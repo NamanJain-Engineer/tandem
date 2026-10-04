@@ -27,3 +27,4 @@
 - M0: F-TL-02 and F-TL-03 core, plus the early slices of settings, commands, and sanitized logs.
 - M0: API `GET /v1/health`, web `GET /api/health`, protocol types, Button, compose file, CI.
 - M0: engine registry, local domain log, sync API, desktop shell.
+- M0: engine spawn plans drop secret environment variables before a child starts.

@@ -411,6 +411,7 @@ name = "tandem-engine"
 version = "0.1.0"
 dependencies = [
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
