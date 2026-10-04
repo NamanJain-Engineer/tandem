@@ -1,7 +1,16 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { bigint, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
-/** Placeholder table so Drizzle has a schema. Account tables land in M1. */
 export const schemaMigrations = pgTable("schema_migrations", {
   id: text("id").primaryKey(),
   appliedAt: timestamp("applied_at", { withTimezone: true }).notNull(),
 });
+
+export const syncEvents = pgTable("sync_events", {
+  seq: bigint("seq", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+  id: text("id").notNull().unique(),
+  workspaceId: text("workspace_id").notNull(),
+  kind: text("kind").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+});
+

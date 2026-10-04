@@ -1,21 +1,23 @@
 import { spawn } from "node:child_process";
 
-const api = spawn("pnpm", ["--filter", "api", "dev"], {
-  stdio: "inherit",
-  env: process.env,
-});
+const children = ["api", "desktop"].map((name) =>
+  spawn("pnpm", ["--filter", name, "dev"], { stdio: "inherit", env: process.env }),
+);
 
-const shutdown = () => {
-  api.kill("SIGINT");
-};
+let stopping = false;
 
-process.on("SIGINT", () => {
-  shutdown();
-  process.exit(0);
-});
-process.on("SIGTERM", () => {
-  shutdown();
-  process.exit(0);
-});
+function stop(code) {
+  if (stopping) return;
+  stopping = true;
+  for (const child of children) child.kill("SIGINT");
+  setTimeout(() => process.exit(code), 200);
+}
 
-api.on("exit", (code) => process.exit(code ?? 0));
+for (const child of children) {
+  child.on("exit", (code) => {
+    if (!stopping) stop(code ?? 0);
+  });
+}
+
+process.on("SIGINT", () => stop(0));
+process.on("SIGTERM", () => stop(0));

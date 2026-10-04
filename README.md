@@ -8,13 +8,13 @@ This repository is a clean-room product. It does not use another product’s nam
 
 Milestone M0 is in progress. Shipped so far:
 
-- `tandem-core` and `tandem-store`
-- `api`: `GET /v1/health`, problem details, redacted request logs
+- `tandem-core`, `tandem-engine`, `tandem-store` (workspaces, sessions, panes, agents, event log)
+- `api`: health, and an idempotent sync log (`/v1/sync/events`)
+- `desktop`: shell frame on port 1420
 - `web`: `GET /api/health`
-- `@tandem/ui`: `Button`
-- `@tandem/protocol` shared types
+- `@tandem/ui` Button and `@tandem/protocol` wire types
 
-The desktop shell is next.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for why this stays one repository.
 
 ## Develop
 
@@ -25,10 +25,12 @@ pnpm install
 pnpm -r lint
 pnpm -r test
 cargo test --workspace
-pnpm dev          # API on http://127.0.0.1:8787
+pnpm dev          # API on http://127.0.0.1:8787 and the shell on http://127.0.0.1:1420
 pnpm --filter web dev
 ```
 
-`GET /v1/health` and `GET /api/health` return `{ "ok": true, "version": "0.1.0" }`.
+`GET /v1/health` returns `{ "ok": true, "version": "0.1.0" }`.
+`POST /v1/sync/events` appends client-authored events. Replays of the same id do not duplicate.
+Set `DATABASE_URL` to store that log in Postgres. Without it, the API keeps the log in memory for one process.
 
 Tests set `TANDEM_HOME` to a temp directory and `TANDEM_FAKE_KEYCHAIN=1`.

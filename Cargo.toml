@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/tandem-core", "crates/tandem-store"]
+members = ["crates/tandem-core", "crates/tandem-engine", "crates/tandem-store"]
 
 [workspace.package]
 edition = "2021"
@@ -16,6 +16,7 @@ regex = "1"
 unicode-normalization = "0.1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 tracing = "0.1"
+uuid = { version = "1", features = ["v4"] }
 
 [workspace.lints.clippy]
 unwrap_used = "deny"

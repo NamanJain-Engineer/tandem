@@ -407,13 +407,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tandem-engine"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
 name = "tandem-store"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "rusqlite",
  "tandem-core",
  "tempfile",
  "thiserror",
+ "uuid",
 ]
 
 [[package]]
@@ -520,6 +529,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
 dependencies = [
  "tinyvec",
+]
+
+[[package]]
+name = "uuid"
+version = "1.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97277d36b9c3ace13e58fa6e753f8b0bbbf302a18dd193240d70f9e29681059a"
+dependencies = [
+ "getrandom",
+ "js-sys",
+ "wasm-bindgen",
 ]
 
 [[package]]

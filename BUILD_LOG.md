@@ -3,9 +3,9 @@
 ## Current state
 - Repo: https://github.com/NamanJain-Engineer/tandem (private, owner NamanJain-Engineer).
 - Milestone: M0 in progress. Not tagged.
-- Done: `tandem-core`, `tandem-store`, `@tandem/protocol`, `api` (`GET /v1/health`, problem details, header redaction), `web` (`GET /api/health`), `@tandem/ui` Button, `infra/docker-compose.yml`, CI workflow.
-- Next: Tauri desktop splash (UI-02), `pnpm dev` bringing web up beside the API, and a tracing subscriber on the Rust logger.
-- Gate: `pnpm -r lint`, `pnpm -r test`, `cargo test --workspace`, clippy, rustfmt. Docker is not available in this environment, so compose is written but not started here.
+- Done: core, engine registry, local domain store, sync API, desktop shell frame, web health, CI.
+- Next: process supervisor for engines, then the Tauri window host once GTK/WebKit is available in CI.
+- Gate: `pnpm -r lint`, `pnpm -r test`, `cargo test --workspace`, clippy, rustfmt. Docker is not available here, so compose is not started.
 
 ## Decisions
 - D-1: F-CD-09 owned by M9. Needs the files editor and browser.
@@ -18,8 +18,12 @@
 - D-8: Create-with-AI is tested against an API fixture in M10.
 - D-9: Threat-model tests land beside each mechanism; M15 audits completeness.
 - D-10: Test-only dependencies do not change the runtime stack.
-- Deviation: production OS keychain (`keyring`) is not linked yet. `MemoryKeychain` is selected when `TANDEM_FAKE_KEYCHAIN=1`. System keychain is the next core task so this slice builds on Linux without a secret-service daemon.
+- Deviation: production OS keychain (`keyring`) is not linked yet. `MemoryKeychain` is selected when `TANDEM_FAKE_KEYCHAIN=1`.
+- D-11: One repository. Split a deployable only when it has its own release cadence.
+- D-12: Local product data is SQLite. The API sync log is Postgres when `DATABASE_URL` is set, so API nodes stay stateless.
+- D-13: Tauri is not in the workspace yet. No GTK/WebKit here, and a crate that cannot compile would fail the gate. The shell UI is `apps/desktop`.
 
 ## Log
 - M0: F-TL-02 and F-TL-03 core, plus the early slices of settings, commands, and sanitized logs.
 - M0: API `GET /v1/health`, web `GET /api/health`, protocol types, Button, compose file, CI.
+- M0: engine registry, local domain log, sync API, desktop shell.

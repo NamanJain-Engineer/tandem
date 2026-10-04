@@ -1,9 +1,13 @@
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { Health } from "@tandem/protocol";
 import { logger } from "./log";
 import { problem } from "./problem";
 import { redactHeaders, redactText } from "./redact";
+import { MemorySyncRepo } from "./sync/memory";
+import { syncRoutes } from "./sync/routes";
+import type { SyncRepo } from "./sync/types";
 
 const VERSION = "0.1.0";
 
@@ -16,8 +20,21 @@ type Variables = {
   requestId: string;
 };
 
-export function createApp() {
+type AppDeps = {
+  sync?: SyncRepo;
+};
+
+export function createApp(deps: AppDeps = {}) {
+  const sync = deps.sync ?? new MemorySyncRepo();
   const app = new Hono<{ Variables: Variables }>();
+
+  app.use(
+    "*",
+    bodyLimit({
+      maxSize: 1024 * 1024,
+      onError: (c) => c.json(problem(413, "Payload Too Large", "Request body exceeds 1 MB."), 413),
+    }),
+  );
 
   app.use("*", async (c, next) => {
     const requestId = c.req.header("x-request-id") ?? crypto.randomUUID();
@@ -45,6 +62,8 @@ export function createApp() {
     const parsed = healthSchema.parse(body);
     return c.json(parsed);
   });
+
+  app.route("/v1/sync/events", syncRoutes(sync));
 
   app.notFound((c) => c.json(problem(404, "Not Found", `${c.req.method} ${c.req.path} was not found`), 404));
 
