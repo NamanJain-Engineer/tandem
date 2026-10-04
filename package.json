@@ -1,0 +1,8 @@
+{
+  "name": "tandem",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "gate": "cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check"
+  }
+}

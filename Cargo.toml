@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = ["crates/tandem-core", "crates/tandem-store"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.1.0"
+publish = false
+
+[workspace.dependencies]
+thiserror = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+tokio = { version = "1", features = ["sync", "rt", "macros"] }
+regex = "1"
+unicode-normalization = "0.1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+tracing = "0.1"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"

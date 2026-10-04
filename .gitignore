@@ -1,0 +1,10 @@
+/target
+**/target
+node_modules
+.dev-keys/
+perf/results/*.tmp
+.DS_Store
+*.log
+dist
+.next
+.turbo
