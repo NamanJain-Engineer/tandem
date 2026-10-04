@@ -20,6 +20,7 @@ tandem-routines = { path = "crates/tandem-routines" }
 tandem-voice = { path = "crates/tandem-voice" }
 tandem-host = { path = "crates/tandem-host" }
 
+aes-gcm = "0.10"
 aho-corasick = "1"
 anyhow = "1"
 async-trait = "0.1"
@@ -31,8 +32,10 @@ futures = "0.3"
 hex = "0.4"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 parking_lot = "0.12"
+portable-pty = "0.9"
 rand = "0.8"
 regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -44,6 +47,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "registry"] }
 ts-rs = { version = "10", features = ["serde-json-impl", "no-serde-warnings"] }
 ulid = "1"
+url = "2"
+vte = "0.15"
 unicode-normalization = "0.1"
 zeroize = "1"
 
