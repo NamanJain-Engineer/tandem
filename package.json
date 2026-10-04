@@ -2,12 +2,35 @@
   "name": "tandem",
   "private": true,
   "packageManager": "pnpm@9.15.9",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "dev": "node scripts/dev.mjs",
-    "infra:up": "docker compose -f infra/docker-compose.yml up -d --wait",
-    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "dev": "tsx scripts/dev.ts",
+    "gate": "bash scripts/gate.sh",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
-    "gate": "pnpm -r lint && pnpm -r test && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check"
+    "e2e": "pnpm --filter desktop e2e",
+    "ci:local": "bash scripts/ci-local.sh",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d --wait",
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "gen:protocol": "tsx scripts/gen-protocol.ts",
+    "gen:pseudo": "tsx scripts/gen-pseudo.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.30.0",
+    "@types/node": "^22.15.30",
+    "eslint": "^9.30.0",
+    "eslint-config-prettier": "^10.1.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^16.3.0",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.3",
+    "typescript": "~5.8.3",
+    "typescript-eslint": "^8.35.1"
   }
 }

@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "The main window: every app command.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-set-title",
+    "allow-app-ready",
+    "allow-app-log",
+    "allow-app-copy-diagnostics",
+    "allow-commands-registry",
+    "allow-redact-text",
+    "allow-settings-get-all",
+    "allow-settings-set",
+    "allow-settings-reset"
+  ]
+}

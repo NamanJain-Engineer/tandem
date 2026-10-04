@@ -1,0 +1,17 @@
+{
+  "app.name": "Tandem",
+  "splash.restoring": "Restoring your workspace…",
+  "splash.progress": "{n} of {m} sessions",
+  "splash.skip": "Skip restore",
+  "splash.starting": "Starting…",
+  "splash.crash.title": "Tandem closed unexpectedly",
+  "splash.crash.body": "We saved {m, plural, one {# session} other {# sessions}} from your last run. Restore them?",
+  "splash.crash.restoreAll": "Restore all",
+  "splash.crash.choose": "Choose…",
+  "splash.crash.startFresh": "Start fresh",
+  "splash.crash.sendReport": "Send a crash report",
+  "splash.failed": "Couldn't restore {n, plural, one {# session} other {# sessions}}",
+  "splash.details": "Details",
+  "error.boot": "Tandem couldn't start. {detail}",
+  "error.copyDiagnostics": "Copy diagnostics"
+}

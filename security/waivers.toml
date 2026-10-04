@@ -1,0 +1,5 @@
+# Accepted audit findings. Each waiver expires; an expired waiver fails CI.
+# [[waiver]]
+# id = "RUSTSEC-0000-0000"      # or a GHSA id for npm
+# reason = "Why it does not affect Tandem"
+# expires = "2026-12-31"

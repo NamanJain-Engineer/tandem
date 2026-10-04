@@ -1,36 +1,53 @@
 # Tandem
 
-Cross-platform desktop workspace for building software with the coding-agent CLIs you already pay for. Terminal panes, readable threads, and named teammates. Tandem hosts those engines. It does not replace them, and it never reads their tokens.
+A cross-platform desktop workspace for building software with the coding-agent CLIs you already pay for: terminal panes (Code mode), coding sessions read as conversations (Thread mode), and persistent teammates (Agent mode). Tandem hosts those engines. It never reads their tokens, and nothing leaves your machine unless you turn it on.
 
-This repository is a clean-room product. It does not use another product’s names, copy, or code.
+Tandem is a clean-room product. It does not use another product's names, copy, artwork or code.
 
-## Status
+- What and why: [`docs/PLAN.md`](docs/PLAN.md) (analysis, architecture, milestone plan)
+- Binding specs: [`build-kit/`](build-kit/) (DECISIONS, PRODUCT_SPEC, ARCHITECTURE, UI_SPEC, MILESTONES)
+- Progress: [`BUILD_LOG.md`](BUILD_LOG.md). Human-only steps: [`HUMAN_TODO.md`](HUMAN_TODO.md)
 
-Milestone M0 is in progress. Shipped so far:
+## Repository layout
 
-- `tandem-core`, `tandem-engine`, `tandem-store` (workspaces, sessions, panes, agents, event log)
-- `api`: health, and an idempotent sync log (`/v1/sync/events`)
-- `desktop`: shell frame on port 1420
-- `web`: `GET /api/health`
-- `@tandem/ui` Button and `@tandem/protocol` wire types
+| Path | What |
+|---|---|
+| `apps/desktop` | Tauri 2 app: React UI in `src/`, Rust crate `tandem-desktop` (lib `tandem_app`, bin `tandem`) in `src-tauri/` |
+| `apps/api` | Backend: Hono, Drizzle, Postgres, Redis |
+| `apps/web` | Website, docs and account portal: Next.js 15 |
+| `crates/tandem-*` | Rust libraries: core, store, pty, engines, git, gateway, tasks, routines, voice, host |
+| `packages/ui` | React components and design tokens |
+| `packages/protocol` | Wire types (generated from Rust with ts-rs) and the API client |
+| `infra/` | docker compose: Postgres 16, Redis 7, Mailpit, stripe-mock |
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for why this stays one repository.
+## Setup
 
-## Develop
-
-Requirements: Rust stable, Node 22, pnpm 9. Docker is optional and starts Postgres, Redis, Mailpit, and stripe-mock.
+Requirements: Rust stable, Node 22, pnpm 9, Docker with compose v2. On Linux, `bash scripts/bootstrap-linux.sh` installs WebKitGTK and the other system packages; `bash scripts/check-env.sh` lists anything missing.
 
 ```bash
 pnpm install
-pnpm -r lint
-pnpm -r test
-cargo test --workspace
-pnpm dev          # API on http://127.0.0.1:8787 and the shell on http://127.0.0.1:1420
-pnpm --filter web dev
+pnpm dev                 # infra + API (:8787) + web (:3000) + desktop app
+pnpm dev --no-desktop    # infra + API + web
+pnpm dev --api-only      # just the API
 ```
 
-`GET /v1/health` returns `{ "ok": true, "version": "0.1.0" }`.
-`POST /v1/sync/events` appends client-authored events. Replays of the same id do not duplicate.
-Set `DATABASE_URL` to store that log in Postgres. Without it, the API keeps the log in memory for one process.
+Ctrl-C stops the apps and leaves the infra running (`pnpm infra:down` stops it). If `api.tandem.local` doesn't resolve, the dev script prints the `/etc/hosts` line and uses `127.0.0.1` for that run.
+
+## Tests
+
+```bash
+pnpm gate                                   # the global gate: lint, tests, desktop build, clippy, fmt, protocol drift
+cargo test --workspace                      # Rust
+pnpm -r test                                # TypeScript (vitest)
+xvfb-run -a pnpm --filter desktop e2e       # desktop E2E (WebdriverIO + tauri-driver)
+bash scripts/smoke-dev.sh                   # `pnpm dev` orchestration smoke test
+bash scripts/check-coverage.sh              # every spec feature is owned by one milestone
+pnpm tsx scripts/trace-tests.ts --milestone M0   # acceptance criteria without a test
+pnpm ci:local                               # the CI jobs, locally
+```
 
 Tests set `TANDEM_HOME` to a temp directory and `TANDEM_FAKE_KEYCHAIN=1`.
+
+## Release
+
+Tag `v*` triggers `.github/workflows/release.yml` (added in M5): signed installers when signing secrets are present, unsigned artifacts with a summary note when they aren't.

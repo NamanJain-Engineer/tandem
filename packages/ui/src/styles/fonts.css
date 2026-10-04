@@ -1,0 +1,8 @@
+/* Self-hosted fonts (no network requests): Inter for UI, JetBrains Mono for code. */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+:root {
+  --font-ui-family: "Inter Variable", "Inter";
+  --font-code-family: "JetBrains Mono Variable", "JetBrains Mono";
+}

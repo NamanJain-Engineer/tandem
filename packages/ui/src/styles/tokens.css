@@ -1,11 +1,302 @@
+@import "tailwindcss";
+
+/* ---------- Raw palette (do not use directly in components) ---------- */
 :root {
-  --tandem-bg: #0b1220;
-  --tandem-fg: #e6edf5;
-  --tandem-accent: #2dd4bf;
-  --tandem-accent-fg: #042f2e;
-  --tandem-danger: #e11d48;
-  --tandem-danger-fg: #fff1f2;
-  --tandem-radius: 6px;
-  --tandem-font: Inter, ui-sans-serif, system-ui, sans-serif;
-  --tandem-mono: "JetBrains Mono", ui-monospace, monospace;
+  --slate-0:   #ffffff;
+  --slate-25:  #f8fafc;
+  --slate-50:  #f1f5f9;
+  --slate-100: #e2e8f0;
+  --slate-200: #cbd5e1;
+  --slate-300: #94a3b8;
+  --slate-400: #64748b;
+  --slate-500: #475569;
+  --slate-600: #334155;
+  --slate-700: #1e293b;
+  --slate-750: #172033;
+  --slate-800: #111827;
+  --slate-850: #0d1320;
+  --slate-900: #0a0f1a;
+  --slate-950: #060a12;
+
+  --teal-50:  #effcf9;
+  --teal-100: #ccfbf1;
+  --teal-200: #99f6e4;
+  --teal-300: #5eead4;
+  --teal-400: #2dd4bf;   /* brand accent */
+  --teal-500: #14b8a6;
+  --teal-600: #0d9488;
+  --teal-700: #0f766e;
+  --teal-800: #115e59;
+  --teal-900: #134e4a;
+
+  --amber-300: #fcd34d;  --amber-400: #fbbf24; --amber-500: #f59e0b; --amber-600: #d97706; --amber-700: #b45309;
+  --sky-300:   #7dd3fc;  --sky-400:   #38bdf8; --sky-500:   #0ea5e9; --sky-600:   #0284c7; --sky-700: #0369a1;
+  --green-300: #86efac;  --green-400: #4ade80; --green-500: #22c55e; --green-600: #16a34a; --green-700: #15803d;
+  --rose-300:  #fda4af;  --rose-400:  #fb7185; --rose-500:  #f43f5e; --rose-600:  #e11d48; --rose-700:  #be123c;
+  --violet-400:#a78bfa;  --violet-500:#8b5cf6;
+  --orange-400:#fb923c;
 }
+
+/* ---------- Semantic tokens: DARK (default) ---------- */
+:root, [data-theme="dark"] {
+  color-scheme: dark;
+
+  /* surfaces (elevation increases upward) */
+  --tn-bg:            var(--slate-950);  /* window background, behind panes */
+  --tn-surface-1:     var(--slate-900);  /* rails, sidebars */
+  --tn-surface-2:     var(--slate-850);  /* panes, cards */
+  --tn-surface-3:     var(--slate-800);  /* raised: menus, popovers, sheets */
+  --tn-surface-4:     var(--slate-750);  /* hover on surface-3, inputs */
+  --tn-overlay:       rgb(2 6 12 / 0.64);/* modal scrim */
+
+  /* borders */
+  --tn-border:        rgb(148 163 184 / 0.14);
+  --tn-border-strong: rgb(148 163 184 / 0.26);
+  --tn-divider:       rgb(148 163 184 / 0.08);
+
+  /* text */
+  --tn-text:          #e6edf5;
+  --tn-text-muted:    #9aa8bb;
+  --tn-text-subtle:   #7d8ba0;   /* §7.3 fix: was #6b7a90 (4.06–4.39:1) */
+  --tn-text-disabled: #4a5668;
+  --tn-text-inverse:  var(--slate-950);
+
+  /* accent */
+  --tn-accent:        var(--teal-400);
+  --tn-accent-hover:  var(--teal-300);
+  --tn-accent-press:  var(--teal-500);
+  --tn-accent-fg:     #042f2c;                 /* text on accent */
+  --tn-accent-soft:   rgb(45 212 191 / 0.14);  /* selected row, chip bg */
+  --tn-accent-ring:   rgb(45 212 191 / 0.55);  /* focus ring */
+
+  /* status: agent/session lifecycle */
+  --tn-status-working:      var(--sky-400);
+  --tn-status-working-soft: rgb(56 189 248 / 0.14);
+  --tn-status-working-text: var(--sky-400);   /* status as text (Badges, labels) */
+  --tn-status-waiting-text: var(--amber-400);
+  --tn-status-done-text:    var(--green-400);
+  --tn-status-waiting:      var(--amber-400);
+  --tn-status-waiting-soft: rgb(251 191 36 / 0.14);
+  --tn-status-done:         var(--green-400);
+  --tn-status-done-soft:    rgb(74 222 128 / 0.14);
+  --tn-status-idle:         var(--slate-400);
+  --tn-status-idle-soft:    rgb(100 116 139 / 0.16);
+  --tn-status-error:        var(--rose-400);
+  --tn-status-error-soft:   rgb(251 113 133 / 0.14);
+
+  /* feedback */
+  --tn-success: var(--green-400);
+  --tn-warning: var(--amber-400);
+  --tn-danger:  var(--rose-400);
+  --tn-danger-hover: var(--rose-300);
+  --tn-danger-fg: #2b0710;
+  --tn-info:    var(--sky-400);
+
+  /* diff */
+  --tn-diff-add-bg:   rgb(34 197 94 / 0.12);
+  --tn-diff-add-fg:   var(--green-300);
+  --tn-diff-del-bg:   rgb(244 63 94 / 0.12);
+  --tn-diff-del-fg:   var(--rose-300);
+  --tn-diff-hunk-bg:  rgb(56 189 248 / 0.08);
+
+  /* misc */
+  --tn-scrollbar:     rgb(148 163 184 / 0.22);
+  --tn-selection:     rgb(45 212 191 / 0.28);
+  --tn-kbd-bg:        var(--slate-800);
+  --tn-shadow-color:  0 0 0;
+}
+
+/* ---------- Semantic tokens: LIGHT ---------- */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --tn-bg:            var(--slate-50);
+  --tn-surface-1:     var(--slate-25);
+  --tn-surface-2:     var(--slate-0);
+  --tn-surface-3:     var(--slate-0);
+  --tn-surface-4:     var(--slate-50);
+  --tn-overlay:       rgb(15 23 42 / 0.36);
+
+  --tn-border:        rgb(15 23 42 / 0.10);
+  --tn-border-strong: rgb(15 23 42 / 0.20);
+  --tn-divider:       rgb(15 23 42 / 0.06);
+
+  --tn-text:          #0f172a;
+  --tn-text-muted:    #475569;
+  --tn-text-subtle:   #5f6f84;   /* was #64748b: 4.34:1 on bg/surface-4 (slate-50) */
+  --tn-text-disabled: #94a3b8;
+  --tn-text-inverse:  #ffffff;
+
+  --tn-accent:        var(--teal-700);   /* #0f766e: 5.5:1 on white (§7.3; teal-600 was 3.74:1) */
+  --tn-accent-hover:  var(--teal-800);
+  --tn-accent-press:  var(--teal-900);
+  --tn-accent-fg:     #ffffff;
+  --tn-accent-soft:   rgb(15 118 110 / 0.10);
+  --tn-accent-ring:   rgb(15 118 110 / 0.50);
+
+  --tn-status-working:      var(--sky-600);
+  --tn-status-working-soft: rgb(2 132 199 / 0.10);
+  --tn-status-working-text: var(--sky-700);    /* 5.9:1 on white (§7.3) */
+  --tn-status-waiting-text: var(--amber-700);  /* 5.0:1 */
+  --tn-status-done-text:    var(--green-700);  /* 5.0:1 */
+  --tn-status-waiting:      var(--amber-600);
+  --tn-status-waiting-soft: rgb(217 119 6 / 0.12);
+  --tn-status-done:         var(--green-600);
+  --tn-status-done-soft:    rgb(22 163 74 / 0.10);
+  --tn-status-idle:         var(--slate-400);
+  --tn-status-idle-soft:    rgb(100 116 139 / 0.12);
+  --tn-status-error:        var(--rose-600);
+  --tn-status-error-soft:   rgb(225 29 72 / 0.10);
+
+  --tn-success: var(--green-600);
+  --tn-warning: var(--amber-600);
+  --tn-danger:  var(--rose-600);
+  --tn-danger-hover: var(--rose-700);
+  --tn-danger-fg: #ffffff;
+  --tn-info:    var(--sky-600);
+
+  --tn-diff-add-bg:   rgb(22 163 74 / 0.10);
+  --tn-diff-add-fg:   var(--green-700);
+  --tn-diff-del-bg:   rgb(225 29 72 / 0.08);
+  --tn-diff-del-fg:   var(--rose-700);
+  --tn-diff-hunk-bg:  rgb(2 132 199 / 0.06);
+
+  --tn-scrollbar:     rgb(15 23 42 / 0.20);
+  --tn-selection:     rgb(15 118 110 / 0.20);
+  --tn-kbd-bg:        var(--slate-50);
+  --tn-shadow-color:  15 23 42;
+}
+
+/* ---------- Theme mapping for Tailwind 4 ---------- */
+@theme inline {
+  --color-bg: var(--tn-bg);
+  --color-surface-1: var(--tn-surface-1);
+  --color-surface-2: var(--tn-surface-2);
+  --color-surface-3: var(--tn-surface-3);
+  --color-surface-4: var(--tn-surface-4);
+  --color-overlay: var(--tn-overlay);
+  --color-border: var(--tn-border);
+  --color-border-strong: var(--tn-border-strong);
+  --color-divider: var(--tn-divider);
+  --color-fg: var(--tn-text);
+  --color-fg-muted: var(--tn-text-muted);
+  --color-fg-subtle: var(--tn-text-subtle);
+  --color-fg-disabled: var(--tn-text-disabled);
+  --color-fg-inverse: var(--tn-text-inverse);
+  --color-accent: var(--tn-accent);
+  --color-accent-hover: var(--tn-accent-hover);
+  --color-accent-press: var(--tn-accent-press);
+  --color-accent-fg: var(--tn-accent-fg);
+  --color-accent-soft: var(--tn-accent-soft);
+  --color-working: var(--tn-status-working);
+  --color-working-soft: var(--tn-status-working-soft);
+  --color-working-text: var(--tn-status-working-text);
+  --color-waiting-text: var(--tn-status-waiting-text);
+  --color-done-text: var(--tn-status-done-text);
+  --color-waiting: var(--tn-status-waiting);
+  --color-waiting-soft: var(--tn-status-waiting-soft);
+  --color-done: var(--tn-status-done);
+  --color-done-soft: var(--tn-status-done-soft);
+  --color-idle: var(--tn-status-idle);
+  --color-idle-soft: var(--tn-status-idle-soft);
+  --color-error: var(--tn-status-error);
+  --color-error-soft: var(--tn-status-error-soft);
+  --color-success: var(--tn-success);
+  --color-warning: var(--tn-warning);
+  --color-danger: var(--tn-danger);
+  --color-danger-hover: var(--tn-danger-hover);
+  --color-danger-fg: var(--tn-danger-fg);
+  --color-info: var(--tn-info);
+  --color-diff-add-bg: var(--tn-diff-add-bg);
+  --color-diff-add-fg: var(--tn-diff-add-fg);
+  --color-diff-del-bg: var(--tn-diff-del-bg);
+  --color-diff-del-fg: var(--tn-diff-del-fg);
+  --color-diff-hunk-bg: var(--tn-diff-hunk-bg);
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* type scale (size / line-height) */
+  --text-2xs: 10px;  --text-2xs--line-height: 14px;
+  --text-xs:  11px;  --text-xs--line-height: 16px;
+  --text-sm:  12px;  --text-sm--line-height: 18px;
+  --text-base:13px;  --text-base--line-height: 20px;   /* default UI text */
+  --text-md:  14px;  --text-md--line-height: 22px;     /* chat body, composer */
+  --text-lg:  16px;  --text-lg--line-height: 24px;
+  --text-xl:  20px;  --text-xl--line-height: 28px;
+  --text-2xl: 24px;  --text-2xl--line-height: 32px;
+  --text-3xl: 30px;  --text-3xl--line-height: 38px;    /* onboarding hero only */
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  --tracking-tight: -0.01em;
+  --tracking-caps: 0.06em;   /* for 10–11px uppercase section labels */
+
+  /* spacing: Tailwind default 4px scale is used as-is (spacing-1 = 4px) */
+  --spacing: 4px;
+
+  /* radii */
+  --radius-xs: 4px;    /* chips, kbd, badges */
+  --radius-sm: 6px;    /* controls: buttons, inputs, menu items */
+  --radius-md: 8px;    /* panels, panes, cards, popovers */
+  --radius-lg: 12px;   /* dialogs, sheets */
+  --radius-full: 9999px;
+
+  /* shadows (dark theme relies more on borders than shadows) */
+  --shadow-1: 0 1px 2px rgb(var(--tn-shadow-color) / 0.18);
+  --shadow-2: 0 4px 12px rgb(var(--tn-shadow-color) / 0.22), 0 1px 2px rgb(var(--tn-shadow-color) / 0.16);
+  --shadow-3: 0 12px 32px rgb(var(--tn-shadow-color) / 0.30), 0 2px 6px rgb(var(--tn-shadow-color) / 0.18);
+  --shadow-focus: 0 0 0 2px var(--tn-bg), 0 0 0 4px var(--tn-accent-ring);
+
+  /* motion */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter:    cubic-bezier(0, 0, 0.2, 1);
+  --ease-exit:     cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring:   cubic-bezier(0.34, 1.36, 0.64, 1);  /* only for toasts/HUD pop-in */
+}
+
+:root {
+  /* durations (not mapped into Tailwind; use via arbitrary values or utilities below) */
+  --dur-instant: 60ms;   /* hover colour */
+  --dur-fast:    120ms;  /* press, toggle, tooltip */
+  --dur-base:    180ms;  /* menus, popovers, tabs */
+  --dur-slow:    260ms;  /* sheets, dialogs, sidebar slide */
+  --dur-deliberate: 400ms; /* onboarding steps, splash fade */
+
+  /* z-index scale */
+  --z-base: 0;
+  --z-pane-overlay: 10;   /* drag handles, pane drop targets */
+  --z-rail: 20;
+  --z-titlebar: 30;
+  --z-sidebar: 40;
+  --z-popover: 100;       /* menus, selects, tooltips anchored */
+  --z-sheet: 200;
+  --z-dialog: 300;
+  --z-toast: 400;
+  --z-hud: 500;           /* Dictate/Conductor HUD */
+  --z-command: 600;       /* command palette sits above everything but HUD? no: above HUD */
+  --z-max: 9999;          /* crash/restore splash, drag ghost */
+
+  /* layout constants */
+  --titlebar-h: 40px;
+  --rail-w: 248px;        --rail-min: 180px; --rail-max: 360px; --rail-collapsed: 52px;
+  --sidebar-w: 470px;     --sidebar-min: 320px; --sidebar-max: 900px;
+  --pane-header-h: 30px;
+  --statusbar-h: 22px;
+  --composer-min-h: 88px; --composer-max-h: 320px;
+}
+
+/* reduced motion: collapse all durations */
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-fast: 0ms; --dur-base: 0ms; --dur-slow: 0ms; --dur-deliberate: 0ms; }
+}
+[data-motion="reduced"] { --dur-fast: 0ms; --dur-base: 0ms; --dur-slow: 0ms; --dur-deliberate: 0ms; }
+
+/* base */
+html, body, #root { height: 100%; background: var(--tn-bg); color: var(--tn-text); }
+body { font-family: var(--font-sans); font-size: 13px; line-height: 20px; -webkit-font-smoothing: antialiased; }
+::selection { background: var(--tn-selection); }
+:focus-visible { outline: none; box-shadow: var(--shadow-focus); border-radius: inherit; }
+* { scrollbar-width: thin; scrollbar-color: var(--tn-scrollbar) transparent; }

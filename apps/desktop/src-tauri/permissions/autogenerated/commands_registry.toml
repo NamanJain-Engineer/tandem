@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-commands-registry"
+description = "Enables the commands_registry command without any pre-configured scope."
+commands.allow = ["commands_registry"]
+
+[[permission]]
+identifier = "deny-commands-registry"
+description = "Denies the commands_registry command without any pre-configured scope."
+commands.deny = ["commands_registry"]

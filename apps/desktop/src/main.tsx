@@ -1,15 +1,13 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { AppShell } from "./shell/AppShell";
+import { App } from "./App";
 import "./styles.css";
 
 const root = document.getElementById("root");
-if (!root) {
-  throw new Error("root element missing");
+if (root) {
+  createRoot(root).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
 }
-
-createRoot(root).render(
-  <StrictMode>
-    <AppShell />
-  </StrictMode>,
-);

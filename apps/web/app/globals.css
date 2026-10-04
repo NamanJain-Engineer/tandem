@@ -1,0 +1,8 @@
+@import "@tandem/ui/tokens.css";
+@import "@tandem/ui/fonts.css";
+
+@source "../../../packages/ui/src";
+
+body {
+  font-family: var(--font-ui-family), var(--font-sans);
+}

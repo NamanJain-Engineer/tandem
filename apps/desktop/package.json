@@ -5,22 +5,43 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420 --strictPort",
-    "build": "vite build",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 1420",
+    "tauri": "tauri",
     "test": "vitest run",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit && tsc --noEmit -p e2e && eslint .",
+    "e2e": "tsx e2e/run.ts"
   },
   "dependencies": {
+    "@tandem/protocol": "workspace:*",
+    "@tandem/ui": "workspace:*",
+    "@tauri-apps/api": "^2.6.0",
+    "intl-messageformat": "^10.7.16",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "zustand": "^5.0.6"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.1.11",
+    "@tauri-apps/cli": "^2.6.2",
     "@testing-library/react": "^16.3.0",
+    "@types/mocha": "^10.0.10",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.7.0",
-    "happy-dom": "^18.0.1",
+    "@wdio/cli": "^9",
+    "@wdio/globals": "^9",
+    "@wdio/local-runner": "^9",
+    "@wdio/mocha-framework": "^9",
+    "@wdio/spec-reporter": "^9",
+    "axe-core": "^4.10.3",
+    "jsdom": "^26.1.0",
+    "tailwindcss": "^4.1.11",
+    "tsx": "^4.20.3",
     "typescript": "~5.8.3",
-    "vite": "^6.3.5",
-    "vitest": "^3.2.4"
+    "vite": "^7.0.0",
+    "vitest": "^3.2.4",
+    "vitest-axe": "^0.1.0",
+    "webdriverio": "^9"
   }
 }

@@ -1,12 +1,14 @@
 {
   "compilerOptions": {
     "target": "ES2022",
+    "lib": ["DOM", "ES2022"],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["vitest/globals"]
+    "isolatedModules": true,
+    "noUncheckedIndexedAccess": true
   },
   "include": ["src"]
 }
