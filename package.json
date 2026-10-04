@@ -18,7 +18,10 @@
     "gen:protocol": "tsx scripts/gen-protocol.ts",
     "gen:pseudo": "tsx scripts/gen-pseudo.ts",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "keys:dev": "tsx scripts/dev-keys.ts",
+    "db:migrate": "pnpm --filter api db:migrate",
+    "db:seed": "pnpm --filter api db:seed"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",

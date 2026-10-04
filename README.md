@@ -33,6 +33,17 @@ pnpm dev --api-only      # just the API
 
 Ctrl-C stops the apps and leaves the infra running (`pnpm infra:down` stops it). If `api.tandem.local` doesn't resolve, the dev script prints the `/etc/hosts` line and uses `127.0.0.1` for that run.
 
+First run:
+
+```bash
+pnpm infra:up
+pnpm keys:dev       # Ed25519 dev keys → .dev-keys/, public keys → the desktop's resources/keys.json
+pnpm db:migrate
+pnpm db:seed
+```
+
+Seeded accounts (all verified, password `Tandem-dev-pass-1`): `free@tandem.test` (Free), `pro@tandem.test` (Pro, 10,000 monthly credits), `pastdue@tandem.test` (payment failed today), `lapsed@tandem.test` (cancelled, period ended). Email goes to Mailpit at http://localhost:8025. Billing runs on a mock provider: Upgrade completes instantly through `/billing/mock`. `bash scripts/stripe-fixture.sh <event> <email>` posts a signed webhook fixture.
+
 ## Tests
 
 ```bash
@@ -46,7 +57,12 @@ pnpm tsx scripts/trace-tests.ts --milestone M0   # acceptance criteria without a
 pnpm ci:local                               # the CI jobs, locally
 ```
 
-Tests set `TANDEM_HOME` to a temp directory and `TANDEM_FAKE_KEYCHAIN=1`.
+Tests set `TANDEM_HOME` to a temp directory and `TANDEM_FAKE_KEYCHAIN=1`. API tests and the web E2E use the compose Postgres and Redis, so run `pnpm infra:up` first (API tests create their own `tandem_test` database).
+
+```bash
+pnpm --filter web test:e2e      # Playwright; set PLAYWRIGHT_CHROMIUM to a Chromium binary if Playwright's own isn't installed
+pnpm --filter api openapi       # regenerate apps/api/openapi.json
+```
 
 ## Release
 

@@ -1,0 +1,19 @@
+{
+  "panes": 4,
+  "workspaces": 3,
+  "threadGrid": 1,
+  "teammates": 1,
+  "routines": false,
+  "backgroundRoutines": false,
+  "taskExecution": false,
+  "pluginConnections": 1,
+  "accountsPerEngine": 1,
+  "cloudStt": false,
+  "enhance": false,
+  "conductor": false,
+  "auto": false,
+  "phone": false,
+  "admin": false,
+  "chatEngines": ["claude", "codex"],
+  "creditPacks": false
+}

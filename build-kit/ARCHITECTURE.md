@@ -2239,6 +2239,7 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 | `POST /v1/billing/portal` | B/C | — | `{url}` | 404 (no customer) | F-BL-02 |
 | `POST /v1/billing/credit-packs/checkout` | B/C | `{pack:'5k'\|'12k'\|'30k'}` | `{url}` | `FORBIDDEN_PLAN` | F-BL-03 |
 | `POST /v1/billing/mock/complete` (dev, `BILLING_PROVIDER=mock`) | C | `{sessionId}` | 204 (emits synthetic webhook events) | 404 in prod | F-BL-01 |
+| `POST /v1/billing/mock/portal` (dev, `BILLING_PROVIDER=mock`) | C | `{action:'cancel_at_period_end'\|'resume'\|'cancel_now'}` | 204 (emits `customer.subscription.updated\|deleted`) | 404 in prod | F-BL-02 |
 | `POST /v1/webhooks/stripe` | S | raw body | 200 `{received:true}` | 400 bad signature | F-BL-01..06 |
 | `POST /v1/ai/title` | B | `{text: str(1..4000)}` | `{title: str(≤60)}` | `RATE_LIMITED` (60/h) | F-TH-15 |
 | `POST /v1/ai/rewrite` | B | `{mode:'enhance'\|'polish', text: str(1..5000), instructions?: str(≤2000), protected_terms?: [str(≤100)] (≤200)}` | `{text}` · 3 cr | `FORBIDDEN_PLAN`, `CREDITS_EXHAUSTED`, `DAILY_LIMIT` | F-DI-10 |

@@ -26,6 +26,7 @@ async-trait = "0.1"
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 dashmap = "6"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
 futures = "0.3"
 hex = "0.4"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }

@@ -1,18 +1,35 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { ApiError, problemResponse } from "./lib/problem";
+import type { Deps } from "./deps";
+import { testRoutesEnabled } from "./env";
 import { logger } from "./lib/logger";
+import { ApiError, problemResponse } from "./lib/problem";
 import { redactText } from "./lib/redact";
-import { requestContext, type AppVariables } from "./middleware/requestContext";
+import { resolveUser } from "./middleware/auth";
+import type { AppEnv } from "./middleware/context";
+import { csrf } from "./middleware/csrf";
+import { minVersion } from "./middleware/minVersion";
+import { authSpikeMonitor, ipRateLimit } from "./middleware/rateLimit";
+import { requestContext } from "./middleware/requestContext";
+import { turnstile } from "./middleware/turnstile";
+import { billingRoutes } from "./routes/billing";
+import { configRoutes } from "./routes/config";
+import { creditsRoutes } from "./routes/credits";
+import { desktopAuthRoutes } from "./routes/desktopAuth";
 import { health } from "./routes/health";
+import { meRoutes } from "./routes/me";
+import { testRoutes } from "./routes/testRoutes";
+import { webhookRoutes } from "./routes/webhooks";
 
-export type Deps = Record<string, never>;
-
-/** Builds the API. Every provider is injected so tests pass mocks (§14.1). */
-export function createApp(_deps: Deps = {}) {
-  const app = new Hono<{ Variables: AppVariables }>();
+/**
+ * Builds the API. Middleware order follows ARCHITECTURE §14.1: request id and
+ * client headers → access log → problems → rate limit → auth → route guards.
+ */
+export function createApp(deps: Deps) {
+  const app = new Hono<AppEnv>();
 
   app.use("*", requestContext);
+  app.use("*", minVersion(deps));
   app.use(
     "*",
     bodyLimit({
@@ -24,8 +41,21 @@ export function createApp(_deps: Deps = {}) {
         ),
     }),
   );
+  app.use("*", resolveUser(deps));
+  app.use("*", authSpikeMonitor(deps));
+  app.use("*", ipRateLimit(deps));
+  app.use("*", csrf(deps.env.WEB_PUBLIC_URL.startsWith("https://")));
+  app.use("*", turnstile(deps));
 
   app.route("/v1/health", health);
+  app.route("/v1/config", configRoutes(deps));
+  app.route("/v1/auth/desktop", desktopAuthRoutes(deps));
+  app.on(["GET", "POST"], "/v1/auth/*", (c) => deps.auth.handler(c.req.raw));
+  app.route("/v1/me", meRoutes(deps));
+  app.route("/v1/credits", creditsRoutes(deps));
+  app.route("/v1/billing", billingRoutes(deps));
+  app.route("/v1/webhooks", webhookRoutes(deps));
+  if (testRoutesEnabled(deps.env)) app.route("/__test", testRoutes(deps));
 
   app.notFound((c) =>
     problemResponse(

@@ -1,0 +1,14 @@
+{
+  "id": "evt_fixture_invoice_paid_{{USER_ID}}",
+  "type": "invoice.paid",
+  "data": {
+    "object": {
+      "id": "in_fixture_{{USER_ID}}",
+      "customer": "{{CUSTOMER}}",
+      "subscription": "{{SUBSCRIPTION}}",
+      "amount_paid": 2900,
+      "lines": { "data": [] },
+      "metadata": { "owner_kind": "user", "owner_id": "{{USER_ID}}" }
+    }
+  }
+}

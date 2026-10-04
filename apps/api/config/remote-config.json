@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "min_app_version": "0.1.0",
+  "prices": {
+    "stt_15s": 2,
+    "rewrite": 3,
+    "voice_10s": 20,
+    "resolve": 1,
+    "auto_turn": 6,
+    "teammate_draft": 10,
+    "title": 0
+  },
+  "daily_caps": { "stt_minutes": 120, "rewrite_calls": 300 },
+  "flags": { "conductor": false, "phone": false },
+  "models": {
+    "claude": [
+      {
+        "id": "default",
+        "label": "Default",
+        "description": "The engine's own default model",
+        "default": true,
+        "effortLevels": [],
+        "contextWindow": null,
+        "deprecated": false
+      }
+    ],
+    "codex": [
+      {
+        "id": "default",
+        "label": "Default",
+        "description": "The engine's own default model",
+        "default": true,
+        "effortLevels": ["low", "medium", "high"],
+        "contextWindow": null,
+        "deprecated": false
+      }
+    ]
+  },
+  "registry_overrides": [],
+  "plugins": {},
+  "telemetry_allowlist_version": 1
+}

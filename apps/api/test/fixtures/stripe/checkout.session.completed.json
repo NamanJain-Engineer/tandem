@@ -1,0 +1,12 @@
+{
+  "id": "evt_fixture_checkout_pack_{{USER_ID}}",
+  "type": "checkout.session.completed",
+  "data": {
+    "object": {
+      "id": "cs_fixture_{{USER_ID}}",
+      "mode": "payment",
+      "customer": "{{CUSTOMER}}",
+      "metadata": { "owner_kind": "user", "owner_id": "{{USER_ID}}", "pack": "5k" }
+    }
+  }
+}

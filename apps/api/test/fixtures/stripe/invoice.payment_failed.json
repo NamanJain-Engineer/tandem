@@ -1,0 +1,12 @@
+{
+  "id": "evt_fixture_payment_failed_{{USER_ID}}",
+  "type": "invoice.payment_failed",
+  "data": {
+    "object": {
+      "id": "in_failed_{{USER_ID}}",
+      "customer": "{{CUSTOMER}}",
+      "subscription": "{{SUBSCRIPTION}}",
+      "metadata": { "owner_kind": "user", "owner_id": "{{USER_ID}}" }
+    }
+  }
+}

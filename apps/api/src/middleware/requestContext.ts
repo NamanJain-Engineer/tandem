@@ -1,12 +1,12 @@
 import type { MiddlewareHandler } from "hono";
 import { logger } from "../lib/logger";
 import { redactHeaders } from "../lib/redact";
+import type { AppEnv } from "./context";
 
 export type ClientInfo = { app?: string; version?: string; platform?: string };
-export type AppVariables = { requestId: string; client: ClientInfo };
 
 /** requestId → clientHeaders → accessLog (ARCHITECTURE §14.1 middleware order). */
-export const requestContext: MiddlewareHandler<{ Variables: AppVariables }> = async (c, next) => {
+export const requestContext: MiddlewareHandler<AppEnv> = async (c, next) => {
   const incoming = c.req.header("x-request-id");
   const requestId = incoming && /^[A-Za-z0-9._-]{1,64}$/.test(incoming) ? incoming : crypto.randomUUID();
   c.set("requestId", requestId);
@@ -25,6 +25,7 @@ export const requestContext: MiddlewareHandler<{ Variables: AppVariables }> = as
     status: c.res.status,
     ms: Math.round(performance.now() - started),
     client: c.get("client"),
+    user: c.get("user")?.id,
     headers: redactHeaders(c.req.raw.headers),
   });
 };
