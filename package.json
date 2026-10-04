@@ -3,6 +3,11 @@
   "private": true,
   "packageManager": "pnpm@9.15.9",
   "scripts": {
-    "gate": "cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check"
+    "dev": "node scripts/dev.mjs",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d --wait",
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "gate": "pnpm -r lint && pnpm -r test && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check"
   }
 }

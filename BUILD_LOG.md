@@ -3,9 +3,9 @@
 ## Current state
 - Repo: https://github.com/NamanJain-Engineer/tandem (private, owner NamanJain-Engineer).
 - Milestone: M0 in progress. Not tagged.
-- Done: workspace skeleton, `tandem-core` (paths, errors, atomic writes, clock, topic bus, settings, commands, memory keychain, redaction, containment, sanitized logs), `tandem-store` (SQLite WAL + `0001_init.sql`).
-- Next: rolling-log size cap wired into a tracing layer, then `apps/api` health, `packages/ui` Button, Tauri shell splash, docker compose, and `pnpm dev`.
-- Gate: `cargo test --workspace` plus clippy and rustfmt. JS gate is not wired yet (no pnpm install in this slice).
+- Done: `tandem-core`, `tandem-store`, `@tandem/protocol`, `api` (`GET /v1/health`, problem details, header redaction), `web` (`GET /api/health`), `@tandem/ui` Button, `infra/docker-compose.yml`, CI workflow.
+- Next: Tauri desktop splash (UI-02), `pnpm dev` bringing web up beside the API, and a tracing subscriber on the Rust logger.
+- Gate: `pnpm -r lint`, `pnpm -r test`, `cargo test --workspace`, clippy, rustfmt. Docker is not available in this environment, so compose is written but not started here.
 
 ## Decisions
 - D-1: F-CD-09 owned by M9. Needs the files editor and browser.
@@ -22,3 +22,4 @@
 
 ## Log
 - M0: F-TL-02 and F-TL-03 core, plus the early slices of settings, commands, and sanitized logs.
+- M0: API `GET /v1/health`, web `GET /api/health`, protocol types, Button, compose file, CI.

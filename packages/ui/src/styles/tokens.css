@@ -1,0 +1,11 @@
+:root {
+  --tandem-bg: #0b1220;
+  --tandem-fg: #e6edf5;
+  --tandem-accent: #2dd4bf;
+  --tandem-accent-fg: #042f2e;
+  --tandem-danger: #e11d48;
+  --tandem-danger-fg: #fff1f2;
+  --tandem-radius: 6px;
+  --tandem-font: Inter, ui-sans-serif, system-ui, sans-serif;
+  --tandem-mono: "JetBrains Mono", ui-monospace, monospace;
+}
