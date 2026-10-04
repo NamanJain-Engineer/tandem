@@ -8,3 +8,7 @@ perf/results/*.tmp
 dist
 .next
 .turbo
+
+# Background research on the reference product. Never committed, never copied from.
+build-kit/reference/
+.dev-data/
