@@ -13,3 +13,5 @@ dist
 build-kit/reference/
 .dev-data/
 apps/desktop/src-tauri/gen/
+test-results/
+playwright-report/
