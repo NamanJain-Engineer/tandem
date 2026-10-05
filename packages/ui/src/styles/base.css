@@ -1,0 +1,81 @@
+/* Behaviour layered on the verbatim tokens (tokens.css stays as UI_SPEC §1.2). */
+
+/* Reduce motion (F-SH-05 AC3): every animation and transition resolves to ≤0.01 ms. */
+[data-motion="reduced"] *,
+[data-motion="reduced"] *::before,
+[data-motion="reduced"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) *,
+  :root:not([data-motion="full"]) *::before,
+  :root:not([data-motion="full"]) *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Derived high contrast: stronger borders, no translucent surfaces. */
+[data-contrast="more"] {
+  --tn-border: var(--tn-border-strong);
+  --tn-divider: var(--tn-border-strong);
+  --tn-overlay: rgb(0 0 0 / 0.85);
+}
+[data-contrast="more"][data-theme="dark"] {
+  --tn-border-strong: #94a3b8;
+  --tn-text-muted: #cbd5e1;
+  --tn-text-subtle: #b6c2d1;
+  --tn-accent-soft: #0f3b38;
+}
+[data-contrast="more"][data-theme="light"] {
+  --tn-border-strong: #334155;
+  --tn-text-muted: #1e293b;
+  --tn-text-subtle: #334155;
+  --tn-accent-soft: #d5f0ec;
+}
+
+/* Interface text size (UI-102): 12 / 13 / 14 px base. */
+[data-text-size="small"] body { font-size: 12px; line-height: 18px; }
+[data-text-size="large"] body { font-size: 14px; line-height: 22px; }
+
+/* Motion (§1.8). */
+@keyframes tn-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tn-pop-in { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+@keyframes tn-dialog-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.97); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+@keyframes tn-sheet-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes tn-toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes tn-dot-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+@keyframes tn-attention { 0% { transform: scale(1); } 50% { transform: scale(1.35); } 100% { transform: scale(1); } }
+@keyframes tn-shimmer { from { background-position: -200px 0; } to { background-position: 200px 0; } }
+@keyframes tn-indeterminate { from { left: -30%; } to { left: 100%; } }
+
+.tn-fade { animation: tn-fade-in var(--dur-base) var(--ease-enter); }
+.tn-pop { animation: tn-pop-in var(--dur-base) var(--ease-enter); }
+.tn-dialog { animation: tn-dialog-in var(--dur-slow) var(--ease-enter); }
+.tn-sheet { animation: tn-sheet-in var(--dur-slow) var(--ease-enter); }
+.tn-toast { animation: tn-toast-in var(--dur-slow) var(--ease-spring); }
+.tn-dot { animation: tn-dot-pulse 1.2s ease-in-out infinite; }
+.tn-dot-2 { animation-delay: 0.2s; }
+.tn-dot-3 { animation-delay: 0.4s; }
+.tn-attention { animation: tn-attention 600ms var(--ease-standard) 1; transform-origin: center; }
+.tn-shimmer {
+  background-image: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.06), transparent);
+  background-size: 200px 100%;
+  background-repeat: no-repeat;
+  animation: tn-shimmer 1.2s linear infinite;
+}
+.tn-indeterminate { animation: tn-indeterminate 1.2s var(--ease-standard) infinite; }
+
+.tn-cmd-group [cmdk-group-heading] {
+  padding: 8px 10px 4px;
+  font-size: 10px;
+  line-height: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--tn-text-subtle);
+}
