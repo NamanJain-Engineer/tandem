@@ -4,14 +4,17 @@ import { cx } from "../cx";
 
 export type BadgeVariant = "neutral" | "accent" | "working" | "waiting" | "done" | "idle" | "error" | "outline";
 
+// Status and accent badges keep their *-text colour on the surface behind
+// them, with a tinted border: the §7.3 text tokens pass AA on surfaces but not
+// on their own soft tints at badge size.
 const BADGE: Record<BadgeVariant, string> = {
   neutral: "bg-surface-4 text-fg-muted",
-  accent: "bg-accent-soft text-accent",
-  working: "bg-working-soft text-working-text",
-  waiting: "bg-waiting-soft text-waiting-text",
-  done: "bg-done-soft text-done-text",
-  idle: "bg-idle-soft text-fg-muted",
-  error: "bg-error-soft text-error",
+  accent: "border border-accent/40 text-accent",
+  working: "border border-working/40 text-working-text",
+  waiting: "border border-waiting/50 text-waiting-text",
+  done: "border border-done/40 text-done-text",
+  idle: "border border-idle/40 text-fg-muted",
+  error: "border border-error/40 text-error",
   outline: "border border-border-strong text-fg-muted",
 };
 

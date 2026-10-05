@@ -92,9 +92,17 @@ async function main() {
     TANDEM_OPEN_URL_CMD: opener,
     TANDEM_NET_LOG: join(home, "net.log"),
     TANDEM_FAKE_PICK_FOLDER: join(home, "pick-folder.txt"),
-    PLAYWRIGHT_CHROMIUM: process.env.PLAYWRIGHT_CHROMIUM ?? "/opt/pw-browsers/chromium",
+    PLAYWRIGHT_CHROMIUM: process.env.PLAYWRIGHT_CHROMIUM ?? (existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : ""),
     PATH: `${join(root, "crates/tandem-engines/tests/fixtures/bin")}:${process.env.PATH ?? ""}`,
   });
+
+  // Maximize and placement need a window manager under Xvfb.
+  let wm: ChildProcess | undefined;
+  if (process.env.DISPLAY && !process.env.TANDEM_E2E_NO_WM) {
+    wm = spawn("openbox", [], { stdio: "ignore", detached: true });
+    wm.on("error", () => console.warn("openbox not found; maximize checks need a window manager"));
+    await new Promise((r) => setTimeout(r, 500));
+  }
 
   let api: ChildProcess | undefined;
   let web: ChildProcess | undefined;
@@ -119,6 +127,7 @@ async function main() {
   } finally {
     stop(api);
     stop(web);
+    stop(wm);
   }
   const problems = checkArtifacts(home);
   for (const p of problems) console.error(`E2E check failed: ${p}`);

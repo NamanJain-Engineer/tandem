@@ -17,7 +17,7 @@ import { useWorkspaces } from "./stores/workspaces";
 const Gallery = lazy(() => import("@tandem/ui/gallery").then((m) => ({ default: m.Gallery })));
 
 /** Tells the core which colours to answer OSC 10/11/12 with (F-SH-05 AC2). */
-function TerminalColorsSync() {
+export function TerminalColorsSync() {
   const { resolved, highContrast } = useTheme();
   const setting = useSetting<TerminalThemeSetting>("terminal_theme", "follow_app");
   useEffect(() => {

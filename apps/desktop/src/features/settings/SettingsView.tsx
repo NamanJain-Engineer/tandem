@@ -51,7 +51,7 @@ export function SettingsView() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
-      const el = e.target as HTMLElement | null;
+      const el = e.target instanceof HTMLElement ? e.target : null;
       if (el?.closest("[role=dialog],[role=alertdialog],[role=menu],[role=listbox]")) return;
       if (el && ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) && el !== filter.current) return;
       e.preventDefault();

@@ -2,13 +2,14 @@
 
 ## Current state
 - Repo: github.com/NamanJain-Engineer/tandem (private). Build kit in `build-kit/`; plan in `docs/PLAN.md`.
-- Milestone: **M1 DONE** (tags `m0`, `m1`, local only: the remote accepts the session branch only). Next: **M2** desktop shell, design system and sign-in.
+- Milestone: **M2 DONE** (tags `m0`, `m1`, `m2`, local only: the remote accepts the session branch only). Next: **M3** Code mode core (workspaces, panes, PTY, terminal fidelity).
 - Layout matches DECISIONS: 10 crates under `crates/`, Tauri crate `apps/desktop/src-tauri` (lib `tandem_app`, bin `tandem`), `apps/{api,web}`, `packages/{ui,protocol}`.
-- Environment: WebKitGTK, webkit2gtk-driver, xvfb, tauri-driver and cargo-audit are installed; `dockerd` must be started by hand in a fresh container (`dockerd &`), then `pnpm infra:up`.
-- Gate: `pnpm gate` (lint, vitest, cargo test, desktop build, clippy, fmt, protocol drift) is green.
-- Desktop E2E: `xvfb-run -a pnpm --filter desktop e2e` runs the real Tauri binary via tauri-driver.
+- Environment: WebKitGTK, webkit2gtk-driver, xvfb, tauri-driver, dbus, xclip, openbox and cargo-audit are installed; `dockerd` must be started by hand in a fresh container (`dockerd &`), then `pnpm infra:up`.
+- Gate: `pnpm gate` (lint, vitest, cargo test, desktop build, clippy, fmt, protocol drift) is green. Stage new files first: the drift check diffs the working tree against the index.
+- Desktop E2E: `dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e` runs the real Tauri binary via tauri-driver (starts API + web if needed, openbox for WM behaviour, scripted Chromium for sign-in and checkout). 9/9 spec files pass.
 - API tests need `pnpm infra:up` (they create `tandem_test`). Web E2E: `PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium pnpm --filter web test:e2e` after `db:migrate`, `db:seed`, `keys:dev`.
-- Open issues: none blocking. Root scripts `gen:shortcuts`, `gen:docs` arrive with M3 and M15.
+- Release harness check: `bash scripts/check-release-harness.sh` (release build, asserts no `test_*` commands in the binary).
+- Open issues: none blocking. Root scripts `gen:shortcuts`, `gen:docs` arrive with M3 and M15. The Linux single-instance plugin needs a DBus session bus (E2E runs under `dbus-run-session`).
 
 ## M0 checklist (MILESTONES M0)
 - [x] 1. Repo files: CLAUDE.md (from build-kit), BUILD_LOG, HUMAN_TODO, README, .editorconfig, .gitignore, rust-toolchain, .nvmrc
@@ -46,6 +47,22 @@
 - [x] Verification commands: all pass (401 problem+json, 304, 400 bad signature, invoice.paid ×2 → 10,000 once, min-version header)
 - [x] E2E-M1-1…5 (Playwright, `apps/web/e2e/m1-account.spec.ts`): all pass; trace-tests M1: 16/16 criteria covered
 
+## M2 checklist (MILESTONES M2)
+- [x] 1. `@tandem/ui`: UI_SPEC §2.1–§2.19, §2.22 CommandPalette shell, §2.31 composites (ListRow, PageHeader, SettingsRow/Group, Banner, Callout, KeyValue, EmptyState, Stepper); one gallery list drives `/__gallery` (debug builds) and a snapshot + axe check per state in both themes (204 checks); `ThemeProvider` (dark/light/system live, derived high contrast, reduce motion → 0.01 ms), §1.9 terminal palettes
+- [x] 2. Frame F-SH-01: decorations off on Windows/Linux, overlay title bar config for macOS; UI-01 title bar (drag regions, min/max-restore/close with the label toggle, logo + wordmark + DEV pill, rail toggle, mode switch, Workspace menu only in Code, omnibox, credits, bell, sidebar toggle, account menu); window-state in `$DATA/window-state.json`, saved 400 ms after any move/resize and re-centred when not fully on a display; single-instance focuses the first window, forwards links, exits 0; §3.6 status bar
+- [x] 3. Theme F-SH-05: native background from the persisted theme before first paint, system theme live, high contrast, reduce motion; OSC 10/11/12 answered in Rust with the theme colours (`term_set_theme_colors`)
+- [x] 4. Settings F-SH-04: UI-100 shell (rail becomes nav, "‹ Back (Esc)", Esc restores mode and focus, reopens on last page, filter narrows pages and highlights rows for 2 s), pages UI-101/102/104/112/114/116, writes apply immediately and revert with Retry on failure; table-driven round trip over all keys (store test)
+- [x] 5. Logging F-SH-11: tracing in the app, UI errors through `app_log` by type only, app menu Help items Copy diagnostics (also clipboard) and Open logs folder
+- [x] 6. Desktop sign-in F-BE-02 / UI-03: PKCE, state, device fingerprint, ephemeral loopback + `tandem(-dev)://auth/callback`, `TANDEM_OPEN_URL_CMD` or the opener plugin, AES-256-GCM `auth/credentials.enc` with the key in `NS.auth/credentials-key` (session-only key without a keyring), refresh at 80% / on wake / on 401 (single-flight), four failure categories with Copy details, mismatched state ignored, offline mode
+- [x] 7. Entitlements in the app: `/v1/me` verified with the bundled keys and cached, SSE `/v1/me/events` refetch, UI-133 banners (offline, grace over, offline-mode deadline, payment failed), Account & Plan page, Manage billing / Buy credits through the system browser
+- [x] 8. F-WB-05: revoking a device on `/devices` revokes its family; the desktop's next refresh fails and it shows sign-in (E2E-M2-6, web `@m2`)
+- [x] 9. Telemetry F-TL-01: `tandem-core::telemetry` (allowlist in `packages/protocol/telemetry-allowlist.json`, analytics id file deleted on opt-out, crash scrubbing), uploads through `Net` so `TANDEM_NET_LOG` sees them; off by default; two toggles on the Privacy page
+- [x] 10. Deep links F-SH-13: known routes only, 4 KB limit, "Unrecognized link"; `auth/callback` and `open?path=`; links queue until the UI is ready; launch at login (autostart) on General
+- [x] 11. Skeleton slices: Code rail with add (non-blocking picker), dedupe by canonical path, tabs, Free limit of 3 → UI-120 sheet → UI-121 checkout handoff; one plain shell per tab over a binary `Channel` per pane; mode switch with interim Agent/Thread surfaces; plan/credits footer
+- [x] Verification commands: `f_be_02` (6), `f_tl_01` (5), `f_sh_11` (2), UI 228 tests, desktop `-t "F-SH-0[145]|F-TL-01|F-SH-13"` (13), web `@m2`, desktop E2E m2-*, log and net.log greps clean
+- [x] E2E-M2-1…8 (`apps/desktop/e2e/specs/m2-*.e2e.ts`): all pass against the real app; axe passes in both themes on sign-in, the shell, the upgrade sheet and every Settings page
+- [x] Exit: README "Sign in locally"; release builds have no test harness (unit test + `scripts/check-release-harness.sh`); HUMAN_TODO `SENTRY_DSN`, `POSTHOG_KEY`, production keys, manual QA items
+
 ## Decisions
 - D-1: F-CD-09 owned by M9. It needs the Files editor and the Tandem browser.
 - D-2: F-SH-08 framework slice in M5, Accounts step in M6, owned by M8.
@@ -71,6 +88,14 @@
 - D-22: The API serves better-auth with `baseURL = WEB_PUBLIC_URL`; browsers reach it through the web app's `/v1/*` rewrite so session cookies are first-party. SSE responses set `Cache-Control: no-cache, no-transform` so the proxy doesn't gzip-buffer the stream.
 - D-23: The rate limiter's refill clamps negative elapsed time to zero (found when the test clock moved backwards and locked a client out).
 - D-24: Stripe fixture event ids derive from the user, so replays are no-ops (M1 verification); E2E passes a nonce for fresh events.
+- D-25: The analytics id lives in its own file, `$DATA/telemetry/analytics-id` (MILESTONES E2E-M2-7 checks "the analytics id file"), instead of a settings row. Opting out deletes the file.
+- D-26: Crash reports use a minimal Sentry envelope client over `Net` instead of the `sentry` crate, so every request shows in `TANDEM_NET_LOG` and nothing else can send; the panic hook only writes scrubbed reports under `$DATA/crashes/`.
+- D-27: `TANDEM_FAKE_PICK_FOLDER` (debug only, declared in ARCHITECTURE §17.5) makes `workspace_pick_folder` return a path, or the contents of a file it names, because WebDriver can't drive the native dialog. `pane_list` added to §3.2 until `layout_get` lands in M3.
+- D-28: ts-rs 12 with `TS_RS_LARGE_INT=number`: JSON over IPC carries i64/u64 as numbers, so the generated TypeScript says `number`.
+- D-29: Each PTY IPC call gets its own JS `Channel`: when Rust drops a channel (a failed `pty_attach`) the JS side closes it for good, so reusing it for `pty_spawn` lost every frame.
+- D-30: Status badges keep their §1.3 `*-text` colour on the surface with a tinted border instead of a soft tinted fill: the text tokens pass AA on surfaces (UI_SPEC §7.3) but the light amber/green/rose text fell to ~4.2:1 on their own tints. Found by the both-themes axe pass.
+- D-31: The E2E keychain is in memory (`TANDEM_FAKE_KEYCHAIN=1`), so a relaunched app is signed out by design; specs that relaunch use "Use Tandem offline" (persisted without secrets) instead of a file-backed fake keychain, which would put secrets on disk.
+- D-32: Signing out also leaves offline mode (back to UI-03). The window state is also saved 400 ms after each change so a crash or kill keeps it, and a restored window that isn't fully on one display is re-centred (the plugin alone only checks overlap).
 - Deviation: the `keyring` crate is linked (Secret Service on Linux). `MemoryKeychain` is selected only with `TANDEM_FAKE_KEYCHAIN=1`.
 
 ## Log
@@ -78,3 +103,4 @@
 - M0: build kit and plan committed (`build-kit/`, `docs/PLAN.md`).
 - M0: realigned to DECISIONS: crate rename to `tandem-engines`, seven new crates, Tauri crate with capabilities and CSP, ts-rs protocol generation, UI_SPEC tokens, ICU i18n, rewritten core (redactor, containment, settings schema, keychain, logging, store with writer thread and full schema), API restructured to ARCHITECTURE §14.1, web on the shared tokens, dev/gate/coverage/trace/CI scripts, desktop E2E harness. Both M0 E2E scenarios pass. M0 closed.
 - M1: backend accounts, entitlements, remote config, mock billing, edge limits, desktop auth server side, account portal pages. 37 API tests, 6 Playwright scenarios, Rust verifiers with an interop fixture. M1 closed.
+- M2: desktop shell, design system and sign-in. `tandem-pty` (reader/batcher/flow control/ring/query responder/tree kill/login env), core `net` + `telemetry`, store repos for workspaces/tabs/panes, desktop services (api, auth, entitlement, deeplink, workspaces, terminal, telemetry, events), the M2 command set and plugins, `@tandem/ui` kit with gallery, and the desktop screens. Fixed on the way: boot waited on an animation frame a hidden window never gets; channel reuse lost PTY output; Settings Esc could miss a non-element target; the terminal stole focus back from Settings' opener. M0's boot spec now asserts the first real screen (the splash is transient since M2). All M2 E2E scenarios pass. M2 closed.

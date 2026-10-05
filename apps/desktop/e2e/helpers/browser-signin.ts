@@ -5,7 +5,7 @@
 //   /billing/mock  → sign in, complete the mock checkout
 // Credentials come from $TANDEM_HOME/e2e-browser.json, written by the spec.
 // Every step is appended to $TANDEM_HOME/e2e-browser.log.
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium, type Page } from "playwright-core";
 
@@ -29,7 +29,9 @@ async function main() {
   const url = new URL(raw);
   const creds = JSON.parse(readFileSync(join(home, "e2e-browser.json"), "utf8")) as Creds;
   say(`open ${url.pathname}`);
-  const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM ?? "/opt/pw-browsers/chromium", headless: true });
+  // A preinstalled Chromium when given (PLAYWRIGHT_CHROMIUM), else Playwright's own.
+  const executablePath = process.env.PLAYWRIGHT_CHROMIUM && existsSync(process.env.PLAYWRIGHT_CHROMIUM) ? process.env.PLAYWRIGHT_CHROMIUM : undefined;
+  const browser = await chromium.launch({ executablePath, headless: true });
   try {
     const page = await browser.newPage();
     if (url.pathname === "/desktop-login") {

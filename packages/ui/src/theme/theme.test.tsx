@@ -53,7 +53,7 @@ describe("ThemeProvider (F-SH-05)", () => {
     expect(root().theme).toBe("light");
   });
 
-  it("F-SH-05-3 reduce motion from the setting or the OS", () => {
+  it("F-SH-05.3 reduce motion from the setting or the OS", () => {
     const media = fakeMedia({ "(prefers-reduced-motion: reduce)": false });
     const { rerender } = render(<ThemeProvider motion="on">x</ThemeProvider>);
     expect(root().motion).toBe("reduced");
@@ -65,7 +65,7 @@ describe("ThemeProvider (F-SH-05)", () => {
     expect(root().motion).toBe("full");
   });
 
-  it("F-SH-05-3 reduced motion collapses every animation to 0.01 ms", () => {
+  it("F-SH-05.3 reduced motion collapses every animation to 0.01 ms", () => {
     const css = readFileSync(resolve(process.cwd(), "src/styles/base.css"), "utf8");
     const rule = css.slice(css.indexOf('[data-motion="reduced"] *,'), css.indexOf("}", css.indexOf('[data-motion="reduced"] *,')));
     expect(rule).toContain("animation-duration: 0.01ms !important");

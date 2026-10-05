@@ -101,6 +101,21 @@ fn focus_main(app: &AppHandle) {
     }
 }
 
+/// The window background for a theme setting: `--tn-bg` from UI_SPEC §1.2
+/// (slate-950 dark, slate-50 light). `os_light` resolves "system".
+pub fn theme_background(theme: &str, os_light: bool) -> (u8, u8, u8) {
+    let light = match theme {
+        "light" => true,
+        "system" => os_light,
+        _ => false,
+    };
+    if light {
+        (0xf1, 0xf5, 0xf9)
+    } else {
+        (0x06, 0x0a, 0x12)
+    }
+}
+
 /// Sets the native background from the persisted theme before the webview
 /// paints, so there's no white flash (F-SH-05).
 fn paint_theme_background(app: &tauri::App, state: &AppState) {
@@ -114,18 +129,104 @@ fn paint_theme_background(app: &tauri::App, state: &AppState) {
     .ok()
     .and_then(|v| v.as_str().map(str::to_string))
     .unwrap_or_else(|| "dark".into());
-    let light = match theme.as_str() {
-        "light" => true,
-        "system" => matches!(window.theme(), Ok(tauri::Theme::Light)),
-        _ => false,
+    let os_light = matches!(window.theme(), Ok(tauri::Theme::Light));
+    let (r, g, b) = theme_background(&theme, os_light);
+    let _ = window.set_background_color(Some(tauri::window::Color(r, g, b, 0xff)));
+}
+
+/// Saves the window state shortly after it changes, so a crash or a killed
+/// process keeps the last size, position and maximized state (F-SH-01 AC2).
+fn persist_window_state(app: &tauri::App) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Arc;
+    use tauri_plugin_window_state::AppHandleExt;
+    let Some(window) = app.get_webview_window("main") else {
+        return;
     };
-    // `--tn-bg` (UI_SPEC §1.2): slate-50 light, slate-950 dark.
-    let color = if light {
-        tauri::window::Color(0xf1, 0xf5, 0xf9, 0xff)
-    } else {
-        tauri::window::Color(0x06, 0x0a, 0x12, 0xff)
+    let generation = Arc::new(AtomicU64::new(0));
+    let handle = app.handle().clone();
+    window.on_window_event(move |event| {
+        if !matches!(
+            event,
+            tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_)
+        ) {
+            return;
+        }
+        let mine = generation.fetch_add(1, Ordering::AcqRel) + 1;
+        let (generation, handle) = (generation.clone(), handle.clone());
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            if generation.load(Ordering::Acquire) == mine {
+                if let Err(err) = handle.save_window_state(StateFlags::all() & !StateFlags::VISIBLE)
+                {
+                    tracing::debug!(error = %err, "couldn't save the window state");
+                }
+            }
+        });
+    });
+}
+
+/// A screen-space rectangle in physical pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScreenRect {
+    pub x: i32,
+    pub y: i32,
+    pub w: u32,
+    pub h: u32,
+}
+
+impl ScreenRect {
+    fn contains(&self, other: &ScreenRect) -> bool {
+        other.x >= self.x
+            && other.y >= self.y
+            && other.x as i64 + other.w as i64 <= self.x as i64 + self.w as i64
+            && other.y as i64 + other.h as i64 <= self.y as i64 + self.h as i64
+    }
+}
+
+/// True when the window lies entirely on one monitor (F-SH-01 AC3).
+pub fn fully_on_screen(window: ScreenRect, monitors: &[ScreenRect]) -> bool {
+    monitors.iter().any(|m| m.contains(&window))
+}
+
+/// Re-centres a restored window that isn't fully on any display (a saved
+/// position from a monitor that's gone).
+fn ensure_on_screen(app: &tauri::App) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
     };
-    let _ = window.set_background_color(Some(color));
+    if window.is_maximized().unwrap_or(false) {
+        return;
+    }
+    let (Ok(pos), Ok(size), Ok(monitors)) = (
+        window.outer_position(),
+        window.outer_size(),
+        window.available_monitors(),
+    ) else {
+        return;
+    };
+    let rect = ScreenRect {
+        x: pos.x,
+        y: pos.y,
+        w: size.width,
+        h: size.height,
+    };
+    let screens: Vec<ScreenRect> = monitors
+        .iter()
+        .map(|m| ScreenRect {
+            x: m.position().x,
+            y: m.position().y,
+            w: m.size().width,
+            h: m.size().height,
+        })
+        .collect();
+    if !screens.is_empty() && !fully_on_screen(rect, &screens) {
+        tracing::info!(
+            code = "window.recentred",
+            "saved window position is off-screen; centring"
+        );
+        let _ = window.center();
+    }
 }
 
 fn spawn_background(state: &AppState) {
@@ -205,6 +306,8 @@ pub fn run() {
                 window.set_title("Tandem")?;
             }
             services::events::forward(handle.clone(), &state.bus);
+            ensure_on_screen(app);
+            persist_window_state(app);
             spawn_background(&state);
             let telemetry_state = handle.clone();
             tauri::async_runtime::spawn(async move {
@@ -237,5 +340,122 @@ pub fn run() {
     if let Err(err) = result {
         tracing::error!(error = %err, "tauri runtime failed");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn f_sh_05_1_dark_on_a_light_os_starts_hidden_on_the_dark_background() {
+        // Dark stays dark on a light OS; only "system" follows the OS.
+        assert_eq!(theme_background("dark", true), (0x06, 0x0a, 0x12));
+        assert_eq!(theme_background("light", false), (0xf1, 0xf5, 0xf9));
+        assert_eq!(theme_background("system", true), (0xf1, 0xf5, 0xf9));
+        assert_eq!(theme_background("system", false), (0x06, 0x0a, 0x12));
+        // The window is created hidden on the dark background and only shown
+        // by `app_ready` after the UI's first paint.
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("conf");
+        let main = &conf["app"]["windows"][0];
+        assert_eq!(main["visible"], false);
+        assert_eq!(main["backgroundColor"], "#060a12");
+        let html = include_str!("../../index.html");
+        assert!(
+            html.contains(r#"data-theme="dark""#),
+            "the page starts in the dark theme before React runs"
+        );
+    }
+
+    #[test]
+    fn f_sh_01_3_off_screen_windows_are_detected() {
+        let primary = ScreenRect {
+            x: 0,
+            y: 0,
+            w: 1920,
+            h: 1080,
+        };
+        let second = ScreenRect {
+            x: 1920,
+            y: 0,
+            w: 1280,
+            h: 1024,
+        };
+        let monitors = [primary, second];
+        assert!(fully_on_screen(
+            ScreenRect {
+                x: 100,
+                y: 100,
+                w: 1440,
+                h: 900
+            },
+            &monitors
+        ));
+        assert!(fully_on_screen(
+            ScreenRect {
+                x: 2000,
+                y: 50,
+                w: 1000,
+                h: 700
+            },
+            &monitors
+        ));
+        // Partly off the edge, or on a monitor that's gone.
+        assert!(!fully_on_screen(
+            ScreenRect {
+                x: 1776,
+                y: 990,
+                w: 1440,
+                h: 900
+            },
+            &[primary]
+        ));
+        assert!(!fully_on_screen(
+            ScreenRect {
+                x: 20000,
+                y: 20000,
+                w: 1000,
+                h: 700
+            },
+            &monitors
+        ));
+        // Spanning two monitors isn't "fully on" either one.
+        assert!(!fully_on_screen(
+            ScreenRect {
+                x: 1500,
+                y: 0,
+                w: 1000,
+                h: 700
+            },
+            &monitors
+        ));
+    }
+}
+
+#[cfg(test)]
+mod harness_tests {
+    /// The E2E harness never ships: no `allow-test-*` permission in the
+    /// shipped capability, and the harness capability is added only at
+    /// runtime in debug builds with TANDEM_E2E=1 (M2 exit checklist).
+    #[test]
+    fn release_capabilities_have_no_test_harness() {
+        let main = include_str!("../capabilities/main.json");
+        assert!(
+            !main.contains("allow-test-"),
+            "test harness permission in capabilities/main.json"
+        );
+        let harness = include_str!("../test-capability.json");
+        assert!(harness.contains("allow-test-auth-refresh"));
+        let lib = include_str!("lib.rs");
+        assert!(
+            lib.contains("if e2e {\n                app.add_capability"),
+            "the harness capability is gated on e2e"
+        );
+        let commands = include_str!("commands/mod.rs");
+        assert!(
+            commands.contains("#[cfg(debug_assertions)]\npub mod test;"),
+            "the harness module is debug-only"
+        );
     }
 }

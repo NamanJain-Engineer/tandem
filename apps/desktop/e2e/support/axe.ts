@@ -24,3 +24,20 @@ export async function expectNoSeriousA11yViolations(): Promise<void> {
     throw new Error(`axe: ${serious.map((v) => `${v.id} (${v.nodes.map((n) => n.target.join(" ")).join("; ")})`).join(", ")}`);
   }
 }
+
+/** Runs the check in the dark and the light theme (M2 exit checklist). */
+export async function expectNoSeriousA11yViolationsInBothThemes(): Promise<void> {
+  const setTheme = (value: string) =>
+    browser.executeAsync((v: string, done: () => void) => {
+      const w = window as unknown as { __TAURI_INTERNALS__: { invoke: (c: string, a: unknown) => Promise<unknown> } };
+      void w.__TAURI_INTERNALS__.invoke("settings_set", { key: "theme", value: v }).then(() => setTimeout(done, 300));
+    }, value);
+  try {
+    for (const theme of ["dark", "light"]) {
+      await setTheme(theme);
+      await expectNoSeriousA11yViolations();
+    }
+  } finally {
+    await setTheme("dark");
+  }
+}

@@ -1,5 +1,5 @@
 import { $, browser } from "@wdio/globals";
-import { expectNoSeriousA11yViolations } from "../support/axe";
+import { expectNoSeriousA11yViolationsInBothThemes } from "../support/axe";
 import { addFolder, browserLog, planFooter, signInDesktop, signUpVerified, terminalLines, terminalText, typeInTerminal, uniqueEmail, waitForApp, workspaceRoots } from "../support/app";
 
 // E2E-M2-1 Walking skeleton (MILESTONES M2).
@@ -15,7 +15,7 @@ describe("E2E-M2-1 walking skeleton", () => {
     await waitForApp();
     await $("#signin-title").waitForDisplayed({ timeout: 20_000 });
     expect(await $("#signin-title").getText()).toBe("Welcome to Tandem");
-    await expectNoSeriousA11yViolations();
+    await expectNoSeriousA11yViolationsInBothThemes();
   });
 
   it("signs in through the scripted browser and shows FREE", async () => {
@@ -32,7 +32,7 @@ describe("E2E-M2-1 walking skeleton", () => {
     await browser.waitUntil(async () => (await terminalLines()).includes("hi"), { timeout: 15_000, timeoutMsg: `terminal: ${await terminalText()}` });
   });
 
-  it("the shell passes axe", async () => {
-    await expectNoSeriousA11yViolations();
+  it("the shell passes axe in both themes", async () => {
+    await expectNoSeriousA11yViolationsInBothThemes();
   });
 });

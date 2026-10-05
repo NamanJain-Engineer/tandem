@@ -21,7 +21,7 @@ export function PlanFooter({ collapsed }: { collapsed?: boolean }) {
         data-testid="plan-footer"
         onClick={() => openSettings("account")}
         className={cx(
-          "flex h-7 w-full items-center rounded-sm px-2 text-2xs font-semibold uppercase tracking-caps text-fg-muted hover:bg-surface-4 focus-visible:shadow-focus focus-visible:outline-none",
+          "flex h-7 w-full items-center rounded-sm px-2 text-2xs font-semibold tracking-caps text-fg-muted hover:bg-surface-4 focus-visible:shadow-focus focus-visible:outline-none",
           collapsed && "justify-center px-0",
         )}
       >

@@ -207,24 +207,53 @@ export function mod(): string {
   return process.platform === "darwin" ? "Meta" : "Control";
 }
 
-/** Starts a spec from a known state on the shared TANDEM_HOME: signed out,
- * no workspaces, Free. Returns a signed-in web jar for the new user. */
+/** Clears the shared TANDEM_HOME's account and workspaces, whichever screen
+ * is showing. The E2E keychain lives in memory, so a relaunch always comes
+ * back signed out; specs that relaunch use offline mode instead. */
+async function resetState(): Promise<void> {
+  await waitForApp();
+  const list = await invoke<Array<{ id: string }>>("workspace_list");
+  for (const w of list) await invoke("workspace_remove", { id: w.id });
+  await invoke("auth_sign_out");
+  await $("#signin-title").waitForDisplayed({ timeout: 20_000 });
+}
+
+/** A new verified account, signed in on the desktop, no workspaces, Free. */
 export async function freshUser(tag: string): Promise<{ email: string; jar: Awaited<ReturnType<typeof signUpVerified>> }> {
   const email = uniqueEmail(tag);
   const jar = await signUpVerified(email);
-  await waitForApp();
-  if (await $("header[role=banner]").isExisting()) {
-    const list = await invoke<Array<{ id: string }>>("workspace_list");
-    for (const w of list) await invoke("workspace_remove", { id: w.id });
-    await invoke("auth_sign_out");
-    await relaunch();
-  }
-  await $("#signin-title").waitForDisplayed({ timeout: 20_000 });
+  await resetState();
   await signInDesktop(email);
   return { email, jar };
+}
+
+/** "Use Tandem offline" with no workspaces: survives relaunches. */
+export async function freshOffline(): Promise<void> {
+  await resetState();
+  await $("button=Use Tandem offline").click();
+  await $('[data-testid="plan-footer"]').waitForExist({ timeout: 20_000 });
 }
 
 /** Dismisses whatever toast or dialog is open with Escape. */
 export async function escape(): Promise<void> {
   await browser.keys("Escape");
+}
+
+/** Types into the focused element, one key per action. */
+export async function typeKeys(text: string): Promise<void> {
+  for (const ch of text) await browser.keys(ch);
+}
+
+/** Writes to the visible terminal's PTY directly (the path xterm's input
+ * uses), for long or escape-heavy input the driver can't type reliably. */
+export async function sendToTerminal(text: string): Promise<void> {
+  const paneId = await browser.execute(() => {
+    for (const el of Array.from(document.querySelectorAll('[data-testid="terminal"]'))) {
+      const host = el as HTMLElement;
+      if (host.offsetParent !== null) return host.dataset.paneId ?? null;
+    }
+    return null;
+  });
+  if (!paneId) throw new Error("no visible terminal");
+  await invoke("pty_write", { paneId, data: text });
 }

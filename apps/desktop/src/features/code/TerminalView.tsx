@@ -132,6 +132,9 @@ export function TerminalView({ paneId, label, visible, options, onClose }: { pan
         if (disposed) return;
         if (replay?.byteLength) xterm.write(replay);
         setPhase(live ? { kind: "live" } : { kind: "exited", code: null });
+        // Focus a new shell once; later visibility changes leave focus alone
+        // so closing Settings can return it to its opener (F-SH-04 AC1).
+        if (el.offsetParent !== null && !document.querySelector("[role=dialog]")) xterm.focus();
       } catch (e) {
         if (disposed) return;
         const err = e as IpcError;
@@ -187,7 +190,6 @@ export function TerminalView({ paneId, label, visible, options, onClose }: { pan
     });
     ro.observe(el);
     apply();
-    if (visible) term.current?.focus();
     return () => {
       ro.disconnect();
       clearTimeout(timer);

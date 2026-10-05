@@ -101,6 +101,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter desktop build
       - run: pnpm --filter desktop tauri build --debug --no-bundle
+      - name: Release build has no E2E test harness
+        if: matrix.os == 'ubuntu-24.04'
+        run: bash scripts/check-release-harness.sh
 
   integration:
     runs-on: ubuntu-24.04
@@ -112,12 +115,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Linux build and E2E dependencies
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev webkit2gtk-driver xvfb libayatana-appindicator3-dev librsvg2-dev libasound2-dev libxdo-dev libdbus-1-dev
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev webkit2gtk-driver xvfb libayatana-appindicator3-dev librsvg2-dev libasound2-dev libxdo-dev libdbus-1-dev dbus xclip openbox
       - run: cargo install tauri-driver --locked
       - run: pnpm install --frozen-lockfile
-      - run: pnpm infra:up
+      - run: pnpm infra:up && pnpm db:migrate && pnpm db:seed && pnpm keys:dev
+      - run: pnpm --filter web exec playwright install --with-deps chromium
       - run: bash scripts/smoke-dev.sh
-      - run: xvfb-run -a pnpm --filter desktop e2e
+      - run: dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e
 
   audit:
     runs-on: ubuntu-24.04

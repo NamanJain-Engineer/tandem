@@ -35,6 +35,8 @@ pub fn auth_cancel(state: State<'_, AppState>, op_id: String) {
 #[tauri::command]
 pub async fn auth_sign_out(state: State<'_, AppState>) -> Result<(), IpcError> {
     state.auth.sign_out().await;
+    // Signing out returns to UI-03, not to offline mode.
+    settings::reset(&state.store, Some(vec![SettingKey::OfflineStartedAt])).await?;
     Ok(())
 }
 

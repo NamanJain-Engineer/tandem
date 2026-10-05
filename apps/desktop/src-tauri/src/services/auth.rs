@@ -722,7 +722,11 @@ impl AuthService {
                 tracing::warn!(error = %err, "server sign-out failed; signing out locally");
             }
         }
-        self.lock().error = None;
+        {
+            let mut inner = self.lock();
+            inner.error = None;
+            inner.offline_started_at = None;
+        }
         self.drop_session();
         tracing::info!(code = "auth.signed_out", "signed out");
     }

@@ -52,7 +52,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
           className={cx(
             "absolute -right-0.5 -top-0.5 inline-flex min-w-[14px] items-center justify-center rounded-full px-1 text-2xs font-semibold tabular-nums",
             badge === "dot" ? "size-2 min-w-0 p-0" : "h-[14px]",
-            badgeTone === "waiting" ? "bg-waiting text-fg-inverse" : "bg-surface-4 text-fg ring-1 ring-border",
+            badgeTone === "waiting" ? "bg-surface-1 text-waiting-text ring-1 ring-waiting" : "bg-surface-4 text-fg ring-1 ring-border",
           )}
         >
           {badge === "dot" ? null : badge > 99 ? "99+" : badge}

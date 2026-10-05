@@ -11,6 +11,8 @@ Things only a human can do. The build never blocks on them: each sits behind a m
 - Production Ed25519 keys: generate with `pnpm keys:dev --force` on a secure machine (or a KMS), set `JWT_SIGNING_KEYS` (ak-*, ek-*) and `CONFIG_SIGNING_KEY` (ck-*), and copy the public keys into `apps/desktop/src-tauri/resources/keys.json` for release builds. Rotation: add the new kid to keys.json one release before signing with it.
 - Managed Postgres 16 and Redis 7 (`DATABASE_URL`, `REDIS_URL`), `BETTER_AUTH_SECRET` (32+ random bytes), `BREACH_CHECK=hibp`.
 - Domains `api.tandem.dev` and `app.tandem.dev` (`API_PUBLIC_URL`, `WEB_PUBLIC_URL`).
+- Telemetry (opt-in only, M2): a PostHog project key in `POSTHOG_KEY` and a Sentry DSN in `SENTRY_DSN`, set at desktop build time. Without them nothing is ever sent, even when a user opts in. Verify: with a debug build, `POSTHOG_KEY=… SENTRY_DSN=…` set, opt in under Settings › Privacy & Telemetry and see requests to the analytics host in `TANDEM_NET_LOG`.
+- Production entitlement and config public keys bundled into `apps/desktop/src-tauri/resources/keys.json` for release builds (ARCHITECTURE §14.4); see "Production Ed25519 keys" above.
 
 ## Signing & distribution
 - Not started. Signing secrets are listed in ARCHITECTURE §17.4 and are added in M5.
@@ -20,4 +22,7 @@ Things only a human can do. The build never blocks on them: each sits behind a m
 - Review the UI labels the consistency pass flagged as generic but coincident with the reference product (CONSISTENCY_REPORT "Remaining known open items" 2).
 
 ## Manual QA checklist
-- None yet. M0 is covered by automated tests, including the desktop boot E2E under xvfb.
+- M2: the `tandem://` scheme on macOS and Windows (installed build): `tandem://open?path=/some/folder` opens the app and adds the folder.
+- M2: macOS overlay title bar with the traffic lights inset; the left cluster starts clear of them.
+- M2: Windows snap layouts appear when hovering the custom maximize button.
+- M2: a cold start with Dark on a Light OS shows no white flash (F-SH-05 AC1; automated on Linux only via the native background).

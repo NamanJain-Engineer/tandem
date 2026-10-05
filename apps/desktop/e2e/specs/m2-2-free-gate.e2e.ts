@@ -1,4 +1,5 @@
 import { $, browser } from "@wdio/globals";
+import { expectNoSeriousA11yViolationsInBothThemes } from "../support/axe";
 import { addFolder, browserLog, freshUser, planFooter, textOf, workspaceRoots } from "../support/app";
 
 // E2E-M2-2 Free gate (MILESTONES M2, F-BL-04, F-BL-01 AC2).
@@ -19,6 +20,7 @@ describe("E2E-M2-2 free gate", () => {
     await $('[data-testid="upgrade-gate"]').waitForExist({ timeout: 10_000 });
     expect(await textOf('[data-testid="upgrade-gate"]')).toBe("You hit the Free limit of 3 workspaces.");
     expect(await workspaceRoots()).not.toContain(`${base}/w4`);
+    await expectNoSeriousA11yViolationsInBothThemes();
   });
 
   it("mock checkout turns the footer to PRO within 5 s", async () => {
