@@ -1,0 +1,13 @@
+{
+  "identifier": "test-harness",
+  "description": "E2E test harness (debug builds with TANDEM_E2E=1 only; added at runtime).",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "allow-test-counters",
+    "allow-test-spawn-log",
+    "allow-test-clock-advance",
+    "allow-test-auth-refresh"
+  ]
+}

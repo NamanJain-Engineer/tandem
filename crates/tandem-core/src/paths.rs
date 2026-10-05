@@ -139,6 +139,12 @@ impl DataDir {
     pub fn briefings(&self) -> PathBuf {
         self.root.join("briefings")
     }
+    pub fn telemetry(&self) -> PathBuf {
+        self.root.join("telemetry")
+    }
+    pub fn crashes(&self) -> PathBuf {
+        self.root.join("crashes")
+    }
     pub fn tmp(&self) -> PathBuf {
         self.root.join("tmp")
     }

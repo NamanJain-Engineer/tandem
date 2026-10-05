@@ -29,6 +29,8 @@ pub enum StoreError {
     Invalid(String),
     #[error("{0}")]
     Conflict(String),
+    #[error("{0}")]
+    LimitReached(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("the store is closed")]
@@ -43,6 +45,7 @@ impl From<StoreError> for IpcError {
             StoreError::NotFound(_) => ErrorCode::NotFound,
             StoreError::Invalid(_) => ErrorCode::Invalid,
             StoreError::Conflict(_) => ErrorCode::Conflict,
+            StoreError::LimitReached(_) => ErrorCode::LimitReached,
             StoreError::Io(_) => ErrorCode::Io,
             StoreError::Core(c) => c.code,
             _ => ErrorCode::Internal,

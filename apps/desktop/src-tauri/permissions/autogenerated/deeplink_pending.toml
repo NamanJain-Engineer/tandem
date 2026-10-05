@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-deeplink-pending"
+description = "Enables the deeplink_pending command without any pre-configured scope."
+commands.allow = ["deeplink_pending"]
+
+[[permission]]
+identifier = "deny-deeplink-pending"
+description = "Denies the deeplink_pending command without any pre-configured scope."
+commands.deny = ["deeplink_pending"]

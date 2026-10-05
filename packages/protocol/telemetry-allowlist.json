@@ -1,0 +1,28 @@
+{
+  "$comment": "Every telemetry event and property Tandem may send. Anything not listed is dropped before it leaves the wrapper (F-TL-01). Property specs: \"string\", \"number\", \"bool\", or a list of allowed values.",
+  "events": {
+    "app_started": {
+      "props": {
+        "platform": ["macos", "windows", "linux"],
+        "version": "string",
+        "first_run": "bool"
+      }
+    },
+    "mode_switched": { "props": { "mode": ["agent", "code", "thread"] } },
+    "settings_opened": {
+      "props": {
+        "page": [
+          "general", "appearance", "notifications", "terminal", "engines", "accounts", "teammates",
+          "dictate", "conductor", "plugins", "remote", "privacy", "shortcuts", "account", "updates", "advanced"
+        ]
+      }
+    },
+    "signed_in": { "props": { "method": ["loopback", "deep_link"] } },
+    "signed_out": { "props": {} },
+    "workspace_added": { "props": { "kind": ["local", "ssh", "wsl"], "count": "number" } },
+    "limit_hit": { "props": { "limit": ["panes", "workspaces", "threadGrid", "teammates", "pluginConnections", "accountsPerEngine"] } },
+    "upgrade_sheet_opened": { "props": { "source": ["gate", "account_menu", "settings", "palette"] } },
+    "terminal_opened": { "props": { "kind": ["terminal", "agent"] } },
+    "startup_timing": { "props": { "ms": "number" } }
+  }
+}

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-test-clock-advance"
+description = "Enables the test_clock_advance command without any pre-configured scope."
+commands.allow = ["test_clock_advance"]
+
+[[permission]]
+identifier = "deny-test-clock-advance"
+description = "Denies the test_clock_advance command without any pre-configured scope."
+commands.deny = ["test_clock_advance"]

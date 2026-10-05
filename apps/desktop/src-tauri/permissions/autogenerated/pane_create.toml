@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pane-create"
+description = "Enables the pane_create command without any pre-configured scope."
+commands.allow = ["pane_create"]
+
+[[permission]]
+identifier = "deny-pane-create"
+description = "Denies the pane_create command without any pre-configured scope."
+commands.deny = ["pane_create"]

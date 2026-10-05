@@ -60,7 +60,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let data = DataDir::at(dir.path().to_path_buf()).expect("data");
         let store = Store::open(&data).expect("store");
-        let state = AppState::with(data, store, None, true);
+        let state = AppState::for_tests(data, store);
         let boot = app_boot(&state).await;
         assert_eq!(boot.version, env!("CARGO_PKG_VERSION"));
         assert_eq!(boot.last_mode, "code");

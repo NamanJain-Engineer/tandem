@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pane-list"
+description = "Enables the pane_list command without any pre-configured scope."
+commands.allow = ["pane_list"]
+
+[[permission]]
+identifier = "deny-pane-list"
+description = "Denies the pane_list command without any pre-configured scope."
+commands.deny = ["pane_list"]

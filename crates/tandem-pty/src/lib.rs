@@ -435,6 +435,25 @@ impl PtyManager {
         self.sessions.get(pane).map(|s| s.pid)
     }
 
+    /// True while the pane's process is running.
+    pub fn is_live(&self, pane: &str) -> bool {
+        self.sessions
+            .get(pane)
+            .map(|s| s.exited.lock().map(|e| e.is_none()).unwrap_or(false))
+            .unwrap_or(false)
+    }
+
+    /// Sends a one-line notice frame (e.g. "Folder not found — opened at
+    /// workspace root") in sequence with the pane's output.
+    pub fn notice(&self, pane: &str, message: &str) -> Result<(), PtyError> {
+        let session = self.get(pane)?;
+        let seq = session.seq.fetch_add(1, Ordering::AcqRel);
+        if let Some(sink) = session.sink.read().as_ref() {
+            let _ = sink.send(PtyFrame::notice(seq, message));
+        }
+        Ok(())
+    }
+
     pub fn exit_info(&self, pane: &str) -> Option<ExitInfo> {
         self.sessions
             .get(pane)

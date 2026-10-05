@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-telemetry-capture"
+description = "Enables the telemetry_capture command without any pre-configured scope."
+commands.allow = ["telemetry_capture"]
+
+[[permission]]
+identifier = "deny-telemetry-capture"
+description = "Denies the telemetry_capture command without any pre-configured scope."
+commands.deny = ["telemetry_capture"]

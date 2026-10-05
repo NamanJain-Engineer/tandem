@@ -12,12 +12,14 @@
       {
         "label": "main",
         "title": "Tandem",
-        "width": 1280,
-        "height": 800,
+        "width": 1440,
+        "height": 900,
         "minWidth": 960,
         "minHeight": 600,
         "visible": false,
-        "backgroundColor": "#0b111c"
+        "backgroundColor": "#0b111c",
+        "center": true,
+        "decorations": false
       }
     ],
     "security": {
@@ -32,11 +34,18 @@
         "base-uri": "'self'",
         "frame-ancestors": "'none'"
       }
-    }
+    },
+    "withGlobalTauri": false
   },
   "bundle": {
     "active": true,
-    "targets": ["appimage", "deb", "dmg", "app", "nsis"],
+    "targets": [
+      "appimage",
+      "deb",
+      "dmg",
+      "app",
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -46,5 +55,14 @@
     ],
     "category": "DeveloperTool",
     "shortDescription": "A desktop workspace for coding agents"
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "tandem"
+        ]
+      }
+    }
   }
 }

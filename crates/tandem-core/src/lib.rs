@@ -13,12 +13,14 @@ pub mod error;
 pub mod ids;
 pub mod keychain;
 pub mod logging;
+pub mod net;
 pub mod paths;
 pub mod redact;
 pub mod remote_config;
 pub mod settings;
 pub mod status;
 pub mod supervisor;
+pub mod telemetry;
 
 pub use error::{CoreError, ErrorCode, IpcError};
 pub use paths::DataDir;

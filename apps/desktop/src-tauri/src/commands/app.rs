@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
@@ -7,9 +8,12 @@ use ts_rs::TS;
 use tandem_core::commands::{self as registry, CommandSpec};
 use tandem_core::diagnostics::{self, DiagnosticsInfo};
 use tandem_core::redact::Redactor;
-use tandem_core::IpcError;
+use tandem_core::{ErrorCode, IpcError};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use crate::services::boot::{self, AppBoot};
+use crate::services::deeplink::DeepLink;
+use crate::services::opener::is_external_url;
 use crate::state::AppState;
 
 /// Called by the UI after its first paint: shows the main window and returns
@@ -66,19 +70,77 @@ pub fn app_log(level: LogLevel, target: String, code: String, fields: BTreeMap<S
     }
 }
 
+/// Help → Copy diagnostics (F-SH-11): version, OS and the last 200
+/// sanitized log lines, also placed on the clipboard.
 #[tauri::command]
-pub fn app_copy_diagnostics(state: State<'_, AppState>) -> Result<String, IpcError> {
+pub fn app_copy_diagnostics(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, IpcError> {
     let info = DiagnosticsInfo {
         app_version: env!("CARGO_PKG_VERSION").to_string(),
         build: boot::build_id(),
         engines: Vec::new(),
         flags: Vec::new(),
     };
-    Ok(diagnostics::bundle(
-        &state.data.logs(),
-        state.data.root(),
-        &info,
-    ))
+    let bundle = diagnostics::bundle(&state.data.logs(), state.data.root(), &info);
+    if let Err(err) = app.clipboard().write_text(bundle.clone()) {
+        tracing::warn!(error = %err, "couldn't write diagnostics to the clipboard");
+    }
+    Ok(bundle)
+}
+
+/// Help → Open logs folder (F-SH-11).
+#[tauri::command]
+pub fn app_open_logs_folder(state: State<'_, AppState>) -> Result<(), IpcError> {
+    let logs = state.data.logs();
+    let _ = std::fs::create_dir_all(&logs);
+    if state.e2e {
+        return Ok(());
+    }
+    tauri_plugin_opener::open_path(&logs, None::<&str>)
+        .map_err(|e| IpcError::new(ErrorCode::Unavailable, e.to_string()).with_stage("opener"))
+}
+
+/// Opens http(s) and mailto links in the system browser (F-CD-09).
+#[tauri::command]
+pub fn app_open_external(state: State<'_, AppState>, url: String) -> Result<(), IpcError> {
+    if !is_external_url(&url) {
+        return Err(IpcError::new(
+            ErrorCode::Invalid,
+            "Only web and email links can be opened",
+        ));
+    }
+    state
+        .opener
+        .open(&url)
+        .map_err(|e| IpcError::new(ErrorCode::Unavailable, e).with_stage("browser"))
+}
+
+#[tauri::command]
+pub fn app_quit(app: tauri::AppHandle, state: State<'_, AppState>) {
+    state.terminals.pty.kill_all();
+    app.exit(0);
+}
+
+/// Links that arrived before the UI was ready (F-SH-13).
+#[tauri::command]
+pub fn deeplink_pending(state: State<'_, AppState>) -> Vec<DeepLink> {
+    state.deeplinks.take()
+}
+
+static PTY_RESIZES: AtomicU64 = AtomicU64::new(0);
+
+pub fn count_resize() {
+    PTY_RESIZES.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn resize_count(reset: bool) -> u64 {
+    if reset {
+        PTY_RESIZES.swap(0, Ordering::Relaxed)
+    } else {
+        PTY_RESIZES.load(Ordering::Relaxed)
+    }
 }
 
 #[tauri::command]

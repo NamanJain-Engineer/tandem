@@ -38,6 +38,11 @@ macro_rules! prefixed_id {
             pub fn as_str(&self) -> &str {
                 &self.0
             }
+
+            /// Wraps an id read back from Tandem's own database.
+            pub fn from_db(raw: String) -> Self {
+                Self(raw)
+            }
         }
 
         impl Default for $name {

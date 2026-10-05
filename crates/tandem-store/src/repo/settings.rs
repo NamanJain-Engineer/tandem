@@ -57,6 +57,23 @@ pub async fn get(store: &Store, key: SettingKey) -> Result<Value, StoreError> {
         .unwrap_or_else(|| settings::default_value(key)))
 }
 
+/// For startup code that runs before the async runtime.
+pub fn get_blocking(store: &Store, key: SettingKey) -> Result<Value, StoreError> {
+    let name = key.as_str();
+    let stored: Option<String> = store.read_blocking(move |c| {
+        Ok(c.query_row(
+            "SELECT value_json FROM settings WHERE key = ?1",
+            [name],
+            |r| r.get(0),
+        )
+        .optional()?)
+    })?;
+    Ok(stored
+        .and_then(|j| serde_json::from_str::<Value>(&j).ok())
+        .filter(|v| settings::validate(key, v).is_ok())
+        .unwrap_or_else(|| settings::default_value(key)))
+}
+
 pub async fn set(store: &Store, key: SettingKey, value: Value) -> Result<(), StoreError> {
     settings::validate(key, &value)?;
     let name = key.as_str();
