@@ -18,9 +18,11 @@ pub mod paths;
 pub mod redact;
 pub mod remote_config;
 pub mod settings;
+pub mod shellquote;
 pub mod status;
 pub mod supervisor;
 pub mod telemetry;
+pub mod wslpath;
 
 pub use error::{CoreError, ErrorCode, IpcError};
 pub use paths::DataDir;
