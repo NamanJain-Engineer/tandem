@@ -838,6 +838,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `status:changed` | `{records:[StatusRecord]}` (coalesced 50 ms) | StatusStore forwarder | F-EN-05, F-DB-01 |
 | `pty:state` | `{paneId, cwd?, title?, altScreen, bracketedPaste, mouse, readiness}` (debounced 100 ms) | tandem-pty | F-CD-10, F-EN-06 |
 | `pty:mark` | `{paneId, kind:"A"\|"B"\|"C"\|"D", exitCode?, line}` | tandem-pty | F-CD-10 |
+| `sessions:saved` | `{workspaceId, session: SavedSession}` (an agent handed its pane back to the shell) | terminal service | F-CD-03 |
 | `engines:detected` | `{hostId, report: DetectionReport}` | Detector | F-EN-01 |
 | `accounts:changed` | `{accounts:[Account]}` | accounts service | F-AC-02 |
 | `accounts:login-finished` | `{opId, ok, account?, error?}` | accounts service | F-AC-02 |
@@ -1350,7 +1351,7 @@ $DATA/                                  (0700)
     status.sock                         UDS (Unix). If the path exceeds 100 bytes, use $TMPDIR/tandem-<sha8(DATA)>/status.sock and write its path to run/status.path
     status.port                         loopback port (Windows)
     app.lock  app.lock.json             GUI/headless exclusivity {pid, mode, startedAt}
-    children.json                       PID registry [{paneId, pid, pgid, startTime, exe}] for orphan detection
+    children-<app pid>.json             this run's PID registry {owner:{pid,startTime}, children:[{paneId, pid, startTime, exe, cwd}]} for orphan detection
     gateway.json                        {port} (sidecar mode / diagnostics only)
   logs/tandem.log[.1-.4]                10 MB × 5, redacted (F-SH-11)
   logs/routines-headless.log
@@ -1405,7 +1406,7 @@ pane_create ─► PaneRecord ─► UI mounts <TerminalPane> (xterm model creat
 pty_spawn(paneId, cols, rows, channel) ── entitlement check (live_count < limit) ──► LimitReached → upgrade card, no process
       │ builds SpawnSpec (env §5.2, shell-integration §5.8, engine launch §6.3)
       ▼
-PtyManager::spawn  → portable-pty openpty(cols,rows) → spawn_command → register PID in run/children.json
+PtyManager::spawn  → portable-pty openpty(cols,rows) → spawn_command → register PID in run/children-<app pid>.json
       │                returns PtyInfo immediately (≤5 ms); UI never awaits output
       ├─ reader thread: read(64 KB) → SideChannel(vte) → ring.push → Batcher (16 ms window, ≤256 KB) → OutputSink
       ├─ query responder: DA1/DA2/DSR/CPR/XTVERSION/OSC 10/11/12 answered from Rust (§5.7)
@@ -1434,7 +1435,7 @@ pty_kill / pane_close → tree kill (§5.3) → unregister status secret → rev
 ### 5.3 Process-tree kill [F-CD-03 AC4, F-SH-07]
 - **Unix:** the child is a session leader (`setsid` via portable-pty), so pgid = pid. Kill: `SIGHUP` to `-pgid`, wait 2 s, `SIGTERM`, wait 2 s, `SIGKILL`. Also walk descendants (`/proc` on Linux, `sysctl KERN_PROC` on macOS via `sysinfo` crate) and kill any that escaped the group with `setsid` (daemonized `sleep &`).
 - **Windows:** every PTY child is assigned to a **Job Object** with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` created before resume; closing the job handle kills the tree.
-- **Orphans:** `run/children.json` stores `{pid, startTime}`. On startup, entries whose PID is alive **and** whose start time matches are orphans; UI-132 asks "N agent processes from your last session are still running. Stop them / Keep them" (F-CD-03 AC8). PID reuse is excluded by the start-time check.
+- **Orphans:** each run writes `run/children-<app pid>.json` with its owner (the app's `{pid, startTime}`) and `{pid, startTime}` per child; a clean exit deletes it. On startup a background scan collects the files whose owner has exited, waiting up to 8 s for an owner that is still shutting down (so a quick relaunch never reports children the old instance is stopping, and two instances never overwrite each other's records). Entries whose PID is alive **and** whose start time matches are orphans; `orphans_list` waits for the scan; UI-132 asks "N agent processes from your last session are still running. Stop them / Keep them" (F-CD-03 AC8). PID reuse is excluded by the start-time check.
 
 ### 5.4 Scrollback ring and persistence [F-CD-03, F-CD-05, F-SH-07]
 - **Rust ring (`ScrollbackRing`):** a `VecDeque<Bytes>` of raw output chunks with running totals of bytes and `\n` count. Bound: evict oldest chunks while `newlines > scrollback_lines` **or** `bytes > scrollback_lines × 200`. This keeps each background pane within `lines × 200 B + 2 MB` (the 2 MB covers the vt screen model, batch buffers and xterm overhead is on the webview side) (F-CD-03, F-CD-04 AC5).
@@ -2414,7 +2415,7 @@ Export: zip of `settings.json`, `workspaces.json`, `threads.json` (with messages
 | `TURNSTILE_SECRET` | empty → noop | |
 | `BREACH_CHECK` | `offline` | `hibp` in prod |
 | `LOG_LEVEL` | `info` | |
-- **Env vars (desktop)**: `TANDEM_HOME` (default `~/.tandem`), `TANDEM_API_URL` (default dev `http://api.tandem.local:8787`, release `https://api.tandem.dev`), `TANDEM_WEB_URL`, `TANDEM_FAKE_KEYCHAIN` (0), `TANDEM_FAKE_AUDIO` (0; uses WAV fixtures), `TANDEM_FAKE_INSERT` (0), `TANDEM_REAL_ENGINES` (0; gated integration tests), `TANDEM_LOG` (`info`), `TANDEM_UPDATER_ENDPOINT` (override for tests), `TANDEM_LAUNCHER_ROOT` (test override for OS launcher files, §10.3), `TANDEM_E2E` (1 under wdio: disables splash animation, exposes `window.__tandemTest` hooks in debug builds only). Debug-build-only test variables (semantics in MILESTONES §1): `TANDEM_SPAWN_LOG`, `TANDEM_FAKE_CLOCK`, `TANDEM_OPEN_URL_CMD`, `TANDEM_NET_LOG`, `TANDEM_FAKE_PICK_FOLDER` (`workspace_pick_folder` returns this path, or the contents of this file when it names a file, instead of showing the native dialog, which WebDriver can't drive); fake-engine variables `TANDEM_FAKE_ENGINE`, `TANDEM_FAKE_SCRIPT`, `TANDEM_FAKE_RECORD`, `TANDEM_FAKE_MODE` (§6.12). API test routes: `TANDEM_API_TEST_ROUTES=1` mounts `/__test/*` (never with `NODE_ENV=production`).
+- **Env vars (desktop)**: `TANDEM_HOME` (default `~/.tandem`), `TANDEM_API_URL` (default dev `http://api.tandem.local:8787`, release `https://api.tandem.dev`), `TANDEM_WEB_URL`, `TANDEM_FAKE_KEYCHAIN` (0), `TANDEM_FAKE_AUDIO` (0; uses WAV fixtures), `TANDEM_FAKE_INSERT` (0), `TANDEM_REAL_ENGINES` (0; gated integration tests), `TANDEM_LOG` (`info`), `TANDEM_UPDATER_ENDPOINT` (override for tests), `TANDEM_LAUNCHER_ROOT` (test override for OS launcher files, §10.3), `TANDEM_E2E` (1 under wdio: disables splash animation, exposes `window.__tandemTest` hooks in debug builds only). Debug-build-only test variables (semantics in MILESTONES §1): `TANDEM_SPAWN_LOG`, `TANDEM_FAKE_CLOCK`, `TANDEM_OPEN_URL_CMD`, `TANDEM_NET_LOG`, `TANDEM_FAKE_PICK_FOLDER` (`workspace_pick_folder` returns this path, or the contents of this file when it names a file, instead of showing the native dialog, which WebDriver can't drive; a first line `delay=<ms>` holds the "dialog" open that long); fake-engine variables `TANDEM_FAKE_ENGINE`, `TANDEM_FAKE_SCRIPT`, `TANDEM_FAKE_RECORD`, `TANDEM_FAKE_MODE` (§6.12). API test routes: `TANDEM_API_TEST_ROUTES=1` mounts `/__test/*` (never with `NODE_ENV=production`).
 - **Env vars (web)**: `API_INTERNAL_URL` (`http://localhost:8787`), `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_POSTHOG_KEY` (empty).
 
 ---

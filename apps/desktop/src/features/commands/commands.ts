@@ -116,6 +116,10 @@ export const handlers: Record<string, () => void> = {
     if (ws) void applyDrop({ kind: "pane", paneId, tabId, title: "" }, { kind: "new_tab", workspaceId: ws });
   }),
   "pane.restart": onPane((_, paneId) => terminalHandles.get(paneId)?.restart()),
+  "terminal.jump_bottom": onPane((_, paneId) => terminalHandles.get(paneId)?.jumpToBottom()),
+  "terminal.find": onPane((_, paneId) => terminalHandles.get(paneId)?.find()),
+  "terminal.find_next": onPane((_, paneId) => terminalHandles.get(paneId)?.find("next")),
+  "terminal.find_prev": onPane((_, paneId) => terminalHandles.get(paneId)?.find("prev")),
   "billing.plans": () => useUi.getState().openUpgrade(),
   "help.copy_diagnostics": () => void copyDiagnostics(toast),
   "help.open_logs": () => void invoke("app_open_logs_folder").catch(() => undefined),

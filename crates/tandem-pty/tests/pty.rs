@@ -24,6 +24,7 @@ fn spec(pane: &str, script: &str) -> SpawnSpec {
         cols: 80,
         rows: 24,
         scrollback_lines: 1000,
+        mark_token: None,
     }
 }
 
@@ -263,11 +264,11 @@ fn f_cd_03_modes_reach_the_state_sink() {
 fn f_cd_03_8_children_are_recorded_until_they_exit() {
     use tandem_pty::orphans::{read_records, ChildRegistry, SystemTable};
     let dir = tempfile::tempdir().expect("tempdir");
-    let path = dir.path().join("run/children.json");
     let registry = Arc::new(ChildRegistry::new(
-        path.clone(),
+        &dir.path().join("run"),
         Box::new(SystemTable::default()),
     ));
+    let path = registry.path().to_path_buf();
     let mgr = PtyManager::new().with_registry(registry);
     let info = mgr.spawn(spec("tracked", "sleep 30"), None).expect("spawn");
     let records = read_records(&path);
@@ -277,4 +278,6 @@ fn f_cd_03_8_children_are_recorded_until_they_exit() {
     assert!(records[0].start_time > 0);
     mgr.kill("tracked").expect("kill");
     assert!(wait_until(Duration::from_secs(5), || read_records(&path).is_empty()));
+    mgr.shutdown();
+    assert!(!path.exists(), "a clean exit removes the registry file");
 }

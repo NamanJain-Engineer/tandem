@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { AlertTriangle, Folder, GitBranch, Plus, SquareTerminal } from "lucide-react";
-import type { WorkspaceSummary } from "@tandem/protocol";
+import type { SavedSession, WorkspaceSummary } from "@tandem/protocol";
 import { Badge, ConfirmDialog, IconButton, StatusDot, cx, useToast, type MenuEntry } from "@tandem/ui";
 import { t } from "../../i18n";
 import { copyText } from "../../ipc/clipboard";
+import { listen } from "../../ipc/events";
 import { invoke } from "../../ipc/invoke";
+import { useEngines } from "../../stores/engines";
 import { useLayout } from "../../stores/layout";
 import { useSetting, useSettings } from "../../stores/settings";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { RailList } from "../rail/RailList";
+import { paneTitles } from "./titles";
 import { pickAndAddWorkspace, switchMode } from "../shell/actions";
 import { PlanFooter } from "../shell/PlanFooter";
 import { useBoot } from "../shell/useBoot";
@@ -58,8 +61,36 @@ function RailResizer({ width, onWidth }: { width: number; onWidth: (w: number, d
   );
 }
 
+/** A workspace's Saved sessions count (agents that handed back, F-CD-03). */
+function useSavedCount(workspaceId: string): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      void invoke<SavedSession[]>("sessions_saved_list", { workspaceId })
+        .then((list) => live && setCount(list?.length ?? 0))
+        .catch(() => undefined);
+    load();
+    let off: (() => void) | undefined;
+    void listen<{ workspaceId: string }>(
+      "sessions:saved",
+      (e) => e.workspaceId === workspaceId && load(),
+    ).then((f) => {
+      if (live) off = f;
+      else f();
+    });
+    return () => {
+      live = false;
+      off?.();
+    };
+  }, [workspaceId]);
+  return count;
+}
+
 /** Open panes of a workspace, under its expanded rail row. */
 function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
+  const savedCount = useSavedCount(ws.id);
+  const engines = useEngines((st) => st.list);
   const tabs = useLayout((s) => s.tabs);
   const loaded = useLayout((s) => s.loaded[ws.id] ?? false);
   useEffect(() => {
@@ -72,25 +103,38 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
   const rows = ws.tabs.flatMap((tab) => {
     const t2 = tabs[tab.id];
     if (!t2?.tree) return [];
-    const sorted = Object.values(t2.panes).sort((a, b) => a.createdAt - b.createdAt);
-    return sorted.map((p, i) => ({
-      tab,
-      pane: p,
-      title: p.humanName ?? p.title ?? t("pane.shell", { n: i + 1 }),
-    }));
+    const names = paneTitles(t2.panes, engines);
+    return Object.values(t2.panes)
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((p) => ({ tab, pane: p, title: names[p.id] ?? "" }));
   });
   // Level-2 rows of the rail tree (a tree may only own treeitems and groups).
-  if (rows.length === 0)
-    return (
+  const saved =
+    savedCount > 0 ? (
       <div
         role="treeitem"
         aria-level={2}
-        aria-disabled="true"
         aria-selected={false}
-        className="px-2 py-1 text-sm text-fg-subtle"
+        data-testid="saved-sessions"
+        className="px-2 py-1 text-sm text-fg-muted"
       >
-        {t("rail.noSessions")}
+        {t("rail.savedSessions", { n: savedCount })}
       </div>
+    ) : null;
+  if (rows.length === 0)
+    return (
+      <>
+        <div
+          role="treeitem"
+          aria-level={2}
+          aria-disabled="true"
+          aria-selected={false}
+          className="px-2 py-1 text-sm text-fg-subtle"
+        >
+          {t("rail.noSessions")}
+        </div>
+        {saved}
+      </>
     );
   const open = (tabId: string, paneId: string) => {
     const store = useWorkspaces.getState();
@@ -123,6 +167,7 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
           <span className="min-w-0 flex-1 truncate">{title}</span>
         </div>
       ))}
+      {saved}
     </>
   );
 }

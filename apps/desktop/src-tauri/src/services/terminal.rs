@@ -9,11 +9,19 @@ use tokio::sync::OnceCell;
 
 use tandem_core::ids::PaneId;
 use tandem_core::settings::SettingKey;
+use tandem_core::shellquote::{self, ShellDialect};
 use tandem_core::{ErrorCode, IpcError};
+use tandem_engines::{EngineRegistry, EngineSpec};
 use tandem_pty::env::{self, LoginEnv};
 use tandem_pty::{OutputSink, PtyInfo, PtyManager, SpawnSpec};
-use tandem_store::repo::{panes, settings, workspaces};
+use tandem_store::repo::{panes, sessions, settings, workspaces};
 use tandem_store::Store;
+
+/// A fresh secret for one launch's marks (handback, shell integration).
+pub fn launch_token() -> String {
+    use rand::distributions::{Alphanumeric, DistString};
+    Alphanumeric.sample_string(&mut rand::thread_rng(), 32)
+}
 
 pub const FOLDER_NOT_FOUND: &str = "Folder not found — opened at workspace root";
 /// Lines kept per pane in `$DATA/scrollback/<pane>.bin` (F-CD-03).
@@ -23,6 +31,9 @@ pub const SNAPSHOT_EVERY: std::time::Duration = std::time::Duration::from_secs(3
 
 pub struct TerminalService {
     pub pty: PtyManager,
+    pub engines: EngineRegistry,
+    /// The quoting dialect of each pane's shell (drops, staged images).
+    dialects: std::sync::Mutex<std::collections::HashMap<String, ShellDialect>>,
     store: Store,
     login: OnceCell<LoginEnv>,
     spawn_log: Option<PathBuf>,
@@ -49,10 +60,17 @@ impl TerminalService {
         };
         Arc::new(Self {
             pty,
+            engines: EngineRegistry::bundled(),
+            dialects: Default::default(),
             store,
             login: OnceCell::new(),
             spawn_log,
         })
+    }
+
+    /// Uses `login` instead of capturing one (tests).
+    pub fn set_login_env(&self, login: LoginEnv) {
+        let _ = self.login.set(login);
     }
 
     /// Captured once per launch (§5.2); the first caller waits ≤3 s.
@@ -94,7 +112,7 @@ impl TerminalService {
     /// The quit path: snapshots first, then every process tree.
     pub fn shutdown(&self, snapshots: &Path) {
         self.snapshot_all(snapshots);
-        self.pty.kill_all();
+        self.pty.shutdown();
     }
 
     /// The plan's live-pane limit: at the limit no pane or process is
@@ -119,7 +137,7 @@ impl TerminalService {
         sink: Arc<dyn OutputSink>,
     ) -> Result<PtyInfo, IpcError> {
         self.check_live_limit(max_live)?;
-        let record = panes::get(&self.store, pane).await?;
+        let record = panes::get_open(&self.store, pane).await?;
         let ws = workspaces::get(&self.store, &record.workspace_id).await?;
         let root = PathBuf::from(&ws.root);
         if !root.is_dir() {
@@ -150,23 +168,110 @@ impl TerminalService {
             .await?
             .as_u64()
             .unwrap_or(10_000) as usize;
+        // Agent panes run the engine under the login shell and hand back to
+        // it when the engine exits (F-CD-03 AC3).
+        let (args, mark_token, engine) = if record.kind == "agent" {
+            let engine = record
+                .engine_id
+                .as_deref()
+                .and_then(|id| self.engines.get(id))
+                .cloned()
+                .ok_or_else(|| {
+                    IpcError::new(ErrorCode::NotFound, "This pane's engine isn't known")
+                })?;
+            let path = self.resolve_engine(&engine).await.ok_or_else(|| {
+                IpcError::new(
+                    ErrorCode::EngineMissing,
+                    format!("{} isn't installed on this machine.", engine.label),
+                )
+            })?;
+            let argv = vec![path.to_string_lossy().into_owned()];
+            let args = env::agent_wrapper(&shell, &argv).map_err(|_| {
+                IpcError::new(
+                    ErrorCode::Invalid,
+                    "The engine's path can't be launched safely",
+                )
+            })?;
+            (args, Some(launch_token()), Some(engine))
+        } else {
+            (env::login_args(&shell), None, None)
+        };
+        if let Ok(mut d) = self.dialects.lock() {
+            d.insert(
+                pane.to_string(),
+                ShellDialect::for_shell(&shell.to_string_lossy()),
+            );
+        }
+        let mut child_env = env::pane_env(login, pane.as_str(), env!("CARGO_PKG_VERSION"));
+        if let Some(token) = &mark_token {
+            child_env.insert(env::TOKEN_VAR.to_string(), token.clone());
+        }
         let spec = SpawnSpec {
             pane_id: pane.to_string(),
-            args: env::login_args(&shell),
+            args,
             program: shell,
             cwd,
-            env: env::pane_env(login, pane.as_str(), env!("CARGO_PKG_VERSION")),
+            env: child_env,
             cols,
             rows,
             scrollback_lines: scrollback,
+            mark_token,
         };
         self.log_spawn(&spec);
         let info = self.pty.spawn(spec, Some(sink))?;
+        // The pane (or its workspace) may have closed while the shell
+        // started: never leave a process nobody can see.
+        if panes::get_open(&self.store, pane).await.is_err() {
+            let _ = self.pty.kill(pane.as_str());
+            return Err(IpcError::new(ErrorCode::NotFound, "This pane was closed"));
+        }
+        if let Some(engine) = engine {
+            sessions::start_in_pane(&self.store, pane, &record.workspace_id, &engine.id).await?;
+        }
         if let Some(text) = notice {
             let _ = self.pty.notice(pane.as_str(), text);
         }
         tracing::info!(code = "pty.spawned", pid = info.pid, "terminal started");
         Ok(info)
+    }
+
+    /// Quotes dropped paths for the pane's shell (F-CD-06): space-separated,
+    /// no trailing newline; a name with control characters refuses the drop.
+    pub fn quote_paths(&self, pane: &PaneId, paths: &[String]) -> Result<String, IpcError> {
+        let dialect = self
+            .dialects
+            .lock()
+            .ok()
+            .and_then(|d| d.get(pane.as_str()).copied())
+            .unwrap_or(if cfg!(windows) {
+                ShellDialect::PowerShell
+            } else {
+                ShellDialect::Posix
+            });
+        Ok(shellquote::quote_paths(paths, dialect)?)
+    }
+
+    /// The engine's executable from the login PATH only, never the workspace
+    /// folder (F-CD-03 AC6).
+    pub async fn resolve_engine(&self, engine: &EngineSpec) -> Option<PathBuf> {
+        // The login PATH first; then the app's own PATH, which can hold
+        // installs the login profile resets away (Linux /etc/profile).
+        let login = self.login_env().await;
+        let sep = if cfg!(windows) { ";" } else { ":" };
+        let path = [login.vars.get("PATH").cloned(), std::env::var("PATH").ok()]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(sep);
+        let pathext = if cfg!(windows) {
+            std::env::var("PATHEXT").ok()
+        } else {
+            None
+        };
+        engine
+            .commands
+            .iter()
+            .find_map(|c| env::resolve_on_path(c, &path, pathext.as_deref()))
     }
 
     fn log_spawn(&self, spec: &SpawnSpec) {
@@ -267,5 +372,150 @@ mod tests {
             .collect();
         assert_eq!(notices, vec![FOLDER_NOT_FOUND.to_string()]);
         svc.pty.kill(pane.id.as_str()).expect("kill");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_cd_03_3_an_agent_hands_back_to_a_shell_and_is_saved() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let root = dir.path().join("ws-agent");
+        std::fs::create_dir_all(&root).expect("mkdir");
+        // The test engine, on a PATH only the login env knows.
+        let bin = dir.path().join("bin");
+        std::fs::create_dir_all(&bin).expect("bin");
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../crates/tandem-engines/tests/fixtures/bin/claude");
+        std::fs::copy(&fixture, bin.join("claude")).expect("copy fake engine");
+        settings::set(
+            &store,
+            SettingKey::DefaultShell,
+            serde_json::json!("/bin/sh"),
+        )
+        .await
+        .expect("shell");
+        let added = crate::services::workspaces::add(&store, root.to_str().expect("utf8"), None)
+            .await
+            .expect("ws");
+        let tab = tabs::list(&store, &added.workspace.id)
+            .await
+            .expect("tabs")
+            .remove(0);
+        let pane = panes::create_with(&store, &tab.id, "agent", None, Some("claude".into()))
+            .await
+            .expect("pane");
+
+        let handbacks: Arc<std::sync::Mutex<Vec<i32>>> = Arc::default();
+        let seen = handbacks.clone();
+        let pty = PtyManager::new().with_handback_sink(Arc::new(move |_pane, code| {
+            if let Ok(mut v) = seen.lock() {
+                v.push(code);
+            }
+        }));
+        let svc = TerminalService::new(pty, store.clone());
+        let mut vars = std::collections::BTreeMap::new();
+        vars.insert(
+            "PATH".to_string(),
+            format!("{}:/usr/bin:/bin", bin.display()),
+        );
+        vars.insert("HOME".to_string(), dir.path().display().to_string());
+        svc.set_login_env(LoginEnv {
+            vars,
+            shell: "/bin/sh".into(),
+            degraded: false,
+        });
+        let sink = Arc::new(VecSink::default());
+        svc.spawn(&pane.id, 80, 24, None, sink.clone())
+            .await
+            .expect("spawn");
+        let text = || String::from_utf8_lossy(&sink.data()).into_owned();
+        assert!(
+            wait_until(Duration::from_secs(10), || text()
+                .contains("Fake Claude Code")),
+            "{}",
+            text()
+        );
+        let state = svc.pty.state(pane.id.as_str()).expect("state");
+        assert!(state.bracketed_paste, "the engine's modes reach pty:state");
+        svc.pty.write(pane.id.as_str(), b"/exit\n").expect("write");
+        assert!(wait_until(Duration::from_secs(10), || !handbacks
+            .lock()
+            .expect("handbacks")
+            .is_empty()));
+        assert_eq!(*handbacks.lock().expect("handbacks"), vec![0]);
+        // The pane is a live shell again, in the same folder.
+        assert!(svc.pty.is_live(pane.id.as_str()));
+        svc.pty
+            .write(pane.id.as_str(), b"echo back-$((1+1)); pwd\n")
+            .expect("write");
+        assert!(
+            wait_until(Duration::from_secs(10), || text().contains("back-2")
+                && text().matches("ws-agent").count() >= 2),
+            "{}",
+            text()
+        );
+        // The service saved the session (the app wires this to the sink).
+        tandem_store::repo::sessions::save_on_handback(&store, &pane.id, None)
+            .await
+            .expect("save")
+            .expect("started at spawn");
+        assert_eq!(
+            tandem_store::repo::sessions::saved_list(&store, &added.workspace.id)
+                .await
+                .expect("list")
+                .len(),
+            1
+        );
+        // The token travels in the environment, never in argv.
+        let logged = svc.spawn_records();
+        assert!(logged.iter().all(|r| r
+            .argv
+            .iter()
+            .all(|a| !a.contains("handback;") || a.contains("$t"))));
+        svc.pty.kill(pane.id.as_str()).expect("kill");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_cd_03_a_missing_engine_is_reported_not_spawned() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let root = dir.path().join("ws-none");
+        std::fs::create_dir_all(&root).expect("mkdir");
+        let added = crate::services::workspaces::add(&store, root.to_str().expect("utf8"), None)
+            .await
+            .expect("ws");
+        let tab = tabs::list(&store, &added.workspace.id)
+            .await
+            .expect("tabs")
+            .remove(0);
+        let pane = panes::create_with(&store, &tab.id, "agent", None, Some("kimi".into()))
+            .await
+            .expect("pane");
+        let svc = TerminalService::new(PtyManager::new(), store.clone());
+        let mut vars = std::collections::BTreeMap::new();
+        vars.insert(
+            "PATH".to_string(),
+            dir.path().join("empty").display().to_string(),
+        );
+        svc.set_login_env(LoginEnv {
+            vars,
+            shell: "/bin/sh".into(),
+            degraded: false,
+        });
+        // The app's own PATH is searched too; make sure kimi isn't there.
+        if std::env::var("PATH")
+            .unwrap_or_default()
+            .split(':')
+            .any(|d| std::path::Path::new(d).join("kimi").exists())
+        {
+            return;
+        }
+        let err = svc
+            .spawn(&pane.id, 80, 24, None, Arc::new(VecSink::default()))
+            .await
+            .expect_err("missing");
+        assert_eq!(err.code, ErrorCode::EngineMissing);
+        assert_eq!(svc.pty.live_count(), 0);
     }
 }

@@ -8,27 +8,24 @@ import {
   type ImperativePanelGroupHandle,
 } from "react-resizable-panels";
 import type { PaneRecord, WorkspaceSummary } from "@tandem/protocol";
-import { Spinner, cx, useToast, type MenuEntry, type Status } from "@tandem/ui";
+import { Badge, Spinner, Tooltip, cx, useToast, type MenuEntry, type Status } from "@tandem/ui";
 import { t } from "../../i18n";
+import { useEngines } from "../../stores/engines";
+import { useBoot } from "../shell/useBoot";
 import { useLayout, type Box, type TabPanes } from "../../stores/layout";
 import { DropZones, applyDrop, type PaneDrag } from "./dnd";
+import { useDropTarget } from "./drops";
 import { leaves, minExtent, type LayoutNode } from "./layout/tree";
 import { PaneChrome } from "./PaneChrome";
 import { attachPaneHost, paneHost } from "./paneHosts";
-import { LaunchTiles, useTiles } from "./PanePicker";
+import { LaunchTiles, launchFor, useTiles } from "./PanePicker";
+import { paneTitles } from "./titles";
+import { webglPool } from "./webglPool";
 import { TerminalView, terminalHandles, type Phase, type TerminalOptions } from "./TerminalView";
 
 /** Gutter between panes (UI_SPEC §2.21). */
 const GUTTER = 6;
 const BOX_THROTTLE_MS = 50;
-
-/** Pane titles default to "Shell · n" in creation order (UI-11). */
-function titles(panes: Record<string, PaneRecord>): Record<string, string> {
-  const sorted = Object.values(panes).sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
-  return Object.fromEntries(
-    sorted.map((p, i) => [p.id, p.humanName ?? p.title ?? t("pane.shell", { n: i + 1 })]),
-  );
-}
 
 /** Where a pane's host lives in the layout. */
 function PaneSlot({ paneId }: { paneId: string }) {
@@ -188,6 +185,15 @@ const PaneView = memo(function PaneView({
   options,
 }: PaneViewProps) {
   const [status, setStatus] = useState<Status>("idle");
+  const dropping = useDropTarget((st) => st.paneId === pane.id);
+  const mac = useBoot((st) => st.boot?.platform === "macos");
+  const engineNewline = useEngines((st) => st.list.find((e) => e.spec.id === pane.engineId)?.spec.newlineSequence ?? "\x1b\r");
+  // "Lite": this pane renders without a WebGL context (UI_SPEC §2.27).
+  const [lite, setLite] = useState(() => !webglPool.holds(pane.id));
+  useEffect(() => {
+    setLite(!webglPool.holds(pane.id));
+    return webglPool.subscribe((id, webgl) => id === pane.id && setLite(!webgl));
+  }, [pane.id]);
   const { show } = useToast();
   const drag: PaneDrag = { kind: "pane", paneId: pane.id, tabId, title };
   const { attributes, listeners, setNodeRef } = useDraggable({ id: `pane:${pane.id}`, data: drag });
@@ -207,6 +213,20 @@ const PaneView = memo(function PaneView({
     },
     { id: "new-tab", label: t("pane.moveToNewTab"), onSelect: () => void moveToNewTab(tabId, pane.id) },
     { id: "restart", label: t("pane.restart"), onSelect: () => terminalHandles.get(pane.id)?.restart() },
+    { id: "sep-copy", type: "separator" },
+    ...([
+      ["copy-100", "terminal.copyLast100", 100],
+      ["copy-500", "terminal.copyLast500", 500],
+      ["copy-all", "terminal.copyAll", null],
+    ] as const).map(([id, key, n]) => ({
+      id,
+      label: t(key),
+      onSelect: () =>
+        void terminalHandles
+          .get(pane.id)
+          ?.copyLast(n)
+          .then((ok) => ok && show({ tone: "success", title: t("terminal.copied") })),
+    })),
     {
       id: "close",
       label: t("pane.closePane"),
@@ -222,8 +242,10 @@ const PaneView = memo(function PaneView({
       data-testid="pane"
       data-pane-id={pane.id}
       data-focused={focused ? "true" : undefined}
+      data-drop-target={dropping ? "true" : undefined}
       className={cx(
         "relative flex h-full min-h-0 flex-col overflow-hidden rounded-md border",
+        dropping && "ring-2 ring-accent",
         focused && !solo ? "border-border-strong" : "border-border",
       )}
       onFocusCapture={() => layout().focus(tabId, pane.id)}
@@ -238,6 +260,15 @@ const PaneView = memo(function PaneView({
         menuItems={menu}
         onMaximize={() => layout().toggleMaximize(tabId, pane.id)}
         onClose={() => void layout().close(tabId, pane.id)}
+        badges={
+          lite && visible && options.gpu !== false ? (
+            <Tooltip label={t("pane.liteTooltip")}>
+              <span data-testid="lite-badge" tabIndex={0} className="rounded-xs focus-visible:shadow-focus focus-visible:outline-none">
+                <Badge>{t("pane.lite")}</Badge>
+              </span>
+            </Tooltip>
+          ) : undefined
+        }
         dragRef={setNodeRef}
         dragProps={{ ...attributes, ...listeners, tabIndex: -1, role: "toolbar" }}
       />
@@ -251,6 +282,9 @@ const PaneView = memo(function PaneView({
           options={options}
           onClose={() => void layout().close(tabId, pane.id)}
           onPhase={(p) => setStatus(phaseStatus(p))}
+          agent={pane.kind === "agent"}
+          newlineSequence={engineNewline}
+          mac={mac}
         />
       </div>
       <DropZones paneId={pane.id} tabId={tabId} />
@@ -272,9 +306,9 @@ function EmptyTab({ tabId, workspace }: { tabId: string; workspace: WorkspaceSum
   const tiles = useTiles(workspace.name);
   const [busy, setBusy] = useState<string | null>(null);
   const { show } = useToast();
-  const start = async () => {
-    setBusy("shell");
-    const res = await useLayout.getState().split(tabId, null, "right");
+  const start = async (tileId: string) => {
+    setBusy(tileId);
+    const res = await useLayout.getState().split(tabId, null, "right", launchFor(tileId));
     setBusy(null);
     if (!res.ok) {
       if (res.error.code === "limit_reached")
@@ -286,7 +320,7 @@ function EmptyTab({ tabId, workspace }: { tabId: string; workspace: WorkspaceSum
     <div data-testid="empty-tab" className="flex h-full items-center justify-center p-6">
       <div className="flex w-full max-w-[600px] flex-col gap-3">
         <h2 className="text-md font-semibold text-fg">{t("code.start")}</h2>
-        <LaunchTiles tiles={tiles} busy={busy} onPick={() => void start()} />
+        <LaunchTiles tiles={tiles} busy={busy} onPick={(id) => void start(id)} />
       </div>
     </div>
   );
@@ -346,7 +380,8 @@ export function PaneGrid({
     };
   }, [root, tabId]);
 
-  const names = useMemo(() => titles(tab?.panes ?? {}), [tab?.panes]);
+  const engines = useEngines((st) => st.list);
+  const names = useMemo(() => paneTitles(tab?.panes ?? {}, engines), [tab?.panes, engines]);
 
   if (!tab || (!tab.tree && !tab.keepEmpty)) {
     return (

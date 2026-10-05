@@ -13,7 +13,8 @@ export function OrphansDialog() {
   const { show } = useToast();
 
   useEffect(() => {
-    void invoke<OrphanInfo[]>("orphans_list")
+    // The scan may wait out a previous instance that is still shutting down.
+    void invoke<OrphanInfo[]>("orphans_list", undefined, { timeoutMs: 20_000 })
       .then((list) => setOrphans(list ?? []))
       .catch(() => undefined);
   }, []);

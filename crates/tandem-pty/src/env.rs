@@ -3,10 +3,14 @@
 //! then sanitized so panes never inherit another account's provider home.
 
 use std::collections::BTreeMap;
+#[cfg(unix)]
 use std::io::Read;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(unix)]
+use std::time::Instant;
 
 pub const MARKER: &[u8] = b"\0__TANDEM_ENV__\0";
 pub const CAPTURE_TIMEOUT: Duration = Duration::from_secs(3);
@@ -201,6 +205,112 @@ pub fn login_args(shell: &Path) -> Vec<String> {
     }
 }
 
+/// The variable that carries a launch's mark token into the shell. The
+/// wrapper copies it into an unexported shell variable and unsets it before
+/// the engine starts, so neither argv nor the engine's environment holds it
+/// (ARCHITECTURE §5.8).
+pub const TOKEN_VAR: &str = "TANDEM_SHELL_TOKEN";
+
+/// Arguments that run an agent as a child of the user's login shell and hand
+/// the pane back to a fresh login shell when it exits (F-CD-03): POSIX
+/// `$SHELL -lic '<engine>; <mark>; exec $SHELL -l'`, with fish and PowerShell
+/// equivalents. The mark is `OSC 7770;handback;<token>;<exit code>`; the side
+/// channel accepts it only with this launch's token, which the wrapper reads
+/// from `TANDEM_SHELL_TOKEN`. Every argument is quoted; one that can't be
+/// (control characters) refuses the launch.
+pub fn agent_wrapper(
+    shell: &Path,
+    engine: &[String],
+) -> Result<Vec<String>, tandem_core::shellquote::UnsafeFilename> {
+    use tandem_core::shellquote::{quote_path, quote_paths, ShellDialect};
+    let shell_str = shell.to_string_lossy();
+    Ok(match shell_kind(shell) {
+        ShellKind::Posix => {
+            let cmd = quote_paths(engine, ShellDialect::Posix)?;
+            let again = quote_path(&shell_str, ShellDialect::Posix)?;
+            vec![
+                "-lic".into(),
+                format!(
+                    "t=\"${TOKEN_VAR}\"; unset {TOKEN_VAR}; {cmd}; c=$?; printf '\\033]7770;handback;%s;%s\\007' \"$t\" \"$c\"; unset t c; exec {again} -l"
+                ),
+            ]
+        }
+        ShellKind::Fish => {
+            let cmd = quote_paths(engine, ShellDialect::Posix)?;
+            let again = quote_path(&shell_str, ShellDialect::Posix)?;
+            vec![
+                "-l".into(),
+                "-i".into(),
+                "-c".into(),
+                format!(
+                    "set -l t ${TOKEN_VAR}; set -e {TOKEN_VAR}; {cmd}; set -l c $status; printf '\\033]7770;handback;%s;%s\\007' $t $c; exec {again} -l"
+                ),
+            ]
+        }
+        ShellKind::PowerShell => {
+            let cmd = quote_paths(engine, ShellDialect::PowerShell)?;
+            vec![
+                "-NoLogo".into(),
+                "-NoExit".into(),
+                "-Command".into(),
+                format!(
+                    "$t = $env:{TOKEN_VAR}; Remove-Item Env:{TOKEN_VAR}; & {cmd}; Write-Host -NoNewline \"$([char]27)]7770;handback;$t;$LASTEXITCODE$([char]7)\"; Remove-Variable t"
+                ),
+            ]
+        }
+        // cmd.exe can't print the mark; the agent still hands back to the shell.
+        ShellKind::Cmd => vec!["/K".into(), quote_paths(engine, ShellDialect::Cmd)?],
+    })
+}
+
+/// Finds `program` on `path` only, never in the working directory (F-CD-03
+/// AC6): a workspace that ships its own `claude.cmd` can't hijack a launch.
+/// On Windows `pathext` lists the extensions to try.
+pub fn resolve_on_path(program: &str, path: &str, pathext: Option<&str>) -> Option<PathBuf> {
+    if program.contains(['/', '\\']) {
+        // Explicit paths are the caller's decision, but never relative ones.
+        let p = PathBuf::from(program);
+        return p.is_absolute().then_some(p).filter(|p| p.is_file());
+    }
+    let sep = if cfg!(windows) { ';' } else { ':' };
+    let exts: Vec<String> = match pathext {
+        Some(list) => std::iter::once(String::new())
+            .chain(
+                list.split(';')
+                    .filter(|e| !e.is_empty())
+                    .map(|e| e.to_ascii_lowercase()),
+            )
+            .collect(),
+        None => vec![String::new()],
+    };
+    for dir in path.split(sep) {
+        // An empty or "." entry means the current directory: skip it.
+        if dir.is_empty() || dir == "." || !Path::new(dir).is_absolute() {
+            continue;
+        }
+        for ext in &exts {
+            let candidate = Path::new(dir).join(format!("{program}{ext}"));
+            if is_executable(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(unix)]
+fn is_executable(p: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(p)
+        .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable(p: &Path) -> bool {
+    p.is_file()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,6 +374,96 @@ mod tests {
     fn falls_back_to_process_env_when_the_shell_is_missing() {
         let login = capture(Path::new("/nonexistent/shell"), Duration::from_millis(200));
         assert!(login.degraded);
+    }
+
+    #[test]
+    fn f_cd_03_3_agents_run_under_the_login_shell_and_hand_back() {
+        let args = agent_wrapper(
+            Path::new("/bin/zsh"),
+            &["claude".into(), "--model".into(), "it's".into()],
+        )
+        .expect("wrap");
+        assert_eq!(args[0], "-lic");
+        assert_eq!(
+            args[1],
+            "t=\"$TANDEM_SHELL_TOKEN\"; unset TANDEM_SHELL_TOKEN; 'claude' '--model' 'it'\\''s'; c=$?; printf '\\033]7770;handback;%s;%s\\007' \"$t\" \"$c\"; unset t c; exec '/bin/zsh' -l"
+        );
+        let fish = agent_wrapper(Path::new("/usr/bin/fish"), &["codex".into()]).expect("wrap");
+        assert!(
+            fish[3].contains("set -e TANDEM_SHELL_TOKEN")
+                && fish[3].ends_with("exec '/usr/bin/fish' -l")
+        );
+        let pwsh = agent_wrapper(Path::new("C:/pwsh.exe"), &["claude".into()]).expect("wrap");
+        assert!(
+            pwsh.contains(&"-NoExit".to_string())
+                && pwsh[3].contains("Remove-Item Env:TANDEM_SHELL_TOKEN; & 'claude';")
+        );
+        assert!(agent_wrapper(Path::new("/bin/sh"), &["claude\nrm".into()]).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn f_cd_03_3_the_wrapper_marks_the_handback_and_hides_the_token() {
+        // Run the real wrapper with /bin/sh and a tiny "engine".
+        let args = agent_wrapper(
+            Path::new("/bin/sh"),
+            &[
+                "sh".into(),
+                "-c".into(),
+                "env | grep -c tok42; exit 7".into(),
+            ],
+        )
+        .expect("wrap");
+        let out = Command::new("/bin/sh")
+            .args(&args[..1])
+            .arg(args[1].replace("; exec '/bin/sh' -l", ""))
+            .env(TOKEN_VAR, "tok42")
+            .stdin(Stdio::null())
+            .output()
+            .expect("run");
+        let text = String::from_utf8_lossy(&out.stdout);
+        // (dash exports `_=TANDEM_SHELL_TOKEN` after the unset: the name, not the value.)
+        assert!(
+            text.lines().any(|l| l.trim() == "0"),
+            "the engine's env has no token: {text}"
+        );
+        assert!(
+            text.contains("\u{1b}]7770;handback;tok42;7\u{7}"),
+            "{text:?}"
+        );
+    }
+
+    #[test]
+    fn f_cd_03_6_commands_resolve_from_path_never_the_workspace() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path().join("workspace");
+        let bin = dir.path().join("bin");
+        std::fs::create_dir_all(&workspace).expect("ws");
+        std::fs::create_dir_all(&bin).expect("bin");
+        let make = |p: &Path| {
+            std::fs::write(p, "#!/bin/sh\n").expect("write");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+            }
+        };
+        // The workspace ships its own `claude`; PATH has the real one.
+        make(&workspace.join("claude"));
+        make(&workspace.join("claude.cmd"));
+        make(&bin.join("claude"));
+        let sep = if cfg!(windows) { ";" } else { ":" };
+        let path = format!(".{sep}{sep}relative{sep}{}", bin.display());
+        // "." and relative PATH entries are skipped, so the workspace copy
+        // never wins wherever the process happens to run.
+        let found = resolve_on_path("claude", &path, Some(".COM;.EXE;.CMD"));
+        assert_eq!(found, Some(bin.join("claude")));
+        assert_eq!(resolve_on_path("nope", &path, None), None);
+        assert_eq!(
+            resolve_on_path("./claude", &path, None),
+            None,
+            "relative paths are refused"
+        );
     }
 
     #[test]

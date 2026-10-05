@@ -54,6 +54,10 @@ const COMMANDS: &[&str] = &[
     "term_set_theme_colors",
     "orphans_list",
     "orphans_resolve",
+    "sessions_saved_list",
+    "term_quote_paths",
+    "term_stage_clipboard_image",
+    "engines_list",
 ];
 
 const TEST_COMMANDS: &[&str] = &[

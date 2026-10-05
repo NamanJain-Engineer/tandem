@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 import { useToast } from "@tandem/ui";
 import { t } from "../../i18n";
+import { useLayout } from "../../stores/layout";
 import { useUi } from "../../stores/ui";
+import { useWorkspaces } from "../../stores/workspaces";
 import { UpgradeDialog } from "../billing/UpgradeDialog";
 import { CodeMain } from "../code/CodeMain";
 import { CodeRail } from "../code/CodeRail";
@@ -10,6 +12,9 @@ import { InterimMain, InterimRail } from "../interim/Interim";
 import { Palette } from "../palette/Palette";
 import { OrphansDialog } from "../restore/OrphansDialog";
 import { followPtyState } from "../../stores/terminals";
+import { terminalHandles } from "../code/TerminalView";
+import { webglPool } from "../code/webglPool";
+import { useBoot } from "./useBoot";
 import { SettingsView } from "../settings/SettingsView";
 import { Banners } from "./Banners";
 import { Sidebar } from "./Sidebar";
@@ -25,6 +30,32 @@ export function AppShell() {
   useShortcuts();
   useEffect(() => setCommandToast(toast), [toast]);
   useEffect(followPtyState, []);
+  // Debug builds: UI-side counters for the E2E harness (ARCHITECTURE §17.5).
+  const dev = useBoot((st) => st.boot?.dev ?? false);
+  useEffect(() => {
+    if (!dev) return;
+    (window as unknown as { __tandemTest?: object }).__tandemTest = {
+      webglContexts: () => webglPool.liveContexts(),
+      paneText: (paneId: string) => terminalHandles.get(paneId)?.text() ?? "",
+      // State the harness saves next to a failure's screenshot.
+      debug: () => {
+        const ws = useWorkspaces.getState();
+        const layout = useLayout.getState();
+        const active = document.activeElement;
+        return {
+          mode: useUi.getState().mode,
+          handles: [...terminalHandles.keys()],
+          domPanes: Array.from(document.querySelectorAll<HTMLElement>('[data-testid="pane"]')).map((el) => el.dataset.paneId),
+          activeWorkspace: ws.activeId,
+          activeTab: ws.activeTab,
+          layoutTabs: Object.fromEntries(Object.entries(layout.tabs).map(([id, tab]) => [id, { active: tab.active, panes: Object.keys(tab.panes) }])),
+          picker: layout.picker,
+          activeElement: active ? `${active.tagName}.${String(active.className).slice(0, 60)}` : null,
+          dialogs: Array.from(document.querySelectorAll("[role=dialog],[role=alertdialog]")).map((el) => el.textContent?.slice(0, 80)),
+        };
+      },
+    };
+  }, [dev]);
   const show = (m: typeof mode) => (!settingsOpen && mode === m ? "flex" : "none");
   return (
     <div className="flex h-full flex-col bg-bg">

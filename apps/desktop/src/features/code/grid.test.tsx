@@ -83,6 +83,36 @@ function core(
       return null;
     },
     workspace_pick_folder: () => opts.picked ?? null,
+    engines_list: () => [
+      {
+        spec: {
+          id: "claude",
+          label: "Claude Code",
+          vendor: "Anthropic",
+          commands: ["claude"],
+          providerHomeEnv: null,
+          supportsResume: true,
+          newlineSequence: "\u001b\r",
+        },
+        install: { path: "/bin/claude" },
+        chatCapable: false,
+        unsupportedReason: null,
+      },
+      {
+        spec: {
+          id: "kimi",
+          label: "Kimi",
+          vendor: "Moonshot",
+          commands: ["kimi"],
+          providerHomeEnv: null,
+          supportsResume: false,
+          newlineSequence: "\u001b\r",
+        },
+        install: null,
+        chatCapable: false,
+        unsupportedReason: null,
+      },
+    ],
     workspace_locate: () => {
       opts.missing = false;
       return null;
@@ -102,7 +132,11 @@ function core(
     pane_create: (a) => {
       if (opts.live !== undefined && opts.live >= 4)
         throw { code: "limit_reached", message: "Free includes 4 live panes" };
-      const p = pane(`pn_${++n}`, String(a?.tabId), 100 + n);
+      const p = {
+        ...pane(`pn_${++n}`, String(a?.tabId), 100 + n),
+        kind: String(a?.kind),
+        engineId: (a?.engineId as string | undefined) ?? null,
+      };
       panes.push(p);
       return p;
     },
@@ -399,5 +433,22 @@ describe("pane grid (F-CD-02)", () => {
       }),
     );
     await waitFor(() => expect(screen.queryByText("This folder is missing")).toBeNull());
+  });
+
+  it("F-CD-02 the picker offers installed engines; an agent pane is titled by its engine", async () => {
+    const { calls } = core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    act(() => void useLayout.getState().requestSplit(TAB.id, "pn_a", "right"));
+    const picker = await screen.findByTestId("pane-picker");
+    await waitFor(() => expect(within(picker).getByTestId("tile-claude")).toBeTruthy());
+    expect(within(picker).queryByTestId("tile-kimi")).toBeNull();
+    fireEvent.click(within(picker).getByTestId("tile-claude"));
+    await waitFor(() => expect(paneEls()).toHaveLength(2));
+    expect(calls.find((c) => c.cmd === "pane_create" && c.args?.kind === "agent")?.args).toMatchObject({
+      engineId: "claude",
+    });
+    const titles = screen.getAllByTestId("pane-title").map((el) => el.textContent);
+    expect(titles).toEqual(["Shell · 1", "Claude Code · 1"]);
   });
 });

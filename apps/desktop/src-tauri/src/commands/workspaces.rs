@@ -18,13 +18,21 @@ use crate::state::AppState;
 pub async fn workspace_pick_folder(app: AppHandle) -> Result<Option<String>, IpcError> {
     if cfg!(debug_assertions) {
         if let Ok(fake) = std::env::var("TANDEM_FAKE_PICK_FOLDER") {
-            // A file holds the folder to return, so a test can change it per step.
-            let picked = match std::fs::read_to_string(&fake) {
-                Ok(contents) if std::path::Path::new(&fake).is_file() => {
-                    contents.trim().to_string()
-                }
+            // A file holds the folder to return, so a test can change it per
+            // step. A first line `delay=<ms>` keeps the "dialog" open that long.
+            let contents = match std::fs::read_to_string(&fake) {
+                Ok(contents) if std::path::Path::new(&fake).is_file() => contents,
                 _ => fake,
             };
+            let mut lines = contents.lines().map(str::trim).filter(|l| !l.is_empty());
+            let mut picked = lines.next().unwrap_or_default().to_string();
+            if let Some(ms) = picked
+                .strip_prefix("delay=")
+                .and_then(|v| v.parse::<u64>().ok())
+            {
+                tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+                picked = lines.next().unwrap_or_default().to_string();
+            }
             return Ok(Some(picked).filter(|f| !f.is_empty()));
         }
     }

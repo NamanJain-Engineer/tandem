@@ -163,12 +163,14 @@ export async function workspaceRoots(): Promise<string[]> {
   return roots;
 }
 
-/** Text of the visible terminal. */
+/** Text of the visible terminal, from xterm's buffer (WebGL panes draw to a
+ * canvas, so the DOM has no rows to read). */
 export async function terminalText(): Promise<string> {
   const text = await browser.execute(() => {
+    const test = (window as unknown as { __tandemTest?: { paneText: (id: string) => string } }).__tandemTest;
     for (const el of Array.from(document.querySelectorAll('[data-testid="terminal"]'))) {
       const host = el as HTMLElement;
-      if (host.offsetParent !== null) return (host.querySelector(".xterm-rows") as HTMLElement | null)?.innerText ?? "";
+      if (host.offsetParent !== null) return test?.paneText(host.dataset.paneId ?? "") ?? "";
     }
     return "";
   });
@@ -215,6 +217,10 @@ async function resetState(): Promise<void> {
   const list = await invoke<Array<{ id: string }>>("workspace_list");
   for (const w of list) await invoke("workspace_remove", { id: w.id });
   await invoke("auth_sign_out");
+  // The removals bypassed the UI's stores (the launch already showed the last
+  // spec's workspace): reload so the UI starts from what the backend has.
+  await browser.refresh();
+  await waitForApp();
   await $("#signin-title").waitForDisplayed({ timeout: 20_000 });
 }
 
@@ -256,4 +262,89 @@ export async function sendToTerminal(text: string): Promise<void> {
   });
   if (!paneId) throw new Error("no visible terminal");
   await invoke("pty_write", { paneId, data: text });
+}
+
+/** Ids of the visible panes, in layout (DOM) order. */
+export async function paneIds(): Promise<string[]> {
+  const ids = await browser.execute(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('[data-testid="pane"]'))
+      .filter((el) => el.offsetParent !== null)
+      .map((el) => el.dataset.paneId ?? ""),
+  );
+  return ids as string[];
+}
+
+/** Screen text of one pane's terminal. */
+export async function paneText(paneId: string): Promise<string> {
+  const text = await browser.execute(
+    (id: string) => (window as unknown as { __tandemTest?: { paneText: (id: string) => string } }).__tandemTest?.paneText(id) ?? "",
+    paneId,
+  );
+  return String(text);
+}
+
+/** Writes to one pane's PTY. */
+export async function sendToPane(paneId: string, text: string): Promise<void> {
+  await invoke("pty_write", { paneId, data: text });
+}
+
+/** Waits until a pane's screen shows `needle`. */
+export async function waitForPaneText(paneId: string, needle: string, timeout = 15_000): Promise<void> {
+  await browser.waitUntil(async () => (await paneText(paneId)).includes(needle), {
+    timeout,
+    timeoutMsg: `pane ${paneId} never showed ${JSON.stringify(needle)}: ${await paneText(paneId)}`,
+  });
+}
+
+/** A shell's pid, read through the shell itself. */
+export async function shellPid(paneId: string): Promise<number> {
+  const tag = `pid-${Math.random().toString(36).slice(2, 8)}`;
+  await sendToPane(paneId, `echo ${tag}=$$\n`);
+  await waitForPaneText(paneId, `${tag}=`);
+  const match = new RegExp(`${tag}=(\\d+)`).exec(await paneText(paneId));
+  if (!match?.[1]) throw new Error(`no pid in pane ${paneId}`);
+  return Number(match[1]);
+}
+
+/** Waits until a pane's process has printed something (its prompt). */
+export async function waitForShell(paneId: string, timeout = 20_000): Promise<void> {
+  if (!paneId) throw new Error("waitForShell: no pane id (the pane wasn't visible)");
+  await browser.waitUntil(async () => (await paneText(paneId)).trim().length > 0, {
+    timeout,
+    timeoutMsg: `pane ${paneId} never printed anything`,
+  });
+}
+
+/** Splits the focused pane (Mod+D or Mod+Shift+D) and picks a tile. */
+export async function split(direction: "right" | "down", tile = "shell"): Promise<string> {
+  const before = await paneIds();
+  await browser.execute((dir: string) => {
+    const mac = navigator.platform.toLowerCase().includes("mac");
+    // Outside a terminal Ctrl+D splits right; Ctrl+Shift+D splits down everywhere.
+    (document.activeElement as HTMLElement | null)?.blur();
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { code: "KeyD", key: "d", ctrlKey: !mac, metaKey: mac, shiftKey: dir === "down", bubbles: true, cancelable: true }),
+    );
+  }, direction);
+  await $(`[data-testid="tile-${tile}"]`).waitForClickable({ timeout: 10_000 });
+  await $(`[data-testid="tile-${tile}"]`).click();
+  let added = "";
+  await browser.waitUntil(
+    async () => {
+      const now = await paneIds();
+      added = now.find((id) => !before.includes(id)) ?? "";
+      return added !== "";
+    },
+    {
+      timeout: 15_000,
+      timeoutMsg: `the split didn't add a pane: ${String(await browser.execute(() => document.querySelector("[role=dialog], [role=status], [role=alert]")?.textContent ?? "no dialog"))}`,
+    },
+  );
+  await waitForShell(added);
+  return added;
+}
+
+/** Counters from the test harness (`test_counters`). */
+export async function counters(reset = false): Promise<{ ptyResizes: number }> {
+  return invoke("test_counters", { reset });
 }

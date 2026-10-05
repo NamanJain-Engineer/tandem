@@ -1,6 +1,16 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import type { AppBoot, AuthState, TermColors } from "@tandem/protocol";
-import { UiProvider, terminalThemeFor, useTheme, useToast, type Density, type MotionSetting, type TerminalThemeSetting, type TextSize, type ThemeSetting } from "@tandem/ui";
+import {
+  UiProvider,
+  terminalThemeFor,
+  useTheme,
+  useToast,
+  type Density,
+  type MotionSetting,
+  type TerminalThemeSetting,
+  type TextSize,
+  type ThemeSetting,
+} from "@tandem/ui";
 import { AppShell } from "./features/shell/AppShell";
 import { DeepLinks } from "./features/shell/DeepLinks";
 import { useBoot } from "./features/shell/useBoot";
@@ -34,7 +44,8 @@ function SignInToast() {
   const { show } = useToast();
   const [prev, setPrev] = useState<AuthState | null>(null);
   useEffect(() => {
-    if (prev && !prev.signedIn && auth?.signedIn && auth.email) show({ tone: "success", title: t("signin.signedInAs", { email: auth.email }) });
+    if (prev && !prev.signedIn && auth?.signedIn && auth.email)
+      show({ tone: "success", title: t("signin.signedInAs", { email: auth.email }) });
     setPrev(auth);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth]);
@@ -74,9 +85,16 @@ export function App() {
           const b = await invoke<AppBoot>("app_ready");
           setBoot(b);
           useUi.getState().setMode((b.lastMode as Mode) ?? "code");
-          await Promise.all([useSettings.getState().load(), useSession.getState().load(), useWorkspaces.getState().refresh()]);
+          await Promise.all([
+            useSettings.getState().load(),
+            useSession.getState().load(),
+            useWorkspaces.getState().refresh(),
+          ]);
           cleanup = [await watchSettings(), await watchSession()];
-          invoke("telemetry_capture", { event: "app_started", props: { platform: b.platform, version: b.version, first_run: b.firstRun } }).catch(() => undefined);
+          invoke("telemetry_capture", {
+            event: "app_started",
+            props: { platform: b.platform, version: b.version, first_run: b.firstRun },
+          }).catch(() => undefined);
           setReady(true);
         } catch (e) {
           log("error", "ui.boot_failed", { code: (e as { code?: string }).code ?? "internal" });

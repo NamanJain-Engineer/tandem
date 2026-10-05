@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { SquareTerminal } from "lucide-react";
+import { Bot, SquareTerminal } from "lucide-react";
 import type { IpcError } from "@tandem/protocol";
 import { Button, Callout, Dialog, Spinner, cx, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
-import { useLayout } from "../../stores/layout";
+import { useEngines } from "../../stores/engines";
+import { useLayout, type Launch } from "../../stores/layout";
 import { useSession } from "../../stores/session";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
@@ -44,9 +45,27 @@ export function PaneLimitCard({ onManage }: { onManage: () => void }) {
 
 export type Tile = { id: string; label: string; body: string; icon: ReactNode };
 
-/** Launch tiles: Shell now; engines join in M4 and Browser in M9 (UI-10). */
+export function launchFor(tileId: string): Launch {
+  return tileId === "shell" ? { kind: "terminal" } : { kind: "agent", engineId: tileId };
+}
+
+/** Launch tiles (UI-10): installed engines, then Shell (always present).
+ * Browser joins in M9. */
 export function useTiles(workspaceName: string): Tile[] {
+  const engines = useEngines((s) => s.list);
+  const loaded = useEngines((s) => s.loaded);
+  useEffect(() => {
+    if (!loaded) void useEngines.getState().refresh();
+  }, [loaded]);
   return [
+    ...engines
+      .filter((e) => e.install)
+      .map((e) => ({
+        id: e.spec.id,
+        label: e.spec.label,
+        body: t("picker.agent.body", { name: workspaceName }),
+        icon: <Bot size={18} />,
+      })),
     {
       id: "shell",
       label: t("picker.shell"),
@@ -108,6 +127,7 @@ export function PanePicker({ workspaceName }: { workspaceName: string }) {
 
   useEffect(() => {
     if (!picker) return;
+    void useEngines.getState().refresh();
     setBusy(null);
     setLimited(atPaneLimit());
     setChecking(true);
@@ -121,10 +141,10 @@ export function PanePicker({ workspaceName }: { workspaceName: string }) {
       });
   }, [picker]);
 
-  const pick = async () => {
+  const pick = async (tileId: string) => {
     if (!picker) return;
-    setBusy("shell");
-    const res = await split(picker.tabId, picker.target, picker.side);
+    setBusy(tileId);
+    const res = await split(picker.tabId, picker.target, picker.side, launchFor(tileId));
     setBusy(null);
     if (res.ok) {
       closePicker();
@@ -154,7 +174,7 @@ export function PanePicker({ workspaceName }: { workspaceName: string }) {
           <Spinner />
         ) : (
           <>
-            <LaunchTiles tiles={tiles} busy={busy} onPick={() => void pick()} autoFocus />
+            <LaunchTiles tiles={tiles} busy={busy} onPick={(id) => void pick(id)} autoFocus />
             <p className="text-sm text-fg-subtle">{t("picker.more")}</p>
           </>
         )}

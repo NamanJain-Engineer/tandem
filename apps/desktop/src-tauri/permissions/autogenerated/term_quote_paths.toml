@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-term-quote-paths"
+description = "Enables the term_quote_paths command without any pre-configured scope."
+commands.allow = ["term_quote_paths"]
+
+[[permission]]
+identifier = "deny-term-quote-paths"
+description = "Denies the term_quote_paths command without any pre-configured scope."
+commands.deny = ["term_quote_paths"]

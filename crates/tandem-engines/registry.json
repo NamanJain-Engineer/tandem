@@ -1,0 +1,13 @@
+[
+  { "id": "claude", "label": "Claude Code", "vendor": "Anthropic", "commands": ["claude"], "providerHomeEnv": "CLAUDE_CONFIG_DIR", "supportsResume": true, "newlineSequence": "\u001b\r" },
+  { "id": "codex", "label": "Codex", "vendor": "OpenAI", "commands": ["codex"], "providerHomeEnv": "CODEX_HOME", "supportsResume": true, "newlineSequence": "\u001b\r" },
+  { "id": "cursor-agent", "label": "Cursor Agent", "vendor": "Cursor", "commands": ["cursor-agent"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" },
+  { "id": "gemini", "label": "Gemini CLI", "vendor": "Google", "commands": ["gemini"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" },
+  { "id": "copilot", "label": "Copilot CLI", "vendor": "GitHub", "commands": ["copilot"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" },
+  { "id": "grok", "label": "Grok", "vendor": "xAI", "commands": ["grok"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" },
+  { "id": "opencode", "label": "opencode", "vendor": "SST", "commands": ["opencode"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" },
+  { "id": "droid", "label": "Droid", "vendor": "Factory", "commands": ["droid"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" },
+  { "id": "amp", "label": "Amp", "vendor": "Sourcegraph", "commands": ["amp"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" },
+  { "id": "aider", "label": "Aider", "vendor": "Aider", "commands": ["aider"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" },
+  { "id": "kimi", "label": "Kimi", "vendor": "Moonshot", "commands": ["kimi"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" }
+]

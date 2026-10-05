@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const desktop = new URL("..", import.meta.url).pathname;
@@ -29,5 +30,16 @@ export const config: WebdriverIO.Config = {
     }),
   onComplete: () => {
     driver?.kill();
+  },
+  // A screenshot of the app for each failed test, in test-results/.
+  afterTest: async (test, _context, result) => {
+    if (result.passed) return;
+    const name = `${test.parent} ${test.title}`.replace(/[^\w.-]+/g, "_").slice(0, 120);
+    mkdirSync(join(desktop, "../../test-results/e2e"), { recursive: true });
+    await browser.saveScreenshot(join(desktop, `../../test-results/e2e/${name}.png`)).catch(() => undefined);
+    const state = await browser
+      .execute(() => (window as unknown as { __tandemTest?: { debug: () => unknown } }).__tandemTest?.debug() ?? null)
+      .catch((e: unknown) => String(e));
+    writeFileSync(join(desktop, `../../test-results/e2e/${name}.json`), JSON.stringify(state, null, 2));
   },
 };

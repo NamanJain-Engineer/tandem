@@ -19,6 +19,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tandem-core.workspace = true
+tandem-engines.workspace = true
 tandem-pty.workspace = true
 tandem-store.workspace = true
 aes-gcm.workspace = true
@@ -47,6 +48,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-window-state = "2"
+png = "0.17"
 
 [dev-dependencies]
 ed25519-dalek.workspace = true

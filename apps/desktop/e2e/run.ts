@@ -82,7 +82,17 @@ async function main() {
   );
   chmodSync(opener, 0o755);
 
+  // Login shells read this HOME's profile, which puts the test engines first
+  // on PATH, so an agent pane never starts a real engine installed on the
+  // machine (ARCHITECTURE §17.4 "Fake CLI").
+  const fakes = join(root, "crates/tandem-engines/tests/fixtures/bin");
+  const userHome = join(home, "home");
+  mkdirSync(userHome, { recursive: true });
+  const profile = `export PATH="${fakes}:$PATH"\n`;
+  for (const f of [".bash_profile", ".profile", ".zprofile"]) writeFileSync(join(userHome, f), profile);
+
   Object.assign(process.env, {
+    HOME: userHome,
     TANDEM_HOME: home,
     TANDEM_FAKE_KEYCHAIN: "1",
     TANDEM_E2E: "1",
@@ -93,7 +103,7 @@ async function main() {
     TANDEM_NET_LOG: join(home, "net.log"),
     TANDEM_FAKE_PICK_FOLDER: join(home, "pick-folder.txt"),
     PLAYWRIGHT_CHROMIUM: process.env.PLAYWRIGHT_CHROMIUM ?? (existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : ""),
-    PATH: `${join(root, "crates/tandem-engines/tests/fixtures/bin")}:${process.env.PATH ?? ""}`,
+    PATH: `${fakes}:${process.env.PATH ?? ""}`,
   });
 
   // Maximize and placement need a window manager under Xvfb.

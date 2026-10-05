@@ -28,6 +28,7 @@ import { useSetting } from "../../stores/settings";
 import { useWorkspaces } from "../../stores/workspaces";
 import { pickAndAddWorkspace } from "../shell/actions";
 import { PaneDndProvider, useNewTabTarget, useDrag } from "./dnd";
+import { useFileDrops } from "./drops";
 import { PaneGrid } from "./PaneGrid";
 import { PanePicker } from "./PanePicker";
 import type { TerminalOptions } from "./TerminalView";
@@ -40,6 +41,11 @@ function useTerminalOptions(): TerminalOptions {
   const cursorStyle = useSetting<"bar" | "block" | "underline">("term_cursor_style", "bar");
   const cursorBlink = useSetting("term_cursor_blink", false);
   const scrollback = useSetting("term_scrollback", 10_000);
+  const gpu = useSetting("term_gpu_rendering", true);
+  const optionAsMeta = useSetting("term_option_as_meta", false);
+  const screenReader = useSetting("term_screen_reader", false);
+  const confirmMultilinePaste = useSetting("term_confirm_multiline_paste", true);
+  const copyOnSelect = useSetting("term_copy_on_select", false);
   return useMemo(
     () => ({
       theme: terminalThemeFor(themeSetting, resolved, highContrast),
@@ -48,8 +54,27 @@ function useTerminalOptions(): TerminalOptions {
       cursorStyle,
       cursorBlink,
       scrollback,
+      gpu,
+      optionAsMeta,
+      screenReader,
+      confirmMultilinePaste,
+      copyOnSelect,
     }),
-    [themeSetting, resolved, highContrast, fontFamily, fontSize, cursorStyle, cursorBlink, scrollback],
+    [
+      themeSetting,
+      resolved,
+      highContrast,
+      fontFamily,
+      fontSize,
+      cursorStyle,
+      cursorBlink,
+      scrollback,
+      gpu,
+      optionAsMeta,
+      screenReader,
+      confirmMultilinePaste,
+      copyOnSelect,
+    ],
   );
 }
 
@@ -205,6 +230,7 @@ export function CodeMain({ visible }: { visible: boolean }) {
   const { list, activeId, activeTab, selectTab, createTab, closeTab } = useWorkspaces();
   const { show } = useToast();
   const options = useTerminalOptions();
+  useFileDrops(show);
   const [visited, setVisited] = useState<Record<string, Tab>>({});
   const active = list.find((w) => w.id === activeId) ?? null;
   const activeTabId = active ? activeTab[active.id] : undefined;

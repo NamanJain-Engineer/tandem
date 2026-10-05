@@ -55,6 +55,7 @@ function setup(initial: WorkspaceSummary[]) {
       return null;
     },
     layout_get: () => [],
+    sessions_saved_list: (a) => (a?.workspaceId === "b" ? [{ id: "ses_1" }, { id: "ses_2" }] : []),
   });
   useWorkspaces.setState({ list: initial, activeId: initial[0]?.id ?? null, activeTab: {} });
   useLayout.setState({ tabs: {}, loaded: {}, boxes: {}, dragging: false, picker: null });
@@ -235,6 +236,8 @@ describe("rail (F-SH-03)", () => {
     );
     expect(screen.getByTestId("rail-session")).toBeTruthy();
     expect(screen.getByText("No open panes")).toBeTruthy();
+    // F-CD-03: agents that handed back are listed as Saved sessions.
+    expect((await screen.findByTestId("saved-sessions")).textContent).toBe("Saved sessions (2)");
     const results = await axe(container, { rules: { region: { enabled: false } } });
     expect(results.violations.filter((v) => v.impact === "serious" || v.impact === "critical")).toEqual([]);
   });

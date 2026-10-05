@@ -69,6 +69,10 @@ macro_rules! app_commands {
             commands::terminal::term_set_theme_colors,
             commands::terminal::orphans_list,
             commands::terminal::orphans_resolve,
+            commands::terminal::sessions_saved_list,
+            commands::terminal::term_quote_paths,
+            commands::terminal::term_stage_clipboard_image,
+            commands::engines::engines_list,
             $($extra),*
         ]
     };
@@ -253,6 +257,10 @@ fn spawn_background(state: &AppState) {
     let terminals = state.terminals.clone();
     tauri::async_runtime::spawn(async move {
         terminals.login_env().await;
+    });
+    let staging = state.data.staging();
+    tauri::async_runtime::spawn_blocking(move || {
+        services::staging::sweep(&staging, services::staging::KEEP_FOR)
     });
     // Live panes' scrollback is snapshotted every 5 minutes so a crash keeps
     // something to show on restore (§5.4).

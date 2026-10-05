@@ -37,7 +37,14 @@ export const BOOT: AppBoot = {
   dataDirDisplay: "~/.tandem",
 };
 
-export const SIGNED_IN: AuthState = { signedIn: true, email: "ana@tandem.test", offline: false, offlineDaysLeft: null, pending: null, error: null };
+export const SIGNED_IN: AuthState = {
+  signedIn: true,
+  email: "ana@tandem.test",
+  offline: false,
+  offlineDaysLeft: null,
+  pending: null,
+  error: null,
+};
 
 export const FREE_VIEW: EntitlementView = {
   plan: "free",
@@ -56,7 +63,9 @@ export const FREE_VIEW: EntitlementView = {
 export type Call = { cmd: string; args?: Record<string, unknown> };
 
 /** A scripted core: records every call and answers from `handlers`. */
-export function fakeBackend(handlers: Record<string, (args?: Record<string, unknown>) => unknown> = {}): Call[] {
+export function fakeBackend(
+  handlers: Record<string, (args?: Record<string, unknown>) => unknown> = {},
+): Call[] {
   const calls: Call[] = [];
   const settings: Record<string, unknown> = {};
   const defaults: Record<string, (args?: Record<string, unknown>) => unknown> = {
@@ -87,6 +96,15 @@ export function resetStores(): void {
   useBoot.setState({ boot: BOOT });
   useSession.setState({ auth: SIGNED_IN, entitlement: FREE_VIEW });
   useSettings.setState({ values: {}, loaded: true });
-  useUi.setState({ mode: "code", settingsOpen: false, returnFocus: null, railCollapsed: false, sidebarOpen: false, paletteOpen: false, upgrade: { open: false }, settingsPage: null });
+  useUi.setState({
+    mode: "code",
+    settingsOpen: false,
+    returnFocus: null,
+    railCollapsed: false,
+    sidebarOpen: false,
+    paletteOpen: false,
+    upgrade: { open: false },
+    settingsPage: null,
+  });
   useWorkspaces.setState({ list: [], activeId: null, activeTab: {} });
 }

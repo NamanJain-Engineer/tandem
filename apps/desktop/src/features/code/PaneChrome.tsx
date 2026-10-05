@@ -17,6 +17,8 @@ export type PaneChromeProps = {
   dragRef?: Ref<HTMLDivElement>;
   dragProps?: HTMLAttributes<HTMLDivElement>;
   glyph?: ReactNode;
+  /** Shown after the title (e.g. "Lite" when rendering without WebGL). */
+  badges?: ReactNode;
 };
 
 /** UI_SPEC §2.20: the 30 px header of every pane. The whole header drags
@@ -33,6 +35,7 @@ export function PaneChrome({
   dragRef,
   dragProps,
   glyph,
+  badges,
 }: PaneChromeProps) {
   return (
     <div
@@ -59,6 +62,7 @@ export function PaneChrome({
       <span data-testid="pane-title" className="min-w-0 flex-1 truncate text-sm text-fg">
         {title}
       </span>
+      {badges}
       {/* Buttons don't start a drag. */}
       <div
         className="flex shrink-0 items-center"

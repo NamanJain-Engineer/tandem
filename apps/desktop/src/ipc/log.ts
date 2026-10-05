@@ -11,6 +11,8 @@ export function log(level: LogLevel, code: string, fields: Record<string, LogFie
 export function installGlobalErrorLogging(): void {
   window.addEventListener("error", (e) => log("error", "ui.uncaught", { kind: e.error?.name ?? "Error" }));
   window.addEventListener("unhandledrejection", (e) =>
-    log("error", "ui.unhandled_rejection", { kind: e.reason instanceof Error ? e.reason.name : typeof e.reason }),
+    log("error", "ui.unhandled_rejection", {
+      kind: e.reason instanceof Error ? e.reason.name : typeof e.reason,
+    }),
   );
 }

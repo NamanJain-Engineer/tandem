@@ -22,7 +22,9 @@ export const useSession = create<SessionState>((set) => ({
   },
   refreshEntitlement: async () => {
     try {
-      const entitlement = await invoke<EntitlementView>("entitlement_refresh", undefined, { timeoutMs: 30_000 });
+      const entitlement = await invoke<EntitlementView>("entitlement_refresh", undefined, {
+        timeoutMs: 30_000,
+      });
       set({ entitlement });
       return entitlement;
     } catch {
@@ -33,7 +35,9 @@ export const useSession = create<SessionState>((set) => ({
 
 export async function watchSession(): Promise<() => void> {
   const offAuth = await listen<AuthState>("auth:changed", (auth) => useSession.setState({ auth }));
-  const offEnt = await listen<EntitlementView>("entitlement:changed", (entitlement) => useSession.setState({ entitlement }));
+  const offEnt = await listen<EntitlementView>("entitlement:changed", (entitlement) =>
+    useSession.setState({ entitlement }),
+  );
   return () => {
     offAuth();
     offEnt();

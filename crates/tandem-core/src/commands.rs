@@ -202,6 +202,35 @@ static REGISTRY: &[CommandSpec] = &[
     ),
     same("pane.move_to_new_tab", C::Pane, None, E::PaneFocused),
     same("pane.restart", C::Terminal, None, E::PaneFocused),
+    aliased(
+        "terminal.find",
+        C::Terminal,
+        "Mod+F",
+        Some("Mod+Shift+F"),
+        E::PaneFocused,
+    ),
+    // In a terminal under "Terminal first", Enter / Shift+Enter in the find
+    // bar step through matches instead.
+    aliased(
+        "terminal.find_next",
+        C::Terminal,
+        "Mod+G",
+        None,
+        E::PaneFocused,
+    ),
+    aliased(
+        "terminal.find_prev",
+        C::Terminal,
+        "Mod+Shift+G",
+        None,
+        E::PaneFocused,
+    ),
+    CommandSpec {
+        mac: Some("Mod+Down"),
+        pc: Some("Ctrl+Shift+End"),
+        pc_terminal: Some("Ctrl+Shift+End"),
+        ..same("terminal.jump_bottom", C::Terminal, None, E::PaneFocused)
+    },
     same("billing.plans", C::App, None, E::Always),
     same("help.copy_diagnostics", C::Help, None, E::Always),
     same("help.open_logs", C::Help, None, E::Always),

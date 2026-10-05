@@ -25,6 +25,68 @@ use crate::services::terminal::TerminalService;
 
 pub const BUNDLED_KEYS: &str = include_str!("../resources/keys.json");
 
+/// How long the startup scan waits for a previous instance that is still
+/// shutting down (its own stop sequence takes up to ~4 s) before treating
+/// what it left as orphans.
+pub const ORPHAN_SCAN_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
+
+/// Last run's leftovers (UI-132). The scan runs off the startup path; readers
+/// wait for it.
+pub struct OrphanScan {
+    list: Arc<Mutex<Vec<OrphanInfo>>>,
+    ready: tokio::sync::watch::Receiver<bool>,
+}
+
+impl OrphanScan {
+    /// Collects the registry files of runs that have exited (waiting up to
+    /// `wait` for one still shutting down) and finds their live processes.
+    pub fn start(
+        run: std::path::PathBuf,
+        own: std::path::PathBuf,
+        wait: std::time::Duration,
+    ) -> Self {
+        let list = Arc::new(Mutex::new(Vec::new()));
+        let (tx, ready) = tokio::sync::watch::channel(false);
+        let out = list.clone();
+        std::thread::spawn(move || {
+            let mut table = SystemTable::default();
+            let records = orphans::collect_stale(&run, &own, &mut table, wait);
+            let found = orphans::scan(&records, &mut table);
+            if !found.is_empty() {
+                tracing::info!(
+                    code = "orphans.found",
+                    count = found.len(),
+                    "processes from the last run are still running"
+                );
+            }
+            if let Ok(mut l) = out.lock() {
+                *l = found;
+            }
+            let _ = tx.send(true);
+        });
+        Self { list, ready }
+    }
+
+    async fn wait(&self) {
+        let mut ready = self.ready.clone();
+        let _ = ready.wait_for(|r| *r).await;
+    }
+
+    pub async fn list(&self) -> Vec<OrphanInfo> {
+        self.wait().await;
+        self.list.lock().map(|l| l.clone()).unwrap_or_default()
+    }
+
+    /// The list, emptied: the user (or the policy) has decided.
+    pub async fn take(&self) -> Vec<OrphanInfo> {
+        self.wait().await;
+        self.list
+            .lock()
+            .map(|mut l| std::mem::take(&mut *l))
+            .unwrap_or_default()
+    }
+}
+
 /// Everything commands need, built once at startup and shared.
 pub struct AppState {
     pub data: DataDir,
@@ -46,7 +108,7 @@ pub struct AppState {
     pub telemetry: Arc<TelemetryService>,
     pub deeplinks: DeepLinkQueue,
     /// Processes a crashed run left behind, until the user decides (UI-132).
-    pub orphans: Mutex<Vec<OrphanInfo>>,
+    pub orphans: OrphanScan,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
     pub e2e: bool,
 }
@@ -123,16 +185,39 @@ impl AppState {
             clock.clone(),
             bus.clone(),
         );
-        // Scan last run's children before this run's registry replaces the file.
-        let children = data.run().join("children.json");
-        let mut table = SystemTable::default();
-        let found = orphans::scan(&orphans::read_records(&children), &mut table);
-        let registry = Arc::new(ChildRegistry::new(children, Box::new(table)));
+        // This run records its children in its own file; earlier runs' files
+        // are scanned in the background (F-CD-03 AC8).
+        let registry = Arc::new(ChildRegistry::new(
+            &data.run(),
+            Box::new(SystemTable::default()),
+        ));
+        let orphans =
+            OrphanScan::start(data.run(), registry.path().to_path_buf(), ORPHAN_SCAN_WAIT);
         let pty_bus = bus.clone();
+        // An agent exited and its pane went back to the shell: save the
+        // session for the workspace's "Saved sessions" (F-CD-03 AC3).
+        let handback_store = store.clone();
+        let handback_bus = bus.clone();
         let pty = PtyManager::new()
             .with_registry(registry)
             .with_state_sink(Arc::new(move |state| {
                 pty_bus.publish(BusEvent::new(Topic::Pty, "pty:state", state));
+            }))
+            .with_handback_sink(Arc::new(move |pane, code| {
+                let (store, bus) = (handback_store.clone(), handback_bus.clone());
+                let pane = tandem_core::ids::PaneId::from_db(pane.to_string());
+                tracing::info!(code = "pty.handback", exit = code, "agent handed the pane back");
+                tauri::async_runtime::spawn(async move {
+                    match tandem_store::repo::sessions::save_on_handback(&store, &pane, None).await {
+                        Ok(Some(session)) => bus.publish(BusEvent::new(
+                            Topic::Pty,
+                            "sessions:saved",
+                            serde_json::json!({ "workspaceId": session.workspace_id, "session": session }),
+                        )),
+                        Ok(None) => {}
+                        Err(err) => tracing::warn!(error = %err, "couldn't save the session"),
+                    }
+                });
             }));
         let terminals = TerminalService::new(pty, store.clone());
         let telemetry = TelemetryService::new(&data, net.clone());
@@ -155,7 +240,7 @@ impl AppState {
             terminals,
             telemetry,
             deeplinks: DeepLinkQueue::default(),
-            orphans: Mutex::new(found),
+            orphans,
             e2e,
         }
     }
@@ -194,11 +279,7 @@ impl AppState {
         if policy == "ask" {
             return;
         }
-        let list = self
-            .orphans
-            .lock()
-            .map(|mut o| std::mem::take(&mut *o))
-            .unwrap_or_default();
+        let list = self.orphans.take().await;
         if policy == "always" && !list.is_empty() {
             let _ = tokio::task::spawn_blocking(move || {
                 orphans::stop(
@@ -270,12 +351,18 @@ mod tests {
             started_at: 1,
         };
         let (_dir, state) = state_with_children(&[record]);
-        let found = state.orphans.lock().expect("orphans").clone();
+        let found = state.orphans.list().await;
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].pids, vec![pid]);
-        // This run's registry starts empty.
+        // Last run's file was collected; this run's registry starts empty.
+        assert!(!state.data.run().join("children.json").exists());
         assert_eq!(
-            orphans::read_records(&state.data.run().join("children.json")),
+            orphans::read_records(
+                &state
+                    .data
+                    .run()
+                    .join(format!("children-{}.json", std::process::id()))
+            ),
             Vec::<ChildRecord>::new()
         );
         settings::set(
@@ -286,7 +373,7 @@ mod tests {
         .await
         .expect("policy");
         state.apply_orphan_policy().await;
-        assert!(state.orphans.lock().expect("orphans").is_empty());
+        assert!(state.orphans.list().await.is_empty());
         let status = child.wait().expect("wait");
         assert!(!status.success(), "sleep was stopped");
     }
@@ -303,6 +390,6 @@ mod tests {
             started_at: 1,
         };
         let (_dir, state) = state_with_children(&[record]);
-        assert!(state.orphans.lock().expect("orphans").is_empty());
+        assert!(state.orphans.list().await.is_empty());
     }
 }

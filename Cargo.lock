@@ -4683,12 +4683,14 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "hex",
+ "png 0.17.16",
  "rand 0.8.8",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2",
  "tandem-core",
+ "tandem-engines",
  "tandem-pty",
  "tandem-store",
  "tauri",
@@ -4713,6 +4715,12 @@ dependencies = [
 [[package]]
 name = "tandem-engines"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tracing",
+ "ts-rs",
+]
 
 [[package]]
 name = "tandem-gateway"
@@ -4757,6 +4765,7 @@ dependencies = [
  "ts-rs",
  "vt100",
  "vte",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

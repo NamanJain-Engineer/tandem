@@ -48,8 +48,13 @@ pub struct SideChannel {
 
 impl SideChannel {
     pub fn new(pane_id: &str, rows: u16, cols: u16) -> Self {
+        Self::with_token(pane_id, rows, cols, None)
+    }
+
+    /// `token` is the per-launch secret the agent wrapper's marks carry.
+    pub fn with_token(pane_id: &str, rows: u16, cols: u16, token: Option<String>) -> Self {
         Self {
-            responder: QueryResponder::new(),
+            responder: QueryResponder::new().with_token(token),
             screen: vt100::Parser::new_with_callbacks(
                 rows.max(2),
                 cols.max(2),
@@ -111,6 +116,11 @@ impl SideChannel {
         }
         self.published = now.clone();
         Some(now)
+    }
+
+    /// Exit codes of engines that handed the pane back to its shell.
+    pub fn take_handbacks(&mut self) -> Vec<i32> {
+        self.responder.take_handbacks()
     }
 
     /// Plain text of the visible screen (TUI goldens, readiness patterns).

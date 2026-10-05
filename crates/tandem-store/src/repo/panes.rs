@@ -47,6 +47,17 @@ pub async fn create(
     kind: &str,
     cwd: Option<String>,
 ) -> Result<PaneRecord, StoreError> {
+    create_with(store, tab, kind, cwd, None).await
+}
+
+/// A pane that runs `engine_id` (agent panes).
+pub async fn create_with(
+    store: &Store,
+    tab: &TabId,
+    kind: &str,
+    cwd: Option<String>,
+    engine_id: Option<String>,
+) -> Result<PaneRecord, StoreError> {
     if !matches!(kind, "terminal" | "agent" | "browser" | "simulator") {
         return Err(StoreError::Invalid("Unknown pane kind".into()));
     }
@@ -63,14 +74,14 @@ pub async fn create(
                 workspace_id: WorkspaceId::from_db(ws),
                 kind,
                 cwd,
-                engine_id: None,
+                engine_id,
                 human_name: None,
                 title: None,
                 created_at: now_ms(),
             };
             t.execute(
-                "INSERT INTO panes (id, tab_id, workspace_id, kind, cwd, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![pane.id.as_str(), tab, pane.workspace_id.as_str(), pane.kind, pane.cwd, pane.created_at],
+                "INSERT INTO panes (id, tab_id, workspace_id, kind, cwd, engine_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![pane.id.as_str(), tab, pane.workspace_id.as_str(), pane.kind, pane.cwd, pane.engine_id, pane.created_at],
             )?;
             Ok(pane)
         })
@@ -88,6 +99,22 @@ pub async fn get(store: &Store, id: &PaneId) -> Result<PaneRecord, StoreError> {
             )
             .optional()?
             .ok_or_else(|| StoreError::NotFound("No pane with that id".into()))
+        })
+        .await
+}
+
+/// A pane that's still open (closed panes never get a process).
+pub async fn get_open(store: &Store, id: &PaneId) -> Result<PaneRecord, StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .read(move |c| {
+            c.query_row(
+                &format!("SELECT {COLUMNS} FROM panes WHERE id = ?1 AND closed_at IS NULL"),
+                [&id],
+                from_row,
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound("This pane was closed".into()))
         })
         .await
 }
@@ -178,8 +205,13 @@ mod tests {
             get(&store, &pane.id).await.expect("get").cwd.as_deref(),
             Some("/p")
         );
+        assert!(get_open(&store, &pane.id).await.is_ok());
         close(&store, &pane.id).await.expect("close");
         assert!(list_open(&store, &tab.id).await.expect("list").is_empty());
+        assert!(matches!(
+            get_open(&store, &pane.id).await,
+            Err(StoreError::NotFound(_))
+        ));
         assert!(matches!(
             create(&store, &tab.id, "toaster", None).await,
             Err(StoreError::Invalid(_))

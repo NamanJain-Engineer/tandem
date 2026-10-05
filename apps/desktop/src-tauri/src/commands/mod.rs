@@ -3,6 +3,7 @@
 
 pub mod account;
 pub mod app;
+pub mod engines;
 pub mod settings;
 pub mod terminal;
 #[cfg(debug_assertions)]

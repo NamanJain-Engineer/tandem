@@ -21,6 +21,9 @@ export type TerminalTheme = {
   brightMagenta: string;
   brightCyan: string;
   brightWhite: string;
+  /** Find highlights (#RRGGBB only: the search addon draws them as decorations). */
+  searchMatch: string;
+  searchActive: string;
 };
 
 export const tandemNight: TerminalTheme = {
@@ -45,6 +48,8 @@ export const tandemNight: TerminalTheme = {
   brightMagenta: "#d8b4fe",
   brightCyan: "#5eead4",
   brightWhite: "#f8fafc",
+  searchMatch: "#3d3414",
+  searchActive: "#8a5a0c",
 };
 
 export const tandemDay: TerminalTheme = {
@@ -69,6 +74,8 @@ export const tandemDay: TerminalTheme = {
   brightMagenta: "#a855f7",
   brightCyan: "#14b8a6",
   brightWhite: "#0f172a",
+  searchMatch: "#fde68a",
+  searchActive: "#fbbf24",
 };
 
 /** Pure black/white with saturated ANSI. */
@@ -94,6 +101,8 @@ export const tandemHighContrast: TerminalTheme = {
   brightMagenta: "#ff8cff",
   brightCyan: "#6bf3ff",
   brightWhite: "#ffffff",
+  searchMatch: "#4d4400",
+  searchActive: "#0050c8",
 };
 
 export type TerminalThemeSetting = "follow_app" | "night" | "day" | "high_contrast";

@@ -1,15 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
+import { ArrowDown } from "lucide-react";
 import type { ExitInfo, IpcError, PtyInfo, AttachSnapshot, PtyState } from "@tandem/protocol";
-import { Button, Spinner, cx, type TerminalTheme } from "@tandem/ui";
+import { Button, ConfirmDialog, Spinner, cx, type TerminalTheme } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { log } from "../../ipc/log";
 import { createFrameChannel, FrameKind, type Frame, type FrameChannel } from "../../ipc/pty";
 import { useLayout } from "../../stores/layout";
 import { useTerminals } from "../../stores/terminals";
+import { copyText, readText } from "../../ipc/clipboard";
+import { HIGHLIGHT_LIMIT, searchOptions, validQuery, type FindFlags, type FindResult } from "./find";
+import { FindBar } from "./FindBar";
+import { keyAction, lastLines, lineCount, needsConfirm } from "./terminalInput";
+import { webglPool } from "./webglPool";
 
 export type TerminalOptions = {
   theme: TerminalTheme;
@@ -18,7 +27,28 @@ export type TerminalOptions = {
   cursorStyle: "bar" | "block" | "underline";
   cursorBlink: boolean;
   scrollback: number;
+  /** Settings › Terminal: GPU rendering (off keeps every pane on the DOM renderer). */
+  gpu?: boolean;
+  /** "Paste N lines?" before multi-line pastes into shells (default on). */
+  confirmMultilinePaste?: boolean;
+  copyOnSelect?: boolean;
+  optionAsMeta?: boolean;
+  screenReader?: boolean;
 };
+
+/** The bundled code font (self-hosted, so it never comes from the network). */
+const BUNDLED_MONO = "JetBrains Mono Variable";
+
+/** The chosen font, the bundled JetBrains Mono, then CJK and emoji fallbacks
+ * (F-CD-04). Plain family names only: the WebGL renderer measures with a
+ * canvas, which can't resolve CSS variables. */
+export function fontStack(family: string): string {
+  const names = [family, BUNDLED_MONO, "JetBrains Mono", "ui-monospace", "SF Mono", "Menlo", "Consolas", "Noto Sans Mono CJK SC", "Noto Sans CJK SC", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"];
+  return [...new Set(names)].map((n) => (n === "ui-monospace" ? n : `"${n}"`)).join(", ") + ", monospace";
+}
+
+/** Unfocused panes coalesce output to at most ~30 fps (F-CD-04). */
+const UNFOCUSED_FLUSH_MS = 33;
 
 export type Phase =
   | { kind: "starting" }
@@ -27,7 +57,17 @@ export type Phase =
   | { kind: "failed"; message: string };
 
 /** Actions other parts of the UI run on a pane's terminal (menus, shortcuts). */
-export type TerminalHandle = { restart: () => void; focus: () => void };
+export type TerminalHandle = {
+  restart: () => void;
+  focus: () => void;
+  jumpToBottom: () => void;
+  /** Copies the last `n` lines (all with `null`), ANSI-free (F-CD-05 AC4). */
+  copyLast: (n: number | null) => Promise<boolean>;
+  /** The buffer as text, whatever renders it (tests read this: WebGL draws to a canvas). */
+  text: () => string;
+  /** Opens the find bar, or steps through matches once it has a query (F-CD-08). */
+  find: (step?: "next" | "prev") => void;
+};
 export const terminalHandles = new Map<string, TerminalHandle>();
 
 /** Terminals reflow at most this often while their size changes (F-CD-02). */
@@ -95,6 +135,9 @@ export function TerminalView({
   focused = true,
   bare = false,
   onPhase,
+  agent = false,
+  newlineSequence = "\x1b\r",
+  mac = false,
 }: {
   paneId: string;
   label: string;
@@ -106,6 +149,10 @@ export function TerminalView({
   /** Inside a pane frame (no border of its own). */
   bare?: boolean;
   onPhase?: (phase: Phase) => void;
+  /** An agent pane: Shift+Enter types `newlineSequence`; images paste as staged files. */
+  agent?: boolean;
+  newlineSequence?: string;
+  mac?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<Terminal | null>(null);
@@ -113,6 +160,17 @@ export function TerminalView({
   const size = useRef({ cols: 0, rows: 0 });
   const [phase, setPhase] = useState<Phase>({ kind: "starting" });
   const [generation, setGeneration] = useState(0);
+  const [scrolledUp, setScrolledUp] = useState(false);
+  const [pendingPaste, setPendingPaste] = useState<string | null>(null);
+  const search = useRef<SearchAddon | null>(null);
+  const findInput = useRef<HTMLInputElement>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findFlags, setFindFlags] = useState<FindFlags>({ caseSensitive: false, regex: false });
+  const [findResult, setFindResult] = useState<FindResult | null>(null);
+  const inputCtx = useRef({ agent, newlineSequence, mac });
+  inputCtx.current = { agent, newlineSequence, mac };
+  const flushNow = useRef<() => void>(() => undefined);
   const optionsRef = useRef(options);
   optionsRef.current = options;
   const visibleRef = useRef(visible);
@@ -137,18 +195,73 @@ export function TerminalView({
     const o = optionsRef.current;
     const xterm = new Terminal({
       theme: o.theme,
-      fontFamily: `"${o.fontFamily}", var(--font-mono), monospace`,
+      fontFamily: fontStack(o.fontFamily),
       fontSize: o.fontSize,
       lineHeight: 1.25,
       cursorStyle: o.cursorStyle === "underline" ? "underline" : o.cursorStyle,
       cursorBlink: o.cursorBlink,
       scrollback: o.scrollback,
-      allowProposedApi: false,
+      // The Unicode 11 width tables need the proposed API.
+      allowProposedApi: true,
+      macOptionIsMeta: o.optionAsMeta ?? false,
+      screenReaderMode: o.screenReader ?? false,
+      scrollOnUserInput: true,
+      smoothScrollDuration: 0,
+      fontWeightBold: "bold",
     });
     const fitAddon = new FitAddon();
     xterm.loadAddon(fitAddon);
+    xterm.loadAddon(new Unicode11Addon());
+    xterm.unicode.activeVersion = "11";
+    const searchAddon = new SearchAddon({ highlightLimit: HIGHLIGHT_LIMIT });
+    xterm.loadAddon(searchAddon);
+    search.current = searchAddon;
+    const results = searchAddon.onDidChangeResults((r) => setFindResult({ index: r.resultIndex, count: r.resultCount }));
     xterm.open(el);
     quietQueries(xterm);
+    // A WebGL renderer when the pool grants one; the DOM renderer otherwise.
+    let webgl: WebglAddon | undefined;
+    const renderer = {
+      attach: () => {
+        if (optionsRef.current.gpu === false) return false;
+        try {
+          const addon = new WebglAddon();
+          addon.onContextLoss(() => webglPool.lost(paneId));
+          xterm.loadAddon(addon);
+          webgl = addon;
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      detach: () => {
+        webgl?.dispose();
+        webgl = undefined;
+      },
+    };
+    webglPool.register(paneId, renderer);
+    // Cell size is measured from the font; once the web font has loaded,
+    // measure again so canvas glyphs line up with the grid.
+    const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+    if (fonts && !fonts.check(`${o.fontSize}px "${BUNDLED_MONO}"`)) {
+      void fonts.load(`${o.fontSize}px "${BUNDLED_MONO}"`).then(() => {
+        if (term.current !== xterm) return;
+        const family = xterm.options.fontFamily ?? fontStack(o.fontFamily);
+        xterm.options.fontFamily = "monospace";
+        xterm.options.fontFamily = family;
+        try {
+          fitAddon.fit();
+        } catch {
+          /* hidden */
+        }
+      });
+    }
+    const scrolled = () => {
+      const buf = xterm.buffer.active;
+      setScrolledUp(buf.viewportY < buf.baseY);
+    };
+    const onScroll = xterm.onScroll(scrolled);
+    const onParsed = xterm.onWriteParsed(scrolled);
     term.current = xterm;
     fit.current = fitAddon;
     try {
@@ -167,16 +280,44 @@ export function TerminalView({
         invoke("pty_ack", { paneId, bytes }).catch(() => undefined);
       }
     };
+    const write = (data: Uint8Array) => {
+      const len = data.byteLength;
+      xterm.write(data, () => {
+        unacked += len;
+        if (unacked >= 64 * 1024) flushAck();
+        else ackTimer ??= setTimeout(flushAck, 50);
+      });
+    };
+    // The focused pane writes at once (xterm renders at up to 60 fps); the
+    // others coalesce into one write per ~33 ms.
+    let pending: Uint8Array[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | undefined;
+    const flushPending = () => {
+      flushTimer = undefined;
+      if (pending.length === 0) return;
+      const total = pending.reduce((n, c) => n + c.byteLength, 0);
+      const merged = new Uint8Array(total);
+      let at = 0;
+      for (const c of pending) {
+        merged.set(c, at);
+        at += c.byteLength;
+      }
+      pending = [];
+      write(merged);
+    };
+    flushNow.current = flushPending;
     const onFrame = (f: Frame) => {
       if (disposed) return;
       if (f.kind === FrameKind.Data) {
-        const len = f.payload.byteLength;
-        xterm.write(f.payload, () => {
-          unacked += len;
-          if (unacked >= 64 * 1024) flushAck();
-          else ackTimer ??= setTimeout(flushAck, 50);
-        });
+        if (focusedRef.current && pending.length === 0) {
+          write(f.payload);
+        } else {
+          pending.push(f.payload.slice());
+          flushTimer ??= setTimeout(flushPending, UNFOCUSED_FLUSH_MS);
+        }
       } else if (f.kind === FrameKind.Exit) {
+        // The final output always renders before the exit notice.
+        flushPending();
         const info = JSON.parse(new TextDecoder().decode(f.payload)) as ExitInfo;
         setPhase({ kind: "exited", code: info.code });
       } else if (f.kind === FrameKind.Notice) {
@@ -185,6 +326,33 @@ export function TerminalView({
       }
     };
     const input = xterm.onData((data) => invoke("pty_write", { paneId, data }).catch(() => undefined));
+    // Copy, paste and the agent newline (F-CD-05, F-CD-07); everything else
+    // reaches the PTY.
+    xterm.attachCustomKeyEventHandler((ev) => {
+      const action = keyAction(ev, { ...inputCtx.current, hasSelection: xterm.hasSelection() });
+      if (action === "pass") return true;
+      if (ev.type !== "keydown") return false;
+      ev.preventDefault();
+      if (action === "copy") {
+        const text = xterm.getSelection();
+        if (text) void copyText(text);
+      } else if (action === "paste") {
+        void pasteRef.current(undefined);
+      } else if (action === "newline") {
+        invoke("pty_write", { paneId, data: inputCtx.current.newlineSequence }).catch(() => undefined);
+      }
+      return false;
+    });
+    // Native paste events (menu, middle click) take the same path.
+    const onNativePaste = (e: ClipboardEvent) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      void pasteRef.current(e.clipboardData?.getData("text/plain") ?? undefined);
+    };
+    xterm.textarea?.addEventListener("paste", onNativePaste, true);
+    const selection = xterm.onSelectionChange(() => {
+      if (optionsRef.current.copyOnSelect && xterm.hasSelection()) void copyText(xterm.getSelection());
+    });
     void (async () => {
       try {
         const cols = Math.max(xterm.cols, 2);
@@ -209,17 +377,116 @@ export function TerminalView({
     return () => {
       disposed = true;
       clearTimeout(ackTimer);
+      clearTimeout(flushTimer);
       flushAck();
       input.dispose();
+      selection.dispose();
+      xterm.textarea?.removeEventListener("paste", onNativePaste, true);
+      onScroll.dispose();
+      onParsed.dispose();
+      results.dispose();
+      search.current = null;
+      webglPool.unregister(paneId, renderer);
+      flushNow.current = () => undefined;
       xterm.dispose();
       term.current = null;
     };
   }, [paneId, generation]);
 
+  // Visibility and focus decide who holds a WebGL context (§5.6).
   useEffect(() => {
-    terminalHandles.set(paneId, { restart, focus: () => term.current?.focus() });
+    webglPool.update(paneId, { visible, focused });
+    // Becoming focused flushes coalesced output at once.
+    if (focused) flushNow.current();
+  }, [paneId, visible, focused, generation]);
+
+  const jumpToBottom = () => {
+    term.current?.scrollToBottom();
+    setScrolledUp(false);
+    term.current?.focus();
+  };
+
+  /** Pastes `given` text, or the clipboard: confirms multi-line shell pastes,
+   * stages an image for agents, and lets xterm add bracketed paste markers. */
+  const pasteFrom = async (given: string | undefined) => {
+    const xterm = term.current;
+    if (!xterm) return;
+    const text = given ?? (await readText());
+    if (!text) {
+      if (!inputCtx.current.agent) return;
+      const staged = await invoke<string>("term_stage_clipboard_image", { paneId }).catch(() => "");
+      if (staged) xterm.paste(staged);
+      return;
+    }
+    if (needsConfirm(text, { agent: inputCtx.current.agent, confirmSetting: optionsRef.current.confirmMultilinePaste ?? true })) {
+      setPendingPaste(text);
+      return;
+    }
+    xterm.paste(text);
+  };
+
+  /** Runs the search addon: `incremental` while typing, so the current match
+   * grows rather than moving on. */
+  const runFind = (dir: "next" | "prev", query: string, flags: FindFlags, incremental = false) => {
+    const s = search.current;
+    if (!s) return;
+    if (!query || !validQuery(query, flags)) {
+      s.clearDecorations();
+      term.current?.clearSelection();
+      setFindResult(null);
+      return;
+    }
+    const opts = searchOptions(flags, optionsRef.current.theme, incremental);
+    if (dir === "prev") s.findPrevious(query, opts);
+    else s.findNext(query, opts);
+  };
+
+  const openFind = () => {
+    setFindOpen(true);
+    // Focus after the bar renders; select so typing replaces the last query.
+    requestAnimationFrame(() => {
+      findInput.current?.focus();
+      findInput.current?.select();
+    });
+  };
+
+  const closeFind = () => {
+    setFindOpen(false);
+    search.current?.clearDecorations();
+    setFindResult(null);
+    term.current?.focus();
+  };
+
+  const findStep = (step?: "next" | "prev") => {
+    if (!step || !findOpen || !findQuery) openFind();
+    else runFind(step, findQuery, findFlags);
+  };
+
+  const pasteRef = useRef(pasteFrom);
+  pasteRef.current = pasteFrom;
+
+  const copyLast = async (n: number | null) => {
+    const xterm = term.current;
+    if (!xterm) return false;
+    const buf = xterm.buffer.active;
+    const lines: string[] = [];
+    for (let i = 0; i < buf.length; i++) lines.push(buf.getLine(i)?.translateToString(true) ?? "");
+    return copyText(lastLines(lines, n));
+  };
+
+  useEffect(() => {
+    const text = () => {
+      const buf = term.current?.buffer.active;
+      if (!buf) return "";
+      const lines: string[] = [];
+      for (let i = 0; i < buf.length; i++) lines.push(buf.getLine(i)?.translateToString(true) ?? "");
+      return lastLines(lines, null);
+    };
+    const handle: TerminalHandle = { restart, focus: () => term.current?.focus(), jumpToBottom, copyLast, text, find: findStep };
+    terminalHandles.set(paneId, handle);
     return () => {
-      terminalHandles.delete(paneId);
+      // Another view of the same pane may have taken over (a remount).
+      if (terminalHandles.get(paneId) === handle) terminalHandles.delete(paneId);
     };
   });
 
@@ -244,7 +511,9 @@ export function TerminalView({
     if (!xterm) return;
     xterm.options.theme = options.theme;
     xterm.options.fontSize = options.fontSize;
-    xterm.options.fontFamily = `"${options.fontFamily}", var(--font-mono), monospace`;
+    xterm.options.fontFamily = fontStack(options.fontFamily);
+    xterm.options.macOptionIsMeta = options.optionAsMeta ?? false;
+    xterm.options.screenReaderMode = options.screenReader ?? false;
     xterm.options.cursorStyle = options.cursorStyle;
     xterm.options.cursorBlink = options.cursorBlink;
     xterm.options.scrollback = options.scrollback;
@@ -302,7 +571,38 @@ export function TerminalView({
       )}
       style={{ background: options.theme.background }}
     >
-      <div ref={host} data-testid="terminal" data-pane-id={paneId} className="min-h-0 flex-1 px-2 py-1.5" />
+      <div ref={host} data-testid="terminal" data-pane-id={paneId} className="tn-term min-h-0 flex-1 px-2 py-1.5" />
+      {scrolledUp && phase.kind !== "starting" && (
+        <button
+          type="button"
+          data-testid="jump-bottom"
+          onClick={jumpToBottom}
+          className="absolute bottom-3 right-4 z-10 inline-flex h-7 items-center gap-1 rounded-full border border-border-strong bg-surface-3 px-3 text-sm text-fg shadow-2 hover:bg-surface-4 focus-visible:shadow-focus focus-visible:outline-none"
+        >
+          {t("terminal.jumpBottom")}
+          <ArrowDown size={13} aria-hidden="true" />
+        </button>
+      )}
+      {findOpen && (
+        <FindBar
+          ref={findInput}
+          query={findQuery}
+          flags={findFlags}
+          result={findResult}
+          valid={validQuery(findQuery, findFlags)}
+          mac={mac}
+          onQuery={(q) => {
+            setFindQuery(q);
+            runFind("next", q, findFlags, true);
+          }}
+          onFlags={(f) => {
+            setFindFlags(f);
+            runFind("next", findQuery, f, true);
+          }}
+          onStep={(dir) => runFind(dir, findQuery, findFlags)}
+          onClose={closeFind}
+        />
+      )}
       {phase.kind === "starting" && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-sm text-fg-muted">
           <Spinner />
@@ -336,6 +636,18 @@ export function TerminalView({
           )}
         </div>
       )}
+      <ConfirmDialog
+        open={pendingPaste !== null}
+        onOpenChange={(o) => !o && setPendingPaste(null)}
+        title={t("terminal.pasteLines", { n: lineCount(pendingPaste ?? "") })}
+        body={t("terminal.pasteBody")}
+        confirmLabel={t("terminal.paste")}
+        onConfirm={() => {
+          if (pendingPaste !== null) term.current?.paste(pendingPaste);
+          setPendingPaste(null);
+          term.current?.focus();
+        }}
+      />
     </div>
   );
 }

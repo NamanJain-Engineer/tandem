@@ -26,3 +26,7 @@ Things only a human can do. The build never blocks on them: each sits behind a m
 - M2: macOS overlay title bar with the traffic lights inset; the left cluster starts clear of them.
 - M2: Windows snap layouts appear when hovering the custom maximize button.
 - M2: a cold start with Dark on a Light OS shows no white flash (F-SH-05 AC1; automated on Linux only via the native background).
+- M3: real Japanese IME on macOS and Windows (commit on Enter, no CR during composition); Option-as-Meta on macOS.
+- M3: ConPTY TUIs on Windows (vim, htop): rendering, resize, mouse; closing a pane ends its whole tree (Job Object) and a crash of Tandem leaves no children behind.
+- M3: orphan detection on macOS after a forced quit (`kill -9`) with a `nohup` child in a pane: the dialog lists it and Stop ends it.
+- M3: the 16-pane benchmark (`pnpm --filter desktop perf -- --suite terminals`) on the reference machines.

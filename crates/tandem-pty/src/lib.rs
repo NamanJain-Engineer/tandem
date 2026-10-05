@@ -5,6 +5,8 @@
 
 pub mod env;
 pub mod frame;
+#[cfg(windows)]
+mod job;
 pub mod orphans;
 pub mod quote;
 pub mod responder;
@@ -44,6 +46,8 @@ pub const STATE_DEBOUNCE: Duration = Duration::from_millis(100);
 
 /// Receives `pty:state` changes (the app forwards them to the webview).
 pub type StateSink = Arc<dyn Fn(PtyState) + Send + Sync>;
+/// Told when an agent exits and its pane hands back to the shell: (pane, exit code).
+pub type HandbackSink = Arc<dyn Fn(&str, i32) + Send + Sync>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PtyError {
@@ -87,6 +91,8 @@ pub struct SpawnSpec {
     pub cols: u16,
     pub rows: u16,
     pub scrollback_lines: usize,
+    /// Agent panes: the token the wrapper's handback mark carries.
+    pub mark_token: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -132,6 +138,9 @@ struct Session {
     side: Mutex<SideChannel>,
     /// A `pty:state` change not sent yet (debounced).
     state_dirty: AtomicBool,
+    /// Windows: the kill-on-close Job Object holding the tree.
+    #[cfg(windows)]
+    job: Option<job::Job>,
 }
 
 /// All live PTYs. Cheap to clone.
@@ -141,6 +150,7 @@ pub struct PtyManager {
     colors: Arc<RwLock<TermColors>>,
     registry: Option<Arc<ChildRegistry>>,
     on_state: Option<StateSink>,
+    on_handback: Option<HandbackSink>,
 }
 
 enum Msg {
@@ -160,9 +170,15 @@ impl PtyManager {
         Self::default()
     }
 
-    /// Records every child in `run/children.json` for orphan detection.
+    /// Records every child in this run's `run/children-<pid>.json` for orphan detection.
     pub fn with_registry(mut self, registry: Arc<ChildRegistry>) -> Self {
         self.registry = Some(registry);
+        self
+    }
+
+    /// Where agent handbacks go (Saved sessions, F-CD-03 AC3).
+    pub fn with_handback_sink(mut self, sink: HandbackSink) -> Self {
+        self.on_handback = Some(sink);
         self
     }
 
@@ -238,8 +254,15 @@ impl PtyManager {
             }),
             exited: Arc::new(Mutex::new(None)),
             seq: Arc::new(AtomicU64::new(0)),
-            side: Mutex::new(SideChannel::new(&spec.pane_id, spec.rows, spec.cols)),
+            side: Mutex::new(SideChannel::with_token(
+                &spec.pane_id,
+                spec.rows,
+                spec.cols,
+                spec.mark_token.clone(),
+            )),
             state_dirty: AtomicBool::new(false),
+            #[cfg(windows)]
+            job: job::Job::for_process(pid),
         });
         self.sessions.insert(spec.pane_id.clone(), session.clone());
         let started_at = now_ms();
@@ -275,6 +298,8 @@ impl PtyManager {
         tx: mpsc::SyncSender<Msg>,
     ) {
         let colors = self.colors.clone();
+        let on_handback = self.on_handback.clone();
+        let pane_id = pane.to_string();
         let name = format!("pty-read-{pane}");
         let spawned = std::thread::Builder::new().name(name).spawn(move || {
             let mut buf = vec![0u8; READ_BUF];
@@ -305,6 +330,11 @@ impl PtyManager {
                                 let replies = side.feed(chunk, &colors.read());
                                 if side.state() != side_published(&side) {
                                     session.state_dirty.store(true, Ordering::Release);
+                                }
+                                if let Some(sink) = &on_handback {
+                                    for code in side.take_handbacks() {
+                                        sink(&pane_id, code);
+                                    }
                                 }
                                 replies
                             }
@@ -593,6 +623,10 @@ impl PtyManager {
     /// Ends the process tree: SIGHUP, then SIGTERM, then SIGKILL, 2 s apart (§5.3).
     pub fn kill(&self, pane: &str) -> Result<ExitInfo, PtyError> {
         let session = self.get(pane)?;
+        #[cfg(windows)]
+        if let Some(job) = &session.job {
+            job.terminate();
+        }
         kill_tree(session.pid, &session.exited, Duration::from_secs(2));
         self.sessions.remove(pane);
         Ok(session
@@ -610,6 +644,15 @@ impl PtyManager {
         let panes: Vec<String> = self.sessions.iter().map(|e| e.key().clone()).collect();
         for pane in panes {
             let _ = self.kill(&pane);
+        }
+    }
+
+    /// App exit: stops every child, then drops this run's registry file so
+    /// the next launch has nothing to ask about.
+    pub fn shutdown(&self) {
+        self.kill_all();
+        if let Some(reg) = &self.registry {
+            reg.close();
         }
     }
 }
@@ -702,9 +745,17 @@ pub fn descendants(root: u32) -> Vec<u32> {
     }
 }
 
+/// Windows: the Job Object already ended the tree (see `kill`); this waits
+/// for the exit and stops the root directly if there was no job.
 #[cfg(not(unix))]
-fn kill_tree(_pid: u32, _state: &Mutex<Option<ExitInfo>>, _step: Duration) {
-    // Windows: the Job Object with KILL_ON_JOB_CLOSE ends the tree (M3).
+fn kill_tree(pid: u32, state: &Mutex<Option<ExitInfo>>, step: Duration) {
+    if wait_until(step, || exited(state)) || pid == 0 {
+        return;
+    }
+    let mut table = orphans::SystemTable::default();
+    use orphans::ProcessTable;
+    table.kill(pid);
+    let _ = wait_until(step, || exited(state));
 }
 
 /// Used by tests to wait for a condition on collected frames.

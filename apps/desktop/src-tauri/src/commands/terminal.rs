@@ -34,17 +34,30 @@ pub async fn pane_create(
     tab_id: TabId,
     kind: String,
     cwd: Option<String>,
+    engine_id: Option<String>,
 ) -> Result<PaneRecord, IpcError> {
-    if kind != "terminal" {
-        return Err(IpcError::new(
-            ErrorCode::Invalid,
-            "Only terminal panes are available yet",
-        ));
+    match kind.as_str() {
+        "terminal" => {}
+        "agent" => {
+            let known = engine_id
+                .as_deref()
+                .is_some_and(|id| state.terminals.engines.get(id).is_some());
+            if !known {
+                return Err(IpcError::new(ErrorCode::NotFound, "No engine with that id"));
+            }
+        }
+        _ => {
+            return Err(IpcError::new(
+                ErrorCode::Invalid,
+                "Browser and Simulator panes aren't available yet",
+            ))
+        }
     }
     state
         .terminals
         .check_live_limit(state.entitlements.limits().panes)?;
-    Ok(panes::create(&state.store, &tab_id, &kind, cwd).await?)
+    let engine_id = engine_id.filter(|_| kind == "agent");
+    Ok(panes::create_with(&state.store, &tab_id, &kind, cwd, engine_id).await?)
 }
 
 #[tauri::command]
@@ -160,8 +173,8 @@ pub fn term_set_theme_colors(state: State<'_, AppState>, colors: TermColors) {
 
 /// Processes a crashed run left behind (UI-132).
 #[tauri::command]
-pub fn orphans_list(state: State<'_, AppState>) -> Vec<OrphanInfo> {
-    state.orphans.lock().map(|o| o.clone()).unwrap_or_default()
+pub async fn orphans_list(state: State<'_, AppState>) -> Result<Vec<OrphanInfo>, IpcError> {
+    Ok(state.orphans.list().await)
 }
 
 /// "Stop them" ends every listed process (terminate, then kill after 2 s);
@@ -171,11 +184,7 @@ pub async fn orphans_resolve(state: State<'_, AppState>, action: String) -> Resu
     if action != "stop" && action != "keep" {
         return Err(IpcError::new(ErrorCode::Invalid, "Choose stop or keep"));
     }
-    let list = state
-        .orphans
-        .lock()
-        .map(|mut o| std::mem::take(&mut *o))
-        .unwrap_or_default();
+    let list = state.orphans.take().await;
     if action == "stop" && !list.is_empty() {
         tracing::info!(
             code = "orphans.stop",
@@ -193,4 +202,48 @@ pub async fn orphans_resolve(state: State<'_, AppState>, action: String) -> Resu
         .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?;
     }
     Ok(())
+}
+
+/// A workspace's Saved sessions, newest first (F-CD-03).
+#[tauri::command]
+pub async fn sessions_saved_list(
+    state: State<'_, AppState>,
+    workspace_id: tandem_core::ids::WorkspaceId,
+) -> Result<Vec<tandem_store::repo::sessions::SavedSession>, IpcError> {
+    Ok(tandem_store::repo::sessions::saved_list(&state.store, &workspace_id).await?)
+}
+
+/// Shell-quoted paths for a drop into this pane (F-CD-06).
+#[tauri::command]
+pub fn term_quote_paths(
+    state: State<'_, AppState>,
+    pane_id: PaneId,
+    paths: Vec<String>,
+) -> Result<String, IpcError> {
+    state.terminals.quote_paths(&pane_id, &paths)
+}
+
+/// Saves the clipboard image as a PNG under `$DATA/staging/<pane>/` and
+/// returns its quoted path, for an agent to read (F-CD-05 AC3).
+#[tauri::command]
+pub async fn term_stage_clipboard_image(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    pane_id: PaneId,
+) -> Result<String, IpcError> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let image = app
+        .clipboard()
+        .read_image()
+        .map_err(|_| IpcError::new(ErrorCode::NotFound, "There's no image on the clipboard"))?;
+    let (width, height, rgba) = (image.width(), image.height(), image.rgba().to_vec());
+    let dir = state.data.staging().join(pane_id.as_str());
+    let path = tokio::task::spawn_blocking(move || {
+        crate::services::staging::write_png(&dir, width, height, &rgba)
+    })
+    .await
+    .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))??;
+    state
+        .terminals
+        .quote_paths(&pane_id, &[path.to_string_lossy().into_owned()])
 }

@@ -31,6 +31,9 @@ export type TabPanes = {
   keepEmpty: boolean;
 };
 
+/** What a new pane runs: a shell, or an engine under the login shell. */
+export type Launch = { kind: "terminal" } | { kind: "agent"; engineId: string };
+
 export type SplitRequest = { tabId: string; target: string | null; side: Side };
 export type SplitResult = { ok: true; pane: PaneRecord } | { ok: false; error: IpcError };
 export type RequestResult = "picker" | "no_room" | "no_tab";
@@ -50,7 +53,7 @@ type LayoutState = {
   markEmpty: (tabId: string) => void;
   requestSplit: (tabId: string, target: string | null, side: Side) => RequestResult;
   closePicker: () => void;
-  split: (tabId: string, target: string | null, side: Side) => Promise<SplitResult>;
+  split: (tabId: string, target: string | null, side: Side, launch?: Launch) => Promise<SplitResult>;
   close: (tabId: string, paneId: string) => Promise<void>;
   focus: (tabId: string, paneId: string) => void;
   focusDirection: (tabId: string, direction: Side) => void;
@@ -221,9 +224,13 @@ export const useLayout = create<LayoutState>((set, get) => {
 
     closePicker: () => set({ picker: null }),
 
-    split: async (tabId, target, side) => {
+    split: async (tabId, target, side, launch = { kind: "terminal" }) => {
       try {
-        const pane = await invoke<PaneRecord>("pane_create", { tabId, kind: "terminal" });
+        const pane = await invoke<PaneRecord>("pane_create", {
+          tabId,
+          kind: launch.kind,
+          engineId: launch.kind === "agent" ? launch.engineId : undefined,
+        });
         const t = get().tabs[tabId] ?? EMPTY;
         const anchor = target && contains(t.tree, target) ? target : (t.active ?? leaves(t.tree)[0] ?? null);
         const tree = t.tree && anchor ? splitNode(t.tree, anchor, pane.id, side) : leaf(pane.id);

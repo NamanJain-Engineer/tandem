@@ -16,6 +16,7 @@
     "core:window:allow-close",
     "core:window:allow-set-focus",
     "clipboard-manager:allow-write-text",
+    "clipboard-manager:allow-read-text",
     "allow-app-ready",
     "allow-app-log",
     "allow-app-copy-diagnostics",
@@ -67,6 +68,10 @@
     "allow-pty-kill",
     "allow-term-set-theme-colors",
     "allow-orphans-list",
-    "allow-orphans-resolve"
+    "allow-orphans-resolve",
+    "allow-sessions-saved-list",
+    "allow-term-quote-paths",
+    "allow-term-stage-clipboard-image",
+    "allow-engines-list"
   ]
 }

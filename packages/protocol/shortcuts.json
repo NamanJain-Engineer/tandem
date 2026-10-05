@@ -216,6 +216,42 @@
     "enabledWhen": "pane_focused"
   },
   {
+    "id": "terminal.find",
+    "category": "terminal",
+    "mac": "Mod+F",
+    "pc": "Mod+F",
+    "pcTerminal": "Mod+Shift+F",
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "terminal.find_next",
+    "category": "terminal",
+    "mac": "Mod+G",
+    "pc": "Mod+G",
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "terminal.find_prev",
+    "category": "terminal",
+    "mac": "Mod+Shift+G",
+    "pc": "Mod+Shift+G",
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "terminal.jump_bottom",
+    "category": "terminal",
+    "mac": "Mod+Down",
+    "pc": "Ctrl+Shift+End",
+    "pcTerminal": "Ctrl+Shift+End",
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
     "id": "billing.plans",
     "category": "app",
     "mac": null,
