@@ -21,7 +21,8 @@ import { attachPaneHost, paneHost } from "./paneHosts";
 import { LaunchTiles, launchFor, useTiles } from "./PanePicker";
 import { paneTitles } from "./titles";
 import { webglPool } from "./webglPool";
-import { TerminalView, terminalHandles, type Phase, type TerminalOptions } from "./TerminalView";
+import type { Activity } from "./commandMarks";
+import { TerminalView, copyLastOutput, terminalHandles, type Phase, type TerminalOptions } from "./TerminalView";
 
 /** Gutter between panes (UI_SPEC §2.21). */
 const GUTTER = 6;
@@ -157,10 +158,12 @@ function Node({ node, path, tabId, box }: { node: LayoutNode; path: string; tabI
   return <Split key={`${path}:${node.dir}`} node={node} path={path} tabId={tabId} box={box} />;
 }
 
-function phaseStatus(phase: Phase): Status {
+/** The pane's status dot: the process's phase first, then shell activity
+ * (working between a command's start and end marks, F-CD-10). */
+function paneStatus(phase: Phase, activity: Activity): Status {
   if (phase.kind === "failed") return "error";
   if (phase.kind === "exited") return phase.code === 0 || phase.code === null ? "done" : "error";
-  return "idle";
+  return activity === "working" ? "working" : "idle";
 }
 
 type PaneViewProps = {
@@ -184,7 +187,9 @@ const PaneView = memo(function PaneView({
   maximized,
   options,
 }: PaneViewProps) {
-  const [status, setStatus] = useState<Status>("idle");
+  const [phase, setPhase] = useState<Phase>({ kind: "starting" });
+  const [activity, setActivity] = useState<Activity>("idle");
+  const status = paneStatus(phase, activity);
   const dropping = useDropTarget((st) => st.paneId === pane.id);
   const mac = useBoot((st) => st.boot?.platform === "macos");
   const engineNewline = useEngines((st) => st.list.find((e) => e.spec.id === pane.engineId)?.spec.newlineSequence ?? "\x1b\r");
@@ -214,6 +219,11 @@ const PaneView = memo(function PaneView({
     { id: "new-tab", label: t("pane.moveToNewTab"), onSelect: () => void moveToNewTab(tabId, pane.id) },
     { id: "restart", label: t("pane.restart"), onSelect: () => terminalHandles.get(pane.id)?.restart() },
     { id: "sep-copy", type: "separator" },
+    {
+      id: "copy-last-output",
+      label: t("terminal.copyLastOutput"),
+      onSelect: () => void copyLastOutput(pane.id, show),
+    },
     ...([
       ["copy-100", "terminal.copyLast100", 100],
       ["copy-500", "terminal.copyLast500", 500],
@@ -281,7 +291,8 @@ const PaneView = memo(function PaneView({
           bare
           options={options}
           onClose={() => void layout().close(tabId, pane.id)}
-          onPhase={(p) => setStatus(phaseStatus(p))}
+          onPhase={setPhase}
+          onActivity={setActivity}
           agent={pane.kind === "agent"}
           newlineSequence={engineNewline}
           mac={mac}

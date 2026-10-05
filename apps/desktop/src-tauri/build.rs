@@ -57,6 +57,7 @@ const COMMANDS: &[&str] = &[
     "sessions_saved_list",
     "term_quote_paths",
     "term_stage_clipboard_image",
+    "term_last_output",
     "engines_list",
 ];
 

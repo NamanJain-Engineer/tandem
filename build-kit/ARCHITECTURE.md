@@ -570,6 +570,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `term_last_command_output` | `{paneId}` | `String` | NotFound (no marks) | F-CD-10 |
 | `term_quote_paths` | `{paneId, paths:[String]}` | `String` (space-joined, no trailing newline) | UnsafeFilename | F-CD-06, F-RM-02 |
 | `term_stage_clipboard_image` | `{paneId}` | `String` (quoted staged PNG path) | NotFound (no image) | F-CD-05 |
+| `term_last_output` | `{paneId}` | `LastOutput?` `{text, exitCode?}`: the last finished command's plain-text output, from its OSC 133 C and D marks ("Copy last command output") | — | F-CD-10 |
 | `pane_rename` | `{paneId, humanName}` | — | Conflict (name taken) | F-CD-12 |
 | `pane_close` | `{paneId}` (UI already confirmed if working) | — | — | F-CD-12, F-SH-07 |
 | `pane_move` | `{paneId, tabId}` (same workspace; drop on the tab strip, "Move to new tab") | `PaneRecord` (same process) | NotFound | F-CD-02 |
@@ -837,7 +838,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `settings:changed` | `{key, value}` | settings service | F-SH-04 |
 | `status:changed` | `{records:[StatusRecord]}` (coalesced 50 ms) | StatusStore forwarder | F-EN-05, F-DB-01 |
 | `pty:state` | `{paneId, cwd?, title?, altScreen, bracketedPaste, mouse, readiness}` (debounced 100 ms) | tandem-pty | F-CD-10, F-EN-06 |
-| `pty:mark` | `{paneId, kind:"A"\|"B"\|"C"\|"D", exitCode?, line}` | tandem-pty | F-CD-10 |
+| `pty:mark` | `{paneId, kind:"A"\|"B"\|"C"\|"D", exitCode?}` (the view places ✓/✗ from the same marks, which reach xterm without the token) | tandem-pty | F-CD-10 |
 | `sessions:saved` | `{workspaceId, session: SavedSession}` (an agent handed its pane back to the shell) | terminal service | F-CD-03 |
 | `engines:detected` | `{hostId, report: DetectionReport}` | Detector | F-EN-01 |
 | `accounts:changed` | `{accounts:[Account]}` | accounts service | F-AC-02 |
@@ -1476,7 +1477,7 @@ pty_kill / pane_close → tree kill (§5.3) → unregister status secret → rev
   - **fish:** `--init-command 'source <shim>.fish'`.
   - **PowerShell:** `-NoExit -Command ". '<shim>.ps1'"` wrapping `prompt`.
 - Emitted sequences: `OSC 7;file://<host><cwd> ST`, `OSC 133;A;tandem=<token> ST` (prompt start), `B` (prompt end), `C` (command start), `D;<exit>` (command end). The token is read from the env var and then `unset` in the shell so child programs can't read it from the environment (they could still read `/proc/<shell>/environ` on Linux; accepted residual risk, logged in threat model §16).
-- SideChannel accepts 133 marks and OSC 7 only if the token matches; otherwise ignored (F-CD-10 AC2). Marks store ring byte offsets, which gives "Copy last command output" = bytes between the last `C` and `D` marks, ANSI-stripped (F-CD-10 AC3).
+- A `MarkFilter` takes every OSC 133, OSC 7 and handback (`OSC 7770`) sequence out of the output before the ring, the side channel and the view see it. With the matching token it becomes a mark, and OSC 133 goes back into the stream without the token (the view decorates commands from it); without it, it is dropped, so a program, a remote host or pasted text can't spoof a mark (F-CD-10 AC2), and the token never reaches the webview, the ring or snapshots. The side channel captures the plain text between the last `C` and `D` marks (vte-stripped, `\r` overwrite and `ESC[K` applied): "Copy last command output" (F-CD-10 AC3, `term_last_output`).
 - Plain-shell idle: `D` received and no output for 2 s → idle.
 
 ### 5.9 Input: keys, paste, drops, links [F-CD-05..07, F-CD-09, F-SH-09]

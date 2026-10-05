@@ -281,3 +281,142 @@ fn f_cd_03_8_children_are_recorded_until_they_exit() {
     mgr.shutdown();
     assert!(!path.exists(), "a clean exit removes the registry file");
 }
+
+/// Starts `shell` with the installed integration scripts and a token, in a
+/// HOME with no startup files of its own.
+fn integrated(
+    shell: &str,
+    pane: &str,
+    home: &std::path::Path,
+    scripts: &std::path::Path,
+) -> Option<SpawnSpec> {
+    use tandem_pty::integration::{launch, IntegratedShell};
+    let program = PathBuf::from(shell);
+    if !program.exists() {
+        return None;
+    }
+    let kind = IntegratedShell::detect(&program)?;
+    let l = launch(kind, scripts, None).expect("launch");
+    let mut s = spec(pane, "");
+    s.program = program;
+    s.args = l.args;
+    s.env
+        .insert("HOME".into(), home.to_string_lossy().into_owned());
+    s.env
+        .insert(tandem_pty::env::TOKEN_VAR.into(), "tok-it".into());
+    s.env.extend(l.env);
+    s.cwd = home.to_path_buf();
+    s.mark_token = Some("tok-it".into());
+    Some(s)
+}
+
+#[test]
+fn f_cd_10_shells_report_cwd_marks_and_last_output() {
+    let home = tempfile::tempdir().expect("home");
+    let data = tempfile::tempdir().expect("data");
+    let scripts = tandem_pty::integration::install(data.path()).expect("install");
+    let listing = tempfile::tempdir().expect("listing");
+    for f in ["alpha.txt", "beta.txt"] {
+        std::fs::write(listing.path().join(f), b"x").expect("file");
+    }
+    let marks: Arc<std::sync::Mutex<Vec<(String, tandem_pty::Mark)>>> = Arc::default();
+    let seen = marks.clone();
+    let mgr = PtyManager::new().with_mark_sink(Arc::new(move |pane, m| {
+        seen.lock()
+            .expect("marks")
+            .push((pane.to_string(), m.clone()));
+    }));
+    let mut ran = 0;
+    for shell in ["/bin/bash", "/usr/bin/zsh", "/usr/bin/fish"] {
+        let pane = format!("si-{}", shell.rsplit('/').next().unwrap_or("x"));
+        let Some(s) = integrated(shell, &pane, home.path(), &scripts) else {
+            continue;
+        };
+        ran += 1;
+        eprintln!("shell integration: {shell}");
+        let sink = Arc::new(VecSink::default());
+        mgr.spawn(s, Some(sink.clone() as Arc<dyn OutputSink>))
+            .expect("spawn");
+        let prompts = |n: usize| {
+            let marks = marks.clone();
+            let pane = pane.clone();
+            move || {
+                marks
+                    .lock()
+                    .map(|m| {
+                        m.iter()
+                            .filter(|(p, k)| *p == pane && *k == tandem_pty::Mark::PromptStart)
+                            .count()
+                            >= n
+                    })
+                    .unwrap_or(false)
+            }
+        };
+        assert!(
+            wait_until(Duration::from_secs(10), prompts(1)),
+            "{shell}: first prompt"
+        );
+        // AC1: cd /tmp updates the cwd.
+        mgr.write(&pane, b"cd /tmp\r").expect("write");
+        assert!(
+            wait_until(Duration::from_secs(5), || mgr
+                .state(&pane)
+                .and_then(|s| s.cwd)
+                .as_deref()
+                == Some("/tmp")),
+            "{shell}: cwd is /tmp: {:?}",
+            mgr.state(&pane)
+        );
+        // AC2: a program's own 133 mark isn't one.
+        let before = marks.lock().map(|m| m.len()).unwrap_or(0);
+        mgr.write(&pane, b"printf '\\033]133;A\\007spoof\\n'\r")
+            .expect("write");
+        assert!(wait_until(Duration::from_secs(5), || text(&sink).contains("spoof")));
+        assert!(
+            wait_until(Duration::from_secs(5), prompts(3)),
+            "{shell}: prompt after printf"
+        );
+        let added: Vec<tandem_pty::Mark> = marks.lock().expect("marks")[before..]
+            .iter()
+            .filter(|(p, _)| *p == pane)
+            .map(|(_, m)| m.clone())
+            .collect();
+        assert_eq!(
+            added
+                .iter()
+                .filter(|m| **m == tandem_pty::Mark::PromptStart)
+                .count(),
+            1,
+            "{shell}: only the shell's own prompt mark: {added:?}"
+        );
+        assert!(
+            !text(&sink).contains("tok-it"),
+            "{shell}: the token never reaches the view"
+        );
+        // AC3: the last command's output is exactly what it printed.
+        let cmd = format!("ls -1 {}\r", listing.path().display());
+        mgr.write(&pane, cmd.as_bytes()).expect("write");
+        assert!(
+            wait_until(Duration::from_secs(5), || mgr
+                .last_output(&pane)
+                .map(|o| o.0)
+                == Some("alpha.txt\nbeta.txt".into())),
+            "{shell}: last output {:?}",
+            mgr.last_output(&pane)
+        );
+        assert_eq!(mgr.last_output(&pane).and_then(|o| o.1), Some(0));
+        // The shell's children don't inherit the token.
+        mgr.write(&pane, b"env | grep -c TANDEM_SHELL_TOKEN\r")
+            .expect("write");
+        assert!(
+            wait_until(Duration::from_secs(5), || mgr
+                .last_output(&pane)
+                .map(|o| o.0)
+                == Some("0".into())),
+            "{shell}: token in env: {:?}",
+            mgr.last_output(&pane)
+        );
+        mgr.kill(&pane).expect("kill");
+    }
+    assert!(ran >= 1, "bash at least");
+}

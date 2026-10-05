@@ -9,3 +9,19 @@ body {
   font-family: var(--font-ui-family), var(--font-sans);
   overflow: hidden;
 }
+
+/* Shell-integration command marks (F-CD-10): a small ✓/✗ in the terminal's
+   left padding, beside the prompt line of each finished command. */
+.tn-term .tn-cmd-mark {
+  transform: translateX(calc(-100% - 2px));
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-align: right;
+  pointer-events: none;
+}
+.tn-term .tn-cmd-mark[data-ok="true"] {
+  color: var(--tn-success);
+}
+.tn-term .tn-cmd-mark[data-ok="false"] {
+  color: var(--tn-danger);
+}

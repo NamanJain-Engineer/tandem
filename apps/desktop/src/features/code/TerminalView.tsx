@@ -3,10 +3,10 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type IMarker } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { ArrowDown } from "lucide-react";
-import type { ExitInfo, IpcError, PtyInfo, AttachSnapshot, PtyState } from "@tandem/protocol";
+import type { ExitInfo, IpcError, LastOutput, PtyInfo, AttachSnapshot, PtyState } from "@tandem/protocol";
 import { Button, ConfirmDialog, Spinner, cx, type TerminalTheme } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
@@ -15,6 +15,7 @@ import { createFrameChannel, FrameKind, type Frame, type FrameChannel } from "..
 import { useLayout } from "../../stores/layout";
 import { useTerminals } from "../../stores/terminals";
 import { copyText, readText } from "../../ipc/clipboard";
+import { CommandMarks, type Activity } from "./commandMarks";
 import { HIGHLIGHT_LIMIT, searchOptions, validQuery, type FindFlags, type FindResult } from "./find";
 import { FindBar } from "./FindBar";
 import { keyAction, lastLines, lineCount, needsConfirm } from "./terminalInput";
@@ -67,8 +68,18 @@ export type TerminalHandle = {
   text: () => string;
   /** Opens the find bar, or steps through matches once it has a query (F-CD-08). */
   find: (step?: "next" | "prev") => void;
+  /** Copies the last finished command's output (shell integration, F-CD-10 AC3). */
+  copyLastOutput: () => Promise<"copied" | "none">;
 };
 export const terminalHandles = new Map<string, TerminalHandle>();
+
+type Toast = (t: { tone?: "info" | "success" | "warning" | "error"; title: string }) => void;
+
+/** "Copy last command output" from the pane menu and the palette (F-CD-10 AC3). */
+export async function copyLastOutput(paneId: string, toast: Toast): Promise<void> {
+  const result = (await terminalHandles.get(paneId)?.copyLastOutput()) ?? "none";
+  toast(result === "copied" ? { tone: "success", title: t("terminal.copied") } : { tone: "info", title: t("terminal.noLastOutput") });
+}
 
 /** Terminals reflow at most this often while their size changes (F-CD-02). */
 const RESIZE_THROTTLE_MS = 50;
@@ -138,6 +149,7 @@ export function TerminalView({
   agent = false,
   newlineSequence = "\x1b\r",
   mac = false,
+  onActivity,
 }: {
   paneId: string;
   label: string;
@@ -153,6 +165,8 @@ export function TerminalView({
   agent?: boolean;
   newlineSequence?: string;
   mac?: boolean;
+  /** Shell integration: a command is running, or the shell went quiet (F-CD-10). */
+  onActivity?: (activity: Activity) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<Terminal | null>(null);
@@ -180,6 +194,8 @@ export function TerminalView({
   const dragging = useLayout((st) => st.dragging);
   const onPhaseRef = useRef(onPhase);
   onPhaseRef.current = onPhase;
+  const onActivityRef = useRef(onActivity);
+  onActivityRef.current = onActivity;
   useEffect(() => onPhaseRef.current?.(phase), [phase]);
   // An exited session still attaches (live: false); restart drops it first.
   const restart = () => {
@@ -219,6 +235,30 @@ export function TerminalView({
     const results = searchAddon.onDidChangeResults((r) => setFindResult({ index: r.resultIndex, count: r.resultCount }));
     xterm.open(el);
     quietQueries(xterm);
+    // Shell-integration marks reach xterm only when they carried this
+    // launch's token (Rust drops the rest): ✓/✗ beside each command's prompt
+    // and working/idle for the pane's status (F-CD-10).
+    const commands = new CommandMarks<IMarker>({
+      marker: () => xterm.registerMarker(0),
+      release: (m) => m.dispose(),
+      decorate: (marker, ok) => {
+        const deco = xterm.registerDecoration({ marker, x: 0, width: 1, layer: "top" });
+        deco?.onRender((node) => {
+          node.classList.add("tn-cmd-mark");
+          node.dataset.ok = String(ok);
+          node.textContent = ok ? "✓" : "✗";
+          node.setAttribute("aria-hidden", "true");
+        });
+      },
+      activity: (a) => onActivityRef.current?.(a),
+      now: () => performance.now(),
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (t) => clearTimeout(t as ReturnType<typeof setTimeout>),
+    });
+    const commandMarks = xterm.parser.registerOscHandler(133, (data) => {
+      commands.mark(data);
+      return true;
+    });
     // A WebGL renderer when the pool grants one; the DOM renderer otherwise.
     let webgl: WebglAddon | undefined;
     const renderer = {
@@ -309,6 +349,7 @@ export function TerminalView({
     const onFrame = (f: Frame) => {
       if (disposed) return;
       if (f.kind === FrameKind.Data) {
+        commands.output();
         if (focusedRef.current && pending.length === 0) {
           write(f.payload);
         } else {
@@ -386,6 +427,8 @@ export function TerminalView({
       onParsed.dispose();
       results.dispose();
       search.current = null;
+      commandMarks.dispose();
+      commands.dispose();
       webglPool.unregister(paneId, renderer);
       flushNow.current = () => undefined;
       xterm.dispose();
@@ -482,7 +525,20 @@ export function TerminalView({
       for (let i = 0; i < buf.length; i++) lines.push(buf.getLine(i)?.translateToString(true) ?? "");
       return lastLines(lines, null);
     };
-    const handle: TerminalHandle = { restart, focus: () => term.current?.focus(), jumpToBottom, copyLast, text, find: findStep };
+    const copyLastOutput = async () => {
+      const last = await invoke<LastOutput | null>("term_last_output", { paneId }).catch(() => null);
+      if (!last) return "none" as const;
+      return (await copyText(last.text)) ? ("copied" as const) : ("none" as const);
+    };
+    const handle: TerminalHandle = {
+      restart,
+      focus: () => term.current?.focus(),
+      jumpToBottom,
+      copyLast,
+      text,
+      find: findStep,
+      copyLastOutput,
+    };
     terminalHandles.set(paneId, handle);
     return () => {
       // Another view of the same pane may have taken over (a remount).
@@ -571,7 +627,7 @@ export function TerminalView({
       )}
       style={{ background: options.theme.background }}
     >
-      <div ref={host} data-testid="terminal" data-pane-id={paneId} className="tn-term min-h-0 flex-1 px-2 py-1.5" />
+      <div ref={host} data-testid="terminal" data-pane-id={paneId} className="tn-term min-h-0 flex-1 py-1.5 pl-3.5 pr-2" />
       {scrolledUp && phase.kind !== "starting" && (
         <button
           type="button"

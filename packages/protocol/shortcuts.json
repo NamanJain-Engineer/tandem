@@ -234,6 +234,15 @@
     "enabledWhen": "pane_focused"
   },
   {
+    "id": "terminal.copy_last_output",
+    "category": "terminal",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
     "id": "terminal.find_prev",
     "category": "terminal",
     "mac": "Mod+Shift+G",

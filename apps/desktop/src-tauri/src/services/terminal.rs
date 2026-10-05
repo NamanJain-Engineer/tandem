@@ -13,6 +13,7 @@ use tandem_core::shellquote::{self, ShellDialect};
 use tandem_core::{ErrorCode, IpcError};
 use tandem_engines::{EngineRegistry, EngineSpec};
 use tandem_pty::env::{self, LoginEnv};
+use tandem_pty::integration::{self, IntegratedShell};
 use tandem_pty::{OutputSink, PtyInfo, PtyManager, SpawnSpec};
 use tandem_store::repo::{panes, sessions, settings, workspaces};
 use tandem_store::Store;
@@ -37,6 +38,10 @@ pub struct TerminalService {
     store: Store,
     login: OnceCell<LoginEnv>,
     spawn_log: Option<PathBuf>,
+    /// `$DATA/shell-integration` (F-CD-10); `None` turns integration off.
+    integration_root: Option<PathBuf>,
+    /// The installed scripts' folder, written on first use.
+    integration_dir: std::sync::OnceLock<Option<PathBuf>>,
 }
 
 /// One line of `TANDEM_SPAWN_LOG` (debug builds): what was started, with
@@ -53,6 +58,15 @@ pub struct SpawnRecord {
 
 impl TerminalService {
     pub fn new(pty: PtyManager, store: Store) -> Arc<Self> {
+        Self::with_integration(pty, store, None)
+    }
+
+    /// `integration_root` holds the shell-integration scripts (F-CD-10).
+    pub fn with_integration(
+        pty: PtyManager,
+        store: Store,
+        integration_root: Option<PathBuf>,
+    ) -> Arc<Self> {
         let spawn_log = if cfg!(debug_assertions) {
             std::env::var_os("TANDEM_SPAWN_LOG").map(PathBuf::from)
         } else {
@@ -65,7 +79,35 @@ impl TerminalService {
             store,
             login: OnceCell::new(),
             spawn_log,
+            integration_root,
+            integration_dir: std::sync::OnceLock::new(),
         })
+    }
+
+    /// The shell's integration and the scripts' folder, unless the shell has
+    /// none or Settings › Terminal turned it off for that shell.
+    async fn integration_for(&self, shell: &Path) -> Option<(IntegratedShell, PathBuf)> {
+        let kind = IntegratedShell::detect(shell)?;
+        let root = self.integration_root.as_ref()?;
+        let enabled = settings::get(&self.store, SettingKey::TermShellIntegration)
+            .await
+            .ok()
+            .and_then(|v| v.get(kind.setting_key()).and_then(|b| b.as_bool()))
+            .unwrap_or(true);
+        if !enabled {
+            return None;
+        }
+        let dir = self
+            .integration_dir
+            .get_or_init(|| match integration::install(root) {
+                Ok(dir) => Some(dir),
+                Err(err) => {
+                    tracing::warn!(code = "pty.integration_install_failed", error = %err, "shell integration is off: couldn't write its scripts");
+                    None
+                }
+            })
+            .clone()?;
+        Some((kind, dir))
     }
 
     /// Uses `login` instead of capturing one (tests).
@@ -168,9 +210,13 @@ impl TerminalService {
             .await?
             .as_u64()
             .unwrap_or(10_000) as usize;
+        // Every launch gets its own token; shell-integration and handback
+        // marks must carry it (§5.8).
+        let token = launch_token();
+        let integration = self.integration_for(&shell).await;
         // Agent panes run the engine under the login shell and hand back to
         // it when the engine exits (F-CD-03 AC3).
-        let (args, mark_token, engine) = if record.kind == "agent" {
+        let (args, extra_env, engine) = if record.kind == "agent" {
             let engine = record
                 .engine_id
                 .as_deref()
@@ -186,15 +232,30 @@ impl TerminalService {
                 )
             })?;
             let argv = vec![path.to_string_lossy().into_owned()];
-            let args = env::agent_wrapper(&shell, &argv).map_err(|_| {
+            let args = env::agent_wrapper(
+                &shell,
+                &argv,
+                integration.as_ref().map(|(_, dir)| dir.as_path()),
+            )
+            .map_err(|_| {
                 IpcError::new(
                     ErrorCode::Invalid,
                     "The engine's path can't be launched safely",
                 )
             })?;
-            (args, Some(launch_token()), Some(engine))
+            (args, Vec::new(), Some(engine))
+        } else if let Some((kind, dir)) = &integration {
+            let launch =
+                integration::launch(*kind, dir, login.vars.get("ZDOTDIR").map(String::as_str))
+                    .map_err(|_| {
+                        IpcError::new(
+                            ErrorCode::Invalid,
+                            "The shell-integration folder can't be used safely",
+                        )
+                    })?;
+            (launch.args, launch.env, None)
         } else {
-            (env::login_args(&shell), None, None)
+            (env::login_args(&shell), Vec::new(), None)
         };
         if let Ok(mut d) = self.dialects.lock() {
             d.insert(
@@ -203,9 +264,10 @@ impl TerminalService {
             );
         }
         let mut child_env = env::pane_env(login, pane.as_str(), env!("CARGO_PKG_VERSION"));
-        if let Some(token) = &mark_token {
+        if integration.is_some() || engine.is_some() {
             child_env.insert(env::TOKEN_VAR.to_string(), token.clone());
         }
+        child_env.extend(extra_env);
         let spec = SpawnSpec {
             pane_id: pane.to_string(),
             args,
@@ -215,7 +277,7 @@ impl TerminalService {
             cols,
             rows,
             scrollback_lines: scrollback,
-            mark_token,
+            mark_token: Some(token),
         };
         self.log_spawn(&spec);
         let info = self.pty.spawn(spec, Some(sink))?;

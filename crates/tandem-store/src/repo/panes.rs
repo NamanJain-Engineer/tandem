@@ -146,6 +146,21 @@ pub async fn close(store: &Store, id: &PaneId) -> Result<(), StoreError> {
         .await
 }
 
+/// The shell's working directory, from its OSC 7 mark (F-CD-10): restores
+/// and link resolution start there.
+pub async fn set_cwd(store: &Store, id: &PaneId, cwd: String) -> Result<(), StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .write(move |t| {
+            t.execute(
+                "UPDATE panes SET cwd = ?2 WHERE id = ?1 AND closed_at IS NULL AND (cwd IS NULL OR cwd <> ?2)",
+                params![id, cwd],
+            )?;
+            Ok(())
+        })
+        .await
+}
+
 /// Moves an open pane into another tab (drag to the tab strip, "Move to new
 /// tab"). The process keeps running; only the pane's place changes.
 pub async fn move_to_tab(
@@ -206,6 +221,11 @@ mod tests {
             Some("/p")
         );
         assert!(get_open(&store, &pane.id).await.is_ok());
+        set_cwd(&store, &pane.id, "/tmp".into()).await.expect("cwd");
+        assert_eq!(
+            get(&store, &pane.id).await.expect("get").cwd.as_deref(),
+            Some("/tmp")
+        );
         close(&store, &pane.id).await.expect("close");
         assert!(list_open(&store, &tab.id).await.expect("list").is_empty());
         assert!(matches!(

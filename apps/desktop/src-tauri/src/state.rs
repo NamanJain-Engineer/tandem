@@ -194,6 +194,8 @@ impl AppState {
         let orphans =
             OrphanScan::start(data.run(), registry.path().to_path_buf(), ORPHAN_SCAN_WAIT);
         let pty_bus = bus.clone();
+        let mark_bus = bus.clone();
+        let cwd_store = store.clone();
         // An agent exited and its pane went back to the shell: save the
         // session for the workspace's "Saved sessions" (F-CD-03 AC3).
         let handback_store = store.clone();
@@ -201,7 +203,22 @@ impl AppState {
         let pty = PtyManager::new()
             .with_registry(registry)
             .with_state_sink(Arc::new(move |state| {
+                // The shell's cwd (OSC 7) is the pane's stored cwd: restores
+                // and link resolution start there (F-CD-10 AC1).
+                if let Some(cwd) = state.cwd.clone() {
+                    let (store, pane) = (cwd_store.clone(), tandem_core::ids::PaneId::from_db(state.pane_id.clone()));
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(err) = tandem_store::repo::panes::set_cwd(&store, &pane, cwd).await {
+                            tracing::warn!(error = %err, "couldn't store the pane's cwd");
+                        }
+                    });
+                }
                 pty_bus.publish(BusEvent::new(Topic::Pty, "pty:state", state));
+            }))
+            .with_mark_sink(Arc::new(move |pane, mark| {
+                if let Some(event) = mark.event(pane) {
+                    mark_bus.publish(BusEvent::new(Topic::Pty, "pty:mark", event));
+                }
             }))
             .with_handback_sink(Arc::new(move |pane, code| {
                 let (store, bus) = (handback_store.clone(), handback_bus.clone());
@@ -219,7 +236,8 @@ impl AppState {
                     }
                 });
             }));
-        let terminals = TerminalService::new(pty, store.clone());
+        let terminals =
+            TerminalService::with_integration(pty, store.clone(), Some(data.shell_integration()));
         let telemetry = TelemetryService::new(&data, net.clone());
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         Self {

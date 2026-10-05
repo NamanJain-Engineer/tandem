@@ -11,7 +11,7 @@ import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { applyDrop } from "../code/dnd";
 import type { Side } from "../code/layout/tree";
-import { terminalHandles } from "../code/TerminalView";
+import { copyLastOutput, terminalHandles } from "../code/TerminalView";
 import { copyDiagnostics, pickAndAddWorkspace, switchMode } from "../shell/actions";
 
 export const COMMANDS = shortcuts as CommandSpec[];
@@ -120,6 +120,7 @@ export const handlers: Record<string, () => void> = {
   "terminal.find": onPane((_, paneId) => terminalHandles.get(paneId)?.find()),
   "terminal.find_next": onPane((_, paneId) => terminalHandles.get(paneId)?.find("next")),
   "terminal.find_prev": onPane((_, paneId) => terminalHandles.get(paneId)?.find("prev")),
+  "terminal.copy_last_output": onPane((_, paneId) => void copyLastOutput(paneId, toast)),
   "billing.plans": () => useUi.getState().openUpgrade(),
   "help.copy_diagnostics": () => void copyDiagnostics(toast),
   "help.open_logs": () => void invoke("app_open_logs_folder").catch(() => undefined),

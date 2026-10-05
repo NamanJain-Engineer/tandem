@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { SettingKey } from "@tandem/protocol";
-import { Combobox, Input, SegmentedControl, Select, Switch, cx, useToast } from "@tandem/ui";
+import { Checkbox, Combobox, Input, SegmentedControl, Select, Switch, cx, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useSetting, useSettings } from "../../stores/settings";
 
@@ -45,6 +45,31 @@ export function BoolControl({
       aria-label={label}
       onCheckedChange={(v) => void save(k, v)}
     />
+  );
+}
+
+const INTEGRATED_SHELLS = [
+  ["bash", "Bash"],
+  ["zsh", "Zsh"],
+  ["fish", "Fish"],
+  ["pwsh", "PowerShell"],
+] as const;
+
+/** Shell integration on or off per shell (F-CD-10); new terminals only. */
+export function ShellIntegrationControl({ ids, label }: { ids: Ids; label: string }) {
+  const value = useSetting<Record<string, boolean>>("term_shell_integration", {});
+  const save = useSave();
+  return (
+    <div id={ids.id} role="group" aria-label={label} aria-describedby={ids.describedBy} className="flex flex-wrap gap-x-4 gap-y-2">
+      {INTEGRATED_SHELLS.map(([key, name]) => (
+        <Checkbox
+          key={key}
+          label={name}
+          checked={value[key] !== false}
+          onCheckedChange={(on) => void save("term_shell_integration", { ...value, [key]: on })}
+        />
+      ))}
+    </div>
   );
 }
 

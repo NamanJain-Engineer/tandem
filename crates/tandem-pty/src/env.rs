@@ -216,45 +216,56 @@ pub const TOKEN_VAR: &str = "TANDEM_SHELL_TOKEN";
 /// `$SHELL -lic '<engine>; <mark>; exec $SHELL -l'`, with fish and PowerShell
 /// equivalents. The mark is `OSC 7770;handback;<token>;<exit code>`; the side
 /// channel accepts it only with this launch's token, which the wrapper reads
-/// from `TANDEM_SHELL_TOKEN`. Every argument is quoted; one that can't be
+/// from `TANDEM_SHELL_TOKEN`. With `integration` (the installed scripts'
+/// folder), the shell that takes the pane back starts with shell integration
+/// and the token (§5.8). Every argument is quoted; one that can't be
 /// (control characters) refuses the launch.
 pub fn agent_wrapper(
     shell: &Path,
     engine: &[String],
+    integration: Option<&Path>,
 ) -> Result<Vec<String>, tandem_core::shellquote::UnsafeFilename> {
+    use crate::integration::{handback_tail, IntegratedShell};
     use tandem_core::shellquote::{quote_path, quote_paths, ShellDialect};
     let shell_str = shell.to_string_lossy();
+    let tail = match (IntegratedShell::detect(shell), integration) {
+        (Some(kind), Some(dir)) => Some(handback_tail(kind, shell, dir)?),
+        _ => None,
+    };
     Ok(match shell_kind(shell) {
         ShellKind::Posix => {
             let cmd = quote_paths(engine, ShellDialect::Posix)?;
             let again = quote_path(&shell_str, ShellDialect::Posix)?;
+            let tail = tail.unwrap_or_else(|| format!("unset t; exec {again} -l"));
             vec![
                 "-lic".into(),
                 format!(
-                    "t=\"${TOKEN_VAR}\"; unset {TOKEN_VAR}; {cmd}; c=$?; printf '\\033]7770;handback;%s;%s\\007' \"$t\" \"$c\"; unset t c; exec {again} -l"
+                    "t=\"${TOKEN_VAR}\"; unset {TOKEN_VAR}; {cmd}; c=$?; printf '\\033]7770;handback;%s;%s\\007' \"$t\" \"$c\"; unset c; {tail}"
                 ),
             ]
         }
         ShellKind::Fish => {
             let cmd = quote_paths(engine, ShellDialect::Posix)?;
             let again = quote_path(&shell_str, ShellDialect::Posix)?;
+            let tail = tail.unwrap_or_else(|| format!("exec {again} -l"));
             vec![
                 "-l".into(),
                 "-i".into(),
                 "-c".into(),
                 format!(
-                    "set -l t ${TOKEN_VAR}; set -e {TOKEN_VAR}; {cmd}; set -l c $status; printf '\\033]7770;handback;%s;%s\\007' $t $c; exec {again} -l"
+                    "set -l t ${TOKEN_VAR}; set -e {TOKEN_VAR}; {cmd}; set -l c $status; printf '\\033]7770;handback;%s;%s\\007' $t $c; {tail}"
                 ),
             ]
         }
         ShellKind::PowerShell => {
             let cmd = quote_paths(engine, ShellDialect::PowerShell)?;
+            let tail = tail.map(|t| format!("{t}; ")).unwrap_or_default();
             vec![
                 "-NoLogo".into(),
                 "-NoExit".into(),
                 "-Command".into(),
                 format!(
-                    "$t = $env:{TOKEN_VAR}; Remove-Item Env:{TOKEN_VAR}; & {cmd}; Write-Host -NoNewline \"$([char]27)]7770;handback;$t;$LASTEXITCODE$([char]7)\"; Remove-Variable t"
+                    "$t = $env:{TOKEN_VAR}; Remove-Item Env:{TOKEN_VAR}; & {cmd}; Write-Host -NoNewline \"$([char]27)]7770;handback;$t;$LASTEXITCODE$([char]7)\"; {tail}Remove-Variable t"
                 ),
             ]
         }
@@ -381,24 +392,36 @@ mod tests {
         let args = agent_wrapper(
             Path::new("/bin/zsh"),
             &["claude".into(), "--model".into(), "it's".into()],
+            None,
         )
         .expect("wrap");
         assert_eq!(args[0], "-lic");
         assert_eq!(
             args[1],
-            "t=\"$TANDEM_SHELL_TOKEN\"; unset TANDEM_SHELL_TOKEN; 'claude' '--model' 'it'\\''s'; c=$?; printf '\\033]7770;handback;%s;%s\\007' \"$t\" \"$c\"; unset t c; exec '/bin/zsh' -l"
+            "t=\"$TANDEM_SHELL_TOKEN\"; unset TANDEM_SHELL_TOKEN; 'claude' '--model' 'it'\\''s'; c=$?; printf '\\033]7770;handback;%s;%s\\007' \"$t\" \"$c\"; unset c; unset t; exec '/bin/zsh' -l"
         );
-        let fish = agent_wrapper(Path::new("/usr/bin/fish"), &["codex".into()]).expect("wrap");
+        // With integration the returning shell gets its scripts and the token.
+        let args = agent_wrapper(
+            Path::new("/bin/zsh"),
+            &["claude".into()],
+            Some(Path::new("/d/si")),
+        )
+        .expect("wrap");
+        assert!(args[1].ends_with(
+            "unset c; TANDEM_SHELL_TOKEN=\"$t\" TANDEM_REAL_ZDOTDIR=\"${ZDOTDIR-}\" ZDOTDIR='/d/si/zsh' exec '/bin/zsh' -l"
+        ));
+        let fish =
+            agent_wrapper(Path::new("/usr/bin/fish"), &["codex".into()], None).expect("wrap");
         assert!(
             fish[3].contains("set -e TANDEM_SHELL_TOKEN")
                 && fish[3].ends_with("exec '/usr/bin/fish' -l")
         );
-        let pwsh = agent_wrapper(Path::new("C:/pwsh.exe"), &["claude".into()]).expect("wrap");
+        let pwsh = agent_wrapper(Path::new("C:/pwsh.exe"), &["claude".into()], None).expect("wrap");
         assert!(
             pwsh.contains(&"-NoExit".to_string())
                 && pwsh[3].contains("Remove-Item Env:TANDEM_SHELL_TOKEN; & 'claude';")
         );
-        assert!(agent_wrapper(Path::new("/bin/sh"), &["claude\nrm".into()]).is_err());
+        assert!(agent_wrapper(Path::new("/bin/sh"), &["claude\nrm".into()], None).is_err());
     }
 
     #[cfg(unix)]
@@ -412,6 +435,7 @@ mod tests {
                 "-c".into(),
                 "env | grep -c tok42; exit 7".into(),
             ],
+            None,
         )
         .expect("wrap");
         let out = Command::new("/bin/sh")

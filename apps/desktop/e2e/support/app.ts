@@ -90,6 +90,17 @@ export async function signUpVerified(email: string, password = PASSWORD): Promis
   return jar;
 }
 
+/** Puts the user on `plan` through the API's test route (no checkout); the
+ * desktop follows over its entitlement stream. */
+export async function setPlan(email: string, plan: "free" | "pro" | "team"): Promise<void> {
+  const res = await fetch(`${API}/__test/plan`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, plan }),
+  });
+  if (!res.ok) throw new Error(`setting the plan failed: ${res.status} ${await res.text()}`);
+}
+
 /** Desktop sessions of the jar's user (`/devices`), newest first. */
 export async function deviceSessions(jar: Jar): Promise<Array<{ id: string }>> {
   const res = await call(jar, "GET", "/v1/me/sessions");
@@ -154,13 +165,20 @@ export async function planFooter(): Promise<string> {
 export async function addFolder(path: string): Promise<void> {
   pickFolder(path);
   await $('nav[aria-label="Workspaces"] button[aria-label="Add folder…"]').click();
+  // The fake picker reads its file asynchronously: wait for this folder
+  // before another call can rewrite it.
+  await browser.waitUntil(async () => (await workspaceRoots()).includes(path), {
+    timeout: 15_000,
+    timeoutMsg: `${path} wasn't added: ${JSON.stringify(await workspaceRoots())}`,
+  });
 }
 
+/** Rail rows' roots, read in the page (rows re-render while a list refreshes). */
 export async function workspaceRoots(): Promise<string[]> {
-  const rows = await $$('[data-testid="workspace-row"]');
-  const roots: string[] = [];
-  for (const r of rows) roots.push((await r.getAttribute("data-root")) ?? "");
-  return roots;
+  const roots = await browser.execute(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('[data-testid="workspace-row"]')).map((r) => r.dataset.root ?? ""),
+  );
+  return roots as string[];
 }
 
 /** Text of the visible terminal, from xterm's buffer (WebGL panes draw to a
@@ -315,6 +333,18 @@ export async function waitForShell(paneId: string, timeout = 20_000): Promise<vo
   });
 }
 
+/** Waits until finite CSS animations (a dialog zooming in) have finished,
+ * so a click lands where the element ends up. */
+export async function settled(): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() =>
+        document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity),
+      ),
+    { timeout: 5_000, timeoutMsg: "animations still running" },
+  );
+}
+
 /** Splits the focused pane (Mod+D or Mod+Shift+D) and picks a tile. */
 export async function split(direction: "right" | "down", tile = "shell"): Promise<string> {
   const before = await paneIds();
@@ -327,7 +357,18 @@ export async function split(direction: "right" | "down", tile = "shell"): Promis
     );
   }, direction);
   await $(`[data-testid="tile-${tile}"]`).waitForClickable({ timeout: 10_000 });
+  await settled();
   await $(`[data-testid="tile-${tile}"]`).click();
+  // Under load WebKitWebDriver has dropped a click on a dialog that had just
+  // opened (D-52). Tiles are disabled while a pick runs, so one more click
+  // can only start a pick that never started.
+  const closed = await browser
+    .waitUntil(async () => !(await $('[data-testid="pane-picker"]').isExisting()), { timeout: 2_000 })
+    .catch(() => false);
+  if (!closed && (await $(`[data-testid="tile-${tile}"]`).isEnabled().catch(() => false))) {
+    console.warn(`split: the ${tile} tile click didn't register; clicking again`);
+    await $(`[data-testid="tile-${tile}"]`).click();
+  }
   let added = "";
   await browser.waitUntil(
     async () => {
@@ -337,7 +378,12 @@ export async function split(direction: "right" | "down", tile = "shell"): Promis
     },
     {
       timeout: 15_000,
-      timeoutMsg: `the split didn't add a pane: ${String(await browser.execute(() => document.querySelector("[role=dialog], [role=status], [role=alert]")?.textContent ?? "no dialog"))}`,
+      timeoutMsg: `the split didn't add a pane: ${JSON.stringify(
+        await browser.execute(() => ({
+          toasts: Array.from(document.querySelectorAll("[role=status], [role=alert], [role=dialog]")).map((el) => el.textContent),
+          state: (window as unknown as { __tandemTest?: { debug: () => unknown } }).__tandemTest?.debug(),
+        })),
+      )}`,
     },
   );
   await waitForShell(added);

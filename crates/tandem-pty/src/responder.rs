@@ -40,10 +40,6 @@ struct Collector {
     colors: TermColors,
     /// 1-based (row, col) for CPR, from the shadow screen.
     cursor: (u16, u16),
-    /// The per-launch token marks must carry (F-TL-06 rule 2).
-    token: Option<String>,
-    /// Exit codes from `OSC 7770;handback;<token>;<code>` marks.
-    handbacks: Vec<i32>,
 }
 
 impl Perform for Collector {
@@ -75,19 +71,6 @@ impl Perform for Collector {
         let (Some(code), Some(arg)) = (params.first(), params.get(1)) else {
             return;
         };
-        // An agent wrapper's handback mark; anything without our token is ignored.
-        if *code == HANDBACK_OSC.as_bytes() && *arg == b"handback" {
-            let token = params.get(2).copied().unwrap_or_default();
-            if self.token.as_deref().map(str::as_bytes) == Some(token) {
-                let exit = params
-                    .get(3)
-                    .and_then(|c| std::str::from_utf8(c).ok())
-                    .and_then(|c| c.trim().parse().ok())
-                    .unwrap_or(-1);
-                self.handbacks.push(exit);
-            }
-            return;
-        }
         if *arg != b"?" {
             return;
         }
@@ -106,9 +89,6 @@ impl Perform for Collector {
         self.replies.extend_from_slice(end);
     }
 }
-
-/// The private OSC number an agent wrapper prints when the engine exits.
-pub const HANDBACK_OSC: &str = "7770";
 
 /// Streaming parser: keeps state across chunks, returns bytes to write back.
 pub struct QueryResponder {
@@ -132,17 +112,6 @@ impl QueryResponder {
 
     pub fn feed(&mut self, bytes: &[u8], colors: &TermColors) -> Vec<u8> {
         self.feed_at(bytes, colors, (1, 1))
-    }
-
-    /// Accepts marks carrying this token.
-    pub fn with_token(mut self, token: Option<String>) -> Self {
-        self.collector.token = token;
-        self
-    }
-
-    /// Handback marks seen since the last call.
-    pub fn take_handbacks(&mut self) -> Vec<i32> {
-        std::mem::take(&mut self.collector.handbacks)
     }
 
     /// Like `feed`, answering CPR with `cursor` (1-based row, col).
@@ -183,25 +152,6 @@ mod tests {
         assert!(
             r.feed(b"\x1b]11;#000000\x07", &c).is_empty(),
             "setting a colour isn't a query"
-        );
-    }
-
-    #[test]
-    fn handback_marks_need_the_launch_token() {
-        let mut r = QueryResponder::new().with_token(Some("tok123".into()));
-        let c = TermColors::default();
-        r.feed(b"\x1b]7770;handback;forged;0\x07", &c);
-        assert!(
-            r.take_handbacks().is_empty(),
-            "a program can't fake a handback"
-        );
-        r.feed(b"bye\r\n\x1b]7770;handback;tok123;3\x07$ ", &c);
-        assert_eq!(r.take_handbacks(), vec![3]);
-        let mut plain = QueryResponder::new();
-        plain.feed(b"\x1b]7770;handback;tok123;0\x07", &c);
-        assert!(
-            plain.take_handbacks().is_empty(),
-            "plain shells have no token"
         );
     }
 }

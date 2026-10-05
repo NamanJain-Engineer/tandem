@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-term-last-output"
+description = "Enables the term_last_output command without any pre-configured scope."
+commands.allow = ["term_last_output"]
+
+[[permission]]
+identifier = "deny-term-last-output"
+description = "Denies the term_last_output command without any pre-configured scope."
+commands.deny = ["term_last_output"]

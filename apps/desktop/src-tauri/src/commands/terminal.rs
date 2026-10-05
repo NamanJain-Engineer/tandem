@@ -171,6 +171,20 @@ pub fn term_set_theme_colors(state: State<'_, AppState>, colors: TermColors) {
     state.terminals.pty.set_theme_colors(colors);
 }
 
+/// The last finished command's plain-text output in a pane, from its shell
+/// integration marks ("Copy last command output", F-CD-10 AC3).
+#[tauri::command]
+pub fn term_last_output(
+    state: State<'_, AppState>,
+    pane_id: tandem_core::ids::PaneId,
+) -> Option<tandem_pty::marks::LastOutput> {
+    state
+        .terminals
+        .pty
+        .last_output(pane_id.as_str())
+        .map(|(text, exit_code)| tandem_pty::marks::LastOutput { text, exit_code })
+}
+
 /// Processes a crashed run left behind (UI-132).
 #[tauri::command]
 pub async fn orphans_list(state: State<'_, AppState>) -> Result<Vec<OrphanInfo>, IpcError> {

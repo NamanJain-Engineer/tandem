@@ -8,6 +8,7 @@ import {
   NumberControl,
   SegmentControl,
   SelectControl,
+  ShellIntegrationControl,
   TextControl,
   ThemeCards,
 } from "./controls";
@@ -292,6 +293,13 @@ export function settingsPages(platform: string): PageDef[] {
                 ),
               },
             ]),
+        {
+          id: "term_shell_integration",
+          label: t("settings.shellIntegration"),
+          description: t("settings.shellIntegration.desc"),
+          keywords: ["shell integration", "cwd", "prompt", "bash", "zsh", "fish", "powershell"],
+          control: (ids) => <ShellIntegrationControl ids={ids} label={t("settings.shellIntegration")} />,
+        },
         {
           id: "term_gpu_rendering",
           label: t("settings.gpu"),

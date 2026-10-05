@@ -218,6 +218,12 @@ static REGISTRY: &[CommandSpec] = &[
         None,
         E::PaneFocused,
     ),
+    same(
+        "terminal.copy_last_output",
+        C::Terminal,
+        None,
+        E::PaneFocused,
+    ),
     aliased(
         "terminal.find_prev",
         C::Terminal,

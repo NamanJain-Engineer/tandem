@@ -1,5 +1,5 @@
 import { $, browser } from "@wdio/globals";
-import { addFolder, freshOffline, paneIds, paneText, sendToPane, split, waitForPaneText } from "../support/app";
+import { addFolder, freshOffline, paneIds, paneText, sendToPane, split, textOf, waitForPaneText } from "../support/app";
 
 // E2E-M3-5 Handback (F-CD-03 AC3): the test engine on PATH stands in for `claude`.
 describe("E2E-M3-5 handback", () => {
@@ -11,11 +11,11 @@ describe("E2E-M3-5 handback", () => {
     const agent = await split("right", "claude");
     await waitForPaneText(agent, "Fake Claude Code");
     expect(await paneText(agent)).toContain(`cwd: ${root}`);
-    // Read once the new pane has faded in (hidden text reads as "").
-    const title = $(`[data-testid="pane"][data-pane-id="${agent}"] [data-testid="pane-title"]`);
-    await browser.waitUntil(async () => (await title.getText()) === "Claude Code · 1", {
+    // In-page text: WebKitWebDriver's getText drops truncated text.
+    const title = `[data-testid="pane"][data-pane-id="${agent}"] [data-testid="pane-title"]`;
+    await browser.waitUntil(async () => (await textOf(title)) === "Claude Code · 1", {
       timeout: 5_000,
-      timeoutMsg: `title: ${await title.getText()}`,
+      timeoutMsg: `title: ${await textOf(title)}`,
     });
     await sendToPane(agent, "/exit\r");
     await waitForPaneText(agent, "Goodbye from the test engine");

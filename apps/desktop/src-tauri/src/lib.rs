@@ -71,6 +71,7 @@ macro_rules! app_commands {
             commands::terminal::orphans_resolve,
             commands::terminal::sessions_saved_list,
             commands::terminal::term_quote_paths,
+            commands::terminal::term_last_output,
             commands::terminal::term_stage_clipboard_image,
             commands::engines::engines_list,
             $($extra),*

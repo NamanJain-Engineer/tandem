@@ -30,3 +30,5 @@ Things only a human can do. The build never blocks on them: each sits behind a m
 - M3: ConPTY TUIs on Windows (vim, htop): rendering, resize, mouse; closing a pane ends its whole tree (Job Object) and a crash of Tandem leaves no children behind.
 - M3: orphan detection on macOS after a forced quit (`kill -9`) with a `nohup` child in a pane: the dialog lists it and Stop ends it.
 - M3: the 16-pane benchmark (`pnpm --filter desktop perf -- --suite terminals`) on the reference machines.
+- M3: PowerShell shell integration on Windows (pwsh 7 and Windows PowerShell 5.1): cwd after `cd`, ✓/✗ marks, and "Copy last command output" without a leading blank line; the user's own `prompt` still renders.
+- M3: zsh integration with a real oh-my-zsh / powerlevel10k setup (instant prompt on): prompt unchanged, marks present, `echo $ZDOTDIR` shows the user's own value.

@@ -15,3 +15,4 @@ build-kit/reference/
 apps/desktop/src-tauri/gen/
 test-results/
 playwright-report/
+*.tsbuildinfo

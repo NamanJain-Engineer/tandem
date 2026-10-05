@@ -5,8 +5,10 @@
 
 pub mod env;
 pub mod frame;
+pub mod integration;
 #[cfg(windows)]
 mod job;
+pub mod marks;
 pub mod orphans;
 pub mod quote;
 pub mod responder;
@@ -28,9 +30,10 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub use frame::{FrameKind, PtyFrame};
+pub use marks::Mark;
 pub use responder::{QueryResponder, TermColors};
 pub use ring::ScrollbackRing;
-pub use side::{PtyState, SideChannel};
+pub use side::{Fed, PtyState, SideChannel};
 
 use orphans::ChildRegistry;
 
@@ -48,6 +51,8 @@ pub const STATE_DEBOUNCE: Duration = Duration::from_millis(100);
 pub type StateSink = Arc<dyn Fn(PtyState) + Send + Sync>;
 /// Told when an agent exits and its pane hands back to the shell: (pane, exit code).
 pub type HandbackSink = Arc<dyn Fn(&str, i32) + Send + Sync>;
+/// Called with each shell-integration mark (`pty:mark`, F-CD-10).
+pub type MarkSink = Arc<dyn Fn(&str, &Mark) + Send + Sync>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PtyError {
@@ -91,7 +96,8 @@ pub struct SpawnSpec {
     pub cols: u16,
     pub rows: u16,
     pub scrollback_lines: usize,
-    /// Agent panes: the token the wrapper's handback mark carries.
+    /// This launch's token: shell-integration and handback marks must carry
+    /// it (§5.8); `None` accepts no marks.
     pub mark_token: Option<String>,
 }
 
@@ -151,6 +157,7 @@ pub struct PtyManager {
     registry: Option<Arc<ChildRegistry>>,
     on_state: Option<StateSink>,
     on_handback: Option<HandbackSink>,
+    on_mark: Option<MarkSink>,
 }
 
 enum Msg {
@@ -179,6 +186,12 @@ impl PtyManager {
     /// Where agent handbacks go (Saved sessions, F-CD-03 AC3).
     pub fn with_handback_sink(mut self, sink: HandbackSink) -> Self {
         self.on_handback = Some(sink);
+        self
+    }
+
+    /// Where shell-integration marks go (`pty:mark`).
+    pub fn with_mark_sink(mut self, sink: MarkSink) -> Self {
+        self.on_mark = Some(sink);
         self
     }
 
@@ -299,6 +312,7 @@ impl PtyManager {
     ) {
         let colors = self.colors.clone();
         let on_handback = self.on_handback.clone();
+        let on_mark = self.on_mark.clone();
         let pane_id = pane.to_string();
         let name = format!("pty-read-{pane}");
         let spawned = std::thread::Builder::new().name(name).spawn(move || {
@@ -322,34 +336,48 @@ impl PtyManager {
                         return;
                     }
                     Ok(n) => {
-                        let chunk = &buf[..n];
-                        // Queries are answered here, for visible and hidden
-                        // panes alike, within the same read (§5.7).
-                        let replies = match session.side.lock() {
+                        // Marks come out of the stream first; queries are
+                        // answered here, for visible and hidden panes alike,
+                        // within the same read (§5.7, §5.8).
+                        let fed = match session.side.lock() {
                             Ok(mut side) => {
-                                let replies = side.feed(chunk, &colors.read());
+                                let fed = side.feed_raw(&buf[..n], &colors.read());
                                 if side.state() != side_published(&side) {
                                     session.state_dirty.store(true, Ordering::Release);
                                 }
-                                if let Some(sink) = &on_handback {
-                                    for code in side.take_handbacks() {
-                                        sink(&pane_id, code);
-                                    }
-                                }
-                                replies
+                                fed
                             }
-                            Err(_) => Vec::new(),
+                            Err(_) => Fed {
+                                output: buf[..n].to_vec(),
+                                ..Fed::default()
+                            },
                         };
+                        for mark in &fed.marks {
+                            match (mark, &on_handback, &on_mark) {
+                                (Mark::Handback(code), Some(sink), _) => sink(&pane_id, *code),
+                                (Mark::Handback(_), None, _) => {}
+                                (m, _, Some(sink)) => sink(&pane_id, m),
+                                _ => {}
+                            }
+                        }
+                        let Fed {
+                            output: chunk,
+                            replies,
+                            ..
+                        } = fed;
                         if !replies.is_empty() {
                             if let Ok(mut w) = session.writer.lock() {
                                 let _ = w.write_all(&replies);
                                 let _ = w.flush();
                             }
                         }
-                        if let Ok(mut ring) = session.ring.lock() {
-                            ring.push(chunk);
+                        if chunk.is_empty() {
+                            continue;
                         }
-                        if tx.send(Msg::Data(chunk.to_vec())).is_err() {
+                        if let Ok(mut ring) = session.ring.lock() {
+                            ring.push(&chunk);
+                        }
+                        if tx.send(Msg::Data(chunk)).is_err() {
                             return;
                         }
                     }
@@ -583,6 +611,13 @@ impl PtyManager {
     }
 
     /// Plain text of the pane's visible screen.
+    /// The last finished command's plain-text output and exit code (F-CD-10 AC3).
+    pub fn last_output(&self, pane: &str) -> Option<(String, Option<i32>)> {
+        let session = self.sessions.get(pane)?.clone();
+        let out = session.side.lock().ok().and_then(|s| s.last_output());
+        out
+    }
+
     pub fn screen_text(&self, pane: &str) -> Option<String> {
         let session = self.sessions.get(pane)?;
         let text = session.side.lock().ok().map(|s| s.screen_text());
