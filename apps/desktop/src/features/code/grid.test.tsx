@@ -51,7 +51,9 @@ const WS: WorkspaceSummary = {
 };
 
 /** A small core: tabs, panes and saved layouts. */
-function core(opts: { live?: number; panes?: string[]; tree?: unknown } = {}) {
+function core(
+  opts: { live?: number; panes?: string[]; tree?: unknown; missing?: boolean; picked?: string } = {},
+) {
   let n = 0;
   const tabs: Tab[] = [TAB];
   const panes: PaneRecord[] = (opts.panes ?? []).map((id, i) => pane(id, TAB.id, i));
@@ -59,18 +61,47 @@ function core(opts: { live?: number; panes?: string[]; tree?: unknown } = {}) {
     ? { tree: opts.tree, activePaneId: null, maximizedPaneId: null }
     : null;
   function pane(id: string, tabId: string, at: number): PaneRecord {
-    return { id, tabId, workspaceId: WS.id, kind: "terminal", cwd: null, engineId: null, humanName: null, title: null, createdAt: at };
+    return {
+      id,
+      tabId,
+      workspaceId: WS.id,
+      kind: "terminal",
+      cwd: null,
+      engineId: null,
+      humanName: null,
+      title: null,
+      createdAt: at,
+    };
   }
   const calls: Call[] = fakeBackend({
-    workspace_list: () => [{ ...WS, tabs, liveCount: opts.live ?? panes.length }],
-    layout_get: () => tabs.map((tab): TabLayout => ({ tab, tree: tab.id === TAB.id ? ((saved?.tree as TabLayout["tree"]) ?? null) : null, activePaneId: null, maximizedPaneId: null })),
+    workspace_list: () => [
+      { ...WS, tabs, liveCount: opts.live ?? panes.length, missing: opts.missing ?? false },
+    ],
+    tab_rename: (a) => {
+      const tab = tabs.find((x) => x.id === a?.id);
+      if (tab) tab.name = String(a?.name);
+      return null;
+    },
+    workspace_pick_folder: () => opts.picked ?? null,
+    workspace_locate: () => {
+      opts.missing = false;
+      return null;
+    },
+    layout_get: () =>
+      tabs.map((tab): TabLayout => ({
+        tab,
+        tree: tab.id === TAB.id ? ((saved?.tree as TabLayout["tree"]) ?? null) : null,
+        activePaneId: null,
+        maximizedPaneId: null,
+      })),
     layout_save: (a) => {
       saved = a as typeof saved;
       return null;
     },
     pane_list: (a) => panes.filter((p) => p.tabId === a?.tabId),
     pane_create: (a) => {
-      if (opts.live !== undefined && opts.live >= 4) throw { code: "limit_reached", message: "Free includes 4 live panes" };
+      if (opts.live !== undefined && opts.live >= 4)
+        throw { code: "limit_reached", message: "Free includes 4 live panes" };
       const p = pane(`pn_${++n}`, String(a?.tabId), 100 + n);
       panes.push(p);
       return p;
@@ -153,7 +184,16 @@ describe("pane grid (F-CD-02)", () => {
   });
 
   it("F-CD-02 maximize hides siblings without unmounting them, and restores", async () => {
-    core({ panes: ["pn_a", "pn_b"], tree: { type: "split", dir: "row", ratio: 0.5, a: { type: "leaf", paneId: "pn_a" }, b: { type: "leaf", paneId: "pn_b" } } });
+    core({
+      panes: ["pn_a", "pn_b"],
+      tree: {
+        type: "split",
+        dir: "row",
+        ratio: 0.5,
+        a: { type: "leaf", paneId: "pn_a" },
+        b: { type: "leaf", paneId: "pn_b" },
+      },
+    });
     renderCode();
     await waitFor(() => expect(paneEls()).toHaveLength(2));
     const firstMaximize = screen.getAllByRole("button", { name: "Maximize pane" })[0] as HTMLElement;
@@ -168,33 +208,83 @@ describe("pane grid (F-CD-02)", () => {
   });
 
   it("F-CD-02 swapping two panes moves them without remounting their terminals", async () => {
-    core({ panes: ["pn_a", "pn_b"], tree: { type: "split", dir: "row", ratio: 0.5, a: { type: "leaf", paneId: "pn_a" }, b: { type: "leaf", paneId: "pn_b" } } });
+    core({
+      panes: ["pn_a", "pn_b"],
+      tree: {
+        type: "split",
+        dir: "row",
+        ratio: 0.5,
+        a: { type: "leaf", paneId: "pn_a" },
+        b: { type: "leaf", paneId: "pn_b" },
+      },
+    });
     renderCode();
     await waitFor(() => expect(paneEls()).toHaveLength(2));
-    const order = () => Array.from(document.querySelectorAll("[data-slot] [data-testid=pane]")).map((el) => el.getAttribute("data-pane-id"));
+    const order = () =>
+      Array.from(document.querySelectorAll("[data-slot] [data-testid=pane]")).map((el) =>
+        el.getAttribute("data-pane-id"),
+      );
     expect(order()).toEqual(["pn_a", "pn_b"]);
-    await act(() => applyDrop({ kind: "pane", paneId: "pn_a", tabId: TAB.id, title: "" }, { kind: "zone", paneId: "pn_b", tabId: TAB.id, zone: "center" }));
+    await act(() =>
+      applyDrop(
+        { kind: "pane", paneId: "pn_a", tabId: TAB.id, title: "" },
+        { kind: "zone", paneId: "pn_b", tabId: TAB.id, zone: "center" },
+      ),
+    );
     expect(order()).toEqual(["pn_b", "pn_a"]);
     expect(mounts.get("pn_a")).toBe(1);
     expect(mounts.get("pn_b")).toBe(1);
   });
 
   it("F-CD-02 an edge drop splits next to the target; dropping on itself changes nothing", async () => {
-    core({ panes: ["pn_a", "pn_b"], tree: { type: "split", dir: "row", ratio: 0.5, a: { type: "leaf", paneId: "pn_a" }, b: { type: "leaf", paneId: "pn_b" } } });
+    core({
+      panes: ["pn_a", "pn_b"],
+      tree: {
+        type: "split",
+        dir: "row",
+        ratio: 0.5,
+        a: { type: "leaf", paneId: "pn_a" },
+        b: { type: "leaf", paneId: "pn_b" },
+      },
+    });
     renderCode();
     await waitFor(() => expect(paneEls()).toHaveLength(2));
     const before = tree();
-    await act(() => applyDrop({ kind: "pane", paneId: "pn_a", tabId: TAB.id, title: "" }, { kind: "zone", paneId: "pn_a", tabId: TAB.id, zone: "left" }));
+    await act(() =>
+      applyDrop(
+        { kind: "pane", paneId: "pn_a", tabId: TAB.id, title: "" },
+        { kind: "zone", paneId: "pn_a", tabId: TAB.id, zone: "left" },
+      ),
+    );
     expect(tree()).toBe(before);
-    await act(() => applyDrop({ kind: "pane", paneId: "pn_a", tabId: TAB.id, title: "" }, { kind: "zone", paneId: "pn_b", tabId: TAB.id, zone: "bottom" }));
+    await act(() =>
+      applyDrop(
+        { kind: "pane", paneId: "pn_a", tabId: TAB.id, title: "" },
+        { kind: "zone", paneId: "pn_b", tabId: TAB.id, zone: "bottom" },
+      ),
+    );
     expect(tree()).toMatchObject({ type: "split", dir: "col", a: { paneId: "pn_b" }, b: { paneId: "pn_a" } });
   });
 
   it("F-CD-02 dropping on the tab strip moves the pane to a new tab with the same id", async () => {
-    const { panes } = core({ panes: ["pn_a", "pn_b"], tree: { type: "split", dir: "row", ratio: 0.5, a: { type: "leaf", paneId: "pn_a" }, b: { type: "leaf", paneId: "pn_b" } } });
+    const { panes } = core({
+      panes: ["pn_a", "pn_b"],
+      tree: {
+        type: "split",
+        dir: "row",
+        ratio: 0.5,
+        a: { type: "leaf", paneId: "pn_a" },
+        b: { type: "leaf", paneId: "pn_b" },
+      },
+    });
     renderCode();
     await waitFor(() => expect(paneEls()).toHaveLength(2));
-    await act(() => applyDrop({ kind: "pane", paneId: "pn_b", tabId: TAB.id, title: "" }, { kind: "new_tab", workspaceId: WS.id }));
+    await act(() =>
+      applyDrop(
+        { kind: "pane", paneId: "pn_b", tabId: TAB.id, title: "" },
+        { kind: "new_tab", workspaceId: WS.id },
+      ),
+    );
     expect(leaves(tree())).toEqual(["pn_a"]);
     expect(useLayout.getState().tabs.tb_2?.tree).toEqual({ type: "leaf", paneId: "pn_b" });
     expect(panes.find((p) => p.id === "pn_b")?.tabId).toBe("tb_2");
@@ -214,7 +304,16 @@ describe("pane grid (F-CD-02)", () => {
   });
 
   it("F-CD-02 layout changes are saved once, 500 ms after the last change", async () => {
-    const { calls, saved } = core({ panes: ["pn_a", "pn_b"], tree: { type: "split", dir: "row", ratio: 0.5, a: { type: "leaf", paneId: "pn_a" }, b: { type: "leaf", paneId: "pn_b" } } });
+    const { calls, saved } = core({
+      panes: ["pn_a", "pn_b"],
+      tree: {
+        type: "split",
+        dir: "row",
+        ratio: 0.5,
+        a: { type: "leaf", paneId: "pn_a" },
+        b: { type: "leaf", paneId: "pn_b" },
+      },
+    });
     renderCode();
     await waitFor(() => expect(paneEls()).toHaveLength(2));
     vi.useFakeTimers();
@@ -235,7 +334,16 @@ describe("pane grid (F-CD-02)", () => {
   });
 
   it("F-CD-02 Mod+Alt+Arrow logic moves focus to the spatial neighbour", async () => {
-    core({ panes: ["pn_a", "pn_b"], tree: { type: "split", dir: "row", ratio: 0.5, a: { type: "leaf", paneId: "pn_a" }, b: { type: "leaf", paneId: "pn_b" } } });
+    core({
+      panes: ["pn_a", "pn_b"],
+      tree: {
+        type: "split",
+        dir: "row",
+        ratio: 0.5,
+        a: { type: "leaf", paneId: "pn_a" },
+        b: { type: "leaf", paneId: "pn_b" },
+      },
+    });
     renderCode();
     await waitFor(() => expect(paneEls()).toHaveLength(2));
     act(() => useLayout.getState().focus(TAB.id, "pn_a"));
@@ -246,5 +354,50 @@ describe("pane grid (F-CD-02)", () => {
     expect(useLayout.getState().tabs[TAB.id]?.active).toBe("pn_b");
     act(() => useLayout.getState().focusCycle(TAB.id, 1));
     expect(useLayout.getState().tabs[TAB.id]?.active).toBe("pn_a");
+  });
+
+  it("F-CD-01 a tab renames with F2 or a double-click; Escape keeps the old name", async () => {
+    const { calls } = core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    const tabButton = () => within(screen.getByTestId("tab")).getAllByRole("button")[0] as HTMLElement;
+    fireEvent.keyDown(tabButton(), { key: "F2" });
+    fireEvent.keyDown(screen.getByLabelText("New name for Tab 1"), { key: "Escape" });
+    expect(calls.filter((c) => c.cmd === "tab_rename")).toHaveLength(0);
+    fireEvent.doubleClick(tabButton());
+    const field = screen.getByLabelText("New name for Tab 1");
+    fireEvent.change(field, { target: { value: "Server" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    await waitFor(() => expect(tabButton().textContent).toBe("Server"));
+    expect(calls.filter((c) => c.cmd === "tab_rename").map((c) => c.args)).toEqual([
+      { id: TAB.id, name: "Server" },
+    ]);
+  });
+
+  it("F-CD-01 a missing folder blocks launches and offers Locate… and Remove", async () => {
+    const { calls } = core({ missing: true, picked: "/code/shop-moved" });
+    useWorkspaces.setState({
+      list: [{ ...WS, missing: true }],
+      activeId: WS.id,
+      activeTab: { [WS.id]: TAB.id },
+    });
+    render(
+      <UiProvider>
+        <CodeMain visible />
+      </UiProvider>,
+    );
+    expect(await screen.findByText("This folder is missing")).toBeTruthy();
+    expect(calls.filter((c) => c.cmd === "pane_create")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    expect(useWorkspaces.getState().confirmRemove?.id).toBe(WS.id);
+    act(() => useWorkspaces.getState().askRemove(null));
+    fireEvent.click(screen.getByRole("button", { name: "Locate…" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "workspace_locate")?.args).toEqual({
+        id: WS.id,
+        newRoot: "/code/shop-moved",
+      }),
+    );
+    await waitFor(() => expect(screen.queryByText("This folder is missing")).toBeNull());
   });
 });

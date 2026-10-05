@@ -54,7 +54,15 @@ function setup(platform: "linux" | "macos" = "linux", dev = true) {
   useBoot.setState({ boot: { ...BOOT, platform, dev } });
   useWorkspaces.setState({ list: [WS], activeId: WS.id, activeTab: { [WS.id]: "tb_1" } });
   useLayout.setState({
-    tabs: { tb_1: { tree: { type: "leaf", paneId: "pn_1" }, active: "pn_1", maximized: null, panes: {}, keepEmpty: false } },
+    tabs: {
+      tb_1: {
+        tree: { type: "leaf", paneId: "pn_1" },
+        active: "pn_1",
+        maximized: null,
+        panes: {},
+        keepEmpty: false,
+      },
+    },
     loaded: { [WS.id]: true },
     boxes: {},
     dragging: false,
@@ -107,12 +115,24 @@ describe("command registry (F-SH-09)", () => {
     expect(matches(b, ev, false)).toBe(true);
     expect(matches(b, { ...ev, altKey: true }, false)).toBe(false);
     expect(matches(b, { ...ev, ctrlKey: false, metaKey: true }, true)).toBe(true);
-    expect(matches(parseBinding("Ctrl+Tab"), { code: "Tab", metaKey: false, ctrlKey: true, shiftKey: false, altKey: false }, true)).toBe(true);
+    expect(
+      matches(
+        parseBinding("Ctrl+Tab"),
+        { code: "Tab", metaKey: false, ctrlKey: true, shiftKey: false, altKey: false },
+        true,
+      ),
+    ).toBe(true);
   });
 
   it("F-SH-09.1 with a terminal focused on Linux, Ctrl+W/T/D/[/] reach the PTY", () => {
     setup();
-    const spies = ["pane.close", "workspace.new_tab", "pane.split_right", "pane.focus_prev", "pane.focus_next"].map((id) => vi.spyOn(handlers, id));
+    const spies = [
+      "pane.close",
+      "workspace.new_tab",
+      "pane.split_right",
+      "pane.focus_prev",
+      "pane.focus_next",
+    ].map((id) => vi.spyOn(handlers, id));
     for (const code of ["KeyW", "KeyT", "KeyD", "BracketLeft", "BracketRight"]) {
       const r = press(terminal(), { code, key: code.slice(-1).toLowerCase(), ctrlKey: true });
       expect(r, code).toEqual({ prevented: false, reachedTarget: true });
@@ -150,7 +170,9 @@ describe("command registry (F-SH-09)", () => {
   it("F-SH-09 text fields keep their keys, except the global few", () => {
     setup();
     const split = vi.spyOn(handlers, "pane.split_right");
-    expect(press(screen.getByLabelText("field"), { code: "KeyD", key: "d", ctrlKey: true }).prevented).toBe(false);
+    expect(press(screen.getByLabelText("field"), { code: "KeyD", key: "d", ctrlKey: true }).prevented).toBe(
+      false,
+    );
     expect(split).not.toHaveBeenCalled();
     press(screen.getByLabelText("field"), { code: "Digit3", key: "3", ctrlKey: true });
     expect(useUi.getState().mode).toBe("thread");
@@ -174,20 +196,30 @@ describe("command registry (F-SH-09)", () => {
   it("F-SH-09.3 release builds swallow reload, print and devtools keys", () => {
     setup("linux", false);
     expect(press(screen.getByText("elsewhere"), { key: "F5", code: "F5" }).prevented).toBe(true);
-    expect(press(screen.getByText("elsewhere"), { key: "r", code: "KeyR", ctrlKey: true }).prevented).toBe(true);
+    expect(press(screen.getByText("elsewhere"), { key: "r", code: "KeyR", ctrlKey: true }).prevented).toBe(
+      true,
+    );
     // Ctrl+R still reaches the shell for reverse search.
     expect(press(terminal(), { key: "r", code: "KeyR", ctrlKey: true }).reachedTarget).toBe(true);
-    expect(isWebviewShortcut({ key: "i", code: "KeyI", ctrlKey: true, shiftKey: true, metaKey: false }, false)).toBe(true);
-    expect(isWebviewShortcut({ key: "c", code: "KeyC", ctrlKey: true, shiftKey: false, metaKey: false }, false)).toBe(false);
+    expect(
+      isWebviewShortcut({ key: "i", code: "KeyI", ctrlKey: true, shiftKey: true, metaKey: false }, false),
+    ).toBe(true);
+    expect(
+      isWebviewShortcut({ key: "c", code: "KeyC", ctrlKey: true, shiftKey: false, metaKey: false }, false),
+    ).toBe(false);
   });
 
   it("F-SH-09.4 every registry command is in the palette and runs the shortcut's handler", () => {
     setup();
     for (const spec of COMMANDS) {
       if (spec.id === "palette.open") continue;
-      act(() => useUi.setState({ paletteOpen: true, mode: "code", settingsOpen: false, upgrade: { open: false } }));
+      act(() =>
+        useUi.setState({ paletteOpen: true, mode: "code", settingsOpen: false, upgrade: { open: false } }),
+      );
       const spy = vi.spyOn(handlers, spec.id).mockImplementation(() => undefined);
-      const option = screen.getAllByRole("option").find((o) => o.textContent?.includes(commandTitle(spec.id)));
+      const option = screen
+        .getAllByRole("option")
+        .find((o) => o.textContent?.includes(commandTitle(spec.id)));
       expect(option, spec.id).toBeTruthy();
       fireEvent.click(option as HTMLElement);
       expect(spy, spec.id).toHaveBeenCalledTimes(1);
@@ -195,10 +227,16 @@ describe("command registry (F-SH-09)", () => {
       const keys = bindingFor(spec, { mac: false, terminalFirst: false });
       if (keys) {
         const b = parseBinding(keys);
-        press(screen.getByText("elsewhere"), { code: b.code, key: b.code, ctrlKey: b.mod || b.ctrl, shiftKey: b.shift, altKey: b.alt });
+        press(screen.getByText("elsewhere"), {
+          code: b.code,
+          key: b.code,
+          ctrlKey: b.mod || b.ctrl,
+          shiftKey: b.shift,
+          altKey: b.alt,
+        });
         expect(spy, `${spec.id} via ${keys}`).toHaveBeenCalledTimes(2);
       }
       spy.mockRestore();
     }
-  });
+  }, 20_000); // one palette round trip per command
 });

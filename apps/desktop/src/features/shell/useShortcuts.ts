@@ -7,11 +7,19 @@ import { useBoot } from "./useBoot";
 /** Fields where typing wins over app shortcuts (xterm's textarea excepted). */
 function isTextField(el: Element | null): boolean {
   if (!(el instanceof HTMLElement) || el.closest(".xterm")) return false;
-  return el.isContentEditable || el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement;
+  return (
+    el.isContentEditable ||
+    el instanceof HTMLInputElement ||
+    el instanceof HTMLTextAreaElement ||
+    el instanceof HTMLSelectElement
+  );
 }
 
 /** WebView keys that would reload, print, save or open devtools (F-SH-09 AC3). */
-export function isWebviewShortcut(e: Pick<KeyboardEvent, "key" | "code" | "metaKey" | "ctrlKey" | "shiftKey">, mac: boolean): boolean {
+export function isWebviewShortcut(
+  e: Pick<KeyboardEvent, "key" | "code" | "metaKey" | "ctrlKey" | "shiftKey">,
+  mac: boolean,
+): boolean {
   if (e.key === "F5" || e.key === "F3" || e.key === "F12") return true;
   if (!(mac ? e.metaKey : e.ctrlKey)) return false;
   if (e.shiftKey) return e.code === "KeyI" || e.code === "KeyJ" || e.code === "KeyR";

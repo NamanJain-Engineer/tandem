@@ -86,7 +86,9 @@ describe("deep links (F-SH-13)", () => {
       workspace_add: () => ({ workspace: { ...ws, root: "/tmp/x", name: "x" }, created: true }),
     });
     wrap(<DeepLinks />);
-    await waitFor(() => expect(calls.find((c) => c.cmd === "workspace_add")?.args).toEqual({ root: "/tmp/x" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "workspace_add")?.args).toEqual({ root: "/tmp/x" }),
+    );
     expect(useUi.getState().mode).toBe("code");
   });
 });

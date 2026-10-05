@@ -59,7 +59,8 @@ export function isEnabled(spec: CommandSpec): boolean {
 
 function split(side: Side): void {
   const tabId = activeTab();
-  if (tabId && useLayout.getState().requestSplit(tabId, null, side) === "no_room") toast({ tone: "warning", title: t("split.noRoom") });
+  if (tabId && useLayout.getState().requestSplit(tabId, null, side) === "no_room")
+    toast({ tone: "warning", title: t("split.noRoom") });
 }
 
 function cycleTab(delta: 1 | -1): void {

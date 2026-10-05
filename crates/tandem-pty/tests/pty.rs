@@ -182,3 +182,99 @@ fn resize_and_unknown_pane() {
         Err(tandem_pty::PtyError::NotFound)
     ));
 }
+
+#[test]
+fn f_cd_03_5_a_hidden_pane_gets_da_answered_within_100ms() {
+    // No sink: the pane isn't shown anywhere.
+    let mgr = PtyManager::new();
+    mgr.spawn(
+        spec(
+            "hidden",
+            "stty raw -echo; t0=$(date +%s%N); printf '\\033[c'; r=$(dd bs=1 count=9 2>/dev/null | od -An -c); t1=$(date +%s%N); echo \"$(( (t1 - t0) / 1000000 )) $r\" > /tmp/tandem-da-$$; mv /tmp/tandem-da-$$ /tmp/tandem-da-done-$$; echo $$ > /tmp/tandem-da-pid",
+        ),
+        None,
+    )
+    .expect("spawn");
+    let started = std::time::Instant::now();
+    let reply = (|| loop {
+        if let Ok(pid) = std::fs::read_to_string("/tmp/tandem-da-pid") {
+            let path = format!("/tmp/tandem-da-done-{}", pid.trim());
+            if let Ok(body) = std::fs::read_to_string(&path) {
+                let _ = std::fs::remove_file(&path);
+                let _ = std::fs::remove_file("/tmp/tandem-da-pid");
+                return Some(body);
+            }
+        }
+        if started.elapsed() > Duration::from_secs(5) {
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    })()
+    .expect("the program got its answer");
+    assert!(
+        reply.contains('?') && reply.contains('c'),
+        "DA1 reply: {reply}"
+    );
+    let ms: u64 = reply
+        .split_whitespace()
+        .next()
+        .and_then(|v| v.parse().ok())
+        .expect("elapsed");
+    assert!(ms < 100, "answered in {ms} ms");
+}
+
+#[test]
+fn f_cd_03_modes_reach_the_state_sink() {
+    use std::sync::Mutex;
+    use tandem_pty::PtyState;
+    let seen: Arc<Mutex<Vec<PtyState>>> = Arc::default();
+    let sink = seen.clone();
+    let mgr = PtyManager::new().with_state_sink(Arc::new(move |s| {
+        if let Ok(mut v) = sink.lock() {
+            v.push(s);
+        }
+    }));
+    mgr.spawn(
+        spec("modes", "printf '\\033]2;build watch\\007\\033[?2004h'; sleep 0.3; printf '\\033[?2004l'; sleep 0.3"),
+        None,
+    )
+    .expect("spawn");
+    assert!(wait_until(Duration::from_secs(5), || {
+        seen.lock()
+            .map(|v| {
+                v.iter()
+                    .any(|s| s.bracketed_paste && s.title.as_deref() == Some("build watch"))
+            })
+            .unwrap_or(false)
+    }));
+    assert!(
+        wait_until(Duration::from_secs(5), || {
+            seen.lock()
+                .map(|v| v.last().map(|s| !s.bracketed_paste).unwrap_or(false))
+                .unwrap_or(false)
+        }),
+        "the last change is always sent"
+    );
+    let changes = seen.lock().map(|v| v.len()).unwrap_or(0);
+    assert!(changes <= 3, "debounced: {changes} events");
+}
+
+#[test]
+fn f_cd_03_8_children_are_recorded_until_they_exit() {
+    use tandem_pty::orphans::{read_records, ChildRegistry, SystemTable};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("run/children.json");
+    let registry = Arc::new(ChildRegistry::new(
+        path.clone(),
+        Box::new(SystemTable::default()),
+    ));
+    let mgr = PtyManager::new().with_registry(registry);
+    let info = mgr.spawn(spec("tracked", "sleep 30"), None).expect("spawn");
+    let records = read_records(&path);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].pid, info.pid);
+    assert_eq!(records[0].exe, "sh");
+    assert!(records[0].start_time > 0);
+    mgr.kill("tracked").expect("kill");
+    assert!(wait_until(Duration::from_secs(5), || read_records(&path).is_empty()));
+}

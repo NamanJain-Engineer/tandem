@@ -119,7 +119,7 @@ pub fn app_open_external(state: State<'_, AppState>, url: String) -> Result<(), 
 
 #[tauri::command]
 pub fn app_quit(app: tauri::AppHandle, state: State<'_, AppState>) {
-    state.terminals.pty.kill_all();
+    state.terminals.shutdown(&state.data.scrollback());
     app.exit(0);
 }
 

@@ -68,7 +68,10 @@ export function SettingsView() {
   const current = pages.find((p) => p.id === page) ?? pages[0];
   return (
     <>
-      <nav aria-label={t("settings.nav")} className="flex w-[var(--rail-w)] shrink-0 flex-col gap-2 border-r border-border bg-surface-1 p-2">
+      <nav
+        aria-label={t("settings.nav")}
+        className="flex w-[var(--rail-w)] shrink-0 flex-col gap-2 border-r border-border bg-surface-1 p-2"
+      >
         <button
           type="button"
           onClick={closeSettings}
@@ -77,7 +80,17 @@ export function SettingsView() {
           <ChevronLeft size={14} aria-hidden="true" />
           {t("settings.back")}
         </button>
-        <Input ref={filter} label={t("settings.filter")} hideLabel placeholder={t("settings.filter")} prefix={<Search size={14} />} value={query} onChange={(e) => setQuery(e.target.value)} clearable onClear={() => setQuery("")} />
+        <Input
+          ref={filter}
+          label={t("settings.filter")}
+          hideLabel
+          placeholder={t("settings.filter")}
+          prefix={<Search size={14} />}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          clearable
+          onClear={() => setQuery("")}
+        />
         <ul className="flex flex-col gap-0.5">
           {visible.map((p) => (
             <li key={p.id}>
@@ -95,17 +108,29 @@ export function SettingsView() {
             </li>
           ))}
         </ul>
-        {visible.length === 0 && <p className="px-2 text-sm text-fg-subtle">{t("settings.noMatch", { q: query })}</p>}
+        {visible.length === 0 && (
+          <p className="px-2 text-sm text-fg-subtle">{t("settings.noMatch", { q: query })}</p>
+        )}
       </nav>
       <main id="main" tabIndex={-1} className="min-w-0 flex-1 overflow-y-auto bg-bg focus:outline-none">
         {current && (
-          <div className="mx-auto flex max-w-[720px] flex-col gap-6 px-6 py-6" data-testid={`settings-page-${current.id}`}>
+          <div
+            className="mx-auto flex max-w-[720px] flex-col gap-6 px-6 py-6"
+            data-testid={`settings-page-${current.id}`}
+          >
             <PageHeader title={current.label} subtitle={current.subtitle} />
             {current.callout && <Callout>{current.callout}</Callout>}
             {current.rows.length > 0 && (
               <SettingsGroup>
                 {current.rows.map((row) => (
-                  <SettingsRow key={row.id} settingKey={row.id} label={row.label} description={row.description} highlighted={highlight === row.id} control={row.control} />
+                  <SettingsRow
+                    key={row.id}
+                    settingKey={row.id}
+                    label={row.label}
+                    description={row.description}
+                    highlighted={highlight === row.id}
+                    control={row.control}
+                  />
                 ))}
               </SettingsGroup>
             )}

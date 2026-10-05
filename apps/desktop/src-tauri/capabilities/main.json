@@ -15,6 +15,7 @@
     "core:window:allow-minimize",
     "core:window:allow-close",
     "core:window:allow-set-focus",
+    "clipboard-manager:allow-write-text",
     "allow-app-ready",
     "allow-app-log",
     "allow-app-copy-diagnostics",
@@ -44,6 +45,10 @@
     "allow-workspace-list",
     "allow-workspace-rename",
     "allow-workspace-remove",
+    "allow-workspace-locate",
+    "allow-workspace-set-flags",
+    "allow-workspace-reveal",
+    "allow-rail-move",
     "allow-tab-create",
     "allow-tab-rename",
     "allow-tab-close",
@@ -60,6 +65,8 @@
     "allow-pty-ack",
     "allow-pty-resize",
     "allow-pty-kill",
-    "allow-term-set-theme-colors"
+    "allow-term-set-theme-colors",
+    "allow-orphans-list",
+    "allow-orphans-resolve"
   ]
 }

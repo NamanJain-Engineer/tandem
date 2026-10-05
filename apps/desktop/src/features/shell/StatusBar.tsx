@@ -10,7 +10,11 @@ export function StatusBar() {
   const online = useSession((s) => s.entitlement?.online ?? true);
   const branch = useWorkspaces((s) => s.list.find((w) => w.id === s.activeId)?.branch ?? null);
   return (
-    <footer role="contentinfo" aria-label={t("status.label")} className="flex h-[var(--statusbar-h)] shrink-0 items-center gap-3 border-t border-divider bg-surface-1 px-3 text-2xs text-fg-muted">
+    <footer
+      role="contentinfo"
+      aria-label={t("status.label")}
+      className="flex h-[var(--statusbar-h)] shrink-0 items-center gap-3 border-t border-divider bg-surface-1 px-3 text-2xs text-fg-muted"
+    >
       <span className="inline-flex items-center gap-1">
         <GitBranch size={11} aria-hidden="true" />
         {branch ?? t("status.noBranch")}

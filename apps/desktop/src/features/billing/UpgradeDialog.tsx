@@ -27,7 +27,10 @@ export function UpgradeDialog() {
   useEffect(() => {
     if (open) {
       setStage(plan === "free" ? "choose" : "choose");
-      invoke("telemetry_capture", { event: "upgrade_sheet_opened", props: { source: gate ? "gate" : "account_menu" } }).catch(() => undefined);
+      invoke("telemetry_capture", {
+        event: "upgrade_sheet_opened",
+        props: { source: gate ? "gate" : "account_menu" },
+      }).catch(() => undefined);
     }
   }, [open, gate, plan]);
 
@@ -68,12 +71,20 @@ export function UpgradeDialog() {
   );
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && close()} size="lg" title={stage === "success" ? t("checkout.success") : t("upgrade.title")} closeLabel={t("common.close")}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => !o && close()}
+      size="lg"
+      title={stage === "success" ? t("checkout.success") : t("upgrade.title")}
+      closeLabel={t("common.close")}
+    >
       {stage === "choose" && (
         <div className="flex flex-col gap-4">
           {gate && (
             <p className="text-base text-fg" data-testid="upgrade-gate">
-              {gate.kind === "workspaces" ? t("upgrade.gate.workspaces", { n: gate.limit }) : t("upgrade.gate.panes", { n: gate.limit })}
+              {gate.kind === "workspaces"
+                ? t("upgrade.gate.workspaces", { n: gate.limit })
+                : t("upgrade.gate.panes", { n: gate.limit })}
             </p>
           )}
           <div className="flex justify-center">
@@ -92,8 +103,16 @@ export function UpgradeDialog() {
             <section aria-label={t("plan.free")} className={card}>
               <h3 className="text-md font-semibold text-fg">{t("plan.free")}</h3>
               <p className="text-lg font-semibold text-fg">{t("upgrade.free.price")}</p>
-              <ul className={cx("flex flex-1 flex-col gap-1", gate?.kind === "workspaces" && "[&>li:nth-child(2)]:rounded-xs [&>li:nth-child(2)]:bg-accent-soft")}>
-                {[t("upgrade.free.f1"), t("upgrade.free.f2"), t("upgrade.free.f3"), t("upgrade.free.f4")].map(feature)}
+              <ul
+                className={cx(
+                  "flex flex-1 flex-col gap-1",
+                  gate?.kind === "workspaces" &&
+                    "[&>li:nth-child(2)]:rounded-xs [&>li:nth-child(2)]:bg-accent-soft",
+                )}
+              >
+                {[t("upgrade.free.f1"), t("upgrade.free.f2"), t("upgrade.free.f3"), t("upgrade.free.f4")].map(
+                  feature,
+                )}
               </ul>
               <Button disabled={plan === "free"} fullWidth>
                 {t("upgrade.current")}
@@ -104,27 +123,58 @@ export function UpgradeDialog() {
                 <h3 className="text-md font-semibold text-fg">{t("plan.pro")}</h3>
                 <Badge variant="accent">{t("upgrade.recommended")}</Badge>
               </div>
-              <p className="text-lg font-semibold text-fg">{interval === "month" ? t("upgrade.pro.price.month") : t("upgrade.pro.price.year")}</p>
-              <ul className="flex flex-1 flex-col gap-1">{[t("upgrade.pro.f1"), t("upgrade.pro.f2"), t("upgrade.pro.f3"), t("upgrade.pro.f4")].map(feature)}</ul>
-              <Button variant="primary" fullWidth data-testid="upgrade-pro" disabled={plan === "pro"} onClick={() => void checkout({ plan: "pro", interval })}>
+              <p className="text-lg font-semibold text-fg">
+                {interval === "month" ? t("upgrade.pro.price.month") : t("upgrade.pro.price.year")}
+              </p>
+              <ul className="flex flex-1 flex-col gap-1">
+                {[t("upgrade.pro.f1"), t("upgrade.pro.f2"), t("upgrade.pro.f3"), t("upgrade.pro.f4")].map(
+                  feature,
+                )}
+              </ul>
+              <Button
+                variant="primary"
+                fullWidth
+                data-testid="upgrade-pro"
+                disabled={plan === "pro"}
+                onClick={() => void checkout({ plan: "pro", interval })}
+              >
                 {signedOut ? t("upgrade.signInToUpgrade") : t("upgrade.proTrial")}
               </Button>
               <p className="text-2xs text-fg-subtle">{t("upgrade.finePrint")}</p>
             </section>
             <section aria-label={t("plan.team")} className={card}>
               <h3 className="text-md font-semibold text-fg">{t("plan.team")}</h3>
-              <p className="text-lg font-semibold text-fg">{interval === "month" ? t("upgrade.team.price.month") : t("upgrade.team.price.year")}</p>
+              <p className="text-lg font-semibold text-fg">
+                {interval === "month" ? t("upgrade.team.price.month") : t("upgrade.team.price.year")}
+              </p>
               <ul className="flex flex-1 flex-col gap-1">
-                {[t("upgrade.team.f1"), t("upgrade.team.f2"), t("upgrade.team.f3"), t("upgrade.team.f4"), t("upgrade.team.f5")].map(feature)}
+                {[
+                  t("upgrade.team.f1"),
+                  t("upgrade.team.f2"),
+                  t("upgrade.team.f3"),
+                  t("upgrade.team.f4"),
+                  t("upgrade.team.f5"),
+                ].map(feature)}
               </ul>
-              <Button fullWidth disabled={plan === "team"} onClick={() => void checkout({ plan: "team", interval })}>
+              <Button
+                fullWidth
+                disabled={plan === "team"}
+                onClick={() => void checkout({ plan: "team", interval })}
+              >
                 {signedOut ? t("upgrade.signInToUpgrade") : t("upgrade.teamTrial")}
               </Button>
             </section>
           </div>
           <div className="flex items-start gap-4 text-sm text-fg-subtle">
             <p className="flex-1">{t("upgrade.footer")}</p>
-            <Button variant="link" size="sm" iconRight={<ExternalLink size={12} />} onClick={() => invoke("app_open_external", { url: "https://tandem.dev/pricing" }).catch(() => undefined)}>
+            <Button
+              variant="link"
+              size="sm"
+              iconRight={<ExternalLink size={12} />}
+              onClick={() =>
+                invoke("app_open_external", { url: "https://tandem.dev/pricing" }).catch(() => undefined)
+              }
+            >
               {t("upgrade.compare")}
             </Button>
           </div>
@@ -138,7 +188,9 @@ export function UpgradeDialog() {
           </p>
           <p className="text-base text-fg-muted">{t("checkout.waitingBody")}</p>
           <div className="flex gap-2">
-            <Button onClick={() => lastTarget && void openBilling({ type: "upgrade", ...lastTarget }, show)}>{t("checkout.openAgain")}</Button>
+            <Button onClick={() => lastTarget && void openBilling({ type: "upgrade", ...lastTarget }, show)}>
+              {t("checkout.openAgain")}
+            </Button>
             <Button variant="primary" onClick={() => void refresh()}>
               {t("checkout.finished")}
             </Button>
@@ -151,12 +203,16 @@ export function UpgradeDialog() {
       {stage === "timeout" && (
         <div role="alert" className="flex items-center gap-3">
           <p className="flex-1 text-base text-fg">{t("checkout.notConfirmed")}</p>
-          <Button onClick={() => void refresh().then((e) => e && e.plan !== "free" && setStage("success"))}>{t("checkout.refresh")}</Button>
+          <Button onClick={() => void refresh().then((e) => e && e.plan !== "free" && setStage("success"))}>
+            {t("checkout.refresh")}
+          </Button>
         </div>
       )}
       {stage === "success" && (
         <div className="flex flex-col gap-4">
-          <ul className="flex flex-col gap-1.5">{[t("checkout.unlocked1"), t("checkout.unlocked2"), t("checkout.unlocked3")].map(feature)}</ul>
+          <ul className="flex flex-col gap-1.5">
+            {[t("checkout.unlocked1"), t("checkout.unlocked2"), t("checkout.unlocked3")].map(feature)}
+          </ul>
           <div className="flex justify-end gap-2">
             {retry && (
               <Button

@@ -25,7 +25,13 @@ export function WindowControls() {
   const label = maximized ? t("titlebar.restore") : t("titlebar.maximize");
   return (
     <div className="flex items-center self-stretch">
-      <button type="button" aria-label={t("titlebar.minimize")} title={t("titlebar.minimize")} className={BTN} onClick={() => invoke("window_minimize").catch(() => undefined)}>
+      <button
+        type="button"
+        aria-label={t("titlebar.minimize")}
+        title={t("titlebar.minimize")}
+        className={BTN}
+        onClick={() => invoke("window_minimize").catch(() => undefined)}
+      >
         <Minus size={16} aria-hidden="true" />
       </button>
       <button
@@ -42,7 +48,13 @@ export function WindowControls() {
       >
         {maximized ? <Copy size={14} aria-hidden="true" /> : <Square size={13} aria-hidden="true" />}
       </button>
-      <button type="button" aria-label={t("titlebar.close")} title={t("titlebar.close")} className={cx(BTN, "hover:bg-danger hover:text-danger-fg")} onClick={() => invoke("window_close").catch(() => undefined)}>
+      <button
+        type="button"
+        aria-label={t("titlebar.close")}
+        title={t("titlebar.close")}
+        className={cx(BTN, "hover:bg-danger hover:text-danger-fg")}
+        onClick={() => invoke("window_close").catch(() => undefined)}
+      >
         <X size={16} aria-hidden="true" />
       </button>
     </div>

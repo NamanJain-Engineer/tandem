@@ -41,6 +41,23 @@ impl ScrollbackRing {
         out
     }
 
+    /// The last `lines` lines (raw bytes, escapes included).
+    pub fn tail(&self, lines: usize) -> Vec<u8> {
+        let all = self.contents();
+        let mut seen = 0;
+        // A trailing newline ends the last line rather than starting one.
+        let body = all.strip_suffix(b"\n").unwrap_or(&all);
+        for (i, b) in body.iter().enumerate().rev() {
+            if *b == b'\n' {
+                seen += 1;
+                if seen == lines {
+                    return all[i + 1..].to_vec();
+                }
+            }
+        }
+        all
+    }
+
     pub fn len_bytes(&self) -> usize {
         self.bytes
     }
@@ -60,5 +77,15 @@ mod tests {
         assert!(text.lines().count() <= 100);
         assert!(text.ends_with("line 999\n"));
         assert!(ring.len_bytes() <= 100 * 200);
+    }
+
+    #[test]
+    fn tail_keeps_the_last_lines() {
+        let mut ring = ScrollbackRing::new(100);
+        ring.push(b"one\ntwo\nthree\n");
+        assert_eq!(ring.tail(2), b"two\nthree\n");
+        assert_eq!(ring.tail(10), b"one\ntwo\nthree\n");
+        ring.push(b"four");
+        assert_eq!(ring.tail(2), b"three\nfour");
     }
 }

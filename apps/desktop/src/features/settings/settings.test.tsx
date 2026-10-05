@@ -55,7 +55,16 @@ describe("Settings (F-SH-04)", () => {
     open();
     expect(screen.getByRole("heading", { name: "Privacy & Telemetry" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
-    await waitFor(() => expect(calls.some((c) => c.cmd === "settings_set" && c.args?.key === "settings_last_page" && c.args?.value === "appearance")).toBe(true));
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (c) =>
+            c.cmd === "settings_set" &&
+            c.args?.key === "settings_last_page" &&
+            c.args?.value === "appearance",
+        ),
+      ).toBe(true),
+    );
   });
 
   it("F-SH-04 a failed write reverts the control and offers Retry", async () => {

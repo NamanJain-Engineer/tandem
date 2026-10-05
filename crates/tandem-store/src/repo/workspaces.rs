@@ -199,6 +199,117 @@ pub async fn remove(store: &Store, id: &WorkspaceId) -> Result<(), StoreError> {
         .await
 }
 
+/// Moves a top-level workspace in the rail (F-SH-03): into the pinned band
+/// or out of it, right after `after` (or first in its band). Only the moved
+/// row changes.
+pub async fn move_to(
+    store: &Store,
+    id: &WorkspaceId,
+    after: Option<WorkspaceId>,
+    pinned: bool,
+) -> Result<(), StoreError> {
+    let id = id.as_str().to_string();
+    let after = after.map(|a| a.as_str().to_string());
+    store
+        .write(move |t| {
+            let band: Vec<(String, String)> = {
+                let mut stmt = t.prepare(
+                    "SELECT id, sort_key FROM workspaces
+                     WHERE removed_at IS NULL AND parent_id IS NULL AND pinned = ?1 AND id != ?2
+                     ORDER BY sort_key, created_at",
+                )?;
+                let rows = stmt
+                    .query_map(params![pinned, id], |r| Ok((r.get(0)?, r.get(1)?)))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                rows
+            };
+            let (lo, hi) = match &after {
+                None => (None, band.first().map(|(_, k)| k.clone())),
+                Some(a) => {
+                    let i = band
+                        .iter()
+                        .position(|(bid, _)| bid == a)
+                        .ok_or_else(|| StoreError::NotFound("No workspace to place it after".into()))?;
+                    (band.get(i).map(|(_, k)| k.clone()), band.get(i + 1).map(|(_, k)| k.clone()))
+                }
+            };
+            // Equal neighbours (legacy rows) get fresh keys first.
+            let key = if lo.is_some() && lo == hi {
+                let keys = sort_key::sequence(band.len());
+                for ((bid, _), k) in band.iter().zip(&keys) {
+                    t.execute("UPDATE workspaces SET sort_key = ?2 WHERE id = ?1", params![bid, k])?;
+                }
+                let i = after.as_ref().and_then(|a| band.iter().position(|(bid, _)| bid == a)).unwrap_or(0);
+                sort_key::between(keys.get(i).map(String::as_str), keys.get(i + 1).map(String::as_str))
+            } else {
+                sort_key::between(lo.as_deref(), hi.as_deref())
+            };
+            match t.execute(
+                "UPDATE workspaces SET sort_key = ?2, pinned = ?3 WHERE id = ?1 AND removed_at IS NULL AND parent_id IS NULL",
+                params![id, key, pinned],
+            )? {
+                0 => Err(StoreError::NotFound("No workspace with that id".into())),
+                _ => Ok(()),
+            }
+        })
+        .await
+}
+
+/// Points a workspace at its folder's new location ("Locate…").
+pub async fn locate(store: &Store, id: &WorkspaceId, new_root: String) -> Result<(), StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .write(move |t| {
+            let taken: Option<String> = t
+                .query_row(
+                    "SELECT id FROM workspaces WHERE root = ?1 AND id != ?2 AND removed_at IS NULL
+                     AND host_id = (SELECT host_id FROM workspaces WHERE id = ?2)",
+                    params![new_root, id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if taken.is_some() {
+                return Err(StoreError::Conflict(
+                    "Another workspace already uses that folder".into(),
+                ));
+            }
+            match t.execute(
+                "UPDATE workspaces SET root = ?2 WHERE id = ?1",
+                params![id, new_root],
+            )? {
+                0 => Err(StoreError::NotFound("No workspace with that id".into())),
+                _ => Ok(()),
+            }
+        })
+        .await
+}
+
+pub async fn set_flags(
+    store: &Store,
+    id: &WorkspaceId,
+    collapsed: Option<bool>,
+    sessions_collapsed: Option<bool>,
+) -> Result<(), StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .write(move |t| {
+            if let Some(c) = collapsed {
+                t.execute(
+                    "UPDATE workspaces SET collapsed = ?2 WHERE id = ?1",
+                    params![id, c],
+                )?;
+            }
+            if let Some(c) = sessions_collapsed {
+                t.execute(
+                    "UPDATE workspaces SET sessions_collapsed = ?2 WHERE id = ?1",
+                    params![id, c],
+                )?;
+            }
+            Ok(())
+        })
+        .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,6 +372,84 @@ mod tests {
             vec!["w1", "w2", "w3", "w4"],
             "rail order is insertion order"
         );
+    }
+
+    async fn names(store: &Store) -> Vec<(String, bool)> {
+        list(store)
+            .await
+            .expect("list")
+            .into_iter()
+            .map(|w| (w.name, w.pinned))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn f_sh_03_2_reorder_and_pin_touch_only_the_moved_row() {
+        let (_d, store) = store();
+        let mut ids = Vec::new();
+        for root in ["/a", "/b", "/c", "/d"] {
+            ids.push(add(&store, local(root), None).await.expect("add").0.id);
+        }
+        // d after a.
+        move_to(&store, &ids[3], Some(ids[0].clone()), false)
+            .await
+            .expect("move");
+        assert_eq!(
+            names(&store).await,
+            vec![
+                ("a".into(), false),
+                ("d".into(), false),
+                ("b".into(), false),
+                ("c".into(), false)
+            ]
+        );
+        // c above the band: pinned, first.
+        move_to(&store, &ids[2], None, true).await.expect("pin");
+        // b pinned after c.
+        move_to(&store, &ids[1], Some(ids[2].clone()), true)
+            .await
+            .expect("pin");
+        assert_eq!(
+            names(&store).await,
+            vec![
+                ("c".into(), true),
+                ("b".into(), true),
+                ("a".into(), false),
+                ("d".into(), false)
+            ]
+        );
+        // Unpin c to the top of All.
+        move_to(&store, &ids[2], None, false).await.expect("unpin");
+        assert_eq!(
+            names(&store).await,
+            vec![
+                ("b".into(), true),
+                ("c".into(), false),
+                ("a".into(), false),
+                ("d".into(), false)
+            ]
+        );
+        assert!(matches!(
+            move_to(&store, &ids[0], Some(WorkspaceId::new()), false).await,
+            Err(StoreError::NotFound(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn f_sh_03_locate_moves_the_root_and_refuses_duplicates() {
+        let (_d, store) = store();
+        let (a, _) = add(&store, local("/old"), None).await.expect("add");
+        add(&store, local("/taken"), None).await.expect("add");
+        locate(&store, &a.id, "/new".into()).await.expect("locate");
+        assert_eq!(get(&store, &a.id).await.expect("get").root, "/new");
+        assert!(matches!(
+            locate(&store, &a.id, "/taken".into()).await,
+            Err(StoreError::Conflict(_))
+        ));
+        set_flags(&store, &a.id, Some(true), None)
+            .await
+            .expect("flags");
+        assert!(get(&store, &a.id).await.expect("get").collapsed);
     }
 
     #[tokio::test]

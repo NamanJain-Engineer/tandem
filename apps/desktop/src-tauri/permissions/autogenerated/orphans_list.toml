@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-orphans-list"
+description = "Enables the orphans_list command without any pre-configured scope."
+commands.allow = ["orphans_list"]
+
+[[permission]]
+identifier = "deny-orphans-list"
+description = "Denies the orphans_list command without any pre-configured scope."
+commands.deny = ["orphans_list"]

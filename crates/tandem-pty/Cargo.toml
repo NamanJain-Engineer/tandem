@@ -17,6 +17,8 @@ tokio.workspace = true
 tracing.workspace = true
 ts-rs.workspace = true
 vte.workspace = true
+sysinfo = { version = "0.37", default-features = false, features = ["system"] }
+vt100 = "0.16"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

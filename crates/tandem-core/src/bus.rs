@@ -27,11 +27,13 @@ pub enum Topic {
     Conductor,
     Updates,
     Remote,
+    /// Per-pane terminal state (`pty:state`).
+    Pty,
     App,
 }
 
 impl Topic {
-    pub const ALL: [Topic; 14] = [
+    pub const ALL: [Topic; 15] = [
         Topic::Status,
         Topic::Notifications,
         Topic::Threads,
@@ -45,6 +47,7 @@ impl Topic {
         Topic::Conductor,
         Topic::Updates,
         Topic::Remote,
+        Topic::Pty,
         Topic::App,
     ];
 }

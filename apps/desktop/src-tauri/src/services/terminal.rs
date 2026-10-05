@@ -16,6 +16,10 @@ use tandem_store::repo::{panes, settings, workspaces};
 use tandem_store::Store;
 
 pub const FOLDER_NOT_FOUND: &str = "Folder not found — opened at workspace root";
+/// Lines kept per pane in `$DATA/scrollback/<pane>.bin` (F-CD-03).
+pub const SNAPSHOT_LINES: usize = 2_000;
+/// Live panes are also snapshotted this often, to survive a crash (§5.4).
+pub const SNAPSHOT_EVERY: std::time::Duration = std::time::Duration::from_secs(300);
 
 pub struct TerminalService {
     pub pty: PtyManager,
@@ -61,6 +65,36 @@ impl TerminalService {
                     .unwrap_or_default()
             })
             .await
+    }
+
+    /// Writes each pane's last 2,000 lines to `dir/<pane>.bin` (restore display only).
+    pub fn snapshot_all(&self, dir: &Path) {
+        for pane in self.pty.panes() {
+            // Pane ids are `pn_<ulid>`; anything else never becomes a file name.
+            if !pane.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                continue;
+            }
+            let Ok(tail) = self.pty.tail(&pane, SNAPSHOT_LINES) else {
+                continue;
+            };
+            if tail.is_empty() {
+                continue;
+            }
+            let _ = std::fs::create_dir_all(dir);
+            if let Err(err) = tandem_core::atomic::atomic_write(
+                &dir.join(format!("{pane}.bin")),
+                &tail,
+                Some(0o600),
+            ) {
+                tracing::warn!(code = "pty.snapshot_failed", error = %err, "couldn't save a scrollback snapshot");
+            }
+        }
+    }
+
+    /// The quit path: snapshots first, then every process tree.
+    pub fn shutdown(&self, snapshots: &Path) {
+        self.snapshot_all(snapshots);
+        self.pty.kill_all();
     }
 
     /// The plan's live-pane limit: at the limit no pane or process is

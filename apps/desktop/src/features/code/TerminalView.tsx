@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import type { ExitInfo, IpcError, PtyInfo, AttachSnapshot } from "@tandem/protocol";
+import type { ExitInfo, IpcError, PtyInfo, AttachSnapshot, PtyState } from "@tandem/protocol";
 import { Button, Spinner, cx, type TerminalTheme } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { log } from "../../ipc/log";
 import { createFrameChannel, FrameKind, type Frame, type FrameChannel } from "../../ipc/pty";
 import { useLayout } from "../../stores/layout";
+import { useTerminals } from "../../stores/terminals";
 
 export type TerminalOptions = {
   theme: TerminalTheme;
@@ -42,6 +43,17 @@ function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
+/** Rust answers terminal queries for every pane, visible or hidden, so each
+ * is answered exactly once (ARCHITECTURE §5.7, F-CD-03 AC5). xterm's own
+ * replies to the same queries are switched off. */
+export function quietQueries(xterm: Pick<Terminal, "parser">): void {
+  xterm.parser.registerCsiHandler({ final: "c" }, () => true); // DA1
+  xterm.parser.registerCsiHandler({ prefix: ">", final: "c" }, () => true); // DA2
+  xterm.parser.registerCsiHandler({ final: "n" }, (params) => params[0] === 5 || params[0] === 6); // DSR, CPR
+  xterm.parser.registerCsiHandler({ prefix: ">", final: "q" }, () => true); // XTVERSION
+  for (const code of [10, 11, 12]) xterm.parser.registerOscHandler(code, (data) => data === "?"); // colour queries
+}
+
 /** Attaches to a running PTY or spawns one. Each call gets its own channel:
  * when Rust drops a channel (a failed attach) the JS side closes it for good. */
 async function connect(
@@ -49,12 +61,12 @@ async function connect(
   cols: number,
   rows: number,
   channel: () => Promise<FrameChannel>,
-): Promise<{ replay?: Uint8Array; live: boolean }> {
+): Promise<{ replay?: Uint8Array; live: boolean; state?: PtyState | null }> {
   const pending = spawning.get(paneId);
   if (pending) await pending.catch(() => undefined);
   try {
     const snap = await invoke<AttachSnapshot>("pty_attach", { paneId, channel: await channel() });
-    return { replay: base64ToBytes(snap.replay), live: snap.live };
+    return { replay: base64ToBytes(snap.replay), live: snap.live, state: snap.state };
   } catch (e) {
     if ((e as IpcError).code !== "not_found") throw e;
   }
@@ -136,6 +148,7 @@ export function TerminalView({
     const fitAddon = new FitAddon();
     xterm.loadAddon(fitAddon);
     xterm.open(el);
+    quietQueries(xterm);
     term.current = xterm;
     fit.current = fitAddon;
     try {
@@ -177,7 +190,8 @@ export function TerminalView({
         const cols = Math.max(xterm.cols, 2);
         const rows = Math.max(xterm.rows, 2);
         size.current = { cols, rows };
-        const { replay, live } = await connect(paneId, cols, rows, () => createFrameChannel(onFrame));
+        const { replay, live, state } = await connect(paneId, cols, rows, () => createFrameChannel(onFrame));
+        if (state) useTerminals.getState().put(state);
         if (disposed) return;
         if (replay?.byteLength) xterm.write(replay);
         setPhase(live ? { kind: "live" } : { kind: "exited", code: null });

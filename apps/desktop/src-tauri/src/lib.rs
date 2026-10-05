@@ -46,6 +46,10 @@ macro_rules! app_commands {
             commands::workspaces::workspace_list,
             commands::workspaces::workspace_rename,
             commands::workspaces::workspace_remove,
+            commands::workspaces::workspace_locate,
+            commands::workspaces::workspace_set_flags,
+            commands::workspaces::workspace_reveal,
+            commands::workspaces::rail_move,
             commands::workspaces::tab_create,
             commands::workspaces::tab_rename,
             commands::workspaces::tab_close,
@@ -63,6 +67,8 @@ macro_rules! app_commands {
             commands::terminal::pty_resize,
             commands::terminal::pty_kill,
             commands::terminal::term_set_theme_colors,
+            commands::terminal::orphans_list,
+            commands::terminal::orphans_resolve,
             $($extra),*
         ]
     };
@@ -248,6 +254,19 @@ fn spawn_background(state: &AppState) {
     tauri::async_runtime::spawn(async move {
         terminals.login_env().await;
     });
+    // Live panes' scrollback is snapshotted every 5 minutes so a crash keeps
+    // something to show on restore (§5.4).
+    let terminals = state.terminals.clone();
+    let snapshots = state.data.scrollback();
+    tauri::async_runtime::spawn(async move {
+        let mut tick = tokio::time::interval(services::terminal::SNAPSHOT_EVERY);
+        tick.tick().await;
+        loop {
+            tick.tick().await;
+            let (t, dir) = (terminals.clone(), snapshots.clone());
+            let _ = tokio::task::spawn_blocking(move || t.snapshot_all(&dir)).await;
+        }
+    });
     let _ = telemetry;
 }
 
@@ -316,6 +335,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 let state = telemetry_state.state::<AppState>();
                 state.apply_settings().await;
+                state.apply_orphan_policy().await;
                 state.telemetry.upload_crashes().await;
             });
             if e2e {
@@ -339,10 +359,20 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!());
-    if let Err(err) = result {
-        tracing::error!(error = %err, "tauri runtime failed");
-        std::process::exit(1);
+        .build(tauri::generate_context!());
+    match result {
+        // However the app ends (Quit, last window closed), panes get their
+        // scrollback snapshot and every process tree is stopped.
+        Ok(app) => app.run(|handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                let state = handle.state::<AppState>();
+                state.terminals.shutdown(&state.data.scrollback());
+            }
+        }),
+        Err(err) => {
+            tracing::error!(error = %err, "tauri runtime failed");
+            std::process::exit(1);
+        }
     }
 }
 

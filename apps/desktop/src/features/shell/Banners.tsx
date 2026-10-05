@@ -5,7 +5,13 @@ import { invoke } from "../../ipc/invoke";
 import { useSession } from "../../stores/session";
 import { openBilling } from "./actions";
 
-type Shown = { id: string; tone: "info" | "warning" | "error"; text: string; action?: { label: string; onClick: () => void }; dismissable: boolean };
+type Shown = {
+  id: string;
+  tone: "info" | "warning" | "error";
+  text: string;
+  action?: { label: string; onClick: () => void };
+  dismissable: boolean;
+};
 
 /** UI-133: one banner at a time — grace over > offline > offline-mode
  * deadline > payment failed. */
@@ -19,9 +25,19 @@ export function Banners() {
 
   let banner: Shown | null = null;
   if (auth.signedIn && e && !e.online && e.source === "free" && e.confirmedUntil !== null) {
-    banner = { id: "grace", tone: "warning", text: t("banner.graceOver"), action: { label: t("banner.retry"), onClick: () => void refresh() }, dismissable: false };
+    banner = {
+      id: "grace",
+      tone: "warning",
+      text: t("banner.graceOver"),
+      action: { label: t("banner.retry"), onClick: () => void refresh() },
+      dismissable: false,
+    };
   } else if (auth.signedIn && e && !e.online && e.confirmedUntil) {
-    const time = new Date(Number(e.confirmedUntil)).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
+    const time = new Date(Number(e.confirmedUntil)).toLocaleString("en-US", {
+      weekday: "short",
+      hour: "numeric",
+      minute: "2-digit",
+    });
     banner = { id: "offline", tone: "info", text: t("banner.offlineValid", { time }), dismissable: true };
   } else if (auth.offline && auth.offlineDaysLeft !== null && Number(auth.offlineDaysLeft) <= 3) {
     banner = {

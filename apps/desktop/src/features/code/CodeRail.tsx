@@ -1,47 +1,186 @@
-import { useRef, useState, type KeyboardEvent } from "react";
-import { AlertTriangle, Folder, GitBranch, Plus } from "lucide-react";
-import { Badge, ConfirmDialog, ContextMenu, IconButton, Tooltip, cx, useToast } from "@tandem/ui";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { AlertTriangle, Folder, GitBranch, Plus, SquareTerminal } from "lucide-react";
 import type { WorkspaceSummary } from "@tandem/protocol";
+import { Badge, ConfirmDialog, IconButton, StatusDot, cx, useToast, type MenuEntry } from "@tandem/ui";
 import { t } from "../../i18n";
+import { copyText } from "../../ipc/clipboard";
+import { invoke } from "../../ipc/invoke";
+import { useLayout } from "../../stores/layout";
+import { useSetting, useSettings } from "../../stores/settings";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
-import { pickAndAddWorkspace } from "../shell/actions";
+import { RailList } from "../rail/RailList";
+import { pickAndAddWorkspace, switchMode } from "../shell/actions";
 import { PlanFooter } from "../shell/PlanFooter";
+import { useBoot } from "../shell/useBoot";
 
-/** Code rail (F-SH-03 slice): WORKSPACES + "+", the list, plan footer. */
-export function CodeRail() {
-  const { list, activeId, select, remove } = useWorkspaces();
-  const collapsed = useUi((s) => s.railCollapsed);
-  const { show } = useToast();
-  const [removing, setRemoving] = useState<WorkspaceSummary | null>(null);
-  const rows = useRef<Array<HTMLDivElement | null>>([]);
+export const RAIL_MIN = 180;
+export const RAIL_MAX = 360;
+/** Dragging the edge below this collapses the rail to icons (UI_SPEC §3.3). */
+const COLLAPSE_BELOW = 160;
 
-  const onKey = (e: KeyboardEvent, index: number) => {
-    const move = (to: number) => {
-      e.preventDefault();
-      rows.current[Math.max(0, Math.min(list.length - 1, to))]?.focus();
-    };
-    if (e.key === "ArrowDown") move(index + 1);
-    else if (e.key === "ArrowUp") move(index - 1);
-    else if (e.key === "Home") move(0);
-    else if (e.key === "End") move(list.length - 1);
-    else if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      const ws = list[index];
-      if (ws) select(ws.id);
-    } else if (e.key === "Delete") {
-      const ws = list[index];
-      if (ws) setRemoving(ws);
-    }
+/** The rail's right edge: drag or arrow keys resize it (180–360 px); the
+ * width persists (F-SH-03). */
+function RailResizer({ width, onWidth }: { width: number; onWidth: (w: number, done: boolean) => void }) {
+  const start = useRef<{ x: number; w: number } | null>(null);
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    start.current = { x: e.clientX, w: width };
+    e.currentTarget.setPointerCapture(e.pointerId);
   };
+  const next = (e: ReactPointerEvent<HTMLDivElement>) =>
+    start.current ? start.current.w + e.clientX - start.current.x : width;
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={t("rail.resize")}
+      aria-valuemin={RAIL_MIN}
+      aria-valuemax={RAIL_MAX}
+      aria-valuenow={width}
+      tabIndex={0}
+      data-testid="rail-resizer"
+      onPointerDown={onPointerDown}
+      onPointerMove={(e) => start.current && onWidth(next(e), false)}
+      onPointerUp={(e) => {
+        if (!start.current) return;
+        onWidth(next(e), true);
+        start.current = null;
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          e.preventDefault();
+          onWidth(width + (e.key === "ArrowRight" ? 8 : -8), true);
+        }
+      }}
+      className="absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize outline-none after:absolute after:inset-y-0 after:left-[3px] after:w-0.5 after:bg-transparent hover:after:bg-accent focus-visible:after:bg-accent"
+    />
+  );
+}
+
+/** Open panes of a workspace, under its expanded rail row. */
+function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
+  const tabs = useLayout((s) => s.tabs);
+  const loaded = useLayout((s) => s.loaded[ws.id] ?? false);
+  useEffect(() => {
+    if (!loaded)
+      void useLayout
+        .getState()
+        .load(ws.id)
+        .catch(() => undefined);
+  }, [loaded, ws.id]);
+  const rows = ws.tabs.flatMap((tab) => {
+    const t2 = tabs[tab.id];
+    if (!t2?.tree) return [];
+    const sorted = Object.values(t2.panes).sort((a, b) => a.createdAt - b.createdAt);
+    return sorted.map((p, i) => ({
+      tab,
+      pane: p,
+      title: p.humanName ?? p.title ?? t("pane.shell", { n: i + 1 }),
+    }));
+  });
+  // Level-2 rows of the rail tree (a tree may only own treeitems and groups).
+  if (rows.length === 0)
+    return (
+      <div
+        role="treeitem"
+        aria-level={2}
+        aria-disabled="true"
+        aria-selected={false}
+        className="px-2 py-1 text-sm text-fg-subtle"
+      >
+        {t("rail.noSessions")}
+      </div>
+    );
+  const open = (tabId: string, paneId: string) => {
+    const store = useWorkspaces.getState();
+    store.select(ws.id);
+    store.selectTab(ws.id, tabId);
+    useLayout.getState().focus(tabId, paneId);
+    switchMode("code");
+  };
+  return (
+    <>
+      {rows.map(({ tab, pane, title }) => (
+        <div
+          key={pane.id}
+          role="treeitem"
+          aria-level={2}
+          aria-selected={false}
+          tabIndex={-1}
+          data-testid="rail-session"
+          onClick={() => open(tab.id, pane.id)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              open(tab.id, pane.id);
+            }
+          }}
+          className="flex h-6 w-full cursor-default items-center gap-1.5 rounded-sm px-2 text-left text-sm text-fg-muted outline-none hover:bg-surface-4 hover:text-fg focus-visible:shadow-focus"
+        >
+          <StatusDot status="idle" size={6} />
+          <SquareTerminal size={12} aria-hidden="true" className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">{title}</span>
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** UI_SPEC §3.3 Code rail: WORKSPACES + "+", the shared RailList, footer. */
+export function CodeRail() {
+  const { list, activeId, select, remove, move, rename, setCollapsed, confirmRemove, askRemove } =
+    useWorkspaces();
+  const collapsed = useUi((s) => s.railCollapsed);
+  const platform = useBoot((s) => s.boot?.platform ?? "linux");
+  const saved = useSetting("rail_width", 248);
+  const [width, setWidth] = useState<number | null>(null);
+  const { show } = useToast();
+  const shown = Math.min(RAIL_MAX, Math.max(RAIL_MIN, width ?? saved));
+
+  const onWidth = (w: number, done: boolean) => {
+    if (done && w < COLLAPSE_BELOW) {
+      setWidth(null);
+      if (!useUi.getState().railCollapsed) useUi.getState().toggleRail();
+      return;
+    }
+    const clamped = Math.round(Math.min(RAIL_MAX, Math.max(RAIL_MIN, w)));
+    setWidth(done ? null : clamped);
+    if (done) void useSettings.getState().set("rail_width", clamped);
+  };
+
+  const menu = (
+    ws: WorkspaceSummary,
+    a: { rename: () => void; moveUp: () => void; moveDown: () => void; togglePin: () => void },
+  ): MenuEntry[] => [
+    { id: "pin", label: ws.pinned ? t("rail.unpin") : t("rail.pin"), onSelect: a.togglePin },
+    { id: "rename", label: t("rail.rename"), kbd: ["F2"], onSelect: a.rename },
+    { id: "up", label: t("rail.moveUp"), onSelect: a.moveUp },
+    { id: "down", label: t("rail.moveDown"), onSelect: a.moveDown },
+    { id: "sep", type: "separator" },
+    {
+      id: "reveal",
+      label: platform === "macos" ? t("rail.revealMac") : t("rail.reveal"),
+      disabled: ws.missing,
+      onSelect: () =>
+        void invoke("workspace_reveal", { id: ws.id }).catch((e: { message?: string }) =>
+          show({ tone: "error", title: e.message ?? "" }),
+        ),
+    },
+    {
+      id: "copy",
+      label: t("rail.copyPath"),
+      onSelect: () =>
+        void copyText(ws.root).then((ok) => ok && show({ tone: "success", title: t("rail.pathCopied") })),
+    },
+    { id: "remove", label: t("rail.remove"), danger: true, onSelect: () => askRemove(ws) },
+  ];
 
   return (
     <nav
       aria-label={t("rail.workspaces")}
-      className={cx(
-        "flex h-full shrink-0 flex-col border-r border-border bg-surface-1",
-        collapsed ? "w-[var(--rail-collapsed)]" : "w-[var(--rail-w)]",
-      )}
+      className="relative flex h-full shrink-0 flex-col border-r border-border bg-surface-1"
+      style={{ width: collapsed ? "var(--rail-collapsed)" : shown }}
     >
       <div className={cx("flex h-9 items-center gap-1 px-2", collapsed && "justify-center")}>
         {!collapsed && (
@@ -56,85 +195,61 @@ export function CodeRail() {
           onClick={() => void pickAndAddWorkspace(show)}
         />
       </div>
-      <div
-        role="tree"
-        aria-label={t("rail.workspaces")}
-        className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2"
-      >
-        {list.map((ws, i) => {
-          const selected = ws.id === activeId;
-          const row = (
-            <div
-              ref={(el) => {
-                rows.current[i] = el;
-              }}
-              role="treeitem"
-              aria-level={1}
-              aria-selected={selected}
-              tabIndex={selected || (!activeId && i === 0) ? 0 : -1}
-              data-testid="workspace-row"
-              data-root={ws.root}
-              onClick={() => select(ws.id)}
-              onKeyDown={(e) => onKey(e, i)}
-              title={ws.root}
-              className={cx(
-                "group flex h-[30px] cursor-default select-none items-center gap-1.5 rounded-sm px-2 text-base text-fg outline-none hover:bg-surface-4 focus-visible:shadow-focus",
-                selected && "bg-accent-soft hover:bg-accent-soft",
-                collapsed && "justify-center px-0",
+      <RailList
+        label={t("rail.workspaces")}
+        items={list}
+        selectedId={activeId}
+        collapsed={collapsed}
+        expanded={Object.fromEntries(list.map((w) => [w.id, !w.collapsed]))}
+        onExpand={(ws, open) => setCollapsed(ws.id, !open)}
+        row={(ws) => ({
+          testId: "workspace-row",
+          data: { root: ws.root },
+          name: ws.name,
+          tooltip: ws.missing ? t("rail.missing") : ws.root,
+          warning: ws.missing,
+          icon: ws.missing ? (
+            <AlertTriangle size={14} aria-label={t("rail.missing")} className="text-warning" />
+          ) : (
+            <Folder size={14} aria-hidden="true" className="text-fg-muted" />
+          ),
+          trailing: (
+            <>
+              {ws.branch && (
+                <span className="inline-flex max-w-[84px] shrink-0 items-center gap-0.5 truncate text-sm text-fg-subtle">
+                  <GitBranch size={12} aria-hidden="true" />
+                  <span className="truncate">{ws.branch}</span>
+                </span>
               )}
-            >
-              {ws.missing ? (
-                <AlertTriangle size={14} aria-label={t("rail.missing")} className="shrink-0 text-warning" />
-              ) : (
-                <Folder size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
+              {ws.liveCount > 0 && (
+                <span aria-label={t("rail.live", { n: ws.liveCount })}>
+                  <Badge>{ws.liveCount}</Badge>
+                </span>
               )}
-              {!collapsed && (
-                <>
-                  <span className="min-w-0 flex-1 truncate">{ws.name}</span>
-                  {ws.branch && (
-                    <span className="inline-flex max-w-[84px] shrink-0 items-center gap-0.5 truncate text-sm text-fg-subtle">
-                      <GitBranch size={12} aria-hidden="true" />
-                      <span className="truncate">{ws.branch}</span>
-                    </span>
-                  )}
-                  {ws.liveCount > 0 && (
-                    <span aria-label={t("rail.live", { n: ws.liveCount })}>
-                      <Badge>{ws.liveCount}</Badge>
-                    </span>
-                  )}
-                </>
-              )}
-            </div>
-          );
-          return (
-            <ContextMenu
-              key={ws.id}
-              entries={[
-                { id: "remove", label: t("rail.remove"), danger: true, onSelect: () => setRemoving(ws) },
-              ]}
-            >
-              {collapsed ? (
-                <Tooltip label={ws.name} side="right">
-                  {row}
-                </Tooltip>
-              ) : (
-                row
-              )}
-            </ContextMenu>
-          );
+            </>
+          ),
+          children: <WorkspaceSessions ws={ws} />,
         })}
-      </div>
+        menu={menu}
+        onOpen={(ws) => select(ws.id)}
+        onMove={(id, afterId, pinned) => void move(id, afterId, pinned)}
+        onRename={(ws, name) =>
+          void rename(ws.id, name).then((err) => err && show({ tone: "error", title: err.message }))
+        }
+        onRemove={(ws) => askRemove(ws)}
+      />
       <PlanFooter collapsed={collapsed} />
+      {!collapsed && <RailResizer width={shown} onWidth={onWidth} />}
       <ConfirmDialog
-        open={removing !== null}
-        onOpenChange={(o) => !o && setRemoving(null)}
-        title={t("code.remove.title", { name: removing?.name ?? "" })}
+        open={confirmRemove !== null}
+        onOpenChange={(o) => !o && askRemove(null)}
+        title={t("code.remove.title", { name: confirmRemove?.name ?? "" })}
         body={t("code.remove.body")}
         confirmLabel={t("code.remove.confirm")}
         onConfirm={() => {
-          if (!removing) return;
-          const name = removing.name;
-          void remove(removing.id).then(() => show({ title: t("code.removed", { name }) }));
+          if (!confirmRemove) return;
+          const name = confirmRemove.name;
+          void remove(confirmRemove.id).then(() => show({ title: t("code.removed", { name }) }));
         }}
       />
     </nav>

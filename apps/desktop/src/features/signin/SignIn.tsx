@@ -24,7 +24,10 @@ export function SignIn() {
   const error = auth?.error ?? null;
   return (
     <main id="main" className="flex h-full items-center justify-center bg-bg p-6">
-      <section aria-labelledby="signin-title" className="flex w-[520px] max-w-full flex-col gap-5 rounded-lg border border-border bg-surface-2 p-8 shadow-2">
+      <section
+        aria-labelledby="signin-title"
+        className="flex w-[520px] max-w-full flex-col gap-5 rounded-lg border border-border bg-surface-2 p-8 shadow-2"
+      >
         <div className="flex items-center gap-3">
           <LogoMark size={32} />
           <div>
@@ -59,13 +62,20 @@ export function SignIn() {
         )}
 
         {pending ? (
-          <div role="status" className="flex flex-col items-start gap-3 rounded-md border border-border bg-surface-3 p-4">
+          <div
+            role="status"
+            className="flex flex-col items-start gap-3 rounded-md border border-border bg-surface-3 p-4"
+          >
             <p className="inline-flex items-center gap-2 text-base text-fg">
               <Spinner />
               {t("signin.waiting")}
             </p>
             <div className="flex gap-4">
-              <Button size="sm" variant="link" onClick={() => invoke("auth_cancel", { opId: pending.opId }).catch(() => undefined)}>
+              <Button
+                size="sm"
+                variant="link"
+                onClick={() => invoke("auth_cancel", { opId: pending.opId }).catch(() => undefined)}
+              >
                 {t("signin.cancel")}
               </Button>
               <Button
@@ -97,7 +107,9 @@ export function SignIn() {
           <span className="h-px flex-1 bg-divider" />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={() => invoke("auth_continue_offline").catch(() => undefined)}>{t("signin.offline")}</Button>
+          <Button onClick={() => invoke("auth_continue_offline").catch(() => undefined)}>
+            {t("signin.offline")}
+          </Button>
           <span className="text-sm text-fg-subtle">{t("signin.offlineNote")}</span>
         </div>
         <p className="text-sm text-fg-subtle">{t("signin.terms")}</p>

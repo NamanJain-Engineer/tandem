@@ -9,7 +9,8 @@ import { useSettings } from "../../stores/settings";
 beforeEach(resetStores);
 afterEach(() => setInvokeBackend(null));
 
-const lastColors = (calls: ReturnType<typeof fakeBackend>) => calls.filter((c) => c.cmd === "term_set_theme_colors").at(-1)?.args?.colors;
+const lastColors = (calls: ReturnType<typeof fakeBackend>) =>
+  calls.filter((c) => c.cmd === "term_set_theme_colors").at(-1)?.args?.colors;
 
 describe("theme (F-SH-05)", () => {
   it("F-SH-05.2 the core answers OSC 10/11/12 with the current theme", async () => {
@@ -19,13 +20,17 @@ describe("theme (F-SH-05)", () => {
         <TerminalColorsSync />
       </UiProvider>,
     );
-    await waitFor(() => expect(lastColors(calls)).toEqual({ fg: "#dbe4ef", bg: "#0b111c", cursor: "#2dd4bf" }));
+    await waitFor(() =>
+      expect(lastColors(calls)).toEqual({ fg: "#dbe4ef", bg: "#0b111c", cursor: "#2dd4bf" }),
+    );
     rerender(
       <UiProvider theme="light">
         <TerminalColorsSync />
       </UiProvider>,
     );
-    await waitFor(() => expect(lastColors(calls)).toEqual({ fg: "#1e293b", bg: "#ffffff", cursor: "#0d9488" }));
+    await waitFor(() =>
+      expect(lastColors(calls)).toEqual({ fg: "#1e293b", bg: "#ffffff", cursor: "#0d9488" }),
+    );
   });
 
   it("F-SH-05 a fixed terminal theme ignores the app theme", async () => {

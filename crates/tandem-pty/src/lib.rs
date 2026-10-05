@@ -5,9 +5,11 @@
 
 pub mod env;
 pub mod frame;
+pub mod orphans;
 pub mod quote;
 pub mod responder;
 pub mod ring;
+pub mod side;
 
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
@@ -26,6 +28,9 @@ use ts_rs::TS;
 pub use frame::{FrameKind, PtyFrame};
 pub use responder::{QueryResponder, TermColors};
 pub use ring::ScrollbackRing;
+pub use side::{PtyState, SideChannel};
+
+use orphans::ChildRegistry;
 
 /// Flush a batch after this long since its first byte (§5.5).
 pub const BATCH_WINDOW: Duration = Duration::from_millis(16);
@@ -34,6 +39,11 @@ pub const BATCH_MAX: usize = 256 * 1024;
 pub const ACK_HIGH: u64 = 4 * 1024 * 1024;
 pub const ACK_LOW: u64 = 1024 * 1024;
 pub const READ_BUF: usize = 64 * 1024;
+/// `pty:state` goes out at most this often per pane (ARCHITECTURE §3.3).
+pub const STATE_DEBOUNCE: Duration = Duration::from_millis(100);
+
+/// Receives `pty:state` changes (the app forwards them to the webview).
+pub type StateSink = Arc<dyn Fn(PtyState) + Send + Sync>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PtyError {
@@ -119,6 +129,9 @@ struct Session {
     flow: Arc<FlowControl>,
     exited: Arc<Mutex<Option<ExitInfo>>>,
     seq: Arc<AtomicU64>,
+    side: Mutex<SideChannel>,
+    /// A `pty:state` change not sent yet (debounced).
+    state_dirty: AtomicBool,
 }
 
 /// All live PTYs. Cheap to clone.
@@ -126,6 +139,8 @@ struct Session {
 pub struct PtyManager {
     sessions: Arc<DashMap<String, Arc<Session>>>,
     colors: Arc<RwLock<TermColors>>,
+    registry: Option<Arc<ChildRegistry>>,
+    on_state: Option<StateSink>,
 }
 
 enum Msg {
@@ -143,6 +158,18 @@ fn now_ms() -> i64 {
 impl PtyManager {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Records every child in `run/children.json` for orphan detection.
+    pub fn with_registry(mut self, registry: Arc<ChildRegistry>) -> Self {
+        self.registry = Some(registry);
+        self
+    }
+
+    /// Where `pty:state` changes go.
+    pub fn with_state_sink(mut self, sink: StateSink) -> Self {
+        self.on_state = Some(sink);
+        self
     }
 
     /// Colours answered to OSC 10/11/12 queries (F-SH-05 AC2).
@@ -211,18 +238,33 @@ impl PtyManager {
             }),
             exited: Arc::new(Mutex::new(None)),
             seq: Arc::new(AtomicU64::new(0)),
+            side: Mutex::new(SideChannel::new(&spec.pane_id, spec.rows, spec.cols)),
+            state_dirty: AtomicBool::new(false),
         });
         self.sessions.insert(spec.pane_id.clone(), session.clone());
+        let started_at = now_ms();
+        if let Some(reg) = &self.registry {
+            let exe = spec
+                .program
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            reg.add(
+                &spec.pane_id,
+                pid,
+                &exe,
+                &spec.cwd.to_string_lossy(),
+                started_at,
+            );
+        }
 
         let (tx, rx) = mpsc::sync_channel::<Msg>(256);
         self.start_reader(&spec.pane_id, session.clone(), reader, tx);
         let child_done = Arc::new((Mutex::new(false), Condvar::new()));
-        Self::start_waiter(session.clone(), child, child_done.clone());
-        Self::start_batcher(session, rx, child_done);
-        Ok(PtyInfo {
-            pid,
-            started_at: now_ms(),
-        })
+        let registered = self.registry.clone().map(|r| (r, spec.pane_id.clone()));
+        Self::start_waiter(session.clone(), child, child_done.clone(), registered);
+        Self::start_batcher(session, rx, child_done, self.on_state.clone());
+        Ok(PtyInfo { pid, started_at })
     }
 
     fn start_reader(
@@ -236,7 +278,6 @@ impl PtyManager {
         let name = format!("pty-read-{pane}");
         let spawned = std::thread::Builder::new().name(name).spawn(move || {
             let mut buf = vec![0u8; READ_BUF];
-            let mut responder = QueryResponder::new();
             loop {
                 // Backpressure only while a UI is attached (§5.5).
                 if session.sink.read().is_some() && session.flow.unacked() > ACK_HIGH {
@@ -257,7 +298,18 @@ impl PtyManager {
                     }
                     Ok(n) => {
                         let chunk = &buf[..n];
-                        let replies = responder.feed(chunk, &colors.read());
+                        // Queries are answered here, for visible and hidden
+                        // panes alike, within the same read (§5.7).
+                        let replies = match session.side.lock() {
+                            Ok(mut side) => {
+                                let replies = side.feed(chunk, &colors.read());
+                                if side.state() != side_published(&side) {
+                                    session.state_dirty.store(true, Ordering::Release);
+                                }
+                                replies
+                            }
+                            Err(_) => Vec::new(),
+                        };
                         if !replies.is_empty() {
                             if let Ok(mut w) = session.writer.lock() {
                                 let _ = w.write_all(&replies);
@@ -283,6 +335,7 @@ impl PtyManager {
         session: Arc<Session>,
         mut child: Box<dyn Child + Send + Sync>,
         done: Arc<(Mutex<bool>, Condvar)>,
+        registered: Option<(Arc<ChildRegistry>, String)>,
     ) {
         let _ = std::thread::Builder::new()
             .name("pty-wait".into())
@@ -301,6 +354,9 @@ impl PtyManager {
                 if let Ok(mut e) = session.exited.lock() {
                     *e = Some(info);
                 }
+                if let Some((reg, pane)) = &registered {
+                    reg.remove(pane);
+                }
                 let (lock, cv) = &*done;
                 if let Ok(mut d) = lock.lock() {
                     *d = true;
@@ -313,6 +369,7 @@ impl PtyManager {
         session: Arc<Session>,
         rx: mpsc::Receiver<Msg>,
         child_done: Arc<(Mutex<bool>, Condvar)>,
+        on_state: Option<StateSink>,
     ) {
         let _ = std::thread::Builder::new()
             .name("pty-batch".into())
@@ -330,9 +387,36 @@ impl PtyManager {
                         *session.sink.write() = None;
                     }
                 };
+                // `pty:state` at most every 100 ms, the last change always sent.
+                let mut last_state = Instant::now() - STATE_DEBOUNCE;
+                let flush_state = |last: &mut Instant| {
+                    let Some(sink) = &on_state else { return };
+                    if !session.state_dirty.swap(false, Ordering::AcqRel) {
+                        return;
+                    }
+                    let change = session.side.lock().ok().and_then(|mut s| s.take_change());
+                    if let Some(state) = change {
+                        sink(state);
+                        *last = Instant::now();
+                    }
+                };
                 let mut eof = false;
                 while !eof {
-                    let mut batch = match rx.recv() {
+                    let dirty = on_state.is_some() && session.state_dirty.load(Ordering::Acquire);
+                    let first = if dirty {
+                        let wait = STATE_DEBOUNCE.saturating_sub(last_state.elapsed());
+                        match rx.recv_timeout(wait) {
+                            Ok(m) => Ok(m),
+                            Err(RecvTimeoutError::Timeout) => {
+                                flush_state(&mut last_state);
+                                continue;
+                            }
+                            Err(RecvTimeoutError::Disconnected) => Err(()),
+                        }
+                    } else {
+                        rx.recv().map_err(|_| ())
+                    };
+                    let mut batch = match first {
                         Ok(Msg::Data(d)) => d,
                         Ok(Msg::Eof) | Err(_) => break,
                     };
@@ -353,7 +437,11 @@ impl PtyManager {
                     }
                     let seq = session.seq.fetch_add(1, Ordering::AcqRel);
                     send(PtyFrame::data(seq, batch));
+                    if last_state.elapsed() >= STATE_DEBOUNCE {
+                        flush_state(&mut last_state);
+                    }
                 }
+                flush_state(&mut last_state);
                 // The exit frame always follows the last data frame.
                 let (lock, cv) = &*child_done;
                 let guard = lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -417,6 +505,9 @@ impl PtyManager {
 
     pub fn resize(&self, pane: &str, cols: u16, rows: u16) -> Result<(), PtyError> {
         let session = self.get(pane)?;
+        if let Ok(mut side) = session.side.lock() {
+            side.resize(rows, cols);
+        }
         let master = session
             .master
             .lock()
@@ -452,6 +543,35 @@ impl PtyManager {
             let _ = sink.send(PtyFrame::notice(seq, message));
         }
         Ok(())
+    }
+
+    /// Modes and title as of now (attach, tests).
+    pub fn state(&self, pane: &str) -> Option<PtyState> {
+        let session = self.sessions.get(pane)?;
+        let state = session.side.lock().ok().map(|s| s.state());
+        state
+    }
+
+    /// Plain text of the pane's visible screen.
+    pub fn screen_text(&self, pane: &str) -> Option<String> {
+        let session = self.sessions.get(pane)?;
+        let text = session.side.lock().ok().map(|s| s.screen_text());
+        text
+    }
+
+    /// The last `lines` lines of the ring (raw bytes): the quit snapshot.
+    pub fn tail(&self, pane: &str, lines: usize) -> Result<Vec<u8>, PtyError> {
+        Ok(self
+            .get(pane)?
+            .ring
+            .lock()
+            .map(|r| r.tail(lines))
+            .unwrap_or_default())
+    }
+
+    /// Panes with a session, live or exited.
+    pub fn panes(&self) -> Vec<String> {
+        self.sessions.iter().map(|e| e.key().clone()).collect()
     }
 
     pub fn exit_info(&self, pane: &str) -> Option<ExitInfo> {
@@ -492,6 +612,11 @@ impl PtyManager {
             let _ = self.kill(&pane);
         }
     }
+}
+
+/// The state last handed to `pty:state`, so the reader marks real changes only.
+fn side_published(side: &SideChannel) -> PtyState {
+    side.published()
 }
 
 fn exited(state: &Mutex<Option<ExitInfo>>) -> bool {

@@ -8,6 +8,8 @@ import { CodeRail } from "../code/CodeRail";
 import { setCommandToast } from "../commands/commands";
 import { InterimMain, InterimRail } from "../interim/Interim";
 import { Palette } from "../palette/Palette";
+import { OrphansDialog } from "../restore/OrphansDialog";
+import { followPtyState } from "../../stores/terminals";
 import { SettingsView } from "../settings/SettingsView";
 import { Banners } from "./Banners";
 import { Sidebar } from "./Sidebar";
@@ -22,10 +24,14 @@ export function AppShell() {
   const { show: toast } = useToast();
   useShortcuts();
   useEffect(() => setCommandToast(toast), [toast]);
+  useEffect(followPtyState, []);
   const show = (m: typeof mode) => (!settingsOpen && mode === m ? "flex" : "none");
   return (
     <div className="flex h-full flex-col bg-bg">
-      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-[var(--z-max)] focus:rounded-sm focus:bg-surface-3 focus:px-3 focus:py-1.5 focus:text-fg">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-[var(--z-max)] focus:rounded-sm focus:bg-surface-3 focus:px-3 focus:py-1.5 focus:text-fg"
+      >
         {t("app.skipToMain")}
       </a>
       <TitleBar />
@@ -41,18 +47,29 @@ export function AppShell() {
         <div style={{ display: show("thread") }}>
           <InterimRail mode="thread" collapsed={railCollapsed} />
         </div>
-        <main id={settingsOpen ? undefined : "main"} tabIndex={-1} className="min-w-0 flex-1 p-1.5 focus:outline-none" style={{ display: settingsOpen ? "none" : "block" }}>
+        <main
+          id={settingsOpen ? undefined : "main"}
+          tabIndex={-1}
+          className="min-w-0 flex-1 p-1.5 focus:outline-none"
+          style={{ display: settingsOpen ? "none" : "block" }}
+        >
           <div className="h-full" style={{ display: mode === "code" ? "block" : "none" }}>
             <CodeMain visible={!settingsOpen && mode === "code"} />
           </div>
-          {mode === "agent" && <InterimMain mode="agent" />}
-          {mode === "thread" && <InterimMain mode="thread" />}
+          {/* Every surface stays mounted; hidden ones are display:none (F-SH-02). */}
+          <div className="h-full" style={{ display: mode === "agent" ? "block" : "none" }}>
+            <InterimMain mode="agent" />
+          </div>
+          <div className="h-full" style={{ display: mode === "thread" ? "block" : "none" }}>
+            <InterimMain mode="thread" />
+          </div>
         </main>
         {sidebarOpen && <Sidebar />}
       </div>
       <StatusBar />
       <UpgradeDialog />
       <Palette />
+      <OrphansDialog />
     </div>
   );
 }

@@ -765,7 +765,9 @@ pub static SCHEMA: &[SettingSpec] = &[
         []
     ),
     spec!(OfflineStartedAt, json!(null), V::OptionalInt, Hidden, []),
-    spec!(RailWidth, json!(240), V::IntRange(180, 480), Hidden, []),
+    // The Code rail's width (F-SH-03: 180–360 px, default 248). The Agent and
+    // Thread rails get their own keys with their lists.
+    spec!(RailWidth, json!(248), V::IntRange(180, 360), Hidden, []),
 ];
 
 pub fn spec(key: SettingKey) -> &'static SettingSpec {

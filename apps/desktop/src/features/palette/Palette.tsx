@@ -24,12 +24,19 @@ export function Palette() {
     const spec = COMMANDS.find((c) => c.id === id);
     if (!spec || !isEnabled(spec)) return null;
     const keys = bindingFor(spec, { mac, terminalFirst: false });
-    return { id, label: commandTitle(id), kbd: keys ? keysOf(keys) : undefined, onSelect: () => void runCommand(id) };
+    return {
+      id,
+      label: commandTitle(id),
+      kbd: keys ? keysOf(keys) : undefined,
+      onSelect: () => void runCommand(id),
+    };
   };
   const listed = (ids: string[]) => ids.map(item).filter((i): i is PaletteItem => i !== null);
   const navigation = COMMANDS.filter((c) => c.category === "navigation").map((c) => c.id);
   // The palette doesn't list itself.
-  const actions = COMMANDS.filter((c) => c.category !== "navigation" && c.id !== "palette.open" && c.id !== "settings.open").map((c) => c.id);
+  const actions = COMMANDS.filter(
+    (c) => c.category !== "navigation" && c.id !== "palette.open" && c.id !== "settings.open",
+  ).map((c) => c.id);
   const groups: PaletteGroup[] = [
     { heading: t("palette.goto"), items: listed(navigation) },
     {
@@ -51,7 +58,13 @@ export function Palette() {
       heading: t("palette.settings"),
       items: [
         ...listed(["settings.open"]),
-        ...settingsPages(platform).map((p) => ({ id: `settings.${p.id}`, label: p.label, icon: <Settings size={16} />, keywords: p.keywords, onSelect: () => openSettings(p.id) })),
+        ...settingsPages(platform).map((p) => ({
+          id: `settings.${p.id}`,
+          label: p.label,
+          icon: <Settings size={16} />,
+          keywords: p.keywords,
+          onSelect: () => openSettings(p.id),
+        })),
       ],
     },
   ];

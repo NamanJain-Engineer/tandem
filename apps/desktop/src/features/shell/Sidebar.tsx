@@ -6,7 +6,10 @@ import { t } from "../../i18n";
 export function Sidebar() {
   const [tab, setTab] = useState("dashboard");
   return (
-    <aside aria-label={t("sidebar.label")} className="flex w-[var(--sidebar-w)] shrink-0 flex-col border-l border-border bg-surface-1 px-3 pt-1">
+    <aside
+      aria-label={t("sidebar.label")}
+      className="flex w-[var(--sidebar-w)] shrink-0 flex-col border-l border-border bg-surface-1 px-3 pt-1"
+    >
       <Tabs
         label={t("sidebar.label")}
         value={tab}

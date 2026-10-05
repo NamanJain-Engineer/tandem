@@ -1,5 +1,17 @@
 import { Bell, ChevronDown, Command as CommandIcon, Gem, PanelLeft, PanelRight, Search } from "lucide-react";
-import { Avatar, Badge, Button, IconButton, Kbd, Menu, SegmentedControl, Tooltip, cx, useToast, type MenuEntry } from "@tandem/ui";
+import {
+  Avatar,
+  Badge,
+  Button,
+  IconButton,
+  Kbd,
+  Menu,
+  SegmentedControl,
+  Tooltip,
+  cx,
+  useToast,
+  type MenuEntry,
+} from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { totalCredits, useSession } from "../../stores/session";
@@ -10,7 +22,11 @@ import { LogoMark } from "./LogoMark";
 import { isDesktopChrome, useBoot } from "./useBoot";
 import { WindowControls } from "./WindowControls";
 
-const MODES: Array<{ id: Mode; key: "titlebar.mode.agent" | "titlebar.mode.code" | "titlebar.mode.thread"; n: string }> = [
+const MODES: Array<{
+  id: Mode;
+  key: "titlebar.mode.agent" | "titlebar.mode.code" | "titlebar.mode.thread";
+  n: string;
+}> = [
   { id: "agent", key: "titlebar.mode.agent", n: "1" },
   { id: "code", key: "titlebar.mode.code", n: "2" },
   { id: "thread", key: "titlebar.mode.thread", n: "3" },
@@ -20,7 +36,17 @@ const MODES: Array<{ id: Mode; key: "titlebar.mode.agent" | "titlebar.mode.code"
  * Tab order follows the visual order. */
 export function TitleBar() {
   const boot = useBoot((s) => s.boot);
-  const { mode, railCollapsed, sidebarOpen, settingsOpen, toggleRail, toggleSidebar, setPalette, openSettings, openUpgrade } = useUi();
+  const {
+    mode,
+    railCollapsed,
+    sidebarOpen,
+    settingsOpen,
+    toggleRail,
+    toggleSidebar,
+    setPalette,
+    openSettings,
+    openUpgrade,
+  } = useUi();
   const auth = useSession((s) => s.auth);
   const entitlement = useSession((s) => s.entitlement);
   const workspaces = useWorkspaces();
@@ -36,17 +62,43 @@ export function TitleBar() {
     { id: "updates", label: t("menu.checkUpdates"), disabled: true },
     { id: "shortcuts", label: t("menu.shortcuts"), kbd: ["Mod", "/"], disabled: true },
     { id: "sep1", type: "separator" },
-    { id: "help", label: t("menu.help"), onSelect: () => invoke("app_open_external", { url: "https://tandem.dev/docs" }).catch(() => undefined) },
+    {
+      id: "help",
+      label: t("menu.help"),
+      onSelect: () => invoke("app_open_external", { url: "https://tandem.dev/docs" }).catch(() => undefined),
+    },
     { id: "diag", label: t("menu.copyDiagnostics"), onSelect: () => void copyDiagnostics(show) },
-    { id: "logs", label: t("menu.openLogs"), onSelect: () => invoke("app_open_logs_folder").catch(() => undefined) },
+    {
+      id: "logs",
+      label: t("menu.openLogs"),
+      onSelect: () => invoke("app_open_logs_folder").catch(() => undefined),
+    },
     { id: "sep2", type: "separator" },
     auth?.signedIn
-      ? { id: "signout", label: t("menu.signOut"), onSelect: () => invoke("auth_sign_out").catch(() => undefined) }
-      : { id: "signin", label: t("menu.signIn"), onSelect: () => invoke("auth_sign_in").catch(() => undefined) },
-    { id: "quit", label: t("menu.quit"), kbd: ["Mod", "Q"], onSelect: () => invoke("app_quit").catch(() => undefined) },
+      ? {
+          id: "signout",
+          label: t("menu.signOut"),
+          onSelect: () => invoke("auth_sign_out").catch(() => undefined),
+        }
+      : {
+          id: "signin",
+          label: t("menu.signIn"),
+          onSelect: () => invoke("auth_sign_in").catch(() => undefined),
+        },
+    {
+      id: "quit",
+      label: t("menu.quit"),
+      kbd: ["Mod", "Q"],
+      onSelect: () => invoke("app_quit").catch(() => undefined),
+    },
   ];
 
-  const planBadge = entitlement?.plan === "pro" ? t("plan.pro") : entitlement?.plan === "team" ? t("plan.team") : t("plan.free");
+  const planBadge =
+    entitlement?.plan === "pro"
+      ? t("plan.pro")
+      : entitlement?.plan === "team"
+        ? t("plan.team")
+        : t("plan.free");
   const accountMenu: MenuEntry[] = [
     { id: "who", type: "label", label: auth?.email ?? t("menu.offlineMode") },
     { id: "billing", label: t("menu.accountBilling"), onSelect: () => openSettings("account") },
@@ -54,14 +106,28 @@ export function TitleBar() {
     { id: "plans", label: t("menu.seePlans"), onSelect: () => openUpgrade() },
     { id: "sep", type: "separator" },
     auth?.signedIn
-      ? { id: "signout", label: t("menu.signOut"), onSelect: () => invoke("auth_sign_out").catch(() => undefined) }
-      : { id: "signin", label: t("menu.signIn"), onSelect: () => invoke("auth_sign_in").catch(() => undefined) },
+      ? {
+          id: "signout",
+          label: t("menu.signOut"),
+          onSelect: () => invoke("auth_sign_out").catch(() => undefined),
+        }
+      : {
+          id: "signin",
+          label: t("menu.signIn"),
+          onSelect: () => invoke("auth_sign_in").catch(() => undefined),
+        },
   ];
 
   const workspaceMenu: MenuEntry[] = [
     { id: "arrange", label: t("menu.ws.arrange"), kbd: ["Mod", "Shift", "T"], disabled: true },
     { id: "cards", label: t("menu.ws.cards"), disabled: true },
-    { id: "sessions", type: "checkbox", label: t("menu.ws.sessions"), checked: !(active?.sessionsCollapsed ?? false), disabled: true },
+    {
+      id: "sessions",
+      type: "checkbox",
+      label: t("menu.ws.sessions"),
+      checked: !(active?.sessionsCollapsed ?? false),
+      disabled: true,
+    },
     { id: "usage", label: t("menu.ws.usage"), disabled: true },
   ];
 
@@ -77,7 +143,11 @@ export function TitleBar() {
         <Menu
           entries={appMenu}
           trigger={
-            <button type="button" aria-label={t("titlebar.appMenu")} className="inline-flex h-7 items-center gap-1.5 rounded-sm px-1.5 hover:bg-surface-4 focus-visible:shadow-focus focus-visible:outline-none">
+            <button
+              type="button"
+              aria-label={t("titlebar.appMenu")}
+              className="inline-flex h-7 items-center gap-1.5 rounded-sm px-1.5 hover:bg-surface-4 focus-visible:shadow-focus focus-visible:outline-none"
+            >
               <LogoMark size={18} />
               <span className="text-base font-semibold text-fg">{t("app.name")}</span>
               {boot?.dev && <Badge variant="waiting">{t("app.dev")}</Badge>}
@@ -92,7 +162,13 @@ export function TitleBar() {
           {boot?.dev && <Badge variant="waiting">{t("app.dev")}</Badge>}
         </span>
       )}
-      <IconButton icon={<PanelLeft size={16} />} label={t("titlebar.toggleRail")} pressed={!railCollapsed} kbd={["Mod", "\\"]} onClick={toggleRail} />
+      <IconButton
+        icon={<PanelLeft size={16} />}
+        label={t("titlebar.toggleRail")}
+        pressed={!railCollapsed}
+        kbd={["Mod", "\\"]}
+        onClick={toggleRail}
+      />
       {!settingsOpen && (
         <SegmentedControl
           label={t("titlebar.workMode")}
@@ -100,14 +176,24 @@ export function TitleBar() {
           size="sm"
           value={mode}
           onValueChange={(v) => switchMode(v as Mode)}
-          items={MODES.map((m) => ({ id: m.id, label: t(m.key), tooltip: t("titlebar.mode.tooltip", { mode: t(m.key) }), kbd: ["Mod", m.n] }))}
+          items={MODES.map((m) => ({
+            id: m.id,
+            label: t(m.key),
+            tooltip: t("titlebar.mode.tooltip", { mode: t(m.key) }),
+            kbd: ["Mod", m.n],
+          }))}
         />
       )}
       {mode === "code" && !settingsOpen && active && (
         <Menu
           entries={workspaceMenu}
           trigger={
-            <Button size="sm" variant="ghost" aria-label={`${t("titlebar.workspaceMenu")}: ${active.name}`} iconRight={<ChevronDown size={14} />}>
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label={`${t("titlebar.workspaceMenu")}: ${active.name}`}
+              iconRight={<ChevronDown size={14} />}
+            >
               {active.name}
             </Button>
           }
@@ -124,7 +210,12 @@ export function TitleBar() {
         <Kbd keys={["Mod", "K"]} />
       </button>
       <span className="min-[1180px]:hidden">
-        <IconButton icon={<CommandIcon size={16} />} label={t("titlebar.omnibox")} kbd={["Mod", "K"]} onClick={() => setPalette(true)} />
+        <IconButton
+          icon={<CommandIcon size={16} />}
+          label={t("titlebar.omnibox")}
+          kbd={["Mod", "K"]}
+          onClick={() => setPalette(true)}
+        />
       </span>
       <div className="h-full min-w-4 flex-1" data-tauri-drag-region />
       {credits !== null && (
@@ -148,12 +239,22 @@ export function TitleBar() {
         entries={[{ id: "empty", type: "label", label: t("notifications.empty") }]}
         trigger={<IconButton icon={<Bell size={16} />} label={t("titlebar.notifications")} />}
       />
-      <IconButton icon={<PanelRight size={16} />} label={t("titlebar.toggleSidebar")} pressed={sidebarOpen} kbd={["Mod", "Shift", "B"]} onClick={toggleSidebar} />
+      <IconButton
+        icon={<PanelRight size={16} />}
+        label={t("titlebar.toggleSidebar")}
+        pressed={sidebarOpen}
+        kbd={["Mod", "Shift", "B"]}
+        onClick={toggleSidebar}
+      />
       <Menu
         align="end"
         entries={[{ id: "plan", type: "label", label: planBadge }, ...accountMenu]}
         trigger={
-          <button type="button" aria-label={t("titlebar.account")} className="mx-1 inline-flex rounded-md focus-visible:shadow-focus focus-visible:outline-none">
+          <button
+            type="button"
+            aria-label={t("titlebar.account")}
+            className="mx-1 inline-flex rounded-md focus-visible:shadow-focus focus-visible:outline-none"
+          >
             <Avatar name={auth?.email ?? t("app.name")} id={auth?.email ?? "offline"} size={24} />
           </button>
         }

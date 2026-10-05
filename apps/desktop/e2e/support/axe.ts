@@ -11,17 +11,39 @@ type Violation = { id: string; impact: string | null; nodes: Array<{ target: str
  * violations (PRODUCT_SPEC §5.4). The webview can't open helper windows, so
  * axe is injected directly instead of through @axe-core/webdriverio. */
 export async function expectNoSeriousA11yViolations(): Promise<void> {
+  // Colour contrast is measured on settled pixels: a dialog mid-fade has
+  // partial opacity and would read as low contrast.
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(() =>
+        // Spinners loop forever; only finite transitions have to settle.
+        document
+          .getAnimations()
+          .every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity),
+      ),
+    { timeout: 5_000, timeoutMsg: "animations still running before axe" },
+  );
   await browser.execute(AXE_SOURCE);
   const violations = (await browser.executeAsync((done: (v: Violation[]) => void) => {
     const w = window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: Violation[] }> } };
     w.axe
       .run(document)
-      .then((r) => done(r.violations.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.map((n) => ({ target: n.target })) }))))
+      .then((r) =>
+        done(
+          r.violations.map((v) => ({
+            id: v.id,
+            impact: v.impact,
+            nodes: v.nodes.map((n) => ({ target: n.target })),
+          })),
+        ),
+      )
       .catch(() => done([{ id: "axe-failed", impact: "critical", nodes: [] }]));
   })) as Violation[];
   const serious = violations.filter((v) => v.impact === "serious" || v.impact === "critical");
   if (serious.length > 0) {
-    throw new Error(`axe: ${serious.map((v) => `${v.id} (${v.nodes.map((n) => n.target.join(" ")).join("; ")})`).join(", ")}`);
+    throw new Error(
+      `axe: ${serious.map((v) => `${v.id} (${v.nodes.map((n) => n.target.join(" ")).join("; ")})`).join(", ")}`,
+    );
   }
 }
 
@@ -29,8 +51,12 @@ export async function expectNoSeriousA11yViolations(): Promise<void> {
 export async function expectNoSeriousA11yViolationsInBothThemes(): Promise<void> {
   const setTheme = (value: string) =>
     browser.executeAsync((v: string, done: () => void) => {
-      const w = window as unknown as { __TAURI_INTERNALS__: { invoke: (c: string, a: unknown) => Promise<unknown> } };
-      void w.__TAURI_INTERNALS__.invoke("settings_set", { key: "theme", value: v }).then(() => setTimeout(done, 300));
+      const w = window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (c: string, a: unknown) => Promise<unknown> };
+      };
+      void w.__TAURI_INTERNALS__
+        .invoke("settings_set", { key: "theme", value: v })
+        .then(() => setTimeout(done, 300));
     }, value);
   try {
     for (const theme of ["dark", "light"]) {

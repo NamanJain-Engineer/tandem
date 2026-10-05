@@ -2,10 +2,10 @@
 
 ## Current state
 - Repo: github.com/NamanJain-Engineer/tandem (private). Build kit in `build-kit/`; plan in `docs/PLAN.md`.
-- Milestone: **M2 DONE** (tags `m0`, `m1`, `m2`, local only: the remote accepts the session branch only). Next: **M3** Code mode core (workspaces, panes, PTY, terminal fidelity).
+- Milestone: **M3 in progress** (M2 done; tags `m0`, `m1`, `m2` are local only: the remote accepts the session branch only). Done in M3: layout engine and pane grid, command registry and shortcuts, rail and tab strip, `tandem-pty` side channel and child registry. Next: desktop wiring for `pty:state` and orphans, handback, snapshots, then tasks 6, 7, 9 and 10, then E2E-M3.
 - Layout matches DECISIONS: 10 crates under `crates/`, Tauri crate `apps/desktop/src-tauri` (lib `tandem_app`, bin `tandem`), `apps/{api,web}`, `packages/{ui,protocol}`.
 - Environment: WebKitGTK, webkit2gtk-driver, xvfb, tauri-driver, dbus, xclip, openbox and cargo-audit are installed; `dockerd` must be started by hand in a fresh container (`dockerd &`), then `pnpm infra:up`.
-- Gate: `pnpm gate` (lint, vitest, cargo test, desktop build, clippy, fmt, protocol drift) is green. Stage new files first: the drift check diffs the working tree against the index.
+- Gate: `pnpm gate` (lint, vitest, cargo test, desktop build, clippy, fmt, protocol drift) is green. Stage new files first: the drift check diffs the working tree against the index. `gen:protocol` also writes `packages/protocol/shortcuts.json`.
 - Desktop E2E: `dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e` runs the real Tauri binary via tauri-driver (starts API + web if needed, openbox for WM behaviour, scripted Chromium for sign-in and checkout). 9/9 spec files pass.
 - API tests need `pnpm infra:up` (they create `tandem_test`). Web E2E: `PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium pnpm --filter web test:e2e` after `db:migrate`, `db:seed`, `keys:dev`.
 - Release harness check: `bash scripts/check-release-harness.sh` (release build, asserts no `test_*` commands in the binary).
@@ -63,6 +63,19 @@
 - [x] E2E-M2-1…8 (`apps/desktop/e2e/specs/m2-*.e2e.ts`): all pass against the real app; axe passes in both themes on sign-in, the shell, the upgrade sheet and every Settings page
 - [x] Exit: README "Sign in locally"; release builds have no test harness (unit test + `scripts/check-release-harness.sh`); HUMAN_TODO `SENTRY_DSN`, `POSTHOG_KEY`, production keys, manual QA items
 
+## M3 checklist (MILESTONES M3)
+- [ ] 1. `tandem-pty` sessions: done: side channel (vt100 shadow screen, CPR from its cursor, modes and title for `pty:state`, 100 ms debounce), every query answered in Rust and xterm's replies switched off, live-pane limit enforced at `pane_create`, child registry `run/children.json` + orphan scan/stop (`sysinfo`, Unix session ids). To do: desktop wiring (`pty:state`, `orphans_*`, UI-132), agent handback + Saved sessions, quit/5-min scrollback snapshots, Windows job object and PATH-only resolution
+- [x] 2. Layout engine F-CD-02: pure tree (fast-check round trip), PaneGrid on react-resizable-panels with reparented pane hosts, PTY resize after pointer-up / 50 ms throttle, 240×120 minimums, dnd-kit drag (4 px, five zones, ghost, new-tab drop, Esc), maximize without unmounting, focus ring and `Mod+Alt+Arrow`, pane picker with the Free card, `layout_get` / `layout_save` / `pane_move`
+- [x] 3. Workspaces and tabs F-CD-01: tab rename (double-click, F2), drag reorder, close, `+`; closing the last tab leaves the empty state; missing folders block launches and offer Locate… / Remove (`workspace_locate`); debounced layout saves. Folder drop on the rail and pane-to-rail adoption wait for cwd tracking (task 10)
+- [x] 4. Rail F-SH-03: generic `RailList` (Pinned band by drag, reorder, context menu with Pin/Rename/Move up/down/Reveal/Copy path/Remove, inline rename, keyboard, expand to open panes), resize 180–360 persisted, footer from M2. Status slots and Saved sessions arrive with M4 and task 1
+- [x] 5. Mode switch F-SH-02: radiogroup and `Mod+1/2/3` (also from a terminal) via the registry; every surface stays mounted
+- [ ] 6. Terminal rendering F-CD-04
+- [ ] 7. Clipboard, drops and keys F-CD-05/06/07
+- [x] 8. Command registry F-SH-09: `tandem-core::commands` with macOS / Windows-Linux / terminal-focused bindings, `pnpm gen:shortcuts`, registry-driven dispatcher (passthrough rule, IME guard, release webview-key suppression), palette on the same handlers
+- [ ] 9. Find F-CD-08
+- [ ] 10. Shell integration F-CD-10
+- [ ] E2E-M3-1…16, perf suite, exit checklist
+
 ## Decisions
 - D-1: F-CD-09 owned by M9. It needs the Files editor and the Tandem browser.
 - D-2: F-SH-08 framework slice in M5, Accounts step in M6, owned by M8.
@@ -96,6 +109,15 @@
 - D-30: Status badges keep their §1.3 `*-text` colour on the surface with a tinted border instead of a soft tinted fill: the text tokens pass AA on surfaces (UI_SPEC §7.3) but the light amber/green/rose text fell to ~4.2:1 on their own tints. Found by the both-themes axe pass.
 - D-31: The E2E keychain is in memory (`TANDEM_FAKE_KEYCHAIN=1`), so a relaunched app is signed out by design; specs that relaunch use "Use Tandem offline" (persisted without secrets) instead of a file-backed fake keychain, which would put secrets on disk.
 - D-32: Signing out also leaves offline mode (back to UI-03). The window state is also saved 400 ms after each change so a crash or kill keeps it, and a restored window that isn't fully on one display is re-centred (the plugin alone only checks overlap).
+- D-33: Panes render into host elements the grid moves between layout slots (`paneHosts.ts`), so swap, move and maximize never remount xterm: the WebGL context and scrollback stay (F-CD-02 AC2, AC3).
+- D-34: A fresh tab starts a Shell (E2E-M2-1 expects "a tab with a live shell"); a tab whose last pane closed, or that replaced the last closed tab, shows UI-10's launch tiles instead.
+- D-35: `pane_move {paneId, tabId}` (declared in ARCHITECTURE §3.2) moves a pane to another tab of its workspace with the same process: the tab-strip drop and "Move to new tab".
+- D-36: The command registry carries the three binding columns of UI_SPEC §5 (`mac`, `pc`, `pcTerminal`); titles are `cmd.<id>`. It lists only commands that have a handler and grows each milestone; a test checks every `pcTerminal` binding against the terminal intercept list.
+- D-37: Code mode's rail order is `workspaces.sort_key` / `pinned` (`rail_move` with `mode: "code"`); `rail_items` holds the Agent and Thread rails when they land. `rail_width` defaults to 248 within 180–360.
+- D-38: Terminal queries are answered in Rust for every pane, visible or hidden, and xterm's own replies are switched off with parser hooks (ARCHITECTURE §5.7). MILESTONES M3 describes xterm answering while visible; ARCHITECTURE outranks it, and both give exactly one reply. CPR uses the vt100 shadow cursor as of the query.
+- D-39: Orphans are found with `sysinfo`: a record matches when its PID is alive with the same start time, and on Unix any process in the pane's session (the session id is the recorded PID) also counts, so a `nohup` child of a shell that died with the app is found. Windows relies on the Job Object.
+- D-40: `scripts/gate.sh` runs one command per line. Under `set -e` a failure inside an `a && b` list doesn't stop the script, so a red `pnpm -r test` once let the gate exit 0 (found when Postgres was down after a container restart; the earlier gated commits had run every step).
+- D-41: The E2E axe helper waits for finite animations to finish before running, so a dialog mid-fade isn't measured as low contrast.
 - Deviation: the `keyring` crate is linked (Secret Service on Linux). `MemoryKeychain` is selected only with `TANDEM_FAKE_KEYCHAIN=1`.
 
 ## Log
@@ -104,3 +126,4 @@
 - M0: realigned to DECISIONS: crate rename to `tandem-engines`, seven new crates, Tauri crate with capabilities and CSP, ts-rs protocol generation, UI_SPEC tokens, ICU i18n, rewritten core (redactor, containment, settings schema, keychain, logging, store with writer thread and full schema), API restructured to ARCHITECTURE §14.1, web on the shared tokens, dev/gate/coverage/trace/CI scripts, desktop E2E harness. Both M0 E2E scenarios pass. M0 closed.
 - M1: backend accounts, entitlements, remote config, mock billing, edge limits, desktop auth server side, account portal pages. 37 API tests, 6 Playwright scenarios, Rust verifiers with an interop fixture. M1 closed.
 - M2: desktop shell, design system and sign-in. `tandem-pty` (reader/batcher/flow control/ring/query responder/tree kill/login env), core `net` + `telemetry`, store repos for workspaces/tabs/panes, desktop services (api, auth, entitlement, deeplink, workspaces, terminal, telemetry, events), the M2 command set and plugins, `@tandem/ui` kit with gallery, and the desktop screens. Fixed on the way: boot waited on an animation frame a hidden window never gets; channel reuse lost PTY output; Settings Esc could miss a non-element target; the terminal stole focus back from Settings' opener. M0's boot spec now asserts the first real screen (the splash is transient since M2). All M2 E2E scenarios pass. M2 closed.
+- M3 (in progress): pane grid, picker and drag and drop; command registry, dispatcher and palette; rail, tab strip and missing-folder flow; `tandem-pty` side channel and child registry. Fixed on the way: a new pane took focus twice and could steal it back from Settings' opener; Escape in an inline rename still committed through the blur; the rail tree owned list markup (axe); `gate.sh` could pass with a failed step.

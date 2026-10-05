@@ -532,7 +532,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `settings_reset` | `{key}` | — | — | F-SH-04 |
 | `term_set_theme_colors` | `TermColors {fg, bg, cursor, ansi[16]}` | — | — | F-SH-05 |
 | `rail_list` | `{mode}` | `[RailItem]` | — | F-SH-03 |
-| `rail_move` | `{mode, itemId, afterId?, pinned}` | — | NotFound | F-SH-03 |
+| `rail_move` | `{mode, itemId, afterId?, pinned}` (Code mode orders `workspaces.sort_key`/`pinned`; `rail_items` holds the Agent and Thread rails) | — | NotFound | F-SH-03 |
 | `sidebar_get` / `sidebar_save` | — / `SidebarState` | `SidebarState` / — | — | F-SH-10 |
 
 #### Workspaces, tabs, layout [F-CD-01, F-CD-02, F-CD-11, F-TH-14]
@@ -544,6 +544,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `workspace_rename` / `workspace_remove` / `workspace_locate` | `{id, name}` / `{id}` / `{id, newRoot}` | — | NotFound | F-CD-01, F-SH-03 |
 | `workspace_set_account_override` | `{id, engineId, accountId?}` | — | NotFound | F-AC-03 |
 | `workspace_set_flags` | `{id, collapsed?, showSessionsCollapsed?}` | — | — | F-SH-03, F-CD-11 |
+| `workspace_reveal` | `{id}` (opens the root in the file manager; no arbitrary paths) | — | NotFound | F-SH-03 |
 | `workspace_adopt_pane` | `{paneId}` | `Workspace` (new ws for pane cwd; pane moves, same PID) | NotFound | F-CD-01 |
 | `tab_create` / `tab_rename` / `tab_close` / `tab_reorder` | `{workspaceId, name?}` / `{id, name}` / `{id}` / `{workspaceId, ids}` | `Tab` / — | NotFound | F-CD-01 |
 | `layout_get` | `{workspaceId}` | `[TabLayout {tab, tree: LayoutNode, activePaneId?, maximizedPaneId?}]` | — | F-CD-02 |

@@ -31,6 +31,10 @@ const COMMANDS: &[&str] = &[
     "workspace_list",
     "workspace_rename",
     "workspace_remove",
+    "workspace_locate",
+    "workspace_set_flags",
+    "workspace_reveal",
+    "rail_move",
     "tab_create",
     "tab_rename",
     "tab_close",
@@ -48,6 +52,8 @@ const COMMANDS: &[&str] = &[
     "pty_resize",
     "pty_kill",
     "term_set_theme_colors",
+    "orphans_list",
+    "orphans_resolve",
 ];
 
 const TEST_COMMANDS: &[&str] = &[

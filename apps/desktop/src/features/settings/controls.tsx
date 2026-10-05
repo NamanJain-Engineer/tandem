@@ -12,19 +12,53 @@ export function useSave() {
   const { show } = useToast();
   const save = async (key: SettingKey, value: unknown): Promise<boolean> => {
     const ok = await set(key, value);
-    if (!ok) show({ tone: "error", title: t("settings.saveFailed"), action: { label: t("settings.retry"), onClick: () => void save(key, value) } });
+    if (!ok)
+      show({
+        tone: "error",
+        title: t("settings.saveFailed"),
+        action: { label: t("settings.retry"), onClick: () => void save(key, value) },
+      });
     return ok;
   };
   return save;
 }
 
-export function BoolControl({ k, ids, label, disabled }: { k: SettingKey; ids: Ids; label: string; disabled?: boolean }) {
+export function BoolControl({
+  k,
+  ids,
+  label,
+  disabled,
+}: {
+  k: SettingKey;
+  ids: Ids;
+  label: string;
+  disabled?: boolean;
+}) {
   const value = useSetting(k, false);
   const save = useSave();
-  return <Switch id={ids.id} aria-describedby={ids.describedBy} checked={value} disabled={disabled} aria-label={label} onCheckedChange={(v) => void save(k, v)} />;
+  return (
+    <Switch
+      id={ids.id}
+      aria-describedby={ids.describedBy}
+      checked={value}
+      disabled={disabled}
+      aria-label={label}
+      onCheckedChange={(v) => void save(k, v)}
+    />
+  );
 }
 
-export function SelectControl({ k, ids, options, fallback }: { k: SettingKey; ids: Ids; options: Array<{ value: string; label: string }>; fallback: string }) {
+export function SelectControl({
+  k,
+  ids,
+  options,
+  fallback,
+}: {
+  k: SettingKey;
+  ids: Ids;
+  options: Array<{ value: string; label: string }>;
+  fallback: string;
+}) {
   const value = useSetting(k, fallback);
   const save = useSave();
   return (
@@ -34,10 +68,28 @@ export function SelectControl({ k, ids, options, fallback }: { k: SettingKey; id
   );
 }
 
-export function SegmentControl({ k, label, options, fallback }: { k: SettingKey; label: string; options: Array<{ id: string; label: string }>; fallback: string }) {
+export function SegmentControl({
+  k,
+  label,
+  options,
+  fallback,
+}: {
+  k: SettingKey;
+  label: string;
+  options: Array<{ id: string; label: string }>;
+  fallback: string;
+}) {
   const value = useSetting(k, fallback);
   const save = useSave();
-  return <SegmentedControl label={label} size="sm" value={value} items={options} onValueChange={(v) => void save(k, v)} />;
+  return (
+    <SegmentedControl
+      label={label}
+      size="sm"
+      value={value}
+      items={options}
+      onValueChange={(v) => void save(k, v)}
+    />
+  );
 }
 
 /** "Saved" for a second when the effect isn't visible (UI-100). */
@@ -57,13 +109,30 @@ function useSavedHint(): [boolean, () => void] {
 
 export function SavedHint({ shown }: { shown: boolean }) {
   return (
-    <span role="status" className={cx("text-sm text-fg-subtle transition-opacity", shown ? "opacity-100" : "opacity-0")}>
+    <span
+      role="status"
+      className={cx("text-sm text-fg-subtle transition-opacity", shown ? "opacity-100" : "opacity-0")}
+    >
       {shown ? t("settings.saved") : ""}
     </span>
   );
 }
 
-export function NumberControl({ k, ids, min, max, fallback, label }: { k: SettingKey; ids: Ids; min: number; max: number; fallback: number; label: string }) {
+export function NumberControl({
+  k,
+  ids,
+  min,
+  max,
+  fallback,
+  label,
+}: {
+  k: SettingKey;
+  ids: Ids;
+  min: number;
+  max: number;
+  fallback: number;
+  label: string;
+}) {
   const value = useSetting(k, fallback);
   const save = useSave();
   const [draft, setDraft] = useState(String(value));
@@ -97,7 +166,19 @@ export function NumberControl({ k, ids, min, max, fallback, label }: { k: Settin
   );
 }
 
-export function TextControl({ k, ids, placeholder, label, monospace }: { k: SettingKey; ids: Ids; placeholder?: string; label: string; monospace?: boolean }) {
+export function TextControl({
+  k,
+  ids,
+  placeholder,
+  label,
+  monospace,
+}: {
+  k: SettingKey;
+  ids: Ids;
+  placeholder?: string;
+  label: string;
+  monospace?: boolean;
+}) {
   const value = useSetting<string | null>(k, null);
   const save = useSave();
   const [draft, setDraft] = useState(value ?? "");
@@ -126,7 +207,16 @@ export function TextControl({ k, ids, placeholder, label, monospace }: { k: Sett
   );
 }
 
-const FONTS = ["JetBrains Mono", "Menlo", "SF Mono", "Consolas", "Cascadia Mono", "DejaVu Sans Mono", "Ubuntu Mono", "Fira Code"];
+const FONTS = [
+  "JetBrains Mono",
+  "Menlo",
+  "SF Mono",
+  "Consolas",
+  "Cascadia Mono",
+  "DejaVu Sans Mono",
+  "Ubuntu Mono",
+  "Fira Code",
+];
 
 export function FontControl({ k, label }: { k: SettingKey; label: string }) {
   const value = useSetting(k, "JetBrains Mono");
@@ -134,7 +224,13 @@ export function FontControl({ k, label }: { k: SettingKey; label: string }) {
   const options = [...new Set([value, ...FONTS])].map((f) => ({ value: f, label: f }));
   return (
     <div className="w-48">
-      <Combobox ariaLabel={label} value={value} options={options} onValueChange={(v) => void save(k, v)} onCreate={(v) => void save(k, v)} />
+      <Combobox
+        ariaLabel={label}
+        value={value}
+        options={options}
+        onValueChange={(v) => void save(k, v)}
+        onCreate={(v) => void save(k, v)}
+      />
     </div>
   );
 }
@@ -143,18 +239,40 @@ export function ThemeCards({ label }: { label: string }) {
   const value = useSetting("theme", "dark");
   const save = useSave();
   const cards: Array<{ id: string; label: string; swatch: ReactNode }> = [
-    { id: "dark", label: t("settings.theme.dark"), swatch: <span className="block h-10 rounded-xs border border-border bg-[#060a12]" /> },
-    { id: "light", label: t("settings.theme.light"), swatch: <span className="block h-10 rounded-xs border border-border bg-[#f1f5f9]" /> },
-    { id: "system", label: t("settings.theme.system"), swatch: <span className="block h-10 rounded-xs border border-border bg-[linear-gradient(135deg,#060a12_50%,#f1f5f9_50%)]" /> },
+    {
+      id: "dark",
+      label: t("settings.theme.dark"),
+      swatch: <span className="block h-10 rounded-xs border border-border bg-[#060a12]" />,
+    },
+    {
+      id: "light",
+      label: t("settings.theme.light"),
+      swatch: <span className="block h-10 rounded-xs border border-border bg-[#f1f5f9]" />,
+    },
+    {
+      id: "system",
+      label: t("settings.theme.system"),
+      swatch: (
+        <span className="block h-10 rounded-xs border border-border bg-[linear-gradient(135deg,#060a12_50%,#f1f5f9_50%)]" />
+      ),
+    },
   ];
   const onKey = (e: KeyboardEvent, i: number) => {
-    const delta = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    const delta =
+      e.key === "ArrowRight" || e.key === "ArrowDown"
+        ? 1
+        : e.key === "ArrowLeft" || e.key === "ArrowUp"
+          ? -1
+          : 0;
     if (!delta) return;
     e.preventDefault();
     const next = cards[(i + delta + cards.length) % cards.length];
     if (next) {
       void save("theme", next.id);
-      (e.currentTarget.parentElement?.children[(i + delta + cards.length) % cards.length] as HTMLElement | undefined)?.focus();
+      (
+        e.currentTarget.parentElement?.children[(i + delta + cards.length) % cards.length] as
+          HTMLElement | undefined
+      )?.focus();
     }
   };
   return (

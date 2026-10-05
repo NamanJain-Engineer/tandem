@@ -4,7 +4,7 @@ use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
 use tandem_core::ids::{PaneId, TabId, WorkspaceId};
-use tandem_core::IpcError;
+use tandem_core::{ErrorCode, IpcError};
 use tandem_store::repo::layouts::{self, LayoutNode, TabLayout};
 use tandem_store::repo::tabs::{self, Tab};
 use tandem_store::repo::workspaces as repo;
@@ -65,6 +65,58 @@ pub async fn workspace_rename(
 #[tauri::command]
 pub async fn workspace_remove(state: State<'_, AppState>, id: WorkspaceId) -> Result<(), IpcError> {
     workspaces::remove(&state.store, &state.terminals.pty, &id).await
+}
+
+/// Points a workspace at its folder's new location ("Locate…", F-SH-03).
+#[tauri::command]
+pub async fn workspace_locate(
+    state: State<'_, AppState>,
+    id: WorkspaceId,
+    new_root: String,
+) -> Result<(), IpcError> {
+    let root = workspaces::canonical_root(&new_root)?;
+    Ok(repo::locate(&state.store, &id, root.to_string_lossy().into_owned()).await?)
+}
+
+#[tauri::command]
+pub async fn workspace_set_flags(
+    state: State<'_, AppState>,
+    id: WorkspaceId,
+    collapsed: Option<bool>,
+    show_sessions_collapsed: Option<bool>,
+) -> Result<(), IpcError> {
+    Ok(repo::set_flags(&state.store, &id, collapsed, show_sessions_collapsed).await?)
+}
+
+/// Shows the workspace folder in the system file manager.
+#[tauri::command]
+pub async fn workspace_reveal(state: State<'_, AppState>, id: WorkspaceId) -> Result<(), IpcError> {
+    let ws = repo::get(&state.store, &id).await?;
+    tauri_plugin_opener::reveal_item_in_dir(&ws.root).map_err(|e| {
+        tracing::warn!(code = "workspace.reveal_failed", error = %e, "reveal failed");
+        IpcError::new(ErrorCode::NotFound, "This folder can't be shown.")
+    })
+}
+
+/// Reorders or pins a rail row (F-SH-03). Code mode orders workspaces; the
+/// other modes' rails arrive with their lists.
+#[tauri::command]
+pub async fn rail_move(
+    state: State<'_, AppState>,
+    mode: String,
+    item_id: String,
+    after_id: Option<String>,
+    pinned: bool,
+) -> Result<(), IpcError> {
+    if mode != "code" {
+        return Err(IpcError::new(
+            ErrorCode::Invalid,
+            "This rail can't be reordered yet",
+        ));
+    }
+    let id = WorkspaceId::from_db(item_id);
+    let after = after_id.map(WorkspaceId::from_db);
+    Ok(repo::move_to(&state.store, &id, after, pinned).await?)
 }
 
 #[tauri::command]

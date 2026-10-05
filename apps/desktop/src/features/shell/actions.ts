@@ -25,7 +25,9 @@ export async function addWorkspace(root: string, toast: Toast): Promise<boolean>
   }
   if (result.limit) {
     const limit = useSession.getState().entitlement?.limits.workspaces ?? 3;
-    invoke("telemetry_capture", { event: "limit_hit", props: { limit: "workspaces" } }).catch(() => undefined);
+    invoke("telemetry_capture", { event: "limit_hit", props: { limit: "workspaces" } }).catch(
+      () => undefined,
+    );
     useUi.getState().openUpgrade({ kind: "workspaces", limit }, () => void addWorkspace(root, toast));
     return false;
   }
@@ -34,7 +36,9 @@ export async function addWorkspace(root: string, toast: Toast): Promise<boolean>
 }
 
 export async function pickAndAddWorkspace(toast: Toast): Promise<void> {
-  const picked = await invoke<string | null>("workspace_pick_folder", undefined, { timeoutMs: 24 * 3_600_000 }).catch(() => null);
+  const picked = await invoke<string | null>("workspace_pick_folder", undefined, {
+    timeoutMs: 24 * 3_600_000,
+  }).catch(() => null);
   if (picked) await addWorkspace(picked, toast);
 }
 
@@ -47,7 +51,10 @@ export async function copyDiagnostics(toast: Toast): Promise<void> {
   }
 }
 
-export async function openBilling(target: { type: "upgrade"; plan: string; interval: string } | { type: "portal" } | { type: "credits" }, toast: Toast): Promise<boolean> {
+export async function openBilling(
+  target: { type: "upgrade"; plan: string; interval: string } | { type: "portal" } | { type: "credits" },
+  toast: Toast,
+): Promise<boolean> {
   try {
     await invoke("billing_open", { target }, { timeoutMs: 30_000 });
     return true;

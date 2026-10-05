@@ -12,7 +12,8 @@ use ts_rs::TS;
 
 use tandem_core::ids::{PaneId, TabId};
 use tandem_core::{ErrorCode, IpcError};
-use tandem_pty::{ExitInfo, OutputSink, PtyFrame, PtyInfo, SinkClosed, TermColors};
+use tandem_pty::orphans::{self, OrphanInfo, SystemTable};
+use tandem_pty::{ExitInfo, OutputSink, PtyFrame, PtyInfo, PtyState, SinkClosed, TermColors};
 use tandem_store::repo::panes::{self, PaneRecord};
 
 use crate::state::AppState;
@@ -98,6 +99,8 @@ pub struct AttachSnapshot {
     /// Ring contents, base64.
     pub replay: String,
     pub live: bool,
+    /// Modes and title as of the attach (later changes arrive as `pty:state`).
+    pub state: Option<PtyState>,
 }
 
 /// Re-attaches after a webview reload: returns the scrollback to replay.
@@ -112,6 +115,7 @@ pub fn pty_attach(
     Ok(AttachSnapshot {
         replay: STANDARD.encode(replay),
         live: pty.is_live(pane_id.as_str()),
+        state: pty.state(pane_id.as_str()),
     })
 }
 
@@ -152,4 +156,41 @@ pub fn pty_kill(state: State<'_, AppState>, pane_id: PaneId) -> Result<ExitInfo,
 #[tauri::command]
 pub fn term_set_theme_colors(state: State<'_, AppState>, colors: TermColors) {
     state.terminals.pty.set_theme_colors(colors);
+}
+
+/// Processes a crashed run left behind (UI-132).
+#[tauri::command]
+pub fn orphans_list(state: State<'_, AppState>) -> Vec<OrphanInfo> {
+    state.orphans.lock().map(|o| o.clone()).unwrap_or_default()
+}
+
+/// "Stop them" ends every listed process (terminate, then kill after 2 s);
+/// "Keep them" forgets the list.
+#[tauri::command]
+pub async fn orphans_resolve(state: State<'_, AppState>, action: String) -> Result<(), IpcError> {
+    if action != "stop" && action != "keep" {
+        return Err(IpcError::new(ErrorCode::Invalid, "Choose stop or keep"));
+    }
+    let list = state
+        .orphans
+        .lock()
+        .map(|mut o| std::mem::take(&mut *o))
+        .unwrap_or_default();
+    if action == "stop" && !list.is_empty() {
+        tracing::info!(
+            code = "orphans.stop",
+            count = list.len(),
+            "stopping orphaned processes"
+        );
+        tokio::task::spawn_blocking(move || {
+            orphans::stop(
+                &list,
+                &mut SystemTable::default(),
+                std::time::Duration::from_secs(2),
+            );
+        })
+        .await
+        .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?;
+    }
+    Ok(())
 }

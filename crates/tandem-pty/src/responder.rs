@@ -38,6 +38,8 @@ pub fn xparse_color(hex: &str) -> String {
 struct Collector {
     replies: Vec<u8>,
     colors: TermColors,
+    /// 1-based (row, col) for CPR, from the shadow screen.
+    cursor: (u16, u16),
 }
 
 impl Perform for Collector {
@@ -51,6 +53,11 @@ impl Perform for Collector {
             ([], 'c') if first == 0 => self.replies.extend_from_slice(b"\x1b[?62;22c"),
             ([b'>'], 'c') => self.replies.extend_from_slice(b"\x1b[>0;10;1c"),
             ([], 'n') if first == 5 => self.replies.extend_from_slice(b"\x1b[0n"),
+            ([], 'n') if first == 6 => {
+                let (row, col) = self.cursor;
+                self.replies
+                    .extend_from_slice(format!("\x1b[{row};{col}R").as_bytes());
+            }
             ([b'>'], 'q') => {
                 self.replies.extend_from_slice(
                     format!("\x1bP>|Tandem {}\x1b\\", env!("CARGO_PKG_VERSION")).as_bytes(),
@@ -104,6 +111,12 @@ impl QueryResponder {
     }
 
     pub fn feed(&mut self, bytes: &[u8], colors: &TermColors) -> Vec<u8> {
+        self.feed_at(bytes, colors, (1, 1))
+    }
+
+    /// Like `feed`, answering CPR with `cursor` (1-based row, col).
+    pub fn feed_at(&mut self, bytes: &[u8], colors: &TermColors, cursor: (u16, u16)) -> Vec<u8> {
+        self.collector.cursor = cursor;
         self.collector.colors = colors.clone();
         self.parser.advance(&mut self.collector, bytes);
         std::mem::take(&mut self.collector.replies)

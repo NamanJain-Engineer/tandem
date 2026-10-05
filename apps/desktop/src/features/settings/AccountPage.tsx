@@ -22,7 +22,9 @@ export function AccountPage() {
       <SettingsGroup>
         <div className="flex items-center gap-3 p-3">
           <p className="flex-1 text-base text-fg">
-            {auth?.offline && auth.offlineDaysLeft !== null ? t("settings.account.offline", { n: Number(auth.offlineDaysLeft) }) : t("settings.account.signedOut")}
+            {auth?.offline && auth.offlineDaysLeft !== null
+              ? t("settings.account.offline", { n: Number(auth.offlineDaysLeft) })
+              : t("settings.account.signedOut")}
           </p>
           <Button variant="primary" onClick={() => invoke("auth_sign_in").catch(() => undefined)}>
             {t("settings.account.signIn")}
@@ -49,8 +51,12 @@ export function AccountPage() {
     <div className="flex flex-col gap-6">
       <SettingsGroup>
         <div className="flex items-center gap-3 p-3">
-          <p className="flex-1 text-base text-fg">{t("settings.account.signedInAs", { email: auth.email ?? "" })}</p>
-          <Button onClick={() => invoke("auth_sign_out").catch(() => undefined)}>{t("settings.account.signOut")}</Button>
+          <p className="flex-1 text-base text-fg">
+            {t("settings.account.signedInAs", { email: auth.email ?? "" })}
+          </p>
+          <Button onClick={() => invoke("auth_sign_out").catch(() => undefined)}>
+            {t("settings.account.signOut")}
+          </Button>
         </div>
       </SettingsGroup>
       <SettingsGroup>
@@ -74,10 +80,15 @@ export function AccountPage() {
                         <span className="flex flex-col">
                           <span className="tabular-nums">
                             {t("settings.account.creditsLine", { total, grant })}
-                            {e.credits.resetsAt ? ` · ${t("settings.account.resets", { date: date(e.credits.resetsAt) })}` : ""}
+                            {e.credits.resetsAt
+                              ? ` · ${t("settings.account.resets", { date: date(e.credits.resetsAt) })}`
+                              : ""}
                           </span>
                           <span className="text-sm text-fg-subtle tabular-nums">
-                            {t("settings.account.creditsSplit", { monthly: e.credits.monthly, purchased: e.credits.purchased })}
+                            {t("settings.account.creditsSplit", {
+                              monthly: e.credits.monthly,
+                              purchased: e.credits.purchased,
+                            })}
                           </span>
                         </span>
                       ),
@@ -92,11 +103,17 @@ export function AccountPage() {
                 {t("settings.account.seePlans")}
               </Button>
             ) : (
-              <Button iconRight={<ExternalLink size={14} />} onClick={() => void openBilling({ type: "portal" }, show)}>
+              <Button
+                iconRight={<ExternalLink size={14} />}
+                onClick={() => void openBilling({ type: "portal" }, show)}
+              >
                 {t("settings.account.manageBilling")}
               </Button>
             )}
-            <Button iconRight={<ExternalLink size={14} />} onClick={() => void openBilling({ type: "credits" }, show)}>
+            <Button
+              iconRight={<ExternalLink size={14} />}
+              onClick={() => void openBilling({ type: "credits" }, show)}
+            >
               {t("settings.account.buyCredits")}
             </Button>
             <Button variant="link" onClick={() => void refresh()}>
