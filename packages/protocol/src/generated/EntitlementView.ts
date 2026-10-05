@@ -21,4 +21,4 @@ online: boolean,
  * Unix ms until which the cached plan stays confirmed offline (token
  * expiry + 24 h), for the UI-133 banner.
  */
-confirmedUntil: bigint | null, monthlyGrant: bigint, };
+confirmedUntil: number | null, monthlyGrant: number, };

@@ -6,4 +6,4 @@ export type EntitlementClaims = { sub: string, plan: Plan,
 /**
  * Subscription status as the server saw it (`active`, `past_due`, `none`…).
  */
-status: string, limits: Limits, policy: Record<string, unknown> | null, exp: bigint, iat: bigint, kid: string, };
+status: string, limits: Limits, policy: Record<string, unknown> | null, exp: number, iat: number, kid: string, };

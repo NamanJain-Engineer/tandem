@@ -2,4 +2,4 @@
 import type { AgentStatus } from "./AgentStatus";
 import type { WaitingReason } from "./WaitingReason";
 
-export type StatusUpdate = { status: AgentStatus, reason: WaitingReason | null, ts: bigint, tool: string | null, title: string | null, preview: string | null, };
+export type StatusUpdate = { status: AgentStatus, reason: WaitingReason | null, ts: number, tool: string | null, title: string | null, preview: string | null, };

@@ -8,6 +8,8 @@
     "allow-test-counters",
     "allow-test-spawn-log",
     "allow-test-clock-advance",
-    "allow-test-auth-refresh"
+    "allow-test-auth-refresh",
+    "core:window:allow-set-position",
+    "core:window:allow-outer-position"
   ]
 }

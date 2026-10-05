@@ -17,7 +17,14 @@ use crate::state::AppState;
 pub async fn workspace_pick_folder(app: AppHandle) -> Result<Option<String>, IpcError> {
     if cfg!(debug_assertions) {
         if let Ok(fake) = std::env::var("TANDEM_FAKE_PICK_FOLDER") {
-            return Ok(Some(fake).filter(|f| !f.is_empty()));
+            // A file holds the folder to return, so a test can change it per step.
+            let picked = match std::fs::read_to_string(&fake) {
+                Ok(contents) if std::path::Path::new(&fake).is_file() => {
+                    contents.trim().to_string()
+                }
+                _ => fake,
+            };
+            return Ok(Some(picked).filter(|f| !f.is_empty()));
         }
     }
     let (tx, rx) = tokio::sync::oneshot::channel();

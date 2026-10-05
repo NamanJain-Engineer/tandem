@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const AXE_SOURCE = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 
-type Violation = { id: string; impact: string | null; nodes: unknown[] };
+type Violation = { id: string; impact: string | null; nodes: Array<{ target: string[] }> };
 
 /** Runs axe-core inside the app webview and fails on serious or critical
  * violations (PRODUCT_SPEC §5.4). The webview can't open helper windows, so
@@ -16,11 +16,11 @@ export async function expectNoSeriousA11yViolations(): Promise<void> {
     const w = window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: Violation[] }> } };
     w.axe
       .run(document)
-      .then((r) => done(r.violations.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes }))))
+      .then((r) => done(r.violations.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.map((n) => ({ target: n.target })) }))))
       .catch(() => done([{ id: "axe-failed", impact: "critical", nodes: [] }]));
   })) as Violation[];
   const serious = violations.filter((v) => v.impact === "serious" || v.impact === "critical");
   if (serious.length > 0) {
-    throw new Error(`axe: ${serious.map((v) => `${v.id} (${v.nodes.length})`).join(", ")}`);
+    throw new Error(`axe: ${serious.map((v) => `${v.id} (${v.nodes.map((n) => n.target.join(" ")).join("; ")})`).join(", ")}`);
   }
 }

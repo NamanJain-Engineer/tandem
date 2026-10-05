@@ -7,4 +7,4 @@ export type PaneRecord = { id: PaneId, tabId: TabId, workspaceId: WorkspaceId,
 /**
  * `terminal` | `agent` | `browser` | `simulator`
  */
-kind: string, cwd: string | null, engineId: string | null, humanName: string | null, title: string | null, createdAt: bigint, };
+kind: string, cwd: string | null, engineId: string | null, humanName: string | null, title: string | null, createdAt: number, };

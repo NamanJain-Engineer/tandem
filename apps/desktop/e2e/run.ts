@@ -1,10 +1,13 @@
 // Desktop E2E runner (MILESTONES §1): builds the UI and a debug app that
 // serves the built assets, creates a temp TANDEM_HOME, sets the test env,
-// prepends the fake-engine dir to PATH, starts the API if it isn't up, then
-// runs WebdriverIO against tauri-driver. Run under `xvfb-run -a`.
-//   pnpm --filter desktop e2e -- --spec 'e2e/specs/m0-*.e2e.ts'
-import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+// starts the API (test routes, mock billing) and the web app if they aren't
+// up, then runs WebdriverIO against tauri-driver. Run under a display and a
+// session bus (single-instance uses DBus on Linux):
+//   dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m2-*.e2e.ts'
+// After the run it enforces the M2 checks: no secret patterns in the logs and
+// no analytics or crash hosts in the network log (telemetry is off).
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Launcher } from "@wdio/cli";
@@ -16,53 +19,110 @@ const args = process.argv.slice(2).filter((a) => a !== "--");
 const specIndex = args.indexOf("--spec");
 const spec = specIndex >= 0 ? args[specIndex + 1] : undefined;
 
-async function apiUp(): Promise<boolean> {
+const API = "http://127.0.0.1:8787";
+const WEB = "http://localhost:3000";
+
+async function up(url: string): Promise<boolean> {
   try {
-    const res = await fetch("http://127.0.0.1:8787/v1/health");
-    return res.ok;
+    return (await fetch(url)).ok;
   } catch {
     return false;
   }
 }
 
+async function waitUp(url: string, seconds: number): Promise<void> {
+  for (let i = 0; i < seconds * 2 && !(await up(url)); i++) await new Promise((r) => setTimeout(r, 500));
+  if (!(await up(url))) throw new Error(`${url} didn't come up`);
+}
+
+function startDetached(cmd: string, cmdArgs: string[], env: NodeJS.ProcessEnv): ChildProcess {
+  return spawn(cmd, cmdArgs, { cwd: root, stdio: "ignore", detached: true, env: { ...process.env, ...env } });
+}
+
+function stop(child?: ChildProcess) {
+  if (!child?.pid) return;
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  } catch {
+    // already exited
+  }
+}
+
+/** The M2 exit checks over the run's data folder. */
+function checkArtifacts(home: string): string[] {
+  const problems: string[] = [];
+  const logs = join(home, "logs");
+  if (existsSync(logs)) {
+    for (const file of readdirSync(logs)) {
+      const body = readFileSync(join(logs, file), "utf8");
+      if (/sk-[A-Za-z0-9]{20}|ghp_[A-Za-z0-9]{20}/.test(body)) problems.push(`secret pattern in logs/${file}`);
+    }
+  }
+  const net = join(home, "net.log");
+  if (existsSync(net) && /posthog|sentry/.test(readFileSync(net, "utf8"))) problems.push("analytics or crash host in net.log");
+  return problems;
+}
+
 async function main() {
   if (!process.env.TANDEM_E2E_SKIP_BUILD) {
     execFileSync("pnpm", ["build"], { cwd: desktop, stdio: "inherit" });
-    execFileSync("cargo", ["build", "-p", "tandem-desktop", "--features", "custom-protocol"], {
-      cwd: root,
-      stdio: "inherit",
-    });
+    execFileSync("cargo", ["build", "-p", "tandem-desktop", "--features", "custom-protocol"], { cwd: root, stdio: "inherit" });
   }
   const home = mkdtempSync(join(tmpdir(), "tandem-e2e-"));
-  process.env.TANDEM_HOME = home;
-  process.env.TANDEM_FAKE_KEYCHAIN = "1";
-  process.env.TANDEM_E2E = "1";
-  process.env.TANDEM_APP_BINARY = join(root, "target/debug/tandem");
-  process.env.PATH = `${join(root, "crates/tandem-engines/tests/fixtures/bin")}:${process.env.PATH ?? ""}`;
+  const results = join(root, "test-results");
+  mkdirSync(results, { recursive: true });
+  writeFileSync(join(results, "e2e-last-home"), home);
+  console.log(`E2E_LAST_HOME=${home}`);
 
-  let api: ReturnType<typeof spawn> | undefined;
-  if (!(await apiUp())) {
-    api = spawn("pnpm", ["dev", "--api-only", "--no-infra"], { cwd: root, stdio: "ignore", detached: true });
-    for (let i = 0; i < 60 && !(await apiUp()); i++) await new Promise((r) => setTimeout(r, 500));
+  // The app opens URLs through this script (TANDEM_OPEN_URL_CMD).
+  const opener = join(home, "open-url.sh");
+  writeFileSync(
+    opener,
+    `#!/bin/sh\nexec "${join(root, "node_modules/.bin/tsx")}" "${join(desktop, "e2e/helpers/browser-signin.ts")}" "$1" >>"${join(home, "open-url.log")}" 2>&1\n`,
+  );
+  chmodSync(opener, 0o755);
+
+  Object.assign(process.env, {
+    TANDEM_HOME: home,
+    TANDEM_FAKE_KEYCHAIN: "1",
+    TANDEM_E2E: "1",
+    TANDEM_APP_BINARY: join(root, "target/debug/tandem"),
+    TANDEM_API_URL: API,
+    TANDEM_WEB_URL: WEB,
+    TANDEM_OPEN_URL_CMD: opener,
+    TANDEM_NET_LOG: join(home, "net.log"),
+    TANDEM_FAKE_PICK_FOLDER: join(home, "pick-folder.txt"),
+    PLAYWRIGHT_CHROMIUM: process.env.PLAYWRIGHT_CHROMIUM ?? "/opt/pw-browsers/chromium",
+    PATH: `${join(root, "crates/tandem-engines/tests/fixtures/bin")}:${process.env.PATH ?? ""}`,
+  });
+
+  let api: ChildProcess | undefined;
+  let web: ChildProcess | undefined;
+  if (!(await up(`${API}/v1/health`))) {
+    api = startDetached("pnpm", ["--filter", "api", "start"], {
+      TANDEM_API_TEST_ROUTES: "1",
+      BILLING_PROVIDER: "mock",
+      WEB_PUBLIC_URL: WEB,
+      LOG_LEVEL: "warn",
+    });
+    await waitUp(`${API}/v1/health`, 60);
+  }
+  if (!(await up(`${WEB}/api/health`))) {
+    web = startDetached("pnpm", ["--filter", "web", "dev"], { API_INTERNAL_URL: API });
+    await waitUp(`${WEB}/api/health`, 120);
   }
 
   let code = 1;
   try {
-    const launcher = new Launcher(
-      join(desktop, "e2e/wdio.conf.ts"),
-      spec ? { spec: [join(desktop, spec)] } : {},
-    );
+    const launcher = new Launcher(join(desktop, "e2e/wdio.conf.ts"), spec ? { spec: [join(desktop, spec)] } : {});
     code = (await launcher.run()) ?? 1;
   } finally {
-    if (api?.pid) {
-      try {
-        process.kill(-api.pid, "SIGTERM");
-      } catch {
-        // already exited
-      }
-    }
+    stop(api);
+    stop(web);
   }
-  process.exit(code);
+  const problems = checkArtifacts(home);
+  for (const p of problems) console.error(`E2E check failed: ${p}`);
+  process.exit(problems.length ? 1 : code);
 }
 
 void main();

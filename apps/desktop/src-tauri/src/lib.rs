@@ -119,10 +119,11 @@ fn paint_theme_background(app: &tauri::App, state: &AppState) {
         "system" => matches!(window.theme(), Ok(tauri::Theme::Light)),
         _ => false,
     };
+    // `--tn-bg` (UI_SPEC §1.2): slate-50 light, slate-950 dark.
     let color = if light {
-        tauri::window::Color(0xf8, 0xfa, 0xfc, 0xff)
+        tauri::window::Color(0xf1, 0xf5, 0xf9, 0xff)
     } else {
-        tauri::window::Color(0x0b, 0x11, 0x1c, 0xff)
+        tauri::window::Color(0x06, 0x0a, 0x12, 0xff)
     };
     let _ = window.set_background_color(Some(color));
 }

@@ -13,4 +13,4 @@ missing: boolean, branch: string | null, liveCount: number, tabs: Array<Tab>, id
 /**
  * `local` | `ssh` | `wsl`
  */
-kind: string, hostId: string, root: string, wslDistro: string | null, name: string, parentId: WorkspaceId | null, laneBranch: string | null, sortKey: string, pinned: boolean, collapsed: boolean, sessionsCollapsed: boolean, createdAt: bigint, };
+kind: string, hostId: string, root: string, wslDistro: string | null, name: string, parentId: WorkspaceId | null, laneBranch: string | null, sortKey: string, pinned: boolean, collapsed: boolean, sessionsCollapsed: boolean, createdAt: number, };

@@ -11,6 +11,11 @@ export function setInvokeBackend(fn: InvokeFn | null): void {
   backend = fn;
 }
 
+/** True when a test or preview backend replaced the Tauri bridge. */
+export function usingFakeBackend(): boolean {
+  return backend !== null;
+}
+
 export function inTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }

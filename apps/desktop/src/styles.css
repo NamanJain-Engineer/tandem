@@ -1,5 +1,6 @@
 @import "@tandem/ui/tokens.css";
 @import "@tandem/ui/fonts.css";
+@import "@tandem/ui/base.css";
 
 /* Components from @tandem/ui are styled with Tailwind classes; scan them too. */
 @source "../../../packages/ui/src";

@@ -2,4 +2,4 @@
 import type { TabId } from "./TabId";
 import type { WorkspaceId } from "./WorkspaceId";
 
-export type Tab = { id: TabId, workspaceId: WorkspaceId, name: string, sortKey: string, createdAt: bigint, };
+export type Tab = { id: TabId, workspaceId: WorkspaceId, name: string, sortKey: string, createdAt: number, };

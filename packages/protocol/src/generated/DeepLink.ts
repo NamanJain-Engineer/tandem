@@ -4,4 +4,4 @@ export type DeepLink = {
 /**
  * `auth/callback`, `open`, or `unrecognized`.
  */
-route: string, params: { [key in string]?: string }, };
+route: string, params: { [key in string]: string }, };

@@ -16,7 +16,10 @@
     "@tandem/protocol": "workspace:*",
     "@tandem/ui": "workspace:*",
     "@tauri-apps/api": "^2.6.0",
+    "@xterm/addon-fit": "^0.10",
+    "@xterm/xterm": "^5",
     "intl-messageformat": "^10.7.16",
+    "lucide-react": "^0.525.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "zustand": "^5.0.6"
@@ -36,6 +39,7 @@
     "@wdio/spec-reporter": "^9",
     "axe-core": "^4.10.3",
     "jsdom": "^26.1.0",
+    "playwright-core": "^1.63.0",
     "tailwindcss": "^4.1.11",
     "tsx": "^4.20.3",
     "typescript": "~5.8.3",

@@ -7,8 +7,8 @@ export type StatusRecord = { key: SessionKey, status: AgentStatus, reason: Waiti
 /**
  * When the session entered `status` (ms).
  */
-since: bigint, 
+since: number, 
 /**
  * Timestamp of the report that produced this record (ms).
  */
-ts: bigint, tool: string | null, title: string | null, preview: string | null, };
+ts: number, tool: string | null, title: string | null, preview: string | null, };
