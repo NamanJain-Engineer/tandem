@@ -1,6 +1,11 @@
-//! Command registry metadata (F-SH-09 core). Every user-reachable action is a
-//! `CommandSpec`; the palette, menus, shortcuts table, docs and the Conductor
-//! tool catalog are all generated from this list.
+//! Command registry metadata (F-SH-09). Every user-reachable action is a
+//! `CommandSpec`; the palette, menus, the shortcut dispatcher, the docs'
+//! shortcut table (`packages/protocol/shortcuts.json`, `pnpm gen:shortcuts`)
+//! and later the Conductor tool catalog all read this one list. Handlers are
+//! bound in the UI. The list grows with each milestone: a command is listed
+//! once something runs it.
+//!
+//! Shortcuts use `Mod` for ⌘ on macOS and Ctrl elsewhere (UI_SPEC §5).
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -14,10 +19,6 @@ pub enum CommandCategory {
     Workspace,
     Pane,
     Terminal,
-    Thread,
-    Teammate,
-    Dictate,
-    Conductor,
     Help,
 }
 
@@ -28,257 +29,182 @@ pub enum CommandCategory {
 pub enum EnabledWhen {
     Always,
     CodeMode,
-    ThreadMode,
-    AgentMode,
-    PaneFocused,
-    TerminalFocused,
-    ThreadFocused,
     WorkspaceOpen,
-    SignedIn,
+    PaneFocused,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct CommandSpec {
+    /// Also names the title in the UI catalog: `cmd.<id>`.
     pub id: &'static str,
-    /// i18n catalog key for the title.
-    pub title_key: &'static str,
     pub category: CommandCategory,
-    /// `Mod` = ⌘ on macOS and Ctrl elsewhere.
-    pub default_shortcut: Option<&'static str>,
-    /// Works when Tandem isn't focused.
-    pub global: bool,
+    /// macOS binding.
+    pub mac: Option<&'static str>,
+    /// Windows and Linux binding.
+    pub pc: Option<&'static str>,
+    /// Windows and Linux with a terminal focused under "Terminal first":
+    /// the terminal-safe alias, or none when the key goes to the PTY.
+    pub pc_terminal: Option<&'static str>,
+    /// Also fires while a text field or dialog has focus (palette,
+    /// settings, mode switch).
+    pub in_text: bool,
     pub enabled_when: EnabledWhen,
-    /// Conductor may run this command by voice.
-    pub voice: bool,
-}
-
-const fn cmd(
-    id: &'static str,
-    title_key: &'static str,
-    category: CommandCategory,
-    default_shortcut: Option<&'static str>,
-    enabled_when: EnabledWhen,
-) -> CommandSpec {
-    CommandSpec {
-        id,
-        title_key,
-        category,
-        default_shortcut,
-        global: false,
-        enabled_when,
-        voice: false,
-    }
 }
 
 use CommandCategory as C;
 use EnabledWhen as E;
 
+/// A command whose binding is the same everywhere, terminals included.
+const fn same(
+    id: &'static str,
+    category: CommandCategory,
+    keys: Option<&'static str>,
+    enabled_when: EnabledWhen,
+) -> CommandSpec {
+    CommandSpec {
+        id,
+        category,
+        mac: keys,
+        pc: keys,
+        pc_terminal: keys,
+        in_text: false,
+        enabled_when,
+    }
+}
+
+/// A command with a terminal-safe alias (or `None`: the key reaches the PTY).
+const fn aliased(
+    id: &'static str,
+    category: CommandCategory,
+    keys: &'static str,
+    pc_terminal: Option<&'static str>,
+    enabled_when: EnabledWhen,
+) -> CommandSpec {
+    CommandSpec {
+        id,
+        category,
+        mac: Some(keys),
+        pc: Some(keys),
+        pc_terminal,
+        in_text: false,
+        enabled_when,
+    }
+}
+
+const fn in_text(mut c: CommandSpec) -> CommandSpec {
+    c.in_text = true;
+    c
+}
+
 static REGISTRY: &[CommandSpec] = &[
-    cmd(
-        "palette.open",
-        "cmd.palette.open",
-        C::App,
-        Some("Mod+K"),
-        E::Always,
-    ),
-    cmd(
-        "settings.open",
-        "cmd.settings.open",
-        C::App,
-        Some("Mod+,"),
-        E::Always,
-    ),
-    cmd(
-        "mode.agent",
-        "cmd.mode.agent",
-        C::Navigation,
-        Some("Mod+1"),
-        E::Always,
-    ),
-    cmd(
-        "mode.code",
-        "cmd.mode.code",
-        C::Navigation,
-        Some("Mod+2"),
-        E::Always,
-    ),
-    cmd(
-        "mode.thread",
-        "cmd.mode.thread",
-        C::Navigation,
-        Some("Mod+3"),
-        E::Always,
-    ),
-    cmd(
+    in_text(same("palette.open", C::App, Some("Mod+K"), E::Always)),
+    in_text(same("settings.open", C::App, Some("Mod+,"), E::Always)),
+    in_text(same("mode.agent", C::Navigation, Some("Mod+1"), E::Always)),
+    in_text(same("mode.code", C::Navigation, Some("Mod+2"), E::Always)),
+    in_text(same("mode.thread", C::Navigation, Some("Mod+3"), E::Always)),
+    aliased(
         "rail.toggle",
-        "cmd.rail.toggle",
         C::Navigation,
-        Some("Mod+\\"),
+        "Mod+\\",
+        Some("Mod+Shift+\\"),
         E::Always,
     ),
-    cmd(
+    same(
         "sidebar.toggle",
-        "cmd.sidebar.toggle",
         C::Navigation,
-        Some("Mod+Alt+B"),
+        Some("Mod+Shift+B"),
         E::Always,
     ),
-    cmd(
-        "notifications.open",
-        "cmd.notifications.open",
-        C::Navigation,
-        Some("Mod+Shift+N"),
-        E::Always,
-    ),
-    cmd(
-        "dashboard.open",
-        "cmd.dashboard.open",
-        C::Navigation,
-        Some("Mod+Shift+D"),
-        E::Always,
-    ),
-    cmd(
-        "workspace.open_folder",
-        "cmd.workspace.open_folder",
-        C::Workspace,
-        Some("Mod+O"),
-        E::Always,
-    ),
-    cmd(
+    same("workspace.open_folder", C::Workspace, None, E::Always),
+    aliased(
         "workspace.new_tab",
-        "cmd.workspace.new_tab",
         C::Workspace,
-        Some("Mod+T"),
+        "Mod+T",
+        None,
         E::WorkspaceOpen,
     ),
-    cmd(
-        "workspace.launch_several",
-        "cmd.workspace.launch_several",
+    same(
+        "workspace.next_tab",
         C::Workspace,
-        Some("Mod+Shift+L"),
+        Some("Ctrl+Tab"),
         E::WorkspaceOpen,
     ),
-    cmd(
+    same(
+        "workspace.prev_tab",
+        C::Workspace,
+        Some("Ctrl+Shift+Tab"),
+        E::WorkspaceOpen,
+    ),
+    same(
         "workspace.arrange",
-        "cmd.workspace.arrange",
-        C::Workspace,
+        C::Pane,
         Some("Mod+Shift+T"),
-        E::CodeMode,
+        E::PaneFocused,
     ),
-    cmd(
+    aliased(
         "pane.split_right",
-        "cmd.pane.split_right",
         C::Pane,
-        Some("Mod+D"),
-        E::PaneFocused,
-    ),
-    cmd(
-        "pane.split_down",
-        "cmd.pane.split_down",
-        C::Pane,
+        "Mod+D",
         Some("Mod+Shift+E"),
-        E::PaneFocused,
+        E::WorkspaceOpen,
     ),
-    cmd(
-        "pane.close",
-        "cmd.pane.close",
+    same(
+        "pane.split_down",
         C::Pane,
-        Some("Mod+W"),
+        Some("Mod+Shift+D"),
+        E::WorkspaceOpen,
+    ),
+    aliased(
+        "pane.close",
+        C::Pane,
+        "Mod+W",
+        Some("Mod+Shift+W"),
         E::PaneFocused,
     ),
-    cmd(
+    same(
+        "pane.focus_left",
+        C::Pane,
+        Some("Mod+Alt+Left"),
+        E::PaneFocused,
+    ),
+    same(
+        "pane.focus_right",
+        C::Pane,
+        Some("Mod+Alt+Right"),
+        E::PaneFocused,
+    ),
+    same("pane.focus_up", C::Pane, Some("Mod+Alt+Up"), E::PaneFocused),
+    same(
+        "pane.focus_down",
+        C::Pane,
+        Some("Mod+Alt+Down"),
+        E::PaneFocused,
+    ),
+    CommandSpec {
+        mac: Some("Mod+["),
+        pc: Some("Mod+Shift+["),
+        pc_terminal: Some("Mod+Shift+["),
+        ..same("pane.focus_prev", C::Pane, None, E::PaneFocused)
+    },
+    CommandSpec {
+        mac: Some("Mod+]"),
+        pc: Some("Mod+Shift+]"),
+        pc_terminal: Some("Mod+Shift+]"),
+        ..same("pane.focus_next", C::Pane, None, E::PaneFocused)
+    },
+    same(
         "pane.maximize",
-        "cmd.pane.maximize",
         C::Pane,
         Some("Mod+Shift+Enter"),
         E::PaneFocused,
     ),
-    cmd(
-        "pane.focus_next",
-        "cmd.pane.focus_next",
-        C::Pane,
-        Some("Mod+]"),
-        E::CodeMode,
-    ),
-    cmd(
-        "pane.focus_prev",
-        "cmd.pane.focus_prev",
-        C::Pane,
-        Some("Mod+["),
-        E::CodeMode,
-    ),
-    cmd(
-        "terminal.find",
-        "cmd.terminal.find",
-        C::Terminal,
-        Some("Mod+F"),
-        E::TerminalFocused,
-    ),
-    cmd(
-        "terminal.clear",
-        "cmd.terminal.clear",
-        C::Terminal,
-        Some("Mod+Shift+K"),
-        E::TerminalFocused,
-    ),
-    cmd(
-        "thread.new",
-        "cmd.thread.new",
-        C::Thread,
-        Some("Mod+N"),
-        E::ThreadMode,
-    ),
-    cmd(
-        "thread.plan_act",
-        "cmd.thread.plan_act",
-        C::Thread,
-        Some("Mod+Shift+P"),
-        E::ThreadFocused,
-    ),
-    cmd(
-        "thread.model_picker",
-        "cmd.thread.model_picker",
-        C::Thread,
-        Some("Mod+Shift+O"),
-        E::ThreadFocused,
-    ),
-    cmd(
-        "thread.stop",
-        "cmd.thread.stop",
-        C::Thread,
-        Some("Mod+."),
-        E::ThreadFocused,
-    ),
-    cmd(
-        "teammate.new",
-        "cmd.teammate.new",
-        C::Teammate,
-        None,
-        E::AgentMode,
-    ),
-    cmd(
-        "help.shortcuts",
-        "cmd.help.shortcuts",
-        C::Help,
-        Some("Mod+/"),
-        E::Always,
-    ),
-    cmd(
-        "help.copy_diagnostics",
-        "cmd.help.copy_diagnostics",
-        C::Help,
-        None,
-        E::Always,
-    ),
-    cmd(
-        "help.open_logs",
-        "cmd.help.open_logs",
-        C::Help,
-        None,
-        E::Always,
-    ),
+    same("pane.move_to_new_tab", C::Pane, None, E::PaneFocused),
+    same("pane.restart", C::Terminal, None, E::PaneFocused),
+    same("billing.plans", C::App, None, E::Always),
+    same("help.copy_diagnostics", C::Help, None, E::Always),
+    same("help.open_logs", C::Help, None, E::Always),
 ];
 
 pub fn registry() -> &'static [CommandSpec] {
@@ -289,22 +215,74 @@ pub fn find(id: &str) -> Option<&'static CommandSpec> {
     REGISTRY.iter().find(|c| c.id == id)
 }
 
+/// The Windows/Linux terminal intercept list (UI_SPEC §5): with a terminal
+/// focused, Tandem only takes `Ctrl+Shift+…`, `Ctrl+Alt+…`, `Ctrl+K`,
+/// `Ctrl+,`, `Ctrl+1..3`, `Ctrl+Tab`/`Ctrl+Shift+Tab` and `F6`.
+pub fn terminal_may_intercept(keys: &str) -> bool {
+    let parts: Vec<&str> = keys.split('+').collect();
+    let has = |m: &str| parts.contains(&m);
+    let key = parts.last().copied().unwrap_or("");
+    let ctrl = has("Mod") || has("Ctrl");
+    key == "F6"
+        || (ctrl && (has("Shift") || has("Alt")))
+        || (ctrl && parts.len() == 2 && matches!(key, "K" | "," | "1" | "2" | "3" | "Tab"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashSet;
 
     #[test]
-    fn ids_and_shortcuts_are_unique() {
+    fn f_sh_09_ids_and_bindings_are_unique_per_context() {
         let mut ids = HashSet::new();
-        let mut keys = HashSet::new();
+        let (mut mac, mut pc, mut term) = (HashSet::new(), HashSet::new(), HashSet::new());
         for c in registry() {
             assert!(ids.insert(c.id), "duplicate id {}", c.id);
-            if let Some(k) = c.default_shortcut {
-                assert!(keys.insert(k), "duplicate shortcut {k}");
+            if let Some(k) = c.mac {
+                assert!(mac.insert(k), "duplicate macOS shortcut {k}");
             }
-            assert!(c.title_key.starts_with("cmd."));
+            if let Some(k) = c.pc {
+                assert!(pc.insert(k), "duplicate shortcut {k}");
+            }
+            if let Some(k) = c.pc_terminal {
+                assert!(term.insert(k), "duplicate terminal shortcut {k}");
+            }
         }
         assert!(find("palette.open").is_some());
+    }
+
+    #[test]
+    fn f_sh_09_1_terminal_bindings_follow_the_passthrough_rule() {
+        for c in registry() {
+            if let Some(k) = c.pc_terminal {
+                assert!(
+                    terminal_may_intercept(k),
+                    "{} would take {k} from the terminal",
+                    c.id
+                );
+            }
+        }
+        // Ctrl+W/T/D/[/] reach the shell (F-SH-09 AC1)...
+        for k in ["Mod+W", "Mod+T", "Mod+D", "Mod+[", "Mod+]"] {
+            assert!(!terminal_may_intercept(k), "{k}");
+            assert!(registry().iter().all(|c| c.pc_terminal != Some(k)), "{k}");
+        }
+        // ...and Ctrl+Shift+D splits (AC2).
+        assert_eq!(
+            find("pane.split_down").and_then(|c| c.pc_terminal),
+            Some("Mod+Shift+D")
+        );
+    }
+
+    /// `pnpm gen:shortcuts` → `packages/protocol/shortcuts.json`, the table
+    /// the docs and the UI read.
+    #[test]
+    fn export_shortcuts() {
+        let Ok(out) = std::env::var("TANDEM_SHORTCUTS_OUT") else {
+            return;
+        };
+        let json = serde_json::to_string_pretty(registry()).expect("json");
+        std::fs::write(out, json + "\n").expect("write shortcuts.json");
     }
 }

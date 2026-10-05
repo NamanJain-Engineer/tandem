@@ -2,12 +2,15 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   arrange,
+  at,
   canSplit,
   depth,
   deserialize,
   equalize,
+  equalizeAt,
   leaf,
   leaves,
+  minExtent,
   move,
   neighbor,
   presetFor,
@@ -23,13 +26,27 @@ import {
 } from "./tree";
 
 const SIDES: Side[] = ["left", "right", "top", "bottom"];
-type Op = { kind: "split"; target: number; side: Side; ratio: number } | { kind: "remove"; target: number } | { kind: "swap"; a: number; b: number } | { kind: "move"; a: number; b: number; side: Side };
+type Op =
+  | { kind: "split"; target: number; side: Side; ratio: number }
+  | { kind: "remove"; target: number }
+  | { kind: "swap"; a: number; b: number }
+  | { kind: "move"; a: number; b: number; side: Side };
 
 const opArb: fc.Arbitrary<Op> = fc.oneof(
-  fc.record({ kind: fc.constant("split" as const), target: fc.nat(40), side: fc.constantFrom(...SIDES), ratio: fc.double({ min: 0, max: 1, noNaN: true }) }),
+  fc.record({
+    kind: fc.constant("split" as const),
+    target: fc.nat(40),
+    side: fc.constantFrom(...SIDES),
+    ratio: fc.double({ min: 0, max: 1, noNaN: true }),
+  }),
   fc.record({ kind: fc.constant("remove" as const), target: fc.nat(40) }),
   fc.record({ kind: fc.constant("swap" as const), a: fc.nat(40), b: fc.nat(40) }),
-  fc.record({ kind: fc.constant("move" as const), a: fc.nat(40), b: fc.nat(40), side: fc.constantFrom(...SIDES) }),
+  fc.record({
+    kind: fc.constant("move" as const),
+    a: fc.nat(40),
+    b: fc.nat(40),
+    side: fc.constantFrom(...SIDES),
+  }),
 );
 
 /** Applies random operations, tracking the expected set of panes. */
@@ -147,8 +164,33 @@ describe("layout tree (F-CD-02)", () => {
   });
 
   it("rejects malformed layouts", () => {
-    expect(() => deserialize('{"type":"split","dir":"row","ratio":2,"a":{"type":"leaf","paneId":"a"},"b":{"type":"leaf","paneId":"b"}}')).toThrow();
-    expect(() => deserialize('{"type":"split","dir":"row","ratio":0.5,"a":{"type":"leaf","paneId":"a"},"b":{"type":"leaf","paneId":"a"}}')).toThrow();
+    expect(() =>
+      deserialize(
+        '{"type":"split","dir":"row","ratio":2,"a":{"type":"leaf","paneId":"a"},"b":{"type":"leaf","paneId":"b"}}',
+      ),
+    ).toThrow();
+    expect(() =>
+      deserialize(
+        '{"type":"split","dir":"row","ratio":0.5,"a":{"type":"leaf","paneId":"a"},"b":{"type":"leaf","paneId":"a"}}',
+      ),
+    ).toThrow();
     expect(() => deserialize('{"type":"pane"}')).toThrow();
+  });
+
+  it("double-clicking a gutter evens out its whole row", () => {
+    const row = arrange(["a", "b", "c"], "3c");
+    if (!row) throw new Error("no tree");
+    const skewed = setRatio(setRatio(row, "", 0.8), "b", 0.2);
+    const even = equalizeAt(skewed, "");
+    const widths = [...rects(even, { x: 0, y: 0, w: 900, h: 100 }).values()].map((r) => Math.round(r.w));
+    expect(widths).toEqual([300, 300, 300]);
+    // A stacked split inside the row keeps its own ratio.
+    const mixed = split(row, "b", "d", "bottom", 0.3);
+    expect(at(equalizeAt(mixed, ""), "ba")).toMatchObject({ type: "split", dir: "col", ratio: 0.3 });
+  });
+
+  it("knows the smallest box a subtree fits in", () => {
+    const t = split(split(leaf("a"), "a", "b", "right"), "b", "c", "bottom");
+    expect(minExtent(t, 6)).toEqual({ w: 486, h: 246 });
   });
 });

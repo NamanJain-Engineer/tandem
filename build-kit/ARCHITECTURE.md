@@ -556,7 +556,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
 | `pane_create` | `{tabId, kind:"terminal"\|"agent"\|"browser"\|"simulator", engineId?, accountId?, cwd?, humanName?}` | `PaneRecord` (assigns unique human name for agents) | NotFound, LimitReached | F-CD-02, F-CD-12 |
-| `pane_list` | `{tabId}` | `[PaneRecord]` (open panes, oldest first; until `layout_get` lands in M3) | — | F-CD-02 |
+| `pane_list` | `{tabId}` | `[PaneRecord]` (open panes, oldest first) | — | F-CD-02 |
 | `pty_spawn` | `{paneId, cols, rows, shell?, engine?: EngineLaunch {engineId, accountId?, oneOffHome?, extraArgs?, firstPrompt?, resumeSessionId?}, channel: Channel<PtyFrame>}` | `PtyInfo {pid, startedAt, launchConfigId?}` | LimitReached (plan), EngineMissing, NotFound (cwd → falls back to root with notice, not an error), Unavailable (config gone) | F-CD-03, F-EN-04, F-AC-01, F-SH-07 |
 | `pty_attach` | `{paneId, channel}` | `AttachSnapshot {replay: base64, state: PtyState}` (after webview reload) | NotFound | F-CD-03 |
 | `pty_write` | `{paneId, data: string}` | — | NotFound | F-CD-03, F-CD-07 |
@@ -571,6 +571,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `term_stage_clipboard_image` | `{paneId}` | `String` (quoted staged PNG path) | NotFound (no image) | F-CD-05 |
 | `pane_rename` | `{paneId, humanName}` | — | Conflict (name taken) | F-CD-12 |
 | `pane_close` | `{paneId}` (UI already confirmed if working) | — | — | F-CD-12, F-SH-07 |
+| `pane_move` | `{paneId, tabId}` (same workspace; drop on the tab strip, "Move to new tab") | `PaneRecord` (same process) | NotFound | F-CD-02 |
 | `pane_resolve_link` | `{paneId, text}` | `ResolvedLink? {kind:"url"\|"file", target, line?, col?, readonly}` | — | F-CD-09 |
 | `sessions_saved_list` | `{workspaceId}` | `[SavedSession]` | — | F-CD-03 |
 | `sessions_resume_saved` | `{savedId, tabId}` | `PaneRecord` | Unavailable | F-CD-03 |

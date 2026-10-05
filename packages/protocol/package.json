@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./plans": "./src/plans.ts",
-    "./client": "./src/client.ts"
+    "./client": "./src/client.ts",
+    "./shortcuts.json": "./shortcuts.json"
   },
   "scripts": {
     "test": "vitest run",

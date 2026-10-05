@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pane-move"
+description = "Enables the pane_move command without any pre-configured scope."
+commands.allow = ["pane_move"]
+
+[[permission]]
+identifier = "deny-pane-move"
+description = "Denies the pane_move command without any pre-configured scope."
+commands.deny = ["pane_move"]

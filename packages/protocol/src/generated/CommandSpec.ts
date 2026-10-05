@@ -2,20 +2,26 @@
 import type { CommandCategory } from "./CommandCategory";
 import type { EnabledWhen } from "./EnabledWhen";
 
-export type CommandSpec = { id: string, 
+export type CommandSpec = { 
 /**
- * i18n catalog key for the title.
+ * Also names the title in the UI catalog: `cmd.<id>`.
  */
-titleKey: string, category: CommandCategory, 
+id: string, category: CommandCategory, 
 /**
- * `Mod` = ⌘ on macOS and Ctrl elsewhere.
+ * macOS binding.
  */
-defaultShortcut: string | null, 
+mac: string | null, 
 /**
- * Works when Tandem isn't focused.
+ * Windows and Linux binding.
  */
-global: boolean, enabledWhen: EnabledWhen, 
+pc: string | null, 
 /**
- * Conductor may run this command by voice.
+ * Windows and Linux with a terminal focused under "Terminal first":
+ * the terminal-safe alias, or none when the key goes to the PTY.
  */
-voice: boolean, };
+pcTerminal: string | null, 
+/**
+ * Also fires while a text field or dialog has focus (palette,
+ * settings, mode switch).
+ */
+inText: boolean, enabledWhen: EnabledWhen, };

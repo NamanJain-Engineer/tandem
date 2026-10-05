@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { AddedWorkspace, IpcError, Tab, WorkspaceSummary } from "@tandem/protocol";
 import { invoke } from "../ipc/invoke";
+import { useLayout } from "./layout";
 
 export type AddResult =
   | { ok: true; added: AddedWorkspace }
@@ -69,8 +70,9 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
     await invoke("tab_close", { id: tabId });
     const ws = get().list.find((w) => w.id === workspaceId);
     if (ws && ws.tabs.length <= 1) {
-      // Every workspace keeps at least one tab (F-CD-01).
-      await invoke<Tab>("tab_create", { workspaceId });
+      // Every workspace keeps at least one tab (F-CD-01); it shows the empty state.
+      const tab = await invoke<Tab>("tab_create", { workspaceId });
+      useLayout.getState().markEmpty(tab.id);
     }
     await get().refresh();
   },

@@ -36,12 +36,31 @@ export function CodeRail() {
   };
 
   return (
-    <nav aria-label={t("rail.workspaces")} className={cx("flex h-full shrink-0 flex-col border-r border-border bg-surface-1", collapsed ? "w-[var(--rail-collapsed)]" : "w-[var(--rail-w)]")}>
+    <nav
+      aria-label={t("rail.workspaces")}
+      className={cx(
+        "flex h-full shrink-0 flex-col border-r border-border bg-surface-1",
+        collapsed ? "w-[var(--rail-collapsed)]" : "w-[var(--rail-w)]",
+      )}
+    >
       <div className={cx("flex h-9 items-center gap-1 px-2", collapsed && "justify-center")}>
-        {!collapsed && <h2 className="flex-1 px-1 text-2xs font-semibold uppercase tracking-caps text-fg-subtle">{t("rail.workspacesHeader")}</h2>}
-        <IconButton size="sm" icon={<Plus size={14} />} label={t("rail.addFolder")} onClick={() => void pickAndAddWorkspace(show)} />
+        {!collapsed && (
+          <h2 className="flex-1 px-1 text-2xs font-semibold uppercase tracking-caps text-fg-subtle">
+            {t("rail.workspacesHeader")}
+          </h2>
+        )}
+        <IconButton
+          size="sm"
+          icon={<Plus size={14} />}
+          label={t("rail.addFolder")}
+          onClick={() => void pickAndAddWorkspace(show)}
+        />
       </div>
-      <div role="tree" aria-label={t("rail.workspaces")} className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+      <div
+        role="tree"
+        aria-label={t("rail.workspaces")}
+        className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2"
+      >
         {list.map((ws, i) => {
           const selected = ws.id === activeId;
           const row = (
@@ -88,8 +107,19 @@ export function CodeRail() {
             </div>
           );
           return (
-            <ContextMenu key={ws.id} entries={[{ id: "remove", label: t("rail.remove"), danger: true, onSelect: () => setRemoving(ws) }]}>
-              {collapsed ? <Tooltip label={ws.name} side="right">{row}</Tooltip> : row}
+            <ContextMenu
+              key={ws.id}
+              entries={[
+                { id: "remove", label: t("rail.remove"), danger: true, onSelect: () => setRemoving(ws) },
+              ]}
+            >
+              {collapsed ? (
+                <Tooltip label={ws.name} side="right">
+                  {row}
+                </Tooltip>
+              ) : (
+                row
+              )}
             </ContextMenu>
           );
         })}

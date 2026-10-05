@@ -3,8 +3,9 @@
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
-use tandem_core::ids::{TabId, WorkspaceId};
+use tandem_core::ids::{PaneId, TabId, WorkspaceId};
 use tandem_core::IpcError;
+use tandem_store::repo::layouts::{self, LayoutNode, TabLayout};
 use tandem_store::repo::tabs::{self, Tab};
 use tandem_store::repo::workspaces as repo;
 
@@ -100,4 +101,33 @@ pub async fn tab_reorder(
     ids: Vec<TabId>,
 ) -> Result<(), IpcError> {
     Ok(tabs::reorder(&state.store, &workspace_id, ids).await?)
+}
+
+/// Every tab's split tree, in tab order (F-CD-02).
+#[tauri::command]
+pub async fn layout_get(
+    state: State<'_, AppState>,
+    workspace_id: WorkspaceId,
+) -> Result<Vec<TabLayout>, IpcError> {
+    let list = tabs::list(&state.store, &workspace_id).await?;
+    Ok(layouts::for_workspace(&state.store, list).await?)
+}
+
+/// Saves a tab's tree after the store validates it (the UI debounces).
+#[tauri::command]
+pub async fn layout_save(
+    state: State<'_, AppState>,
+    tab_id: TabId,
+    tree: LayoutNode,
+    active_pane_id: Option<PaneId>,
+    maximized_pane_id: Option<PaneId>,
+) -> Result<(), IpcError> {
+    Ok(layouts::save(
+        &state.store,
+        &tab_id,
+        tree,
+        active_pane_id,
+        maximized_pane_id,
+    )
+    .await?)
 }

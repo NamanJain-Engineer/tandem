@@ -119,6 +119,32 @@ pub async fn close(store: &Store, id: &PaneId) -> Result<(), StoreError> {
         .await
 }
 
+/// Moves an open pane into another tab (drag to the tab strip, "Move to new
+/// tab"). The process keeps running; only the pane's place changes.
+pub async fn move_to_tab(
+    store: &Store,
+    id: &PaneId,
+    tab: &TabId,
+) -> Result<PaneRecord, StoreError> {
+    let id = id.as_str().to_string();
+    let tab = tab.as_str().to_string();
+    store
+        .write(move |t| {
+            let ws: Option<String> =
+                t.query_row("SELECT workspace_id FROM tabs WHERE id = ?1", [&tab], |r| r.get(0)).optional()?;
+            let ws = ws.ok_or_else(|| StoreError::NotFound("No tab with that id".into()))?;
+            let moved = t.execute(
+                "UPDATE panes SET tab_id = ?2, workspace_id = ?3 WHERE id = ?1 AND closed_at IS NULL",
+                params![id, tab, ws],
+            )?;
+            if moved == 0 {
+                return Err(StoreError::NotFound("No open pane with that id".into()));
+            }
+            Ok(t.query_row(&format!("SELECT {COLUMNS} FROM panes WHERE id = ?1"), [&id], from_row)?)
+        })
+        .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,6 +183,41 @@ mod tests {
         assert!(matches!(
             create(&store, &tab.id, "toaster", None).await,
             Err(StoreError::Invalid(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn f_cd_02_move_to_new_tab_keeps_the_pane() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = tandem_core::DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = Store::open(&data).expect("store");
+        let (ws, _) = workspaces::add(
+            &store,
+            workspaces::NewWorkspace {
+                kind: "local".into(),
+                host_id: "local".into(),
+                root: "/p".into(),
+                name: "p".into(),
+                wsl_distro: None,
+            },
+            None,
+        )
+        .await
+        .expect("ws");
+        let from = tabs::create(&store, &ws.id, None).await.expect("tab");
+        let to = tabs::create(&store, &ws.id, None).await.expect("tab");
+        let pane = create(&store, &from.id, "terminal", None)
+            .await
+            .expect("pane");
+        let moved = move_to_tab(&store, &pane.id, &to.id).await.expect("move");
+        assert_eq!(moved.id, pane.id);
+        assert_eq!(moved.tab_id, to.id);
+        assert!(list_open(&store, &from.id).await.expect("list").is_empty());
+        assert_eq!(list_open(&store, &to.id).await.expect("list").len(), 1);
+        close(&store, &pane.id).await.expect("close");
+        assert!(matches!(
+            move_to_tab(&store, &pane.id, &from.id).await,
+            Err(StoreError::NotFound(_))
         ));
     }
 }

@@ -63,6 +63,19 @@ impl TerminalService {
             .await
     }
 
+    /// The plan's live-pane limit: at the limit no pane or process is
+    /// created and the picker shows the upgrade card (F-CD-03).
+    pub fn check_live_limit(&self, max_live: Option<u32>) -> Result<(), IpcError> {
+        match max_live {
+            Some(max) if self.pty.live_count() as u32 >= max => Err(IpcError::new(
+                ErrorCode::LimitReached,
+                format!("Free includes {max} live panes"),
+            )
+            .with_stage("panes")),
+            _ => Ok(()),
+        }
+    }
+
     pub async fn spawn(
         &self,
         pane: &PaneId,
@@ -71,15 +84,7 @@ impl TerminalService {
         max_live: Option<u32>,
         sink: Arc<dyn OutputSink>,
     ) -> Result<PtyInfo, IpcError> {
-        if let Some(max) = max_live {
-            if self.pty.live_count() as u32 >= max {
-                return Err(IpcError::new(
-                    ErrorCode::LimitReached,
-                    format!("Free includes {max} live panes"),
-                )
-                .with_stage("panes"));
-            }
-        }
+        self.check_live_limit(max_live)?;
         let record = panes::get(&self.store, pane).await?;
         let ws = workspaces::get(&self.store, &record.workspace_id).await?;
         let root = PathBuf::from(&ws.root);

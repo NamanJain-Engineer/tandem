@@ -1,8 +1,11 @@
+import { useEffect } from "react";
+import { useToast } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useUi } from "../../stores/ui";
 import { UpgradeDialog } from "../billing/UpgradeDialog";
 import { CodeMain } from "../code/CodeMain";
 import { CodeRail } from "../code/CodeRail";
+import { setCommandToast } from "../commands/commands";
 import { InterimMain, InterimRail } from "../interim/Interim";
 import { Palette } from "../palette/Palette";
 import { SettingsView } from "../settings/SettingsView";
@@ -16,7 +19,9 @@ import { useShortcuts } from "./useShortcuts";
  * display:none) so terminals never re-mount (§3.4). */
 export function AppShell() {
   const { mode, settingsOpen, sidebarOpen, railCollapsed } = useUi();
+  const { show: toast } = useToast();
   useShortcuts();
+  useEffect(() => setCommandToast(toast), [toast]);
   const show = (m: typeof mode) => (!settingsOpen && mode === m ? "flex" : "none");
   return (
     <div className="flex h-full flex-col bg-bg">

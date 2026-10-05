@@ -40,6 +40,9 @@ pub async fn pane_create(
             "Only terminal panes are available yet",
         ));
     }
+    state
+        .terminals
+        .check_live_limit(state.entitlements.limits().panes)?;
     Ok(panes::create(&state.store, &tab_id, &kind, cwd).await?)
 }
 
@@ -55,6 +58,16 @@ pub async fn pane_list(
 pub async fn pane_close(state: State<'_, AppState>, pane_id: PaneId) -> Result<(), IpcError> {
     let _ = state.terminals.pty.kill(pane_id.as_str());
     Ok(panes::close(&state.store, &pane_id).await?)
+}
+
+/// Moves a pane to another tab; its process keeps running (F-CD-02).
+#[tauri::command]
+pub async fn pane_move(
+    state: State<'_, AppState>,
+    pane_id: PaneId,
+    tab_id: TabId,
+) -> Result<PaneRecord, IpcError> {
+    Ok(panes::move_to_tab(&state.store, &pane_id, &tab_id).await?)
 }
 
 #[tauri::command]
