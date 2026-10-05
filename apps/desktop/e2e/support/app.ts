@@ -1,5 +1,5 @@
 import { $, $$, browser } from "@wdio/globals";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const API = "http://127.0.0.1:8787";
@@ -162,9 +162,11 @@ export async function planFooter(): Promise<string> {
 }
 
 /** Adds a folder through the rail "+" and the fake picker. */
-export async function addFolder(path: string): Promise<void> {
+export async function addFolder(path: string, { added = true }: { added?: boolean } = {}): Promise<void> {
   pickFolder(path);
   await $('nav[aria-label="Workspaces"] button[aria-label="Add folder…"]').click();
+  // A refused add (a plan limit) never shows up; the caller checks why.
+  if (!added) return;
   // The fake picker reads its file asynchronously: wait for this folder
   // before another call can rewrite it.
   await browser.waitUntil(async () => (await workspaceRoots()).includes(path), {
@@ -391,6 +393,30 @@ export async function split(direction: "right" | "down", tile = "shell"): Promis
 }
 
 /** Counters from the test harness (`test_counters`). */
-export async function counters(reset = false): Promise<{ ptyResizes: number }> {
+export async function counters(reset = false): Promise<{ ptyResizes: number; ptyResizesByPane: Record<string, number> }> {
   return invoke("test_counters", { reset });
+}
+
+let rawSeq = 0;
+
+/** Puts the pane's tty in raw mode and records the next `count` bytes it
+ * receives (or what arrived within `seconds`) as hex. */
+export async function rawRead(pane: string, count: number, seconds = 10, opts: { bracketed?: boolean } = {}): Promise<() => Promise<string>> {
+  const tag = `raw${++rawSeq}`;
+  const out = `/tmp/tandem-e2e-raw-${process.pid}-${tag}`;
+  rmSync(out, { force: true });
+  rmSync(`${out}.done`, { force: true });
+  // `rea''dy` keeps the typed command line from matching the marker.
+  await sendToPane(
+    pane,
+    `stty raw -echo; ${opts.bracketed ? "printf '\\033[?2004h'; " : ""}printf 'rea''dy-${tag}\\r\\n'; timeout ${seconds} dd bs=1 count=${count} 2>/dev/null | od -An -tx1 | tr -s ' \\n' ' ' > ${out}; ${opts.bracketed ? "printf '\\033[?2004l'; " : ""}stty sane; touch ${out}.done\n`,
+  );
+  await waitForPaneText(pane, `ready-${tag}`);
+  return async () => {
+    await browser.waitUntil(() => existsSync(`${out}.done`), { timeout: (seconds + 5) * 1000, timeoutMsg: `the read of ${count} bytes never finished` });
+    const hex = readFileSync(out, "utf8").trim();
+    rmSync(out, { force: true });
+    rmSync(`${out}.done`, { force: true });
+    return hex;
+  };
 }

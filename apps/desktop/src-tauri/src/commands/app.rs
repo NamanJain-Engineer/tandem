@@ -130,9 +130,15 @@ pub fn deeplink_pending(state: State<'_, AppState>) -> Vec<DeepLink> {
 }
 
 static PTY_RESIZES: AtomicU64 = AtomicU64::new(0);
+static PTY_RESIZES_BY_PANE: std::sync::Mutex<std::collections::BTreeMap<String, u32>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
 
-pub fn count_resize() {
+/// Counts `pty_resize` calls for the E2E harness (F-CD-02 AC1: one per PTY).
+pub fn count_resize(pane: &str) {
     PTY_RESIZES.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut m) = PTY_RESIZES_BY_PANE.lock() {
+        *m.entry(pane.to_string()).or_insert(0) += 1;
+    }
 }
 
 pub fn resize_count(reset: bool) -> u64 {
@@ -141,6 +147,20 @@ pub fn resize_count(reset: bool) -> u64 {
     } else {
         PTY_RESIZES.load(Ordering::Relaxed)
     }
+}
+
+/// Resizes per pane since the last reset.
+pub fn resize_counts_by_pane(reset: bool) -> std::collections::BTreeMap<String, u32> {
+    PTY_RESIZES_BY_PANE
+        .lock()
+        .map(|mut m| {
+            if reset {
+                std::mem::take(&mut *m)
+            } else {
+                m.clone()
+            }
+        })
+        .unwrap_or_default()
 }
 
 #[tauri::command]

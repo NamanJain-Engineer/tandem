@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
+import { SerializeAddon } from "@xterm/addon-serialize";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal, type IMarker } from "@xterm/xterm";
@@ -16,9 +17,10 @@ import { useLayout } from "../../stores/layout";
 import { useTerminals } from "../../stores/terminals";
 import { copyText, readText } from "../../ipc/clipboard";
 import { CommandMarks, type Activity } from "./commandMarks";
+import { markFirstOutput, markMounted, markWrite } from "./perfMarks";
 import { HIGHLIGHT_LIMIT, searchOptions, validQuery, type FindFlags, type FindResult } from "./find";
 import { FindBar } from "./FindBar";
-import { keyAction, lastLines, lineCount, needsConfirm } from "./terminalInput";
+import { keyAction, lastLines, lineCount, needsConfirm, pasteBytes } from "./terminalInput";
 import { webglPool } from "./webglPool";
 
 export type TerminalOptions = {
@@ -48,6 +50,13 @@ export function fontStack(family: string): string {
   return [...new Set(names)].map((n) => (n === "ui-monospace" ? n : `"${n}"`)).join(", ") + ", monospace";
 }
 
+/** Makes xterm measure its character cell again (font or attachment changed). */
+function remeasure(xterm: Terminal): void {
+  const family = xterm.options.fontFamily ?? "monospace";
+  xterm.options.fontFamily = "monospace";
+  xterm.options.fontFamily = family;
+}
+
 /** Unfocused panes coalesce output to at most ~30 fps (F-CD-04). */
 const UNFOCUSED_FLUSH_MS = 33;
 
@@ -70,6 +79,14 @@ export type TerminalHandle = {
   find: (step?: "next" | "prev") => void;
   /** Copies the last finished command's output (shell integration, F-CD-10 AC3). */
   copyLastOutput: () => Promise<"copied" | "none">;
+  selectAll: () => void;
+  /** The visible screen as the serialize addon writes it (TUI goldens). */
+  serialize: () => string;
+  size: () => { cols: number; rows: number } | null;
+  /** The cursor in the active buffer (the perf suite times echoes with it). */
+  cursor: () => { x: number; y: number } | null;
+  /** Measured cell size and font options (debug builds). */
+  metrics: () => Record<string, unknown> | null;
 };
 export const terminalHandles = new Map<string, TerminalHandle>();
 
@@ -83,6 +100,8 @@ export async function copyLastOutput(paneId: string, toast: Toast): Promise<void
 
 /** Terminals reflow at most this often while their size changes (F-CD-02). */
 const RESIZE_THROTTLE_MS = 50;
+/** After a drag or becoming visible, the size must hold this long first. */
+const LAYOUT_SETTLE_MS = 80;
 
 /** One spawn per pane even when React mounts twice (StrictMode, reloads). */
 const spawning = new Map<string, Promise<unknown>>();
@@ -172,11 +191,16 @@ export function TerminalView({
   const term = useRef<Terminal | null>(null);
   const fit = useRef<FitAddon | null>(null);
   const size = useRef({ cols: 0, rows: 0 });
+  /** Fits the view and resizes the PTY when that changed its size. */
+  const refit = useRef<() => void>(() => undefined);
+  /** The cell size was measured with the view in the document. */
+  const measured = useRef(false);
   const [phase, setPhase] = useState<Phase>({ kind: "starting" });
   const [generation, setGeneration] = useState(0);
   const [scrolledUp, setScrolledUp] = useState(false);
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
   const search = useRef<SearchAddon | null>(null);
+  const serializer = useRef<SerializeAddon | null>(null);
   const findInput = useRef<HTMLInputElement>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
@@ -208,6 +232,7 @@ export function TerminalView({
   useEffect(() => {
     const el = host.current;
     if (!el) return;
+    measured.current = false;
     const o = optionsRef.current;
     const xterm = new Terminal({
       theme: o.theme,
@@ -235,6 +260,7 @@ export function TerminalView({
     const results = searchAddon.onDidChangeResults((r) => setFindResult({ index: r.resultIndex, count: r.resultCount }));
     xterm.open(el);
     quietQueries(xterm);
+    markMounted(paneId);
     // Shell-integration marks reach xterm only when they carried this
     // launch's token (Rust drops the rest): ✓/✗ beside each command's prompt
     // and working/idle for the pane's status (F-CD-10).
@@ -281,20 +307,19 @@ export function TerminalView({
     };
     webglPool.register(paneId, renderer);
     // Cell size is measured from the font; once the web font has loaded,
-    // measure again so canvas glyphs line up with the grid.
+    // measure again (and resize the PTY to match) so the grid, the glyphs
+    // and the program agree on rows and columns.
+    // `check()` can report ready before every face of the variable font has
+    // loaded, so follow the font set itself.
     const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
-    if (fonts && !fonts.check(`${o.fontSize}px "${BUNDLED_MONO}"`)) {
-      void fonts.load(`${o.fontSize}px "${BUNDLED_MONO}"`).then(() => {
-        if (term.current !== xterm) return;
-        const family = xterm.options.fontFamily ?? fontStack(o.fontFamily);
-        xterm.options.fontFamily = "monospace";
-        xterm.options.fontFamily = family;
-        try {
-          fitAddon.fit();
-        } catch {
-          /* hidden */
-        }
-      });
+    const fontsLoaded = () => {
+      if (term.current !== xterm) return;
+      remeasure(xterm);
+      refit.current();
+    };
+    if (fonts) {
+      void fonts.load(`${o.fontSize}px "${BUNDLED_MONO}"`).then(fontsLoaded, () => undefined);
+      fonts.addEventListener("loadingdone", fontsLoaded);
     }
     const scrolled = () => {
       const buf = xterm.buffer.active;
@@ -322,7 +347,9 @@ export function TerminalView({
     };
     const write = (data: Uint8Array) => {
       const len = data.byteLength;
+      markWrite(paneId);
       xterm.write(data, () => {
+        markFirstOutput(paneId);
         unacked += len;
         if (unacked >= 64 * 1024) flushAck();
         else ackTimer ??= setTimeout(flushAck, 50);
@@ -404,6 +431,8 @@ export function TerminalView({
         if (disposed) return;
         if (replay?.byteLength) xterm.write(replay);
         setPhase(live ? { kind: "live" } : { kind: "exited", code: null });
+        // The view may have been measured or resized while the PTY started.
+        refit.current();
         // Focus a new shell once; later visibility changes leave focus alone
         // so closing Settings can return it to its opener (F-SH-04 AC1).
         if (focusedRef.current && el.offsetParent !== null && !document.querySelector("[role=dialog]"))
@@ -427,6 +456,8 @@ export function TerminalView({
       onParsed.dispose();
       results.dispose();
       search.current = null;
+      fonts?.removeEventListener("loadingdone", fontsLoaded);
+      serializer.current = null;
       commandMarks.dispose();
       commands.dispose();
       webglPool.unregister(paneId, renderer);
@@ -449,8 +480,17 @@ export function TerminalView({
     term.current?.focus();
   };
 
+  /** Types a paste, bracketed when the program asked for it (F-CD-05 AC2). */
+  const sendPaste = (text: string) => {
+    const xterm = term.current;
+    if (!xterm) return;
+    const data = pasteBytes(text, xterm.modes.bracketedPasteMode);
+    xterm.scrollToBottom();
+    invoke("pty_write", { paneId, data }).catch(() => undefined);
+  };
+
   /** Pastes `given` text, or the clipboard: confirms multi-line shell pastes,
-   * stages an image for agents, and lets xterm add bracketed paste markers. */
+   * stages an image for agents, and brackets it when the program asked. */
   const pasteFrom = async (given: string | undefined) => {
     const xterm = term.current;
     if (!xterm) return;
@@ -458,14 +498,14 @@ export function TerminalView({
     if (!text) {
       if (!inputCtx.current.agent) return;
       const staged = await invoke<string>("term_stage_clipboard_image", { paneId }).catch(() => "");
-      if (staged) xterm.paste(staged);
+      if (staged) sendPaste(staged);
       return;
     }
     if (needsConfirm(text, { agent: inputCtx.current.agent, confirmSetting: optionsRef.current.confirmMultilinePaste ?? true })) {
       setPendingPaste(text);
       return;
     }
-    xterm.paste(text);
+    sendPaste(text);
   };
 
   /** Runs the search addon: `incremental` while typing, so the current match
@@ -518,11 +558,17 @@ export function TerminalView({
   };
 
   useEffect(() => {
+    // Logical lines: a row the terminal wrapped joins the one before it.
     const text = () => {
       const buf = term.current?.buffer.active;
       if (!buf) return "";
       const lines: string[] = [];
-      for (let i = 0; i < buf.length; i++) lines.push(buf.getLine(i)?.translateToString(true) ?? "");
+      for (let i = 0; i < buf.length; i++) {
+        const line = buf.getLine(i);
+        const row = line?.translateToString(true) ?? "";
+        if (line?.isWrapped && lines.length > 0) lines[lines.length - 1] += row;
+        else lines.push(row);
+      }
       return lastLines(lines, null);
     };
     const copyLastOutput = async () => {
@@ -538,6 +584,36 @@ export function TerminalView({
       text,
       find: findStep,
       copyLastOutput,
+      selectAll: () => term.current?.selectAll(),
+      size: () => (term.current ? { cols: term.current.cols, rows: term.current.rows } : null),
+      metrics: () => {
+        const xterm = term.current;
+        if (!xterm) return null;
+        const core = (xterm as unknown as { _core?: { _renderService?: { dimensions?: { css?: { cell?: unknown } } }; _charSizeService?: { width?: number; height?: number } } })._core;
+        return {
+          cell: core?._renderService?.dimensions?.css?.cell ?? null,
+          char: { w: core?._charSizeService?.width, h: core?._charSizeService?.height },
+          fontSize: xterm.options.fontSize,
+          lineHeight: xterm.options.lineHeight,
+          fontFamily: xterm.options.fontFamily,
+          dpr: window.devicePixelRatio,
+        };
+      },
+      cursor: () => {
+        const buf = term.current?.buffer.active;
+        return buf ? { x: buf.cursorX, y: buf.baseY + buf.cursorY } : null;
+      },
+      serialize: () => {
+        const xterm = term.current;
+        if (!xterm) return "";
+        // Loaded on first use: only the test harness asks.
+        serializer.current ??= (() => {
+          const addon = new SerializeAddon();
+          xterm.loadAddon(addon);
+          return addon;
+        })();
+        return serializer.current.serialize({ scrollback: 0, excludeModes: true, excludeAltBuffer: false });
+      },
     };
     terminalHandles.set(paneId, handle);
     return () => {
@@ -575,13 +651,16 @@ export function TerminalView({
     xterm.options.scrollback = options.scrollback;
   }, [options]);
 
-  // PTY resizes follow the layout: never during a divider drag (one resize
-  // after pointer-up, F-CD-02 AC1), at most every 50 ms otherwise.
+  // PTY resizes follow the layout: never during a divider drag; once the
+  // layout has settled after pointer-up or after showing (panel groups land
+  // over a few frames, so one resize per PTY, F-CD-02 AC1); and at most every
+  // 50 ms while a window resize goes on.
   useEffect(() => {
     const el = host.current;
     if (!el || !visible || dragging) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let last = 0;
+    let settling = true;
     const apply = () => {
       const f = fit.current;
       const xterm = term.current;
@@ -593,29 +672,48 @@ export function TerminalView({
       }
       const next = { cols: xterm.cols, rows: xterm.rows };
       if (next.cols !== size.current.cols || next.rows !== size.current.rows) {
+        const prev = size.current;
         size.current = next;
-        invoke("pty_resize", { paneId, ...next }).catch(() => undefined);
+        // Before the spawn lands there is no PTY yet: forget this size so
+        // the reconcile after connecting sends it.
+        invoke("pty_resize", { paneId, ...next }).catch(() => {
+          if (size.current === next) size.current = prev;
+        });
       }
     };
+    refit.current = apply;
+    const run = () => {
+      timer = undefined;
+      settling = false;
+      last = performance.now();
+      // xterm measured its cell while the pane's host may still have been
+      // detached (no styles, a fallback font): measure again, once, now
+      // that the view is in the document.
+      const xterm = term.current;
+      if (xterm && !measured.current && el.isConnected) {
+        measured.current = true;
+        remeasure(xterm);
+      }
+      apply();
+    };
+    // Trailing: every change while settling starts the wait again.
+    const settle = () => {
+      clearTimeout(timer);
+      timer = setTimeout(run, LAYOUT_SETTLE_MS);
+    };
     const ro = new ResizeObserver(() => {
+      if (settling) return settle();
       if (timer) return;
-      timer = setTimeout(
-        () => {
-          timer = undefined;
-          last = performance.now();
-          apply();
-        },
-        Math.max(0, RESIZE_THROTTLE_MS - (performance.now() - last)),
-      );
+      timer = setTimeout(run, Math.max(0, RESIZE_THROTTLE_MS - (performance.now() - last)));
     });
     ro.observe(el);
-    last = performance.now();
-    apply();
+    settle();
     return () => {
       ro.disconnect();
       clearTimeout(timer);
+      refit.current = () => undefined;
     };
-  }, [paneId, visible, dragging]);
+  }, [paneId, visible, dragging, generation]);
 
   return (
     <div
@@ -699,7 +797,7 @@ export function TerminalView({
         body={t("terminal.pasteBody")}
         confirmLabel={t("terminal.paste")}
         onConfirm={() => {
-          if (pendingPaste !== null) term.current?.paste(pendingPaste);
+          if (pendingPaste !== null) sendPaste(pendingPaste);
           setPendingPaste(null);
           term.current?.focus();
         }}

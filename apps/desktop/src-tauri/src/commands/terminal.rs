@@ -156,7 +156,7 @@ pub fn pty_resize(
     cols: u16,
     rows: u16,
 ) -> Result<(), IpcError> {
-    crate::commands::app::count_resize();
+    crate::commands::app::count_resize(pane_id.as_str());
     Ok(state.terminals.pty.resize(pane_id.as_str(), cols, rows)?)
 }
 

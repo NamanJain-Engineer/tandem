@@ -7,12 +7,13 @@ import { useWorkspaces } from "../../stores/workspaces";
 import { UpgradeDialog } from "../billing/UpgradeDialog";
 import { CodeMain } from "../code/CodeMain";
 import { CodeRail } from "../code/CodeRail";
-import { setCommandToast } from "../commands/commands";
+import { commandRuns, setCommandToast } from "../commands/commands";
 import { InterimMain, InterimRail } from "../interim/Interim";
 import { Palette } from "../palette/Palette";
 import { OrphansDialog } from "../restore/OrphansDialog";
 import { followPtyState } from "../../stores/terminals";
 import { terminalHandles } from "../code/TerminalView";
+import { enablePerfMarks, perfTimes, writeCounts } from "../code/perfMarks";
 import { webglPool } from "../code/webglPool";
 import { useBoot } from "./useBoot";
 import { SettingsView } from "../settings/SettingsView";
@@ -37,6 +38,14 @@ export function AppShell() {
     (window as unknown as { __tandemTest?: object }).__tandemTest = {
       webglContexts: () => webglPool.liveContexts(),
       paneText: (paneId: string) => terminalHandles.get(paneId)?.text() ?? "",
+      selectAll: (paneId: string) => terminalHandles.get(paneId)?.selectAll(),
+      paneScreen: (paneId: string) => terminalHandles.get(paneId)?.serialize() ?? "",
+      paneCursor: (paneId: string) => terminalHandles.get(paneId)?.cursor() ?? null,
+      paneMetrics: (paneId: string) => terminalHandles.get(paneId)?.metrics() ?? null,
+      webglHolds: (paneId: string) => webglPool.holds(paneId),
+      perf: { enable: enablePerfMarks, times: perfTimes, writes: writeCounts },
+      paneSize: (paneId: string) => terminalHandles.get(paneId)?.size() ?? null,
+      commandRuns: () => Object.fromEntries(commandRuns),
       // State the harness saves next to a failure's screenshot.
       debug: () => {
         const ws = useWorkspaces.getState();

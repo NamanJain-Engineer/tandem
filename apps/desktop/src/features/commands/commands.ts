@@ -126,11 +126,16 @@ export const handlers: Record<string, () => void> = {
   "help.open_logs": () => void invoke("app_open_logs_folder").catch(() => undefined),
 };
 
+/** How often each command's handler ran (debug builds read it: the E2E
+ * check that the palette and shortcuts share one handler). */
+export const commandRuns = new Map<string, number>();
+
 /** Runs a command if it's enabled. Returns whether it ran. */
 export function runCommand(id: string): boolean {
   const spec = COMMANDS.find((c) => c.id === id);
   const handler = handlers[id];
   if (!spec || !handler || !isEnabled(spec)) return false;
+  commandRuns.set(id, (commandRuns.get(id) ?? 0) + 1);
   handler();
   return true;
 }

@@ -27,6 +27,8 @@ fn guard(state: &AppState) -> Result<(), IpcError> {
 #[ts(export)]
 pub struct TestCounters {
     pub pty_resizes: u64,
+    /// `pty_resize` calls per pane.
+    pub pty_resizes_by_pane: std::collections::BTreeMap<String, u32>,
     pub webgl_contexts: u64,
     pub dom_renderers: u64,
     pub reflows: u64,
@@ -38,8 +40,10 @@ pub fn test_counters(
     reset: Option<bool>,
 ) -> Result<TestCounters, IpcError> {
     guard(&state)?;
+    let reset = reset.unwrap_or(false);
     Ok(TestCounters {
-        pty_resizes: crate::commands::app::resize_count(reset.unwrap_or(false)),
+        pty_resizes_by_pane: crate::commands::app::resize_counts_by_pane(reset),
+        pty_resizes: crate::commands::app::resize_count(reset),
         webgl_contexts: 0,
         dom_renderers: 0,
         reflows: 0,

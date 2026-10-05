@@ -10,7 +10,8 @@
     "tauri": "tauri",
     "test": "vitest run",
     "lint": "tsc --noEmit && tsc --noEmit -p e2e && eslint .",
-    "e2e": "tsx e2e/run.ts"
+    "e2e": "tsx e2e/run.ts",
+    "perf": "tsx e2e/run.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6",

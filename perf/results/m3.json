@@ -1,0 +1,49 @@
+{
+  "terminals": {
+    "date": "2026-10-05T17:56:52.878Z",
+    "machine": {
+      "os": "linux 6.18.44-fc-v70 (xvfb)",
+      "cpus": 4,
+      "cpuModel": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+      "memGb": 16,
+      "build": "debug"
+    },
+    "metrics": {
+      "unfocusedWritesPerSec": {
+        "value": 1,
+        "target": 30,
+        "op": "<=",
+        "unit": "writes/s",
+        "pass": true
+      },
+      "focusedFps": {
+        "value": 2,
+        "target": 50,
+        "op": ">=",
+        "unit": "fps",
+        "pass": false
+      },
+      "idleCpuPercent": {
+        "value": 338.3,
+        "target": 2,
+        "op": "<=",
+        "unit": "% of a core",
+        "pass": false
+      },
+      "sixteenPaneRssMb": {
+        "value": 5285.5,
+        "target": 1229,
+        "op": "<=",
+        "unit": "MB",
+        "pass": false
+      },
+      "modeSwitchP95Ms": {
+        "value": 2878,
+        "target": 100,
+        "op": "<=",
+        "unit": "ms",
+        "pass": false
+      }
+    }
+  }
+}

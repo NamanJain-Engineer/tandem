@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keyAction, lastLines, lineCount, needsConfirm, type KeyLike } from "./terminalInput";
+import { keyAction, lastLines, lineCount, needsConfirm, pasteBytes, type KeyLike } from "./terminalInput";
 
 const key = (over: Partial<KeyLike>): KeyLike => ({
   type: "keydown",
@@ -66,5 +66,13 @@ describe("paste and copy helpers (F-CD-05)", () => {
     expect(text.startsWith("line 201\n")).toBe(true);
     expect(text.endsWith("line 300")).toBe(true);
     expect(lastLines(lines, null).split("\n")).toHaveLength(300);
+  });
+
+  it("F-CD-05.2 a bracketed paste keeps LF and can't close its own bracket", () => {
+    expect(pasteBytes("a\nb", true)).toBe("\x1b[200~a\nb\x1b[201~");
+    expect(pasteBytes("a\r\nb", true)).toBe("\x1b[200~a\nb\x1b[201~");
+    expect(pasteBytes("x\x1b[201~rm -rf ~\n", true)).toBe("\x1b[200~xrm -rf ~\n\x1b[201~");
+    // Without bracketed paste, line breaks are typed as Enter.
+    expect(pasteBytes("a\nb\r\nc", false)).toBe("a\rb\rc");
   });
 });

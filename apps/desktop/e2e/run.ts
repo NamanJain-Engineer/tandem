@@ -17,7 +17,11 @@ const root = join(desktop, "../..");
 
 const args = process.argv.slice(2).filter((a) => a !== "--");
 const specIndex = args.indexOf("--spec");
-const spec = specIndex >= 0 ? args[specIndex + 1] : undefined;
+// `pnpm --filter desktop perf -- --suite <name>` runs e2e/perf/<name>.perf.ts
+// (MILESTONES §1); results land in perf/results/<milestone>.json.
+const suiteIndex = args.indexOf("--suite");
+const suite = suiteIndex >= 0 ? args[suiteIndex + 1] : undefined;
+const spec = suite ? `e2e/perf/${suite}.perf.ts` : specIndex >= 0 ? args[specIndex + 1] : undefined;
 
 const API = "http://127.0.0.1:8787";
 const WEB = "http://localhost:3000";

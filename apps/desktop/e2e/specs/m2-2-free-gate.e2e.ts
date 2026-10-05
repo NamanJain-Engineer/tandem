@@ -16,7 +16,7 @@ describe("E2E-M2-2 free gate", () => {
   });
 
   it("the fourth opens the upgrade sheet naming the limit", async () => {
-    await addFolder(`${base}/w4`);
+    await addFolder(`${base}/w4`, { added: false });
     await $('[data-testid="upgrade-gate"]').waitForExist({ timeout: 10_000 });
     expect(await textOf('[data-testid="upgrade-gate"]')).toBe("You hit the Free limit of 3 workspaces.");
     expect(await workspaceRoots()).not.toContain(`${base}/w4`);

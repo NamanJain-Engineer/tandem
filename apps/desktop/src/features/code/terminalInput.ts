@@ -45,6 +45,19 @@ export function needsConfirm(text: string, opts: { agent: boolean; confirmSettin
   return !opts.agent && opts.confirmSetting && lineCount(text) > 1;
 }
 
+const PASTE_START = "\x1b[200~";
+const PASTE_END = "\x1b[201~";
+
+/** The bytes a paste sends (F-CD-05 AC2). With bracketed paste on, the text
+ * goes between the markers with its line breaks as LF, and any marker inside
+ * it is removed so pasted text can't end the bracket early and run the rest.
+ * Without it, line breaks become CR (Enter), as terminals type them. */
+export function pasteBytes(text: string, bracketed: boolean): string {
+  if (!bracketed) return text.replace(/\r?\n/g, "\r");
+  const body = text.replace(/\r\n?/g, "\n").split(PASTE_START).join("").split(PASTE_END).join("");
+  return `${PASTE_START}${body}${PASTE_END}`;
+}
+
 /** The last `n` lines of a buffer as plain text (`null` = all), trailing blank lines dropped. */
 export function lastLines(lines: string[], n: number | null): string {
   let end = lines.length;
