@@ -225,13 +225,23 @@ impl ApprovalBroker {
         let _ = self.tx.send(ApprovalEvent::Requested(view.clone()));
         let weak: Weak<Self> = Arc::downgrade(self);
         let id = view.id.clone();
-        let sleep = self.clock.sleep(self.ttl);
-        tokio::spawn(async move {
-            sleep.await;
-            if let Some(broker) = weak.upgrade() {
-                broker.finish(&id, ApprovalState::Expired, None, Some(ApprovalVia::Expiry));
+        let (clock, ttl) = (self.clock.clone(), self.ttl);
+        // The timer is made inside the task: a caller off the runtime's
+        // threads (a sync command) must not need a reactor.
+        match tokio::runtime::Handle::try_current() {
+            Ok(rt) => {
+                rt.spawn(async move {
+                    clock.sleep(ttl).await;
+                    if let Some(broker) = weak.upgrade() {
+                        broker.finish(&id, ApprovalState::Expired, None, Some(ApprovalVia::Expiry));
+                    }
+                });
             }
-        });
+            Err(_) => tracing::warn!(
+                code = "approvals.no_runtime",
+                "an approval was opened outside a runtime; it won't expire"
+            ),
+        }
         (view, ApprovalTicket { rx })
     }
 
@@ -469,5 +479,20 @@ mod tests {
             .map(|v| v.id),
             Some(other.id)
         );
+    }
+
+    /// A sync caller (a command on the main thread) has no reactor: opening
+    /// a request there must not panic (it crashed the app once).
+    #[test]
+    fn approvals_open_outside_a_runtime_without_panicking() {
+        let clock = MockClock::new(
+            chrono::Utc
+                .with_ymd_and_hms(2026, 10, 1, 9, 0, 0)
+                .single()
+                .expect("time"),
+        );
+        let b = ApprovalBroker::new(Arc::new(clock));
+        let (view, _ticket) = b.request(req("th_1"));
+        assert_eq!(b.pending().first().map(|v| v.id.clone()), Some(view.id));
     }
 }

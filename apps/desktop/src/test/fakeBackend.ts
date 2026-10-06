@@ -1,3 +1,4 @@
+import { resetNotifications } from "../stores/notifications";
 import { resetDashboard } from "../stores/dashboard";
 import { useInstall } from "../features/code/InstallSheet";
 import { resetSidebar } from "../stores/sidebar";
@@ -99,6 +100,7 @@ export function fakeBackend(
 export function resetStores(): void {
   resetSidebar();
   resetDashboard();
+  resetNotifications();
   useInstall.setState({ engine: null, tabId: null });
   useEngines.setState({ list: [], loaded: false, report: null, detecting: false });
   useBoot.setState({ boot: BOOT });

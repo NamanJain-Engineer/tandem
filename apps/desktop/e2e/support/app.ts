@@ -237,6 +237,11 @@ async function resetState(): Promise<void> {
   const list = await invoke<Array<{ id: string }>>("workspace_list");
   for (const w of list) await invoke("workspace_remove", { id: w.id });
   await invoke("auth_sign_out");
+  // UI state that outlives a spec: start in Code mode with the sidebar closed.
+  await invoke("settings_set", { key: "last_mode", value: "code" });
+  await invoke("sidebar_save", {
+    sidebar: { open: false, tabs: [{ id: "dashboard", kind: "dashboard", title: null, url: null }], active: "dashboard", width: 470, fullscreen: false, pinned: false },
+  });
   // The removals bypassed the UI's stores (the launch already showed the last
   // spec's workspace): reload so the UI starts from what the backend has.
   await browser.refresh();

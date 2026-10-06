@@ -144,3 +144,43 @@ pub async fn dashboard_close_idle(
     }
     Ok(CloseIdleResult { closed })
 }
+
+/// The bell's items, newest first within 7 days (F-DB-02).
+#[tauri::command]
+pub async fn notifications_list(
+    state: State<'_, AppState>,
+    cursor: Option<String>,
+) -> Result<tandem_store::repo::notifications::NotificationPage, IpcError> {
+    Ok(tandem_store::repo::notifications::list(&state.store, cursor).await?)
+}
+
+#[tauri::command]
+pub async fn notifications_mark_read(
+    state: State<'_, AppState>,
+    ids: Option<Vec<tandem_core::ids::NotificationId>>,
+    all: Option<bool>,
+) -> Result<(), IpcError> {
+    let changed = tandem_store::repo::notifications::mark_read(
+        &state.store,
+        ids.unwrap_or_default(),
+        all.unwrap_or(false),
+    )
+    .await?;
+    if !changed.is_empty() {
+        state.bus.publish(BusEvent::new(
+            Topic::Notifications,
+            "notifications:changed",
+            serde_json::json!({ "ids": changed, "state": "read" }),
+        ));
+    }
+    Ok(())
+}
+
+/// The agents the webview shows right now (F-DB-03: no OS notification for
+/// what the user can see).
+#[tauri::command]
+pub fn ui_visibility(state: State<'_, AppState>, visible: Vec<SessionKey>) {
+    state
+        .notifications
+        .set_visible(visible.into_iter().map(|k| k.0).collect());
+}

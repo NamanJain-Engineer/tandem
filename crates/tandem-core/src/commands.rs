@@ -117,6 +117,18 @@ static REGISTRY: &[CommandSpec] = &[
         Some("Mod+Shift+B"),
         E::Always,
     ),
+    same(
+        "notifications.open",
+        C::Navigation,
+        Some("Mod+Shift+N"),
+        E::Always,
+    ),
+    same(
+        "dashboard.full_view",
+        C::Navigation,
+        Some("Mod+Alt+Shift+D"),
+        E::Always,
+    ),
     same("workspace.open_folder", C::Workspace, None, E::Always),
     aliased(
         "workspace.new_tab",

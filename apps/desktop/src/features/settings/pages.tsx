@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { t } from "../../i18n";
 import { AccountPage } from "./AccountPage";
 import { EnginesPage } from "./EnginesPage";
+import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
 import {
   BoolControl,
@@ -204,6 +205,53 @@ export function settingsPages(platform: string): PageDef[] {
           ),
         },
       ],
+    },
+    {
+      id: "notifications",
+      label: t("settings.notifications"),
+      subtitle: t("settings.notifications.subtitle"),
+      keywords: ["notifications", "alerts", "sound", "bell", "badge"],
+      rows: [
+        {
+          id: "notify_system",
+          label: t("settings.notify.systemToggle"),
+          keywords: ["system", "os", "desktop notifications"],
+          control: (ids) => <BoolControl k="notify_system" ids={ids} label={t("settings.notify.systemToggle")} />,
+        },
+        {
+          id: "notify_only_unseen",
+          label: t("settings.notify.onlyUnseen"),
+          description: t("settings.notify.onlyUnseen.desc"),
+          keywords: ["background", "focused", "visible"],
+          control: (ids) => <BoolControl k="notify_only_unseen" ids={ids} label={t("settings.notify.onlyUnseen")} />,
+        },
+        {
+          id: "notify_attention",
+          label: mac ? t("settings.notify.bounce") : t("settings.notify.flash"),
+          keywords: ["dock", "bounce", "taskbar", "flash"],
+          control: (ids) => (
+            <BoolControl k="notify_attention" ids={ids} label={mac ? t("settings.notify.bounce") : t("settings.notify.flash")} />
+          ),
+        },
+        {
+          id: "notify_sound",
+          label: t("settings.notify.soundToggle"),
+          keywords: ["sound", "chime", "audio"],
+          control: (ids) => <BoolControl k="notify_sound" ids={ids} label={t("settings.notify.soundToggle")} />,
+        },
+        {
+          id: "notify_sound_name",
+          label: t("settings.notify.soundName"),
+          keywords: ["sound", "chime", "tone"],
+          control: (ids) => (
+            <span className="flex items-center gap-1">
+              <SelectControl k="notify_sound_name" ids={ids} fallback="chime" options={opts(["chime", "soft", "pop", "none"], "settings.notify.tone")} />
+              <SoundPreview />
+            </span>
+          ),
+        },
+      ],
+      extra: <NotificationTypes />,
     },
     {
       id: "terminal",

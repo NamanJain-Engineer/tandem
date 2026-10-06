@@ -38,6 +38,9 @@ macro_rules! app_commands {
             commands::shell::status_snapshot,
             commands::shell::status_mark_seen,
             commands::shell::dashboard_close_idle,
+            commands::shell::notifications_list,
+            commands::shell::notifications_mark_read,
+            commands::shell::ui_visibility,
             commands::settings::settings_get_all,
             commands::settings::settings_set,
             commands::settings::settings_reset,
@@ -327,6 +330,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::init(
@@ -340,6 +344,9 @@ pub fn run() {
         commands::test::test_spawn_log,
         commands::test::test_clock_advance,
         commands::test::test_fixture_agent,
+        commands::test::test_notifier_calls,
+        commands::test::test_notifier_click,
+        commands::test::test_set_window_focused,
         commands::test::test_auth_refresh,
         commands::test::test_account_create,
     ]);
@@ -359,6 +366,22 @@ pub fn run() {
             persist_window_state(app);
             spawn_background(&state);
             state.approvals.start();
+            // OS notifications: the system's, or a recording one under the
+            // test harness (F-DB-03).
+            {
+                use crate::services::notifier::{Notifier, RecordingNotifier, SystemNotifier};
+                use std::sync::Arc;
+                let (notifier, recording): (Arc<dyn Notifier>, Option<Arc<RecordingNotifier>>) =
+                    if state.e2e {
+                        let r = Arc::new(RecordingNotifier::default());
+                        (r.clone(), Some(r))
+                    } else {
+                        (Arc::new(SystemNotifier::new(handle.clone())), None)
+                    };
+                state
+                    .notifications
+                    .start(handle.clone(), notifier, recording);
+            }
             // The status server, then engines: the cached report at once, the
             // remote registry and a fresh detection in the background (F-EN-01).
             let engines_state = handle.clone();
@@ -375,6 +398,12 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 let focus = handle.clone();
                 window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::Focused(focused) = event {
+                        focus
+                            .state::<AppState>()
+                            .notifications
+                            .set_focused(*focused);
+                    }
                     if let tauri::WindowEvent::Focused(true) = event {
                         let focus = focus.clone();
                         tauri::async_runtime::spawn(async move {

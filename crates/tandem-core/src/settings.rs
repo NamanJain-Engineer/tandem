@@ -64,6 +64,7 @@ setting_keys! {
     NotifySoundName,
     NotifyAttention,
     NotifyTypes,
+    NotifyOnlyUnseen,
     DefaultShell,
     WslDefaultDistro,
     TermFontFamily,
@@ -287,6 +288,13 @@ pub static SCHEMA: &[SettingSpec] = &[
         ["dock", "bounce", "flash", "taskbar"]
     ),
     spec!(NotifyTypes, json!({}), V::Map, Notifications, ["types"]),
+    spec!(
+        NotifyOnlyUnseen,
+        json!(true),
+        V::Bool,
+        Notifications,
+        ["background", "unfocused", "visible"]
+    ),
     spec!(
         DefaultShell,
         json!(null),

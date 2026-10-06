@@ -1,4 +1,4 @@
-import { Bell, ChevronDown, Command as CommandIcon, Gem, PanelLeft, PanelRight, Search } from "lucide-react";
+import { ChevronDown, Command as CommandIcon, Gem, PanelLeft, PanelRight, Search } from "lucide-react";
 import {
   Avatar,
   Badge,
@@ -18,6 +18,7 @@ import { totalCredits, useSession } from "../../stores/session";
 import { useUi, type Mode } from "../../stores/ui";
 import { useLayout } from "../../stores/layout";
 import { useSidebar } from "../../stores/sidebar";
+import { NotificationsBell } from "../notifications/NotificationsPopover";
 import { useWorkspaces } from "../../stores/workspaces";
 import { copyDiagnostics, switchMode } from "./actions";
 import { LogoMark } from "./LogoMark";
@@ -253,11 +254,7 @@ export function TitleBar() {
           </button>
         </Tooltip>
       )}
-      <Menu
-        align="end"
-        entries={[{ id: "empty", type: "label", label: t("notifications.empty") }]}
-        trigger={<IconButton icon={<Bell size={16} />} label={t("titlebar.notifications")} />}
-      />
+      <NotificationsBell />
       <IconButton
         icon={<PanelRight size={16} />}
         label={t("titlebar.toggleSidebar")}

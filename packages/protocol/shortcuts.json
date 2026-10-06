@@ -63,6 +63,24 @@
     "enabledWhen": "always"
   },
   {
+    "id": "notifications.open",
+    "category": "navigation",
+    "mac": "Mod+Shift+N",
+    "pc": "Mod+Shift+N",
+    "pcTerminal": "Mod+Shift+N",
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "dashboard.full_view",
+    "category": "navigation",
+    "mac": "Mod+Alt+Shift+D",
+    "pc": "Mod+Alt+Shift+D",
+    "pcTerminal": "Mod+Alt+Shift+D",
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
     "id": "workspace.open_folder",
     "category": "workspace",
     "mac": null,

@@ -56,7 +56,7 @@ pub async fn snapshot(state: &AppState) -> Vec<DashboardItem> {
     items
 }
 
-async fn item_for(state: &AppState, rec: StatusRecord) -> Option<DashboardItem> {
+pub(crate) async fn item_for(state: &AppState, rec: StatusRecord) -> Option<DashboardItem> {
     let engines = &state.terminals.engines;
     if let Some(pane_id) = rec.key.0.strip_prefix("pane:") {
         let pane = panes::get_open(&state.store, &PaneId::from_db(pane_id.to_string()))

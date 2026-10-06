@@ -94,10 +94,10 @@
 ## M5 checklist (MILESTONES M5)
 - [x] 1. `tandem-core::approvals` ApprovalBroker (pending by id and source, allow with an offered scope, deny with a reason, 30 min expiry on the injected clock, cancel by source, event stream); app service records `approvals`, cancels crash-stale rows, forwards `approvals:changed`; `approvals_pending`, `approval_resolve`
 - [x] 2. Right sidebar F-SH-10: `layout_sidebar` via `sidebar_get`/`sidebar_save` (validated: one of each singleton, width 320–900), docked / floating below 1,100 px (outside click closes unless pinned) / full-screen overlay with a spacer so the main area never resizes, Esc leaves it, sortable closable pills, "+" focuses an open singleton, every tab mounted, reflow counters in the harness
-- [ ] 3. Dashboard F-DB-01
+- [x] 3. Dashboard F-DB-01 (UI-42/43): `status_snapshot` cards with engine, workspace, branch, account, redacted preview and pending approval; live patches from `status:changed` / `approvals:changed`; AND search (case- and accent-insensitive); Status | Project groups; filter chips with "n of m"; Allow once / Deny through the broker; Close idle re-checked in the core; jump with flash; empty, filter-empty and loading states; 4-column full view (Mod+Alt+Shift+D); a test-only fixture agent source
 - [x] 4. Pane header F-CD-12 (status palette, 12-character title minimum with a tooltip and the full title atop the menu, 200 original first names unique per workspace assigned in the store transaction, rename in place with Conflict, cwd metadata, "Stop {name}? It's working." confirm, 1.2 s flash ring from `ui:focus` / `focus_source`)
-- [ ] 5. Notification center F-DB-02
-- [ ] 6. OS notifications F-DB-03
+- [x] 5. Notification center F-DB-02 (UI-40): `notifications` with 7-day retention and an insertion-order cursor; items from waiting/done/failed agents and broker approvals, resolved when their source moves on; bell with unread badge (amber when something waits), "Waiting on you" / "All" tabs, click marks read and jumps, Mark all read, inline Allow once / Deny (via notification), Mod+Shift+N
+- [x] 6. OS notifications F-DB-03 (UI-41): `Notifier` trait (tauri notification plugin; a recording one under the harness); only when unfocused or the source isn't on screen (`ui_visibility`), per-type toggles, synthesized soft sounds, dock bounce / taskbar flash; Settings › Notifications
 - [ ] 7. Session restore F-SH-07
 - [ ] 8. Updater F-SH-06
 - [ ] 9. Release pipeline F-TL-04
@@ -182,6 +182,11 @@
 - D-75: An agent pane's first name sits beside its title instead of replacing it; the title chain (F-EN-06) is unchanged. Names are drawn at random from the free ones inside the pane's write transaction, so panes created together can't collide; when all 200 are in use a number is added ("Ada 2").
 - D-76: `SourceRef` gains a test-only `fixture` variant (E2E fixture agents). The `approvals` table doesn't record fixture sources (its CHECK allows thread, teammate_chat and gateway).
 - D-77: `ui:focus` carries the pane's `{workspaceId, tabId}` so a card or notification can open a workspace whose layout hasn't loaded yet.
+- D-78: A real system notification's click isn't routed to its source yet: the notification plugin has no click callback on desktop. Clicking one brings Tandem forward on macOS and most Linux desktops; the jump to the source is covered through the recording notifier (`test_notifier_click`) and the bell. HUMAN_TODO lists the manual check; wiring the click per OS goes with M15's hardening.
+- D-79: `notify_types` keys are flat, `"<type>.<channel>"` (`"done.system": false`): settings maps hold scalar values only.
+- D-80: Notification paging uses `"<createdAt>:<seq>"` (SQLite rowid) so items created in the same millisecond keep their order and none is skipped.
+- D-81: The approval broker makes its expiry timer inside the spawned task and needs a runtime only when one exists: a request opened from a sync command once crashed the app ("no reactor running").
+- D-82: The E2E axe check waits for the theme to land, colours to stop changing and every open dialog to be fully opaque; WebKit doesn't list every fade in `getAnimations()`, and a half-faded sheet read as low contrast (E2E-M2-2 failed intermittently under load). Failures now print the measured colours and ratio.
 
 ## Log
 - M0 (earlier session): first slices of core, engine registry, local store, desktop shell frame, API health, CI.

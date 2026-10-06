@@ -39,12 +39,16 @@ export async function closeIdle(keys: string[]): Promise<string[]> {
   return res.closed;
 }
 
-export async function answer(approvalId: string, allow: boolean): Promise<IpcError | null> {
+export async function answer(
+  approvalId: string,
+  allow: boolean,
+  via: "dashboard" | "notification" = "dashboard",
+): Promise<IpcError | null> {
   try {
     await invoke("approval_resolve", {
       approvalId,
       decision: allow ? { type: "allow", scope: "once" } : { type: "deny", reason: null },
-      via: "dashboard",
+      via,
     });
     return null;
   } catch (e) {

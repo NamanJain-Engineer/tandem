@@ -200,7 +200,7 @@ pub struct IpcError { pub code: ErrorCode, pub message: String, pub stage: Optio
 
 // settings.rs — typed schema; every key has default, validator, and doc anchor
 pub enum SettingKey { Theme, TerminalsMatchTheme, Language, AutoSaveFiles, LaunchAtLogin, UpdateChannel,
-    NotifySystem, NotifySound, NotifySoundName, NotifyAttention, NotifyTypes, DefaultShell, WslDefaultDistro,
+    NotifySystem, NotifySound, NotifySoundName, NotifyAttention, NotifyTypes, NotifyOnlyUnseen, DefaultShell, WslDefaultDistro,
     TermFontFamily, TermFontSize, TermCursorStyle, TermCursorBlink, TermScrollback, TermCopyOnSelect,
     TermConfirmMultilinePaste, TermOptionAsMeta, TermScreenReader, TermShellIntegration /* per shell map */,
     OpenLinksInTandem, SearchEngine, EngineExtraArgs /* map */, DefaultAccess, AllowTeammateSkills,
@@ -616,7 +616,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `dashboard_close_idle` | `{keys:[SessionKey]}` (the visible filtered set) | `{closed:[SessionKey]}` (server re-checks each is idle) | — | F-DB-01 |
 | `ui_visibility` | `{visible:[SessionKey]}` (agents on screen: visible pane grid of the active tab, Code mode, Settings closed) | — | — | F-DB-03 |
 | `focus_source` | `{source: SourceRef}` | — (emits `ui:focus`) | NotFound | F-DB-01, F-DB-02, F-CD-12 |
-| `notifications_list` | `{cursor?}` | `Page<Notification>` (7-day window) | — | F-DB-02 |
+| `notifications_list` | `{cursor?: string}` | `NotificationPage {items:[Notification {id, kind, title, body, source, state:"unread"\|"read"\|"resolved", dedupeKey?, createdAt, readAt?}], nextCursor?, unread}` (7-day window, newest first; the cursor is `"<createdAt>:<seq>"`) | — | F-DB-02 |
 | `notifications_mark_read` | `{ids?: [NotificationId], all?: bool}` | — | — | F-DB-02 |
 
 `SourceRef = {type:"pane", paneId} | {type:"thread", threadId} | {type:"teammate_chat", teammateId, threadId} | {type:"routine", routineId, runId?} | {type:"task", issueId} | {type:"lane", workspaceId} | {type:"update"} | {type:"plugin", connectionId}`.
@@ -828,6 +828,9 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `test_auth_refresh` | — | `AuthState` (forces the refresh path, e.g. to observe a revoked device) | — |
 | `test_account_create` | `{engineId, label}` | `Account` (a second account with its own provider home, without the sign-in flow; E2E-M4-4) | — |
 | `test_fixture_agent` | `FixtureAgent {id, title, status, engineId?, workspaceId?, preview?, approval?}` | `ApprovalView?` (a scripted agent in the status bus; with `approval` it waits on the broker and works once allowed; the E2E "fixture source") | — |
+| `test_notifier_calls` | `{clear?}` | `[OsNotification {kind, title, body, source}]` (the recording notifier used under the harness) | — |
+| `test_notifier_click` | `{index}` | — (clicks a recorded OS notification: focuses the app and its source) | NotFound |
+| `test_set_window_focused` | `{focused?}` | — (pretends the window is focused or not; `null` = the real state) | — |
 
 `window.__tandemTest` in the webview wraps these commands plus UI-side counters. Not listed in `capabilities/*.json` for release.
 
@@ -853,7 +856,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `threads:changed` | `{threads:[ThreadSummary]}` | threads service | F-TH-01 |
 | `approvals:changed` | `{upserted:[ApprovalView], resolved:[ApprovalId]}` | approval service | F-TH-11, F-PL-07 |
 | `held:changed` | `{drafts:[HeldDraft]}` | gateway | F-PL-08 |
-| `notifications:new` / `notifications:changed` | `Notification` / `{ids, state}` | notifications service | F-DB-02 |
+| `notifications:new` / `notifications:changed` | `{notification: Notification, sound: bool}` (`sound`: an OS notification went out and its type plays a sound) / `{ids, state}` | notifications service | F-DB-02, F-DB-03 |
 | `auth:changed` | `AuthState` | auth service | F-BE-02 |
 | `entitlement:changed` | `EntitlementView` | entitlement service (refresh, SSE) | F-BE-04, F-SH-03 |
 | `routines:changed` / `routines:run` | `RoutineView` / `RoutineRun` | scheduler | F-RT-02, F-RT-04 |

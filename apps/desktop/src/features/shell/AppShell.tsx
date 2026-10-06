@@ -15,6 +15,8 @@ import { followEngines } from "../../stores/engines";
 import { followStatus } from "../../stores/status";
 import { followFocus } from "../../stores/focus";
 import { followDashboard } from "../../stores/dashboard";
+import { followNotifications } from "../../stores/notifications";
+import { useVisibilityReport } from "../notifications/visibility";
 import { InstallHost } from "../code/InstallSheet";
 import { followPtyState } from "../../stores/terminals";
 import { terminalHandles } from "../code/TerminalView";
@@ -40,6 +42,8 @@ export function AppShell() {
   useEffect(followStatus, []);
   useEffect(followFocus, []);
   useEffect(followDashboard, []);
+  useEffect(followNotifications, []);
+  useVisibilityReport();
   // Debug builds: UI-side counters for the E2E harness (ARCHITECTURE §17.5).
   const dev = useBoot((st) => st.boot?.dev ?? false);
   useEffect(() => {

@@ -23,6 +23,7 @@ export { EngineBadge, EngineGlyph } from "./components/EngineGlyph";
 export { IconButton, type IconButtonProps } from "./components/IconButton";
 export { Kbd, type KbdProps } from "./components/Kbd";
 export { ContextMenu, Menu, orderEntries, type MenuEntry, type MenuProps } from "./components/Menu";
+export { Popover, type PopoverProps } from "./components/Popover";
 export { ProgressBar, UsageMeter, meterTone, type ProgressBarProps, type UsageMeterProps } from "./components/Progress";
 export { SegmentedControl, type Segment, type SegmentedControlProps } from "./components/SegmentedControl";
 export { Combobox, Select, type ComboboxProps, type SelectOption, type SelectProps } from "./components/Select";

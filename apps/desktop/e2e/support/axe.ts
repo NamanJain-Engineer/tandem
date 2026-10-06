@@ -23,6 +23,19 @@ export async function expectNoSeriousA11yViolations(): Promise<void> {
       ),
     { timeout: 5_000, timeoutMsg: "animations still running before axe" },
   );
+  // …and dialogs fully opaque: a fade that WebKit doesn't list as an
+  // animation leaves text blended toward the background (measured once as
+  // light text reading #595f68 on the upgrade sheet).
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() =>
+        Array.from(document.querySelectorAll("[role=dialog], [role=alertdialog]")).every((el) => {
+          for (let n: Element | null = el; n; n = n.parentElement) if (Number(getComputedStyle(n).opacity) < 1) return false;
+          return true;
+        }),
+      ),
+    { timeout: 5_000, timeoutMsg: "a dialog never became fully opaque before axe" },
+  );
   await browser.execute(AXE_SOURCE);
   const violations = (await browser.executeAsync((done: (v: Violation[]) => void) => {
     const w = window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: Violation[] }> } };

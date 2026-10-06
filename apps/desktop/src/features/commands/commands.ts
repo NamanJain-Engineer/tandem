@@ -2,6 +2,7 @@
 // predicates) comes from `tandem-core` through
 // `@tandem/protocol/shortcuts.json`; the palette, the shortcut dispatcher and
 // menus all run commands through `runCommand`, so they share one handler.
+import { useNotifications } from "../../stores/notifications";
 import { useCloseConfirm } from "../../stores/closeConfirm";
 import { useSidebar } from "../../stores/sidebar";
 import type { CommandSpec } from "@tandem/protocol";
@@ -92,6 +93,12 @@ export const handlers: Record<string, () => void> = {
   "mode.thread": () => switchMode("thread"),
   "rail.toggle": () => useUi.getState().toggleRail(),
   "sidebar.toggle": () => useSidebar.getState().toggle(),
+  "notifications.open": () => useNotifications.getState().setOpen(true),
+  "dashboard.full_view": () => {
+    const sb = useSidebar.getState();
+    sb.openTab("dashboard");
+    sb.setFullscreen(!sb.fullscreen);
+  },
   "workspace.open_folder": () => void pickAndAddWorkspace(toast),
   "workspace.new_tab": () => {
     const ws = useWorkspaces.getState();

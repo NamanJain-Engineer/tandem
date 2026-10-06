@@ -126,7 +126,7 @@ pub struct FixtureAgent {
 /// source"): it shows in the status bus like any agent; with `approval` it
 /// waits on the broker, and once allowed it goes back to work.
 #[tauri::command]
-pub fn test_fixture_agent(
+pub async fn test_fixture_agent(
     state: State<'_, AppState>,
     agent: FixtureAgent,
 ) -> Result<Option<tandem_core::approvals::ApprovalView>, IpcError> {
@@ -194,4 +194,52 @@ pub fn test_fixture_agent(
         );
     });
     Ok(Some(view))
+}
+
+/// What the recording notifier was asked to show (F-DB-03 AC1).
+#[tauri::command]
+pub fn test_notifier_calls(
+    state: State<'_, AppState>,
+    clear: Option<bool>,
+) -> Result<Vec<crate::services::notifier::OsNotification>, IpcError> {
+    guard(&state)?;
+    let rec = state
+        .notifications
+        .recording
+        .get()
+        .ok_or_else(|| IpcError::new(ErrorCode::Unavailable, "No recording notifier"))?;
+    let calls = rec.calls();
+    if clear.unwrap_or(false) {
+        rec.clear();
+    }
+    Ok(calls)
+}
+
+/// Clicks a recorded OS notification: focuses the app and its source.
+#[tauri::command]
+pub async fn test_notifier_click(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    index: usize,
+) -> Result<(), IpcError> {
+    guard(&state)?;
+    let source = state
+        .notifications
+        .recording
+        .get()
+        .and_then(|r| r.calls().get(index).map(|c| c.source.clone()))
+        .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "No such notification"))?;
+    crate::services::notifications::NotificationService::click(&app, source).await;
+    Ok(())
+}
+
+/// Pretends the window is focused or not (`None`: the real state).
+#[tauri::command]
+pub fn test_set_window_focused(
+    state: State<'_, AppState>,
+    focused: Option<bool>,
+) -> Result<(), IpcError> {
+    guard(&state)?;
+    state.notifications.override_focus(focused);
+    Ok(())
 }
