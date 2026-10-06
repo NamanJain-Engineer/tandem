@@ -1,3 +1,6 @@
+import { resetDashboard } from "../stores/dashboard";
+import { useInstall } from "../features/code/InstallSheet";
+import { resetSidebar } from "../stores/sidebar";
 import { useEngines } from "../stores/engines";
 import type { AppBoot, AuthState, EntitlementView, Limits, WorkspaceSummary } from "@tandem/protocol";
 import { setInvokeBackend } from "../ipc/invoke";
@@ -94,6 +97,9 @@ export function fakeBackend(
 
 /** Resets the stores to a signed-in Free session on Linux. */
 export function resetStores(): void {
+  resetSidebar();
+  resetDashboard();
+  useInstall.setState({ engine: null, tabId: null });
   useEngines.setState({ list: [], loaded: false, report: null, detecting: false });
   useBoot.setState({ boot: BOOT });
   useSession.setState({ auth: SIGNED_IN, entitlement: FREE_VIEW });
@@ -103,7 +109,6 @@ export function resetStores(): void {
     settingsOpen: false,
     returnFocus: null,
     railCollapsed: false,
-    sidebarOpen: false,
     paletteOpen: false,
     upgrade: { open: false },
     settingsPage: null,

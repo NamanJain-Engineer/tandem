@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-approval-resolve"
+description = "Enables the approval_resolve command without any pre-configured scope."
+commands.allow = ["approval_resolve"]
+
+[[permission]]
+identifier = "deny-approval-resolve"
+description = "Denies the approval_resolve command without any pre-configured scope."
+commands.deny = ["approval_resolve"]

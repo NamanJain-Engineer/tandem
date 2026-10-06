@@ -7,7 +7,7 @@ import {
   PanelResizeHandle,
   type ImperativePanelGroupHandle,
 } from "react-resizable-panels";
-import type { PaneRecord, WorkspaceSummary } from "@tandem/protocol";
+import type { IpcError, PaneRecord, WorkspaceSummary } from "@tandem/protocol";
 import { SquareTerminal } from "lucide-react";
 import { Badge, EngineGlyph, Spinner, StatusDot, Tooltip, cx, useToast, type MenuEntry, type Status } from "@tandem/ui";
 import { t } from "../../i18n";
@@ -15,6 +15,10 @@ import { useEngines } from "../../stores/engines";
 import { paneKey, statusView, useStatus } from "../../stores/status";
 import { useTerminals } from "../../stores/terminals";
 import { useBoot } from "../shell/useBoot";
+import { useCloseConfirm } from "../../stores/closeConfirm";
+import { useFlash } from "../../stores/focus";
+import { useWorkspaces } from "../../stores/workspaces";
+import { invoke } from "../../ipc/invoke";
 import { useLayout, type Box, type TabPanes } from "../../stores/layout";
 import { DropZones, applyDrop, type PaneDrag } from "./dnd";
 import { useDropTarget } from "./drops";
@@ -218,7 +222,26 @@ const PaneView = memo(function PaneView({
     if (layout().requestSplit(tabId, pane.id, side) === "no_room")
       show({ tone: "warning", title: t("split.noRoom") });
   };
+  const [renaming, setRenaming] = useState(false);
+  const flashing = useFlash((st) => st.flashing[pane.id] !== undefined);
+  // Location metadata: the cwd relative to the workspace root (F-CD-12).
+  const cwd = useTerminals((st) => st.states[pane.id]?.cwd ?? null);
+  const root = useWorkspaces((st) => st.list.find((w) => w.id === pane.workspaceId)?.root ?? null);
+  const meta = relativeCwd(cwd ?? pane.cwd, root);
+  const rename = async (name: string): Promise<string | null> => {
+    try {
+      const stored = await invoke<string>("pane_rename", { paneId: pane.id, humanName: name });
+      layout().setHumanName(tabId, pane.id, stored);
+      return null;
+    } catch (e) {
+      return (e as IpcError).message ?? t("pane.renameFailed");
+    }
+  };
   const menu: MenuEntry[] = [
+    // The full title, which the header may truncate (F-CD-12).
+    { id: "title", type: "label", label: title },
+    { id: "rename", label: t("pane.rename"), onSelect: () => setRenaming(true) },
+    { id: "sep-title", type: "separator" },
     { id: "split-right", label: t("pane.splitRight"), kbd: ["Mod", "D"], onSelect: () => split("right") },
     {
       id: "split-down",
@@ -252,7 +275,7 @@ const PaneView = memo(function PaneView({
       label: t("pane.closePane"),
       danger: true,
       kbd: ["Mod", "W"],
-      onSelect: () => void layout().close(tabId, pane.id),
+      onSelect: () => useCloseConfirm.getState().request(tabId, pane.id),
     },
   ];
 
@@ -263,8 +286,10 @@ const PaneView = memo(function PaneView({
       data-pane-id={pane.id}
       data-focused={focused ? "true" : undefined}
       data-drop-target={dropping ? "true" : undefined}
+      data-flash={flashing ? "true" : undefined}
       className={cx(
         "relative flex h-full min-h-0 flex-col overflow-hidden rounded-md border",
+        flashing && "tn-flash",
         dropping && "ring-2 ring-accent",
         focused && !solo ? "border-border-strong" : "border-border",
       )}
@@ -279,8 +304,13 @@ const PaneView = memo(function PaneView({
         maximized={maximized}
         menuItems={menu}
         onMaximize={() => layout().toggleMaximize(tabId, pane.id)}
-        onClose={() => void layout().close(tabId, pane.id)}
+        onClose={() => useCloseConfirm.getState().request(tabId, pane.id)}
         glyph={pane.kind === "agent" && glyph ? <EngineGlyph letters={glyph} size={14} /> : undefined}
+        name={pane.humanName}
+        meta={meta}
+        onRename={rename}
+        renaming={renaming}
+        onRenamingChange={setRenaming}
         badges={
           lite && visible && options.gpu !== false ? (
             <Tooltip label={t("pane.liteTooltip")}>
@@ -310,7 +340,7 @@ const PaneView = memo(function PaneView({
           focused={focused}
           bare
           options={options}
-          onClose={() => void layout().close(tabId, pane.id)}
+          onClose={() => useCloseConfirm.getState().request(tabId, pane.id)}
           onPhase={setPhase}
           onActivity={setActivity}
           agent={pane.kind === "agent"}
@@ -322,6 +352,13 @@ const PaneView = memo(function PaneView({
     </section>
   );
 });
+
+/** A cwd relative to its workspace root; nothing at the root itself. */
+export function relativeCwd(cwd: string | null, root: string | null): string | null {
+  if (!cwd || !root || cwd === root) return null;
+  const base = root.endsWith("/") ? root : `${root}/`;
+  return cwd.startsWith(base) ? cwd.slice(base.length) : cwd;
+}
 
 /** Elapsed time since `since` (ms), as "4m" or "1h 12m". */
 function elapsed(since: number, now: number): string {

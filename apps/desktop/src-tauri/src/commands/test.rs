@@ -107,3 +107,91 @@ pub async fn test_account_create(
         .create_account(&engine, &label)
         .await
 }
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FixtureAgent {
+    pub id: String,
+    pub title: String,
+    pub status: tandem_core::status::AgentStatus,
+    pub engine_id: Option<String>,
+    pub workspace_id: Option<String>,
+    pub preview: Option<String>,
+    /// Asks for approval with this summary (the agent waits until answered).
+    pub approval: Option<String>,
+}
+
+/// A scripted agent for the Dashboard and notification E2E (the "fixture
+/// source"): it shows in the status bus like any agent; with `approval` it
+/// waits on the broker, and once allowed it goes back to work.
+#[tauri::command]
+pub fn test_fixture_agent(
+    state: State<'_, AppState>,
+    agent: FixtureAgent,
+) -> Result<Option<tandem_core::approvals::ApprovalView>, IpcError> {
+    use tandem_core::approvals::{ApprovalKind, ApprovalRequest, ApprovalScope};
+    use tandem_core::source::SourceRef;
+    use tandem_core::status::{AgentStatus, StatusUpdate, WaitingReason};
+    guard(&state)?;
+    let source = SourceRef::Fixture {
+        fixture_id: agent.id.clone(),
+    };
+    let meta = crate::services::status::ExternalMeta {
+        source: source.clone(),
+        title: agent.title.clone(),
+        engine_id: agent.engine_id.clone(),
+        workspace_id: agent.workspace_id.clone(),
+    };
+    let status = state.terminals.status.clone();
+    let update = |status: AgentStatus, reason: Option<WaitingReason>, preview: Option<String>| {
+        StatusUpdate {
+            status,
+            reason,
+            ts: 0,
+            tool: None,
+            title: Some(agent.title.clone()),
+            preview,
+        }
+    };
+    let Some(summary) = agent.approval.clone() else {
+        status.set_external(meta, update(agent.status, None, agent.preview.clone()));
+        return Ok(None);
+    };
+    status.set_external(
+        meta.clone(),
+        update(
+            AgentStatus::Waiting,
+            Some(WaitingReason::Approval),
+            Some(format!("Wants to run: {summary}")),
+        ),
+    );
+    let (view, ticket) = state.approvals.broker.request(ApprovalRequest {
+        source,
+        kind: ApprovalKind::Command,
+        summary: format!("Run `{summary}`"),
+        detail: summary.clone(),
+        options: vec![ApprovalScope::Once],
+    });
+    let title = agent.title.clone();
+    tauri::async_runtime::spawn(async move {
+        let outcome = ticket.outcome().await;
+        let (next, preview) = if outcome.allowed() {
+            (AgentStatus::Working, format!("Running {summary}"))
+        } else {
+            (AgentStatus::Idle, "Denied".to_string())
+        };
+        status.set_external(
+            meta,
+            StatusUpdate {
+                status: next,
+                reason: None,
+                ts: 0,
+                tool: None,
+                title: Some(title),
+                preview: Some(preview),
+            },
+        );
+    });
+    Ok(Some(view))
+}

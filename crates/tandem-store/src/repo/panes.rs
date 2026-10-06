@@ -92,6 +92,97 @@ pub async fn create_with(
         .await
 }
 
+/// Gives an agent pane a first name no other open pane of its workspace
+/// has (F-CD-12 AC1). `pick(n)` chooses among the `n` free names (random in
+/// the app, fixed in tests); when all are taken, names get a number.
+pub async fn assign_human_name(
+    store: &Store,
+    pane: &PaneId,
+    names: &[String],
+    pick: impl FnOnce(usize) -> usize + Send + 'static,
+) -> Result<String, StoreError> {
+    if names.is_empty() {
+        return Err(StoreError::Invalid("No names to choose from".into()));
+    }
+    let pane = pane.as_str().to_string();
+    let names = names.to_vec();
+    store
+        .write(move |t| {
+            let ws: String = t
+                .query_row(
+                    "SELECT workspace_id FROM panes WHERE id = ?1 AND closed_at IS NULL",
+                    [&pane],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .ok_or_else(|| StoreError::NotFound("No open pane with that id".into()))?;
+            let taken = taken_names(t, &ws, &pane)?;
+            let free: Vec<&String> = names
+                .iter()
+                .filter(|n| !taken.contains(n.as_str()))
+                .collect();
+            let name = if free.is_empty() {
+                let base = &names[pick(names.len()) % names.len()];
+                (2..)
+                    .map(|n| format!("{base} {n}"))
+                    .find(|c| !taken.contains(c.as_str()))
+                    .unwrap_or_else(|| base.clone())
+            } else {
+                free[pick(free.len()) % free.len()].clone()
+            };
+            t.execute(
+                "UPDATE panes SET human_name = ?2 WHERE id = ?1",
+                params![pane, name],
+            )?;
+            Ok(name)
+        })
+        .await
+}
+
+/// Renames a pane; a name another open pane of the workspace uses is a
+/// Conflict (F-CD-12).
+pub async fn rename(store: &Store, pane: &PaneId, name: &str) -> Result<String, StoreError> {
+    let name = name.trim().to_string();
+    if name.is_empty() || name.chars().count() > 32 || name.chars().any(char::is_control) {
+        return Err(StoreError::Invalid("Names are 1–32 characters".into()));
+    }
+    let pane = pane.as_str().to_string();
+    store
+        .write(move |t| {
+            let ws: String = t
+                .query_row(
+                    "SELECT workspace_id FROM panes WHERE id = ?1 AND closed_at IS NULL",
+                    [&pane],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .ok_or_else(|| StoreError::NotFound("No open pane with that id".into()))?;
+            if taken_names(t, &ws, &pane)?.contains(name.as_str()) {
+                return Err(StoreError::Conflict(format!(
+                    "Another pane is already called {name}"
+                )));
+            }
+            t.execute(
+                "UPDATE panes SET human_name = ?2 WHERE id = ?1",
+                params![pane, name],
+            )?;
+            Ok(name)
+        })
+        .await
+}
+
+fn taken_names(
+    t: &rusqlite::Transaction<'_>,
+    workspace: &str,
+    except: &str,
+) -> Result<std::collections::HashSet<String>, StoreError> {
+    let mut stmt = t.prepare(
+        "SELECT human_name FROM panes WHERE workspace_id = ?1 AND id <> ?2 AND closed_at IS NULL AND human_name IS NOT NULL",
+    )?;
+    let rows = stmt.query_map(params![workspace, except], |r| r.get::<_, String>(0))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 /// Pins an agent pane to one engine account (F-AC-01).
 pub async fn set_account(
     store: &Store,
@@ -293,5 +384,109 @@ mod tests {
             move_to_tab(&store, &pane.id, &from.id).await,
             Err(StoreError::NotFound(_))
         ));
+    }
+
+    async fn workspace_tab(store: &Store, root: &str) -> TabId {
+        let (ws, _) = workspaces::add(
+            store,
+            workspaces::NewWorkspace {
+                kind: "local".into(),
+                host_id: "local".into(),
+                root: root.into(),
+                name: root.trim_start_matches('/').into(),
+                wsl_distro: None,
+            },
+            None,
+        )
+        .await
+        .expect("ws");
+        tabs::create(store, &ws.id, None).await.expect("tab").id
+    }
+
+    #[tokio::test]
+    async fn f_cd_12_1_agent_names_are_unique_per_workspace_and_persist() {
+        let (_d, store) = crate::tests::temp_store().await;
+        let names: Vec<String> = ["Ada", "Bea"].map(String::from).to_vec();
+        let tab = workspace_tab(&store, "/a").await;
+        let other = workspace_tab(&store, "/b").await;
+        let mut got = Vec::new();
+        for _ in 0..3 {
+            let p = create_with(&store, &tab, "agent", None, Some("claude".into()))
+                .await
+                .expect("pane");
+            // Always "pick the first free one": the uniqueness is the store's.
+            got.push(
+                assign_human_name(&store, &p.id, &names, |_| 0)
+                    .await
+                    .expect("name"),
+            );
+        }
+        assert_eq!(got, ["Ada", "Bea", "Ada 2"]);
+        // Another workspace starts over.
+        let p = create_with(&store, &other, "agent", None, Some("claude".into()))
+            .await
+            .expect("pane");
+        assert_eq!(
+            assign_human_name(&store, &p.id, &names, |_| 0)
+                .await
+                .expect("name"),
+            "Ada"
+        );
+        // Stored on the pane, so a relaunch shows the same name.
+        assert_eq!(
+            get(&store, &p.id).await.expect("get").human_name.as_deref(),
+            Some("Ada")
+        );
+        // A closed pane frees its name.
+        let open = list_open(&store, &tab).await.expect("list");
+        let first = open
+            .iter()
+            .find(|x| x.human_name.as_deref() == Some("Ada"))
+            .expect("ada");
+        close(&store, &first.id).await.expect("close");
+        let p = create_with(&store, &tab, "agent", None, Some("claude".into()))
+            .await
+            .expect("pane");
+        assert_eq!(
+            assign_human_name(&store, &p.id, &names, |_| 0)
+                .await
+                .expect("name"),
+            "Ada"
+        );
+    }
+
+    #[tokio::test]
+    async fn f_cd_12_renaming_to_a_name_in_use_is_a_conflict() {
+        let (_d, store) = crate::tests::temp_store().await;
+        let names: Vec<String> = ["Ada", "Bea"].map(String::from).to_vec();
+        let tab = workspace_tab(&store, "/a").await;
+        let a = create_with(&store, &tab, "agent", None, Some("claude".into()))
+            .await
+            .expect("a");
+        let b = create_with(&store, &tab, "agent", None, Some("claude".into()))
+            .await
+            .expect("b");
+        assign_human_name(&store, &a.id, &names, |_| 0)
+            .await
+            .expect("a");
+        assign_human_name(&store, &b.id, &names, |_| 0)
+            .await
+            .expect("b");
+        assert!(matches!(
+            rename(&store, &b.id, " Ada ").await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(matches!(
+            rename(&store, &b.id, "").await,
+            Err(StoreError::Invalid(_))
+        ));
+        assert_eq!(
+            rename(&store, &b.id, " Rhea ").await.expect("rename"),
+            "Rhea"
+        );
+        assert_eq!(
+            rename(&store, &a.id, "Ada").await.expect("same name"),
+            "Ada"
+        );
     }
 }

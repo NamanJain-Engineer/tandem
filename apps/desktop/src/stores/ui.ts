@@ -9,7 +9,6 @@ type UiState = {
   /** Focus returns here when Settings closes (F-SH-04 AC1). */
   returnFocus: HTMLElement | null;
   railCollapsed: boolean;
-  sidebarOpen: boolean;
   paletteOpen: boolean;
   upgrade: { open: boolean; gate?: UpgradeGate; retry?: () => void };
   setMode: (m: Mode) => void;
@@ -17,7 +16,6 @@ type UiState = {
   closeSettings: () => void;
   settingsPage: string | null;
   toggleRail: () => void;
-  toggleSidebar: () => void;
   setPalette: (open: boolean) => void;
   openUpgrade: (gate?: UpgradeGate, retry?: () => void) => void;
   closeUpgrade: () => void;
@@ -28,7 +26,6 @@ export const useUi = create<UiState>((set, get) => ({
   settingsOpen: false,
   returnFocus: null,
   railCollapsed: false,
-  sidebarOpen: false,
   paletteOpen: false,
   upgrade: { open: false },
   settingsPage: null,
@@ -48,7 +45,6 @@ export const useUi = create<UiState>((set, get) => ({
     requestAnimationFrame(() => target?.isConnected && target.focus());
   },
   toggleRail: () => set({ railCollapsed: !get().railCollapsed }),
-  toggleSidebar: () => set({ sidebarOpen: !get().sidebarOpen }),
   setPalette: (paletteOpen) => set({ paletteOpen }),
   openUpgrade: (gate, retry) => set({ upgrade: { open: true, gate, retry } }),
   closeUpgrade: () => set({ upgrade: { open: false } }),

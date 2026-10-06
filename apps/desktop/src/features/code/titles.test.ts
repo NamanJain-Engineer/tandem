@@ -37,8 +37,8 @@ describe("pane titles (F-EN-06)", () => {
     });
   });
 
-  it("a name the user gave wins over everything", () => {
-    expect(paneTitles({ a: pane("a", 1, { humanName: "Rhea" }) }, engines, { a: { hook: "x" } })).toEqual({ a: "Rhea" });
+  it("F-CD-12 the first name sits beside the title and doesn't replace it", () => {
+    expect(paneTitles({ a: pane("a", 1, { humanName: "Rhea" }) }, engines, { a: { hook: "x" } })).toEqual({ a: "x" });
   });
 
   it("spinner glyphs are stripped without a registry pattern", () => {

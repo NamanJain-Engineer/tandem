@@ -1,3 +1,4 @@
+import { useCloseConfirm } from "../../stores/closeConfirm";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   DndContext,
@@ -13,6 +14,7 @@ import { FolderPlus, LayoutGrid, Plus, X } from "lucide-react";
 import type { Tab } from "@tandem/protocol";
 import {
   Button,
+  ConfirmDialog,
   EmptyState,
   IconButton,
   cx,
@@ -234,6 +236,23 @@ function TabItem({
   );
 }
 
+/** "Stop {name}? It's working." before closing a working agent (F-CD-12 AC2). */
+function CloseConfirm() {
+  const pending = useCloseConfirm((s) => s.pending);
+  return (
+    <ConfirmDialog
+      open={pending !== null}
+      onOpenChange={(o) => !o && useCloseConfirm.getState().cancel()}
+      title={t("pane.stopConfirm", { name: pending?.name ?? "" })}
+      body={t("pane.stopBody")}
+      confirmLabel={t("pane.stopAndClose")}
+      cancelLabel={t("pane.keepRunning")}
+      danger
+      onConfirm={() => useCloseConfirm.getState().confirm()}
+    />
+  );
+}
+
 export function CodeMain({ visible }: { visible: boolean }) {
   const { list, activeId, activeTab, selectTab, createTab, closeTab } = useWorkspaces();
   const { show } = useToast();
@@ -359,6 +378,7 @@ export function CodeMain({ visible }: { visible: boolean }) {
           })}
         </div>
         <PanePicker workspaceName={active.name} />
+        <CloseConfirm />
       </div>
     </PaneDndProvider>
   );

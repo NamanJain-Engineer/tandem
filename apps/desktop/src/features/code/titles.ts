@@ -36,10 +36,10 @@ export function promptTitle(prompt: string): string {
   return words.length > 8 ? `${head}…` : head;
 }
 
-/** Pane titles (F-EN-06, UI-11). The user's own name wins. Agent panes then
- * use the hook title, the cleaned OSC title, the first prompt, and finally
- * "{Engine} · n"; terminals are "Shell · n" — numbered per engine in
- * creation order. */
+/** Pane titles (F-EN-06, UI-11): agent panes use the hook title, the
+ * cleaned OSC title, the first prompt, and finally "{Engine} · n";
+ * terminals are "Shell · n" — numbered per engine in creation order. The
+ * pane's first name (F-CD-12) is shown beside the title, not instead. */
 export function paneTitles(
   panes: Record<string, PaneRecord>,
   engines: EngineView[],
@@ -56,7 +56,6 @@ export function paneTitles(
       const s = p.kind === "agent" ? spec(p.engineId) : undefined;
       const engine = p.kind === "agent" ? (s?.label ?? p.engineId ?? "Agent") : null;
       const fallback = engine ? t("pane.engine", { engine, n }) : t("pane.shell", { n });
-      if (p.humanName) return [p.id, p.humanName];
       if (p.kind !== "agent") return [p.id, p.title ?? fallback];
       const src = sources[p.id] ?? {};
       const osc = src.osc ? cleanTitle(src.osc, s?.titlePatterns ?? []) : "";

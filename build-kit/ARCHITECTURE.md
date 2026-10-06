@@ -533,7 +533,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `term_set_theme_colors` | `TermColors {fg, bg, cursor, ansi[16]}` | — | — | F-SH-05 |
 | `rail_list` | `{mode}` | `[RailItem]` | — | F-SH-03 |
 | `rail_move` | `{mode, itemId, afterId?, pinned}` (Code mode orders `workspaces.sort_key`/`pinned`; `rail_items` holds the Agent and Thread rails) | — | NotFound | F-SH-03 |
-| `sidebar_get` / `sidebar_save` | — / `SidebarState` | `SidebarState` / — | — | F-SH-10 |
+| `sidebar_get` / `sidebar_save` | — / `{sidebar: SidebarState {open, tabs:[SidebarTab {id, kind, title?, url?}], active?, width, fullscreen, pinned}}` | `SidebarState` / `SidebarState` (as stored: width clamped to 320–900, stale active tab repaired) | Invalid (a second singleton) | F-SH-10 |
 
 #### Workspaces, tabs, layout [F-CD-01, F-CD-02, F-CD-11, F-TH-14]
 | Command | Args | Returns | Errors | IDs |
@@ -571,7 +571,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `term_quote_paths` | `{paneId, paths:[String]}` | `String` (space-joined, no trailing newline) | UnsafeFilename | F-CD-06, F-RM-02 |
 | `term_stage_clipboard_image` | `{paneId}` | `String` (quoted staged PNG path) | NotFound (no image) | F-CD-05 |
 | `term_last_output` | `{paneId}` | `LastOutput?` `{text, exitCode?}`: the last finished command's plain-text output, from its OSC 133 C and D marks ("Copy last command output") | — | F-CD-10 |
-| `pane_rename` | `{paneId, humanName}` | — | Conflict (name taken) | F-CD-12 |
+| `pane_rename` | `{paneId, humanName}` | `String` (the stored name, trimmed; 1–32 chars) | Conflict (name taken), Invalid | F-CD-12 |
 | `pane_close` | `{paneId}` (UI already confirmed if working) | — | — | F-CD-12, F-SH-07 |
 | `pane_move` | `{paneId, tabId}` (same workspace; drop on the tab strip, "Move to new tab") | `PaneRecord` (same process) | NotFound | F-CD-02 |
 | `pane_resolve_link` | `{paneId, text}` | `ResolvedLink? {kind:"url"\|"file", target, line?, col?, readonly}` | — | F-CD-09 |
@@ -610,10 +610,11 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 #### Status, dashboard, notifications, focus [F-DB-*, F-EN-05]
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
-| `status_snapshot` | — | `[DashboardItem {key, source: SourceRef, status, reason?, since, title, humanName?, engineId, accountLabel?, workspace?, branch?, teammateId?, preview?, pendingApproval?}]` | — | F-DB-01 |
-| `status_mark_seen` | `{key}` | — | — | F-DB-01 |
+| `status_snapshot` | — | `[DashboardItem {key, source: SourceRef, status, reason?, since, title?, humanName?, engineId?, engineLabel?, engineLogo?, accountLabel?, workspaceId?, workspace?, branch?, preview? (redacted), pendingApproval?: ApprovalView}]` (newest first; sources that closed are left out) | — | F-DB-01 |
+| `status_mark_seen` | `{key}` | — (a done agent becomes idle) | — | F-DB-01 |
 | `status_list` | — | `[StatusRecord]` (every live agent status; rail and pane headers load it after a webview reload, then follow `status:changed`) | — | F-EN-05, F-SH-03 |
 | `dashboard_close_idle` | `{keys:[SessionKey]}` (the visible filtered set) | `{closed:[SessionKey]}` (server re-checks each is idle) | — | F-DB-01 |
+| `ui_visibility` | `{visible:[SessionKey]}` (agents on screen: visible pane grid of the active tab, Code mode, Settings closed) | — | — | F-DB-03 |
 | `focus_source` | `{source: SourceRef}` | — (emits `ui:focus`) | NotFound | F-DB-01, F-DB-02, F-CD-12 |
 | `notifications_list` | `{cursor?}` | `Page<Notification>` (7-day window) | — | F-DB-02 |
 | `notifications_mark_read` | `{ids?: [NotificationId], all?: bool}` | — | — | F-DB-02 |
@@ -826,6 +827,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `test_clock_advance` | `{ms}` | `{now}` | — |
 | `test_auth_refresh` | — | `AuthState` (forces the refresh path, e.g. to observe a revoked device) | — |
 | `test_account_create` | `{engineId, label}` | `Account` (a second account with its own provider home, without the sign-in flow; E2E-M4-4) | — |
+| `test_fixture_agent` | `FixtureAgent {id, title, status, engineId?, workspaceId?, preview?, approval?}` | `ApprovalView?` (a scripted agent in the status bus; with `approval` it waits on the broker and works once allowed; the E2E "fixture source") | — |
 
 `window.__tandemTest` in the webview wraps these commands plus UI-side counters. Not listed in `capabilities/*.json` for release.
 
@@ -837,7 +839,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `app:deep-link` | `DeepLink {route, params}` | deeplink service | F-SH-13 |
 | `app:subsystem-failed` | `{name, code, restarts}` | Supervisor | §5.2 |
 | `app:min-version` | `{minVersion, graceUntil}` | api client (header watcher) | F-SH-06 |
-| `ui:focus` | `{source: SourceRef, flash: true}` | focus service (notifications, Conductor, phone) | F-CD-12, F-DB-02 |
+| `ui:focus` | `{source: SourceRef, flash: true, location?: {workspaceId, tabId}}` (`location` for panes) | focus service (notifications, Conductor, phone) | F-CD-12, F-DB-02 |
 | `settings:changed` | `{key, value}` | settings service | F-SH-04 |
 | `status:changed` | `{records:[StatusRecord], removed:[SessionKey]}` (coalesced 50 ms; `removed` when an agent left its pane) | StatusStore forwarder | F-EN-05, F-DB-01 |
 | `pty:state` | `{paneId, cwd?, title?, altScreen, bracketedPaste, mouse, readiness}` (debounced 100 ms) | tandem-pty | F-CD-10, F-EN-06 |

@@ -108,6 +108,7 @@ pub struct AppState {
     pub auth: Arc<AuthService>,
     pub entitlements: Arc<EntitlementService>,
     pub terminals: Arc<TerminalService>,
+    pub approvals: Arc<crate::services::approvals::ApprovalService>,
     pub config: Arc<ConfigService>,
     pub telemetry: Arc<TelemetryService>,
     pub deeplinks: DeepLinkQueue,
@@ -265,6 +266,11 @@ impl AppState {
             engines,
             status,
         );
+        let approvals = crate::services::approvals::ApprovalService::new(
+            store.clone(),
+            bus.clone(),
+            clock.clone(),
+        );
         let telemetry = TelemetryService::new(&data, net.clone());
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         Self {
@@ -283,6 +289,7 @@ impl AppState {
             auth,
             entitlements,
             terminals,
+            approvals,
             config,
             telemetry,
             deeplinks: DeepLinkQueue::default(),

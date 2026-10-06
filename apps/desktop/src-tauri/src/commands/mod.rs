@@ -5,6 +5,7 @@ pub mod account;
 pub mod app;
 pub mod engines;
 pub mod settings;
+pub mod shell;
 pub mod terminal;
 #[cfg(debug_assertions)]
 pub mod test;

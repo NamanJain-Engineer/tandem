@@ -91,6 +91,19 @@
 - [x] `fake-engine` (feature `fixtures`) stands in for all 11 engines and any remote one by the name it runs as; as `claude` it runs the hooks from its provider home with transcript text in the hook JSON. E2E-M4-1…7 written and passing; `invariant_rule_2_status_needs_hmac`; registry as built in ARCHITECTURE §6.1
 - [x] Full desktop suite (M0–M4: 32 spec files) passes in one run; G green; tag `m4` local
 
+## M5 checklist (MILESTONES M5)
+- [x] 1. `tandem-core::approvals` ApprovalBroker (pending by id and source, allow with an offered scope, deny with a reason, 30 min expiry on the injected clock, cancel by source, event stream); app service records `approvals`, cancels crash-stale rows, forwards `approvals:changed`; `approvals_pending`, `approval_resolve`
+- [x] 2. Right sidebar F-SH-10: `layout_sidebar` via `sidebar_get`/`sidebar_save` (validated: one of each singleton, width 320–900), docked / floating below 1,100 px (outside click closes unless pinned) / full-screen overlay with a spacer so the main area never resizes, Esc leaves it, sortable closable pills, "+" focuses an open singleton, every tab mounted, reflow counters in the harness
+- [ ] 3. Dashboard F-DB-01
+- [x] 4. Pane header F-CD-12 (status palette, 12-character title minimum with a tooltip and the full title atop the menu, 200 original first names unique per workspace assigned in the store transaction, rename in place with Conflict, cwd metadata, "Stop {name}? It's working." confirm, 1.2 s flash ring from `ui:focus` / `focus_source`)
+- [ ] 5. Notification center F-DB-02
+- [ ] 6. OS notifications F-DB-03
+- [ ] 7. Session restore F-SH-07
+- [ ] 8. Updater F-SH-06
+- [ ] 9. Release pipeline F-TL-04
+- [ ] 10. Onboarding framework (F-SH-08 slice)
+- [ ] E2E-M5-1…9, kill-fuzz, startup perf, G, tag `m5`
+
 ## Decisions
 - D-1: F-CD-09 owned by M9. It needs the Files editor and the Tandem browser.
 - D-2: F-SH-08 framework slice in M5, Accounts step in M6, owned by M8.
@@ -165,6 +178,10 @@
 - D-71: Check again captures the login environment again but keeps the previous capture when the new one is degraded (a shell that's slow right now doesn't lose a good PATH).
 - D-72: Added `engines_report` (the cached last report) so the launch grid's diagnostics survive a webview reload, and the test-only `test_account_create` (a second engine account with its own home; the sign-in flow is F-AC-02 in M6) and API `POST /__test/config` (re-signs the remote config with new `registry_overrides`).
 - D-73: `PaneRecord` carries `accountId`; `pane_create {accountId}` pins an agent pane to an account of its own engine, otherwise the engine's default account.
+- D-74: Where UI_SPEC and PRODUCT_SPEC/MILESTONES differ on the sidebar, the latter win: it floats below 1,100 px (not 1,280) and its tabs are closable, reorderable pills. The close confirmation uses PRODUCT_SPEC's title ("Stop {name}? It's working.") with UI_SPEC's body and buttons.
+- D-75: An agent pane's first name sits beside its title instead of replacing it; the title chain (F-EN-06) is unchanged. Names are drawn at random from the free ones inside the pane's write transaction, so panes created together can't collide; when all 200 are in use a number is added ("Ada 2").
+- D-76: `SourceRef` gains a test-only `fixture` variant (E2E fixture agents). The `approvals` table doesn't record fixture sources (its CHECK allows thread, teammate_chat and gateway).
+- D-77: `ui:focus` carries the pane's `{workspaceId, tabId}` so a card or notification can open a workspace whose layout hasn't loaded yet.
 
 ## Log
 - M0 (earlier session): first slices of core, engine registry, local store, desktop shell frame, API health, CI.

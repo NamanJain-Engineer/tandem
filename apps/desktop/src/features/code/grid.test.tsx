@@ -4,7 +4,9 @@ import type { PaneRecord, Tab, TabLayout, WorkspaceSummary } from "@tandem/proto
 import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { setInvokeBackend } from "../../ipc/invoke";
+import { followFocus } from "../../stores/focus";
 import { useLayout } from "../../stores/layout";
+import { useStatus } from "../../stores/status";
 import { useSession } from "../../stores/session";
 import { useWorkspaces } from "../../stores/workspaces";
 import { FREE_VIEW, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
@@ -152,13 +154,23 @@ function core(
     pane_create: (a) => {
       if (opts.live !== undefined && opts.live >= 4)
         throw { code: "limit_reached", message: "Free includes 4 live panes" };
+      const names = ["Ada", "Bea", "Cleo"];
       const p = {
         ...pane(`pn_${++n}`, String(a?.tabId), 100 + n),
         kind: String(a?.kind),
         engineId: (a?.engineId as string | undefined) ?? null,
+        humanName: a?.kind === "agent" ? (names[panes.filter((x) => x.kind === "agent").length] ?? null) : null,
       };
       panes.push(p);
       return p;
+    },
+    pane_rename: (a) => {
+      const name = String(a?.humanName).trim();
+      if (panes.some((x) => x.id !== a?.paneId && x.humanName === name))
+        throw { code: "conflict", message: `Another pane is already called ${name}` };
+      const p = panes.find((x) => x.id === a?.paneId);
+      if (p) p.humanName = name;
+      return name;
     },
     pane_close: (a) => {
       const i = panes.findIndex((p) => p.id === a?.paneId);
@@ -526,5 +538,76 @@ describe("pane grid (F-CD-02)", () => {
     act(() => emitLocal("pty:mark", { paneId, kind: "D", exit: 0, ts: 2 }));
     await waitFor(() => expect(calls.some((c) => c.cmd === "engines_detect")).toBe(true));
     expect(screen.getByTestId("install-sheet")).toBeTruthy();
+  });
+
+  it("F-CD-12.1 agent panes show their name; renaming to a name in use says so", async () => {
+    core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    for (const _ of [0, 1]) {
+      act(() => void useLayout.getState().requestSplit(TAB.id, null, "right"));
+      const picker = await screen.findByTestId("pane-picker");
+      await waitFor(() => expect(within(picker).getByTestId("tile-claude")).toBeTruthy());
+      fireEvent.click(within(picker).getByTestId("tile-claude"));
+      await waitFor(() => expect(document.querySelector("[role=dialog]")).toBeNull());
+    }
+    await waitFor(() => expect(screen.getAllByTestId("pane-name").map((el) => el.textContent)).toEqual(["Ada", "Bea"]));
+    fireEvent.doubleClick(screen.getAllByTestId("pane-name")[1] as HTMLElement);
+    const input = await screen.findByRole("textbox", { name: "New name for Bea" });
+    fireEvent.change(input, { target: { value: "Ada" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect((await screen.findByRole("alert")).textContent).toBe("Another pane is already called Ada");
+    fireEvent.change(input, { target: { value: "Rhea" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(screen.getAllByTestId("pane-name").map((el) => el.textContent)).toEqual(["Ada", "Rhea"]));
+  });
+
+  it("F-CD-12.2 closing a working agent asks first and closes only after Stop and close", async () => {
+    const { calls } = core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    act(() => void useLayout.getState().requestSplit(TAB.id, null, "right"));
+    const picker = await screen.findByTestId("pane-picker");
+    await waitFor(() => expect(within(picker).getByTestId("tile-claude")).toBeTruthy());
+    fireEvent.click(within(picker).getByTestId("tile-claude"));
+    await waitFor(() => expect(paneEls()).toHaveLength(2));
+    // The picker's closing leaves the rest aria-hidden until it unmounts.
+    await waitFor(() => expect(document.querySelector("[role=dialog]")).toBeNull());
+    const agent = paneEls()[1]?.dataset.paneId ?? "";
+    act(() =>
+      useStatus.getState().apply([{ key: `pane:${agent}`, status: "working", reason: null, since: 1, ts: 1, tool: null, title: null, preview: null }], []),
+    );
+    fireEvent.click(within(paneEls()[1] as HTMLElement).getByRole("button", { name: /^Close / }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText("Stop Ada? It's working.")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Keep running" }));
+    expect(calls.some((c) => c.cmd === "pane_close")).toBe(false);
+    fireEvent.click(within(paneEls()[1] as HTMLElement).getByRole("button", { name: /^Close / }));
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Stop and close" }));
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    expect(calls.filter((c) => c.cmd === "pane_close").map((c) => c.args?.paneId)).toEqual([agent]);
+  });
+
+  it("F-CD-12.3 ui:focus shows the pane and flashes it for 1.2 s", async () => {
+    core({
+      panes: ["pn_a", "pn_b"],
+      tree: { type: "split", dir: "row", ratio: 0.5, a: { type: "leaf", paneId: "pn_a" }, b: { type: "leaf", paneId: "pn_b" } },
+    });
+    renderCode();
+    followFocus();
+    await waitFor(() => expect(paneEls()).toHaveLength(2));
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    act(() => emitLocal("ui:focus", { source: { type: "pane", paneId: "pn_b" }, flash: true, location: { workspaceId: WS.id, tabId: TAB.id } }));
+    await waitFor(() => expect(paneEls()[1]?.className).toContain("tn-flash"));
+    expect(useLayout.getState().tabs[TAB.id]?.active).toBe("pn_b");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_100);
+    });
+    expect(paneEls()[1]?.className).toContain("tn-flash");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(paneEls()[1]?.className).not.toContain("tn-flash");
+    vi.useRealTimers();
   });
 });

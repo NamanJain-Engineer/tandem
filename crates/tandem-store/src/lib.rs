@@ -216,8 +216,16 @@ pub fn now_ms() -> i64 {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    /// A store in a fresh temp dir (keep the dir alive for the test).
+    pub(crate) async fn temp_store() -> (tempfile::TempDir, Store) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = Store::open(&data).expect("open");
+        (dir, store)
+    }
 
     #[tokio::test]
     async fn writes_are_visible_to_readers() {

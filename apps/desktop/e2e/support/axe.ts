@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const AXE_SOURCE = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 
-type Violation = { id: string; impact: string | null; nodes: Array<{ target: string[] }> };
+type Violation = { id: string; impact: string | null; nodes: Array<{ target: string[]; why?: string }> };
 
 /** Runs axe-core inside the app webview and fails on serious or critical
  * violations (PRODUCT_SPEC §5.4). The webview can't open helper windows, so
@@ -33,7 +33,11 @@ export async function expectNoSeriousA11yViolations(): Promise<void> {
           r.violations.map((v) => ({
             id: v.id,
             impact: v.impact,
-            nodes: v.nodes.map((n) => ({ target: n.target })),
+            // Contrast failures say what was measured.
+            nodes: v.nodes.map((n) => {
+              const d = (n as unknown as { any?: Array<{ data?: { fgColor?: string; bgColor?: string; contrastRatio?: number } }> }).any?.[0]?.data;
+              return { target: n.target, why: d?.contrastRatio ? `${d.fgColor} on ${d.bgColor} = ${d.contrastRatio}` : undefined };
+            }),
           })),
         ),
       )
@@ -42,22 +46,53 @@ export async function expectNoSeriousA11yViolations(): Promise<void> {
   const serious = violations.filter((v) => v.impact === "serious" || v.impact === "critical");
   if (serious.length > 0) {
     throw new Error(
-      `axe: ${serious.map((v) => `${v.id} (${v.nodes.map((n) => n.target.join(" ")).join("; ")})`).join(", ")}`,
+      `axe (${await browser.execute(() => document.documentElement.dataset.theme)}): ${serious
+        .map((v) => `${v.id} (${v.nodes.map((n) => `${n.target.join(" ")}${n.why ? ` [${n.why}]` : ""}`).join("; ")})`)
+        .join(", ")}`,
     );
   }
 }
 
 /** Runs the check in the dark and the light theme (M2 exit checklist). */
 export async function expectNoSeriousA11yViolationsInBothThemes(): Promise<void> {
-  const setTheme = (value: string) =>
-    browser.executeAsync((v: string, done: () => void) => {
+  // The theme applies when the setting's event reaches the webview, which
+  // under load can take longer than any fixed pause: wait until the page is
+  // on the new theme, so axe never measures a half-switched page.
+  const setTheme = async (value: string) => {
+    await browser.execute((v: string) => {
       const w = window as unknown as {
         __TAURI_INTERNALS__: { invoke: (c: string, a: unknown) => Promise<unknown> };
       };
-      void w.__TAURI_INTERNALS__
-        .invoke("settings_set", { key: "theme", value: v })
-        .then(() => setTimeout(done, 300));
+      void w.__TAURI_INTERNALS__.invoke("settings_set", { key: "theme", value: v });
     }, value);
+    await browser.waitUntil(async () => (await browser.execute(() => document.documentElement.dataset.theme)) === value, {
+      timeout: 10_000,
+      timeoutMsg: `theme never became ${value}`,
+    });
+    // Colours then transition (WebKit doesn't list CSS transitions in
+    // getAnimations): wait until the computed colours stop changing.
+    const sample = () =>
+      browser.execute(() =>
+        Array.from(document.querySelectorAll("body, [role=dialog], [role=dialog] *"))
+          .slice(0, 200)
+          .map((el) => {
+            const cs = getComputedStyle(el);
+            return `${cs.color}|${cs.backgroundColor}`;
+          })
+          .join(";"),
+      );
+    let last = await sample();
+    await browser.waitUntil(
+      async () => {
+        await browser.pause(120);
+        const now = await sample();
+        const stable = now === last;
+        last = now;
+        return stable;
+      },
+      { timeout: 5_000, timeoutMsg: "colours kept changing after the theme switch" },
+    );
+  };
   try {
     for (const theme of ["dark", "light"]) {
       await setTheme(theme);

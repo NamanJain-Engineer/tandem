@@ -59,6 +59,8 @@ type LayoutState = {
   closePicker: () => void;
   split: (tabId: string, target: string | null, side: Side, launch?: Launch) => Promise<SplitResult>;
   close: (tabId: string, paneId: string) => Promise<void>;
+  /** A pane the core already closed (Dashboard Close idle): out of its tree. */
+  dropPane: (paneId: string) => void;
   focus: (tabId: string, paneId: string) => void;
   focusDirection: (tabId: string, direction: Side) => void;
   focusCycle: (tabId: string, delta: 1 | -1) => void;
@@ -69,6 +71,8 @@ type LayoutState = {
   move: (tabId: string, paneId: string, target: string, side: Side) => void;
   moveToNewTab: (tabId: string, paneId: string) => Promise<Tab | null>;
   arrange: (tabId: string) => void;
+  /** After `pane_rename`: the stored name. */
+  setHumanName: (tabId: string, paneId: string, name: string) => void;
   toggleCards: (tabId: string) => void;
   flipCard: (tabId: string, paneId: string) => void;
   setBox: (tabId: string, box: Box) => void;
@@ -261,6 +265,13 @@ export const useLayout = create<LayoutState>((set, get) => {
       releasePaneHost(paneId);
     },
 
+    dropPane: (paneId) => {
+      const tabId = Object.keys(get().tabs).find((id) => get().tabs[id]?.panes[paneId]);
+      if (!tabId) return;
+      update(tabId, (t) => without(t, paneId));
+      releasePaneHost(paneId);
+    },
+
     focus: (tabId, paneId) =>
       update(tabId, (t) => (t.active === paneId || !contains(t.tree, paneId) ? t : { ...t, active: paneId })),
 
@@ -329,6 +340,13 @@ export const useLayout = create<LayoutState>((set, get) => {
     arrange: (tabId) => {
       const box = get().boxes[tabId];
       update(tabId, (t) => (t.tree ? { ...t, tree: autoGrid(leaves(t.tree), box, GUTTER), maximized: null } : t));
+    },
+
+    setHumanName: (tabId, paneId, name) => {
+      const tab = get().tabs[tabId];
+      const pane = tab?.panes[paneId];
+      if (!tab || !pane) return;
+      set({ tabs: { ...get().tabs, [tabId]: { ...tab, panes: { ...tab.panes, [paneId]: { ...pane, humanName: name } } } } });
     },
 
     toggleCards: (tabId) => {

@@ -8,6 +8,7 @@
     "allow-test-counters",
     "allow-test-spawn-log",
     "allow-test-clock-advance",
+    "allow-test-fixture-agent",
     "allow-test-auth-refresh",
     "allow-test-account-create",
     "core:window:allow-set-position",

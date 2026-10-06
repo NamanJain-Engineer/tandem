@@ -17,6 +17,7 @@ import { invoke } from "../../ipc/invoke";
 import { totalCredits, useSession } from "../../stores/session";
 import { useUi, type Mode } from "../../stores/ui";
 import { useLayout } from "../../stores/layout";
+import { useSidebar } from "../../stores/sidebar";
 import { useWorkspaces } from "../../stores/workspaces";
 import { copyDiagnostics, switchMode } from "./actions";
 import { LogoMark } from "./LogoMark";
@@ -40,14 +41,13 @@ export function TitleBar() {
   const {
     mode,
     railCollapsed,
-    sidebarOpen,
     settingsOpen,
     toggleRail,
-    toggleSidebar,
     setPalette,
     openSettings,
     openUpgrade,
   } = useUi();
+  const sidebarOpen = useSidebar((s) => s.open);
   const auth = useSession((s) => s.auth);
   const entitlement = useSession((s) => s.entitlement);
   const workspaces = useWorkspaces();
@@ -263,7 +263,9 @@ export function TitleBar() {
         label={t("titlebar.toggleSidebar")}
         pressed={sidebarOpen}
         kbd={["Mod", "Shift", "B"]}
-        onClick={toggleSidebar}
+        data-sidebar-toggle=""
+        data-testid="sidebar-toggle"
+        onClick={() => useSidebar.getState().toggle()}
       />
       <Menu
         align="end"

@@ -80,3 +80,17 @@ export function timed<T>(name: string, fn: () => T): T {
 export function perfSpans(): Span[] {
   return spans.slice();
 }
+
+const reflows = new Map<string, number>();
+
+/** A terminal's grid changed size (cols × rows): the reflow F-SH-10 counts.
+ * Always counted (one map write per resize). */
+export function markReflow(paneId: string): void {
+  reflows.set(paneId, (reflows.get(paneId) ?? 0) + 1);
+}
+
+export function reflowCounts(reset = false): Record<string, number> {
+  const out = Object.fromEntries(reflows);
+  if (reset) reflows.clear();
+  return out;
+}

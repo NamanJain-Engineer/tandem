@@ -79,3 +79,12 @@
   letter-spacing: var(--tracking-caps);
   color: var(--tn-text-subtle);
 }
+
+/* Focus flash (F-CD-12): 3 × 400 ms accent pulses = 1.2 s; a steady ring
+   when motion is reduced. */
+@keyframes tn-flash-ring { 0%, 100% { outline-color: transparent; } 50% { outline-color: var(--tn-accent); } }
+.tn-flash { outline: 2px solid transparent; outline-offset: -2px; animation: tn-flash-ring 400ms var(--ease-standard) 3; }
+[data-motion="reduced"] .tn-flash { animation: none; outline-color: var(--tn-accent); }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) .tn-flash { animation: none; outline-color: var(--tn-accent); }
+}

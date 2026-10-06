@@ -29,6 +29,15 @@ macro_rules! app_commands {
             commands::window::window_toggle_maximize,
             commands::window::window_minimize,
             commands::window::window_close,
+            commands::shell::sidebar_get,
+            commands::shell::sidebar_save,
+            commands::terminal::pane_rename,
+            commands::shell::focus_source,
+            commands::shell::approvals_pending,
+            commands::shell::approval_resolve,
+            commands::shell::status_snapshot,
+            commands::shell::status_mark_seen,
+            commands::shell::dashboard_close_idle,
             commands::settings::settings_get_all,
             commands::settings::settings_set,
             commands::settings::settings_reset,
@@ -114,7 +123,7 @@ pub fn route_link(app: &AppHandle, raw: &str) {
     }
 }
 
-fn focus_main(app: &AppHandle) {
+pub(crate) fn focus_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();
@@ -330,6 +339,7 @@ pub fn run() {
         commands::test::test_counters,
         commands::test::test_spawn_log,
         commands::test::test_clock_advance,
+        commands::test::test_fixture_agent,
         commands::test::test_auth_refresh,
         commands::test::test_account_create,
     ]);
@@ -348,6 +358,7 @@ pub fn run() {
             ensure_on_screen(app);
             persist_window_state(app);
             spawn_background(&state);
+            state.approvals.start();
             // The status server, then engines: the cached report at once, the
             // remote registry and a fresh detection in the background (F-EN-01).
             let engines_state = handle.clone();

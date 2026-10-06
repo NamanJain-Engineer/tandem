@@ -73,7 +73,29 @@ pub async fn pane_create(
         panes::set_account(&state.store, &pane.id, &account).await?;
         pane.account_id = Some(account);
     }
+    // Agent panes get a first name, unique in the workspace (F-CD-12).
+    if kind == "agent" {
+        let name = panes::assign_human_name(
+            &state.store,
+            &pane.id,
+            crate::services::names::names(),
+            |n| rand::random::<u32>() as usize % n.max(1),
+        )
+        .await?;
+        pane.human_name = Some(name);
+    }
     Ok(pane)
+}
+
+/// Renames a pane (F-CD-12). Conflict when another open pane of the
+/// workspace already has the name.
+#[tauri::command]
+pub async fn pane_rename(
+    state: State<'_, AppState>,
+    pane_id: PaneId,
+    human_name: String,
+) -> Result<String, IpcError> {
+    Ok(panes::rename(&state.store, &pane_id, &human_name).await?)
 }
 
 #[tauri::command]
@@ -86,8 +108,21 @@ pub async fn pane_list(
 
 #[tauri::command]
 pub async fn pane_close(state: State<'_, AppState>, pane_id: PaneId) -> Result<(), IpcError> {
+    close_pane(&state, &pane_id).await
+}
+
+/// Ends a pane's process tree, its status record and any approval it asked
+/// for, then closes it in the store.
+pub async fn close_pane(state: &AppState, pane_id: &PaneId) -> Result<(), IpcError> {
     let _ = state.terminals.pty.kill(pane_id.as_str());
-    Ok(panes::close(&state.store, &pane_id).await?)
+    state.terminals.status.unwatch(pane_id.as_str());
+    state
+        .approvals
+        .broker
+        .cancel_source(&tandem_core::source::SourceRef::Pane {
+            pane_id: pane_id.as_str().to_string(),
+        });
+    Ok(panes::close(&state.store, pane_id).await?)
 }
 
 /// Moves a pane to another tab; its process keeps running (F-CD-02).

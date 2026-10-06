@@ -1,5 +1,5 @@
 import { browser } from "@wdio/globals";
-import { addFolder, fakeLog, freshOffline, invoke, paneIds, sendToPane, split, waitForPaneText, waitForStatus } from "../support/app";
+import { addFolder, fakeLog, freshOffline, invoke, paneIds, sendToPane, split, textOf, waitForPaneText, waitForStatus } from "../support/app";
 
 const hex = (s: string) => Buffer.from(s, "utf8").toString("hex");
 
@@ -31,7 +31,10 @@ describe("E2E-M4-5 typing", () => {
       () => "",
       (e: Error) => e.message,
     );
-    expect(err).toContain("Claude Code is waiting for your approval");
+    // "<name> is waiting for your approval": the pane's first name (F-CD-12).
+    const name = await textOf(`[data-testid="pane"][data-pane-id="${agent}"] [data-testid="pane-name"]`);
+    expect(name).not.toBe("");
+    expect(err).toContain(`${name} is waiting for your approval`);
     expect(err).toContain('"code":"waiting"');
   });
 });

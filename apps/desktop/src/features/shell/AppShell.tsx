@@ -13,10 +13,12 @@ import { Palette } from "../palette/Palette";
 import { OrphansDialog } from "../restore/OrphansDialog";
 import { followEngines } from "../../stores/engines";
 import { followStatus } from "../../stores/status";
+import { followFocus } from "../../stores/focus";
+import { followDashboard } from "../../stores/dashboard";
 import { InstallHost } from "../code/InstallSheet";
 import { followPtyState } from "../../stores/terminals";
 import { terminalHandles } from "../code/TerminalView";
-import { enablePerfMarks, perfSpans, perfTimes, writeCounts } from "../code/perfMarks";
+import { enablePerfMarks, perfSpans, perfTimes, reflowCounts, writeCounts } from "../code/perfMarks";
 import { webglPool } from "../code/webglPool";
 import { useBoot } from "./useBoot";
 import { SettingsView } from "../settings/SettingsView";
@@ -29,13 +31,15 @@ import { useShortcuts } from "./useShortcuts";
 /** UI §3.1 window anatomy. Mode surfaces stay mounted (hidden with
  * display:none) so terminals never re-mount (§3.4). */
 export function AppShell() {
-  const { mode, settingsOpen, sidebarOpen, railCollapsed } = useUi();
+  const { mode, settingsOpen, railCollapsed } = useUi();
   const { show: toast } = useToast();
   useShortcuts();
   useEffect(() => setCommandToast(toast), [toast]);
   useEffect(followPtyState, []);
   useEffect(followEngines, []);
   useEffect(followStatus, []);
+  useEffect(followFocus, []);
+  useEffect(followDashboard, []);
   // Debug builds: UI-side counters for the E2E harness (ARCHITECTURE §17.5).
   const dev = useBoot((st) => st.boot?.dev ?? false);
   useEffect(() => {
@@ -50,6 +54,7 @@ export function AppShell() {
       webglHolds: (paneId: string) => webglPool.holds(paneId),
       perf: { enable: enablePerfMarks, times: perfTimes, writes: writeCounts, spans: perfSpans },
       paneSize: (paneId: string) => terminalHandles.get(paneId)?.size() ?? null,
+      reflows: (reset?: boolean) => reflowCounts(reset ?? false),
       commandRuns: () => Object.fromEntries(commandRuns),
       // State the harness saves next to a failure's screenshot.
       debug: () => {
@@ -81,7 +86,8 @@ export function AppShell() {
       </a>
       <TitleBar />
       <Banners />
-      <div className="flex min-h-0 flex-1">
+      {/* relative: a floating or full-screen sidebar overlays this row. */}
+      <div className="relative flex min-h-0 flex-1">
         {settingsOpen && <SettingsView />}
         <InstallHost />
         <div style={{ display: show("code") }}>
@@ -110,7 +116,7 @@ export function AppShell() {
             <InterimMain mode="thread" />
           </div>
         </main>
-        {sidebarOpen && <Sidebar />}
+        {!settingsOpen && <Sidebar />}
       </div>
       <StatusBar />
       <UpgradeDialog />

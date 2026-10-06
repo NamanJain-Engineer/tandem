@@ -22,6 +22,15 @@ pub const TICK: Duration = Duration::from_secs(1);
 /// Screen text is checked for waiting patterns at most this often per pane.
 const SCREEN_CHECK_MS: i64 = 300;
 
+/// A non-pane source's card details.
+#[derive(Debug, Clone)]
+pub struct ExternalMeta {
+    pub source: tandem_core::source::SourceRef,
+    pub title: String,
+    pub engine_id: Option<String>,
+    pub workspace_id: Option<String>,
+}
+
 struct Watched {
     heuristics: Heuristics,
     last_screen_check: Option<i64>,
@@ -39,6 +48,9 @@ pub struct StatusService {
     sessions: Mutex<HashMap<String, String>>,
     /// Last output per watched pane (ms).
     activity: Mutex<HashMap<String, i64>>,
+    /// Sources that aren't panes (test fixtures now, threads later): what
+    /// their Dashboard card shows.
+    external: Mutex<HashMap<String, ExternalMeta>>,
     bus: EventBus,
     clock: Arc<dyn Clock>,
 }
@@ -54,6 +66,7 @@ impl StatusService {
             flushing: Mutex::new(false),
             sessions: Mutex::default(),
             activity: Mutex::default(),
+            external: Mutex::default(),
             bus,
             clock,
         })
@@ -305,6 +318,57 @@ impl StatusService {
 
     pub fn snapshot(&self) -> Vec<StatusRecord> {
         self.store.snapshot()
+    }
+
+    /// Sets the status of a non-pane source and remembers its card details.
+    pub fn set_external(self: &Arc<Self>, meta: ExternalMeta, mut update: StatusUpdate) {
+        let Some(key) = meta.source.session_key() else {
+            return;
+        };
+        update.ts = update.ts.max(self.clock.now_ms());
+        if let Ok(mut e) = self.external.lock() {
+            e.insert(key.0.clone(), meta);
+        }
+        if let Some(rec) = self.store.apply(&key, update) {
+            self.queue(rec);
+        }
+    }
+
+    /// Marks a done source as seen: it becomes idle.
+    pub fn set_idle(self: &Arc<Self>, key: &SessionKey) {
+        let Some(cur) = self.store.get(key) else {
+            return;
+        };
+        let update = StatusUpdate {
+            status: tandem_core::status::AgentStatus::Idle,
+            reason: None,
+            ts: cur.ts.max(self.clock.now_ms()),
+            tool: cur.tool,
+            title: cur.title,
+            preview: cur.preview,
+        };
+        if let Some(rec) = self.store.apply(key, update) {
+            self.queue(rec);
+        }
+    }
+
+    pub fn external(&self, key: &SessionKey) -> Option<ExternalMeta> {
+        self.external.lock().ok()?.get(&key.0).cloned()
+    }
+
+    pub fn remove_external(self: &Arc<Self>, key: &SessionKey) {
+        if let Ok(mut e) = self.external.lock() {
+            e.remove(&key.0);
+        }
+        if self.store.remove(key).is_some() {
+            if let Ok(mut p) = self.pending.lock() {
+                p.retain(|r| &r.key != key);
+            }
+            if let Ok(mut r) = self.removed.lock() {
+                r.push(key.0.clone());
+            }
+            self.schedule();
+        }
     }
 }
 

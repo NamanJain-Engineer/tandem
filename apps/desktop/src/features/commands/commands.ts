@@ -2,6 +2,8 @@
 // predicates) comes from `tandem-core` through
 // `@tandem/protocol/shortcuts.json`; the palette, the shortcut dispatcher and
 // menus all run commands through `runCommand`, so they share one handler.
+import { useCloseConfirm } from "../../stores/closeConfirm";
+import { useSidebar } from "../../stores/sidebar";
 import type { CommandSpec } from "@tandem/protocol";
 import shortcuts from "@tandem/protocol/shortcuts.json";
 import { t, type MessageKey } from "../../i18n";
@@ -89,7 +91,7 @@ export const handlers: Record<string, () => void> = {
   "mode.code": () => switchMode("code"),
   "mode.thread": () => switchMode("thread"),
   "rail.toggle": () => useUi.getState().toggleRail(),
-  "sidebar.toggle": () => useUi.getState().toggleSidebar(),
+  "sidebar.toggle": () => useSidebar.getState().toggle(),
   "workspace.open_folder": () => void pickAndAddWorkspace(toast),
   "workspace.new_tab": () => {
     const ws = useWorkspaces.getState();
@@ -103,7 +105,7 @@ export const handlers: Record<string, () => void> = {
   },
   "pane.split_right": () => split("right"),
   "pane.split_down": () => split("bottom"),
-  "pane.close": onPane((tabId, paneId) => void useLayout.getState().close(tabId, paneId)),
+  "pane.close": onPane((tabId, paneId) => useCloseConfirm.getState().request(tabId, paneId)),
   "pane.focus_left": onPane((tabId) => useLayout.getState().focusDirection(tabId, "left")),
   "pane.focus_right": onPane((tabId) => useLayout.getState().focusDirection(tabId, "right")),
   "pane.focus_up": onPane((tabId) => useLayout.getState().focusDirection(tabId, "top")),

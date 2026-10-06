@@ -17,7 +17,7 @@ import { useLayout } from "../../stores/layout";
 import { useTerminals } from "../../stores/terminals";
 import { copyText, readText } from "../../ipc/clipboard";
 import { CommandMarks, type Activity } from "./commandMarks";
-import { markFirstOutput, markMounted, markPhase, markWrite, timed } from "./perfMarks";
+import { markFirstOutput, markMounted, markPhase, markReflow, markWrite, timed } from "./perfMarks";
 import { HIGHLIGHT_LIMIT, searchOptions, validQuery, type FindFlags, type FindResult } from "./find";
 import { FindBar } from "./FindBar";
 import { keyAction, lastLines, lineCount, needsConfirm, pasteBytes } from "./terminalInput";
@@ -702,6 +702,7 @@ export function TerminalView({
       if (next.cols !== size.current.cols || next.rows !== size.current.rows) {
         const prev = size.current;
         size.current = next;
+        markReflow(paneId);
         // Before the spawn lands there is no PTY yet: forget this size so
         // the reconcile after connecting sends it.
         invoke("pty_resize", { paneId, ...next }).catch(() => {
