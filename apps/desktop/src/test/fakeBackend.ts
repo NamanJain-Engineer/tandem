@@ -1,3 +1,4 @@
+import { useEngines } from "../stores/engines";
 import type { AppBoot, AuthState, EntitlementView, Limits, WorkspaceSummary } from "@tandem/protocol";
 import { setInvokeBackend } from "../ipc/invoke";
 import { useBoot } from "../features/shell/useBoot";
@@ -93,6 +94,7 @@ export function fakeBackend(
 
 /** Resets the stores to a signed-in Free session on Linux. */
 export function resetStores(): void {
+  useEngines.setState({ list: [], loaded: false, report: null, detecting: false });
   useBoot.setState({ boot: BOOT });
   useSession.setState({ auth: SIGNED_IN, entitlement: FREE_VIEW });
   useSettings.setState({ values: {}, loaded: true });

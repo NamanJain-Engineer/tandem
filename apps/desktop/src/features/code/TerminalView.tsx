@@ -22,6 +22,7 @@ import { HIGHLIGHT_LIMIT, searchOptions, validQuery, type FindFlags, type FindRe
 import { FindBar } from "./FindBar";
 import { keyAction, lastLines, lineCount, needsConfirm, pasteBytes } from "./terminalInput";
 import { mountQueue } from "./mountQueue";
+import { PromptCapture, useFirstPrompts } from "./titles";
 import { webglPool } from "./webglPool";
 import { writeScheduler } from "./writeScheduler";
 
@@ -411,7 +412,12 @@ export function TerminalView({
         xterm.write(`\x1b[2m${message}\x1b[0m\r\n`);
       }
     };
-    const input = xterm.onData((data) => invoke("pty_write", { paneId, data }).catch(() => undefined));
+    // An agent pane's first prompt names it until the engine does (F-EN-06).
+    const capture = new PromptCapture((text) => useFirstPrompts.getState().set(paneId, text));
+    const input = xterm.onData((data) => {
+      if (inputCtx.current.agent) capture.input(data);
+      invoke("pty_write", { paneId, data }).catch(() => undefined);
+    });
     // Copy, paste and the agent newline (F-CD-05, F-CD-07); everything else
     // reaches the PTY.
     xterm.attachCustomKeyEventHandler((ev) => {

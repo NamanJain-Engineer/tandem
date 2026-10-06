@@ -3,18 +3,26 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::Serialize;
 use tokio::sync::OnceCell;
 
+use tandem_core::bus::EventBus;
+use tandem_core::clock::SystemClock;
 use tandem_core::ids::PaneId;
 use tandem_core::settings::SettingKey;
 use tandem_core::shellquote::{self, ShellDialect};
+use tandem_core::status::{AgentStatus, SessionKey};
 use tandem_core::{ErrorCode, IpcError};
-use tandem_engines::{EngineRegistry, EngineSpec};
+use tandem_engines::launch::StatusEnv;
+use tandem_engines::EngineSpec;
+
+use crate::services::engines::EngineService;
+use crate::services::status::StatusService;
 use tandem_pty::env::{self, LoginEnv};
 use tandem_pty::integration::{self, IntegratedShell};
-use tandem_pty::{OutputSink, PtyInfo, PtyManager, SpawnSpec};
+use tandem_pty::{typing, OutputSink, PtyInfo, PtyManager, SpawnSpec};
 use tandem_store::repo::{panes, sessions, settings, workspaces};
 use tandem_store::Store;
 
@@ -24,6 +32,11 @@ pub fn launch_token() -> String {
     Alphanumeric.sample_string(&mut rand::thread_rng(), 32)
 }
 
+/// Quiet after the first output that counts as ready (§6.5).
+pub const READY_QUIET_MS: i64 = 1_500;
+/// How long `type_prompt` waits for a TUI to become ready.
+pub const READY_TIMEOUT: Duration = Duration::from_secs(10);
+
 pub const FOLDER_NOT_FOUND: &str = "Folder not found — opened at workspace root";
 /// Lines kept per pane in `$DATA/scrollback/<pane>.bin` (F-CD-03).
 pub const SNAPSHOT_LINES: usize = 2_000;
@@ -32,7 +45,8 @@ pub const SNAPSHOT_EVERY: std::time::Duration = std::time::Duration::from_secs(3
 
 pub struct TerminalService {
     pub pty: PtyManager,
-    pub engines: EngineRegistry,
+    pub engines: Arc<EngineService>,
+    pub status: Arc<StatusService>,
     /// The quoting dialect of each pane's shell (drops, staged images).
     dialects: std::sync::Mutex<std::collections::HashMap<String, ShellDialect>>,
     store: Store,
@@ -67,6 +81,25 @@ impl TerminalService {
         store: Store,
         integration_root: Option<PathBuf>,
     ) -> Arc<Self> {
+        let bus = EventBus::new();
+        let providers = store
+            .path()
+            .parent()
+            .map(|d| d.join("providers"))
+            .unwrap_or_else(|| PathBuf::from("providers"));
+        let engines = EngineService::new(store.clone(), bus.clone(), providers);
+        let status = StatusService::new(bus, Arc::new(SystemClock));
+        Self::with_services(pty, store, integration_root, engines, status)
+    }
+
+    /// With the app's engine and status services.
+    pub fn with_services(
+        pty: PtyManager,
+        store: Store,
+        integration_root: Option<PathBuf>,
+        engines: Arc<EngineService>,
+        status: Arc<StatusService>,
+    ) -> Arc<Self> {
         let spawn_log = if cfg!(debug_assertions) {
             std::env::var_os("TANDEM_SPAWN_LOG").map(PathBuf::from)
         } else {
@@ -74,7 +107,8 @@ impl TerminalService {
         };
         Arc::new(Self {
             pty,
-            engines: EngineRegistry::bundled(),
+            engines,
+            status,
             dialects: Default::default(),
             store,
             login: OnceCell::new(),
@@ -196,7 +230,7 @@ impl TerminalService {
         let (cwd, notice) = if wanted.is_dir() {
             (wanted, None)
         } else {
-            (root, Some(FOLDER_NOT_FOUND))
+            (root.clone(), Some(FOLDER_NOT_FOUND))
         };
 
         let login = self.login_env().await;
@@ -216,12 +250,11 @@ impl TerminalService {
         let integration = self.integration_for(&shell).await;
         // Agent panes run the engine under the login shell and hand back to
         // it when the engine exits (F-CD-03 AC3).
-        let (args, extra_env, engine) = if record.kind == "agent" {
+        let (args, extra_env, engine, launched) = if record.kind == "agent" {
             let engine = record
                 .engine_id
                 .as_deref()
                 .and_then(|id| self.engines.get(id))
-                .cloned()
                 .ok_or_else(|| {
                     IpcError::new(ErrorCode::NotFound, "This pane's engine isn't known")
                 })?;
@@ -231,19 +264,30 @@ impl TerminalService {
                     format!("{} isn't installed on this machine.", engine.label),
                 )
             })?;
-            let argv = vec![path.to_string_lossy().into_owned()];
+            // Status hooks report with this launch's secret (§6.6).
+            let status = self
+                .status
+                .watch(pane.as_str(), &engine.waiting_patterns)
+                .map(|(url, secret)| StatusEnv { url, secret });
+            let launch = self
+                .engines
+                .agent_launch(&engine, path, &root, status)
+                .await
+                .inspect_err(|_| self.status.unwatch(pane.as_str()))?;
             let args = env::agent_wrapper(
                 &shell,
-                &argv,
+                &launch.spec.argv(),
                 integration.as_ref().map(|(_, dir)| dir.as_path()),
             )
             .map_err(|_| {
+                self.status.unwatch(pane.as_str());
                 IpcError::new(
                     ErrorCode::Invalid,
                     "The engine's path can't be launched safely",
                 )
             })?;
-            (args, Vec::new(), Some(engine))
+            let env: Vec<(String, String)> = launch.spec.env.clone().into_iter().collect();
+            (args, env, Some(engine), Some(launch))
         } else if let Some((kind, dir)) = &integration {
             let launch =
                 integration::launch(*kind, dir, login.vars.get("ZDOTDIR").map(String::as_str))
@@ -253,9 +297,9 @@ impl TerminalService {
                             "The shell-integration folder can't be used safely",
                         )
                     })?;
-            (launch.args, launch.env, None)
+            (launch.args, launch.env, None, None)
         } else {
-            (env::login_args(&shell), Vec::new(), None)
+            (env::login_args(&shell), Vec::new(), None, None)
         };
         if let Ok(mut d) = self.dialects.lock() {
             d.insert(
@@ -279,8 +323,13 @@ impl TerminalService {
             scrollback_lines: scrollback,
             mark_token: Some(token),
         };
-        self.log_spawn(&spec);
-        let info = self.pty.spawn(spec, Some(sink))?;
+        let home = launched.as_ref().and_then(|l| l.home.clone());
+        self.log_spawn(&spec, home.as_deref());
+        let info = self.pty.spawn(spec, Some(sink)).inspect_err(|_| {
+            if engine.is_some() {
+                self.status.unwatch(pane.as_str());
+            }
+        })?;
         // The pane (or its workspace) may have closed while the shell
         // started: never leave a process nobody can see.
         if panes::get_open(&self.store, pane).await.is_err() {
@@ -288,13 +337,106 @@ impl TerminalService {
             return Err(IpcError::new(ErrorCode::NotFound, "This pane was closed"));
         }
         if let Some(engine) = engine {
-            sessions::start_in_pane(&self.store, pane, &record.workspace_id, &engine.id).await?;
+            let account = launched
+                .as_ref()
+                .and_then(|l| l.account.as_ref())
+                .map(|a| a.id.clone());
+            sessions::start_in_pane(
+                &self.store,
+                pane,
+                &record.workspace_id,
+                &engine.id,
+                account.as_ref(),
+                home.as_ref().map(|h| h.to_string_lossy().into_owned()),
+            )
+            .await?;
         }
         if let Some(text) = notice {
             let _ = self.pty.notice(pane.as_str(), text);
         }
         tracing::info!(code = "pty.spawned", pid = info.pid, "terminal started");
         Ok(info)
+    }
+
+    /// Readiness (§6.5): the TUI set a title, showed a ready pattern, or went
+    /// quiet for 1.5 s after its first output. False when `timeout` passes.
+    pub async fn wait_ready(&self, pane: &PaneId, engine: &EngineSpec, timeout: Duration) -> bool {
+        let patterns: Vec<regex::Regex> = engine
+            .ready_patterns
+            .iter()
+            .filter_map(|p| regex::RegexBuilder::new(p).multi_line(true).build().ok())
+            .collect();
+        let until = std::time::Instant::now() + timeout;
+        loop {
+            let id = pane.as_str();
+            if self.pty.state(id).is_some_and(|s| s.title.is_some()) {
+                return true;
+            }
+            if !patterns.is_empty() {
+                if let Some(screen) = self.pty.screen_text(id) {
+                    if patterns.iter().any(|re| re.is_match(&screen)) {
+                        return true;
+                    }
+                }
+            }
+            if let Some(last) = self.status.last_output(id) {
+                if chrono::Utc::now().timestamp_millis() - last >= READY_QUIET_MS {
+                    return true;
+                }
+            }
+            if std::time::Instant::now() >= until || !self.pty.is_live(id) {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    /// `type_prompt` (§6.5, F-EN-06 AC1–2).
+    pub async fn type_prompt(&self, pane: &PaneId, text: &str) -> Result<(), IpcError> {
+        let record = panes::get_open(&self.store, pane).await?;
+        let engine = record
+            .engine_id
+            .as_deref()
+            .and_then(|id| self.engines.get(id));
+        let name = record
+            .human_name
+            .clone()
+            .or_else(|| engine.as_ref().map(|e| e.label.clone()))
+            .unwrap_or_else(|| "This agent".into());
+        let waiting = self
+            .status
+            .store
+            .get(&SessionKey::pane(pane.as_str()))
+            .is_some_and(|r| r.status == AgentStatus::Waiting);
+        if waiting {
+            return Err(IpcError::new(
+                ErrorCode::Waiting,
+                format!("{name} is waiting for your approval"),
+            ));
+        }
+        if !self.pty.is_live(pane.as_str()) {
+            return Err(IpcError::new(
+                ErrorCode::NotFound,
+                "This pane isn't running",
+            ));
+        }
+        let newline = engine
+            .as_ref()
+            .map(|e| e.newline_sequence.clone())
+            .unwrap_or_else(|| "\u{1b}\r".into());
+        if let Some(engine) = &engine {
+            self.wait_ready(pane, engine, READY_TIMEOUT).await;
+        }
+        let bracketed = self
+            .pty
+            .state(pane.as_str())
+            .is_some_and(|s| s.bracketed_paste);
+        let (body, enter) = typing::prompt_writes(text, bracketed, &newline);
+        self.status.quiet_window(pane.as_str());
+        self.pty.write(pane.as_str(), &body)?;
+        tokio::time::sleep(typing::ENTER_DELAY).await;
+        self.pty.write(pane.as_str(), &enter)?;
+        Ok(())
     }
 
     /// Quotes dropped paths for the pane's shell (F-CD-06): space-separated,
@@ -316,7 +458,11 @@ impl TerminalService {
     /// The engine's executable from the login PATH only, never the workspace
     /// folder (F-CD-03 AC6).
     pub async fn resolve_engine(&self, engine: &EngineSpec) -> Option<PathBuf> {
-        // The login PATH first; then the app's own PATH, which can hold
+        // Where detection found it (known install folders included).
+        if let Some(p) = self.engines.installed(&engine.id).filter(|p| p.is_file()) {
+            return Some(p);
+        }
+        // The login PATH next; then the app's own PATH, which can hold
         // installs the login profile resets away (Linux /etc/profile).
         let login = self.login_env().await;
         let sep = if cfg!(windows) { ";" } else { ":" };
@@ -336,14 +482,14 @@ impl TerminalService {
             .find_map(|c| env::resolve_on_path(c, &path, pathext.as_deref()))
     }
 
-    fn log_spawn(&self, spec: &SpawnSpec) {
+    fn log_spawn(&self, spec: &SpawnSpec, home: Option<&Path>) {
         let Some(path) = &self.spawn_log else { return };
         let mut argv = vec![spec.program.to_string_lossy().into_owned()];
         argv.extend(spec.args.iter().cloned());
         let record = SpawnRecord {
             argv,
             env_keys: spec.env.keys().cloned().collect(),
-            provider_home: None,
+            provider_home: home.map(|h| h.to_string_lossy().into_owned()),
             cwd: spec.cwd.to_string_lossy().into_owned(),
         };
         if let Ok(line) = serde_json::to_string(&record) {

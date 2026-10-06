@@ -257,6 +257,14 @@ export function presetFor(n: number): Preset {
   return "4x2";
 }
 
+/** Auto-arrange (F-CD-11): an even grid with the fewest rows — cols =
+ * ⌈√n⌉, rows = ⌈n / cols⌉, filled row-major, equal widths in each row. */
+export function autoGrid(ids: string[]): LayoutNode | null {
+  if (ids.length === 0) return null;
+  if (ids.length === 1) return leaf(ids[0] ?? "");
+  return grid(ids, Math.ceil(Math.sqrt(ids.length)));
+}
+
 /** Lays `ids` out by a preset; panes beyond the preset's slots fill more rows. */
 export function arrange(ids: string[], preset: Preset = presetFor(ids.length)): LayoutNode | null {
   if (ids.length === 0) return null;

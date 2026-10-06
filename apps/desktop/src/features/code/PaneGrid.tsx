@@ -8,9 +8,12 @@ import {
   type ImperativePanelGroupHandle,
 } from "react-resizable-panels";
 import type { PaneRecord, WorkspaceSummary } from "@tandem/protocol";
-import { Badge, Spinner, Tooltip, cx, useToast, type MenuEntry, type Status } from "@tandem/ui";
+import { SquareTerminal } from "lucide-react";
+import { Badge, EngineGlyph, Spinner, StatusDot, Tooltip, cx, useToast, type MenuEntry, type Status } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useEngines } from "../../stores/engines";
+import { paneKey, statusView, useStatus } from "../../stores/status";
+import { useTerminals } from "../../stores/terminals";
 import { useBoot } from "../shell/useBoot";
 import { useLayout, type Box, type TabPanes } from "../../stores/layout";
 import { DropZones, applyDrop, type PaneDrag } from "./dnd";
@@ -18,8 +21,9 @@ import { useDropTarget } from "./drops";
 import { leaves, minExtent, type LayoutNode } from "./layout/tree";
 import { PaneChrome } from "./PaneChrome";
 import { attachPaneHost, paneHost } from "./paneHosts";
-import { LaunchTiles, launchFor, useTiles } from "./PanePicker";
-import { paneTitles } from "./titles";
+import { LaunchGrid } from "./LaunchGrid";
+import { launchFor } from "./PanePicker";
+import { paneTitles, useFirstPrompts, type TitleSources } from "./titles";
 import { webglPool } from "./webglPool";
 import type { Activity } from "./commandMarks";
 import { TerminalView, copyLastOutput, terminalHandles, type Phase, type TerminalOptions } from "./TerminalView";
@@ -175,6 +179,9 @@ type PaneViewProps = {
   solo: boolean;
   maximized: boolean;
   options: TerminalOptions;
+  /** Card view's title card, or the one-line collapsed session (F-CD-11).
+   * The terminal keeps running and keeps its size behind it. */
+  cover: "card" | "line" | null;
 };
 
 const PaneView = memo(function PaneView({
@@ -186,10 +193,15 @@ const PaneView = memo(function PaneView({
   solo,
   maximized,
   options,
+  cover,
 }: PaneViewProps) {
   const [phase, setPhase] = useState<Phase>({ kind: "starting" });
   const [activity, setActivity] = useState<Activity>("idle");
-  const status = paneStatus(phase, activity);
+  // Agents report through hooks or heuristics (F-EN-05); shells through
+  // their command marks. An exited or failed pane says so either way.
+  const agentStatus = useStatus((st) => st.records[paneKey(pane.id)]?.status);
+  const status = pane.kind === "agent" && agentStatus && phase.kind === "live" ? statusView(agentStatus) : paneStatus(phase, activity);
+  const glyph = useEngines((st) => st.list.find((e) => e.spec.id === pane.engineId)?.spec.logo);
   const dropping = useDropTarget((st) => st.paneId === pane.id);
   const mac = useBoot((st) => st.boot?.platform === "macos");
   const engineNewline = useEngines((st) => st.list.find((e) => e.spec.id === pane.engineId)?.spec.newlineSequence ?? "\x1b\r");
@@ -270,6 +282,7 @@ const PaneView = memo(function PaneView({
         menuItems={menu}
         onMaximize={() => layout().toggleMaximize(tabId, pane.id)}
         onClose={() => void layout().close(tabId, pane.id)}
+        glyph={pane.kind === "agent" && glyph ? <EngineGlyph letters={glyph} size={14} /> : undefined}
         badges={
           lite && visible && options.gpu !== false ? (
             <Tooltip label={t("pane.liteTooltip")}>
@@ -283,10 +296,19 @@ const PaneView = memo(function PaneView({
         dragProps={{ ...attributes, ...listeners, tabIndex: -1, role: "toolbar" }}
       />
       <div className="relative min-h-0 flex-1">
+        {cover && (
+          <PaneCover
+            kind={cover}
+            pane={pane}
+            title={title}
+            status={status}
+            onFlip={() => layout().flipCard(tabId, pane.id)}
+          />
+        )}
         <TerminalView
           paneId={pane.id}
           label={t("terminal.label", { name: title })}
-          visible={visible}
+          visible={visible && !cover}
           focused={focused}
           bare
           options={options}
@@ -303,6 +325,68 @@ const PaneView = memo(function PaneView({
   );
 });
 
+/** Elapsed time since `since` (ms), as "4m" or "1h 12m". */
+function elapsed(since: number, now: number): string {
+  const m = Math.max(0, Math.floor((now - since) / 60_000));
+  return m < 60 ? t("time.minutes", { n: m }) : t("time.hoursMinutes", { h: Math.floor(m / 60), m: m % 60 });
+}
+
+/** F-CD-11: Card view's title card (click flips the pane back), or the
+ * collapsed one-line session. */
+function PaneCover({
+  kind,
+  pane,
+  title,
+  status,
+  onFlip,
+}: {
+  kind: "card" | "line";
+  pane: PaneRecord;
+  title: string;
+  status: Status;
+  onFlip: () => void;
+}) {
+  const spec = useEngines((st) => st.list.find((e) => e.spec.id === pane.engineId)?.spec);
+  const since = useStatus((st) => st.records[paneKey(pane.id)]?.since);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (status !== "working") return;
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, [status]);
+  const engine = spec?.label ?? t("picker.terminal");
+  if (kind === "line")
+    return (
+      <div data-testid="pane-collapsed" className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-surface-2 text-sm text-fg">
+        <StatusDot status={status} size={8} />
+        {spec ? <EngineGlyph letters={spec.logo} size={16} /> : <SquareTerminal size={14} aria-hidden="true" className="text-fg-muted" />}
+        <span className="truncate">{title}</span>
+      </div>
+    );
+  return (
+    <button
+      type="button"
+      data-testid="pane-card"
+      data-status={status}
+      onClick={onFlip}
+      className="absolute inset-0 z-10 flex flex-col items-start justify-center gap-2 bg-surface-2 p-6 text-left hover:bg-surface-3 focus-visible:shadow-focus focus-visible:outline-none"
+    >
+      <span className="line-clamp-2 text-lg font-semibold text-fg" data-testid="pane-card-title">
+        {title}
+      </span>
+      <span className="flex items-center gap-2 text-sm text-fg-muted">
+        {spec ? <EngineGlyph letters={spec.logo} size={16} /> : <SquareTerminal size={14} aria-hidden="true" />}
+        {engine}
+      </span>
+      <span className="flex items-center gap-2 text-sm text-fg-muted">
+        <StatusDot status={status} size={8} />
+        {t(`agentStatus.${status}`)}
+        {status === "working" && since !== undefined && <span>· {elapsed(since, now)}</span>}
+      </span>
+    </button>
+  );
+}
+
 async function moveToNewTab(tabId: string, paneId: string): Promise<void> {
   const pane = useLayout.getState().tabs[tabId]?.panes[paneId];
   if (pane)
@@ -314,7 +398,6 @@ async function moveToNewTab(tabId: string, paneId: string): Promise<void> {
 
 /** The empty tab (UI-10): launch tiles instead of a shell. */
 function EmptyTab({ tabId, workspace }: { tabId: string; workspace: WorkspaceSummary }) {
-  const tiles = useTiles(workspace.name);
   const [busy, setBusy] = useState<string | null>(null);
   const { show } = useToast();
   const start = async (tileId: string) => {
@@ -329,9 +412,12 @@ function EmptyTab({ tabId, workspace }: { tabId: string; workspace: WorkspaceSum
   };
   return (
     <div data-testid="empty-tab" className="flex h-full items-center justify-center p-6">
-      <div className="flex w-full max-w-[600px] flex-col gap-3">
-        <h2 className="text-md font-semibold text-fg">{t("code.start")}</h2>
-        <LaunchTiles tiles={tiles} busy={busy} onPick={(id) => void start(id)} />
+      <div className="flex w-full max-w-[480px] flex-col gap-3">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-md font-semibold text-fg">{t("code.startIn", { name: workspace.name })}</h2>
+          <p className="text-sm text-fg-muted">{t("code.startBody")}</p>
+        </div>
+        <LaunchGrid tabId={tabId} busy={busy} onPick={(id) => void start(id)} />
       </div>
     </div>
   );
@@ -392,7 +478,23 @@ export function PaneGrid({
   }, [root, tabId]);
 
   const engines = useEngines((st) => st.list);
-  const names = useMemo(() => paneTitles(tab?.panes ?? {}, engines), [tab?.panes, engines]);
+  const cards = useLayout((st) => st.cards[tabId]);
+  const records = useStatus((st) => st.records);
+  const ptyStates = useTerminals((st) => st.states);
+  const prompts = useFirstPrompts((st) => st.prompts);
+  const names = useMemo(() => {
+    const sources: Record<string, TitleSources> = {};
+    for (const id of Object.keys(tab?.panes ?? {}))
+      sources[id] = { hook: records[paneKey(id)]?.title, osc: ptyStates[id]?.title, firstPrompt: prompts[id] };
+    return paneTitles(tab?.panes ?? {}, engines, sources);
+  }, [tab?.panes, engines, records, ptyStates, prompts]);
+  // The pane in front never turns unread (F-SH-03).
+  const active = tab?.active ?? null;
+  useEffect(() => {
+    const st = useStatus.getState();
+    if (visible && active) st.setFocused(paneKey(active));
+    else if (active && st.focusedKey === paneKey(active)) st.setFocused(null);
+  }, [visible, active]);
 
   if (!tab || (!tab.tree && !tab.keepEmpty)) {
     return (
@@ -437,6 +539,7 @@ export function PaneGrid({
             solo={solo}
             maximized={tab.maximized === id}
             options={options}
+            cover={cards && !cards.flipped[id] ? "card" : workspace.sessionsCollapsed ? "line" : null}
           />,
           paneHost(id),
           id,

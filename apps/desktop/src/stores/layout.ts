@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { IpcError, PaneRecord, Tab, TabLayout } from "@tandem/protocol";
 import { invoke } from "../ipc/invoke";
 import {
-  arrange,
+  autoGrid,
   canSplit,
   contains,
   equalizeAt as equalizeAtNode,
@@ -48,6 +48,9 @@ type LayoutState = {
   dragging: boolean;
   /** The pane picker for a pending split. */
   picker: SplitRequest | null;
+  /** Card view per tab (F-CD-11): panes shown as title cards, and the ones
+   * flipped back to their terminal. */
+  cards: Record<string, { flipped: Record<string, true> }>;
   load: (workspaceId: string) => Promise<void>;
   ensurePane: (tabId: string) => Promise<void>;
   markEmpty: (tabId: string) => void;
@@ -65,6 +68,8 @@ type LayoutState = {
   move: (tabId: string, paneId: string, target: string, side: Side) => void;
   moveToNewTab: (tabId: string, paneId: string) => Promise<Tab | null>;
   arrange: (tabId: string) => void;
+  toggleCards: (tabId: string) => void;
+  flipCard: (tabId: string, paneId: string) => void;
   setBox: (tabId: string, box: Box) => void;
   setDragging: (dragging: boolean) => void;
   forgetTab: (tabId: string) => void;
@@ -139,6 +144,7 @@ export const useLayout = create<LayoutState>((set, get) => {
     boxes: {},
     dragging: false,
     picker: null,
+    cards: {},
 
     load: (workspaceId) => {
       const pending = loading.get(workspaceId);
@@ -320,7 +326,20 @@ export const useLayout = create<LayoutState>((set, get) => {
     },
 
     arrange: (tabId) =>
-      update(tabId, (t) => (t.tree ? { ...t, tree: arrange(leaves(t.tree)), maximized: null } : t)),
+      update(tabId, (t) => (t.tree ? { ...t, tree: autoGrid(leaves(t.tree)), maximized: null } : t)),
+
+    toggleCards: (tabId) => {
+      const cards = { ...get().cards };
+      if (cards[tabId]) delete cards[tabId];
+      else cards[tabId] = { flipped: {} };
+      set({ cards });
+    },
+
+    flipCard: (tabId, paneId) => {
+      const cur = get().cards[tabId];
+      if (!cur) return;
+      set({ cards: { ...get().cards, [tabId]: { flipped: { ...cur.flipped, [paneId]: true } } } });
+    },
 
     setBox: (tabId, box) => {
       const prev = get().boxes[tabId];

@@ -58,7 +58,12 @@ const COMMANDS: &[&str] = &[
     "term_quote_paths",
     "term_stage_clipboard_image",
     "term_last_output",
+    "pty_type_prompt",
+    "status_list",
     "engines_list",
+    "engines_detect",
+    "engines_install_command",
+    "engines_set_extra_args",
 ];
 
 const TEST_COMMANDS: &[&str] = &[

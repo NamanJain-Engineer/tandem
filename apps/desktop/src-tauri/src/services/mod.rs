@@ -4,11 +4,14 @@
 pub mod api;
 pub mod auth;
 pub mod boot;
+pub mod config;
 pub mod deeplink;
+pub mod engines;
 pub mod entitlement;
 pub mod events;
 pub mod opener;
 pub mod staging;
+pub mod status;
 pub mod telemetry;
 pub mod terminal;
 pub mod workspaces;

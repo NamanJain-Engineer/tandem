@@ -50,9 +50,19 @@ const WS: WorkspaceSummary = {
   tabs: [TAB],
 };
 
+const REPORT = {
+  host: "local",
+  shellsAsked: ["/bin/zsh -lic"],
+  foldersChecked: ["~/.local/bin", "~/.nvm/versions/node/v22.3.0/bin"],
+  found: [],
+  missing: ["claude", "kimi"],
+  fixes: [],
+  slowShell: null,
+};
+
 /** A small core: tabs, panes and saved layouts. */
 function core(
-  opts: { live?: number; panes?: string[]; tree?: unknown; missing?: boolean; picked?: string } = {},
+  opts: { live?: number; panes?: string[]; tree?: unknown; missing?: boolean; picked?: string; noEngines?: boolean } = {},
 ) {
   let n = 0;
   const tabs: Tab[] = [TAB];
@@ -89,20 +99,23 @@ function core(
           id: "claude",
           label: "Claude Code",
           vendor: "Anthropic",
+          logo: "C",
           commands: ["claude"],
           providerHomeEnv: null,
           supportsResume: true,
           newlineSequence: "\u001b\r",
         },
-        install: { path: "/bin/claude" },
+        install: opts.noEngines ? null : { path: "/bin/claude", version: "1.0.0", source: "shell" },
         chatCapable: false,
         unsupportedReason: null,
+        extraArgs: [],
       },
       {
         spec: {
           id: "kimi",
           label: "Kimi",
           vendor: "Moonshot",
+          logo: "K",
           commands: ["kimi"],
           providerHomeEnv: null,
           supportsResume: false,
@@ -111,8 +124,10 @@ function core(
         install: null,
         chatCapable: false,
         unsupportedReason: null,
+        extraArgs: [],
       },
     ],
+    engines_detect: () => REPORT,
     workspace_locate: () => {
       opts.missing = false;
       return null;
@@ -331,7 +346,7 @@ describe("pane grid (F-CD-02)", () => {
     await waitFor(() => expect(paneEls()).toHaveLength(1));
     fireEvent.click(screen.getByRole("button", { name: "Close Shell · 1" }));
     expect(await screen.findByTestId("empty-tab")).toBeTruthy();
-    expect(screen.getByText("Start something")).toBeTruthy();
+    expect(screen.getByText("Start in shop")).toBeTruthy();
     expect(calls.filter((c) => c.cmd === "pane_create")).toHaveLength(0);
     fireEvent.click(screen.getByTestId("tile-shell"));
     await waitFor(() => expect(paneEls()).toHaveLength(1));
@@ -450,5 +465,34 @@ describe("pane grid (F-CD-02)", () => {
     });
     const titles = screen.getAllByTestId("pane-title").map((el) => el.textContent);
     expect(titles).toEqual(["Shell · 1", "Claude Code · 1"]);
+  });
+
+  it("F-CD-13.1 with only claude installed the grid shows Claude Code first and the rest under not installed", async () => {
+    core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Close Shell · 1" }));
+    const grid = await screen.findByTestId("launch-grid");
+    await waitFor(() => expect(within(grid).getByTestId("tile-claude")).toBeTruthy());
+    const tiles = within(grid).getAllByRole("button").filter((b) => b.dataset.testid?.startsWith("tile-"));
+    expect(tiles.map((b) => b.dataset.testid)).toEqual(["tile-claude", "tile-shell"]);
+    const more = within(grid).getByTestId("more-engines");
+    expect(more.textContent).toContain("1 more not installed");
+    fireEvent.click(more);
+    expect(within(grid).getByTestId("missing-kimi")).toBeTruthy();
+    expect(within(grid).getByTestId("install-kimi")).toBeTruthy();
+    expect(within(grid).queryByTestId("engines-diagnostics")).toBeNull();
+  });
+
+  it("F-CD-13.2 with none installed the diagnostics list the shells probed and Check again re-detects", async () => {
+    const { calls } = core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" }, noEngines: true });
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Close Shell · 1" }));
+    const diag = await screen.findByTestId("engines-diagnostics");
+    fireEvent.click(within(diag).getByTestId("check-again"));
+    await waitFor(() => expect(calls.some((c) => c.cmd === "engines_detect")).toBe(true));
+    await waitFor(() => expect(within(diag).getByTestId("shells-asked").textContent).toContain("/bin/zsh -lic"));
+    expect(within(diag).getByText(/~\/\.nvm\/versions\/node/)).toBeTruthy();
   });
 });

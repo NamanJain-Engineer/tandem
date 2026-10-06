@@ -16,6 +16,7 @@ import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { totalCredits, useSession } from "../../stores/session";
 import { useUi, type Mode } from "../../stores/ui";
+import { useLayout } from "../../stores/layout";
 import { useWorkspaces } from "../../stores/workspaces";
 import { copyDiagnostics, switchMode } from "./actions";
 import { LogoMark } from "./LogoMark";
@@ -118,18 +119,36 @@ export function TitleBar() {
         },
   ];
 
+  const activeTab = active ? workspaces.activeTab[active.id] : undefined;
+  const cardsOn = useLayout((st) => (activeTab ? st.cards[activeTab] !== undefined : false));
+  const inCode = mode === "code" && activeTab !== undefined;
   const workspaceMenu: MenuEntry[] = [
-    { id: "arrange", label: t("menu.ws.arrange"), kbd: ["Mod", "Shift", "T"], disabled: true },
-    { id: "cards", label: t("menu.ws.cards"), disabled: true },
+    {
+      id: "arrange",
+      label: t("menu.ws.arrange"),
+      kbd: ["Mod", "Shift", "T"],
+      disabled: !inCode,
+      onSelect: () => activeTab && useLayout.getState().arrange(activeTab),
+    },
+    {
+      id: "cards",
+      type: "checkbox",
+      label: t("menu.ws.cards"),
+      checked: cardsOn,
+      disabled: !inCode,
+      onCheckedChange: () => activeTab && useLayout.getState().toggleCards(activeTab),
+    },
     {
       id: "sessions",
       type: "checkbox",
       label: t("menu.ws.sessions"),
       checked: !(active?.sessionsCollapsed ?? false),
-      disabled: true,
+      disabled: !active,
+      onCheckedChange: (show) => active && void workspaces.setSessionsCollapsed(active.id, !show),
     },
     { id: "usage", label: t("menu.ws.usage"), disabled: true },
   ];
+
 
   return (
     <header

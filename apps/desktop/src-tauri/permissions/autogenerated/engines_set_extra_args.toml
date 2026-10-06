@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-engines-set-extra-args"
+description = "Enables the engines_set_extra_args command without any pre-configured scope."
+commands.allow = ["engines_set_extra_args"]
+
+[[permission]]
+identifier = "deny-engines-set-extra-args"
+description = "Denies the engines_set_extra_args command without any pre-configured scope."
+commands.deny = ["engines_set_extra_args"]

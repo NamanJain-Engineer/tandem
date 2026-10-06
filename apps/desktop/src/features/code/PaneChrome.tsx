@@ -55,7 +55,9 @@ export function PaneChrome({
         aria-hidden="true"
         className="shrink-0 text-fg-subtle opacity-0 group-hover/chrome:opacity-100"
       />
-      <StatusDot status={status} size={6} />
+      <span data-testid="pane-status" data-status={status} className="inline-flex shrink-0">
+        <StatusDot status={status} size={6} />
+      </span>
       <span className="inline-flex shrink-0 text-fg-muted" aria-hidden="true">
         {glyph ?? <SquareTerminal size={13} />}
       </span>

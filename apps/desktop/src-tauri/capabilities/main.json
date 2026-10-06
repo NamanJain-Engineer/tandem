@@ -73,6 +73,11 @@
     "allow-term-quote-paths",
     "allow-term-last-output",
     "allow-term-stage-clipboard-image",
-    "allow-engines-list"
+    "allow-engines-list",
+    "allow-pty-type-prompt",
+    "allow-status-list",
+    "allow-engines-detect",
+    "allow-engines-install-command",
+    "allow-engines-set-extra-args"
   ]
 }

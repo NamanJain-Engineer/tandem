@@ -23,6 +23,8 @@ type WorkspacesState = {
   move: (id: string, afterId: string | null, pinned: boolean) => Promise<void>;
   rename: (id: string, name: string) => Promise<IpcError | null>;
   setCollapsed: (id: string, collapsed: boolean) => void;
+  /** "Show terminal sessions" off: panes collapse to one line (F-CD-11). */
+  setSessionsCollapsed: (id: string, collapsed: boolean) => Promise<void>;
   locate: (id: string, root: string) => Promise<IpcError | null>;
   renameTab: (workspaceId: string, tabId: string, name: string) => Promise<IpcError | null>;
   reorderTabs: (workspaceId: string, ids: string[]) => Promise<void>;
@@ -114,6 +116,10 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
     } finally {
       await get().refresh();
     }
+  },
+  setSessionsCollapsed: async (id, sessionsCollapsed) => {
+    set({ list: get().list.map((w) => (w.id === id ? { ...w, sessionsCollapsed } : w)) });
+    await invoke("workspace_set_flags", { id, showSessionsCollapsed: sessionsCollapsed }).catch(() => undefined);
   },
   setCollapsed: (id, collapsed) => {
     set({ list: get().list.map((w) => (w.id === id ? { ...w, collapsed } : w)) });

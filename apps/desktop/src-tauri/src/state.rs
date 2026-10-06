@@ -17,9 +17,12 @@ use tandem_store::Store;
 
 use crate::services::api::{ApiClient, Endpoints, HttpApi};
 use crate::services::auth::AuthService;
+use crate::services::config::ConfigService;
 use crate::services::deeplink::DeepLinkQueue;
+use crate::services::engines::EngineService;
 use crate::services::entitlement::EntitlementService;
 use crate::services::opener::{self, UrlOpener};
+use crate::services::status::StatusService;
 use crate::services::telemetry::TelemetryService;
 use crate::services::terminal::TerminalService;
 
@@ -105,6 +108,7 @@ pub struct AppState {
     pub auth: Arc<AuthService>,
     pub entitlements: Arc<EntitlementService>,
     pub terminals: Arc<TerminalService>,
+    pub config: Arc<ConfigService>,
     pub telemetry: Arc<TelemetryService>,
     pub deeplinks: DeepLinkQueue,
     /// Processes a crashed run left behind, until the user decides (UI-132).
@@ -175,7 +179,7 @@ impl AppState {
             bus.clone(),
             offline_started_at,
         );
-        let (entitlement_keys, _config_keys) = bundled_keys(BUNDLED_KEYS)
+        let (entitlement_keys, config_keys) = bundled_keys(BUNDLED_KEYS)
             .unwrap_or((PublicKeySet::default(), PublicKeySet::default()));
         let entitlements = EntitlementService::new(
             auth.clone(),
@@ -193,6 +197,10 @@ impl AppState {
         ));
         let orphans =
             OrphanScan::start(data.run(), registry.path().to_path_buf(), ORPHAN_SCAN_WAIT);
+        let config = ConfigService::new(api.clone(), config_keys, data.config_cache());
+        let engines = EngineService::new(store.clone(), bus.clone(), data.providers());
+        engines.apply_config(&config.value());
+        let status = StatusService::new(bus.clone(), clock.clone());
         let pty_bus = bus.clone();
         let mark_bus = bus.clone();
         let cwd_store = store.clone();
@@ -200,6 +208,12 @@ impl AppState {
         // session for the workspace's "Saved sessions" (F-CD-03 AC3).
         let handback_store = store.clone();
         let handback_bus = bus.clone();
+        let handback_status = status.clone();
+        // Agent output drives the status heuristics (F-EN-05); the screen is
+        // read only when a waiting-pattern check is due.
+        let activity_status = status.clone();
+        let screen_pty: Arc<std::sync::OnceLock<PtyManager>> = Arc::new(std::sync::OnceLock::new());
+        let screen_for_sink = screen_pty.clone();
         let pty = PtyManager::new()
             .with_registry(registry)
             .with_state_sink(Arc::new(move |state| {
@@ -220,7 +234,14 @@ impl AppState {
                     mark_bus.publish(BusEvent::new(Topic::Pty, "pty:mark", event));
                 }
             }))
+            .with_activity_sink(Arc::new(move |pane, _bytes| {
+                if !activity_status.is_watched(pane) {
+                    return;
+                }
+                activity_status.output(pane, || screen_for_sink.get().and_then(|p| p.screen_text(pane)));
+            }))
             .with_handback_sink(Arc::new(move |pane, code| {
+                handback_status.unwatch(pane);
                 let (store, bus) = (handback_store.clone(), handback_bus.clone());
                 let pane = tandem_core::ids::PaneId::from_db(pane.to_string());
                 tracing::info!(code = "pty.handback", exit = code, "agent handed the pane back");
@@ -236,8 +257,14 @@ impl AppState {
                     }
                 });
             }));
-        let terminals =
-            TerminalService::with_integration(pty, store.clone(), Some(data.shell_integration()));
+        let _ = screen_pty.set(pty.clone());
+        let terminals = TerminalService::with_services(
+            pty,
+            store.clone(),
+            Some(data.shell_integration()),
+            engines,
+            status,
+        );
         let telemetry = TelemetryService::new(&data, net.clone());
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         Self {
@@ -256,6 +283,7 @@ impl AppState {
             auth,
             entitlements,
             terminals,
+            config,
             telemetry,
             deeplinks: DeepLinkQueue::default(),
             orphans,

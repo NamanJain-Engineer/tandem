@@ -11,9 +11,11 @@ import { commandRuns, setCommandToast } from "../commands/commands";
 import { InterimMain, InterimRail } from "../interim/Interim";
 import { Palette } from "../palette/Palette";
 import { OrphansDialog } from "../restore/OrphansDialog";
+import { followEngines } from "../../stores/engines";
+import { followStatus } from "../../stores/status";
 import { followPtyState } from "../../stores/terminals";
 import { terminalHandles } from "../code/TerminalView";
-import { enablePerfMarks, perfTimes, writeCounts } from "../code/perfMarks";
+import { enablePerfMarks, perfSpans, perfTimes, writeCounts } from "../code/perfMarks";
 import { webglPool } from "../code/webglPool";
 import { useBoot } from "./useBoot";
 import { SettingsView } from "../settings/SettingsView";
@@ -31,6 +33,8 @@ export function AppShell() {
   useShortcuts();
   useEffect(() => setCommandToast(toast), [toast]);
   useEffect(followPtyState, []);
+  useEffect(followEngines, []);
+  useEffect(followStatus, []);
   // Debug builds: UI-side counters for the E2E harness (ARCHITECTURE §17.5).
   const dev = useBoot((st) => st.boot?.dev ?? false);
   useEffect(() => {
@@ -43,7 +47,7 @@ export function AppShell() {
       paneCursor: (paneId: string) => terminalHandles.get(paneId)?.cursor() ?? null,
       paneMetrics: (paneId: string) => terminalHandles.get(paneId)?.metrics() ?? null,
       webglHolds: (paneId: string) => webglPool.holds(paneId),
-      perf: { enable: enablePerfMarks, times: perfTimes, writes: writeCounts },
+      perf: { enable: enablePerfMarks, times: perfTimes, writes: writeCounts, spans: perfSpans },
       paneSize: (paneId: string) => terminalHandles.get(paneId)?.size() ?? null,
       commandRuns: () => Object.fromEntries(commandRuns),
       // State the harness saves next to a failure's screenshot.

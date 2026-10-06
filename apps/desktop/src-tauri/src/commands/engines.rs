@@ -1,11 +1,12 @@
-//! Engines (ARCHITECTURE §3.2, F-EN-02). M3 slice: the bundled registry with
-//! PATH-only detection, enough for the pane picker's engine tiles. M4 brings
-//! the full detection report, versions and install commands.
+//! Engines (ARCHITECTURE §3.2, §6.1–6.3; F-EN-01, F-EN-02, F-EN-03): the
+//! registry joined with detection, Check again, install commands and the
+//! user's extra launch args.
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use ts_rs::TS;
 
+use tandem_engines::detect::{DetectionReport, FoundSource};
 use tandem_engines::EngineSpec;
 
 use crate::state::AppState;
@@ -15,6 +16,8 @@ use crate::state::AppState;
 #[ts(export)]
 pub struct EngineInstall {
     pub path: String,
+    pub version: Option<String>,
+    pub source: FoundSource,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -22,12 +25,49 @@ pub struct EngineInstall {
 #[ts(export)]
 pub struct EngineView {
     pub spec: EngineSpec,
-    /// Where it was found on the login PATH; absent when not installed.
+    /// Where detection found it; absent when not installed.
     pub install: Option<EngineInstall>,
     pub chat_capable: bool,
     pub unsupported_reason: Option<String>,
+    /// The user's extra launch args (Settings › Engines).
+    pub extra_args: Vec<String>,
 }
 
+/// The install command for this OS, shown verbatim and typed into a visible
+/// terminal by "Run in terminal" (F-EN-03).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct InstallCommand {
+    pub display: String,
+    pub shell: String,
+}
+
+fn views(
+    spec: &[EngineSpec],
+    report: Option<&DetectionReport>,
+    extra: &serde_json::Value,
+) -> Vec<EngineView> {
+    spec.iter()
+        .map(|s| EngineView {
+            install: report.and_then(|r| r.get(&s.id)).map(|f| EngineInstall {
+                path: f.path.clone(),
+                version: f.version.clone(),
+                source: f.source,
+            }),
+            // Chat adapters arrive in M6.
+            chat_capable: false,
+            unsupported_reason: None,
+            extra_args: extra
+                .get(&s.id)
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default(),
+            spec: s.clone(),
+        })
+        .collect()
+}
+
+/// Installed engines first, in registry order otherwise (UI-10).
 #[tauri::command]
 pub async fn engines_list(
     state: State<'_, AppState>,
@@ -36,21 +76,86 @@ pub async fn engines_list(
     if host_id.as_deref().is_some_and(|h| h != "local") {
         return Ok(Vec::new());
     }
-    let mut out = Vec::new();
-    for spec in state.terminals.engines.all() {
-        let install = state
-            .terminals
-            .resolve_engine(spec)
-            .await
-            .map(|p| EngineInstall {
-                path: p.to_string_lossy().into_owned(),
-            });
-        out.push(EngineView {
-            spec: spec.clone(),
-            install,
-            chat_capable: false,
-            unsupported_reason: None,
-        });
+    let engines = &state.terminals.engines;
+    let report = match engines.report() {
+        Some(r) => r,
+        // First run, nothing cached: wait for detection (≤ 8 s + versions).
+        None => engines.detect(state.terminals.login_env().await).await,
+    };
+    let extra = tandem_store::repo::settings::get(
+        &state.store,
+        tandem_core::settings::SettingKey::EngineExtraArgs,
+    )
+    .await
+    .unwrap_or_default();
+    let mut list = views(engines.registry().all(), Some(&report), &extra);
+    list.sort_by_key(|v| v.install.is_none());
+    Ok(list)
+}
+
+/// Check again: re-reads the remote registry and detects (F-EN-01 AC3).
+#[tauri::command]
+pub async fn engines_detect(
+    state: State<'_, AppState>,
+    host_id: Option<String>,
+) -> Result<DetectionReport, tandem_core::IpcError> {
+    if host_id.as_deref().is_some_and(|h| h != "local") {
+        return Err(tandem_core::IpcError::new(
+            tandem_core::ErrorCode::Unavailable,
+            "Remote hosts arrive in a later version",
+        ));
     }
-    Ok(out)
+    let config = state.config.refresh().await;
+    state.terminals.engines.apply_config(&config);
+    Ok(state
+        .terminals
+        .engines
+        .detect(state.terminals.login_env().await)
+        .await)
+}
+
+#[tauri::command]
+pub async fn engines_install_command(
+    state: State<'_, AppState>,
+    engine_id: String,
+) -> Result<InstallCommand, tandem_core::IpcError> {
+    let spec = state.terminals.engines.get(&engine_id).ok_or_else(|| {
+        tandem_core::IpcError::new(tandem_core::ErrorCode::NotFound, "That engine isn't known")
+    })?;
+    let display = if cfg!(target_os = "macos") {
+        spec.install.mac
+    } else if cfg!(windows) {
+        spec.install.win
+    } else {
+        spec.install.lin
+    }
+    .ok_or_else(|| {
+        tandem_core::IpcError::new(
+            tandem_core::ErrorCode::NotFound,
+            format!("{} has no install command for this system", spec.label),
+        )
+    })?;
+    Ok(InstallCommand {
+        display,
+        shell: if cfg!(windows) { "powershell" } else { "sh" }.into(),
+    })
+}
+
+#[tauri::command]
+pub async fn engines_set_extra_args(
+    state: State<'_, AppState>,
+    engine_id: String,
+    args: Vec<String>,
+) -> Result<(), tandem_core::IpcError> {
+    if state.terminals.engines.get(&engine_id).is_none() {
+        return Err(tandem_core::IpcError::new(
+            tandem_core::ErrorCode::NotFound,
+            "That engine isn't known",
+        ));
+    }
+    state
+        .terminals
+        .engines
+        .set_extra_args(&engine_id, args)
+        .await
 }

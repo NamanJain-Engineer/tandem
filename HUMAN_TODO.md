@@ -19,6 +19,7 @@ Things only a human can do. The build never blocks on them: each sits behind a m
 
 ## Legal
 - Trademark search for the working name "Tandem" before any public launch (DECISIONS §Identity).
+- Engine marks: Tandem ships its own letter monograms (UI_SPEC §1.6). Before shipping any vendor logo, get each vendor's permission or trademark guidance.
 - Review the UI labels the consistency pass flagged as generic but coincident with the reference product (CONSISTENCY_REPORT "Remaining known open items" 2).
 
 ## Manual QA checklist
@@ -29,6 +30,8 @@ Things only a human can do. The build never blocks on them: each sits behind a m
 - M3: real Japanese IME on macOS and Windows (commit on Enter, no CR during composition); Option-as-Meta on macOS.
 - M3: ConPTY TUIs on Windows (vim, htop): rendering, resize, mouse; closing a pane ends its whole tree (Job Object) and a crash of Tandem leaves no children behind.
 - M3: orphan detection on macOS after a forced quit (`kill -9`) with a `nohup` child in a pane: the dialog lists it and Stop ends it.
-- M3: the 16-pane benchmark (`pnpm --filter desktop perf -- --suite terminals`) on the reference machines.
+- M3: the 16-pane benchmark (`pnpm --filter desktop perf -- --suite terminals`) on the reference machines (a GPU, 8+ cores). The build VM (4 vCPU, Xvfb, software GL) records mode switch ~150 ms, six agents framed 670 ms / 526 ms stall, key echo P95 223 ms, focused 4.5 fps, idle CPU 6–13 %, RSS ~2.3 GB; compare and file anything still over target.
+- M4: real engines per OS (Claude Code, Codex, Gemini, Copilot, Cursor, Grok, OpenCode, Droid, Amp, Aider, Kimi): detected path and version, launch in its provider home, sign-in stays inside that home; Claude hooks drive Working → Waiting → Done in the pane header and rail.
+- M4: macOS GUI-PATH detection: an engine on PATH only through `~/.zprofile` (zsh) is found from the Dock-launched app, and one only in `~/.zshrc` gets the "Add the folder to PATH in ~/.zprofile" fix.
 - M3: PowerShell shell integration on Windows (pwsh 7 and Windows PowerShell 5.1): cwd after `cd`, ✓/✗ marks, and "Copy last command output" without a leading blank line; the user's own `prompt` still renders.
 - M3: zsh integration with a real oh-my-zsh / powerlevel10k setup (instant prompt on): prompt unchanged, marks present, `echo $ZDOTDIR` shows the user's own value.

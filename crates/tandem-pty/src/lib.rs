@@ -14,6 +14,7 @@ pub mod quote;
 pub mod responder;
 pub mod ring;
 pub mod side;
+pub mod typing;
 
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
@@ -53,6 +54,9 @@ pub type StateSink = Arc<dyn Fn(PtyState) + Send + Sync>;
 pub type HandbackSink = Arc<dyn Fn(&str, i32) + Send + Sync>;
 /// Called with each shell-integration mark (`pty:mark`, F-CD-10).
 pub type MarkSink = Arc<dyn Fn(&str, &Mark) + Send + Sync>;
+/// Called with each chunk's size as a pane's program writes (status
+/// heuristics, F-EN-05). Runs on the pane's reader thread: keep it short.
+pub type ActivitySink = Arc<dyn Fn(&str, usize) + Send + Sync>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PtyError {
@@ -158,6 +162,7 @@ pub struct PtyManager {
     on_state: Option<StateSink>,
     on_handback: Option<HandbackSink>,
     on_mark: Option<MarkSink>,
+    on_activity: Option<ActivitySink>,
 }
 
 enum Msg {
@@ -192,6 +197,12 @@ impl PtyManager {
     /// Where shell-integration marks go (`pty:mark`).
     pub fn with_mark_sink(mut self, sink: MarkSink) -> Self {
         self.on_mark = Some(sink);
+        self
+    }
+
+    /// Where output activity goes (status heuristics).
+    pub fn with_activity_sink(mut self, sink: ActivitySink) -> Self {
+        self.on_activity = Some(sink);
         self
     }
 
@@ -313,6 +324,7 @@ impl PtyManager {
         let colors = self.colors.clone();
         let on_handback = self.on_handback.clone();
         let on_mark = self.on_mark.clone();
+        let on_activity = self.on_activity.clone();
         let pane_id = pane.to_string();
         let name = format!("pty-read-{pane}");
         let spawned = std::thread::Builder::new().name(name).spawn(move || {
@@ -376,6 +388,9 @@ impl PtyManager {
                         }
                         if let Ok(mut ring) = session.ring.lock() {
                             ring.push(&chunk);
+                        }
+                        if let Some(sink) = &on_activity {
+                            sink(&pane_id, chunk.len());
                         }
                         if tx.send(Msg::Data(chunk)).is_err() {
                             return;

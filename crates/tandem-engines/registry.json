@@ -1,13 +1,609 @@
 [
-  { "id": "claude", "label": "Claude Code", "vendor": "Anthropic", "commands": ["claude"], "providerHomeEnv": "CLAUDE_CONFIG_DIR", "supportsResume": true, "newlineSequence": "\u001b\r" },
-  { "id": "codex", "label": "Codex", "vendor": "OpenAI", "commands": ["codex"], "providerHomeEnv": "CODEX_HOME", "supportsResume": true, "newlineSequence": "\u001b\r" },
-  { "id": "cursor-agent", "label": "Cursor Agent", "vendor": "Cursor", "commands": ["cursor-agent"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" },
-  { "id": "gemini", "label": "Gemini CLI", "vendor": "Google", "commands": ["gemini"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" },
-  { "id": "copilot", "label": "Copilot CLI", "vendor": "GitHub", "commands": ["copilot"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" },
-  { "id": "grok", "label": "Grok", "vendor": "xAI", "commands": ["grok"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" },
-  { "id": "opencode", "label": "opencode", "vendor": "SST", "commands": ["opencode"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" },
-  { "id": "droid", "label": "Droid", "vendor": "Factory", "commands": ["droid"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" },
-  { "id": "amp", "label": "Amp", "vendor": "Sourcegraph", "commands": ["amp"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" },
-  { "id": "aider", "label": "Aider", "vendor": "Aider", "commands": ["aider"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" },
-  { "id": "kimi", "label": "Kimi", "vendor": "Moonshot", "commands": ["kimi"], "providerHomeEnv": null, "supportsResume": false, "newlineSequence": "\u001b\r" }
+  {
+    "id": "claude",
+    "label": "Claude Code",
+    "vendor": "Anthropic",
+    "logo": "C",
+    "commands": [
+      "claude"
+    ],
+    "versionCmd": [
+      "--version"
+    ],
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "install": {
+      "mac": "curl -fsSL https://claude.ai/install.sh | bash",
+      "lin": "curl -fsSL https://claude.ai/install.sh | bash",
+      "win": "irm https://claude.ai/install.ps1 | iex"
+    },
+    "loginCmd": [
+      "/login"
+    ],
+    "loginMode": "tui_slash",
+    "logoutCmd": [
+      "/logout"
+    ],
+    "statusCmd": null,
+    "chatAdapter": "claude",
+    "acpCmd": null,
+    "adapterVersions": ">=1.0.0",
+    "providerHomeEnv": "CLAUDE_CONFIG_DIR",
+    "homeStrategy": "env",
+    "keychainIsolation": "unsupported_mac",
+    "resumeCmdTemplate": [
+      "--resume",
+      "{session_id}"
+    ],
+    "supportsResume": true,
+    "newlineSequence": "\u001b\r",
+    "hooksSupport": "claude-hooks",
+    "usageLogGlobs": [
+      "projects/**/*.jsonl"
+    ],
+    "skillsDir": "skills",
+    "cheapModel": "haiku",
+    "titlePatterns": [
+      "^[✳✶✻✽✢·*]\\s*(.+)$"
+    ],
+    "readyPatterns": [
+      "^>\\s",
+      "\\? for shortcuts"
+    ],
+    "waitingPatterns": [
+      "Do you want to proceed\\?",
+      "❯ 1\\. Yes"
+    ],
+    "limitPatterns": [
+      "usage limit reached",
+      "rate limit",
+      "\\b429\\b"
+    ],
+    "onboardingSeed": {
+      "file": ".claude.json",
+      "merge": {
+        "hasCompletedOnboarding": true,
+        "theme": "{theme}"
+      }
+    },
+    "mcpNative": {
+      "kind": "claude_json",
+      "file": ".claude.json",
+      "key": "mcpServers"
+    }
+  },
+  {
+    "id": "codex",
+    "label": "Codex",
+    "vendor": "OpenAI",
+    "logo": "X",
+    "commands": [
+      "codex"
+    ],
+    "versionCmd": [
+      "--version"
+    ],
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "install": {
+      "mac": "npm install -g @openai/codex",
+      "lin": "npm install -g @openai/codex",
+      "win": "npm install -g @openai/codex"
+    },
+    "loginCmd": [
+      "login"
+    ],
+    "loginMode": "argv",
+    "logoutCmd": [
+      "logout"
+    ],
+    "statusCmd": [
+      "login",
+      "status"
+    ],
+    "chatAdapter": "codex",
+    "acpCmd": null,
+    "adapterVersions": ">=0.40.0",
+    "providerHomeEnv": "CODEX_HOME",
+    "homeStrategy": "env",
+    "keychainIsolation": "n/a",
+    "resumeCmdTemplate": [
+      "resume",
+      "{session_id}"
+    ],
+    "supportsResume": true,
+    "newlineSequence": "\u001b\r",
+    "hooksSupport": "codex-notify",
+    "usageLogGlobs": [
+      "sessions/**/*.jsonl"
+    ],
+    "skillsDir": "skills",
+    "cheapModel": "gpt-5-mini",
+    "titlePatterns": [],
+    "readyPatterns": [
+      "^›\\s",
+      "^>\\s"
+    ],
+    "waitingPatterns": [
+      "Allow command\\?",
+      "approve",
+      "\\[y/N\\]"
+    ],
+    "limitPatterns": [
+      "usage limit",
+      "rate limit",
+      "\\b429\\b",
+      "quota exceeded"
+    ],
+    "onboardingSeed": null,
+    "mcpNative": {
+      "kind": "codex_toml",
+      "file": "config.toml",
+      "key": "mcp_servers"
+    }
+  },
+  {
+    "id": "cursor-agent",
+    "label": "Cursor Agent",
+    "vendor": "Cursor",
+    "logo": "Cu",
+    "commands": [
+      "cursor-agent",
+      "agent"
+    ],
+    "versionCmd": [
+      "--version"
+    ],
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "install": {
+      "mac": "curl https://cursor.com/install -fsS | bash",
+      "lin": "curl https://cursor.com/install -fsS | bash",
+      "win": "irm 'https://cursor.com/install?win32=true' | iex"
+    },
+    "loginCmd": [
+      "login"
+    ],
+    "loginMode": "argv",
+    "logoutCmd": [
+      "logout"
+    ],
+    "statusCmd": [
+      "status"
+    ],
+    "chatAdapter": "acp",
+    "acpCmd": [
+      "cursor-agent",
+      "acp"
+    ],
+    "adapterVersions": null,
+    "providerHomeEnv": null,
+    "homeStrategy": "none",
+    "keychainIsolation": "n/a",
+    "resumeCmdTemplate": [
+      "--resume",
+      "{session_id}"
+    ],
+    "supportsResume": true,
+    "newlineSequence": "\u001b\r",
+    "hooksSupport": "none",
+    "usageLogGlobs": [],
+    "skillsDir": null,
+    "cheapModel": null,
+    "titlePatterns": [],
+    "readyPatterns": [],
+    "waitingPatterns": [
+      "Run this command\\?",
+      "\\(y\\)"
+    ],
+    "limitPatterns": [
+      "usage limit",
+      "rate limit",
+      "\\b429\\b",
+      "quota exceeded"
+    ],
+    "onboardingSeed": null,
+    "mcpNative": null
+  },
+  {
+    "id": "gemini",
+    "label": "Gemini CLI",
+    "vendor": "Google",
+    "logo": "G",
+    "commands": [
+      "gemini"
+    ],
+    "versionCmd": [
+      "--version"
+    ],
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "install": {
+      "mac": "npm install -g @google/gemini-cli",
+      "lin": "npm install -g @google/gemini-cli",
+      "win": "npm install -g @google/gemini-cli"
+    },
+    "loginCmd": null,
+    "loginMode": "tui_slash",
+    "logoutCmd": null,
+    "statusCmd": null,
+    "chatAdapter": null,
+    "acpCmd": null,
+    "adapterVersions": null,
+    "providerHomeEnv": null,
+    "homeStrategy": "none",
+    "keychainIsolation": "n/a",
+    "resumeCmdTemplate": null,
+    "supportsResume": false,
+    "newlineSequence": "\u001b\r",
+    "hooksSupport": "none",
+    "usageLogGlobs": [],
+    "skillsDir": null,
+    "cheapModel": null,
+    "titlePatterns": [],
+    "readyPatterns": [
+      "^>\\s",
+      "Type your message"
+    ],
+    "waitingPatterns": [
+      "Allow execution",
+      "Apply this change\\?"
+    ],
+    "limitPatterns": [
+      "usage limit",
+      "rate limit",
+      "\\b429\\b",
+      "quota exceeded"
+    ],
+    "onboardingSeed": null,
+    "mcpNative": null
+  },
+  {
+    "id": "copilot",
+    "label": "Copilot CLI",
+    "vendor": "GitHub",
+    "logo": "Co",
+    "commands": [
+      "copilot"
+    ],
+    "versionCmd": [
+      "--version"
+    ],
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "install": {
+      "mac": "npm install -g @github/copilot",
+      "lin": "npm install -g @github/copilot",
+      "win": "npm install -g @github/copilot"
+    },
+    "loginCmd": [
+      "/login"
+    ],
+    "loginMode": "tui_slash",
+    "logoutCmd": [
+      "/logout"
+    ],
+    "statusCmd": null,
+    "chatAdapter": null,
+    "acpCmd": null,
+    "adapterVersions": null,
+    "providerHomeEnv": null,
+    "homeStrategy": "none",
+    "keychainIsolation": "n/a",
+    "resumeCmdTemplate": null,
+    "supportsResume": false,
+    "newlineSequence": "\u001b\r",
+    "hooksSupport": "none",
+    "usageLogGlobs": [],
+    "skillsDir": null,
+    "cheapModel": null,
+    "titlePatterns": [],
+    "readyPatterns": [],
+    "waitingPatterns": [
+      "Do you want to run this command\\?",
+      "Allow"
+    ],
+    "limitPatterns": [
+      "usage limit",
+      "rate limit",
+      "\\b429\\b",
+      "quota exceeded"
+    ],
+    "onboardingSeed": null,
+    "mcpNative": null
+  },
+  {
+    "id": "grok",
+    "label": "Grok",
+    "vendor": "xAI",
+    "logo": "Gk",
+    "commands": [
+      "grok"
+    ],
+    "versionCmd": [
+      "--version"
+    ],
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "install": {
+      "mac": "curl -fsSL https://x.ai/cli/install.sh | bash",
+      "lin": "curl -fsSL https://x.ai/cli/install.sh | bash",
+      "win": "irm https://x.ai/cli/install.ps1 | iex"
+    },
+    "loginCmd": null,
+    "loginMode": "tui_slash",
+    "logoutCmd": null,
+    "statusCmd": null,
+    "chatAdapter": "acp",
+    "acpCmd": [
+      "grok",
+      "acp"
+    ],
+    "adapterVersions": null,
+    "providerHomeEnv": null,
+    "homeStrategy": "none",
+    "keychainIsolation": "n/a",
+    "resumeCmdTemplate": null,
+    "supportsResume": false,
+    "newlineSequence": "\u001b\r",
+    "hooksSupport": "none",
+    "usageLogGlobs": [],
+    "skillsDir": null,
+    "cheapModel": null,
+    "titlePatterns": [],
+    "readyPatterns": [],
+    "waitingPatterns": [],
+    "limitPatterns": [
+      "usage limit",
+      "rate limit",
+      "\\b429\\b",
+      "quota exceeded"
+    ],
+    "onboardingSeed": null,
+    "mcpNative": null
+  },
+  {
+    "id": "opencode",
+    "label": "OpenCode",
+    "vendor": "SST",
+    "logo": "O",
+    "commands": [
+      "opencode"
+    ],
+    "versionCmd": [
+      "--version"
+    ],
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "install": {
+      "mac": "curl -fsSL https://opencode.ai/install | bash",
+      "lin": "curl -fsSL https://opencode.ai/install | bash",
+      "win": "npm install -g opencode-ai"
+    },
+    "loginCmd": [
+      "auth",
+      "login"
+    ],
+    "loginMode": "argv",
+    "logoutCmd": [
+      "auth",
+      "logout"
+    ],
+    "statusCmd": null,
+    "chatAdapter": "acp",
+    "acpCmd": [
+      "opencode",
+      "acp"
+    ],
+    "adapterVersions": null,
+    "providerHomeEnv": null,
+    "homeStrategy": "xdg",
+    "keychainIsolation": "n/a",
+    "resumeCmdTemplate": null,
+    "supportsResume": false,
+    "newlineSequence": "\u001b\r",
+    "hooksSupport": "none",
+    "usageLogGlobs": [],
+    "skillsDir": null,
+    "cheapModel": null,
+    "titlePatterns": [],
+    "readyPatterns": [],
+    "waitingPatterns": [],
+    "limitPatterns": [
+      "usage limit",
+      "rate limit",
+      "\\b429\\b",
+      "quota exceeded"
+    ],
+    "onboardingSeed": null,
+    "mcpNative": null
+  },
+  {
+    "id": "droid",
+    "label": "Droid",
+    "vendor": "Factory",
+    "logo": "D",
+    "commands": [
+      "droid"
+    ],
+    "versionCmd": [
+      "--version"
+    ],
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "install": {
+      "mac": "curl -fsSL https://app.factory.ai/cli | sh",
+      "lin": "curl -fsSL https://app.factory.ai/cli | sh",
+      "win": "irm https://app.factory.ai/cli/windows | iex"
+    },
+    "loginCmd": null,
+    "loginMode": "tui_slash",
+    "logoutCmd": null,
+    "statusCmd": null,
+    "chatAdapter": null,
+    "acpCmd": null,
+    "adapterVersions": null,
+    "providerHomeEnv": null,
+    "homeStrategy": "none",
+    "keychainIsolation": "n/a",
+    "resumeCmdTemplate": null,
+    "supportsResume": false,
+    "newlineSequence": "\u001b\r",
+    "hooksSupport": "none",
+    "usageLogGlobs": [],
+    "skillsDir": null,
+    "cheapModel": null,
+    "titlePatterns": [],
+    "readyPatterns": [],
+    "waitingPatterns": [],
+    "limitPatterns": [
+      "usage limit",
+      "rate limit",
+      "\\b429\\b",
+      "quota exceeded"
+    ],
+    "onboardingSeed": null,
+    "mcpNative": null
+  },
+  {
+    "id": "amp",
+    "label": "Amp",
+    "vendor": "Sourcegraph",
+    "logo": "A",
+    "commands": [
+      "amp"
+    ],
+    "versionCmd": [
+      "--version"
+    ],
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "install": {
+      "mac": "npm install -g @sourcegraph/amp",
+      "lin": "npm install -g @sourcegraph/amp",
+      "win": "npm install -g @sourcegraph/amp"
+    },
+    "loginCmd": [
+      "login"
+    ],
+    "loginMode": "argv",
+    "logoutCmd": [
+      "logout"
+    ],
+    "statusCmd": null,
+    "chatAdapter": null,
+    "acpCmd": null,
+    "adapterVersions": null,
+    "providerHomeEnv": null,
+    "homeStrategy": "none",
+    "keychainIsolation": "n/a",
+    "resumeCmdTemplate": null,
+    "supportsResume": false,
+    "newlineSequence": "\u001b\r",
+    "hooksSupport": "none",
+    "usageLogGlobs": [],
+    "skillsDir": null,
+    "cheapModel": null,
+    "titlePatterns": [],
+    "readyPatterns": [],
+    "waitingPatterns": [],
+    "limitPatterns": [
+      "usage limit",
+      "rate limit",
+      "\\b429\\b",
+      "quota exceeded"
+    ],
+    "onboardingSeed": null,
+    "mcpNative": null
+  },
+  {
+    "id": "aider",
+    "label": "Aider",
+    "vendor": "Aider",
+    "logo": "Ai",
+    "commands": [
+      "aider"
+    ],
+    "versionCmd": [
+      "--version"
+    ],
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "install": {
+      "mac": "python -m pip install aider-install && aider-install",
+      "lin": "python -m pip install aider-install && aider-install",
+      "win": "python -m pip install aider-install; aider-install"
+    },
+    "loginCmd": null,
+    "loginMode": "tui_slash",
+    "logoutCmd": null,
+    "statusCmd": null,
+    "chatAdapter": null,
+    "acpCmd": null,
+    "adapterVersions": null,
+    "providerHomeEnv": null,
+    "homeStrategy": "none",
+    "keychainIsolation": "n/a",
+    "resumeCmdTemplate": null,
+    "supportsResume": false,
+    "newlineSequence": "\u001b\r",
+    "hooksSupport": "none",
+    "usageLogGlobs": [],
+    "skillsDir": null,
+    "cheapModel": null,
+    "titlePatterns": [],
+    "readyPatterns": [
+      "^> ",
+      "^architect> ",
+      "^code> "
+    ],
+    "waitingPatterns": [
+      "\\(Y\\)es/\\(N\\)o",
+      "\\[Yes\\]"
+    ],
+    "limitPatterns": [
+      "usage limit",
+      "rate limit",
+      "\\b429\\b",
+      "quota exceeded"
+    ],
+    "onboardingSeed": null,
+    "mcpNative": null
+  },
+  {
+    "id": "kimi",
+    "label": "Kimi",
+    "vendor": "Moonshot",
+    "logo": "K",
+    "commands": [
+      "kimi"
+    ],
+    "versionCmd": [
+      "--version"
+    ],
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "install": {
+      "mac": "curl -LsSf https://code.kimi.com/install.sh | bash",
+      "lin": "curl -LsSf https://code.kimi.com/install.sh | bash",
+      "win": "irm https://code.kimi.com/install.ps1 | iex"
+    },
+    "loginCmd": null,
+    "loginMode": "tui_slash",
+    "logoutCmd": null,
+    "statusCmd": null,
+    "chatAdapter": null,
+    "acpCmd": null,
+    "adapterVersions": null,
+    "providerHomeEnv": null,
+    "homeStrategy": "none",
+    "keychainIsolation": "n/a",
+    "resumeCmdTemplate": null,
+    "supportsResume": false,
+    "newlineSequence": "\u001b\r",
+    "hooksSupport": "none",
+    "usageLogGlobs": [],
+    "skillsDir": null,
+    "cheapModel": null,
+    "titlePatterns": [],
+    "readyPatterns": [],
+    "waitingPatterns": [],
+    "limitPatterns": [
+      "usage limit",
+      "rate limit",
+      "\\b429\\b",
+      "quota exceeded"
+    ],
+    "onboardingSeed": null,
+    "mcpNative": null
+  }
 ]

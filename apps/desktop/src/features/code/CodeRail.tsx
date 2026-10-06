@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { AlertTriangle, Folder, GitBranch, Plus, SquareTerminal } from "lucide-react";
 import type { SavedSession, WorkspaceSummary } from "@tandem/protocol";
-import { Badge, ConfirmDialog, IconButton, StatusDot, cx, useToast, type MenuEntry } from "@tandem/ui";
+import { Badge, ConfirmDialog, EngineGlyph, IconButton, StatusDot, cx, useToast, type MenuEntry } from "@tandem/ui";
 import { t } from "../../i18n";
 import { copyText } from "../../ipc/clipboard";
 import { listen } from "../../ipc/events";
@@ -9,6 +9,7 @@ import { invoke } from "../../ipc/invoke";
 import { useEngines } from "../../stores/engines";
 import { useLayout } from "../../stores/layout";
 import { useSetting, useSettings } from "../../stores/settings";
+import { paneKey, statusView, useStatus } from "../../stores/status";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { RailList } from "../rail/RailList";
@@ -87,6 +88,56 @@ function useSavedCount(workspaceId: string): number {
   return count;
 }
 
+function SessionDot({ paneId }: { paneId: string }) {
+  const status = useStatus((st) => st.records[paneKey(paneId)]?.status);
+  const unread = useStatus((st) => st.unread[paneKey(paneId)] ?? false);
+  return (
+    <span className="relative inline-flex shrink-0" data-testid="rail-session-status" data-status={status ?? "idle"}>
+      <StatusDot status={status ? statusView(status) : "idle"} size={6} />
+      {unread && <span data-testid="unread-dot" aria-label={t("rail.unread")} className="absolute -right-1 -top-1 size-1.5 rounded-full bg-accent" />}
+    </span>
+  );
+}
+
+/** The right slot of a workspace row (F-SH-03): Working n, Waiting on you,
+ * Failed, or nothing; and the unread dot when something finished unseen. */
+function useWorkspaceStatus(ws: WorkspaceSummary): { working: number; waiting: boolean; failed: boolean; unread: boolean } {
+  const tabs = useLayout((s) => s.tabs);
+  const records = useStatus((s) => s.records);
+  const unread = useStatus((s) => s.unread);
+  return useMemo(() => {
+    const keys = ws.tabs.flatMap((tab) => Object.keys(tabs[tab.id]?.panes ?? {})).map(paneKey);
+    const statuses = keys.map((k) => records[k]?.status);
+    return {
+      working: statuses.filter((x) => x === "working").length,
+      waiting: statuses.includes("waiting"),
+      failed: statuses.includes("failed"),
+      unread: keys.some((k) => unread[k]),
+    };
+  }, [ws.tabs, tabs, records, unread]);
+}
+
+function WorkspaceSlot({ ws }: { ws: WorkspaceSummary }) {
+  const s = useWorkspaceStatus(ws);
+  const slot = s.waiting ? (
+    <Badge variant="waiting">{t("rail.waiting")}</Badge>
+  ) : s.working > 0 ? (
+    <Badge variant="working">{t("rail.working", { n: s.working })}</Badge>
+  ) : s.failed ? (
+    <Badge variant="error">{t("rail.failed")}</Badge>
+  ) : null;
+  return (
+    <>
+      {slot && (
+        <span data-testid="workspace-status" className="inline-flex shrink-0">
+          {slot}
+        </span>
+      )}
+      {s.unread && <span data-testid="workspace-unread" aria-label={t("rail.unread")} className="size-1.5 shrink-0 rounded-full bg-accent" />}
+    </>
+  );
+}
+
 /** Open panes of a workspace, under its expanded rail row. */
 function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
   const savedCount = useSavedCount(ws.id);
@@ -162,8 +213,12 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
           }}
           className="flex h-6 w-full cursor-default items-center gap-1.5 rounded-sm px-2 text-left text-sm text-fg-muted outline-none hover:bg-surface-4 hover:text-fg focus-visible:shadow-focus"
         >
-          <StatusDot status="idle" size={6} />
-          <SquareTerminal size={12} aria-hidden="true" className="shrink-0" />
+          <SessionDot paneId={pane.id} />
+          {pane.kind === "agent" ? (
+            <EngineGlyph letters={engines.find((e) => e.spec.id === pane.engineId)?.spec.logo ?? ""} size={14} />
+          ) : (
+            <SquareTerminal size={12} aria-hidden="true" className="shrink-0" />
+          )}
           <span className="min-w-0 flex-1 truncate">{title}</span>
         </div>
       ))}
@@ -266,6 +321,7 @@ export function CodeRail() {
                   <span className="truncate">{ws.branch}</span>
                 </span>
               )}
+              <WorkspaceSlot ws={ws} />
               {ws.liveCount > 0 && (
                 <span aria-label={t("rail.live", { n: ws.liveCount })}>
                   <Badge>{ws.liveCount}</Badge>

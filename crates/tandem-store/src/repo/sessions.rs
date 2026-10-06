@@ -4,7 +4,7 @@
 
 use rusqlite::{params, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
-use tandem_core::ids::{PaneId, SessionId, WorkspaceId};
+use tandem_core::ids::{AccountId, PaneId, SessionId, WorkspaceId};
 use ts_rs::TS;
 
 use crate::{now_ms, Store, StoreError};
@@ -36,24 +36,29 @@ fn saved_from_row(r: &Row<'_>) -> rusqlite::Result<SavedSession> {
 }
 
 /// Records an agent starting in a pane.
+/// `account` and `home` are the provider home it runs in (resume uses the
+/// same one, F-AC-01).
 pub async fn start_in_pane(
     store: &Store,
     pane: &PaneId,
     workspace: &WorkspaceId,
     engine_id: &str,
+    account: Option<&AccountId>,
+    home: Option<String>,
 ) -> Result<SessionId, StoreError> {
     let id = SessionId::new();
-    let (sid, pane, ws, engine) = (
+    let (sid, pane, ws, engine, account) = (
         id.as_str().to_string(),
         pane.as_str().to_string(),
         workspace.as_str().to_string(),
         engine_id.to_string(),
+        account.map(|a| a.as_str().to_string()),
     );
     store
         .write(move |t| {
             t.execute(
-                "INSERT INTO sessions (id, kind, pane_id, workspace_id, engine_id, started_at) VALUES (?1, 'pane', ?2, ?3, ?4, ?5)",
-                params![sid, pane, ws, engine, now_ms()],
+                "INSERT INTO sessions (id, kind, pane_id, workspace_id, engine_id, account_id, provider_home, started_at) VALUES (?1, 'pane', ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![sid, pane, ws, engine, account, home, now_ms()],
             )?;
             Ok(())
         })
@@ -146,7 +151,7 @@ mod tests {
                 .is_none(),
             "nothing running yet"
         );
-        start_in_pane(&store, &pane.id, &ws.id, "claude")
+        start_in_pane(&store, &pane.id, &ws.id, "claude", None, None)
             .await
             .expect("start");
         assert!(

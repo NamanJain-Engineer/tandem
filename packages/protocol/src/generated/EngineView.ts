@@ -4,6 +4,10 @@ import type { EngineSpec } from "./EngineSpec";
 
 export type EngineView = { spec: EngineSpec, 
 /**
- * Where it was found on the login PATH; absent when not installed.
+ * Where detection found it; absent when not installed.
  */
-install: EngineInstall | null, chatCapable: boolean, unsupportedReason: string | null, };
+install: EngineInstall | null, chatCapable: boolean, unsupportedReason: string | null, 
+/**
+ * The user's extra launch args (Settings › Engines).
+ */
+extraArgs: Array<string>, };

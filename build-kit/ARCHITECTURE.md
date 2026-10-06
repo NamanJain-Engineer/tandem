@@ -590,9 +590,9 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 #### Engines, accounts, usage [F-EN-*, F-AC-*, F-TH-08]
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
-| `engines_list` | `{hostId?}` | `[EngineView {spec, install?: EngineInstall, chatCapable, unsupportedReason?}]` | — | F-EN-02 |
-| `engines_detect` | `{hostId?}` → op | `DetectionReport` via `engines:detected` | — | F-EN-01 |
-| `engines_install_command` | `{engineId}` | `InstallCommand {display, argv, shell}` | NotFound | F-EN-03 |
+| `engines_list` | `{hostId?}` | `[EngineView {spec, install?: EngineInstall {path, version?, source:"shell"\|"known"}, chatCapable, unsupportedReason?, extraArgs}]` (installed first; waits for the first detection when nothing is cached) | — | F-EN-02 |
+| `engines_detect` | `{hostId?}` → op | `DetectionReport` (also sent as `engines:detected`); re-reads the remote registry first | — | F-EN-01 |
+| `engines_install_command` | `{engineId}` | `InstallCommand {display, shell}` (`display` is the registry string verbatim; the UI types it into a visible terminal pane) | NotFound | F-EN-03 |
 | `engines_set_extra_args` | `{engineId, args:[String]}` | — | Invalid (secret-shaped) | F-SH-04 |
 | `models_list` | `{engineId, accountId?}` | `[ModelEntry {id, label, description, isDefault, effortLevels, contextWindow, source}]` (Automatic first) | — | F-TH-08 |
 | `accounts_list` | — | `[Account]` | — | F-AC-02 |
@@ -611,6 +611,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 |---|---|---|---|---|
 | `status_snapshot` | — | `[DashboardItem {key, source: SourceRef, status, reason?, since, title, humanName?, engineId, accountLabel?, workspace?, branch?, teammateId?, preview?, pendingApproval?}]` | — | F-DB-01 |
 | `status_mark_seen` | `{key}` | — | — | F-DB-01 |
+| `status_list` | — | `[StatusRecord]` (every live agent status; rail and pane headers load it after a webview reload, then follow `status:changed`) | — | F-EN-05, F-SH-03 |
 | `dashboard_close_idle` | `{keys:[SessionKey]}` (the visible filtered set) | `{closed:[SessionKey]}` (server re-checks each is idle) | — | F-DB-01 |
 | `focus_source` | `{source: SourceRef}` | — (emits `ui:focus`) | NotFound | F-DB-01, F-DB-02, F-CD-12 |
 | `notifications_list` | `{cursor?}` | `Page<Notification>` (7-day window) | — | F-DB-02 |
@@ -836,7 +837,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `app:min-version` | `{minVersion, graceUntil}` | api client (header watcher) | F-SH-06 |
 | `ui:focus` | `{source: SourceRef, flash: true}` | focus service (notifications, Conductor, phone) | F-CD-12, F-DB-02 |
 | `settings:changed` | `{key, value}` | settings service | F-SH-04 |
-| `status:changed` | `{records:[StatusRecord]}` (coalesced 50 ms) | StatusStore forwarder | F-EN-05, F-DB-01 |
+| `status:changed` | `{records:[StatusRecord], removed:[SessionKey]}` (coalesced 50 ms; `removed` when an agent left its pane) | StatusStore forwarder | F-EN-05, F-DB-01 |
 | `pty:state` | `{paneId, cwd?, title?, altScreen, bracketedPaste, mouse, readiness}` (debounced 100 ms) | tandem-pty | F-CD-10, F-EN-06 |
 | `pty:mark` | `{paneId, kind:"A"\|"B"\|"C"\|"D", exitCode?}` (the view places ✓/✗ from the same marks, which reach xterm without the token) | tandem-pty | F-CD-10 |
 | `sessions:saved` | `{workspaceId, session: SavedSession}` (an agent handed its pane back to the shell) | terminal service | F-CD-03 |

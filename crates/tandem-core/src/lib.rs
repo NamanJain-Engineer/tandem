@@ -20,6 +20,8 @@ pub mod remote_config;
 pub mod settings;
 pub mod shellquote;
 pub mod status;
+pub mod status_heuristics;
+pub mod status_report;
 pub mod supervisor;
 pub mod telemetry;
 pub mod wslpath;

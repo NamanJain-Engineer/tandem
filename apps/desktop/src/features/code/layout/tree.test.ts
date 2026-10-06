@@ -2,6 +2,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   arrange,
+  autoGrid,
   at,
   canSplit,
   depth,
@@ -192,5 +193,21 @@ describe("layout tree (F-CD-02)", () => {
   it("knows the smallest box a subtree fits in", () => {
     const t = split(split(leaf("a"), "a", "b", "right"), "b", "c", "bottom");
     expect(minExtent(t, 6)).toEqual({ w: 486, h: 246 });
+  });
+
+  it("F-CD-11.1 auto-arrange: 5 panes make a 3+2 grid with equal widths in each row", () => {
+    const t = autoGrid(["a", "b", "c", "d", "e"]);
+    if (!t || t.type !== "split") throw new Error("expected a split");
+    expect(t.dir).toBe("col");
+    expect(t.ratio).toBeCloseTo(1 / 2);
+    const row = (n: LayoutNode): string[] => leaves(n);
+    expect(row(t.a)).toEqual(["a", "b", "c"]);
+    expect(row(t.b)).toEqual(["d", "e"]);
+    // Equal widths: first of three gets 1/3, then halves.
+    if (t.a.type !== "split" || t.a.b.type !== "split" || t.b.type !== "split") throw new Error("rows");
+    expect(t.a.ratio).toBeCloseTo(1 / 3);
+    expect(t.a.b.ratio).toBeCloseTo(1 / 2);
+    expect(t.b.ratio).toBeCloseTo(1 / 2);
+    expect(leaves(autoGrid(["a", "b", "c"]) as LayoutNode)).toEqual(["a", "b", "c"]);
   });
 });

@@ -73,7 +73,12 @@ macro_rules! app_commands {
             commands::terminal::term_quote_paths,
             commands::terminal::term_last_output,
             commands::terminal::term_stage_clipboard_image,
+            commands::terminal::pty_type_prompt,
+            commands::terminal::status_list,
             commands::engines::engines_list,
+            commands::engines::engines_detect,
+            commands::engines::engines_install_command,
+            commands::engines::engines_set_extra_args,
             $($extra),*
         ]
     };
@@ -340,6 +345,34 @@ pub fn run() {
             ensure_on_screen(app);
             persist_window_state(app);
             spawn_background(&state);
+            // The status server, then engines: the cached report at once, the
+            // remote registry and a fresh detection in the background (F-EN-01).
+            let engines_state = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                let state = engines_state.state::<AppState>();
+                state.terminals.status.start(&state.data.run()).await;
+                state.terminals.engines.load_cached().await;
+                let config = state.config.refresh().await;
+                state.terminals.engines.apply_config(&config);
+                let login = state.terminals.login_env().await;
+                state.terminals.engines.detect(login).await;
+            });
+            // Detect again when the window comes back, at most once a minute.
+            if let Some(window) = app.get_webview_window("main") {
+                let focus = handle.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::Focused(true) = event {
+                        let focus = focus.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let state = focus.state::<AppState>();
+                            if state.terminals.engines.focus_due() {
+                                let login = state.terminals.login_env().await;
+                                state.terminals.engines.detect(login).await;
+                            }
+                        });
+                    }
+                });
+            }
             let telemetry_state = handle.clone();
             tauri::async_runtime::spawn(async move {
                 let state = telemetry_state.state::<AppState>();

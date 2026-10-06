@@ -138,10 +138,29 @@ pub fn pty_write(
     pane_id: PaneId,
     data: String,
 ) -> Result<(), IpcError> {
+    // The echo of typing is never the agent working (F-EN-05 AC3).
+    state.terminals.status.quiet_window(pane_id.as_str());
     Ok(state
         .terminals
         .pty
         .write(pane_id.as_str(), data.as_bytes())?)
+}
+
+/// Types a prompt into an agent's TUI once it's ready (F-EN-06): one paste,
+/// then Enter as its own write. Refused while the agent waits for approval.
+#[tauri::command]
+pub async fn pty_type_prompt(
+    state: State<'_, AppState>,
+    pane_id: PaneId,
+    text: String,
+) -> Result<(), IpcError> {
+    state.terminals.type_prompt(&pane_id, &text).await
+}
+
+/// Every known agent status (rail, pane headers; F-EN-05).
+#[tauri::command]
+pub fn status_list(state: State<'_, AppState>) -> Vec<tandem_core::status::StatusRecord> {
+    state.terminals.status.snapshot()
 }
 
 #[tauri::command]
@@ -157,6 +176,8 @@ pub fn pty_resize(
     rows: u16,
 ) -> Result<(), IpcError> {
     crate::commands::app::count_resize(pane_id.as_str());
+    // A resize's repaint is never the agent working (F-EN-05 AC3).
+    state.terminals.status.quiet_window(pane_id.as_str());
     Ok(state.terminals.pty.resize(pane_id.as_str(), cols, rows)?)
 }
 

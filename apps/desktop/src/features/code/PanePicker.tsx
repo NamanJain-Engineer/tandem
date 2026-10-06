@@ -1,13 +1,13 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { Bot, SquareTerminal } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { IpcError } from "@tandem/protocol";
-import { Button, Callout, Dialog, Spinner, cx, useToast } from "@tandem/ui";
+import { Button, Callout, Dialog, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useEngines } from "../../stores/engines";
 import { useLayout, type Launch } from "../../stores/layout";
 import { useSession } from "../../stores/session";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
+import { LaunchGrid } from "./LaunchGrid";
 
 /** Live panes across every workspace, from the core's counts. */
 function liveTotal(): number {
@@ -43,74 +43,8 @@ export function PaneLimitCard({ onManage }: { onManage: () => void }) {
   );
 }
 
-export type Tile = { id: string; label: string; body: string; icon: ReactNode };
-
 export function launchFor(tileId: string): Launch {
   return tileId === "shell" ? { kind: "terminal" } : { kind: "agent", engineId: tileId };
-}
-
-/** Launch tiles (UI-10): installed engines, then Shell (always present).
- * Browser joins in M9. */
-export function useTiles(workspaceName: string): Tile[] {
-  const engines = useEngines((s) => s.list);
-  const loaded = useEngines((s) => s.loaded);
-  useEffect(() => {
-    if (!loaded) void useEngines.getState().refresh();
-  }, [loaded]);
-  return [
-    ...engines
-      .filter((e) => e.install)
-      .map((e) => ({
-        id: e.spec.id,
-        label: e.spec.label,
-        body: t("picker.agent.body", { name: workspaceName }),
-        icon: <Bot size={18} />,
-      })),
-    {
-      id: "shell",
-      label: t("picker.shell"),
-      body: t("picker.shell.body", { name: workspaceName }),
-      icon: <SquareTerminal size={18} />,
-    },
-  ];
-}
-
-export function LaunchTiles({
-  tiles,
-  onPick,
-  busy,
-  autoFocus,
-}: {
-  tiles: Tile[];
-  onPick: (id: string) => void;
-  busy: string | null;
-  autoFocus?: boolean;
-}) {
-  return (
-    <ul className="grid grid-cols-[repeat(auto-fill,minmax(132px,1fr))] gap-2">
-      {tiles.map((tile, i) => (
-        <li key={tile.id}>
-          <button
-            type="button"
-            data-testid={`tile-${tile.id}`}
-            autoFocus={autoFocus && i === 0}
-            disabled={busy !== null}
-            onClick={() => onPick(tile.id)}
-            className={cx(
-              "flex h-[88px] w-full flex-col items-start justify-between rounded-md border border-border bg-surface-2 p-3 text-left",
-              "hover:border-border-strong hover:bg-surface-3 focus-visible:shadow-focus focus-visible:outline-none disabled:opacity-60",
-            )}
-          >
-            <span className="inline-flex text-fg-muted">{busy === tile.id ? <Spinner /> : tile.icon}</span>
-            <span className="flex flex-col">
-              <span className="text-base font-medium text-fg">{tile.label}</span>
-              <span className="truncate text-sm text-fg-subtle">{tile.body}</span>
-            </span>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
 }
 
 /** The picker a split opens (F-CD-02). At the live-pane limit it shows the
@@ -119,7 +53,6 @@ export function PanePicker({ workspaceName }: { workspaceName: string }) {
   const picker = useLayout((s) => s.picker);
   const closePicker = useLayout((s) => s.closePicker);
   const split = useLayout((s) => s.split);
-  const tiles = useTiles(workspaceName);
   const { show } = useToast();
   const [limited, setLimited] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -165,18 +98,14 @@ export function PanePicker({ workspaceName }: { workspaceName: string }) {
       open={picker !== null}
       onOpenChange={(o) => !o && closePicker()}
       title={t("picker.title")}
+      description={workspaceName}
       size="sm"
     >
       <div data-testid="pane-picker" className="flex flex-col gap-3">
         {limited ? (
           <PaneLimitCard onManage={closePicker} />
-        ) : checking && tiles.length === 0 ? (
-          <Spinner />
         ) : (
-          <>
-            <LaunchTiles tiles={tiles} busy={busy} onPick={(id) => void pick(id)} autoFocus />
-            <p className="text-sm text-fg-subtle">{t("picker.more")}</p>
-          </>
+          picker && <LaunchGrid tabId={picker.tabId} busy={busy ?? (checking ? "checking" : null)} onPick={(id) => void pick(id)} autoFocus />
         )}
       </div>
     </Dialog>
