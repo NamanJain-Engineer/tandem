@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { IpcError, PaneRecord, Tab, TabLayout } from "@tandem/protocol";
 import { invoke } from "../ipc/invoke";
 import {
+  GUTTER,
   autoGrid,
   canSplit,
   contains,
@@ -325,8 +326,10 @@ export const useLayout = create<LayoutState>((set, get) => {
       }
     },
 
-    arrange: (tabId) =>
-      update(tabId, (t) => (t.tree ? { ...t, tree: autoGrid(leaves(t.tree)), maximized: null } : t)),
+    arrange: (tabId) => {
+      const box = get().boxes[tabId];
+      update(tabId, (t) => (t.tree ? { ...t, tree: autoGrid(leaves(t.tree), box, GUTTER), maximized: null } : t));
+    },
 
     toggleCards: (tabId) => {
       const cards = { ...get().cards };

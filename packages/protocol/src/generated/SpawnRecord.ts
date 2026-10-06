@@ -4,4 +4,8 @@
  * One line of `TANDEM_SPAWN_LOG` (debug builds): what was started, with
  * env keys only.
  */
-export type SpawnRecord = { argv: Array<string>, envKeys: Array<string>, providerHome: string | null, cwd: string, };
+export type SpawnRecord = { argv: Array<string>, envKeys: Array<string>, 
+/**
+ * Env keys whose values look like secrets (F-EN-04 AC1: must be empty).
+ */
+secretEnvKeys: Array<string>, providerHome: string | null, cwd: string, };

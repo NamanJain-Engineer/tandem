@@ -35,6 +35,7 @@ pub async fn pane_create(
     kind: String,
     cwd: Option<String>,
     engine_id: Option<String>,
+    account_id: Option<tandem_core::ids::AccountId>,
 ) -> Result<PaneRecord, IpcError> {
     match kind.as_str() {
         "terminal" => {}
@@ -57,7 +58,22 @@ pub async fn pane_create(
         .terminals
         .check_live_limit(state.entitlements.limits().panes)?;
     let engine_id = engine_id.filter(|_| kind == "agent");
-    Ok(panes::create_with(&state.store, &tab_id, &kind, cwd, engine_id).await?)
+    // An account must belong to the pane's engine (F-AC-01).
+    if let Some(account) = &account_id {
+        let a = tandem_store::repo::accounts::get(&state.store, account).await?;
+        if Some(a.engine_id.as_str()) != engine_id.as_deref() {
+            return Err(IpcError::new(
+                ErrorCode::Invalid,
+                "That account is for another engine",
+            ));
+        }
+    }
+    let mut pane = panes::create_with(&state.store, &tab_id, &kind, cwd, engine_id).await?;
+    if let Some(account) = account_id {
+        panes::set_account(&state.store, &pane.id, &account).await?;
+        pane.account_id = Some(account);
+    }
+    Ok(pane)
 }
 
 #[tauri::command]

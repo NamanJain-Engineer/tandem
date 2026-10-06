@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { create } from "zustand";
 import { Check, Copy, SquareTerminal } from "lucide-react";
 import type { EngineView, InstallCommand, PtyMark } from "@tandem/protocol";
 import { Button, Callout, EngineGlyph, Sheet, Spinner, useToast } from "@tandem/ui";
@@ -8,16 +9,41 @@ import { listen } from "../../ipc/events";
 import { invoke } from "../../ipc/invoke";
 import { useEngines } from "../../stores/engines";
 import { useLayout } from "../../stores/layout";
+import { useUi } from "../../stores/ui";
+import { switchMode } from "../shell/actions";
 
 type Step = { kind: "ready" } | { kind: "running"; paneId: string } | { kind: "installed"; version: string | null } | { kind: "missing" };
 
 /** How long the new shell gets to show its prompt before the command is typed anyway. */
 const PROMPT_WAIT_MS = 3_000;
 
+type InstallState = {
+  engine: EngineView | null;
+  /** The tab the installer's terminal opens in. */
+  tabId: string | null;
+  open: (engine: EngineView, tabId: string | null) => void;
+  close: () => void;
+};
+
+/** One install sheet for the whole app: it outlives the launch grid that
+ * opened it (the installer's pane replaces an empty tab's grid). */
+export const useInstall = create<InstallState>((set) => ({
+  engine: null,
+  tabId: null,
+  open: (engine, tabId) => set({ engine, tabId }),
+  close: () => set({ engine: null, tabId: null }),
+}));
+
+export function InstallHost() {
+  const engine = useInstall((s) => s.engine);
+  const tabId = useInstall((s) => s.tabId);
+  return <InstallSheet engine={engine} tabId={tabId} onClose={() => useInstall.getState().close()} />;
+}
+
 /** UI-34 / F-EN-03: the registry's install command, exactly as listed, with
  * Copy and Run in terminal. Run types it into a visible terminal pane (never
  * hidden, never with sudo added); when it finishes, Tandem detects again. */
-export function InstallSheet({ engine, tabId, onClose }: { engine: EngineView | null; tabId: string; onClose: () => void }) {
+export function InstallSheet({ engine, tabId, onClose }: { engine: EngineView | null; tabId: string | null; onClose: () => void }) {
   const [command, setCommand] = useState<InstallCommand | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<Step>({ kind: "ready" });
@@ -52,7 +78,10 @@ export function InstallSheet({ engine, tabId, onClose }: { engine: EngineView | 
   };
 
   const run = async () => {
-    if (!command) return;
+    if (!command || !tabId) return;
+    // The installer runs where it can be seen (from Settings too).
+    if (useUi.getState().settingsOpen) useUi.getState().closeSettings();
+    switchMode("code");
     const res = await useLayout.getState().split(tabId, null, "right", { kind: "terminal" });
     if (!res.ok) {
       show({ tone: "error", title: res.error.message });
@@ -105,7 +134,8 @@ export function InstallSheet({ engine, tabId, onClose }: { engine: EngineView | 
         )}
         {step.kind === "ready" && command && (
           <div className="flex gap-2">
-            <Button variant="primary" onClick={() => void run()} data-testid="install-run">
+            {/* Without an open workspace there's no terminal to run it in; Copy still works. */}
+            <Button variant="primary" disabled={!tabId} onClick={() => void run()} data-testid="install-run">
               <SquareTerminal size={16} aria-hidden="true" />
               {t("install.run")}
             </Button>

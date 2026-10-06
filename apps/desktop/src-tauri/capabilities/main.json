@@ -78,6 +78,8 @@
     "allow-status-list",
     "allow-engines-detect",
     "allow-engines-install-command",
-    "allow-engines-set-extra-args"
+    "allow-engines-set-extra-args",
+    "allow-accounts-list",
+    "allow-engines-report"
   ]
 }

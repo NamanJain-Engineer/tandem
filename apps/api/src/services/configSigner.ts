@@ -11,23 +11,33 @@ export type SignedConfig = { payload: string; sig: string; kid: string; etag: st
  * verifies without re-canonicalizing (ARCHITECTURE §14.10, BUILD_LOG D-19).
  */
 export class ConfigSigner {
-  readonly signed: SignedConfig;
-  readonly config: RemoteConfig;
+  signed: SignedConfig;
+  config: RemoteConfig;
 
   constructor(
-    keys: KeySet,
+    private keys: KeySet,
     path = new URL("../../config/remote-config.json", import.meta.url),
     minVersion?: string,
   ) {
     const raw = JSON.parse(readFileSync(path, "utf8")) as RemoteConfig;
     if (minVersion) raw.min_app_version = minVersion;
     this.config = raw;
-    const payload = canonicalize(raw);
+    this.signed = this.sign(raw);
+  }
+
+  private sign(config: RemoteConfig): SignedConfig {
+    const payload = canonicalize(config);
     if (!payload) throw new Error("remote config is empty");
-    const key = currentKey(keys.config);
+    const key = currentKey(this.keys.config);
     const sig = sign(null, Buffer.from(payload, "utf8"), key.privateKey).toString("base64");
     const etag = `"${createHash("sha256").update(payload).digest("hex")}"`;
-    this.signed = { payload, sig, kid: key.kid, etag };
+    return { payload, sig, kid: key.kid, etag };
+  }
+
+  /** Test routes only: replaces the engine registry overrides and re-signs. */
+  setRegistryOverrides(overrides: unknown[]): void {
+    this.config = { ...this.config, registry_overrides: overrides };
+    this.signed = this.sign(this.config);
   }
 
   get minAppVersion(): string {

@@ -18,7 +18,7 @@ import { useBoot } from "../shell/useBoot";
 import { useLayout, type Box, type TabPanes } from "../../stores/layout";
 import { DropZones, applyDrop, type PaneDrag } from "./dnd";
 import { useDropTarget } from "./drops";
-import { leaves, minExtent, type LayoutNode } from "./layout/tree";
+import { GUTTER, leaves, minExtent, type LayoutNode } from "./layout/tree";
 import { PaneChrome } from "./PaneChrome";
 import { attachPaneHost, paneHost } from "./paneHosts";
 import { LaunchGrid } from "./LaunchGrid";
@@ -28,8 +28,6 @@ import { webglPool } from "./webglPool";
 import type { Activity } from "./commandMarks";
 import { TerminalView, copyLastOutput, terminalHandles, type Phase, type TerminalOptions } from "./TerminalView";
 
-/** Gutter between panes (UI_SPEC §2.21). */
-const GUTTER = 6;
 const BOX_THROTTLE_MS = 50;
 
 /** Where a pane's host lives in the layout. */

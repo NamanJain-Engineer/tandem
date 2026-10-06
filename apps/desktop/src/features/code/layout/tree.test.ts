@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   arrange,
   autoGrid,
+  GUTTER,
   at,
   canSplit,
   depth,
@@ -209,5 +210,21 @@ describe("layout tree (F-CD-02)", () => {
     expect(t.a.b.ratio).toBeCloseTo(1 / 2);
     expect(t.b.ratio).toBeCloseTo(1 / 2);
     expect(leaves(autoGrid(["a", "b", "c"]) as LayoutNode)).toEqual(["a", "b", "c"]);
+  });
+
+  it("F-CD-11.1 with the grid's box, auto-arrange widths are equal to the pixel across the dividers", () => {
+    const box = { w: 1200, h: 800 };
+    const t = autoGrid(["a", "b", "c", "d", "e"], box, GUTTER);
+    // Panels share what the dividers leave (react-resizable-panels).
+    const widths = (n: LayoutNode, w: number): number[] =>
+      n.type === "leaf" ? [w] : n.dir === "row" ? [...widths(n.a, n.ratio * (w - GUTTER)), ...widths(n.b, (1 - n.ratio) * (w - GUTTER))] : [w];
+    if (!t || t.type !== "split" || t.dir !== "col") throw new Error("expected rows");
+    const top = widths(t.a, box.w);
+    const bottom = widths(t.b, box.w);
+    expect(top).toHaveLength(3);
+    expect(bottom).toHaveLength(2);
+    for (const row of [top, bottom]) for (const w of row) expect(w).toBeCloseTo(row[0] ?? 0, 6);
+    expect((top[0] ?? 0) * 3 + 2 * GUTTER).toBeCloseTo(box.w, 6);
+    validate(t);
   });
 });

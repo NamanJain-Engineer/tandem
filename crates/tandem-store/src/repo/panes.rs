@@ -3,7 +3,7 @@
 
 use rusqlite::{params, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
-use tandem_core::ids::{PaneId, TabId, WorkspaceId};
+use tandem_core::ids::{AccountId, PaneId, TabId, WorkspaceId};
 use ts_rs::TS;
 
 use crate::{now_ms, Store, StoreError};
@@ -19,13 +19,15 @@ pub struct PaneRecord {
     pub kind: String,
     pub cwd: Option<String>,
     pub engine_id: Option<String>,
+    /// The engine account it launches with; `None` = the engine's default.
+    pub account_id: Option<AccountId>,
     pub human_name: Option<String>,
     pub title: Option<String>,
     pub created_at: i64,
 }
 
 const COLUMNS: &str =
-    "id, tab_id, workspace_id, kind, cwd, engine_id, human_name, title, created_at";
+    "id, tab_id, workspace_id, kind, cwd, engine_id, human_name, title, created_at, account_id";
 
 fn from_row(r: &Row<'_>) -> rusqlite::Result<PaneRecord> {
     Ok(PaneRecord {
@@ -38,6 +40,7 @@ fn from_row(r: &Row<'_>) -> rusqlite::Result<PaneRecord> {
         human_name: r.get(6)?,
         title: r.get(7)?,
         created_at: r.get(8)?,
+        account_id: r.get::<_, Option<String>>(9)?.map(AccountId::from_db),
     })
 }
 
@@ -75,6 +78,7 @@ pub async fn create_with(
                 kind,
                 cwd,
                 engine_id,
+                account_id: None,
                 human_name: None,
                 title: None,
                 created_at: now_ms(),
@@ -84,6 +88,24 @@ pub async fn create_with(
                 params![pane.id.as_str(), tab, pane.workspace_id.as_str(), pane.kind, pane.cwd, pane.engine_id, pane.created_at],
             )?;
             Ok(pane)
+        })
+        .await
+}
+
+/// Pins an agent pane to one engine account (F-AC-01).
+pub async fn set_account(
+    store: &Store,
+    pane: &PaneId,
+    account: &AccountId,
+) -> Result<(), StoreError> {
+    let (pane, account) = (pane.as_str().to_string(), account.as_str().to_string());
+    store
+        .write(move |t| {
+            t.execute(
+                "UPDATE panes SET account_id = ?2 WHERE id = ?1",
+                params![pane, account],
+            )?;
+            Ok(())
         })
         .await
 }

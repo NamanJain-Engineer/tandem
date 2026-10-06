@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PaneRecord, Tab, TabLayout, WorkspaceSummary } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
+import { emitLocal } from "../../ipc/events";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
 import { useSession } from "../../stores/session";
@@ -28,6 +29,7 @@ vi.mock("./TerminalView", async () => {
 });
 
 const { CodeMain } = await import("./CodeMain");
+const { InstallHost } = await import("./InstallSheet");
 
 const TAB: Tab = { id: "tb_1", workspaceId: "ws_1", name: "Tab 1", sortKey: "a0", createdAt: 0 };
 const WS: WorkspaceSummary = {
@@ -78,6 +80,7 @@ function core(
       kind: "terminal",
       cwd: null,
       engineId: null,
+      accountId: null,
       humanName: null,
       title: null,
       createdAt: at,
@@ -128,6 +131,8 @@ function core(
       },
     ],
     engines_detect: () => REPORT,
+    engines_report: () => (opts.noEngines ? REPORT : null),
+    engines_install_command: () => ({ display: "npm install -g kimi-cli", shell: "/bin/zsh" }),
     workspace_locate: () => {
       opts.missing = false;
       return null;
@@ -179,6 +184,7 @@ function renderCode() {
   return render(
     <UiProvider>
       <CodeMain visible />
+      <InstallHost />
     </UiProvider>,
   );
 }
@@ -490,9 +496,35 @@ describe("pane grid (F-CD-02)", () => {
     await waitFor(() => expect(paneEls()).toHaveLength(1));
     fireEvent.click(screen.getByRole("button", { name: "Close Shell · 1" }));
     const diag = await screen.findByTestId("engines-diagnostics");
+    // The cached report shows at once, before any Check again (a webview reload).
+    await waitFor(() => expect(within(diag).getByTestId("shells-asked").textContent).toContain("/bin/zsh -lic"));
+    expect(calls.some((c) => c.cmd === "engines_detect")).toBe(false);
     fireEvent.click(within(diag).getByTestId("check-again"));
     await waitFor(() => expect(calls.some((c) => c.cmd === "engines_detect")).toBe(true));
     await waitFor(() => expect(within(diag).getByTestId("shells-asked").textContent).toContain("/bin/zsh -lic"));
     expect(within(diag).getByText(/~\/\.nvm\/versions\/node/)).toBeTruthy();
+  });
+
+  it("F-EN-03.1 the install sheet outlives the empty tab's grid: Run types the exact command, the end mark re-detects", async () => {
+    const { calls } = core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Close Shell · 1" }));
+    const grid = await screen.findByTestId("launch-grid");
+    fireEvent.click(within(grid).getByTestId("more-engines"));
+    fireEvent.click(within(grid).getByTestId("install-kimi"));
+    expect((await screen.findByTestId("install-command")).textContent).toBe("npm install -g kimi-cli");
+    fireEvent.click(screen.getByTestId("install-run"));
+    // The installer's pane replaces the grid; the sheet stays.
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    expect(screen.queryByTestId("launch-grid")).toBeNull();
+    const paneId = paneEls()[0]?.dataset.paneId ?? "";
+    act(() => emitLocal("pty:mark", { paneId, kind: "A", exit: null, ts: 1 }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "pty_write" && c.args?.paneId === paneId)?.args?.data).toBe("npm install -g kimi-cli\r"),
+    );
+    act(() => emitLocal("pty:mark", { paneId, kind: "D", exit: 0, ts: 2 }));
+    await waitFor(() => expect(calls.some((c) => c.cmd === "engines_detect")).toBe(true));
+    expect(screen.getByTestId("install-sheet")).toBeTruthy();
   });
 });

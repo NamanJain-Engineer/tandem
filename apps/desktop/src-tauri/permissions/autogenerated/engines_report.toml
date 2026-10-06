@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-engines-report"
+description = "Enables the engines_report command without any pre-configured scope."
+commands.allow = ["engines_report"]
+
+[[permission]]
+identifier = "deny-engines-report"
+description = "Denies the engines_report command without any pre-configured scope."
+commands.deny = ["engines_report"]

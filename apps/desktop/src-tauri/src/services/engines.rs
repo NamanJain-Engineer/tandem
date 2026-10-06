@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 use tandem_core::bus::{BusEvent, EventBus, Topic};
 use tandem_core::error::{ErrorCode, IpcError};
+use tandem_core::ids::AccountId;
 use tandem_core::settings::SettingKey;
 use tandem_engines::detect::{self, DetectEnv, DetectionReport};
 use tandem_engines::homes::{ProviderHomes, Seed};
@@ -190,19 +191,34 @@ impl EngineService {
         program: PathBuf,
         workspace_root: &Path,
         status: Option<StatusEnv>,
+        account: Option<&AccountId>,
     ) -> Result<AgentLaunch, IpcError> {
         let (account, home) = if engine.provider_home_env.is_some()
             || engine.home_strategy == tandem_engines::registry::HomeStrategy::Xdg
         {
-            let root = self.homes.root().to_path_buf();
-            let engine_id = engine.id.clone();
-            let account = accounts::ensure_default(&self.store, &engine.id, move |id| {
-                root.join(&engine_id)
-                    .join(id.as_str())
-                    .to_string_lossy()
-                    .into_owned()
-            })
-            .await?;
+            let account = match account {
+                Some(id) => {
+                    let a = accounts::get(&self.store, id).await?;
+                    if a.engine_id != engine.id {
+                        return Err(IpcError::new(
+                            ErrorCode::Invalid,
+                            "That account is for another engine",
+                        ));
+                    }
+                    a
+                }
+                None => {
+                    let root = self.homes.root().to_path_buf();
+                    let engine_id = engine.id.clone();
+                    accounts::ensure_default(&self.store, &engine.id, move |id| {
+                        root.join(&engine_id)
+                            .join(id.as_str())
+                            .to_string_lossy()
+                            .into_owned()
+                    })
+                    .await?
+                }
+            };
             let seed = Seed {
                 theme: self.theme().await,
             };
@@ -252,6 +268,32 @@ impl EngineService {
             account,
             home,
         })
+    }
+
+    /// A named account with its own home (the full sign-in flow is F-AC-02).
+    pub async fn create_account(
+        &self,
+        engine: &EngineSpec,
+        label: &str,
+    ) -> Result<Account, IpcError> {
+        let root = self.homes.root().to_path_buf();
+        let engine_id = engine.id.clone();
+        let account = accounts::create(&self.store, &engine.id, label, false, move |id| {
+            root.join(&engine_id)
+                .join(id.as_str())
+                .to_string_lossy()
+                .into_owned()
+        })
+        .await?;
+        let seed = Seed {
+            theme: self.theme().await,
+        };
+        self.homes
+            .create(engine, account.id.as_str(), &seed)
+            .map_err(|e| {
+                IpcError::new(ErrorCode::Internal, e.to_string()).with_stage("provider_home")
+            })?;
+        Ok(account)
     }
 
     async fn theme(&self) -> String {

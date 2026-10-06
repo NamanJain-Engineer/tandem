@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { t } from "../../i18n";
 import { AccountPage } from "./AccountPage";
+import { EnginesPage } from "./EnginesPage";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
 import {
   BoolControl,
@@ -39,7 +40,7 @@ const opts = (keys: string[], prefix: string) =>
 const segs = (keys: string[], prefix: string) =>
   keys.map((k) => ({ id: k, label: t(`${prefix}.${k}` as Parameters<typeof t>[0]) }));
 
-/** The pages shipped in M2 (UI-101, 102, 104, 112, 114, 116), in UI-100 order. */
+/** The pages shipped so far (UI-101, 102, 104, 105, 112, 114, 116), in UI-100 order. */
 export function settingsPages(platform: string): PageDef[] {
   const mac = platform === "macos";
   return [
@@ -314,6 +315,14 @@ export function settingsPages(platform: string): PageDef[] {
           ),
         },
       ],
+    },
+    {
+      id: "engines",
+      label: t("settings.engines"),
+      subtitle: t("settings.engines.subtitle"),
+      keywords: ["engines", "agents", "claude", "codex", "install", "path", "arguments", "detect"],
+      rows: [],
+      extra: <EnginesPage />,
     },
     {
       id: "privacy",

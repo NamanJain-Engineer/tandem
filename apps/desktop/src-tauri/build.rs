@@ -64,6 +64,8 @@ const COMMANDS: &[&str] = &[
     "engines_detect",
     "engines_install_command",
     "engines_set_extra_args",
+    "accounts_list",
+    "engines_report",
 ];
 
 const TEST_COMMANDS: &[&str] = &[
@@ -71,6 +73,7 @@ const TEST_COMMANDS: &[&str] = &[
     "test_spawn_log",
     "test_clock_advance",
     "test_auth_refresh",
+    "test_account_create",
 ];
 
 fn main() {

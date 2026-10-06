@@ -7,7 +7,7 @@
 // After the run it enforces the M2 checks: no secret patterns in the logs and
 // no analytics or crash hosts in the network log (telemetry is off).
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Launcher } from "@wdio/cli";
@@ -73,6 +73,8 @@ async function main() {
     // Perf suites measure an optimised build (the `perf` profile keeps the test harness).
     const cargoProfile = suite ? ["--profile", "perf"] : [];
     execFileSync("cargo", ["build", "-p", "tandem-desktop", "--features", "custom-protocol", ...cargoProfile], { cwd: root, stdio: "inherit" });
+    // The status hook and the fake engines (ARCHITECTURE §6.12).
+    execFileSync("cargo", ["build", "-p", "tandem-engines", "--features", "fixtures", "--bins"], { cwd: root, stdio: "inherit" });
   }
   const home = mkdtempSync(join(tmpdir(), "tandem-e2e-"));
   const results = join(root, "test-results");
@@ -90,11 +92,28 @@ async function main() {
 
   // Login shells read this HOME's profile, which puts the test engines first
   // on PATH, so an agent pane never starts a real engine installed on the
-  // machine (ARCHITECTURE §17.4 "Fake CLI").
-  const fakes = join(root, "crates/tandem-engines/tests/fixtures/bin");
+  // machine (ARCHITECTURE §17.4 "Fake CLI"). Only `claude` is installed by
+  // default: a link to `fake-engine`, which behaves by the name it runs as.
+  const fakes = join(home, "fakebin");
+  mkdirSync(fakes, { recursive: true });
+  const fakeEngine = join(root, "target/debug/fake-engine");
+  symlinkSync(fakeEngine, join(fakes, "claude"));
   const userHome = join(home, "home");
   mkdirSync(userHome, { recursive: true });
-  const profile = `export PATH="${fakes}:$PATH"\n`;
+  // The app's PATH: system folders and node (the scripted browser opener
+  // needs it), but none of the engines installed on this machine.
+  const nodeBin = join(home, "nodebin");
+  mkdirSync(nodeBin, { recursive: true });
+  symlinkSync(process.execPath, join(nodeBin, "node"));
+  const appPath = [nodeBin, "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"].join(":");
+  // TANDEM_* variables never reach panes from the app; the profile sets the
+  // test-only ones for the shells and engines started in them.
+  const profile = [
+    `export PATH="${fakes}:$PATH"`,
+    `export TANDEM_FAKE_ENGINE_LOG="${join(home, "fake-engine.log")}"`,
+    `export TANDEM_HOOK_LOG="${join(home, "hook.log")}"`,
+    "",
+  ].join("\n");
   for (const f of [".bash_profile", ".profile", ".zprofile"]) writeFileSync(join(userHome, f), profile);
 
   Object.assign(process.env, {
@@ -108,9 +127,16 @@ async function main() {
     TANDEM_OPEN_URL_CMD: opener,
     TANDEM_NET_LOG: join(home, "net.log"),
     TANDEM_FAKE_PICK_FOLDER: join(home, "pick-folder.txt"),
+    TANDEM_HOOK_BIN: join(root, "target/debug/tandem-hook"),
+    TANDEM_SPAWN_LOG: join(home, "spawn.log"),
+    TANDEM_APP_PATH: appPath,
+    TANDEM_FAKE_ENGINE_BIN: fakeEngine,
+    // Detection looks only at this run's folders (no npm, no /usr/local/bin).
+    TANDEM_DETECT_SYSTEM_DIRS: "",
+    TANDEM_DETECT_NO_NPM: "1",
     ...(suite ? { TANDEM_MOCHA_TIMEOUT: "900000" } : {}),
     PLAYWRIGHT_CHROMIUM: process.env.PLAYWRIGHT_CHROMIUM ?? (existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : ""),
-    PATH: `${fakes}:${process.env.PATH ?? ""}`,
+    PATH: process.env.PATH ?? "",
   });
 
   // Maximize and placement need a window manager under Xvfb.

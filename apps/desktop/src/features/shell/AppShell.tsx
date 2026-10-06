@@ -13,6 +13,7 @@ import { Palette } from "../palette/Palette";
 import { OrphansDialog } from "../restore/OrphansDialog";
 import { followEngines } from "../../stores/engines";
 import { followStatus } from "../../stores/status";
+import { InstallHost } from "../code/InstallSheet";
 import { followPtyState } from "../../stores/terminals";
 import { terminalHandles } from "../code/TerminalView";
 import { enablePerfMarks, perfSpans, perfTimes, writeCounts } from "../code/perfMarks";
@@ -82,6 +83,7 @@ export function AppShell() {
       <Banners />
       <div className="flex min-h-0 flex-1">
         {settingsOpen && <SettingsView />}
+        <InstallHost />
         <div style={{ display: show("code") }}>
           <CodeRail />
         </div>

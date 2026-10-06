@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::Serialize;
-use tokio::sync::OnceCell;
 
 use tandem_core::bus::EventBus;
 use tandem_core::clock::SystemClock;
@@ -25,6 +24,13 @@ use tandem_pty::integration::{self, IntegratedShell};
 use tandem_pty::{typing, OutputSink, PtyInfo, PtyManager, SpawnSpec};
 use tandem_store::repo::{panes, sessions, settings, workspaces};
 use tandem_store::Store;
+
+async fn capture_login() -> LoginEnv {
+    let shell = env::default_shell();
+    tokio::task::spawn_blocking(move || env::capture(&shell, env::CAPTURE_TIMEOUT))
+        .await
+        .unwrap_or_default()
+}
 
 /// A fresh secret for one launch's marks (handback, shell integration).
 pub fn launch_token() -> String {
@@ -50,7 +56,9 @@ pub struct TerminalService {
     /// The quoting dialect of each pane's shell (drops, staged images).
     dialects: std::sync::Mutex<std::collections::HashMap<String, ShellDialect>>,
     store: Store,
-    login: OnceCell<LoginEnv>,
+    /// The login environment (§5.2): captured on first use, again on Check again.
+    login: tokio::sync::RwLock<Option<Arc<LoginEnv>>>,
+    capturing: tokio::sync::Mutex<()>,
     spawn_log: Option<PathBuf>,
     /// `$DATA/shell-integration` (F-CD-10); `None` turns integration off.
     integration_root: Option<PathBuf>,
@@ -66,6 +74,8 @@ pub struct TerminalService {
 pub struct SpawnRecord {
     pub argv: Vec<String>,
     pub env_keys: Vec<String>,
+    /// Env keys whose values look like secrets (F-EN-04 AC1: must be empty).
+    pub secret_env_keys: Vec<String>,
     pub provider_home: Option<String>,
     pub cwd: String,
 }
@@ -111,7 +121,8 @@ impl TerminalService {
             status,
             dialects: Default::default(),
             store,
-            login: OnceCell::new(),
+            login: tokio::sync::RwLock::new(None),
+            capturing: tokio::sync::Mutex::new(()),
             spawn_log,
             integration_root,
             integration_dir: std::sync::OnceLock::new(),
@@ -146,19 +157,40 @@ impl TerminalService {
 
     /// Uses `login` instead of capturing one (tests).
     pub fn set_login_env(&self, login: LoginEnv) {
-        let _ = self.login.set(login);
+        if let Ok(mut l) = self.login.try_write() {
+            *l = Some(Arc::new(login));
+        }
     }
 
     /// Captured once per launch (§5.2); the first caller waits ≤3 s.
-    pub async fn login_env(&self) -> &LoginEnv {
-        self.login
-            .get_or_init(|| async {
-                let shell = env::default_shell();
-                tokio::task::spawn_blocking(move || env::capture(&shell, env::CAPTURE_TIMEOUT))
-                    .await
-                    .unwrap_or_default()
-            })
-            .await
+    pub async fn login_env(&self) -> Arc<LoginEnv> {
+        if let Some(l) = self.login.read().await.clone() {
+            return l;
+        }
+        let _one = self.capturing.lock().await;
+        if let Some(l) = self.login.read().await.clone() {
+            return l;
+        }
+        let l = Arc::new(capture_login().await);
+        *self.login.write().await = Some(l.clone());
+        l
+    }
+
+    /// Captures the login environment again (Check again, §6.2): a PATH
+    /// fixed in the profile counts without restarting the app.
+    pub async fn refresh_login_env(&self) -> Arc<LoginEnv> {
+        let _one = self.capturing.lock().await;
+        let fresh = capture_login().await;
+        let mut slot = self.login.write().await;
+        // A shell that's slow right now doesn't throw away a good capture.
+        if fresh.degraded {
+            if let Some(prev) = slot.as_ref().filter(|p| !p.degraded) {
+                return prev.clone();
+            }
+        }
+        let l = Arc::new(fresh);
+        *slot = Some(l.clone());
+        l
     }
 
     /// Writes each pane's last 2,000 lines to `dir/<pane>.bin` (restore display only).
@@ -271,7 +303,7 @@ impl TerminalService {
                 .map(|(url, secret)| StatusEnv { url, secret });
             let launch = self
                 .engines
-                .agent_launch(&engine, path, &root, status)
+                .agent_launch(&engine, path, &root, status, record.account_id.as_ref())
                 .await
                 .inspect_err(|_| self.status.unwatch(pane.as_str()))?;
             let args = env::agent_wrapper(
@@ -307,7 +339,7 @@ impl TerminalService {
                 ShellDialect::for_shell(&shell.to_string_lossy()),
             );
         }
-        let mut child_env = env::pane_env(login, pane.as_str(), env!("CARGO_PKG_VERSION"));
+        let mut child_env = env::pane_env(&login, pane.as_str(), env!("CARGO_PKG_VERSION"));
         if integration.is_some() || engine.is_some() {
             child_env.insert(env::TOKEN_VAR.to_string(), token.clone());
         }
@@ -489,6 +521,12 @@ impl TerminalService {
         let record = SpawnRecord {
             argv,
             env_keys: spec.env.keys().cloned().collect(),
+            secret_env_keys: spec
+                .env
+                .iter()
+                .filter(|(_, v)| tandem_engines::launch::looks_secret(v))
+                .map(|(k, _)| k.clone())
+                .collect(),
             provider_home: home.map(|h| h.to_string_lossy().into_owned()),
             cwd: spec.cwd.to_string_lossy().into_owned(),
         };

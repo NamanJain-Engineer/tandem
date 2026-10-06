@@ -30,7 +30,24 @@ fn main() {
         (Some("codex"), Some(json)) => hook::codex_report(&json, &pane, now),
         _ => None,
     };
-    if let Some(req) = report.and_then(|r| hook::request(&r, &secret)) {
+    let Some(report) = report else { return };
+    // Debug builds can record what's posted, so tests can check it.
+    if cfg!(debug_assertions) {
+        if let (Some(path), Ok(body)) = (
+            std::env::var_os("TANDEM_HOOK_LOG"),
+            serde_json::to_string(&report),
+        ) {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+            {
+                let _ = writeln!(f, "{body}");
+            }
+        }
+    }
+    if let Some(req) = hook::request(&report, &secret) {
         let _ = hook::post(&url, &req, POST_TIMEOUT);
     }
 }

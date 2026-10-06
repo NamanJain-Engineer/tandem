@@ -30,9 +30,18 @@ libc = "0.2"
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
+[features]
+# Test support: the `fake-engine` binary (ARCHITECTURE §6.12).
+fixtures = []
+
 [[bin]]
 name = "tandem-hook"
 path = "src/bin/tandem-hook.rs"
+
+[[bin]]
+name = "fake-engine"
+path = "src/bin/fake-engine.rs"
+required-features = ["fixtures"]
 
 [lints]
 workspace = true

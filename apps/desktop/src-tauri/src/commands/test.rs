@@ -86,3 +86,24 @@ pub async fn test_auth_refresh(state: State<'_, AppState>) -> Result<AuthState, 
     state.entitlements.refresh().await;
     Ok(state.auth.state())
 }
+
+/// A second account for an engine, with its own home (E2E-M4-4). The real
+/// sign-in flow is `accounts_begin_add` (F-AC-02).
+#[tauri::command]
+pub async fn test_account_create(
+    state: State<'_, AppState>,
+    engine_id: String,
+    label: String,
+) -> Result<tandem_store::repo::accounts::Account, IpcError> {
+    guard(&state)?;
+    let engine = state
+        .terminals
+        .engines
+        .get(&engine_id)
+        .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "No engine with that id"))?;
+    state
+        .terminals
+        .engines
+        .create_account(&engine, &label)
+        .await
+}

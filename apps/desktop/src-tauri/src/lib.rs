@@ -79,6 +79,8 @@ macro_rules! app_commands {
             commands::engines::engines_detect,
             commands::engines::engines_install_command,
             commands::engines::engines_set_extra_args,
+            commands::engines::accounts_list,
+            commands::engines::engines_report,
             $($extra),*
         ]
     };
@@ -329,6 +331,7 @@ pub fn run() {
         commands::test::test_spawn_log,
         commands::test::test_clock_advance,
         commands::test::test_auth_refresh,
+        commands::test::test_account_create,
     ]);
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(app_commands![]);
@@ -355,7 +358,7 @@ pub fn run() {
                 let config = state.config.refresh().await;
                 state.terminals.engines.apply_config(&config);
                 let login = state.terminals.login_env().await;
-                state.terminals.engines.detect(login).await;
+                state.terminals.engines.detect(&login).await;
             });
             // Detect again when the window comes back, at most once a minute.
             if let Some(window) = app.get_webview_window("main") {
@@ -367,7 +370,7 @@ pub fn run() {
                             let state = focus.state::<AppState>();
                             if state.terminals.engines.focus_due() {
                                 let login = state.terminals.login_env().await;
-                                state.terminals.engines.detect(login).await;
+                                state.terminals.engines.detect(&login).await;
                             }
                         });
                     }

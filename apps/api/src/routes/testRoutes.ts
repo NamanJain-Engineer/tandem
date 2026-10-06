@@ -37,6 +37,13 @@ export function testRoutes(deps: Deps) {
     return c.json({ now: deps.clock.now().toISOString() });
   });
 
+  // Engine registry overrides in the signed config (E2E-M4-2, E2E-M4-7).
+  app.post("/config", async (c) => {
+    const body = await parseJson(c, z.object({ registry_overrides: z.array(z.record(z.string(), z.unknown())) }));
+    deps.config.setRegistryOverrides(body.registry_overrides);
+    return c.json({ etag: deps.config.signed.etag });
+  });
+
   app.post("/plan", async (c) => {
     const body = await parseJson(
       c,

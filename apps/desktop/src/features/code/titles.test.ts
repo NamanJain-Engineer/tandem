@@ -9,6 +9,7 @@ const pane = (id: string, at: number, extra: Partial<PaneRecord> = {}): PaneReco
   kind: "agent",
   cwd: null,
   engineId: "claude",
+  accountId: null,
   humanName: null,
   title: null,
   createdAt: at,

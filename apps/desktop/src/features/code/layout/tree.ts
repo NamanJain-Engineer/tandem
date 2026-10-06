@@ -10,6 +10,8 @@ export type LayoutNode =
 
 export type Rect = { x: number; y: number; w: number; h: number };
 
+/** The divider between panes, px (UI_SPEC §2.21; `w-1.5` in the grid). */
+export const GUTTER = 6;
 export const MIN_RATIO = 0.05;
 export const MAX_RATIO = 0.95;
 export const MAX_DEPTH = 16;
@@ -257,12 +259,46 @@ export function presetFor(n: number): Preset {
   return "4x2";
 }
 
+/** The ratio that gives the first of `n` equal panes its share of `extent`
+ * when every split also holds a `gutter`: panels share what the dividers
+ * leave, so a plain 1/n makes the first pane half a gutter wider. */
+function evenRatio(n: number, extent: number | undefined, gutter: number): number {
+  const plain = 1 / n;
+  if (!extent || gutter <= 0 || extent <= gutter * n) return plain;
+  const r = (extent - (n - 1) * gutter) / (n * (extent - gutter));
+  return Math.min(MAX_RATIO, Math.max(MIN_RATIO, r));
+}
+
+function evenRow(ids: string[], dir: Dir, extent: number | undefined, gutter: number): LayoutNode {
+  if (ids.length === 1) return leaf(ids[0] ?? "");
+  const [first, ...rest] = ids;
+  const ratio = evenRatio(ids.length, extent, gutter);
+  const restExtent = extent === undefined ? undefined : (1 - ratio) * (extent - gutter);
+  return { type: "split", dir, ratio, a: leaf(first ?? ""), b: evenRow(rest, dir, restExtent, gutter) };
+}
+
+function evenStack(nodes: LayoutNode[], extent: number | undefined, gutter: number): LayoutNode {
+  if (nodes.length === 1) return nodes[0] as LayoutNode;
+  const ratio = evenRatio(nodes.length, extent, gutter);
+  const restExtent = extent === undefined ? undefined : (1 - ratio) * (extent - gutter);
+  return { type: "split", dir: "col", ratio, a: nodes[0] as LayoutNode, b: evenStack(nodes.slice(1), restExtent, gutter) };
+}
+
 /** Auto-arrange (F-CD-11): an even grid with the fewest rows — cols =
- * ⌈√n⌉, rows = ⌈n / cols⌉, filled row-major, equal widths in each row. */
-export function autoGrid(ids: string[]): LayoutNode | null {
+ * ⌈√n⌉, rows = ⌈n / cols⌉, filled row-major, equal widths in each row and
+ * equal row heights. With the grid's `box` and divider size the panes come
+ * out equal to the pixel, not just by ratio. */
+export function autoGrid(ids: string[], box?: { w: number; h: number }, gutter = 0): LayoutNode | null {
   if (ids.length === 0) return null;
   if (ids.length === 1) return leaf(ids[0] ?? "");
-  return grid(ids, Math.ceil(Math.sqrt(ids.length)));
+  const cols = Math.ceil(Math.sqrt(ids.length));
+  const rows: string[][] = [];
+  for (let i = 0; i < ids.length; i += cols) rows.push(ids.slice(i, i + cols));
+  return evenStack(
+    rows.map((r) => evenRow(r, "row", box?.w, gutter)),
+    box?.h,
+    gutter,
+  );
 }
 
 /** Lays `ids` out by a preset; panes beyond the preset's slots fill more rows. */

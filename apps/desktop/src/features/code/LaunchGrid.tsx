@@ -4,7 +4,7 @@ import type { EngineView } from "@tandem/protocol";
 import { Button, EngineGlyph, Spinner, cx } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useEngines } from "../../stores/engines";
-import { InstallSheet } from "./InstallSheet";
+import { useInstall } from "./InstallSheet";
 
 const TILE = cx(
   "flex h-14 w-full items-center gap-3 rounded-md border border-border bg-surface-2 px-3 text-left",
@@ -39,7 +39,6 @@ export function LaunchGrid({
   const report = useEngines((s) => s.report);
   const detecting = useEngines((s) => s.detecting);
   const [more, setMore] = useState(false);
-  const [installing, setInstalling] = useState<EngineView | null>(null);
   const tile = (id: string, label: string, glyph: React.ReactNode, detail: string | null, first: boolean) => (
     <li key={id}>
       <button type="button" data-testid={`tile-${id}`} autoFocus={autoFocus && first} disabled={busy !== null} onClick={() => onPick(id)} className={TILE}>
@@ -59,14 +58,15 @@ export function LaunchGrid({
         {installed.map((e, i) => tile(e.spec.id, e.spec.label, <EngineGlyph letters={e.spec.logo} size={20} />, e.install?.version ?? null, i === 0))}
         {tile("shell", t("picker.terminal"), <SquareTerminal size={20} className="text-fg-muted" aria-hidden="true" />, null, installed.length === 0)}
       </ul>
+      {report?.slowShell && (
+        // Known folders were still checked: what's above is real (F-EN-01 AC2).
+        <p className="text-sm text-warning-text" data-testid="slow-shell">
+          {t("engines.slowShell", { seconds: report.slowShell.seconds })}
+        </p>
+      )}
       {installed.length === 0 && (
         <div data-testid="engines-diagnostics" className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3">
           <p className="text-sm text-fg">{t("engines.noneFound")}</p>
-          {report?.slowShell && (
-            <p className="text-sm text-warning-text" data-testid="slow-shell">
-              {t("engines.slowShell", { seconds: report.slowShell.seconds })}
-            </p>
-          )}
           {report && (
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
               <dt className="text-fg-subtle">{t("engines.shellsAsked")}</dt>
@@ -103,7 +103,7 @@ export function LaunchGrid({
                 <li key={e.spec.id} data-testid={`missing-${e.spec.id}`} className="flex h-9 items-center gap-2 border-b border-divider px-1 last:border-b-0">
                   <EngineGlyph letters={e.spec.logo} size={16} />
                   <span className="flex-1 truncate text-sm text-fg">{e.spec.label}</span>
-                  <Button size="sm" variant="ghost" onClick={() => setInstalling(e)} data-testid={`install-${e.spec.id}`}>
+                  <Button size="sm" variant="ghost" onClick={() => useInstall.getState().open(e, tabId)} data-testid={`install-${e.spec.id}`}>
                     {t("engines.install")}
                   </Button>
                 </li>
@@ -112,7 +112,6 @@ export function LaunchGrid({
           )}
         </div>
       )}
-      <InstallSheet engine={installing} tabId={tabId} onClose={() => setInstalling(null)} />
     </div>
   );
 }

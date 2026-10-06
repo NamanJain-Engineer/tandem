@@ -1,5 +1,5 @@
 import { $, $$, browser } from "@wdio/globals";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const API = "http://127.0.0.1:8787";
@@ -379,22 +379,25 @@ export async function split(direction: "right" | "down", tile = "shell"): Promis
     await $(`[data-testid="tile-${tile}"]`).click();
   }
   let added = "";
-  await browser.waitUntil(
-    async () => {
-      const now = await paneIds();
-      added = now.find((id) => !before.includes(id)) ?? "";
-      return added !== "";
-    },
-    {
-      timeout: 15_000,
-      timeoutMsg: `the split didn't add a pane: ${JSON.stringify(
-        await browser.execute(() => ({
-          toasts: Array.from(document.querySelectorAll("[role=status], [role=alert], [role=dialog]")).map((el) => el.textContent),
-          state: (window as unknown as { __tandemTest?: { debug: () => unknown } }).__tandemTest?.debug(),
-        })),
-      )}`,
-    },
-  );
+  // Toasts expire before the timeout; keep any seen while waiting.
+  const seen = new Set<string>();
+  await browser
+    .waitUntil(
+      async () => {
+        const toasts = (await browser.execute(() =>
+          Array.from(document.querySelectorAll("[role=status], [role=alert]")).map((el) => (el.textContent ?? "").trim()),
+        )) as string[];
+        for (const t of toasts) if (t) seen.add(t);
+        const now = await paneIds();
+        added = now.find((id) => !before.includes(id)) ?? "";
+        return added !== "";
+      },
+      { timeout: 15_000, interval: 200 },
+    )
+    .catch(async () => {
+      const state = await browser.execute(() => (window as unknown as { __tandemTest?: { debug: () => unknown } }).__tandemTest?.debug());
+      throw new Error(`the split didn't add a pane: ${JSON.stringify({ toasts: [...seen], state })}`);
+    });
   await waitForShell(added);
   return added;
 }
@@ -426,4 +429,84 @@ export async function rawRead(pane: string, count: number, seconds = 10, opts: {
     rmSync(`${out}.done`, { force: true });
     return hex;
   };
+}
+
+// ── M4: engines ────────────────────────────────────────────────────────────
+
+const PROFILES = [".zprofile", ".profile", ".bash_profile"];
+let defaultProfile: string | null = null;
+
+/** The test user's home (run.ts points HOME at it). */
+export function userHome(): string {
+  return process.env.HOME ?? "";
+}
+
+/** Rewrites the login profiles; `null` puts the run's default back (fake
+ * `claude` on PATH, test logs). */
+export function setProfile(lines: string[] | null): void {
+  const home = userHome();
+  defaultProfile ??= readFileSync(join(home, ".zprofile"), "utf8");
+  const body = lines === null ? defaultProfile : `${lines.join("\n")}\n`;
+  for (const f of PROFILES) writeFileSync(join(home, f), body);
+}
+
+/** The default profile without the fake-engine folder on PATH. */
+export function profileWithoutEngines(): string[] {
+  const home = userHome();
+  defaultProfile ??= readFileSync(join(home, ".zprofile"), "utf8");
+  return defaultProfile.split("\n").filter((l) => l && !l.startsWith("export PATH="));
+}
+
+/** Puts `fake-engine` in `dir` under `name` (it behaves by the name it runs as). */
+export function fakeEngine(name: string, dir: string): string {
+  mkdirSync(dir, { recursive: true });
+  const link = join(dir, name);
+  rmSync(link, { force: true });
+  symlinkSync(process.env.TANDEM_FAKE_ENGINE_BIN ?? "", link);
+  return link;
+}
+
+/** Engine registry overrides in the API's signed config (`/__test/config`). */
+export async function setRegistryOverrides(overrides: unknown[]): Promise<void> {
+  const res = await fetch(`${API}/__test/config`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ registry_overrides: overrides }),
+  });
+  if (!res.ok) throw new Error(`setting registry overrides failed: ${res.status} ${await res.text()}`);
+}
+
+/** Check again: re-reads the registry and the login env, then detects. */
+export async function checkAgain(): Promise<{ found: Array<{ engineId: string; source: string }>; slowShell: unknown; shellsAsked: string[] }> {
+  return invoke("engines_detect", {});
+}
+
+/** The status a pane's header shows (`working`, `waiting`, `done`, `idle`…). */
+export async function paneStatus(paneId: string): Promise<string> {
+  return String(
+    await browser.execute(
+      (id: string) =>
+        document.querySelector<HTMLElement>(`[data-testid="pane"][data-pane-id="${id}"] [data-testid="pane-status"]`)?.dataset.status ?? "",
+      paneId,
+    ),
+  );
+}
+
+/** Waits for a pane's header status. */
+export async function waitForStatus(paneId: string, status: string, timeout = 15_000): Promise<void> {
+  await browser.waitUntil(async () => (await paneStatus(paneId)) === status, {
+    timeout,
+    interval: 100,
+    timeoutMsg: `pane ${paneId} never showed status ${status} (now ${await paneStatus(paneId)})`,
+  });
+}
+
+/** Lines of the fake engines' log (TANDEM_FAKE_ENGINE_LOG), and of tandem-hook's posts. */
+export function fakeLog(): string[] {
+  const path = join(process.env.TANDEM_HOME ?? "", "fake-engine.log");
+  return existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean) : [];
+}
+export function hookLog(): string[] {
+  const path = join(process.env.TANDEM_HOME ?? "", "hook.log");
+  return existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean) : [];
 }

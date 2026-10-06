@@ -38,7 +38,7 @@ All locally generated ids are `<prefix>_<ULID>` (Crockford base32, 26 chars), st
 | Name | What it is | Why |
 |---|---|---|
 | `tandem_app` | the library crate inside `apps/desktop/src-tauri` holding services (teammates, mail, Auto, tasks execution, restore) | keeps the fixed crate list; services are testable without a Tauri runtime |
-| `fake-engine` | test-only binary in `crates/tandem-engines` that replays fixture scripts | F-TH-03 contract tests, F-EN-* spawn assertions |
+| `fake-engine` | test-only binary in `crates/tandem-engines` (feature `fixtures`): stands in for any engine by the name it runs as (`--version`, a small TUI that logs each read as hex, Claude hooks run from its provider home) | F-TH-03 contract tests, F-EN-* spawn assertions, E2E-M3/M4 |
 | Reserved plugin id `tandem` | namespace for the gateway's built-in tools: `tandem__search_tools`, `tandem__call`, `tandem__session_search`, `tandem__send_message`, `tandem__list_teammates`, `tandem__schedule_{list,create,update,delete}`, `tandem__memory_write`, `tandem__read_skill` | the spec's `<plugin>__<tool>` rule applied to built-ins |
 | `tandem_approvals__request` | the permission-prompt tool (spec's `tandem_approvals.request`); Claude sees `mcp__tandem__tandem_approvals__request` | spec F-TH-04 name kept exactly |
 | `ApprovalKind` superset | `command, file_write, file_delete, network, mcp, plugin_action, spend, question, other` | reconciles PRODUCT_SPEC `edit` (= `file_write`) with UI_SPEC ApprovalCard kinds |
@@ -373,7 +373,7 @@ pub mod briefing;  // assemble teammate briefing (F-AG-06)
 pub mod handoff;   // brief generation (F-CD-16)
 pub mod headless;  // one-shot runs with no MCP (F-AG-08, F-TK-04 review)
 pub mod usage;     // UsageProbe, log parsers (F-AC-04, F-AC-07)
-// bins: src/bin/tandem-hook.rs ; tests/support/fake_engine.rs (bin "fake-engine", test-only feature)
+// bins: src/bin/tandem-hook.rs ; src/bin/fake-engine.rs (bin "fake-engine", only with the test-only `fixtures` feature)
 ```
 
 ### 2.6 `tandem-git` [F-CD-15, F-CD-20, F-TH-13]
@@ -592,6 +592,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 |---|---|---|---|---|
 | `engines_list` | `{hostId?}` | `[EngineView {spec, install?: EngineInstall {path, version?, source:"shell"\|"known"}, chatCapable, unsupportedReason?, extraArgs}]` (installed first; waits for the first detection when nothing is cached) | — | F-EN-02 |
 | `engines_detect` | `{hostId?}` → op | `DetectionReport` (also sent as `engines:detected`); re-reads the remote registry first | — | F-EN-01 |
+| `engines_report` | `{hostId?}` | `DetectionReport?` (the last report, cached across launches; the launch grid loads it after a webview reload) | — | F-EN-01, F-CD-13 |
 | `engines_install_command` | `{engineId}` | `InstallCommand {display, shell}` (`display` is the registry string verbatim; the UI types it into a visible terminal pane) | NotFound | F-EN-03 |
 | `engines_set_extra_args` | `{engineId, args:[String]}` | — | Invalid (secret-shaped) | F-SH-04 |
 | `models_list` | `{engineId, accountId?}` | `[ModelEntry {id, label, description, isDefault, effortLevels, contextWindow, source}]` (Automatic first) | — | F-TH-08 |
@@ -824,6 +825,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `test_spawn_log` | — | `[SpawnRecord {argv, envKeys, providerHome?, cwd}]` (same content as `TANDEM_SPAWN_LOG`) | — |
 | `test_clock_advance` | `{ms}` | `{now}` | — |
 | `test_auth_refresh` | — | `AuthState` (forces the refresh path, e.g. to observe a revoked device) | — |
+| `test_account_create` | `{engineId, label}` | `Account` (a second account with its own provider home, without the sign-in flow; E2E-M4-4) | — |
 
 `window.__tandemTest` in the webview wraps these commands plus UI-side counters. Not listed in `capabilities/*.json` for release.
 
@@ -1420,11 +1422,11 @@ pty_kill / pane_close → tree kill (§5.3) → unregister status secret → rev
 - **Exit notice:** UI prints the notice only on the Exit frame, which follows the last data frame (F-CD-03). Plain shells show Restart/Close.
 
 ### 5.2 Environment resolution [F-CD-03, F-EN-04, F-EN-01]
-- **LoginEnv capture (once at startup, cached; refreshed on `engines_detect`):**
+- **LoginEnv capture (once at startup, cached; refreshed on `engines_detect`, which keeps the previous capture when the new one is degraded and the previous one wasn't):**
   - Unix: run `$SHELL -lic 'printf "\0__TANDEM_ENV__\0"; env -0'` with stdin `/dev/null`, a fresh process group, 3 s timeout. Parse after the marker (rc files may print noise). If `$SHELL` is unset, read the passwd entry (`getpwuid`), else `/bin/sh`. On timeout: use the GUI process env, set `LoginEnv.degraded = true` (surfaced in detection diagnostics).
   - Windows: use the process env plus registry `HKCU\Environment` and `HKLM\…\Session Manager\Environment` merged PATH (Explorer-started apps can have a stale PATH).
   - Strip from the captured env: `TERM` if `dumb`, `TANDEM_*`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and every `provider_home_env` in the registry (panes must not inherit another account), `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` containing `--inspect`.
-- **Always set:** `TERM=xterm-256color`, `COLORTERM=truecolor`, `TERM_PROGRAM=Tandem`, `TERM_PROGRAM_VERSION=<ver>`, `FORCE_COLOR=3`, `CLICOLOR=1`, `LANG` (if unset: `en_US.UTF-8`), `TANDEM_PANE_ID`, and for agent panes `TANDEM_STATUS_URL`, `TANDEM_STATUS_SECRET`.
+- **Always set:** `TERM=xterm-256color`, `COLORTERM=truecolor`, `TERM_PROGRAM=Tandem`, `TERM_PROGRAM_VERSION=<ver>`, `FORCE_COLOR=3`, `CLICOLOR=1`, `LANG` (if unset or empty: `C.UTF-8` on Linux, `en_US.UTF-8` elsewhere), `TANDEM_PANE_ID`, and for agent panes `TANDEM_STATUS_URL`, `TANDEM_STATUS_SECRET`.
 - **Plain terminal command:** the configured shell as a login shell (`-l` for bash/zsh/fish; PowerShell `-NoLogo`), with integration args (§5.8). cwd = requested dir; if missing → workspace root plus a one-line notice frame "Folder not found — opened at workspace root".
 - **Agent terminal command (handback):**
   - bash/zsh: `$SHELL -lic '<engine argv, each shell-quoted>; exec "$SHELL" -l'` with integration env.
@@ -1550,6 +1552,7 @@ Schema (`EngineSpec`, ts-rs exported; remote config may add or override entries 
 | kimi | `kimi` | none | none | vendor script ✓ |
 
 `provider_home_env: null` means one account per engine (the user's default home); the Accounts page says "This engine uses one sign-in on this machine." Adding a registry entry via remote config makes an engine detectable and terminal-launchable with no code change (F-EN-02 AC1).
+- **As built (M4):** `registry.json` and remote entries use the camelCase field names of the ts-rs `EngineSpec` (`providerHomeEnv`, `versionRegex`, `titlePatterns`, …); the snake_case names above are the schema's. `logo` holds the letters of Tandem's own glyph (UI_SPEC §1.6), not a file. Remote entries come from the config's `registry_overrides`: an entry whose `id` matches a bundled engine is deep-merged into it field by field; a new `id` needs `id`, `label`, `vendor`, `logo` and `commands`, and every other field takes its default. Each merged entry is checked (`EngineSpec::validate`: bare-name `id` and commands, env-var-shaped `providerHomeEnv`, regexes that compile, an `xdg`/`env` home strategy consistent with `providerHomeEnv`); one that fails is dropped with a warning and never affects the bundled entries. The registry is re-read at startup and on Check again (`engines_detect`).
 
 ### 6.2 Detection [F-EN-01, F-CD-13]
 Per host (`local`, each SSH host via tandem-host `engines.detect`, each WSL distro via `wsl.exe -d <d> -- sh -lc`):

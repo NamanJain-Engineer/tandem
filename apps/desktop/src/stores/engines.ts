@@ -25,8 +25,12 @@ export const useEngines = create<EnginesState>((set, get) => ({
   report: null,
   detecting: false,
   refresh: async () => {
-    const list = await invoke<EngineView[]>("engines_list", {}).catch(() => get().list);
-    set({ list: list ?? [], loaded: true });
+    const [list, report] = await Promise.all([
+      invoke<EngineView[]>("engines_list", {}).catch(() => get().list),
+      // After a webview reload: the last report, until detection runs again.
+      get().report ? Promise.resolve(get().report) : invoke<DetectionReport | null>("engines_report", {}).catch(() => null),
+    ]);
+    set({ list: list ?? [], loaded: true, report: get().report ?? report ?? null });
   },
   detect: async () => {
     set({ detecting: true });

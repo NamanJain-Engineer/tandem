@@ -80,7 +80,7 @@ pub async fn engines_list(
     let report = match engines.report() {
         Some(r) => r,
         // First run, nothing cached: wait for detection (≤ 8 s + versions).
-        None => engines.detect(state.terminals.login_env().await).await,
+        None => engines.detect(&*state.terminals.login_env().await).await,
     };
     let extra = tandem_store::repo::settings::get(
         &state.store,
@@ -107,11 +107,8 @@ pub async fn engines_detect(
     }
     let config = state.config.refresh().await;
     state.terminals.engines.apply_config(&config);
-    Ok(state
-        .terminals
-        .engines
-        .detect(state.terminals.login_env().await)
-        .await)
+    let login = state.terminals.refresh_login_env().await;
+    Ok(state.terminals.engines.detect(&login).await)
 }
 
 #[tauri::command]
@@ -158,4 +155,24 @@ pub async fn engines_set_extra_args(
         .engines
         .set_extra_args(&engine_id, args)
         .await
+}
+
+/// Engine accounts and their provider homes (F-AC-01, F-AC-02).
+#[tauri::command]
+pub async fn accounts_list(
+    state: State<'_, AppState>,
+) -> Result<Vec<tandem_store::repo::accounts::Account>, tandem_core::IpcError> {
+    Ok(tandem_store::repo::accounts::list(&state.store).await?)
+}
+
+/// The last detection report (F-EN-01 diagnostics after a webview reload).
+#[tauri::command]
+pub fn engines_report(
+    state: State<'_, AppState>,
+    host_id: Option<String>,
+) -> Option<DetectionReport> {
+    if host_id.as_deref().is_some_and(|h| h != "local") {
+        return None;
+    }
+    state.terminals.engines.report()
 }
