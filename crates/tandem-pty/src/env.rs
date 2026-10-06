@@ -170,10 +170,19 @@ pub fn pane_env(login: &LoginEnv, pane_id: &str, app_version: &str) -> BTreeMap<
     ] {
         env.insert(k.into(), v.into());
     }
-    env.entry("LANG".into())
-        .or_insert_with(|| "en_US.UTF-8".into());
+    // A UTF-8 locale that exists: unset or empty LANG would leave programs
+    // in ASCII (htop, less and TUIs draw differently).
+    if env.get("LANG").is_none_or(|v| v.is_empty()) {
+        env.insert("LANG".into(), DEFAULT_LANG.into());
+    }
     env
 }
+
+/// `en_US.UTF-8` isn't installed on many Linux systems; `C.UTF-8` always is.
+#[cfg(target_os = "linux")]
+pub const DEFAULT_LANG: &str = "C.UTF-8";
+#[cfg(not(target_os = "linux"))]
+pub const DEFAULT_LANG: &str = "en_US.UTF-8";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShellKind {
@@ -369,7 +378,13 @@ mod tests {
         assert_eq!(env["TANDEM_PANE_ID"], "pn_1");
         assert_eq!(env["LANG"], "de_DE.UTF-8", "an existing LANG is kept");
         let env = pane_env(&LoginEnv::default(), "pn_2", "0.1.0");
-        assert_eq!(env["LANG"], "en_US.UTF-8");
+        assert_eq!(env["LANG"], DEFAULT_LANG);
+        // Set but empty is the same as unset: programs would fall back to ASCII.
+        let empty = LoginEnv {
+            vars: [("LANG".into(), String::new())].into(),
+            ..Default::default()
+        };
+        assert_eq!(pane_env(&empty, "pn_3", "0.1.0")["LANG"], DEFAULT_LANG);
     }
 
     #[cfg(unix)]

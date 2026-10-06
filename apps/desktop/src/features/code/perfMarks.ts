@@ -2,7 +2,7 @@
 // "6 spawns framed ≤300 ms"): when each pane's view mounted and when its
 // first output reached xterm. Nothing is recorded unless the harness asks.
 
-export type PaneTimes = { mounted: number; firstOutput?: number };
+export type PaneTimes = { mounted: number; firstOutput?: number; phases?: Record<string, number> };
 
 const times = new Map<string, PaneTimes>();
 const writes = new Map<string, number>();
@@ -39,7 +39,18 @@ export function writeCounts(): Record<string, number> {
 }
 
 export function markMounted(paneId: string): void {
-  if (enabled) times.set(paneId, { mounted: performance.now() });
+  if (!enabled) return;
+  const prev = times.get(paneId);
+  times.set(paneId, { mounted: performance.now(), phases: prev?.phases });
+}
+
+/** A named step of a pane's start (effect, spawned, first frame…), once. */
+export function markPhase(paneId: string, phase: string): void {
+  if (!enabled) return;
+  const t = times.get(paneId) ?? { mounted: NaN };
+  t.phases ??= {};
+  t.phases[phase] ??= performance.now();
+  times.set(paneId, t);
 }
 
 export function markFirstOutput(paneId: string): void {
@@ -50,4 +61,22 @@ export function markFirstOutput(paneId: string): void {
 
 export function perfTimes(): Record<string, PaneTimes> {
   return Object.fromEntries(times);
+}
+
+export type Span = { name: string; at: number; ms: number };
+const spans: Span[] = [];
+
+/** Times `fn` as a named span (WebGL attach, detach…) when recording. */
+export function timed<T>(name: string, fn: () => T): T {
+  if (!enabled) return fn();
+  const at = performance.now();
+  try {
+    return fn();
+  } finally {
+    spans.push({ name, at, ms: performance.now() - at });
+  }
+}
+
+export function perfSpans(): Span[] {
+  return spans.slice();
 }

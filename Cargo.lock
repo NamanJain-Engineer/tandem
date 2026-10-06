@@ -1983,6 +1983,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
+name = "httpdate"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
+
+[[package]]
 name = "hyper"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1995,6 +2001,7 @@ dependencies = [
  "http",
  "http-body",
  "httparse",
+ "httpdate",
  "itoa",
  "pin-project-lite",
  "smallvec",
@@ -4653,6 +4660,8 @@ dependencies = [
  "dashmap",
  "ed25519-dalek",
  "futures",
+ "hex",
+ "hmac",
  "keyring",
  "rand 0.8.8",
  "regex",
@@ -4685,6 +4694,7 @@ dependencies = [
  "hex",
  "png 0.17.16",
  "rand 0.8.8",
+ "regex",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -4716,10 +4726,24 @@ dependencies = [
 name = "tandem-engines"
 version = "0.1.0"
 dependencies = [
+ "futures",
+ "hex",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "libc",
+ "rand 0.8.8",
+ "regex",
  "serde",
  "serde_json",
+ "tandem-core",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "toml_edit 0.25.15+spec-1.1.0",
  "tracing",
  "ts-rs",
+ "ulid",
 ]
 
 [[package]]
@@ -4780,6 +4804,7 @@ dependencies = [
 name = "tandem-store"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "rusqlite",
  "serde",
  "serde_json",
@@ -5516,6 +5541,7 @@ dependencies = [
  "indexmap 2.14.2",
  "toml_datetime 1.1.1+spec-1.1.0",
  "toml_parser",
+ "toml_writer",
  "winnow 1.0.4",
 ]
 

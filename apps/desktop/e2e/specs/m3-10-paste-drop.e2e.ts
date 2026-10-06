@@ -106,7 +106,8 @@ describe("E2E-M3-10 paste and drop", () => {
     const odd = `${root}/a b'c`;
     mkdirSync(odd, { recursive: true });
     await drop([odd], await center(target));
-    await waitForPaneText(target, `'${root}/a b'\\''c'`);
+    // The drop is typed onto the shell's command line (zsh breaks it at the pane's width).
+    await waitForPaneText(target, `'${root}/a b'\\''c'`, 15_000, { commandLine: true });
     for (const other of ids.filter((id) => id !== target)) expect(await paneText(other)).not.toContain("a b'");
     await sendToPane(target, "\x15");
   });

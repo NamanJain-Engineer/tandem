@@ -420,3 +420,46 @@ fn f_cd_10_shells_report_cwd_marks_and_last_output() {
     }
     assert!(ran >= 1, "bash at least");
 }
+
+/// F-CD-04 AC5: a background pane (no view attached, so nothing holds the
+/// reader back) stays within F-CD-03's bound, `lines × 200 B + 2 MB`, after
+/// 1 GB of output. Slow: `cargo test -p tandem-pty --release -- --include-ignored f_cd_04_5`.
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "streams 1 GB of output"]
+fn f_cd_04_5_background_pane_memory_stays_bounded_after_1_gb() {
+    let rss = || -> usize {
+        std::fs::read_to_string("/proc/self/status")
+            .ok()
+            .and_then(|s| {
+                s.lines()
+                    .find(|l| l.starts_with("VmRSS:"))
+                    .and_then(|l| l.split_whitespace().nth(1))
+                    .and_then(|kb| kb.parse::<usize>().ok())
+            })
+            .unwrap_or(0)
+            * 1024
+    };
+    let lines = 10_000;
+    let mut s = spec(
+        "bg",
+        "head -c 1073741824 /dev/zero | tr '\\0' 'x' | fold -w 100",
+    );
+    s.scrollback_lines = lines;
+    let mgr = PtyManager::new();
+    let before = rss();
+    mgr.spawn(s, None).expect("spawn");
+    assert!(
+        wait_until(Duration::from_secs(900), || mgr.exit_info("bg").is_some()),
+        "1 GB never finished"
+    );
+    let bound = lines * 200 + 2 * 1024 * 1024;
+    let ring = mgr.scrollback("bg").expect("ring").len();
+    assert!(ring <= bound, "ring holds {ring} bytes, bound {bound}");
+    // Allocator and thread overhead aside, the process grew by at most the bound.
+    let grown = rss().saturating_sub(before);
+    assert!(
+        grown <= bound + 16 * 1024 * 1024,
+        "the process grew by {grown} bytes streaming 1 GB (bound {bound})"
+    );
+}

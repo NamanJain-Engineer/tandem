@@ -308,9 +308,16 @@ export async function sendToPane(paneId: string, text: string): Promise<void> {
   await invoke("pty_write", { paneId, data: text });
 }
 
-/** Waits until a pane's screen shows `needle`. */
-export async function waitForPaneText(paneId: string, needle: string, timeout = 15_000): Promise<void> {
-  await browser.waitUntil(async () => (await paneText(paneId)).includes(needle), {
+/** Waits until a pane's screen shows `needle`. With `commandLine`, the
+ * needle is looked for in the shell's command line, which zsh breaks with
+ * real newlines at the pane's width (program output wraps softly and is
+ * joined by `paneText` already). */
+export async function waitForPaneText(paneId: string, needle: string, timeout = 15_000, opts: { commandLine?: boolean } = {}): Promise<void> {
+  const text = async () => {
+    const t = await paneText(paneId);
+    return opts.commandLine ? t.replace(/\n/g, "") : t;
+  };
+  await browser.waitUntil(async () => (await text()).includes(needle), {
     timeout,
     timeoutMsg: `pane ${paneId} never showed ${JSON.stringify(needle)}: ${await paneText(paneId)}`,
   });

@@ -70,7 +70,9 @@ function checkArtifacts(home: string): string[] {
 async function main() {
   if (!process.env.TANDEM_E2E_SKIP_BUILD) {
     execFileSync("pnpm", ["build"], { cwd: desktop, stdio: "inherit" });
-    execFileSync("cargo", ["build", "-p", "tandem-desktop", "--features", "custom-protocol"], { cwd: root, stdio: "inherit" });
+    // Perf suites measure an optimised build (the `perf` profile keeps the test harness).
+    const cargoProfile = suite ? ["--profile", "perf"] : [];
+    execFileSync("cargo", ["build", "-p", "tandem-desktop", "--features", "custom-protocol", ...cargoProfile], { cwd: root, stdio: "inherit" });
   }
   const home = mkdtempSync(join(tmpdir(), "tandem-e2e-"));
   const results = join(root, "test-results");
@@ -100,12 +102,13 @@ async function main() {
     TANDEM_HOME: home,
     TANDEM_FAKE_KEYCHAIN: "1",
     TANDEM_E2E: "1",
-    TANDEM_APP_BINARY: join(root, "target/debug/tandem"),
+    TANDEM_APP_BINARY: join(root, suite ? "target/perf/tandem" : "target/debug/tandem"),
     TANDEM_API_URL: API,
     TANDEM_WEB_URL: WEB,
     TANDEM_OPEN_URL_CMD: opener,
     TANDEM_NET_LOG: join(home, "net.log"),
     TANDEM_FAKE_PICK_FOLDER: join(home, "pick-folder.txt"),
+    ...(suite ? { TANDEM_MOCHA_TIMEOUT: "900000" } : {}),
     PLAYWRIGHT_CHROMIUM: process.env.PLAYWRIGHT_CHROMIUM ?? (existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : ""),
     PATH: `${fakes}:${process.env.PATH ?? ""}`,
   });

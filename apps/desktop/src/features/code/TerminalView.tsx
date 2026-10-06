@@ -17,11 +17,13 @@ import { useLayout } from "../../stores/layout";
 import { useTerminals } from "../../stores/terminals";
 import { copyText, readText } from "../../ipc/clipboard";
 import { CommandMarks, type Activity } from "./commandMarks";
-import { markFirstOutput, markMounted, markWrite } from "./perfMarks";
+import { markFirstOutput, markMounted, markPhase, markWrite, timed } from "./perfMarks";
 import { HIGHLIGHT_LIMIT, searchOptions, validQuery, type FindFlags, type FindResult } from "./find";
 import { FindBar } from "./FindBar";
 import { keyAction, lastLines, lineCount, needsConfirm, pasteBytes } from "./terminalInput";
+import { mountQueue } from "./mountQueue";
 import { webglPool } from "./webglPool";
+import { writeScheduler } from "./writeScheduler";
 
 export type TerminalOptions = {
   theme: TerminalTheme;
@@ -57,8 +59,6 @@ function remeasure(xterm: Terminal): void {
   xterm.options.fontFamily = family;
 }
 
-/** Unfocused panes coalesce output to at most ~30 fps (F-CD-04). */
-const UNFOCUSED_FLUSH_MS = 33;
 
 export type Phase =
   | { kind: "starting" }
@@ -140,6 +140,7 @@ async function connect(
   } catch (e) {
     if ((e as IpcError).code !== "not_found") throw e;
   }
+  markPhase(paneId, "spawn");
   const spawn = invoke<PtyInfo>(
     "pty_spawn",
     { paneId, cols, rows, channel: await channel() },
@@ -232,7 +233,15 @@ export function TerminalView({
   useEffect(() => {
     const el = host.current;
     if (!el) return;
-    measured.current = false;
+    markPhase(paneId, "effect");
+    // Opened one per frame when several views mount together (mountQueue).
+    return mountQueue.add(() => openViewRef.current(el), focusedRef.current);
+  }, [paneId, generation]);
+
+  /** Creates the xterm in `el` and connects it to the pane's PTY; returns
+   * the teardown. */
+  function openView(el: HTMLDivElement): () => void {
+    markPhase(paneId, "open");
     const o = optionsRef.current;
     const xterm = new Terminal({
       theme: o.theme,
@@ -258,7 +267,7 @@ export function TerminalView({
     xterm.loadAddon(searchAddon);
     search.current = searchAddon;
     const results = searchAddon.onDidChangeResults((r) => setFindResult({ index: r.resultIndex, count: r.resultCount }));
-    xterm.open(el);
+    timed("xterm.open", () => xterm.open(el));
     quietQueries(xterm);
     markMounted(paneId);
     // Shell-integration marks reach xterm only when they carried this
@@ -293,7 +302,7 @@ export function TerminalView({
         try {
           const addon = new WebglAddon();
           addon.onContextLoss(() => webglPool.lost(paneId));
-          xterm.loadAddon(addon);
+          timed("webgl.attach", () => xterm.loadAddon(addon));
           webgl = addon;
           return true;
         } catch {
@@ -301,24 +310,47 @@ export function TerminalView({
         }
       },
       detach: () => {
-        webgl?.dispose();
+        timed("webgl.detach", () => webgl?.dispose());
         webgl = undefined;
       },
     };
     webglPool.register(paneId, renderer);
-    // Cell size is measured from the font; once the web font has loaded,
-    // measure again (and resize the PTY to match) so the grid, the glyphs
-    // and the program agree on rows and columns.
+    webglPool.update(paneId, { visible: visibleRef.current, focused: focusedRef.current });
+    // Cell size is measured from the font. When the web font was still
+    // loading as the view opened, measure again once it has (and resize the
+    // PTY to match) so the grid, the glyphs and the program agree on rows and
+    // columns. A measurement costs a full re-render, so it happens only
+    // then, and a hidden pane waits until it's shown (F-CD-04).
     // `check()` can report ready before every face of the variable font has
-    // loaded, so follow the font set itself.
+    // loaded, so the font set must also have nothing left loading.
     const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+    const fontSpec = `${o.fontSize}px "${BUNDLED_MONO}"`;
+    const fontReady = () => !fonts || (fonts.status === "loaded" && fonts.check(fontSpec));
+    let fontPending = !fontReady();
+    measured.current = el.isConnected && !fontPending;
     const fontsLoaded = () => {
       if (term.current !== xterm) return;
-      remeasure(xterm);
-      refit.current();
+      if (!fontPending) {
+        // Another face (bold, italic) arrived after the cell was measured:
+        // WebGL's glyph cache drew it with a fallback, so draw it again.
+        if (webgl) timed("fonts.atlas", () => xterm.clearTextureAtlas());
+        return;
+      }
+      if (!fontReady()) return;
+      fontPending = false;
+      if (el.offsetParent === null) {
+        // Measured by the layout pass when it's shown.
+        measured.current = false;
+        return;
+      }
+      timed("fonts.remeasure", () => {
+        measured.current = true;
+        remeasure(xterm);
+        refit.current();
+      });
     };
     if (fonts) {
-      void fonts.load(`${o.fontSize}px "${BUNDLED_MONO}"`).then(fontsLoaded, () => undefined);
+      if (fontPending) void fonts.load(fontSpec).then(fontsLoaded, () => undefined);
       fonts.addEventListener("loadingdone", fontsLoaded);
     }
     const scrolled = () => {
@@ -345,7 +377,9 @@ export function TerminalView({
         invoke("pty_ack", { paneId, bytes }).catch(() => undefined);
       }
     };
-    const write = (data: Uint8Array) => {
+    // Output is acked once xterm has parsed it, which is what holds a
+    // program back when the view falls behind (§5.5).
+    const write = (data: Uint8Array, parsed?: () => void) => {
       const len = data.byteLength;
       markWrite(paneId);
       xterm.write(data, () => {
@@ -353,39 +387,23 @@ export function TerminalView({
         unacked += len;
         if (unacked >= 64 * 1024) flushAck();
         else ackTimer ??= setTimeout(flushAck, 50);
+        parsed?.();
       });
     };
     // The focused pane writes at once (xterm renders at up to 60 fps); the
-    // others coalesce into one write per ~33 ms.
-    let pending: Uint8Array[] = [];
-    let flushTimer: ReturnType<typeof setTimeout> | undefined;
-    const flushPending = () => {
-      flushTimer = undefined;
-      if (pending.length === 0) return;
-      const total = pending.reduce((n, c) => n + c.byteLength, 0);
-      const merged = new Uint8Array(total);
-      let at = 0;
-      for (const c of pending) {
-        merged.set(c, at);
-        at += c.byteLength;
-      }
-      pending = [];
-      write(merged);
-    };
-    flushNow.current = flushPending;
+    // others go through the shared scheduler (≤30 fps, a byte budget per tick).
+    writeScheduler.register(paneId, write);
+    flushNow.current = () => writeScheduler.flush(paneId);
     const onFrame = (f: Frame) => {
       if (disposed) return;
       if (f.kind === FrameKind.Data) {
+        markPhase(paneId, "firstFrame");
         commands.output();
-        if (focusedRef.current && pending.length === 0) {
-          write(f.payload);
-        } else {
-          pending.push(f.payload.slice());
-          flushTimer ??= setTimeout(flushPending, UNFOCUSED_FLUSH_MS);
-        }
+        if (focusedRef.current && writeScheduler.pending(paneId) === 0) write(f.payload);
+        else writeScheduler.push(paneId, f.payload.slice());
       } else if (f.kind === FrameKind.Exit) {
         // The final output always renders before the exit notice.
-        flushPending();
+        writeScheduler.flush(paneId);
         const info = JSON.parse(new TextDecoder().decode(f.payload)) as ExitInfo;
         setPhase({ kind: "exited", code: info.code });
       } else if (f.kind === FrameKind.Notice) {
@@ -426,7 +444,9 @@ export function TerminalView({
         const cols = Math.max(xterm.cols, 2);
         const rows = Math.max(xterm.rows, 2);
         size.current = { cols, rows };
+        markPhase(paneId, "connect");
         const { replay, live, state } = await connect(paneId, cols, rows, () => createFrameChannel(onFrame));
+        markPhase(paneId, "connected");
         if (state) useTerminals.getState().put(state);
         if (disposed) return;
         if (replay?.byteLength) xterm.write(replay);
@@ -447,7 +467,7 @@ export function TerminalView({
     return () => {
       disposed = true;
       clearTimeout(ackTimer);
-      clearTimeout(flushTimer);
+      writeScheduler.unregister(paneId, write);
       flushAck();
       input.dispose();
       selection.dispose();
@@ -465,7 +485,9 @@ export function TerminalView({
       xterm.dispose();
       term.current = null;
     };
-  }, [paneId, generation]);
+  }
+  const openViewRef = useRef(openView);
+  openViewRef.current = openView;
 
   // Visibility and focus decide who holds a WebGL context (§5.6).
   useEffect(() => {
@@ -689,12 +711,14 @@ export function TerminalView({
       // xterm measured its cell while the pane's host may still have been
       // detached (no styles, a fallback font): measure again, once, now
       // that the view is in the document.
-      const xterm = term.current;
-      if (xterm && !measured.current && el.isConnected) {
-        measured.current = true;
-        remeasure(xterm);
-      }
-      apply();
+      timed("settle.run", () => {
+        const xterm = term.current;
+        if (xterm && !measured.current && el.isConnected) {
+          measured.current = true;
+          remeasure(xterm);
+        }
+        apply();
+      });
     };
     // Trailing: every change while settling starts the wait again.
     const settle = () => {

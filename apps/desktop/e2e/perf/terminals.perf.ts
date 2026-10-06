@@ -3,7 +3,7 @@
 // writes perf/results/m3.json; every target is asserted. Debug build under
 // Xvfb: a miss that only a reference machine can settle is recorded as
 // [manual] in BUILD_LOG, never loosened here.
-import { $, browser } from "@wdio/globals";
+import { $, $$, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { cpus, totalmem, release } from "node:os";
@@ -49,7 +49,7 @@ function appPids(): number[] {
       return [];
     }
   };
-  return [...out("target/debug/tandem$"), ...out("WebKitWebProcess"), ...out("WebKitNetworkProcess")];
+  return [...out("target/(debug|perf)/tandem$"), ...out("WebKitWebProcess"), ...out("WebKitNetworkProcess")];
 }
 
 function cpuTicks(pids: number[]): number {
@@ -122,7 +122,30 @@ type Hook = {
   perf: { enable: () => void; times: () => Record<string, { mounted: number; firstOutput?: number }>; writes: () => Record<string, number> };
 };
 
-const STREAM = "while :; do yes 'stream 0123456789 abcdefghijklmnopqrstuvwxyz' | head -c 2000000; sleep 0.1; done\n";
+/** The streaming load (MILESTONES M3 mocks): 50 MB of `yes` per pane. */
+const STREAM = "yes 'stream 0123456789 abcdefghijklmnopqrstuvwxyz' | head -c 50M\n";
+
+/** Waits until no pane has written for `quietMs` (streams done or stopped). */
+async function drained(quietMs = 3_000, timeout = 300_000): Promise<void> {
+  const total = async () =>
+    Object.values((await browser.execute(() => (window as unknown as { __tandemTest: Hook }).__tandemTest.perf.writes())) as Record<string, number>).reduce(
+      (a, b) => a + b,
+      0,
+    );
+  let last = await total();
+  let since = Date.now();
+  await browser.waitUntil(
+    async () => {
+      const now = await total();
+      if (now !== last) {
+        last = now;
+        since = Date.now();
+      }
+      return Date.now() - since >= quietMs;
+    },
+    { timeout, interval: 500, timeoutMsg: "output never stopped" },
+  );
+}
 
 describe("perf: terminals", () => {
   let ids: string[] = [];
@@ -135,14 +158,17 @@ describe("perf: terminals", () => {
       ...prior,
       terminals: {
         date: new Date().toISOString(),
-        machine: { os: `linux ${release()} (xvfb)`, cpus: cpus().length, cpuModel: cpus()[0]?.model, memGb: Math.round(totalmem() / 2 ** 30), build: "debug" },
+        machine: { os: `linux ${release()} (xvfb)`, cpus: cpus().length, cpuModel: cpus()[0]?.model, memGb: Math.round(totalmem() / 2 ** 30), build: process.env.TANDEM_APP_BINARY?.includes("/perf/") ? "perf" : "debug" },
         metrics,
       },
     };
     writeFileSync(OUT, `${JSON.stringify(body, null, 2)}\n`);
   });
 
-  before(async () => {
+  before(async function () {
+    this.timeout(300_000);
+    // The page is busy while 15 panes stream; give its scripts room.
+    await browser.setTimeout({ script: 300_000 });
     const { email } = await freshUser("perf-terminals");
     await setPlan(email, "pro");
     await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
@@ -158,77 +184,12 @@ describe("perf: terminals", () => {
     await waitForApp();
     await browser.waitUntil(async () => (await paneIds()).length === 16, { timeout: 30_000 });
     for (const id of ids) await waitForPaneText(id, "#", 30_000);
-  });
-
-  it("keypress → echo in the focused terminal with 16 panes streaming: P95 ≤ 50 ms", async () => {
-    for (const id of ids.slice(1)) await sendToPane(id, STREAM);
-    await $(`[data-testid="terminal"][data-pane-id="${ids[0]}"]`).click();
-    await browser.pause(2_000);
-    const samples = (await browser.executeAsync(
-      (pane: string, n: number, done: (xs: number[]) => void) => {
-        const t = (window as unknown as { __tandemTest: Hook }).__tandemTest;
-        const ipc = (window as unknown as { __TAURI_INTERNALS__: { invoke: (c: string, a: unknown) => Promise<unknown> } }).__TAURI_INTERNALS__;
-        const out: number[] = [];
-        const one = (i: number) => {
-          if (i >= n) return done(out);
-          const before = t.paneCursor(pane);
-          const t0 = performance.now();
-          void ipc.invoke("pty_write", { paneId: pane, data: "x" });
-          const check = () => {
-            const c = t.paneCursor(pane);
-            if (c && before && (c.x !== before.x || c.y !== before.y)) {
-              out.push(performance.now() - t0);
-              setTimeout(() => one(i + 1), 30);
-            } else if (performance.now() - t0 > 2_000) {
-              out.push(2_000);
-              one(i + 1);
-            } else requestAnimationFrame(check);
-          };
-          requestAnimationFrame(check);
-        };
-        one(0);
-      },
-      ids[0] ?? "",
-      100,
-    )) as number[];
-    await sendToPane(ids[0] ?? "", "\x15");
-    record("keyEchoP95Ms", p95(samples), "<=", 50, "ms");
-  });
-
-  it("unfocused visible terminals coalesce to ≤ 30 writes/s", async () => {
     await browser.execute(() => (window as unknown as { __tandemTest: Hook }).__tandemTest.perf.enable());
-    const pane = ids[5] ?? "";
-    const count = async () => ((await browser.execute(() => (window as unknown as { __tandemTest: Hook }).__tandemTest.perf.writes())) as Record<string, number>)[pane] ?? 0;
-    const before = await count();
-    await browser.pause(3_000);
-    record("unfocusedWritesPerSec", ((await count()) - before) / 3, "<=", 30, "writes/s");
   });
 
-  it("focused terminal frame rate under streaming ≥ 50 fps", async () => {
-    await sendToPane(ids[0] ?? "", STREAM);
-    await browser.pause(1_000);
-    const fps = (await browser.executeAsync((done: (fps: number) => void) => {
-      let frames = 0;
-      const start = performance.now();
-      const tick = () => {
-        frames++;
-        if (performance.now() - start < 3_000) requestAnimationFrame(tick);
-        else done((frames * 1000) / (performance.now() - start));
-      };
-      requestAnimationFrame(tick);
-    })) as number;
-    record("focusedFps", fps, ">=", 50, "fps");
-    for (const id of ids) await sendToPane(id, "\x03");
-  });
-
-  it("app idle CPU with 16 panes and no output ≤ 2% of one core, memory ≤ 1.2 GB", async () => {
-    await browser.pause(3_000);
-    const pids = appPids();
-    const hz = Number(execFileSync("getconf", ["CLK_TCK"], { encoding: "utf8" }).trim()) || 100;
-    const t0 = cpuTicks(pids);
-    await browser.pause(10_000);
-    record("idleCpuPercent", ((cpuTicks(pids) - t0) / hz / 10) * 100, "<=", 2, "% of a core");
-    record("sixteenPaneRssMb", rssMb(pids), "<=", 1229, "MB");
+  beforeEach(function () {
+    // Each measurement can wait out 15 streams of 50 MB.
+    this.currentTest?.timeout(600_000);
   });
 
   it("mode switch ≤ 100 ms", async () => {
@@ -259,39 +220,6 @@ describe("perf: terminals", () => {
       }
     }
     record("modeSwitchP95Ms", p95(samples), "<=", 100, "ms");
-  });
-
-  it("DOM and WebGL renderers differ by ≤ 1% of pixels", async () => {
-    const holds = (id: string) => browser.execute((p: string) => (window as unknown as { __tandemTest: Hook }).__tandemTest.webglHolds(p), id);
-    const gl: string[] = [];
-    const dom: string[] = [];
-    for (const id of ids) ((await holds(id)) ? gl : dom).push(id);
-    expect(gl.length).toBeGreaterThan(0);
-    expect(dom.length).toBeGreaterThan(0);
-    const [a, b] = [gl[gl.length - 1] ?? "", dom[0] ?? ""];
-    const art = "clear; for i in 1 2 3 4 5 6; do printf '\\033[31mred \\033[32mgreen \\033[1;34mbold blue\\033[0m plain 0123456789 ~!@#$%%^&*()\\n'; done\n";
-    for (const id of [a, b]) await sendToPane(id, art);
-    for (const id of [a, b]) await waitForPaneText(id, "plain 0123456789");
-    // Neither holds focus (cursors match).
-    await $(`[data-testid="terminal"][data-pane-id="${ids.find((id) => id !== a && id !== b)}"]`).click();
-    await browser.pause(1_000);
-    const shot = async (id: string) => {
-      const el = await $(`[data-testid="terminal"][data-pane-id="${id}"]`);
-      return decodePng(Buffer.from(await browser.takeElementScreenshot(await el.elementId), "base64"));
-    };
-    const [x, y] = [await shot(a), await shot(b)];
-    const w = Math.min(x.w, y.w);
-    const h = Math.min(x.h, y.h);
-    let differ = 0;
-    for (let row = 0; row < h; row++) {
-      for (let col = 0; col < w; col++) {
-        const i = (row * x.w + col) * 4;
-        const j = (row * y.w + col) * 4;
-        const d = Math.max(Math.abs((x.px[i] ?? 0) - (y.px[j] ?? 0)), Math.abs((x.px[i + 1] ?? 0) - (y.px[j + 1] ?? 0)), Math.abs((x.px[i + 2] ?? 0) - (y.px[j + 2] ?? 0)));
-        if (d > 48) differ++;
-      }
-    }
-    record("domVsWebglPixelDiffPercent", (differ / (w * h)) * 100, "<=", 1, "%");
   });
 
   it("spawning 6 agent panes: frames visible ≤ 300 ms, no UI stall > 100 ms", async () => {
@@ -331,6 +259,114 @@ describe("perf: terminals", () => {
     const framed = agents.map((id) => (times[id]?.firstOutput ?? Infinity) - (times[id]?.mounted ?? 0));
     record("sixAgentsFramedMs", Math.max(...framed), "<=", 300, "ms");
     record("sixAgentsMaxStallMs", gap, "<=", 100, "ms");
+    // Back to the 16 shells for the rest.
+    await $$('[data-testid="tab"]')[0]?.click();
+    await browser.waitUntil(async () => (await paneIds()).length === 16, { timeout: 30_000 });
+  });
+
+  it("DOM and WebGL renderers differ by ≤ 1% of pixels", async () => {
+    const holds = (id: string) => browser.execute((p: string) => (window as unknown as { __tandemTest: Hook }).__tandemTest.webglHolds(p), id);
+    const gl: string[] = [];
+    const dom: string[] = [];
+    for (const id of ids) ((await holds(id)) ? gl : dom).push(id);
+    expect(gl.length).toBeGreaterThan(0);
+    expect(dom.length).toBeGreaterThan(0);
+    const [a, b] = [gl[gl.length - 1] ?? "", dom[0] ?? ""];
+    const art = "clear; for i in 1 2 3 4 5 6; do printf '\\033[31mred \\033[32mgreen \\033[1;34mbold blue\\033[0m plain 0123456789 ~!@#$%%^&*()\\n'; done\n";
+    for (const id of [a, b]) await sendToPane(id, art);
+    for (const id of [a, b]) await waitForPaneText(id, "plain 0123456789");
+    // Neither holds focus (cursors match).
+    await $(`[data-testid="terminal"][data-pane-id="${ids.find((id) => id !== a && id !== b)}"]`).click();
+    await browser.pause(1_000);
+    const shot = async (id: string) => {
+      const el = await $(`[data-testid="terminal"][data-pane-id="${id}"]`);
+      return decodePng(Buffer.from(await browser.takeElementScreenshot(await el.elementId), "base64"));
+    };
+    const [x, y] = [await shot(a), await shot(b)];
+    const w = Math.min(x.w, y.w);
+    const h = Math.min(x.h, y.h);
+    let differ = 0;
+    for (let row = 0; row < h; row++) {
+      for (let col = 0; col < w; col++) {
+        const i = (row * x.w + col) * 4;
+        const j = (row * y.w + col) * 4;
+        const d = Math.max(Math.abs((x.px[i] ?? 0) - (y.px[j] ?? 0)), Math.abs((x.px[i + 1] ?? 0) - (y.px[j + 1] ?? 0)), Math.abs((x.px[i + 2] ?? 0) - (y.px[j + 2] ?? 0)));
+        if (d > 48) differ++;
+      }
+    }
+    record("domVsWebglPixelDiffPercent", (differ / (w * h)) * 100, "<=", 1, "%");
+  });
+
+  it("keypress → echo in the focused terminal with 16 panes streaming: P95 ≤ 50 ms", async () => {
+    for (const id of ids.slice(1)) await sendToPane(id, STREAM);
+    await $(`[data-testid="terminal"][data-pane-id="${ids[0]}"]`).click();
+    await browser.pause(2_000);
+    const samples = (await browser.executeAsync(
+      (pane: string, n: number, done: (xs: number[]) => void) => {
+        const t = (window as unknown as { __tandemTest: Hook }).__tandemTest;
+        const ipc = (window as unknown as { __TAURI_INTERNALS__: { invoke: (c: string, a: unknown) => Promise<unknown> } }).__TAURI_INTERNALS__;
+        const out: number[] = [];
+        const one = (i: number) => {
+          if (i >= n) return done(out);
+          const before = t.paneCursor(pane);
+          const t0 = performance.now();
+          void ipc.invoke("pty_write", { paneId: pane, data: "x" });
+          const check = () => {
+            const c = t.paneCursor(pane);
+            if (c && before && (c.x !== before.x || c.y !== before.y)) {
+              out.push(performance.now() - t0);
+              setTimeout(() => one(i + 1), 30);
+            } else if (performance.now() - t0 > 2_000) {
+              out.push(2_000);
+              one(i + 1);
+            } else requestAnimationFrame(check);
+          };
+          requestAnimationFrame(check);
+        };
+        one(0);
+      },
+      ids[0] ?? "",
+      100,
+    )) as number[];
+    await sendToPane(ids[0] ?? "", "\x15");
+    record("keyEchoP95Ms", p95(samples), "<=", 50, "ms");
+  });
+
+  it("unfocused visible terminals coalesce to ≤ 30 writes/s", async () => {
+    const pane = ids[5] ?? "";
+    const count = async () => ((await browser.execute(() => (window as unknown as { __tandemTest: Hook }).__tandemTest.perf.writes())) as Record<string, number>)[pane] ?? 0;
+    const before = await count();
+    await browser.pause(3_000);
+    record("unfocusedWritesPerSec", ((await count()) - before) / 3, "<=", 30, "writes/s");
+  });
+
+  it("focused terminal frame rate under streaming ≥ 50 fps", async () => {
+    await sendToPane(ids[0] ?? "", STREAM);
+    await browser.pause(1_000);
+    const fps = (await browser.executeAsync((done: (fps: number) => void) => {
+      let frames = 0;
+      const start = performance.now();
+      const tick = () => {
+        frames++;
+        if (performance.now() - start < 3_000) requestAnimationFrame(tick);
+        else done((frames * 1000) / (performance.now() - start));
+      };
+      requestAnimationFrame(tick);
+    })) as number;
+    record("focusedFps", fps, ">=", 50, "fps");
+    for (const id of ids) await sendToPane(id, "\x03");
+    await drained();
+  });
+
+  it("app idle CPU with 16 panes and no output ≤ 2% of one core, memory ≤ 1.2 GB", async () => {
+    await browser.pause(3_000);
+    const pids = appPids();
+    const hz = Number(execFileSync("getconf", ["CLK_TCK"], { encoding: "utf8" }).trim()) || 100;
+    const t0 = cpuTicks(pids);
+    await browser.pause(10_000);
+    record("idleCpuPercent", ((cpuTicks(pids) - t0) / hz / 10) * 100, "<=", 2, "% of a core");
+    record("sixteenPaneRssMb", rssMb(pids), "<=", 1229, "MB");
+    console.log(`perf memory: app ${rssMb(appPids().slice(0, 1)).toFixed(0)} MB, webview processes ${rssMb(appPids().slice(1)).toFixed(0)} MB`);
   });
 
   it("meets every target", () => {

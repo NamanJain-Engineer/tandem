@@ -32,6 +32,7 @@ import { useFileDrops } from "./drops";
 import { PaneGrid } from "./PaneGrid";
 import { PanePicker } from "./PanePicker";
 import type { TerminalOptions } from "./TerminalView";
+import { webglPool } from "./webglPool";
 
 function useTerminalOptions(): TerminalOptions {
   const { resolved, highContrast } = useTheme();
@@ -41,7 +42,14 @@ function useTerminalOptions(): TerminalOptions {
   const cursorStyle = useSetting<"bar" | "block" | "underline">("term_cursor_style", "bar");
   const cursorBlink = useSetting("term_cursor_blink", false);
   const scrollback = useSetting("term_scrollback", 10_000);
-  const gpu = useSetting("term_gpu_rendering", true);
+  // "off" keeps every pane on the DOM renderer (Settings › Terminal).
+  const gpu = useSetting<"auto" | "off">("term_gpu_rendering", "auto") !== "off";
+  const firstGpu = useRef(gpu);
+  useEffect(() => {
+    if (firstGpu.current === gpu) return;
+    firstGpu.current = gpu;
+    webglPool.reset();
+  }, [gpu]);
   const optionAsMeta = useSetting("term_option_as_meta", false);
   const screenReader = useSetting("term_screen_reader", false);
   const confirmMultilinePaste = useSetting("term_confirm_multiline_paste", true);

@@ -22,7 +22,8 @@ export const config: WebdriverIO.Config = {
   logLevel: "warn",
   framework: "mocha",
   reporters: ["spec"],
-  mochaOpts: { ui: "bdd", timeout: 60_000 },
+  // Perf suites wait out heavy loads; run.ts raises this for them.
+  mochaOpts: { ui: "bdd", timeout: Number(process.env.TANDEM_MOCHA_TIMEOUT ?? 60_000) },
   onPrepare: () =>
     new Promise<void>((resolve) => {
       driver = spawn("tauri-driver", [], { stdio: [null, process.stdout, process.stderr] });
