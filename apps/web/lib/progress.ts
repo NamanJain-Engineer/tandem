@@ -59,7 +59,7 @@ export const MILESTONES: readonly Milestone[] = [
     month: "October 2026",
     items: [
       "The Tauri desktop app, its design system, settings and themes.",
-      "Sign in with a Tandem account, or use the app offline.",
+      "Sign in with a Vibezeo account, or use the app offline.",
       "Usage statistics and crash reports off by default; secrets in the OS keychain.",
     ],
   },

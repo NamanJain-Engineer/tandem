@@ -9,8 +9,8 @@ export default function PrivacyPage() {
   return (
     <ProsePage title="Privacy" updated={SITE.updated}>
       <p>
-        {SITE.product} is built by {OPERATOR}, who is responsible for your data. This page covers this website
-        and the {SITE.product} desktop app. Questions go to{" "}
+        {OPERATOR} is responsible for your data. This page covers this website and the {SITE.product} desktop
+        app. Questions go to{" "}
         <a href={`mailto:${SITE.contactEmail}`} className="text-accent hover:underline">
           {SITE.contactEmail}
         </a>

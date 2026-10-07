@@ -8,7 +8,7 @@ type Legal = { name: string; registration?: string; address?: string };
  * listed here. */
 export const SITE = {
   url: "https://vibezeo.com",
-  product: "Tandem",
+  product: "Vibezeo",
   tagline: "A desktop workspace for the coding agents you already use.",
   /** The name the site and the product are published under. */
   company: "Vibezeo",
@@ -36,7 +36,7 @@ export const SITE = {
  * "Vibezeo (Naman Jain)" until there is one. */
 export const OPERATOR = SITE.legal?.name ?? `${SITE.company} (${SITE.founder.name})`;
 
-/** The engine CLIs Tandem detects and runs (crates/tandem-engines/registry.json). */
+/** The engine CLIs Vibezeo detects and runs (crates/tandem-engines/registry.json). */
 export const ENGINES = [
   "Claude Code",
   "Codex",
@@ -68,7 +68,7 @@ export const SITE_PAGES = [
 export const EARLY_ACCESS_HREF = `mailto:${SITE.contactEmail}?subject=${encodeURIComponent(
   `${SITE.product} feedback`,
 )}&body=${encodeURIComponent(
-  "Hi,\n\nI'm trying Tandem.\n\nMy OS (macOS / Windows / Linux):\nCoding agents I use (e.g. Claude Code, Codex):\nWhat works, what doesn't:\n",
+  "Hi,\n\nI'm trying Vibezeo.\n\nMy OS (macOS / Windows / Linux):\nCoding agents I use (e.g. Claude Code, Codex):\nWhat works, what doesn't:\n",
 )}`;
 
 /** `/.well-known/security.txt` (RFC 9116). `Expires` is 11 months after `now`

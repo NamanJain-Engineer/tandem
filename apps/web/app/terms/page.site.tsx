@@ -46,7 +46,7 @@ export default function TermsPage() {
 
       <h2>Names and marks</h2>
       <p>
-        {SITE.product} and its logo belong to {OPERATOR}. Other product names on this site, including the
+        The {SITE.product} name and logo belong to {OPERATOR}. Other product names on this site, including the
         coding agents {SITE.product} works with, belong to their owners. Their use here doesn't imply
         affiliation or endorsement.
       </p>

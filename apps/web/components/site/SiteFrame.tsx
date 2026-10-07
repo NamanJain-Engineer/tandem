@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { SITE } from "../../lib/site";
 
-/** Tandem's mark: two overlapping rings. */
+/** Vibezeo's mark: two overlapping rings. */
 export function Mark({ size = 22 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 28 28" fill="none" aria-hidden="true">
@@ -61,8 +61,7 @@ export function SiteFrame({ children }: { children: ReactNode }) {
       <footer className="border-t border-divider">
         <div className="mx-auto flex max-w-5xl flex-col gap-3 px-6 py-8 text-sm text-fg-muted sm:flex-row sm:items-center">
           <span>
-            © {year} {SITE.legal?.name ?? SITE.company} · Built by {SITE.founder.name}. {SITE.product} is in
-            active development.
+            © {year} {SITE.legal?.name ?? SITE.company} · Built by {SITE.founder.name}.
           </span>
           <nav aria-label="Legal" className="flex flex-wrap gap-x-5 gap-y-2 sm:ml-auto">
             <a href="/about/" className="hover:text-fg">

@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE.url),
   title: { default: `${SITE.product} · ${SITE.tagline}`, template: `%s · ${SITE.product}` },
   description:
-    "Tandem runs Claude Code, Codex, Gemini CLI and other coding-agent CLIs side by side in real terminals, on your own accounts, with one Dashboard for every agent.",
+    "Vibezeo runs Claude Code, Codex, Gemini CLI and other coding-agent CLIs side by side in real terminals, on your own accounts, with one Dashboard for every agent.",
   icons: { icon: "/favicon.svg" },
   openGraph: {
     title: SITE.product,

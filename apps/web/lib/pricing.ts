@@ -1,5 +1,5 @@
 /** The plans (PRODUCT_SPEC §3.1–3.3). Free is available now; Pro and Team aren't on sale yet: the
- * site shows the plans so people know what Tandem will cost. M15 generates
+ * site shows the plans so people know what Vibezeo will cost. M15 generates
  * /pricing from `packages/protocol/src/plans.ts` and checks it against the
  * API's config (F-WB-01 AC3). */
 

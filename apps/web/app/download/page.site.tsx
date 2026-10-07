@@ -1,14 +1,14 @@
 import { Badge } from "@tandem/ui/components/Badge";
 import type { Metadata } from "next";
 import { SiteFrame } from "../../components/site/SiteFrame";
-import { CHECKSUMS_URL, DOWNLOADS, ISSUES_URL, RELEASE, RELEASE_URL, assetUrl } from "../../lib/release";
+import { CHECKSUMS_URL, DOWNLOADS, RELEASE, RELEASE_URL, assetUrl } from "../../lib/release";
 import { SITE } from "../../lib/site";
 
 export const metadata: Metadata = { title: "Download" };
 
 const START = [
-  "Have at least one coding agent CLI installed and signed in, the way you use it today: Claude Code, Codex, Gemini CLI or another. Tandem finds it and never touches its sign-in.",
-  "Open Tandem and choose Start using Tandem. The Free plan runs on your computer, no account needed.",
+  "Have at least one coding agent CLI installed and signed in, the way you use it today: Claude Code, Codex, Gemini CLI or another. Vibezeo finds it and never touches its sign-in.",
+  "Open the app and choose Start on the welcome screen. The Free plan runs on your computer, no account needed.",
   "Add a project folder. The launch grid lists the agents it found: pick one to start it in a real terminal, or Terminal for a shell.",
   "Split with Mod+D (right) and Mod+Shift+D (down), where Mod is ⌘ on a Mac and Ctrl elsewhere. Mod+K opens the command palette. The Dashboard shows which agents are working and which are waiting for you.",
 ];
@@ -121,11 +121,7 @@ export default function DownloadPage() {
               ))}
             </ul>
             <p className="text-base text-fg-muted">
-              Found a problem?{" "}
-              <a href={ISSUES_URL} className="text-accent hover:underline">
-                Open an issue
-              </a>{" "}
-              or write to{" "}
+              Found a problem? Write to{" "}
               <a href={`mailto:${SITE.contactEmail}`} className="text-accent hover:underline">
                 {SITE.contactEmail}
               </a>

@@ -61,7 +61,7 @@ export default function AboutPage() {
       <section className="mx-auto flex max-w-5xl flex-col gap-5 px-6 pb-10 pt-16">
         <p className="text-xs font-medium uppercase tracking-caps text-accent">About</p>
         <h1 className="max-w-3xl text-3xl font-semibold tracking-tight">
-          {SITE.company} builds {SITE.product}, a desktop workspace for running coding agents side by side.
+          {SITE.product} is a desktop workspace for running coding agents side by side.
         </h1>
         <p className="max-w-3xl text-lg text-fg-muted">
           {SITE.company} is a small, independent software company
@@ -89,8 +89,8 @@ export default function AboutPage() {
           </p>
           {SITE.founder.bio && <p className="mt-2 text-md text-fg">{SITE.founder.bio}</p>}
           <p className="text-md text-fg-muted">
-            {SITE.founder.name} started {SITE.company} to build {SITE.product} and does every job in it:
-            product, design, code, releases and support. Every email gets a reply from the founder.
+            {SITE.founder.name} started {SITE.company} and does every job in it: product, design, code,
+            releases and support. Every email gets a reply from the founder.
           </p>
           {SITE.founder.link && (
             <a href={SITE.founder.link} className="mt-1 text-base font-medium text-accent hover:underline">
