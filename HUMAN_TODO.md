@@ -14,6 +14,8 @@ Things only a human can do. The build never blocks on them: each sits behind a m
 - Telemetry (opt-in only, M2): a PostHog project key in `POSTHOG_KEY` and a Sentry DSN in `SENTRY_DSN`, set at desktop build time. Without them nothing is ever sent, even when a user opts in. Verify: with a debug build, `POSTHOG_KEY=… SENTRY_DSN=…` set, opt in under Settings › Privacy & Telemetry and see requests to the analytics host in `TANDEM_NET_LOG`.
 - Production entitlement and config public keys bundled into `apps/desktop/src-tauri/resources/keys.json` for release builds (ARCHITECTURE §14.4); see "Production Ed25519 keys" above.
 
+- Public site: create the Cloudflare Pages project for `vibezeo.com`, point the domain at it, and turn on Email Routing for `hello@vibezeo.com` (`docs/DEPLOY_SITE.md`). Remove the custom domain from the old `vibezeo` repo's GitHub Pages. Verify: `https://vibezeo.com/` shows the Tandem home page, `/security/` loads, and a test mail to hello@vibezeo.com arrives.
+
 ## Signing & distribution
 Until these exist, release builds can't update (`updates_state` reads `unavailable`) and the release workflow marks every artifact "unsigned" (F-TL-04).
 - [ ] Minisign updater keypair: `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as repo secrets; the public key as `TAURI_SIGNING_PUBLIC_KEY` (repo variable, compiled into release builds). Debug builds use the dev key from `pnpm keys:dev` and never ship it.

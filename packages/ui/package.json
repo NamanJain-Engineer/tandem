@@ -8,7 +8,8 @@
     "./tokens.css": "./src/styles/tokens.css",
     "./fonts.css": "./src/styles/fonts.css",
     "./base.css": "./src/styles/base.css",
-    "./gallery": "./src/gallery/Gallery.tsx"
+    "./gallery": "./src/gallery/Gallery.tsx",
+    "./components/*": "./src/components/*.tsx"
   },
   "scripts": {
     "test": "vitest run",

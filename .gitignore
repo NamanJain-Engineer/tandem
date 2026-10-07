@@ -7,6 +7,7 @@ perf/results/*.tmp
 *.log
 dist
 .next
+apps/web/out
 .turbo
 
 # Background research on the reference product. Never committed, never copied from.

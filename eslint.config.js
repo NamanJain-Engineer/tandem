@@ -11,6 +11,7 @@ export default tseslint.config(
     ignores: [
       "**/dist/**",
       "**/.next/**",
+      "apps/web/out/**",
       "**/node_modules/**",
       "**/target/**",
       "**/src-tauri/gen/**",
