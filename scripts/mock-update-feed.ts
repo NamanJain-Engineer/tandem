@@ -38,7 +38,13 @@ if (!key) throw new Error("no dev updater key: run `pnpm keys:dev`");
 
 /** The "update": any bytes do, the app's test installer never runs them. */
 const artifact = Buffer.from(`tandem test update ${"x".repeat(64 * 1024)}`);
-const requests: Array<{ channel: string; target: string; arch: string; current: string; scenario: Scenario }> = [];
+const requests: Array<{
+  channel: string;
+  target: string;
+  arch: string;
+  current: string;
+  scenario: Scenario;
+}> = [];
 
 function release(s: Scenario): object | null {
   if (s === "none") return null;
@@ -68,7 +74,9 @@ const server = createServer((req, res) => {
     return;
   }
   if (req.method === "GET" && url.pathname.startsWith("/artifacts/")) {
-    res.writeHead(200, { "content-type": "application/octet-stream", "content-length": artifact.length }).end(artifact);
+    res
+      .writeHead(200, { "content-type": "application/octet-stream", "content-length": artifact.length })
+      .end(artifact);
     return;
   }
   if (req.method === "POST" && url.pathname === "/__scenario") {
@@ -96,5 +104,7 @@ const server = createServer((req, res) => {
   res.writeHead(404).end();
 });
 
-server.listen(port, "127.0.0.1", () => console.log(`mock update feed on http://127.0.0.1:${port} (scenario ${scenario})`));
+server.listen(port, "127.0.0.1", () =>
+  console.log(`mock update feed on http://127.0.0.1:${port} (scenario ${scenario})`),
+);
 for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => server.close(() => process.exit(0)));

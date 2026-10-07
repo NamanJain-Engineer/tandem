@@ -13,6 +13,8 @@ dist
 build-kit/reference/
 .dev-data/
 apps/desktop/src-tauri/gen/
+# Generated for release builds by scripts/gen-notices.ts --resources.
+apps/desktop/src-tauri/resources/THIRD_PARTY_NOTICES.md
 test-results/
 playwright-report/
 *.tsbuildinfo

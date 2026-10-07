@@ -6,7 +6,7 @@
 //   dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m2-*.e2e.ts'
 // After the run it enforces the M2 checks: no secret patterns in the logs and
 // no analytics or crash hosts in the network log (telemetry is off).
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawnSync, spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -66,6 +66,23 @@ function checkArtifacts(home: string): string[] {
   const net = join(home, "net.log");
   if (existsSync(net) && /posthog|sentry/.test(readFileSync(net, "utf8"))) problems.push("analytics or crash host in net.log");
   return problems;
+}
+
+function startKeyring(): void {
+  if (!process.env.DBUS_SESSION_BUS_ADDRESS) {
+    const address = execFileSync("dbus-daemon", ["--session", "--fork", "--print-address=1"], { encoding: "utf8" }).trim().split("\n")[0];
+    if (address) process.env.DBUS_SESSION_BUS_ADDRESS = address;
+  }
+  const r = spawnSync("gnome-keyring-daemon", ["--unlock", "--components=secrets", "--daemonize"], {
+    input: "\n",
+    encoding: "utf8",
+    env: process.env,
+  });
+  if (r.status !== 0) throw new Error(`gnome-keyring-daemon didn't start (apt-get install gnome-keyring): ${r.stderr}`);
+  for (const line of r.stdout.split("\n")) {
+    const [k, v] = line.split("=");
+    if (k && v) process.env[k] = v;
+  }
 }
 
 async function main() {
@@ -144,6 +161,13 @@ async function main() {
     PLAYWRIGHT_CHROMIUM: process.env.PLAYWRIGHT_CHROMIUM ?? (existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : ""),
     PATH: process.env.PATH ?? "",
   });
+  // The startup suite relaunches signed in (16 live shells need a paid plan),
+  // so it uses the real Secret Service keychain: an unlocked gnome-keyring on
+  // a private session bus, inside this run's HOME.
+  if (suite === "startup") {
+    delete process.env.TANDEM_FAKE_KEYCHAIN;
+    startKeyring();
+  }
 
   // Maximize and placement need a window manager under Xvfb.
   let wm: ChildProcess | undefined;

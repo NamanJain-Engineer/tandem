@@ -123,6 +123,12 @@ pub fn app_quit(app: tauri::AppHandle, state: State<'_, AppState>) {
     app.exit(0);
 }
 
+/// About › Licenses (F-TL-04 AC2): the third-party notices this build carries.
+#[tauri::command]
+pub fn app_licenses() -> String {
+    include_str!(concat!(env!("OUT_DIR"), "/THIRD_PARTY_NOTICES.md")).to_string()
+}
+
 /// Links that arrived before the UI was ready (F-SH-13).
 #[tauri::command]
 pub fn deeplink_pending(state: State<'_, AppState>) -> Vec<DeepLink> {

@@ -18,7 +18,15 @@
  * it). Never touches the network: the app's API points at a closed port.
  */
 import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -66,10 +74,16 @@ const between = (lo: number, hi: number) => Math.round(lo + rand() * (hi - lo));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 if (!flag("no-build")) {
-  execFileSync("cargo", ["build", "-q", "-p", "tandem-store", "--example", "killfuzz"], { cwd: root, stdio: "inherit" });
+  execFileSync("cargo", ["build", "-q", "-p", "tandem-store", "--example", "killfuzz"], {
+    cwd: root,
+    stdio: "inherit",
+  });
   if (!existsSync(appBin)) {
     execFileSync("pnpm", ["--filter", "desktop", "build"], { cwd: root, stdio: "inherit" });
-    execFileSync("cargo", ["build", "-q", "-p", "tandem-desktop", "--features", "custom-protocol"], { cwd: root, stdio: "inherit" });
+    execFileSync("cargo", ["build", "-q", "-p", "tandem-desktop", "--features", "custom-protocol"], {
+      cwd: root,
+      stdio: "inherit",
+    });
   }
 }
 for (const bin of [appBin, fuzzBin]) {
@@ -115,7 +129,8 @@ function registered(pid: number): number[] {
   const file = join(data, "run", `children-${pid}.json`);
   if (!existsSync(file)) return [];
   try {
-    const doc = JSON.parse(readFileSync(file, "utf8")) as { children?: Array<{ pid: number }> } | Array<{ pid: number }>;
+    const doc = JSON.parse(readFileSync(file, "utf8")) as
+      { children?: Array<{ pid: number }> } | Array<{ pid: number }>;
     const list = Array.isArray(doc) ? doc : (doc.children ?? []);
     return list.map((c) => c.pid);
   } catch {
@@ -167,7 +182,10 @@ const note = (i: number, what: string) => {
 
 function check(i: number, launched: boolean): void {
   try {
-    const r = JSON.parse(store("check", data, ...(launched ? ["--launched"] : [])).trim()) as { ok: boolean; problems: string[] };
+    const r = JSON.parse(store("check", data, ...(launched ? ["--launched"] : [])).trim()) as {
+      ok: boolean;
+      problems: string[];
+    };
     for (const p of r.problems) note(i, p);
   } catch (e) {
     note(i, `the store didn't open: ${(e as Error).message.split("\n")[0]}`);
@@ -186,7 +204,11 @@ for (let i = 1; i <= iterations; i++) {
     const until = Date.now() + 40_000;
     while (registered(pid).length < 4 && Date.now() < until && app.exitCode === null) await sleep(100);
     const n = registered(pid).length;
-    if (n < 4) note(i, `the app never started its 4 shells (${n}${app.exitCode !== null ? `, exited ${app.exitCode}` : ""})`);
+    if (n < 4)
+      note(
+        i,
+        `the app never started its 4 shells (${n}${app.exitCode !== null ? `, exited ${app.exitCode}` : ""})`,
+      );
     const after = between(0, 1_000);
     await sleep(after);
     detail = `kill -9 ${after} ms after ${n} shells`;

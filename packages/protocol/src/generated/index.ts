@@ -67,6 +67,7 @@ export type * from "./NotificationKind";
 export type * from "./NotificationPage";
 export type * from "./NotificationState";
 export type * from "./OnboardingSeed";
+export type * from "./OnboardingState";
 export type * from "./OpHandle";
 export type * from "./OpId";
 export type * from "./OrphanInfo";

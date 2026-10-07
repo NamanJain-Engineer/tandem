@@ -138,17 +138,34 @@ export function uniqueEmail(tag: string): string {
 /** Waits for the app shell or the sign-in screen after a (re)launch. */
 export async function waitForApp(): Promise<void> {
   await browser.waitUntil(async () => (await browser.getTitle()) === "Tandem", { timeout: 30_000 });
-  await browser.waitUntil(async () => (await $("header[role=banner]").isExisting()) || (await $("#signin-title").isExisting()), {
-    timeout: 30_000,
-    timeoutMsg: "neither the shell nor sign-in appeared",
-  });
+  await browser.waitUntil(
+    async () =>
+      (await $("header[role=banner]").isExisting()) ||
+      (await $("#signin-title").isExisting()) ||
+      (await $('[data-testid="onboarding"]').isExisting()),
+    { timeout: 30_000, timeoutMsg: "neither the shell, sign-in nor the setup wizard appeared" },
+  );
+}
+
+/** A fresh profile shows the setup wizard after sign-in: skip every step. */
+export async function skipOnboarding(): Promise<void> {
+  for (let i = 0; i < 6 && (await $('[data-testid="onboarding"]').isExisting()); i++) {
+    await $('[data-testid="onboarding-skip"]').click();
+    await browser.pause(150);
+  }
 }
 
 /** Clicks sign-in and waits for the shell (the scripted browser signs in). */
 export async function signInDesktop(email: string): Promise<void> {
   browserAs(email);
   await $("button=Continue with email").click();
-  await $('[data-testid="plan-footer"]').waitForExist({ timeout: 60_000, timeoutMsg: `sign-in didn't finish:\n${browserLog()}` });
+  await browser.waitUntil(
+    async () => (await $('[data-testid="plan-footer"]').isExisting()) || (await $('[data-testid="onboarding"]').isExisting()),
+    { timeout: 60_000, timeoutMsg: `sign-in didn't finish:\n${browserLog()}` },
+  );
+  // A brand-new profile (the first spec of a run) gets the wizard first.
+  await skipOnboarding();
+  await $('[data-testid="plan-footer"]').waitForExist({ timeout: 20_000 });
 }
 
 /** `innerText` of the first match. WebKitWebDriver's getText drops text
@@ -233,11 +250,13 @@ export function mod(): string {
 /** Clears the shared TANDEM_HOME's account and workspaces, whichever screen
  * is showing. The E2E keychain lives in memory, so a relaunch always comes
  * back signed out; specs that relaunch use offline mode instead. */
-async function resetState(): Promise<void> {
+async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): Promise<void> {
   await waitForApp();
   const list = await invoke<Array<{ id: string }>>("workspace_list");
   for (const w of list) await invoke("workspace_remove", { id: w.id });
   await invoke("auth_sign_out");
+  // Specs start past the first-run wizard unless they test it (E2E-M5-9).
+  await invoke("onboarding_set", onboarded ? { done: true } : { step: "engines" });
   // UI state that outlives a spec: start in Code mode with the sidebar closed.
   await invoke("settings_set", { key: "last_mode", value: "code" });
   await invoke("sidebar_save", {
@@ -257,6 +276,11 @@ export async function freshUser(tag: string): Promise<{ email: string; jar: Awai
   await resetState();
   await signInDesktop(email);
   return { email, jar };
+}
+
+/** A profile as on first launch: signed out, no workspaces, the wizard not run. */
+export async function freshProfile(): Promise<void> {
+  await resetState({ onboarded: false });
 }
 
 /** "Use Tandem offline" with no workspaces: survives relaunches. */

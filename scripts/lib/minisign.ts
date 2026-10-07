@@ -24,7 +24,12 @@ export function publicKey(privatePem: string): string {
 }
 
 /** A `.sig` for `data`, as the updater feed's `signature` field. */
-export function signature(data: Buffer, privatePem: string, version: string, file = "tandem.AppImage"): string {
+export function signature(
+  data: Buffer,
+  privatePem: string,
+  version: string,
+  file = "tandem.AppImage",
+): string {
   const key = createPrivateKey(privatePem);
   const digest = createHash("blake2b512").update(data).digest();
   const sig = sign(null, digest, key);

@@ -1,4 +1,5 @@
-import { Button, KeyValue, SettingsGroup, useToast } from "@tandem/ui";
+import { useEffect, useState } from "react";
+import { Button, Dialog, KeyValue, SettingsGroup, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useSetting } from "../../stores/settings";
@@ -71,14 +72,41 @@ export function PrivacyFlows() {
 }
 
 /** UI-116 actions: diagnostics, logs, data folder, version, dev links. */
+/** About › Licenses (F-TL-04 AC2): the notices this build carries. */
+function LicensesDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open || text !== null) return;
+    void invoke<string>("app_licenses")
+      .then(setText)
+      .catch(() => setText(""));
+  }, [open, text]);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} title={t("settings.licenses")} size="lg">
+      <pre
+        data-testid="licenses-text"
+        tabIndex={0}
+        className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-sm bg-surface-1 p-3 font-mono text-xs text-fg focus-visible:shadow-focus focus-visible:outline-none"
+      >
+        {text ?? t("settings.licensesLoading")}
+      </pre>
+    </Dialog>
+  );
+}
+
 export function AdvancedExtras() {
   const boot = useBoot((s) => s.boot);
   const { show } = useToast();
+  const [licenses, setLicenses] = useState(false);
   return (
     <SettingsGroup>
+      <LicensesDialog open={licenses} onOpenChange={setLicenses} />
       <div className="flex flex-col gap-4 p-3">
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => void copyDiagnostics(show)}>{t("settings.copyDiagnostics")}</Button>
+          <Button data-testid="open-licenses" onClick={() => setLicenses(true)}>
+            {t("settings.licenses")}
+          </Button>
           <Button onClick={() => invoke("app_open_logs_folder").catch(() => undefined)}>
             {t("settings.openLogs")}
           </Button>

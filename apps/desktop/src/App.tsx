@@ -24,6 +24,8 @@ import { canUseApp, useSession, watchSession } from "./stores/session";
 import { useUi, type Mode } from "./stores/ui";
 import { useWorkspaces } from "./stores/workspaces";
 import { useRestore } from "./stores/restore";
+import { useOnboarding } from "./stores/onboarding";
+import { Onboarding } from "./features/onboarding/Onboarding";
 
 /** The plan check holds the splash at most this long, then the app
  * continues from the cached entitlement (F-SH-07). */
@@ -78,6 +80,7 @@ export function App() {
   const motion = useSetting<MotionSetting>("reduce_motion", "system");
   const textSize = useSetting<TextSize>("interface_text_size", "default");
   const density = useSetting<Density>("density", "compact");
+  const onboardingDone = useOnboarding((s) => s.state?.done ?? true);
 
   useEffect(() => {
     const onHash = () => setHash(window.location.hash);
@@ -108,6 +111,7 @@ export function App() {
             useSettings.getState().load(),
             useWorkspaces.getState().refresh(),
             useRestore.getState().load(),
+            useOnboarding.getState().load(),
           ]);
           setSplashPhase("plan");
           await bounded(session, PLAN_WAIT_MS, skipPlan.promise);
@@ -166,10 +170,15 @@ export function App() {
           <TerminalColorsSync />
           <SignInToast />
           {canUseApp(auth) ? (
-            <>
-              <DeepLinks />
-              <AppShell />
-            </>
+            onboardingDone ? (
+              <>
+                <DeepLinks />
+                <AppShell />
+              </>
+            ) : (
+              // UI-04 after Welcome (the sign-in screen), until done or skipped.
+              <Onboarding />
+            )
           ) : (
             <SignIn />
           )}

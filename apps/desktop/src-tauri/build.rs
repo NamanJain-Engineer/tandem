@@ -36,6 +36,9 @@ const COMMANDS: &[&str] = &[
     "updates_check_now",
     "updates_set_channel",
     "updates_install",
+    "app_licenses",
+    "onboarding_get",
+    "onboarding_set",
     "settings_get_all",
     "settings_set",
     "settings_reset",
@@ -106,7 +109,21 @@ const TEST_COMMANDS: &[&str] = &[
     "test_account_create",
 ];
 
+/// What About › Licenses shows when the notices weren't generated (dev builds).
+const NOTICES_PLACEHOLDER: &str = "# Third-party notices\n\nThis build doesn't include the generated notices. Release builds embed them: `pnpm tsx scripts/gen-notices.ts --resources` writes `resources/THIRD_PARTY_NOTICES.md` before the build.\n";
+
 fn main() {
+    // About › Licenses (F-TL-04 AC2): the generated notices when present.
+    // Watching the folder (not the file) keeps a missing file from re-running
+    // this script on every build.
+    println!("cargo:rerun-if-changed=resources");
+    let notices = std::fs::read_to_string("resources/THIRD_PARTY_NOTICES.md")
+        .unwrap_or_else(|_| NOTICES_PLACEHOLDER.to_string());
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap_or_default())
+        .join("THIRD_PARTY_NOTICES.md");
+    if let Err(err) = std::fs::write(&out, notices) {
+        panic!("couldn't write {}: {err}", out.display());
+    }
     let debug = std::env::var("PROFILE").as_deref() == Ok("debug");
     let mut all: Vec<&'static str> = COMMANDS.to_vec();
     if debug {

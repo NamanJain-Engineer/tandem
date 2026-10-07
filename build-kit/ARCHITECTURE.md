@@ -510,6 +510,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `app_ready` | — | `AppBoot {version, build, platform, dev, firstRun, lastMode, flags, dataDirDisplay}` | — | F-SH-01, F-SH-07 |
 | `app_quit_preview` | — | `QuitPreview {liveAgents:[SourceRef], runningThreads:[SourceRef]}` | — | F-SH-06, F-SH-07 |
 | `app_quit` | `{restartForUpdate?}` | — (process exits) | — | F-SH-07 |
+| `app_licenses` | — | the third-party notices (Markdown) the build embeds, for About › Licenses (release builds: `scripts/gen-notices.ts --resources` before the build; other builds a pointer to it) | — | F-TL-04 |
 | `window_toggle_maximize` / `window_minimize` / `window_close` | — | `{maximized}` / — / — | — | F-SH-01 |
 | `app_open_external` | `{url}` (http/https/mailto only) | — | Invalid | F-CD-09 |
 | `app_reveal_path` | `{path}` | — | NotFound | F-SH-03 |
@@ -518,7 +519,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `app_log` | `{level, target, code, fields:Record<string,string\|number\|boolean>}` | — | — | F-SH-11 |
 | `deeplink_pending` | — | `[DeepLink]` | — | F-SH-13 |
 | `op_cancel` | `{opId}` | — | NotFound | §5.2 |
-| `onboarding_get` / `onboarding_set` | — / `{step, done?}` | `OnboardingState` / — | — | F-SH-08 |
+| `onboarding_get` / `onboarding_set` | — / `{step?, done?}` | `OnboardingState {step?, done, steps}` (both; `steps` = the wizard after Welcome, in order: engines, privacy, workspace; accounts and dictate join with M6/M12; a profile that never ran it but has workspaces counts as done) | Invalid (unknown step) | F-SH-08 |
 | `commands_registry` | — | `[CommandSpec]` | — | F-SH-09 |
 | `redact_text` | `{text}` | `String` | — | F-TL-02 |
 | `diagnostics_subscribe` | `{channel: Channel<MetricsFrame>}` | `SubId` | — | §5.7 |
@@ -2376,7 +2377,7 @@ Export: zip of `settings.json`, `workspaces.json`, `threads.json` (with messages
 - `tauri.conf.json`: `identifier: app.tandem.desktop`, `productName: Tandem`, `mainBinaryName: tandem`, `bundle.targets` per OS: macOS `dmg`,`app` (`--target universal-apple-darwin`, minimumSystemVersion 14.0); Windows `nsis` (per-user install, WebView2 evergreen bootstrapper, AUMID `app.tandem.desktop` registered on the Start Menu shortcut); Linux `appimage`, `deb` (deps: `libwebkit2gtk-4.1-0`, `libgtk-3-0`, `libayatana-appindicator3-1`; recommends `wl-clipboard`, `xdotool`).
 - `bundle.externalBin`: `binaries/tandem-hook`, `binaries/tandem-tasks` (built per target triple by `scripts/build-sidecars.ts` before `tauri build`). `bundle.resources`: `resources/**` including `tandem-host/<triple>/tandem-host` + `tandem-host/manifest.json {version, protocol, sha256 per triple}` (built with `cargo zigbuild` for musl targets).
 - Deep-link scheme `tandem` (dev `tandem-dev`), registered via `plugins.deep-link.desktop.schemes`. Single-instance + deep-link plugins wired so a second launch forwards the URL.
-- Licenses: `cargo about generate` + `license-checker` → `resources/THIRD_PARTY_NOTICES.md` (includes Parakeet CC-BY-4.0 attribution and LGPL notices for bundled WebKitGTK/GStreamer libs in the AppImage) (F-TL-04 AC2). SBOM: `cargo cyclonedx` + `@cyclonedx/cyclonedx-npm` per release.
+- Licenses: `scripts/gen-notices.ts` = `cargo about generate --format json` (licences accepted in `about.toml`) + `pnpm --filter "desktop..." licenses list --prod` (pnpm's own production set; `license-checker` misreads pnpm's layout) + `crates/tandem-voice/models/catalog.json` + `licenses/extra-attributions.toml` → `THIRD_PARTY_NOTICES.md` (includes Parakeet CC-BY-4.0 attribution, the OFL fonts and LGPL notices for bundled WebKitGTK/GStreamer libs in the AppImage) (F-TL-04 AC2), embedded at build time for About › Licenses. SBOM: `cargo cyclonedx` + `scripts/gen-sbom-npm.ts` (CycloneDX 1.5 from the same pnpm production set; `@cyclonedx/cyclonedx-npm` reads `npm ls`, which reports dev packages and missing-dependency errors under pnpm) per release.
 
 ### 17.2 Auto-update [F-SH-06]
 - `tauri-plugin-updater` with `endpoints: ["https://api.tandem.dev/v1/updates/{{channel}}/{{target}}/{{arch}}/{{current_version}}"]` (channel substituted at runtime via `UpdaterBuilder::endpoints`), `pubkey` = minisign public key (`TAURI_SIGNING_PUBLIC_KEY`, committed). The client additionally refuses `version <= current` (anti-rollback, AC3).
@@ -2400,7 +2401,7 @@ Export: zip of `settings.json`, `workspaces.json`, `threads.json` (with messages
 
 ### 17.4 Release (`.github/workflows/release.yml`, on tag `v*`)
 1. `verify`: tag = `package.json`/`Cargo.toml`/`tauri.conf.json` version; CHANGELOG section exists; model sha256 has no `TBD`.
-2. `build` matrix: macos-14 (universal), windows-2022, and Linux inside a `debian:bullseye` container (glibc 2.31, matching §5.6 compatibility): build sidecars + tandem-host, then `pnpm tauri build`.
+2. `build` matrix: macos-14 (universal), windows-2022, and Linux on ubuntu-22.04 (glibc 2.35: Tauri 2 needs webkit2gtk-4.1, which Debian bullseye doesn't ship): build sidecars + tandem-host, then `pnpm tauri build`. A `notices` job generates THIRD_PARTY_NOTICES.md and the SBOMs once; every build embeds the same notices.
 3. Signing steps, each `if: env.<SECRET_PRESENT> == 'true'` (computed in a first step from `secrets.*` being non-empty), otherwise a step writes "unsigned: <reason>" to `$GITHUB_STEP_SUMMARY` and artifacts get the `-unsigned` suffix (F-TL-04 AC1):
    - macOS: `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` → codesign + notarize (`xcrun notarytool submit --wait`, a separate job step with 60 min timeout) + staple.
    - Windows: `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_CERT_PROFILE` → Trusted Signing via `signCommand` (`trusted-signing-cli`).

@@ -5,6 +5,7 @@ import { EnginesPage } from "./EnginesPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
 import { UpdatesPanel } from "../updates/UpdatesPanel";
+import { RunSetupAgain } from "../onboarding/RunSetupAgain";
 import {
   BoolControl,
   FontControl,
@@ -110,6 +111,13 @@ export function settingsPages(platform: string): PageDef[] {
               options={[{ value: "en", label: t("settings.language.en") }]}
             />
           ),
+        },
+        {
+          id: "run_setup",
+          label: t("settings.runSetup"),
+          description: t("settings.runSetup.desc"),
+          keywords: ["onboarding", "setup", "wizard", "welcome"],
+          control: (ids) => <RunSetupAgain id={ids.id} />,
         },
       ],
     },
