@@ -7,11 +7,13 @@ name: Release
 # `bash scripts/release-local.sh --dry-run` reproduces the Linux path.
 
 #
-# Early access (D-105): run by hand with channel `early-access`. Builds are
-# compiled with TANDEM_HOSTED=0 (no accounts, no API calls, the Free plan
-# locally) and published as a prerelease in the public
-# NamanJain-Engineer/tandem-releases repository, which needs the
-# RELEASES_TOKEN secret (contents: write on that repository only).
+# Early access (D-105): push a tag `v<version>-early-access`, or run by hand
+# with channel `early-access` (a manual run needs this file on the default
+# branch; a tag doesn't). Builds are compiled with TANDEM_HOSTED=0 (no
+# accounts, no API calls, the Free plan locally) and published as a
+# prerelease in the public NamanJain-Engineer/tandem-releases repository,
+# which needs the RELEASES_TOKEN secret (contents: write on that repository
+# only). The verify job checks the secret before anything is built.
 
 on:
   push:
@@ -29,7 +31,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || 'stable' }}
+  CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || (endsWith(github.ref_name, '-early-access') && 'early-access' || 'stable') }}
   RELEASES_REPO: NamanJain-Engineer/tandem-releases
 
 jobs:
@@ -42,11 +44,17 @@ jobs:
       - id: v
         name: One version everywhere, a changelog section, pinned models
         shell: bash
+        env:
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
+          if [ "$CHANNEL" = "early-access" ] && [ -z "$RELEASES_TOKEN" ]; then
+            echo "::error::early access publishes to $RELEASES_REPO and needs the RELEASES_TOKEN secret (fine-grained token, contents: write on that repository)"; exit 1
+          fi
           version="$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")"
           pkg="$(node -p "require('./apps/desktop/package.json').version")"
           cargo_v="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
           tag="${GITHUB_REF_NAME#v}"
+          tag="${tag%-early-access}"
           if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$tag" != "$version" ]; then
             echo "::error::tag $GITHUB_REF_NAME doesn't match tauri.conf.json $version"; exit 1
           fi
@@ -101,7 +109,7 @@ jobs:
     env:
       # Early-access builds have no hosted service (D-105).
       # (job-level env can't read the workflow's env context)
-      TANDEM_HOSTED: ${{ github.event_name == 'workflow_dispatch' && inputs.channel == 'early-access' && '0' || '' }}
+      TANDEM_HOSTED: ${{ ((github.event_name == 'workflow_dispatch' && inputs.channel == 'early-access') || endsWith(github.ref_name, '-early-access')) && '0' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -224,11 +232,7 @@ jobs:
         shell: bash
         env:
           RELEASE_API_TOKEN: ${{ secrets.RELEASE_API_TOKEN }}
-          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
-          if [ "$CHANNEL" = "early-access" ] && [ -z "$RELEASES_TOKEN" ]; then
-            echo "::error::early access publishes to $RELEASES_REPO and needs the RELEASES_TOKEN secret (fine-grained token, contents: write on that repository)"; exit 1
-          fi
           mkdir -p release
           find artifacts -type f -exec cp {} release/ \;
           (cd release && sha256sum -- * > SHA256SUMS)
