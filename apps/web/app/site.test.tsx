@@ -17,6 +17,7 @@ import {
   securityTxt,
   sitemapXml,
 } from "../lib/site";
+import { metadata } from "./layout.site";
 import AboutPage from "./about/page.site";
 import ChangelogPage from "./changelog/page.site";
 import DownloadPage from "./download/page.site";
@@ -239,6 +240,18 @@ describe("public site", () => {
     expect(csp).toContain("default-src 'self'");
     expect(csp).not.toMatch(/https?:/);
     expect(header("X-Content-Type-Options")).toBe("nosniff");
+  });
+
+  it("F-WB-01 shared links show a preview of the real app and credit the founder", () => {
+    const og = metadata.openGraph as { images?: { url: string }[] };
+    const card = metadata.twitter as { card?: string; creator?: string; images?: string[] };
+    const image = og.images?.[0]?.url ?? "";
+    expect(image).toBe("/screens/code-mode.png");
+    expect(existsSync(join(import.meta.dirname, `../public${image}`))).toBe(true);
+    expect(card.card).toBe("summary_large_image");
+    expect(card.images).toEqual([image]);
+    expect(card.creator).toBe(`@${SITE.founder.link?.split("/").pop()}`);
+    expect(metadata.authors).toEqual([{ name: SITE.founder.name, url: SITE.founder.link }]);
   });
 
   it("F-WB-01 robots, sitemap and security.txt point at the site", () => {
