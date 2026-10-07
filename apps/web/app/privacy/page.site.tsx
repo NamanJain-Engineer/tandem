@@ -27,7 +27,7 @@ export default function PrivacyPage() {
           There are no forms or accounts here. If you email us, we use your message and address only to reply.
         </li>
         <li>
-          Our host, Cloudflare, processes the technical data needed to deliver pages (such as IP address and
+          Our host, {SITE.host}, processes the technical data needed to deliver pages (such as IP address and
           browser type) under its own privacy policy.
         </li>
       </ul>

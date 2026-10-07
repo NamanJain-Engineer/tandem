@@ -52,6 +52,13 @@ export default function TermsPage() {
         </a>
         .
       </p>
+      {SITE.legal && (
+        <p>
+          {SITE.legal.name}
+          {SITE.legal.registration && `, ${SITE.legal.registration}`}
+          {SITE.legal.address && `, ${SITE.legal.address}`}.
+        </p>
+      )}
     </ProsePage>
   );
 }

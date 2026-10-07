@@ -1,4 +1,7 @@
 type Founder = { name: string; role: string; link?: string };
+/** A registered company: its name, registration number (e.g. CIN) and
+ * registered address. */
+type Legal = { name: string; registration?: string; address?: string };
 
 /** The public site at vibezeo.com (F-WB-01 slice). Contact and company
  * details come from the owner; nothing personal is published unless it's
@@ -7,17 +10,24 @@ export const SITE = {
   url: "https://vibezeo.com",
   product: "Tandem",
   tagline: "A desktop workspace for the coding agents you already use.",
-  /** The name the site is published under (footer, Terms, Privacy). There's
-   * no registered entity yet: the founder runs it. */
+  /** The name the site and the product are published under. */
   company: "Vibezeo",
   contactEmail: "hello@vibezeo.com",
-  /** Who runs the site and builds the product (home page, Terms, Privacy). */
+  /** Who runs the company and builds the product (home, About, Terms, Privacy). */
   founder: { name: "Naman Jain", role: "Founder" } as Founder,
+  /** The registered entity, once there is one. When set, it's shown on About,
+   * Terms and Privacy and in the footer; until then the founder runs the site. */
+  legal: null as Legal | null,
+  /** Where the company is based (About), when set. */
+  location: null as string | null,
+  /** Who serves the site (Privacy). */
+  host: "Vercel",
   updated: "7 October 2026",
 } as const;
 
-/** "Vibezeo (Naman Jain)": who's responsible for the site and the app. */
-export const OPERATOR = `${SITE.company} (${SITE.founder.name})`;
+/** Who's responsible for the site and the app: the registered entity, or
+ * "Vibezeo (Naman Jain)" until there is one. */
+export const OPERATOR = SITE.legal?.name ?? `${SITE.company} (${SITE.founder.name})`;
 
 /** The engine CLIs Tandem detects and runs (crates/tandem-engines/registry.json). */
 export const ENGINES = [
@@ -35,7 +45,7 @@ export const ENGINES = [
 ] as const;
 
 /** The public pages, for the sitemap. */
-export const SITE_PAGES = ["/", "/privacy/", "/terms/", "/security/"] as const;
+export const SITE_PAGES = ["/", "/about/", "/privacy/", "/terms/", "/security/"] as const;
 
 /** `/.well-known/security.txt` (RFC 9116). `Expires` is 11 months after `now`
  * (the RFC recommends less than a year), so each deploy renews it. */

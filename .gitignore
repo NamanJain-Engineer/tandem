@@ -8,6 +8,7 @@ perf/results/*.tmp
 dist
 .next
 apps/web/out
+.vercel
 .turbo
 
 # Background research on the reference product. Never committed, never copied from.

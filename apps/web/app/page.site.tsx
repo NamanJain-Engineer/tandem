@@ -248,6 +248,9 @@ export default function HomePage() {
             </a>{" "}
             to talk about the product or try an early build.
           </p>
+          <a href="/about/" className="mt-2 text-base font-medium text-accent hover:underline">
+            More about {SITE.company} →
+          </a>
         </div>
       </Section>
 

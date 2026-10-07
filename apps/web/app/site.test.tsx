@@ -4,6 +4,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ENGINES, OPERATOR, SITE, SITE_PAGES, robotsTxt, securityTxt, sitemapXml } from "../lib/site";
+import AboutPage from "./about/page.site";
 import HomePage from "./page.site";
 import NotFound from "./not-found.site";
 import PrivacyPage from "./privacy/page.site";
@@ -13,6 +14,7 @@ import TermsPage from "./terms/page.site";
 const html = (el: ReactElement) => renderToStaticMarkup(el);
 const PAGES = {
   home: HomePage,
+  about: AboutPage,
   privacy: PrivacyPage,
   terms: TermsPage,
   security: SecurityPage,
@@ -29,9 +31,19 @@ describe("public site", () => {
     for (const id of ["features", "engines", "roadmap", "team", "faq"]) expect(h).toContain(`id="${id}"`);
   });
 
-  it("F-WB-01 the founder is named on the home page, and Terms and Privacy name who runs the site", () => {
-    expect(html(<HomePage />)).toContain(`${SITE.founder.role}, ${SITE.company}`);
+  it("F-WB-01 the founder is named on the home and About pages, and Terms and Privacy name who runs the site", () => {
+    for (const Page of [HomePage, AboutPage])
+      expect(html(<Page />)).toContain(`${SITE.founder.role}, ${SITE.company}`);
     for (const Page of [TermsPage, PrivacyPage]) expect(html(<Page />)).toContain(OPERATOR);
+    expect(html(<PrivacyPage />)).toContain(`Our host, ${SITE.host}`);
+  });
+
+  it("F-WB-01 About has the company details and a contact section, and every page links to it", () => {
+    const h = html(<AboutPage />);
+    for (const id of ["founder", "company", "contact"]) expect(h).toContain(`id="${id}"`);
+    expect(h).toContain(`mailto:${SITE.contactEmail}`);
+    for (const [name, Page] of Object.entries(PAGES))
+      expect(html(<Page />), name).toContain(`href="/about/"`);
   });
 
   it("F-WB-01 the illustration is labelled as sample data", () => {
@@ -56,13 +68,26 @@ describe("public site", () => {
     }
   });
 
-  it("F-WB-01 headers forbid framing and third-party origins", () => {
-    const headers = readFileSync(join(import.meta.dirname, "../public/_headers"), "utf8");
-    const csp = /Content-Security-Policy: (.*)/.exec(headers)?.[1] ?? "";
+  it("F-WB-01 Vercel serves the export with headers that forbid framing and third-party origins", () => {
+    type Rule = { source: string; headers: Array<{ key: string; value: string }> };
+    const config = JSON.parse(readFileSync(join(import.meta.dirname, "../vercel.json"), "utf8")) as {
+      framework: string;
+      buildCommand: string;
+      outputDirectory?: string;
+      headers: Rule[];
+    };
+    // Vercel's Next.js builder picks up the static export itself; an output
+    // directory would point it away from `.next` and fail the build.
+    expect(config.framework).toBe("nextjs");
+    expect(config.buildCommand).toBe("pnpm build:site");
+    expect(config.outputDirectory).toBeUndefined();
+    const all = config.headers.find((r) => r.source === "/(.*)")?.headers ?? [];
+    const header = (key: string) => all.find((h) => h.key === key)?.value ?? "";
+    const csp = header("Content-Security-Policy");
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("default-src 'self'");
     expect(csp).not.toMatch(/https?:/);
-    expect(headers).toContain("X-Content-Type-Options: nosniff");
+    expect(header("X-Content-Type-Options")).toBe("nosniff");
   });
 
   it("F-WB-01 robots, sitemap and security.txt point at the site", () => {

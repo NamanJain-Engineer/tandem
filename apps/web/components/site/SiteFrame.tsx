@@ -15,7 +15,7 @@ const NAV = [
   { href: "/#features", label: "Features" },
   { href: "/#engines", label: "Engines" },
   { href: "/#roadmap", label: "Roadmap" },
-  { href: "/security/", label: "Security" },
+  { href: "/about/", label: "About" },
 ];
 
 /** Header, main and footer for the public pages. Plain links: the site is
@@ -59,9 +59,13 @@ export function SiteFrame({ children }: { children: ReactNode }) {
       <footer className="border-t border-divider">
         <div className="mx-auto flex max-w-5xl flex-col gap-3 px-6 py-8 text-sm text-fg-muted sm:flex-row sm:items-center">
           <span>
-            © {year} {SITE.company} · Built by {SITE.founder.name}. {SITE.product} is in active development.
+            © {year} {SITE.legal?.name ?? SITE.company} · Built by {SITE.founder.name}. {SITE.product} is in
+            active development.
           </span>
-          <nav aria-label="Legal" className="flex gap-5 sm:ml-auto">
+          <nav aria-label="Legal" className="flex flex-wrap gap-x-5 gap-y-2 sm:ml-auto">
+            <a href="/about/" className="hover:text-fg">
+              About
+            </a>
             <a href="/privacy/" className="hover:text-fg">
               Privacy
             </a>
