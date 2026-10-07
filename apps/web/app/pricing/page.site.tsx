@@ -2,7 +2,8 @@ import { Badge } from "@tandem/ui/components/Badge";
 import type { Metadata } from "next";
 import { SiteFrame } from "../../components/site/SiteFrame";
 import { CREDIT_VALUE_USD, PLANS } from "../../lib/pricing";
-import { EARLY_ACCESS_HREF, SITE } from "../../lib/site";
+import { RELEASE } from "../../lib/release";
+import { SITE } from "../../lib/site";
 
 export const metadata: Metadata = { title: "Pricing" };
 
@@ -11,15 +12,15 @@ export default function PricingPage() {
     <SiteFrame>
       <section className="mx-auto flex max-w-6xl flex-col items-start gap-4 px-6 pb-8 pt-16">
         <Badge variant="accent" dot>
-          Pricing at launch
+          Plans
         </Badge>
         <h1 className="text-3xl font-semibold tracking-tight">
           Free to run your agents. Pro when you run a lot.
         </h1>
         <p className="max-w-3xl text-lg text-fg-muted">
-          {SITE.product} isn't on sale yet: these are the plans it will launch with. Your coding agents always
-          run on your own subscriptions, so {SITE.product} never charges for engine usage. Features marked{" "}
-          <span className="font-medium text-fg">Planned</span> arrive with later milestones.
+          Free is available now: download {SITE.product} {RELEASE.version} for Linux. Pro and Team start with
+          Vibezeo accounts. Your coding agents always run on your own subscriptions, so {SITE.product} never
+          charges for engine usage.
         </p>
       </section>
 
@@ -65,22 +66,21 @@ export default function PricingPage() {
           <div className="flex flex-col gap-2">
             <h2 className="text-xl font-semibold tracking-tight">What credits pay for</h2>
             <p className="text-md text-fg-muted">
-              Credits pay only for hosted AI features, which will run on the Claude API: polishing dictated
-              prompts, drafting teammates, titling threads and the Auto supervisor. One credit is $
-              {CREDIT_VALUE_USD.toFixed(3)} of usage, so Pro's 10,000 a month are worth $10. They never pay
-              for your engines.
+              Credits pay only for hosted AI features, which run on the Claude API: session titles, and
+              Enhance and Polish for your prompts. One credit is ${CREDIT_VALUE_USD.toFixed(3)} of usage. They
+              never pay for your engines.
             </p>
           </div>
           <div className="flex flex-col items-start gap-3">
-            <h2 className="text-xl font-semibold tracking-tight">Want to try it before launch?</h2>
+            <h2 className="text-xl font-semibold tracking-tight">Try the Free plan now</h2>
             <p className="text-md text-fg-muted">
-              A small group of developers is testing early builds. Tell us which agents you use.
+              {SITE.product} {RELEASE.version} runs the Free plan on your computer, with no account, on Linux.
             </p>
             <a
-              href={EARLY_ACCESS_HREF}
+              href="/download/"
               className="rounded-sm bg-accent px-4 py-2 text-md font-medium text-accent-fg hover:bg-accent-hover"
             >
-              Request early access →
+              Download →
             </a>
           </div>
         </div>

@@ -8,7 +8,7 @@ type Legal = { name: string; registration?: string; address?: string };
  * listed here. */
 export const SITE = {
   url: "https://vibezeo.com",
-  product: "Tandem",
+  product: "Vibezeo",
   tagline: "A desktop workspace for the coding agents you already use.",
   /** The name the site and the product are published under. */
   company: "Vibezeo",
@@ -18,10 +18,9 @@ export const SITE = {
     name: "Naman Jain",
     role: "Founder",
     bio: "An engineer focused on building products and shipping meaningful software.",
-    link: "https://github.com/NamanJain-Engineer",
   } as Founder,
-  /** Year the company started (About). */
-  founded: "2025" as string | null,
+  /** When the company started (About); not shown when null. */
+  founded: null as string | null,
   /** The registered entity, once there is one. When set, it's shown on About,
    * Terms and Privacy and in the footer; until then the founder runs the site. */
   legal: null as Legal | null,
@@ -29,14 +28,13 @@ export const SITE = {
   location: "India" as string | null,
   /** Who serves the site (Privacy). */
   host: "Vercel",
-  updated: "7 October 2026",
 } as const;
 
 /** Who's responsible for the site and the app: the registered entity, or
  * "Vibezeo (Naman Jain)" until there is one. */
 export const OPERATOR = SITE.legal?.name ?? `${SITE.company} (${SITE.founder.name})`;
 
-/** The engine CLIs Tandem detects and runs (crates/tandem-engines/registry.json). */
+/** The engine CLIs Vibezeo detects and runs (crates/tandem-engines/registry.json). */
 export const ENGINES = [
   "Claude Code",
   "Codex",
@@ -54,6 +52,7 @@ export const ENGINES = [
 /** The public pages, for the sitemap. */
 export const SITE_PAGES = [
   "/",
+  "/download/",
   "/pricing/",
   "/about/",
   "/changelog/",
@@ -62,12 +61,12 @@ export const SITE_PAGES = [
   "/security/",
 ] as const;
 
-/** "Request early access": a prefilled email, so people can tell us what
- * they'd run. The site keeps no form or list of its own. */
+/** Feedback from users: a prefilled email, so people can tell
+ * us what they run. The site keeps no form or list of its own. */
 export const EARLY_ACCESS_HREF = `mailto:${SITE.contactEmail}?subject=${encodeURIComponent(
-  `${SITE.product} early access`,
+  `${SITE.product} feedback`,
 )}&body=${encodeURIComponent(
-  "Hi,\n\nI'd like to try Tandem.\n\nMy OS (macOS / Windows / Linux):\nCoding agents I use (e.g. Claude Code, Codex):\nWhat I'd run side by side:\n",
+  "Hi,\n\nI'm trying Vibezeo.\n\nMy OS (macOS / Windows / Linux):\nCoding agents I use (e.g. Claude Code, Codex):\nWhat works, what doesn't:\n",
 )}`;
 
 /** `/.well-known/security.txt` (RFC 9116). `Expires` is 11 months after `now`

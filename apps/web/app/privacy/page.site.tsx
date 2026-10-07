@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
 import { ProsePage } from "../../components/site/SiteFrame";
+import { RELEASE } from "../../lib/release";
 import { OPERATOR, SITE } from "../../lib/site";
 
 export const metadata: Metadata = { title: "Privacy" };
 
 export default function PrivacyPage() {
   return (
-    <ProsePage title="Privacy" updated={SITE.updated}>
+    <ProsePage title="Privacy">
       <p>
-        {SITE.product} is built by {OPERATOR}, who is responsible for your data. This page covers this website
-        and the {SITE.product} desktop app, which is in development and not yet publicly released. Questions
-        go to{" "}
+        {OPERATOR} is responsible for your data. This page covers this website and the {SITE.product} desktop
+        app. Questions go to{" "}
         <a href={`mailto:${SITE.contactEmail}`} className="text-accent hover:underline">
           {SITE.contactEmail}
         </a>
@@ -35,6 +35,10 @@ export default function PrivacyPage() {
       <h2>The desktop app</h2>
       <ul>
         <li>
+          The current release ({RELEASE.version}) has no {SITE.product} accounts and don't contact our servers
+          at all: no sign-in, no analytics, no crash reports, no update checks.
+        </li>
+        <li>
           Your workspaces, layouts, settings and history are stored on your computer, in the app's data
           folder.
         </li>
@@ -51,13 +55,13 @@ export default function PrivacyPage() {
           their credentials, and doesn't send your prompts, code or terminal output to us.
         </li>
         <li>
-          If you sign in to a {SITE.product} account, our service stores your email address, your plan, and
-          the devices you've signed in on (device name, platform and app version), so you can see and revoke
-          them.
+          Once accounts open: if you sign in to a {SITE.product} account, our service stores your email
+          address, your plan, and the devices you've signed in on (device name, platform and app version), so
+          you can see and revoke them.
         </li>
         <li>
-          To check for updates, the app sends its version, platform and update channel. Updates are verified
-          with a signature before they install.
+          Once automatic updates arrive, the app will send its version, platform and update channel to check
+          for them. Updates are verified with a signature before they install.
         </li>
       </ul>
 
@@ -70,8 +74,8 @@ export default function PrivacyPage() {
 
       <h2>Changes</h2>
       <p>
-        We'll update this page before anything here changes, and before the app's public release. The date at
-        the top shows the latest version.
+        We'll update this page before anything here changes, and before accounts or automatic updates go live.
+        The date at the top shows the latest version.
       </p>
     </ProsePage>
   );

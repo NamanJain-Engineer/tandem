@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: "Security" };
 
 export default function SecurityPage() {
   return (
-    <ProsePage title="Security" updated={SITE.updated}>
+    <ProsePage title="Security">
       <p>
         {SITE.product} runs coding agents on your machine, against your code. These are the rules it's built
         on, and how to tell us about a problem.

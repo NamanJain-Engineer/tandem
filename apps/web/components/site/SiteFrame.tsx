@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { EARLY_ACCESS_HREF, SITE } from "../../lib/site";
+import { SITE } from "../../lib/site";
 
-/** Tandem's mark: two overlapping rings. */
+/** Vibezeo's mark: two overlapping rings. */
 export function Mark({ size = 22 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 28 28" fill="none" aria-hidden="true">
@@ -12,6 +12,7 @@ export function Mark({ size = 22 }: { size?: number }) {
 }
 
 const NAV = [
+  { href: "/download/", label: "Download" },
   { href: "/#demo", label: "Demo" },
   { href: "/#claude", label: "Claude" },
   { href: "/pricing/", label: "Pricing" },
@@ -22,7 +23,6 @@ const NAV = [
 /** Header, main and footer for the public pages. Plain links: the site is
  * static and works without JavaScript. */
 export function SiteFrame({ children }: { children: ReactNode }) {
-  const year = new Date().getFullYear();
   return (
     <div className="flex min-h-screen flex-col bg-bg text-fg">
       <a
@@ -47,10 +47,10 @@ export function SiteFrame({ children }: { children: ReactNode }) {
             ))}
           </ul>
           <a
-            href={EARLY_ACCESS_HREF}
+            href="/download/"
             className="ml-auto rounded-sm bg-accent px-3 py-1.5 font-medium text-accent-fg hover:bg-accent-hover sm:ml-0"
           >
-            Early access
+            Download
           </a>
         </nav>
       </header>
@@ -60,8 +60,7 @@ export function SiteFrame({ children }: { children: ReactNode }) {
       <footer className="border-t border-divider">
         <div className="mx-auto flex max-w-5xl flex-col gap-3 px-6 py-8 text-sm text-fg-muted sm:flex-row sm:items-center">
           <span>
-            © {year} {SITE.legal?.name ?? SITE.company} · Built by {SITE.founder.name}. {SITE.product} is in
-            active development.
+            © {SITE.legal?.name ?? SITE.company} · Built by {SITE.founder.name}.
           </span>
           <nav aria-label="Legal" className="flex flex-wrap gap-x-5 gap-y-2 sm:ml-auto">
             <a href="/about/" className="hover:text-fg">

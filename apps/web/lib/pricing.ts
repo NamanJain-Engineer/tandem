@@ -1,5 +1,5 @@
-/** Pricing at launch (PRODUCT_SPEC §3.1–3.3). Nothing is on sale yet: the
- * site shows the plans so people know what Tandem will cost. M15 generates
+/** The plans (PRODUCT_SPEC §3.1–3.3). Free is available now; Pro and Team start with accounts: the
+ * site shows the plans so people know what Vibezeo will cost. M15 generates
  * /pricing from `packages/protocol/src/plans.ts` and checks it against the
  * API's config (F-WB-01 AC3). */
 
@@ -28,8 +28,6 @@ export const PLANS: readonly Plan[] = [
       { text: "Every supported engine, on your own accounts" },
       { text: "Dashboard, notifications and crash-safe restore" },
       { text: "Signed updates, always, even after a paid plan ends" },
-      { text: "One account per engine", planned: true },
-      { text: "Dictation with local speech models", planned: true },
     ],
   },
   {
@@ -39,13 +37,7 @@ export const PLANS: readonly Plan[] = [
     cadence: "per month, or $290 a year",
     summary: "For developers who run many agents every day.",
     trial: "7-day free trial · 14-day money-back on the first charge",
-    features: [
-      { text: "Unlimited panes and workspaces" },
-      { text: "Work and personal accounts for each engine", planned: true },
-      { text: "10,000 credits a month for hosted AI features on the Claude API", planned: true },
-      { text: "Routines, including while the app is closed", planned: true },
-      { text: "Phone companion", planned: true },
-    ],
+    features: [{ text: "Everything in Free" }, { text: "Unlimited panes and workspaces" }],
   },
   {
     id: "team",
@@ -54,11 +46,7 @@ export const PLANS: readonly Plan[] = [
     cadence: "per seat per month, or $490 a year · 2 seats minimum",
     summary: "For teams that share agents, policy and credits.",
     trial: "14-day free trial · 14-day money-back",
-    features: [
-      { text: "Everything in Pro" },
-      { text: "10,000 credits per seat a month, pooled across the team", planned: true },
-      { text: "Admin policy, audit log and seat management", planned: true },
-    ],
+    features: [{ text: "Everything in Pro" }],
   },
 ];
 

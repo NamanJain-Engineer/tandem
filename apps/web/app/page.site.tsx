@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { SiteFrame } from "../components/site/SiteFrame";
 import { PLANS } from "../lib/pricing";
 import { PROGRESS } from "../lib/progress";
+import { RELEASE } from "../lib/release";
 import { EARLY_ACCESS_HREF, ENGINES, SITE } from "../lib/site";
 
 /** What the desktop app does today (milestones M0–M5). */
@@ -13,11 +14,11 @@ const FEATURES = [
   },
   {
     title: "Your accounts, untouched",
-    body: "Each engine signs in by itself, inside its own provider home on your disk. Tandem never reads, copies or proxies an AI vendor's tokens.",
+    body: "Each engine signs in by itself, inside its own provider home on your disk. Vibezeo never reads, copies or proxies an AI vendor's tokens.",
   },
   {
     title: "Live status for every agent",
-    body: "Tandem knows when an agent is working, waiting for you, done or has failed, from Claude Code's hooks and from each engine's own output. The status shows on every pane and in the sidebar.",
+    body: "Vibezeo knows when an agent is working, waiting for you, done or has failed, from Claude Code's hooks and from each engine's own output. The status shows on every pane and in the sidebar.",
   },
   {
     title: "One Dashboard",
@@ -41,22 +42,22 @@ const FEATURES = [
   },
 ] as const;
 
-/** How Tandem builds on Claude: what's shipped, how it's built, what's planned. */
+/** How Vibezeo builds on Claude: what's shipped, how it's built, and what's built but not live yet. */
 const CLAUDE = [
   {
     tag: "Shipped",
     title: "Claude Code, integrated first",
-    body: "Claude Code is the engine Tandem integrates most deeply. Tandem installs Claude Code's own hooks in a separate home for each account, so it knows exactly when a session starts, runs a tool, needs you or finishes. After a restart it reopens the same Claude Code session with --resume.",
+    body: "Claude Code is the engine Vibezeo integrates most deeply. Vibezeo installs Claude Code's own hooks in a separate home for each account, so it knows exactly when a session starts, runs a tool, needs you or finishes. After a restart it reopens the same Claude Code session with --resume.",
   },
   {
     tag: "How we build",
     title: "Built with Claude Code",
-    body: "Tandem is built with Claude Code. Most of the code, including the desktop app, the backend, this site and their tests, was written with it, and the commit history records it.",
+    body: "Vibezeo is built with Claude Code. Most of the code, including the desktop app, the backend, this site and their tests, was written with it, and the commit history records it.",
   },
   {
-    tag: "Planned",
+    tag: "Built, live when accounts open",
     title: "Hosted features on the Claude API",
-    body: "Tandem's hosted AI features will run on the Claude API: polishing dictated prompts, drafting a new teammate from a one-line description, titling threads, and the Auto supervisor that keeps an agent working toward your goal until it's done or stuck. They're on the roadmap, not built yet.",
+    body: "Vibezeo's hosted AI runs on the Claude API. Session titles and Enhance and Polish for dictated prompts are built: the backend calls Claude, meters credits, and stores no prompts or responses. They go live when accounts open, alongside Thread mode and Dictate in the app. Teammate drafts and the Auto supervisor come next.",
   },
 ] as const;
 
@@ -107,7 +108,7 @@ const PRINCIPLES = [
   },
   {
     title: "Explicit authority",
-    body: "Tandem never answers an agent's request on your behalf, and spending always asks first.",
+    body: "Vibezeo never answers an agent's request on your behalf, and spending always asks first.",
   },
   {
     title: "One codebase",
@@ -117,28 +118,28 @@ const PRINCIPLES = [
 
 const FAQ = [
   {
-    q: "Can I use Tandem today?",
-    a: "Not publicly yet. A small group of developers is testing early builds, and we're adding more a few at a time. Request early access and tell us which agents you use.",
+    q: "Can I use Vibezeo today?",
+    a: "Yes. Download Vibezeo 0.1.0 for Linux from the download page. It runs the Free plan on your computer with no account, and doesn't contact our servers.",
   },
   {
-    q: "How does Tandem use Claude?",
-    a: "Claude Code is the engine Tandem integrates most deeply, and Tandem itself is built with Claude Code. Its planned hosted AI features will run on the Claude API.",
+    q: "How does Vibezeo use Claude?",
+    a: "Claude Code is the engine Vibezeo integrates most deeply, and Vibezeo itself is built with Claude Code. Its hosted AI features run on the Claude API: session titles and Enhance and Polish are built, and go live when accounts open.",
   },
   {
-    q: "Which platforms will it support?",
-    a: "macOS 14 or later, Windows 10 and 11 (x64), and Linux x86_64 (AppImage and .deb). We develop and test on Linux first, and build every platform in CI.",
+    q: "Which platforms does it support?",
+    a: "Linux x86-64, as a .deb for Debian and Ubuntu.",
   },
   {
-    q: "Does Tandem see my API keys or subscription tokens?",
-    a: "No. Each engine CLI signs in by itself, in its own folder on your disk. Tandem starts the CLI and shows its terminal, and never reads, copies or forwards the engine's credentials.",
+    q: "Does Vibezeo see my API keys or subscription tokens?",
+    a: "No. Each engine CLI signs in by itself, in its own folder on your disk. Vibezeo starts the CLI and shows its terminal, and never reads, copies or forwards the engine's credentials.",
   },
   {
     q: "Do I need a new AI subscription?",
-    a: "No. Tandem runs the coding agents you already have, on your existing plans.",
+    a: "No. Vibezeo runs the coding agents you already have, on your existing plans.",
   },
   {
     q: "What will it cost?",
-    a: "At launch: Free at $0, Pro at $29 a month and Team at $49 per seat a month. Nothing is on sale yet. The plans are on the Pricing page.",
+    a: "Free is $0. Pro is $29 a month and Team is $49 per seat a month; they start with Vibezeo accounts. The plans are on the Pricing page.",
   },
 ] as const;
 
@@ -194,38 +195,38 @@ export default function HomePage() {
       <section className="mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="flex flex-col items-start gap-5">
           <Badge variant="accent" dot>
-            In active development
+            Released · {RELEASE.version} for Linux
           </Badge>
           <h1 className="text-3xl font-semibold tracking-tight">{SITE.tagline}</h1>
           <p className="text-lg text-fg-muted">
-            Tandem runs Claude Code, Codex, Gemini CLI and other coding-agent CLIs side by side in real
+            Vibezeo runs Claude Code, Codex, Gemini CLI and other coding-agent CLIs side by side in real
             terminals, on your own subscriptions. One Dashboard shows every agent: what it's doing, and when
             it needs you.
           </p>
           <div className="flex flex-wrap gap-3">
             <a
-              href={EARLY_ACCESS_HREF}
+              href="/download/"
               className="rounded-sm bg-accent px-4 py-2 text-md font-medium text-accent-fg hover:bg-accent-hover"
             >
-              Request early access →
+              Download for Linux →
             </a>
             <a
               href="#demo"
               className="rounded-sm border border-border-strong px-4 py-2 text-md font-medium text-fg hover:bg-surface-3"
             >
-              Watch it run (50 s)
+              Watch it run (45 s)
             </a>
           </div>
           <p className="text-sm text-fg-muted">
-            A small group of developers is testing early builds. We're adding more, a few at a time.
+            Free for Linux. No account needed: it runs on your computer.
           </p>
         </div>
         <Screenshot
           src="/screens/code-mode.png"
           width={1440}
           height={900}
-          alt="The Tandem desktop app with four terminal panes over its own repository: the git history, htop, vim open on the Claude Code hook handler, and a passing cargo test run."
-          caption="The Tandem desktop app on Linux, four real terminals over its own repository: git history, htop, the Claude Code hook handler in vim, and a test run."
+          alt="The Vibezeo desktop app with four terminal panes over its own repository: the git history, htop, vim open on the Claude Code hook handler, and a passing cargo test run."
+          caption="The Vibezeo desktop app on Linux, four real terminals over its own repository: git history, htop, the Claude Code hook handler in vim, and a test run."
         />
       </section>
 
@@ -240,7 +241,7 @@ export default function HomePage() {
             ))}
           </dl>
           <p className="text-sm text-fg-muted">
-            Built so far, as of {PROGRESS.asOf}.{" "}
+            Built so far.{" "}
             <a href="/changelog/" className="text-accent hover:underline">
               See the changelog →
             </a>
@@ -248,7 +249,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <Section id="demo" eyebrow="See it run" title="50 seconds, unedited">
+      <Section id="demo" eyebrow="See it run" title="45 seconds, unedited">
         <figure className="flex flex-col gap-3">
           <video
             poster="/screens/code-mode.png"
@@ -267,8 +268,8 @@ export default function HomePage() {
           </video>
           <figcaption className="text-sm text-fg-muted">
             A screen recording of the Linux build, with no cuts. 0:00 A new tab finds Claude Code on the
-            machine. 0:04 Four terminals over Tandem's own repository: git history, htop, the Claude Code hook
-            handler in vim, and the test suite. 0:39 The app is killed with kill -9. 0:42 Relaunched, the
+            machine. 0:04 Four terminals over Vibezeo's own repository: git history, htop, the Claude Code
+            hook handler in vim, and the test suite. 0:35 The app is killed with kill -9. 0:38 Relaunched, the
             layout and the four live shells come back, and nothing re-runs on its own.
           </figcaption>
         </figure>
@@ -276,7 +277,7 @@ export default function HomePage() {
 
       <Section id="claude" eyebrow="Built with Claude" title="Made for Claude Code, open to every agent">
         <p className="max-w-3xl text-md text-fg-muted">
-          Tandem gives Claude Code a persistent workspace: run several sessions at once, see which one needs
+          Vibezeo gives Claude Code a persistent workspace: run several sessions at once, see which one needs
           you, and pick up where you left off after a restart, all on your own Claude subscription.
         </p>
         <ul className="grid gap-4 md:grid-cols-3">
@@ -311,8 +312,8 @@ export default function HomePage() {
         <div className="grid items-center gap-8 lg:grid-cols-[1.2fr_1fr]">
           <div className="flex flex-col gap-5">
             <p className="text-md text-fg-muted">
-              Tandem finds the engine CLIs installed on your machine and launches them in panes, each signed
-              in to your own account. If an engine is missing, Tandem shows you how to install it.
+              Vibezeo finds the engine CLIs installed on your machine and launches them in panes, each signed
+              in to your own account. If an engine is missing, Vibezeo shows you how to install it.
             </p>
             <ul className="flex flex-wrap gap-2">
               {ENGINES.map((e) => (
@@ -322,7 +323,7 @@ export default function HomePage() {
               ))}
             </ul>
             <p className="text-sm text-fg-subtle">
-              Product names belong to their owners. Tandem isn't affiliated with or endorsed by any engine
+              Product names belong to their owners. Vibezeo isn't affiliated with or endorsed by any engine
               vendor.
             </p>
           </div>
@@ -330,8 +331,8 @@ export default function HomePage() {
             src="/screens/launch-grid.png"
             width={544}
             height={570}
-            alt="Tandem's launch grid in a new tab: Claude Code 2.1.292 detected, a terminal, and ten more engines with Install buttons."
-            caption="A new tab: Tandem found Claude Code on this machine and offers to install the ten engines that aren't."
+            alt="Vibezeo's launch grid in a new tab: Claude Code 2.1.292 detected, a terminal, and ten more engines with Install buttons."
+            caption="A new tab: Vibezeo found Claude Code on this machine and offers to install the ten engines that aren't."
           />
         </div>
       </Section>
@@ -363,7 +364,7 @@ export default function HomePage() {
         </ol>
       </Section>
 
-      <Section id="team" eyebrow="Team" title="Who's building Tandem">
+      <Section id="team" eyebrow="Team" title="Who's building Vibezeo">
         <div className="flex max-w-2xl flex-col gap-1 rounded-md border border-border bg-surface-1 p-5">
           <p className="text-md font-semibold">
             {SITE.founder.link ? (
@@ -378,8 +379,8 @@ export default function HomePage() {
             {SITE.founder.role}, {SITE.company}
           </p>
           <p className="mt-2 text-base text-fg-muted">
-            {SITE.founder.bio} {SITE.founder.name} started {SITE.company} to build {SITE.product}: as coding
-            agents multiply, developers need a better way to run, coordinate and keep an eye on them.
+            {SITE.founder.bio} {SITE.founder.name} started {SITE.company} because, as coding agents multiply,
+            developers need a better way to run, coordinate and keep an eye on them.
           </p>
           <a href="/about/" className="mt-2 text-base font-medium text-accent hover:underline">
             More about {SITE.company} →
@@ -387,7 +388,7 @@ export default function HomePage() {
         </div>
       </Section>
 
-      <Section id="pricing" eyebrow="Pricing at launch" title="Free to run your agents">
+      <Section id="pricing" eyebrow="Pricing" title="Free to run your agents">
         <ul className="grid gap-4 sm:grid-cols-3">
           {PLANS.map((p) => (
             <li key={p.id} className="flex flex-col gap-1 rounded-md border border-border bg-surface-1 p-5">
@@ -401,7 +402,8 @@ export default function HomePage() {
           ))}
         </ul>
         <p className="text-sm text-fg-muted">
-          Nothing is on sale yet. Your agents always run on your own subscriptions.{" "}
+          Free is available today; Pro and Team start with Vibezeo accounts. Your agents always run on your
+          own subscriptions.{" "}
           <a href="/pricing/" className="text-accent hover:underline">
             Compare the plans →
           </a>
@@ -422,17 +424,20 @@ export default function HomePage() {
       <section className="border-t border-divider">
         <div className="mx-auto flex max-w-6xl flex-col items-start gap-4 px-6 py-16 sm:flex-row sm:items-center">
           <div className="flex flex-col gap-1">
-            <h2 className="text-xl font-semibold tracking-tight">Want to try it early?</h2>
+            <h2 className="text-xl font-semibold tracking-tight">Try it on your own projects</h2>
             <p className="text-md text-fg-muted">
-              Tell us which engines you use and what you'd run side by side. We'll reply from{" "}
-              {SITE.contactEmail}.
+              Download {SITE.product} for Linux, then{" "}
+              <a href={EARLY_ACCESS_HREF} className="text-accent hover:underline">
+                tell us what works and what doesn't
+              </a>{" "}
+              at {SITE.contactEmail}.
             </p>
           </div>
           <a
-            href={EARLY_ACCESS_HREF}
+            href="/download/"
             className="rounded-sm bg-accent px-4 py-2 text-md font-medium text-accent-fg hover:bg-accent-hover sm:ml-auto"
           >
-            Request early access →
+            Download →
           </a>
         </div>
       </section>

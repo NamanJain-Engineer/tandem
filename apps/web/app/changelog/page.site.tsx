@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { SiteFrame } from "../../components/site/SiteFrame";
 import { MILESTONES, PROGRESS } from "../../lib/progress";
-import { EARLY_ACCESS_HREF, SITE } from "../../lib/site";
+import { RELEASE, RELEASE_URL } from "../../lib/release";
+import { SITE } from "../../lib/site";
 
 export const metadata: Metadata = { title: "Changelog" };
 
@@ -14,10 +15,13 @@ export default function ChangelogPage() {
         <p className="text-lg text-fg-muted">
           {SITE.product} is built in milestones. Each one closes with its features tested end to end on the
           real app: {PROGRESS.automatedTests.toLocaleString("en-US")} automated tests and{" "}
-          {PROGRESS.endToEndSuites} end-to-end suites as of {PROGRESS.asOf}. Early builds are with a small
-          group of developers.{" "}
-          <a href={EARLY_ACCESS_HREF} className="text-accent hover:underline">
-            Request early access
+          {PROGRESS.endToEndSuites} end-to-end suites. The first release,{" "}
+          <a href={RELEASE_URL} className="text-accent hover:underline">
+            {SITE.product} {RELEASE.version} for Linux
+          </a>
+          , is out:{" "}
+          <a href="/download/" className="text-accent hover:underline">
+            download it
           </a>
           .
         </p>
@@ -28,7 +32,6 @@ export default function ChangelogPage() {
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="font-mono text-sm text-accent">{m.id}</span>
               <h2 className="text-xl font-semibold tracking-tight">{m.title}</h2>
-              <span className="text-sm text-fg-subtle">{m.month}</span>
             </div>
             <ul className="flex flex-col gap-1.5 text-base text-fg-muted">
               {m.items.map((item) => (
