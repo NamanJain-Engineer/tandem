@@ -1,0 +1,71 @@
+:root {
+  color-scheme: light;
+  --paper: #f3efe6;
+  --ink: #1b1914;
+  --muted: #5c564c;
+  --line: #d9d0c2;
+  --hot: #c2410c;
+  --term: #211e18;
+  --term-text: #f6f1e7;
+  font-family: Outfit, ui-sans-serif, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+a { color: inherit; }
+
+.bar, footer {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 18px 28px;
+}
+.bar { position: sticky; top: 0; background: rgb(243 239 230 / 92%); border-bottom: 1px solid var(--line); }
+.mark, h1, h2 { font-family: Fraunces, Georgia, serif; font-weight: 560; }
+.mark { text-decoration: none; font-size: 22px; }
+nav { display: flex; gap: 16px; }
+nav a { color: var(--muted); text-decoration: none; }
+.mail { margin-left: auto; text-decoration: none; border-bottom: 1px solid var(--hot); }
+
+main { max-width: 980px; margin: 0 auto; padding: 48px 28px 72px; }
+.kicker { letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; color: var(--hot); }
+h1 { font-size: clamp(40px, 6vw, 76px); line-height: 0.96; margin: 8px 0 16px; max-width: 12ch; }
+.lede { font-size: 20px; line-height: 1.45; max-width: 42rem; color: var(--muted); }
+
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 48px; }
+.grid article { border-top: 1px solid var(--ink); padding-top: 12px; }
+.grid h2, .claude h2, .status h2 { margin: 0 0 8px; font-size: 28px; }
+p, li { line-height: 1.5; }
+
+.claude {
+  margin-top: 56px;
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 28px;
+  align-items: start;
+}
+.term {
+  margin: 0;
+  background: var(--term);
+  color: var(--term-text);
+  padding: 18px;
+  border-radius: 12px;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.dim { color: #b7ab99; }
+.status { margin-top: 56px; max-width: 40rem; }
+footer { border-top: 1px solid var(--line); color: var(--muted); justify-content: space-between; }
+
+@media (max-width: 800px) {
+  .grid, .claude { grid-template-columns: 1fr; }
+  .bar { flex-wrap: wrap; }
+  .mail { margin-left: 0; }
+}

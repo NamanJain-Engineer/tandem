@@ -12,6 +12,7 @@ Milestone M0 is in progress. Shipped so far:
 - `api`: health, and an idempotent sync log (`/v1/sync/events`)
 - `desktop`: shell frame on port 1420
 - `web`: `GET /api/health`
+- `site`: public page for [vibezeo.com](https://vibezeo.com)
 - `@tandem/ui` Button and `@tandem/protocol` wire types
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for why this stays one repository.
