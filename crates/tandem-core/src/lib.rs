@@ -15,6 +15,7 @@ pub mod ids;
 pub mod keychain;
 pub mod logging;
 pub mod net;
+pub mod origin;
 pub mod paths;
 pub mod redact;
 pub mod remote_config;

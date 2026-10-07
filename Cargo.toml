@@ -29,6 +29,8 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 dashmap = "6"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 futures = "0.3"
+# No network transports: reads only; the git CLI does fetch/push (ARCHITECTURE §7).
+git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
 hex = "0.4"
 hmac = "0.12"
 http-body-util = "0.1"
