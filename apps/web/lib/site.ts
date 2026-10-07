@@ -21,7 +21,7 @@ export const SITE = {
     link: "https://github.com/NamanJain-Engineer",
   } as Founder,
   /** Year the company started (About). */
-  founded: "2026" as string | null,
+  founded: "2025" as string | null,
   /** The registered entity, once there is one. When set, it's shown on About,
    * Terms and Privacy and in the footer; until then the founder runs the site. */
   legal: null as Legal | null,
