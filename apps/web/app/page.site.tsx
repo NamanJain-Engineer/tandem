@@ -1,10 +1,13 @@
 import { Badge } from "@tandem/ui/components/Badge";
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { SiteFrame } from "../components/site/SiteFrame";
 import { PLANS } from "../lib/pricing";
 import { PROGRESS } from "../lib/progress";
 import { RELEASE } from "../lib/release";
 import { EARLY_ACCESS_HREF, ENGINES, SITE } from "../lib/site";
+
+export const metadata: Metadata = { alternates: { canonical: "/" } };
 
 /** What the desktop app does today (milestones M0–M5). */
 const FEATURES = [

@@ -17,7 +17,16 @@ import {
   securityTxt,
   sitemapXml,
 } from "../lib/site";
+import * as about from "./about/page.site";
 import AboutPage from "./about/page.site";
+import * as changelog from "./changelog/page.site";
+import * as download from "./download/page.site";
+import { metadata as rootMetadata } from "./layout.site";
+import * as home from "./page.site";
+import * as pricing from "./pricing/page.site";
+import * as privacy from "./privacy/page.site";
+import * as security from "./security/page.site";
+import * as terms from "./terms/page.site";
 import ChangelogPage from "./changelog/page.site";
 import DownloadPage from "./download/page.site";
 import PricingPage from "./pricing/page.site";
@@ -176,6 +185,16 @@ describe("public site", () => {
     const h = html(<HomePage />);
     expect(h).toContain("The goal is that Linux, macOS and Windows get the same features on the same day");
     expect(h).toContain("milestones in the 0.1.0 release");
+  });
+
+  it("F-WB-01 search engines get a canonical URL for every page, a share image and PNG icons", () => {
+    const canon = { "/": home, "/about/": about, "/changelog/": changelog, "/download/": download, "/pricing/": pricing, "/privacy/": privacy, "/security/": security, "/terms/": terms };
+    expect(Object.keys(canon).sort()).toEqual([...SITE_PAGES].sort());
+    for (const [path, mod] of Object.entries(canon)) expect(mod.metadata.alternates?.canonical, path).toBe(path);
+    expect(JSON.stringify(rootMetadata.openGraph)).toContain("/og.png");
+    expect(robotsTxt()).toContain("Allow: /");
+    for (const file of ["og.png", "icon.png", "apple-touch-icon.png"])
+      expect(existsSync(join(import.meta.dirname, `../public/${file}`)), file).toBe(true);
   });
 
   it("F-WB-01 no page shows a year", () => {

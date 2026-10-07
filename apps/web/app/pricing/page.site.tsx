@@ -5,7 +5,7 @@ import { CREDIT_VALUE_USD, PLANS } from "../../lib/pricing";
 import { RELEASE } from "../../lib/release";
 import { SITE } from "../../lib/site";
 
-export const metadata: Metadata = { title: "Pricing" };
+export const metadata: Metadata = { title: "Pricing", alternates: { canonical: "/pricing/" } };
 
 export default function PricingPage() {
   return (

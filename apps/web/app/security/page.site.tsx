@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { ProsePage } from "../../components/site/SiteFrame";
 import { SITE } from "../../lib/site";
 
-export const metadata: Metadata = { title: "Security" };
+export const metadata: Metadata = { title: "Security", alternates: { canonical: "/security/" } };
 
 export default function SecurityPage() {
   return (

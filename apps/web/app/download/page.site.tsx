@@ -4,7 +4,7 @@ import { SiteFrame } from "../../components/site/SiteFrame";
 import { CHECKSUMS_URL, DOWNLOADS, RELEASE, RELEASE_URL, assetUrl } from "../../lib/release";
 import { SITE } from "../../lib/site";
 
-export const metadata: Metadata = { title: "Download" };
+export const metadata: Metadata = { title: "Download", alternates: { canonical: "/download/" } };
 
 const START = [
   "Have at least one coding agent CLI installed and signed in, the way you use it today: Claude Code, Codex, Gemini CLI or another. Vibezeo finds it and never touches its sign-in.",

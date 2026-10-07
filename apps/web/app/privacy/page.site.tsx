@@ -3,7 +3,7 @@ import { ProsePage } from "../../components/site/SiteFrame";
 import { RELEASE } from "../../lib/release";
 import { OPERATOR, SITE } from "../../lib/site";
 
-export const metadata: Metadata = { title: "Privacy" };
+export const metadata: Metadata = { title: "Privacy", alternates: { canonical: "/privacy/" } };
 
 export default function PrivacyPage() {
   return (

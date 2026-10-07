@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { SiteFrame } from "../../components/site/SiteFrame";
 import { SITE } from "../../lib/site";
 
-export const metadata: Metadata = { title: `About ${SITE.company}` };
+export const metadata: Metadata = { title: `About ${SITE.company}`, alternates: { canonical: "/about/" } };
 
 const WAYS = [
   {

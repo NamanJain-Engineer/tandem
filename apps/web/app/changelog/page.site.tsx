@@ -4,7 +4,7 @@ import { MILESTONES, PROGRESS } from "../../lib/progress";
 import { RELEASE, RELEASE_URL } from "../../lib/release";
 import { SITE } from "../../lib/site";
 
-export const metadata: Metadata = { title: "Changelog" };
+export const metadata: Metadata = { title: "Changelog", alternates: { canonical: "/changelog/" } };
 
 export default function ChangelogPage() {
   return (
