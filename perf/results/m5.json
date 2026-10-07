@@ -1,0 +1,35 @@
+{
+  "startup": {
+    "date": "2026-10-07T06:06:21.675Z",
+    "machine": {
+      "os": "linux 6.18.44-fc-v77 (xvfb)",
+      "cpus": 4,
+      "cpuModel": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+      "memGb": 16,
+      "build": "perf"
+    },
+    "metrics": {
+      "coldStartInteractiveP50Ms": {
+        "value": 4175,
+        "target": 2000,
+        "op": "<=",
+        "unit": "ms",
+        "pass": false
+      },
+      "coldStartAllShellsP50Ms": {
+        "value": 11580,
+        "target": 4000,
+        "op": "<=",
+        "unit": "ms",
+        "pass": false
+      },
+      "dashboardOpenP50Ms": {
+        "value": 434,
+        "target": 500,
+        "op": "<=",
+        "unit": "ms",
+        "pass": true
+      }
+    }
+  }
+}

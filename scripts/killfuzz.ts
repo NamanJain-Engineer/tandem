@@ -257,7 +257,11 @@ for (let i = 1; i <= iterations; i++) {
 
 if (problems.length === 0) {
   console.log(`killfuzz: clean (${iterations} iterations, seed ${seed})`);
-  if (!flag("keep")) rmSync(work, { recursive: true, force: true });
+  // The last app's WebKit helpers can still be flushing caches for a moment.
+  if (!flag("keep")) {
+    await sleep(1_000);
+    rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+  }
   process.exit(0);
 }
 console.log(`killfuzz: ${problems.length} problem(s) (seed ${seed}, profile kept at ${work}):`);

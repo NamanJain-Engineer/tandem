@@ -28,6 +28,7 @@ Until these exist, release builds can't update (`updates_state` reads `unavailab
 - Review the UI labels the consistency pass flagged as generic but coincident with the reference product (CONSISTENCY_REPORT "Remaining known open items" 2).
 
 ## Manual QA checklist
+- M5: the startup suite (`pnpm --filter desktop perf -- --suite startup`, needs `gnome-keyring` on Linux) on the reference machines. The build VM (4 vCPU, Xvfb, software GL, perf build) records cold start to an interactive 16-shell window at P50 4,175 ms (target 2,000), all 16 shells at 11.6 s, Dashboard open with six agents 434 ms (target 500). The first shell spawns 2.7 s after process start and its zsh prompt lands ~1.4 s later; the rest follow the one-view-per-frame mount queue (~0.45 s per frame here). If the reference machine still misses, respawn restored shells in the core at launch (ARCHITECTURE §1.3 step 7) instead of on view mount.
 - M5: a real signed update per OS once the keys exist: AppImage self-replace and restart, macOS .app.tar.gz, Windows NSIS; a deb install shows "Updates are managed by your package manager" (E2E records the install instead of replacing the debug binary, D-94).
 - M2: the `tandem://` scheme on macOS and Windows (installed build): `tandem://open?path=/some/folder` opens the app and adds the folder.
 - M2: macOS overlay title bar with the traffic lights inset; the left cluster starts clear of them.
