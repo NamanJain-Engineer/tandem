@@ -21,8 +21,10 @@ export type PaneChromeProps = {
   badges?: ReactNode;
   /** The agent's first name (F-CD-12), before the title. */
   name?: string | null;
-  /** Location: cwd relative to the workspace, later the lane branch. */
+  /** Location: cwd relative to the workspace. */
   meta?: string | null;
+  /** After the location: the worktree branch chip (UI_SPEC §4.3). */
+  location?: ReactNode;
   /** Renames the pane; resolves to an error message, or null when done. */
   onRename?: (name: string) => Promise<string | null>;
   /** Asked from the menu: start editing the name. */
@@ -127,6 +129,7 @@ export function PaneChrome({
   badges,
   name,
   meta,
+  location,
   onRename,
   renaming = false,
   onRenamingChange,
@@ -172,6 +175,7 @@ export function PaneChrome({
           · {meta}
         </span>
       )}
+      {location}
       <span className="flex-1" />
       {badges}
       {/* Buttons don't start a drag. */}

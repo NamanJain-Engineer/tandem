@@ -18,6 +18,7 @@ export {
   type Tone,
 } from "./components/Composites";
 export { ConfirmDialog, Dialog, Sheet, type ConfirmDialogProps, type DialogProps, type SheetProps } from "./components/Dialog";
+export { DiffView, LARGE_DIFF_LINES, parsePatch, type DiffFile, type DiffLine, type DiffViewLabels } from "./components/DiffView";
 export { Input, SecretInput, Textarea, type InputProps, type SecretInputProps, type TextareaProps } from "./components/Field";
 export { EngineBadge, EngineGlyph } from "./components/EngineGlyph";
 export { IconButton, type IconButtonProps } from "./components/IconButton";

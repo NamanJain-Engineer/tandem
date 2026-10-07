@@ -1,3 +1,4 @@
+import { WorktreeDialogs } from "../code/Worktrees";
 import { useEffect } from "react";
 import { useToast } from "@tandem/ui";
 import { t } from "../../i18n";
@@ -131,6 +132,7 @@ export function AppShell() {
       </div>
       <StatusBar />
       <UpgradeDialog />
+      <WorktreeDialogs />
       <Palette />
       <OrphansDialog />
       <RestartDialog />

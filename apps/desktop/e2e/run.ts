@@ -145,6 +145,8 @@ async function main() {
     TANDEM_OPEN_URL_CMD: opener,
     TANDEM_NET_LOG: join(home, "net.log"),
     TANDEM_FAKE_PICK_FOLDER: join(home, "pick-folder.txt"),
+    // The native "Discard worktree?" confirm answers from this file (debug builds).
+    TANDEM_FAKE_CONFIRM: join(home, "confirm.txt"),
     TANDEM_HOOK_BIN: join(root, "target/debug/tandem-hook"),
     TANDEM_SPAWN_LOG: join(home, "spawn.log"),
     // The local update feed (scripts/mock-update-feed.ts, E2E-M5-7); it

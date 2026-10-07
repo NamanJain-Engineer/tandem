@@ -7,6 +7,7 @@ import { Checkbox, RadioGroup, Switch } from "../components/Choice";
 import { CommandPalette } from "../components/CommandPalette";
 import { Banner, Callout, EmptyState, KeyValue, ListRow, PageHeader, SettingsGroup, SettingsRow, Stepper } from "../components/Composites";
 import { ConfirmDialog, Dialog, Sheet } from "../components/Dialog";
+import { DiffView } from "../components/DiffView";
 import { Input, SecretInput, Textarea } from "../components/Field";
 import { IconButton } from "../components/IconButton";
 import { Kbd } from "../components/Kbd";
@@ -302,6 +303,34 @@ export const galleryEntries: GalleryEntry[] = [
       { name: "callout", render: () => <Callout tone="accent" title="Free includes 3 workspaces" actions={<Button size="sm" variant="primary">See plans</Button>}>Remove one from the rail (nothing on disk is deleted) or upgrade.</Callout> },
       { name: "key value", render: () => <KeyValue items={[{ key: "Plan", value: "PRO · renews 12 Oct" }, { key: "Credits", value: "8,420 of 10,000" }]} /> },
       { name: "stepper", render: () => <Stepper steps={["Theme", "Engines", "Dictate", "Workspace"]} current={1} /> },
+    ],
+  },
+  {
+    id: "diff-view",
+    title: "DiffView",
+    spec: "§2.25",
+    states: [
+      {
+        name: "unified",
+        render: () => (
+          <DiffView
+            className="w-[560px]"
+            files={[
+              {
+                path: "src/auth/guard.ts",
+                change: "modified",
+                additions: 2,
+                deletions: 1,
+                binary: false,
+                truncated: false,
+                patch: "@@ -10,4 +10,5 @@ export function guard(req) {\n   const token = read(req);\n-  if (!token) return deny();\n+  if (!token || expired(token)) return deny();\n+  refresh(token);\n   return allow(token);\n }",
+              },
+              { path: "assets/logo.png", change: "added", additions: 0, deletions: 0, binary: true, truncated: false, patch: "" },
+            ]}
+          />
+        ),
+      },
+      { name: "empty", render: () => <DiffView files={[]} /> },
     ],
   },
 ];

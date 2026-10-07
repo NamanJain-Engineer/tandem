@@ -43,8 +43,46 @@ impl GitError {
     }
 }
 
+/// Git refuses to commit (a merge, for one) until it has a name and an email.
+pub const NO_IDENTITY: &str = "Git doesn't know who you are yet. Run git config --global user.name \"Your Name\" and git config --global user.email you@example.com, then try again.";
+
+impl GitError {
+    /// Git stopped because no user.name / user.email is set.
+    pub fn is_missing_identity(&self) -> bool {
+        matches!(self, GitError::Command { stderr, .. }
+            if stderr.contains("Please tell me who you are") || stderr.contains("Committer identity unknown"))
+    }
+}
+
 impl From<GitError> for IpcError {
     fn from(err: GitError) -> Self {
+        if err.is_missing_identity() {
+            return IpcError::new(ErrorCode::Invalid, NO_IDENTITY).with_stage("git");
+        }
         IpcError::new(err.code(), err.to_string()).with_stage("git")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn f_cd_15_3_a_merge_without_a_git_identity_says_how_to_set_one() {
+        let err = GitError::Command {
+            op: "merge".into(),
+            code: Some(128),
+            stderr: "Committer identity unknown\n\n*** Please tell me who you are.\n".into(),
+        };
+        let ipc: IpcError = err.into();
+        assert_eq!(ipc.code, ErrorCode::Invalid);
+        assert!(ipc.message.contains("git config --global user.email"));
+        let other: IpcError = GitError::Command {
+            op: "merge".into(),
+            code: Some(1),
+            stderr: "boom".into(),
+        }
+        .into();
+        assert_eq!(other.message, "git merge failed: boom");
     }
 }

@@ -33,6 +33,8 @@ import { webglPool } from "./webglPool";
 import type { Activity } from "./commandMarks";
 import { TerminalView, copyLastOutput, terminalHandles, type Phase, type TerminalOptions } from "./TerminalView";
 import { PausedCard } from "./PausedCard";
+import { WorktreeChip, worktreeMenu } from "./Worktrees";
+import { baseBranch, isWorktree } from "../../stores/worktrees";
 
 const BOX_THROTTLE_MS = 50;
 
@@ -235,7 +237,11 @@ const PaneView = memo(function PaneView({
   const flashing = useFlash((st) => st.flashing[pane.id] !== undefined);
   // Location metadata: the cwd relative to the workspace root (F-CD-12).
   const cwd = useTerminals((st) => st.states[pane.id]?.cwd ?? null);
-  const root = useWorkspaces((st) => st.list.find((w) => w.id === pane.workspaceId)?.root ?? null);
+  const home = useWorkspaces((st) => st.list.find((w) => w.id === pane.workspaceId));
+  const root = home?.root ?? null;
+  // A pane in a worktree shows its branch and the worktree actions (UI_SPEC §4.3).
+  const wt = home && isWorktree(home) ? home : null;
+  const base = useWorkspaces((st) => (wt ? baseBranch(st.list, wt) : ""));
   const meta = relativeCwd(cwd ?? pane.cwd, root);
   const rename = async (name: string): Promise<string | null> => {
     try {
@@ -279,6 +285,7 @@ const PaneView = memo(function PaneView({
           ?.copyLast(n)
           .then((ok) => ok && show({ tone: "success", title: t("terminal.copied") })),
     })),
+    ...(wt ? [{ id: "sep-worktree", type: "separator" as const }, ...worktreeMenu(wt, base, show)] : []),
     {
       id: "close",
       label: t("pane.closePane"),
@@ -317,6 +324,7 @@ const PaneView = memo(function PaneView({
         glyph={pane.kind === "agent" && glyph ? <EngineGlyph letters={glyph} size={14} /> : undefined}
         name={pane.humanName}
         meta={meta}
+        location={wt ? <WorktreeChip wt={wt} /> : undefined}
         onRename={rename}
         renaming={renaming}
         onRenamingChange={setRenaming}

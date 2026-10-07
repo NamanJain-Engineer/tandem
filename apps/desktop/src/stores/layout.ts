@@ -58,6 +58,9 @@ type LayoutState = {
   requestSplit: (tabId: string, target: string | null, side: Side) => RequestResult;
   closePicker: () => void;
   split: (tabId: string, target: string | null, side: Side, launch?: Launch) => Promise<SplitResult>;
+  /** Places a pane the core already created (a worktree's pull-request
+   * shell) beside `target`, or the active pane, and focuses it. */
+  insert: (tabId: string, pane: PaneRecord, target: string | null, side: Side) => void;
   close: (tabId: string, paneId: string) => Promise<void>;
   /** A pane the core already closed (Dashboard Close idle): out of its tree. */
   dropPane: (paneId: string) => void;
@@ -245,21 +248,25 @@ export const useLayout = create<LayoutState>((set, get) => {
           kind: launch.kind,
           engineId: launch.kind === "agent" ? launch.engineId : undefined,
         });
-        const t = get().tabs[tabId] ?? EMPTY;
-        const anchor = target && contains(t.tree, target) ? target : (t.active ?? leaves(t.tree)[0] ?? null);
-        const tree = t.tree && anchor ? splitNode(t.tree, anchor, pane.id, side) : leaf(pane.id);
-        put(tabId, {
-          ...t,
-          tree,
-          active: pane.id,
-          maximized: null,
-          panes: { ...t.panes, [pane.id]: pane },
-          keepEmpty: false,
-        });
+        get().insert(tabId, pane, target, side);
         return { ok: true, pane };
       } catch (e) {
         return { ok: false, error: e as IpcError };
       }
+    },
+
+    insert: (tabId, pane, target, side) => {
+      const t = get().tabs[tabId] ?? EMPTY;
+      const anchor = target && contains(t.tree, target) ? target : (t.active ?? leaves(t.tree)[0] ?? null);
+      const tree = t.tree && anchor ? splitNode(t.tree, anchor, pane.id, side) : leaf(pane.id);
+      put(tabId, {
+        ...t,
+        tree,
+        active: pane.id,
+        maximized: null,
+        panes: { ...t.panes, [pane.id]: pane },
+        keepEmpty: false,
+      });
     },
 
     close: async (tabId, paneId) => {

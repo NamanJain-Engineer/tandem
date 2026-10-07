@@ -13,6 +13,8 @@ import { paneKey, statusView, useStatus } from "../../stores/status";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { RailList } from "../rail/RailList";
+import { topLevel, useWorktrees, worktreesOf } from "../../stores/worktrees";
+import { WorktreeRow } from "./Worktrees";
 import { paneTitles } from "./titles";
 import { pickAndAddWorkspace, switchMode } from "../shell/actions";
 import { PlanFooter } from "../shell/PlanFooter";
@@ -255,6 +257,13 @@ export function CodeRail() {
   ): MenuEntry[] => [
     { id: "pin", label: ws.pinned ? t("rail.unpin") : t("rail.pin"), onSelect: a.togglePin },
     { id: "rename", label: t("rail.rename"), kbd: ["F2"], onSelect: a.rename },
+    {
+      // Only a repository can have worktrees; the label says why it's off.
+      id: "new-worktree",
+      label: ws.branch ? t("worktree.new") : t("worktree.needsRepo"),
+      disabled: !ws.branch || ws.missing,
+      onSelect: () => useWorktrees.getState().open({ kind: "new", workspaceId: ws.id }),
+    },
     { id: "up", label: t("rail.moveUp"), onSelect: a.moveUp },
     { id: "down", label: t("rail.moveDown"), onSelect: a.moveDown },
     { id: "sep", type: "separator" },
@@ -297,7 +306,7 @@ export function CodeRail() {
       </div>
       <RailList
         label={t("rail.workspaces")}
-        items={list}
+        items={topLevel(list)}
         selectedId={activeId}
         collapsed={collapsed}
         expanded={Object.fromEntries(list.map((w) => [w.id, !w.collapsed]))}
@@ -329,7 +338,14 @@ export function CodeRail() {
               )}
             </>
           ),
-          children: <WorkspaceSessions ws={ws} />,
+          children: (
+            <>
+              <WorkspaceSessions ws={ws} />
+              {worktreesOf(list, ws.id).map((wt) => (
+                <WorktreeRow key={wt.id} wt={wt} base={ws.branch ?? "HEAD"} slot={<WorkspaceSlot ws={wt} />} />
+              ))}
+            </>
+          ),
         })}
         menu={menu}
         onOpen={(ws) => select(ws.id)}
