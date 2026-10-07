@@ -12,7 +12,6 @@ export const PROGRESS = {
 export type Milestone = {
   id: string;
   title: string;
-  month: string;
   items: readonly string[];
 };
 
@@ -21,7 +20,6 @@ export const MILESTONES: readonly Milestone[] = [
   {
     id: "M5",
     title: "Dashboard, notifications, restore and updates",
-    month: "October 2026",
     items: [
       "A Dashboard of every live agent across workspaces, with search, filters and grouping by status or project.",
       "A notification center, plus OS notifications when an agent waits for you, finishes or fails while you're elsewhere.",
@@ -34,7 +32,6 @@ export const MILESTONES: readonly Milestone[] = [
   {
     id: "M4",
     title: "Engines, provider homes and live status",
-    month: "October 2026",
     items: [
       "Detects 11 coding-agent CLIs, and shows how to install the missing ones.",
       "A separate provider home per engine account; each engine signs in by itself.",
@@ -45,7 +42,6 @@ export const MILESTONES: readonly Milestone[] = [
   {
     id: "M3",
     title: "Code mode",
-    month: "October 2026",
     items: [
       "Real PTY terminals in split layouts, with drag and drop, swap and maximize.",
       "Full-screen terminal apps such as vim and htop render as in a native terminal, checked against golden snapshots.",
@@ -56,7 +52,6 @@ export const MILESTONES: readonly Milestone[] = [
   {
     id: "M2",
     title: "Desktop app and sign-in",
-    month: "October 2026",
     items: [
       "The Tauri desktop app, its design system, settings and themes.",
       "Sign in with a Vibezeo account, or use the app offline.",
@@ -66,7 +61,6 @@ export const MILESTONES: readonly Milestone[] = [
   {
     id: "M1",
     title: "Accounts backend",
-    month: "October 2026",
     items: [
       "Accounts with email verification, signed entitlements and device management.",
       "Plans and billing, in test mode.",
@@ -76,7 +70,6 @@ export const MILESTONES: readonly Milestone[] = [
   {
     id: "M0",
     title: "Foundations",
-    month: "October 2026",
     items: [
       "Secret redaction for every log line, path containment and the local store.",
       "CI with lint, test and security gates.",

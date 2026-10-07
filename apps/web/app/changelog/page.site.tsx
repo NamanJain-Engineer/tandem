@@ -32,7 +32,6 @@ export default function ChangelogPage() {
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="font-mono text-sm text-accent">{m.id}</span>
               <h2 className="text-xl font-semibold tracking-tight">{m.title}</h2>
-              <span className="text-sm text-fg-subtle">{m.month}</span>
             </div>
             <ul className="flex flex-col gap-1.5 text-base text-fg-muted">
               {m.items.map((item) => (
