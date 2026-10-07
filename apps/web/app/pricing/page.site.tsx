@@ -2,6 +2,7 @@ import { Badge } from "@tandem/ui/components/Badge";
 import type { Metadata } from "next";
 import { SiteFrame } from "../../components/site/SiteFrame";
 import { CREDIT_VALUE_USD, PLANS } from "../../lib/pricing";
+import { RELEASE } from "../../lib/release";
 import { SITE } from "../../lib/site";
 
 export const metadata: Metadata = { title: "Pricing" };
@@ -11,15 +12,15 @@ export default function PricingPage() {
     <SiteFrame>
       <section className="mx-auto flex max-w-6xl flex-col items-start gap-4 px-6 pb-8 pt-16">
         <Badge variant="accent" dot>
-          Pricing at launch
+          Plans
         </Badge>
         <h1 className="text-3xl font-semibold tracking-tight">
           Free to run your agents. Pro when you run a lot.
         </h1>
         <p className="max-w-3xl text-lg text-fg-muted">
-          Free is available now as an early-access download. Pro and Team aren't on sale yet: these are the
-          plans they'll launch with. Your coding agents always run on your own subscriptions, so{" "}
-          {SITE.product} never charges for engine usage. Features marked{" "}
+          Free is available now: download {SITE.product} {RELEASE.version} for Linux. Pro and Team aren't on
+          sale yet: these are the plans they'll open with. Your coding agents always run on your own
+          subscriptions, so {SITE.product} never charges for engine usage. Features marked{" "}
           <span className="font-medium text-fg">Planned</span> arrive with later milestones.
         </p>
       </section>
@@ -75,8 +76,8 @@ export default function PricingPage() {
           <div className="flex flex-col items-start gap-3">
             <h2 className="text-xl font-semibold tracking-tight">Try the Free plan now</h2>
             <p className="text-md text-fg-muted">
-              The early-access build runs the Free plan on your computer, with no account, on macOS, Windows
-              and Linux.
+              {SITE.product} {RELEASE.version} runs the Free plan on your computer, with no account. It's out
+              for Linux now; macOS and Windows are next.
             </p>
             <a
               href="/download/"

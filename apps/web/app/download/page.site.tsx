@@ -15,7 +15,7 @@ const START = [
 
 const LIMITS = [
   "The Free plan: up to 4 panes and 3 workspaces.",
-  "No accounts yet, so no Pro, Team or hosted AI features. They come with launch.",
+  "No accounts yet, so no Pro, Team or hosted AI features. They come when accounts open.",
   "No automatic updates: new builds appear on this page.",
   "This build doesn't contact our servers and carries no analytics.",
 ];
@@ -25,12 +25,12 @@ export default function DownloadPage() {
     <SiteFrame>
       <section className="mx-auto flex max-w-6xl flex-col items-start gap-4 px-6 pb-8 pt-16">
         <Badge variant="accent" dot>
-          Early access · {RELEASE.version}
+          Released · {RELEASE.version}
         </Badge>
         <h1 className="text-3xl font-semibold tracking-tight">Download {SITE.product}</h1>
         <p className="max-w-3xl text-lg text-fg-muted">
-          The early-access build for Linux is out now; macOS and Windows are next. The Free plan runs on your
-          own computer, with the coding agents you already use. Released {RELEASE.date}.{" "}
+          {SITE.product} {RELEASE.version} is released for Linux. macOS and Windows are next. The Free plan
+          runs on your own computer, with the coding agents you already use. Released {RELEASE.date}.{" "}
           <a href={RELEASE_URL} className="text-accent hover:underline">
             Release notes
           </a>
@@ -95,7 +95,7 @@ export default function DownloadPage() {
           <a href={CHECKSUMS_URL} className="text-accent hover:underline">
             SHA256SUMS
           </a>
-          . Builds aren't code-signed yet; signing comes before launch.
+          . The build isn't code-signed yet.
         </p>
       </section>
 
@@ -112,7 +112,7 @@ export default function DownloadPage() {
             </ol>
           </div>
           <div className="flex flex-col gap-3">
-            <h2 className="text-xl font-semibold tracking-tight">What early access includes</h2>
+            <h2 className="text-xl font-semibold tracking-tight">What this release includes</h2>
             <ul className="flex flex-col gap-2 text-base text-fg-muted">
               {LIMITS.map((s) => (
                 <li key={s} className="ml-5 list-disc">

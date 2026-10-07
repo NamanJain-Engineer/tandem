@@ -125,7 +125,7 @@ export default function AboutPage() {
       <Block id="contact" title="Contact">
         <div className="flex max-w-3xl flex-col gap-3 text-md text-fg-muted">
           <p>
-            For early access, partnerships or anything else, email{" "}
+            For support, partnerships or anything else, email{" "}
             <a href={`mailto:${SITE.contactEmail}`} className="text-accent hover:underline">
               {SITE.contactEmail}
             </a>

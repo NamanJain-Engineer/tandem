@@ -43,7 +43,7 @@ describe("public site", () => {
   it("F-WB-01 home shows the tagline, the dev status, every engine and a way to get in touch", () => {
     const h = html(<HomePage />);
     expect(h).toContain(SITE.tagline);
-    expect(h).toContain(`Early access · ${RELEASE.version}`);
+    expect(h).toContain(`Released · ${RELEASE.version} for Linux`);
     for (const e of ENGINES) expect(h).toContain(`>${e}<`);
     expect(h).toContain(`mailto:${SITE.contactEmail}`);
     for (const id of ["demo", "claude", "features", "engines", "roadmap", "pricing", "team", "faq"])
@@ -80,8 +80,8 @@ describe("public site", () => {
     const h = html(<HomePage />);
     expect(h).toContain("Built with Claude");
     expect(h).toContain("--resume");
-    expect(h).toContain("Built, live at launch");
-    expect(h).toContain("go live with accounts at launch");
+    expect(h).toContain("Built, live when accounts open");
+    expect(h).toContain("go live when accounts open");
     expect(h).not.toContain("not built yet");
     // Dashboard approvals have no real source until Thread mode: never claim them.
     expect(h).not.toMatch(/approve or deny tool requests right on the card/i);
@@ -90,7 +90,7 @@ describe("public site", () => {
   it("F-WB-01 the home page leads to the download, takes feedback by email and shows the real progress figures", () => {
     const h = html(<HomePage />);
     expect(h).toContain(`href="/download/"`);
-    expect(h).toContain("Download early access");
+    expect(h).toContain("Download for Linux");
     expect(EARLY_ACCESS_HREF.startsWith(`mailto:${SITE.contactEmail}?subject=`)).toBe(true);
     expect(h).toContain(PROGRESS.automatedTests.toLocaleString("en-US"));
     expect(h).toContain(`href="/changelog/"`);
@@ -129,6 +129,21 @@ describe("public site", () => {
     expect(SITE_PAGES).toContain("/download/");
   });
 
+  it("F-WB-01 says the product is released for Linux and never claims a build that isn't out", () => {
+    // The release's tag name is part of the download URLs; the copy is what's checked.
+    const pages = [HomePage, DownloadPage, PricingPage]
+      .map((P) => html(<P />))
+      .join("\n")
+      .replaceAll(RELEASE.tag, "");
+    expect(pages).not.toMatch(/early.access/i);
+    expect(pages).not.toMatch(/at launch|before launch|with launch/i);
+    // macOS and Windows are only ever "next" or "coming soon", never available.
+    expect(pages).not.toMatch(/(for|on) macOS, Windows and Linux/);
+    expect(pages).not.toContain(".dmg");
+    expect(pages).not.toContain(".msi");
+    expect(pages).toContain("macOS and Windows are next");
+  });
+
   it("F-WB-01 pricing shows the launch plans from the spec and says Free is available now, Pro and Team not yet", () => {
     const h = html(<PricingPage />);
     expect(PLANS.map((p) => [p.name, p.price])).toEqual([
@@ -137,7 +152,7 @@ describe("public site", () => {
       ["Team", "$49"],
     ]);
     for (const p of PLANS) expect(h).toContain(`id="${p.id}"`);
-    expect(h).toContain("Pricing at launch");
+    expect(h).toContain("download Tandem");
     expect(h).toContain("on sale yet");
     expect(h).toContain("Free is available now");
     expect(h).toContain("$290 a year");

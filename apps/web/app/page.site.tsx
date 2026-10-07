@@ -55,9 +55,9 @@ const CLAUDE = [
     body: "Tandem is built with Claude Code. Most of the code, including the desktop app, the backend, this site and their tests, was written with it, and the commit history records it.",
   },
   {
-    tag: "Built, live at launch",
+    tag: "Built, live when accounts open",
     title: "Hosted features on the Claude API",
-    body: "Tandem's hosted AI runs on the Claude API. Session titles and Enhance and Polish for dictated prompts are built: the backend calls Claude, meters credits, and stores no prompts or responses. They go live with accounts at launch, alongside Thread mode and Dictate in the app. Teammate drafts and the Auto supervisor come next.",
+    body: "Tandem's hosted AI runs on the Claude API. Session titles and Enhance and Polish for dictated prompts are built: the backend calls Claude, meters credits, and stores no prompts or responses. They go live when accounts open, alongside Thread mode and Dictate in the app. Teammate drafts and the Auto supervisor come next.",
   },
 ] as const;
 
@@ -119,15 +119,15 @@ const PRINCIPLES = [
 const FAQ = [
   {
     q: "Can I use Tandem today?",
-    a: "Yes. The early-access build for Linux is on the download page, and macOS and Windows are next. It runs the Free plan on your computer with no account, and doesn't contact our servers. Accounts, Pro and Team come with launch.",
+    a: "Yes. Tandem 0.1.0 is released for Linux: download it from the download page. macOS and Windows are next. It runs the Free plan on your computer with no account, and doesn't contact our servers. Accounts, Pro and Team come later.",
   },
   {
     q: "How does Tandem use Claude?",
-    a: "Claude Code is the engine Tandem integrates most deeply, and Tandem itself is built with Claude Code. Its hosted AI features run on the Claude API: session titles and Enhance and Polish are built, and go live with accounts at launch.",
+    a: "Claude Code is the engine Tandem integrates most deeply, and Tandem itself is built with Claude Code. Its hosted AI features run on the Claude API: session titles and Enhance and Polish are built, and go live when accounts open.",
   },
   {
-    q: "Which platforms will it support?",
-    a: "macOS 14 or later, Windows 10 and 11 (x64), and Linux x86_64 (AppImage and .deb). We develop and test on Linux first, and build every platform in CI.",
+    q: "Which platforms does it support?",
+    a: "Linux x86-64 today (.deb for Debian and Ubuntu). macOS and Windows 10 and 11 are next: the app already compiles for both in CI. We develop and test on Linux first.",
   },
   {
     q: "Does Tandem see my API keys or subscription tokens?",
@@ -139,7 +139,7 @@ const FAQ = [
   },
   {
     q: "What will it cost?",
-    a: "At launch: Free at $0, Pro at $29 a month and Team at $49 per seat a month. Nothing is on sale yet. The plans are on the Pricing page.",
+    a: "Free is $0 and available now. Pro ($29 a month) and Team ($49 per seat a month) aren't on sale yet. The plans are on the Pricing page.",
   },
 ] as const;
 
@@ -195,7 +195,7 @@ export default function HomePage() {
       <section className="mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="flex flex-col items-start gap-5">
           <Badge variant="accent" dot>
-            Early access · {RELEASE.version}
+            Released · {RELEASE.version} for Linux
           </Badge>
           <h1 className="text-3xl font-semibold tracking-tight">{SITE.tagline}</h1>
           <p className="text-lg text-fg-muted">
@@ -208,7 +208,7 @@ export default function HomePage() {
               href="/download/"
               className="rounded-sm bg-accent px-4 py-2 text-md font-medium text-accent-fg hover:bg-accent-hover"
             >
-              Download early access →
+              Download for Linux →
             </a>
             <a
               href="#demo"
@@ -218,7 +218,8 @@ export default function HomePage() {
             </a>
           </div>
           <p className="text-sm text-fg-muted">
-            Free early access for Linux now, macOS and Windows next. No account needed: it runs on your computer.
+            Free, and out now for Linux. macOS and Windows are next. No account needed: it runs on your
+            computer.
           </p>
         </div>
         <Screenshot
@@ -388,7 +389,7 @@ export default function HomePage() {
         </div>
       </Section>
 
-      <Section id="pricing" eyebrow="Pricing at launch" title="Free to run your agents">
+      <Section id="pricing" eyebrow="Pricing" title="Free to run your agents">
         <ul className="grid gap-4 sm:grid-cols-3">
           {PLANS.map((p) => (
             <li key={p.id} className="flex flex-col gap-1 rounded-md border border-border bg-surface-1 p-5">
@@ -425,7 +426,7 @@ export default function HomePage() {
           <div className="flex flex-col gap-1">
             <h2 className="text-xl font-semibold tracking-tight">Try it on your own projects</h2>
             <p className="text-md text-fg-muted">
-              Download the early-access build, then{" "}
+              Download {SITE.product} for Linux, then{" "}
               <a href={EARLY_ACCESS_HREF} className="text-accent hover:underline">
                 tell us what works and what doesn't
               </a>{" "}

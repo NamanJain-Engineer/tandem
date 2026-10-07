@@ -8,15 +8,15 @@ export default function TermsPage() {
   return (
     <ProsePage title="Terms of use" updated={SITE.updated}>
       <p>
-        These terms cover your use of this website and of the {SITE.product} early-access builds, run by{" "}
-        {OPERATOR}. By using either you agree to them.
+        These terms cover your use of this website and of the {SITE.product} desktop app, run by {OPERATOR}.
+        By using either you agree to them.
       </p>
 
       <h2>The site</h2>
       <ul>
         <li>
-          The site describes {SITE.product}, a desktop app in early access. Features, platforms and plans
-          described here may change before launch.
+          The site describes {SITE.product}, a desktop app. Features, platforms and plans described here may
+          change.
         </li>
         <li>
           The content is provided as is, for information. We work to keep it accurate but make no warranty
@@ -27,16 +27,16 @@ export default function TermsPage() {
         </li>
       </ul>
 
-      <h2>Early-access builds</h2>
+      <h2>The desktop app</h2>
       <ul>
         <li>
-          You may install and use the early-access builds on your own computers, for personal or work
-          projects, free of charge.
+          You may install and use the desktop app on your own computers, for personal or work projects, free
+          of charge.
         </li>
         <li>Don't sell or redistribute them. Link to the download page instead.</li>
         <li>
-          They're provided as is, without warranty. Pre-release software can have bugs: keep backups of your
-          work and use version control.
+          They're provided as is, without warranty. Software can have bugs: keep backups of your work and use
+          version control.
         </li>
         <li>
           The coding agents you run in {SITE.product} use your own accounts with their providers, under those
@@ -54,7 +54,7 @@ export default function TermsPage() {
       <h2>Liability</h2>
       <p>
         To the extent the law allows, {OPERATOR} isn't liable for any loss that comes from using this site or
-        the early-access builds.
+        the desktop app.
       </p>
 
       <h2>Contact</h2>

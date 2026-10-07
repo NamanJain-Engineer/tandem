@@ -63,10 +63,10 @@ export const SITE_PAGES = [
   "/security/",
 ] as const;
 
-/** Feedback from early-access users: a prefilled email, so people can tell
+/** Feedback from users: a prefilled email, so people can tell
  * us what they run. The site keeps no form or list of its own. */
 export const EARLY_ACCESS_HREF = `mailto:${SITE.contactEmail}?subject=${encodeURIComponent(
-  `${SITE.product} early access`,
+  `${SITE.product} feedback`,
 )}&body=${encodeURIComponent(
   "Hi,\n\nI'm trying Tandem.\n\nMy OS (macOS / Windows / Linux):\nCoding agents I use (e.g. Claude Code, Codex):\nWhat works, what doesn't:\n",
 )}`;

@@ -15,9 +15,9 @@ export default function ChangelogPage() {
         <p className="text-lg text-fg-muted">
           {SITE.product} is built in milestones. Each one closes with its features tested end to end on the
           real app: {PROGRESS.automatedTests.toLocaleString("en-US")} automated tests and{" "}
-          {PROGRESS.endToEndSuites} end-to-end suites as of {PROGRESS.asOf}. The first public build,{" "}
+          {PROGRESS.endToEndSuites} end-to-end suites as of {PROGRESS.asOf}. The first release,{" "}
           <a href={RELEASE_URL} className="text-accent hover:underline">
-            {RELEASE.version} early access
+            {SITE.product} {RELEASE.version} for Linux
           </a>
           , came out in {RELEASE.date}:{" "}
           <a href="/download/" className="text-accent hover:underline">
