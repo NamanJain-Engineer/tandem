@@ -23,7 +23,6 @@ const NAV = [
 /** Header, main and footer for the public pages. Plain links: the site is
  * static and works without JavaScript. */
 export function SiteFrame({ children }: { children: ReactNode }) {
-  const year = new Date().getFullYear();
   return (
     <div className="flex min-h-screen flex-col bg-bg text-fg">
       <a
@@ -61,7 +60,7 @@ export function SiteFrame({ children }: { children: ReactNode }) {
       <footer className="border-t border-divider">
         <div className="mx-auto flex max-w-5xl flex-col gap-3 px-6 py-8 text-sm text-fg-muted sm:flex-row sm:items-center">
           <span>
-            © {year} {SITE.legal?.name ?? SITE.company} · Built by {SITE.founder.name}.
+            © {SITE.legal?.name ?? SITE.company} · Built by {SITE.founder.name}.
           </span>
           <nav aria-label="Legal" className="flex flex-wrap gap-x-5 gap-y-2 sm:ml-auto">
             <a href="/about/" className="hover:text-fg">
