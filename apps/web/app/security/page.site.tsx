@@ -34,8 +34,9 @@ export default function SecurityPage() {
           look-alike characters can't escape it.
         </li>
         <li>
-          <strong className="text-fg">Approvals are explicit.</strong> When an agent asks to run a tool, you
-          approve or deny it. Unattended work never inherits interactive full access.
+          <strong className="text-fg">Approvals stay with you.</strong> When an agent asks permission to run a
+          tool, {SITE.product} marks it as waiting for you and never answers on your behalf. Unattended work
+          never inherits interactive full access.
         </li>
         <li>
           <strong className="text-fg">Updates are signed.</strong> The app verifies each update's signature
