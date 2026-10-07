@@ -19,7 +19,7 @@ pub const TAIL_LINES: usize = 200;
 pub fn bundle(logs_dir: &Path, data_root: &Path, info: &DiagnosticsInfo) -> String {
     let redactor = Redactor::global();
     let mut out = String::new();
-    out.push_str(&format!("Tandem {} ({})\n", info.app_version, info.build));
+    out.push_str(&format!("Vibezeo {} ({})\n", info.app_version, info.build));
     out.push_str(&format!(
         "OS: {} {}\n",
         std::env::consts::OS,

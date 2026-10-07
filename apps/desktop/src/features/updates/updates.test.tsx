@@ -90,7 +90,7 @@ describe("updates (F-SH-06)", () => {
     await waitFor(() => expect(calls.some((c) => c.cmd === "updates_install")).toBe(true));
   });
 
-  it("F-SH-06.1 with nothing running the dialog says Tandem restarts in a few seconds; Later keeps the pill", async () => {
+  it("F-SH-06.1 with nothing running the dialog says Vibezeo restarts in a few seconds; Later keeps the pill", async () => {
     setup(ready);
     await useUpdates.getState().load();
     mount(
@@ -101,7 +101,7 @@ describe("updates (F-SH-06)", () => {
     );
     fireEvent.click(screen.getByTestId("update-pill"));
     const dialog = await screen.findByRole("dialog");
-    await waitFor(() => expect(within(dialog).getByText("Tandem will restart in a few seconds.")).toBeTruthy());
+    await waitFor(() => expect(within(dialog).getByText("Vibezeo will restart in a few seconds.")).toBeTruthy());
     fireEvent.click(within(dialog).getByRole("button", { name: "Later" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByTestId("update-pill")).toBeTruthy();
@@ -188,7 +188,7 @@ describe("updates (F-SH-06)", () => {
       </UiProvider>,
     );
     const overlay = screen.getByTestId("unsupported-overlay");
-    expect(within(overlay).getByRole("heading").textContent).toBe("This version of Tandem is no longer supported");
+    expect(within(overlay).getByRole("heading").textContent).toBe("This version of Vibezeo is no longer supported");
     expect(within(overlay).getByRole("button", { name: "Update now" })).toBeTruthy();
     expect(screen.queryByTestId("banner-unsupported")).toBeNull();
   });

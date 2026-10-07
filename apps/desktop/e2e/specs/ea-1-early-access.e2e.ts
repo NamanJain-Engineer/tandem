@@ -25,7 +25,7 @@ describe("EA-1 early-access build", () => {
     await $("p=Early access").waitForDisplayed({ timeout: 10_000 });
     expect(await $("button=Continue with Google").isExisting()).toBe(false);
 
-    await $("button=Start using Tandem").click();
+    await $("button=Start using Vibezeo").click();
     await $('[data-testid="plan-footer"]').waitForExist({ timeout: 20_000 });
 
     let refused = "";

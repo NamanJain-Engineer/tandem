@@ -26,7 +26,7 @@ async function resolveBackend(): Promise<InvokeFn> {
     const core = await import("@tauri-apps/api/core");
     return (cmd, args) => core.invoke(cmd, args);
   }
-  throw toIpcError({ code: "unavailable", message: "Tandem's core isn't running." });
+  throw toIpcError({ code: "unavailable", message: "Vibezeo's core isn't running." });
 }
 
 function toIpcError(e: unknown): IpcError {

@@ -344,7 +344,7 @@ pub struct AuthService {
 pub enum AuthError {
     #[error("Sign in to use this")]
     Unauthenticated,
-    #[error("Couldn't reach Tandem. Check your connection.")]
+    #[error("Couldn't reach Vibezeo. Check your connection.")]
     Network,
 }
 
@@ -369,7 +369,7 @@ fn failure(kind: AuthFailureKind, err: Option<&ApiError>) -> AuthFailure {
         AuthFailureKind::Callback => "Sign-in timed out. Try again.",
         AuthFailureKind::Expired => "That link has expired.",
         AuthFailureKind::Network => {
-            "Couldn't reach Tandem. Check your connection or continue offline."
+            "Couldn't reach Vibezeo. Check your connection or continue offline."
         }
     };
     let code = match err {
@@ -857,10 +857,10 @@ fn callback_page(cb: &Callback) -> String {
         cb.state
     );
     format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Tandem</title>\
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Vibezeo</title>\
          <style>body{{font:15px system-ui,sans-serif;background:#0b111c;color:#dbe4ef;display:grid;place-items:center;height:100vh;margin:0}}\
-         a{{color:#2dd4bf}}</style></head><body><main><h1>You can return to Tandem.</h1>\
-         <p>If Tandem didn't come to the front, <a href=\"{link}\">open Tandem</a>.</p></main></body></html>"
+         a{{color:#2dd4bf}}</style></head><body><main><h1>You can return to Vibezeo.</h1>\
+         <p>If Vibezeo didn't come to the front, <a href=\"{link}\">open Vibezeo</a>.</p></main></body></html>"
     )
 }
 
@@ -1125,7 +1125,7 @@ pub mod tests {
         let state = query(&opened, "state");
 
         let page = http_get(&format!("{redirect}?code=good-code&state={state}")).await;
-        assert!(page.contains("You can return to Tandem."));
+        assert!(page.contains("You can return to Vibezeo."));
         let s = wait_for(&r.auth, |s| s.signed_in).await;
         assert!(
             s.signed_in && s.pending.is_none() && s.error.is_none(),

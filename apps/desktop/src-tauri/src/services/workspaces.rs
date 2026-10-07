@@ -75,7 +75,7 @@ pub async fn add(
         .ok_or_else(|| {
             IpcError::new(
                 ErrorCode::Invalid,
-                "Tandem can't open folders whose names aren't valid UTF-8",
+                "Vibezeo can't open folders whose names aren't valid UTF-8",
             )
         })?
         .to_string();

@@ -21,7 +21,7 @@ pub const READERS: usize = 4;
 pub enum StoreError {
     #[error("database error: {0}")]
     Sqlite(#[from] rusqlite::Error),
-    #[error("Tandem couldn't upgrade its data. Your data is unchanged. ({0})")]
+    #[error("Vibezeo couldn't upgrade its data. Your data is unchanged. ({0})")]
     Migration(String),
     #[error("{0}")]
     NotFound(String),

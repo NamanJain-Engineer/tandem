@@ -120,7 +120,7 @@ pub async fn billing_open(
         if e.is_network() {
             IpcError::new(
                 ErrorCode::Unavailable,
-                "Couldn't reach Tandem. Check your connection.",
+                "Couldn't reach Vibezeo. Check your connection.",
             )
             .with_stage("network")
         } else {

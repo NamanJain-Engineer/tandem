@@ -33,7 +33,7 @@ pub enum HomeError {
     Io(#[from] io::Error),
     #[error("{file} isn't valid {kind}; leaving it as it is")]
     Parse { file: String, kind: &'static str },
-    #[error("that folder isn't a Tandem provider home")]
+    #[error("that folder isn't a Vibezeo provider home")]
     NotOwned,
 }
 

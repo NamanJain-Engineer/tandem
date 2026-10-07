@@ -124,7 +124,7 @@ describe("E2E-M5-7 updater", () => {
     // The overlay comes back on focus (and every minute).
     await browser.execute(() => window.dispatchEvent(new Event("focus")));
     await $('[data-testid="unsupported-overlay"]').waitForExist({ timeout: 10_000 });
-    expect(await textOf("#unsupported-title")).toBe("This version of Tandem is no longer supported");
+    expect(await textOf("#unsupported-title")).toBe("This version of Vibezeo is no longer supported");
     // Back to a supported minimum: the notice clears.
     await minAppVersion(originalMin);
     await invoke("entitlement_refresh");

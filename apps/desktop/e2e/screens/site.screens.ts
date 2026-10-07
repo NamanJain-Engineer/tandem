@@ -92,7 +92,17 @@ describe("site screenshots", () => {
 
   before(() => {
     mkdirSync(out, { recursive: true });
-    execFileSync("git", ["clone", "-q", "--depth", "80", `file://${repo}`, join(work, "tandem")]);
+    execFileSync("git", ["clone", "-q", "--depth", "80", `file://${repo}`, join(work, "vibezeo")]);
+    // `git recent`: the product's own history (the app and its crates), one
+    // line per commit, without internal code names, release-channel or
+    // dated subjects.
+    execFileSync("git", [
+      "-C",
+      join(work, "vibezeo"),
+      "config",
+      "alias.recent",
+      "!git --no-pager log --oneline --decorate --color=always -n 14 -i --invert-grep --grep=tandem --grep=early --grep='20[0-9][0-9]' -- crates apps/desktop",
+    ]);
     // The run's HOME is a temp dir: point the shells at this machine's Rust
     // toolchain and build cache so `cargo test` in a pane runs as usual.
     const cargoHome = process.env.CARGO_HOME ?? join(process.env.TANDEM_REAL_HOME ?? "/root", ".cargo");
@@ -111,7 +121,7 @@ describe("site screenshots", () => {
 
   it("code mode: four real terminals over this repository", async () => {
     await freshOffline();
-    const ws = join(work, "tandem");
+    const ws = join(work, "vibezeo");
     await addFolder(ws);
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
     const [first] = await paneIds();
@@ -119,11 +129,11 @@ describe("site screenshots", () => {
     const belowRight = await split("down");
     await $(`[data-testid="pane"][data-pane-id="${first}"]`).click();
     const belowLeft = await split("down");
-    await sendToPane(first ?? "", "git --no-pager log --oneline --decorate --color=always -n 14\r");
+    await sendToPane(first ?? "", "git recent\r");
     await sendToPane(right, "htop\r");
-    // How Tandem reads Claude Code's hooks.
-    await sendToPane(belowLeft, "vim +/PreToolUse crates/tandem-engines/src/hook.rs\r");
-    await sendToPane(belowRight, "cargo test -q -p tandem-core --lib 2>&1 | tail -n 12\r");
+    // How Vibezeo reads Claude Code's hooks.
+    await sendToPane(belowLeft, "(cd crates/*engines/src && vim +/PreToolUse hook.rs)\r");
+    await sendToPane(belowRight, "(cd crates/*core && cargo test -q --lib 2>&1 | tail -n 12)\r");
     await waitForPaneText(first ?? "", "M5:", 20_000);
     await waitForPaneText(belowRight, "test result", 240_000);
     await shot("code-mode");

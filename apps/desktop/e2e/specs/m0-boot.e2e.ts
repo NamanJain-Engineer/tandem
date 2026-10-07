@@ -7,11 +7,11 @@ import { expectNoSeriousA11yViolations } from "../support/axe";
 describe("E2E-M0-1 boot smoke", () => {
   // Since M2 the splash is a transient boot state and a fresh launch lands
   // on UI-03 sign-in; the window and catalog copy are what M0 asserts.
-  it("shows the Tandem window with catalog copy", async () => {
-    await browser.waitUntil(async () => (await browser.getTitle()) === "Tandem", { timeout: 20_000 });
+  it("shows the Vibezeo window with catalog copy", async () => {
+    await browser.waitUntil(async () => (await browser.getTitle()) === "Vibezeo", { timeout: 20_000 });
     const heading = await $("h1");
     await heading.waitForDisplayed({ timeout: 20_000 });
-    expect(["Tandem", "Welcome to Tandem"]).toContain(await heading.getText());
+    expect(["Vibezeo", "Welcome to Vibezeo"]).toContain(await heading.getText());
   });
 
   it("has no serious accessibility violations", async () => {

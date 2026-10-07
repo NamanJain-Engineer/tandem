@@ -1,7 +1,7 @@
 // The TANDEM_OPEN_URL_CMD target for desktop E2E (MILESTONES M2): instead of
 // a real browser, drive headless Chromium through what the app opened.
 //   /desktop-login → sign in on the web, follow the redirect to the app's
-//                    loopback callback ("You can return to Tandem.")
+//                    loopback callback ("You can return to Vibezeo.")
 //   /billing/mock  → sign in, complete the mock checkout
 // Credentials come from $TANDEM_HOME/e2e-browser.json, written by the spec.
 // Every step is appended to $TANDEM_HOME/e2e-browser.log.
@@ -37,8 +37,8 @@ async function main() {
     if (url.pathname === "/desktop-login") {
       await signInThenGo(page, url, creds);
       await page.waitForURL(/127\.0\.0\.1:\d+\/callback/, { timeout: 30_000 });
-      await page.getByText("You can return to Tandem.").waitFor({ timeout: 10_000 });
-      say("signin:returned You can return to Tandem.");
+      await page.getByText("You can return to Vibezeo.").waitFor({ timeout: 10_000 });
+      say("signin:returned You can return to Vibezeo.");
     } else if (url.pathname === "/billing/mock") {
       await signInThenGo(page, url, creds);
       await page.waitForURL(/\/billing\/mock/, { timeout: 30_000 });

@@ -59,7 +59,17 @@ describe("demo video", () => {
 
   before(() => {
     mkdirSync(out, { recursive: true });
-    execFileSync("git", ["clone", "-q", "--depth", "80", `file://${repo}`, join(work, "tandem")]);
+    execFileSync("git", ["clone", "-q", "--depth", "80", `file://${repo}`, join(work, "vibezeo")]);
+    // `git recent`: the product's own history (the app and its crates), one
+    // line per commit, without internal code names, release-channel or
+    // dated subjects.
+    execFileSync("git", [
+      "-C",
+      join(work, "vibezeo"),
+      "config",
+      "alias.recent",
+      "!git --no-pager log --oneline --decorate --color=always -n 14 -i --invert-grep --grep=tandem --grep=early --grep='20[0-9][0-9]' -- crates apps/desktop",
+    ]);
     const cargoHome = process.env.CARGO_HOME ?? join(process.env.TANDEM_REAL_HOME ?? "/root", ".cargo");
     const rustupHome = process.env.RUSTUP_HOME ?? join(process.env.TANDEM_REAL_HOME ?? "/root", ".rustup");
     setProfile([
@@ -78,7 +88,7 @@ describe("demo video", () => {
   it("records launch, four terminals, a crash and the restore", async function () {
     this.timeout(600_000);
     await freshOffline();
-    await addFolder(join(work, "tandem"));
+    await addFolder(join(work, "vibezeo"));
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
     // Detect again with this machine's PATH: the real `claude`, not the
     // harness's fake engine, must be what the video shows. The launch grid
@@ -124,17 +134,17 @@ describe("demo video", () => {
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 10_000 });
     const [first] = await paneIds();
     await waitForPaneText(first ?? "", "#", 20_000);
-    await typeIn(first ?? "", "git --no-pager log --oneline --decorate --color=always -n 14");
+    await typeIn(first ?? "", "git recent");
     await pause(1_500);
     // 2. Three more terminals: htop, the Claude Code hook handler, the tests.
     const right = await split("right");
     await typeIn(right, "htop");
     await pause(1_200);
     const belowRight = await split("down");
-    await typeIn(belowRight, "cargo test -q -p tandem-core --lib 2>&1 | tail -n 12");
+    await typeIn(belowRight, "(cd crates/*core && cargo test -q --lib 2>&1 | tail -n 12)");
     await $(`[data-testid="pane"][data-pane-id="${first}"]`).click();
     const belowLeft = await split("down");
-    await typeIn(belowLeft, "vim +/PreToolUse crates/tandem-engines/src/hook.rs");
+    await typeIn(belowLeft, "(cd crates/*engines/src && vim +/PreToolUse hook.rs)");
     await waitForPaneText(belowRight, "test result", 240_000);
     await pause(3_500);
 

@@ -324,7 +324,7 @@ pub fn run() {
     let state = match AppState::init() {
         Ok(state) => state,
         Err(err) => {
-            eprintln!("Tandem couldn't start: {err}");
+            eprintln!("Vibezeo couldn't start: {err}");
             std::process::exit(1);
         }
     };
@@ -392,7 +392,7 @@ pub fn run() {
             let state = app.state::<AppState>();
             paint_theme_background(app, &state);
             if let Some(window) = app.get_webview_window("main") {
-                window.set_title("Tandem")?;
+                window.set_title("Vibezeo")?;
             }
             services::events::forward(handle.clone(), &state.bus);
             ensure_on_screen(app);

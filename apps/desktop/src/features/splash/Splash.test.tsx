@@ -6,7 +6,7 @@ import { Splash } from "./Splash";
 describe("UI-02 splash", () => {
   it("renders labels from the i18n catalog while starting", async () => {
     const { container } = render(<Splash />);
-    expect(screen.getByRole("heading", { name: "Tandem" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Vibezeo" })).toBeTruthy();
     expect(screen.getByRole("status").textContent).toBe("Starting…");
     expect(await axe(container)).toHaveNoViolations();
   });

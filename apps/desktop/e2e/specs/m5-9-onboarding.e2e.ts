@@ -29,7 +29,7 @@ describe("E2E-M5-9 onboarding", () => {
     await freshProfile();
     // Welcome is the sign-in screen.
     await $("#signin-title").waitForDisplayed({ timeout: 20_000 });
-    await $("button=Use Tandem offline").click();
+    await $("button=Use Vibezeo offline").click();
     await atStep("engines");
     expect(await textOf('[data-testid="onboarding"] h1')).toBe("Set up your coding agents");
     await expectNoSeriousA11yViolations();

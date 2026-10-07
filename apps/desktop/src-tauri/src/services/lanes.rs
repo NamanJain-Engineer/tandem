@@ -93,7 +93,7 @@ pub async fn create(
     let root = lane.path.to_str().map(str::to_string).ok_or_else(|| {
         IpcError::new(
             ErrorCode::Invalid,
-            "Tandem can't open folders whose names aren't valid UTF-8",
+            "Vibezeo can't open folders whose names aren't valid UTF-8",
         )
     });
     let row = match root {

@@ -35,7 +35,7 @@ describe("early-access builds (D-105)", () => {
     expect(screen.getByText("Early access")).toBeTruthy();
     expect(screen.queryByText("Continue with Google")).toBeNull();
     expect(screen.queryByText("Continue with email")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Start using Tandem" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start using Vibezeo" }));
     await waitFor(() => expect(calls.some((c) => c.cmd === "auth_continue_offline")).toBe(true));
     expect(calls.some((c) => c.cmd === "auth_sign_in")).toBe(false);
   });
@@ -49,7 +49,7 @@ describe("early-access builds (D-105)", () => {
       </UiProvider>,
     );
     expect(screen.getByText("Continue with Google")).toBeTruthy();
-    expect(screen.getByText("Use Tandem offline")).toBeTruthy();
+    expect(screen.getByText("Use Vibezeo offline")).toBeTruthy();
   });
 
   it("Account & Plan explains early access without a sign-in button", () => {

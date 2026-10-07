@@ -22,7 +22,7 @@ pub fn run(conn: &mut Connection, db: &Path, backups: &Path) -> Result<(), Store
     let version = current_version(conn)?;
     if version > MIGRATIONS.len() {
         return Err(StoreError::Migration(format!(
-            "this database was written by a newer Tandem (schema {version})"
+            "this database was written by a newer Vibezeo (schema {version})"
         )));
     }
     if version == MIGRATIONS.len() {

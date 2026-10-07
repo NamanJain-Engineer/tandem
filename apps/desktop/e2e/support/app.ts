@@ -137,7 +137,7 @@ export function uniqueEmail(tag: string): string {
 
 /** Waits for the app shell or the sign-in screen after a (re)launch. */
 export async function waitForApp(): Promise<void> {
-  await browser.waitUntil(async () => (await browser.getTitle()) === "Tandem", { timeout: 30_000 });
+  await browser.waitUntil(async () => (await browser.getTitle()) === "Vibezeo", { timeout: 30_000 });
   await browser.waitUntil(
     async () =>
       (await $("header[role=banner]").isExisting()) ||
@@ -288,10 +288,10 @@ export async function freshProfile(): Promise<void> {
   await resetState({ onboarded: false });
 }
 
-/** "Use Tandem offline" with no workspaces: survives relaunches. */
+/** "Use Vibezeo offline" with no workspaces: survives relaunches. */
 export async function freshOffline(): Promise<void> {
   await resetState();
-  await $("button=Use Tandem offline").click();
+  await $("button=Use Vibezeo offline").click();
   await $('[data-testid="plan-footer"]').waitForExist({ timeout: 20_000 });
 }
 

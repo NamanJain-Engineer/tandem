@@ -90,7 +90,7 @@ fn resolves(host_port: &str) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ApiError {
     /// Couldn't connect, timed out, or the server is down (5xx).
-    #[error("couldn't reach Tandem: {0}")]
+    #[error("couldn't reach Vibezeo: {0}")]
     Network(String),
     #[error("{status} {code}")]
     Http {
@@ -98,7 +98,7 @@ pub enum ApiError {
         code: String,
         detail: Option<String>,
     },
-    #[error("unexpected response from Tandem")]
+    #[error("unexpected response from Vibezeo")]
     Decode(String),
 }
 

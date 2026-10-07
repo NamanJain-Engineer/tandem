@@ -14,13 +14,13 @@ describe("E2E-M2-1 walking skeleton", () => {
   it("launches fresh at sign-in, which passes axe", async () => {
     await waitForApp();
     await $("#signin-title").waitForDisplayed({ timeout: 20_000 });
-    expect(await $("#signin-title").getText()).toBe("Welcome to Tandem");
+    expect(await $("#signin-title").getText()).toBe("Welcome to Vibezeo");
     await expectNoSeriousA11yViolationsInBothThemes();
   });
 
   it("signs in through the scripted browser and shows FREE", async () => {
     await signInDesktop(email);
-    expect(browserLog()).toContain("You can return to Tandem.");
+    expect(browserLog()).toContain("You can return to Vibezeo.");
     await browser.waitUntil(async () => (await planFooter()) === "FREE", { timeout: 15_000, timeoutMsg: `footer: ${await planFooter()}` });
   });
 

@@ -46,7 +46,7 @@ describe("title bar (F-SH-01)", () => {
     expect(controls.length).toBeGreaterThan(8);
     for (const c of controls) expect(c.getAttribute("aria-label") ?? c.textContent?.trim()).toBeTruthy();
     const names = controls.map((c) => c.getAttribute("aria-label") ?? c.textContent?.trim());
-    expect(names.indexOf("Tandem menu")).toBeLessThan(names.indexOf("Toggle left sidebar"));
+    expect(names.indexOf("Vibezeo menu")).toBeLessThan(names.indexOf("Toggle left sidebar"));
     expect(names.indexOf("Toggle left sidebar")).toBeLessThan(names.indexOf("Account"));
     expect(names.at(-1)).toBe("Close");
   });
