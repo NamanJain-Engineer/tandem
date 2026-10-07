@@ -54,6 +54,7 @@ export const ENGINES = [
 /** The public pages, for the sitemap. */
 export const SITE_PAGES = [
   "/",
+  "/download/",
   "/pricing/",
   "/about/",
   "/changelog/",
@@ -62,12 +63,12 @@ export const SITE_PAGES = [
   "/security/",
 ] as const;
 
-/** "Request early access": a prefilled email, so people can tell us what
- * they'd run. The site keeps no form or list of its own. */
+/** Feedback from early-access users: a prefilled email, so people can tell
+ * us what they run. The site keeps no form or list of its own. */
 export const EARLY_ACCESS_HREF = `mailto:${SITE.contactEmail}?subject=${encodeURIComponent(
   `${SITE.product} early access`,
 )}&body=${encodeURIComponent(
-  "Hi,\n\nI'd like to try Tandem.\n\nMy OS (macOS / Windows / Linux):\nCoding agents I use (e.g. Claude Code, Codex):\nWhat I'd run side by side:\n",
+  "Hi,\n\nI'm trying Tandem.\n\nMy OS (macOS / Windows / Linux):\nCoding agents I use (e.g. Claude Code, Codex):\nWhat works, what doesn't:\n",
 )}`;
 
 /** `/.well-known/security.txt` (RFC 9116). `Expires` is 11 months after `now`

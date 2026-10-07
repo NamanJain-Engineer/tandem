@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { SiteFrame } from "../components/site/SiteFrame";
 import { PLANS } from "../lib/pricing";
 import { PROGRESS } from "../lib/progress";
+import { RELEASE } from "../lib/release";
 import { EARLY_ACCESS_HREF, ENGINES, SITE } from "../lib/site";
 
 /** What the desktop app does today (milestones M0–M5). */
@@ -118,7 +119,7 @@ const PRINCIPLES = [
 const FAQ = [
   {
     q: "Can I use Tandem today?",
-    a: "Not publicly yet. A small group of developers is testing early builds, and we're adding more a few at a time. Request early access and tell us which agents you use.",
+    a: "Yes. Early-access builds for macOS, Windows and Linux are on the download page. They run the Free plan on your computer with no account, and don't contact our servers. Accounts, Pro and Team come with launch.",
   },
   {
     q: "How does Tandem use Claude?",
@@ -194,7 +195,7 @@ export default function HomePage() {
       <section className="mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="flex flex-col items-start gap-5">
           <Badge variant="accent" dot>
-            In active development
+            Early access · {RELEASE.version}
           </Badge>
           <h1 className="text-3xl font-semibold tracking-tight">{SITE.tagline}</h1>
           <p className="text-lg text-fg-muted">
@@ -204,10 +205,10 @@ export default function HomePage() {
           </p>
           <div className="flex flex-wrap gap-3">
             <a
-              href={EARLY_ACCESS_HREF}
+              href="/download/"
               className="rounded-sm bg-accent px-4 py-2 text-md font-medium text-accent-fg hover:bg-accent-hover"
             >
-              Request early access →
+              Download early access →
             </a>
             <a
               href="#demo"
@@ -217,7 +218,7 @@ export default function HomePage() {
             </a>
           </div>
           <p className="text-sm text-fg-muted">
-            A small group of developers is testing early builds. We're adding more, a few at a time.
+            Free for macOS, Windows and Linux. No account needed: it runs on your computer.
           </p>
         </div>
         <Screenshot
@@ -422,17 +423,20 @@ export default function HomePage() {
       <section className="border-t border-divider">
         <div className="mx-auto flex max-w-6xl flex-col items-start gap-4 px-6 py-16 sm:flex-row sm:items-center">
           <div className="flex flex-col gap-1">
-            <h2 className="text-xl font-semibold tracking-tight">Want to try it early?</h2>
+            <h2 className="text-xl font-semibold tracking-tight">Try it on your own projects</h2>
             <p className="text-md text-fg-muted">
-              Tell us which engines you use and what you'd run side by side. We'll reply from{" "}
-              {SITE.contactEmail}.
+              Download the early-access build, then{" "}
+              <a href={EARLY_ACCESS_HREF} className="text-accent hover:underline">
+                tell us what works and what doesn't
+              </a>{" "}
+              at {SITE.contactEmail}.
             </p>
           </div>
           <a
-            href={EARLY_ACCESS_HREF}
+            href="/download/"
             className="rounded-sm bg-accent px-4 py-2 text-md font-medium text-accent-fg hover:bg-accent-hover sm:ml-auto"
           >
-            Request early access →
+            Download →
           </a>
         </div>
       </section>

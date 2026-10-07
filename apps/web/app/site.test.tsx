@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { PLANS } from "../lib/pricing";
 import { MILESTONES, PROGRESS } from "../lib/progress";
+import { CHECKSUMS_URL, DOWNLOADS, RELEASE, RELEASES_REPO, assetUrl } from "../lib/release";
 import {
   EARLY_ACCESS_HREF,
   ENGINES,
@@ -17,6 +18,7 @@ import {
 } from "../lib/site";
 import AboutPage from "./about/page.site";
 import ChangelogPage from "./changelog/page.site";
+import DownloadPage from "./download/page.site";
 import PricingPage from "./pricing/page.site";
 import HomePage from "./page.site";
 import NotFound from "./not-found.site";
@@ -29,6 +31,7 @@ const PAGES = {
   home: HomePage,
   about: AboutPage,
   changelog: ChangelogPage,
+  download: DownloadPage,
   pricing: PricingPage,
   privacy: PrivacyPage,
   terms: TermsPage,
@@ -40,7 +43,7 @@ describe("public site", () => {
   it("F-WB-01 home shows the tagline, the dev status, every engine and a way to get in touch", () => {
     const h = html(<HomePage />);
     expect(h).toContain(SITE.tagline);
-    expect(h).toContain("In active development");
+    expect(h).toContain(`Early access · ${RELEASE.version}`);
     for (const e of ENGINES) expect(h).toContain(`>${e}<`);
     expect(h).toContain(`mailto:${SITE.contactEmail}`);
     for (const id of ["demo", "claude", "features", "engines", "roadmap", "pricing", "team", "faq"])
@@ -84,10 +87,11 @@ describe("public site", () => {
     expect(h).not.toMatch(/approve or deny tool requests right on the card/i);
   });
 
-  it("F-WB-01 early access is a prefilled email and the home page shows the real progress figures", () => {
+  it("F-WB-01 the home page leads to the download, takes feedback by email and shows the real progress figures", () => {
     const h = html(<HomePage />);
+    expect(h).toContain(`href="/download/"`);
+    expect(h).toContain("Download early access");
     expect(EARLY_ACCESS_HREF.startsWith(`mailto:${SITE.contactEmail}?subject=`)).toBe(true);
-    expect(h).toContain("Request early access");
     expect(h).toContain(PROGRESS.automatedTests.toLocaleString("en-US"));
     expect(h).toContain(`href="/changelog/"`);
   });
@@ -101,7 +105,27 @@ describe("public site", () => {
     }
   });
 
-  it("F-WB-01 pricing shows the launch plans from the spec and says nothing is on sale yet", () => {
+  it("F-WB-01 download offers every OS from the public releases repo, with checksums and unsigned-install steps", () => {
+    const h = html(<DownloadPage />);
+    expect(DOWNLOADS.map((d) => d.os)).toEqual(["macos", "windows", "linux"]);
+    for (const d of DOWNLOADS) {
+      expect(h).toContain(`id="${d.os}"`);
+      for (const a of d.assets) {
+        expect(a.file, a.file).toContain(RELEASE.version);
+        expect(h).toContain(`href="${assetUrl(a.file)}"`);
+        expect(assetUrl(a.file).startsWith(`${RELEASES_REPO}/releases/download/${RELEASE.tag}/`)).toBe(true);
+      }
+      expect(d.steps.length).toBeGreaterThan(0);
+    }
+    expect(h).toContain(`href="${CHECKSUMS_URL}"`);
+    expect(h).toContain(`id="getting-started"`);
+    // Honest about what this build is.
+    expect(h).toContain("code-signed yet");
+    expect(h).toContain("contact our servers");
+    expect(SITE_PAGES).toContain("/download/");
+  });
+
+  it("F-WB-01 pricing shows the launch plans from the spec and says Free is available now, Pro and Team not yet", () => {
     const h = html(<PricingPage />);
     expect(PLANS.map((p) => [p.name, p.price])).toEqual([
       ["Free", "$0"],
@@ -111,6 +135,7 @@ describe("public site", () => {
     for (const p of PLANS) expect(h).toContain(`id="${p.id}"`);
     expect(h).toContain("Pricing at launch");
     expect(h).toContain("on sale yet");
+    expect(h).toContain("Free is available now");
     expect(h).toContain("$290 a year");
     expect(h).toContain("Planned");
     expect(html(<HomePage />)).toContain(`href="/pricing/"`);

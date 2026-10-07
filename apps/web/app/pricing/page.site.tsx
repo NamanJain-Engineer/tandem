@@ -2,7 +2,7 @@ import { Badge } from "@tandem/ui/components/Badge";
 import type { Metadata } from "next";
 import { SiteFrame } from "../../components/site/SiteFrame";
 import { CREDIT_VALUE_USD, PLANS } from "../../lib/pricing";
-import { EARLY_ACCESS_HREF, SITE } from "../../lib/site";
+import { SITE } from "../../lib/site";
 
 export const metadata: Metadata = { title: "Pricing" };
 
@@ -17,8 +17,9 @@ export default function PricingPage() {
           Free to run your agents. Pro when you run a lot.
         </h1>
         <p className="max-w-3xl text-lg text-fg-muted">
-          {SITE.product} isn't on sale yet: these are the plans it will launch with. Your coding agents always
-          run on your own subscriptions, so {SITE.product} never charges for engine usage. Features marked{" "}
+          Free is available now as an early-access download. Pro and Team aren't on sale yet: these are the
+          plans they'll launch with. Your coding agents always run on your own subscriptions, so{" "}
+          {SITE.product} never charges for engine usage. Features marked{" "}
           <span className="font-medium text-fg">Planned</span> arrive with later milestones.
         </p>
       </section>
@@ -72,15 +73,16 @@ export default function PricingPage() {
             </p>
           </div>
           <div className="flex flex-col items-start gap-3">
-            <h2 className="text-xl font-semibold tracking-tight">Want to try it before launch?</h2>
+            <h2 className="text-xl font-semibold tracking-tight">Try the Free plan now</h2>
             <p className="text-md text-fg-muted">
-              A small group of developers is testing early builds. Tell us which agents you use.
+              The early-access build runs the Free plan on your computer, with no account, on macOS, Windows
+              and Linux.
             </p>
             <a
-              href={EARLY_ACCESS_HREF}
+              href="/download/"
               className="rounded-sm bg-accent px-4 py-2 text-md font-medium text-accent-fg hover:bg-accent-hover"
             >
-              Request early access →
+              Download →
             </a>
           </div>
         </div>

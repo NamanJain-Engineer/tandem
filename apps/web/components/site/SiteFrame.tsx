@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { EARLY_ACCESS_HREF, SITE } from "../../lib/site";
+import { SITE } from "../../lib/site";
 
 /** Tandem's mark: two overlapping rings. */
 export function Mark({ size = 22 }: { size?: number }) {
@@ -12,6 +12,7 @@ export function Mark({ size = 22 }: { size?: number }) {
 }
 
 const NAV = [
+  { href: "/download/", label: "Download" },
   { href: "/#demo", label: "Demo" },
   { href: "/#claude", label: "Claude" },
   { href: "/pricing/", label: "Pricing" },
@@ -47,10 +48,10 @@ export function SiteFrame({ children }: { children: ReactNode }) {
             ))}
           </ul>
           <a
-            href={EARLY_ACCESS_HREF}
+            href="/download/"
             className="ml-auto rounded-sm bg-accent px-3 py-1.5 font-medium text-accent-fg hover:bg-accent-hover sm:ml-0"
           >
-            Early access
+            Download
           </a>
         </nav>
       </header>
