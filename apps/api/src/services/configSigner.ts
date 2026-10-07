@@ -58,6 +58,8 @@ export type RemoteConfig = {
   daily_caps: Record<string, number>;
   flags: Record<string, boolean>;
   models: Record<string, Array<{ id: string; label: string; default?: boolean }>>;
+  /** The Claude model each hosted AI feature uses (D-103). */
+  ai_models?: Record<string, string>;
   registry_overrides: unknown[];
   plugins: Record<string, { client_id?: string; enabled: boolean }>;
   telemetry_allowlist_version: number;

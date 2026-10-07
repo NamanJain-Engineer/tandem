@@ -1,5 +1,6 @@
 // Public API routes and their zod schemas, the source for openapi.json (F-WB-04).
 import { z } from "zod";
+import { rewriteBody, titleBody } from "../routes/ai";
 import { checkoutBody, packBody } from "../routes/billing";
 import { authorizeBody, exchangeBody, refreshBody, tokenResponse } from "../routes/desktopAuth";
 
@@ -169,6 +170,22 @@ export const ROUTES: RouteDoc[] = [
     auth: "bearer_or_cookie",
     body: packBody,
     response: url,
+  },
+  {
+    method: "post",
+    path: "/v1/ai/title",
+    summary: "Title a session from its opening text (Claude API, free, 60/h)",
+    auth: "bearer",
+    body: titleBody,
+    response: z.object({ title: z.string().max(60) }),
+  },
+  {
+    method: "post",
+    path: "/v1/ai/rewrite",
+    summary: "Enhance or Polish dictated text (Claude API, Pro, 3 credits)",
+    auth: "bearer",
+    body: rewriteBody,
+    response: z.object({ text: z.string() }),
   },
   {
     method: "post",

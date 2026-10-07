@@ -31,6 +31,10 @@ const schema = z.object({
   BREACH_CHECK: z.enum(["offline", "hibp"]).default("offline"),
   TANDEM_API_TEST_ROUTES: z.string().optional(),
   MIN_APP_VERSION: z.string().optional(),
+  /** Hosted AI features (D-103): `claude` needs ANTHROPIC_API_KEY; `mock` answers deterministically. */
+  AI_PROVIDER: z.enum(["mock", "claude"]).default("mock"),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_API_BASE: z.string().optional(),
 });
 
 export type Env = z.infer<typeof schema>;

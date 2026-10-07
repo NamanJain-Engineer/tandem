@@ -4,6 +4,7 @@ import type { KeySet } from "./auth/keys";
 import type { Db } from "./db/client";
 import type { Env } from "./env";
 import type { Clock } from "./lib/clock";
+import type { AiProvider } from "./providers/ai/types";
 import type { BillingProvider } from "./providers/billing/types";
 import type { BreachChecker } from "./providers/breach";
 import type { CaptchaVerifier } from "./providers/captcha";
@@ -25,4 +26,5 @@ export type Deps = {
   config: ConfigSigner;
   events: EventHub;
   auth: Auth;
+  ai: AiProvider;
 };

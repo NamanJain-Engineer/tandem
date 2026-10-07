@@ -12,6 +12,7 @@ import { minVersion } from "./middleware/minVersion";
 import { authSpikeMonitor, ipRateLimit } from "./middleware/rateLimit";
 import { requestContext } from "./middleware/requestContext";
 import { turnstile } from "./middleware/turnstile";
+import { aiRoutes } from "./routes/ai";
 import { billingRoutes } from "./routes/billing";
 import { configRoutes } from "./routes/config";
 import { creditsRoutes } from "./routes/credits";
@@ -54,6 +55,7 @@ export function createApp(deps: Deps) {
   app.route("/v1/me", meRoutes(deps));
   app.route("/v1/credits", creditsRoutes(deps));
   app.route("/v1/billing", billingRoutes(deps));
+  app.route("/v1/ai", aiRoutes(deps));
   app.route("/v1/webhooks", webhookRoutes(deps));
   if (testRoutesEnabled(deps.env)) app.route("/__test", testRoutes(deps));
 

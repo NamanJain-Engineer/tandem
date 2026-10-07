@@ -38,5 +38,6 @@
   },
   "registry_overrides": [],
   "plugins": {},
-  "telemetry_allowlist_version": 1
+  "telemetry_allowlist_version": 1,
+  "ai_models": { "title": "claude-haiku-4-5-20251001", "rewrite": "claude-haiku-4-5-20251001" }
 }
