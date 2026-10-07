@@ -4,6 +4,8 @@ import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useSession } from "../../stores/session";
 import { openBilling } from "./actions";
+import { useUpdates } from "../../stores/updates";
+import { hoursLeft, updateNow } from "../updates/UnsupportedOverlay";
 
 type Shown = {
   id: string;
@@ -13,18 +15,28 @@ type Shown = {
   dismissable: boolean;
 };
 
-/** UI-133: one banner at a time — grace over > offline > offline-mode
- * deadline > payment failed. */
+/** UI-133: one banner at a time — unsupported version > grace over >
+ * offline > offline-mode deadline > payment failed. */
 export function Banners() {
   const auth = useSession((s) => s.auth);
   const e = useSession((s) => s.entitlement);
   const refresh = useSession((s) => s.refreshEntitlement);
   const { show } = useToast();
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const minVersion = useUpdates((s) => s.state?.minVersion ?? null);
   if (!auth) return null;
 
   let banner: Shown | null = null;
-  if (auth.signedIn && e && !e.online && e.source === "free" && e.confirmedUntil !== null) {
+  if (minVersion && !minVersion.modal) {
+    // UI-131 during the 72 h grace: terminals keep working.
+    banner = {
+      id: "unsupported",
+      tone: "warning",
+      text: `${t("unsupported.title")}. ${t("unsupported.body", { hours: hoursLeft(Number(minVersion.graceUntil)) })}`,
+      action: { label: t("unsupported.update"), onClick: () => void updateNow() },
+      dismissable: true,
+    };
+  } else if (auth.signedIn && e && !e.online && e.source === "free" && e.confirmedUntil !== null) {
     banner = {
       id: "grace",
       tone: "warning",

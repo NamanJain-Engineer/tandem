@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-updates-set-channel"
+description = "Enables the updates_set_channel command without any pre-configured scope."
+commands.allow = ["updates_set_channel"]
+
+[[permission]]
+identifier = "deny-updates-set-channel"
+description = "Denies the updates_set_channel command without any pre-configured scope."
+commands.deny = ["updates_set_channel"]

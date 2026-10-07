@@ -286,3 +286,21 @@ pub async fn test_thread_state(state: State<'_, AppState>, id: String) -> Result
         })
         .await?)
 }
+
+/// The version the harness's updater "installed" (E2E-M5-7), if any.
+#[tauri::command]
+pub fn test_update_installed(state: State<'_, AppState>) -> Result<Option<String>, IpcError> {
+    guard(&state)?;
+    Ok(std::fs::read_to_string(state.data.root().join("test-update-installed")).ok())
+}
+
+/// Moves the minimum-version notice `ms` into the past (E2E-M5-7's grace).
+#[tauri::command]
+pub fn test_min_version_shift(
+    state: State<'_, AppState>,
+    ms: i64,
+) -> Result<crate::services::updates::UpdateState, IpcError> {
+    guard(&state)?;
+    state.updates.shift_min_version_seen(ms);
+    Ok(state.updates.state())
+}

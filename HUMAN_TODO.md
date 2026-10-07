@@ -15,7 +15,12 @@ Things only a human can do. The build never blocks on them: each sits behind a m
 - Production entitlement and config public keys bundled into `apps/desktop/src-tauri/resources/keys.json` for release builds (ARCHITECTURE §14.4); see "Production Ed25519 keys" above.
 
 ## Signing & distribution
-- Not started. Signing secrets are listed in ARCHITECTURE §17.4 and are added in M5.
+Until these exist, release builds can't update (`updates_state` reads `unavailable`) and the release workflow marks every artifact "unsigned" (F-TL-04).
+- [ ] Minisign updater keypair: `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as repo secrets; the public key as `TAURI_SIGNING_PUBLIC_KEY` (repo variable, compiled into release builds). Debug builds use the dev key from `pnpm keys:dev` and never ship it.
+- [ ] Apple Developer ID and notarization: `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`.
+- [ ] Azure Trusted Signing for Windows: `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, the endpoint and the certificate profile.
+- [ ] A GPG key for the deb and the AppImage detached signature.
+- [ ] Release hosting at `https://releases.tandem.dev` (bucket + CDN) for artifacts and `latest.json`, and the API's `/v1/updates/:channel/:target/:arch/:current_version` reading published `releases` rows.
 
 ## Legal
 - Trademark search for the working name "Tandem" before any public launch (DECISIONS §Identity).
@@ -23,6 +28,7 @@ Things only a human can do. The build never blocks on them: each sits behind a m
 - Review the UI labels the consistency pass flagged as generic but coincident with the reference product (CONSISTENCY_REPORT "Remaining known open items" 2).
 
 ## Manual QA checklist
+- M5: a real signed update per OS once the keys exist: AppImage self-replace and restart, macOS .app.tar.gz, Windows NSIS; a deb install shows "Updates are managed by your package manager" (E2E records the install instead of replacing the debug binary, D-94).
 - M2: the `tandem://` scheme on macOS and Windows (installed build): `tandem://open?path=/some/folder` opens the app and adds the folder.
 - M2: macOS overlay title bar with the traffic lights inset; the left cluster starts clear of them.
 - M2: Windows snap layouts appear when hovering the custom maximize button.

@@ -25,6 +25,7 @@ const spec = suite ? `e2e/perf/${suite}.perf.ts` : specIndex >= 0 ? args[specInd
 
 const API = "http://127.0.0.1:8787";
 const WEB = "http://localhost:3000";
+const FEED = "http://127.0.0.1:8790";
 
 async function up(url: string): Promise<boolean> {
   try {
@@ -129,6 +130,9 @@ async function main() {
     TANDEM_FAKE_PICK_FOLDER: join(home, "pick-folder.txt"),
     TANDEM_HOOK_BIN: join(root, "target/debug/tandem-hook"),
     TANDEM_SPAWN_LOG: join(home, "spawn.log"),
+    // The local update feed (scripts/mock-update-feed.ts, E2E-M5-7); it
+    // answers "nothing new" unless a spec picks a scenario.
+    TANDEM_UPDATE_URL: `${FEED}/v1/updates`,
     // Scrollback snapshots often enough that a kill -9 leaves some (E2E-M5-3).
     TANDEM_SNAPSHOT_EVERY_MS: "1500",
     TANDEM_APP_PATH: appPath,
@@ -164,6 +168,13 @@ async function main() {
     web = startDetached("pnpm", ["--filter", "web", "dev"], { API_INTERNAL_URL: API });
     await waitUp(`${WEB}/api/health`, 120);
   }
+  let feed: ChildProcess | undefined;
+  if (!(await up(`${FEED}/health`))) {
+    feed = startDetached(join(root, "node_modules/.bin/tsx"), ["scripts/mock-update-feed.ts", "--port", "8790", "--scenario", "none"], {});
+    await waitUp(`${FEED}/health`, 30);
+  } else {
+    await fetch(`${FEED}/__scenario`, { method: "POST", body: JSON.stringify({ scenario: "none" }) });
+  }
 
   let code = 1;
   try {
@@ -172,6 +183,7 @@ async function main() {
   } finally {
     stop(api);
     stop(web);
+    stop(feed);
     stop(wm);
   }
   const problems = checkArtifacts(home);

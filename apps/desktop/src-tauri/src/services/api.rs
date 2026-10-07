@@ -4,6 +4,7 @@
 //! `TANDEM_NET_LOG`.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -160,14 +161,41 @@ pub trait ApiClient: Send + Sync {
     ) -> Result<BoxStream<'static, Result<String, ApiError>>, ApiError>;
 }
 
+/// Told the `x-tandem-min-version` of API responses (F-SH-06). Set once
+/// the update service exists.
+pub type MinVersionWatch = Arc<std::sync::OnceLock<Arc<dyn Fn(&str) + Send + Sync>>>;
+
 pub struct HttpApi {
     net: Net,
     endpoints: Endpoints,
+    min_version: MinVersionWatch,
 }
 
 impl HttpApi {
     pub fn new(net: Net, endpoints: Endpoints) -> Self {
-        Self { net, endpoints }
+        Self::watching(net, endpoints, MinVersionWatch::default())
+    }
+
+    pub fn watching(net: Net, endpoints: Endpoints, min_version: MinVersionWatch) -> Self {
+        Self {
+            net,
+            endpoints,
+            min_version,
+        }
+    }
+
+    /// Any response can name the oldest supported app version.
+    fn watch(&self, res: &reqwest::Response) {
+        let Some(min) = res
+            .headers()
+            .get("x-tandem-min-version")
+            .and_then(|v| v.to_str().ok())
+        else {
+            return;
+        };
+        if let Some(sink) = self.min_version.get() {
+            sink(min);
+        }
     }
 
     fn url(&self, path: &str) -> String {
@@ -190,6 +218,7 @@ impl HttpApi {
             .send(self.with_headers(req))
             .await
             .map_err(|e| ApiError::Network(e.to_string()))?;
+        self.watch(&res);
         let status = res.status().as_u16();
         if status >= 500 {
             return Err(ApiError::Network(format!("server error {status}")));
@@ -328,6 +357,7 @@ impl ApiClient for HttpApi {
             .send(req)
             .await
             .map_err(|e| ApiError::Network(e.to_string()))?;
+        self.watch(&res);
         let status = res.status().as_u16();
         if status >= 400 {
             return Err(if status >= 500 {

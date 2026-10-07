@@ -47,6 +47,10 @@ macro_rules! app_commands {
             commands::restore::restore_cancel,
             commands::restore::restore_scrollback,
             commands::restore::restore_auto_resume,
+            commands::updates::updates_state,
+            commands::updates::updates_check_now,
+            commands::updates::updates_set_channel,
+            commands::updates::updates_install,
             commands::settings::settings_get_all,
             commands::settings::settings_set,
             commands::settings::settings_reset,
@@ -320,6 +324,7 @@ pub fn run() {
     let initial_links = deeplink::from_args(std::env::args().skip(1));
     let window_state_file = state.data.window_state().to_string_lossy().into_owned();
     let e2e = state.e2e;
+    let endpoints_api = state.endpoints.api.clone();
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -337,6 +342,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::init(
@@ -355,12 +361,22 @@ pub fn run() {
         commands::test::test_set_window_focused,
         commands::test::test_thread_seed,
         commands::test::test_thread_state,
+        commands::test::test_update_installed,
+        commands::test::test_min_version_shift,
         commands::test::test_auth_refresh,
         commands::test::test_account_create,
     ]);
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(app_commands![]);
 
+    let mut context = tauri::generate_context!();
+    // The local test feed is plain HTTP on loopback (debug builds only).
+    let feed = services::updates::feed_base(&endpoints_api);
+    if services::updates::allows_insecure_feed(&feed) {
+        if let Some(cfg) = context.config_mut().plugins.0.get_mut("updater") {
+            cfg["dangerousInsecureTransportProtocol"] = serde_json::json!(true);
+        }
+    }
     let result = builder
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -374,6 +390,36 @@ pub fn run() {
             persist_window_state(app);
             spawn_background(&state);
             state.approvals.start();
+            // Updates (F-SH-06): the signed feed, if this build has a key.
+            if let Some(key) = services::updates::pubkey(state::BUNDLED_KEYS) {
+                let record = state
+                    .e2e
+                    .then(|| state.data.root().join("test-update-installed"));
+                state.updates.set_backend(std::sync::Arc::new(
+                    services::updates::tauri_backend::TauriUpdater::new(
+                        handle.clone(),
+                        feed.clone(),
+                        key,
+                        record,
+                    ),
+                ));
+            }
+            {
+                let store = state.store.clone();
+                tauri::async_runtime::spawn(state.updates.clone().run_schedule(move || {
+                    let store = store.clone();
+                    Box::pin(async move {
+                        tandem_store::repo::settings::get(
+                            &store,
+                            tandem_core::settings::SettingKey::AutoCheckUpdates,
+                        )
+                        .await
+                        .ok()
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true)
+                    })
+                }));
+            }
             // OS notifications: the system's, or a recording one under the
             // test harness (F-DB-03).
             {
@@ -452,7 +498,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .build(tauri::generate_context!());
+        .build(context);
     match result {
         // However the app ends (Quit, last window closed), panes get their
         // scrollback snapshot and every process tree is stopped.

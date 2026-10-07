@@ -4,6 +4,7 @@ import { AccountPage } from "./AccountPage";
 import { EnginesPage } from "./EnginesPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
+import { UpdatesPanel } from "../updates/UpdatesPanel";
 import {
   BoolControl,
   FontControl,
@@ -41,7 +42,7 @@ const opts = (keys: string[], prefix: string) =>
 const segs = (keys: string[], prefix: string) =>
   keys.map((k) => ({ id: k, label: t(`${prefix}.${k}` as Parameters<typeof t>[0]) }));
 
-/** The pages shipped so far (UI-101, 102, 104, 105, 112, 114, 116), in UI-100 order. */
+/** The pages shipped so far (UI-101, 102, 104, 105, 112, 114, 115, 116), in UI-100 order. */
 export function settingsPages(platform: string): PageDef[] {
   const mac = platform === "macos";
   return [
@@ -418,6 +419,21 @@ export function settingsPages(platform: string): PageDef[] {
       keywords: ["plan", "billing", "credits", "subscription", "sign out"],
       rows: [],
       extra: <AccountPage />,
+    },
+    {
+      id: "updates",
+      label: t("settings.updates"),
+      subtitle: t("settings.updates.subtitle"),
+      keywords: ["update", "version", "channel", "beta", "release"],
+      rows: [
+        {
+          id: "auto_check_updates",
+          label: t("settings.autoCheckUpdates"),
+          keywords: ["automatic", "check"],
+          control: (ids) => <BoolControl k="auto_check_updates" ids={ids} label={t("settings.autoCheckUpdates")} />,
+        },
+      ],
+      extra: <UpdatesPanel />,
     },
     {
       id: "advanced",

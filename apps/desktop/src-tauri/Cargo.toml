@@ -50,6 +50,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-notification = "2"
+tauri-plugin-updater = "2"
 tauri-plugin-window-state = "2"
 png = "0.17"
 

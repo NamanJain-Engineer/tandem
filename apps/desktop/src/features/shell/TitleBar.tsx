@@ -19,6 +19,7 @@ import { useUi, type Mode } from "../../stores/ui";
 import { flushLayouts, useLayout } from "../../stores/layout";
 import { useSidebar } from "../../stores/sidebar";
 import { NotificationsBell } from "../notifications/NotificationsPopover";
+import { UpdatePill } from "../updates/UpdatePill";
 import { useWorkspaces } from "../../stores/workspaces";
 import { copyDiagnostics, switchMode } from "./actions";
 import { LogoMark } from "./LogoMark";
@@ -257,6 +258,7 @@ export function TitleBar() {
           </button>
         </Tooltip>
       )}
+      <UpdatePill />
       <NotificationsBell />
       <IconButton
         icon={<PanelRight size={16} />}

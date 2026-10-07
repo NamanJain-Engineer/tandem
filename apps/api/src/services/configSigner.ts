@@ -40,6 +40,12 @@ export class ConfigSigner {
     this.signed = this.sign(this.config);
   }
 
+  /** Test routes only: the oldest app version responses name, re-signed. */
+  setMinAppVersion(version: string): void {
+    this.config = { ...this.config, min_app_version: version };
+    this.signed = this.sign(this.config);
+  }
+
   get minAppVersion(): string {
     return this.config.min_app_version;
   }

@@ -14,6 +14,8 @@
     "allow-test-set-window-focused",
     "allow-test-thread-seed",
     "allow-test-thread-state",
+    "allow-test-update-installed",
+    "allow-test-min-version-shift",
     "allow-test-auth-refresh",
     "allow-test-account-create",
     "core:window:allow-set-position",

@@ -3,6 +3,7 @@ import { resetDashboard } from "../stores/dashboard";
 import { useInstall } from "../features/code/InstallSheet";
 import { resetSidebar } from "../stores/sidebar";
 import { resetRestore } from "../stores/restore";
+import { resetUpdates } from "../stores/updates";
 import { useEngines } from "../stores/engines";
 import type { AppBoot, AuthState, EntitlementView, Limits, WorkspaceSummary } from "@tandem/protocol";
 import { setInvokeBackend } from "../ipc/invoke";
@@ -103,6 +104,7 @@ export function resetStores(): void {
   resetDashboard();
   resetNotifications();
   resetRestore();
+  resetUpdates();
   useInstall.setState({ engine: null, tabId: null });
   useEngines.setState({ list: [], loaded: false, report: null, detecting: false });
   useBoot.setState({ boot: BOOT });

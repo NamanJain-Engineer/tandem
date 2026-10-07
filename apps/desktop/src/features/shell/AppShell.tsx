@@ -17,6 +17,9 @@ import { followFocus } from "../../stores/focus";
 import { followDashboard } from "../../stores/dashboard";
 import { followNotifications } from "../../stores/notifications";
 import { followRestore, startAutoResume } from "../../stores/restore";
+import { followUpdates } from "../../stores/updates";
+import { RestartDialog } from "../updates/RestartDialog";
+import { UnsupportedOverlay } from "../updates/UnsupportedOverlay";
 import { useVisibilityReport } from "../notifications/visibility";
 import { InstallHost } from "../code/InstallSheet";
 import { followPtyState } from "../../stores/terminals";
@@ -46,6 +49,7 @@ export function AppShell() {
   useEffect(followNotifications, []);
   useEffect(followRestore, []);
   useEffect(startAutoResume, []);
+  useEffect(followUpdates, []);
   useVisibilityReport();
   // Debug builds: UI-side counters for the E2E harness (ARCHITECTURE §17.5).
   const dev = useBoot((st) => st.boot?.dev ?? false);
@@ -129,6 +133,8 @@ export function AppShell() {
       <UpgradeDialog />
       <Palette />
       <OrphansDialog />
+      <RestartDialog />
+      <UnsupportedOverlay />
     </div>
   );
 }

@@ -814,7 +814,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `auth_continue_offline` | — | — | — |
 | `entitlement_get` / `entitlement_refresh` | — | `EntitlementView {plan, status, limits, source:"token"\|"grace"\|"free", credits:{monthly, purchased, resetsAt}, policy?}` | — |
 | `billing_open` | `{target: {type:"upgrade", plan, interval} \| {type:"portal"} \| {type:"credits"}}` | — (system browser) | Unauthenticated |
-| `updates_state` / `updates_check_now` / `updates_install` / `updates_set_channel` | — / — / — / `{channel:"stable"\|"beta"}` | `UpdateState` | Unavailable (stage) |
+| `updates_state` / `updates_check_now` / `updates_install` / `updates_set_channel` | — / — / — / `{channel:"stable"\|"beta"}` | `UpdateState {stage: idle\|checking\|downloading\|ready\|error\|managed\|unavailable, current, channel, version?, notes?, percent?, errorStage?: check\|download\|verify\|install, error?, lastCheck?, upToDate, minVersion?: {minVersion, graceUntil, modal}}` (`check_now` waits for a check already running; a newer release downloads and verifies before `ready`; `install` installs the staged release, stops every terminal and restarts; under the harness it records the install and keeps running) | Unavailable (stage), Invalid (channel) |
 | `whats_new_get` / `whats_new_seen` | — / `{version}` | `ReleaseNotes?` / — | — |
 | `privacy_data_flows` | — | `[DataFlowRow {feature, enabled, sends, destination}]` | — |
 | `privacy_export` | `{destPath}` → op | — | Io |
@@ -833,6 +833,8 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `test_notifier_calls` | `{clear?}` | `[OsNotification {kind, title, body, source}]` (the recording notifier used under the harness) | — |
 | `test_notifier_click` | `{index}` | — (clicks a recorded OS notification: focuses the app and its source) | NotFound |
 | `test_set_window_focused` | `{focused?}` | — (pretends the window is focused or not; `null` = the real state) | — |
+| `test_update_installed` | — | the version the harness's updater recorded as installed, or `null` (E2E-M5-7) | — |
+| `test_min_version_shift` | `{ms}` | `UpdateState` (moves the minimum-version notice `ms` into the past: the 72 h grace, time-mocked) | — |
 | `test_thread_seed` | `{threadState}` | thread id (writes a bare `threads` row in that state, e.g. one a crash left `working`; E2E-M5-3 until threads land in M7) | — |
 | `test_thread_state` | `{id}` | the thread's stored `state` | NotFound |
 
@@ -845,7 +847,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 |---|---|---|---|
 | `app:deep-link` | `DeepLink {route, params}` | deeplink service | F-SH-13 |
 | `app:subsystem-failed` | `{name, code, restarts}` | Supervisor | §5.2 |
-| `app:min-version` | `{minVersion, graceUntil}` | api client (header watcher) | F-SH-06 |
+| `app:min-version` | `{minVersion?, graceUntil?, modal}` (`null`s: a lower minimum cleared the notice) | api client (header watcher) → updater service | F-SH-06 |
 | `ui:focus` | `{source: SourceRef, flash: true, location?: {workspaceId, tabId}}` (`location` for panes) | focus service (notifications, Conductor, phone) | F-CD-12, F-DB-02 |
 | `settings:changed` | `{key, value}` | settings service | F-SH-04 |
 | `status:changed` | `{records:[StatusRecord], removed:[SessionKey]}` (coalesced 50 ms; `removed` when an agent left its pane) | StatusStore forwarder | F-EN-05, F-DB-01 |
@@ -881,7 +883,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `remote:ssh` | `{opId, stage, prompt?: {kind:"hostkey", fingerprint} \| {kind:"password", label}, error?}` | ssh service | F-RM-01 |
 | `remote:host` | `{hostId, state:"connected"\|"reconnecting"\|"down"}` | ssh service | F-RM-01 |
 | `remote:phone` | `{pairingId, event:"connected"\|"command"\|"queued"\|"revoked"}` | phone service | F-RM-03 |
-| `updates:state` | `UpdateState {stage:"idle"\|"checking"\|"downloading"\|"ready"\|"error", version?, errorStage?}` | updater service | F-SH-06 |
+| `updates:state` | `UpdateState` (see `updates_state`; during a download at most one event per 5 %) | updater service | F-SH-06 |
 | `browser:state` / `browser:picker` | `{browserId, url, title, canBack, canForward, loading}` / `{browserId, elements:[PickedElement]}` | browser service | F-CD-17, F-CD-18 |
 | `op:progress` | `{opId, stage, pct?, done, error?: IpcError}` | any op | §5.2 |
 
@@ -2378,6 +2380,7 @@ Export: zip of `settings.json`, `workspaces.json`, `threads.json` (with messages
 
 ### 17.2 Auto-update [F-SH-06]
 - `tauri-plugin-updater` with `endpoints: ["https://api.tandem.dev/v1/updates/{{channel}}/{{target}}/{{arch}}/{{current_version}}"]` (channel substituted at runtime via `UpdaterBuilder::endpoints`), `pubkey` = minisign public key (`TAURI_SIGNING_PUBLIC_KEY`, committed). The client additionally refuses `version <= current` (anti-rollback, AC3).
+- Feed URL: `{api}/v1/updates/{channel}/{{target}}/{{arch}}/{{current_version}}`; debug builds read `TANDEM_UPDATE_URL` (the E2E points it at `scripts/mock-update-feed.ts`) and only then allow plain HTTP, on 127.0.0.1. The plugin config sets `requireSignedVersion`, so a signature must name the version the feed announces. Release builds take the key from `TAURI_SIGNING_PUBLIC_KEY` at compile time and never trust the dev key (`uk-1`, `pnpm keys:dev`); without a key the state is `unavailable`.
 - Checks: launch + 60 s, every 4 h, "Check now". Download in background → state `ready` → pill; install on restart after the live-agents dialog. Verification failure → `errorStage: verify`, never installs (AC2). deb installs (detected by `/usr/share/doc/tandem` + no `$APPIMAGE`) show "Updates are managed by your package manager".
 - Min-version overlay: any response header `x-tandem-min-version` > current → `app:min-version`; grace 72 h stored in `update-state.json`; terminals keep working under the non-modal overlay until then (AC4, time-mocked).
 - Release job uploads per-platform artifacts + `.sig`, then `scripts/publish-release.ts` inserts `releases` rows (and writes static `latest.json` to the GitHub Release as a fallback feed). A local feed server (`scripts/test-feed-server.ts`) backs the updater integration test (AC1).

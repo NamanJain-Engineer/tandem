@@ -112,6 +112,8 @@ pub struct AppState {
     pub notifications: Arc<crate::services::notifications::NotificationService>,
     /// Paused agents and their relaunch queue (F-SH-07).
     pub restore: Arc<crate::services::restore::RestoreService>,
+    /// Auto-update and the minimum-version notice (F-SH-06).
+    pub updates: Arc<crate::services::updates::UpdateService>,
     pub config: Arc<ConfigService>,
     pub telemetry: Arc<TelemetryService>,
     pub deeplinks: DeepLinkQueue,
@@ -141,8 +143,13 @@ impl AppState {
             Net::with_log(None)
         };
         let endpoints = Endpoints::from_env();
-        let api: Arc<dyn ApiClient> = Arc::new(HttpApi::new(net.clone(), endpoints.clone()));
-        Ok(Self::with(
+        let min_version = crate::services::api::MinVersionWatch::default();
+        let api: Arc<dyn ApiClient> = Arc::new(HttpApi::watching(
+            net.clone(),
+            endpoints.clone(),
+            min_version.clone(),
+        ));
+        let state = Self::with(
             data,
             store,
             log,
@@ -151,7 +158,11 @@ impl AppState {
             endpoints,
             api,
             opener::default_opener(),
-        ))
+        );
+        // API responses can name the oldest supported version (F-SH-06).
+        let updates = state.updates.clone();
+        let _ = min_version.set(Arc::new(move |v: &str| updates.observe_min_version(v)));
+        Ok(state)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -294,6 +305,16 @@ impl AppState {
         // Before the UI lists anything: agents pause, crashed threads settle.
         let restore = crate::services::restore::RestoreService::new(store.clone(), bus.clone());
         restore.settle_at_launch();
+        let managed = crate::services::updates::managed_by_package_manager(
+            std::path::Path::new("/usr/share/doc/tandem"),
+            std::env::var("APPIMAGE").ok().as_deref(),
+        );
+        let updates = crate::services::updates::UpdateService::new(
+            managed,
+            data.update_state(),
+            clock.clone(),
+            bus.clone(),
+        );
         let telemetry = TelemetryService::new(&data, net.clone());
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         Self {
@@ -315,6 +336,7 @@ impl AppState {
             approvals,
             notifications,
             restore,
+            updates,
             config,
             telemetry,
             deeplinks: DeepLinkQueue::default(),
