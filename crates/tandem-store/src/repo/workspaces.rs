@@ -22,6 +22,8 @@ pub struct Workspace {
     pub name: String,
     pub parent_id: Option<WorkspaceId>,
     pub lane_branch: Option<String>,
+    /// The commit a worktree started from (its "Diff vs base").
+    pub lane_base: Option<String>,
     pub sort_key: String,
     pub pinned: bool,
     pub collapsed: bool,
@@ -38,6 +40,16 @@ pub struct NewWorkspace {
     pub wsl_distro: Option<String>,
 }
 
+/// A worktree registered as a child of its repository's workspace (F-CD-15).
+#[derive(Debug, Clone)]
+pub struct NewLane {
+    pub parent_id: WorkspaceId,
+    pub root: String,
+    pub name: String,
+    pub branch: String,
+    pub base: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Added {
     Created,
@@ -45,7 +57,7 @@ pub enum Added {
     Restored,
 }
 
-const COLUMNS: &str = "id, kind, host_id, root, wsl_distro, name, parent_id, lane_branch, sort_key, pinned, collapsed, sessions_collapsed, created_at";
+const COLUMNS: &str = "id, kind, host_id, root, wsl_distro, name, parent_id, lane_branch, sort_key, pinned, collapsed, sessions_collapsed, created_at, lane_base";
 
 fn from_row(r: &Row<'_>) -> rusqlite::Result<Workspace> {
     Ok(Workspace {
@@ -62,10 +74,12 @@ fn from_row(r: &Row<'_>) -> rusqlite::Result<Workspace> {
         collapsed: r.get(10)?,
         sessions_collapsed: r.get(11)?,
         created_at: r.get(12)?,
+        lane_base: r.get(13)?,
     })
 }
 
-/// Top-level workspaces that aren't removed, in rail order.
+/// Workspaces that aren't removed, in rail order: top-level ones and their
+/// worktrees (`parent_id` set), which the rail nests under their parent.
 pub async fn list(store: &Store) -> Result<Vec<Workspace>, StoreError> {
     store
         .read(|c| {
@@ -107,7 +121,7 @@ pub async fn add(
                 .query_row(
                     &format!("SELECT {COLUMNS}, removed_at FROM workspaces WHERE host_id = ?1 AND root = ?2"),
                     params![new.host_id, new.root],
-                    |r| Ok((from_row(r)?, r.get(13)?)),
+                    |r| Ok((from_row(r)?, r.get(14)?)),
                 )
                 .optional()?;
             if let Some((ws, None)) = &found {
@@ -148,6 +162,7 @@ pub async fn add(
                 name: new.name,
                 parent_id: None,
                 lane_branch: None,
+                lane_base: None,
                 sort_key: key,
                 pinned: false,
                 collapsed: false,
@@ -160,6 +175,101 @@ pub async fn add(
                 params![ws.id.as_str(), ws.kind, ws.host_id, ws.root, ws.wsl_distro, ws.name, ws.sort_key, ws.created_at],
             )?;
             Ok((ws, Added::Created))
+        })
+        .await
+}
+
+/// Registers a worktree under its parent, after the parent's other
+/// worktrees. Worktrees don't count toward the plan's workspace limit. A
+/// removed row for the same folder (an earlier worktree at that path) is
+/// reused.
+pub async fn add_lane(store: &Store, lane: NewLane) -> Result<Workspace, StoreError> {
+    store
+        .write(move |t| {
+            let parent = t
+                .query_row(
+                    &format!("SELECT {COLUMNS} FROM workspaces WHERE id = ?1 AND removed_at IS NULL"),
+                    [lane.parent_id.as_str()],
+                    from_row,
+                )
+                .optional()?
+                .ok_or_else(|| StoreError::NotFound("No workspace with that id".into()))?;
+            if parent.parent_id.is_some() {
+                return Err(StoreError::Invalid(
+                    "A worktree belongs to its repository's workspace".into(),
+                ));
+            }
+            let found: Option<(String, Option<i64>)> = t
+                .query_row(
+                    "SELECT id, removed_at FROM workspaces WHERE host_id = ?1 AND root = ?2",
+                    params![parent.host_id, lane.root],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+            let last: Option<String> = t
+                .query_row(
+                    "SELECT MAX(sort_key) FROM workspaces WHERE removed_at IS NULL AND parent_id = ?1",
+                    [parent.id.as_str()],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .flatten();
+            let key = sort_key::between(last.as_deref(), None);
+            let ws = Workspace {
+                id: WorkspaceId::new(),
+                kind: parent.kind.clone(),
+                host_id: parent.host_id.clone(),
+                root: lane.root,
+                wsl_distro: parent.wsl_distro.clone(),
+                name: lane.name,
+                parent_id: Some(parent.id.clone()),
+                lane_branch: Some(lane.branch),
+                lane_base: Some(lane.base),
+                sort_key: key,
+                pinned: false,
+                collapsed: false,
+                sessions_collapsed: false,
+                created_at: now_ms(),
+            };
+            match found {
+                Some((_, None)) => Err(StoreError::Conflict(
+                    "Another workspace already uses that folder".into(),
+                )),
+                Some((id, Some(_))) => {
+                    t.execute(
+                        "UPDATE workspaces SET removed_at = NULL, name = ?2, parent_id = ?3, lane_branch = ?4,
+                         lane_base = ?5, sort_key = ?6, kind = ?7, wsl_distro = ?8, pinned = 0, collapsed = 0
+                         WHERE id = ?1",
+                        params![id, ws.name, parent.id.as_str(), ws.lane_branch, ws.lane_base, ws.sort_key, ws.kind, ws.wsl_distro],
+                    )?;
+                    Ok(Workspace { id: WorkspaceId::from_db(id), ..ws })
+                }
+                None => {
+                    t.execute(
+                        "INSERT INTO workspaces (id, kind, host_id, root, wsl_distro, name, parent_id, lane_branch, lane_base, sort_key, created_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                        params![
+                            ws.id.as_str(), ws.kind, ws.host_id, ws.root, ws.wsl_distro, ws.name,
+                            parent.id.as_str(), ws.lane_branch, ws.lane_base, ws.sort_key, ws.created_at
+                        ],
+                    )?;
+                    Ok(ws)
+                }
+            }
+        })
+        .await
+}
+
+/// A workspace's worktrees that aren't removed, oldest first.
+pub async fn lanes(store: &Store, parent: &WorkspaceId) -> Result<Vec<Workspace>, StoreError> {
+    let parent = parent.as_str().to_string();
+    store
+        .read(move |c| {
+            let mut stmt = c.prepare(&format!(
+                "SELECT {COLUMNS} FROM workspaces WHERE removed_at IS NULL AND parent_id = ?1 ORDER BY sort_key, created_at"
+            ))?;
+            let rows = stmt.query_map([&parent], from_row)?.collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
         })
         .await
 }
@@ -450,6 +560,89 @@ mod tests {
             .await
             .expect("flags");
         assert!(get(&store, &a.id).await.expect("get").collapsed);
+    }
+
+    fn lane(parent: &WorkspaceId, slug: &str) -> NewLane {
+        NewLane {
+            parent_id: parent.clone(),
+            root: format!("/repo/.tandem/worktrees/{slug}"),
+            name: slug.into(),
+            branch: format!("tandem/{slug}"),
+            base: "0123abc".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn f_cd_15_4_worktrees_nest_under_their_parent_outside_the_limit() {
+        let (_d, store) = store();
+        let (repo, _) = add(&store, local("/repo"), Some(1)).await.expect("add");
+        let a = add_lane(&store, lane(&repo.id, "fix-auth"))
+            .await
+            .expect("lane");
+        let b = add_lane(&store, lane(&repo.id, "fix-auth-2"))
+            .await
+            .expect("lane 2");
+        assert_eq!(a.parent_id.as_ref(), Some(&repo.id));
+        assert_eq!(a.lane_branch.as_deref(), Some("tandem/fix-auth"));
+        assert_eq!(a.lane_base.as_deref(), Some("0123abc"));
+        let got = get(&store, &b.id).await.expect("get");
+        assert_eq!(got.lane_base.as_deref(), Some("0123abc"));
+        assert_eq!(
+            lanes(&store, &repo.id)
+                .await
+                .expect("lanes")
+                .into_iter()
+                .map(|w| w.name)
+                .collect::<Vec<_>>(),
+            vec!["fix-auth", "fix-auth-2"],
+            "worktrees list in creation order"
+        );
+        // The Free limit (1 here) counts top-level workspaces only.
+        assert!(matches!(
+            add(&store, local("/other"), Some(1)).await,
+            Err(StoreError::LimitReached(_))
+        ));
+        // A worktree can't hold worktrees of its own.
+        assert!(matches!(
+            add_lane(&store, lane(&a.id, "nested")).await,
+            Err(StoreError::Invalid(_))
+        ));
+        // Removing the repository removes its worktrees' rows too.
+        remove(&store, &repo.id).await.expect("remove");
+        assert!(list(&store).await.expect("list").is_empty());
+    }
+
+    #[tokio::test]
+    async fn f_cd_15_a_removed_worktree_folder_can_be_registered_again() {
+        let (_d, store) = store();
+        let (repo, _) = add(&store, local("/repo"), None).await.expect("add");
+        let first = add_lane(&store, lane(&repo.id, "fix-auth"))
+            .await
+            .expect("lane");
+        assert!(matches!(
+            add_lane(&store, lane(&repo.id, "fix-auth")).await,
+            Err(StoreError::Conflict(_))
+        ));
+        remove(&store, &first.id).await.expect("remove");
+        assert!(lanes(&store, &repo.id).await.expect("lanes").is_empty());
+        let again = add_lane(
+            &store,
+            NewLane {
+                base: "fed9876".into(),
+                ..lane(&repo.id, "fix-auth")
+            },
+        )
+        .await
+        .expect("again");
+        assert_eq!(again.id, first.id, "the old row is reused");
+        assert_eq!(
+            get(&store, &again.id)
+                .await
+                .expect("get")
+                .lane_base
+                .as_deref(),
+            Some("fed9876")
+        );
     }
 
     #[tokio::test]

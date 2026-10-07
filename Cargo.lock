@@ -4969,6 +4969,7 @@ dependencies = [
  "sha2",
  "tandem-core",
  "tandem-engines",
+ "tandem-git",
  "tandem-pty",
  "tandem-store",
  "tauri",

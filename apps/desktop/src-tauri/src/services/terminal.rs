@@ -577,6 +577,35 @@ impl TerminalService {
         }
     }
 
+    /// Types `command` and Enter into a shell pane once it's ready: its view
+    /// has started it and it has been quiet for 1.5 s after its first output
+    /// (the prompt is up). False when `timeout` passes first.
+    pub async fn type_command_when_ready(
+        &self,
+        pane: &PaneId,
+        command: &str,
+        timeout: Duration,
+    ) -> bool {
+        let id = pane.as_str();
+        let until = std::time::Instant::now() + timeout;
+        loop {
+            if self.pty.is_live(id) {
+                if let Some(last) = self.status.last_output(id) {
+                    if chrono::Utc::now().timestamp_millis() - last >= READY_QUIET_MS {
+                        break;
+                    }
+                }
+            }
+            if std::time::Instant::now() >= until {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        self.pty
+            .write(id, format!("{command}\r").as_bytes())
+            .is_ok()
+    }
+
     /// `type_prompt` (§6.5, F-EN-06 AC1–2).
     pub async fn type_prompt(&self, pane: &PaneId, text: &str) -> Result<(), IpcError> {
         let record = panes::get_open(&self.store, pane).await?;

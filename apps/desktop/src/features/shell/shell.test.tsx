@@ -20,6 +20,7 @@ const ws: WorkspaceSummary = {
   name: "shop",
   parentId: null,
   laneBranch: null,
+  laneBase: null,
   sortKey: "a0",
   pinned: false,
   collapsed: false,

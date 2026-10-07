@@ -104,6 +104,7 @@ export type * from "./SlowShell";
 export type * from "./SourceRef";
 export type * from "./SpawnRecord";
 export type * from "./StaleLane";
+export type * from "./StaleLanes";
 export type * from "./StatusRecord";
 export type * from "./StatusReport";
 export type * from "./StatusUpdate";

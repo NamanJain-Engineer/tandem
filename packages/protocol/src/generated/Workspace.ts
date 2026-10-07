@@ -5,4 +5,8 @@ export type Workspace = { id: WorkspaceId,
 /**
  * `local` | `ssh` | `wsl`
  */
-kind: string, hostId: string, root: string, wslDistro: string | null, name: string, parentId: WorkspaceId | null, laneBranch: string | null, sortKey: string, pinned: boolean, collapsed: boolean, sessionsCollapsed: boolean, createdAt: number, };
+kind: string, hostId: string, root: string, wslDistro: string | null, name: string, parentId: WorkspaceId | null, laneBranch: string | null, 
+/**
+ * The commit a worktree started from (its "Diff vs base").
+ */
+laneBase: string | null, sortKey: string, pinned: boolean, collapsed: boolean, sessionsCollapsed: boolean, createdAt: number, };

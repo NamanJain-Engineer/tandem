@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lane-remove"
+description = "Enables the lane_remove command without any pre-configured scope."
+commands.allow = ["lane_remove"]
+
+[[permission]]
+identifier = "deny-lane-remove"
+description = "Denies the lane_remove command without any pre-configured scope."
+commands.deny = ["lane_remove"]

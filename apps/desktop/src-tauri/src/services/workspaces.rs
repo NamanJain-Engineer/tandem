@@ -137,11 +137,22 @@ pub async fn list(store: &Store, pty: &PtyManager) -> Result<Vec<WorkspaceSummar
     Ok(out)
 }
 
+/// Soft remove. Its worktrees' rows go with it, so their panes stop too;
+/// nothing on disk is touched.
 pub async fn remove(store: &Store, pty: &PtyManager, id: &WorkspaceId) -> Result<(), IpcError> {
-    for tab in tabs::list(store, id).await? {
-        for pane in panes::list_open(store, &tab.id).await? {
-            let _ = pty.kill(pane.id.as_str());
-            panes::close(store, &pane.id).await?;
+    let mut ids = vec![id.clone()];
+    ids.extend(
+        workspaces::lanes(store, id)
+            .await?
+            .into_iter()
+            .map(|w| w.id),
+    );
+    for ws in &ids {
+        for tab in tabs::list(store, ws).await? {
+            for pane in panes::list_open(store, &tab.id).await? {
+                let _ = pty.kill(pane.id.as_str());
+                panes::close(store, &pane.id).await?;
+            }
         }
     }
     workspaces::remove(store, id).await?;

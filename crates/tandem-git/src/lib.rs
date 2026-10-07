@@ -10,7 +10,7 @@ pub mod types;
 
 pub use cli::{Git, Mode};
 pub use error::GitError;
-pub use lanes::{ForceConfirm, Lane, LaneManager};
+pub use lanes::{briefing, ForceConfirm, Lane, LaneManager};
 pub use repo::Repo;
 pub use slug::slugify;
 pub use types::{FileChange, FileDiff, FileStatus, GitStatus, MergeReport, StaleLane};

@@ -6,7 +6,8 @@ pub const MAX_SLUG: usize = 40;
 
 /// Kebab-case, ASCII only, at most 40 characters. Accents fold to their base
 /// letter; anything else that isn't a letter or digit becomes a separator.
-/// Empty input gives "lane".
+/// Empty input gives "session" (UI_SPEC UI-12: branch names are user-visible,
+/// and "lane" is an internal word).
 pub fn slugify(text: &str) -> String {
     let mut out = String::with_capacity(text.len().min(MAX_SLUG));
     let mut dash = false;
@@ -27,7 +28,7 @@ pub fn slugify(text: &str) -> String {
     out.truncate(MAX_SLUG);
     let out = out.trim_end_matches('-').to_string();
     if out.is_empty() {
-        "lane".into()
+        "session".into()
     } else {
         out
     }
@@ -96,8 +97,8 @@ mod tests {
             "reparer-l-ecran-d-accueil"
         );
         assert_eq!(slugify("snake_case/and.dots"), "snake-case-and-dots");
-        assert_eq!(slugify("🚀"), "lane");
-        assert_eq!(slugify(""), "lane");
+        assert_eq!(slugify("🚀"), "session");
+        assert_eq!(slugify(""), "session");
         assert_eq!(slugify("测试 tests"), "tests");
     }
 

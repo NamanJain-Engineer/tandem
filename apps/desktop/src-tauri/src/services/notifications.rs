@@ -264,6 +264,39 @@ impl NotificationService {
         }
     }
 
+    /// An in-app notification that isn't about an agent session (worktree
+    /// clean-up): it replaces the unresolved one with the same `dedupe_key`
+    /// and never reaches the OS.
+    pub async fn raise_in_app(
+        &self,
+        kind: NotificationKind,
+        title: String,
+        body: String,
+        source: SourceRef,
+        dedupe_key: String,
+    ) {
+        self.resolve(&dedupe_key).await;
+        match repo::insert(
+            &self.store,
+            NewNotification {
+                kind,
+                title,
+                body,
+                source,
+                dedupe_key: Some(dedupe_key),
+            },
+        )
+        .await
+        {
+            Ok(n) => self.bus.publish(BusEvent::new(
+                Topic::Notifications,
+                "notifications:new",
+                serde_json::json!({ "notification": n, "sound": false }),
+            )),
+            Err(err) => tracing::warn!(error = %err, "couldn't store a notification"),
+        }
+    }
+
     async fn resolve(&self, dedupe: &str) {
         match repo::resolve(&self.store, dedupe).await {
             Ok(ids) if !ids.is_empty() => self.bus.publish(BusEvent::new(

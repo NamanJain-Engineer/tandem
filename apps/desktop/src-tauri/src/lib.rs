@@ -71,6 +71,12 @@ macro_rules! app_commands {
             commands::workspaces::workspace_list,
             commands::workspaces::workspace_rename,
             commands::workspaces::workspace_remove,
+            commands::lanes::lane_create,
+            commands::lanes::lane_diff,
+            commands::lanes::lane_merge,
+            commands::lanes::lane_create_pr,
+            commands::lanes::lane_remove,
+            commands::lanes::lanes_sweep,
             commands::workspaces::workspace_locate,
             commands::workspaces::workspace_set_flags,
             commands::workspaces::workspace_reveal,
@@ -450,6 +456,19 @@ pub fn run() {
                 state.terminals.engines.apply_config(&config);
                 let login = state.terminals.login_env().await;
                 state.terminals.engines.detect(&login).await;
+            });
+            // Worktree sweep: at startup, then every 6 h (F-CD-15). It never
+            // deletes anything; finished worktrees become one notification.
+            let sweep_state = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut tick = tokio::time::interval(services::lanes::SWEEP_EVERY);
+                loop {
+                    tick.tick().await;
+                    let state = sweep_state.state::<AppState>();
+                    if let Err(err) = services::lanes::sweep_and_notify(&state).await {
+                        tracing::info!(error = %err, "worktree sweep skipped");
+                    }
+                }
             });
             // Detect again when the window comes back, at most once a minute.
             if let Some(window) = app.get_webview_window("main") {

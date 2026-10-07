@@ -22,6 +22,7 @@ function ws(id: string, over: Partial<WorkspaceSummary> = {}): WorkspaceSummary 
     name: id,
     parentId: null,
     laneBranch: null,
+    laneBase: null,
     sortKey: "a0",
     pinned: false,
     collapsed: true,

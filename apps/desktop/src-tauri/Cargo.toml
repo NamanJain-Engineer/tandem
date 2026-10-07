@@ -20,6 +20,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tandem-core.workspace = true
 tandem-engines.workspace = true
+tandem-git.workspace = true
 tandem-pty.workspace = true
 tandem-store.workspace = true
 aes-gcm.workspace = true

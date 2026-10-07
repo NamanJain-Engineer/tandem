@@ -44,6 +44,24 @@ impl ForceConfirm {
     }
 }
 
+/// What a worktree's agent receives before its task (F-CD-15 "Briefing").
+/// `siblings` are the other worktrees' branches in the same launch or repo.
+pub fn briefing(path: &Path, branch: &str, siblings: &[String]) -> String {
+    let others = if siblings.is_empty() {
+        "none".to_string()
+    } else {
+        siblings
+            .iter()
+            .map(|b| format!("`{b}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    format!(
+        "You are working in the git worktree `{}` on branch `{branch}`. Sibling branches: {others}. Don't modify other worktrees.",
+        path_string(path)
+    )
+}
+
 pub struct LaneManager;
 
 impl LaneManager {
@@ -304,4 +322,24 @@ fn list_lanes(main: &Repo) -> Result<Vec<ListedLane>, GitError> {
 fn modified(path: &Path) -> Option<DateTime<Utc>> {
     let time: SystemTime = std::fs::metadata(path).ok()?.modified().ok()?;
     Some(DateTime::<Utc>::from(time))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn f_cd_15_briefing_names_the_worktree_branch_and_siblings() {
+        let text = briefing(
+            Path::new("/repo/.tandem/worktrees/fix-auth"),
+            "tandem/fix-auth",
+            &["tandem/fix-auth-2".into(), "tandem/fix-auth-3".into()],
+        );
+        assert_eq!(
+            text,
+            "You are working in the git worktree `/repo/.tandem/worktrees/fix-auth` on branch `tandem/fix-auth`. \
+             Sibling branches: `tandem/fix-auth-2`, `tandem/fix-auth-3`. Don't modify other worktrees."
+        );
+        assert!(briefing(Path::new("/r/w"), "tandem/w", &[]).contains("Sibling branches: none."));
+    }
 }
