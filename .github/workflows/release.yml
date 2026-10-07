@@ -6,16 +6,31 @@ name: Release
 # secrets still produces unsigned artifacts and doesn't fail (AC1).
 # `bash scripts/release-local.sh --dry-run` reproduces the Linux path.
 
+#
+# Early access (D-105): run by hand with channel `early-access`. Builds are
+# compiled with TANDEM_HOSTED=0 (no accounts, no API calls, the Free plan
+# locally) and published as a prerelease in the public
+# NamanJain-Engineer/tandem-releases repository, which needs the
+# RELEASES_TOKEN secret (contents: write on that repository only).
+
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      channel:
+        description: "early-access: public prerelease in tandem-releases; stable: draft release here"
+        type: choice
+        options: [early-access, stable]
+        default: early-access
 
 permissions:
   contents: write
 
 env:
   CARGO_TERM_COLOR: always
+  CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || 'stable' }}
+  RELEASES_REPO: NamanJain-Engineer/tandem-releases
 
 jobs:
   verify:
@@ -39,7 +54,8 @@ jobs:
             echo "::error::version mismatch: tauri.conf.json $version, package.json $pkg, Cargo.toml $cargo_v"; exit 1
           fi
           grep -q "^## $version\b" CHANGELOG.md || { echo "::error::CHANGELOG.md has no '## $version' section"; exit 1; }
-          if grep -q '"TBD"' crates/tandem-voice/models/catalog.json; then
+          # Unpinned models matter once the app can download them (Dictate).
+          if grep -q 'tandem-voice' apps/desktop/src-tauri/Cargo.toml && grep -q '"TBD"' crates/tandem-voice/models/catalog.json; then
             echo "::error::model sha256 values are still TBD (scripts/pin-models.ts)"; exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -82,6 +98,10 @@ jobs:
           # oldest image that ships it (Debian bullseye doesn't).
           - { name: linux, os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, bundles: "appimage,deb" }
     runs-on: ${{ matrix.os }}
+    env:
+      # Early-access builds have no hosted service (D-105).
+      # (job-level env can't read the workflow's env context)
+      TANDEM_HOSTED: ${{ github.event_name == 'workflow_dispatch' && inputs.channel == 'early-access' && '0' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -141,6 +161,7 @@ jobs:
           args: >-
             --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
             ${{ steps.secrets.outputs.updater == 'true' && '--config {"bundle":{"createUpdaterArtifacts":true}}' || '' }}
+            ${{ matrix.name == 'macos' && steps.secrets.outputs.apple != 'true' && '--config {"bundle":{"macOS":{"signingIdentity":"-"}}}' || '' }}
             ${{ matrix.name == 'windows' && steps.secrets.outputs.azure == 'true' && format('--config {{"bundle":{{"windows":{{"signCommand":"trusted-signing-cli -e {0} -a {1} -c {2} %1"}}}}}}', secrets.AZURE_SIGNING_ENDPOINT, secrets.AZURE_SIGNING_ACCOUNT, secrets.AZURE_CERT_PROFILE) || '' }}
 
       - if: matrix.name == 'linux' && steps.secrets.outputs.gpg == 'true'
@@ -203,7 +224,11 @@ jobs:
         shell: bash
         env:
           RELEASE_API_TOKEN: ${{ secrets.RELEASE_API_TOKEN }}
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
+          if [ "$CHANNEL" = "early-access" ] && [ -z "$RELEASES_TOKEN" ]; then
+            echo "::error::early access publishes to $RELEASES_REPO and needs the RELEASES_TOKEN secret (fine-grained token, contents: write on that repository)"; exit 1
+          fi
           mkdir -p release
           find artifacts -type f -exec cp {} release/ \;
           (cd release && sha256sum -- * > SHA256SUMS)
@@ -214,7 +239,34 @@ jobs:
           if [ -z "$RELEASE_API_TOKEN" ]; then
             echo "- not registered with the update API (missing RELEASE_API_TOKEN)" >> "$GITHUB_STEP_SUMMARY"
           fi
-      - name: Draft GitHub release
+      - if: env.CHANNEL == 'early-access'
+        name: Release notes
+        shell: bash
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          {
+            echo "Early-access build of Tandem $VERSION for macOS, Windows and Linux."
+            echo
+            echo "- The Free plan runs on your computer. No account is needed, and the app doesn't contact our servers."
+            echo "- These builds aren't code-signed yet. Install steps for each OS: https://vibezeo.com/download/"
+            echo "- Check a download against SHA256SUMS."
+            echo
+            awk -v v="$VERSION" '$0 ~ "^## "v"( |$)" {on=1; next} /^## / && on {exit} on' CHANGELOG.md
+          } > release-notes.md
+      - if: env.CHANNEL == 'early-access'
+        name: Publish the early-access prerelease (public)
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ env.RELEASES_REPO }}
+          token: ${{ secrets.RELEASES_TOKEN }}
+          prerelease: true
+          tag_name: v${{ needs.verify.outputs.version }}-early-access
+          name: Tandem ${{ needs.verify.outputs.version }} (early access)
+          body_path: release-notes.md
+          files: release/*
+      - if: env.CHANNEL != 'early-access'
+        name: Draft GitHub release
         uses: softprops/action-gh-release@v2
         with:
           draft: true

@@ -22,6 +22,7 @@ export function SignIn() {
     invoke("auth_sign_in").catch((e: IpcError) => show({ tone: "error", title: e.message }));
   const pending = auth?.pending ?? null;
   const error = auth?.error ?? null;
+  if (auth && !auth.hosted) return <EarlyAccessWelcome />;
   return (
     <main id="main" className="flex h-full items-center justify-center bg-bg p-6">
       <section
@@ -111,6 +112,44 @@ export function SignIn() {
             {t("signin.offline")}
           </Button>
           <span className="text-sm text-fg-subtle">{t("signin.offlineNote")}</span>
+        </div>
+        <p className="text-sm text-fg-subtle">{t("signin.terms")}</p>
+      </section>
+    </main>
+  );
+}
+
+/** UI-03 in an early-access build: no accounts yet, the Free plan runs
+ * locally (D-105). */
+function EarlyAccessWelcome() {
+  return (
+    <main id="main" className="flex h-full items-center justify-center bg-bg p-6">
+      <section
+        aria-labelledby="signin-title"
+        className="flex w-[520px] max-w-full flex-col gap-5 rounded-lg border border-border bg-surface-2 p-8 shadow-2"
+      >
+        <div className="flex items-center gap-3">
+          <LogoMark size={32} />
+          <div>
+            <h1 id="signin-title" className="text-xl font-semibold text-fg">
+              {t("signin.title")}
+            </h1>
+            <p className="text-base text-fg-muted">{t("signin.subtitle")}</p>
+          </div>
+        </div>
+        <Callout tone="info" title={t("signin.earlyAccess.title")}>
+          {t("signin.earlyAccess.body")}
+        </Callout>
+        <div className="flex flex-col gap-2">
+          <Button
+            size="lg"
+            variant="primary"
+            fullWidth
+            onClick={() => invoke("auth_continue_offline").catch(() => undefined)}
+          >
+            {t("signin.earlyAccess.start")}
+          </Button>
+          <span className="text-sm text-fg-subtle">{t("signin.earlyAccess.note")}</span>
         </div>
         <p className="text-sm text-fg-subtle">{t("signin.terms")}</p>
       </section>

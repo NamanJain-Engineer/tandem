@@ -5,7 +5,7 @@ import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { followFocus } from "../../stores/focus";
-import { useLayout } from "../../stores/layout";
+import { flushLayouts, useLayout } from "../../stores/layout";
 import { useRestore } from "../../stores/restore";
 import { useStatus } from "../../stores/status";
 import { useSession } from "../../stores/session";
@@ -249,7 +249,12 @@ beforeEach(() => {
   mounts.clear();
   lastProps.clear();
 });
-afterEach(() => setInvokeBackend(null));
+// Pending layout saves are module state (500 ms timers): store them with
+// this test's backend, so none lands in a later test's calls.
+afterEach(async () => {
+  await flushLayouts();
+  setInvokeBackend(null);
+});
 
 describe("pane grid (F-CD-02)", () => {
   it("F-CD-02 a fresh tab starts one shell, alone without a maximize control", async () => {

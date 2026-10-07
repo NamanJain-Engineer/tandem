@@ -17,6 +17,16 @@ export function AccountPage() {
   const openUpgrade = useUi((s) => s.openUpgrade);
   const { show } = useToast();
 
+  if (auth && !auth.hosted) {
+    return (
+      <SettingsGroup>
+        <p className="p-3 text-base text-fg" data-testid="account-early-access">
+          {t("settings.account.earlyAccess")}
+        </p>
+      </SettingsGroup>
+    );
+  }
+
   if (!auth?.signedIn) {
     return (
       <SettingsGroup>

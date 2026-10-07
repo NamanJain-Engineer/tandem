@@ -4,7 +4,7 @@ import { invoke } from "../../ipc/invoke";
 import { useUpdates } from "../../stores/updates";
 import { useBoot } from "../shell/useBoot";
 
-const DOWNLOAD_PAGE = "https://tandem.dev/download";
+const DOWNLOAD_PAGE = "https://vibezeo.com/download/";
 
 /** UI-115 Settings › Updates: version, channel, Check now and its stages. */
 export function UpdatesPanel() {

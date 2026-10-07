@@ -297,7 +297,11 @@ pub struct AuthState {
     pub email: Option<String>,
     /// Using Tandem without an account (UI-03 offline path).
     pub offline: bool,
+    /// `None` when there's no sign-in deadline (early-access builds).
     pub offline_days_left: Option<i64>,
+    /// False in early-access builds: no accounts yet, the Free plan runs
+    /// locally with no deadline (D-105).
+    pub hosted: bool,
     pub pending: Option<PendingSignIn>,
     pub error: Option<AuthFailure>,
 }
@@ -432,8 +436,9 @@ impl AuthService {
             offline,
             offline_days_left: inner
                 .offline_started_at
-                .filter(|_| offline)
+                .filter(|_| offline && self.endpoints.hosted)
                 .map(|start| (OFFLINE_DAYS - (now - start) / 86_400_000).max(0)),
+            hosted: self.endpoints.hosted,
             pending: inner.attempt.as_ref().map(|a| PendingSignIn {
                 op_id: a.op_id.clone(),
                 url: a.url.clone(),
@@ -454,6 +459,12 @@ impl AuthService {
     /// Starts an attempt (replacing any current one) and returns its op id.
     /// The result arrives as `auth:changed`.
     pub async fn sign_in(self: &Arc<Self>) -> Result<String, IpcError> {
+        if !self.endpoints.hosted {
+            return Err(IpcError::new(
+                ErrorCode::Unavailable,
+                "Accounts open at launch. This early-access build runs the Free plan without one.",
+            ));
+        }
         self.cancel_attempt();
         let pkce = Pkce::generate();
         let listener = TcpListener::bind("127.0.0.1:0").await.map_err(|e| {
@@ -1042,6 +1053,7 @@ pub mod tests {
             Endpoints {
                 api: "http://api.test".into(),
                 web: "http://web.test".into(),
+                hosted: true,
             },
             Arc::new(clock.clone()),
             bus.clone(),
@@ -1198,6 +1210,7 @@ pub mod tests {
             Endpoints {
                 api: "http://api.test".into(),
                 web: "http://web.test".into(),
+                hosted: true,
             },
             Arc::new(r.clock.clone()),
             r.bus.clone(),
@@ -1333,6 +1346,36 @@ pub mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         assert_eq!(*r.api.refreshes.lock().expect("lock"), 1);
+    }
+
+    #[tokio::test]
+    async fn early_access_runs_free_without_a_deadline_or_sign_in() {
+        let r = rig();
+        let auth = AuthService::new(
+            r.data.clone(),
+            r.keychain.clone(),
+            r.api.clone(),
+            r.opener.clone(),
+            Endpoints {
+                api: "http://api.test".into(),
+                web: "http://web.test".into(),
+                hosted: false,
+            },
+            Arc::new(r.clock.clone()),
+            r.bus.clone(),
+            None,
+        );
+        auth.continue_offline();
+        r.clock.advance(Duration::from_secs(30 * 86_400));
+        let s = auth.state();
+        assert!(s.offline && !s.hosted);
+        assert_eq!(s.offline_days_left, None, "no sign-in deadline");
+        let err = auth.sign_in().await.expect_err("no accounts yet");
+        assert_eq!(err.code, ErrorCode::Unavailable);
+        assert!(
+            r.opener.opened.lock().expect("opened").is_empty(),
+            "no browser opened"
+        );
     }
 
     #[tokio::test]

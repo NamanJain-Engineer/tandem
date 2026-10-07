@@ -4,26 +4,27 @@ Things only a human can do. The build never blocks on them: each sits behind a m
 
 ## Accounts & keys
 - Enable GitHub Actions on `NamanJain-Engineer/tandem` so `.github/workflows/ci.yml` runs.
-- Google OAuth client: set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` for the API; redirect URI `https://app.tandem.dev/v1/auth/callback/google`. Until then the Google button is hidden. Verify: the sign-in page offers Google and the callback lands on /account.
-- Stripe: create products and prices for Pro $29/mo and $290/yr (7-day trial, card required) and Team $49/seat/mo and $490/seat/yr (14-day trial); credit packs 5k/$5, 12k/$10, 30k/$20. Put the price ids in `STRIPE_PRICE_*`, the key in `STRIPE_SECRET_KEY`, set `BILLING_PROVIDER=stripe`. Configure the customer portal; set dunning to cancel after 14 days; add the webhook endpoint `https://api.tandem.dev/v1/webhooks/stripe` and put its secret in `STRIPE_WEBHOOK_SECRET`. Verify: `bash scripts/stripe-fixture.sh invoice.paid <email>` with the real secret returns 200.
+- Google OAuth client: set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` for the API; redirect URI `https://app.vibezeo.com/v1/auth/callback/google`. Until then the Google button is hidden. Verify: the sign-in page offers Google and the callback lands on /account.
+- Stripe: create products and prices for Pro $29/mo and $290/yr (7-day trial, card required) and Team $49/seat/mo and $490/seat/yr (14-day trial); credit packs 5k/$5, 12k/$10, 30k/$20. Put the price ids in `STRIPE_PRICE_*`, the key in `STRIPE_SECRET_KEY`, set `BILLING_PROVIDER=stripe`. Configure the customer portal; set dunning to cancel after 14 days; add the webhook endpoint `https://api.vibezeo.com/v1/webhooks/stripe` and put its secret in `STRIPE_WEBHOOK_SECRET`. Verify: `bash scripts/stripe-fixture.sh invoice.paid <email>` with the real secret returns 200.
 - SMTP provider credentials in `SMTP_URL` and a verified sender for `EMAIL_FROM`.
 - Claude API key in `ANTHROPIC_API_KEY` for the hosted AI features (D-103, M13). Apply to the Claude startup program from the Claude Console, signed in with an @vibezeo.com address that has a Cloudflare Email Routing rule. Until the key exists, `MockAi` answers.
 - Cloudflare Turnstile site and secret keys (`TURNSTILE_SECRET`; site key for the web sign-up page). Edge rules must skip challenges for `Authorization: Bearer` requests and `/v1/webhooks/*`.
 - Production Ed25519 keys: generate with `pnpm keys:dev --force` on a secure machine (or a KMS), set `JWT_SIGNING_KEYS` (ak-*, ek-*) and `CONFIG_SIGNING_KEY` (ck-*), and copy the public keys into `apps/desktop/src-tauri/resources/keys.json` for release builds. Rotation: add the new kid to keys.json one release before signing with it.
 - Managed Postgres 16 and Redis 7 (`DATABASE_URL`, `REDIS_URL`), `BETTER_AUTH_SECRET` (32+ random bytes), `BREACH_CHECK=hibp`.
-- Domains `api.tandem.dev` and `app.tandem.dev` (`API_PUBLIC_URL`, `WEB_PUBLIC_URL`).
+- Domains `api.vibezeo.com` and `app.vibezeo.com` (`API_PUBLIC_URL`, `WEB_PUBLIC_URL`); release builds default to them (D-105).
 - Telemetry (opt-in only, M2): a PostHog project key in `POSTHOG_KEY` and a Sentry DSN in `SENTRY_DSN`, set at desktop build time. Without them nothing is ever sent, even when a user opts in. Verify: with a debug build, `POSTHOG_KEY=… SENTRY_DSN=…` set, opt in under Settings › Privacy & Telemetry and see requests to the analytics host in `TANDEM_NET_LOG`.
 - Production entitlement and config public keys bundled into `apps/desktop/src-tauri/resources/keys.json` for release builds (ARCHITECTURE §14.4); see "Production Ed25519 keys" above.
 
 - Public site: the Vercel project exists (`tandem-pi-woad.vercel.app`, Root Directory `apps/web`, production branch `main`); add `vibezeo.com` and `www`, and set up mail forwarding for `hello@vibezeo.com` (`docs/DEPLOY_SITE.md`). Remove the custom domain from the old `vibezeo` repo's GitHub Pages. If the company gets registered, fill `legal` and `location` in `apps/web/lib/site.ts`. Verify: `https://vibezeo.com/` shows the Tandem home page, `/about/` loads, and a test mail to hello@vibezeo.com arrives.
 
 ## Signing & distribution
+- [ ] Early access (D-105): create the public repository `NamanJain-Engineer/tandem-releases` (with a README so it has a default branch), and a fine-grained token with Contents read/write on that repository only, saved in `tandem` as the Actions secret `RELEASES_TOKEN`. Then run the Release workflow with channel `early-access`. Verify: the repository's Releases page shows "Tandem 0.1.0 (early access)" with macOS, Windows and Linux files and SHA256SUMS.
 Until these exist, release builds can't update (`updates_state` reads `unavailable`) and the release workflow marks every artifact "unsigned" (F-TL-04).
 - [ ] Minisign updater keypair: `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as repo secrets; the public key as `TAURI_SIGNING_PUBLIC_KEY` (repo variable, compiled into release builds). Debug builds use the dev key from `pnpm keys:dev` and never ship it.
 - [ ] Apple Developer ID and notarization: `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`.
 - [ ] Azure Trusted Signing for Windows: `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, the endpoint and the certificate profile.
 - [ ] A GPG key for the deb and the AppImage detached signature.
-- [ ] Release hosting at `https://releases.tandem.dev` (bucket + CDN) for artifacts and `latest.json`, and the API's `/v1/updates/:channel/:target/:arch/:current_version` reading published `releases` rows.
+- [ ] Release hosting for signed updates (bucket + CDN) for artifacts and `latest.json`, and the API's `/v1/updates/:channel/:target/:arch/:current_version` reading published `releases` rows.
 
 ## Legal
 - Trademark search for the working name "Tandem" before any public launch (DECISIONS §Identity).

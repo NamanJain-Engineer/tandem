@@ -22,6 +22,24 @@ use tandem_core::remote_config::SignedConfig;
 pub struct Endpoints {
     pub api: String,
     pub web: String,
+    /// False in early-access builds, which ship before the hosted service
+    /// exists: no accounts, no API calls (D-105).
+    pub hosted: bool,
+}
+
+/// Whether this build talks to the hosted service. The release workflow
+/// compiles early-access builds with `TANDEM_HOSTED=0`; debug builds also
+/// read it at run time, or take `--test-no-hosted` (E2E relaunches).
+pub fn hosted_service() -> bool {
+    if cfg!(debug_assertions) {
+        if std::env::args().any(|a| a == "--test-no-hosted") {
+            return false;
+        }
+        if let Ok(v) = std::env::var("TANDEM_HOSTED") {
+            return v != "0";
+        }
+    }
+    !matches!(option_env!("TANDEM_HOSTED"), Some("0"))
 }
 
 impl Endpoints {
@@ -45,7 +63,7 @@ impl Endpoints {
                 ("http://127.0.0.1:8787", "http://localhost:3000")
             }
         } else {
-            ("https://api.tandem.dev", "https://app.tandem.dev")
+            ("https://api.vibezeo.com", "https://app.vibezeo.com")
         };
         Self {
             api: api
@@ -56,6 +74,7 @@ impl Endpoints {
                 .unwrap_or_else(|| web_default.into())
                 .trim_end_matches('/')
                 .to_string(),
+            hosted: hosted_service(),
         }
     }
 }
@@ -159,6 +178,45 @@ pub trait ApiClient: Send + Sync {
         &self,
         access: &str,
     ) -> Result<BoxStream<'static, Result<String, ApiError>>, ApiError>;
+}
+
+/// The API client of an early-access build (D-105): every call fails as
+/// "offline" without touching the network.
+pub struct NoHostedApi;
+
+fn no_hosted_service() -> ApiError {
+    ApiError::Network("this early-access build has no hosted service".into())
+}
+
+#[async_trait]
+impl ApiClient for NoHostedApi {
+    async fn exchange(&self, _: &str, _: &str, _: &str) -> Result<TokenPair, ApiError> {
+        Err(no_hosted_service())
+    }
+    async fn refresh(&self, _: &str) -> Result<TokenPair, ApiError> {
+        Err(no_hosted_service())
+    }
+    async fn logout(&self, _: &str, _: &str) -> Result<(), ApiError> {
+        Err(no_hosted_service())
+    }
+    async fn me(&self, _: &str) -> Result<MeResponse, ApiError> {
+        Err(no_hosted_service())
+    }
+    async fn checkout(&self, _: &str, _: &str, _: &str) -> Result<String, ApiError> {
+        Err(no_hosted_service())
+    }
+    async fn portal(&self, _: &str) -> Result<String, ApiError> {
+        Err(no_hosted_service())
+    }
+    async fn config(&self) -> Result<SignedConfig, ApiError> {
+        Err(no_hosted_service())
+    }
+    async fn events(
+        &self,
+        _: &str,
+    ) -> Result<BoxStream<'static, Result<String, ApiError>>, ApiError> {
+        Err(no_hosted_service())
+    }
 }
 
 /// Told the `x-tandem-min-version` of API responses (F-SH-06). Set once
@@ -432,6 +490,29 @@ mod tests {
             vec!["entitlement", "credits"]
         );
         assert_eq!(p.feed(b"data: hi\n\n"), vec!["message"]);
+    }
+
+    #[tokio::test]
+    async fn early_access_api_never_reaches_the_network() {
+        // NoHostedApi holds no client at all; every call is "offline".
+        let api = NoHostedApi;
+        assert!(matches!(api.config().await, Err(ApiError::Network(_))));
+        assert!(matches!(api.refresh("r").await, Err(ApiError::Network(_))));
+        assert!(matches!(
+            api.checkout("a", "pro", "month").await,
+            Err(ApiError::Network(_))
+        ));
+    }
+
+    #[test]
+    fn release_builds_use_our_own_domains() {
+        let src = include_str!("api.rs");
+        assert!(src.contains("\"https://api.vibezeo.com\", \"https://app.vibezeo.com\""));
+        let conf = include_str!("../../tauri.conf.json");
+        assert!(
+            !conf.contains("tandem.dev"),
+            "tauri.conf.json still names tandem.dev"
+        );
     }
 
     #[test]

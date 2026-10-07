@@ -144,11 +144,17 @@ impl AppState {
         };
         let endpoints = Endpoints::from_env();
         let min_version = crate::services::api::MinVersionWatch::default();
-        let api: Arc<dyn ApiClient> = Arc::new(HttpApi::watching(
-            net.clone(),
-            endpoints.clone(),
-            min_version.clone(),
-        ));
+        // Early-access builds have no hosted service: nothing leaves the
+        // machine for it (D-105).
+        let api: Arc<dyn ApiClient> = if endpoints.hosted {
+            Arc::new(HttpApi::watching(
+                net.clone(),
+                endpoints.clone(),
+                min_version.clone(),
+            ))
+        } else {
+            Arc::new(crate::services::api::NoHostedApi)
+        };
         let state = Self::with(
             data,
             store,
@@ -354,6 +360,7 @@ impl AppState {
         let endpoints = Endpoints {
             api: "http://api.test".into(),
             web: "http://web.test".into(),
+            hosted: true,
         };
         Self::with(
             data,

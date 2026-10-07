@@ -62,6 +62,8 @@ export function UpgradeDialog() {
   };
 
   const signedOut = !auth?.signedIn;
+  // Early-access builds can't sell anything yet (D-105).
+  const hosted = auth?.hosted ?? true;
   const card = "flex flex-1 flex-col gap-3 rounded-md border border-border bg-surface-2 p-4";
   const feature = (text: string) => (
     <li key={text} className="flex items-start gap-1.5 text-sm text-fg-muted">
@@ -85,6 +87,11 @@ export function UpgradeDialog() {
               {gate.kind === "workspaces"
                 ? t("upgrade.gate.workspaces", { n: gate.limit })
                 : t("upgrade.gate.panes", { n: gate.limit })}
+            </p>
+          )}
+          {!hosted && (
+            <p className="text-base text-fg-muted" data-testid="upgrade-early-access">
+              {t("upgrade.earlyAccess")}
             </p>
           )}
           <div className="flex justify-center">
@@ -135,7 +142,7 @@ export function UpgradeDialog() {
                 variant="primary"
                 fullWidth
                 data-testid="upgrade-pro"
-                disabled={plan === "pro"}
+                disabled={plan === "pro" || !hosted}
                 onClick={() => void checkout({ plan: "pro", interval })}
               >
                 {signedOut ? t("upgrade.signInToUpgrade") : t("upgrade.proTrial")}
@@ -158,7 +165,7 @@ export function UpgradeDialog() {
               </ul>
               <Button
                 fullWidth
-                disabled={plan === "team"}
+                disabled={plan === "team" || !hosted}
                 onClick={() => void checkout({ plan: "team", interval })}
               >
                 {signedOut ? t("upgrade.signInToUpgrade") : t("upgrade.teamTrial")}
@@ -172,7 +179,7 @@ export function UpgradeDialog() {
               size="sm"
               iconRight={<ExternalLink size={12} />}
               onClick={() =>
-                invoke("app_open_external", { url: "https://tandem.dev/pricing" }).catch(() => undefined)
+                invoke("app_open_external", { url: "https://vibezeo.com/pricing/" }).catch(() => undefined)
               }
             >
               {t("upgrade.compare")}

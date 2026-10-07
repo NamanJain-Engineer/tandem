@@ -68,7 +68,7 @@ export function TitleBar() {
     {
       id: "help",
       label: t("menu.help"),
-      onSelect: () => invoke("app_open_external", { url: "https://tandem.dev/docs" }).catch(() => undefined),
+      onSelect: () => invoke("app_open_external", { url: "https://vibezeo.com/download/#getting-started" }).catch(() => undefined),
     },
     { id: "diag", label: t("menu.copyDiagnostics"), onSelect: () => void copyDiagnostics(show) },
     {
@@ -105,11 +105,7 @@ export function TitleBar() {
       : entitlement?.plan === "team"
         ? t("plan.team")
         : t("plan.free");
-  const accountMenu: MenuEntry[] = [
-    { id: "who", type: "label", label: auth?.email ?? t("menu.offlineMode") },
-    { id: "billing", label: t("menu.accountBilling"), onSelect: () => openSettings("account") },
-    { id: "settings", label: t("menu.settings"), kbd: ["Mod", ","], onSelect: () => openSettings() },
-    { id: "plans", label: t("menu.seePlans"), onSelect: () => openUpgrade() },
+  const accountAction: MenuEntry[] = [
     { id: "sep", type: "separator" },
     auth?.signedIn
       ? {
@@ -122,6 +118,17 @@ export function TitleBar() {
           label: t("menu.signIn"),
           onSelect: () => invoke("auth_sign_in").catch(() => undefined),
         },
+  ];
+  const accountMenu: MenuEntry[] = [
+    {
+      id: "who",
+      type: "label",
+      label: auth?.email ?? (auth && !auth.hosted ? t("menu.earlyAccess") : t("menu.offlineMode")),
+    },
+    { id: "billing", label: t("menu.accountBilling"), onSelect: () => openSettings("account") },
+    { id: "settings", label: t("menu.settings"), kbd: ["Mod", ","], onSelect: () => openSettings() },
+    { id: "plans", label: t("menu.seePlans"), onSelect: () => openUpgrade() },
+    ...(auth && !auth.hosted ? [] : accountAction),
   ];
 
   const activeTab = active ? workspaces.activeTab[active.id] : undefined;

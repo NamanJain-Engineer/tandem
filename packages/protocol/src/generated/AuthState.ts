@@ -9,4 +9,13 @@ export type AuthState = { signedIn: boolean, email: string | null,
 /**
  * Using Tandem without an account (UI-03 offline path).
  */
-offline: boolean, offlineDaysLeft: number | null, pending: PendingSignIn | null, error: AuthFailure | null, };
+offline: boolean, 
+/**
+ * `None` when there's no sign-in deadline (early-access builds).
+ */
+offlineDaysLeft: number | null, 
+/**
+ * False in early-access builds: no accounts yet, the Free plan runs
+ * locally with no deadline (D-105).
+ */
+hosted: boolean, pending: PendingSignIn | null, error: AuthFailure | null, };

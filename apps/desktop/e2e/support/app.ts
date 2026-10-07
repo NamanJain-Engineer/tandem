@@ -269,6 +269,11 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
   await $("#signin-title").waitForDisplayed({ timeout: 20_000 });
 }
 
+/** Back to the welcome screen with no workspaces, past the wizard. */
+export async function resetToWelcome(): Promise<void> {
+  await resetState();
+}
+
 /** A new verified account, signed in on the desktop, no workspaces, Free. */
 export async function freshUser(tag: string): Promise<{ email: string; jar: Awaited<ReturnType<typeof signUpVerified>> }> {
   const email = uniqueEmail(tag);
