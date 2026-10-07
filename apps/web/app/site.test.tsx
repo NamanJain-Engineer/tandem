@@ -58,6 +58,12 @@ describe("public site", () => {
     expect(html(<PrivacyPage />)).toContain(`Our host, ${SITE.host}`);
   });
 
+  it("F-WB-01 the founder's name links to their X profile on About and the home page", () => {
+    expect(SITE.founder.link).toBe("https://x.com/jus_eng_njainam");
+    for (const Page of [AboutPage, HomePage])
+      expect(html(<Page />)).toMatch(/<a href="https:\/\/x\.com\/jus_eng_njainam"[^>]*>Naman Jain<\/a>/);
+  });
+
   it("F-WB-01 About has the company details and a contact section, and every page links to it", () => {
     const h = html(<AboutPage />);
     for (const id of ["founder", "company", "contact"]) expect(h).toContain(`id="${id}"`);
