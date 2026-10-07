@@ -58,6 +58,12 @@ describe("public site", () => {
     expect(html(<PrivacyPage />)).toContain(`Our host, ${SITE.host}`);
   });
 
+  it("F-WB-01 the founder's name links to their X profile on About and the home page", () => {
+    expect(SITE.founder.link).toBe("https://x.com/jus_eng_njainam");
+    for (const Page of [AboutPage, HomePage])
+      expect(html(<Page />)).toMatch(/<a href="https:\/\/x\.com\/jus_eng_njainam"[^>]*>Naman Jain<\/a>/);
+  });
+
   it("F-WB-01 About has the company details and a contact section, and every page links to it", () => {
     const h = html(<AboutPage />);
     for (const id of ["founder", "company", "contact"]) expect(h).toContain(`id="${id}"`);
@@ -163,6 +169,13 @@ describe("public site", () => {
           a.file,
         ).toBe(true);
     expect(existsSync(fileURLToPath(new URL(`../public${CHECKSUMS_URL}`, import.meta.url)))).toBe(true);
+  });
+
+  it("F-WB-01 every build is named Vibezeo, and same-day platforms are a goal, not a claim", () => {
+    for (const d of DOWNLOADS) for (const a of d.assets) expect(a.file, a.file).toMatch(/^Vibezeo_/);
+    const h = html(<HomePage />);
+    expect(h).toContain("The goal is that Linux, macOS and Windows get the same features on the same day");
+    expect(h).toContain("milestones in the 0.1.0 release");
   });
 
   it("F-WB-01 no page shows a year", () => {

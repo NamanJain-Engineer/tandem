@@ -14,8 +14,9 @@ export default function ChangelogPage() {
         <h1 className="text-3xl font-semibold tracking-tight">What's shipped in {SITE.product} so far</h1>
         <p className="text-lg text-fg-muted">
           {SITE.product} is built in milestones. Each one closes with its features tested end to end on the
-          real app: {PROGRESS.automatedTests.toLocaleString("en-US")} automated tests and{" "}
-          {PROGRESS.endToEndSuites} end-to-end suites. The first release,{" "}
+          real app. The code the first release is built from has{" "}
+          {PROGRESS.automatedTests.toLocaleString("en-US")} automated tests and {PROGRESS.endToEndSuites}{" "}
+          end-to-end suites. The first release,{" "}
           <a href={RELEASE_URL} className="text-accent hover:underline">
             {SITE.product} {RELEASE.version} for Linux
           </a>

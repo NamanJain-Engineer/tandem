@@ -32,7 +32,9 @@ describe("early-access builds (D-105)", () => {
         <SignIn />
       </UiProvider>,
     );
-    expect(screen.getByText("Early access")).toBeTruthy();
+    expect(screen.getByText("Free plan")).toBeTruthy();
+    // A released build doesn't read as unfinished.
+    expect(screen.queryByText(/early access|at launch/i)).toBeNull();
     expect(screen.queryByText("Continue with Google")).toBeNull();
     expect(screen.queryByText("Continue with email")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Start using Vibezeo" }));
@@ -61,7 +63,7 @@ describe("early-access builds (D-105)", () => {
       </UiProvider>,
     );
     expect(screen.getByTestId("account-early-access").textContent).toContain(
-      "Accounts, Pro and Team open at launch",
+      "Pro and Team start with Vibezeo accounts",
     );
     expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
   });

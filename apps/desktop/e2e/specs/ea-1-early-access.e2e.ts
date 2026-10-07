@@ -22,7 +22,7 @@ describe("EA-1 early-access build", () => {
     const before = size();
     await relaunch(["--test-no-hosted"]);
     await resetToWelcome();
-    await $("p=Early access").waitForDisplayed({ timeout: 10_000 });
+    await $("p=Free plan").waitForDisplayed({ timeout: 10_000 });
     expect(await $("button=Continue with Google").isExisting()).toBe(false);
 
     await $("button=Start using Vibezeo").click();

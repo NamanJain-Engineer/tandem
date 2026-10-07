@@ -462,7 +462,7 @@ impl AuthService {
         if !self.endpoints.hosted {
             return Err(IpcError::new(
                 ErrorCode::Unavailable,
-                "Accounts open at launch. This early-access build runs the Free plan without one.",
+                "Vibezeo accounts aren't available in this build. It runs the Free plan without one.",
             ));
         }
         self.cancel_attempt();
