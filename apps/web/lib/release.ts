@@ -20,6 +20,8 @@ export type Download = {
   assets: { file: string; label: string }[];
   /** How to install an unsigned build on this OS. */
   steps: string[];
+  /** False until this OS's build is in the release: the card says "Coming soon" and links nothing. */
+  available: boolean;
 };
 
 export const DOWNLOADS: Download[] = [
@@ -32,6 +34,7 @@ export const DOWNLOADS: Download[] = [
       "Open the .dmg and drag Tandem into Applications.",
       "The first time, right-click Tandem in Applications, choose Open, then Open again. The build isn't notarized by Apple yet, so a plain double-click is blocked.",
     ],
+    available: false,
   },
   {
     os: "windows",
@@ -45,19 +48,15 @@ export const DOWNLOADS: Download[] = [
       "Run the installer.",
       "If SmartScreen says it protected your PC, choose More info, then Run anyway. The build isn't code-signed yet.",
     ],
+    available: false,
   },
   {
     os: "linux",
     name: "Linux",
     requirement: "x86-64 with WebKitGTK 4.1: Ubuntu 22.04+, Debian 12+, Fedora 38+",
-    assets: [
-      { file: "Tandem_0.1.0_amd64-unsigned.AppImage", label: "Download for Linux (AppImage)" },
-      { file: "Tandem_0.1.0_amd64-unsigned.deb", label: ".deb package" },
-    ],
-    steps: [
-      "AppImage: make it executable (chmod +x Tandem_*.AppImage), then run it.",
-      "Debian or Ubuntu: sudo apt install ./Tandem_*.deb",
-    ],
+    assets: [{ file: "Tandem_0.1.0_amd64-unsigned.deb", label: "Download for Linux (.deb)" }],
+    steps: ["Debian or Ubuntu: sudo apt install ./Tandem_*.deb", "Open Tandem from your applications menu."],
+    available: true,
   },
 ];
 

@@ -105,18 +105,22 @@ describe("public site", () => {
     }
   });
 
-  it("F-WB-01 download offers every OS from the public releases repo, with checksums and unsigned-install steps", () => {
+  it("F-WB-01 download links only builds in the public release, with checksums and install steps; the rest say Coming soon", () => {
     const h = html(<DownloadPage />);
     expect(DOWNLOADS.map((d) => d.os)).toEqual(["macos", "windows", "linux"]);
+    expect(DOWNLOADS.filter((d) => d.available).map((d) => d.os)).toEqual(["linux"]);
     for (const d of DOWNLOADS) {
       expect(h).toContain(`id="${d.os}"`);
       for (const a of d.assets) {
         expect(a.file, a.file).toContain(RELEASE.version);
-        expect(h).toContain(`href="${assetUrl(a.file)}"`);
         expect(assetUrl(a.file).startsWith(`${RELEASES_REPO}/releases/download/${RELEASE.tag}/`)).toBe(true);
+        // No dead links: a build that isn't out yet isn't linked.
+        if (d.available) expect(h).toContain(`href="${assetUrl(a.file)}"`);
+        else expect(h).not.toContain(`href="${assetUrl(a.file)}"`);
       }
       expect(d.steps.length).toBeGreaterThan(0);
     }
+    expect(h.match(/Coming soon/g)?.length).toBe(2);
     expect(h).toContain(`href="${CHECKSUMS_URL}"`);
     expect(h).toContain(`id="getting-started"`);
     // Honest about what this build is.

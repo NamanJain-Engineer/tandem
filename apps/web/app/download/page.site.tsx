@@ -29,8 +29,8 @@ export default function DownloadPage() {
         </Badge>
         <h1 className="text-3xl font-semibold tracking-tight">Download {SITE.product}</h1>
         <p className="max-w-3xl text-lg text-fg-muted">
-          Early-access builds for macOS, Windows and Linux. The Free plan runs on your own computer, with the
-          coding agents you already use. Released {RELEASE.date}.{" "}
+          The early-access build for Linux is out now; macOS and Windows are next. The Free plan runs on your
+          own computer, with the coding agents you already use. Released {RELEASE.date}.{" "}
           <a href={RELEASE_URL} className="text-accent hover:underline">
             Release notes
           </a>
@@ -48,10 +48,22 @@ export default function DownloadPage() {
                 className="flex flex-col gap-4 rounded-md border border-border bg-surface-1 p-6"
               >
                 <div className="flex flex-col gap-1">
-                  <h2 className="text-lg font-semibold">{d.name}</h2>
+                  <h2 className="flex items-center gap-2 text-lg font-semibold">
+                    {d.name}
+                    {!d.available && <Badge variant="outline">Coming soon</Badge>}
+                  </h2>
                   <p className="text-sm text-fg-muted">{d.requirement}</p>
                 </div>
-                {primary && (
+                {!d.available && (
+                  <p className="text-sm text-fg-muted">
+                    The {d.name} build is next. Write to{" "}
+                    <a href={`mailto:${SITE.contactEmail}`} className="text-accent hover:underline">
+                      {SITE.contactEmail}
+                    </a>{" "}
+                    to hear when it&apos;s ready.
+                  </p>
+                )}
+                {d.available && primary && (
                   <a
                     href={assetUrl(primary.file)}
                     className="self-start rounded-sm bg-accent px-4 py-2 text-md font-medium text-accent-fg hover:bg-accent-hover"
@@ -59,18 +71,21 @@ export default function DownloadPage() {
                     {primary.label}
                   </a>
                 )}
-                {others.map((a) => (
-                  <a key={a.file} href={assetUrl(a.file)} className="text-sm text-accent hover:underline">
-                    {a.label}
-                  </a>
-                ))}
-                <ol className="flex flex-col gap-1.5 border-t border-divider pt-4 text-sm text-fg-muted">
-                  {d.steps.map((s) => (
-                    <li key={s} className="ml-4 list-decimal">
-                      {s}
-                    </li>
+                {d.available &&
+                  others.map((a) => (
+                    <a key={a.file} href={assetUrl(a.file)} className="text-sm text-accent hover:underline">
+                      {a.label}
+                    </a>
                   ))}
-                </ol>
+                {d.available && (
+                  <ol className="flex flex-col gap-1.5 border-t border-divider pt-4 text-sm text-fg-muted">
+                    {d.steps.map((s) => (
+                      <li key={s} className="ml-4 list-decimal">
+                        {s}
+                      </li>
+                    ))}
+                  </ol>
+                )}
               </li>
             );
           })}

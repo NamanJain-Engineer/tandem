@@ -119,7 +119,7 @@ const PRINCIPLES = [
 const FAQ = [
   {
     q: "Can I use Tandem today?",
-    a: "Yes. Early-access builds for macOS, Windows and Linux are on the download page. They run the Free plan on your computer with no account, and don't contact our servers. Accounts, Pro and Team come with launch.",
+    a: "Yes. The early-access build for Linux is on the download page, and macOS and Windows are next. It runs the Free plan on your computer with no account, and doesn't contact our servers. Accounts, Pro and Team come with launch.",
   },
   {
     q: "How does Tandem use Claude?",
@@ -218,7 +218,7 @@ export default function HomePage() {
             </a>
           </div>
           <p className="text-sm text-fg-muted">
-            Free for macOS, Windows and Linux. No account needed: it runs on your computer.
+            Free early access for Linux now, macOS and Windows next. No account needed: it runs on your computer.
           </p>
         </div>
         <Screenshot
