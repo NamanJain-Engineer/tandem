@@ -65,7 +65,7 @@ export default function PricingPage() {
           <div className="flex flex-col gap-2">
             <h2 className="text-xl font-semibold tracking-tight">What credits pay for</h2>
             <p className="text-md text-fg-muted">
-              Credits pay only for hosted AI features, which will run on the Claude API: polishing dictated
+              Credits pay only for hosted AI features, which run on the Claude API: polishing dictated
               prompts, drafting teammates, titling threads and the Auto supervisor. One credit is $
               {CREDIT_VALUE_USD.toFixed(3)} of usage, so Pro's 10,000 a month are worth $10. They never pay
               for your engines.

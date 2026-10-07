@@ -41,7 +41,7 @@ const FEATURES = [
   },
 ] as const;
 
-/** How Tandem builds on Claude: what's shipped, how it's built, what's planned. */
+/** How Tandem builds on Claude: what's shipped, how it's built, and what's built but not live yet. */
 const CLAUDE = [
   {
     tag: "Shipped",
@@ -54,9 +54,9 @@ const CLAUDE = [
     body: "Tandem is built with Claude Code. Most of the code, including the desktop app, the backend, this site and their tests, was written with it, and the commit history records it.",
   },
   {
-    tag: "Planned",
+    tag: "Built, live at launch",
     title: "Hosted features on the Claude API",
-    body: "Tandem's hosted AI features will run on the Claude API: polishing dictated prompts, drafting a new teammate from a one-line description, titling threads, and the Auto supervisor that keeps an agent working toward your goal until it's done or stuck. They're on the roadmap, not built yet.",
+    body: "Tandem's hosted AI runs on the Claude API. Session titles and Enhance and Polish for dictated prompts are built: the backend calls Claude, meters credits, and stores no prompts or responses. They go live with accounts at launch, alongside Thread mode and Dictate in the app. Teammate drafts and the Auto supervisor come next.",
   },
 ] as const;
 
@@ -122,7 +122,7 @@ const FAQ = [
   },
   {
     q: "How does Tandem use Claude?",
-    a: "Claude Code is the engine Tandem integrates most deeply, and Tandem itself is built with Claude Code. Its planned hosted AI features will run on the Claude API.",
+    a: "Claude Code is the engine Tandem integrates most deeply, and Tandem itself is built with Claude Code. Its hosted AI features run on the Claude API: session titles and Enhance and Polish are built, and go live with accounts at launch.",
   },
   {
     q: "Which platforms will it support?",

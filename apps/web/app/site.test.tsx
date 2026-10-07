@@ -73,12 +73,13 @@ describe("public site", () => {
     expect(h).not.toContain("sample data");
   });
 
-  it("F-WB-01 Built with Claude separates what's shipped from what's planned", () => {
+  it("F-WB-01 Built with Claude separates what's shipped from what's built but not live", () => {
     const h = html(<HomePage />);
     expect(h).toContain("Built with Claude");
     expect(h).toContain("--resume");
-    expect(h).toContain("Planned");
-    expect(h).toContain("not built yet");
+    expect(h).toContain("Built, live at launch");
+    expect(h).toContain("go live with accounts at launch");
+    expect(h).not.toContain("not built yet");
     // Dashboard approvals have no real source until Thread mode: never claim them.
     expect(h).not.toMatch(/approve or deny tool requests right on the card/i);
   });
