@@ -164,7 +164,10 @@ function Screenshot({
           alt={alt}
           width={width}
           height={height}
-          className="h-auto w-auto max-w-full rounded-lg border border-border shadow-3"
+          // Sized from width/height before it loads, so the page doesn't shift
+          // under a #demo link; never wider than the capture itself.
+          style={{ maxWidth: width }}
+          className="h-auto w-full rounded-lg border border-border shadow-3"
         />
       </a>
       <figcaption className="text-xs text-fg-subtle">{caption}</figcaption>
@@ -255,6 +258,7 @@ export default function HomePage() {
             muted
             playsInline
             preload="metadata"
+            style={{ aspectRatio: "1280 / 800" }}
             className="h-auto w-full max-w-full rounded-lg border border-border bg-surface-1 shadow-3"
           >
             {/* VP9 first: open-source Chromium builds can't play H.264. */}
