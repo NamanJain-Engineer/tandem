@@ -214,7 +214,7 @@ export default function HomePage() {
               href="#demo"
               className="rounded-sm border border-border-strong px-4 py-2 text-md font-medium text-fg hover:bg-surface-3"
             >
-              Watch it run (50 s)
+              Watch it run (45 s)
             </a>
           </div>
           <p className="text-sm text-fg-muted">
@@ -249,7 +249,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <Section id="demo" eyebrow="See it run" title="50 seconds, unedited">
+      <Section id="demo" eyebrow="See it run" title="45 seconds, unedited">
         <figure className="flex flex-col gap-3">
           <video
             poster="/screens/code-mode.png"
@@ -269,7 +269,7 @@ export default function HomePage() {
           <figcaption className="text-sm text-fg-muted">
             A screen recording of the Linux build, with no cuts. 0:00 A new tab finds Claude Code on the
             machine. 0:04 Four terminals over Vibezeo's own repository: git history, htop, the Claude Code
-            hook handler in vim, and the test suite. 0:39 The app is killed with kill -9. 0:42 Relaunched, the
+            hook handler in vim, and the test suite. 0:35 The app is killed with kill -9. 0:38 Relaunched, the
             layout and the four live shells come back, and nothing re-runs on its own.
           </figcaption>
         </figure>
