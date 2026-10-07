@@ -1,0 +1,90 @@
+import { Badge } from "@tandem/ui/components/Badge";
+import type { Metadata } from "next";
+import { SiteFrame } from "../../components/site/SiteFrame";
+import { CREDIT_VALUE_USD, PLANS } from "../../lib/pricing";
+import { EARLY_ACCESS_HREF, SITE } from "../../lib/site";
+
+export const metadata: Metadata = { title: "Pricing" };
+
+export default function PricingPage() {
+  return (
+    <SiteFrame>
+      <section className="mx-auto flex max-w-6xl flex-col items-start gap-4 px-6 pb-8 pt-16">
+        <Badge variant="accent" dot>
+          Pricing at launch
+        </Badge>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          Free to run your agents. Pro when you run a lot.
+        </h1>
+        <p className="max-w-3xl text-lg text-fg-muted">
+          {SITE.product} isn't on sale yet: these are the plans it will launch with. Your coding agents always
+          run on your own subscriptions, so {SITE.product} never charges for engine usage. Features marked{" "}
+          <span className="font-medium text-fg">Planned</span> arrive with later milestones.
+        </p>
+      </section>
+
+      <section aria-label="Plans" className="mx-auto max-w-6xl px-6 pb-12">
+        <ul className="grid gap-4 md:grid-cols-3">
+          {PLANS.map((plan) => (
+            <li
+              key={plan.id}
+              id={plan.id}
+              className={`flex flex-col gap-4 rounded-md border bg-surface-1 p-6 ${
+                plan.id === "pro" ? "border-accent" : "border-border"
+              }`}
+            >
+              <div className="flex flex-col gap-1">
+                <h2 className="text-lg font-semibold">{plan.name}</h2>
+                <p className="text-base text-fg-muted">{plan.summary}</p>
+              </div>
+              <p className="flex flex-wrap items-baseline gap-x-2">
+                <span className="text-3xl font-semibold tracking-tight">{plan.price}</span>
+                <span className="text-sm text-fg-muted">{plan.cadence}</span>
+              </p>
+              {plan.trial && <p className="text-sm text-fg-muted">{plan.trial}</p>}
+              <ul className="flex flex-col gap-2 border-t border-divider pt-4 text-base">
+                {plan.features.map((f) => (
+                  <li key={f.text} className="flex items-start gap-2">
+                    <span aria-hidden="true" className="text-accent">
+                      ✓
+                    </span>
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className={f.planned ? "text-fg-muted" : "text-fg"}>{f.text}</span>
+                      {f.planned && <Badge variant="outline">Planned</Badge>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="border-t border-divider">
+        <div className="mx-auto grid max-w-6xl gap-8 px-6 py-12 md:grid-cols-2">
+          <div className="flex flex-col gap-2">
+            <h2 className="text-xl font-semibold tracking-tight">What credits pay for</h2>
+            <p className="text-md text-fg-muted">
+              Credits pay only for hosted AI features, which will run on the Claude API: polishing dictated
+              prompts, drafting teammates, titling threads and the Auto supervisor. One credit is $
+              {CREDIT_VALUE_USD.toFixed(3)} of usage, so Pro's 10,000 a month are worth $10. They never pay
+              for your engines.
+            </p>
+          </div>
+          <div className="flex flex-col items-start gap-3">
+            <h2 className="text-xl font-semibold tracking-tight">Want to try it before launch?</h2>
+            <p className="text-md text-fg-muted">
+              A small group of developers is testing early builds. Tell us which agents you use.
+            </p>
+            <a
+              href={EARLY_ACCESS_HREF}
+              className="rounded-sm bg-accent px-4 py-2 text-md font-medium text-accent-fg hover:bg-accent-hover"
+            >
+              Request early access →
+            </a>
+          </div>
+        </div>
+      </section>
+    </SiteFrame>
+  );
+}

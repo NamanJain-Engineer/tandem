@@ -52,7 +52,15 @@ export const ENGINES = [
 ] as const;
 
 /** The public pages, for the sitemap. */
-export const SITE_PAGES = ["/", "/about/", "/changelog/", "/privacy/", "/terms/", "/security/"] as const;
+export const SITE_PAGES = [
+  "/",
+  "/pricing/",
+  "/about/",
+  "/changelog/",
+  "/privacy/",
+  "/terms/",
+  "/security/",
+] as const;
 
 /** "Request early access": a prefilled email, so people can tell us what
  * they'd run. The site keeps no form or list of its own. */

@@ -1,6 +1,7 @@
 import { Badge } from "@tandem/ui/components/Badge";
 import type { ReactNode } from "react";
 import { SiteFrame } from "../components/site/SiteFrame";
+import { PLANS } from "../lib/pricing";
 import { PROGRESS } from "../lib/progress";
 import { EARLY_ACCESS_HREF, ENGINES, SITE } from "../lib/site";
 
@@ -137,7 +138,7 @@ const FAQ = [
   },
   {
     q: "What will it cost?",
-    a: "We'll publish pricing before launch. There will be a free plan for running your own engines side by side.",
+    a: "At launch: Free at $0, Pro at $29 a month and Team at $49 per seat a month. Nothing is on sale yet. The plans are on the Pricing page.",
   },
 ] as const;
 
@@ -206,10 +207,10 @@ export default function HomePage() {
               Request early access →
             </a>
             <a
-              href="#features"
+              href="#demo"
               className="rounded-sm border border-border-strong px-4 py-2 text-md font-medium text-fg hover:bg-surface-3"
             >
-              See what works today
+              Watch it run (50 s)
             </a>
           </div>
           <p className="text-sm text-fg-muted">
@@ -243,6 +244,31 @@ export default function HomePage() {
           </p>
         </div>
       </section>
+
+      <Section id="demo" eyebrow="See it run" title="50 seconds, unedited">
+        <figure className="flex flex-col gap-3">
+          <video
+            poster="/screens/code-mode.png"
+            width={1280}
+            height={800}
+            controls
+            muted
+            playsInline
+            preload="metadata"
+            className="h-auto w-full max-w-full rounded-lg border border-border bg-surface-1 shadow-3"
+          >
+            {/* VP9 first: open-source Chromium builds can't play H.264. */}
+            <source src="/screens/demo.webm" type="video/webm" />
+            <source src="/screens/demo.mp4" type="video/mp4" />
+          </video>
+          <figcaption className="text-sm text-fg-muted">
+            A screen recording of the Linux build, with no cuts. 0:00 A new tab finds Claude Code on the
+            machine. 0:04 Four terminals over Tandem's own repository: git history, htop, the Claude Code hook
+            handler in vim, and the test suite. 0:39 The app is killed with kill -9. 0:42 Relaunched, the
+            layout and the four live shells come back, and nothing re-runs on its own.
+          </figcaption>
+        </figure>
+      </Section>
 
       <Section id="claude" eyebrow="Built with Claude" title="Made for Claude Code, open to every agent">
         <p className="max-w-3xl text-md text-fg-muted">
@@ -355,6 +381,27 @@ export default function HomePage() {
             More about {SITE.company} →
           </a>
         </div>
+      </Section>
+
+      <Section id="pricing" eyebrow="Pricing at launch" title="Free to run your agents">
+        <ul className="grid gap-4 sm:grid-cols-3">
+          {PLANS.map((p) => (
+            <li key={p.id} className="flex flex-col gap-1 rounded-md border border-border bg-surface-1 p-5">
+              <h3 className="text-md font-semibold">{p.name}</h3>
+              <p className="flex flex-wrap items-baseline gap-x-2">
+                <span className="text-2xl font-semibold tracking-tight">{p.price}</span>
+                <span className="text-sm text-fg-muted">{p.cadence}</span>
+              </p>
+              <p className="text-base text-fg-muted">{p.summary}</p>
+            </li>
+          ))}
+        </ul>
+        <p className="text-sm text-fg-muted">
+          Nothing is on sale yet. Your agents always run on your own subscriptions.{" "}
+          <a href="/pricing/" className="text-accent hover:underline">
+            Compare the plans →
+          </a>
+        </p>
       </Section>
 
       <Section id="faq" eyebrow="FAQ" title="Questions">

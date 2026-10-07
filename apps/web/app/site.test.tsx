@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { PLANS } from "../lib/pricing";
 import { MILESTONES, PROGRESS } from "../lib/progress";
 import {
   EARLY_ACCESS_HREF,
@@ -16,6 +17,7 @@ import {
 } from "../lib/site";
 import AboutPage from "./about/page.site";
 import ChangelogPage from "./changelog/page.site";
+import PricingPage from "./pricing/page.site";
 import HomePage from "./page.site";
 import NotFound from "./not-found.site";
 import PrivacyPage from "./privacy/page.site";
@@ -27,6 +29,7 @@ const PAGES = {
   home: HomePage,
   about: AboutPage,
   changelog: ChangelogPage,
+  pricing: PricingPage,
   privacy: PrivacyPage,
   terms: TermsPage,
   security: SecurityPage,
@@ -40,7 +43,7 @@ describe("public site", () => {
     expect(h).toContain("In active development");
     for (const e of ENGINES) expect(h).toContain(`>${e}<`);
     expect(h).toContain(`mailto:${SITE.contactEmail}`);
-    for (const id of ["claude", "features", "engines", "roadmap", "team", "faq"])
+    for (const id of ["demo", "claude", "features", "engines", "roadmap", "pricing", "team", "faq"])
       expect(h).toContain(`id="${id}"`);
   });
 
@@ -86,6 +89,30 @@ describe("public site", () => {
     expect(h).toContain("Request early access");
     expect(h).toContain(PROGRESS.automatedTests.toLocaleString("en-US"));
     expect(h).toContain(`href="/changelog/"`);
+  });
+
+  it("F-WB-01 the demo video is a recording of the real app that ships with the site", () => {
+    const h = html(<HomePage />);
+    expect(h).toMatch(/<video[^>]*controls/);
+    for (const file of ["demo.webm", "demo.mp4"]) {
+      expect(h).toContain(`src="/screens/${file}"`);
+      expect(existsSync(join(import.meta.dirname, `../public/screens/${file}`)), file).toBe(true);
+    }
+  });
+
+  it("F-WB-01 pricing shows the launch plans from the spec and says nothing is on sale yet", () => {
+    const h = html(<PricingPage />);
+    expect(PLANS.map((p) => [p.name, p.price])).toEqual([
+      ["Free", "$0"],
+      ["Pro", "$29"],
+      ["Team", "$49"],
+    ]);
+    for (const p of PLANS) expect(h).toContain(`id="${p.id}"`);
+    expect(h).toContain("Pricing at launch");
+    expect(h).toContain("on sale yet");
+    expect(h).toContain("$290 a year");
+    expect(h).toContain("Planned");
+    expect(html(<HomePage />)).toContain(`href="/pricing/"`);
   });
 
   it("F-WB-01 the changelog lists every closed milestone", () => {

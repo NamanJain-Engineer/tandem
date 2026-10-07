@@ -12,9 +12,9 @@ export function Mark({ size = 22 }: { size?: number }) {
 }
 
 const NAV = [
-  { href: "/#features", label: "Features" },
+  { href: "/#demo", label: "Demo" },
   { href: "/#claude", label: "Claude" },
-  { href: "/#roadmap", label: "Roadmap" },
+  { href: "/pricing/", label: "Pricing" },
   { href: "/changelog/", label: "Changelog" },
   { href: "/about/", label: "About" },
 ];
@@ -69,6 +69,9 @@ export function SiteFrame({ children }: { children: ReactNode }) {
             </a>
             <a href="/changelog/" className="hover:text-fg">
               Changelog
+            </a>
+            <a href="/pricing/" className="hover:text-fg">
+              Pricing
             </a>
             <a href="/privacy/" className="hover:text-fg">
               Privacy
