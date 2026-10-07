@@ -18,7 +18,6 @@ export const SITE = {
     name: "Naman Jain",
     role: "Founder",
     bio: "An engineer focused on building products and shipping meaningful software.",
-    link: "https://github.com/NamanJain-Engineer",
   } as Founder,
   /** When the company started (About); not shown when null. */
   founded: null as string | null,

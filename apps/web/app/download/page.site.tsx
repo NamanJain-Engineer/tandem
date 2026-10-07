@@ -15,8 +15,7 @@ const START = [
 
 const LIMITS = [
   "The Free plan: up to 4 panes and 3 workspaces.",
-  "No accounts yet, so no Pro, Team or hosted AI features. They come when accounts open.",
-  "No automatic updates: new builds appear on this page.",
+  "New versions appear on this page.",
   "This build doesn't contact our servers and carries no analytics.",
 ];
 
@@ -29,8 +28,8 @@ export default function DownloadPage() {
         </Badge>
         <h1 className="text-3xl font-semibold tracking-tight">Download {SITE.product}</h1>
         <p className="max-w-3xl text-lg text-fg-muted">
-          {SITE.product} {RELEASE.version} is released for Linux. macOS and Windows are next. The Free plan
-          runs on your own computer, with the coding agents you already use.{" "}
+          {SITE.product} {RELEASE.version} for Linux. The Free plan runs on your own computer, with the coding
+          agents you already use.{" "}
           <a href={RELEASE_URL} className="text-accent hover:underline">
             Release notes
           </a>
@@ -38,8 +37,8 @@ export default function DownloadPage() {
       </section>
 
       <section aria-label="Downloads" className="mx-auto max-w-6xl px-6 pb-12">
-        <ul className="grid gap-4 md:grid-cols-3">
-          {DOWNLOADS.map((d) => {
+        <ul className="grid max-w-md gap-4">
+          {DOWNLOADS.filter((d) => d.available).map((d) => {
             const [primary, ...others] = d.assets;
             return (
               <li
@@ -95,7 +94,7 @@ export default function DownloadPage() {
           <a href={CHECKSUMS_URL} className="text-accent hover:underline">
             SHA256SUMS
           </a>
-          . The build isn't code-signed yet.
+          : the .deb isn&apos;t code-signed, so the checksum is how you confirm it&apos;s ours.
         </p>
       </section>
 

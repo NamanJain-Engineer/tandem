@@ -106,12 +106,13 @@ describe("public site", () => {
     }
   });
 
-  it("F-WB-01 download links only builds in the public release, with checksums and install steps; the rest say Coming soon", () => {
+  it("F-WB-01 download offers only the builds that exist, with checksums and install steps", () => {
     const h = html(<DownloadPage />);
     expect(DOWNLOADS.map((d) => d.os)).toEqual(["macos", "windows", "linux"]);
     expect(DOWNLOADS.filter((d) => d.available).map((d) => d.os)).toEqual(["linux"]);
     for (const d of DOWNLOADS) {
-      expect(h).toContain(`id="${d.os}"`);
+      if (d.available) expect(h).toContain(`id="${d.os}"`);
+      else expect(h).not.toContain(`id="${d.os}"`);
       for (const a of d.assets) {
         expect(a.file, a.file).toContain(RELEASE.version);
         expect(assetUrl(a.file).startsWith(`${DOWNLOADS_PATH}/`)).toBe(true);
@@ -121,11 +122,11 @@ describe("public site", () => {
       }
       expect(d.steps.length).toBeGreaterThan(0);
     }
-    expect(h.match(/Coming soon/g)?.length).toBe(2);
+    expect(h).not.toContain("Coming soon");
     expect(h).toContain(`href="${CHECKSUMS_URL}"`);
     expect(h).toContain(`id="getting-started"`);
     // Honest about what this build is.
-    expect(h).toContain("code-signed yet");
+    expect(h).toContain("isn&#x27;t code-signed, so the checksum is how you confirm");
     expect(h).toContain("contact our servers");
     expect(SITE_PAGES).toContain("/download/");
   });
@@ -138,7 +139,15 @@ describe("public site", () => {
     expect(pages).not.toMatch(/(for|on) macOS, Windows and Linux/);
     expect(pages).not.toContain(".dmg");
     expect(pages).not.toContain(".msi");
-    expect(pages).toContain("macOS and Windows are next");
+    for (const unfinished of [
+      "are next",
+      "Coming soon",
+      "on sale yet",
+      "Planned",
+      "isn't code-signed yet",
+      "testing early builds",
+    ])
+      expect(pages, unfinished).not.toContain(unfinished);
   });
 
   it("F-WB-01 the site is Vibezeo's, serves its own downloads and links no code repository", () => {
@@ -170,10 +179,10 @@ describe("public site", () => {
     ]);
     for (const p of PLANS) expect(h).toContain(`id="${p.id}"`);
     expect(h).toContain("download Vibezeo");
-    expect(h).toContain("on sale yet");
+    expect(h).toContain("start with");
     expect(h).toContain("Free is available now");
     expect(h).toContain("$290 a year");
-    expect(h).toContain("Planned");
+    expect(h).not.toContain("Planned");
     expect(html(<HomePage />)).toContain(`href="/pricing/"`);
   });
 

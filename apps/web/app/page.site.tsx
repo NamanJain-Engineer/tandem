@@ -119,7 +119,7 @@ const PRINCIPLES = [
 const FAQ = [
   {
     q: "Can I use Vibezeo today?",
-    a: "Yes. Vibezeo 0.1.0 is released for Linux: download it from the download page. macOS and Windows are next. It runs the Free plan on your computer with no account, and doesn't contact our servers. Accounts, Pro and Team come later.",
+    a: "Yes. Download Vibezeo 0.1.0 for Linux from the download page. It runs the Free plan on your computer with no account, and doesn't contact our servers.",
   },
   {
     q: "How does Vibezeo use Claude?",
@@ -127,7 +127,7 @@ const FAQ = [
   },
   {
     q: "Which platforms does it support?",
-    a: "Linux x86-64 today (.deb for Debian and Ubuntu). macOS and Windows 10 and 11 are next: the app already compiles for both in CI. We develop and test on Linux first.",
+    a: "Linux x86-64, as a .deb for Debian and Ubuntu.",
   },
   {
     q: "Does Vibezeo see my API keys or subscription tokens?",
@@ -139,7 +139,7 @@ const FAQ = [
   },
   {
     q: "What will it cost?",
-    a: "Free is $0 and available now. Pro ($29 a month) and Team ($49 per seat a month) aren't on sale yet. The plans are on the Pricing page.",
+    a: "Free is $0. Pro is $29 a month and Team is $49 per seat a month; they start with Vibezeo accounts. The plans are on the Pricing page.",
   },
 ] as const;
 
@@ -218,8 +218,7 @@ export default function HomePage() {
             </a>
           </div>
           <p className="text-sm text-fg-muted">
-            Free, and out now for Linux. macOS and Windows are next. No account needed: it runs on your
-            computer.
+            Free for Linux. No account needed: it runs on your computer.
           </p>
         </div>
         <Screenshot
@@ -403,7 +402,8 @@ export default function HomePage() {
           ))}
         </ul>
         <p className="text-sm text-fg-muted">
-          Nothing is on sale yet. Your agents always run on your own subscriptions.{" "}
+          Free is available today; Pro and Team start with Vibezeo accounts. Your agents always run on your
+          own subscriptions.{" "}
           <a href="/pricing/" className="text-accent hover:underline">
             Compare the plans →
           </a>

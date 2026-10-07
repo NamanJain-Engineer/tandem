@@ -18,10 +18,9 @@ export default function PricingPage() {
           Free to run your agents. Pro when you run a lot.
         </h1>
         <p className="max-w-3xl text-lg text-fg-muted">
-          Free is available now: download {SITE.product} {RELEASE.version} for Linux. Pro and Team aren't on
-          sale yet: these are the plans they'll open with. Your coding agents always run on your own
-          subscriptions, so {SITE.product} never charges for engine usage. Features marked{" "}
-          <span className="font-medium text-fg">Planned</span> arrive with later milestones.
+          Free is available now: download {SITE.product} {RELEASE.version} for Linux. Pro and Team start with
+          Vibezeo accounts. Your coding agents always run on your own subscriptions, so {SITE.product} never
+          charges for engine usage.
         </p>
       </section>
 
@@ -67,17 +66,15 @@ export default function PricingPage() {
           <div className="flex flex-col gap-2">
             <h2 className="text-xl font-semibold tracking-tight">What credits pay for</h2>
             <p className="text-md text-fg-muted">
-              Credits pay only for hosted AI features, which run on the Claude API: polishing dictated
-              prompts, drafting teammates, titling threads and the Auto supervisor. One credit is $
-              {CREDIT_VALUE_USD.toFixed(3)} of usage, so Pro's 10,000 a month are worth $10. They never pay
-              for your engines.
+              Credits pay only for hosted AI features, which run on the Claude API: session titles, and
+              Enhance and Polish for your prompts. One credit is ${CREDIT_VALUE_USD.toFixed(3)} of usage. They
+              never pay for your engines.
             </p>
           </div>
           <div className="flex flex-col items-start gap-3">
             <h2 className="text-xl font-semibold tracking-tight">Try the Free plan now</h2>
             <p className="text-md text-fg-muted">
-              {SITE.product} {RELEASE.version} runs the Free plan on your computer, with no account. It's out
-              for Linux now; macOS and Windows are next.
+              {SITE.product} {RELEASE.version} runs the Free plan on your computer, with no account, on Linux.
             </p>
             <a
               href="/download/"
