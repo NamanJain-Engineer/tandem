@@ -1,7 +1,8 @@
 import { Badge } from "@tandem/ui/components/Badge";
-import { StatusDot, type Status } from "@tandem/ui/components/StatusDot";
-import { Mark, SiteFrame } from "../components/site/SiteFrame";
-import { ENGINES, SITE } from "../lib/site";
+import type { ReactNode } from "react";
+import { SiteFrame } from "../components/site/SiteFrame";
+import { PROGRESS } from "../lib/progress";
+import { EARLY_ACCESS_HREF, ENGINES, SITE } from "../lib/site";
 
 /** What the desktop app does today (milestones M0–M5). */
 const FEATURES = [
@@ -15,11 +16,11 @@ const FEATURES = [
   },
   {
     title: "Live status for every agent",
-    body: "Tandem knows when an agent is working, waiting for you, done or stuck. That status shows on every pane, tab and workspace.",
+    body: "Tandem knows when an agent is working, waiting for you, done or has failed, from Claude Code's hooks and from each engine's own output. The status shows on every pane and in the sidebar.",
   },
   {
     title: "One Dashboard",
-    body: "Every live agent in one place, across all your workspaces. Approve or deny tool requests right on the card, without hunting for the right pane.",
+    body: "Every live agent in one place, across all your workspaces: what each one is doing and which ones are waiting for you. One click jumps to the pane that needs you.",
   },
   {
     title: "Notifications that matter",
@@ -39,19 +40,47 @@ const FEATURES = [
   },
 ] as const;
 
+/** How Tandem builds on Claude: what's shipped, how it's built, what's planned. */
+const CLAUDE = [
+  {
+    tag: "Shipped",
+    title: "Claude Code, integrated first",
+    body: "Claude Code is the engine Tandem integrates most deeply. Tandem installs Claude Code's own hooks in a separate home for each account, so it knows exactly when a session starts, runs a tool, needs you or finishes. After a restart it reopens the same Claude Code session with --resume.",
+  },
+  {
+    tag: "How we build",
+    title: "Built with Claude Code",
+    body: "Tandem is built with Claude Code. Most of the code, including the desktop app, the backend, this site and their tests, was written with it, and the commit history records it.",
+  },
+  {
+    tag: "Planned",
+    title: "Hosted features on the Claude API",
+    body: "Tandem's hosted AI features will run on the Claude API: polishing dictated prompts, drafting a new teammate from a one-line description, titling threads, and the Auto supervisor that keeps an agent working toward your goal until it's done or stuck. They're on the roadmap, not built yet.",
+  },
+] as const;
+
 /** Later milestones, in build order. */
 const ROADMAP = [
   {
     title: "Lanes, presets and handoff",
     body: "Run one task across several engines, each in its own git worktree, then compare and hand work from one to another.",
   },
-  { title: "Accounts and usage", body: "Several subscriptions per engine, with usage and limits in view." },
+  {
+    title: "Accounts and usage",
+    body: "Keep work and personal accounts for each engine apart, each signed in by itself, with usage and limits in view.",
+  },
   {
     title: "Thread mode",
     body: "Read a coding session as a conversation instead of watching a TUI, with inline approvals and a changes panel.",
   },
-  { title: "Dictate", body: "Push-to-talk anywhere in the app, with speech recognized on your machine." },
-  { title: "Files, git and a browser", body: "Your files, diffs and a preview browser beside the agents." },
+  {
+    title: "Dictate",
+    body: "Push-to-talk anywhere in the app, with speech recognized on your machine.",
+  },
+  {
+    title: "Files, git and a browser",
+    body: "Your files, diffs and a preview browser beside the agents.",
+  },
   {
     title: "Teammates (Agent mode)",
     body: "Persistent agents with memory, skills and routines that can message each other.",
@@ -60,7 +89,10 @@ const ROADMAP = [
     title: "Tasks, routines and plugins",
     body: "A local task tracker agents can read and write, scheduled routines, and connected services behind explicit approvals.",
   },
-  { title: "Remote", body: "Run agents over SSH and WSL, and check on them from your phone." },
+  {
+    title: "Remote",
+    body: "Run agents over SSH and WSL, and check on them from your phone.",
+  },
 ] as const;
 
 const PRINCIPLES = [
@@ -74,15 +106,22 @@ const PRINCIPLES = [
   },
   {
     title: "Explicit authority",
-    body: "Unattended work never inherits interactive full access, and spending always asks first.",
+    body: "Tandem never answers an agent's request on your behalf, and spending always asks first.",
   },
-  { title: "One codebase", body: "macOS, Windows and Linux get the same features on the same day." },
+  {
+    title: "One codebase",
+    body: "macOS, Windows and Linux get the same features on the same day.",
+  },
 ] as const;
 
 const FAQ = [
   {
     q: "Can I use Tandem today?",
-    a: "Not yet. Tandem is in active development and isn't publicly available. Email us if you'd like to try an early build.",
+    a: "Not publicly yet. A small group of developers is testing early builds, and we're adding more a few at a time. Request early access and tell us which agents you use.",
+  },
+  {
+    q: "How does Tandem use Claude?",
+    a: "Claude Code is the engine Tandem integrates most deeply, and Tandem itself is built with Claude Code. Its planned hosted AI features will run on the Claude API.",
   },
   {
     q: "Which platforms will it support?",
@@ -102,45 +141,53 @@ const FAQ = [
   },
 ] as const;
 
-/** A static picture of a 2×2 workspace (sample data, no live content). */
-const SAMPLE: Array<{ engine: string; status: Status; line: string }> = [
-  { engine: "Claude Code", status: "working", line: "Refactoring the session store…" },
-  { engine: "Codex", status: "waiting", line: "Wants to run: pnpm test" },
-  { engine: "Gemini CLI", status: "done", line: "Updated 4 files" },
-  { engine: "zsh", status: "idle", line: "~/src/app $" },
-];
-
-function Illustration() {
+/** A screenshot of the real app, captured by `apps/desktop/e2e/screens/site.screens.ts`. */
+function Screenshot({
+  src,
+  alt,
+  caption,
+  width,
+  height,
+}: {
+  src: string;
+  alt: string;
+  caption: string;
+  width: number;
+  height: number;
+}) {
   return (
     <figure className="flex flex-col gap-2">
-      <div className="overflow-hidden rounded-lg border border-border bg-surface-1 shadow-3">
-        <div className="flex h-9 items-center gap-2 border-b border-divider px-3 text-xs text-fg-muted">
-          <Mark size={14} />
-          <span className="font-medium text-fg">app</span>
-          <span aria-hidden="true">·</span>
-          <span>4 panes</span>
-        </div>
-        <div className="grid grid-cols-2 gap-px bg-divider">
-          {SAMPLE.map((p) => (
-            <div key={p.engine} className="flex min-h-28 flex-col gap-2 bg-surface-2 p-3">
-              <div className="flex items-center gap-2 text-xs">
-                <StatusDot status={p.status} />
-                <span className="font-medium text-fg">{p.engine}</span>
-              </div>
-              <p className="font-mono text-xs text-fg-muted">{p.line}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-      <figcaption className="text-xs text-fg-subtle">Illustration · sample data</figcaption>
+      <a href={src} title="Open full size">
+        <img
+          src={src}
+          alt={alt}
+          width={width}
+          height={height}
+          className="h-auto w-auto max-w-full rounded-lg border border-border shadow-3"
+        />
+      </a>
+      <figcaption className="text-xs text-fg-subtle">{caption}</figcaption>
     </figure>
   );
 }
 
+const STATS = [
+  { value: String(PROGRESS.milestones), label: "milestones shipped" },
+  {
+    value: PROGRESS.automatedTests.toLocaleString("en-US"),
+    label: "automated tests",
+  },
+  {
+    value: String(PROGRESS.endToEndSuites),
+    label: "end-to-end suites on the real app",
+  },
+  { value: String(PROGRESS.engines), label: "coding agents supported" },
+] as const;
+
 export default function HomePage() {
   return (
     <SiteFrame>
-      <section className="mx-auto grid max-w-5xl items-center gap-12 px-6 py-20 md:grid-cols-[1.1fr_1fr]">
+      <section className="mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="flex flex-col items-start gap-5">
           <Badge variant="accent" dot>
             In active development
@@ -153,10 +200,10 @@ export default function HomePage() {
           </p>
           <div className="flex flex-wrap gap-3">
             <a
-              href={`mailto:${SITE.contactEmail}?subject=Tandem%20early%20access`}
+              href={EARLY_ACCESS_HREF}
               className="rounded-sm bg-accent px-4 py-2 text-md font-medium text-accent-fg hover:bg-accent-hover"
             >
-              Ask for early access
+              Request early access →
             </a>
             <a
               href="#features"
@@ -165,9 +212,56 @@ export default function HomePage() {
               See what works today
             </a>
           </div>
+          <p className="text-sm text-fg-muted">
+            A small group of developers is testing early builds. We're adding more, a few at a time.
+          </p>
         </div>
-        <Illustration />
+        <Screenshot
+          src="/screens/code-mode.png"
+          width={1440}
+          height={900}
+          alt="The Tandem desktop app with four terminal panes over its own repository: the git history, htop, vim open on the Claude Code hook handler, and a passing cargo test run."
+          caption="The Tandem desktop app on Linux, four real terminals over its own repository: git history, htop, the Claude Code hook handler in vim, and a test run."
+        />
       </section>
+
+      <section aria-label="Progress" className="border-t border-divider">
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-10">
+          <dl className="grid grid-cols-2 gap-6 sm:grid-cols-4">
+            {STATS.map((s) => (
+              <div key={s.label} className="flex flex-col gap-1">
+                <dt className="order-2 text-sm text-fg-muted">{s.label}</dt>
+                <dd className="order-1 text-2xl font-semibold tracking-tight">{s.value}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="text-sm text-fg-muted">
+            Built so far, as of {PROGRESS.asOf}.{" "}
+            <a href="/changelog/" className="text-accent hover:underline">
+              See the changelog →
+            </a>
+          </p>
+        </div>
+      </section>
+
+      <Section id="claude" eyebrow="Built with Claude" title="Made for Claude Code, open to every agent">
+        <p className="max-w-3xl text-md text-fg-muted">
+          Tandem gives Claude Code a persistent workspace: run several sessions at once, see which one needs
+          you, and pick up where you left off after a restart, all on your own Claude subscription.
+        </p>
+        <ul className="grid gap-4 md:grid-cols-3">
+          {CLAUDE.map((c) => (
+            <li
+              key={c.title}
+              className="flex flex-col gap-2 rounded-md border border-border bg-surface-1 p-5"
+            >
+              <span className="text-xs font-medium uppercase tracking-caps text-accent">{c.tag}</span>
+              <h3 className="text-md font-semibold">{c.title}</h3>
+              <p className="text-base text-fg-muted">{c.body}</p>
+            </li>
+          ))}
+        </ul>
+      </Section>
 
       <Section id="features" eyebrow="Working today" title="Built for running many agents at once">
         <ul className="grid gap-4 sm:grid-cols-2">
@@ -184,20 +278,32 @@ export default function HomePage() {
       </Section>
 
       <Section id="engines" eyebrow="Engines" title="Bring the agents you already use">
-        <p className="max-w-2xl text-md text-fg-muted">
-          Tandem finds the engine CLIs installed on your machine and launches them in panes, each signed in to
-          your own account. If an engine is missing, Tandem shows you how to install it.
-        </p>
-        <ul className="flex flex-wrap gap-2">
-          {ENGINES.map((e) => (
-            <li key={e} className="rounded-sm border border-border bg-surface-1 px-3 py-1.5 text-base">
-              {e}
-            </li>
-          ))}
-        </ul>
-        <p className="text-sm text-fg-subtle">
-          Product names belong to their owners. Tandem isn't affiliated with or endorsed by any engine vendor.
-        </p>
+        <div className="grid items-center gap-8 lg:grid-cols-[1.2fr_1fr]">
+          <div className="flex flex-col gap-5">
+            <p className="text-md text-fg-muted">
+              Tandem finds the engine CLIs installed on your machine and launches them in panes, each signed
+              in to your own account. If an engine is missing, Tandem shows you how to install it.
+            </p>
+            <ul className="flex flex-wrap gap-2">
+              {ENGINES.map((e) => (
+                <li key={e} className="rounded-sm border border-border bg-surface-1 px-3 py-1.5 text-base">
+                  {e}
+                </li>
+              ))}
+            </ul>
+            <p className="text-sm text-fg-subtle">
+              Product names belong to their owners. Tandem isn't affiliated with or endorsed by any engine
+              vendor.
+            </p>
+          </div>
+          <Screenshot
+            src="/screens/launch-grid.png"
+            width={544}
+            height={570}
+            alt="Tandem's launch grid in a new tab: Claude Code 2.1.292 detected, a terminal, and ten more engines with Install buttons."
+            caption="A new tab: Tandem found Claude Code on this machine and offers to install the ten engines that aren't."
+          />
+        </div>
       </Section>
 
       <Section id="principles" eyebrow="Principles" title="What we won't compromise on">
@@ -242,11 +348,8 @@ export default function HomePage() {
             {SITE.founder.role}, {SITE.company}
           </p>
           <p className="mt-2 text-base text-fg-muted">
-            {SITE.product} is built by {SITE.founder.name}, the founder of {SITE.company}. Write to{" "}
-            <a href={`mailto:${SITE.contactEmail}`} className="text-accent hover:underline">
-              {SITE.contactEmail}
-            </a>{" "}
-            to talk about the product or try an early build.
+            {SITE.founder.bio} {SITE.founder.name} started {SITE.company} to build {SITE.product}: as coding
+            agents multiply, developers need a better way to run, coordinate and keep an eye on them.
           </p>
           <a href="/about/" className="mt-2 text-base font-medium text-accent hover:underline">
             More about {SITE.company} →
@@ -266,18 +369,19 @@ export default function HomePage() {
       </Section>
 
       <section className="border-t border-divider">
-        <div className="mx-auto flex max-w-5xl flex-col items-start gap-4 px-6 py-16 sm:flex-row sm:items-center">
+        <div className="mx-auto flex max-w-6xl flex-col items-start gap-4 px-6 py-16 sm:flex-row sm:items-center">
           <div className="flex flex-col gap-1">
             <h2 className="text-xl font-semibold tracking-tight">Want to try it early?</h2>
             <p className="text-md text-fg-muted">
-              Tell us which engines you use and what you'd run side by side.
+              Tell us which engines you use and what you'd run side by side. We'll reply from{" "}
+              {SITE.contactEmail}.
             </p>
           </div>
           <a
-            href={`mailto:${SITE.contactEmail}?subject=Tandem%20early%20access`}
+            href={EARLY_ACCESS_HREF}
             className="rounded-sm bg-accent px-4 py-2 text-md font-medium text-accent-fg hover:bg-accent-hover sm:ml-auto"
           >
-            {SITE.contactEmail}
+            Request early access →
           </a>
         </div>
       </section>
@@ -294,11 +398,11 @@ function Section({
   id: string;
   eyebrow: string;
   title: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-16 border-t border-divider">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-16">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-16">
         <header className="flex flex-col gap-2">
           <p className="text-xs font-medium uppercase tracking-caps text-accent">{eyebrow}</p>
           <h2 id={`${id}-title`} className="text-2xl font-semibold tracking-tight">

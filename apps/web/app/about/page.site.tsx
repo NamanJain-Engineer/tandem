@@ -15,8 +15,8 @@ const WAYS = [
     body: `${SITE.product} runs the agents you already pay for, signed in by themselves. Your code, prompts and tokens stay on your computer.`,
   },
   {
-    title: "You talk to the builder",
-    body: "Every email is read and answered by the person who writes the code.",
+    title: "Built with the agents we support",
+    body: `${SITE.product} is written with Claude Code, the engine it integrates most deeply, so we use what we build every day.`,
   },
 ] as const;
 
@@ -25,8 +25,18 @@ function details(): Array<[string, ReactNode]> {
   const rows: Array<[string, ReactNode]> = [
     ["Company", SITE.company],
     ["Product", SITE.product],
-    ["Founder", SITE.founder.name],
+    [
+      "Founder",
+      SITE.founder.link ? (
+        <a key="founder" href={SITE.founder.link} className="text-accent hover:underline">
+          {SITE.founder.name}
+        </a>
+      ) : (
+        SITE.founder.name
+      ),
+    ],
   ];
+  if (SITE.founded) rows.push(["Founded", SITE.founded]);
   if (SITE.legal) {
     rows.push(["Registered name", SITE.legal.name]);
     if (SITE.legal.registration) rows.push(["Registration", SITE.legal.registration]);
@@ -54,9 +64,12 @@ export default function AboutPage() {
           {SITE.company} builds {SITE.product}, a desktop workspace for running coding agents side by side.
         </h1>
         <p className="max-w-3xl text-lg text-fg-muted">
-          {SITE.company} is a small, independent software company, and right now it's one person. We think the
-          coding agents developers already pay for deserve a proper home on their own machine: real terminals,
-          one view of every agent, and nothing taken off the computer without asking.
+          {SITE.company} is a small, independent software company
+          {SITE.founded && SITE.location ? `, founded in ${SITE.founded} in ${SITE.location}` : ""}, and right
+          now it's one person. It started from a simple observation: as coding agents multiply, developers
+          need a better way to run, coordinate and keep an eye on them. We think the agents developers already
+          pay for deserve a proper home on their own machine: real terminals, one view of every agent, and
+          nothing taken off the computer without asking.
         </p>
       </section>
 
@@ -74,10 +87,16 @@ export default function AboutPage() {
           <p className="text-base text-fg-muted">
             {SITE.founder.role}, {SITE.company}
           </p>
-          <p className="mt-2 text-md text-fg-muted">
+          {SITE.founder.bio && <p className="mt-2 text-md text-fg">{SITE.founder.bio}</p>}
+          <p className="text-md text-fg-muted">
             {SITE.founder.name} started {SITE.company} to build {SITE.product} and does every job in it:
             product, design, code, releases and support. Every email gets a reply from the founder.
           </p>
+          {SITE.founder.link && (
+            <a href={SITE.founder.link} className="mt-1 text-base font-medium text-accent hover:underline">
+              {SITE.founder.link.replace("https://", "")}
+            </a>
+          )}
         </div>
       </Block>
 
@@ -109,6 +128,13 @@ export default function AboutPage() {
             For early access, partnerships or anything else, email{" "}
             <a href={`mailto:${SITE.contactEmail}`} className="text-accent hover:underline">
               {SITE.contactEmail}
+            </a>
+            .
+          </p>
+          <p>
+            See what's shipped so far in the{" "}
+            <a href="/changelog/" className="text-accent hover:underline">
+              changelog
             </a>
             .
           </p>

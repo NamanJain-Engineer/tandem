@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { SITE } from "../../lib/site";
+import { EARLY_ACCESS_HREF, SITE } from "../../lib/site";
 
 /** Tandem's mark: two overlapping rings. */
 export function Mark({ size = 22 }: { size?: number }) {
@@ -13,8 +13,9 @@ export function Mark({ size = 22 }: { size?: number }) {
 
 const NAV = [
   { href: "/#features", label: "Features" },
-  { href: "/#engines", label: "Engines" },
+  { href: "/#claude", label: "Claude" },
   { href: "/#roadmap", label: "Roadmap" },
+  { href: "/changelog/", label: "Changelog" },
   { href: "/about/", label: "About" },
 ];
 
@@ -46,10 +47,10 @@ export function SiteFrame({ children }: { children: ReactNode }) {
             ))}
           </ul>
           <a
-            href={`mailto:${SITE.contactEmail}`}
+            href={EARLY_ACCESS_HREF}
             className="ml-auto rounded-sm bg-accent px-3 py-1.5 font-medium text-accent-fg hover:bg-accent-hover sm:ml-0"
           >
-            Contact
+            Early access
           </a>
         </nav>
       </header>
@@ -65,6 +66,9 @@ export function SiteFrame({ children }: { children: ReactNode }) {
           <nav aria-label="Legal" className="flex flex-wrap gap-x-5 gap-y-2 sm:ml-auto">
             <a href="/about/" className="hover:text-fg">
               About
+            </a>
+            <a href="/changelog/" className="hover:text-fg">
+              Changelog
             </a>
             <a href="/privacy/" className="hover:text-fg">
               Privacy
