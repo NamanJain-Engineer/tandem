@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const api = process.env.API_INTERNAL_URL ?? "http://127.0.0.1:8787";
 
 // `SITE_EXPORT=1` (`pnpm --filter web build:site`) builds only the public
-// pages (`*.site.tsx`) as static files for Cloudflare Pages. The account
+// pages (`*.site.tsx`) as static files for Vercel. The account
 // portal and route handlers need the API and stay out of that export.
 const siteExport = process.env.SITE_EXPORT === "1";
 

@@ -242,6 +242,8 @@ importers:
         specifier: ^9
         version: 9.32.0
 
+  apps/site: {}
+
   apps/web:
     dependencies:
       '@tandem/protocol':

@@ -14,7 +14,8 @@ Tandem is a clean-room product. It does not use another product's names, copy, a
 |---|---|
 | `apps/desktop` | Tauri 2 app: React UI in `src/`, Rust crate `tandem-desktop` (lib `tandem_app`, bin `tandem`) in `src-tauri/` |
 | `apps/api` | Backend: Hono, Drizzle, Postgres, Redis |
-| `apps/web` | Website, docs and account portal: Next.js 15 |
+| `apps/web` | Website ([vibezeo.com](https://vibezeo.com), static export on Vercel: [docs/DEPLOY_SITE.md](docs/DEPLOY_SITE.md)), docs and account portal: Next.js 15 |
+| `apps/site` | An earlier one-page draft of the public page (not deployed) |
 | `crates/tandem-*` | Rust libraries: core, store, pty, engines, git, gateway, tasks, routines, voice, host |
 | `packages/ui` | React components and design tokens |
 | `packages/protocol` | Wire types (generated from Rust with ts-rs) and the API client |

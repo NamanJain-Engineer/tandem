@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vibezeo — a workspace for Claude Code</title>
+    <meta
+      name="description"
+      content="Vibezeo is a local desktop workspace for Claude Code and the other coding-agent CLIs you already pay for. It does not read your Claude login."
+    />
+    <link rel="canonical" href="https://vibezeo.com/" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,520;9..144,640&family=Outfit:wght@380;520&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <a class="mark" href="#top">Vibezeo</a>
+      <nav>
+        <a href="#product">Product</a>
+        <a href="#claude">Claude</a>
+        <a href="#status">Status</a>
+      </nav>
+      <a class="mail" href="mailto:hello@vibezeo.com">hello@vibezeo.com</a>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <p class="kicker">Local-first · early build</p>
+        <h1>The desk where Claude Code actually works.</h1>
+        <p class="lede">
+          Vibezeo is a desktop workspace for people who already pay for Claude Code.
+          It gives that CLI a real pane, a readable thread, and a named teammate.
+          Your Claude login stays on your machine.
+        </p>
+      </section>
+
+      <section id="product" class="grid">
+        <article>
+          <h2>Panes</h2>
+          <p>Claude Code runs in its own terminal, next to the other coding CLIs you choose. Each pane has its own working directory.</p>
+        </article>
+        <article>
+          <h2>Threads</h2>
+          <p>The same session can be read as a thread, so you are not stuck scrolling raw terminal output to see what changed.</p>
+        </article>
+        <article>
+          <h2>Teammates</h2>
+          <p>A teammate is a saved name, instructions, and engine. It is not a second model that we host or bill you for.</p>
+        </article>
+      </section>
+
+      <section id="claude" class="claude">
+        <div>
+          <h2>How Claude fits</h2>
+          <p>
+            Vibezeo hosts the Claude Code CLI. It does not replace Claude, and it does not
+            read your Claude login. The engine signs in inside its own account folder.
+            Prompts and files stay on the computer that has the repo.
+          </p>
+          <ul>
+            <li>Bring the Claude subscription you already have.</li>
+            <li>Vibezeo does not proxy Claude OAuth tokens.</li>
+            <li>Other CLIs can sit in other panes. Claude is not locked in, and it is not locked out.</li>
+          </ul>
+        </div>
+        <pre class="term" aria-hidden="true"><span class="dim">~/src/vibezeo</span>
+claude
+<span class="dim">pane</span>  claude · this folder
+<span class="dim">thread</span> readable session
+<span class="dim">login</span> stays in Claude's own account</pre>
+      </section>
+
+      <section id="status" class="status">
+        <h2>Where it is</h2>
+        <p>
+          Vibezeo is in active development. There is no public launch, no customer list,
+          and no usage number on this page because we will not invent one.
+          If you want early access, write to
+          <a href="mailto:hello@vibezeo.com">hello@vibezeo.com</a>.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <span>Vibezeo</span>
+      <span>vibezeo.com</span>
+    </footer>
+  </body>
+</html>
