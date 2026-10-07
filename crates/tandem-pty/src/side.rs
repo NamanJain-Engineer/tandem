@@ -176,6 +176,11 @@ impl SideChannel {
         self.capture.running()
     }
 
+    /// The screen's width in columns.
+    pub fn cols(&self) -> u16 {
+        self.screen.screen().size().1
+    }
+
     /// Plain text of the visible screen (TUI goldens, readiness patterns).
     pub fn screen_text(&self) -> String {
         self.screen.screen().contents()

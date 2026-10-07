@@ -5,6 +5,7 @@
 //! specs, the status server and `tandem-hook`. Chat adapters arrive in M6.
 
 pub mod detect;
+pub mod handoff;
 pub mod homes;
 pub mod hook;
 pub mod launch;

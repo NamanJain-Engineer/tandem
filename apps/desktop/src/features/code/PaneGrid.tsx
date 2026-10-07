@@ -8,8 +8,8 @@ import {
   type ImperativePanelGroupHandle,
 } from "react-resizable-panels";
 import type { IpcError, PaneRecord, WorkspaceSummary } from "@tandem/protocol";
-import { SquareTerminal } from "lucide-react";
-import { Badge, Button, EngineGlyph, Spinner, StatusDot, Tooltip, cx, useToast, type MenuEntry, type Status } from "@tandem/ui";
+import { ArrowRightLeft, SquareTerminal, X } from "lucide-react";
+import { Badge, Button, EngineGlyph, IconButton, Spinner, StatusDot, Tooltip, cx, useToast, type MenuEntry, type Status } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useEngines } from "../../stores/engines";
 import { paneKey, statusView, useStatus } from "../../stores/status";
@@ -35,6 +35,7 @@ import type { Activity } from "./commandMarks";
 import { TerminalView, copyLastOutput, terminalHandles, type Phase, type TerminalOptions } from "./TerminalView";
 import { PausedCard } from "./PausedCard";
 import { WorktreeChip, worktreeMenu } from "./Worktrees";
+import { useHandoff } from "../../stores/handoff";
 import { baseBranch, isWorktree } from "../../stores/worktrees";
 
 const BOX_THROTTLE_MS = 50;
@@ -244,6 +245,7 @@ const PaneView = memo(function PaneView({
   const wt = home && isWorktree(home) ? home : null;
   const base = useWorkspaces((st) => (wt ? baseBranch(st.list, wt) : ""));
   const meta = relativeCwd(cwd ?? pane.cwd, root);
+  const note = useHandoff((st) => st.notes[pane.id]);
   const rename = async (name: string): Promise<string | null> => {
     try {
       const stored = await invoke<string>("pane_rename", { paneId: pane.id, humanName: name });
@@ -267,6 +269,14 @@ const PaneView = memo(function PaneView({
     },
     { id: "new-tab", label: t("pane.moveToNewTab"), onSelect: () => void moveToNewTab(tabId, pane.id) },
     { id: "restart", label: t("pane.restart"), onSelect: () => terminalHandles.get(pane.id)?.restart() },
+    {
+      id: "handoff",
+      label: t("pane.handoff"),
+      onSelect: () =>
+        useHandoff
+          .getState()
+          .open({ paneId: pane.id, workspaceId: pane.workspaceId, kind: pane.kind, engineId: pane.engineId }),
+    },
     { id: "sep-copy", type: "separator" },
     {
       id: "copy-last-output",
@@ -341,6 +351,22 @@ const PaneView = memo(function PaneView({
         dragRef={setNodeRef}
         dragProps={{ ...attributes, ...listeners, tabIndex: -1, role: "toolbar" }}
       />
+      {note && (
+        // F-CD-16: where the work went, until dismissed.
+        <div
+          data-testid="handoff-note"
+          className="flex h-6 shrink-0 items-center gap-1.5 border-b border-divider bg-surface-2 pl-2 pr-1 text-xs text-fg-muted"
+        >
+          <ArrowRightLeft size={12} aria-hidden="true" className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">{note}</span>
+          <IconButton
+            size="sm"
+            icon={<X size={12} />}
+            label={t("handoff.dismissNote")}
+            onClick={() => useHandoff.getState().note(pane.id, null)}
+          />
+        </div>
+      )}
       <div className="relative min-h-0 flex-1">
         {cover && (
           <PaneCover

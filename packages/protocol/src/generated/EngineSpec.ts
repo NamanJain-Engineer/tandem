@@ -50,6 +50,13 @@ usageLogGlobs: Array<string>, skillsDir: string | null,
  */
 cheapModel: string | null, 
 /**
+ * Arguments for a one-shot run that reads its prompt on stdin and
+ * prints the answer, with no MCP servers (handoff briefs, F-CD-16).
+ * `{model}` becomes `cheap_model`; without one, it and the flag before
+ * it are left out.
+ */
+headlessCmd: Array<string> | null, 
+/**
  * OSC titles: the first capture group is the work title.
  */
 titlePatterns: Array<string>, 

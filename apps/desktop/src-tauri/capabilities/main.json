@@ -82,6 +82,8 @@
     "allow-preset-delete",
     "allow-launch-lineup",
     "allow-launch-retry-seat",
+    "allow-handoff-brief",
+    "allow-handoff-start",
     "allow-workspace-locate",
     "allow-workspace-set-flags",
     "allow-workspace-reveal",

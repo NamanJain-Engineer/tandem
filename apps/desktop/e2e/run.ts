@@ -130,6 +130,8 @@ async function main() {
     `export PATH="${fakes}:$PATH"`,
     `export TANDEM_FAKE_ENGINE_LOG="${join(home, "fake-engine.log")}"`,
     `export TANDEM_HOOK_LOG="${join(home, "hook.log")}"`,
+    // `empty` in this file makes the fake engines' handoff briefs empty (E2E-M6-5).
+    `export TANDEM_FAKE_BRIEF="${join(home, "brief.txt")}"`,
     "",
   ].join("\n");
   for (const f of [".bash_profile", ".profile", ".zprofile"]) writeFileSync(join(userHome, f), profile);
@@ -149,6 +151,10 @@ async function main() {
     TANDEM_FAKE_CONFIRM: join(home, "confirm.txt"),
     // Fails the nth worktree of a launch (debug builds; E2E-M6-3).
     TANDEM_FAKE_LANE_FAIL: join(home, "lane-fail.txt"),
+    // Headless engine runs aren't panes and don't read the profile; debug
+    // builds hand them these (E2E-M6-5).
+    TANDEM_FAKE_BRIEF: join(home, "brief.txt"),
+    TANDEM_FAKE_ENGINE_LOG: join(home, "fake-engine.log"),
     TANDEM_HOOK_BIN: join(root, "target/debug/tandem-hook"),
     TANDEM_SPAWN_LOG: join(home, "spawn.log"),
     // The local update feed (scripts/mock-update-feed.ts, E2E-M5-7); it

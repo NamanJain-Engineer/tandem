@@ -25,7 +25,7 @@ import { useEngines } from "../../stores/engines";
 import { useSetting } from "../../stores/settings";
 import { useSidebar } from "../../stores/sidebar";
 import { useWorkspaces } from "../../stores/workspaces";
-import { answer, closeAgent, closeIdle, jumpTo, stopAgent } from "./actions";
+import { answer, closeAgent, closeIdle, handOff, jumpTo, stopAgent } from "./actions";
 import { cardMeta, cardTitle, closeIdleTargets, counts, group, visible, type Group, type Lanes } from "./model";
 import { isWorktree } from "../../stores/worktrees";
 
@@ -102,6 +102,9 @@ function AgentCard({ item, title, now }: { item: DashboardItem; title: string; n
     { id: "open", label: t("dashboard.open"), onSelect: () => void jumpTo(item) },
     ...(item.status === "done"
       ? [{ id: "seen", label: t("dashboard.markSeen"), onSelect: () => void invoke("status_mark_seen", { key: item.key }).catch(() => undefined) }]
+      : []),
+    ...(item.source.type === "pane"
+      ? [{ id: "handoff", label: t("dashboard.handoff"), onSelect: () => handOff(item) }]
       : []),
     ...(item.status === "working"
       ? [{ id: "stop", label: t("dashboard.stop"), danger: true, onSelect: () => void stopAgent(item) }]

@@ -15,7 +15,13 @@
 //!
 //! Lines: `/exit` quits; `/ask` asks for approval (Notification);
 //! `/script` runs UserPromptSubmit → Notification → Stop two seconds apart;
-//! `/title <t>` sets the OSC title; anything else is answered, then Stop.
+//! `/title <t>` sets the OSC title; a handoff brief request (F-CD-16) is
+//! answered with a brief between its markers; anything else is answered,
+//! then Stop.
+//!
+//! Run headless (`claude -p`, `codex exec`), it reads its prompt from stdin,
+//! logs its size and prints a brief. `TANDEM_FAKE_BRIEF` (a value, or a
+//! file holding it) set to `empty` makes both briefs empty.
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -55,6 +61,46 @@ fn out(s: &str) {
     let mut o = std::io::stdout();
     let _ = o.write_all(s.as_bytes());
     let _ = o.flush();
+}
+
+/// `TANDEM_FAKE_BRIEF`: the value, or the contents of the file it names.
+fn brief_mode() -> String {
+    let Ok(v) = std::env::var("TANDEM_FAKE_BRIEF") else {
+        return String::new();
+    };
+    std::fs::read_to_string(&v).unwrap_or(v).trim().to_string()
+}
+
+/// A brief under the template's headings, one line each.
+fn brief_lines(label: &str) -> Vec<String> {
+    if brief_mode() == "empty" {
+        return Vec::new();
+    }
+    [
+        "## Goal".to_string(),
+        format!("Finish the work {label} started."),
+        "## What's done".into(),
+        "The parser is fixed.".into(),
+        "## Current state".into(),
+        "Tests are running.".into(),
+        "## Files touched".into(),
+        "src/parse.rs".into(),
+        "## Open problems".into(),
+        "None known.".into(),
+        "## Next steps".into(),
+        "Run the tests.".into(),
+    ]
+    .to_vec()
+}
+
+/// One-shot mode: the prompt on stdin, the answer on stdout.
+fn headless(name: &str) {
+    let mut input = Vec::new();
+    let _ = std::io::stdin().read_to_end(&mut input);
+    log(&format!("headless: {name} read {} bytes", input.len()));
+    for line in brief_lines(&format!("Fake {}", label(name))) {
+        println!("{line}");
+    }
 }
 
 /// `--resume <id>` resumes that session; otherwise each run is a new one.
@@ -160,11 +206,16 @@ fn main() {
         println!("{name} 1.2.3 (test engine)");
         return;
     }
+    let args = &argv[1.min(argv.len())..];
+    if (name == "claude" && args.iter().any(|a| a == "-p"))
+        || (name == "codex" && args.first().is_some_and(|a| a == "exec"))
+    {
+        log(&format!("start: {name} args={args:?}"));
+        headless(&name);
+        return;
+    }
     let label = label(&name).to_string();
-    log(&format!(
-        "start: {name} args={:?}",
-        &argv[1.min(argv.len())..]
-    ));
+    log(&format!("start: {name} args={args:?}"));
     #[cfg(unix)]
     let saved = raw_mode();
     out("\x1b[?2004h");
@@ -237,6 +288,18 @@ fn answer(name: &str, text: &str) -> bool {
     }
     if claude {
         hook("UserPromptSubmit", serde_json::json!({}));
+    }
+    if let Some(rest) = t.split("--- handoff brief ").nth(1) {
+        let nonce = rest.split_whitespace().next().unwrap_or("");
+        out(&format!("⏺ --- handoff brief {nonce} ---\r\n"));
+        for line in brief_lines(&format!("Fake {}", label(name))) {
+            out(&format!("  {line}\r\n"));
+        }
+        out(&format!("  --- end of brief {nonce} ---\r\n"));
+        if claude {
+            hook("Stop", serde_json::json!({ "stop_hook_active": false }));
+        }
+        return true;
     }
     if let Some(title) = t.strip_prefix("/title ") {
         out(&format!("\x1b]2;{title}\x07"));

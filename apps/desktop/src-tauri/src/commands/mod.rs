@@ -4,6 +4,7 @@
 pub mod account;
 pub mod app;
 pub mod engines;
+pub mod handoff;
 pub mod lanes;
 pub mod launch;
 pub mod onboarding;

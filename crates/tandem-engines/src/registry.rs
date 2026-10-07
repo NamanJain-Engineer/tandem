@@ -159,6 +159,12 @@ pub struct EngineSpec {
     /// The engine's cheapest model, for headless helper runs.
     #[serde(default)]
     pub cheap_model: Option<String>,
+    /// Arguments for a one-shot run that reads its prompt on stdin and
+    /// prints the answer, with no MCP servers (handoff briefs, F-CD-16).
+    /// `{model}` becomes `cheap_model`; without one, it and the flag before
+    /// it are left out.
+    #[serde(default)]
+    pub headless_cmd: Option<Vec<String>>,
     /// OSC titles: the first capture group is the work title.
     #[serde(default)]
     pub title_patterns: Vec<String>,
@@ -229,6 +235,7 @@ impl EngineSpec {
             .version_cmd
             .iter()
             .chain(self.login_cmd.iter().flatten())
+            .chain(self.headless_cmd.iter().flatten())
             .any(|a| a.chars().any(char::is_control))
         {
             return fail("arguments can't hold control characters");

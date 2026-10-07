@@ -67,6 +67,8 @@ const COMMANDS: &[&str] = &[
     "preset_delete",
     "launch_lineup",
     "launch_retry_seat",
+    "handoff_brief",
+    "handoff_start",
     "workspace_locate",
     "workspace_set_flags",
     "workspace_reveal",

@@ -42,6 +42,7 @@
     ],
     "skillsDir": "skills",
     "cheapModel": "haiku",
+    "headlessCmd": ["-p", "--strict-mcp-config", "--model", "{model}"],
     "titlePatterns": [
       "^[✳✶✻✽✢·*]\\s*(.+)$"
     ],
@@ -117,6 +118,7 @@
     ],
     "skillsDir": "skills",
     "cheapModel": "gpt-5-mini",
+    "headlessCmd": ["exec", "--skip-git-repo-check", "-c", "mcp_servers={}", "--model", "{model}", "-"],
     "titlePatterns": [],
     "readyPatterns": [
       "^›\\s",

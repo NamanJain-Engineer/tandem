@@ -11,6 +11,7 @@ pub mod deeplink;
 pub mod engines;
 pub mod entitlement;
 pub mod events;
+pub mod handoff;
 pub mod lanes;
 pub mod launch;
 pub mod names;

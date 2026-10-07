@@ -663,7 +663,8 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `presets_list` / `preset_save` / `preset_delete` | — / `{id?, name, seats:[Seat], isolation}` / `{id}` | `[Preset]` (the 4 built-ins, defined in code with `pst_builtin_*` ids, then saved ones) / `Preset` / — | Invalid (builtin) · Conflict (name taken) | F-CD-14 |
 | `launch_lineup` | `{workspaceId, seats:[Seat], task?, isolation:"shared"\|"worktree"}` → op | `LaunchReport {launched:[{seatIndex, pane, workspaceId, tabId, laneBranch?}], failed:[{seatIndex, seat, error: IpcError}], sharedTabId?}` (seats expanded by `count`; shared-checkout seats open in one new tab named after the task; agents type `briefing? + role brief + task` once ready) | LimitReached (whole lineup over plan cap → nothing launched) | F-CD-14, F-CD-15 |
 | `launch_retry_seat` | `{workspaceId, seat, task?, isolation, tabId?}` (`tabId`: the lineup's shared tab) | `LaunchedSeat` | as above | F-CD-14 |
-| `handoff_start` | `{source: SourceRef, engineId, accountId?, teammateId?, extra?}` → op | `{target: SourceRef}` | EngineMissing | F-CD-16 |
+| `handoff_brief` | `{paneId, engineId, accountId?}` (up to 120 s per strategy; UI-13 shows "Writing summary…") | `HandoffBrief {text, source: "source"\|"headless"\|"fallback"}` (§6.11 strategies in order; always returns text unless the pane is gone) | NotFound | F-CD-16 |
+| `handoff_start` | `{paneId, engineId, accountId?, brief, place: "same"\|"new_worktree", closeSource}` | `HandoffResult {pane, workspaceId, tabId, laneBranch?, sourceClosed}` (the client splits it right of the source; briefs over 8 KB go via `$DATA/briefings/<pane>.md`) | EngineMissing, LimitReached, Invalid (empty brief) | F-CD-16 |
 | `lane_create` | `{workspaceId, slugSource}` | `Workspace` (child) | Conflict, Io | F-CD-15 |
 | `lane_diff` | `{laneId}` | `[FileDiff]` | — | F-CD-15 |
 | `lane_merge` | `{laneId}` | `MergeReport {merged, conflicts:[path], commit?}` | — | F-CD-15 |

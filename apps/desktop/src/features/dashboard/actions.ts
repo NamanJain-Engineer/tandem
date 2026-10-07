@@ -2,6 +2,7 @@ import type { DashboardItem, IpcError } from "@tandem/protocol";
 import { invoke } from "../../ipc/invoke";
 import { useDashboard } from "../../stores/dashboard";
 import { focusSource } from "../../stores/focus";
+import { useHandoff } from "../../stores/handoff";
 import { useLayout } from "../../stores/layout";
 import { FLOAT_BELOW, useSidebar } from "../../stores/sidebar";
 
@@ -13,6 +14,12 @@ export async function jumpTo(item: DashboardItem): Promise<boolean> {
   if (sb.fullscreen) sb.setFullscreen(false);
   else if (window.innerWidth < FLOAT_BELOW && !sb.pinned) sb.setOpen(false);
   return ok;
+}
+
+/** "Hand off to…" (UI-13) for the card's pane. */
+export function handOff(item: DashboardItem): void {
+  if (item.source.type !== "pane" || !item.workspaceId) return;
+  useHandoff.getState().open({ paneId: item.source.paneId, workspaceId: item.workspaceId, kind: "agent", engineId: item.engineId });
 }
 
 /** Ends the agent's process; the pane stays with its output. */
