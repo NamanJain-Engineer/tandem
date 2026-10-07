@@ -29,3 +29,4 @@
 - M0: engine registry, local domain log, sync API, desktop shell.
 - M0: engine spawn plans drop secret environment variables before a child starts.
 - Public site: `apps/site` is the Vibezeo page (vibezeo.com). It describes the product without invented traction.
+- Public site on Vercel: `apps/web` is now the vibezeo.com site (home, about, privacy, terms, security, robots, sitemap, security.txt), a static export (`pnpm --filter web build:site`) that Vercel deploys from `main` (`apps/web/vercel.json`, `docs/DEPLOY_SITE.md`). It uses the `@tandem/ui` tokens, fonts, Badge and StatusDot. `apps/site` is the earlier one-page draft and isn't deployed. The rest of the M0–M5 work arrives through a pull request.

@@ -8,3 +8,5 @@ perf/results/*.tmp
 dist
 .next
 .turbo
+apps/web/out
+.vercel

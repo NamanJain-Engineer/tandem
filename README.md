@@ -11,9 +11,9 @@ Milestone M0 is in progress. Shipped so far:
 - `tandem-core`, `tandem-engine`, `tandem-store` (workspaces, sessions, panes, agents, event log)
 - `api`: health, and an idempotent sync log (`/v1/sync/events`)
 - `desktop`: shell frame on port 1420
-- `web`: `GET /api/health`
-- `site`: public page for [vibezeo.com](https://vibezeo.com)
-- `@tandem/ui` Button and `@tandem/protocol` wire types
+- `web`: the public site for [vibezeo.com](https://vibezeo.com) (static export on Vercel, see [docs/DEPLOY_SITE.md](docs/DEPLOY_SITE.md)) and `GET /api/health`
+- `site`: an earlier one-page draft of the public page (not deployed)
+- `@tandem/ui` Button, Badge, StatusDot and the design tokens, and `@tandem/protocol` wire types
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for why this stays one repository.
 
