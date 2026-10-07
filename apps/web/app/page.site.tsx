@@ -217,7 +217,7 @@ export default function HomePage() {
               href="#demo"
               className="rounded-sm border border-border-strong px-4 py-2 text-md font-medium text-fg hover:bg-surface-3"
             >
-              Watch it run (45 s)
+              Watch it run (1 min)
             </a>
           </div>
           <p className="text-sm text-fg-muted">
@@ -252,28 +252,28 @@ export default function HomePage() {
         </div>
       </section>
 
-      <Section id="demo" eyebrow="See it run" title="45 seconds, unedited">
+      <Section id="demo" eyebrow="See it run" title="Vibezeo in 1 minute">
         <figure className="flex flex-col gap-3">
           <video
-            poster="/screens/code-mode.png"
-            width={1280}
-            height={800}
+            poster="/screens/product-poster.jpg"
+            width={1600}
+            height={900}
             controls
-            muted
             playsInline
             preload="metadata"
-            style={{ aspectRatio: "1280 / 800" }}
+            style={{ aspectRatio: "16 / 9" }}
             className="h-auto w-full max-w-full rounded-lg border border-border bg-surface-1 shadow-3"
           >
             {/* VP9 first: open-source Chromium builds can't play H.264. */}
-            <source src="/screens/demo.webm" type="video/webm" />
-            <source src="/screens/demo.mp4" type="video/mp4" />
+            <source src="/screens/product.webm" type="video/webm" />
+            <source src="/screens/product.mp4" type="video/mp4" />
           </video>
           <figcaption className="text-sm text-fg-muted">
-            A screen recording of the Linux build, with no cuts. 0:00 A new tab finds Claude Code on the
-            machine. 0:04 Four terminals over Vibezeo's own repository: git history, htop, the Claude Code
-            hook handler in vim, and the test suite. 0:35 The app is killed with kill -9. 0:38 Relaunched, the
-            layout and the four live shells come back, and nothing re-runs on its own.
+            Every shot of the app is a screen recording of the Linux {RELEASE.version} build. The terminal
+            part plays at 2.3× speed (marked on screen), and the live-status scene is an illustration. 0:08 A
+            new tab finds Claude Code on the machine. 0:14 Four terminals over Vibezeo's own repository: htop,
+            the test suite and vim. 0:34 The app is killed with kill -9. 0:36 Relaunched, the layout comes
+            back.
           </figcaption>
         </figure>
       </Section>

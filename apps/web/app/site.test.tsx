@@ -115,7 +115,14 @@ describe("public site", () => {
   it("F-WB-01 the demo video is a recording of the real app that ships with the site", () => {
     const h = html(<HomePage />);
     expect(h).toMatch(/<video[^>]*controls/);
-    for (const file of ["demo.webm", "demo.mp4"]) {
+    expect(h).toContain("Watch it run (1 min)");
+    expect(h).toContain(`poster="/screens/product-poster.jpg"`);
+    expect(existsSync(join(import.meta.dirname, "../public/screens/product-poster.jpg"))).toBe(true);
+    // It has sound, so it doesn't start muted, and it says what's sped up or illustrated.
+    expect(h).not.toMatch(/<video[^>]*muted/);
+    expect(h).toContain("2.3× speed");
+    expect(h).toContain("illustration");
+    for (const file of ["product.webm", "product.mp4"]) {
       expect(h).toContain(`src="/screens/${file}"`);
       expect(existsSync(join(import.meta.dirname, `../public/screens/${file}`)), file).toBe(true);
     }
