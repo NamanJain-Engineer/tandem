@@ -1,0 +1,1248 @@
+            # class dict just has the default value
+    def set_description(self, description):
+                token, value = get_fws(value)
+            subargs = getattr(arg, '__typing_unpacked_tuple_args__', None)
+        keep_blank_values: flag indicating whether blank values in
+    if nbytes is None:
+# Each decoder must also supply a length function that takes the binary
+           most up-to-date version.
+                            chunks[k-1] = chunks[k-1][:-1] + chunks[k][1:]
+                              capath if os.path.isdir(capath) else None,
+            elif i < usage_end:
+            self.data.difference_update(ref(item) for item in other)
+ValuesView = _alias(collections.abc.ValuesView, 1)
+    # Provide default arguments
+        elif type == INDENT:
+    """Return the size of a file, reported by os.stat()."""
+    # We are creating a new archive from a directory.
+    name: the field name, if specified; otherwise None
+    return dict.get(instance_dict, attr, _sentinel)
+        if member.gname is not None:
+        # set the parser name if requested
+    def _s_getter(self):
+            normdirs.append(normdir)
+            hint; the splitter does the best it can.
+ 'HAVE_KILLPG': 1,
+    # Thus for c*10**e close to 1, f = 0
+    if code is None:
+used for operations on integers with many digits.  In those cases, the
+              failing to provide a subnetmask will create an object with
+    def getheaders(self):
+def get_text_content(msg, errors='replace'):
+    # This regular expression is used to find doctest examples in a
+        # Check if 'func' is a coroutine function.
+            return super().value
+        padding = ''
+            skips['skip_host'] = 1
+        return self._shortcmd('NOOP')
+                        # empty line marks end of value
+        # REs insist on real strings, so we can too.
+            return '<a href="%s.html#%s">%s</a>' % (
+            returncode = self._proc.wait()
+                if not name.endswith(rbrace):
+    >>> encode_long(0)
+           "register_error", "lookup_error"]
+            return self.hosts[host]
+    def get_opcodes(self):
+        result = type(self)(self.fget, self.fset, fdel, self.__doc__)
+        return self._dt_test.name
+            # If 'SKIP' is set, then skip this example.
+        return self[-1].route
+            NetmaskValueError: If the input is not a valid netmask/hostmask
+        # replace those things that would get confused with HTML symbols
+            return value.fold(policy=self)
+    env_base = os.environ.get("PYTHONUSERBASE", None)
+function call in <a statement>.
+ 'HAVE_SENDFILE': 1,
+        assert self.current_indent >= 0, "Indent decreased below 0."
+    # other helper functions
+        module_or_name = sys.modules[module_or_name]
+                self._long_opt.get(opt_str))
+                    funcname = code.co_name
+        self.top_level = set()
+        """Starts event loop - calling Tkinter's mainloop function.
+    def add_argument_group(self, *args, **kwargs):
+        return date(self._year, self._month, self._day)
+# Protocol 4
+        single_quoted.add(u)
+                    NORMALIZE_WHITESPACE |
+        if self.lineno is not None:
+                            "Macro definition missing null line terminator.",
+           specify a different directory using `path'. File attributes (owner,
+            self.hStdError = hStdError
+        kind = _PY_SOURCE
+                        line_len = indent_length - 1
+        else: # mode == "logo":
+0x1d416:'w', 0x1d417:'x', 0x1d418:'y', 0x1d419:'z',
+    nexttok = next(tokens)
+        Return a DocTest for the given object, if it defines a docstring;
+    returned. The debugger prompt appears as soon as the function is
+        `vars` argument, which must be a dictionary whose contents overrides
+        if unknown and cls._boundary_ is not KEEP:
+                data = self.read(size)
+    getboolean(section, options, raw=False, vars=None, fallback=_UNSET)
+        # they are processed by this code.
+            self.fileobj.write(fname + b'\000')
+    def raw(self):
+            yield from g
+                    "domain and path must be given to remove a cookie by name")
+            lookup("chflags")(dst, st.st_flags, follow_symlinks=follow)
+                stderr=subprocess.DEVNULL,
+        raise ValueError("cutoff must be in [0.0, 1.0]: %r" % (cutoff,))
+    cr_await = gi_yieldfrom
+# difference between the LHS and RHS of [5]?  Let
+        again.  Simply use the continue command, or step, or any other
+   *stop* is an optional callback accepting an object in the wrapper chain
+    'ca_it':                                'ca_IT.ISO8859-1',
+standard output is written, respectively.  The return value is the
+              minus zero doesn't work across boxes, or on some boxes even
+        warnings.warn('isSet() is deprecated, use is_set() instead',
+        return self in self._constants._reserved_network
+            if tp == TYPE_ATTRIBUTE:
+        elif margin.startswith(indent):
+    elif maxsize is None:
+    if _can_fork_exec:
+        """Internal: skip lines until outer boundary if defined."""
+            # Put the hdrcharset field at the beginning of the header.
+    extract_dir = os.fspath(extract_dir)
+        line = line.encode(self.encoding, self.errors)
+            A boolean, True if the network is reserved per
+        obj_locals = None
+                if handle_list:
+    """Copy data from one regular mmap-like fd to another by using
+            newids[arg] = None
+            elif cls._boundary_ is CONFORM:
+    'eo.utf8':                              'eo.UTF-8',
+Writing AIFF files:
+            # _connected being set, e.g. if connect() first returned
+                (False, False, False, True ): None,
+            policy = DefaultCookiePolicy()
+>>> y = [1, 2, 3, 1, 2, 3, 1, 2, 3]
+        if dotplace <= 0:
+    (?P<presentation_type>[eEfFgG%])
+                raise ValueError("unbuffered streams must be binary")
+            self = _dec_from_triple(self._sign, '1', exp-1)
+            _abc_init(cls)
+                self._get_response()
+    return _SCHEME_KEYS
+ 'HAVE_SCHED_GET_PRIORITY_MAX': 1,
+        """Helper to ensure file descriptors opened in _get_handles are closed"""
+        action_conflicts = {}
+        if not hasattr(self, "_file_write"):
+            # Restore old definitions.
+     diff_files: list of filenames which differ.
+        the default value after setting the flag.
+from struct import unpack as _unpack
+        for dirname in sys.path:
+# Return a copy with items that occur in skip removed.
+        elif group_key == 'A':
+        This implements the method described in RFC3596 2.5.
+# Author of the BaseServer patch: Luke Kenneth Casson Leighton
+to a file named "<name>.html".
+            NetmaskValueError: If the netmask isn't valid for
+        # if they only differ in case); turn relative paths into absolute
+    timestamp = nanoseconds // 100 + 0x01b21dd213814000
+        return not self.is_private
+0x1d764:'\u03bf', 0x1d765:'\u03c0', 0x1d766:'\u03c1', 0x1d767:'\u03b8',
+   16: }        EMPTY_DICT
+    def bz2open(cls, name, mode="r", fileobj=None, compresslevel=9, **kwargs):
+def get_unpack_formats():
+                del compiler_so[index:index+2]
+    The aggregated number of tried examples and failed examples is
+        s = repr(self.fileobj)
+        them as a list of `Example` objects.  Line numbers are
+                or Flag is not None and not issubclass(enum_class, Flag)
+        """Return the lastly recorded polygon.
+    If no encoding is specified, then the default of 'utf-8' will be returned.
+    # Try and build one for Python defined functions
+        """Add a path to the DLL search path.
+        """Just returns 10, as this is Decimal, :)
+    # Push a class object, or module function, on the stack, via its module
+    if path.endswith(':') and url.endswith('/'):
+            raise ValueError("group length should be positive")
+            nargs_errors = {
+        self.__lines = None
+    subdirectories are generated.
+    def shuffle(self, x):
+        typ, dat = self._simple_command(name, message_set, message_parts)
+def ior(a, b):
+                sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+# derives from OSError for backwards-compatibility with Python 2.4.0
+        return cls._create_(
+    GET = 'GET', 'Retrieve the target.'
+        if max((len(x) for x in lines), default=0) <= policy.max_line_length:
+    multiarch = get_config_var('MULTIARCH')
+    def __init__(self, name, code, arg,
+    return marshal.load(stream)
+        return self._charset
+        # converted in both the decode and non-decode path.
+            # Find the best split point, working backward from the end.
+        with self.open(mode='w', encoding=encoding, errors=errors, newline=newline) as f:
+    a[8] and b[17] match for 21 elements
+                passwd = fallback_getpass(prompt, stream)
+            thread.join()
+    class POP3_SSL(POP3):
+                last_chunk = [string]
+class Domain(TokenList):
+        except OSError as why:
+    For example::
+_HAS_FCOPYFILE = posix and hasattr(posix, "_fcopyfile")  # macOS
+        surrogateescaped binary data if the lines were parsed by a BytesParser.
+            if isinstance(data, str):
+The module also provides another class:
+                self.returncode = rc
+            # Since they are sorted, last.network_address <= net.network_address
+        if not parser.SPECIALS.isdisjoint(disp):
+        actual mouse position on the canvas.
+    if '32-bit' in fileout:
+        'starts_line',
+        else:  # expected: ordinary TK.Canvas
+            digest_cons = lambda d=b'': _hashlib.new(digestmod, d)
+            base_locals = dict(vars(base)) if localns is None else localns
+            result = result + self.section('AUTHOR', str(object.__author__))
+    """Disassemble a code object."""
+    class ForkingUDPServer(ForkingMixIn, UDPServer): pass
+    specialized: base for base, family in _specializations.items() for specialized in family
+            # If we found a '::', then check if it also covers the endpoints.
+        file using file_encoding. The intermediate data type
+    grp.add_argument('-t', '--trace', action='store_true',
+    name is the name of the format. function is the callable that will be
+def_op('INSTRUMENTED_END_SEND', 252)
+    "Same as -a."
+                        traceback = tracebacks[frame]
+                           (3, 0, 0, "alpha", 0),
+        'CONDITIONAL': 'if',
+        """Return the members of the archive as a list of TarInfo objects. The
+import _warnings  # For warn()
+            cls._netmask_cache[arg] = netmask, prefixlen
+    0x203b: "sms_FI",# Sami Skolt
+            i.node for i in self._node2info.values() if i.npredecessors == 0
+            for filename, modulename, funcname in sorted(calls):
+    0x040c: "fr_FR", # French - France
+            PREFIXES = [sys.prefix]
+class _ParentSelector(_Selector):
+                        title, content = html_topicpage(url)
+        return (x.numerator, x.denominator)
+    stacklevel = 2
+pyint = pylong = StackObject(
+                attachments = []
+                if pairs: result.append(pairs)
+    def get_prog_name(self):
+This module tries to capture the various aspects of defining a server:
+Writing WAVE files:
+        Look through the list of headers and find all lines matching a given
+                   "line = %r, margin = %r" % (line, margin)
+        """Triangular distribution.
+        (typ, [data]) = <instance>.xatom(name, arg, ...)
+            _zip_directory_cache[self.archive] = self._files
+        return '%s.%s' % (module, self._name_)
+            "blank lines": r"""
+    # collect stats from pending stack, including getting final
+    no_fold_literal.append(ValueTerminal('[', 'no-fold-literal-start'))
+        x = x.__code__
+                "message/external-body parts do not support cte={}".format(cte))
+            # We're looking at start of an entry for a named machine or default.
+    even when the underlying operating system doesn't. Files opened in
+            if count > _RECURSIVE_CUTOFF:
+            if not data or size is not None:
+        """Remove an element. If not a member, raise a KeyError."""
+        """Send a file, possibly by using os.sendfile() if this is a
+                     source_address=None, context=None, blocksize=8192):
+        self._host = host
+        parsing after reading the headers or not.  The default is False,
+    treply = target.sendcmd('STOR ' + targetname)
+    if isinstance(node, Constant) and isinstance(node.value, str):
+        kill = terminate
+    def sections(self):
+        matches = sum(triple[-1] for triple in self.get_matching_blocks())
+        # because a dead weakref never compares equal to a live weakref,
+        # quickly terminating child could make our fds unwrappable
+ 'HAVE_GETPAGESIZE': 1,
+                var_tuple_index = k
+        args = (args,)
+        base_dir = os.curdir
+    class EpollSelector(_PollLikeSelector):
+        w = wave.open(f, 'r')
+                os.setxattr(dst, name, value, follow_symlinks=follow_symlinks)
+        data = self.buffer + input
+            return S_ISBLK(self.stat().st_mode)
+    Concrete subclasses must provide __new__ or __init__,
+        _init_posix(_CONFIG_VARS)
+        msg = ('{} is a symlink and will be changed into a regular file if '
+    # `value` attributes of enum members while keeping some measure of
+        time, default 'T'.
+        # insert things at the necessary indices
+    _add("HAVE_FCHMODAT",   "chmod")
+    'setcontext', 'getcontext', 'localcontext',
+        tuples. For days outside the specified month the day number is 0.
+                if isinstance(item, AST):
+# Updated alias mapping with glibc 2.19 supported locales.
+    if isinstance(t, types.UnionType):
+            return '<%s instance>' % x.__class__.__name__
+        super(SSLContext, SSLContext).verify_flags.__set__(self, value)
+            if expect_bye:
+        except AddressValueError:
+    for part in path_parts[:-1]:
+    'latin_1':                      'ISO8859-1',
+        for nspace in [self.namespace, builtins.__dict__]:
+        if normp[2:3] == sep:
+# from tarfile import *
+            self._set_ident()
+def in_table_c11_c12(code):
+            token_range = "%d,%d-%d,%d:" % (token.start + token.end)
+            write(cal.formatyearpage(options.year, **optdict))
+    return f'{userbase}/lib/python{version[0]}.{version[1]}/site-packages'
+        env = environ
+            _Screen._root = None
+                   ROUND_FLOOR, ROUND_UP, ROUND_HALF_DOWN, ROUND_05UP)
+                    + 'Use the filter argument to control this behavior.',
+                "must not supply choices for type %r" % self.type, self)
+        indent = indentsize(lines[lnum])
+    def setquota(self, root, limits):
+                zip(keys, node.patterns, strict=True),
+              n=TAKEN_FROM_ARGUMENT1,
+            # To be able to communicate with as many SMTP servers as possible,
+B_CRLF = b'\r\n'
+            # If server keeps sending challenges, something is wrong.
+    'win32': ('', 'WindowsPE'),
+        del self.defaults
+# Thus, this could cause the module to be imported recursively.
+        someData = b"<binary gunk>",
+        return self.data.pop(ref(key), *args)
+        """ Creates a StreamWriter instance.
+                checked_member_keys = list(checked_member_dict.keys())
+                                             TAKEN_FROM_ARGUMENT4U,
+def compile_file(fullname, ddir=None, force=False, rx=None, quiet=0,
+    (including *node* itself), in no specified order.  This is useful if you
+        if sw is not _showwarning_orig:
+def runctx(statement, globals, locals):
+ 'HAVE_SYS_XATTR_H': 1,
+        return generator.gi_frame.f_locals
+        self._set_alpn_protocols(protos)
+            if a[mid] < x:
+get_ident = _thread.get_ident
+            if not force:
+                names.append(k)
+    I(name='DUP',
+What's important about thread-local objects is that their data are
+                    and cwd is None
+    # sense; convert it to 1.  Same if format type is unspecified.
+    if resolved_bases is not bases:
+ * u64 bpf_ktime_get_boot_ns(void)
+ *  It saves some memory, but also requires that `dict` outlives its usage within `cctx` */
+#define key_srsume                     CUR Strings[211]
+ * finished the drag-and-drop operation.
+   The storage returned in *IFAP is allocated dynamically and can
+ * \param elm Link of the containing struct to insert into the list
+** <dd>^An SQLITE_TRACE_ROW callback is invoked whenever a prepared
+extern const char *sigabbrev_np (int __sig) __THROW;
+typedef struct Fts5PhraseIter Fts5PhraseIter;
+/* FIELD_INDEX_NONE is returned in read() data from the kernel when flags
+  extern nss_getservent_r _nss_##module##_getservent_r;                  \
+/* If this bit is set, then anchors do not match at newline
+** of [SQLITE_MAX_LENGTH].
+#define V4L2_DV_BT_DMT_720X400P85 { \
+** determine exactly which parts of a database file are cached and for
+ * Copyright (C) 2005 Guillaume Thouvenin <guillaume.thouvenin@bull.net>
+ * FILS shared key crypto offload should be able to encrypt and decrypt
+ * @IFLA_BRPORT_BRIDGE_ID
+ * @param y surface-local y coordinate
+    size_t problem_offset;
+#ifndef NCURSES_PANEL_H_incl
+# define UINT32_WIDTH 32
+  output space is provided, deflate will not return Z_STREAM_END, and it must
+#ifndef _LINUX_WATCH_QUEUE_H
+ZSTDLIB_STATIC_API size_t ZSTD_compressBegin_usingDict(ZSTD_CCtx* cctx, const void* dict, size_t dictSize, int compressionLevel);
+#define _LINUX_NVRAM_H
+** second parameter to the callback is an integer code that specifies
+/*! ZSTD_decompressionMargin() :
+ * See @ref iface_wl_display.
+   whole memory since previous selection data cannot be freed.  */
+  // line, the attributes will be changed up to the end of the line.
+#    define gzopen64              z_gzopen64
+#ifndef _LINUX_IF_PLIP_H
+wl_client_get_credentials(struct wl_client *client,
+ *    specifics regarding offset/matchlength requirements) then the function will bail out and return an error.
+/* Access macros for `cpu_set'.  */
+wl_subcompositor_get_subsurface(struct wl_subcompositor *wl_subcompositor, struct wl_surface *surface, struct wl_surface *parent)
+/* Downsampling */
+  /* ptrs to coefficient quantization tables, or NULL if not defined,
+#define PCRE2_H_IDEMPOTENT_GUARD
+   * downsampled_width = ceil(image_width * Hi/Hmax * DCT_[h_]scaled_size/DCTSIZE)
+ * that cannot change to the requested mode will prevent the XNACK
+ * by the kernel to userspace.
+ * Daemon code not supporting IP injection (legacy daemon).
+ * The kernel component simply acts as a conduit for communication between the
+struct opal_mbr_done {
+#define RKISP1_CIF_ISP_HISTOGRAM_WEIGHT_GRIDS_SIZE_V10 25
+#endif /* ulimit.h */
+ * A wl_array is a dynamic array that can only grow until released. It is
+   png_uint_16 gray;  /* for use in grayscale files */
+#define XATTR_CAPS_SZ_1         (sizeof(__le32)*(1 + 2*VFS_CAP_U32_1))
+extern int __REDIRECT_NTHNL (pthread_rwlock_clockwrlock,
+union tcp_word_hdr {
+extern long int sysconf (int __name) __THROW;
+ * @frame_num: slice header syntax element.
+#define VIRTIO_CRYPTO_SERVICE_AKCIPHER 4
+  // item is constructed which can be used to terminate a list of
+/* Load a short int from the following tables with big-endian formats */
+   value, and the other in the remaining upper bits, obtained by shifting the
+ * modify it under the terms of version 2 of the GNU General Public
+ * This file supplies definitions required by the PPP over L2TP driver
+#define OPAL_UID_LENGTH 8
+   counters are increased if necessary.  */
+** [SQLITE_CONFIG_PAGECACHE].  The
+typedef png_int_32 png_fixed_point;
+struct vfio_iommu_type1_dma_unmap {
+ * KVM_CREATE_VCPU receives as a parameter the vcpu slot, and returns
+#define FAN_ALL_PERM_EVENTS (FAN_OPEN_PERM |\
+** Consider a scenario where one process is holding a read lock that
+ * @capabilities: capabilities of the CEC adapter.
+ * @NL80211_ATTR_AUTH_TYPE: AuthenticationType, see &enum nl80211_auth_type,
+ * buffers may reside. Requires VHOST_BACKEND_F_IOTLB_ASID.
+ * location, and may remove a rule at a later location (lower
+/* Filter */
+ * commands, and pass those up to the proper user.
+#define NCURSES_CXX_EXPORT(type) NCURSES_CXX_IMPEXP type NCURSES_API
+**      sqlite3_column_text16() is called.  The content must be converted
+ * This allows the plugin to be notified when a PAM module modifies
+    YAML_ANY_BREAK,
+#ifndef _BAYCOM_H
+** property.  If the SQLITE_SUBTYPE property is omitted, then the return
+#include <bits/indirect-return.h>
+enum v4l2_mpeg_video_frame_skip_mode {
+wl_event_loop_create(void);
+ZSTDLIB_STATIC_API size_t ZSTD_CCtx_setParametersUsingCCtxParams(
+struct wl_list *
+enum iommu_hwpt_data_type {
+#   define lockf lockf64
+ * All of the events - we build the list by hand so that we can add flags in
+/* You can pre-allocate the buffer by making sure it is of sufficient size
+/* Activity types signaled through la_activity.  */
+ * Copyright 1998-2012,2017 Free Software Foundation, Inc.                  *
+#ifndef _LINUX_VIRTIO_FS_H
+extern int wprintf (const wchar_t *__restrict __format, ...)
+ * direct, indirect, incidental, special, exemplary, or consequential damages
+PNG_FIXED_EXPORT(213, void, png_set_sCAL_fixed, (png_const_structrp png_ptr,
+ * Heavily based on evdev.c by Vojtech Pavlik
+typedef unsigned short UINT16;
+#define VIRTIO_CRYPTO_MAC_DESTROY_SESSION \
+   It is distributed in the hope that it will be useful,
+/* active modifiers stuff */
+SQLITE_API int sqlite3_complete(const char *sql);
+#define KEXEC_ARCH_PPC64   (21 << 16)
+#define __MATHDECL(type, function,suffix, args) \
+union coda_downcalls {
+#define __HID_H
+ * @tx_window_errors: Number of frame transmission errors due
+struct gfs2_meta_header {
+ *   "alt+Return"
+#define VERR_INVALID_MAGIC                  (-3)
+extern NCURSES_EXPORT_VAR(char) PC;
+ * ABS_MT_POSITION_X, ABS_MT_POSITION_Y) is reported in units
+# define stdc_bit_ceil_us(x) ((unsigned short) __bc16_inline (x))
+enum nl80211_peer_measurement_attrs {
+    (png_const_charp user_png_ver, png_voidp error_ptr, png_error_ptr error_fn,
+ * Then follow this process:
+static const int rgb_red[JPEG_NUMCS] = {
+#define BTRFS_UUID_SIZE 16
+/* Decoder commands */
+ * This option will set a shared secret key which is used to build an
+ *    McLean VA 22101
+ * The IOCTL opens a communication channel between a host client and
+ * @NL80211_MPATH_FLAG_RESOLVED: the mesh path discovery process succeeded
+#define _LINUX_WAIT_H
+ *         growing the ABI in a backwards compatible manner.
+#ifdef getch
+ * PROC_EVENT_ALL above as well.
+ *     payload packet
+ * @edid_max_size: max size of the edid blob (readonly).
+   POSIX draft 11.2 says that * etc. in leading positions is undefined.
+#    define gzread                z_gzread
+#ifndef _LINUX_IPC_H
+ * we have just incremented index from old to new_idx,
+ * @NL80211_STA_INFO_TX_BYTES64: total transmitted bytes (MPDU length)
+struct nilfs_suinfo {
+   Otherwise, the #define hackery is quite ugly and would have been
+      min_col(rhs.min_col)
+ *   Hank Janssen  <hjanssen@microsoft.com>
+  ITEM** mapItems(NCursesMenuItem* nitems[]);
+   RE_LIMITED_OPS, i.e., \? \+ \| are not recognized.  Actually, this
+ *    therefore flush speed is limited by production speed of oldest job
+#define pcre2_compile_context_create          PCRE2_SUFFIX(pcre2_compile_context_create_)
+struct ovs_action_push_vlan {
+** 11 alphanumeric and/or "-" characters.
+** is obtained from [sqlite3_malloc()] and must be freed by the application
+ *     @op determines which union struct args to use.
+#    if HAVE_GPP_BUILTIN_H
+ NCURSES_NOMACROS suppresses macro definitions in favor of functions
+ *     change in the future.
+ * NETLINK_GENERIC related info
+  async #getPackage (name, requireScope) {
+  if (c.match(/[A-Z]/)) {
+    if (lastPart[0] === '@' && !lastPart.includes('/')) {
+ * @fileoverview Rule to restrict what can be thrown as an exception.
+const { log, output } = require('proc-log')
+    const versions = Object.keys(packument.versions)
+      throw Object.assign(new Error(message), {
+    spdxVersion: SPDX_SCHEMA_VERSION,
+      // handles special deletion cases for obj props / array items
+  log.info('using', 'npm@%s', npm.version)
+const VALID_STRING_ESCAPES = union(new Set("\\nrvtbfux"), astUtils.LINEBREAKS);
+  args.length > 0 ? args.some(
+ * @author gfyoung <https://github.com/gfyoung>
+ * @param {Function} relative The function before the invocation point.
+module.exports = Edit
+        `${spec.name}@${aSpec}`,
+ * @param {ConfigLoader} options.configLoader The config array to use for
+ * @fileoverview This rule sets a specific indentation style and width for your code
+      // other than the cwd.
+  un: 'uninstall',
+ * reporting lines and columns starting from 1.
+/** @typedef {import("../options").ParsedCLIOptions} ParsedCLIOptions */
+      if (er.errno === 'EPIPE') {
+module.exports = CodePathState;
+ * Check if a given node is an Identifier node with a given name.
+        const comps = await completion(opts, this.npm)
+      detail.push(['rofs', [
+      er.code = 'EDEDUPEGLOBAL'
+ * `false` if the pattern would be invalid with the `u` flag or the configured
+const BOM = "\uFEFF";
+    const site = manifest.homepage?.url || manifest.homepage
+    const currentRange = `^${current}`
+    } else if (spec.type === 'directory') {
+ * @param {ASTNode} node The AST node to be evaluated.
+ *   over options specified in the main options object, which will in
+ * @author Jonathan Wilsson
+    if (edge.missing && !(edge.type === 'optional' || edge.type === 'peerOptional')) {
+          output.standard(`${item}: ${outputs[item]}`)
+    if (force) {
+    if (!semverA && semverB) {
+      'dependencies',
+        pruned.shift()
+  // item would appear twice given that it's a children of an extraneous item,
+ * Updates the code path due to the type of a given node in entering.
+const CYCLONEDX_FORMAT = 'CycloneDX'
+  static usage = ['[<user>]']
+function checkForAcceptableEscapeInString(char, nodeSource, codeUnits) {
+ * @fileoverview Utilities to operate on strings.
+  get version () {
+ * Predicate function for whether or not to apply fixes in quiet mode.
+ * @param {ESQuerySelector} root The root of the selector to match against.
+function isNode(x) {
+      // if it's missing, it's not deduped, it's just missing
+ * Finds the nearest enclosing context where this rule allows declarations and returns its description.
+  async edit () {
+  static usage = ['<text>']
+// when running "npm config list"
+ * @returns {boolean} True if the node is a negative number that looks like a
+      return jsonRes
+ * Checks whether or not a given location is inside of the range of a given node.
+ * @fileoverview Worker thread for multithread linting.
+      for (const hook of hooks) {
+      body: JSON.stringify(version),
+function findLineNumberBinarySearch(lineStartIndices, target) {
+      res.push(`\nbin: ${chalk.cyan(bins.join(', '))}`)
+      log.silly('unfinished npm timer', name, timer)
+  //   - argv: this allows tests to extend argv in the same way the argv would
+ * @param {number} startLoc The start location of the iteration range.
+function deepMergeObjects(first, second) {
+ * @property {boolean} modified - The flag that the reference is modified in
+ * @param {Partial<T>} input New value.
+      delete data._etag
+const LOGICAL_ASSIGNMENT_OPERATORS = new Set(["&&=", "||=", "??="]);
+ *      "arrowFunctions", "generatorFunctions", "asyncFunctions", "methods",
+ *   e.g. `if (a) b = 1` / `return (b = 1)`
+ * @fileoverview Rule to disallow duplicate conditions in if-else-if chains
+    // then complete on it.
+ * @param {Config[]} defaultConfigs The default configs.
+ * @returns {Object|null} JSON Schema for the rule's options. `null` if `meta.schema` is `false`.
+    const { name, version, location, registry, type } = info
+ * Types of class members.
+      output.standard(prop + '\t' + result[prop])
+function normalizeOptions(options = {}) {
+ * @property {Array<string>} [ignorePatterns] The ignore patterns to use.
+    const code = char.charCodeAt(0)
+    } else if (wsNodes && wsNodes.length > 0) {
+  for (const node of getValues(gTree)) {
+        words[w - 1].charAt(0) === '-' &&
+ * @param {Object} normalizedOptions The normalized rule options.
+ * Asserts that the provided text is a string.
+const os = require("node:os");
+      this.#logStream.end(output)
+; lines that start with semi-colons are comments
+    const fundingInfo = getFundingInfo(actualTree, { countOnly: true })
+      path: globalTop,
+      await otplease(this.npm, opts, o => libunpub(spec, o))
+ * Converts a base ten number to proper scientific notation
+  static description = 'Log out of the registry'
+    // the cwd against a published version to the registry using the
+ * @returns {boolean} True if the parser is Espree or false if not.
+function isInOrInstanceOfOperator(op) {
+  if (remain.length > 3) {
+ * Check and report statements for `never` configuration.
+ * Checks whether or not a given token is a "Template" token ends with "${".
+  if (dependents.length > max) {
+      : this.npm.localPrefix
+      ? node.package.author.name
+ * const rules = new LazyLoadingRuleMap([
+      const lines = content.split(/\n+/)
+ * @returns {Function|null} A validation function or null if no validation is needed.
+// zsh or bash when calling a function for completion, based on the cursor
+        `${pkgName}@${a}`,
+ * @fileoverview Rule to disallow unnecessary computed property keys in object literals
+      const { content: { scripts = {} } } = await pkgJson.normalize(npm.localPrefix)
+ * @fileoverview enforce the location of arrow function bodies
+        stream.resume()
+      value = { old: current, new: newpassword }
+  'unpublish',
+    this.npm.config.set('install-links', false)
+    downloadLocation: (node.isLink ? undefined : node.resolved) || NO_ASSERTION,
+  static name = 'run-script'
+      suppressError: true,
+module.exports = Restart
+function getCompletionFields (d, f = [], pref = []) {
+        .sort((a, b) => a > b ? 1 : -1)
+    if (specs.length > 0) {
+      msg += ` ${this.constructor.usage}`
+ * Returns the name of the module imported or re-exported.
+ * Checks whether or not a given comment string is really a fallthrough comment and not an ESLint directive.
+const { log, output, input, META } = require('proc-log')
+    if (force || show({ index: this.#levelIndex, timing: this.#timing })) {
+ * @returns {boolean} Will `node` always give the same result when compared to a
+    const maybeLoc = arg.replace(/\\/g, '/').replace(/\/+$/, '')
+ * @param {ASTNode} b The other side of the expression
+      const deprecated = this.npm.config.definitions[baseKey]?.deprecated
+//-----------------------------------------------------------------------------
+/** @type {Map<string,WeakSet>} */
+        pkgid: spec,
+ * @param {RulesConfig} options.configuredRules The rules configuration.
+ * @author Mathias Schreck <https://github.com/lo1tuma>
+      if (type === 'edgesOut') {
+    await Promise.all(args.map(async spec => {
+ * without having to know about each other.
+const packagesChangedMessage = (npm, { added, removed, changed, audited }) => {
+const suggestionObjectParameters = new Set([
+class FileContext {
+    // find either section.n or npm-section.n
+          ...process.platform === 'win32' ? [
+ * @property {WarningService} [warningService] The warning service to use.
+ * @fileoverview Mocha/Jest test wrapper
+      await this.template(path)
+const SkipCursor = require("./skip-cursor");
+    const { reset, bold, cyan, dim, blue } = this.npm.chalk
+module.exports = (additionalOptions = {}) => {
+ * @param {ASTNode} node A node which can be a BinaryExpression or a LogicalExpression node.
+function isBinaryNegatingOfIndexOf(node) {
+ * implementation adapted from the no-trailing-spaces rule.
+ * Creates an object with the cap is new exceptions as its keys and true as their values.
+  reifyOutput(npm, arb)
+    'install-strategy',
+function compareFixesByRange(a, b) {
+ * @fileoverview Disallow renaming import, export, and destructured assignments to the same name.
+    item.missing = true
+ * expression appears as the test expression for `|| c`, so the
+const ESLINT_DIRECTIVE_PATTERN = /^(?:eslint[- ]|(?:globals?|exported) )/u;
+ * @param {ASTNode} ast The Program node of the AST to check.
+const hasOwnProperty = Function.call.bind(Object.hasOwnProperty);
+  // At this point, even if they have a credentials object, it doesn't have a
+const tar = require('tar')
+ * @returns {boolean} `true` if the node is in a loop.
+    relationships: [
+ * @param {boolean} fix The fix option.
+ * `+0` (false) and then checks the values `==` equality to that number.
+          encoding: 'utf-8',
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * @param {RuleConfig} ruleConfig rule configuration
+ * Checks whether the given operator is `in` or `instanceof`
+const kinds = Object.keys(findCharacterSequences);
+ * @property {Function|string} validate The function or name of the function to call
+    } else if (auth.isBasicAuth) {
+ * @typedef {Object} LoopConditionInfo
+    let args = ['man', [man]]
+ * @returns {boolean} True if the node parent is a TypeScript enum member
+      this.npm.config.delete(regRef, level)
+    this.#display = new Display({ stdout, stderr })
+  async #viewPackage (name, args, { workspace } = {}) {
+        detail.push(['404', 'tarball, folder, http url, or git url.'])
+    switch (argv[2]) {
+  // and assigns `value` to the last property of the query chain
+    const nodes = new Set()
+  if (unwrapSingleItemArrays && Array.isArray(_data) && _data.length <= 1) {
+// Operators that always result in a boolean value
+function isRenamedInDestructuring(node) {
+const KNOWN_NODES = new Set([
+        const err = getError(e, { npm: this.npm, command: null })
+      output.standard(`Created ${chalk.blue(level)} token ${result.token}`)
+      log.notice('PONG', JSON.stringify(details, null, 2))
+const configNames = Object.keys(definitions)
+  async initTree ({ arb, args, packageLockOnly }) {
+  #stderrChalk
+    if (Array.isArray(v)) {
+ * Determines if the first character of the name is a capital letter.
+            #overview.bg-2,
+      output.standard('No matches found for ' + (args.map(JSON.stringify).join(' ')))
+      if (result.cidr_whitelist?.length) {
+ * Checks whether a node and a token are separated by blank lines
+    { code: 'ENEEDAUTH' }
+const { commands } = require('./cmd-list')
+ * @param {any} element The target item to remove.
+  // in edges out, so here we add them to the list:
+  #response = {} // response is the sbom response
+// These are important
+    data = unparsePerson(data)
+ * - **I/O Time**: Portion of linting time spent loading configs and reading files
+ * @param {Array} arrA The array to compare from.
+const disableCloneabilityCheck = Symbol(
+ * Returns `true`.
+function isSimpleParameterList(params) {
+          name.startsWith(opts.conf.argv.remain[0])))
+      // and creates a new archy item for readable output
+    global: true,
+ * @author Rajendra Patil
+ * Check whether a given character is a regional indicator symbol.
+      // TODO when we have an in progress indicator that could go here
+function throwRuleNotFoundError({ pluginName, ruleName }, config) {
+ * The error type when there's an eslintrc-style options in a flat config.
+/** Class representing a number in scientific notation. */
+          && wsNodes.includes(edge.to.target))
+ * @param {URL} fileURL The file URL to load.
+      if (toDelete <= 0) {
+ * have any `break` statement.
+      json: this.config.get('json'),
+    [...tree.inventory.values()]
+      // composes human readable package name
+module.exports = { LazyLoadingRuleMap };
+ *     a[tag`b`]     // => null
+      // location which we do not want to use here
+const hash = require("./hash");
+      const msg = 'npm completion supported only in MINGW / Git bash on Windows'
+ * @returns {ASTNode | null } The closest parent `CatchClause` node, `null` if the `node` is not in a catch block.
+ * Identifies is a node is a FunctionExpression which is part of an IIFE
+  // meta also contains the meta object passed to flush
+ * @param {string} baseDir Absolute path of base directory
+ * The following table shows the relationship between the number of files to be processed and the
+  static name = 'exec'
+      targetLocation,
+    const ini = require('ini')
+      // has the full context of what each option contains.
+  if (!node.resolved) {
+            _id: data._id,
+      .filter(cmd => isClose(scmd, cmd) && scmd !== cmd)
+ * Wraps a config error with details about where the error occurred.
+      const newRoster = {}
+    'audit-level',
+function isParentTSReadonlyPropertyDefinition(node) {
+const { readTree: getFundingInfo } = require('libnpmfund')
+ * @returns {Record<string, RulesMeta>} metadata for all enabled rules.
+    const warnings = failures.filter(f => f.isWarn)
+      return typeof _data[_key] === 'object' ? _data[_key] || {} : {}
+ * @param {Array<CodePathSegment>} segments Segments to merge.
+        if (argv.length > 3) {
+            token.readonly ? 'true' : 'false',
+/** @typedef {import("estree").Node} ASTNode */
+const { getCacheFile } = require("./eslint/eslint-helpers");
+ * @throws {InvalidRuleOptionsError} If the value isn't a valid rule options.
+        log.verbose('web add user not supported, trying couch')
+  static description = 'Open documentation for a package in a web browser'
+ * Checks the given node is an expression statement of IIFE.
+ * @returns {boolean} `true` if the node has non string literals.
+    if (compls.length > 0) {
+ * @returns {number} -1 if a comes before b, 1 if a comes after b, 0 if equal.
+ * @property {boolean} [help] Show help
+        // todo: complete with valid values, if possible.
+      output.standard('Removed ' + toRemove.length + ' token' + (toRemove.length !== 1 ? 's' : ''))
+    const [cmd, ..._args] = args
+  async linkInstall (args) {
+      this.#timeout.unref()
+ * @returns {TryContext|CodePathState} A context for a `return` statement.
+  // to: 'a', 'b c', or 'd' 'e'
+        return npmFetch.json(dataPath, {
+      // Identical to list
+      // return an array, but currently since there is only one version matching `^2`
+  const { edge, dep, current, peerConflict, currentEdge } = expl
+  if (mask & W_OK) {
+ * (this function always reports unused disable directives).
+ * @param {string} text The text to insert.
+function isColonToken(token) {
+const duplicationIgnoredParameters = new Set(["name", "errors", "output"]);
+        .map(k => `${k}:${res.hits[k]}`)
+ * @param {number} index The index of the reference in the references.
+        res.push(`- ${unparsePerson({
+const TARGET_NODE_TYPE = /^(?:Arrow)?FunctionExpression$/u;
+    this.config = new Config({
+ * This is called at the last of functions or the program.
+      output.standard(['user', 'org', 'userCount', 'deleted'].join('\t'))
+    // - .@version
+    const update = args.length === 0 ? true : args
+ * In particular, it determines whether removing the square brackets and using the content between them
+const installedShallow = async (npm, opts) => {
+      name = npa(edge.spec).subSpec.name
+ * @property {(string|null)} ruleId The rule ID
+ * Checks that a given identifier node is a reference or not.
+      result = `${result}^${String.fromCharCode(code + 64)}`
+// Functions
+      // we ask pacote for the thing, and then just throw the data
+        await this.#run(args, { path, pkg, workspace })
+      log.verbose('diff', 'failed to load actual install tree')
+      noPackageJson = true
+        switch (d.action) {
+  if (!res || !res.report) {
+function union(setA, setB) {
+      ...this.buildRegistryConfig(registry),
+ * Checks if the given message is an error message.
+ * @param {LoopConditionInfo} condition A loop condition info to check.
+class CodePathAnalyzer {
+  // Patch the global fs module here at the app level
+ * @property {'defined'|'assigned a value'} action Description of the vars state.
+      throw `Use npm v${latest}`
+const { spdxOutput } = require('../utils/sbom-spdx.js')
+function normalizeOptionValue(value) {
+ * @returns {Object} The normalized option value.
+      if (edge.to) {
+ * A test case that is expected to fail lint.
+  const cmd = `npm install -g npm@${latest}`
+ * @property {string | null} [output] The expected code after autofixes are applied. If set to `null`, the test runner will assert that no autofix is suggested.
+const noOptionsSchema = Object.freeze({
+ * @param {Object} it data for the document.
+    // node_modules is sometimes under ./lib, and in global mode we're only ever
+    // have no npm or an unloaded npm. This will clean the error
+ * Determines whether any of input's properties are different
+                 WHERE workspace_id = ?1 ORDER BY created_at, id",
+    async fn subscribers_only_see_their_topic() {
+    if policy == Policy::Write && is_private_file(&resolved) {
+    fs::create_dir_all(parent)?;
+        assert_eq!(ipc.code, ErrorCode::Io);
+        self.root.join("browser-profile")
+    let start = lines.len().saturating_sub(200);
+    pub fn new(topic: Topic, name: impl Into<String>, payload: impl Serialize) -> Self {
+    let folded = key.to_ascii_uppercase();
+/// `local` is the fixed id of this machine; remote hosts are `host_<ULID>`.
+    pub fn at(root: PathBuf) -> Result<Self, CoreError> {
+/// Every failure that crosses the IPC boundary carries one of these codes.
+        let store = Store::open(&paths).expect("reopen");
+    let result = (|| {
+                "SELECT id, workspace_id, kind, title, created_at FROM sessions
+//! The one status store every surface reads (F-EN-05, F-DB-01).
+            .create_workspace("demo", "/tmp/demo")
+            "check disk space",
+        stage: impl Into<String>,
+        atomic_write(&path, b"one", None).expect("write");
+                params![workspace_id, kind, payload, created_at],
+//! Crash-safe file writes: temp file, fsync, rename, fsync(dir) (PRODUCT_SPEC §5.2).
+            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+                tool: update.tool,
+    entries: Arc<Mutex<HashMap<(String, String), Zeroizing<Vec<u8>>>>>,
+        let mut entry = self.records.entry(key.clone());
+        assert!(pane.as_str().parse::<WorkspaceId>().is_err());
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+                        format!("expected a {} id", $prefix),
+        keys.set(&svc, "github:pc_1", b"{\"api_key\":\"x\"}").expect("set");
+use std::io::Write;
+            .map_err(|err| db(err, "fk"))?;
+        let conn = Connection::open(paths.data.join("tandem.sqlite")).map_err(|err| {
+    fn now_ms(&self) -> i64 {
+                    name: row.get(1)?,
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
+                StatusRecord {
+            let clock = clock.clone();
+        let root = dir.path().join("ws");
+                    session.kind,
+prefixed_id!(HeldDraftId, "hd");
+use std::sync::{Arc, Mutex};
+                    current = canon;
+            path: path.to_string(),
+    pub status: AgentStatus,
+        fs::write(&program, b"").expect("write");
+    if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
+const MAX_BYTES: u64 = 10 * 1024 * 1024;
+    CreditsExhausted,
+    pub fn get(&self, key: &str) -> Option<String> {
+                if has_prefix(s, $prefix) {
+pub struct Pane {
+    #[error("Your system keyring is locked or missing")]
+    let tail = lines[start..].join("\n");
+            pub const PREFIX: &'static str = $prefix;
+        let entry = keyring::Entry::new(service, account).map_err(map_err)?;
+                restarts.retain(|t| now - *t < WINDOW.as_millis() as i64);
+        out.hint = Some(err.next_step);
+    use crate::paths::Paths;
+                "SELECT 1 FROM schema_migrations WHERE id = ?1",
+        self.records.remove(key).map(|(_, r)| r)
+        assert_eq!(settings.theme, Theme::Dark);
+/// `mkdir -p` and, on Unix, chmod 0700.
+    path_env.split(sep).filter(|entry| !entry.is_empty())
+    pub enabled_predicate: &'static str,
+        Topic::Status,
+pub struct MockClock {
+        self.root.join("conductor")
+/// `pane:<id>` or `thread:<id>`.
+                |row| row.get(0),
+            name: name.to_string(),
+pub trait Clock: Send + Sync {
+        let step = ChronoDuration::from_std(d).unwrap_or(ChronoDuration::MAX);
+                ("HOME", "/tmp/home"),
+//! Shared, dependency-light building blocks for every Tandem crate:
+use tokio::sync::broadcast;
+    conn: Connection,
+    pub default_shortcut: Option<&'static str>,
+    pub payload: Value,
+                    .with_code(ErrorCode::Invalid))
+            Err(err) => Err(map_err(err)),
+prefixed_id!(TeammateId, "tm");
+        let link = root.join("escape");
+            dashmap::Entry::Occupied(current) => {
+            retryable: matches!(
+        self.root.join("attachments")
+        assert!(threads.try_recv().is_err());
+    let raw = fs::read_to_string(&log_path).unwrap_or_default();
+    let root = root.canonicalize().map_err(|err| {
+        if from.exists() {
+  description: "Agent workspace",
+        setPaletteOpen(true);
+              aria-label="Filter commands"
+  routes.post("/", async (c) => {
+const sync = await openSyncRepo();
+  kind: z.string().regex(/^[a-z0-9._-]{1,64}$/),
+import { redactText } from "./redact";
+    const cleaned = redactHeaders(headers);
+  useEffect(() => {
+    const res = GET();
+describe("api", () => {
+    const headers = new Headers({
+      `/v1/sync/events?workspaceId=${workspaceId}&after=1&limit=1`,
+    const matched = this.ordered.filter(
+    c.set("requestId", requestId);
+  if (!databaseUrl) {
+import postgres from "postgres";
+    type: "about:blank",
+describe("GET /api/health", () => {
+                    type="button"
+        <h1>{copy.title}</h1>
+      headers: { "content-type": "application/json", "content-length": String(1_100_000) },
+      body: JSON.stringify({ events: [event(firstId)] }),
+const SECRET =
+  const databaseUrl = process.env.DATABASE_URL;
+  test: { environment: "node" },
+    expect(cleaned.cookie).toBe("[REDACTED]");
+import { syncRoutes } from "./sync/routes";
+                      setPaletteOpen(false);
+  routes.get("/", async (c) => {
+        "x-tandem-platform": "linux",
+  const [mode, setMode] = useState<ShellMode>("home");
+        <button type="button" onClick={() => setPaletteOpen(true)}>
+      body: "x".repeat(1_100_000),
+    <div className="shell">
+    title: "Home",
+    expect(page.status).toBe(200);
+              {matches.length === 0 ? <li>No matches</li> : null}
+    await next();
+  return Response.json({ ok: true, version: "0.1.0" });
+  out: "./drizzle",
+import { bodyLimit } from "hono/body-limit";
+export function GET() {
+  ok: z.literal(true),
+    censor: "[REDACTED]",
+    const filter = screen.getByRole("textbox", { name: "Filter commands" });
+      <body>{children}</body>
+    const raw: Record<string, string> = {};
+zonetabtype=zone1970
+    -*\'*) cmp="$cmp '"`printf '%sX\n' "$1" | sed "$escape"`;;
+    # key is only part of new keyring, so we need to import it
+# Copyright © 2020 Guillem Jover <guillem@debian.org>
+    unset PG_VIRTUALENV_NEWPID
+    echo "If no specific keyring file is given the command applies to all keyring files."
+    num=`expr $num + 1`
+                          /*) TMPDIR=$TMPDIR/;;
+    echo >&2 "*** ERROR: Need exactly two arguments, got $#";
+      # Otherwise append the prefix.
+#   if state >= 4; ask
+    if test -f "$i"; then
+    prefix=${src%%/*}
+if test "$(id -u)" != 0; then
+    error "Xvfb failed to start" >&2
+                               "$old_file_label" "$new_file_label" "$out"
+  representations about the suitability of this software for any
+    echo >&2 "$progname: Corrupt registry: Duplicate entries for ${conf_file}";
+       symlink_match "$SYMLINK" "$SYMLINK_TARGET" &&
+IFS=$newline
+    if [ "X$force_conffnew" != "X" ]; then
+    setq source_dir "$opt_source_dir" "The Source directory"
+prepare_dir_to_symlink()
+case ${LD_PRELOAD:-} in
+# This script starts an instance of Xvfb, the "fake" X server, runs a command
+    *[-.]bz2 | *.tbz | *.tbz2) xz2=bzip2;;
+PKGDATADIR="${DPKG_DATADIR:-$PKGDATADIR_DEFAULT}"
+      elif test -e "$f"
+# Copyright 2018-2021,2022 Thomas E. Dickey                                  #
+for arg in "$@"; do
+# Make sure the tables are readable.
+      prezip-bin -z "$cmd: $2"
+      if test "x$i" = "x-"; then
+            need_update=1
+########                Start Processing                     #########
+      src=${src#/}
+  (-[ef]* | --file | --file=* | --reg*)
+#         installed file matches any of the old md5sums; in which case
+Copyright (C) 2009, 2011-2018 Free Software Foundation, Inc.
+    unset _PG_VIRTUALENV_UNSHARE
+      result="$result/$prefix"
+             old-style, non-debconf prompting. Ugh!
+  # NOTE: Instead of 128 + signal_number, some shells use
+      d ) mode=d ;;
+setq conf_file "$2" "The Configuration file";
+    echo "# $1: make clean"
+        # If sed fails, set i to a known safe string to ensure that
+# along with this program; if not, write to the Free Software
+    *[-.]zst | *[-.]tzst) uncompress="zstd -cdfq";; # zstd needs -q.
+# features and common extensions, such as $(...) (which works sometimes
+      this.delete(`-authtoken`, level)
+      data.contributors = authors
+        if M.state == 'AUTH':
+      auth.basic = { username: basic[0], password: basic[1] }
+                        msg = ('#PROXY', (rexposed, token))
+        obj['auth-type'] = 'legacy'
+      if (invalidSignatures.length) {
+            cache_token = get_cache_token()
+    if server and server.address == token.address:
+    token_type = 'addr-spec'
+        """Error 401 -- authentication required.
+    parsed TokenList.
+        const identityToken = await this.getIdentityToken();
+# Author: Skip Montanaro
+    token.prev = prev;
+        # a TLS session active.  A client MUST NOT attempt to start a TLS
+// envelope and signature
+                        token = Token(typeid, self.address, rident)
+        res = TokenList(self)
+    var startingToken = this.currToken;
+const SOCKS5_NO_ACCEPTABLE_AUTH = 0xff;
+      stopPosition = this.tokens.length;
+var t = _interopRequireWildcard(require("./tokenTypes"));
+        process.current_process().authkey = data['authkey']
+        // Invalid auth method range
+        self.auth_cache = {}
+        # No '__text_signature__' was found for the 'obj' class.
+    tokenlist.append(parse_mime_parameters(value[1:]))
+    def __new__(cls, value, token_type):
+const webAuth = async (opener, opts, body) => {
+        if (proxy.custom_auth_request_handler === undefined ||
+ * @author <a href="mailto:gary.court@gmail.com">Gary Court</a>
+    if (envelope.signatures[0].keyid.length > 0) {
+# NONINFRINGEMENT.  IN  NO  EVENT SHALL  THE  AUTHORS  OR COPYRIGHT
+    .then((rPassword) => readPassword(msg, rPassword, true))
+    [`${regKey}:_auth`]: auth,
+    var current = this.currToken;
+          //     return this.expected('attribute', token[TOKEN.START_POS], content);
+/** creates a matcher for redacting the url password */
+        // Missing/invalid custom_auth_response_handler
+    get digitalSignature() {
+        author knew about the types of both arguments, or convert both
+        if authorization:
+    } else if (auth.isBasicAuth) {
+            return await this.identityProvider.getToken();
+createToken('LONECARET', '(?:\\^)')
+        elif token == 0x23: # real
+class InvalidMailbox(TokenList):
+      if (WHITESPACE_EQUIV_TOKENS[this.tokens[searchPosition][_tokenize.FIELDS.TYPE]]) {
+      await this.auditSignatures()
+    log.verbose('web auth', 'opening url pair')
+      Alias for \`--init-author-name\`
+_token_pattern = re.compile(r"""
+                ? object.signatures.map((e) => verifier_1.Signature.fromJSON(e))
+        sig = obj.__signature__
+  generateTokenIds (tokens, minLength) {
+        conn = Client(self._address, authkey=self._authkey)
+    quoted_string.append(token)
+    ASCII, a NonPrintableDefect is added to the token's defects list.  Since
+Token = Ignore + PlainToken
+        - password: password to use with username
+        #    raise self.error("Server doesn't allow %s authentication." % mech)
+const invalidTokenRegex = /[^^_`a-zA-Z\-0-9!#$%&'*+.|~]/
+      auth.basic = { username: creds.username, password: creds.password }
+        author = decode_header(over['from']).split('<', 1)[0]
+        if (!ssh || hosted.auth) {
+    if (!content.compareSignature(Buffer.from(tlogSig, 'base64'))) {
+        if (message.signatures?.length) {
+                                        found: token.value,
+        case tokens.str:
+      if(n === 0x7b){ this.onToken(LEFT_BRACE, "{"); // {
+function toCertificateRequest(identityToken, publicKey, challenge) {
+# These aren't used by the C tokenizer but are needed for tokenize.py
+# changes to tokenize more like Posix shells by Vinay Sajip, July 2016.
+            # check for encrypted flag & handle password
+      cert: auth.cert || opts.cert,
+    token_type = 'domain-literal'
+                res[-1] = TokenList(res[-1][:-1])
+    s = getattr(func, "__text_signature__", None)
+                authResult = yield this.handleSocks5AuthenticationNoAuthHandshakeResponse(this.receiveBuffer.get(2));
+        return ValueError('unexpected token in plural form: %s' % value)
+        'DELETEACL':    ('AUTH', 'SELECTED'),
+        # Use the original decorated method to extract the correct function signature
+            token, value = get_obs_local_part(value)
+        Set authorization key of process
+    for token in xpath_tokenizer_re.findall(pattern):
+                                  quote(passwd, safe=''), proxyhost)
+THIS CODE, EVEN IF THE AUTHOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH
+All TokenList and Terminal objects have a 'value' attribute, which produces the
+        'Enabling two-factor authentication is an interactive operation and ' +
+                authobject(challenge).encode('ascii'), eol='')
+                    self.token = nextchar
+        var next = this.nextToken;
+      // registry where we logged in, but the same auth SHOULD be sent
+        only be used when authentication credentials are supplied. The tuple
+        return this.signatureValueObj.value.subarray(1);
+  exports.author = authorName
+class HTTPBasicAuthHandler(AbstractBasicAuthHandler, BaseHandler):
+        if 'proxy-authenticate' not in headers:
+                authProblems.push({ action: 'delete', key, where: entryWhere })
+    return func(token, serializer, incref=incref, **kwds)
+  if (type === 'boolean' && token.value != null) {
+ * getEnv can retrieve an OIDC token from an environment variable.
+        return readPasswords()
+    column: token[_tokenize.FIELDS.END_COL]
+# multiprocessing.connection Authentication Handshake Protocol Description
+        return this.env.signatures.length > 0
+    def auth_cram_md5(self, challenge=None):
+            kwds['parse_tree'] = parser.TokenList()
+        if token.token_type == 'cfws':
+exports.TimestampAuthority = TimestampAuthority;
+      var t = token()
+        self.authkey = process.AuthenticationString(authkey)
+    token, value = get_dtext(value)
+                code: 'EINTEGRITYSIGNATURE',
+    if (nextToken && this.content(nextToken) === '|') {
+            raise ValueError("Unsupported digest authentication "
+# 2002-10-22 fl  Added basic authentication (based on code from Phillip Eby)
+        Returns a list describing the signature of the method. In the
+                conn = self._Client(token.address, authkey=self._authkey)
+<LI>AUTH_TYPE
+        # http_error_auth_reqed requires that there is no userinfo component in
+      nextToken = this.nextToken;
+        const auth = res.headers.get('www-authenticate')
+    simple token (not part of a parameter) is None.  Syntactically incorrect
+                        return authinfo
+ * and signature algorithm.
+        """Error 407 -- proxy authentication required.
+    _allowsStoringAuthenticated() {
+    def retry_http_basic_auth(self, url, realm, data=None):
+    def _format_mock_call_signature(self, args, kwargs):
+    var t = token()
+    for t in token_stream:
+    # XXX: should we have an ExtendedAttribute TokenList?
+            sig = self._get_call_signature_from_name(_call[0])
+      // cert/key may be used in conjunction with other credentials, thus no `else`
+        return { getToken: () => Promise.resolve(token) };
+                del self.auth_cache[key]
+      token.rawName, config.allowPositionals);
+            return done(buildValues(self, basePath.lastComponent, newString, oldString, self.useLongestToken));
+    # needs to be given to the signature.  A list of ints is
+def _signature_is_builtin(obj):
+        message_id = InvalidMessageID(token)
+  async auditSignatures () {
+      authors: data.maintainers.map((m) => `${strip(m.username)}`).join(' '),
+    parameters to be treated as its own TokenList.
+        sig = _get_signature_of(obj.__func__)
+            user, passwd = _splitpasswd(user)
+    return this.expected('opening parenthesis', this.currToken[_tokenize.FIELDS.START_POS]);
+      * that signature re-rendered in standard Python syntax, and
+    def get_authorization(self, req, chal):
+            noncebit = "%s:%s:%s:%s:%s" % (nonce, ncvalue, cnonce, 'auth', H(A2))
+    prev_ttype = token.INDENT
+    def session(self):
+Comment tokens also have a 'content' attribute providing the string found
+    return b.content.$case === 'messageSignature';
+            if not have_password:
+        # useful for something like authentication
+          isBracket = token.isBracket = true;
+            token, value = get_qcontent(value)
+      c => createToken(password, readonly, validCIDR, c)
+exports.MessageSignatureContent = void 0;
+    def system_methodSignature(self, method_name):
+        return self._sslobj.session_reused
+      case tokens.comment:
+        raw = self.read_token()
+        'Network Authentication Required',
+function readPassword (msg = passwordPrompt, password, isRetry) {
+#    If that URL should fail, try contacting the author.
+    if signature == "@-='" or signature == "@-!='":
+        # We have an authority, so for RFC 3986-compliant URLs (by ss 3.
+      spaceOrDescendantSelectorNodes = this.parseWhitespaceEquivalentTokens(nextSigTokenPos);
+            obs_local_part[-2].token_type=='dot'):
+        const signature = await this.prepare(artifact).then((blob) => this.signer.sign(blob));
+        // Missing custom_auth_response_size
+    unquoted values, so what is returned is a ptext token, in this case a
+                mime_parameters.append(token)
+        raise AuthenticationError('digest received was wrong')
+            # This means, that we need to calculate the signature
+     * USER WARNING: LMS and LM-OTS are both stateful signature schemes.
+        buff.writeString(password);
+        msg_id.append(token)
+      linesAndNewlines = value.split(/(\n|\r\n)/); // Ignore the final empty token that occurs if the string ends with a new line
+// DSSE Pre-Authentication Encoding
+        if token.token_type.endswith(
+# results in the connection being closed and auth to fail.
+        output.standard(`${missing.length} packages have ${missingClr} registry signatures but the registry is providing signing keys:`)
+                    # signature: "(*, a='spam', b, c)". Because attempting
+      negated = token.negated = true;
+        token, value = get_cfws(value)
+                token = token[len(h):] if token else None
+            self._authkey = process.current_process().authkey
+    token_type = 'msg-id'
+            phrase.append(token)
+    // unlike the nerf-darted auth keys, this one does *not* allow a mismatch
+            self._session = session
+    if authkey is None and manager is not None:
+    def get_user_passwd(self, host, realm, clear_cache=0):
+  "Authorization": (new Buffer(cred.username + ":" + cred.password)).toString("base64")
+  pattern: /\b(Basic\s+|Bearer\s+)[\w+=\-.]+\b/gi,
+ * @return {Object} Returns an object with tokens and regex source string.
+const JSON_WEB_TOKEN = {
+                return token.value
+        token, value = get_quoted_string(value)
+            blockfinder.tokeneater(tokenize.NEWLINE, *_token_info)
+// Separator between the note and the signatures in a checkpoint
+class HTTPPasswordMgrWithPriorAuth(HTTPPasswordMgrWithDefaultRealm):
+var _tokenize = _interopRequireWildcard(require("./tokenize"));
+                entryname = lexer.get_token()
+        token, value = get_domain_literal(value)
+    token_type = 'content-type'
+ * `Events` is the set of event handler signatures that this object
+def _generate_tokens_from_c_tokenizer(source, encoding=None, extra_tokens=False):
+function toDSSEBundle(artifact, signature, certificateChain) {
+exports.SOCKS5_CUSTOM_AUTH_START = SOCKS5_CUSTOM_AUTH_START;
+        raise SMTPAuthenticationError(code, resp)
+    def escape_brackets(self, token):
+   * Tokenize input until we reach end-of-string
+const hasAuth = (regKey, opts) => {
+        tokens[i] += tokens[i + 2];
+            return super().login(user, passwd, acct)
+      : (node.package?.author || undefined),
+        This server does NOT support system.methodSignature."""
+  ArrayPrototypeForEach(tokens, (token) => {
+    if signature == "-" or signature == "-()" or signature == "-()-":
+            self.password.encode('ascii'), challenge, 'md5').hexdigest()
+    their signatures will vary, implementations and clients should
+  // preserving the users intent for author to deal with.
+                    lexer.push_token(tt)
+      case tokens.space:
+    program = "def foo" + clean_signature + ": pass"
+                      'system.methodSignature' : self.system_methodSignature,
+            else if (data[1] === this.options.proxy.custom_auth_method) {
+                ? { $case: "messageSignature", messageSignature: sigstore_common_1.MessageSignature.fromJSON(object.messageSignature) }
+    if authkey is None:
+                authkey=self._authkey, exposed=exposed
+            obj.signature = base64FromBytes(message.signature);
+          isBrace = token.isBrace = true;
+  if (opts[`${regKey}:username`] && opts[`${regKey}:_password`]) {
+    token_type = 'word'
+def prepare_parent(next, token):
+            conn = self._Client(token.address, authkey=self._authkey)
+    def clear_session_cookies(self):
+    def _run_server(cls, registry, address, authkey, serializer, writer,
+#                                     or unsupported digest? <- AuthenticationError
+            proxy_auth_hdr = "Proxy-Authorization"
+        'mechanism' specifies which authentication mechanism is to
+            signatures: globalThis.Array.isArray(object?.signatures)
+    only the presence of given attributes, ignoring their type signatures.
+    # Signature of checking functions is:

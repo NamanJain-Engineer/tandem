@@ -1,0 +1,53 @@
+# Containment corpus for F-TL-03. Format: "reject|accept <path>"; {ROOT} is the workspace root.
+# Checked with the Write policy. The fixture creates src/nested/deep, src/main.rs, .env, .git/,
+# linkdir -> ../outside, src/linkfile -> ../outside/secret.txt, inner-link -> src/nested.
+reject ../outside/secret.txt
+reject ../../etc/passwd
+reject src/../../outside
+reject src/nested/../../../outside
+reject ./../outside
+reject ..
+reject ../ws/../outside
+reject /etc/passwd
+reject {ROOT}/../outside/secret.txt
+reject {ROOT}/src/../../outside
+reject linkdir/secret.txt
+reject linkdir
+reject src/linkfile
+reject %2e%2e/outside
+reject src/%2E%2E/%2e%2e/outside
+reject ..%2foutside
+reject %2e%2e%5coutside
+reject src/．．/．．/outside
+reject ．．/outside
+reject src/‥/outside
+reject ﹒﹒/outside
+reject src／..／..／outside
+reject .／．．／outside
+reject src/.../outside
+reject src/. ./outside
+reject .env
+reject .env.local
+reject config/.env.production
+reject certs/server.pem
+reject keys/id_rsa
+reject keys/id_ed25519
+reject .git/config
+reject .git/hooks/pre-commit
+reject src/.git/HEAD
+reject private/tls.key
+accept src/main.rs
+accept src/nested/deep/file.txt
+accept src/new-file.ts
+accept ./src/main.rs
+accept src/nested/../main.rs
+accept inner-link/deep/x.md
+accept {ROOT}/src/main.rs
+accept {ROOT}/README.md
+accept docs/guide.md
+accept keys/id_rsa.pub
+accept .github/workflows/ci.yml
+accept environment.ts
+accept src/env.rs
+accept a/b/c/d/e/f/g.txt
+accept naïve-café.md

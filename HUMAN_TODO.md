@@ -1,18 +1,50 @@
 # HUMAN_TODO
 
-Things only a human can do. The build does not block on these.
+Things only a human can do. The build never blocks on them: each sits behind a mock or dev provider.
 
 ## Accounts & keys
-- GitHub repository `NamanJain-Engineer/tandem` exists and Actions can be enabled when CI is added.
-- Apple Developer and Windows code-signing certificates, when release builds start.
-- Stripe, OAuth client ids, and model-provider keys. Until then every hosted call stays behind a mock.
+- Enable GitHub Actions on `NamanJain-Engineer/tandem` so `.github/workflows/ci.yml` runs.
+- Google OAuth client: set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` for the API; redirect URI `https://app.vibezeo.com/v1/auth/callback/google`. Until then the Google button is hidden. Verify: the sign-in page offers Google and the callback lands on /account.
+- Stripe: create products and prices for Pro $29/mo and $290/yr (7-day trial, card required) and Team $49/seat/mo and $490/seat/yr (14-day trial); credit packs 5k/$5, 12k/$10, 30k/$20. Put the price ids in `STRIPE_PRICE_*`, the key in `STRIPE_SECRET_KEY`, set `BILLING_PROVIDER=stripe`. Configure the customer portal; set dunning to cancel after 14 days; add the webhook endpoint `https://api.vibezeo.com/v1/webhooks/stripe` and put its secret in `STRIPE_WEBHOOK_SECRET`. Verify: `bash scripts/stripe-fixture.sh invoice.paid <email>` with the real secret returns 200.
+- SMTP provider credentials in `SMTP_URL` and a verified sender for `EMAIL_FROM`.
+- Claude API key in `ANTHROPIC_API_KEY` with `AI_PROVIDER=claude` for the hosted AI features (D-103; titles and Enhance/Polish are built, D-106). Check the per-call prices against real token use before launch: a full 5,000-character Enhance on Haiku 4.5 can cost more than its 3 credits. Apply to the Claude startup program from the Claude Console, signed in with an @vibezeo.com address that has a Cloudflare Email Routing rule. Until the key exists, `MockAi` answers.
+- Cloudflare Turnstile site and secret keys (`TURNSTILE_SECRET`; site key for the web sign-up page). Edge rules must skip challenges for `Authorization: Bearer` requests and `/v1/webhooks/*`.
+- Production Ed25519 keys: generate with `pnpm keys:dev --force` on a secure machine (or a KMS), set `JWT_SIGNING_KEYS` (ak-*, ek-*) and `CONFIG_SIGNING_KEY` (ck-*), and copy the public keys into `apps/desktop/src-tauri/resources/keys.json` for release builds. Rotation: add the new kid to keys.json one release before signing with it.
+- Managed Postgres 16 and Redis 7 (`DATABASE_URL`, `REDIS_URL`), `BETTER_AUTH_SECRET` (32+ random bytes), `BREACH_CHECK=hibp`.
+- Domains `api.vibezeo.com` and `app.vibezeo.com` (`API_PUBLIC_URL`, `WEB_PUBLIC_URL`); release builds default to them (D-105).
+- Telemetry (opt-in only, M2): a PostHog project key in `POSTHOG_KEY` and a Sentry DSN in `SENTRY_DSN`, set at desktop build time. Without them nothing is ever sent, even when a user opts in. Verify: with a debug build, `POSTHOG_KEY=… SENTRY_DSN=…` set, opt in under Settings › Privacy & Telemetry and see requests to the analytics host in `TANDEM_NET_LOG`.
+- Production entitlement and config public keys bundled into `apps/desktop/src-tauri/resources/keys.json` for release builds (ARCHITECTURE §14.4); see "Production Ed25519 keys" above.
+
+- Public site: the Vercel project exists (`tandem-pi-woad.vercel.app`, Root Directory `apps/web`, production branch `main`); add `vibezeo.com` and `www`, and set up mail forwarding for `hello@vibezeo.com` (`docs/DEPLOY_SITE.md`). Remove the custom domain from the old `vibezeo` repo's GitHub Pages. If the company gets registered, fill `legal` and `location` in `apps/web/lib/site.ts`. Verify: `https://vibezeo.com/` shows the Vibezeo home page, `/about/` loads, and a test mail to hello@vibezeo.com arrives.
+- Google Search: add `vibezeo.com` as a Domain property in Google Search Console and verify it with the DNS TXT record it gives you, at the domain's DNS host (or send the `google-site-verification` token and it goes into `metadata.verification` in `apps/web/app/layout.site.tsx`). Then submit `https://vibezeo.com/sitemap.xml` under Sitemaps and use URL Inspection › Request indexing on `https://vibezeo.com/`. Do the same in Bing Webmaster Tools (it can import from Search Console). Link vibezeo.com from the X, LinkedIn and GitHub profiles so crawlers find it. The site side is done: canonical URLs, sitemap, robots.txt, share image, icons. Verify: a `site:vibezeo.com` search lists the pages, usually within a few days.
 
 ## Signing & distribution
-- Not started. No installer is published yet.
+- [ ] Early access (D-105): ~~create the public repository `NamanJain-Engineer/tandem-releases`~~ (done) and ~~the `RELEASES_TOKEN` secret~~ (done). Waiting for the Actions minutes to reset (about November 1) or an Actions budget. Then push the tag `v0.1.0-early-access` (or run the Release workflow by hand with channel `early-access` once it is on `main`). Verify: the repository's Releases page shows "Tandem 0.1.0 (early access)" with macOS, Windows and Linux files and SHA256SUMS.
+Until these exist, release builds can't update (`updates_state` reads `unavailable`) and the release workflow marks every artifact "unsigned" (F-TL-04).
+- [ ] Minisign updater keypair: `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as repo secrets; the public key as `TAURI_SIGNING_PUBLIC_KEY` (repo variable, compiled into release builds). Debug builds use the dev key from `pnpm keys:dev` and never ship it.
+- [ ] Apple Developer ID and notarization: `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`.
+- [ ] Azure Trusted Signing for Windows: `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, the endpoint and the certificate profile.
+- [ ] A GPG key for the deb and the AppImage detached signature.
+- [ ] Release hosting for signed updates (bucket + CDN) for artifacts and `latest.json`, and the API's `/v1/updates/:channel/:target/:arch/:current_version` reading published `releases` rows.
 
 ## Legal
-- Trademark search for the name Tandem before a public launch.
-- Terms, privacy policy, and subprocessors list before billing goes live.
+- Trademark search for the working name "Tandem" before any public launch (DECISIONS §Identity).
+- Engine marks: Tandem ships its own letter monograms (UI_SPEC §1.6). Before shipping any vendor logo, get each vendor's permission or trademark guidance.
+- Review the UI labels the consistency pass flagged as generic but coincident with the reference product (CONSISTENCY_REPORT "Remaining known open items" 2).
 
 ## Manual QA checklist
-- None yet. Automated tests cover the core libraries in this commit.
+- M5: the startup suite (`pnpm --filter desktop perf -- --suite startup`, needs `gnome-keyring` on Linux) on the reference machines. The build VM (4 vCPU, Xvfb, software GL, perf build) records cold start to an interactive 16-shell window at P50 4,175 ms (target 2,000), all 16 shells at 11.6 s, Dashboard open with six agents 434 ms (target 500). The first shell spawns 2.7 s after process start and its zsh prompt lands ~1.4 s later; the rest follow the one-view-per-frame mount queue (~0.45 s per frame here). If the reference machine still misses, respawn restored shells in the core at launch (ARCHITECTURE §1.3 step 7) instead of on view mount.
+- M5: a real signed update per OS once the keys exist: AppImage self-replace and restart, macOS .app.tar.gz, Windows NSIS; a deb install shows "Updates are managed by your package manager" (E2E records the install instead of replacing the debug binary, D-94).
+- M2: the `tandem://` scheme on macOS and Windows (installed build): `tandem://open?path=/some/folder` opens the app and adds the folder.
+- M2: macOS overlay title bar with the traffic lights inset; the left cluster starts clear of them.
+- M2: Windows snap layouts appear when hovering the custom maximize button.
+- M2: a cold start with Dark on a Light OS shows no white flash (F-SH-05 AC1; automated on Linux only via the native background).
+- M3: real Japanese IME on macOS and Windows (commit on Enter, no CR during composition); Option-as-Meta on macOS.
+- M3: ConPTY TUIs on Windows (vim, htop): rendering, resize, mouse; closing a pane ends its whole tree (Job Object) and a crash of Tandem leaves no children behind.
+- M3: orphan detection on macOS after a forced quit (`kill -9`) with a `nohup` child in a pane: the dialog lists it and Stop ends it.
+- M3: the 16-pane benchmark (`pnpm --filter desktop perf -- --suite terminals`) on the reference machines (a GPU, 8+ cores). The build VM (4 vCPU, Xvfb, software GL) records mode switch ~150 ms, six agents framed 670 ms / 526 ms stall, key echo P95 223 ms, focused 4.5 fps, idle CPU 6–13 %, RSS ~2.3 GB; compare and file anything still over target.
+- M4: real engines per OS (Claude Code, Codex, Gemini, Copilot, Cursor, Grok, OpenCode, Droid, Amp, Aider, Kimi): detected path and version, launch in its provider home, sign-in stays inside that home; Claude hooks drive Working → Waiting → Done in the pane header and rail.
+- M5: system notifications per OS: Windows toast with the AppUserModelID registered on the Start Menu shortcut (an installed build), macOS dock bounce and Linux urgency hint while in the background, and what clicking a notification does (D-78).
+- M4: macOS GUI-PATH detection: an engine on PATH only through `~/.zprofile` (zsh) is found from the Dock-launched app, and one only in `~/.zshrc` gets the "Add the folder to PATH in ~/.zprofile" fix.
+- M3: PowerShell shell integration on Windows (pwsh 7 and Windows PowerShell 5.1): cwd after `cd`, ✓/✗ marks, and "Copy last command output" without a leading blank line; the user's own `prompt` still renders.
+- M3: zsh integration with a real oh-my-zsh / powerlevel10k setup (instant prompt on): prompt unchanged, marks present, `echo $ZDOTDIR` shows the user's own value.

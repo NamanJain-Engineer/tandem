@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dashboard-close-idle"
+description = "Enables the dashboard_close_idle command without any pre-configured scope."
+commands.allow = ["dashboard_close_idle"]
+
+[[permission]]
+identifier = "deny-dashboard-close-idle"
+description = "Denies the dashboard_close_idle command without any pre-configured scope."
+commands.deny = ["dashboard_close_idle"]

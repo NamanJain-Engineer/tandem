@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-term-set-theme-colors"
+description = "Enables the term_set_theme_colors command without any pre-configured scope."
+commands.allow = ["term_set_theme_colors"]
+
+[[permission]]
+identifier = "deny-term-set-theme-colors"
+description = "Denies the term_set_theme_colors command without any pre-configured scope."
+commands.deny = ["term_set_theme_colors"]

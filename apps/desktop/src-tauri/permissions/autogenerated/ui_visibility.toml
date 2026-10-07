@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ui-visibility"
+description = "Enables the ui_visibility command without any pre-configured scope."
+commands.allow = ["ui_visibility"]
+
+[[permission]]
+identifier = "deny-ui-visibility"
+description = "Denies the ui_visibility command without any pre-configured scope."
+commands.deny = ["ui_visibility"]

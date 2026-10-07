@@ -1,0 +1,145 @@
+// Every IPC command gets an `allow-<name>` permission; capabilities grant them
+// per window (ARCHITECTURE §3.1, least privilege). The test harness exists
+// only in debug builds.
+const COMMANDS: &[&str] = &[
+    "app_ready",
+    "app_log",
+    "app_copy_diagnostics",
+    "app_open_logs_folder",
+    "app_open_external",
+    "app_quit",
+    "commands_registry",
+    "redact_text",
+    "deeplink_pending",
+    "window_toggle_maximize",
+    "window_minimize",
+    "window_close",
+    "sidebar_get",
+    "sidebar_save",
+    "pane_rename",
+    "focus_source",
+    "approvals_pending",
+    "approval_resolve",
+    "status_snapshot",
+    "status_mark_seen",
+    "dashboard_close_idle",
+    "notifications_list",
+    "notifications_mark_read",
+    "ui_visibility",
+    "restore_get_snapshot",
+    "restore_resume",
+    "restore_start_fresh",
+    "restore_cancel",
+    "restore_scrollback",
+    "restore_auto_resume",
+    "updates_state",
+    "updates_check_now",
+    "updates_set_channel",
+    "updates_install",
+    "app_licenses",
+    "onboarding_get",
+    "onboarding_set",
+    "settings_get_all",
+    "settings_set",
+    "settings_reset",
+    "auth_sign_in",
+    "auth_cancel",
+    "auth_sign_out",
+    "auth_state",
+    "auth_continue_offline",
+    "entitlement_get",
+    "entitlement_refresh",
+    "billing_open",
+    "telemetry_capture",
+    "workspace_pick_folder",
+    "workspace_add",
+    "workspace_list",
+    "workspace_rename",
+    "workspace_remove",
+    "lane_create",
+    "lane_diff",
+    "lane_merge",
+    "lane_create_pr",
+    "lane_remove",
+    "lanes_sweep",
+    "workspace_locate",
+    "workspace_set_flags",
+    "workspace_reveal",
+    "rail_move",
+    "tab_create",
+    "tab_rename",
+    "tab_close",
+    "tab_reorder",
+    "layout_get",
+    "layout_save",
+    "pane_create",
+    "pane_list",
+    "pane_close",
+    "pane_move",
+    "pty_spawn",
+    "pty_attach",
+    "pty_write",
+    "pty_ack",
+    "pty_resize",
+    "pty_kill",
+    "term_set_theme_colors",
+    "orphans_list",
+    "orphans_resolve",
+    "sessions_saved_list",
+    "term_quote_paths",
+    "term_stage_clipboard_image",
+    "term_last_output",
+    "pty_type_prompt",
+    "status_list",
+    "engines_list",
+    "engines_detect",
+    "engines_install_command",
+    "engines_set_extra_args",
+    "accounts_list",
+    "engines_report",
+];
+
+const TEST_COMMANDS: &[&str] = &[
+    "test_counters",
+    "test_spawn_log",
+    "test_clock_advance",
+    "test_fixture_agent",
+    "test_notifier_calls",
+    "test_notifier_click",
+    "test_set_window_focused",
+    "test_thread_seed",
+    "test_thread_state",
+    "test_update_installed",
+    "test_min_version_shift",
+    "test_auth_refresh",
+    "test_account_create",
+];
+
+/// What About › Licenses shows when the notices weren't generated (dev builds).
+const NOTICES_PLACEHOLDER: &str = "# Third-party notices\n\nThis build doesn't include the generated notices. Release builds embed them: `pnpm tsx scripts/gen-notices.ts --resources` writes `resources/THIRD_PARTY_NOTICES.md` before the build.\n";
+
+fn main() {
+    // About › Licenses (F-TL-04 AC2): the generated notices when present.
+    // Watching the folder (not the file) keeps a missing file from re-running
+    // this script on every build.
+    println!("cargo:rerun-if-changed=resources");
+    let notices = std::fs::read_to_string("resources/THIRD_PARTY_NOTICES.md")
+        .unwrap_or_else(|_| NOTICES_PLACEHOLDER.to_string());
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap_or_default())
+        .join("THIRD_PARTY_NOTICES.md");
+    if let Err(err) = std::fs::write(&out, notices) {
+        panic!("couldn't write {}: {err}", out.display());
+    }
+    let debug = std::env::var("PROFILE").as_deref() == Ok("debug");
+    let mut all: Vec<&'static str> = COMMANDS.to_vec();
+    if debug {
+        all.extend_from_slice(TEST_COMMANDS);
+    }
+    // AppManifest wants a 'static list; a build script can leak it.
+    let all: &'static [&'static str] = Box::leak(all.into_boxed_slice());
+    let attrs =
+        tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(all));
+    if let Err(err) = tauri_build::try_build(attrs) {
+        panic!("tauri build failed: {err:#}");
+    }
+}

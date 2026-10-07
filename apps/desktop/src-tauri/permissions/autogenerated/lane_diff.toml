@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lane-diff"
+description = "Enables the lane_diff command without any pre-configured scope."
+commands.allow = ["lane_diff"]
+
+[[permission]]
+identifier = "deny-lane-diff"
+description = "Denies the lane_diff command without any pre-configured scope."
+commands.deny = ["lane_diff"]

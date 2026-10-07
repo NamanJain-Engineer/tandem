@@ -1,10 +1,8 @@
 import { defineConfig } from "drizzle-kit";
 
 export default defineConfig({
+  dialect: "postgresql",
   schema: "./src/db/schema.ts",
   out: "./drizzle",
-  dialect: "postgresql",
-  dbCredentials: {
-    url: process.env.DATABASE_URL ?? "postgres://tandem:tandem@127.0.0.1:5432/tandem",
-  },
+  dbCredentials: { url: process.env.DATABASE_URL ?? "postgres://tandem:tandem@localhost:5432/tandem" },
 });

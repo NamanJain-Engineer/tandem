@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "note": "Dictate model catalog (ARCHITECTURE §12.4, F-DI-04). sha256 values stay TBD until scripts/pin-models.ts pins them (M12); the release workflow refuses to publish while any remain. license and attribution feed THIRD_PARTY_NOTICES.md (F-TL-04 AC2).",
+  "models": [
+    {
+      "id": "parakeet-tdt-0.6b-v3-int8",
+      "runtime": "onnx",
+      "url": "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/",
+      "files": ["encoder-model.int8.onnx", "decoder_joint-model.int8.onnx", "nemo128.onnx", "vocab.txt"],
+      "sha256": {
+        "encoder-model.int8.onnx": "TBD",
+        "decoder_joint-model.int8.onnx": "TBD",
+        "nemo128.onnx": "TBD",
+        "vocab.txt": "TBD"
+      },
+      "approx_mb": 670,
+      "langs": "25-eu",
+      "recommended": true,
+      "exclude": ["mac-x86_64"],
+      "license": "CC-BY-4.0",
+      "attribution": "Parakeet TDT 0.6B v3 by NVIDIA, licensed under the Creative Commons Attribution 4.0 International License (https://creativecommons.org/licenses/by/4.0/). ONNX export by istupakov. Tandem downloads the model on request and does not modify it.",
+      "source": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3"
+    },
+    {
+      "id": "whisper-large-v3-turbo-q5_0",
+      "runtime": "whisper",
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin",
+      "sha256": "TBD",
+      "approx_mb": 575,
+      "langs": "multi",
+      "default_on": ["mac-x86_64"],
+      "license": "MIT",
+      "attribution": "Whisper large-v3-turbo by OpenAI (MIT License), GGML conversion from the whisper.cpp project (MIT License).",
+      "source": "https://huggingface.co/openai/whisper-large-v3-turbo"
+    },
+    {
+      "id": "whisper-base.en",
+      "runtime": "whisper",
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
+      "sha256": "TBD",
+      "approx_mb": 145,
+      "langs": "en",
+      "license": "MIT",
+      "attribution": "Whisper base.en by OpenAI (MIT License), GGML conversion from the whisper.cpp project (MIT License).",
+      "source": "https://huggingface.co/openai/whisper-base.en"
+    },
+    {
+      "id": "distil-whisper-large-v3.5",
+      "runtime": "whisper",
+      "url": "https://huggingface.co/distil-whisper/distil-large-v3.5-ggml/resolve/main/ggml-model.bin",
+      "sha256": "TBD",
+      "approx_mb": 1500,
+      "langs": "en",
+      "warn_cpu": ["win", "lin"],
+      "license": "MIT",
+      "attribution": "Distil-Whisper large-v3.5 by Hugging Face (MIT License).",
+      "source": "https://huggingface.co/distil-whisper/distil-large-v3.5"
+    }
+  ]
+}

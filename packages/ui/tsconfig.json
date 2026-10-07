@@ -1,13 +1,16 @@
 {
   "compilerOptions": {
     "target": "ES2022",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "lib": ["DOM", "ES2022"]
+    "isolatedModules": true,
+    "noUncheckedIndexedAccess": true,
+    "types": ["vitest/globals"]
   },
   "include": ["src"]
 }

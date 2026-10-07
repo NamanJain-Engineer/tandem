@@ -1,0 +1,308 @@
+[
+  {
+    "id": "palette.open",
+    "category": "app",
+    "mac": "Mod+K",
+    "pc": "Mod+K",
+    "pcTerminal": "Mod+K",
+    "inText": true,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "settings.open",
+    "category": "app",
+    "mac": "Mod+,",
+    "pc": "Mod+,",
+    "pcTerminal": "Mod+,",
+    "inText": true,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "mode.agent",
+    "category": "navigation",
+    "mac": "Mod+1",
+    "pc": "Mod+1",
+    "pcTerminal": "Mod+1",
+    "inText": true,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "mode.code",
+    "category": "navigation",
+    "mac": "Mod+2",
+    "pc": "Mod+2",
+    "pcTerminal": "Mod+2",
+    "inText": true,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "mode.thread",
+    "category": "navigation",
+    "mac": "Mod+3",
+    "pc": "Mod+3",
+    "pcTerminal": "Mod+3",
+    "inText": true,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "rail.toggle",
+    "category": "navigation",
+    "mac": "Mod+\\",
+    "pc": "Mod+\\",
+    "pcTerminal": "Mod+Shift+\\",
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "sidebar.toggle",
+    "category": "navigation",
+    "mac": "Mod+Shift+B",
+    "pc": "Mod+Shift+B",
+    "pcTerminal": "Mod+Shift+B",
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "notifications.open",
+    "category": "navigation",
+    "mac": "Mod+Shift+N",
+    "pc": "Mod+Shift+N",
+    "pcTerminal": "Mod+Shift+N",
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "dashboard.full_view",
+    "category": "navigation",
+    "mac": "Mod+Alt+Shift+D",
+    "pc": "Mod+Alt+Shift+D",
+    "pcTerminal": "Mod+Alt+Shift+D",
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "workspace.open_folder",
+    "category": "workspace",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "workspace.new_tab",
+    "category": "workspace",
+    "mac": "Mod+T",
+    "pc": "Mod+T",
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "workspace_open"
+  },
+  {
+    "id": "workspace.next_tab",
+    "category": "workspace",
+    "mac": "Ctrl+Tab",
+    "pc": "Ctrl+Tab",
+    "pcTerminal": "Ctrl+Tab",
+    "inText": false,
+    "enabledWhen": "workspace_open"
+  },
+  {
+    "id": "workspace.prev_tab",
+    "category": "workspace",
+    "mac": "Ctrl+Shift+Tab",
+    "pc": "Ctrl+Shift+Tab",
+    "pcTerminal": "Ctrl+Shift+Tab",
+    "inText": false,
+    "enabledWhen": "workspace_open"
+  },
+  {
+    "id": "workspace.arrange",
+    "category": "pane",
+    "mac": "Mod+Shift+T",
+    "pc": "Mod+Shift+T",
+    "pcTerminal": "Mod+Shift+T",
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "pane.split_right",
+    "category": "pane",
+    "mac": "Mod+D",
+    "pc": "Mod+D",
+    "pcTerminal": "Mod+Shift+E",
+    "inText": false,
+    "enabledWhen": "workspace_open"
+  },
+  {
+    "id": "pane.split_down",
+    "category": "pane",
+    "mac": "Mod+Shift+D",
+    "pc": "Mod+Shift+D",
+    "pcTerminal": "Mod+Shift+D",
+    "inText": false,
+    "enabledWhen": "workspace_open"
+  },
+  {
+    "id": "pane.close",
+    "category": "pane",
+    "mac": "Mod+W",
+    "pc": "Mod+W",
+    "pcTerminal": "Mod+Shift+W",
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "pane.focus_left",
+    "category": "pane",
+    "mac": "Mod+Alt+Left",
+    "pc": "Mod+Alt+Left",
+    "pcTerminal": "Mod+Alt+Left",
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "pane.focus_right",
+    "category": "pane",
+    "mac": "Mod+Alt+Right",
+    "pc": "Mod+Alt+Right",
+    "pcTerminal": "Mod+Alt+Right",
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "pane.focus_up",
+    "category": "pane",
+    "mac": "Mod+Alt+Up",
+    "pc": "Mod+Alt+Up",
+    "pcTerminal": "Mod+Alt+Up",
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "pane.focus_down",
+    "category": "pane",
+    "mac": "Mod+Alt+Down",
+    "pc": "Mod+Alt+Down",
+    "pcTerminal": "Mod+Alt+Down",
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "pane.focus_prev",
+    "category": "pane",
+    "mac": "Mod+[",
+    "pc": "Mod+Shift+[",
+    "pcTerminal": "Mod+Shift+[",
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "pane.focus_next",
+    "category": "pane",
+    "mac": "Mod+]",
+    "pc": "Mod+Shift+]",
+    "pcTerminal": "Mod+Shift+]",
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "pane.maximize",
+    "category": "pane",
+    "mac": "Mod+Shift+Enter",
+    "pc": "Mod+Shift+Enter",
+    "pcTerminal": "Mod+Shift+Enter",
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "pane.move_to_new_tab",
+    "category": "pane",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "pane.restart",
+    "category": "terminal",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "terminal.find",
+    "category": "terminal",
+    "mac": "Mod+F",
+    "pc": "Mod+F",
+    "pcTerminal": "Mod+Shift+F",
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "terminal.find_next",
+    "category": "terminal",
+    "mac": "Mod+G",
+    "pc": "Mod+G",
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "terminal.copy_last_output",
+    "category": "terminal",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "terminal.find_prev",
+    "category": "terminal",
+    "mac": "Mod+Shift+G",
+    "pc": "Mod+Shift+G",
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "terminal.jump_bottom",
+    "category": "terminal",
+    "mac": "Mod+Down",
+    "pc": "Ctrl+Shift+End",
+    "pcTerminal": "Ctrl+Shift+End",
+    "inText": false,
+    "enabledWhen": "pane_focused"
+  },
+  {
+    "id": "billing.plans",
+    "category": "app",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "help.copy_diagnostics",
+    "category": "help",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "help.open_logs",
+    "category": "help",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  }
+]

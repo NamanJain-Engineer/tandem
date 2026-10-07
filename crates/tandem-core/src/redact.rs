@@ -1,160 +1,652 @@
-use regex::Regex;
-use std::sync::OnceLock;
+//! The single shared redactor (F-TL-02, F-SH-11). Logs, Auto scrollback,
+//! Conductor tool results, handoff briefs, Dashboard previews, notification
+//! text, memory writes and diagnostics all go through it.
 
-const REDACTED: &str = "[REDACTED]";
-const HOLDBACK: usize = 512;
+use regex::{Regex, RegexSet};
+use sha2::{Digest, Sha256};
+use std::borrow::Cow;
+use std::collections::HashSet;
+use std::sync::{OnceLock, RwLock};
 
-fn patterns() -> &'static [Regex] {
-    static PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
-    PATTERNS.get_or_init(|| {
-        [
-            r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
-            r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b",
-            r"\bsk-ant-[A-Za-z0-9_-]{16,}\b",
-            r"\bsk-(?:proj-)?[A-Za-z0-9]{20,}\b",
-            r"\bgh[pousr]_[A-Za-z0-9]{20,}\b",
-            r"\bgithub_pat_[A-Za-z0-9_]{20,}\b",
-            r"\bghu_[A-Za-z0-9]{20,}\b",
-            r"\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{16,}\b",
-            r"\bwhsec_[A-Za-z0-9]{16,}\b",
-            r"\bAKIA[0-9A-Z]{16}\b",
-            r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b",
-            r"\bAIza[0-9A-Za-z\-_]{20,}\b",
-            r"(?i)\b(?:password|token|secret|api_key)\s*=\s*[^\s]{16,}",
-            r"(?i)\b(?:api[_-]?key|secret|password|authorization)\b[^A-Za-z0-9]{0,8}[A-Za-z0-9_\-+/=]{24,}",
-        ]
-        .into_iter()
-        .map(|pattern| Regex::new(pattern).expect("redaction pattern compiles"))
-        .collect()
+pub const REDACTED: &str = "[REDACTED]";
+
+/// Bytes held back by [`StreamRedactor`] so a secret split across chunks is
+/// still seen whole.
+pub const WINDOW: usize = 512;
+
+/// A held-back buffer never grows past this; beyond it the buffer is flushed
+/// through the redactor (an unterminated private-key block is redacted to the
+/// end, so nothing leaks).
+const MAX_PENDING: usize = 64 * 1024;
+
+type Validator = fn(&str) -> bool;
+type Extractor = fn(&str, &regex::Captures<'_>) -> Option<(usize, usize)>;
+
+#[derive(Clone, Copy)]
+enum Extract {
+    /// Redact the whole match.
+    Whole,
+    /// Redact capture group `v` when the validator accepts it.
+    Value(Option<Validator>),
+    /// Custom span logic.
+    Custom(Extractor),
+}
+
+struct Rule {
+    re: Regex,
+    extract: Extract,
+}
+
+type Spec = (String, Extract);
+
+fn rule(pattern: &str) -> Spec {
+    (pattern.to_string(), Extract::Whole)
+}
+
+fn value_rule(pattern: &str, validator: Option<Validator>) -> Spec {
+    (pattern.to_string(), Extract::Value(validator))
+}
+
+/// Words that mark the value after them as a credential.
+const KEY_WORDS: &str = r"[A-Za-z0-9_]*(?:password|passwd|passphrase|secret|token|api_?key|apikey|access_?key|private_?key|client_?secret|auth_?key|credentials?)[A-Za-z0-9_]*";
+
+fn rule_specs() -> Vec<Spec> {
+    vec![
+        // Private key blocks, complete or still streaming in.
+        rule(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----"),
+        rule(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----(?:\r?\n(?:[A-Za-z0-9+/=]+|[A-Za-z-]+: [^\r\n]*))*(?:\r?\n)?"),
+        // JWTs.
+        rule(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),
+        // Anthropic, OpenAI (project, service-account, admin), OpenRouter.
+        rule(r"\bsk-ant-[A-Za-z0-9]{2,8}-[A-Za-z0-9_-]{20,}"),
+        rule(r"\bsk-(?:proj-|svcacct-|admin-|or-v1-)?[A-Za-z0-9_-]{20,}"),
+        // GitHub.
+        rule(r"\bgh[pousr]_[A-Za-z0-9]{30,}"),
+        rule(r"\bgithub_pat_[A-Za-z0-9_]{30,}"),
+        // Stripe secret and restricted keys, webhook secrets.
+        rule(r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}"),
+        rule(r"\bwhsec_[A-Za-z0-9+/=]{16,}"),
+        // AWS access key ids; secret keys are caught by the assignment rule.
+        rule(r"\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b"),
+        // Slack tokens and webhooks.
+        rule(r"\bxox[abposre]-[A-Za-z0-9-]{10,}"),
+        rule(r"\bxapp-[0-9]+-[A-Za-z0-9-]{10,}"),
+        rule(r"https://hooks\.slack\.com/services/[A-Za-z0-9_/-]{20,}"),
+        // Google API keys, OAuth client secrets and access tokens.
+        rule(r"\bAIza[0-9A-Za-z_-]{35}"),
+        rule(r"\bGOCSPX-[A-Za-z0-9_-]{20,}"),
+        rule(r"\bya29\.[0-9A-Za-z_-]{20,}"),
+        // Other common vendor formats.
+        rule(r"\bnpm_[A-Za-z0-9]{36}\b"),
+        rule(r"\bhf_[A-Za-z0-9]{30,}\b"),
+        rule(r"\bxai-[A-Za-z0-9]{30,}\b"),
+        rule(r"\bgsk_[A-Za-z0-9]{40,}\b"),
+        rule(r"\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}"),
+        rule(r"\blin_(?:api|oauth)_[A-Za-z0-9]{32,}\b"),
+        rule(r"\bsbp_[a-f0-9]{40}\b"),
+        rule(r"\b(?:ntn|secret)_[A-Za-z0-9]{40,}\b"),
+        rule(r"\bphx_[A-Za-z0-9]{30,}\b"),
+        rule(r"\bglpat-[A-Za-z0-9_-]{20,}"),
+        // Bearer tokens in headers.
+        value_rule(r"(?i)\bbearer\s+(?P<v>[A-Za-z0-9._~+/=-]{20,})", None),
+        // Passwords embedded in URLs: scheme://user:password@host
+        value_rule(r"[A-Za-z][A-Za-z0-9+.-]*://[^/\s:@]+:(?P<v>[^/\s@]{3,})@", Some(url_password_ok)),
+        // `password = "…"`, `token: …`, `export API_KEY=…`, `?access_token=…`
+        (
+            format!(
+                r#"(?i)\b(?P<k>{KEY_WORDS})\b["']?[ \t]*(?:=|:|=>)[ \t]*(?:(?P<q>["'`])(?P<vq>[^"'`\s]{{8,}})|(?P<vu>[^\s"'`,;)]{{8,}}))"#
+            ),
+            Extract::Custom(assignment_span),
+        ),
+        // `--token abc…`, `--api-key=…`
+        (
+            r#"(?i)--[A-Za-z0-9-]*(?:password|passwd|secret|token|api-?key|access-?key|auth-?key)[A-Za-z0-9-]*(?:=|[ \t]+)(?P<v>[^\s"'`]{8,})"#.to_string(),
+            Extract::Value(Some(cli_value_ok)),
+        ),
+        // High-entropy strings near key-like words.
+        value_rule(
+            r"(?i)(?:key|secret|token|passw(?:or)?d|auth|credential|session|signature)[^\n]{0,24}?(?P<v>\b[A-Za-z0-9+/_-]{24,}={0,2})",
+            Some(high_entropy),
+        ),
+    ]
+}
+
+fn url_password_ok(v: &str) -> bool {
+    // `${PASSWORD}` and similar placeholders carry no secret.
+    !(v.starts_with('$') || v.starts_with('{') || v.starts_with('<') || v.starts_with('%'))
+}
+
+fn is_identifier_path(v: &str) -> bool {
+    let v = v.trim_end_matches(['(', ')', '!', '?', ']', '[', '}', '{']);
+    let mut parts = v.split(['.', ':']).filter(|p| !p.is_empty()).peekable();
+    if parts.peek().is_none() {
+        return false;
+    }
+    parts.all(|p| {
+        let mut chars = p.chars();
+        chars
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '$')
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
     })
 }
 
-pub fn redact(input: &str) -> String {
-    let mut output = input.to_string();
-    for pattern in patterns() {
-        output = pattern.replace_all(&output, REDACTED).into_owned();
-    }
-    output
-}
-
-/// Holds the last 512 bytes so a secret split across chunks is still removed.
-pub struct StreamRedactor {
-    hold: Vec<u8>,
-    emitted: Vec<u8>,
-}
-
-impl StreamRedactor {
-    pub fn new() -> Self {
-        Self {
-            hold: Vec::new(),
-            emitted: Vec::new(),
-        }
-    }
-
-    pub fn push(&mut self, chunk: &[u8]) {
-        self.hold.extend_from_slice(chunk);
-        self.flush_ready();
-    }
-
-    fn flush_ready(&mut self) {
-        if self.hold.len() <= HOLDBACK {
-            return;
-        }
-        let safe_end = self.hold.len() - HOLDBACK;
-        let text = String::from_utf8_lossy(&self.hold);
-        let mut cut = safe_end;
-        for pattern in patterns() {
-            for found in pattern.find_iter(&text) {
-                if found.end() > safe_end && found.start() < cut {
-                    cut = found.start();
-                }
+/// The value span of a `key = value` match, or `None` when the value is code
+/// rather than a literal (`token = getToken()`).
+fn assignment_span(text: &str, caps: &regex::Captures<'_>) -> Option<(usize, usize)> {
+    let key = caps.name("k")?;
+    let quoted = caps.name("vq").is_some();
+    let v = caps.name("vq").or_else(|| caps.name("vu"))?;
+    let mut value = v.as_str();
+    if !quoted {
+        // `?access_token=abc&page=2`: a query parameter ends at `&`.
+        let in_query = key.start() > 0 && matches!(text.as_bytes()[key.start() - 1], b'?' | b'&');
+        if in_query {
+            if let Some(i) = value.find('&') {
+                value = &value[..i];
             }
         }
-        while cut > 0 && (self.hold[cut] & 0b1100_0000) == 0b1000_0000 {
-            cut -= 1;
+        // `token:abc@github.com/…`: credentials in a URL end at `@host`.
+        if let Some(i) = value.find('@') {
+            if value[i + 1..].contains('.') {
+                value = &value[..i];
+            }
         }
-        if cut == 0 {
-            return;
-        }
-        let prefix = String::from_utf8_lossy(&self.hold[..cut]);
-        self.emitted.extend_from_slice(redact(&prefix).as_bytes());
-        self.hold.drain(..cut);
     }
+    if value.len() < 8 || descriptive_key(key.as_str()) || !assignment_value_ok(value, quoted) {
+        return None;
+    }
+    Some((v.start(), v.start() + value.len()))
+}
 
-    pub fn finish(mut self) -> Vec<u8> {
-        let rest = String::from_utf8_lossy(&self.hold);
-        self.emitted.extend_from_slice(redact(&rest).as_bytes());
-        self.emitted
+fn cli_value_ok(v: &str) -> bool {
+    !v.starts_with('-') && assignment_value_ok(v, false)
+}
+
+/// `getToken(`, `self.secret[`, `new Foo(`: the value is an expression.
+fn starts_like_code(v: &str) -> bool {
+    let v = v.strip_prefix("new ").unwrap_or(v);
+    let end = v
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '$' || c == '.'))
+        .unwrap_or(v.len());
+    end > 0 && is_identifier_path(&v[..end]) && matches!(v[end..].chars().next(), Some('(' | '['))
+}
+
+/// Keys that describe a credential rather than hold one: `token_type`,
+/// `password_hint`, `secret_name`.
+fn descriptive_key(key: &str) -> bool {
+    const SUFFIXES: [&str; 22] = [
+        "type", "types", "name", "kind", "pattern", "url", "uri", "id", "field", "label", "file",
+        "path", "count", "length", "len", "prefix", "header", "endpoint", "hint", "policy",
+        "format", "mode",
+    ];
+    let lower = key.to_ascii_lowercase();
+    lower
+        .rsplit(['_', '-'])
+        .next()
+        .is_some_and(|last| lower.contains(['_', '-']) && SUFFIXES.contains(&last))
+}
+
+fn assignment_value_ok(v: &str, quoted: bool) -> bool {
+    let lower = v.to_ascii_lowercase();
+    const NOT_SECRETS: [&str; 9] = [
+        "null",
+        "none",
+        "undefined",
+        "true",
+        "false",
+        "redacted",
+        "[redacted]",
+        "required",
+        "optional",
+    ];
+    if NOT_SECRETS.contains(&lower.as_str()) || lower.contains("[redacted]") {
+        return false;
+    }
+    if v.starts_with('$') || v.starts_with('{') || v.starts_with('<') || v.starts_with('%') {
+        return false;
+    }
+    if v.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    let has_digit_or_symbol = v.chars().any(|c| !c.is_ascii_alphabetic());
+    if quoted {
+        // 'content-type', 'addr-spec': lowercase words are labels, not secrets.
+        let wordish = v
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || matches!(c, '-' | '_' | '.' | '/'));
+        return v.len() >= 20 || (has_digit_or_symbol && !wordish);
+    }
+    if starts_like_code(v) {
+        return false;
+    }
+    // Unquoted identifiers are usually code (`getToken()`, `self.secret`,
+    // `req.headers.authorization`), unless they read like a password:
+    // one segment mixing letters with two or more digits, or random.
+    if is_identifier_path(v) {
+        let digits = v.chars().filter(char::is_ascii_digit).count();
+        let single = !v.contains(['.', ':', '(', '[']);
+        return looks_random(v) || (single && digits >= 2);
+    }
+    has_digit_or_symbol || v.len() >= 20
+}
+
+fn shannon_entropy(s: &str) -> f64 {
+    let mut counts = [0usize; 256];
+    for b in s.bytes() {
+        counts[b as usize] += 1;
+    }
+    let len = s.len() as f64;
+    counts
+        .iter()
+        .filter(|c| **c > 0)
+        .map(|c| {
+            let p = *c as f64 / len;
+            -p * p.log2()
+        })
+        .sum()
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum Class {
+    Lower,
+    Upper,
+    Digit,
+    Other,
+}
+
+fn class(c: char) -> Class {
+    if c.is_ascii_lowercase() {
+        Class::Lower
+    } else if c.is_ascii_uppercase() {
+        Class::Upper
+    } else if c.is_ascii_digit() {
+        Class::Digit
+    } else {
+        Class::Other
     }
 }
 
-impl Default for StreamRedactor {
+/// Random tokens switch character class often; identifiers and words do not.
+fn looks_random(v: &str) -> bool {
+    let chars: Vec<char> = v.chars().collect();
+    if chars.len() < 16 {
+        return false;
+    }
+    let transitions = chars
+        .windows(2)
+        .filter(|w| class(w[0]) != class(w[1]))
+        .count();
+    let has_lower = chars.iter().any(|c| c.is_ascii_lowercase());
+    let has_upper = chars.iter().any(|c| c.is_ascii_uppercase());
+    let has_digit = chars.iter().any(|c| c.is_ascii_digit());
+    has_digit && (has_lower || has_upper) && transitions * 10 >= chars.len() * 3
+}
+
+fn high_entropy(v: &str) -> bool {
+    let v = v.trim_end_matches('=');
+    let all_hex = v.chars().all(|c| c.is_ascii_hexdigit());
+    !all_hex && shannon_entropy(v) >= 3.9 && looks_random(v)
+}
+
+struct SecretFilter {
+    /// Bloom filter over SHA-256 hashes of registered secrets; `exact` confirms.
+    bits: Vec<u64>,
+    exact: HashSet<[u8; 32]>,
+}
+
+const BLOOM_BITS: usize = 1 << 16;
+
+impl SecretFilter {
+    fn new() -> Self {
+        Self {
+            bits: vec![0; BLOOM_BITS / 64],
+            exact: HashSet::new(),
+        }
+    }
+
+    fn slots(hash: &[u8; 32]) -> [usize; 3] {
+        let take = |i: usize| {
+            (u32::from_le_bytes([hash[i], hash[i + 1], hash[i + 2], hash[i + 3]]) as usize)
+                % BLOOM_BITS
+        };
+        [take(0), take(4), take(8)]
+    }
+
+    fn insert(&mut self, hash: [u8; 32]) {
+        for slot in Self::slots(&hash) {
+            self.bits[slot / 64] |= 1 << (slot % 64);
+        }
+        self.exact.insert(hash);
+    }
+
+    fn contains(&self, hash: &[u8; 32]) -> bool {
+        Self::slots(hash)
+            .iter()
+            .all(|slot| self.bits[slot / 64] & (1 << (slot % 64)) != 0)
+            && self.exact.contains(hash)
+    }
+}
+
+pub struct Redactor {
+    prefilter: RegexSet,
+    rules: Vec<Rule>,
+    token_re: Regex,
+    secrets: RwLock<SecretFilter>,
+    home: Option<String>,
+}
+
+impl Default for Redactor {
     fn default() -> Self {
         Self::new()
     }
+}
+
+impl Redactor {
+    pub fn new() -> Self {
+        let specs = rule_specs();
+        let prefilter = RegexSet::new(specs.iter().map(|(p, _)| p.as_str()))
+            .expect("redaction patterns compile");
+        let rules = specs
+            .into_iter()
+            .map(|(pattern, extract)| Rule {
+                re: Regex::new(&pattern).expect("redaction pattern compiles"),
+                extract,
+            })
+            .collect();
+        let token_re = Regex::new(r"[A-Za-z0-9+/_.~-]{8,}").expect("token pattern compiles");
+        Self {
+            prefilter,
+            rules,
+            token_re,
+            secrets: RwLock::new(SecretFilter::new()),
+            home: crate::paths::user_home()
+                .map(|h| {
+                    h.to_string_lossy()
+                        .trim_end_matches(['/', '\\'])
+                        .to_string()
+                })
+                .filter(|h| h.len() > 1),
+        }
+    }
+
+    pub fn global() -> &'static Redactor {
+        static GLOBAL: OnceLock<Redactor> = OnceLock::new();
+        GLOBAL.get_or_init(Redactor::new)
+    }
+
+    /// Registers a secret the user owns (e.g. a plugin credential) by its
+    /// SHA-256 hash. Exact occurrences are redacted from then on.
+    pub fn register_secret_hash(&self, sha256: [u8; 32]) {
+        let mut filter = self.secrets.write().unwrap_or_else(|e| e.into_inner());
+        filter.insert(sha256);
+    }
+
+    pub fn register_secret(&self, secret: &str) {
+        self.register_secret_hash(Sha256::digest(secret.as_bytes()).into());
+    }
+
+    /// Byte spans to redact, sorted and merged.
+    fn spans(&self, s: &str) -> Vec<(usize, usize)> {
+        let mut spans = Vec::new();
+        for idx in self.prefilter.matches(s).into_iter() {
+            let Some(rule) = self.rules.get(idx) else {
+                continue;
+            };
+            for caps in rule.re.captures_iter(s) {
+                let span = match rule.extract {
+                    Extract::Whole => caps.get(0).map(|m| (m.start(), m.end())),
+                    Extract::Value(validator) => caps
+                        .name("v")
+                        .filter(|m| validator.is_none_or(|ok| ok(m.as_str())))
+                        .map(|m| (m.start(), m.end())),
+                    Extract::Custom(extract) => extract(s, &caps),
+                };
+                if let Some((start, end)) = span.filter(|(a, b)| b > a) {
+                    spans.push((start, end));
+                }
+            }
+        }
+        {
+            let filter = self.secrets.read().unwrap_or_else(|e| e.into_inner());
+            if !filter.exact.is_empty() {
+                let mut check = |start: usize, end: usize| {
+                    let hash: [u8; 32] = Sha256::digest(&s.as_bytes()[start..end]).into();
+                    if filter.contains(&hash) {
+                        spans.push((start, end));
+                    }
+                };
+                for m in self.token_re.find_iter(s) {
+                    check(m.start(), m.end());
+                    // Also check the pieces between separators (`a.b`, `x/y`).
+                    let mut piece_start = m.start();
+                    for (i, ch) in m.as_str().char_indices() {
+                        if matches!(ch, '.' | '/' | '~') {
+                            if m.start() + i > piece_start {
+                                check(piece_start, m.start() + i);
+                            }
+                            piece_start = m.start() + i + 1;
+                        }
+                    }
+                    if piece_start > m.start() && piece_start < m.end() {
+                        check(piece_start, m.end());
+                    }
+                }
+            }
+        }
+        merge(spans)
+    }
+
+    /// Replaces every secret in `s` with `[REDACTED]`.
+    pub fn redact<'a>(&self, s: &'a str) -> Cow<'a, str> {
+        let spans = self.spans(s);
+        if spans.is_empty() {
+            return Cow::Borrowed(s);
+        }
+        Cow::Owned(apply(s, &spans))
+    }
+
+    pub fn stream(&self) -> StreamRedactor<'_> {
+        StreamRedactor {
+            redactor: self,
+            pending: String::new(),
+        }
+    }
+
+    /// Replaces the user's home directory with `~`.
+    pub fn redact_home(&self, s: &str) -> String {
+        match &self.home {
+            Some(home) => s.replace(home.as_str(), "~"),
+            None => s.to_string(),
+        }
+    }
+}
+
+fn merge(mut spans: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
+    spans.sort_unstable();
+    let mut out: Vec<(usize, usize)> = Vec::with_capacity(spans.len());
+    for (start, end) in spans {
+        match out.last_mut() {
+            Some(last) if start <= last.1 => last.1 = last.1.max(end),
+            _ => out.push((start, end)),
+        }
+    }
+    out
+}
+
+fn apply(s: &str, spans: &[(usize, usize)]) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut cursor = 0;
+    for (start, end) in spans {
+        out.push_str(&s[cursor..*start]);
+        out.push_str(REDACTED);
+        cursor = *end;
+    }
+    out.push_str(&s[cursor..]);
+    out
+}
+
+fn floor_char_boundary(s: &str, mut idx: usize) -> usize {
+    while idx > 0 && !s.is_char_boundary(idx) {
+        idx -= 1;
+    }
+    idx
+}
+
+/// Redacts a stream of text chunks, holding back the last [`WINDOW`] bytes
+/// (and any match that reaches into them) until more text arrives.
+pub struct StreamRedactor<'r> {
+    redactor: &'r Redactor,
+    pending: String,
+}
+
+impl StreamRedactor<'_> {
+    pub fn push(&mut self, chunk: &str) -> String {
+        self.pending.push_str(chunk);
+        let spans = self.redactor.spans(&self.pending);
+        let mut cut = floor_char_boundary(&self.pending, self.pending.len().saturating_sub(WINDOW));
+        if self.pending.len() <= MAX_PENDING {
+            // Never cut through a match, and never emit the start of a match
+            // that reaches the held-back window: it may still be growing.
+            for (start, end) in &spans {
+                if *end > cut && *start < cut {
+                    cut = *start;
+                }
+            }
+        } else {
+            cut = self.pending.len();
+        }
+        if cut == 0 {
+            return String::new();
+        }
+        let head_spans: Vec<(usize, usize)> = spans
+            .iter()
+            .filter(|(_, end)| *end <= cut)
+            .copied()
+            .collect();
+        let head = apply(&self.pending[..cut], &head_spans);
+        self.pending.drain(..cut);
+        head
+    }
+
+    pub fn finish(self) -> String {
+        self.redactor.redact(&self.pending).into_owned()
+    }
+}
+
+/// Convenience wrapper over the global redactor.
+pub fn redact(s: &str) -> String {
+    Redactor::global().redact(s).into_owned()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn secrets() -> Vec<String> {
-        let mut out = Vec::new();
-        let samples = [
-            "sk-ant-api03_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345",
-            "sk-projABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-            "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij",
-            "github_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd",
-            "ghu_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij",
-            "sk_live_ABCDEFGHIJKLMNOPQRST",
-            "sk_test_ABCDEFGHIJKLMNOPQRST",
-            "whsec_ABCDEFGHIJKLMNOPQRSTUV",
-            "AKIAIOSFODNN7EXAMPLE",
-            "xoxb-123456789012-ABCDEFGHIJKLMNOP",
-            "AIzaSyA-ABCDEFGHIJKLMNOPQRSTUVWX12",
-            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
-            "password=supersecretvalue123456",
-            "token=anothersecretvalue1234567",
-        ];
-        for sample in samples {
-            out.push(sample.to_string());
-        }
-        while out.len() < 60 {
-            let n = out.len();
-            out.push(format!("ghp_{n:036}"));
-        }
-        out
+    const SECRETS: &str = include_str!("../tests/redaction/secrets.txt");
+    const BENIGN: &str = include_str!("../tests/redaction/benign.txt");
+
+    /// Corpus lines mark the secret with «…». `{{}}` splits strings so that
+    /// repository secret scanners don't flag the fake fixtures.
+    fn corpus() -> Vec<(String, String, String)> {
+        SECRETS
+            .lines()
+            .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+            .map(|l| {
+                let l = l.replace("{{}}", "").replace("\\n", "\n");
+                let (prefix, rest) = l.split_once('«').expect("line has «");
+                let (secret, suffix) = rest.split_once('»').expect("line has »");
+                (prefix.to_string(), secret.to_string(), suffix.to_string())
+            })
+            .collect()
     }
 
     #[test]
     fn f_tl_02_1_corpus_redacted_no_false_positives() {
-        for secret in secrets() {
-            let wrapped = format!("before {secret} after");
-            let cleaned = redact(&wrapped);
-            assert!(!cleaned.contains(&secret), "leaked {secret}");
-            assert!(
-                cleaned.contains("[REDACTED]"),
-                "missing marker for {secret}"
-            );
+        let redactor = Redactor::new();
+        let cases = corpus();
+        assert!(cases.len() >= 60, "corpus has {} secrets", cases.len());
+        let mut failures = Vec::new();
+        for (prefix, secret, suffix) in &cases {
+            let input = format!("{prefix}{secret}{suffix}");
+            let out = redactor.redact(&input);
+            if out != format!("{prefix}{REDACTED}{suffix}") {
+                failures.push(format!("{input:?}\n   -> {out:?}"));
+            }
         }
-        let mut benign = String::new();
-        for i in 0..1000 {
-            benign.push_str(&format!("fn benign_{i}() {{ let value = {i}; }}\n"));
-        }
-        assert_eq!(redact(&benign), benign);
+        assert!(
+            failures.is_empty(),
+            "not redacted exactly:\n{}",
+            failures.join("\n")
+        );
+        let benign: Vec<&str> = BENIGN.lines().collect();
+        assert!(
+            benign.len() >= 1000,
+            "benign corpus has {} lines",
+            benign.len()
+        );
+        let flagged: Vec<&&str> = benign
+            .iter()
+            .filter(|line| redactor.redact(line) != **line)
+            .collect();
+        assert!(flagged.is_empty(), "false positives: {flagged:#?}");
     }
 
     #[test]
     fn f_tl_02_2_split_secret_every_offset() {
-        let secret = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij";
-        for offset in 0..=secret.len() {
-            let mut stream = StreamRedactor::new();
-            stream.push(&secret.as_bytes()[..offset]);
-            stream.push(&secret.as_bytes()[offset..]);
-            let out = stream.finish();
-            let text = String::from_utf8_lossy(&out);
-            assert!(!text.contains(secret), "leaked at offset {offset}");
-            assert!(text.contains("[REDACTED]"));
+        let redactor = Redactor::new();
+        for (prefix, secret, suffix) in corpus() {
+            let input = format!("log line before {prefix}{secret}{suffix} and after\n");
+            for offset in 0..=input.len() {
+                if !input.is_char_boundary(offset) {
+                    continue;
+                }
+                let mut stream = redactor.stream();
+                let mut out = stream.push(&input[..offset]);
+                out.push_str(&stream.push(&input[offset..]));
+                out.push_str(&stream.finish());
+                assert!(
+                    !out.contains(&secret),
+                    "secret leaked when split at {offset}: {input:?}"
+                );
+                assert!(out.contains(REDACTED));
+            }
+        }
+    }
+
+    #[test]
+    fn stream_output_matches_batch_for_long_text() {
+        let redactor = Redactor::new();
+        let mut text = String::new();
+        for i in 0..400 {
+            text.push_str(&format!("line {i}: compiling crate number {i}\n"));
+            if i % 97 == 0 {
+                text.push_str("token used: ghp_0123456789abcdefghijABCDEFGHIJ0123456789\n");
+            }
+        }
+        let mut stream = redactor.stream();
+        let mut out = String::new();
+        for chunk in text.as_bytes().chunks(37) {
+            out.push_str(&stream.push(std::str::from_utf8(chunk).expect("ascii")));
+        }
+        out.push_str(&stream.finish());
+        assert_eq!(out, redactor.redact(&text));
+    }
+
+    #[test]
+    fn registered_secrets_are_redacted_exactly() {
+        let redactor = Redactor::new();
+        redactor.register_secret("plainvalue-0001");
+        let out = redactor.redact("calling with plainvalue-0001 now");
+        assert_eq!(out, "calling with [REDACTED] now");
+    }
+
+    #[test]
+    fn home_is_replaced_with_tilde() {
+        let redactor = Redactor::new();
+        if let Some(home) = crate::paths::user_home() {
+            let line = format!("opened {}/code/app", home.display());
+            assert_eq!(redactor.redact_home(&line), "opened ~/code/app");
         }
     }
 }

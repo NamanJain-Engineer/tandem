@@ -1,0 +1,17 @@
+{
+  "note": "Generated once by the API's own signing code (jose + node:crypto) to prove the Rust verifiers interoperate.",
+  "keys": {
+    "entitlement": {
+      "ek-7": "jm1KpkB8IaadMxuPy92vWEOIqsZMHANrrta4cGqKWyQ="
+    },
+    "config": {
+      "ck-7": "gVR2lZruMpTNX0mzPZRHIMPqzNfYNlHWqR7hXuZufYs="
+    }
+  },
+  "entitlement_token": "eyJhbGciOiJFZERTQSIsImtpZCI6ImVrLTciLCJ0eXAiOiJKV1QifQ.eyJwbGFuIjoicHJvIiwic3RhdHVzIjoiYWN0aXZlIiwibGltaXRzIjp7InBhbmVzIjo2NCwid29ya3NwYWNlcyI6bnVsbCwidGhyZWFkR3JpZCI6NiwidGVhbW1hdGVzIjpudWxsLCJyb3V0aW5lcyI6dHJ1ZSwiYmFja2dyb3VuZFJvdXRpbmVzIjp0cnVlLCJ0YXNrRXhlY3V0aW9uIjp0cnVlLCJwbHVnaW5Db25uZWN0aW9ucyI6bnVsbCwiYWNjb3VudHNQZXJFbmdpbmUiOm51bGwsImNsb3VkU3R0Ijp0cnVlLCJlbmhhbmNlIjp0cnVlLCJjb25kdWN0b3IiOnRydWUsImF1dG8iOnRydWUsInBob25lIjp0cnVlLCJhZG1pbiI6ZmFsc2UsImNoYXRFbmdpbmVzIjpudWxsLCJjcmVkaXRQYWNrcyI6dHJ1ZX0sInBvbGljeSI6bnVsbCwic3ViIjoidXNlcl9maXh0dXJlIiwiaXNzIjoidGFuZGVtLWFwaSIsImF1ZCI6InRhbmRlbS1kZXNrdG9wIiwiaWF0IjoxODAwMDAwMDAwLCJleHAiOjE4MDAwODY0MDB9.HnvLmHCD41ZFh4SRId-RznhzTTl2XCXCc82-GaneZRNOidWZNaatCDnfajVlakKFCei1qlamHThPLlKWhNZ6CQ",
+  "config": {
+    "payload": "{\"daily_caps\":{\"rewrite_calls\":300,\"stt_minutes\":120},\"flags\":{\"conductor\":false,\"phone\":false},\"min_app_version\":\"0.1.0\",\"models\":{\"claude\":[{\"contextWindow\":null,\"default\":true,\"deprecated\":false,\"description\":\"The engine's own default model\",\"effortLevels\":[],\"id\":\"default\",\"label\":\"Default\"}],\"codex\":[{\"contextWindow\":null,\"default\":true,\"deprecated\":false,\"description\":\"The engine's own default model\",\"effortLevels\":[\"low\",\"medium\",\"high\"],\"id\":\"default\",\"label\":\"Default\"}]},\"plugins\":{},\"prices\":{\"auto_turn\":6,\"resolve\":1,\"rewrite\":3,\"stt_15s\":2,\"teammate_draft\":10,\"title\":0,\"voice_10s\":20},\"registry_overrides\":[],\"telemetry_allowlist_version\":1,\"version\":1}",
+    "sig": "V/CdOmrJ5cVVOZvhs/0dbOB5GpAC2jIQzfFgigF9tGPDjWpM4qmxXwEnb4WudJI69WJ8z10nntaCq2b8sGfzAg==",
+    "kid": "ck-7"
+  }
+}

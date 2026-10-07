@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sessions-saved-list"
+description = "Enables the sessions_saved_list command without any pre-configured scope."
+commands.allow = ["sessions_saved_list"]
+
+[[permission]]
+identifier = "deny-sessions-saved-list"
+description = "Denies the sessions_saved_list command without any pre-configured scope."
+commands.deny = ["sessions_saved_list"]

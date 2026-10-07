@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sidebar-get"
+description = "Enables the sidebar_get command without any pre-configured scope."
+commands.allow = ["sidebar_get"]
+
+[[permission]]
+identifier = "deny-sidebar-get"
+description = "Denies the sidebar_get command without any pre-configured scope."
+commands.deny = ["sidebar_get"]

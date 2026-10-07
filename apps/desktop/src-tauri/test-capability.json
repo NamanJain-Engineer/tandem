@@ -1,0 +1,24 @@
+{
+  "identifier": "test-harness",
+  "description": "E2E test harness (debug builds with TANDEM_E2E=1 only; added at runtime).",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "allow-test-counters",
+    "allow-test-spawn-log",
+    "allow-test-clock-advance",
+    "allow-test-fixture-agent",
+    "allow-test-notifier-calls",
+    "allow-test-notifier-click",
+    "allow-test-set-window-focused",
+    "allow-test-thread-seed",
+    "allow-test-thread-state",
+    "allow-test-update-installed",
+    "allow-test-min-version-shift",
+    "allow-test-auth-refresh",
+    "allow-test-account-create",
+    "core:window:allow-set-position",
+    "core:window:allow-outer-position"
+  ]
+}

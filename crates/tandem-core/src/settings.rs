@@ -1,71 +1,935 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Theme {
-    Dark,
-    Light,
+//! Typed settings schema (F-SH-04 core). Every key has a default, a validator
+//! and the Settings page it lives on (UI-100 navigation).
+
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use ts_rs::TS;
+
+use crate::error::{CoreError, ErrorCode};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum SettingsPage {
+    General,
+    Appearance,
+    Notifications,
+    Terminal,
+    Engines,
+    Accounts,
+    Teammates,
+    Dictate,
+    Conductor,
+    Plugins,
+    Remote,
+    Privacy,
+    Shortcuts,
+    Account,
+    Updates,
+    Advanced,
+    /// Not shown in Settings (UI state that persists).
+    Hidden,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Settings {
-    pub theme: Theme,
-    pub telemetry_opt_in: bool,
-    pub reduce_motion: bool,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            theme: Theme::Dark,
-            telemetry_opt_in: false,
-            reduce_motion: false,
+macro_rules! setting_keys {
+    ($($name:ident),* $(,)?) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
+        #[serde(rename_all = "snake_case")]
+        #[ts(export)]
+        pub enum SettingKey {
+            $($name),*
         }
+
+        impl SettingKey {
+            pub const ALL: &'static [SettingKey] = &[$(SettingKey::$name),*];
+        }
+    };
+}
+
+setting_keys! {
+    Theme,
+    TerminalTheme,
+    TerminalsMatchTheme,
+    InterfaceTextSize,
+    Density,
+    ShowStatusPreviews,
+    Language,
+    AutoSaveFiles,
+    LaunchAtLogin,
+    KeepRunningInTray,
+    UpdateChannel,
+    AutoCheckUpdates,
+    NotifySystem,
+    NotifySound,
+    NotifySoundName,
+    NotifyAttention,
+    NotifyTypes,
+    NotifyOnlyUnseen,
+    DefaultShell,
+    WslDefaultDistro,
+    TermFontFamily,
+    TermFontSize,
+    TermCursorStyle,
+    TermCursorBlink,
+    TermScrollback,
+    TermCopyOnSelect,
+    TermConfirmMultilinePaste,
+    TermOptionAsMeta,
+    TermScreenReader,
+    TermShellIntegration,
+    TermShortcutPriority,
+    TermGpuRendering,
+    OpenLinksInTandem,
+    SearchEngine,
+    EngineExtraArgs,
+    DefaultAccess,
+    RoutineAccess,
+    AllowTeammateSkills,
+    LearnAfterTurn,
+    PauseAllMail,
+    ResumeAgentsAutomatically,
+    TrustWorkspacesIAdd,
+    ExposeTasksToTerminalAgents,
+    ExposeAllPluginTools,
+    GrantPluginsToAllThreads,
+    PluginAskBeforeWrites,
+    DictateEnabled,
+    DictateHotkey,
+    DictateMode,
+    DictateEngine,
+    DictateModel,
+    DictateLanguage,
+    DictateMic,
+    DictateBackupMic,
+    DictateGain,
+    DictateWidgetVisibility,
+    DictateWidgetStyle,
+    DictateFollowCursor,
+    DictateLockPosition,
+    DictateSounds,
+    DictatePauseMedia,
+    DictateOutput,
+    DictateAutoEnhance,
+    DictateFormatting,
+    DictateShareHints,
+    ConductorName,
+    ConductorVoice,
+    ConductorTone,
+    ConductorVerbosity,
+    ConductorSpeed,
+    ConductorAboutYou,
+    ConductorMemory,
+    ConductorReflection,
+    ConductorWake,
+    ConductorFloatingRing,
+    TelemetryUsage,
+    TelemetryCrash,
+    AutoConsent,
+    AutoDontAsk,
+    SendKey,
+    ReduceMotion,
+    LogLevel,
+    PerfHud,
+    OrphanPolicy,
+    LastMode,
+    SettingsLastPage,
+    OnboardingStep,
+    OfflineStartedAt,
+    RailWidth,
+}
+
+/// How a value is checked before it is stored.
+#[derive(Debug, Clone, Copy)]
+pub enum Validator {
+    Bool,
+    OneOf(&'static [&'static str]),
+    IntRange(i64, i64),
+    Text {
+        max: usize,
+    },
+    OptionalText {
+        max: usize,
+    },
+    /// A JSON object whose values are strings, booleans or string lists.
+    Map,
+    OptionalInt,
+}
+
+pub struct SettingSpec {
+    pub key: SettingKey,
+    pub default: fn() -> Value,
+    pub validator: Validator,
+    pub page: SettingsPage,
+    /// Words the Settings filter matches besides the label (F-SH-04 AC4).
+    pub keywords: &'static [&'static str],
+}
+
+macro_rules! spec {
+    ($key:ident, $default:expr, $validator:expr, $page:ident, [$($kw:literal),*]) => {
+        SettingSpec {
+            key: SettingKey::$key,
+            default: || $default,
+            validator: $validator,
+            page: SettingsPage::$page,
+            keywords: &[$($kw),*],
+        }
+    };
+}
+
+use Validator as V;
+
+const ACCESS: &[&str] = &["read", "edits", "full"];
+
+pub static SCHEMA: &[SettingSpec] = &[
+    spec!(
+        Theme,
+        json!("dark"),
+        V::OneOf(&["dark", "light", "system"]),
+        Appearance,
+        ["theme", "dark", "light"]
+    ),
+    spec!(
+        TerminalTheme,
+        json!("follow_app"),
+        V::OneOf(&["follow_app", "night", "day", "high_contrast"]),
+        Appearance,
+        ["terminal theme", "colors"]
+    ),
+    spec!(
+        TerminalsMatchTheme,
+        json!(true),
+        V::Bool,
+        Appearance,
+        ["terminal", "theme"]
+    ),
+    spec!(
+        InterfaceTextSize,
+        json!("default"),
+        V::OneOf(&["small", "default", "large"]),
+        Appearance,
+        ["text size", "font"]
+    ),
+    spec!(
+        Density,
+        json!("compact"),
+        V::OneOf(&["compact", "comfortable"]),
+        Appearance,
+        ["density", "rows"]
+    ),
+    spec!(
+        ShowStatusPreviews,
+        json!(true),
+        V::Bool,
+        Appearance,
+        ["dashboard", "preview"]
+    ),
+    spec!(
+        Language,
+        json!("en"),
+        V::OneOf(&["en"]),
+        General,
+        ["language"]
+    ),
+    spec!(
+        AutoSaveFiles,
+        json!(true),
+        V::Bool,
+        General,
+        ["save", "files"]
+    ),
+    spec!(
+        LaunchAtLogin,
+        json!(false),
+        V::Bool,
+        General,
+        ["login", "startup"]
+    ),
+    spec!(
+        KeepRunningInTray,
+        json!(false),
+        V::Bool,
+        General,
+        ["tray", "background"]
+    ),
+    spec!(
+        UpdateChannel,
+        json!("stable"),
+        V::OneOf(&["stable", "beta"]),
+        Updates,
+        ["channel", "beta"]
+    ),
+    spec!(
+        AutoCheckUpdates,
+        json!(true),
+        V::Bool,
+        Updates,
+        ["updates", "check"]
+    ),
+    spec!(
+        NotifySystem,
+        json!(true),
+        V::Bool,
+        Notifications,
+        ["system notifications"]
+    ),
+    spec!(NotifySound, json!(true), V::Bool, Notifications, ["sound"]),
+    spec!(
+        NotifySoundName,
+        json!("chime"),
+        V::OneOf(&["chime", "soft", "pop", "none"]),
+        Notifications,
+        ["sound"]
+    ),
+    spec!(
+        NotifyAttention,
+        json!(true),
+        V::Bool,
+        Notifications,
+        ["dock", "bounce", "flash", "taskbar"]
+    ),
+    spec!(NotifyTypes, json!({}), V::Map, Notifications, ["types"]),
+    spec!(
+        NotifyOnlyUnseen,
+        json!(true),
+        V::Bool,
+        Notifications,
+        ["background", "unfocused", "visible"]
+    ),
+    spec!(
+        DefaultShell,
+        json!(null),
+        V::OptionalText { max: 512 },
+        Terminal,
+        ["shell", "bash", "zsh", "powershell"]
+    ),
+    spec!(
+        WslDefaultDistro,
+        json!(null),
+        V::OptionalText { max: 128 },
+        Terminal,
+        ["wsl"]
+    ),
+    spec!(
+        TermFontFamily,
+        json!("JetBrains Mono"),
+        V::Text { max: 128 },
+        Appearance,
+        ["font", "terminal"]
+    ),
+    spec!(
+        TermFontSize,
+        json!(13),
+        V::IntRange(11, 18),
+        Appearance,
+        ["font size"]
+    ),
+    spec!(
+        TermCursorStyle,
+        json!("bar"),
+        V::OneOf(&["bar", "block", "underline"]),
+        Terminal,
+        ["cursor"]
+    ),
+    spec!(
+        TermCursorBlink,
+        json!(false),
+        V::Bool,
+        Terminal,
+        ["cursor", "blink"]
+    ),
+    spec!(
+        TermScrollback,
+        json!(10_000),
+        V::IntRange(1_000, 100_000),
+        Terminal,
+        ["scrollback", "history", "lines"]
+    ),
+    spec!(
+        TermCopyOnSelect,
+        json!(false),
+        V::Bool,
+        Terminal,
+        ["copy", "select"]
+    ),
+    spec!(
+        TermConfirmMultilinePaste,
+        json!(true),
+        V::Bool,
+        General,
+        ["paste", "multiple lines"]
+    ),
+    spec!(
+        TermOptionAsMeta,
+        json!(true),
+        V::Bool,
+        Terminal,
+        ["option", "meta", "alt"]
+    ),
+    spec!(
+        TermScreenReader,
+        json!(false),
+        V::Bool,
+        Terminal,
+        ["screen reader", "accessibility"]
+    ),
+    spec!(
+        TermShellIntegration,
+        json!({"bash": true, "zsh": true, "fish": true, "pwsh": true}),
+        V::Map,
+        Terminal,
+        ["shell integration"]
+    ),
+    spec!(
+        TermShortcutPriority,
+        json!("terminal"),
+        V::OneOf(&["terminal", "tandem"]),
+        Terminal,
+        ["shortcut priority"]
+    ),
+    spec!(
+        TermGpuRendering,
+        json!("auto"),
+        V::OneOf(&["auto", "off"]),
+        Terminal,
+        ["gpu", "webgl", "rendering"]
+    ),
+    spec!(
+        OpenLinksInTandem,
+        json!(true),
+        V::Bool,
+        General,
+        ["links", "browser"]
+    ),
+    spec!(
+        SearchEngine,
+        json!("duckduckgo"),
+        V::OneOf(&["duckduckgo", "google", "bing", "kagi"]),
+        General,
+        ["search"]
+    ),
+    spec!(
+        EngineExtraArgs,
+        json!({}),
+        V::Map,
+        Engines,
+        ["arguments", "flags"]
+    ),
+    spec!(
+        DefaultAccess,
+        json!("edits"),
+        V::OneOf(ACCESS),
+        Teammates,
+        ["access", "permissions"]
+    ),
+    spec!(
+        RoutineAccess,
+        json!("read"),
+        V::OneOf(&["read", "edits"]),
+        Teammates,
+        ["routine", "access"]
+    ),
+    spec!(
+        AllowTeammateSkills,
+        json!(true),
+        V::Bool,
+        Teammates,
+        ["skills"]
+    ),
+    spec!(
+        LearnAfterTurn,
+        json!(true),
+        V::Bool,
+        Teammates,
+        ["learn", "memory"]
+    ),
+    spec!(
+        PauseAllMail,
+        json!(false),
+        V::Bool,
+        Teammates,
+        ["mail", "pause"]
+    ),
+    spec!(
+        ResumeAgentsAutomatically,
+        json!(false),
+        V::Bool,
+        General,
+        ["resume", "restart"]
+    ),
+    spec!(
+        TrustWorkspacesIAdd,
+        json!(false),
+        V::Bool,
+        General,
+        ["trust"]
+    ),
+    spec!(
+        ExposeTasksToTerminalAgents,
+        json!(true),
+        V::Bool,
+        Teammates,
+        ["tasks", "mcp"]
+    ),
+    spec!(
+        ExposeAllPluginTools,
+        json!(false),
+        V::Bool,
+        Plugins,
+        ["tools"]
+    ),
+    spec!(
+        GrantPluginsToAllThreads,
+        json!(false),
+        V::Bool,
+        Plugins,
+        ["threads", "grant"]
+    ),
+    spec!(
+        PluginAskBeforeWrites,
+        json!(true),
+        V::Bool,
+        Plugins,
+        ["approve", "write"]
+    ),
+    spec!(
+        DictateEnabled,
+        json!(true),
+        V::Bool,
+        Dictate,
+        ["dictate", "voice"]
+    ),
+    spec!(
+        DictateHotkey,
+        json!(null),
+        V::OptionalText { max: 64 },
+        Dictate,
+        ["hotkey", "shortcut"]
+    ),
+    spec!(
+        DictateMode,
+        json!("hold"),
+        V::OneOf(&["hold", "toggle", "both"]),
+        Dictate,
+        ["hold", "hands-free"]
+    ),
+    spec!(
+        DictateEngine,
+        json!("local"),
+        V::OneOf(&["local", "cloud"]),
+        Dictate,
+        ["engine", "cloud"]
+    ),
+    spec!(
+        DictateModel,
+        json!(null),
+        V::OptionalText { max: 128 },
+        Dictate,
+        ["model", "whisper", "parakeet"]
+    ),
+    spec!(
+        DictateLanguage,
+        json!("auto"),
+        V::Text { max: 16 },
+        Dictate,
+        ["language"]
+    ),
+    spec!(
+        DictateMic,
+        json!(null),
+        V::OptionalText { max: 256 },
+        Dictate,
+        ["microphone", "mic"]
+    ),
+    spec!(
+        DictateBackupMic,
+        json!(null),
+        V::OptionalText { max: 256 },
+        Dictate,
+        ["backup microphone"]
+    ),
+    spec!(
+        DictateGain,
+        json!(100),
+        V::IntRange(25, 400),
+        Dictate,
+        ["gain", "volume"]
+    ),
+    spec!(
+        DictateWidgetVisibility,
+        json!("while_dictating"),
+        V::OneOf(&["always", "while_dictating", "never"]),
+        Dictate,
+        ["widget"]
+    ),
+    spec!(
+        DictateWidgetStyle,
+        json!("pill"),
+        V::OneOf(&["pill", "minimal"]),
+        Dictate,
+        ["widget style"]
+    ),
+    spec!(
+        DictateFollowCursor,
+        json!(false),
+        V::Bool,
+        Dictate,
+        ["follow cursor"]
+    ),
+    spec!(
+        DictateLockPosition,
+        json!(false),
+        V::Bool,
+        Dictate,
+        ["lock position"]
+    ),
+    spec!(
+        DictateSounds,
+        json!(true),
+        V::Bool,
+        Dictate,
+        ["sounds", "chime"]
+    ),
+    spec!(
+        DictatePauseMedia,
+        json!(false),
+        V::Bool,
+        Dictate,
+        ["pause media", "audio"]
+    ),
+    spec!(
+        DictateOutput,
+        json!("paste"),
+        V::OneOf(&["paste", "type", "clipboard"]),
+        Dictate,
+        ["output", "paste"]
+    ),
+    spec!(
+        DictateAutoEnhance,
+        json!(false),
+        V::Bool,
+        Dictate,
+        ["enhance", "polish"]
+    ),
+    spec!(
+        DictateFormatting,
+        json!(null),
+        V::OptionalText { max: 2_000 },
+        Dictate,
+        ["formatting", "instructions"]
+    ),
+    spec!(
+        DictateShareHints,
+        json!(false),
+        V::Bool,
+        Privacy,
+        ["dictionary hints", "cloud"]
+    ),
+    spec!(
+        ConductorName,
+        json!("Conductor"),
+        V::Text { max: 40 },
+        Conductor,
+        ["name"]
+    ),
+    spec!(
+        ConductorVoice,
+        json!("default"),
+        V::Text { max: 64 },
+        Conductor,
+        ["voice"]
+    ),
+    spec!(
+        ConductorTone,
+        json!("friendly"),
+        V::OneOf(&["friendly", "direct", "playful"]),
+        Conductor,
+        ["tone"]
+    ),
+    spec!(
+        ConductorVerbosity,
+        json!("brief"),
+        V::OneOf(&["brief", "normal", "detailed"]),
+        Conductor,
+        ["verbosity"]
+    ),
+    spec!(
+        ConductorSpeed,
+        json!(100),
+        V::IntRange(75, 150),
+        Conductor,
+        ["speed"]
+    ),
+    spec!(
+        ConductorAboutYou,
+        json!(null),
+        V::OptionalText { max: 2_000 },
+        Conductor,
+        ["about you"]
+    ),
+    spec!(
+        ConductorMemory,
+        json!(false),
+        V::Bool,
+        Conductor,
+        ["memory"]
+    ),
+    spec!(
+        ConductorReflection,
+        json!(false),
+        V::Bool,
+        Conductor,
+        ["reflection", "journal"]
+    ),
+    spec!(
+        ConductorWake,
+        json!(false),
+        V::Bool,
+        Conductor,
+        ["wake", "hey conductor"]
+    ),
+    spec!(
+        ConductorFloatingRing,
+        json!(false),
+        V::Bool,
+        Conductor,
+        ["floating", "ring"]
+    ),
+    spec!(
+        TelemetryUsage,
+        json!(false),
+        V::Bool,
+        Privacy,
+        ["usage statistics", "analytics", "telemetry"]
+    ),
+    spec!(
+        TelemetryCrash,
+        json!(false),
+        V::Bool,
+        Privacy,
+        ["crash reports"]
+    ),
+    spec!(
+        AutoConsent,
+        json!(false),
+        V::Bool,
+        Privacy,
+        ["auto", "terminal output"]
+    ),
+    spec!(AutoDontAsk, json!(false), V::Bool, Hidden, []),
+    spec!(
+        SendKey,
+        json!("enter"),
+        V::OneOf(&["enter", "mod_enter"]),
+        General,
+        ["send", "enter"]
+    ),
+    spec!(
+        ReduceMotion,
+        json!("system"),
+        V::OneOf(&["system", "on", "off"]),
+        Appearance,
+        ["motion", "animation"]
+    ),
+    spec!(
+        LogLevel,
+        json!("normal"),
+        V::OneOf(&["normal", "verbose"]),
+        Advanced,
+        ["log level", "verbose"]
+    ),
+    spec!(
+        PerfHud,
+        json!(false),
+        V::Bool,
+        Advanced,
+        ["performance", "hud", "fps"]
+    ),
+    spec!(
+        OrphanPolicy,
+        json!("ask"),
+        V::OneOf(&["ask", "always", "never"]),
+        Advanced,
+        ["orphaned processes"]
+    ),
+    spec!(
+        LastMode,
+        json!("code"),
+        V::OneOf(&["agent", "code", "thread"]),
+        Hidden,
+        []
+    ),
+    spec!(
+        SettingsLastPage,
+        json!("general"),
+        V::Text { max: 32 },
+        Hidden,
+        []
+    ),
+    spec!(
+        OnboardingStep,
+        json!(null),
+        V::OptionalText { max: 32 },
+        Hidden,
+        []
+    ),
+    spec!(OfflineStartedAt, json!(null), V::OptionalInt, Hidden, []),
+    // The Code rail's width (F-SH-03: 180–360 px, default 248). The Agent and
+    // Thread rails get their own keys with their lists.
+    spec!(RailWidth, json!(248), V::IntRange(180, 360), Hidden, []),
+];
+
+pub fn spec(key: SettingKey) -> &'static SettingSpec {
+    SCHEMA
+        .iter()
+        .find(|s| s.key == key)
+        .unwrap_or_else(|| panic!("setting {key:?} missing from SCHEMA"))
+}
+
+pub fn default_value(key: SettingKey) -> Value {
+    (spec(key).default)()
+}
+
+impl SettingKey {
+    /// The snake_case name stored in SQLite.
+    pub fn as_str(&self) -> String {
+        match serde_json::to_value(self) {
+            Ok(Value::String(s)) => s,
+            _ => format!("{self:?}"),
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<SettingKey> {
+        serde_json::from_value(Value::String(s.to_string())).ok()
     }
 }
 
-impl Settings {
-    pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
-        match key {
-            "theme" => {
-                self.theme = match value {
-                    "dark" => Theme::Dark,
-                    "light" => Theme::Light,
-                    _ => return Err(format!("unknown theme {value}")),
-                };
-            }
-            "telemetry_opt_in" => {
-                self.telemetry_opt_in = value == "true";
-            }
-            "reduce_motion" => {
-                self.reduce_motion = value == "true";
-            }
-            _ => return Err(format!("unknown setting {key}")),
-        }
-        Ok(())
-    }
+fn invalid(key: SettingKey, why: &str) -> CoreError {
+    CoreError::new(
+        "settings",
+        format!("{} {why}", key.as_str()),
+        "pick a value from the list",
+    )
+    .with_code(ErrorCode::Invalid)
+}
 
-    pub fn get(&self, key: &str) -> Option<String> {
-        match key {
-            "theme" => Some(
-                match self.theme {
-                    Theme::Dark => "dark",
-                    Theme::Light => "light",
-                }
-                .to_string(),
-            ),
-            "telemetry_opt_in" => Some(self.telemetry_opt_in.to_string()),
-            "reduce_motion" => Some(self.reduce_motion.to_string()),
-            _ => None,
+pub fn validate(key: SettingKey, v: &Value) -> Result<(), CoreError> {
+    match spec(key).validator {
+        Validator::Bool => v
+            .as_bool()
+            .map(|_| ())
+            .ok_or_else(|| invalid(key, "must be on or off")),
+        Validator::OneOf(options) => match v.as_str() {
+            Some(s) if options.contains(&s) => Ok(()),
+            _ => Err(invalid(key, "is not one of the allowed values")),
+        },
+        Validator::IntRange(min, max) => match v.as_i64() {
+            Some(n) if (min..=max).contains(&n) => Ok(()),
+            _ => Err(invalid(
+                key,
+                &format!("must be a whole number from {min} to {max}"),
+            )),
+        },
+        Validator::Text { max } => match v.as_str() {
+            Some(s) if !s.is_empty() && s.chars().count() <= max => Ok(()),
+            _ => Err(invalid(
+                key,
+                &format!("must be text up to {max} characters"),
+            )),
+        },
+        Validator::OptionalText { max } => match v {
+            Value::Null => Ok(()),
+            Value::String(s) if s.chars().count() <= max => Ok(()),
+            _ => Err(invalid(
+                key,
+                &format!("must be empty or text up to {max} characters"),
+            )),
+        },
+        Validator::Map => match v.as_object() {
+            Some(map)
+                if map.values().all(|x| {
+                    x.is_string()
+                        || x.is_boolean()
+                        || x.as_array().is_some_and(|a| a.iter().all(Value::is_string))
+                }) =>
+            {
+                Ok(())
+            }
+            _ => Err(invalid(key, "must be a map")),
+        },
+        Validator::OptionalInt => match v {
+            Value::Null => Ok(()),
+            v if v.is_i64() => Ok(()),
+            _ => Err(invalid(key, "must be empty or a number")),
+        },
+    }
+}
+
+/// A value in a type that satisfies the key's validator but differs from the
+/// default. Used by round-trip tests.
+pub fn sample_non_default(key: SettingKey) -> Value {
+    let default = default_value(key);
+    match spec(key).validator {
+        Validator::Bool => json!(!default.as_bool().unwrap_or(false)),
+        Validator::OneOf(options) => {
+            let pick = options
+                .iter()
+                .find(|o| Some(**o) != default.as_str())
+                .unwrap_or(&options[0]);
+            json!(pick)
         }
+        Validator::IntRange(min, max) => {
+            let d = default.as_i64().unwrap_or(min);
+            json!(if d == max { min } else { d + 1 })
+        }
+        Validator::Text { .. } => json!("Sample"),
+        Validator::OptionalText { .. } => json!("sample"),
+        Validator::Map => json!({"sample": true}),
+        Validator::OptionalInt => json!(1_700_000_000_000_i64),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
-    fn defaults_are_private() {
-        let settings = Settings::default();
-        assert_eq!(settings.theme, Theme::Dark);
-        assert!(!settings.telemetry_opt_in);
+    fn every_key_has_one_spec_with_a_valid_default() {
+        let mut seen = HashSet::new();
+        for s in SCHEMA {
+            assert!(seen.insert(s.key), "duplicate {:?}", s.key);
+            validate(s.key, &(s.default)()).unwrap_or_else(|e| panic!("{:?}: {e}", s.key));
+            let sample = sample_non_default(s.key);
+            validate(s.key, &sample).unwrap_or_else(|e| panic!("{:?} sample: {e}", s.key));
+            assert_eq!(SettingKey::parse(&s.key.as_str()), Some(s.key));
+        }
+        assert_eq!(seen.len(), SCHEMA.len());
+        assert_eq!(
+            SettingKey::ALL.len(),
+            SCHEMA.len(),
+            "every key needs a spec"
+        );
+    }
+
+    #[test]
+    fn validators_reject_out_of_range_values() {
+        assert!(validate(SettingKey::TermScrollback, &json!(999)).is_err());
+        assert!(validate(SettingKey::TermScrollback, &json!(100_001)).is_err());
+        assert!(validate(SettingKey::TermScrollback, &json!(5_000)).is_ok());
+        assert!(validate(SettingKey::Theme, &json!("pink")).is_err());
+        assert!(validate(SettingKey::DefaultAccess, &json!("full")).is_ok());
+        assert!(validate(SettingKey::RoutineAccess, &json!("full")).is_err());
+    }
+
+    #[test]
+    fn privacy_toggles_default_off() {
+        for key in [
+            SettingKey::TelemetryUsage,
+            SettingKey::TelemetryCrash,
+            SettingKey::AutoConsent,
+            SettingKey::DictateShareHints,
+        ] {
+            assert_eq!(default_value(key), json!(false), "{key:?}");
+        }
     }
 }

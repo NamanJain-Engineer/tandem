@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-test-fixture-agent"
+description = "Enables the test_fixture_agent command without any pre-configured scope."
+commands.allow = ["test_fixture_agent"]
+
+[[permission]]
+identifier = "deny-test-fixture-agent"
+description = "Denies the test_fixture_agent command without any pre-configured scope."
+commands.deny = ["test_fixture_agent"]

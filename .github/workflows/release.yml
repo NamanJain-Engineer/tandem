@@ -1,0 +1,279 @@
+name: Release
+
+# Tags `v*` build every platform (ARCHITECTURE §17.4, F-TL-04). Each signing
+# step runs only when its secrets exist; otherwise the artifact is renamed
+# `-unsigned` and the job summary says what's missing. A fork without
+# secrets still produces unsigned artifacts and doesn't fail (AC1).
+# `bash scripts/release-local.sh --dry-run` reproduces the Linux path.
+
+#
+# Early access (D-105): push a tag `v<version>-early-access`, or run by hand
+# with channel `early-access` (a manual run needs this file on the default
+# branch; a tag doesn't). Builds are compiled with TANDEM_HOSTED=0 (no
+# accounts, no API calls, the Free plan locally) and published as a
+# prerelease in the public NamanJain-Engineer/tandem-releases repository,
+# which needs the RELEASES_TOKEN secret (contents: write on that repository
+# only). The verify job checks the secret before anything is built.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "early-access: public prerelease in tandem-releases; stable: draft release here"
+        type: choice
+        options: [early-access, stable]
+        default: early-access
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || (endsWith(github.ref_name, '-early-access') && 'early-access' || 'stable') }}
+  RELEASES_REPO: NamanJain-Engineer/tandem-releases
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        name: One version everywhere, a changelog section, pinned models
+        shell: bash
+        env:
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          if [ "$CHANNEL" = "early-access" ] && [ -z "$RELEASES_TOKEN" ]; then
+            echo "::error::early access publishes to $RELEASES_REPO and needs the RELEASES_TOKEN secret (fine-grained token, contents: write on that repository)"; exit 1
+          fi
+          version="$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")"
+          pkg="$(node -p "require('./apps/desktop/package.json').version")"
+          cargo_v="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          tag="${GITHUB_REF_NAME#v}"
+          tag="${tag%-early-access}"
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$tag" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME doesn't match tauri.conf.json $version"; exit 1
+          fi
+          if [ "$version" != "$pkg" ] || [ "$version" != "$cargo_v" ]; then
+            echo "::error::version mismatch: tauri.conf.json $version, package.json $pkg, Cargo.toml $cargo_v"; exit 1
+          fi
+          grep -q "^## $version\b" CHANGELOG.md || { echo "::error::CHANGELOG.md has no '## $version' section"; exit 1; }
+          # Unpinned models matter once the app can download them (Dictate).
+          if grep -q 'tandem-voice' apps/desktop/src-tauri/Cargo.toml && grep -q '"TBD"' crates/tandem-voice/models/catalog.json; then
+            echo "::error::model sha256 values are still TBD (scripts/pin-models.ts)"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  # Notices and SBOMs once; every build embeds the same notices (About › Licenses).
+  notices:
+    needs: verify
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with: { tool: "cargo-about,cargo-cyclonedx" }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tsx scripts/gen-notices.ts --out dist --resources
+      - name: SBOMs (CycloneDX 1.5)
+        run: |
+          cargo cyclonedx --format json --spec-version 1.5 --override-filename tandem-rust.cdx
+          mv apps/desktop/src-tauri/tandem-rust.cdx.json dist/
+          pnpm tsx scripts/gen-sbom-npm.ts --out dist/tandem-npm.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notices
+          path: |
+            dist/THIRD_PARTY_NOTICES.md
+            dist/*.cdx.json
+
+  build:
+    needs: notices
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macos, os: macos-14, target: universal-apple-darwin, bundles: "app,dmg" }
+          - { name: windows, os: windows-2022, target: x86_64-pc-windows-msvc, bundles: "nsis,msi" }
+          # Tauri 2 needs webkit2gtk-4.1: ubuntu-22.04 (glibc 2.35) is the
+          # oldest image that ships it (Debian bullseye doesn't).
+          - { name: linux, os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, bundles: "appimage,deb" }
+    runs-on: ${{ matrix.os }}
+    env:
+      # Early-access builds have no hosted service (D-105).
+      # (job-level env can't read the workflow's env context)
+      TANDEM_HOSTED: ${{ ((github.event_name == 'workflow_dispatch' && inputs.channel == 'early-access') || endsWith(github.ref_name, '-early-access')) && '0' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.name == 'macos' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - if: matrix.name == 'linux'
+        name: Linux build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libxdo-dev libdbus-1-dev patchelf
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with: { name: notices, path: dist }
+      - name: Embed the notices
+        shell: bash
+        run: cp dist/THIRD_PARTY_NOTICES.md apps/desktop/src-tauri/resources/THIRD_PARTY_NOTICES.md
+
+      - id: secrets
+        name: Which signing secrets exist
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          on() { [ -n "$1" ] && echo true || echo false; }
+          echo "apple=$(on "$APPLE_CERTIFICATE$APPLE_ID")" >> "$GITHUB_OUTPUT"
+          echo "azure=$(on "$AZURE_CLIENT_ID")" >> "$GITHUB_OUTPUT"
+          echo "gpg=$(on "$LINUX_GPG_PRIVATE_KEY")" >> "$GITHUB_OUTPUT"
+          echo "updater=$(on "$TAURI_SIGNING_PRIVATE_KEY")" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        uses: tauri-apps/tauri-action@v0
+        env:
+          # Release builds trust only this updater key (F-SH-06).
+          TAURI_SIGNING_PUBLIC_KEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ steps.secrets.outputs.apple == 'true' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ steps.secrets.outputs.apple == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ steps.secrets.outputs.apple == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ steps.secrets.outputs.apple == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ steps.secrets.outputs.apple == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ steps.secrets.outputs.apple == 'true' && secrets.APPLE_TEAM_ID || '' }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        with:
+          projectPath: apps/desktop
+          tauriScript: pnpm tauri
+          # Updater artifacts (.sig) only with the key; Trusted Signing only
+          # with Azure credentials.
+          args: >-
+            --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+            ${{ steps.secrets.outputs.updater == 'true' && '--config {"bundle":{"createUpdaterArtifacts":true}}' || '' }}
+            ${{ matrix.name == 'macos' && steps.secrets.outputs.apple != 'true' && '--config {"bundle":{"macOS":{"signingIdentity":"-"}}}' || '' }}
+            ${{ matrix.name == 'windows' && steps.secrets.outputs.azure == 'true' && format('--config {{"bundle":{{"windows":{{"signCommand":"trusted-signing-cli -e {0} -a {1} -c {2} %1"}}}}}}', secrets.AZURE_SIGNING_ENDPOINT, secrets.AZURE_SIGNING_ACCOUNT, secrets.AZURE_CERT_PROFILE) || '' }}
+
+      - if: matrix.name == 'linux' && steps.secrets.outputs.gpg == 'true'
+        name: Sign the AppImage (detached) and the deb
+        shell: bash
+        env:
+          LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
+          LINUX_GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
+        run: |
+          echo "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
+          sudo apt-get install -y dpkg-sig
+          for f in target/${{ matrix.target }}/release/bundle/appimage/*.AppImage; do
+            gpg --batch --pinentry-mode loopback --passphrase "$LINUX_GPG_PASSPHRASE" --armor --detach-sign "$f"
+          done
+          dpkg-sig --sign builder -g "--batch --pinentry-mode loopback --passphrase $LINUX_GPG_PASSPHRASE" target/${{ matrix.target }}/release/bundle/deb/*.deb
+
+      - name: Collect, marking what's unsigned
+        shell: bash
+        run: |
+          mkdir -p out
+          bundle="target/${{ matrix.target }}/release/bundle"
+          case "${{ matrix.name }}" in
+            macos) signed="${{ steps.secrets.outputs.apple }}"; what="code signing and notarization (APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID)"; files="$bundle/dmg/*.dmg $bundle/macos/*.app.tar.gz*" ;;
+            windows) signed="${{ steps.secrets.outputs.azure }}"; what="Authenticode via Azure Trusted Signing (AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT, AZURE_CERT_PROFILE)"; files="$bundle/nsis/*.exe* $bundle/msi/*.msi*" ;;
+            linux) signed="${{ steps.secrets.outputs.gpg }}"; what="GPG (LINUX_GPG_PRIVATE_KEY, LINUX_GPG_PASSPHRASE)"; files="$bundle/appimage/*.AppImage* $bundle/deb/*.deb" ;;
+          esac
+          suffix=""
+          if [ "$signed" != "true" ]; then
+            suffix="-unsigned"
+            echo "- unsigned: ${{ matrix.name }} artifacts, missing $what" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- signed: ${{ matrix.name }}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ "${{ steps.secrets.outputs.updater }}" != "true" ]; then
+            echo "- ${{ matrix.name }}: no update artifacts (missing TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          for f in $files; do
+            [ -e "$f" ] || continue
+            name="$(basename "$f")"
+            case "$name" in
+              *.sig|*.asc) cp "$f" out/ ;;
+              *) base="${name%.*}"; ext="${name##*.}"; cp "$f" "out/$base$suffix.$ext" ;;
+            esac
+          done
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.name }}
+          path: out/*
+
+  publish:
+    needs: [verify, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts }
+      - name: Assemble the release
+        id: files
+        shell: bash
+        env:
+          RELEASE_API_TOKEN: ${{ secrets.RELEASE_API_TOKEN }}
+        run: |
+          mkdir -p release
+          find artifacts -type f -exec cp {} release/ \;
+          (cd release && sha256sum -- * > SHA256SUMS)
+          echo "- notices, SBOMs and SHA256SUMS attached" >> "$GITHUB_STEP_SUMMARY"
+          if ! ls release/*.sig >/dev/null 2>&1; then
+            echo "- no latest.json: no updater signatures (TAURI_SIGNING_PRIVATE_KEY)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -z "$RELEASE_API_TOKEN" ]; then
+            echo "- not registered with the update API (missing RELEASE_API_TOKEN)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - if: env.CHANNEL == 'early-access'
+        name: Release notes
+        shell: bash
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          {
+            echo "Early-access build of Tandem $VERSION for macOS, Windows and Linux."
+            echo
+            echo "- The Free plan runs on your computer. No account is needed, and the app doesn't contact our servers."
+            echo "- These builds aren't code-signed yet. Install steps for each OS: https://vibezeo.com/download/"
+            echo "- Check a download against SHA256SUMS."
+            echo
+            awk -v v="$VERSION" '$0 ~ "^## "v"( |$)" {on=1; next} /^## / && on {exit} on' CHANGELOG.md
+          } > release-notes.md
+      - if: env.CHANNEL == 'early-access'
+        name: Publish the early-access prerelease (public)
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ env.RELEASES_REPO }}
+          token: ${{ secrets.RELEASES_TOKEN }}
+          prerelease: true
+          tag_name: v${{ needs.verify.outputs.version }}-early-access
+          name: Tandem ${{ needs.verify.outputs.version }} (early access)
+          body_path: release-notes.md
+          files: release/*
+      - if: env.CHANNEL != 'early-access'
+        name: Draft GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.verify.outputs.version) }}
+          name: Tandem ${{ needs.verify.outputs.version }}
+          files: release/*

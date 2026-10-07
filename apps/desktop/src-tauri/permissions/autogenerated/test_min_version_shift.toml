@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-test-min-version-shift"
+description = "Enables the test_min_version_shift command without any pre-configured scope."
+commands.allow = ["test_min_version_shift"]
+
+[[permission]]
+identifier = "deny-test-min-version-shift"
+description = "Denies the test_min_version_shift command without any pre-configured scope."
+commands.deny = ["test_min_version_shift"]

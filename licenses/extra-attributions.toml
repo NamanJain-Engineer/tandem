@@ -1,0 +1,69 @@
+# Attributions THIRD_PARTY_NOTICES.md needs beyond the Cargo and npm license
+# data (F-TL-04 AC2): downloaded models, bundled fonts, and the system
+# libraries the Linux AppImage ships (LGPL: their licence text and the right
+# to replace them are part of the notice). scripts/gen-notices.ts reads this
+# file and crates/tandem-voice/models/catalog.json; it fails when a model in
+# the catalog has no entry here.
+
+[[model]]
+id = "parakeet-tdt-0.6b-v3-int8"
+name = "NVIDIA Parakeet TDT 0.6B v3 (ONNX int8)"
+license = "CC-BY-4.0"
+
+[[model]]
+id = "whisper-large-v3-turbo-q5_0"
+name = "OpenAI Whisper large-v3-turbo (GGML q5_0)"
+license = "MIT"
+
+[[model]]
+id = "whisper-base.en"
+name = "OpenAI Whisper base.en (GGML)"
+license = "MIT"
+
+[[model]]
+id = "distil-whisper-large-v3.5"
+name = "Distil-Whisper large-v3.5 (GGML)"
+license = "MIT"
+
+[[font]]
+name = "Inter"
+license = "OFL-1.1"
+copyright = "Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)"
+package = "@fontsource-variable/inter"
+
+[[font]]
+name = "JetBrains Mono"
+license = "OFL-1.1"
+copyright = "Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)"
+package = "@fontsource-variable/jetbrains-mono"
+
+# Linux AppImage only: libraries bundled from the build image.
+[[bundled]]
+name = "WebKitGTK"
+license = "LGPL-2.1-or-later"
+url = "https://webkitgtk.org"
+platforms = ["linux-appimage"]
+
+[[bundled]]
+name = "GTK 3"
+license = "LGPL-2.1-or-later"
+url = "https://gtk.org"
+platforms = ["linux-appimage"]
+
+[[bundled]]
+name = "GLib"
+license = "LGPL-2.1-or-later"
+url = "https://gitlab.gnome.org/GNOME/glib"
+platforms = ["linux-appimage"]
+
+[[bundled]]
+name = "libsoup 3"
+license = "LGPL-2.1-or-later"
+url = "https://gitlab.gnome.org/GNOME/libsoup"
+platforms = ["linux-appimage"]
+
+[[bundled]]
+name = "GStreamer"
+license = "LGPL-2.1-or-later"
+url = "https://gstreamer.freedesktop.org"
+platforms = ["linux-appimage"]

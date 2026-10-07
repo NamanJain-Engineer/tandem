@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-updates-check-now"
+description = "Enables the updates_check_now command without any pre-configured scope."
+commands.allow = ["updates_check_now"]
+
+[[permission]]
+identifier = "deny-updates-check-now"
+description = "Denies the updates_check_now command without any pre-configured scope."
+commands.deny = ["updates_check_now"]

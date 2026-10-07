@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pty-type-prompt"
+description = "Enables the pty_type_prompt command without any pre-configured scope."
+commands.allow = ["pty_type_prompt"]
+
+[[permission]]
+identifier = "deny-pty-type-prompt"
+description = "Denies the pty_type_prompt command without any pre-configured scope."
+commands.deny = ["pty_type_prompt"]

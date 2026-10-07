@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-redact-text"
+description = "Enables the redact_text command without any pre-configured scope."
+commands.allow = ["redact_text"]
+
+[[permission]]
+identifier = "deny-redact-text"
+description = "Denies the redact_text command without any pre-configured scope."
+commands.deny = ["redact_text"]

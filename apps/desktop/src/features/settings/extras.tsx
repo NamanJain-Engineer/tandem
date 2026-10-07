@@ -1,0 +1,134 @@
+import { useEffect, useState } from "react";
+import { Button, Dialog, KeyValue, SettingsGroup, useToast } from "@tandem/ui";
+import { t } from "../../i18n";
+import { invoke } from "../../ipc/invoke";
+import { useSetting } from "../../stores/settings";
+import { copyDiagnostics } from "../shell/actions";
+import { useBoot } from "../shell/useBoot";
+
+/** "What leaves this machine" (F-TL-07): rows update when toggles change. */
+export function PrivacyFlows() {
+  const usage = useSetting("telemetry_usage", false);
+  const crash = useSetting("telemetry_crash", false);
+  const auto = useSetting("auto_consent", false);
+  const hints = useSetting("dictate_share_hints", false);
+  const rows = [
+    {
+      feature: t("settings.flows.usage"),
+      on: usage,
+      sends: t("settings.flows.usage.sends"),
+      where: t("settings.flows.usage.where"),
+    },
+    {
+      feature: t("settings.flows.crash"),
+      on: crash,
+      sends: t("settings.flows.crash.sends"),
+      where: t("settings.flows.crash.where"),
+    },
+    {
+      feature: t("settings.flows.auto"),
+      on: auto,
+      sends: t("settings.flows.auto.sends"),
+      where: t("settings.flows.auto.where"),
+    },
+    {
+      feature: t("settings.flows.hints"),
+      on: hints,
+      sends: t("settings.flows.hints.sends"),
+      where: t("settings.flows.hints.where"),
+    },
+  ];
+  return (
+    <section className="flex flex-col gap-1.5">
+      <h2 className="px-3 text-2xs font-semibold uppercase tracking-caps text-fg-subtle">
+        {t("settings.flows")}
+      </h2>
+      <div className="overflow-hidden rounded-md border border-border bg-surface-2">
+        <table className="w-full text-left text-sm">
+          <thead className="text-fg-subtle">
+            <tr>
+              <th className="px-3 py-2 font-medium">{t("settings.flows.feature")}</th>
+              <th className="px-3 py-2 font-medium">{t("settings.flows.status")}</th>
+              <th className="px-3 py-2 font-medium">{t("settings.flows.sends")}</th>
+              <th className="px-3 py-2 font-medium">{t("settings.flows.where")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.feature} className="border-t border-divider">
+                <td className="px-3 py-2 text-fg">{r.feature}</td>
+                <td className={r.on ? "px-3 py-2 text-fg" : "px-3 py-2 text-fg-muted"}>
+                  {r.on ? t("settings.flows.on") : t("settings.flows.off")}
+                </td>
+                <td className="px-3 py-2 text-fg-muted">{r.sends}</td>
+                <td className="px-3 py-2 text-fg-muted">{r.where}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+/** UI-116 actions: diagnostics, logs, data folder, version, dev links. */
+/** About › Licenses (F-TL-04 AC2): the notices this build carries. */
+function LicensesDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open || text !== null) return;
+    void invoke<string>("app_licenses")
+      .then(setText)
+      .catch(() => setText(""));
+  }, [open, text]);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} title={t("settings.licenses")} size="lg">
+      <pre
+        data-testid="licenses-text"
+        tabIndex={0}
+        className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-sm bg-surface-1 p-3 font-mono text-xs text-fg focus-visible:shadow-focus focus-visible:outline-none"
+      >
+        {text ?? t("settings.licensesLoading")}
+      </pre>
+    </Dialog>
+  );
+}
+
+export function AdvancedExtras() {
+  const boot = useBoot((s) => s.boot);
+  const { show } = useToast();
+  const [licenses, setLicenses] = useState(false);
+  return (
+    <SettingsGroup>
+      <LicensesDialog open={licenses} onOpenChange={setLicenses} />
+      <div className="flex flex-col gap-4 p-3">
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => void copyDiagnostics(show)}>{t("settings.copyDiagnostics")}</Button>
+          <Button data-testid="open-licenses" onClick={() => setLicenses(true)}>
+            {t("settings.licenses")}
+          </Button>
+          <Button onClick={() => invoke("app_open_logs_folder").catch(() => undefined)}>
+            {t("settings.openLogs")}
+          </Button>
+          {boot?.dev && (
+            <Button variant="ghost" onClick={() => (window.location.hash = "#/__gallery")}>
+              {t("settings.gallery")}
+            </Button>
+          )}
+        </div>
+        <KeyValue
+          items={[
+            {
+              key: t("settings.dataFolder"),
+              value: <code className="font-mono text-sm">{boot?.dataDirDisplay ?? ""}</code>,
+            },
+            {
+              key: t("settings.version"),
+              value: t("settings.versionValue", { version: boot?.version ?? "", build: boot?.build ?? "" }),
+            },
+          ]}
+        />
+      </div>
+    </SettingsGroup>
+  );
+}

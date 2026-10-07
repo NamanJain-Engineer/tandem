@@ -1,0 +1,14 @@
+{
+  "id": "evt_fixture_sub_created_{{USER_ID}}",
+  "type": "customer.subscription.created",
+  "data": {
+    "object": {
+      "id": "{{SUBSCRIPTION}}",
+      "customer": "{{CUSTOMER}}",
+      "status": "active",
+      "cancel_at_period_end": false,
+      "metadata": { "owner_kind": "user", "owner_id": "{{USER_ID}}", "plan": "pro", "interval": "month" },
+      "items": { "data": [{ "quantity": 1, "current_period_start": {{NOW}}, "current_period_end": {{NOW_PLUS_30D}} }] }
+    }
+  }
+}

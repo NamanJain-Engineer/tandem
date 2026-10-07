@@ -1,0 +1,19 @@
+#!/bin/sh
+# A stand-in for the `claude` CLI in tests (MILESTONES M3 mocks). It turns on
+# bracketed paste like a TUI, logs every line it receives to
+# $TANDEM_FAKE_ENGINE_LOG when set, answers each line, and leaves on /exit.
+printf '\033[?2004h'
+printf 'Fake Claude Code (test engine)\r\n'
+printf 'cwd: %s\r\n' "$(pwd)"
+while IFS= read -r line; do
+  [ -n "$TANDEM_FAKE_ENGINE_LOG" ] && printf '%s\n' "$line" >> "$TANDEM_FAKE_ENGINE_LOG"
+  case "$line" in
+    */exit*)
+      printf '\033[?2004l'
+      printf 'Goodbye from the test engine\r\n'
+      exit 0
+      ;;
+    *) printf 'you said: %s\r\n' "$line" ;;
+  esac
+done
+printf '\033[?2004l'

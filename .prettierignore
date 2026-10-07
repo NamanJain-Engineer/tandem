@@ -1,0 +1,9 @@
+build-kit/
+target/
+dist/
+.next/
+pnpm-lock.yaml
+packages/protocol/src/generated/
+**/src-tauri/gen/
+**/*.md
+packages/ui/src/styles/tokens.css

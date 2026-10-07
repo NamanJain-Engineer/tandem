@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/tandem-core", "crates/tandem-engine", "crates/tandem-store"]
+members = ["crates/*", "apps/desktop/src-tauri"]
 
 [workspace.package]
 edition = "2021"
@@ -9,14 +9,70 @@ version = "0.1.0"
 publish = false
 
 [workspace.dependencies]
-thiserror = "2"
-chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-tokio = { version = "1", features = ["sync", "rt", "macros"] }
+tandem-core = { path = "crates/tandem-core" }
+tandem-store = { path = "crates/tandem-store" }
+tandem-pty = { path = "crates/tandem-pty" }
+tandem-engines = { path = "crates/tandem-engines" }
+tandem-git = { path = "crates/tandem-git" }
+tandem-gateway = { path = "crates/tandem-gateway" }
+tandem-tasks = { path = "crates/tandem-tasks" }
+tandem-routines = { path = "crates/tandem-routines" }
+tandem-voice = { path = "crates/tandem-voice" }
+tandem-host = { path = "crates/tandem-host" }
+
+aes-gcm = "0.10"
+aho-corasick = "1"
+anyhow = "1"
+async-trait = "0.1"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+dashmap = "6"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+futures = "0.3"
+# No network transports: reads only; the git CLI does fetch/push (ARCHITECTURE §7).
+git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
+hex = "0.4"
+hmac = "0.12"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
+parking_lot = "0.12"
+portable-pty = "0.9"
+rand = "0.8"
 regex = "1"
-unicode-normalization = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1", features = ["sync", "rt", "rt-multi-thread", "macros", "time", "process", "io-util", "fs", "net"] }
+toml_edit = "0.25"
 tracing = "0.1"
-uuid = { version = "1", features = ["v4"] }
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "registry"] }
+ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
+ulid = "1"
+url = "2"
+vte = "0.15"
+unicode-normalization = "0.1"
+zeroize = "1"
 
 [workspace.lints.clippy]
 unwrap_used = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+# `pnpm --filter desktop perf`: release optimisations with the debug-only
+# test harness (cfg!(debug_assertions)) still compiled in, so the suites can
+# read the app's counters. Never shipped.
+[profile.perf]
+inherits = "release"
+debug-assertions = true
+lto = false
+codegen-units = 16
+strip = "none"

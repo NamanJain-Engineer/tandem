@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pane-close"
+description = "Enables the pane_close command without any pre-configured scope."
+commands.allow = ["pane_close"]
+
+[[permission]]
+identifier = "deny-pane-close"
+description = "Denies the pane_close command without any pre-configured scope."
+commands.deny = ["pane_close"]

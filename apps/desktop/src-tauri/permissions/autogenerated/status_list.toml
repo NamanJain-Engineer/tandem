@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-status-list"
+description = "Enables the status_list command without any pre-configured scope."
+commands.allow = ["status_list"]
+
+[[permission]]
+identifier = "deny-status-list"
+description = "Denies the status_list command without any pre-configured scope."
+commands.deny = ["status_list"]

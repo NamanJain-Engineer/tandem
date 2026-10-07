@@ -1,75 +1,74 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { z } from "zod";
-import type { Health } from "@tandem/protocol";
-import { logger } from "./log";
-import { problem } from "./problem";
-import { redactHeaders, redactText } from "./redact";
-import { MemorySyncRepo } from "./sync/memory";
-import { syncRoutes } from "./sync/routes";
-import type { SyncRepo } from "./sync/types";
+import type { Deps } from "./deps";
+import { testRoutesEnabled } from "./env";
+import { logger } from "./lib/logger";
+import { ApiError, problemResponse } from "./lib/problem";
+import { redactText } from "./lib/redact";
+import { resolveUser } from "./middleware/auth";
+import type { AppEnv } from "./middleware/context";
+import { csrf } from "./middleware/csrf";
+import { minVersion } from "./middleware/minVersion";
+import { authSpikeMonitor, ipRateLimit } from "./middleware/rateLimit";
+import { requestContext } from "./middleware/requestContext";
+import { turnstile } from "./middleware/turnstile";
+import { aiRoutes } from "./routes/ai";
+import { billingRoutes } from "./routes/billing";
+import { configRoutes } from "./routes/config";
+import { creditsRoutes } from "./routes/credits";
+import { desktopAuthRoutes } from "./routes/desktopAuth";
+import { health } from "./routes/health";
+import { meRoutes } from "./routes/me";
+import { testRoutes } from "./routes/testRoutes";
+import { webhookRoutes } from "./routes/webhooks";
 
-const VERSION = "0.1.0";
+/**
+ * Builds the API. Middleware order follows ARCHITECTURE §14.1: request id and
+ * client headers → access log → problems → rate limit → auth → route guards.
+ */
+export function createApp(deps: Deps) {
+  const app = new Hono<AppEnv>();
 
-const healthSchema = z.object({
-  ok: z.literal(true),
-  version: z.string(),
-});
-
-type Variables = {
-  requestId: string;
-};
-
-type AppDeps = {
-  sync?: SyncRepo;
-};
-
-export function createApp(deps: AppDeps = {}) {
-  const sync = deps.sync ?? new MemorySyncRepo();
-  const app = new Hono<{ Variables: Variables }>();
-
+  app.use("*", requestContext);
+  app.use("*", minVersion(deps));
   app.use(
     "*",
     bodyLimit({
       maxSize: 1024 * 1024,
-      onError: (c) => c.json(problem(413, "Payload Too Large", "Request body exceeds 1 MB."), 413),
+      onError: (c) =>
+        problemResponse(
+          c,
+          new ApiError(413, "PAYLOAD_TOO_LARGE", "Payload Too Large", "The request body is over 1 MB."),
+        ),
     }),
   );
+  app.use("*", resolveUser(deps));
+  app.use("*", authSpikeMonitor(deps));
+  app.use("*", ipRateLimit(deps));
+  app.use("*", csrf(deps.env.WEB_PUBLIC_URL.startsWith("https://")));
+  app.use("*", turnstile(deps));
 
-  app.use("*", async (c, next) => {
-    const requestId = c.req.header("x-request-id") ?? crypto.randomUUID();
-    c.set("requestId", requestId);
-    c.header("x-request-id", requestId);
-    const started = Date.now();
-    await next();
-    logger.info({
-      requestId,
-      method: c.req.method,
-      path: c.req.path,
-      status: c.res.status,
-      ms: Date.now() - started,
-      client: {
-        app: c.req.header("x-tandem-app"),
-        version: c.req.header("x-tandem-version"),
-        platform: c.req.header("x-tandem-platform"),
-      },
-      headers: redactHeaders(c.req.raw.headers),
-    });
-  });
+  app.route("/v1/health", health);
+  app.route("/v1/config", configRoutes(deps));
+  app.route("/v1/auth/desktop", desktopAuthRoutes(deps));
+  app.on(["GET", "POST"], "/v1/auth/*", (c) => deps.auth.handler(c.req.raw));
+  app.route("/v1/me", meRoutes(deps));
+  app.route("/v1/credits", creditsRoutes(deps));
+  app.route("/v1/billing", billingRoutes(deps));
+  app.route("/v1/ai", aiRoutes(deps));
+  app.route("/v1/webhooks", webhookRoutes(deps));
+  if (testRoutesEnabled(deps.env)) app.route("/__test", testRoutes(deps));
 
-  app.get("/v1/health", (c) => {
-    const body: Health = { ok: true, version: VERSION };
-    const parsed = healthSchema.parse(body);
-    return c.json(parsed);
-  });
-
-  app.route("/v1/sync/events", syncRoutes(sync));
-
-  app.notFound((c) => c.json(problem(404, "Not Found", `${c.req.method} ${c.req.path} was not found`), 404));
-
+  app.notFound((c) =>
+    problemResponse(
+      c,
+      new ApiError(404, "NOT_FOUND", "Not Found", `${c.req.method} ${c.req.path} was not found.`),
+    ),
+  );
   app.onError((err, c) => {
-    logger.error({ requestId: c.get("requestId"), err: redactText(err.message) });
-    return c.json(problem(500, "Internal Server Error", "The request failed."), 500);
+    if (err instanceof ApiError) return problemResponse(c, err);
+    logger.error({ requestId: c.get("requestId"), err: redactText(err.message) }, "unhandled error");
+    return problemResponse(c, new ApiError(500, "INTERNAL", "Internal Server Error", "The request failed."));
   });
 
   return app;

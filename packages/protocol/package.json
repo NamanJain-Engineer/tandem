@@ -4,11 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./plans": "./src/plans.ts",
+    "./client": "./src/client.ts",
+    "./shortcuts.json": "./shortcuts.json"
   },
   "scripts": {
     "test": "vitest run",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit && eslint ."
   },
   "devDependencies": {
     "typescript": "~5.8.3",

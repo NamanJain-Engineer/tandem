@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-restore-auto-resume"
+description = "Enables the restore_auto_resume command without any pre-configured scope."
+commands.allow = ["restore_auto_resume"]
+
+[[permission]]
+identifier = "deny-restore-auto-resume"
+description = "Denies the restore_auto_resume command without any pre-configured scope."
+commands.deny = ["restore_auto_resume"]

@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# Reproduces the release workflow's no-secrets path locally (F-TL-04 AC1,
+# ARCHITECTURE §17.4): verify, build the Linux bundles, mark them unsigned,
+# SBOMs, THIRD_PARTY_NOTICES.md, SHA-256 list and a summary in dist/.
+#
+#   bash scripts/release-local.sh --dry-run [--target x86_64-unknown-linux-gnu] [--skip-build]
+#
+# --dry-run: every signing secret is ignored (the fork path) and nothing is
+#            published; a model sha256 still TBD is a warning, not a failure.
+# --skip-build: reuse the bundles already in target/<target>/release/bundle.
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+dist="$root/dist"
+target="x86_64-unknown-linux-gnu"
+dry=0
+build=1
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) dry=1 ;;
+    --skip-build) build=0 ;;
+    --target) target="$2"; shift ;;
+    *) echo "unknown option $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+secrets=(TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+  APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+  AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_CERT_PROFILE
+  LINUX_GPG_PRIVATE_KEY LINUX_GPG_PASSPHRASE RELEASE_API_TOKEN)
+if [ "$dry" = 1 ]; then
+  for s in "${secrets[@]}"; do unset "$s"; done
+fi
+has() { [ -n "${!1:-}" ]; }
+
+rm -rf "$dist"
+mkdir -p "$dist"
+summary="$dist/RELEASE_SUMMARY.md"
+note() { echo "$*" | tee -a "$summary"; }
+: >"$summary"
+note "# Release ${dry:+(dry run) }for $target"
+note ""
+
+# 1. verify: one version everywhere, a changelog section, pinned models.
+version="$(node -p "require('$root/apps/desktop/src-tauri/tauri.conf.json').version")"
+pkg="$(node -p "require('$root/apps/desktop/package.json').version")"
+cargo_v="$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)"
+if [ "$version" != "$pkg" ] || [ "$version" != "$cargo_v" ]; then
+  echo "version mismatch: tauri.conf.json $version, package.json $pkg, Cargo.toml $cargo_v" >&2
+  exit 1
+fi
+if ! grep -q "^## $version\b" "$root/CHANGELOG.md"; then
+  echo "CHANGELOG.md has no '## $version' section" >&2
+  exit 1
+fi
+if grep -q '"TBD"' "$root/crates/tandem-voice/models/catalog.json"; then
+  if [ "$dry" = 1 ]; then
+    note "- warning: model sha256 values are still TBD (a real release refuses this; pinned by scripts/pin-models.ts in M12)"
+  else
+    echo "model sha256 values are still TBD" >&2
+    exit 1
+  fi
+fi
+note "- version $version"
+
+# 2. third-party notices first: the build embeds them (About › Licenses).
+(cd "$root" && pnpm tsx scripts/gen-notices.ts --out "$dist" --resources)
+
+# 3. build the Linux bundles.
+bundle="$root/target/$target/release/bundle"
+if [ "$build" = 1 ]; then
+  (cd "$root" && pnpm --filter desktop build)
+  # AppImage tooling runs without FUSE in containers.
+  (cd "$root/apps/desktop" && APPIMAGE_EXTRACT_AND_RUN=1 NO_STRIP=true pnpm tauri build --target "$target" --bundles appimage,deb)
+fi
+
+# 4. signing, each only with its secrets; otherwise the artifact says so.
+suffix=""
+if has LINUX_GPG_PRIVATE_KEY; then
+  note "- Linux: AppImage and deb signed with the release GPG key"
+else
+  suffix="-unsigned"
+  note "- unsigned: Linux AppImage and deb (missing LINUX_GPG_PRIVATE_KEY, LINUX_GPG_PASSPHRASE)"
+fi
+found=0
+for f in "$bundle"/appimage/*.AppImage "$bundle"/deb/*.deb; do
+  [ -e "$f" ] || continue
+  found=1
+  name="$(basename "$f")"
+  out="$dist/${name%.*}$suffix.${name##*.}"
+  cp "$f" "$out"
+  if has LINUX_GPG_PRIVATE_KEY; then
+    gpg --batch --pinentry-mode loopback --passphrase "${LINUX_GPG_PASSPHRASE:-}" --armor --detach-sign "$out"
+  fi
+done
+if [ "$found" = 0 ]; then
+  echo "no bundles under $bundle (build them, or drop --skip-build)" >&2
+  exit 1
+fi
+if has TAURI_SIGNING_PRIVATE_KEY; then
+  note "- updater: artifacts signed; latest.json written"
+else
+  note "- unsigned: no update artifacts or latest.json (missing TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD)"
+fi
+note "- macOS and Windows builds run on their own runners (release.yml); not built here"
+
+# 5. SBOMs.
+(cd "$root" && cargo cyclonedx --format json --spec-version 1.5 --override-filename tandem-rust.cdx >/dev/null)
+find "$root/apps/desktop/src-tauri" -maxdepth 1 -name 'tandem-rust.cdx.json' -exec mv {} "$dist/tandem-rust.cdx.json" \;
+find "$root/crates" "$root/tests" -name 'tandem-rust.cdx.json' -delete 2>/dev/null || true
+(cd "$root" && pnpm tsx scripts/gen-sbom-npm.ts --out "$dist/tandem-npm.cdx.json")
+note "- SBOMs: tandem-rust.cdx.json, tandem-npm.cdx.json (CycloneDX 1.5); THIRD_PARTY_NOTICES.md (embedded in the build)"
+
+# 6. checksums.
+(cd "$dist" && sha256sum -- *.AppImage *.deb *.cdx.json THIRD_PARTY_NOTICES.md 2>/dev/null >SHA256SUMS)
+if [ "$dry" = 1 ]; then
+  note "- dry run: nothing published"
+fi
+note ""
+note "Artifacts:"
+(cd "$dist" && ls -1 | sed 's/^/- /') | tee -a "$summary"

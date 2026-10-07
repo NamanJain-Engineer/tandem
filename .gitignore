@@ -7,6 +7,16 @@ perf/results/*.tmp
 *.log
 dist
 .next
-.turbo
 apps/web/out
 .vercel
+.turbo
+
+# Background research on the reference product. Never committed, never copied from.
+build-kit/reference/
+.dev-data/
+apps/desktop/src-tauri/gen/
+# Generated for release builds by scripts/gen-notices.ts --resources.
+apps/desktop/src-tauri/resources/THIRD_PARTY_NOTICES.md
+test-results/
+playwright-report/
+*.tsbuildinfo
