@@ -85,9 +85,10 @@ const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const loading = new Map<string, Promise<void>>();
 const ensuring = new Map<string, Promise<void>>();
 
-function save(tabId: string, t: TabPanes): void {
-  if (!t.tree) return;
-  invoke("layout_save", { tabId, tree: t.tree, activePaneId: t.active, maximizedPaneId: t.maximized }).catch(
+function save(tabId: string, t: TabPanes): Promise<void> {
+  if (!t.tree) return Promise.resolve();
+  return invoke("layout_save", { tabId, tree: t.tree, activePaneId: t.active, maximizedPaneId: t.maximized }).then(
+    () => undefined,
     () => undefined,
   );
 }
@@ -98,19 +99,21 @@ function persist(tabId: string, t: TabPanes): void {
     tabId,
     setTimeout(() => {
       timers.delete(tabId);
-      save(tabId, t);
+      void save(tabId, t);
     }, 500),
   );
 }
 
-/** Saves any pending layouts now (quit, tests). */
-export function flushLayouts(): void {
+/** Saves any pending layouts now (quit, tests); resolves once they're stored. */
+export function flushLayouts(): Promise<void> {
+  const saves: Array<Promise<void>> = [];
   for (const [tabId, timer] of timers) {
     clearTimeout(timer);
     timers.delete(tabId);
     const t = useLayout.getState().tabs[tabId];
-    if (t) save(tabId, t);
+    if (t) saves.push(save(tabId, t));
   }
+  return Promise.all(saves).then(() => undefined);
 }
 
 /** Drops a pane from a tab's state; the tab keeps its empty state after its last pane. */

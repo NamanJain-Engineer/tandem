@@ -19,4 +19,15 @@ describe("UI-02 splash", () => {
     fireEvent.click(screen.getByRole("button", { name: "Skip restore" }));
     expect(onSkip).toHaveBeenCalled();
   });
+
+  it("F-SH-07 says what launch is doing, and any key or click skips the wait", () => {
+    const onAnyInput = vi.fn();
+    const { rerender } = render(<Splash phase="restoring" onAnyInput={onAnyInput} />);
+    expect(screen.getByRole("status").textContent).toBe("Restoring your workspace…");
+    rerender(<Splash phase="plan" onAnyInput={onAnyInput} />);
+    expect(screen.getByRole("status").textContent).toBe("Checking your plan…");
+    fireEvent.keyDown(screen.getByTestId("splash"), { key: "a" });
+    fireEvent.pointerDown(screen.getByTestId("splash"));
+    expect(onAnyInput).toHaveBeenCalledTimes(2);
+  });
 });

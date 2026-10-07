@@ -12,4 +12,9 @@ kind: string, cwd: string | null, engineId: string | null,
 /**
  * The engine account it launches with; `None` = the engine's default.
  */
-accountId: AccountId | null, humanName: string | null, title: string | null, createdAt: number, };
+accountId: AccountId | null, humanName: string | null, title: string | null, 
+/**
+ * `none` | `live` | `paused` (an agent waiting for Resume after a
+ * restart) | `cancelled` (its restore was cancelled; F-SH-07).
+ */
+restoreState: string, createdAt: number, };

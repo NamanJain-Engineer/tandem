@@ -12,6 +12,7 @@ const pane = (id: string, at: number, extra: Partial<PaneRecord> = {}): PaneReco
   accountId: null,
   humanName: null,
   title: null,
+  restoreState: "none",
   createdAt: at,
   ...extra,
 });

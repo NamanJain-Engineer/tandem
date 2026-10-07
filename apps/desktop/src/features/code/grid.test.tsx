@@ -6,6 +6,7 @@ import { emitLocal } from "../../ipc/events";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { followFocus } from "../../stores/focus";
 import { useLayout } from "../../stores/layout";
+import { useRestore } from "../../stores/restore";
 import { useStatus } from "../../stores/status";
 import { useSession } from "../../stores/session";
 import { useWorkspaces } from "../../stores/workspaces";
@@ -27,6 +28,14 @@ vi.mock("./TerminalView", async () => {
       lastProps.set(paneId, { visible, focused });
       return React.createElement("div", { "data-testid": "terminal", "data-pane-id": paneId });
     },
+  };
+});
+
+vi.mock("./RestoredScrollback", async () => {
+  const React = await import("react");
+  return {
+    RestoredScrollback: ({ paneId }: { paneId: string }) =>
+      React.createElement("div", { "data-testid": "restored-scrollback", "data-pane-id": paneId }, "saved output"),
   };
 });
 
@@ -66,11 +75,24 @@ const REPORT = {
 
 /** A small core: tabs, panes and saved layouts. */
 function core(
-  opts: { live?: number; panes?: string[]; tree?: unknown; missing?: boolean; picked?: string; noEngines?: boolean } = {},
+  opts: {
+    live?: number;
+    panes?: string[];
+    tree?: unknown;
+    missing?: boolean;
+    picked?: string;
+    noEngines?: boolean;
+    /** Agent panes paused after a restart, with the reason Resume isn't offered. */
+    paused?: Record<string, string | null>;
+  } = {},
 ) {
   let n = 0;
   const tabs: Tab[] = [TAB];
-  const panes: PaneRecord[] = (opts.panes ?? []).map((id, i) => pane(id, TAB.id, i));
+  const panes: PaneRecord[] = (opts.panes ?? []).map((id, i) =>
+    opts.paused && id in opts.paused
+      ? { ...pane(id, TAB.id, i), kind: "agent", engineId: "claude", humanName: "Ada", restoreState: "paused" }
+      : pane(id, TAB.id, i),
+  );
   let saved: { tree: unknown; activePaneId: string | null; maximizedPaneId: string | null } | null = opts.tree
     ? { tree: opts.tree, activePaneId: null, maximizedPaneId: null }
     : null;
@@ -85,6 +107,7 @@ function core(
       accountId: null,
       humanName: null,
       title: null,
+      restoreState: "none",
       createdAt: at,
     };
   }
@@ -187,6 +210,22 @@ function core(
       if (p) p.tabId = String(a?.tabId);
       return p;
     },
+    restore_get_snapshot: () => ({
+      panes: Object.entries(opts.paused ?? {}).map(([paneId, reason]) => ({
+        paneId,
+        workspaceId: WS.id,
+        engineId: "claude",
+        state: "paused",
+        canResume: reason === null,
+        reason,
+        hasScrollback: true,
+      })),
+      interruptedThreads: 0,
+      autoResume: false,
+    }),
+    restore_resume: () => ({ pid: 42, startedAt: 1 }),
+    restore_start_fresh: () => ({ pid: 43, startedAt: 1 }),
+    restore_cancel: () => null,
   });
   return { calls, panes, saved: () => saved };
 }
@@ -609,5 +648,54 @@ describe("pane grid (F-CD-02)", () => {
     });
     expect(paneEls()[1]?.className).not.toContain("tn-flash");
     vi.useRealTimers();
+  });
+});
+
+describe("restore (F-SH-07)", () => {
+  async function restored(paused: Record<string, string | null>) {
+    const backend = core({ panes: Object.keys(paused), tree: { type: "leaf", paneId: Object.keys(paused)[0] }, paused });
+    await useRestore.getState().load();
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    return backend;
+  }
+  const card = () => screen.getByTestId("paused-card");
+
+  it("F-SH-07.1 a restored agent pane shows its paused card over the saved output, never a terminal", async () => {
+    const { calls } = await restored({ pn_a: null });
+    expect(card().dataset.state).toBe("paused");
+    expect(within(card()).getByText("Paused after restart")).toBeTruthy();
+    expect(within(card()).getByTestId("restored-scrollback")).toBeTruthy();
+    expect(screen.queryByTestId("terminal")).toBeNull();
+    expect(calls.some((c) => c.cmd === "pty_spawn" || c.cmd === "restore_resume")).toBe(false);
+  });
+
+  it("F-SH-07.2 Resume starts the agent and the pane becomes its terminal", async () => {
+    const { calls } = await restored({ pn_a: null });
+    fireEvent.click(within(card()).getByRole("button", { name: "Resume" }));
+    await waitFor(() => expect(screen.getByTestId("terminal").dataset.paneId).toBe("pn_a"));
+    expect(calls.filter((c) => c.cmd === "restore_resume").map((c) => c.args?.paneId)).toEqual(["pn_a"]);
+  });
+
+  it("F-SH-07.4 a missing launch configuration disables Resume and says why; Start fresh still works", async () => {
+    const { calls } = await restored({ pn_a: "Launch configuration unavailable" });
+    const resume = within(card()).getByRole("button", { name: "Resume" }) as HTMLButtonElement;
+    expect(resume.disabled).toBe(true);
+    expect(within(card()).getByTestId("restore-reason").textContent).toBe("Launch configuration unavailable");
+    fireEvent.click(resume);
+    expect(calls.some((c) => c.cmd === "restore_resume")).toBe(false);
+    fireEvent.click(within(card()).getByRole("button", { name: "Start fresh" }));
+    await waitFor(() => expect(screen.getByTestId("terminal")).toBeTruthy());
+    expect(calls.filter((c) => c.cmd === "restore_start_fresh")).toHaveLength(1);
+  });
+
+  it("F-SH-07.5 Ctrl+C on a card cancels its restore and keeps the saved output", async () => {
+    const { calls } = await restored({ pn_a: null });
+    fireEvent.keyDown(card(), { key: "c", ctrlKey: true });
+    await waitFor(() => expect(card().dataset.state).toBe("cancelled"));
+    expect(calls.filter((c) => c.cmd === "restore_cancel").map((c) => c.args?.paneId)).toEqual(["pn_a"]);
+    expect(within(card()).getByTestId("restored-scrollback")).toBeTruthy();
+    expect(within(card()).getByRole("status").textContent).toContain("Restore cancelled");
+    expect(screen.queryByTestId("terminal")).toBeNull();
   });
 });

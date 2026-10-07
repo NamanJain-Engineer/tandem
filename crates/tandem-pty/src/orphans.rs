@@ -292,15 +292,17 @@ impl ChildRegistry {
                 cwd: cwd.to_string(),
                 started_at,
             });
+            // Written under the lock: two panes starting at once must never
+            // leave an older list on disk (kill-fuzz found a missed child).
+            self.write(&e);
         }
-        self.save();
     }
 
     pub fn remove(&self, pane_id: &str) {
         if let Ok(mut e) = self.entries.lock() {
             e.retain(|r| r.pane_id != pane_id);
+            self.write(&e);
         }
-        self.save();
     }
 
     pub fn records(&self) -> Vec<ChildRecord> {
@@ -308,9 +310,15 @@ impl ChildRegistry {
     }
 
     fn save(&self) {
+        if let Ok(e) = self.entries.lock() {
+            self.write(&e);
+        }
+    }
+
+    fn write(&self, children: &[ChildRecord]) {
         let file = RegistryFile {
             owner: Some(self.owner),
-            children: self.records(),
+            children: children.to_vec(),
         };
         let Ok(body) = serde_json::to_vec_pretty(&file) else {
             return;
@@ -490,6 +498,24 @@ mod tests {
         assert!(table.signals.contains(&(100, "term")));
         assert!(table.signals.contains(&(101, "kill")));
         assert!(!table.signals.contains(&(100, "kill")));
+    }
+
+    #[test]
+    fn f_sh_07_concurrent_spawns_all_reach_the_registry_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let run = dir.path().join("run");
+        let rows: Vec<(u32, Option<u32>, u64)> = (1..=16).map(|p| (p, Some(p), 1)).collect();
+        for _ in 0..5 {
+            let reg = ChildRegistry::new(&run, Box::new(FakeTable::with(&rows)));
+            std::thread::scope(|s| {
+                for pid in 1..=16u32 {
+                    let reg = &reg;
+                    s.spawn(move || reg.add(&format!("pn_{pid}"), pid, "sh", "/code", 1));
+                }
+            });
+            assert_eq!(read_records(reg.path()).len(), 16);
+            reg.close();
+        }
     }
 
     #[test]

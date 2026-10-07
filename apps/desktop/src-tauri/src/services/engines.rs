@@ -17,6 +17,7 @@ use tandem_engines::launch::{self, HostKind, LaunchSpec, StatusEnv, TerminalLaun
 use tandem_engines::{EngineRegistry, EngineSpec};
 use tandem_pty::env::LoginEnv;
 use tandem_store::repo::accounts::{self, Account, InstallRow};
+use tandem_store::repo::sessions::LaunchConfig;
 use tandem_store::repo::settings;
 use tandem_store::Store;
 
@@ -40,7 +41,20 @@ pub struct AgentLaunch {
     pub spec: LaunchSpec,
     pub account: Option<Account>,
     pub home: Option<PathBuf>,
+    /// Saved with the session so Resume relaunches the same way (F-SH-07).
+    pub config: LaunchConfig,
 }
+
+/// A relaunch of a saved session (F-SH-07): its own configuration, never
+/// the current defaults.
+pub struct Relaunch<'a> {
+    /// The engine's session id to resume; `None` starts a new conversation.
+    pub resume: Option<&'a str>,
+    pub config: &'a LaunchConfig,
+}
+
+/// The card's message when a saved configuration is gone (UI-132).
+pub const LAUNCH_CONFIG_UNAVAILABLE: &str = "Launch configuration unavailable";
 
 impl EngineService {
     pub fn new(store: Store, bus: EventBus, providers: PathBuf) -> Arc<Self> {
@@ -193,6 +207,24 @@ impl EngineService {
         status: Option<StatusEnv>,
         account: Option<&AccountId>,
     ) -> Result<AgentLaunch, IpcError> {
+        self.agent_launch_with(engine, program, workspace_root, status, account, None)
+            .await
+    }
+
+    /// [`agent_launch`](Self::agent_launch), or a relaunch of a saved session
+    /// in exactly its provider home with its own args.
+    pub async fn agent_launch_with(
+        &self,
+        engine: &EngineSpec,
+        program: PathBuf,
+        workspace_root: &Path,
+        status: Option<StatusEnv>,
+        account: Option<&AccountId>,
+        relaunch: Option<Relaunch<'_>>,
+    ) -> Result<AgentLaunch, IpcError> {
+        if let Some(r) = relaunch {
+            return self.relaunch(engine, program, status, account, r).await;
+        }
         let (account, home) = if engine.provider_home_env.is_some()
             || engine.home_strategy == tandem_engines::registry::HomeStrategy::Xdg
         {
@@ -246,27 +278,80 @@ impl EngineService {
         } else {
             (None, None)
         };
+        let extra_args = self.extra_args(&engine.id).await;
+        let config = LaunchConfig {
+            extra_args: extra_args.clone(),
+            home: home.as_ref().map(|h| h.to_string_lossy().into_owned()),
+        };
         let req = TerminalLaunchRequest {
             engine,
             program,
-            extra_args: self.extra_args(&engine.id).await,
+            extra_args,
             resume: None,
             host: HostKind::Local,
             home: home.clone(),
             providers_root: self.homes.root().to_path_buf(),
             status,
         };
-        let spec = launch::terminal_launch(&req).map_err(|e| {
-            let code = match e {
-                launch::LaunchError::SecretInArgs => ErrorCode::Invalid,
-                _ => ErrorCode::Unavailable,
-            };
-            IpcError::new(code, e.to_string())
-        })?;
+        let spec = launch::terminal_launch(&req).map_err(launch_error)?;
         Ok(AgentLaunch {
             spec,
             account,
             home,
+            config,
+        })
+    }
+
+    async fn relaunch(
+        &self,
+        engine: &EngineSpec,
+        program: PathBuf,
+        status: Option<StatusEnv>,
+        account: Option<&AccountId>,
+        r: Relaunch<'_>,
+    ) -> Result<AgentLaunch, IpcError> {
+        let unavailable = || IpcError::new(ErrorCode::Unavailable, LAUNCH_CONFIG_UNAVAILABLE);
+        let home = match &r.config.home {
+            Some(h) => {
+                let home = PathBuf::from(h);
+                if !home.is_dir() {
+                    return Err(unavailable().with_stage("provider_home"));
+                }
+                if let Some(hook) = &self.hook_bin {
+                    if let Err(err) = self.homes.install_hooks(engine, &home, hook) {
+                        tracing::warn!(code = "engines.hooks_failed", error = %err, "couldn't install status hooks");
+                    }
+                }
+                Some(home)
+            }
+            // An engine that keeps its sign-in in a home always ran in one.
+            None if engine.provider_home_env.is_some()
+                || engine.home_strategy == tandem_engines::registry::HomeStrategy::Xdg =>
+            {
+                return Err(unavailable().with_stage("provider_home"));
+            }
+            None => None,
+        };
+        let account = match account {
+            Some(id) => accounts::get(&self.store, id).await.ok(),
+            None => None,
+        };
+        let req = TerminalLaunchRequest {
+            engine,
+            program,
+            extra_args: r.config.extra_args.clone(),
+            resume: r.resume.map(str::to_string),
+            host: HostKind::Local,
+            home: home.clone(),
+            providers_root: self.homes.root().to_path_buf(),
+            status,
+        };
+        let spec = launch::terminal_launch(&req).map_err(launch_error)?;
+        Ok(AgentLaunch {
+            spec,
+            account,
+            home,
+            config: r.config.clone(),
         })
     }
 
@@ -304,6 +389,14 @@ impl EngineService {
             .unwrap_or_default();
         if theme == "light" { "light" } else { "dark" }.to_string()
     }
+}
+
+fn launch_error(e: launch::LaunchError) -> IpcError {
+    let code = match e {
+        launch::LaunchError::SecretInArgs => ErrorCode::Invalid,
+        _ => ErrorCode::Unavailable,
+    };
+    IpcError::new(code, e.to_string())
 }
 
 /// Where to look, from the captured login environment.

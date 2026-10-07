@@ -15,7 +15,7 @@ import { AppShell } from "./features/shell/AppShell";
 import { DeepLinks } from "./features/shell/DeepLinks";
 import { useBoot } from "./features/shell/useBoot";
 import { SignIn } from "./features/signin/SignIn";
-import { Splash } from "./features/splash/Splash";
+import { Splash, type SplashPhase } from "./features/splash/Splash";
 import { t } from "./i18n";
 import { inTauri, invoke } from "./ipc/invoke";
 import { installGlobalErrorLogging, log } from "./ipc/log";
@@ -23,6 +23,16 @@ import { useSetting, useSettings, watchSettings } from "./stores/settings";
 import { canUseApp, useSession, watchSession } from "./stores/session";
 import { useUi, type Mode } from "./stores/ui";
 import { useWorkspaces } from "./stores/workspaces";
+import { useRestore } from "./stores/restore";
+
+/** The plan check holds the splash at most this long, then the app
+ * continues from the cached entitlement (F-SH-07). */
+const PLAN_WAIT_MS = 3_000;
+
+/** Resolves when `work` settles, after `ms`, or when `skip` fires. */
+function bounded(work: Promise<unknown>, ms: number, skip: Promise<void>): Promise<void> {
+  return Promise.race([work.then(() => undefined, () => undefined), new Promise<void>((r) => setTimeout(r, ms)), skip]);
+}
 
 const Gallery = lazy(() => import("@tandem/ui/gallery").then((m) => ({ default: m.Gallery })));
 
@@ -56,6 +66,12 @@ export function App() {
   const boot = useBoot((s) => s.boot);
   const setBoot = useBoot((s) => s.setBoot);
   const [ready, setReady] = useState(false);
+  const [splashPhase, setSplashPhase] = useState<SplashPhase>("starting");
+  const [skipPlan] = useState(() => {
+    let fire = () => undefined as void;
+    const promise = new Promise<void>((r) => (fire = r));
+    return { promise, fire: () => fire() };
+  });
   const [hash, setHash] = useState(() => window.location.hash);
   const auth = useSession((s) => s.auth);
   const theme = useSetting<ThemeSetting>("theme", "dark");
@@ -85,11 +101,16 @@ export function App() {
           const b = await invoke<AppBoot>("app_ready");
           setBoot(b);
           useUi.getState().setMode((b.lastMode as Mode) ?? "code");
+          // "Restoring your session…", then "Checking your plan…" (F-SH-07).
+          setSplashPhase("restoring");
+          const session = useSession.getState().load();
           await Promise.all([
             useSettings.getState().load(),
-            useSession.getState().load(),
             useWorkspaces.getState().refresh(),
+            useRestore.getState().load(),
           ]);
+          setSplashPhase("plan");
+          await bounded(session, PLAN_WAIT_MS, skipPlan.promise);
           cleanup = [await watchSettings(), await watchSession()];
           invoke("telemetry_capture", {
             event: "app_started",
@@ -109,7 +130,19 @@ export function App() {
       clearTimeout(timer);
       cleanup.forEach((f) => f());
     };
-  }, [setBoot]);
+  }, [setBoot, skipPlan]);
+
+  // Any key or click while the splash shows skips the wait.
+  useEffect(() => {
+    if (ready) return;
+    const skip = () => skipPlan.fire();
+    window.addEventListener("keydown", skip, true);
+    window.addEventListener("pointerdown", skip, true);
+    return () => {
+      window.removeEventListener("keydown", skip, true);
+      window.removeEventListener("pointerdown", skip, true);
+    };
+  }, [ready, skipPlan]);
 
   // Refresh workspaces when the session changes (plan → limits).
   useEffect(() => {
@@ -127,7 +160,7 @@ export function App() {
   return (
     <UiProvider theme={theme} motion={motion} textSize={textSize} density={density}>
       {!ready || !auth ? (
-        <Splash />
+        <Splash phase={splashPhase} onAnyInput={skipPlan.fire} />
       ) : (
         <>
           <TerminalColorsSync />

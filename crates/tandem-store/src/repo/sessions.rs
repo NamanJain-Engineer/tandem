@@ -23,6 +23,34 @@ pub struct SavedSession {
     pub ended_at: i64,
 }
 
+/// What an agent pane was launched with, kept so Resume uses the same
+/// configuration (F-SH-07): never the current defaults.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchConfig {
+    /// The user's extra engine args at launch time.
+    #[serde(default)]
+    pub extra_args: Vec<String>,
+    /// The exact provider home (one-off homes too); `None` = the engine's own.
+    #[serde(default)]
+    pub home: Option<String>,
+}
+
+/// The newest session that ran in a pane (restore).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PaneSession {
+    pub id: SessionId,
+    pub engine_id: String,
+    pub account_id: Option<AccountId>,
+    pub provider_home: Option<String>,
+    pub engine_session_id: Option<String>,
+    /// The saved launch configuration; `Err` when the row has one that no
+    /// longer parses.
+    pub launch_config: Option<Result<LaunchConfig, String>>,
+    pub started_at: i64,
+    pub ended_at: Option<i64>,
+}
+
 fn saved_from_row(r: &Row<'_>) -> rusqlite::Result<SavedSession> {
     Ok(SavedSession {
         id: SessionId::from_db(r.get(0)?),
@@ -37,7 +65,7 @@ fn saved_from_row(r: &Row<'_>) -> rusqlite::Result<SavedSession> {
 
 /// Records an agent starting in a pane.
 /// `account` and `home` are the provider home it runs in (resume uses the
-/// same one, F-AC-01).
+/// same one, F-AC-01); `config` is what Resume relaunches with (F-SH-07).
 pub async fn start_in_pane(
     store: &Store,
     pane: &PaneId,
@@ -46,24 +74,124 @@ pub async fn start_in_pane(
     account: Option<&AccountId>,
     home: Option<String>,
 ) -> Result<SessionId, StoreError> {
+    let config = LaunchConfig {
+        extra_args: Vec::new(),
+        home: home.clone(),
+    };
+    start_with_config(store, pane, workspace, engine_id, account, &config).await
+}
+
+/// [`start_in_pane`] with the full launch configuration.
+pub async fn start_with_config(
+    store: &Store,
+    pane: &PaneId,
+    workspace: &WorkspaceId,
+    engine_id: &str,
+    account: Option<&AccountId>,
+    config: &LaunchConfig,
+) -> Result<SessionId, StoreError> {
     let id = SessionId::new();
-    let (sid, pane, ws, engine, account) = (
+    let json = serde_json::to_string(config).map_err(|e| StoreError::Invalid(e.to_string()))?;
+    let (sid, pane, ws, engine, account, home) = (
         id.as_str().to_string(),
         pane.as_str().to_string(),
         workspace.as_str().to_string(),
         engine_id.to_string(),
         account.map(|a| a.as_str().to_string()),
+        config.home.clone(),
     );
     store
         .write(move |t| {
             t.execute(
-                "INSERT INTO sessions (id, kind, pane_id, workspace_id, engine_id, account_id, provider_home, started_at) VALUES (?1, 'pane', ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![sid, pane, ws, engine, account, home, now_ms()],
+                "INSERT INTO sessions (id, kind, pane_id, workspace_id, engine_id, account_id, provider_home, launch_config, started_at) VALUES (?1, 'pane', ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![sid, pane, ws, engine, account, home, json, now_ms()],
             )?;
             Ok(())
         })
         .await?;
     Ok(id)
+}
+
+/// The engine's own session id, from its hooks: what `--resume` takes.
+/// Recorded on the pane's running session as soon as it's reported, so a
+/// crash keeps it.
+pub async fn set_engine_session(
+    store: &Store,
+    pane: &PaneId,
+    engine_session_id: &str,
+) -> Result<(), StoreError> {
+    let (pane, esid) = (pane.as_str().to_string(), engine_session_id.to_string());
+    store
+        .write(move |t| {
+            t.execute(
+                "UPDATE sessions SET engine_session_id = ?2 WHERE id = (
+                   SELECT id FROM sessions WHERE pane_id = ?1 AND kind = 'pane' AND ended_at IS NULL
+                   ORDER BY started_at DESC, rowid DESC LIMIT 1)
+                 AND (engine_session_id IS NULL OR engine_session_id <> ?2)",
+                params![pane, esid],
+            )?;
+            Ok(())
+        })
+        .await
+}
+
+/// The newest session that ran in `pane`, running or saved.
+pub async fn latest_for_pane(
+    store: &Store,
+    pane: &PaneId,
+) -> Result<Option<PaneSession>, StoreError> {
+    let pane = pane.as_str().to_string();
+    store
+        .read(move |c| {
+            Ok(c.query_row(
+                "SELECT id, engine_id, account_id, provider_home, engine_session_id, launch_config, started_at, ended_at
+                 FROM sessions WHERE pane_id = ?1 AND kind IN ('pane', 'saved')
+                 ORDER BY started_at DESC, rowid DESC LIMIT 1",
+                [pane],
+                |r| {
+                    let config: Option<String> = r.get(5)?;
+                    Ok(PaneSession {
+                        id: SessionId::from_db(r.get(0)?),
+                        engine_id: r.get(1)?,
+                        account_id: r.get::<_, Option<String>>(2)?.map(AccountId::from_db),
+                        provider_home: r.get(3)?,
+                        engine_session_id: r.get(4)?,
+                        launch_config: config.map(|j| {
+                            serde_json::from_str::<LaunchConfig>(&j).map_err(|e| e.to_string())
+                        }),
+                        started_at: r.get(6)?,
+                        ended_at: r.get(7)?,
+                    })
+                },
+            )
+            .optional()?)
+        })
+        .await
+}
+
+/// A session whose process never started.
+pub async fn discard(store: &Store, id: &SessionId) -> Result<(), StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .write(move |t| {
+            t.execute("DELETE FROM sessions WHERE id = ?1", [id])?;
+            Ok(())
+        })
+        .await
+}
+
+/// A resumed session runs in its pane again.
+pub async fn reopen(store: &Store, id: &SessionId) -> Result<(), StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .write(move |t| {
+            t.execute(
+                "UPDATE sessions SET kind = 'pane', ended_at = NULL WHERE id = ?1",
+                [id],
+            )?;
+            Ok(())
+        })
+        .await
 }
 
 /// The agent in `pane` exited and the shell took over: its running session

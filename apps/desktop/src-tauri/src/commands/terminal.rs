@@ -114,6 +114,8 @@ pub async fn pane_close(state: State<'_, AppState>, pane_id: PaneId) -> Result<(
 /// Ends a pane's process tree, its status record and any approval it asked
 /// for, then closes it in the store.
 pub async fn close_pane(state: &AppState, pane_id: &PaneId) -> Result<(), IpcError> {
+    // A queued restore never starts once its pane is gone (F-SH-07).
+    state.restore.forget(pane_id);
     let _ = state.terminals.pty.kill(pane_id.as_str());
     state.terminals.status.unwatch(pane_id.as_str());
     state

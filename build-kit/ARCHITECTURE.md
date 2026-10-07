@@ -558,7 +558,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 |---|---|---|---|---|
 | `pane_create` | `{tabId, kind:"terminal"\|"agent"\|"browser"\|"simulator", engineId?, accountId?, cwd?, humanName?}` | `PaneRecord` (assigns unique human name for agents) | NotFound, LimitReached | F-CD-02, F-CD-12 |
 | `pane_list` | `{tabId}` | `[PaneRecord]` (open panes, oldest first) | — | F-CD-02 |
-| `pty_spawn` | `{paneId, cols, rows, shell?, engine?: EngineLaunch {engineId, accountId?, oneOffHome?, extraArgs?, firstPrompt?, resumeSessionId?}, channel: Channel<PtyFrame>}` | `PtyInfo {pid, startedAt, launchConfigId?}` | LimitReached (plan), EngineMissing, NotFound (cwd → falls back to root with notice, not an error), Unavailable (config gone) | F-CD-03, F-EN-04, F-AC-01, F-SH-07 |
+| `pty_spawn` | `{paneId, cols, rows, shell?, engine?: EngineLaunch {engineId, accountId?, oneOffHome?, extraArgs?, firstPrompt?, resumeSessionId?}, channel: Channel<PtyFrame>}` | `PtyInfo {pid, startedAt, launchConfigId?}` | LimitReached (plan), EngineMissing, NotFound (cwd → falls back to root with notice, not an error), Unavailable (config gone), Conflict (an agent paused after a restart starts only from its card: `restore_resume` / `restore_start_fresh`) | F-CD-03, F-EN-04, F-AC-01, F-SH-07 |
 | `pty_attach` | `{paneId, channel}` | `AttachSnapshot {replay: base64, state: PtyState}` (after webview reload) | NotFound | F-CD-03 |
 | `pty_write` | `{paneId, data: string}` | — | NotFound | F-CD-03, F-CD-07 |
 | `pty_ack` | `{paneId, bytes: u64}` | — | — | F-CD-04 |
@@ -582,10 +582,12 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 #### Restore [F-SH-07]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
-| `restore_get_snapshot` | — | `RestoreSnapshot {workspaces, tabs, layouts, panes:[PaneRestore], threads:[ThreadSummary], sidebar, grid, lastMode, interruptedThreads}` | — |
-| `restore_resume` | `{paneId, channel}` | `PtyInfo` (queued: ≤2 concurrent spawns) | Unavailable ("Launch configuration unavailable") |
-| `restore_start_fresh` | `{paneId, channel}` | `PtyInfo` | — |
-| `restore_cancel` | `{paneId}` | — (scrollback snapshot stays viewable) | — |
+| `restore_get_snapshot` | — | `RestoreSnapshot {panes:[PaneRestore {paneId, workspaceId, engineId?, state: paused\|queued\|cancelled\|live, canResume, reason?, hasScrollback}], interruptedThreads, autoResume}` (workspaces, tabs, layouts, sidebar and last mode load through their own commands; each `PaneRecord` carries `restoreState`) | — |
+| `restore_resume` | `{paneId, cols?, rows?}` | `PtyInfo` (queued: ≤2 engines spawning at once, each until ready; started without a view, which then attaches with `pty_attach` and replays) | Unavailable ("Launch configuration unavailable", or no resumable session), Conflict (already running or queued), Cancelled (Ctrl+C or pane closed while queued) |
+| `restore_start_fresh` | `{paneId, cols?, rows?}` | `PtyInfo` (same queue; the old conversation moves to Saved sessions) | Conflict, Cancelled |
+| `restore_auto_resume` | — | — (returns at once; "Resume agents automatically": every paused agent that can resume starts through the queue, newest first; the UI calls it once its shell shows, never behind sign-in; once per launch) | — |
+| `restore_cancel` | `{paneId}` | — (leaves the queue; the card becomes the read-only saved scrollback) | NotFound |
+| `restore_scrollback` | `{paneId}` | base64 of `$DATA/scrollback/<pane>.bin` (shown dimmed under the card, §5.6) | NotFound |
 
 #### Engines, accounts, usage [F-EN-*, F-AC-*, F-TH-08]
 | Command | Args | Returns | Errors | IDs |
@@ -822,7 +824,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 #### Test harness (debug builds with `TANDEM_E2E=1` only; compiled out of release, asserted absent by a release-build test) [§18, MILESTONES §1]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
-| `test_counters` | `{reset?: bool}` | `TestCounters {ptyResizes, webglContexts, domRenderers, reflows}` | — |
+| `test_counters` | `{reset?: bool}` | `TestCounters {ptyResizes, ptyResizesByPane, webglContexts, domRenderers, reflows, restoreMaxSpawning}` (`restoreMaxSpawning`: most agents ever starting at once during restore, F-SH-07 AC3) | — |
 | `test_spawn_log` | — | `[SpawnRecord {argv, envKeys, providerHome?, cwd}]` (same content as `TANDEM_SPAWN_LOG`) | — |
 | `test_clock_advance` | `{ms}` | `{now}` | — |
 | `test_auth_refresh` | — | `AuthState` (forces the refresh path, e.g. to observe a revoked device) | — |
@@ -831,6 +833,8 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `test_notifier_calls` | `{clear?}` | `[OsNotification {kind, title, body, source}]` (the recording notifier used under the harness) | — |
 | `test_notifier_click` | `{index}` | — (clicks a recorded OS notification: focuses the app and its source) | NotFound |
 | `test_set_window_focused` | `{focused?}` | — (pretends the window is focused or not; `null` = the real state) | — |
+| `test_thread_seed` | `{threadState}` | thread id (writes a bare `threads` row in that state, e.g. one a crash left `working`; E2E-M5-3 until threads land in M7) | — |
+| `test_thread_state` | `{id}` | the thread's stored `state` | NotFound |
 
 `window.__tandemTest` in the webview wraps these commands plus UI-side counters. Not listed in `capabilities/*.json` for release.
 
@@ -848,6 +852,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `pty:state` | `{paneId, cwd?, title?, altScreen, bracketedPaste, mouse, readiness}` (debounced 100 ms) | tandem-pty | F-CD-10, F-EN-06 |
 | `pty:mark` | `{paneId, kind:"A"\|"B"\|"C"\|"D", exitCode?}` (the view places ✓/✗ from the same marks, which reach xterm without the token) | tandem-pty | F-CD-10 |
 | `sessions:saved` | `{workspaceId, session: SavedSession}` (an agent handed its pane back to the shell) | terminal service | F-CD-03 |
+| `restore:changed` | `{paneId, state: queued\|live\|paused\|cancelled}` (a paused card was queued, started, failed back to its card, or cancelled) | restore service | F-SH-07 |
 | `engines:detected` | `{hostId, report: DetectionReport}` | Detector | F-EN-01 |
 | `accounts:changed` | `{accounts:[Account]}` | accounts service | F-AC-02 |
 | `accounts:login-finished` | `{opId, ok, account?, error?}` | accounts service | F-AC-02 |

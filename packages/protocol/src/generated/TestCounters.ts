@@ -4,4 +4,8 @@ export type TestCounters = { ptyResizes: number,
 /**
  * `pty_resize` calls per pane.
  */
-ptyResizesByPane: { [key in string]: number }, webglContexts: number, domRenderers: number, reflows: number, };
+ptyResizesByPane: { [key in string]: number }, webglContexts: number, domRenderers: number, reflows: number, 
+/**
+ * The most agents ever spawning at once during restore (F-SH-07 AC3).
+ */
+restoreMaxSpawning: number, };

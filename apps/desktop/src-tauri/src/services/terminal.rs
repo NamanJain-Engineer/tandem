@@ -17,12 +17,14 @@ use tandem_core::{ErrorCode, IpcError};
 use tandem_engines::launch::StatusEnv;
 use tandem_engines::EngineSpec;
 
-use crate::services::engines::EngineService;
+use crate::services::engines::{EngineService, Relaunch, LAUNCH_CONFIG_UNAVAILABLE};
 use crate::services::status::StatusService;
 use tandem_pty::env::{self, LoginEnv};
 use tandem_pty::integration::{self, IntegratedShell};
 use tandem_pty::{typing, OutputSink, PtyInfo, PtyManager, SpawnSpec};
-use tandem_store::repo::{panes, sessions, settings, workspaces};
+use tandem_store::repo::panes::PaneRecord;
+use tandem_store::repo::sessions::{LaunchConfig, PaneSession};
+use tandem_store::repo::{panes, restore, sessions, settings, workspaces};
 use tandem_store::Store;
 
 async fn capture_login() -> LoginEnv {
@@ -48,6 +50,42 @@ pub const FOLDER_NOT_FOUND: &str = "Folder not found — opened at workspace roo
 pub const SNAPSHOT_LINES: usize = 2_000;
 /// Live panes are also snapshotted this often, to survive a crash (§5.4).
 pub const SNAPSHOT_EVERY: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// [`SNAPSHOT_EVERY`], or `TANDEM_SNAPSHOT_EVERY_MS` in debug builds (the
+/// crash-restore E2E can't wait five minutes).
+pub fn snapshot_every() -> Duration {
+    if cfg!(debug_assertions) {
+        if let Some(ms) = std::env::var("TANDEM_SNAPSHOT_EVERY_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .filter(|ms| *ms >= 100)
+        {
+            return Duration::from_millis(ms);
+        }
+    }
+    SNAPSHOT_EVERY
+}
+
+/// How a pane starts (F-SH-07).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaunchMode {
+    /// A shell, or a new agent: refused while an agent waits on its card.
+    Normal,
+    /// The pane's saved conversation, with its saved configuration.
+    Resume,
+    /// A new conversation; the saved one moves to Saved sessions.
+    Fresh,
+}
+
+/// What Resume relaunches (F-SH-07).
+#[derive(Debug, Clone)]
+pub struct ResumePlan {
+    pub session: PaneSession,
+    pub engine_session_id: String,
+    pub config: LaunchConfig,
+}
+
+pub const AGENT_PAUSED: &str = "This agent is paused. Resume it or start fresh from its card.";
 
 pub struct TerminalService {
     pub pty: PtyManager,
@@ -244,8 +282,94 @@ impl TerminalService {
         max_live: Option<u32>,
         sink: Arc<dyn OutputSink>,
     ) -> Result<PtyInfo, IpcError> {
+        self.spawn_with(pane, cols, rows, max_live, Some(sink), LaunchMode::Normal)
+            .await
+    }
+
+    /// Whether a paused agent can resume, and with what (F-SH-07). Errors
+    /// are the card's reason: "Launch configuration unavailable" when the
+    /// saved configuration is gone, never a fallback to defaults.
+    pub async fn resume_plan(&self, record: &PaneRecord) -> Result<ResumePlan, IpcError> {
+        let engine = record
+            .engine_id
+            .as_deref()
+            .and_then(|id| self.engines.get(id))
+            .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "This pane's engine isn't known"))?;
+        if !engine.supports_resume && engine.id != "codex" {
+            return Err(IpcError::new(
+                ErrorCode::Unavailable,
+                format!("{} can't resume sessions", engine.label),
+            )
+            .with_stage("resume"));
+        }
+        let no_session = || {
+            IpcError::new(
+                ErrorCode::Unavailable,
+                "There's no saved conversation to resume",
+            )
+            .with_stage("resume")
+        };
+        let session = sessions::latest_for_pane(&self.store, &record.id)
+            .await?
+            .ok_or_else(no_session)?;
+        let engine_session_id = session.engine_session_id.clone().ok_or_else(no_session)?;
+        let unavailable = || {
+            IpcError::new(ErrorCode::Unavailable, LAUNCH_CONFIG_UNAVAILABLE)
+                .with_stage("launch_config")
+        };
+        let config = match &session.launch_config {
+            Some(Ok(c)) => c.clone(),
+            Some(Err(_)) => return Err(unavailable()),
+            // Rows from before configs were saved: the exact home they used.
+            None => LaunchConfig {
+                extra_args: Vec::new(),
+                home: session.provider_home.clone(),
+            },
+        };
+        if config
+            .home
+            .as_deref()
+            .is_some_and(|h| !Path::new(h).is_dir())
+        {
+            return Err(unavailable());
+        }
+        Ok(ResumePlan {
+            session,
+            engine_session_id,
+            config,
+        })
+    }
+
+    /// Starts a pane's process. `sink: None` keeps output in the ring until
+    /// a view attaches (restores started from the queue).
+    pub async fn spawn_with(
+        &self,
+        pane: &PaneId,
+        cols: u16,
+        rows: u16,
+        max_live: Option<u32>,
+        sink: Option<Arc<dyn OutputSink>>,
+        mode: LaunchMode,
+    ) -> Result<PtyInfo, IpcError> {
         self.check_live_limit(max_live)?;
         let record = panes::get_open(&self.store, pane).await?;
+        let waiting_on_card = record.kind == "agent"
+            && matches!(record.restore_state.as_str(), "paused" | "cancelled");
+        if mode == LaunchMode::Normal && waiting_on_card {
+            // Nothing an agent runs starts again without consent (F-SH-07).
+            return Err(IpcError::new(ErrorCode::Conflict, AGENT_PAUSED).with_stage("restore"));
+        }
+        let plan = match (mode, record.kind.as_str()) {
+            (LaunchMode::Resume, "agent") => Some(self.resume_plan(&record).await?),
+            (LaunchMode::Resume, _) => {
+                return Err(IpcError::new(ErrorCode::Invalid, "Only agent panes resume"))
+            }
+            _ => None,
+        };
+        if mode == LaunchMode::Fresh && record.kind == "agent" {
+            // The old conversation stays under Saved sessions.
+            sessions::save_on_handback(&self.store, pane, None).await?;
+        }
         let ws = workspaces::get(&self.store, &record.workspace_id).await?;
         let root = PathBuf::from(&ws.root);
         if !root.is_dir() {
@@ -301,9 +425,17 @@ impl TerminalService {
                 .status
                 .watch(pane.as_str(), &engine.waiting_patterns)
                 .map(|(url, secret)| StatusEnv { url, secret });
+            let relaunch = plan.as_ref().map(|p| Relaunch {
+                resume: Some(p.engine_session_id.as_str()),
+                config: &p.config,
+            });
+            let account = match &plan {
+                Some(p) => p.session.account_id.as_ref(),
+                None => record.account_id.as_ref(),
+            };
             let launch = self
                 .engines
-                .agent_launch(&engine, path, &root, status, record.account_id.as_ref())
+                .agent_launch_with(&engine, path, &root, status, account, relaunch)
                 .await
                 .inspect_err(|_| self.status.unwatch(pane.as_str()))?;
             let args = env::agent_wrapper(
@@ -357,31 +489,53 @@ impl TerminalService {
         };
         let home = launched.as_ref().and_then(|l| l.home.clone());
         self.log_spawn(&spec, home.as_deref());
-        let info = self.pty.spawn(spec, Some(sink)).inspect_err(|_| {
-            if engine.is_some() {
-                self.status.unwatch(pane.as_str());
+        // The session row exists before the engine starts: its first hook
+        // (with the session id Resume needs) can arrive at once (F-SH-07).
+        let new_session = match (engine.as_ref(), launched.as_ref(), &plan) {
+            (Some(_), Some(_), Some(p)) => {
+                sessions::reopen(&self.store, &p.session.id).await?;
+                None
             }
-        })?;
+            (Some(engine), Some(launched), None) => {
+                let account = launched.account.as_ref().map(|a| a.id.clone());
+                Some(
+                    sessions::start_with_config(
+                        &self.store,
+                        pane,
+                        &record.workspace_id,
+                        &engine.id,
+                        account.as_ref(),
+                        &launched.config,
+                    )
+                    .await?,
+                )
+            }
+            _ => None,
+        };
+        let spawned = self.pty.spawn(spec, sink);
+        let info = match spawned {
+            Ok(info) => info,
+            Err(err) => {
+                if engine.is_some() {
+                    self.status.unwatch(pane.as_str());
+                }
+                if let Some(id) = &new_session {
+                    let _ = sessions::discard(&self.store, id).await;
+                }
+                return Err(err.into());
+            }
+        };
         // The pane (or its workspace) may have closed while the shell
         // started: never leave a process nobody can see.
         if panes::get_open(&self.store, pane).await.is_err() {
             let _ = self.pty.kill(pane.as_str());
+            if let Some(id) = &new_session {
+                let _ = sessions::discard(&self.store, id).await;
+            }
             return Err(IpcError::new(ErrorCode::NotFound, "This pane was closed"));
         }
-        if let Some(engine) = engine {
-            let account = launched
-                .as_ref()
-                .and_then(|l| l.account.as_ref())
-                .map(|a| a.id.clone());
-            sessions::start_in_pane(
-                &self.store,
-                pane,
-                &record.workspace_id,
-                &engine.id,
-                account.as_ref(),
-                home.as_ref().map(|h| h.to_string_lossy().into_owned()),
-            )
-            .await?;
+        if mode != LaunchMode::Normal {
+            restore::set_state(&self.store, pane, "live").await?;
         }
         if let Some(text) = notice {
             let _ = self.pty.notice(pane.as_str(), text);

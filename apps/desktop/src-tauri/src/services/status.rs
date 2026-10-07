@@ -51,9 +51,15 @@ pub struct StatusService {
     /// Sources that aren't panes (test fixtures now, threads later): what
     /// their Dashboard card shows.
     external: Mutex<HashMap<String, ExternalMeta>>,
+    /// Told when a pane's engine reports a new session id (it's persisted at
+    /// once so a crash can resume it, F-SH-07).
+    on_session: std::sync::OnceLock<SessionSink>,
     bus: EventBus,
     clock: Arc<dyn Clock>,
 }
+
+/// `(pane_id, engine_session_id)`.
+pub type SessionSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
 
 impl StatusService {
     pub fn new(bus: EventBus, clock: Arc<dyn Clock>) -> Arc<Self> {
@@ -67,9 +73,15 @@ impl StatusService {
             sessions: Mutex::default(),
             activity: Mutex::default(),
             external: Mutex::default(),
+            on_session: std::sync::OnceLock::new(),
             bus,
             clock,
         })
+    }
+
+    /// Where reported engine session ids go (set once, at startup).
+    pub fn set_session_sink(&self, sink: SessionSink) {
+        let _ = self.on_session.set(sink);
     }
 
     /// Starts the status server in `run_dir` and the done/idle ticker.
@@ -234,8 +246,15 @@ impl StatusService {
             }
         }
         if let Some(id) = &report.payload.session_id {
-            if let Ok(mut s) = self.sessions.lock() {
-                s.insert(pane.clone(), id.clone());
+            let changed = self
+                .sessions
+                .lock()
+                .map(|mut s| s.insert(pane.clone(), id.clone()).as_ref() != Some(id))
+                .unwrap_or(false);
+            if changed {
+                if let Some(sink) = self.on_session.get() {
+                    sink(&pane, id);
+                }
             }
         }
         match report.event {
@@ -409,6 +428,36 @@ mod tests {
         // Output for a pane nobody watches is ignored.
         s.output("pn_x", || None);
         assert_eq!(status(&s, "pn_x"), None);
+    }
+
+    #[test]
+    fn f_sh_07_2_a_reported_session_id_is_persisted_once_per_change() {
+        let (s, _clock) = service();
+        let seen: Arc<Mutex<Vec<(String, String)>>> = Arc::default();
+        let sink = seen.clone();
+        s.set_session_sink(Arc::new(move |pane, id| {
+            if let Ok(mut v) = sink.lock() {
+                v.push((pane.to_string(), id.to_string()));
+            }
+        }));
+        s.watch("pn_1", &[]);
+        let report = |sid: &str, ts| StatusReport {
+            v: 1,
+            pane_id: "pn_1".into(),
+            event: ReportEvent::Session,
+            ts,
+            payload: ReportPayload {
+                session_id: Some(sid.into()),
+                ..ReportPayload::default()
+            },
+        };
+        s.on_report(report("a-1", 1));
+        s.on_report(report("a-1", 2));
+        s.on_report(report("b-2", 3));
+        assert_eq!(
+            *seen.lock().expect("seen"),
+            vec![("pn_1".into(), "a-1".into()), ("pn_1".into(), "b-2".into())]
+        );
     }
 
     #[test]

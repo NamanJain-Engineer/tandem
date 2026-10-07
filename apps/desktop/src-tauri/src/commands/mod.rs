@@ -4,6 +4,7 @@
 pub mod account;
 pub mod app;
 pub mod engines;
+pub mod restore;
 pub mod settings;
 pub mod shell;
 pub mod terminal;

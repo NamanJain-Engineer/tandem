@@ -16,7 +16,7 @@ import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { totalCredits, useSession } from "../../stores/session";
 import { useUi, type Mode } from "../../stores/ui";
-import { useLayout } from "../../stores/layout";
+import { flushLayouts, useLayout } from "../../stores/layout";
 import { useSidebar } from "../../stores/sidebar";
 import { NotificationsBell } from "../notifications/NotificationsPopover";
 import { useWorkspaces } from "../../stores/workspaces";
@@ -91,7 +91,10 @@ export function TitleBar() {
       id: "quit",
       label: t("menu.quit"),
       kbd: ["Mod", "Q"],
-      onSelect: () => invoke("app_quit").catch(() => undefined),
+      onSelect: () => {
+        // Pending layout saves are stored before the app exits (F-SH-07).
+        void flushLayouts().then(() => invoke("app_quit").catch(() => undefined));
+      },
     },
   ];
 

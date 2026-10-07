@@ -18,6 +18,7 @@ import { useBoot } from "../shell/useBoot";
 import { useCloseConfirm } from "../../stores/closeConfirm";
 import { useFlash } from "../../stores/focus";
 import { useWorkspaces } from "../../stores/workspaces";
+import { useRestore, waitingOnCard } from "../../stores/restore";
 import { invoke } from "../../ipc/invoke";
 import { useLayout, type Box, type TabPanes } from "../../stores/layout";
 import { DropZones, applyDrop, type PaneDrag } from "./dnd";
@@ -31,6 +32,7 @@ import { paneTitles, useFirstPrompts, type TitleSources } from "./titles";
 import { webglPool } from "./webglPool";
 import type { Activity } from "./commandMarks";
 import { TerminalView, copyLastOutput, terminalHandles, type Phase, type TerminalOptions } from "./TerminalView";
+import { PausedCard } from "./PausedCard";
 
 const BOX_THROTTLE_MS = 50;
 
@@ -199,10 +201,17 @@ const PaneView = memo(function PaneView({
 }: PaneViewProps) {
   const [phase, setPhase] = useState<Phase>({ kind: "starting" });
   const [activity, setActivity] = useState<Activity>("idle");
+  // A restored agent waits on its card until resumed (F-SH-07).
+  const card = useRestore((st) => st.cards[pane.id]);
+  const paused = waitingOnCard(pane, card);
   // Agents report through hooks or heuristics (F-EN-05); shells through
   // their command marks. An exited or failed pane says so either way.
   const agentStatus = useStatus((st) => st.records[paneKey(pane.id)]?.status);
-  const status = pane.kind === "agent" && agentStatus && phase.kind === "live" ? statusView(agentStatus) : paneStatus(phase, activity);
+  const status = paused
+    ? "idle"
+    : pane.kind === "agent" && agentStatus && phase.kind === "live"
+      ? statusView(agentStatus)
+      : paneStatus(phase, activity);
   const glyph = useEngines((st) => st.list.find((e) => e.spec.id === pane.engineId)?.spec.logo);
   const dropping = useDropTarget((st) => st.paneId === pane.id);
   const mac = useBoot((st) => st.boot?.platform === "macos");
@@ -333,20 +342,24 @@ const PaneView = memo(function PaneView({
             onFlip={() => layout().flipCard(tabId, pane.id)}
           />
         )}
-        <TerminalView
-          paneId={pane.id}
-          label={t("terminal.label", { name: title })}
-          visible={visible && !cover}
-          focused={focused}
-          bare
-          options={options}
-          onClose={() => useCloseConfirm.getState().request(tabId, pane.id)}
-          onPhase={setPhase}
-          onActivity={setActivity}
-          agent={pane.kind === "agent"}
-          newlineSequence={engineNewline}
-          mac={mac}
-        />
+        {paused ? (
+          <PausedCard pane={pane} title={title} card={card} focused={focused && visible} options={options} />
+        ) : (
+          <TerminalView
+            paneId={pane.id}
+            label={t("terminal.label", { name: title })}
+            visible={visible && !cover}
+            focused={focused}
+            bare
+            options={options}
+            onClose={() => useCloseConfirm.getState().request(tabId, pane.id)}
+            onPhase={setPhase}
+            onActivity={setActivity}
+            agent={pane.kind === "agent"}
+            newlineSequence={engineNewline}
+            mac={mac}
+          />
+        )}
       </div>
       <DropZones paneId={pane.id} tabId={tabId} />
     </section>

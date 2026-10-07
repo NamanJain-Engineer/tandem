@@ -1,6 +1,7 @@
 import { $, $$, browser } from "@wdio/globals";
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 
 export const API = "http://127.0.0.1:8787";
 export const MAILPIT = "http://localhost:8025";
@@ -514,4 +515,54 @@ export function fakeLog(): string[] {
 export function hookLog(): string[] {
   const path = join(process.env.TANDEM_HOME ?? "", "hook.log");
   return existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean) : [];
+}
+
+/** kill -9 the app (a crash), and wait until it's gone. */
+export function crash(): void {
+  const app = process.env.TANDEM_APP_BINARY ?? "";
+  try {
+    execFileSync("pkill", ["-9", "-f", `^${app}`]);
+  } catch {
+    // Already gone.
+  }
+  for (let i = 0; i < 50; i++) {
+    try {
+      execFileSync("pgrep", ["-f", `^${app}`]);
+    } catch {
+      return;
+    }
+    execFileSync("sleep", ["0.1"]);
+  }
+}
+
+export type SpawnRecord = { argv: string[]; envKeys: string[]; providerHome: string | null; cwd: string };
+
+/** Spawns that started an engine in a provider home (not plain shells). */
+export async function engineSpawns(): Promise<SpawnRecord[]> {
+  return (await invoke<SpawnRecord[]>("test_spawn_log")).filter((r) => r.envKeys.includes("CLAUDE_CONFIG_DIR"));
+}
+
+/** Pane ids of the paused agent cards on screen, by card state. */
+export async function pausedCards(): Promise<Array<{ paneId: string; state: string }>> {
+  return browser.execute(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('[data-testid="paused-card"]')).map((el) => ({
+      paneId: el.closest<HTMLElement>('[data-testid="pane"]')?.dataset.paneId ?? "",
+      state: el.dataset.state ?? "",
+    })),
+  );
+}
+
+/** Waits until `n` new SessionStart hooks ran after `from` log lines, then
+ * a moment for their session ids to be stored. */
+export async function waitForSessionStarts(from: number, n: number): Promise<void> {
+  await browser.waitUntil(async () => fakeLog().slice(from).filter((l) => l === "hook: SessionStart").length >= n, {
+    timeout: 20_000,
+    timeoutMsg: `only ${fakeLog().slice(from).filter((l) => l === "hook: SessionStart").length} of ${n} agents reported a session`,
+  });
+  await browser.pause(800);
+}
+
+/** Leftover processes from the crash are stopped without the dialog. */
+export async function stopOrphansAutomatically(on: boolean): Promise<void> {
+  await invoke("settings_set", { key: "orphan_policy", value: on ? "always" : "ask" });
 }

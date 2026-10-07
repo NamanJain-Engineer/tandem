@@ -129,6 +129,8 @@ async function main() {
     TANDEM_FAKE_PICK_FOLDER: join(home, "pick-folder.txt"),
     TANDEM_HOOK_BIN: join(root, "target/debug/tandem-hook"),
     TANDEM_SPAWN_LOG: join(home, "spawn.log"),
+    // Scrollback snapshots often enough that a kill -9 leaves some (E2E-M5-3).
+    TANDEM_SNAPSHOT_EVERY_MS: "1500",
     TANDEM_APP_PATH: appPath,
     TANDEM_FAKE_ENGINE_BIN: fakeEngine,
     // Detection looks only at this run's folders (no npm, no /usr/local/bin).

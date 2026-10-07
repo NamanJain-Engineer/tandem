@@ -23,11 +23,14 @@ pub struct PaneRecord {
     pub account_id: Option<AccountId>,
     pub human_name: Option<String>,
     pub title: Option<String>,
+    /// `none` | `live` | `paused` (an agent waiting for Resume after a
+    /// restart) | `cancelled` (its restore was cancelled; F-SH-07).
+    pub restore_state: String,
     pub created_at: i64,
 }
 
 const COLUMNS: &str =
-    "id, tab_id, workspace_id, kind, cwd, engine_id, human_name, title, created_at, account_id";
+    "id, tab_id, workspace_id, kind, cwd, engine_id, human_name, title, created_at, account_id, restore_state";
 
 fn from_row(r: &Row<'_>) -> rusqlite::Result<PaneRecord> {
     Ok(PaneRecord {
@@ -41,6 +44,7 @@ fn from_row(r: &Row<'_>) -> rusqlite::Result<PaneRecord> {
         title: r.get(7)?,
         created_at: r.get(8)?,
         account_id: r.get::<_, Option<String>>(9)?.map(AccountId::from_db),
+        restore_state: r.get(10)?,
     })
 }
 
@@ -81,6 +85,7 @@ pub async fn create_with(
                 account_id: None,
                 human_name: None,
                 title: None,
+                restore_state: "none".into(),
                 created_at: now_ms(),
             };
             t.execute(

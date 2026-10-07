@@ -32,6 +32,8 @@ pub struct TestCounters {
     pub webgl_contexts: u64,
     pub dom_renderers: u64,
     pub reflows: u64,
+    /// The most agents ever spawning at once during restore (F-SH-07 AC3).
+    pub restore_max_spawning: u64,
 }
 
 #[tauri::command]
@@ -47,6 +49,7 @@ pub fn test_counters(
         webgl_contexts: 0,
         dom_renderers: 0,
         reflows: 0,
+        restore_max_spawning: state.restore.max_spawning(reset) as u64,
     })
 }
 
@@ -242,4 +245,44 @@ pub fn test_set_window_focused(
     guard(&state)?;
     state.notifications.override_focus(focused);
     Ok(())
+}
+
+/// Seeds a thread row in `state` (E2E-M5-3: a thread a crash left running).
+/// Threads arrive in M7; this only writes the row restore settles.
+#[tauri::command]
+pub async fn test_thread_seed(
+    state: State<'_, AppState>,
+    thread_state: String,
+) -> Result<String, IpcError> {
+    guard(&state)?;
+    let id = format!("th_test{}", chrono::Utc::now().timestamp_millis());
+    let (row, now) = (id.clone(), chrono::Utc::now().timestamp_millis());
+    state
+        .store
+        .write(move |t| {
+            t.execute(
+                "INSERT INTO threads (id, kind, cwd, engine_id, access, mode, state, sort_key, created_at, updated_at)
+                 VALUES (?1, 'thread', '/tmp', 'claude', 'edits', 'act', ?2, ?1, ?3, ?3)",
+                rusqlite::params![row, thread_state, now],
+            )?;
+            Ok(())
+        })
+        .await?;
+    Ok(id)
+}
+
+/// A thread's stored state (E2E-M5-3).
+#[tauri::command]
+pub async fn test_thread_state(state: State<'_, AppState>, id: String) -> Result<String, IpcError> {
+    guard(&state)?;
+    Ok(state
+        .store
+        .read(move |c| {
+            Ok(
+                c.query_row("SELECT state FROM threads WHERE id = ?1", [id], |r| {
+                    r.get::<_, String>(0)
+                })?,
+            )
+        })
+        .await?)
 }

@@ -697,14 +697,90 @@ impl PtyManager {
         }
     }
 
-    /// App exit: stops every child, then drops this run's registry file so
-    /// the next launch has nothing to ask about.
+    /// App exit: stops every child within [`QUIT_DEADLINE`], then drops this
+    /// run's registry file so the next launch has nothing to ask about.
     pub fn shutdown(&self) {
-        self.kill_all();
+        self.shutdown_within(QUIT_DEADLINE);
+    }
+
+    /// Quit (ARCHITECTURE §1.4, F-SH-07): every tree gets SIGHUP, SIGTERM
+    /// and SIGKILL 2 s apart, all panes in parallel; whatever is still alive
+    /// at `deadline` is force-killed so quitting never hangs.
+    pub fn shutdown_within(&self, deadline: Duration) {
+        let until = Instant::now() + deadline;
+        let sessions: Vec<Arc<Session>> = self.sessions.iter().map(|e| e.value().clone()).collect();
+        let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
+        for session in &sessions {
+            #[cfg(windows)]
+            if let Some(job) = &session.job {
+                job.terminate();
+            }
+            let (s, tx) = (session.clone(), done_tx.clone());
+            let spawned = std::thread::Builder::new()
+                .name("pty-quit".into())
+                .spawn(move || {
+                    kill_tree(s.pid, &s.exited, Duration::from_secs(2));
+                    let _ = tx.send(());
+                });
+            if spawned.is_err() {
+                force_kill(session.pid);
+                let _ = done_tx.send(());
+            }
+        }
+        drop(done_tx);
+        let mut finished = 0;
+        while finished < sessions.len() {
+            let left = until.saturating_duration_since(Instant::now());
+            match done_rx.recv_timeout(left) {
+                Ok(()) => finished += 1,
+                Err(_) => break,
+            }
+        }
+        let forced = sessions.iter().filter(|s| !exited(&s.exited)).count();
+        if forced > 0 {
+            tracing::warn!(
+                code = "pty.quit_forced",
+                count = forced,
+                "processes outlived the quit deadline; force-killing"
+            );
+            for s in sessions.iter().filter(|s| !exited(&s.exited)) {
+                force_kill(s.pid);
+            }
+        }
+        self.sessions.clear();
         if let Some(reg) = &self.registry {
             reg.close();
         }
     }
+}
+
+/// How long quitting may take before every child tree is force-killed.
+pub const QUIT_DEADLINE: Duration = Duration::from_secs(5);
+
+/// SIGKILL to a tree at once: its group, the root and every descendant.
+#[cfg(unix)]
+fn force_kill(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    let escaped = descendants(pid);
+    // SAFETY: kill(2) on our own child's group and its descendants.
+    unsafe {
+        libc::kill(-(pid as i32), libc::SIGKILL);
+        libc::kill(pid as i32, libc::SIGKILL);
+        for child in escaped {
+            libc::kill(child as i32, libc::SIGKILL);
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn force_kill(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    use orphans::ProcessTable;
+    orphans::SystemTable::default().kill(pid);
 }
 
 /// The state last handed to `pty:state`, so the reader marks real changes only.

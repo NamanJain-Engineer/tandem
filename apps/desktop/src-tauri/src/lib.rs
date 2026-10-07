@@ -41,6 +41,12 @@ macro_rules! app_commands {
             commands::shell::notifications_list,
             commands::shell::notifications_mark_read,
             commands::shell::ui_visibility,
+            commands::restore::restore_get_snapshot,
+            commands::restore::restore_resume,
+            commands::restore::restore_start_fresh,
+            commands::restore::restore_cancel,
+            commands::restore::restore_scrollback,
+            commands::restore::restore_auto_resume,
             commands::settings::settings_get_all,
             commands::settings::settings_set,
             commands::settings::settings_reset,
@@ -287,7 +293,7 @@ fn spawn_background(state: &AppState) {
     let terminals = state.terminals.clone();
     let snapshots = state.data.scrollback();
     tauri::async_runtime::spawn(async move {
-        let mut tick = tokio::time::interval(services::terminal::SNAPSHOT_EVERY);
+        let mut tick = tokio::time::interval(services::terminal::snapshot_every());
         tick.tick().await;
         loop {
             tick.tick().await;
@@ -347,6 +353,8 @@ pub fn run() {
         commands::test::test_notifier_calls,
         commands::test::test_notifier_click,
         commands::test::test_set_window_focused,
+        commands::test::test_thread_seed,
+        commands::test::test_thread_state,
         commands::test::test_auth_refresh,
         commands::test::test_account_create,
     ]);

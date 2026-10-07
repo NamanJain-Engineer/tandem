@@ -10,6 +10,9 @@
 //!   `$CLAUDE_CONFIG_DIR/settings.json`, feeding them hook JSON that also
 //!   carries transcript text (which must never leave `tandem-hook`).
 //!
+//! `--resume <id>` (or `resume <id>`) prints "Resumed session <id>" and
+//! reports that id from its hooks; a new run reports `fake-<pid>`.
+//!
 //! Lines: `/exit` quits; `/ask` asks for approval (Notification);
 //! `/script` runs UserPromptSubmit → Notification → Stop two seconds apart;
 //! `/title <t>` sets the OSC title; anything else is answered, then Stop.
@@ -54,6 +57,18 @@ fn out(s: &str) {
     let _ = o.flush();
 }
 
+/// `--resume <id>` resumes that session; otherwise each run is a new one.
+fn resumed() -> Option<String> {
+    let args: Vec<String> = std::env::args().collect();
+    args.windows(2)
+        .find(|w| w[0] == "--resume" || w[0] == "resume")
+        .map(|w| w[1].clone())
+}
+
+fn session_id() -> String {
+    resumed().unwrap_or_else(|| format!("fake-{}", std::process::id()))
+}
+
 /// Runs every Tandem hook for `event` with hook JSON on stdin.
 fn hook(event: &str, extra: serde_json::Value) {
     let Some(home) = std::env::var_os("CLAUDE_CONFIG_DIR") else {
@@ -67,7 +82,7 @@ fn hook(event: &str, extra: serde_json::Value) {
     };
     let mut input = serde_json::json!({
         "hook_event_name": event,
-        "session_id": "fake-session-1",
+        "session_id": session_id(),
         "transcript_path": "/tmp/fake-transcript.jsonl",
         "cwd": std::env::current_dir().map(|d| d.display().to_string()).unwrap_or_default(),
         "transcript": [{"role": "user", "content": "SECRET TRANSCRIPT TEXT"}],
@@ -160,6 +175,9 @@ fn main() {
             .map(|d| d.display().to_string())
             .unwrap_or_default()
     ));
+    if let Some(id) = resumed() {
+        out(&format!("Resumed session {id}\r\n"));
+    }
     if name == "claude" {
         hook("SessionStart", serde_json::json!({}));
     }

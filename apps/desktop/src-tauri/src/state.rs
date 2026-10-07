@@ -110,6 +110,8 @@ pub struct AppState {
     pub terminals: Arc<TerminalService>,
     pub approvals: Arc<crate::services::approvals::ApprovalService>,
     pub notifications: Arc<crate::services::notifications::NotificationService>,
+    /// Paused agents and their relaunch queue (F-SH-07).
+    pub restore: Arc<crate::services::restore::RestoreService>,
     pub config: Arc<ConfigService>,
     pub telemetry: Arc<TelemetryService>,
     pub deeplinks: DeepLinkQueue,
@@ -203,6 +205,21 @@ impl AppState {
         let engines = EngineService::new(store.clone(), bus.clone(), data.providers());
         engines.apply_config(&config.value());
         let status = StatusService::new(bus.clone(), clock.clone());
+        // Engine session ids are saved as soon as hooks report them, so a
+        // crash can still resume (F-SH-07).
+        let session_store = store.clone();
+        status.set_session_sink(Arc::new(move |pane, id| {
+            let store = session_store.clone();
+            let pane = tandem_core::ids::PaneId::from_db(pane.to_string());
+            let id = id.to_string();
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) =
+                    tandem_store::repo::sessions::set_engine_session(&store, &pane, &id).await
+                {
+                    tracing::warn!(error = %err, "couldn't save the engine session id");
+                }
+            });
+        }));
         let pty_bus = bus.clone();
         let mark_bus = bus.clone();
         let cwd_store = store.clone();
@@ -274,6 +291,9 @@ impl AppState {
         );
         let notifications =
             crate::services::notifications::NotificationService::new(store.clone(), bus.clone());
+        // Before the UI lists anything: agents pause, crashed threads settle.
+        let restore = crate::services::restore::RestoreService::new(store.clone(), bus.clone());
+        restore.settle_at_launch();
         let telemetry = TelemetryService::new(&data, net.clone());
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         Self {
@@ -294,6 +314,7 @@ impl AppState {
             terminals,
             approvals,
             notifications,
+            restore,
             config,
             telemetry,
             deeplinks: DeepLinkQueue::default(),

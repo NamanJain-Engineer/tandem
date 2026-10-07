@@ -463,3 +463,62 @@ fn f_cd_04_5_background_pane_memory_stays_bounded_after_1_gb() {
         "the process grew by {grown} bytes streaming 1 GB (bound {bound})"
     );
 }
+
+/// Ignores SIGHUP and SIGTERM: only SIGKILL ends it.
+const STUBBORN: &str = "trap '' HUP TERM; echo ready; while :; do sleep 0.1; done";
+
+#[test]
+fn f_sh_07_quit_force_kills_what_outlives_the_deadline_in_parallel() {
+    let mgr = PtyManager::new();
+    let mut pids = Vec::new();
+    for i in 0..3 {
+        let sink = Arc::new(VecSink::default());
+        let info = mgr
+            .spawn(spec(&format!("q{i}"), STUBBORN), Some(sink.clone()))
+            .expect("spawn");
+        assert!(wait_until(Duration::from_secs(5), || text(&sink).contains("ready")));
+        pids.push(info.pid);
+    }
+    let started = std::time::Instant::now();
+    mgr.shutdown_within(Duration::from_millis(1_200));
+    let took = started.elapsed();
+    // Parallel, and bounded by the deadline (not 3 × 1.2 s, never the full
+    // HUP→TERM→KILL ladder).
+    assert!(took < Duration::from_millis(2_000), "took {took:?}");
+    for pid in pids {
+        let gone = wait_until(Duration::from_secs(2), || {
+            // SAFETY: signal 0 only checks that the pid exists.
+            let alive = unsafe { libc::kill(pid as i32, 0) } == 0;
+            let zombie = std::fs::read_to_string(format!("/proc/{pid}/stat"))
+                .map(|s| {
+                    s.rsplit(')')
+                        .next()
+                        .is_some_and(|r| r.trim_start().starts_with('Z'))
+                })
+                .unwrap_or(true);
+            !alive || zombie
+        });
+        assert!(gone, "pid {pid} survived the quit");
+    }
+    assert_eq!(mgr.live_count(), 0);
+}
+
+#[test]
+fn f_sh_07_quit_ends_cooperative_shells_without_waiting_for_the_deadline() {
+    let mgr = PtyManager::new();
+    for i in 0..4 {
+        mgr.spawn(
+            spec(&format!("c{i}"), "echo up; sleep 30"),
+            Some(Arc::new(VecSink::default())),
+        )
+        .expect("spawn");
+    }
+    let started = std::time::Instant::now();
+    mgr.shutdown_within(Duration::from_secs(5));
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "took {:?}",
+        started.elapsed()
+    );
+    assert_eq!(mgr.live_count(), 0);
+}

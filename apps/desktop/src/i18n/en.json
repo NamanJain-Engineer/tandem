@@ -14,6 +14,7 @@
   "splash.crash.sendReport": "Send a crash report",
   "splash.failed": "Couldn't restore {n, plural, one {# session} other {# sessions}}",
   "splash.details": "Details",
+  "splash.checkingPlan": "Checking your plan…",
   "error.boot": "Tandem couldn't start. {detail}",
   "error.copyDiagnostics": "Copy diagnostics",
 
@@ -108,6 +109,16 @@
   "code.remove.body": "Nothing on disk is deleted. Add the folder again to bring back its history.",
   "code.remove.confirm": "Remove",
   "code.addFailed": "Couldn't add that folder",
+
+  "restore.paused": "Paused after restart",
+  "restore.queued": "Waiting to resume…",
+  "restore.resume": "Resume",
+  "restore.startFresh": "Start fresh",
+  "restore.cancelled": "Restore cancelled. This is the saved output from your last session.",
+  "restore.cancelHint": "Ctrl+C cancels the restore",
+  "restore.separator": "— Restored output —",
+  "restore.savedOutput": "Saved output",
+  "restore.cardLabel": "{name}, paused after restart",
 
   "terminal.label": "Terminal {name}",
   "terminal.exited": "Process exited ({code}).",

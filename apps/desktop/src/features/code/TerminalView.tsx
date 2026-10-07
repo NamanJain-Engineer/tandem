@@ -107,7 +107,7 @@ const LAYOUT_SETTLE_MS = 80;
 /** One spawn per pane even when React mounts twice (StrictMode, reloads). */
 const spawning = new Map<string, Promise<unknown>>();
 
-function base64ToBytes(b64: string): Uint8Array {
+export function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
