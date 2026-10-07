@@ -171,6 +171,13 @@ describe("public site", () => {
     expect(existsSync(fileURLToPath(new URL(`../public${CHECKSUMS_URL}`, import.meta.url)))).toBe(true);
   });
 
+  it("F-WB-01 every build is named Vibezeo, and same-day platforms are a goal, not a claim", () => {
+    for (const d of DOWNLOADS) for (const a of d.assets) expect(a.file, a.file).toMatch(/^Vibezeo_/);
+    const h = html(<HomePage />);
+    expect(h).toContain("The goal is that Linux, macOS and Windows get the same features on the same day");
+    expect(h).toContain("milestones in the 0.1.0 release");
+  });
+
   it("F-WB-01 no page shows a year", () => {
     for (const [name, Page] of Object.entries(PAGES))
       expect(html(<Page />), name).not.toMatch(/\b(19|20)\d{2}\b/);

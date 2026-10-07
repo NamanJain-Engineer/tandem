@@ -26,7 +26,7 @@ export const DOWNLOADS: Download[] = [
     os: "macos",
     name: "macOS",
     requirement: "macOS 10.15 or later, Apple Silicon or Intel",
-    assets: [{ file: "Tandem_0.1.0_universal-unsigned.dmg", label: "Download for macOS (.dmg)" }],
+    assets: [{ file: "Vibezeo_0.1.0_universal-unsigned.dmg", label: "Download for macOS (.dmg)" }],
     steps: [
       "Open the .dmg and drag Vibezeo into Applications.",
       "The first time, right-click Vibezeo in Applications, choose Open, then Open again. The build isn't notarized by Apple yet, so a plain double-click is blocked.",
@@ -38,8 +38,8 @@ export const DOWNLOADS: Download[] = [
     name: "Windows",
     requirement: "Windows 10 or 11, 64-bit",
     assets: [
-      { file: "Tandem_0.1.0_x64-setup-unsigned.exe", label: "Download for Windows (.exe)" },
-      { file: "Tandem_0.1.0_x64_en-US-unsigned.msi", label: ".msi installer" },
+      { file: "Vibezeo_0.1.0_x64-setup-unsigned.exe", label: "Download for Windows (.exe)" },
+      { file: "Vibezeo_0.1.0_x64_en-US-unsigned.msi", label: ".msi installer" },
     ],
     steps: [
       "Run the installer.",

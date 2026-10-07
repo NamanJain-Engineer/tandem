@@ -112,7 +112,7 @@ const PRINCIPLES = [
   },
   {
     title: "One codebase",
-    body: "macOS, Windows and Linux get the same features on the same day.",
+    body: "The goal is that Linux, macOS and Windows get the same features on the same day. Linux is first.",
   },
 ] as const;
 
@@ -177,10 +177,10 @@ function Screenshot({
 }
 
 const STATS = [
-  { value: String(PROGRESS.milestones), label: "milestones shipped" },
+  { value: String(PROGRESS.milestones), label: "milestones in the 0.1.0 release" },
   {
     value: PROGRESS.automatedTests.toLocaleString("en-US"),
-    label: "automated tests",
+    label: "automated tests in its code",
   },
   {
     value: String(PROGRESS.endToEndSuites),
