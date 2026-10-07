@@ -6,8 +6,6 @@ export const DOWNLOADS_PATH = "/downloads";
 
 export const RELEASE = {
   version: "0.1.0",
-  /** When the release was published. */
-  date: "October 2026",
 } as const;
 
 export type Os = "macos" | "windows" | "linux";

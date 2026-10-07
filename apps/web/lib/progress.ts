@@ -2,7 +2,6 @@
  * changelog. Figures come from the repository (`scripts/gate.sh` output and
  * `apps/desktop/e2e/specs`); update them when a milestone closes. */
 export const PROGRESS = {
-  asOf: "October 2026",
   milestones: 6,
   automatedTests: 792,
   endToEndSuites: 41,

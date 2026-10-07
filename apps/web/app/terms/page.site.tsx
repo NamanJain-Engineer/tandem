@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: "Terms" };
 
 export default function TermsPage() {
   return (
-    <ProsePage title="Terms of use" updated={SITE.updated}>
+    <ProsePage title="Terms of use">
       <p>
         These terms cover your use of this website and of the {SITE.product} desktop app, run by {OPERATOR}.
         By using either you agree to them.

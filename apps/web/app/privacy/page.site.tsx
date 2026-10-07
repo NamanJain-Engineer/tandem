@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Privacy" };
 
 export default function PrivacyPage() {
   return (
-    <ProsePage title="Privacy" updated={SITE.updated}>
+    <ProsePage title="Privacy">
       <p>
         {OPERATOR} is responsible for your data. This page covers this website and the {SITE.product} desktop
         app. Questions go to{" "}

@@ -20,8 +20,8 @@ export const SITE = {
     bio: "An engineer focused on building products and shipping meaningful software.",
     link: "https://github.com/NamanJain-Engineer",
   } as Founder,
-  /** Year the company started (About). */
-  founded: "2025" as string | null,
+  /** When the company started (About); not shown when null. */
+  founded: null as string | null,
   /** The registered entity, once there is one. When set, it's shown on About,
    * Terms and Privacy and in the footer; until then the founder runs the site. */
   legal: null as Legal | null,
@@ -29,7 +29,6 @@ export const SITE = {
   location: "India" as string | null,
   /** Who serves the site (Privacy). */
   host: "Vercel",
-  updated: "7 October 2026",
 } as const;
 
 /** Who's responsible for the site and the app: the registered entity, or

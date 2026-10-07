@@ -156,6 +156,11 @@ describe("public site", () => {
     expect(existsSync(fileURLToPath(new URL(`../public${CHECKSUMS_URL}`, import.meta.url)))).toBe(true);
   });
 
+  it("F-WB-01 no page shows a year", () => {
+    for (const [name, Page] of Object.entries(PAGES))
+      expect(html(<Page />), name).not.toMatch(/\b(19|20)\d{2}\b/);
+  });
+
   it("F-WB-01 pricing shows the launch plans from the spec and says Free is available now, Pro and Team not yet", () => {
     const h = html(<PricingPage />);
     expect(PLANS.map((p) => [p.name, p.price])).toEqual([

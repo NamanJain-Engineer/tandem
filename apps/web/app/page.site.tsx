@@ -242,7 +242,7 @@ export default function HomePage() {
             ))}
           </dl>
           <p className="text-sm text-fg-muted">
-            Built so far, as of {PROGRESS.asOf}.{" "}
+            Built so far.{" "}
             <a href="/changelog/" className="text-accent hover:underline">
               See the changelog →
             </a>

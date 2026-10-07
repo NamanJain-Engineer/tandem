@@ -30,7 +30,7 @@ export default function DownloadPage() {
         <h1 className="text-3xl font-semibold tracking-tight">Download {SITE.product}</h1>
         <p className="max-w-3xl text-lg text-fg-muted">
           {SITE.product} {RELEASE.version} is released for Linux. macOS and Windows are next. The Free plan
-          runs on your own computer, with the coding agents you already use. Released {RELEASE.date}.{" "}
+          runs on your own computer, with the coding agents you already use.{" "}
           <a href={RELEASE_URL} className="text-accent hover:underline">
             Release notes
           </a>
