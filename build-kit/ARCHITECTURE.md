@@ -660,9 +660,9 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 #### Launch, handoff, lanes, git [F-CD-14..16, F-CD-20]
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
-| `presets_list` / `preset_save` / `preset_delete` | — / `Preset` / `{id}` | `[Preset]` / `Preset` / — | Invalid (builtin) | F-CD-14 |
-| `launch_lineup` | `{workspaceId, seats:[Seat], task?, isolation:"shared"\|"worktree"}` → op | `LaunchReport {launched:[{seatIndex, paneId}], failed:[{seatIndex, error: IpcError}]}` | LimitReached (whole lineup over plan cap → nothing launched) | F-CD-14, F-CD-15 |
-| `launch_retry_seat` | `{workspaceId, seat, task?, isolation}` | `{paneId}` | as above | F-CD-14 |
+| `presets_list` / `preset_save` / `preset_delete` | — / `{id?, name, seats:[Seat], isolation}` / `{id}` | `[Preset]` (the 4 built-ins, defined in code with `pst_builtin_*` ids, then saved ones) / `Preset` / — | Invalid (builtin) · Conflict (name taken) | F-CD-14 |
+| `launch_lineup` | `{workspaceId, seats:[Seat], task?, isolation:"shared"\|"worktree"}` → op | `LaunchReport {launched:[{seatIndex, pane, workspaceId, tabId, laneBranch?}], failed:[{seatIndex, seat, error: IpcError}], sharedTabId?}` (seats expanded by `count`; shared-checkout seats open in one new tab named after the task; agents type `briefing? + role brief + task` once ready) | LimitReached (whole lineup over plan cap → nothing launched) | F-CD-14, F-CD-15 |
+| `launch_retry_seat` | `{workspaceId, seat, task?, isolation, tabId?}` (`tabId`: the lineup's shared tab) | `LaunchedSeat` | as above | F-CD-14 |
 | `handoff_start` | `{source: SourceRef, engineId, accountId?, teammateId?, extra?}` → op | `{target: SourceRef}` | EngineMissing | F-CD-16 |
 | `lane_create` | `{workspaceId, slugSource}` | `Workspace` (child) | Conflict, Io | F-CD-15 |
 | `lane_diff` | `{laneId}` | `[FileDiff]` | — | F-CD-15 |

@@ -9,7 +9,7 @@ import {
 } from "react-resizable-panels";
 import type { IpcError, PaneRecord, WorkspaceSummary } from "@tandem/protocol";
 import { SquareTerminal } from "lucide-react";
-import { Badge, EngineGlyph, Spinner, StatusDot, Tooltip, cx, useToast, type MenuEntry, type Status } from "@tandem/ui";
+import { Badge, Button, EngineGlyph, Spinner, StatusDot, Tooltip, cx, useToast, type MenuEntry, type Status } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useEngines } from "../../stores/engines";
 import { paneKey, statusView, useStatus } from "../../stores/status";
@@ -18,6 +18,7 @@ import { useBoot } from "../shell/useBoot";
 import { useCloseConfirm } from "../../stores/closeConfirm";
 import { useFlash } from "../../stores/focus";
 import { useWorkspaces } from "../../stores/workspaces";
+import { useLaunch } from "../../stores/launch";
 import { useRestore, waitingOnCard } from "../../stores/restore";
 import { invoke } from "../../ipc/invoke";
 import { useLayout, type Box, type TabPanes } from "../../stores/layout";
@@ -474,6 +475,9 @@ function EmptyTab({ tabId, workspace }: { tabId: string; workspace: WorkspaceSum
           <p className="text-sm text-fg-muted">{t("code.startBody")}</p>
         </div>
         <LaunchGrid tabId={tabId} busy={busy} onPick={(id) => void start(id)} />
+        <Button size="sm" variant="ghost" className="self-start" onClick={() => useLaunch.getState().open(workspace.id)} data-testid="launch-several">
+          {t("launch.several")}
+        </Button>
       </div>
     </div>
   );

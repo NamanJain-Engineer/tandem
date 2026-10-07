@@ -5,6 +5,7 @@ pub mod account;
 pub mod app;
 pub mod engines;
 pub mod lanes;
+pub mod launch;
 pub mod onboarding;
 pub mod restore;
 pub mod settings;

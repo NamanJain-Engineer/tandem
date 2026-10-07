@@ -1,3 +1,4 @@
+import { LaunchSheet } from "../code/LaunchSheet";
 import { WorktreeDialogs } from "../code/Worktrees";
 import { useEffect } from "react";
 import { useToast } from "@tandem/ui";
@@ -133,6 +134,7 @@ export function AppShell() {
       <StatusBar />
       <UpgradeDialog />
       <WorktreeDialogs />
+      <LaunchSheet />
       <Palette />
       <OrphansDialog />
       <RestartDialog />

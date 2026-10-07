@@ -2,6 +2,7 @@
 // predicates) comes from `tandem-core` through
 // `@tandem/protocol/shortcuts.json`; the palette, the shortcut dispatcher and
 // menus all run commands through `runCommand`, so they share one handler.
+import { useLaunch } from "../../stores/launch";
 import { useNotifications } from "../../stores/notifications";
 import { useCloseConfirm } from "../../stores/closeConfirm";
 import { useSidebar } from "../../stores/sidebar";
@@ -104,6 +105,7 @@ export const handlers: Record<string, () => void> = {
     const ws = useWorkspaces.getState();
     if (ws.activeId) void ws.createTab(ws.activeId);
   },
+  "workspace.launch": () => useLaunch.getState().open(null),
   "workspace.next_tab": () => cycleTab(1),
   "workspace.prev_tab": () => cycleTab(-1),
   "workspace.arrange": () => {

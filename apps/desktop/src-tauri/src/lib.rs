@@ -71,6 +71,11 @@ macro_rules! app_commands {
             commands::workspaces::workspace_list,
             commands::workspaces::workspace_rename,
             commands::workspaces::workspace_remove,
+            commands::launch::presets_list,
+            commands::launch::preset_save,
+            commands::launch::preset_delete,
+            commands::launch::launch_lineup,
+            commands::launch::launch_retry_seat,
             commands::lanes::lane_create,
             commands::lanes::lane_diff,
             commands::lanes::lane_merge,
@@ -651,5 +656,38 @@ mod harness_tests {
             commands.contains("#[cfg(debug_assertions)]\npub mod test;"),
             "the harness module is debug-only"
         );
+    }
+
+    /// Every registered command has an `allow-<name>` permission (build.rs)
+    /// that the window's capability grants; otherwise the webview's call is
+    /// refused at runtime (ARCHITECTURE §3.1).
+    #[test]
+    fn every_registered_command_is_permitted() {
+        let lib = include_str!("lib.rs");
+        let build = include_str!("../build.rs");
+        let main = include_str!("../capabilities/main.json");
+        let harness = include_str!("../test-capability.json");
+        let names: Vec<&str> = lib
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("commands::")?.strip_suffix(','))
+            .filter_map(|path| path.split("::").nth(1))
+            .collect();
+        assert!(names.len() > 100, "found {} commands", names.len());
+        for name in names {
+            assert!(
+                build.contains(&format!("\"{name}\",")),
+                "{name} is missing from build.rs COMMANDS"
+            );
+            let allow = format!("\"allow-{}\"", name.replace('_', "-"));
+            let granted = if name.starts_with("test_") {
+                harness
+            } else {
+                main
+            };
+            assert!(
+                granted.contains(&allow),
+                "{allow} is missing from the capability"
+            );
+        }
     }
 }

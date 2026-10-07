@@ -90,6 +90,15 @@
     "enabledWhen": "always"
   },
   {
+    "id": "workspace.launch",
+    "category": "workspace",
+    "mac": "Mod+Shift+L",
+    "pc": "Mod+Shift+L",
+    "pcTerminal": "Mod+Shift+L",
+    "inText": false,
+    "enabledWhen": "workspace_open"
+  },
+  {
     "id": "workspace.new_tab",
     "category": "workspace",
     "mac": "Mod+T",

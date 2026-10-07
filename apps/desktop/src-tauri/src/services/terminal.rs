@@ -263,6 +263,37 @@ impl TerminalService {
 
     /// The plan's live-pane limit: at the limit no pane or process is
     /// created and the picker shows the upgrade card (F-CD-03).
+    /// Room for `opening` more live panes under the plan's cap: a lineup
+    /// launches whole or not at all (F-CD-14).
+    pub fn check_room(&self, max_live: Option<u32>, opening: u32) -> Result<(), IpcError> {
+        match max_live {
+            Some(max) if self.pty.live_count() as u32 + opening > max => Err(IpcError::new(
+                ErrorCode::LimitReached,
+                format!("Free includes {max} live panes"),
+            )
+            .with_stage("panes")),
+            _ => Ok(()),
+        }
+    }
+
+    /// Types `text` as the pane's first prompt once its view has started it
+    /// and its TUI is ready (F-CD-14 AC1). Timeout when it never starts.
+    pub async fn type_prompt_when_live(
+        &self,
+        pane: &PaneId,
+        text: &str,
+        timeout: Duration,
+    ) -> Result<(), IpcError> {
+        let until = std::time::Instant::now() + timeout;
+        while !self.pty.is_live(pane.as_str()) {
+            if std::time::Instant::now() >= until {
+                return Err(IpcError::new(ErrorCode::Timeout, "The pane didn't start"));
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        self.type_prompt(pane, text).await
+    }
+
     pub fn check_live_limit(&self, max_live: Option<u32>) -> Result<(), IpcError> {
         match max_live {
             Some(max) if self.pty.live_count() as u32 >= max => Err(IpcError::new(

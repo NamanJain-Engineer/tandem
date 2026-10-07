@@ -37,7 +37,23 @@ pub async fn pane_create(
     engine_id: Option<String>,
     account_id: Option<tandem_core::ids::AccountId>,
 ) -> Result<PaneRecord, IpcError> {
-    match kind.as_str() {
+    state
+        .terminals
+        .check_live_limit(state.entitlements.limits().panes)?;
+    create_pane(&state, &tab_id, &kind, cwd, engine_id, account_id).await
+}
+
+/// A pane record in `tab` (the view starts its process). Callers check the
+/// plan's live-pane cap first: one pane (`pane_create`) or a whole lineup.
+pub(crate) async fn create_pane(
+    state: &AppState,
+    tab_id: &TabId,
+    kind: &str,
+    cwd: Option<String>,
+    engine_id: Option<String>,
+    account_id: Option<tandem_core::ids::AccountId>,
+) -> Result<PaneRecord, IpcError> {
+    match kind {
         "terminal" => {}
         "agent" => {
             let known = engine_id
@@ -54,9 +70,6 @@ pub async fn pane_create(
             ))
         }
     }
-    state
-        .terminals
-        .check_live_limit(state.entitlements.limits().panes)?;
     let engine_id = engine_id.filter(|_| kind == "agent");
     // An account must belong to the pane's engine (F-AC-01).
     if let Some(account) = &account_id {
@@ -68,7 +81,7 @@ pub async fn pane_create(
             ));
         }
     }
-    let mut pane = panes::create_with(&state.store, &tab_id, &kind, cwd, engine_id).await?;
+    let mut pane = panes::create_with(&state.store, tab_id, kind, cwd, engine_id).await?;
     if let Some(account) = account_id {
         panes::set_account(&state.store, &pane.id, &account).await?;
         pane.account_id = Some(account);

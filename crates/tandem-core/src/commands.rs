@@ -130,6 +130,13 @@ static REGISTRY: &[CommandSpec] = &[
         E::Always,
     ),
     same("workspace.open_folder", C::Workspace, None, E::Always),
+    // The launch sheet (F-CD-14, UI-12).
+    same(
+        "workspace.launch",
+        C::Workspace,
+        Some("Mod+Shift+L"),
+        E::WorkspaceOpen,
+    ),
     aliased(
         "workspace.new_tab",
         C::Workspace,

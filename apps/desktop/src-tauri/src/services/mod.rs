@@ -12,6 +12,7 @@ pub mod engines;
 pub mod entitlement;
 pub mod events;
 pub mod lanes;
+pub mod launch;
 pub mod names;
 pub mod notifications;
 pub mod notifier;

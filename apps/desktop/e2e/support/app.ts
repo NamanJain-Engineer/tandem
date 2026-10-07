@@ -252,8 +252,9 @@ export function mod(): string {
  * back signed out; specs that relaunch use offline mode instead. */
 async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): Promise<void> {
   await waitForApp();
-  const list = await invoke<Array<{ id: string }>>("workspace_list");
-  for (const w of list) await invoke("workspace_remove", { id: w.id });
+  const list = await invoke<Array<{ id: string; parentId: string | null }>>("workspace_list");
+  // Removing a repository removes its worktrees with it (F-CD-15).
+  for (const w of list.filter((w) => !w.parentId)) await invoke("workspace_remove", { id: w.id });
   await invoke("auth_sign_out");
   // Specs start past the first-run wizard unless they test it (E2E-M5-9).
   await invoke("onboarding_set", onboarded ? { done: true } : { step: "engines" });

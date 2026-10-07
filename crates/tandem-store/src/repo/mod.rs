@@ -5,6 +5,7 @@ pub mod approvals;
 pub mod layouts;
 pub mod notifications;
 pub mod panes;
+pub mod presets;
 pub mod restore;
 pub mod sessions;
 pub mod settings;
