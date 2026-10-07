@@ -105,7 +105,7 @@ All locally generated ids are `<prefix>_<ULID>` (Crockford base32, 26 chars), st
  ┌────────────▼──────────────── Tandem cloud ─────────────────────────────────────────────────────────┐
  │ apps/api (Hono, Node 22): auth (better-auth + desktop PKCE + device code), /me entitlements (Ed25519│
  │ JWS), credits ledger, Stripe billing + webhooks, AI/STT relays, voice session minting, /config,     │
- │ /relay/{pairing_id} WebSocket, updates feed ── Postgres 16 · Redis 7 · SMTP · Stripe · OpenRouter   │
+ │ /relay/{pairing_id} WebSocket, updates feed ── Postgres 16 · Redis 7 · SMTP · Stripe · Claude API   │
  │ apps/web (Next.js 15): marketing, /docs (Fumadocs), /changelog, account portal, /remote PWA         │
  └────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -2291,7 +2291,7 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 - Team: org owner creates checkout with `quantity = seats`; seat changes call `updateQuantity`; credits pooled on the org's buckets; per-member caps via `member_usage` (F-BL-06 AC2/3).
 
 ### 14.8 Relays and providers [F-BE-06..08, F-BE-11]
-- **AI:** `AiProvider.complete({feature, model, system, messages, maxTokens, json})`; `OpenRouterAi` (`https://openrouter.ai/api/v1/chat/completions`, 30 s timeout, 1 retry on 5xx, `provider: {data_collection: 'deny'}`), `MockAi` (deterministic: title = first 6 words title-cased; rewrite = normalized input; teammate-draft = fixed JSON from `test/fixtures`; auto/next = `prompt "Continue with the next step."` unless scrollback contains `ALL TESTS PASSED` → `done`; voice/act = keyword intents → tool calls; resolve = token-overlap scoring). Selected when `OPENROUTER_API_KEY` is empty. Models per feature from remote config. Metering: reserve the per-call price up front, settle to the same (flat prices) or refund on failure. No request/response bodies are logged; `ai_requests` stores metadata only (F-BE-06 AC2 log-capture test).
+- **AI:** `AiProvider.complete({feature, model, system, messages, maxTokens, json})`; `ClaudeAi` (the Claude Messages API, `https://api.anthropic.com/v1/messages`, first-party so startup-program credits apply; 30 s timeout, 1 retry on 5xx or overloaded; D-103), `MockAi` (deterministic: title = first 6 words title-cased; rewrite = normalized input; teammate-draft = fixed JSON from `test/fixtures`; auto/next = `prompt "Continue with the next step."` unless scrollback contains `ALL TESTS PASSED` → `done`; voice/act = keyword intents → tool calls; resolve = token-overlap scoring). Selected when `ANTHROPIC_API_KEY` is empty. Models per feature from remote config. Metering: reserve the per-call price up front, settle to the same (flat prices) or refund on failure. No request/response bodies are logged; `ai_requests` stores metadata only (F-BE-06 AC2 log-capture test).
 - **STT:** `SttProvider.transcribe(stream, {mime, language, hints})`; real provider configured by `STT_PROVIDER` (`openrouter` | `groq` | `openai`, keys from env), `MockStt` returns the `x-mock-transcript` header value or "hello world". Audio is piped (busboy stream → provider), never written to disk (AC3 asserts temp dir empty). Duration from container headers (Opus granule / WAV header); cost `ceil(duration/15) × 2`; daily cap check on `daily_usage` before forwarding.
 - **Realtime:** `RealtimeProvider.mint({instructions, voice, maxSeconds})` → ephemeral token + ws URL (`OpenAiRealtime` uses the vendor's client-secret endpoint; `MockRealtime` returns `ws://api…/v1/dev/realtime?token=…`). Reservation 10 min × 120/min = 1,200 cr (F-BE-08 AC1). Sweeper settles unsettled sessions at `max_seconds` (provider usage if available).
 - **Relay (F-BE-11):** `ws` server on `/v1/relay/:pairing_id`; auth on upgrade; pairs at most one desktop + one phone socket; forwards binary frames unchanged; frames >64 KB → close 1009; per-pairing rate limit 50 frames/s; stores nothing except connect/disconnect metadata. `src/routes/relay.ts` imports no crypto modules (lint rule `no-restricted-imports` for `crypto`, `node:crypto`, `@noble/*` in that file; AC2).
@@ -2428,7 +2428,7 @@ Export: zip of `settings.json`, `workspaces.json`, `threads.json` (with messages
 | `BILLING_PROVIDER` | `mock` | `stripe` uses `STRIPE_*` |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_API_BASE` | `sk_test_mock` / `whsec_mock` / `http://localhost:12111` | |
 | `STRIPE_PRICE_*` | `price_mock_*` | |
-| `AI_PROVIDER` / `OPENROUTER_API_KEY` | `mock` / empty → MockAi | `openrouter` when the key is set |
+| `AI_PROVIDER` / `ANTHROPIC_API_KEY` | `mock` / empty → MockAi | `claude` when the key is set |
 | `STT_PROVIDER` / `STT_API_KEY` | `mock` / empty | |
 | `REALTIME_PROVIDER` / `OPENAI_API_KEY` | `mock` / empty | |
 | `TURNSTILE_SECRET` | empty → noop | |

@@ -62,7 +62,7 @@ git tag m<n>
 | `TANDEM_NET_LOG=<file>` | Logs every outbound HTTP request from Rust (host, path, no bodies). Used for "nothing leaves the machine" tests. |
 | `TANDEM_REAL_ENGINES=1` | Enables gated integration tests against real CLIs on PATH. |
 | `TANDEM_API_TEST_ROUTES=1` | API mounts `/__test/*` (clock, plan, credits, mail helpers). A test asserts they return 404 without the flag or with `NODE_ENV=production`. |
-| `BILLING_PROVIDER=mock\|stripe`, `AI_PROVIDER=mock\|openrouter`, `STT_PROVIDER=mock\|…` | Dev and test run on mocks. Mocks are chosen automatically when keys are absent. |
+| `BILLING_PROVIDER=mock\|stripe`, `AI_PROVIDER=mock\|claude`, `STT_PROVIDER=mock\|…` | Dev and test run on mocks. Mocks are chosen automatically when keys are absent. |
 
 **Fixtures and fakes (locations are fixed):**
 - `crates/tandem-engines/tests/fixtures/bin/`: one fake per engine command (`claude`, `codex`, `cursor-agent`, `gemini`, `copilot`, `grok`, `opencode`, `droid`, `amp`, `aider`, `kimi`). Each is a symlink to the `fake-engine` binary (ARCHITECTURE §6.12: a test-only `[[bin]]` of `tandem-engines`), which dispatches on `argv[0]` (or `TANDEM_FAKE_ENGINE`), plays the script in `TANDEM_FAKE_SCRIPT` and records to `TANDEM_FAKE_RECORD`. It supports three modes:
@@ -1568,7 +1568,7 @@ grep -rq "$E2E_FAKE_TOKEN" "$E2E_LAST_HOME" && exit 1 || true    # token only in
    - Monthly reset on `invoice.paid`, with a ledger entry.
    - `GET /v1/credits`. A failed reserve returns `402 CREDITS_EXHAUSTED`.
 2. **AI relay (F-BE-06).**
-   - An `AiProvider` interface: OpenRouter, plus a deterministic mock used when there is no key.
+   - An `AiProvider` interface: the Claude API (D-103), plus a deterministic mock used when there is no key.
    - Per-feature model ids come from the config. 30 s timeout, 1 retry on 5xx. Metering maps actual tokens to credits through the price table.
    - No request or response bodies are logged (a log-capture test).
    - Redis buckets per user and feature return 429 with `Retry-After`.
@@ -1630,7 +1630,7 @@ cargo test -p tandem-voice f_di_05 && cargo test --workspace invariant_rule_7
 
 **Exit checklist:** G green · every hosted route is in the `requirePlan` table test · no request bodies in the API logs.
 **HUMAN_TODO:**
-- *Accounts & keys:* `OPENROUTER_API_KEY` and per-feature model ids; STT provider key; enable no-training and no-retention provider settings; Stripe one-time prices for the packs ($5/5,000, $10/12,000, $20/30,000) and Team seat prices.
+- *Accounts & keys:* `ANTHROPIC_API_KEY` and per-feature model ids; STT provider key; enable no-training and no-retention provider settings; Stripe one-time prices for the packs ($5/5,000, $10/12,000, $20/30,000) and Team seat prices.
 - *Legal:* refund policy, support mailbox, DPAs with providers, subprocessor list review.
 
 ---
