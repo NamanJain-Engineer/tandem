@@ -156,6 +156,7 @@ const TEST_COMMANDS: &[&str] = &[
     "test_set_window_focused",
     "test_thread_seed",
     "test_thread_state",
+    "test_thread_seed_events",
     "test_update_installed",
     "test_min_version_shift",
     "test_auth_refresh",

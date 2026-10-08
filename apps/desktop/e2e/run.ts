@@ -89,7 +89,7 @@ async function main() {
   if (!process.env.TANDEM_E2E_SKIP_BUILD) {
     execFileSync("pnpm", ["build"], { cwd: desktop, stdio: "inherit" });
     // Perf suites measure an optimised build (the `perf` profile keeps the test harness).
-    const cargoProfile = suite ? ["--profile", "perf"] : [];
+    const cargoProfile = suite && process.env.TANDEM_PERF_BUILD !== "debug" ? ["--profile", "perf"] : [];
     execFileSync("cargo", ["build", "-p", "tandem-desktop", "--features", "custom-protocol", ...cargoProfile], { cwd: root, stdio: "inherit" });
     // The status hook and the fake engines (ARCHITECTURE §6.12).
     execFileSync("cargo", ["build", "-p", "tandem-engines", "--features", "fixtures", "--bins"], { cwd: root, stdio: "inherit" });
@@ -143,7 +143,9 @@ async function main() {
     TANDEM_HOME: home,
     TANDEM_FAKE_KEYCHAIN: "1",
     TANDEM_E2E: "1",
-    TANDEM_APP_BINARY: join(root, suite ? "target/perf/tandem" : "target/debug/tandem"),
+    // TANDEM_PERF_BUILD=debug runs a suite on the debug build (quick
+    // iterations; results record the build).
+    TANDEM_APP_BINARY: join(root, suite && process.env.TANDEM_PERF_BUILD !== "debug" ? "target/perf/tandem" : "target/debug/tandem"),
     TANDEM_API_URL: API,
     TANDEM_WEB_URL: WEB,
     TANDEM_OPEN_URL_CMD: opener,

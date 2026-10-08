@@ -85,7 +85,7 @@ export {
   type Block as MarkdownBlock,
   type Inline as MarkdownInline,
 } from "./components/markdown";
-export { CodeBlock, MarkdownView, type CodeBlockProps, type MarkdownViewProps } from "./components/MarkdownView";
+export { CodeBlock, LARGE_PREVIEW, MarkdownView, type CodeBlockProps, type MarkdownViewProps } from "./components/MarkdownView";
 export { Popover, type PopoverProps } from "./components/Popover";
 export {
   ContextMeter,

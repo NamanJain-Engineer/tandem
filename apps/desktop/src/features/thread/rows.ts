@@ -99,6 +99,34 @@ export function toRows(view: ThreadView): Row[] {
   return rows;
 }
 
+function sameRow(a: Row, b: Row): boolean {
+  if (a.kind !== b.kind || a.key !== b.key) return false;
+  const x = a as Record<string, unknown>;
+  const y = b as Record<string, unknown>;
+  for (const k of Object.keys(x)) {
+    const u = x[k];
+    const v = y[k];
+    if (u === v) continue;
+    if (!Array.isArray(u) || !Array.isArray(v) || u.length !== v.length || u.some((e, i) => e !== v[i])) return false;
+  }
+  return true;
+}
+
+/** `next` with every row that didn't change replaced by its object in
+ * `prev`, so memoized rows skip rendering while a turn streams. */
+export function reuseRows(prev: Row[], next: Row[]): Row[] {
+  if (prev.length === 0) return next;
+  const old = new Map(prev.map((r) => [r.key, r]));
+  let same = prev.length === next.length;
+  const out = next.map((r, i) => {
+    const o = old.get(r.key);
+    const keep = o && sameRow(o, r) ? o : r;
+    if (keep !== prev[i]) same = false;
+    return keep;
+  });
+  return same ? prev : out;
+}
+
 /** Approval requests of the running turn still waiting for an answer,
  * oldest first (UI-23: pinned above the composer). */
 export function pendingApprovals(rows: Row[], running: string | null): Array<Extract<Row, { kind: "approval" }>> {

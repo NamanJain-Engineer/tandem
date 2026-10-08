@@ -205,6 +205,7 @@ const RowView = memo(function RowView({
               copiedLabel={t("thread.copied")}
               doneLabel={t("thread.taskDone")}
               todoLabel={t("thread.taskTodo")}
+              showAllLabel={(size) => t("thread.showAll", { size })}
             />
           </div>
         </Hover>

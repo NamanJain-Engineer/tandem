@@ -925,6 +925,7 @@
   "thread.attachments": "{n, plural, one {# attachment} other {# attachments}}",
   "thread.taskDone": "Done",
   "thread.taskTodo": "To do",
+  "thread.showAll": "Show all ({size})",
   "thread.working": "Working {s}s",
   "thread.newActivity": "New activity",
   "thread.stopped": "Stopped by you",

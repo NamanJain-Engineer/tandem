@@ -417,6 +417,7 @@ pub fn run() {
         commands::test::test_set_window_focused,
         commands::test::test_thread_seed,
         commands::test::test_thread_state,
+        commands::test::test_thread_seed_events,
         commands::test::test_update_installed,
         commands::test::test_min_version_shift,
         commands::test::test_auth_refresh,

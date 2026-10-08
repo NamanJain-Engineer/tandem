@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseInline, parseMarkdown, safeHref, splitStable } from "./markdown";
+import { lineChunks, parseInline, parseMarkdown, parseMarkdownCached, safeHref, splitStable } from "./markdown";
 
 describe("markdown (F-TH-12 MarkdownView)", () => {
   it("F-TH-12 headings, paragraphs, rules and fenced code", () => {
@@ -66,5 +66,24 @@ describe("markdown (F-TH-12 MarkdownView)", () => {
       tail: "Tail being wri",
     });
     expect(splitStable("no break yet")).toEqual({ stable: "", tail: "no break yet" });
+  });
+
+  it("F-TH-12 UI-21 settled text parses once and comes back from the cache; huge text isn't kept", () => {
+    const src = "## Cached\n\nA paragraph with `code`.";
+    const first = parseMarkdownCached(src);
+    expect(first).toEqual(parseMarkdown(src));
+    expect(parseMarkdownCached(src)).toBe(first);
+    const huge = "x".repeat(65 * 1024);
+    expect(parseMarkdownCached(huge)).not.toBe(parseMarkdownCached(huge));
+  });
+
+  it("F-TH-12 large text cuts into line-aligned chunks that cover it all", () => {
+    const text = "aaaa\nbbbb\ncccc\ndddd\n";
+    expect(lineChunks(text, 7, 7)).toEqual([5, 10, 15, 20]);
+    expect(lineChunks("x".repeat(10), 4, 3)).toEqual([4, 7, 10]);
+    expect(lineChunks("", 4, 4)).toEqual([]);
+    const long = "word ".repeat(1000);
+    const ends = lineChunks(long, 1024, 2048);
+    expect(ends[ends.length - 1]).toBe(long.length);
   });
 });

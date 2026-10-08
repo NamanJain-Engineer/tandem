@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ThreadEvent, ThreadEventEnvelope } from "@tandem/protocol";
 import { emptyThread, reduce } from "./reducer";
-import { groupStatus, pendingApprovals, toRows, usageOf, type ToolEvent } from "./rows";
+import { groupStatus, pendingApprovals, reuseRows, toRows, usageOf, type ToolEvent } from "./rows";
 
 let seq = 0;
 function env(turnId: string, event: ThreadEvent, s?: number): ThreadEventEnvelope {
@@ -89,5 +89,26 @@ describe("transcript rows (F-TH-12, UI-21)", () => {
     view = reduce(view, env("t2", { type: "user", text: "more", attachments: [] }, 0));
     view = reduce(view, env("t2", { type: "usage", input: 10, output: 5, cacheRead: 0, cacheWrite: 0, contextFillPct: null, costUsd: null }, 1));
     expect(usageOf(view)).toEqual({ input: 160, output: 25, contextFillPct: 4.2 });
+  });
+
+  it("UI-21 a streamed delta keeps the objects of rows that didn't change", () => {
+    seq = 0;
+    const before = play(
+      env("t1", { type: "user", text: "go", attachments: [] }),
+      env("t1", tool("a")),
+      env("t1", tool("b")),
+      env("t1", tool("c")),
+      env("t1", { type: "assistant_delta", text: "Hel" }, 10),
+    );
+    const prev = toRows(before);
+    const next = reuseRows(prev, toRows(reduce(before, env("t1", { type: "assistant_delta", text: "lo" }, 10))));
+    expect(next.map((r) => r.kind)).toEqual(["user", "tools", "assistant", "working"]);
+    expect(next[0]).toBe(prev[0]);
+    expect(next[1]).toBe(prev[1]);
+    expect(next[2]).not.toBe(prev[2]);
+    expect(next[2]).toMatchObject({ markdown: "Hello" });
+    expect(next[3]).toBe(prev[3]);
+    // Nothing changed: the same array comes back.
+    expect(reuseRows(next, toRows(reduce(before, env("t1", { type: "assistant_delta", text: "lo" }, 10))))).toBe(next);
   });
 });

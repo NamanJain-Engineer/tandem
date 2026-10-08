@@ -144,6 +144,50 @@ export function parseMarkdown(src: string): Block[] {
   return parseLines(lines);
 }
 
+/** Where to cut `text` into chunks: the first about `first` long, the rest
+ * about `step`, each ending at a line end when there is one. */
+export function lineChunks(text: string, first: number, step: number): number[] {
+  const ends: number[] = [];
+  let at = 0;
+  let size = first;
+  while (at < text.length) {
+    let end = Math.min(text.length, at + size);
+    if (end < text.length) {
+      const nl = text.lastIndexOf("\n", end - 1);
+      if (nl >= at) end = nl + 1;
+    }
+    ends.push(end);
+    at = end;
+    size = step;
+  }
+  return ends;
+}
+
+const CACHE_ENTRIES = 256;
+const CACHE_MAX_CHARS = 64 * 1024;
+const cache = new Map<string, Block[]>();
+
+/** `parseMarkdown` for settled text, remembering the last few hundred
+ * messages (each under 64 KB), so a row scrolled back into view doesn't
+ * parse again. The blocks are shared: never mutate them. */
+export function parseMarkdownCached(src: string): Block[] {
+  if (src.length > CACHE_MAX_CHARS) return parseMarkdown(src);
+  const hit = cache.get(src);
+  if (hit) {
+    // Most recently used goes last.
+    cache.delete(src);
+    cache.set(src, hit);
+    return hit;
+  }
+  const parsed = parseMarkdown(src);
+  cache.set(src, parsed);
+  if (cache.size > CACHE_ENTRIES) {
+    const oldest = cache.keys().next();
+    if (!oldest.done) cache.delete(oldest.value);
+  }
+  return parsed;
+}
+
 function parseLines(lines: string[]): Block[] {
   const blocks: Block[] = [];
   let para: string[] = [];

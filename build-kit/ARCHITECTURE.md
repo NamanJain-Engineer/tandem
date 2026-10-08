@@ -849,6 +849,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `test_min_version_shift` | `{ms}` | `UpdateState` (moves the minimum-version notice `ms` into the past: the 72 h grace, time-mocked) | — |
 | `test_thread_seed` | `{threadState}` | thread id (writes a bare `threads` row in that state, e.g. one a crash left `working`; E2E-M5-3 until threads land in M7) | — |
 | `test_thread_state` | `{id}` | the thread's stored `state` | NotFound |
+| `test_thread_seed_events` | `{threadId, events, fenceBytes?}` | the number of events written (completed turns of a user message, an assistant reply, tool calls and a turn end, in one transaction; `fenceBytes` adds a last reply with a code fence that size; threads perf suite) | NotFound |
 
 `window.__tandemTest` in the webview wraps these commands plus UI-side counters. Not listed in `capabilities/*.json` for release.
 

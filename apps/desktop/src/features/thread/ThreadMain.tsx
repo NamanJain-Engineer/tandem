@@ -23,7 +23,7 @@ import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { switchMode } from "../shell/actions";
-import { pendingApprovals, toRows, usageOf } from "./rows";
+import { pendingApprovals, reuseRows, toRows, usageOf, type Row } from "./rows";
 import { useThreadDrops } from "./drops";
 import { ThreadComposer } from "./ThreadComposer";
 import { Transcript, approvalLabels, type TranscriptActions } from "./Transcript";
@@ -181,7 +181,12 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
   const [prefill, setPrefill] = useState<{ text: string; n: number } | null>(null);
   const [expanded, setExpanded] = useState(false);
 
-  const rows = useMemo(() => (live ? toRows(live.view) : []), [live]);
+  const previous = useRef<Row[]>([]);
+  const rows = useMemo(() => {
+    const next = reuseRows(previous.current, live ? toRows(live.view) : []);
+    previous.current = next;
+    return next;
+  }, [live]);
   const usage = useMemo(() => (live ? usageOf(live.view) : { input: 0, output: 0, contextFillPct: null }), [live]);
   const running = live?.detail?.running ?? null;
   const pending = pendingApprovals(rows, running);
@@ -207,17 +212,21 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
     }
     return null;
   }, [rows]);
-  const startedAt = useCallback(
-    (turnId: string) => live?.detail?.turns.find((tr) => tr.id === turnId)?.startedAt ?? null,
-    [live],
-  );
+  // Stable across streamed events, so rows that didn't change don't re-render.
+  const turns = live?.detail?.turns;
+  const startedAt = useCallback((turnId: string) => turns?.find((tr) => tr.id === turnId)?.startedAt ?? null, [turns]);
+  const approvalLabel = useCallback((kind: string) => approvalTitle(engineLabel, kind), [engineLabel]);
+  const threadId = thread?.id;
+  const onNearTop = useCallback(() => {
+    if (threadId) void loadOlder(threadId);
+  }, [threadId, loadOlder]);
 
   if (!selectedId || !thread) return <Starter visible={visible} />;
 
   const loading = !live || live.status === "loading";
   const empty = !loading && live.status === "ready" && rows.length === 0;
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="thread-main">
+    <div className="flex h-full min-h-0 flex-col" data-testid="thread-main" data-thread-id={thread.id}>
       <Header thread={thread} contextFill={usage.contextFillPct} />
       {live?.status === "error" ? (
         <div className="p-4">
@@ -264,7 +273,7 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
               )}
             </div>
           ) : (
-            <Transcript rows={rows} actions={actions} approvalLabel={(kind) => approvalTitle(engineLabel, kind)} startedAt={startedAt} onNearTop={() => void loadOlder(thread.id)} />
+            <Transcript rows={rows} actions={actions} approvalLabel={approvalLabel} startedAt={startedAt} onNearTop={onNearTop} />
           )}
         </SkeletonGate>
       )}
