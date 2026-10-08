@@ -654,6 +654,15 @@ impl ThreadService {
         removed
     }
 
+    /// `thread_unqueue`: takes back the follow-up waiting for the running
+    /// turn; its text goes back to the composer.
+    pub async fn unqueue(&self, id: &ThreadId) -> Result<Option<String>, IpcError> {
+        self.thread(id).await?;
+        let rt = self.runtime(id);
+        let queued = rt.lock().await.queued.take();
+        Ok(queued.map(|q| q.text))
+    }
+
     /// `thread_save_draft` (F-TH-07): `Draft {text, attachmentIds, queued?}`.
     pub async fn save_draft(
         &self,
@@ -3532,5 +3541,36 @@ mod tests {
             Err(ErrorCode::Conflict)
         );
         busy.svc.stop(&busy.thread.id).await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn f_th_07_a_queued_follow_up_can_be_taken_back() {
+        let f = fixture(OnStop::Ack, hang()).await;
+        send(&f, "first", vec![]).await;
+        let queued = f
+            .svc
+            .send(&f.thread.id, "second".into(), vec![], true)
+            .await
+            .expect("queue");
+        assert!(queued.queued);
+        assert_eq!(
+            f.svc
+                .get(&f.thread.id)
+                .await
+                .expect("get")
+                .queued
+                .as_deref(),
+            Some("second")
+        );
+        assert_eq!(
+            f.svc
+                .unqueue(&f.thread.id)
+                .await
+                .expect("unqueue")
+                .as_deref(),
+            Some("second")
+        );
+        assert_eq!(f.svc.unqueue(&f.thread.id).await.expect("unqueue"), None);
+        f.svc.stop(&f.thread.id).await.expect("stop");
     }
 }

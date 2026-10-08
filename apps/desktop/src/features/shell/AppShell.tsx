@@ -12,6 +12,9 @@ import { CodeMain } from "../code/CodeMain";
 import { CodeRail } from "../code/CodeRail";
 import { commandRuns, setCommandToast } from "../commands/commands";
 import { InterimMain, InterimRail } from "../interim/Interim";
+import { ThreadMain } from "../thread/ThreadMain";
+import { ThreadRail } from "../thread/ThreadRail";
+import { followThreads } from "../../stores/threads";
 import { Palette } from "../palette/Palette";
 import { OrphansDialog } from "../restore/OrphansDialog";
 import { followEngines } from "../../stores/engines";
@@ -59,6 +62,7 @@ export function AppShell() {
   useEffect(followRestore, []);
   useEffect(startAutoResume, []);
   useEffect(followUpdates, []);
+  useEffect(followThreads, []);
   useVisibilityReport();
   // Debug builds: UI-side counters for the E2E harness (ARCHITECTURE §17.5).
   const dev = useBoot((st) => st.boot?.dev ?? false);
@@ -117,7 +121,7 @@ export function AppShell() {
           <InterimRail mode="agent" collapsed={railCollapsed} />
         </div>
         <div style={{ display: show("thread") }}>
-          <InterimRail mode="thread" collapsed={railCollapsed} />
+          <ThreadRail collapsed={railCollapsed} />
         </div>
         <main
           id={settingsOpen ? undefined : "main"}
@@ -133,7 +137,7 @@ export function AppShell() {
             <InterimMain mode="agent" />
           </div>
           <div className="h-full" style={{ display: mode === "thread" ? "block" : "none" }}>
-            <InterimMain mode="thread" />
+            <ThreadMain visible={!settingsOpen && mode === "thread"} />
           </div>
         </main>
         {!settingsOpen && <Sidebar />}

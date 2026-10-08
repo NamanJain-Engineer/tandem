@@ -462,3 +462,46 @@ pub async fn models_list(
         &state.config,
     ))
 }
+
+/// `thread_pick_files`: the native picker, then the picked files attached.
+#[tauri::command]
+pub async fn thread_pick_files(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    thread_id: ThreadId,
+) -> Result<Vec<Attachment>, IpcError> {
+    let picked: Vec<String> = match std::env::var("TANDEM_FAKE_PICK_FILES") {
+        Ok(fake) if cfg!(debug_assertions) => fake
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect(),
+        _ => {
+            use tauri_plugin_dialog::DialogExt;
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            app.dialog().file().pick_files(move |picked| {
+                let paths = picked
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|p| p.into_path().ok())
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect::<Vec<_>>();
+                let _ = tx.send(paths);
+            });
+            rx.await.unwrap_or_default()
+        }
+    };
+    if picked.is_empty() {
+        return Ok(Vec::new());
+    }
+    state.threads.attach_paths(&thread_id, picked).await
+}
+
+#[tauri::command]
+pub async fn thread_unqueue(
+    state: State<'_, AppState>,
+    thread_id: ThreadId,
+) -> Result<Option<String>, IpcError> {
+    state.threads.unqueue(&thread_id).await
+}

@@ -122,6 +122,8 @@
     "allow-attachment-remove",
     "allow-thread-mention-search",
     "allow-models-list",
+    "allow-thread-pick-files",
+    "allow-thread-unqueue",
     "allow-workspace-locate",
     "allow-workspace-set-flags",
     "allow-workspace-reveal",

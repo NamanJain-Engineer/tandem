@@ -14,6 +14,7 @@ import { useBoot } from "../features/shell/useBoot";
 import { useSession } from "../stores/session";
 import { useSettings } from "../stores/settings";
 import { useUi } from "../stores/ui";
+import { resetThreads } from "../stores/threads";
 import { useWorkspaces } from "../stores/workspaces";
 
 export const FREE: Limits = {
@@ -127,4 +128,5 @@ export function resetStores(): void {
   useWorkspaces.setState({ list: [], activeId: null, activeTab: {} });
   useUsage.setState({ byAccount: {} });
   useContexts.setState({ byPane: {} });
+  resetThreads();
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-thread-pick-files"
+description = "Enables the thread_pick_files command without any pre-configured scope."
+commands.allow = ["thread_pick_files"]
+
+[[permission]]
+identifier = "deny-thread-pick-files"
+description = "Denies the thread_pick_files command without any pre-configured scope."
+commands.deny = ["thread_pick_files"]

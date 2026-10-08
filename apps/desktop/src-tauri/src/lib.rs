@@ -156,6 +156,8 @@ macro_rules! app_commands {
             commands::threads::attachment_remove,
             commands::threads::thread_mention_search,
             commands::threads::models_list,
+            commands::threads::thread_pick_files,
+            commands::threads::thread_unqueue,
             commands::engines::engines_report,
             $($extra),*
         ]

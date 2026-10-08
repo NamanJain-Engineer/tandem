@@ -107,6 +107,8 @@ const COMMANDS: &[&str] = &[
     "attachment_remove",
     "thread_mention_search",
     "models_list",
+    "thread_pick_files",
+    "thread_unqueue",
     "workspace_locate",
     "workspace_set_flags",
     "workspace_reveal",

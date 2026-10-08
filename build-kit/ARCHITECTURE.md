@@ -651,6 +651,8 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `thread_attach_paths` | `{threadId, paths}` | `[Attachment]` | LimitReached (20 / 20 MB) | F-TH-07 |
 | `thread_attach_clipboard_image` | `{threadId}` (Rust reads the system clipboard; the PNG is saved 0600) | `Attachment {id, threadId, kind, path, name, mime?, bytes, sent, error?}` | NotFound (no image on the clipboard) | F-TH-07 |
 | `attachment_remove` | `{attachmentId}` | — | — | F-TH-07 |
+| `thread_pick_files` | `{threadId}` (native multi-file picker; debug builds read `TANDEM_FAKE_PICK_FILES`, newline-separated paths) | `[Attachment]` (empty when cancelled) | LimitReached | F-TH-07 |
+| `thread_unqueue` | `{threadId}` | `string?` (the queued follow-up's text, for the composer; its attachments go back to the draft) | — | F-TH-07 |
 | `thread_mention_search` | `{threadId, query}` | `[PathEntry]` (≤50, gitignore-aware) | — | F-TH-07 |
 | `thread_implement_plan` | `{threadId, version, access}` | `SendResult` | NotFound | F-TH-10 |
 | `thread_changes` | `{threadId}` | `[FileDiff]` | — | F-TH-13 |
