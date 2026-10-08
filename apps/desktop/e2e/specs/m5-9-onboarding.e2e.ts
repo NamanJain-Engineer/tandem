@@ -24,7 +24,7 @@ describe("E2E-M5-9 onboarding", () => {
     await invoke("onboarding_set", { done: true }).catch(() => undefined);
   });
 
-  it("F-SH-08.1 Welcome → offline → Engines (skip) → Privacy (both off) → a folder lands in Code mode on the launch grid", async function () {
+  it("F-SH-08.1 Welcome → offline → Engines (skip) → Accounts → Privacy (both off) → a folder lands in Code mode on the launch grid", async function () {
     this.timeout(120_000);
     await freshProfile();
     // Welcome is the sign-in screen.
@@ -34,14 +34,28 @@ describe("E2E-M5-9 onboarding", () => {
     expect(await textOf('[data-testid="onboarding"] h1')).toBe("Set up your coding agents");
     await expectNoSeriousA11yViolations();
     await $('[data-testid="onboarding-skip"]').click();
+    // Step 3, Accounts: the installed chat engine's own sign-in (F-AC-02).
+    await atStep("accounts");
+    expect(await textOf('[data-testid="onboarding"] h1')).toBe("Sign in to your agents");
+    await $('[data-testid="onboarding-sign-in-claude"]').waitForExist({ timeout: 15_000 });
+    expect(await textOf('[data-testid="onboarding-sign-in-claude"]')).toBe("Sign in to Claude Code");
+    await expectNoSeriousA11yViolations();
+    // It opens the engine's own sign-in as a new account, named first.
+    await $('[data-testid="onboarding-sign-in-claude"]').click();
+    await $('[data-testid="login-nickname"]').waitForExist({ timeout: 5_000 });
+    expect(await $('[data-testid="login-nickname"]').getValue()).toBe("Personal");
+    await browser.keys("Escape");
+    await $('[data-testid="login-nickname"]').waitForExist({ reverse: true, timeout: 5_000 });
+
+    // F-SH-08.2: quitting at step 3 resumes at step 3.
+    await relaunch();
+    await atStep("accounts");
+
+    await $('[data-testid="onboarding-continue"]').click();
     await atStep("privacy");
     expect(await checked("Share anonymous usage statistics")).toBe("false");
     expect(await checked("Send crash reports")).toBe("false");
     await expectNoSeriousA11yViolations();
-
-    // F-SH-08.2: quitting mid-way resumes at the same step.
-    await relaunch();
-    await atStep("privacy");
 
     await $('[data-testid="onboarding-continue"]').click();
     await atStep("workspace");
@@ -71,7 +85,7 @@ describe("E2E-M5-9 onboarding", () => {
     await typeKeys("setup");
     await $('[data-testid="run-setup-again"]').waitForExist({ timeout: 10_000 });
     await $('[data-testid="run-setup-again"]').click();
-    for (const s of ["engines", "privacy", "workspace"]) {
+    for (const s of ["engines", "accounts", "privacy", "workspace"]) {
       await atStep(s);
       await $('[data-testid="onboarding-skip"]').click();
     }

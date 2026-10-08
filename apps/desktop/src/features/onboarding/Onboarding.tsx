@@ -1,17 +1,30 @@
-import { useEffect, useRef } from "react";
-import { Badge, Button, EngineGlyph, SettingsGroup, SettingsRow, Spinner, Stepper, Switch, useToast } from "@tandem/ui";
+import { useEffect, useRef, useState } from "react";
+import {
+  Badge,
+  Button,
+  EngineGlyph,
+  SettingsGroup,
+  SettingsRow,
+  Spinner,
+  Stepper,
+  Switch,
+  useToast,
+} from "@tandem/ui";
 import { t, type MessageKey } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
+import { useAccounts } from "../../stores/accounts";
 import { useEngines } from "../../stores/engines";
 import { useLayout } from "../../stores/layout";
 import { useOnboarding } from "../../stores/onboarding";
 import { useSetting, useSettings } from "../../stores/settings";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
+import { LoginSheet, SignInState, type LoginRequest } from "../settings/AccountsPage";
 import { addWorkspace } from "../shell/actions";
 
 const TITLES: Record<string, MessageKey> = {
   engines: "onboarding.engines.title",
+  accounts: "onboarding.accounts.title",
   privacy: "onboarding.privacy.title",
   workspace: "onboarding.workspace.title",
 };
@@ -34,13 +47,23 @@ function EnginesStep() {
           <Spinner /> {t("onboarding.engines.checking")}
         </span>
       ) : (
-        <ul className="flex flex-col divide-y divide-divider rounded-md border border-border" data-testid="onboarding-engines">
+        <ul
+          className="flex flex-col divide-y divide-divider rounded-md border border-border"
+          data-testid="onboarding-engines"
+        >
           {[...installed, ...missing].map((e) => (
-            <li key={e.spec.id} className="flex items-center gap-3 px-3 py-2 text-sm" data-engine={e.spec.id} data-installed={e.install ? "true" : "false"}>
+            <li
+              key={e.spec.id}
+              className="flex items-center gap-3 px-3 py-2 text-sm"
+              data-engine={e.spec.id}
+              data-installed={e.install ? "true" : "false"}
+            >
               <EngineGlyph letters={e.spec.logo} size={20} />
               <span className="flex-1 text-fg">{e.spec.label}</span>
               {e.install ? (
-                <Badge variant="done">{t("onboarding.engines.installed", { version: e.install.version ?? "" })}</Badge>
+                <Badge variant="done">
+                  {t("onboarding.engines.installed", { version: e.install.version ?? "" })}
+                </Badge>
               ) : (
                 <span className="text-fg-muted">{t("onboarding.engines.notInstalled")}</span>
               )}
@@ -54,6 +77,94 @@ function EnginesStep() {
         </Button>
         <span className="text-sm text-fg-muted">{t("onboarding.engines.later")}</span>
       </div>
+    </div>
+  );
+}
+
+/** F-SH-08 step 3: each installed chat engine's own login, run in its
+ * default account's provider home (F-AC-02). Vibezeo never sees the token. */
+function AccountsStep() {
+  const engines = useEngines((s) => s.list);
+  const enginesLoaded = useEngines((s) => s.loaded);
+  const accounts = useAccounts((s) => s.list);
+  const loaded = useAccounts((s) => s.loaded);
+  const signIn = useAccounts((s) => s.signIn);
+  const [login, setLogin] = useState<LoginRequest | null>(null);
+  useEffect(() => {
+    void useAccounts.getState().load();
+    if (!enginesLoaded) void useEngines.getState().refresh();
+  }, [enginesLoaded]);
+  useEffect(() => {
+    const { signIn: known, check } = useAccounts.getState();
+    for (const a of accounts) if (known[a.id] === undefined) void check(a.id);
+  }, [accounts]);
+  // Chat engines whose accounts Vibezeo keeps apart (D-114).
+  const chat = engines.filter(
+    (e) =>
+      e.install !== null &&
+      e.unsupportedReason === null &&
+      e.spec.chatAdapter !== null &&
+      e.spec.homeStrategy !== "none",
+  );
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-sm text-fg-muted">{t("onboarding.accounts.body")}</p>
+      {!enginesLoaded || !loaded ? (
+        <span className="flex items-center gap-2 text-sm text-fg-muted">
+          <Spinner /> {t("onboarding.engines.checking")}
+        </span>
+      ) : chat.length === 0 ? (
+        <p
+          className="rounded-md border border-border px-3 py-4 text-sm text-fg-muted"
+          data-testid="onboarding-accounts-empty"
+        >
+          {t("onboarding.accounts.none")}
+        </p>
+      ) : (
+        <ul
+          className="flex flex-col divide-y divide-divider rounded-md border border-border"
+          data-testid="onboarding-accounts"
+        >
+          {chat.map((e) => {
+            const account = accounts.find((a) => a.engineId === e.spec.id && a.isDefault);
+            const signedIn = account !== undefined && signIn[account.id] === "signed_in";
+            return (
+              <li
+                key={e.spec.id}
+                className="flex items-center gap-3 px-3 py-2 text-sm"
+                data-engine={e.spec.id}
+                data-signed-in={signedIn ? "true" : "false"}
+              >
+                <EngineGlyph letters={e.spec.logo} size={20} />
+                <span className="flex-1 text-fg">{e.spec.label}</span>
+                {account ? (
+                  <SignInState account={account} />
+                ) : (
+                  <span className="text-fg-muted">{t("onboarding.accounts.notSignedIn")}</span>
+                )}
+                {!signedIn && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    data-testid={`onboarding-sign-in-${e.spec.id}`}
+                    onClick={() =>
+                      setLogin(
+                        account
+                          ? { kind: "session", account, action: "sign_in" }
+                          : { kind: "add", engineId: e.spec.id, nickname: t("onboarding.accounts.nickname") },
+                      )
+                    }
+                  >
+                    {t("onboarding.accounts.signIn", { engine: e.spec.label })}
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <p className="text-sm text-fg-muted">{t("onboarding.accounts.later")}</p>
+      {login && <LoginSheet request={login} onClose={() => setLogin(null)} />}
     </div>
   );
 }
@@ -108,7 +219,9 @@ function PrivacyStep() {
 function WorkspaceStep({ onAdded }: { onAdded: (root: string) => void }) {
   const { show } = useToast();
   const choose = async () => {
-    const picked = await invoke<string | null>("workspace_pick_folder", undefined, { timeoutMs: 24 * 3_600_000 }).catch(() => null);
+    const picked = await invoke<string | null>("workspace_pick_folder", undefined, {
+      timeoutMs: 24 * 3_600_000,
+    }).catch(() => null);
     if (picked && (await addWorkspace(picked, show))) onAdded(picked);
   };
   return (
@@ -123,7 +236,7 @@ function WorkspaceStep({ onAdded }: { onAdded: (root: string) => void }) {
   );
 }
 
-/** UI-04 onboarding wizard (F-SH-08 slice): Engines, Privacy, First workspace.
+/** UI-04 onboarding wizard (F-SH-08 slice): Engines, Accounts, Privacy, First workspace.
  * Every step has Back and Skip; completion persists. */
 export function Onboarding() {
   const state = useOnboarding((s) => s.state);
@@ -158,13 +271,22 @@ export function Onboarding() {
   };
 
   return (
-    <main className="flex h-full justify-center overflow-auto bg-bg px-6 py-10" data-testid="onboarding" data-step={step}>
+    <main
+      className="flex h-full justify-center overflow-auto bg-bg px-6 py-10"
+      data-testid="onboarding"
+      data-step={step}
+    >
       <div className="flex w-full max-w-[720px] flex-col gap-6">
-        <Stepper steps={steps.map((s) => t(TITLES[s] ?? "onboarding.engines.title"))} current={index} label={t("onboarding.progress")} />
+        <Stepper
+          steps={steps.map((s) => t(TITLES[s] ?? "onboarding.engines.title"))}
+          current={index}
+          label={t("onboarding.progress")}
+        />
         <h1 ref={heading} tabIndex={-1} className="text-2xl font-semibold text-fg focus:outline-none">
           {t(TITLES[step] ?? "onboarding.engines.title")}
         </h1>
         {step === "engines" && <EnginesStep />}
+        {step === "accounts" && <AccountsStep />}
         {step === "privacy" && <PrivacyStep />}
         {step === "workspace" && <WorkspaceStep onAdded={(root) => void finish(root)} />}
         <footer className="flex items-center justify-between border-t border-divider pt-4">

@@ -37,10 +37,11 @@ import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { MiniTerminal } from "../code/MiniTerminal";
 
-type LoginRequest =
-  { kind: "add"; engineId?: string } | { kind: "session"; account: Account; action: LoginAction };
+export type LoginRequest =
+  | { kind: "add"; engineId?: string; nickname?: string }
+  | { kind: "session"; account: Account; action: LoginAction };
 
-function SignInState({ account }: { account: Account }) {
+export function SignInState({ account }: { account: Account }) {
   const state = useAccounts((s) => s.signIn[account.id]);
   if (state === undefined) return <span className="text-sm text-fg-subtle">{t("accounts.checking")}</span>;
   if (state === "signed_in") return <span className="text-sm text-fg-muted">{t("accounts.signedIn")}</span>;
@@ -155,7 +156,7 @@ type Phase =
 
 /** UI-35 "Add account" (and Sign in again / Sign out): the engine's own
  * login runs in a terminal inside the sheet, under the account's home. */
-function LoginSheet({ request, onClose }: { request: LoginRequest; onClose: () => void }) {
+export function LoginSheet({ request, onClose }: { request: LoginRequest; onClose: () => void }) {
   const engines = useEngines((s) => s.list);
   const label = useEngines((s) => s.label);
   const installed = useMemo(
@@ -165,7 +166,9 @@ function LoginSheet({ request, onClose }: { request: LoginRequest; onClose: () =
   const [engineId, setEngineId] = useState(
     request.kind === "add" ? (request.engineId ?? defaultEngine(engines) ?? "") : request.account.engineId,
   );
-  const [nickname, setNickname] = useState(request.kind === "session" ? request.account.label : "");
+  const [nickname, setNickname] = useState(
+    request.kind === "session" ? request.account.label : (request.nickname ?? ""),
+  );
   const [phase, setPhase] = useState<Phase>({ at: "form", error: null });
   const [busy, setBusy] = useState(false);
   const stop = useRef<(() => void) | null>(null);
