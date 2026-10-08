@@ -1,0 +1,101 @@
+[
+  {
+    "argSummary": "npm test -- --runInBand",
+    "detail": "npm test -- --runInBand",
+    "diff": null,
+    "id": "call_1",
+    "output": null,
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "pending",
+    "type": "tool",
+    "verb": "bash"
+  },
+  {
+    "approval": {
+      "detail": "npm test -- --runInBand",
+      "kind": "command",
+      "options": [
+        [
+          "once",
+          "allow_once"
+        ],
+        [
+          "always",
+          "allow_always"
+        ],
+        [
+          "no",
+          "reject_once"
+        ]
+      ],
+      "rpcId": 7,
+      "subject": {
+        "command": "npm test -- --runInBand"
+      },
+      "summary": "Run `npm test -- --runInBand`"
+    }
+  },
+  {
+    "argSummary": "notes.md",
+    "detail": "Write notes.md",
+    "diff": "--- /dev/null\n+++ b/notes.md\n@@ -0,0 +1,1 @@\n+# Notes\n",
+    "id": "call_2",
+    "output": null,
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "pending",
+    "type": "tool",
+    "verb": "edit"
+  },
+  {
+    "approval": {
+      "detail": "--- /dev/null\n+++ b/notes.md\n@@ -0,0 +1,1 @@\n+# Notes\n",
+      "kind": "file_write",
+      "options": [
+        [
+          "ok",
+          "allow_once"
+        ],
+        [
+          "never",
+          "reject_always"
+        ]
+      ],
+      "rpcId": "p-8",
+      "subject": {
+        "tool": "edit"
+      },
+      "summary": "Edit `notes.md`"
+    }
+  },
+  {
+    "argSummary": "old.log",
+    "detail": "Delete old.log",
+    "diff": null,
+    "id": "call_3",
+    "output": null,
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "pending",
+    "type": "tool",
+    "verb": "edit"
+  },
+  {
+    "approval": {
+      "detail": "Delete old.log",
+      "kind": "file_delete",
+      "options": [
+        [
+          "ok",
+          "allow_once"
+        ]
+      ],
+      "rpcId": 9,
+      "subject": {
+        "tool": "delete"
+      },
+      "summary": "Delete `old.log`"
+    }
+  }
+]

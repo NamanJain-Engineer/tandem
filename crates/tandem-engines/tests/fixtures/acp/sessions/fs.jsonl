@@ -1,0 +1,16 @@
+{"client":["\"method\":\"initialize\""]}
+{"agent":{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{}}}}
+{"client":["\"method\":\"session/new\""]}
+{"agent":{"jsonrpc":"2.0","id":2,"result":{"sessionId":"sess_fs"}}}
+{"client":["\"method\":\"session/prompt\""]}
+{"agent":{"jsonrpc":"2.0","id":200,"method":"fs/read_text_file","params":{"sessionId":"sess_fs","path":"{cwd}/notes.txt","line":2,"limit":1}}}
+{"client":["\"id\":200","\"content\":\"two\""]}
+{"agent":{"jsonrpc":"2.0","id":201,"method":"fs/read_text_file","params":{"sessionId":"sess_fs","path":"/etc/hostname"}}}
+{"client":["\"id\":201","\"error\"","outside the folder"]}
+{"agent":{"jsonrpc":"2.0","id":202,"method":"fs/write_text_file","params":{"sessionId":"sess_fs","path":"{cwd}/out/new.txt","content":"written"}}}
+{"client":["\"id\":202","{write}"]}
+{"agent":{"jsonrpc":"2.0","id":203,"method":"terminal/create","params":{"sessionId":"sess_fs","command":"ls"}}}
+{"client":["\"id\":203","-32601"]}
+{"agent":{"jsonrpc":"2.0","id":204,"method":"session/request_permission","params":{"sessionId":"sess_fs","toolCall":{"toolCallId":"call_e","title":"Edit a.txt","kind":"edit","locations":[{"path":"{cwd}/a.txt"}]},"options":[{"optionId":"yes","kind":"allow_once"},{"optionId":"no","kind":"reject_once"}]}}}
+{"client":["\"id\":204","\"optionId\":\"no\""]}
+{"agent":{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}}

@@ -1685,6 +1685,7 @@ Common: each adapter owns a child process (spawned via `tokio::process` with `ki
 - **Agent→client requests:** `session/request_permission{toolCall, options:[{optionId, kind}]}` → `approval_request`; reply `{outcome:{outcome:"selected", optionId}}` choosing `allow_once` / `allow_always` (for thread scope) / `reject_once`, or `{outcome:{outcome:"cancelled"}}` on expiry. `fs/read_text_file` and `fs/write_text_file` are served through `contain(thread cwd)`; writes are refused at Read access.
 - **Cancel:** `session/cancel` notification; 3 s → tree kill.
 - **Credential pickup:** each turn re-reads the account env (no restart needed) since ACP agents read their own config per request (F-TH-06).
+- **Models (D-120):** `models.availableModels` / `currentModelId` on the `session/new|load` result go to the picker (`AdapterEvent::Models`); the thread's model is chosen with `session/set_model`. A model no longer offered (or refused) clears the thread's model, and the next turn opens with the note. After a sign-in error the session is retired, so the next turn's agent starts with the account's current env.
 
 ### 6.9 Normalized events [F-TH-03]
 ```rust

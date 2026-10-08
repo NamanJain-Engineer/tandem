@@ -269,6 +269,8 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
   await invoke("onboarding_set", onboarded ? { done: true } : { step: "engines" });
   // UI state that outlives a spec: start in Code mode with the sidebar closed.
   await invoke("settings_set", { key: "last_mode", value: "code" });
+  // New threads start from the app's defaults, not a spec's last engine (F-TH-07).
+  await invoke("settings_set", { key: "thread_defaults", value: {} });
   await invoke("sidebar_save", {
     sidebar: { open: false, tabs: [{ id: "dashboard", kind: "dashboard", title: null, url: null }], active: "dashboard", width: 470, fullscreen: false, pinned: false },
   });

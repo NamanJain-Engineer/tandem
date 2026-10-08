@@ -39,12 +39,15 @@
 //! `login status` exits 0 when it exists and `logout` deletes it.
 //!
 //! As `claude -p --input-format stream-json` (Thread mode), it is a chat
-//! engine: see `fake-engine/chat.rs`.
+//! engine: see `fake-engine/chat.rs`. As `<engine> acp` it is an Agent Client
+//! Protocol agent: see `fake-engine/acp.rs`.
 //!
 //! Run headless (`claude -p`, `codex exec`), it reads its prompt from stdin,
 //! logs its size and prints a brief. `TANDEM_FAKE_BRIEF` (a value, or a
 //! file holding it) set to `empty` makes both briefs empty.
 
+#[path = "fake-engine/acp.rs"]
+mod acp;
 #[path = "fake-engine/chat.rs"]
 mod chat;
 
@@ -440,6 +443,11 @@ fn main() {
     {
         log(&format!("start: {name} args={args:?}"));
         chat::run(args, session_id());
+        return;
+    }
+    if args.first().is_some_and(|a| a == "acp") {
+        log(&format!("start: {name} args={args:?}"));
+        acp::run(&name);
         return;
     }
     if (name == "claude" && args.iter().any(|a| a == "-p"))

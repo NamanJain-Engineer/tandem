@@ -134,6 +134,8 @@ async function main() {
     `export TANDEM_FAKE_BRIEF="${join(home, "brief.txt")}"`,
     // `<engine> <version>` lines change what a fake engine reports (E2E-M7-5).
     `export TANDEM_FAKE_VERSION="${join(home, "fake-version.txt")}"`,
+    // `<engine> <model>,<model>` (or `signed-out`) lines: an ACP agent's models (E2E-M7-12).
+    `export TANDEM_FAKE_MODELS="${join(home, "fake-models.txt")}"`,
     "",
   ].join("\n");
   for (const f of [".bash_profile", ".profile", ".zprofile"]) writeFileSync(join(userHome, f), profile);
@@ -160,6 +162,7 @@ async function main() {
     TANDEM_FAKE_BRIEF: join(home, "brief.txt"),
     TANDEM_FAKE_ENGINE_LOG: join(home, "fake-engine.log"),
     TANDEM_FAKE_VERSION: join(home, "fake-version.txt"),
+    TANDEM_FAKE_MODELS: join(home, "fake-models.txt"),
     // The fake `codex app-server`'s usage windows, e.g. "40,85" (E2E-M6-8).
     TANDEM_FAKE_USAGE: join(home, "usage.txt"),
     TANDEM_HOOK_BIN: join(root, "target/debug/tandem-hook"),

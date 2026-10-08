@@ -1,0 +1,89 @@
+[
+  {
+    "sessionId": "sess_1"
+  },
+  {
+    "event": {
+      "text": "The suite is slow.",
+      "type": "reasoning_delta"
+    },
+    "turn": 1
+  },
+  {
+    "event": {
+      "text": "Running the tests first.",
+      "type": "assistant_delta"
+    },
+    "turn": 1
+  },
+  {
+    "event": {
+      "argSummary": "npm test",
+      "detail": "npm test",
+      "diff": null,
+      "id": "call_1",
+      "output": null,
+      "outputFile": null,
+      "outputTruncated": false,
+      "status": "pending",
+      "type": "tool",
+      "verb": "bash"
+    },
+    "turn": 1
+  },
+  {
+    "approval": {
+      "detail": "npm test",
+      "kind": "command",
+      "subject": {
+        "command": "npm test"
+      },
+      "summary": "Run `npm test`"
+    },
+    "turn": 1
+  },
+  {
+    "event": {
+      "argSummary": "npm test",
+      "detail": "npm test",
+      "diff": null,
+      "id": "call_1",
+      "output": "Tests: 12 passed",
+      "outputFile": null,
+      "outputTruncated": false,
+      "status": "ok",
+      "type": "tool",
+      "verb": "bash"
+    },
+    "turn": 1
+  },
+  {
+    "event": {
+      "blockedActions": 0,
+      "reason": "completed",
+      "type": "turn_end"
+    },
+    "turn": 1
+  },
+  {
+    "event": {
+      "text": "Splitting",
+      "type": "assistant_delta"
+    },
+    "turn": 2
+  },
+  {
+    "interrupt": {
+      "acked": true,
+      "killed": false
+    }
+  },
+  {
+    "event": {
+      "blockedActions": 0,
+      "reason": "cancelled",
+      "type": "turn_end"
+    },
+    "turn": 2
+  }
+]

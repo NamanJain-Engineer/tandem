@@ -1,0 +1,23 @@
+[
+  {
+    "read": {
+      "limit": 10,
+      "line": 3,
+      "path": "/work/shop/src/cache.rs",
+      "rpcId": 20
+    }
+  },
+  {
+    "write": {
+      "content": "# Notes\n",
+      "path": "/work/shop/notes.md",
+      "rpcId": 21
+    }
+  },
+  {
+    "unsupported": {
+      "method": "terminal/create",
+      "rpcId": 22
+    }
+  }
+]

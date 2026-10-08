@@ -3,6 +3,7 @@
 //! engine-specific code; they turn an engine's output into
 //! [`ThreadEvent`](crate::events::ThreadEvent)s.
 
+pub mod acp;
 pub mod claude;
 pub mod codex;
 pub mod process;
@@ -93,12 +94,26 @@ pub enum AdapterEvent {
         /// What an "Allow for this thread" rule matches on.
         subject: ApprovalSubject,
     },
+    /// The models the engine offers (ACP agents report theirs), for the
+    /// picker. `withdrawn` is the thread's model when it's no longer among
+    /// them: the thread falls back to Automatic.
+    Models {
+        available: Vec<ModelOffer>,
+        withdrawn: Option<String>,
+    },
     /// The engine process ended. `stderr_tail` is for the error card only
     /// and is never logged.
     Exited {
         code: Option<i32>,
         stderr_tail: String,
     },
+}
+
+/// A model an engine offers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelOffer {
+    pub id: String,
+    pub label: String,
 }
 
 /// `thread_stop`'s answer: the engine acknowledged, or its process tree was
@@ -123,6 +138,9 @@ pub enum AdapterError {
     Protocol(String),
     #[error("{0}")]
     Unsupported(String),
+    /// The engine needs the user to sign in (shown with Sign in).
+    #[error("{0}")]
+    Auth(String),
 }
 
 #[async_trait]

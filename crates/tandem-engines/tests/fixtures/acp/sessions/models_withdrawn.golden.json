@@ -1,0 +1,42 @@
+[
+  {
+    "sessionId": "sess_2"
+  },
+  {
+    "models": {
+      "available": [
+        [
+          "grok-4",
+          "Grok 4"
+        ],
+        [
+          "grok-code-fast",
+          "Grok Code Fast"
+        ]
+      ],
+      "withdrawn": "grok-3"
+    }
+  },
+  {
+    "event": {
+      "text": "Model no longer offered by Grok",
+      "type": "note"
+    },
+    "turn": 1
+  },
+  {
+    "event": {
+      "text": "Hi",
+      "type": "assistant_delta"
+    },
+    "turn": 1
+  },
+  {
+    "event": {
+      "blockedActions": 0,
+      "reason": "completed",
+      "type": "turn_end"
+    },
+    "turn": 1
+  }
+]

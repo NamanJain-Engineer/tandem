@@ -18,10 +18,12 @@ import {
 } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
+import { useAccounts } from "../../stores/accounts";
 import { useEngines } from "../../stores/engines";
 import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
+import { LoginSheet, type LoginRequest } from "../settings/AccountsPage";
 import { switchMode } from "../shell/actions";
 import { pendingApprovals, reuseRows, toRows, usageOf, type Row } from "./rows";
 import { useThreadDrops } from "./drops";
@@ -180,6 +182,7 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
   const composer = useRef<ComposerHandle>(null);
   const [prefill, setPrefill] = useState<{ text: string; n: number } | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [login, setLogin] = useState<LoginRequest | null>(null);
 
   const previous = useRef<Row[]>([]);
   const rows = useMemo(() => {
@@ -198,7 +201,13 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
       deny: (id, reason) => void resolve(id, { type: "deny", reason }).catch(fail),
       retry: () => thread && void retry(thread.id).then((e) => e && fail(e)),
       openTerminal: () => switchMode("code"),
-      signIn: () => useUi.getState().openSettings("accounts"),
+      // The engine's login, in a terminal, for the thread's account (F-TH-06).
+      signIn: () => {
+        if (!thread) return;
+        const mine = useAccounts.getState().list.filter((a) => a.engineId === thread.engineId);
+        const account = mine.find((a) => a.id === thread.accountId) ?? mine.find((a) => a.isDefault) ?? null;
+        setLogin(account ? { kind: "session", account, action: "sign_in" } : { kind: "add", engineId: thread.engineId });
+      },
       editResend: (text) => setPrefill({ text, n: Date.now() }),
       openLink: (href) => void invoke("app_open_external", { url: href }).catch(fail),
       copy: (text) => void navigator.clipboard?.writeText(text),
@@ -227,6 +236,7 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
   const empty = !loading && live.status === "ready" && rows.length === 0;
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="thread-main" data-thread-id={thread.id}>
+      {login && <LoginSheet request={login} onClose={() => setLogin(null)} />}
       <Header thread={thread} contextFill={usage.contextFillPct} />
       {live?.status === "error" ? (
         <div className="p-4">

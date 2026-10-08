@@ -191,6 +191,10 @@ mod chat_tests {
         };
         assert_eq!(capable("claude"), Some(true));
         assert_eq!(capable("codex"), Some(true));
+        // ACP agents (F-TH-06).
+        for id in ["cursor-agent", "grok", "opencode"] {
+            assert_eq!(capable(id), Some(true), "{id}");
+        }
         // Terminal-only engines stay in Code mode.
         assert!(list
             .iter()

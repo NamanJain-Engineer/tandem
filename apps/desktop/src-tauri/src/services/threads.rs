@@ -25,7 +25,7 @@ use tandem_core::ids::{AttachmentId, ThreadId, TurnId};
 use tandem_core::source::SourceRef;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_engines::chat::{
-    AdapterEvent, ChatAdapter, ChatSession, ChatStart, InterruptOutcome, TurnInput,
+    AdapterEvent, ChatAdapter, ChatSession, ChatStart, InterruptOutcome, ModelOffer, TurnInput,
 };
 use tandem_engines::events::{
     ApprovalDecisionView, ErrorAction, ErrorStage, ThreadEvent, ThreadEventEnvelope, ToolStatus,
@@ -115,6 +115,9 @@ pub trait ChatLauncher: Send + Sync {
     fn model_for(&self, thread: &ThreadRecord) -> (Option<String>, Option<String>) {
         (thread.model.clone(), None)
     }
+
+    /// The models an engine reported (ACP agents), for the picker.
+    fn models_reported(&self, _engine_id: &str, _models: &[ModelOffer]) {}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1132,21 +1135,19 @@ impl ThreadService {
             None => match self.start_session(&thread, &mut guard).await {
                 Ok(s) => s,
                 Err(e) => {
-                    // An engine version Thread mode can't speak: its terminal still works.
-                    let action = if e.code == ErrorCode::EngineUnsupported {
-                        ErrorAction::OpenTerminal
-                    } else {
-                        ErrorAction::Retry
+                    // An engine version Thread mode can't speak: its terminal
+                    // still works. A sign-in is its own stage (F-TH-06).
+                    let (code, stage, action) = match e.code {
+                        ErrorCode::EngineUnsupported => {
+                            ("spawn_failed", ErrorStage::Spawn, ErrorAction::OpenTerminal)
+                        }
+                        ErrorCode::Unauthenticated => {
+                            ("auth_required", ErrorStage::Auth, ErrorAction::SignIn)
+                        }
+                        _ => ("spawn_failed", ErrorStage::Spawn, ErrorAction::Retry),
                     };
-                    self.fail_turn(
-                        id,
-                        &mut guard,
-                        "spawn_failed",
-                        &e.message,
-                        ErrorStage::Spawn,
-                        action,
-                    )
-                    .await;
+                    self.fail_turn(id, &mut guard, code, &e.message, stage, action)
+                        .await;
                     return Ok(SendResult {
                         turn_id: Some(turn_id),
                         queued: false,
@@ -1199,6 +1200,7 @@ impl ThreadService {
                     tandem_engines::chat::AdapterError::Unsupported(_) => {
                         ErrorCode::EngineUnsupported
                     }
+                    tandem_engines::chat::AdapterError::Auth(_) => ErrorCode::Unauthenticated,
                     _ => ErrorCode::Internal,
                 };
                 IpcError::new(code, e.to_string())
@@ -1278,6 +1280,26 @@ impl ThreadService {
                     {
                         tracing::warn!(code = "threads.session_failed", error = %e, "couldn't save the engine session");
                     }
+                }
+            }
+            AdapterEvent::Models {
+                available,
+                withdrawn,
+            } => {
+                let Ok(record) = self.thread(thread).await else {
+                    return;
+                };
+                self.launcher.models_reported(&record.engine_id, &available);
+                // The session already fell back to Automatic (F-TH-06 AC2).
+                if withdrawn.is_some() && withdrawn == record.model {
+                    let patch = ThreadPatch {
+                        model: Some(None),
+                        ..ThreadPatch::default()
+                    };
+                    if let Err(e) = repo::update(&self.store, thread, patch).await {
+                        tracing::warn!(code = "threads.model_failed", error = %e, "couldn't clear a withdrawn model");
+                    }
+                    self.publish_threads().await;
                 }
             }
             AdapterEvent::Exited { code, stderr_tail } => {
@@ -1424,7 +1446,19 @@ impl ThreadService {
                         {
                             run.blocked += 1;
                         }
+                        // After a sign-in, the next turn starts a new session
+                        // with the new credentials (F-TH-06).
+                        let signed_out = matches!(
+                            other,
+                            ThreadEvent::Error {
+                                stage: ErrorStage::Auth,
+                                ..
+                            }
+                        );
                         self.emit(thread, run, other).await;
+                        if signed_out {
+                            guard.stale = true;
+                        }
                     }
                 }
             }
@@ -1668,7 +1702,7 @@ fn origin_of(thread: &ThreadRecord) -> tandem_core::access::Origin {
 
 /// The chat adapters Thread mode has (ARCHITECTURE §6.8); ACP arrives
 /// with M7 task 10.
-pub const CHAT_ADAPTERS: &[&str] = &["claude", "codex"];
+pub const CHAT_ADAPTERS: &[&str] = &["claude", "codex", "acp"];
 
 /// An engine Thread mode can run.
 pub fn has_chat_adapter(spec: &tandem_engines::registry::EngineSpec) -> bool {
@@ -1730,12 +1764,25 @@ impl AppLauncher {
             .get("codex")
             .map(|e| e.limit_patterns)
             .unwrap_or_default();
-        vec![
+        let mut adapters: Vec<Arc<dyn ChatAdapter>> = vec![
             Arc::new(tandem_engines::chat::claude::ClaudeAdapter::new(
                 claude_limits,
             )),
             Arc::new(tandem_engines::chat::codex::CodexAdapter::new(codex_limits)),
-        ]
+        ];
+        // Every engine that speaks the Agent Client Protocol (F-TH-06).
+        let registry = terminals.engines.registry();
+        for engine in registry.all() {
+            if let (Some("acp"), Some(cmd)) = (engine.chat_adapter.as_deref(), &engine.acp_cmd) {
+                adapters.push(Arc::new(tandem_engines::chat::acp::AcpAdapter::new(
+                    &engine.id,
+                    &engine.label,
+                    cmd,
+                    engine.limit_patterns.clone(),
+                )));
+            }
+        }
+        adapters
     }
 
     /// The threads the gateway's approvals tool reports to.
@@ -1814,9 +1861,35 @@ impl AppLauncher {
 #[async_trait]
 impl ChatLauncher for AppLauncher {
     fn model_for(&self, thread: &ThreadRecord) -> (Option<String>, Option<String>) {
+        // An ACP agent's models are known once it reports them; until then
+        // the saved one goes to the agent, which says whether it's offered.
+        let acp = self
+            .terminals
+            .engines
+            .get(&thread.engine_id)
+            .is_some_and(|e| e.chat_adapter.as_deref() == Some("acp"));
+        if acp && self.models.get(&thread.engine_id).is_empty() {
+            return (thread.model.clone(), None);
+        }
         let catalog =
             crate::services::models::catalog_for(&thread.engine_id, &self.models, &self.config);
         crate::services::models::resolve(thread.model.as_deref(), &catalog)
+    }
+
+    fn models_reported(&self, engine_id: &str, models: &[ModelOffer]) {
+        let entries = models
+            .iter()
+            .map(|m| crate::services::models::ModelEntry {
+                id: m.id.clone(),
+                label: m.label.clone(),
+                description: String::new(),
+                is_default: false,
+                effort_levels: Vec::new(),
+                context_window: None,
+                source: crate::services::models::ModelSource::Runtime,
+            })
+            .collect();
+        self.models.set(engine_id, entries);
     }
 
     async fn prepare(
@@ -2987,6 +3060,188 @@ mod tests {
             &events[1].event,
             ThreadEvent::Error { action: Some(ErrorAction::OpenTerminal), stage: ErrorStage::Spawn, message, .. }
                 if message.starts_with("Codex version 0.31.0 isn't supported yet")
+        ));
+    }
+
+    #[tokio::test]
+    async fn f_th_06_2_a_withdrawn_model_is_cleared_from_the_thread_with_the_note() {
+        let f = fixture(
+            OnStop::Ack,
+            Arc::new(|turn, tx| {
+                play(
+                    tx,
+                    vec![
+                        AdapterEvent::Models {
+                            available: vec![ModelOffer {
+                                id: "grok-4".into(),
+                                label: "Grok 4".into(),
+                            }],
+                            withdrawn: Some("grok-3".into()),
+                        },
+                        ev(
+                            &turn,
+                            ThreadEvent::Note {
+                                text: "Model no longer offered by Grok".into(),
+                            },
+                        ),
+                        ev(&turn, delta("Hi")),
+                        ev(&turn, end(TurnEndReason::Completed)),
+                    ],
+                )
+            }),
+        )
+        .await;
+        let id = &f.thread.id;
+        f.svc
+            .update(
+                id,
+                ThreadPatch {
+                    model: Some(Some("grok-3".into())),
+                    ..ThreadPatch::default()
+                },
+            )
+            .await
+            .expect("model");
+        f.svc
+            .send(id, "hello".into(), Vec::new(), false)
+            .await
+            .expect("send");
+        ended(&f, 1).await;
+        assert_eq!(f.svc.thread(id).await.expect("thread").model, None);
+        assert!(stored(&f).await.contains(&ThreadEvent::Note {
+            text: "Model no longer offered by Grok".into()
+        }));
+    }
+
+    #[tokio::test]
+    async fn f_th_06_the_turn_after_a_sign_in_error_starts_a_new_session() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let n = calls.clone();
+        let f = fixture(
+            OnStop::Ack,
+            Arc::new(move |turn, tx| {
+                let first = n.fetch_add(1, Ordering::SeqCst) == 0;
+                let events = if first {
+                    vec![
+                        ev(
+                            &turn,
+                            ThreadEvent::Error {
+                                code: "auth_required".into(),
+                                message: "Grok needs you to sign in.".into(),
+                                stage: ErrorStage::Auth,
+                                hint: None,
+                                action: Some(ErrorAction::SignIn),
+                            },
+                        ),
+                        ev(&turn, end(TurnEndReason::Error)),
+                    ]
+                } else {
+                    vec![
+                        ev(&turn, delta("Hi")),
+                        ev(&turn, end(TurnEndReason::Completed)),
+                    ]
+                };
+                play(tx, events);
+            }),
+        )
+        .await;
+        let id = &f.thread.id;
+        f.svc
+            .send(id, "one".into(), Vec::new(), false)
+            .await
+            .expect("one");
+        ended(&f, 1).await;
+        f.svc
+            .send(id, "two".into(), Vec::new(), false)
+            .await
+            .expect("two");
+        ended(&f, 2).await;
+        // The new session reads the account's credentials again.
+        assert_eq!(f.adapter.starts.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn f_th_06_an_engine_that_needs_a_sign_in_offers_sign_in() {
+        struct NeedsLogin;
+        #[async_trait]
+        impl ChatAdapter for NeedsLogin {
+            fn engine_id(&self) -> &str {
+                "grok"
+            }
+            async fn start(
+                &self,
+                _req: ChatStart,
+                _events: mpsc::Sender<AdapterEvent>,
+            ) -> Result<Box<dyn ChatSession>, AdapterError> {
+                Err(AdapterError::Auth("Grok needs you to sign in.".into()))
+            }
+        }
+        struct Launcher;
+        #[async_trait]
+        impl ChatLauncher for Launcher {
+            async fn prepare(
+                &self,
+                thread: &ThreadRecord,
+            ) -> Result<(Arc<dyn ChatAdapter>, ChatStart), IpcError> {
+                Ok((
+                    Arc::new(NeedsLogin),
+                    ChatStart {
+                        thread_id: thread.id.clone(),
+                        engine_id: thread.engine_id.clone(),
+                        program: "/bin/true".into(),
+                        cwd: thread.cwd.clone().into(),
+                        env: Vec::new(),
+                        model: None,
+                        effort: None,
+                        access: thread.access,
+                        mode: thread.mode,
+                        attended: true,
+                        resume_session: None,
+                        mcp_config: None,
+                        mcp: None,
+                        engine_version: None,
+                    },
+                ))
+            }
+        }
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store =
+            Store::open(&DataDir::at(dir.path().to_path_buf()).expect("data")).expect("store");
+        let svc = ThreadService::new(
+            store,
+            EventBus::new(),
+            Arc::new(SystemClock),
+            ApprovalBroker::new(Arc::new(SystemClock)),
+            Arc::new(Launcher),
+        );
+        let thread = svc
+            .create(NewThread {
+                id: ThreadId::new(),
+                kind: ThreadKind::Thread,
+                workspace_id: None,
+                cwd: "/tmp".into(),
+                engine_id: "grok".into(),
+                account_id: None,
+                model: None,
+                effort: None,
+                access: Access::Edits,
+                mode: ThreadMode::Act,
+                attended: true,
+            })
+            .await
+            .expect("thread");
+        svc.send(&thread.id, "hi".into(), Vec::new(), false)
+            .await
+            .expect("send");
+        let events = svc
+            .events(&thread.id, None, 50)
+            .await
+            .expect("events")
+            .items;
+        assert!(matches!(
+            &events[1].event,
+            ThreadEvent::Error { action: Some(ErrorAction::SignIn), stage: ErrorStage::Auth, message, code, .. }
+                if message == "Grok needs you to sign in." && code == "auth_required"
         ));
     }
 
