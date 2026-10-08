@@ -81,7 +81,21 @@ pub(crate) async fn create_pane(
             ));
         }
     }
-    let mut pane = panes::create_with(&state.store, tab_id, kind, cwd, engine_id).await?;
+    let mut pane = panes::create_with(&state.store, tab_id, kind, cwd, engine_id.clone()).await?;
+    // An agent pane is pinned to the account it starts on (F-AC-03).
+    let engine = engine_id
+        .as_deref()
+        .and_then(|id| state.terminals.engines.get(id));
+    let account_id = match &engine {
+        Some(engine) => {
+            state
+                .terminals
+                .engines
+                .account_for_new_session(engine, &pane.workspace_id, account_id.as_ref())
+                .await?
+        }
+        None => account_id,
+    };
     if let Some(account) = account_id {
         panes::set_account(&state.store, &pane.id, &account).await?;
         pane.account_id = Some(account);

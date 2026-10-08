@@ -24,6 +24,7 @@
       "/logout"
     ],
     "statusCmd": null,
+    "signedInFile": ".credentials.json",
     "chatAdapter": "claude",
     "acpCmd": null,
     "adapterVersions": ">=1.0.0",

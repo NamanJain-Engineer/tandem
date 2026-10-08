@@ -26,6 +26,11 @@ versionRegex: string, install: InstallCommands, loginCmd: Array<string> | null, 
  */
 statusCmd: Array<string> | null, 
 /**
+ * A file in the provider home that exists once the engine is signed in;
+ * only its presence is checked, never its contents (F-AC-01).
+ */
+signedInFile: string | null, 
+/**
  * `claude`, `codex` or `acp`; none = terminal only.
  */
 chatAdapter: string | null, acpCmd: Array<string> | null, adapterVersions: string | null, 

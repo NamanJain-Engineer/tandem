@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { t } from "../../i18n";
 import { AccountPage } from "./AccountPage";
 import { EnginesPage } from "./EnginesPage";
+import { AccountsPage } from "./AccountsPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
 import { UpdatesPanel } from "../updates/UpdatesPanel";
@@ -380,6 +381,14 @@ export function settingsPages(platform: string): PageDef[] {
       keywords: ["engines", "agents", "claude", "codex", "install", "path", "arguments", "detect"],
       rows: [],
       extra: <EnginesPage />,
+    },
+    {
+      id: "accounts",
+      label: t("settings.accounts"),
+      subtitle: t("settings.accounts.subtitle"),
+      keywords: ["accounts", "sign in", "login", "default", "override", "claude", "codex", "provider"],
+      rows: [],
+      extra: <AccountsPage />,
     },
     {
       id: "privacy",

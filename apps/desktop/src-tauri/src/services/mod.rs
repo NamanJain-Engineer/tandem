@@ -1,6 +1,7 @@
 //! `tandem_app` services. Each takes its dependencies explicitly so tests run
 //! without a window (ARCHITECTURE §2.12).
 
+pub mod accounts;
 pub mod api;
 pub mod approvals;
 pub mod auth;

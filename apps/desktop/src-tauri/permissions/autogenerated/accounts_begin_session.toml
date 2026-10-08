@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-accounts-begin-session"
+description = "Enables the accounts_begin_session command without any pre-configured scope."
+commands.allow = ["accounts_begin_session"]
+
+[[permission]]
+identifier = "deny-accounts-begin-session"
+description = "Denies the accounts_begin_session command without any pre-configured scope."
+commands.deny = ["accounts_begin_session"]

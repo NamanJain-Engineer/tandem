@@ -19,6 +19,11 @@
 //! answered with a brief between its markers; anything else is answered,
 //! then Stop.
 //!
+//! Sign-in (F-AC-02): `/login` asks for a code like a device flow and, once a
+//! line is typed, writes `$CLAUDE_CONFIG_DIR/.credentials.json`; `/logout`
+//! deletes it. As `codex`, `login` does the same with `$CODEX_HOME/auth.json`,
+//! `login status` exits 0 when it exists and `logout` deletes it.
+//!
 //! Run headless (`claude -p`, `codex exec`), it reads its prompt from stdin,
 //! logs its size and prints a brief. `TANDEM_FAKE_BRIEF` (a value, or a
 //! file holding it) set to `empty` makes both briefs empty.
@@ -91,6 +96,60 @@ fn brief_lines(label: &str) -> Vec<String> {
         "Run the tests.".into(),
     ]
     .to_vec()
+}
+
+/// Where this engine keeps its fake sign-in.
+fn credentials(name: &str) -> Option<PathBuf> {
+    let (var, file) = if name == "codex" {
+        ("CODEX_HOME", "auth.json")
+    } else {
+        ("CLAUDE_CONFIG_DIR", ".credentials.json")
+    };
+    std::env::var_os(var).map(|home| PathBuf::from(home).join(file))
+}
+
+static AWAITING_CODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn sign_in(name: &str) {
+    if let Some(path) = credentials(name) {
+        let _ = std::fs::write(&path, "{}");
+    }
+    log(&format!("signed in: {name}"));
+    out("Login successful\r\n");
+}
+
+/// `codex login` / `login status` / `logout`; true when handled.
+fn account_command(name: &str, args: &[String]) -> Option<i32> {
+    if name != "codex" {
+        return None;
+    }
+    match args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        ["login", "status"] => Some(if credentials(name).is_some_and(|p| p.exists()) {
+            0
+        } else {
+            1
+        }),
+        ["login"] => {
+            out("Open https://example.invalid/device and enter ABCD-1234\r\nPaste the code to finish: ");
+            let mut line = String::new();
+            let _ = std::io::stdin().read_line(&mut line);
+            sign_in(name);
+            Some(0)
+        }
+        ["logout"] => {
+            if let Some(p) = credentials(name) {
+                let _ = std::fs::remove_file(p);
+            }
+            out("Logged out\r\n");
+            Some(0)
+        }
+        _ => None,
+    }
 }
 
 /// One-shot mode: the prompt on stdin, the answer on stdout.
@@ -207,6 +266,10 @@ fn main() {
         return;
     }
     let args = &argv[1.min(argv.len())..];
+    if let Some(code) = account_command(&name, args) {
+        log(&format!("start: {name} args={args:?}"));
+        std::process::exit(code);
+    }
     if (name == "claude" && args.iter().any(|a| a == "-p"))
         || (name == "codex" && args.first().is_some_and(|a| a == "exec"))
     {
@@ -284,6 +347,22 @@ fn answer(name: &str, text: &str) -> bool {
         return false;
     }
     if t.is_empty() {
+        return true;
+    }
+    if AWAITING_CODE.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        sign_in(name);
+        return true;
+    }
+    if t == "/login" {
+        AWAITING_CODE.store(true, std::sync::atomic::Ordering::SeqCst);
+        out("Open https://example.invalid/device and enter ABCD-1234\r\nPaste the code to finish:\r\n");
+        return true;
+    }
+    if t == "/logout" {
+        if let Some(p) = credentials(name) {
+            let _ = std::fs::remove_file(p);
+        }
+        out("Logged out\r\n");
         return true;
     }
     if claude {

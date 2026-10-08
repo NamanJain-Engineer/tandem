@@ -127,6 +127,10 @@ pub struct EngineSpec {
     /// Probes whether the engine is signed in (exit code 0 = yes).
     #[serde(default)]
     pub status_cmd: Option<Vec<String>>,
+    /// A file in the provider home that exists once the engine is signed in;
+    /// only its presence is checked, never its contents (F-AC-01).
+    #[serde(default)]
+    pub signed_in_file: Option<String>,
     /// `claude`, `codex` or `acp`; none = terminal only.
     #[serde(default)]
     pub chat_adapter: Option<String>,
@@ -246,6 +250,11 @@ impl EngineSpec {
         {
             if cmd.trim().is_empty() || cmd.chars().any(char::is_control) || cmd.contains("sudo ") {
                 return fail("install commands are one line, without sudo");
+            }
+        }
+        if let Some(f) = &self.signed_in_file {
+            if !bare_name(f) || f.starts_with("..") {
+                return fail("signed_in_file is a file name in the provider home");
             }
         }
         if let Some(var) = &self.provider_home_env {

@@ -4,6 +4,7 @@
 //! M4: the full §6.1 registry, detection, provider homes, terminal launch
 //! specs, the status server and `tandem-hook`. Chat adapters arrive in M6.
 
+pub mod accounts;
 pub mod detect;
 pub mod handoff;
 pub mod homes;

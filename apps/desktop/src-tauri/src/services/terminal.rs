@@ -460,9 +460,29 @@ impl TerminalService {
                 resume: Some(p.engine_session_id.as_str()),
                 config: &p.config,
             });
+            // A resumed session keeps its account; a new one takes the pane's
+            // explicit pick, then the workspace's override, then the
+            // engine's default (F-AC-03; teammates arrive with M11).
+            let workspace_pick = match (&plan, &record.account_id) {
+                (None, None) => tandem_store::repo::accounts::workspace_override(
+                    &self.store,
+                    &record.workspace_id,
+                    &engine.id,
+                )
+                .await
+                .ok()
+                .flatten(),
+                _ => None,
+            };
+            let chosen = tandem_core::accounts::resolve(
+                record.account_id.as_ref(),
+                None,
+                workspace_pick.as_ref(),
+                None,
+            );
             let account = match &plan {
                 Some(p) => p.session.account_id.as_ref(),
-                None => record.account_id.as_ref(),
+                None => chosen.as_ref(),
             };
             let launch = self
                 .engines

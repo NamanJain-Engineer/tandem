@@ -283,6 +283,33 @@ pub fn agent_wrapper(
     })
 }
 
+/// Runs `argv` under the user's login shell (its profile's PATH and
+/// variables) and nothing after it: the sign-in terminal of Settings ›
+/// Accounts (F-AC-02), which closes when the engine exits.
+pub fn login_exec(
+    shell: &Path,
+    argv: &[String],
+) -> Result<Vec<String>, tandem_core::shellquote::UnsafeFilename> {
+    use tandem_core::shellquote::{quote_paths, ShellDialect};
+    Ok(match shell_kind(shell) {
+        ShellKind::Posix => vec![
+            "-lc".into(),
+            format!("exec {}", quote_paths(argv, ShellDialect::Posix)?),
+        ],
+        ShellKind::Fish => vec![
+            "-l".into(),
+            "-c".into(),
+            format!("exec {}", quote_paths(argv, ShellDialect::Posix)?),
+        ],
+        ShellKind::PowerShell => vec![
+            "-NoLogo".into(),
+            "-Command".into(),
+            format!("& {}", quote_paths(argv, ShellDialect::PowerShell)?),
+        ],
+        ShellKind::Cmd => vec!["/C".into(), quote_paths(argv, ShellDialect::Cmd)?],
+    })
+}
+
 /// Finds `program` on `path` only, never in the working directory (F-CD-03
 /// AC6): a workspace that ships its own `claude.cmd` can't hijack a launch.
 /// On Windows `pathext` lists the extensions to try.
@@ -333,6 +360,19 @@ fn is_executable(p: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn f_ac_02_the_sign_in_terminal_runs_the_engine_under_the_login_shell_and_exits_with_it() {
+        let argv = vec!["/opt/my engine/codex".to_string(), "login".to_string()];
+        assert_eq!(
+            login_exec(Path::new("/bin/zsh"), &argv).expect("zsh"),
+            ["-lc", "exec '/opt/my engine/codex' 'login'"]
+        );
+        assert_eq!(
+            login_exec(Path::new("/usr/bin/fish"), &argv).expect("fish")[2],
+            "exec '/opt/my engine/codex' 'login'"
+        );
+    }
     use super::*;
 
     #[test]

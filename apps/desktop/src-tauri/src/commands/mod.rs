@@ -2,6 +2,7 @@
 //! `Result<T, IpcError>` (ARCHITECTURE §3.1).
 
 pub mod account;
+pub mod accounts;
 pub mod app;
 pub mod engines;
 pub mod handoff;

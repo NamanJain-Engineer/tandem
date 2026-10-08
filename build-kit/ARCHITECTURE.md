@@ -600,11 +600,14 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `engines_set_extra_args` | `{engineId, args:[String]}` | — | Invalid (secret-shaped) | F-SH-04 |
 | `models_list` | `{engineId, accountId?}` | `[ModelEntry {id, label, description, isDefault, effortLevels, contextWindow, source}]` (Automatic first) | — | F-TH-08 |
 | `accounts_list` | — | `[Account]` | — | F-AC-02 |
-| `accounts_begin_add` | `{engineId, label, channel: Channel<PtyFrame>}` → op | `LoginSession {opId, paneId}` (mini PTY in a fresh home) | LimitReached (Free: 1/engine), Unavailable (mac Keychain single-account) | F-AC-01, F-AC-02 |
-| `accounts_cancel_add` | `{opId}` | — (kills login tree, deletes the home) | — | F-AC-02 |
-| `accounts_update` | `{accountId, label?}` | — | Conflict | F-AC-02 |
-| `accounts_set_default` | `{engineId, accountId}` | — | — | F-AC-02, F-AC-03 |
-| `accounts_sign_out` / `accounts_remove` | `{accountId}` / `{accountId, deleteHome}` | — | — | F-AC-02 |
+| `accounts_begin_add` | `{engineId, label}` | `LoginSession {opId, paneId, accountId, action, reports}` (mini PTY in a fresh home; the sheet `pty_attach`es `paneId`; `reports` false = the engine can't say when it's signed in, so the user clicks Done); the end arrives as `accounts:login-finished` | LimitReached (Free: 1/engine), Unavailable (mac Keychain single-account), Conflict (name taken), EngineMissing | F-AC-01, F-AC-02 |
+| `accounts_begin_session` | `{accountId, action: "sign_in"\|"sign_out"}` | `LoginSession` (Sign in again / Sign out, in the account's own home) | EngineMissing | F-AC-02 |
+| `accounts_finish_login` / `accounts_cancel_login` | `{opId}` | — (Done for engines that can't report; Cancel kills the login tree, and a new account's home is deleted with no account created) | NotFound (already ended) | F-AC-02 |
+| `accounts_update` | `{accountId, label}` | `Account` | Conflict, Invalid | F-AC-02 |
+| `accounts_set_default` | `{accountId}` | — | — | F-AC-02, F-AC-03 |
+| `accounts_remove` | `{accountId}` | — (deletes its provider home; the engine's oldest other account becomes default; workspace overrides naming it are dropped) | — | F-AC-02 |
+| `accounts_status` | `{accountId}` | `"signed_in"\|"signed_out"\|"unknown"` (`signed_in_file` presence or `status_cmd` exit code, never the token) | — | F-AC-02 |
+| `accounts_overrides` | — | `[AccountOverride {workspaceId, engineId, accountId}]` | — | F-AC-03 |
 | `usage_get` | `{accountId?}` | `[UsageView {accountId, windows:[UsageWindow {kind, usedPct, resetsAt?}], source, estimated}]` | — | F-AC-04 |
 | `usage_refresh` | `{accountId?}` | — | — | F-AC-04 |
 | `usage_dashboard` | `{weeks: 12}` → op | `UsageDashboard {days:[DayTotal], perEngine, perAccount, topWorkspaces, skippedLines}` | — | F-AC-07 |
@@ -859,7 +862,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `restore:changed` | `{paneId, state: queued\|live\|paused\|cancelled}` (a paused card was queued, started, failed back to its card, or cancelled) | restore service | F-SH-07 |
 | `engines:detected` | `{hostId, report: DetectionReport}` | Detector | F-EN-01 |
 | `accounts:changed` | `{accounts:[Account]}` | accounts service | F-AC-02 |
-| `accounts:login-finished` | `{opId, ok, account?, error?}` | accounts service | F-AC-02 |
+| `accounts:login-finished` | `{opId, accountId, state: "signed_in"\|"signed_out"\|"failed"\|"cancelled", message?}` (`message`: the engine's last line, redacted) | accounts service | F-AC-02 |
 | `usage:changed` | `UsageView` | UsageProbe | F-AC-04, F-AC-06 |
 | `limit:hit` | `{source: SourceRef, accountId, resetsAt?, kind}` | adapters / pattern matcher | F-AC-05 |
 | `threads:changed` | `{threads:[ThreadSummary]}` | threads service | F-TH-01 |

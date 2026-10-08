@@ -118,6 +118,16 @@ macro_rules! app_commands {
             commands::engines::engines_install_command,
             commands::engines::engines_set_extra_args,
             commands::engines::accounts_list,
+            commands::accounts::accounts_begin_add,
+            commands::accounts::accounts_begin_session,
+            commands::accounts::accounts_finish_login,
+            commands::accounts::accounts_cancel_login,
+            commands::accounts::accounts_update,
+            commands::accounts::accounts_set_default,
+            commands::accounts::accounts_remove,
+            commands::accounts::accounts_status,
+            commands::accounts::accounts_overrides,
+            commands::accounts::workspace_set_account_override,
             commands::engines::engines_report,
             $($extra),*
         ]

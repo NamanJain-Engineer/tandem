@@ -119,6 +119,25 @@ impl ProviderHomes {
         }
     }
 
+    /// Deletes an account's home (`<root>/<engine>/<account>`); refuses
+    /// anything else, so a stored path can never point it at a user folder.
+    pub fn remove(&self, path: &Path) -> Result<(), HomeError> {
+        let rel = path
+            .strip_prefix(&self.root)
+            .map_err(|_| HomeError::NotOwned)?;
+        let parts: Vec<_> = rel.components().collect();
+        let plain = parts
+            .iter()
+            .all(|c| matches!(c, std::path::Component::Normal(n) if !n.is_empty()));
+        if parts.len() != 2 || !plain || rel.starts_with(ONE_OFF_DIR) {
+            return Err(HomeError::NotOwned);
+        }
+        match std::fs::remove_dir_all(path) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.into()),
+            _ => Ok(()),
+        }
+    }
+
     /// True when `path` is one of this root's homes (never a user folder).
     pub fn owns(&self, path: &Path) -> bool {
         path.starts_with(&self.root) && path != self.root
@@ -367,6 +386,29 @@ fn private_dir(dir: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn f_ac_02_1_removing_a_home_deletes_only_an_account_home() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let homes = ProviderHomes::new(dir.path().join("providers"));
+        let home = homes.path("claude", "acc_1");
+        std::fs::create_dir_all(home.join("x")).expect("home");
+        let outside = dir.path().join("mine");
+        std::fs::create_dir_all(&outside).expect("outside");
+        for refused in [
+            outside.clone(),
+            homes.root().to_path_buf(),
+            homes.root().join("claude"),
+            homes.root().join("claude/acc_1/x"),
+            homes.root().join("claude/../../mine"),
+        ] {
+            assert!(homes.remove(&refused).is_err(), "{}", refused.display());
+        }
+        assert!(outside.is_dir());
+        homes.remove(&home).expect("removed");
+        assert!(!home.exists());
+        homes.remove(&home).expect("already gone is fine");
+    }
     use super::*;
     use crate::EngineRegistry;
 

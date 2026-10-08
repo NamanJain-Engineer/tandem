@@ -54,7 +54,7 @@ export function fontStack(family: string): string {
 }
 
 /** Makes xterm measure its character cell again (font or attachment changed). */
-function remeasure(xterm: Terminal): void {
+export function remeasure(xterm: Terminal): void {
   const family = xterm.options.fontFamily ?? "monospace";
   xterm.options.fontFamily = "monospace";
   xterm.options.fontFamily = family;

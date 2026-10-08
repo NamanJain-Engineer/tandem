@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-accounts-status"
+description = "Enables the accounts_status command without any pre-configured scope."
+commands.allow = ["accounts_status"]
+
+[[permission]]
+identifier = "deny-accounts-status"
+description = "Denies the accounts_status command without any pre-configured scope."
+commands.deny = ["accounts_status"]

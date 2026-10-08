@@ -119,6 +119,8 @@ pub struct AppState {
     pub deeplinks: DeepLinkQueue,
     /// Processes a crashed run left behind, until the user decides (UI-132).
     pub orphans: OrphanScan,
+    /// Engine-account sign-ins and sign-outs in flight (F-AC-02).
+    pub logins: Arc<crate::services::accounts::LoginOps>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
     pub e2e: bool,
 }
@@ -347,6 +349,7 @@ impl AppState {
             telemetry,
             deeplinks: DeepLinkQueue::default(),
             orphans,
+            logins: Arc::default(),
             e2e,
         }
     }

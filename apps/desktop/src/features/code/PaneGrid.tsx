@@ -36,6 +36,7 @@ import { TerminalView, copyLastOutput, terminalHandles, type Phase, type Termina
 import { PausedCard } from "./PausedCard";
 import { WorktreeChip, worktreeMenu } from "./Worktrees";
 import { useHandoff } from "../../stores/handoff";
+import { AccountChip } from "./AccountChip";
 import { baseBranch, isWorktree } from "../../stores/worktrees";
 
 const BOX_THROTTLE_MS = 50;
@@ -335,7 +336,12 @@ const PaneView = memo(function PaneView({
         glyph={pane.kind === "agent" && glyph ? <EngineGlyph letters={glyph} size={14} /> : undefined}
         name={pane.humanName}
         meta={meta}
-        location={wt ? <WorktreeChip wt={wt} /> : undefined}
+        location={
+          <>
+            {wt && <WorktreeChip wt={wt} />}
+            <AccountChip pane={pane} />
+          </>
+        }
         onRename={rename}
         renaming={renaming}
         onRenamingChange={setRenaming}
