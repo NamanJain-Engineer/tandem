@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Bell, Folder, PanelLeft, Plus, Settings, Terminal } from "lucide-react";
+import { ApprovalCard } from "../components/ApprovalCard";
 import { Avatar, AvatarStack } from "../components/Avatar";
 import { Badge, Chip } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -7,10 +8,12 @@ import { Checkbox, RadioGroup, Switch } from "../components/Choice";
 import { CommandPalette } from "../components/CommandPalette";
 import { Banner, Callout, EmptyState, KeyValue, ListRow, PageHeader, SettingsGroup, SettingsRow, Stepper } from "../components/Composites";
 import { ConfirmDialog, Dialog, Sheet } from "../components/Dialog";
+import { Composer } from "../components/Composer";
 import { DiffView } from "../components/DiffView";
 import { Input, SecretInput, Textarea } from "../components/Field";
 import { IconButton } from "../components/IconButton";
 import { Kbd } from "../components/Kbd";
+import { CodeBlock, MarkdownView } from "../components/MarkdownView";
 import { Menu } from "../components/Menu";
 import { ContextMeter, ProgressBar, UsageMeter } from "../components/Progress";
 import { SegmentedControl } from "../components/SegmentedControl";
@@ -19,6 +22,7 @@ import { Skeleton } from "../components/Skeleton";
 import { Spinner } from "../components/Spinner";
 import { StatusDot, type Status } from "../components/StatusDot";
 import { Tabs } from "../components/Tabs";
+import { ToolCallBlock, ToolGroup, ToolOutput } from "../components/ToolCallBlock";
 import { useToast, type ToastTone } from "../components/Toast";
 import { Tooltip } from "../components/Tooltip";
 
@@ -332,6 +336,151 @@ export const galleryEntries: GalleryEntry[] = [
         ),
       },
       { name: "empty", render: () => <DiffView files={[]} /> },
+    ],
+  },
+  {
+    id: "markdown-view",
+    title: "MarkdownView",
+    spec: "§2.31",
+    states: [
+      {
+        name: "agent message",
+        render: () => (
+          <MarkdownView
+            className="w-[560px]"
+            markdown={"## The redirect loop\n\nThe guard calls `refresh()` **before** checking expiry, so an expired token redirects forever.\n\n- [x] Reproduce with `pnpm test checkout`\n- [ ] Fix the guard\n\n```ts\nif (!token || expired(token)) return deny();\n```\n\n| File | Change |\n|:--|--:|\n| src/auth/guard.ts | +2 −1 |\n\nSee [the docs](https://vibezeo.com/docs)."}
+          />
+        ),
+      },
+      { name: "streaming", render: () => <MarkdownView className="w-[560px]" streaming markdown={"First paragraph is done.\n\nThe second one is still being wri"} /> },
+      { name: "code block", render: () => <CodeBlock className="w-[480px]" language="sh" code={"pnpm install\npnpm test"} /> },
+    ],
+  },
+  {
+    id: "tool-call",
+    title: "ToolCallBlock",
+    spec: "UI-21",
+    states: [
+      { name: "running", render: () => <ToolCallBlock className="w-[480px]" icon="command" verb="Running" arg="pnpm test checkout" status="running" statusLabel="Running" /> },
+      { name: "done", render: () => <ToolCallBlock className="w-[480px]" icon="read" verb="Read" arg="src/checkout.ts" status="ok" statusLabel="Done" /> },
+      {
+        name: "failed expanded",
+        render: () => (
+          <ToolCallBlock className="w-[480px]" icon="command" verb="Ran" arg="pnpm test checkout" meta="exit 1, 6s" status="error" statusLabel="Failed" defaultOpen>
+            <ToolOutput text={"FAIL  test/checkout.test.ts\n  ✕ redirects once (12 ms)"} note="Showing the last 64 KB" />
+          </ToolCallBlock>
+        ),
+      },
+      { name: "denied", render: () => <ToolCallBlock className="w-[480px]" icon="edit" verb="Blocked" arg="src/checkout.ts" status="denied" statusLabel="Blocked" /> },
+      {
+        name: "group",
+        render: () => (
+          <div className="w-[480px]">
+            <ToolGroup summary="4 tool calls" collapseLabel="Collapse" status="ok" statusLabel="Done" defaultOpen>
+              <ToolCallBlock icon="read" verb="Read" arg="src/a.ts" status="ok" statusLabel="Done" />
+              <ToolCallBlock icon="search" verb="Searched for" arg="redirect" meta="(3 files)" status="ok" statusLabel="Done" />
+              <ToolCallBlock icon="web" verb="Fetched" arg="example.com" status="ok" statusLabel="Done" />
+            </ToolGroup>
+          </div>
+        ),
+      },
+    ],
+  },
+  {
+    id: "approval-card",
+    title: "ApprovalCard",
+    spec: "§2.24",
+    states: [
+      {
+        name: "command",
+        render: () => (
+          <ApprovalCard
+            className="w-[560px]"
+            kind="command"
+            title="Claude Code wants to run a command"
+            detail={<CodeBlock code="pnpm prisma migrate reset" language="sh" />}
+            context="In: ~/code/shop · Branch: tandem/fix-auth"
+            risk="high"
+            riskText="This can delete data."
+            age="2m"
+            allowThread
+            onAllow={noop}
+            onAllowThread={noop}
+            onDeny={noop}
+          />
+        ),
+      },
+      {
+        name: "file edit",
+        render: () => (
+          <ApprovalCard
+            className="w-[560px]"
+            kind="file_write"
+            title="Codex wants to edit 2 files"
+            detail={<CodeBlock code="--- a/src/a.ts" />}
+            labels={{ allow: "Allow", showDetail: "View diff", hideDetail: "Hide diff" }}
+            onAllow={noop}
+            onDeny={noop}
+          />
+        ),
+      },
+      { name: "compact", render: () => <ApprovalCard className="w-[560px]" compact kind="command" title="Claude Code wants to run npm test" allowThread onAllow={noop} onAllowThread={noop} onDeny={noop} /> },
+      { name: "resolved", render: () => <ApprovalCard kind="command" title="Run npm test" onAllow={noop} onDeny={noop} resolved={{ tone: "allowed", text: "Allowed once · you · 10:42" }} /> },
+    ],
+  },
+  {
+    id: "composer",
+    title: "Composer",
+    spec: "§2.23",
+    states: [
+      {
+        name: "idle",
+        render: () => (
+          <Controlled initial="">
+            {(v, set) => (
+              <Composer
+                className="w-[720px]"
+                value={v}
+                onChange={set}
+                onSend={noop}
+                placeholder="Ask Claude Code about shop — @ a file or folder, paste a screenshot…"
+                mode="act"
+                engine={{ value: "claude", options: [{ value: "claude", label: "Claude Code" }, { value: "codex", label: "Codex" }], onChange: noop }}
+                model={{ value: "default", options: [{ value: "default", label: "Default" }], onChange: noop }}
+                effort={{ value: "medium", options: [{ value: "medium", label: "Medium" }], onChange: noop }}
+                access={{ value: "edits", options: [{ value: "read", label: "Read only" }, { value: "edits", label: "Edits" }, { value: "full", label: "Full access" }], onChange: noop }}
+                tokens={{ text: "12.4k", tooltip: "Tokens used in this thread · 10.1k in / 2.3k out" }}
+                onAttach={noop}
+                mentions={() => []}
+              />
+            )}
+          </Controlled>
+        ),
+      },
+      {
+        name: "running with queue",
+        render: () => (
+          <Composer
+            className="w-[720px]"
+            value="and then update the docs"
+            onChange={noop}
+            onSend={noop}
+            onStop={noop}
+            running
+            queued="Run the tests again"
+            onRemoveQueued={noop}
+            attachments={[
+              { id: "a", label: "error.png", kind: "image" },
+              { id: "b", label: "src/checkout.ts", kind: "file" },
+              { id: "c", label: "video.mov", kind: "file", error: "Too large (max 20 MB)" },
+            ]}
+            onRemoveAttachment={noop}
+            placeholder="Working… you can type your next message, or Stop."
+          />
+        ),
+      },
+      { name: "disabled", render: () => <Composer className="w-[720px]" value="" onChange={noop} onSend={noop} placeholder="Ask anything…" disabledReason="Claude Code isn't signed in." /> },
+      { name: "drop", render: () => <Composer className="w-[720px]" value="" onChange={noop} onSend={noop} placeholder="Ask anything…" dropActive /> },
     ],
   },
 ];

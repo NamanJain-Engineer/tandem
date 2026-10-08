@@ -1,3 +1,10 @@
+export {
+  APPROVAL_LABELS,
+  ApprovalCard,
+  type ApprovalCardKind,
+  type ApprovalCardLabels,
+  type ApprovalCardProps,
+} from "./components/ApprovalCard";
 export { Avatar, AvatarStack, avatarHue, fnv1a32, initials, type AvatarProps } from "./components/Avatar";
 export { Badge, Chip, type BadgeVariant, type ChipProps } from "./components/Badge";
 export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from "./components/Button";
@@ -47,6 +54,17 @@ export {
   type DiffViewLabels,
 } from "./components/DiffView";
 export {
+  COMPOSER_LABELS,
+  Composer,
+  mentionAt,
+  type ComposerAttachment,
+  type ComposerHandle,
+  type ComposerLabels,
+  type ComposerProps,
+  type ComposerSelect,
+  type MentionItem,
+} from "./components/Composer";
+export {
   Input,
   SecretInput,
   Textarea,
@@ -58,6 +76,16 @@ export { EngineBadge, EngineGlyph } from "./components/EngineGlyph";
 export { IconButton, type IconButtonProps } from "./components/IconButton";
 export { Kbd, type KbdProps } from "./components/Kbd";
 export { ContextMenu, Menu, orderEntries, type MenuEntry, type MenuProps } from "./components/Menu";
+export {
+  MARKDOWN_MAX,
+  parseInline,
+  parseMarkdown,
+  safeHref,
+  splitStable,
+  type Block as MarkdownBlock,
+  type Inline as MarkdownInline,
+} from "./components/markdown";
+export { CodeBlock, MarkdownView, type CodeBlockProps, type MarkdownViewProps } from "./components/MarkdownView";
 export { Popover, type PopoverProps } from "./components/Popover";
 export {
   ContextMeter,
@@ -81,6 +109,15 @@ export { Skeleton, SkeletonGate, useDelayedFlag } from "./components/Skeleton";
 export { Spinner, type SpinnerProps } from "./components/Spinner";
 export { STATUS_LABEL, StatusDot, type Status } from "./components/StatusDot";
 export { Tabs, type TabItem, type TabsProps } from "./components/Tabs";
+export {
+  ToolCallBlock,
+  ToolGroup,
+  ToolOutput,
+  type ToolCallBlockProps,
+  type ToolCallStatus,
+  type ToolGroupProps,
+  type ToolIcon,
+} from "./components/ToolCallBlock";
 export { ToastProvider, useToast, type ToastInput, type ToastTone } from "./components/Toast";
 export { Tooltip, TooltipProvider, type TooltipProps } from "./components/Tooltip";
 export { cx } from "./cx";
