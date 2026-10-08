@@ -165,7 +165,8 @@ describe("E2E-M6-4 worktrees", () => {
     await confirm.click();
     const list = await $('[data-testid="merge-conflicts"]');
     await list.waitForExist({ timeout: 15_000 });
-    expect(await list.getText()).toContain("README.md");
+    // textContent: WebKit's getText is "" while the dialog fades in.
+    expect(String(await list.getProperty("textContent"))).toContain("README.md");
     expect(git(repo, "status", "--porcelain")).toContain("UU README.md");
     expect(git(repo, "rev-parse", "HEAD")).toBe(head);
   });
