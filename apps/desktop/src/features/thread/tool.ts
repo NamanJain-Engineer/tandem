@@ -43,7 +43,13 @@ export function statusLabel(status: ToolStatus): string {
 }
 
 /** What a ToolCallBlock shows for a tool event (UI-21 labels). */
-export function toolView(tool: ToolEvent): { icon: ToolIcon; verb: string; arg: string; meta?: string; statusLabel: string } {
+export function toolView(tool: ToolEvent): {
+  icon: ToolIcon;
+  verb: string;
+  arg: string;
+  meta?: string;
+  statusLabel: string;
+} {
   const active = tool.status === "running" || tool.status === "pending";
   const verb = t(`thread.tool.${tool.verb}${active ? ".active" : ""}` as MessageKey);
   let meta: string | undefined;

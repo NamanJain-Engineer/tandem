@@ -7,7 +7,12 @@ type Item = { key: string; status: string; pendingApproval: { summary: string } 
 const pinned = '[data-testid="thread-pending"]';
 
 async function openDashboard(): Promise<void> {
-  if (!(await $('[data-testid="sidebar"]').isDisplayed().catch(() => false))) await $('[data-testid="sidebar-toggle"]').click();
+  if (
+    !(await $('[data-testid="sidebar"]')
+      .isDisplayed()
+      .catch(() => false))
+  )
+    await $('[data-testid="sidebar-toggle"]').click();
   await $('[data-testid="sidebar-pill-dashboard"]').click();
   await $('[data-testid="dashboard"]').waitForExist({ timeout: 10_000 });
 }
@@ -31,7 +36,9 @@ describe("E2E-M7-2 approvals", () => {
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
     await threadMode();
     const [ws] = await invoke<Array<{ id: string }>>("workspace_list");
-    const thread = await invoke<{ id: string }>("thread_create", { args: { kind: "thread", workspaceId: ws?.id } });
+    const thread = await invoke<{ id: string }>("thread_create", {
+      args: { kind: "thread", workspaceId: ws?.id },
+    });
     threadId = thread.id;
     const row = await $(`[data-testid="thread-row"][data-thread-id="${threadId}"]`);
     await row.waitForExist({ timeout: 10_000 });

@@ -22,7 +22,9 @@ function killAgent(): void {
 }
 
 async function transcriptText(): Promise<string> {
-  return browser.execute(() => document.querySelector<HTMLElement>('[data-testid="thread-main"] [role="log"]')?.innerText ?? "");
+  return browser.execute(
+    () => document.querySelector<HTMLElement>('[data-testid="thread-main"] [role="log"]')?.innerText ?? "",
+  );
 }
 
 // E2E-M7-12 ACP (F-TH-06): an Agent Client Protocol agent (the fake
@@ -41,7 +43,11 @@ describe("E2E-M7-12 ACP", () => {
     const report = await checkAgain();
     expect(report.found.map((f) => f.engineId)).toContain("opencode");
     await threadMode();
-    threadId = (await invoke<Thread>("thread_create", { args: { kind: "thread", workspaceId: null, engineId: "opencode" } })).id;
+    threadId = (
+      await invoke<Thread>("thread_create", {
+        args: { kind: "thread", workspaceId: null, engineId: "opencode" },
+      })
+    ).id;
     const row = await $(`[data-testid="thread-row"][data-thread-id="${threadId}"]`);
     await row.waitForExist({ timeout: 10_000 });
     await row.click();
@@ -60,7 +66,9 @@ describe("E2E-M7-12 ACP", () => {
     await waitForAssistant("Ran npm test.");
 
     await sendMessage("/hang");
-    await browser.waitUntil(async () => (await assistantTexts()).some((t) => t.includes("Working on it")), { timeout: 20_000 });
+    await browser.waitUntil(async () => (await assistantTexts()).some((t) => t.includes("Working on it")), {
+      timeout: 20_000,
+    });
     await composer().click();
     await browser.keys("Escape");
     await $("p*=Stopped by you").waitForExist({ timeout: 6_000 });
@@ -81,10 +89,13 @@ describe("E2E-M7-12 ACP", () => {
     killAgent();
     await sendMessage("again");
     await waitForAssistant("You said: again");
-    await browser.waitUntil(async () => (await transcriptText()).includes("Model no longer offered by OpenCode"), {
-      timeout: 10_000,
-      timeoutMsg: `transcript: ${await transcriptText()}`,
-    });
+    await browser.waitUntil(
+      async () => (await transcriptText()).includes("Model no longer offered by OpenCode"),
+      {
+        timeout: 10_000,
+        timeoutMsg: `transcript: ${await transcriptText()}`,
+      },
+    );
     const thread = await invoke<{ thread: Thread }>("thread_get", { threadId });
     expect(thread.thread.model).toBeNull();
     const list = await invoke<Model[]>("models_list", { engineId: "opencode" });

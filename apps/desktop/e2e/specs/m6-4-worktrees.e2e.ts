@@ -11,7 +11,8 @@ const GIT_ENV = {
   GIT_COMMITTER_NAME: "E2E",
   GIT_COMMITTER_EMAIL: "e2e@vibezeo.test",
 };
-const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: GIT_ENV }).trim();
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: GIT_ENV }).trim();
 
 function makeRepo(path: string): void {
   mkdirSync(path, { recursive: true });
@@ -32,7 +33,9 @@ async function pick(label: string): Promise<void> {
   await browser.waitUntil(
     async () =>
       browser.execute((l: string) => {
-        const item = Array.from(document.querySelectorAll<HTMLElement>("[role=menuitem]")).find((el) => el.textContent?.trim() === l);
+        const item = Array.from(document.querySelectorAll<HTMLElement>("[role=menuitem]")).find(
+          (el) => el.textContent?.trim() === l,
+        );
         item?.click();
         return item !== undefined;
       }, label),
@@ -46,7 +49,13 @@ async function repoMenu(root: string): Promise<void> {
     const row = document.querySelector<HTMLElement>(`[data-testid="workspace-row"][data-root="${r}"]`);
     const box = row?.getBoundingClientRect();
     row?.dispatchEvent(
-      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: (box?.left ?? 0) + 24, clientY: (box?.top ?? 0) + 8 }),
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+        clientX: (box?.left ?? 0) + 24,
+        clientY: (box?.top ?? 0) + 8,
+      }),
     );
   }, root);
 }
@@ -102,7 +111,10 @@ describe("E2E-M6-4 worktrees", () => {
     await newWorktree(repo, "fix auth");
     await newWorktree(repo, "fix auth");
     await browser.waitUntil(async () => (await rows()).length === 2, { timeout: 10_000 });
-    expect(git(repo, "branch", "--list", "tandem/*", "--format=%(refname:short)").split("\n")).toEqual(["tandem/fix-auth", "tandem/fix-auth-2"]);
+    expect(git(repo, "branch", "--list", "tandem/*", "--format=%(refname:short)").split("\n")).toEqual([
+      "tandem/fix-auth",
+      "tandem/fix-auth-2",
+    ]);
     const exclude = readFileSync(join(repo, ".git/info/exclude"), "utf8").split("\n");
     expect(exclude.filter((l) => l.trim() === ".tandem/")).toHaveLength(1);
     expect(git(repo, "status", "--porcelain")).toBe("");
@@ -118,15 +130,33 @@ describe("E2E-M6-4 worktrees", () => {
     const lane = list.find((w) => w.laneBranch === "tandem/fix-auth-2");
     expect(lane?.parentId).toBe(parent?.id);
     const agent = (id: string, workspaceId: string | undefined, title: string) =>
-      invoke("test_fixture_agent", { agent: { id, title, status: "working", engineId: "claude", workspaceId, preview: null, approval: null } });
+      invoke("test_fixture_agent", {
+        agent: {
+          id,
+          title,
+          status: "working",
+          engineId: "claude",
+          workspaceId,
+          preview: null,
+          approval: null,
+        },
+      });
     await agent("m64-main", parent?.id, "on main");
     await agent("m64-lane", lane?.id, "in the worktree");
-    if (!(await $('[data-testid="sidebar"]').isDisplayed().catch(() => false))) await $('[data-testid="sidebar-toggle"]').click();
+    if (
+      !(await $('[data-testid="sidebar"]')
+        .isDisplayed()
+        .catch(() => false))
+    )
+      await $('[data-testid="sidebar-toggle"]').click();
     await $('[data-testid="sidebar-pill-dashboard"]').click();
     await $('[data-testid="dashboard"]').waitForExist({ timeout: 10_000 });
     await $('//*[@role="radio"][normalize-space()="Project"]').click();
     const nested = `[data-testid="worktrees-ws:${parent?.id}"] [data-testid="group-ws:${lane?.id}"]`;
-    await $(nested).waitForExist({ timeout: 10_000, timeoutMsg: "the worktree's group isn't inside its repository's" });
+    await $(nested).waitForExist({
+      timeout: 10_000,
+      timeoutMsg: "the worktree's group isn't inside its repository's",
+    });
     expect(await $(`${nested} [data-testid="agent-card"][data-key$="m64-lane"]`).isExisting()).toBe(true);
   });
 
@@ -135,7 +165,9 @@ describe("E2E-M6-4 worktrees", () => {
     writeFileSync(join(folder, "notes.txt"), "uncommitted\n");
     const discard = async () => {
       await worktreeAction("tandem/fix-auth", "Discard worktree…");
-      await $('//label[normalize-space()="Type tandem/fix-auth to confirm"]/following::input[1]').setValue("tandem/fix-auth");
+      await $('//label[normalize-space()="Type tandem/fix-auth to confirm"]/following::input[1]').setValue(
+        "tandem/fix-auth",
+      );
       await $("button=Discard worktree").click();
     };
     // The plain removal refuses (uncommitted work); the force asks natively: No.
@@ -147,7 +179,9 @@ describe("E2E-M6-4 worktrees", () => {
     // Yes: the folder goes, the branch and its commits stay.
     answerConfirm("yes");
     await discard();
-    await browser.waitUntil(async () => !(await rows()).some((r) => r.branch === "tandem/fix-auth"), { timeout: 15_000 });
+    await browser.waitUntil(async () => !(await rows()).some((r) => r.branch === "tandem/fix-auth"), {
+      timeout: 15_000,
+    });
     expect(existsSync(folder)).toBe(false);
     expect(git(repo, "branch", "--list", "tandem/fix-auth")).not.toBe("");
   });

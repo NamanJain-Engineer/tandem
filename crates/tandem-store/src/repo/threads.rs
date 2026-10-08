@@ -530,9 +530,50 @@ pub async fn set_folder(
     );
     store
         .write(move |t| {
+            // A new folder: the Changes panel starts over there (F-TH-13).
             t.execute(
-                "UPDATE threads SET workspace_id = ?2, cwd = ?3, engine_session_id = NULL WHERE id = ?1",
+                "UPDATE threads SET workspace_id = ?2, cwd = ?3, engine_session_id = NULL,
+                   start_commit = NULL, snapshot_ref = NULL WHERE id = ?1",
                 params![id, ws, cwd],
+            )?;
+            Ok(())
+        })
+        .await
+}
+
+/// Where the thread's Changes panel starts (F-TH-13): its starting commit
+/// (empty: a repository with no commits yet) or its snapshot manifest.
+/// Both `None` until the first turn.
+pub async fn start_point(
+    store: &Store,
+    id: &ThreadId,
+) -> Result<(Option<String>, Option<String>), StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .read(move |c| {
+            Ok(c.query_row(
+                "SELECT start_commit, snapshot_ref FROM threads WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+            .unwrap_or((None, None)))
+        })
+        .await
+}
+
+pub async fn set_start_point(
+    store: &Store,
+    id: &ThreadId,
+    commit: Option<String>,
+    snapshot: Option<String>,
+) -> Result<(), StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .write(move |t| {
+            t.execute(
+                "UPDATE threads SET start_commit = ?2, snapshot_ref = ?3 WHERE id = ?1",
+                params![id, commit, snapshot],
             )?;
             Ok(())
         })

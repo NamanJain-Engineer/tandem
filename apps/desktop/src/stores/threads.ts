@@ -49,6 +49,9 @@ type ThreadsState = {
   send: (id: string, text: string, attachmentIds: string[], queueIfBusy: boolean) => Promise<SendResult | IpcError>;
   stop: (id: string) => Promise<void>;
   retry: (id: string) => Promise<IpcError | null>;
+  /** UI-24: the Changes panel is open (Mod+Alt+C). */
+  changesOpen: boolean;
+  toggleChanges: () => void;
   /** F-TH-10: Act, then send plan `version`; the draft stays. */
   implementPlan: (id: string, version: number) => Promise<IpcError | null>;
   setShowArchived: (v: boolean) => void;
@@ -255,6 +258,8 @@ export const useThreads = create<ThreadsState>((set, get) => {
       }
     },
     setShowArchived: (v) => set({ showArchived: v }),
+    changesOpen: false,
+    toggleChanges: () => set((s) => ({ changesOpen: !s.changesOpen })),
   };
 });
 

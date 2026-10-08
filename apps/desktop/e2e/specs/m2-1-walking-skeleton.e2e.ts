@@ -1,6 +1,18 @@
 import { $, browser } from "@wdio/globals";
 import { expectNoSeriousA11yViolationsInBothThemes } from "../support/axe";
-import { addFolder, browserLog, planFooter, signInDesktop, signUpVerified, terminalLines, terminalText, typeInTerminal, uniqueEmail, waitForApp, workspaceRoots } from "../support/app";
+import {
+  addFolder,
+  browserLog,
+  planFooter,
+  signInDesktop,
+  signUpVerified,
+  terminalLines,
+  terminalText,
+  typeInTerminal,
+  uniqueEmail,
+  waitForApp,
+  workspaceRoots,
+} from "../support/app";
 
 // E2E-M2-1 Walking skeleton (MILESTONES M2).
 describe("E2E-M2-1 walking skeleton", () => {
@@ -21,15 +33,24 @@ describe("E2E-M2-1 walking skeleton", () => {
   it("signs in through the scripted browser and shows FREE", async () => {
     await signInDesktop(email);
     expect(browserLog()).toContain("You can return to Vibezeo.");
-    await browser.waitUntil(async () => (await planFooter()) === "FREE", { timeout: 15_000, timeoutMsg: `footer: ${await planFooter()}` });
+    await browser.waitUntil(async () => (await planFooter()) === "FREE", {
+      timeout: 15_000,
+      timeoutMsg: `footer: ${await planFooter()}`,
+    });
   });
 
   it("opens a workspace with a live shell that runs commands", async () => {
     await addFolder(ws);
     await browser.waitUntil(async () => (await workspaceRoots()).includes(ws), { timeout: 15_000 });
-    await browser.waitUntil(async () => (await terminalText()).length > 0, { timeout: 20_000, timeoutMsg: "no shell output" });
+    await browser.waitUntil(async () => (await terminalText()).length > 0, {
+      timeout: 20_000,
+      timeoutMsg: "no shell output",
+    });
     await typeInTerminal("echo hi\n");
-    await browser.waitUntil(async () => (await terminalLines()).includes("hi"), { timeout: 15_000, timeoutMsg: `terminal: ${await terminalText()}` });
+    await browser.waitUntil(async () => (await terminalLines()).includes("hi"), {
+      timeout: 15_000,
+      timeoutMsg: `terminal: ${await terminalText()}`,
+    });
   });
 
   it("the shell passes axe in both themes", async () => {

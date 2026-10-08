@@ -1,5 +1,13 @@
 import { $, browser } from "@wdio/globals";
-import { addFolder, freshOffline, mod, paneIds, sendToPane, waitForPaneText, waitForShell } from "../support/app";
+import {
+  addFolder,
+  freshOffline,
+  mod,
+  paneIds,
+  sendToPane,
+  waitForPaneText,
+  waitForShell,
+} from "../support/app";
 
 async function countIs(label: string): Promise<void> {
   const count = $('[data-testid="find-count"]');
@@ -18,7 +26,10 @@ describe("E2E-M3-12 find", () => {
     const pane = (await paneIds())[0] ?? "";
     await waitForShell(pane);
     // The command line spells it `nee""dle`, so only the output matches.
-    await sendToPane(pane, `for i in $(seq 1 1000); do case $i in 10|500|900) echo "line $i nee""dle";; *) echo "line $i";; esac; done\n`);
+    await sendToPane(
+      pane,
+      `for i in $(seq 1 1000); do case $i in 10|500|900) echo "line $i nee""dle";; *) echo "line $i";; esac; done\n`,
+    );
     await waitForPaneText(pane, "line 1000");
     await $(`[data-testid="terminal"][data-pane-id="${pane}"]`).click();
     // Linux under "Terminal first": Ctrl+Shift+F (Ctrl+F stays the shell's).

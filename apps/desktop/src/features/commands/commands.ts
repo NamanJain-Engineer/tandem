@@ -11,6 +11,7 @@ import shortcuts from "@tandem/protocol/shortcuts.json";
 import { t, type MessageKey } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
+import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { applyDrop } from "../code/dnd";
@@ -52,6 +53,7 @@ function activePane(): { tabId: string; paneId: string } | null {
 export function isEnabled(spec: CommandSpec): boolean {
   if (spec.enabledWhen === "always") return true;
   const ui = useUi.getState();
+  if (spec.enabledWhen === "thread_open") return ui.mode === "thread" && !ui.settingsOpen && useThreads.getState().selectedId !== null;
   if (ui.mode !== "code" || ui.settingsOpen) return false;
   if (spec.enabledWhen === "code_mode") return true;
   const ws = useWorkspaces.getState();
@@ -92,6 +94,7 @@ export const handlers: Record<string, () => void> = {
   "mode.agent": () => switchMode("agent"),
   "mode.code": () => switchMode("code"),
   "mode.thread": () => switchMode("thread"),
+  "thread.changes": () => useThreads.getState().toggleChanges(),
   "rail.toggle": () => useUi.getState().toggleRail(),
   "sidebar.toggle": () => useSidebar.getState().toggle(),
   "notifications.open": () => useNotifications.getState().setOpen(true),

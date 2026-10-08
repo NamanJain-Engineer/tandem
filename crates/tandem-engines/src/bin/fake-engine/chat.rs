@@ -10,6 +10,8 @@
 //! - `/hang`: streams one piece, then reads nothing more and ignores SIGINT
 //!   (the tree must be killed, E2E-M7-3).
 //! - `/crash`: streams one piece and exits 3 mid-turn.
+//! - `write <path>=<text>;<path>=<text>…`: writes each file (`\n` is a line
+//!   break) in its folder as Write tool calls, then says how many (E2E-M7-9).
 //! - anything else: "You said: <text>" in two pieces.
 //!
 //! An interrupt (`control_request`) is acknowledged and ends the turn.
@@ -355,6 +357,31 @@ pub fn run(args: &[String], session: String) {
             loop {
                 std::thread::sleep(Duration::from_secs(60));
             }
+        } else if let Some(spec) = first.strip_prefix("write ") {
+            let mut count = 0;
+            for (k, part) in spec.split(';').enumerate() {
+                let Some((path, body)) = part.split_once('=') else {
+                    continue;
+                };
+                let path = path.trim();
+                let body = body.replace("\\n", "\n");
+                let id = format!("toolu_{n}_{k}");
+                turn.assistant(json!([{"type": "tool_use", "id": id, "name": "Write",
+                    "input": {"file_path": path, "content": body}}]));
+                if let Some(dir) = std::path::Path::new(path).parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                let ok = std::fs::write(path, &body).is_ok();
+                emit(
+                    json!({"type": "user", "session_id": turn.session, "parent_tool_use_id": null,
+                    "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": id,
+                        "content": if ok { "written" } else { "failed" }, "is_error": !ok}]}}),
+                );
+                count += 1;
+            }
+            let said = format!("Wrote {count} files.");
+            turn.say(&[&said]);
+            turn.done("done");
         } else if first == "/crash" {
             turn.delta("About to fail");
             std::process::exit(3);

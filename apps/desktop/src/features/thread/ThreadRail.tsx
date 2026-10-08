@@ -73,9 +73,19 @@ function Row({ thread, selected, now }: { thread: Thread; selected: boolean; now
     {
       id: "archive",
       label: thread.archived ? t("thread.rail.restore") : t("thread.rail.archive"),
-      onSelect: () => void archive(thread.id, !thread.archived).then((e) => e && show({ tone: "error", title: e.message })),
+      onSelect: () =>
+        void archive(thread.id, !thread.archived).then((e) => e && show({ tone: "error", title: e.message })),
     },
-    ...(thread.archived ? [{ id: "delete", label: t("thread.rail.delete"), danger: true, onSelect: () => setConfirmDelete(true) }] : []),
+    ...(thread.archived
+      ? [
+          {
+            id: "delete",
+            label: t("thread.rail.delete"),
+            danger: true,
+            onSelect: () => setConfirmDelete(true),
+          },
+        ]
+      : []),
   ]);
 
   const save = () => {
@@ -129,8 +139,16 @@ function Row({ thread, selected, now }: { thread: Thread; selected: boolean; now
           }
         >
           <StatusDot status={STATUS[thread.state]} label={t(`thread.state.${thread.state}`)} />
-          <span className={"min-w-0 flex-1 truncate " + (thread.archived ? "text-fg-muted" : "")}>{title}</span>
-          {thread.unread && <span aria-label={t("thread.rail.unread")} role="img" className="size-1.5 shrink-0 rounded-full bg-accent" />}
+          <span className={"min-w-0 flex-1 truncate " + (thread.archived ? "text-fg-muted" : "")}>
+            {title}
+          </span>
+          {thread.unread && (
+            <span
+              aria-label={t("thread.rail.unread")}
+              role="img"
+              className="size-1.5 shrink-0 rounded-full bg-accent"
+            />
+          )}
           <span className="shrink-0 text-sm text-fg-subtle">{rightLabel(thread, now)}</span>
           <EngineGlyph letters={glyph} size={14} label={engine ?? undefined} />
         </button>
@@ -170,7 +188,10 @@ export function ThreadRail({ collapsed }: { collapsed: boolean }) {
     return () => clearInterval(id);
   }, []);
 
-  const groups = useMemo(() => groupThreads(list, workspaces, { showArchived, query }), [list, workspaces, showArchived, query]);
+  const groups = useMemo(
+    () => groupThreads(list, workspaces, { showArchived, query }),
+    [list, workspaces, showArchived, query],
+  );
   const newThread = (workspaceId: string | null) =>
     void create(workspaceId).then((r) => {
       if ("code" in r) show({ tone: "error", title: r.message });
@@ -178,17 +199,37 @@ export function ThreadRail({ collapsed }: { collapsed: boolean }) {
 
   if (collapsed) {
     return (
-      <nav aria-label={t("rail.threads")} className="flex w-[var(--rail-collapsed)] shrink-0 flex-col items-center gap-1 border-r border-border bg-surface-1 py-2">
-        <IconButton icon={<Plus size={16} />} label={t("thread.rail.new")} kbd={["Mod", "N"]} onClick={() => newThread(null)} />
+      <nav
+        aria-label={t("rail.threads")}
+        className="flex w-[var(--rail-collapsed)] shrink-0 flex-col items-center gap-1 border-r border-border bg-surface-1 py-2"
+      >
+        <IconButton
+          icon={<Plus size={16} />}
+          label={t("thread.rail.new")}
+          kbd={["Mod", "N"]}
+          onClick={() => newThread(null)}
+        />
       </nav>
     );
   }
 
   return (
-    <nav aria-label={t("rail.threads")} className="flex w-[var(--rail-w)] shrink-0 flex-col border-r border-border bg-surface-1">
+    <nav
+      aria-label={t("rail.threads")}
+      className="flex w-[var(--rail-w)] shrink-0 flex-col border-r border-border bg-surface-1"
+    >
       <header className="flex h-9 items-center justify-between pl-3 pr-1.5">
-        <h2 className="text-2xs font-semibold uppercase tracking-caps text-fg-subtle">{t("rail.threads").toUpperCase()}</h2>
-        <IconButton size="sm" icon={<Plus size={16} />} label={t("thread.rail.new")} kbd={["Mod", "N"]} onClick={() => newThread(null)} data-testid="thread-new" />
+        <h2 className="text-2xs font-semibold uppercase tracking-caps text-fg-subtle">
+          {t("rail.threads").toUpperCase()}
+        </h2>
+        <IconButton
+          size="sm"
+          icon={<Plus size={16} />}
+          label={t("thread.rail.new")}
+          kbd={["Mod", "N"]}
+          onClick={() => newThread(null)}
+          data-testid="thread-new"
+        />
       </header>
       <div className="px-2 pb-2">
         <Input
@@ -218,7 +259,9 @@ export function ThreadRail({ collapsed }: { collapsed: boolean }) {
           groups.map((g) => (
             <section key={g.id} aria-label={groupLabel(g)} className="pt-2">
               <div className="group flex h-6 items-center justify-between px-2">
-                <h3 className="truncate text-2xs font-semibold uppercase tracking-caps text-fg-subtle">{groupLabel(g).toUpperCase()}</h3>
+                <h3 className="truncate text-2xs font-semibold uppercase tracking-caps text-fg-subtle">
+                  {groupLabel(g).toUpperCase()}
+                </h3>
                 {g.kind === "folder" && (
                   <IconButton
                     size="sm"
@@ -239,7 +282,13 @@ export function ThreadRail({ collapsed }: { collapsed: boolean }) {
         )}
       </div>
       <footer className="border-t border-divider px-2 py-1.5">
-        <Button size="sm" variant="ghost" iconLeft={<Archive size={14} />} aria-pressed={showArchived} onClick={() => setShowArchived(!showArchived)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          iconLeft={<Archive size={14} />}
+          aria-pressed={showArchived}
+          onClick={() => setShowArchived(!showArchived)}
+        >
           {showArchived ? t("thread.rail.hideArchived") : t("thread.rail.showArchived")}
         </Button>
       </footer>

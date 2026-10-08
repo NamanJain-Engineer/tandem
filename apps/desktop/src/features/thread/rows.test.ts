@@ -9,7 +9,18 @@ function env(turnId: string, event: ThreadEvent, s?: number): ThreadEventEnvelop
 }
 
 function tool(id: string, status: ToolEvent["status"] = "ok"): ThreadEvent {
-  return { type: "tool", id, verb: "read", argSummary: `src/${id}.ts`, status, output: null, outputTruncated: false, outputFile: null, diff: null, detail: null };
+  return {
+    type: "tool",
+    id,
+    verb: "read",
+    argSummary: `src/${id}.ts`,
+    status,
+    output: null,
+    outputTruncated: false,
+    outputFile: null,
+    diff: null,
+    detail: null,
+  };
 }
 
 function play(...events: ThreadEventEnvelope[]) {
@@ -37,7 +48,15 @@ describe("transcript rows (F-TH-12, UI-21)", () => {
 
   it("F-TH-11 approvals carry their decision; pending ones are the running turn's", () => {
     seq = 0;
-    const req = (id: string): ThreadEvent => ({ type: "approval_request", id, kind: "command", summary: "Run `npm test`", detail: "npm test", options: ["once", "thread"], expiresAt: 0 });
+    const req = (id: string): ThreadEvent => ({
+      type: "approval_request",
+      id,
+      kind: "command",
+      summary: "Run `npm test`",
+      detail: "npm test",
+      options: ["once", "thread"],
+      expiresAt: 0,
+    });
     const view = play(
       env("t1", { type: "user", text: "go", attachments: [] }),
       env("t1", req("apr_1")),
@@ -46,7 +65,10 @@ describe("transcript rows (F-TH-12, UI-21)", () => {
     );
     const rows = toRows(view);
     const approvals = rows.filter((r) => r.kind === "approval");
-    expect(approvals.map((r) => r.kind === "approval" && r.decision)).toEqual([{ type: "allow", scope: "thread" }, null]);
+    expect(approvals.map((r) => r.kind === "approval" && r.decision)).toEqual([
+      { type: "allow", scope: "thread" },
+      null,
+    ]);
     expect(pendingApprovals(rows, "t1").map((r) => r.request.id)).toEqual(["apr_2"]);
     expect(pendingApprovals(rows, null)).toEqual([]);
   });
@@ -83,11 +105,43 @@ describe("transcript rows (F-TH-12, UI-21)", () => {
     view = reduce(view, env("t1", { type: "assistant_delta", text: "Hel" }, 1));
     view = reduce(view, env("t1", { type: "assistant_delta", text: "lo" }, 1));
     const rows = toRows(view);
-    expect(rows.filter((r) => r.kind === "assistant")).toEqual([{ kind: "assistant", key: "t1:1", markdown: "Hello", streaming: true }]);
-    view = reduce(view, env("t1", { type: "usage", input: 100, output: 20, cacheRead: 50, cacheWrite: 0, contextFillPct: 4.2, costUsd: null }, 2));
+    expect(rows.filter((r) => r.kind === "assistant")).toEqual([
+      { kind: "assistant", key: "t1:1", markdown: "Hello", streaming: true },
+    ]);
+    view = reduce(
+      view,
+      env(
+        "t1",
+        {
+          type: "usage",
+          input: 100,
+          output: 20,
+          cacheRead: 50,
+          cacheWrite: 0,
+          contextFillPct: 4.2,
+          costUsd: null,
+        },
+        2,
+      ),
+    );
     view = reduce(view, env("t1", { type: "turn_end", reason: "completed", blockedActions: 0 }, 3));
     view = reduce(view, env("t2", { type: "user", text: "more", attachments: [] }, 0));
-    view = reduce(view, env("t2", { type: "usage", input: 10, output: 5, cacheRead: 0, cacheWrite: 0, contextFillPct: null, costUsd: null }, 1));
+    view = reduce(
+      view,
+      env(
+        "t2",
+        {
+          type: "usage",
+          input: 10,
+          output: 5,
+          cacheRead: 0,
+          cacheWrite: 0,
+          contextFillPct: null,
+          costUsd: null,
+        },
+        1,
+      ),
+    );
     expect(usageOf(view)).toEqual({ input: 160, output: 25, contextFillPct: 4.2 });
   });
 
@@ -101,7 +155,10 @@ describe("transcript rows (F-TH-12, UI-21)", () => {
       env("t1", { type: "assistant_delta", text: "Hel" }, 10),
     );
     const prev = toRows(before);
-    const next = reuseRows(prev, toRows(reduce(before, env("t1", { type: "assistant_delta", text: "lo" }, 10))));
+    const next = reuseRows(
+      prev,
+      toRows(reduce(before, env("t1", { type: "assistant_delta", text: "lo" }, 10))),
+    );
     expect(next.map((r) => r.kind)).toEqual(["user", "tools", "assistant", "working"]);
     expect(next[0]).toBe(prev[0]);
     expect(next[1]).toBe(prev[1]);
@@ -109,6 +166,8 @@ describe("transcript rows (F-TH-12, UI-21)", () => {
     expect(next[2]).toMatchObject({ markdown: "Hello" });
     expect(next[3]).toBe(prev[3]);
     // Nothing changed: the same array comes back.
-    expect(reuseRows(next, toRows(reduce(before, env("t1", { type: "assistant_delta", text: "lo" }, 10))))).toBe(next);
+    expect(
+      reuseRows(next, toRows(reduce(before, env("t1", { type: "assistant_delta", text: "lo" }, 10)))),
+    ).toBe(next);
   });
 });

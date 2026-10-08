@@ -21,7 +21,9 @@ function appServers(): number[] {
 }
 
 async function codexThread(): Promise<string> {
-  const thread = await invoke<{ id: string }>("thread_create", { args: { kind: "thread", workspaceId: null, engineId: "codex" } });
+  const thread = await invoke<{ id: string }>("thread_create", {
+    args: { kind: "thread", workspaceId: null, engineId: "codex" },
+  });
   const row = await $(`[data-testid="thread-row"][data-thread-id="${thread.id}"]`);
   await row.waitForExist({ timeout: 10_000 });
   await row.click();
@@ -31,7 +33,9 @@ async function codexThread(): Promise<string> {
 
 async function notes(): Promise<string[]> {
   return browser.execute(() =>
-    Array.from(document.querySelectorAll<HTMLElement>('[data-testid="thread-main"] [role="log"] p')).map((p) => p.innerText.trim()),
+    Array.from(document.querySelectorAll<HTMLElement>('[data-testid="thread-main"] [role="log"] p')).map(
+      (p) => p.innerText.trim(),
+    ),
   );
 }
 
@@ -65,7 +69,11 @@ describe("E2E-M7-5 Codex", () => {
     await waitForAssistant("You said: second");
     expect(await notes()).toContain("Reconnecting…");
     expect((await assistantTexts()).filter((t) => t.startsWith("You said: first"))).toHaveLength(1);
-    expect(fakeLog().slice(mark).some((l) => l.startsWith("app-server: thread/resume thr_fake_"))).toBe(true);
+    expect(
+      fakeLog()
+        .slice(mark)
+        .some((l) => l.startsWith("app-server: thread/resume thr_fake_")),
+    ).toBe(true);
   });
 
   it("F-TH-05.3 an unsupported Codex version fails closed with the message", async function () {
@@ -76,7 +84,9 @@ describe("E2E-M7-5 Codex", () => {
     await codexThread();
     await sendMessage("hello");
     const alerts = () =>
-      browser.execute(() => Array.from(document.querySelectorAll<HTMLElement>('[role="alert"]')).map((e) => e.innerText));
+      browser.execute(() =>
+        Array.from(document.querySelectorAll<HTMLElement>('[role="alert"]')).map((e) => e.innerText),
+      );
     await browser.waitUntil(async () => (await alerts()).some((t) => t.includes("isn't supported yet")), {
       timeout: 20_000,
       timeoutMsg: `alerts: ${JSON.stringify(await alerts())}`,

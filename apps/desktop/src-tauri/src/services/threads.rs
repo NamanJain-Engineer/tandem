@@ -42,6 +42,7 @@ use tandem_store::repo::threads::{
 use tandem_store::Store;
 use tokio::sync::{broadcast, mpsc, Mutex};
 
+use crate::services::thread_changes;
 use crate::services::thread_files::{self, PathEntry};
 use crate::services::thread_titles::{self, LocalOnly, Titler};
 use ts_rs::TS;
@@ -646,6 +647,8 @@ impl ThreadService {
         if own.is_dir() {
             std::fs::rename(&own, dir.join("attachments")).map_err(io)?;
         }
+        // Its Changes snapshot isn't needed any more.
+        let _ = std::fs::remove_file(data.snapshots().join(format!("{}.json", id.as_str())));
         // The engine session ends with the thread.
         let rt = self.runtime(id);
         if let Some(session) = rt.lock().await.session.take() {
@@ -954,6 +957,64 @@ impl ThreadService {
 
     /// Ends the running turn; returns the queued follow-up to send, if the
     /// turn wasn't stopped.
+    /// Records where the Changes panel starts, before the thread's first
+    /// turn runs (F-TH-13): the folder's commit, or a snapshot manifest.
+    async fn ensure_start(&self, thread: &ThreadRecord) {
+        if !matches!(
+            repo::start_point(&self.store, &thread.id).await,
+            Ok((None, None))
+        ) {
+            return;
+        }
+        // Only a folder without git needs somewhere to keep its snapshot.
+        let snapshot = self.data.get().map(|data| {
+            data.snapshots()
+                .join(format!("{}.json", thread.id.as_str()))
+        });
+        let start = match thread_changes::capture(thread.cwd.clone().into(), snapshot).await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(code = "threads.start_failed", error = %e.message, "couldn't record where the thread starts");
+                return;
+            }
+        };
+        let (commit, snapshot) = match start {
+            thread_changes::Start::Commit(c) => (Some(c), None),
+            thread_changes::Start::Snapshot(p) => (None, Some(p.display().to_string())),
+        };
+        if let Err(e) = repo::set_start_point(&self.store, &thread.id, commit, snapshot).await {
+            tracing::warn!(code = "threads.start_failed", error = %e, "couldn't record where the thread starts");
+        }
+    }
+
+    /// `thread_file_read`: a text file in the thread's folder (Files tab).
+    pub async fn read_file(
+        &self,
+        id: &ThreadId,
+        path: String,
+    ) -> Result<thread_files::FileText, IpcError> {
+        let thread = self.thread(id).await?;
+        let root = std::path::PathBuf::from(thread.cwd);
+        tokio::task::spawn_blocking(move || thread_files::read_text(&root, &path))
+            .await
+            .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?
+    }
+
+    /// `thread_changes`: what changed in the thread's folder since its first
+    /// turn (F-TH-13).
+    pub async fn changes(&self, id: &ThreadId) -> Result<thread_changes::ThreadChanges, IpcError> {
+        let thread = self.thread(id).await?;
+        let start = match repo::start_point(&self.store, id)
+            .await
+            .map_err(store_err)?
+        {
+            (Some(commit), _) => Some(thread_changes::Start::Commit(commit)),
+            (None, Some(path)) => Some(thread_changes::Start::Snapshot(path.into())),
+            (None, None) => None,
+        };
+        thread_changes::changes(thread.cwd.into(), start).await
+    }
+
     /// In Plan mode a completed turn's last reply is the thread's next plan
     /// version (F-TH-10). Returns that version.
     async fn save_plan(&self, thread: &ThreadId, turn: &TurnId) -> Option<u32> {
@@ -1244,6 +1305,7 @@ impl ThreadService {
         drop(guard);
 
         // Outside the lock: a slow stdin never holds up the event stream.
+        self.ensure_start(&thread).await;
         let input = turn_input(&turn_id, text, &carried, std::path::Path::new(&thread.cwd));
         if let Err(e) = session.send_turn(input).await {
             let mut guard = rt.lock().await;
@@ -3211,6 +3273,66 @@ mod tests {
         assert_eq!(detail.plan_revisions.len(), 2);
         let missing = f.svc.implement_plan(id, 9, None).await;
         assert_eq!(missing.err().map(|e| e.code), Some(ErrorCode::NotFound));
+    }
+
+    #[tokio::test]
+    async fn f_th_13_the_first_turn_records_the_start_and_changes_follow_it() {
+        let f = fixture(
+            OnStop::Ack,
+            Arc::new(|turn, tx| play(tx, vec![ev(&turn, end(TurnEndReason::Completed))])),
+        )
+        .await;
+        let cwd = std::path::PathBuf::from(&f.thread.cwd);
+        let git = |args: &[&str]| {
+            let empty = std::env::temp_dir().join("tandem-desktop-tests-empty-gitconfig");
+            std::fs::write(&empty, "").expect("empty gitconfig");
+            let out = std::process::Command::new("git")
+                .current_dir(&cwd)
+                .env("GIT_CONFIG_GLOBAL", &empty)
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_AUTHOR_NAME", "T")
+                .env("GIT_AUTHOR_EMAIL", "t@example.com")
+                .env("GIT_COMMITTER_NAME", "T")
+                .env("GIT_COMMITTER_EMAIL", "t@example.com")
+                .args(args)
+                .output()
+                .expect("git");
+            assert!(out.status.success(), "git {args:?}");
+        };
+        git(&["-c", "init.defaultBranch=main", "init", "-q"]);
+        // The fixture's database lives in the same folder.
+        std::fs::write(cwd.join(".gitignore"), "tandem.db*\n").expect("write");
+        std::fs::write(cwd.join("a.txt"), "one\n").expect("write");
+        git(&["add", "."]);
+        git(&["commit", "-qm", "first"]);
+        let id = &f.thread.id;
+        let before = f.svc.changes(id).await.expect("changes");
+        assert_eq!(before.source, thread_changes::ChangesSource::NotStarted);
+
+        f.svc
+            .send(id, "go".into(), Vec::new(), false)
+            .await
+            .expect("send");
+        ended(&f, 1).await;
+        std::fs::write(cwd.join("a.txt"), "two\n").expect("edit");
+        git(&["commit", "-qam", "the agent committed"]);
+        std::fs::write(cwd.join("b.txt"), "new\n").expect("add");
+        // A later turn doesn't move the start.
+        f.svc
+            .send(id, "more".into(), Vec::new(), false)
+            .await
+            .expect("send");
+        ended(&f, 2).await;
+        let after = f.svc.changes(id).await.expect("changes");
+        assert_eq!(after.source, thread_changes::ChangesSource::Git);
+        assert_eq!(
+            after
+                .files
+                .iter()
+                .map(|d| d.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a.txt", "b.txt"]
+        );
     }
 
     #[tokio::test]

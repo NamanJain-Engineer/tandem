@@ -159,6 +159,8 @@ macro_rules! app_commands {
             commands::threads::thread_pick_files,
             commands::threads::thread_unqueue,
             commands::threads::thread_implement_plan,
+            commands::threads::thread_changes,
+            commands::threads::thread_file_read,
             commands::engines::engines_report,
             $($extra),*
         ]

@@ -10,7 +10,10 @@ describe("E2E-M2-3 deep links", () => {
     await freshOffline();
     mkdirSync(target, { recursive: true });
     await relaunch([`tandem-dev://open?path=${encodeURIComponent(target)}`]);
-    await browser.waitUntil(async () => (await workspaceRoots()).includes(target), { timeout: 15_000, timeoutMsg: `roots: ${await workspaceRoots()}` });
+    await browser.waitUntil(async () => (await workspaceRoots()).includes(target), {
+      timeout: 15_000,
+      timeoutMsg: `roots: ${await workspaceRoots()}`,
+    });
   });
 
   for (const [name, link] of [
@@ -20,7 +23,11 @@ describe("E2E-M2-3 deep links", () => {
     it(`rejects a ${name} with "Unrecognized link" and no state change`, async () => {
       const before = await invoke<Array<{ id: string }>>("workspace_list");
       await relaunch([link]);
-      await browser.waitUntil(async () => (await textOf('[role="region"][aria-label="Notifications"]')).includes("Unrecognized link"), { timeout: 15_000 });
+      await browser.waitUntil(
+        async () =>
+          (await textOf('[role="region"][aria-label="Notifications"]')).includes("Unrecognized link"),
+        { timeout: 15_000 },
+      );
       const after = await invoke<Array<{ id: string }>>("workspace_list");
       expect(after.map((w) => w.id)).toEqual(before.map((w) => w.id));
       await $('header[role="banner"]').waitForExist();

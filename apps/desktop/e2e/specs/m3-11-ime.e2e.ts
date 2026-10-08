@@ -21,10 +21,26 @@ describe("E2E-M3-11 IME", () => {
       for (const step of ["に", "にほ", "にほん", "にほんご"]) {
         ta.value = step;
         fire(new CompositionEvent("compositionupdate", { bubbles: true, data: step }));
-        fire(new InputEvent("input", { bubbles: true, data: step, inputType: "insertCompositionText", isComposing: true }));
+        fire(
+          new InputEvent("input", {
+            bubbles: true,
+            data: step,
+            inputType: "insertCompositionText",
+            isComposing: true,
+          }),
+        );
       }
       // The Enter that commits the IME's choice belongs to the IME.
-      fire(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Enter", code: "Enter", keyCode: 229, isComposing: true }));
+      fire(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: "Enter",
+          code: "Enter",
+          keyCode: 229,
+          isComposing: true,
+        }),
+      );
       fire(new CompositionEvent("compositionend", { bubbles: true, data: "にほんご" }));
       fire(new KeyboardEvent("keyup", { bubbles: true, key: "Enter", code: "Enter", keyCode: 13 }));
       setTimeout(done, 200);

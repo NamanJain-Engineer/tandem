@@ -1,7 +1,16 @@
 import { $, browser } from "@wdio/globals";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, checkAgain, fakeEngine, freshOffline, home, paneIds, setRegistryOverrides, waitForPaneText } from "../support/app";
+import {
+  addFolder,
+  checkAgain,
+  fakeEngine,
+  freshOffline,
+  home,
+  paneIds,
+  setRegistryOverrides,
+  waitForPaneText,
+} from "../support/app";
 
 // E2E-M4-7 Remote registry (F-EN-02 AC1): an engine added by the signed
 // remote config is detected and launches in a terminal, no code change.
@@ -14,7 +23,9 @@ describe("E2E-M4-7 remote registry", () => {
 
   it("F-EN-02.1 a config entry adds zed-agent: detected, offered and launched", async () => {
     fakeEngine("zed-agent", join(home(), "fakebin"));
-    await setRegistryOverrides([{ id: "zed-agent", label: "Zed Agent", vendor: "Zed Industries", logo: "Z", commands: ["zed-agent"] }]);
+    await setRegistryOverrides([
+      { id: "zed-agent", label: "Zed Agent", vendor: "Zed Industries", logo: "Z", commands: ["zed-agent"] },
+    ]);
     await freshOffline();
     await addFolder(`/tmp/tandem-e2e-m4-7-${Date.now()}`);
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });

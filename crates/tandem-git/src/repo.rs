@@ -244,9 +244,23 @@ impl Repo {
         self.blocking(move |r| r.diff_since_blocking(&base)).await
     }
 
+    /// Like [`Repo::diff_since`]; with no base (a repository that had no
+    /// commits yet), everything in the working tree counts as added.
+    pub async fn diff_from(&self, base: Option<String>) -> Result<Vec<FileDiff>, GitError> {
+        self.blocking(move |r| r.diff_from_blocking(base.as_deref()))
+            .await
+    }
+
     pub fn diff_since_blocking(&self, base: &str) -> Result<Vec<FileDiff>, GitError> {
+        self.diff_from_blocking(Some(base))
+    }
+
+    fn diff_from_blocking(&self, base: Option<&str>) -> Result<Vec<FileDiff>, GitError> {
         let repo = self.open()?;
-        let tree = repo.revparse_single(base)?.peel_to_commit()?.tree()?;
+        let tree = match base {
+            Some(base) => Some(repo.revparse_single(base)?.peel_to_commit()?.tree()?),
+            None => None,
+        };
         let mut opts = DiffOptions::new();
         opts.include_untracked(true)
             .recurse_untracked_dirs(true)
@@ -256,7 +270,7 @@ impl Repo {
         if let Some(spec) = self.pathspec() {
             opts.pathspec(spec);
         }
-        let mut diff = repo.diff_tree_to_workdir_with_index(Some(&tree), Some(&mut opts))?;
+        let mut diff = repo.diff_tree_to_workdir_with_index(tree.as_ref(), Some(&mut opts))?;
         diff.find_similar(Some(DiffFindOptions::new().renames(true)))?;
         let mut files = Vec::with_capacity(diff.deltas().len());
         for idx in 0..diff.deltas().len() {

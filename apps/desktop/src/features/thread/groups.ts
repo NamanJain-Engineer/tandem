@@ -28,15 +28,18 @@ export function groupThreads(
   const pinned = visible.filter((t) => t.pinned);
   const rest = visible.filter((t) => !t.pinned);
   const groups: RailGroup[] = [];
-  if (pinned.length) groups.push({ id: "pinned", name: null, kind: "pinned", workspaceId: null, threads: pinned });
+  if (pinned.length)
+    groups.push({ id: "pinned", name: null, kind: "pinned", workspaceId: null, threads: pinned });
   const none = rest.filter((t) => t.workspaceId === null);
   if (none.length) groups.push({ id: "none", name: null, kind: "none", workspaceId: null, threads: none });
   for (const ws of workspaces) {
     const mine = rest.filter((t) => t.workspaceId === ws.id);
-    if (mine.length) groups.push({ id: ws.id, name: ws.name, kind: "folder", workspaceId: ws.id, threads: mine });
+    if (mine.length)
+      groups.push({ id: ws.id, name: ws.name, kind: "folder", workspaceId: ws.id, threads: mine });
   }
   const other = rest.filter((t) => t.workspaceId !== null && !known.has(t.workspaceId));
-  if (other.length) groups.push({ id: "other", name: null, kind: "other", workspaceId: null, threads: other });
+  if (other.length)
+    groups.push({ id: "other", name: null, kind: "other", workspaceId: null, threads: other });
   return groups;
 }
 

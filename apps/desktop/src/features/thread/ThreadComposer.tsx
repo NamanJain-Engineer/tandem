@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Access, Attachment, IpcError, ModelEntry, PathEntry, Thread, ThreadDetail } from "@tandem/protocol";
+import type {
+  Access,
+  Attachment,
+  IpcError,
+  ModelEntry,
+  PathEntry,
+  Thread,
+  ThreadDetail,
+} from "@tandem/protocol";
 import {
   Composer,
   ConfirmDialog,
@@ -25,7 +33,10 @@ type Draft = { text: string; attachmentIds: string[] };
 function parseDraft(json: string | undefined): Draft {
   try {
     const d = JSON.parse(json ?? "{}") as Partial<Draft>;
-    return { text: typeof d.text === "string" ? d.text : "", attachmentIds: Array.isArray(d.attachmentIds) ? d.attachmentIds : [] };
+    return {
+      text: typeof d.text === "string" ? d.text : "",
+      attachmentIds: Array.isArray(d.attachmentIds) ? d.attachmentIds : [],
+    };
   } catch {
     return { text: "", attachmentIds: [] };
   }
@@ -168,15 +179,32 @@ export function ThreadComposer({
   );
   const savedModel = thread.model ?? "default";
   const modelOptions: SelectOption[] = useMemo(() => {
-    const list = catalog.length ? catalog : [{ id: "default", label: "Default", description: "", isDefault: true, effortLevels: [], contextWindow: null, source: "bundled" as const }];
+    const list = catalog.length
+      ? catalog
+      : [
+          {
+            id: "default",
+            label: "Default",
+            description: "",
+            isDefault: true,
+            effortLevels: [],
+            contextWindow: null,
+            source: "bundled" as const,
+          },
+        ];
     const opts = list.map((m) => ({ value: m.id, label: m.label, description: m.description || undefined }));
     if (!list.some((m) => m.id === savedModel)) {
-      opts.push({ value: savedModel, label: t("thread.composer.modelGone", { model: savedModel }), description: undefined });
+      opts.push({
+        value: savedModel,
+        label: t("thread.composer.modelGone", { model: savedModel }),
+        description: undefined,
+      });
     }
     return opts;
   }, [catalog, savedModel]);
   const efforts = (catalog.find((m) => m.id === savedModel) ?? catalog[0])?.effortLevels ?? [];
-  const effortLabel = (e: string) => (["low", "medium", "high", "max"].includes(e) ? t(`thread.effort.${e as "low"}`) : e);
+  const effortLabel = (e: string) =>
+    ["low", "medium", "high", "max"].includes(e) ? t(`thread.effort.${e as "low"}`) : e;
 
   const setAccess = (v: string) => {
     const access = v as Access;
@@ -194,7 +222,12 @@ export function ThreadComposer({
     // Removed from the draft at once; restored ahead of new typing on failure.
     setText("");
     setAttachments([]);
-    const res = await send(thread.id, sent, sentAttachments.map((a) => a.id), running);
+    const res = await send(
+      thread.id,
+      sent,
+      sentAttachments.map((a) => a.id),
+      running,
+    );
     if ("code" in res) {
       setText((typed) => restoreAfterFailure(sent, typed));
       setAttachments((now) => [...sentAttachments, ...now]);
@@ -209,7 +242,9 @@ export function ThreadComposer({
 
   const mentions = useCallback(
     async (query: string): Promise<MentionItem[]> => {
-      const rows = await invoke<PathEntry[]>("thread_mention_search", { threadId: thread.id, query }).catch(() => []);
+      const rows = await invoke<PathEntry[]>("thread_mention_search", { threadId: thread.id, query }).catch(
+        () => [],
+      );
       return rows.map((r) => ({ id: r.path, label: r.path, kind: r.isDir ? "folder" : "file" }));
     },
     [thread.id],
@@ -218,7 +253,10 @@ export function ThreadComposer({
   const onMention = (item: MentionItem) => {
     const sep = thread.cwd.includes("\\") ? "\\" : "/";
     const path = `${thread.cwd.replace(/[\\/]+$/, "")}${sep}${item.id.replace(/\/$/, "")}`;
-    void invoke<Attachment[]>("thread_attach_paths", { threadId: thread.id, paths: [path] }).then(attach, attach);
+    void invoke<Attachment[]>("thread_attach_paths", { threadId: thread.id, paths: [path] }).then(
+      attach,
+      attach,
+    );
   };
 
   return (
@@ -233,7 +271,12 @@ export function ThreadComposer({
         placeholder={placeholder}
         sendWithModEnter={sendKey === "mod_enter"}
         onRecallLast={lastMessage}
-        attachments={attachments.map((a) => ({ id: a.id, label: a.name, kind: a.kind === "tool_output" ? "file" : a.kind, error: a.error ?? undefined }))}
+        attachments={attachments.map((a) => ({
+          id: a.id,
+          label: a.name,
+          kind: a.kind === "tool_output" ? "file" : a.kind,
+          error: a.error ?? undefined,
+        }))}
         onRemoveAttachment={(id) => {
           setAttachments((a) => a.filter((x) => x.id !== id));
           void invoke("attachment_remove", { attachmentId: id }).catch(() => undefined);
@@ -257,10 +300,18 @@ export function ThreadComposer({
               (e: IpcError) => show({ tone: "error", title: e.message }),
             ),
         }}
-        model={{ value: savedModel, options: modelOptions, onChange: (model) => void update(thread.id, { model }) }}
+        model={{
+          value: savedModel,
+          options: modelOptions,
+          onChange: (model) => void update(thread.id, { model }),
+        }}
         effort={
           efforts.length
-            ? { value: thread.effort ?? efforts[Math.floor(efforts.length / 2)] ?? "", options: efforts.map((e) => ({ value: e, label: effortLabel(e) })), onChange: (effort) => void update(thread.id, { effort }) }
+            ? {
+                value: thread.effort ?? efforts[Math.floor(efforts.length / 2)] ?? "",
+                options: efforts.map((e) => ({ value: e, label: effortLabel(e) })),
+                onChange: (effort) => void update(thread.id, { effort }),
+              }
             : undefined
         }
         access={{
@@ -275,9 +326,14 @@ export function ThreadComposer({
         }}
         tokens={{
           text: tokenCount(tokens.input + tokens.output),
-          tooltip: t("thread.composer.tokens", { input: tokenCount(tokens.input), output: tokenCount(tokens.output) }),
+          tooltip: t("thread.composer.tokens", {
+            input: tokenCount(tokens.input),
+            output: tokenCount(tokens.output),
+          }),
         }}
-        onAttach={() => void invoke<Attachment[]>("thread_pick_files", { threadId: thread.id }).then(attach, attach)}
+        onAttach={() =>
+          void invoke<Attachment[]>("thread_pick_files", { threadId: thread.id }).then(attach, attach)
+        }
         dropActive={dragOver}
         onPasteImage={() =>
           void invoke<Attachment>("thread_attach_clipboard_image", { threadId: thread.id }).then(

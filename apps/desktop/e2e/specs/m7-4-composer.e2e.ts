@@ -2,7 +2,16 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { addFolder, freshOffline, home, invoke, mod, paneIds } from "../support/app";
-import { assistantTexts, composer, openThreadId, png, sendMessage, threadMode, userTexts, waitForAssistant } from "../support/thread";
+import {
+  assistantTexts,
+  composer,
+  openThreadId,
+  png,
+  sendMessage,
+  threadMode,
+  userTexts,
+  waitForAssistant,
+} from "../support/thread";
 
 type Thread = { id: string; access: string; workspaceId: string | null };
 
@@ -65,7 +74,9 @@ describe("E2E-M7-4 composer", () => {
       const el = document.querySelector('[data-testid="composer"] textarea');
       // The Enter that confirms a composition (keyCode 229 can't be set on a
       // synthetic event; isComposing can).
-      el?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, isComposing: true }));
+      el?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, isComposing: true }),
+      );
     });
     await browser.pause(500);
     expect((await userTexts()).length).toBe(before);
@@ -77,7 +88,9 @@ describe("E2E-M7-4 composer", () => {
     this.timeout(60_000);
     // A running turn with a queued follow-up: a third message can't be sent.
     await sendMessage("/hang");
-    await browser.waitUntil(async () => (await assistantTexts()).some((t) => t.includes("Working on it")), { timeout: 20_000 });
+    await browser.waitUntil(async () => (await assistantTexts()).some((t) => t.includes("Working on it")), {
+      timeout: 20_000,
+    });
     await sendMessage("queued one");
     await $("span*=Queued · sends when this turn finishes").waitForExist({ timeout: 5_000 });
     await sendMessage("will fail");
@@ -97,13 +110,17 @@ describe("E2E-M7-4 composer", () => {
     this.timeout(30_000);
     const file = `${root}/shot.png`;
     writeFileSync(file, png(4, 3));
-    const owner = spawn("xclip", ["-selection", "clipboard", "-t", "image/png", "-i", file], { stdio: "ignore", detached: true });
+    const owner = spawn("xclip", ["-selection", "clipboard", "-t", "image/png", "-i", file], {
+      stdio: "ignore",
+      detached: true,
+    });
     owner.unref();
     await browser.pause(500);
     await composer().click();
     await browser.keys(["Control", "v"]);
     // (A selector ending in ".png" reads as an image file to WebdriverIO.)
-    const chips = () => browser.execute(() => document.querySelector('[data-testid="composer"]')?.textContent ?? "");
+    const chips = () =>
+      browser.execute(() => document.querySelector('[data-testid="composer"]')?.textContent ?? "");
     await browser.waitUntil(async () => (await chips()).includes("Pasted image.png"), {
       timeout: 5_000,
       timeoutMsg: `composer: ${JSON.stringify(await chips())}`,
@@ -129,7 +146,9 @@ describe("E2E-M7-4 composer", () => {
     await list.waitForExist({ timeout: 5_000 });
     await browser.waitUntil(async () => (await list.$$('[role="option"]').length) > 0, { timeout: 5_000 });
     const options = await browser.execute(() =>
-      Array.from(document.querySelectorAll('[data-testid="composer"] [role="option"]')).map((o) => o.textContent ?? ""),
+      Array.from(document.querySelectorAll('[data-testid="composer"] [role="option"]')).map(
+        (o) => o.textContent ?? "",
+      ),
     );
     expect(options).toEqual(["src/app.ts"]);
     await browser.keys("Escape");

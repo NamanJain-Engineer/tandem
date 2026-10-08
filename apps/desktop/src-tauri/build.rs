@@ -110,6 +110,8 @@ const COMMANDS: &[&str] = &[
     "thread_pick_files",
     "thread_unqueue",
     "thread_implement_plan",
+    "thread_changes",
+    "thread_file_read",
     "workspace_locate",
     "workspace_set_flags",
     "workspace_reveal",

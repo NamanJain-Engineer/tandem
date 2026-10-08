@@ -52,6 +52,75 @@ async fn f_cd_20_subfolder_workspace_sees_only_its_folder() {
     assert_eq!(paths, vec!["app/in.txt".to_string()]);
 }
 
+/// F-TH-13 AC1: two files changed since the thread's start commit (one
+/// edited and committed during the thread, one new) are both listed with
+/// their diffs.
+#[tokio::test]
+async fn f_th_13_1_changes_since_the_start_commit_list_each_file_with_its_diff() {
+    let f = Fixture::new();
+    let repo = Repo::discover(&f.repo).expect("discover").expect("repo");
+    let start = repo.head().await.expect("head").expect("a commit");
+    std::fs::write(f.repo.join("a.txt"), "one\nTWO\nthree\n").expect("write");
+    f.commit_all(&f.repo, "during the thread");
+    std::fs::write(f.repo.join("b.txt"), "new\n").expect("write");
+    let files = repo.diff_from(Some(start)).await.expect("diff");
+    let summary: Vec<_> = files
+        .iter()
+        .map(|d| (d.path.as_str(), d.change, d.additions, d.deletions))
+        .collect();
+    assert_eq!(
+        summary,
+        vec![
+            ("a.txt", FileChange::Modified, 1, 1),
+            ("b.txt", FileChange::Added, 1, 0)
+        ]
+    );
+    assert!(
+        files[0].patch.contains("-two\n+TWO\n"),
+        "{}",
+        files[0].patch
+    );
+    assert!(files[1].patch.contains("+new\n"), "{}", files[1].patch);
+}
+
+/// F-TH-13 AC2: in a subfolder workspace only that subfolder's changes show.
+#[tokio::test]
+async fn f_th_13_2_a_subfolder_workspace_lists_only_its_changes() {
+    let f = Fixture::new();
+    let sub = f.repo.join("app");
+    std::fs::create_dir_all(&sub).expect("mkdir");
+    std::fs::write(sub.join("keep.txt"), "k\n").expect("write");
+    f.commit_all(&f.repo, "app");
+    let repo = Repo::discover(&sub).expect("discover").expect("repo");
+    let start = repo.head().await.expect("head").expect("a commit");
+    std::fs::write(sub.join("keep.txt"), "changed\n").expect("write");
+    std::fs::write(f.repo.join("a.txt"), "outside\n").expect("write");
+    let paths: Vec<_> = repo
+        .diff_from(Some(start))
+        .await
+        .expect("diff")
+        .into_iter()
+        .map(|d| d.path)
+        .collect();
+    assert_eq!(paths, vec!["app/keep.txt".to_string()]);
+}
+
+#[tokio::test]
+async fn f_th_13_a_repo_with_no_commits_diffs_from_nothing() {
+    let f = Fixture::new();
+    let fresh = f.dir.path().join("fresh");
+    std::fs::create_dir_all(&fresh).expect("mkdir");
+    git(&fresh, &["-c", "init.defaultBranch=trunk", "init", "-q"]);
+    std::fs::write(fresh.join("first.txt"), "hello\n").expect("write");
+    let repo = Repo::discover(&fresh).expect("discover").expect("repo");
+    let files = repo.diff_from(None).await.expect("diff");
+    assert_eq!(files.len(), 1);
+    assert_eq!(
+        (files[0].path.as_str(), files[0].change),
+        ("first.txt", FileChange::Added)
+    );
+}
+
 #[tokio::test]
 async fn f_cd_20_repo_without_commits_lists_added_files() {
     let f = Fixture::new();

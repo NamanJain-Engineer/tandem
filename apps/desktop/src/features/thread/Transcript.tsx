@@ -70,11 +70,22 @@ function ToolBody({ tool }: { tool: ToolEvent }) {
   if (tool.diff) parts.push(<DiffView key="diff" files={diffFiles(tool.diff)} />);
   if (tool.output) {
     parts.push(
-      <ToolOutput key="out" text={tool.output} note={tool.outputTruncated ? t("thread.tool.truncated") : undefined} />,
+      <ToolOutput
+        key="out"
+        text={tool.output}
+        note={tool.outputTruncated ? t("thread.tool.truncated") : undefined}
+      />,
     );
   }
   if (tool.detail && tool.detail !== tool.argSummary && !tool.diff) {
-    parts.push(<CodeBlock key="detail" code={tool.detail} copyLabel={t("thread.copy")} copiedLabel={t("thread.copied")} />);
+    parts.push(
+      <CodeBlock
+        key="detail"
+        code={tool.detail}
+        copyLabel={t("thread.copy")}
+        copiedLabel={t("thread.copied")}
+      />,
+    );
   }
   return parts.length ? <>{parts}</> : null;
 }
@@ -84,13 +95,28 @@ function Tool({ tool }: { tool: ToolEvent }) {
   const body = <ToolBody tool={tool} />;
   const has = !!(tool.diff || tool.output || (tool.detail && tool.detail !== tool.argSummary));
   return (
-    <ToolCallBlock icon={v.icon} verb={v.verb} arg={v.arg} meta={v.meta} status={tool.status} statusLabel={v.statusLabel}>
+    <ToolCallBlock
+      icon={v.icon}
+      verb={v.verb}
+      arg={v.arg}
+      meta={v.meta}
+      status={tool.status}
+      statusLabel={v.statusLabel}
+    >
       {has ? body : undefined}
     </ToolCallBlock>
   );
 }
 
-function Reasoning({ text, durationMs, streaming }: { text: string; durationMs: number | null; streaming: boolean }) {
+function Reasoning({
+  text,
+  durationMs,
+  streaming,
+}: {
+  text: string;
+  durationMs: number | null;
+  streaming: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const label = streaming
     ? t("thread.reasoning.active")
@@ -108,14 +134,24 @@ function Reasoning({ text, durationMs, streaming }: { text: string; durationMs: 
         {open ? <ChevronDown size={12} aria-hidden="true" /> : <ChevronRight size={12} aria-hidden="true" />}
         {label}
       </button>
-      {open && <p className="whitespace-pre-wrap border-l border-divider pl-3 text-sm text-fg-subtle">{text}</p>}
+      {open && (
+        <p className="whitespace-pre-wrap border-l border-divider pl-3 text-sm text-fg-subtle">{text}</p>
+      )}
     </div>
   );
 }
 
 function decisionText(d: ApprovalDecisionView): { tone: "allowed" | "denied"; text: string } {
-  if (d.type === "allow") return { tone: "allowed", text: d.scope === "once" ? t("thread.approval.allowedOnce") : t("thread.approval.allowedThread") };
-  if (d.type === "deny") return { tone: "denied", text: d.reason ? t("thread.approval.deniedWhy", { reason: d.reason }) : t("thread.approval.denied") };
+  if (d.type === "allow")
+    return {
+      tone: "allowed",
+      text: d.scope === "once" ? t("thread.approval.allowedOnce") : t("thread.approval.allowedThread"),
+    };
+  if (d.type === "deny")
+    return {
+      tone: "denied",
+      text: d.reason ? t("thread.approval.deniedWhy", { reason: d.reason }) : t("thread.approval.denied"),
+    };
   return { tone: "denied", text: t("thread.approval.expired", { n: 30 }) };
 }
 
@@ -128,7 +164,10 @@ function Working({ startedAt }: { startedAt: number | null }) {
   const s = startedAt ? Math.max(0, Math.round((now - startedAt) / 1000)) : 0;
   return (
     <p data-testid="thread-working" className="flex items-center gap-2 px-1 text-sm text-fg-muted">
-      <span aria-hidden="true" className="size-2 animate-pulse rounded-full bg-working motion-reduce:animate-none" />
+      <span
+        aria-hidden="true"
+        className="size-2 animate-pulse rounded-full bg-working motion-reduce:animate-none"
+      />
       {t("thread.working", { s })}
     </p>
   );
@@ -146,7 +185,15 @@ function Hover({ children, actions }: { children: ReactNode; actions: ReactNode 
 }
 
 /** A plan version (UI_SPEC §4.3): its steps, and Implement / Revise / Copy. */
-export function PlanCard({ version, text, actions }: { version: number; text: string | null; actions: TranscriptActions }) {
+export function PlanCard({
+  version,
+  text,
+  actions,
+}: {
+  version: number;
+  text: string | null;
+  actions: TranscriptActions;
+}) {
   return (
     <Callout
       tone="accent"
@@ -155,13 +202,23 @@ export function PlanCard({ version, text, actions }: { version: number; text: st
       actions={
         text !== null && (
           <>
-            <Button size="sm" variant="primary" onClick={() => actions.implementPlan(version)} data-testid="plan-implement">
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => actions.implementPlan(version)}
+              data-testid="plan-implement"
+            >
               {t("thread.plan.implement")}
             </Button>
             <Button size="sm" variant="secondary" onClick={actions.revisePlan}>
               {t("thread.plan.revise")}
             </Button>
-            <Button size="sm" variant="ghost" iconLeft={<Copy size={14} />} onClick={() => actions.copy(text)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              iconLeft={<Copy size={14} />}
+              onClick={() => actions.copy(text)}
+            >
               {t("thread.copy")}
             </Button>
           </>
@@ -193,12 +250,25 @@ const RowView = memo(function RowView({
           <Hover
             actions={
               <>
-                <IconButton size="sm" icon={<Pencil size={14} />} label={t("thread.editResend")} onClick={() => actions.editResend(row.text)} />
-                <IconButton size="sm" icon={<Copy size={14} />} label={t("thread.copy")} onClick={() => actions.copy(row.text)} />
+                <IconButton
+                  size="sm"
+                  icon={<Pencil size={14} />}
+                  label={t("thread.editResend")}
+                  onClick={() => actions.editResend(row.text)}
+                />
+                <IconButton
+                  size="sm"
+                  icon={<Copy size={14} />}
+                  label={t("thread.copy")}
+                  onClick={() => actions.copy(row.text)}
+                />
               </>
             }
           >
-            <div data-testid="thread-user" className="flex max-w-[72%] flex-col gap-1 rounded-md bg-surface-3 px-3 py-2 text-md text-fg">
+            <div
+              data-testid="thread-user"
+              className="flex max-w-[72%] flex-col gap-1 rounded-md bg-surface-3 px-3 py-2 text-md text-fg"
+            >
               {row.attachments.length > 0 && (
                 <span className="inline-flex items-center gap-1 text-sm text-fg-muted">
                   <Paperclip size={12} aria-hidden="true" />
@@ -229,7 +299,16 @@ const RowView = memo(function RowView({
       );
     case "assistant":
       return (
-        <Hover actions={<IconButton size="sm" icon={<Copy size={14} />} label={t("thread.copyMarkdown")} onClick={() => actions.copy(row.markdown)} />}>
+        <Hover
+          actions={
+            <IconButton
+              size="sm"
+              icon={<Copy size={14} />}
+              label={t("thread.copyMarkdown")}
+              onClick={() => actions.copy(row.markdown)}
+            />
+          }
+        >
           <div data-testid="thread-assistant">
             <MarkdownView
               markdown={row.markdown}
@@ -247,13 +326,27 @@ const RowView = memo(function RowView({
     case "approval": {
       const r = row.request;
       if (row.decision) {
-        return <ApprovalCard kind={r.kind} title={r.summary} onAllow={() => undefined} onDeny={() => undefined} resolved={decisionText(row.decision)} />;
+        return (
+          <ApprovalCard
+            kind={r.kind}
+            title={r.summary}
+            onAllow={() => undefined}
+            onDeny={() => undefined}
+            resolved={decisionText(row.decision)}
+          />
+        );
       }
       return (
         <ApprovalCard
           kind={r.kind}
           title={approvalLabel(r.kind)}
-          detail={<CodeBlock code={r.detail || r.summary} copyLabel={t("thread.copy")} copiedLabel={t("thread.copied")} />}
+          detail={
+            <CodeBlock
+              code={r.detail || r.summary}
+              copyLabel={t("thread.copy")}
+              copiedLabel={t("thread.copied")}
+            />
+          }
           context={r.summary}
           allowThread={r.options.includes("thread")}
           onAllow={() => actions.approve(r.id, "once")}
@@ -272,7 +365,10 @@ const RowView = memo(function RowView({
       );
     case "end":
       return (
-        <p className="flex items-center justify-center gap-1.5 py-1 text-sm text-fg-subtle" data-testid="thread-end">
+        <p
+          className="flex items-center justify-center gap-1.5 py-1 text-sm text-fg-subtle"
+          data-testid="thread-end"
+        >
           <Info size={12} aria-hidden="true" />
           {row.reason === "cancelled" ? t("thread.stopped") : t("thread.blocked", { n: row.blocked })}
         </p>
@@ -301,7 +397,9 @@ const RowView = memo(function RowView({
       return (
         <Callout tone="warning" title={t("thread.limit.title")}>
           {row.limit.message}
-          {row.limit.resetsAt ? ` ${t("thread.limit.resets", { at: new Date(row.limit.resetsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) })}` : ""}
+          {row.limit.resetsAt
+            ? ` ${t("thread.limit.resets", { at: new Date(row.limit.resetsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) })}`
+            : ""}
         </Callout>
       );
     case "divider":
@@ -364,7 +462,15 @@ export function Transcript({
       ariaLabel={t("thread.transcript")}
       onNearTop={onNearTop}
       className="h-full overflow-y-auto px-4 py-3 focus-visible:outline-none [&>div]:mx-auto [&>div]:max-w-3xl [&>div]:py-1.5"
-      render={(row) => <RowView row={row} actions={actions} approvalLabel={approvalLabel} startedAt={startedAt} planText={planText} />}
+      render={(row) => (
+        <RowView
+          row={row}
+          actions={actions}
+          approvalLabel={approvalLabel}
+          startedAt={startedAt}
+          planText={planText}
+        />
+      )}
       newActivity={(jump) => (
         <div className="absolute inset-x-0 bottom-3 flex justify-center">
           <Button size="sm" variant="secondary" iconLeft={<ArrowDown size={14} />} onClick={jump}>

@@ -31,6 +31,8 @@ pub enum EnabledWhen {
     CodeMode,
     WorkspaceOpen,
     PaneFocused,
+    /// Thread mode shows a thread.
+    ThreadOpen,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -104,6 +106,12 @@ static REGISTRY: &[CommandSpec] = &[
     in_text(same("mode.agent", C::Navigation, Some("Mod+1"), E::Always)),
     in_text(same("mode.code", C::Navigation, Some("Mod+2"), E::Always)),
     in_text(same("mode.thread", C::Navigation, Some("Mod+3"), E::Always)),
+    in_text(same(
+        "thread.changes",
+        C::Navigation,
+        Some("Mod+Alt+C"),
+        E::ThreadOpen,
+    )),
     aliased(
         "rail.toggle",
         C::Navigation,

@@ -1,7 +1,18 @@
 import { $, browser } from "@wdio/globals";
-import { addFolder, freshOffline, paneIds, sendToPane, split, textOf, waitForApp, waitForPaneText, waitForStatus } from "../support/app";
+import {
+  addFolder,
+  freshOffline,
+  paneIds,
+  sendToPane,
+  split,
+  textOf,
+  waitForApp,
+  waitForPaneText,
+  waitForStatus,
+} from "../support/app";
 
-const nameOf = (pane: string) => textOf(`[data-testid="pane"][data-pane-id="${pane}"] [data-testid="pane-name"]`);
+const nameOf = (pane: string) =>
+  textOf(`[data-testid="pane"][data-pane-id="${pane}"] [data-testid="pane-name"]`);
 
 // E2E-M5-8 Pane names (F-CD-12).
 describe("E2E-M5-8 pane names", () => {

@@ -43,7 +43,10 @@ export const UNSET: Range = { start: Number.MAX_SAFE_INTEGER, end: Number.MAX_SA
  * when nothing changes. */
 export function nextRange(r: Range, offsets: number[], top: number, height: number): Range {
   const count = offsets.length - 1;
-  const need = { start: find(offsets, top - OVERSCAN_PX / 2), end: Math.min(count, find(offsets, top + height + OVERSCAN_PX / 2) + 1) };
+  const need = {
+    start: find(offsets, top - OVERSCAN_PX / 2),
+    end: Math.min(count, find(offsets, top + height + OVERSCAN_PX / 2) + 1),
+  };
   if (r.start <= need.start && r.end >= need.end && r.end <= count) return r;
   const start = Math.max(0, find(offsets, top - OVERSCAN_PX * 1.5));
   const end = Math.min(count, find(offsets, top + height + OVERSCAN_PX * 1.5) + 1);
@@ -55,7 +58,16 @@ export function nextRange(r: Range, offsets: number[], top: number, height: numb
  * rows are added above. Rows are measured by one ResizeObserver (never
  * during render), and scrolling re-renders only when the visible range
  * changes. */
-export function VirtualList<T>({ items, getKey, estimate, render, onNearTop, newActivity, ariaLabel, className }: VirtualListProps<T>) {
+export function VirtualList<T>({
+  items,
+  getKey,
+  estimate,
+  render,
+  onNearTop,
+  newActivity,
+  ariaLabel,
+  className,
+}: VirtualListProps<T>) {
   const scroller = useRef<HTMLDivElement>(null);
   const heights = useRef(new Map<string, number>());
   const [version, setVersion] = useState(0);
@@ -69,7 +81,8 @@ export function VirtualList<T>({ items, getKey, estimate, render, onNearTop, new
   const offsets = useMemo(() => {
     const out = new Array<number>(keys.length + 1);
     out[0] = 0;
-    for (let i = 0; i < keys.length; i++) out[i + 1] = (out[i] ?? 0) + (heights.current.get(keys[i] ?? "") ?? estimate);
+    for (let i = 0; i < keys.length; i++)
+      out[i + 1] = (out[i] ?? 0) + (heights.current.get(keys[i] ?? "") ?? estimate);
     return out;
     // `version` changes when measurements do.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -89,7 +102,11 @@ export function VirtualList<T>({ items, getKey, estimate, render, onNearTop, new
     if (virtual) computeRange();
   }, [computeRange, virtual]);
 
-  const start = virtual ? (range === UNSET ? Math.max(0, keys.length - 40) : Math.min(range.start, keys.length)) : 0;
+  const start = virtual
+    ? range === UNSET
+      ? Math.max(0, keys.length - 40)
+      : Math.min(range.start, keys.length)
+    : 0;
   const end = virtual ? (range === UNSET ? keys.length : Math.min(range.end, keys.length)) : keys.length;
 
   // One observer for every row; heights change without a render.
@@ -223,7 +240,9 @@ export function VirtualList<T>({ items, getKey, estimate, render, onNearTop, new
             </div>
           );
         })}
-        {virtual && <div aria-hidden="true" style={{ height: Math.max(0, total - (offsets[end] ?? total)) }} />}
+        {virtual && (
+          <div aria-hidden="true" style={{ height: Math.max(0, total - (offsets[end] ?? total)) }} />
+        )}
       </div>
       {behind && newActivity?.(jump)}
     </div>

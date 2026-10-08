@@ -12,7 +12,10 @@ describe("E2E-M3-15 hidden DA", () => {
     const pane = (await paneIds())[0] ?? "";
     await waitForShell(pane);
     await $('button[aria-label="New tab"]').click();
-    await browser.waitUntil(async () => !(await paneIds()).includes(pane), { timeout: 10_000, timeoutMsg: "the first pane is still visible" });
+    await browser.waitUntil(async () => !(await paneIds()).includes(pane), {
+      timeout: 10_000,
+      timeoutMsg: "the first pane is still visible",
+    });
     const out = `/tmp/tandem-e2e-da-${Date.now()}`;
     // The reply, ESC [ ? 6 2 ; 2 2 c, is 9 bytes.
     await sendToPane(

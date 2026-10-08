@@ -2,7 +2,17 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { crc32, deflateSync } from "node:zlib";
-import { addFolder, freshOffline, invoke, paneIds, paneText, rawRead, sendToPane, split, waitForPaneText } from "../support/app";
+import {
+  addFolder,
+  freshOffline,
+  invoke,
+  paneIds,
+  paneText,
+  rawRead,
+  sendToPane,
+  split,
+  waitForPaneText,
+} from "../support/app";
 
 /** A tiny RGBA PNG (`w`×`h`, one colour). */
 function png(w: number, h: number): Buffer {
@@ -20,12 +30,19 @@ function png(w: number, h: number): Buffer {
   ihdr.set([8, 6, 0, 0, 0], 8);
   const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(w * 4, Buffer.from([0x2d, 0xd4, 0xbf, 0xff]))]);
   const raw = Buffer.concat(Array.from({ length: h }, () => row));
-  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
 }
 
 async function center(pane: string): Promise<{ x: number; y: number }> {
   return (await browser.execute((id: string) => {
-    const r = document.querySelector(`[data-testid="terminal"][data-pane-id="${id}"]`)?.getBoundingClientRect();
+    const r = document
+      .querySelector(`[data-testid="terminal"][data-pane-id="${id}"]`)
+      ?.getBoundingClientRect();
     return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : { x: -1, y: -1 };
   }, pane)) as { x: number; y: number };
 }
@@ -33,7 +50,8 @@ async function center(pane: string): Promise<{ x: number; y: number }> {
 async function drop(paths: string[], at: { x: number; y: number }): Promise<void> {
   await browser.executeAsync(
     (p: string[], x: number, y: number, done: () => void) => {
-      const f = (window as unknown as { __tandemDrop: (p: string[], x: number, y: number) => Promise<void> }).__tandemDrop;
+      const f = (window as unknown as { __tandemDrop: (p: string[], x: number, y: number) => Promise<void> })
+        .__tandemDrop;
       void f(p, x, y).then(done);
     },
     paths,
@@ -74,7 +92,10 @@ describe("E2E-M3-10 paste and drop", () => {
     const file = `${root}/clip.png`;
     writeFileSync(file, png(3, 2));
     // xclip keeps serving the clipboard in the background until replaced.
-    const owner = spawn("xclip", ["-selection", "clipboard", "-t", "image/png", "-i", file], { stdio: "ignore", detached: true });
+    const owner = spawn("xclip", ["-selection", "clipboard", "-t", "image/png", "-i", file], {
+      stdio: "ignore",
+      detached: true,
+    });
     owner.unref();
     await browser.pause(500);
     await $(`[data-testid="terminal"][data-pane-id="${agent}"]`).click();
@@ -108,17 +129,24 @@ describe("E2E-M3-10 paste and drop", () => {
     await drop([odd], await center(target));
     // The drop is typed onto the shell's command line (zsh breaks it at the pane's width).
     await waitForPaneText(target, `'${root}/a b'\\''c'`, 15_000, { commandLine: true });
-    for (const other of ids.filter((id) => id !== target)) expect(await paneText(other)).not.toContain("a b'");
+    for (const other of ids.filter((id) => id !== target))
+      expect(await paneText(other)).not.toContain("a b'");
     await sendToPane(target, "\x15");
   });
 
   it("F-CD-06.3 a file name with a newline is refused with a toast", async () => {
     const target = (await paneIds())[0] ?? "";
     await drop([`${root}/bad\nname`], await center(target));
-    await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText)).includes("This file name can't be inserted safely"), {
-      timeout: 5_000,
-      timeoutMsg: "no refusal toast",
-    });
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(() => document.body.innerText)).includes(
+          "This file name can't be inserted safely",
+        ),
+      {
+        timeout: 5_000,
+        timeoutMsg: "no refusal toast",
+      },
+    );
     expect(await paneText(target)).not.toContain("bad");
   });
 });

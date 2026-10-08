@@ -1,7 +1,17 @@
 import { $, browser } from "@wdio/globals";
 import { chmodSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, checkAgain, freshOffline, home, paneIds, paneText, setRegistryOverrides, textOf, userHome } from "../support/app";
+import {
+  addFolder,
+  checkAgain,
+  freshOffline,
+  home,
+  paneIds,
+  paneText,
+  setRegistryOverrides,
+  textOf,
+  userHome,
+} from "../support/app";
 
 // E2E-M4-2 Install (F-EN-03): a registry override points gemini's installer
 // at a fake script that puts a fake `gemini` in ~/.local/bin.
@@ -39,7 +49,9 @@ describe("E2E-M4-2 install", () => {
     // A visible terminal pane runs it.
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 15_000 });
     const [pane] = await paneIds();
-    await browser.waitUntil(async () => (await paneText(pane ?? "")).includes("gemini installed"), { timeout: 20_000 });
+    await browser.waitUntil(async () => (await paneText(pane ?? "")).includes("gemini installed"), {
+      timeout: 20_000,
+    });
     await $('[data-testid="install-done"]').waitForExist({ timeout: 20_000 });
     expect(await textOf('[data-testid="install-sheet"]')).toContain("Installed ✓ — Sign in next");
   });

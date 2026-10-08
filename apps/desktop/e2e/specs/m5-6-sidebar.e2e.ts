@@ -1,18 +1,45 @@
 import { $, browser } from "@wdio/globals";
-import { addFolder, counters, freshUser, invoke, paneIds, planFooter, setPlan, waitForApp } from "../support/app";
+import {
+  addFolder,
+  counters,
+  freshUser,
+  invoke,
+  paneIds,
+  planFooter,
+  setPlan,
+  waitForApp,
+} from "../support/app";
 
-type Node = { type: "leaf"; paneId: string } | { type: "split"; dir: "row" | "col"; ratio: number; a: Node; b: Node };
+type Node =
+  { type: "leaf"; paneId: string } | { type: "split"; dir: "row" | "col"; ratio: number; a: Node; b: Node };
 
 function balanced(nodes: Node[], dir: "row" | "col"): Node {
   if (nodes.length === 1) return nodes[0] as Node;
   const half = Math.ceil(nodes.length / 2);
-  return { type: "split", dir, ratio: half / nodes.length, a: balanced(nodes.slice(0, half), dir), b: balanced(nodes.slice(half), dir) };
+  return {
+    type: "split",
+    dir,
+    ratio: half / nodes.length,
+    a: balanced(nodes.slice(0, half), dir),
+    b: balanced(nodes.slice(half), dir),
+  };
 }
 
 const reflows = (reset = false) =>
-  browser.execute((r: boolean) => (window as unknown as { __tandemTest: { reflows: (r: boolean) => Record<string, number> } }).__tandemTest.reflows(r), reset);
+  browser.execute(
+    (r: boolean) =>
+      (
+        window as unknown as { __tandemTest: { reflows: (r: boolean) => Record<string, number> } }
+      ).__tandemTest.reflows(r),
+    reset,
+  );
 const pills = () =>
-  browser.execute(() => Array.from(document.querySelectorAll<HTMLElement>('[data-testid="sidebar"] [role="tab"]')).map((el) => ({ id: el.dataset.tabId, selected: el.getAttribute("aria-selected") === "true" })));
+  browser.execute(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('[data-testid="sidebar"] [role="tab"]')).map((el) => ({
+      id: el.dataset.tabId,
+      selected: el.getAttribute("aria-selected") === "true",
+    })),
+  );
 
 /** Picks an item from the sidebar's "+" menu. */
 async function openFromPlus(label: string): Promise<void> {
@@ -20,7 +47,9 @@ async function openFromPlus(label: string): Promise<void> {
   await browser.waitUntil(
     async () =>
       browser.execute((l: string) => {
-        const item = Array.from(document.querySelectorAll<HTMLElement>("[role=menuitem]")).find((el) => el.textContent?.trim() === l);
+        const item = Array.from(document.querySelectorAll<HTMLElement>("[role=menuitem]")).find(
+          (el) => el.textContent?.trim() === l,
+        );
         item?.click();
         return item !== undefined;
       }, label),
@@ -48,9 +77,23 @@ describe("E2E-M5-6 sidebar", () => {
     const [ws] = await invoke<Array<{ tabs: Array<{ id: string }> }>>("workspace_list");
     const tabId = ws?.tabs[0]?.id ?? "";
     ids = [(await paneIds())[0] ?? ""];
-    for (let i = 1; i < 16; i++) ids.push((await invoke<{ id: string }>("pane_create", { tabId, kind: "terminal", cwd: null, engineId: null })).id);
-    const rows = [0, 4, 8, 12].map((at) => balanced(ids.slice(at, at + 4).map((paneId) => ({ type: "leaf", paneId })), "row"));
-    await invoke("layout_save", { tabId, tree: balanced(rows, "col"), activePaneId: ids[0], maximizedPaneId: null });
+    for (let i = 1; i < 16; i++)
+      ids.push(
+        (await invoke<{ id: string }>("pane_create", { tabId, kind: "terminal", cwd: null, engineId: null }))
+          .id,
+      );
+    const rows = [0, 4, 8, 12].map((at) =>
+      balanced(
+        ids.slice(at, at + 4).map((paneId) => ({ type: "leaf", paneId })),
+        "row",
+      ),
+    );
+    await invoke("layout_save", {
+      tabId,
+      tree: balanced(rows, "col"),
+      activePaneId: ids[0],
+      maximizedPaneId: null,
+    });
     await browser.refresh();
     await waitForApp();
     await browser.waitUntil(async () => (await paneIds()).length === 16, { timeout: 30_000 });
@@ -69,11 +112,17 @@ describe("E2E-M5-6 sidebar", () => {
   it("F-SH-10.2 full-screen and back cause no PTY resize", async () => {
     await counters(true);
     await $('[data-testid="sidebar-fullscreen"]').click();
-    await browser.waitUntil(async () => (await $('[data-testid="sidebar"]').getAttribute("data-placement")) === "fullscreen", { timeout: 5_000 });
+    await browser.waitUntil(
+      async () => (await $('[data-testid="sidebar"]').getAttribute("data-placement")) === "fullscreen",
+      { timeout: 5_000 },
+    );
     await quiet();
     expect((await counters()).ptyResizes).toBe(0);
     await browser.keys("Escape");
-    await browser.waitUntil(async () => (await $('[data-testid="sidebar"]').getAttribute("data-placement")) === "docked", { timeout: 5_000 });
+    await browser.waitUntil(
+      async () => (await $('[data-testid="sidebar"]').getAttribute("data-placement")) === "docked",
+      { timeout: 5_000 },
+    );
     await quiet();
     expect((await counters()).ptyResizes).toBe(0);
   });
@@ -88,7 +137,9 @@ describe("E2E-M5-6 sidebar", () => {
     // Files moves before Dashboard (Alt+Shift+←) and stays selected.
     await $('[data-testid="sidebar-pill-files"]').click();
     await browser.keys(["Alt", "Shift", "ArrowLeft"]);
-    await browser.waitUntil(async () => (await pills()).map((p) => p.id).join(",") === "files,dashboard", { timeout: 5_000 });
+    await browser.waitUntil(async () => (await pills()).map((p) => p.id).join(",") === "files,dashboard", {
+      timeout: 5_000,
+    });
     await browser.pause(600); // the save is debounced
     await browser.refresh();
     await waitForApp();

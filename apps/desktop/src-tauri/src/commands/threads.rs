@@ -500,6 +500,25 @@ pub async fn thread_pick_files(
     state.threads.attach_paths(&thread_id, picked).await
 }
 
+/// F-TH-13 Files: a text file in the thread's folder, contained.
+#[tauri::command]
+pub async fn thread_file_read(
+    state: State<'_, AppState>,
+    thread_id: ThreadId,
+    path: String,
+) -> Result<crate::services::thread_files::FileText, IpcError> {
+    state.threads.read_file(&thread_id, path).await
+}
+
+/// F-TH-13: what changed in the thread's folder since its first turn.
+#[tauri::command]
+pub async fn thread_changes(
+    state: State<'_, AppState>,
+    thread_id: ThreadId,
+) -> Result<crate::services::thread_changes::ThreadChanges, IpcError> {
+    state.threads.changes(&thread_id).await
+}
+
 /// F-TH-10: Act at `access` (or the thread's), then send plan `version`.
 #[tauri::command]
 pub async fn thread_implement_plan(

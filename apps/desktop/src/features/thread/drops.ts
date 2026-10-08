@@ -38,7 +38,9 @@ export async function dropOnThread(paths: string[], toast: Toast): Promise<boole
   if (!threadId || paths.length === 0) return false;
   try {
     const added = await invoke<Attachment[]>("thread_attach_paths", { threadId, paths });
-    useThreadDrop.setState((s) => ({ dropped: { ...s.dropped, [threadId]: [...(s.dropped[threadId] ?? []), ...added] } }));
+    useThreadDrop.setState((s) => ({
+      dropped: { ...s.dropped, [threadId]: [...(s.dropped[threadId] ?? []), ...added] },
+    }));
     return true;
   } catch (e) {
     toast({ tone: "error", title: (e as IpcError).message });
@@ -54,7 +56,9 @@ export function useThreadDrops(toast: Toast): void {
       if (overThread(x, y)) await dropOnThread(paths, toast);
     };
     // Debug builds: the E2E harness drives drops through the same path.
-    const test = window as unknown as { __tandemThreadDrop?: (paths: string[], x: number, y: number) => Promise<void> };
+    const test = window as unknown as {
+      __tandemThreadDrop?: (paths: string[], x: number, y: number) => Promise<void>;
+    };
     test.__tandemThreadDrop = drop;
     let unlisten: (() => void) | undefined;
     let live = true;

@@ -17,7 +17,13 @@ import {
 } from "../support/app";
 
 const FEED = "http://127.0.0.1:8790";
-type State = { stage: string; version: string | null; errorStage: string | null; upToDate: boolean; minVersion: { modal: boolean } | null };
+type State = {
+  stage: string;
+  version: string | null;
+  errorStage: string | null;
+  upToDate: boolean;
+  minVersion: { modal: boolean } | null;
+};
 
 async function scenario(name: "valid" | "badsig" | "lower" | "none"): Promise<void> {
   const res = await fetch(`${FEED}/__scenario`, { method: "POST", body: JSON.stringify({ scenario: name }) });
@@ -86,15 +92,23 @@ describe("E2E-M5-7 updater", () => {
     const s = await invoke<State>("updates_check_now");
     expect(s.stage).toBe("ready");
     expect(s.version).toBe("9.9.0");
-    await browser.waitUntil(async () => (await textOf('[data-testid="update-pill"]')) === "Restart to update", { timeout: 5_000 });
+    await browser.waitUntil(
+      async () => (await textOf('[data-testid="update-pill"]')) === "Restart to update",
+      { timeout: 5_000 },
+    );
     await $('[data-testid="update-pill"]').click();
     await $('[data-testid="update-restart-dialog"]').waitForExist({ timeout: 5_000 });
     expect(await textOf("[role=dialog] h2")).toBe("Restart to update to 9.9.0?");
-    await browser.waitUntil(async () => (await $('[data-testid="update-live-agents"]').isExisting()), { timeout: 5_000 });
+    await browser.waitUntil(async () => await $('[data-testid="update-live-agents"]').isExisting(), {
+      timeout: 5_000,
+    });
     const name = await textOf(`[data-testid="pane"][data-pane-id="${agent}"] [data-testid="pane-name"]`);
     expect(await textOf('[data-testid="update-live-agents"]')).toContain(name);
     await $('[data-testid="update-restart-now"]').click();
-    await browser.waitUntil(async () => (await installed()) === "9.9.0", { timeout: 10_000, timeoutMsg: "the update wasn't installed" });
+    await browser.waitUntil(async () => (await installed()) === "9.9.0", {
+      timeout: 10_000,
+      timeoutMsg: "the update wasn't installed",
+    });
   });
 
   it("F-SH-06.5 with a lapsed plan the update still installs", async () => {
@@ -111,7 +125,10 @@ describe("E2E-M5-7 updater", () => {
   it("F-SH-06.4 x-tandem-min-version: a banner while terminals keep working through 71 h, then a modal overlay at 73 h", async () => {
     await minAppVersion("99.0.0");
     await invoke("entitlement_refresh");
-    await $('[data-testid="banner-unsupported"]').waitForExist({ timeout: 10_000, timeoutMsg: "no unsupported-version banner" });
+    await $('[data-testid="banner-unsupported"]').waitForExist({
+      timeout: 10_000,
+      timeoutMsg: "no unsupported-version banner",
+    });
     let s = await invoke<State>("test_min_version_shift", { ms: 71 * HOUR });
     expect(s.minVersion?.modal).toBe(false);
     await invoke("updates_state");
@@ -128,7 +145,9 @@ describe("E2E-M5-7 updater", () => {
     // Back to a supported minimum: the notice clears.
     await minAppVersion(originalMin);
     await invoke("entitlement_refresh");
-    await browser.waitUntil(async () => (await invoke<State>("updates_state")).minVersion === null, { timeout: 10_000 });
+    await browser.waitUntil(async () => (await invoke<State>("updates_state")).minVersion === null, {
+      timeout: 10_000,
+    });
     await browser.execute(() => window.dispatchEvent(new Event("focus")));
     await $('[data-testid="unsupported-overlay"]').waitForExist({ reverse: true, timeout: 10_000 });
   });

@@ -655,7 +655,8 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `thread_unqueue` | `{threadId}` | `string?` (the queued follow-up's text, for the composer; its attachments go back to the draft) | — | F-TH-07 |
 | `thread_mention_search` | `{threadId, query}` | `[PathEntry]` (≤50, gitignore-aware) | — | F-TH-07 |
 | `thread_implement_plan` | `{threadId, version, access?}`: the thread goes to Act (at `access` when given) and sends "Implement plan version {n} exactly as written:" + the plan; the draft stays | `SendResult` | NotFound, Conflict (a turn is running) | F-TH-10 |
-| `thread_changes` | `{threadId}` | `[FileDiff]` | — | F-TH-13 |
+| `thread_changes` | `{threadId}` | `ThreadChanges {source: "git"\|"snapshot"\|"not_started", files: [FileDiff]}`: since the thread's first turn (its `start_commit`, empty for a repository with no commits yet, or its `$DATA/snapshots/<thread>.json` manifest) | NotFound | F-TH-13 |
+| `thread_file_read` | `{threadId, path}` (relative to the thread's folder) | `FileText {path, content, truncated, binary}`: at most 256 KB; never outside the folder or a private file (`contain`, Read policy) | PathEscape, NotFound | F-TH-13 |
 | `thread_summarize_continue` | `{threadId}` | `Thread` (new thread seeded with summary) | — | F-TH-04 |
 
 #### Approvals and held drafts [F-TH-11, F-PL-06..08, F-DB-01]
@@ -1769,7 +1770,7 @@ Persistence: every envelope except `*Delta` is appended to `thread_messages`; de
   - **Remove:** stop lane panes → `git worktree remove <path>`; if it fails for uncommitted changes → `Conflict`; force requires `force: true` from window `main` plus a Rust-side native confirm dialog; never available through Conductor or phone (F-CD-15 AC2).
   - **Merge into base:** in the parent checkout: refuse if the parent has uncommitted changes; `git merge --no-ff tandem/<slug>`; on conflict leave the conflicted state, return `conflicts` (from `git diff --name-only --diff-filter=U`), create no commit (F-CD-15 AC3).
   - **Sweep** (startup + every 6 h): `git worktree prune`; list lanes whose branch is merged into base and idle >7 days → one "Clean up lanes" notification; never deletes.
-- **Changes panel** (`thread_changes`): git repos → diff between `threads.start_commit` and the working tree (tracked + untracked, within prefix); non-git → a manifest `{path: (size, mtime, blake3)}` captured at thread start (skipping ignored/large >5 MB files, max 20k files) compared at each turn end (F-TH-13).
+- **Changes panel** (`thread_changes`): git repos → diff between `threads.start_commit` and the working tree (tracked + untracked, within prefix); non-git → a manifest `{path: (size, mtime, sha256)}` captured before the thread's first turn (`$DATA/snapshots/<thread>.json`, D-122) (skipping ignored/large >5 MB files, max 20k files) compared at each turn end (F-TH-13).
 
 ---
 

@@ -164,6 +164,65 @@ fn score(path: &str, query: &str) -> Option<(usize, usize, usize)> {
     Some((last - first, first, path.len()))
 }
 
+/// The most of a file the Files tab shows.
+pub const FILE_SHOWN: usize = 256 * 1024;
+
+/// `thread_file_read`: a text file in the thread's folder (F-TH-13 Files).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FileText {
+    pub path: String,
+    pub content: String,
+    /// Cut at [`FILE_SHOWN`].
+    pub truncated: bool,
+    /// Not text: `content` is empty.
+    pub binary: bool,
+}
+
+/// Reads `rel` inside `root` for the Files tab: never outside the folder,
+/// never a private file (`.env*`, keys), at most [`FILE_SHOWN`] bytes.
+pub fn read_text(root: &Path, rel: &str) -> Result<FileText, IpcError> {
+    let path = tandem_core::contain::contain(
+        root,
+        Path::new(rel),
+        tandem_core::contain::ContainPolicy::Read,
+    )
+    .map_err(|e| IpcError::new(ErrorCode::PathEscape, e.to_string()))?;
+    let mut bytes = Vec::new();
+    {
+        use std::io::Read;
+        let file = std::fs::File::open(&path)
+            .map_err(|_| IpcError::new(ErrorCode::NotFound, "That file isn't there any more"))?;
+        file.take(FILE_SHOWN as u64 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
+    }
+    let truncated = bytes.len() > FILE_SHOWN;
+    bytes.truncate(FILE_SHOWN);
+    if bytes.contains(&0) {
+        return Ok(FileText {
+            path: rel.to_string(),
+            content: String::new(),
+            truncated: false,
+            binary: true,
+        });
+    }
+    let mut content = String::from_utf8_lossy(&bytes).into_owned();
+    if truncated {
+        // Don't end on half a line.
+        if let Some(cut) = content.rfind('\n') {
+            content.truncate(cut + 1);
+        }
+    }
+    Ok(FileText {
+        path: rel.to_string(),
+        content,
+        truncated,
+        binary: false,
+    })
+}
+
 /// `@` picker rows under `root` for `query` (F-TH-07 AC6): `.gitignore`d
 /// and hidden entries are skipped; top-level folders come first when the
 /// query is empty.
@@ -318,5 +377,31 @@ mod tests {
         assert!(check_limits(&[big]).is_err());
         let folder = for_path(&thread, dir.path()).expect("folder");
         assert_eq!(folder.kind, AttachmentKind::Folder);
+    }
+
+    #[test]
+    fn f_th_13_files_read_inside_the_folder_only_and_never_private_ones() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let root = dir.path().canonicalize().expect("canonical");
+        std::fs::create_dir_all(root.join("src")).expect("mkdir");
+        std::fs::write(root.join("src/a.rs"), "fn main() {}\n").expect("write");
+        std::fs::write(root.join(".env"), "TOKEN=x\n").expect("write");
+        std::fs::write(root.join("bin.dat"), [0u8, 1, 2]).expect("write");
+        let text = read_text(&root, "src/a.rs").expect("read");
+        assert_eq!(text.content, "fn main() {}\n");
+        assert!(!text.truncated && !text.binary);
+        assert!(read_text(&root, "bin.dat").expect("binary").binary);
+        assert_eq!(
+            read_text(&root, ".env").err().map(|e| e.code),
+            Some(ErrorCode::PathEscape)
+        );
+        assert_eq!(
+            read_text(&root, "../outside.txt").err().map(|e| e.code),
+            Some(ErrorCode::PathEscape)
+        );
+        let big = "line\n".repeat(FILE_SHOWN / 5 + 10);
+        std::fs::write(root.join("big.txt"), &big).expect("write");
+        let cut = read_text(&root, "big.txt").expect("big");
+        assert!(cut.truncated && cut.content.len() <= FILE_SHOWN && cut.content.ends_with('\n'));
     }
 }

@@ -1,13 +1,24 @@
 import { $, browser } from "@wdio/globals";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { addFolder, freshOffline, invoke, mod, paneIds, sendToPane, split, typeKeys, waitForPaneText } from "../support/app";
+import {
+  addFolder,
+  freshOffline,
+  invoke,
+  mod,
+  paneIds,
+  sendToPane,
+  split,
+  typeKeys,
+  waitForPaneText,
+} from "../support/app";
 
 type PaneRow = { id: string; cwd: string | null };
 
 async function tabOf(paneId: string): Promise<string> {
   for (const w of await invoke<Array<{ tabs: Array<{ id: string }> }>>("workspace_list")) {
     for (const tab of w.tabs) {
-      if ((await invoke<PaneRow[]>("pane_list", { tabId: tab.id })).some((p) => p.id === paneId)) return tab.id;
+      if ((await invoke<PaneRow[]>("pane_list", { tabId: tab.id })).some((p) => p.id === paneId))
+        return tab.id;
     }
   }
   throw new Error(`no tab holds ${paneId}`);
@@ -22,7 +33,9 @@ async function storedCwd(tabId: string, paneId: string): Promise<string | null> 
 async function cdAndTime(paneId: string, tabId: string, dir: string): Promise<number> {
   const ms = await browser.executeAsync(
     (pane: string, tab: string, target: string, done: (ms: number) => void) => {
-      const ipc = (window as unknown as { __TAURI_INTERNALS__: { invoke: (c: string, a: unknown) => Promise<unknown> } }).__TAURI_INTERNALS__;
+      const ipc = (
+        window as unknown as { __TAURI_INTERNALS__: { invoke: (c: string, a: unknown) => Promise<unknown> } }
+      ).__TAURI_INTERNALS__;
       const t0 = performance.now();
       void ipc.invoke("pty_write", { paneId: pane, data: `cd ${target}\r` }).then(() => {
         const poll = () => {
@@ -80,7 +93,12 @@ describe("E2E-M3-13 shell integration", () => {
 
   it("F-CD-10.2 a program's own OSC 133 marks are ignored; the shell's are not", async () => {
     const pane = bash;
-    const failed = () => browser.execute((id: string) => document.querySelectorAll(`[data-pane-id="${id}"] .tn-cmd-mark[data-ok="false"]`).length, pane);
+    const failed = () =>
+      browser.execute(
+        (id: string) =>
+          document.querySelectorAll(`[data-pane-id="${id}"] .tn-cmd-mark[data-ok="false"]`).length,
+        pane,
+      );
     // A spoofed command that "failed": no ✗ appears.
     await sendToPane(pane, "printf '\\033]133;A\\007\\033]133;C\\007\\033]133;D;1\\007spoofed\\n'\n");
     await waitForPaneText(pane, "spoofed");
@@ -88,7 +106,10 @@ describe("E2E-M3-13 shell integration", () => {
     expect(await failed()).toBe(0);
     // The shell's own marks for a failing command do.
     await sendToPane(pane, "false\n");
-    await browser.waitUntil(async () => (await failed()) === 1, { timeout: 5_000, timeoutMsg: "no ✗ for false" });
+    await browser.waitUntil(async () => (await failed()) === 1, {
+      timeout: 5_000,
+      timeoutMsg: "no ✗ for false",
+    });
   });
 
   it("F-CD-10.3 Copy last command output after ls is exactly ls's output", async () => {
@@ -96,7 +117,8 @@ describe("E2E-M3-13 shell integration", () => {
     await sendToPane(pane, `cd ${root}/listing\n`);
     await sendToPane(pane, "ls\n");
     await waitForPaneText(pane, "gamma.txt");
-    const last = async () => (await invoke<{ text: string } | null>("term_last_output", { paneId: pane }))?.text ?? "";
+    const last = async () =>
+      (await invoke<{ text: string } | null>("term_last_output", { paneId: pane }))?.text ?? "";
     await browser.waitUntil(async () => (await last()).includes("gamma.txt"), {
       timeout: 5_000,
       timeoutMsg: `last output: ${await last()}`,
@@ -108,10 +130,13 @@ describe("E2E-M3-13 shell integration", () => {
     await $('input[placeholder="Type a command or search…"]').waitForDisplayed({ timeout: 3_000 });
     await typeKeys("Copy last command output");
     await browser.keys("Enter");
-    await browser.waitUntil(async () => (await invoke<string>("plugin:clipboard-manager|read_text")) === expected, {
-      timeout: 5_000,
-      timeoutMsg: `clipboard: ${JSON.stringify(await invoke("plugin:clipboard-manager|read_text").catch((e: unknown) => String(e)))}`,
-    });
+    await browser.waitUntil(
+      async () => (await invoke<string>("plugin:clipboard-manager|read_text")) === expected,
+      {
+        timeout: 5_000,
+        timeoutMsg: `clipboard: ${JSON.stringify(await invoke("plugin:clipboard-manager|read_text").catch((e: unknown) => String(e)))}`,
+      },
+    );
     // Exactly ls's output: the names, nothing from the prompt or the command line.
     expect(expected.split(/\s+/)).toEqual(["alpha.txt", "beta.txt", "gamma.txt"]);
   });

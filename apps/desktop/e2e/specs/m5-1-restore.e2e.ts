@@ -22,13 +22,20 @@ import {
   waitForShell,
 } from "../support/app";
 
-type Node = { type: "leaf"; paneId: string } | { type: "split"; dir: "row" | "col"; ratio: number; a: Node; b: Node };
+type Node =
+  { type: "leaf"; paneId: string } | { type: "split"; dir: "row" | "col"; ratio: number; a: Node; b: Node };
 type Layout = { tab: { id: string }; tree: Node | null };
 
 function balanced(nodes: Node[], dir: "row" | "col"): Node {
   if (nodes.length === 1) return nodes[0] as Node;
   const half = Math.ceil(nodes.length / 2);
-  return { type: "split", dir, ratio: half / nodes.length, a: balanced(nodes.slice(0, half), dir), b: balanced(nodes.slice(half), dir) };
+  return {
+    type: "split",
+    dir,
+    ratio: half / nodes.length,
+    a: balanced(nodes.slice(0, half), dir),
+    b: balanced(nodes.slice(half), dir),
+  };
 }
 const leaves = (ids: string[]): Node[] => ids.map((paneId) => ({ type: "leaf", paneId }));
 
@@ -57,10 +64,18 @@ describe("E2E-M5-1 crash restore", () => {
     wsId = ws?.id ?? "";
     const tabId = ws?.tabs[0]?.id ?? "";
     shells = [(await paneIds())[0] ?? ""];
-    for (let i = 1; i < 4; i++) shells.push((await invoke<{ id: string }>("pane_create", { tabId, kind: "terminal", cwd: null, engineId: null })).id);
+    for (let i = 1; i < 4; i++)
+      shells.push(
+        (await invoke<{ id: string }>("pane_create", { tabId, kind: "terminal", cwd: null, engineId: null }))
+          .id,
+      );
     const logFrom = fakeLog().length;
     agents = [];
-    for (let i = 0; i < 4; i++) agents.push((await invoke<{ id: string }>("pane_create", { tabId, kind: "agent", cwd: null, engineId: "claude" })).id);
+    for (let i = 0; i < 4; i++)
+      agents.push(
+        (await invoke<{ id: string }>("pane_create", { tabId, kind: "agent", cwd: null, engineId: "claude" }))
+          .id,
+      );
     const tree = balanced([balanced(leaves(shells), "row"), balanced(leaves(agents), "row")], "col");
     await invoke("layout_save", { tabId, tree, activePaneId: shells[0], maximizedPaneId: null });
     await browser.refresh();
@@ -89,7 +104,10 @@ describe("E2E-M5-1 crash restore", () => {
     await relaunch();
     // The in-memory test keychain doesn't survive a relaunch: sign in again.
     await signInDesktop(email);
-    await browser.waitUntil(async () => (await paneIds()).length === 8, { timeout: 30_000, timeoutMsg: `panes: ${await paneIds()}` });
+    await browser.waitUntil(async () => (await paneIds()).length === 8, {
+      timeout: 30_000,
+      timeoutMsg: `panes: ${await paneIds()}`,
+    });
     expect((await invoke<Layout[]>("layout_get", { workspaceId: wsId })).map((l) => l.tree)).toEqual(before);
     await browser.waitUntil(async () => (await pausedCards()).length === 4, { timeout: 15_000 });
     expect((await pausedCards()).map((c) => c.paneId).sort()).toEqual([...agents].sort());

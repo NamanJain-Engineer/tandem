@@ -45,6 +45,15 @@
     "enabledWhen": "always"
   },
   {
+    "id": "thread.changes",
+    "category": "navigation",
+    "mac": "Mod+Alt+C",
+    "pc": "Mod+Alt+C",
+    "pcTerminal": "Mod+Alt+C",
+    "inText": true,
+    "enabledWhen": "thread_open"
+  },
+  {
     "id": "rail.toggle",
     "category": "navigation",
     "mac": "Mod+\\",

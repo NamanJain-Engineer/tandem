@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Bot, FolderOpen, GitBranch, Home, MessagesSquare } from "lucide-react";
 import type { IpcError, PlanRevision, Thread } from "@tandem/protocol";
 import {
@@ -29,9 +29,17 @@ import { switchMode } from "../shell/actions";
 import { pendingApprovals, reuseRows, toRows, usageOf, type Row } from "./rows";
 import { useThreadDrops } from "./drops";
 import { ThreadComposer } from "./ThreadComposer";
+import { ChangesPanel, ChangesToggle } from "./ChangesPanel";
 import { PlanCard, Transcript, approvalLabels, type TranscriptActions } from "./Transcript";
 
-const STATE_DOT = { idle: "idle", working: "working", waiting: "waiting", done: "done", failed: "error", interrupted: "idle" } as const;
+const STATE_DOT = {
+  idle: "idle",
+  working: "working",
+  waiting: "waiting",
+  done: "done",
+  failed: "error",
+  interrupted: "idle",
+} as const;
 
 function approvalTitle(engine: string, kind: string): string {
   switch (kind) {
@@ -49,7 +57,10 @@ function approvalTitle(engine: string, kind: string): string {
   }
 }
 
-async function resolve(approvalId: string, decision: { type: "allow"; scope: "once" | "thread" } | { type: "deny"; reason: string | null }) {
+async function resolve(
+  approvalId: string,
+  decision: { type: "allow"; scope: "once" | "thread" } | { type: "deny"; reason: string | null },
+) {
   await invoke("approval_resolve", { approvalId, decision, via: "inline" });
 }
 
@@ -72,10 +83,15 @@ function PlanVersions({ plans, actions }: { plans: PlanRevision[]; actions: Tran
               <div className="flex items-center gap-2 text-sm">
                 <span className="font-semibold text-fg">{t("thread.plan", { n: p.version })}</span>
                 <span className="text-fg-muted">
-                  {new Date(p.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} · {t("thread.plan.steps", { n: steps(p.text) })}
+                  {new Date(p.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} ·{" "}
+                  {t("thread.plan.steps", { n: steps(p.text) })}
                 </span>
                 <span className="ml-auto flex gap-1">
-                  <Button size="sm" variant="ghost" onClick={() => setViewing(viewing === p.version ? null : p.version)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setViewing(viewing === p.version ? null : p.version)}
+                  >
                     {t("thread.plan.view")}
                   </Button>
                   <Button
@@ -107,11 +123,13 @@ function Header({
   contextFill,
   plans,
   actions,
+  changes,
 }: {
   thread: Thread;
   contextFill: number | null;
   plans: PlanRevision[];
   actions: TranscriptActions;
+  changes: ReactNode;
 }) {
   const ws = useWorkspaces((s) => s.list.find((w) => w.id === thread.workspaceId) ?? null);
   const engine = useEngines((s) => s.list.find((e) => e.spec.id === thread.engineId));
@@ -129,7 +147,9 @@ function Header({
         <Home size={14} aria-hidden="true" />
         {ws ? ws.name : t("thread.header.noFolder")}
       </span>
-      <span aria-hidden="true" className="text-fg-subtle">·</span>
+      <span aria-hidden="true" className="text-fg-subtle">
+        ·
+      </span>
       {renaming ? (
         <input
           autoFocus
@@ -157,17 +177,27 @@ function Header({
           {title}
         </button>
       )}
-      {ws?.branch && <Chip label={ws.branch} icon={<GitBranch size={12} />} className="hidden shrink-0 lg:inline-flex" />}
+      {ws?.branch && (
+        <Chip label={ws.branch} icon={<GitBranch size={12} />} className="hidden shrink-0 lg:inline-flex" />
+      )}
       <span className="ml-auto flex shrink-0 items-center gap-3">
         <PlanVersions plans={plans} actions={actions} />
+        {changes}
         {engine && <EngineBadge letters={engine.spec.logo} name={engine.spec.label} size={14} />}
-        <span className="hidden text-fg-muted md:inline">{thread.model ?? t("thread.header.defaultModel")}</span>
+        <span className="hidden text-fg-muted md:inline">
+          {thread.model ?? t("thread.header.defaultModel")}
+        </span>
         <span className="inline-flex items-center gap-1.5 text-fg-muted" data-testid="thread-state">
           <StatusDot status={STATE_DOT[thread.state]} />
           {t(`thread.state.${thread.state}`)}
         </span>
         {contextFill !== null && (
-          <ContextMeter used={Math.round(contextFill * 10)} window={1000} label={t("thread.header.context")} tooltip={t("thread.header.contextTip", { pct: contextFill })} />
+          <ContextMeter
+            used={Math.round(contextFill * 10)}
+            window={1000}
+            label={t("thread.header.context")}
+            tooltip={t("thread.header.contextTip", { pct: contextFill })}
+          />
         )}
       </span>
     </header>
@@ -175,6 +205,22 @@ function Header({
 }
 
 const NO_PLANS: PlanRevision[] = [];
+
+/** Below 1100px the Changes panel floats over the transcript (UI-24). */
+function useNarrow(): boolean {
+  const query = "(max-width: 1099px)";
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== "undefined" && !!window.matchMedia?.(query).matches,
+  );
+  useEffect(() => {
+    const m = window.matchMedia?.(query);
+    if (!m) return;
+    const on = () => setNarrow(m.matches);
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, []);
+  return narrow;
+}
 
 /** Thread mode with no thread picked: the composer starts one (F-TH-02 AC1). */
 function Starter({ visible }: { visible: boolean }) {
@@ -217,10 +263,25 @@ function Starter({ visible }: { visible: boolean }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-1 items-center justify-center">
-        <EmptyState icon={<MessagesSquare size={20} />} title={t("thread.empty.noFolder.title")} body={t("thread.empty.noFolder.body")} />
+        <EmptyState
+          icon={<MessagesSquare size={20} />}
+          title={t("thread.empty.noFolder.title")}
+          body={t("thread.empty.noFolder.body")}
+        />
       </div>
       <div className="mx-auto w-full max-w-3xl px-4 pb-4">
-        <Composer value={text} onChange={setText} onSend={() => void start()} placeholder={t("thread.composer.placeholderNew")} labels={{ message: t("thread.composer.message"), send: t("thread.composer.send"), emptySend: t("thread.composer.empty") }} autoFocus={visible} />
+        <Composer
+          value={text}
+          onChange={setText}
+          onSend={() => void start()}
+          placeholder={t("thread.composer.placeholderNew")}
+          labels={{
+            message: t("thread.composer.message"),
+            send: t("thread.composer.send"),
+            emptySend: t("thread.composer.empty"),
+          }}
+          autoFocus={visible}
+        />
       </div>
     </div>
   );
@@ -253,11 +314,17 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
     previous.current = next;
     return next;
   }, [live]);
-  const usage = useMemo(() => (live ? usageOf(live.view) : { input: 0, output: 0, contextFillPct: null }), [live]);
+  const usage = useMemo(
+    () => (live ? usageOf(live.view) : { input: 0, output: 0, contextFillPct: null }),
+    [live],
+  );
   const running = live?.detail?.running ?? null;
   const pending = pendingApprovals(rows, running);
 
-  const fail = useCallback((e: unknown) => show({ tone: "error", title: (e as IpcError)?.message ?? String(e) }), [show]);
+  const fail = useCallback(
+    (e: unknown) => show({ tone: "error", title: (e as IpcError)?.message ?? String(e) }),
+    [show],
+  );
   const actions: TranscriptActions = useMemo(
     () => ({
       approve: (id, scope) => void resolve(id, { type: "allow", scope }).catch(fail),
@@ -269,7 +336,11 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
         if (!thread) return;
         const mine = useAccounts.getState().list.filter((a) => a.engineId === thread.engineId);
         const account = mine.find((a) => a.id === thread.accountId) ?? mine.find((a) => a.isDefault) ?? null;
-        setLogin(account ? { kind: "session", account, action: "sign_in" } : { kind: "add", engineId: thread.engineId });
+        setLogin(
+          account
+            ? { kind: "session", account, action: "sign_in" }
+            : { kind: "add", engineId: thread.engineId },
+        );
       },
       editResend: (text) => setPrefill({ text, n: Date.now() }),
       openLink: (href) => void invoke("app_open_external", { url: href }).catch(fail),
@@ -288,10 +359,21 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
   }, [rows]);
   // Stable across streamed events, so rows that didn't change don't re-render.
   const turns = live?.detail?.turns;
-  const startedAt = useCallback((turnId: string) => turns?.find((tr) => tr.id === turnId)?.startedAt ?? null, [turns]);
+  const startedAt = useCallback(
+    (turnId: string) => turns?.find((tr) => tr.id === turnId)?.startedAt ?? null,
+    [turns],
+  );
   const approvalLabel = useCallback((kind: string) => approvalTitle(engineLabel, kind), [engineLabel]);
   const plans = live?.detail?.planRevisions;
-  const planText = useCallback((version: number) => plans?.find((p) => p.version === version)?.text ?? null, [plans]);
+  const planText = useCallback(
+    (version: number) => plans?.find((p) => p.version === version)?.text ?? null,
+    [plans],
+  );
+  const changesOpen = useThreads((s) => s.changesOpen);
+  const toggleChanges = useThreads((s) => s.toggleChanges);
+  const narrow = useNarrow();
+  // The Changes panel reads the folder again whenever a turn ends.
+  const changesKey = `${live?.detail?.turns.filter((tr) => tr.endedAt !== null).length ?? 0}:${running ?? ""}`;
   const threadId = thread?.id;
   const onNearTop = useCallback(() => {
     if (threadId) void loadOlder(threadId);
@@ -304,91 +386,130 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="thread-main" data-thread-id={thread.id}>
       {login && <LoginSheet request={login} onClose={() => setLogin(null)} />}
-      <Header thread={thread} contextFill={usage.contextFillPct} plans={plans ?? NO_PLANS} actions={actions} />
-      {live?.status === "error" ? (
-        <div className="p-4">
-          <Banner tone="error" action={{ label: t("thread.reload"), onClick: () => void open(thread.id) }}>
-            {live.error?.message ?? t("thread.loadFailed")}
-          </Banner>
-        </div>
-      ) : (
-        <SkeletonGate
-          loading={loading}
-          label={t("thread.loading")}
-          skeleton={
-            <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4">
-              {[0, 1, 2, 3].map((n) => (
-                <Skeleton key={n} height={n % 2 ? 56 : 32} width={n % 2 ? "100%" : "60%"} className={n % 2 ? "" : "self-end"} />
-              ))}
-            </div>
-          }
-        >
-          {empty ? (
-            <div className="flex min-h-0 flex-1 items-center justify-center">
-              {workspace ? (
-                <EmptyState
-                  icon={<MessagesSquare size={20} />}
-                  title={t("thread.empty.folder.title", { folder: workspace.name })}
-                  body={t("thread.empty.folder.body")}
-                  primary={
-                    <span className="flex flex-wrap justify-center gap-2">
-                      {SUGGESTIONS.map((k) => (
-                        <Button key={k} size="sm" variant="secondary" onClick={() => setPrefill({ text: t(k), n: Date.now() })}>
-                          {t(k)}
-                        </Button>
-                      ))}
-                    </span>
-                  }
-                />
-              ) : (
-                <EmptyState
-                  icon={<FolderOpen size={20} />}
-                  title={t("thread.empty.noFolder.title")}
-                  body={t("thread.empty.noFolder.body")}
-                  primary={<AddFolder thread={thread} />}
-                />
-              )}
+      <Header
+        thread={thread}
+        contextFill={usage.contextFillPct}
+        plans={plans ?? NO_PLANS}
+        actions={actions}
+        changes={<ChangesToggle open={changesOpen} onToggle={toggleChanges} />}
+      />
+      <div className="relative flex min-h-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {live?.status === "error" ? (
+            <div className="p-4">
+              <Banner
+                tone="error"
+                action={{ label: t("thread.reload"), onClick: () => void open(thread.id) }}
+              >
+                {live.error?.message ?? t("thread.loadFailed")}
+              </Banner>
             </div>
           ) : (
-            <Transcript rows={rows} actions={actions} approvalLabel={approvalLabel} startedAt={startedAt} planText={planText} onNearTop={onNearTop} />
+            <SkeletonGate
+              loading={loading}
+              label={t("thread.loading")}
+              skeleton={
+                <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4">
+                  {[0, 1, 2, 3].map((n) => (
+                    <Skeleton
+                      key={n}
+                      height={n % 2 ? 56 : 32}
+                      width={n % 2 ? "100%" : "60%"}
+                      className={n % 2 ? "" : "self-end"}
+                    />
+                  ))}
+                </div>
+              }
+            >
+              {empty ? (
+                <div className="flex min-h-0 flex-1 items-center justify-center">
+                  {workspace ? (
+                    <EmptyState
+                      icon={<MessagesSquare size={20} />}
+                      title={t("thread.empty.folder.title", { folder: workspace.name })}
+                      body={t("thread.empty.folder.body")}
+                      primary={
+                        <span className="flex flex-wrap justify-center gap-2">
+                          {SUGGESTIONS.map((k) => (
+                            <Button
+                              key={k}
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => setPrefill({ text: t(k), n: Date.now() })}
+                            >
+                              {t(k)}
+                            </Button>
+                          ))}
+                        </span>
+                      }
+                    />
+                  ) : (
+                    <EmptyState
+                      icon={<FolderOpen size={20} />}
+                      title={t("thread.empty.noFolder.title")}
+                      body={t("thread.empty.noFolder.body")}
+                      primary={<AddFolder thread={thread} />}
+                    />
+                  )}
+                </div>
+              ) : (
+                <Transcript
+                  rows={rows}
+                  actions={actions}
+                  approvalLabel={approvalLabel}
+                  startedAt={startedAt}
+                  planText={planText}
+                  onNearTop={onNearTop}
+                />
+              )}
+            </SkeletonGate>
           )}
-        </SkeletonGate>
-      )}
-      <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 px-4 pb-4">
-        {pending.length > 0 && (
-          <div className="flex flex-col gap-2" data-testid="thread-pending">
-            {(expanded ? pending : pending.slice(0, 1)).map((p) => (
-              <ApprovalCard
-                key={p.request.id}
-                compact
-                kind={p.request.kind}
-                title={`${approvalTitle(engineLabel, p.request.kind)}: ${p.request.summary}`}
-                allowThread={p.request.options.includes("thread")}
-                onAllow={() => actions.approve(p.request.id, "once")}
-                onAllowThread={() => actions.approve(p.request.id, "thread")}
-                onDeny={(reason) => actions.deny(p.request.id, reason)}
-                labels={approvalLabels(p.request.kind)}
-              />
-            ))}
-            {pending.length > 1 && !expanded && (
-              <Button size="sm" variant="ghost" className="self-start" onClick={() => setExpanded(true)}>
-                {t("thread.approval.more", { n: pending.length - 1 })}
-              </Button>
+          <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 px-4 pb-4">
+            {pending.length > 0 && (
+              <div className="flex flex-col gap-2" data-testid="thread-pending">
+                {(expanded ? pending : pending.slice(0, 1)).map((p) => (
+                  <ApprovalCard
+                    key={p.request.id}
+                    compact
+                    kind={p.request.kind}
+                    title={`${approvalTitle(engineLabel, p.request.kind)}: ${p.request.summary}`}
+                    allowThread={p.request.options.includes("thread")}
+                    onAllow={() => actions.approve(p.request.id, "once")}
+                    onAllowThread={() => actions.approve(p.request.id, "thread")}
+                    onDeny={(reason) => actions.deny(p.request.id, reason)}
+                    labels={approvalLabels(p.request.kind)}
+                  />
+                ))}
+                {pending.length > 1 && !expanded && (
+                  <Button size="sm" variant="ghost" className="self-start" onClick={() => setExpanded(true)}>
+                    {t("thread.approval.more", { n: pending.length - 1 })}
+                  </Button>
+                )}
+              </div>
             )}
+            <ThreadComposer
+              key={thread.id}
+              thread={thread}
+              detail={live?.detail ?? null}
+              running={running !== null}
+              tokens={usage}
+              folderName={workspace?.name ?? null}
+              lastMessage={lastMessage}
+              composerRef={composer}
+              prefill={prefill}
+              visible={visible}
+            />
           </div>
+        </div>
+        {changesOpen && (
+          <ChangesPanel
+            threadId={thread.id}
+            refreshKey={changesKey}
+            rows={rows}
+            floating={narrow}
+            onClose={toggleChanges}
+          />
         )}
-        <ThreadComposer
-          key={thread.id}
-          thread={thread}
-          detail={live?.detail ?? null}
-          running={running !== null}
-          tokens={usage}
-          folderName={workspace?.name ?? null}
-          lastMessage={lastMessage}
-          composerRef={composer}
-          prefill={prefill}
-          visible={visible}
-        />
       </div>
     </div>
   );
@@ -410,7 +531,10 @@ function AddFolder({ thread }: { thread: Thread }) {
           show({ tone: "error", title: res.error.message });
           return;
         }
-        await invoke("thread_move_to_folder", { threadId: thread.id, workspaceId: res.added.workspace.id }).catch((e: IpcError) => show({ tone: "error", title: e.message }));
+        await invoke("thread_move_to_folder", {
+          threadId: thread.id,
+          workspaceId: res.added.workspace.id,
+        }).catch((e: IpcError) => show({ tone: "error", title: e.message }));
         void reloadDetail(thread.id);
       }}
     >

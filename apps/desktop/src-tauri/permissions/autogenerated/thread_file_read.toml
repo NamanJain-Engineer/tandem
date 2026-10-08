@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-thread-file-read"
+description = "Enables the thread_file_read command without any pre-configured scope."
+commands.allow = ["thread_file_read"]
+
+[[permission]]
+identifier = "deny-thread-file-read"
+description = "Denies the thread_file_read command without any pre-configured scope."
+commands.deny = ["thread_file_read"]

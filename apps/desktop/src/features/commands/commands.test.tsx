@@ -5,6 +5,7 @@ import { UiProvider } from "@tandem/ui";
 import en from "../../i18n/en.json";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
+import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { BOOT, fakeBackend, resetStores } from "../../test/fakeBackend";
@@ -214,9 +215,13 @@ describe("command registry (F-SH-09)", () => {
     setup();
     for (const spec of COMMANDS) {
       if (spec.id === "palette.open") continue;
-      act(() =>
-        useUi.setState({ paletteOpen: true, mode: "code", settingsOpen: false, upgrade: { open: false } }),
-      );
+      // Each command where it's enabled: Thread mode with a thread open for
+      // the thread commands, Code mode with a pane for the rest.
+      const inThread = spec.enabledWhen === "thread_open";
+      act(() => {
+        useThreads.setState({ selectedId: inThread ? "thr_open" : null });
+        useUi.setState({ paletteOpen: true, mode: inThread ? "thread" : "code", settingsOpen: false, upgrade: { open: false } });
+      });
       const spy = vi.spyOn(handlers, spec.id).mockImplementation(() => undefined);
       const option = screen
         .getAllByRole("option")

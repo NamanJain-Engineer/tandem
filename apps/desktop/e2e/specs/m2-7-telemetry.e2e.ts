@@ -18,9 +18,15 @@ describe("E2E-M2-7 nothing leaves by default", () => {
     await $("button=Privacy & Telemetry").click();
     const toggle = $('[data-setting="telemetry_usage"] button[role="switch"]');
     await toggle.click();
-    await browser.waitUntil(() => existsSync(idFile), { timeout: 5_000, timeoutMsg: "no analytics id after opting in" });
+    await browser.waitUntil(() => existsSync(idFile), {
+      timeout: 5_000,
+      timeoutMsg: "no analytics id after opting in",
+    });
     await toggle.click();
-    await browser.waitUntil(() => !existsSync(idFile), { timeout: 5_000, timeoutMsg: "analytics id kept after opting out" });
+    await browser.waitUntil(() => !existsSync(idFile), {
+      timeout: 5_000,
+      timeoutMsg: "analytics id kept after opting out",
+    });
     await browser.keys("Escape");
   });
 });

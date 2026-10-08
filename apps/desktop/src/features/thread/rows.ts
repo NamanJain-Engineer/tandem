@@ -12,7 +12,13 @@ export type Row =
   | { kind: "tool"; key: string; tool: ToolEvent }
   | { kind: "tools"; key: string; tools: ToolEvent[] }
   | { kind: "assistant"; key: string; markdown: string; streaming: boolean }
-  | { kind: "approval"; key: string; turnId: string; request: ApprovalRequest; decision: ApprovalDecisionView | null }
+  | {
+      kind: "approval";
+      key: string;
+      turnId: string;
+      request: ApprovalRequest;
+      decision: ApprovalDecisionView | null;
+    }
   | { kind: "note"; key: string; text: string }
   | { kind: "error"; key: string; turnId: string; error: Ev<"error">; last: boolean }
   | { kind: "limit"; key: string; limit: Ev<"limit"> }
@@ -58,13 +64,27 @@ export function toRows(view: ThreadView): Row[] {
           rows.push({ kind: "user", key, turnId: turn.id, text: e.text, attachments: e.attachments });
           break;
         case "reasoning":
-          if (e.text.trim()) rows.push({ kind: "reasoning", key, text: e.text, durationMs: e.durationMs, streaming: item.streaming });
+          if (e.text.trim())
+            rows.push({
+              kind: "reasoning",
+              key,
+              text: e.text,
+              durationMs: e.durationMs,
+              streaming: item.streaming,
+            });
           break;
         case "assistant":
-          if (e.markdown.trim() || item.streaming) rows.push({ kind: "assistant", key, markdown: e.markdown, streaming: item.streaming });
+          if (e.markdown.trim() || item.streaming)
+            rows.push({ kind: "assistant", key, markdown: e.markdown, streaming: item.streaming });
           break;
         case "approval_request":
-          rows.push({ kind: "approval", key, turnId: turn.id, request: e, decision: decisions.get(e.id) ?? null });
+          rows.push({
+            kind: "approval",
+            key,
+            turnId: turn.id,
+            request: e,
+            decision: decisions.get(e.id) ?? null,
+          });
           break;
         case "note":
           rows.push({ kind: "note", key, text: e.text });
@@ -107,7 +127,8 @@ function sameRow(a: Row, b: Row): boolean {
     const u = x[k];
     const v = y[k];
     if (u === v) continue;
-    if (!Array.isArray(u) || !Array.isArray(v) || u.length !== v.length || u.some((e, i) => e !== v[i])) return false;
+    if (!Array.isArray(u) || !Array.isArray(v) || u.length !== v.length || u.some((e, i) => e !== v[i]))
+      return false;
   }
   return true;
 }
@@ -129,9 +150,13 @@ export function reuseRows(prev: Row[], next: Row[]): Row[] {
 
 /** Approval requests of the running turn still waiting for an answer,
  * oldest first (UI-23: pinned above the composer). */
-export function pendingApprovals(rows: Row[], running: string | null): Array<Extract<Row, { kind: "approval" }>> {
+export function pendingApprovals(
+  rows: Row[],
+  running: string | null,
+): Array<Extract<Row, { kind: "approval" }>> {
   return rows.filter(
-    (r): r is Extract<Row, { kind: "approval" }> => r.kind === "approval" && r.decision === null && r.turnId === running,
+    (r): r is Extract<Row, { kind: "approval" }> =>
+      r.kind === "approval" && r.decision === null && r.turnId === running,
   );
 }
 

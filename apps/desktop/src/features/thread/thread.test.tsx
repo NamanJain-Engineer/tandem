@@ -1,11 +1,20 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { EngineView, Thread, ThreadDetail, ThreadEvent, ThreadEventEnvelope, WorkspaceSummary } from "@tandem/protocol";
+import type {
+  EngineView,
+  Thread,
+  ThreadDetail,
+  ThreadEvent,
+  ThreadEventEnvelope,
+  WorkspaceSummary,
+} from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { useEngines } from "../../stores/engines";
 import { useThreads } from "../../stores/threads";
 import { useWorkspaces } from "../../stores/workspaces";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
+import { referencedFiles } from "./ChangesPanel";
+import type { Row, ToolEvent } from "./rows";
 import { dropOnThread } from "./drops";
 import { restoreAfterFailure } from "./ThreadComposer";
 import { age, groupThreads } from "./groups";
@@ -49,7 +58,16 @@ const CLAUDE: EngineView = {
 };
 
 function detail(th: Thread, extra: Partial<ThreadDetail> = {}): ThreadDetail {
-  return { thread: th, turns: [], running: null, queued: null, draft: "{}", attachments: [], planRevisions: [], ...extra };
+  return {
+    thread: th,
+    turns: [],
+    running: null,
+    queued: null,
+    draft: "{}",
+    attachments: [],
+    planRevisions: [],
+    ...extra,
+  };
 }
 
 type Channel = { onmessage: (e: ThreadEventEnvelope) => void };
@@ -88,7 +106,10 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     await waitFor(() => expect(calls.some((c) => c.cmd === "thread_send")).toBe(true));
     const create = calls.find((c) => c.cmd === "thread_create");
     expect(create?.args).toEqual({ args: { kind: "thread", workspaceId: null } });
-    expect(calls.find((c) => c.cmd === "thread_send")?.args).toMatchObject({ threadId: created.id, text: "hello" });
+    expect(calls.find((c) => c.cmd === "thread_send")?.args).toMatchObject({
+      threadId: created.id,
+      text: "hello",
+    });
     expect(useThreads.getState().selectedId).toBe(created.id);
   });
 
@@ -107,7 +128,9 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     });
     mount(<ThreadRail collapsed={false} />);
     const rail = screen.getByRole("navigation", { name: "Threads" });
-    const groups = within(rail).getAllByRole("region").map((g) => g.getAttribute("aria-label"));
+    const groups = within(rail)
+      .getAllByRole("region")
+      .map((g) => g.getAttribute("aria-label"));
     expect(groups).toEqual(["Pinned", "No folder", "shop"]);
     expect(within(screen.getByRole("region", { name: "shop" })).getByText("Working")).toBeTruthy();
     expect(screen.getByRole("img", { name: "Finished while you were away" })).toBeTruthy();
@@ -121,8 +144,27 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     let channel: Channel | null = null;
     const calls = fakeBackend({
       thread_list: () => [th],
-      thread_get: () => detail(th, { running: "turn_1", turns: [{ id: "turn_1", threadId: th.id, n: 1, engineId: "claude", accountId: null, state: "running", blockedActions: 0, startedAt: Date.now(), endedAt: null }] }),
-      thread_events: () => ({ items: [env(th.id, "turn_1", 0, { type: "user", text: "fix it", attachments: [] })], nextBeforeId: null }),
+      thread_get: () =>
+        detail(th, {
+          running: "turn_1",
+          turns: [
+            {
+              id: "turn_1",
+              threadId: th.id,
+              n: 1,
+              engineId: "claude",
+              accountId: null,
+              state: "running",
+              blockedActions: 0,
+              startedAt: Date.now(),
+              endedAt: null,
+            },
+          ],
+        }),
+      thread_events: () => ({
+        items: [env(th.id, "turn_1", 0, { type: "user", text: "fix it", attachments: [] })],
+        nextBeforeId: null,
+      }),
       thread_subscribe: (a) => {
         channel = a?.channel as Channel;
         return null;
@@ -163,8 +205,16 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
       via: "inline",
     });
     act(() => {
-      channel?.onmessage(env(th.id, "turn_1", 3, { type: "approval_resolved", id: "apr_1", decision: { type: "allow", scope: "thread" } }));
-      channel?.onmessage(env(th.id, "turn_1", 4, { type: "turn_end", reason: "cancelled", blockedActions: 0 }));
+      channel?.onmessage(
+        env(th.id, "turn_1", 3, {
+          type: "approval_resolved",
+          id: "apr_1",
+          decision: { type: "allow", scope: "thread" },
+        }),
+      );
+      channel?.onmessage(
+        env(th.id, "turn_1", 4, { type: "turn_end", reason: "cancelled", blockedActions: 0 }),
+      );
     });
     expect(await screen.findByText("Stopped by you")).toBeTruthy();
     expect(screen.getByText("Allowed for this thread")).toBeTruthy();
@@ -206,7 +256,12 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
 
   it("F-TH-10.1 each plan card shows its own version; Implement sends that version and Revise pre-fills", async () => {
     const th = thread({ mode: "plan" });
-    const plan = (v: number) => ({ version: v, turnId: `turn_${v}`, text: `1. Step of plan ${v}`, createdAt: 1_000 * v });
+    const plan = (v: number) => ({
+      version: v,
+      turnId: `turn_${v}`,
+      text: `1. Step of plan ${v}`,
+      createdAt: 1_000 * v,
+    });
     const items: ThreadEventEnvelope[] = [1, 2].flatMap((v) => [
       env(th.id, `turn_${v}`, 0, { type: "user", text: `plan it ${v}`, attachments: [] }),
       env(th.id, `turn_${v}`, 1, { type: "assistant", markdown: `1. Step of plan ${v}` }),
@@ -231,11 +286,132 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     expect(within(cards[0] as HTMLElement).getByText("Plan · version 1")).toBeTruthy();
     fireEvent.click(within(cards[0] as HTMLElement).getByRole("button", { name: "Implement this plan" }));
     await waitFor(() => expect(calls.some((c) => c.cmd === "thread_implement_plan")).toBe(true));
-    expect(calls.find((c) => c.cmd === "thread_implement_plan")?.args).toMatchObject({ threadId: th.id, version: 1 });
+    expect(calls.find((c) => c.cmd === "thread_implement_plan")?.args).toMatchObject({
+      threadId: th.id,
+      version: 1,
+    });
     fireEvent.click(within(cards[1] as HTMLElement).getByRole("button", { name: "Revise…" }));
-    await waitFor(() => expect((screen.getByRole("textbox", { name: /message/i }) as HTMLTextAreaElement).value).toBe("Revise the plan: "));
+    await waitFor(() =>
+      expect((screen.getByRole("textbox", { name: /message/i }) as HTMLTextAreaElement).value).toBe(
+        "Revise the plan: ",
+      ),
+    );
     // The header lists both versions.
     expect(screen.getByTestId("plan-versions").textContent).toBe("Plan versions (2)");
+  });
+
+  it("F-TH-13 the Changes panel lists files with their diff; Files opens what the thread read or edited", async () => {
+    const th = thread({ title: "Edits" });
+    const tool = (id: string, verb: "read" | "edit", path: string) =>
+      ({
+        type: "tool",
+        id,
+        verb,
+        argSummary: path,
+        status: "ok",
+        output: null,
+        outputTruncated: false,
+        outputFile: null,
+        diff: null,
+        detail: null,
+      }) as ThreadEvent;
+    const items: ThreadEventEnvelope[] = [
+      env(th.id, "turn_1", 0, { type: "user", text: "edit two files", attachments: [] }),
+      env(th.id, "turn_1", 1, tool("t1", "read", "src/a.ts")),
+      env(th.id, "turn_1", 2, tool("t2", "edit", "src/a.ts")),
+      env(th.id, "turn_1", 3, tool("t3", "edit", "src/b.ts")),
+      env(th.id, "turn_1", 4, { type: "turn_end", reason: "completed", blockedActions: 0 }),
+    ];
+    const patch =
+      "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old line\n+new line\n";
+    const calls: Call[] = fakeBackend({
+      thread_list: () => [th],
+      thread_get: () => detail(th),
+      thread_events: () => ({ items, nextBeforeId: null }),
+      thread_subscribe: () => null,
+      thread_changes: () => ({
+        source: "git",
+        files: [
+          {
+            path: "src/a.ts",
+            change: "modified",
+            additions: 1,
+            deletions: 1,
+            binary: false,
+            patch,
+            truncated: false,
+          },
+          {
+            path: "src/b.ts",
+            change: "added",
+            additions: 2,
+            deletions: 0,
+            binary: false,
+            patch: "",
+            truncated: false,
+          },
+        ],
+      }),
+      thread_file_read: (a) => ({
+        path: a?.path,
+        content: "export const b = 1;\n",
+        truncated: false,
+        binary: false,
+      }),
+      models_list: () => [],
+    });
+    await act(async () => {
+      await useThreads.getState().refresh();
+      useThreads.getState().select(th.id);
+    });
+    mount(<ThreadMain />);
+    fireEvent.click(await screen.findByTestId("changes-toggle"));
+    const rows = await screen.findAllByTestId("change-row");
+    expect(rows.map((r) => r.getAttribute("data-path"))).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(screen.getByText("Changes (2)")).toBeTruthy();
+    fireEvent.click(rows[0] as HTMLElement);
+    expect(within(await screen.findByTestId("change-diff")).getByText("new line")).toBeTruthy();
+    expect(calls.filter((c) => c.cmd === "thread_changes")).toHaveLength(1);
+
+    fireEvent.mouseDown(screen.getByRole("tab", { name: /Files/ }));
+    const files = await screen.findAllByTestId("file-row");
+    expect(files.map((f) => f.textContent)).toEqual(["src/b.tsEdited", "src/a.tsEdited"]);
+    fireEvent.click(files[0] as HTMLElement);
+    expect(await screen.findByText("export const b = 1;")).toBeTruthy();
+    expect(calls.find((c) => c.cmd === "thread_file_read")?.args).toMatchObject({
+      threadId: th.id,
+      path: "src/b.ts",
+    });
+    act(() => useThreads.getState().toggleChanges());
+    expect(screen.queryByTestId("changes-panel")).toBeNull();
+  });
+
+  it("F-TH-13 files the thread touched: latest first, edited wins over read, commands left out", () => {
+    const tool = (verb: ToolEvent["verb"], argSummary: string) =>
+      ({
+        type: "tool",
+        id: argSummary,
+        verb,
+        argSummary,
+        status: "ok",
+        output: null,
+        outputTruncated: false,
+        outputFile: null,
+        diff: null,
+        detail: null,
+      }) as ToolEvent;
+    const rows: Row[] = [
+      { kind: "tool", key: "1", tool: tool("edit", "a.ts") },
+      {
+        kind: "tools",
+        key: "2",
+        tools: [tool("read", "b.ts"), tool("bash", "npm test"), tool("read", "a.ts")],
+      },
+    ];
+    expect(referencedFiles(rows)).toEqual([
+      { path: "a.ts", wrote: true },
+      { path: "b.ts", wrote: false },
+    ]);
   });
 
   it("F-TH-07.3 a failed send puts the text back ahead of anything typed since", async () => {
@@ -249,7 +425,13 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
       thread_subscribe: () => null,
       models_list: () => [],
       thread_send: () => {
-        throw { code: "engine_missing", message: "Claude Code isn't installed", stage: null, hint: null, retryable: false };
+        throw {
+          code: "engine_missing",
+          message: "Claude Code isn't installed",
+          stage: null,
+          hint: null,
+          retryable: false,
+        };
       },
     });
     await act(async () => {
@@ -294,7 +476,10 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
       expect(await dropOnThread(["/tmp/a/notes.txt"], () => undefined)).toBe(true);
     });
     expect(await screen.findByText("notes.txt")).toBeTruthy();
-    expect(calls.find((c) => c.cmd === "thread_attach_paths")?.args).toEqual({ threadId: th.id, paths: ["/tmp/a/notes.txt"] });
+    expect(calls.find((c) => c.cmd === "thread_attach_paths")?.args).toEqual({
+      threadId: th.id,
+      paths: ["/tmp/a/notes.txt"],
+    });
   });
 
   it("groups and ages are pure", () => {

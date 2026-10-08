@@ -6,7 +6,10 @@ import { assistantTexts, openThreadId, sendMessage, threadMode } from "../suppor
 /** Engine processes still running for a thread (its MCP config names it). */
 function engines(threadId: string): number {
   try {
-    return execFileSync("pgrep", ["-f", `${threadId}.json`], { encoding: "utf8" }).trim().split("\n").filter(Boolean).length;
+    return execFileSync("pgrep", ["-f", `${threadId}.json`], { encoding: "utf8" })
+      .trim()
+      .split("\n")
+      .filter(Boolean).length;
   } catch {
     return 0;
   }
@@ -35,7 +38,10 @@ describe("E2E-M7-3 stop and crash", () => {
     const took = Date.now() - t0;
     // The core's budget is 3.5 s; the UI adds a render.
     expect(took).toBeLessThan(4_000);
-    await browser.waitUntil(async () => engines(thread) === 0, { timeout: 2_000, timeoutMsg: "the engine tree is still running" });
+    await browser.waitUntil(async () => engines(thread) === 0, {
+      timeout: 2_000,
+      timeoutMsg: "the engine tree is still running",
+    });
     // The composer is usable again.
     expect(await $('[data-testid="composer-send"]').isExisting()).toBe(true);
   });
@@ -44,7 +50,9 @@ describe("E2E-M7-3 stop and crash", () => {
     this.timeout(60_000);
     await sendMessage("/crash");
     const alerts = () =>
-      browser.execute(() => Array.from(document.querySelectorAll<HTMLElement>('[role="alert"]')).map((e) => e.innerText));
+      browser.execute(() =>
+        Array.from(document.querySelectorAll<HTMLElement>('[role="alert"]')).map((e) => e.innerText),
+      );
     await browser.waitUntil(async () => (await alerts()).some((t) => t.includes("stopped unexpectedly")), {
       timeout: 20_000,
       timeoutMsg: `alerts: ${JSON.stringify(await alerts())}`,
@@ -53,6 +61,9 @@ describe("E2E-M7-3 stop and crash", () => {
     expect(await $("button=Retry turn").isExisting()).toBe(true);
     // Still responsive: a new message gets an answer from a new session.
     await sendMessage("still there?");
-    await browser.waitUntil(async () => (await assistantTexts()).some((t) => t.includes("You said: still there?")), { timeout: 20_000 });
+    await browser.waitUntil(
+      async () => (await assistantTexts()).some((t) => t.includes("You said: still there?")),
+      { timeout: 20_000 },
+    );
   });
 });
