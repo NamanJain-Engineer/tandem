@@ -256,6 +256,10 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
   // Removing a repository removes its worktrees with it (F-CD-15).
   for (const w of list.filter((w) => !w.parentId)) await invoke("workspace_remove", { id: w.id });
   await invoke("auth_sign_out");
+  // A first run has no engine accounts yet (the wizard's Accounts step, D-114).
+  if (!onboarded) {
+    for (const a of await invoke<Array<{ id: string }>>("accounts_list")) await invoke("accounts_remove", { accountId: a.id });
+  }
   // Specs start past the first-run wizard unless they test it (E2E-M5-9).
   await invoke("onboarding_set", onboarded ? { done: true } : { step: "engines" });
   // UI state that outlives a spec: start in Code mode with the sidebar closed.
