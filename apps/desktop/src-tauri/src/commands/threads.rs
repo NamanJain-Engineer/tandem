@@ -89,7 +89,9 @@ fn default_engine(state: &AppState) -> Option<String> {
     let chat: Vec<&str> = registry
         .all()
         .iter()
-        .filter(|e| e.chat_adapter.is_some() && engines.installed(&e.id).is_some())
+        .filter(|e| {
+            crate::services::threads::has_chat_adapter(e) && engines.installed(&e.id).is_some()
+        })
         .map(|e| e.id.as_str())
         .collect();
     chat.iter()
@@ -112,7 +114,7 @@ pub async fn thread_create(
                 .terminals
                 .engines
                 .get(e)
-                .is_some_and(|spec| spec.chat_adapter.is_some())
+                .is_some_and(|spec| crate::services::threads::has_chat_adapter(&spec))
     });
     let engine_id = match args.engine_id.or(last) {
         Some(id) => id,
@@ -360,7 +362,7 @@ pub async fn thread_switch_engine(
             "This engine isn't known to Vibezeo",
         )
     })?;
-    if spec.chat_adapter.is_none() {
+    if !crate::services::threads::has_chat_adapter(&spec) {
         return Err(IpcError::new(
             ErrorCode::EngineUnsupported,
             format!(

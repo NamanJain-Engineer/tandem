@@ -55,8 +55,7 @@ fn views(
                 version: f.version.clone(),
                 source: f.source,
             }),
-            // Chat adapters arrive in M6.
-            chat_capable: false,
+            chat_capable: crate::services::threads::has_chat_adapter(s),
             unsupported_reason: None,
             extra_args: extra
                 .get(&s.id)
@@ -175,4 +174,27 @@ pub fn engines_report(
         return None;
     }
     state.terminals.engines.report()
+}
+
+#[cfg(test)]
+mod chat_tests {
+    use super::*;
+
+    #[test]
+    fn f_th_01_engines_with_a_thread_adapter_are_chat_capable() {
+        let registry = tandem_engines::registry::EngineRegistry::bundled();
+        let list = views(registry.all(), None, &serde_json::json!({}));
+        let capable = |id: &str| {
+            list.iter()
+                .find(|v| v.spec.id == id)
+                .map(|v| v.chat_capable)
+        };
+        assert_eq!(capable("claude"), Some(true));
+        assert_eq!(capable("codex"), Some(true));
+        // Terminal-only engines stay in Code mode.
+        assert!(list
+            .iter()
+            .filter(|v| v.spec.chat_adapter.is_none())
+            .all(|v| !v.chat_capable));
+    }
 }

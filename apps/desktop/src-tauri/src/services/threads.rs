@@ -1666,6 +1666,17 @@ fn origin_of(thread: &ThreadRecord) -> tandem_core::access::Origin {
     }
 }
 
+/// The chat adapters Thread mode has (ARCHITECTURE §6.8); ACP arrives
+/// with M7 task 10.
+pub const CHAT_ADAPTERS: &[&str] = &["claude", "codex"];
+
+/// An engine Thread mode can run.
+pub fn has_chat_adapter(spec: &tandem_engines::registry::EngineSpec) -> bool {
+    spec.chat_adapter
+        .as_deref()
+        .is_some_and(|a| CHAT_ADAPTERS.contains(&a))
+}
+
 /// The app's launcher: the thread's engine and account, resolved like a
 /// pane's (provider home, sanitized login env), run by that engine's adapter,
 /// with the gateway (started on first use) as its only MCP server.

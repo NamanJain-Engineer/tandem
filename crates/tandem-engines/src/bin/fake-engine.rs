@@ -19,9 +19,13 @@
 //! answered with a brief between its markers; anything else is answered,
 //! then Stop.
 //!
-//! As `codex`, `app-server` answers JSON-RPC lines: `initialize`, and
+//! As `codex`, `app-server` answers JSON-RPC lines: `initialize`,
 //! `account/rateLimits/read` from `TANDEM_FAKE_USAGE` ("40,85": a 5-hour and
-//! a weekly window; empty or `none`: an error), F-AC-04.
+//! a weekly window; empty or `none`: an error), F-AC-04, and the V2 thread
+//! protocol (`thread/start|resume`, `turn/start` answered "You said: …").
+//!
+//! `TANDEM_FAKE_VERSION` (a value or a file of `<name> <version>` lines) sets
+//! the version an engine reports (`--version`, Codex's `userAgent`).
 //!
 //! `/context <tokens>` (as `claude`) ends a turn whose transcript, under
 //! `$CLAUDE_CONFIG_DIR/projects/`, reports that many context tokens (F-AC-06).
@@ -141,6 +145,63 @@ fn usage_mode() -> String {
     std::fs::read_to_string(&v).unwrap_or(v).trim().to_string()
 }
 
+/// The version this engine reports: `TANDEM_FAKE_VERSION` (a value or a file
+/// of `<name> <version>` lines), else 1.2.3.
+fn version(name: &str) -> String {
+    let Ok(v) = std::env::var("TANDEM_FAKE_VERSION") else {
+        return "1.2.3".into();
+    };
+    let text = std::fs::read_to_string(&v).unwrap_or(v);
+    text.lines()
+        .filter_map(|l| l.trim().split_once(' '))
+        .find(|(n, _)| *n == name)
+        .map(|(_, ver)| ver.trim().to_string())
+        .unwrap_or_else(|| "1.2.3".into())
+}
+
+fn send_line(v: serde_json::Value) {
+    println!("{v}");
+    let _ = std::io::stdout().flush();
+}
+
+/// A turn of the stand-in app-server: "You said: <text>" as an agent message,
+/// token usage, then `turn/completed` (Thread mode, E2E-M7-5).
+fn app_turn(thread: &str, turn: &str, text: &str) {
+    let note = |method: &str, params: serde_json::Value| {
+        send_line(serde_json::json!({"jsonrpc": "2.0", "method": method, "params": params}));
+    };
+    note(
+        "turn/started",
+        serde_json::json!({"threadId": thread, "turn": {"id": turn, "status": "inProgress", "items": []}}),
+    );
+    let item = format!("msg_{turn}");
+    note(
+        "item/started",
+        serde_json::json!({"threadId": thread, "turnId": turn, "item": {"type": "agentMessage", "id": item, "text": ""}}),
+    );
+    for piece in ["You said: ", text] {
+        note(
+            "item/agentMessage/delta",
+            serde_json::json!({"threadId": thread, "turnId": turn, "itemId": item, "delta": piece}),
+        );
+    }
+    note(
+        "item/completed",
+        serde_json::json!({"threadId": thread, "turnId": turn, "item": {"type": "agentMessage", "id": item, "text": format!("You said: {text}")}}),
+    );
+    note(
+        "thread/tokenUsage/updated",
+        serde_json::json!({"threadId": thread, "turnId": turn, "tokenUsage": {
+        "total": {"totalTokens": 120, "inputTokens": 100, "cachedInputTokens": 0, "outputTokens": 20, "reasoningOutputTokens": 0},
+        "last": {"totalTokens": 120, "inputTokens": 100, "cachedInputTokens": 0, "outputTokens": 20, "reasoningOutputTokens": 0},
+        "modelContextWindow": 272000}}),
+    );
+    note(
+        "turn/completed",
+        serde_json::json!({"threadId": thread, "turn": {"id": turn, "status": "completed", "items": []}}),
+    );
+}
+
 /// A stand-in `codex app-server`: one JSON-RPC message per line.
 fn app_server() {
     let now = std::time::SystemTime::now()
@@ -149,6 +210,7 @@ fn app_server() {
         .unwrap_or(0);
     let stdin = std::io::stdin();
     let mut line = String::new();
+    let mut turns = 0;
     while stdin.read_line(&mut line).is_ok_and(|n| n > 0) {
         let msg: serde_json::Value = serde_json::from_str(line.trim()).unwrap_or_default();
         line.clear();
@@ -171,6 +233,42 @@ fn app_server() {
                         serde_json::json!({"id": id, "error": {"code": -32000, "message": "no usage data"}})
                     }
                 }
+            }
+            Some("initialize") => {
+                serde_json::json!({"id": id, "result": {"userAgent": format!("codex_cli_rs/{}", version("codex"))}})
+            }
+            Some("thread/start") => {
+                let thread = format!("thr_fake_{}", std::process::id());
+                log(&format!("app-server: thread/start {thread}"));
+                serde_json::json!({"id": id, "result": {"thread": {"id": thread}}})
+            }
+            Some("thread/resume") => {
+                let thread = msg
+                    .pointer("/params/threadId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                log(&format!("app-server: thread/resume {thread}"));
+                serde_json::json!({"id": id, "result": {"thread": {"id": thread}}})
+            }
+            Some("turn/start") => {
+                turns += 1;
+                let thread = msg
+                    .pointer("/params/threadId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let text = msg
+                    .pointer("/params/input/0/text")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let turn = format!("turn_{turns}");
+                send_line(
+                    serde_json::json!({"id": id, "result": {"turn": {"id": turn, "status": "inProgress", "items": []}}}),
+                );
+                app_turn(&thread, &turn, &text);
+                continue;
             }
             _ => serde_json::json!({"id": id, "result": {}}),
         };
@@ -202,7 +300,7 @@ fn account_command(name: &str, args: &[String]) -> Option<i32> {
             sign_in(name);
             Some(0)
         }
-        ["app-server"] => {
+        ["app-server", ..] => {
             app_server();
             Some(0)
         }
@@ -327,7 +425,7 @@ fn main() {
             .unwrap_or_default()
     });
     if argv.iter().skip(1).any(|a| a == "--version" || a == "-v") {
-        println!("{name} 1.2.3 (test engine)");
+        println!("{name} {} (test engine)", version(&name));
         return;
     }
     let args = &argv[1.min(argv.len())..];
