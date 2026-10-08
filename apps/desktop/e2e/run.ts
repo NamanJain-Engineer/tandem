@@ -155,6 +155,8 @@ async function main() {
     // builds hand them these (E2E-M6-5).
     TANDEM_FAKE_BRIEF: join(home, "brief.txt"),
     TANDEM_FAKE_ENGINE_LOG: join(home, "fake-engine.log"),
+    // The fake `codex app-server`'s usage windows, e.g. "40,85" (E2E-M6-8).
+    TANDEM_FAKE_USAGE: join(home, "usage.txt"),
     TANDEM_HOOK_BIN: join(root, "target/debug/tandem-hook"),
     TANDEM_SPAWN_LOG: join(home, "spawn.log"),
     // The local update feed (scripts/mock-update-feed.ts, E2E-M5-7); it

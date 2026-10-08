@@ -161,11 +161,7 @@ async fn ask_headless(
         .chain(launch.spec.env.iter())
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    // Debug builds: the E2E fake engines' switches, which panes get from the
-    // test profile (TANDEM_FAKE_BRIEF, TANDEM_FAKE_ENGINE_LOG).
-    if cfg!(debug_assertions) {
-        env.extend(std::env::vars().filter(|(k, _)| k.starts_with("TANDEM_FAKE_")));
-    }
+    env.extend(crate::services::fake_engine_env());
     let out = handoff::run_headless(
         &program,
         &args,

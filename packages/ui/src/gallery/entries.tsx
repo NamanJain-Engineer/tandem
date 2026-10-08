@@ -12,7 +12,7 @@ import { Input, SecretInput, Textarea } from "../components/Field";
 import { IconButton } from "../components/IconButton";
 import { Kbd } from "../components/Kbd";
 import { Menu } from "../components/Menu";
-import { ProgressBar, UsageMeter } from "../components/Progress";
+import { ContextMeter, ProgressBar, UsageMeter } from "../components/Progress";
 import { SegmentedControl } from "../components/SegmentedControl";
 import { Combobox, Select } from "../components/Select";
 import { Skeleton } from "../components/Skeleton";
@@ -239,6 +239,7 @@ export const galleryEntries: GalleryEntry[] = [
       { name: "progress", render: () => <ProgressBar label="Downloading 0.2.0" value={0.42} /> },
       { name: "indeterminate", render: () => <ProgressBar label="Checking for updates" /> },
       { name: "meters", render: () => (<div className="flex flex-col gap-2"><UsageMeter label="5h" value={0.62} resetText="resets in 1h 12m" /><UsageMeter label="Week" value={0.86} /><UsageMeter label="Context" value={0.97} kind="context" /><UsageMeter label="5h" size="xs" value={0.97} /></div>) },
+      { name: "context", render: () => (<div className="flex gap-4"><ContextMeter label="Context" used={114_000} window={200_000} /><ContextMeter label="Context" used={170_000} window={200_000} /></div>) },
     ],
   },
   {

@@ -26,4 +26,16 @@ pub mod status;
 pub mod telemetry;
 pub mod terminal;
 pub mod updates;
+pub mod usage;
 pub mod workspaces;
+
+/// Debug builds: the E2E fake engines' switches (`TANDEM_FAKE_*`), for
+/// engine runs that aren't panes and so don't read the test profile.
+pub(crate) fn fake_engine_env() -> Vec<(String, String)> {
+    if !cfg!(debug_assertions) {
+        return Vec::new();
+    }
+    std::env::vars()
+        .filter(|(k, _)| k.starts_with("TANDEM_FAKE_"))
+        .collect()
+}

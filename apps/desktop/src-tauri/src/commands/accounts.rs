@@ -104,3 +104,38 @@ pub async fn workspace_set_account_override(
             .await?,
     )
 }
+
+/// Usage per account (F-AC-04): the latest reading, probing the engine when
+/// there's none yet.
+#[tauri::command]
+pub async fn usage_get(
+    state: State<'_, AppState>,
+    account_id: Option<AccountId>,
+) -> Result<Vec<crate::services::usage::UsageView>, IpcError> {
+    let mut out = Vec::new();
+    for account in accounts::list(&state.store).await? {
+        if account_id.as_ref().is_some_and(|id| *id != account.id) {
+            continue;
+        }
+        out.push(match state.usage.get(account.id.as_str()) {
+            Some(view) => view,
+            None => crate::services::usage::probe(&state, &account).await,
+        });
+    }
+    Ok(out)
+}
+
+/// Reads usage again (every 5 minutes and after a turn, from the webview).
+#[tauri::command]
+pub async fn usage_refresh(
+    state: State<'_, AppState>,
+    account_id: Option<AccountId>,
+) -> Result<Vec<crate::services::usage::UsageView>, IpcError> {
+    let mut out = Vec::new();
+    for account in accounts::list(&state.store).await? {
+        if account_id.as_ref().is_none_or(|id| *id == account.id) {
+            out.push(crate::services::usage::probe(&state, &account).await);
+        }
+    }
+    Ok(out)
+}

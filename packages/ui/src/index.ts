@@ -1,8 +1,21 @@
 export { Avatar, AvatarStack, avatarHue, fnv1a32, initials, type AvatarProps } from "./components/Avatar";
 export { Badge, Chip, type BadgeVariant, type ChipProps } from "./components/Badge";
 export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from "./components/Button";
-export { Checkbox, RadioGroup, Switch, type CheckboxProps, type RadioGroupProps, type RadioItem, type SwitchProps } from "./components/Choice";
-export { CommandPalette, type CommandPaletteProps, type PaletteGroup, type PaletteItem } from "./components/CommandPalette";
+export {
+  Checkbox,
+  RadioGroup,
+  Switch,
+  type CheckboxProps,
+  type RadioGroupProps,
+  type RadioItem,
+  type SwitchProps,
+} from "./components/Choice";
+export {
+  CommandPalette,
+  type CommandPaletteProps,
+  type PaletteGroup,
+  type PaletteItem,
+} from "./components/CommandPalette";
 export {
   Banner,
   Callout,
@@ -17,17 +30,53 @@ export {
   type SettingsRowProps,
   type Tone,
 } from "./components/Composites";
-export { ConfirmDialog, Dialog, Sheet, type ConfirmDialogProps, type DialogProps, type SheetProps } from "./components/Dialog";
-export { DiffView, LARGE_DIFF_LINES, parsePatch, type DiffFile, type DiffLine, type DiffViewLabels } from "./components/DiffView";
-export { Input, SecretInput, Textarea, type InputProps, type SecretInputProps, type TextareaProps } from "./components/Field";
+export {
+  ConfirmDialog,
+  Dialog,
+  Sheet,
+  type ConfirmDialogProps,
+  type DialogProps,
+  type SheetProps,
+} from "./components/Dialog";
+export {
+  DiffView,
+  LARGE_DIFF_LINES,
+  parsePatch,
+  type DiffFile,
+  type DiffLine,
+  type DiffViewLabels,
+} from "./components/DiffView";
+export {
+  Input,
+  SecretInput,
+  Textarea,
+  type InputProps,
+  type SecretInputProps,
+  type TextareaProps,
+} from "./components/Field";
 export { EngineBadge, EngineGlyph } from "./components/EngineGlyph";
 export { IconButton, type IconButtonProps } from "./components/IconButton";
 export { Kbd, type KbdProps } from "./components/Kbd";
 export { ContextMenu, Menu, orderEntries, type MenuEntry, type MenuProps } from "./components/Menu";
 export { Popover, type PopoverProps } from "./components/Popover";
-export { ProgressBar, UsageMeter, meterTone, type ProgressBarProps, type UsageMeterProps } from "./components/Progress";
+export {
+  ContextMeter,
+  ProgressBar,
+  UsageMeter,
+  meterTone,
+  tokenCount,
+  type ContextMeterProps,
+  type ProgressBarProps,
+  type UsageMeterProps,
+} from "./components/Progress";
 export { SegmentedControl, type Segment, type SegmentedControlProps } from "./components/SegmentedControl";
-export { Combobox, Select, type ComboboxProps, type SelectOption, type SelectProps } from "./components/Select";
+export {
+  Combobox,
+  Select,
+  type ComboboxProps,
+  type SelectOption,
+  type SelectProps,
+} from "./components/Select";
 export { Skeleton, SkeletonGate, useDelayedFlag } from "./components/Skeleton";
 export { Spinner, type SpinnerProps } from "./components/Spinner";
 export { STATUS_LABEL, StatusDot, type Status } from "./components/StatusDot";

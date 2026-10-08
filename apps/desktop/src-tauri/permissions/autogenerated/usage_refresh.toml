@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-usage-refresh"
+description = "Enables the usage_refresh command without any pre-configured scope."
+commands.allow = ["usage_refresh"]
+
+[[permission]]
+identifier = "deny-usage-refresh"
+description = "Denies the usage_refresh command without any pre-configured scope."
+commands.deny = ["usage_refresh"]

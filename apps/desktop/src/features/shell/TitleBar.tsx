@@ -20,6 +20,7 @@ import { flushLayouts, useLayout } from "../../stores/layout";
 import { useSidebar } from "../../stores/sidebar";
 import { NotificationsBell } from "../notifications/NotificationsPopover";
 import { UpdatePill } from "../updates/UpdatePill";
+import { UsageChip } from "./UsageChip";
 import { useWorkspaces } from "../../stores/workspaces";
 import { copyDiagnostics, switchMode } from "./actions";
 import { LogoMark } from "./LogoMark";
@@ -237,7 +238,7 @@ export function TitleBar() {
         className="hidden h-7 w-[360px] shrink items-center gap-2 rounded-sm border border-border bg-surface-2 px-2.5 text-sm text-fg-subtle hover:border-border-strong focus-visible:shadow-focus focus-visible:outline-none min-[1180px]:inline-flex"
       >
         <Search size={14} aria-hidden="true" />
-        <span className="flex-1 text-left">{t("titlebar.omnibox")}</span>
+        <span className="min-w-0 flex-1 truncate text-left">{t("titlebar.omnibox")}</span>
         <Kbd keys={["Mod", "K"]} />
       </button>
       <span className="min-[1180px]:hidden">
@@ -265,6 +266,7 @@ export function TitleBar() {
           </button>
         </Tooltip>
       )}
+      <UsageChip />
       <UpdatePill />
       <NotificationsBell />
       <IconButton

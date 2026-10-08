@@ -16,6 +16,8 @@ import { Palette } from "../palette/Palette";
 import { OrphansDialog } from "../restore/OrphansDialog";
 import { followEngines } from "../../stores/engines";
 import { followLimits } from "../../stores/limits";
+import { followContexts } from "../../stores/contexts";
+import { followUsage } from "../../stores/usage";
 import { followStatus } from "../../stores/status";
 import { followFocus } from "../../stores/focus";
 import { followDashboard } from "../../stores/dashboard";
@@ -48,6 +50,8 @@ export function AppShell() {
   useEffect(followPtyState, []);
   useEffect(followEngines, []);
   useEffect(followLimits, []);
+  useEffect(followContexts, []);
+  useEffect(followUsage, []);
   useEffect(followStatus, []);
   useEffect(followFocus, []);
   useEffect(followDashboard, []);

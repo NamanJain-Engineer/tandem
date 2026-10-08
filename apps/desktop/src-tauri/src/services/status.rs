@@ -16,6 +16,7 @@ use tandem_engines::status_server::{ReportSink, StatusServer};
 use tokio::sync::OnceCell;
 
 use crate::services::limits::LimitBoard;
+use crate::services::usage::ContextBoard;
 
 /// `status:changed` is sent at most this often.
 pub const COALESCE: Duration = Duration::from_millis(50);
@@ -68,6 +69,9 @@ impl Watched {
 /// Reads a pane's visible screen text.
 pub type ScreenSource = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 
+/// `(pane_id, transcript_path)` when a hooked agent's turn ends (F-AC-06).
+pub type TurnSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
+
 pub struct StatusService {
     pub store: Arc<StatusStore>,
     server: OnceCell<StatusServer>,
@@ -90,7 +94,10 @@ pub struct StatusService {
     clock: Arc<dyn Clock>,
     /// Usage limits showing on panes (F-AC-05).
     pub limits: Arc<LimitBoard>,
+    /// Context fill per pane (F-AC-06).
+    pub contexts: Arc<ContextBoard>,
     screen: std::sync::OnceLock<ScreenSource>,
+    on_turn: std::sync::OnceLock<TurnSink>,
 }
 
 /// `(pane_id, engine_session_id)`.
@@ -110,7 +117,9 @@ impl StatusService {
             external: Mutex::default(),
             on_session: std::sync::OnceLock::new(),
             limits: Arc::new(LimitBoard::new(bus.clone())),
+            contexts: Arc::new(ContextBoard::new(bus.clone())),
             screen: std::sync::OnceLock::new(),
+            on_turn: std::sync::OnceLock::new(),
             bus,
             clock,
         })
@@ -185,6 +194,7 @@ impl StatusService {
             w.remove(pane_id);
         }
         self.limits.clear(pane_id);
+        self.contexts.clear(pane_id);
         if let Ok(mut a) = self.activity.lock() {
             a.remove(pane_id);
         }
@@ -330,6 +340,12 @@ impl StatusService {
         }
     }
 
+    /// Told when a hooked agent's turn ends, with its transcript path (set
+    /// once, at startup).
+    pub fn set_turn_sink(&self, sink: TurnSink) {
+        let _ = self.on_turn.set(sink);
+    }
+
     /// Where the tick reads screens from (set once, at startup).
     pub fn set_screen_source(&self, source: ScreenSource) {
         let _ = self.screen.set(source);
@@ -394,6 +410,13 @@ impl StatusService {
             _ => {
                 if let Some(u) = report.update() {
                     self.apply(&pane, u);
+                }
+                if report.event == ReportEvent::Done {
+                    if let (Some(path), Some(sink)) =
+                        (&report.payload.transcript_path, self.on_turn.get())
+                    {
+                        sink(&pane, path);
+                    }
                 }
             }
         }
@@ -528,6 +551,36 @@ mod tests {
 
     fn status(s: &Arc<StatusService>, pane: &str) -> Option<AgentStatus> {
         s.store.get(&SessionKey::pane(pane)).map(|r| r.status)
+    }
+
+    #[test]
+    fn f_ac_06_a_finished_turn_hands_its_transcript_to_the_context_reader() {
+        let (s, clock) = service();
+        let seen: Arc<Mutex<Vec<(String, String)>>> = Arc::default();
+        let sink = seen.clone();
+        s.set_turn_sink(Arc::new(move |pane, path| {
+            if let Ok(mut v) = sink.lock() {
+                v.push((pane.to_string(), path.to_string()));
+            }
+        }));
+        s.watch("pn_1", &[], &[], None);
+        let report = |event, ts| StatusReport {
+            v: 1,
+            pane_id: "pn_1".into(),
+            event,
+            ts,
+            payload: ReportPayload {
+                transcript_path: Some("/home/p/s.jsonl".into()),
+                ..ReportPayload::default()
+            },
+        };
+        s.on_report(report(ReportEvent::Working, clock.now_ms()));
+        assert!(seen.lock().expect("seen").is_empty());
+        s.on_report(report(ReportEvent::Done, clock.now_ms() + 1));
+        assert_eq!(
+            *seen.lock().expect("seen"),
+            vec![("pn_1".into(), "/home/p/s.jsonl".into())]
+        );
     }
 
     #[test]

@@ -9,7 +9,7 @@ import {
 } from "react-resizable-panels";
 import type { IpcError, PaneRecord, WorkspaceSummary } from "@tandem/protocol";
 import { ArrowRightLeft, SquareTerminal, X } from "lucide-react";
-import { Badge, Button, EngineGlyph, IconButton, Spinner, StatusDot, Tooltip, cx, useToast, type MenuEntry, type Status } from "@tandem/ui";
+import { Badge, Button, ContextMeter, EngineGlyph, IconButton, Spinner, StatusDot, Tooltip, cx, useToast, type MenuEntry, type Status } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useEngines } from "../../stores/engines";
 import { paneKey, statusView, useStatus } from "../../stores/status";
@@ -38,6 +38,7 @@ import { WorktreeChip, worktreeMenu } from "./Worktrees";
 import { useHandoff } from "../../stores/handoff";
 import { AccountChip } from "./AccountChip";
 import { LimitBanner } from "./LimitCard";
+import { useContexts } from "../../stores/contexts";
 import { baseBranch, isWorktree } from "../../stores/worktrees";
 
 const BOX_THROTTLE_MS = 50;
@@ -248,6 +249,7 @@ const PaneView = memo(function PaneView({
   const base = useWorkspaces((st) => (wt ? baseBranch(st.list, wt) : ""));
   const meta = relativeCwd(cwd ?? pane.cwd, root);
   const note = useHandoff((st) => st.notes[pane.id]);
+  const context = useContexts((st) => st.byPane[pane.id]);
   const rename = async (name: string): Promise<string | null> => {
     try {
       const stored = await invoke<string>("pane_rename", { paneId: pane.id, humanName: name });
@@ -347,13 +349,23 @@ const PaneView = memo(function PaneView({
         renaming={renaming}
         onRenamingChange={setRenaming}
         badges={
-          lite && visible && options.gpu !== false ? (
-            <Tooltip label={t("pane.liteTooltip")}>
-              <span data-testid="lite-badge" tabIndex={0} className="rounded-xs focus-visible:shadow-focus focus-visible:outline-none">
-                <Badge>{t("pane.lite")}</Badge>
-              </span>
-            </Tooltip>
-          ) : undefined
+          <>
+            {context && (
+              <ContextMeter
+                label={t("pane.context")}
+                used={Number(context.used)}
+                window={Number(context.window)}
+                tooltip={t("pane.contextTooltip")}
+              />
+            )}
+            {lite && visible && options.gpu !== false && (
+              <Tooltip label={t("pane.liteTooltip")}>
+                <span data-testid="lite-badge" tabIndex={0} className="rounded-xs focus-visible:shadow-focus focus-visible:outline-none">
+                  <Badge>{t("pane.lite")}</Badge>
+                </span>
+              </Tooltip>
+            )}
+          </>
         }
         dragRef={setNodeRef}
         dragProps={{ ...attributes, ...listeners, tabIndex: -1, role: "toolbar" }}

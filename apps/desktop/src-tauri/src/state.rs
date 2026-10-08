@@ -121,6 +121,8 @@ pub struct AppState {
     pub orphans: OrphanScan,
     /// Engine-account sign-ins and sign-outs in flight (F-AC-02).
     pub logins: Arc<crate::services::accounts::LoginOps>,
+    /// The latest usage per engine account (F-AC-04).
+    pub usage: Arc<crate::services::usage::UsageBoard>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
     pub e2e: bool,
 }
@@ -253,6 +255,35 @@ impl AppState {
         let screen_pty: Arc<std::sync::OnceLock<PtyManager>> = Arc::new(std::sync::OnceLock::new());
         let screen_for_sink = screen_pty.clone();
         let screen_for_tick = screen_pty.clone();
+        // A turn ended: the context fill from the engine's own transcript,
+        // only when it's inside the pane's provider home (F-AC-06).
+        let (turn_store, turn_contexts) = (store.clone(), status.contexts.clone());
+        status.set_turn_sink(Arc::new(move |pane, transcript| {
+            let (store, contexts) = (turn_store.clone(), turn_contexts.clone());
+            let (pane, transcript) = (pane.to_string(), std::path::PathBuf::from(transcript));
+            tauri::async_runtime::spawn(async move {
+                let id = tandem_core::ids::PaneId::from_db(pane.clone());
+                let Ok(record) = tandem_store::repo::panes::get(&store, &id).await else {
+                    return;
+                };
+                let Some(account) = record.account_id else {
+                    return;
+                };
+                let Ok(account) = tandem_store::repo::accounts::get(&store, &account).await else {
+                    return;
+                };
+                let home = std::path::PathBuf::from(account.home_path);
+                let fill = tokio::task::spawn_blocking(move || {
+                    tandem_engines::transcript::context_fill(&transcript, &home)
+                })
+                .await
+                .ok()
+                .flatten();
+                if let Some(fill) = fill {
+                    contexts.set(&pane, fill);
+                }
+            });
+        }));
         status.set_screen_source(Arc::new(move |pane| {
             screen_for_tick.get().and_then(|p| p.screen_text(pane))
         }));
@@ -354,6 +385,7 @@ impl AppState {
             deeplinks: DeepLinkQueue::default(),
             orphans,
             logins: Arc::default(),
+            usage: Arc::default(),
             e2e,
         }
     }

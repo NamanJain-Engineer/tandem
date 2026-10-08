@@ -6,6 +6,8 @@ import { resetRestore } from "../stores/restore";
 import { resetUpdates } from "../stores/updates";
 import { resetOnboarding } from "../stores/onboarding";
 import { useEngines } from "../stores/engines";
+import { useContexts } from "../stores/contexts";
+import { useUsage } from "../stores/usage";
 import type { AppBoot, AuthState, EntitlementView, Limits, WorkspaceSummary } from "@tandem/protocol";
 import { setInvokeBackend } from "../ipc/invoke";
 import { useBoot } from "../features/shell/useBoot";
@@ -123,4 +125,6 @@ export function resetStores(): void {
     settingsPage: null,
   });
   useWorkspaces.setState({ list: [], activeId: null, activeTab: {} });
+  useUsage.setState({ byAccount: {} });
+  useContexts.setState({ byPane: {} });
 }

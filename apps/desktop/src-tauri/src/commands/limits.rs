@@ -44,6 +44,12 @@ pub fn limit_dismiss(state: State<'_, AppState>, pane_id: PaneId) {
     limits::dismiss(&state, &pane_id)
 }
 
+/// Context fill per agent pane (F-AC-06).
+#[tauri::command]
+pub fn contexts_list(state: State<'_, AppState>) -> Vec<crate::services::usage::PaneContextView> {
+    state.terminals.status.contexts.list()
+}
+
 /// "Continue on another account": a new pane split right with a summary.
 #[tauri::command]
 pub async fn limit_continue(

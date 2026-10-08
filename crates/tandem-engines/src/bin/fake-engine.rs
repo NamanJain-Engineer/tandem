@@ -19,6 +19,13 @@
 //! answered with a brief between its markers; anything else is answered,
 //! then Stop.
 //!
+//! As `codex`, `app-server` answers JSON-RPC lines: `initialize`, and
+//! `account/rateLimits/read` from `TANDEM_FAKE_USAGE` ("40,85": a 5-hour and
+//! a weekly window; empty or `none`: an error), F-AC-04.
+//!
+//! `/context <tokens>` (as `claude`) ends a turn whose transcript, under
+//! `$CLAUDE_CONFIG_DIR/projects/`, reports that many context tokens (F-AC-06).
+//!
 //! `/limit <delay>` prints a usage-limit message that resets after the delay
 //! ("5s", "2h"), as engines do (F-AC-05).
 //!
@@ -121,6 +128,51 @@ fn sign_in(name: &str) {
     out("Login successful\r\n");
 }
 
+fn usage_mode() -> String {
+    let Ok(v) = std::env::var("TANDEM_FAKE_USAGE") else {
+        return String::new();
+    };
+    std::fs::read_to_string(&v).unwrap_or(v).trim().to_string()
+}
+
+/// A stand-in `codex app-server`: one JSON-RPC message per line.
+fn app_server() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let stdin = std::io::stdin();
+    let mut line = String::new();
+    while stdin.read_line(&mut line).is_ok_and(|n| n > 0) {
+        let msg: serde_json::Value = serde_json::from_str(line.trim()).unwrap_or_default();
+        line.clear();
+        let Some(id) = msg.get("id").cloned() else {
+            continue;
+        };
+        let reply = match msg.get("method").and_then(serde_json::Value::as_str) {
+            Some("account/rateLimits/read") => {
+                let pcts: Vec<f64> = usage_mode()
+                    .split(',')
+                    .filter_map(|p| p.trim().parse().ok())
+                    .collect();
+                log(&format!("app-server: rateLimits {pcts:?}"));
+                match pcts.as_slice() {
+                    [primary, rest @ ..] => serde_json::json!({"id": id, "result": {"rateLimits": {
+                        "primary": {"usedPercent": primary, "windowMinutes": 300, "resetsAt": now + 7_200},
+                        "secondary": rest.first().map(|s| serde_json::json!({"usedPercent": s, "windowMinutes": 10_080, "resetsAt": now + 259_200})),
+                    }}}),
+                    [] => {
+                        serde_json::json!({"id": id, "error": {"code": -32000, "message": "no usage data"}})
+                    }
+                }
+            }
+            _ => serde_json::json!({"id": id, "result": {}}),
+        };
+        println!("{reply}");
+        let _ = std::io::stdout().flush();
+    }
+}
+
 /// `codex login` / `login status` / `logout`; true when handled.
 fn account_command(name: &str, args: &[String]) -> Option<i32> {
     if name != "codex" {
@@ -142,6 +194,10 @@ fn account_command(name: &str, args: &[String]) -> Option<i32> {
             let mut line = String::new();
             let _ = std::io::stdin().read_line(&mut line);
             sign_in(name);
+            Some(0)
+        }
+        ["app-server"] => {
+            app_server();
             Some(0)
         }
         ["logout"] => {
@@ -380,6 +436,38 @@ fn answer(name: &str, text: &str) -> bool {
         out(&format!("  --- end of brief {nonce} ---\r\n"));
         if claude {
             hook("Stop", serde_json::json!({ "stop_hook_active": false }));
+        }
+        return true;
+    }
+    if let Some(tokens) = t.strip_prefix("/context ") {
+        let tokens: u64 = tokens.trim().parse().unwrap_or(0);
+        let Some(home) = std::env::var_os("CLAUDE_CONFIG_DIR") else {
+            return true;
+        };
+        let dir = PathBuf::from(home).join("projects").join("fake");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join(format!("{}.jsonl", session_id()));
+        let line = serde_json::json!({
+            "type": "assistant",
+            "message": {
+                "model": "claude-sonnet-4-5",
+                "content": [{"type": "text", "text": "SECRET ANSWER TEXT"}],
+                "usage": {"input_tokens": tokens.saturating_sub(2_000), "cache_read_input_tokens": 2_000, "cache_creation_input_tokens": 0, "output_tokens": 40}
+            }
+        });
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            let _ = writeln!(f, "{line}");
+        }
+        out(&format!("context: {tokens} tokens\r\n"));
+        if claude {
+            hook(
+                "Stop",
+                serde_json::json!({ "stop_hook_active": false, "transcript_path": path.to_string_lossy() }),
+            );
         }
         return true;
     }

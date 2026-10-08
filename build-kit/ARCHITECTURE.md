@@ -612,8 +612,9 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `limit_resume_at_reset` / `limit_cancel_resume` | `{paneId}` | `LimitView` (`resumeAt` set / cleared; "continue" is typed at `resetsAt` via the Clock if the app is open) | NotFound (no limit), Invalid (no reset time) | F-AC-05 |
 | `limit_resume_now` / `limit_dismiss` | `{paneId}` | — (types "continue" now / "Stop here"; both clear the limit) | NotFound | F-AC-05 |
 | `limit_continue` | `{paneId, engineId, accountId?}` | `HandoffResult` (a new pane split right with the brief fallback: the last 200 redacted lines under the brief headings; only ever from the user's click) | NotFound, EngineMissing, LimitReached | F-AC-05 |
-| `usage_get` | `{accountId?}` | `[UsageView {accountId, windows:[UsageWindow {kind, usedPct, resetsAt?}], source, estimated}]` | — | F-AC-04 |
-| `usage_refresh` | `{accountId?}` | — | — | F-AC-04 |
+| `usage_get` | `{accountId?}` | `[UsageView {accountId, engineId, windows:[UsageWindow {kind, usedPct, resetsAt?}], source: "codex_app_server"\|"unavailable", estimated, reason?, fetchedAt}]` (the latest reading; probes when there's none) | — | F-AC-04 |
+| `usage_refresh` | `{accountId?}` | `[UsageView]` (probes again; the webview calls it every 5 min and after a turn) | — | F-AC-04 |
+| `contexts_list` | — | `[PaneContext {paneId, used, window}]` (context fill per agent pane, from the engine's transcript when a turn ends) | — | F-AC-06 |
 | `usage_dashboard` | `{weeks: 12}` → op | `UsageDashboard {days:[DayTotal], perEngine, perAccount, topWorkspaces, skippedLines}` | — | F-AC-07 |
 | `usage_share_card` | `{showWorkspaces}` | `String` (PNG path in `$DATA/tmp`) | — | F-AC-07 |
 
@@ -867,7 +868,8 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `engines:detected` | `{hostId, report: DetectionReport}` | Detector | F-EN-01 |
 | `accounts:changed` | `{accounts:[Account]}` | accounts service | F-AC-02 |
 | `accounts:login-finished` | `{opId, accountId, state: "signed_in"\|"signed_out"\|"failed"\|"cancelled", message?}` (`message`: the engine's last line, redacted) | accounts service | F-AC-02 |
-| `usage:changed` | `UsageView` | UsageProbe | F-AC-04, F-AC-06 |
+| `usage:changed` | `UsageView` | UsageProbe | F-AC-04 |
+| `context:changed` | `PaneContext {paneId, used, window}` | status service (Stop hook → transcript tail) | F-AC-06 |
 | `limit:hit` | `LimitView {paneId, accountId?, message, resetsAt?, resumeAt?}` (terminals: a new screen line matching the engine's `limit_patterns`; threads add `kind` in M7) | status service (pattern matcher) | F-AC-05 |
 | `limit:changed` | `{paneId, limit: LimitView \| null}` (scheduled, cancelled, resumed, moved or dismissed) | limits service | F-AC-05 |
 | `threads:changed` | `{threads:[ThreadSummary]}` | threads service | F-TH-01 |

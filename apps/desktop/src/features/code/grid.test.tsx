@@ -4,6 +4,7 @@ import type { PaneRecord, Tab, TabLayout, WorkspaceSummary } from "@tandem/proto
 import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { setInvokeBackend } from "../../ipc/invoke";
+import { followContexts } from "../../stores/contexts";
 import { followFocus } from "../../stores/focus";
 import { flushLayouts, useLayout } from "../../stores/layout";
 import { useRestore } from "../../stores/restore";
@@ -666,6 +667,23 @@ describe("restore (F-SH-07)", () => {
     return backend;
   }
   const card = () => screen.getByTestId("paused-card");
+
+  it("F-AC-06.1 an agent pane's header shows its context fill: 150k of 200k is 75% and neutral, 170k amber", async () => {
+    core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" }, paused: { pn_a: null } });
+    const stop = followContexts();
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    expect(screen.queryByRole("meter", { name: "Context" })).toBeNull();
+    act(() => emitLocal("context:changed", { paneId: "pn_a", used: 150_000, window: 200_000 }));
+    const meter = await screen.findByRole("meter", { name: "Context" });
+    expect(meter.getAttribute("aria-valuenow")).toBe("75");
+    expect(meter.textContent).toBe("150K / 200K");
+    expect(meter.dataset.tone).toBe("muted");
+    expect(meter.title).toBe("Context used by this session. Near the limit, the engine may compact or stop.");
+    act(() => emitLocal("context:changed", { paneId: "pn_a", used: 170_000, window: 200_000 }));
+    await waitFor(() => expect(screen.getByRole("meter", { name: "Context" }).dataset.tone).toBe("warning"));
+    stop();
+  });
 
   it("F-SH-07.1 a restored agent pane shows its paused card over the saved output, never a terminal", async () => {
     const { calls } = await restored({ pn_a: null });

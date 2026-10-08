@@ -5,7 +5,7 @@ import { UiProvider } from "@tandem/ui";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useAccounts } from "../../stores/accounts";
 import { useEngines } from "../../stores/engines";
-import { until, useLimits } from "../../stores/limits";
+import { resetClock, until, useLimits } from "../../stores/limits";
 import { useLayout } from "../../stores/layout";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { LimitBanner } from "./LimitCard";
@@ -77,6 +77,15 @@ describe("limit card (F-AC-05, UI-36)", () => {
   it("F-AC-05 the countdown is hours and minutes, never negative", () => {
     expect(until(1_000 + 108 * 60_000, 1_000)).toEqual({ h: 1, m: 48 });
     expect(until(0, 60_000)).toEqual({ h: 0, m: 0 });
+  });
+
+  it("F-AC-05 F-AC-04 a reset today shows the time; a later one names the day", () => {
+    const now = new Date(2026, 9, 8, 10, 0).getTime();
+    const at = (d: number, h: number) => new Date(2026, 9, d, h, 0).getTime();
+    expect(resetClock(at(8, 16), now)).not.toMatch(/[A-Za-z]{3} /);
+    expect(resetClock(at(8, 16), now)).toMatch(/4:00/);
+    expect(resetClock(at(11, 9), now)).toMatch(/^Sun 9:00/);
+    expect(resetClock(at(20, 9), now)).toMatch(/^Oct 20, 9:00/);
   });
 
   it("F-AC-05.2 the banner names the account and reset; Resume at reset schedules it, and it can be cancelled", async () => {

@@ -169,6 +169,10 @@ pub struct EngineSpec {
     /// it are left out.
     #[serde(default)]
     pub headless_cmd: Option<Vec<String>>,
+    /// Where the engine reports its usage windows (F-AC-04):
+    /// `codex_app_server`; none = "Usage unavailable".
+    #[serde(default)]
+    pub usage_probe: Option<String>,
     /// OSC titles: the first capture group is the work title.
     #[serde(default)]
     pub title_patterns: Vec<String>,
@@ -250,6 +254,11 @@ impl EngineSpec {
         {
             if cmd.trim().is_empty() || cmd.chars().any(char::is_control) || cmd.contains("sudo ") {
                 return fail("install commands are one line, without sudo");
+            }
+        }
+        if let Some(probe) = &self.usage_probe {
+            if probe != "codex_app_server" {
+                return fail("usage_probe is codex_app_server");
             }
         }
         if let Some(f) = &self.signed_in_file {

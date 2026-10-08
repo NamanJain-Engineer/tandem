@@ -12,6 +12,8 @@ pub mod hook;
 pub mod launch;
 pub mod registry;
 pub mod status_server;
+pub mod transcript;
+pub mod usage;
 
 pub use detect::{detect, DetectEnv, DetectionReport, FoundEngine, FoundSource};
 pub use registry::{EngineRegistry, EngineSpec};

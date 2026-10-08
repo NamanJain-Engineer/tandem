@@ -189,7 +189,7 @@ pub async fn begin_session(
 }
 
 /// The env a sign-in runs with: what a pane gets plus the account's home.
-async fn login_env(
+pub(crate) async fn login_env(
     terminals: &TerminalService,
     engine: &EngineSpec,
     program: &std::path::Path,

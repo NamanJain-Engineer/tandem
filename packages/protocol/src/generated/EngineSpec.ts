@@ -62,6 +62,11 @@ cheapModel: string | null,
  */
 headlessCmd: Array<string> | null, 
 /**
+ * Where the engine reports its usage windows (F-AC-04):
+ * `codex_app_server`; none = "Usage unavailable".
+ */
+usageProbe: string | null, 
+/**
  * OSC titles: the first capture group is the work title.
  */
 titlePatterns: Array<string>, 

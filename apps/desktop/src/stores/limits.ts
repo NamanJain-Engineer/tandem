@@ -61,9 +61,17 @@ export async function continueElsewhere(
   return out;
 }
 
-/** "4:12 PM" for a reset time. */
-export function resetClock(at: number): string {
-  return new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+/** "4:12 PM" for a reset time today, "Mon 9:00 AM" within a week, else
+ * "Oct 14, 9:00 AM". */
+export function resetClock(at: number, now = Date.now()): string {
+  const when = new Date(at);
+  const time = when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (when.toDateString() === new Date(now).toDateString()) return time;
+  const day =
+    at - now < 6 * 86_400_000
+      ? when.toLocaleDateString([], { weekday: "short" })
+      : when.toLocaleDateString([], { month: "short", day: "numeric" });
+  return at - now < 6 * 86_400_000 ? `${day} ${time}` : `${day}, ${time}`;
 }
 
 /** Hours and minutes until `at` (never negative). */
