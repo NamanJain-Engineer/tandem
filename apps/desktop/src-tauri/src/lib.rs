@@ -145,6 +145,17 @@ macro_rules! app_commands {
             commands::threads::thread_send,
             commands::threads::thread_stop,
             commands::threads::thread_retry,
+            commands::threads::thread_update,
+            commands::threads::thread_archive,
+            commands::threads::thread_delete,
+            commands::threads::thread_switch_engine,
+            commands::threads::thread_move_to_folder,
+            commands::threads::thread_save_draft,
+            commands::threads::thread_attach_paths,
+            commands::threads::thread_attach_clipboard_image,
+            commands::threads::attachment_remove,
+            commands::threads::thread_mention_search,
+            commands::threads::models_list,
             commands::engines::engines_report,
             $($extra),*
         ]
@@ -490,6 +501,19 @@ pub fn run() {
                 state.terminals.engines.apply_config(&config);
                 let login = state.terminals.login_env().await;
                 state.terminals.engines.detect(&login).await;
+            });
+            // Remote config (model catalog, registry overrides) has a 10-min
+            // TTL: a model added remotely shows up without an update (F-TH-08 AC1).
+            let config_state = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut tick = tokio::time::interval(services::config::CONFIG_TTL);
+                tick.tick().await;
+                loop {
+                    tick.tick().await;
+                    let state = config_state.state::<AppState>();
+                    let config = state.config.refresh().await;
+                    state.terminals.engines.apply_config(&config);
+                }
             });
             // Worktree sweep: at startup, then every 6 h (F-CD-15). It never
             // deletes anything; finished worktrees become one notification.

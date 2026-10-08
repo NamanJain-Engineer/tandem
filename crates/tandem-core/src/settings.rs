@@ -124,6 +124,7 @@ setting_keys! {
     ConductorFloatingRing,
     TelemetryUsage,
     TelemetryCrash,
+    AiThreadTitles,
     AutoConsent,
     AutoDontAsk,
     SendKey,
@@ -136,6 +137,7 @@ setting_keys! {
     OnboardingStep,
     OfflineStartedAt,
     RailWidth,
+    ThreadDefaults,
 }
 
 /// How a value is checked before it is stored.
@@ -708,6 +710,15 @@ pub static SCHEMA: &[SettingSpec] = &[
         Privacy,
         ["crash reports"]
     ),
+    // D-118: thread titles from the hosted AI send the first message off the
+    // machine, so they're opt-in; the local title is used otherwise.
+    spec!(
+        AiThreadTitles,
+        json!(false),
+        V::Bool,
+        Privacy,
+        ["titles", "ai", "thread names"]
+    ),
     spec!(
         AutoConsent,
         json!(false),
@@ -776,6 +787,9 @@ pub static SCHEMA: &[SettingSpec] = &[
     // The Code rail's width (F-SH-03: 180–360 px, default 248). The Agent and
     // Thread rails get their own keys with their lists.
     spec!(RailWidth, json!(248), V::IntRange(180, 360), Hidden, []),
+    // Thread mode's remembered defaults (F-TH-07 AC4): `last_engine`, and
+    // per engine `<engine>.model`, `<engine>.effort`, `<engine>.access`.
+    spec!(ThreadDefaults, json!({}), V::Map, Hidden, []),
 ];
 
 pub fn spec(key: SettingKey) -> &'static SettingSpec {
@@ -926,6 +940,7 @@ mod tests {
         for key in [
             SettingKey::TelemetryUsage,
             SettingKey::TelemetryCrash,
+            SettingKey::AiThreadTitles,
             SettingKey::AutoConsent,
             SettingKey::DictateShareHints,
         ] {

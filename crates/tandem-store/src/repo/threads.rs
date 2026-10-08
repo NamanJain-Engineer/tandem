@@ -363,6 +363,208 @@ pub async fn set_allow_rules(
         .await
 }
 
+/// `thread_update`'s fields (F-TH-01, F-TH-09); `None` leaves a field as is.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ThreadPatch {
+    /// A user rename: never overwritten by auto-titles (F-TH-15 AC2).
+    pub title: Option<String>,
+    pub access: Option<Access>,
+    pub mode: Option<ThreadMode>,
+    /// `Some(None)` goes back to the engine's default.
+    pub model: Option<Option<String>>,
+    pub effort: Option<Option<String>>,
+    pub pinned: Option<bool>,
+}
+
+pub async fn update(
+    store: &Store,
+    id: &ThreadId,
+    patch: ThreadPatch,
+) -> Result<Option<ThreadRecord>, StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .write(move |t| {
+            t.execute(
+                "UPDATE threads SET
+                   title = COALESCE(?2, title),
+                   title_source = CASE WHEN ?2 IS NULL THEN title_source ELSE 'user' END,
+                   access = COALESCE(?3, access),
+                   mode = COALESCE(?4, mode),
+                   model = CASE WHEN ?5 THEN ?6 ELSE model END,
+                   effort = CASE WHEN ?7 THEN ?8 ELSE effort END,
+                   pinned = COALESCE(?9, pinned)
+                 WHERE id = ?1 AND deleted_at IS NULL",
+                params![
+                    id,
+                    patch.title,
+                    patch.access.map(Access::as_str),
+                    patch.mode.map(ThreadMode::as_str),
+                    patch.model.is_some(),
+                    patch.model.flatten(),
+                    patch.effort.is_some(),
+                    patch.effort.flatten(),
+                    patch.pinned,
+                ],
+            )?;
+            Ok(t.query_row(
+                &format!("SELECT {COLUMNS} FROM threads WHERE id = ?1 AND deleted_at IS NULL"),
+                [id],
+                from_row,
+            )
+            .optional()?)
+        })
+        .await
+}
+
+/// Where a thread's title came from (`none`, `auto`, `fallback`, `user`, …).
+pub async fn title_source(store: &Store, id: &ThreadId) -> Result<String, StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .read(move |c| {
+            Ok(c.query_row(
+                "SELECT title_source FROM threads WHERE id = ?1",
+                [id],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?
+            .unwrap_or_else(|| "none".to_string()))
+        })
+        .await
+}
+
+/// Sets an automatic title (`source` is `auto` or `fallback`) unless the
+/// user named the thread, or an auto title is already there. Returns
+/// whether it was set.
+pub async fn set_auto_title(
+    store: &Store,
+    id: &ThreadId,
+    title: String,
+    source: &'static str,
+) -> Result<bool, StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .write(move |t| {
+            // A fallback never replaces an AI title; an AI title may replace
+            // the fallback that came first.
+            let replaceable = if source == "auto" {
+                "('none', 'fallback')"
+            } else {
+                "('none')"
+            };
+            let n = t.execute(
+                &format!(
+                    "UPDATE threads SET title = ?2, title_source = ?3
+                     WHERE id = ?1 AND title_source IN {replaceable}"
+                ),
+                params![id, title, source],
+            )?;
+            Ok(n > 0)
+        })
+        .await
+}
+
+pub async fn set_archived(store: &Store, id: &ThreadId, archived: bool) -> Result<(), StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .write(move |t| {
+            t.execute(
+                "UPDATE threads SET archived = ?2, pinned = CASE WHEN ?2 THEN 0 ELSE pinned END WHERE id = ?1",
+                params![id, archived],
+            )?;
+            Ok(())
+        })
+        .await
+}
+
+pub async fn set_unread(store: &Store, id: &ThreadId, unread: bool) -> Result<(), StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .write(move |t| {
+            t.execute(
+                "UPDATE threads SET unread = ?2 WHERE id = ?1",
+                params![id, unread],
+            )?;
+            Ok(())
+        })
+        .await
+}
+
+/// A new engine or account for the next turn: the engine's session and the
+/// thread's allow rules don't carry over (F-TH-11, F-TH-16).
+pub async fn set_engine(
+    store: &Store,
+    id: &ThreadId,
+    engine_id: &str,
+    account_id: Option<&AccountId>,
+) -> Result<(), StoreError> {
+    let (id, engine, account) = (
+        id.as_str().to_string(),
+        engine_id.to_string(),
+        account_id.map(|a| a.as_str().to_string()),
+    );
+    store
+        .write(move |t| {
+            t.execute(
+                "UPDATE threads SET engine_id = ?2, account_id = ?3, engine_session_id = NULL,
+                   allow_rules_json = '[]', model = NULL, effort = NULL
+                 WHERE id = ?1",
+                params![id, engine, account],
+            )?;
+            Ok(())
+        })
+        .await
+}
+
+/// Moves a thread into a folder (F-TH-02): its cwd changes, so the engine
+/// session starts over.
+pub async fn set_folder(
+    store: &Store,
+    id: &ThreadId,
+    workspace_id: &WorkspaceId,
+    cwd: &str,
+) -> Result<(), StoreError> {
+    let (id, ws, cwd) = (
+        id.as_str().to_string(),
+        workspace_id.as_str().to_string(),
+        cwd.to_string(),
+    );
+    store
+        .write(move |t| {
+            t.execute(
+                "UPDATE threads SET workspace_id = ?2, cwd = ?3, engine_session_id = NULL WHERE id = ?1",
+                params![id, ws, cwd],
+            )?;
+            Ok(())
+        })
+        .await
+}
+
+/// Deletes a thread with its turns, events and attachment rows.
+pub async fn delete(store: &Store, id: &ThreadId) -> Result<(), StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .write(move |t| {
+            t.execute("DELETE FROM threads WHERE id = ?1", [id])?;
+            Ok(())
+        })
+        .await
+}
+
+/// Every stored event of a thread, oldest first (exports and recovery copies).
+pub async fn all_messages(store: &Store, thread: &ThreadId) -> Result<Vec<MessageRow>, StoreError> {
+    let thread = thread.as_str().to_string();
+    store
+        .read(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT id, thread_id, turn_id, seq, type, payload_json, created_at
+                 FROM thread_messages WHERE thread_id = ?1 ORDER BY id",
+            )?;
+            let rows = stmt.query_map([thread], message_from_row)?;
+            Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        })
+        .await
+}
+
 /// A new running turn, numbered after the last.
 pub async fn start_turn(
     store: &Store,
@@ -569,6 +771,120 @@ mod tests {
             .await
             .expect("chats")
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn f_th_01_update_pin_archive_and_delete() {
+        let (_dir, store) = store();
+        let a = insert(&store, new("claude")).await.expect("a");
+        let patched = update(
+            &store,
+            &a.id,
+            ThreadPatch {
+                pinned: Some(true),
+                access: Some(Access::Edits),
+                model: Some(Some("sonnet".into())),
+                ..ThreadPatch::default()
+            },
+        )
+        .await
+        .expect("update")
+        .expect("found");
+        assert!(patched.pinned);
+        assert_eq!(patched.access, Access::Edits);
+        assert_eq!(patched.model.as_deref(), Some("sonnet"));
+        assert_eq!(patched.mode, ThreadMode::Act);
+        // Some(None) clears back to the engine's default.
+        let cleared = update(
+            &store,
+            &a.id,
+            ThreadPatch {
+                model: Some(None),
+                ..ThreadPatch::default()
+            },
+        )
+        .await
+        .expect("update")
+        .expect("found");
+        assert_eq!(cleared.model, None);
+        assert!(cleared.pinned);
+        // Archiving hides it from the rail and unpins it; restoring keeps it.
+        set_archived(&store, &a.id, true).await.expect("archive");
+        assert!(list(&store, ThreadKind::Thread, false)
+            .await
+            .expect("rail")
+            .is_empty());
+        let all = list(&store, ThreadKind::Thread, true).await.expect("all");
+        assert!(all[0].archived && !all[0].pinned);
+        set_archived(&store, &a.id, false).await.expect("restore");
+        assert_eq!(
+            list(&store, ThreadKind::Thread, false)
+                .await
+                .expect("rail")
+                .len(),
+            1
+        );
+        delete(&store, &a.id).await.expect("delete");
+        assert!(get(&store, &a.id).await.expect("get").is_none());
+        assert!(update(&store, &a.id, ThreadPatch::default())
+            .await
+            .expect("update")
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn f_th_15_2_a_user_rename_is_never_overwritten_by_auto_titles() {
+        let (_dir, store) = store();
+        let a = insert(&store, new("claude")).await.expect("a");
+        assert!(
+            set_auto_title(&store, &a.id, "Fix the login bug".into(), "fallback")
+                .await
+                .expect("fallback")
+        );
+        // The AI title replaces the fallback; a second fallback doesn't.
+        assert!(
+            set_auto_title(&store, &a.id, "Login redirect fix".into(), "auto")
+                .await
+                .expect("auto")
+        );
+        assert!(!set_auto_title(&store, &a.id, "other".into(), "fallback")
+            .await
+            .expect("fallback again"));
+        update(
+            &store,
+            &a.id,
+            ThreadPatch {
+                title: Some("Mine".into()),
+                ..ThreadPatch::default()
+            },
+        )
+        .await
+        .expect("rename");
+        assert_eq!(title_source(&store, &a.id).await.expect("source"), "user");
+        assert!(!set_auto_title(&store, &a.id, "Later".into(), "auto")
+            .await
+            .expect("auto"));
+        let a = get(&store, &a.id).await.expect("get").expect("a");
+        assert_eq!(a.title, "Mine");
+    }
+
+    #[tokio::test]
+    async fn f_th_11_a_new_engine_clears_the_session_and_allow_rules() {
+        let (_dir, store) = store();
+        let a = insert(&store, new("claude")).await.expect("a");
+        set_engine_session(&store, &a.id, Some("s1"))
+            .await
+            .expect("session");
+        set_allow_rules(&store, &a.id, r#"[{"kind":"tool","name":"Edit"}]"#.into())
+            .await
+            .expect("rules");
+        set_engine(&store, &a.id, "codex", None)
+            .await
+            .expect("engine");
+        let a = get(&store, &a.id).await.expect("get").expect("a");
+        assert_eq!(a.engine_id, "codex");
+        assert_eq!(a.engine_session_id, None);
+        assert_eq!(allow_rules(&store, &a.id).await.expect("rules"), "[]");
     }
 
     #[tokio::test]

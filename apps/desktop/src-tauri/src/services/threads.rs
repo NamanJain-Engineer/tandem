@@ -32,12 +32,17 @@ use tandem_engines::events::{
     TurnEndReason,
 };
 use tandem_gateway::{ApprovalAnswer, ApprovalAsker, Caller, ToolApproval};
+use tandem_store::repo::attachments::{self as attachments_repo, Attachment, AttachmentKind};
+use tandem_store::repo::threads::ThreadPatch;
 use tandem_store::repo::threads::{
     self as repo, MessageRow, NewThread, ThreadKind, ThreadRecord, ThreadState, TurnRecord,
     TurnState,
 };
 use tandem_store::Store;
 use tokio::sync::{broadcast, mpsc, Mutex};
+
+use crate::services::thread_files::{self, PathEntry};
+use crate::services::thread_titles::{self, LocalOnly, Titler};
 use ts_rs::TS;
 
 /// How often an open text block is saved as a partial row.
@@ -46,6 +51,10 @@ const FLUSH_EVERY: Duration = Duration::from_secs(2);
 const ACKED_END: Duration = Duration::from_secs(3);
 /// Live envelopes buffered per subscriber before it must resync.
 const LIVE_BUFFER: usize = 4096;
+/// A working turn with no output this long gets a note (F-TH-15).
+const SILENT_AFTER_MS: i64 = 10 * 60 * 1000;
+/// Deleted threads' recovery copies are kept this long (F-TH-01).
+pub const TRASH_KEEP_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
 /// `thread_send` / `thread_retry`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -70,6 +79,8 @@ pub struct ThreadDetail {
     pub queued: Option<String>,
     /// The composer draft (`Draft` JSON).
     pub draft: String,
+    /// The draft's attachments (not sent yet).
+    pub attachments: Vec<Attachment>,
 }
 
 /// `thread_events`: oldest first; `next_before_id` pages further back.
@@ -98,6 +109,12 @@ pub trait ChatLauncher: Send + Sync {
         &self,
         thread: &ThreadRecord,
     ) -> Result<(Arc<dyn ChatAdapter>, ChatStart), IpcError>;
+
+    /// The model to start with: the saved one while it's still offered, else
+    /// the engine's default and the note saying so (F-TH-08 AC2).
+    fn model_for(&self, thread: &ThreadRecord) -> (Option<String>, Option<String>) {
+        (thread.model.clone(), None)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,6 +153,11 @@ struct Running {
     open: Option<Block>,
     stopping: bool,
     blocked: u32,
+    /// The first turn's message, which names the thread when it ends.
+    title_from: Option<String>,
+    /// When the engine last said anything (`clock.now_ms()`).
+    last_output: i64,
+    silence_noted: bool,
 }
 
 impl Running {
@@ -161,6 +183,11 @@ struct Runtime {
     /// The engine process went away on its own; the next session says
     /// "Reconnecting…" and resumes the engine's session (F-TH-05 AC2).
     lost: bool,
+    /// Access, mode or model changed: the next turn starts a fresh session
+    /// (resuming the engine's conversation) with the new settings.
+    stale: bool,
+    /// Shown in the next turn, after its message ("Switched to Codex").
+    pending_note: Option<String>,
 }
 
 pub struct ThreadService {
@@ -171,6 +198,10 @@ pub struct ThreadService {
     launcher: Arc<dyn ChatLauncher>,
     runtimes: StdMutex<HashMap<String, Arc<Mutex<Runtime>>>>,
     live: broadcast::Sender<ThreadEventEnvelope>,
+    /// Names threads (F-TH-15); local titles only until the app sets one.
+    titler: std::sync::OnceLock<Arc<dyn Titler>>,
+    /// `$DATA`: attachments and deleted threads' recovery copies.
+    data: std::sync::OnceLock<tandem_core::DataDir>,
 }
 
 fn store_err(e: tandem_store::StoreError) -> IpcError {
@@ -214,6 +245,48 @@ fn describe(ask: &ToolApproval, cwd: &std::path::Path) -> (ApprovalKind, String)
         ),
         t if t.starts_with("mcp__") => (ApprovalKind::Mcp, format!("Use `{what}`")),
         _ => (ApprovalKind::Other, format!("Use `{what}`")),
+    }
+}
+
+/// Owner-only access to a directory (recovery copies).
+fn restrict_dir(dir: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+    }
+    #[cfg(not(unix))]
+    let _ = dir;
+}
+
+/// A turn's message with its attachments: images inline, files and folders
+/// as paths (relative to the cwd when they're inside it).
+fn turn_input(
+    turn: &TurnId,
+    text: String,
+    carried: &[Attachment],
+    cwd: &std::path::Path,
+) -> TurnInput {
+    let mut images = Vec::new();
+    let mut files = Vec::new();
+    for a in carried {
+        let path = std::path::PathBuf::from(&a.path);
+        match a.kind {
+            AttachmentKind::Image => images.push(path),
+            AttachmentKind::File | AttachmentKind::Folder | AttachmentKind::ToolOutput => {
+                let shown = path
+                    .strip_prefix(cwd)
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_else(|_| a.path.clone());
+                files.push(shown);
+            }
+        }
+    }
+    TurnInput {
+        turn_id: turn.clone(),
+        text,
+        images,
+        files,
     }
 }
 
@@ -272,7 +345,21 @@ impl ThreadService {
             launcher,
             runtimes: StdMutex::default(),
             live,
+            titler: std::sync::OnceLock::new(),
+            data: std::sync::OnceLock::new(),
         })
+    }
+
+    /// The app's titler and data folder (tests may leave them unset).
+    pub fn configure(&self, titler: Arc<dyn Titler>, data: tandem_core::DataDir) {
+        let _ = self.titler.set(titler);
+        let _ = self.data.set(data);
+    }
+
+    fn data_dir(&self) -> Result<&tandem_core::DataDir, IpcError> {
+        self.data
+            .get()
+            .ok_or_else(|| IpcError::new(ErrorCode::Unavailable, "Attachments aren't available"))
     }
 
     fn runtime(&self, id: &ThreadId) -> Arc<Mutex<Runtime>> {
@@ -328,6 +415,18 @@ impl ThreadService {
         let thread = self.thread(id).await?;
         let turns = repo::turns(&self.store, id).await.map_err(store_err)?;
         let draft = repo::draft(&self.store, id).await.map_err(store_err)?;
+        let attachments = attachments_repo::unsent(&self.store, id)
+            .await
+            .map_err(store_err)?;
+        // Opening a thread reads it (F-TH-01 AC2).
+        let mut thread = thread;
+        if thread.unread {
+            if let Err(e) = repo::set_unread(&self.store, id, false).await {
+                tracing::warn!(code = "threads.unread_failed", error = %e, "couldn't mark a thread read");
+            }
+            thread.unread = false;
+            self.publish_threads().await;
+        }
         let rt = self.runtime(id);
         let rt = rt.lock().await;
         Ok(ThreadDetail {
@@ -336,7 +435,317 @@ impl ThreadService {
             running: rt.turn.as_ref().map(|r| r.id.clone()),
             queued: rt.queued.as_ref().map(|q| q.text.clone()),
             draft,
+            attachments,
         })
+    }
+
+    /// Asks for an AI title in the background; the local one stays if
+    /// there's none (F-TH-15, D-118).
+    fn ai_title(self: &Arc<Self>, thread: &ThreadId, first: String) {
+        let titler: Arc<dyn Titler> = match self.titler.get() {
+            Some(t) => t.clone(),
+            None => Arc::new(LocalOnly),
+        };
+        let svc = self.clone();
+        let thread = thread.clone();
+        tauri::async_runtime::spawn(async move {
+            let Some(title) = titler.title(&first).await else {
+                return;
+            };
+            match repo::set_auto_title(&svc.store, &thread, title, "auto").await {
+                Ok(true) => svc.publish_threads().await,
+                Ok(false) => {}
+                Err(e) => {
+                    tracing::warn!(code = "threads.title_failed", error = %e, "couldn't name a thread")
+                }
+            }
+        });
+    }
+
+    /// `thread_update` (F-TH-01, F-TH-09). New access, mode or model take
+    /// effect on the next turn, in a fresh session.
+    pub async fn update(
+        &self,
+        id: &ThreadId,
+        patch: ThreadPatch,
+    ) -> Result<ThreadRecord, IpcError> {
+        if patch.title.as_deref().is_some_and(|t| t.trim().is_empty()) {
+            return Err(IpcError::new(ErrorCode::Invalid, "A thread needs a name"));
+        }
+        let patch = ThreadPatch {
+            title: patch
+                .title
+                .map(|t| t.trim().chars().take(thread_titles::MAX_TITLE).collect()),
+            ..patch
+        };
+        let before = self.thread(id).await?;
+        let restart = patch.access.is_some_and(|a| a != before.access)
+            || patch.mode.is_some_and(|m| m != before.mode)
+            || patch.model.as_ref().is_some_and(|m| *m != before.model)
+            || patch.effort.as_ref().is_some_and(|e| *e != before.effort);
+        let thread = repo::update(&self.store, id, patch)
+            .await
+            .map_err(store_err)?
+            .ok_or_else(not_found)?;
+        if restart {
+            self.runtime(id).lock().await.stale = true;
+        }
+        self.publish_threads().await;
+        Ok(thread)
+    }
+
+    /// Ends the engine session between turns; the next turn starts anew.
+    async fn retire_session(&self, id: &ThreadId) -> Result<(), IpcError> {
+        let rt = self.runtime(id);
+        let mut guard = rt.lock().await;
+        if guard.turn.is_some() {
+            return Err(IpcError::new(
+                ErrorCode::Conflict,
+                "Wait for this turn to finish, or stop it",
+            ));
+        }
+        guard.stale = false;
+        guard.lost = false;
+        if let Some(old) = guard.session.take() {
+            guard.generation += 1;
+            tauri::async_runtime::spawn(async move {
+                let _ = old.shutdown().await;
+            });
+        }
+        Ok(())
+    }
+
+    /// `thread_switch_engine` (F-TH-16, between turns): the new engine starts
+    /// a fresh session; this thread's allow rules don't carry over.
+    pub async fn switch_engine(
+        &self,
+        id: &ThreadId,
+        engine_id: &str,
+        account_id: Option<&tandem_core::ids::AccountId>,
+        note: String,
+    ) -> Result<ThreadRecord, IpcError> {
+        let thread = self.thread(id).await?;
+        if thread.engine_id == engine_id && thread.account_id.as_ref() == account_id {
+            return Ok(thread);
+        }
+        self.retire_session(id).await?;
+        repo::set_engine(&self.store, id, engine_id, account_id)
+            .await
+            .map_err(store_err)?;
+        let has_turns = !repo::turns(&self.store, id)
+            .await
+            .map_err(store_err)?
+            .is_empty();
+        if has_turns {
+            self.runtime(id).lock().await.pending_note = Some(note);
+        }
+        let thread = self.thread(id).await?;
+        self.publish_threads().await;
+        Ok(thread)
+    }
+
+    /// `thread_move_to_folder` (F-TH-02): the thread now works in `cwd`;
+    /// its draft and attachments stay.
+    pub async fn move_to_folder(
+        &self,
+        id: &ThreadId,
+        workspace_id: &tandem_core::ids::WorkspaceId,
+        cwd: &str,
+    ) -> Result<ThreadRecord, IpcError> {
+        self.thread(id).await?;
+        self.retire_session(id).await?;
+        repo::set_folder(&self.store, id, workspace_id, cwd)
+            .await
+            .map_err(store_err)?;
+        let thread = self.thread(id).await?;
+        self.publish_threads().await;
+        Ok(thread)
+    }
+
+    /// `thread_archive`: an archived thread leaves the rail; a running turn
+    /// stops first.
+    pub async fn archive(self: &Arc<Self>, id: &ThreadId, archived: bool) -> Result<(), IpcError> {
+        self.thread(id).await?;
+        if archived {
+            self.stop(id).await?;
+        }
+        repo::set_archived(&self.store, id, archived)
+            .await
+            .map_err(store_err)?;
+        self.publish_threads().await;
+        Ok(())
+    }
+
+    /// `thread_delete` (archived threads only): a recovery copy of the thread
+    /// and its attachments is kept for 7 days, readable only by the user.
+    pub async fn delete(self: &Arc<Self>, id: &ThreadId) -> Result<(), IpcError> {
+        let thread = self.thread(id).await?;
+        if !thread.archived {
+            return Err(IpcError::new(
+                ErrorCode::Invalid,
+                "Archive the thread before deleting it",
+            ));
+        }
+        let data = self.data_dir()?.clone();
+        let turns = repo::turns(&self.store, id).await.map_err(store_err)?;
+        let messages = repo::all_messages(&self.store, id)
+            .await
+            .map_err(store_err)?;
+        let copy = serde_json::json!({
+            "thread": thread,
+            "turns": turns,
+            "events": messages.iter().filter_map(envelope).collect::<Vec<_>>(),
+        });
+        let dir =
+            data.trash()
+                .join("threads")
+                .join(format!("{}-{}", id.as_str(), self.clock.now_ms()));
+        let io = |e: std::io::Error| {
+            IpcError::new(ErrorCode::Io, format!("Couldn't keep a recovery copy: {e}"))
+        };
+        std::fs::create_dir_all(&dir).map_err(io)?;
+        restrict_dir(&dir);
+        tandem_core::atomic::atomic_write(
+            &dir.join("thread.json"),
+            copy.to_string().as_bytes(),
+            Some(0o600),
+        )
+        .map_err(io)?;
+        let own = data.attachments().join(id.as_str());
+        if own.is_dir() {
+            std::fs::rename(&own, dir.join("attachments")).map_err(io)?;
+        }
+        // The engine session ends with the thread.
+        let rt = self.runtime(id);
+        if let Some(session) = rt.lock().await.session.take() {
+            let _ = session.shutdown().await;
+        }
+        if let Ok(mut map) = self.runtimes.lock() {
+            map.remove(id.as_str());
+        }
+        repo::delete(&self.store, id).await.map_err(store_err)?;
+        tracing::info!(
+            code = "threads.deleted",
+            "thread deleted; recovery copy kept for 7 days"
+        );
+        self.publish_threads().await;
+        Ok(())
+    }
+
+    /// Removes deleted threads' recovery copies older than 7 days.
+    pub fn sweep_trash(&self) -> usize {
+        let Some(data) = self.data.get() else {
+            return 0;
+        };
+        let Ok(entries) = std::fs::read_dir(data.trash().join("threads")) else {
+            return 0;
+        };
+        let now = self.clock.now_ms();
+        let mut removed = 0;
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let deleted_at = name.rsplit('-').next().and_then(|t| t.parse::<i64>().ok());
+            if deleted_at.is_some_and(|t| now - t > TRASH_KEEP_MS)
+                && std::fs::remove_dir_all(entry.path()).is_ok()
+            {
+                removed += 1;
+            }
+        }
+        removed
+    }
+
+    /// `thread_save_draft` (F-TH-07): `Draft {text, attachmentIds, queued?}`.
+    pub async fn save_draft(
+        &self,
+        id: &ThreadId,
+        draft: serde_json::Value,
+    ) -> Result<(), IpcError> {
+        if !draft.is_object() || draft.get("text").is_some_and(|t| !t.is_string()) {
+            return Err(IpcError::new(
+                ErrorCode::Invalid,
+                "A draft is {text, attachmentIds}",
+            ));
+        }
+        repo::set_draft(&self.store, id, draft.to_string())
+            .await
+            .map_err(store_err)
+    }
+
+    /// `thread_attach_paths`: dropped or picked files and folders.
+    pub async fn attach_paths(
+        &self,
+        id: &ThreadId,
+        paths: Vec<String>,
+    ) -> Result<Vec<Attachment>, IpcError> {
+        self.thread(id).await?;
+        let pending = attachments_repo::unsent(&self.store, id)
+            .await
+            .map_err(store_err)?
+            .len();
+        if pending + paths.len() > thread_files::MAX_ATTACHMENTS {
+            return Err(IpcError::new(
+                ErrorCode::LimitReached,
+                "A message can carry up to 20 attachments",
+            ));
+        }
+        let mut out = Vec::new();
+        for p in paths {
+            let a = thread_files::for_path(id, std::path::Path::new(&p))?;
+            out.push(
+                attachments_repo::insert(&self.store, a)
+                    .await
+                    .map_err(store_err)?,
+            );
+        }
+        Ok(out)
+    }
+
+    /// `thread_attach_clipboard_image`: the pixels, saved as a PNG chip.
+    pub async fn attach_png(
+        &self,
+        id: &ThreadId,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    ) -> Result<Attachment, IpcError> {
+        self.thread(id).await?;
+        let dir = self.data_dir()?.attachments().join(id.as_str());
+        let thread = id.clone();
+        let a = tokio::task::spawn_blocking(move || {
+            thread_files::save_png(&dir, &thread, width, height, &rgba)
+        })
+        .await
+        .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))??;
+        attachments_repo::insert(&self.store, a)
+            .await
+            .map_err(store_err)
+    }
+
+    /// `attachment_remove`: drops a chip, and the copy if Vibezeo made it.
+    pub async fn remove_attachment(&self, attachment: &AttachmentId) -> Result<(), IpcError> {
+        let removed = attachments_repo::remove(&self.store, attachment)
+            .await
+            .map_err(store_err)?;
+        if let (Some(a), Ok(data)) = (removed, self.data_dir()) {
+            let path = std::path::PathBuf::from(&a.path);
+            if path.starts_with(data.attachments()) {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+        Ok(())
+    }
+
+    /// `thread_mention_search` (F-TH-07 AC6): paths in the thread's folder.
+    pub async fn mention_search(
+        &self,
+        id: &ThreadId,
+        query: String,
+    ) -> Result<Vec<PathEntry>, IpcError> {
+        let thread = self.thread(id).await?;
+        let root = std::path::PathBuf::from(thread.cwd);
+        tokio::task::spawn_blocking(move || thread_files::mention_search(&root, &query))
+            .await
+            .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))
     }
 
     /// A page of stored events, oldest first.
@@ -419,10 +828,11 @@ impl ThreadService {
     }
 
     /// Stores and streams one event of the running turn.
-    async fn emit(&self, thread: &ThreadId, run: &mut Running, event: ThreadEvent) {
+    async fn emit(&self, thread: &ThreadId, run: &mut Running, event: ThreadEvent) -> Option<i64> {
         let seq = run.take_seq();
-        self.store_event(thread, &run.id, seq, &event, None).await;
+        let row = self.store_event(thread, &run.id, seq, &event, None).await;
         self.broadcast(self.envelope(thread, &run.id, seq, event));
+        row
     }
 
     /// Inserts an event (or rewrites `row`); returns the row id.
@@ -468,13 +878,25 @@ impl ThreadService {
         self.broadcast(self.envelope(thread, &run.id, block.seq, event));
     }
 
-    /// Saves the open block as a partial row (every 2 s while streaming).
+    /// Saves the open block as a partial row (every 2 s while streaming),
+    /// and notes a turn that has said nothing for 10 minutes (F-TH-15).
     async fn flush(&self, thread: &ThreadId) {
         let rt = self.runtime(thread);
         let mut rt = rt.lock().await;
         let Some(run) = rt.turn.as_mut() else {
             return;
         };
+        if !run.silence_noted && self.clock.now_ms() - run.last_output >= SILENT_AFTER_MS {
+            run.silence_noted = true;
+            self.emit(
+                thread,
+                run,
+                ThreadEvent::Note {
+                    text: "No output for 10 minutes".into(),
+                },
+            )
+            .await;
+        }
         let turn = run.id.clone();
         let Some(block) = run.open.as_mut().filter(|b| b.dirty) else {
             return;
@@ -489,7 +911,7 @@ impl ThreadService {
     /// Ends the running turn; returns the queued follow-up to send, if the
     /// turn wasn't stopped.
     async fn end_turn(
-        &self,
+        self: &Arc<Self>,
         thread: &ThreadId,
         rt: &mut Runtime,
         reason: TurnEndReason,
@@ -519,6 +941,13 @@ impl ThreadService {
             tracing::warn!(code = "threads.turn_end_failed", error = %e, "couldn't end a turn");
         }
         tracing::info!(code = "threads.turn_ended", reason = ?reason, "turn ended");
+        // Unread until the thread is opened again (F-TH-01 AC2).
+        if let Err(e) = repo::set_unread(&self.store, thread, true).await {
+            tracing::warn!(code = "threads.unread_failed", error = %e, "couldn't mark a thread unread");
+        }
+        if let (TurnEndReason::Completed, Some(first)) = (reason, run.title_from.take()) {
+            self.ai_title(thread, first);
+        }
         self.set_state(thread, thread_state(reason)).await;
         let queued = rt.queued.take();
         if reason == TurnEndReason::Cancelled {
@@ -558,6 +987,11 @@ impl ThreadService {
         queue_if_busy: bool,
     ) -> Result<SendResult, IpcError> {
         let thread = self.thread(id).await?;
+        // What the message carries, checked before anything starts (F-TH-07).
+        let carried = attachments_repo::get_many(&self.store, id, &attachments)
+            .await
+            .map_err(store_err)?;
+        thread_files::check_limits(&carried)?;
         let rt = self.runtime(id);
         let mut guard = rt.lock().await;
         if guard.turn.is_some() {
@@ -580,8 +1014,19 @@ impl ThreadService {
             });
         }
 
+        if guard.stale {
+            // New access, mode or model: a fresh session picks them up.
+            guard.stale = false;
+            if let Some(old) = guard.session.take() {
+                guard.generation += 1;
+                tauri::async_runtime::spawn(async move {
+                    let _ = old.shutdown().await;
+                });
+            }
+        }
+
         let turn_id = TurnId::new();
-        repo::start_turn(
+        let record = repo::start_turn(
             &self.store,
             id,
             &turn_id,
@@ -590,22 +1035,49 @@ impl ThreadService {
         )
         .await
         .map_err(store_err)?;
+        // The first message names the thread at once; an AI title may
+        // follow when the turn ends (F-TH-15).
+        let mut title_from = None;
+        if record.n == 1
+            && repo::title_source(&self.store, id)
+                .await
+                .is_ok_and(|s| s == "none")
+        {
+            let local = thread_titles::fallback(&text);
+            if let Err(e) = repo::set_auto_title(&self.store, id, local, "fallback").await {
+                tracing::warn!(code = "threads.title_failed", error = %e, "couldn't name a thread");
+            }
+            title_from = Some(text.clone());
+        }
         let mut run = Running {
             id: turn_id.clone(),
             next_seq: 0,
             open: None,
             stopping: false,
             blocked: 0,
+            title_from,
+            last_output: self.clock.now_ms(),
+            silence_noted: false,
         };
-        self.emit(
-            id,
-            &mut run,
-            ThreadEvent::User {
-                text: text.clone(),
-                attachments: attachments.clone(),
-            },
-        )
-        .await;
+        let row = self
+            .emit(
+                id,
+                &mut run,
+                ThreadEvent::User {
+                    text: text.clone(),
+                    attachments: attachments.clone(),
+                },
+            )
+            .await;
+        if let Some(text) = guard.pending_note.take() {
+            self.emit(id, &mut run, ThreadEvent::Note { text }).await;
+        }
+        if let (Some(row), false) = (row, carried.is_empty()) {
+            let ids: Vec<AttachmentId> = carried.iter().map(|a| a.id.clone()).collect();
+            if let Err(e) = attachments_repo::mark_sent(&self.store, &ids, row).await {
+                tracing::warn!(code = "threads.attachments_failed", error = %e, "couldn't tie attachments to their message");
+            }
+        }
         guard.turn = Some(run);
         self.set_state(id, ThreadState::Working).await;
 
@@ -651,12 +1123,7 @@ impl ThreadService {
         drop(guard);
 
         // Outside the lock: a slow stdin never holds up the event stream.
-        let input = TurnInput {
-            turn_id: turn_id.clone(),
-            text,
-            images: Vec::new(),
-            files: Vec::new(),
-        };
+        let input = turn_input(&turn_id, text, &carried, std::path::Path::new(&thread.cwd));
         if let Err(e) = session.send_turn(input).await {
             let mut guard = rt.lock().await;
             if guard.turn.as_ref().map(|r| &r.id) == Some(&turn_id) {
@@ -685,6 +1152,11 @@ impl ThreadService {
         let (adapter, mut start) = self.launcher.prepare(thread).await?;
         if start.resume_session.is_none() {
             start.resume_session = thread.engine_session_id.clone();
+        }
+        let (model, notice) = self.launcher.model_for(thread);
+        start.model = model;
+        if let (Some(text), Some(run)) = (notice, rt.turn.as_mut()) {
+            self.emit(&thread.id, run, ThreadEvent::Note { text }).await;
         }
         let (tx, rx) = mpsc::channel(256);
         let session: Arc<dyn ChatSession> =
@@ -869,6 +1341,8 @@ impl ThreadService {
                 let Some(run) = guard.turn.as_mut().filter(|r| r.id == turn_id) else {
                     return;
                 };
+                run.last_output = self.clock.now_ms();
+                run.silence_noted = false;
                 if let Some((kind, text)) = delta_parts(&event) {
                     if text.is_empty() {
                         return;
@@ -1163,6 +1637,8 @@ fn origin_of(thread: &ThreadRecord) -> tandem_core::access::Origin {
 /// with the gateway (started on first use) as its only MCP server.
 pub struct AppLauncher {
     terminals: Arc<crate::services::terminal::TerminalService>,
+    config: Arc<crate::services::config::ConfigService>,
+    models: Arc<crate::services::models::RuntimeModels>,
     adapters: HashMap<String, Arc<dyn ChatAdapter>>,
     /// `$DATA/mcp`: one 0600 config per thread session.
     mcp_dir: std::path::PathBuf,
@@ -1175,11 +1651,15 @@ pub struct AppLauncher {
 impl AppLauncher {
     pub fn new(
         terminals: Arc<crate::services::terminal::TerminalService>,
+        config: Arc<crate::services::config::ConfigService>,
+        models: Arc<crate::services::models::RuntimeModels>,
         adapters: Vec<Arc<dyn ChatAdapter>>,
         mcp_dir: std::path::PathBuf,
     ) -> Self {
         Self {
             terminals,
+            config,
+            models,
             adapters: adapters
                 .into_iter()
                 .map(|a| (a.engine_id().to_string(), a))
@@ -1288,6 +1768,12 @@ impl AppLauncher {
 
 #[async_trait]
 impl ChatLauncher for AppLauncher {
+    fn model_for(&self, thread: &ThreadRecord) -> (Option<String>, Option<String>) {
+        let catalog =
+            crate::services::models::catalog_for(&thread.engine_id, &self.models, &self.config);
+        crate::services::models::resolve(thread.model.as_deref(), &catalog)
+    }
+
     async fn prepare(
         &self,
         thread: &ThreadRecord,
@@ -1400,6 +1886,8 @@ mod tests {
         resumed: StdMutex<Vec<Option<String>>>,
         /// Every in-band approval answer.
         answers: Arc<StdMutex<Vec<(ApprovalId, ApprovalDecision)>>>,
+        /// Every turn's input, in order.
+        inputs: Arc<StdMutex<Vec<TurnInput>>>,
     }
 
     struct ScriptedSession {
@@ -1407,6 +1895,7 @@ mod tests {
         on_stop: OnStop,
         events: mpsc::Sender<AdapterEvent>,
         answers: Arc<StdMutex<Vec<(ApprovalId, ApprovalDecision)>>>,
+        inputs: Arc<StdMutex<Vec<TurnInput>>>,
     }
 
     #[async_trait]
@@ -1428,6 +1917,7 @@ mod tests {
                 on_stop: self.on_stop,
                 events,
                 answers: self.answers.clone(),
+                inputs: self.inputs.clone(),
             }))
         }
     }
@@ -1439,6 +1929,9 @@ mod tests {
         }
         async fn send_turn(&self, turn: TurnInput) -> Result<TurnId, AdapterError> {
             (self.script)(turn.turn_id.clone(), self.events.clone());
+            if let Ok(mut i) = self.inputs.lock() {
+                i.push(turn.clone());
+            }
             Ok(turn.turn_id)
         }
         async fn interrupt(&self, turn: &TurnId) -> Result<InterruptOutcome, AdapterError> {
@@ -1535,6 +2028,7 @@ mod tests {
             starts: AtomicUsize::new(0),
             resumed: StdMutex::default(),
             answers: Arc::default(),
+            inputs: Arc::default(),
         });
         let svc = ThreadService::new(
             store.clone(),
@@ -2467,6 +2961,7 @@ mod tests {
             starts: AtomicUsize::new(0),
             resumed: StdMutex::default(),
             answers: Arc::default(),
+            inputs: Arc::default(),
         });
         let svc = ThreadService::new(
             store,
@@ -2690,5 +3185,352 @@ mod tests {
                 if message == "Claude Code isn't installed"
         ));
         assert_eq!(events[2], end(TurnEndReason::Error));
+    }
+
+    fn reply(text: &'static str) -> Script {
+        Arc::new(move |turn, tx| {
+            play(
+                tx,
+                vec![
+                    ev(&turn, delta(text)),
+                    ev(&turn, end(TurnEndReason::Completed)),
+                ],
+            )
+        })
+    }
+
+    struct FixedTitler(&'static str);
+
+    #[async_trait]
+    impl Titler for FixedTitler {
+        async fn title(&self, _: &str) -> Option<String> {
+            Some(self.0.to_string())
+        }
+    }
+
+    async fn now(f: &Fixture) -> ThreadRecord {
+        repo::get(&f.store, &f.thread.id)
+            .await
+            .expect("get")
+            .expect("thread")
+    }
+
+    fn data(f: &Fixture) -> DataDir {
+        DataDir::at(f._dir.path().join("data")).expect("data")
+    }
+
+    async fn send(f: &Fixture, text: &str, attachments: Vec<AttachmentId>) {
+        f.svc
+            .send(&f.thread.id, text.into(), attachments, false)
+            .await
+            .expect("send");
+    }
+
+    #[tokio::test]
+    async fn f_th_15_the_first_message_names_the_thread_then_the_ai_title_and_a_rename_sticks() {
+        let f = fixture(OnStop::Ack, reply("Hi")).await;
+        f.svc
+            .configure(Arc::new(FixedTitler("Login redirect fix")), data(&f));
+        send(
+            &f,
+            "fix the login bug where the redirect loops forever",
+            vec![],
+        )
+        .await;
+        assert_eq!(
+            now(&f).await.title,
+            "Fix the login bug where the redirect loops"
+        );
+        ended(&f, 1).await;
+        for _ in 0..300 {
+            if now(&f).await.title == "Login redirect fix" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(now(&f).await.title, "Login redirect fix");
+        f.svc
+            .update(
+                &f.thread.id,
+                ThreadPatch {
+                    title: Some("  Mine ".into()),
+                    ..ThreadPatch::default()
+                },
+            )
+            .await
+            .expect("rename");
+        send(&f, "and the tests", vec![]).await;
+        ended(&f, 2).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(now(&f).await.title, "Mine");
+        let blank = f
+            .svc
+            .update(
+                &f.thread.id,
+                ThreadPatch {
+                    title: Some("  ".into()),
+                    ..ThreadPatch::default()
+                },
+            )
+            .await;
+        assert_eq!(blank.map_err(|e| e.code), Err(ErrorCode::Invalid));
+    }
+
+    #[tokio::test]
+    async fn d_118_without_the_opt_in_the_local_title_stays() {
+        let f = fixture(OnStop::Ack, reply("Hi")).await;
+        send(&f, "explain this repo", vec![]).await;
+        ended(&f, 1).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(now(&f).await.title, "Explain this repo");
+    }
+
+    #[tokio::test]
+    async fn f_th_01_2_a_finished_turn_is_unread_until_the_thread_is_opened() {
+        let f = fixture(OnStop::Ack, reply("Hi")).await;
+        send(&f, "hello", vec![]).await;
+        ended(&f, 1).await;
+        assert!(now(&f).await.unread);
+        let detail = f.svc.get(&f.thread.id).await.expect("get");
+        assert!(!detail.thread.unread);
+        assert!(!now(&f).await.unread);
+    }
+
+    #[tokio::test]
+    async fn f_th_07_attachments_go_with_the_message_and_leave_the_draft() {
+        let f = fixture(OnStop::Ack, reply("Seen")).await;
+        f.svc.configure(Arc::new(LocalOnly), data(&f));
+        let file = f._dir.path().join("notes.txt");
+        std::fs::write(&file, "x").expect("write");
+        let files = f
+            .svc
+            .attach_paths(&f.thread.id, vec![file.display().to_string()])
+            .await
+            .expect("attach");
+        let png = f
+            .svc
+            .attach_png(&f.thread.id, 1, 1, vec![0, 0, 0, 255])
+            .await
+            .expect("png");
+        assert!(std::path::Path::new(&png.path).starts_with(data(&f).attachments()));
+        let detail = f.svc.get(&f.thread.id).await.expect("get");
+        assert_eq!(detail.attachments.len(), 2);
+        let ids = vec![files[0].id.clone(), png.id.clone()];
+        send(&f, "look", ids.clone()).await;
+        ended(&f, 1).await;
+        let input = f.adapter.inputs.lock().expect("inputs")[0].clone();
+        assert_eq!(input.files, vec!["notes.txt".to_string()]);
+        assert_eq!(input.images, vec![std::path::PathBuf::from(&png.path)]);
+        assert!(f
+            .svc
+            .get(&f.thread.id)
+            .await
+            .expect("get")
+            .attachments
+            .is_empty());
+        // 20 per message.
+        let many = vec![file.display().to_string(); 21];
+        assert_eq!(
+            f.svc
+                .attach_paths(&f.thread.id, many)
+                .await
+                .map(|_| ())
+                .map_err(|e| e.code),
+            Err(ErrorCode::LimitReached)
+        );
+        // Removing a pasted image deletes Vibezeo's copy.
+        let again = f
+            .svc
+            .attach_png(&f.thread.id, 1, 1, vec![0, 0, 0, 255])
+            .await
+            .expect("png");
+        f.svc.remove_attachment(&again.id).await.expect("remove");
+        assert!(!std::path::Path::new(&again.path).exists());
+        assert!(std::path::Path::new(&png.path).exists());
+    }
+
+    #[tokio::test]
+    async fn f_th_09_new_access_starts_a_fresh_session_on_the_next_turn() {
+        let f = fixture(OnStop::Ack, reply("ok")).await;
+        send(&f, "one", vec![]).await;
+        ended(&f, 1).await;
+        let starts = || f.adapter.starts.load(Ordering::SeqCst);
+        assert_eq!(starts(), 1);
+        let same = ThreadPatch {
+            access: Some(Access::Edits),
+            pinned: Some(true),
+            ..ThreadPatch::default()
+        };
+        f.svc.update(&f.thread.id, same).await.expect("update");
+        send(&f, "two", vec![]).await;
+        ended(&f, 2).await;
+        assert_eq!(starts(), 1, "nothing that matters changed");
+        let read = ThreadPatch {
+            access: Some(Access::Read),
+            ..ThreadPatch::default()
+        };
+        f.svc.update(&f.thread.id, read).await.expect("update");
+        send(&f, "three", vec![]).await;
+        ended(&f, 3).await;
+        assert_eq!(starts(), 2);
+    }
+
+    #[tokio::test]
+    async fn f_th_01_delete_needs_archive_and_keeps_a_private_recovery_copy() {
+        let f = fixture(OnStop::Ack, reply("ok")).await;
+        f.svc.configure(Arc::new(LocalOnly), data(&f));
+        send(&f, "hello", vec![]).await;
+        ended(&f, 1).await;
+        assert_eq!(
+            f.svc.delete(&f.thread.id).await.map_err(|e| e.code),
+            Err(ErrorCode::Invalid)
+        );
+        f.svc.archive(&f.thread.id, true).await.expect("archive");
+        assert!(f
+            .svc
+            .list(ThreadKind::Thread, false)
+            .await
+            .expect("rail")
+            .is_empty());
+        f.svc.delete(&f.thread.id).await.expect("delete");
+        assert!(f.svc.get(&f.thread.id).await.is_err());
+        let trash = data(&f).trash().join("threads");
+        let copy = std::fs::read_dir(&trash)
+            .expect("trash")
+            .flatten()
+            .next()
+            .expect("a copy")
+            .path();
+        let json = std::fs::read_to_string(copy.join("thread.json")).expect("thread.json");
+        assert!(json.contains("hello"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = |p: &std::path::Path| {
+                std::fs::metadata(p).expect("meta").permissions().mode() & 0o777
+            };
+            assert_eq!(mode(&copy.join("thread.json")), 0o600);
+            assert_eq!(mode(&copy), 0o700);
+        }
+        // Kept 7 days, then swept.
+        assert_eq!(f.svc.sweep_trash(), 0);
+        let old = trash.join(format!("{}-1000", f.thread.id.as_str()));
+        std::fs::rename(&copy, &old).expect("age it");
+        assert_eq!(f.svc.sweep_trash(), 1);
+        assert!(!old.exists());
+    }
+
+    struct GoneModel(Arc<ScriptedAdapter>);
+
+    #[async_trait]
+    impl ChatLauncher for GoneModel {
+        async fn prepare(
+            &self,
+            thread: &ThreadRecord,
+        ) -> Result<(Arc<dyn ChatAdapter>, ChatStart), IpcError> {
+            ScriptedLauncher(self.0.clone()).prepare(thread).await
+        }
+        fn model_for(&self, _: &ThreadRecord) -> (Option<String>, Option<String>) {
+            (
+                None,
+                Some("The saved model gone-1 isn't available — using Default".into()),
+            )
+        }
+    }
+
+    #[tokio::test]
+    async fn f_th_08_2_a_missing_saved_model_falls_back_with_the_notice() {
+        let f = fixture(OnStop::Ack, reply("ok")).await;
+        let svc = ThreadService::new(
+            f.store.clone(),
+            EventBus::new(),
+            Arc::new(SystemClock),
+            ApprovalBroker::new(Arc::new(SystemClock)),
+            Arc::new(GoneModel(f.adapter.clone())),
+        );
+        svc.send(&f.thread.id, "hi".into(), vec![], false)
+            .await
+            .expect("send");
+        ended(&f, 1).await;
+        let events = stored(&f).await;
+        assert!(events.contains(&ThreadEvent::Note {
+            text: "The saved model gone-1 isn't available — using Default".into()
+        }));
+    }
+
+    #[tokio::test]
+    async fn f_th_15_a_silent_turn_gets_a_note_after_10_minutes() {
+        let clock = tandem_core::clock::MockClock::new(
+            chrono::DateTime::parse_from_rfc3339("2026-10-08T10:00:00Z")
+                .expect("start")
+                .with_timezone(&chrono::Utc),
+        );
+        let f = fixture(OnStop::Ack, hang()).await;
+        let svc = ThreadService::new(
+            f.store.clone(),
+            EventBus::new(),
+            Arc::new(clock.clone()),
+            ApprovalBroker::new(Arc::new(SystemClock)),
+            Arc::new(ScriptedLauncher(f.adapter.clone())),
+        );
+        svc.send(&f.thread.id, "wait".into(), vec![], false)
+            .await
+            .expect("send");
+        clock.advance(Duration::from_secs(11 * 60));
+        let note = ThreadEvent::Note {
+            text: "No output for 10 minutes".into(),
+        };
+        for _ in 0..400 {
+            if stored(&f).await.contains(&note) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(stored(&f).await.iter().filter(|e| **e == note).count(), 1);
+        svc.stop(&f.thread.id).await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn f_th_16_switching_engines_between_turns_notes_it_and_clears_rules() {
+        let f = fixture(OnStop::Ack, reply("ok")).await;
+        send(&f, "one", vec![]).await;
+        ended(&f, 1).await;
+        repo::set_allow_rules(
+            &f.store,
+            &f.thread.id,
+            r#"[{"kind":"tool","name":"Edit"}]"#.into(),
+        )
+        .await
+        .expect("rules");
+        let thread = f
+            .svc
+            .switch_engine(&f.thread.id, "codex", None, "Switched to Codex".into())
+            .await
+            .expect("switch");
+        assert_eq!(thread.engine_id, "codex");
+        assert_eq!(
+            repo::allow_rules(&f.store, &f.thread.id)
+                .await
+                .expect("rules"),
+            "[]"
+        );
+        send(&f, "two", vec![]).await;
+        ended(&f, 2).await;
+        assert!(stored(&f).await.contains(&ThreadEvent::Note {
+            text: "Switched to Codex".into()
+        }));
+        assert_eq!(f.adapter.starts.load(Ordering::SeqCst), 2);
+        // Not mid-turn.
+        let busy = fixture(OnStop::Ack, hang()).await;
+        send(&busy, "go", vec![]).await;
+        assert_eq!(
+            busy.svc
+                .switch_engine(&busy.thread.id, "codex", None, String::new())
+                .await
+                .map(|_| ())
+                .map_err(|e| e.code),
+            Err(ErrorCode::Conflict)
+        );
+        busy.svc.stop(&busy.thread.id).await.expect("stop");
     }
 }

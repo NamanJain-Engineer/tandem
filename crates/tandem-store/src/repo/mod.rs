@@ -2,6 +2,7 @@
 
 pub mod accounts;
 pub mod approvals;
+pub mod attachments;
 pub mod layouts;
 pub mod notifications;
 pub mod panes;

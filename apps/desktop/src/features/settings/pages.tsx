@@ -412,6 +412,13 @@ export function settingsPages(platform: string): PageDef[] {
           control: (ids) => <BoolControl k="telemetry_crash" ids={ids} label={t("settings.crashReports")} />,
         },
         {
+          id: "ai_thread_titles",
+          label: t("settings.aiThreadTitles"),
+          description: t("settings.aiThreadTitles.desc"),
+          keywords: ["titles", "ai", "thread names"],
+          control: (ids) => <BoolControl k="ai_thread_titles" ids={ids} label={t("settings.aiThreadTitles")} />,
+        },
+        {
           id: "auto_consent",
           label: t("settings.autoConsent"),
           description: t("settings.autoConsent.desc"),

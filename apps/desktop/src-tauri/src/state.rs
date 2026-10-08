@@ -125,6 +125,8 @@ pub struct AppState {
     pub usage: Arc<crate::services::usage::UsageBoard>,
     /// Thread mode: turns, their events and the chat adapters (F-TH-03).
     pub threads: Arc<crate::services::threads::ThreadService>,
+    /// Models engines reported at runtime (F-TH-08).
+    pub models: Arc<crate::services::models::RuntimeModels>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
     pub e2e: bool,
 }
@@ -361,8 +363,11 @@ impl AppState {
             bus.clone(),
         );
         let telemetry = TelemetryService::new(&data, net.clone());
+        let models = Arc::new(crate::services::models::RuntimeModels::default());
         let launcher = Arc::new(crate::services::threads::AppLauncher::new(
             terminals.clone(),
+            config.clone(),
+            models.clone(),
             crate::services::threads::AppLauncher::adapters(&terminals),
             data.mcp_configs(),
         ));
@@ -374,6 +379,25 @@ impl AppState {
             launcher.clone(),
         );
         launcher.bind(&threads);
+        // Thread titles: AI only with the Privacy opt-in (D-118).
+        let titles_store = store.clone();
+        threads.configure(
+            Arc::new(crate::services::thread_titles::ApiTitler {
+                auth: auth.clone(),
+                api: api.clone(),
+                enabled: Arc::new(move || {
+                    tandem_store::repo::settings::get_blocking(
+                        &titles_store,
+                        tandem_core::settings::SettingKey::AiThreadTitles,
+                    )
+                    .ok()
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                }),
+            }),
+            data.clone(),
+        );
+        threads.sweep_trash();
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         Self {
             data,
@@ -402,6 +426,7 @@ impl AppState {
             logins: Arc::default(),
             usage: Arc::default(),
             threads,
+            models,
             e2e,
         }
     }

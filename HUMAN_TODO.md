@@ -32,6 +32,9 @@ Until these exist, release builds can't update (`updates_state` reads `unavailab
 - Engine marks: Tandem ships its own letter monograms (UI_SPEC §1.6). Before shipping any vendor logo, get each vendor's permission or trademark guidance.
 - Review the UI labels the consistency pass flagged as generic but coincident with the reference product (CONSISTENCY_REPORT "Remaining known open items" 2).
 
+## Product decisions waiting on the owner
+- **AI thread titles (D-118).** The spec auto-names threads with the hosted AI after the first reply, which sends the first message off the machine. It's built as an opt-in (Settings › Privacy › "Name threads with AI", off), with a local title from the first words otherwise. Decide whether it should stay opt-in, or become default-on with a one-time consent at first use.
+
 ## Engine protocols to check against real installs
 - Codex app-server (D-117): run `codex app-server generate-json-schema` (or read the vendor's protocol docs) for the installed Codex and compare the method and field names with `crates/tandem-engines/tests/fixtures/codex/*.jsonl` and `chat/codex/protocol.rs` (`initialize` → `userAgent`, `thread/start|resume`, `turn/start|interrupt`, `item/*`, `item/commandExecution|fileChange/requestApproval` → `accept|acceptForSession|decline`, `thread/tokenUsage/updated`, `turn/completed`), and that `-c mcp_servers.tandem.url=… -c mcp_servers.tandem.bearer_token_env_var=…` after `app-server` reaches the gateway. Fix the fixtures and goldens to what the real Codex sends. Verify: a Codex thread answers, asks for `npm test`, and the turn ends.
 - Claude Code (F-TH-04 AC2, manual): in a repo whose `.claude/settings.json` has `permissions.allow:["Bash(*)"]`, an Edits thread still asks before running `npm test`. Also check `control_request` interrupt is acknowledged by the installed version, and that the permission prompt tool waits for a long approval (30 min) without the CLI timing out.

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-thread-attach-paths"
+description = "Enables the thread_attach_paths command without any pre-configured scope."
+commands.allow = ["thread_attach_paths"]
+
+[[permission]]
+identifier = "deny-thread-attach-paths"
+description = "Denies the thread_attach_paths command without any pre-configured scope."
+commands.deny = ["thread_attach_paths"]

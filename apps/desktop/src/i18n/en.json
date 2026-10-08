@@ -669,6 +669,8 @@
   "settings.usageStats.desc": "Feature usage counts and performance timings. Turning it off deletes the local analytics ID.",
   "settings.crashReports": "Send crash reports",
   "settings.crashReports.desc": "Stack traces and app version. No prompts, file contents or terminal output.",
+  "settings.aiThreadTitles": "Name threads with AI",
+  "settings.aiThreadTitles.desc": "Sends a thread's first message to Vibezeo's AI service to suggest a short title. Off: the title is the message's first words.",
   "settings.autoConsent": "Allow Auto to send terminal output to Vibezeo's servers",
   "settings.autoConsent.desc": "Auto needs recent terminal output to decide the next prompt. Off means Auto is unavailable.",
   "settings.dictionaryHints": "Share dictionary hints with cloud transcription",

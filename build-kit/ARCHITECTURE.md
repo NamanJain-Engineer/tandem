@@ -637,19 +637,19 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 |---|---|---|---|---|
 | `thread_create` | `{kind:"thread"\|"teammate_chat", workspaceId?, teammateId?, engineId?, accountId?, model?, effort?, access?, mode?}` (omitted = remembered defaults) | `Thread` | EngineMissing, ForbiddenPlan (engine not in plan) | F-TH-01, F-TH-02, F-TH-07 |
 | `thread_list` | `{kind, teammateId?, includeArchived?}` | `[Thread]` (the rail's summary is the thread row) | — | F-TH-01, F-AG-03 |
-| `thread_get` | `{threadId}` | `ThreadDetail {thread, turns, running?, queued?, draft}` (+ `planRevisions`, `attachments`, `pendingApprovals` with M7 tasks 11, 8, 6) | NotFound | F-TH-01 |
+| `thread_get` | `{threadId}` | `ThreadDetail {thread, turns, running?, queued?, draft, attachments}` (`attachments`: the draft's unsent ones; + `planRevisions` with M7 task 11; pending approvals are the running turn's `approval_request` events without a resolution). Opening a thread clears its unread flag | NotFound | F-TH-01 |
 | `thread_events` | `{threadId, beforeId?, limit ≤ 500}` | `ThreadEventPage {items: [ThreadEventEnvelope] (oldest first), nextBeforeId?}` | — | F-TH-12 |
 | `thread_subscribe` | `{threadId, channel: Channel<ThreadEventEnvelope>}` | — (streams until the webview drops the channel) | NotFound | F-TH-03 |
 | `thread_send` | `{threadId, text, attachmentIds:[AttachmentId], queueIfBusy: bool}` | `SendResult {turnId?, queued: bool}` | Conflict (a queued message already exists), EngineMissing, LimitReached, Unauthenticated (engine sign-in) | F-TH-03, F-TH-07 |
 | `thread_stop` | `{threadId}` | `InterruptOutcome {acked: bool, killed: bool}` (≤3.5 s) | — | F-TH-03 |
 | `thread_retry` | `{threadId}` | `SendResult` | — | F-TH-03, F-TH-15 |
-| `thread_update` | `{threadId, title?, access?, mode?, model?, effort?, pinned?, sortKey?, pluginGrants?}` | `Thread` | ForbiddenPlan (Full forbidden by org policy) | F-TH-01, F-TH-09, F-PL-05 |
-| `thread_switch_engine` | `{threadId, engineId, accountId?}` | `Thread` (next turn seeds summary) | EngineMissing | F-TH-16, F-AC-05 |
-| `thread_archive` / `thread_delete` | `{threadId, archived}` / `{threadId}` (archived only) | — | Invalid | F-TH-01 |
+| `thread_update` | `{threadId, title?, access?, mode?, model?, effort?, pinned?, sortKey?, pluginGrants?}` (`model`/`effort` `"default"` = the engine's own; a title is a user rename, `title_source = user`; new access, mode, model or effort start a fresh session on the next turn) | `Thread` | ForbiddenPlan (Full forbidden by org policy), Invalid (empty title) | F-TH-01, F-TH-09, F-PL-05 |
+| `thread_switch_engine` | `{threadId, engineId, accountId?}` | `Thread` (next turn seeds summary; allow rules cleared) | EngineMissing, EngineUnsupported (no chat adapter), Conflict (a turn is running) | F-TH-16, F-AC-05 |
+| `thread_archive` / `thread_delete` | `{threadId, archived}` (archiving stops a running turn) / `{threadId}` (archived only; the recovery copy is `$DATA/trash/threads/<id>-<deletedAtMs>/` (0700) with `thread.json` (0600) and the attachments, removed after 7 days) | — | Invalid | F-TH-01 |
 | `thread_move_to_folder` | `{threadId, workspaceId}` | `Thread` | — | F-TH-02 |
 | `thread_save_draft` | `{threadId, draft: Draft {text, attachmentIds, queued?}}` | — | — | F-TH-07 |
 | `thread_attach_paths` | `{threadId, paths}` | `[Attachment]` | LimitReached (20 / 20 MB) | F-TH-07 |
-| `thread_attach_clipboard_image` | `{threadId}` | `Attachment` | NotFound | F-TH-07 |
+| `thread_attach_clipboard_image` | `{threadId}` (Rust reads the system clipboard; the PNG is saved 0600) | `Attachment {id, threadId, kind, path, name, mime?, bytes, sent, error?}` | NotFound (no image on the clipboard) | F-TH-07 |
 | `attachment_remove` | `{attachmentId}` | — | — | F-TH-07 |
 | `thread_mention_search` | `{threadId, query}` | `[PathEntry]` (≤50, gitignore-aware) | — | F-TH-07 |
 | `thread_implement_plan` | `{threadId, version, access}` | `SendResult` | NotFound | F-TH-10 |

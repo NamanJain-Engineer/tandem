@@ -13,6 +13,9 @@ use crate::services::api::ApiClient;
 
 pub const BUNDLED_CONFIG: &str = include_str!("../../resources/config.json");
 
+/// How long fetched config is used before it's fetched again (§14.10).
+pub const CONFIG_TTL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
 pub struct ConfigService {
     api: Arc<dyn ApiClient>,
     keys: PublicKeySet,

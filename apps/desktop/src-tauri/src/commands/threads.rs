@@ -2,17 +2,25 @@
 //! F-TH-02, F-TH-03).
 
 use serde::Deserialize;
+use serde_json::{Map, Value};
 use tandem_core::access::{Access, ThreadMode};
 use tandem_core::ids::{AccountId, AttachmentId, ThreadId, WorkspaceId};
+use tandem_core::settings::SettingKey;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_engines::chat::InterruptOutcome;
 use tandem_engines::events::ThreadEventEnvelope;
-use tandem_store::repo::threads::{NewThread, ThreadKind, ThreadRecord};
+use tandem_store::repo::attachments::Attachment;
+use tandem_store::repo::settings as settings_repo;
+use tandem_store::repo::threads::{NewThread, ThreadKind, ThreadPatch, ThreadRecord};
 use tandem_store::repo::workspaces;
 use tauri::ipc::Channel;
+use tauri::AppHandle;
 use tauri::State;
+use tauri_plugin_clipboard_manager::ClipboardExt;
 use tokio::sync::broadcast::error::RecvError;
 
+use crate::services::models::{self, ModelEntry};
+use crate::services::thread_files::PathEntry;
 use crate::services::threads::{SendResult, ThreadDetail, ThreadEventPage};
 use crate::state::AppState;
 
@@ -27,6 +35,50 @@ pub struct ThreadCreate {
     pub effort: Option<String>,
     pub access: Option<Access>,
     pub mode: Option<ThreadMode>,
+}
+
+/// Thread mode's remembered defaults (F-TH-07 AC4): `last_engine`, and per
+/// engine `<engine>.model`, `<engine>.effort` and `<engine>.access`.
+async fn remembered(state: &AppState) -> Map<String, Value> {
+    settings_repo::get(&state.store, SettingKey::ThreadDefaults)
+        .await
+        .ok()
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default()
+}
+
+fn text(map: &Map<String, Value>, key: &str) -> Option<String> {
+    map.get(key)
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// Remembers a thread's engine and its settings for the next new thread.
+async fn remember(state: &AppState, thread: &ThreadRecord) {
+    if thread.kind != ThreadKind::Thread {
+        return;
+    }
+    let mut map = remembered(state).await;
+    let e = &thread.engine_id;
+    map.insert("last_engine".into(), Value::String(e.clone()));
+    map.insert(
+        format!("{e}.model"),
+        Value::String(thread.model.clone().unwrap_or_default()),
+    );
+    map.insert(
+        format!("{e}.effort"),
+        Value::String(thread.effort.clone().unwrap_or_default()),
+    );
+    map.insert(
+        format!("{e}.access"),
+        Value::String(thread.access.as_str().to_string()),
+    );
+    if let Err(e) =
+        settings_repo::set(&state.store, SettingKey::ThreadDefaults, Value::Object(map)).await
+    {
+        tracing::warn!(code = "threads.defaults_failed", error = %e, "couldn't remember thread defaults");
+    }
 }
 
 /// The engine a thread starts with: Claude Code when it's installed, else
@@ -53,7 +105,16 @@ pub async fn thread_create(
     state: State<'_, AppState>,
     args: ThreadCreate,
 ) -> Result<ThreadRecord, IpcError> {
-    let engine_id = match args.engine_id {
+    let defaults = remembered(&state).await;
+    let last = text(&defaults, "last_engine").filter(|e| {
+        state.terminals.engines.installed(e).is_some()
+            && state
+                .terminals
+                .engines
+                .get(e)
+                .is_some_and(|spec| spec.chat_adapter.is_some())
+    });
+    let engine_id = match args.engine_id.or(last) {
         Some(id) => id,
         None => default_engine(&state).ok_or_else(|| {
             IpcError::new(
@@ -62,6 +123,15 @@ pub async fn thread_create(
             )
         })?,
     };
+    // This engine's last model, effort and access (F-TH-07 AC4).
+    let model = args
+        .model
+        .or_else(|| text(&defaults, &format!("{engine_id}.model")));
+    let effort = args
+        .effort
+        .or_else(|| text(&defaults, &format!("{engine_id}.effort")));
+    let remembered_access = text(&defaults, &format!("{engine_id}.access"))
+        .and_then(|a| serde_json::from_value::<Access>(Value::String(a)).ok());
     if state.terminals.engines.get(&engine_id).is_none() {
         return Err(IpcError::new(
             ErrorCode::EngineMissing,
@@ -74,7 +144,7 @@ pub async fn thread_create(
             let ws = workspaces::get(&state.store, ws)
                 .await
                 .map_err(|e| IpcError::new(ErrorCode::NotFound, e.to_string()))?;
-            (ws.root, Access::Edits)
+            (ws.root, remembered_access.unwrap_or(Access::Edits))
         }
         None => {
             let dir = state.data.scratch(id.as_str());
@@ -96,8 +166,8 @@ pub async fn thread_create(
             cwd,
             engine_id,
             account_id: args.account_id,
-            model: args.model,
-            effort: args.effort,
+            model,
+            effort,
             access: args.access.unwrap_or(default_access),
             mode: args.mode.unwrap_or(ThreadMode::Act),
             attended: true,
@@ -218,4 +288,177 @@ pub async fn thread_retry(
     thread_id: ThreadId,
 ) -> Result<SendResult, IpcError> {
     state.threads.retry(&thread_id).await
+}
+
+/// `"default"` (or empty) means the engine's own default.
+fn choice(v: Option<String>) -> Option<Option<String>> {
+    v.map(|s| Some(s).filter(|s| !s.is_empty() && s != models::DEFAULT_MODEL))
+}
+
+/// `thread_update` (F-TH-01, F-TH-09). Omitted fields stay as they are.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn thread_update(
+    state: State<'_, AppState>,
+    thread_id: ThreadId,
+    title: Option<String>,
+    access: Option<Access>,
+    mode: Option<ThreadMode>,
+    model: Option<String>,
+    effort: Option<String>,
+    pinned: Option<bool>,
+) -> Result<ThreadRecord, IpcError> {
+    let settings_changed = access.is_some() || model.is_some() || effort.is_some();
+    let thread = state
+        .threads
+        .update(
+            &thread_id,
+            ThreadPatch {
+                title,
+                access,
+                mode,
+                model: choice(model),
+                effort: choice(effort),
+                pinned,
+            },
+        )
+        .await?;
+    if settings_changed {
+        remember(&state, &thread).await;
+    }
+    Ok(thread)
+}
+
+#[tauri::command]
+pub async fn thread_archive(
+    state: State<'_, AppState>,
+    thread_id: ThreadId,
+    archived: bool,
+) -> Result<(), IpcError> {
+    state.threads.archive(&thread_id, archived).await
+}
+
+#[tauri::command]
+pub async fn thread_delete(
+    state: State<'_, AppState>,
+    thread_id: ThreadId,
+) -> Result<(), IpcError> {
+    state.threads.delete(&thread_id).await
+}
+
+/// `thread_switch_engine` (F-TH-16): between turns only.
+#[tauri::command]
+pub async fn thread_switch_engine(
+    state: State<'_, AppState>,
+    thread_id: ThreadId,
+    engine_id: String,
+    account_id: Option<AccountId>,
+) -> Result<ThreadRecord, IpcError> {
+    let spec = state.terminals.engines.get(&engine_id).ok_or_else(|| {
+        IpcError::new(
+            ErrorCode::EngineMissing,
+            "This engine isn't known to Vibezeo",
+        )
+    })?;
+    if spec.chat_adapter.is_none() {
+        return Err(IpcError::new(
+            ErrorCode::EngineUnsupported,
+            format!(
+                "{} can't run in Thread mode yet. Use it in Code mode.",
+                spec.label
+            ),
+        ));
+    }
+    let note = format!("Switched to {}", spec.label);
+    let thread = state
+        .threads
+        .switch_engine(&thread_id, &engine_id, account_id.as_ref(), note)
+        .await?;
+    remember(&state, &thread).await;
+    Ok(thread)
+}
+
+/// `thread_move_to_folder` (F-TH-02 "Add folder…").
+#[tauri::command]
+pub async fn thread_move_to_folder(
+    state: State<'_, AppState>,
+    thread_id: ThreadId,
+    workspace_id: WorkspaceId,
+) -> Result<ThreadRecord, IpcError> {
+    let ws = workspaces::get(&state.store, &workspace_id)
+        .await
+        .map_err(|e| IpcError::new(ErrorCode::NotFound, e.to_string()))?;
+    state
+        .threads
+        .move_to_folder(&thread_id, &workspace_id, &ws.root)
+        .await
+}
+
+#[tauri::command]
+pub async fn thread_save_draft(
+    state: State<'_, AppState>,
+    thread_id: ThreadId,
+    draft: Value,
+) -> Result<(), IpcError> {
+    state.threads.save_draft(&thread_id, draft).await
+}
+
+#[tauri::command]
+pub async fn thread_attach_paths(
+    state: State<'_, AppState>,
+    thread_id: ThreadId,
+    paths: Vec<String>,
+) -> Result<Vec<Attachment>, IpcError> {
+    state.threads.attach_paths(&thread_id, paths).await
+}
+
+/// A pasted screenshot, read from the system clipboard and saved as a PNG
+/// in `$DATA/attachments/<thread>/` (F-TH-07 AC5).
+#[tauri::command]
+pub async fn thread_attach_clipboard_image(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    thread_id: ThreadId,
+) -> Result<Attachment, IpcError> {
+    let image = app
+        .clipboard()
+        .read_image()
+        .map_err(|_| IpcError::new(ErrorCode::NotFound, "There's no image on the clipboard"))?;
+    let (width, height, rgba) = (image.width(), image.height(), image.rgba().to_vec());
+    state
+        .threads
+        .attach_png(&thread_id, width, height, rgba)
+        .await
+}
+
+#[tauri::command]
+pub async fn attachment_remove(
+    state: State<'_, AppState>,
+    attachment_id: AttachmentId,
+) -> Result<(), IpcError> {
+    state.threads.remove_attachment(&attachment_id).await
+}
+
+#[tauri::command]
+pub async fn thread_mention_search(
+    state: State<'_, AppState>,
+    thread_id: ThreadId,
+    query: String,
+) -> Result<Vec<PathEntry>, IpcError> {
+    state.threads.mention_search(&thread_id, query).await
+}
+
+/// `models_list` (F-TH-08): Default first, then what the engine reports,
+/// the remote catalog and the bundled one.
+#[tauri::command]
+pub async fn models_list(
+    state: State<'_, AppState>,
+    engine_id: String,
+    #[allow(unused_variables)] account_id: Option<AccountId>,
+) -> Result<Vec<ModelEntry>, IpcError> {
+    Ok(models::catalog_for(
+        &engine_id,
+        &state.models,
+        &state.config,
+    ))
 }
