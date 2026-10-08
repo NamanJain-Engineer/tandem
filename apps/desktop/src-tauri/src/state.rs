@@ -123,6 +123,8 @@ pub struct AppState {
     pub logins: Arc<crate::services::accounts::LoginOps>,
     /// The latest usage per engine account (F-AC-04).
     pub usage: Arc<crate::services::usage::UsageBoard>,
+    /// Thread mode: turns, their events and the chat adapters (F-TH-03).
+    pub threads: Arc<crate::services::threads::ThreadService>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
     pub e2e: bool,
 }
@@ -359,6 +361,15 @@ impl AppState {
             bus.clone(),
         );
         let telemetry = TelemetryService::new(&data, net.clone());
+        let threads = crate::services::threads::ThreadService::new(
+            store.clone(),
+            bus.clone(),
+            clock.clone(),
+            Arc::new(crate::services::threads::AppLauncher::new(
+                terminals.clone(),
+                Vec::new(),
+            )),
+        );
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         Self {
             data,
@@ -386,6 +397,7 @@ impl AppState {
             orphans,
             logins: Arc::default(),
             usage: Arc::default(),
+            threads,
             e2e,
         }
     }

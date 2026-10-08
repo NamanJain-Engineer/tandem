@@ -25,6 +25,7 @@ pub mod staging;
 pub mod status;
 pub mod telemetry;
 pub mod terminal;
+pub mod threads;
 pub mod updates;
 pub mod usage;
 pub mod workspaces;

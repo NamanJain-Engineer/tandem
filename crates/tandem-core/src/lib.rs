@@ -2,6 +2,7 @@
 //! paths, errors, ids, settings schema, event bus, status store, redaction,
 //! path containment, clock, keychain, command registry and logging.
 
+pub mod access;
 pub mod accounts;
 pub mod approvals;
 pub mod atomic;

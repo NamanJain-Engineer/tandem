@@ -28,6 +28,11 @@ fn settle_in(t: &Transaction) -> Result<Settled, StoreError> {
         "UPDATE threads SET state = 'interrupted' WHERE state IN ('working', 'waiting')",
         [],
     )?;
+    // Their turns too: a turn never stays "running" across a launch (F-TH-03).
+    t.execute(
+        "UPDATE thread_turns SET state = 'interrupted', ended_at = ?1 WHERE state = 'running'",
+        [crate::now_ms()],
+    )?;
     Ok(Settled {
         paused_panes,
         interrupted_threads,

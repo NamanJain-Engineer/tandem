@@ -137,6 +137,14 @@ macro_rules! app_commands {
             commands::limits::limit_dismiss,
             commands::limits::limit_continue,
             commands::limits::contexts_list,
+            commands::threads::thread_create,
+            commands::threads::thread_list,
+            commands::threads::thread_get,
+            commands::threads::thread_events,
+            commands::threads::thread_subscribe,
+            commands::threads::thread_send,
+            commands::threads::thread_stop,
+            commands::threads::thread_retry,
             commands::engines::engines_report,
             $($extra),*
         ]

@@ -636,10 +636,10 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
 | `thread_create` | `{kind:"thread"\|"teammate_chat", workspaceId?, teammateId?, engineId?, accountId?, model?, effort?, access?, mode?}` (omitted = remembered defaults) | `Thread` | EngineMissing, ForbiddenPlan (engine not in plan) | F-TH-01, F-TH-02, F-TH-07 |
-| `thread_list` | `{kind, teammateId?, includeArchived?}` | `[ThreadSummary]` | — | F-TH-01, F-AG-03 |
-| `thread_get` | `{threadId}` | `ThreadDetail {thread, turns, planRevisions, attachments, draft, pendingApprovals}` | NotFound | F-TH-01 |
-| `thread_events` | `{threadId, beforeId?, limit ≤ 500}` | `Page<ThreadEventEnvelope>` | — | F-TH-12 |
-| `thread_subscribe` | `{threadId, channel: Channel<ThreadEventEnvelope>}` | `SubId` | NotFound | F-TH-03 |
+| `thread_list` | `{kind, teammateId?, includeArchived?}` | `[Thread]` (the rail's summary is the thread row) | — | F-TH-01, F-AG-03 |
+| `thread_get` | `{threadId}` | `ThreadDetail {thread, turns, running?, queued?, draft}` (+ `planRevisions`, `attachments`, `pendingApprovals` with M7 tasks 11, 8, 6) | NotFound | F-TH-01 |
+| `thread_events` | `{threadId, beforeId?, limit ≤ 500}` | `ThreadEventPage {items: [ThreadEventEnvelope] (oldest first), nextBeforeId?}` | — | F-TH-12 |
+| `thread_subscribe` | `{threadId, channel: Channel<ThreadEventEnvelope>}` | — (streams until the webview drops the channel) | NotFound | F-TH-03 |
 | `thread_send` | `{threadId, text, attachmentIds:[AttachmentId], queueIfBusy: bool}` | `SendResult {turnId?, queued: bool}` | Conflict (a queued message already exists), EngineMissing, LimitReached, Unauthenticated (engine sign-in) | F-TH-03, F-TH-07 |
 | `thread_stop` | `{threadId}` | `InterruptOutcome {acked: bool, killed: bool}` (≤3.5 s) | — | F-TH-03 |
 | `thread_retry` | `{threadId}` | `SendResult` | — | F-TH-03, F-TH-15 |
@@ -872,7 +872,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `context:changed` | `PaneContext {paneId, used, window}` | status service (Stop hook → transcript tail) | F-AC-06 |
 | `limit:hit` | `LimitView {paneId, accountId?, message, resetsAt?, resumeAt?}` (terminals: a new screen line matching the engine's `limit_patterns`; threads add `kind` in M7) | status service (pattern matcher) | F-AC-05 |
 | `limit:changed` | `{paneId, limit: LimitView \| null}` (scheduled, cancelled, resumed, moved or dismissed) | limits service | F-AC-05 |
-| `threads:changed` | `{threads:[ThreadSummary]}` | threads service | F-TH-01 |
+| `threads:changed` | `{threads:[Thread]}` | threads service | F-TH-01 |
 | `approvals:changed` | `{upserted:[ApprovalView], resolved:[ApprovalId]}` | approval service | F-TH-11, F-PL-07 |
 | `held:changed` | `{drafts:[HeldDraft]}` | gateway | F-PL-08 |
 | `notifications:new` / `notifications:changed` | `{notification: Notification, sound: bool}` (`sound`: an OS notification went out and its type plays a sound) / `{ids, state}` | notifications service | F-DB-02, F-DB-03 |
@@ -913,7 +913,7 @@ offset 12 …    payload   kind 1: raw PTY bytes; kind 2/3: UTF-8 JSON {code?, s
 - Exit frames are always sent **after** the final data frame (the reader drains to EOF, flushes the batcher, then emits exit).
 - Seq gaps are impossible within a launch; on `pty_attach` Rust sends `replay-begin`, the ring contents, `replay-end`, then live frames.
 
-**Thread events (per subscription) [F-TH-03, F-TH-12].** `thread_subscribe(threadId, channel)` sends `ThreadEventEnvelope` JSON (§6.9). On subscribe, Rust first sends events of the current turn from the DB (so a remounted view is exact), then live events. Assistant text arrives as `assistant_delta` envelopes; the UI reducer appends them to the open block and replaces it with the compacted `assistant` event at `turn_end`. The reducer ignores envelopes whose `turnId` is not the thread's current turn (F-TH-03 AC3).
+**Thread events (per subscription) [F-TH-03, F-TH-12].** `thread_subscribe(threadId, channel)` sends `ThreadEventEnvelope` JSON (§6.9). On subscribe, Rust first sends the running turn from the DB (so a remounted view is exact), with the open text block as its text so far (an `assistant`/`reasoning` event at the block's `seq`), then live events. Assistant text arrives as `assistant_delta` envelopes carrying their block's `seq`; the UI reducer appends them to the item at that `seq` and replaces it with the compacted `assistant` event when the block closes (the next non-delta event, or `turn_end`). A subscriber that falls behind gets the running turn again; the reducer replaces by `seq`, so text is never doubled. A turn starts with its `user` event at `seq` 0; the reducer ignores envelopes of any other turn than the current one (F-TH-03 AC3).
 
 **Other channels:** `fs_watch` (`FsChange {paths, kind}` debounced 500 ms), `tasks_subscribe`, `diagnostics_subscribe`, Dictate/Conductor audio levels (`Channel<f32>` at ≤30 Hz, only while the widget/ring is visible; paused when hidden, F-CN-04 AC2).
 
@@ -1710,7 +1710,7 @@ pub enum ToolVerb { Bash, Read, Grep, Glob, Edit, Write, Multiedit, Webfetch, We
 pub enum ToolStatus { Pending, Running, Ok, Error, Denied }
 pub enum ApprovalKind { Command, FileWrite, FileDelete, Network, Mcp, PluginAction, Spend, Question, Other }
 ```
-Persistence: every envelope except `*Delta` is appended to `thread_messages`; deltas are buffered in memory (and flushed as a partial `assistant` row every 2 s so a crash keeps partial text); at `turn_end` the partial rows of that turn are replaced by the final `assistant` rows in one transaction (F-TH-03). Reducer (`apps/desktop/src/features/thread/reducer.ts`) is pure and unit-tested (F-TH-03 AC3).
+Persistence: every envelope except `*Delta` is appended to `thread_messages`; deltas are buffered in memory per text block (and flushed as a partial `assistant`/`reasoning` row every 2 s so a crash keeps partial text); when the block closes (the adapter's own final text, the next non-delta event, or `turn_end`), its final text replaces the partial row in place, so each block is one row at its `seq` (F-TH-03, D-115). Reducer (`apps/desktop/src/features/thread/reducer.ts`) is pure and unit-tested (F-TH-03 AC3).
 
 ### 6.10 Approvals mapping and thread allow-rules [F-TH-11, F-TH-09]
 | Source | Kind | Summary | Options offered | Decision sent back |

@@ -2,10 +2,13 @@
 //! launch specs, the status server and the chat adapters. Built in M3–M6.
 //!
 //! M4: the full §6.1 registry, detection, provider homes, terminal launch
-//! specs, the status server and `tandem-hook`. Chat adapters arrive in M6.
+//! specs, the status server and `tandem-hook`. M7: the normalized thread
+//! events and the chat adapters.
 
 pub mod accounts;
+pub mod chat;
 pub mod detect;
+pub mod events;
 pub mod handoff;
 pub mod homes;
 pub mod hook;

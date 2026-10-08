@@ -11,4 +11,5 @@ pub mod sessions;
 pub mod settings;
 pub mod sidebar;
 pub mod tabs;
+pub mod threads;
 pub mod workspaces;

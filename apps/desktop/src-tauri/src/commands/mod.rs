@@ -16,6 +16,7 @@ pub mod shell;
 pub mod terminal;
 #[cfg(debug_assertions)]
 pub mod test;
+pub mod threads;
 pub mod updates;
 pub mod window;
 pub mod workspaces;

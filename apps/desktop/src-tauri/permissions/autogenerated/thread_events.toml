@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-thread-events"
+description = "Enables the thread_events command without any pre-configured scope."
+commands.allow = ["thread_events"]
+
+[[permission]]
+identifier = "deny-thread-events"
+description = "Denies the thread_events command without any pre-configured scope."
+commands.deny = ["thread_events"]
