@@ -255,6 +255,11 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
   const list = await invoke<Array<{ id: string; parentId: string | null }>>("workspace_list");
   // Removing a repository removes its worktrees with it (F-CD-15).
   for (const w of list.filter((w) => !w.parentId)) await invoke("workspace_remove", { id: w.id });
+  // Threads outlive specs too: archive, then delete each (F-TH-01).
+  for (const th of await invoke<Array<{ id: string }>>("thread_list", { kind: "thread", includeArchived: true })) {
+    await invoke("thread_archive", { threadId: th.id, archived: true });
+    await invoke("thread_delete", { threadId: th.id });
+  }
   await invoke("auth_sign_out");
   // A first run has no engine accounts yet (the wizard's Accounts step, D-114).
   if (!onboarded) {

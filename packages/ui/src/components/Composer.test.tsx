@@ -90,8 +90,14 @@ describe("Composer (F-TH-07, UI-22)", () => {
   it("F-TH-07 a pasted image is handed to the app; the disabled reason shows", () => {
     const onPasteImage = vi.fn();
     render(<Harness onPasteImage={onPasteImage} disabledReason="Claude Code isn't signed in." />);
-    fireEvent.paste(box(), { clipboardData: { items: [{ kind: "file", type: "image/png" }] } });
-    expect(onPasteImage).toHaveBeenCalled();
+    const clip = (items: unknown[], types: string[], text: string) => ({ items, types, getData: () => text });
+    fireEvent.paste(box(), { clipboardData: clip([{ kind: "file", type: "image/png" }], ["Files"], "") });
+    fireEvent.paste(box(), { clipboardData: clip([], ["image/png"], "") });
+    fireEvent.paste(box(), { clipboardData: clip([], [], "") });
+    expect(onPasteImage).toHaveBeenCalledTimes(3);
+    // Text pastes as text.
+    fireEvent.paste(box(), { clipboardData: clip([{ kind: "string", type: "text/plain" }], ["text/plain"], "hi") });
+    expect(onPasteImage).toHaveBeenCalledTimes(3);
     expect(screen.getByText("Claude Code isn't signed in.")).toBeTruthy();
     expect(box()).toHaveProperty("disabled", true);
   });

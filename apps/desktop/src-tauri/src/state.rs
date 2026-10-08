@@ -398,6 +398,45 @@ impl AppState {
             data.clone(),
         );
         threads.sweep_trash();
+        // Threads are Dashboard items too (F-DB-01, D-6).
+        let status = terminals.status.clone();
+        threads.set_status_sink(Arc::new(move |th| {
+            use tandem_core::status::{AgentStatus, StatusUpdate, WaitingReason};
+            use tandem_store::repo::threads::ThreadState;
+            let source = tandem_core::source::SourceRef::Thread {
+                thread_id: th.id.as_str().to_string(),
+            };
+            if th.archived {
+                if let Some(key) = source.session_key() {
+                    status.remove_external(&key);
+                }
+                return;
+            }
+            let (agent, reason) = match th.state {
+                ThreadState::Working => (AgentStatus::Working, None),
+                ThreadState::Waiting => (AgentStatus::Waiting, Some(WaitingReason::Approval)),
+                ThreadState::Done => (AgentStatus::Done, None),
+                ThreadState::Failed => (AgentStatus::Failed, None),
+                ThreadState::Idle | ThreadState::Interrupted => (AgentStatus::Idle, None),
+            };
+            let title = (!th.title.is_empty()).then(|| th.title.clone());
+            status.set_external(
+                crate::services::status::ExternalMeta {
+                    source,
+                    title: title.clone().unwrap_or_else(|| "New thread".into()),
+                    engine_id: Some(th.engine_id.clone()),
+                    workspace_id: th.workspace_id.as_ref().map(|w| w.as_str().to_string()),
+                },
+                StatusUpdate {
+                    status: agent,
+                    reason,
+                    ts: th.updated_at,
+                    tool: None,
+                    title,
+                    preview: None,
+                },
+            );
+        }));
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         Self {
             data,

@@ -173,18 +173,9 @@ export const useThreads = create<ThreadsState>((set, get) => {
       }
       patch(id, blank());
       try {
-        const [detail, page] = await Promise.all([
-          invoke<ThreadDetail>("thread_get", { threadId: id }),
-          invoke<ThreadEventPage>("thread_events", { threadId: id, limit: PAGE }),
-        ]);
-        patch(id, {
-          detail,
-          history: page.items,
-          view: fromHistory(page.items),
-          nextBeforeId: page.nextBeforeId,
-          status: "ready",
-          error: null,
-        });
+        // Subscribe first, then read history: a turn that ends in between is
+        // in the history, and live events replay on top (the reducer ignores
+        // an ended turn's stragglers and replaces rows by seq).
         if (!subscribed.has(id)) {
           subscribed.add(id);
           // One subscription per thread for the app's life: the core streams
@@ -195,6 +186,19 @@ export const useThreads = create<ThreadsState>((set, get) => {
             throw e;
           });
         }
+        const [detail, page] = await Promise.all([
+          invoke<ThreadDetail>("thread_get", { threadId: id }),
+          invoke<ThreadEventPage>("thread_events", { threadId: id, limit: PAGE }),
+        ]);
+        const live = get().byId[id]?.live ?? [];
+        patch(id, {
+          detail,
+          history: page.items,
+          view: live.reduce(reduce, fromHistory(page.items)),
+          nextBeforeId: page.nextBeforeId,
+          status: "ready",
+          error: null,
+        });
       } catch (e) {
         patch(id, { status: "error", error: isIpcError(e) ? e : null });
       }

@@ -34,9 +34,15 @@
 //! deletes it. As `codex`, `login` does the same with `$CODEX_HOME/auth.json`,
 //! `login status` exits 0 when it exists and `logout` deletes it.
 //!
+//! As `claude -p --input-format stream-json` (Thread mode), it is a chat
+//! engine: see `fake-engine/chat.rs`.
+//!
 //! Run headless (`claude -p`, `codex exec`), it reads its prompt from stdin,
 //! logs its size and prints a brief. `TANDEM_FAKE_BRIEF` (a value, or a
 //! file holding it) set to `empty` makes both briefs empty.
+
+#[path = "fake-engine/chat.rs"]
+mod chat;
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -328,6 +334,15 @@ fn main() {
     if let Some(code) = account_command(&name, args) {
         log(&format!("start: {name} args={args:?}"));
         std::process::exit(code);
+    }
+    if name == "claude"
+        && args
+            .windows(2)
+            .any(|w| w[0] == "--input-format" && w[1] == "stream-json")
+    {
+        log(&format!("start: {name} args={args:?}"));
+        chat::run(args, session_id());
+        return;
     }
     if (name == "claude" && args.iter().any(|a| a == "-p"))
         || (name == "codex" && args.first().is_some_and(|a| a == "exec"))

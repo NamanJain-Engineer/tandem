@@ -107,7 +107,8 @@ export type ComposerProps = {
   /** "12.4k", with "Tokens used in this thread · …" as its tooltip. */
   tokens?: { text: string; tooltip: string };
   onAttach?: () => void;
-  /** A paste with an image in it (the app reads the clipboard natively). */
+  /** A paste that may hold an image (an image type, or no text): the app
+   * reads the system clipboard natively and ignores "no image". */
   onPasteImage?: () => void;
   /** Files are being dragged over the thread. */
   dropActive?: boolean;
@@ -274,8 +275,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     if (!onPasteImage) return;
-    const items = Array.from(e.clipboardData?.items ?? []);
-    if (items.some((i) => i.kind === "file" && i.type.startsWith("image/"))) {
+    const data = e.clipboardData;
+    const items = Array.from(data?.items ?? []);
+    const types = Array.from(data?.types ?? []);
+    // Webviews differ in how a copied image shows up: as a file item, as a
+    // type, or not at all (a paste with no text). The app reads the system
+    // clipboard itself, so any of these asks it.
+    const image =
+      items.some((i) => i.type.startsWith("image/")) || types.some((t) => t.startsWith("image/")) || !data?.getData("text/plain");
+    if (image) {
       e.preventDefault();
       onPasteImage();
     }

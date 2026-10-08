@@ -202,7 +202,13 @@ pub struct ThreadService {
     titler: std::sync::OnceLock<Arc<dyn Titler>>,
     /// `$DATA`: attachments and deleted threads' recovery copies.
     data: std::sync::OnceLock<tandem_core::DataDir>,
+    /// Tells the status bus each thread's state (Dashboard, D-6).
+    status_sink: std::sync::OnceLock<ThreadStatusSink>,
 }
+
+/// Receives every thread whenever the list changes; an archived thread
+/// leaves the Dashboard.
+pub type ThreadStatusSink = Arc<dyn Fn(&ThreadRecord) + Send + Sync>;
 
 fn store_err(e: tandem_store::StoreError) -> IpcError {
     IpcError::new(ErrorCode::Internal, e.to_string())
@@ -347,6 +353,7 @@ impl ThreadService {
             live,
             titler: std::sync::OnceLock::new(),
             data: std::sync::OnceLock::new(),
+            status_sink: std::sync::OnceLock::new(),
         })
     }
 
@@ -354,6 +361,15 @@ impl ThreadService {
     pub fn configure(&self, titler: Arc<dyn Titler>, data: tandem_core::DataDir) {
         let _ = self.titler.set(titler);
         let _ = self.data.set(data);
+    }
+
+    /// Publishes every thread (at launch: the Dashboard shows them).
+    pub async fn announce(&self) {
+        self.publish_threads().await;
+    }
+
+    pub fn set_status_sink(&self, sink: ThreadStatusSink) {
+        let _ = self.status_sink.set(sink);
     }
 
     fn data_dir(&self) -> Result<&tandem_core::DataDir, IpcError> {
@@ -379,6 +395,11 @@ impl ThreadService {
 
     async fn publish_threads(&self) {
         if let Ok(threads) = repo::list(&self.store, ThreadKind::Thread, true).await {
+            if let Some(sink) = self.status_sink.get() {
+                for t in &threads {
+                    sink(t);
+                }
+            }
             self.bus.publish(BusEvent::new(
                 Topic::Threads,
                 "threads:changed",
@@ -622,6 +643,10 @@ impl ThreadService {
         }
         if let Ok(mut map) = self.runtimes.lock() {
             map.remove(id.as_str());
+        }
+        if let Some(sink) = self.status_sink.get() {
+            // Archived: its card goes.
+            sink(&thread);
         }
         repo::delete(&self.store, id).await.map_err(store_err)?;
         tracing::info!(

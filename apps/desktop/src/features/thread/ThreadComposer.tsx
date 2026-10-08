@@ -279,7 +279,13 @@ export function ThreadComposer({
         }}
         onAttach={() => void invoke<Attachment[]>("thread_pick_files", { threadId: thread.id }).then(attach, attach)}
         dropActive={dragOver}
-        onPasteImage={() => void invoke<Attachment>("thread_attach_clipboard_image", { threadId: thread.id }).then((a) => attach([a]), attach)}
+        onPasteImage={() =>
+          void invoke<Attachment>("thread_attach_clipboard_image", { threadId: thread.id }).then(
+            (a) => attach([a]),
+            // A paste with nothing usable on the clipboard does nothing.
+            (e: IpcError) => e.code !== "not_found" && attach(e),
+          )
+        }
         mentions={mentions}
         onMention={onMention}
         labels={{

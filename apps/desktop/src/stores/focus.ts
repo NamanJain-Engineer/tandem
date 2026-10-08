@@ -4,6 +4,7 @@ import { listen } from "../ipc/events";
 import { invoke } from "../ipc/invoke";
 import { switchMode } from "../features/shell/actions";
 import { useLayout } from "./layout";
+import { useThreads } from "./threads";
 import { useWorkspaces } from "./workspaces";
 
 /** How long a focused pane shows its accent ring (F-CD-12 AC3). */
@@ -39,6 +40,12 @@ export type FocusLocation = { workspaceId: string; tabId: string };
 /** Shows a source and flashes it: the workspace and tab, Code mode, the
  * pane focused (from a Dashboard card, a notification, an OS notification). */
 export async function showSource(source: SourceRef, location?: FocusLocation | null): Promise<void> {
+  if (source.type === "thread") {
+    // A thread card or notification opens the thread in Thread mode.
+    switchMode("thread");
+    useThreads.getState().select(source.threadId);
+    return;
+  }
   if (source.type !== "pane") return;
   const paneId = source.paneId;
   const layout = useLayout.getState();

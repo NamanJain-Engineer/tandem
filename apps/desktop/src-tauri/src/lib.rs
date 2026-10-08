@@ -504,6 +504,11 @@ pub fn run() {
                 let login = state.terminals.login_env().await;
                 state.terminals.engines.detect(&login).await;
             });
+            // Threads on the Dashboard from the start (D-6).
+            let threads_state = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                threads_state.state::<AppState>().threads.announce().await;
+            });
             // Remote config (model catalog, registry overrides) has a 10-min
             // TTL: a model added remotely shows up without an update (F-TH-08 AC1).
             let config_state = handle.clone();

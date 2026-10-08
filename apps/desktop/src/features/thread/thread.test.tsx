@@ -171,6 +171,39 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     expect(screen.queryByTestId("thread-pending")).toBeNull();
   });
 
+  it("F-TH-12 a turn that ends before history loads shows once (subscribe first, then history)", async () => {
+    const th = thread({ title: "Quick" });
+    const turn: ThreadEventEnvelope[] = [
+      env(th.id, "turn_1", 0, { type: "user", text: "hi", attachments: [] }),
+      env(th.id, "turn_1", 1, { type: "assistant", markdown: "Quick reply." }),
+      env(th.id, "turn_1", 2, { type: "turn_end", reason: "completed", blockedActions: 0 }),
+    ];
+    const order: string[] = [];
+    fakeBackend({
+      thread_list: () => [th],
+      thread_get: () => detail(th),
+      thread_events: () => {
+        order.push("history");
+        return { items: turn, nextBeforeId: null };
+      },
+      thread_subscribe: (a) => {
+        order.push("subscribe");
+        // The whole turn streams before the history read.
+        for (const e of turn) (a?.channel as Channel).onmessage(e);
+        return null;
+      },
+      models_list: () => [],
+    });
+    await act(async () => {
+      await useThreads.getState().refresh();
+      useThreads.getState().select(th.id);
+    });
+    mount(<ThreadMain />);
+    expect(await screen.findByText("Quick reply.")).toBeTruthy();
+    expect(screen.getAllByText("Quick reply.")).toHaveLength(1);
+    expect(order).toEqual(["subscribe", "history"]);
+  });
+
   it("F-TH-07.3 a failed send puts the text back ahead of anything typed since", async () => {
     expect(restoreAfterFailure("first message", "")).toBe("first message");
     expect(restoreAfterFailure("first message", "typed later")).toBe("first message\ntyped later");
