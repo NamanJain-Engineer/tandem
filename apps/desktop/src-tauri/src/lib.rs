@@ -128,6 +128,12 @@ macro_rules! app_commands {
             commands::accounts::accounts_status,
             commands::accounts::accounts_overrides,
             commands::accounts::workspace_set_account_override,
+            commands::limits::limits_list,
+            commands::limits::limit_resume_at_reset,
+            commands::limits::limit_resume_now,
+            commands::limits::limit_cancel_resume,
+            commands::limits::limit_dismiss,
+            commands::limits::limit_continue,
             commands::engines::engines_report,
             $($extra),*
         ]

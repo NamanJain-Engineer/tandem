@@ -220,4 +220,24 @@ describe("accounts (F-AC-02, F-AC-03, UI-35)", () => {
       }),
     );
   });
+
+  it("F-AC-03 the chip reloads once for an account created after the list loaded", async () => {
+    setup();
+    useAccounts.setState({ list: [STUDIO], overrides: [], loaded: true, failed: false, signIn: {} });
+    const pane = {
+      id: "pn_9",
+      tabId: "tb",
+      workspaceId: "ws_shop",
+      kind: "agent",
+      engineId: "claude",
+      accountId: "acc_work",
+    } as PaneRecord;
+    render(
+      <UiProvider>
+        <AccountChip pane={pane} />
+      </UiProvider>,
+    );
+    expect((await screen.findByTestId("account-chip")).textContent).toBe("Work");
+    expect(named("accounts_list")).toHaveLength(1);
+  });
 });

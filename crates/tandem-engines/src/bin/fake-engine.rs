@@ -19,6 +19,9 @@
 //! answered with a brief between its markers; anything else is answered,
 //! then Stop.
 //!
+//! `/limit <delay>` prints a usage-limit message that resets after the delay
+//! ("5s", "2h"), as engines do (F-AC-05).
+//!
 //! Sign-in (F-AC-02): `/login` asks for a code like a device flow and, once a
 //! line is typed, writes `$CLAUDE_CONFIG_DIR/.credentials.json`; `/logout`
 //! deletes it. As `codex`, `login` does the same with `$CODEX_HOME/auth.json`,
@@ -375,6 +378,18 @@ fn answer(name: &str, text: &str) -> bool {
             out(&format!("  {line}\r\n"));
         }
         out(&format!("  --- end of brief {nonce} ---\r\n"));
+        if claude {
+            hook("Stop", serde_json::json!({ "stop_hook_active": false }));
+        }
+        return true;
+    }
+    if let Some(delay) = t.strip_prefix("/limit") {
+        let delay = delay.trim();
+        let delay = if delay.is_empty() { "2h" } else { delay };
+        out(&format!(
+            "{} usage limit reached. Try again in {delay}.\r\n",
+            label(name)
+        ));
         if claude {
             hook("Stop", serde_json::json!({ "stop_hook_active": false }));
         }

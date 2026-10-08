@@ -37,6 +37,7 @@ import { PausedCard } from "./PausedCard";
 import { WorktreeChip, worktreeMenu } from "./Worktrees";
 import { useHandoff } from "../../stores/handoff";
 import { AccountChip } from "./AccountChip";
+import { LimitBanner } from "./LimitCard";
 import { baseBranch, isWorktree } from "../../stores/worktrees";
 
 const BOX_THROTTLE_MS = 50;
@@ -357,6 +358,7 @@ const PaneView = memo(function PaneView({
         dragRef={setNodeRef}
         dragProps={{ ...attributes, ...listeners, tabIndex: -1, role: "toolbar" }}
       />
+      <LimitBanner pane={pane} />
       {note && (
         // F-CD-16: where the work went, until dismissed.
         <div

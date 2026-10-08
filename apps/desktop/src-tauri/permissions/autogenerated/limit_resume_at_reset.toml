@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-limit-resume-at-reset"
+description = "Enables the limit_resume_at_reset command without any pre-configured scope."
+commands.allow = ["limit_resume_at_reset"]
+
+[[permission]]
+identifier = "deny-limit-resume-at-reset"
+description = "Denies the limit_resume_at_reset command without any pre-configured scope."
+commands.deny = ["limit_resume_at_reset"]

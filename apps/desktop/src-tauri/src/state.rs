@@ -252,6 +252,10 @@ impl AppState {
         let activity_status = status.clone();
         let screen_pty: Arc<std::sync::OnceLock<PtyManager>> = Arc::new(std::sync::OnceLock::new());
         let screen_for_sink = screen_pty.clone();
+        let screen_for_tick = screen_pty.clone();
+        status.set_screen_source(Arc::new(move |pane| {
+            screen_for_tick.get().and_then(|p| p.screen_text(pane))
+        }));
         let pty = PtyManager::new()
             .with_registry(registry)
             .with_state_sink(Arc::new(move |state| {

@@ -15,6 +15,7 @@ import { InterimMain, InterimRail } from "../interim/Interim";
 import { Palette } from "../palette/Palette";
 import { OrphansDialog } from "../restore/OrphansDialog";
 import { followEngines } from "../../stores/engines";
+import { followLimits } from "../../stores/limits";
 import { followStatus } from "../../stores/status";
 import { followFocus } from "../../stores/focus";
 import { followDashboard } from "../../stores/dashboard";
@@ -46,6 +47,7 @@ export function AppShell() {
   useEffect(() => setCommandToast(toast), [toast]);
   useEffect(followPtyState, []);
   useEffect(followEngines, []);
+  useEffect(followLimits, []);
   useEffect(followStatus, []);
   useEffect(followFocus, []);
   useEffect(followDashboard, []);

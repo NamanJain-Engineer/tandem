@@ -51,9 +51,10 @@ impl Heuristics {
         self.status
     }
 
-    /// A signed hook report arrived for this pane.
-    pub fn hooked(&mut self) {
-        self.hooked = true;
+    /// A signed hook report arrived for this pane. Returns whether one had
+    /// arrived before.
+    pub fn hooked(&mut self) -> bool {
+        std::mem::replace(&mut self.hooked, true)
     }
 
     /// The user typed, or the pane was resized or repainted: the output that

@@ -454,7 +454,12 @@ impl TerminalService {
             // Status hooks report with this launch's secret (§6.6).
             let status = self
                 .status
-                .watch(pane.as_str(), &engine.waiting_patterns)
+                .watch(
+                    pane.as_str(),
+                    &engine.waiting_patterns,
+                    &engine.limit_patterns,
+                    record.account_id.as_ref().map(|a| a.as_str()),
+                )
                 .map(|(url, secret)| StatusEnv { url, secret });
             let relaunch = plan.as_ref().map(|p| Relaunch {
                 resume: Some(p.engine_session_id.as_str()),

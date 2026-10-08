@@ -608,6 +608,10 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `accounts_remove` | `{accountId}` | — (deletes its provider home; the engine's oldest other account becomes default; workspace overrides naming it are dropped) | — | F-AC-02 |
 | `accounts_status` | `{accountId}` | `"signed_in"\|"signed_out"\|"unknown"` (`signed_in_file` presence or `status_cmd` exit code, never the token) | — | F-AC-02 |
 | `accounts_overrides` | — | `[AccountOverride {workspaceId, engineId, accountId}]` | — | F-AC-03 |
+| `limits_list` | — | `[LimitView {paneId, accountId?, message, resetsAt?, resumeAt?}]` (limits showing on panes) | — | F-AC-05 |
+| `limit_resume_at_reset` / `limit_cancel_resume` | `{paneId}` | `LimitView` (`resumeAt` set / cleared; "continue" is typed at `resetsAt` via the Clock if the app is open) | NotFound (no limit), Invalid (no reset time) | F-AC-05 |
+| `limit_resume_now` / `limit_dismiss` | `{paneId}` | — (types "continue" now / "Stop here"; both clear the limit) | NotFound | F-AC-05 |
+| `limit_continue` | `{paneId, engineId, accountId?}` | `HandoffResult` (a new pane split right with the brief fallback: the last 200 redacted lines under the brief headings; only ever from the user's click) | NotFound, EngineMissing, LimitReached | F-AC-05 |
 | `usage_get` | `{accountId?}` | `[UsageView {accountId, windows:[UsageWindow {kind, usedPct, resetsAt?}], source, estimated}]` | — | F-AC-04 |
 | `usage_refresh` | `{accountId?}` | — | — | F-AC-04 |
 | `usage_dashboard` | `{weeks: 12}` → op | `UsageDashboard {days:[DayTotal], perEngine, perAccount, topWorkspaces, skippedLines}` | — | F-AC-07 |
@@ -864,7 +868,8 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `accounts:changed` | `{accounts:[Account]}` | accounts service | F-AC-02 |
 | `accounts:login-finished` | `{opId, accountId, state: "signed_in"\|"signed_out"\|"failed"\|"cancelled", message?}` (`message`: the engine's last line, redacted) | accounts service | F-AC-02 |
 | `usage:changed` | `UsageView` | UsageProbe | F-AC-04, F-AC-06 |
-| `limit:hit` | `{source: SourceRef, accountId, resetsAt?, kind}` | adapters / pattern matcher | F-AC-05 |
+| `limit:hit` | `LimitView {paneId, accountId?, message, resetsAt?, resumeAt?}` (terminals: a new screen line matching the engine's `limit_patterns`; threads add `kind` in M7) | status service (pattern matcher) | F-AC-05 |
+| `limit:changed` | `{paneId, limit: LimitView \| null}` (scheduled, cancelled, resumed, moved or dismissed) | limits service | F-AC-05 |
 | `threads:changed` | `{threads:[ThreadSummary]}` | threads service | F-TH-01 |
 | `approvals:changed` | `{upserted:[ApprovalView], resolved:[ApprovalId]}` | approval service | F-TH-11, F-PL-07 |
 | `held:changed` | `{drafts:[HeldDraft]}` | gateway | F-PL-08 |

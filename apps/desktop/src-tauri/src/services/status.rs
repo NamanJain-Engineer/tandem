@@ -15,6 +15,8 @@ use tandem_core::status_report::{ReportEvent, StatusReport};
 use tandem_engines::status_server::{ReportSink, StatusServer};
 use tokio::sync::OnceCell;
 
+use crate::services::limits::LimitBoard;
+
 /// `status:changed` is sent at most this often.
 pub const COALESCE: Duration = Duration::from_millis(50);
 /// How often quiet panes are checked for done and idle.
@@ -34,7 +36,37 @@ pub struct ExternalMeta {
 struct Watched {
     heuristics: Heuristics,
     last_screen_check: Option<i64>,
+    /// The engine's `limit_patterns` (F-AC-05).
+    limits: Vec<regex::Regex>,
+    /// The account the pane runs on.
+    account: Option<String>,
+    /// The last limit line reported, so a line still on screen isn't
+    /// reported again.
+    last_limit: Option<String>,
+    /// Output arrived after the last screen check (throttled away): the
+    /// tick checks the screen once more, so a burst's last lines count.
+    unchecked: bool,
 }
+
+impl Watched {
+    /// A limit line in `text` that wasn't reported yet (F-AC-05).
+    fn new_limit(
+        &mut self,
+        text: &str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Option<(tandem_core::limits::LimitHit, Option<String>)> {
+        let local = tandem_core::limits::local(now);
+        let hit = tandem_core::limits::detect(text, &self.limits, local)?;
+        if self.last_limit.as_deref() == Some(hit.message.as_str()) {
+            return None;
+        }
+        self.last_limit = Some(hit.message.clone());
+        Some((hit, self.account.clone()))
+    }
+}
+
+/// Reads a pane's visible screen text.
+pub type ScreenSource = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 
 pub struct StatusService {
     pub store: Arc<StatusStore>,
@@ -56,6 +88,9 @@ pub struct StatusService {
     on_session: std::sync::OnceLock<SessionSink>,
     bus: EventBus,
     clock: Arc<dyn Clock>,
+    /// Usage limits showing on panes (F-AC-05).
+    pub limits: Arc<LimitBoard>,
+    screen: std::sync::OnceLock<ScreenSource>,
 }
 
 /// `(pane_id, engine_session_id)`.
@@ -74,6 +109,8 @@ impl StatusService {
             activity: Mutex::default(),
             external: Mutex::default(),
             on_session: std::sync::OnceLock::new(),
+            limits: Arc::new(LimitBoard::new(bus.clone())),
+            screen: std::sync::OnceLock::new(),
             bus,
             clock,
         })
@@ -114,15 +151,27 @@ impl StatusService {
         self.server.get()
     }
 
-    /// An agent pane started: watch its output, and give it a fresh secret.
-    /// Returns `(url, secret)` for its env when the server runs.
-    pub fn watch(&self, pane_id: &str, waiting_patterns: &[String]) -> Option<(String, String)> {
+    /// An agent pane started: watch its output (waiting and limit
+    /// patterns), and give it a fresh secret. Returns `(url, secret)` for
+    /// its env when the server runs.
+    pub fn watch(
+        &self,
+        pane_id: &str,
+        waiting_patterns: &[String],
+        limit_patterns: &[String],
+        account: Option<&str>,
+    ) -> Option<(String, String)> {
         if let Ok(mut w) = self.watched.lock() {
+            let last_limit = w.get(pane_id).and_then(|old| old.last_limit.clone());
             w.insert(
                 pane_id.to_string(),
                 Watched {
                     heuristics: Heuristics::new(waiting_patterns),
                     last_screen_check: None,
+                    limits: tandem_core::limits::compile(limit_patterns),
+                    account: account.map(str::to_string),
+                    last_limit,
+                    unchecked: false,
                 },
             );
         }
@@ -135,6 +184,7 @@ impl StatusService {
         if let Ok(mut w) = self.watched.lock() {
             w.remove(pane_id);
         }
+        self.limits.clear(pane_id);
         if let Ok(mut a) = self.activity.lock() {
             a.remove(pane_id);
         }
@@ -177,7 +227,7 @@ impl StatusService {
         if let Ok(mut a) = self.activity.lock() {
             a.insert(pane_id.to_string(), now);
         }
-        let update = {
+        let (update, limit) = {
             let Ok(mut w) = self.watched.lock() else {
                 return;
             };
@@ -189,12 +239,19 @@ impl StatusService {
                 .is_none_or(|t| now.saturating_sub(t) >= SCREEN_CHECK_MS);
             let text = if due {
                 entry.last_screen_check = Some(now);
+                entry.unchecked = false;
                 screen()
             } else {
+                entry.unchecked = true;
                 None
             };
-            entry.heuristics.output(now, text.as_deref())
+            let utc = self.clock.now_utc();
+            let limit = text.as_deref().and_then(|t| entry.new_limit(t, utc));
+            (entry.heuristics.output(now, text.as_deref()), limit)
         };
+        if let Some((hit, account)) = limit {
+            self.limits.hit(pane_id, account.as_deref(), hit);
+        }
         if let Some(u) = update {
             self.apply(pane_id, u);
         }
@@ -223,28 +280,72 @@ impl StatusService {
 
     fn tick(self: &Arc<Self>) {
         let now = self.clock.now_ms();
-        let updates: Vec<(String, StatusUpdate)> = match self.watched.lock() {
-            Ok(mut w) => w
-                .iter_mut()
-                .filter_map(|(id, e)| e.heuristics.tick(now).map(|u| (id.clone(), u)))
-                .collect(),
-            Err(_) => return,
-        };
+        let (updates, trailing): (Vec<(String, StatusUpdate)>, Vec<String>) =
+            match self.watched.lock() {
+                Ok(mut w) => {
+                    let updates = w
+                        .iter_mut()
+                        .filter_map(|(id, e)| e.heuristics.tick(now).map(|u| (id.clone(), u)))
+                        .collect();
+                    let trailing = w
+                        .iter_mut()
+                        .filter(|(_, e)| {
+                            e.unchecked
+                                && e.last_screen_check
+                                    .is_none_or(|t| now.saturating_sub(t) >= SCREEN_CHECK_MS)
+                        })
+                        .map(|(id, e)| {
+                            e.unchecked = false;
+                            e.last_screen_check = Some(now);
+                            id.clone()
+                        })
+                        .collect();
+                    (updates, trailing)
+                }
+                Err(_) => return,
+            };
         for (pane, u) in updates {
             self.apply(&pane, u);
         }
+        self.check_screens(&trailing);
+    }
+
+    /// The trailing screen check: limit lines only (it isn't output, so the
+    /// activity heuristics don't see it).
+    fn check_screens(&self, panes: &[String]) {
+        let Some(source) = self.screen.get() else {
+            return;
+        };
+        for pane in panes {
+            let Some(text) = source(pane) else { continue };
+            let utc = self.clock.now_utc();
+            let hit = self
+                .watched
+                .lock()
+                .ok()
+                .and_then(|mut w| w.get_mut(pane).and_then(|e| e.new_limit(&text, utc)));
+            if let Some((hit, account)) = hit {
+                self.limits.hit(pane, account.as_deref(), hit);
+            }
+        }
+    }
+
+    /// Where the tick reads screens from (set once, at startup).
+    pub fn set_screen_source(&self, source: ScreenSource) {
+        let _ = self.screen.set(source);
     }
 
     /// A verified hook report.
     pub fn on_report(self: &Arc<Self>, report: StatusReport) {
         let pane = report.pane_id.clone();
-        if let Ok(mut w) = self.watched.lock() {
-            match w.get_mut(&pane) {
-                Some(e) => e.heuristics.hooked(),
+        let first = match self.watched.lock() {
+            Ok(mut w) => match w.get_mut(&pane) {
+                Some(e) => !e.heuristics.hooked(),
                 // A report for a pane that isn't running an agent any more.
                 None => return,
-            }
-        }
+            },
+            Err(_) => false,
+        };
         if let Some(id) = &report.payload.session_id {
             let changed = self
                 .sessions
@@ -273,6 +374,21 @@ impl StatusService {
                     };
                     self.apply(&pane, update);
                 }
+            }
+            // The engine's first report is its session starting: it waits
+            // for input. Without this a hooked agent had no status (missing
+            // from the Dashboard) or kept "working" from its startup banner,
+            // depending on which arrived first.
+            ReportEvent::Session if first => {
+                let update = StatusUpdate {
+                    status: tandem_core::status::AgentStatus::Idle,
+                    reason: None,
+                    ts: report.ts,
+                    tool: None,
+                    title: None,
+                    preview: None,
+                };
+                self.apply(&pane, update);
             }
             ReportEvent::Session => {}
             _ => {
@@ -415,9 +531,63 @@ mod tests {
     }
 
     #[test]
+    fn f_ac_05_a_limit_in_a_bursts_last_lines_is_caught_by_the_tick() {
+        let (s, clock) = service();
+        let screen = Arc::new(Mutex::new(String::from("> /limit")));
+        let source = screen.clone();
+        s.set_screen_source(Arc::new(move |_| source.lock().ok().map(|t| t.clone())));
+        s.watch("pn_1", &[], &["usage limit reached".into()], None);
+        // The echo is checked; the limit line 50 ms later is throttled away.
+        s.output("pn_1", || Some("> /limit".into()));
+        clock.advance(Duration::from_millis(50));
+        *screen.lock().expect("screen") = "> /limit\nClaude usage limit reached".into();
+        s.output("pn_1", || panic!("throttled: no screen read"));
+        assert_eq!(s.limits.get("pn_1"), None);
+        clock.advance(Duration::from_millis(400));
+        s.tick();
+        assert!(s.limits.get("pn_1").is_some(), "the tick read the screen");
+    }
+
+    #[test]
+    fn f_ac_05_1_a_limit_line_on_screen_is_reported_once_with_its_account() {
+        let (s, clock) = service();
+        s.watch(
+            "pn_1",
+            &[],
+            &["usage limit reached".into()],
+            Some("acct_work"),
+        );
+        s.output("pn_1", || {
+            Some("> fix it\nClaude usage limit reached. Try again in 2h.".into())
+        });
+        let limit = s.limits.get("pn_1").expect("limit shown");
+        assert_eq!(
+            limit.account_id.as_ref().map(|a| a.as_str()),
+            Some("acct_work")
+        );
+        assert_eq!(limit.resets_at, Some(clock.now_ms() + 2 * 3_600_000));
+        // Still on screen after a dismiss: not reported again.
+        s.limits.clear("pn_1");
+        clock.advance(Duration::from_secs(1));
+        s.output("pn_1", || {
+            Some("Claude usage limit reached. Try again in 2h.".into())
+        });
+        assert_eq!(s.limits.get("pn_1"), None);
+        // A new limit line is.
+        clock.advance(Duration::from_secs(1));
+        s.output("pn_1", || {
+            Some("Claude usage limit reached. Try again in 4h.".into())
+        });
+        assert!(s.limits.get("pn_1").is_some());
+        // Closing the pane clears it.
+        s.unwatch("pn_1");
+        assert_eq!(s.limits.get("pn_1"), None);
+    }
+
+    #[test]
     fn f_en_05_3_output_drives_the_heuristics_from_the_first_byte() {
         let (s, clock) = service();
-        s.watch("pn_1", &[]);
+        s.watch("pn_1", &[], &[], None);
         // The first output (no earlier screen check) must not trip anything.
         s.output("pn_1", || Some("hello".into()));
         assert_eq!(status(&s, "pn_1"), Some(AgentStatus::Working));
@@ -440,7 +610,7 @@ mod tests {
                 v.push((pane.to_string(), id.to_string()));
             }
         }));
-        s.watch("pn_1", &[]);
+        s.watch("pn_1", &[], &[], None);
         let report = |sid: &str, ts| StatusReport {
             v: 1,
             pane_id: "pn_1".into(),
@@ -461,9 +631,45 @@ mod tests {
     }
 
     #[test]
+    fn f_en_05_a_started_hooked_agent_is_idle_whichever_arrives_first() {
+        let session = |ts| StatusReport {
+            v: 1,
+            pane_id: "pn_1".into(),
+            event: ReportEvent::Session,
+            ts,
+            payload: ReportPayload {
+                session_id: Some("ses-1".into()),
+                ..ReportPayload::default()
+            },
+        };
+        // The hook first: idle at once.
+        let (s, clock) = service();
+        s.watch("pn_1", &[], &[], None);
+        s.on_report(session(clock.now_ms()));
+        assert_eq!(status(&s, "pn_1"), Some(AgentStatus::Idle));
+        // The banner first: "working" from the heuristics, then idle.
+        let (s, clock) = service();
+        s.watch("pn_1", &[], &[], None);
+        s.output("pn_1", || Some("Claude Code".into()));
+        assert_eq!(status(&s, "pn_1"), Some(AgentStatus::Working));
+        clock.advance(Duration::from_millis(10));
+        s.on_report(session(clock.now_ms()));
+        assert_eq!(status(&s, "pn_1"), Some(AgentStatus::Idle));
+        // A later session report (a resume, a clear) changes nothing.
+        let working = StatusReport {
+            event: ReportEvent::Working,
+            ts: clock.now_ms() + 5,
+            ..session(0)
+        };
+        s.on_report(working);
+        s.on_report(session(clock.now_ms() + 10));
+        assert_eq!(status(&s, "pn_1"), Some(AgentStatus::Working));
+    }
+
+    #[test]
     fn f_en_05_2_hook_reports_win_and_stale_ones_are_dropped() {
         let (s, _clock) = service();
-        s.watch("pn_1", &[]);
+        s.watch("pn_1", &[], &[], None);
         let report = |event, ts| StatusReport {
             v: 1,
             pane_id: "pn_1".into(),

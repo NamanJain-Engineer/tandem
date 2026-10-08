@@ -86,6 +86,17 @@ export async function startHandoff(
   } catch (e) {
     return { ok: false, error: e as IpcError };
   }
+  await showHandoff(source.paneId, result, where);
+  return { ok: true, value: result };
+}
+
+/** Shows a pane that took over from `sourcePaneId`: split right of it in the
+ * same tab, or in its new worktree's tab. */
+export async function showHandoff(
+  sourcePaneId: string,
+  result: HandoffResult,
+  where: HandoffPlace,
+): Promise<void> {
   const layout = useLayout.getState;
   if (where === "same") {
     if (!layout().loaded[result.workspaceId])
@@ -94,7 +105,7 @@ export async function startHandoff(
         .catch(() => undefined);
     const tab = layout().tabs[result.tabId];
     if (tab && !tab.panes[result.pane.id]) {
-      layout().insert(result.tabId, result.pane, tab.panes[source.paneId] ? source.paneId : null, "right");
+      layout().insert(result.tabId, result.pane, tab.panes[sourcePaneId] ? sourcePaneId : null, "right");
     }
     useWorkspaces.getState().selectTab(result.workspaceId, result.tabId);
   } else {
@@ -111,6 +122,5 @@ export async function startHandoff(
       result.tabId,
     );
   }
-  if (result.sourceClosed) layout().dropPane(source.paneId);
-  return { ok: true, value: result };
+  if (result.sourceClosed) layout().dropPane(sourcePaneId);
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-limit-resume-now"
+description = "Enables the limit_resume_now command without any pre-configured scope."
+commands.allow = ["limit_resume_now"]
+
+[[permission]]
+identifier = "deny-limit-resume-now"
+description = "Denies the limit_resume_now command without any pre-configured scope."
+commands.deny = ["limit_resume_now"]

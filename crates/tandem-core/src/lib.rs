@@ -14,6 +14,7 @@ pub mod entitlement;
 pub mod error;
 pub mod ids;
 pub mod keychain;
+pub mod limits;
 pub mod logging;
 pub mod net;
 pub mod origin;

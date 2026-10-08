@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { UserRound } from "lucide-react";
 import type { PaneRecord } from "@tandem/protocol";
 import { Menu, useToast, type MenuEntry } from "@tandem/ui";
@@ -18,9 +18,17 @@ export function AccountChip({ pane }: { pane: PaneRecord }) {
   const engine = useEngines((s) => s.label(pane.engineId)) ?? "";
   const workspace = useWorkspaces((s) => s.list.find((w) => w.id === pane.workspaceId));
   const { show } = useToast();
+  // The list may predate this pane's account (a default created with the
+  // pane): reload once for an account it doesn't know.
+  const missing = Boolean(pane.accountId) && loaded && !list.some((a) => a.id === pane.accountId);
+  const asked = useRef<string | null>(null);
   useEffect(() => {
     if (!loaded) void useAccounts.getState().load();
-  }, [loaded]);
+    else if (missing && asked.current !== pane.accountId) {
+      asked.current = pane.accountId;
+      void useAccounts.getState().load();
+    }
+  }, [loaded, missing, pane.accountId]);
 
   const current = list.find((a) => a.id === pane.accountId);
   if (pane.kind !== "agent" || !pane.engineId || !current) return null;
