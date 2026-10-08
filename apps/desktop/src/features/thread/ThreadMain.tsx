@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Bot, FolderOpen, GitBranch, Home, MessagesSquare } from "lucide-react";
-import type { IpcError, Thread } from "@tandem/protocol";
+import type { IpcError, PlanRevision, Thread } from "@tandem/protocol";
 import {
   ApprovalCard,
   Banner,
@@ -8,6 +8,7 @@ import {
   Chip,
   Composer,
   ContextMeter,
+  Dialog,
   EmptyState,
   EngineBadge,
   Skeleton,
@@ -28,7 +29,7 @@ import { switchMode } from "../shell/actions";
 import { pendingApprovals, reuseRows, toRows, usageOf, type Row } from "./rows";
 import { useThreadDrops } from "./drops";
 import { ThreadComposer } from "./ThreadComposer";
-import { Transcript, approvalLabels, type TranscriptActions } from "./Transcript";
+import { PlanCard, Transcript, approvalLabels, type TranscriptActions } from "./Transcript";
 
 const STATE_DOT = { idle: "idle", working: "working", waiting: "waiting", done: "done", failed: "error", interrupted: "idle" } as const;
 
@@ -53,7 +54,65 @@ async function resolve(approvalId: string, decision: { type: "allow"; scope: "on
 }
 
 /** Thread header (UI-20): folder, title, branch, engine and model, state. */
-function Header({ thread, contextFill }: { thread: Thread; contextFill: number | null }) {
+/** "Plan versions (n)": every plan of the thread, newest first (F-TH-10). */
+function PlanVersions({ plans, actions }: { plans: PlanRevision[]; actions: TranscriptActions }) {
+  const [open, setOpen] = useState(false);
+  const [viewing, setViewing] = useState<number | null>(null);
+  if (plans.length === 0) return null;
+  const steps = (text: string) => text.split("\n").filter((l) => /^\s*(\d+[.)]|[-*])\s+/.test(l)).length;
+  return (
+    <>
+      <Button size="sm" variant="ghost" onClick={() => setOpen(true)} data-testid="plan-versions">
+        {t("thread.plan.versions", { n: plans.length })}
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen} title={t("thread.plan.versionsTitle")} size="lg">
+        <ul className="flex flex-col gap-2">
+          {[...plans].reverse().map((p) => (
+            <li key={p.version} className="flex flex-col gap-2 rounded-md border border-border p-3">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="font-semibold text-fg">{t("thread.plan", { n: p.version })}</span>
+                <span className="text-fg-muted">
+                  {new Date(p.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} · {t("thread.plan.steps", { n: steps(p.text) })}
+                </span>
+                <span className="ml-auto flex gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => setViewing(viewing === p.version ? null : p.version)}>
+                    {t("thread.plan.view")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      setOpen(false);
+                      actions.implementPlan(p.version);
+                    }}
+                  >
+                    {t("thread.plan.implementShort")}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => actions.copy(p.text)}>
+                    {t("thread.copy")}
+                  </Button>
+                </span>
+              </div>
+              {viewing === p.version && <PlanCard version={p.version} text={p.text} actions={actions} />}
+            </li>
+          ))}
+        </ul>
+      </Dialog>
+    </>
+  );
+}
+
+function Header({
+  thread,
+  contextFill,
+  plans,
+  actions,
+}: {
+  thread: Thread;
+  contextFill: number | null;
+  plans: PlanRevision[];
+  actions: TranscriptActions;
+}) {
   const ws = useWorkspaces((s) => s.list.find((w) => w.id === thread.workspaceId) ?? null);
   const engine = useEngines((s) => s.list.find((e) => e.spec.id === thread.engineId));
   const update = useThreads((s) => s.update);
@@ -100,6 +159,7 @@ function Header({ thread, contextFill }: { thread: Thread; contextFill: number |
       )}
       {ws?.branch && <Chip label={ws.branch} icon={<GitBranch size={12} />} className="hidden shrink-0 lg:inline-flex" />}
       <span className="ml-auto flex shrink-0 items-center gap-3">
+        <PlanVersions plans={plans} actions={actions} />
         {engine && <EngineBadge letters={engine.spec.logo} name={engine.spec.label} size={14} />}
         <span className="hidden text-fg-muted md:inline">{thread.model ?? t("thread.header.defaultModel")}</span>
         <span className="inline-flex items-center gap-1.5 text-fg-muted" data-testid="thread-state">
@@ -113,6 +173,8 @@ function Header({ thread, contextFill }: { thread: Thread; contextFill: number |
     </header>
   );
 }
+
+const NO_PLANS: PlanRevision[] = [];
 
 /** Thread mode with no thread picked: the composer starts one (F-TH-02 AC1). */
 function Starter({ visible }: { visible: boolean }) {
@@ -175,6 +237,7 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
   const open = useThreads((s) => s.open);
   const loadOlder = useThreads((s) => s.loadOlder);
   const retry = useThreads((s) => s.retry);
+  const implementPlan = useThreads((s) => s.implementPlan);
   const workspace = useWorkspaces((s) => s.list.find((w) => w.id === thread?.workspaceId) ?? null);
   const engineLabel = useEngines((s) => s.label(thread?.engineId) ?? thread?.engineId ?? "");
   const { show } = useToast();
@@ -211,8 +274,10 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
       editResend: (text) => setPrefill({ text, n: Date.now() }),
       openLink: (href) => void invoke("app_open_external", { url: href }).catch(fail),
       copy: (text) => void navigator.clipboard?.writeText(text),
+      implementPlan: (version) => thread && void implementPlan(thread.id, version).then((e) => e && fail(e)),
+      revisePlan: () => setPrefill({ text: t("thread.plan.revisePrefill"), n: Date.now() }),
     }),
-    [thread, retry, fail],
+    [thread, retry, implementPlan, fail],
   );
   const lastMessage = useCallback(() => {
     for (let i = rows.length - 1; i >= 0; i--) {
@@ -225,6 +290,8 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
   const turns = live?.detail?.turns;
   const startedAt = useCallback((turnId: string) => turns?.find((tr) => tr.id === turnId)?.startedAt ?? null, [turns]);
   const approvalLabel = useCallback((kind: string) => approvalTitle(engineLabel, kind), [engineLabel]);
+  const plans = live?.detail?.planRevisions;
+  const planText = useCallback((version: number) => plans?.find((p) => p.version === version)?.text ?? null, [plans]);
   const threadId = thread?.id;
   const onNearTop = useCallback(() => {
     if (threadId) void loadOlder(threadId);
@@ -237,7 +304,7 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="thread-main" data-thread-id={thread.id}>
       {login && <LoginSheet request={login} onClose={() => setLogin(null)} />}
-      <Header thread={thread} contextFill={usage.contextFillPct} />
+      <Header thread={thread} contextFill={usage.contextFillPct} plans={plans ?? NO_PLANS} actions={actions} />
       {live?.status === "error" ? (
         <div className="p-4">
           <Banner tone="error" action={{ label: t("thread.reload"), onClick: () => void open(thread.id) }}>
@@ -283,7 +350,7 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
               )}
             </div>
           ) : (
-            <Transcript rows={rows} actions={actions} approvalLabel={approvalLabel} startedAt={startedAt} onNearTop={onNearTop} />
+            <Transcript rows={rows} actions={actions} approvalLabel={approvalLabel} startedAt={startedAt} planText={planText} onNearTop={onNearTop} />
           )}
         </SkeletonGate>
       )}

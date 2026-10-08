@@ -29,6 +29,10 @@ export type TranscriptActions = {
   editResend: (text: string) => void;
   openLink: (href: string) => void;
   copy: (text: string) => void;
+  /** F-TH-10: Act, then send this plan version. */
+  implementPlan: (version: number) => void;
+  /** Pre-fills the composer to ask for a revised plan. */
+  revisePlan: () => void;
 };
 
 /** A unified diff (with `--- a/` / `+++ b/` headers per file) as DiffView files. */
@@ -141,16 +145,46 @@ function Hover({ children, actions }: { children: ReactNode; actions: ReactNode 
   );
 }
 
+/** A plan version (UI_SPEC §4.3): its steps, and Implement / Revise / Copy. */
+export function PlanCard({ version, text, actions }: { version: number; text: string | null; actions: TranscriptActions }) {
+  return (
+    <Callout
+      tone="accent"
+      title={t("thread.plan", { n: version })}
+      className="border-l-4"
+      actions={
+        text !== null && (
+          <>
+            <Button size="sm" variant="primary" onClick={() => actions.implementPlan(version)} data-testid="plan-implement">
+              {t("thread.plan.implement")}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={actions.revisePlan}>
+              {t("thread.plan.revise")}
+            </Button>
+            <Button size="sm" variant="ghost" iconLeft={<Copy size={14} />} onClick={() => actions.copy(text)}>
+              {t("thread.copy")}
+            </Button>
+          </>
+        )
+      }
+    >
+      {text !== null ? <MarkdownView markdown={text} onLink={actions.openLink} /> : t("thread.plan.missing")}
+    </Callout>
+  );
+}
+
 const RowView = memo(function RowView({
   row,
   actions,
   approvalLabel,
   startedAt,
+  planText,
 }: {
   row: Row;
   actions: TranscriptActions;
   approvalLabel: (kind: string) => string;
   startedAt: (turnId: string) => number | null;
+  planText: (version: number) => string | null;
 }) {
   switch (row.kind) {
     case "user":
@@ -279,7 +313,11 @@ const RowView = memo(function RowView({
         </div>
       );
     case "plan":
-      return <Callout tone="accent" title={t("thread.plan", { n: row.version })} />;
+      return (
+        <div data-testid="thread-plan" data-version={row.version}>
+          <PlanCard version={row.version} text={planText(row.version)} actions={actions} />
+        </div>
+      );
     case "working":
       return <Working startedAt={startedAt(row.turnId)} />;
   }
@@ -308,12 +346,14 @@ export function Transcript({
   actions,
   approvalLabel,
   startedAt,
+  planText,
   onNearTop,
 }: {
   rows: Row[];
   actions: TranscriptActions;
   approvalLabel: (kind: string) => string;
   startedAt: (turnId: string) => number | null;
+  planText: (version: number) => string | null;
   onNearTop?: () => void;
 }) {
   return (
@@ -324,7 +364,7 @@ export function Transcript({
       ariaLabel={t("thread.transcript")}
       onNearTop={onNearTop}
       className="h-full overflow-y-auto px-4 py-3 focus-visible:outline-none [&>div]:mx-auto [&>div]:max-w-3xl [&>div]:py-1.5"
-      render={(row) => <RowView row={row} actions={actions} approvalLabel={approvalLabel} startedAt={startedAt} />}
+      render={(row) => <RowView row={row} actions={actions} approvalLabel={approvalLabel} startedAt={startedAt} planText={planText} />}
       newActivity={(jump) => (
         <div className="absolute inset-x-0 bottom-3 flex justify-center">
           <Button size="sm" variant="secondary" iconLeft={<ArrowDown size={14} />} onClick={jump}>

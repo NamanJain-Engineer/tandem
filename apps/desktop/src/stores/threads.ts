@@ -49,6 +49,8 @@ type ThreadsState = {
   send: (id: string, text: string, attachmentIds: string[], queueIfBusy: boolean) => Promise<SendResult | IpcError>;
   stop: (id: string) => Promise<void>;
   retry: (id: string) => Promise<IpcError | null>;
+  /** F-TH-10: Act, then send plan `version`; the draft stays. */
+  implementPlan: (id: string, version: number) => Promise<IpcError | null>;
   setShowArchived: (v: boolean) => void;
 };
 
@@ -240,6 +242,16 @@ export const useThreads = create<ThreadsState>((set, get) => {
         return null;
       } catch (e) {
         return isIpcError(e) ? e : null;
+      }
+    },
+    implementPlan: async (id, version) => {
+      try {
+        await invoke<SendResult>("thread_implement_plan", { threadId: id, version, access: null });
+        void get().refresh();
+        void get().reloadDetail(id);
+        return null;
+      } catch (e) {
+        return isIpcError(e) ? e : { code: "internal", message: String(e), stage: null, hint: null, retryable: false };
       }
     },
     setShowArchived: (v) => set({ showArchived: v }),

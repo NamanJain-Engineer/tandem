@@ -49,7 +49,7 @@ const CLAUDE: EngineView = {
 };
 
 function detail(th: Thread, extra: Partial<ThreadDetail> = {}): ThreadDetail {
-  return { thread: th, turns: [], running: null, queued: null, draft: "{}", attachments: [], ...extra };
+  return { thread: th, turns: [], running: null, queued: null, draft: "{}", attachments: [], planRevisions: [], ...extra };
 }
 
 type Channel = { onmessage: (e: ThreadEventEnvelope) => void };
@@ -202,6 +202,40 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     expect(await screen.findByText("Quick reply.")).toBeTruthy();
     expect(screen.getAllByText("Quick reply.")).toHaveLength(1);
     expect(order).toEqual(["subscribe", "history"]);
+  });
+
+  it("F-TH-10.1 each plan card shows its own version; Implement sends that version and Revise pre-fills", async () => {
+    const th = thread({ mode: "plan" });
+    const plan = (v: number) => ({ version: v, turnId: `turn_${v}`, text: `1. Step of plan ${v}`, createdAt: 1_000 * v });
+    const items: ThreadEventEnvelope[] = [1, 2].flatMap((v) => [
+      env(th.id, `turn_${v}`, 0, { type: "user", text: `plan it ${v}`, attachments: [] }),
+      env(th.id, `turn_${v}`, 1, { type: "assistant", markdown: `1. Step of plan ${v}` }),
+      env(th.id, `turn_${v}`, 2, { type: "plan_revision", version: v }),
+      env(th.id, `turn_${v}`, 3, { type: "turn_end", reason: "completed", blockedActions: 0 }),
+    ]);
+    const calls: Call[] = fakeBackend({
+      thread_list: () => [th],
+      thread_get: () => detail(th, { planRevisions: [plan(1), plan(2)] }),
+      thread_events: () => ({ items, nextBeforeId: null }),
+      thread_subscribe: () => null,
+      thread_implement_plan: () => ({ turnId: "turn_3", queued: false }),
+      models_list: () => [],
+    });
+    await act(async () => {
+      await useThreads.getState().refresh();
+      useThreads.getState().select(th.id);
+    });
+    mount(<ThreadMain />);
+    const cards = await screen.findAllByTestId("thread-plan");
+    expect(cards.map((c) => c.getAttribute("data-version"))).toEqual(["1", "2"]);
+    expect(within(cards[0] as HTMLElement).getByText("Plan · version 1")).toBeTruthy();
+    fireEvent.click(within(cards[0] as HTMLElement).getByRole("button", { name: "Implement this plan" }));
+    await waitFor(() => expect(calls.some((c) => c.cmd === "thread_implement_plan")).toBe(true));
+    expect(calls.find((c) => c.cmd === "thread_implement_plan")?.args).toMatchObject({ threadId: th.id, version: 1 });
+    fireEvent.click(within(cards[1] as HTMLElement).getByRole("button", { name: "Revise…" }));
+    await waitFor(() => expect((screen.getByRole("textbox", { name: /message/i }) as HTMLTextAreaElement).value).toBe("Revise the plan: "));
+    // The header lists both versions.
+    expect(screen.getByTestId("plan-versions").textContent).toBe("Plan versions (2)");
   });
 
   it("F-TH-07.3 a failed send puts the text back ahead of anything typed since", async () => {

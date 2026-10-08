@@ -717,6 +717,81 @@ pub async fn page(
         .await
 }
 
+/// A plan the agent wrote in Plan mode (F-TH-10): v1, v2, … per thread.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PlanRevision {
+    pub version: u32,
+    pub turn_id: TurnId,
+    pub text: String,
+    pub created_at: i64,
+}
+
+/// Saves a turn's plan as the thread's next version.
+pub async fn add_plan_revision(
+    store: &Store,
+    thread: &ThreadId,
+    turn: &TurnId,
+    text: String,
+) -> Result<PlanRevision, StoreError> {
+    let thread = thread.as_str().to_string();
+    let turn_id = turn.clone();
+    store
+        .write(move |t| {
+            let version: u32 = t.query_row(
+                "SELECT COALESCE(MAX(version), 0) + 1 FROM plan_revisions WHERE thread_id = ?1",
+                [&thread],
+                |r| r.get(0),
+            )?;
+            let at = now_ms();
+            t.execute(
+                "INSERT INTO plan_revisions (id, thread_id, version, turn_id, text, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    format!("{thread}:v{version}"),
+                    thread,
+                    version,
+                    turn_id.as_str(),
+                    text,
+                    at
+                ],
+            )?;
+            Ok(PlanRevision {
+                version,
+                turn_id,
+                text,
+                created_at: at,
+            })
+        })
+        .await
+}
+
+/// A thread's plans, oldest first.
+pub async fn plan_revisions(
+    store: &Store,
+    thread: &ThreadId,
+) -> Result<Vec<PlanRevision>, StoreError> {
+    let thread = thread.as_str().to_string();
+    store
+        .read(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT version, turn_id, text, created_at FROM plan_revisions
+                 WHERE thread_id = ?1 ORDER BY version",
+            )?;
+            let rows = stmt.query_map([thread], |r| {
+                Ok(PlanRevision {
+                    version: r.get(0)?,
+                    turn_id: TurnId::from_db(r.get(1)?),
+                    text: r.get(2)?,
+                    created_at: r.get(3)?,
+                })
+            })?;
+            Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        })
+        .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -965,6 +1040,32 @@ mod tests {
         assert_eq!(
             turns(&store, &th.id).await.expect("turns")[1].state,
             TurnState::Interrupted
+        );
+    }
+
+    #[tokio::test]
+    async fn f_th_10_plan_revisions_are_numbered_per_thread() {
+        let (_dir, store) = store();
+        let a = insert(&store, new("claude")).await.expect("a");
+        let b = insert(&store, new("claude")).await.expect("b");
+        let turn = TurnId::new();
+        let v1 = add_plan_revision(&store, &a.id, &turn, "1. Read".into())
+            .await
+            .expect("v1");
+        let v2 = add_plan_revision(&store, &a.id, &turn, "1. Write".into())
+            .await
+            .expect("v2");
+        let other = add_plan_revision(&store, &b.id, &turn, "1. Other".into())
+            .await
+            .expect("other");
+        assert_eq!((v1.version, v2.version, other.version), (1, 2, 1));
+        let listed = plan_revisions(&store, &a.id).await.expect("list");
+        assert_eq!(
+            listed
+                .iter()
+                .map(|p| (p.version, p.text.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(1, "1. Read"), (2, "1. Write")]
         );
     }
 }

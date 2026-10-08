@@ -500,6 +500,20 @@ pub async fn thread_pick_files(
     state.threads.attach_paths(&thread_id, picked).await
 }
 
+/// F-TH-10: Act at `access` (or the thread's), then send plan `version`.
+#[tauri::command]
+pub async fn thread_implement_plan(
+    state: State<'_, AppState>,
+    thread_id: ThreadId,
+    version: u32,
+    access: Option<Access>,
+) -> Result<SendResult, IpcError> {
+    state
+        .threads
+        .implement_plan(&thread_id, version, access)
+        .await
+}
+
 #[tauri::command]
 pub async fn thread_unqueue(
     state: State<'_, AppState>,

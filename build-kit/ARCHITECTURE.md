@@ -637,7 +637,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 |---|---|---|---|---|
 | `thread_create` | `{kind:"thread"\|"teammate_chat", workspaceId?, teammateId?, engineId?, accountId?, model?, effort?, access?, mode?}` (omitted = remembered defaults) | `Thread` | EngineMissing, ForbiddenPlan (engine not in plan) | F-TH-01, F-TH-02, F-TH-07 |
 | `thread_list` | `{kind, teammateId?, includeArchived?}` | `[Thread]` (the rail's summary is the thread row) | — | F-TH-01, F-AG-03 |
-| `thread_get` | `{threadId}` | `ThreadDetail {thread, turns, running?, queued?, draft, attachments}` (`attachments`: the draft's unsent ones; + `planRevisions` with M7 task 11; pending approvals are the running turn's `approval_request` events without a resolution). Opening a thread clears its unread flag | NotFound | F-TH-01 |
+| `thread_get` | `{threadId}` | `ThreadDetail {thread, turns, running?, queued?, draft, attachments}` (`attachments`: the draft's unsent ones; `planRevisions`: `[PlanRevision {version, turnId, text, createdAt}]`, v1 first; pending approvals are the running turn's `approval_request` events without a resolution). Opening a thread clears its unread flag | NotFound | F-TH-01 |
 | `thread_events` | `{threadId, beforeId?, limit ≤ 500}` | `ThreadEventPage {items: [ThreadEventEnvelope] (oldest first), nextBeforeId?}` | — | F-TH-12 |
 | `thread_subscribe` | `{threadId, channel: Channel<ThreadEventEnvelope>}` | — (streams until the webview drops the channel) | NotFound | F-TH-03 |
 | `thread_send` | `{threadId, text, attachmentIds:[AttachmentId], queueIfBusy: bool}` | `SendResult {turnId?, queued: bool}` | Conflict (a queued message already exists), EngineMissing, LimitReached, Unauthenticated (engine sign-in) | F-TH-03, F-TH-07 |
@@ -654,7 +654,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `thread_pick_files` | `{threadId}` (native multi-file picker; debug builds read `TANDEM_FAKE_PICK_FILES`, newline-separated paths) | `[Attachment]` (empty when cancelled) | LimitReached | F-TH-07 |
 | `thread_unqueue` | `{threadId}` | `string?` (the queued follow-up's text, for the composer; its attachments go back to the draft) | — | F-TH-07 |
 | `thread_mention_search` | `{threadId, query}` | `[PathEntry]` (≤50, gitignore-aware) | — | F-TH-07 |
-| `thread_implement_plan` | `{threadId, version, access}` | `SendResult` | NotFound | F-TH-10 |
+| `thread_implement_plan` | `{threadId, version, access?}`: the thread goes to Act (at `access` when given) and sends "Implement plan version {n} exactly as written:" + the plan; the draft stays | `SendResult` | NotFound, Conflict (a turn is running) | F-TH-10 |
 | `thread_changes` | `{threadId}` | `[FileDiff]` | — | F-TH-13 |
 | `thread_summarize_continue` | `{threadId}` | `Thread` (new thread seeded with summary) | — | F-TH-04 |
 

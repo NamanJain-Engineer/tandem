@@ -15,6 +15,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use tandem_core::access::{Access, ThreadMode};
 use tandem_core::allow_rules::{self, AllowRule, ApprovalSubject};
 use tandem_core::approvals::{
     ApprovalBroker, ApprovalKind, ApprovalOutcome, ApprovalRequest, ApprovalScope,
@@ -81,6 +82,8 @@ pub struct ThreadDetail {
     pub draft: String,
     /// The draft's attachments (not sent yet).
     pub attachments: Vec<Attachment>,
+    /// The plans written in Plan mode, v1 first (F-TH-10).
+    pub plan_revisions: Vec<repo::PlanRevision>,
 }
 
 /// `thread_events`: oldest first; `next_before_id` pages further back.
@@ -451,6 +454,9 @@ impl ThreadService {
             thread.unread = false;
             self.publish_threads().await;
         }
+        let plan_revisions = repo::plan_revisions(&self.store, id)
+            .await
+            .map_err(store_err)?;
         let rt = self.runtime(id);
         let rt = rt.lock().await;
         Ok(ThreadDetail {
@@ -460,6 +466,7 @@ impl ThreadService {
             queued: rt.queued.as_ref().map(|q| q.text.clone()),
             draft,
             attachments,
+            plan_revisions,
         })
     }
 
@@ -947,6 +954,79 @@ impl ThreadService {
 
     /// Ends the running turn; returns the queued follow-up to send, if the
     /// turn wasn't stopped.
+    /// In Plan mode a completed turn's last reply is the thread's next plan
+    /// version (F-TH-10). Returns that version.
+    async fn save_plan(&self, thread: &ThreadId, turn: &TurnId) -> Option<u32> {
+        let record = self.thread(thread).await.ok()?;
+        if record.mode != ThreadMode::Plan {
+            return None;
+        }
+        let rows = repo::turn_messages(&self.store, turn).await.ok()?;
+        let text =
+            rows.iter().rev().find_map(|row| {
+                match serde_json::from_str::<ThreadEvent>(&row.payload_json).ok()? {
+                    ThreadEvent::Assistant { markdown } if !markdown.trim().is_empty() => {
+                        Some(markdown)
+                    }
+                    _ => None,
+                }
+            })?;
+        match repo::add_plan_revision(&self.store, thread, turn, text).await {
+            Ok(plan) => Some(plan.version),
+            Err(e) => {
+                tracing::warn!(code = "threads.plan_failed", error = %e, "couldn't save a plan version");
+                None
+            }
+        }
+    }
+
+    /// Implement on a plan version: the thread goes to Act (at `access` when
+    /// given) and that version's text is sent. An unsent draft stays in the
+    /// composer (D-121).
+    pub async fn implement_plan(
+        self: &Arc<Self>,
+        id: &ThreadId,
+        version: u32,
+        access: Option<Access>,
+    ) -> Result<SendResult, IpcError> {
+        let plan = repo::plan_revisions(&self.store, id)
+            .await
+            .map_err(store_err)?
+            .into_iter()
+            .find(|p| p.version == version)
+            .ok_or_else(|| {
+                IpcError::new(
+                    ErrorCode::NotFound,
+                    format!("There's no plan version {version}"),
+                )
+            })?;
+        if self.runtime(id).lock().await.turn.is_some() {
+            return Err(IpcError::new(
+                ErrorCode::Conflict,
+                "Working — send when it's done, or stop it",
+            ));
+        }
+        self.update(
+            id,
+            ThreadPatch {
+                mode: Some(ThreadMode::Act),
+                access,
+                ..ThreadPatch::default()
+            },
+        )
+        .await?;
+        self.send(
+            id,
+            format!(
+                "Implement plan version {version} exactly as written:\n\n{}",
+                plan.text
+            ),
+            Vec::new(),
+            false,
+        )
+        .await
+    }
+
     async fn end_turn(
         self: &Arc<Self>,
         thread: &ThreadId,
@@ -965,6 +1045,12 @@ impl ThreadService {
             r => r,
         };
         let blocked = run.blocked;
+        if reason == TurnEndReason::Completed {
+            if let Some(version) = self.save_plan(thread, &run.id).await {
+                self.emit(thread, &mut run, ThreadEvent::PlanRevision { version })
+                    .await;
+            }
+        }
         self.emit(
             thread,
             &mut run,
@@ -1974,7 +2060,6 @@ impl ChatLauncher for AppLauncher {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use tandem_core::access::{Access, ThreadMode};
     use tandem_core::approvals::ApprovalDecision;
     use tandem_core::clock::SystemClock;
     use tandem_core::ids::ApprovalId;
@@ -3061,6 +3146,71 @@ mod tests {
             ThreadEvent::Error { action: Some(ErrorAction::OpenTerminal), stage: ErrorStage::Spawn, message, .. }
                 if message.starts_with("Codex version 0.31.0 isn't supported yet")
         ));
+    }
+
+    #[tokio::test]
+    async fn f_th_10_1_plan_turns_make_versions_and_implement_sends_the_chosen_one() {
+        let n = Arc::new(AtomicUsize::new(0));
+        let count = n.clone();
+        let f = fixture(
+            OnStop::Ack,
+            Arc::new(move |turn, tx| {
+                let i = count.fetch_add(1, Ordering::SeqCst) + 1;
+                play(
+                    tx,
+                    vec![
+                        ev(&turn, delta(&format!("1. Step of plan {i}"))),
+                        ev(&turn, end(TurnEndReason::Completed)),
+                    ],
+                );
+            }),
+        )
+        .await;
+        let id = &f.thread.id;
+        f.svc
+            .update(
+                id,
+                ThreadPatch {
+                    mode: Some(ThreadMode::Plan),
+                    ..ThreadPatch::default()
+                },
+            )
+            .await
+            .expect("plan mode");
+        for (k, text) in ["plan it", "plan it again"].into_iter().enumerate() {
+            f.svc
+                .send(id, text.into(), Vec::new(), false)
+                .await
+                .expect("send");
+            ended(&f, k + 1).await;
+        }
+        let detail = f.svc.get(id).await.expect("detail");
+        assert_eq!(
+            detail
+                .plan_revisions
+                .iter()
+                .map(|p| (p.version, p.text.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(1, "1. Step of plan 1"), (2, "1. Step of plan 2")]
+        );
+        let events = stored(&f).await;
+        assert!(events.contains(&ThreadEvent::PlanRevision { version: 1 }));
+        assert!(events.contains(&ThreadEvent::PlanRevision { version: 2 }));
+
+        f.svc.implement_plan(id, 1, None).await.expect("implement");
+        ended(&f, 3).await;
+        let sent = f.adapter.inputs.lock().expect("inputs")[2].text.clone();
+        assert_eq!(
+            sent,
+            "Implement plan version 1 exactly as written:\n\n1. Step of plan 1"
+        );
+        assert!(!sent.contains("plan 2"));
+        let detail = f.svc.get(id).await.expect("detail");
+        assert_eq!(detail.thread.mode, ThreadMode::Act);
+        // An Act turn writes no plan.
+        assert_eq!(detail.plan_revisions.len(), 2);
+        let missing = f.svc.implement_plan(id, 9, None).await;
+        assert_eq!(missing.err().map(|e| e.code), Some(ErrorCode::NotFound));
     }
 
     #[tokio::test]

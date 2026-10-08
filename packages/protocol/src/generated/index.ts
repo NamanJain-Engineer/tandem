@@ -112,6 +112,7 @@ export type * from "./PaneRestore";
 export type * from "./PathEntry";
 export type * from "./PendingSignIn";
 export type * from "./Plan";
+export type * from "./PlanRevision";
 export type * from "./Preset";
 export type * from "./PresetId";
 export type * from "./PtyInfo";
