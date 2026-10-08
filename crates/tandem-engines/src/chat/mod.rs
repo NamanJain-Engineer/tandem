@@ -3,6 +3,7 @@
 //! engine-specific code; they turn an engine's output into
 //! [`ThreadEvent`](crate::events::ThreadEvent)s.
 
+pub mod claude;
 pub mod process;
 
 use std::path::PathBuf;

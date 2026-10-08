@@ -15,16 +15,22 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use tandem_core::approvals::{
+    ApprovalBroker, ApprovalKind, ApprovalOutcome, ApprovalRequest, ApprovalScope,
+};
 use tandem_core::bus::{BusEvent, EventBus, Topic};
 use tandem_core::clock::Clock;
 use tandem_core::ids::{AttachmentId, ThreadId, TurnId};
+use tandem_core::source::SourceRef;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_engines::chat::{
     AdapterEvent, ChatAdapter, ChatSession, ChatStart, InterruptOutcome, TurnInput,
 };
 use tandem_engines::events::{
-    ErrorAction, ErrorStage, ThreadEvent, ThreadEventEnvelope, ToolStatus, TurnEndReason,
+    ApprovalDecisionView, ErrorAction, ErrorStage, ThreadEvent, ThreadEventEnvelope, ToolStatus,
+    TurnEndReason,
 };
+use tandem_gateway::{ApprovalAnswer, ApprovalAsker, Caller, ToolApproval};
 use tandem_store::repo::threads::{
     self as repo, MessageRow, NewThread, ThreadKind, ThreadRecord, ThreadState, TurnRecord,
     TurnState,
@@ -157,6 +163,7 @@ pub struct ThreadService {
     store: Store,
     bus: EventBus,
     clock: Arc<dyn Clock>,
+    approvals: Arc<ApprovalBroker>,
     launcher: Arc<dyn ChatLauncher>,
     runtimes: StdMutex<HashMap<String, Arc<Mutex<Runtime>>>>,
     live: broadcast::Sender<ThreadEventEnvelope>,
@@ -187,6 +194,42 @@ fn thread_state(reason: TurnEndReason) -> ThreadState {
     }
 }
 
+/// The approval card's kind and one-line summary for a tool use
+/// ("Run `npm test`").
+fn describe(ask: &ToolApproval, cwd: &std::path::Path) -> (ApprovalKind, String) {
+    let what = tandem_engines::chat::claude::arg_summary(&ask.tool_name, &ask.input, cwd);
+    match ask.tool_name.as_str() {
+        "Bash" => (ApprovalKind::Command, format!("Run `{what}`")),
+        "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => {
+            (ApprovalKind::FileWrite, format!("Edit `{what}`"))
+        }
+        "WebFetch" => (ApprovalKind::Network, format!("Fetch `{what}`")),
+        "WebSearch" => (
+            ApprovalKind::Network,
+            format!("Search the web for `{what}`"),
+        ),
+        t if t.starts_with("mcp__") => (ApprovalKind::Mcp, format!("Use `{what}`")),
+        _ => (ApprovalKind::Other, format!("Use `{what}`")),
+    }
+}
+
+/// The gateway's approvals tool, answered by the thread that asked.
+pub struct GatewayAsker {
+    threads: std::sync::Weak<ThreadService>,
+}
+
+#[async_trait]
+impl ApprovalAsker for GatewayAsker {
+    async fn ask(&self, caller: &Caller, ask: ToolApproval) -> ApprovalAnswer {
+        match (caller, self.threads.upgrade()) {
+            (Caller::Thread { thread_id }, Some(threads)) => {
+                threads.ask_approval(thread_id, ask).await
+            }
+            _ => ApprovalAnswer::Deny { message: None },
+        }
+    }
+}
+
 /// A streaming piece: its block kind and text.
 fn delta_parts(event: &ThreadEvent) -> Option<(BlockKind, &str)> {
     match event {
@@ -213,6 +256,7 @@ impl ThreadService {
         store: Store,
         bus: EventBus,
         clock: Arc<dyn Clock>,
+        approvals: Arc<ApprovalBroker>,
         launcher: Arc<dyn ChatLauncher>,
     ) -> Arc<Self> {
         let (live, _) = broadcast::channel(LIVE_BUFFER);
@@ -220,6 +264,7 @@ impl ThreadService {
             store,
             bus,
             clock,
+            approvals,
             launcher,
             runtimes: StdMutex::default(),
             live,
@@ -446,6 +491,10 @@ impl ThreadService {
         reason: TurnEndReason,
     ) -> Option<Queued> {
         let mut run = rt.turn.take()?;
+        // Nothing waits on an answer once the turn is over.
+        self.approvals.cancel_source(&SourceRef::Thread {
+            thread_id: thread.as_str().to_string(),
+        });
         self.close_block(thread, &mut run, None).await;
         // A stop that the engine reports as an error is still a stop.
         let reason = match reason {
@@ -859,6 +908,93 @@ impl ThreadService {
         Ok(outcome)
     }
 
+    /// A tool use the engine asks about (F-TH-04 AC4, F-TH-11): an approval
+    /// card in the running turn and the Dashboard, until someone answers or
+    /// it expires (a deny).
+    pub async fn ask_approval(&self, id: &ThreadId, ask: ToolApproval) -> ApprovalAnswer {
+        let Ok(thread) = self.thread(id).await else {
+            return ApprovalAnswer::Deny { message: None };
+        };
+        let (kind, summary) = describe(&ask, std::path::Path::new(&thread.cwd));
+        let detail = serde_json::to_string_pretty(&ask.input).unwrap_or_default();
+        let detail =
+            tandem_core::redact::redact(&tandem_engines::events::truncate_output(&detail).0);
+        let rt = self.runtime(id);
+        let (view, ticket, turn) = {
+            let mut guard = rt.lock().await;
+            if guard.turn.is_none() {
+                // No turn to show it in: nobody could answer.
+                return ApprovalAnswer::Deny { message: None };
+            }
+            // Waiting before the card shows anywhere (F-TH-11).
+            self.set_state(id, ThreadState::Waiting).await;
+            let Some(run) = guard.turn.as_mut() else {
+                return ApprovalAnswer::Deny { message: None };
+            };
+            let (view, ticket) = self.approvals.request(ApprovalRequest {
+                source: SourceRef::Thread {
+                    thread_id: id.as_str().to_string(),
+                },
+                kind,
+                summary,
+                detail,
+                options: vec![ApprovalScope::Once, ApprovalScope::Thread],
+            });
+            self.emit(
+                id,
+                run,
+                ThreadEvent::ApprovalRequest {
+                    id: view.id.clone(),
+                    kind: view.kind,
+                    summary: view.summary.clone(),
+                    detail: view.detail.clone(),
+                    options: view.options.clone(),
+                    expires_at: view.expires_at,
+                },
+            )
+            .await;
+            (view, ticket, run.id.clone())
+        };
+        tracing::info!(code = "threads.approval_asked", kind = ?view.kind, "approval requested");
+        let outcome = ticket.outcome().await;
+        let (decision, answer) = match outcome {
+            ApprovalOutcome::Allowed { scope, .. } => {
+                (ApprovalDecisionView::Allow { scope }, ApprovalAnswer::Allow)
+            }
+            ApprovalOutcome::Denied { reason, .. } => (
+                ApprovalDecisionView::Deny {
+                    reason: reason.clone(),
+                },
+                ApprovalAnswer::Deny { message: reason },
+            ),
+            ApprovalOutcome::Expired => (
+                ApprovalDecisionView::Expired,
+                ApprovalAnswer::Deny {
+                    message: Some("Nobody answered within 30 minutes".into()),
+                },
+            ),
+            ApprovalOutcome::Cancelled => (
+                ApprovalDecisionView::Deny { reason: None },
+                ApprovalAnswer::Deny { message: None },
+            ),
+        };
+        let mut guard = rt.lock().await;
+        if let Some(run) = guard.turn.as_mut().filter(|r| r.id == turn) {
+            self.emit(
+                id,
+                run,
+                ThreadEvent::ApprovalResolved {
+                    id: view.id.clone(),
+                    decision,
+                },
+            )
+            .await;
+            drop(guard);
+            self.set_state(id, ThreadState::Working).await;
+        }
+        answer
+    }
+
     /// `thread_retry`: sends the last failed or interrupted turn's message
     /// again.
     pub async fn retry(self: &Arc<Self>, id: &ThreadId) -> Result<SendResult, IpcError> {
@@ -883,16 +1019,24 @@ impl ThreadService {
 }
 
 /// The app's launcher: the thread's engine and account, resolved like a
-/// pane's (provider home, sanitized login env), run by that engine's adapter.
+/// pane's (provider home, sanitized login env), run by that engine's adapter,
+/// with the gateway (started on first use) as its only MCP server.
 pub struct AppLauncher {
     terminals: Arc<crate::services::terminal::TerminalService>,
     adapters: HashMap<String, Arc<dyn ChatAdapter>>,
+    /// `$DATA/mcp`: one 0600 config per thread session.
+    mcp_dir: std::path::PathBuf,
+    gateway: tokio::sync::OnceCell<tandem_gateway::GatewayHandle>,
+    threads: std::sync::OnceLock<std::sync::Weak<ThreadService>>,
+    /// The live lease per thread; a new session revokes the last one.
+    leases: StdMutex<HashMap<String, tandem_core::ids::LeaseId>>,
 }
 
 impl AppLauncher {
     pub fn new(
         terminals: Arc<crate::services::terminal::TerminalService>,
         adapters: Vec<Arc<dyn ChatAdapter>>,
+        mcp_dir: std::path::PathBuf,
     ) -> Self {
         Self {
             terminals,
@@ -900,7 +1044,83 @@ impl AppLauncher {
                 .into_iter()
                 .map(|a| (a.engine_id().to_string(), a))
                 .collect(),
+            mcp_dir,
+            gateway: tokio::sync::OnceCell::new(),
+            threads: std::sync::OnceLock::new(),
+            leases: StdMutex::default(),
         }
+    }
+
+    /// The engines Thread mode supports now.
+    pub fn adapters(
+        terminals: &crate::services::terminal::TerminalService,
+    ) -> Vec<Arc<dyn ChatAdapter>> {
+        let claude_limits = terminals
+            .engines
+            .get("claude")
+            .map(|e| e.limit_patterns)
+            .unwrap_or_default();
+        vec![Arc::new(tandem_engines::chat::claude::ClaudeAdapter::new(
+            claude_limits,
+        ))]
+    }
+
+    /// The threads the gateway's approvals tool reports to.
+    pub fn bind(&self, threads: &Arc<ThreadService>) {
+        let _ = self.threads.set(Arc::downgrade(threads));
+    }
+
+    async fn gateway(&self) -> Result<&tandem_gateway::GatewayHandle, IpcError> {
+        self.gateway
+            .get_or_try_init(|| async {
+                let threads = self.threads.get().cloned().unwrap_or_default();
+                tandem_gateway::Gateway::start(tandem_gateway::GatewayDeps {
+                    approvals: Arc::new(GatewayAsker { threads }),
+                })
+                .await
+                .map_err(|e| {
+                    IpcError::new(ErrorCode::Unavailable, e.to_string()).with_stage("gateway")
+                })
+            })
+            .await
+    }
+
+    /// A lease for the thread's new session, in a config only the user can
+    /// read (`$DATA/mcp/<thread>.json`, 0600).
+    async fn mcp_config(&self, thread: &ThreadRecord) -> Result<std::path::PathBuf, IpcError> {
+        let gateway = self.gateway().await?;
+        let lease = gateway.prepare(tandem_gateway::SessionDescriptor {
+            caller: Caller::Thread {
+                thread_id: thread.id.clone(),
+            },
+            attended: if thread.attended {
+                tandem_gateway::Attended::Interactive
+            } else {
+                tandem_gateway::Attended::Unattended {
+                    origin: "thread".into(),
+                }
+            },
+            access: thread.access,
+            builtins: tandem_gateway::BuiltinSet::for_thread(),
+        });
+        let previous = match self.leases.lock() {
+            Ok(mut l) => l.insert(thread.id.as_str().to_string(), lease.id.clone()),
+            Err(_) => None,
+        };
+        if let Some(old) = previous {
+            gateway.revoke(&old);
+        }
+        let config = serde_json::json!({"mcpServers": {"tandem": {
+            "type": "http",
+            "url": gateway.url,
+            "headers": {"Authorization": format!("Bearer {}", lease.token)}
+        }}});
+        std::fs::create_dir_all(&self.mcp_dir)
+            .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
+        let path = self.mcp_dir.join(format!("{}.json", thread.id.as_str()));
+        tandem_core::atomic::atomic_write(&path, config.to_string().as_bytes(), Some(0o600))
+            .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
+        Ok(path)
     }
 }
 
@@ -969,7 +1189,7 @@ impl ChatLauncher for AppLauncher {
                 mode: thread.mode,
                 attended: thread.attended,
                 resume_session: thread.engine_session_id.clone(),
-                mcp_config: None,
+                mcp_config: Some(self.mcp_config(thread).await?),
             },
         ))
     }
@@ -1133,6 +1353,7 @@ mod tests {
             store.clone(),
             EventBus::new(),
             Arc::new(SystemClock),
+            ApprovalBroker::new(Arc::new(SystemClock)),
             Arc::new(ScriptedLauncher(adapter.clone())),
         );
         let thread = svc
@@ -1622,6 +1843,259 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn f_th_04_4_an_approval_request_shows_in_the_turn_and_allow_answers_the_tool() {
+        let f = fixture(OnStop::Ack, hang()).await;
+        let id = f.thread.id.clone();
+        f.svc
+            .send(&id, "run the tests".into(), Vec::new(), false)
+            .await
+            .expect("send");
+        let ask = ToolApproval {
+            tool_name: "Bash".into(),
+            input: serde_json::json!({"command": "npm test"}),
+            tool_use_id: Some("toolu_1".into()),
+        };
+        let svc = f.svc.clone();
+        let asking = {
+            let id = id.clone();
+            tokio::spawn(async move { svc.ask_approval(&id, ask).await })
+        };
+        // The card is in the turn and the thread waits for the user.
+        let mut pending = Vec::new();
+        for _ in 0..200 {
+            pending = f.svc.approvals.pending();
+            if !pending.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let view = pending.first().cloned().expect("pending approval");
+        assert_eq!(view.kind, ApprovalKind::Command);
+        assert_eq!(view.summary, "Run `npm test`");
+        assert_eq!(
+            f.svc.get(&id).await.expect("detail").thread.state,
+            ThreadState::Waiting
+        );
+        assert!(stored(&f).await.iter().any(|e| matches!(e, ThreadEvent::ApprovalRequest { summary, .. } if summary == "Run `npm test`")));
+
+        f.svc
+            .approvals
+            .resolve(
+                &view.id,
+                tandem_core::approvals::ApprovalDecision::Allow {
+                    scope: ApprovalScope::Once,
+                },
+                tandem_core::approvals::ApprovalVia::Inline,
+            )
+            .expect("resolve");
+        assert_eq!(asking.await.expect("join"), ApprovalAnswer::Allow);
+        assert!(stored(&f).await.iter().any(|e| matches!(
+            e,
+            ThreadEvent::ApprovalResolved {
+                decision: ApprovalDecisionView::Allow {
+                    scope: ApprovalScope::Once
+                },
+                ..
+            }
+        )));
+        assert_eq!(
+            f.svc.get(&id).await.expect("detail").thread.state,
+            ThreadState::Working
+        );
+
+        // A deny's reason goes back to the engine.
+        let svc = f.svc.clone();
+        let asking = {
+            let id = id.clone();
+            tokio::spawn(async move {
+                svc.ask_approval(
+                    &id,
+                    ToolApproval {
+                        tool_name: "Write".into(),
+                        input: serde_json::json!({"file_path": "/etc/hosts"}),
+                        tool_use_id: None,
+                    },
+                )
+                .await
+            })
+        };
+        let mut pending = Vec::new();
+        for _ in 0..200 {
+            pending = f.svc.approvals.pending();
+            if !pending.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let view = pending.first().cloned().expect("pending");
+        assert_eq!(view.kind, ApprovalKind::FileWrite);
+        f.svc
+            .approvals
+            .resolve(
+                &view.id,
+                tandem_core::approvals::ApprovalDecision::Deny {
+                    reason: Some("Not that file".into()),
+                },
+                tandem_core::approvals::ApprovalVia::Inline,
+            )
+            .expect("resolve");
+        assert_eq!(
+            asking.await.expect("join"),
+            ApprovalAnswer::Deny {
+                message: Some("Not that file".into())
+            }
+        );
+
+        // A stopped turn cancels what it was waiting on.
+        let svc = f.svc.clone();
+        let asking = {
+            let id = id.clone();
+            tokio::spawn(async move {
+                svc.ask_approval(
+                    &id,
+                    ToolApproval {
+                        tool_name: "Bash".into(),
+                        input: serde_json::json!({"command": "make"}),
+                        tool_use_id: None,
+                    },
+                )
+                .await
+            })
+        };
+        for _ in 0..200 {
+            if !f.svc.approvals.pending().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        f.svc.stop(&id).await.expect("stop");
+        assert_eq!(
+            asking.await.expect("join"),
+            ApprovalAnswer::Deny { message: None }
+        );
+        assert!(f.svc.approvals.pending().is_empty());
+    }
+
+    /// A JSON-RPC call to the gateway (JSON body or SSE stream).
+    async fn mcp(
+        url: &str,
+        token: &str,
+        session: Option<&str>,
+        body: serde_json::Value,
+    ) -> (Option<String>, serde_json::Value) {
+        let mut req = reqwest::Client::new()
+            .post(url)
+            .bearer_auth(token)
+            .header("accept", "application/json, text/event-stream")
+            .json(&body);
+        if let Some(s) = session {
+            req = req
+                .header("mcp-session-id", s)
+                .header("mcp-protocol-version", "2025-03-26");
+        }
+        let resp = req.send().await.expect("send");
+        let sid = resp
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        let text = resp.text().await.unwrap_or_default();
+        let msg = serde_json::from_str(&text).ok().or_else(|| {
+            text.lines()
+                .filter_map(|l| l.strip_prefix("data:"))
+                .filter_map(|d| serde_json::from_str::<serde_json::Value>(d.trim()).ok())
+                .find(|m| m.get("id").is_some())
+        });
+        (sid, msg.unwrap_or_default())
+    }
+
+    #[tokio::test]
+    async fn f_th_04_4_the_gateway_tool_asks_the_thread_and_allow_returns_behavior_allow() {
+        let f = fixture(OnStop::Ack, hang()).await;
+        let id = f.thread.id.clone();
+        let gateway = tandem_gateway::Gateway::start(tandem_gateway::GatewayDeps {
+            approvals: Arc::new(GatewayAsker {
+                threads: Arc::downgrade(&f.svc),
+            }),
+        })
+        .await
+        .expect("gateway");
+        let lease = gateway.prepare(tandem_gateway::SessionDescriptor {
+            caller: Caller::Thread {
+                thread_id: id.clone(),
+            },
+            attended: tandem_gateway::Attended::Interactive,
+            access: tandem_core::access::Access::Edits,
+            builtins: tandem_gateway::BuiltinSet::for_thread(),
+        });
+        f.svc
+            .send(&id, "test it".into(), Vec::new(), false)
+            .await
+            .expect("send");
+        let (sid, _) = mcp(
+            &gateway.url,
+            &lease.token,
+            None,
+            serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                "protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "claude-code", "version": "2"}
+            }}),
+        )
+        .await;
+        let sid = sid.expect("session");
+        mcp(
+            &gateway.url,
+            &lease.token,
+            Some(&sid),
+            serde_json::json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+        )
+        .await;
+        // Claude asks; the user allows from the card.
+        let (url, token, s) = (gateway.url.clone(), lease.token.clone(), sid.clone());
+        let call = tokio::spawn(async move {
+            mcp(&url, &token, Some(&s), serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                "name": "tandem_approvals__request",
+                "arguments": {"tool_name": "Bash", "input": {"command": "npm test"}, "tool_use_id": "toolu_7"}
+            }}))
+            .await
+        });
+        let mut pending = Vec::new();
+        for _ in 0..300 {
+            pending = f.svc.approvals.pending();
+            if !pending.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let view = pending.first().cloned().expect("a card");
+        assert_eq!(
+            view.source,
+            SourceRef::Thread {
+                thread_id: id.as_str().to_string()
+            }
+        );
+        f.svc
+            .approvals
+            .resolve(
+                &view.id,
+                tandem_core::approvals::ApprovalDecision::Allow {
+                    scope: ApprovalScope::Once,
+                },
+                tandem_core::approvals::ApprovalVia::Inline,
+            )
+            .expect("allow");
+        let (_, reply) = call.await.expect("join");
+        let text = reply
+            .pointer("/result/content/0/text")
+            .and_then(serde_json::Value::as_str)
+            .expect("tool text");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(text).expect("json"),
+            serde_json::json!({"behavior": "allow", "updatedInput": {"command": "npm test"}})
+        );
+        gateway.shutdown();
+    }
+
+    #[tokio::test]
     async fn f_th_03_a_launch_failure_is_an_error_card_not_a_hang() {
         struct NoEngine;
         #[async_trait]
@@ -1643,6 +2117,7 @@ mod tests {
             store,
             EventBus::new(),
             Arc::new(SystemClock),
+            ApprovalBroker::new(Arc::new(SystemClock)),
             Arc::new(NoEngine),
         );
         let thread = svc

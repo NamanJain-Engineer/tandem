@@ -124,7 +124,7 @@ All locally generated ids are `<prefix>_<ULID>` (Crockford base32, 26 chars), st
 | Headless helpers | engine one-shots for handoff briefs, learn-after-turn, reviews | tandem-engines | one call | stdio | F-CD-16, F-AG-08, F-TK-04 |
 | `tandem-hook` | bundled sidecar | engine hooks / Codex `notify` | ≤500 ms per event | status bus | F-EN-05 |
 | `tandem-tasks` | bundled sidecar | engine (from injected MCP config) | engine session | files under `$DATA/tasks` | F-TK-02 |
-| Gateway | in-process tokio task (default); `tandem-gateway` bin for sidecar mode/tests | main at startup | app session | engines (HTTP), upstream vendors | F-PL-01 |
+| Gateway | in-process tokio task (default); `tandem-gateway` bin for sidecar mode/tests | the threads launcher, on the first engine session that needs it (D-116) | app session | engines (HTTP), upstream vendors | F-PL-01 |
 | Headless routines | `tandem --run-routines` | OS launcher | one pass, exits | SQLite, engines, gateway (in-process) | F-RT-03 |
 | `tandem-host` | static binary on SSH hosts | ssh | `serve` per connection; `daemon` keeps PTYs 10 min | JSON-RPC over ssh stdio | F-RM-01 |
 | API | `node apps/api/dist/server.js` | docker/PM | server | Postgres, Redis, Stripe, providers | F-BE-* |

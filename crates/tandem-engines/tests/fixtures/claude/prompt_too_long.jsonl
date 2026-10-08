@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","session_id":"sess-long","model":"claude-sonnet-4-5"}
+{"type":"result","subtype":"success","is_error":true,"result":"Prompt is too long","session_id":"sess-long"}

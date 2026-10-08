@@ -1,0 +1,63 @@
+[
+  {
+    "session": "sess-think"
+  },
+  {
+    "text": "Session started",
+    "type": "note"
+  },
+  {
+    "text": "The user wants ",
+    "type": "reasoning_delta"
+  },
+  {
+    "text": "a summary.",
+    "type": "reasoning_delta"
+  },
+  {
+    "durationMs": null,
+    "text": "The user wants a summary.",
+    "type": "reasoning"
+  },
+  {
+    "argSummary": "Survey the repo",
+    "detail": "{\n  \"description\": \"Survey the repo\",\n  \"prompt\": \"List the modules\"\n}",
+    "diff": null,
+    "id": "toolu_20",
+    "output": null,
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "running",
+    "type": "tool",
+    "verb": "task"
+  },
+  {
+    "argSummary": "Survey the repo",
+    "detail": "{\n  \"description\": \"Survey the repo\",\n  \"prompt\": \"List the modules\"\n}",
+    "diff": null,
+    "id": "toolu_20",
+    "output": "Two modules: a, b.",
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "ok",
+    "type": "tool",
+    "verb": "task"
+  },
+  {
+    "ack": true
+  },
+  {
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "contextFillPct": 0.0,
+    "costUsd": null,
+    "input": 1,
+    "output": 1,
+    "type": "usage"
+  },
+  {
+    "blockedActions": 0,
+    "reason": "completed",
+    "type": "turn_end"
+  }
+]

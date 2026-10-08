@@ -1,0 +1,25 @@
+[
+  {
+    "session": "sess-long"
+  },
+  {
+    "text": "Session started",
+    "type": "note"
+  },
+  {
+    "ack": true
+  },
+  {
+    "action": "summarize_continue",
+    "code": "prompt_too_long",
+    "hint": "The conversation is too long. Start a new thread with a summary?",
+    "message": "The conversation is too long for the model.",
+    "stage": "model",
+    "type": "error"
+  },
+  {
+    "blockedActions": 0,
+    "reason": "error",
+    "type": "turn_end"
+  }
+]

@@ -361,15 +361,19 @@ impl AppState {
             bus.clone(),
         );
         let telemetry = TelemetryService::new(&data, net.clone());
+        let launcher = Arc::new(crate::services::threads::AppLauncher::new(
+            terminals.clone(),
+            crate::services::threads::AppLauncher::adapters(&terminals),
+            data.mcp_configs(),
+        ));
         let threads = crate::services::threads::ThreadService::new(
             store.clone(),
             bus.clone(),
             clock.clone(),
-            Arc::new(crate::services::threads::AppLauncher::new(
-                terminals.clone(),
-                Vec::new(),
-            )),
+            approvals.broker.clone(),
+            launcher.clone(),
         );
+        launcher.bind(&threads);
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         Self {
             data,

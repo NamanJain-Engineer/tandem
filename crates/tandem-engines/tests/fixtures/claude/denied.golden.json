@@ -1,0 +1,54 @@
+[
+  {
+    "session": "sess-denied"
+  },
+  {
+    "text": "Session started",
+    "type": "note"
+  },
+  {
+    "argSummary": "rm -rf build",
+    "detail": "{\n  \"command\": \"rm -rf build\"\n}",
+    "diff": null,
+    "id": "toolu_09",
+    "output": null,
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "running",
+    "type": "tool",
+    "verb": "bash"
+  },
+  {
+    "argSummary": "rm -rf build",
+    "detail": "{\n  \"command\": \"rm -rf build\"\n}",
+    "diff": null,
+    "id": "toolu_09",
+    "output": "Denied by the user",
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "denied",
+    "type": "tool",
+    "verb": "bash"
+  },
+  {
+    "markdown": "Okay, I won't delete the build folder.",
+    "type": "assistant"
+  },
+  {
+    "ack": true
+  },
+  {
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "contextFillPct": 0.0,
+    "costUsd": null,
+    "input": 4,
+    "output": 9,
+    "type": "usage"
+  },
+  {
+    "blockedActions": 0,
+    "reason": "completed",
+    "type": "turn_end"
+  }
+]

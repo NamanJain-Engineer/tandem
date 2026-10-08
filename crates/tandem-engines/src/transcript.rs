@@ -64,12 +64,19 @@ fn fill_from_line(line: &str) -> Option<ContextFill> {
         .get("model")
         .and_then(serde_json::Value::as_str)
         .unwrap_or("");
-    let window = if model.contains("[1m]") || model.ends_with("-1m") {
+    Some(ContextFill {
+        used,
+        window: window_for(model),
+    })
+}
+
+/// A Claude model's context window: 1M when the model id says so.
+pub fn window_for(model: &str) -> u64 {
+    if model.contains("[1m]") || model.ends_with("-1m") {
         WINDOW_1M
     } else {
         WINDOW
-    };
-    Some(ContextFill { used, window })
+    }
 }
 
 #[cfg(test)]

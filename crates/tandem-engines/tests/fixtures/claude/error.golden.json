@@ -1,0 +1,34 @@
+[
+  {
+    "session": "sess-err"
+  },
+  {
+    "text": "Session started",
+    "type": "note"
+  },
+  {
+    "ack": true
+  },
+  {
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "contextFillPct": 0.0,
+    "costUsd": null,
+    "input": 5,
+    "output": 0,
+    "type": "usage"
+  },
+  {
+    "action": "retry",
+    "code": "error_during_execution",
+    "hint": null,
+    "message": "Claude Code stopped with an error.",
+    "stage": "unknown",
+    "type": "error"
+  },
+  {
+    "blockedActions": 0,
+    "reason": "error",
+    "type": "turn_end"
+  }
+]
