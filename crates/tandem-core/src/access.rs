@@ -1,5 +1,6 @@
 //! What a thread may do (F-TH-09): the access level and the Plan/Act mode,
-//! stored on `threads.access` / `threads.mode`.
+//! stored on `threads.access` / `threads.mode`, and [`resolve`], the one
+//! place that turns them into the access an engine session gets.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -59,6 +60,43 @@ impl ThreadMode {
     }
 }
 
+/// Who started a run (F-TH-09 "unattended rule").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Origin {
+    /// A live user action.
+    Interactive,
+    /// A routine run; `grants_full` is the routine's own explicit setting.
+    Routine { grants_full: bool },
+    /// A task run; `grants_full` is the task's own explicit setting.
+    Task { grants_full: bool },
+    /// A teammate chat started by mail.
+    Mail,
+    /// An Auto (Conductor) run.
+    Auto,
+}
+
+impl Origin {
+    pub fn attended(self) -> bool {
+        self == Origin::Interactive
+    }
+}
+
+/// The access a session runs with: Plan mode reads only; an unattended run
+/// never inherits Full, unless its routine or task explicitly grants it
+/// (`invariant_rule_4_unattended_never_full`).
+pub fn resolve(level: Access, mode: ThreadMode, origin: Origin) -> Access {
+    if mode == ThreadMode::Plan {
+        return Access::Read;
+    }
+    match (level, origin) {
+        (Access::Full, Origin::Interactive)
+        | (Access::Full, Origin::Routine { grants_full: true })
+        | (Access::Full, Origin::Task { grants_full: true }) => Access::Full,
+        (Access::Full, _) => Access::Edits,
+        (level, _) => level,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,5 +111,58 @@ mod tests {
             assert_eq!(ThreadMode::parse(m.as_str()), Some(m));
         }
         assert_eq!(Access::parse("admin"), None);
+    }
+
+    #[test]
+    fn invariant_rule_4_unattended_never_full() {
+        for origin in [
+            Origin::Mail,
+            Origin::Auto,
+            Origin::Routine { grants_full: false },
+            Origin::Task { grants_full: false },
+        ] {
+            assert_eq!(
+                resolve(Access::Full, ThreadMode::Act, origin),
+                Access::Edits,
+                "{origin:?}"
+            );
+            assert!(!origin.attended());
+        }
+        // Only the routine's or task's own setting grants Full.
+        assert_eq!(
+            resolve(
+                Access::Full,
+                ThreadMode::Act,
+                Origin::Routine { grants_full: true }
+            ),
+            Access::Full
+        );
+        assert_eq!(
+            resolve(
+                Access::Full,
+                ThreadMode::Act,
+                Origin::Task { grants_full: true }
+            ),
+            Access::Full
+        );
+        assert_eq!(
+            resolve(Access::Full, ThreadMode::Act, Origin::Interactive),
+            Access::Full
+        );
+        // Lower levels are never raised.
+        assert_eq!(
+            resolve(Access::Read, ThreadMode::Act, Origin::Mail),
+            Access::Read
+        );
+    }
+
+    #[test]
+    fn f_th_09_2_plan_mode_reads_only_at_any_level() {
+        for level in [Access::Read, Access::Edits, Access::Full] {
+            assert_eq!(
+                resolve(level, ThreadMode::Plan, Origin::Interactive),
+                Access::Read
+            );
+        }
     }
 }

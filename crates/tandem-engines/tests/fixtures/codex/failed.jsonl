@@ -1,0 +1,3 @@
+{"jsonrpc":"2.0","method":"error","params":{"threadId":"thr_1","turnId":"turn_f","willRetry":true,"error":{"message":"stream disconnected before completion","codexErrorInfo":{"responseStreamDisconnected":{"httpStatusCode":502}}}}}
+{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thr_1","turn":{"id":"turn_f","status":"failed","items":[],"error":{"message":"Your session expired. Run codex login.","codexErrorInfo":"unauthorized"}}}}
+{"jsonrpc":"2.0","method":"some/futureNotification","params":{"x":1}}

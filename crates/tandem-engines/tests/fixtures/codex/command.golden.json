@@ -1,0 +1,92 @@
+[
+  {
+    "turnStarted": "turn_b"
+  },
+  {
+    "argSummary": "npm ci && npm run build && npm run lint -- --max-warnings … --runInBand --reporters=default --reporters=jest-junit",
+    "detail": "npm ci && npm run build && npm run lint -- --max-warnings 0 && npm test -- --coverage --runInBand --reporters=default --reporters=jest-junit",
+    "diff": null,
+    "id": "call_1",
+    "output": null,
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "running",
+    "type": "tool",
+    "verb": "bash"
+  },
+  {
+    "approval": {
+      "detail": "npm ci && npm run build && npm run lint -- --max-warnings 0 && npm test -- --coverage --runInBand --reporters=default --reporters=jest-junit\n\nNeeds network for npm ci",
+      "kind": "command",
+      "rpcId": 7,
+      "subject": {
+        "command": "npm ci && npm run build && npm run lint -- --max-warnings 0 && npm test -- --coverage --runInBand --reporters=default --reporters=jest-junit"
+      },
+      "summary": "Run `npm ci && npm run build && npm run lint -- --max-warnings … --runInBand --reporters=default --reporters=jest-junit`"
+    }
+  },
+  {
+    "argSummary": "npm ci && npm run build && npm run lint -- --max-warnings … --runInBand --reporters=default --reporters=jest-junit",
+    "detail": "npm ci && npm run build && npm run lint -- --max-warnings 0 && npm test -- --coverage --runInBand --reporters=default --reporters=jest-junit",
+    "diff": null,
+    "id": "call_1",
+    "output": "added 812 packages\nTests: 42 passed",
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "ok",
+    "type": "tool",
+    "verb": "bash"
+  },
+  {
+    "argSummary": "git push --force",
+    "detail": "git push --force",
+    "diff": null,
+    "id": "call_2",
+    "output": null,
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "running",
+    "type": "tool",
+    "verb": "bash"
+  },
+  {
+    "approval": {
+      "detail": "git push --force",
+      "kind": "command",
+      "rpcId": 8,
+      "subject": {
+        "command": "git push --force"
+      },
+      "summary": "Run `git push --force`"
+    }
+  },
+  {
+    "argSummary": "git push --force",
+    "detail": "git push --force",
+    "diff": null,
+    "id": "call_2",
+    "output": null,
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "denied",
+    "type": "tool",
+    "verb": "bash"
+  },
+  {
+    "argSummary": "cat missing.txt",
+    "detail": "cat missing.txt",
+    "diff": null,
+    "id": "call_3",
+    "output": "cat: missing.txt: No such file",
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "error",
+    "type": "tool",
+    "verb": "bash"
+  },
+  {
+    "blockedActions": 0,
+    "reason": "completed",
+    "type": "turn_end"
+  }
+]

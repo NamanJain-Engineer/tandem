@@ -94,6 +94,8 @@ fn start(access: Access, mode: ThreadMode, attended: bool) -> ChatStart {
         attended,
         resume_session: None,
         mcp_config: None,
+        mcp: None,
+        engine_version: None,
     }
 }
 
@@ -153,9 +155,14 @@ fn f_th_04_2_access_maps_to_the_permission_mode() {
         mode(Access::Full, ThreadMode::Act, true),
         (Some("bypassPermissions".into()), None)
     );
-    // Unattended runs never get Full (F-TH-09 AC1).
+    // F-TH-09 AC1: a teammate chat at Full started by mail runs at Edits.
+    let mailed = tandem_core::access::resolve(
+        Access::Full,
+        ThreadMode::Act,
+        tandem_core::access::Origin::Mail,
+    );
     assert_eq!(
-        mode(Access::Full, ThreadMode::Act, false),
+        mode(mailed, ThreadMode::Act, false),
         (Some("acceptEdits".into()), None)
     );
     // Plan mode reads only, at any access.

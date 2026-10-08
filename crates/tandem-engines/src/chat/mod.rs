@@ -4,6 +4,7 @@
 //! [`ThreadEvent`](crate::events::ThreadEvent)s.
 
 pub mod claude;
+pub mod codex;
 pub mod process;
 
 use std::path::PathBuf;
@@ -11,7 +12,8 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tandem_core::access::{Access, ThreadMode};
-use tandem_core::approvals::ApprovalDecision;
+use tandem_core::allow_rules::ApprovalSubject;
+use tandem_core::approvals::{ApprovalDecision, ApprovalKind};
 use tandem_core::ids::{ApprovalId, ThreadId, TurnId};
 use tokio::sync::mpsc;
 use ts_rs::TS;
@@ -38,6 +40,27 @@ pub struct ChatStart {
     pub resume_session: Option<String>,
     /// `$DATA/mcp/<session>.json` (F-PL-01), when the gateway is up.
     pub mcp_config: Option<PathBuf>,
+    /// The gateway and this session's lease, for engines that take MCP
+    /// servers as flags (Codex).
+    pub mcp: Option<McpEndpoint>,
+    /// The engine version detection found, for the adapter's version gate.
+    pub engine_version: Option<String>,
+}
+
+/// The gateway URL and a session's lease token.
+#[derive(Clone, PartialEq, Eq)]
+pub struct McpEndpoint {
+    pub url: String,
+    pub token: String,
+}
+
+impl std::fmt::Debug for McpEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("McpEndpoint")
+            .field("url", &self.url)
+            .field("token", &"<redacted>")
+            .finish()
+    }
 }
 
 /// One user turn.
@@ -58,6 +81,18 @@ pub enum AdapterEvent {
     Event { turn_id: TurnId, event: ThreadEvent },
     /// The engine's own session id (for `--resume` and friends).
     SessionId(String),
+    /// The engine asks in-band whether a tool may run (Codex, ACP): the
+    /// threads service shows the card and answers with
+    /// [`ChatSession::resolve_approval`] under this `id`.
+    Approval {
+        turn_id: TurnId,
+        id: ApprovalId,
+        kind: ApprovalKind,
+        summary: String,
+        detail: String,
+        /// What an "Allow for this thread" rule matches on.
+        subject: ApprovalSubject,
+    },
     /// The engine process ended. `stderr_tail` is for the error card only
     /// and is never logged.
     Exited {

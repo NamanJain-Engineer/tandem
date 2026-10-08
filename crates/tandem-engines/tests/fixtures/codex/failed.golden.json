@@ -1,0 +1,19 @@
+[
+  {
+    "text": "Retrying: stream disconnected before completion",
+    "type": "note"
+  },
+  {
+    "action": "sign_in",
+    "code": "unauthorized",
+    "hint": null,
+    "message": "Your session expired. Run codex login.",
+    "stage": "auth",
+    "type": "error"
+  },
+  {
+    "blockedActions": 0,
+    "reason": "error",
+    "type": "turn_end"
+  }
+]

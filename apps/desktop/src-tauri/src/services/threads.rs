@@ -15,6 +15,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use tandem_core::allow_rules::{self, AllowRule, ApprovalSubject};
 use tandem_core::approvals::{
     ApprovalBroker, ApprovalKind, ApprovalOutcome, ApprovalRequest, ApprovalScope,
 };
@@ -157,6 +158,9 @@ struct Runtime {
     generation: u64,
     turn: Option<Running>,
     queued: Option<Queued>,
+    /// The engine process went away on its own; the next session says
+    /// "Reconnecting…" and resumes the engine's session (F-TH-05 AC2).
+    lost: bool,
 }
 
 pub struct ThreadService {
@@ -605,17 +609,36 @@ impl ThreadService {
         guard.turn = Some(run);
         self.set_state(id, ThreadState::Working).await;
 
+        if guard.session.is_none() && guard.lost {
+            if let Some(run) = guard.turn.as_mut() {
+                self.emit(
+                    id,
+                    run,
+                    ThreadEvent::Note {
+                        text: "Reconnecting…".into(),
+                    },
+                )
+                .await;
+            }
+        }
         let session = match guard.session.clone() {
             Some(s) => s,
             None => match self.start_session(&thread, &mut guard).await {
                 Ok(s) => s,
                 Err(e) => {
+                    // An engine version Thread mode can't speak: its terminal still works.
+                    let action = if e.code == ErrorCode::EngineUnsupported {
+                        ErrorAction::OpenTerminal
+                    } else {
+                        ErrorAction::Retry
+                    };
                     self.fail_turn(
                         id,
                         &mut guard,
                         "spawn_failed",
                         &e.message,
                         ErrorStage::Spawn,
+                        action,
                     )
                     .await;
                     return Ok(SendResult {
@@ -643,6 +666,7 @@ impl ThreadService {
                     "send_failed",
                     &e.to_string(),
                     ErrorStage::Unknown,
+                    ErrorAction::Retry,
                 )
                 .await;
             }
@@ -663,14 +687,19 @@ impl ThreadService {
             start.resume_session = thread.engine_session_id.clone();
         }
         let (tx, rx) = mpsc::channel(256);
-        let session: Arc<dyn ChatSession> = Arc::from(
-            adapter
-                .start(start, tx)
-                .await
-                .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?,
-        );
+        let session: Arc<dyn ChatSession> =
+            Arc::from(adapter.start(start, tx).await.map_err(|e| {
+                let code = match e {
+                    tandem_engines::chat::AdapterError::Unsupported(_) => {
+                        ErrorCode::EngineUnsupported
+                    }
+                    _ => ErrorCode::Internal,
+                };
+                IpcError::new(code, e.to_string())
+            })?);
         rt.generation += 1;
         rt.session = Some(session.clone());
+        rt.lost = false;
         let svc = self.clone();
         let id = thread.id.clone();
         let generation = rt.generation;
@@ -686,6 +715,7 @@ impl ThreadService {
         code: &str,
         message: &str,
         stage: ErrorStage,
+        action: ErrorAction,
     ) {
         let Some(run) = rt.turn.as_mut() else {
             return;
@@ -699,7 +729,7 @@ impl ThreadService {
                 message: message.to_string(),
                 stage,
                 hint: None,
-                action: Some(ErrorAction::Retry),
+                action: Some(action),
             },
         )
         .await;
@@ -749,6 +779,7 @@ impl ThreadService {
                     return;
                 }
                 guard.session = None;
+                guard.lost = true;
                 tracing::info!(code = "threads.engine_exited", exit = ?code, "engine process ended");
                 let stopping = guard.turn.as_ref().map(|r| r.stopping);
                 match stopping {
@@ -790,6 +821,48 @@ impl ThreadService {
                         self.send_queued(thread, queued);
                     }
                 }
+            }
+            AdapterEvent::Approval {
+                turn_id,
+                id: asked,
+                kind,
+                summary,
+                detail,
+                subject,
+            } => {
+                let Some(session) = guard
+                    .session
+                    .clone()
+                    .filter(|_| generation == guard.generation)
+                else {
+                    return;
+                };
+                let current = guard.turn.as_ref().is_some_and(|r| r.id == turn_id);
+                drop(guard);
+                let svc = self.clone();
+                let thread = thread.clone();
+                // The card waits for the user; the event stream doesn't.
+                tauri::async_runtime::spawn(async move {
+                    let outcome = if current {
+                        svc.ask_card(&thread, kind, summary, detail, subject).await
+                    } else {
+                        ApprovalOutcome::Cancelled
+                    };
+                    let decision = match outcome {
+                        ApprovalOutcome::Allowed { scope, .. } => {
+                            tandem_core::approvals::ApprovalDecision::Allow { scope }
+                        }
+                        ApprovalOutcome::Denied { reason, .. } => {
+                            tandem_core::approvals::ApprovalDecision::Deny { reason }
+                        }
+                        ApprovalOutcome::Expired | ApprovalOutcome::Cancelled => {
+                            tandem_core::approvals::ApprovalDecision::Deny { reason: None }
+                        }
+                    };
+                    if let Err(e) = session.resolve_approval(&asked, decision).await {
+                        tracing::warn!(code = "threads.approval_reply_failed", error = %e, "couldn't answer the engine");
+                    }
+                });
             }
             AdapterEvent::Event { turn_id, event } => {
                 // F-TH-03 AC3: a finished turn's events change nothing.
@@ -908,9 +981,7 @@ impl ThreadService {
         Ok(outcome)
     }
 
-    /// A tool use the engine asks about (F-TH-04 AC4, F-TH-11): an approval
-    /// card in the running turn and the Dashboard, until someone answers or
-    /// it expires (a deny).
+    /// A tool use Claude asks about through the gateway (F-TH-04 AC4).
     pub async fn ask_approval(&self, id: &ThreadId, ask: ToolApproval) -> ApprovalAnswer {
         let Ok(thread) = self.thread(id).await else {
             return ApprovalAnswer::Deny { message: None };
@@ -919,17 +990,87 @@ impl ThreadService {
         let detail = serde_json::to_string_pretty(&ask.input).unwrap_or_default();
         let detail =
             tandem_core::redact::redact(&tandem_engines::events::truncate_output(&detail).0);
+        let subject = match ask.input.get("command").and_then(serde_json::Value::as_str) {
+            Some(c) if ask.tool_name == "Bash" => ApprovalSubject::Command(c.to_string()),
+            _ => ApprovalSubject::Tool(ask.tool_name.clone()),
+        };
+        match self.ask_card(id, kind, summary, detail, subject).await {
+            ApprovalOutcome::Allowed { .. } => ApprovalAnswer::Allow,
+            ApprovalOutcome::Denied { reason, .. } => ApprovalAnswer::Deny { message: reason },
+            ApprovalOutcome::Expired => ApprovalAnswer::Deny {
+                message: Some("Nobody answered within 30 minutes".into()),
+            },
+            ApprovalOutcome::Cancelled => ApprovalAnswer::Deny { message: None },
+        }
+    }
+
+    /// The approval card (F-TH-11): Waiting first, then the card in the
+    /// running turn and on the Dashboard, until someone answers or it
+    /// expires; the answer is recorded in the turn. No running turn: nobody
+    /// could answer, so it's cancelled.
+    async fn ask_card(
+        &self,
+        id: &ThreadId,
+        kind: ApprovalKind,
+        summary: String,
+        detail: String,
+        subject: ApprovalSubject,
+    ) -> ApprovalOutcome {
+        // "Allow for this thread" answers without a card, for a user who is
+        // there; an unattended session always waits (§6.10).
+        let attended = self.thread(id).await.map(|t| t.attended).unwrap_or(false);
+        let rules = self.allow_rules(id).await;
+        if attended && allow_rules::allowed(&rules, &subject) {
+            tracing::info!(code = "threads.approval_by_rule", kind = ?kind, "allowed by a thread rule");
+            return ApprovalOutcome::Allowed {
+                scope: ApprovalScope::Thread,
+                via: tandem_core::approvals::ApprovalVia::Rule,
+            };
+        }
+        let outcome = self.ask_user(id, kind, summary, detail).await;
+        if let ApprovalOutcome::Allowed {
+            scope: ApprovalScope::Thread,
+            ..
+        } = outcome
+        {
+            if let Some(rule) = AllowRule::for_subject(&subject) {
+                let rules = allow_rules::with(rules, rule);
+                if let Ok(json) = serde_json::to_string(&rules) {
+                    if let Err(e) = repo::set_allow_rules(&self.store, id, json).await {
+                        tracing::warn!(code = "threads.rule_failed", error = %e, "couldn't save the thread's allow rule");
+                    }
+                }
+            }
+        }
+        outcome
+    }
+
+    async fn allow_rules(&self, id: &ThreadId) -> Vec<AllowRule> {
+        repo::allow_rules(&self.store, id)
+            .await
+            .ok()
+            .and_then(|j| serde_json::from_str(&j).ok())
+            .unwrap_or_default()
+    }
+
+    /// The card itself.
+    async fn ask_user(
+        &self,
+        id: &ThreadId,
+        kind: ApprovalKind,
+        summary: String,
+        detail: String,
+    ) -> ApprovalOutcome {
         let rt = self.runtime(id);
         let (view, ticket, turn) = {
             let mut guard = rt.lock().await;
             if guard.turn.is_none() {
-                // No turn to show it in: nobody could answer.
-                return ApprovalAnswer::Deny { message: None };
+                return ApprovalOutcome::Cancelled;
             }
-            // Waiting before the card shows anywhere (F-TH-11).
+            // Waiting before the card shows anywhere.
             self.set_state(id, ThreadState::Waiting).await;
             let Some(run) = guard.turn.as_mut() else {
-                return ApprovalAnswer::Deny { message: None };
+                return ApprovalOutcome::Cancelled;
             };
             let (view, ticket) = self.approvals.request(ApprovalRequest {
                 source: SourceRef::Thread {
@@ -957,26 +1098,13 @@ impl ThreadService {
         };
         tracing::info!(code = "threads.approval_asked", kind = ?view.kind, "approval requested");
         let outcome = ticket.outcome().await;
-        let (decision, answer) = match outcome {
-            ApprovalOutcome::Allowed { scope, .. } => {
-                (ApprovalDecisionView::Allow { scope }, ApprovalAnswer::Allow)
-            }
-            ApprovalOutcome::Denied { reason, .. } => (
-                ApprovalDecisionView::Deny {
-                    reason: reason.clone(),
-                },
-                ApprovalAnswer::Deny { message: reason },
-            ),
-            ApprovalOutcome::Expired => (
-                ApprovalDecisionView::Expired,
-                ApprovalAnswer::Deny {
-                    message: Some("Nobody answered within 30 minutes".into()),
-                },
-            ),
-            ApprovalOutcome::Cancelled => (
-                ApprovalDecisionView::Deny { reason: None },
-                ApprovalAnswer::Deny { message: None },
-            ),
+        let decision = match &outcome {
+            ApprovalOutcome::Allowed { scope, .. } => ApprovalDecisionView::Allow { scope: *scope },
+            ApprovalOutcome::Denied { reason, .. } => ApprovalDecisionView::Deny {
+                reason: reason.clone(),
+            },
+            ApprovalOutcome::Expired => ApprovalDecisionView::Expired,
+            ApprovalOutcome::Cancelled => ApprovalDecisionView::Deny { reason: None },
         };
         let mut guard = rt.lock().await;
         if let Some(run) = guard.turn.as_mut().filter(|r| r.id == turn) {
@@ -992,7 +1120,7 @@ impl ThreadService {
             drop(guard);
             self.set_state(id, ThreadState::Working).await;
         }
-        answer
+        outcome
     }
 
     /// `thread_retry`: sends the last failed or interrupted turn's message
@@ -1015,6 +1143,18 @@ impl ThreadService {
             })
             .ok_or_else(|| IpcError::new(ErrorCode::Invalid, "Nothing to retry"))?;
         self.send(id, text, attachments, false).await
+    }
+}
+
+/// Who started a thread's runs. Routines and tasks pass their own explicit
+/// Full grant when they arrive (M13, M15); until then unattended runs grant
+/// nothing.
+fn origin_of(thread: &ThreadRecord) -> tandem_core::access::Origin {
+    use tandem_core::access::Origin;
+    match (thread.attended, thread.kind) {
+        (true, _) => Origin::Interactive,
+        (false, ThreadKind::TeammateChat) => Origin::Mail,
+        (false, ThreadKind::Thread) => Origin::Routine { grants_full: false },
     }
 }
 
@@ -1060,9 +1200,17 @@ impl AppLauncher {
             .get("claude")
             .map(|e| e.limit_patterns)
             .unwrap_or_default();
-        vec![Arc::new(tandem_engines::chat::claude::ClaudeAdapter::new(
-            claude_limits,
-        ))]
+        let codex_limits = terminals
+            .engines
+            .get("codex")
+            .map(|e| e.limit_patterns)
+            .unwrap_or_default();
+        vec![
+            Arc::new(tandem_engines::chat::claude::ClaudeAdapter::new(
+                claude_limits,
+            )),
+            Arc::new(tandem_engines::chat::codex::CodexAdapter::new(codex_limits)),
+        ]
     }
 
     /// The threads the gateway's approvals tool reports to.
@@ -1087,7 +1235,10 @@ impl AppLauncher {
 
     /// A lease for the thread's new session, in a config only the user can
     /// read (`$DATA/mcp/<thread>.json`, 0600).
-    async fn mcp_config(&self, thread: &ThreadRecord) -> Result<std::path::PathBuf, IpcError> {
+    async fn mcp_config(
+        &self,
+        thread: &ThreadRecord,
+    ) -> Result<(std::path::PathBuf, tandem_engines::chat::McpEndpoint), IpcError> {
         let gateway = self.gateway().await?;
         let lease = gateway.prepare(tandem_gateway::SessionDescriptor {
             caller: Caller::Thread {
@@ -1101,7 +1252,12 @@ impl AppLauncher {
                 }
             },
             access: thread.access,
-            builtins: tandem_gateway::BuiltinSet::for_thread(),
+            // Claude asks through the gateway; Codex and ACP agents ask in-band.
+            builtins: if thread.engine_id == "claude" {
+                tandem_gateway::BuiltinSet::for_thread()
+            } else {
+                tandem_gateway::BuiltinSet::default()
+            },
         });
         let previous = match self.leases.lock() {
             Ok(mut l) => l.insert(thread.id.as_str().to_string(), lease.id.clone()),
@@ -1120,7 +1276,13 @@ impl AppLauncher {
         let path = self.mcp_dir.join(format!("{}.json", thread.id.as_str()));
         tandem_core::atomic::atomic_write(&path, config.to_string().as_bytes(), Some(0o600))
             .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
-        Ok(path)
+        Ok((
+            path,
+            tandem_engines::chat::McpEndpoint {
+                url: gateway.url.clone(),
+                token: lease.token,
+            },
+        ))
     }
 }
 
@@ -1175,6 +1337,7 @@ impl ChatLauncher for AppLauncher {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         env.extend(crate::services::fake_engine_env());
+        let (config, endpoint) = self.mcp_config(thread).await?;
         Ok((
             adapter,
             ChatStart {
@@ -1185,11 +1348,19 @@ impl ChatLauncher for AppLauncher {
                 env,
                 model: thread.model.clone(),
                 effort: thread.effort.clone(),
-                access: thread.access,
+                // The one place a session's access is decided (F-TH-09).
+                access: tandem_core::access::resolve(thread.access, thread.mode, origin_of(thread)),
                 mode: thread.mode,
                 attended: thread.attended,
                 resume_session: thread.engine_session_id.clone(),
-                mcp_config: Some(self.mcp_config(thread).await?),
+                mcp_config: Some(config),
+                mcp: Some(endpoint),
+                engine_version: engines.report().and_then(|r| {
+                    r.found
+                        .into_iter()
+                        .find(|f| f.engine_id == engine.id)
+                        .and_then(|f| f.version)
+                }),
             },
         ))
     }
@@ -1225,12 +1396,17 @@ mod tests {
         script: Script,
         on_stop: OnStop,
         starts: AtomicUsize,
+        /// Each start's `resume_session`.
+        resumed: StdMutex<Vec<Option<String>>>,
+        /// Every in-band approval answer.
+        answers: Arc<StdMutex<Vec<(ApprovalId, ApprovalDecision)>>>,
     }
 
     struct ScriptedSession {
         script: Script,
         on_stop: OnStop,
         events: mpsc::Sender<AdapterEvent>,
+        answers: Arc<StdMutex<Vec<(ApprovalId, ApprovalDecision)>>>,
     }
 
     #[async_trait]
@@ -1244,10 +1420,14 @@ mod tests {
             events: mpsc::Sender<AdapterEvent>,
         ) -> Result<Box<dyn ChatSession>, AdapterError> {
             self.starts.fetch_add(1, Ordering::SeqCst);
+            if let Ok(mut r) = self.resumed.lock() {
+                r.push(_req.resume_session.clone());
+            }
             Ok(Box::new(ScriptedSession {
                 script: self.script.clone(),
                 on_stop: self.on_stop,
                 events,
+                answers: self.answers.clone(),
             }))
         }
     }
@@ -1287,9 +1467,12 @@ mod tests {
         }
         async fn resolve_approval(
             &self,
-            _id: &ApprovalId,
-            _d: ApprovalDecision,
+            id: &ApprovalId,
+            d: ApprovalDecision,
         ) -> Result<(), AdapterError> {
+            if let Ok(mut a) = self.answers.lock() {
+                a.push((id.clone(), d));
+            }
             Ok(())
         }
         async fn set_model(
@@ -1327,6 +1510,8 @@ mod tests {
                     attended: true,
                     resume_session: None,
                     mcp_config: None,
+                    mcp: None,
+                    engine_version: None,
                 },
             ))
         }
@@ -1348,6 +1533,8 @@ mod tests {
             script,
             on_stop,
             starts: AtomicUsize::new(0),
+            resumed: StdMutex::default(),
+            answers: Arc::default(),
         });
         let svc = ThreadService::new(
             store.clone(),
@@ -2093,6 +2280,356 @@ mod tests {
             serde_json::json!({"behavior": "allow", "updatedInput": {"command": "npm test"}})
         );
         gateway.shutdown();
+    }
+
+    #[tokio::test]
+    async fn f_th_05_an_in_band_approval_shows_the_card_and_answers_the_engine() {
+        let script: Script = Arc::new(|turn, tx| {
+            play(
+                tx,
+                vec![AdapterEvent::Approval {
+                    turn_id: turn,
+                    id: ApprovalId::from_db("ap_engine_1".into()),
+                    kind: ApprovalKind::Command,
+                    summary: "Run `npm ci`".into(),
+                    detail: "npm ci".into(),
+                    subject: ApprovalSubject::Command("npm ci".into()),
+                }],
+            )
+        });
+        let f = fixture(OnStop::Ack, script).await;
+        f.svc
+            .send(&f.thread.id, "install".into(), Vec::new(), false)
+            .await
+            .expect("send");
+        let mut pending = Vec::new();
+        for _ in 0..300 {
+            pending = f.svc.approvals.pending();
+            if !pending.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let view = pending.first().cloned().expect("card");
+        assert_eq!(view.summary, "Run `npm ci`");
+        f.svc
+            .approvals
+            .resolve(
+                &view.id,
+                ApprovalDecision::Allow {
+                    scope: ApprovalScope::Thread,
+                },
+                tandem_core::approvals::ApprovalVia::Dashboard,
+            )
+            .expect("allow");
+        for _ in 0..300 {
+            if !f.adapter.answers.lock().expect("answers").is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(
+            f.adapter.answers.lock().expect("answers").clone(),
+            vec![(
+                ApprovalId::from_db("ap_engine_1".into()),
+                ApprovalDecision::Allow {
+                    scope: ApprovalScope::Thread
+                }
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn f_th_05_2_an_engine_that_died_while_idle_is_restarted_resumed_and_says_reconnecting() {
+        let script: Script = Arc::new(|turn, tx| {
+            play(
+                tx,
+                vec![
+                    AdapterEvent::SessionId("thr_engine".into()),
+                    ev(&turn, delta("first reply")),
+                    ev(&turn, end(TurnEndReason::Completed)),
+                ],
+            )
+        });
+        let f = fixture(OnStop::Ack, script).await;
+        let id = &f.thread.id;
+        f.svc
+            .send(id, "one".into(), Vec::new(), false)
+            .await
+            .expect("one");
+        ended(&f, 1).await;
+        // The engine process dies while the thread is idle.
+        let generation = f.svc.runtime(id).lock().await.generation;
+        f.svc
+            .handle(
+                id,
+                generation,
+                AdapterEvent::Exited {
+                    code: Some(137),
+                    stderr_tail: String::new(),
+                },
+            )
+            .await;
+        assert_eq!(
+            turn_states(&f).await,
+            vec![TurnState::Completed],
+            "an idle exit fails nothing"
+        );
+        f.svc
+            .send(id, "two".into(), Vec::new(), false)
+            .await
+            .expect("two");
+        ended(&f, 2).await;
+        assert_eq!(f.adapter.starts.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            f.adapter.resumed.lock().expect("resumed").clone(),
+            vec![None, Some("thr_engine".into())]
+        );
+        let events = stored(&f).await;
+        assert!(events.contains(&ThreadEvent::Note {
+            text: "Reconnecting…".into()
+        }));
+        // Earlier messages are still there.
+        assert!(events.contains(&ThreadEvent::Assistant {
+            markdown: "first reply".into()
+        }));
+    }
+
+    #[tokio::test]
+    async fn f_th_05_3_an_unsupported_engine_version_offers_the_terminal() {
+        struct Old;
+        #[async_trait]
+        impl ChatLauncher for Old {
+            async fn prepare(
+                &self,
+                _thread: &ThreadRecord,
+            ) -> Result<(Arc<dyn ChatAdapter>, ChatStart), IpcError> {
+                Err(IpcError::new(
+                    ErrorCode::EngineUnsupported,
+                    "Codex version 0.31.0 isn't supported yet — update Vibezeo or Codex",
+                ))
+            }
+        }
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store =
+            Store::open(&DataDir::at(dir.path().to_path_buf()).expect("data")).expect("store");
+        let svc = ThreadService::new(
+            store,
+            EventBus::new(),
+            Arc::new(SystemClock),
+            ApprovalBroker::new(Arc::new(SystemClock)),
+            Arc::new(Old),
+        );
+        let thread = svc
+            .create(NewThread {
+                id: ThreadId::new(),
+                kind: ThreadKind::Thread,
+                workspace_id: None,
+                cwd: "/tmp".into(),
+                engine_id: "codex".into(),
+                account_id: None,
+                model: None,
+                effort: None,
+                access: Access::Read,
+                mode: ThreadMode::Act,
+                attended: true,
+            })
+            .await
+            .expect("thread");
+        svc.send(&thread.id, "hi".into(), Vec::new(), false)
+            .await
+            .expect("send");
+        let events = svc
+            .events(&thread.id, None, 50)
+            .await
+            .expect("events")
+            .items;
+        assert!(matches!(
+            &events[1].event,
+            ThreadEvent::Error { action: Some(ErrorAction::OpenTerminal), stage: ErrorStage::Spawn, message, .. }
+                if message.starts_with("Codex version 0.31.0 isn't supported yet")
+        ));
+    }
+
+    #[tokio::test]
+    async fn f_th_09_3_an_approval_pending_31_min_is_denied_and_the_engine_told_so() {
+        let mock = tandem_core::clock::MockClock::new(
+            chrono::DateTime::parse_from_rfc3339("2026-10-08T10:00:00Z")
+                .expect("start")
+                .with_timezone(&chrono::Utc),
+        );
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store =
+            Store::open(&DataDir::at(dir.path().to_path_buf()).expect("data")).expect("store");
+        let adapter = Arc::new(ScriptedAdapter {
+            script: hang(),
+            on_stop: OnStop::Ack,
+            starts: AtomicUsize::new(0),
+            resumed: StdMutex::default(),
+            answers: Arc::default(),
+        });
+        let svc = ThreadService::new(
+            store,
+            EventBus::new(),
+            Arc::new(SystemClock),
+            ApprovalBroker::new(Arc::new(mock.clone())),
+            Arc::new(ScriptedLauncher(adapter)),
+        );
+        let thread = svc
+            .create(NewThread {
+                id: ThreadId::new(),
+                kind: ThreadKind::Thread,
+                workspace_id: None,
+                cwd: "/tmp".into(),
+                engine_id: "claude".into(),
+                account_id: None,
+                model: None,
+                effort: None,
+                access: Access::Edits,
+                mode: ThreadMode::Act,
+                attended: true,
+            })
+            .await
+            .expect("thread");
+        svc.send(&thread.id, "go".into(), Vec::new(), false)
+            .await
+            .expect("send");
+        let asking = {
+            let svc = svc.clone();
+            let id = thread.id.clone();
+            tokio::spawn(async move {
+                svc.ask_approval(
+                    &id,
+                    ToolApproval {
+                        tool_name: "Bash".into(),
+                        input: serde_json::json!({"command": "make deploy"}),
+                        tool_use_id: None,
+                    },
+                )
+                .await
+            })
+        };
+        for _ in 0..300 {
+            if !svc.approvals.pending().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        mock.advance(Duration::from_secs(29 * 60));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(svc.approvals.pending().len(), 1, "still pending at 29 min");
+        mock.advance(Duration::from_secs(2 * 60));
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(5), asking)
+                .await
+                .expect("answered")
+                .expect("join"),
+            ApprovalAnswer::Deny {
+                message: Some("Nobody answered within 30 minutes".into())
+            }
+        );
+        let events: Vec<ThreadEvent> = svc
+            .events(&thread.id, None, 50)
+            .await
+            .expect("events")
+            .items
+            .into_iter()
+            .map(|e| e.event)
+            .collect();
+        assert!(events.iter().any(|e| matches!(
+            e,
+            ThreadEvent::ApprovalResolved {
+                decision: ApprovalDecisionView::Expired,
+                ..
+            }
+        )));
+    }
+
+    /// Asks about `command` and answers the card with `decision` (if one
+    /// shows); returns the answer and whether a card showed.
+    async fn ask_command(
+        f: &Fixture,
+        command: &str,
+        decision: Option<ApprovalDecision>,
+    ) -> (ApprovalAnswer, bool) {
+        let svc = f.svc.clone();
+        let id = f.thread.id.clone();
+        let command = command.to_string();
+        let asking = tokio::spawn(async move {
+            svc.ask_approval(
+                &id,
+                ToolApproval {
+                    tool_name: "Bash".into(),
+                    input: serde_json::json!({ "command": command }),
+                    tool_use_id: None,
+                },
+            )
+            .await
+        });
+        let mut carded = false;
+        for _ in 0..50 {
+            if asking.is_finished() {
+                break;
+            }
+            if let Some(view) = f.svc.approvals.pending().first().cloned() {
+                carded = true;
+                f.svc
+                    .approvals
+                    .resolve(
+                        &view.id,
+                        decision.clone().expect("a card needs an answer"),
+                        tandem_core::approvals::ApprovalVia::Inline,
+                    )
+                    .expect("resolve");
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        (asking.await.expect("join"), carded)
+    }
+
+    #[tokio::test]
+    async fn f_th_11_2_allow_for_this_thread_on_npm_test_allows_npm_test_again_but_not_npm_install()
+    {
+        let f = fixture(OnStop::Ack, hang()).await;
+        f.svc
+            .send(&f.thread.id, "test".into(), Vec::new(), false)
+            .await
+            .expect("send");
+        let thread_scope = ApprovalDecision::Allow {
+            scope: ApprovalScope::Thread,
+        };
+        assert_eq!(
+            ask_command(&f, "npm test", Some(thread_scope.clone())).await,
+            (ApprovalAnswer::Allow, true)
+        );
+        // No card the second time.
+        assert_eq!(
+            ask_command(&f, "npm  test -- --watch", None).await,
+            (ApprovalAnswer::Allow, false)
+        );
+        // A different command still asks.
+        let deny = ApprovalDecision::Deny { reason: None };
+        assert_eq!(
+            ask_command(&f, "npm install", Some(deny.clone())).await,
+            (ApprovalAnswer::Deny { message: None }, true)
+        );
+        assert_eq!(
+            ask_command(&f, "npm test && rm -rf x", Some(deny)).await,
+            (ApprovalAnswer::Deny { message: None }, true)
+        );
+        // Allow once makes no rule.
+        let once = ApprovalDecision::Allow {
+            scope: ApprovalScope::Once,
+        };
+        assert_eq!(
+            ask_command(&f, "make", Some(once.clone())).await,
+            (ApprovalAnswer::Allow, true)
+        );
+        assert_eq!(
+            ask_command(&f, "make", Some(once)).await,
+            (ApprovalAnswer::Allow, true)
+        );
     }
 
     #[tokio::test]

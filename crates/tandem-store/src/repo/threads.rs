@@ -330,6 +330,39 @@ pub async fn set_draft(store: &Store, id: &ThreadId, draft_json: String) -> Resu
         .await
 }
 
+/// "Allow for this thread" rules (`AllowRule` JSON array, F-TH-11).
+pub async fn allow_rules(store: &Store, id: &ThreadId) -> Result<String, StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .read(move |c| {
+            Ok(c.query_row(
+                "SELECT allow_rules_json FROM threads WHERE id = ?1",
+                [id],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?
+            .unwrap_or_else(|| "[]".to_string()))
+        })
+        .await
+}
+
+pub async fn set_allow_rules(
+    store: &Store,
+    id: &ThreadId,
+    rules_json: String,
+) -> Result<(), StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .write(move |t| {
+            t.execute(
+                "UPDATE threads SET allow_rules_json = ?2 WHERE id = ?1",
+                params![id, rules_json],
+            )?;
+            Ok(())
+        })
+        .await
+}
+
 /// A new running turn, numbered after the last.
 pub async fn start_turn(
     store: &Store,

@@ -5,6 +5,7 @@ export type * from "./AccountId";
 export type * from "./AccountOverride";
 export type * from "./AddedWorkspace";
 export type * from "./AgentStatus";
+export type * from "./AllowRule";
 export type * from "./AppBoot";
 export type * from "./ApprovalDecision";
 export type * from "./ApprovalDecisionView";

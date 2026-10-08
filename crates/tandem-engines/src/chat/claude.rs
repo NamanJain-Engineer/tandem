@@ -40,17 +40,9 @@ const PROMPT_TOO_LONG_HINT: &str =
 /// Tool input kept as the row's detail.
 const DETAIL_MAX: usize = 4 * 1024;
 
-/// `--permission-mode` and `--disallowedTools` for an access level and mode
-/// (§6.8.1 table). Unattended sessions are capped at Edits (F-TH-09 AC1).
-pub fn permissions(
-    access: Access,
-    mode: ThreadMode,
-    attended: bool,
-) -> (&'static str, Option<&'static str>) {
-    let access = match access {
-        Access::Full if !attended => Access::Edits,
-        a => a,
-    };
+/// `--permission-mode` and `--disallowedTools` for the session's resolved
+/// access (`tandem_core::access::resolve`) and mode (§6.8.1 table).
+pub fn permissions(access: Access, mode: ThreadMode) -> (&'static str, Option<&'static str>) {
     match (mode, access) {
         (ThreadMode::Plan, _) => ("plan", Some(NO_WRITES)),
         (ThreadMode::Act, Access::Read) => ("default", Some(NO_WRITES)),
@@ -83,7 +75,7 @@ pub fn args(req: &ChatStart) -> Vec<OsString> {
         a.push("--permission-prompt-tool".into());
         a.push(PERMISSION_TOOL.into());
     }
-    let (mode, disallowed) = permissions(req.access, req.mode, req.attended);
+    let (mode, disallowed) = permissions(req.access, req.mode);
     a.push("--permission-mode".into());
     a.push(mode.into());
     if let Some(d) = disallowed {

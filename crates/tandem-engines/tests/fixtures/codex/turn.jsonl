@@ -1,0 +1,11 @@
+{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thr_1","turn":{"id":"turn_a","status":"inProgress","items":[]}}}
+{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thr_1","turnId":"turn_a","item":{"type":"reasoning","id":"rs_1","summary":[],"content":[]}}}
+{"jsonrpc":"2.0","method":"item/reasoning/summaryTextDelta","params":{"threadId":"thr_1","turnId":"turn_a","itemId":"rs_1","delta":"Looking at the cart","summaryIndex":0}}
+{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr_1","turnId":"turn_a","item":{"type":"reasoning","id":"rs_1","summary":["Looking at the cart"],"content":[]}}}
+{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thr_1","turnId":"turn_a","item":{"type":"agentMessage","id":"msg_1","text":""}}}
+{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thr_1","turnId":"turn_a","itemId":"msg_1","delta":"The cart "}}
+{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thr_1","turnId":"turn_a","itemId":"msg_1","delta":"total is fixed."}}
+{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr_1","turnId":"turn_a","item":{"type":"agentMessage","id":"msg_1","text":"The cart total is fixed."}}}
+{"jsonrpc":"2.0","method":"thread/tokenUsage/updated","params":{"threadId":"thr_1","turnId":"turn_a","tokenUsage":{"total":{"totalTokens":24100,"inputTokens":24000,"cachedInputTokens":20000,"outputTokens":100,"reasoningOutputTokens":40},"last":{"totalTokens":12100,"inputTokens":12000,"cachedInputTokens":10000,"outputTokens":100,"reasoningOutputTokens":40},"modelContextWindow":272000}}}
+{"jsonrpc":"2.0","method":"account/rateLimits/updated","params":{"rateLimits":{"primary":{"usedPercent":12,"windowMinutes":300}}}}
+{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thr_1","turn":{"id":"turn_a","status":"completed","items":[]}}}

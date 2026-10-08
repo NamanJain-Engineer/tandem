@@ -1,0 +1,40 @@
+[
+  {
+    "turnStarted": "turn_a"
+  },
+  {
+    "text": "Looking at the cart",
+    "type": "reasoning_delta"
+  },
+  {
+    "durationMs": null,
+    "text": "Looking at the cart",
+    "type": "reasoning"
+  },
+  {
+    "text": "The cart ",
+    "type": "assistant_delta"
+  },
+  {
+    "text": "total is fixed.",
+    "type": "assistant_delta"
+  },
+  {
+    "markdown": "The cart total is fixed.",
+    "type": "assistant"
+  },
+  {
+    "cacheRead": 10000,
+    "cacheWrite": 0,
+    "contextFillPct": 4.400000095367432,
+    "costUsd": null,
+    "input": 12000,
+    "output": 100,
+    "type": "usage"
+  },
+  {
+    "blockedActions": 0,
+    "reason": "completed",
+    "type": "turn_end"
+  }
+]

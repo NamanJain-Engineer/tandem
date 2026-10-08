@@ -1,0 +1,14 @@
+[
+  {
+    "turnStarted": "turn_d"
+  },
+  {
+    "text": "Starting the",
+    "type": "assistant_delta"
+  },
+  {
+    "blockedActions": 0,
+    "reason": "cancelled",
+    "type": "turn_end"
+  }
+]

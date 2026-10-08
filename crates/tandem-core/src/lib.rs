@@ -4,6 +4,7 @@
 
 pub mod access;
 pub mod accounts;
+pub mod allow_rules;
 pub mod approvals;
 pub mod atomic;
 pub mod bus;
