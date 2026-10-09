@@ -1,8 +1,10 @@
 //! Local storage: one SQLite database in WAL mode with a single writer thread
 //! and a small read pool (ARCHITECTURE §4.1), plus file stores under `$DATA`.
 
+pub mod memory;
 pub mod migrate;
 pub mod repo;
+pub mod skills;
 pub mod sort_key;
 
 use std::path::{Path, PathBuf};

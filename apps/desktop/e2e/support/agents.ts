@@ -43,3 +43,29 @@ export async function connectTestPlugin(pluginId: "test_echo" | "test_upper" | "
   const conn = await invoke<{ id: string }>("test_plugin_connect", { pluginId });
   return conn.id;
 }
+
+export type Teammate = { id: string; name: string; home: string; engineId: string };
+
+/** Makes a teammate over IPC (the sheet is covered by E2E-M10-1). */
+export async function makeTeammate(name: string, brief = "You keep the changelog."): Promise<Teammate> {
+  return invoke<Teammate>("teammate_create", { input: { name, brief, engineId: "claude", places: [] } });
+}
+
+/** A new chat with a teammate; its thread id. */
+export async function newChat(teammateId: string): Promise<string> {
+  const t = await invoke<{ id: string }>("thread_create", { args: { kind: "teammate_chat", teammateId } });
+  return t.id;
+}
+
+export type SpawnLine = { argv: string[]; envKeys: string[]; cwd: string };
+
+/** Chat-engine spawns (Claude in stream-json mode), oldest first. */
+export async function chatSpawns(): Promise<SpawnLine[]> {
+  return (await invoke<SpawnLine[]>("test_spawn_log")).filter((r) => r.argv.includes("--input-format"));
+}
+
+/** The value after `flag` in an argv. */
+export function argAfter(argv: string[], flag: string): string | null {
+  const i = argv.indexOf(flag);
+  return i >= 0 ? (argv[i + 1] ?? null) : null;
+}

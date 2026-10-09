@@ -844,7 +844,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | Command | Args | Returns | Errors |
 |---|---|---|---|
 | `test_counters` | `{reset?: bool}` | `TestCounters {ptyResizes, ptyResizesByPane, webglContexts, domRenderers, reflows, restoreMaxSpawning}` (`restoreMaxSpawning`: most agents ever starting at once during restore, F-SH-07 AC3) | — |
-| `test_spawn_log` | — | `[SpawnRecord {argv, envKeys, providerHome?, cwd}]` (same content as `TANDEM_SPAWN_LOG`) | — |
+| `test_spawn_log` | — | `[SpawnRecord {argv, envKeys, providerHome?, cwd}]` (same content as `TANDEM_SPAWN_LOG`; chat-engine spawns are recorded too, from M10) | — |
 | `test_clock_advance` | `{ms}` | `{now}` | — |
 | `test_auth_refresh` | — | `AuthState` (forces the refresh path, e.g. to observe a revoked device) | — |
 | `test_account_create` | `{engineId, label}` | `Account` (a second account with its own provider home, without the sign-in flow; E2E-M4-4) | — |
@@ -1806,7 +1806,7 @@ Persistence: every envelope except `*Delta` is appended to `thread_messages`; de
 <tools>{guidance: tandem__memory_write for memory, tandem__session_search, tandem__send_message, tasks via tandem_tasks, schedule tools if allowed}</tools>
 ```
 - Injection scan: lines in memory/skills matching `(?i)ignore (all|previous) instructions|system prompt|</?(brief|tandem_preamble|memory|skills)>` are escaped (angle brackets replaced) and counted in the log (by count only). Credential-shaped strings are redacted.
-- Delivery: always a file `$DATA/briefings/<session>.md` (0600): Claude `--append-system-prompt-file`; Codex `developerInstructions` (V2) or first-turn preamble (V1) read from the file by the adapter and sent over stdin; ACP: prepended to the first `session/prompt`. Never argv (F-AG-06 AC2).
+- Delivery (M10: the file is `$DATA/briefings/<thread>.md`, rewritten for each new session of the chat and removed with the chat; `ChatStart.briefing`): always a file `$DATA/briefings/<session>.md` (0600): Claude `--append-system-prompt-file`; Codex `developerInstructions` (V2) or first-turn preamble (V1) read from the file by the adapter and sent over stdin; ACP: prepended to the first `session/prompt`. Never argv (F-AG-06 AC2).
 
 ### 8.3 Memory [F-AG-07]
 - `tandem__memory_write{file:"notes"|"about", markdown}` (gateway built-in, scoped to the lease's teammate): rejects if `len > cap` (notes: 2k/4k/8k/16k; about: 2k) with "Memory is over its {cap} character budget. Condense it and try again." and if any line matches credential patterns ("Memory can't store credentials"). Writes via `atomic_write`, records a `memory_changes` row (with a backup copy) for Undo.

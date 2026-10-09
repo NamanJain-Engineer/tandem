@@ -60,6 +60,45 @@ impl ProcessSpec {
     }
 }
 
+/// Debug builds with `TANDEM_SPAWN_LOG`: one JSON line per engine spawn,
+/// as the terminal service writes for panes (argv, env keys, cwd; values of
+/// secret-shaped variables never). The E2E harness reads it.
+fn log_spawn(spec: &ProcessSpec) {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let Some(path) = std::env::var_os("TANDEM_SPAWN_LOG") else {
+        return;
+    };
+    let mut argv = vec![spec.program.to_string_lossy().into_owned()];
+    argv.extend(spec.args.iter().map(|a| a.to_string_lossy().into_owned()));
+    let home = spec
+        .env
+        .iter()
+        .find(|(k, _)| matches!(k.as_str(), "CLAUDE_CONFIG_DIR" | "CODEX_HOME"))
+        .map(|(_, v)| v.clone());
+    let record = serde_json::json!({
+        "argv": argv,
+        "envKeys": spec.env.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>(),
+        "secretEnvKeys": spec
+            .env
+            .iter()
+            .filter(|(_, v)| crate::launch::looks_secret(v))
+            .map(|(k, _)| k.clone())
+            .collect::<Vec<_>>(),
+        "providerHome": home,
+        "cwd": spec.cwd.to_string_lossy(),
+    });
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(f, "{record}");
+    }
+}
+
 /// One line of the engine's stdout.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProcessLine {
@@ -83,6 +122,7 @@ impl ChatProcess {
     /// Starts the engine; its stdout lines arrive on the returned receiver,
     /// which closes when stdout does.
     pub fn spawn(spec: ProcessSpec) -> Result<(Self, mpsc::Receiver<ProcessLine>), AdapterError> {
+        log_spawn(&spec);
         let mut cmd = Command::new(&spec.program);
         cmd.args(&spec.args)
             .env_clear()

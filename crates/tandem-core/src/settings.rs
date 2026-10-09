@@ -139,6 +139,7 @@ setting_keys! {
     RailWidth,
     ThreadDefaults,
     ThreadGrid,
+    SkillsSeen,
 }
 
 /// How a value is checked before it is stored.
@@ -792,6 +793,9 @@ pub static SCHEMA: &[SettingSpec] = &[
     // per engine `<engine>.model`, `<engine>.effort`, `<engine>.access`.
     spec!(ThreadDefaults, json!({}), V::Map, Hidden, []),
     spec!(ThreadGrid, json!({"ids": []}), V::Map, Hidden, []),
+    // Per teammate, the skills the user made or opened; any other is the
+    // teammate's own and "New" (F-AG-09).
+    spec!(SkillsSeen, json!({}), V::Map, Hidden, []),
 ];
 
 pub fn spec(key: SettingKey) -> &'static SettingSpec {

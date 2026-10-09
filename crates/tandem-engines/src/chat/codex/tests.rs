@@ -165,6 +165,7 @@ fn start(script_args: bool) -> ChatStart {
         mcp_config: None,
         mcp: None,
         engine_version: Some("codex-cli 0.47.0".into()),
+        briefing: None,
     }
 }
 
@@ -396,4 +397,28 @@ read more"#;
     assert!(err
         .to_string()
         .starts_with("Codex version codex_cli_rs/0.20.1 isn't supported yet"));
+}
+
+/// F-AG-06: Codex gets the briefing as developer instructions (over stdin),
+/// ahead of Plan mode's own.
+#[test]
+fn f_ag_06_codex_gets_the_briefing_as_developer_instructions() {
+    let dir = tempfile::tempdir().expect("dir");
+    let path = dir.path().join("th_1.md");
+    std::fs::write(&path, "<brief>Keep the changelog.</brief>").expect("write");
+    let mut req = start(false);
+    req.briefing = Some(path);
+    let (_, p) = protocol::V2.start_thread(&req);
+    assert_eq!(
+        p["developerInstructions"],
+        "<brief>Keep the changelog.</brief>"
+    );
+    req.mode = ThreadMode::Plan;
+    let (_, p) = protocol::V2.resume_thread("t1", &req);
+    let text = p["developerInstructions"].as_str().expect("text");
+    assert!(text.starts_with("<brief>Keep the changelog.</brief>\n\n"));
+    req.briefing = None;
+    req.mode = ThreadMode::Act;
+    let (_, p) = protocol::V2.start_thread(&req);
+    assert!(p.get("developerInstructions").is_none());
 }

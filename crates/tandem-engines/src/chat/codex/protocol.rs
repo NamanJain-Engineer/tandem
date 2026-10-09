@@ -86,8 +86,14 @@ impl V2 {
         if let Some(model) = &req.model {
             p["model"] = json!(model);
         }
+        // A teammate's briefing goes as developer instructions, read from
+        // its file and sent over stdin (F-AG-06), never argv.
+        let mut instructions: Vec<String> = req.briefing_text().into_iter().collect();
         if req.mode == ThreadMode::Plan {
-            p["developerInstructions"] = json!(PLAN_INSTRUCTIONS);
+            instructions.push(PLAN_INSTRUCTIONS.to_string());
+        }
+        if !instructions.is_empty() {
+            p["developerInstructions"] = json!(instructions.join("\n\n"));
         }
         p
     }

@@ -673,6 +673,8 @@ impl ThreadService {
         }
         // Its Changes snapshot isn't needed any more.
         let _ = std::fs::remove_file(data.snapshots().join(format!("{}.json", id.as_str())));
+        // Nor its briefing (teammate chats).
+        let _ = std::fs::remove_file(data.briefings().join(format!("{}.md", id.as_str())));
         // The engine session ends with the thread.
         let rt = self.runtime(id);
         if let Some(session) = rt.lock().await.session.take() {
@@ -1954,6 +1956,30 @@ impl AppLauncher {
         let _ = self.teammates.set(Arc::downgrade(teammates));
     }
 
+    /// A teammate chat's briefing, written for this session to
+    /// `$DATA/briefings/<thread>.md` (0600; F-AG-06). Threads have none.
+    async fn briefing_file(
+        &self,
+        thread: &ThreadRecord,
+        cwd: &std::path::Path,
+        access: tandem_core::access::Access,
+    ) -> Result<Option<std::path::PathBuf>, IpcError> {
+        let (Some(teammate), Some(service)) = (
+            self.teammate_of(thread).await,
+            self.teammates.get().and_then(std::sync::Weak::upgrade),
+        ) else {
+            return Ok(None);
+        };
+        let date = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let briefing = service
+            .briefing(&teammate, cwd, access, !thread.attended, &date)
+            .await;
+        let dir = service.data().briefings();
+        tandem_engines::briefing::write_file(&dir, thread.id.as_str(), &briefing)
+            .map(Some)
+            .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()).with_stage("briefing"))
+    }
+
     /// A teammate chat's teammate, if the thread is one.
     async fn teammate_of(
         &self,
@@ -2192,6 +2218,8 @@ impl ChatLauncher for AppLauncher {
             .collect();
         env.extend(crate::services::fake_engine_env());
         let (config, endpoint) = self.mcp_config(thread).await?;
+        let access = tandem_core::access::resolve(thread.access, thread.mode, origin_of(thread));
+        let briefing = self.briefing_file(thread, &cwd, access).await?;
         Ok((
             adapter,
             ChatStart {
@@ -2203,7 +2231,7 @@ impl ChatLauncher for AppLauncher {
                 model: thread.model.clone(),
                 effort: thread.effort.clone(),
                 // The one place a session's access is decided (F-TH-09).
-                access: tandem_core::access::resolve(thread.access, thread.mode, origin_of(thread)),
+                access,
                 mode: thread.mode,
                 attended: thread.attended,
                 resume_session: thread.engine_session_id.clone(),
@@ -2215,6 +2243,7 @@ impl ChatLauncher for AppLauncher {
                         .find(|f| f.engine_id == engine.id)
                         .and_then(|f| f.version)
                 }),
+                briefing,
             },
         ))
     }
@@ -2372,6 +2401,7 @@ mod tests {
                     mcp_config: None,
                     mcp: None,
                     engine_version: None,
+                    briefing: None,
                 },
             ))
         }
@@ -3573,6 +3603,7 @@ mod tests {
                         mcp_config: None,
                         mcp: None,
                         engine_version: None,
+                        briefing: None,
                     },
                 ))
             }
