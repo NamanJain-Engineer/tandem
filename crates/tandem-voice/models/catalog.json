@@ -1,60 +1,125 @@
 {
   "version": 1,
-  "note": "Dictate model catalog (ARCHITECTURE §12.4, F-DI-04). sha256 values stay TBD until scripts/pin-models.ts pins them (M12); the release workflow refuses to publish while any remain. license and attribution feed THIRD_PARTY_NOTICES.md (F-TL-04 AC2).",
+  "note": "Dictate model catalog (ARCHITECTURE §12.4, F-DI-04). sha256 and bytes are pinned from each file's Hugging Face LFS record (scripts/pin-models.ts checks them, D-503); the downloader refuses any file that doesn't match both. license and attribution feed THIRD_PARTY_NOTICES.md (F-TL-04 AC2).",
   "models": [
     {
       "id": "parakeet-tdt-0.6b-v3-int8",
       "runtime": "onnx",
-      "url": "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/",
-      "files": ["encoder-model.int8.onnx", "decoder_joint-model.int8.onnx", "nemo128.onnx", "vocab.txt"],
+      "url": "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/",
+      "files": [
+        "encoder-model.int8.onnx",
+        "decoder_joint-model.int8.onnx",
+        "nemo128.onnx",
+        "vocab.txt"
+      ],
       "sha256": {
-        "encoder-model.int8.onnx": "TBD",
-        "decoder_joint-model.int8.onnx": "TBD",
-        "nemo128.onnx": "TBD",
-        "vocab.txt": "TBD"
+        "encoder-model.int8.onnx": "6139d2fa7e1b086097b277c7149725edbab89cc7c7ae64b23c741be4055aff09",
+        "decoder_joint-model.int8.onnx": "eea7483ee3d1a30375daedc8ed83e3960c91b098812127a0d99d1c8977667a70",
+        "nemo128.onnx": "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f",
+        "vocab.txt": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d"
       },
       "approx_mb": 670,
       "langs": "25-eu",
       "recommended": true,
-      "exclude": ["mac-x86_64"],
+      "exclude": [
+        "mac-x86_64"
+      ],
       "license": "CC-BY-4.0",
       "attribution": "Parakeet TDT 0.6B v3 by NVIDIA, licensed under the Creative Commons Attribution 4.0 International License (https://creativecommons.org/licenses/by/4.0/). ONNX export by istupakov. Tandem downloads the model on request and does not modify it.",
-      "source": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3"
+      "source": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+      "name": "Parakeet v3",
+      "bytes": {
+        "encoder-model.int8.onnx": 652183999,
+        "decoder_joint-model.int8.onnx": 18202004,
+        "nemo128.onnx": 139764,
+        "vocab.txt": 93939
+      },
+      "languages": [
+        "bg",
+        "hr",
+        "cs",
+        "da",
+        "nl",
+        "en",
+        "et",
+        "fi",
+        "fr",
+        "de",
+        "el",
+        "hu",
+        "it",
+        "lv",
+        "lt",
+        "mt",
+        "pl",
+        "pt",
+        "ro",
+        "sk",
+        "sl",
+        "es",
+        "sv",
+        "ru",
+        "uk"
+      ],
+      "langs_label": "25 European"
     },
     {
       "id": "whisper-large-v3-turbo-q5_0",
       "runtime": "whisper",
-      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin",
-      "sha256": "TBD",
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin",
+      "sha256": "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
       "approx_mb": 575,
       "langs": "multi",
-      "default_on": ["mac-x86_64"],
+      "default_on": [
+        "mac-x86_64"
+      ],
       "license": "MIT",
       "attribution": "Whisper large-v3-turbo by OpenAI (MIT License), GGML conversion from the whisper.cpp project (MIT License).",
-      "source": "https://huggingface.co/openai/whisper-large-v3-turbo"
+      "source": "https://huggingface.co/openai/whisper-large-v3-turbo",
+      "name": "Whisper Turbo",
+      "bytes": 574041195,
+      "languages": [
+        "*"
+      ],
+      "langs_label": "~100"
     },
     {
       "id": "whisper-base.en",
       "runtime": "whisper",
-      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
-      "sha256": "TBD",
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en.bin",
+      "sha256": "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
       "approx_mb": 145,
       "langs": "en",
       "license": "MIT",
       "attribution": "Whisper base.en by OpenAI (MIT License), GGML conversion from the whisper.cpp project (MIT License).",
-      "source": "https://huggingface.co/openai/whisper-base.en"
+      "source": "https://huggingface.co/openai/whisper-base.en",
+      "name": "Whisper Base (English)",
+      "bytes": 147964211,
+      "languages": [
+        "en"
+      ],
+      "langs_label": "English"
     },
     {
       "id": "distil-whisper-large-v3.5",
       "runtime": "whisper",
-      "url": "https://huggingface.co/distil-whisper/distil-large-v3.5-ggml/resolve/main/ggml-model.bin",
-      "sha256": "TBD",
+      "url": "https://huggingface.co/distil-whisper/distil-large-v3.5-ggml/resolve/960ecb5c2ecfba3ebb9ebe485c1032ec266cf436/ggml-model.bin",
+      "sha256": "ec2498919b498c5f6b00041adb45650124b3cd9f26f545fffa8f5d11c28dcf26",
       "approx_mb": 1500,
       "langs": "en",
-      "warn_cpu": ["win", "lin"],
+      "warn_cpu": [
+        "win",
+        "lin"
+      ],
       "license": "MIT",
       "attribution": "Distil-Whisper large-v3.5 by Hugging Face (MIT License).",
-      "source": "https://huggingface.co/distil-whisper/distil-large-v3.5"
+      "source": "https://huggingface.co/distil-whisper/distil-large-v3.5",
+      "name": "Distil-Whisper (English)",
+      "bytes": 1519521155,
+      "languages": [
+        "en"
+      ],
+      "langs_label": "English"
     }
   ]
 }
