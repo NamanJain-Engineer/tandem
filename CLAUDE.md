@@ -2,6 +2,7 @@
 
 ## Always
 - Read `BUILD_LOG.md` ("Current state") before working. Update it after every slice.
+- Read `docs/OPERATING.md` for machine setup, commands, E2E lessons, releasing, deploying and checking the live site.
 - Follow `build-kit/DECISIONS.md`. The stack, names and layout are fixed.
 - Write tests from the acceptance criteria (`F-AREA-nn`) before implementing, and reference the ID in test names.
 - Run the global gate G (`pnpm gate`, DECISIONS rule 1) before every commit:

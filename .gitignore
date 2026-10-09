@@ -22,3 +22,4 @@ apps/desktop/src-tauri/resources/THIRD_PARTY_NOTICES.md
 test-results/
 playwright-report/
 *.tsbuildinfo
+__pycache__/
