@@ -195,6 +195,12 @@ const COMMANDS: &[&str] = &[
     "memory_get",
     "memory_write",
     "memory_undo",
+    "skills_list",
+    "skill_get",
+    "skill_save",
+    "skill_remove",
+    "skills_library",
+    "skill_add_from_library",
 ];
 
 const TEST_COMMANDS: &[&str] = &[

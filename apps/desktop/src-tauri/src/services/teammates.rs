@@ -197,6 +197,11 @@ fn copy_name(name: &str, taken: &[String]) -> String {
     unreachable!("the loop returns")
 }
 
+/// Whether text holds a credential-shaped string (the log redactor's rules).
+pub fn has_secret(text: &str) -> bool {
+    tandem_store::memory::has_credentials(text)
+}
+
 /// The app's engines (detection and the registry).
 pub struct AppEngineFacts(pub Arc<crate::services::terminal::TerminalService>);
 

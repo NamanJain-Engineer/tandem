@@ -730,7 +730,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `memory_suggestions_resolve` | `{suggestionSetId, keep:[index]}` | — | — | F-AG-08 |
 | `memory_undo` | `{changeId}` | — (puts back what the change replaced) | NotFound, Conflict (the file changed again since) | F-AG-08 |
 | `skills_list` / `skill_get` | `{teammateId}` / `{teammateId, slug}` | `[SkillEntry {slug, name, description, valid, error?, isNew, syncedTo}]` / `Skill` | — | F-AG-09 |
-| `skill_save` / `skill_remove` | `{teammateId, slug, markdown}` / `{teammateId, slug}` | — | Invalid (front matter) | F-AG-09 |
+| `skill_save` / `skill_remove` | `{teammateId, slug, markdown}` / `{teammateId, slug}` (the user's saves, opens and library adds mark a skill seen: not "New"; remove moves the folder to `<home>/.trash/skills/`) | — | Invalid (front matter, or a credential), NotFound | F-AG-09 |
 | `skills_library` / `skill_add_from_library` | — / `{teammateId, slug}` | `[SkillEntry]` / — | Conflict | F-AG-09 |
 | `skill_sync` | `{teammateId, slug, engineId, accountId, on}` | `SyncOutcome {state:"synced"\|"removed"\|"conflict"}` | — | F-AG-10 |
 | `mail_list` / `mail_get` | `{teammateId}` / `{mailId}` | `[MailRow]` / `Mail` | — | F-AG-12 |
