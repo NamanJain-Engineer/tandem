@@ -404,7 +404,8 @@ export const clientAuditBody = z.object({
           .record(z.string().max(40), z.union([z.string().max(100), z.number(), z.boolean(), z.null()]))
           .refine((m) => Object.keys(m).length <= 10, "At most 10 metadata fields.")
           .default({}),
-        ts: z.string().datetime(),
+        // Any RFC 3339 time, with Z or an offset.
+        ts: z.string().datetime({ offset: true }),
       }),
     )
     .max(100),

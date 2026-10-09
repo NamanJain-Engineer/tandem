@@ -4,6 +4,7 @@
 pub mod accounts;
 pub mod api;
 pub mod approvals;
+pub mod audit;
 pub mod auth;
 pub mod boot;
 pub mod config;
@@ -15,6 +16,7 @@ pub mod events;
 pub mod files;
 pub mod git_panel;
 pub mod handoff;
+pub mod hosted;
 pub mod lanes;
 pub mod launch;
 pub mod limits;

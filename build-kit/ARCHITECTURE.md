@@ -630,7 +630,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `notifications_list` | `{cursor?: string}` | `NotificationPage {items:[Notification {id, kind, title, body, source, state:"unread"\|"read"\|"resolved", dedupeKey?, createdAt, readAt?}], nextCursor?, unread}` (7-day window, newest first; the cursor is `"<createdAt>:<seq>"`) | — | F-DB-02 |
 | `notifications_mark_read` | `{ids?: [NotificationId], all?: bool}` | — | — | F-DB-02 |
 
-`SourceRef = {type:"pane", paneId} | {type:"thread", threadId} | {type:"teammate_chat", teammateId, threadId} | {type:"routine", routineId, runId?} | {type:"task", issueId} | {type:"lane", workspaceId} | {type:"update"} | {type:"plugin", connectionId}`.
+`SourceRef = {type:"pane", paneId} | {type:"thread", threadId} | {type:"teammate_chat", teammateId, threadId} | {type:"routine", routineId, runId?} | {type:"task", issueId} | {type:"lane", workspaceId} | {type:"update"} | {type:"account"} | {type:"plugin", connectionId}`. `account` (M13) opens Settings › Account & Plan: the credit-low item's source (F-DB-02).
 
 #### Threads and teammate chats [F-TH-*, F-AG-03]
 | Command | Args | Returns | Errors | IDs |
@@ -831,7 +831,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `auth_sign_in` | — → op | result via `auth:changed` | Unavailable (categorized: browser / callback / expired / network) |
 | `auth_cancel` / `auth_sign_out` / `auth_state` | `{opId}` / — / — | — / — / `AuthState {signedIn, email?, offlineDaysLeft?}` | — |
 | `auth_continue_offline` | — | — | — |
-| `entitlement_get` / `entitlement_refresh` | — | `EntitlementView {plan, status, limits, source:"token"\|"grace"\|"free", credits:{monthly, purchased, resetsAt}, policy?}` | — |
+| `entitlement_get` / `entitlement_refresh` | — | `EntitlementView {plan, status, limits, source:"token"\|"grace"\|"free", credits:{monthly, purchased, resetsAt, cap, spent, grant}, policy: OrgPolicy?, org: {id, name, role}?, monthlyGrant, …}`. `policy` is the last verified token's (it survives a cached token that stops verifying, D-607); `OrgPolicy` mirrors `@tandem/protocol/team` (F-BL-06). The core enforces it at every engine launch (allowed engines) and thread session start (max access, Full-access audit, F-TL-10), and locks the telemetry toggles | — |
 | `billing_open` | `{target: {type:"upgrade", plan, interval} \| {type:"portal"} \| {type:"credits"}}` | — (system browser) | Unauthenticated |
 | `updates_state` / `updates_check_now` / `updates_install` / `updates_set_channel` | — / — / — / `{channel:"stable"\|"beta"}` | `UpdateState {stage: idle\|checking\|downloading\|ready\|error\|managed\|unavailable, current, channel, version?, notes?, percent?, errorStage?: check\|download\|verify\|install, error?, lastCheck?, upToDate, minVersion?: {minVersion, graceUntil, modal}}` (`check_now` waits for a check already running; a newer release downloads and verifies before `ready`; `install` installs the staged release, stops every terminal and restarts; under the harness it records the install and keeps running) | Unavailable (stage), Invalid (channel) |
 | `whats_new_get` / `whats_new_seen` | — / `{version}` | `ReleaseNotes?` / — | — |
@@ -2326,6 +2326,13 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 
 ### 14.10 Remote config [F-BE-09, F-EN-02, F-TH-08]
 `config/remote-config.json` → `{version, min_app_version, prices, daily_caps, flags, models:{<engine>:[{id, label, description, default, effortLevels, contextWindow, deprecated}]}, registry_overrides:[EngineSpec], plugins:{<id>:{client_id?, enabled}}, telemetry_allowlist_version}`. At startup the API signs the canonical JSON (RFC 8785 JCS) with Ed25519 (`CONFIG_SIGNING_KEY`, `kid` `ck-<n>`), serves `{payload, sig, kid}` with a strong ETag = sha256 of the payload. Desktop verifies with bundled keys; failure → bundled `resources/config.json` (AC1); TTL 10 min (F-TH-08 AC1).
+
+### 14.11 Hosted calls from the desktop (the M13 contract for M8, M10 and M12)
+M13 builds the server side and these desktop pieces; the sessions that own the UI wire them (D-600).
+- **Client:** `services/api.rs` `ApiClient` (always through `AuthService::with_token`, so a 401 refreshes once): `ai_rewrite(access, mode: "enhance"|"polish", text, instructions?, protected_terms)` → text (F-DI-10, M8); `ai_teammate_draft(access, description, engines, plugins)` → `TeammateDraft {name, brief, engine, plugins}` (F-AG-04, M10); `stt_transcribe(access, SttUpload {mime: "audio/ogg"|"audio/wav", audio, duration_ms?, language?, hints})` → `Transcript {text, language, duration}` (F-DI-05, M8: send `duration_ms`; send `hints` only with `dictate_share_hints` on); `audit_events(access, [AuditEvent])` (F-TL-10). `NoHostedApi` (early-access builds) fails all of them as offline.
+- **Errors:** `HostedFailure::from_api(&ApiError, feature)` gives the words to show, one variant per limit: `OutOfCredits` (402, including a Team member's cap), `NeedsPro` ("{feature} needs Vibezeo Pro."), `DailyLimit` (the server's text, e.g. "You've reached today's cloud limit of 120 minutes. Switch to Local."), `RateLimited`, `TooLarge` (413), `SignedOut`, `Unavailable` (offline or 5xx), `Other`. F-DI-05: no silent fallback, so the Dictate UI shows the failure and offers "Use local for this take"; F-DI-10: on any failure insert the raw transcript and toast.
+- **Org policy (F-BL-06):** `EntitlementService::policy()` → `Option<OrgPolicy>`; `tandem_core::policy::{allows_access, clamp_access, allows_engine}` and `OrgPolicy::allows_plugin` (M12: refuse Connect for a plugin outside `allowedPlugins`, with "Set by your organization"); `disable_auto`, `disable_conductor` and `disable_phone` are for M16's features. Engine launches already refuse a disallowed engine (`EngineService::check_allowed`), and thread sessions are held to `maxAccess`.
+- **Audit (F-TL-10):** `AppState.audit.record(event, &[(key, value)])` queues an event only when the org turned audit on; values are short ids (an engine or plugin id), never content. Thread sessions already record `full_access_used`; M12 records `plugin_write_approved` (an approved write, with `plugin`) and `plugin_connected` (with `plugin`).
 
 ---
 

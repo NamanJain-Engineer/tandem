@@ -379,6 +379,14 @@ fn spawn_background(state: &AppState) {
     });
     let telemetry = state.telemetry.clone();
     tauri::async_runtime::spawn(telemetry.clone().run_uploader());
+    tauri::async_runtime::spawn(state.audit.clone().run());
+    tauri::async_runtime::spawn(crate::services::hosted::run(
+        state.entitlements.clone(),
+        state.store.clone(),
+        telemetry.clone(),
+        state.notifications.clone(),
+        state.bus.clone(),
+    ));
     let terminals = state.terminals.clone();
     tauri::async_runtime::spawn(async move {
         terminals.login_env().await;

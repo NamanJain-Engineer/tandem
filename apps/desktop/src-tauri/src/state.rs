@@ -116,6 +116,8 @@ pub struct AppState {
     pub updates: Arc<crate::services::updates::UpdateService>,
     pub config: Arc<ConfigService>,
     pub telemetry: Arc<TelemetryService>,
+    /// The Team org's audit events (F-TL-10).
+    pub audit: Arc<crate::services::audit::AuditService>,
     pub deeplinks: DeepLinkQueue,
     /// Processes a crashed run left behind, until the user decides (UI-132).
     pub orphans: OrphanScan,
@@ -386,6 +388,19 @@ impl AppState {
             launcher.clone(),
         );
         launcher.bind(&threads);
+        // The Team org's policy: engines at every launch, access and audit
+        // at every thread session (F-BL-06, F-TL-10).
+        let policy_source = entitlements.clone();
+        terminals
+            .engines
+            .set_policy_source(Arc::new(move || policy_source.policy()));
+        let audit = crate::services::audit::AuditService::new(
+            auth.clone(),
+            api.clone(),
+            entitlements.clone(),
+            clock.clone(),
+        );
+        launcher.set_guard(audit.clone());
         // Thread titles: AI only with the Privacy opt-in (D-118).
         let titles_store = store.clone();
         threads.configure(
@@ -469,6 +484,7 @@ impl AppState {
             updates,
             config,
             telemetry,
+            audit,
             deeplinks: DeepLinkQueue::default(),
             orphans,
             logins: Arc::default(),

@@ -1,4 +1,4 @@
-import { ChevronDown, Command as CommandIcon, Gem, PanelLeft, PanelRight, Search } from "lucide-react";
+import { ChevronDown, Command as CommandIcon, PanelLeft, PanelRight, Search } from "lucide-react";
 import {
   Avatar,
   Badge,
@@ -14,7 +14,7 @@ import {
 } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
-import { totalCredits, useSession } from "../../stores/session";
+import { availableCredits, creditLevel, useSession } from "../../stores/session";
 import { useUi, type Mode } from "../../stores/ui";
 import { flushLayouts, useLayout } from "../../stores/layout";
 import { useSidebar } from "../../stores/sidebar";
@@ -56,8 +56,8 @@ export function TitleBar() {
   const workspaces = useWorkspaces();
   const { show } = useToast();
   const chrome = isDesktopChrome(boot?.platform);
-  const credits = auth?.signedIn ? totalCredits(entitlement) : null;
-  const grant = entitlement?.monthlyGrant ?? 10_000;
+  const credits = auth?.signedIn ? availableCredits(entitlement) : null;
+  const level = creditLevel(entitlement);
   const offline = entitlement ? !entitlement.online : false;
   const active = workspaces.list.find((w) => w.id === workspaces.activeId);
 
@@ -255,13 +255,15 @@ export function TitleBar() {
           <button
             type="button"
             aria-label={t("titlebar.credits", { n: credits })}
+            data-testid="titlebar-credits"
+            data-level={level ?? "normal"}
             onClick={() => openSettings("account")}
             className={cx(
               "inline-flex h-7 items-center gap-1 rounded-sm px-2 text-sm tabular-nums hover:bg-surface-4 focus-visible:shadow-focus focus-visible:outline-none",
-              credits === 0 ? "text-danger" : credits < grant * 0.1 ? "text-warning" : "text-fg-muted",
+              level === "danger" ? "text-danger" : level === "warning" ? "text-warning" : "text-fg-muted",
             )}
           >
-            <Gem size={13} aria-hidden="true" />
+            <span aria-hidden="true">{t("titlebar.creditsGlyph")}</span>
             {credits.toLocaleString("en-US")}
           </button>
         </Tooltip>

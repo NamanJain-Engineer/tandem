@@ -29,7 +29,7 @@ type Me = {
   limits: { admin: boolean };
   policy: typeof DEFAULT_POLICY | null;
   org: { id: string; role: string } | null;
-  credits: { monthly: number; purchased: number; cap: number | null; spent: number | null };
+  credits: { monthly: number; purchased: number; cap: number | null; spent: number | null; grant: number };
   entitlement_token: string;
 };
 
@@ -86,6 +86,7 @@ describe("F-BL-06 Team plan", () => {
     expect(view).toMatchObject({ plan: "team", org: { id: owner.orgId, role: "owner" } });
     expect(view.limits.admin).toBe(true);
     expect(view.credits.monthly).toBe(30_000);
+    expect(view.credits).toMatchObject({ grant: 30_000, cap: null });
   });
 
   it("invites by email: the link joins the org, the wrong account can't use it, seats run out", async () => {
@@ -195,7 +196,7 @@ describe("F-BL-06 Team plan", () => {
     });
     expect(stopped.status).toBe(402);
     expect(await stopped.json()).toMatchObject({ code: "CREDITS_EXHAUSTED", cap: 1_000, spent: 1_000 });
-    expect((await me(member.userId)).credits).toMatchObject({ cap: 1_000, spent: 1_000 });
+    expect((await me(member.userId)).credits).toMatchObject({ cap: 1_000, spent: 1_000, grant: 1_000 });
     // The pool itself still has credits for the owner.
     const ownerCall = await json(t, "POST", "/v1/ai/rewrite", {
       bearer: await bearerFor(t.deps, owner.userId),
@@ -298,6 +299,17 @@ describe("F-TL-10 audit log", () => {
     });
     const rows = await t.deps.db.select().from(auditEvents).where(eq(auditEvents.orgId, owner.orgId));
     expect(rows.some((r) => r.event === "full_access_used")).toBe(false);
+  });
+
+  it("takes the desktop's RFC 3339 times with an offset", async () => {
+    const { owner, member } = await teamWithAudit(true);
+    const res = await json(t, "POST", "/v1/audit/events", {
+      bearer: await bearerFor(t.deps, member.userId),
+      body: { events: [{ ...fullAccess, ts: "2026-10-09T19:32:54.016+00:00" }] },
+    });
+    expect(res.status).toBe(204);
+    const rows = await t.deps.db.select().from(auditEvents).where(eq(auditEvents.orgId, owner.orgId));
+    expect(rows.some((r) => r.event === "full_access_used")).toBe(true);
   });
 
   it("metadata only: long text in meta is refused", async () => {

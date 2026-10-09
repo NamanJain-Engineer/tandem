@@ -670,6 +670,9 @@
                             "number",
                             "null"
                           ]
+                        },
+                        "grant": {
+                          "type": "number"
                         }
                       },
                       "required": [
@@ -677,7 +680,8 @@
                         "purchased",
                         "resets_at",
                         "cap",
-                        "spent"
+                        "spent",
+                        "grant"
                       ],
                       "additionalProperties": false
                     },

@@ -22,6 +22,7 @@ pub mod logging;
 pub mod net;
 pub mod origin;
 pub mod paths;
+pub mod policy;
 pub mod redact;
 pub mod remote_config;
 pub mod settings;

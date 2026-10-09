@@ -84,6 +84,7 @@ const me = z.object({
     resets_at: z.string().nullable(),
     cap: z.number().nullable(),
     spent: z.number().nullable(),
+    grant: z.number(),
   }),
   flags: z.record(z.string(), z.boolean()),
   policy: policySchema.nullable(),

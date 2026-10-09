@@ -80,6 +80,8 @@ export function testRoutes(deps: Deps) {
         status: z.enum(["trialing", "active", "past_due", "canceled"]).default("active"),
         periodEndDays: z.number().default(30),
         cancelAtPeriodEnd: z.boolean().default(false),
+        /** The first charge happened now (refunds need one, F-BL-05). */
+        paid: z.boolean().default(false),
       }),
     );
     const userId = await userIdFor(deps, body.email);
@@ -99,6 +101,7 @@ export function testRoutes(deps: Deps) {
         currentPeriodEnd: new Date(now.getTime() + body.periodEndDays * 86_400_000),
         cancelAtPeriodEnd: body.cancelAtPeriodEnd,
         pastDueSince: body.status === "past_due" ? now : null,
+        firstPaidAt: body.paid ? now : null,
         updatedAt: now,
       });
     }
@@ -208,6 +211,15 @@ export function testRoutes(deps: Deps) {
     await notifyCredits(deps, owner);
     return c.body(null, 204);
   });
+
+  // Support tools need an admin (F-BL-05): a fresh E2E account becomes one.
+  app.post("/admin", async (c) => {
+    const body = await parseJson(c, z.object({ email: z.string() }));
+    await deps.db.update(user).set({ role: "admin" }).where(eq(user.id, await userIdFor(deps, body.email)));
+    return c.body(null, 204);
+  });
+
+  app.get("/user", async (c) => c.json({ id: await userIdFor(deps, c.req.query("email") ?? "") }));
 
   app.get("/billing-calls", (c) => {
     const calls = deps.billing instanceof MockBilling ? deps.billing.calls : [];

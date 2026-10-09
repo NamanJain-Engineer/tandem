@@ -283,6 +283,11 @@ impl NotificationService {
         }
     }
 
+    /// Resolves an in-app item by its dedupe key (the credit-low item).
+    pub async fn resolve_key(&self, dedupe: &str) {
+        self.resolve(dedupe).await;
+    }
+
     async fn resolve(&self, dedupe: &str) {
         match repo::resolve(&self.store, dedupe).await {
             Ok(ids) if !ids.is_empty() => self.bus.publish(BusEvent::new(

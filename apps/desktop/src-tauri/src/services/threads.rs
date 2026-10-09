@@ -1869,6 +1869,31 @@ impl ThreadService {
     }
 }
 
+/// The one place a session's access is decided (F-TH-09): the thread's
+/// level and mode for its origin, then held to the Team org's maximum
+/// (F-BL-06). An interactive Full session is reported to the org's audit
+/// log when the org turned it on (F-TL-10).
+fn session_access(
+    guard: Option<&dyn crate::services::audit::OrgGuard>,
+    thread: &ThreadRecord,
+    origin: tandem_core::access::Origin,
+    engine_id: &str,
+) -> tandem_core::access::Access {
+    use tandem_core::access::Origin;
+    let resolved = tandem_core::access::resolve(thread.access, thread.mode, origin);
+    let policy = guard.and_then(|g| g.policy());
+    let access = tandem_core::policy::clamp_access(policy.as_ref(), resolved);
+    if access == Access::Full && matches!(origin, Origin::Interactive) {
+        if let Some(g) = guard {
+            g.audit(
+                crate::services::audit::FULL_ACCESS_USED,
+                &[("engine", engine_id), ("surface", "thread")],
+            );
+        }
+    }
+    access
+}
+
 /// Who started a thread's runs. Routines and tasks pass their own explicit
 /// Full grant when they arrive (M13, M15); until then unattended runs grant
 /// nothing.
@@ -1906,6 +1931,8 @@ pub struct AppLauncher {
     threads: std::sync::OnceLock<std::sync::Weak<ThreadService>>,
     /// The live lease per thread; a new session revokes the last one.
     leases: StdMutex<HashMap<String, tandem_core::ids::LeaseId>>,
+    /// The Team org's policy and audit log (F-BL-06, F-TL-10).
+    guard: std::sync::OnceLock<Arc<dyn crate::services::audit::OrgGuard>>,
 }
 
 impl AppLauncher {
@@ -1928,7 +1955,13 @@ impl AppLauncher {
             gateway: tokio::sync::OnceCell::new(),
             threads: std::sync::OnceLock::new(),
             leases: StdMutex::default(),
+            guard: std::sync::OnceLock::new(),
         }
+    }
+
+    /// The org policy and audit log every session start consults.
+    pub fn set_guard(&self, guard: Arc<dyn crate::services::audit::OrgGuard>) {
+        let _ = self.guard.set(guard);
     }
 
     /// The engines Thread mode supports now.
@@ -2123,6 +2156,13 @@ impl ChatLauncher for AppLauncher {
             .collect();
         env.extend(crate::services::fake_engine_env());
         let (config, endpoint) = self.mcp_config(thread).await?;
+        let origin = origin_of(thread);
+        let access = session_access(
+            self.guard.get().map(|g| g.as_ref()),
+            thread,
+            origin,
+            &engine.id,
+        );
         Ok((
             adapter,
             ChatStart {
@@ -2133,8 +2173,7 @@ impl ChatLauncher for AppLauncher {
                 env,
                 model: thread.model.clone(),
                 effort: thread.effort.clone(),
-                // The one place a session's access is decided (F-TH-09).
-                access: tandem_core::access::resolve(thread.access, thread.mode, origin_of(thread)),
+                access,
                 mode: thread.mode,
                 attended: thread.attended,
                 resume_session: thread.engine_session_id.clone(),
@@ -2148,6 +2187,101 @@ impl ChatLauncher for AppLauncher {
                 }),
             },
         ))
+    }
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::*;
+    use tandem_core::access::Origin;
+    use tandem_core::policy::OrgPolicy;
+
+    struct Guard {
+        policy: Option<OrgPolicy>,
+        audits: StdMutex<Vec<(String, String)>>,
+    }
+
+    impl crate::services::audit::OrgGuard for Guard {
+        fn policy(&self) -> Option<OrgPolicy> {
+            self.policy.clone()
+        }
+        fn audit(&self, event: &str, meta: &[(&str, &str)]) {
+            let engine = meta.iter().find(|(k, _)| *k == "engine").map(|(_, v)| v.to_string());
+            self.audits
+                .lock()
+                .expect("lock")
+                .push((event.to_string(), engine.unwrap_or_default()));
+        }
+    }
+
+    fn thread(access: Access) -> ThreadRecord {
+        ThreadRecord {
+            id: ThreadId::new(),
+            kind: ThreadKind::Thread,
+            workspace_id: None,
+            cwd: "/tmp".into(),
+            engine_id: "claude".into(),
+            account_id: None,
+            model: None,
+            effort: None,
+            access,
+            mode: ThreadMode::Act,
+            title: String::new(),
+            state: ThreadState::Idle,
+            attended: true,
+            engine_session_id: None,
+            pinned: false,
+            archived: false,
+            unread: false,
+            sort_key: "a".into(),
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    fn guard(policy: Option<OrgPolicy>) -> Guard {
+        Guard {
+            policy,
+            audits: StdMutex::default(),
+        }
+    }
+
+    #[test]
+    fn f_bl_06_1_max_access_edits_holds_a_full_thread_to_edits() {
+        let g = guard(Some(OrgPolicy {
+            max_access: Access::Edits,
+            audit_enabled: true,
+            ..OrgPolicy::default()
+        }));
+        let got = session_access(Some(&g), &thread(Access::Full), Origin::Interactive, "claude");
+        assert_eq!(got, Access::Edits);
+        // Nothing ran with Full, so nothing is audited.
+        assert!(g.audits.lock().expect("lock").is_empty());
+    }
+
+    #[test]
+    fn f_tl_10_1_a_full_session_start_is_offered_to_the_audit_log() {
+        let g = guard(Some(OrgPolicy::default()));
+        let got = session_access(Some(&g), &thread(Access::Full), Origin::Interactive, "codex");
+        assert_eq!(got, Access::Full);
+        assert_eq!(
+            g.audits.lock().expect("lock").as_slice(),
+            [("full_access_used".to_string(), "codex".to_string())]
+        );
+        // Edits sessions and unattended runs (never Full, D-4) aren't Full access.
+        session_access(Some(&g), &thread(Access::Edits), Origin::Interactive, "codex");
+        session_access(
+            Some(&g),
+            &thread(Access::Full),
+            Origin::Routine { grants_full: false },
+            "codex",
+        );
+        assert_eq!(g.audits.lock().expect("lock").len(), 1);
+        // Without a guard (no org) nothing changes.
+        assert_eq!(
+            session_access(None, &thread(Access::Full), Origin::Interactive, "codex"),
+            Access::Full
+        );
     }
 }
 

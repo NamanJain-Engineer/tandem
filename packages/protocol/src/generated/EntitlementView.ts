@@ -2,6 +2,8 @@
 import type { CreditsView } from "./CreditsView";
 import type { LimitSource } from "./LimitSource";
 import type { Limits } from "./Limits";
+import type { MeOrg } from "./MeOrg";
+import type { OrgPolicy } from "./OrgPolicy";
 import type { Plan } from "./Plan";
 
 /**
@@ -12,7 +14,11 @@ export type EntitlementView = { plan: Plan,
  * Subscription status from the server (`active`, `trialing`, `past_due`,
  * `canceled`, `none`); `none` when signed out.
  */
-status: string, limits: Limits, source: LimitSource, credits: CreditsView | null, policy: Record<string, unknown> | null, paidUntil: string | null, cancelAtPeriodEnd: boolean, 
+status: string, limits: Limits, source: LimitSource, credits: CreditsView | null, 
+/**
+ * The Team org's admin policy, from the last verified token (D-607).
+ */
+policy: OrgPolicy | null, org: MeOrg | null, paidUntil: string | null, cancelAtPeriodEnd: boolean, 
 /**
  * False after the last refresh failed on the network.
  */

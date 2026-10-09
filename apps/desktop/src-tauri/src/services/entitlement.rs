@@ -18,9 +18,10 @@ use tandem_core::entitlement::{
     effective_limits, verify_entitlement, EntitlementClaims, LimitSource, Limits, Plan,
     PublicKeySet, GRACE_SECONDS,
 };
+use tandem_core::policy::OrgPolicy;
 use tandem_core::DataDir;
 
-use super::api::{ApiClient, ApiError, MeResponse};
+use super::api::{ApiClient, ApiError, MeOrg, MeResponse};
 use super::auth::AuthService;
 
 pub const MONTHLY_GRANT: i64 = 10_000;
@@ -32,6 +33,25 @@ pub struct CreditsView {
     pub monthly: i64,
     pub purchased: i64,
     pub resets_at: Option<String>,
+    /// A Team member's monthly cap and spend against it (F-BL-06).
+    #[serde(default)]
+    pub cap: Option<i64>,
+    #[serde(default)]
+    pub spent: Option<i64>,
+    /// What arrives each month; the ◈ display warns below 10% of it.
+    #[serde(default)]
+    pub grant: Option<i64>,
+}
+
+impl CreditsView {
+    /// What can be spent now: the balance, held to a member's remaining cap.
+    pub fn available(&self) -> i64 {
+        let total = self.monthly + self.purchased;
+        match (self.cap, self.spent) {
+            (Some(cap), spent) => total.min((cap - spent.unwrap_or(0)).max(0)),
+            _ => total,
+        }
+    }
 }
 
 /// `entitlement_get` and the `entitlement:changed` payload.
@@ -46,8 +66,9 @@ pub struct EntitlementView {
     pub limits: Limits,
     pub source: LimitSource,
     pub credits: Option<CreditsView>,
-    #[ts(type = "Record<string, unknown> | null")]
-    pub policy: Option<Value>,
+    /// The Team org's admin policy, from the last verified token (D-607).
+    pub policy: Option<OrgPolicy>,
+    pub org: Option<MeOrg>,
     pub paid_until: Option<String>,
     pub cancel_at_period_end: bool,
     /// False after the last refresh failed on the network.
@@ -64,6 +85,8 @@ struct MeCache {
     email: String,
     status: String,
     credits: CreditsView,
+    #[serde(default)]
+    org: Option<MeOrg>,
     paid_until: Option<String>,
     cancel_at_period_end: bool,
 }
@@ -71,6 +94,9 @@ struct MeCache {
 #[derive(Default)]
 struct Inner {
     claims: Option<EntitlementClaims>,
+    /// The policy of the last token that verified, kept while signed in even
+    /// when the cached token later fails to verify (D-607).
+    policy: Option<OrgPolicy>,
     me: Option<MeCache>,
     online: bool,
 }
@@ -103,6 +129,10 @@ impl EntitlementService {
             inner.claims = std::fs::read_to_string(data.entitlement_cache())
                 .ok()
                 .and_then(|t| verify_entitlement(t.trim(), &keys).ok());
+            inner.policy = std::fs::read_to_string(policy_cache_path(&data))
+                .ok()
+                .and_then(|t| verify_entitlement(t.trim(), &keys).ok())
+                .and_then(|c| c.policy);
             inner.me = std::fs::read(me_cache_path(&data))
                 .ok()
                 .and_then(|b| serde_json::from_slice(&b).ok());
@@ -142,7 +172,8 @@ impl EntitlementService {
             limits,
             source,
             credits: me.map(|m| m.credits.clone()),
-            policy: inner.claims.as_ref().and_then(|c| c.policy.clone()),
+            policy: inner.policy.clone(),
+            org: me.and_then(|m| m.org.clone()),
             paid_until: me.and_then(|m| m.paid_until.clone()),
             cancel_at_period_end: me.map(|m| m.cancel_at_period_end).unwrap_or(false),
             online: inner.online,
@@ -150,8 +181,15 @@ impl EntitlementService {
                 .claims
                 .as_ref()
                 .map(|c| (c.exp + GRACE_SECONDS) * 1000),
-            monthly_grant: MONTHLY_GRANT,
+            monthly_grant: me
+                .and_then(|m| m.credits.grant)
+                .unwrap_or(MONTHLY_GRANT),
         }
+    }
+
+    /// The org policy to enforce now, if any (F-BL-06).
+    pub fn policy(&self) -> Option<OrgPolicy> {
+        self.read().policy.clone()
     }
 
     /// The limits to enforce right now.
@@ -212,7 +250,11 @@ impl EntitlementService {
                 monthly: me.credits.monthly,
                 purchased: me.credits.purchased,
                 resets_at: me.credits.resets_at.clone(),
+                cap: me.credits.cap,
+                spent: me.credits.spent,
+                grant: me.credits.grant,
             },
+            org: me.org.clone(),
             paid_until: me.paid_until.clone(),
             cancel_at_period_end: me.cancel_at_period_end,
         };
@@ -223,6 +265,17 @@ impl EntitlementService {
                 me.entitlement_token.as_bytes(),
                 Some(0o600),
             );
+            // The policy's own copy: only a newer verified token replaces it.
+            let policy_path = policy_cache_path(&self.data);
+            if claims.as_ref().is_some_and(|c| c.policy.is_some()) {
+                let _ = tandem_core::atomic::atomic_write(
+                    &policy_path,
+                    me.entitlement_token.as_bytes(),
+                    Some(0o600),
+                );
+            } else {
+                let _ = std::fs::remove_file(&policy_path);
+            }
             if let Ok(bytes) = serde_json::to_vec(&cache) {
                 let _ = tandem_core::atomic::atomic_write(
                     &me_cache_path(&self.data),
@@ -233,6 +286,9 @@ impl EntitlementService {
         }
         {
             let mut inner = self.write();
+            if let Some(c) = &claims {
+                inner.policy = c.policy.clone();
+            }
             inner.claims = claims;
             inner.me = Some(cache);
             inner.online = true;
@@ -244,7 +300,9 @@ impl EntitlementService {
         let mut inner = self.write();
         inner.claims = None;
         inner.me = None;
+        inner.policy = None;
         let _ = std::fs::remove_file(self.data.entitlement_cache());
+        let _ = std::fs::remove_file(policy_cache_path(&self.data));
         let _ = std::fs::remove_file(me_cache_path(&self.data));
     }
 
@@ -326,6 +384,11 @@ fn me_cache_path(data: &DataDir) -> std::path::PathBuf {
     data.cache().join("me.json")
 }
 
+/// The last verified token that carried an org policy.
+fn policy_cache_path(data: &DataDir) -> std::path::PathBuf {
+    data.cache().join("policy.jws")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -337,6 +400,10 @@ mod tests {
     use ed25519_dalek::{Signer, SigningKey};
 
     fn token(key: &SigningKey, plan: &str, exp: i64) -> String {
+        token_with(key, plan, exp, Value::Null)
+    }
+
+    fn token_with(key: &SigningKey, plan: &str, exp: i64, policy: Value) -> String {
         let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"EdDSA","kid":"ek-1"}"#);
         let limits = if plan == "free" {
             serde_json::to_value(Limits::free())
@@ -349,7 +416,7 @@ mod tests {
         }
         .expect("limits");
         let payload = serde_json::json!({
-            "sub": "u1", "plan": plan, "status": "active", "limits": limits, "policy": null,
+            "sub": "u1", "plan": plan, "status": "active", "limits": limits, "policy": policy,
             "iat": exp - 86_400, "exp": exp, "iss": "tandem-api", "aud": "tandem-desktop"
         });
         let payload = URL_SAFE_NO_PAD.encode(payload.to_string());
@@ -376,9 +443,13 @@ mod tests {
                 monthly: 10_000,
                 purchased: 0,
                 resets_at: None,
+                cap: None,
+                spent: None,
+                grant: Some(10_000),
             },
             flags: Default::default(),
             policy: None,
+            org: None,
             entitlement_token: tok,
         }
     }
@@ -473,5 +544,103 @@ mod tests {
         *r.api.me.lock().expect("lock") = Some(me(token(&forger, "pro", now + 86_400), Plan::Pro));
         let v = svc.refresh().await;
         assert_eq!((v.plan, v.source), (Plan::Free, LimitSource::Free));
+    }
+
+    #[tokio::test]
+    async fn f_bl_06_1_the_policy_comes_from_the_token_and_survives_a_forged_cache() {
+        let r = rig();
+        let key = SigningKey::generate(&mut rand::rngs::OsRng);
+        let svc = service(&r, &key);
+        signed_in(&r).await;
+        let now = r.clock.now_ms() / 1000;
+        let policy = serde_json::json!({ "maxAccess": "edits", "auditEnabled": true });
+        let mut team = me(token_with(&key, "team", now + 86_400, policy), Plan::Team);
+        // What /me says next to the token is never trusted for the policy.
+        team.policy = Some(serde_json::json!({ "maxAccess": "full" }));
+        *r.api.me.lock().expect("lock") = Some(team);
+        let v = svc.refresh().await;
+        let p = v.policy.expect("policy");
+        assert_eq!(p.max_access, tandem_core::access::Access::Edits);
+        assert!(p.audit_enabled);
+
+        // Someone edits the cached token to drop the policy: it no longer
+        // verifies, so the plan falls to Free, but the org's rules stay.
+        let cached = std::fs::read_to_string(r.data.entitlement_cache()).expect("cache");
+        let mut parts: Vec<&str> = cached.split('.').collect();
+        let forged = URL_SAFE_NO_PAD.encode(br#"{"sub":"u1","plan":"pro","policy":null}"#);
+        parts[1] = &forged;
+        std::fs::write(r.data.entitlement_cache(), parts.join(".")).expect("write");
+        let relaunched = service(&r, &key);
+        let v = relaunched.view();
+        assert_eq!(v.plan, Plan::Free);
+        assert_eq!(
+            v.policy.map(|p| p.max_access),
+            Some(tandem_core::access::Access::Edits)
+        );
+
+        // A newer verified token without a policy (left the org) clears it.
+        *r.api.me.lock().expect("lock") = Some(me(token(&key, "pro", now + 86_400), Plan::Pro));
+        assert_eq!(svc.refresh().await.policy, None);
+        assert!(!r.data.cache().join("policy.jws").exists());
+    }
+
+    #[test]
+    fn f_bl_06_2_a_member_can_spend_their_cap_at_most() {
+        let c = CreditsView {
+            monthly: 20_000,
+            purchased: 0,
+            resets_at: None,
+            cap: Some(1_000),
+            spent: Some(700),
+            grant: Some(1_000),
+        };
+        assert_eq!(c.available(), 300);
+        let solo = CreditsView {
+            cap: None,
+            spent: None,
+            ..c
+        };
+        assert_eq!(solo.available(), 20_000);
+    }
+
+    #[tokio::test]
+    async fn f_tl_10_1_audit_events_leave_only_when_the_org_turned_audit_on() {
+        let r = rig();
+        let key = SigningKey::generate(&mut rand::rngs::OsRng);
+        let svc = service(&r, &key);
+        let audit = crate::services::audit::AuditService::new(
+            r.auth.clone(),
+            r.api.clone(),
+            svc.clone(),
+            Arc::new(r.clock.clone()),
+        );
+        signed_in(&r).await;
+        let now = r.clock.now_ms() / 1000;
+        // A Pro user (no org): nothing is even queued.
+        *r.api.me.lock().expect("lock") = Some(me(token(&key, "pro", now + 86_400), Plan::Pro));
+        svc.refresh().await;
+        assert!(!audit.record("full_access_used", &[("engine", "claude")]));
+        assert_eq!(audit.flush().await, 0);
+        // A Team member whose org turned audit on.
+        let on = serde_json::json!({ "auditEnabled": true });
+        *r.api.me.lock().expect("lock") = Some(me(token_with(&key, "team", now + 86_400, on), Plan::Team));
+        svc.refresh().await;
+        assert!(audit.record("full_access_used", &[("engine", "claude"), ("surface", "thread")]));
+        // Offline: kept for later.
+        *r.api.offline.lock().expect("lock") = true;
+        assert_eq!(audit.flush().await, 0);
+        assert_eq!(audit.pending(), 1);
+        *r.api.offline.lock().expect("lock") = false;
+        assert_eq!(audit.flush().await, 1);
+        let sent = r.api.audits.lock().expect("lock").clone();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].event, "full_access_used");
+        assert_eq!(sent[0].meta.get("engine").and_then(Value::as_str), Some("claude"));
+        // The API's schema: an RFC 3339 time in UTC (it 422s anything else).
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(&sent[0].ts).is_ok() && sent[0].ts.ends_with('Z'),
+            "{}",
+            sent[0].ts
+        );
     }
 }

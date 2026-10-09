@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import type { Limits, Plan, PlanStatus } from "@tandem/protocol/plans";
+import { MONTHLY_CREDITS, type Limits, type Plan, type PlanStatus } from "@tandem/protocol/plans";
 import { signEntitlement } from "../auth/jwt";
 import type { Deps } from "../deps";
 import { subscriptions, user } from "../db/schema";
@@ -24,6 +24,8 @@ export type MeResponse = {
     /** Team members: their monthly cap and what they've spent against it. */
     cap: number | null;
     spent: number | null;
+    /** What arrives each month for this user: 10,000 × seats, a Team member's cap, or 0 on Free. */
+    grant: number;
   };
   flags: Record<string, boolean>;
   /** The org's admin policy while its Team plan is paid (F-BL-06). */
@@ -90,6 +92,10 @@ export async function buildMe(deps: Deps, userId: string): Promise<MeResponse | 
       resets_at: credits.resetsAt,
       cap: credits.org?.cap ?? null,
       spent: credits.org ? credits.org.spent : null,
+      grant:
+        effective.plan === "free"
+          ? 0
+          : (credits.org?.cap ?? MONTHLY_CREDITS * (effective.plan === "team" ? Math.max(1, sub?.seats ?? 1) : 1)),
     },
     flags: deps.config.config.flags,
     policy,
