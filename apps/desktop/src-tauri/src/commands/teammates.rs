@@ -65,3 +65,33 @@ pub async fn teammate_reorder(
 ) -> Result<(), IpcError> {
     state.teammates.reorder(&ids).await
 }
+
+#[tauri::command]
+pub async fn memory_get(
+    state: State<'_, AppState>,
+    teammate_id: TeammateId,
+) -> Result<tandem_store::memory::Memory, IpcError> {
+    state.teammates.memory(&teammate_id).await
+}
+
+/// The user's own edits (Add note, delete, Raw save): checked like the
+/// teammate's writes (F-AG-07).
+#[tauri::command]
+pub async fn memory_write(
+    state: State<'_, AppState>,
+    teammate_id: TeammateId,
+    file: tandem_store::memory::MemoryFile,
+    markdown: String,
+) -> Result<(), IpcError> {
+    let teammate = state.teammates.get(&teammate_id).await?;
+    state
+        .teammates
+        .write_memory(&teammate, file, &markdown)
+        .await
+        .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn memory_undo(state: State<'_, AppState>, change_id: String) -> Result<(), IpcError> {
+    state.teammates.undo_memory(&change_id).await
+}

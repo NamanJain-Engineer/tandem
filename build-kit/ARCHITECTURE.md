@@ -725,10 +725,10 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `teammate_draft_with_ai` | `{description}` | `TeammateDraft {name, brief, engineId, pluginIds}` (nothing saved) | ForbiddenPlan, CreditsExhausted, Unavailable | F-AG-04 |
 | `teammate_suggestions` | `{id}` | `[String; 3]` (local) | — | F-AG-03 |
 | `teammate_launch_in_terminal` | `{id, placePath, tabId}` | `PaneRecord` | EngineMissing | F-AG-13 |
-| `memory_get` | `{teammateId}` | `Memory {notes, about, cap, used, aboutCap: 2048}` | — | F-AG-07 |
-| `memory_write` | `{teammateId, file:"notes"\|"about", markdown}` | — | LimitReached (cap), Invalid ("Memory can't store credentials") | F-AG-07 |
+| `memory_get` | `{teammateId}` | `Memory {notes, about, cap, used, aboutCap: 2048, aboutUsed}` (lengths in characters) | — | F-AG-07 |
+| `memory_write` | `{teammateId, file:"notes"\|"about", markdown}` (the user's own edits, checked like `tandem__memory_write`; each write is a `memory_changes` row with a copy of what it replaced) | — | LimitReached (cap), Invalid ("Memory can't store credentials") | F-AG-07 |
 | `memory_suggestions_resolve` | `{suggestionSetId, keep:[index]}` | — | — | F-AG-08 |
-| `memory_undo` | `{changeId}` | — | NotFound | F-AG-08 |
+| `memory_undo` | `{changeId}` | — (puts back what the change replaced) | NotFound, Conflict (the file changed again since) | F-AG-08 |
 | `skills_list` / `skill_get` | `{teammateId}` / `{teammateId, slug}` | `[SkillEntry {slug, name, description, valid, error?, isNew, syncedTo}]` / `Skill` | — | F-AG-09 |
 | `skill_save` / `skill_remove` | `{teammateId, slug, markdown}` / `{teammateId, slug}` | — | Invalid (front matter) | F-AG-09 |
 | `skills_library` / `skill_add_from_library` | — / `{teammateId, slug}` | `[SkillEntry]` / — | Conflict | F-AG-09 |

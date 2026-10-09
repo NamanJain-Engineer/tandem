@@ -7,7 +7,12 @@ type Envelope = { turnId: string; event: { type: string; markdown?: string; reas
 
 /** Sends a message over IPC and waits for its turn to end; the turn's replies. */
 export async function sendAndWait(threadId: string, text: string, timeout = 30_000): Promise<string[]> {
-  const sent = await invoke<{ turnId: string | null }>("thread_send", { threadId, text, attachmentIds: [], queueIfBusy: false });
+  const sent = await invoke<{ turnId: string | null }>("thread_send", {
+    threadId,
+    text,
+    attachmentIds: [],
+    queueIfBusy: false,
+  });
   const turn = sent.turnId;
   if (!turn) throw new Error("the message was queued, not sent");
   let replies: string[] = [];
@@ -30,7 +35,15 @@ export function gatewayPort(): number {
 }
 
 export type TestGateway = {
-  metrics: { port: number; listeners: number; leases: number; mcpSessions: number; requests: number; restarts: number; rssBytes: number | null };
+  metrics: {
+    port: number;
+    listeners: number;
+    leases: number;
+    mcpSessions: number;
+    requests: number;
+    restarts: number;
+    rssBytes: number | null;
+  };
   starts: number;
 };
 

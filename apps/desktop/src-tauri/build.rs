@@ -192,6 +192,9 @@ const COMMANDS: &[&str] = &[
     "teammate_delete",
     "teammate_duplicate",
     "teammate_reorder",
+    "memory_get",
+    "memory_write",
+    "memory_undo",
 ];
 
 const TEST_COMMANDS: &[&str] = &[

@@ -118,6 +118,9 @@ pub struct AppState {
     pub telemetry: Arc<TelemetryService>,
     /// Teammates (F-AG-01).
     pub teammates: Arc<crate::services::teammates::TeammatesService>,
+    /// Holds the gateway's built-ins handler alive (the gateway keeps a weak
+    /// reference).
+    pub teammate_tools: Arc<dyn crate::services::gateway::BuiltinService>,
     /// The one MCP gateway (F-PL-01).
     pub gateway: Arc<crate::services::gateway::GatewayService>,
     pub deeplinks: DeepLinkQueue,
@@ -431,6 +434,12 @@ impl AppState {
             }));
         }
         launcher.bind_teammates(&teammates);
+        // The gateway's teammate built-ins answer for the lease's teammate.
+        let tools: Arc<dyn crate::services::gateway::BuiltinService> =
+            Arc::new(crate::services::teammate_tools::TeammateTools {
+                teammates: teammates.clone(),
+            });
+        gateway.bind_builtins(Arc::downgrade(&tools));
         // Threads are Dashboard items too (F-DB-01, D-6).
         let status = terminals.status.clone();
         threads.set_status_sink(Arc::new(move |th| {
@@ -503,6 +512,7 @@ impl AppState {
             models,
             gateway,
             teammates,
+            teammate_tools: tools,
             files,
             git_panel,
             browser: std::sync::OnceLock::new(),

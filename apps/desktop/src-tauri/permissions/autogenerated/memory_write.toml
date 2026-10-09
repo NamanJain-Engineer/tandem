@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-memory-write"
+description = "Enables the memory_write command without any pre-configured scope."
+commands.allow = ["memory_write"]
+
+[[permission]]
+identifier = "deny-memory-write"
+description = "Denies the memory_write command without any pre-configured scope."
+commands.deny = ["memory_write"]
