@@ -51,6 +51,21 @@ pub struct ChatStart {
     /// developer instructions and ACP agents as the start of the first
     /// prompt. Never argv.
     pub briefing: Option<PathBuf>,
+    /// Local stdio MCP servers besides the gateway: the tasks server
+    /// (F-TK-02), one connection per session.
+    pub stdio_servers: Vec<StdioServer>,
+}
+
+/// A stdio MCP server an engine starts itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StdioServer {
+    /// The name the engine knows it by (`tandem_tasks`).
+    pub name: String,
+    pub command: PathBuf,
+    pub args: Vec<String>,
+    /// Env vars the engine must pass through to the server (Codex starts
+    /// servers with a minimal env).
+    pub env_vars: Vec<String>,
 }
 
 impl ChatStart {

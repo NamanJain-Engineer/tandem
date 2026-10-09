@@ -95,6 +95,7 @@ async function main() {
     execFileSync("cargo", ["build", "-p", "tandem-desktop", "--features", "custom-protocol,test-vendors", ...cargoProfile], { cwd: root, stdio: "inherit" });
     // The status hook and the fake engines (ARCHITECTURE §6.12).
     execFileSync("cargo", ["build", "-p", "tandem-engines", "--features", "fixtures", "--bins"], { cwd: root, stdio: "inherit" });
+    execFileSync("cargo", ["build", "-p", "tandem-tasks", "--bins"], { cwd: root, stdio: "inherit" });
   }
   const home = mkdtempSync(join(tmpdir(), "tandem-e2e-"));
   const results = join(root, "test-results");
@@ -168,6 +169,7 @@ async function main() {
     // The fake `codex app-server`'s usage windows, e.g. "40,85" (E2E-M6-8).
     TANDEM_FAKE_USAGE: join(home, "usage.txt"),
     TANDEM_HOOK_BIN: join(root, "target/debug/tandem-hook"),
+    TANDEM_TASKS_BIN: join(root, "target/debug/tandem-tasks"),
     TANDEM_SPAWN_LOG: join(home, "spawn.log"),
     // The local update feed (scripts/mock-update-feed.ts, E2E-M5-7); it
     // answers "nothing new" unless a spec picks a scenario.

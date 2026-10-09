@@ -27,6 +27,7 @@ pub mod opener;
 pub mod restore;
 pub mod staging;
 pub mod status;
+pub mod tasks;
 pub mod teammates;
 pub mod telemetry;
 pub mod terminal;

@@ -779,15 +779,25 @@ impl AcpSession {
             .pointer("/agentCapabilities/mcpCapabilities/http")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        match (&self.req.mcp, http) {
-            (Some(mcp), true) => json!([{
+        let mut servers = match (&self.req.mcp, http) {
+            (Some(mcp), true) => vec![json!({
                 "type": "http",
                 "name": "tandem",
                 "url": mcp.url,
                 "headers": [{"name": "Authorization", "value": format!("Bearer {}", mcp.token)}],
-            }]),
-            _ => json!([]),
-        }
+            })],
+            _ => Vec::new(),
+        };
+        // Every ACP agent takes stdio servers.
+        servers.extend(self.req.stdio_servers.iter().map(|s| {
+            json!({
+                "name": s.name,
+                "command": s.command,
+                "args": s.args,
+                "env": [],
+            })
+        }));
+        Value::Array(servers)
     }
 
     /// `initialize`, then a loaded or new session, and the thread's model.

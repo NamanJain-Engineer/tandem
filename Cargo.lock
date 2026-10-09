@@ -5239,6 +5239,7 @@ dependencies = [
  "tandem-git",
  "tandem-pty",
  "tandem-store",
+ "tandem-tasks",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -5387,13 +5388,16 @@ dependencies = [
 name = "tandem-tasks"
 version = "0.2.0"
 dependencies = [
+ "anyhow",
  "base64 0.22.1",
  "chrono",
+ "rmcp",
  "serde",
  "serde_json",
  "tandem-core",
  "tempfile",
  "thiserror 2.0.21",
+ "tokio",
  "tracing",
  "ts-rs",
 ]

@@ -24,6 +24,7 @@ tandem-gateway.workspace = true
 tandem-git.workspace = true
 tandem-pty.workspace = true
 tandem-store.workspace = true
+tandem-tasks.workspace = true
 aes-gcm.workspace = true
 async-trait.workspace = true
 base64.workspace = true

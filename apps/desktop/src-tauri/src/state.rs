@@ -120,6 +120,8 @@ pub struct AppState {
     pub teammates: Arc<crate::services::teammates::TeammatesService>,
     /// The one MCP gateway (F-PL-01).
     pub gateway: Arc<crate::services::gateway::GatewayService>,
+    /// The task tracker and its MCP server (F-TK-01, F-TK-02).
+    pub tasks: Arc<crate::services::tasks::TasksService>,
     pub deeplinks: DeepLinkQueue,
     /// Processes a crashed run left behind, until the user decides (UI-132).
     pub orphans: OrphanScan,
@@ -264,6 +266,9 @@ impl AppState {
         let handback_store = store.clone();
         let handback_bus = bus.clone();
         let handback_status = status.clone();
+        let handback_tasks: Arc<std::sync::OnceLock<Arc<crate::services::tasks::TasksService>>> =
+            Arc::default();
+        let tasks_for_handback = handback_tasks.clone();
         // Agent output drives the status heuristics (F-EN-05); the screen is
         // read only when a waiting-pattern check is due.
         let activity_status = status.clone();
@@ -330,6 +335,9 @@ impl AppState {
             }))
             .with_handback_sink(Arc::new(move |pane, code| {
                 handback_status.unwatch(pane);
+                if let Some(tasks) = tasks_for_handback.get() {
+                    tasks.end_session(&format!("pn:{pane}"));
+                }
                 let (store, bus) = (handback_store.clone(), handback_bus.clone());
                 let pane = tandem_core::ids::PaneId::from_db(pane.to_string());
                 tracing::info!(code = "pty.handback", exit = code, "agent handed the pane back");
@@ -431,6 +439,14 @@ impl AppState {
             }));
         }
         launcher.bind_teammates(&teammates);
+        let tasks = crate::services::tasks::TasksService::new(
+            &data,
+            store.clone(),
+            crate::services::tasks::tasks_bin(),
+        );
+        launcher.bind_tasks(&tasks);
+        let _ = handback_tasks.set(tasks.clone());
+        terminals.bind_tasks(&tasks);
         // Threads are Dashboard items too (F-DB-01, D-6).
         let status = terminals.status.clone();
         threads.set_status_sink(Arc::new(move |th| {
@@ -502,6 +518,7 @@ impl AppState {
             threads,
             models,
             gateway,
+            tasks,
             teammates,
             files,
             git_panel,

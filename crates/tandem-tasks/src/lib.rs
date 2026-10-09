@@ -3,6 +3,7 @@
 
 pub mod error;
 pub mod lock;
+pub mod mcp;
 pub mod model;
 pub mod store;
 
