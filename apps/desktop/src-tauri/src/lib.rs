@@ -114,6 +114,7 @@ macro_rules! app_commands {
             commands::browser::browser_command,
             commands::browser::browser_set_bounds,
             commands::browser::browser_set_device,
+            commands::browser::browser_move,
             commands::browser::browser_close,
             commands::browser::browser_clear_data,
             commands::workspaces::workspace_locate,
@@ -491,7 +492,9 @@ pub fn run() {
                     ))
                 });
                 let emit_app = handle.clone();
+                let keep = commands::browser::keep_pane_pages(state.store.clone());
                 service.set_emitter(std::sync::Arc::new(move |s: &browser::BrowserState| {
+                    keep(s);
                     let _ = emit_app.emit_to("main", "browser:state", s);
                 }));
                 let _ = state.browser.set(service);

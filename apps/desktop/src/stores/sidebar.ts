@@ -1,7 +1,9 @@
 import { create } from "zustand";
-import type { BrowserState, SidebarState, SidebarTab, SidebarTabKind } from "@tandem/protocol";
+import type { SidebarState, SidebarTab, SidebarTabKind } from "@tandem/protocol";
 import { invoke } from "../ipc/invoke";
-import { onBrowserState, useBrowser } from "./browser";
+import { onBrowserState, pageTitle, useBrowser } from "./browser";
+
+export { pageTitle } from "./browser";
 
 export const SIDEBAR_MIN = 320;
 export const SIDEBAR_MAX = 900;
@@ -101,18 +103,6 @@ export const useSidebar = create<SidebarStore>((set, get) => {
     togglePin: () => change({ pinned: !get().pinned }),
   };
 });
-
-/** A pill's name for a page: its title, else its host or file name. */
-export function pageTitle(state: BrowserState): string | null {
-  const title = state.title.trim();
-  if (title) return title.slice(0, 120);
-  try {
-    const url = new URL(state.url);
-    return url.protocol === "file:" ? (decodeURIComponent(url.pathname.split("/").pop() ?? "") || null) : url.host || null;
-  } catch {
-    return null;
-  }
-}
 
 let followingPages = false;
 

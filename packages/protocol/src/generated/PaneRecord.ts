@@ -17,4 +17,8 @@ accountId: AccountId | null, humanName: string | null, title: string | null,
  * `none` | `live` | `paused` (an agent waiting for Resume after a
  * restart) | `cancelled` (its restore was cancelled; F-SH-07).
  */
-restoreState: string, createdAt: number, };
+restoreState: string, createdAt: number, 
+/**
+ * A browser pane's page: the URL it last committed (F-CD-17).
+ */
+browserUrl: string | null, };

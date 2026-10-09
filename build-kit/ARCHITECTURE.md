@@ -557,7 +557,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 #### Panes and terminals [F-CD-03..12, F-EN-04, F-EN-06]
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
-| `pane_create` | `{tabId, kind:"terminal"\|"agent"\|"browser"\|"simulator", engineId?, accountId?, cwd?, humanName?}` | `PaneRecord` (assigns unique human name for agents) | NotFound, LimitReached | F-CD-02, F-CD-12 |
+| `pane_create` | `{tabId, kind:"terminal"\|"agent"\|"browser"\|"simulator", engineId?, accountId?, cwd?, humanName?, url?}` (`url`: a browser pane's first page, read like the address bar; a browser pane runs no process and doesn't count against the live-pane limit) | `PaneRecord` (assigns unique human name for agents; `browserUrl`: the page a browser pane last committed, kept by the core) | NotFound, LimitReached, Invalid (a blocked `url`) | F-CD-02, F-CD-12, F-CD-17 |
 | `pane_list` | `{tabId}` | `[PaneRecord]` (open panes, oldest first) | — | F-CD-02 |
 | `pty_spawn` | `{paneId, cols, rows, shell?, engine?: EngineLaunch {engineId, accountId?, oneOffHome?, extraArgs?, firstPrompt?, resumeSessionId?}, channel: Channel<PtyFrame>}` | `PtyInfo {pid, startedAt, launchConfigId?}` | LimitReached (plan), EngineMissing, NotFound (cwd → falls back to root with notice, not an error), Unavailable (config gone), Conflict (an agent paused after a restart starts only from its card: `restore_resume` / `restore_start_fresh`) | F-CD-03, F-EN-04, F-AC-01, F-SH-07 |
 | `pty_attach` | `{paneId, channel}` | `AttachSnapshot {replay: base64, state: PtyState}` (after webview reload) | NotFound | F-CD-03 |
@@ -573,7 +573,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `term_stage_clipboard_image` | `{paneId}` | `String` (quoted staged PNG path) | NotFound (no image) | F-CD-05 |
 | `term_last_output` | `{paneId}` | `LastOutput?` `{text, exitCode?}`: the last finished command's plain-text output, from its OSC 133 C and D marks ("Copy last command output") | — | F-CD-10 |
 | `pane_rename` | `{paneId, humanName}` | `String` (the stored name, trimmed; 1–32 chars) | Conflict (name taken), Invalid | F-CD-12 |
-| `pane_close` | `{paneId}` (UI already confirmed if working) | — | — | F-CD-12, F-SH-07 |
+| `pane_close` | `{paneId}` (UI already confirmed if working; a browser pane's page closes with it) | — | — | F-CD-12, F-SH-07, F-CD-17 |
 | `pane_move` | `{paneId, tabId}` (same workspace; drop on the tab strip, "Move to new tab") | `PaneRecord` (same process) | NotFound | F-CD-02 |
 | `pane_resolve_link` | `{paneId, text}` | `ResolvedLink? {kind:"url"\|"file", target, line?, col?, readonly}` | — | F-CD-09 |
 | `sessions_saved_list` | `{workspaceId}` | `[SavedSession]` | — | F-CD-03 |
@@ -702,7 +702,8 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `fs_create` / `fs_rename` / `fs_delete` | `{context, path, kind:"file"\|"dir"}` / `{context, from, to}` / `{context, path}` (the UI confirms a delete first) | — | Conflict (exists), PermissionDenied (read-only) | F-CD-19 |
 | `fs_watch` / `fs_unwatch` | `{context, channel: Channel<FsChange {paths, git, overflow}>}` / `{subId}` | `SubId` / — (debounced 500 ms; `paths` relative to the root; `git`: the repository's index, HEAD or refs changed; `overflow`: too many to list, re-read everything shown) | NotFound | F-CD-19, F-CD-20 |
 | `editor_tabs_get` / `editor_tabs_save` | `{contextKey}` / `{contextKey, state: EditorTabs}` | `EditorTabs {tabs:[{path, line?, col?}], active?, expanded:[dir], showIgnored, divider?, view?: "files"\|"changes"}` / — (`contextKey`: `ws:<workspaceId>` or `th:<threadId>`) | — | F-CD-19 |
-| `browser_open` | `{browserId, url?, bounds: Rect, visible}` (`browserId`: the sidebar tab's or the pane's id; opening an open one just moves it, so a pane moved to the sidebar keeps its page) | `BrowserState` | Unavailable (the system webview can't be embedded here), Invalid (a blocked address) | F-CD-17 |
+| `browser_open` | `{browserId, url?, bounds: Rect, visible}` (`browserId`: the sidebar tab's or the pane's id; opening an open one just moves it) | `BrowserState` | Unavailable (the system webview can't be embedded here), Invalid (a blocked address) | F-CD-17 |
+| `browser_move` | `{from, to}` (the page goes on under a new id, history and all: a pane opened in the sidebar, a sidebar tab moved to a pane) | `BrowserState` | NotFound (`from`), Conflict (`to` has a page) | F-CD-17 |
 | `browser_navigate` | `{browserId, input}` (an address; a bare host like `localhost:5173` becomes `http://`; anything else searches with the `search_engine` setting, DuckDuckGo by default) | `{url}` (where it's going; the address bar shows the committed URL from `browser:state`) | Invalid (a scheme other than http, https and file; `file:` outside every workspace) | F-CD-17 |
 | `browser_command` | `{browserId, cmd:"back"\|"forward"\|"reload"\|"stop"}` | — | NotFound | F-CD-17 |
 | `browser_set_bounds` | `{browserId, bounds: Rect, visible}` (window coordinates in CSS px; hidden while its place isn't shown or a menu or dialog covers it) | — | NotFound | F-CD-17 |
@@ -905,7 +906,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `remote:host` | `{hostId, state:"connected"\|"reconnecting"\|"down"}` | ssh service | F-RM-01 |
 | `remote:phone` | `{pairingId, event:"connected"\|"command"\|"queued"\|"revoked"}` | phone service | F-RM-03 |
 | `updates:state` | `UpdateState` (see `updates_state`; during a download at most one event per 5 %) | updater service | F-SH-06 |
-| `browser:state` / `browser:picker` | `BrowserState {browserId, url, title, canBack, canForward, loading, device, rotated, frame: Rect (the page inside the bounds), zoom}` / `{browserId, elements:[PickedElement]}` | browser service | F-CD-17, F-CD-18 |
+| `browser:state` / `browser:picker` | `BrowserState {browserId, url, title, canBack, canForward, loading, device, rotated, frame: Rect (the page inside the bounds), zoom, blocked?, seq}` (`seq` grows with every change: a view drops a reply or event older than what it holds) / `{browserId, elements:[PickedElement]}` | browser service | F-CD-17, F-CD-18 |
 | `op:progress` | `{opId, stage, pct?, done, error?: IpcError}` | any op | §5.2 |
 
 ### 3.4 Streaming patterns

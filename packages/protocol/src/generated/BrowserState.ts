@@ -22,4 +22,10 @@ zoom: number,
 /**
  * The last address the browser refused, for the address bar to say so.
  */
-blocked: string | null, };
+blocked: string | null, 
+/**
+ * Grows with every change, so a reply or event older than the state
+ * a view already has is dropped (a command's reply can arrive after
+ * the events that followed it).
+ */
+seq: number, };

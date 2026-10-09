@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AlertTriangle, Folder, GitBranch, Plus, SquareTerminal } from "lucide-react";
+import { AlertTriangle, Folder, GitBranch, Globe, Plus, SquareTerminal } from "lucide-react";
 import type { SavedSession, WorkspaceSummary } from "@tandem/protocol";
 import { Badge, ConfirmDialog, EngineGlyph, IconButton, StatusDot, cx, useToast, type MenuEntry } from "@tandem/ui";
 import { t } from "../../i18n";
@@ -15,7 +15,8 @@ import { useWorkspaces } from "../../stores/workspaces";
 import { RailList } from "../rail/RailList";
 import { topLevel, useWorktrees, worktreesOf } from "../../stores/worktrees";
 import { WorktreeRow } from "./Worktrees";
-import { paneTitles } from "./titles";
+import { browserSources, paneTitles } from "./titles";
+import { useBrowser } from "../../stores/browser";
 import { pickAndAddWorkspace, switchMode } from "../shell/actions";
 import { PlanFooter } from "../shell/PlanFooter";
 import { useBoot } from "../shell/useBoot";
@@ -145,6 +146,7 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
   const savedCount = useSavedCount(ws.id);
   const engines = useEngines((st) => st.list);
   const tabs = useLayout((s) => s.tabs);
+  const pages = useBrowser((s) => s.pages);
   const loaded = useLayout((s) => s.loaded[ws.id] ?? false);
   useEffect(() => {
     if (!loaded)
@@ -156,7 +158,7 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
   const rows = ws.tabs.flatMap((tab) => {
     const t2 = tabs[tab.id];
     if (!t2?.tree) return [];
-    const names = paneTitles(t2.panes, engines);
+    const names = paneTitles(t2.panes, engines, browserSources(t2.panes, pages));
     return Object.values(t2.panes)
       .sort((a, b) => a.createdAt - b.createdAt)
       .map((p) => ({ tab, pane: p, title: names[p.id] ?? "" }));
@@ -218,6 +220,8 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
           <SessionDot paneId={pane.id} />
           {pane.kind === "agent" ? (
             <EngineGlyph letters={engines.find((e) => e.spec.id === pane.engineId)?.spec.logo ?? ""} size={14} />
+          ) : pane.kind === "browser" ? (
+            <Globe size={12} aria-hidden="true" className="shrink-0" />
           ) : (
             <SquareTerminal size={12} aria-hidden="true" className="shrink-0" />
           )}

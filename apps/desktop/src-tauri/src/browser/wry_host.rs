@@ -13,6 +13,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tandem_core::error::{ErrorCode, IpcError};
@@ -27,10 +28,19 @@ pub const UNAVAILABLE: &str = "Web pages can't be shown inside the app on this s
 /// Linux: the layer exists (or, elsewhere, nothing needs one).
 static READY: AtomicBool = AtomicBool::new(!cfg!(target_os = "linux"));
 
+/// A page's id, which its handlers read when they report: a page that
+/// moves (pane ↔ sidebar) keeps its webview and takes a new id.
+type Name = Rc<RefCell<String>>;
+
+fn name_of(name: &Name) -> String {
+    name.borrow().clone()
+}
+
 struct Page {
     webview: WebView,
     /// Where it goes (window coordinates).
     frame: Rect,
+    name: Name,
 }
 
 #[derive(Default)]
@@ -208,22 +218,22 @@ fn history(_webview: &WebView) -> (bool, bool) {
 /// (`pushState`, a `#fragment`), which load nothing. Elsewhere the finished
 /// load reports the address.
 #[cfg(target_os = "linux")]
-fn watch_commits(webview: &WebView, id: &str, sink: EventSink) {
+fn watch_commits(webview: &WebView, name: &Name, sink: EventSink) {
     use webkit2gtk::{LoadEvent, WebViewExt};
     use wry::WebViewExtUnix;
     let inner = webview.webview();
-    let (commit_id, commit_sink) = (id.to_string(), sink.clone());
+    let (commit_name, commit_sink) = (name.clone(), sink.clone());
     inner.connect_load_changed(move |view, event| {
         if event == LoadEvent::Committed {
             if let Some(url) = view.uri() {
                 commit_sink(HostEvent::Committed {
-                    id: commit_id.clone(),
+                    id: name_of(&commit_name),
                     url: url.to_string(),
                 });
             }
         }
     });
-    let id = id.to_string();
+    let name = name.clone();
     // While a load runs the URI is the requested one, not what's shown;
     // that load reports its own commit.
     inner.connect_uri_notify(move |view| {
@@ -232,7 +242,7 @@ fn watch_commits(webview: &WebView, id: &str, sink: EventSink) {
         }
         if let Some(url) = view.uri() {
             sink(HostEvent::SameDocument {
-                id: id.clone(),
+                id: name_of(&name),
                 url: url.to_string(),
             });
         }
@@ -256,17 +266,17 @@ fn load_later(id: String, url: String) {
 
 fn builder<'a>(
     context: &'a mut WebContext,
-    id: &str,
+    name: &Name,
     url: &str,
     frame: Rect,
     visible: bool,
     policy: Policy,
     sink: EventSink,
 ) -> WebViewBuilder<'a> {
-    let (nav_id, nav_sink, nav_policy) = (id.to_string(), sink.clone(), policy.clone());
-    let (load_id, load_sink) = (id.to_string(), sink.clone());
-    let (title_id, title_sink) = (id.to_string(), sink.clone());
-    let (win_id, win_sink) = (id.to_string(), sink);
+    let (nav_name, nav_sink, nav_policy) = (name.clone(), sink.clone(), policy.clone());
+    let (load_name, load_sink) = (name.clone(), sink.clone());
+    let (title_name, title_sink) = (name.clone(), sink.clone());
+    let (win_name, win_sink) = (name.clone(), sink);
     WebViewBuilder::new_with_web_context(context)
         .with_url(url)
         .with_bounds(bounds(frame))
@@ -278,7 +288,7 @@ fn builder<'a>(
             let ok = nav_policy(&to);
             if !ok {
                 nav_sink(HostEvent::Blocked {
-                    id: nav_id.clone(),
+                    id: name_of(&nav_name),
                     url: to,
                 });
             }
@@ -286,23 +296,23 @@ fn builder<'a>(
         })
         .with_on_page_load_handler(move |event, at| match event {
             PageLoadEvent::Started => load_sink(HostEvent::Loading {
-                id: load_id.clone(),
+                id: name_of(&load_name),
             }),
-            PageLoadEvent::Finished => report_loaded(load_id.clone(), at, load_sink.clone()),
+            PageLoadEvent::Finished => report_loaded(name_of(&load_name), at, load_sink.clone()),
         })
         .with_document_title_changed_handler(move |title| {
             title_sink(HostEvent::Title {
-                id: title_id.clone(),
+                id: name_of(&title_name),
                 title,
             })
         })
         // A link to a new window opens in the same tab, if it may.
         .with_new_window_req_handler(move |to, _features| {
             if policy(&to) {
-                load_later(win_id.clone(), to);
+                load_later(name_of(&win_name), to);
             } else {
                 win_sink(HostEvent::Blocked {
-                    id: win_id.clone(),
+                    id: name_of(&win_name),
                     url: to,
                 });
             }
@@ -342,8 +352,9 @@ impl BrowserHost for WryHost {
                     layer,
                 } = &mut *p;
                 let context = context.get_or_insert_with(|| WebContext::new(Some(profile)));
+                let name: Name = Rc::new(RefCell::new(id.clone()));
                 let built = {
-                    let b = builder(context, &id, &url, frame, visible, policy, sink.clone());
+                    let b = builder(context, &name, &url, frame, visible, policy, sink.clone());
                     #[cfg(target_os = "linux")]
                     {
                         use wry::WebViewBuilderExtUnix;
@@ -364,8 +375,8 @@ impl BrowserHost for WryHost {
                     Ok(webview) => {
                         let _ = webview.zoom(zoom);
                         #[cfg(target_os = "linux")]
-                        watch_commits(&webview, &id, sink);
-                        pages.insert(id, Page { webview, frame });
+                        watch_commits(&webview, &name, sink);
+                        pages.insert(id, Page { webview, frame, name });
                         #[cfg(target_os = "linux")]
                         if let Some((_, fixed)) = layer {
                             use gtk::prelude::*;
@@ -426,6 +437,19 @@ impl BrowserHost for WryHost {
                 let Some(page) = p.pages.get(&id) else { return };
                 let _ = page.webview.zoom(zoom);
                 let _ = page.webview.set_visible(visible);
+            });
+        });
+    }
+
+    fn rename(&self, from: &str, to: &str) {
+        let (from, to) = (from.to_string(), to.to_string());
+        self.on_main(move || {
+            PAGES.with(|p| {
+                let mut p = p.borrow_mut();
+                if let Some(page) = p.pages.remove(&from) {
+                    *page.name.borrow_mut() = to.clone();
+                    p.pages.insert(to, page);
+                }
             });
         });
     }

@@ -44,7 +44,9 @@ export function PaneLimitCard({ onManage }: { onManage: () => void }) {
 }
 
 export function launchFor(tileId: string): Launch {
-  return tileId === "shell" ? { kind: "terminal" } : { kind: "agent", engineId: tileId };
+  if (tileId === "shell") return { kind: "terminal" };
+  if (tileId === "browser") return { kind: "browser" };
+  return { kind: "agent", engineId: tileId };
 }
 
 /** The picker a split opens (F-CD-02). At the live-pane limit it shows the
@@ -105,7 +107,9 @@ export function PanePicker({ workspaceName }: { workspaceName: string }) {
         {limited ? (
           <PaneLimitCard onManage={closePicker} />
         ) : (
-          picker && <LaunchGrid tabId={picker.tabId} busy={busy ?? (checking ? "checking" : null)} onPick={(id) => void pick(id)} autoFocus />
+          picker && (
+            <LaunchGrid tabId={picker.tabId} busy={busy ?? (checking ? "checking" : null)} onPick={(id) => void pick(id)} autoFocus browser />
+          )
         )}
       </div>
     </Dialog>

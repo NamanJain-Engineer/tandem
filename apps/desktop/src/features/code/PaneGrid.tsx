@@ -22,10 +22,12 @@ import { useLaunch } from "../../stores/launch";
 import { useRestore, waitingOnCard } from "../../stores/restore";
 import { invoke } from "../../ipc/invoke";
 import { useLayout, type Box, type TabPanes } from "../../stores/layout";
-import { DropZones, applyDrop, type PaneDrag } from "./dnd";
+import { DropZones, moveToNewTab, type PaneDrag } from "./dnd";
 import { useDropTarget } from "./drops";
 import { GUTTER, leaves, minExtent, type LayoutNode } from "./layout/tree";
 import { PaneChrome } from "./PaneChrome";
+import { BrowserPane } from "./BrowserPane";
+import { pageTitle, useBrowser } from "../../stores/browser";
 import { attachPaneHost, paneHost } from "./paneHosts";
 import { LaunchGrid } from "./LaunchGrid";
 import { launchFor } from "./PanePicker";
@@ -490,15 +492,6 @@ function PaneCover({
   );
 }
 
-async function moveToNewTab(tabId: string, paneId: string): Promise<void> {
-  const pane = useLayout.getState().tabs[tabId]?.panes[paneId];
-  if (pane)
-    await applyDrop(
-      { kind: "pane", paneId, tabId, title: "" },
-      { kind: "new_tab", workspaceId: pane.workspaceId },
-    );
-}
-
 /** The empty tab (UI-10): launch tiles instead of a shell. */
 function EmptyTab({ tabId, workspace }: { tabId: string; workspace: WorkspaceSummary }) {
   const [busy, setBusy] = useState<string | null>(null);
@@ -588,12 +581,20 @@ export function PaneGrid({
   const records = useStatus((st) => st.records);
   const ptyStates = useTerminals((st) => st.states);
   const prompts = useFirstPrompts((st) => st.prompts);
+  const pages = useBrowser((st) => st.pages);
   const names = useMemo(() => {
     const sources: Record<string, TitleSources> = {};
-    for (const id of Object.keys(tab?.panes ?? {}))
-      sources[id] = { hook: records[paneKey(id)]?.title, osc: ptyStates[id]?.title, firstPrompt: prompts[id] };
+    for (const id of Object.keys(tab?.panes ?? {})) {
+      const page = pages[id];
+      sources[id] = {
+        hook: records[paneKey(id)]?.title,
+        osc: ptyStates[id]?.title,
+        firstPrompt: prompts[id],
+        page: page ? pageTitle(page) : null,
+      };
+    }
     return paneTitles(tab?.panes ?? {}, engines, sources);
-  }, [tab?.panes, engines, records, ptyStates, prompts]);
+  }, [tab?.panes, engines, records, ptyStates, prompts, pages]);
   // The pane in front never turns unread (F-SH-03).
   const active = tab?.active ?? null;
   useEffect(() => {
@@ -635,18 +636,32 @@ export function PaneGrid({
       {ids.map((id) => {
         const pane = tab.panes[id];
         if (!pane) return null;
+        const cover = cards && !cards.flipped[id] ? "card" : workspace.sessionsCollapsed ? "line" : null;
         return createPortal(
-          <PaneView
-            tabId={tabId}
-            pane={pane}
-            title={names[id] ?? ""}
-            visible={visible && (!tab.maximized || tab.maximized === id)}
-            focused={tab.active === id}
-            solo={solo}
-            maximized={tab.maximized === id}
-            options={options}
-            cover={cards && !cards.flipped[id] ? "card" : workspace.sessionsCollapsed ? "line" : null}
-          />,
+          pane.kind === "browser" ? (
+            <BrowserPane
+              tabId={tabId}
+              pane={pane}
+              title={names[id] ?? ""}
+              visible={visible && (!tab.maximized || tab.maximized === id)}
+              focused={tab.active === id}
+              solo={solo}
+              maximized={tab.maximized === id}
+              cover={cover}
+            />
+          ) : (
+            <PaneView
+              tabId={tabId}
+              pane={pane}
+              title={names[id] ?? ""}
+              visible={visible && (!tab.maximized || tab.maximized === id)}
+              focused={tab.active === id}
+              solo={solo}
+              maximized={tab.maximized === id}
+              options={options}
+              cover={cover}
+            />
+          ),
           paneHost(id),
           id,
         );

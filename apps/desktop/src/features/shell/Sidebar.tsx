@@ -4,13 +4,16 @@ import { SortableContext, arrayMove, horizontalListSortingStrategy, useSortable 
 import { CSS } from "@dnd-kit/utilities";
 import { Globe, LayoutDashboard, ListTodo, Maximize2, Minimize2, NotebookPen, Pin, PinOff, Plus, FolderTree, X } from "lucide-react";
 import type { SidebarTab, SidebarTabKind } from "@tandem/protocol";
-import { Badge, EmptyState, IconButton, Menu, cx, type MenuEntry } from "@tandem/ui";
+import { Badge, EmptyState, IconButton, Menu, cx, useToast, type MenuEntry } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useLayout } from "../../stores/layout";
 import { FLOAT_BELOW, SIDEBAR_MAX, SIDEBAR_MIN, useSidebar } from "../../stores/sidebar";
 import { useStatus } from "../../stores/status";
 import { focusAddressOnMount } from "../../stores/browser";
 import { BrowserView } from "../browser/BrowserView";
+import { moveToPane } from "../code/BrowserPane";
+import { useUi } from "../../stores/ui";
+import { useWorkspaces } from "../../stores/workspaces";
 import { Dashboard } from "../dashboard/Dashboard";
 import { FilesPanel } from "../files/FilesPanel";
 
@@ -162,10 +165,28 @@ function Resizer({ width, onLive }: { width: number; onLive: (w: number | null) 
   );
 }
 
+/** A browser tab: its page, and "Move to a pane" in Code mode. */
+function BrowserTab({ tab }: { tab: SidebarTab }) {
+  const { show } = useToast();
+  const code = useUi((s) => s.mode === "code");
+  const codeTab = useWorkspaces((s) => (s.activeId ? s.activeTab[s.activeId] : undefined));
+  const actions: MenuEntry[] =
+    code && codeTab
+      ? [
+          {
+            id: "to-pane",
+            label: t("browser.moveToPane"),
+            onSelect: () => void moveToPane(tab).then((message) => message && show({ tone: "error", title: message })),
+          },
+        ]
+      : [];
+  return <BrowserView id={tab.id} url={tab.url} actions={actions} />;
+}
+
 function Panel({ tab }: { tab: SidebarTab }) {
   if (tab.kind === "dashboard") return <Dashboard />;
   if (tab.kind === "files") return <FilesPanel />;
-  if (tab.kind === "browser") return <BrowserView id={tab.id} url={tab.url} />;
+  if (tab.kind === "browser") return <BrowserTab tab={tab} />;
   return <EmptyState title={t("sidebar.soon")} />;
 }
 

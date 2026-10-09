@@ -73,9 +73,14 @@ export type BrowserViewProps = {
   id: string;
   /** The page to reopen (a restored tab), if any. */
   url: string | null;
+  /** Hide the page while the app shows something over its place (a pane
+   * card, a pane being dragged). */
+  suspended?: boolean;
+  /** More ⋯ items: moving the page between a pane and the sidebar. */
+  actions?: MenuEntry[];
 };
 
-export function BrowserView({ id, url }: BrowserViewProps) {
+export function BrowserView({ id, url, suspended = false, actions = [] }: BrowserViewProps) {
   const page = useBrowser((s) => s.pages[id]);
   const unavailable = useBrowser((s) => s.unavailable[id]);
   const toast = useToast();
@@ -86,6 +91,8 @@ export function BrowserView({ id, url }: BrowserViewProps) {
   const failed = useRef<string | null>(null);
   const restoreUrl = useRef(url);
   restoreUrl.current = url;
+  const held = useRef(suspended);
+  held.current = suspended;
   const [bounds, setBounds] = useState<Rect>(ZERO);
   const [visible, setVisible] = useState(false);
   /** What's in the field while it's edited. */
@@ -103,7 +110,7 @@ export function BrowserView({ id, url }: BrowserViewProps) {
     const store = useBrowser.getState();
     const state = store.pages[id];
     if (state) {
-      const show = shown && hasPage(state);
+      const show = shown && !held.current && hasPage(state);
       store.place(id, bounds, show);
       notePage(id, show ? bounds : null);
       setVisible(show);
@@ -117,7 +124,7 @@ export function BrowserView({ id, url }: BrowserViewProps) {
   const ensureOpen = (at: string | null): Promise<boolean> => {
     opening.current ??= (async () => {
       const { bounds, shown } = placed.current;
-      const err = await useBrowser.getState().open(id, at, bounds, shown && at !== null);
+      const err = await useBrowser.getState().open(id, at, bounds, shown && !held.current && at !== null);
       if (err) {
         opening.current = null;
         if (err.code !== "unavailable") {
@@ -144,7 +151,7 @@ export function BrowserView({ id, url }: BrowserViewProps) {
   const latestSync = useRef(sync);
   latestSync.current = sync;
   const showable = hasPage(page);
-  useEffect(() => latestSync.current(), [showable]);
+  useEffect(() => latestSync.current(), [showable, suspended]);
 
   useEffect(() => {
     if (!takeAddressFocus(id)) return;
@@ -211,6 +218,7 @@ export function BrowserView({ id, url }: BrowserViewProps) {
   const more: MenuEntry[] = [
     { id: "external", label: t("browser.openExternal"), disabled: !isWeb(committed), onSelect: () => openExternal(committed) },
     { id: "copy", label: t("browser.copyAddress"), disabled: !committed, onSelect: () => void copyText(committed) },
+    ...(actions.length > 0 ? [{ type: "separator" as const, id: "sep-move" }, ...actions] : []),
     { id: "clear", label: t("browser.clear"), danger: true, onSelect: () => setClearing(true) },
   ];
 

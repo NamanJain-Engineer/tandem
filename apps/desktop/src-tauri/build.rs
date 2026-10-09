@@ -90,6 +90,7 @@ const COMMANDS: &[&str] = &[
     "browser_command",
     "browser_set_bounds",
     "browser_set_device",
+    "browser_move",
     "browser_close",
     "browser_clear_data",
     "presets_list",

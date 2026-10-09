@@ -36,11 +36,35 @@ pub async fn pane_create(
     cwd: Option<String>,
     engine_id: Option<String>,
     account_id: Option<tandem_core::ids::AccountId>,
+    url: Option<String>,
 ) -> Result<PaneRecord, IpcError> {
+    // A browser pane runs no process: the live-pane limit doesn't count it.
+    if kind == "browser" {
+        return create_browser_pane(&state, &tab_id, url).await;
+    }
     state
         .terminals
         .check_live_limit(state.entitlements.limits().panes)?;
     create_pane(&state, &tab_id, &kind, cwd, engine_id, account_id).await
+}
+
+/// A browser pane (F-CD-17). `url`, read like the address bar, is its first
+/// page; without one it starts empty.
+pub(crate) async fn create_browser_pane(
+    state: &AppState,
+    tab_id: &TabId,
+    url: Option<String>,
+) -> Result<PaneRecord, IpcError> {
+    let url = match url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
+        Some(input) => Some(crate::commands::browser::resolve(state, input).await?),
+        None => None,
+    };
+    let mut pane = panes::create(&state.store, tab_id, "browser", None).await?;
+    if let Some(url) = url {
+        panes::set_browser_url(&state.store, &pane.id, Some(url.clone())).await?;
+        pane.browser_url = Some(url);
+    }
+    Ok(pane)
 }
 
 /// A pane record in `tab` (the view starts its process). Callers check the
@@ -63,10 +87,11 @@ pub(crate) async fn create_pane(
                 return Err(IpcError::new(ErrorCode::NotFound, "No engine with that id"));
             }
         }
+        "browser" => return create_browser_pane(state, tab_id, None).await,
         _ => {
             return Err(IpcError::new(
                 ErrorCode::Invalid,
-                "Browser and Simulator panes aren't available yet",
+                "Simulator panes aren't available yet",
             ))
         }
     }
@@ -145,6 +170,11 @@ pub async fn close_pane(state: &AppState, pane_id: &PaneId) -> Result<(), IpcErr
     state.restore.forget(pane_id);
     let _ = state.terminals.pty.kill(pane_id.as_str());
     state.terminals.status.unwatch(pane_id.as_str());
+    // A browser pane's page goes with it (one moved to the sidebar has
+    // another id by now).
+    if let Some(browser) = state.browser.get() {
+        browser.close(pane_id.as_str());
+    }
     state
         .approvals
         .broker

@@ -35,6 +35,7 @@ import {
   retrySeat,
   savePreset,
   shellSeat,
+  browserSeat,
   useLaunch,
 } from "../../stores/launch";
 import { useWorkspaces } from "../../stores/workspaces";
@@ -48,6 +49,7 @@ export function launchLabel(seats: Seat[]): string {
   const parts = [
     c.agents > 0 ? t("launch.agents", { n: c.agents }) : null,
     c.shells > 0 ? t("launch.shells", { n: c.shells }) : null,
+    c.browsers > 0 ? t("launch.browsers", { n: c.browsers }) : null,
   ];
   return t("launch.go", { what: parts.filter(Boolean).join(" + ") });
 }
@@ -174,7 +176,11 @@ function Lineup({
 }) {
   const set = (i: number, patch: Partial<Seat>) =>
     onChange(seats.map((s, k) => (k === i ? { ...s, ...patch } : s)));
-  const kindOptions: SelectOption[] = [...engineOptions, { value: "shell", label: t("launch.shellCommand") }];
+  const kindOptions: SelectOption[] = [
+    ...engineOptions,
+    { value: "shell", label: t("launch.shellCommand") },
+    { value: "browser", label: t("launch.browserUrl") },
+  ];
   const roleOptions: SelectOption[] = ROLES.map((r) => ({ value: r, label: r }));
   return (
     <ol data-testid="launch-lineup" className="flex flex-col gap-2">
@@ -187,19 +193,22 @@ function Lineup({
               size="sm"
               className="w-40 shrink-0"
               ariaLabel={t("launch.seatEngine", { n })}
-              value={s.kind === "shell" ? "shell" : (s.engineId ?? "")}
+              value={s.kind === "agent" ? (s.engineId ?? "") : s.kind}
               options={kindOptions}
               onValueChange={(v) =>
                 set(
                   i,
                   v === "shell"
                     ? { ...shellSeat(), count: 1 }
-                    : {
-                        kind: "agent",
-                        engineId: v,
-                        role: s.kind === "agent" ? s.role : "Builder",
-                        command: null,
-                      },
+                    : v === "browser"
+                      ? browserSeat()
+                      : {
+                          kind: "agent",
+                          engineId: v,
+                          role: s.kind === "agent" ? s.role : "Builder",
+                          command: null,
+                          url: null,
+                        },
                 )
               }
             />
@@ -231,6 +240,16 @@ function Lineup({
                   }
                 />
               </>
+            ) : s.kind === "browser" ? (
+              <Input
+                hideLabel
+                monospace
+                label={t("launch.browserUrlField", { n })}
+                placeholder={t("launch.browserUrlPlaceholder")}
+                className="min-w-0 flex-1"
+                value={s.url ?? ""}
+                onChange={(e) => set(i, { url: e.target.value || null })}
+              />
             ) : (
               <Input
                 hideLabel
@@ -312,7 +331,9 @@ function LaunchSheetBody({ workspaceId }: { workspaceId: string }) {
   const c = counts(seats);
   const worktrees = isolation === "worktree" ? branchPreview(task, seats) : [];
   const ready =
-    seats.length > 0 && c.agents + c.shells > 0 && seats.every((s) => s.kind !== "agent" || s.engineId);
+    seats.length > 0 &&
+    c.agents + c.shells + c.browsers > 0 &&
+    seats.every((s) => (s.kind !== "agent" || s.engineId) && (s.kind !== "browser" || s.url?.trim()));
   const launch = async () => {
     if (!ready || busy || !ws) return;
     setBusy(true);
@@ -379,6 +400,7 @@ function LaunchSheetBody({ workspaceId }: { workspaceId: string }) {
               onSelect: () => edit([...seats, agentSeat(engine, "Builder")]),
             },
             { id: "shell", label: t("launch.addShell"), onSelect: () => edit([...seats, shellSeat()]) },
+            { id: "browser", label: t("launch.addBrowser"), onSelect: () => edit([...seats, browserSeat()]) },
           ]}
         />
       </section>
@@ -396,7 +418,13 @@ function LaunchSheetBody({ workspaceId }: { workspaceId: string }) {
       <Checkbox
         label={t("launch.worktrees")}
         description={
-          repo ? (c.shells > 0 ? t("launch.worktreesShellNote") : undefined) : t("launch.needsRepo")
+          repo
+            ? c.browsers > 0
+              ? t("launch.worktreesOthersNote")
+              : c.shells > 0
+                ? t("launch.worktreesShellNote")
+                : undefined
+            : t("launch.needsRepo")
         }
         checked={isolation === "worktree"}
         disabled={!repo || c.agents === 0}
@@ -408,7 +436,7 @@ function LaunchSheetBody({ workspaceId }: { workspaceId: string }) {
 
       <p data-testid="launch-summary" className="text-sm text-fg-muted">
         {t("launch.summary", {
-          panes: c.agents + c.shells,
+          panes: c.agents + c.shells + c.browsers,
           worktrees: worktrees.length,
           branches: worktrees.join(", "),
         })}

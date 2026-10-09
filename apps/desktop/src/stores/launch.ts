@@ -41,19 +41,26 @@ export function shellSeat(command: string | null = null): Seat {
   };
 }
 
+/** A browser seat (F-CD-14): its page opens tiled with the terminals. */
+export function browserSeat(url: string | null = null): Seat {
+  return { kind: "browser", engineId: null, accountId: null, role: null, task: null, command: null, url, count: 1 };
+}
+
 /** A preset's rows, with "the default engine" resolved. */
 export function lineupFrom(preset: Preset, engine: string | null): Seat[] {
   return preset.seats.map((s) => (s.kind === "agent" ? { ...s, engineId: s.engineId ?? engine } : { ...s }));
 }
 
-export function counts(seats: Seat[]): { agents: number; shells: number } {
+export function counts(seats: Seat[]): { agents: number; shells: number; browsers: number } {
   let agents = 0;
   let shells = 0;
+  let browsers = 0;
   for (const s of seats) {
     if (s.kind === "agent") agents += s.count;
     if (s.kind === "shell") shells += s.count;
+    if (s.kind === "browser") browsers += s.count;
   }
-  return { agents, shells };
+  return { agents, shells, browsers };
 }
 
 /** kebab-case from the prompt's first words, as the core names branches

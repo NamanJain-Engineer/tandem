@@ -12,6 +12,7 @@ pub mod wry_host;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use serde::{Deserialize, Serialize};
@@ -69,6 +70,10 @@ pub struct BrowserState {
     pub zoom: f64,
     /// The last address the browser refused, for the address bar to say so.
     pub blocked: Option<String>,
+    /// Grows with every change, so a reply or event older than the state
+    /// a view already has is dropped (a command's reply can arrive after
+    /// the events that followed it).
+    pub seq: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -132,6 +137,8 @@ pub trait BrowserHost: Send + Sync {
     fn command(&self, id: &str, cmd: BrowserCmd);
     fn place(&self, id: &str, frame: Rect, zoom: f64, visible: bool);
     fn close(&self, id: &str);
+    /// Page `from` goes on as `to`.
+    fn rename(&self, from: &str, to: &str);
     /// Cookies, storage and cache of the browser profile.
     fn clear_data(&self);
 }
@@ -315,6 +322,7 @@ pub struct BrowserService {
     entries: Mutex<HashMap<String, Entry>>,
     roots: Arc<RwLock<Vec<PathBuf>>>,
     emit: Mutex<Option<Emitter>>,
+    seq: AtomicU64,
 }
 
 impl BrowserService {
@@ -339,6 +347,7 @@ impl BrowserService {
                 entries: Mutex::default(),
                 roots,
                 emit: Mutex::default(),
+                seq: AtomicU64::new(0),
             }
         })
     }
@@ -355,6 +364,10 @@ impl BrowserService {
 
     fn roots(&self) -> Vec<PathBuf> {
         self.roots.read().map(|r| r.clone()).unwrap_or_default()
+    }
+
+    fn next_seq(&self) -> u64 {
+        self.seq.fetch_add(1, Ordering::Relaxed) + 1
     }
 
     fn publish(&self, state: &BrowserState) {
@@ -412,6 +425,7 @@ impl BrowserService {
             frame,
             zoom,
             blocked: None,
+            seq: self.next_seq(),
         };
         self.entries
             .lock()
@@ -433,6 +447,7 @@ impl BrowserService {
         let resolved = resolve_input(input, engine, &self.roots());
         let state = self.with_entry(id, |e| {
             e.state.blocked = resolved.as_ref().err().map(|_| input.trim().to_string());
+            e.state.seq = self.next_seq();
             e.state.clone()
         })?;
         self.publish(&state);
@@ -457,6 +472,9 @@ impl BrowserService {
             e.visible = visible;
             e.state.frame = frame;
             e.state.zoom = zoom;
+            if changed {
+                e.state.seq = self.next_seq();
+            }
             (e.state.clone(), changed)
         })?;
         self.host.place(id, state.frame, state.zoom, visible);
@@ -478,9 +496,36 @@ impl BrowserService {
             let (frame, zoom) = fit(e.bounds, device, e.state.rotated);
             e.state.frame = frame;
             e.state.zoom = zoom;
+            e.state.seq = self.next_seq();
             (e.state.clone(), e.visible)
         })?;
         self.host.place(id, state.frame, state.zoom, visible);
+        self.publish(&state);
+        Ok(state)
+    }
+
+    /// `browser_move`: the page goes on under `to`, history and all (a pane
+    /// opened in the sidebar, a sidebar tab moved to a pane).
+    pub fn rename(&self, from: &str, to: &str) -> Result<BrowserState, IpcError> {
+        let state = {
+            let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+            if entries.contains_key(to) {
+                return Err(
+                    IpcError::new(ErrorCode::Conflict, "That place already has a page")
+                        .with_stage("browser"),
+                );
+            }
+            let mut entry = entries.remove(from).ok_or_else(|| {
+                IpcError::new(ErrorCode::NotFound, "That browser tab is closed")
+                    .with_stage("browser")
+            })?;
+            entry.state.browser_id = to.to_string();
+            entry.state.seq = self.next_seq();
+            let state = entry.state.clone();
+            entries.insert(to.to_string(), entry);
+            state
+        };
+        self.host.rename(from, to);
         self.publish(&state);
         Ok(state)
     }
@@ -551,6 +596,7 @@ impl BrowserService {
                 HostEvent::Title { title, .. } => e.state.title = title,
                 HostEvent::Blocked { url, .. } => e.state.blocked = Some(url),
             }
+            e.state.seq = self.next_seq();
             e.state.clone()
         }) else {
             return;
@@ -588,6 +634,10 @@ pub mod testing {
         },
         Close {
             id: String,
+        },
+        Rename {
+            from: String,
+            to: String,
         },
         ClearData,
     }
@@ -669,6 +719,12 @@ pub mod testing {
                 .lock()
                 .expect("calls")
                 .push(Call::Close { id: id.into() });
+        }
+        fn rename(&self, from: &str, to: &str) {
+            self.calls.lock().expect("calls").push(Call::Rename {
+                from: from.into(),
+                to: to.into(),
+            });
         }
         fn clear_data(&self) {
             self.calls.lock().expect("calls").push(Call::ClearData);
@@ -892,6 +948,14 @@ mod tests {
         assert_eq!(last.url, "http://localhost:5173/welcome");
         assert_eq!(last.title, "Fixtures");
         assert!(last.can_back && !last.loading);
+        // Each state is newer than the one before, so a view drops stale ones.
+        let seqs: Vec<u64> = published
+            .lock()
+            .expect("published")
+            .iter()
+            .map(|s| s.seq)
+            .collect();
+        assert!(seqs.windows(2).all(|w| w[0] < w[1]), "{seqs:?}");
     }
 
     #[test]
@@ -1038,6 +1102,59 @@ mod tests {
                 .expect_err("closed")
                 .code,
             ErrorCode::NotFound
+        );
+    }
+
+    #[test]
+    fn f_cd_17_a_page_moves_between_a_pane_and_the_sidebar_and_keeps_going() {
+        let (svc, host, published) = service();
+        svc.open("pn_1", Some("http://localhost:5173/"), PLACE, true)
+            .expect("open");
+        host.send(HostEvent::Loaded {
+            id: "pn_1".into(),
+            url: "http://localhost:5173/a".into(),
+            can_back: true,
+            can_forward: false,
+        });
+        let moved = svc.rename("pn_1", "browser-x").expect("move");
+        assert_eq!(moved.browser_id, "browser-x");
+        assert_eq!(moved.url, "http://localhost:5173/a");
+        assert!(moved.can_back);
+        assert_eq!(
+            host.calls().last(),
+            Some(&Call::Rename {
+                from: "pn_1".into(),
+                to: "browser-x".into()
+            })
+        );
+        assert_eq!(
+            published
+                .lock()
+                .expect("published")
+                .last()
+                .map(|s| s.browser_id.clone())
+                .as_deref(),
+            Some("browser-x")
+        );
+        // The page's reports follow it; the old id is gone.
+        host.send(HostEvent::Title {
+            id: "browser-x".into(),
+            title: "A".into(),
+        });
+        assert_eq!(
+            svc.state("browser-x").map(|s| s.title).as_deref(),
+            Some("A")
+        );
+        assert!(svc.state("pn_1").is_none());
+        assert_eq!(
+            svc.rename("pn_1", "pn_2").expect_err("gone").code,
+            ErrorCode::NotFound
+        );
+        // Opening the old id again makes a new page; a move onto it is refused.
+        svc.open("pn_1", None, PLACE, true).expect("new page");
+        assert_eq!(
+            svc.rename("browser-x", "pn_1").expect_err("taken").code,
+            ErrorCode::Conflict
         );
     }
 

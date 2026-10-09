@@ -30,6 +30,8 @@ function layOut() {
   });
 }
 
+/** States grow like the core's: each is newer than the last. */
+let seq = 0;
 const state = (patch: Partial<BrowserState> = {}): BrowserState => ({
   browserId: "b1",
   url: "",
@@ -42,13 +44,16 @@ const state = (patch: Partial<BrowserState> = {}): BrowserState => ({
   frame: PLACE,
   zoom: 1,
   blocked: null,
+  seq: ++seq,
   ...patch,
 });
 
 const ipcError = (code: string, message: string): IpcError => ({ code: code as IpcError["code"], message, stage: "browser", hint: null, retryable: false });
 
 /** A core with one browser page per id. */
-function setup(opts: { unavailable?: string; sidebar?: Partial<SidebarState> } = {}): Call[] {
+function setup(
+  opts: { unavailable?: string; sidebar?: Partial<SidebarState>; open?: (a?: Record<string, unknown>) => BrowserState } = {},
+): Call[] {
   const pages = new Map<string, BrowserState>();
   const publish = (s: BrowserState) => {
     pages.set(s.browserId, s);
@@ -59,6 +64,7 @@ function setup(opts: { unavailable?: string; sidebar?: Partial<SidebarState> } =
     sidebar_save: (a) => a?.sidebar,
     status_list: () => [],
     browser_open: (a) => {
+      if (opts.open) return opts.open(a);
       if (opts.unavailable) throw ipcError("unavailable", opts.unavailable);
       const id = String(a?.browserId);
       const url = (a?.url as string | null) ?? "";
@@ -71,17 +77,17 @@ function setup(opts: { unavailable?: string; sidebar?: Partial<SidebarState> } =
       const input = String(a?.input);
       const s = pages.get(id) ?? state({ browserId: id });
       if (/^(javascript|tandem):/i.test(input)) {
-        publish({ ...s, blocked: input });
+        publish({ ...s, blocked: input, seq: ++seq });
         throw ipcError("invalid", `${input.split(":")[0]}: addresses can't be opened in the browser`);
       }
-      publish({ ...s, blocked: null });
+      publish({ ...s, blocked: null, seq: ++seq });
       return { url: input.includes("://") ? input : `http://${input}/` };
     },
     browser_set_bounds: () => null,
     browser_set_device: (a) => {
       const id = String(a?.browserId);
       const device = a?.device as Device;
-      const s = { ...(pages.get(id) ?? state({ browserId: id })), device, rotated: a?.rotated === true, zoom: device === "desktop" ? 1 : 0.5 };
+      const s = { ...(pages.get(id) ?? state({ browserId: id })), device, rotated: a?.rotated === true, zoom: device === "desktop" ? 1 : 0.5, seq: ++seq };
       pages.set(id, s);
       return s;
     },
@@ -140,6 +146,22 @@ describe("browser (F-CD-17)", () => {
     await waitFor(() => expect(lastShown(calls)).toBe(true));
     expect(screen.queryByText("Open a page")).toBeNull();
     act(() => emitLocal("browser:state", state({ url: "http://localhost:5173/", loading: false, title: "Fixtures" })));
+    expect(address().value).toBe("http://localhost:5173/");
+  });
+
+  it("F-CD-17 a reply that comes after the page's events never undoes them", async () => {
+    // The page loads before browser_open's reply arrives (a fast local page).
+    const initial = state({ url: "http://localhost:5173/", loading: true });
+    setup({
+      open: () => {
+        emitLocal("browser:state", state({ url: "http://localhost:5173/", loading: false, title: "Fixtures" }));
+        return initial;
+      },
+    });
+    view("http://localhost:5173/");
+    await waitFor(() => expect(useBrowser.getState().pages.b1?.title).toBe("Fixtures"));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(useBrowser.getState().pages.b1).toMatchObject({ title: "Fixtures", loading: false });
     expect(address().value).toBe("http://localhost:5173/");
   });
 
@@ -341,7 +363,7 @@ describe("browser placement (F-CD-17, D-206)", () => {
   });
 
   it("a pill names a page by its title, else its host or file", () => {
-    const base = { browserId: "b", canBack: false, canForward: false, loading: false, device: "desktop" as const, rotated: false, frame: { x: 0, y: 0, width: 0, height: 0 }, zoom: 1, blocked: null };
+    const base = { browserId: "b", canBack: false, canForward: false, loading: false, device: "desktop" as const, rotated: false, frame: { x: 0, y: 0, width: 0, height: 0 }, zoom: 1, blocked: null, seq: 1 };
     expect(pageTitle({ ...base, url: "http://localhost:5173/x", title: "  Fixtures " })).toBe("Fixtures");
     expect(pageTitle({ ...base, url: "http://localhost:5173/x", title: "" })).toBe("localhost:5173");
     expect(pageTitle({ ...base, url: "file:///work/site/index%20page.html", title: "" })).toBe("index page.html");

@@ -17,6 +17,11 @@ type BrowserStore = {
   place: (id: string, bounds: Rect, visible: boolean) => void;
   setDevice: (id: string, device: Device, rotated: boolean) => void;
   close: (id: string) => void;
+  /** The page goes on under `to` (a pane opened in the sidebar, a sidebar
+   * tab moved to a pane). */
+  move: (from: string, to: string) => Promise<IpcError | null>;
+  /** Drops what's known of a page the core closed itself (a pane's). */
+  forget: (id: string) => void;
   clearData: () => Promise<IpcError | null>;
 };
 
@@ -34,16 +39,24 @@ export function onBrowserState(fn: Listener): () => void {
   return () => listeners.delete(fn);
 }
 
+/** Takes a page's state unless the one held is as new (`seq`): a command's
+ * reply can come after the events that followed it. */
+function apply(state: BrowserState): void {
+  const held = useBrowser.getState().pages[state.browserId];
+  if (held && held.seq >= state.seq) return;
+  useBrowser.setState((s) => ({ pages: { ...s.pages, [state.browserId]: state } }));
+  for (const fn of listeners) fn(state);
+}
+
 export const useBrowser = create<BrowserStore>((set) => {
-  const apply = (state: BrowserState) => {
-    set((s) => ({ pages: { ...s.pages, [state.browserId]: state } }));
-    for (const fn of listeners) fn(state);
-  };
   return {
     pages: {},
     unavailable: {},
 
     open: async (id, url, bounds, visible) => {
+      // A page's events start once it exists: be listening first, or a
+      // page restored at launch could load before anyone hears it.
+      await listening;
       try {
         apply(await invoke<BrowserState>("browser_open", { browserId: id, url, bounds, visible }));
         set((s) => {
@@ -85,6 +98,27 @@ export const useBrowser = create<BrowserStore>((set) => {
       });
     },
 
+    move: async (from, to) => {
+      try {
+        const state = await invoke<BrowserState>("browser_move", { from, to });
+        set((s) => {
+          const { [from]: _, ...pages } = s.pages;
+          return { pages };
+        });
+        apply(state);
+        return null;
+      } catch (e) {
+        return asError(e);
+      }
+    },
+
+    forget: (id) =>
+      set((s) => {
+        const { [id]: _, ...pages } = s.pages;
+        const { [id]: __, ...unavailable } = s.unavailable;
+        return { pages, unavailable };
+      }),
+
     clearData: async () => {
       try {
         await invoke("browser_clear_data");
@@ -108,16 +142,27 @@ export function takeAddressFocus(id: string): boolean {
   return wantsFocus.delete(id);
 }
 
+/** A page's name for its tab or pane: its title, else its host or file name. */
+export function pageTitle(state: BrowserState): string | null {
+  const title = state.title.trim();
+  if (title) return title.slice(0, 120);
+  try {
+    const url = new URL(state.url);
+    return url.protocol === "file:" ? (decodeURIComponent(url.pathname.split("/").pop() ?? "") || null) : url.host || null;
+  } catch {
+    return null;
+  }
+}
+
 let following = false;
+/** Resolves once `browser:state` is listened to. */
+let listening: Promise<unknown> = Promise.resolve();
 
 /** Follows `browser:state` for every page. */
 export function followBrowser(): void {
   if (following) return;
   following = true;
-  void listen<BrowserState>("browser:state", (state) => {
-    useBrowser.setState((s) => ({ pages: { ...s.pages, [state.browserId]: state } }));
-    for (const fn of listeners) fn(state);
-  });
+  listening = listen<BrowserState>("browser:state", apply).catch(() => undefined);
 }
 
 /** Tests: forget everything. */

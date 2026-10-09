@@ -14,7 +14,7 @@ use tandem_store::repo::tabs;
 use tandem_store::repo::workspaces::{self, Workspace};
 use ts_rs::TS;
 
-use crate::commands::terminal::create_pane;
+use crate::commands::terminal::{create_browser_pane, create_pane};
 use crate::services::lanes;
 use crate::state::AppState;
 
@@ -23,7 +23,6 @@ use crate::state::AppState;
 pub const FIRST_PROMPT_WAIT: Duration = Duration::from_secs(90);
 /// How long a shell seat waits for its prompt before typing its command.
 pub const SHELL_COMMAND_WAIT: Duration = Duration::from_secs(30);
-pub const BROWSER_LATER: &str = "Browser panes come in a later version";
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -290,9 +289,6 @@ async fn launch_seat(
     branches: &[String],
     shared_tab: &mut Option<TabId>,
 ) -> Result<LaunchedSeat, IpcError> {
-    if seat.kind == SeatKind::Browser {
-        return Err(IpcError::new(ErrorCode::Unavailable, BROWSER_LATER));
-    }
     if seat.kind == SeatKind::Agent {
         let id = seat
             .engine_id
@@ -336,20 +332,26 @@ async fn launch_seat(
             (ws.clone(), tab, None)
         }
     };
-    let kind = if seat.kind == SeatKind::Agent {
-        "agent"
-    } else {
-        "terminal"
+    let pane = match seat.kind {
+        // A browser seat opens its page (`localhost:3000` reads as http).
+        SeatKind::Browser => create_browser_pane(state, &tab, seat.url.clone()).await?,
+        SeatKind::Agent | SeatKind::Shell => {
+            let kind = if seat.kind == SeatKind::Agent {
+                "agent"
+            } else {
+                "terminal"
+            };
+            create_pane(
+                state,
+                &tab,
+                kind,
+                Some(home.root.clone()),
+                seat.engine_id.clone(),
+                seat.account_id.clone(),
+            )
+            .await?
+        }
     };
-    let pane = create_pane(
-        state,
-        &tab,
-        kind,
-        Some(home.root.clone()),
-        seat.engine_id.clone(),
-        seat.account_id.clone(),
-    )
-    .await?;
 
     let terminals = state.terminals.clone();
     let id = pane.id.clone();

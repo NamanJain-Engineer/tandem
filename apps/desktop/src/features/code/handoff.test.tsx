@@ -63,6 +63,7 @@ const pane = (id: string, workspaceId: string, engineId: string | null): PaneRec
   humanName: null,
   title: null,
   restoreState: "none",
+  browserUrl: null,
   createdAt: 0,
 });
 

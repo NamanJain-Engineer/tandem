@@ -14,6 +14,7 @@ import { setInvokeBackend } from "../../ipc/invoke";
 import { useEngines } from "../../stores/engines";
 import {
   agentSeat,
+  browserSeat,
   branchPreview,
   defaultEngine,
   lineupFrom,
@@ -158,6 +159,29 @@ describe("launch sheet (F-CD-14, UI-12)", () => {
     await preset("Bench");
     expect(go().textContent).toContain("Launch 1 agent + 1 shell");
     expect(launchLabel([shellSeat()])).toBe("Launch 1 shell");
+  });
+
+  it("F-CD-14 a browser seat takes an address, stays in the checkout and launches with the others", async () => {
+    const report: LaunchReport = { launched: [], failed: [], sharedTabId: "tb_shop" };
+    open(ws("shop", "main"), { launch_lineup: () => report });
+    fireEvent.keyDown(await screen.findByTestId("launch-add-seat"), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Browser URL" }));
+    const seats = () => screen.getAllByTestId("launch-seat");
+    await waitFor(() => expect(seats()).toHaveLength(2));
+    expect(seats()[1]?.dataset.kind).toBe("browser");
+    // No address yet: nothing to launch it with.
+    expect((go() as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(within(seats()[1] as HTMLElement).getByRole("textbox", { name: "Address for seat 2" }), {
+      target: { value: "localhost:3000" },
+    });
+    expect(go().textContent).toContain("Launch 1 agent + 1 browser");
+    expect(screen.getByTestId("launch-summary").textContent).toBe("This opens 2 panes.");
+    expect(screen.getByText("Shell and browser seats stay in the repository folder.")).toBeTruthy();
+    fireEvent.click(go());
+    await waitFor(() => expect(named("launch_lineup")).toHaveLength(1));
+    const sent = (named("launch_lineup")[0]?.args as { seats: Seat[] }).seats;
+    expect(sent[1]).toEqual({ ...browserSeat("localhost:3000") });
+    expect(launchLabel([browserSeat("a"), { ...browserSeat("b"), count: 2 }])).toBe("Launch 3 browsers");
   });
 
   it("F-CD-15 Fleet in a repository previews a worktree per agent; Pair shares the checkout", async () => {

@@ -191,6 +191,7 @@ function pane(id: string, kind: string, engineId: string | null, humanName: stri
     humanName,
     title: null,
     restoreState: "live",
+    browserUrl: null,
     createdAt: START,
   };
 }

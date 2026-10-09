@@ -19,6 +19,7 @@ import {
   type Side,
 } from "../features/code/layout/tree";
 import { releasePaneHost } from "../features/code/paneHosts";
+import { useBrowser } from "./browser";
 
 /** One tab's panes and split tree (F-CD-02). The UI owns the tree; Rust
  * validates and persists it (`layout_save`, debounced 500 ms). */
@@ -33,7 +34,7 @@ export type TabPanes = {
 };
 
 /** What a new pane runs: a shell, or an engine under the login shell. */
-export type Launch = { kind: "terminal" } | { kind: "agent"; engineId: string };
+export type Launch = { kind: "terminal" } | { kind: "agent"; engineId: string } | { kind: "browser"; url?: string | null };
 
 export type SplitRequest = { tabId: string; target: string | null; side: Side };
 export type SplitResult = { ok: true; pane: PaneRecord } | { ok: false; error: IpcError };
@@ -252,6 +253,7 @@ export const useLayout = create<LayoutState>((set, get) => {
           tabId,
           kind: launch.kind,
           engineId: launch.kind === "agent" ? launch.engineId : undefined,
+          url: launch.kind === "browser" ? (launch.url ?? null) : undefined,
         });
         get().insert(tabId, pane, target, side);
         return { ok: true, pane };
@@ -278,6 +280,8 @@ export const useLayout = create<LayoutState>((set, get) => {
       await invoke("pane_close", { paneId }).catch(() => undefined);
       update(tabId, (t) => without(t, paneId));
       releasePaneHost(paneId);
+      // A browser pane's page closed with it in the core.
+      useBrowser.getState().forget(paneId);
     },
 
     dropPane: (paneId) => {
