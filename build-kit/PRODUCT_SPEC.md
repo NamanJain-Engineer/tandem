@@ -12,7 +12,7 @@
 - §1 Glossary
 - §2 Product overview
 - §3 Plans, entitlements and credits
-- §4 Features, grouped by area, each with a stable ID `F-<AREA>-<nn>`
+- §4 Features, grouped by area, each with a stable ID `F-<AREA>-<nn>` (§4.19 EX holds the extras added after the original spec, M17)
 - §5 Non-functional requirements
 - §6 Out of scope
 - §7 Traceability and build order
@@ -2806,6 +2806,129 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
 
 **Acceptance:**
 1. A Team member with audit on generates an audit event for a Full-access session start, while a Pro user generates nothing.
+
+### 4.19 EX: Extras
+
+Features beyond the original spec that make working with coding agents faster, safer or more pleasant. They're all local: nothing here sends anything off the machine. Built in M17.
+
+#### F-EX-01 Checkpoints and rewind (P2)
+**Story:** Before an agent touches my files, Vibezeo quietly saves them, so I can see what any turn changed and put back everything, or just one file, without learning git plumbing.
+
+**Behavior:**
+- **When:** a checkpoint is taken just before each agent turn:
+  - a thread turn (a sent message, a retry, "Implement plan"), before the engine gets the message;
+  - a prompt submitted to an agent pane: the command bar's send, a prompt Vibezeo types (launch, Best of N, handoff), and Enter typed into an agent pane. The Enter reaches the agent once the checkpoint is written, or after 2 s at most (the timeline then says the checkpoint came late).
+  - "Checkpoint now" in the timeline, any time.
+- **What:** the workspace folder's files as they are on disk: tracked files, and untracked files that aren't ignored (`.gitignore`, `.git/info/exclude`, the global excludes). Never `.git`, `.tandem/worktrees` or anything ignored (`node_modules`, build output). Files over the size limit (5 MB by default) are left out and listed as skipped. A file is stored byte for byte: no line-ending conversion and no filter runs. Symlinks are stored as links, never followed. A lane is its own folder with its own timeline.
+- **Where:** in a private git object store per folder at `$DATA/checkpoints/<key>/` (`<key>` from the folder's path). Vibezeo never writes to the folder's own repository: its branches, HEAD, index, stash, refs, config and hooks stay byte for byte as they were, and `git log --all` shows nothing new. Unchanged files cost nothing extra; a turn that changed nothing since the last checkpoint makes no new one.
+- **Folders without git:** checkpoints work the same way, with the folder's `.gitignore` files applied and at most 20,000 files; past that the checkpoint is marked partial ("Saved 20,000 of 23,410 files"). The timeline says so: "Not a git repository. Checkpoints skip what .gitignore lists and stop at 20,000 files." Without git installed the timeline says "Checkpoints need git. Install git to turn them on." and nothing is taken.
+- **Timeline:** a **Checkpoints** sidebar tab follows the context on screen, like Files: a thread shows its own checkpoints (turn by turn), a Code workspace or lane shows all of the folder's. Each row: what it was taken before ("Before turn 3", "Before prompt · Claude Code · 2", "Before restore", "Manual"), the thread or pane, the age, and "{n} files differ from now". Selecting a row shows the diff from that checkpoint to now, one file per row with a checkbox, in the DiffView.
+  - **Restore all files…** and **Restore {n} files…** ask first: "Restore {n} files to {checkpoint}?" / "Files changed since then go back to how they were; files created since then are deleted. A checkpoint of how things are now is saved first, so you can undo this." [Restore files]. When an agent is working in the folder the dialog adds "{agent} is working in this folder and may change files again."
+  - Restoring writes only the chosen files, inside the folder, never through a symlink out of it, and keeps each file's executable bit. It never touches ignored or skipped files, the index or any git state. It reports "Restored {n} files" or which ones it couldn't write.
+  - States: empty ("No checkpoints yet" / "Vibezeo saves one before each agent turn in this folder."), loading, error, populated, off ("Checkpoints are off" [Turn on]), no git, not a git repository (the note above).
+- **Storage and settings** (Settings › Checkpoints): on/off (on), keep the newest per folder (100, 10–1,000), and for how long (14 days, 1–90), the file size limit (5 MB, 1–100), the space used ("412 MB in 6 folders"), and **Delete all checkpoints** (confirm). Pruning runs after each new checkpoint and at startup; a pruned checkpoint's data is removed from disk by the store's own garbage collection the same hour. A checkpoint a restore just made is kept for at least an hour.
+
+**Data:** SQLite `checkpoints` (id, folder, workspace_id?, thread_id?, pane_id?, turn_id?, reason, label, commit, files, skipped, partial, late, created_at). Files: `$DATA/checkpoints/<key>/` (a bare git store and its index). Prompt text is never stored with a checkpoint.
+
+**Acceptance:**
+1. In a repository with a modified tracked file, a new untracked file and an ignored file, a thread turn's checkpoint holds the first two and not the third, and the repository's HEAD, branches, index file, stash, refs, config and hooks are byte-identical before and after both the checkpoint and a restore.
+2. After a turn edits `a.txt`, deletes `b.txt` and creates `c.txt`, "Restore all files" brings `a.txt` and `b.txt` back as they were and deletes `c.txt`, leaves ignored files alone, and saves a "Before restore" checkpoint whose restore brings back the turn's version.
+3. Restoring chosen files changes only those files.
+4. A turn after which nothing changed adds no checkpoint.
+5. With "keep 10", the eleventh checkpoint removes the oldest from the timeline and its ref from the store; checkpoints older than the age limit go at startup.
+6. In a folder that isn't a git repository, checkpoint and restore work, `.gitignore`d files are skipped, and over 20,000 files the checkpoint is marked partial.
+7. A file over the size limit is skipped and listed, and no restore modifies or deletes it.
+8. Restore keeps the executable bit, restores a symlink as a link, and never writes outside the folder (a symlinked folder pointing outside isn't followed).
+9. Enter typed into an agent pane reaches the engine only after the checkpoint is written (or after 2 s, marked late), and a turn's checkpoint has the files as they were before the engine saw the message.
+10. With checkpoints off, no checkpoint is taken and the timeline shows the off state.
+
+#### F-EX-02 Command recall (P2)
+**Story:** I ran that long docker command last week in some pane. I want it back without scrolling or retyping, and I want to be sure nothing runs until I say so.
+
+**Behavior:**
+- **Recording:** every command a shell runs in a pane with shell integration (F-CD-10) is kept: the command line, the folder it ran in, the exit code, how long it took, the pane and workspace, and when. The shell reports the command line on its command-start mark, which carries the pane's token, so a program can't add entries. A command line never reaches the terminal view, the scrollback or a snapshot.
+- **Not recorded:** a command line that starts with a space (the shells' own "keep out of history" convention), anything bash keeps out of its history, commands in panes without shell integration, and every command while recall is off.
+- **Secrets:** before a command is stored, the redactor (F-TL-02) replaces anything that looks like a secret (tokens, keys, passwords in URLs, `--password=…`, `export X_TOKEN=…`) with `[secret]`. The raw text is never written to disk.
+- **Recall palette** (`Mod+Alt+R`, or "Recall a command…" in the palette): a search box over the history, newest first, one row per distinct command per folder with how often it ran ("×12"). Each row: the command (monospace), its folder, the last exit code (✓, or ✗ with the code), duration and age, and the pane. A filter: **This workspace** (default) / **Everywhere**.
+  - **Enter inserts** the command into the focused pane (bracketed paste, no newline) or the focused composer, or copies it when neither is focused ("Copied"). Nothing runs.
+  - **Run** (`Mod+Enter`, or the row's Run button) types it and presses Enter in the focused terminal pane, only when that pane is a shell at its prompt. It's not offered for a command with a `[secret]` in it ("Insert it and fill in the secret") or for an agent pane.
+  - **Delete** (`Mod+Backspace`) removes that command from the history.
+- **Retention** (Settings › Terminal › Command recall): on/off (on), keep for 90 days (1–3,650), at most 50,000 commands (oldest go first), **Clear command history** (confirm: "Clear command history?" / "Deletes {n} recorded commands. Your shells' own history files aren't touched." [Clear history]).
+- Nothing leaves the machine: recall makes no network request and isn't in telemetry.
+- States: empty ("No commands yet" / "Commands you run in Vibezeo terminals show up here."), loading, error, populated, no results ("No commands match "{query}""), off ("Command recall is off" [Turn on]).
+
+**Data:** SQLite `command_history` (id, pane_id, workspace_id?, cwd, command (redacted), exit_code?, started_at, duration_ms?).
+
+**Acceptance:**
+1. `echo one` then `false` in bash, zsh and fish panes record two commands each, with exit codes 0 and 1, the folder, a duration and the pane.
+2. `export GITHUB_TOKEN=ghp_…` is stored with the token replaced, the database file holds no copy of the token, and Run isn't offered for it.
+3. ` echo hidden` (leading space) isn't recorded; a program printing a command-start mark without the token records nothing; the command line never appears in the pane's scrollback or the view's stream.
+4. Enter in the recall palette puts the command at the prompt with no newline and nothing runs (no new entry is recorded); Run runs it once.
+5. Entries older than the retention period are removed at startup; Clear removes all; with recall off nothing is recorded.
+
+#### F-EX-03 Ports panel (P2)
+**Story:** My agents start dev servers in their panes. I want to see which ports are open, which pane started them, open one with a click and stop the one I forgot.
+
+**Behavior:**
+- A **Ports** sidebar tab lists the TCP ports listening on this machine whose process belongs to a pane (the pane's process or any of its descendants). Each row: the port, the process name and PID, the pane and workspace it belongs to, and where it listens: "localhost" or "all networks" (a warning chip: "Reachable from your network").
+- Ports opened by processes outside Vibezeo's panes aren't listed. Browser panes have no process and list nothing.
+- It refreshes every 2 s while the tab is visible and on Refresh; it never scans while hidden.
+- **Open** opens `http://localhost:<port>` in a new sidebar browser tab (F-CD-17); **Copy URL** copies it; clicking the pane name focuses the pane.
+- **Stop…** asks first: "Stop {process} on port {port}?" / "Sends a stop signal to process {pid}. Its pane stays open." [Stop process]. Before signalling, the core checks again that the PID still belongs to that pane and is the same process (its start time), so a reused PID is never stopped. A process still running 3 s later shows "Still running" with **Force stop** (asks again).
+- Platform probes behind one trait: Linux reads `/proc/net/tcp{,6}` and each pane process's `fd` links; macOS uses `lsof -nP -iTCP -sTCP:LISTEN`; Windows uses `netstat -ano -p tcp`. Each is unit-tested with recorded output.
+- States: empty ("No ports open" / "Servers started from your panes show up here."), loading, error ("Couldn't list ports." [Retry]), populated.
+
+**Acceptance:**
+1. A server started in a pane on a free port is listed within 3 s with that pane's name; a server started outside Vibezeo isn't listed.
+2. Open shows `http://localhost:<port>` in a new sidebar browser tab.
+3. Stop asks first; Cancel leaves the server running; confirming ends it, its row goes, and the pane stays open.
+4. Stop refuses a PID that no longer belongs to the pane or whose start time changed.
+5. A server listening on all addresses is marked "all networks".
+
+#### F-EX-04 Best of N (P2)
+**Story:** For a hard change I want two or three agents to try the same prompt in parallel, compare what they did and how the tests went, and keep the best one.
+
+**Behavior:**
+- **Start** ("Best of N…" in the palette or the launch sheet's footer; Code mode, a workspace in a git repository): a sheet with the prompt, 2 or 3 seats (engine and account each; the same engine may appear twice), an optional check command (for example `pnpm test`), and a summary line: "This opens 3 agents in 3 worktrees (tandem/fix-login-1 … -3) on a new tab."
+- **Launch:** each seat gets its own worktree lane (F-CD-15) branched from the current HEAD and an agent pane in one new tab named after the prompt, and the same prompt is typed into each once it's ready. Seats count against the live-pane limit; over it, nothing is launched ("Free includes 4 live panes"). A workspace with uncommitted changes gets a note: "Worktrees start from the last commit; your uncommitted changes aren't in them."
+- **Compare** (a page in the main area, opened from the tab's header chip "Compare" or the palette): one column per lane with its engine, state (Working / Waiting for you / Done), files changed and +/− counts, and its diff against the starting commit (committed and uncommitted work), in the DiffView. A file filter lines up the same file across lanes.
+  - **Run check** runs the check command in every lane's folder at once, in the user's login shell, with a 10-minute limit; each column shows "Running…", then "Passed" or "Failed · exit {code}" and the last 200 lines of output. Re-runnable; Stop ends them.
+  - **Keep this one…** asks: "Merge {branch} into {base}?" / "Commits {engine}'s uncommitted changes on {branch}, merges it into {base}, and deletes the other {n} worktrees and their uncommitted changes. Their branches stay." [Merge and clean up]. Agents in the lanes are stopped first. A conflict leaves the base checkout conflicted, as "Merge into {base}" does (F-CD-15), and keeps all lanes. A base checkout with uncommitted changes refuses: "Commit or stash your changes in {base} first."
+  - **Discard all…** asks and removes every lane's worktree and pane; branches stay.
+- A run survives relaunch: its lanes, check results and state are kept until it's merged or discarded.
+- States: no git ("Best of N needs a git repository"), launching ("Starting 3 agents…"), comparing, a lane failed to start (its column shows the error with Retry), done (merged, or discarded).
+
+**Data:** SQLite `bestof_runs` (id, workspace_id, title, base_commit, check_command?, state, created_at) and `bestof_lanes` (run_id, lane_workspace_id, pane_id?, engine_id, account_id?, check_state, check_exit?, check_output_tail?).
+
+**Acceptance:**
+1. Launching with three seats creates three worktrees on distinct `tandem/` branches from the same commit, opens three agent panes in one tab, and types the same prompt into each.
+2. Compare shows each lane's changes against the starting commit, committed and uncommitted.
+3. Run check runs the command once in each lane's folder and shows each exit code and output tail.
+4. Keep this one commits the winner's changes, merges its branch into the base, removes the other worktrees and keeps their branches; Cancel changes nothing; a dirty base refuses.
+5. In a folder that isn't a git repository, Best of N is unavailable and says why; over the live-pane limit nothing is launched.
+
+#### F-EX-05 Prompt library (P2)
+**Story:** I keep writing the same prompts ("review this diff for…", "write tests for {{file}}"). I want them saved, shared with my team in the repository, and dropped into any composer or pane with the right file and branch filled in.
+
+**Behavior:**
+- **Where prompts live:** Markdown files in the workspace's `.tandem/prompts/` (shared through the repository) and in `$DATA/prompts/` (yours, in every workspace). The file name is the prompt's name unless front matter sets `title:`; an optional `description:` shows under it. Files over 64 KB, and files that resolve outside their folder (a symlink out), are skipped with a note.
+- **Variables** in `{{name}}` form are filled in when the prompt is inserted:
+  - `{{selection}}`: the selected text in the focused terminal pane or editor;
+  - `{{file}}`: the active editor tab's path, relative to the workspace;
+  - `{{branch}}`: the context's current git branch;
+  - `{{clipboard}}`: the clipboard's text, read only when the prompt uses it;
+  - any other name asks for a value in a small form before inserting, as do the known ones when they're empty (no selection, no open file). `\{{` keeps a literal `{{`.
+- **Insert** ("Insert prompt…" in the palette, `Mod+Alt+P`, or the composer's ⋯): a searchable list showing each prompt's title, description and source ("This repository" or "Yours"). Choosing one fills its variables and inserts the text into the focused composer at the cursor, or into the focused pane as a bracketed paste. It's never sent: no Enter, no submit.
+- **Manage:** "New prompt…" asks for a name and where ("This repository" / "Yours"), creates the file with a template and opens it in the Files editor (F-CD-19); each row's **Edit** opens it there. A repository whose `.git/info/exclude` hides `.tandem/` (older lanes wrote that line) gets a note in the list, "Prompts in this repository aren't shared: .git/info/exclude hides .tandem/", with **Share with the repository**, which narrows the line to `.tandem/worktrees/`.
+- States: empty ("No saved prompts" / "Save prompts you reuse as Markdown files." [New prompt…]), loading, error, populated, no results.
+
+**Data:** Files only (`<workspace>/.tandem/prompts/*.md`, `$DATA/prompts/*.md`).
+
+**Acceptance:**
+1. Prompts from the workspace and from the profile are both listed with their source; front matter sets title and description; a file over 64 KB or a symlink leading out of the folder is skipped.
+2. `{{branch}}`, `{{file}}`, `{{selection}}` and `{{clipboard}}` are filled in; an unknown variable asks for a value; `\{{x}}` stays literal.
+3. Inserting into a terminal pane writes a bracketed paste with no carriage return after it, and inserting into a composer leaves the text in the composer unsent.
+4. New prompt creates the file in the chosen place and opens it in the editor; "Share with the repository" replaces the `.tandem/` exclude line with `.tandem/worktrees/` and the prompt shows in `git status`.
 
 ---
 

@@ -168,6 +168,25 @@ Built on branch `m9-files-git-browser` (from `product-m0-m5`), in parallel with 
 - M9 task 6 (links): `tandem_core::files::links`, `pane_resolve_link`, the terminal's link providers, the Files tab's pending open, and E2E-M9-5 (5 of 5 tests in 3 of 3 runs). Its first run caught the test, not the app: each link was printed at the same spot, so the pointer never moved and xterm never looked for a link there (a plain click on a link then "opened nothing" for the wrong reason). The pointer now comes in from a few rows below, and the plain-click test first checks that xterm shows the link under it. The launch token reaches a shell only with shell integration, so the app test runs bash with it and checks a real `cd sub`.
 - M9 close: the full E2E suite (65 spec files, about 13 minutes) passed 64. E2E-M9-1 F-CD-19.1 failed once, and the app did what F-CD-19 says: the test's "agent" wrote the file before the user's edit, so when typing took longer than the watcher's 500 ms batch (late in a loaded run) the untouched file reloaded first, the edit landed on the agent's text, and there was nothing to conflict. The test now edits, then writes the file, then saves, which is the criterion's own case ("a file that an agent modified meanwhile") without the race, and asserts the same prompt and the same untouched file; it passed 3 of 3, and so did the `m9-*` run. E2E-M5-6 F-SH-10.1 (the open note under task 2) passed in the suite run.
 
+## M17 checklist (Extras)
+Built on branch `m17-extras` (from `product-m0-m5`) in parallel with the M8, M10–M15 and release sessions, at the owner's request for creative features beyond the spec. Owns F-EX-01…05 (PRODUCT_SPEC §4.19, MILESTONES M17, UI_SPEC §4.16 UI-140–145, ARCHITECTURE §3.2 "Extras"). Decisions D-700–D-799; this section holds M17's state, decisions and log so other sessions' sections stay untouched.
+- [x] 0. Spec: PRODUCT_SPEC §4.19 "EX · Extras" (F-EX-01 checkpoints and rewind, F-EX-02 command recall, F-EX-03 ports panel, F-EX-04 Best of N, F-EX-05 prompt library) with numbered acceptance criteria; MILESTONES "M17 · Extras" with tasks, verification and E2E-M17-1…5; UI_SPEC UI-140–145 and two shortcuts; ARCHITECTURE §3.2 rows for every new command and two events (§3.3), §5.8 command lines and §7 checkpoints. `scripts/check-coverage.sh` accepts P2 in M17 (157 spec IDs).
+- [ ] 1. Checkpoints (F-EX-01)
+- [ ] 2. Command recall (F-EX-02)
+- [ ] 3. Ports panel (F-EX-03)
+- [ ] 4. Best of N (F-EX-04)
+- [ ] 5. Prompt library (F-EX-05)
+
+### M17 decisions
+- D-700: The extras are a new spec area, EX (PRODUCT_SPEC §4.19), owned by a new milestone M17. They're P2 (differentiators, §0.2), so the coverage rule "P2 only in M16" becomes "P2 only in M16 or M17" (`scripts/check-coverage.sh`, MILESTONES §20). M17 needs only M9's Files editor, browser and git panel, so it's built in parallel with M8 and M10–M15.
+- D-701: Checkpoints live in a private bare git store per folder under `$DATA/checkpoints/`, never in the user's repository. Refs in the user's repository (`refs/tandem/…`) would show in `git log --all`, `git for-each-ref` and every GUI client, and get pushed by `--mirror`; an alternates link to the user's objects would save space but break the day the user's own gc prunes an object only a checkpoint still needs. The store keeps its own index so a checkpoint rehashes only changed files, and identical content is stored once across checkpoints. Pruned checkpoints leave the disk at once (`gc --prune=now` in the store, which is ours).
+- D-702: The SQLite migration for M17 is `0002_extras.sql`. No other branch had a second migration when M17 started; whichever branch merges second renumbers its file (the list is applied by position, `PRAGMA user_version`), and no released build has run either.
+- D-703: The shell reports a command's text on its `133;C` mark as `cmdline_url=<percent-encoded>` (the convention other terminals use for OSC 133), behind the same launch token as every mark. A line starting with a space is never sent (the shells' own "keep out of history" convention), and bash sends its newest history entry only when the history number moved, so bash's HISTCONTROL rules (ignorespace, ignoredups) apply as the user set them: a repeated command bash didn't add isn't recorded again.
+- D-704: New UI surfaces: sidebar tabs Checkpoints and Ports (singletons, from the "+" menu), a Settings page Checkpoints (UI-117), a "Command recall" group on Settings › Terminal, palette pages for Recall (`Mod+Alt+R`) and prompts (`Mod+Alt+P`), the Best of N sheet and Compare page.
+
+### M17 log
+- M17 spec: PRODUCT_SPEC, MILESTONES, UI_SPEC and ARCHITECTURE written before any code; `check-coverage.sh` passes with 157 IDs.
+
 ## Decisions
 - D-1: F-CD-09 owned by M9. It needs the Files editor and the Tandem browser.
 - D-2: F-SH-08 framework slice in M5, Accounts step in M6, owned by M8.
