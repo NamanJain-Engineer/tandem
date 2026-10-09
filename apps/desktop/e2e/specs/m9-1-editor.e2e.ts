@@ -57,10 +57,12 @@ describe("E2E-M9-1 editor", () => {
     await $('[data-testid="file-row"][data-path="src"]').click();
     await clickRow("src/main.rs");
     await browser.waitUntil(async () => (await editorText()).includes("fn main() {}"), { timeout: 10_000 });
-    // An agent rewrites the file on disk...
-    writeFileSync(`${root}/src/main.rs`, "fn main() { agent(); }\n");
-    // ...and the user, still looking at the old text, edits and saves.
+    // The user edits the text they see; meanwhile an agent rewrites the file
+    // on disk; then the user saves. (Written before the edit, the change
+    // would reload the untouched file first, and the edit would land on the
+    // agent's text with nothing to conflict.)
     await typeAtEnd("// mine");
+    writeFileSync(`${root}/src/main.rs`, "fn main() { agent(); }\n");
     await browser.keys([mod(), "s"]);
     const dialog = await $('[data-testid="conflict-dialog"]');
     await dialog.waitForExist({ timeout: 10_000 });
