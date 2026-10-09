@@ -18,6 +18,7 @@ import { resetThreads } from "../stores/threads";
 import { resetFiles } from "../stores/files";
 import { resetGit } from "../stores/git";
 import { resetBrowser } from "../stores/browser";
+import { resetScratchpad } from "../stores/scratchpad";
 import { useWorkspaces } from "../stores/workspaces";
 
 export const FREE: Limits = {
@@ -136,4 +137,5 @@ export function resetStores(): void {
   resetFiles();
   resetGit();
   resetBrowser();
+  resetScratchpad();
 }

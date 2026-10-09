@@ -33,6 +33,7 @@ import { setInvokeBackend } from "../ipc/invoke";
 import { FrameKind, encodeFrame, type FrameChannel } from "../ipc/pty";
 import { DEMO_CHANGES, afterAllow, afterDeny, chatTurn, fixTurn, type Step } from "./agent";
 import { DemoFiles, NO_GIT } from "./files";
+import { DemoNotes } from "./notes";
 import { DemoShell, agentScreen } from "./shell";
 
 type Args = Record<string, unknown> | undefined;
@@ -274,6 +275,7 @@ export class DemoCore {
   private settings: Record<string, unknown> = { theme: "dark" };
   /** The Files tab's made-up project (in memory). */
   readonly files = new DemoFiles();
+  readonly notes = new DemoNotes();
   private ids = 0;
   private timers = new Set<ReturnType<typeof setTimeout>>();
 
@@ -736,6 +738,15 @@ export class DemoCore {
         return this.files.savedTabs();
       case "editor_tabs_save":
         this.files.saveTabs(args?.state as EditorTabs);
+        return null;
+      case "scratchpad_list":
+        return this.notes.list();
+      case "scratchpad_read":
+        return this.notes.read(String(args?.id ?? ""));
+      case "scratchpad_write":
+        return this.notes.write(typeof args?.id === "string" ? args.id : null, String(args?.markdown ?? ""));
+      case "scratchpad_delete":
+        this.notes.delete(String(args?.id ?? ""));
         return null;
       default:
         // Everything else is quiet: lists are empty, actions do nothing.
