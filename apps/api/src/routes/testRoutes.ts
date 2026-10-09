@@ -1,10 +1,26 @@
-// `/__test/*`: clock, plan, credits and mail helpers for E2E tests. Mounted only
+// `/__test/*`: clock, plan, team, credits, audit and mail helpers for E2E tests. Mounted only
 // with TANDEM_API_TEST_ROUTES=1 and never with NODE_ENV=production.
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { DEFAULT_POLICY } from "@tandem/protocol/team";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Deps } from "../deps";
-import { subscriptions, user } from "../db/schema";
+import {
+  auditEvents,
+  creditBuckets,
+  creditLedger,
+  creditReservations,
+  orgMembers,
+  orgPolicies,
+  orgs,
+  subscriptions,
+  user,
+} from "../db/schema";
+import { MockBilling } from "../providers/billing/mock";
+import { notifyCredits } from "../services/credits";
+import { grantMonthly, type Owner } from "../services/ledger";
+import { creditOwnerOf, membershipOf } from "../services/membership";
+import { createOrg, policySchema } from "../services/orgs";
 import { newId } from "../lib/ids";
 import { ApiError } from "../lib/problem";
 import { parseJson } from "../lib/validate";
@@ -44,7 +60,10 @@ export function testRoutes(deps: Deps) {
       c,
       z.object({
         registry_overrides: z.array(z.record(z.string(), z.unknown())).optional(),
-        min_app_version: z.string().regex(/^\d+\.\d+\.\d+$/).optional(),
+        min_app_version: z
+          .string()
+          .regex(/^\d+\.\d+\.\d+$/)
+          .optional(),
       }),
     );
     if (body.registry_overrides) deps.config.setRegistryOverrides(body.registry_overrides);
@@ -120,5 +139,137 @@ export function testRoutes(deps: Deps) {
     return c.json({ to, subject: msg.Subject, text: msg.Text });
   });
 
+  // M13: a Team org in one call, balances, audit rows and what the billing mock was asked.
+  app.post("/team", async (c) => {
+    const body = await parseJson(
+      c,
+      z.object({
+        owner: z.string(),
+        members: z.array(z.string()).default([]),
+        seats: z.number().int().min(2).default(3),
+        policy: policySchema.partial().optional(),
+        credits: z.number().int().min(0).default(-1),
+      }),
+    );
+    const ownerId = await userIdFor(deps, body.owner);
+    const existing = await membershipOf(deps.db, ownerId);
+    if (existing) await deps.db.delete(orgs).where(eq(orgs.id, existing.orgId));
+    const orgId = await createOrg(deps, ownerId, "Test team");
+    for (const email of body.members) {
+      const id = await userIdFor(deps, email);
+      await deps.db.delete(orgMembers).where(eq(orgMembers.userId, id));
+      await deps.db.insert(orgMembers).values({ orgId, userId: id, role: "member" });
+    }
+    const now = deps.clock.now();
+    const end = new Date(now.getTime() + 30 * 86_400_000);
+    const subId = newId("sub_test");
+    await deps.db.insert(subscriptions).values({
+      id: newId("sub"),
+      stripeSubscriptionId: subId,
+      ownerKind: "org",
+      ownerId: orgId,
+      plan: "team",
+      interval: "month",
+      status: "active",
+      seats: body.seats,
+      currentPeriodStart: now,
+      currentPeriodEnd: end,
+      firstPaidAt: now,
+      updatedAt: now,
+    });
+    await deps.db.transaction((tx) =>
+      grantMonthly(tx, { kind: "org", id: orgId }, body.seats, end, `test_${subId}`),
+    );
+    if (body.credits >= 0) await setBalance(deps, { kind: "org", id: orgId }, body.credits, 0);
+    if (body.policy) {
+      await deps.db
+        .update(orgPolicies)
+        .set({ policy: { ...DEFAULT_POLICY, ...body.policy }, updatedAt: now })
+        .where(eq(orgPolicies.orgId, orgId));
+    }
+    for (const id of [ownerId, ...(await Promise.all(body.members.map((e) => userIdFor(deps, e))))]) {
+      await deps.events.publish(id, "entitlement");
+    }
+    return c.json({ orgId, subscription: subId });
+  });
+
+  app.post("/credits", async (c) => {
+    const body = await parseJson(
+      c,
+      z.object({
+        email: z.string(),
+        monthly: z.number().int().min(0),
+        purchased: z.number().int().min(0).default(0),
+      }),
+    );
+    const userId = await userIdFor(deps, body.email);
+    const owner = await creditOwnerOf(deps.db, userId);
+    await setBalance(deps, owner, body.monthly, body.purchased);
+    await notifyCredits(deps, owner);
+    return c.body(null, 204);
+  });
+
+  app.get("/billing-calls", (c) => {
+    const calls = deps.billing instanceof MockBilling ? deps.billing.calls : [];
+    return c.json({ calls });
+  });
+
+  app.get("/audit", async (c) => {
+    const userId = await userIdFor(deps, c.req.query("email") ?? "");
+    const m = await membershipOf(deps.db, userId);
+    const rows = m
+      ? await deps.db.select().from(auditEvents).where(eq(auditEvents.orgId, m.orgId))
+      : await deps.db.select().from(auditEvents).where(eq(auditEvents.actorUserId, userId));
+    return c.json({ events: rows.map((r) => ({ event: r.event, actor: r.actorUserId, meta: r.meta })) });
+  });
+
+  app.get("/reservations", async (c) => {
+    const userId = await userIdFor(deps, c.req.query("email") ?? "");
+    const rows = await deps.db.select().from(creditReservations).where(eq(creditReservations.userId, userId));
+    return c.json({
+      reservations: rows.map((r) => ({
+        feature: r.feature,
+        amount: r.amount,
+        state: r.state,
+        settled: r.settledAmount,
+      })),
+    });
+  });
+
   return app;
+}
+
+/** Sets an owner's buckets to exact balances, through the ledger (`admin_grant`). */
+async function setBalance(deps: Deps, owner: Owner, monthly: number, purchased: number): Promise<void> {
+  await deps.db.transaction(async (tx) => {
+    for (const [kind, target] of [
+      ["monthly", monthly],
+      ["purchased", purchased],
+    ] as const) {
+      await tx
+        .insert(creditBuckets)
+        .values({ id: newId("cb"), ownerKind: owner.kind, ownerId: owner.id, kind, balance: 0 })
+        .onConflictDoNothing();
+      const [b] = await tx
+        .select()
+        .from(creditBuckets)
+        .where(
+          and(
+            eq(creditBuckets.ownerKind, owner.kind),
+            eq(creditBuckets.ownerId, owner.id),
+            eq(creditBuckets.kind, kind),
+          ),
+        )
+        .for("update");
+      if (!b || b.balance === target) continue;
+      await tx.insert(creditLedger).values({
+        id: newId("cl"),
+        bucketId: b.id,
+        delta: target - b.balance,
+        reason: "admin_grant",
+        note: "test route",
+      });
+      await tx.update(creditBuckets).set({ balance: target }).where(eq(creditBuckets.id, b.id));
+    }
+  });
 }

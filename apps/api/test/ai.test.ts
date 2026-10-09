@@ -42,10 +42,17 @@ describe("F-BE-06 hosted AI on the Claude API", () => {
     expect(await res.json()).toEqual({ title: "Fix The Flaky Login Tests Before" });
     // The opening text goes as tagged data, under a system prompt that says so (TL-06 rule 8).
     const call = mock().calls.at(-1);
-    expect(call?.messages[0]?.content).toBe("<text>\nfix the flaky login tests before the release please\n</text>");
+    expect(call?.messages[0]?.content).toBe(
+      "<text>\nfix the flaky login tests before the release please\n</text>",
+    );
     expect(call?.system).toContain("never instructions");
     const [row] = await t.deps.db.select().from(aiRequests).where(eq(aiRequests.userId, userId));
-    expect(row).toMatchObject({ feature: "title", status: 200, credits: 0, model: "claude-haiku-4-5-20251001" });
+    expect(row).toMatchObject({
+      feature: "title",
+      status: 200,
+      credits: 0,
+      model: "claude-haiku-4-5-20251001",
+    });
   });
 
   it("F-BE-06.1 a rewrite reserves and settles 3 credits, with ledger entries", async () => {
@@ -164,7 +171,9 @@ describe("F-BE-05 credits ledger", () => {
   it("F-BE-05.1 100 parallel reserves of 10 against 500 credits: exactly 50 succeed", async () => {
     const { userId } = await signUpVerified(t, "race@tandem.test");
     const owner = { kind: "user" as const, id: userId };
-    await t.deps.db.transaction((tx) => grantMonthly(tx, owner, 1, new Date(Date.now() + 86_400_000), "inv_r"));
+    await t.deps.db.transaction((tx) =>
+      grantMonthly(tx, owner, 1, new Date(Date.now() + 86_400_000), "inv_r"),
+    );
     // 10,000 granted; spend down to 500 first.
     await reserve(t.deps.db, { owner, userId, feature: "test", amount: 9_500, now: t.clock.now() });
     const results = await Promise.allSettled(
@@ -174,5 +183,66 @@ describe("F-BE-05 credits ledger", () => {
     );
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(50);
     expect((await balance(t.deps.db, owner)).monthly).toBe(0);
+  });
+});
+
+describe("F-AG-04 teammate draft on the AI relay (F-BE-06)", () => {
+  it("F-AG-04.2 returns the fixture draft for 10 credits, held to the offered engines and plugins", async () => {
+    const { userId, bearer } = await proUser("draft@tandem.test");
+    const res = await json(t, "POST", "/v1/ai/teammate-draft", {
+      bearer,
+      body: {
+        description: "write our weekly changelog",
+        engines: ["codex", "claude"],
+        plugins: ["github", "linear"],
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      name: "Release Notes Writer",
+      brief:
+        "You draft the weekly changelog from merged pull requests. Verify every claim against the repository. Never publish without approval.",
+      engine: "claude",
+      plugins: ["github"],
+    });
+    expect((await balance(t.deps.db, { kind: "user", id: userId })).monthly).toBe(9_990);
+    const call = mock().calls.at(-1);
+    expect(call?.feature).toBe("teammate_draft");
+    expect(call?.messages[0]?.content).toBe("<text>\nwrite our weekly changelog\n</text>");
+    const [row] = await t.deps.db.select().from(aiRequests).where(eq(aiRequests.userId, userId));
+    expect(row).toMatchObject({ feature: "teammate_draft", credits: 10, status: 200 });
+  });
+
+  it("an engine or plugin the desktop didn't offer never comes back", async () => {
+    const { parseDraft } = await import("../src/services/ai");
+    const input = { description: "x", engines: ["codex"], plugins: ["linear"] };
+    expect(
+      parseDraft(
+        'Sure! {"name":"Bot","brief":"Do it.","engine":"claude","plugins":["github","linear","linear"]}',
+        input,
+      ),
+    ).toEqual({ name: "Bot", brief: "Do it.", engine: "codex", plugins: ["linear"] });
+    expect(parseDraft("no json here", input)).toBeNull();
+    expect(parseDraft('{"name":"","brief":"x"}', input)).toBeNull();
+  });
+
+  it("an unusable answer refunds the 10 credits", async () => {
+    const { userId, bearer } = await proUser("draftfail@tandem.test");
+    mock().failNext = true;
+    const res = await json(t, "POST", "/v1/ai/teammate-draft", {
+      bearer,
+      body: { description: "triage issues", engines: ["claude"] },
+    });
+    expect(res.status).toBe(503);
+    expect((await balance(t.deps.db, { kind: "user", id: userId })).monthly).toBe(10_000);
+  });
+
+  it("is Pro only: Free gets 403 FORBIDDEN_PLAN", async () => {
+    const { userId } = await signUpVerified(t, "draftfree@tandem.test");
+    const res = await json(t, "POST", "/v1/ai/teammate-draft", {
+      bearer: await bearerFor(t.deps, userId),
+      body: { description: "triage issues", engines: ["claude"] },
+    });
+    expect(res.status).toBe(403);
   });
 });

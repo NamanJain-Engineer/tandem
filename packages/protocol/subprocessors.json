@@ -1,0 +1,41 @@
+{
+  "$comment": "Services that process data for Vibezeo's hosted features (F-TL-07), published on the website. An entry whose vendor isn't chosen yet says so; HUMAN_TODO tracks naming them and the legal review before the API goes live.",
+  "version": 1,
+  "subprocessors": [
+    {
+      "id": "anthropic",
+      "name": "Anthropic (Claude API)",
+      "purpose": "Thread titles, Enhance and Polish, teammate drafts and Auto",
+      "data": "The text each feature sends",
+      "chosen": true
+    },
+    {
+      "id": "stripe",
+      "name": "Stripe",
+      "purpose": "Payments and invoices",
+      "data": "Billing details you enter at checkout",
+      "chosen": true
+    },
+    {
+      "id": "speech",
+      "name": "Speech-to-text provider (not yet chosen)",
+      "purpose": "Cloud dictation",
+      "data": "Audio of each cloud take",
+      "chosen": false
+    },
+    {
+      "id": "email",
+      "name": "Email delivery provider (not yet chosen)",
+      "purpose": "Sign-in links, invites and receipts",
+      "data": "Your email address and the message",
+      "chosen": false
+    },
+    {
+      "id": "hosting",
+      "name": "API hosting provider (not yet chosen)",
+      "purpose": "Runs the Vibezeo API and its database",
+      "data": "Account, plan and credit records",
+      "chosen": false
+    }
+  ]
+}

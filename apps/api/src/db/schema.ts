@@ -132,6 +132,8 @@ export const subscriptions = pgTable(
     trialEnd: timestamp("trial_end", { withTimezone: true }),
     pastDueSince: timestamp("past_due_since", { withTimezone: true }),
     firstPaidAt: timestamp("first_paid_at", { withTimezone: true }),
+    /** Set by a refund (F-BL-05): paid access ends at once, whatever Stripe says later. */
+    refundedAt: timestamp("refunded_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
   },
   (t) => [index("sub_owner").on(t.ownerKind, t.ownerId)],
@@ -177,6 +179,7 @@ export const creditLedger = pgTable(
         "pack_purchase",
         "admin_grant",
         "plan_refund",
+        "pack_refund",
         "expire_sweep",
       ],
     }).notNull(),
@@ -202,6 +205,8 @@ export const creditReservations = pgTable(
     state: text("state", { enum: ["held", "settled", "refunded"] }).notNull(),
     settledAmount: integer("settled_amount"),
     idempotencyKey: text("idempotency_key"),
+    /** The member-cap period this reservation counted against (org pools with a cap). */
+    capPeriod: text("cap_period"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

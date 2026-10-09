@@ -44,6 +44,10 @@ export class MockBilling implements BillingProvider {
     this.calls.push(`refund:${subscriptionId}`);
   }
 
+  async refundPayment(checkoutSessionId: string) {
+    this.calls.push(`refund_payment:${checkoutSessionId}`);
+  }
+
   async updateQuantity(subscriptionId: string, seats: number) {
     this.calls.push(`quantity:${subscriptionId}:${seats}`);
   }

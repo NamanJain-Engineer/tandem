@@ -7,6 +7,7 @@ import { newId } from "../lib/ids";
 import { logger } from "../lib/logger";
 import { ApiError } from "../lib/problem";
 import { type AiFeature, type AiRequest, AiUnavailableError } from "../providers/ai/types";
+import { notifyCredits } from "./credits";
 import { refund, reserve, settle } from "./ledger";
 
 export const DEFAULT_AI_MODEL = "claude-haiku-4-5-20251001";
@@ -79,8 +80,8 @@ function modelFor(deps: Deps, feature: AiFeature): string {
   return deps.config.config.ai_models?.[feature] ?? DEFAULT_AI_MODEL;
 }
 
-function priceFor(deps: Deps, feature: AiFeature): number {
-  return deps.config.config.prices[feature] ?? 0;
+function priceFor(deps: Deps, key: string): number {
+  return deps.config.config.prices[key] ?? 0;
 }
 
 async function record(
@@ -161,12 +162,12 @@ export async function title(deps: Deps, userId: string, text: string): Promise<s
   return cleanTitle(out.result.text, text);
 }
 
-/** Counts a rewrite against the daily cap; false when the cap is reached. */
-async function takeDaily(deps: Deps, userId: string, cap: number): Promise<boolean> {
+/** Counts one call against a daily cap; false when the cap is reached. */
+async function takeDaily(deps: Deps, userId: string, feature: string, cap: number): Promise<boolean> {
   const day = deps.clock.now().toISOString().slice(0, 10);
   const rows = await deps.db
     .insert(dailyUsage)
-    .values({ userId, feature: "rewrite", day, units: 1 })
+    .values({ userId, feature, day, units: 1 })
     .onConflictDoUpdate({
       target: [dailyUsage.userId, dailyUsage.feature, dailyUsage.day],
       set: { units: sql`${dailyUsage.units} + 1` },
@@ -176,58 +177,56 @@ async function takeDaily(deps: Deps, userId: string, cap: number): Promise<boole
   return rows.length > 0;
 }
 
-async function giveBackDaily(deps: Deps, userId: string): Promise<void> {
+async function giveBackDaily(deps: Deps, userId: string, feature: string): Promise<void> {
   const day = deps.clock.now().toISOString().slice(0, 10);
   await deps.db
     .update(dailyUsage)
     .set({ units: sql`greatest(${dailyUsage.units} - 1, 0)` })
-    .where(and(eq(dailyUsage.userId, userId), eq(dailyUsage.feature, "rewrite"), eq(dailyUsage.day, day)));
+    .where(and(eq(dailyUsage.userId, userId), eq(dailyUsage.feature, feature), eq(dailyUsage.day, day)));
 }
 
+type Metered<T> = {
+  feature: AiFeature;
+  /** The remote-config price key. */
+  price: string;
+  daily?: { key: string; cap: number; message: string };
+  request: Omit<AiRequest, "feature" | "model">;
+  /** Turns the model's text into the answer; null means unusable (refunded, 503). */
+  parse: (text: string) => T | null;
+};
+
 /**
- * `POST /v1/ai/rewrite`: Enhance or Polish. Reserves the flat price, settles
- * it on success and refunds it on any failure, so the desktop falls back to
- * the raw transcript at no cost (F-DI-10).
+ * One metered model call: the daily cap, reserve the flat price, call, then
+ * settle on a usable answer or refund everything on any failure, so a caller
+ * that falls back locally (F-DI-10) pays nothing.
  */
-export async function rewrite(deps: Deps, userId: string, input: RewriteInput): Promise<string> {
-  const cap = deps.config.config.daily_caps.rewrite_calls ?? 300;
-  if (!(await takeDaily(deps, userId, cap))) {
-    throw new ApiError(
-      429,
-      "DAILY_LIMIT",
-      "Too Many Requests",
-      `Enhance and Polish allow ${cap} calls a day.`,
-    );
+async function metered<T>(deps: Deps, userId: string, m: Metered<T>): Promise<T> {
+  if (m.daily && !(await takeDaily(deps, userId, m.daily.key, m.daily.cap))) {
+    throw new ApiError(429, "DAILY_LIMIT", "Too Many Requests", m.daily.message, { limit: m.daily.key });
   }
-  const price = priceFor(deps, "rewrite");
+  const price = priceFor(deps, m.price);
   let reservation: string;
   try {
     reservation = await reserve(deps.db, {
-      owner: { kind: "user", id: userId },
       userId,
-      feature: "rewrite",
+      feature: m.feature,
       amount: price,
       now: deps.clock.now(),
     });
   } catch (err) {
-    await giveBackDaily(deps, userId);
+    if (m.daily) await giveBackDaily(deps, userId, m.daily.key);
     throw err;
   }
-  const model = modelFor(deps, "rewrite");
-  const out = await call(deps, {
-    feature: "rewrite",
-    model,
-    system: rewriteSystem(input),
-    messages: [{ role: "user", content: wrap(input.text) }],
-    maxTokens: 2048,
-  });
-  const text = out.ok ? out.result.text.trim() : "";
-  if (!out.ok || !text) {
-    await refund(deps.db, reservation);
-    await giveBackDaily(deps, userId);
+  const model = modelFor(deps, m.feature);
+  const out = await call(deps, { feature: m.feature, model, ...m.request });
+  const parsed = out.ok ? m.parse(out.result.text) : null;
+  if (!out.ok || parsed === null) {
+    const back = await refund(deps.db, reservation);
+    if (back) await notifyCredits(deps, back.owner);
+    if (m.daily) await giveBackDaily(deps, userId, m.daily.key);
     await record(deps, {
       userId,
-      feature: "rewrite",
+      feature: m.feature,
       model,
       status: out.ok ? 502 : out.status,
       credits: 0,
@@ -235,10 +234,11 @@ export async function rewrite(deps: Deps, userId: string, input: RewriteInput): 
     });
     throw unavailable();
   }
-  await settle(deps.db, reservation, price);
+  const settled = await settle(deps.db, reservation, price);
+  if (settled) await notifyCredits(deps, settled.owner);
   await record(deps, {
     userId,
-    feature: "rewrite",
+    feature: m.feature,
     model: out.result.model,
     status: 200,
     credits: price,
@@ -246,5 +246,80 @@ export async function rewrite(deps: Deps, userId: string, input: RewriteInput): 
     tokensIn: out.result.tokensIn,
     tokensOut: out.result.tokensOut,
   });
-  return text;
+  return parsed;
+}
+
+/** `POST /v1/ai/rewrite`: Enhance or Polish, 3 credits, 300 a day (F-DI-10). */
+export async function rewrite(deps: Deps, userId: string, input: RewriteInput): Promise<string> {
+  const cap = deps.config.config.daily_caps.rewrite_calls ?? 300;
+  return metered(deps, userId, {
+    feature: "rewrite",
+    price: "rewrite",
+    daily: { key: "rewrite", cap, message: `Enhance and Polish allow ${cap} calls a day.` },
+    request: {
+      system: rewriteSystem(input),
+      messages: [{ role: "user", content: wrap(input.text) }],
+      maxTokens: 2048,
+    },
+    parse: (text) => text.trim() || null,
+  });
+}
+
+export type DraftInput = { description: string; engines: string[]; plugins: string[] };
+export type TeammateDraft = { name: string; brief: string; engine: string; plugins: string[] };
+
+export function draftSystem(input: DraftInput): string {
+  return [
+    "You draft a new AI teammate for a software team from a short job description.",
+    'Reply with one JSON object and nothing else: {"name": string, "brief": string, "engine": string, "plugins": string[]}.',
+    'name: a short role name of at most 40 characters, like "Release Notes Writer".',
+    "brief: at most 1,200 characters of standing instructions in the second person: what the job is, how to verify the work, and what never to do without approval.",
+    `engine: one of ${input.engines.map((e) => JSON.stringify(e)).join(", ")}.`,
+    input.plugins.length
+      ? `plugins: only ids from ${input.plugins.map((p) => JSON.stringify(p)).join(", ")} that the job needs, or [].`
+      : "plugins: [].",
+    DATA_NOTE,
+  ].join(" ");
+}
+
+/**
+ * The model's draft, held to the request: the engine must be one offered (else
+ * the first), plugins only those offered, and the text within its limits.
+ */
+export function parseDraft(text: string, input: DraftInput): TeammateDraft | null {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const name = typeof o.name === "string" ? o.name.replace(/\s+/g, " ").trim().slice(0, 40).trim() : "";
+  const brief = typeof o.brief === "string" ? o.brief.trim().slice(0, 1200).trim() : "";
+  if (!name || !brief) return null;
+  const engine =
+    typeof o.engine === "string" && input.engines.includes(o.engine) ? o.engine : (input.engines[0] ?? "");
+  const offered = new Set(input.plugins);
+  const plugins = Array.isArray(o.plugins)
+    ? [...new Set(o.plugins.filter((p): p is string => typeof p === "string" && offered.has(p)))]
+    : [];
+  return { name, brief, engine, plugins };
+}
+
+/** `POST /v1/ai/teammate-draft`: "Create with AI", 10 credits (F-AG-04). Nothing is saved here. */
+export async function teammateDraft(deps: Deps, userId: string, input: DraftInput): Promise<TeammateDraft> {
+  return metered(deps, userId, {
+    feature: "teammate_draft",
+    price: "teammate_draft",
+    request: {
+      system: draftSystem(input),
+      messages: [{ role: "user", content: wrap(input.description) }],
+      maxTokens: 1024,
+    },
+    parse: (text) => parseDraft(text, input),
+  });
 }

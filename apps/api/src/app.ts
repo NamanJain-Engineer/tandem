@@ -12,13 +12,17 @@ import { minVersion } from "./middleware/minVersion";
 import { authSpikeMonitor, ipRateLimit } from "./middleware/rateLimit";
 import { requestContext } from "./middleware/requestContext";
 import { turnstile } from "./middleware/turnstile";
+import { adminRoutes } from "./routes/admin";
 import { aiRoutes } from "./routes/ai";
+import { auditRoutes } from "./routes/audit";
 import { billingRoutes } from "./routes/billing";
 import { configRoutes } from "./routes/config";
 import { creditsRoutes } from "./routes/credits";
 import { desktopAuthRoutes } from "./routes/desktopAuth";
 import { health } from "./routes/health";
 import { meRoutes } from "./routes/me";
+import { orgRoutes } from "./routes/orgs";
+import { sttRoutes } from "./routes/stt";
 import { testRoutes } from "./routes/testRoutes";
 import { webhookRoutes } from "./routes/webhooks";
 
@@ -31,17 +35,16 @@ export function createApp(deps: Deps) {
 
   app.use("*", requestContext);
   app.use("*", minVersion(deps));
-  app.use(
-    "*",
-    bodyLimit({
-      maxSize: 1024 * 1024,
-      onError: (c) =>
-        problemResponse(
-          c,
-          new ApiError(413, "PAYLOAD_TOO_LARGE", "Payload Too Large", "The request body is over 1 MB."),
-        ),
-    }),
-  );
+  const jsonLimit = bodyLimit({
+    maxSize: 1024 * 1024,
+    onError: (c) =>
+      problemResponse(
+        c,
+        new ApiError(413, "PAYLOAD_TOO_LARGE", "Payload Too Large", "The request body is over 1 MB."),
+      ),
+  });
+  // Audio uploads stream through the STT relay under its own 25 MB limit.
+  app.use("*", (c, next) => (c.req.path === "/v1/stt/transcribe" ? next() : jsonLimit(c, next)));
   app.use("*", resolveUser(deps));
   app.use("*", authSpikeMonitor(deps));
   app.use("*", ipRateLimit(deps));
@@ -56,6 +59,10 @@ export function createApp(deps: Deps) {
   app.route("/v1/credits", creditsRoutes(deps));
   app.route("/v1/billing", billingRoutes(deps));
   app.route("/v1/ai", aiRoutes(deps));
+  app.route("/v1/stt", sttRoutes(deps));
+  app.route("/v1/orgs", orgRoutes(deps));
+  app.route("/v1/audit", auditRoutes(deps));
+  app.route("/v1/admin", adminRoutes(deps));
   app.route("/v1/webhooks", webhookRoutes(deps));
   if (testRoutesEnabled(deps.env)) app.route("/__test", testRoutes(deps));
 
