@@ -772,7 +772,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `plugin_disconnect` | `{connectionId}` | — | — |
 | `plugin_detail` | `{connectionId}` | `PluginDetail {tools:[{name, riskClass, description}], options}` | — |
 | `plugin_set_option` | `{connectionId, allowPublishInFull}` | — | — |
-| `grants_list` / `grants_set` | `{subject: GrantSubject}` / `{subject, connectionId, granted}` | `[ConnectionId]` / — | — |
+| `grants_list` / `grants_set` | `{subject: GrantSubject}` / `{subject, connectionId, granted}` (`GrantSubject = {type:"teammate", teammateId} \| {type:"thread", threadId} \| {type:"workspace", workspaceId} \| {type:"all_threads"}`; a change reaches the subject's next session) | `[ConnectionId]` / — | — |
 
 #### Auto [F-AU-01]
 | Command | Args | Returns | Errors |
@@ -858,6 +858,8 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `test_thread_state` | `{id}` | the thread's stored `state` | NotFound |
 | `test_browser_eval` | `{browserId, script}` | `String` (the script's value as JSON; E2E-M9-4 clicks in a page with it) | NotFound |
 | `test_thread_seed_events` | `{threadId, events, fenceBytes?}` | the number of events written (completed turns of a user message, an assistant reply, tool calls and a turn end, in one transaction; `fenceBytes` adds a last reply with a code fence that size; threads perf suite) | NotFound |
+| `test_plugin_connect` | `{pluginId}` | `PluginConnection {id, pluginId, accountLabel?, authKind, status, createdAt}` (records a connection of a test vendor module, `test_echo`/`test_upper`/`test_down`, without a sign-in; builds with the `test-vendors` feature only; M10 E2E until Settings › Plugins lands in M12) | NotFound |
+| `test_gateway_metrics` | — | `TestGateway {metrics: GatewayMetrics {port, listeners, leases, mcpSessions, requests, restarts, rssBytes?}, starts}` (`starts`: gateways this process started, F-PL-01 AC2) | Unavailable |
 
 `window.__tandemTest` in the webview wraps these commands plus UI-side counters. Not listed in `capabilities/*.json` for release.
 
@@ -1949,11 +1951,13 @@ All command execution goes through `CommandRunner` (fake in tests; F-RT-03 AC1 a
 - `axum` + `rmcp` Streamable HTTP transport, bound to `127.0.0.1:0` (random port), path `/mcp`. One instance per Tandem process (in-process task; `tandem-gateway` bin for sidecar/tests — F-PL-01 AC2 asserts one gateway for 10 sessions).
 - `Origin` header, if present, must be absent or `null`/loopback; `Host` must be `127.0.0.1:<port>` (DNS-rebinding guard).
 - Every request needs `Authorization: Bearer <lease>`; unknown/revoked/expired → 401 (F-PL-01 AC1). MCP sessions (`Mcp-Session-Id`) are bound to the lease that created them.
+- **Watchdog and metrics (M10):** every 30 s the gateway probes its own listener (an unauthenticated `POST /mcp` must answer 401 within 5 s); a listener that stopped or doesn't answer is reopened on the same port, so every session's MCP config stays valid. `GatewayHandle::metrics()` reports the port, open listeners, leases, MCP sessions, requests, restarts and the process's resident memory (Linux: `VmRSS`; other platforms report none yet). The app starts the gateway at launch and writes `$DATA/run/gateway.json` `{port}` (0600). Test vendor modules (`vendors/test_echo`: `test_echo`, `test_upper`, and `test_down`, which is always unreachable) build only with the `test-vendors` feature, which the E2E build turns on.
 
 ### 11.2 Leases
 `Lease {id, token_hash (sha256), caller, attended, access, granted: Vec<ConnectionId>, builtins: BuiltinSet, conversation_ref, created_at, revoked}`; token = 32 random bytes base64url, only its hash is stored; TTL = session lifetime (revoked at session end, quit, sign-out). `BuiltinSet` is computed from the caller: teammate chats get `session_search`, `memory_write`, `read_skill`, plus `send_message`/`list_teammates` if `may_message`, plus `schedule_*` if `may_schedule`; every Claude session gets `tandem_approvals__request`; threads get only approvals + granted plugins.
 
 ### 11.3 Tool listing
+- The built-ins come from one registry (`tandem_gateway::builtins::BUILTINS`: wire name, description, schema, the `BuiltinSet` flag that turns it on); the app answers them through a `BuiltinHandler` that receives the caller's lease. A lease's `granted` connections are taken when its session starts; grant changes reach the next session. The search and call tools are listed only when the lease has a granted, connected plugin. Until plugin approvals (F-PL-06, M12) only `read`-class tools run; other classes return a tool error saying approvals aren't available yet.
 - Default: `tandem__search_tools{query: str, limit?: int(1..20)}` → `[{name:"<plugin>__<tool>", description, risk_class, input_schema}]` over granted plugins; `tandem__call{tool: str, args: object}` executes one. Plus built-ins. With "Expose all plugin tools directly" on: every granted tool listed as `<plugin>__<tool>` (F-PL-01 AC3).
 - Tool discovery for remote-MCP vendors is lazy per connection (on first search/call, cached 10 min); one failing vendor returns an error entry for that plugin only (F-PL-01).
 - Disconnect/grant removal bumps a generation counter; in-flight leases see the change on their next call (F-PL-01 AC4); the server emits `notifications/tools/list_changed`.

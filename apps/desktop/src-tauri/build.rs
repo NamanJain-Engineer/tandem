@@ -182,6 +182,9 @@ const COMMANDS: &[&str] = &[
     "engines_set_extra_args",
     "accounts_list",
     "engines_report",
+    "plugins_catalog",
+    "grants_list",
+    "grants_set",
 ];
 
 const TEST_COMMANDS: &[&str] = &[
@@ -200,6 +203,8 @@ const TEST_COMMANDS: &[&str] = &[
     "test_min_version_shift",
     "test_auth_refresh",
     "test_account_create",
+    "test_plugin_connect",
+    "test_gateway_metrics",
 ];
 
 /// What About › Licenses shows when the notices weren't generated (dev builds).

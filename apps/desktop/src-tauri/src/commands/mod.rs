@@ -13,6 +13,7 @@ pub mod lanes;
 pub mod launch;
 pub mod limits;
 pub mod onboarding;
+pub mod plugins;
 pub mod restore;
 pub mod settings;
 pub mod shell;

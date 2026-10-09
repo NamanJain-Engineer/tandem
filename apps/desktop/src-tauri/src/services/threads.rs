@@ -32,7 +32,7 @@ use tandem_engines::events::{
     ApprovalDecisionView, ErrorAction, ErrorStage, ThreadEvent, ThreadEventEnvelope, ToolStatus,
     TurnEndReason,
 };
-use tandem_gateway::{ApprovalAnswer, ApprovalAsker, Caller, ToolApproval};
+use tandem_gateway::{ApprovalAnswer, Caller, ToolApproval};
 use tandem_store::repo::attachments::{self as attachments_repo, Attachment, AttachmentKind};
 use tandem_store::repo::threads::ThreadPatch;
 use tandem_store::repo::threads::{
@@ -308,23 +308,6 @@ fn turn_input(
     }
 }
 
-/// The gateway's approvals tool, answered by the thread that asked.
-pub struct GatewayAsker {
-    threads: std::sync::Weak<ThreadService>,
-}
-
-#[async_trait]
-impl ApprovalAsker for GatewayAsker {
-    async fn ask(&self, caller: &Caller, ask: ToolApproval) -> ApprovalAnswer {
-        match (caller, self.threads.upgrade()) {
-            (Caller::Thread { thread_id }, Some(threads)) => {
-                threads.ask_approval(thread_id, ask).await
-            }
-            _ => ApprovalAnswer::Deny { message: None },
-        }
-    }
-}
-
 /// A streaming piece: its block kind and text.
 fn delta_parts(event: &ThreadEvent) -> Option<(BlockKind, &str)> {
     match event {
@@ -529,6 +512,12 @@ impl ThreadService {
         }
         self.publish_threads().await;
         Ok(thread)
+    }
+
+    /// The next turn starts a fresh session (resuming the engine's
+    /// conversation), so new grants or built-ins reach its lease.
+    pub async fn refresh_session(&self, id: &ThreadId) {
+        self.runtime(id).lock().await.stale = true;
     }
 
     /// Ends the engine session between turns; the next turn starts anew.
@@ -1902,8 +1891,8 @@ pub struct AppLauncher {
     adapters: HashMap<String, Arc<dyn ChatAdapter>>,
     /// `$DATA/mcp`: one 0600 config per thread session.
     mcp_dir: std::path::PathBuf,
-    gateway: tokio::sync::OnceCell<tandem_gateway::GatewayHandle>,
-    threads: std::sync::OnceLock<std::sync::Weak<ThreadService>>,
+    gateway: Arc<crate::services::gateway::GatewayService>,
+    store: Store,
     /// The live lease per thread; a new session revokes the last one.
     leases: StdMutex<HashMap<String, tandem_core::ids::LeaseId>>,
 }
@@ -1915,6 +1904,8 @@ impl AppLauncher {
         models: Arc<crate::services::models::RuntimeModels>,
         adapters: Vec<Arc<dyn ChatAdapter>>,
         mcp_dir: std::path::PathBuf,
+        gateway: Arc<crate::services::gateway::GatewayService>,
+        store: Store,
     ) -> Self {
         Self {
             terminals,
@@ -1925,8 +1916,8 @@ impl AppLauncher {
                 .map(|a| (a.engine_id().to_string(), a))
                 .collect(),
             mcp_dir,
-            gateway: tokio::sync::OnceCell::new(),
-            threads: std::sync::OnceLock::new(),
+            gateway,
+            store,
             leases: StdMutex::default(),
         }
     }
@@ -1966,24 +1957,27 @@ impl AppLauncher {
         adapters
     }
 
-    /// The threads the gateway's approvals tool reports to.
-    pub fn bind(&self, threads: &Arc<ThreadService>) {
-        let _ = self.threads.set(Arc::downgrade(threads));
-    }
-
-    async fn gateway(&self) -> Result<&tandem_gateway::GatewayHandle, IpcError> {
-        self.gateway
-            .get_or_try_init(|| async {
-                let threads = self.threads.get().cloned().unwrap_or_default();
-                tandem_gateway::Gateway::start(tandem_gateway::GatewayDeps {
-                    approvals: Arc::new(GatewayAsker { threads }),
-                })
-                .await
-                .map_err(|e| {
-                    IpcError::new(ErrorCode::Unavailable, e.to_string()).with_stage("gateway")
-                })
-            })
+    /// The plugin connections a thread's session may use: its own grants
+    /// and those given to every thread (F-PL-05).
+    async fn thread_grants(&self, thread: &ThreadRecord) -> Vec<tandem_core::ids::ConnectionId> {
+        use tandem_store::repo::plugins::{grants, GrantSubject};
+        let mut out = grants(
+            &self.store,
+            &GrantSubject::Thread {
+                thread_id: thread.id.as_str().to_string(),
+            },
+        )
+        .await
+        .unwrap_or_default();
+        for c in grants(&self.store, &GrantSubject::AllThreads)
             .await
+            .unwrap_or_default()
+        {
+            if !out.contains(&c) {
+                out.push(c);
+            }
+        }
+        out
     }
 
     /// A lease for the thread's new session, in a config only the user can
@@ -1992,26 +1986,28 @@ impl AppLauncher {
         &self,
         thread: &ThreadRecord,
     ) -> Result<(std::path::PathBuf, tandem_engines::chat::McpEndpoint), IpcError> {
-        let gateway = self.gateway().await?;
-        let lease = gateway.prepare(tandem_gateway::SessionDescriptor {
-            caller: Caller::Thread {
+        let gateway = self.gateway.handle().await?;
+        let mut session = tandem_gateway::SessionDescriptor::new(
+            Caller::Thread {
                 thread_id: thread.id.clone(),
             },
-            attended: if thread.attended {
+            if thread.attended {
                 tandem_gateway::Attended::Interactive
             } else {
                 tandem_gateway::Attended::Unattended {
                     origin: "thread".into(),
                 }
             },
-            access: thread.access,
+            thread.access,
             // Claude asks through the gateway; Codex and ACP agents ask in-band.
-            builtins: if thread.engine_id == "claude" {
+            if thread.engine_id == "claude" {
                 tandem_gateway::BuiltinSet::for_thread()
             } else {
                 tandem_gateway::BuiltinSet::default()
             },
-        });
+        );
+        session.granted = self.thread_grants(thread).await;
+        let lease = gateway.prepare(session);
         let previous = match self.leases.lock() {
             Ok(mut l) => l.insert(thread.id.as_str().to_string(), lease.id.clone()),
             Err(_) => None,
@@ -2992,21 +2988,20 @@ mod tests {
     async fn f_th_04_4_the_gateway_tool_asks_the_thread_and_allow_returns_behavior_allow() {
         let f = fixture(OnStop::Ack, hang()).await;
         let id = f.thread.id.clone();
-        let gateway = tandem_gateway::Gateway::start(tandem_gateway::GatewayDeps {
-            approvals: Arc::new(GatewayAsker {
-                threads: Arc::downgrade(&f.svc),
-            }),
-        })
-        .await
-        .expect("gateway");
-        let lease = gateway.prepare(tandem_gateway::SessionDescriptor {
-            caller: Caller::Thread {
+        let service = crate::services::gateway::GatewayService::new(
+            f.store.clone(),
+            f._dir.path().join("run"),
+        );
+        service.bind_threads(&f.svc);
+        let gateway = service.handle().await.expect("gateway").clone();
+        let lease = gateway.prepare(tandem_gateway::SessionDescriptor::new(
+            Caller::Thread {
                 thread_id: id.clone(),
             },
-            attended: tandem_gateway::Attended::Interactive,
-            access: tandem_core::access::Access::Edits,
-            builtins: tandem_gateway::BuiltinSet::for_thread(),
-        });
+            tandem_gateway::Attended::Interactive,
+            tandem_core::access::Access::Edits,
+            tandem_gateway::BuiltinSet::for_thread(),
+        ));
         f.svc
             .send(&id, "test it".into(), Vec::new(), false)
             .await

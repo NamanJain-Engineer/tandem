@@ -5303,10 +5303,12 @@ dependencies = [
  "serde_json",
  "sha2",
  "tandem-core",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
  "tracing",
+ "ts-rs",
 ]
 
 [[package]]

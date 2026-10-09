@@ -12,6 +12,9 @@
 //! - `/crash`: streams one piece and exits 3 mid-turn.
 //! - `write <path>=<text>;<path>=<text>…`: writes each file (`\n` is a line
 //!   break) in its folder as Write tool calls, then says how many (E2E-M7-9).
+//! - `mcp <tool> <json>`: calls a gateway tool (a `tandem__*` built-in, a
+//!   plugin tool, `tandem__call`) as a tool row and says what it answered.
+//! - `tools`: says the names the gateway's `tools/list` gives this session.
 //! - anything else: "You said: <text>" in two pieces.
 //!
 //! An interrupt (`control_request`) is acknowledged and ends the turn.
@@ -187,46 +190,91 @@ fn message(body: &str) -> Option<Value> {
     })
 }
 
-/// Asks the gateway's approvals tool; true when it allows.
-fn approve(gw: &(String, String), command: &str, tool_use_id: &str) -> bool {
+/// Opens an MCP session on the gateway; the headers for its requests.
+fn open_session(gw: &(String, String)) -> Option<Vec<(&'static str, String)>> {
     let (url, auth) = gw;
     let init = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
         "protocolVersion": "2025-03-26", "capabilities": {},
         "clientInfo": {"name": "fake-claude", "version": "1"}}});
     let Some((200, headers, _)) = post(url, &[("Authorization", auth)], &init.to_string()) else {
-        return false;
+        return None;
     };
-    let Some(session) = headers
+    let session = headers
         .iter()
         .find(|(k, _)| k == "mcp-session-id")
-        .map(|(_, v)| v.clone())
-    else {
-        return false;
-    };
-    let with_session = [
-        ("Authorization", auth.as_str()),
-        ("mcp-session-id", session.as_str()),
-        ("mcp-protocol-version", "2025-03-26"),
+        .map(|(_, v)| v.clone())?;
+    let with_session = vec![
+        ("Authorization", auth.clone()),
+        ("mcp-session-id", session),
+        ("mcp-protocol-version", "2025-03-26".to_string()),
     ];
+    let refs: Vec<(&str, &str)> = with_session.iter().map(|(k, v)| (*k, v.as_str())).collect();
     let _ = post(
         url,
-        &with_session,
+        &refs,
         &json!({"jsonrpc": "2.0", "method": "notifications/initialized"}).to_string(),
     );
-    let call = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
-        "name": "tandem_approvals__request",
-        "arguments": {"tool_name": "Bash", "input": {"command": command}, "tool_use_id": tool_use_id}}});
-    let Some((_, _, body)) = post(url, &with_session, &call.to_string()) else {
-        return false;
-    };
-    let reply = message(&body)
-        .and_then(|m| {
-            m.pointer("/result/content/0/text")
+    Some(with_session)
+}
+
+/// One JSON-RPC request on a fresh MCP session: the message with its id.
+fn rpc(gw: &(String, String), method: &str, params: Value) -> Option<Value> {
+    let headers = open_session(gw)?;
+    let refs: Vec<(&str, &str)> = headers.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let req = json!({"jsonrpc": "2.0", "id": 2, "method": method, "params": params});
+    let (_, _, body) = post(&gw.0, &refs, &req.to_string())?;
+    message(&body)
+}
+
+/// Calls a gateway tool: (is_error, text).
+fn call_tool(gw: &(String, String), name: &str, args: Value) -> (bool, String) {
+    match rpc(gw, "tools/call", json!({"name": name, "arguments": args})) {
+        Some(m) => {
+            let result = m.get("result").cloned().unwrap_or_default();
+            let text = result
+                .pointer("/content/0/text")
                 .and_then(Value::as_str)
                 .map(str::to_string)
+                .or_else(|| {
+                    m.pointer("/error/message")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+                .unwrap_or_default();
+            (
+                result
+                    .get("isError")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(m.get("error").is_some()),
+                text,
+            )
+        }
+        None => (true, "the gateway didn't answer".into()),
+    }
+}
+
+/// The names `tools/list` gives this session.
+fn list_tools(gw: &(String, String)) -> Vec<String> {
+    rpc(gw, "tools/list", json!({}))
+        .and_then(|m| m.pointer("/result/tools").cloned())
+        .and_then(|t| t.as_array().cloned())
+        .map(|t| {
+            t.iter()
+                .filter_map(|t| t.get("name").and_then(Value::as_str).map(str::to_string))
+                .collect()
         })
-        .and_then(|t| serde_json::from_str::<Value>(&t).ok());
-    reply
+        .unwrap_or_default()
+}
+
+/// Asks the gateway's approvals tool; true when it allows.
+fn approve(gw: &(String, String), command: &str, tool_use_id: &str) -> bool {
+    let (_, text) = call_tool(
+        gw,
+        "tandem_approvals__request",
+        json!({"tool_name": "Bash", "input": {"command": command}, "tool_use_id": tool_use_id}),
+    );
+    serde_json::from_str::<Value>(&text)
+        .ok()
         .and_then(|r| {
             r.get("behavior")
                 .and_then(Value::as_str)
@@ -382,6 +430,37 @@ pub fn run(args: &[String], session: String) {
             let said = format!("Wrote {count} files.");
             turn.say(&[&said]);
             turn.done("done");
+        } else if let Some(rest) = first.strip_prefix("mcp ") {
+            // `mcp <tool> <json args>`: one gateway tool call, shown as a
+            // tool row (teammate built-ins and plugins, E2E-M10-*).
+            let (tool, args) = rest.split_once(' ').unwrap_or((rest, "{}"));
+            let args: Value = serde_json::from_str(args).unwrap_or_else(|_| json!({}));
+            let id = format!("toolu_{n}");
+            turn.assistant(json!([{"type": "tool_use", "id": id,
+                "name": format!("mcp__tandem__{tool}"), "input": args}]));
+            let (is_error, text) = match gw.as_ref() {
+                Some(g) => call_tool(g, tool, args),
+                None => (true, "no gateway".into()),
+            };
+            emit(
+                json!({"type": "user", "session_id": turn.session, "parent_tool_use_id": null,
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": id,
+                    "content": text, "is_error": is_error}]}}),
+            );
+            let said = if is_error {
+                format!("The tool failed: {text}")
+            } else {
+                format!("The tool said: {text}")
+            };
+            turn.say(&[&said]);
+            turn.done(&said);
+        } else if first == "tools" {
+            // The gateway tools this session sees, sorted.
+            let mut names = gw.as_ref().map(list_tools).unwrap_or_default();
+            names.sort();
+            let said = format!("Tools: {}", names.join(", "));
+            turn.say(&[&said]);
+            turn.done(&said);
         } else if first == "/crash" {
             turn.delta("About to fail");
             std::process::exit(3);

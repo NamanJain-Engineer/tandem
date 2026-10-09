@@ -92,7 +92,7 @@ async function main() {
     execFileSync("pnpm", ["build"], { cwd: desktop, stdio: "inherit" });
     // Perf suites measure an optimised build (the `perf` profile keeps the test harness).
     const cargoProfile = suite && process.env.TANDEM_PERF_BUILD !== "debug" ? ["--profile", "perf"] : [];
-    execFileSync("cargo", ["build", "-p", "tandem-desktop", "--features", "custom-protocol", ...cargoProfile], { cwd: root, stdio: "inherit" });
+    execFileSync("cargo", ["build", "-p", "tandem-desktop", "--features", "custom-protocol,test-vendors", ...cargoProfile], { cwd: root, stdio: "inherit" });
     // The status hook and the fake engines (ARCHITECTURE §6.12).
     execFileSync("cargo", ["build", "-p", "tandem-engines", "--features", "fixtures", "--bins"], { cwd: root, stdio: "inherit" });
   }

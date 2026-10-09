@@ -30,6 +30,9 @@ macro_rules! app_commands {
             commands::window::window_toggle_maximize,
             commands::window::window_minimize,
             commands::window::window_close,
+            commands::plugins::plugins_catalog,
+            commands::plugins::grants_list,
+            commands::plugins::grants_set,
             commands::shell::sidebar_get,
             commands::shell::sidebar_save,
             commands::terminal::pane_rename,
@@ -462,6 +465,8 @@ pub fn run() {
         commands::test::test_min_version_shift,
         commands::test::test_auth_refresh,
         commands::test::test_account_create,
+        commands::test::test_plugin_connect,
+        commands::test::test_gateway_metrics,
     ]);
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(app_commands![]);
@@ -514,6 +519,15 @@ pub fn run() {
             persist_window_state(app);
             spawn_background(&state);
             state.approvals.start();
+            // One gateway for every session, up from launch (F-PL-01).
+            {
+                let gateway = state.gateway.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = gateway.handle().await {
+                        tracing::warn!(code = "gateway.start_failed", error = %e.message, "the MCP gateway didn't start");
+                    }
+                });
+            }
             // Updates (F-SH-06): the signed feed, if this build has a key.
             if let Some(key) = services::updates::pubkey(state::BUNDLED_KEYS) {
                 let record = state

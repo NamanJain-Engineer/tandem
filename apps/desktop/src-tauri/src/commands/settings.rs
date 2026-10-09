@@ -62,6 +62,11 @@ async fn apply(
 ) -> Result<(), IpcError> {
     match key {
         SettingKey::TelemetryUsage | SettingKey::TelemetryCrash => state.apply_settings().await,
+        SettingKey::ExposeAllPluginTools => {
+            state
+                .gateway
+                .set_expose_all(value.as_bool().unwrap_or(false));
+        }
         SettingKey::LaunchAtLogin => {
             let on = value.as_bool().unwrap_or(false);
             // E2E runs never touch the real login items.

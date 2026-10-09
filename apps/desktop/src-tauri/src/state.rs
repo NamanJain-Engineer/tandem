@@ -116,6 +116,8 @@ pub struct AppState {
     pub updates: Arc<crate::services::updates::UpdateService>,
     pub config: Arc<ConfigService>,
     pub telemetry: Arc<TelemetryService>,
+    /// The one MCP gateway (F-PL-01).
+    pub gateway: Arc<crate::services::gateway::GatewayService>,
     pub deeplinks: DeepLinkQueue,
     /// Processes a crashed run left behind, until the user decides (UI-132).
     pub orphans: OrphanScan,
@@ -371,12 +373,15 @@ impl AppState {
         );
         let telemetry = TelemetryService::new(&data, net.clone());
         let models = Arc::new(crate::services::models::RuntimeModels::default());
+        let gateway = crate::services::gateway::GatewayService::new(store.clone(), data.run());
         let launcher = Arc::new(crate::services::threads::AppLauncher::new(
             terminals.clone(),
             config.clone(),
             models.clone(),
             crate::services::threads::AppLauncher::adapters(&terminals),
             data.mcp_configs(),
+            gateway.clone(),
+            store.clone(),
         ));
         let threads = crate::services::threads::ThreadService::new(
             store.clone(),
@@ -385,7 +390,7 @@ impl AppState {
             approvals.broker.clone(),
             launcher.clone(),
         );
-        launcher.bind(&threads);
+        gateway.bind_threads(&threads);
         // Thread titles: AI only with the Privacy opt-in (D-118).
         let titles_store = store.clone();
         threads.configure(
@@ -475,6 +480,7 @@ impl AppState {
             usage: Arc::default(),
             threads,
             models,
+            gateway,
             files,
             git_panel,
             browser: std::sync::OnceLock::new(),
@@ -527,6 +533,16 @@ impl AppState {
                 );
             })
             .await;
+        }
+    }
+
+    /// A subject's plugin grants changed: its next session picks them up.
+    pub async fn after_grants_changed(&self, subject: &tandem_store::repo::plugins::GrantSubject) {
+        use tandem_store::repo::plugins::GrantSubject;
+        if let GrantSubject::Thread { thread_id } = subject {
+            self.threads
+                .refresh_session(&tandem_core::ids::ThreadId::from_db(thread_id.clone()))
+                .await;
         }
     }
 

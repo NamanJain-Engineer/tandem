@@ -7,6 +7,7 @@ pub mod editor_tabs;
 pub mod layouts;
 pub mod notifications;
 pub mod panes;
+pub mod plugins;
 pub mod presets;
 pub mod restore;
 pub mod sessions;
