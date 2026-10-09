@@ -99,7 +99,14 @@ export function applyStatus(records: StatusRecord[], removed: string[]): void {
       unknown = true;
       continue;
     }
-    items[r.key] = { ...cur, status: r.status, reason: r.reason, since: r.since, title: r.title ?? cur.title, preview: r.preview ?? cur.preview };
+    items[r.key] = {
+      ...cur,
+      status: r.status,
+      reason: r.reason,
+      since: r.since,
+      title: r.title ?? cur.title,
+      preview: r.preview ?? cur.preview,
+    };
   }
   useDashboard.setState({ items });
   if (unknown) refetchSoon();
@@ -107,11 +114,13 @@ export function applyStatus(records: StatusRecord[], removed: string[]): void {
 
 function applyApprovals(upserted: ApprovalView[], resolved: string[]): void {
   const items = { ...useDashboard.getState().items };
-  const sameSource = (a: ApprovalView, item: DashboardItem) => JSON.stringify(a.source) === JSON.stringify(item.source);
+  const sameSource = (a: ApprovalView, item: DashboardItem) =>
+    JSON.stringify(a.source) === JSON.stringify(item.source);
   for (const [key, item] of Object.entries(items)) {
     const fresh = upserted.find((a) => sameSource(a, item));
     if (fresh) items[key] = { ...item, pendingApproval: fresh };
-    else if (item.pendingApproval && resolved.includes(item.pendingApproval.id)) items[key] = { ...item, pendingApproval: null };
+    else if (item.pendingApproval && resolved.includes(item.pendingApproval.id))
+      items[key] = { ...item, pendingApproval: null };
   }
   useDashboard.setState({ items });
   if (upserted.some((a) => !Object.values(items).some((i) => sameSource(a, i)))) refetchSoon();
@@ -125,13 +134,21 @@ export function followDashboard(): void {
   void listen<{ records: StatusRecord[]; removed?: string[] }>("status:changed", ({ records, removed }) =>
     applyStatus(records, removed ?? []),
   );
-  void listen<{ upserted: ApprovalView[]; resolved: string[] }>("approvals:changed", ({ upserted, resolved }) =>
-    applyApprovals(upserted, resolved),
+  void listen<{ upserted: ApprovalView[]; resolved: string[] }>(
+    "approvals:changed",
+    ({ upserted, resolved }) => applyApprovals(upserted, resolved),
   );
 }
 
 /** Tests: a clean slate. */
 export function resetDashboard(): void {
   clearTimeout(refetch);
-  useDashboard.setState({ items: {}, loaded: false, query: "", filter: "all", groupBy: "status", collapsed: {} });
+  useDashboard.setState({
+    items: {},
+    loaded: false,
+    query: "",
+    filter: "all",
+    groupBy: "status",
+    collapsed: {},
+  });
 }

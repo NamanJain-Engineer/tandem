@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type Mode = "agent" | "code" | "thread";
-export type UpgradeGate = { kind: "workspaces" | "panes"; limit: number };
+export type UpgradeGate = { kind: "workspaces" | "panes" | "thread_grid"; limit: number };
 
 type UiState = {
   mode: Mode;

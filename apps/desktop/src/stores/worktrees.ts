@@ -1,5 +1,12 @@
 import { create } from "zustand";
-import type { FileDiff, IpcError, MergeReport, PaneRecord, Workspace, WorkspaceSummary } from "@tandem/protocol";
+import type {
+  FileDiff,
+  IpcError,
+  MergeReport,
+  PaneRecord,
+  Workspace,
+  WorkspaceSummary,
+} from "@tandem/protocol";
 import { invoke } from "../ipc/invoke";
 import { useLayout } from "./layout";
 import { useWorkspaces } from "./workspaces";
@@ -25,9 +32,7 @@ export function baseBranch(list: WorkspaceSummary[], wt: WorkspaceSummary): stri
 }
 
 export type WorktreeAsk =
-  | { kind: "new"; workspaceId: string }
-  | { kind: "diff" | "merge" | "discard"; worktreeId: string }
-  | null;
+  { kind: "new"; workspaceId: string } | { kind: "diff" | "merge" | "discard"; worktreeId: string } | null;
 
 type WorktreesState = {
   ask: WorktreeAsk;
@@ -85,7 +90,13 @@ export async function createPullRequest(wt: WorkspaceSummary): Promise<Outcome<P
   if (!tabId)
     return {
       ok: false,
-      error: { code: "not_found", message: "This worktree has no tab", stage: null, hint: null, retryable: false },
+      error: {
+        code: "not_found",
+        message: "This worktree has no tab",
+        stage: null,
+        hint: null,
+        retryable: false,
+      },
     };
   const out = await run<PaneRecord>("lane_create_pr", { laneId: wt.id, tabId });
   if (out.ok) {

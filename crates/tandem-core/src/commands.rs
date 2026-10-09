@@ -33,6 +33,8 @@ pub enum EnabledWhen {
     PaneFocused,
     /// Thread mode shows a thread.
     ThreadOpen,
+    /// A focused pane (Code mode), or a cell of the thread grid (Thread mode).
+    PaneOrCell,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -194,20 +196,20 @@ static REGISTRY: &[CommandSpec] = &[
         "pane.focus_left",
         C::Pane,
         Some("Mod+Alt+Left"),
-        E::PaneFocused,
+        E::PaneOrCell,
     ),
     same(
         "pane.focus_right",
         C::Pane,
         Some("Mod+Alt+Right"),
-        E::PaneFocused,
+        E::PaneOrCell,
     ),
-    same("pane.focus_up", C::Pane, Some("Mod+Alt+Up"), E::PaneFocused),
+    same("pane.focus_up", C::Pane, Some("Mod+Alt+Up"), E::PaneOrCell),
     same(
         "pane.focus_down",
         C::Pane,
         Some("Mod+Alt+Down"),
-        E::PaneFocused,
+        E::PaneOrCell,
     ),
     CommandSpec {
         mac: Some("Mod+["),

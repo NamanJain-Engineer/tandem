@@ -14,6 +14,7 @@ import {
   type MenuEntry,
   type Status,
 } from "@tandem/ui";
+import { dragThread, useAddToGrid } from "./ThreadMain";
 import { t } from "../../i18n";
 import { useEngines } from "../../stores/engines";
 import { useThreads } from "../../stores/threads";
@@ -57,6 +58,7 @@ function Row({ thread, selected, now }: { thread: Thread; selected: boolean; now
   const glyph = useEngines((s) => s.glyph(thread.engineId));
   const engine = useEngines((s) => s.label(thread.engineId));
   const { show } = useToast();
+  const addToGrid = useAddToGrid();
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(thread.title);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -69,6 +71,12 @@ function Row({ thread, selected, now }: { thread: Thread; selected: boolean; now
       label: thread.pinned ? t("thread.rail.unpin") : t("thread.rail.pin"),
       disabled: thread.archived,
       onSelect: () => void update(thread.id, { pinned: !thread.pinned }),
+    },
+    {
+      id: "grid",
+      label: t("thread.grid.add"),
+      disabled: thread.archived,
+      onSelect: () => addToGrid(thread.id),
     },
     {
       id: "archive",
@@ -124,6 +132,8 @@ function Row({ thread, selected, now }: { thread: Thread; selected: boolean; now
           type="button"
           data-testid="thread-row"
           data-thread-id={thread.id}
+          draggable={!thread.archived}
+          onDragStart={(e) => dragThread(e, thread.id)}
           aria-current={selected ? "page" : undefined}
           onClick={() => select(thread.id)}
           onKeyDown={(e) => {

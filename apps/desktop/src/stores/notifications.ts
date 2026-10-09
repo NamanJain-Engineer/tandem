@@ -39,7 +39,11 @@ export const useNotifications = create<NotificationsStore>((set, get) => ({
     const page = await invoke<NotificationPage>("notifications_list", { cursor }).catch(() => null);
     if (!page) return;
     const known = new Set(get().items.map((n) => n.id));
-    set({ items: [...get().items, ...page.items.filter((n) => !known.has(n.id))], nextCursor: page.nextCursor, unread: page.unread });
+    set({
+      items: [...get().items, ...page.items.filter((n) => !known.has(n.id))],
+      nextCursor: page.nextCursor,
+      unread: page.unread,
+    });
   },
   markRead: async (ids) => {
     apply(ids, "read");
@@ -74,16 +78,21 @@ let following = false;
 export function followNotifications(): void {
   if (following) return;
   following = true;
-  void listen<{ notification: Notification; sound: boolean }>("notifications:new", ({ notification, sound }) => {
-    const s = useNotifications.getState();
-    if (s.items.some((n) => n.id === notification.id)) return;
-    useNotifications.setState({ items: [notification, ...s.items], unread: s.unread + 1 });
-    if (sound) {
-      const name = useSettings.getState().values.notify_sound_name;
-      playSound(typeof name === "string" ? name : "chime");
-    }
-  });
-  void listen<{ ids: string[]; state: NotificationState }>("notifications:changed", ({ ids, state }) => apply(ids, state));
+  void listen<{ notification: Notification; sound: boolean }>(
+    "notifications:new",
+    ({ notification, sound }) => {
+      const s = useNotifications.getState();
+      if (s.items.some((n) => n.id === notification.id)) return;
+      useNotifications.setState({ items: [notification, ...s.items], unread: s.unread + 1 });
+      if (sound) {
+        const name = useSettings.getState().values.notify_sound_name;
+        playSound(typeof name === "string" ? name : "chime");
+      }
+    },
+  );
+  void listen<{ ids: string[]; state: NotificationState }>("notifications:changed", ({ ids, state }) =>
+    apply(ids, state),
+  );
 }
 
 /** Tests. */

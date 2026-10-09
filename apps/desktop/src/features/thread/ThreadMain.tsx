@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Bot, FolderOpen, GitBranch, Home, MessagesSquare } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type HTMLAttributes,
+  type ReactNode,
+} from "react";
+import { Bot, FolderOpen, GitBranch, Home, MessagesSquare, X } from "lucide-react";
 import type { IpcError, PlanRevision, Thread } from "@tandem/protocol";
 import {
   ApprovalCard,
@@ -11,9 +20,11 @@ import {
   Dialog,
   EmptyState,
   EngineBadge,
+  IconButton,
   Skeleton,
   SkeletonGate,
   StatusDot,
+  cx,
   useToast,
   type ComposerHandle,
 } from "@tandem/ui";
@@ -21,6 +32,7 @@ import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useAccounts } from "../../stores/accounts";
 import { useEngines } from "../../stores/engines";
+import { useSession } from "../../stores/session";
 import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
@@ -30,6 +42,7 @@ import { pendingApprovals, reuseRows, toRows, usageOf, type Row } from "./rows";
 import { useThreadDrops } from "./drops";
 import { ThreadComposer } from "./ThreadComposer";
 import { ChangesPanel, ChangesToggle } from "./ChangesPanel";
+import { columnsFor, GRID_MAX } from "./grid";
 import { PlanCard, Transcript, approvalLabels, type TranscriptActions } from "./Transcript";
 
 const STATE_DOT = {
@@ -124,12 +137,15 @@ function Header({
   plans,
   actions,
   changes,
+  onClose,
 }: {
   thread: Thread;
   contextFill: number | null;
   plans: PlanRevision[];
   actions: TranscriptActions;
   changes: ReactNode;
+  /** In a grid cell: takes the thread out of the grid. */
+  onClose?: () => void;
 }) {
   const ws = useWorkspaces((s) => s.list.find((w) => w.id === thread.workspaceId) ?? null);
   const engine = useEngines((s) => s.list.find((e) => e.spec.id === thread.engineId));
@@ -183,6 +199,15 @@ function Header({
       <span className="ml-auto flex shrink-0 items-center gap-3">
         <PlanVersions plans={plans} actions={actions} />
         {changes}
+        {onClose && (
+          <IconButton
+            size="sm"
+            icon={<X size={14} />}
+            label={t("thread.grid.close")}
+            onClick={onClose}
+            data-testid="grid-close"
+          />
+        )}
         {engine && <EngineBadge letters={engine.spec.logo} name={engine.spec.label} size={14} />}
         <span className="hidden text-fg-muted md:inline">
           {thread.model ?? t("thread.header.defaultModel")}
@@ -291,10 +316,9 @@ const SUGGESTIONS = ["thread.suggest.explain", "thread.suggest.test", "thread.su
 
 /** UI-20/21/22/23: one thread. */
 /** `visible`: Thread mode is showing (every surface stays mounted, F-SH-02). */
-export function ThreadMain({ visible = true }: { visible?: boolean }) {
-  const selectedId = useThreads((s) => s.selectedId);
-  const thread = useThreads((s) => s.list.find((th) => th.id === s.selectedId) ?? null);
-  const live = useThreads((s) => (s.selectedId ? s.byId[s.selectedId] : undefined));
+function ThreadView({ threadId, visible, cell }: { threadId: string; visible: boolean; cell?: GridCell }) {
+  const thread = useThreads((s) => s.list.find((th) => th.id === threadId) ?? null);
+  const live = useThreads((s) => s.byId[threadId]);
   const open = useThreads((s) => s.open);
   const loadOlder = useThreads((s) => s.loadOlder);
   const retry = useThreads((s) => s.retry);
@@ -302,7 +326,6 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
   const workspace = useWorkspaces((s) => s.list.find((w) => w.id === thread?.workspaceId) ?? null);
   const engineLabel = useEngines((s) => s.label(thread?.engineId) ?? thread?.engineId ?? "");
   const { show } = useToast();
-  useThreadDrops(show);
   const composer = useRef<ComposerHandle>(null);
   const [prefill, setPrefill] = useState<{ text: string; n: number } | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -369,17 +392,19 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
     (version: number) => plans?.find((p) => p.version === version)?.text ?? null,
     [plans],
   );
-  const changesOpen = useThreads((s) => s.changesOpen);
-  const toggleChanges = useThreads((s) => s.toggleChanges);
-  const narrow = useNarrow();
+  const changesOpen = useThreads((s) => !!s.changesOpen[threadId]);
+  const toggle = useThreads((s) => s.toggleChanges);
+  const toggleChanges = useCallback(() => toggle(threadId), [toggle, threadId]);
+  const narrow = useNarrow() || !!cell;
+  // A grid cell loads its thread itself (only the open one is selected).
+  useEffect(() => {
+    if (!useThreads.getState().byId[threadId]) void useThreads.getState().open(threadId);
+  }, [threadId]);
   // The Changes panel reads the folder again whenever a turn ends.
   const changesKey = `${live?.detail?.turns.filter((tr) => tr.endedAt !== null).length ?? 0}:${running ?? ""}`;
-  const threadId = thread?.id;
-  const onNearTop = useCallback(() => {
-    if (threadId) void loadOlder(threadId);
-  }, [threadId, loadOlder]);
+  const onNearTop = useCallback(() => void loadOlder(threadId), [threadId, loadOlder]);
 
-  if (!selectedId || !thread) return <Starter visible={visible} />;
+  if (!thread) return null;
 
   const loading = !live || live.status === "loading";
   const empty = !loading && live.status === "ready" && rows.length === 0;
@@ -392,6 +417,7 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
         plans={plans ?? NO_PLANS}
         actions={actions}
         changes={<ChangesToggle open={changesOpen} onToggle={toggleChanges} />}
+        onClose={cell?.onClose}
       />
       <div className="relative flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -497,7 +523,7 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
               lastMessage={lastMessage}
               composerRef={composer}
               prefill={prefill}
-              visible={visible}
+              visible={visible && (!cell || cell.selected)}
             />
           </div>
         </div>
@@ -511,6 +537,155 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+type GridCell = { selected: boolean; onClose: () => void };
+
+const THREAD_MIME = "application/x-vibezeo-thread";
+
+/** Rail rows carry their thread id when dragged (F-TH-14). */
+export function dragThread(e: DragEvent, id: string): void {
+  e.dataTransfer.setData(THREAD_MIME, id);
+  e.dataTransfer.effectAllowed = "copy";
+}
+
+/** Adds a thread to the grid and says why when it can't (F-TH-14 AC1). */
+export function useAddToGrid(): (id: string) => void {
+  const addToGrid = useThreads((s) => s.addToGrid);
+  const openUpgrade = useUi((s) => s.openUpgrade);
+  const { show } = useToast();
+  return useCallback(
+    (id: string) => {
+      const result = addToGrid(id);
+      if (result === "full") show({ tone: "warning", title: t("thread.grid.full", { n: GRID_MAX }) });
+      if (result === "limit") {
+        const limit = useSession.getState().entitlement?.limits.threadGrid ?? 1;
+        show({
+          tone: "info",
+          title: t("thread.grid.freeTitle"),
+          body: t("thread.grid.freeBody"),
+          action: {
+            label: t("thread.grid.plans"),
+            onClick: () => openUpgrade({ kind: "thread_grid", limit }),
+          },
+        });
+      }
+    },
+    [addToGrid, openUpgrade, show],
+  );
+}
+
+/** The thread area takes threads dragged from the rail. */
+function useGridDrop(): {
+  over: boolean;
+  handlers: Pick<HTMLAttributes<HTMLDivElement>, "onDragOver" | "onDragLeave" | "onDrop">;
+} {
+  const add = useAddToGrid();
+  const [over, setOver] = useState(false);
+  const carries = (e: DragEvent) => Array.from(e.dataTransfer.types).includes(THREAD_MIME);
+  return {
+    over,
+    handlers: {
+      onDragOver: (e) => {
+        if (!carries(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        setOver(true);
+      },
+      onDragLeave: (e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false);
+      },
+      onDrop: (e) => {
+        if (!carries(e)) return;
+        e.preventDefault();
+        setOver(false);
+        const id = e.dataTransfer.getData(THREAD_MIME);
+        if (id) add(id);
+      },
+    },
+  };
+}
+
+/** F-TH-14: up to six threads side by side, 1–3 columns by width. */
+function ThreadGrid({ visible, grid }: { visible: boolean; grid: string[] }) {
+  const selectedId = useThreads((s) => s.selectedId);
+  const select = useThreads((s) => s.select);
+  const remove = useThreads((s) => s.removeFromGrid);
+  const setColumns = useThreads((s) => s.setGridColumns);
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(1200);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setWidth(el.clientWidth || 1200);
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth || 1200));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const columns = columnsFor(width, grid.length);
+  useEffect(() => setColumns(columns), [columns, setColumns]);
+  return (
+    <div
+      ref={ref}
+      data-testid="thread-grid"
+      className={cx("grid h-full min-h-0 auto-rows-fr gap-px bg-border", COLUMNS[columns] ?? "grid-cols-3")}
+    >
+      {grid.map((id) => (
+        <div
+          key={id}
+          data-testid="grid-cell"
+          data-thread-id={id}
+          aria-current={id === selectedId ? "true" : undefined}
+          className={cx(
+            "relative min-h-0 min-w-0 bg-surface-1",
+            id === selectedId && "ring-1 ring-inset ring-accent",
+          )}
+          onPointerDownCapture={() => id !== selectedId && select(id)}
+          onFocusCapture={() => id !== useThreads.getState().selectedId && select(id)}
+        >
+          <ThreadView
+            threadId={id}
+            visible={visible}
+            cell={{ selected: id === selectedId, onClose: () => remove(id) }}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const COLUMNS: Record<number, string> = { 1: "grid-cols-1", 2: "grid-cols-2", 3: "grid-cols-3" };
+
+/** UI-20/21/22/23: Thread mode's main area: one thread, a grid of them
+ * (F-TH-14), or the starter. `visible`: Thread mode is showing (every
+ * surface stays mounted, F-SH-02). */
+export function ThreadMain({ visible = true }: { visible?: boolean }) {
+  const selectedId = useThreads((s) => s.selectedId);
+  const exists = useThreads((s) => s.list.some((th) => th.id === s.selectedId));
+  const saved = useThreads((s) => s.grid);
+  // The plan decides how many show; a saved grid outlives a downgrade.
+  const limit = useSession((s) => s.entitlement?.limits.threadGrid ?? 1);
+  const grid = useMemo(() => (limit > 1 ? saved.slice(0, Math.min(limit, GRID_MAX)) : []), [saved, limit]);
+  const { show } = useToast();
+  useThreadDrops(show);
+  const { over, handlers } = useGridDrop();
+  return (
+    <div className="relative h-full min-h-0" data-testid="thread-area" {...handlers}>
+      {grid.length > 1 ? (
+        <ThreadGrid visible={visible} grid={grid} />
+      ) : selectedId && exists ? (
+        <ThreadView threadId={selectedId} visible={visible} />
+      ) : (
+        <Starter visible={visible} />
+      )}
+      {over && (
+        <div className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center rounded-md border-2 border-dashed border-accent bg-surface-2/80 text-md text-fg">
+          {t("thread.grid.drop")}
+        </div>
+      )}
     </div>
   );
 }

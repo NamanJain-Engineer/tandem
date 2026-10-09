@@ -220,7 +220,12 @@ describe("command registry (F-SH-09)", () => {
       const inThread = spec.enabledWhen === "thread_open";
       act(() => {
         useThreads.setState({ selectedId: inThread ? "thr_open" : null });
-        useUi.setState({ paletteOpen: true, mode: inThread ? "thread" : "code", settingsOpen: false, upgrade: { open: false } });
+        useUi.setState({
+          paletteOpen: true,
+          mode: inThread ? "thread" : "code",
+          settingsOpen: false,
+          upgrade: { open: false },
+        });
       });
       const spy = vi.spyOn(handlers, spec.id).mockImplementation(() => undefined);
       const option = screen

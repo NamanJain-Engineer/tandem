@@ -177,7 +177,7 @@
     "pc": "Mod+Alt+Left",
     "pcTerminal": "Mod+Alt+Left",
     "inText": false,
-    "enabledWhen": "pane_focused"
+    "enabledWhen": "pane_or_cell"
   },
   {
     "id": "pane.focus_right",
@@ -186,7 +186,7 @@
     "pc": "Mod+Alt+Right",
     "pcTerminal": "Mod+Alt+Right",
     "inText": false,
-    "enabledWhen": "pane_focused"
+    "enabledWhen": "pane_or_cell"
   },
   {
     "id": "pane.focus_up",
@@ -195,7 +195,7 @@
     "pc": "Mod+Alt+Up",
     "pcTerminal": "Mod+Alt+Up",
     "inText": false,
-    "enabledWhen": "pane_focused"
+    "enabledWhen": "pane_or_cell"
   },
   {
     "id": "pane.focus_down",
@@ -204,7 +204,7 @@
     "pc": "Mod+Alt+Down",
     "pcTerminal": "Mod+Alt+Down",
     "inText": false,
-    "enabledWhen": "pane_focused"
+    "enabledWhen": "pane_or_cell"
   },
   {
     "id": "pane.focus_prev",

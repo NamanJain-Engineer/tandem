@@ -90,7 +90,12 @@ const ensuring = new Map<string, Promise<void>>();
 
 function save(tabId: string, t: TabPanes): Promise<void> {
   if (!t.tree) return Promise.resolve();
-  return invoke("layout_save", { tabId, tree: t.tree, activePaneId: t.active, maximizedPaneId: t.maximized }).then(
+  return invoke("layout_save", {
+    tabId,
+    tree: t.tree,
+    activePaneId: t.active,
+    maximizedPaneId: t.maximized,
+  }).then(
     () => undefined,
     () => undefined,
   );
@@ -349,14 +354,21 @@ export const useLayout = create<LayoutState>((set, get) => {
 
     arrange: (tabId) => {
       const box = get().boxes[tabId];
-      update(tabId, (t) => (t.tree ? { ...t, tree: autoGrid(leaves(t.tree), box, GUTTER), maximized: null } : t));
+      update(tabId, (t) =>
+        t.tree ? { ...t, tree: autoGrid(leaves(t.tree), box, GUTTER), maximized: null } : t,
+      );
     },
 
     setHumanName: (tabId, paneId, name) => {
       const tab = get().tabs[tabId];
       const pane = tab?.panes[paneId];
       if (!tab || !pane) return;
-      set({ tabs: { ...get().tabs, [tabId]: { ...tab, panes: { ...tab.panes, [paneId]: { ...pane, humanName: name } } } } });
+      set({
+        tabs: {
+          ...get().tabs,
+          [tabId]: { ...tab, panes: { ...tab.panes, [paneId]: { ...pane, humanName: name } } },
+        },
+      });
     },
 
     toggleCards: (tabId) => {

@@ -78,7 +78,10 @@ let following = false;
 export function followFocus(): void {
   if (following) return;
   following = true;
-  void listen<{ source: SourceRef; flash: boolean; location?: FocusLocation | null }>("ui:focus", ({ source, location }) => {
-    void showSource(source, location);
-  });
+  void listen<{ source: SourceRef; flash: boolean; location?: FocusLocation | null }>(
+    "ui:focus",
+    ({ source, location }) => {
+      void showSource(source, location);
+    },
+  );
 }

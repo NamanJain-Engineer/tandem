@@ -39,5 +39,7 @@ export const useOnboarding = create<OnboardingStore>((set, get) => ({
 
 /** Tests. */
 export function resetOnboarding(): void {
-  useOnboarding.setState({ state: { step: null, done: true, steps: ["engines", "accounts", "privacy", "workspace"] } });
+  useOnboarding.setState({
+    state: { step: null, done: true, steps: ["engines", "accounts", "privacy", "workspace"] },
+  });
 }

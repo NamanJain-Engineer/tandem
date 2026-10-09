@@ -10,7 +10,10 @@ import type {
 } from "@tandem/protocol";
 import { invoke, inTauri, usingFakeBackend } from "../ipc/invoke";
 import { listen } from "../ipc/events";
+import { addCell, neighbor, removeCell, type GridAdd } from "../features/thread/grid";
 import { emptyThread, fromHistory, reduce, type ThreadView } from "../features/thread/reducer";
+import { useSession } from "./session";
+import { useSettings } from "./settings";
 
 /** Events loaded when a thread opens, and per "load older" page. */
 export const PAGE = 200;
@@ -46,12 +49,26 @@ type ThreadsState = {
   open: (id: string) => Promise<void>;
   loadOlder: (id: string) => Promise<void>;
   reloadDetail: (id: string) => Promise<void>;
-  send: (id: string, text: string, attachmentIds: string[], queueIfBusy: boolean) => Promise<SendResult | IpcError>;
+  send: (
+    id: string,
+    text: string,
+    attachmentIds: string[],
+    queueIfBusy: boolean,
+  ) => Promise<SendResult | IpcError>;
   stop: (id: string) => Promise<void>;
   retry: (id: string) => Promise<IpcError | null>;
-  /** UI-24: the Changes panel is open (Mod+Alt+C). */
-  changesOpen: boolean;
-  toggleChanges: () => void;
+  /** UI-24: which threads show their Changes panel (Mod+Alt+C). */
+  changesOpen: Record<string, boolean>;
+  toggleChanges: (id?: string) => void;
+  /** F-TH-14: threads shown side by side (2–6); empty is the single view. */
+  grid: string[];
+  gridColumns: number;
+  addToGrid: (id: string) => GridAdd;
+  removeFromGrid: (id: string) => void;
+  focusCell: (dir: "left" | "right" | "up" | "down") => void;
+  setGridColumns: (n: number) => void;
+  /** The saved grid, once threads and settings are loaded. */
+  restoreGrid: () => Promise<void>;
   /** F-TH-10: Act, then send plan `version`; the draft stays. */
   implementPlan: (id: string, version: number) => Promise<IpcError | null>;
   setShowArchived: (v: boolean) => void;
@@ -116,6 +133,7 @@ export const useThreads = create<ThreadsState>((set, get) => {
           loaded: true,
           listError: null,
           selectedId: selected && list.some((t) => t.id === selected) ? selected : null,
+          grid: livingCells(get().grid, list),
         });
       } catch (e) {
         set({ loaded: true, listError: isIpcError(e) ? e : null });
@@ -132,7 +150,9 @@ export const useThreads = create<ThreadsState>((set, get) => {
         get().select(thread.id);
         return thread;
       } catch (e) {
-        return isIpcError(e) ? e : { code: "internal", message: String(e), stage: null, hint: null, retryable: false };
+        return isIpcError(e)
+          ? e
+          : { code: "internal", message: String(e), stage: null, hint: null, retryable: false };
       }
     },
     update: async (id, p) => {
@@ -164,7 +184,10 @@ export const useThreads = create<ThreadsState>((set, get) => {
     remove: async (id) => {
       try {
         await invoke("thread_delete", { threadId: id });
-        set((s) => ({ list: s.list.filter((t) => t.id !== id), selectedId: s.selectedId === id ? null : s.selectedId }));
+        set((s) => ({
+          list: s.list.filter((t) => t.id !== id),
+          selectedId: s.selectedId === id ? null : s.selectedId,
+        }));
         return null;
       } catch (e) {
         return isIpcError(e) ? e : null;
@@ -211,7 +234,11 @@ export const useThreads = create<ThreadsState>((set, get) => {
     loadOlder: async (id) => {
       const cur = get().byId[id];
       if (!cur || cur.nextBeforeId === null) return;
-      const page = await invoke<ThreadEventPage>("thread_events", { threadId: id, beforeId: cur.nextBeforeId, limit: PAGE });
+      const page = await invoke<ThreadEventPage>("thread_events", {
+        threadId: id,
+        beforeId: cur.nextBeforeId,
+        limit: PAGE,
+      });
       const history = [...page.items, ...cur.history];
       // Older turns go first; live events since subscribing replay on top.
       const view = cur.live.reduce(reduce, fromHistory(history));
@@ -228,11 +255,18 @@ export const useThreads = create<ThreadsState>((set, get) => {
     },
     send: async (id, text, attachmentIds, queueIfBusy) => {
       try {
-        const res = await invoke<SendResult>("thread_send", { threadId: id, text, attachmentIds, queueIfBusy });
+        const res = await invoke<SendResult>("thread_send", {
+          threadId: id,
+          text,
+          attachmentIds,
+          queueIfBusy,
+        });
         void get().reloadDetail(id);
         return res;
       } catch (e) {
-        return isIpcError(e) ? e : { code: "internal", message: String(e), stage: null, hint: null, retryable: false };
+        return isIpcError(e)
+          ? e
+          : { code: "internal", message: String(e), stage: null, hint: null, retryable: false };
       }
     },
     stop: async (id) => {
@@ -254,33 +288,111 @@ export const useThreads = create<ThreadsState>((set, get) => {
         void get().reloadDetail(id);
         return null;
       } catch (e) {
-        return isIpcError(e) ? e : { code: "internal", message: String(e), stage: null, hint: null, retryable: false };
+        return isIpcError(e)
+          ? e
+          : { code: "internal", message: String(e), stage: null, hint: null, retryable: false };
       }
     },
     setShowArchived: (v) => set({ showArchived: v }),
-    changesOpen: false,
-    toggleChanges: () => set((s) => ({ changesOpen: !s.changesOpen })),
+    changesOpen: {},
+    toggleChanges: (id) => {
+      const key = id ?? get().selectedId;
+      if (key) set((s) => ({ changesOpen: { ...s.changesOpen, [key]: !s.changesOpen[key] } }));
+    },
+    grid: [],
+    gridColumns: 1,
+    addToGrid: (id) => {
+      const limit = useSession.getState().entitlement?.limits.threadGrid ?? 1;
+      const { grid, result } = addCell(get().grid, get().selectedId, id, limit);
+      if (result === "added" || result === "present") {
+        if (grid !== get().grid) {
+          set({ grid: grid.length > 1 ? grid : [] });
+          saveGrid(grid.length > 1 ? grid : []);
+        }
+        get().select(id);
+      }
+      return result;
+    },
+    removeFromGrid: (id) => {
+      const { grid, open } = removeCell(get().grid, get().selectedId, id);
+      set({ grid });
+      saveGrid(grid);
+      if (open !== get().selectedId) get().select(open);
+    },
+    focusCell: (dir) => {
+      const { grid, selectedId, gridColumns } = get();
+      if (!selectedId || grid.length < 2) return;
+      const to = neighbor(grid, selectedId, dir, gridColumns);
+      if (to !== selectedId) get().select(to);
+    },
+    setGridColumns: (n) => {
+      if (n !== get().gridColumns) set({ gridColumns: n });
+    },
+    restoreGrid: async () => {
+      if (!useSettings.getState().loaded)
+        await useSettings
+          .getState()
+          .load()
+          .catch(() => undefined);
+      const saved = useSettings.getState().values.thread_grid as { ids?: unknown } | undefined;
+      const ids = Array.isArray(saved?.ids)
+        ? saved.ids.filter((x): x is string => typeof x === "string")
+        : [];
+      const grid = livingCells(ids, get().list);
+      if (grid.length < 2) return;
+      set({ grid });
+      const open = get().selectedId;
+      get().select(open && grid.includes(open) ? open : (grid[0] ?? null));
+    },
   };
 });
 
 let following = false;
 
+/** Grid cells whose threads still exist and aren't archived; one left is no grid. */
+function livingCells(ids: string[], list: Thread[]): string[] {
+  const alive = ids.filter((id) => list.some((t) => t.id === id && !t.archived));
+  return alive.length > 1 ? alive : [];
+}
+
+function saveGrid(ids: string[]): void {
+  void useSettings.getState().set("thread_grid", { ids });
+}
+
 /** Tests: an empty store and no subscriptions. */
 export function resetThreads(): void {
   subscribed.clear();
-  useThreads.setState({ list: [], loaded: false, listError: null, selectedId: null, showArchived: false, byId: {} });
+  useThreads.setState({
+    list: [],
+    loaded: false,
+    listError: null,
+    selectedId: null,
+    showArchived: false,
+    byId: {},
+    grid: [],
+    gridColumns: 1,
+    changesOpen: {},
+  });
 }
 
 /** Loads the thread list and keeps it fresh from `threads:changed`. */
 export function followThreads(): void {
   if (following) return;
   following = true;
-  void useThreads.getState().refresh();
+  void useThreads
+    .getState()
+    .refresh()
+    .then(() => useThreads.getState().restoreGrid());
   void listen<ThreadsChanged>("threads:changed", (p) => {
-    useThreads.setState((s) => ({
-      list: p.threads,
-      loaded: true,
-      selectedId: s.selectedId && p.threads.some((t) => t.id === s.selectedId) ? s.selectedId : null,
-    }));
+    useThreads.setState((s) => {
+      const grid = livingCells(s.grid, p.threads);
+      if (grid.length !== s.grid.length) saveGrid(grid);
+      return {
+        list: p.threads,
+        loaded: true,
+        selectedId: s.selectedId && p.threads.some((t) => t.id === s.selectedId) ? s.selectedId : null,
+        grid,
+      };
+    });
   });
 }

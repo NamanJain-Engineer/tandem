@@ -12,7 +12,8 @@ import { UiProvider } from "@tandem/ui";
 import { useEngines } from "../../stores/engines";
 import { useThreads } from "../../stores/threads";
 import { useWorkspaces } from "../../stores/workspaces";
-import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
+import { useSession } from "../../stores/session";
+import { FREE, FREE_VIEW, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { referencedFiles } from "./ChangesPanel";
 import type { Row, ToolEvent } from "./rows";
 import { dropOnThread } from "./drops";
@@ -412,6 +413,69 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
       { path: "a.ts", wrote: true },
       { path: "b.ts", wrote: false },
     ]);
+  });
+
+  it("F-TH-14.1 threads dropped from the rail show side by side, up to 6; Free shows 1", async () => {
+    const threads = Array.from({ length: 7 }, (_, i) => thread({ title: `Grid ${i}` }));
+    const calls: Call[] = fakeBackend({
+      thread_list: () => threads,
+      thread_get: (a) => detail(threads.find((x) => x.id === a?.threadId) ?? (threads[0] as Thread)),
+      thread_events: () => ({ items: [], nextBeforeId: null }),
+      thread_subscribe: () => null,
+      models_list: () => [],
+      settings_set: () => null,
+    });
+    act(() => useSession.setState({ entitlement: { ...FREE_VIEW, limits: { ...FREE, threadGrid: 6 } } }));
+    await act(async () => {
+      await useThreads.getState().refresh();
+      useThreads.getState().select(threads[0]?.id ?? null);
+    });
+    mount(<ThreadMain />);
+    await screen.findByTestId("thread-main");
+    const area = screen.getByTestId("thread-area");
+    const drop = (id: string) => {
+      const data = new Map([["application/x-vibezeo-thread", id]]);
+      const dataTransfer = {
+        types: [...data.keys()],
+        getData: (k: string) => data.get(k) ?? "",
+        dropEffect: "none",
+      };
+      fireEvent.dragOver(area, { dataTransfer });
+      fireEvent.drop(area, { dataTransfer });
+    };
+    for (const th of threads.slice(1)) act(() => drop(th.id));
+    const cells = await screen.findAllByTestId("grid-cell");
+    expect(cells.map((c) => c.getAttribute("data-thread-id"))).toEqual(
+      threads.slice(0, 6).map((th) => th.id),
+    );
+    expect(await screen.findByText("Grid is full (6)")).toBeTruthy();
+    // The layout is saved for the next launch.
+    const saved = calls.filter((c) => c.cmd === "settings_set" && c.args?.key === "thread_grid").at(-1);
+    expect(saved?.args?.value).toEqual({ ids: threads.slice(0, 6).map((th) => th.id) });
+    // Mod+Alt+Arrow moves between cells; closing one keeps the rest.
+    // The thread dropped last is the open one.
+    expect(useThreads.getState().selectedId).toBe(threads[5]?.id);
+    act(() => {
+      useThreads.getState().setGridColumns(3);
+      useThreads.getState().select(threads[0]?.id ?? null);
+    });
+    act(() => useThreads.getState().focusCell("right"));
+    expect(useThreads.getState().selectedId).toBe(threads[1]?.id);
+    act(() => useThreads.getState().focusCell("down"));
+    expect(useThreads.getState().selectedId).toBe(threads[4]?.id);
+    fireEvent.click(within(cells[4] as HTMLElement).getByTestId("grid-close"));
+    await waitFor(() => expect(screen.getAllByTestId("grid-cell")).toHaveLength(5));
+
+    // Free: a second thread stays in the list.
+    act(() => {
+      useThreads.getState().removeFromGrid(threads[1]?.id ?? "");
+      for (const th of threads.slice(2, 6)) useThreads.getState().removeFromGrid(th.id);
+      useSession.setState({ entitlement: FREE_VIEW });
+    });
+    expect(screen.queryAllByTestId("grid-cell")).toHaveLength(0);
+    act(() => drop(threads[6]?.id ?? ""));
+    expect(await screen.findByText("Free shows 1 thread at a time")).toBeTruthy();
+    expect(screen.queryAllByTestId("grid-cell")).toHaveLength(0);
   });
 
   it("F-TH-07.3 a failed send puts the text back ahead of anything typed since", async () => {

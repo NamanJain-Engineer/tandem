@@ -24,7 +24,9 @@ export const useUpdates = create<UpdatesStore>((set) => ({
     if (state) set({ state });
   },
   checkNow: async () => {
-    const state = await invoke<UpdateState>("updates_check_now", {}, { timeoutMs: 600_000 }).catch(() => null);
+    const state = await invoke<UpdateState>("updates_check_now", {}, { timeoutMs: 600_000 }).catch(
+      () => null,
+    );
     if (state) set({ state });
   },
   setChannel: async (channel) => {

@@ -138,6 +138,7 @@ setting_keys! {
     OfflineStartedAt,
     RailWidth,
     ThreadDefaults,
+    ThreadGrid,
 }
 
 /// How a value is checked before it is stored.
@@ -790,6 +791,7 @@ pub static SCHEMA: &[SettingSpec] = &[
     // Thread mode's remembered defaults (F-TH-07 AC4): `last_engine`, and
     // per engine `<engine>.model`, `<engine>.effort`, `<engine>.access`.
     spec!(ThreadDefaults, json!({}), V::Map, Hidden, []),
+    spec!(ThreadGrid, json!({"ids": []}), V::Map, Hidden, []),
 ];
 
 pub fn spec(key: SettingKey) -> &'static SettingSpec {
