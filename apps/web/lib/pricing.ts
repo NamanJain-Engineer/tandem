@@ -27,6 +27,7 @@ export const PLANS: readonly Plan[] = [
       { text: "3 workspaces" },
       { text: "Every supported engine, on your own accounts" },
       { text: "Dashboard, notifications and crash-safe restore" },
+      { text: "Thread mode, one thread at a time" },
       { text: "Signed updates, always, even after a paid plan ends" },
     ],
   },
@@ -37,7 +38,11 @@ export const PLANS: readonly Plan[] = [
     cadence: "per month, or $290 a year",
     summary: "For developers who run many agents every day.",
     trial: "7-day free trial · 14-day money-back on the first charge",
-    features: [{ text: "Everything in Free" }, { text: "Unlimited panes and workspaces" }],
+    features: [
+      { text: "Everything in Free" },
+      { text: "Unlimited panes and workspaces" },
+      { text: "Up to 6 threads side by side" },
+    ],
   },
   {
     id: "team",

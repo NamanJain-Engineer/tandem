@@ -16,11 +16,26 @@ import {
 const root = new URL("../../../..", import.meta.url).pathname;
 const COMMANDS = JSON.parse(readFileSync(join(root, "packages/protocol/shortcuts.json"), "utf8")) as Array<{
   id: string;
+  enabledWhen: string;
 }>;
 const EN = JSON.parse(readFileSync(join(root, "apps/desktop/src/i18n/en.json"), "utf8")) as Record<
   string,
   string
 >;
+
+/** Thread mode with a thread open, for commands that act on the open thread. */
+async function openThread(): Promise<void> {
+  const list = await invoke<Array<{ id: string }>>("thread_list", { kind: "thread" });
+  const id =
+    list[0]?.id ??
+    (await invoke<{ id: string }>("thread_create", { args: { kind: "thread", workspaceId: null } })).id;
+  await browser.keys([mod(), "3"]);
+  await browser.waitUntil(async () => (await mode()) === "Thread", { timeout: 3_000 });
+  const row = $(`[data-testid="thread-row"][data-thread-id="${id}"]`);
+  await row.waitForClickable({ timeout: 10_000 });
+  await row.click();
+  await $(`[data-testid="thread-main"][data-thread-id="${id}"]`).waitForExist({ timeout: 10_000 });
+}
 
 async function focusTerminal(pane: string): Promise<void> {
   await $(`[data-testid="terminal"][data-pane-id="${pane}"]`).click();
@@ -152,6 +167,7 @@ describe("E2E-M3-9 keyboard", () => {
     ids.push(...last);
     for (const id of ids) {
       const was = (await runs())[id] ?? 0;
+      if (COMMANDS.find((c) => c.id === id)?.enabledWhen === "thread_open") await openThread();
       await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
       await browser.keys([mod(), "k"]);
       const input = $('input[placeholder="Type a command or search…"]');

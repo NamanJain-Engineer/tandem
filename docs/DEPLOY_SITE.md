@@ -2,7 +2,9 @@
 
 The public site is the static export of `apps/web` (D-102): Home, About, Privacy, Terms, Security, a 404 page, `robots.txt`, `sitemap.xml` and `/.well-known/security.txt`. It needs no server, database or API, and is hosted on Vercel.
 
-Vercel deploys it from `main`. Every push to `main` that changes `apps/web`, `packages/ui` or `pnpm-lock.yaml` updates the live site. Other pushes are skipped by the rule in `apps/web/vercel.json`. Other branches get preview deployments, which Vercel's Deployment Protection keeps behind a Vercel login.
+Vercel deploys it from `main`. Every push to `main` that changes `apps/web`, `packages/ui`, `packages/protocol`, the desktop interface (`apps/desktop/src`, `demo.html`, `vite.demo.config.ts`, `package.json`) or `pnpm-lock.yaml` updates the live site. Other pushes are skipped by the rule in `apps/web/vercel.json`.
+
+The live demo at `/demo/app/` is the desktop interface built for the browser against a simulated core (`apps/desktop/src/demo`, D-126). `build:site` builds it first (`pnpm --filter desktop build:demo`, into `apps/web/public/demo/app/`, which git ignores), so Vercel installs the desktop app's dependencies too (`--filter desktop...`). It's the only page with scripts; they're first-party and make no network requests. Other branches get preview deployments, which Vercel's Deployment Protection keeps behind a Vercel login.
 
 ```bash
 pnpm --filter web build:site     # writes apps/web/out

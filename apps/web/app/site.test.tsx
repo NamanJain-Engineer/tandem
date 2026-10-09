@@ -194,7 +194,7 @@ describe("public site", () => {
     for (const d of DOWNLOADS) for (const a of d.assets) expect(a.file, a.file).toMatch(/^Vibezeo_/);
     const h = html(<HomePage />);
     expect(h).toContain("The goal is that Linux, macOS and Windows get the same features on the same day");
-    expect(h).toContain("milestones in the 0.1.0 release");
+    expect(h).toContain(`milestones in the ${RELEASE.version} release`);
   });
 
   it("F-WB-01 search engines get a canonical URL for every page, a share image and PNG icons", () => {
@@ -231,7 +231,7 @@ describe("public site", () => {
   it("F-WB-01 the changelog lists every closed milestone", () => {
     const h = html(<ChangelogPage />);
     for (const m of MILESTONES) expect(h).toContain(`id="${m.id.toLowerCase()}"`);
-    expect(MILESTONES.map((m) => m.id)).toEqual(["M5", "M4", "M3", "M2", "M1", "M0"]);
+    expect(MILESTONES.map((m) => m.id)).toEqual(["M7", "M6", "M5", "M4", "M3", "M2", "M1", "M0"]);
   });
 
   it("F-WB-01 every page has one h1, the legal links and the contact address", () => {

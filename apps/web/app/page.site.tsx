@@ -9,7 +9,7 @@ import { EARLY_ACCESS_HREF, ENGINES, SITE } from "../lib/site";
 
 export const metadata: Metadata = { alternates: { canonical: "/" } };
 
-/** What the desktop app does today (milestones M0–M5). */
+/** What the desktop app does today (milestones M0–M7). */
 const FEATURES = [
   {
     title: "Real terminals, side by side",
@@ -26,6 +26,22 @@ const FEATURES = [
   {
     title: "One Dashboard",
     body: "Every live agent in one place, across all your workspaces: what each one is doing and which ones are waiting for you. One click jumps to the pane that needs you.",
+  },
+  {
+    title: "Thread mode",
+    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched.",
+  },
+  {
+    title: "Switch engines mid-thread",
+    body: "Move a thread to another engine and it starts with a summary of what was said, marked in the conversation. Pro shows up to six threads side by side, each with its own composer; Free shows one at a time.",
+  },
+  {
+    title: "Worktree lanes and handoff",
+    body: "Run a task in its own git worktree and branch, then merge it back. Hand a session to another engine with a written summary, in a pane beside it or as a thread.",
+  },
+  {
+    title: "Several accounts per engine",
+    body: "Keep work and personal accounts apart, each signed in by itself, with usage, limits and context in view.",
   },
   {
     title: "Notifications that matter",
@@ -60,24 +76,12 @@ const CLAUDE = [
   {
     tag: "Built, live when accounts open",
     title: "Hosted features on the Claude API",
-    body: "Vibezeo's hosted AI runs on the Claude API. Session titles and Enhance and Polish for dictated prompts are built: the backend calls Claude, meters credits, and stores no prompts or responses. They go live when accounts open, alongside Thread mode and Dictate in the app. Teammate drafts and the Auto supervisor come next.",
+    body: "Vibezeo's hosted AI runs on the Claude API. Session titles and Enhance and Polish for dictated prompts are built: the backend calls Claude, meters credits, and stores no prompts or responses. They go live when accounts open, alongside Dictate in the app. Teammate drafts and the Auto supervisor come next.",
   },
 ] as const;
 
 /** Later milestones, in build order. */
 const ROADMAP = [
-  {
-    title: "Lanes, presets and handoff",
-    body: "Run one task across several engines, each in its own git worktree, then compare and hand work from one to another.",
-  },
-  {
-    title: "Accounts and usage",
-    body: "Keep work and personal accounts for each engine apart, each signed in by itself, with usage and limits in view.",
-  },
-  {
-    title: "Thread mode",
-    body: "Read a coding session as a conversation instead of watching a TUI, with inline approvals and a changes panel.",
-  },
   {
     title: "Dictate",
     body: "Push-to-talk anywhere in the app, with speech recognized on your machine.",
@@ -122,7 +126,7 @@ const PRINCIPLES = [
 const FAQ = [
   {
     q: "Can I use Vibezeo today?",
-    a: "Yes. Download Vibezeo 0.1.0 for Linux from the download page. It runs the Free plan on your computer with no account, and doesn't contact our servers.",
+    a: `Yes. Download Vibezeo ${RELEASE.version} for Linux from the download page. It runs the Free plan on your computer with no account, and doesn't contact our servers.`,
   },
   {
     q: "How does Vibezeo use Claude?",
@@ -180,7 +184,7 @@ function Screenshot({
 }
 
 const STATS = [
-  { value: String(PROGRESS.milestones), label: "milestones in the 0.1.0 release" },
+  { value: String(PROGRESS.milestones), label: `milestones in the ${RELEASE.version} release` },
   {
     value: PROGRESS.automatedTests.toLocaleString("en-US"),
     label: "automated tests in its code",
