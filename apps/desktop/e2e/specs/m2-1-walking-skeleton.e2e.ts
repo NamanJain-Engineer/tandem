@@ -4,13 +4,13 @@ import {
   addFolder,
   browserLog,
   planFooter,
+  resetToWelcome,
   signInDesktop,
   signUpVerified,
   terminalLines,
   terminalText,
   typeInTerminal,
   uniqueEmail,
-  waitForApp,
   workspaceRoots,
 } from "../support/app";
 
@@ -24,7 +24,9 @@ describe("E2E-M2-1 walking skeleton", () => {
   });
 
   it("launches fresh at sign-in, which passes axe", async () => {
-    await waitForApp();
+    // Specs run in name order and others (m13-*, m16-*) now come first: start
+    // from the sign-in screen here rather than rely on m0-boot's fresh launch.
+    await resetToWelcome();
     await $("#signin-title").waitForDisplayed({ timeout: 20_000 });
     expect(await $("#signin-title").getText()).toBe("Welcome to Vibezeo");
     await expectNoSeriousA11yViolationsInBothThemes();

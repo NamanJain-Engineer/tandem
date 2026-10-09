@@ -1,6 +1,6 @@
 // `pnpm db:seed`: the MILESTONES §1 accounts, all verified, password
 // `Tandem-dev-pass-1`. Safe to run repeatedly.
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import { buildDeps } from "../buildDeps";
 import { loadEnv } from "../env";
@@ -101,6 +101,9 @@ async function seedTeam(
   const owner = ids.get("owner");
   const member = ids.get("member");
   if (!owner || !member) throw new Error("seed: team users missing");
+  // Re-runnable: tests may have moved these users into other orgs (one org per user).
+  await deps.db.delete(orgs).where(eq(orgs.ownerId, owner));
+  await deps.db.delete(orgMembers).where(inArray(orgMembers.userId, [owner, member]));
   await deps.db.delete(orgs).where(eq(orgs.id, SEED_ORG_ID));
   await deps.db.delete(subscriptions).where(eq(subscriptions.ownerId, SEED_ORG_ID));
   await deps.db.insert(orgs).values({ id: SEED_ORG_ID, name: "Acme", ownerId: owner });

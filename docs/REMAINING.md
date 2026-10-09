@@ -119,16 +119,16 @@ E2E-M12-1…6: OAuth, OAuth failures, grants, interactive approval, held draft, 
 The metered hosted features (credits ledger, AI and STT relays, cloud
 Dictate, Enhance and Polish, credit packs), refunds, the Team plan with admin
 policy and audit, and the transparency page.
-- [ ] F-BE-05 Credits ledger
-- [ ] F-BE-06 Hosted AI relay (titles and Enhance/Polish routes exist, D-103/D-106)
-- [ ] F-BE-07 STT relay
-- [ ] F-DI-05 Cloud speech-to-text (Pro, credits)
-- [ ] F-DI-10 Enhance and Polish (Pro, credits)
-- [ ] F-BL-03 Credit packs
-- [ ] F-BL-05 Refunds
-- [ ] F-BL-06 Team plan (P1 core; SSO is P2, M16)
-- [ ] F-TL-07 Transparency page
-- [ ] F-TL-10 Audit log (Team)
+- [x] F-BE-05 Credits ledger
+- [x] F-BE-06 Hosted AI relay (titles, Enhance/Polish and teammate drafts; `/auto/next` and the voice routes come with their M16 features)
+- [x] F-BE-07 STT relay
+- [ ] F-DI-05 Cloud speech-to-text (Pro, credits): the M8 session's; the relay and the desktop client are done (M13, ARCHITECTURE §14.11)
+- [ ] F-DI-10 Enhance and Polish (Pro, credits): the M8 session's; the route and the desktop client are done (M13)
+- [x] F-BL-03 Credit packs
+- [x] F-BL-05 Refunds
+- [x] F-BL-06 Team plan (P1 core; SSO is P2, M16, queued in the M13 session's chain)
+- [x] F-TL-07 Transparency page
+- [x] F-TL-10 Audit log (Team)
 
 Tasks: ledger; AI relay; STT relay; cloud Dictate; Enhance and Polish; credit
 packs; refunds; Team core; audit; transparency.
