@@ -4,7 +4,7 @@
 // button. The tree follows the disk through `fs_watch` while the tab exists.
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ChevronsDownUp, Eye, EyeOff, FilePlus, FolderPlus, FolderTree, RefreshCw } from "lucide-react";
-import type { FsEntry, FsKind, PaneRecord } from "@tandem/protocol";
+import type { FilesView, FsEntry, FsKind, PaneRecord } from "@tandem/protocol";
 import {
   Button,
   ConfirmDialog,
@@ -14,6 +14,7 @@ import {
   IconButton,
   Input,
   isMac,
+  SegmentedControl,
   useToast,
   type FileTreeNode,
   type MenuEntry,
@@ -22,10 +23,12 @@ import { t } from "../../i18n";
 import { copyText } from "../../ipc/clipboard";
 import { invoke } from "../../ipc/invoke";
 import { absolutePath, useFiles } from "../../stores/files";
+import { useGit, useGitContext } from "../../stores/git";
 import { useLayout } from "../../stores/layout";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { dropOnThread } from "../thread/drops";
+import { BranchChip, ChangeDiff, ChangesList, changeCount } from "./ChangesView";
 import { useActiveFiles } from "./context";
 import { FileEditor } from "./FileEditor";
 import { startTreeDrag } from "./treeDrag";
@@ -126,6 +129,7 @@ export function FilesPanel() {
   const [ask, setAsk] = useState<NameAsk>(null);
   const [deleting, setDeleting] = useState<FileTreeNode | null>(null);
   const [showEditor, setShowEditor] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
   const [liveDivider, setLiveDivider] = useState<number | null>(null);
   const [ref, width] = useWidth();
   const wide = width >= WIDE_AT;
@@ -137,6 +141,16 @@ export function FilesPanel() {
     void useFiles.getState().setContext(ctxJson ? (JSON.parse(ctxJson) as typeof context) : null);
   }, [ctxJson]);
   useEffect(() => () => void useFiles.getState().setContext(null), []);
+
+  // The Changes view and the branch chip: read again on every watch batch.
+  const git = useGitContext(context);
+  const batches = ctx?.batches ?? 0;
+  useEffect(() => {
+    if (batches > 0 && ctxJson) void useGit.getState().refresh(JSON.parse(ctxJson) as NonNullable<typeof context>);
+  }, [batches, ctxJson]);
+  // Picking a change in the narrow layout shows its diff.
+  const picked = git?.picked ?? null;
+  useEffect(() => setShowDiff(picked !== null), [picked]);
 
   // Opening a file in the narrow layout shows the editor.
   const activePath = ctx?.active ?? null;
@@ -317,12 +331,59 @@ export function FilesPanel() {
     window.addEventListener("pointerup", up);
   };
 
+  const view: FilesView = ctx?.view ?? "files";
+  const changes = changeCount(git?.panel);
+  const header = (
+    <div className="flex h-9 shrink-0 items-center gap-2 border-b border-divider px-2" data-testid="files-header">
+      <SegmentedControl
+        size="sm"
+        label={t("files.view.label")}
+        value={view}
+        items={[
+          { id: "files", label: t("files.view.files") },
+          { id: "changes", label: changes > 0 ? t("files.view.changesCount", { n: changes }) : t("files.view.changes") },
+        ]}
+        onValueChange={(v) => store().setView(v as FilesView)}
+      />
+      <span className="flex-1" />
+      {context && <BranchChip context={context} view={git} />}
+    </div>
+  );
+  // A change opens in the editor (paths in the Changes view are the repository's).
+  const openChange = (path: string) => {
+    const panel = git?.panel;
+    if (!panel) return;
+    store().setView("files");
+    void store().open(`${panel.root.replace(/[\\/]$/, "")}/${path}`);
+  };
+  const left = view === "changes" && context ? <ChangesList context={context} view={git} onOpenFile={openChange} /> : tree;
+  const narrowChanges =
+    showDiff && git?.picked && context ? (
+      <ChangeDiff
+        view={git}
+        onBack={() => {
+          setShowDiff(false);
+          void useGit.getState().pick(context, null);
+        }}
+      />
+    ) : (
+      left
+    );
+
   return (
-    <div ref={ref} className="flex h-full min-h-0 flex-col" data-testid="files-panel" data-layout={wide ? "wide" : "narrow"} data-root={root ?? undefined}>
+    <div
+      ref={ref}
+      className="flex h-full min-h-0 flex-col"
+      data-testid="files-panel"
+      data-layout={wide ? "wide" : "narrow"}
+      data-view={view}
+      data-root={root ?? undefined}
+    >
+      {header}
       {wide ? (
         <div className="flex min-h-0 flex-1">
           <div className="flex min-h-0 shrink-0 flex-col border-r border-divider" style={{ width: divider }}>
-            {tree}
+            {left}
           </div>
           <div
             role="separator"
@@ -342,8 +403,10 @@ export function FilesPanel() {
             }}
             className="-ml-1 w-2 shrink-0 cursor-col-resize outline-none hover:bg-accent-soft focus-visible:bg-accent-soft"
           />
-          <FileEditor />
+          {view === "changes" ? <ChangeDiff view={git} /> : <FileEditor />}
         </div>
+      ) : view === "changes" ? (
+        narrowChanges
       ) : showEditor && (ctx?.tabs.length ?? 0) > 0 ? (
         <FileEditor onBack={() => setShowEditor(false)} />
       ) : (

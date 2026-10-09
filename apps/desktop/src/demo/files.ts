@@ -1,7 +1,13 @@
 // The browser demo's Files tab: the same made-up "shop" project its terminal
 // lists (`ls`, `git status`), in memory. Edits stay in the page and checks
-// work like the core's (a stale hash is a conflict); nothing is saved.
-import type { EditorTabs, FileContent, FileDiff, FsEntry } from "@tandem/protocol";
+// work like the core's (a stale hash is a conflict); nothing is saved. Its
+// Changes view says what the terminal's `git status` says, plus the files
+// edited in the page; the demo runs no git actions (D-204).
+import type { Branch, EditorTabs, FileContent, FileDiff, FileStatus, FsEntry, GitPanel } from "@tandem/protocol";
+import { DEMO_CHANGES } from "./agent";
+
+export const DEMO_ROOT = "/home/you/shop";
+export const NO_GIT = "The browser demo doesn't run git commands.";
 
 const REDIRECT = `import type { Session } from "../session";
 
@@ -96,9 +102,40 @@ export class DemoFiles {
   }
 
   compare(path: string, text: string): FileDiff {
-    const disk = this.files.get(path) ?? "";
-    const a = disk.split("\n");
-    const b = text.split("\n");
+    return this.compareTexts(path, this.files.get(path) ?? "", text);
+  }
+
+  /** Files edited in the page, besides the ones `git status` names. */
+  private edited(): string[] {
+    return [...this.files.entries()]
+      .filter(([path, text]) => !MODIFIED.has(path) && SOURCES[path] !== text)
+      .map(([path]) => path)
+      .sort();
+  }
+
+  gitStatus(): GitPanel {
+    const unstaged: FileStatus[] = [...MODIFIED, ...this.edited()].sort().map((path) => ({ path, change: "modified" }));
+    return {
+      root: DEMO_ROOT,
+      folder: "",
+      status: { branch: "main", upstream: null, ahead: 0, behind: 0, staged: [], unstaged, noCommits: false },
+    };
+  }
+
+  gitDiff(path: string): FileDiff {
+    const known = DEMO_CHANGES.find((d) => d.path === path);
+    if (known) return known;
+    const before = SOURCES[path] ?? "";
+    return this.compareTexts(path, before, this.files.get(path) ?? "");
+  }
+
+  gitBranches(): Branch[] {
+    return [{ name: "main", current: true, remote: false, upstream: null, ahead: 0, behind: 0 }];
+  }
+
+  private compareTexts(path: string, before: string, after: string): FileDiff {
+    const a = before.split("\n");
+    const b = after.split("\n");
     const lines = [`--- a/${path}`, `+++ b/${path}`, `@@ -1,${a.length} +1,${b.length} @@`, ...a.map((l) => `-${l}`), ...b.map((l) => `+${l}`)];
     return { path, change: "modified", additions: b.length, deletions: a.length, binary: false, truncated: false, patch: lines.join("\n") };
   }

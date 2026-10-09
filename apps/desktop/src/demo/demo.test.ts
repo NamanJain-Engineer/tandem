@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type { Thread, ThreadChanges, ThreadDetail, ThreadEvent, ThreadEventEnvelope } from "@tandem/protocol";
+import type { GitPanel, Thread, ThreadChanges, ThreadDetail, ThreadEvent, ThreadEventEnvelope } from "@tandem/protocol";
 import { setInvokeBackend } from "../ipc/invoke";
 import { DemoCore, FIRST_MESSAGE } from "./backend";
 import { DemoShell, PROMPT, run } from "./shell";
@@ -107,5 +107,25 @@ describe("browser demo Files tab (F-CD-19)", () => {
     expect((core.handle("fs_read", { path: "src/checkout/redirect.ts" }) as { text: string }).text).toBe("edited\n");
     expect(() => core?.handle("fs_write", { path: "src/checkout/redirect.ts", text: "x", expectedHash: file.hash })).toThrow();
     expect(() => core?.handle("fs_delete", { path: "README.md" })).toThrow();
+  });
+
+  it("F-CD-20 its Changes view says what the terminal's git status says, plus page edits, and runs no git", () => {
+    core = new DemoCore(0);
+    const terminal = run("git status")?.join("\n") ?? "";
+    const before = core.handle("git_status", {}) as GitPanel;
+    expect(before.status.branch).toBe("main");
+    expect(terminal).toContain("On branch main");
+    for (const f of before.status.unstaged) expect(terminal).toContain(f.path);
+    expect(before.status.unstaged.map((f) => f.path)).toEqual(["src/checkout/redirect.test.ts", "src/checkout/redirect.ts"]);
+    const diff = core.handle("git_diff", { path: "src/checkout/redirect.ts", staged: false }) as { patch: string };
+    expect(diff.patch).toContain("Don't send the login page back to itself.");
+    const readme = core.handle("fs_read", { path: "README.md" }) as { hash: string };
+    core.handle("fs_write", { path: "README.md", text: "# shop, edited\n", expectedHash: readme.hash });
+    const after = core.handle("git_status", {}) as GitPanel;
+    expect(after.status.unstaged.map((f) => f.path)).toContain("README.md");
+    expect((core.handle("git_diff", { path: "README.md", staged: false }) as { patch: string }).patch).toContain("+# shop, edited");
+    for (const cmd of ["git_stage", "git_commit", "git_push", "git_switch"]) {
+      expect(() => core?.handle(cmd, { paths: ["README.md"] })).toThrow();
+    }
   });
 });

@@ -385,6 +385,17 @@ impl FilesService {
         }
     }
 
+    /// Forgets the cached status of every folder in the repository at
+    /// `repo_root` (a git action changes them all).
+    pub fn invalidate_repo(&self, repo_root: &Path) {
+        if let Ok(mut cache) = self.statuses.lock() {
+            cache.retain(|folder, (_, status)| match status {
+                Some(rs) => rs.repo.root() != repo_root,
+                None => !folder.starts_with(repo_root),
+            });
+        }
+    }
+
     /// `fs_watch`: `sink` gets every batch for the context's folder until
     /// it returns false or [`FilesService::unwatch`]. One watcher per folder.
     pub async fn watch(&self, ctx: &FileContext, sink: ChangeSink) -> Result<String, IpcError> {

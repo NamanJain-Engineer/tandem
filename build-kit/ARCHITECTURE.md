@@ -683,12 +683,14 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `lane_create_pr` | `{laneId, tabId}` | `PaneRecord` | EngineMissing ("gh not found") | F-CD-15 |
 | `lane_remove` | `{laneId, force}` (force only from window `main`; shows a native confirm in Rust) | — | Conflict ("Uncommitted changes"), PermissionDenied | F-CD-15 |
 | `lanes_sweep` | — | `[StaleLane]` | — | F-CD-15 |
-| `git_status` | `{workspaceId}` | `GitStatus {branch?, upstream?, ahead, behind, staged:[FileStatus], unstaged:[FileStatus], noCommits}` | NotFound (not a repo) | F-CD-20 |
-| `git_diff` | `{workspaceId, path, staged}` | `UnifiedDiff` | — | F-CD-20 |
-| `git_stage` / `git_unstage` / `git_discard` | `{workspaceId, paths}` | — | — | F-CD-20 |
-| `git_commit` | `{workspaceId, message}` | `{sha}` | Invalid (empty) | F-CD-20 |
-| `git_push` / `git_pull` | `{workspaceId, publish?}` | — | Unauthenticated, Conflict | F-CD-20 |
-| `git_branches` / `git_switch` / `git_create_branch` | `{workspaceId}` / `{workspaceId, branch}` / `{workspaceId, name}` | `[Branch]` / — | Conflict | F-CD-20 |
+| `git_status` | `{context: FileContext}` (the Files tab's context; the status bar passes the focused workspace) | `GitPanel {root, folder, status: GitStatus {branch?, upstream?, ahead, behind, staged:[FileStatus], unstaged:[FileStatus], noCommits}}` (paths relative to the repository `root`; `folder` is the context's folder inside it, `""` at the top), or `null` outside a repository. Read with libgit2, so no repository helper runs (TL-06 rule 6) | NotFound (folder missing) | F-CD-20 |
+| `git_diff` | `{context, path, staged}` (`path` relative to the repository) | `FileDiff` (index → working tree, or HEAD → index when `staged`) | — | F-CD-20 |
+| `git_stage` / `git_unstage` / `git_discard` | `{context, paths}` (relative to the repository; the UI confirms a discard first) | — (discard restores tracked files and deletes untracked ones) | Invalid (a path outside the repository; a conflicted file to discard) | F-CD-20 |
+| `git_commit` | `{context, message}` | `{sha}` (the repository's hooks run) | Invalid (empty message, nothing staged) | F-CD-20 |
+| `git_push` / `git_pull` | `{context, publish?}` / `{context}` (`publish`: a branch with no upstream gets one on `origin`, or the only remote; 120 s timeout) | — | Unauthenticated (git couldn't sign in without a prompt), Conflict ("Pull first", diverged, pull conflicts), Invalid (no upstream or remote; timed out) | F-CD-20 |
+| `git_branches` / `git_switch` / `git_create_branch` | `{context}` / `{context, branch}` (a local branch, or a remote one like `origin/x`, which creates its tracking branch) / `{context, name}` (from HEAD; before the first commit it names the branch to be born) | `[Branch {name, current, remote, upstream?, ahead, behind}]` / — / — | Conflict (changes the switch would overwrite; the name exists), Invalid | F-CD-20 |
+
+The git panel's actions (`git_stage` … `git_create_branch`) run the user's `git` with their config, hooks and credential helpers, never a repository fsmonitor and never a prompt (`GIT_TERMINAL_PROMPT=0`), one at a time per repository; each drops the cached status the Files tab's badges use.
 
 #### Files, editor, browser, scratchpad [F-CD-17..19, F-SH-12]
 | Command | Args | Returns | Errors | IDs |

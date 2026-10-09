@@ -279,6 +279,17 @@ async fn invariant_rule_6_read_ops_no_repo_helpers() {
     repo.local_branches().await.expect("branches");
     repo.is_merged("main", &head).await.expect("merged");
     repo.conflicts().await.expect("conflicts");
+    // The git panel's reads (F-CD-20), and its status polling: the Changes
+    // view and the status bar read the status again on every watch batch,
+    // agent turn and window focus.
+    for _ in 0..3 {
+        let polled = repo.status().await.expect("status poll");
+        assert!(polled.unstaged.iter().any(|f| f.path == "a.txt"));
+    }
+    let unstaged = repo.diff_file("a.txt", false).await.expect("unstaged diff");
+    assert!(unstaged.patch.contains("+four"), "{}", unstaged.patch);
+    repo.diff_file("a.txt", true).await.expect("staged diff");
+    repo.branches().await.expect("branch list");
 
     let cli = trap.f.git();
     for args in [

@@ -32,7 +32,7 @@ import { emitLocal } from "../ipc/events";
 import { setInvokeBackend } from "../ipc/invoke";
 import { FrameKind, encodeFrame, type FrameChannel } from "../ipc/pty";
 import { DEMO_CHANGES, afterAllow, afterDeny, chatTurn, fixTurn, type Step } from "./agent";
-import { DemoFiles } from "./files";
+import { DemoFiles, NO_GIT } from "./files";
 import { DemoShell, agentScreen } from "./shell";
 
 type Args = Record<string, unknown> | undefined;
@@ -711,6 +711,21 @@ export class DemoCore {
         throw { code: "unavailable", message: "The browser demo doesn't create, rename or delete files." };
       case "fs_watch":
         return "demo-watch";
+      case "git_status":
+        return this.files.gitStatus();
+      case "git_diff":
+        return this.files.gitDiff(String(args?.path ?? ""));
+      case "git_branches":
+        return this.files.gitBranches();
+      case "git_stage":
+      case "git_unstage":
+      case "git_discard":
+      case "git_commit":
+      case "git_push":
+      case "git_pull":
+      case "git_switch":
+      case "git_create_branch":
+        throw { code: "unavailable", message: NO_GIT };
       case "editor_tabs_get":
         return this.files.savedTabs();
       case "editor_tabs_save":

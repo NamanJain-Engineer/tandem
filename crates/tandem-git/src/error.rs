@@ -20,6 +20,9 @@ pub enum GitError {
     Conflict(String),
     #[error("{0}")]
     Invalid(String),
+    /// The remote wants credentials git couldn't get without a prompt.
+    #[error("{0}")]
+    Auth(String),
     /// TL-06 rule 5: only a person at this machine can confirm this.
     #[error("This needs a confirmation on this computer")]
     LocalOnly,
@@ -36,6 +39,7 @@ impl GitError {
             GitError::NotARepo => ErrorCode::NotFound,
             GitError::Dirty | GitError::Conflict(_) => ErrorCode::Conflict,
             GitError::Invalid(_) => ErrorCode::Invalid,
+            GitError::Auth(_) => ErrorCode::Unauthenticated,
             GitError::LocalOnly => ErrorCode::PermissionDenied,
             GitError::Io(_) => ErrorCode::Io,
             GitError::Command { .. } | GitError::Lib(_) => ErrorCode::Internal,
@@ -47,10 +51,14 @@ impl GitError {
 pub const NO_IDENTITY: &str = "Git doesn't know who you are yet. Run git config --global user.name \"Your Name\" and git config --global user.email you@example.com, then try again.";
 
 impl GitError {
-    /// Git stopped because no user.name / user.email is set.
+    /// Git stopped because no user.name / user.email is set. A commit's
+    /// message ends with "unable to auto-detect email address", which is
+    /// all the shortened stderr keeps of it.
     pub fn is_missing_identity(&self) -> bool {
         matches!(self, GitError::Command { stderr, .. }
-            if stderr.contains("Please tell me who you are") || stderr.contains("Committer identity unknown"))
+            if stderr.contains("Please tell me who you are")
+                || stderr.contains("identity unknown")
+                || stderr.contains("unable to auto-detect email address"))
     }
 }
 
@@ -84,5 +92,18 @@ mod tests {
         }
         .into();
         assert_eq!(other.message, "git merge failed: boom");
+    }
+
+    #[test]
+    fn f_cd_20_a_commit_without_a_git_identity_says_how_to_set_one() {
+        // The last lines of what `git commit` prints, as the runner keeps them.
+        let err = GitError::Command {
+            op: "commit".into(),
+            code: Some(128),
+            stderr: "to set your account's default identity.\nOmit --global to set the identity only in this repository.\nfatal: unable to auto-detect email address (got 'me@host.(none)')".into(),
+        };
+        let ipc: IpcError = err.into();
+        assert_eq!(ipc.code, ErrorCode::Invalid);
+        assert_eq!(ipc.message, NO_IDENTITY);
     }
 }

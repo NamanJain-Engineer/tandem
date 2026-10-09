@@ -6,6 +6,7 @@ pub mod accounts;
 pub mod app;
 pub mod engines;
 pub mod files;
+pub mod git;
 pub mod handoff;
 pub mod lanes;
 pub mod launch;

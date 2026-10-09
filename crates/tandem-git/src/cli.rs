@@ -172,6 +172,18 @@ impl Git {
 
     /// Runs git and returns its output whatever the exit code.
     pub async fn run(&self, mode: Mode, cwd: &Path, args: &[&OsStr]) -> Result<Output, GitError> {
+        Ok(self.run_verbose(mode, cwd, args).await?.0)
+    }
+
+    /// [`Git::run`] plus all of stderr, for telling failures apart:
+    /// [`Output::stderr`] keeps its last lines for messages, and those can
+    /// be nothing but git's hints.
+    pub async fn run_verbose(
+        &self,
+        mode: Mode,
+        cwd: &Path,
+        args: &[&OsStr],
+    ) -> Result<(Output, String), GitError> {
         if mode == Mode::Read {
             // Kept empty by us; recreated if something removed it.
             std::fs::create_dir_all(&self.empty_hooks)?;
@@ -183,28 +195,71 @@ impl Git {
                 GitError::Io(e)
             }
         })?;
-        Ok(Output {
-            stdout: out.stdout,
-            stderr: short_stderr(&out.stderr),
-            code: out.status.code(),
-        })
+        let full = String::from_utf8_lossy(&out.stderr).into_owned();
+        Ok((
+            Output {
+                stdout: out.stdout,
+                stderr: short_stderr(&out.stderr),
+                code: out.status.code(),
+            },
+            full,
+        ))
     }
 
     /// Runs git and fails on a non-zero exit.
     pub async fn ok(&self, mode: Mode, cwd: &Path, args: &[&OsStr]) -> Result<Output, GitError> {
         let out = self.run(mode, cwd, args).await?;
-        if out.success() {
-            Ok(out)
-        } else {
-            Err(GitError::Command {
-                op: args
-                    .first()
-                    .map(|a| a.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                code: out.code,
-                stderr: out.stderr,
-            })
+        checked_output(out, args)
+    }
+
+    /// Like [`Git::ok`], with `input` on git's stdin (a commit message read
+    /// with `--file=-`).
+    pub async fn ok_with_input(
+        &self,
+        mode: Mode,
+        cwd: &Path,
+        args: &[&OsStr],
+        input: &[u8],
+    ) -> Result<Output, GitError> {
+        use tokio::io::AsyncWriteExt;
+        let mut cmd = self.command(mode, cwd, args);
+        cmd.stdin(Stdio::piped());
+        let mut child = cmd.spawn().map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                GitError::NotInstalled
+            } else {
+                GitError::Io(e)
+            }
+        })?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(input).await?;
+            stdin.shutdown().await?;
         }
+        let out = child.wait_with_output().await?;
+        checked_output(
+            Output {
+                stdout: out.stdout,
+                stderr: short_stderr(&out.stderr),
+                code: out.status.code(),
+            },
+            args,
+        )
+    }
+}
+
+/// `out`, or the [`GitError::Command`] its non-zero exit means.
+pub fn checked_output(out: Output, args: &[&OsStr]) -> Result<Output, GitError> {
+    if out.success() {
+        Ok(out)
+    } else {
+        Err(GitError::Command {
+            op: args
+                .first()
+                .map(|a| a.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            code: out.code,
+            stderr: out.stderr,
+        })
     }
 }
 

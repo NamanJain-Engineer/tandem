@@ -16,6 +16,7 @@ import { useSettings } from "../stores/settings";
 import { useUi } from "../stores/ui";
 import { resetThreads } from "../stores/threads";
 import { resetFiles } from "../stores/files";
+import { resetGit } from "../stores/git";
 import { useWorkspaces } from "../stores/workspaces";
 
 export const FREE: Limits = {
@@ -131,4 +132,5 @@ export function resetStores(): void {
   useContexts.setState({ byPane: {} });
   resetThreads();
   resetFiles();
+  resetGit();
 }

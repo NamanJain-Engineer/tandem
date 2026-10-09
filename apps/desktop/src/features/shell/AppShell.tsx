@@ -22,6 +22,7 @@ import { followLimits } from "../../stores/limits";
 import { followContexts } from "../../stores/contexts";
 import { followUsage } from "../../stores/usage";
 import { followStatus } from "../../stores/status";
+import { followGit } from "../../stores/git";
 import { followFocus } from "../../stores/focus";
 import { followDashboard } from "../../stores/dashboard";
 import { followNotifications } from "../../stores/notifications";
@@ -56,6 +57,7 @@ export function AppShell() {
   useEffect(followContexts, []);
   useEffect(followUsage, []);
   useEffect(followStatus, []);
+  useEffect(followGit, []);
   useEffect(followFocus, []);
   useEffect(followDashboard, []);
   useEffect(followNotifications, []);

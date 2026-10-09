@@ -130,6 +130,8 @@ pub struct AppState {
     /// The Files tab and the repository status it shares with the git
     /// panel (F-CD-19, F-CD-20).
     pub files: Arc<crate::services::files::FilesService>,
+    /// The Changes view and the status bar's branch (F-CD-20).
+    pub git_panel: Arc<crate::services::git_panel::GitPanelService>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
     pub e2e: bool,
 }
@@ -441,7 +443,8 @@ impl AppState {
             );
         }));
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
-        let store_for_files = store.clone();
+        let files = crate::services::files::FilesService::new(store.clone());
+        let git_panel = crate::services::git_panel::GitPanelService::new(files.clone());
         Self {
             data,
             store,
@@ -470,7 +473,8 @@ impl AppState {
             usage: Arc::default(),
             threads,
             models,
-            files: crate::services::files::FilesService::new(store_for_files),
+            files,
+            git_panel,
             e2e,
         }
     }

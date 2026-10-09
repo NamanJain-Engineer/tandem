@@ -60,6 +60,8 @@ export type FilesContext = {
   view: FilesView;
   /** The saved tabs have been read back. */
   restored: boolean;
+  /** Watch batches so far: the Changes view reads the status again on each. */
+  batches: number;
 };
 
 type FilesStore = {
@@ -83,6 +85,9 @@ type FilesStore = {
   compare: (path: string) => Promise<FileDiff | IpcError>;
   setDivider: (px: number) => void;
   setView: (view: FilesView) => void;
+  /** Shows `view` for the context `key` as soon as it's the tab's (the
+   * status bar's branch opens Changes this way). */
+  showView: (key: string, view: FilesView) => void;
   create: (path: string, kind: FsKind) => Promise<IpcError | null>;
   rename: (from: string, to: string) => Promise<IpcError | null>;
   remove: (path: string) => Promise<IpcError | null>;
@@ -143,6 +148,7 @@ const blankContext = (context: FileContext): FilesContext => ({
   divider: null,
   view: "files",
   restored: false,
+  batches: 0,
 });
 
 function parentOf(path: string): string {
@@ -166,6 +172,7 @@ async function changeChannel(on: (c: FsChange) => void): Promise<ChangeChannel> 
 const autosave = new Map<string, ReturnType<typeof setTimeout>>();
 let persistTimer: ReturnType<typeof setTimeout> | undefined;
 let watching: { key: string; sub: string | null } | null = null;
+let pendingView: { key: string; view: FilesView } | null = null;
 let generation = 0;
 
 function autoSaveOn(): boolean {
@@ -309,6 +316,12 @@ export const useFiles = create<FilesStore>((set, get) => {
           active: saved?.active ?? null,
         }));
         for (const t of saved?.tabs ?? []) void load(key, t.path);
+      }
+      if (pendingView?.key === key && get().key === key) {
+        const { view } = pendingView;
+        pendingView = null;
+        patchCtx(key, () => ({ view }));
+        persist();
       }
       await get().refreshAll();
     },
@@ -497,6 +510,15 @@ export const useFiles = create<FilesStore>((set, get) => {
       persist();
     },
 
+    showView: (key, view) => {
+      if (get().key === key && get().byKey[key]?.restored) {
+        patchCtx(key, () => ({ view }));
+        persist();
+      } else {
+        pendingView = { key, view };
+      }
+    },
+
     create: async (path, kind) => {
       const c = cur();
       if (!c) return null;
@@ -548,6 +570,7 @@ export const useFiles = create<FilesStore>((set, get) => {
       if (get().key !== key) return;
       const c = get().byKey[key];
       if (!c) return;
+      patchCtx(key, (x) => ({ batches: x.batches + 1 }));
       const touched = new Set(change.paths);
       // Open files: a clean one follows the disk; a dirty one keeps its text
       // and says the file changed (saving it raises the conflict prompt).
@@ -578,6 +601,7 @@ export function resetFiles(): void {
   autosave.clear();
   clearTimeout(persistTimer);
   watching = null;
+  pendingView = null;
   generation++;
   useFiles.setState({ key: null, byKey: {} });
 }
