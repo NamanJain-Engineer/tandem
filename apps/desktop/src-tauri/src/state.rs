@@ -127,6 +127,9 @@ pub struct AppState {
     pub threads: Arc<crate::services::threads::ThreadService>,
     /// Models engines reported at runtime (F-TH-08).
     pub models: Arc<crate::services::models::RuntimeModels>,
+    /// The Files tab and the repository status it shares with the git
+    /// panel (F-CD-19, F-CD-20).
+    pub files: Arc<crate::services::files::FilesService>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
     pub e2e: bool,
 }
@@ -438,6 +441,7 @@ impl AppState {
             );
         }));
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
+        let store_for_files = store.clone();
         Self {
             data,
             store,
@@ -466,6 +470,7 @@ impl AppState {
             usage: Arc::default(),
             threads,
             models,
+            files: crate::services::files::FilesService::new(store_for_files),
             e2e,
         }
     }

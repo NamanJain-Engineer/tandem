@@ -14,6 +14,8 @@ futures.workspace = true
 hex.workspace = true
 hmac.workspace = true
 keyring.workspace = true
+ignore.workspace = true
+notify.workspace = true
 regex.workspace = true
 reqwest.workspace = true
 uuid = { version = "1", features = ["v4"] }

@@ -63,6 +63,12 @@ impl Repo {
         &self.common_dir
     }
 
+    /// This working tree's own git directory: `.git` for the main
+    /// checkout, `.git/worktrees/<name>` for a lane (HEAD and index).
+    pub fn git_dir(&self) -> &Path {
+        &self.git_dir
+    }
+
     /// The top folder of the main checkout, where `.tandem/worktrees` lives,
     /// also when this is a linked worktree.
     pub fn main_root(&self) -> PathBuf {
@@ -375,6 +381,48 @@ impl Repo {
         spec.push('/');
         Some(spec)
     }
+}
+
+/// `old` → `new` as one file of a diff (the editor's "Compare": the file on
+/// disk against the unsaved text). Nothing is read from a repository.
+pub fn diff_texts(path: &str, old: &[u8], new: &[u8]) -> Result<FileDiff, GitError> {
+    let mut opts = DiffOptions::new();
+    opts.context_lines(3);
+    let mut patch = git2::Patch::from_buffers(
+        old,
+        Some(Path::new(path)),
+        new,
+        Some(Path::new(path)),
+        Some(&mut opts),
+    )?;
+    let binary = patch.delta().flags().is_binary();
+    let (mut additions, mut deletions, mut text, mut truncated) = (0, 0, String::new(), false);
+    if !binary {
+        let (_, add, del) = patch.line_stats()?;
+        additions = u32::try_from(add).unwrap_or(u32::MAX);
+        deletions = u32::try_from(del).unwrap_or(u32::MAX);
+        let buf = patch.to_buf()?;
+        let bytes: &[u8] = &buf;
+        if bytes.len() > MAX_PATCH_BYTES {
+            truncated = true;
+            text = String::from_utf8_lossy(&bytes[..MAX_PATCH_BYTES]).into_owned();
+            if let Some(cut) = text.rfind('\n') {
+                text.truncate(cut + 1);
+            }
+        } else {
+            text = String::from_utf8_lossy(bytes).into_owned();
+        }
+    }
+    Ok(FileDiff {
+        path: path.to_string(),
+        old_path: None,
+        change: FileChange::Modified,
+        additions,
+        deletions,
+        binary,
+        patch: text,
+        truncated,
+    })
 }
 
 fn is_unborn(e: &git2::Error) -> bool {

@@ -324,3 +324,18 @@ async fn writes_run_hooks_but_never_fsmonitor() {
     assert!(fired.iter().any(|m| m == "hook-pre-commit"), "{fired:?}");
     assert!(!fired.iter().any(|m| m == "fsmonitor"), "{fired:?}");
 }
+
+/// The editor's Compare (F-CD-19): the file on disk against unsaved text.
+#[test]
+fn f_cd_19_compare_diffs_two_texts_without_a_repository() {
+    let d = tandem_git::diff_texts("src/a.rs", b"one\ntwo\nthree\n", b"one\nTWO\nthree\nfour\n")
+        .expect("diff");
+    assert_eq!((d.additions, d.deletions, d.binary), (2, 1, false));
+    assert!(d.patch.contains("-two\n+TWO\n"), "{}", d.patch);
+    assert!(d.patch.contains("+four\n"), "{}", d.patch);
+    assert!(d.patch.contains("src/a.rs"), "{}", d.patch);
+    let same = tandem_git::diff_texts("a", b"x\n", b"x\n").expect("diff");
+    assert_eq!((same.additions, same.deletions), (0, 0));
+    let bin = tandem_git::diff_texts("b.bin", b"\0\x01", b"\0\x02").expect("diff");
+    assert!(bin.binary);
+}

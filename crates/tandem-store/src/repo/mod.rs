@@ -3,6 +3,7 @@
 pub mod accounts;
 pub mod approvals;
 pub mod attachments;
+pub mod editor_tabs;
 pub mod layouts;
 pub mod notifications;
 pub mod panes;

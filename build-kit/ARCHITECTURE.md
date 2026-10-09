@@ -693,11 +693,13 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 #### Files, editor, browser, scratchpad [F-CD-17..19, F-SH-12]
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
-| `fs_list` | `{context: FileContext, dir, showIgnored}` | `[FsEntry {name, path, kind, gitStatus?, ignored}]` | NotFound | F-CD-19 |
-| `fs_read` | `{context, path}` | `FileContent {kind:"text"\|"binary"\|"image", text?, size, readonly, hash, mtime}` | NotFound | F-CD-19 |
-| `fs_write` | `{context, path, text, expectedHash}` | `{hash}` | Conflict ("File changed on disk"), PermissionDenied (read-only) | F-CD-19 |
-| `fs_watch` | `{context, channel: Channel<FsChange>}` | `SubId` | — | F-CD-19, F-CD-20 |
-| `editor_tabs_get` / `editor_tabs_save` | `{contextKey}` / `{contextKey, tabs, active?, expanded}` | `EditorTabs` / — | — | F-CD-19 |
+| `fs_list` | `{context: FileContext, dir, showIgnored}` (`dir` relative to the context root, `""` for the root) | `[FsEntry {name, path, kind:"file"\|"dir", symlink, gitStatus?, ignored}]` (one level, lazily; folders first; `.git` never listed; `path` relative to the root, `/`-separated) | NotFound | F-CD-19 |
+| `fs_read` | `{context, path}` (relative to the context root, or absolute) | `FileContent {path, kind:"text"\|"binary"\|"image", text?, size, readonly, readonlyReason?: "outside"\|"large"\|"permission", truncated, hash, mtime, dataUrl? (images up to 10 MB), hex? (binary: the first 256 bytes)}` (over 5 MB: read-only; text over 20 MB is cut) | NotFound | F-CD-19, F-CD-09 |
+| `fs_write` | `{context, path, text, expectedHash?}` (no hash: a new file that mustn't exist yet) | `{hash, mtime}` (written to a symlink's target, keeping the file's line endings, BOM and mode) | Conflict ("File changed on disk"), PermissionDenied (read-only) | F-CD-19 |
+| `fs_compare` | `{context, path, text}` | `FileDiff` (the file on disk → `text`, for the conflict dialog's Compare) | NotFound | F-CD-19 |
+| `fs_create` / `fs_rename` / `fs_delete` | `{context, path, kind:"file"\|"dir"}` / `{context, from, to}` / `{context, path}` (the UI confirms a delete first) | — | Conflict (exists), PermissionDenied (read-only) | F-CD-19 |
+| `fs_watch` / `fs_unwatch` | `{context, channel: Channel<FsChange {paths, git, overflow}>}` / `{subId}` | `SubId` / — (debounced 500 ms; `paths` relative to the root; `git`: the repository's index, HEAD or refs changed; `overflow`: too many to list, re-read everything shown) | NotFound | F-CD-19, F-CD-20 |
+| `editor_tabs_get` / `editor_tabs_save` | `{contextKey}` / `{contextKey, state: EditorTabs}` | `EditorTabs {tabs:[{path, line?, col?}], active?, expanded:[dir], showIgnored, divider?, view?: "files"\|"changes"}` / — (`contextKey`: `ws:<workspaceId>` or `th:<threadId>`) | — | F-CD-19 |
 | `browser_open` | `{browserId?, url, placement: {type:"pane", paneId} \| {type:"sidebar"}, bounds: Rect}` | `BrowserInfo {browserId, url}` | Unavailable (Linux child webview) | F-CD-17 |
 | `browser_navigate` | `{browserId, input}` | `{committedUrl}` | Invalid (blocked scheme) | F-CD-17 |
 | `browser_command` | `{browserId, cmd:"back"\|"forward"\|"reload"\|"stop"}` | — | — | F-CD-17 |
@@ -708,7 +710,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `browser_picker_brief` | `{browserId, note}` | `String` (Markdown) | — | F-CD-18 |
 | `scratchpad_list` / `scratchpad_read` / `scratchpad_write` / `scratchpad_delete` | `{}` / `{id}` / `{id?, markdown}` / `{id}` | … | — | F-SH-12 |
 
-`FileContext = {type:"workspace", workspaceId} | {type:"thread", threadId} | {type:"teammate", teammateId}`. Files outside the context root open `readonly: true`; `fs_write` refuses them.
+`FileContext = {type:"workspace", workspaceId} | {type:"thread", threadId} | {type:"teammate", teammateId}` (the teammate Home arrives with M10). Files outside every workspace open `readonly: true` and `fs_write` refuses them (PRODUCT_SPEC F-CD-09: files inside any workspace are editable, D-201). These commands serve the local UI; any other origin (agents, Conductor, phone) goes through `contain()` first.
 
 #### Teammates, memory, skills, mail [F-AG-*]
 | Command | Args | Returns | Errors | IDs |
