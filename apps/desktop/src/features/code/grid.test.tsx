@@ -94,6 +94,7 @@ function page(browserId: string, url: string, title = ""): BrowserState {
     frame: { x: 0, y: 0, width: 400, height: 300 },
     zoom: 1,
     blocked: null,
+    picking: false,
   };
 }
 

@@ -24,6 +24,10 @@ zoom: number,
  */
 blocked: string | null, 
 /**
+ * The element picker is on (F-CD-18).
+ */
+picking: boolean, 
+/**
  * Grows with every change, so a reply or event older than the state
  * a view already has is dropped (a command's reply can arrive after
  * the events that followed it).

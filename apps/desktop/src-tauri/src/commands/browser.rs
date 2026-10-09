@@ -118,6 +118,53 @@ pub fn browser_set_device(
 }
 
 #[tauri::command]
+pub fn browser_picker(
+    app: State<'_, AppState>,
+    browser_id: String,
+    on: bool,
+) -> Result<BrowserState, IpcError> {
+    service(&app)?.picker(&browser_id, on)
+}
+
+#[tauri::command]
+pub fn browser_picker_brief(
+    app: State<'_, AppState>,
+    browser_id: String,
+    note: String,
+) -> Result<String, IpcError> {
+    service(&app)?.brief(&browser_id, &note)
+}
+
+/// The test harness (debug builds with `TANDEM_E2E=1`): a script's value
+/// from a page, e.g. clicks for the element picker (E2E-M9-4).
+#[cfg(debug_assertions)]
+#[tauri::command]
+pub async fn test_browser_eval(
+    app: State<'_, AppState>,
+    browser_id: String,
+    script: String,
+) -> Result<String, IpcError> {
+    if !app.e2e {
+        return Err(IpcError::new(
+            ErrorCode::PermissionDenied,
+            "The test harness is off",
+        ));
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    service(&app)?.eval_result(
+        &browser_id,
+        &script,
+        Box::new(move |value| {
+            let _ = tx.send(value);
+        }),
+    )?;
+    tokio::time::timeout(std::time::Duration::from_secs(10), rx)
+        .await
+        .map_err(|_| IpcError::new(ErrorCode::Timeout, "The page didn't answer"))?
+        .map_err(|_| IpcError::new(ErrorCode::Internal, "The page went away"))?
+}
+
+#[tauri::command]
 pub fn browser_move(
     app: State<'_, AppState>,
     from: String,

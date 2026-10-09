@@ -3,12 +3,14 @@
 // A page lives in the core until its tab or pane closes; views come and go
 // (a reload, a move between sidebar and pane) and find it again by id.
 import { create } from "zustand";
-import type { BrowserCmd, BrowserState, Device, IpcError, Navigated, Rect } from "@tandem/protocol";
+import type { BrowserCmd, BrowserPicked, BrowserState, Device, IpcError, Navigated, PickedElement, Rect } from "@tandem/protocol";
 import { listen } from "../ipc/events";
 import { invoke } from "../ipc/invoke";
 
 type BrowserStore = {
   pages: Record<string, BrowserState>;
+  /** What the element picker has picked in each page (F-CD-18). */
+  picked: Record<string, PickedElement[]>;
   /** Pages the core couldn't show, with why. */
   unavailable: Record<string, string>;
   open: (id: string, url: string | null, bounds: Rect, visible: boolean) => Promise<IpcError | null>;
@@ -23,6 +25,10 @@ type BrowserStore = {
   /** Drops what's known of a page the core closed itself (a pane's). */
   forget: (id: string) => void;
   clearData: () => Promise<IpcError | null>;
+  /** The element picker on or off (F-CD-18). */
+  pick: (id: string, on: boolean) => Promise<IpcError | null>;
+  /** The Markdown brief of the picked elements and `note`. */
+  brief: (id: string, note: string) => Promise<string | IpcError>;
 };
 
 function asError(e: unknown): IpcError {
@@ -51,6 +57,7 @@ function apply(state: BrowserState): void {
 export const useBrowser = create<BrowserStore>((set) => {
   return {
     pages: {},
+    picked: {},
     unavailable: {},
 
     open: async (id, url, bounds, visible) => {
@@ -103,7 +110,8 @@ export const useBrowser = create<BrowserStore>((set) => {
         const state = await invoke<BrowserState>("browser_move", { from, to });
         set((s) => {
           const { [from]: _, ...pages } = s.pages;
-          return { pages };
+          const { [from]: elements, ...picked } = s.picked;
+          return { pages, picked: elements ? { ...picked, [to]: elements } : picked };
         });
         apply(state);
         return null;
@@ -116,8 +124,26 @@ export const useBrowser = create<BrowserStore>((set) => {
       set((s) => {
         const { [id]: _, ...pages } = s.pages;
         const { [id]: __, ...unavailable } = s.unavailable;
-        return { pages, unavailable };
+        const { [id]: ___, ...picked } = s.picked;
+        return { pages, unavailable, picked };
       }),
+
+    pick: async (id, on) => {
+      try {
+        apply(await invoke<BrowserState>("browser_picker", { browserId: id, on }));
+        return null;
+      } catch (e) {
+        return asError(e);
+      }
+    },
+
+    brief: async (id, note) => {
+      try {
+        return await invoke<string>("browser_picker_brief", { browserId: id, note });
+      } catch (e) {
+        return asError(e);
+      }
+    },
 
     clearData: async () => {
       try {
@@ -162,11 +188,16 @@ let listening: Promise<unknown> = Promise.resolve();
 export function followBrowser(): void {
   if (following) return;
   following = true;
-  listening = listen<BrowserState>("browser:state", apply).catch(() => undefined);
+  listening = Promise.all([
+    listen<BrowserState>("browser:state", apply),
+    listen<BrowserPicked>("browser:picker", (p) =>
+      useBrowser.setState((s) => ({ picked: { ...s.picked, [p.browserId]: p.elements } })),
+    ),
+  ]).catch(() => undefined);
 }
 
 /** Tests: forget everything. */
 export function resetBrowser(): void {
-  useBrowser.setState({ pages: {}, unavailable: {} });
+  useBrowser.setState({ pages: {}, picked: {}, unavailable: {} });
   wantsFocus.clear();
 }

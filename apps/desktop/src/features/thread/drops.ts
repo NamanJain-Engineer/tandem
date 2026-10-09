@@ -10,11 +10,34 @@ import { useThreads } from "../../stores/threads";
 type Toast = (t: { tone?: "info" | "success" | "warning" | "error"; title: string }) => void;
 
 /** The drag is over the thread view (the composer shows "Drop to attach"),
- * and attachments a drop made that the composer hasn't taken yet. */
-export const useThreadDrop = create<{ over: boolean; dropped: Record<string, Attachment[]> }>(() => ({
+ * and attachments a drop made, or text sent to the composer (the element
+ * picker's brief, F-CD-18), that the composer hasn't taken yet. */
+export const useThreadDrop = create<{
+  over: boolean;
+  dropped: Record<string, Attachment[]>;
+  texts: Record<string, string[]>;
+}>(() => ({
   over: false,
   dropped: {},
+  texts: {},
 }));
+
+/** Adds `text` to a thread's composer, after what's typed; nothing sends. */
+export function insertIntoComposer(threadId: string, text: string): void {
+  useThreadDrop.setState((s) => ({ texts: { ...s.texts, [threadId]: [...(s.texts[threadId] ?? []), text] } }));
+}
+
+/** Takes the text sent to a thread's composer (once). */
+export function takeTexts(threadId: string): string[] {
+  const list = useThreadDrop.getState().texts[threadId] ?? [];
+  if (list.length) {
+    useThreadDrop.setState((s) => {
+      const { [threadId]: _, ...rest } = s.texts;
+      return { texts: rest };
+    });
+  }
+  return list;
+}
 
 /** Takes the dropped attachments for a thread (once). */
 export function takeDropped(threadId: string): Attachment[] {

@@ -21,7 +21,7 @@ use tauri::AppHandle;
 use wry::dpi::{LogicalPosition, LogicalSize};
 use wry::{NewWindowResponse, PageLoadEvent, WebContext, WebView, WebViewBuilder};
 
-use super::{BrowserCmd, BrowserHost, EventSink, HostEvent, Policy, Rect, BLANK};
+use super::{picker, BrowserCmd, BrowserHost, EvalDone, EventSink, HostEvent, Policy, Rect, BLANK};
 
 pub const UNAVAILABLE: &str = "Web pages can't be shown inside the app on this system. Open the address in your browser instead.";
 
@@ -249,6 +249,42 @@ fn watch_commits(webview: &WebView, name: &Name, sink: EventSink) {
     });
 }
 
+/// Runs `script` in page `id` once nothing holds the page list; `done`
+/// gets its value as JSON.
+fn eval_later(id: String, script: String, done: Option<EvalDone>) {
+    let run = move || {
+        PAGES.with(|p| {
+            let p = p.borrow();
+            let Some(page) = p.pages.get(&id) else {
+                if let Some(done) = done {
+                    done(Err(IpcError::new(ErrorCode::NotFound, "That browser tab is closed")));
+                }
+                return;
+            };
+            match done {
+                None => {
+                    let _ = page.webview.evaluate_script(&script);
+                }
+                Some(done) => {
+                    let done = std::sync::Mutex::new(Some(done));
+                    let ran = page.webview.evaluate_script_with_callback(&script, move |value| {
+                        if let Some(done) = done.lock().ok().and_then(|mut d| d.take()) {
+                            done(Ok(value));
+                        }
+                    });
+                    if let Err(err) = ran {
+                        tracing::warn!(code = "browser.eval_failed", error = %err, "script not run");
+                    }
+                }
+            }
+        });
+    };
+    #[cfg(target_os = "linux")]
+    gtk::glib::idle_add_local_once(run);
+    #[cfg(not(target_os = "linux"))]
+    run();
+}
+
 /// Loads `url` in page `id` once nothing holds the page list.
 fn load_later(id: String, url: String) {
     let load = move || {
@@ -285,6 +321,14 @@ fn builder<'a>(
         .with_focused(false)
         .with_devtools(false)
         .with_navigation_handler(move |to: String| {
+            // The picker's report, taken here and never loaded (F-CD-18).
+            if to.starts_with(picker::SCHEME) {
+                nav_sink(HostEvent::Picker {
+                    id: name_of(&nav_name),
+                    url: to,
+                });
+                return false;
+            }
             let ok = nav_policy(&to);
             if !ok {
                 nav_sink(HostEvent::Blocked {
@@ -308,7 +352,12 @@ fn builder<'a>(
         })
         // A link to a new window opens in the same tab, if it may.
         .with_new_window_req_handler(move |to, _features| {
-            if policy(&to) {
+            if to.starts_with(picker::SCHEME) {
+                win_sink(HostEvent::Picker {
+                    id: name_of(&win_name),
+                    url: to,
+                });
+            } else if policy(&to) {
                 load_later(name_of(&win_name), to);
             } else {
                 win_sink(HostEvent::Blocked {
@@ -439,6 +488,22 @@ impl BrowserHost for WryHost {
                 let _ = page.webview.set_visible(visible);
             });
         });
+    }
+
+    fn eval(&self, id: &str, script: &str) {
+        let (id, script) = (id.to_string(), script.to_string());
+        self.on_main(move || eval_later(id, script, None));
+    }
+
+    fn eval_result(&self, id: &str, script: &str, done: EvalDone) {
+        let (id, script) = (id.to_string(), script.to_string());
+        self.on_main(move || eval_later(id, script, Some(done)));
+    }
+
+    /// WebKitGTK and WKWebView ask about every frame's navigations; wry
+    /// hands WebView2's `NavigationStarting` over, which is the top frame's.
+    fn sees_frame_navigations(&self) -> bool {
+        !cfg!(target_os = "windows")
     }
 
     fn rename(&self, from: &str, to: &str) {

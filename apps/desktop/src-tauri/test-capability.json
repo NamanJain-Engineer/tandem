@@ -6,6 +6,7 @@
   ],
   "permissions": [
     "allow-test-counters",
+    "allow-test-browser-eval",
     "allow-test-spawn-log",
     "allow-test-clock-advance",
     "allow-test-fixture-agent",

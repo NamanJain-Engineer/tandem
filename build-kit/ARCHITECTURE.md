@@ -709,8 +709,8 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `browser_set_bounds` | `{browserId, bounds: Rect, visible}` (window coordinates in CSS px; hidden while its place isn't shown or a menu or dialog covers it) | — | NotFound | F-CD-17 |
 | `browser_set_device` | `{browserId, device:"desktop"\|"phone"\|"tablet", rotated}` (phone 390×844, tablet 820×1180 CSS px, fitted into the bounds with a page zoom of at most 1) | `BrowserState` | NotFound | F-CD-17 |
 | `browser_close` / `browser_clear_data` | `{browserId}` / — (cookies, storage and cache of the one profile at `$DATA/browser-profile`) | — | — | F-CD-17 |
-| `browser_picker` | `{browserId, on}` | — (selections via `browser:picker`) | — | F-CD-18 |
-| `browser_picker_brief` | `{browserId, note}` | `String` (Markdown) | — | F-CD-18 |
+| `browser_picker` | `{browserId, on}` (injects the element picker into the page, again after each load while on; Esc in the page or `on: false` stops it; the selection arrives as `browser:picker` and clears when the page navigates. The page reports through a navigation to `tandem-picker://<nonce>/<selection>` from a hidden frame, or a new-window request where the browser doesn't see a frame's navigations (WebView2) or the page's CSP refuses the frame; the browser takes it and never loads it, so the page gets no IPC; D-210) | `BrowserState` (`picking`) | NotFound | F-CD-18 |
+| `browser_picker_brief` | `{browserId, note}` | `String` (Markdown: the page's URL, the note, then per element its unique selector, React/Vue component, size and position, key computed styles and outerHTML cut at 4 KB; no trailing newline) | NotFound | F-CD-18 |
 | `scratchpad_list` / `scratchpad_read` / `scratchpad_write` / `scratchpad_delete` | `{}` / `{id}` / `{id?, markdown}` / `{id}` | … | — | F-SH-12 |
 
 `FileContext = {type:"workspace", workspaceId} | {type:"thread", threadId} | {type:"teammate", teammateId}` (the teammate Home arrives with M10). Files outside every workspace open `readonly: true` and `fs_write` refuses them (PRODUCT_SPEC F-CD-09: files inside any workspace are editable, D-201). These commands serve the local UI; any other origin (agents, Conductor, phone) goes through `contain()` first.
@@ -856,6 +856,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `test_min_version_shift` | `{ms}` | `UpdateState` (moves the minimum-version notice `ms` into the past: the 72 h grace, time-mocked) | — |
 | `test_thread_seed` | `{threadState}` | thread id (writes a bare `threads` row in that state, e.g. one a crash left `working`; E2E-M5-3 until threads land in M7) | — |
 | `test_thread_state` | `{id}` | the thread's stored `state` | NotFound |
+| `test_browser_eval` | `{browserId, script}` | `String` (the script's value as JSON; E2E-M9-4 clicks in a page with it) | NotFound |
 | `test_thread_seed_events` | `{threadId, events, fenceBytes?}` | the number of events written (completed turns of a user message, an assistant reply, tool calls and a turn end, in one transaction; `fenceBytes` adds a last reply with a code fence that size; threads perf suite) | NotFound |
 
 `window.__tandemTest` in the webview wraps these commands plus UI-side counters. Not listed in `capabilities/*.json` for release.
@@ -906,7 +907,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `remote:host` | `{hostId, state:"connected"\|"reconnecting"\|"down"}` | ssh service | F-RM-01 |
 | `remote:phone` | `{pairingId, event:"connected"\|"command"\|"queued"\|"revoked"}` | phone service | F-RM-03 |
 | `updates:state` | `UpdateState` (see `updates_state`; during a download at most one event per 5 %) | updater service | F-SH-06 |
-| `browser:state` / `browser:picker` | `BrowserState {browserId, url, title, canBack, canForward, loading, device, rotated, frame: Rect (the page inside the bounds), zoom, blocked?, seq}` (`seq` grows with every change: a view drops a reply or event older than what it holds) / `{browserId, elements:[PickedElement]}` | browser service | F-CD-17, F-CD-18 |
+| `browser:state` / `browser:picker` | `BrowserState {browserId, url, title, canBack, canForward, loading, device, rotated, frame: Rect (the page inside the bounds), zoom, blocked?, picking, seq}` (`seq` grows with every change: a view drops a reply or event older than what it holds) / `{browserId, elements:[PickedElement {tag, selector (unique in the page), component?: {name, framework: "React"\|"Vue"}, rect: Rect (page coordinates), styles: {display, position, font, color, background, margin, padding}, html (outerHTML, cut at 4 KB), truncated}]}` | browser service | F-CD-17, F-CD-18 |
 | `op:progress` | `{opId, stage, pct?, done, error?: IpcError}` | any op | §5.2 |
 
 ### 3.4 Streaming patterns

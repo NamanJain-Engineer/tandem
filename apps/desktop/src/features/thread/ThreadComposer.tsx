@@ -23,7 +23,7 @@ import { invoke } from "../../ipc/invoke";
 import { useEngines } from "../../stores/engines";
 import { useSettings } from "../../stores/settings";
 import { useThreads } from "../../stores/threads";
-import { takeDropped, useThreadDrop } from "./drops";
+import { takeDropped, takeTexts, useThreadDrop } from "./drops";
 
 /** Draft saves are debounced (F-TH-07). */
 export const DRAFT_DEBOUNCE_MS = 300;
@@ -133,6 +133,15 @@ export function ThreadComposer({
     setText(parseDraft(detail.draft).text);
     setAttachments(detail.attachments);
   }, [detail, thread.id]);
+
+  // Text sent here (the element picker's brief, F-CD-18) goes after what's
+  // typed, and only once the draft is in, so the draft can't replace it.
+  const sentText = useThreadDrop((s) => s.texts[thread.id]);
+  useEffect(() => {
+    if (!sentText?.length || loadedFor.current !== thread.id) return;
+    const added = takeTexts(thread.id).join("\n\n");
+    setText((typed) => (typed.trim() ? `${typed.trimEnd()}\n\n${added}` : added));
+  }, [sentText, thread.id, detail]);
 
   useEffect(() => {
     if (prefill) setText(prefill.text);

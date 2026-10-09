@@ -16,7 +16,7 @@ import { useSession } from "../../stores/session";
 import { FREE, FREE_VIEW, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { referencedFiles } from "./ChangesPanel";
 import type { Row, ToolEvent } from "./rows";
-import { dropOnThread } from "./drops";
+import { dropOnThread, insertIntoComposer } from "./drops";
 import { restoreAfterFailure } from "./ThreadComposer";
 import { age, groupThreads } from "./groups";
 import { ThreadMain } from "./ThreadMain";
@@ -586,6 +586,38 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
       threadId: th.id,
       paths: ["/tmp/a/notes.txt"],
     });
+  });
+
+  it("F-CD-18.2 a brief sent to the thread goes after its draft and what's typed, and isn't sent", async () => {
+    const th = thread();
+    let loaded: () => void = () => undefined;
+    const draftIn = new Promise<void>((resolve) => (loaded = resolve));
+    const calls = fakeBackend({
+      thread_list: () => [th],
+      thread_get: async () => {
+        await draftIn;
+        return detail(th, { draft: JSON.stringify({ text: "from before", attachmentIds: [] }) });
+      },
+      thread_events: () => ({ items: [], nextBeforeId: null }),
+      thread_subscribe: () => null,
+      models_list: () => [],
+    });
+    await act(async () => {
+      await useThreads.getState().refresh();
+      useThreads.getState().select(th.id);
+    });
+    mount(<ThreadMain />);
+    await screen.findByRole("textbox", { name: "Message" });
+    // Sent while the composer waits for its draft: the draft doesn't replace it.
+    act(() => insertIntoComposer(th.id, "# Picked elements\n\nPage: http://localhost:5173/"));
+    await act(async () => loaded());
+    await waitFor(() =>
+      expect((box() as HTMLTextAreaElement).value).toBe("from before\n\n# Picked elements\n\nPage: http://localhost:5173/"),
+    );
+    fireEvent.change(box(), { target: { value: "look at these  " } });
+    act(() => insertIntoComposer(th.id, "# Picked elements"));
+    await waitFor(() => expect((box() as HTMLTextAreaElement).value).toBe("look at these\n\n# Picked elements"));
+    expect(calls.some((c) => c.cmd === "thread_send")).toBe(false);
   });
 
   it("groups and ages are pure", () => {

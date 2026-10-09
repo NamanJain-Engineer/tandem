@@ -8,6 +8,7 @@
 //! The webviews live on the main thread behind [`BrowserHost`]
 //! ([`wry_host::WryHost`] in the app, a fake in tests).
 
+pub mod picker;
 pub mod wry_host;
 
 use std::collections::HashMap;
@@ -70,6 +71,8 @@ pub struct BrowserState {
     pub zoom: f64,
     /// The last address the browser refused, for the address bar to say so.
     pub blocked: Option<String>,
+    /// The element picker is on (F-CD-18).
+    pub picking: bool,
     /// Grows with every change, so a reply or event older than the state
     /// a view already has is dropped (a command's reply can arrive after
     /// the events that followed it).
@@ -114,6 +117,12 @@ pub enum HostEvent {
         id: String,
         url: String,
     },
+    /// The picker's report: a navigation to `tandem-picker:`, taken and
+    /// never loaded (F-CD-18).
+    Picker {
+        id: String,
+        url: String,
+    },
 }
 
 /// Whether the page may go to a URL (links, redirects, new windows).
@@ -121,6 +130,10 @@ pub type Policy = Arc<dyn Fn(&str) -> bool + Send + Sync>;
 pub type EventSink = Arc<dyn Fn(HostEvent) + Send + Sync>;
 /// Where `browser:state` goes.
 pub type Emitter = Arc<dyn Fn(&BrowserState) + Send + Sync>;
+/// Where `browser:picker` goes.
+pub type PickerEmitter = Arc<dyn Fn(&picker::BrowserPicked) + Send + Sync>;
+/// A script's value as JSON, or why there's none.
+pub type EvalDone = Box<dyn FnOnce(Result<String, IpcError>) + Send>;
 
 /// The webviews, on whatever thread their platform wants.
 pub trait BrowserHost: Send + Sync {
@@ -139,6 +152,14 @@ pub trait BrowserHost: Send + Sync {
     fn close(&self, id: &str);
     /// Page `from` goes on as `to`.
     fn rename(&self, from: &str, to: &str);
+    /// Runs `script` in the page (the element picker).
+    fn eval(&self, id: &str, script: &str);
+    /// Whether a navigation in a page's frame reaches the page policy
+    /// (WebView2 reports only the top frame's), so the picker can report
+    /// through one (D-210).
+    fn sees_frame_navigations(&self) -> bool;
+    /// Runs `script` in the page and hands back its value (the E2E harness).
+    fn eval_result(&self, id: &str, script: &str, done: EvalDone);
     /// Cookies, storage and cache of the browser profile.
     fn clear_data(&self);
 }
@@ -315,6 +336,10 @@ struct Entry {
     state: BrowserState,
     bounds: Rect,
     visible: bool,
+    /// The picker session's nonce while it's on.
+    picker: Option<String>,
+    /// What's picked in the page now.
+    picked: Vec<picker::PickedElement>,
 }
 
 pub struct BrowserService {
@@ -322,6 +347,7 @@ pub struct BrowserService {
     entries: Mutex<HashMap<String, Entry>>,
     roots: Arc<RwLock<Vec<PathBuf>>>,
     emit: Mutex<Option<Emitter>>,
+    emit_picked: Mutex<Option<PickerEmitter>>,
     seq: AtomicU64,
 }
 
@@ -347,6 +373,7 @@ impl BrowserService {
                 entries: Mutex::default(),
                 roots,
                 emit: Mutex::default(),
+                emit_picked: Mutex::default(),
                 seq: AtomicU64::new(0),
             }
         })
@@ -355,6 +382,25 @@ impl BrowserService {
     /// Where `browser:state` goes.
     pub fn set_emitter(&self, emit: Emitter) {
         *self.emit.lock().unwrap_or_else(|e| e.into_inner()) = Some(emit);
+    }
+
+    /// Where `browser:picker` goes.
+    pub fn set_picker_emitter(&self, emit: PickerEmitter) {
+        *self.emit_picked.lock().unwrap_or_else(|e| e.into_inner()) = Some(emit);
+    }
+
+    fn publish_picked(&self, id: &str, elements: Vec<picker::PickedElement>) {
+        let emit = self
+            .emit_picked
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        if let Some(emit) = emit {
+            emit(&picker::BrowserPicked {
+                browser_id: id.to_string(),
+                elements,
+            });
+        }
     }
 
     /// The workspaces' folders: `file:` pages inside them may load.
@@ -425,6 +471,7 @@ impl BrowserService {
             frame,
             zoom,
             blocked: None,
+            picking: false,
             seq: self.next_seq(),
         };
         self.entries
@@ -436,6 +483,8 @@ impl BrowserService {
                     state: state.clone(),
                     bounds,
                     visible,
+                    picker: None,
+                    picked: Vec::new(),
                 },
             );
         self.publish(&state);
@@ -542,6 +591,47 @@ impl BrowserService {
         }
     }
 
+    /// `browser_picker`: the element picker on (a new session, an empty
+    /// selection) or off.
+    pub fn picker(&self, id: &str, on: bool) -> Result<BrowserState, IpcError> {
+        let frames = self.host.sees_frame_navigations();
+        let (state, script) = self.with_entry(id, |e| {
+            let script = if on {
+                let nonce = picker::nonce();
+                let script = picker::script(&nonce, frames);
+                // A session still on ends first, so only one ever answers.
+                let stop = e.picker.replace(nonce).map(|old| picker::stop_script(&old));
+                e.picked.clear();
+                Some(stop.map_or(script.clone(), |stop| format!("{stop}\n{script}")))
+            } else {
+                e.picker.take().map(|nonce| picker::stop_script(&nonce))
+            };
+            e.state.picking = on;
+            e.state.seq = self.next_seq();
+            (e.state.clone(), script)
+        })?;
+        if let Some(script) = script {
+            self.host.eval(id, &script);
+        }
+        self.publish(&state);
+        if on {
+            self.publish_picked(id, Vec::new());
+        }
+        Ok(state)
+    }
+
+    /// `browser_picker_brief`: the Markdown an agent gets (F-CD-18).
+    pub fn brief(&self, id: &str, note: &str) -> Result<String, IpcError> {
+        self.with_entry(id, |e| picker::brief(&e.state.url, note, &e.picked))
+    }
+
+    /// `test_browser_eval`: a script's value from the page.
+    pub fn eval_result(&self, id: &str, script: &str, done: EvalDone) -> Result<(), IpcError> {
+        self.with_entry(id, |_| ())?;
+        self.host.eval_result(id, script, done);
+        Ok(())
+    }
+
     pub fn clear_data(&self) {
         self.host.clear_data();
     }
@@ -562,8 +652,14 @@ impl BrowserService {
             | HostEvent::SameDocument { id, .. }
             | HostEvent::Loaded { id, .. }
             | HostEvent::Title { id, .. }
-            | HostEvent::Blocked { id, .. } => id.clone(),
+            | HostEvent::Blocked { id, .. }
+            | HostEvent::Picker { id, .. } => id.clone(),
         };
+        // What the picker needs after this: its script again (a new page
+        // while it's on), and the selection to send.
+        let mut reinject = None;
+        let mut picked = None;
+        let frames = self.host.sees_frame_navigations();
         let Ok(state) = self.with_entry(&id, |e| {
             match event {
                 // Not the URL yet: until the new page commits, the old one
@@ -574,6 +670,11 @@ impl BrowserService {
                 }
                 HostEvent::Committed { url, .. } => {
                     e.state.url = if url == BLANK { String::new() } else { url };
+                    // The selection was the old page's.
+                    if !e.picked.is_empty() {
+                        e.picked.clear();
+                        picked = Some(Vec::new());
+                    }
                 }
                 // Never another site: a report that doesn't fit what's
                 // shown waits for that page's own commit.
@@ -592,15 +693,41 @@ impl BrowserService {
                     e.state.url = if url == BLANK { String::new() } else { url };
                     e.state.can_back = can_back;
                     e.state.can_forward = can_forward;
+                    reinject = e
+                        .picker
+                        .as_deref()
+                        .map(|nonce| picker::script(nonce, frames));
                 }
                 HostEvent::Title { title, .. } => e.state.title = title,
                 HostEvent::Blocked { url, .. } => e.state.blocked = Some(url),
+                // A report from another session, or the page's own, changes
+                // nothing.
+                HostEvent::Picker { url, .. } => {
+                    let report = e
+                        .picker
+                        .as_deref()
+                        .and_then(|nonce| picker::parse(&url, nonce));
+                    if let Some(report) = report {
+                        e.picked = report.elements.clone();
+                        picked = Some(report.elements);
+                        if report.stopped {
+                            e.picker = None;
+                            e.state.picking = false;
+                        }
+                    }
+                }
             }
             e.state.seq = self.next_seq();
             e.state.clone()
         }) else {
             return;
         };
+        if let Some(script) = reinject {
+            self.host.eval(&id, &script);
+        }
+        if let Some(elements) = picked {
+            self.publish_picked(&id, elements);
+        }
         self.publish(&state);
     }
 }
@@ -639,6 +766,10 @@ pub mod testing {
             from: String,
             to: String,
         },
+        Eval {
+            id: String,
+            script: String,
+        },
         ClearData,
     }
 
@@ -650,6 +781,8 @@ pub mod testing {
         pub policy: Mutex<Option<Policy>>,
         pub sink: Mutex<Option<EventSink>>,
         pub unavailable: bool,
+        /// Like WebView2: a frame's navigations go unseen.
+        pub no_frame_navigations: std::sync::atomic::AtomicBool,
     }
 
     impl FakeHost {
@@ -719,6 +852,21 @@ pub mod testing {
                 .lock()
                 .expect("calls")
                 .push(Call::Close { id: id.into() });
+        }
+        fn eval(&self, id: &str, script: &str) {
+            self.calls.lock().expect("calls").push(Call::Eval {
+                id: id.into(),
+                script: script.into(),
+            });
+        }
+        fn eval_result(&self, id: &str, script: &str, done: EvalDone) {
+            self.eval(id, script);
+            done(Ok("null".into()));
+        }
+        fn sees_frame_navigations(&self) -> bool {
+            !self
+                .no_frame_navigations
+                .load(std::sync::atomic::Ordering::SeqCst)
         }
         fn rename(&self, from: &str, to: &str) {
             self.calls.lock().expect("calls").push(Call::Rename {
@@ -1155,6 +1303,132 @@ mod tests {
         assert_eq!(
             svc.rename("browser-x", "pn_1").expect_err("taken").code,
             ErrorCode::Conflict
+        );
+    }
+
+    /// A page's report, as the picker script sends it.
+    fn report(nonce: &str, selectors: &[&str], stopped: bool) -> String {
+        let elements: Vec<serde_json::Value> = selectors
+            .iter()
+            .map(|sel| {
+                serde_json::json!({
+                    "tag": "li", "selector": sel, "component": {"name": "TodoItem", "framework": "React"},
+                    "rect": {"x": 0, "y": 0, "width": 10, "height": 10},
+                    "styles": {"display": "block", "position": "static", "font": "16px serif", "color": "rgb(0, 0, 0)",
+                               "background": "rgba(0, 0, 0, 0)", "margin": "0px", "padding": "0px"},
+                    "html": "<li>x</li>", "truncated": false
+                })
+            })
+            .collect();
+        let json = serde_json::json!({ "elements": elements, "stopped": stopped }).to_string();
+        let encoded: String = url::form_urlencoded::byte_serialize(json.as_bytes())
+            .collect::<String>()
+            .replace('+', "%20");
+        format!("tandem-picker://{nonce}/{encoded}")
+    }
+
+    fn nonce_in(script: &str) -> String {
+        let start = script.find("const NONCE = \"").expect("a nonce") + "const NONCE = \"".len();
+        script[start..start + 32].to_string()
+    }
+
+    #[test]
+    fn f_cd_18_the_picker_runs_in_the_page_and_only_its_session_reports() {
+        let (svc, host, published) = service();
+        let picked: Arc<Mutex<Vec<picker::BrowserPicked>>> = Arc::default();
+        let sink = picked.clone();
+        svc.set_picker_emitter(Arc::new(move |p| {
+            sink.lock().expect("picked").push(p.clone())
+        }));
+        let last_picked = || {
+            picked
+                .lock()
+                .expect("picked")
+                .last()
+                .map(|p| p.elements.len())
+        };
+        svc.open("b1", Some("http://localhost:5173/react"), PLACE, true)
+            .expect("open");
+        assert!(svc.picker("b1", true).expect("on").picking);
+        let Some(Call::Eval { script, .. }) = host.calls().last().cloned() else {
+            panic!("the picker wasn't run in the page");
+        };
+        let nonce = nonce_in(&script);
+        host.send(HostEvent::Picker {
+            id: "b1".into(),
+            url: report(&nonce, &["#a", "main > ul > li:nth-of-type(2)"], false),
+        });
+        assert_eq!(last_picked(), Some(2));
+        // Another session's report, or the page's own, is no selection.
+        host.send(HostEvent::Picker {
+            id: "b1".into(),
+            url: report("0123456789abcdef0123456789abcdef", &["#forged"], false),
+        });
+        assert_eq!(last_picked(), Some(2));
+        let md = svc.brief("b1", "bigger").expect("brief");
+        assert!(
+            md.contains("## 1. `#a`")
+                && md.contains("## 2. `main > ul > li:nth-of-type(2)`")
+                && !md.contains("forged")
+        );
+        assert!(md.contains("Page: http://localhost:5173/react") && md.contains("Note: bigger"));
+        // A new page: the old selection goes, and the picker runs again there.
+        host.send(HostEvent::Committed {
+            id: "b1".into(),
+            url: "http://localhost:5173/other".into(),
+        });
+        assert_eq!(last_picked(), Some(0));
+        host.send(HostEvent::Loaded {
+            id: "b1".into(),
+            url: "http://localhost:5173/other".into(),
+            can_back: true,
+            can_forward: false,
+        });
+        assert!(
+            matches!(host.calls().last(), Some(Call::Eval { script, .. }) if nonce_in(script) == nonce)
+        );
+        // Esc in the page stops it.
+        host.send(HostEvent::Picker {
+            id: "b1".into(),
+            url: report(&nonce, &[], true),
+        });
+        assert!(
+            !published
+                .lock()
+                .expect("published")
+                .last()
+                .expect("state")
+                .picking
+        );
+        // A new session gets a new nonce; turning it off stops that one.
+        svc.picker("b1", true).expect("on again");
+        let Some(Call::Eval { script, .. }) = host.calls().last().cloned() else {
+            panic!("no picker");
+        };
+        let second = nonce_in(&script);
+        assert_ne!(second, nonce);
+        assert!(!svc.picker("b1", false).expect("off").picking);
+        assert_eq!(
+            host.calls().last(),
+            Some(&Call::Eval {
+                id: "b1".into(),
+                script: picker::stop_script(&second)
+            })
+        );
+        host.send(HostEvent::Picker {
+            id: "b1".into(),
+            url: report(&second, &["#late"], false),
+        });
+        assert_eq!(last_picked(), Some(0));
+        // Where frames' navigations go unseen (WebView2), it reports by window.
+        assert!(
+            matches!(&host.calls()[..], [.., Call::Eval { script, .. }, _] if script.contains("const VIA = \"frame\";"))
+        );
+        host.no_frame_navigations
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        svc.picker("b1", true).expect("on by window");
+        assert!(
+            matches!(host.calls().last(), Some(Call::Eval { script, .. }) if script.contains("const VIA = \"window\";"))
         );
     }
 

@@ -106,6 +106,8 @@
     "allow-browser-set-bounds",
     "allow-browser-set-device",
     "allow-browser-move",
+    "allow-browser-picker",
+    "allow-browser-picker-brief",
     "allow-browser-close",
     "allow-browser-clear-data",
     "allow-presets-list",

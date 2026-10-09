@@ -4,13 +4,14 @@
 // address bar shows what the core reports as committed, never what a page
 // says about itself.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, Ellipsis, Globe, Monitor, RotateCw, Smartphone, Tablet, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Crosshair, Ellipsis, Globe, Monitor, RotateCw, Smartphone, Tablet, X } from "lucide-react";
 import type { BrowserCmd, BrowserState, Device, Rect } from "@tandem/protocol";
 import { Banner, Button, ConfirmDialog, EmptyState, IconButton, Input, Menu, Spinner, useToast, type MenuEntry } from "@tandem/ui";
 import { t } from "../../i18n";
 import { copyText } from "../../ipc/clipboard";
 import { invoke } from "../../ipc/invoke";
 import { takeAddressFocus, useBrowser } from "../../stores/browser";
+import { PickerPanel } from "./PickerPanel";
 import { notePage, usePlace, ZERO, type Placed } from "./place";
 
 const DEVICE_ICON: Record<Device, ReactNode> = {
@@ -83,6 +84,7 @@ export type BrowserViewProps = {
 export function BrowserView({ id, url, suspended = false, actions = [] }: BrowserViewProps) {
   const page = useBrowser((s) => s.pages[id]);
   const unavailable = useBrowser((s) => s.unavailable[id]);
+  const pickedCount = useBrowser((s) => s.picked[id]?.length ?? 0);
   const toast = useToast();
   const place = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
@@ -199,6 +201,7 @@ export function BrowserView({ id, url, suspended = false, actions = [] }: Browse
   const device = page?.device ?? "desktop";
   const rotated = page?.rotated ?? false;
   const blocked = page?.blocked ?? null;
+  const picking = page?.picking ?? false;
   const target = isWeb(url) ? url : typed ? externalFor(typed) : null;
 
   const devices: MenuEntry[] = [
@@ -271,6 +274,16 @@ export function BrowserView({ id, url, suspended = false, actions = [] }: Browse
             }
           }}
         />
+        <IconButton
+          size="sm"
+          tooltipSide="top"
+          icon={<Crosshair size={14} />}
+          label={picking ? t("browser.pick.stop") : t("browser.pick.start")}
+          pressed={picking}
+          disabled={!showable}
+          data-testid="browser-pick"
+          onClick={() => void useBrowser.getState().pick(id, !picking)}
+        />
         <Menu
           align="end"
           trigger={<IconButton size="sm" tooltipSide="top" icon={DEVICE_ICON[device]} label={t("browser.device")} disabled={!page} data-testid="browser-device" />}
@@ -284,6 +297,7 @@ export function BrowserView({ id, url, suspended = false, actions = [] }: Browse
         </Banner>
       )}
       {error && <Banner tone="error">{error}</Banner>}
+      {(picking || pickedCount > 0) && <PickerPanel id={id} picking={picking} />}
       <div ref={place} className="relative min-h-0 flex-1" data-testid="browser-place" data-visible={visible}>
         {page && showable && <DeviceFrame state={page} bounds={bounds} />}
         {!showable &&

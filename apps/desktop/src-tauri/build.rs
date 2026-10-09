@@ -91,6 +91,8 @@ const COMMANDS: &[&str] = &[
     "browser_set_bounds",
     "browser_set_device",
     "browser_move",
+    "browser_picker",
+    "browser_picker_brief",
     "browser_close",
     "browser_clear_data",
     "presets_list",
@@ -183,6 +185,7 @@ const COMMANDS: &[&str] = &[
 
 const TEST_COMMANDS: &[&str] = &[
     "test_counters",
+    "test_browser_eval",
     "test_spawn_log",
     "test_clock_advance",
     "test_fixture_agent",

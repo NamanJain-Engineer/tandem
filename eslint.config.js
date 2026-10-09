@@ -35,6 +35,11 @@ export default tseslint.config(
     },
   },
   {
+    // Scripts the app runs inside web pages (the element picker, F-CD-18).
+    files: ["apps/desktop/src-tauri/src/**/*.js", "src-tauri/src/**/*.js"],
+    languageOptions: { ecmaVersion: 2022, sourceType: "script", globals: globals.browser },
+  },
+  {
     files: ["**/*.tsx"],
     plugins: { react, "react-hooks": reactHooks },
     settings: { react: { version: "19" } },

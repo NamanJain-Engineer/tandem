@@ -1,10 +1,14 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BrowserState, Device, IpcError, Rect, SidebarState } from "@tandem/protocol";
+import type { BrowserState, Device, IpcError, PaneRecord, PickedElement, Rect, SidebarState, Thread } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { followBrowser, useBrowser } from "../../stores/browser";
 import { followBrowserTabs, pageTitle, useSidebar } from "../../stores/sidebar";
+import { useLayout } from "../../stores/layout";
+import { useThreads } from "../../stores/threads";
+import { terminalHandles, type TerminalHandle } from "../code/TerminalView";
+import { useThreadDrop } from "../thread/drops";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { Sidebar } from "../shell/Sidebar";
 import { BrowserView, externalFor } from "./BrowserView";
@@ -44,6 +48,7 @@ const state = (patch: Partial<BrowserState> = {}): BrowserState => ({
   frame: PLACE,
   zoom: 1,
   blocked: null,
+  picking: false,
   seq: ++seq,
   ...patch,
 });
@@ -94,8 +99,25 @@ function setup(
     browser_close: () => null,
     browser_clear_data: () => null,
     app_open_external: () => null,
+    browser_picker: (a) => {
+      const id = String(a?.browserId);
+      const s = { ...(pages.get(id) ?? state({ browserId: id })), picking: a?.on === true, seq: ++seq };
+      pages.set(id, s);
+      return s;
+    },
+    browser_picker_brief: (a) => `# Picked elements\n\nPage: http://localhost:5173/react\n\nNote: ${String(a?.note)}\n\n## 1. \`#save\``,
   });
 }
+
+const pickedEl = (selector: string, component: string | null): PickedElement => ({
+  tag: "button",
+  selector,
+  component: component ? { name: component, framework: "React" } : null,
+  rect: { x: 0, y: 0, width: 10, height: 10 },
+  styles: { display: "block", position: "static", font: "", color: "", background: "", margin: "0px", padding: "0px" },
+  html: "<button></button>",
+  truncated: false,
+});
 
 const view = (url: string | null = null) =>
   render(
@@ -273,6 +295,43 @@ describe("browser (F-CD-17)", () => {
     expect(calls.filter((c) => c.cmd === "browser_open")).toHaveLength(1);
   });
 
+  it("F-CD-18 the picker lists what's picked; the brief copies, or pastes into an agent pane or the thread without sending", async () => {
+    const calls = setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const paste = vi.fn();
+    terminalHandles.set("pn_ada", { paste } as unknown as TerminalHandle);
+    const agent = { id: "pn_ada", kind: "agent", engineId: "claude", humanName: "Ada", createdAt: 1 } as PaneRecord;
+    useLayout.setState({ tabs: { tb_1: { tree: null, active: null, maximized: null, panes: { pn_ada: agent }, keepEmpty: false } } });
+    useThreads.setState({ list: [{ id: "th_1", title: "Fix login" } as Thread], selectedId: "th_1" });
+    view("http://localhost:5173/react");
+    act(() => emitLocal("browser:state", state({ url: "http://localhost:5173/react" })));
+    fireEvent.click(await screen.findByTestId("browser-pick"));
+    await waitFor(() => expect(calls.find((c) => c.cmd === "browser_picker")?.args).toEqual({ browserId: "b1", on: true }));
+    expect(await screen.findByText(/Shift\+click adds one/)).toBeTruthy();
+    expect(screen.getByText("Nothing picked yet.")).toBeTruthy();
+    act(() => emitLocal("browser:picker", { browserId: "b1", elements: [pickedEl("#save", "SaveButton"), pickedEl("main > ul > li:nth-of-type(2)", null)] }));
+    const rows = screen.getAllByTestId("browser-picked");
+    expect(rows.map((r) => r.textContent)).toEqual(["1#saveSaveButton (React)", "2main > ul > li:nth-of-type(2)"]);
+    fireEvent.change(screen.getByRole("textbox", { name: "Note" }), { target: { value: "bigger" } });
+    fireEvent.click(screen.getByTestId("browser-brief-copy"));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(calls.find((c) => c.cmd === "browser_picker_brief")?.args).toEqual({ browserId: "b1", note: "bigger" });
+    expect(writeText.mock.calls[0]?.[0]).toContain("Note: bigger");
+    // Send to: the agent pane gets a paste with nothing after the brief.
+    fireEvent.keyDown(screen.getByTestId("browser-brief-send"), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Ada · claude" }));
+    await waitFor(() => expect(paste).toHaveBeenCalledTimes(1));
+    const pasted = String(paste.mock.calls[0]?.[0]);
+    expect(pasted.startsWith("# Picked elements")).toBe(true);
+    expect(pasted.endsWith("`#save`")).toBe(true);
+    // …or the open thread's composer.
+    fireEvent.keyDown(screen.getByTestId("browser-brief-send"), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Thread: Fix login" }));
+    await waitFor(() => expect(useThreadDrop.getState().texts.th_1?.[0]).toContain("Note: bigger"));
+    terminalHandles.delete("pn_ada");
+  });
+
   it("F-CD-17 New browser opens a tab with its address focused; the page names the pill; closing it closes the page", async () => {
     const calls = setup();
     render(
@@ -363,7 +422,7 @@ describe("browser placement (F-CD-17, D-206)", () => {
   });
 
   it("a pill names a page by its title, else its host or file", () => {
-    const base = { browserId: "b", canBack: false, canForward: false, loading: false, device: "desktop" as const, rotated: false, frame: { x: 0, y: 0, width: 0, height: 0 }, zoom: 1, blocked: null, seq: 1 };
+    const base = { browserId: "b", canBack: false, canForward: false, loading: false, device: "desktop" as const, rotated: false, frame: { x: 0, y: 0, width: 0, height: 0 }, zoom: 1, blocked: null, picking: false, seq: 1 };
     expect(pageTitle({ ...base, url: "http://localhost:5173/x", title: "  Fixtures " })).toBe("Fixtures");
     expect(pageTitle({ ...base, url: "http://localhost:5173/x", title: "" })).toBe("localhost:5173");
     expect(pageTitle({ ...base, url: "file:///work/site/index%20page.html", title: "" })).toBe("index page.html");

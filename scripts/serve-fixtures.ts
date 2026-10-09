@@ -11,11 +11,17 @@
  *   names itself after what it found and posts the details to `/__report`;
  * - `/to-tandem`: sends itself to `tandem://open` as soon as it loads (a
  *   page-made navigation the browser must refuse);
+ * - `/react`: "React fixture", a React app of repeated named components
+ *   (apps/desktop/e2e/fixtures/pages/react, bundled on first use with the
+ *   desktop's Vite) for the element picker;
  * - `/health`.
  * `GET /__reports` lists the probe reports, `GET /__requests` the pages
  * asked for, and `POST /__reset` forgets both.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createRequire } from "node:module";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const args = process.argv.slice(2);
 const option = (name: string, fallback: string) => {
@@ -23,6 +29,9 @@ const option = (name: string, fallback: string) => {
   return i >= 0 && args[i + 1] ? (args[i + 1] as string) : fallback;
 };
 const port = Number(option("port", "5173"));
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
+/** The static test pages (MILESTONES "Fixtures"). */
+const PAGES = join(ROOT, "apps/desktop/e2e/fixtures/pages");
 
 const page = (title: string, body: string) =>
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title>` +
@@ -61,6 +70,43 @@ const PROBE = page(
 
 const TO_TANDEM = page("To tandem", `<h1>To tandem</h1><script>location.href = "tandem://open?from=page";</script>`);
 
+const REACT = page("React fixture", `<div id="root"></div><script src="/react/main.js"></script>`);
+
+type Chunk = { type: string; code?: string };
+type ViteBuild = (config: Record<string, unknown>) => Promise<{ output: Chunk[] } | Array<{ output: Chunk[] }>>;
+
+let reactApp: Promise<string> | undefined;
+
+/** The React page's script: bundled once, with React's development build so
+ * components keep their names. */
+function reactScript(): Promise<string> {
+  reactApp ??= (async () => {
+    const desktop = createRequire(join(ROOT, "apps/desktop/package.json"));
+    const { build } = (await import(pathToFileURL(desktop.resolve("vite")).href)) as { build: ViteBuild };
+    const dir = join(PAGES, "react");
+    const result = await build({
+      configFile: false,
+      root: dir,
+      publicDir: false,
+      logLevel: "warn",
+      mode: "development",
+      define: { "process.env.NODE_ENV": JSON.stringify("development") },
+      build: {
+        write: false,
+        minify: false,
+        lib: { entry: join(dir, "main.tsx"), formats: ["iife"], name: "fixture", fileName: () => "main.js" },
+      },
+    });
+    const chunk = (Array.isArray(result) ? result.flatMap((r) => r.output) : result.output).find((o) => o.type === "chunk");
+    if (!chunk?.code) throw new Error("the React page didn't bundle");
+    return chunk.code;
+  })().catch((err: unknown) => {
+    reactApp = undefined;
+    throw err;
+  });
+  return reactApp;
+}
+
 const reports: unknown[] = [];
 const requests: string[] = [];
 
@@ -97,6 +143,8 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   if (path === "/") return send(res, 200, "text/html; charset=utf-8", HOME);
   if (path === "/probe") return send(res, 200, "text/html; charset=utf-8", PROBE);
   if (path === "/to-tandem") return send(res, 200, "text/html; charset=utf-8", TO_TANDEM);
+  if (path === "/react") return send(res, 200, "text/html; charset=utf-8", REACT);
+  if (path === "/react/main.js") return send(res, 200, "text/javascript; charset=utf-8", await reactScript());
   return send(res, 404, "text/html; charset=utf-8", page("Not found", "<h1>Not found</h1>"));
 }
 

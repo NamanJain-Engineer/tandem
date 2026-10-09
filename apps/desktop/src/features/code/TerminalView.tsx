@@ -81,6 +81,9 @@ export type TerminalHandle = {
   /** Copies the last finished command's output (shell integration, F-CD-10 AC3). */
   copyLastOutput: () => Promise<"copied" | "none">;
   selectAll: () => void;
+  /** Types `text` as a paste (bracketed when the program asked), never
+   * Enter: "Send to…" from the element picker (F-CD-18). */
+  paste: (text: string) => void;
   /** The visible screen as the serialize addon writes it (TUI goldens). */
   serialize: () => string;
   size: () => { cols: number; rows: number } | null;
@@ -613,6 +616,7 @@ export function TerminalView({
       find: findStep,
       copyLastOutput,
       selectAll: () => term.current?.selectAll(),
+      paste: (text: string) => sendPaste(text),
       size: () => (term.current ? { cols: term.current.cols, rows: term.current.rows } : null),
       metrics: () => {
         const xterm = term.current;

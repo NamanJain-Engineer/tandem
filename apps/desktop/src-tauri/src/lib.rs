@@ -115,6 +115,8 @@ macro_rules! app_commands {
             commands::browser::browser_set_bounds,
             commands::browser::browser_set_device,
             commands::browser::browser_move,
+            commands::browser::browser_picker,
+            commands::browser::browser_picker_brief,
             commands::browser::browser_close,
             commands::browser::browser_clear_data,
             commands::workspaces::workspace_locate,
@@ -445,6 +447,7 @@ pub fn run() {
     #[cfg(debug_assertions)]
     let builder = builder.invoke_handler(app_commands![
         commands::test::test_counters,
+        commands::browser::test_browser_eval,
         commands::test::test_spawn_log,
         commands::test::test_clock_advance,
         commands::test::test_fixture_agent,
@@ -497,6 +500,12 @@ pub fn run() {
                     keep(s);
                     let _ = emit_app.emit_to("main", "browser:state", s);
                 }));
+                let picked_app = handle.clone();
+                service.set_picker_emitter(std::sync::Arc::new(
+                    move |p: &browser::picker::BrowserPicked| {
+                        let _ = picked_app.emit_to("main", "browser:picker", p);
+                    },
+                ));
                 let _ = state.browser.set(service);
             }
             services::events::forward(handle.clone(), &state.bus);
