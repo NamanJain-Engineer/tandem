@@ -29,7 +29,7 @@ const FEATURES = [
   },
   {
     title: "Thread mode",
-    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched.",
+    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched. Free threads run Claude Code and Codex; Cursor Agent, Grok and OpenCode threads need Pro.",
   },
   {
     title: "Switch engines mid-thread",
@@ -41,7 +41,7 @@ const FEATURES = [
   },
   {
     title: "Several accounts per engine",
-    body: "Keep work and personal accounts apart, each signed in by itself, with usage, limits and context in view.",
+    body: "Keep work and personal accounts apart, each signed in by itself, with usage, limits and context in view. Free has one account per engine; Pro has as many as you need.",
   },
   {
     title: "Notifications that matter",

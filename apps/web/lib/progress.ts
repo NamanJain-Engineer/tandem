@@ -22,7 +22,7 @@ export const MILESTONES: readonly Milestone[] = [
     id: "M7",
     title: "Thread mode",
     items: [
-      "Claude Code, Codex, Cursor Agent, Grok and OpenCode as conversations: streamed replies, folded tool calls, Stop and queued follow-ups.",
+      "Claude Code, Codex, Cursor Agent, Grok and OpenCode as conversations: streamed replies, folded tool calls, Stop and queued follow-ups (Cursor Agent, Grok and OpenCode threads on Pro).",
       "Approvals answered inline, once or for the whole thread.",
       "Plan mode with numbered plan versions, and Implement for the one you pick.",
       "A Changes panel with every file a thread changed since it started, and the files it read.",

@@ -24,10 +24,9 @@ M16 adds the P2 extras and the release candidate.
    run the full E2E regression and the gate, then merge `product-m0-m5` into
    `main` and check the live site (`docs/OPERATING.md` §6–7).
 2. **Close known gaps:**
-   - The Free plan's `chatEngines` limit (Claude Code and Codex in Thread mode,
-     PRODUCT_SPEC §3.1) is defined but not enforced; Free threads also run the
-     ACP engines. Enforce it with the entitlement checks, with a test, and keep
-     the site's plan copy matching.
+   - [x] The Free plan's `chatEngines` limit (Claude Code and Codex in Thread
+     mode, PRODUCT_SPEC §3.2) is enforced from the entitlement (D-127), and the
+     site's plan copy matches.
    - Perf items marked [manual] (threads scroll fps, the 2 MB fence, the
      16-pane and startup suites) need the reference machines (`HUMAN_TODO.md`).
 

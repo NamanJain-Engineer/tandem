@@ -228,6 +228,16 @@ describe("public site", () => {
     expect(html(<HomePage />)).toContain(`href="/pricing/"`);
   });
 
+  it("F-TH-06 the plan copy says Free threads run Claude Code and Codex, and Pro every chat engine", () => {
+    const free = PLANS.find((p) => p.id === "free")?.features.map((f) => f.text) ?? [];
+    const pro = PLANS.find((p) => p.id === "pro")?.features.map((f) => f.text) ?? [];
+    expect(free).toContain("Thread mode with Claude Code and Codex, one thread at a time");
+    expect(free.join(" ")).not.toMatch(/Cursor|Grok|OpenCode|Every supported engine, on/);
+    expect(pro).toContain("Thread mode with every chat engine: Cursor Agent, Grok and OpenCode too");
+    const home = html(<HomePage />);
+    expect(home).toContain("Free threads run Claude Code and Codex; Cursor Agent, Grok and OpenCode threads need Pro.");
+  });
+
   it("F-WB-01 the changelog lists every closed milestone", () => {
     const h = html(<ChangelogPage />);
     for (const m of MILESTONES) expect(h).toContain(`id="${m.id.toLowerCase()}"`);
