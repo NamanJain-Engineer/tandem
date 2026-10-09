@@ -250,10 +250,7 @@ pub fn pty_write(
 ) -> Result<(), IpcError> {
     // The echo of typing is never the agent working (F-EN-05 AC3).
     state.terminals.status.quiet_window(pane_id.as_str());
-    Ok(state
-        .terminals
-        .pty
-        .write(pane_id.as_str(), data.as_bytes())?)
+    state.terminals.write_input(&pane_id, data.as_bytes())
 }
 
 /// Types a prompt into an agent's TUI once it's ready (F-EN-06): one paste,

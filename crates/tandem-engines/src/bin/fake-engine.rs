@@ -604,6 +604,15 @@ fn answer(name: &str, text: &str) -> bool {
         }
         return true;
     }
+    // `/write a.txt=text`: edits a file in the cwd the moment the line
+    // arrives, as an agent would (F-EX-01: checkpoints come first).
+    if let Some(spec) = t.strip_prefix("/write ") {
+        if let Some((path, text)) = spec.split_once('=') {
+            let _ = std::fs::write(path.trim(), text);
+            out(&format!("wrote {}\r\n", path.trim()));
+        }
+        return true;
+    }
     if let Some(title) = t.strip_prefix("/title ") {
         out(&format!("\x1b]2;{title}\x07"));
         return true;

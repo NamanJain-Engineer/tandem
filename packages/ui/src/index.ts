@@ -23,6 +23,7 @@ export {
   type PaletteGroup,
   type PaletteItem,
 } from "./components/CommandPalette";
+export { QuickPicker, type QuickPickerItem, type QuickPickerProps } from "./components/QuickPicker";
 export {
   Banner,
   Callout,

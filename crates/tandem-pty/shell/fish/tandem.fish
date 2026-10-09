@@ -13,8 +13,17 @@ if set -q TANDEM_SHELL_TOKEN; and not set -q __tandem_token
         printf '\e]133;%s;tandem=%s\a' $argv[1] $__tandem_token
     end
 
+    # $argv[1] is the command line (F-EX-02); a leading space keeps it out.
     function __tandem_preexec --on-event fish_preexec
         set -g __tandem_in_command 1
+        set -l line $argv[1]
+        if test -n "$line"; and not string match -q ' *' -- "$line"
+            set -l enc (string escape --style=url -- "$line" | string join '')
+            if test (string length -- "$enc") -le 12000
+                __tandem_mark "C;cmdline_url=$enc"
+                return
+            end
+        end
         __tandem_mark C
     end
 

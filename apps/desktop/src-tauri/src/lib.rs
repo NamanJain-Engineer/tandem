@@ -95,6 +95,16 @@ macro_rules! app_commands {
             commands::files::fs_delete,
             commands::files::fs_watch,
             commands::files::fs_unwatch,
+            commands::checkpoints::checkpoints_list,
+            commands::checkpoints::checkpoint_create,
+            commands::checkpoints::checkpoint_diff,
+            commands::checkpoints::checkpoint_restore,
+            commands::checkpoints::checkpoints_usage,
+            commands::checkpoints::checkpoints_delete_all,
+            commands::recall::history_search,
+            commands::recall::history_run,
+            commands::recall::history_delete,
+            commands::recall::history_clear,
             commands::files::editor_tabs_get,
             commands::files::editor_tabs_save,
             commands::files::app_reveal_path,
@@ -382,6 +392,20 @@ fn spawn_background(state: &AppState) {
     let terminals = state.terminals.clone();
     tauri::async_runtime::spawn(async move {
         terminals.login_env().await;
+    });
+    // Checkpoints past the settings' limits go at startup (F-EX-01).
+    let checkpoints = state.checkpoints.clone();
+    tauri::async_runtime::spawn(async move {
+        checkpoints.prune_all().await;
+    });
+    // Command recall keeps its retention at startup and hourly (F-EX-02).
+    let recall = state.recall.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            tick.tick().await;
+            recall.prune().await;
+        }
     });
     let staging = state.data.staging();
     tauri::async_runtime::spawn_blocking(move || {

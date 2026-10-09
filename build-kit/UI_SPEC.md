@@ -2251,9 +2251,9 @@ ID range UI-140–149. Every screen here uses only the §2 components and tokens
 A sidebar tab "Checkpoints" (singleton; "+" menu item "Checkpoints"), following the context on screen like Files: the open thread's checkpoints in Thread mode, the active workspace's or lane's in Code mode.
 ```
 ┌ Checkpoints · shop ─────────────────────── [Checkpoint now] ┐
-│ ● Before turn 4 · Fix checkout redirect · 2m    3 files differ │
-│ ○ Before prompt · Claude Code · 2 · 14m        5 files differ │
-│ ○ Before restore · 1h                          0 files differ │
+│ ● Before a turn · Fix checkout redirect · 2m   3 files differ │
+│ ○ Before a prompt · Claude Code · 2 · 14m      5 files differ │
+│ ○ Before restore · 1h                             Same as now │
 ├────────────────────────────────────────────────────────────────┤
 │ ☑ src/cart.ts            +4 −12                                 │
 │ ☑ src/new-helper.ts      created since                         │
@@ -2269,9 +2269,9 @@ A sidebar tab "Checkpoints" (singleton; "+" menu item "Checkpoints"), following 
 - Settings › Checkpoints (UI-117): Switch "Save checkpoints before agent turns", NumberControl "Keep per folder" (10–1,000), "Keep for (days)" (1–90), "Skip files larger than (MB)" (1–100), KeyValue "Space used", and the danger Button "Delete all checkpoints…".
 
 #### UI-141 · Recall palette · EX
-The command palette's second page (`Mod+Alt+R`, or "Recall a command…"): the input's placeholder is "Search commands you've run", a SegmentedControl "This workspace | Everywhere" sits under it.
+A palette-style picker with the command palette's shell (`Mod+Alt+R`, or "Recall a command…"; D-706): the input's placeholder is "Search commands you've run", a SegmentedControl "This workspace | Everywhere" sits under it.
 - Rows: the command in mono (truncated with the full text in a tooltip), then a second line with the folder, ✓ or "✗ {code}", duration, age and pane name, and "×{n}" when it ran more than once.
-- Footer Kbd hints: "↩ Insert", "⌘↩ Run" (hidden for a command with `[secret]` or when the focused pane can't run it), "⌘⌫ Delete".
+- Footer Kbd hints: "↩ Insert", "⌘↩ Run" (hidden for a command with `[REDACTED]` or when the focused pane can't run it), "⌘⌫ Delete".
 - Empty: "No commands yet" / "Commands you run in Vibezeo terminals show up here." Off: "Command recall is off" [Turn on]. No results: "No commands match "{query}"".
 - Settings › Terminal gains a "Command recall" group: Switch "Remember commands I run", NumberControl "Keep for (days)", and "Clear command history…".
 
@@ -2311,7 +2311,7 @@ Best of N · Fix login redirect                [Run check] [Discard all…]
 - States: loading (Skeleton columns), a lane that failed to start (Banner in its column with Retry), merged ("Merged {branch} into {base}" with "Close"), discarded.
 
 #### UI-145 · Prompt picker · EX
-The command palette's prompt page (`Mod+Alt+P`, "Insert prompt…"): rows show the title, the description and a Badge "This repository" or "Yours"; each row has "Edit" (opens it in the Files editor). The last row is "New prompt…".
+A palette-style picker with the command palette's shell (`Mod+Alt+P`, "Insert prompt…"; D-706): rows show the title, the description and a Badge "This repository" or "Yours"; each row has "Edit" (opens it in the Files editor). The last row is "New prompt…".
 - Choosing a prompt with variables to fill opens a Dialog sm "Fill in the prompt": one Input per variable (label `{{name}}`, prefilled with what Vibezeo found), a read-only preview, and "Cancel" / "Insert ⌘↩". Insert never sends.
 - "New prompt…": Dialog sm with "Name" and a SegmentedControl "This repository | Yours", then the file opens in the editor.
 - A Callout at the top when `.git/info/exclude` hides `.tandem/` (F-EX-05) with "Share with the repository".

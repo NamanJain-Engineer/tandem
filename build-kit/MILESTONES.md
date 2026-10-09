@@ -1869,7 +1869,7 @@ cargo test -p tandem-invariants && bash scripts/release-local.sh --dry-run
 
 **Goal.** Local features beyond the original spec that make working with agents faster, safer and more pleasant: checkpoints before every turn, command recall, a ports panel, Best of N, and a prompt library. Built in parallel with M8 and M10–M15 on branch `m17-extras` (decisions D-700–D-799); each feature lands on its own and can ship in any release after it's green.
 
-**Owns (P2):** F-EX-01, F-EX-02, F-EX-03, F-EX-04, F-EX-05
+**Owns:** F-EX-01, F-EX-02, F-EX-03, F-EX-04, F-EX-05 (all P2)
 **Prerequisites.** M9 (Files editor, browser, git panel). Nothing in M17 needs M8 or M10–M16.
 
 **Ordered tasks**
@@ -1881,7 +1881,7 @@ cargo test -p tandem-invariants && bash scripts/release-local.sh --dry-run
 2. **Command recall (F-EX-02).**
    - The shell scripts add the command line to `133;C` as `cmdline_url=<percent-encoded>` (bash from its history, zsh and fish from preexec, PowerShell from its last history entry, sent with the `D` mark). `MarkFilter` parses it only with the token and never puts it back into the stream.
    - The side channel times C → D; `HistoryService` redacts and stores; retention at startup and hourly.
-   - The recall palette (UI-141): a second page of the command palette (`CommandPalette` gains pages), Insert / Run / Delete.
+   - The recall palette (UI-141): a `QuickPicker` with the command palette's shell (D-706), Insert / Run / Delete.
 3. **Ports panel (F-EX-03).**
    - `tandem_pty::ports`: a `PortProbe` trait with Linux (`/proc/net/tcp{,6}` + `/proc/<pid>/fd`), macOS (`lsof`) and Windows (`netstat -ano`) implementations, each unit-tested on recorded output; a pane's process tree from the PTY's pid.
    - `ports_list`, `ports_stop` (rechecks pane ownership and start time); the Ports sidebar tab (UI-142).
@@ -1890,7 +1890,7 @@ cargo test -p tandem-invariants && bash scripts/release-local.sh --dry-run
    - The Best of N sheet (UI-143) and Compare page (UI-144).
 5. **Prompt library (F-EX-05).**
    - `tandem_core::prompts`: list (front matter, 64 KB limit, `contain()`), variables, render; `prompts_*` commands; the exclude-line narrowing.
-   - The prompt picker (UI-145) as a palette page, its variables form, and insertion into composers and panes without submitting.
+   - The prompt picker (UI-145) as a `QuickPicker`, its variables form, and insertion into composers and panes without submitting.
 
 **Verification**
 ```bash
@@ -1909,7 +1909,7 @@ pnpm tsx scripts/trace-tests.ts --milestone M17 --fail-on-missing
 - **E2E-M17-2 Command recall.**
   - `echo one`, `false` and ` echo hidden` in a bash pane. Expected: two entries with ✓ and ✗ 1.
   - Insert. Expected: the text at the prompt, nothing run. Run. Expected: it runs once.
-  - A command with a token. Expected: `[secret]`, no Run.
+  - A command with a token. Expected: `[REDACTED]`, no Run.
 - **E2E-M17-3 Ports.** A pane runs a small HTTP server on a free port. Expected: listed with the pane's name; Open loads it in a sidebar browser tab; Stop asks, Cancel keeps it, confirming ends it and the pane stays.
 - **E2E-M17-4 Best of N.** Three fake-engine seats with a check command. Expected: three worktrees and panes with the same prompt; Compare shows three diffs; Run check shows each exit code; Keep this one merges the winner and removes the other worktrees; branches stay.
 - **E2E-M17-5 Prompts.** A repository prompt with `{{branch}}` and `{{ticket}}`, and a profile prompt. Expected: both listed with their source; `{{ticket}}` asks; the text lands in the composer unsent and in a pane with no newline.

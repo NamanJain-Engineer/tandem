@@ -132,6 +132,10 @@ pub struct AppState {
     pub files: Arc<crate::services::files::FilesService>,
     /// The Changes view and the status bar's branch (F-CD-20).
     pub git_panel: Arc<crate::services::git_panel::GitPanelService>,
+    /// Checkpoints before agent turns (F-EX-01).
+    pub checkpoints: Arc<crate::services::checkpoints::CheckpointService>,
+    /// Command recall (F-EX-02).
+    pub recall: Arc<crate::services::recall::RecallService>,
     /// Browser tabs and panes (F-CD-17), bound to the window in setup.
     pub browser: std::sync::OnceLock<Arc<crate::browser::BrowserService>>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
@@ -254,6 +258,9 @@ impl AppState {
         }));
         let pty_bus = bus.clone();
         let mark_bus = bus.clone();
+        // Finished commands go to command recall (F-EX-02).
+        let recall = crate::services::recall::RecallService::new(store.clone(), clock.clone());
+        let mark_recall = recall.clone();
         let cwd_store = store.clone();
         // An agent exited and its pane went back to the shell: save the
         // session for the workspace's "Saved sessions" (F-CD-03 AC3).
@@ -314,6 +321,11 @@ impl AppState {
                 pty_bus.publish(BusEvent::new(Topic::Pty, "pty:state", state));
             }))
             .with_mark_sink(Arc::new(move |pane, mark| {
+                if let tandem_pty::Mark::Ran(ran) = mark {
+                    let (recall, pane, ran) = (mark_recall.clone(), pane.to_string(), ran.clone());
+                    tauri::async_runtime::spawn(async move { recall.record(&pane, ran).await });
+                    return;
+                }
                 if let Some(event) = mark.event(pane) {
                     mark_bus.publish(BusEvent::new(Topic::Pty, "pty:mark", event));
                 }
@@ -444,6 +456,39 @@ impl AppState {
                 },
             );
         }));
+        let checkpoints = crate::services::checkpoints::CheckpointService::new(
+            data.clone(),
+            store.clone(),
+            bus.clone(),
+            clock.clone(),
+            terminals.clone(),
+        );
+        threads.set_checkpoints(checkpoints.clone());
+        let (hook_cps, hook_store) = (checkpoints.clone(), store.clone());
+        terminals.set_prompt_hook(Arc::new(move |pane, late| {
+            let (cps, store) = (hook_cps.clone(), hook_store.clone());
+            Box::pin(async move {
+                use tandem_store::repo::{panes, workspaces};
+                let Ok(record) = panes::get(&store, &pane).await else {
+                    return;
+                };
+                let Ok(ws) = workspaces::get(&store, &record.workspace_id).await else {
+                    return;
+                };
+                cps.before_turn(
+                    crate::services::checkpoints::Request {
+                        folder: std::path::PathBuf::from(&ws.root),
+                        workspace_id: Some(ws.id.as_str().to_string()),
+                        pane_id: Some(pane.as_str().to_string()),
+                        label: record.human_name.unwrap_or_default(),
+                        late,
+                        ..Default::default()
+                    },
+                    tandem_store::repo::checkpoints::CheckpointReason::Prompt,
+                )
+                .await;
+            })
+        }));
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         let files = crate::services::files::FilesService::new(store.clone());
         let git_panel = crate::services::git_panel::GitPanelService::new(files.clone());
@@ -477,6 +522,8 @@ impl AppState {
             models,
             files,
             git_panel,
+            checkpoints,
+            recall,
             browser: std::sync::OnceLock::new(),
             e2e,
         }

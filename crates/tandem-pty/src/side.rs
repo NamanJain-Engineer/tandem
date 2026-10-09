@@ -11,7 +11,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::marks::{Mark, MarkFilter, OutputCapture};
+use crate::marks::{Mark, MarkFilter, OutputCapture, Ran};
 use crate::responder::{QueryResponder, TermColors};
 
 /// What `pty:state` carries for a pane.
@@ -62,6 +62,17 @@ pub struct SideChannel {
     filter: MarkFilter,
     capture: OutputCapture,
     cwd: Option<String>,
+    /// The command running now, from its `C` mark (F-EX-02).
+    running: Option<(Option<String>, i64, std::time::Instant)>,
+    /// A prompt is up and no command started since (F-EX-02 Run).
+    at_prompt: bool,
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 impl SideChannel {
@@ -76,6 +87,8 @@ impl SideChannel {
             filter: MarkFilter::new(token),
             capture: OutputCapture::default(),
             cwd: None,
+            running: None,
+            at_prompt: false,
             screen: vt100::Parser::new_with_callbacks(
                 rows.max(2),
                 cols.max(2),
@@ -100,13 +113,46 @@ impl SideChannel {
             let segment = fed.output[at..offset].to_vec();
             fed.replies.extend(self.feed(&segment, colors));
             at = offset;
+            let mut ran = None;
             match &mark {
-                Mark::CommandStart { skip_newline } => self.capture.start(*skip_newline),
-                Mark::CommandEnd { exit } => self.capture.end(*exit),
+                Mark::CommandStart {
+                    skip_newline,
+                    command,
+                } => {
+                    self.capture.start(*skip_newline);
+                    self.running = Some((command.clone(), now_ms(), std::time::Instant::now()));
+                }
+                Mark::CommandEnd { exit, command } => {
+                    self.capture.end(*exit);
+                    let started = self.running.take();
+                    let (text, started_at, duration_ms) = match started {
+                        Some((text, at, clock)) => (
+                            text.or_else(|| command.clone()),
+                            at,
+                            Some(clock.elapsed().as_millis() as i64),
+                        ),
+                        None => (command.clone(), now_ms(), None),
+                    };
+                    if let Some(command) = text {
+                        ran = Some(Mark::Ran(Ran {
+                            command,
+                            cwd: self.cwd.clone(),
+                            exit: *exit,
+                            started_at,
+                            duration_ms,
+                        }));
+                    }
+                }
                 Mark::Cwd(path) => self.cwd = Some(path.clone()),
                 _ => {}
             }
+            match &mark {
+                Mark::PromptStart | Mark::PromptEnd => self.at_prompt = true,
+                Mark::CommandStart { .. } | Mark::Handback(_) => self.at_prompt = false,
+                _ => {}
+            }
             fed.marks.push(mark);
+            fed.marks.extend(ran);
         }
         let rest = fed.output[at..].to_vec();
         fed.replies.extend(self.feed(&rest, colors));
@@ -172,6 +218,12 @@ impl SideChannel {
     }
 
     /// A command is running (between its C and D marks).
+    /// The shell showed a prompt and started nothing since: typing a
+    /// command and Enter runs it (F-EX-02).
+    pub fn at_prompt(&self) -> bool {
+        self.at_prompt && !self.capture.running()
+    }
+
     pub fn command_running(&self) -> bool {
         self.capture.running()
     }
@@ -249,6 +301,30 @@ mod tests {
             side.last_output(),
             Some(("a.txt  b.txt".to_string(), Some(0)))
         );
+    }
+
+    #[test]
+    fn f_ex_02_1_a_finished_command_is_reported_with_its_folder_exit_and_time() {
+        let mut side = SideChannel::with_token("pn_1", 24, 80, Some("tk".into()));
+        let c = TermColors::default();
+        let fed = side.feed_raw(
+            b"\x1b]7;file://h/srv/app;tandem=tk\x07\x1b]133;C;cmdline_url=false;tandem=tk\x07\x1b]133;D;1;tandem=tk\x07",
+            &c,
+        );
+        let ran: Vec<&Ran> = fed
+            .marks
+            .iter()
+            .filter_map(|m| if let Mark::Ran(r) = m { Some(r) } else { None })
+            .collect();
+        assert_eq!(ran.len(), 1);
+        assert_eq!(ran[0].command, "false");
+        assert_eq!(ran[0].cwd.as_deref(), Some("/srv/app"));
+        assert_eq!(ran[0].exit, Some(1));
+        assert!(ran[0].duration_ms.is_some());
+        assert!(ran[0].started_at > 0);
+        // Without a command line (a space-prefixed one) nothing is reported.
+        let fed = side.feed_raw(b"\x1b]133;C;tandem=tk\x07\x1b]133;D;0;tandem=tk\x07", &c);
+        assert!(!fed.marks.iter().any(|m| matches!(m, Mark::Ran(_))));
     }
 
     #[test]

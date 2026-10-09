@@ -6,6 +6,7 @@ import { useLaunch } from "../../stores/launch";
 import { useNotifications } from "../../stores/notifications";
 import { useCloseConfirm } from "../../stores/closeConfirm";
 import { useSidebar } from "../../stores/sidebar";
+import { useRecall } from "../recall/RecallPicker";
 import type { CommandSpec } from "@tandem/protocol";
 import shortcuts from "@tandem/protocol/shortcuts.json";
 import { t, type MessageKey } from "../../i18n";
@@ -101,6 +102,8 @@ export const handlers: Record<string, () => void> = {
   "rail.toggle": () => useUi.getState().toggleRail(),
   "sidebar.toggle": () => useSidebar.getState().toggle(),
   "sidebar.files": () => useSidebar.getState().openTab("files"),
+  "sidebar.checkpoints": () => useSidebar.getState().openTab("checkpoints"),
+  "recall.open": () => useRecall.getState().show(),
   "notifications.open": () => useNotifications.getState().setOpen(true),
   "dashboard.full_view": () => {
     const sb = useSidebar.getState();

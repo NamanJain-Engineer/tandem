@@ -6,6 +6,7 @@ import { Badge, Chip } from "../components/Badge";
 import { Button } from "../components/Button";
 import { Checkbox, RadioGroup, Switch } from "../components/Choice";
 import { CommandPalette } from "../components/CommandPalette";
+import { QuickPicker } from "../components/QuickPicker";
 import { Banner, Callout, EmptyState, KeyValue, ListRow, PageHeader, SettingsGroup, SettingsRow, Stepper } from "../components/Composites";
 import { ConfirmDialog, Dialog, Sheet } from "../components/Dialog";
 import { Composer } from "../components/Composer";
@@ -299,6 +300,32 @@ export const galleryEntries: GalleryEntry[] = [
               { heading: "Actions", prefix: ">", items: [{ id: "ws.add", label: "Add folder…", icon: <Plus size={16} />, onSelect: noop }, { id: "term.new", label: "New terminal", icon: <Terminal size={16} />, onSelect: noop }] },
               { heading: "Settings", items: [{ id: "settings.open", label: "Open Settings", kbd: ["Mod", ","], onSelect: noop }] },
             ]}
+          />
+        ),
+      },
+    ],
+  },
+  {
+    id: "quick-picker",
+    title: "QuickPicker",
+    spec: "§2.22 (UI-141, UI-145)",
+    states: [
+      {
+        name: "open",
+        render: () => (
+          <QuickPicker
+            open
+            onOpenChange={noop}
+            title="Recall a command"
+            placeholder="Search commands you've run"
+            query=""
+            onQueryChange={noop}
+            onSelect={noop}
+            items={[
+              { id: "1", label: "pnpm test", content: <span className="font-mono text-sm">pnpm test</span> },
+              { id: "2", label: "docker compose up -d", content: <span className="font-mono text-sm">docker compose up -d</span> },
+            ]}
+            hints={[{ keys: ["Enter"], label: "Insert" }, { keys: ["Mod", "Enter"], label: "Run" }]}
           />
         ),
       },

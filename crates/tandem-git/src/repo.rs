@@ -448,7 +448,7 @@ impl Repo {
 }
 
 /// Each file of `diff` as the DiffView renders it (UI_SPEC §2.25).
-fn files_of(diff: &git2::Diff<'_>) -> Result<Vec<FileDiff>, GitError> {
+pub(crate) fn files_of(diff: &git2::Diff<'_>) -> Result<Vec<FileDiff>, GitError> {
     let mut files = Vec::with_capacity(diff.deltas().len());
     for idx in 0..diff.deltas().len() {
         let Some(delta) = diff.get_delta(idx) else {

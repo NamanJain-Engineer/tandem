@@ -125,6 +125,10 @@ impl DataDir {
     pub fn conductor(&self) -> PathBuf {
         self.root.join("conductor")
     }
+    /// Checkpoint stores, one per folder (F-EX-01).
+    pub fn checkpoints(&self) -> PathBuf {
+        self.root.join("checkpoints")
+    }
     pub fn scratchpad(&self) -> PathBuf {
         self.root.join("scratchpad")
     }

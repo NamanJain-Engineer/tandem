@@ -81,6 +81,24 @@
     "enabledWhen": "always"
   },
   {
+    "id": "sidebar.checkpoints",
+    "category": "navigation",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "recall.open",
+    "category": "terminal",
+    "mac": "Mod+Alt+R",
+    "pc": "Mod+Alt+R",
+    "pcTerminal": "Mod+Alt+R",
+    "inText": true,
+    "enabledWhen": "always"
+  },
+  {
     "id": "notifications.open",
     "category": "navigation",
     "mac": "Mod+Shift+N",

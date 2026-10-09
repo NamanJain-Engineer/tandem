@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, ty
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Globe, LayoutDashboard, ListTodo, Maximize2, Minimize2, NotebookPen, Pin, PinOff, Plus, FolderTree, X } from "lucide-react";
+import { Globe, History, LayoutDashboard, ListTodo, Maximize2, Minimize2, NotebookPen, Pin, PinOff, Plug, Plus, FolderTree, X } from "lucide-react";
 import type { SidebarTab, SidebarTabKind } from "@tandem/protocol";
 import { Badge, EmptyState, IconButton, Menu, cx, useToast, type MenuEntry } from "@tandem/ui";
 import { t } from "../../i18n";
@@ -15,6 +15,7 @@ import { moveToPane } from "../code/BrowserPane";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { Dashboard } from "../dashboard/Dashboard";
+import { CheckpointsPanel } from "../checkpoints/CheckpointsPanel";
 import { FilesPanel } from "../files/FilesPanel";
 
 const ICONS: Record<SidebarTabKind, ReactNode> = {
@@ -23,6 +24,8 @@ const ICONS: Record<SidebarTabKind, ReactNode> = {
   files: <FolderTree size={13} aria-hidden="true" />,
   tasks: <ListTodo size={13} aria-hidden="true" />,
   scratchpad: <NotebookPen size={13} aria-hidden="true" />,
+  checkpoints: <History size={13} aria-hidden="true" />,
+  ports: <Plug size={13} aria-hidden="true" />,
 };
 
 const LABELS: Record<Exclude<SidebarTabKind, "browser">, () => string> = {
@@ -30,6 +33,8 @@ const LABELS: Record<Exclude<SidebarTabKind, "browser">, () => string> = {
   files: () => t("sidebar.files"),
   tasks: () => t("sidebar.tasks"),
   scratchpad: () => t("sidebar.scratchpad"),
+  checkpoints: () => t("sidebar.checkpoints"),
+  ports: () => t("sidebar.ports"),
 };
 
 function tabLabel(tab: SidebarTab): string {
@@ -187,6 +192,7 @@ function Panel({ tab }: { tab: SidebarTab }) {
   if (tab.kind === "dashboard") return <Dashboard />;
   if (tab.kind === "files") return <FilesPanel />;
   if (tab.kind === "browser") return <BrowserTab tab={tab} />;
+  if (tab.kind === "checkpoints") return <CheckpointsPanel />;
   return <EmptyState title={t("sidebar.soon")} />;
 }
 
@@ -249,6 +255,7 @@ export function Sidebar() {
     },
     { id: "dashboard", label: t("sidebar.dashboard"), onSelect: () => useSidebar.getState().openTab("dashboard") },
     { id: "files", label: t("sidebar.files"), onSelect: () => useSidebar.getState().openTab("files") },
+    { id: "checkpoints", label: t("sidebar.checkpoints"), onSelect: () => useSidebar.getState().openTab("checkpoints") },
     { id: "tasks", label: t("sidebar.tasks"), onSelect: () => useSidebar.getState().openTab("tasks") },
     { id: "scratchpad", label: t("sidebar.scratchpad"), onSelect: () => useSidebar.getState().openTab("scratchpad") },
   ];

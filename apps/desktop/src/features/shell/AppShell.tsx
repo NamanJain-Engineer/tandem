@@ -16,6 +16,7 @@ import { ThreadMain } from "../thread/ThreadMain";
 import { ThreadRail } from "../thread/ThreadRail";
 import { followThreads } from "../../stores/threads";
 import { Palette } from "../palette/Palette";
+import { RecallPicker } from "../recall/RecallPicker";
 import { OrphansDialog } from "../restore/OrphansDialog";
 import { followEngines } from "../../stores/engines";
 import { followLimits } from "../../stores/limits";
@@ -155,6 +156,7 @@ export function AppShell() {
       <LaunchSheet />
       <HandoffDialog />
       <Palette />
+      <RecallPicker />
       <OrphansDialog />
       <RestartDialog />
       <UnsupportedOverlay />

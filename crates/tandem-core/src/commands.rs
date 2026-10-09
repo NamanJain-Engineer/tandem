@@ -129,6 +129,15 @@ static REGISTRY: &[CommandSpec] = &[
     ),
     // F-CD-19: the sidebar's Files tab (UI_SPEC §5).
     same("sidebar.files", C::Navigation, Some("Mod+Alt+F"), E::Always),
+    // F-EX-01: the sidebar's Checkpoints tab (UI-140).
+    same("sidebar.checkpoints", C::Navigation, None, E::Always),
+    // F-EX-02: the recall palette (UI-141).
+    in_text(same(
+        "recall.open",
+        C::Terminal,
+        Some("Mod+Alt+R"),
+        E::Always,
+    )),
     same(
         "notifications.open",
         C::Navigation,

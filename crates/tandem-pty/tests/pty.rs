@@ -522,3 +522,99 @@ fn f_sh_07_quit_ends_cooperative_shells_without_waiting_for_the_deadline() {
     );
     assert_eq!(mgr.live_count(), 0);
 }
+
+#[test]
+fn f_ex_02_1_shells_report_each_command_line_with_its_exit_and_folder() {
+    let home = tempfile::tempdir().expect("home");
+    let data = tempfile::tempdir().expect("data");
+    let scripts = tandem_pty::integration::install(data.path()).expect("install");
+    let marks: Arc<std::sync::Mutex<Vec<(String, tandem_pty::Mark)>>> = Arc::default();
+    let seen = marks.clone();
+    let mgr = PtyManager::new().with_mark_sink(Arc::new(move |pane, m| {
+        seen.lock()
+            .expect("marks")
+            .push((pane.to_string(), m.clone()));
+    }));
+    let mut ran_shells = 0;
+    for shell in ["/bin/bash", "/usr/bin/zsh", "/usr/bin/fish"] {
+        let pane = format!("recall-{}", shell.rsplit('/').next().unwrap_or("x"));
+        let Some(mut s) = integrated(shell, &pane, home.path(), &scripts) else {
+            continue;
+        };
+        ran_shells += 1;
+        // No HISTCONTROL: bash keeps the space-prefixed line in its own
+        // history, and the integration still leaves it out.
+        s.env.remove("HISTCONTROL");
+        s.env.insert(
+            "HISTFILE".into(),
+            home.path().join(".hist").to_string_lossy().into_owned(),
+        );
+        let sink = Arc::new(VecSink::default());
+        mgr.spawn(s, Some(sink.clone() as Arc<dyn OutputSink>))
+            .expect("spawn");
+        let ran = |marks: &Arc<std::sync::Mutex<Vec<(String, tandem_pty::Mark)>>>,
+                   pane: &str|
+         -> Vec<tandem_pty::Ran> {
+            marks
+                .lock()
+                .map(|m| {
+                    m.iter()
+                        .filter(|(p, _)| p == pane)
+                        .filter_map(|(_, k)| {
+                            if let tandem_pty::Mark::Ran(r) = k {
+                                Some(r.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let prompt_count = |marks: &Arc<std::sync::Mutex<Vec<(String, tandem_pty::Mark)>>>,
+                            pane: &str| {
+            marks
+                .lock()
+                .map(|m| {
+                    m.iter()
+                        .filter(|(p, k)| p == pane && *k == tandem_pty::Mark::PromptStart)
+                        .count()
+                })
+                .unwrap_or(0)
+        };
+        assert!(
+            wait_until(Duration::from_secs(10), || prompt_count(&marks, &pane) >= 1),
+            "{shell}: first prompt"
+        );
+        for (i, line) in ["echo one", "false", " echo hidden"].iter().enumerate() {
+            mgr.write(&pane, format!("{line}\r").as_bytes())
+                .expect("write");
+            assert!(
+                wait_until(Duration::from_secs(5), || prompt_count(&marks, &pane)
+                    >= i + 2),
+                "{shell}: prompt after {line}"
+            );
+        }
+        let got = ran(&marks, &pane);
+        assert_eq!(
+            got.iter()
+                .map(|r| (r.command.as_str(), r.exit))
+                .collect::<Vec<_>>(),
+            [("echo one", Some(0)), ("false", Some(1))],
+            "{shell}"
+        );
+        let home_canon = std::fs::canonicalize(home.path()).expect("canon");
+        for r in &got {
+            assert_eq!(
+                r.cwd.as_deref().map(std::path::Path::new),
+                Some(home_canon.as_path()),
+                "{shell}"
+            );
+            assert!(r.duration_ms.is_some() && r.started_at > 0, "{shell}");
+        }
+        // The command line never reaches the view.
+        assert!(!text(&sink).contains("cmdline_url"), "{shell}");
+        mgr.kill(&pane).expect("kill");
+    }
+    assert!(ran_shells >= 1);
+}

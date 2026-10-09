@@ -23,6 +23,8 @@ pub enum SettingsPage {
     Plugins,
     Remote,
     Privacy,
+    /// Checkpoints (F-EX-01, UI-117).
+    Checkpoints,
     Shortcuts,
     Account,
     Updates,
@@ -139,6 +141,12 @@ setting_keys! {
     RailWidth,
     ThreadDefaults,
     ThreadGrid,
+    CheckpointsEnabled,
+    CheckpointsKeep,
+    CheckpointsDays,
+    CheckpointsMaxFileMb,
+    CommandHistoryEnabled,
+    CommandHistoryDays,
 }
 
 /// How a value is checked before it is stored.
@@ -792,6 +800,50 @@ pub static SCHEMA: &[SettingSpec] = &[
     // per engine `<engine>.model`, `<engine>.effort`, `<engine>.access`.
     spec!(ThreadDefaults, json!({}), V::Map, Hidden, []),
     spec!(ThreadGrid, json!({"ids": []}), V::Map, Hidden, []),
+    // F-EX-01: checkpoints before agent turns, kept per folder.
+    spec!(
+        CheckpointsEnabled,
+        json!(true),
+        V::Bool,
+        Checkpoints,
+        ["checkpoints", "rewind", "undo", "restore"]
+    ),
+    spec!(
+        CheckpointsKeep,
+        json!(100),
+        V::IntRange(10, 1000),
+        Checkpoints,
+        ["checkpoints", "keep"]
+    ),
+    spec!(
+        CheckpointsDays,
+        json!(14),
+        V::IntRange(1, 90),
+        Checkpoints,
+        ["checkpoints", "days"]
+    ),
+    spec!(
+        CheckpointsMaxFileMb,
+        json!(5),
+        V::IntRange(1, 100),
+        Checkpoints,
+        ["checkpoints", "large files"]
+    ),
+    // F-EX-02: command recall, local only.
+    spec!(
+        CommandHistoryEnabled,
+        json!(true),
+        V::Bool,
+        Terminal,
+        ["command recall", "history"]
+    ),
+    spec!(
+        CommandHistoryDays,
+        json!(90),
+        V::IntRange(1, 3650),
+        Terminal,
+        ["command recall", "history", "retention"]
+    ),
 ];
 
 pub fn spec(key: SettingKey) -> &'static SettingSpec {
