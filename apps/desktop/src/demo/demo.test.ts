@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type { GitPanel, Thread, ThreadChanges, ThreadDetail, ThreadEvent, ThreadEventEnvelope } from "@tandem/protocol";
+import type { GitPanel, ScratchNote, Thread, ThreadChanges, ThreadDetail, ThreadEvent, ThreadEventEnvelope } from "@tandem/protocol";
 import { setInvokeBackend } from "../ipc/invoke";
 import { DemoCore, FIRST_MESSAGE } from "./backend";
 import { DemoShell, PROMPT, run } from "./shell";
@@ -127,5 +127,33 @@ describe("browser demo Files tab (F-CD-19)", () => {
     for (const cmd of ["git_stage", "git_commit", "git_push", "git_switch"]) {
       expect(() => core?.handle(cmd, { paths: ["README.md"] })).toThrow();
     }
+  });
+});
+
+describe("browser demo Scratchpad (F-SH-12)", () => {
+  it("F-SH-12 keeps notes in the page with the app's rules: newest first, titled by the first line, no save after a delete", () => {
+    core = new DemoCore(0);
+    const list = () => (core?.handle("scratchpad_list", {}) as ScratchNote[]).map((n) => [n.id, n.title]);
+    expect(list()).toEqual([]);
+    const a = core.handle("scratchpad_write", { id: null, markdown: "" }) as ScratchNote;
+    expect(a.title).toBe("");
+    core.handle("scratchpad_write", { id: a.id, markdown: "\n# **Groceries** list\n- [ ] milk" });
+    const b = core.handle("scratchpad_write", { id: null, markdown: "- [x] call <u>Ana</u>" }) as ScratchNote;
+    expect(b.id).not.toBe(a.id);
+    expect(list()).toEqual([
+      [b.id, "call Ana"],
+      [a.id, "Groceries list"],
+    ]);
+    expect(core.handle("scratchpad_read", { id: a.id })).toBe("\n# **Groceries** list\n- [ ] milk");
+    // Saving a note moves it to the top.
+    core.handle("scratchpad_write", { id: a.id, markdown: "1. eggs" });
+    expect(list()).toEqual([
+      [a.id, "eggs"],
+      [b.id, "call Ana"],
+    ]);
+    core.handle("scratchpad_delete", { id: a.id });
+    expect(() => core?.handle("scratchpad_write", { id: a.id, markdown: "late" })).toThrow();
+    expect(() => core?.handle("scratchpad_read", { id: a.id })).toThrow();
+    expect(list()).toEqual([[b.id, "call Ana"]]);
   });
 });

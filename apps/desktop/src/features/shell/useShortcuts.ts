@@ -70,16 +70,24 @@ export function useShortcuts(): void {
         }
       }
       // Release builds never reload, print or open devtools. The key still
-      // reaches a focused terminal (xterm ignores defaultPrevented).
-      if (!dev && isWebviewShortcut(e, mac)) e.preventDefault();
+      // reaches a focused terminal (xterm ignores defaultPrevented). An
+      // editor sees it first, because CodeMirror ignores prevented keys: it
+      // takes the ones it handles (Mod+S in the Files editor, Mod+U in a
+      // note) and `onKeyBubble` swallows the rest on the way back up.
+      if (!dev && isWebviewShortcut(e, mac) && !target?.closest(".cm-editor")) e.preventDefault();
+    };
+    const onKeyBubble = (e: KeyboardEvent) => {
+      if (!dev && !e.defaultPrevented && isWebviewShortcut(e, mac)) e.preventDefault();
     };
     window.addEventListener("compositionstart", onCompositionStart, true);
     window.addEventListener("compositionend", onCompositionEnd, true);
     window.addEventListener("keydown", onKey, { capture: true });
+    window.addEventListener("keydown", onKeyBubble);
     return () => {
       window.removeEventListener("compositionstart", onCompositionStart, true);
       window.removeEventListener("compositionend", onCompositionEnd, true);
       window.removeEventListener("keydown", onKey, { capture: true });
+      window.removeEventListener("keydown", onKeyBubble);
     };
   }, [platform, priority, dev]);
 }

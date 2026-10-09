@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-scratchpad-write"
+description = "Enables the scratchpad_write command without any pre-configured scope."
+commands.allow = ["scratchpad_write"]
+
+[[permission]]
+identifier = "deny-scratchpad-write"
+description = "Denies the scratchpad_write command without any pre-configured scope."
+commands.deny = ["scratchpad_write"]
