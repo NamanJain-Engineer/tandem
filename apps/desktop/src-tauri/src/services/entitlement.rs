@@ -181,9 +181,7 @@ impl EntitlementService {
                 .claims
                 .as_ref()
                 .map(|c| (c.exp + GRACE_SECONDS) * 1000),
-            monthly_grant: me
-                .and_then(|m| m.credits.grant)
-                .unwrap_or(MONTHLY_GRANT),
+            monthly_grant: me.and_then(|m| m.credits.grant).unwrap_or(MONTHLY_GRANT),
         }
     }
 
@@ -623,9 +621,13 @@ mod tests {
         assert_eq!(audit.flush().await, 0);
         // A Team member whose org turned audit on.
         let on = serde_json::json!({ "auditEnabled": true });
-        *r.api.me.lock().expect("lock") = Some(me(token_with(&key, "team", now + 86_400, on), Plan::Team));
+        *r.api.me.lock().expect("lock") =
+            Some(me(token_with(&key, "team", now + 86_400, on), Plan::Team));
         svc.refresh().await;
-        assert!(audit.record("full_access_used", &[("engine", "claude"), ("surface", "thread")]));
+        assert!(audit.record(
+            "full_access_used",
+            &[("engine", "claude"), ("surface", "thread")]
+        ));
         // Offline: kept for later.
         *r.api.offline.lock().expect("lock") = true;
         assert_eq!(audit.flush().await, 0);
@@ -635,7 +637,10 @@ mod tests {
         let sent = r.api.audits.lock().expect("lock").clone();
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0].event, "full_access_used");
-        assert_eq!(sent[0].meta.get("engine").and_then(Value::as_str), Some("claude"));
+        assert_eq!(
+            sent[0].meta.get("engine").and_then(Value::as_str),
+            Some("claude")
+        );
         // The API's schema: an RFC 3339 time in UTC (it 422s anything else).
         assert!(
             chrono::DateTime::parse_from_rfc3339(&sent[0].ts).is_ok() && sent[0].ts.ends_with('Z'),

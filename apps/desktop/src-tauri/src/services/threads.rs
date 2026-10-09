@@ -2206,7 +2206,10 @@ mod policy_tests {
             self.policy.clone()
         }
         fn audit(&self, event: &str, meta: &[(&str, &str)]) {
-            let engine = meta.iter().find(|(k, _)| *k == "engine").map(|(_, v)| v.to_string());
+            let engine = meta
+                .iter()
+                .find(|(k, _)| *k == "engine")
+                .map(|(_, v)| v.to_string());
             self.audits
                 .lock()
                 .expect("lock")
@@ -2253,7 +2256,12 @@ mod policy_tests {
             audit_enabled: true,
             ..OrgPolicy::default()
         }));
-        let got = session_access(Some(&g), &thread(Access::Full), Origin::Interactive, "claude");
+        let got = session_access(
+            Some(&g),
+            &thread(Access::Full),
+            Origin::Interactive,
+            "claude",
+        );
         assert_eq!(got, Access::Edits);
         // Nothing ran with Full, so nothing is audited.
         assert!(g.audits.lock().expect("lock").is_empty());
@@ -2262,14 +2270,24 @@ mod policy_tests {
     #[test]
     fn f_tl_10_1_a_full_session_start_is_offered_to_the_audit_log() {
         let g = guard(Some(OrgPolicy::default()));
-        let got = session_access(Some(&g), &thread(Access::Full), Origin::Interactive, "codex");
+        let got = session_access(
+            Some(&g),
+            &thread(Access::Full),
+            Origin::Interactive,
+            "codex",
+        );
         assert_eq!(got, Access::Full);
         assert_eq!(
             g.audits.lock().expect("lock").as_slice(),
             [("full_access_used".to_string(), "codex".to_string())]
         );
         // Edits sessions and unattended runs (never Full, D-4) aren't Full access.
-        session_access(Some(&g), &thread(Access::Edits), Origin::Interactive, "codex");
+        session_access(
+            Some(&g),
+            &thread(Access::Edits),
+            Origin::Interactive,
+            "codex",
+        );
         session_access(
             Some(&g),
             &thread(Access::Full),

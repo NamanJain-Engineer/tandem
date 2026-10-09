@@ -230,20 +230,36 @@ pub struct AuditEvent {
 #[ts(export)]
 pub enum HostedFailure {
     /// 402: the balance (or a Team member's cap) is spent.
-    OutOfCredits { message: String },
+    OutOfCredits {
+        message: String,
+    },
     /// 403 FORBIDDEN_PLAN: the feature needs Pro.
-    NeedsPro { message: String },
+    NeedsPro {
+        message: String,
+    },
     /// 429 DAILY_LIMIT: the day's cap for this feature.
-    DailyLimit { message: String },
+    DailyLimit {
+        message: String,
+    },
     /// 429 RATE_LIMITED.
-    RateLimited { message: String },
+    RateLimited {
+        message: String,
+    },
     /// 413: a take over 10 minutes or 25 MB.
-    TooLarge { message: String },
+    TooLarge {
+        message: String,
+    },
     /// Signed out.
-    SignedOut { message: String },
+    SignedOut {
+        message: String,
+    },
     /// Offline, timed out, or the service failed (5xx).
-    Unavailable { message: String },
-    Other { message: String },
+    Unavailable {
+        message: String,
+    },
+    Other {
+        message: String,
+    },
 }
 
 impl HostedFailure {
@@ -318,7 +334,11 @@ pub fn stt_body(upload: &SttUpload, boundary: &str) -> Vec<u8> {
     for hint in &upload.hints {
         field("hints", &hint.replace(['\r', '\n'], " "));
     }
-    let ext = if upload.mime.contains("wav") { "wav" } else { "opus" };
+    let ext = if upload.mime.contains("wav") {
+        "wav"
+    } else {
+        "opus"
+    };
     body.extend_from_slice(
         format!(
             "--{boundary}\r\nContent-Disposition: form-data; name=\"audio\"; filename=\"take.{ext}\"\r\nContent-Type: {}\r\n\r\n",
@@ -375,7 +395,11 @@ pub trait ApiClient: Send + Sync {
         Err(no_hosted_service())
     }
     /// `POST /v1/stt/transcribe` (F-BE-07, for F-DI-05).
-    async fn stt_transcribe(&self, _access: &str, _upload: SttUpload) -> Result<Transcript, ApiError> {
+    async fn stt_transcribe(
+        &self,
+        _access: &str,
+        _upload: SttUpload,
+    ) -> Result<Transcript, ApiError> {
         Err(no_hosted_service())
     }
     /// `POST /v1/audit/events` (F-TL-10).
@@ -665,7 +689,11 @@ impl ApiClient for HttpApi {
         self.call(req).await
     }
 
-    async fn stt_transcribe(&self, access: &str, upload: SttUpload) -> Result<Transcript, ApiError> {
+    async fn stt_transcribe(
+        &self,
+        access: &str,
+        upload: SttUpload,
+    ) -> Result<Transcript, ApiError> {
         let boundary = format!("tandem-{}", uuid::Uuid::new_v4().simple());
         let body = stt_body(&upload, &boundary);
         let req = self
@@ -800,8 +828,13 @@ mod tests {
         assert!(field("duration_ms") < field("audio"));
         assert!(field("language") < field("audio"));
         assert!(body.contains("\r\n\r\n31000\r\n"));
-        assert!(body.contains("\r\n\r\ntwo lines\r\n"), "a hint can't break the framing");
-        assert!(body.contains("filename=\"take.opus\"\r\nContent-Type: audio/ogg\r\n\r\nOggS-AUDIO\r\n--B--"));
+        assert!(
+            body.contains("\r\n\r\ntwo lines\r\n"),
+            "a hint can't break the framing"
+        );
+        assert!(body.contains(
+            "filename=\"take.opus\"\r\nContent-Type: audio/ogg\r\n\r\nOggS-AUDIO\r\n--B--"
+        ));
         let auto = stt_body(
             &SttUpload {
                 language: None,
@@ -822,15 +855,27 @@ mod tests {
             detail: detail.map(str::to_string),
         };
         assert_eq!(
-            HostedFailure::from_api(&http(403, "FORBIDDEN_PLAN", None), "Cloud transcription").message(),
+            HostedFailure::from_api(&http(403, "FORBIDDEN_PLAN", None), "Cloud transcription")
+                .message(),
             "Cloud transcription needs Vibezeo Pro."
         );
         assert!(matches!(
-            HostedFailure::from_api(&http(402, "CREDITS_EXHAUSTED", Some("You're out of credits for now.")), "x"),
+            HostedFailure::from_api(
+                &http(
+                    402,
+                    "CREDITS_EXHAUSTED",
+                    Some("You're out of credits for now.")
+                ),
+                "x"
+            ),
             HostedFailure::OutOfCredits { .. }
         ));
         let daily = HostedFailure::from_api(
-            &http(429, "DAILY_LIMIT", Some("You've reached today's cloud limit of 120 minutes. Switch to Local.")),
+            &http(
+                429,
+                "DAILY_LIMIT",
+                Some("You've reached today's cloud limit of 120 minutes. Switch to Local."),
+            ),
             "x",
         );
         assert!(matches!(daily, HostedFailure::DailyLimit { .. }));
@@ -859,7 +904,10 @@ mod tests {
             api.ai_rewrite("a", "polish", "hi", None, &[]).await,
             Err(ApiError::Network(_))
         ));
-        assert!(matches!(api.audit_events("a", &[]).await, Err(ApiError::Network(_))));
+        assert!(matches!(
+            api.audit_events("a", &[]).await,
+            Err(ApiError::Network(_))
+        ));
     }
 
     #[test]

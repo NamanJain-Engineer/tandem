@@ -57,16 +57,17 @@ impl AuditService {
     /// Queues `event` when the org's audit is on; returns whether it was.
     /// `meta` holds short identifiers only (an engine or plugin id).
     pub fn record(&self, event: &str, meta: &[(&str, &str)]) -> bool {
-        if !self
-            .entitlements
-            .policy()
-            .is_some_and(|p| p.audit_enabled)
-        {
+        if !self.entitlements.policy().is_some_and(|p| p.audit_enabled) {
             return false;
         }
         let meta: Map<String, Value> = meta
             .iter()
-            .map(|(k, v)| ((*k).to_string(), Value::String(v.chars().take(100).collect())))
+            .map(|(k, v)| {
+                (
+                    (*k).to_string(),
+                    Value::String(v.chars().take(100).collect()),
+                )
+            })
             .collect();
         // UTC with a Z, the form every RFC 3339 parser takes.
         let ts = chrono::DateTime::from_timestamp_millis(self.clock.now_ms())

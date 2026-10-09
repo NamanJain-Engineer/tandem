@@ -45,7 +45,7 @@ fn format_count(n: i64) -> String {
     let digits = n.abs().to_string();
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);
@@ -113,7 +113,12 @@ mod tests {
     use crate::services::entitlement::CreditsView;
     use tandem_core::entitlement::{LimitSource, Limits, Plan};
 
-    fn view(monthly: i64, purchased: i64, grant: Option<i64>, cap: Option<(i64, i64)>) -> EntitlementView {
+    fn view(
+        monthly: i64,
+        purchased: i64,
+        grant: Option<i64>,
+        cap: Option<(i64, i64)>,
+    ) -> EntitlementView {
         EntitlementView {
             plan: Plan::Pro,
             status: "active".into(),
@@ -149,7 +154,8 @@ mod tests {
         // Team: 30,000 for three seats; 2,500 left is under 10%.
         assert!(credit_low(&view(2_500, 0, Some(30_000), None)).is_some());
         // A member capped at 1,000 with 950 spent has 50 left of a big pool.
-        let (title, body) = credit_low(&view(25_000, 0, Some(1_000), Some((1_000, 950)))).expect("cap");
+        let (title, body) =
+            credit_low(&view(25_000, 0, Some(1_000), Some((1_000, 950)))).expect("cap");
         assert_eq!(title, "50 credits left");
         assert!(body.contains("cap"));
         // Free: no grant, no item.
@@ -159,7 +165,14 @@ mod tests {
     /// Signs the auth rig in through its scripted login.
     async fn sign_in(r: &crate::services::auth::tests::Rig) {
         r.auth.sign_in().await.expect("start");
-        let url = r.opener.opened.lock().expect("lock").last().cloned().unwrap_or_default();
+        let url = r
+            .opener
+            .opened
+            .lock()
+            .expect("lock")
+            .last()
+            .cloned()
+            .unwrap_or_default();
         let state = url::Url::parse(&url)
             .expect("url")
             .query_pairs()
@@ -226,7 +239,10 @@ mod tests {
 
         // A session: a thread's first message, a Full-access start, app events.
         assert_eq!(off.title("refactor the billing module").await, None);
-        assert!(!audit.record(crate::services::audit::FULL_ACCESS_USED, &[("engine", "claude")]));
+        assert!(!audit.record(
+            crate::services::audit::FULL_ACCESS_USED,
+            &[("engine", "claude")]
+        ));
         audit.flush().await;
         assert!(!crate::services::telemetry::capture(
             &telemetry,
@@ -236,7 +252,10 @@ mod tests {
         telemetry.flush().await;
         telemetry.upload_crashes().await;
         let sent = std::fs::read_to_string(&log).unwrap_or_default();
-        assert!(sent.trim().is_empty(), "nothing may leave with every opt-in off:\n{sent}");
+        assert!(
+            sent.trim().is_empty(),
+            "nothing may leave with every opt-in off:\n{sent}"
+        );
 
         // The witness works: with the titles opt-in on, the attempt is logged.
         let on = ApiTitler {
@@ -246,8 +265,14 @@ mod tests {
         };
         let _ = on.title("refactor the billing module").await;
         let sent = std::fs::read_to_string(&log).unwrap_or_default();
-        assert!(sent.contains("POST http://127.0.0.1:9/v1/ai/title"), "{sent}");
-        assert!(!sent.contains("billing"), "bodies never reach the log: {sent}");
+        assert!(
+            sent.contains("POST http://127.0.0.1:9/v1/ai/title"),
+            "{sent}"
+        );
+        assert!(
+            !sent.contains("billing"),
+            "bodies never reach the log: {sent}"
+        );
     }
 
     /// Every opt-in row in hosted-features.json is off by default; only update
@@ -266,10 +291,15 @@ mod tests {
             if state["kind"] != "setting" {
                 continue;
             }
-            let key = tandem_core::settings::SettingKey::parse(state["key"].as_str().unwrap_or_default())
-                .unwrap_or_else(|| panic!("{id}: unknown setting {}", state["key"]));
+            let key =
+                tandem_core::settings::SettingKey::parse(state["key"].as_str().unwrap_or_default())
+                    .unwrap_or_else(|| panic!("{id}: unknown setting {}", state["key"]));
             let on_by_default = tandem_core::settings::default_value(key) == state["equals"];
-            assert_eq!(on_by_default, id == "updates", "{id} must be off until the user turns it on");
+            assert_eq!(
+                on_by_default,
+                id == "updates",
+                "{id} must be off until the user turns it on"
+            );
         }
     }
 }
