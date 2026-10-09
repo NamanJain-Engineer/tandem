@@ -10,6 +10,7 @@ import { useLayout } from "../../stores/layout";
 import { FLOAT_BELOW, SIDEBAR_MAX, SIDEBAR_MIN, useSidebar } from "../../stores/sidebar";
 import { useStatus } from "../../stores/status";
 import { Dashboard } from "../dashboard/Dashboard";
+import { FilesPanel } from "../files/FilesPanel";
 
 const ICONS: Record<SidebarTabKind, ReactNode> = {
   dashboard: <LayoutDashboard size={13} aria-hidden="true" />,
@@ -61,6 +62,7 @@ function Pill({ tab, active }: { tab: SidebarTab; active: boolean }) {
   return (
     <li
       ref={setNodeRef}
+      role="presentation"
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cx(
         "group flex h-6 shrink-0 items-center rounded-full border text-sm",
@@ -80,6 +82,7 @@ function Pill({ tab, active }: { tab: SidebarTab; active: boolean }) {
         role="tab"
         aria-roledescription={undefined}
         aria-describedby={undefined}
+        aria-keyshortcuts="Delete"
         tabIndex={active ? 0 : -1}
         onClick={() => store().activate(tab.id)}
         onKeyDown={(e) => {
@@ -101,14 +104,17 @@ function Pill({ tab, active }: { tab: SidebarTab; active: boolean }) {
           </span>
         )}
       </button>
-      <button
-        type="button"
-        aria-label={t("sidebar.closeTab", { name: label })}
+      {/* A tab list may only hold tabs: × is for the mouse; the keyboard
+          closes the focused tab with Delete (aria-keyshortcuts). */}
+      <span
+        aria-hidden="true"
+        title={t("sidebar.closeTab", { name: label })}
+        data-testid="sidebar-pill-close"
         onClick={() => store().close(tab.id)}
-        className="mr-1 inline-flex size-4 items-center justify-center rounded-full text-fg-subtle opacity-0 hover:bg-surface-4 hover:text-fg focus-visible:opacity-100 focus-visible:shadow-focus focus-visible:outline-none group-hover:opacity-100"
+        className="mr-1 inline-flex size-4 cursor-default items-center justify-center rounded-full text-fg-subtle opacity-0 hover:bg-surface-4 hover:text-fg group-hover:opacity-100"
       >
         <X size={11} aria-hidden="true" />
-      </button>
+      </span>
     </li>
   );
 }
@@ -156,6 +162,7 @@ function Resizer({ width, onLive }: { width: number; onLive: (w: number | null) 
 
 function Panel({ tab }: { tab: SidebarTab }) {
   if (tab.kind === "dashboard") return <Dashboard />;
+  if (tab.kind === "files") return <FilesPanel />;
   return <EmptyState title={t("sidebar.soon")} />;
 }
 

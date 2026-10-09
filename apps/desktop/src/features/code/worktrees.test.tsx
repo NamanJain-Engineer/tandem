@@ -200,3 +200,21 @@ describe("worktrees (F-CD-15)", () => {
     expect(only.map((g) => [g.label, g.items.length, g.children?.length])).toEqual([["shop", 0, 1]]);
   });
 });
+
+describe("worktree Open in Files (F-CD-15, M9)", () => {
+  beforeEach(() => resetStores());
+
+  it("opens the worktree's folder in the Files tab", async () => {
+    const { worktreeMenu } = await import("./Worktrees");
+    const { useSidebar } = await import("../../stores/sidebar");
+    fakeBackend({ workspace_list: () => [REPO, FIX] });
+    useWorkspaces.setState({ list: [REPO, FIX], activeId: "shop", activeTab: {} });
+    const item = worktreeMenu(FIX, "main", () => 0).find((e) => e.id === "wt-files");
+    expect(item && "label" in item ? item.label : null).toBe("Open in Files");
+    if (item && (item.type === undefined || item.type === "item")) item.onSelect?.();
+    expect(useWorkspaces.getState().activeId).toBe("wt_1");
+    const s = useSidebar.getState();
+    expect(s.open).toBe(true);
+    expect(s.tabs.find((x) => x.id === s.active)?.kind).toBe("files");
+  });
+});

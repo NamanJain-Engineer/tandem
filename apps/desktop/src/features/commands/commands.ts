@@ -100,6 +100,7 @@ export const handlers: Record<string, () => void> = {
   "thread.changes": () => useThreads.getState().toggleChanges(),
   "rail.toggle": () => useUi.getState().toggleRail(),
   "sidebar.toggle": () => useSidebar.getState().toggle(),
+  "sidebar.files": () => useSidebar.getState().openTab("files"),
   "notifications.open": () => useNotifications.getState().setOpen(true),
   "dashboard.full_view": () => {
     const sb = useSidebar.getState();

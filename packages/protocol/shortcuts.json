@@ -72,6 +72,15 @@
     "enabledWhen": "always"
   },
   {
+    "id": "sidebar.files",
+    "category": "navigation",
+    "mac": "Mod+Alt+F",
+    "pc": "Mod+Alt+F",
+    "pcTerminal": "Mod+Alt+F",
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
     "id": "notifications.open",
     "category": "navigation",
     "mac": "Mod+Shift+N",

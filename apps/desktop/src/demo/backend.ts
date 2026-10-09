@@ -2,6 +2,7 @@
  * real interface runs against this simulation, in memory. Nothing runs and
  * nothing leaves the browser. */
 import type {
+  EditorTabs,
   AppBoot,
   AttachSnapshot,
   AuthState,
@@ -31,6 +32,7 @@ import { emitLocal } from "../ipc/events";
 import { setInvokeBackend } from "../ipc/invoke";
 import { FrameKind, encodeFrame, type FrameChannel } from "../ipc/pty";
 import { DEMO_CHANGES, afterAllow, afterDeny, chatTurn, fixTurn, type Step } from "./agent";
+import { DemoFiles } from "./files";
 import { DemoShell, agentScreen } from "./shell";
 
 type Args = Record<string, unknown> | undefined;
@@ -268,6 +270,8 @@ export class DemoCore {
   private ptys = new Map<string, Pty>();
   private threads = new Map<string, DemoThread>();
   private settings: Record<string, unknown> = { theme: "dark" };
+  /** The Files tab's made-up project (in memory). */
+  readonly files = new DemoFiles();
   private ids = 0;
   private timers = new Set<ReturnType<typeof setTimeout>>();
 
@@ -692,6 +696,25 @@ export class DemoCore {
       }
       case "app_open_external":
         if (typeof args?.url === "string" && args.url.startsWith("https://")) window.open(args.url, "_blank", "noopener");
+        return null;
+      case "fs_list":
+        return this.files.list(String(args?.dir ?? ""));
+      case "fs_read":
+        return this.files.read(String(args?.path ?? ""));
+      case "fs_write":
+        return this.files.write(String(args?.path ?? ""), String(args?.text ?? ""), (args?.expectedHash as string | null | undefined) ?? null);
+      case "fs_compare":
+        return this.files.compare(String(args?.path ?? ""), String(args?.text ?? ""));
+      case "fs_create":
+      case "fs_rename":
+      case "fs_delete":
+        throw { code: "unavailable", message: "The browser demo doesn't create, rename or delete files." };
+      case "fs_watch":
+        return "demo-watch";
+      case "editor_tabs_get":
+        return this.files.savedTabs();
+      case "editor_tabs_save":
+        this.files.saveTabs(args?.state as EditorTabs);
         return null;
       default:
         // Everything else is quiet: lists are empty, actions do nothing.

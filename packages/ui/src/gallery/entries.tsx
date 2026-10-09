@@ -10,6 +10,8 @@ import { Banner, Callout, EmptyState, KeyValue, ListRow, PageHeader, SettingsGro
 import { ConfirmDialog, Dialog, Sheet } from "../components/Dialog";
 import { Composer } from "../components/Composer";
 import { DiffView } from "../components/DiffView";
+import { CodeEditor } from "../components/CodeEditor";
+import { FileTree, type FileTreeNode } from "../components/FileTree";
 import { Input, SecretInput, Textarea } from "../components/Field";
 import { IconButton } from "../components/IconButton";
 import { Kbd } from "../components/Kbd";
@@ -52,6 +54,23 @@ const MODES = [
   { id: "code", label: "Code", kbd: ["Mod", "2"] },
   { id: "thread", label: "Thread", kbd: ["Mod", "3"] },
 ];
+
+const TREE: Record<string, FileTreeNode[] | undefined> = {
+  "": [
+    { path: "node_modules", name: "node_modules", kind: "dir", ignored: true },
+    { path: "src", name: "src", kind: "dir", gitStatus: "modified" },
+    { path: "docs", name: "docs", kind: "dir", gitStatus: "untracked" },
+    { path: ".env", name: ".env", kind: "file" },
+    { path: "README.md", name: "README.md", kind: "file", gitStatus: "modified" },
+    { path: "config.json", name: "config.json", kind: "file", symlink: true },
+  ],
+  src: [
+    { path: "src/auth", name: "auth", kind: "dir" },
+    { path: "src/main.rs", name: "main.rs", kind: "file", gitStatus: "modified" },
+    { path: "src/new.rs", name: "new.rs", kind: "file", gitStatus: "added" },
+  ],
+  "src/auth": undefined,
+};
 
 export const galleryEntries: GalleryEntry[] = [
   {
@@ -336,6 +355,68 @@ export const galleryEntries: GalleryEntry[] = [
         ),
       },
       { name: "empty", render: () => <DiffView files={[]} /> },
+    ],
+  },
+  {
+    id: "file-tree",
+    title: "FileTree",
+    spec: "§2.26",
+    states: [
+      {
+        name: "populated",
+        render: () => (
+          <div className="flex h-[320px] w-[280px]">
+            <FileTree entries={TREE} expanded={new Set(["src", "src/auth"])} selected="src/main.rs" onToggle={noop} onOpen={noop} />
+          </div>
+        ),
+      },
+      {
+        name: "loading",
+        render: () => (
+          <div className="flex h-[120px] w-[280px]">
+            <FileTree entries={{}} expanded={new Set()} onToggle={noop} onOpen={noop} />
+          </div>
+        ),
+      },
+      {
+        name: "empty",
+        render: () => (
+          <div className="flex h-[120px] w-[280px]">
+            <FileTree entries={{ "": [] }} expanded={new Set()} onToggle={noop} onOpen={noop} />
+          </div>
+        ),
+      },
+      {
+        name: "error",
+        render: () => (
+          <div className="flex h-[120px] w-[280px]">
+            <FileTree entries={{}} errors={{ "": "Permission denied" }} expanded={new Set()} onToggle={noop} onOpen={noop} onRetry={noop} />
+          </div>
+        ),
+      },
+    ],
+  },
+  {
+    id: "code-editor",
+    title: "CodeEditor",
+    spec: "§2.26 (Files editor)",
+    states: [
+      {
+        name: "editable",
+        render: () => (
+          <div className="h-[160px] w-[480px]">
+            <CodeEditor docKey="main" path="src/main.rs" label="Editor: src/main.rs" value={"fn main() {\n    println!(\"hi\");\n}\n"} />
+          </div>
+        ),
+      },
+      {
+        name: "read-only",
+        render: () => (
+          <div className="h-[120px] w-[480px]">
+            <CodeEditor docKey="hosts" path="/etc/hosts" label="Editor: /etc/hosts (read-only)" readOnly value={"127.0.0.1 localhost\n"} />
+          </div>
+        ),
+      },
     ],
   },
   {

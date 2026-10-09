@@ -76,7 +76,7 @@ describe("right sidebar (F-SH-10)", () => {
     await waitFor(() => expect(pills()).toEqual(["dashboard", "files"]));
     fireEvent.keyDown(screen.getByRole("tab", { name: /Files/ }), { key: "ArrowLeft", altKey: true, shiftKey: true });
     expect(pills()).toEqual(["files", "dashboard"]);
-    fireEvent.click(screen.getByRole("button", { name: "Close Files" }));
+    fireEvent.click(screen.getByTitle("Close Files"));
     expect(pills()).toEqual(["dashboard"]);
     fireEvent.keyDown(screen.getByRole("tab", { name: /Dashboard/ }), { key: "Delete" });
     expect(screen.queryAllByRole("tab")).toHaveLength(0);

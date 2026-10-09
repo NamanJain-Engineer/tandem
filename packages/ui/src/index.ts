@@ -73,6 +73,19 @@ export {
   type TextareaProps,
 } from "./components/Field";
 export { EngineBadge, EngineGlyph } from "./components/EngineGlyph";
+export { CodeEditor, languageFor, type CodeEditorProps } from "./components/CodeEditor";
+export {
+  FILE_ROW_HEIGHT,
+  FILE_TREE_LABELS,
+  FileTree,
+  GIT_LETTER,
+  VIRTUALIZE_ABOVE,
+  visibleRows,
+  type FileTreeChange,
+  type FileTreeLabels,
+  type FileTreeNode,
+  type FileTreeProps,
+} from "./components/FileTree";
 export { IconButton, type IconButtonProps } from "./components/IconButton";
 export { Kbd, type KbdProps } from "./components/Kbd";
 export { ContextMenu, Menu, orderEntries, type MenuEntry, type MenuProps } from "./components/Menu";

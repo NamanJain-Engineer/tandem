@@ -17,6 +17,7 @@ import {
   type MenuEntry,
 } from "@tandem/ui";
 import { t } from "../../i18n";
+import { useSidebar } from "../../stores/sidebar";
 import { useWorkspaces } from "../../stores/workspaces";
 import {
   baseBranch,
@@ -36,6 +37,17 @@ export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): Me
   const open = useWorktrees.getState().open;
   return [
     { id: "wt-diff", label: t("worktree.openDiff"), onSelect: () => open({ kind: "diff", worktreeId: wt.id }) },
+    {
+      // F-CD-15 "Open in Files": the worktree's folder in the Files tab.
+      id: "wt-files",
+      label: t("worktree.openInFiles"),
+      disabled: wt.missing,
+      onSelect: () => {
+        switchMode("code");
+        useWorkspaces.getState().select(wt.id);
+        useSidebar.getState().openTab("files");
+      },
+    },
     {
       id: "wt-merge",
       label: t("worktree.merge", { base }),

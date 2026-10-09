@@ -127,6 +127,8 @@ static REGISTRY: &[CommandSpec] = &[
         Some("Mod+Shift+B"),
         E::Always,
     ),
+    // F-CD-19: the sidebar's Files tab (UI_SPEC §5).
+    same("sidebar.files", C::Navigation, Some("Mod+Alt+F"), E::Always),
     same(
         "notifications.open",
         C::Navigation,

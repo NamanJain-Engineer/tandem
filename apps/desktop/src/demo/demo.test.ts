@@ -92,3 +92,20 @@ describe("browser demo (vibezeo.com/demo)", () => {
     expect(() => core?.handle("thread_get", { threadId: "nope" })).toThrow();
   });
 });
+
+describe("browser demo Files tab (F-CD-19)", () => {
+  it("lists the demo project the terminal shows, edits in memory and refuses stale saves", () => {
+    core = new DemoCore(0);
+    const top = core.handle("fs_list", { dir: "" }) as Array<{ path: string; kind: string; gitStatus?: string }>;
+    expect(top.map((e) => e.path)).toEqual(["src", "tests", "package.json", "README.md", "tsconfig.json", "vite.config.ts"]);
+    expect(top.find((e) => e.path === "src")?.gitStatus).toBe("modified");
+    const checkout = core.handle("fs_list", { dir: "src/checkout" }) as Array<{ path: string; gitStatus?: string }>;
+    expect(checkout.find((e) => e.path === "src/checkout/redirect.ts")?.gitStatus).toBe("modified");
+    const file = core.handle("fs_read", { path: "src/checkout/redirect.ts" }) as { text: string; hash: string };
+    expect(file.text).toContain("export function nextStep");
+    core.handle("fs_write", { path: "src/checkout/redirect.ts", text: "edited\n", expectedHash: file.hash });
+    expect((core.handle("fs_read", { path: "src/checkout/redirect.ts" }) as { text: string }).text).toBe("edited\n");
+    expect(() => core?.handle("fs_write", { path: "src/checkout/redirect.ts", text: "x", expectedHash: file.hash })).toThrow();
+    expect(() => core?.handle("fs_delete", { path: "README.md" })).toThrow();
+  });
+});
