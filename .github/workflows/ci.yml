@@ -62,6 +62,32 @@ jobs:
         run: pnpm --filter desktop build
       - run: cargo test --workspace
 
+  # tandem-host for SSH hosts (F-RM-01, MILESTONES M14): static binaries for
+  # the three host platforms. macOS minutes cost more, so macOS builds on
+  # merges to main and by hand, like test-rust.
+  tandem-host:
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"platform":"linux-x86_64","os":"ubuntu-24.04"},{"platform":"linux-aarch64","os":"ubuntu-24.04"}]' || '[{"platform":"linux-x86_64","os":"ubuntu-24.04"},{"platform":"linux-aarch64","os":"ubuntu-24.04"},{"platform":"macos-universal","os":"macos-14"}]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-universal' && 'aarch64-apple-darwin,x86_64-apple-darwin' || (matrix.platform == 'linux-aarch64' && 'aarch64-unknown-linux-musl' || 'x86_64-unknown-linux-musl') }}
+      - uses: Swatinem/rust-cache@v2
+      - if: runner.os == 'Linux'
+        name: Zig linker for static musl builds
+        run: pip install ziglang==0.13.0 && cargo install cargo-zigbuild --locked
+      - name: Build
+        shell: bash
+        run: bash scripts/ci/build-tandem-host.sh "${{ matrix.platform }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tandem-host-${{ matrix.platform }}
+          path: apps/desktop/src-tauri/resources/tandem-host/${{ matrix.platform }}/tandem-host
+
   test-ts:
     runs-on: ubuntu-24.04
     steps:

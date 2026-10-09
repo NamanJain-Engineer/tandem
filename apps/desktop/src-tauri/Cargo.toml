@@ -18,7 +18,7 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tandem-core.workspace = true
+tandem-core = { workspace = true, features = ["os-keychain"] }
 tandem-engines.workspace = true
 tandem-gateway.workspace = true
 tandem-git.workspace = true

@@ -117,6 +117,12 @@ sh scripts/agent/with-infra.sh dbus-run-session -- xvfb-run -a -s "-screen 0 192
 ... pnpm --filter desktop e2e -- --spec 'e2e/specs/m7-{8,10}-*.e2e.ts'
 TANDEM_E2E_SKIP_BUILD=1 ...                                 # reuse the last build after test-only edits
 
+# Remote (M14): the sshd fixture, the bundled tandem-host, the SSH integration test
+bash scripts/gen-ssh-fixture.sh && docker compose -f infra/docker-compose.yml --profile remote up -d --wait sshd
+sh scripts/agent/build-sshd-image.sh                        # agent containers (HTTPS proxy only): build the sshd image first
+sh scripts/build-tandem-host.sh                             # musl binary + manifest into src-tauri/resources/tandem-host
+cargo test -p tandem-host --features e2e-ssh -- --include-ignored f_rm_01
+
 pnpm --filter desktop perf -- --suite threads               # perf suites (threads, terminals, startup); TANDEM_PERF_BUILD=debug
 pnpm --filter desktop build:demo                            # the browser demo → apps/web/public/demo/app/
 pnpm --filter web build:site                                # the public site (demo included) → apps/web/out

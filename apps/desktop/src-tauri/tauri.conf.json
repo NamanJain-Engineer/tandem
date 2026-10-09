@@ -54,7 +54,10 @@
       "icons/icon.ico"
     ],
     "category": "DeveloperTool",
-    "shortDescription": "A desktop workspace for coding agents"
+    "shortDescription": "A desktop workspace for coding agents",
+    "resources": {
+      "resources/tandem-host/": "host-binaries/"
+    }
   },
   "plugins": {
     "deep-link": {
