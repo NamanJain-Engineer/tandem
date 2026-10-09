@@ -152,6 +152,7 @@ export type * from "./RoutineId";
 export type * from "./RunId";
 export type * from "./Saved";
 export type * from "./SavedSession";
+export type * from "./ScratchNote";
 export type * from "./Seat";
 export type * from "./SeatKind";
 export type * from "./SendResult";

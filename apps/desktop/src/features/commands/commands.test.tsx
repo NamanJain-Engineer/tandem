@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceSummary } from "@tandem/protocol";
-import { UiProvider } from "@tandem/ui";
+import { CodeEditor, NoteEditor, UiProvider } from "@tandem/ui";
 import en from "../../i18n/en.json";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
@@ -209,6 +209,28 @@ describe("command registry (F-SH-09)", () => {
     expect(
       isWebviewShortcut({ key: "c", code: "KeyC", ctrlKey: true, shiftKey: false, metaKey: false }, false),
     ).toBe(false);
+  });
+
+  it("F-SH-09.3 in release builds an editor still gets the keys it handles: Mod+S saves a file, Mod+U underlines a note", () => {
+    setup("linux", false);
+    const onSave = vi.fn();
+    const onNote = vi.fn();
+    render(
+      <>
+        <CodeEditor value="x" docKey="f" path="a.ts" label="file" onSave={onSave} />
+        <NoteEditor value="word" docKey="n" label="note" taskLabel="Done" onChange={onNote} />
+      </>,
+    );
+    const content = (label: string) => screen.getByLabelText(label);
+    expect(press(content("file"), { key: "s", code: "KeyS", ctrlKey: true }).prevented).toBe(true);
+    expect(onSave).toHaveBeenCalledTimes(1);
+    // The cursor starts before "word": the marks go in around it.
+    const note = content("note");
+    expect(press(note, { key: "u", code: "KeyU", ctrlKey: true }).prevented).toBe(true);
+    expect(onNote).toHaveBeenLastCalledWith("<u></u>word");
+    // What the editor doesn't handle is still kept from the webview.
+    expect(press(note, { key: "p", code: "KeyP", ctrlKey: true }).prevented).toBe(true);
+    expect(press(note, { key: "r", code: "KeyR", ctrlKey: true }).prevented).toBe(true);
   });
 
   it("F-SH-09.4 every registry command is in the palette and runs the shortcut's handler", () => {

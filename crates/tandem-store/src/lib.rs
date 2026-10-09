@@ -3,6 +3,7 @@
 
 pub mod migrate;
 pub mod repo;
+pub mod scratchpad;
 pub mod sort_key;
 
 use std::path::{Path, PathBuf};
