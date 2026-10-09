@@ -46,6 +46,8 @@ function thread(extra: Partial<Thread> = {}): Thread {
     sortKey: "a",
     createdAt: 1_000 + n,
     updatedAt: 1_000 + n,
+    teammateId: null,
+    conversationRef: null,
     ...extra,
   };
 }

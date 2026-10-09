@@ -185,6 +185,13 @@ const COMMANDS: &[&str] = &[
     "plugins_catalog",
     "grants_list",
     "grants_set",
+    "teammate_list",
+    "teammate_get",
+    "teammate_create",
+    "teammate_update",
+    "teammate_delete",
+    "teammate_duplicate",
+    "teammate_reorder",
 ];
 
 const TEST_COMMANDS: &[&str] = &[

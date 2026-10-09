@@ -116,6 +116,8 @@ pub struct AppState {
     pub updates: Arc<crate::services::updates::UpdateService>,
     pub config: Arc<ConfigService>,
     pub telemetry: Arc<TelemetryService>,
+    /// Teammates (F-AG-01).
+    pub teammates: Arc<crate::services::teammates::TeammatesService>,
     /// The one MCP gateway (F-PL-01).
     pub gateway: Arc<crate::services::gateway::GatewayService>,
     pub deeplinks: DeepLinkQueue,
@@ -410,6 +412,25 @@ impl AppState {
             data.clone(),
         );
         threads.sweep_trash();
+        let limit_ent = entitlements.clone();
+        let teammates = crate::services::teammates::TeammatesService::new(
+            store.clone(),
+            bus.clone(),
+            data.clone(),
+            Arc::new(crate::services::teammates::AppEngineFacts(
+                terminals.clone(),
+            )),
+            Arc::new(move || limit_ent.limits().teammates),
+        );
+        {
+            let weak = Arc::downgrade(&teammates);
+            threads.set_chats_sink(Arc::new(move || {
+                if let Some(t) = weak.upgrade() {
+                    t.publish_soon();
+                }
+            }));
+        }
+        launcher.bind_teammates(&teammates);
         // Threads are Dashboard items too (F-DB-01, D-6).
         let status = terminals.status.clone();
         threads.set_status_sink(Arc::new(move |th| {
@@ -481,6 +502,7 @@ impl AppState {
             threads,
             models,
             gateway,
+            teammates,
             files,
             git_panel,
             browser: std::sync::OnceLock::new(),
@@ -539,10 +561,31 @@ impl AppState {
     /// A subject's plugin grants changed: its next session picks them up.
     pub async fn after_grants_changed(&self, subject: &tandem_store::repo::plugins::GrantSubject) {
         use tandem_store::repo::plugins::GrantSubject;
-        if let GrantSubject::Thread { thread_id } = subject {
-            self.threads
-                .refresh_session(&tandem_core::ids::ThreadId::from_db(thread_id.clone()))
+        match subject {
+            GrantSubject::Thread { thread_id } => {
+                self.threads
+                    .refresh_session(&tandem_core::ids::ThreadId::from_db(thread_id.clone()))
+                    .await;
+            }
+            GrantSubject::Teammate { teammate_id } => {
+                self.refresh_teammate_sessions(&tandem_core::ids::TeammateId::from_db(
+                    teammate_id.clone(),
+                ))
                 .await;
+            }
+            _ => {}
+        }
+    }
+
+    /// A teammate's settings changed: its chats' next turns start fresh
+    /// sessions with the new lease and briefing.
+    pub async fn refresh_teammate_sessions(&self, teammate: &tandem_core::ids::TeammateId) {
+        if let Ok(chats) =
+            tandem_store::repo::threads::teammate_chats(&self.store, teammate, true).await
+        {
+            for c in chats {
+                self.threads.refresh_session(&c.id).await;
+            }
         }
     }
 

@@ -321,6 +321,8 @@ export class DemoCore {
       sortKey: String(at),
       createdAt: at,
       updatedAt: at,
+      teammateId: null,
+      conversationRef: null,
     };
     const t: DemoThread = { thread, turns: [], events: [], channels: new Set(), running: null, awaiting: null, fixed: false, divider: null, draft: "{}" };
     this.threads.set(thread.id, t);

@@ -635,8 +635,8 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 #### Threads and teammate chats [F-TH-*, F-AG-03]
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
-| `thread_create` | `{kind:"thread"\|"teammate_chat", workspaceId?, teammateId?, engineId?, accountId?, model?, effort?, access?, mode?}` (omitted = remembered defaults) | `Thread` | EngineMissing, ForbiddenPlan (engine not in plan) | F-TH-01, F-TH-02, F-TH-07 |
-| `thread_list` | `{kind, teammateId?, includeArchived?}` | `[Thread]` (the rail's summary is the thread row) | — | F-TH-01, F-AG-03 |
+| `thread_create` | `{kind:"thread"\|"teammate_chat", workspaceId?, teammateId?, place?, engineId?, accountId?, model?, effort?, access?, mode?}` (omitted = remembered defaults; a teammate chat takes its teammate's engine, model, preferred account and default access, and works in `place`: Home or one of the teammate's places; `Thread` gains `teammateId?` and `conversationRef?`) | `Thread` | EngineMissing, ForbiddenPlan (engine not in plan) | F-TH-01, F-TH-02, F-TH-07 |
+| `thread_list` | `{kind, teammateId?, includeArchived?}` | `[Thread]` (the rail's summary is the thread row; `teammate_chat` with `teammateId`: that teammate's chats in tab order) | — | F-TH-01, F-AG-03 |
 | `thread_get` | `{threadId}` | `ThreadDetail {thread, turns, running?, queued?, draft, attachments}` (`attachments`: the draft's unsent ones; `planRevisions`: `[PlanRevision {version, turnId, text, createdAt}]`, v1 first; pending approvals are the running turn's `approval_request` events without a resolution). Opening a thread clears its unread flag | NotFound | F-TH-01 |
 | `thread_events` | `{threadId, beforeId?, limit ≤ 500}` | `ThreadEventPage {items: [ThreadEventEnvelope] (oldest first), nextBeforeId?}` | — | F-TH-12 |
 | `thread_subscribe` | `{threadId, channel: Channel<ThreadEventEnvelope>}` | — (streams until the webview drops the channel) | NotFound | F-TH-03 |
@@ -718,9 +718,9 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 #### Teammates, memory, skills, mail [F-AG-*]
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
-| `teammate_list` / `teammate_get` | — / `{id}` | `[TeammateSummary]` / `Teammate` | NotFound | F-AG-01, F-AG-02 |
-| `teammate_create` | `TeammateInput` | `Teammate` | Conflict ("Name already used"), LimitReached, EngineMissing | F-AG-01, F-AG-04 |
-| `teammate_update` | `{id, patch: TeammatePatch}` | `Teammate` | Conflict, Invalid | F-AG-05 |
+| `teammate_list` / `teammate_get` | — / `{id}` | `[TeammateSummary {teammate, chatCapable, working, waiting, failed, lastLine?, lastAt?, chats}]` (the Lead is made on first use) / `Teammate {id, name, avatarHue?, avatarImage?, brief, engineId, model?, effort?, preferredAccountId?, home, places, settings: {memoryCap, learnMode, mayMessage, maySchedule, defaultAccess}, isLead, pinned, sortKey, createdAt}` | NotFound | F-AG-01, F-AG-02 |
+| `teammate_create` | `{input: TeammateInput {name, brief, engineId, model?, effort?, preferredAccountId?, places, avatarHue?, settings?}}` | `Teammate` | Conflict ("Name already used"), LimitReached, EngineMissing, Invalid | F-AG-01, F-AG-04 |
+| `teammate_update` | `{id, patch: TeammatePatch}` (only the fields given change; `model`, `effort`, `preferredAccountId`, `avatarHue` take `null` to clear; `pinned: true` unpins every other teammate: one hero; new settings or engine start the teammate's chats on fresh sessions) | `Teammate` | Conflict, Invalid, EngineMissing | F-AG-05 |
 | `teammate_delete` / `teammate_duplicate` / `teammate_reorder` | `{id}` / `{id}` / `{ids}` | — / `Teammate` / — | — | F-AG-02 |
 | `teammate_draft_with_ai` | `{description}` | `TeammateDraft {name, brief, engineId, pluginIds}` (nothing saved) | ForbiddenPlan, CreditsExhausted, Unavailable | F-AG-04 |
 | `teammate_suggestions` | `{id}` | `[String; 3]` (local) | — | F-AG-03 |
@@ -894,6 +894,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `routines:changed` / `routines:run` | `RoutineView` / `RoutineRun` | scheduler | F-RT-02, F-RT-04 |
 | `tasks:attempt` | `AttemptView` | task runner | F-TK-04 |
 | `plugins:changed` / `plugins:connect` | `PluginCard` / `{opId, step:"discovery"\|"registration"\|"sign_in"\|"token_exchange"\|"verification"\|"timeout", state, error?}` | gateway | F-PL-03 |
+| `teammates:changed` | `{teammates:[TeammateSummary]}` (a teammate or one of its chats changed; coalesced 100 ms) | teammates service | F-AG-02 |
 | `mail:changed` | `{teammateId, rows:[MailRow]}` | mail service | F-AG-12 |
 | `memory:suggestions` | `{teammateId, threadId, setId, items}` | learn service | F-AG-08 |
 | `auto:changed` | `AutoRunView` | Auto supervisor | F-AU-01 |

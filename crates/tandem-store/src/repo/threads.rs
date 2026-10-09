@@ -5,7 +5,7 @@
 use rusqlite::{params, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 use tandem_core::access::{Access, ThreadMode};
-use tandem_core::ids::{AccountId, ThreadId, TurnId, WorkspaceId};
+use tandem_core::ids::{AccountId, TeammateId, ThreadId, TurnId, WorkspaceId};
 use ts_rs::TS;
 
 use crate::{now_ms, sort_key, Store, StoreError};
@@ -56,6 +56,10 @@ pub struct ThreadRecord {
     pub sort_key: String,
     pub created_at: i64,
     pub updated_at: i64,
+    /// A teammate chat's teammate (F-AG-03).
+    pub teammate_id: Option<TeammateId>,
+    /// Mail threading (F-AG-12).
+    pub conversation_ref: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -140,7 +144,7 @@ fn parse<T: for<'de> Deserialize<'de>>(s: &str) -> Result<T, rusqlite::Error> {
     })
 }
 
-const COLUMNS: &str = "id, kind, workspace_id, cwd, engine_id, account_id, model, effort, access, mode, title, state, attended, engine_session_id, pinned, archived, unread, sort_key, created_at, updated_at";
+const COLUMNS: &str = "id, kind, workspace_id, cwd, engine_id, account_id, model, effort, access, mode, title, state, attended, engine_session_id, pinned, archived, unread, sort_key, created_at, updated_at, teammate_id, conversation_ref";
 
 fn from_row(r: &Row) -> Result<ThreadRecord, rusqlite::Error> {
     Ok(ThreadRecord {
@@ -164,6 +168,8 @@ fn from_row(r: &Row) -> Result<ThreadRecord, rusqlite::Error> {
         sort_key: r.get(17)?,
         created_at: r.get(18)?,
         updated_at: r.get(19)?,
+        teammate_id: r.get::<_, Option<String>>(20)?.map(TeammateId::from_db),
+        conversation_ref: r.get(21)?,
     })
 }
 
@@ -232,6 +238,187 @@ pub async fn insert(store: &Store, new: NewThread) -> Result<ThreadRecord, Store
                 [id.as_str()],
                 from_row,
             )?)
+        })
+        .await
+}
+
+/// What a new teammate chat carries besides a thread's fields.
+#[derive(Debug, Clone, Default)]
+pub struct ChatExtra {
+    pub teammate_id: Option<TeammateId>,
+    /// Mail threading (F-AG-12).
+    pub conversation_ref: Option<String>,
+    /// A title from the start (mail's "{sender}: {first line}").
+    pub title: Option<(String, &'static str)>,
+}
+
+/// A new teammate chat, after its teammate's other chats (tabs read left to
+/// right).
+pub async fn insert_chat(
+    store: &Store,
+    new: NewThread,
+    extra: ChatExtra,
+) -> Result<ThreadRecord, StoreError> {
+    let id = new.id.clone();
+    store
+        .write(move |t| {
+            let teammate = extra.teammate_id.as_ref().map(|t| t.as_str().to_string());
+            let last: Option<String> = t.query_row(
+                "SELECT MAX(sort_key) FROM threads WHERE teammate_id IS ?1 AND kind = 'teammate_chat' AND deleted_at IS NULL",
+                [&teammate],
+                |r| r.get(0),
+            )?;
+            let key = sort_key::between(last.as_deref(), None);
+            let now = now_ms();
+            let (title, source) = extra
+                .title
+                .clone()
+                .unwrap_or_else(|| (String::new(), "none"));
+            t.execute(
+                "INSERT INTO threads (id, kind, teammate_id, workspace_id, cwd, engine_id, account_id, model, effort, access, mode, attended, sort_key, conversation_ref, title, title_source, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?17)",
+                params![
+                    id.as_str(),
+                    snake(&new.kind),
+                    teammate,
+                    new.workspace_id.as_ref().map(WorkspaceId::as_str),
+                    new.cwd,
+                    new.engine_id,
+                    new.account_id.as_ref().map(AccountId::as_str),
+                    new.model,
+                    new.effort,
+                    new.access.as_str(),
+                    new.mode.as_str(),
+                    new.attended,
+                    key,
+                    extra.conversation_ref,
+                    title,
+                    source,
+                    now
+                ],
+            )?;
+            Ok(t.query_row(
+                &format!("SELECT {COLUMNS} FROM threads WHERE id = ?1"),
+                [id.as_str()],
+                from_row,
+            )?)
+        })
+        .await
+}
+
+/// A teammate's chats, in tab order.
+pub async fn teammate_chats(
+    store: &Store,
+    teammate: &TeammateId,
+    include_archived: bool,
+) -> Result<Vec<ThreadRecord>, StoreError> {
+    let teammate = teammate.as_str().to_string();
+    store
+        .read(move |c| {
+            let mut stmt = c.prepare(&format!(
+                "SELECT {COLUMNS} FROM threads WHERE kind = 'teammate_chat' AND teammate_id = ?1
+                   AND deleted_at IS NULL AND (?2 OR archived = 0)
+                 ORDER BY sort_key, created_at"
+            ))?;
+            let rows = stmt.query_map(params![teammate, include_archived], from_row)?;
+            Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        })
+        .await
+}
+
+/// Every teammate's chats that aren't archived (the views' list).
+pub async fn all_teammate_chats(store: &Store) -> Result<Vec<ThreadRecord>, StoreError> {
+    store
+        .read(|c| {
+            let mut stmt = c.prepare(&format!(
+                "SELECT {COLUMNS} FROM threads WHERE kind = 'teammate_chat' AND teammate_id IS NOT NULL
+                   AND deleted_at IS NULL AND archived = 0
+                 ORDER BY teammate_id, sort_key, created_at"
+            ))?;
+            let rows = stmt.query_map([], from_row)?;
+            Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        })
+        .await
+}
+
+/// A teammate's chats at a glance (the Agent rail, F-AG-02).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TeammateChatStats {
+    pub teammate_id: TeammateId,
+    pub chats: u32,
+    pub working: u32,
+    pub waiting: bool,
+    /// The most recently updated chat failed.
+    pub failed: bool,
+    pub last_line: Option<String>,
+    pub last_at: Option<i64>,
+}
+
+/// The first non-empty line of Markdown, without its leading marks.
+fn first_line(markdown: &str) -> Option<String> {
+    markdown
+        .lines()
+        .map(|l| {
+            l.trim()
+                .trim_start_matches(['#', '>', '-', '*', ' '])
+                .trim()
+        })
+        .find(|l| !l.is_empty())
+        .map(|l| l.chars().take(160).collect())
+}
+
+pub async fn teammate_stats(store: &Store) -> Result<Vec<TeammateChatStats>, StoreError> {
+    store
+        .read(|c| {
+            let mut stmt = c.prepare(
+                "SELECT teammate_id, COUNT(*),
+                        SUM(state = 'working'),
+                        MAX(state = 'waiting')
+                   FROM threads
+                  WHERE kind = 'teammate_chat' AND teammate_id IS NOT NULL AND deleted_at IS NULL AND archived = 0
+                  GROUP BY teammate_id",
+            )?;
+            let rows = stmt.query_map([], |r| {
+                Ok(TeammateChatStats {
+                    teammate_id: TeammateId::from_db(r.get(0)?),
+                    chats: r.get::<_, i64>(1)?.max(0) as u32,
+                    working: r.get::<_, Option<i64>>(2)?.unwrap_or(0).max(0) as u32,
+                    waiting: r.get::<_, Option<bool>>(3)?.unwrap_or(false),
+                    ..Default::default()
+                })
+            })?;
+            let mut out = rows.collect::<Result<Vec<_>, _>>()?;
+            for s in &mut out {
+                let id = s.teammate_id.as_str().to_string();
+                s.failed = c
+                    .query_row(
+                        "SELECT state = 'failed' FROM threads
+                          WHERE kind = 'teammate_chat' AND teammate_id = ?1 AND deleted_at IS NULL AND archived = 0
+                          ORDER BY updated_at DESC LIMIT 1",
+                        [&id],
+                        |r| r.get(0),
+                    )
+                    .optional()?
+                    .unwrap_or(false);
+                let last: Option<(String, i64)> = c
+                    .query_row(
+                        "SELECT m.payload_json, m.created_at FROM thread_messages m
+                           JOIN threads t ON t.id = m.thread_id
+                          WHERE t.teammate_id = ?1 AND t.kind = 'teammate_chat' AND t.deleted_at IS NULL
+                            AND m.type = 'assistant'
+                          ORDER BY m.id DESC LIMIT 1",
+                        [&id],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .optional()?;
+                if let Some((payload, at)) = last {
+                    s.last_line = serde_json::from_str::<serde_json::Value>(&payload)
+                        .ok()
+                        .and_then(|v| v.get("markdown").and_then(|m| m.as_str()).and_then(first_line));
+                    s.last_at = Some(at);
+                }
+            }
+            Ok(out)
         })
         .await
 }

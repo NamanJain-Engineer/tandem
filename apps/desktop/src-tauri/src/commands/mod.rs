@@ -17,6 +17,7 @@ pub mod plugins;
 pub mod restore;
 pub mod settings;
 pub mod shell;
+pub mod teammates;
 pub mod terminal;
 #[cfg(debug_assertions)]
 pub mod test;

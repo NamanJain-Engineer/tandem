@@ -216,6 +216,8 @@ pub struct ThreadService {
     data: std::sync::OnceLock<tandem_core::DataDir>,
     /// Tells the status bus each thread's state (Dashboard, D-6).
     status_sink: std::sync::OnceLock<ThreadStatusSink>,
+    /// Tells the teammates service that chats changed.
+    chats_sink: std::sync::OnceLock<Arc<dyn Fn() + Send + Sync>>,
 }
 
 /// Receives every thread whenever the list changes; an archived thread
@@ -349,6 +351,7 @@ impl ThreadService {
             titler: std::sync::OnceLock::new(),
             data: std::sync::OnceLock::new(),
             status_sink: std::sync::OnceLock::new(),
+            chats_sink: std::sync::OnceLock::new(),
         })
     }
 
@@ -389,6 +392,9 @@ impl ThreadService {
     }
 
     async fn publish_threads(&self) {
+        if let Some(sink) = self.chats_sink.get() {
+            sink();
+        }
         if let Ok(threads) = repo::list(&self.store, ThreadKind::Thread, true).await {
             if let Some(sink) = self.status_sink.get() {
                 for t in &threads {
@@ -415,6 +421,25 @@ impl ThreadService {
         tracing::info!(code = "threads.created", engine = %thread.engine_id, "thread created");
         self.publish_threads().await;
         Ok(thread)
+    }
+
+    /// A teammate chat (F-AG-03): after its teammate's other chats.
+    pub async fn create_chat(
+        &self,
+        new: NewThread,
+        extra: repo::ChatExtra,
+    ) -> Result<ThreadRecord, IpcError> {
+        let thread = repo::insert_chat(&self.store, new, extra)
+            .await
+            .map_err(store_err)?;
+        tracing::info!(code = "threads.chat_created", engine = %thread.engine_id, "teammate chat created");
+        self.publish_threads().await;
+        Ok(thread)
+    }
+
+    /// Teammate chats changed state: the Agent views hear about it.
+    pub fn set_chats_sink(&self, sink: Arc<dyn Fn() + Send + Sync>) {
+        let _ = self.chats_sink.set(sink);
     }
 
     pub async fn list(
@@ -1895,6 +1920,7 @@ pub struct AppLauncher {
     store: Store,
     /// The live lease per thread; a new session revokes the last one.
     leases: StdMutex<HashMap<String, tandem_core::ids::LeaseId>>,
+    teammates: std::sync::OnceLock<std::sync::Weak<crate::services::teammates::TeammatesService>>,
 }
 
 impl AppLauncher {
@@ -1919,7 +1945,25 @@ impl AppLauncher {
             gateway,
             store,
             leases: StdMutex::default(),
+            teammates: std::sync::OnceLock::new(),
         }
+    }
+
+    /// The teammates whose chats this launcher starts.
+    pub fn bind_teammates(&self, teammates: &Arc<crate::services::teammates::TeammatesService>) {
+        let _ = self.teammates.set(Arc::downgrade(teammates));
+    }
+
+    /// A teammate chat's teammate, if the thread is one.
+    async fn teammate_of(
+        &self,
+        thread: &ThreadRecord,
+    ) -> Option<tandem_store::repo::teammates::Teammate> {
+        let id = thread.teammate_id.as_ref()?;
+        tandem_store::repo::teammates::get(&self.store, id)
+            .await
+            .ok()
+            .flatten()
     }
 
     /// The engines Thread mode supports now.
@@ -1987,10 +2031,18 @@ impl AppLauncher {
         thread: &ThreadRecord,
     ) -> Result<(std::path::PathBuf, tandem_engines::chat::McpEndpoint), IpcError> {
         let gateway = self.gateway.handle().await?;
-        let mut session = tandem_gateway::SessionDescriptor::new(
-            Caller::Thread {
+        let teammate = self.teammate_of(thread).await;
+        let caller = match &teammate {
+            Some(t) => Caller::TeammateChat {
+                teammate_id: t.id.clone(),
                 thread_id: thread.id.clone(),
             },
+            None => Caller::Thread {
+                thread_id: thread.id.clone(),
+            },
+        };
+        let mut session = tandem_gateway::SessionDescriptor::new(
+            caller,
             if thread.attended {
                 tandem_gateway::Attended::Interactive
             } else {
@@ -2006,7 +2058,28 @@ impl AppLauncher {
                 tandem_gateway::BuiltinSet::default()
             },
         );
-        session.granted = self.thread_grants(thread).await;
+        match &teammate {
+            Some(t) => {
+                // A teammate chat: memory, skills, search and (when it may
+                // message) mail; the teammate's own plugin grants (F-PL-05).
+                let approvals = session.builtins.approvals;
+                session.builtins =
+                    tandem_gateway::BuiltinSet::for_teammate(t.settings.may_message, false);
+                session.builtins.approvals = approvals;
+                session.granted = tandem_store::repo::plugins::grants(
+                    &self.store,
+                    &tandem_store::repo::plugins::GrantSubject::Teammate {
+                        teammate_id: t.id.as_str().to_string(),
+                    },
+                )
+                .await
+                .unwrap_or_default();
+            }
+            None => session.granted = self.thread_grants(thread).await,
+        }
+        if let Some(r) = &thread.conversation_ref {
+            session.conversation_ref = r.clone();
+        }
         let lease = gateway.prepare(session);
         let previous = match self.leases.lock() {
             Ok(mut l) => l.insert(thread.id.as_str().to_string(), lease.id.clone()),
