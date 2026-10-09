@@ -5387,8 +5387,15 @@ dependencies = [
 name = "tandem-tasks"
 version = "0.2.0"
 dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "serde",
+ "serde_json",
  "tandem-core",
+ "tempfile",
  "thiserror 2.0.21",
+ "tracing",
+ "ts-rs",
 ]
 
 [[package]]

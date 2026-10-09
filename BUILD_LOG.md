@@ -197,6 +197,25 @@ Built on branch `m10-teammates-gateway` (from `m9-files-git-browser`, which goes
 - M10 task 2 (teammate record): core rules, the teammates repo, teammate chats in the threads repo, `TeammatesService`, commands and `teammates:changed`, the avatar palette. The first gate run of task 1 failed only on the API tests: `with-infra.sh` had started Postgres but it wasn't accepting connections yet; a rerun with Docker already up passed.
 - M10 task 3 (briefing): `briefing.rs`, delivery in the three adapters, the memory and skills stores, the starter skills, chat spawns in the spawn log, E2E-M10-2's briefing tests. Found on the way: the memory store's first `write` took its cap from the caller, so a caller passing the notes cap could write a 16k ABOUT_YOU.md; its test caught it, and `write` now picks each file's own cap.
 
+## M11 checklist (MILESTONES M11)
+Built on branch `m11-tasks-routines` (from `m10-teammates-gateway`, since M11 needs M10), in parallel with M10's remaining tasks, M8, M12, M13, M14 and M17. Owns F-TK-01…04 and F-RT-01…04; completes F-SH-10 (the Tasks tab), F-SH-13 (the tray's "Pause routines"), F-DB-02 ("Ready for review" and task-review items), F-BL-04 (routines pause on lapse) and F-AG-05 (the Routines link). Then F-RT-05 from M16 on the same branch. This section holds M11's state, decisions (D-900 to D-949) and log.
+- [x] 1. Task store (F-TK-01). `tandem_tasks::TaskStore` keeps the tracker in `$DATA/tasks/`: `meta.json` (next number, projects, labels, the six statuses, actors with the human `me`, the `local` team), `issues/ISSUE-<n>.json` (id `TAN-<n>`, a revision, title, Markdown description, status, priority 0–4, labels, project, assignee, timestamps, archived, result, attempts), and per issue an append-only `ISSUE-<n>.history.jsonl` (one line per changed field: time, actor, MCP connection, from, to) and `ISSUE-<n>.comments.jsonl` (threaded by `parent_id`). Every write takes an exclusive lock file under `locks/` (per issue, `meta`, `idempotency`, `connections`; std `File::try_lock`, 5 s, then `UNAVAILABLE`), so the app and any number of MCP server processes can write at once; issue files are replaced atomically (`tandem_core::atomic`). `save_issue` creates (a title is needed) or patches at `expected_revision` (required for a patch; a stale one is `REVISION_CONFLICT` with the current revision), and a patch that changes nothing writes nothing. Idempotency keys (≤128) return the first recorded result for 24 h without writing again, for issues and comments; older entries are compacted when the store opens. Labels, projects and assignees must exist; `null` clears an assignee or project. `connections.json` holds one connection per engine session with the actor its writes are recorded as; a revoked or unknown connection is `CONNECTION_REVOKED`. `list` filters by status, assignee, label, project and text, newest first, with an opaque cursor at a position (updated, number), pages ≤ 50. Rust `tandem-tasks`: store 9, lock 1.
+- [ ] 2. MCP server (F-TK-02)
+- [ ] 3. Tasks UI (F-TK-03, UI-80/81)
+- [ ] 4. Task execution (F-TK-04, UI-82/83/84)
+- [ ] 5. Routine model and schedules (F-RT-01)
+- [ ] 6. Scheduler (F-RT-02)
+- [ ] 7. Background runner (F-RT-03)
+- [ ] 8. Routines UI (F-RT-04, UI-50..53)
+- [ ] Exit. G green · DST and cron tables fully covered · the headless mode's single-instance lock is tested.
+- [ ] M16 · F-RT-05 Schedule tool for teammates.
+
+### M11 decisions
+- D-900: The tracker's records have one shape everywhere: the files under `$DATA/tasks/`, the MCP tools and the app's IPC all use the snake_case fields ARCHITECTURE §9.2 and §9.3 give (`expected_revision`, `next_cursor`, …), rather than camelCase on IPC as the rest of the app does, so the UI and agents read the same records and nothing is translated twice. Their TypeScript names carry a `Task` prefix (`TaskComment`, `TaskLabel`, …) so they never collide with other protocol types. A new issue starts in Todo with priority 0 (none); comments don't change an issue's revision, so an agent's comment never makes the user's open edit stale.
+
+### M11 log
+- M11 task 1 (task store): `tandem-tasks` model, lock files and `TaskStore`, 10 tests; the concurrency test runs ten rounds of two threads saving at the same revision. Found on the way: the container's `apt-get install zsh` stopped at an interactive conffile prompt; `dpkg --configure -a --force-confold` finished it.
+
 ## Decisions
 - D-1: F-CD-09 owned by M9. It needs the Files editor and the Tandem browser.
 - D-2: F-SH-08 framework slice in M5, Accounts step in M6, owned by M8.
