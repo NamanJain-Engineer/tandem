@@ -123,6 +123,22 @@ impl TerminalService {
         Self::with_integration(pty, store, None)
     }
 
+    /// Where a pane's relative paths start (F-CD-09): the shell's folder as
+    /// its last OSC 7 said, else the folder the pane opens in.
+    pub async fn link_cwd(&self, pane: &PaneId) -> Option<PathBuf> {
+        if let Some(cwd) = self.pty.state(pane.as_str()).and_then(|s| s.cwd) {
+            return Some(PathBuf::from(cwd));
+        }
+        let record = panes::get(&self.store, pane).await.ok()?;
+        match record.cwd {
+            Some(cwd) => Some(PathBuf::from(cwd)),
+            None => workspaces::get(&self.store, &record.workspace_id)
+                .await
+                .ok()
+                .map(|w| PathBuf::from(w.root)),
+        }
+    }
+
     /// `integration_root` holds the shell-integration scripts (F-CD-10).
     pub fn with_integration(
         pty: PtyManager,
@@ -856,6 +872,66 @@ mod tests {
             .filter_map(|v| v["message"].as_str().map(str::to_string))
             .collect();
         assert_eq!(notices, vec![FOLDER_NOT_FOUND.to_string()]);
+        svc.pty.kill(pane.id.as_str()).expect("kill");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_cd_09_3_a_panes_links_start_from_its_shells_latest_folder() {
+        if !Path::new("/bin/bash").is_file() {
+            return;
+        }
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let root = std::fs::canonicalize(dir.path())
+            .expect("canonical")
+            .join("ws1");
+        std::fs::create_dir_all(root.join("sub")).expect("mkdir");
+        settings::set(
+            &store,
+            SettingKey::DefaultShell,
+            serde_json::json!("/bin/bash"),
+        )
+        .await
+        .expect("shell");
+        let added = crate::services::workspaces::add(&store, root.to_str().expect("utf8"), Some(3))
+            .await
+            .expect("ws");
+        let tab = tabs::list(&store, &added.workspace.id)
+            .await
+            .expect("tabs")
+            .remove(0);
+        let pane = panes::create(&store, &tab.id, "terminal", None)
+            .await
+            .expect("pane");
+        let svc = TerminalService::with_integration(
+            PtyManager::new(),
+            store.clone(),
+            Some(data.shell_integration()),
+        );
+        // Before its shell says where it is: the folder the pane opens in.
+        assert_eq!(svc.link_cwd(&pane.id).await, Some(root.clone()));
+        svc.spawn(&pane.id, 80, 24, Some(4), Arc::new(VecSink::default()))
+            .await
+            .expect("spawn");
+        let cwd = || svc.pty.state(pane.id.as_str()).and_then(|s| s.cwd);
+        let root_text = root.to_string_lossy().into_owned();
+        assert!(
+            wait_until(Duration::from_secs(10), || cwd().as_deref()
+                == Some(root_text.as_str())),
+            "the shell never said where it was: {:?}",
+            cwd()
+        );
+        // `cd sub`: the shell's next OSC 7 moves where links start.
+        svc.pty.write(pane.id.as_str(), b"cd sub\n").expect("write");
+        let sub = root.join("sub").to_string_lossy().into_owned();
+        assert!(
+            wait_until(Duration::from_secs(10), || cwd().as_deref()
+                == Some(sub.as_str())),
+            "{:?}",
+            cwd()
+        );
+        assert_eq!(svc.link_cwd(&pane.id).await, Some(root.join("sub")));
         svc.pty.kill(pane.id.as_str()).expect("kill");
     }
 

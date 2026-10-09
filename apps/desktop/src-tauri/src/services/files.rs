@@ -174,14 +174,19 @@ impl FilesService {
         Ok(root)
     }
 
-    /// Every workspace's folder: files in any of them are editable.
-    async fn editable_roots(&self, root: &Path) -> Result<Vec<PathBuf>, IpcError> {
-        let mut roots: Vec<PathBuf> = workspaces::list(&self.store)
+    /// Every workspace's folder: files in any of them are editable (D-201).
+    pub async fn workspace_roots(&self) -> Result<Vec<PathBuf>, IpcError> {
+        Ok(workspaces::list(&self.store)
             .await?
             .into_iter()
             .filter(|w| w.kind == "local")
             .map(|w| PathBuf::from(w.root))
-            .collect();
+            .collect())
+    }
+
+    /// The workspaces' folders and the context's own.
+    async fn editable_roots(&self, root: &Path) -> Result<Vec<PathBuf>, IpcError> {
+        let mut roots = self.workspace_roots().await?;
         roots.push(root.to_path_buf());
         Ok(roots)
     }

@@ -3,6 +3,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal, type IMarker } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -21,6 +22,7 @@ import { markFirstOutput, markMounted, markPhase, markReflow, markWrite, timed }
 import { HIGHLIGHT_LIMIT, searchOptions, validQuery, type FindFlags, type FindResult } from "./find";
 import { FindBar } from "./FindBar";
 import { keyAction, lastLines, lineCount, needsConfirm, pasteBytes } from "./terminalInput";
+import { openFileLink, opensLink, openUrl, pathLinkProvider, resolveLink } from "./links";
 import { mountQueue } from "./mountQueue";
 import { PromptCapture, useFirstPrompts } from "./titles";
 import { webglPool } from "./webglPool";
@@ -84,6 +86,9 @@ export type TerminalHandle = {
   /** Types `text` as a paste (bracketed when the program asked), never
    * Enter: "Send to…" from the element picker (F-CD-18). */
   paste: (text: string) => void;
+  /** Where `needle` shows on screen, lowest first: its first cell's centre
+   * in client pixels (the E2E harness clicks links there). */
+  pointAt: (needle: string) => { x: number; y: number } | null;
   /** The visible screen as the serialize addon writes it (TUI goldens). */
   serialize: () => string;
   size: () => { cols: number; rows: number } | null;
@@ -271,6 +276,20 @@ export function TerminalView({
     xterm.loadAddon(searchAddon);
     search.current = searchAddon;
     const results = searchAddon.onDidChangeResults((r) => setFindResult({ index: r.resultIndex, count: r.resultCount }));
+    // Links (F-CD-09): Mod+Click opens a URL or a file a program printed,
+    // never while the pane is hidden or a pane is being dragged.
+    const follow = (event: MouseEvent, open: () => void) => {
+      const pane = { mac: inputCtx.current.mac, visible: visibleRef.current, dragging: useLayout.getState().dragging };
+      if (opensLink(event, pane)) open();
+    };
+    xterm.loadAddon(new WebLinksAddon((event, uri) => follow(event, () => openUrl(uri))));
+    const paths = xterm.registerLinkProvider(
+      pathLinkProvider(
+        xterm,
+        (text) => resolveLink(paneId, text),
+        (event, link) => follow(event, () => void openFileLink(link)),
+      ),
+    );
     timed("xterm.open", () => xterm.open(el));
     quietQueries(xterm);
     markMounted(paneId);
@@ -484,6 +503,7 @@ export function TerminalView({
       onScroll.dispose();
       onParsed.dispose();
       results.dispose();
+      paths.dispose();
       search.current = null;
       fonts?.removeEventListener("loadingdone", fontsLoaded);
       serializer.current = null;
@@ -618,6 +638,20 @@ export function TerminalView({
       selectAll: () => term.current?.selectAll(),
       paste: (text: string) => sendPaste(text),
       size: () => (term.current ? { cols: term.current.cols, rows: term.current.rows } : null),
+      pointAt: (needle: string) => {
+        const xterm = term.current;
+        const screen = xterm?.element?.querySelector(".xterm-screen");
+        const core = (xterm as unknown as { _core?: { _renderService?: { dimensions?: { css?: { cell?: { width: number; height: number } } } } } } | null)?._core;
+        const cell = core?._renderService?.dimensions?.css?.cell;
+        if (!xterm || !screen || !cell) return null;
+        const buf = xterm.buffer.active;
+        const box = screen.getBoundingClientRect();
+        for (let row = xterm.rows - 1; row >= 0; row--) {
+          const col = buf.getLine(buf.viewportY + row)?.translateToString(true).indexOf(needle) ?? -1;
+          if (col >= 0) return { x: box.left + (col + 0.5) * cell.width, y: box.top + (row + 0.5) * cell.height };
+        }
+        return null;
+      },
       metrics: () => {
         const xterm = term.current;
         if (!xterm) return null;

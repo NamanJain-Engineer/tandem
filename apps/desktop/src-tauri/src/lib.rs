@@ -144,6 +144,7 @@ macro_rules! app_commands {
             commands::terminal::orphans_resolve,
             commands::terminal::sessions_saved_list,
             commands::terminal::term_quote_paths,
+            commands::terminal::pane_resolve_link,
             commands::terminal::term_last_output,
             commands::terminal::term_stage_clipboard_image,
             commands::terminal::pty_type_prompt,

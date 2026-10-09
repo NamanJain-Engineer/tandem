@@ -368,6 +368,24 @@ pub fn term_quote_paths(
     state.terminals.quote_paths(&pane_id, &paths)
 }
 
+/// What a link a pane printed opens (F-CD-09): a URL, or a file that exists,
+/// with relative paths taken from the pane's folder (its shell's last OSC 7,
+/// so they follow `cd`), read-only outside every workspace.
+#[tauri::command]
+pub async fn pane_resolve_link(
+    state: State<'_, AppState>,
+    pane_id: PaneId,
+    text: String,
+) -> Result<Option<tandem_core::files::links::ResolvedLink>, IpcError> {
+    let cwd = state.terminals.link_cwd(&pane_id).await;
+    let roots = state.files.workspace_roots().await?;
+    tokio::task::spawn_blocking(move || {
+        tandem_core::files::links::resolve(&text, cwd.as_deref(), &roots)
+    })
+    .await
+    .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))
+}
+
 /// Saves the clipboard image as a PNG under `$DATA/staging/<pane>/` and
 /// returns its quoted path, for an agent to read (F-CD-05 AC3).
 #[tauri::command]

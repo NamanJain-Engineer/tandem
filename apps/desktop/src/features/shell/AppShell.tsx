@@ -81,6 +81,7 @@ export function AppShell() {
       paneScreen: (paneId: string) => terminalHandles.get(paneId)?.serialize() ?? "",
       paneCursor: (paneId: string) => terminalHandles.get(paneId)?.cursor() ?? null,
       paneMetrics: (paneId: string) => terminalHandles.get(paneId)?.metrics() ?? null,
+      panePoint: (paneId: string, needle: string) => terminalHandles.get(paneId)?.pointAt(needle) ?? null,
       webglHolds: (paneId: string) => webglPool.holds(paneId),
       perf: { enable: enablePerfMarks, times: perfTimes, writes: writeCounts, spans: perfSpans },
       paneSize: (paneId: string) => terminalHandles.get(paneId)?.size() ?? null,

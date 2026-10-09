@@ -575,7 +575,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `pane_rename` | `{paneId, humanName}` | `String` (the stored name, trimmed; 1–32 chars) | Conflict (name taken), Invalid | F-CD-12 |
 | `pane_close` | `{paneId}` (UI already confirmed if working; a browser pane's page closes with it) | — | — | F-CD-12, F-SH-07, F-CD-17 |
 | `pane_move` | `{paneId, tabId}` (same workspace; drop on the tab strip, "Move to new tab") | `PaneRecord` (same process) | NotFound | F-CD-02 |
-| `pane_resolve_link` | `{paneId, text}` | `ResolvedLink? {kind:"url"\|"file", target, line?, col?, readonly}` | — | F-CD-09 |
+| `pane_resolve_link` | `{paneId, text}` (a path with optional `:line[:col]`, relative to the pane's folder: its shell's last OSC 7, else the pane's stored cwd, else its workspace root; punctuation a sentence put after it is tried without; only regular files that exist; http(s) URLs come back as they are) | `ResolvedLink? {kind:"url"\|"file", target (the URL, or the file's absolute path), line?, col?, readonly}` | — | F-CD-09 |
 | `sessions_saved_list` | `{workspaceId}` | `[SavedSession]` | — | F-CD-03 |
 | `sessions_resume_saved` | `{savedId, tabId}` | `PaneRecord` | Unavailable | F-CD-03 |
 | `orphans_list` / `orphans_resolve` | — / `{action:"stop"\|"keep"}` | `[OrphanInfo]` / — | — | F-CD-03 |

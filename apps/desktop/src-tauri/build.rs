@@ -171,6 +171,7 @@ const COMMANDS: &[&str] = &[
     "orphans_resolve",
     "sessions_saved_list",
     "term_quote_paths",
+    "pane_resolve_link",
     "term_stage_clipboard_image",
     "term_last_output",
     "pty_type_prompt",

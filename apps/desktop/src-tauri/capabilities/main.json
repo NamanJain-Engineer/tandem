@@ -186,6 +186,7 @@
     "allow-orphans-resolve",
     "allow-sessions-saved-list",
     "allow-term-quote-paths",
+    "allow-pane-resolve-link",
     "allow-term-last-output",
     "allow-term-stage-clipboard-image",
     "allow-engines-list",

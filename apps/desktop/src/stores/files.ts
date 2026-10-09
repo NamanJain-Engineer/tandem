@@ -75,6 +75,9 @@ type FilesStore = {
   select: (path: string | null) => void;
   /** Opens (or focuses) a file, optionally at a line. */
   open: (path: string, at?: { line: number; col?: number }) => Promise<void>;
+  /** Opens a file for the context `key` as soon as the tab shows it, in
+   * the Files view (a terminal link, F-CD-09). */
+  openLink: (key: string, path: string, at?: { line: number; col?: number }) => void;
   activate: (path: string) => void;
   /** Closing a tab selects its left neighbour. */
   close: (path: string) => void;
@@ -173,6 +176,7 @@ const autosave = new Map<string, ReturnType<typeof setTimeout>>();
 let persistTimer: ReturnType<typeof setTimeout> | undefined;
 let watching: { key: string; sub: string | null } | null = null;
 let pendingView: { key: string; view: FilesView } | null = null;
+let pendingLink: { key: string; path: string; at?: { line: number; col?: number } } | null = null;
 let generation = 0;
 
 function autoSaveOn(): boolean {
@@ -323,6 +327,12 @@ export const useFiles = create<FilesStore>((set, get) => {
         patchCtx(key, () => ({ view }));
         persist();
       }
+      if (pendingLink?.key === key && get().key === key) {
+        const { path, at } = pendingLink;
+        pendingLink = null;
+        patchCtx(key, () => ({ view: "files" }));
+        void get().open(path, at);
+      }
       await get().refreshAll();
     },
 
@@ -412,6 +422,15 @@ export const useFiles = create<FilesStore>((set, get) => {
           selected: shown,
         }));
         persist();
+      }
+    },
+
+    openLink: (key, path, at) => {
+      if (get().key === key && get().byKey[key]?.restored) {
+        patchCtx(key, () => ({ view: "files" }));
+        void get().open(path, at);
+      } else {
+        pendingLink = { key, path, at };
       }
     },
 
@@ -602,6 +621,7 @@ export function resetFiles(): void {
   clearTimeout(persistTimer);
   watching = null;
   pendingView = null;
+  pendingLink = null;
   generation++;
   useFiles.setState({ key: null, byKey: {} });
 }

@@ -9,6 +9,7 @@
 //! other origin resolves its path with [`crate::contain::contain`] first
 //! ([`resolve`]).
 
+pub mod links;
 pub mod watch;
 
 use std::fs::{self, OpenOptions};
