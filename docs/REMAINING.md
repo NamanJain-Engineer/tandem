@@ -5,7 +5,8 @@ build order. Generated from `build-kit/MILESTONES.md` (feature ownership and
 tasks) and `build-kit/PRODUCT_SPEC.md` (feature titles). Every feature below
 has its behaviour and acceptance criteria in PRODUCT_SPEC under its ID, and
 every milestone has its tasks, exit checks and E2E list in MILESTONES. Tick
-items off here and in `BUILD_LOG.md` as they're done.
+items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md`
+has every feature below with its full behaviour and acceptance tests.
 
 **Where it stands (9 October 2026, `product-m0-m5`):** M0–M7 and M9 are done
 (75 of 152 features, 54 of 65 P0). Left: 77 features in eight milestones
@@ -62,7 +63,7 @@ history and dictionary, model download.
 Agent mode: persistent teammates with a brief, memory, skills, learning,
 session search and teammate-to-teammate mail, all over the single local gateway
 with leases.
-- [ ] F-PL-01 Gateway process (M7 built its skeleton, D-4)
+- [ ] F-PL-01 Gateway process (M7 built its skeleton, D-4; in progress in pull request #5)
 - [ ] F-AG-01 Teammate record
 - [ ] F-AG-02 Agent rail
 - [ ] F-AG-03 Teammate page and chats
