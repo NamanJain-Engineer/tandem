@@ -14,6 +14,7 @@ still uses the working name *tandem* (crates, commands, bundle id); keep it.
 | Rules for agents | `CLAUDE.md` (Always / Never / Conventions) |
 | Where the build is now, every decision (D-n), the log of each slice | `BUILD_LOG.md`: read "Current state" first |
 | What to build, in order, with acceptance tests | `build-kit/MILESTONES.md` (M0–M15) |
+| Every feature still to build, in order | `docs/REMAINING.md` |
 | Feature behaviour and acceptance criteria (F-AREA-nn) | `build-kit/PRODUCT_SPEC.md` |
 | Crates, IPC commands and events, data model, protocols | `build-kit/ARCHITECTURE.md` |
 | Fixed stack, names, layout (never re-decide) | `build-kit/DECISIONS.md` |
