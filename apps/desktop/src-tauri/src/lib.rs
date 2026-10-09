@@ -2,6 +2,7 @@
 //! Services take their dependencies explicitly so they run in `cargo test`
 //! without a window (ARCHITECTURE §2.12).
 
+pub mod browser;
 pub mod commands;
 pub mod services;
 pub mod state;
@@ -108,6 +109,13 @@ macro_rules! app_commands {
             commands::git::git_branches,
             commands::git::git_switch,
             commands::git::git_create_branch,
+            commands::browser::browser_open,
+            commands::browser::browser_navigate,
+            commands::browser::browser_command,
+            commands::browser::browser_set_bounds,
+            commands::browser::browser_set_device,
+            commands::browser::browser_close,
+            commands::browser::browser_clear_data,
             commands::workspaces::workspace_locate,
             commands::workspaces::workspace_set_flags,
             commands::workspaces::workspace_reveal,
@@ -468,6 +476,25 @@ pub fn run() {
             paint_theme_background(app, &state);
             if let Some(window) = app.get_webview_window("main") {
                 window.set_title("Vibezeo")?;
+                // The browser's layer goes in before the window first shows
+                // (app_ready shows it): a WebKitGTK view moved after it has
+                // painted stays blank (D-206).
+                #[cfg(target_os = "linux")]
+                browser::wry_host::install_overlay(&window);
+            }
+            {
+                let profile = state.data.browser_profile();
+                let host_app = handle.clone();
+                let service = browser::BrowserService::new(move |policy, sink| {
+                    std::sync::Arc::new(browser::wry_host::WryHost::new(
+                        host_app, profile, policy, sink,
+                    ))
+                });
+                let emit_app = handle.clone();
+                service.set_emitter(std::sync::Arc::new(move |s: &browser::BrowserState| {
+                    let _ = emit_app.emit_to("main", "browser:state", s);
+                }));
+                let _ = state.browser.set(service);
             }
             services::events::forward(handle.clone(), &state.bus);
             ensure_on_screen(app);

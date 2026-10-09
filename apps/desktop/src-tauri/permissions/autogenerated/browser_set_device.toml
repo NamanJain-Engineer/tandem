@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-browser-set-device"
+description = "Enables the browser_set_device command without any pre-configured scope."
+commands.allow = ["browser_set_device"]
+
+[[permission]]
+identifier = "deny-browser-set-device"
+description = "Denies the browser_set_device command without any pre-configured scope."
+commands.deny = ["browser_set_device"]

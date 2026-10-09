@@ -96,15 +96,18 @@ export type MenuProps = {
   side?: "top" | "right" | "bottom" | "left";
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Closing focuses the trigger again unless this prevents it (an item
+   * that moves focus somewhere new). */
+  onCloseAutoFocus?: (event: Event) => void;
 };
 
 /** Dropdown menu (UI_SPEC §2.9). */
-export function Menu({ trigger, entries, align = "start", side = "bottom", open, onOpenChange }: MenuProps) {
+export function Menu({ trigger, entries, align = "start", side = "bottom", open, onOpenChange, onCloseAutoFocus }: MenuProps) {
   return (
     <DM.Root open={open} onOpenChange={onOpenChange}>
       <DM.Trigger asChild>{trigger}</DM.Trigger>
       <DM.Portal>
-        <DM.Content align={align} side={side} sideOffset={4} className={PANEL}>
+        <DM.Content align={align} side={side} sideOffset={4} className={PANEL} onCloseAutoFocus={onCloseAutoFocus}>
           {renderEntries(DM, entries)}
         </DM.Content>
       </DM.Portal>

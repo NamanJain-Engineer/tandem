@@ -26,6 +26,8 @@ const spec = suite ? `e2e/perf/${suite}.perf.ts` : specIndex >= 0 ? args[specInd
 const API = "http://127.0.0.1:8787";
 const WEB = "http://localhost:3000";
 const FEED = "http://127.0.0.1:8790";
+/** The browser's fixture pages (scripts/serve-fixtures.ts, E2E-M9-3). */
+const FIXTURES = "http://127.0.0.1:5173";
 
 async function up(url: string): Promise<boolean> {
   try {
@@ -220,6 +222,14 @@ async function main() {
     await fetch(`${FEED}/__scenario`, { method: "POST", body: JSON.stringify({ scenario: "none" }) });
   }
 
+  let fixtures: ChildProcess | undefined;
+  const fixturesUp = async () => (await fetch(`${FIXTURES}/health`).then((r) => r.text()).catch(() => "")) === "ok";
+  if (!(await fixturesUp())) {
+    fixtures = startDetached(join(root, "node_modules/.bin/tsx"), ["scripts/serve-fixtures.ts", "--port", "5173"], {});
+    for (let i = 0; i < 60 && !(await fixturesUp()); i++) await new Promise((r) => setTimeout(r, 500));
+    if (!(await fixturesUp())) throw new Error(`${FIXTURES} didn't come up (is something else on :5173?)`);
+  }
+
   let code = 1;
   try {
     const launcher = new Launcher(join(desktop, "e2e/wdio.conf.ts"), spec ? { spec: [join(desktop, spec)] } : {});
@@ -228,6 +238,7 @@ async function main() {
     stop(api);
     stop(web);
     stop(feed);
+    stop(fixtures);
     stop(wm);
   }
   const problems = checkArtifacts(home);

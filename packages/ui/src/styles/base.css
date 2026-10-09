@@ -97,3 +97,11 @@
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion="full"]) .tn-flash { animation: none; outline-color: var(--tn-accent); }
 }
+
+/* The app's browser pages draw above everything (D-206): while one covers
+   the toasts' corner, toasts show bottom-left. */
+:root[data-toasts="left"] [data-toast-region] {
+  right: auto;
+  left: calc(var(--spacing) * 4);
+  align-items: flex-start;
+}

@@ -17,6 +17,7 @@ import { useUi } from "../stores/ui";
 import { resetThreads } from "../stores/threads";
 import { resetFiles } from "../stores/files";
 import { resetGit } from "../stores/git";
+import { resetBrowser } from "../stores/browser";
 import { useWorkspaces } from "../stores/workspaces";
 
 export const FREE: Limits = {
@@ -133,4 +134,5 @@ export function resetStores(): void {
   resetThreads();
   resetFiles();
   resetGit();
+  resetBrowser();
 }

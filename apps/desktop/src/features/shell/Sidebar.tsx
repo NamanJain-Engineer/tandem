@@ -9,6 +9,8 @@ import { t } from "../../i18n";
 import { useLayout } from "../../stores/layout";
 import { FLOAT_BELOW, SIDEBAR_MAX, SIDEBAR_MIN, useSidebar } from "../../stores/sidebar";
 import { useStatus } from "../../stores/status";
+import { focusAddressOnMount } from "../../stores/browser";
+import { BrowserView } from "../browser/BrowserView";
 import { Dashboard } from "../dashboard/Dashboard";
 import { FilesPanel } from "../files/FilesPanel";
 
@@ -163,6 +165,7 @@ function Resizer({ width, onLive }: { width: number; onLive: (w: number | null) 
 function Panel({ tab }: { tab: SidebarTab }) {
   if (tab.kind === "dashboard") return <Dashboard />;
   if (tab.kind === "files") return <FilesPanel />;
+  if (tab.kind === "browser") return <BrowserView id={tab.id} url={tab.url} />;
   return <EmptyState title={t("sidebar.soon")} />;
 }
 
@@ -175,6 +178,8 @@ export function Sidebar() {
   const narrow = useNarrow();
   const aside = useRef<HTMLElement>(null);
   const [liveWidth, setLiveWidth] = useState<number | null>(null);
+  /** The "+" menu gives focus back to "+" unless an item moved it. */
+  const focusMoved = useRef(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   useEffect(() => {
@@ -212,7 +217,15 @@ export function Sidebar() {
   const floating = narrow && !fullscreen;
   const docked = !narrow;
   const plus: MenuEntry[] = [
-    { id: "browser", label: t("sidebar.newBrowser"), disabled: true },
+    {
+      id: "browser",
+      label: t("sidebar.newBrowser"),
+      onSelect: () => {
+        // A new tab's address field takes the focus.
+        focusAddressOnMount(useSidebar.getState().openTab("browser"));
+        focusMoved.current = true;
+      },
+    },
     { id: "dashboard", label: t("sidebar.dashboard"), onSelect: () => useSidebar.getState().openTab("dashboard") },
     { id: "files", label: t("sidebar.files"), onSelect: () => useSidebar.getState().openTab("files") },
     { id: "tasks", label: t("sidebar.tasks"), onSelect: () => useSidebar.getState().openTab("tasks") },
@@ -265,6 +278,10 @@ export function Sidebar() {
             align="end"
             trigger={<IconButton size="sm" icon={<Plus size={14} />} label={t("sidebar.openIn")} data-testid="sidebar-plus" />}
             entries={plus}
+            onCloseAutoFocus={(e) => {
+              if (focusMoved.current) e.preventDefault();
+              focusMoved.current = false;
+            }}
           />
           {floating && (
             <IconButton

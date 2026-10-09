@@ -726,6 +726,10 @@ export class DemoCore {
       case "git_switch":
       case "git_create_branch":
         throw { code: "unavailable", message: NO_GIT };
+      // A web page can't hold other pages the way the app's browser does.
+      case "browser_open":
+      case "browser_navigate":
+        throw { code: "unavailable", message: "Web pages don't open inside this demo. In the app they open right here." };
       case "editor_tabs_get":
         return this.files.savedTabs();
       case "editor_tabs_save":

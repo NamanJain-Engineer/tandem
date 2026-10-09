@@ -1,6 +1,6 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cx } from "../cx";
-import { Tooltip } from "./Tooltip";
+import { Tooltip, type TooltipProps } from "./Tooltip";
 
 export type IconButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & {
   icon: ReactNode;
@@ -15,6 +15,8 @@ export type IconButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "chi
   pressed?: boolean;
   kbd?: string[];
   tooltip?: boolean;
+  /** Where the tooltip goes (below by default). */
+  tooltipSide?: TooltipProps["side"];
 };
 
 const VARIANTS = {
@@ -24,7 +26,7 @@ const VARIANTS = {
 };
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { icon, label, variant = "ghost", size = "md", badge, badgeTone = "neutral", pressed, kbd, tooltip = true, className, type = "button", ...rest },
+  { icon, label, variant = "ghost", size = "md", badge, badgeTone = "neutral", pressed, kbd, tooltip = true, tooltipSide, className, type = "button", ...rest },
   ref,
 ) {
   const button = (
@@ -61,7 +63,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
     </button>
   );
   return tooltip ? (
-    <Tooltip label={label} kbd={kbd}>
+    <Tooltip label={label} kbd={kbd} side={tooltipSide}>
       {button}
     </Tooltip>
   ) : (

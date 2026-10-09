@@ -23,6 +23,8 @@ import { followContexts } from "../../stores/contexts";
 import { followUsage } from "../../stores/usage";
 import { followStatus } from "../../stores/status";
 import { followGit } from "../../stores/git";
+import { followBrowser } from "../../stores/browser";
+import { followBrowserTabs } from "../../stores/sidebar";
 import { followFocus } from "../../stores/focus";
 import { followDashboard } from "../../stores/dashboard";
 import { followNotifications } from "../../stores/notifications";
@@ -58,6 +60,8 @@ export function AppShell() {
   useEffect(followUsage, []);
   useEffect(followStatus, []);
   useEffect(followGit, []);
+  useEffect(followBrowser, []);
+  useEffect(followBrowserTabs, []);
   useEffect(followFocus, []);
   useEffect(followDashboard, []);
   useEffect(followNotifications, []);

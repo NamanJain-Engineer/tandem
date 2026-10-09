@@ -118,7 +118,7 @@ All locally generated ids are `<prefix>_<ULID>` (Crockford base32, 26 chars), st
 | Main webview | system WebView (WKWebView / WebView2 / WebKitGTK) | Tauri | app session | main via IPC | F-SH-* |
 | Dictate widget webview | window label `dictate-widget` | main, when Dictate enabled | app session, shown/hidden | main via events + 3 commands | F-DI-07 |
 | Conductor ring webview | window label `conductor-ring` | main, when "floating ring" on | while enabled | main via events | F-CN-04 |
-| Browser webviews | child webviews labelled `browser-<id>` | main | per browser tab | none (no IPC access) | F-CD-17 |
+| Browser webviews | wry webviews the browser service creates itself, not Tauri webviews, so no IPC bridge is injected (D-206). Linux: a GTK overlay layer over the main webview, installed before the window first shows; macOS and Windows: wry child webviews | main | per browser tab or pane | none (no IPC access) | F-CD-17 |
 | PTY children | user's login shell (and engine TUI as its child) | tandem-pty | until pane close/exit | PTY master | F-CD-03 |
 | Chat engine processes | `claude`, `codex app-server`, `<engine> acp` | tandem-engines adapter | per thread session (idle-killed after 30 min, resumed on next turn) | stdio | F-TH-04..06 |
 | Headless helpers | engine one-shots for handoff briefs, learn-after-turn, reviews | tandem-engines | one call | stdio | F-CD-16, F-AG-08, F-TK-04 |
@@ -497,7 +497,7 @@ src-tauri/
 - **Serde:** `#[serde(rename_all = "camelCase")]` on structs, `#[serde(tag = "type", rename_all = "snake_case")]` on enums. Timestamps are `i64` Unix milliseconds. Paths are strings (UTF-8; non-UTF-8 paths are rejected with `Invalid` and logged by code only).
 - **Errors:** every command returns `Result<T, IpcError>` (§2.2). The TS wrapper rejects with a typed `IpcError`. The column "Errors" below lists the `ErrorCode`s a caller must handle beyond `Internal`/`Timeout`.
 - **Timeouts and cancellation [§5.2]:** the TS wrapper applies 10 s by default. Commands that can exceed it return an `OpHandle { opId }` immediately and report through `op:progress`; `op_cancel(opId)` cancels. Such commands are marked "op" in the table.
-- **Capabilities [§5.3]:** `capabilities/main.json` allows all commands for window `main`; `widget.json` allows only `dictate_status`, `dictate_cancel_take`, `dictate_widget_set_position`, `app_log`; `ring.json` allows `conductor_start_call`, `conductor_end_call`, `conductor_mute`, `app_log`. Browser webviews get no capability. Implement with `tauri_build::Attributes::app_manifest(AppManifest::new().commands(ALL_COMMANDS))` so each command has an `allow-<name>` permission.
+- **Capabilities [§5.3]:** `capabilities/main.json` allows all commands for window `main`; `widget.json` allows only `dictate_status`, `dictate_cancel_take`, `dictate_widget_set_position`, `app_log`; `ring.json` allows `conductor_start_call`, `conductor_end_call`, `conductor_mute`, `app_log`. Browser webviews get no capability (they aren't Tauri webviews, D-206). Implement with `tauri_build::Attributes::app_manifest(AppManifest::new().commands(ALL_COMMANDS))` so each command has an `allow-<name>` permission.
 - **Origin:** commands that must not be reachable from voice or phone (forced lane removal, enabling Full, shell commands) are never exposed through the Conductor action registry or the phone command set (§12.6, §13.3). Local-review actions additionally check the calling window label is `main`.
 
 ### 3.2 Commands
@@ -702,12 +702,12 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `fs_create` / `fs_rename` / `fs_delete` | `{context, path, kind:"file"\|"dir"}` / `{context, from, to}` / `{context, path}` (the UI confirms a delete first) | — | Conflict (exists), PermissionDenied (read-only) | F-CD-19 |
 | `fs_watch` / `fs_unwatch` | `{context, channel: Channel<FsChange {paths, git, overflow}>}` / `{subId}` | `SubId` / — (debounced 500 ms; `paths` relative to the root; `git`: the repository's index, HEAD or refs changed; `overflow`: too many to list, re-read everything shown) | NotFound | F-CD-19, F-CD-20 |
 | `editor_tabs_get` / `editor_tabs_save` | `{contextKey}` / `{contextKey, state: EditorTabs}` | `EditorTabs {tabs:[{path, line?, col?}], active?, expanded:[dir], showIgnored, divider?, view?: "files"\|"changes"}` / — (`contextKey`: `ws:<workspaceId>` or `th:<threadId>`) | — | F-CD-19 |
-| `browser_open` | `{browserId?, url, placement: {type:"pane", paneId} \| {type:"sidebar"}, bounds: Rect}` | `BrowserInfo {browserId, url}` | Unavailable (Linux child webview) | F-CD-17 |
-| `browser_navigate` | `{browserId, input}` | `{committedUrl}` | Invalid (blocked scheme) | F-CD-17 |
-| `browser_command` | `{browserId, cmd:"back"\|"forward"\|"reload"\|"stop"}` | — | — | F-CD-17 |
-| `browser_set_bounds` | `{browserId, bounds, visible}` | — | — | F-CD-17 |
-| `browser_set_device` | `{browserId, device:"desktop"\|"phone"\|"tablet", rotated}` | — | — | F-CD-17 |
-| `browser_close` / `browser_clear_data` | `{browserId}` / — | — | — | F-CD-17 |
+| `browser_open` | `{browserId, url?, bounds: Rect, visible}` (`browserId`: the sidebar tab's or the pane's id; opening an open one just moves it, so a pane moved to the sidebar keeps its page) | `BrowserState` | Unavailable (the system webview can't be embedded here), Invalid (a blocked address) | F-CD-17 |
+| `browser_navigate` | `{browserId, input}` (an address; a bare host like `localhost:5173` becomes `http://`; anything else searches with the `search_engine` setting, DuckDuckGo by default) | `{url}` (where it's going; the address bar shows the committed URL from `browser:state`) | Invalid (a scheme other than http, https and file; `file:` outside every workspace) | F-CD-17 |
+| `browser_command` | `{browserId, cmd:"back"\|"forward"\|"reload"\|"stop"}` | — | NotFound | F-CD-17 |
+| `browser_set_bounds` | `{browserId, bounds: Rect, visible}` (window coordinates in CSS px; hidden while its place isn't shown or a menu or dialog covers it) | — | NotFound | F-CD-17 |
+| `browser_set_device` | `{browserId, device:"desktop"\|"phone"\|"tablet", rotated}` (phone 390×844, tablet 820×1180 CSS px, fitted into the bounds with a page zoom of at most 1) | `BrowserState` | NotFound | F-CD-17 |
+| `browser_close` / `browser_clear_data` | `{browserId}` / — (cookies, storage and cache of the one profile at `$DATA/browser-profile`) | — | — | F-CD-17 |
 | `browser_picker` | `{browserId, on}` | — (selections via `browser:picker`) | — | F-CD-18 |
 | `browser_picker_brief` | `{browserId, note}` | `String` (Markdown) | — | F-CD-18 |
 | `scratchpad_list` / `scratchpad_read` / `scratchpad_write` / `scratchpad_delete` | `{}` / `{id}` / `{id?, markdown}` / `{id}` | … | — | F-SH-12 |
@@ -905,7 +905,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `remote:host` | `{hostId, state:"connected"\|"reconnecting"\|"down"}` | ssh service | F-RM-01 |
 | `remote:phone` | `{pairingId, event:"connected"\|"command"\|"queued"\|"revoked"}` | phone service | F-RM-03 |
 | `updates:state` | `UpdateState` (see `updates_state`; during a download at most one event per 5 %) | updater service | F-SH-06 |
-| `browser:state` / `browser:picker` | `{browserId, url, title, canBack, canForward, loading}` / `{browserId, elements:[PickedElement]}` | browser service | F-CD-17, F-CD-18 |
+| `browser:state` / `browser:picker` | `BrowserState {browserId, url, title, canBack, canForward, loading, device, rotated, frame: Rect (the page inside the bounds), zoom}` / `{browserId, elements:[PickedElement]}` | browser service | F-CD-17, F-CD-18 |
 | `op:progress` | `{opId, stage, pct?, done, error?: IpcError}` | any op | §5.2 |
 
 ### 3.4 Streaming patterns
