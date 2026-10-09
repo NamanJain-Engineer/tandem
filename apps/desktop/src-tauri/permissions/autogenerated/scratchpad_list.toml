@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-scratchpad-list"
+description = "Enables the scratchpad_list command without any pre-configured scope."
+commands.allow = ["scratchpad_list"]
+
+[[permission]]
+identifier = "deny-scratchpad-list"
+description = "Denies the scratchpad_list command without any pre-configured scope."
+commands.deny = ["scratchpad_list"]

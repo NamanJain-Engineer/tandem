@@ -17,6 +17,7 @@ import { useWorkspaces } from "../../stores/workspaces";
 import { Dashboard } from "../dashboard/Dashboard";
 import { CheckpointsPanel } from "../checkpoints/CheckpointsPanel";
 import { FilesPanel } from "../files/FilesPanel";
+import { ScratchpadPanel } from "../scratchpad/ScratchpadPanel";
 
 const ICONS: Record<SidebarTabKind, ReactNode> = {
   dashboard: <LayoutDashboard size={13} aria-hidden="true" />,
@@ -193,6 +194,7 @@ function Panel({ tab }: { tab: SidebarTab }) {
   if (tab.kind === "files") return <FilesPanel />;
   if (tab.kind === "browser") return <BrowserTab tab={tab} />;
   if (tab.kind === "checkpoints") return <CheckpointsPanel />;
+  if (tab.kind === "scratchpad") return <ScratchpadPanel />;
   return <EmptyState title={t("sidebar.soon")} />;
 }
 

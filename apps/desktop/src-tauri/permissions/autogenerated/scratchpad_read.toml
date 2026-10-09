@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-scratchpad-read"
+description = "Enables the scratchpad_read command without any pre-configured scope."
+commands.allow = ["scratchpad_read"]
+
+[[permission]]
+identifier = "deny-scratchpad-read"
+description = "Denies the scratchpad_read command without any pre-configured scope."
+commands.deny = ["scratchpad_read"]
