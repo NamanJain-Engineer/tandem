@@ -82,3 +82,11 @@ export function argAfter(argv: string[], flag: string): string | null {
   const i = argv.indexOf(flag);
   return i >= 0 ? (argv[i + 1] ?? null) : null;
 }
+
+/** The Lead (made on first use). */
+export async function lead(): Promise<Teammate> {
+  const list = await invoke<Array<{ teammate: Teammate & { isLead: boolean } }>>("teammate_list");
+  const found = list.find((s) => s.teammate.isLead);
+  if (!found) throw new Error("no Lead");
+  return found.teammate;
+}

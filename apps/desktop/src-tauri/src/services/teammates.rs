@@ -277,6 +277,10 @@ impl TeammatesService {
         &self.data
     }
 
+    pub fn store(&self) -> &Store {
+        &self.store
+    }
+
     /// The Lead, made once per profile (a deleted Lead isn't made again).
     pub async fn ensure_lead(&self) {
         let _ = self

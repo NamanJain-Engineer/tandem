@@ -65,6 +65,27 @@ impl BuiltinService for TeammateTools {
                     Err(e) => err(e.message),
                 }
             }
+            Builtin::SessionSearch => {
+                let Some(query) = args.get("query").and_then(Value::as_str) else {
+                    return err("query is required");
+                };
+                let limit = args
+                    .get("limit")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(10)
+                    .min(10) as u32;
+                match tandem_store::repo::search::search(
+                    self.teammates.store(),
+                    &teammate.id,
+                    query,
+                    limit,
+                )
+                .await
+                {
+                    Ok(hits) => ok(serde_json::to_string(&hits).unwrap_or_else(|_| "[]".into())),
+                    Err(e) => err(e.to_string()),
+                }
+            }
             _ => err("This tool isn't available yet"),
         }
     }

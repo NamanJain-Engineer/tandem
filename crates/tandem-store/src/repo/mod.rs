@@ -11,6 +11,7 @@ pub mod panes;
 pub mod plugins;
 pub mod presets;
 pub mod restore;
+pub mod search;
 pub mod sessions;
 pub mod settings;
 pub mod sidebar;
