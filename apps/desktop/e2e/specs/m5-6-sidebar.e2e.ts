@@ -33,6 +33,19 @@ const reflows = (reset = false) =>
       ).__tandemTest.reflows(r),
     reset,
   );
+type PerfHook = {
+  perf: { enable: () => void; times: () => Record<string, { phases?: Record<string, number> }> };
+};
+/** When each pane's terminal connected to its PTY (debug perf marks). */
+const connectedAt = () =>
+  browser.execute(() =>
+    Object.fromEntries(
+      Object.entries((window as unknown as { __tandemTest: PerfHook }).__tandemTest.perf.times()).map(([id, t]) => [
+        id,
+        t.phases?.connected,
+      ]),
+    ),
+  );
 const pills = () =>
   browser.execute(() =>
     Array.from(document.querySelectorAll<HTMLElement>('[data-testid="sidebar"] [role="tab"]')).map((el) => ({
@@ -94,12 +107,32 @@ describe("E2E-M5-6 sidebar", () => {
       activePaneId: ids[0],
       maximizedPaneId: null,
     });
+    // Views open one per frame and each then connects to its PTY: on a
+    // software-GL display 16 take seconds, and a pane that connects late
+    // sends its size once more. Count the toggle only: wait for every
+    // terminal to connect, then for a second with no resize at all (the
+    // backend's count can trail the view's by an IPC round trip).
+    await browser.execute(() => (window as unknown as { __tandemTest: PerfHook }).__tandemTest.perf.enable());
     await browser.refresh();
     await waitForApp();
     await browser.waitUntil(async () => (await paneIds()).length === 16, { timeout: 30_000 });
-    await quiet();
-    await reflows(true);
-    await counters(true);
+    await browser.waitUntil(
+      async () => {
+        const times = await connectedAt();
+        return ids.every((id) => times[id] !== undefined);
+      },
+      { timeout: 90_000, timeoutMsg: "not every terminal connected" },
+    );
+    await browser.waitUntil(
+      async () => {
+        await reflows(true);
+        await counters(true);
+        await browser.pause(1_000);
+        const still = Object.values(await reflows()).every((n) => n === 0);
+        return still && (await counters()).ptyResizes === 0;
+      },
+      { timeout: 60_000, interval: 1, timeoutMsg: "the terminals never stopped resizing" },
+    );
     await $('[data-testid="sidebar-toggle"]').click();
     await $('[data-testid="sidebar"]').waitForDisplayed({ timeout: 5_000 });
     await quiet();
@@ -130,6 +163,38 @@ describe("E2E-M5-6 sidebar", () => {
   it("F-SH-10.4 opening Dashboard twice leaves one Dashboard tab", async () => {
     for (let i = 0; i < 2; i++) await openFromPlus("Dashboard");
     expect((await pills()).filter((p) => p.id === "dashboard")).toHaveLength(1);
+  });
+
+  it("F-SH-10 the + menu opens again right after an item is picked", async () => {
+    // Pick Dashboard the moment the menu is positioned, before its entry
+    // animation's animationstart: the closed menu must go as soon as the
+    // close commits rather than linger and swallow the next click on "+".
+    await browser.waitUntil(async () => browser.execute(() => document.querySelector("[role=menu]") === null), {
+      timeout: 5_000,
+      timeoutMsg: "a menu is still open",
+    });
+    const after = await browser.executeAsync((done: (result: string) => void) => {
+      const plus = document.querySelector<HTMLElement>('[data-testid="sidebar-plus"]');
+      if (!plus) return done("no + button");
+      const seen = new MutationObserver(() => {
+        const menu = document.querySelector<HTMLElement>("[role=menu]");
+        // Until it's positioned the popper holds its animation off.
+        if (!menu || menu.style.animationName === "none" || menu.parentElement?.style.transform.includes("-200%"))
+          return;
+        seen.disconnect();
+        const item = Array.from(menu.querySelectorAll<HTMLElement>("[role=menuitem]")).find(
+          (el) => el.textContent?.trim() === "Dashboard",
+        );
+        if (!item) return done("no Dashboard item");
+        item.click();
+        // The click queued React's commit first, so this runs after it.
+        queueMicrotask(() => done(document.querySelector("[role=menu]") ? "lingered" : "gone"));
+      });
+      seen.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["style"] });
+      plus.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, pointerType: "mouse" }));
+    });
+    expect(after).toBe("gone");
+    await openFromPlus("Dashboard");
   });
 
   it("F-SH-10.3 tab order and the active tab survive a relaunch", async () => {
