@@ -1588,6 +1588,8 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
 
 ### F-SH-12 · Scratchpad (P2)
 
+**Status: built** (pull request #7, merged 9 October). Kept here for reference.
+
 **Behaviour**
 - A sidebar app for local notes, auto-saved on each keystroke (debounced at 300 ms).
 - Supports bold, italic and underline (`Mod+B/I/U`), lists and checkboxes. Content is stored as Markdown.
