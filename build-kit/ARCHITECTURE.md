@@ -2232,7 +2232,7 @@ export const releases = pgTable('releases', { version: text('version').notNull()
   - Allowed `redirect_uri`: `^http://127\.0\.0\.1:\d{2,5}/callback$` or `^tandem(-dev)?://auth/callback$`. Code: 32 random bytes, stored hashed, 5 min, single use, bound to challenge + fingerprint.
   - **Access token:** EdDSA JWT (`jose`), `kid` `ak-<n>`, claims `{sub, sid: familyId, aud:'tandem-api', iss:'tandem-api', iat, exp: +3600}`. **Refresh:** 32 random bytes (hashed), 30 days, rotated on each use; presenting a rotated (already-used) token revokes the whole family and returns 401 `UNAUTHENTICATED` (AC3).
   - Client refresh at 80% of lifetime, on wake (OS resume notification), and on any 401 (single-flight); network errors never sign out.
-- **Device code (F-BE-03):** `user_code` = 8 chars from `BCDFGHJKLMNPQRSTVWXZ` formatted `ABCD-EFGH`; `interval` 5 s; polling faster → `slow_down` (and interval += 5); expired (10 min) → `expired_token`; denied → `access_denied`.
+- **Device code (F-BE-03):** `user_code` = 8 chars from `BCDFGHJKLMNPQRSTVWXZ` formatted `ABCD-EFGH`; `interval` 5 s; polling faster → `slow_down` (and interval += 5); expired (10 min) → `expired_token`; denied → `access_denied`; a consumed or unknown code → `invalid_grant`. The tokens are a desktop-style family (`platform: cli`, the client's name as the device name), so the Devices page lists and revokes them. The web page `/device?code=` approves; the desktop's `services/device_login.rs` polls (for the headless runner and any CLI).
 - **Revocation** from the portal (Devices page) revokes the family; the desktop's next refresh fails → sign-in prompt (F-WB-05 AC1).
 
 ### 14.4 Plans and entitlements [F-BE-04, F-BL-04, F-BL-06, §3.2]
@@ -2273,7 +2273,8 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 | `POST /v1/auth/desktop/refresh` | — | `{refresh_token}` | same as exchange | 401 `UNAUTHENTICATED` (reuse revokes family) | F-BE-02 |
 | `POST /v1/auth/desktop/logout` | B | `{refresh_token}` | 204 | — | F-BE-02 |
 | `POST /v1/auth/device/start` | — | `{client: str, version: str}` | `{user_code, verification_uri, device_code, interval, expires_in}` | `RATE_LIMITED` | F-BE-03 |
-| `POST /v1/auth/device/approve` | C | `{user_code, approve: bool}` | 204 | 404 | F-BE-03 |
+| `GET /v1/auth/device/info?user_code=` | C | — | `{user_code, client, version, expires_at}` (what the approval page names) | 404 (unknown, used or expired) | F-BE-03 |
+| `POST /v1/auth/device/approve` | C | `{user_code, approve: bool}` (any case, with or without the dash) | 204 | 404 | F-BE-03 |
 | `POST /v1/auth/device/token` | — | `{device_code}` | tokens | 400 `{error: authorization_pending\|slow_down\|expired_token\|access_denied}` | F-BE-03 |
 | `GET /v1/me` | B/C | — | `MeResponse` (§14.4) | `UNAUTHENTICATED` | F-BE-04 |
 | `GET /v1/me/events` | B | — | SSE `entitlement`, `credits`, heartbeat 25 s | — | F-BE-04 |

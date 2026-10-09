@@ -3,6 +3,7 @@ import { z } from "zod";
 import { rewriteBody, titleBody } from "../routes/ai";
 import { checkoutBody, packBody } from "../routes/billing";
 import { authorizeBody, exchangeBody, refreshBody, tokenResponse } from "../routes/desktopAuth";
+import { approveBody, startBody, startResponse, tokenBody } from "../routes/deviceAuth";
 
 const problem = z.object({
   type: z.string(),
@@ -105,6 +106,37 @@ export const ROUTES: RouteDoc[] = [
     auth: "bearer",
     body: refreshBody,
     status: 204,
+  },
+  {
+    method: "post",
+    path: "/v1/auth/device/start",
+    summary: "Start a device-code sign-in (CLI, headless runs; 10 an hour per IP)",
+    auth: "none",
+    body: startBody,
+    response: startResponse,
+  },
+  {
+    method: "get",
+    path: "/v1/auth/device/info",
+    summary: "Which app a user code belongs to (the approval page)",
+    auth: "cookie",
+    response: z.object({ user_code: z.string(), client: z.string(), version: z.string(), expires_at: z.string() }),
+  },
+  {
+    method: "post",
+    path: "/v1/auth/device/approve",
+    summary: "Approve or deny a user code",
+    auth: "cookie",
+    body: approveBody,
+    status: 204,
+  },
+  {
+    method: "post",
+    path: "/v1/auth/device/token",
+    summary: "Poll for tokens (400 authorization_pending, slow_down, expired_token, access_denied)",
+    auth: "none",
+    body: tokenBody,
+    response: tokenResponse,
   },
   {
     method: "get",

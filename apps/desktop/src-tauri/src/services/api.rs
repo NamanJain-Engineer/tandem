@@ -180,6 +180,25 @@ pub trait ApiClient: Send + Sync {
         &self,
         access: &str,
     ) -> Result<BoxStream<'static, Result<String, ApiError>>, ApiError>;
+    /// `POST /v1/auth/device/start` (F-BE-03): a code for the user to approve on the web.
+    async fn device_start(&self, _client: &str, _version: &str) -> Result<DeviceStart, ApiError> {
+        Err(ApiError::Network("this build has no hosted service".into()))
+    }
+    /// `POST /v1/auth/device/token`: tokens once approved; the OAuth error code otherwise.
+    async fn device_token(&self, _device_code: &str) -> Result<TokenPair, ApiError> {
+        Err(ApiError::Network("this build has no hosted service".into()))
+    }
+}
+
+/// `POST /v1/auth/device/start` (F-BE-03).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceStart {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub verification_uri_complete: String,
+    pub interval: u64,
+    pub expires_in: u64,
 }
 
 /// The API client of an early-access build (D-105): every call fails as
@@ -415,6 +434,24 @@ impl ApiClient for HttpApi {
             .bearer_auth(access)
             .json(&json!({ "text": text }));
         self.call::<TitleBody>(req).await.map(|b| b.title)
+    }
+
+    async fn device_start(&self, client: &str, version: &str) -> Result<DeviceStart, ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/auth/device/start"))
+            .json(&json!({ "client": client, "version": version }));
+        self.call(req).await
+    }
+
+    async fn device_token(&self, device_code: &str) -> Result<TokenPair, ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/auth/device/token"))
+            .json(&json!({ "device_code": device_code }));
+        self.call(req).await
     }
 
     async fn events(

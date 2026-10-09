@@ -17,6 +17,7 @@ import { billingRoutes } from "./routes/billing";
 import { configRoutes } from "./routes/config";
 import { creditsRoutes } from "./routes/credits";
 import { desktopAuthRoutes } from "./routes/desktopAuth";
+import { deviceAuthRoutes } from "./routes/deviceAuth";
 import { health } from "./routes/health";
 import { meRoutes } from "./routes/me";
 import { testRoutes } from "./routes/testRoutes";
@@ -51,6 +52,7 @@ export function createApp(deps: Deps) {
   app.route("/v1/health", health);
   app.route("/v1/config", configRoutes(deps));
   app.route("/v1/auth/desktop", desktopAuthRoutes(deps));
+  app.route("/v1/auth/device", deviceAuthRoutes(deps));
   app.on(["GET", "POST"], "/v1/auth/*", (c) => deps.auth.handler(c.req.raw));
   app.route("/v1/me", meRoutes(deps));
   app.route("/v1/credits", creditsRoutes(deps));

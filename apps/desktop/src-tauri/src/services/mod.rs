@@ -9,6 +9,7 @@ pub mod boot;
 pub mod config;
 pub mod dashboard;
 pub mod deeplink;
+pub mod device_login;
 pub mod engines;
 pub mod entitlement;
 pub mod events;

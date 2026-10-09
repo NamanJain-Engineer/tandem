@@ -180,7 +180,7 @@ release candidate. Stop after any sub-phase if the budget runs out.
 - 16D Extras: [x] F-SH-12 Scratchpad · [ ] F-CD-21 Simulator pane (macOS) ·
   [ ] F-AC-07 Usage dashboard · [ ] F-AG-10 Skill sync to engines ·
   [ ] F-AG-13 Teammate in a terminal · [ ] F-RT-05 Schedule tool for teammates ·
-  [ ] F-BE-03 CLI device-code sign-in · [ ] F-BE-12 Admin
+  [x] F-BE-03 CLI device-code sign-in · [ ] F-BE-12 Admin
 - Also: app-shortcut rebinding (F-SH-09 P2 part, Settings › Shortcuts UI-113),
   Team SSO (F-BL-06 P2 part), the remaining AI routes (`/auto/next`,
   `/voice/act`, `/voice/resolve`).
