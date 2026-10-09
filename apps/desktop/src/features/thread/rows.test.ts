@@ -46,6 +46,21 @@ describe("transcript rows (F-TH-12, UI-21)", () => {
     expect(group?.kind === "tools" && groupStatus(group.tools)).toBe("running");
   });
 
+  it("F-TH-16.1 an engine switch's divider streams after its message and reads above it", () => {
+    seq = 0;
+    const view = play(
+      env("t1", { type: "user", text: "one", attachments: [] }),
+      env("t1", { type: "turn_end", reason: "completed", blockedActions: 0 }),
+      env("t2", { type: "user", text: "two", attachments: [] }, 0),
+      env("t2", { type: "divider", text: "Continued on Codex (Default) with a summary" }, 1),
+      env("t2", { type: "assistant", markdown: "ok" }, 2),
+    );
+    const rows = toRows(view);
+    expect(rows.map((r) => r.kind)).toEqual(["user", "divider", "user", "assistant", "working"]);
+    const divider = rows[1];
+    expect(divider?.kind === "divider" && divider.text).toBe("Continued on Codex (Default) with a summary");
+  });
+
   it("F-TH-11 approvals carry their decision; pending ones are the running turn's", () => {
     seq = 0;
     const req = (id: string): ThreadEvent => ({
@@ -142,7 +157,13 @@ describe("transcript rows (F-TH-12, UI-21)", () => {
         1,
       ),
     );
-    expect(usageOf(view)).toEqual({ input: 160, output: 25, contextFillPct: 4.2 });
+    expect(usageOf(view)).toEqual({ input: 160, output: 25, contextFillPct: 4.2, byEngine: [] });
+    // F-TH-16: each turn's engine gets its own total.
+    const engines: Record<string, string> = { t1: "claude", t2: "codex" };
+    expect(usageOf(view, (id) => engines[id]).byEngine).toEqual([
+      { engineId: "claude", input: 150, output: 20 },
+      { engineId: "codex", input: 10, output: 5 },
+    ]);
   });
 
   it("UI-21 a streamed delta keeps the objects of rows that didn't change", () => {

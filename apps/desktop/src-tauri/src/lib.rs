@@ -78,6 +78,7 @@ macro_rules! app_commands {
             commands::launch::launch_retry_seat,
             commands::handoff::handoff_brief,
             commands::handoff::handoff_start,
+            commands::handoff::handoff_to_thread,
             commands::lanes::lane_create,
             commands::lanes::lane_diff,
             commands::lanes::lane_merge,

@@ -222,6 +222,48 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     expect(screen.queryByTestId("thread-pending")).toBeNull();
   });
 
+  it("F-TH-01.6 a thread a crash interrupted says Interrupted — Resume? and Resume sends its turn again", async () => {
+    const th = thread({ title: "Crashed", state: "interrupted" });
+    const calls = fakeBackend({
+      thread_list: () => [th],
+      thread_get: () =>
+        detail(th, {
+          turns: [
+            {
+              id: "turn_1",
+              threadId: th.id,
+              n: 1,
+              engineId: "claude",
+              accountId: null,
+              state: "interrupted",
+              blockedActions: 0,
+              startedAt: Date.now(),
+              endedAt: Date.now(),
+            },
+          ],
+        }),
+      thread_events: () => ({
+        items: [env(th.id, "turn_1", 0, { type: "user", text: "long job", attachments: [] })],
+        nextBeforeId: null,
+      }),
+      thread_subscribe: () => null,
+      thread_retry: () => ({ turnId: "turn_2", queued: false }),
+      models_list: () => [],
+    });
+    await act(async () => {
+      await useThreads.getState().refresh();
+      useThreads.getState().select(th.id);
+    });
+    mount(<ThreadMain />);
+    const banner = await screen.findByTestId("thread-interrupted");
+    expect(banner.textContent).toContain("Interrupted — Resume?");
+    // Never shown as done.
+    expect(screen.getByTestId("thread-state").textContent).toBe("Interrupted");
+    fireEvent.click(within(banner).getByRole("button", { name: "Resume" }));
+    await waitFor(() => expect(calls.some((c) => c.cmd === "thread_retry")).toBe(true));
+    expect(calls.find((c) => c.cmd === "thread_retry")?.args).toEqual({ threadId: th.id });
+  });
+
   it("F-TH-12 a turn that ends before history loads shows once (subscribe first, then history)", async () => {
     const th = thread({ title: "Quick" });
     const turn: ThreadEventEnvelope[] = [

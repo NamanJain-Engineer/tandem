@@ -20,6 +20,8 @@ import {
 import * as about from "./about/page.site";
 import AboutPage from "./about/page.site";
 import * as changelog from "./changelog/page.site";
+import * as demo from "./demo/page.site";
+import DemoPage, { DEMO_APP } from "./demo/page.site";
 import * as download from "./download/page.site";
 import { metadata as rootMetadata } from "./layout.site";
 import * as home from "./page.site";
@@ -42,6 +44,7 @@ const PAGES = {
   about: AboutPage,
   changelog: ChangelogPage,
   download: DownloadPage,
+  demo: DemoPage,
   pricing: PricingPage,
   privacy: PrivacyPage,
   terms: TermsPage,
@@ -195,7 +198,7 @@ describe("public site", () => {
   });
 
   it("F-WB-01 search engines get a canonical URL for every page, a share image and PNG icons", () => {
-    const canon = { "/": home, "/about/": about, "/changelog/": changelog, "/download/": download, "/pricing/": pricing, "/privacy/": privacy, "/security/": security, "/terms/": terms };
+    const canon = { "/": home, "/about/": about, "/changelog/": changelog, "/download/": download, "/demo/": demo, "/pricing/": pricing, "/privacy/": privacy, "/security/": security, "/terms/": terms };
     expect(Object.keys(canon).sort()).toEqual([...SITE_PAGES].sort());
     for (const [path, mod] of Object.entries(canon)) expect(mod.metadata.alternates?.canonical, path).toBe(path);
     expect(JSON.stringify(rootMetadata.openGraph)).toContain("/og.png");
@@ -238,6 +241,16 @@ describe("public site", () => {
       for (const href of ["/privacy/", "/terms/", "/security/"]) expect(h, name).toContain(`href="${href}"`);
       expect(h, name).toContain(SITE.contactEmail);
     }
+  });
+
+  it("F-WB-01 the live demo says its agents are simulated and opens the browser build", () => {
+    const h = html(<DemoPage />);
+    expect(h).toContain(`href="${DEMO_APP}"`);
+    expect(h).toContain("simulated");
+    expect(h).toContain("nothing you type leaves your browser");
+    expect(html(<HomePage />)).toContain(`href="/demo/"`);
+    // The demo app is a separate build; the pages themselves stay script-free.
+    expect(DEMO_APP).toBe("/demo/app/");
   });
 
   it("F-WB-01 AC2 no page loads a script, iframe or third-party resource", () => {

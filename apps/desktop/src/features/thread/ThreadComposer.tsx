@@ -94,7 +94,7 @@ export function ThreadComposer({
   thread: Thread;
   detail: ThreadDetail | null;
   running: boolean;
-  tokens: { input: number; output: number };
+  tokens: { input: number; output: number; byEngine?: Array<{ engineId: string; input: number; output: number }> };
   folderName: string | null;
   lastMessage: () => string | null;
   composerRef?: React.Ref<ComposerHandle>;
@@ -326,10 +326,21 @@ export function ThreadComposer({
         }}
         tokens={{
           text: tokenCount(tokens.input + tokens.output),
-          tooltip: t("thread.composer.tokens", {
-            input: tokenCount(tokens.input),
-            output: tokenCount(tokens.output),
-          }),
+          tooltip: [
+            t("thread.composer.tokens", {
+              input: tokenCount(tokens.input),
+              output: tokenCount(tokens.output),
+            }),
+            // After a switch, each engine's share (F-TH-16).
+            ...((tokens.byEngine?.length ?? 0) > 1
+              ? (tokens.byEngine ?? []).map((e) =>
+                  t("thread.composer.tokensEngine", {
+                    engine: engines.find((x) => x.spec.id === e.engineId)?.spec.label ?? e.engineId,
+                    n: tokenCount(e.input + e.output),
+                  }),
+                )
+              : []),
+          ].join(" · "),
         }}
         onAttach={() =>
           void invoke<Attachment[]>("thread_pick_files", { threadId: thread.id }).then(attach, attach)

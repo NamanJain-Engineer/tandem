@@ -1,9 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "installCommand": "pnpm install --frozen-lockfile --filter web...",
+  "installCommand": "pnpm install --frozen-lockfile --filter web... --filter desktop...",
   "buildCommand": "pnpm build:site",
-  "ignoreCommand": "[ -n \"$VERCEL_GIT_PREVIOUS_SHA\" ] && git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD -- . ../../packages/ui ../../pnpm-lock.yaml",
+  "ignoreCommand": "[ -n \"$VERCEL_GIT_PREVIOUS_SHA\" ] && git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD -- . ../desktop/src ../desktop/demo.html ../desktop/vite.demo.config.ts ../desktop/package.json ../../packages/ui ../../packages/protocol ../../pnpm-lock.yaml",
   "headers": [
     {
       "source": "/(.*)",

@@ -11,7 +11,9 @@ import type {
 import { UiProvider } from "@tandem/ui";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useEngines } from "../../stores/engines";
-import { defaultTarget, useHandoff, type HandoffSource } from "../../stores/handoff";
+import { defaultTarget, startThreadHandoff, useHandoff, type HandoffSource } from "../../stores/handoff";
+import { useThreads } from "../../stores/threads";
+import { useUi } from "../../stores/ui";
 import { useLayout } from "../../stores/layout";
 import { useWorkspaces } from "../../stores/workspaces";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
@@ -154,6 +156,25 @@ describe("handoff (F-CD-16, UI-13)", () => {
     expect(useHandoff.getState().notes.pn_src).toBe("Handed off to Builder (Claude Code)");
     useHandoff.getState().note("pn_src", null);
     expect(useHandoff.getState().notes.pn_src).toBeUndefined();
+  });
+
+  it("F-CD-16 a Thread target opens a new thread in the source's folder with the brief, in Thread mode", async () => {
+    const created = { id: "thr_9", workspaceId: "shop", engineId: "codex", title: "Fix auth" };
+    calls = fakeBackend({
+      handoff_to_thread: () => ({ thread: created, sourceClosed: false }),
+      thread_list: () => [created],
+    });
+    const out = await startThreadHandoff(codexPane, "codex", BRIEF, true);
+    expect(out.ok).toBe(true);
+    expect(named("handoff_to_thread")[0]?.args).toEqual({
+      paneId: "pn_src",
+      engineId: "codex",
+      accountId: null,
+      brief: BRIEF,
+      closeSource: true,
+    });
+    expect(useThreads.getState().selectedId).toBe("thr_9");
+    expect(useUi.getState().mode).toBe("thread");
   });
 
   it("UI-13 when no summary can be written, it says so and the empty box can be filled in", async () => {

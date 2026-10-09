@@ -61,6 +61,7 @@ export type * from "./GitStatus";
 export type * from "./HandoffBrief";
 export type * from "./HandoffPlace";
 export type * from "./HandoffResult";
+export type * from "./HandoffThread";
 export type * from "./HeldDraftId";
 export type * from "./HomeStrategy";
 export type * from "./HooksSupport";

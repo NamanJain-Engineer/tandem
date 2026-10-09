@@ -6,7 +6,7 @@ use tauri::State;
 use tandem_core::ids::{AccountId, PaneId};
 use tandem_core::IpcError;
 
-use crate::services::handoff::{self, HandoffBrief, HandoffPlace, HandoffResult};
+use crate::services::handoff::{self, HandoffBrief, HandoffPlace, HandoffResult, HandoffThread};
 use crate::state::AppState;
 
 /// Writes the brief for handing `pane_id` to `engine_id`: the source's own,
@@ -39,6 +39,28 @@ pub async fn handoff_start(
         account_id,
         &brief,
         place,
+        close_source,
+    )
+    .await
+}
+
+/// Hands `pane_id` to a new Thread in the same folder, the brief as its
+/// first message (F-CD-16 chat target).
+#[tauri::command]
+pub async fn handoff_to_thread(
+    state: State<'_, AppState>,
+    pane_id: PaneId,
+    engine_id: String,
+    account_id: Option<AccountId>,
+    brief: String,
+    close_source: bool,
+) -> Result<HandoffThread, IpcError> {
+    handoff::start_thread(
+        &state,
+        &pane_id,
+        &engine_id,
+        account_id,
+        &brief,
         close_source,
     )
     .await

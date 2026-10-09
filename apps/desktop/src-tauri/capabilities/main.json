@@ -84,6 +84,7 @@
     "allow-launch-retry-seat",
     "allow-handoff-brief",
     "allow-handoff-start",
+    "allow-handoff-to-thread",
     "allow-accounts-begin-add",
     "allow-accounts-begin-session",
     "allow-accounts-finish-login",

@@ -1,0 +1,708 @@
+/** The browser demo's stand-in for Vibezeo's core (vibezeo.com/demo): the
+ * real interface runs against this simulation, in memory. Nothing runs and
+ * nothing leaves the browser. */
+import type {
+  AppBoot,
+  AttachSnapshot,
+  AuthState,
+  DashboardItem,
+  EngineSpec,
+  EngineView,
+  EntitlementView,
+  FileText,
+  LayoutNode,
+  ModelEntry,
+  PaneRecord,
+  SendResult,
+  StatusRecord,
+  Tab,
+  TabLayout,
+  Thread,
+  ThreadChanges,
+  ThreadDetail,
+  ThreadEvent,
+  ThreadEventEnvelope,
+  ThreadEventPage,
+  ThreadsChanged,
+  Turn,
+  WorkspaceSummary,
+} from "@tandem/protocol";
+import { emitLocal } from "../ipc/events";
+import { setInvokeBackend } from "../ipc/invoke";
+import { FrameKind, encodeFrame, type FrameChannel } from "../ipc/pty";
+import { DEMO_CHANGES, afterAllow, afterDeny, chatTurn, fixTurn, type Step } from "./agent";
+import { DemoShell, agentScreen } from "./shell";
+
+type Args = Record<string, unknown> | undefined;
+
+const WS = "ws_demo";
+const TAB = "tb_demo";
+const START = Date.now() - 42 * 60_000;
+
+const BOOT: AppBoot = {
+  version: "0.1.0",
+  build: "demo",
+  platform: "linux",
+  dev: false,
+  firstRun: false,
+  lastMode: "thread",
+  flags: [],
+  dataDirDisplay: "~/.vibezeo",
+};
+
+const AUTH: AuthState = {
+  signedIn: true,
+  email: "demo@vibezeo.com",
+  offline: false,
+  offlineDaysLeft: null,
+  hosted: false,
+  pending: null,
+  error: null,
+};
+
+const ENTITLEMENT: EntitlementView = {
+  plan: "pro",
+  status: "active",
+  limits: {
+    panes: 16,
+    workspaces: 10,
+    threadGrid: 6,
+    teammates: 3,
+    routines: false,
+    backgroundRoutines: false,
+    taskExecution: false,
+    pluginConnections: 1,
+    accountsPerEngine: 3,
+    cloudStt: false,
+    enhance: false,
+    conductor: false,
+    auto: false,
+    phone: false,
+    admin: false,
+    chatEngines: ["claude", "codex"],
+    creditPacks: false,
+  },
+  source: "token",
+  credits: { monthly: 1_000, purchased: 0, resetsAt: null },
+  policy: null,
+  paidUntil: null,
+  cancelAtPeriodEnd: false,
+  online: true,
+  confirmedUntil: null,
+  monthlyGrant: 1_000,
+};
+
+function spec(id: string, label: string, vendor: string, logo: string, chatAdapter: string | null): EngineSpec {
+  return {
+    id,
+    label,
+    vendor,
+    logo,
+    commands: [id],
+    versionCmd: [id, "--version"],
+    versionRegex: "",
+    install: { mac: null, lin: null, win: null },
+    loginCmd: null,
+    loginMode: "argv",
+    logoutCmd: null,
+    statusCmd: null,
+    signedInFile: null,
+    chatAdapter,
+    acpCmd: null,
+    adapterVersions: null,
+    providerHomeEnv: null,
+    homeStrategy: "none",
+    keychainIsolation: "n/a",
+    resumeCmdTemplate: null,
+    supportsResume: true,
+    newlineSequence: "\x1b\r",
+    hooksSupport: "none",
+    usageLogGlobs: [],
+    skillsDir: null,
+    cheapModel: null,
+    headlessCmd: null,
+    usageProbe: null,
+    titlePatterns: [],
+    readyPatterns: [],
+    waitingPatterns: [],
+    limitPatterns: [],
+    onboardingSeed: null,
+    mcpNative: null,
+  };
+}
+
+const ENGINES: EngineView[] = [
+  ["claude", "Claude Code", "Anthropic", "CC", "claude", "2.1.0"],
+  ["codex", "Codex", "OpenAI", "CX", "codex", "0.46.0"],
+  ["gemini", "Gemini CLI", "Google", "GE", null, "0.9.0"],
+].map(([id, label, vendor, logo, adapter, version]) => ({
+  spec: spec(id ?? "", label ?? "", vendor ?? "", logo ?? "", adapter ?? null),
+  install: { path: `/usr/local/bin/${id}`, version: version ?? null, source: "shell" },
+  chatCapable: adapter !== null,
+  unsupportedReason: null,
+  extraArgs: [],
+}));
+
+const MODELS: Record<string, ModelEntry[]> = {
+  claude: [
+    { id: "default", label: "Default", description: "The engine's own choice", isDefault: true, effortLevels: [], contextWindow: 200_000, source: "bundled" },
+    { id: "sonnet", label: "Sonnet", description: "Fast and capable", isDefault: false, effortLevels: [], contextWindow: 200_000, source: "bundled" },
+    { id: "opus", label: "Opus", description: "The most capable", isDefault: false, effortLevels: [], contextWindow: 200_000, source: "bundled" },
+  ],
+  codex: [
+    { id: "default", label: "Default", description: "The engine's own choice", isDefault: true, effortLevels: ["low", "medium", "high"], contextWindow: 272_000, source: "bundled" },
+  ],
+};
+
+const TAB_RECORD: Tab = { id: TAB, workspaceId: WS, name: "checkout", sortKey: "a0", createdAt: START };
+
+const WORKSPACE: WorkspaceSummary = {
+  id: WS,
+  kind: "local",
+  hostId: "local",
+  root: "/home/you/shop",
+  wslDistro: null,
+  name: "shop",
+  parentId: null,
+  laneBranch: null,
+  laneBase: null,
+  sortKey: "a0",
+  pinned: false,
+  collapsed: false,
+  sessionsCollapsed: false,
+  createdAt: START,
+  missing: false,
+  branch: "main",
+  liveCount: 3,
+  tabs: [TAB_RECORD],
+};
+
+function pane(id: string, kind: string, engineId: string | null, humanName: string | null): PaneRecord {
+  return {
+    id,
+    tabId: TAB,
+    workspaceId: WS,
+    kind,
+    cwd: WORKSPACE.root,
+    engineId,
+    accountId: null,
+    humanName,
+    title: null,
+    restoreState: "live",
+    createdAt: START,
+  };
+}
+
+const PANES: PaneRecord[] = [
+  pane("pn_claude", "agent", "claude", "Fixer"),
+  pane("pn_codex", "agent", "codex", "Reviewer"),
+  pane("pn_shell", "terminal", null, null),
+];
+
+const TREE: LayoutNode = {
+  type: "split",
+  dir: "row",
+  ratio: 0.55,
+  a: { type: "leaf", paneId: "pn_claude" },
+  b: {
+    type: "split",
+    dir: "col",
+    ratio: 0.5,
+    a: { type: "leaf", paneId: "pn_codex" },
+    b: { type: "leaf", paneId: "pn_shell" },
+  },
+};
+
+const AGENT_SCREENS: Record<string, string> = {
+  pn_claude: agentScreen("Claude Code", "Fix the redirect loop after login", [
+    "● Read src/checkout/redirect.ts",
+    "● Update src/checkout/redirect.ts (+3 -1)",
+    "● Bash npm test -- src/checkout",
+    "  ✓ 13 tests passed",
+    "",
+    "The loop came from sending /login back to itself. Fixed, with a test.",
+  ]),
+  pn_codex: agentScreen("Codex", "Review the open diff for edge cases", [
+    "• Reading the diff in src/checkout…",
+    "• Checking callers of nextStep()",
+    "",
+    "Working…",
+  ]),
+};
+
+const STATUS: Record<string, { status: StatusRecord["status"]; title: string; preview: string }> = {
+  pn_claude: { status: "done", title: "Fix the redirect loop after login", preview: "Fixed, with a test. 13 tests pass." },
+  pn_codex: { status: "working", title: "Review the open diff", preview: "Checking callers of nextStep()" },
+};
+
+type Pty = { channel: FrameChannel; seq: number; screen: string; shell: DemoShell | null };
+
+type DemoThread = {
+  thread: Thread;
+  turns: Turn[];
+  events: ThreadEventEnvelope[];
+  channels: Set<{ onmessage: (e: ThreadEventEnvelope) => void }>;
+  running: string | null;
+  /** Steps waiting on the visitor's answer. */
+  awaiting: { approvalId: string; turnId: string } | null;
+  fixed: boolean;
+  divider: string | null;
+  /** The composer's draft (`{text, attachmentIds}` JSON). */
+  draft: string;
+};
+
+/** What the first thread's composer starts with. */
+export const FIRST_MESSAGE =
+  "After signing in, checkout sends some people back to /login forever. Find out why and fix it.";
+
+const encoder = new TextEncoder();
+
+function base64(text: string): string {
+  let bin = "";
+  for (const b of encoder.encode(text)) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+/** The simulated core. One per page. */
+export class DemoCore {
+  private ptys = new Map<string, Pty>();
+  private threads = new Map<string, DemoThread>();
+  private settings: Record<string, unknown> = { theme: "dark" };
+  private ids = 0;
+  private timers = new Set<ReturnType<typeof setTimeout>>();
+
+  constructor(private readonly speed = 1) {
+    this.seed();
+  }
+
+  private id(prefix: string): string {
+    this.ids += 1;
+    return `${prefix}_demo${this.ids}`;
+  }
+
+  private later(ms: number, fn: () => void): void {
+    const t = setTimeout(() => {
+      this.timers.delete(t);
+      fn();
+    }, ms * this.speed);
+    this.timers.add(t);
+  }
+
+  /** Stops every pending step (tests). */
+  dispose(): void {
+    for (const t of this.timers) clearTimeout(t);
+    this.timers.clear();
+  }
+
+  private newThread(title: string, engineId: string, workspaceId: string | null, at: number): DemoThread {
+    const thread: Thread = {
+      id: this.id("thr"),
+      kind: "thread",
+      workspaceId,
+      cwd: workspaceId ? WORKSPACE.root : "/home/you/.vibezeo/scratch",
+      engineId,
+      accountId: null,
+      model: null,
+      effort: null,
+      access: workspaceId ? "edits" : "read",
+      mode: "act",
+      title,
+      state: "idle",
+      attended: true,
+      engineSessionId: null,
+      pinned: false,
+      archived: false,
+      unread: false,
+      sortKey: String(at),
+      createdAt: at,
+      updatedAt: at,
+    };
+    const t: DemoThread = { thread, turns: [], events: [], channels: new Set(), running: null, awaiting: null, fixed: false, divider: null, draft: "{}" };
+    this.threads.set(thread.id, t);
+    return t;
+  }
+
+  /** A finished thread to look at, and an empty one to try. */
+  private seed(): void {
+    const done = this.newThread("Add rate limiting to the API", "codex", WS, START);
+    const turn = this.startTurn(done, "Add rate limiting to POST /api/orders: 20 requests a minute per user.");
+    const steps: ThreadEvent[] = [
+      { type: "reasoning", text: "There's already a token bucket in src/api/limits.ts; reuse it rather than adding a dependency.", durationMs: 2400 },
+      { type: "tool", id: "s1", verb: "read", argSummary: "src/api/limits.ts", status: "ok", output: "(48 lines)", outputTruncated: false, outputFile: null, diff: null, detail: null },
+      { type: "tool", id: "s2", verb: "edit", argSummary: "src/api/orders.ts", status: "ok", output: null, outputTruncated: false, outputFile: null, diff: null, detail: null },
+      { type: "tool", id: "s3", verb: "write", argSummary: "src/api/rate-limit.test.ts", status: "ok", output: null, outputTruncated: false, outputFile: null, diff: null, detail: null },
+      { type: "tool", id: "s4", verb: "bash", argSummary: "npm test -- src/api", status: "ok", output: "Tests  6 passed (6)", outputTruncated: false, outputFile: null, diff: null, detail: null },
+      {
+        type: "assistant",
+        markdown:
+          "Added a per-user limit of **20 requests a minute** to `POST /api/orders`, reusing the token bucket in `src/api/limits.ts`. Over the limit, the API answers `429` with a `Retry-After` header.\n\nSix new tests cover the limit, the reset and the header.",
+      },
+      { type: "usage", input: 22_310, output: 1_840, cacheRead: 0, cacheWrite: 0, contextFillPct: 11.4, costUsd: null },
+    ];
+    for (const e of steps) this.push(done, turn, e);
+    this.endTurn(done, turn, "completed");
+    done.thread.state = "done";
+
+    const fresh = this.newThread("Fix the redirect loop after login", "claude", WS, START + 60_000);
+    fresh.draft = JSON.stringify({ text: FIRST_MESSAGE, attachmentIds: [] });
+    this.firstThread = fresh.thread.id;
+  }
+
+  /** The thread the demo opens on. */
+  firstThread = "";
+
+  private startTurn(t: DemoThread, text: string): string {
+    const id = this.id("turn");
+    const turn: Turn = {
+      id,
+      threadId: t.thread.id,
+      n: t.turns.length + 1,
+      engineId: t.thread.engineId,
+      accountId: null,
+      state: "running",
+      blockedActions: 0,
+      startedAt: Date.now(),
+      endedAt: null,
+    };
+    t.turns.push(turn);
+    t.running = id;
+    t.thread.state = "working";
+    this.push(t, id, { type: "user", text, attachments: [] });
+    if (t.divider) {
+      this.push(t, id, { type: "divider", text: t.divider });
+      t.divider = null;
+    }
+    return id;
+  }
+
+  private push(t: DemoThread, turnId: string, event: ThreadEvent): void {
+    const seq = t.events.filter((e) => e.turnId === turnId).length;
+    const env: ThreadEventEnvelope = { threadId: t.thread.id, turnId, seq, ts: Date.now(), event };
+    t.events.push(env);
+    t.thread.updatedAt = env.ts;
+    for (const ch of t.channels) ch.onmessage(env);
+  }
+
+  private endTurn(t: DemoThread, turnId: string, reason: "completed" | "cancelled"): void {
+    this.push(t, turnId, { type: "turn_end", reason, blockedActions: 0 });
+    const turn = t.turns.find((x) => x.id === turnId);
+    if (turn) {
+      turn.state = reason === "completed" ? "completed" : "cancelled";
+      turn.endedAt = Date.now();
+    }
+    t.running = null;
+    t.thread.state = reason === "completed" ? "done" : "idle";
+    this.changed(t);
+  }
+
+  private changed(t: DemoThread): void {
+    const threads: ThreadsChanged = { threads: [...this.threads.values()].map((x) => ({ ...x.thread })) };
+    emitLocal("threads:changed", threads);
+    const status = this.dashboard().find((d) => d.key === `thread:${t.thread.id}`);
+    if (status)
+      emitLocal("status:changed", {
+        records: [
+          {
+            key: status.key,
+            status: status.status,
+            reason: status.reason,
+            since: status.since,
+            ts: Date.now(),
+            tool: null,
+            title: status.title,
+            preview: null,
+          } satisfies StatusRecord,
+        ],
+        removed: [],
+      });
+  }
+
+  /** Plays steps in order; an approval stops until it's answered. */
+  private play(t: DemoThread, turnId: string, steps: Step[]): void {
+    const [step, ...rest] = steps;
+    if (!step) return this.endTurn(t, turnId, "completed");
+    if ("approval" in step) {
+      t.awaiting = { approvalId: step.approval.id, turnId };
+      t.thread.state = "waiting";
+      this.push(t, turnId, step.approval);
+      this.changed(t);
+      return;
+    }
+    this.later(step.wait, () => {
+      if (t.running !== turnId) return;
+      this.push(t, turnId, step.event);
+      this.play(t, turnId, rest);
+    });
+  }
+
+  private thread(args: Args): DemoThread {
+    const t = this.threads.get(String(args?.threadId ?? ""));
+    if (!t) throw { code: "not_found", message: "No such thread" };
+    return t;
+  }
+
+  private detail(t: DemoThread): ThreadDetail {
+    return {
+      thread: t.thread,
+      turns: t.turns,
+      running: t.running,
+      queued: null,
+      draft: t.draft,
+      attachments: [],
+      planRevisions: [],
+    };
+  }
+
+  private send(t: DemoThread, text: string): SendResult {
+    if (t.running) throw { code: "conflict", message: "Working — send when it's done, or stop it" };
+    const turnId = this.startTurn(t, text);
+    this.changed(t);
+    const first = !t.fixed && t.thread.workspaceId !== null && t.turns.length === 1;
+    this.play(t, turnId, first ? fixTurn(this.id("apr"), Date.now() + 10 * 60_000) : chatTurn(text));
+    return { turnId, queued: false };
+  }
+
+  private frame(pty: Pty, text: string): void {
+    pty.seq += 1;
+    pty.screen += text;
+    pty.channel.onmessage(encodeFrame(FrameKind.Data, pty.seq, encoder.encode(text)));
+  }
+
+  private dashboard(): DashboardItem[] {
+    const panes = PANES.filter((p) => STATUS[p.id]).map((p): DashboardItem => {
+      const s = STATUS[p.id] ?? { status: "idle", title: "", preview: "" };
+      const engine = ENGINES.find((e) => e.spec.id === p.engineId);
+      return {
+        key: `pane:${p.id}`,
+        source: { type: "pane", paneId: p.id },
+        status: s.status,
+        reason: null,
+        since: START,
+        title: s.title,
+        humanName: p.humanName,
+        engineId: p.engineId,
+        engineLabel: engine?.spec.label ?? null,
+        engineLogo: engine?.spec.logo ?? null,
+        accountLabel: null,
+        workspaceId: WS,
+        workspace: WORKSPACE.name,
+        branch: "main",
+        preview: s.preview,
+        pendingApproval: null,
+      };
+    });
+    const threads = [...this.threads.values()].map((t): DashboardItem => {
+      const engine = ENGINES.find((e) => e.spec.id === t.thread.engineId);
+      const status = t.thread.state === "working" ? "working" : t.thread.state === "waiting" ? "waiting" : t.thread.state === "done" ? "done" : "idle";
+      return {
+        key: `thread:${t.thread.id}`,
+        source: { type: "thread", threadId: t.thread.id },
+        status,
+        reason: status === "waiting" ? "approval" : null,
+        since: t.thread.updatedAt,
+        title: t.thread.title,
+        humanName: null,
+        engineId: t.thread.engineId,
+        engineLabel: engine?.spec.label ?? null,
+        engineLogo: engine?.spec.logo ?? null,
+        accountLabel: null,
+        workspaceId: t.thread.workspaceId,
+        workspace: t.thread.workspaceId ? WORKSPACE.name : null,
+        branch: null,
+        preview: null,
+        pendingApproval: null,
+      };
+    });
+    return [...panes, ...threads];
+  }
+
+  /** Answers one command, as the core would. */
+  handle(cmd: string, args: Args): unknown {
+    switch (cmd) {
+      case "app_ready":
+        return BOOT;
+      case "auth_state":
+        return AUTH;
+      case "entitlement_get":
+      case "entitlement_refresh":
+        return ENTITLEMENT;
+      case "settings_get_all":
+        return this.settings;
+      case "settings_set":
+        this.settings[String(args?.key)] = args?.value;
+        return null;
+      case "onboarding_get":
+        return { step: null, done: true, steps: [] };
+      case "restore_get_snapshot":
+        return { panes: [], interruptedThreads: 0, autoResume: false };
+      case "updates_state":
+        return { stage: "idle", current: "0.1.0", channel: "stable", version: null, notes: null, percent: null, errorStage: null, error: null, lastCheck: null, upToDate: true, minVersion: null };
+      case "notifications_list":
+        return { items: [], nextCursor: null, unread: 0 };
+      case "sidebar_get":
+        return { open: false, tabs: [], active: null, width: 360, fullscreen: false, pinned: false };
+      case "accounts_status":
+        return "signed_in";
+      case "workspace_list":
+        return [WORKSPACE];
+      case "layout_get": {
+        const layout: TabLayout = { tab: TAB_RECORD, tree: TREE, activePaneId: "pn_claude", maximizedPaneId: null };
+        return args?.workspaceId === WS ? [layout] : [];
+      }
+      case "pane_list":
+        return PANES;
+      case "engines_list":
+        return ENGINES;
+      case "engines_detect":
+        return { found: [], slowShell: null, shellsAsked: [] };
+      case "models_list":
+        return MODELS[String(args?.engineId)] ?? [];
+      case "status_list":
+        return PANES.filter((p) => STATUS[p.id]).map((p): StatusRecord => ({
+          key: `pane:${p.id}`,
+          status: STATUS[p.id]?.status ?? "idle",
+          reason: null,
+          since: START,
+          ts: START,
+          tool: null,
+          title: STATUS[p.id]?.title ?? null,
+          preview: STATUS[p.id]?.preview ?? null,
+        }));
+      case "status_snapshot":
+        return this.dashboard();
+      case "pty_attach": {
+        const pty = this.ptys.get(String(args?.paneId));
+        if (!pty) throw { code: "not_found", message: "Not running" };
+        pty.channel = args?.channel as FrameChannel;
+        const snap: AttachSnapshot = { replay: base64(pty.screen), live: true, state: null };
+        return snap;
+      }
+      case "pty_spawn": {
+        const id = String(args?.paneId);
+        const shell = id === "pn_shell" ? new DemoShell() : null;
+        const pty: Pty = { channel: args?.channel as FrameChannel, seq: 0, screen: "", shell };
+        this.ptys.set(id, pty);
+        this.later(80, () => this.frame(pty, shell ? shell.greeting() : (AGENT_SCREENS[id] ?? "")));
+        return { pid: 4000 + this.ptys.size, startedAt: Date.now() };
+      }
+      case "pty_write": {
+        const pty = this.ptys.get(String(args?.paneId));
+        const data = String(args?.data ?? "");
+        if (pty?.shell) this.frame(pty, pty.shell.write(data));
+        else if (pty && data.includes("\r"))
+          this.frame(pty, "\r\n\x1b[2m(This agent is simulated. In Vibezeo you'd be talking to it here.)\x1b[0m\r\n");
+        return null;
+      }
+      case "thread_list":
+        return [...this.threads.values()].map((t) => t.thread);
+      case "thread_get":
+        return this.detail(this.thread(args));
+      case "thread_events": {
+        const page: ThreadEventPage = { items: this.thread(args).events, nextBeforeId: null };
+        return page;
+      }
+      case "thread_subscribe":
+        this.thread(args).channels.add(args?.channel as { onmessage: (e: ThreadEventEnvelope) => void });
+        return null;
+      case "thread_create": {
+        const a = (args?.args ?? {}) as { workspaceId?: string | null; engineId?: string | null };
+        const t = this.newThread("", a.engineId ?? "claude", a.workspaceId ?? null, Date.now());
+        this.changed(t);
+        return t.thread;
+      }
+      case "thread_save_draft":
+        this.thread(args).draft = JSON.stringify(args?.draft ?? {});
+        return null;
+      case "thread_send": {
+        const t = this.thread(args);
+        t.draft = "{}";
+        const text = String(args?.text ?? "");
+        if (!t.thread.title) t.thread.title = text.split("\n")[0]?.slice(0, 60) ?? "New thread";
+        return this.send(t, text);
+      }
+      case "approval_resolve": {
+        const t = [...this.threads.values()].find((x) => x.awaiting?.approvalId === args?.approvalId);
+        if (!t?.awaiting) return null;
+        const { turnId, approvalId } = t.awaiting;
+        t.awaiting = null;
+        const decision = args?.decision as { type: string; scope?: string };
+        const allowed = decision.type === "allow";
+        this.push(t, turnId, {
+          type: "approval_resolved",
+          id: approvalId,
+          decision: allowed ? { type: "allow", scope: decision.scope === "thread" ? "thread" : "once" } : { type: "deny", reason: null },
+        });
+        t.thread.state = "working";
+        t.fixed = true;
+        this.changed(t);
+        this.play(t, turnId, allowed ? afterAllow() : afterDeny());
+        return null;
+      }
+      case "thread_stop": {
+        const t = this.thread(args);
+        if (t.running) this.endTurn(t, t.running, "cancelled");
+        t.awaiting = null;
+        return "stopped";
+      }
+      case "thread_update": {
+        const t = this.thread(args);
+        const { threadId: _id, ...patch } = args ?? {};
+        Object.assign(t.thread, patch);
+        this.changed(t);
+        return t.thread;
+      }
+      case "thread_switch_engine": {
+        const t = this.thread(args);
+        const engineId = String(args?.engineId);
+        if (engineId !== t.thread.engineId && t.turns.length > 0) {
+          const label = ENGINES.find((e) => e.spec.id === engineId)?.spec.label ?? engineId;
+          t.divider = `Continued on ${label} (Default) with a summary`;
+        }
+        t.thread.engineId = engineId;
+        this.changed(t);
+        return t.thread;
+      }
+      case "thread_archive": {
+        const t = this.thread(args);
+        t.thread.archived = Boolean(args?.archived);
+        this.changed(t);
+        return null;
+      }
+      case "thread_changes": {
+        const t = this.thread(args);
+        const changes: ThreadChanges = { source: t.turns.length ? "git" : "not_started", files: t.fixed ? DEMO_CHANGES : [] };
+        return changes;
+      }
+      case "thread_file_read": {
+        const file = DEMO_CHANGES.find((f) => f.path === args?.path);
+        const text: FileText = {
+          path: String(args?.path ?? ""),
+          content: file ? file.patch.split("\n").filter((l) => !l.startsWith("-") && !l.startsWith("@@") && !l.startsWith("diff")).map((l) => l.replace(/^[+ ]/, "")).join("\n") : "",
+          binary: false,
+          truncated: false,
+        };
+        return text;
+      }
+      case "thread_mention_search":
+        return ["src/checkout/redirect.ts", "src/checkout/redirect.test.ts", "src/api/orders.ts", "package.json"].map((path) => ({ path, kind: "file" }));
+      case "thread_retry": {
+        const t = this.thread(args);
+        const last = [...t.events].reverse().find((e) => e.event.type === "user");
+        return this.send(t, last?.event.type === "user" ? last.event.text : "");
+      }
+      case "app_open_external":
+        if (typeof args?.url === "string" && args.url.startsWith("https://")) window.open(args.url, "_blank", "noopener");
+        return null;
+      default:
+        // Everything else is quiet: lists are empty, actions do nothing.
+        return cmd.endsWith("_list") || cmd.endsWith("s_get") ? [] : null;
+    }
+  }
+}
+
+/** Replaces the Tauri bridge with the simulation. */
+export function installDemo(speed = 1): DemoCore {
+  const core = new DemoCore(speed);
+  setInvokeBackend(async (cmd, args) => core.handle(cmd, args));
+  return core;
+}

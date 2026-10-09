@@ -44,6 +44,7 @@ use tokio::sync::{broadcast, mpsc, Mutex};
 
 use crate::services::thread_changes;
 use crate::services::thread_files::{self, PathEntry};
+use crate::services::thread_summary;
 use crate::services::thread_titles::{self, LocalOnly, Titler};
 use ts_rs::TS;
 
@@ -193,8 +194,12 @@ struct Runtime {
     /// Access, mode or model changed: the next turn starts a fresh session
     /// (resuming the engine's conversation) with the new settings.
     stale: bool,
-    /// Shown in the next turn, after its message ("Switched to Codex").
-    pending_note: Option<String>,
+    /// After an engine switch: the next turn opens with this divider and
+    /// seeds the new engine with a summary (F-TH-16).
+    pending_switch: Option<String>,
+    /// The new engine hasn't been told the conversation so far yet: kept
+    /// until a turn's input reaches it (F-TH-16).
+    seed_pending: bool,
 }
 
 pub struct ThreadService {
@@ -548,13 +553,15 @@ impl ThreadService {
     }
 
     /// `thread_switch_engine` (F-TH-16, between turns): the new engine starts
-    /// a fresh session; this thread's allow rules don't carry over.
+    /// a fresh session, seeded with a summary of the conversation at its
+    /// first turn, which opens with `divider`; this thread's allow rules
+    /// don't carry over.
     pub async fn switch_engine(
         &self,
         id: &ThreadId,
         engine_id: &str,
         account_id: Option<&tandem_core::ids::AccountId>,
-        note: String,
+        divider: String,
     ) -> Result<ThreadRecord, IpcError> {
         let thread = self.thread(id).await?;
         if thread.engine_id == engine_id && thread.account_id.as_ref() == account_id {
@@ -569,7 +576,10 @@ impl ThreadService {
             .map_err(store_err)?
             .is_empty();
         if has_turns {
-            self.runtime(id).lock().await.pending_note = Some(note);
+            let rt = self.runtime(id);
+            let mut guard = rt.lock().await;
+            guard.pending_switch = Some(divider);
+            guard.seed_pending = true;
         }
         let thread = self.thread(id).await?;
         self.publish_threads().await;
@@ -1209,6 +1219,18 @@ impl ThreadService {
             }
         }
 
+        // After a switch the new engine hears what was said before (F-TH-16).
+        let seed = if guard.seed_pending {
+            let rows = repo::all_messages(&self.store, id)
+                .await
+                .map_err(store_err)?;
+            let events: Vec<ThreadEvent> =
+                rows.iter().filter_map(envelope).map(|e| e.event).collect();
+            thread_summary::summary(&events)
+        } else {
+            None
+        };
+
         let turn_id = TurnId::new();
         let record = repo::start_turn(
             &self.store,
@@ -1253,8 +1275,10 @@ impl ThreadService {
                 },
             )
             .await;
-        if let Some(text) = guard.pending_note.take() {
-            self.emit(id, &mut run, ThreadEvent::Note { text }).await;
+        // A turn starts with its message; the transcript shows the divider
+        // above it.
+        if let Some(text) = guard.pending_switch.take() {
+            self.emit(id, &mut run, ThreadEvent::Divider { text }).await;
         }
         if let (Some(row), false) = (row, carried.is_empty()) {
             let ids: Vec<AttachmentId> = carried.iter().map(|a| a.id.clone()).collect();
@@ -1306,8 +1330,17 @@ impl ThreadService {
 
         // Outside the lock: a slow stdin never holds up the event stream.
         self.ensure_start(&thread).await;
+        let seeded = seed.is_some();
+        let text = match seed {
+            Some(summary) => thread_summary::seeded(&summary, &text),
+            None => text,
+        };
         let input = turn_input(&turn_id, text, &carried, std::path::Path::new(&thread.cwd));
-        if let Err(e) = session.send_turn(input).await {
+        let sent = session.send_turn(input).await;
+        if seeded && sent.is_ok() {
+            rt.lock().await.seed_pending = false;
+        }
+        if let Err(e) = sent {
             let mut guard = rt.lock().await;
             if guard.turn.as_ref().map(|r| &r.id) == Some(&turn_id) {
                 self.fail_turn(
@@ -4063,10 +4096,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn f_th_16_switching_engines_between_turns_notes_it_and_clears_rules() {
+    async fn f_th_16_1_switching_engines_seeds_a_summary_shows_a_divider_and_clears_rules() {
         let f = fixture(OnStop::Ack, reply("ok")).await;
-        send(&f, "one", vec![]).await;
-        ended(&f, 1).await;
+        for (n, text) in ["one", "two", "three"].into_iter().enumerate() {
+            send(&f, text, vec![]).await;
+            ended(&f, n + 1).await;
+        }
         repo::set_allow_rules(
             &f.store,
             &f.thread.id,
@@ -4074,9 +4109,10 @@ mod tests {
         )
         .await
         .expect("rules");
+        let divider = "Continued on Codex (Default) with a summary";
         let thread = f
             .svc
-            .switch_engine(&f.thread.id, "codex", None, "Switched to Codex".into())
+            .switch_engine(&f.thread.id, "codex", None, divider.into())
             .await
             .expect("switch");
         assert_eq!(thread.engine_id, "codex");
@@ -4086,11 +4122,53 @@ mod tests {
                 .expect("rules"),
             "[]"
         );
-        send(&f, "two", vec![]).await;
-        ended(&f, 2).await;
-        assert!(stored(&f).await.contains(&ThreadEvent::Note {
-            text: "Switched to Codex".into()
-        }));
+        send(&f, "four", vec![]).await;
+        ended(&f, 4).await;
+        // The new engine's first input carries the summary, then the message.
+        let inputs: Vec<String> = f
+            .adapter
+            .inputs
+            .lock()
+            .expect("inputs")
+            .iter()
+            .map(|i| i.text.clone())
+            .collect();
+        let first = &inputs[3];
+        assert!(first.contains("<previous_conversation>"), "{first}");
+        for said in ["User: one", "User: two", "User: three", "Assistant: ok"] {
+            assert!(first.contains(said), "{said} missing from {first}");
+        }
+        assert!(
+            first.ends_with("</previous_conversation>\n\nfour"),
+            "{first}"
+        );
+        // The turn opens with the message, then the divider; not the summary.
+        let turn = repo::turns(&f.store, &f.thread.id).await.expect("turns")[3].clone();
+        assert_eq!(turn.engine_id, "codex");
+        let rows: Vec<ThreadEvent> = repo::turn_messages(&f.store, &turn.id)
+            .await
+            .expect("rows")
+            .iter()
+            .filter_map(envelope)
+            .map(|e| e.event)
+            .collect();
+        assert_eq!(
+            rows[0],
+            ThreadEvent::User {
+                text: "four".into(),
+                attachments: vec![]
+            }
+        );
+        assert_eq!(
+            rows[1],
+            ThreadEvent::Divider {
+                text: divider.into()
+            }
+        );
+        // Only once: the next turn is plain.
+        send(&f, "five", vec![]).await;
+        ended(&f, 5).await;
+        assert_eq!(f.adapter.inputs.lock().expect("inputs")[4].text, "five");
         assert_eq!(f.adapter.starts.load(Ordering::SeqCst), 2);
         // Not mid-turn.
         let busy = fixture(OnStop::Ack, hang()).await;

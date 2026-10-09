@@ -8,6 +8,8 @@ perf/results/*.tmp
 dist
 .next
 apps/web/out
+# The browser demo, built from apps/desktop by `pnpm --filter web build:site`.
+apps/web/public/demo/app/
 .vercel
 .turbo
 

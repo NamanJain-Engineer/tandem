@@ -1,6 +1,7 @@
 build-kit/
 target/
 dist/
+apps/web/public/demo/app/
 .next/
 pnpm-lock.yaml
 packages/protocol/src/generated/

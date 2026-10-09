@@ -17,7 +17,7 @@ import { useBoot } from "./features/shell/useBoot";
 import { SignIn } from "./features/signin/SignIn";
 import { Splash, type SplashPhase } from "./features/splash/Splash";
 import { t } from "./i18n";
-import { inTauri, invoke } from "./ipc/invoke";
+import { inTauri, invoke, usingFakeBackend } from "./ipc/invoke";
 import { installGlobalErrorLogging, log } from "./ipc/log";
 import { useSetting, useSettings, watchSettings } from "./stores/settings";
 import { canUseApp, useSession, watchSession } from "./stores/session";
@@ -89,8 +89,9 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!inTauri()) return;
-    installGlobalErrorLogging();
+    // The browser demo (vibezeo.com/demo) boots against its simulated core.
+    if (!inTauri() && !usingFakeBackend()) return;
+    if (inTauri()) installGlobalErrorLogging();
     let cleanup: Array<() => void> = [];
     let started = false;
     // Show the window after the first paint (ARCHITECTURE §1.3 step 5). A

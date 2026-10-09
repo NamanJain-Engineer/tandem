@@ -676,6 +676,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `launch_retry_seat` | `{workspaceId, seat, task?, isolation, tabId?}` (`tabId`: the lineup's shared tab) | `LaunchedSeat` | as above | F-CD-14 |
 | `handoff_brief` | `{paneId, engineId, accountId?}` (up to 120 s per strategy; UI-13 shows "Writing summary…") | `HandoffBrief {text, source: "source"\|"headless"\|"fallback"}` (§6.11 strategies in order; always returns text unless the pane is gone) | NotFound | F-CD-16 |
 | `handoff_start` | `{paneId, engineId, accountId?, brief, place: "same"\|"new_worktree", closeSource}` | `HandoffResult {pane, workspaceId, tabId, laneBranch?, sourceClosed}` (the client splits it right of the source; briefs over 8 KB go via `$DATA/briefings/<pane>.md`) | EngineMissing, LimitReached, Invalid (empty brief) | F-CD-16 |
+| `handoff_to_thread` | `{paneId, engineId, accountId?, brief, closeSource}` | `HandoffThread {thread, sourceClosed}` (a new Thread in the source's workspace with the engine's remembered settings; the brief is its first message, §6.11 chat target) | EngineMissing, EngineUnsupported (no chat adapter), Invalid (empty brief) | F-CD-16 |
 | `lane_create` | `{workspaceId, slugSource}` | `Workspace` (child) | Conflict, Io | F-CD-15 |
 | `lane_diff` | `{laneId}` | `[FileDiff]` | — | F-CD-15 |
 | `lane_merge` | `{laneId}` | `MergeReport {merged, conflicts:[path], commit?}` | — | F-CD-15 |

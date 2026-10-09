@@ -18,6 +18,7 @@ import {
   defaultTarget,
   generateBrief,
   startHandoff,
+  startThreadHandoff,
   useHandoff,
   type HandoffSource,
 } from "../../stores/handoff";
@@ -33,7 +34,8 @@ function HandoffBody({ source }: { source: HandoffSource }) {
   const label = useEngines((s) => s.label);
   const { show } = useToast();
   const [engineId, setEngineId] = useState<string | null>(() => defaultTarget(engines, source.engineId));
-  const [where, setWhere] = useState<HandoffPlace>("same");
+  // A pane beside the source, a new worktree, or a Thread (chat engines).
+  const [where, setWhere] = useState<HandoffPlace | "thread">("same");
   const [text, setText] = useState("");
   const [summary, setSummary] = useState<Summary>({ state: "loading" });
   const [closeSource, setCloseSource] = useState(false);
@@ -71,12 +73,19 @@ function HandoffBody({ source }: { source: HandoffSource }) {
   const target = (engineId && label(engineId)) ?? "";
   const current = source.kind === "agent" ? (label(source.engineId) ?? t("handoff.thisAgent")) : null;
   const inWorktree = ws ? isWorktree(ws) : false;
+  const chatCapable = engines.some((e) => e.spec.id === engineId && e.chatCapable);
+  const place = where === "thread" && !chatCapable ? "same" : where;
   const places: SelectOption[] = [
     { value: "same", label: inWorktree ? t("handoff.sameWorktree") : t("handoff.sameFolder") },
     {
       value: "new_worktree",
       label: isRepo(ws) ? t("handoff.newWorktree") : t("handoff.newWorktreeNeedsRepo"),
       disabled: !isRepo(ws),
+    },
+    {
+      value: "thread",
+      label: chatCapable ? t("handoff.thread") : t("handoff.threadUnsupported", { target }),
+      disabled: !chatCapable,
     },
   ];
   const loading = summary.state === "loading";
@@ -86,7 +95,16 @@ function HandoffBody({ source }: { source: HandoffSource }) {
     if (!engineId || !ready) return;
     setBusy(true);
     setError(null);
-    const out = await startHandoff(source, engineId, text, where, closeSource);
+    if (place === "thread") {
+      const out = await startThreadHandoff(source, engineId, text, closeSource);
+      setBusy(false);
+      if (!out.ok) return setError(out.error);
+      if (!out.value.sourceClosed)
+        useHandoff.getState().note(source.paneId, t("handoff.noteThread", { engine: target }));
+      show({ tone: "success", title: t("handoff.startedThread", { engine: target }) });
+      return close();
+    }
+    const out = await startHandoff(source, engineId, text, place, closeSource);
     setBusy(false);
     if (!out.ok) return setError(out.error);
     const name = out.value.pane.humanName ?? target;
@@ -134,8 +152,8 @@ function HandoffBody({ source }: { source: HandoffSource }) {
           />
           <Select
             label={t("handoff.where")}
-            value={where}
-            onValueChange={(v) => setWhere(v as HandoffPlace)}
+            value={place}
+            onValueChange={(v) => setWhere(v as HandoffPlace | "thread")}
             options={places}
           />
         </div>

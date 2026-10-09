@@ -214,8 +214,14 @@ export default function HomePage() {
               Download for Linux →
             </a>
             <a
-              href="#demo"
+              href="/demo/"
               className="rounded-sm border border-border-strong px-4 py-2 text-md font-medium text-fg hover:bg-surface-3"
+            >
+              Try it in your browser
+            </a>
+            <a
+              href="#demo"
+              className="rounded-sm px-4 py-2 text-md font-medium text-fg-muted hover:bg-surface-3 hover:text-fg"
             >
               Watch it run (1 min)
             </a>

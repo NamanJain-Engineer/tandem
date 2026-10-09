@@ -69,6 +69,7 @@ const COMMANDS: &[&str] = &[
     "launch_retry_seat",
     "handoff_brief",
     "handoff_start",
+    "handoff_to_thread",
     "accounts_begin_add",
     "accounts_begin_session",
     "accounts_finish_login",

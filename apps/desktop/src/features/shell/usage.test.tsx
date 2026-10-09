@@ -92,14 +92,21 @@ afterEach(() => {
 
 describe("usage chip (F-AC-04)", () => {
   it("F-AC-04.1 windows at 40% and 85% show the 85% window in warning", () => {
-    setup(pane("pn_1", "acct_codex"));
-    useUsage.getState().set([view("acct_codex", "codex", [40, 85])]);
-    renderChip();
-    const chip = screen.getByTestId("usage-chip");
-    expect(chip.dataset.tone).toBe("warning");
-    expect(chip.textContent).toMatch(/^Codex · 85% · resets 4:10/);
-    expect(chip.title).toBe("Weekly, the closest to its limit. Click for every account.");
-    expect(fullest(view("a", "codex", [40, 85]).windows)?.kind).toBe("week");
+    // The windows reset later the same day: today's resets show the time only.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 8, 12, 0));
+    try {
+      setup(pane("pn_1", "acct_codex"));
+      useUsage.getState().set([view("acct_codex", "codex", [40, 85])]);
+      renderChip();
+      const chip = screen.getByTestId("usage-chip");
+      expect(chip.dataset.tone).toBe("warning");
+      expect(chip.textContent).toMatch(/^Codex · 85% · resets 4:10/);
+      expect(chip.title).toBe("Weekly, the closest to its limit. Click for every account.");
+      expect(fullest(view("a", "codex", [40, 85]).windows)?.kind).toBe("week");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("F-AC-04 the chip turns danger at 95% and stays neutral below 80%", () => {

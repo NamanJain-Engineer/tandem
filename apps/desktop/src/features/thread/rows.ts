@@ -60,9 +60,15 @@ export function toRows(view: ThreadView): Row[] {
       if (e.type === "usage" || e.type === "approval_resolved") continue;
       flush();
       switch (e.type) {
-        case "user":
+        case "user": {
+          // An engine switch's divider follows the message it was sent
+          // with (a turn starts with its message) but reads above it.
+          const divider = turn.items.find((i) => i.event.type === "divider");
+          if (divider?.event.type === "divider")
+            rows.push({ kind: "divider", key: `${turn.id}:${divider.seq}`, text: divider.event.text });
           rows.push({ kind: "user", key, turnId: turn.id, text: e.text, attachments: e.attachments });
           break;
+        }
         case "reasoning":
           if (e.text.trim())
             rows.push({
@@ -96,7 +102,7 @@ export function toRows(view: ThreadView): Row[] {
           rows.push({ kind: "limit", key, limit: e });
           break;
         case "divider":
-          rows.push({ kind: "divider", key, text: e.text });
+          // Shown with the turn's message (above).
           break;
         case "plan_revision":
           rows.push({ kind: "plan", key, version: e.version });
@@ -162,19 +168,39 @@ export function pendingApprovals(
 
 /** Tokens this thread (input + output across turns) and the latest context
  * fill, for the header meter and the composer readout. */
-export function usageOf(view: ThreadView): { input: number; output: number; contextFillPct: number | null } {
+export type Usage = {
+  input: number;
+  output: number;
+  contextFillPct: number | null;
+  /** Per engine, in the order first used (F-TH-16). */
+  byEngine: Array<{ engineId: string; input: number; output: number }>;
+};
+
+/** Tokens over the whole thread; `engineOf` names the engine of each turn. */
+export function usageOf(view: ThreadView, engineOf: (turnId: string) => string | undefined = () => undefined): Usage {
   let input = 0;
   let output = 0;
   let contextFillPct: number | null = null;
+  const byEngine: Usage["byEngine"] = [];
   for (const turn of view.turns) {
+    const engineId = engineOf(turn.id);
     for (const item of turn.items) {
       if (item.event.type !== "usage") continue;
-      input += item.event.input + item.event.cacheRead;
+      const i = item.event.input + item.event.cacheRead;
+      input += i;
       output += item.event.output;
       if (item.event.contextFillPct !== null) contextFillPct = item.event.contextFillPct;
+      if (engineId === undefined) continue;
+      let entry = byEngine.find((e) => e.engineId === engineId);
+      if (!entry) {
+        entry = { engineId, input: 0, output: 0 };
+        byEngine.push(entry);
+      }
+      entry.input += i;
+      entry.output += item.event.output;
     }
   }
-  return { input, output, contextFillPct };
+  return { input, output, contextFillPct, byEngine };
 }
 
 /** The worst status in a group: running beats error beats denied beats ok. */

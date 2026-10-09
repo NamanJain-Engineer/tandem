@@ -9,6 +9,7 @@ use tandem_core::settings::SettingKey;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_engines::chat::InterruptOutcome;
 use tandem_engines::events::ThreadEventEnvelope;
+use tandem_store::repo::accounts as accounts_repo;
 use tandem_store::repo::attachments::Attachment;
 use tandem_store::repo::settings as settings_repo;
 use tandem_store::repo::threads::{NewThread, ThreadKind, ThreadPatch, ThreadRecord};
@@ -107,7 +108,16 @@ pub async fn thread_create(
     state: State<'_, AppState>,
     args: ThreadCreate,
 ) -> Result<ThreadRecord, IpcError> {
-    let defaults = remembered(&state).await;
+    create_thread(&state, args).await
+}
+
+/// A new thread with this engine's remembered settings (also a handoff's
+/// Thread target, F-CD-16).
+pub(crate) async fn create_thread(
+    state: &AppState,
+    args: ThreadCreate,
+) -> Result<ThreadRecord, IpcError> {
+    let defaults = remembered(state).await;
     let last = text(&defaults, "last_engine").filter(|e| {
         state.terminals.engines.installed(e).is_some()
             && state
@@ -118,7 +128,7 @@ pub async fn thread_create(
     });
     let engine_id = match args.engine_id.or(last) {
         Some(id) => id,
-        None => default_engine(&state).ok_or_else(|| {
+        None => default_engine(state).ok_or_else(|| {
             IpcError::new(
                 ErrorCode::EngineMissing,
                 "No coding agent that works in Thread mode is installed",
@@ -371,13 +381,36 @@ pub async fn thread_switch_engine(
             ),
         ));
     }
-    let note = format!("Switched to {}", spec.label);
     let thread = state
         .threads
-        .switch_engine(&thread_id, &engine_id, account_id.as_ref(), note)
+        .switch_engine(
+            &thread_id,
+            &engine_id,
+            account_id.as_ref(),
+            switch_divider(&state, &spec.label, &engine_id, account_id.as_ref()).await,
+        )
         .await?;
     remember(&state, &thread).await;
     Ok(thread)
+}
+
+/// "Continued on Codex (Work) with a summary" (F-TH-16): the account is
+/// the one chosen, else the engine's default.
+async fn switch_divider(
+    state: &AppState,
+    engine: &str,
+    engine_id: &str,
+    account_id: Option<&AccountId>,
+) -> String {
+    let account = match account_id {
+        Some(id) => accounts_repo::get(&state.store, id).await.ok(),
+        None => accounts_repo::default_for(&state.store, engine_id)
+            .await
+            .ok()
+            .flatten(),
+    };
+    let label = account.map_or_else(|| accounts_repo::DEFAULT_LABEL.to_string(), |a| a.label);
+    format!("Continued on {engine} ({label}) with a summary")
 }
 
 /// `thread_move_to_folder` (F-TH-02 "Add folder…").

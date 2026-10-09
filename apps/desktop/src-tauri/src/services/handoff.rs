@@ -13,6 +13,7 @@ use tandem_engines::handoff::{self, Reply};
 use tandem_engines::launch::MAX_ARG_INPUT;
 use tandem_store::repo::panes::{self, PaneRecord};
 use tandem_store::repo::tabs;
+use tandem_store::repo::threads::{ThreadKind, ThreadRecord};
 use tandem_store::repo::workspaces;
 use ts_rs::TS;
 
@@ -340,6 +341,76 @@ pub async fn start(
         workspace_id: home.id.clone(),
         tab_id: tab,
         lane_branch: home.lane_branch.clone(),
+        source_closed,
+    })
+}
+
+/// `handoff_to_thread`.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct HandoffThread {
+    pub thread: ThreadRecord,
+    /// The source pane was closed ("Close the original pane after handoff").
+    pub source_closed: bool,
+}
+
+/// A handoff to a chat target (F-CD-16, §6.11 delivery): a new Thread in
+/// the source's folder whose first message is the brief.
+pub async fn start_thread(
+    state: &AppState,
+    pane: &PaneId,
+    engine_id: &str,
+    account: Option<AccountId>,
+    brief: &str,
+    close_source: bool,
+) -> Result<HandoffThread, IpcError> {
+    let brief = brief.trim();
+    if brief.is_empty() {
+        return Err(IpcError::new(ErrorCode::Invalid, "Write a summary first"));
+    }
+    let source = panes::get_open(&state.store, pane).await?;
+    let engines = &state.terminals.engines;
+    let engine = engines
+        .get(engine_id)
+        .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "No engine with that id"))?;
+    if engines.installed(engine_id).is_none() {
+        return Err(IpcError::new(
+            ErrorCode::EngineMissing,
+            format!("{} isn't installed", engine.label),
+        ));
+    }
+    if !crate::services::threads::has_chat_adapter(&engine) {
+        return Err(IpcError::new(
+            ErrorCode::EngineUnsupported,
+            format!(
+                "{} can't run in Thread mode yet. Hand off to a pane instead.",
+                engine.label
+            ),
+        ));
+    }
+    let thread = crate::commands::threads::create_thread(
+        state,
+        crate::commands::threads::ThreadCreate {
+            kind: ThreadKind::Thread,
+            workspace_id: Some(source.workspace_id.clone()),
+            engine_id: Some(engine_id.to_string()),
+            account_id: account,
+            model: None,
+            effort: None,
+            access: None,
+            mode: None,
+        },
+    )
+    .await?;
+    state
+        .threads
+        .send(&thread.id, brief.to_string(), Vec::new(), false)
+        .await?;
+    let source_closed = close_source && close_pane(state, pane).await.is_ok();
+    tracing::info!(code = "handoff.start", place = "thread", "handed off");
+    Ok(HandoffThread {
+        thread,
         source_closed,
     })
 }

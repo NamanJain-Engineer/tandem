@@ -1,8 +1,10 @@
 import { create } from "zustand";
-import type { EngineView, HandoffBrief, HandoffPlace, HandoffResult, IpcError } from "@tandem/protocol";
+import type { EngineView, HandoffBrief, HandoffPlace, HandoffResult, HandoffThread, IpcError } from "@tandem/protocol";
 import { invoke } from "../ipc/invoke";
 import { place, type Outcome } from "./launch";
 import { useLayout } from "./layout";
+import { useThreads } from "./threads";
+import { useUi } from "./ui";
 import { useWorkspaces } from "./workspaces";
 
 /** The pane being handed off (UI-13). */
@@ -87,6 +89,33 @@ export async function startHandoff(
     return { ok: false, error: e as IpcError };
   }
   await showHandoff(source.paneId, result, where);
+  return { ok: true, value: result };
+}
+
+/** Hands off to a new Thread in the source's folder and opens it in Thread
+ * mode (F-CD-16 chat target). */
+export async function startThreadHandoff(
+  source: HandoffSource,
+  engineId: string,
+  brief: string,
+  closeSource: boolean,
+): Promise<Outcome<HandoffThread>> {
+  let result: HandoffThread;
+  try {
+    result = await invoke<HandoffThread>("handoff_to_thread", {
+      paneId: source.paneId,
+      engineId,
+      accountId: null,
+      brief,
+      closeSource,
+    });
+  } catch (e) {
+    return { ok: false, error: e as IpcError };
+  }
+  const threads = useThreads.getState();
+  await threads.refresh();
+  threads.select(result.thread.id);
+  useUi.getState().setMode("thread");
   return { ok: true, value: result };
 }
 

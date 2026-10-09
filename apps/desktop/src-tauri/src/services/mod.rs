@@ -28,6 +28,7 @@ pub mod telemetry;
 pub mod terminal;
 pub mod thread_changes;
 pub mod thread_files;
+pub mod thread_summary;
 pub mod thread_titles;
 pub mod threads;
 pub mod updates;

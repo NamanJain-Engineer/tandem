@@ -13,6 +13,7 @@ import {
   ToolCallBlock,
   ToolGroup,
   ToolOutput,
+  cx,
   type DiffFile,
 } from "@tandem/ui";
 import { t } from "../../i18n";
@@ -173,9 +174,9 @@ function Working({ startedAt }: { startedAt: number | null }) {
   );
 }
 
-function Hover({ children, actions }: { children: ReactNode; actions: ReactNode }) {
+function Hover({ children, actions, className }: { children: ReactNode; actions: ReactNode; className?: string }) {
   return (
-    <div className="group relative">
+    <div className={cx("group relative", className)}>
       {children}
       <div className="absolute -top-3 right-0 hidden gap-0.5 rounded-sm border border-border bg-surface-3 p-0.5 shadow-1 group-focus-within:flex group-hover:flex">
         {actions}
@@ -248,6 +249,9 @@ const RowView = memo(function RowView({
       return (
         <div className="flex justify-end">
           <Hover
+            // The cap sits on the wrapper: a percentage of a shrink-to-fit
+            // box would squeeze short messages to a letter per line.
+            className="max-w-[72%]"
             actions={
               <>
                 <IconButton
@@ -267,7 +271,7 @@ const RowView = memo(function RowView({
           >
             <div
               data-testid="thread-user"
-              className="flex max-w-[72%] flex-col gap-1 rounded-md bg-surface-3 px-3 py-2 text-md text-fg"
+              className="flex flex-col gap-1 rounded-md bg-surface-3 px-3 py-2 text-md text-fg"
             >
               {row.attachments.length > 0 && (
                 <span className="inline-flex items-center gap-1 text-sm text-fg-muted">

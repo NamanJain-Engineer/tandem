@@ -337,10 +337,12 @@ function ThreadView({ threadId, visible, cell }: { threadId: string; visible: bo
     previous.current = next;
     return next;
   }, [live]);
-  const usage = useMemo(
-    () => (live ? usageOf(live.view) : { input: 0, output: 0, contextFillPct: null }),
-    [live],
-  );
+  const usage = useMemo(() => {
+    const turns = new Map((live?.detail?.turns ?? []).map((t) => [t.id, t.engineId]));
+    return live
+      ? usageOf(live.view, (id) => turns.get(id))
+      : { input: 0, output: 0, contextFillPct: null, byEngine: [] };
+  }, [live]);
   const running = live?.detail?.running ?? null;
   const pending = pendingApprovals(rows, running);
 
@@ -491,6 +493,18 @@ function ThreadView({ threadId, visible, cell }: { threadId: string; visible: bo
             </SkeletonGate>
           )}
           <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 px-4 pb-4">
+            {thread.state === "interrupted" && running === null && (
+              // A crash or quit stopped its turn: never shown as done (F-SH-07).
+              <div data-testid="thread-interrupted">
+                <Banner
+                  tone="warning"
+                  className="rounded-md"
+                  action={{ label: t("thread.interrupted.resume"), onClick: actions.retry }}
+                >
+                  {t("thread.interrupted.title")}
+                </Banner>
+              </div>
+            )}
             {pending.length > 0 && (
               <div className="flex flex-col gap-2" data-testid="thread-pending">
                 {(expanded ? pending : pending.slice(0, 1)).map((p) => (
