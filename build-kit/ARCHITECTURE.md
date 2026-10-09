@@ -816,10 +816,11 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 #### Remote [F-RM-*]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
-| `ssh_hosts_list` / `ssh_host_add` / `ssh_host_remove` | — / `{target, port?, user?, identityFile?}` / `{hostId}` | `[Host]` / `Host` / — | Invalid |
-| `ssh_connect` | `{hostId}` → op | progress `remote:ssh` (may ask host-key or password) | Unavailable (categorized stage) |
+| `ssh_hosts_list` / `ssh_host_add` / `ssh_host_remove` | — / `{target, port?, user?, identityFile?, label?}` (`target`: an alias, `host`, `user@host` or `user@host:port`; the user is stored in it) / `{hostId}` (refused while it has workspaces) | `[HostView]` (`Host` + `state`) / `Host` / — | Invalid |
+| `ssh_connect` | `{hostId}` → op | progress `remote:ssh` (may ask host-key or password); then the host's engines are detected (`engines:detected`) | Unavailable (stage = the error category), Cancelled (key not trusted) |
 | `ssh_hostkey_decide` / `ssh_askpass_reply` | `{opId, accept}` / `{opId, secret?}` | — | — |
-| `ssh_disconnect` / `ssh_list_dir` | `{hostId}` / `{hostId, path}` | — / `[FsEntry]` | — |
+| `ssh_disconnect` / `ssh_list_dir` | `{hostId}` (ends the host's panes) / `{hostId, path}` (absolute, or empty / `~` for home) | — / `RemoteDir {path, parent?, dirs}` (folders only, for the remote folder picker) | NotFound |
+| `ssh_host_reset_key` | `{hostId}` ("Trust new key…" after a danger confirm: forgets the pinned key; the next connect shows the new fingerprint) | — | — |
 | `wsl_distros` | — | `[{name, isDefault, version}]` | Unavailable (non-Windows) |
 | `phone_pair_begin` | — | `PairingQr {pairingId, qrSvg, expiresAt}` | ForbiddenPlan |
 | `phone_pairings_list` / `phone_pairing_set_grants` / `phone_pairing_revoke` | — / `{pairingId, grants}` / `{pairingId}` | `[Pairing]` / — / — | — |
@@ -904,8 +905,8 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `conductor:state` | `{state:"connecting"\|"listening"\|"thinking"\|"speaking"\|"ended", utterance?, chips:[Chip], question?}` (to `main`, `conductor-ring`) | CallController | F-CN-04 |
 | `conductor:ui-action` | `{action, args}` (navigation-only actions) | ActionRegistry | F-CN-02 |
 | `conductor:confirm-request` | `{requestId, summary, kind}` | ActionRegistry | F-CN-03 |
-| `remote:ssh` | `{opId, stage, prompt?: {kind:"hostkey", fingerprint} \| {kind:"password", label}, error?}` | ssh service | F-RM-01 |
-| `remote:host` | `{hostId, state:"connected"\|"reconnecting"\|"down"}` | ssh service | F-RM-01 |
+| `remote:ssh` | `SshProgress {opId, hostId, stage: "resolving"\|"hostkey"\|"password"\|"connecting"\|"installing"\|"starting"\|"connected"\|"failed", prompt?: {kind:"hostkey", host, fingerprint, keyType} \| {kind:"password", label}, error?}` | ssh service | F-RM-01 |
+| `remote:host` | `{hostId, state:"connected"\|"connecting"\|"reconnecting"\|"down"}` | ssh service | F-RM-01 |
 | `remote:phone` | `{pairingId, event:"connected"\|"command"\|"queued"\|"revoked"}` | phone service | F-RM-03 |
 | `updates:state` | `UpdateState` (see `updates_state`; during a download at most one event per 5 %) | updater service | F-SH-06 |
 | `browser:state` / `browser:picker` | `BrowserState {browserId, url, title, canBack, canForward, loading, device, rotated, frame: Rect (the page inside the bounds), zoom, blocked?, picking, seq}` (`seq` grows with every change: a view drops a reply or event older than what it holds) / `{browserId, elements:[PickedElement {tag, selector (unique in the page), component?: {name, framework: "React"\|"Vue"}, rect: Rect (page coordinates), styles: {display, position, font, color, background, margin, padding}, html (outerHTML, cut at 4 KB), truncated}]}` | browser service | F-CD-17, F-CD-18 |

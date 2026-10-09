@@ -72,10 +72,22 @@ pub async fn engines_list(
     state: State<'_, AppState>,
     host_id: Option<String>,
 ) -> Result<Vec<EngineView>, tandem_core::IpcError> {
-    if host_id.as_deref().is_some_and(|h| h != "local") {
-        return Ok(Vec::new());
-    }
     let engines = &state.terminals.engines;
+    if let Some(host) = host_id.filter(|h| h != "local") {
+        // The host's own engines (F-RM-01 "the + menu lists engines
+        // installed on the host"); nothing until it's been asked.
+        let host = tandem_core::ids::HostId::from_db(host);
+        let report = state.remote.report(&host).await;
+        let extra = tandem_store::repo::settings::get(
+            &state.store,
+            tandem_core::settings::SettingKey::EngineExtraArgs,
+        )
+        .await
+        .unwrap_or_default();
+        let mut list = views(engines.registry().all(), report.as_ref(), &extra);
+        list.sort_by_key(|v| v.install.is_none());
+        return Ok(list);
+    }
     let report = match engines.report() {
         Some(r) => r,
         // First run, nothing cached: wait for detection (≤ 8 s + versions).
@@ -98,11 +110,10 @@ pub async fn engines_detect(
     state: State<'_, AppState>,
     host_id: Option<String>,
 ) -> Result<DetectionReport, tandem_core::IpcError> {
-    if host_id.as_deref().is_some_and(|h| h != "local") {
-        return Err(tandem_core::IpcError::new(
-            tandem_core::ErrorCode::Unavailable,
-            "Remote hosts arrive in a later version",
-        ));
+    if let Some(host) = host_id.filter(|h| h != "local") {
+        let host = tandem_core::ids::HostId::from_db(host);
+        let engines = state.terminals.engines.registry().all().to_vec();
+        return state.remote.detect(&host, &engines).await;
     }
     let config = state.config.refresh().await;
     state.terminals.engines.apply_config(&config);
@@ -166,14 +177,17 @@ pub async fn accounts_list(
 
 /// The last detection report (F-EN-01 diagnostics after a webview reload).
 #[tauri::command]
-pub fn engines_report(
+pub async fn engines_report(
     state: State<'_, AppState>,
     host_id: Option<String>,
-) -> Option<DetectionReport> {
-    if host_id.as_deref().is_some_and(|h| h != "local") {
-        return None;
+) -> Result<Option<DetectionReport>, tandem_core::IpcError> {
+    if let Some(host) = host_id.filter(|h| h != "local") {
+        return Ok(state
+            .remote
+            .report(&tandem_core::ids::HostId::from_db(host))
+            .await);
     }
-    state.terminals.engines.report()
+    Ok(state.terminals.engines.report())
 }
 
 #[cfg(test)]

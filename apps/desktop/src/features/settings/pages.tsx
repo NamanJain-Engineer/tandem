@@ -3,6 +3,7 @@ import { t } from "../../i18n";
 import { AccountPage } from "./AccountPage";
 import { EnginesPage } from "./EnginesPage";
 import { AccountsPage } from "./AccountsPage";
+import { RemoteHosts } from "../remote/RemoteHosts";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
 import { UpdatesPanel } from "../updates/UpdatesPanel";
@@ -389,6 +390,14 @@ export function settingsPages(platform: string): PageDef[] {
       keywords: ["accounts", "sign in", "login", "default", "override", "claude", "codex", "provider"],
       rows: [],
       extra: <AccountsPage />,
+    },
+    {
+      id: "remote",
+      label: t("settings.remote"),
+      subtitle: t("settings.remote.subtitle"),
+      keywords: ["ssh", "remote", "host", "server", "wsl", "linux"],
+      rows: [],
+      extra: <RemoteHosts />,
     },
     {
       id: "privacy",

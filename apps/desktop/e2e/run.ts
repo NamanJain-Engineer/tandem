@@ -96,6 +96,20 @@ async function main() {
     // The status hook and the fake engines (ARCHITECTURE §6.12).
     execFileSync("cargo", ["build", "-p", "tandem-engines", "--features", "fixtures", "--bins"], { cwd: root, stdio: "inherit" });
   }
+  // Remote workspaces (E2E-M14): the bundled tandem-host and the sshd
+  // fixture (infra/docker-compose.yml, profile remote). Without Docker or
+  // the musl target the m14 specs fail and say so; the others don't care.
+  if (!spec || spec.includes("m14")) {
+    const quiet = { cwd: root, stdio: "ignore" as const };
+    if (!process.env.TANDEM_E2E_SKIP_BUILD && spawnSync("sh", ["scripts/build-tandem-host.sh"], quiet).status !== 0)
+      console.warn("E2E: couldn't build tandem-host (rustup target add x86_64-unknown-linux-musl; apt install musl-tools)");
+    const up = spawnSync(
+      "sh",
+      ["-c", "bash scripts/gen-ssh-fixture.sh >/dev/null && docker compose -f infra/docker-compose.yml --profile remote up -d --wait sshd"],
+      quiet,
+    );
+    if (up.status !== 0) console.warn("E2E: the sshd fixture didn't start (Docker?); the m14 specs will fail");
+  }
   const home = mkdtempSync(join(tmpdir(), "tandem-e2e-"));
   const results = join(root, "test-results");
   mkdirSync(results, { recursive: true });

@@ -132,6 +132,8 @@ pub struct AppState {
     pub files: Arc<crate::services::files::FilesService>,
     /// The Changes view and the status bar's branch (F-CD-20).
     pub git_panel: Arc<crate::services::git_panel::GitPanelService>,
+    /// SSH hosts and their connections (F-RM-01).
+    pub remote: Arc<crate::services::remote::RemoteService>,
     /// Browser tabs and panes (F-CD-17), bound to the window in setup.
     pub browser: std::sync::OnceLock<Arc<crate::browser::BrowserService>>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
@@ -349,6 +351,16 @@ impl AppState {
             engines,
             status,
         );
+        let remote = crate::services::remote::RemoteService::new(
+            store.clone(),
+            bus.clone(),
+            &data,
+            crate::services::remote::bin_dir(None),
+            terminals.pty.clone(),
+            terminals.status.clone(),
+        );
+        terminals.set_remote(remote.clone());
+        remote.set_engines(terminals.engines.clone());
         let approvals = crate::services::approvals::ApprovalService::new(
             store.clone(),
             bus.clone(),
@@ -477,6 +489,7 @@ impl AppState {
             models,
             files,
             git_panel,
+            remote,
             browser: std::sync::OnceLock::new(),
             e2e,
         }

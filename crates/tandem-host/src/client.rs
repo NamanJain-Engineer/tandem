@@ -124,6 +124,20 @@ impl HostClient {
         let _ = c.wait_for(|v| *v).await;
     }
 
+    /// Sends a request without waiting for its reply (keystrokes and
+    /// resizes, which must keep their order). Its reply is dropped.
+    pub fn send<P: Serialize>(&self, method: &str, params: P) -> Result<(), ClientError> {
+        if self.is_closed() {
+            return Err(ClientError::Disconnected);
+        }
+        let params =
+            serde_json::to_value(params).map_err(|e| ClientError::Decode(e.to_string()))?;
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        self.tx
+            .send(Message::request(id, method, params).to_line())
+            .map_err(|_| ClientError::Disconnected)
+    }
+
     pub async fn call<P: Serialize, T: DeserializeOwned>(
         &self,
         method: &str,

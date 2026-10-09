@@ -466,6 +466,26 @@ impl Ssh {
         std::fs::write(&self.known_hosts, kept.join("\n") + "\n")
     }
 
+    /// Forgets the keys pinned for `r` (the user chose to trust a new key;
+    /// the next connection asks again).
+    pub fn forget(&self, r: &Resolved) -> std::io::Result<()> {
+        let name = known_name(r);
+        let existing = match std::fs::read_to_string(&self.known_hosts) {
+            Ok(s) => s,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        let kept: Vec<&str> = existing
+            .lines()
+            .filter(|l| {
+                l.split_whitespace()
+                    .next()
+                    .is_none_or(|h| !h.split(',').any(|x| x == name))
+            })
+            .collect();
+        std::fs::write(&self.known_hosts, kept.join("\n") + "\n")
+    }
+
     pub async fn master_running(&self, t: &SshTarget) -> bool {
         let mut cmd = self.base(&self.ssh);
         cmd.args(self.options(t, false))
@@ -783,6 +803,9 @@ Host key verification failed.";
         .expect("t2");
         s.trust(&r, &keys[1]).expect("retrust");
         assert_eq!(s.known(&r), [keys[1].fingerprint.clone()]);
+        assert_eq!(s.known(&other).len(), 1);
+        s.forget(&r).expect("forget");
+        assert!(s.known(&r).is_empty());
         assert_eq!(s.known(&other).len(), 1);
         assert_eq!(
             parse_g("user tandem\nhostname 10.0.0.5\nport 2222\n"),

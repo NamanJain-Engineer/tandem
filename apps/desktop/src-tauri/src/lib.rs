@@ -69,6 +69,15 @@ macro_rules! app_commands {
             commands::account::telemetry_capture,
             commands::workspaces::workspace_pick_folder,
             commands::workspaces::workspace_add,
+            commands::remote::ssh_hosts_list,
+            commands::remote::ssh_host_add,
+            commands::remote::ssh_host_remove,
+            commands::remote::ssh_connect,
+            commands::remote::ssh_hostkey_decide,
+            commands::remote::ssh_askpass_reply,
+            commands::remote::ssh_disconnect,
+            commands::remote::ssh_list_dir,
+            commands::remote::ssh_host_reset_key,
             commands::workspaces::workspace_list,
             commands::workspaces::workspace_rename,
             commands::workspaces::workspace_remove,
@@ -572,6 +581,21 @@ pub fn run() {
                 let login = state.terminals.login_env().await;
                 state.terminals.engines.detect(&login).await;
             });
+            // SSH hosts (F-RM-01): the bundled helper binaries and the
+            // askpass helper's loopback endpoint.
+            {
+                let state = handle.state::<AppState>();
+                state
+                    .remote
+                    .set_bin_dir(services::remote::bin_dir(handle.path().resource_dir().ok()));
+                let remote_state = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    match services::askpass::AskpassServer::start().await {
+                        Ok(server) => remote_state.state::<AppState>().remote.set_askpass(server),
+                        Err(err) => tracing::warn!(code = "remote.askpass_failed", error = %err, "SSH password prompts are off"),
+                    }
+                });
+            }
             // Threads on the Dashboard from the start (D-6).
             let threads_state = handle.clone();
             tauri::async_runtime::spawn(async move {
@@ -661,6 +685,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 let state = handle.state::<AppState>();
                 state.terminals.shutdown(&state.data.scrollback());
+                state.remote.shutdown();
             }
         }),
         Err(err) => {

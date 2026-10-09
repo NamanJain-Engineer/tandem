@@ -51,9 +51,37 @@ pub async fn workspace_pick_folder(app: AppHandle) -> Result<Option<String>, Ipc
 pub async fn workspace_add(
     state: State<'_, AppState>,
     root: String,
+    kind: Option<String>,
+    host_id: Option<tandem_core::ids::HostId>,
+    wsl_distro: Option<String>,
 ) -> Result<AddedWorkspace, IpcError> {
     let limit = state.entitlements.limits().workspaces;
-    workspaces::add(&state.store, &root, limit).await
+    match kind.as_deref().unwrap_or("local") {
+        "local" => workspaces::add(&state.store, &root, limit).await,
+        "ssh" => {
+            let host = host_id.ok_or_else(|| {
+                tandem_core::IpcError::new(tandem_core::ErrorCode::Invalid, "Choose the host first")
+            })?;
+            // The host says whether the folder exists, and its real path.
+            let dir = state.remote.list_dir(&host, &root).await?;
+            workspaces::add_remote(&state.store, "ssh", &host, &dir.path, None, limit).await
+        }
+        "wsl" => {
+            let distro = wsl_distro.ok_or_else(|| {
+                tandem_core::IpcError::new(
+                    tandem_core::ErrorCode::Invalid,
+                    "Choose the distribution first",
+                )
+            })?;
+            let root = crate::services::wsl::checked_root(&distro, &root).await?;
+            let host = tandem_store::repo::hosts::ensure_wsl(&state.store, &distro).await?;
+            workspaces::add_remote(&state.store, "wsl", &host.id, &root, Some(distro), limit).await
+        }
+        _ => Err(tandem_core::IpcError::new(
+            tandem_core::ErrorCode::Invalid,
+            "That kind of workspace doesn't exist",
+        )),
+    }
 }
 
 #[tauri::command]

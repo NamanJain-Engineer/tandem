@@ -728,6 +728,11 @@ export class DemoCore {
       case "git_create_branch":
         throw { code: "unavailable", message: NO_GIT };
       // A web page can't hold other pages the way the app's browser does.
+      case "ssh_host_add":
+      case "ssh_connect":
+      case "ssh_list_dir":
+        // The demo runs in a web page: there's no ssh to run.
+        throw { code: "unavailable", message: "The browser demo doesn't connect to SSH hosts. The app does, with your own ssh." };
       case "browser_open":
       case "browser_navigate":
         throw { code: "unavailable", message: "Web pages don't open inside this demo. In the app they open right here." };

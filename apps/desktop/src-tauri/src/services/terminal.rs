@@ -102,6 +102,8 @@ pub struct TerminalService {
     integration_root: Option<PathBuf>,
     /// The installed scripts' folder, written on first use.
     integration_dir: std::sync::OnceLock<Option<PathBuf>>,
+    /// SSH hosts: panes of remote workspaces run there (F-RM-01).
+    remote: std::sync::OnceLock<Arc<crate::services::remote::RemoteService>>,
 }
 
 /// One line of `TANDEM_SPAWN_LOG` (debug builds): what was started, with
@@ -180,7 +182,16 @@ impl TerminalService {
             spawn_log,
             integration_root,
             integration_dir: std::sync::OnceLock::new(),
+            remote: std::sync::OnceLock::new(),
         })
+    }
+
+    pub fn set_remote(&self, remote: Arc<crate::services::remote::RemoteService>) {
+        let _ = self.remote.set(remote);
+    }
+
+    pub fn remote(&self) -> Option<&Arc<crate::services::remote::RemoteService>> {
+        self.remote.get()
     }
 
     /// The shell's integration and the scripts' folder, unless the shell has
@@ -418,6 +429,18 @@ impl TerminalService {
             sessions::save_on_handback(&self.store, pane, None).await?;
         }
         let ws = workspaces::get(&self.store, &record.workspace_id).await?;
+        if ws.kind == "ssh" {
+            if plan.is_some() {
+                return Err(IpcError::new(
+                    ErrorCode::Unavailable,
+                    "Agents on remote hosts start fresh: they can't resume a saved conversation",
+                )
+                .with_stage("resume"));
+            }
+            return self
+                .spawn_on_host(pane, &record, &ws, cols, rows, sink, mode)
+                .await;
+        }
         let root = PathBuf::from(&ws.root);
         if !root.is_dir() {
             return Err(IpcError::new(
@@ -613,6 +636,150 @@ impl TerminalService {
             let _ = self.pty.notice(pane.as_str(), text);
         }
         tracing::info!(code = "pty.spawned", pid = info.pid, "terminal started");
+        Ok(info)
+    }
+
+    /// A pane of an SSH workspace (F-RM-01): a login shell on the host, an
+    /// agent first when it's an agent pane. Only the allowlisted variables
+    /// cross (`tandem_host::env`): never a provider home or Vibezeo's own
+    /// paths; the engine signs in with the host's own sign-in.
+    #[allow(clippy::too_many_arguments)]
+    async fn spawn_on_host(
+        &self,
+        pane: &PaneId,
+        record: &PaneRecord,
+        ws: &tandem_store::repo::workspaces::Workspace,
+        cols: u16,
+        rows: u16,
+        sink: Option<Arc<dyn OutputSink>>,
+        mode: LaunchMode,
+    ) -> Result<PtyInfo, IpcError> {
+        let remote = self.remote.get().cloned().ok_or_else(|| {
+            IpcError::new(
+                ErrorCode::Unavailable,
+                "Remote hosts aren't available in this build",
+            )
+        })?;
+        let host = tandem_core::ids::HostId::from_db(ws.host_id.clone());
+        let scrollback = settings::get(&self.store, SettingKey::TermScrollback)
+            .await?
+            .as_u64()
+            .unwrap_or(10_000) as usize;
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("TERM".to_string(), "xterm-256color".to_string());
+        env.insert("COLORTERM".to_string(), "truecolor".to_string());
+        env.insert("TERM_PROGRAM".to_string(), "Vibezeo".to_string());
+        env.insert("TANDEM_PANE_ID".to_string(), pane.to_string());
+        let mut command = None;
+        if record.kind == "agent" {
+            let engine = record
+                .engine_id
+                .as_deref()
+                .and_then(|id| self.engines.get(id))
+                .ok_or_else(|| {
+                    IpcError::new(ErrorCode::NotFound, "This pane's engine isn't known")
+                })?;
+            let found = remote
+                .report(&host)
+                .await
+                .and_then(|r| r.get(&engine.id).map(|f| PathBuf::from(&f.path)))
+                .ok_or_else(|| {
+                    IpcError::new(
+                        ErrorCode::EngineMissing,
+                        format!("{} isn't installed on this host.", engine.label),
+                    )
+                })?;
+            let req = tandem_engines::launch::TerminalLaunchRequest {
+                engine: &engine,
+                program: found,
+                extra_args: self.engines.extra_args(&engine.id).await,
+                resume: None,
+                host: tandem_engines::launch::HostKind::Ssh,
+                home: None,
+                providers_root: PathBuf::new(),
+                status: None,
+            };
+            let launch = tandem_engines::launch::terminal_launch(&req).map_err(|e| {
+                IpcError::new(ErrorCode::Invalid, e.to_string()).with_stage("launch")
+            })?;
+            // Heuristics from the relayed output; a hook's report would
+            // need this secret (D-406).
+            if let Some((_, secret)) = self.status.watch(
+                pane.as_str(),
+                &engine.waiting_patterns,
+                &engine.limit_patterns,
+                None,
+            ) {
+                env.insert("TANDEM_STATUS_SECRET".to_string(), secret);
+            }
+            command = Some(tandem_host::quote_argv(&launch.argv()));
+        }
+        if let Ok(mut d) = self.dialects.lock() {
+            d.insert(pane.to_string(), ShellDialect::Posix);
+        }
+        let spec = SpawnSpec {
+            pane_id: pane.to_string(),
+            program: PathBuf::from("ssh"),
+            args: command.iter().cloned().collect(),
+            cwd: PathBuf::from(record.cwd.as_deref().unwrap_or(&ws.root)),
+            env,
+            cols,
+            rows,
+            scrollback_lines: scrollback,
+            mark_token: None,
+        };
+        self.log_spawn(
+            &SpawnSpec {
+                env: tandem_host::env::allowed(&spec.env),
+                ..spec.clone()
+            },
+            None,
+        );
+        let cwd = record.cwd.clone().unwrap_or_else(|| ws.root.clone());
+        let spawned = remote
+            .spawn_pane(&host, spec, &cwd, command.clone(), sink.clone())
+            .await;
+        let info = match spawned {
+            Err(e) if e.code == ErrorCode::NotFound && cwd != ws.root => {
+                // The pane's folder went: open at the workspace's root.
+                let spec = SpawnSpec {
+                    pane_id: pane.to_string(),
+                    program: PathBuf::from("ssh"),
+                    args: Vec::new(),
+                    cwd: PathBuf::from(&ws.root),
+                    env: std::collections::BTreeMap::from([
+                        ("TERM".to_string(), "xterm-256color".to_string()),
+                        ("TANDEM_PANE_ID".to_string(), pane.to_string()),
+                    ]),
+                    cols,
+                    rows,
+                    scrollback_lines: scrollback,
+                    mark_token: None,
+                };
+                let info = remote
+                    .spawn_pane(&host, spec, &ws.root, command, sink)
+                    .await?;
+                let _ = self.pty.notice(pane.as_str(), FOLDER_NOT_FOUND);
+                info
+            }
+            Err(e) => {
+                self.status.unwatch(pane.as_str());
+                return Err(e);
+            }
+            Ok(info) => info,
+        };
+        if panes::get_open(&self.store, pane).await.is_err() {
+            let _ = self.pty.kill(pane.as_str());
+            return Err(IpcError::new(ErrorCode::NotFound, "This pane was closed"));
+        }
+        if mode != LaunchMode::Normal {
+            restore::set_state(&self.store, pane, "live").await?;
+        }
+        tracing::info!(
+            code = "pty.spawned_remote",
+            pid = info.pid,
+            "remote terminal started"
+        );
         Ok(info)
     }
 
