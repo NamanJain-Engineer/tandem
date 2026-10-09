@@ -166,6 +166,7 @@ export type * from "./RunId";
 export type * from "./SaveIssue";
 export type * from "./Saved";
 export type * from "./SavedSession";
+export type * from "./SearchHit";
 export type * from "./Seat";
 export type * from "./SeatKind";
 export type * from "./SendResult";

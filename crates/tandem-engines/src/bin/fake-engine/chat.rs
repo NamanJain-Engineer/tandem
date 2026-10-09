@@ -14,6 +14,8 @@
 //!   break) in its folder as Write tool calls, then says how many (E2E-M7-9).
 //! - `mcp <tool> <json>`: calls a gateway tool (a `tandem__*` built-in, a
 //!   plugin tool, `tandem__call`) as a tool row and says what it answered.
+//! - `/tool-output <word>`: a Bash tool whose output holds the word
+//!   reversed, and the reply "Read the notes." (session search, E2E-M10-4).
 //! - `tools`: says the names the gateway's `tools/list` gives this session.
 //! - anything else: "You said: <text>" in two pieces.
 //!
@@ -454,6 +456,20 @@ pub fn run(args: &[String], session: String) {
             };
             turn.say(&[&said]);
             turn.done(&said);
+        } else if let Some(word) = first.strip_prefix("/tool-output ") {
+            // A word that ends up only in a tool's output (reversed), never
+            // in the user's or the assistant's prose (E2E-M10-4).
+            let id = format!("toolu_{n}");
+            turn.assistant(json!([{"type": "tool_use", "id": id, "name": "Bash",
+                "input": {"command": "cat notes.txt"}}]));
+            let hidden: String = word.trim().chars().rev().collect();
+            emit(
+                json!({"type": "user", "session_id": turn.session, "parent_tool_use_id": null,
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": id,
+                    "content": format!("notes: {hidden}"), "is_error": false}]}}),
+            );
+            turn.say(&["Read the notes."]);
+            turn.done("Read the notes.");
         } else if first == "tools" {
             // The gateway tools this session sees, sorted.
             let mut names = gw.as_ref().map(list_tools).unwrap_or_default();

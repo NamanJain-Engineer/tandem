@@ -5,7 +5,9 @@ import { connectTestPlugin, gatewayMetrics, gatewayPort, sendAndWait } from "../
 type Thread = { id: string };
 
 async function newThread(workspaceId: string): Promise<string> {
-  const t = await invoke<Thread>("thread_create", { args: { kind: "thread", workspaceId, engineId: "claude" } });
+  const t = await invoke<Thread>("thread_create", {
+    args: { kind: "thread", workspaceId, engineId: "claude" },
+  });
   return t.id;
 }
 
@@ -58,8 +60,13 @@ describe("E2E-M10-8 gateway", () => {
     const b = await newThread(ws);
     await grant(a, echo);
     await grant(b, upper);
-    const refused = await sendAndWait(a, 'mcp tandem__call {"tool":"test_upper__upper","args":{"text":"hi"}}');
-    expect(refused.join(" ")).toContain("The tool failed: The test_upper plugin isn't enabled for this session");
+    const refused = await sendAndWait(
+      a,
+      'mcp tandem__call {"tool":"test_upper__upper","args":{"text":"hi"}}',
+    );
+    expect(refused.join(" ")).toContain(
+      "The tool failed: The test_upper plugin isn't enabled for this session",
+    );
     const own = await sendAndWait(a, 'mcp tandem__call {"tool":"test_echo__echo","args":{"text":"mine"}}');
     expect(own.join(" ")).toContain("The tool said: mine");
     const theirs = await sendAndWait(b, 'mcp tandem__call {"tool":"test_upper__upper","args":{"text":"hi"}}');
@@ -71,7 +78,9 @@ describe("E2E-M10-8 gateway", () => {
     const t = await newThread(ws);
     for (const c of [echo, upper, down]) await grant(t, c);
     const listed = await sendAndWait(t, "tools");
-    expect(listed.join(" ")).toContain("Tools: tandem__call, tandem__search_tools, tandem_approvals__request");
+    expect(listed.join(" ")).toContain(
+      "Tools: tandem__call, tandem__search_tools, tandem_approvals__request",
+    );
     // The vendor that's down doesn't break the others.
     const ok = await sendAndWait(t, 'mcp tandem__call {"tool":"test_upper__upper","args":{"text":"up"}}');
     expect(ok.join(" ")).toContain("The tool said: UP");

@@ -1158,6 +1158,17 @@ impl ThreadService {
         if let Err(e) = repo::end_turn(&self.store, &run.id, turn_state(reason), blocked).await {
             tracing::warn!(code = "threads.turn_end_failed", error = %e, "couldn't end a turn");
         }
+        // A teammate chat's prose becomes searchable (F-AG-11).
+        if let Ok(Some(record)) = repo::get(&self.store, thread).await {
+            if let Some(teammate) = &record.teammate_id {
+                if let Err(e) =
+                    tandem_store::repo::search::index_turn(&self.store, thread, &run.id, teammate)
+                        .await
+                {
+                    tracing::warn!(code = "threads.index_failed", error = %e, "couldn't index a turn");
+                }
+            }
+        }
         tracing::info!(code = "threads.turn_ended", reason = ?reason, "turn ended");
         // Unread until the thread is opened again (F-TH-01 AC2).
         if let Err(e) = repo::set_unread(&self.store, thread, true).await {
