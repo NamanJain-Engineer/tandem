@@ -8,12 +8,99 @@ Priorities: **P0** must-have, **P1** should-have (part of the launchable product
 
 ## Before new features
 
-1. **Release 0.3.0 and deploy the website.** vibezeo.com still serves 0.1.0. Ship M6 + M7 + M9 as 0.3.0: version, release notes, site copy, the Linux .deb (built and smoke-tested), the full test run, then merge `product-m0-m5` into `main` and check the live site (`docs/OPERATING.md` §6–7).
+1. **Release 0.3.0 with the interactive demo on the home page, and deploy the website** (the demo's spec is the next section). vibezeo.com still serves 0.1.0, and the live demo (vibezeo.com/demo) isn't online yet. Ship M6 + M7 + M9 and the demo as 0.3.0: version, release notes, site copy, the Linux .deb (built and smoke-tested), the full test run, then merge `product-m0-m5` into `main` and check the live site (`docs/OPERATING.md` §6–7).
 2. **Enforce the Free plan's Thread-mode engine limit.** The plan says Free threads use Claude Code and Codex; the limit is defined but not checked, so Free threads also run the ACP engines.
-3. **Manual performance checks** (thread scrolling, the 16-pane benchmark, startup) need the reference machines (`HUMAN_TODO.md`).
+3. **Keep the live demo in step with every release.** vibezeo.com/demo (the page) opens /demo/app/: the real desktop interface running in the browser against a simulated core, built with the site (D-126; the Files tab, D-204). Its code is `apps/desktop/src/demo/`: `backend.ts` answers the app's commands, `agent.ts` scripts the agent's turns, `shell.ts` the terminal, `files.ts` the Files tab, `DemoBar.tsx` the strip that says it's a demo. When a release ships something visible in the interface, make it work in the demo too wherever it can be simulated honestly (sample data, no network, no microphone), add a test to `demo.test.ts`, and walk it with `scripts/agent/demo-walkthrough.mjs` before deploying. The demo shows only what the released download does, never more, and always says its agents are simulated.
+4. **Manual performance checks** (thread scrolling, the 16-pane benchmark, startup) need the reference machines (`HUMAN_TODO.md`).
+
+## The interactive demo on the website
+
+**Goal.** Anyone visiting vibezeo.com uses the real Vibezeo interface right on
+the home page, without installing anything or leaving the page. It's the
+spec's F-WB-01 "Interactive demo" (Code, Thread and Dashboard surfaces, sample
+data, no network or microphone), made the centre of the home page.
+
+**Where it is today.** `/demo` explains the demo and opens `/demo/app/`, the
+real desktop interface running in the browser against a simulated core
+(`apps/desktop/src/demo/`, D-126; the Files tab, D-204). It has a workspace with
+two simulated agent panes and a working shell, two threads (one with a scripted
+fix: tool calls, an approval card, the test run and the Changes panel), and the
+Files tab. It isn't online yet and it's desktop-only.
+
+**Reference.** Desktop-app sites often embed a live replica of their app with
+sample data instead of screenshots; BridgeMind's (bridgemind.ai) home page does
+this. Use that only as a reference for the idea and the interactions described
+here. Never copy its names, wording, visuals, effects or code (`CLAUDE.md`
+"Never"). Everything visible must be Vibezeo's own interface and words.
+
+**Behaviour**
+- **On the home page.** Right under the hero, inside a Vibezeo window frame
+  (the app's own title bar), sized like a laptop screen and scaled to fit the
+  column. Above it the label "Interactive demo · sample data"; below it a line
+  in our words, for example "This is Vibezeo itself, running in your browser
+  with sample data. Click around." `/demo` and `/demo/app/` keep working as
+  direct links.
+- **Fast page.** Until the section comes near the viewport, the frame shows a
+  still image of the demo's first screen (same size, no layout shift); then
+  the demo loads (IntersectionObserver) and replaces it. Lighthouse stays at 90
+  or more for performance and accessibility on `/`.
+- **Explore.** "Explore full screen" expands the demo to the whole viewport;
+  Esc or Close returns to the page with everything as it was.
+- **Phones and small screens.** Under 1024 px wide the frame shows the still
+  image with "Tap to explore", which opens the full-screen demo; inside it the
+  rail starts collapsed and every surface is reachable by touch.
+- **First steps.** A dismissible hint points at the ready message ("Press
+  Enter to send it"), plus a short "Try this" list: send the message, answer
+  the approval, open Changes, press Ctrl+2 for Code mode, type `help` in the
+  shell, press Ctrl+K.
+- **Sample world** (grow it with each release, only with what the released
+  download does):
+  - Code mode: two or three workspaces; agent panes for Claude Code, Codex and
+    Gemini CLI showing their terminal screens in colour; a shell that answers
+    `help`, `ls`, `pwd`, `git status`, `git diff`, `git log`, `npm test`,
+    `clear`; the Dashboard with agents Working, Waiting for you and Done.
+  - Thread mode: finished threads to read, the scripted fix with its approval
+    and Changes, a Plan-mode turn that produces a plan version, an engine switch
+    with its divider.
+  - The Files tab and the git panel on the sample project.
+  - Later, once released: Dictate with a simulated take ("your microphone stays
+    off"), teammates with memory and skills, tasks and routines, plugins.
+- **Limits.** Up to 12 messages per visit and 500 characters per message; past
+  that the composer says "Demo limit reached" with Download for Linux. "Reset
+  the demo" brings the sample workspace back at any time.
+- **Honest and private.** Always labelled as a demo whose agents are simulated;
+  never shows a feature the released download doesn't have. No network requests
+  beyond its own files (CSP `connect-src 'self'`), no microphone or camera, and
+  what visitors type stays in the page's memory (browser storage holds only
+  "hint dismissed").
+- **Site rule change.** Today the marketing pages load no script (F-WB-01 AC2
+  test). The home page now loads one first-party script, the demo loader (or
+  embeds `/demo/app/` in a same-origin frame, which needs `frame-ancestors
+  'self'` for that path). Choose one, record it as a D-n, and change the site
+  test to allow exactly that and still forbid every third-party script,
+  analytics and other-origin frame.
+
+**Acceptance tests**
+1. `/` shows the demo frame with its label and line; no demo asset is requested
+   until the section scrolls near the viewport, and then the live demo
+   replaces the still image.
+2. In the embedded demo, sending the ready message runs the scripted turn: the
+   approval card appears, Allow runs the tests, and Changes lists both files.
+3. Explore full screen opens the demo over the page; Esc returns with the same
+   state.
+4. At 390×844 the frame shows "Tap to explore", which opens a usable
+   full-screen demo.
+5. The 13th message shows "Demo limit reached"; Reset the demo restores the
+   sample workspace.
+6. The demo makes no network request beyond its own files, asks for no
+   microphone or camera, and the page loads no third-party resource.
+7. Lighthouse is 90 or more for performance and accessibility on `/`.
+8. The release checklist confirms every surface the demo shows is in the
+   released download.
 
 ## Contents
 
+- [The interactive demo on the website](#the-interactive-demo-on-the-website)
 - [M8 · Dictate (local) and onboarding (XL)](#m8) · 11 features
 - [M10 · Teammates and gateway core (XL)](#m10) · 12 features
 - [M11 · Tasks and routines (L)](#m11) · 8 features
@@ -1084,6 +1171,8 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
 
 **Prerequisites.** M14.
 
+**Note.** F-WB-01's interactive demo already exists (see "Keep the live demo in step" at the top): don't rebuild it. M15 checks it against F-WB-01: all three surfaces (Code, Thread and the Dashboard), the label "Interactive demo · sample data", and no network or microphone access (the site's CSP and a test).
+
 **Note.** After this milestone the must-have and should-have product is launchable. Launch also needs signed macOS and Windows builds (HUMAN_TODO.md).
 
 **Features:** F-TL-06 Threat-model rules (P0), F-WB-01 Marketing site (P0), F-TL-05 Local data controls (P1), F-WB-02 Docs (P1), F-WB-03 Changelog (P1), F-WB-04 Downloads and machine-readable discovery (P1)
@@ -1498,6 +1587,8 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
 2. `tandem__schedule_create` with access Full is rejected.
 
 ### F-SH-12 · Scratchpad (P2)
+
+**Status: built** (pull request #7, merged 9 October). Kept here for reference.
 
 **Behaviour**
 - A sidebar app for local notes, auto-saved on each keystroke (debounced at 300 ms).
