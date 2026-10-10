@@ -168,6 +168,42 @@ pub fn toplevel(root: &Path) -> Result<Option<PathBuf>, RpcError> {
     })
 }
 
+/// Keeps Vibezeo's own folder (`.tandem/`, attachments of remote threads)
+/// out of the host repository's status, as locally: one line in
+/// `info/exclude`, never `.gitignore`. Nothing outside a repository.
+pub fn exclude_tandem(root: &Path) {
+    let Ok(Some(top)) = toplevel(root) else {
+        return;
+    };
+    let Ok(out) = read(&top, &["rev-parse", "--git-common-dir"]) else {
+        return;
+    };
+    let dir = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if dir.is_empty() {
+        return;
+    }
+    let common = if Path::new(&dir).is_absolute() {
+        PathBuf::from(dir)
+    } else {
+        top.join(dir)
+    };
+    let path = common.join("info").join("exclude");
+    let current = std::fs::read_to_string(&path).unwrap_or_default();
+    if current
+        .lines()
+        .any(|l| l.trim_end_matches('\r') == ".tandem/")
+    {
+        return;
+    }
+    let _ = std::fs::create_dir_all(common.join("info"));
+    let mut text = current;
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text.push_str(".tandem/\n");
+    let _ = std::fs::write(&path, text);
+}
+
 pub fn status(root: &Path) -> Result<Option<RepoState>, RpcError> {
     let Some(top) = toplevel(root)? else {
         return Ok(None);
@@ -427,18 +463,20 @@ fn write(cwd: &Path, args: &[&str], paths: &[String], stdin: Option<&str>) -> Re
     }
 }
 
-pub fn op(p: &GitOp) -> Result<(), RpcError> {
+/// Runs the action; a commit returns its sha.
+pub fn op(p: &GitOp) -> Result<Option<String>, RpcError> {
     let top = toplevel(Path::new(&p.root))?
         .ok_or_else(|| RpcError::new(ErrorKind::Invalid, "Not a git repository"))?;
     match p.op {
-        GitOpKind::Stage => write(&top, &["add", "-A"], &p.paths, None),
+        GitOpKind::Stage => write(&top, &["add", "-A"], &p.paths, None).map(|_| None),
         GitOpKind::Unstage => {
             let st = status(&top)?.map(|s| s.status).unwrap_or_default();
             if st.no_commits {
-                write(&top, &["rm", "--cached", "-r", "-q"], &p.paths, None)
+                write(&top, &["rm", "--cached", "-r", "-q"], &p.paths, None)?;
             } else {
-                write(&top, &["restore", "--staged"], &p.paths, None)
+                write(&top, &["restore", "--staged"], &p.paths, None)?;
             }
+            Ok(None)
         }
         GitOpKind::Discard => {
             let st = status(&top)?.map(|s| s.status).unwrap_or_default();
@@ -485,11 +523,10 @@ pub fn op(p: &GitOp) -> Result<(), RpcError> {
                     None => {}
                 }
             }
-            if tracked.is_empty() {
-                Ok(())
-            } else {
-                write(&top, &["restore", "--worktree"], &tracked, None)
+            if !tracked.is_empty() {
+                write(&top, &["restore", "--worktree"], &tracked, None)?;
             }
+            Ok(None)
         }
         GitOpKind::Commit => {
             let msg = p.message.as_deref().unwrap_or_default();
@@ -499,7 +536,11 @@ pub fn op(p: &GitOp) -> Result<(), RpcError> {
                     "Write a commit message first",
                 ));
             }
-            write(&top, &["commit", "-F", "-"], &[], Some(msg))
+            write(&top, &["commit", "-F", "-"], &[], Some(msg))?;
+            let out = read(&top, &["rev-parse", "HEAD"])?;
+            Ok(Some(
+                String::from_utf8_lossy(&out.stdout).trim().to_string(),
+            ))
         }
     }
 }
@@ -587,6 +628,17 @@ u UU N... 100644 100644 100644 100644 a b c conflict.txt\0\
         })
         .expect_err("refused");
         assert_eq!(escape.kind, ErrorKind::PathEscape);
+        git(&repo, &["config", "user.name", "T"]);
+        git(&repo, &["config", "user.email", "t@example.com"]);
+        let sha = op(&GitOp {
+            root: repo.to_string_lossy().into(),
+            op: GitOpKind::Commit,
+            paths: vec![],
+            message: Some("second".into()),
+        })
+        .expect("commit")
+        .expect("sha");
+        assert_eq!(sha.len(), 40);
         op(&GitOp {
             root: repo.to_string_lossy().into(),
             op: GitOpKind::Discard,
@@ -596,6 +648,18 @@ u UU N... 100644 100644 100644 100644 a b c conflict.txt\0\
         .expect("discard");
         assert!(!repo.join("sub/new.txt").exists());
         assert!(status(dir.path()).expect("not a repo").is_none());
+        // Attachments under .tandem/ never show as changes.
+        std::fs::create_dir_all(repo.join(".tandem/attachments/th_1")).expect("mkdir");
+        std::fs::write(repo.join(".tandem/attachments/th_1/a.txt"), "x").expect("w");
+        exclude_tandem(&repo.join("sub"));
+        exclude_tandem(&repo);
+        let st = status(&repo).expect("s").expect("r").status;
+        assert!(
+            st.unstaged.iter().all(|f| !f.path.starts_with(".tandem")),
+            "{st:?}"
+        );
+        let exclude = std::fs::read_to_string(repo.join(".git/info/exclude")).expect("exclude");
+        assert_eq!(exclude.matches(".tandem/").count(), 1);
     }
 
     #[test]

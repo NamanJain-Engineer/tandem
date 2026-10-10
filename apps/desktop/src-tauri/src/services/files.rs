@@ -23,7 +23,7 @@ use tandem_store::Store;
 use ts_rs::TS;
 
 /// A cached status is reused this long when no watch event came in.
-const STATUS_TTL: Duration = Duration::from_secs(2);
+pub const STATUS_TTL: Duration = Duration::from_secs(2);
 
 pub const FOLDER_MISSING: &str = "This folder is missing. It may have been moved or deleted.";
 pub const NO_FOLDER: &str = "This thread has no folder";
@@ -110,6 +110,8 @@ type StatusCache = HashMap<PathBuf, (Instant, Option<Arc<RepoStatus>>)>;
 
 pub struct FilesService {
     store: Store,
+    /// SSH hosts: their contexts are served by `tandem-host` (F-RM-01).
+    remote: std::sync::OnceLock<Arc<crate::services::remote::RemoteService>>,
     watchers: Mutex<HashMap<PathBuf, DirWatcher>>,
     subs: Arc<Mutex<Subscribers>>,
     statuses: Arc<Mutex<StatusCache>>,
@@ -144,12 +146,58 @@ impl FilesService {
     pub fn with_options(store: Store, watch_opts: WatchOptions) -> Arc<Self> {
         Arc::new(Self {
             store,
+            remote: std::sync::OnceLock::new(),
             watchers: Mutex::default(),
             subs: Arc::default(),
             statuses: Arc::default(),
             watch_opts,
             next_sub: std::sync::atomic::AtomicU64::new(1),
         })
+    }
+
+    pub fn set_remote(&self, remote: Arc<crate::services::remote::RemoteService>) {
+        let _ = self.remote.set(remote);
+    }
+
+    /// A context on an SSH host: the host and the folder there. `None`
+    /// for local contexts.
+    pub async fn remote_of(
+        &self,
+        ctx: &FileContext,
+    ) -> Result<
+        Option<(
+            Arc<crate::services::remote::RemoteService>,
+            crate::services::remote_files::RemoteRoot,
+        )>,
+        IpcError,
+    > {
+        let (ws_id, cwd) = match ctx {
+            FileContext::Workspace { workspace_id } => (Some(workspace_id.clone()), None),
+            FileContext::Thread { thread_id } => {
+                let thread = threads_repo::get(&self.store, thread_id)
+                    .await?
+                    .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "That thread is gone"))?;
+                (thread.workspace_id.clone(), Some(thread.cwd))
+            }
+        };
+        let Some(ws_id) = ws_id else { return Ok(None) };
+        let ws = workspaces::get(&self.store, &ws_id).await?;
+        if ws.kind != "ssh" {
+            return Ok(None);
+        }
+        let remote = self.remote.get().cloned().ok_or_else(|| {
+            IpcError::new(
+                ErrorCode::Unavailable,
+                "Remote hosts aren't available in this build",
+            )
+        })?;
+        Ok(Some((
+            remote,
+            crate::services::remote_files::RemoteRoot {
+                host: tandem_core::ids::HostId::from_db(ws.host_id),
+                root: cwd.unwrap_or(ws.root),
+            },
+        )))
     }
 
     /// The context's folder (canonical, as workspaces are stored).
@@ -207,6 +255,9 @@ impl FilesService {
         dir: String,
         show_ignored: bool,
     ) -> Result<Vec<FsEntry>, IpcError> {
+        if let Some((remote, r)) = self.remote_of(ctx).await? {
+            return remote.files.list(&remote, &r, dir, show_ignored).await;
+        }
         let root = self.root(ctx).await?;
         let status = self.status(&root).await;
         blocking(move || {
@@ -230,6 +281,9 @@ impl FilesService {
     /// `fs_read`: a file for the editor, read-only outside every workspace,
     /// over 5 MB or when the file system says so.
     pub async fn read(&self, ctx: &FileContext, path: String) -> Result<FileContent, IpcError> {
+        if let Some((remote, r)) = self.remote_of(ctx).await? {
+            return remote.files.read(&remote, &r, path).await;
+        }
         let root = self.root(ctx).await?;
         let roots = self.editable_roots(&root).await?;
         blocking(move || {
@@ -289,6 +343,9 @@ impl FilesService {
         text: String,
         expected: Option<String>,
     ) -> Result<Saved, IpcError> {
+        if let Some((remote, r)) = self.remote_of(ctx).await? {
+            return remote.files.write(&remote, &r, path, text, expected).await;
+        }
         let abs = self.writable_path(ctx, &path).await?;
         let written =
             blocking(move || Ok(files::write_file(&abs, &text, expected.as_deref())?)).await?;
@@ -306,6 +363,9 @@ impl FilesService {
         path: String,
         text: String,
     ) -> Result<FileDiff, IpcError> {
+        if let Some((remote, r)) = self.remote_of(ctx).await? {
+            return remote.files.compare(&remote, &r, path, text).await;
+        }
         let root = self.root(ctx).await?;
         blocking(move || {
             let abs = Self::resolve(&root, &path)?;
@@ -323,6 +383,9 @@ impl FilesService {
         path: String,
         kind: FsKind,
     ) -> Result<(), IpcError> {
+        if let Some((remote, r)) = self.remote_of(ctx).await? {
+            return remote.files.create(&remote, &r, path, kind).await;
+        }
         let abs = self.writable_path(ctx, &path).await?;
         blocking(move || Ok(files::create(&abs, kind)?)).await
     }
@@ -334,6 +397,9 @@ impl FilesService {
         from: String,
         to: String,
     ) -> Result<(), IpcError> {
+        if let Some((remote, r)) = self.remote_of(ctx).await? {
+            return remote.files.rename(&remote, &r, from, to).await;
+        }
         let from = self.writable_path(ctx, &from).await?;
         let to = self.writable_path(ctx, &to).await?;
         blocking(move || Ok(files::rename(&from, &to)?)).await
@@ -341,6 +407,9 @@ impl FilesService {
 
     /// `fs_delete` (the UI has confirmed).
     pub async fn delete(&self, ctx: &FileContext, path: String) -> Result<(), IpcError> {
+        if let Some((remote, r)) = self.remote_of(ctx).await? {
+            return remote.files.delete(&remote, &r, path).await;
+        }
         let root = self.root(ctx).await?;
         let abs = self.writable_path(ctx, &path).await?;
         if abs == root {
@@ -404,12 +473,18 @@ impl FilesService {
     /// `fs_watch`: `sink` gets every batch for the context's folder until
     /// it returns false or [`FilesService::unwatch`]. One watcher per folder.
     pub async fn watch(&self, ctx: &FileContext, sink: ChangeSink) -> Result<String, IpcError> {
-        let root = self.root(ctx).await?;
         let id = format!(
             "fsw_{}",
             self.next_sub
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         );
+        // A host's files aren't watched (D-411): the subscription is real
+        // and simply gets no batches.
+        if self.remote_of(ctx).await?.is_some() {
+            drop(sink);
+            return Ok(id);
+        }
+        let root = self.root(ctx).await?;
         self.subs
             .lock()
             .map_err(io_err)?
@@ -488,7 +563,16 @@ impl FilesService {
 /// The badge for each changed file and folder, keyed by path relative to
 /// the workspace (the repository may start above it).
 pub fn badges(rs: &RepoStatus) -> HashMap<String, FileChange> {
-    let prefix = files::slash_path(rs.repo.prefix());
+    badges_for(&files::slash_path(rs.repo.prefix()), &rs.status)
+}
+
+/// [`badges`] for a status whose repository starts `prefix` above the
+/// workspace (`/`-separated, `""` at the top): a remote one too.
+pub fn badges_for(
+    prefix: &str,
+    status: &tandem_git::types::GitStatus,
+) -> HashMap<String, FileChange> {
+    let prefix = prefix.to_string();
     let rel = |p: &str| -> Option<String> {
         if prefix.is_empty() {
             Some(p.to_string())
@@ -499,14 +583,13 @@ pub fn badges(rs: &RepoStatus) -> HashMap<String, FileChange> {
         }
     };
     let mut out: HashMap<String, FileChange> = HashMap::new();
-    let staged_added: std::collections::HashSet<&str> = rs
-        .status
+    let staged_added: std::collections::HashSet<&str> = status
         .staged
         .iter()
         .filter(|f| f.change == FileChange::Added)
         .map(|f| f.path.as_str())
         .collect();
-    let files = rs.status.staged.iter().chain(rs.status.unstaged.iter());
+    let files = status.staged.iter().chain(status.unstaged.iter());
     for f in files {
         let Some(path) = rel(&f.path) else {
             continue;

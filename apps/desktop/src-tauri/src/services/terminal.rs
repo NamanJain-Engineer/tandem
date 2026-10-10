@@ -186,6 +186,10 @@ impl TerminalService {
         })
     }
 
+    pub fn store(&self) -> &Store {
+        &self.store
+    }
+
     pub fn set_remote(&self, remote: Arc<crate::services::remote::RemoteService>) {
         let _ = self.remote.set(remote);
     }
@@ -679,6 +683,8 @@ impl TerminalService {
                 .ok_or_else(|| {
                     IpcError::new(ErrorCode::NotFound, "This pane's engine isn't known")
                 })?;
+            // The org's engine policy holds on hosts too (F-BL-06).
+            self.engines.check_allowed(&engine)?;
             let found = remote
                 .report(&host)
                 .await

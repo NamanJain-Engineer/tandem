@@ -32,6 +32,8 @@ const ipcError = (code: string, message: string): IpcError => ({
 });
 
 /** A repository behind the git_* commands. `repo: null` is a plain folder. */
+let remoteHost: string | null = null;
+
 function setup(repo: Repo | null, opts: { commitFails?: string } = {}) {
   const channels: Array<{ onmessage: (c: FsChange) => void }> = [];
   const branches: Branch[] = [
@@ -57,7 +59,14 @@ function setup(repo: Repo | null, opts: { commitFails?: string } = {}) {
     fs_unwatch: () => null,
     fs_list: () => [],
     git_status: (): GitPanel | null =>
-      repo ? { root: "/work/shop", folder: "", status: { ...repo, staged: [...repo.staged], unstaged: [...repo.unstaged] } } : null,
+      repo
+        ? {
+            root: "/work/shop",
+            folder: "",
+            status: { ...repo, staged: [...repo.staged], unstaged: [...repo.unstaged] },
+            ...(remoteHost ? { host: remoteHost } : {}),
+          }
+        : null,
     git_diff: (a) => ({
       path: String(a?.path),
       change: "modified",
@@ -149,6 +158,20 @@ describe("Changes view (F-CD-20)", () => {
   beforeEach(() => {
     resetStores();
     resetGit();
+    remoteHost = null;
+  });
+
+  it("F-RM-01 a remote folder's branch chip says push and pull run on the host", async () => {
+    remoteHost = "Build box";
+    const repo: Repo = { branch: "main", upstream: "origin/main", ahead: 1, behind: 0, staged: [], unstaged: [modified("a.txt")], noCommits: false };
+    const { calls } = setup(repo);
+    await showChanges();
+    await waitFor(() => expect(chip().dataset.branch).toBe("main"));
+    fireEvent.keyDown(chip(), { key: "Enter" });
+    const item = await screen.findByRole("menuitem", { name: "Push, pull and branches: run git in a terminal on Build box" });
+    expect(item.getAttribute("aria-disabled")).toBe("true");
+    expect(screen.queryByRole("menuitem", { name: /^Push$/ })).toBeNull();
+    expect(count(calls, "git_branches")).toBe(0);
   });
 
   it("F-CD-20.2 stage, commit and push: the branch chip comes back to 0/0", async () => {

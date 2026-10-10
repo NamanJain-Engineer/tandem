@@ -510,6 +510,7 @@ impl ChatAdapter for ClaudeAdapter {
             .cloned()
             .collect();
         let spec = ProcessSpec::new(req.program.clone(), args(&req), env, req.cwd.clone());
+        let spec = super::Relocate::apply(req.relocate.as_ref(), spec);
         let (process, lines) = ChatProcess::spawn(spec)?;
         let session = ClaudeSession {
             process: Arc::new(process),

@@ -271,6 +271,8 @@ pub fn bin_dir(resource_dir: Option<PathBuf>) -> PathBuf {
 }
 
 pub struct RemoteService {
+    /// Files and git on hosts, with their cached statuses.
+    pub files: crate::services::remote_files::RemoteFiles,
     store: Store,
     bus: EventBus,
     ssh: Ssh,
@@ -299,6 +301,7 @@ impl RemoteService {
             ssh.ssh = PathBuf::from(p);
         }
         Arc::new(Self {
+            files: Default::default(),
             store,
             bus,
             ssh,
@@ -1052,6 +1055,20 @@ impl RemoteService {
         let host = hosts::get(&self.store, host_id).await?;
         let target = target_of(&host)?;
         Ok(self.ssh.run_args(&target, cwd, env, argv))
+    }
+
+    /// What the app calls a host.
+    pub async fn label(&self, host_id: &HostId) -> String {
+        hosts::get(&self.store, host_id)
+            .await
+            .map(|h| h.label)
+            .unwrap_or_else(|_| host_id.as_str().to_string())
+    }
+
+    /// The transport and target for a host (thread engines run over it).
+    pub async fn transport(&self, host_id: &HostId) -> Result<(Ssh, SshTarget), IpcError> {
+        let host = hosts::get(&self.store, host_id).await?;
+        Ok((self.ssh.clone(), target_of(&host)?))
     }
 
     /// Quit: remote panes end with the app, like local ones.

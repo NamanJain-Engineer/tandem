@@ -1542,5 +1542,6 @@
   "settings.remote": "Remote",
   "settings.remote.subtitle": "SSH hosts and WSL distributions",
   "picker.onHost": "On {host}",
-  "picker.noneOnHost": "No coding engines found on {host}. Install one there, then check again."
+  "picker.noneOnHost": "No coding engines found on {host}. Install one there, then check again.",
+  "git.remoteOnly": "Push, pull and branches: run git in a terminal on {host}"
 }

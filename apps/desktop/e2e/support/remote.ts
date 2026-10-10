@@ -18,16 +18,37 @@ async function until(check: () => Promise<boolean>, timeoutMsg: string, timeout 
 export function inContainer(cmd: string): string {
   return execFileSync(
     "docker",
-    ["compose", "-f", join(root, "infra/docker-compose.yml"), "--profile", "remote", "exec", "-T", "sshd", "sh", "-c", cmd],
+    [
+      "compose",
+      "-f",
+      join(root, "infra/docker-compose.yml"),
+      "--profile",
+      "remote",
+      "exec",
+      "-T",
+      "sshd",
+      "sh",
+      "-c",
+      cmd,
+    ],
     { encoding: "utf8" },
   );
 }
 
+/** The fixture's repository as the image made it (specs edit it). */
+export function resetProject(): void {
+  inContainer(`su tandem -c 'cd ${PROJECT} && git checkout -q -- . && git clean -fdxq'`);
+}
+
 /** Copies a local file into the container. */
 export function copyIn(local: string, remote: string): void {
-  const id = execFileSync("docker", ["compose", "-f", join(root, "infra/docker-compose.yml"), "--profile", "remote", "ps", "-q", "sshd"], {
-    encoding: "utf8",
-  }).trim();
+  const id = execFileSync(
+    "docker",
+    ["compose", "-f", join(root, "infra/docker-compose.yml"), "--profile", "remote", "ps", "-q", "sshd"],
+    {
+      encoding: "utf8",
+    },
+  ).trim();
   execFileSync("docker", ["cp", "-L", local, `${id}:${remote}`]);
 }
 
@@ -58,7 +79,9 @@ export function dropConnection(): void {
 }
 
 /** Hosts as the Remote page lists them. */
-export async function hostRows(): Promise<Array<{ id: string; state: string; text: string; error: string; stage: string }>> {
+export async function hostRows(): Promise<
+  Array<{ id: string; state: string; text: string; error: string; stage: string }>
+> {
   return (await browser.execute(() =>
     Array.from(document.querySelectorAll<HTMLElement>('[data-testid="remote-host"]')).map((el) => ({
       id: el.dataset.host ?? "",
@@ -94,11 +117,21 @@ export async function addFixtureHost(): Promise<void> {
 export async function hostKeyShown(): Promise<string> {
   const fp = $('[data-testid="remote-hostkey-fp"]');
   await fp.waitForExist({ timeout: 30_000 });
-  return String(await browser.execute(() => document.querySelector('[data-testid="remote-hostkey-fp"]')?.textContent ?? ""));
+  // A click while the dialog zooms in can miss (D-52).
+  await settled();
+  return String(
+    await browser.execute(
+      () => document.querySelector('[data-testid="remote-hostkey-fp"]')?.textContent ?? "",
+    ),
+  );
 }
 
 export async function waitForState(state: string, timeout = 60_000): Promise<void> {
-  await until(async () => (await hostRows()).some((h) => h.state === state), `no host is ${state}: ${JSON.stringify(await hostRows())}`, timeout);
+  await until(
+    async () => (await hostRows()).some((h) => h.state === state),
+    `no host is ${state}: ${JSON.stringify(await hostRows())}`,
+    timeout,
+  );
 }
 
 /** Opens `path` on the connected fixture through the folder picker and
@@ -111,17 +144,71 @@ export async function openRemoteFolder(path = PROJECT): Promise<string> {
   await field.setValue(path);
   await browser.keys("Enter");
   await until(
-    async () => (await browser.execute(() => (document.querySelector('[data-testid="remote-picker-path"]') as HTMLInputElement | null)?.value ?? "")) === path,
+    async () =>
+      (await browser.execute(
+        () =>
+          (document.querySelector('[data-testid="remote-picker-path"]') as HTMLInputElement | null)?.value ??
+          "",
+      )) === path,
     `the picker didn't go to ${path}`,
   );
   await $('[data-testid="remote-picker-open"]').click();
-  await until(async () => (await workspaceRoots()).includes(path), `${path} wasn't added: ${JSON.stringify(await workspaceRoots())}`);
+  await until(
+    async () => (await workspaceRoots()).includes(path),
+    `${path} wasn't added: ${JSON.stringify(await workspaceRoots())}`,
+  );
   await until(async () => (await paneIds()).length >= 1, "the remote shell didn't open");
   return (await paneIds())[0] ?? "";
 }
 
 /** The fixture's host id, once it's been added. */
 export async function fixtureHostId(): Promise<string> {
-  const hosts = await invoke<Array<{ id: string; sshTarget: string | null; sshPort: number | null }>>("ssh_hosts_list");
+  const hosts =
+    await invoke<Array<{ id: string; sshTarget: string | null; sshPort: number | null }>>("ssh_hosts_list");
   return hosts.find((h) => h.sshTarget === "tandem@127.0.0.1" && h.sshPort === 2222)?.id ?? "";
+}
+
+/** The fixture host added and connected, whatever earlier specs did:
+ * added through the command when missing, its fingerprint approved when
+ * asked. Leaves Settings › Remote open. */
+export async function ensureConnected(): Promise<string> {
+  if (!(await fixtureHostId())) {
+    await invoke("ssh_host_add", {
+      target: "tandem@127.0.0.1",
+      port: 2222,
+      identityFile: KEY,
+      label: null,
+      user: null,
+    });
+  }
+  await openRemotePage();
+  await until(async () => (await hostRows()).length === 1, "no fixture host");
+  if ((await hostRows())[0]?.state !== "connected") {
+    await $("button=Connect").click();
+    await until(
+      async () =>
+        (await hostRows())[0]?.state === "connected" ||
+        (await $('[data-testid="remote-hostkey-accept"]').isExisting()),
+      "the fixture didn't connect or ask about its key",
+      120_000,
+    );
+    if (await $('[data-testid="remote-hostkey-accept"]').isExisting()) {
+      expect(await hostKeyShown()).toBe(hostFingerprint());
+      await approveHostKey();
+    }
+    await waitForState("connected", 120_000);
+  }
+  return fixtureHostId();
+}
+
+/** Clicks "Trust and connect" until the dialog has gone (a click on a
+ * dialog that just opened can be dropped under load, D-52). */
+export async function approveHostKey(): Promise<void> {
+  await settled();
+  await $('[data-testid="remote-hostkey-accept"]').click();
+  const gone = await browser
+    .waitUntil(async () => !(await $('[data-testid="remote-hostkey"]').isExisting()), { timeout: 3_000 })
+    .catch(() => false);
+  if (!gone && (await $('[data-testid="remote-hostkey-accept"]').isExisting()))
+    await $('[data-testid="remote-hostkey-accept"]').click();
 }

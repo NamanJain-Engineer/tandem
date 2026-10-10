@@ -225,6 +225,15 @@ async fn f_rm_01_3_reading_outside_the_root_is_refused() {
     let _g = SERIAL.lock().await;
     let f = connected().await;
     f.ssh.install(&f.t, &bin_dir()).await.expect("install");
+    // The fixture's repository as the image made it (other tests edit it).
+    f.ssh
+        .exec(
+            &f.t,
+            "git -C ~/project checkout -q -- . && git -C ~/project clean -fdxq",
+            None,
+        )
+        .await
+        .expect("reset");
     let (c, _notes, _child) = open(&f).await;
     let err = c
         .call::<_, Value>(

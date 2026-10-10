@@ -20,7 +20,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::process::{Child, Command};
 
 use crate::manifest::{platform, Manifest};
-use crate::protocol::{PROTOCOL, VERSION};
+use crate::protocol::PROTOCOL;
 
 /// Where the host keeps its binary, relative to the remote home.
 pub fn remote_dir() -> String {
@@ -599,15 +599,6 @@ impl Ssh {
             )
         })?;
         let bin = remote_bin();
-        let have = self
-            .exec(t, &format!("{bin} version 2>/dev/null || true"), None)
-            .await?;
-        if have.trim() == format!("tandem-host {VERSION}") {
-            return Ok(Installed {
-                platform: plat.into(),
-                uploaded: false,
-            });
-        }
         let install_err = |d: &str| {
             SshError::new(
                 Category::InstallFailed,
@@ -618,6 +609,20 @@ impl Ssh {
         let (path, entry) = manifest
             .binary(bin_dir, plat)
             .map_err(|e| install_err(&e.to_string()))?;
+        // The copy on the host is this build's only if its hash matches.
+        let have = self
+            .exec(
+                t,
+                &format!("( sha256sum {bin} 2>/dev/null || shasum -a 256 {bin} 2>/dev/null ) | cut -d' ' -f1"),
+                None,
+            )
+            .await?;
+        if have.trim() == entry.sha256 {
+            return Ok(Installed {
+                platform: plat.into(),
+                uploaded: false,
+            });
+        }
         let bytes = tokio::fs::read(&path)
             .await
             .map_err(|e| install_err(&e.to_string()))?;

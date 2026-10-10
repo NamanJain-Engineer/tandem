@@ -165,6 +165,7 @@ fn start(script_args: bool) -> ChatStart {
         mcp_config: None,
         mcp: None,
         engine_version: Some("codex-cli 0.47.0".into()),
+        relocate: None,
     }
 }
 

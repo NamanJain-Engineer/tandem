@@ -163,6 +163,9 @@ pub fn write(p: &FsWrite) -> Result<FsWritten, RpcError> {
                 })?;
             f.write_all(&bytes).map_err(|e| map_files(e.into()))?;
             let meta = f.metadata().map_err(|e| map_files(e.into()))?;
+            if p.path.starts_with(".tandem/") {
+                crate::gitops::exclude_tandem(Path::new(&p.root));
+            }
             Ok(FsWritten {
                 hash: files::hash_bytes(&bytes),
                 mtime: mtime(&meta),

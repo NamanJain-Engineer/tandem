@@ -83,8 +83,9 @@ async fn remember(state: &AppState, thread: &ThreadRecord) {
 }
 
 /// The engine a thread starts with: Claude Code when it's installed, else
-/// the first installed engine that has a chat adapter and the plan runs.
-fn default_engine(state: &AppState) -> Option<String> {
+/// the first installed engine (here, or on the thread's host) that has a
+/// chat adapter and the plan runs.
+fn default_engine(state: &AppState, installed: &dyn Fn(&str) -> bool) -> Option<String> {
     let engines = &state.terminals.engines;
     let registry = engines.registry();
     let limits = state.entitlements.limits();
@@ -93,7 +94,7 @@ fn default_engine(state: &AppState) -> Option<String> {
         .iter()
         .filter(|e| {
             crate::services::threads::has_chat_adapter(e)
-                && engines.installed(&e.id).is_some()
+                && installed(&e.id)
                 && limits.allows_chat_engine(&e.id)
         })
         .map(|e| e.id.as_str())
@@ -121,10 +122,28 @@ pub(crate) async fn create_thread(
     args: ThreadCreate,
 ) -> Result<ThreadRecord, IpcError> {
     let defaults = remembered(state).await;
+    // A remote workspace's thread runs one of the host's engines (F-RM-01).
+    let host_report = match &args.workspace_id {
+        Some(ws) => match workspaces::get(&state.store, ws).await {
+            Ok(w) if w.kind == "ssh" => Some(
+                state
+                    .remote
+                    .report(&tandem_core::ids::HostId::from_db(w.host_id))
+                    .await
+                    .unwrap_or_default(),
+            ),
+            _ => None,
+        },
+        None => None,
+    };
+    let installed = |e: &str| match &host_report {
+        Some(r) => r.get(e).is_some(),
+        None => state.terminals.engines.installed(e).is_some(),
+    };
     // The last engine, unless the plan no longer runs it (a lapse to Free).
     let last = text(&defaults, "last_engine").filter(|e| {
         state.entitlements.limits().allows_chat_engine(e)
-            && state.terminals.engines.installed(e).is_some()
+            && installed(e)
             && state
                 .terminals
                 .engines
@@ -133,7 +152,7 @@ pub(crate) async fn create_thread(
     });
     let engine_id = match args.engine_id.or(last) {
         Some(id) => id,
-        None => default_engine(state).ok_or_else(|| {
+        None => default_engine(state, &installed).ok_or_else(|| {
             IpcError::new(
                 ErrorCode::EngineMissing,
                 "No coding agent that works in Thread mode is installed",

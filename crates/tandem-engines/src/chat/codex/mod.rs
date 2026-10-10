@@ -556,6 +556,7 @@ impl ChatAdapter for CodexAdapter {
             env.push((LEASE_ENV.into(), mcp.token.clone()));
         }
         let spec = ProcessSpec::new(req.program.clone(), args(&req), env, req.cwd.clone());
+        let spec = super::Relocate::apply(req.relocate.as_ref(), spec);
         let (process, lines) = ChatProcess::spawn(spec)?;
         let session = CodexSession {
             process: Arc::new(process),

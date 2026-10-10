@@ -42,13 +42,27 @@ pub fn run_dir(home: &Path) -> PathBuf {
     home.join(".tandem-host").join("run")
 }
 
-/// One socket per host version, so an upgrade never talks to an old daemon.
+/// This binary's identity: its version and the start of its SHA-256, so
+/// a different build of the same version never talks to an older daemon.
+pub fn build_id() -> &'static str {
+    static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ID.get_or_init(|| {
+        let hash = std::env::current_exe()
+            .ok()
+            .and_then(|exe| crate::manifest::sha256_file(&exe).ok())
+            .map(|h| h[..12].to_string())
+            .unwrap_or_else(|| "unknown".into());
+        format!("{VERSION}-{hash}")
+    })
+}
+
+/// One socket per build, so an upgrade never talks to an old daemon.
 pub fn socket_path(run: &Path) -> PathBuf {
-    run.join(format!("daemon-{VERSION}.sock"))
+    run.join(format!("daemon-{}.sock", build_id()))
 }
 
 pub fn status_socket_path(run: &Path) -> PathBuf {
-    run.join(format!("status-{VERSION}.sock"))
+    run.join(format!("status-{}.sock", build_id()))
 }
 
 pub fn ensure_run_dir(run: &Path) -> std::io::Result<()> {

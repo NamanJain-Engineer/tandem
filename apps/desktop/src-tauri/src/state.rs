@@ -414,6 +414,7 @@ impl AppState {
             clock.clone(),
         );
         launcher.set_guard(audit.clone());
+        threads.set_remote(remote.clone());
         // Thread titles: AI only with the Privacy opt-in (D-118).
         let titles_store = store.clone();
         threads.configure(
@@ -477,6 +478,7 @@ impl AppState {
         }));
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         let files = crate::services::files::FilesService::new(store.clone());
+        files.set_remote(remote.clone());
         let git_panel = crate::services::git_panel::GitPanelService::new(files.clone());
         let auto = Arc::new(crate::services::auto::AutoService::new(
             bus.clone(),

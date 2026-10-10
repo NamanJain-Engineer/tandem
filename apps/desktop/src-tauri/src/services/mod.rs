@@ -29,6 +29,7 @@ pub mod notifications;
 pub mod notifier;
 pub mod opener;
 pub mod remote;
+pub mod remote_files;
 pub mod restore;
 pub mod staging;
 pub mod status;

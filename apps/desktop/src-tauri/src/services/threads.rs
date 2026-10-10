@@ -218,6 +218,8 @@ pub struct ThreadService {
     status_sink: std::sync::OnceLock<ThreadStatusSink>,
     /// The plan's limits right now; unset (tests) runs every engine.
     plan_limits: std::sync::OnceLock<PlanLimits>,
+    /// Threads in SSH workspaces (F-RM-01).
+    remote: std::sync::OnceLock<Arc<crate::services::remote::RemoteService>>,
 }
 
 /// Reads the plan's current limits (the entitlement service in the app).
@@ -372,6 +374,7 @@ impl ThreadService {
             data: std::sync::OnceLock::new(),
             status_sink: std::sync::OnceLock::new(),
             plan_limits: std::sync::OnceLock::new(),
+            remote: std::sync::OnceLock::new(),
         })
     }
 
@@ -413,6 +416,81 @@ impl ThreadService {
 
     pub fn set_status_sink(&self, sink: ThreadStatusSink) {
         let _ = self.status_sink.set(sink);
+    }
+
+    pub fn set_remote(&self, remote: Arc<crate::services::remote::RemoteService>) {
+        let _ = self.remote.set(remote);
+    }
+
+    /// A thread whose folder is on an SSH host: the host's service and the
+    /// folder there.
+    async fn remote_root(
+        &self,
+        thread: &ThreadRecord,
+    ) -> Option<(
+        Arc<crate::services::remote::RemoteService>,
+        crate::services::remote_files::RemoteRoot,
+    )> {
+        let ws = tandem_store::repo::workspaces::get(&self.store, thread.workspace_id.as_ref()?)
+            .await
+            .ok()?;
+        if ws.kind != "ssh" {
+            return None;
+        }
+        Some((
+            self.remote.get()?.clone(),
+            crate::services::remote_files::RemoteRoot {
+                host: tandem_core::ids::HostId::from_db(ws.host_id),
+                root: thread.cwd.clone(),
+            },
+        ))
+    }
+
+    /// A remote thread's attachments go to the host first (F-RM-01
+    /// "Conversation attachments are stored under the remote workspace"):
+    /// each local file is copied to `<root>/.tandem/attachments/<thread>/`
+    /// and the engine gets that path. Paths already on the host stay; a
+    /// local folder can't be sent and is left out.
+    async fn carry_to_host(
+        &self,
+        thread: &ThreadRecord,
+        carried: Vec<Attachment>,
+    ) -> Result<Vec<Attachment>, IpcError> {
+        let Some((remote, root)) = self.remote_root(thread).await else {
+            return Ok(carried);
+        };
+        let mut out = Vec::with_capacity(carried.len());
+        for mut a in carried {
+            if a.path
+                .starts_with(&format!("{}/", root.root.trim_end_matches('/')))
+            {
+                out.push(a);
+                continue;
+            }
+            let local = std::path::PathBuf::from(&a.path);
+            if !matches!(
+                a.kind,
+                AttachmentKind::Image | AttachmentKind::File | AttachmentKind::ToolOutput
+            ) || !local.is_file()
+            {
+                tracing::info!(
+                    code = "threads.remote_attachment_skipped",
+                    "a local folder can't go to a remote thread"
+                );
+                continue;
+            }
+            let bytes = tokio::fs::read(&local).await.map_err(|e| {
+                IpcError::new(ErrorCode::Io, format!("Couldn't read {}: {e}", a.name))
+            })?;
+            a.path = remote
+                .files
+                .upload(&remote, &root, thread.id.as_str(), &a.name, &bytes)
+                .await?;
+            // The engine reads it on the host by path, images too.
+            a.kind = AttachmentKind::File;
+            out.push(a);
+        }
+        Ok(out)
     }
 
     fn data_dir(&self) -> Result<&tandem_core::DataDir, IpcError> {
@@ -767,7 +845,6 @@ impl ThreadService {
         id: &ThreadId,
         paths: Vec<String>,
     ) -> Result<Vec<Attachment>, IpcError> {
-        self.thread(id).await?;
         let pending = attachments_repo::unsent(&self.store, id)
             .await
             .map_err(store_err)?
@@ -778,9 +855,31 @@ impl ThreadService {
                 "A message can carry up to 20 attachments",
             ));
         }
+        let thread = self.thread(id).await?;
+        let remote = self.remote_root(&thread).await;
         let mut out = Vec::new();
         for p in paths {
-            let a = thread_files::for_path(id, std::path::Path::new(&p))?;
+            let a = match &remote {
+                // A file from the host's own Files tab: it's already there.
+                Some((svc, root))
+                    if p.starts_with(&format!("{}/", root.root.trim_end_matches('/'))) =>
+                {
+                    let stat: tandem_host::protocol::FsStat = svc
+                        .call(
+                            &root.host,
+                            tandem_host::protocol::method::FS_STAT,
+                            serde_json::json!({"root": root.root, "path": p}),
+                        )
+                        .await?;
+                    thread_files::on_host(
+                        id,
+                        &p,
+                        stat.kind == tandem_host::protocol::EntryKind::Dir,
+                        stat.size,
+                    )
+                }
+                _ => thread_files::for_path(id, std::path::Path::new(&p))?,
+            };
             out.push(
                 attachments_repo::insert(&self.store, a)
                     .await
@@ -1003,6 +1102,10 @@ impl ThreadService {
     /// Records where the Changes panel starts, before the thread's first
     /// turn runs (F-TH-13): the folder's commit, or a snapshot manifest.
     async fn ensure_start(&self, thread: &ThreadRecord) {
+        // A host's folder isn't read from here: no start point (D-411).
+        if self.remote_root(thread).await.is_some() {
+            return;
+        }
         if !matches!(
             repo::start_point(&self.store, &thread.id).await,
             Ok((None, None))
@@ -1037,6 +1140,13 @@ impl ThreadService {
         path: String,
     ) -> Result<thread_files::FileText, IpcError> {
         let thread = self.thread(id).await?;
+        if let Some((remote, root)) = self.remote_root(&thread).await {
+            if tandem_core::contain::is_private_file(std::path::Path::new(&path)) {
+                return Err(IpcError::new(ErrorCode::PathEscape, "that file is private"));
+            }
+            let f = remote.files.read(&remote, &root, path).await?;
+            return thread_files::remote_text(f);
+        }
         let root = std::path::PathBuf::from(thread.cwd);
         tokio::task::spawn_blocking(move || thread_files::read_text(&root, &path))
             .await
@@ -1047,6 +1157,13 @@ impl ThreadService {
     /// turn (F-TH-13).
     pub async fn changes(&self, id: &ThreadId) -> Result<thread_changes::ThreadChanges, IpcError> {
         let thread = self.thread(id).await?;
+        if self.remote_root(&thread).await.is_some() {
+            return Err(IpcError::new(
+                ErrorCode::Unavailable,
+                "The Changes panel follows local folders. This thread's folder is on a remote host: its Files tab shows git changes there.",
+            )
+            .with_stage("remote"));
+        }
         let start = match repo::start_point(&self.store, id)
             .await
             .map_err(store_err)?
@@ -1370,6 +1487,25 @@ impl ThreadService {
         let text = match seed {
             Some(summary) => thread_summary::seeded(&summary, &text),
             None => text,
+        };
+        let carried = match self.carry_to_host(&thread, carried).await {
+            Ok(c) => c,
+            Err(e) => {
+                let mut guard = rt.lock().await;
+                self.fail_turn(
+                    id,
+                    &mut guard,
+                    "spawn_failed",
+                    &e.message,
+                    ErrorStage::Spawn,
+                    ErrorAction::Retry,
+                )
+                .await;
+                return Ok(SendResult {
+                    turn_id: Some(turn_id),
+                    queued: false,
+                });
+            }
         };
         let input = turn_input(&turn_id, text, &carried, std::path::Path::new(&thread.cwd));
         let sent = session.send_turn(input).await;
@@ -1972,6 +2108,133 @@ pub struct AppLauncher {
 }
 
 impl AppLauncher {
+    /// The SSH host a thread's folder is on, when it's a remote workspace.
+    async fn remote_host(
+        &self,
+        thread: &ThreadRecord,
+    ) -> Result<
+        Option<(
+            Arc<crate::services::remote::RemoteService>,
+            tandem_core::ids::HostId,
+        )>,
+        IpcError,
+    > {
+        let Some(ws) = &thread.workspace_id else {
+            return Ok(None);
+        };
+        let ws = tandem_store::repo::workspaces::get(self.terminals.store(), ws)
+            .await
+            .map_err(store_err)?;
+        if ws.kind != "ssh" {
+            return Ok(None);
+        }
+        let remote = self.terminals.remote().cloned().ok_or_else(|| {
+            IpcError::new(
+                ErrorCode::Unavailable,
+                "Remote hosts aren't available in this build",
+            )
+        })?;
+        Ok(Some((
+            remote,
+            tandem_core::ids::HostId::from_db(ws.host_id),
+        )))
+    }
+
+    /// A thread on an SSH host (F-RM-01): the host's own engine, run
+    /// through `tandem-host run` over the host's connection (D-403), with
+    /// the host's own sign-in. Nothing local crosses: no provider home, no
+    /// account, and no gateway (plugins are local-only, D-408).
+    async fn prepare_remote(
+        &self,
+        thread: &ThreadRecord,
+        engine: &tandem_engines::EngineSpec,
+        adapter: Arc<dyn ChatAdapter>,
+        remote: Arc<crate::services::remote::RemoteService>,
+        host: tandem_core::ids::HostId,
+    ) -> Result<(Arc<dyn ChatAdapter>, ChatStart), IpcError> {
+        // The org's engine policy holds on hosts too (F-BL-06).
+        self.terminals.engines.check_allowed(engine)?;
+        // The connection first: its detection names the host's engines.
+        remote.client(&host).await?;
+        let mut report = remote.report(&host).await;
+        if report.as_ref().and_then(|r| r.get(&engine.id)).is_none() {
+            let list = self.terminals.engines.registry().all().to_vec();
+            report = remote.detect(&host, &list).await.ok();
+        }
+        let found = report
+            .as_ref()
+            .and_then(|r| r.get(&engine.id))
+            .cloned()
+            .ok_or_else(|| {
+                IpcError::new(
+                    ErrorCode::EngineMissing,
+                    format!("{} isn't installed on this host.", engine.label),
+                )
+            })?;
+        let (ssh, target) = remote.transport(&host).await?;
+        let cwd = thread.cwd.clone();
+        let local_env: Vec<(String, String)> = std::env::vars()
+            .filter(|(k, _)| {
+                matches!(
+                    k.as_str(),
+                    "HOME"
+                        | "USER"
+                        | "LOGNAME"
+                        | "PATH"
+                        | "SSH_AUTH_SOCK"
+                        | "LANG"
+                        | "LC_ALL"
+                        | "TMPDIR"
+                        | "XDG_RUNTIME_DIR"
+                )
+            })
+            .collect();
+        let here = std::env::var_os("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir);
+        let relocate = tandem_engines::chat::Relocate(Arc::new(
+            move |spec: tandem_engines::chat::process::ProcessSpec| {
+                let mut argv = vec![spec.program.to_string_lossy().into_owned()];
+                argv.extend(spec.args.iter().map(|a| a.to_string_lossy().into_owned()));
+                let env: std::collections::BTreeMap<String, String> =
+                    spec.env.iter().cloned().collect();
+                let (program, args) = ssh.run_args(&target, &cwd, &env, &argv);
+                tandem_engines::chat::process::ProcessSpec {
+                    program,
+                    args: args.into_iter().map(std::ffi::OsString::from).collect(),
+                    env: local_env.clone(),
+                    cwd: here.clone(),
+                    ..spec
+                }
+            },
+        ));
+        Ok((
+            adapter,
+            ChatStart {
+                thread_id: thread.id.clone(),
+                engine_id: engine.id.clone(),
+                program: std::path::PathBuf::from(&found.path),
+                cwd: std::path::PathBuf::from(&thread.cwd),
+                env: vec![("TERM".into(), "dumb".into())],
+                model: thread.model.clone(),
+                effort: thread.effort.clone(),
+                access: session_access(
+                    self.guard.get().map(|g| g.as_ref()),
+                    thread,
+                    origin_of(thread),
+                    &engine.id,
+                ),
+                mode: thread.mode,
+                attended: thread.attended,
+                resume_session: thread.engine_session_id.clone(),
+                mcp_config: None,
+                mcp: None,
+                engine_version: found.version,
+                relocate: Some(relocate),
+            },
+        ))
+    }
+
     pub fn new(
         terminals: Arc<crate::services::terminal::TerminalService>,
         config: Arc<crate::services::config::ConfigService>,
@@ -2162,6 +2425,11 @@ impl ChatLauncher for AppLauncher {
                 ),
             )
         })?;
+        if let Some((remote, host)) = self.remote_host(thread).await? {
+            return self
+                .prepare_remote(thread, &engine, adapter, remote, host)
+                .await;
+        }
         let program = self
             .terminals
             .resolve_engine(&engine)
@@ -2221,6 +2489,7 @@ impl ChatLauncher for AppLauncher {
                         .find(|f| f.engine_id == engine.id)
                         .and_then(|f| f.version)
                 }),
+                relocate: None,
             },
         ))
     }
@@ -2491,6 +2760,7 @@ mod tests {
                     mcp_config: None,
                     mcp: None,
                     engine_version: None,
+                    relocate: None,
                 },
             ))
         }
@@ -3693,6 +3963,7 @@ mod tests {
                         mcp_config: None,
                         mcp: None,
                         engine_version: None,
+                        relocate: None,
                     },
                 ))
             }

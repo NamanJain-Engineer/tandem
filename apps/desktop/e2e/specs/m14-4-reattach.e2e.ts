@@ -1,6 +1,5 @@
-import { browser } from "@wdio/globals";
 import { freshOffline, paneText, shellPid, waitForPaneText } from "../support/app";
-import { PROJECT, dropConnection, hostRows, openRemoteFolder, openRemotePage, waitForState } from "../support/remote";
+import { PROJECT, dropConnection, ensureConnected, openRemoteFolder } from "../support/remote";
 
 // E2E-M14-4 Re-attach (F-RM-01 AC5): `ssh -O exit` drops the connection.
 // The remote pane says "Reconnecting…", then the same remote shell (the
@@ -12,12 +11,7 @@ describe("E2E-M14-4 re-attach", () => {
   before(async function () {
     this.timeout(180_000);
     await freshOffline();
-    await openRemotePage();
-    await browser.waitUntil(async () => (await hostRows()).length === 1, { timeout: 10_000, timeoutMsg: "no fixture host" });
-    if ((await hostRows())[0]?.state !== "connected") {
-      await $("button=Connect").click();
-      await waitForState("connected", 120_000);
-    }
+    await ensureConnected();
     shell = await openRemoteFolder(PROJECT);
     await waitForPaneText(shell, "tandem@", 30_000);
   });

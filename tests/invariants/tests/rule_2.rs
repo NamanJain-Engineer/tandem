@@ -43,6 +43,54 @@ fn invariant_rule_2_marks_need_token() {
     assert_eq!(marks, vec![Mark::PromptStart]);
 }
 
+/// A remote pane (F-RM-01) runs no shell integration and gets no launch
+/// token, so whatever the host prints, no mark is taken from its output.
+#[test]
+fn invariant_rule_2_remote_output_makes_no_marks() {
+    use std::sync::{Arc, Mutex};
+    use tandem_pty::{PtyManager, RemotePty, SpawnSpec};
+
+    struct Host;
+    impl RemotePty for Host {
+        fn write(&self, _: &[u8]) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn resize(&self, _: u16, _: u16) {}
+        fn kill(&self) {}
+    }
+    let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+    let s = seen.clone();
+    let mgr = PtyManager::new().with_mark_sink(Arc::new(move |_, m| {
+        s.lock().expect("lock").push(format!("{m:?}"))
+    }));
+    let spec = SpawnSpec {
+        pane_id: "pn_r".into(),
+        program: "ssh".into(),
+        args: Vec::new(),
+        cwd: "/home/tandem".into(),
+        env: Default::default(),
+        cols: 80,
+        rows: 24,
+        scrollback_lines: 100,
+        mark_token: None,
+    };
+    let (_, feed) = mgr
+        .spawn_remote(spec, 4242, Arc::new(Host), None)
+        .expect("spawn");
+    feed.data(
+        b"\x1b]133;A;tandem=guess\x07\x1b]133;D;0\x07\x1b]7770;handback;x;0\x07done\r\n".to_vec(),
+    );
+    assert!(tandem_pty::wait_until(
+        std::time::Duration::from_secs(5),
+        || mgr.screen_text("pn_r").unwrap_or_default().contains("done")
+    ));
+    assert!(
+        seen.lock().expect("lock").is_empty(),
+        "a host forged a mark"
+    );
+    let _ = mgr.kill("pn_r");
+}
+
 #[cfg(unix)]
 mod status {
     use std::sync::{Arc, Mutex};
@@ -99,5 +147,41 @@ mod status {
         let renewed = s.register("pn_1");
         assert_ne!(renewed, secret);
         assert_eq!(post(&s.url(), raw(&body, Some(&right))).await, 401);
+    }
+
+    /// A report relayed from an SSH host (D-406) counts only with the
+    /// pane's own secret: the host can't forge one either.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn invariant_rule_2_relayed_status_needs_hmac() {
+        let dir = tempfile::tempdir().expect("dir");
+        let sink: Arc<dyn ReportSink> = Arc::new(|_r: StatusReport| {});
+        let s = StatusServer::start(dir.path(), sink).await.expect("start");
+        let secret = s.register("pn_remote");
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_millis();
+        let body = format!(
+            r#"{{"v":1,"pane_id":"pn_remote","event":"waiting","ts":{now},"payload":{{}}}}"#
+        );
+        for sig in [
+            None,
+            Some("sha256=00".to_string()),
+            Some(sign("guess", body.as_bytes())),
+        ] {
+            assert!(
+                s.accept_relayed(body.as_bytes(), sig.as_deref()).is_err(),
+                "{sig:?}"
+            );
+        }
+        let other = format!(
+            r#"{{"v":1,"pane_id":"pn_other","event":"waiting","ts":{now},"payload":{{}}}}"#
+        );
+        assert!(s
+            .accept_relayed(other.as_bytes(), Some(&sign(&secret, other.as_bytes())))
+            .is_err());
+        assert!(s
+            .accept_relayed(body.as_bytes(), Some(&sign(&secret, body.as_bytes())))
+            .is_ok());
     }
 }
