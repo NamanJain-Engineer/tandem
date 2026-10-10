@@ -15,7 +15,7 @@ M16 adds the P2 extras and the release candidate.
 
 ## 0. First, before new features
 
-1. **Release 0.3.0 and deploy the site.** Vibezeo 0.2.0 (M6 + M7) and the
+1. **Release 0.3.0 with the interactive demo on the home page, and deploy the site.** The demo moves from its own page into the home page, explorable full screen and on phones, with message limits and a reset (full spec: "The interactive demo on the website" in `docs/FEATURES_TO_BUILD.md`). Vibezeo 0.2.0 (M6 + M7) and the
    browser demo are committed but were never deployed: vibezeo.com (`main`)
    still serves 0.1.0. M9 has landed since, and the demo already shows its Files
    tab, so ship them together: 0.3.0 = M6 + M7 + M9. Bump the version, add the
@@ -23,7 +23,8 @@ M16 adds the P2 extras and the release candidate.
    figures from the gate and the spec files), build and smoke-test the .deb,
    run the full E2E regression and the gate, then merge `product-m0-m5` into
    `main` and check the live site (`docs/OPERATING.md` §6–7).
-2. **Close known gaps:**
+2. **Keep the live demo in step with every release.** vibezeo.com/demo (the page) opens /demo/app/: the real desktop interface running in the browser against a simulated core, built with the site (D-126; the Files tab, D-204). Its code is `apps/desktop/src/demo/`: `backend.ts` answers the app's commands, `agent.ts` scripts the agent's turns, `shell.ts` the terminal, `files.ts` the Files tab, `DemoBar.tsx` the strip that says it's a demo. When a release ships something visible in the interface, make it work in the demo too wherever it can be simulated honestly (sample data, no network, no microphone), add a test to `demo.test.ts`, and walk it with `scripts/agent/demo-walkthrough.mjs` before deploying. The demo shows only what the released download does, never more, and always says its agents are simulated.
+3. **Close known gaps:**
    - The Free plan's `chatEngines` limit (Claude Code and Codex in Thread mode,
      PRODUCT_SPEC §3.1) is defined but not enforced; Free threads also run the
      ACP engines. Enforce it with the entitlement checks, with a test, and keep
@@ -152,7 +153,7 @@ needs a Windows machine (manual QA in `HUMAN_TODO.md` until CI runs Windows).
 ### M15 · Website, docs, data controls and launch hardening (L) · 6 features (2 P0)
 Close every remaining P0 and P1 and every non-functional requirement. After
 this milestone the P0/P1 product is launchable.
-- [ ] F-WB-01 Marketing site (P0; the site exists, M15 completes it and checks it against the API's plans, AC3)
+- [ ] F-WB-01 Marketing site (P0; the site and its interactive demo exist, D-126: M15 completes the site, checks the demo against the spec's three surfaces and label, and checks prices against the API's plans, AC3)
 - [ ] F-TL-06 Threat-model rules (P0; invariant tests for every rule)
 - [ ] F-WB-02 Docs
 - [ ] F-WB-03 Changelog (in-app "What's new" too)
@@ -177,7 +178,7 @@ release candidate. Stop after any sub-phase if the budget runs out.
   calls · [ ] F-BE-08 Voice session minting
 - 16B Auto: [ ] F-AU-01 Auto (Pro, credits)
 - 16C Phone companion: [ ] F-RM-03 Phone companion · [ ] F-BE-11 Remote relay
-- 16D Extras: [ ] F-SH-12 Scratchpad · [ ] F-CD-21 Simulator pane (macOS) ·
+- 16D Extras: [x] F-SH-12 Scratchpad · [ ] F-CD-21 Simulator pane (macOS) ·
   [ ] F-AC-07 Usage dashboard · [ ] F-AG-10 Skill sync to engines ·
   [ ] F-AG-13 Teammate in a terminal · [ ] F-RT-05 Schedule tool for teammates ·
   [ ] F-BE-03 CLI device-code sign-in · [ ] F-BE-12 Admin

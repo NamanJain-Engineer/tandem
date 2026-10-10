@@ -83,6 +83,8 @@ export {
 } from "./components/Field";
 export { EngineBadge, EngineGlyph } from "./components/EngineGlyph";
 export { CodeEditor, languageFor, type CodeEditorProps } from "./components/CodeEditor";
+export { NoteEditor, type NoteEditorHandle, type NoteEditorProps } from "./components/NoteEditor";
+export { NOTE_FORMATS, continueList, taskBoxes, tickAt, toggleBold, toggleBullet, toggleItalic, toggleTask, toggleUnderline, toggleWrap, type NoteFormat } from "./components/noteCommands";
 export {
   FILE_ROW_HEIGHT,
   FILE_TREE_LABELS,
