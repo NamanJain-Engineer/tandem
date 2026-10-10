@@ -9,10 +9,13 @@ import { key, setSetting } from "../support/dictate";
 
 const step = () => $('[data-testid="onboarding"]').getAttribute("data-step");
 async function atStep(name: string): Promise<void> {
-  await browser.waitUntil(async () => (await $('[data-testid="onboarding"]').isExisting()) && (await step()) === name, {
-    timeout: 15_000,
-    timeoutMsg: `the wizard never reached ${name}`,
-  });
+  await browser.waitUntil(
+    async () => (await $('[data-testid="onboarding"]').isExisting()) && (await step()) === name,
+    {
+      timeout: 15_000,
+      timeoutMsg: `the wizard never reached ${name}`,
+    },
+  );
 }
 
 describe("E2E-M8-6 Onboarding", () => {

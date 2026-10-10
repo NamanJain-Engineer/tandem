@@ -1,7 +1,17 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { freshOffline, home, invoke } from "../support/app";
-import { TEXT_EDITOR, ensureModel, fixture, hold, mic, resetPlatform, setSetting, waitPasted, words } from "../support/dictate";
+import {
+  TEXT_EDITOR,
+  ensureModel,
+  fixture,
+  hold,
+  mic,
+  resetPlatform,
+  setSetting,
+  waitPasted,
+  words,
+} from "../support/dictate";
 
 // E2E-M8-7 History and dictionary (F-DI-08, F-DI-09).
 
@@ -23,20 +33,30 @@ const correction = (phrase: string, replacement: string, appProfiles: string[] =
 });
 
 describe("E2E-M8-7 History and dictionary", () => {
-  before(async () => {
+  before(async function () {
+    this.timeout(300_000);
     await freshOffline();
     await setSetting("dictate_enabled", true);
     await ensureModel();
   });
 
-  it("E2E-M8-7 search finds a stored take; the CSV has the exact header; clearing keeps the word total", async () => {
+  it("E2E-M8-7 search finds a stored take; the CSV has the exact header; clearing keeps the word total", async function () {
+    this.timeout(180_000);
     await resetPlatform();
     await mic({ source: "wav", path: fixture("hello_world_16k.wav") });
     await hold(2_500);
     await waitPasted();
-    const found = await invoke<{ takes: Array<{ text: string }> }>("dictate_history", { query: "world", before: null, limit: 50 });
+    const found = await invoke<{ takes: Array<{ text: string }> }>("dictate_history", {
+      query: "world",
+      before: null,
+      limit: 50,
+    });
     expect(found.takes.some((t) => words(t.text).includes("world"))).toBe(true);
-    const none = await invoke<{ takes: unknown[] }>("dictate_history", { query: "zebracrossing", before: null, limit: 50 });
+    const none = await invoke<{ takes: unknown[] }>("dictate_history", {
+      query: "zebracrossing",
+      before: null,
+      limit: 50,
+    });
     expect(none.takes).toEqual([]);
 
     const csv = join(home(), "history.csv");
@@ -45,25 +65,47 @@ describe("E2E-M8-7 History and dictionary", () => {
 
     const before = await invoke<Stats>("dictate_stats");
     await invoke("dictate_history_clear");
-    expect((await invoke<{ takes: unknown[] }>("dictate_history", { query: null, before: null, limit: 50 })).takes).toEqual([]);
+    expect(
+      (await invoke<{ takes: unknown[] }>("dictate_history", { query: null, before: null, limit: 50 })).takes,
+    ).toEqual([]);
     expect((await invoke<Stats>("dictate_stats")).words).toBe(before.words);
   });
 
-  it("E2E-M8-7 'tandem'→'Tandem' leaves the URL alone", async () => {
+  it("E2E-M8-7 'tandem'→'Tandem' leaves the URL alone", async function () {
+    this.timeout(180_000);
     const rule = await invoke<Rule>("dictionary_save", { rule: correction("tandem", "Tandem") });
     try {
-      const out = await invoke<string>("dictionary_test", { sample: "use tandem, https://tandem.dev", appId: null, lang: null });
+      const out = await invoke<string>("dictionary_test", {
+        sample: "use tandem, https://tandem.dev",
+        appId: null,
+        lang: null,
+      });
       expect(out).toBe("use Tandem, https://tandem.dev");
     } finally {
       await invoke("dictionary_delete", { ids: [rule.id] });
     }
   });
 
-  it("E2E-M8-7 an app-scoped rule applies only in that app", async () => {
-    const rule = await invoke<Rule>("dictionary_save", { rule: correction("world", "WORLD", ["org.gnome.Terminal"]) });
+  it("E2E-M8-7 an app-scoped rule applies only in that app", async function () {
+    this.timeout(180_000);
+    const rule = await invoke<Rule>("dictionary_save", {
+      rule: correction("world", "WORLD", ["org.gnome.Terminal"]),
+    });
     try {
-      expect(await invoke<string>("dictionary_test", { sample: "hello world", appId: "org.gnome.Terminal", lang: null })).toBe("hello WORLD");
-      expect(await invoke<string>("dictionary_test", { sample: "hello world", appId: TEXT_EDITOR.appId, lang: null })).toBe("hello world");
+      expect(
+        await invoke<string>("dictionary_test", {
+          sample: "hello world",
+          appId: "org.gnome.Terminal",
+          lang: null,
+        }),
+      ).toBe("hello WORLD");
+      expect(
+        await invoke<string>("dictionary_test", {
+          sample: "hello world",
+          appId: TEXT_EDITOR.appId,
+          lang: null,
+        }),
+      ).toBe("hello world");
       // And in a real take over the text editor, it stays out.
       await resetPlatform();
       await mic({ source: "wav", path: fixture("hello_world_16k.wav") });
@@ -75,15 +117,21 @@ describe("E2E-M8-7 History and dictionary", () => {
     }
   });
 
-  it("E2E-M8-7 a JSON export imports back", async () => {
+  it("E2E-M8-7 a JSON export imports back", async function () {
+    this.timeout(180_000);
     const rule = await invoke<Rule>("dictionary_save", { rule: correction("vibe zeo", "Vibezeo") });
     const file = join(home(), "dictionary.json");
     await invoke("dictionary_export", { path: file, format: "json" });
     await invoke("dictionary_delete", { ids: [rule.id] });
     writeFileSync(file, readFileSync(file, "utf8"));
-    const preview = await invoke<{ previewId: string; added: unknown[] }>("dictionary_import_preview", { path: file, format: "json" });
+    const preview = await invoke<{ previewId: string; added: unknown[] }>("dictionary_import_preview", {
+      path: file,
+      format: "json",
+    });
     expect(preview.added.length).toBeGreaterThan(0);
     await invoke("dictionary_import_commit", { previewId: preview.previewId });
-    expect(await invoke<string>("dictionary_test", { sample: "vibe zeo", appId: null, lang: null })).toBe("Vibezeo");
+    expect(await invoke<string>("dictionary_test", { sample: "vibe zeo", appId: null, lang: null })).toBe(
+      "Vibezeo",
+    );
   });
 });

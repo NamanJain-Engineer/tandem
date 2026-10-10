@@ -8,7 +8,12 @@ export function fixture(name: string): string {
   return join(process.cwd(), "../../crates/tandem-voice/tests/fixtures", name);
 }
 
-type ModelsView = { active: string | null; pending: string | null; models: Array<{ id: string; state: string; error: string | null; available: boolean }>; usedBytes: number };
+type ModelsView = {
+  active: string | null;
+  pending: string | null;
+  models: Array<{ id: string; state: string; error: string | null; available: boolean }>;
+  usedBytes: number;
+};
 
 export const BASE_EN = "whisper-base.en";
 
@@ -44,7 +49,9 @@ export async function key(which: "hold" | "toggle" | "esc", phase: "down" | "up"
   return invoke<boolean>("test_dictate_key", { which, phase });
 }
 
-export async function mic(source: { source: "wav"; path: string } | { source: "silence" } | { source: "zeros" }): Promise<void> {
+export async function mic(
+  source: { source: "wav"; path: string } | { source: "silence" } | { source: "zeros" },
+): Promise<void> {
   await invoke("test_dictate_mic", { source });
 }
 
@@ -66,7 +73,13 @@ export async function platform(args: Record<string, unknown> = {}): Promise<Plat
 
 /** A clean insertion backend over a text editor, with something on the clipboard. */
 export async function resetPlatform(target: Record<string, unknown> | null = TEXT_EDITOR): Promise<void> {
-  await platform({ clear: true, failFocus: false, failPaste: false, clipboard: "previous clipboard", ...(target ? { target } : { noTarget: true }) });
+  await platform({
+    clear: true,
+    failFocus: false,
+    failPaste: false,
+    clipboard: "previous clipboard",
+    ...(target ? { target } : { noTarget: true }),
+  });
 }
 
 export async function waitPasted(timeout = 60_000): Promise<PlatformView> {
