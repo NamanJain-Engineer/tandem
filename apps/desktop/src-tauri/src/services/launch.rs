@@ -162,6 +162,18 @@ fn opening(seats: &[Seat]) -> u32 {
 
 /// `launch_lineup`: the whole lineup, or nothing when it would go over the
 /// plan's live-pane cap.
+/// Worktrees are made with this machine's git, so a folder on an SSH host or
+/// in WSL can't have them (F-RM-01; the sheet offers Shared only there).
+fn check_isolation(ws: &Workspace, isolation: Isolation) -> Result<(), IpcError> {
+    if isolation == Isolation::Worktree && ws.kind != "local" {
+        return Err(IpcError::new(
+            ErrorCode::Unavailable,
+            "Worktrees aren't available in remote folders yet",
+        ));
+    }
+    Ok(())
+}
+
 pub async fn launch(
     state: &AppState,
     workspace: &WorkspaceId,
@@ -172,6 +184,7 @@ pub async fn launch(
     presets::validate(seats)?;
     let seats = expand(seats);
     let ws = workspaces::get(&state.store, workspace).await?;
+    check_isolation(&ws, isolation)?;
     state
         .terminals
         .check_room(state.entitlements.limits().panes, opening(&seats))?;
@@ -255,6 +268,7 @@ pub async fn retry(
         ..seat.clone()
     };
     let ws = workspaces::get(&state.store, workspace).await?;
+    check_isolation(&ws, isolation)?;
     state.terminals.check_room(
         state.entitlements.limits().panes,
         opening(std::slice::from_ref(&seat)),
@@ -299,7 +313,8 @@ async fn launch_seat(
             .engines
             .get(id)
             .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "No engine with that id"))?;
-        if state.terminals.engines.installed(id).is_none() {
+        // A host's engines are its own: the pane checks them there.
+        if ws.kind == "local" && state.terminals.engines.installed(id).is_none() {
             return Err(IpcError::new(
                 ErrorCode::EngineMissing,
                 format!("{} isn't installed", engine.label),
@@ -399,6 +414,32 @@ async fn launch_seat(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn f_rm_01_a_remote_folder_launches_shared_never_in_worktrees() {
+        let ws = |kind: &str| Workspace {
+            id: WorkspaceId::new(),
+            kind: kind.into(),
+            host_id: "h".into(),
+            root: "/home/tandem/project".into(),
+            wsl_distro: None,
+            name: "project".into(),
+            parent_id: None,
+            lane_branch: None,
+            lane_base: None,
+            sort_key: "a".into(),
+            pinned: false,
+            collapsed: false,
+            sessions_collapsed: false,
+            created_at: 0,
+        };
+        assert!(check_isolation(&ws("local"), Isolation::Worktree).is_ok());
+        for kind in ["ssh", "wsl"] {
+            assert!(check_isolation(&ws(kind), Isolation::Shared).is_ok());
+            let e = check_isolation(&ws(kind), Isolation::Worktree).expect_err("refused");
+            assert_eq!(e.code, ErrorCode::Unavailable);
+        }
+    }
 
     #[test]
     fn f_cd_14_1_each_agent_gets_its_role_then_the_task() {
