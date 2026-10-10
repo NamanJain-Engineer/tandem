@@ -4,7 +4,7 @@
 import type { Release } from "@tandem/protocol/changelog";
 import { RELEASES } from "./changelog";
 import { PLANS } from "./pricing";
-import { RELEASE } from "./release";
+import { DOWNLOADS, RELEASE } from "./release";
 import { docsPath } from "./docs/pages";
 
 /** What the released desktop app does (the milestones `lib/progress.ts` lists). */
@@ -267,4 +267,16 @@ export function releaseTiles(release: Release | undefined = RELEASES.find((r) =>
       if (!meta) throw new Error(`"${title}" (CHANGELOG ${release.version}) has no entry in RELEASE_TILE_MAP`);
       return [{ title, body: firstSentence(rest), text: rest, platforms: e.platforms, icon: meta.icon, docs: meta.docs }];
     });
+}
+
+/** What "Linux first" means in this build, each fact checkable in the
+ * download or its CHANGELOG section (a test checks the CHANGELOG ones). */
+export function linuxFacts(): string[] {
+  const linux = DOWNLOADS.find((d) => d.os === "linux" && d.available);
+  const distros = linux?.requirement.split(": ")[1] ?? "";
+  return [
+    `A .deb for ${distros}`,
+    "Dictate on X11 and Wayland",
+    "SSH hosts on x86-64 and arm64",
+  ];
 }

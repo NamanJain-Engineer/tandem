@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { engineLetters } from "../components/site/home/Engines";
 import { RELEASES } from "../lib/changelog";
-import { CAPABILITIES, FEATURES, MODE_ROWS, RELEASE_TILE_MAP, releaseTiles } from "../lib/home";
+import { CAPABILITIES, FEATURES, MODE_ROWS, RELEASE_TILE_MAP, linuxFacts, releaseTiles } from "../lib/home";
 import { formatSize, releaseAssets } from "../lib/manifest";
 import { VIDEO } from "../lib/media";
 import { RELEASE } from "../lib/release";
@@ -84,5 +84,13 @@ describe("home page", () => {
     expect(home.match(/<script/g)?.length).toBe(1);
     expect(home).toMatch(/<details[^>]*name="faq"/);
     expect(home).toMatch(/<img[^>]*src="\/demo\/still\.jpg"[^>]*fetchpriority="high"/);
+  });
+
+  it("F-WB-01 \"Linux first\" says only what this build ships", () => {
+    const facts = linuxFacts();
+    expect(facts[0]).toContain("Ubuntu 22.04+");
+    const notes = (RELEASES.find((r) => r.version === RELEASE.version)?.entries ?? []).map((e) => e.text).join(" ");
+    for (const word of ["X11", "Wayland", "arm64", "x86-64"]) expect(notes, word).toContain(word);
+    for (const f of facts) expect(text(home)).toContain(f);
   });
 });
