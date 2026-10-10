@@ -3,4 +3,4 @@
 /**
  * Named predicates the UI evaluates to enable or hide a command.
  */
-export type EnabledWhen = "always" | "code_mode" | "workspace_open" | "pane_focused" | "thread_open" | "pane_or_cell";
+export type EnabledWhen = "always" | "code_mode" | "workspace_open" | "pane_focused" | "thread_open" | "pane_or_cell" | "routines";

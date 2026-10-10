@@ -8,6 +8,7 @@ import { showSource } from "../../stores/focus";
 import { useLayout } from "../../stores/layout";
 import { useSettings } from "../../stores/settings";
 import { useUi } from "../../stores/ui";
+import { useSession } from "../../stores/session";
 import { useWorkspaces } from "../../stores/workspaces";
 import { COMMANDS, bindingFor, commandTitle, isEnabled, runCommand } from "../commands/commands";
 import { keysOf } from "../commands/keys";
@@ -72,6 +73,7 @@ export function Palette() {
   useUi((s) => s.mode);
   const platform = useBoot((s) => s.boot?.platform ?? "linux");
   const mac = platform === "macos";
+  const routines = useSession((s) => !!s.entitlement?.limits.routines);
   // Rebound shortcuts show as soon as they change.
   useSettings((s) => s.values.shortcut_overrides);
   const item = (id: string): PaletteItem | null => {
@@ -112,7 +114,7 @@ export function Palette() {
       heading: t("palette.settings"),
       items: [
         ...listed(["settings.open"]),
-        ...settingsPages(platform).map((p) => ({
+        ...settingsPages(platform, routines).map((p) => ({
           id: `settings.${p.id}`,
           label: p.label,
           icon: <Settings size={16} />,

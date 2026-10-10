@@ -174,10 +174,17 @@ describe("E2E-M3-9 keyboard", () => {
       await input.waitForDisplayed({ timeout: 3_000 });
       await typeKeys(EN[`cmd.${id}`] ?? id);
       await browser.keys("Enter");
-      await browser.waitUntil(async () => ((await runs())[id] ?? 0) === was + 1, {
-        timeout: 3_000,
-        timeoutMsg: `${id} didn't run from the palette`,
-      });
+      // Plan-gated commands are absent on this Free profile (F-RT-04): Enter
+      // runs nothing.
+      if (COMMANDS.find((c) => c.id === id)?.enabledWhen === "routines") {
+        await browser.pause(500);
+        expect((await runs())[id] ?? 0).toBe(was);
+      } else {
+        await browser.waitUntil(async () => ((await runs())[id] ?? 0) === was + 1, {
+          timeout: 3_000,
+          timeoutMsg: `${id} didn't run from the palette`,
+        });
+      }
       // Close whatever it opened (dialog, picker, find bar, Settings) and come back to Code.
       for (let i = 0; i < 2; i++) {
         await browser.keys("Escape");

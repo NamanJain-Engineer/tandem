@@ -146,6 +146,10 @@ jobs:
           echo "gpg=$(on "$LINUX_GPG_PRIVATE_KEY")" >> "$GITHUB_OUTPUT"
           echo "updater=$(on "$TAURI_SIGNING_PRIVATE_KEY")" >> "$GITHUB_OUTPUT"
 
+      - name: Build the sidecars
+        shell: bash
+        run: sh scripts/build-sidecars.sh ${{ matrix.target }}
+
       - name: Build
         uses: tauri-apps/tauri-action@v0
         env:
@@ -169,6 +173,7 @@ jobs:
           # with Azure credentials.
           args: >-
             --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+            --config src-tauri/tauri.sidecars.conf.json
             ${{ steps.secrets.outputs.updater == 'true' && '--config {"bundle":{"createUpdaterArtifacts":true}}' || '' }}
             ${{ matrix.name == 'macos' && steps.secrets.outputs.apple != 'true' && '--config {"bundle":{"macOS":{"signingIdentity":"-"}}}' || '' }}
             ${{ matrix.name == 'windows' && steps.secrets.outputs.azure == 'true' && format('--config {{"bundle":{{"windows":{{"signCommand":"trusted-signing-cli -e {0} -a {1} -c {2} %1"}}}}}}', secrets.AZURE_SIGNING_ENDPOINT, secrets.AZURE_SIGNING_ACCOUNT, secrets.AZURE_CERT_PROFILE) || '' }}

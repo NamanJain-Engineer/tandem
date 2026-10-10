@@ -96,7 +96,7 @@
     "pc": null,
     "pcTerminal": null,
     "inText": false,
-    "enabledWhen": "always"
+    "enabledWhen": "routines"
   },
   {
     "id": "rail.toggle",

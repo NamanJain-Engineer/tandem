@@ -51,8 +51,9 @@ const opts = (keys: string[], prefix: string) =>
 const segs = (keys: string[], prefix: string) =>
   keys.map((k) => ({ id: k, label: t(`${prefix}.${k}` as Parameters<typeof t>[0]) }));
 
-/** The pages shipped so far (UI-101, 102, 104, 105, 112, 113, 114, 115, 116), in UI-100 order. */
-export function settingsPages(platform: string): PageDef[] {
+/** The pages shipped so far (UI-101, 102, 104, 105, 112, 113, 114, 115, 116), in UI-100 order.
+ * `routines`: the plan has routines; without them "Pause routines" is absent. */
+export function settingsPages(platform: string, routines = false): PageDef[] {
   const mac = platform === "macos";
   return [
     {
@@ -436,20 +437,29 @@ export function settingsPages(platform: string): PageDef[] {
           label: t("dictate.mic.label"),
           description: t("dictate.mic.desc"),
           keywords: ["microphone", "input", "bluetooth"],
-          control: () => <MicSelect k="dictate_mic" label={t("dictate.mic.label")} none={t("dictate.mic.none")} />,
+          control: () => (
+            <MicSelect k="dictate_mic" label={t("dictate.mic.label")} none={t("dictate.mic.none")} />
+          ),
         },
         {
           id: "dictate_backup_mic",
           label: t("dictate.mic.backup"),
           keywords: ["backup", "fallback"],
-          control: () => <MicSelect k="dictate_backup_mic" label={t("dictate.mic.backup")} none={t("dictate.mic.none")} />,
+          control: () => (
+            <MicSelect k="dictate_backup_mic" label={t("dictate.mic.backup")} none={t("dictate.mic.none")} />
+          ),
         },
         {
           id: "dictate_gain",
           label: t("dictate.gain"),
           keywords: ["boost", "gain", "volume"],
           control: () => (
-            <SegmentControl k="dictate_gain" label={t("dictate.gain")} fallback="off" options={segs(["off", "2x", "4x", "6x", "8x"], "dictate.gain")} />
+            <SegmentControl
+              k="dictate_gain"
+              label={t("dictate.gain")}
+              fallback="off"
+              options={segs(["off", "2x", "4x", "6x", "8x"], "dictate.gain")}
+            />
           ),
         },
         {
@@ -477,7 +487,12 @@ export function settingsPages(platform: string): PageDef[] {
           description: platform === "windows" ? t("dictate.output.windowsNote") : undefined,
           keywords: ["paste", "clipboard", "insert"],
           control: (ids) => (
-            <SelectControl k="dictate_output" ids={ids} fallback="paste" options={opts(["paste", "clipboard"], "dictate.output")} />
+            <SelectControl
+              k="dictate_output"
+              ids={ids}
+              fallback="paste"
+              options={opts(["paste", "clipboard"], "dictate.output")}
+            />
           ),
         },
         ...(platform === "windows"
@@ -487,7 +502,9 @@ export function settingsPages(platform: string): PageDef[] {
                 id: "dictate_pause_media",
                 label: t("dictate.pauseMedia"),
                 keywords: ["mute", "music", "pause"],
-                control: (ids: Ids) => <BoolControl k="dictate_pause_media" ids={ids} label={t("dictate.pauseMedia")} />,
+                control: (ids: Ids) => (
+                  <BoolControl k="dictate_pause_media" ids={ids} label={t("dictate.pauseMedia")} />
+                ),
               },
             ]),
         {
@@ -514,27 +531,41 @@ export function settingsPages(platform: string): PageDef[] {
           label: t("dictate.widget.style"),
           keywords: ["widget style"],
           control: (ids) => (
-            <SelectControl k="dictate_widget_style" ids={ids} fallback="logo_text" options={opts(["logo_text", "logo", "mono"], "dictate.widget.style")} />
+            <SelectControl
+              k="dictate_widget_style"
+              ids={ids}
+              fallback="logo_text"
+              options={opts(["logo_text", "logo", "mono"], "dictate.widget.style")}
+            />
           ),
         },
         {
           id: "dictate_follow_cursor",
           label: t("dictate.widget.follow"),
           keywords: ["displays", "monitor", "cursor"],
-          control: (ids) => <BoolControl k="dictate_follow_cursor" ids={ids} label={t("dictate.widget.follow")} />,
+          control: (ids) => (
+            <BoolControl k="dictate_follow_cursor" ids={ids} label={t("dictate.widget.follow")} />
+          ),
         },
         {
           id: "dictate_lock_position",
           label: t("dictate.widget.lock"),
           keywords: ["position", "drag"],
-          control: (ids) => <BoolControl k="dictate_lock_position" ids={ids} label={t("dictate.widget.lock")} />,
+          control: (ids) => (
+            <BoolControl k="dictate_lock_position" ids={ids} label={t("dictate.widget.lock")} />
+          ),
         },
         {
           id: "dictate_keep_history",
           label: t("dictate.keepHistory"),
           keywords: ["history", "retention"],
           control: (ids) => (
-            <SelectControl k="dictate_keep_history" ids={ids} fallback="forever" options={opts(["forever", "90d", "30d", "7d"], "dictate.keepHistory")} />
+            <SelectControl
+              k="dictate_keep_history"
+              ids={ids}
+              fallback="forever"
+              options={opts(["forever", "90d", "30d", "7d"], "dictate.keepHistory")}
+            />
           ),
         },
       ],
@@ -570,15 +601,19 @@ export function settingsPages(platform: string): PageDef[] {
           keywords: ["mail", "pause", "message"],
           control: (ids) => <BoolControl k="pause_all_mail" ids={ids} label={t("settings.pauseAllMail")} />,
         },
-        {
-          id: "pause_all_routines",
-          label: t("settings.pauseAllRoutines"),
-          description: t("settings.pauseAllRoutines.desc"),
-          keywords: ["routines", "pause", "schedule"],
-          control: (ids) => (
-            <BoolControl k="pause_all_routines" ids={ids} label={t("settings.pauseAllRoutines")} />
-          ),
-        },
+        ...(routines
+          ? [
+              {
+                id: "pause_all_routines",
+                label: t("settings.pauseAllRoutines"),
+                description: t("settings.pauseAllRoutines.desc"),
+                keywords: ["routines", "pause", "schedule"],
+                control: (ids: Ids) => (
+                  <BoolControl k="pause_all_routines" ids={ids} label={t("settings.pauseAllRoutines")} />
+                ),
+              },
+            ]
+          : []),
       ],
     },
     {
