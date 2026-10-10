@@ -206,3 +206,65 @@ pub async fn teammate_suggestions(
     let teammate = state.teammates.get(&id).await?;
     Ok(crate::services::teammates::suggestions(&teammate.brief))
 }
+
+/// `teammate_draft_with_ai` (F-AG-04): Pro, signed in and online; nothing
+/// is saved.
+#[tauri::command]
+pub async fn teammate_draft_with_ai(
+    state: State<'_, AppState>,
+    description: String,
+) -> Result<crate::services::teammate_draft::TeammateDraft, IpcError> {
+    use crate::services::teammate_draft as draft;
+    use tandem_core::ErrorCode;
+    if description.trim().is_empty() {
+        return Err(IpcError::new(ErrorCode::Invalid, "Describe the job first"));
+    }
+    let view = state.entitlements.view();
+    if view.plan == tandem_core::entitlement::Plan::Free {
+        return Err(IpcError::new(
+            ErrorCode::ForbiddenPlan,
+            "Create with AI is part of Pro.",
+        ));
+    }
+    if !state.endpoints.hosted || !view.online || !state.auth.is_signed_in() {
+        return Err(IpcError::new(ErrorCode::Unavailable, draft::COULDNT_DRAFT));
+    }
+    let engines: Vec<String> = {
+        let e = &state.terminals.engines;
+        e.registry()
+            .all()
+            .iter()
+            .filter(|s| {
+                crate::services::threads::has_chat_adapter(s) && e.installed(&s.id).is_some()
+            })
+            .map(|s| s.id.clone())
+            .collect()
+    };
+    let plugins: Vec<String> = tandem_store::repo::plugins::connections(&state.store)
+        .await?
+        .into_iter()
+        .map(|c| c.plugin_id)
+        .collect();
+    let raw = match draft::fixture() {
+        Some(v) => v,
+        None => {
+            let body = draft::body(&description, &engines, &plugins);
+            let api = state.api.clone();
+            state
+                .auth
+                .with_token(|token| {
+                    let (api, body) = (api.clone(), body.clone());
+                    async move { api.ai_teammate_draft(&token, body).await }
+                })
+                .await
+                .map_err(|e| draft::api_error(&e))?
+        }
+    };
+    draft::sanitize(&raw, &engines, &plugins)
+        .ok_or_else(|| IpcError::new(ErrorCode::Unavailable, draft::COULDNT_DRAFT))
+}
+
+#[tauri::command]
+pub fn teammate_templates() -> Vec<crate::services::teammate_draft::TeammateTemplate> {
+    crate::services::teammate_draft::templates()
+}

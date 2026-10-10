@@ -12,8 +12,23 @@ function disk(initial: Record<string, string> = {}) {
   let clock = 1_000;
   let next = 0;
   let failWrites = false;
-  const meta = (id: string): ScratchNote => ({ id, title: (notes.get(id) ?? "").split("\n").find((l) => l.trim())?.replace(/^#+\s*/, "") ?? "", updatedAt: ++clock, bytes: notes.get(id)?.length ?? 0 });
-  const err = (code: string, message: string): IpcError => ({ code: code as IpcError["code"], message, stage: "scratchpad", hint: null, retryable: false });
+  const meta = (id: string): ScratchNote => ({
+    id,
+    title:
+      (notes.get(id) ?? "")
+        .split("\n")
+        .find((l) => l.trim())
+        ?.replace(/^#+\s*/, "") ?? "",
+    updatedAt: ++clock,
+    bytes: notes.get(id)?.length ?? 0,
+  });
+  const err = (code: string, message: string): IpcError => ({
+    code: code as IpcError["code"],
+    message,
+    stage: "scratchpad",
+    hint: null,
+    retryable: false,
+  });
   const calls = fakeBackend({
     scratchpad_list: () => [...notes.keys()].map(meta).reverse(),
     scratchpad_read: (a) => {
@@ -86,13 +101,19 @@ describe("Scratchpad (F-SH-12)", () => {
     // jsdom measures the panel as narrow: the new note opens on its own.
     await screen.findByTestId("note-editor");
     fireEvent.click(screen.getByTestId("scratchpad-back"));
-    await waitFor(() => expect(screen.getAllByTestId("scratchpad-note").map((n) => n.textContent)).toEqual([expect.stringMatching(/^Untitled note/)]));
+    await waitFor(() =>
+      expect(screen.getAllByTestId("scratchpad-note").map((n) => n.textContent)).toEqual([
+        expect.stringMatching(/^Untitled note/),
+      ]),
+    );
     fireEvent.click(screen.getAllByTestId("scratchpad-note")[0] as HTMLElement);
     await screen.findByTestId("note-editor");
     act(() => useScratchpad.getState().edit("# Groceries\n- [ ] milk"));
     fireEvent.click(screen.getByTestId("scratchpad-back"));
     // Going back writes what was typed.
-    await waitFor(() => expect(screen.getAllByTestId("scratchpad-note")[0]?.textContent).toMatch(/^Groceries/));
+    await waitFor(() =>
+      expect(screen.getAllByTestId("scratchpad-note")[0]?.textContent).toMatch(/^Groceries/),
+    );
   });
 
   it("F-SH-12 Delete asks first, and a save still waiting for the note isn't sent", async () => {
@@ -108,12 +129,18 @@ describe("Scratchpad (F-SH-12)", () => {
       useScratchpad.setState({ activeId: null, text: "" });
     });
     const before = writes(d.calls).length;
-    const row = screen.getAllByTestId("scratchpad-note").find((r) => r.getAttribute("data-id") === "note_b") as HTMLElement;
+    const row = screen
+      .getAllByTestId("scratchpad-note")
+      .find((r) => r.getAttribute("data-id") === "note_b") as HTMLElement;
     fireEvent.click(within(row.parentElement as HTMLElement).getByRole("button", { name: /^Delete / }));
     const dialog = await screen.findByRole("alertdialog");
     expect(dialog.textContent).toContain("Delete “Bin me”?");
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete note" }));
-    await waitFor(() => expect(screen.getAllByTestId("scratchpad-note").map((r) => r.getAttribute("data-id"))).toEqual(["note_a"]));
+    await waitFor(() =>
+      expect(screen.getAllByTestId("scratchpad-note").map((r) => r.getAttribute("data-id"))).toEqual([
+        "note_a",
+      ]),
+    );
     await act(async () => new Promise((r) => setTimeout(r, 2 * SAVE_MS)));
     expect(writes(d.calls).length).toBe(before);
     expect(d.notes.has("note_b")).toBe(false);
@@ -146,6 +173,11 @@ describe("Scratchpad (F-SH-12)", () => {
     expect(calls.filter((c) => c.cmd === "scratchpad_list")).toHaveLength(1);
     disk({ note_a: "older", note_b: "newer" });
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    await waitFor(() => expect(screen.getAllByTestId("scratchpad-note").map((r) => r.getAttribute("data-id"))).toEqual(["note_b", "note_a"]));
+    await waitFor(() =>
+      expect(screen.getAllByTestId("scratchpad-note").map((r) => r.getAttribute("data-id"))).toEqual([
+        "note_b",
+        "note_a",
+      ]),
+    );
   });
 });

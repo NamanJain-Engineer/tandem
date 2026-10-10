@@ -27,6 +27,7 @@ pub mod opener;
 pub mod restore;
 pub mod staging;
 pub mod status;
+pub mod teammate_draft;
 pub mod teammate_tools;
 pub mod teammates;
 pub mod telemetry;

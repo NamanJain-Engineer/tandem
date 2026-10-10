@@ -48,6 +48,8 @@ macro_rules! app_commands {
             commands::teammates::skill_add_from_library,
             commands::teammates::teammate_suggestions,
             commands::threads::thread_reorder,
+            commands::teammates::teammate_draft_with_ai,
+            commands::teammates::teammate_templates,
             commands::plugins::plugins_catalog,
             commands::plugins::grants_list,
             commands::plugins::grants_set,

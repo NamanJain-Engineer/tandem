@@ -2,7 +2,10 @@
 // app-wide dispatcher has already taken registry shortcuts; what reaches here
 // is decided per key: copy, paste, the agent newline, or the PTY.
 
-export type KeyLike = Pick<KeyboardEvent, "type" | "key" | "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey" | "isComposing">;
+export type KeyLike = Pick<
+  KeyboardEvent,
+  "type" | "key" | "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey" | "isComposing"
+>;
 
 export type KeyContext = {
   mac: boolean;
@@ -16,7 +19,10 @@ export type KeyAction = "copy" | "paste" | "newline" | "pass";
 export function keyAction(e: KeyLike, ctx: KeyContext): KeyAction {
   if (e.type !== "keydown" || e.isComposing) return "pass";
   const only = (mods: { ctrl?: boolean; meta?: boolean; shift?: boolean; alt?: boolean }) =>
-    e.ctrlKey === !!mods.ctrl && e.metaKey === !!mods.meta && e.shiftKey === !!mods.shift && e.altKey === !!mods.alt;
+    e.ctrlKey === !!mods.ctrl &&
+    e.metaKey === !!mods.meta &&
+    e.shiftKey === !!mods.shift &&
+    e.altKey === !!mods.alt;
   const c = e.code === "KeyC";
   const v = e.code === "KeyV";
   if (ctx.mac) {

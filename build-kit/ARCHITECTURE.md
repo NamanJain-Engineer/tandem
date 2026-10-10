@@ -723,7 +723,8 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `teammate_create` | `{input: TeammateInput {name, brief, engineId, model?, effort?, preferredAccountId?, places, avatarHue?, settings?}}` | `Teammate` | Conflict ("Name already used"), LimitReached, EngineMissing, Invalid | F-AG-01, F-AG-04 |
 | `teammate_update` | `{id, patch: TeammatePatch}` (only the fields given change; `model`, `effort`, `preferredAccountId`, `avatarHue` take `null` to clear; `pinned: true` unpins every other teammate: one hero; new settings or engine start the teammate's chats on fresh sessions) | `Teammate` | Conflict, Invalid, EngineMissing | F-AG-05 |
 | `teammate_delete` / `teammate_duplicate` / `teammate_reorder` | `{id}` / `{id}` / `{ids}` | — / `Teammate` / — | — | F-AG-02 |
-| `teammate_draft_with_ai` | `{description}` | `TeammateDraft {name, brief, engineId, pluginIds}` (nothing saved) | ForbiddenPlan, CreditsExhausted, Unavailable | F-AG-04 |
+| `teammate_draft_with_ai` | `{description}` | `TeammateDraft {name, brief, engineId, pluginIds}` (nothing saved; `engineId` only when installed and chat-capable, `pluginIds` only connected ones; debug E2E builds answer from `TANDEM_FIXTURE_TEAMMATE_DRAFT`, D-8) | ForbiddenPlan, CreditsExhausted, Unavailable | F-AG-04 |
+| `teammate_templates` | — | `[TeammateTemplate {id, name, brief}]` (Reviewer, Release notes writer, Researcher, Triage; the sheet's offline / Free choice) | — | F-AG-04 |
 | `teammate_suggestions` | `{id}` | `[String; 3]` (local: the brief's first sentences as asks, "You draft…" → "Draft…", constraints skipped, general asks to fill) | — | F-AG-03 |
 | `teammate_launch_in_terminal` | `{id, placePath, tabId}` | `PaneRecord` | EngineMissing | F-AG-13 |
 | `memory_get` | `{teammateId}` | `Memory {notes, about, cap, used, aboutCap: 2048, aboutUsed}` (lengths in characters) | — | F-AG-07 |

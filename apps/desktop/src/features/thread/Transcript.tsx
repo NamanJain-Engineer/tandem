@@ -174,7 +174,15 @@ function Working({ startedAt }: { startedAt: number | null }) {
   );
 }
 
-function Hover({ children, actions, className }: { children: ReactNode; actions: ReactNode; className?: string }) {
+function Hover({
+  children,
+  actions,
+  className,
+}: {
+  children: ReactNode;
+  actions: ReactNode;
+  className?: string;
+}) {
   return (
     <div className={cx("group relative", className)}>
       {children}

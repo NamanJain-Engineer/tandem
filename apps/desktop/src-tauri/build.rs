@@ -207,6 +207,8 @@ const COMMANDS: &[&str] = &[
     "skill_add_from_library",
     "teammate_suggestions",
     "thread_reorder",
+    "teammate_draft_with_ai",
+    "teammate_templates",
 ];
 
 const TEST_COMMANDS: &[&str] = &[

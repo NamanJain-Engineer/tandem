@@ -61,7 +61,11 @@ export const FindBar = forwardRef<HTMLInputElement, FindBarProps>(function FindB
         onKeyDown={onKeyDown}
         className="h-7 w-44 rounded-sm border border-border bg-surface-2 px-2 text-sm text-fg outline-none placeholder:text-fg-subtle focus:border-accent aria-invalid:border-danger"
       />
-      <span role="status" data-testid="find-count" className="min-w-16 px-1.5 text-center text-xs tabular-nums text-fg-muted">
+      <span
+        role="status"
+        data-testid="find-count"
+        className="min-w-16 px-1.5 text-center text-xs tabular-nums text-fg-muted"
+      >
         {label}
       </span>
       <IconButton
@@ -78,8 +82,20 @@ export const FindBar = forwardRef<HTMLInputElement, FindBarProps>(function FindB
         pressed={flags.regex}
         onClick={() => onFlags({ ...flags, regex: !flags.regex })}
       />
-      <IconButton size="sm" icon={<ChevronUp size={15} />} label={t("find.prev")} onClick={() => onStep("prev")} disabled={!query} />
-      <IconButton size="sm" icon={<ChevronDown size={15} />} label={t("find.next")} onClick={() => onStep("next")} disabled={!query} />
+      <IconButton
+        size="sm"
+        icon={<ChevronUp size={15} />}
+        label={t("find.prev")}
+        onClick={() => onStep("prev")}
+        disabled={!query}
+      />
+      <IconButton
+        size="sm"
+        icon={<ChevronDown size={15} />}
+        label={t("find.next")}
+        onClick={() => onStep("next")}
+        disabled={!query}
+      />
       <IconButton size="sm" icon={<X size={15} />} label={t("find.close")} onClick={onClose} />
     </div>
   );

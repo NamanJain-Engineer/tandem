@@ -13,6 +13,7 @@ import {
   Avatar,
   Banner,
   Button,
+  ConfirmDialog,
   ContextMenu,
   EmptyState,
   EngineBadge,
@@ -410,7 +411,14 @@ export function TeammatePage({
   const engine = useEngines((st) => st.list.find((e) => e.spec.id === tm.engineId));
   const chats = useTeammates((st) => st.chats[tm.id]?.length ?? 0);
   const newChat = useTeammates((st) => st.newChat);
-  const [tab, setTab] = useState<PageTab>("chats");
+  const [tab, setTabNow] = useState<PageTab>("chats");
+  const [leaving, setLeaving] = useState<PageTab | null>(null);
+  const dirty = useTeammates((st) => st.dirty);
+  // Unsaved settings: ask before leaving the tab (UI-75's guard).
+  const setTab = (next: PageTab) => {
+    if (tab === "settings" && next !== "settings" && dirty) setLeaving(next);
+    else setTabNow(next);
+  };
   const { show } = useToast();
   const status = teammateStatus(s);
   const pill =
@@ -515,6 +523,18 @@ export function TeammatePage({
           )
         }
       />
+      <ConfirmDialog
+        open={leaving !== null}
+        onOpenChange={(o) => !o && setLeaving(null)}
+        title={t("agent.settings.leaveTitle")}
+        body={t("agent.settings.leaveBody")}
+        confirmLabel={t("agent.settings.leaveOk")}
+        onConfirm={() => {
+          useTeammates.getState().setDirty(false);
+          if (leaving) setTabNow(leaving);
+          setLeaving(null);
+        }}
+      />
     </div>
   );
 }
@@ -532,6 +552,8 @@ export function AgentMain({
   const selectedId = useTeammates((s) => s.selectedId);
   const select = useTeammates((s) => s.select);
   const open = list.find((s) => s.teammate.id === selectedId) ?? null;
+  const pendingId = useTeammates((s) => s.pendingId);
+  const resolvePending = useTeammates((s) => s.resolvePending);
   // The hero opens by default.
   useEffect(() => {
     if (!selectedId && loaded && list.length) {
@@ -550,5 +572,17 @@ export function AgentMain({
       </div>
     );
   }
-  return <TeammatePage key={open.teammate.id} s={open} visible={visible} settings={settingsFor?.(open)} />;
+  return (
+    <>
+      <TeammatePage key={open.teammate.id} s={open} visible={visible} settings={settingsFor?.(open)} />
+      <ConfirmDialog
+        open={pendingId !== null}
+        onOpenChange={(o) => !o && resolvePending(false)}
+        title={t("agent.settings.leaveTitle")}
+        body={t("agent.settings.leaveBody")}
+        confirmLabel={t("agent.settings.leaveOk")}
+        onConfirm={() => resolvePending(true)}
+      />
+    </>
+  );
 }

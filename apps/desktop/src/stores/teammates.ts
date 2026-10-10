@@ -12,6 +12,13 @@ type TeammatesState = {
   error: IpcError | null;
   version: number;
   selectedId: string | null;
+  /** The open settings have unsaved changes (the guard asks first). */
+  dirty: boolean;
+  /** A teammate the user picked while settings were unsaved. */
+  pendingId: string | null;
+  setDirty: (d: boolean) => void;
+  /** Leaves unsaved settings for the pending teammate (or stays). */
+  resolvePending: (leave: boolean) => void;
   /** Each teammate's chats, in tab order. */
   chats: Record<string, Thread[]>;
   /** The open chat per teammate. */
@@ -56,8 +63,24 @@ export const useTeammates = create<TeammatesState>((set, get) => ({
     }
   },
   select: (id) => {
-    set({ selectedId: id });
+    if (get().dirty && id !== get().selectedId) {
+      set({ pendingId: id });
+      return;
+    }
+    set({ selectedId: id, pendingId: null });
     if (id) void get().loadChats(id);
+  },
+  dirty: false,
+  pendingId: null,
+  setDirty: (dirty) => set({ dirty }),
+  resolvePending: (leave) => {
+    const id = get().pendingId;
+    if (!leave) {
+      set({ pendingId: null });
+      return;
+    }
+    set({ dirty: false, pendingId: null });
+    get().select(id);
   },
   chats: {},
   chatOf: {},
@@ -148,5 +171,15 @@ export function followTeammates(): void {
 /** Tests: an empty store. */
 export function resetTeammates(): void {
   following = false;
-  useTeammates.setState({ list: [], loaded: false, error: null, version: 0, selectedId: null, chats: {}, chatOf: {} });
+  useTeammates.setState({
+    list: [],
+    loaded: false,
+    error: null,
+    version: 0,
+    selectedId: null,
+    chats: {},
+    chatOf: {},
+    dirty: false,
+    pendingId: null,
+  });
 }

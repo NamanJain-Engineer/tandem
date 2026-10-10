@@ -177,7 +177,10 @@ export type Usage = {
 };
 
 /** Tokens over the whole thread; `engineOf` names the engine of each turn. */
-export function usageOf(view: ThreadView, engineOf: (turnId: string) => string | undefined = () => undefined): Usage {
+export function usageOf(
+  view: ThreadView,
+  engineOf: (turnId: string) => string | undefined = () => undefined,
+): Usage {
   let input = 0;
   let output = 0;
   let contextFillPct: number | null = null;

@@ -39,6 +39,8 @@
     "allow-skill-add-from-library",
     "allow-teammate-suggestions",
     "allow-thread-reorder",
+    "allow-teammate-draft-with-ai",
+    "allow-teammate-templates",
     "allow-app-log",
     "allow-app-copy-diagnostics",
     "allow-app-open-logs-folder",

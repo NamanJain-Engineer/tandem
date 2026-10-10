@@ -60,7 +60,13 @@ export function ShellIntegrationControl({ ids, label }: { ids: Ids; label: strin
   const value = useSetting<Record<string, boolean>>("term_shell_integration", {});
   const save = useSave();
   return (
-    <div id={ids.id} role="group" aria-label={label} aria-describedby={ids.describedBy} className="flex flex-wrap gap-x-4 gap-y-2">
+    <div
+      id={ids.id}
+      role="group"
+      aria-label={label}
+      aria-describedby={ids.describedBy}
+      className="flex flex-wrap gap-x-4 gap-y-2"
+    >
       {INTEGRATED_SHELLS.map(([key, name]) => (
         <Checkbox
           key={key}

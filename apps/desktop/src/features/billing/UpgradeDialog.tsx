@@ -86,7 +86,11 @@ export function UpgradeDialog() {
             <p className="text-base text-fg" data-testid="upgrade-gate">
               {gate.kind === "workspaces"
                 ? t("upgrade.gate.workspaces", { n: gate.limit })
-                : t("upgrade.gate.panes", { n: gate.limit })}
+                : gate.kind === "teammates"
+                  ? t("upgrade.gate.teammates", { n: gate.limit })
+                  : gate.kind === "thread_grid"
+                    ? t("upgrade.gate.thread_grid", { n: gate.limit })
+                    : t("upgrade.gate.panes", { n: gate.limit })}
             </p>
           )}
           {!hosted && (

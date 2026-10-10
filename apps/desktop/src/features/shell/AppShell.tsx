@@ -2,7 +2,8 @@ import { LaunchSheet } from "../code/LaunchSheet";
 import { HandoffDialog } from "../code/HandoffDialog";
 import { WorktreeDialogs } from "../code/Worktrees";
 import { useEffect } from "react";
-import { useToast } from "@tandem/ui";
+import { IconButton, useToast } from "@tandem/ui";
+import { Plus } from "lucide-react";
 import { t } from "../../i18n";
 import { useLayout } from "../../stores/layout";
 import { useUi } from "../../stores/ui";
@@ -12,7 +13,9 @@ import { CodeMain } from "../code/CodeMain";
 import { CodeRail } from "../code/CodeRail";
 import { commandRuns, setCommandToast } from "../commands/commands";
 import { AgentRail } from "../agents/AgentRail";
+import { NewTeammateSheet, useNewTeammate } from "../agents/NewTeammateSheet";
 import { AgentMain } from "../agents/TeammatePage";
+import { TeammateSettings } from "../agents/TeammateSettings";
 import { followTeammates } from "../../stores/teammates";
 import { ThreadMain } from "../thread/ThreadMain";
 import { ThreadRail } from "../thread/ThreadRail";
@@ -137,7 +140,18 @@ export function AppShell() {
           <CodeRail />
         </div>
         <div style={{ display: show("agent") }}>
-          <AgentRail collapsed={railCollapsed} />
+          <AgentRail
+            collapsed={railCollapsed}
+            actions={
+              <IconButton
+                size="sm"
+                icon={<Plus size={16} />}
+                label={t("agent.rail.new")}
+                onClick={() => useNewTeammate.getState().show(true)}
+                data-testid="teammate-new"
+              />
+            }
+          />
         </div>
         <div style={{ display: show("thread") }}>
           <ThreadRail collapsed={railCollapsed} />
@@ -153,7 +167,10 @@ export function AppShell() {
           </div>
           {/* Every surface stays mounted; hidden ones are display:none (F-SH-02). */}
           <div className="h-full" style={{ display: mode === "agent" ? "block" : "none" }}>
-            <AgentMain visible={!settingsOpen && mode === "agent"} />
+            <AgentMain
+              visible={!settingsOpen && mode === "agent"}
+              settingsFor={(s) => <TeammateSettings key={s.teammate.id} s={s} />}
+            />
           </div>
           <div className="h-full" style={{ display: mode === "thread" ? "block" : "none" }}>
             <ThreadMain visible={!settingsOpen && mode === "thread"} />
@@ -166,6 +183,7 @@ export function AppShell() {
       <WorktreeDialogs />
       <LaunchSheet />
       <HandoffDialog />
+      <NewTeammateSheet />
       <Palette />
       <OrphansDialog />
       <RestartDialog />

@@ -420,6 +420,15 @@ export function settingsPages(platform: string): PageDef[] {
             <BoolControl k="allow_teammate_skills" ids={ids} label={t("settings.teammateSkills")} />
           ),
         },
+        {
+          id: "learn_after_turn",
+          label: t("settings.learnAfterTurn"),
+          description: t("settings.learnAfterTurn.desc"),
+          keywords: ["learn", "memory", "notes"],
+          control: (ids) => (
+            <BoolControl k="learn_after_turn" ids={ids} label={t("settings.learnAfterTurn")} />
+          ),
+        },
       ],
     },
     {

@@ -41,15 +41,7 @@ const MODES: Array<{
  * Tab order follows the visual order. */
 export function TitleBar() {
   const boot = useBoot((s) => s.boot);
-  const {
-    mode,
-    railCollapsed,
-    settingsOpen,
-    toggleRail,
-    setPalette,
-    openSettings,
-    openUpgrade,
-  } = useUi();
+  const { mode, railCollapsed, settingsOpen, toggleRail, setPalette, openSettings, openUpgrade } = useUi();
   const sidebarOpen = useSidebar((s) => s.open);
   const auth = useSession((s) => s.auth);
   const entitlement = useSession((s) => s.entitlement);
@@ -69,7 +61,10 @@ export function TitleBar() {
     {
       id: "help",
       label: t("menu.help"),
-      onSelect: () => invoke("app_open_external", { url: "https://vibezeo.com/download/#getting-started" }).catch(() => undefined),
+      onSelect: () =>
+        invoke("app_open_external", { url: "https://vibezeo.com/download/#getting-started" }).catch(
+          () => undefined,
+        ),
     },
     { id: "diag", label: t("menu.copyDiagnostics"), onSelect: () => void copyDiagnostics(show) },
     {
@@ -161,7 +156,6 @@ export function TitleBar() {
     },
     { id: "usage", label: t("menu.ws.usage"), disabled: true },
   ];
-
 
   return (
     <header

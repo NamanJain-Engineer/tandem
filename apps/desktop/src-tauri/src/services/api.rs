@@ -175,6 +175,12 @@ pub trait ApiClient: Send + Sync {
     async fn config(&self) -> Result<SignedConfig, ApiError>;
     /// `POST /v1/ai/title` (F-TH-15): a thread title of at most 60 characters.
     async fn ai_title(&self, access: &str, text: &str) -> Result<String, ApiError>;
+    /// `POST /v1/ai/teammate-draft` (F-AG-04, 10 credits): `{name, brief,
+    /// engine, plugins}` for a job description. The route lands in M13; a
+    /// client without it says so.
+    async fn ai_teammate_draft(&self, _access: &str, _body: Value) -> Result<Value, ApiError> {
+        Err(ApiError::Network("teammate drafts aren't available".into()))
+    }
     /// `GET /v1/me/events` as a stream of event names (`entitlement`, `credits`).
     async fn events(
         &self,
@@ -401,6 +407,16 @@ impl ApiClient for HttpApi {
     async fn config(&self) -> Result<SignedConfig, ApiError> {
         self.call(self.net.client().get(self.url("/v1/config")))
             .await
+    }
+
+    async fn ai_teammate_draft(&self, access: &str, body: Value) -> Result<Value, ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/ai/teammate-draft"))
+            .bearer_auth(access)
+            .json(&body);
+        self.call::<Value>(req).await
     }
 
     async fn ai_title(&self, access: &str, text: &str) -> Result<String, ApiError> {
