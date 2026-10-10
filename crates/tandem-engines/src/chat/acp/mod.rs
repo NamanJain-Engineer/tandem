@@ -635,12 +635,13 @@ impl AcpAdapter {
             .filter(|(k, _)| !k.starts_with("TANDEM_STATUS"))
             .cloned()
             .collect();
-        ProcessSpec::new(
+        let spec = ProcessSpec::new(
             req.program.clone(),
             self.args.iter().map(OsString::from).collect(),
             env,
             req.cwd.clone(),
-        )
+        );
+        super::Relocate::apply(req.relocate.as_ref(), spec)
     }
 
     pub(crate) async fn start_with(

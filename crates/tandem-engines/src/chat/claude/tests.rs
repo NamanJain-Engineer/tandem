@@ -96,6 +96,7 @@ fn start(access: Access, mode: ThreadMode, attended: bool) -> ChatStart {
         mcp_config: None,
         mcp: None,
         engine_version: None,
+        relocate: None,
         briefing: None,
         stdio_servers: Vec::new(),
     }
