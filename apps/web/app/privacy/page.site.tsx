@@ -60,7 +60,7 @@ export default function PrivacyPage() {
       <h2>The desktop app</h2>
       <ul>
         <li>
-          The current release ({RELEASE.version}) has no {SITE.product} accounts and don't contact our servers
+          The current release ({RELEASE.version}) has no {SITE.product} accounts and doesn't contact our servers
           at all: no sign-in, no analytics, no crash reports, no update checks.
         </li>
         <li>

@@ -3,6 +3,34 @@ title: Plugins and approvals
 description: Connect services once and approve what agents do with them.
 ---
 
-> **Not in the app yet.** Plugins and approvals isn't in the current release. This page describes what is being built (M12 in the build plan), and it will be filled in when it ships. [The changelog](/changelog/) says what each release contains.
+Plugins connect a service once, in **Settings › Plugins**; then you choose which teammates and threads may use it. Engines never see a plugin's credential: every call goes through Vibezeo's gateway on your computer, which adds the credential only for that service's own addresses.
 
-Plugins connect external services once and grant them to a teammate or thread. Every action has a risk class: some run, some ask you first, and some are held as drafts for you to review. Engines never see a plugin's token.
+## Connecting
+
+The connect sheet shows how each service connects: the service's sign-in in your browser, an API key, a token, or nothing at all. It shows each step and, if one fails, names it with the service's own message. Credentials are saved only in your system keychain. **Disconnect** revokes access where the service supports it, deletes the credential, and removes the plugin from every teammate and thread.
+
+In this build:
+
+- **Web fetch** is built in and needs no sign-in. It only reads: it follows robots.txt, refuses private network addresses (also after redirects), and stops at 2 MB.
+- **Sign in in your browser:** Notion, Sentry, Cloudflare, Linear, Supabase, Stripe and PostHog. Linear, Supabase, Stripe and PostHog also take an API key.
+- **Token:** GitHub (a fine-grained personal access token) and Slack (a bot token).
+- **Not available yet:** Gmail and Vercel need app registrations this build doesn't have, and their cards say so.
+- **Preview:** Google Ads, Meta Ads, X, YouTube, Shopify, QuickBooks, RevenueCat, Resend and Figma are listed but can't be connected yet.
+
+Free includes one connection, and Web fetch counts as one.
+
+## Who can use a plugin
+
+A new teammate starts with no plugins. Grant one per teammate (the plugin's **Teammates** tab, or the teammate's settings), per thread (**Attach › Plugins for this thread…** in the message box), or to every thread with **Grant these plugins to all threads**.
+
+## Approvals
+
+Every action has a risk class: Read, Write, Publish, Uses credits, Spend, Delete or Unknown.
+
+- Reads run.
+- Everything else asks you first, in the chat: the plugin, the action, the account, the target and any cost, with the full request behind a toggle. Writes and publishing offer **Allow for the rest of this chat**.
+- Spending, using credits, deleting and unknown actions always ask, and never offer Allow for the rest of this chat. In a plugin's **Approvals** tab you can let Full access chats run writes, or publish, without asking.
+- A spend is checked again right before it runs. If the amount changed after you approved it, it doesn't run.
+- Runs nobody is watching, such as teammate mail, never act on their own. Each write they want is held in **Held actions**, labelled with where it came from, for you to approve and run, edit and run, or discard.
+
+The connections are tested against each service's published interface, with local fixtures. If one fails with a real account, the connect sheet shows the step and the service's message.

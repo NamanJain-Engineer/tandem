@@ -9,13 +9,17 @@ items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md
 has every feature below with its full behaviour and acceptance tests.
 
 **Where it stands (10 October 2026, `product-m0-m5`):** M0–M14 are done,
-and so are M15's six features (its non-functional checks are under way). M16
+and so are M15's six features and its non-functional checks (pull request #38;
+the performance budgets still need the reference machines, `HUMAN_TODO.md`). M16
 has F-SH-12, F-AC-07, F-AU-01, F-BE-03, F-BE-12 and F-RT-05. That's 139 of 152
-features: all 65 P0s and every P1. Left: M16's 13 P2 extras. vibezeo.com serves
-0.4.0 (teammates, Find work, your data, shortcut rebinding and the usage page);
-Dictate (M8), tasks and routines (M11), plugins (M12) and SSH and WSL
-workspaces (M14) reach a download with the next release. M15 makes the P0/P1
-product launchable; M16 adds the P2 extras and the release candidate.
+features: all 65 P0s and every P1. Left: M16's 13 P2 extras, each now being
+built on its own branch: Conductor (F-CN-01 to F-CN-08), the phone companion and
+relay (F-RM-03, F-BE-11), skill sync and a teammate in a terminal (F-AG-10,
+F-AG-13) and the macOS Simulator pane (F-CD-21). vibezeo.com serves 0.5.0:
+Dictate (M8), tasks (M11), plugins (M12), SSH workspaces (M14) and Diagnostics
+(M15), on top of 0.4.0's teammates, Find work, your data, shortcut rebinding and
+usage page. Routines and running tasks are built and switch on with Pro; WSL
+workspaces wait for the Windows download.
 
 ## 0. First, before new features
 
