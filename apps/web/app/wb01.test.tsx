@@ -44,6 +44,8 @@ describe("F-WB-01 marketing site (M15)", () => {
     // F-DI-10 shipped: Enhance and Polish is priced, at 3 credits a use.
     expect(remaining).toContain("- [x] F-DI-10 ");
     expect(page).toContain('data-credit-price="rewrite"');
+    // Priced as a Pro feature that comes with accounts, never as the download's.
+    expect(page).toContain("switch on with a Pro account (the download, on the Free plan, never uses them)");
   });
 
   it("F-WB-01 /privacy lists what the app can send, when, and who processes it", () => {
