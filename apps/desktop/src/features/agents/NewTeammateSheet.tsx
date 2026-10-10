@@ -102,6 +102,11 @@ export function NewTeammateSheet() {
 
 function SheetBody({ onClose }: { onClose: () => void }) {
   const engines = useEngines((s) => s.list);
+  const enginesLoaded = useEngines((s) => s.loaded);
+  // Nothing else may have listed the engines yet (a launch straight into Agent mode).
+  useEffect(() => {
+    if (!enginesLoaded) void useEngines.getState().refresh();
+  }, [enginesLoaded]);
   const detecting = useEngines((s) => s.detecting);
   const detect = useEngines((s) => s.detect);
   const teammates = useTeammates((s) => s.list);

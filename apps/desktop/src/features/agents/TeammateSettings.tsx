@@ -99,6 +99,11 @@ export function patchOf(tm: Teammate, base: Form, next: Form): TeammatePatch {
 export function TeammateSettings({ s }: { s: TeammateSummary }) {
   const tm = s.teammate;
   const engines = useEngines((st) => st.list);
+  const enginesLoaded = useEngines((st) => st.loaded);
+  // Nothing else may have listed the engines yet (a launch straight into Agent mode).
+  useEffect(() => {
+    if (!enginesLoaded) void useEngines.getState().refresh();
+  }, [enginesLoaded]);
   const accounts = useAccounts((st) => st.list);
   const update = useTeammates((st) => st.update);
   const remove = useTeammates((st) => st.remove);

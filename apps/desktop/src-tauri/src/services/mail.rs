@@ -678,6 +678,13 @@ mod tests {
         assert_eq!(mail.list(&bea.id).await.expect("b").len(), 1);
     }
 
+    #[test]
+    fn f_ag_12_4_a_mail_run_never_gets_full_access() {
+        assert_eq!(mail_access(Access::Full), Access::Edits);
+        assert_eq!(mail_access(Access::Edits), Access::Edits);
+        assert_eq!(mail_access(Access::Read), Access::Read);
+    }
+
     #[tokio::test]
     async fn f_ag_12_an_idle_chat_in_the_same_thread_of_work_gets_the_mail() {
         let (_d, _t, host, mail, ada, _bea) = setup().await;

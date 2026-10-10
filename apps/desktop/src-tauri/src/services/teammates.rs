@@ -506,6 +506,13 @@ impl TeammatesService {
         self.ensure_lead().await;
         let name = rules::validate_name(&input.name).map_err(invalid)?;
         Self::check_brief(&input.brief)?;
+        // A taken name says so before the plan's limit does.
+        if repo::name_used(&self.store, &name)
+            .await
+            .map_err(store_err)?
+        {
+            return Err(IpcError::new(ErrorCode::Conflict, repo::NAME_USED));
+        }
         if let Some(limit) = (self.limit)() {
             let have = repo::count_besides_lead(&self.store)
                 .await
@@ -1026,6 +1033,14 @@ mod tests {
         svc.create(input("Scout", "claude")).await.expect("scout");
         let err = svc.create(input("scout", "claude")).await.expect_err("dup");
         assert_eq!(err.code, ErrorCode::Conflict);
+        assert_eq!(err.message, "Name already used");
+        // On Free, at the limit, the name is still what's wrong.
+        let (_d2, free) = service(Some(1)).await;
+        free.create(input("Scout", "claude")).await.expect("scout");
+        let err = free
+            .create(input("SCOUT", "claude"))
+            .await
+            .expect_err("dup");
         assert_eq!(err.message, "Name already used");
         let err = svc.create(input("  ", "claude")).await.expect_err("empty");
         assert_eq!(err.code, ErrorCode::Invalid);

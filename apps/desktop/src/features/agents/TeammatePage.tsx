@@ -27,6 +27,7 @@ import {
   type Status,
 } from "@tandem/ui";
 import { t } from "../../i18n";
+import { listen } from "../../ipc/events";
 import { invoke } from "../../ipc/invoke";
 import { useEngines } from "../../stores/engines";
 import { useTeammates } from "../../stores/teammates";
@@ -86,6 +87,19 @@ function PluginNudge({ s }: { s: TeammateSummary }) {
   useEffect(() => {
     void load();
   }, [load, version]);
+  // A plugin connected or changed (F-PL-03).
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+    let gone = false;
+    void listen<PluginCard>("plugins:changed", () => void load()).then((u) => {
+      if (gone) u();
+      else stop = u;
+    });
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  }, [load]);
   if (off.length === 0) return null;
   const enable = async () => {
     try {

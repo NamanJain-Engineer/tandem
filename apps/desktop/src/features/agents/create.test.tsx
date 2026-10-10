@@ -89,6 +89,14 @@ describe("UI-72 New teammate sheet", () => {
     expect((made?.args?.input as { name: string; engineId: string }).engineId).toBe("codex");
   });
 
+  it("F-AG-04 the sheet lists the engines even when nothing listed them before", async () => {
+    useEngines.setState({ list: [], loaded: false });
+    await waitFor(() =>
+      expect(screen.getAllByTestId("engine-tile").map((e) => e.dataset.engine)).toEqual(["codex"]),
+    );
+    expect(calls.some((c) => c.cmd === "engines_list")).toBe(true);
+  });
+
   it("F-AG-04 offline or Free: templates instead of Create with AI", async () => {
     await screen.findByTestId("templates");
     expect(screen.queryByTestId("draft-card")).toBeNull();

@@ -137,6 +137,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn f_ag_08_2_the_follow_up_runs_with_no_mcp_servers() {
+        let registry = crate::registry::EngineRegistry::bundled();
+        for id in ["claude", "codex"] {
+            let spec = registry.get(id).expect("engine");
+            let args = crate::handoff::headless_args(spec).expect("headless");
+            assert!(
+                !args.iter().any(|a| a.starts_with("--mcp-config")),
+                "{id}: {args:?}"
+            );
+            match id {
+                "claude" => assert!(args.contains(&"--strict-mcp-config".to_string())),
+                _ => assert!(args.contains(&"mcp_servers={}".to_string()), "{args:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn f_ag_08_the_prompt_fences_the_turn_and_asks_for_json() {
         let p = prompt("Scout", "use pnpm", "Okay, pnpm it is.", "- old note\n");
         assert!(p.starts_with("<learn_request>"));
