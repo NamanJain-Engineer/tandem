@@ -118,6 +118,8 @@ async function main() {
   mkdirSync(fakes, { recursive: true });
   const fakeEngine = join(root, "target/debug/fake-engine");
   symlinkSync(fakeEngine, join(fakes, "claude"));
+  const zsh = ["/usr/bin/zsh", "/bin/zsh"].find((p) => existsSync(p));
+  if (!zsh) console.warn("zsh not found: the shell specs need it (apt-get install zsh)");
   const userHome = join(home, "home");
   mkdirSync(userHome, { recursive: true });
   // The app's PATH: system folders and node (the scripted browser opener
@@ -184,6 +186,10 @@ async function main() {
     ...(suite ? { TANDEM_MOCHA_TIMEOUT: "900000" } : {}),
     PLAYWRIGHT_CHROMIUM: process.env.PLAYWRIGHT_CHROMIUM ?? (existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : ""),
     PATH: process.env.PATH ?? "",
+    // The specs are written for a zsh login shell (E2E-M4-1 writes ~/.zshrc),
+    // and the runner's own login shell may put a real engine on PATH through
+    // /etc/profile.d: the app probes zsh, whatever shell runs this script.
+    ...(zsh ? { SHELL: zsh } : {}),
   });
   // The startup suite relaunches signed in (16 live shells need a paid plan),
   // so it uses the real Secret Service keychain: an unlocked gnome-keyring on

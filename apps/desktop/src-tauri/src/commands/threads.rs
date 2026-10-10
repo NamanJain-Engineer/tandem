@@ -83,15 +83,18 @@ async fn remember(state: &AppState, thread: &ThreadRecord) {
 }
 
 /// The engine a thread starts with: Claude Code when it's installed, else
-/// the first installed engine that has a chat adapter.
+/// the first installed engine that has a chat adapter and the plan runs.
 fn default_engine(state: &AppState) -> Option<String> {
     let engines = &state.terminals.engines;
     let registry = engines.registry();
+    let limits = state.entitlements.limits();
     let chat: Vec<&str> = registry
         .all()
         .iter()
         .filter(|e| {
-            crate::services::threads::has_chat_adapter(e) && engines.installed(&e.id).is_some()
+            crate::services::threads::has_chat_adapter(e)
+                && engines.installed(&e.id).is_some()
+                && limits.allows_chat_engine(&e.id)
         })
         .map(|e| e.id.as_str())
         .collect();
@@ -118,8 +121,10 @@ pub(crate) async fn create_thread(
     args: ThreadCreate,
 ) -> Result<ThreadRecord, IpcError> {
     let defaults = remembered(state).await;
+    // The last engine, unless the plan no longer runs it (a lapse to Free).
     let last = text(&defaults, "last_engine").filter(|e| {
-        state.terminals.engines.installed(e).is_some()
+        state.entitlements.limits().allows_chat_engine(e)
+            && state.terminals.engines.installed(e).is_some()
             && state
                 .terminals
                 .engines

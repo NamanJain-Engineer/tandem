@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   Access,
   Attachment,
+  EngineView,
   IpcError,
   ModelEntry,
   PathEntry,
@@ -9,6 +10,8 @@ import type {
   ThreadDetail,
 } from "@tandem/protocol";
 import {
+  Button,
+  Callout,
   Composer,
   ConfirmDialog,
   EngineGlyph,
@@ -24,6 +27,7 @@ import { useEngines } from "../../stores/engines";
 import { useSession } from "../../stores/session";
 import { useSettings } from "../../stores/settings";
 import { useThreads } from "../../stores/threads";
+import { useUi } from "../../stores/ui";
 import { allowsAccess, clampAccess } from "../policy/policy";
 import { takeDropped, takeTexts, useThreadDrop } from "./drops";
 
@@ -45,6 +49,29 @@ function parseDraft(json: string | undefined): Draft {
 }
 
 /** A failed send puts its text back ahead of anything typed since (F-TH-07 AC3). */
+/** The engine picker: installed engines; terminal-only ones in their own
+ * group; on Free, only the plan's chat engines are enabled and the others
+ * read "Pro" (UI_SPEC UI-11 Engine select, PRODUCT_SPEC §3.2). */
+export function engineOptionsFor(engines: EngineView[], chatEngines: string[] | null): SelectOption[] {
+  return engines
+    .filter((e) => e.install)
+    .map((e) => {
+      const onPlan = chatEngines === null || chatEngines.includes(e.spec.id);
+      return {
+        value: e.spec.id,
+        label: e.spec.label,
+        icon: <EngineGlyph letters={e.spec.logo} size={14} />,
+        disabled: !e.chatCapable || !onPlan,
+        disabledReason: !e.chatCapable
+          ? t("thread.composer.terminalOnly")
+          : onPlan
+            ? undefined
+            : t("thread.composer.pro"),
+        group: e.chatCapable ? undefined : t("thread.composer.terminalOnly"),
+      };
+    });
+}
+
 export function restoreAfterFailure(failed: string, typedSince: string): string {
   return typedSince.trim() ? `${failed}\n${typedSince}` : failed;
 }
@@ -174,20 +201,14 @@ export function ThreadComposer({
       ? t("thread.composer.placeholder", { engine: engineLabel, folder: folderName })
       : t("thread.composer.placeholderNoFolder", { engine: engineLabel });
 
+  const chatEngines = useSession((s) => s.entitlement?.limits.chatEngines ?? null);
+  const openUpgrade = useUi((s) => s.openUpgrade);
   const engineOptions: SelectOption[] = useMemo(
-    () =>
-      engines
-        .filter((e) => e.install)
-        .map((e) => ({
-          value: e.spec.id,
-          label: e.spec.label,
-          icon: <EngineGlyph letters={e.spec.logo} size={14} />,
-          disabled: !e.chatCapable,
-          disabledReason: e.chatCapable ? undefined : t("thread.composer.terminalOnly"),
-          group: e.chatCapable ? undefined : t("thread.composer.terminalOnly"),
-        })),
-    [engines],
+    () => engineOptionsFor(engines, chatEngines),
+    [engines, chatEngines],
   );
+  // A thread made on Pro stays readable after a lapse; its engine can't run.
+  const offPlan = chatEngines !== null && !chatEngines.includes(thread.engineId);
   const savedModel = thread.model ?? "default";
   const modelOptions: SelectOption[] = useMemo(() => {
     const list = catalog.length
@@ -275,6 +296,25 @@ export function ThreadComposer({
 
   return (
     <>
+      {offPlan && (
+        <div className="px-3 pb-2" data-testid="thread-engine-gate">
+          <Callout
+            tone="accent"
+            title={t("thread.engineGate.title")}
+            actions={
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => openUpgrade({ kind: "chat_engines", limit: chatEngines.length })}
+              >
+                {t("thread.engineGate.plans")}
+              </Button>
+            }
+          >
+            {t("thread.engineGate.body", { engine: engineLabel })}
+          </Callout>
+        </div>
+      )}
       <Composer
         ref={composerRef}
         value={text}

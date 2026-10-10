@@ -3,14 +3,15 @@ import { expectNoSeriousA11yViolationsInBothThemes } from "../support/axe";
 import {
   addFolder,
   browserLog,
+  freshSignedOut,
   planFooter,
-  resetToWelcome,
   signInDesktop,
   signUpVerified,
   terminalLines,
   terminalText,
   typeInTerminal,
   uniqueEmail,
+  waitForApp,
   workspaceRoots,
 } from "../support/app";
 
@@ -24,9 +25,9 @@ describe("E2E-M2-1 walking skeleton", () => {
   });
 
   it("launches fresh at sign-in, which passes axe", async () => {
-    // Specs run in name order and others (m13-*, m16-*) now come first: start
-    // from the sign-in screen here rather than rely on m0-boot's fresh launch.
-    await resetToWelcome();
+    await waitForApp();
+    // Spec files run in name order, and `m13-*` and `m16-*` come first: they leave other profiles.
+    await freshSignedOut();
     await $("#signin-title").waitForDisplayed({ timeout: 20_000 });
     expect(await $("#signin-title").getText()).toBe("Welcome to Vibezeo");
     await expectNoSeriousA11yViolationsInBothThemes();

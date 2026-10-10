@@ -1,12 +1,12 @@
-/** What's in the 0.2.0 release, for the home page's progress strip and the
+/** What's in the 0.3.0 release, for the home page's progress strip and the
  * changelog. Figures are counted in the code the release was built from
- * (product branch): `scripts/gate.sh` output (613 Rust and 622 TypeScript
+ * (product branch): `scripts/gate.sh` output (729 Rust and 742 TypeScript
  * tests) and the files in `apps/desktop/e2e/specs`. Update them with each
  * release. */
 export const PROGRESS = {
-  milestones: 8,
-  automatedTests: 1235,
-  endToEndSuites: 60,
+  milestones: 9,
+  automatedTests: 1471,
+  endToEndSuites: 66,
   engines: 11,
 } as const;
 
@@ -19,10 +19,22 @@ export type Milestone = {
 /** Newest first. Each entry is a closed milestone of the build plan. */
 export const MILESTONES: readonly Milestone[] = [
   {
+    id: "M9",
+    title: "Files, git and a browser",
+    items: [
+      "A Files tab for the open thread's folder, the workspace or a lane: a tree that follows .gitignore and a code editor that asks before overwriting a file changed on disk.",
+      "A git panel: stage, unstage, discard, commit, push, pull, publish and switch branches, with your own git, config and hooks.",
+      "A browser in the sidebar or in a pane, with Phone and Tablet sizes; its pages get no access to the app.",
+      "An element picker that sends what you pick on a page to a pane or a thread.",
+      "File paths and URLs in terminals open with Ctrl+Click, following the shell's current folder.",
+      "A Scratchpad in the sidebar: local Markdown notes with lists and checklists, saved as you type.",
+    ],
+  },
+  {
     id: "M7",
     title: "Thread mode",
     items: [
-      "Claude Code, Codex, Cursor Agent, Grok and OpenCode as conversations: streamed replies, folded tool calls, Stop and queued follow-ups.",
+      "Claude Code, Codex, Cursor Agent, Grok and OpenCode as conversations: streamed replies, folded tool calls, Stop and queued follow-ups (Cursor Agent, Grok and OpenCode threads on Pro).",
       "Approvals answered inline, once or for the whole thread.",
       "Plan mode with numbered plan versions, and Implement for the one you pick.",
       "A Changes panel with every file a thread changed since it started, and the files it read.",

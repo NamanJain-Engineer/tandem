@@ -420,6 +420,9 @@ impl AppState {
             }),
             data.clone(),
         );
+        // Free threads run Claude Code and Codex only (PRODUCT_SPEC §3.2).
+        let plan = entitlements.clone();
+        threads.set_plan_limits(Arc::new(move || plan.limits()));
         threads.sweep_trash();
         // Threads are Dashboard items too (F-DB-01, D-6).
         let status = terminals.status.clone();
