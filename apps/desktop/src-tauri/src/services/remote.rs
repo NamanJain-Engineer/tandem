@@ -954,7 +954,6 @@ impl RemoteService {
         host_id: &HostId,
         engines: &[tandem_engines::EngineSpec],
     ) -> Result<tandem_engines::detect::DetectionReport, IpcError> {
-        use tandem_engines::detect::{DetectionReport, FoundEngine, FoundSource};
         let wanted: Vec<Value> = engines
             .iter()
             .map(|e| json!({"id": e.id, "commands": e.commands, "version_args": e.version_cmd}))
@@ -962,42 +961,26 @@ impl RemoteService {
         let found: Vec<Found> = self
             .call(host_id, method::ENGINES_DETECT, json!({"engines": wanted}))
             .await?;
-        let report = DetectionReport {
-            host: host_id.as_str().to_string(),
-            shells_asked: vec!["$SHELL -lc (on the host)".into()],
-            folders_checked: Vec::new(),
-            missing: engines
-                .iter()
-                .filter(|e| !found.iter().any(|f| f.id == e.id))
-                .map(|e| e.id.clone())
-                .collect(),
-            found: found
+        let report = report_from(
+            host_id,
+            "$SHELL -lc (on the host)",
+            engines,
+            found
                 .into_iter()
-                .map(|f| {
-                    // The registry's pattern picks the version out of the
-                    // engine's output, as local detection does.
-                    let version = f.version.and_then(|line| {
-                        let pattern = engines
-                            .iter()
-                            .find(|e| e.id == f.id)
-                            .map(|e| e.version_regex.as_str())?;
-                        regex::Regex::new(pattern)
-                            .ok()?
-                            .captures(&line)
-                            .and_then(|c| c.get(1).or_else(|| c.get(0)))
-                            .map(|m| m.as_str().to_string())
-                    });
-                    FoundEngine {
-                        engine_id: f.id,
-                        path: f.path,
-                        version,
-                        source: FoundSource::Shell,
-                    }
-                })
+                .map(|f| (f.id, f.path, f.version))
                 .collect(),
-            fixes: Vec::new(),
-            slow_shell: None,
-        };
+        );
+        self.publish_report(host_id, &report).await?;
+        Ok(report)
+    }
+
+    /// Saves a host's (or WSL distro's) detection and sends it as
+    /// `engines:detected`.
+    pub async fn publish_report(
+        &self,
+        host_id: &HostId,
+        report: &tandem_engines::detect::DetectionReport,
+    ) -> Result<(), IpcError> {
         let installs = report
             .found
             .iter()
@@ -1007,7 +990,7 @@ impl RemoteService {
                 version: f.version.clone(),
             })
             .collect();
-        if let Ok(json) = serde_json::to_string(&report) {
+        if let Ok(json) = serde_json::to_string(report) {
             tandem_store::repo::accounts::save_detection(
                 &self.store,
                 host_id.as_str(),
@@ -1024,7 +1007,7 @@ impl RemoteService {
             "engines:detected",
             json!({"hostId": host_id, "report": report}),
         ));
-        Ok(report)
+        Ok(())
     }
 
     /// The host's last detection report (memory, then the saved one).
@@ -1084,6 +1067,52 @@ impl RemoteService {
                 let _ = child.start_kill();
             }
         }
+    }
+}
+
+/// A detection report for a host or WSL distro from what its login shell
+/// found: `(engine id, path, version line)`. The registry's pattern picks
+/// the version out of the line, as local detection does.
+pub fn report_from(
+    host_id: &HostId,
+    shell: &str,
+    engines: &[tandem_engines::EngineSpec],
+    found: Vec<(String, String, Option<String>)>,
+) -> tandem_engines::detect::DetectionReport {
+    use tandem_engines::detect::{DetectionReport, FoundEngine, FoundSource};
+    DetectionReport {
+        host: host_id.as_str().to_string(),
+        shells_asked: vec![shell.to_string()],
+        folders_checked: Vec::new(),
+        missing: engines
+            .iter()
+            .filter(|e| !found.iter().any(|f| f.0 == e.id))
+            .map(|e| e.id.clone())
+            .collect(),
+        found: found
+            .into_iter()
+            .map(|(id, path, line)| {
+                let version = line.and_then(|line| {
+                    let pattern = engines
+                        .iter()
+                        .find(|e| e.id == id)
+                        .map(|e| e.version_regex.as_str())?;
+                    regex::Regex::new(pattern)
+                        .ok()?
+                        .captures(&line)
+                        .and_then(|c| c.get(1).or_else(|| c.get(0)))
+                        .map(|m| m.as_str().to_string())
+                });
+                FoundEngine {
+                    engine_id: id,
+                    path,
+                    version,
+                    source: FoundSource::Shell,
+                }
+            })
+            .collect(),
+        fixes: Vec::new(),
+        slow_shell: None,
     }
 }
 

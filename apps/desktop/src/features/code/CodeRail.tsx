@@ -236,8 +236,13 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
 
 /** The host a remote workspace lives on, as the rail names it. */
 function hostLabel(ws: WorkspaceSummary): string {
-  if (ws.kind === "wsl") return ws.wslDistro ?? "WSL";
+  if (ws.kind === "wsl") return ws.wslDistro ?? ws.hostId;
   return useRemote.getState().hostOf(ws.hostId)?.label ?? ws.hostId;
+}
+
+/** "Remote · build box" or "WSL · Ubuntu". */
+function placeBadge(ws: WorkspaceSummary): string {
+  return t(ws.kind === "wsl" ? "rail.wslBadge" : "rail.remoteBadge", { host: hostLabel(ws) });
 }
 
 /** UI_SPEC §3.3 Code rail: WORKSPACES + "+", the shared RailList, footer. */
@@ -329,13 +334,13 @@ export function CodeRail() {
           tooltip: ws.missing
             ? t("rail.missing")
             : ws.kind !== "local"
-              ? `${t("rail.remoteBadge", { host: hostLabel(ws) })} · ${ws.root}`
+              ? `${placeBadge(ws)} · ${ws.root}`
               : ws.root,
           warning: ws.missing,
           icon: ws.missing ? (
             <AlertTriangle size={14} aria-label={t("rail.missing")} className="text-warning" />
           ) : ws.kind !== "local" ? (
-            <Cloud size={14} aria-label={t("rail.remoteBadge", { host: hostLabel(ws) })} className="text-fg-muted" />
+            <Cloud size={14} aria-label={placeBadge(ws)} className="text-fg-muted" />
           ) : (
             <Folder size={14} aria-hidden="true" className="text-fg-muted" />
           ),

@@ -847,6 +847,9 @@ export class DemoCore {
       case "ssh_list_dir":
         // The demo runs in a web page: there's no ssh to run.
         throw { code: "unavailable", message: "The browser demo doesn't connect to SSH hosts. The app does, with your own ssh." };
+      case "wsl_distros":
+        // Same answer as the app on a system without WSL: the section hides.
+        throw { code: "unavailable", message: "WSL folders open on Windows only", stage: "wsl" };
       case "browser_open":
       case "browser_navigate":
         throw { code: "unavailable", message: "Web pages don't open inside this demo. In the app they open right here." };

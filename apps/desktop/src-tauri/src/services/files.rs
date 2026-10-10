@@ -131,6 +131,18 @@ where
     tokio::task::spawn_blocking(f).await.map_err(io_err)?
 }
 
+/// Where this machine reads a workspace's files: its folder, or for a WSL
+/// workspace the distro's folder as Windows sees it
+/// (`\\wsl.localhost\<distro>\…`, F-RM-02).
+pub fn local_root(ws: &tandem_store::repo::workspaces::Workspace) -> PathBuf {
+    match (ws.kind.as_str(), ws.wsl_distro.as_deref()) {
+        ("wsl", Some(distro)) => tandem_core::wslpath::from_wsl_path(distro, &ws.root)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(&ws.root)),
+        _ => PathBuf::from(&ws.root),
+    }
+}
+
 /// Paths with a `.git` component are git's own data: never created,
 /// renamed into or deleted from the tree.
 fn in_git_data(path: &Path) -> bool {
@@ -204,16 +216,25 @@ impl FilesService {
     pub async fn root(&self, ctx: &FileContext) -> Result<PathBuf, IpcError> {
         let root = match ctx {
             FileContext::Workspace { workspace_id } => {
-                PathBuf::from(workspaces::get(&self.store, workspace_id).await?.root)
+                let ws = workspaces::get(&self.store, workspace_id).await?;
+                local_root(&ws)
             }
             FileContext::Thread { thread_id } => {
                 let thread = threads_repo::get(&self.store, thread_id)
                     .await?
                     .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "That thread is gone"))?;
-                if thread.workspace_id.is_none() {
+                let Some(ws_id) = thread.workspace_id.as_ref() else {
                     return Err(IpcError::new(ErrorCode::Invalid, NO_FOLDER).with_stage("files"));
+                };
+                match workspaces::get(&self.store, ws_id).await {
+                    Ok(ws) if ws.kind == "wsl" => {
+                        local_root(&tandem_store::repo::workspaces::Workspace {
+                            root: thread.cwd.clone(),
+                            ..ws
+                        })
+                    }
+                    _ => PathBuf::from(thread.cwd),
                 }
-                PathBuf::from(thread.cwd)
             }
         };
         if !root.is_dir() {
@@ -227,8 +248,8 @@ impl FilesService {
         Ok(workspaces::list(&self.store)
             .await?
             .into_iter()
-            .filter(|w| w.kind == "local")
-            .map(|w| PathBuf::from(w.root))
+            .filter(|w| w.kind == "local" || w.kind == "wsl")
+            .map(|w| local_root(&w))
             .collect())
     }
 

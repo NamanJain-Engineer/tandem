@@ -113,6 +113,15 @@ pub async fn engines_detect(
     if let Some(host) = host_id.filter(|h| h != "local") {
         let host = tandem_core::ids::HostId::from_db(host);
         let engines = state.terminals.engines.registry().all().to_vec();
+        let row = tandem_store::repo::hosts::get(&state.store, &host).await?;
+        if row.kind == "wsl" {
+            // Inside the distro's login shell (F-RM-02 "Detection runs
+            // inside each distro").
+            let distro = row.wsl_distro.unwrap_or_default();
+            let report = state.wsl.detect_report(&host, &distro, &engines).await?;
+            state.remote.publish_report(&host, &report).await?;
+            return Ok(report);
+        }
         return state.remote.detect(&host, &engines).await;
     }
     let config = state.config.refresh().await;

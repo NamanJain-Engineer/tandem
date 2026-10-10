@@ -137,6 +137,8 @@ pub struct AppState {
     pub git_panel: Arc<crate::services::git_panel::GitPanelService>,
     /// SSH hosts and their connections (F-RM-01).
     pub remote: Arc<crate::services::remote::RemoteService>,
+    /// WSL distributions (F-RM-02; Windows only).
+    pub wsl: Arc<crate::services::wsl::WslService>,
     /// Browser tabs and panes (F-CD-17), bound to the window in setup.
     pub browser: std::sync::OnceLock<Arc<crate::browser::BrowserService>>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
@@ -363,6 +365,10 @@ impl AppState {
             terminals.status.clone(),
         );
         terminals.set_remote(remote.clone());
+        let wsl = Arc::new(crate::services::wsl::WslService::new(
+            crate::services::wsl::system(),
+        ));
+        terminals.set_wsl(wsl.clone());
         remote.set_engines(terminals.engines.clone());
         let approvals = crate::services::approvals::ApprovalService::new(
             store.clone(),
@@ -517,6 +523,7 @@ impl AppState {
             files,
             git_panel,
             remote,
+            wsl,
             browser: std::sync::OnceLock::new(),
             e2e,
         }

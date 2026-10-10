@@ -4,7 +4,7 @@
 //!
 //! | Rule | What holds | Mechanism | Built in |
 //! |---|---|---|---|
-//! | 1 | Repo-level engine config can't raise permissions | `tandem_engines::chat::claude::args`; on SSH hosts the same argv through `tandem-host run` | M7, M14 |
+//! | 1 | Repo-level engine config can't raise permissions | `tandem_engines::chat::claude::args`; on SSH hosts the same argv through `tandem-host run`, in WSL through `wsl.exe … -- env …` | M7, M14 |
 //! | 2 | Status reports and shell marks need a per-launch secret | `StatusServer`, `MarkFilter`; relayed host reports (`accept_relayed`) and token-less remote panes | M3/M4, M14 |
 //! | 3 | Credentials go only to pinned hosts | the gateway's loopback-only lease; plugin credentials (F-PL-04) join in M12 | M7, M12 |
 //! | 4 | Unattended runs never get Full and can never approve | `tandem_core::access::resolve`; F-PL-06 approvals join in M12 | M7, M12 |

@@ -446,6 +446,25 @@ impl ThreadService {
         ))
     }
 
+    /// Where this machine reads a thread's folder: a WSL thread's Linux
+    /// folder is `\\wsl.localhost\<distro>\…` from Windows (F-RM-02).
+    async fn local_cwd(&self, thread: &ThreadRecord) -> String {
+        let ws = match &thread.workspace_id {
+            Some(ws) => tandem_store::repo::workspaces::get(&self.store, ws)
+                .await
+                .ok(),
+            None => None,
+        };
+        match ws {
+            Some(ws) if ws.kind == "wsl" => ws
+                .wsl_distro
+                .as_deref()
+                .and_then(|d| tandem_core::wslpath::from_wsl_path(d, &thread.cwd))
+                .unwrap_or_else(|| thread.cwd.clone()),
+            _ => thread.cwd.clone(),
+        }
+    }
+
     /// A remote thread's attachments go to the host first (F-RM-01
     /// "Conversation attachments are stored under the remote workspace"):
     /// each local file is copied to `<root>/.tandem/attachments/<thread>/`
@@ -931,7 +950,7 @@ impl ThreadService {
         query: String,
     ) -> Result<Vec<PathEntry>, IpcError> {
         let thread = self.thread(id).await?;
-        let root = std::path::PathBuf::from(thread.cwd);
+        let root = std::path::PathBuf::from(self.local_cwd(&thread).await);
         tokio::task::spawn_blocking(move || thread_files::mention_search(&root, &query))
             .await
             .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))
@@ -1117,7 +1136,8 @@ impl ThreadService {
             data.snapshots()
                 .join(format!("{}.json", thread.id.as_str()))
         });
-        let start = match thread_changes::capture(thread.cwd.clone().into(), snapshot).await {
+        let cwd = self.local_cwd(thread).await;
+        let start = match thread_changes::capture(cwd.into(), snapshot).await {
             Ok(s) => s,
             Err(e) => {
                 tracing::warn!(code = "threads.start_failed", error = %e.message, "couldn't record where the thread starts");
@@ -1147,7 +1167,7 @@ impl ThreadService {
             let f = remote.files.read(&remote, &root, path).await?;
             return thread_files::remote_text(f);
         }
-        let root = std::path::PathBuf::from(thread.cwd);
+        let root = std::path::PathBuf::from(self.local_cwd(&thread).await);
         tokio::task::spawn_blocking(move || thread_files::read_text(&root, &path))
             .await
             .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?
@@ -1172,7 +1192,7 @@ impl ThreadService {
             (None, Some(path)) => Some(thread_changes::Start::Snapshot(path.into())),
             (None, None) => None,
         };
-        thread_changes::changes(thread.cwd.into(), start).await
+        thread_changes::changes(self.local_cwd(&thread).await.into(), start).await
     }
 
     /// In Plan mode a completed turn's last reply is the thread's next plan
@@ -2235,6 +2255,106 @@ impl AppLauncher {
         ))
     }
 
+    /// The WSL distro a thread's folder is in, when it's a WSL workspace.
+    async fn wsl_host(
+        &self,
+        thread: &ThreadRecord,
+    ) -> Result<Option<(tandem_core::ids::HostId, String)>, IpcError> {
+        let Some(ws) = &thread.workspace_id else {
+            return Ok(None);
+        };
+        let ws = tandem_store::repo::workspaces::get(self.terminals.store(), ws)
+            .await
+            .map_err(store_err)?;
+        if ws.kind != "wsl" {
+            return Ok(None);
+        }
+        let distro = ws.wsl_distro.ok_or_else(|| {
+            IpcError::new(ErrorCode::Invalid, "This WSL workspace has no distribution")
+        })?;
+        Ok(Some((
+            tandem_core::ids::HostId::from_db(ws.host_id),
+            distro,
+        )))
+    }
+
+    /// A thread in a WSL workspace (F-RM-02): the distro's own engine, run
+    /// through `wsl.exe` with the distro's own sign-in. As on SSH hosts,
+    /// nothing local crosses: no provider home, no account, no gateway.
+    async fn prepare_wsl(
+        &self,
+        thread: &ThreadRecord,
+        engine: &tandem_engines::EngineSpec,
+        adapter: Arc<dyn ChatAdapter>,
+        host: tandem_core::ids::HostId,
+        distro: String,
+    ) -> Result<(Arc<dyn ChatAdapter>, ChatStart), IpcError> {
+        self.terminals.engines.check_allowed(engine)?;
+        let wsl = self
+            .terminals
+            .wsl()
+            .cloned()
+            .filter(|_| crate::services::wsl::system().is_some())
+            .ok_or_else(|| {
+                IpcError::new(ErrorCode::Unavailable, "WSL folders open on Windows only")
+                    .with_stage("wsl")
+            })?;
+        let remote = self.terminals.remote().cloned();
+        let mut report = match &remote {
+            Some(r) => r.report(&host).await,
+            None => None,
+        };
+        if report.as_ref().and_then(|r| r.get(&engine.id)).is_none() {
+            let list = self.terminals.engines.registry().all().to_vec();
+            let fresh = wsl.detect_report(&host, &distro, &list).await?;
+            if let Some(r) = &remote {
+                r.publish_report(&host, &fresh).await?;
+            }
+            report = Some(fresh);
+        }
+        let found = report
+            .as_ref()
+            .and_then(|r| r.get(&engine.id))
+            .cloned()
+            .ok_or_else(|| {
+                IpcError::new(
+                    ErrorCode::EngineMissing,
+                    format!("{} isn't installed in {distro}.", engine.label),
+                )
+            })?;
+        let cwd = thread.cwd.clone();
+        let relocate = tandem_engines::chat::Relocate(Arc::new(
+            move |spec: tandem_engines::chat::process::ProcessSpec| {
+                crate::services::wsl::thread_spec(&distro, &cwd, spec, std::env::vars())
+            },
+        ));
+        Ok((
+            adapter,
+            ChatStart {
+                thread_id: thread.id.clone(),
+                engine_id: engine.id.clone(),
+                program: std::path::PathBuf::from(&found.path),
+                cwd: std::path::PathBuf::from(&thread.cwd),
+                env: vec![("TERM".into(), "dumb".into())],
+                model: thread.model.clone(),
+                effort: thread.effort.clone(),
+                access: session_access(
+                    self.guard.get().map(|g| g.as_ref()),
+                    thread,
+                    origin_of(thread),
+                    &engine.id,
+                ),
+                mode: thread.mode,
+                attended: thread.attended,
+                resume_session: thread.engine_session_id.clone(),
+                mcp_config: None,
+                mcp: None,
+                engine_version: found.version,
+                relocate: Some(relocate),
+            },
+        ))
+    }
+
     pub fn new(
         terminals: Arc<crate::services::terminal::TerminalService>,
         config: Arc<crate::services::config::ConfigService>,
@@ -2428,6 +2548,11 @@ impl ChatLauncher for AppLauncher {
         if let Some((remote, host)) = self.remote_host(thread).await? {
             return self
                 .prepare_remote(thread, &engine, adapter, remote, host)
+                .await;
+        }
+        if let Some((host, distro)) = self.wsl_host(thread).await? {
+            return self
+                .prepare_wsl(thread, &engine, adapter, host, distro)
                 .await;
         }
         let program = self

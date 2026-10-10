@@ -51,6 +51,7 @@ export type * from "./DashboardItem";
 export type * from "./DeepLink";
 export type * from "./DetectionReport";
 export type * from "./Device";
+export type * from "./Distro";
 export type * from "./EditorTab";
 export type * from "./EditorTabs";
 export type * from "./EnabledWhen";

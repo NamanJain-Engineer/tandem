@@ -59,10 +59,10 @@ export function PanePicker({ workspaceName }: { workspaceName: string }) {
   const [limited, setLimited] = useState(false);
   const [checking, setChecking] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  // A remote workspace's + menu lists the host's engines (F-RM-01).
+  // A remote or WSL workspace's + menu lists its own engines (F-RM-01, F-RM-02).
   const remoteHost = useWorkspaces((s) => {
     const ws = picker ? s.list.find((w) => w.tabs.some((tab) => tab.id === picker.tabId)) : undefined;
-    return ws && ws.kind === "ssh" ? ws.hostId : null;
+    return ws && (ws.kind === "ssh" || ws.kind === "wsl") ? ws.hostId : null;
   });
 
   useEffect(() => {

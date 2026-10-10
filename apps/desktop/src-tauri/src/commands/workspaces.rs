@@ -73,9 +73,40 @@ pub async fn workspace_add(
                     "Choose the distribution first",
                 )
             })?;
-            let root = crate::services::wsl::checked_root(&distro, &root).await?;
+            let wsl = state.wsl.clone();
+            let d = distro.clone();
+            let root = tokio::task::spawn_blocking(move || wsl.checked_root(&d, &root))
+                .await
+                .map_err(|e| {
+                    tandem_core::IpcError::new(tandem_core::ErrorCode::Internal, e.to_string())
+                })??;
             let host = tandem_store::repo::hosts::ensure_wsl(&state.store, &distro).await?;
-            workspaces::add_remote(&state.store, "wsl", &host.id, &root, Some(distro), limit).await
+            let added = workspaces::add_remote(
+                &state.store,
+                "wsl",
+                &host.id,
+                &root,
+                Some(distro.clone()),
+                limit,
+            )
+            .await?;
+            // The + menu lists the distro's engines: detect them now, as
+            // connecting does for an SSH host.
+            let (wsl, remote) = (state.wsl.clone(), state.remote.clone());
+            let engines = state.terminals.engines.registry().all().to_vec();
+            tauri::async_runtime::spawn(async move {
+                match wsl.detect_report(&host.id, &distro, &engines).await {
+                    Ok(report) => {
+                        if let Err(e) = remote.publish_report(&host.id, &report).await {
+                            tracing::warn!(code = "wsl.detect_failed", error = %e.message, "couldn't keep the distro's engines");
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(code = "wsl.detect_failed", error = %e.message, "couldn't detect the distro's engines")
+                    }
+                }
+            });
+            Ok(added)
         }
         _ => Err(tandem_core::IpcError::new(
             tandem_core::ErrorCode::Invalid,

@@ -104,3 +104,51 @@ fn invariant_rule_1_remote_threads_keep_the_flags() {
         }
     }
 }
+
+/// Rule 1 for WSL threads (F-RM-02): the engine inside the distro gets the
+/// same flags, in order, and nothing of Windows' environment.
+#[test]
+fn invariant_rule_1_wsl_threads_keep_the_flags() {
+    use tandem_engines::chat::process::ProcessSpec;
+
+    for access in [Access::Read, Access::Edits, Access::Full] {
+        let req = start(access, ThreadMode::Act, true);
+        let local = args(&req);
+        let spec = ProcessSpec::new(
+            req.program.clone(),
+            local.clone(),
+            Vec::new(),
+            req.cwd.clone(),
+        );
+        let windows = [
+            ("PATH".to_string(), r"C:\Windows".to_string()),
+            (
+                "CLAUDE_CONFIG_DIR".to_string(),
+                r"C:\Users\a\.tandem\providers\claude\x".to_string(),
+            ),
+        ];
+        let out = tandem_app::services::wsl::thread_spec(
+            "Ubuntu",
+            "/home/me/repo",
+            spec,
+            windows.into_iter(),
+        );
+        let words: Vec<String> = out
+            .args
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let at = words
+            .iter()
+            .position(|w| w == "/bin/claude")
+            .expect("engine");
+        let expected: Vec<String> = local
+            .iter()
+            .map(|w| w.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(words[at + 1..], expected[..]);
+        assert!(words.iter().any(|w| w == "--strict-mcp-config"));
+        assert!(!words.iter().any(|w| w == "--dangerously-skip-permissions"));
+        assert!(out.env.iter().all(|(k, _)| k != "CLAUDE_CONFIG_DIR"));
+    }
+}

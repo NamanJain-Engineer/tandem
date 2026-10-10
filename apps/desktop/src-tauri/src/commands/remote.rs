@@ -145,3 +145,14 @@ pub async fn ssh_host_reset_key(
     state.remote.disconnect(&host_id).await?;
     state.remote.reset_key(&host_id).await
 }
+
+/// `wsl_distros` (Windows only; elsewhere Unavailable).
+#[tauri::command]
+pub async fn wsl_distros(
+    state: State<'_, AppState>,
+) -> Result<Vec<tandem_core::wslpath::Distro>, IpcError> {
+    let wsl = state.wsl.clone();
+    tokio::task::spawn_blocking(move || wsl.distros())
+        .await
+        .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?
+}

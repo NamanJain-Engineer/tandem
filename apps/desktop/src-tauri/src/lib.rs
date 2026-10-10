@@ -78,6 +78,7 @@ macro_rules! app_commands {
             commands::remote::ssh_disconnect,
             commands::remote::ssh_list_dir,
             commands::remote::ssh_host_reset_key,
+            commands::remote::wsl_distros,
             commands::workspaces::workspace_list,
             commands::workspaces::workspace_rename,
             commands::workspaces::workspace_remove,

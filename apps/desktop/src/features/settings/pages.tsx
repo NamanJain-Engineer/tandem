@@ -5,6 +5,7 @@ import { EnginesPage } from "./EnginesPage";
 import { ShortcutsPage } from "./ShortcutsPage";
 import { AccountsPage } from "./AccountsPage";
 import { RemoteHosts } from "../remote/RemoteHosts";
+import { WslDistros } from "../remote/WslDistros";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
 import { UpdatesPanel } from "../updates/UpdatesPanel";
@@ -399,7 +400,12 @@ export function settingsPages(platform: string): PageDef[] {
       subtitle: t("settings.remote.subtitle"),
       keywords: ["ssh", "remote", "host", "server", "wsl", "linux"],
       rows: [],
-      extra: <RemoteHosts />,
+      extra: (
+        <div className="flex flex-col gap-6">
+          <RemoteHosts />
+          <WslDistros />
+        </div>
+      ),
     },
     {
       id: "privacy",

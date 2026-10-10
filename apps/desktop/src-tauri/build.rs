@@ -62,6 +62,7 @@ const COMMANDS: &[&str] = &[
     "ssh_disconnect",
     "ssh_list_dir",
     "ssh_host_reset_key",
+    "wsl_distros",
     "workspace_list",
     "workspace_rename",
     "workspace_remove",

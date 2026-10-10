@@ -42,6 +42,8 @@ function RemoteLaunchGrid({
   };
   if (!list) return <Spinner />;
   const installed = list.filter((e) => e.install);
+  // "Claude Code (in Ubuntu)" for a WSL distro, "On <host>" for SSH.
+  const where = host?.kind === "wsl" ? t("picker.inDistro", { distro: host.wslDistro ?? host.label }) : t("picker.onHost", { host: host?.label ?? "" });
   const tile = (id: string, label: string, glyph: React.ReactNode, detail: string | null, first: boolean) => (
     <li key={id}>
       <button type="button" data-testid={`tile-${id}`} autoFocus={autoFocus && first} disabled={busy !== null} onClick={() => onPick(id)} className={TILE}>
@@ -57,14 +59,14 @@ function RemoteLaunchGrid({
     <div className="flex flex-col gap-3" data-testid="launch-grid" data-host={hostId}>
       <ul className="grid grid-cols-2 gap-2">
         {installed.map((e, i) =>
-          tile(e.spec.id, e.spec.label, <EngineGlyph letters={e.spec.logo} size={20} />, t("picker.onHost", { host: host?.label ?? "" }), i === 0),
+          tile(e.spec.id, e.spec.label, <EngineGlyph letters={e.spec.logo} size={20} />, where, i === 0),
         )}
         {tile("shell", t("picker.terminal"), <SquareTerminal size={20} className="text-fg-muted" aria-hidden="true" />, null, installed.length === 0)}
         {browser && tile("browser", t("picker.browser"), <Globe size={20} className="text-fg-muted" aria-hidden="true" />, null, false)}
       </ul>
       {installed.length === 0 && (
         <div data-testid="engines-diagnostics" className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3">
-          <p className="text-sm text-fg">{t("picker.noneOnHost", { host: host?.label ?? "" })}</p>
+          <p className="text-sm text-fg">{t("picker.noneOnHost", { host: host?.kind === "wsl" ? (host.wslDistro ?? host.label) : (host?.label ?? "") })}</p>
           <div>
             <Button size="sm" variant="secondary" disabled={checking} onClick={() => void check()} data-testid="check-again">
               {checking ? <Spinner /> : <RefreshCw size={14} aria-hidden="true" />}

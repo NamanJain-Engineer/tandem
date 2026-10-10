@@ -407,7 +407,9 @@ export function RemoteFolderPicker({ host, onClose }: { host: HostView | null; o
 
 /** UI-14 / UI-111: SSH hosts, their connections, and their folders. */
 export function RemoteHosts() {
-  const hosts = useRemote((s) => s.hosts);
+  // WSL distros have their own section; this one is SSH hosts.
+  const all = useRemote((s) => s.hosts);
+  const hosts = all.filter((h) => h.kind === "ssh");
   const loaded = useRemote((s) => s.loaded);
   const error = useRemote((s) => s.error);
   const [adding, setAdding] = useState(false);
