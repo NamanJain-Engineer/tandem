@@ -10,9 +10,10 @@ has every feature below with its full behaviour and acceptance tests.
 
 **Where it stands (10 October 2026, `product-m0-m5`):** M0–M7 and M9 are
 done. So is M13, apart from its voice pair (F-DI-05 and F-DI-10, which wait
-for M8's Dictate). M16 has F-SH-12, F-AC-07, F-AU-01, F-BE-03 and F-BE-12.
-That's 88 of 152 features, 54 of 65 P0. Left: 64 features in eight
-milestones (M8, M10–M16), of which 11 are P0. vibezeo.com serves 0.3.0
+for M8's Dictate). M14 (SSH and WSL) is done on `m14-remote-ssh-wsl`.
+M16 has F-SH-12, F-AC-07, F-AU-01, F-BE-03 and F-BE-12.
+That's 90 of 152 features, 54 of 65 P0. Left: 62 features in seven
+milestones (M8, M10–M13, M15, M16), of which 11 are P0. vibezeo.com serves 0.3.0
 (M6, M7, M9 and the Scratchpad). M15 makes the P0/P1 product launchable;
 M16 adds the P2 extras and the release candidate.
 
@@ -144,13 +145,16 @@ and test modes until they exist.
 ### M14 · Remote: SSH and WSL (L) · 2 features (P1)
 Terminals, agents, threads, files and git on SSH hosts through `tandem-host`,
 and in WSL distros, never forwarding local credentials.
-- [ ] F-RM-01 SSH workspaces and `tandem-host`
-- [ ] F-RM-02 WSL workspaces (Windows)
+- [x] F-RM-01 SSH workspaces and `tandem-host`
+- [x] F-RM-02 WSL workspaces (Windows)
 
 Tasks: `tandem-host`; SSH transport; remote workspaces; WSL; infra (the
 compose `sshd` profile).
 E2E-M14-1…5: connect, host key, containment, re-attach, remote engines. WSL
 needs a Windows machine (manual QA in `HUMAN_TODO.md` until CI runs Windows).
+Done on `m14-remote-ssh-wsl` (PR #6): every task, E2E-M14-1…5 green; WSL is
+unit-tested with fakes, and its Windows pass, real macOS/aarch64 hosts and the
+CI-built binaries for all three targets wait in `HUMAN_TODO.md`.
 
 ### M15 · Website, docs, data controls and launch hardening (L) · 6 features (2 P0)
 Close every remaining P0 and P1 and every non-functional requirement. After

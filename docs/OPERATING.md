@@ -131,6 +131,11 @@ sh scripts/agent/with-infra.sh dbus-run-session -- xvfb-run -a -s "-screen 0 192
 # one or a few specs: ONE --spec with a glob (the runner keeps only the first --spec)
 ... pnpm --filter desktop e2e -- --spec 'e2e/specs/m7-{8,10}-*.e2e.ts'
 TANDEM_E2E_SKIP_BUILD=1 ...                                 # reuse the last build after test-only edits
+# "sign-up failed: 500" in many specs after a merge: the local database lacks the
+# new API migrations (relation "…" does not exist in the API's log). Run
+pnpm db:migrate && pnpm db:seed                             # inside with-infra, then E2E again
+# Plain xvfb-run (no session bus, small screen) fails F-SH-01.1, the TUI goldens
+# and ls's column order: always use the dbus-run-session line above.
 
 # Remote (M14): the sshd fixture, the bundled tandem-host, the SSH integration test
 bash scripts/gen-ssh-fixture.sh && docker compose -f infra/docker-compose.yml --profile remote up -d --wait sshd
