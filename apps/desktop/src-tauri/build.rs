@@ -186,6 +186,7 @@ const COMMANDS: &[&str] = &[
     "usage_share_save",
     "data_export",
     "data_delete_local",
+    "find_work",
     "term_stage_clipboard_image",
     "term_last_output",
     "pty_type_prompt",

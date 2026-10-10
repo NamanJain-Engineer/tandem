@@ -229,6 +229,7 @@
     "allow-usage-share-save",
     "allow-data-export",
     "allow-data-delete-local",
+    "allow-find-work",
     "allow-term-last-output",
     "allow-term-stage-clipboard-image",
     "allow-engines-list",

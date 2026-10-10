@@ -63,4 +63,4 @@ export const DOWNLOADS: Download[] = [
 export const assetUrl = (file: string): string => `${DOWNLOADS_PATH}/${file}`;
 /** What's in each release: the changelog on this site. */
 export const RELEASE_URL = "/changelog/";
-export const CHECKSUMS_URL = assetUrl("SHA256SUMS");
+export const CHECKSUMS_URL = assetUrl("SHA256SUMS.txt");

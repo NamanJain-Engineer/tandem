@@ -19,7 +19,7 @@ esac
 prev="$VERCEL_GIT_PREVIOUS_SHA"
 if [ -n "$prev" ] && git cat-file -e "$prev^{commit}" 2>/dev/null &&
   git diff --quiet "$prev" HEAD -- . ../desktop/src ../desktop/demo.html ../desktop/vite.demo.config.ts \
-    ../desktop/package.json ../../packages/ui ../../packages/protocol ../../pnpm-lock.yaml; then
+    ../desktop/package.json ../../packages/ui ../../packages/protocol ../../pnpm-lock.yaml ../../CHANGELOG.md ../../crates/tandem-engines/registry.json; then
   echo "Nothing the site uses changed since the last deployment"
   exit 0
 fi

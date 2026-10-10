@@ -255,6 +255,28 @@ pub async fn list_open(store: &Store, tab: &TabId) -> Result<Vec<PaneRecord>, St
         .await
 }
 
+/// Every open pane in a workspace that isn't removed, oldest first (Find
+/// work, F-CN-05).
+pub async fn list_all_open(store: &Store) -> Result<Vec<PaneRecord>, StoreError> {
+    store
+        .read(move |c| {
+            let columns = COLUMNS
+                .split(", ")
+                .map(|col| format!("p.{col}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut stmt = c.prepare(&format!(
+                "SELECT {columns} FROM panes p JOIN workspaces w ON w.id = p.workspace_id
+                 WHERE p.closed_at IS NULL AND w.removed_at IS NULL ORDER BY p.created_at, p.id"
+            ))?;
+            let rows = stmt
+                .query_map([], from_row)?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .await
+}
+
 pub async fn close(store: &Store, id: &PaneId) -> Result<(), StoreError> {
     let id = id.as_str().to_string();
     store
@@ -377,6 +399,50 @@ mod tests {
             create(&store, &tab.id, "toaster", None).await,
             Err(StoreError::Invalid(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn f_cn_05_every_open_pane_of_every_workspace_is_listed_but_not_removed_ones() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = tandem_core::DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = Store::open(&data).expect("store");
+        let mut tabs_by_ws = Vec::new();
+        for root in ["/a", "/b"] {
+            let (ws, _) = workspaces::add(
+                &store,
+                workspaces::NewWorkspace {
+                    kind: "local".into(),
+                    host_id: "local".into(),
+                    root: root.into(),
+                    name: root.trim_start_matches('/').into(),
+                    wsl_distro: None,
+                },
+                None,
+            )
+            .await
+            .expect("ws");
+            let tab = tabs::create(&store, &ws.id, None).await.expect("tab");
+            tabs_by_ws.push((ws, tab));
+        }
+        let a = create(&store, &tabs_by_ws[0].1.id, "terminal", None)
+            .await
+            .expect("a");
+        let closed = create(&store, &tabs_by_ws[0].1.id, "terminal", None)
+            .await
+            .expect("closed");
+        close(&store, &closed.id).await.expect("close");
+        let b = create(&store, &tabs_by_ws[1].1.id, "terminal", None)
+            .await
+            .expect("b");
+        let ids = |rows: Vec<PaneRecord>| rows.into_iter().map(|p| p.id).collect::<Vec<_>>();
+        assert_eq!(
+            ids(list_all_open(&store).await.expect("all")),
+            [a.id.clone(), b.id]
+        );
+        workspaces::remove(&store, &tabs_by_ws[1].0.id)
+            .await
+            .expect("remove");
+        assert_eq!(ids(list_all_open(&store).await.expect("all")), [a.id]);
     }
 
     #[tokio::test]

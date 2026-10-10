@@ -50,8 +50,8 @@ if [ "$version" != "$pkg" ] || [ "$version" != "$cargo_v" ]; then
   echo "version mismatch: tauri.conf.json $version, package.json $pkg, Cargo.toml $cargo_v" >&2
   exit 1
 fi
-if ! grep -q "^## $version\b" "$root/CHANGELOG.md"; then
-  echo "CHANGELOG.md has no '## $version' section" >&2
+# F-WB-03 AC1: CHANGELOG.md's format holds and this version has a section.
+if ! (cd "$root" && pnpm exec tsx scripts/check-changelog.ts --version "$version" >/dev/null); then
   exit 1
 fi
 if grep -q '"TBD"' "$root/crates/tandem-voice/models/catalog.json"; then

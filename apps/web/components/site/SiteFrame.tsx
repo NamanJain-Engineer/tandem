@@ -16,6 +16,7 @@ const NAV = [
   { href: "/demo/", label: "Live demo" },
   { href: "/#claude", label: "Claude" },
   { href: "/pricing/", label: "Pricing" },
+  { href: "/docs/", label: "Docs" },
   { href: "/changelog/", label: "Changelog" },
   { href: "/about/", label: "About" },
 ];
@@ -65,6 +66,9 @@ export function SiteFrame({ children }: { children: ReactNode }) {
           <nav aria-label="Legal" className="flex flex-wrap gap-x-5 gap-y-2 sm:ml-auto">
             <a href="/about/" className="hover:text-fg">
               About
+            </a>
+            <a href="/docs/" className="hover:text-fg">
+              Docs
             </a>
             <a href="/changelog/" className="hover:text-fg">
               Changelog
