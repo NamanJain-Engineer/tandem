@@ -27,8 +27,8 @@ impl ApprovalAsker for Deny {
 #[tokio::test]
 async fn invariant_rule_3_the_gateway_lease_is_served_on_loopback_only() {
     let gw = Gateway::start(GatewayDeps::new(Arc::new(Deny)))
-    .await
-    .expect("gateway");
+        .await
+        .expect("gateway");
     assert!(gw.url.starts_with("http://127.0.0.1:"), "{}", gw.url);
     let lease = gw.prepare(SessionDescriptor::new(
         Caller::Thread {
