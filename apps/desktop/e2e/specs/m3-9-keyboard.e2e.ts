@@ -63,7 +63,11 @@ async function runs(): Promise<Record<string, number>> {
 }
 
 // E2E-M3-9 Keyboard (F-SH-09, F-CD-05 AC1).
-describe("E2E-M3-9 keyboard", () => {
+describe("E2E-M3-9 keyboard", function () {
+  // F-SH-09.4 runs every registry command through the palette, about 1.5 s
+  // each; the budget grows with the registry (D-821). Each command still has
+  // its own 3 s to run.
+  this.timeout(60_000 + COMMANDS.length * 3_000);
   let pane = "";
 
   before(async () => {
