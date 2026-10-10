@@ -16,7 +16,7 @@ export {
   type AvatarProps,
 } from "./components/Avatar";
 export { Badge, Chip, type BadgeVariant, type ChipProps } from "./components/Badge";
-export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from "./components/Button";
+export { Button, buttonClass, type ButtonProps, type ButtonSize, type ButtonVariant } from "./components/Button";
 export {
   Checkbox,
   RadioGroup,
