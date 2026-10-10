@@ -116,6 +116,9 @@ static REGISTRY: &[CommandSpec] = &[
         Some("Mod+Alt+C"),
         E::ThreadOpen,
     )),
+    // F-AG-04: the New teammate sheet (no default shortcut: Mod+Shift+N is
+    // Notifications, UI_SPEC UI-70).
+    same("teammate.new", C::App, None, E::Always),
     aliased(
         "rail.toggle",
         C::Navigation,

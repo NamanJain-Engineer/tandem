@@ -99,17 +99,34 @@ describe("Privacy (F-TL-01)", () => {
   });
 
   it("F-TL-04.2 About › Licenses shows the notices the build carries", async () => {
-    fakeBackend({ app_licenses: () => "# Third-party notices\n\nParakeet TDT 0.6B v3 by NVIDIA, CC BY 4.0\nGNU Lesser General Public License" });
+    fakeBackend({
+      app_licenses: () =>
+        "# Third-party notices\n\nParakeet TDT 0.6B v3 by NVIDIA, CC BY 4.0\nGNU Lesser General Public License",
+    });
     open();
     fireEvent.change(screen.getByLabelText("Filter settings"), { target: { value: "diagnostics" } });
     fireEvent.click(await screen.findByTestId("open-licenses"));
-    await waitFor(() => expect(screen.getByTestId("licenses-text").textContent).toContain("Parakeet TDT 0.6B v3 by NVIDIA"));
+    await waitFor(() =>
+      expect(screen.getByTestId("licenses-text").textContent).toContain("Parakeet TDT 0.6B v3 by NVIDIA"),
+    );
     expect(screen.getByRole("dialog", { name: "Licenses" })).toBeTruthy();
   });
 
   it("F-SH-06 Settings › Updates is a page with automatic checks and Check now", async () => {
     fakeBackend({
-      updates_state: () => ({ stage: "idle", current: "0.1.0", channel: "stable", version: null, notes: null, percent: null, errorStage: null, error: null, lastCheck: null, upToDate: false, minVersion: null }),
+      updates_state: () => ({
+        stage: "idle",
+        current: "0.1.0",
+        channel: "stable",
+        version: null,
+        notes: null,
+        percent: null,
+        errorStage: null,
+        error: null,
+        lastCheck: null,
+        upToDate: false,
+        minVersion: null,
+      }),
     });
     open();
     fireEvent.change(screen.getByLabelText("Filter settings"), { target: { value: "channel" } });

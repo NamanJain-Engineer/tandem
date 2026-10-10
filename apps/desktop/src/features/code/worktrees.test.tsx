@@ -86,15 +86,22 @@ describe("worktrees (F-CD-15)", () => {
         <CodeRail />
       </UiProvider>,
     );
-    const tops = screen.getAllByTestId("workspace-row").map((r) => within(r).getByTestId("rail-row-name").textContent);
+    const tops = screen
+      .getAllByTestId("workspace-row")
+      .map((r) => within(r).getByTestId("rail-row-name").textContent);
     expect(tops).toEqual(["shop", "notes"]);
     const nested = screen.getAllByTestId("worktree-row");
-    expect(nested.map((r) => r.getAttribute("data-branch"))).toEqual(["tandem/fix-auth", "tandem/fix-auth-2"]);
+    expect(nested.map((r) => r.getAttribute("data-branch"))).toEqual([
+      "tandem/fix-auth",
+      "tandem/fix-auth-2",
+    ]);
     for (const row of nested) {
       const groupEl = row.closest('[role="group"]');
       expect(groupEl).not.toBeNull();
       // The group belongs to the repository's row, the element just before it.
-      expect(within(groupEl?.previousElementSibling as HTMLElement).getByTestId("rail-row-name").textContent).toBe("shop");
+      expect(
+        within(groupEl?.previousElementSibling as HTMLElement).getByTestId("rail-row-name").textContent,
+      ).toBe("shop");
     }
     expect(topLevel([REPO, FIX, PLAIN]).map((w) => w.id)).toEqual(["shop", "notes"]);
     expect(worktreesOf([REPO, FIX, FIX2, PLAIN], "notes")).toEqual([]);
@@ -126,7 +133,13 @@ describe("worktrees (F-CD-15)", () => {
       lane_remove: (a) => {
         forced.push(Boolean(a?.force));
         if (!a?.force) {
-          const err: IpcError = { code: "conflict", message: "Uncommitted changes", stage: null, hint: null, retryable: false };
+          const err: IpcError = {
+            code: "conflict",
+            message: "Uncommitted changes",
+            stage: null,
+            hint: null,
+            retryable: false,
+          };
           throw err;
         }
         return null;
@@ -136,7 +149,9 @@ describe("worktrees (F-CD-15)", () => {
     dialogs();
     const confirm = screen.getByRole("button", { name: "Discard worktree" }) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText("Type tandem/fix-auth to confirm"), { target: { value: "tandem/fix-auth" } });
+    fireEvent.change(screen.getByLabelText("Type tandem/fix-auth to confirm"), {
+      target: { value: "tandem/fix-auth" },
+    });
     expect(confirm.disabled).toBe(false);
     fireEvent.click(confirm);
     await waitFor(() => expect(forced).toEqual([false, true]));
@@ -154,7 +169,9 @@ describe("worktrees (F-CD-15)", () => {
     });
     useWorktrees.getState().open({ kind: "discard", worktreeId: "wt_1" });
     dialogs();
-    fireEvent.change(screen.getByLabelText("Type tandem/fix-auth to confirm"), { target: { value: "tandem/fix-auth" } });
+    fireEvent.change(screen.getByLabelText("Type tandem/fix-auth to confirm"), {
+      target: { value: "tandem/fix-auth" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Discard worktree" }));
     await waitFor(() => expect(named("lane_remove")).toHaveLength(2));
     expect(screen.queryByText("Kept the worktree")).toBeNull();
@@ -169,7 +186,11 @@ describe("worktrees (F-CD-15)", () => {
     expect(screen.getByText("Merge tandem/fix-auth into main?")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Merge" }));
     const list = await screen.findByTestId("merge-conflicts");
-    expect(within(list).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Csrc/auth.rs", "CREADME.md"]);
+    expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["Csrc/auth.rs", "CREADME.md"]);
     expect(screen.getByText("Merge stopped: 2 files conflict")).toBeTruthy();
     expect(screen.getByText(/Nothing was committed/)).toBeTruthy();
   });
@@ -182,7 +203,12 @@ describe("worktrees (F-CD-15)", () => {
       wt_2: { parentId: "shop", parentName: "shop", branch: "tandem/fix-auth-2" },
     };
     const groups = group(
-      [item("p1", "shop", "shop"), item("p2", "wt_2", "fix-auth-2"), item("p3", "wt_1", "fix-auth"), item("p4", "notes", "notes")],
+      [
+        item("p1", "shop", "shop"),
+        item("p2", "wt_2", "fix-auth-2"),
+        item("p3", "wt_1", "fix-auth"),
+        item("p4", "notes", "notes"),
+      ],
       "project",
       ["shop", "wt_1", "wt_2", "notes"],
       "No folder",

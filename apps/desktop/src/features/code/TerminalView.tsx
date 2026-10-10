@@ -51,7 +51,20 @@ const BUNDLED_MONO = "JetBrains Mono Variable";
  * (F-CD-04). Plain family names only: the WebGL renderer measures with a
  * canvas, which can't resolve CSS variables. */
 export function fontStack(family: string): string {
-  const names = [family, BUNDLED_MONO, "JetBrains Mono", "ui-monospace", "SF Mono", "Menlo", "Consolas", "Noto Sans Mono CJK SC", "Noto Sans CJK SC", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"];
+  const names = [
+    family,
+    BUNDLED_MONO,
+    "JetBrains Mono",
+    "ui-monospace",
+    "SF Mono",
+    "Menlo",
+    "Consolas",
+    "Noto Sans Mono CJK SC",
+    "Noto Sans CJK SC",
+    "Apple Color Emoji",
+    "Segoe UI Emoji",
+    "Noto Color Emoji",
+  ];
   return [...new Set(names)].map((n) => (n === "ui-monospace" ? n : `"${n}"`)).join(", ") + ", monospace";
 }
 
@@ -61,7 +74,6 @@ export function remeasure(xterm: Terminal): void {
   xterm.options.fontFamily = "monospace";
   xterm.options.fontFamily = family;
 }
-
 
 export type Phase =
   | { kind: "starting" }
@@ -104,7 +116,11 @@ type Toast = (t: { tone?: "info" | "success" | "warning" | "error"; title: strin
 /** "Copy last command output" from the pane menu and the palette (F-CD-10 AC3). */
 export async function copyLastOutput(paneId: string, toast: Toast): Promise<void> {
   const result = (await terminalHandles.get(paneId)?.copyLastOutput()) ?? "none";
-  toast(result === "copied" ? { tone: "success", title: t("terminal.copied") } : { tone: "info", title: t("terminal.noLastOutput") });
+  toast(
+    result === "copied"
+      ? { tone: "success", title: t("terminal.copied") }
+      : { tone: "info", title: t("terminal.noLastOutput") },
+  );
 }
 
 /** Terminals reflow at most this often while their size changes (F-CD-02). */
@@ -275,11 +291,17 @@ export function TerminalView({
     const searchAddon = new SearchAddon({ highlightLimit: HIGHLIGHT_LIMIT });
     xterm.loadAddon(searchAddon);
     search.current = searchAddon;
-    const results = searchAddon.onDidChangeResults((r) => setFindResult({ index: r.resultIndex, count: r.resultCount }));
+    const results = searchAddon.onDidChangeResults((r) =>
+      setFindResult({ index: r.resultIndex, count: r.resultCount }),
+    );
     // Links (F-CD-09): Mod+Click opens a URL or a file a program printed,
     // never while the pane is hidden or a pane is being dragged.
     const follow = (event: MouseEvent, open: () => void) => {
-      const pane = { mac: inputCtx.current.mac, visible: visibleRef.current, dragging: useLayout.getState().dragging };
+      const pane = {
+        mac: inputCtx.current.mac,
+        visible: visibleRef.current,
+        dragging: useLayout.getState().dragging,
+      };
       if (opensLink(event, pane)) open();
     };
     xterm.loadAddon(new WebLinksAddon((event, uri) => follow(event, () => openUrl(uri))));
@@ -552,7 +574,12 @@ export function TerminalView({
       if (staged) sendPaste(staged);
       return;
     }
-    if (needsConfirm(text, { agent: inputCtx.current.agent, confirmSetting: optionsRef.current.confirmMultilinePaste ?? true })) {
+    if (
+      needsConfirm(text, {
+        agent: inputCtx.current.agent,
+        confirmSetting: optionsRef.current.confirmMultilinePaste ?? true,
+      })
+    ) {
       setPendingPaste(text);
       return;
     }
@@ -641,21 +668,39 @@ export function TerminalView({
       pointAt: (needle: string) => {
         const xterm = term.current;
         const screen = xterm?.element?.querySelector(".xterm-screen");
-        const core = (xterm as unknown as { _core?: { _renderService?: { dimensions?: { css?: { cell?: { width: number; height: number } } } } } } | null)?._core;
+        const core = (
+          xterm as unknown as {
+            _core?: {
+              _renderService?: { dimensions?: { css?: { cell?: { width: number; height: number } } } };
+            };
+          } | null
+        )?._core;
         const cell = core?._renderService?.dimensions?.css?.cell;
         if (!xterm || !screen || !cell) return null;
         const buf = xterm.buffer.active;
         const box = screen.getBoundingClientRect();
         for (let row = xterm.rows - 1; row >= 0; row--) {
-          const col = buf.getLine(buf.viewportY + row)?.translateToString(true).indexOf(needle) ?? -1;
-          if (col >= 0) return { x: box.left + (col + 0.5) * cell.width, y: box.top + (row + 0.5) * cell.height };
+          const col =
+            buf
+              .getLine(buf.viewportY + row)
+              ?.translateToString(true)
+              .indexOf(needle) ?? -1;
+          if (col >= 0)
+            return { x: box.left + (col + 0.5) * cell.width, y: box.top + (row + 0.5) * cell.height };
         }
         return null;
       },
       metrics: () => {
         const xterm = term.current;
         if (!xterm) return null;
-        const core = (xterm as unknown as { _core?: { _renderService?: { dimensions?: { css?: { cell?: unknown } } }; _charSizeService?: { width?: number; height?: number } } })._core;
+        const core = (
+          xterm as unknown as {
+            _core?: {
+              _renderService?: { dimensions?: { css?: { cell?: unknown } } };
+              _charSizeService?: { width?: number; height?: number };
+            };
+          }
+        )._core;
         return {
           cell: core?._renderService?.dimensions?.css?.cell ?? null,
           char: { w: core?._charSizeService?.width, h: core?._charSizeService?.height },
@@ -794,7 +839,12 @@ export function TerminalView({
       )}
       style={{ background: options.theme.background }}
     >
-      <div ref={host} data-testid="terminal" data-pane-id={paneId} className="tn-term min-h-0 flex-1 py-1.5 pl-3.5 pr-2" />
+      <div
+        ref={host}
+        data-testid="terminal"
+        data-pane-id={paneId}
+        className="tn-term min-h-0 flex-1 py-1.5 pl-3.5 pr-2"
+      />
       {scrolledUp && phase.kind !== "starting" && (
         <button
           type="button"

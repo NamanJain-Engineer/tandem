@@ -20,6 +20,8 @@
     "allow-test-min-version-shift",
     "allow-test-auth-refresh",
     "allow-test-account-create",
+    "allow-test-plugin-connect",
+    "allow-test-gateway-metrics",
     "core:window:allow-set-position",
     "core:window:allow-outer-position"
   ]

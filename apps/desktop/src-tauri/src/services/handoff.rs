@@ -400,6 +400,8 @@ pub async fn start_thread(
             effort: None,
             access: None,
             mode: None,
+            teammate_id: None,
+            place: None,
         },
     )
     .await?;

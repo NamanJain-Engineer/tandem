@@ -1,7 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { AlertTriangle, Folder, GitBranch, Globe, Plus, SquareTerminal } from "lucide-react";
 import type { SavedSession, WorkspaceSummary } from "@tandem/protocol";
-import { Badge, ConfirmDialog, EngineGlyph, IconButton, StatusDot, cx, useToast, type MenuEntry } from "@tandem/ui";
+import {
+  Badge,
+  ConfirmDialog,
+  EngineGlyph,
+  IconButton,
+  StatusDot,
+  cx,
+  useToast,
+  type MenuEntry,
+} from "@tandem/ui";
 import { t } from "../../i18n";
 import { copyText } from "../../ipc/clipboard";
 import { listen } from "../../ipc/events";
@@ -95,16 +104,31 @@ function SessionDot({ paneId }: { paneId: string }) {
   const status = useStatus((st) => st.records[paneKey(paneId)]?.status);
   const unread = useStatus((st) => st.unread[paneKey(paneId)] ?? false);
   return (
-    <span className="relative inline-flex shrink-0" data-testid="rail-session-status" data-status={status ?? "idle"}>
+    <span
+      className="relative inline-flex shrink-0"
+      data-testid="rail-session-status"
+      data-status={status ?? "idle"}
+    >
       <StatusDot status={status ? statusView(status) : "idle"} size={6} />
-      {unread && <span data-testid="unread-dot" aria-label={t("rail.unread")} className="absolute -right-1 -top-1 size-1.5 rounded-full bg-accent" />}
+      {unread && (
+        <span
+          data-testid="unread-dot"
+          aria-label={t("rail.unread")}
+          className="absolute -right-1 -top-1 size-1.5 rounded-full bg-accent"
+        />
+      )}
     </span>
   );
 }
 
 /** The right slot of a workspace row (F-SH-03): Working n, Waiting on you,
  * Failed, or nothing; and the unread dot when something finished unseen. */
-function useWorkspaceStatus(ws: WorkspaceSummary): { working: number; waiting: boolean; failed: boolean; unread: boolean } {
+function useWorkspaceStatus(ws: WorkspaceSummary): {
+  working: number;
+  waiting: boolean;
+  failed: boolean;
+  unread: boolean;
+} {
   const tabs = useLayout((s) => s.tabs);
   const records = useStatus((s) => s.records);
   const unread = useStatus((s) => s.unread);
@@ -136,7 +160,13 @@ function WorkspaceSlot({ ws }: { ws: WorkspaceSummary }) {
           {slot}
         </span>
       )}
-      {s.unread && <span data-testid="workspace-unread" aria-label={t("rail.unread")} className="size-1.5 shrink-0 rounded-full bg-accent" />}
+      {s.unread && (
+        <span
+          data-testid="workspace-unread"
+          aria-label={t("rail.unread")}
+          className="size-1.5 shrink-0 rounded-full bg-accent"
+        />
+      )}
     </>
   );
 }
@@ -219,7 +249,10 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
         >
           <SessionDot paneId={pane.id} />
           {pane.kind === "agent" ? (
-            <EngineGlyph letters={engines.find((e) => e.spec.id === pane.engineId)?.spec.logo ?? ""} size={14} />
+            <EngineGlyph
+              letters={engines.find((e) => e.spec.id === pane.engineId)?.spec.logo ?? ""}
+              size={14}
+            />
           ) : pane.kind === "browser" ? (
             <Globe size={12} aria-hidden="true" className="shrink-0" />
           ) : (
@@ -346,7 +379,12 @@ export function CodeRail() {
             <>
               <WorkspaceSessions ws={ws} />
               {worktreesOf(list, ws.id).map((wt) => (
-                <WorktreeRow key={wt.id} wt={wt} base={ws.branch ?? "HEAD"} slot={<WorkspaceSlot ws={wt} />} />
+                <WorktreeRow
+                  key={wt.id}
+                  wt={wt}
+                  base={ws.branch ?? "HEAD"}
+                  slot={<WorkspaceSlot ws={wt} />}
+                />
               ))}
             </>
           ),

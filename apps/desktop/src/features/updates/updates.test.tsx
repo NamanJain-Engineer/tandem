@@ -45,7 +45,10 @@ const agent = (name: string): DashboardItem => ({
   pendingApproval: null,
 });
 
-function setup(state: UpdateState, extra: Record<string, (a?: Record<string, unknown>) => unknown> = {}): Call[] {
+function setup(
+  state: UpdateState,
+  extra: Record<string, (a?: Record<string, unknown>) => unknown> = {},
+): Call[] {
   let current = state;
   return fakeBackend({
     updates_state: () => current,
@@ -84,7 +87,13 @@ describe("updates (F-SH-06)", () => {
     fireEvent.click(pill);
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Restart to update to 9.9.0?")).toBeTruthy();
-    await waitFor(() => expect(within(dialog).getAllByTestId("update-live-agent").map((li) => li.textContent)).toEqual(["Adashop", "Beashop"]));
+    await waitFor(() =>
+      expect(
+        within(dialog)
+          .getAllByTestId("update-live-agent")
+          .map((li) => li.textContent),
+      ).toEqual(["Adashop", "Beashop"]),
+    );
     expect(within(dialog).getByText(/Agents stop and can be resumed after the restart/)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Restart now" }));
     await waitFor(() => expect(calls.some((c) => c.cmd === "updates_install")).toBe(true));
@@ -101,14 +110,22 @@ describe("updates (F-SH-06)", () => {
     );
     fireEvent.click(screen.getByTestId("update-pill"));
     const dialog = await screen.findByRole("dialog");
-    await waitFor(() => expect(within(dialog).getByText("Vibezeo will restart in a few seconds.")).toBeTruthy());
+    await waitFor(() =>
+      expect(within(dialog).getByText("Vibezeo will restart in a few seconds.")).toBeTruthy(),
+    );
     fireEvent.click(within(dialog).getByRole("button", { name: "Later" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByTestId("update-pill")).toBeTruthy();
   });
 
   it("F-SH-06.2 a bad signature shows the failed pill at the verify stage and says it can't be verified", async () => {
-    setup({ ...base, stage: "error", version: "9.9.0", errorStage: "verify", error: "Update can't be verified, so it wasn't installed." });
+    setup({
+      ...base,
+      stage: "error",
+      version: "9.9.0",
+      errorStage: "verify",
+      error: "Update can't be verified, so it wasn't installed.",
+    });
     await useUpdates.getState().load();
     mount(
       <>
@@ -119,7 +136,9 @@ describe("updates (F-SH-06)", () => {
     const pill = screen.getByTestId("update-pill");
     expect(pill.textContent).toBe("Update failed — Retry");
     expect(pill.dataset.stage).toBe("verify");
-    expect(screen.getByTestId("updates-status").textContent).toBe("Update can't be verified, so it wasn't installed.");
+    expect(screen.getByTestId("updates-status").textContent).toBe(
+      "Update can't be verified, so it wasn't installed.",
+    );
   });
 
   it("F-SH-06.3 nothing newer shows no pill and You're up to date", async () => {
@@ -156,7 +175,9 @@ describe("updates (F-SH-06)", () => {
     setup({ ...base, stage: "managed" });
     await useUpdates.getState().load();
     mount(<UpdatesPanel />);
-    expect(screen.getByTestId("updates-panel").textContent).toContain("Updates are managed by your package manager.");
+    expect(screen.getByTestId("updates-panel").textContent).toContain(
+      "Updates are managed by your package manager.",
+    );
     expect(screen.queryByTestId("updates-check-now")).toBeNull();
   });
 
@@ -165,7 +186,9 @@ describe("updates (F-SH-06)", () => {
     await useUpdates.getState().load();
     mount(<UpdatesPanel />);
     fireEvent.click(screen.getByRole("radio", { name: "Beta" }));
-    await waitFor(() => expect(calls.find((c) => c.cmd === "updates_set_channel")?.args).toEqual({ channel: "beta" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "updates_set_channel")?.args).toEqual({ channel: "beta" }),
+    );
   });
 
   it("F-SH-06.4 during the grace a banner keeps terminals usable; after it the overlay is modal", async () => {
@@ -178,9 +201,15 @@ describe("updates (F-SH-06)", () => {
         <UnsupportedOverlay />
       </>,
     );
-    expect(screen.getByTestId("banner-unsupported").textContent).toContain("Terminals keep working for 72 more hours.");
+    expect(screen.getByTestId("banner-unsupported").textContent).toContain(
+      "Terminals keep working for 72 more hours.",
+    );
     expect(screen.queryByTestId("unsupported-overlay")).toBeNull();
-    act(() => useUpdates.setState({ state: { ...base, minVersion: { minVersion: "9.0.0", graceUntil: Date.now() - 1, modal: true } } }));
+    act(() =>
+      useUpdates.setState({
+        state: { ...base, minVersion: { minVersion: "9.0.0", graceUntil: Date.now() - 1, modal: true } },
+      }),
+    );
     rerender(
       <UiProvider>
         <Banners />
@@ -188,7 +217,9 @@ describe("updates (F-SH-06)", () => {
       </UiProvider>,
     );
     const overlay = screen.getByTestId("unsupported-overlay");
-    expect(within(overlay).getByRole("heading").textContent).toBe("This version of Vibezeo is no longer supported");
+    expect(within(overlay).getByRole("heading").textContent).toBe(
+      "This version of Vibezeo is no longer supported",
+    );
     expect(within(overlay).getByRole("button", { name: "Update now" })).toBeTruthy();
     expect(screen.queryByTestId("banner-unsupported")).toBeNull();
   });

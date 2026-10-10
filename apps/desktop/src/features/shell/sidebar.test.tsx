@@ -37,7 +37,11 @@ describe("right sidebar (F-SH-10)", () => {
 
   it("F-SH-10.4 opening Dashboard twice leaves one Dashboard tab and focuses it", async () => {
     setup();
-    render(<UiProvider><Sidebar /></UiProvider>);
+    render(
+      <UiProvider>
+        <Sidebar />
+      </UiProvider>,
+    );
     await waitFor(() => expect(pills()).toEqual(["dashboard", "files"]));
     act(() => useSidebar.getState().activate("files"));
     act(() => useSidebar.getState().openTab("dashboard"));
@@ -53,7 +57,11 @@ describe("right sidebar (F-SH-10)", () => {
   it("F-SH-10.3 order, active tab and width are saved (debounced) as one state", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const calls = setup();
-    render(<UiProvider><Sidebar /></UiProvider>);
+    render(
+      <UiProvider>
+        <Sidebar />
+      </UiProvider>,
+    );
     await waitFor(() => expect(pills()).toEqual(["dashboard", "files"]));
     act(() => useSidebar.getState().reorder(["files", "dashboard"]));
     fireEvent.click(screen.getAllByRole("tab")[1] as HTMLElement);
@@ -72,9 +80,17 @@ describe("right sidebar (F-SH-10)", () => {
 
   it("a pill closes with × or Delete; Alt+Shift+Arrow moves it", async () => {
     setup();
-    render(<UiProvider><Sidebar /></UiProvider>);
+    render(
+      <UiProvider>
+        <Sidebar />
+      </UiProvider>,
+    );
     await waitFor(() => expect(pills()).toEqual(["dashboard", "files"]));
-    fireEvent.keyDown(screen.getByRole("tab", { name: /Files/ }), { key: "ArrowLeft", altKey: true, shiftKey: true });
+    fireEvent.keyDown(screen.getByRole("tab", { name: /Files/ }), {
+      key: "ArrowLeft",
+      altKey: true,
+      shiftKey: true,
+    });
     expect(pills()).toEqual(["files", "dashboard"]);
     fireEvent.click(screen.getByTitle("Close Files"));
     expect(pills()).toEqual(["dashboard"]);
@@ -85,7 +101,11 @@ describe("right sidebar (F-SH-10)", () => {
 
   it("F-SH-10.2 full-screen overlays the content and keeps the docked width in the flow; Esc leaves it", async () => {
     setup();
-    const { container } = render(<UiProvider><Sidebar /></UiProvider>);
+    const { container } = render(
+      <UiProvider>
+        <Sidebar />
+      </UiProvider>,
+    );
     await waitFor(() => expect(pills()).toHaveLength(2));
     const aside = screen.getByTestId("sidebar");
     expect(aside.dataset.placement).toBe("docked");

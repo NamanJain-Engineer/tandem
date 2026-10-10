@@ -46,6 +46,21 @@ pub struct ChatStart {
     pub mcp: Option<McpEndpoint>,
     /// The engine version detection found, for the adapter's version gate.
     pub engine_version: Option<String>,
+    /// A teammate chat's briefing (`$DATA/briefings/<thread>.md`, F-AG-06):
+    /// Claude reads it with `--append-system-prompt-file`, Codex gets it as
+    /// developer instructions and ACP agents as the start of the first
+    /// prompt. Never argv.
+    pub briefing: Option<PathBuf>,
+}
+
+impl ChatStart {
+    /// The briefing's text, if the session has one that can be read.
+    pub fn briefing_text(&self) -> Option<String> {
+        self.briefing
+            .as_ref()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .filter(|t| !t.trim().is_empty())
+    }
 }
 
 /// The gateway URL and a session's lease token.

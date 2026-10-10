@@ -311,6 +311,8 @@ mod tests {
             sort_key: "a0".into(),
             created_at: 1,
             updated_at: 1,
+            teammate_id: None,
+            conversation_ref: None,
         }
     }
 

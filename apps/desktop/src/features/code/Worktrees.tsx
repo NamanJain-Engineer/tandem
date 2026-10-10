@@ -36,7 +36,11 @@ type Show = ReturnType<typeof useToast>["show"];
 export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): MenuEntry[] {
   const open = useWorktrees.getState().open;
   return [
-    { id: "wt-diff", label: t("worktree.openDiff"), onSelect: () => open({ kind: "diff", worktreeId: wt.id }) },
+    {
+      id: "wt-diff",
+      label: t("worktree.openDiff"),
+      onSelect: () => open({ kind: "diff", worktreeId: wt.id }),
+    },
     {
       // F-CD-15 "Open in Files": the worktree's folder in the Files tab.
       id: "wt-files",
@@ -75,7 +79,15 @@ export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): Me
 }
 
 /** A worktree under its repository in the Code rail (F-CD-15 AC4). */
-export function WorktreeRow({ wt, base, slot }: { wt: WorkspaceSummary; base: string; slot?: React.ReactNode }) {
+export function WorktreeRow({
+  wt,
+  base,
+  slot,
+}: {
+  wt: WorkspaceSummary;
+  base: string;
+  slot?: React.ReactNode;
+}) {
   const activeId = useWorkspaces((s) => s.activeId);
   const { show } = useToast();
   const branch = wt.laneBranch ?? wt.name;
@@ -124,7 +136,13 @@ export function WorktreeRow({ wt, base, slot }: { wt: WorkspaceSummary; base: st
       >
         <Menu
           align="end"
-          trigger={<IconButton size="sm" icon={<MoreHorizontal size={14} />} label={t("worktree.menuLabel", { branch })} />}
+          trigger={
+            <IconButton
+              size="sm"
+              icon={<MoreHorizontal size={14} />}
+              label={t("worktree.menuLabel", { branch })}
+            />
+          }
           entries={worktreeMenu(wt, base, show)}
         />
       </span>
@@ -176,7 +194,12 @@ function NewWorktreeDialog({ ws, onClose }: { ws: WorkspaceSummary; onClose: () 
           <Button variant="secondary" onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button variant="primary" loading={busy} onClick={() => void submit()} data-testid="worktree-create">
+          <Button
+            variant="primary"
+            loading={busy}
+            onClick={() => void submit()}
+            data-testid="worktree-create"
+          >
             {t("worktree.create")}
           </Button>
         </>
@@ -256,7 +279,17 @@ function DiffDialog({ wt, onClose }: { wt: WorkspaceSummary; onClose: () => void
   );
 }
 
-function MergeDialogs({ wt, parent, base, onClose }: { wt: WorkspaceSummary; parent: WorkspaceSummary | undefined; base: string; onClose: () => void }) {
+function MergeDialogs({
+  wt,
+  parent,
+  base,
+  onClose,
+}: {
+  wt: WorkspaceSummary;
+  parent: WorkspaceSummary | undefined;
+  base: string;
+  onClose: () => void;
+}) {
   const [report, setReport] = useState<MergeReport | null>(null);
   // The confirm closes itself on Merge; stay mounted until the report is in,
   // so a conflict can still be shown.
@@ -305,7 +338,9 @@ function MergeDialogs({ wt, parent, base, onClose }: { wt: WorkspaceSummary; par
           } else if (out.value.merged) {
             show({
               tone: "success",
-              title: out.value.commit ? t("worktree.merged", { branch, base }) : t("worktree.upToDate", { branch, base }),
+              title: out.value.commit
+                ? t("worktree.merged", { branch, base })
+                : t("worktree.upToDate", { branch, base }),
             });
             void useWorkspaces.getState().refresh();
             onClose();
@@ -359,6 +394,13 @@ export function WorktreeDialogs() {
   if (!wt) return null;
   if (ask.kind === "diff") return <DiffDialog wt={wt} onClose={close} />;
   if (ask.kind === "merge")
-    return <MergeDialogs wt={wt} parent={list.find((w) => w.id === wt.parentId)} base={baseBranch(list, wt)} onClose={close} />;
+    return (
+      <MergeDialogs
+        wt={wt}
+        parent={list.find((w) => w.id === wt.parentId)}
+        base={baseBranch(list, wt)}
+        onClose={close}
+      />
+    );
   return <DiscardDialog wt={wt} onClose={close} />;
 }

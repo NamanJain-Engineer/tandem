@@ -8,12 +8,12 @@ every milestone has its tasks, exit checks and E2E list in MILESTONES. Tick
 items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md`
 has every feature below with its full behaviour and acceptance tests.
 
-**Where it stands (10 October 2026, `product-m0-m5`):** M0–M7 and M9 are
-done, and so are M15's six features (its non-functional checks are under
+**Where it stands (10 October 2026, `product-m0-m5`):** M0–M7, M9 and M10
+are done, and so are M15's six features (its non-functional checks are under
 way). So is M13, apart from its voice pair (F-DI-05 and F-DI-10, which wait
 for M8's Dictate). M16 has F-SH-12, F-AC-07, F-AU-01, F-BE-03 and F-BE-12.
-That's 94 of 152 features, 56 of 65 P0. Left: 58 features in seven
-milestones (M8, M10–M14, M16), of which 9 are P0. vibezeo.com serves 0.3.0
+That's 106 of 152 features, 56 of 65 P0. Left: 46 features in six
+milestones (M8, M11–M14, M16), of which 9 are P0, all M8's. vibezeo.com serves 0.3.0
 (M6, M7, M9 and the Scratchpad). M15 makes the P0/P1 product launchable;
 M16 adds the P2 extras and the release candidate.
 
@@ -66,19 +66,19 @@ history and dictionary, model download.
 ### M10 · Teammates and gateway core (XL) · 12 features (P1)
 Agent mode: persistent teammates with a brief, memory, skills, learning,
 session search and teammate-to-teammate mail, all over the single local gateway
-with leases.
-- [ ] F-PL-01 Gateway process (M7 built its skeleton, D-4; in progress in pull request #5)
-- [ ] F-AG-01 Teammate record
-- [ ] F-AG-02 Agent rail
-- [ ] F-AG-03 Teammate page and chats
-- [ ] F-AG-04 Create teammate
-- [ ] F-AG-05 Teammate settings
-- [ ] F-AG-06 Briefing assembly
-- [ ] F-AG-07 Memory
-- [ ] F-AG-08 Learn after a turn
-- [ ] F-AG-09 Skills
-- [ ] F-AG-11 Session search tool
-- [ ] F-AG-12 Teammate mail
+with leases. **Done in pull request #5** (branch `m10-teammates-gateway`), except F-DI-12's mic in "Create with AI", which completes after M8 merges (D-300).
+- [x] F-PL-01 Gateway process
+- [x] F-AG-01 Teammate record
+- [x] F-AG-02 Agent rail
+- [x] F-AG-03 Teammate page and chats
+- [x] F-AG-04 Create teammate
+- [x] F-AG-05 Teammate settings
+- [x] F-AG-06 Briefing assembly
+- [x] F-AG-07 Memory
+- [x] F-AG-08 Learn after a turn
+- [x] F-AG-09 Skills
+- [x] F-AG-11 Session search tool
+- [x] F-AG-12 Teammate mail
 
 Tasks: gateway; teammate record; briefing; memory (UI-73); skills (UI-74);
 session search; Agent rail (UI-70); teammate page and chats (UI-71); settings
