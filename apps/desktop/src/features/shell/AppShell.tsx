@@ -10,6 +10,7 @@ import { useLayout } from "../../stores/layout";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { UpgradeDialog } from "../billing/UpgradeDialog";
+import { WhatsNew } from "../whatsnew/WhatsNew";
 import { CodeMain } from "../code/CodeMain";
 import { CodeRail } from "../code/CodeRail";
 import { commandRuns, setCommandToast } from "../commands/commands";
@@ -155,6 +156,7 @@ export function AppShell() {
       </div>
       <StatusBar />
       <UpgradeDialog />
+      <WhatsNew />
       <WorktreeDialogs />
       <LaunchSheet />
       <HandoffDialog />

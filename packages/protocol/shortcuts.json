@@ -45,6 +45,15 @@
     "enabledWhen": "always"
   },
   {
+    "id": "work.find",
+    "category": "navigation",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
     "id": "thread.changes",
     "category": "navigation",
     "mac": "Mod+Alt+C",

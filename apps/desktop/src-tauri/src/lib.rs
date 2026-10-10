@@ -153,6 +153,7 @@ macro_rules! app_commands {
             commands::usage::usage_share_save,
             commands::data_controls::data_export,
             commands::data_controls::data_delete_local,
+            commands::find_work::find_work,
             commands::terminal::term_last_output,
             commands::terminal::term_stage_clipboard_image,
             commands::terminal::pty_type_prompt,

@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { createMDX } from "fumadocs-mdx/next";
 
 const api = process.env.API_INTERNAL_URL ?? "http://127.0.0.1:8787";
 
@@ -28,4 +29,5 @@ const nextConfig: NextConfig = siteExport
       },
     };
 
-export default nextConfig;
+// /docs pages are MDX (F-WB-02, Fumadocs).
+export default createMDX()(nextConfig);

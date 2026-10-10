@@ -137,6 +137,7 @@ setting_keys! {
     SettingsLastPage,
     OnboardingStep,
     OfflineStartedAt,
+    WhatsNewSeen,
     RailWidth,
     ThreadDefaults,
     ThreadGrid,
@@ -798,6 +799,14 @@ pub static SCHEMA: &[SettingSpec] = &[
         []
     ),
     spec!(OfflineStartedAt, json!(null), V::OptionalInt, Hidden, []),
+    // F-WB-03: the last version whose "What's new" was shown.
+    spec!(
+        WhatsNewSeen,
+        json!(null),
+        V::OptionalText { max: 64 },
+        Hidden,
+        []
+    ),
     // The Code rail's width (F-SH-03: 180–360 px, default 248). The Agent and
     // Thread rails get their own keys with their lists.
     spec!(RailWidth, json!(248), V::IntRange(180, 360), Hidden, []),
@@ -979,6 +988,22 @@ mod tests {
         assert!(validate(k, &json!({"pane.split_right": "R"})).is_err());
         assert!(validate(k, &json!({"pane.split_right": true})).is_err());
         assert!(validate(k, &json!(["pane.split_right"])).is_err());
+    }
+
+    /// `pnpm gen:protocol` / `gen:docs` (F-WB-02): writes every setting's
+    /// key, page and default to `TANDEM_SETTINGS_OUT` for the docs.
+    #[test]
+    fn export_settings() {
+        let Ok(out) = std::env::var("TANDEM_SETTINGS_OUT") else {
+            return;
+        };
+        let rows: Vec<_> = SCHEMA
+            .iter()
+            .filter(|s| s.page != SettingsPage::Hidden)
+            .map(|s| json!({ "key": s.key, "page": s.page, "default": (s.default)() }))
+            .collect();
+        let json = serde_json::to_string_pretty(&rows).expect("json");
+        std::fs::write(out, json + "\n").expect("write settings.json");
     }
 
     #[test]

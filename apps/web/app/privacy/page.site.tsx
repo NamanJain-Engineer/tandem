@@ -1,9 +1,34 @@
 import type { Metadata } from "next";
+import hosted from "@tandem/protocol/hosted-features.json";
+import subprocessors from "@tandem/protocol/subprocessors.json";
 import { ProsePage } from "../../components/site/SiteFrame";
 import { RELEASE } from "../../lib/release";
 import { OPERATOR, SITE } from "../../lib/site";
 
 export const metadata: Metadata = { title: "Privacy", alternates: { canonical: "/privacy/" } };
+
+type HostedFeature = {
+  id: string;
+  label: string;
+  sends: string;
+  destination: string;
+  state: { kind: string };
+};
+type Subprocessor = { id: string; name: string; purpose: string; data: string };
+
+/** When a row's data is sent, in words (as /transparency says it). */
+function when(f: HostedFeature): string {
+  switch (f.state.kind) {
+    case "signed_in":
+      return "While you're signed in";
+    case "on_use":
+      return "Only when you use it";
+    case "policy":
+      return "Only when your Team admins turn it on";
+    default:
+      return f.id === "updates" ? "On unless you turn it off" : "Off unless you turn it on";
+  }
+}
 
 export default function PrivacyPage() {
   return (
@@ -63,6 +88,43 @@ export default function PrivacyPage() {
           Once automatic updates arrive, the app will send its version, platform and update channel to check
           for them. Updates are verified with a signature before they install.
         </li>
+      </ul>
+
+      <h2>What the app can send, and when</h2>
+      <p>
+        The download on this site runs with {SITE.product}&apos;s hosted services turned off, so it sends none
+        of this. When {SITE.product} accounts open, these are the only things the app sends anywhere. Some of
+        them belong to features that aren&apos;t in the app yet; this is what they will send. The app shows
+        the same list, with what&apos;s on, in Settings › Privacy.
+      </p>
+      <table className="text-left text-sm">
+        <thead>
+          <tr>
+            <th className="py-1.5 pr-4">Feature</th>
+            <th className="py-1.5 pr-4">What it sends</th>
+            <th className="py-1.5 pr-4">To</th>
+            <th className="py-1.5">When</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(hosted.features as HostedFeature[]).map((f) => (
+            <tr key={f.id} data-hosted-feature={f.id} className="border-t border-divider align-top">
+              <td className="py-1.5 pr-4 font-medium">{f.label}</td>
+              <td className="py-1.5 pr-4">{f.sends}</td>
+              <td className="py-1.5 pr-4">{f.destination}</td>
+              <td className="py-1.5">{when(f)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h2>Who processes it</h2>
+      <ul>
+        {(subprocessors.subprocessors as Subprocessor[]).map((s) => (
+          <li key={s.id}>
+            <strong>{s.name}</strong>: {s.purpose}. {s.data}.
+          </li>
+        ))}
       </ul>
 
       <h2>Your choices</h2>
