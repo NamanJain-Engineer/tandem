@@ -137,6 +137,7 @@ setting_keys! {
     SettingsLastPage,
     OnboardingStep,
     OfflineStartedAt,
+    WhatsNewSeen,
     RailWidth,
     ThreadDefaults,
     ThreadGrid,
@@ -798,6 +799,14 @@ pub static SCHEMA: &[SettingSpec] = &[
         []
     ),
     spec!(OfflineStartedAt, json!(null), V::OptionalInt, Hidden, []),
+    // F-WB-03: the last version whose "What's new" was shown.
+    spec!(
+        WhatsNewSeen,
+        json!(null),
+        V::OptionalText { max: 64 },
+        Hidden,
+        []
+    ),
     // The Code rail's width (F-SH-03: 180–360 px, default 248). The Agent and
     // Thread rails get their own keys with their lists.
     spec!(RailWidth, json!(248), V::IntRange(180, 360), Hidden, []),
