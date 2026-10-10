@@ -92,7 +92,7 @@ lanes; scheduled routines that run in-app and in the background.
 - [x] F-TK-01 Task store
 - [x] F-TK-02 `tandem-tasks` MCP server
 - [x] F-TK-03 Tasks UI
-- [ ] F-TK-04 Task execution (Pro)
+- [x] F-TK-04 Task execution (Pro)
 - [x] F-RT-01 Routine model (Pro)
 - [ ] F-RT-02 In-app scheduler and runs
 - [ ] F-RT-03 Background runner (Pro)

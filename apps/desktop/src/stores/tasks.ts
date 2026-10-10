@@ -4,6 +4,8 @@
 // UI or an agent.
 import { create } from "zustand";
 import type {
+  AttemptView,
+  ExecuteInput,
   IpcError,
   Issue,
   IssueStatus,
@@ -48,6 +50,11 @@ type TasksState = {
   archive: (issue: { id: string; revision: number }) => Promise<IpcError | null>;
   restore: (issue: { id: string; revision: number }) => Promise<IpcError | null>;
   comment: (body: string, parentId?: string | null) => Promise<TaskComment | IpcError>;
+  /** Every run, in queue order (F-TK-04). */
+  attempts: AttemptView[];
+  loadAttempts: () => Promise<void>;
+  execute: (input: ExecuteInput) => Promise<AttemptView | IpcError>;
+  attemptAction: (action: "stop" | "resume" | "retry", attemptId: string) => Promise<AttemptView | IpcError>;
 };
 
 export function isIpcError(e: unknown): e is IpcError {
@@ -78,6 +85,16 @@ async function allIssues(includeArchived: boolean): Promise<IssueSummary[]> {
 
 let unlisten: (() => void) | null = null;
 let listening: Promise<void> | null = null;
+let unlistenAttempts: (() => void) | null = null;
+let listeningAttempts: Promise<void> | null = null;
+
+function upsertAttempt(list: AttemptView[], v: AttemptView): AttemptView[] {
+  const at = list.findIndex((a) => a.attempt.id === v.attempt.id);
+  if (at < 0) return [...list, v];
+  const out = list.slice();
+  out[at] = v;
+  return out;
+}
 
 export const useTasks = create<TasksState>((set, get) => ({
   meta: null,
@@ -89,6 +106,37 @@ export const useTasks = create<TasksState>((set, get) => ({
   detail: null,
   detailError: null,
   version: 0,
+  attempts: [],
+  loadAttempts: async () => {
+    listeningAttempts ??= listen<AttemptView>("tasks:attempt", (v) => {
+      set((s) => ({ attempts: upsertAttempt(s.attempts, v) }));
+    }).then((u) => {
+      unlistenAttempts = u;
+    });
+    try {
+      set({ attempts: (await invoke<AttemptView[] | null>("task_attempts_list")) ?? [] });
+    } catch {
+      // Runs stay as they were; the tracker itself still works.
+    }
+  },
+  execute: async (input) => {
+    try {
+      const v = await invoke<AttemptView>("task_execute", { input });
+      set((s) => ({ attempts: upsertAttempt(s.attempts, v) }));
+      return v;
+    } catch (e) {
+      return asError(e);
+    }
+  },
+  attemptAction: async (action, attemptId) => {
+    try {
+      const v = await invoke<AttemptView>(`task_attempt_${action}`, { attemptId });
+      set((s) => ({ attempts: upsertAttempt(s.attempts, v) }));
+      return v;
+    } catch (e) {
+      return asError(e);
+    }
+  },
   load: async () => {
     listening ??= listen<{ ids: string[] }>("tasks:changed", (e) => {
       void get().load();
@@ -193,6 +241,9 @@ export function resetTasks(): void {
   unlisten?.();
   unlisten = null;
   listening = null;
+  unlistenAttempts?.();
+  unlistenAttempts = null;
+  listeningAttempts = null;
   useTasks.setState({
     meta: null,
     issues: [],
@@ -203,5 +254,6 @@ export function resetTasks(): void {
     detail: null,
     detailError: null,
     version: 0,
+    attempts: [],
   });
 }

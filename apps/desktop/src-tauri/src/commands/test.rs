@@ -444,3 +444,11 @@ pub async fn test_gateway_metrics(state: State<'_, AppState>) -> Result<TestGate
         .ok_or_else(|| IpcError::new(ErrorCode::Unavailable, "The gateway isn't running"))?;
     Ok(TestGateway { metrics, starts })
 }
+
+/// Each task run pauses `ms` before making its lane (F-TK-04 AC3's E2E).
+#[tauri::command]
+pub async fn test_task_lane_delay(state: State<'_, AppState>, ms: u64) -> Result<(), IpcError> {
+    guard(&state)?;
+    state.task_exec.set_test_lane_delay(ms);
+    Ok(())
+}

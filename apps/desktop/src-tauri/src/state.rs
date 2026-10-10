@@ -132,6 +132,8 @@ pub struct AppState {
     pub tasks: Arc<crate::services::tasks::TasksService>,
     /// Routines and their scheduler (F-RT-01..04).
     pub routines: Arc<crate::services::routines::RoutinesService>,
+    /// Task runs: attempts, the 4-run cap, reviews (F-TK-04).
+    pub task_exec: Arc<crate::services::tasks_exec::TaskExecService>,
     /// The Team org's audit events (F-TL-10).
     pub audit: Arc<crate::services::audit::AuditService>,
     pub deeplinks: DeepLinkQueue,
@@ -503,6 +505,22 @@ impl AppState {
             notifications: notifications.clone(),
         }));
         terminals.bind_tasks(&tasks);
+        let task_exec = crate::services::tasks_exec::TaskExecService::new(
+            store.clone(),
+            bus.clone(),
+            clock.clone(),
+            tasks.tracker.clone(),
+        );
+        task_exec.set_host(Arc::new(crate::services::task_host::AppExecHost {
+            store: store.clone(),
+            data: data.clone(),
+            auth: auth.clone(),
+            entitlements: entitlements.clone(),
+            terminals: terminals.clone(),
+            teammates: teammates.clone(),
+            threads: threads.clone(),
+            notifications: notifications.clone(),
+        }));
         // Teammate mail (F-AG-12) lands in teammate chats.
         let mail = crate::services::mail::MailService::new(
             store.clone(),
@@ -618,6 +636,7 @@ impl AppState {
             gateway,
             tasks,
             routines,
+            task_exec,
             teammates,
             teammate_tools: tools,
             learn,

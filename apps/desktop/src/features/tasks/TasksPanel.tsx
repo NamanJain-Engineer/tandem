@@ -5,7 +5,7 @@
 // never starts work (F-TK-04): runs start only from Execute.
 import { useEffect, useState, type ReactNode } from "react";
 import { ListTodo, RotateCcw, X } from "lucide-react";
-import type { Issue, IssueSummary } from "@tandem/protocol";
+import type { IssueSummary } from "@tandem/protocol";
 import {
   Avatar,
   Banner,
@@ -218,14 +218,8 @@ function ListPane({ header }: { header?: ReactNode }) {
   );
 }
 
-/** The tracker. `onExecute` adds "Execute…" to the open task (F-TK-04). */
-export function TasksPanel({
-  header,
-  onExecute,
-}: {
-  header?: ReactNode;
-  onExecute?: (issue: Issue) => void;
-}) {
+/** The tracker; the open task has Execute… (F-TK-04). */
+export function TasksPanel({ header }: { header?: ReactNode }) {
   const [ref, width] = useWidth();
   const selectedId = useTasks((s) => s.selectedId);
   useEffect(() => {
@@ -239,10 +233,7 @@ export function TasksPanel({
         <div
           className={cx("flex min-h-0 min-w-0 flex-col", wide ? "w-[55%] border-l border-divider" : "flex-1")}
         >
-          <TaskDetailView
-            onClose={wide ? undefined : () => void useTasks.getState().select(null)}
-            onExecute={onExecute}
-          />
+          <TaskDetailView onClose={wide ? undefined : () => void useTasks.getState().select(null)} />
         </div>
       )}
     </div>
@@ -250,10 +241,9 @@ export function TasksPanel({
 }
 
 /** The full-page view (Agent mode's "Tasks"). */
-export function TasksPage({ onExecute }: { onExecute?: (issue: Issue) => void }) {
+export function TasksPage() {
   return (
     <TasksPanel
-      onExecute={onExecute}
       header={
         <div className="flex h-11 shrink-0 items-center gap-2 border-b border-divider px-3">
           <h1 className="text-md font-semibold text-fg">{t("tasks.title")}</h1>

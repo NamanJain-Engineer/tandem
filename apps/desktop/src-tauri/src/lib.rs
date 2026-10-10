@@ -50,6 +50,11 @@ macro_rules! app_commands {
             commands::tasks::task_restore,
             commands::tasks::task_connections_list,
             commands::tasks::task_connection_revoke,
+            commands::task_exec::task_execute,
+            commands::task_exec::task_attempts_list,
+            commands::task_exec::task_attempt_stop,
+            commands::task_exec::task_attempt_resume,
+            commands::task_exec::task_attempt_retry,
             commands::teammates::teammate_list,
             commands::teammates::teammate_get,
             commands::teammates::teammate_create,
@@ -539,6 +544,7 @@ pub fn run() {
         commands::test::test_account_create,
         commands::test::test_plugin_connect,
         commands::test::test_gateway_metrics,
+        commands::test::test_task_lane_delay,
     ]);
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(app_commands![]);
@@ -596,6 +602,35 @@ pub fn run() {
             state.routines.start(state.data.run());
             // Tasks refresh when anyone writes them (F-TK-03).
             state.tasks.watch(state.bus.clone());
+            // Task runs: those the last run left are stopped; signing out
+            // or losing Pro stops the active ones (F-TK-04, UI-84).
+            {
+                let exec = state.task_exec.clone();
+                let (auth, ent) = (state.auth.clone(), state.entitlements.clone());
+                let mut app_events = state.bus.subscribe(tandem_core::bus::Topic::App);
+                let mut plan_events = state.bus.subscribe(tandem_core::bus::Topic::Entitlement);
+                tauri::async_runtime::spawn(async move {
+                    exec.settle().await;
+                    loop {
+                        use tokio::sync::broadcast::error::RecvError;
+                        let (app, plan) = tokio::select! {
+                            e = app_events.recv() => (Some(e), None),
+                            e = plan_events.recv() => (None, Some(e)),
+                        };
+                        if matches!(app, Some(Err(RecvError::Closed))) || matches!(plan, Some(Err(RecvError::Closed))) {
+                            break;
+                        }
+                        if let Some(Ok(e)) = &app {
+                            if e.name == "auth:changed" && !auth.is_signed_in() {
+                                exec.stop_all("you signed out").await;
+                            }
+                        }
+                        if plan.is_some() && !ent.limits().task_execution {
+                            exec.stop_all("plan changed").await;
+                        }
+                    }
+                });
+            }
             {
                 let (routines, ent) = (state.routines.clone(), state.entitlements.clone());
                 let mut events = state.bus.subscribe(tandem_core::bus::Topic::Entitlement);

@@ -219,6 +219,11 @@ const COMMANDS: &[&str] = &[
     "task_restore",
     "task_connections_list",
     "task_connection_revoke",
+    "task_execute",
+    "task_attempts_list",
+    "task_attempt_stop",
+    "task_attempt_resume",
+    "task_attempt_retry",
     "teammate_list",
     "teammate_get",
     "teammate_create",
@@ -264,6 +269,7 @@ const TEST_COMMANDS: &[&str] = &[
     "test_account_create",
     "test_plugin_connect",
     "test_gateway_metrics",
+    "test_task_lane_delay",
 ];
 
 /// What About › Licenses shows when the notices weren't generated (dev builds).

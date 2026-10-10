@@ -19,6 +19,11 @@
 //! - `tools`: says the names the gateway's `tools/list` gives this session.
 //! - `tasks <tool> <json>`: calls a tool of the `tandem_tasks` stdio server
 //!   named in `--mcp-config` (F-TK-02, E2E-M11-1) and says what it answered.
+//! - a task run's briefing ("Report progress with save_comment on TAN-<n>"):
+//!   a progress comment through the tasks server, a pause of N seconds when
+//!   the task says `[hold N]`, then a one-line summary (F-TK-04, E2E-M11-2).
+//! - a task review ("Post one comment on TAN-<n>… Verdict"): "Verdict:
+//!   Approve" and a reason.
 //! - anything else: "You said: <text>" in two pieces.
 //!
 //! An interrupt (`control_request`) is acknowledged and ends the turn.
@@ -571,6 +576,41 @@ pub fn run(args: &[String], session: String) {
             let said = format!("Tools: {}", names.join(", "));
             turn.say(&[&said]);
             turn.done(&said);
+        } else if let Some(issue) = text
+            .split("Report progress with save_comment on ")
+            .nth(1)
+            .and_then(|r| r.split(['.', ' ']).next())
+            .filter(|i| i.starts_with("TAN-"))
+            .map(str::to_string)
+        {
+            // A task run: progress through the tasks server, then the summary.
+            let comment = json!({"id": issue, "body": "Progress: reproduced the problem and working on a fix."});
+            let id = format!("toolu_{n}");
+            turn.assistant(json!([{"type": "tool_use", "id": id,
+                "name": "mcp__tandem_tasks__save_comment", "input": comment}]));
+            let (is_error, out) = match tasks_server(args) {
+                Some(s) => call_stdio(&s, "save_comment", comment),
+                None => (true, "no tasks server".into()),
+            };
+            emit(
+                json!({"type": "user", "session_id": turn.session, "parent_tool_use_id": null,
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": id,
+                    "content": out, "is_error": is_error}]}}),
+            );
+            let hold: u64 = text
+                .split("[hold ")
+                .nth(1)
+                .and_then(|r| r.split(']').next())
+                .and_then(|n| n.trim().parse().ok())
+                .unwrap_or(0);
+            std::thread::sleep(Duration::from_secs(hold.min(120)));
+            let said = format!("Fixed {issue}: the change is in the worktree.");
+            turn.say(&[&said]);
+            turn.done(&said);
+        } else if text.contains("Post one comment on TAN-") && text.contains("Verdict: Approve") {
+            let said = "Verdict: Approve\nThe change does what the task asks.";
+            turn.say(&[said]);
+            turn.done(said);
         } else if first == "/crash" {
             turn.delta("About to fail");
             std::process::exit(3);

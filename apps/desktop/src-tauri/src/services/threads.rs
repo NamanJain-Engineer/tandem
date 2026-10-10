@@ -2128,6 +2128,14 @@ impl AppLauncher {
     /// routine's own Full grant, if any (F-RT-01, rule 4).
     async fn origin(&self, thread: &ThreadRecord) -> tandem_core::access::Origin {
         if !thread.attended {
+            // A task run's session: the task's own Full grant, if any.
+            if let Ok(Some(a)) =
+                tandem_store::repo::task_attempts::for_thread(&self.store, &thread.id).await
+            {
+                return tandem_core::access::Origin::Task {
+                    grants_full: a.access == Access::Full,
+                };
+            }
             if let Ok(Some(r)) =
                 tandem_store::repo::routines::routine_of_chat(&self.store, &thread.id).await
             {

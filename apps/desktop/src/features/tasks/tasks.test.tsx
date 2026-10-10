@@ -4,7 +4,10 @@ import type { IpcError, Issue, IssueSummary, SaveIssue, TaskComment, TasksMeta }
 import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { useTasks } from "../../stores/tasks";
-import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
+import { FREE_VIEW, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
+import { useEngines } from "../../stores/engines";
+import { useSession } from "../../stores/session";
+import { useWorkspaces } from "../../stores/workspaces";
 import { draftOf, edit, rebase, shown } from "./merge";
 import { TasksPanel } from "./TasksPanel";
 
@@ -77,6 +80,8 @@ function tracker(initial: Issue[] = []) {
   };
   const calls = fakeBackend({
     tasks_meta: () => META,
+    task_attempts_list: () => [],
+    teammate_list: () => [],
     tasks_list: (a) => {
       const all = (a?.filter as { include_archived?: boolean }).include_archived;
       return {
@@ -280,3 +285,101 @@ describe("F-TK-03 Tasks panel", () => {
     expect(reply.args?.parentId).toBe("cmt_1");
   });
 });
+
+describe("F-TK-04 Execute and runs", () => {
+  async function openTask(t: ReturnType<typeof tracker>, plan: "free" | "pro") {
+    useSession.setState({
+      entitlement: {
+        ...FREE_VIEW,
+        plan,
+        limits: { ...FREE_VIEW.limits, taskExecution: plan === "pro" },
+      },
+    });
+    useWorkspaces.setState({ list: [{ id: "ws_1", name: "shop", parentId: null, missing: false } as never] });
+    useEngines.setState({
+      list: [{ spec: { id: "claude", label: "Claude Code" }, install: {}, chatCapable: true } as never],
+      loaded: true,
+    });
+    mount();
+    fireEvent.click(await screen.findByText("Task 1"));
+    fireEvent.click(await screen.findByTestId("task-execute"));
+    return t;
+  }
+
+  it("F-TK-04 Free: Execute shows the plan copy and can't start", async () => {
+    const t = await openTask(tracker([issue(1)]), "free");
+    const blocked = await screen.findByTestId("task-execute-blocked");
+    expect(blocked.textContent).toBe("Running tasks is part of Pro. You can still track tasks for free.");
+    expect((screen.getByTestId("task-execute-start") as HTMLButtonElement).disabled).toBe(true);
+    expect(t.calls.some((c) => c.cmd === "task_execute")).toBe(false);
+  });
+
+  it("F-TK-04 Pro: a new worktree at Edits with review by default; the run shows its queue place and stops", async () => {
+    const t = tracker([issue(1)]);
+    let started: Record<string, unknown> | undefined;
+    const runs: unknown[] = [];
+    fakeBackendAdd(t, {
+      task_attempts_list: () => runs,
+      task_execute: (a) => {
+        started = a?.input as Record<string, unknown>;
+        const v = {
+          attempt: {
+            id: "atm_1",
+            issueId: "TAN-1",
+            engineId: "claude",
+            state: "queued",
+            threadId: null,
+            error: null,
+            reviewVerdict: null,
+          },
+          queuePosition: 1,
+        };
+        runs.push(v);
+        return v;
+      },
+      task_attempt_stop: () => ({
+        attempt: {
+          id: "atm_1",
+          issueId: "TAN-1",
+          engineId: "claude",
+          state: "stopped",
+          threadId: null,
+          error: "Stopped by you",
+          reviewVerdict: null,
+        },
+        queuePosition: null,
+      }),
+    });
+    await openTask(t, "pro");
+    expect(screen.queryByTestId("task-execute-blocked")).toBeNull();
+    fireEvent.click(screen.getByTestId("task-execute-start"));
+    await waitFor(() => expect(started).toBeTruthy());
+    expect(started).toMatchObject({
+      issueId: "TAN-1",
+      workspaceId: "ws_1",
+      engineId: "claude",
+      isolation: "lane",
+      access: "edits",
+      fullConfirmed: false,
+      review: true,
+    });
+    // The run shows queued with its place, and Stop stops it.
+    expect((await screen.findByTestId("task-run")).textContent).toContain("Queued (position 1)");
+    fireEvent.click(screen.getByTestId("task-run-stop"));
+    await waitFor(() => expect(screen.getByTestId("task-run").dataset.state).toBe("stopped"));
+  });
+});
+
+/** Adds handlers to the fake tracker's backend. */
+function fakeBackendAdd(
+  t: ReturnType<typeof tracker>,
+  more: Record<string, (a?: Record<string, unknown>) => unknown>,
+) {
+  const base: Record<string, (a?: Record<string, unknown>) => unknown> = {
+    tasks_meta: () => META,
+    teammate_list: () => [],
+    tasks_list: () => ({ items: [...t.issues.values()].map(summary), next_cursor: null }),
+    task_get: (a) => ({ issue: t.issues.get(String(a?.id)), comments: [], history: [] }),
+  };
+  fakeBackend({ ...base, ...more });
+}

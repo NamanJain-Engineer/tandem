@@ -30,6 +30,7 @@ import {
 import { t, type MessageKey } from "../../i18n";
 import { STATUS_ORDER, isIpcError, useTasks } from "../../stores/tasks";
 import { age } from "../thread/groups";
+import { ExecuteDialog, Runs } from "./Execute";
 import { discard, draftOf, edit, keepMine, rebase, shown, type Draft, type EditField } from "./merge";
 
 export const statusLabel = (s: IssueStatus) => t(`tasks.status.${s}` as MessageKey);
@@ -178,15 +179,8 @@ function Comments({ comments }: { comments: TaskComment[] }) {
 }
 
 /** The open task, with local drafts merged against the saved copy. */
-function DetailBody({
-  detail,
-  onClose,
-  onExecute,
-}: {
-  detail: Detail;
-  onClose?: () => void;
-  onExecute?: (issue: Issue) => void;
-}) {
+function DetailBody({ detail, onClose }: { detail: Detail; onClose?: () => void }) {
+  const [executing, setExecuting] = useState(false);
   const meta = useTasks((s) => s.meta);
   const save = useTasks((s) => s.save);
   const { show: toast } = useToast();
@@ -252,17 +246,16 @@ function DetailBody({
         )}
         <span className="font-mono text-xs text-fg-subtle">{issue.id}</span>
         <span className="flex-1" />
-        {onExecute && (
-          <Button
-            size="sm"
-            variant="secondary"
-            iconLeft={<Play size={13} />}
-            onClick={() => onExecute(issue)}
-            data-testid="task-execute"
-          >
-            {t("tasks.execute")}
-          </Button>
-        )}
+        <Button
+          size="sm"
+          variant="secondary"
+          iconLeft={<Play size={13} />}
+          onClick={() => setExecuting(true)}
+          data-testid="task-execute"
+        >
+          {t("tasks.execute")}
+        </Button>
+        <ExecuteDialog issue={issue} open={executing} onOpenChange={setExecuting} />
       </div>
       {conflicts.map((field) => (
         <Banner
@@ -435,6 +428,7 @@ function DetailBody({
             <p className="text-sm text-fg-subtle">{t("tasks.description.empty")}</p>
           )}
         </div>
+        <Runs issueId={issue.id} />
         {issue.result && (
           <div className="flex flex-col gap-1.5" data-testid="task-result">
             <h3 className="text-xs font-medium uppercase tracking-caps text-fg-subtle">
@@ -464,13 +458,7 @@ function DetailBody({
   );
 }
 
-export function TaskDetailView({
-  onClose,
-  onExecute,
-}: {
-  onClose?: () => void;
-  onExecute?: (issue: Issue) => void;
-}) {
+export function TaskDetailView({ onClose }: { onClose?: () => void }) {
   const detail = useTasks((s) => s.detail);
   const error = useTasks((s) => s.detailError);
   const selectedId = useTasks((s) => s.selectedId);
@@ -497,5 +485,5 @@ export function TaskDetailView({
       </div>
     );
   }
-  return <DetailBody key={detail.issue.id} detail={detail} onClose={onClose} onExecute={onExecute} />;
+  return <DetailBody key={detail.issue.id} detail={detail} onClose={onClose} />;
 }

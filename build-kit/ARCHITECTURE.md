@@ -752,8 +752,9 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `task_comment` | `{id, body, parentId?, idempotencyKey?}` | `TaskComment` | NotFound, Invalid |
 | `task_archive` / `task_restore` | `{id, expectedRevision}` | `Issue` | RevisionConflict |
 | event `tasks:changed` | `{ids: [TAN-n]}` from the `issues/` watcher (≤ 500 ms after a write by anyone; D-905) | — | — |
-| `task_execute` | `{issueId, workspaceId, teammateId?, engineId?, accountId?, isolation:"lane"\|"shared", access, review: bool}` | `AttemptView {state:"queued"\|"setup"\|…, queuePosition?}` | ForbiddenPlan, Unauthenticated |
-| `task_attempt_stop` / `task_attempt_resume` / `task_attempt_retry` | `{attemptId}` | `AttemptView` | Conflict |
+| `task_execute` | `{input: ExecuteInput {issueId, workspaceId, teammateId?, engineId?, accountId?, isolation:"lane"\|"shared", access, fullConfirmed, review, note?}}` | `AttemptView {attempt, queuePosition?}` | ForbiddenPlan, Unauthenticated, Invalid (Full not confirmed) |
+| `task_attempts_list` | — | `[AttemptView]` (queue order) | — |
+| `task_attempt_stop` / `task_attempt_resume` / `task_attempt_retry` | `{attemptId}` / `{attemptId, text?}` / `{attemptId}` | `AttemptView` | Conflict |
 | `task_connections_list` / `task_connection_revoke` | — / `{connectionId}` | `[TaskConnection]` / — | — |
 
 #### Routines [F-RT-*]
@@ -866,6 +867,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `test_browser_eval` | `{browserId, script}` | `String` (the script's value as JSON; E2E-M9-4 clicks in a page with it) | NotFound |
 | `test_thread_seed_events` | `{threadId, events, fenceBytes?}` | the number of events written (completed turns of a user message, an assistant reply, tool calls and a turn end, in one transaction; `fenceBytes` adds a last reply with a code fence that size; threads perf suite) | NotFound |
 | `test_plugin_connect` | `{pluginId}` | `PluginConnection {id, pluginId, accountLabel?, authKind, status, createdAt}` (records a connection of a test vendor module, `test_echo`/`test_upper`/`test_down`, without a sign-in; builds with the `test-vendors` feature only; M10 E2E until Settings › Plugins lands in M12) | NotFound |
+| `test_task_lane_delay` | `{ms}` | — (each task run pauses this long before making its lane, so E2E can stop one during setup, F-TK-04 AC3) | — |
 | `test_gateway_metrics` | — | `TestGateway {metrics: GatewayMetrics {port, listeners, leases, mcpSessions, requests, restarts, rssBytes?}, starts}` (`starts`: gateways this process started, F-PL-01 AC2) | Unavailable |
 
 `window.__tandemTest` in the webview wraps these commands plus UI-side counters. Not listed in `capabilities/*.json` for release.

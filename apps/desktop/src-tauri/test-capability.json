@@ -22,6 +22,7 @@
     "allow-test-account-create",
     "allow-test-plugin-connect",
     "allow-test-gateway-metrics",
+    "allow-test-task-lane-delay",
     "core:window:allow-set-position",
     "core:window:allow-outer-position"
   ]
