@@ -81,7 +81,11 @@ export function PickerPanel({ id, picking }: { id: string; picking: boolean }) {
       : [{ id: "none", label: t("browser.pick.noTargets"), disabled: true }];
 
   return (
-    <section aria-label={t("browser.pick.panel")} data-testid="browser-picker" className="flex max-h-[45%] shrink-0 flex-col gap-2 overflow-auto border-b border-divider bg-surface-2 p-2">
+    <section
+      aria-label={t("browser.pick.panel")}
+      data-testid="browser-picker"
+      className="flex max-h-[45%] shrink-0 flex-col gap-2 overflow-auto border-b border-divider bg-surface-2 p-2"
+    >
       {picking && (
         <p className="flex items-center gap-1.5 text-sm text-fg-muted">
           <MousePointerClick size={14} aria-hidden="true" className="shrink-0" />
@@ -93,7 +97,11 @@ export function PickerPanel({ id, picking }: { id: string; picking: boolean }) {
       ) : (
         <ol className="flex flex-col gap-1" aria-label={t("browser.pick.count", { n: picked.length })}>
           {picked.map((e, i) => (
-            <li key={`${i}:${e.selector}`} data-testid="browser-picked" className="flex min-w-0 items-baseline gap-2 text-sm">
+            <li
+              key={`${i}:${e.selector}`}
+              data-testid="browser-picked"
+              className="flex min-w-0 items-baseline gap-2 text-sm"
+            >
               <span className="w-4 shrink-0 text-right tabular-nums text-fg-subtle">{i + 1}</span>
               <code className="min-w-0 truncate font-mono text-xs text-fg">{e.selector}</code>
               {e.component && (
@@ -115,12 +123,23 @@ export function PickerPanel({ id, picking }: { id: string; picking: boolean }) {
         data-testid="browser-pick-note"
       />
       <div className="flex items-center gap-2">
-        <Button size="sm" variant="secondary" disabled={picked.length === 0} onClick={() => void copy()} data-testid="browser-brief-copy">
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={picked.length === 0}
+          onClick={() => void copy()}
+          data-testid="browser-brief-copy"
+        >
           {t("browser.pick.copy")}
         </Button>
         <Menu
           trigger={
-            <Button size="sm" variant="secondary" disabled={picked.length === 0} data-testid="browser-brief-send">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={picked.length === 0}
+              data-testid="browser-brief-send"
+            >
               {t("browser.pick.send")}
             </Button>
           }
@@ -133,7 +152,11 @@ export function PickerPanel({ id, picking }: { id: string; picking: boolean }) {
           </Button>
         ) : (
           // Done with this selection: the panel goes (a new pick starts afresh).
-          <Button size="sm" variant="ghost" onClick={() => useBrowser.setState((s) => ({ picked: { ...s.picked, [id]: [] } }))}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => useBrowser.setState((s) => ({ picked: { ...s.picked, [id]: [] } }))}
+          >
             {t("browser.pick.close")}
           </Button>
         )}

@@ -197,6 +197,34 @@ const COMMANDS: &[&str] = &[
     "engines_set_extra_args",
     "accounts_list",
     "engines_report",
+    "plugins_catalog",
+    "grants_list",
+    "grants_set",
+    "teammate_list",
+    "teammate_get",
+    "teammate_create",
+    "teammate_update",
+    "teammate_delete",
+    "teammate_duplicate",
+    "teammate_reorder",
+    "memory_get",
+    "memory_write",
+    "memory_undo",
+    "skills_list",
+    "skill_get",
+    "skill_save",
+    "skill_remove",
+    "skills_library",
+    "skill_add_from_library",
+    "teammate_suggestions",
+    "thread_reorder",
+    "teammate_draft_with_ai",
+    "teammate_templates",
+    "memory_suggestions_resolve",
+    "mail_list",
+    "mail_get",
+    "mail_send",
+    "mail_retry",
 ];
 
 const TEST_COMMANDS: &[&str] = &[
@@ -215,6 +243,8 @@ const TEST_COMMANDS: &[&str] = &[
     "test_min_version_shift",
     "test_auth_refresh",
     "test_account_create",
+    "test_plugin_connect",
+    "test_gateway_metrics",
 ];
 
 /// What About › Licenses shows when the notices weren't generated (dev builds).

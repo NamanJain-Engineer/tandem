@@ -51,7 +51,8 @@ export class CommandMarks<M> {
       if (!this.running) return;
       this.running = false;
       const exit = code === undefined || code === "" ? null : Number(code);
-      if (this.command !== undefined && exit !== null && Number.isFinite(exit)) this.host.decorate(this.command, exit === 0);
+      if (this.command !== undefined && exit !== null && Number.isFinite(exit))
+        this.host.decorate(this.command, exit === 0);
       this.command = undefined;
       this.waitForIdle();
     }

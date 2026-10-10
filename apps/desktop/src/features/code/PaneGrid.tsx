@@ -11,7 +11,20 @@ import {
 } from "react-resizable-panels";
 import type { IpcError, PaneRecord, WorkspaceSummary } from "@tandem/protocol";
 import { ArrowRightLeft, SquareTerminal, X } from "lucide-react";
-import { Badge, Button, ContextMeter, EngineGlyph, IconButton, Spinner, StatusDot, Tooltip, cx, useToast, type MenuEntry, type Status } from "@tandem/ui";
+import {
+  Badge,
+  Button,
+  ContextMeter,
+  EngineGlyph,
+  IconButton,
+  Spinner,
+  StatusDot,
+  Tooltip,
+  cx,
+  useToast,
+  type MenuEntry,
+  type Status,
+} from "@tandem/ui";
 import { t } from "../../i18n";
 import { useEngines } from "../../stores/engines";
 import { paneKey, statusView, useStatus } from "../../stores/status";
@@ -36,7 +49,13 @@ import { launchFor } from "./PanePicker";
 import { paneTitles, useFirstPrompts, type TitleSources } from "./titles";
 import { webglPool } from "./webglPool";
 import type { Activity } from "./commandMarks";
-import { TerminalView, copyLastOutput, terminalHandles, type Phase, type TerminalOptions } from "./TerminalView";
+import {
+  TerminalView,
+  copyLastOutput,
+  terminalHandles,
+  type Phase,
+  type TerminalOptions,
+} from "./TerminalView";
 import { PausedCard } from "./PausedCard";
 import { WorktreeChip, worktreeMenu } from "./Worktrees";
 import { useHandoff } from "../../stores/handoff";
@@ -228,7 +247,9 @@ const PaneView = memo(function PaneView({
   const glyph = useEngines((st) => st.list.find((e) => e.spec.id === pane.engineId)?.spec.logo);
   const dropping = useDropTarget((st) => st.paneId === pane.id);
   const mac = useBoot((st) => st.boot?.platform === "macos");
-  const engineNewline = useEngines((st) => st.list.find((e) => e.spec.id === pane.engineId)?.spec.newlineSequence ?? "\x1b\r");
+  const engineNewline = useEngines(
+    (st) => st.list.find((e) => e.spec.id === pane.engineId)?.spec.newlineSequence ?? "\x1b\r",
+  );
   // "Lite": this pane renders without a WebGL context (UI_SPEC §2.27).
   const [lite, setLite] = useState(() => !webglPool.holds(pane.id));
   useEffect(() => {
@@ -296,11 +317,13 @@ const PaneView = memo(function PaneView({
       label: t("terminal.copyLastOutput"),
       onSelect: () => void copyLastOutput(pane.id, show),
     },
-    ...([
-      ["copy-100", "terminal.copyLast100", 100],
-      ["copy-500", "terminal.copyLast500", 500],
-      ["copy-all", "terminal.copyAll", null],
-    ] as const).map(([id, key, n]) => ({
+    ...(
+      [
+        ["copy-100", "terminal.copyLast100", 100],
+        ["copy-500", "terminal.copyLast500", 500],
+        ["copy-all", "terminal.copyAll", null],
+      ] as const
+    ).map(([id, key, n]) => ({
       id,
       label: t(key),
       onSelect: () =>
@@ -370,7 +393,11 @@ const PaneView = memo(function PaneView({
             )}
             {lite && visible && options.gpu !== false && (
               <Tooltip label={t("pane.liteTooltip")}>
-                <span data-testid="lite-badge" tabIndex={0} className="rounded-xs focus-visible:shadow-focus focus-visible:outline-none">
+                <span
+                  data-testid="lite-badge"
+                  tabIndex={0}
+                  className="rounded-xs focus-visible:shadow-focus focus-visible:outline-none"
+                >
                   <Badge>{t("pane.lite")}</Badge>
                 </span>
               </Tooltip>
@@ -470,9 +497,16 @@ function PaneCover({
   const engine = spec?.label ?? t("picker.terminal");
   if (kind === "line")
     return (
-      <div data-testid="pane-collapsed" className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-surface-2 text-sm text-fg">
+      <div
+        data-testid="pane-collapsed"
+        className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-surface-2 text-sm text-fg"
+      >
         <StatusDot status={status} size={8} />
-        {spec ? <EngineGlyph letters={spec.logo} size={16} /> : <SquareTerminal size={14} aria-hidden="true" className="text-fg-muted" />}
+        {spec ? (
+          <EngineGlyph letters={spec.logo} size={16} />
+        ) : (
+          <SquareTerminal size={14} aria-hidden="true" className="text-fg-muted" />
+        )}
         <span className="truncate">{title}</span>
       </div>
     );
@@ -488,7 +522,11 @@ function PaneCover({
         {title}
       </span>
       <span className="flex items-center gap-2 text-sm text-fg-muted">
-        {spec ? <EngineGlyph letters={spec.logo} size={16} /> : <SquareTerminal size={14} aria-hidden="true" />}
+        {spec ? (
+          <EngineGlyph letters={spec.logo} size={16} />
+        ) : (
+          <SquareTerminal size={14} aria-hidden="true" />
+        )}
         {engine}
       </span>
       <span className="flex items-center gap-2 text-sm text-fg-muted">
@@ -522,7 +560,13 @@ function EmptyTab({ tabId, workspace }: { tabId: string; workspace: WorkspaceSum
           <p className="text-sm text-fg-muted">{t("code.startBody")}</p>
         </div>
         <LaunchGrid tabId={tabId} busy={busy} onPick={(id) => void start(id)} />
-        <Button size="sm" variant="ghost" className="self-start" onClick={() => useLaunch.getState().open(workspace.id)} data-testid="launch-several">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="self-start"
+          onClick={() => useLaunch.getState().open(workspace.id)}
+          data-testid="launch-several"
+        >
           {t("launch.several")}
         </Button>
       </div>

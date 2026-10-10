@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-teammate-delete"
+description = "Enables the teammate_delete command without any pre-configured scope."
+commands.allow = ["teammate_delete"]
+
+[[permission]]
+identifier = "deny-teammate-delete"
+description = "Denies the teammate_delete command without any pre-configured scope."
+commands.deny = ["teammate_delete"]

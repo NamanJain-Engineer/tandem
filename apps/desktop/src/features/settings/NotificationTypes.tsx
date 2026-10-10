@@ -21,7 +21,8 @@ const ROWS: Array<{ id: string; label: () => string; system: boolean; sound: boo
 export function NotificationTypes() {
   const types = useSetting<Types>("notify_types", {});
   const save = useSave();
-  const set = (id: string, channel: "system" | "sound", on: boolean) => void save("notify_types", { ...types, [`${id}.${channel}`]: on });
+  const set = (id: string, channel: "system" | "sound", on: boolean) =>
+    void save("notify_types", { ...types, [`${id}.${channel}`]: on });
   return (
     <table className="w-full text-base" data-testid="notify-types">
       <thead>
@@ -40,12 +41,18 @@ export function NotificationTypes() {
             <tr key={r.id} className="border-t border-divider">
               <td className="py-1.5 text-fg">{r.label()}</td>
               <td className="text-center">
-                <Checkbox checked disabled label={<span className="sr-only">{t("settings.notify.inAppOf", { type: r.label() })}</span>} />
+                <Checkbox
+                  checked
+                  disabled
+                  label={<span className="sr-only">{t("settings.notify.inAppOf", { type: r.label() })}</span>}
+                />
               </td>
               <td className="text-center" data-testid={`notify-${r.id}-system`}>
                 <Checkbox
                   checked={system}
-                  label={<span className="sr-only">{t("settings.notify.systemOf", { type: r.label() })}</span>}
+                  label={
+                    <span className="sr-only">{t("settings.notify.systemOf", { type: r.label() })}</span>
+                  }
                   onCheckedChange={(v) => set(r.id, "system", v)}
                 />
               </td>
@@ -67,5 +74,12 @@ export function NotificationTypes() {
 /** ▶ previews the chosen sound without blocking. */
 export function SoundPreview() {
   const name = useSetting<string>("notify_sound_name", "chime");
-  return <IconButton size="sm" icon={<Play size={13} />} label={t("settings.notify.preview")} onClick={() => playSound(name)} />;
+  return (
+    <IconButton
+      size="sm"
+      icon={<Play size={13} />}
+      label={t("settings.notify.preview")}
+      onClick={() => playSound(name)}
+    />
+  );
 }

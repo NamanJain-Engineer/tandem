@@ -244,6 +244,7 @@ fn start(cwd: &std::path::Path) -> ChatStart {
         mcp_config: None,
         mcp: None,
         engine_version: None,
+        briefing: None,
     }
 }
 
@@ -524,4 +525,41 @@ async fn f_th_09_acp_file_requests_stay_in_the_folder_and_respect_read_access() 
         }
         s.shutdown().await.expect("shutdown");
     }
+}
+
+/// Waits for `turn`'s end; a script whose check failed exits instead.
+async fn ended(rx: &mut mpsc::Receiver<AdapterEvent>, turn: &TurnId) {
+    loop {
+        match next(rx).await {
+            AdapterEvent::Event {
+                turn_id,
+                event: ThreadEvent::TurnEnd { .. },
+            } if &turn_id == turn => return,
+            AdapterEvent::Exited { code, stderr_tail } => {
+                panic!("the agent exited ({code:?}): {stderr_tail}")
+            }
+            _ => {}
+        }
+    }
+}
+
+/// F-AG-06: an ACP agent gets the teammate briefing at the start of the
+/// session's first prompt, and only there.
+#[cfg(unix)]
+#[tokio::test]
+async fn f_ag_06_the_briefing_opens_the_first_acp_prompt_only() {
+    let (_dir, cwd) = tmp();
+    let briefing = cwd.join("briefing.md");
+    std::fs::write(&briefing, "<brief>Keep the changelog.</brief>").expect("briefing");
+    let mut req = start(&cwd);
+    req.briefing = Some(briefing);
+    let (s, mut rx) = session("briefing", req, &[]).await;
+    let s = s.expect("start");
+    let first = TurnId::new();
+    s.send_turn(input(&first, "hello")).await.expect("send");
+    ended(&mut rx, &first).await;
+    let second = TurnId::new();
+    s.send_turn(input(&second, "again")).await.expect("send");
+    ended(&mut rx, &second).await;
+    s.shutdown().await.expect("shutdown");
 }

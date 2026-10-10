@@ -5,7 +5,18 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import { ChevronLeft, FileWarning, X } from "lucide-react";
 import type { FileDiff, IpcError } from "@tandem/protocol";
-import { Banner, Button, CodeEditor, Dialog, DiffView, EmptyState, IconButton, Skeleton, Spinner, cx } from "@tandem/ui";
+import {
+  Banner,
+  Button,
+  CodeEditor,
+  Dialog,
+  DiffView,
+  EmptyState,
+  IconButton,
+  Skeleton,
+  Spinner,
+  cx,
+} from "@tandem/ui";
 import { t, type MessageKey } from "../../i18n";
 import { useFiles, type OpenFile } from "../../stores/files";
 
@@ -89,7 +100,12 @@ function ConflictDialog({ file }: { file: OpenFile }) {
       const key = s.key;
       const c = key ? s.byKey[key] : undefined;
       if (!key || !c) return {};
-      return { byKey: { ...s.byKey, [key]: { ...c, tabs: c.tabs.map((f) => (f.path === file.path ? { ...f, conflict: false } : f)) } } };
+      return {
+        byKey: {
+          ...s.byKey,
+          [key]: { ...c, tabs: c.tabs.map((f) => (f.path === file.path ? { ...f, conflict: false } : f)) },
+        },
+      };
     });
   };
   const comparing = diff && !("code" in diff);
@@ -168,7 +184,11 @@ function Body({ file }: { file: OpenFile }) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 overflow-auto p-4">
         {c.dataUrl ? (
-          <img src={c.dataUrl} alt={baseName(file.path)} className="max-h-full max-w-full rounded-sm border border-border object-contain" />
+          <img
+            src={c.dataUrl}
+            alt={baseName(file.path)}
+            className="max-h-full max-w-full rounded-sm border border-border object-contain"
+          />
         ) : (
           <p className="text-sm text-fg-muted">{t("files.imageTooLarge", { size: formatSize(c.size) })}</p>
         )}
@@ -184,7 +204,9 @@ function Body({ file }: { file: OpenFile }) {
       </div>
     );
   }
-  const label = c.readonly ? t("files.editor.labelReadOnly", { path: file.path }) : t("files.editor.label", { path: file.path });
+  const label = c.readonly
+    ? t("files.editor.labelReadOnly", { path: file.path })
+    : t("files.editor.label", { path: file.path });
   return (
     <CodeEditor
       docKey={file.path}
@@ -211,7 +233,11 @@ export function FileEditor({ onBack }: { onBack?: () => void }) {
   }, [onBack, tabs.length]);
 
   return (
-    <section aria-label={t("files.editor.region")} className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="file-editor">
+    <section
+      aria-label={t("files.editor.region")}
+      className="flex min-h-0 min-w-0 flex-1 flex-col"
+      data-testid="file-editor"
+    >
       <div className="flex h-8 shrink-0 items-end gap-0.5 overflow-x-auto border-b border-divider px-1">
         {onBack && (
           <IconButton
@@ -242,16 +268,29 @@ export function FileEditor({ onBack }: { onBack?: () => void }) {
       )}
       {active?.content?.truncated && <Banner tone="warning">{t("files.truncated")}</Banner>}
       {active?.changedOnDisk && !active.conflict && (
-        <Banner tone="warning" action={{ label: t("files.conflict.reload"), onClick: () => void useFiles.getState().reload(active.path) }}>
+        <Banner
+          tone="warning"
+          action={{
+            label: t("files.conflict.reload"),
+            onClick: () => void useFiles.getState().reload(active.path),
+          }}
+        >
           {t("files.changedOnDisk")}
         </Banner>
       )}
       {active?.error && active.status === "ready" && (
-        <Banner tone="error" action={{ label: t("files.retry"), onClick: () => void useFiles.getState().save(active.path) }}>
+        <Banner
+          tone="error"
+          action={{ label: t("files.retry"), onClick: () => void useFiles.getState().save(active.path) }}
+        >
           {t("files.saveFailed", { name: baseName(active.path), message: active.error.message })}
         </Banner>
       )}
-      <div className="relative min-h-0 flex-1" role="tabpanel" aria-label={active ? baseName(active.path) : t("files.tabs.label")}>
+      <div
+        className="relative min-h-0 flex-1"
+        role="tabpanel"
+        aria-label={active ? baseName(active.path) : t("files.tabs.label")}
+      >
         {active ? (
           <Body file={active} />
         ) : (

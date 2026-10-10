@@ -63,6 +63,15 @@
     "enabledWhen": "thread_open"
   },
   {
+    "id": "teammate.new",
+    "category": "app",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
     "id": "rail.toggle",
     "category": "navigation",
     "mac": "Mod+\\",

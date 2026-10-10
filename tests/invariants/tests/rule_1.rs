@@ -24,6 +24,7 @@ fn start(access: Access, mode: ThreadMode, attended: bool) -> ChatStart {
         mcp_config: Some("/data/mcp/th_1.json".into()),
         mcp: None,
         engine_version: None,
+        briefing: None,
     }
 }
 

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-thread-reorder"
+description = "Enables the thread_reorder command without any pre-configured scope."
+commands.allow = ["thread_reorder"]
+
+[[permission]]
+identifier = "deny-thread-reorder"
+description = "Denies the thread_reorder command without any pre-configured scope."
+commands.deny = ["thread_reorder"]
