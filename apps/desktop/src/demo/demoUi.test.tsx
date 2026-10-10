@@ -1,7 +1,10 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AuthState, EntitlementView } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
+import { TitleBar } from "../features/shell/TitleBar";
 import { setInvokeBackend } from "../ipc/invoke";
+import { useSession } from "../stores/session";
 import { resetStores } from "../test/fakeBackend";
 import { DEMO_MESSAGE_LIMIT, DemoCore } from "./backend";
 import { DemoBar } from "./DemoBar";
@@ -59,5 +62,20 @@ describe("the interactive demo's page furniture", () => {
     mount(<DemoBar core={core} firstThread={core.firstThread} embedded />);
     expect(screen.getByTestId("demo-bar").textContent).toMatch(/simulated/i);
     expect(screen.queryByRole("link", { name: "vibezeo.com" })).toBeNull();
+  });
+
+  it("F-WB-01 demo the title bar shows no credits and no account, as the early-access download doesn't", async () => {
+    core = new DemoCore(0);
+    const c = core;
+    setInvokeBackend(async (cmd, args) => c.handle(cmd, args ?? {}));
+    useSession.setState({
+      auth: c.handle("auth_state", {}) as AuthState,
+      entitlement: c.handle("entitlement_get", {}) as EntitlementView,
+    });
+    mount(<TitleBar />);
+    expect(screen.queryByRole("button", { name: /credits/i })).toBeNull();
+    fireEvent.keyDown(screen.getByRole("button", { name: "Account" }), { key: "Enter" });
+    expect(await screen.findByText("Free plan · no account")).toBeTruthy();
+    expect(screen.queryByText(/@/)).toBeNull();
   });
 });
