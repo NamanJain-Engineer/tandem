@@ -8,6 +8,9 @@ import { useLaunch } from "../../stores/launch";
 import { useNotifications } from "../../stores/notifications";
 import { useCloseConfirm } from "../../stores/closeConfirm";
 import { useSidebar } from "../../stores/sidebar";
+import { useRecall } from "../recall/RecallPicker";
+import { usePrompts } from "../prompts/PromptPicker";
+import { latestRun, useBestOf } from "../bestof/BestOf";
 import { useSession } from "../../stores/session";
 import { useSettings } from "../../stores/settings";
 import type { CommandSpec } from "@tandem/protocol";
@@ -144,6 +147,18 @@ export const handlers: Record<string, () => void> = {
   "rail.toggle": () => useUi.getState().toggleRail(),
   "sidebar.toggle": () => useSidebar.getState().toggle(),
   "sidebar.files": () => useSidebar.getState().openTab("files"),
+  "sidebar.checkpoints": () => useSidebar.getState().openTab("checkpoints"),
+  "sidebar.ports": () => useSidebar.getState().openTab("ports"),
+  "recall.open": () => useRecall.getState().show(),
+  "prompts.open": () => usePrompts.getState().show(),
+  "bestof.open": () => {
+    const id = useWorkspaces.getState().activeId;
+    if (id) useBestOf.getState().openSheet(id);
+  },
+  "bestof.compare": () =>
+    void latestRun(useWorkspaces.getState().activeId).then((run) =>
+      run ? useBestOf.getState().openCompare(run.id) : toast({ tone: "info", title: t("bestof.none") }),
+    ),
   "notifications.open": () => useNotifications.getState().setOpen(true),
   "dashboard.full_view": () => {
     const sb = useSidebar.getState();

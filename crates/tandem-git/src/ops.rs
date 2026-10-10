@@ -64,6 +64,14 @@ pub async fn stage(git: &Git, repo: &Repo, paths: &[String]) -> Result<(), GitEr
     write_with(git, repo, &["add", "-A"], checked(paths)?).await
 }
 
+/// Stages every change in the working tree, untracked files included
+/// (`git add -A`). Ignored files stay out.
+pub async fn stage_all(git: &Git, repo: &Repo) -> Result<(), GitError> {
+    write(git, repo, vec![OsString::from("add"), OsString::from("-A")])
+        .await
+        .map(|_| ())
+}
+
 /// Takes `paths` out of the index again; before the first commit that
 /// means forgetting them (`git rm --cached`).
 pub async fn unstage(git: &Git, repo: &Repo, paths: &[String]) -> Result<(), GitError> {

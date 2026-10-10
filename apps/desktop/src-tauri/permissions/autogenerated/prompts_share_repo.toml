@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-prompts-share-repo"
+description = "Enables the prompts_share_repo command without any pre-configured scope."
+commands.allow = ["prompts_share_repo"]
+
+[[permission]]
+identifier = "deny-prompts-share-repo"
+description = "Denies the prompts_share_repo command without any pre-configured scope."
+commands.deny = ["prompts_share_repo"]

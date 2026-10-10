@@ -69,7 +69,8 @@ export function ListRow({ leading, title, secondary, trailing, selected, fullTit
       <span className="min-w-0 flex-1 truncate" title={fullTitle}>
         {title}
       </span>
-      {secondary && <span className="shrink-0 truncate text-sm text-fg-subtle">{secondary}</span>}
+      {/* fg-subtle on the selected row's accent-soft is 4.3:1; fg-muted passes AA (D-705). */}
+      {secondary && <span className={cx("shrink-0 truncate text-sm", selected ? "text-fg-muted" : "text-fg-subtle")}>{secondary}</span>}
       {trailing && <span className="inline-flex shrink-0 items-center gap-1">{trailing}</span>}
     </div>
   );

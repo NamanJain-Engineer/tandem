@@ -10,6 +10,7 @@ pub mod integration;
 mod job;
 pub mod marks;
 pub mod orphans;
+pub mod ports;
 pub mod quote;
 pub mod remote;
 pub mod responder;
@@ -33,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub use frame::{FrameKind, PtyFrame};
-pub use marks::Mark;
+pub use marks::{Mark, Ran};
 pub use remote::{RemoteFeed, RemotePty};
 pub use responder::{QueryResponder, TermColors};
 pub use ring::ScrollbackRing;
@@ -784,6 +785,15 @@ impl PtyManager {
         let session = self.sessions.get(pane)?.clone();
         let out = session.side.lock().ok().and_then(|s| s.last_output());
         out
+    }
+
+    /// The pane's shell is at its prompt (shell integration said so).
+    pub fn at_prompt(&self, pane: &str) -> bool {
+        let Some(session) = self.sessions.get(pane) else {
+            return false;
+        };
+        let at = session.side.lock().map(|s| s.at_prompt()).unwrap_or(false);
+        at
     }
 
     pub fn screen_text(&self, pane: &str) -> Option<String> {

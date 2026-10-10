@@ -12,6 +12,8 @@ import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
 import { UpdatesPanel } from "../updates/UpdatesPanel";
 import { RunSetupAgain } from "../onboarding/RunSetupAgain";
+import { CheckpointsSettingsExtra } from "../checkpoints/CheckpointsSettings";
+import { RecallSettingsExtra } from "../recall/RecallSettings";
 import { DictateExtras, MicSelect, ShortcutField } from "../dictate/DictatePage";
 import { LanguageSelect } from "../dictate/LanguageSelect";
 import { EngineControl } from "../dictate/EngineControl";
@@ -400,7 +402,25 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
             />
           ),
         },
+        {
+          id: "command_history_enabled",
+          label: t("settings.commandHistoryEnabled"),
+          description: t("settings.commandHistoryEnabled.description"),
+          keywords: ["command recall", "history", "commands"],
+          control: (ids) => (
+            <BoolControl k="command_history_enabled" ids={ids} label={t("settings.commandHistoryEnabled")} />
+          ),
+        },
+        {
+          id: "command_history_days",
+          label: t("settings.commandHistoryDays"),
+          keywords: ["command recall", "history", "retention"],
+          control: (ids) => (
+            <NumberControl k="command_history_days" ids={ids} min={1} max={3650} fallback={90} label={t("settings.commandHistoryDays")} />
+          ),
+        },
       ],
+      extra: <RecallSettingsExtra />,
     },
     {
       id: "engines",
@@ -748,6 +768,44 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
         },
       ],
       extra: <PrivacyFlows />,
+    },
+    {
+      id: "checkpoints",
+      label: t("settings.checkpoints"),
+      subtitle: t("settings.checkpoints.subtitle"),
+      keywords: ["checkpoints", "rewind", "undo", "restore", "snapshots"],
+      rows: [
+        {
+          id: "checkpoints_enabled",
+          label: t("settings.checkpointsEnabled"),
+          description: t("settings.checkpointsEnabled.description"),
+          keywords: ["checkpoints", "rewind"],
+          control: (ids) => <BoolControl k="checkpoints_enabled" ids={ids} label={t("settings.checkpointsEnabled")} />,
+        },
+        {
+          id: "checkpoints_keep",
+          label: t("settings.checkpointsKeep"),
+          description: t("settings.checkpointsKeep.description"),
+          control: (ids) => (
+            <NumberControl k="checkpoints_keep" ids={ids} min={10} max={1000} fallback={100} label={t("settings.checkpointsKeep")} />
+          ),
+        },
+        {
+          id: "checkpoints_days",
+          label: t("settings.checkpointsDays"),
+          control: (ids) => (
+            <NumberControl k="checkpoints_days" ids={ids} min={1} max={90} fallback={14} label={t("settings.checkpointsDays")} />
+          ),
+        },
+        {
+          id: "checkpoints_max_file_mb",
+          label: t("settings.checkpointsMaxFileMb"),
+          control: (ids) => (
+            <NumberControl k="checkpoints_max_file_mb" ids={ids} min={1} max={100} fallback={5} label={t("settings.checkpointsMaxFileMb")} />
+          ),
+        },
+      ],
+      extra: <CheckpointsSettingsExtra />,
     },
     {
       id: "shortcuts",

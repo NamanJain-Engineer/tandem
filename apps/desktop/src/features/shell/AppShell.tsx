@@ -35,6 +35,9 @@ import { followThreads } from "../../stores/threads";
 import { followRemote } from "../../stores/remote";
 import { RemotePrompts } from "../remote/RemotePrompts";
 import { Palette } from "../palette/Palette";
+import { RecallPicker } from "../recall/RecallPicker";
+import { BestOf } from "../bestof/BestOf";
+import { PromptPicker } from "../prompts/PromptPicker";
 import { Cheatsheet } from "../commands/Cheatsheet";
 import { DiagnosticsPanel } from "../diagnostics/DiagnosticsPanel";
 import { OrphansDialog } from "../restore/OrphansDialog";
@@ -222,6 +225,9 @@ export function AppShell() {
       <Hud />
       <CallLog />
       <Palette />
+      <RecallPicker />
+      <PromptPicker />
+      <BestOf />
       <Cheatsheet />
       <DiagnosticsPanel />
       <OrphansDialog />

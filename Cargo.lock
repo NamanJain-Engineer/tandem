@@ -6112,8 +6112,11 @@ version = "0.5.0"
 dependencies = [
  "chrono",
  "git2",
+ "hex",
+ "ignore",
  "serde",
  "serde_json",
+ "sha2",
  "tandem-core",
  "tempfile",
  "thiserror 2.0.21",

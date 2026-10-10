@@ -125,6 +125,10 @@ impl DataDir {
     pub fn conductor(&self) -> PathBuf {
         self.root.join("conductor")
     }
+    /// Checkpoint stores, one per folder (F-EX-01).
+    pub fn checkpoints(&self) -> PathBuf {
+        self.root.join("checkpoints")
+    }
     pub fn scratchpad(&self) -> PathBuf {
         self.root.join("scratchpad")
     }
@@ -136,6 +140,10 @@ impl DataDir {
     }
     pub fn shell_integration(&self) -> PathBuf {
         self.root.join("shell-integration")
+    }
+    /// The user's own prompt library (F-EX-05).
+    pub fn prompts(&self) -> PathBuf {
+        self.root.join("prompts")
     }
     pub fn mcp_configs(&self) -> PathBuf {
         self.root.join("mcp")

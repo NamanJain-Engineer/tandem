@@ -173,6 +173,29 @@ macro_rules! app_commands {
             commands::files::fs_delete,
             commands::files::fs_watch,
             commands::files::fs_unwatch,
+            commands::checkpoints::checkpoints_list,
+            commands::checkpoints::checkpoint_create,
+            commands::checkpoints::checkpoint_diff,
+            commands::checkpoints::checkpoint_restore,
+            commands::checkpoints::checkpoints_usage,
+            commands::checkpoints::checkpoints_delete_all,
+            commands::recall::history_search,
+            commands::recall::history_run,
+            commands::recall::history_delete,
+            commands::recall::history_clear,
+            commands::ports::ports_list,
+            commands::ports::ports_stop,
+            commands::prompts::prompts_list,
+            commands::prompts::prompts_render,
+            commands::prompts::prompts_create,
+            commands::prompts::prompts_share_repo,
+            commands::bestof::bestof_start,
+            commands::bestof::bestof_list,
+            commands::bestof::bestof_get,
+            commands::bestof::bestof_check,
+            commands::bestof::bestof_check_stop,
+            commands::bestof::bestof_keep,
+            commands::bestof::bestof_discard,
             commands::files::editor_tabs_get,
             commands::files::editor_tabs_save,
             commands::files::app_reveal_path,
@@ -560,6 +583,25 @@ fn spawn_background(state: &AppState) {
     let terminals = state.terminals.clone();
     tauri::async_runtime::spawn(async move {
         terminals.login_env().await;
+    });
+    // Checkpoints past the settings' limits go at startup (F-EX-01).
+    let checkpoints = state.checkpoints.clone();
+    tauri::async_runtime::spawn(async move {
+        checkpoints.prune_all().await;
+    });
+    // A Best of N check can't outlive the app that ran it (F-EX-04).
+    let store = state.store.clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = tandem_store::repo::bestof::settle_checks(&store).await;
+    });
+    // Command recall keeps its retention at startup and hourly (F-EX-02).
+    let recall = state.recall.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            tick.tick().await;
+            recall.prune().await;
+        }
     });
     let staging = state.data.staging();
     tauri::async_runtime::spawn_blocking(move || {

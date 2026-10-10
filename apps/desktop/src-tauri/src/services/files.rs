@@ -117,6 +117,9 @@ pub struct FilesService {
     statuses: Arc<Mutex<StatusCache>>,
     watch_opts: WatchOptions,
     next_sub: std::sync::atomic::AtomicU64,
+    /// Folders outside every workspace that are still editable: the
+    /// profile's prompt library (F-EX-05).
+    extra_editable: Mutex<Vec<PathBuf>>,
 }
 
 fn io_err(e: impl std::fmt::Display) -> IpcError {
@@ -164,7 +167,15 @@ impl FilesService {
             statuses: Arc::default(),
             watch_opts,
             next_sub: std::sync::atomic::AtomicU64::new(1),
+            extra_editable: Mutex::default(),
         })
+    }
+
+    /// Files under `dir` open editable although no workspace holds them.
+    pub fn allow_editing(&self, dir: PathBuf) {
+        if let Ok(mut extra) = self.extra_editable.lock() {
+            extra.push(dir);
+        }
     }
 
     pub fn set_remote(&self, remote: Arc<crate::services::remote::RemoteService>) {
@@ -257,6 +268,9 @@ impl FilesService {
     async fn editable_roots(&self, root: &Path) -> Result<Vec<PathBuf>, IpcError> {
         let mut roots = self.workspace_roots().await?;
         roots.push(root.to_path_buf());
+        if let Ok(extra) = self.extra_editable.lock() {
+            roots.extend(extra.iter().cloned());
+        }
         Ok(roots)
     }
 

@@ -278,6 +278,9 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
     await invoke("thread_archive", { threadId: th.id, archived: true });
     await invoke("thread_delete", { threadId: th.id });
   }
+  // Command history outlives specs too (F-EX-02): a command one spec's
+  // shell ran must not show in another's recall.
+  await invoke("history_clear");
   // Routines outlive specs too (M11): they go, with the background runner
   // and the global pause.
   for (const v of await invoke<Array<{ routine: { id: string } }>>("routines_list")) {

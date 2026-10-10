@@ -126,6 +126,42 @@
     "enabledWhen": "always"
   },
   {
+    "id": "sidebar.checkpoints",
+    "category": "navigation",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "prompts.open",
+    "category": "terminal",
+    "mac": "Mod+Alt+P",
+    "pc": "Mod+Alt+P",
+    "pcTerminal": "Mod+Alt+P",
+    "inText": true,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "sidebar.ports",
+    "category": "navigation",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "recall.open",
+    "category": "terminal",
+    "mac": "Mod+Alt+J",
+    "pc": "Mod+Alt+J",
+    "pcTerminal": "Mod+Alt+J",
+    "inText": true,
+    "enabledWhen": "always"
+  },
+  {
     "id": "notifications.open",
     "category": "navigation",
     "mac": "Mod+Shift+N",
@@ -151,6 +187,24 @@
     "pcTerminal": null,
     "inText": false,
     "enabledWhen": "always"
+  },
+  {
+    "id": "bestof.open",
+    "category": "workspace",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "workspace_open"
+  },
+  {
+    "id": "bestof.compare",
+    "category": "workspace",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "workspace_open"
   },
   {
     "id": "workspace.launch",

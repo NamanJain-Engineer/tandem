@@ -140,6 +140,24 @@ static REGISTRY: &[CommandSpec] = &[
     ),
     // F-CD-19: the sidebar's Files tab (UI_SPEC §5).
     same("sidebar.files", C::Navigation, Some("Mod+Alt+F"), E::Always),
+    // F-EX-01: the sidebar's Checkpoints tab (UI-140).
+    same("sidebar.checkpoints", C::Navigation, None, E::Always),
+    // F-EX-05: the prompt picker (UI-145).
+    in_text(same(
+        "prompts.open",
+        C::Terminal,
+        Some("Mod+Alt+P"),
+        E::Always,
+    )),
+    // F-EX-03: the sidebar's Ports tab (UI-142).
+    same("sidebar.ports", C::Navigation, None, E::Always),
+    // F-EX-02: the recall palette (UI-141).
+    in_text(same(
+        "recall.open",
+        C::Terminal,
+        Some("Mod+Alt+J"),
+        E::Always,
+    )),
     same(
         "notifications.open",
         C::Navigation,
@@ -153,6 +171,9 @@ static REGISTRY: &[CommandSpec] = &[
         E::Always,
     ),
     same("workspace.open_folder", C::Workspace, None, E::Always),
+    // F-EX-04: Best of N's sheet (UI-143) and its compare view (UI-144).
+    same("bestof.open", C::Workspace, None, E::WorkspaceOpen),
+    same("bestof.compare", C::Workspace, None, E::WorkspaceOpen),
     // The launch sheet (F-CD-14, UI-12).
     same(
         "workspace.launch",

@@ -11,6 +11,7 @@ import { SortableContext, arrayMove, horizontalListSortingStrategy, useSortable 
 import { CSS } from "@dnd-kit/utilities";
 import {
   Globe,
+  History,
   LayoutDashboard,
   ListTodo,
   Maximize2,
@@ -18,6 +19,7 @@ import {
   NotebookPen,
   Pin,
   PinOff,
+  Plug,
   Plus,
   FolderTree,
   X,
@@ -34,7 +36,9 @@ import { moveToPane } from "../code/BrowserPane";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { Dashboard } from "../dashboard/Dashboard";
+import { CheckpointsPanel } from "../checkpoints/CheckpointsPanel";
 import { FilesPanel } from "../files/FilesPanel";
+import { PortsPanel } from "../ports/PortsPanel";
 import { ScratchpadPanel } from "../scratchpad/ScratchpadPanel";
 import { TasksPanel } from "../tasks/TasksPanel";
 import { useShortcutKeys } from "../commands/useShortcutKeys";
@@ -45,6 +49,8 @@ const ICONS: Record<SidebarTabKind, ReactNode> = {
   files: <FolderTree size={13} aria-hidden="true" />,
   tasks: <ListTodo size={13} aria-hidden="true" />,
   scratchpad: <NotebookPen size={13} aria-hidden="true" />,
+  checkpoints: <History size={13} aria-hidden="true" />,
+  ports: <Plug size={13} aria-hidden="true" />,
 };
 
 const LABELS: Record<Exclude<SidebarTabKind, "browser">, () => string> = {
@@ -52,6 +58,8 @@ const LABELS: Record<Exclude<SidebarTabKind, "browser">, () => string> = {
   files: () => t("sidebar.files"),
   tasks: () => t("sidebar.tasks"),
   scratchpad: () => t("sidebar.scratchpad"),
+  checkpoints: () => t("sidebar.checkpoints"),
+  ports: () => t("sidebar.ports"),
 };
 
 function tabLabel(tab: SidebarTab): string {
@@ -213,10 +221,12 @@ function BrowserTab({ tab }: { tab: SidebarTab }) {
   return <BrowserView id={tab.id} url={tab.url} actions={actions} />;
 }
 
-function Panel({ tab }: { tab: SidebarTab }) {
+function Panel({ tab, shown }: { tab: SidebarTab; shown: boolean }) {
   if (tab.kind === "dashboard") return <Dashboard />;
   if (tab.kind === "files") return <FilesPanel />;
   if (tab.kind === "browser") return <BrowserTab tab={tab} />;
+  if (tab.kind === "checkpoints") return <CheckpointsPanel />;
+  if (tab.kind === "ports") return <PortsPanel visible={shown} />;
   if (tab.kind === "scratchpad") return <ScratchpadPanel />;
   if (tab.kind === "tasks") return <TasksPanel />;
   return <EmptyState title={t("sidebar.soon")} />;
@@ -289,6 +299,8 @@ export function Sidebar() {
       onSelect: () => useSidebar.getState().openTab("dashboard"),
     },
     { id: "files", label: t("sidebar.files"), onSelect: () => useSidebar.getState().openTab("files") },
+    { id: "checkpoints", label: t("sidebar.checkpoints"), onSelect: () => useSidebar.getState().openTab("checkpoints") },
+    { id: "ports", label: t("sidebar.ports"), onSelect: () => useSidebar.getState().openTab("ports") },
     { id: "tasks", label: t("sidebar.tasks"), onSelect: () => useSidebar.getState().openTab("tasks") },
     {
       id: "scratchpad",
@@ -401,7 +413,7 @@ export function Sidebar() {
               className="absolute inset-0 overflow-auto"
               style={{ display: tab.id === active ? "block" : "none" }}
             >
-              <Panel tab={tab} />
+              <Panel tab={tab} shown={open && tab.id === active} />
             </div>
           ))}
         </div>
