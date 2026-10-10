@@ -131,6 +131,8 @@ setting_keys! {
     ConductorMemory,
     ConductorReflection,
     ConductorWake,
+    ConductorWakeSensitivity,
+    ConductorWakePauseVideos,
     ConductorFloatingRing,
     TelemetryUsage,
     TelemetryCrash,
@@ -714,29 +716,29 @@ pub static SCHEMA: &[SettingSpec] = &[
     ),
     spec!(
         ConductorTone,
-        json!("friendly"),
-        V::OneOf(&["friendly", "direct", "playful"]),
+        json!("neutral"),
+        V::OneOf(&["neutral", "warm", "brief"]),
         Conductor,
         ["tone"]
     ),
     spec!(
         ConductorVerbosity,
-        json!("brief"),
-        V::OneOf(&["brief", "normal", "detailed"]),
+        json!("normal"),
+        V::OneOf(&["short", "normal", "detailed"]),
         Conductor,
         ["verbosity"]
     ),
     spec!(
         ConductorSpeed,
-        json!(100),
-        V::IntRange(75, 150),
+        json!(3),
+        V::IntRange(1, 5),
         Conductor,
         ["speed"]
     ),
     spec!(
         ConductorAboutYou,
         json!(null),
-        V::OptionalText { max: 2_000 },
+        V::OptionalText { max: 1_000 },
         Conductor,
         ["about you"]
     ),
@@ -749,8 +751,8 @@ pub static SCHEMA: &[SettingSpec] = &[
     ),
     spec!(
         ConductorReflection,
-        json!(false),
-        V::Bool,
+        json!("ask"),
+        V::OneOf(&["ask", "auto", "off"]),
         Conductor,
         ["reflection", "journal"]
     ),
@@ -760,6 +762,20 @@ pub static SCHEMA: &[SettingSpec] = &[
         V::Bool,
         Conductor,
         ["wake", "hey conductor"]
+    ),
+    spec!(
+        ConductorWakeSensitivity,
+        json!("medium"),
+        V::OneOf(&["low", "medium", "high"]),
+        Conductor,
+        ["wake", "sensitivity"]
+    ),
+    spec!(
+        ConductorWakePauseVideos,
+        json!(true),
+        V::Bool,
+        Conductor,
+        ["wake", "videos", "pause"]
     ),
     spec!(
         ConductorFloatingRing,

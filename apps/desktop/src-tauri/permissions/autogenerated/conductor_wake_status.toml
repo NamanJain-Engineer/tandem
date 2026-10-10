@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-conductor-wake-status"
+description = "Enables the conductor_wake_status command without any pre-configured scope."
+commands.allow = ["conductor_wake_status"]
+
+[[permission]]
+identifier = "deny-conductor-wake-status"
+description = "Denies the conductor_wake_status command without any pre-configured scope."
+commands.deny = ["conductor_wake_status"]

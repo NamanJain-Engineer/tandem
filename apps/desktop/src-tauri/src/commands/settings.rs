@@ -63,6 +63,14 @@ async fn apply(
     if key.as_str().starts_with("dictate_") || key == SettingKey::Theme {
         state.dictate.reload_settings(key).await;
     }
+    // The wake listener follows its own settings and the Dictate mic (F-CN-07).
+    if key.as_str().starts_with("conductor_wake")
+        || matches!(key, SettingKey::DictateMic | SettingKey::DictateBackupMic)
+    {
+        if let Some(w) = state.wake.get() {
+            w.reload(state.dictate.mic_prefs().await).await;
+        }
+    }
     match key {
         SettingKey::TelemetryUsage | SettingKey::TelemetryCrash => state.apply_settings().await,
         SettingKey::ExposeAllPluginTools => {

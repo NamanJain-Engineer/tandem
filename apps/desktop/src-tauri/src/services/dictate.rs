@@ -1127,6 +1127,22 @@ impl DictateService {
         self.controller().is_some_and(|c| c.use_local())
     }
 
+    /// The microphone backend, shared with the wake listener (F-CN-07).
+    pub fn audio_backend(&self) -> Arc<dyn AudioBackend> {
+        self.backend.clone()
+    }
+
+    /// True while a take records (the wake listener steps aside).
+    pub fn is_recording(&self) -> bool {
+        self.audio.get().is_some_and(|a| a.is_recording())
+    }
+
+    /// The Dictate microphone setting; calls and the wake listener use it
+    /// too (F-CN-08, F-CN-07).
+    pub async fn mic_prefs(&self) -> MicPrefs {
+        self.capture_config().await.prefs
+    }
+
     async fn capture_config(&self) -> CaptureConfig {
         CaptureConfig {
             prefs: MicPrefs {

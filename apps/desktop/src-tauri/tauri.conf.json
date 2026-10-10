@@ -56,7 +56,8 @@
     "category": "DeveloperTool",
     "shortDescription": "A desktop workspace for coding agents",
     "resources": {
-      "resources/tandem-host/": "host-binaries/"
+      "resources/tandem-host/": "host-binaries/",
+      "../../../crates/tandem-voice/models/wake/": "models/wake/"
     }
   },
   "plugins": {

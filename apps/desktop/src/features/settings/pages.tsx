@@ -13,6 +13,7 @@ import { UpdatesPanel } from "../updates/UpdatesPanel";
 import { RunSetupAgain } from "../onboarding/RunSetupAgain";
 import { DictateExtras, MicSelect, ShortcutField } from "../dictate/DictatePage";
 import { LanguageSelect } from "../dictate/LanguageSelect";
+import { AboutYou, MemoryPanel, NameControl, SpeedControl, WakeControl } from "../conductor/ConductorSettings";
 import { EngineControl } from "../dictate/EngineControl";
 import { AutoEnhanceControl, FormattingControl, QuickActionsControl } from "../dictate/EnhanceControls";
 import {
@@ -614,6 +615,125 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
           ),
         },
       ],
+    },
+    {
+      id: "conductor",
+      label: t("settings.conductor"),
+      subtitle: t("settings.conductor.subtitle"),
+      keywords: ["conductor", "voice", "persona", "memory", "wake", "hey conductor"],
+      callout: t("conductor.privacy"),
+      rows: [
+        {
+          id: "conductor_name",
+          label: t("conductor.name"),
+          description: t("conductor.name.desc"),
+          keywords: ["name", "persona"],
+          control: (ids) => <NameControl ids={ids} />,
+        },
+        {
+          id: "conductor_voice",
+          label: t("conductor.voice"),
+          description: t("conductor.voice.desc"),
+          keywords: ["voice"],
+          control: (ids) => (
+            <SelectControl
+              k="conductor_voice"
+              ids={ids}
+              fallback="default"
+              options={[{ value: "default", label: t("conductor.voice.default") }]}
+            />
+          ),
+        },
+        {
+          id: "conductor_tone",
+          label: t("conductor.tone"),
+          keywords: ["tone", "warm", "brief", "neutral"],
+          control: () => (
+            <SegmentControl
+              k="conductor_tone"
+              label={t("conductor.tone")}
+              fallback="neutral"
+              options={segs(["neutral", "warm", "brief"], "conductor.tone")}
+            />
+          ),
+        },
+        {
+          id: "conductor_verbosity",
+          label: t("conductor.verbosity"),
+          keywords: ["verbosity", "short", "detailed"],
+          control: () => (
+            <SegmentControl
+              k="conductor_verbosity"
+              label={t("conductor.verbosity")}
+              fallback="normal"
+              options={segs(["short", "normal", "detailed"], "conductor.verbosity")}
+            />
+          ),
+        },
+        {
+          id: "conductor_speed",
+          label: t("conductor.speed"),
+          description: t("conductor.speed.desc"),
+          keywords: ["speed", "faster", "slower"],
+          control: () => <SpeedControl />,
+        },
+        {
+          id: "conductor_memory",
+          label: t("conductor.memoryToggle"),
+          description: t("conductor.memoryToggle.desc"),
+          keywords: ["memory", "remember", "forget"],
+          control: (ids) => <BoolControl k="conductor_memory" ids={ids} label={t("conductor.memoryToggle")} />,
+        },
+        {
+          id: "conductor_reflection",
+          label: t("conductor.reflection"),
+          keywords: ["reflection", "after each call", "memories"],
+          control: () => (
+            <SegmentControl
+              k="conductor_reflection"
+              label={t("conductor.reflection")}
+              fallback="ask"
+              options={segs(["ask", "auto", "off"], "conductor.reflection")}
+            />
+          ),
+        },
+        {
+          id: "conductor_wake",
+          label: t("conductor.wake"),
+          description: t("conductor.wake.desc"),
+          keywords: ["wake", "hey conductor", "listening"],
+          control: (ids) => <WakeControl ids={ids} />,
+        },
+        {
+          id: "conductor_wake_sensitivity",
+          label: t("conductor.wake.sensitivity"),
+          keywords: ["wake", "sensitivity"],
+          control: () => (
+            <SegmentControl
+              k="conductor_wake_sensitivity"
+              label={t("conductor.wake.sensitivity")}
+              fallback="medium"
+              options={segs(["low", "medium", "high"], "conductor.wake.sensitivity")}
+            />
+          ),
+        },
+        {
+          id: "conductor_wake_pause_videos",
+          label: t("conductor.wake.pauseVideos"),
+          description: t("conductor.wake.pauseVideos.desc"),
+          keywords: ["videos", "media", "pause"],
+          control: (ids) => (
+            <BoolControl k="conductor_wake_pause_videos" ids={ids} label={t("conductor.wake.pauseVideos")} />
+          ),
+        },
+      ],
+      extra: (
+        <>
+          <AboutYou />
+          <MemoryPanel />
+          <p className="text-sm text-fg-muted">{t("conductor.safety")}</p>
+        </>
+      ),
     },
     {
       id: "teammates",

@@ -265,7 +265,7 @@ mod tests {
         .expect("json");
         assert_eq!(
             conf["bundle"]["externalBin"],
-            serde_json::json!(["binaries/tandem-tasks"])
+            serde_json::json!(["binaries/tandem-tasks", "binaries/tandem-wake"])
         );
         // Both release paths build the sidecar and pass that config.
         let repo = root.join("../../..");

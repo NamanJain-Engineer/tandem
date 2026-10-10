@@ -162,6 +162,14 @@ pub struct AppState {
     pub browser: std::sync::OnceLock<Arc<crate::browser::BrowserService>>,
     /// Dictate: push-to-talk, models, history and the dictionary (F-DI-*).
     pub dictate: Arc<crate::services::dictate::DictateService>,
+    /// Who holds the microphone: Dictate takes and Conductor calls
+    /// (F-CN-07 shares it).
+    pub mic: tandem_voice::mic_owner::MicOwners,
+    /// Conductor's persona and opt-in memory (F-CN-06).
+    pub persona: Arc<crate::services::conductor_persona::ConductorPersona>,
+    /// "Hey Conductor" (F-CN-07), created in setup once the resource
+    /// directory is known.
+    pub wake: std::sync::OnceLock<Arc<crate::services::wake::WakeService>>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
     pub e2e: bool,
 }
@@ -676,6 +684,10 @@ impl AppState {
         ));
         let dictate =
             crate::services::dictate::DictateService::new(store.clone(), data.clone(), e2e);
+        let persona = Arc::new(crate::services::conductor_persona::ConductorPersona::new(
+            store.clone(),
+            &data,
+        ));
         Self {
             data,
             store,
@@ -721,6 +733,9 @@ impl AppState {
             wsl,
             browser: std::sync::OnceLock::new(),
             dictate,
+            mic: tandem_voice::mic_owner::MicOwners::new(),
+            persona,
+            wake: std::sync::OnceLock::new(),
             e2e,
         }
     }

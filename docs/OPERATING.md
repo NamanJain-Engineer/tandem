@@ -188,6 +188,13 @@ E2E lessons (each cost a debugging round):
   `~/.cache/tandem-models`; run `bash scripts/fetch-models.sh base.en parakeet`
   first). The runner points `HOME` at the test's home, so anything that needs the
   real home must capture it before then.
+- The wake phrase (F-CN-07) runs in the `tandem-wake` sidecar, built with
+  `cargo build -p tandem-voice --features kws --bin tandem-wake` (release
+  builds: `scripts/build-sidecars.sh`). Behind a TLS-intercepting proxy, run
+  `bash scripts/fetch-sherpa.sh` first: `sherpa-onnx-sys` can't verify the
+  proxy's CA, so it reads the archive from `SHERPA_ONNX_ARCHIVE_DIR` (the gate
+  sets it). Its benchmark: `cargo test -p tandem-voice --features kws --
+  --include-ignored f_cn_07_1` (about a minute).
 
 ## 6. Releasing the desktop app (Linux, local)
 
