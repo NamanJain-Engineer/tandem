@@ -17,7 +17,9 @@ export function home(): string {
 export async function invoke<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
   const result = (await browser.executeAsync(
     (c: string, a: Record<string, unknown>, done: (r: { ok?: unknown; err?: unknown }) => void) => {
-      const w = window as unknown as { __TAURI_INTERNALS__: { invoke: (c: string, a: unknown) => Promise<unknown> } };
+      const w = window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (c: string, a: unknown) => Promise<unknown> };
+      };
       w.__TAURI_INTERNALS__
         .invoke(c, a)
         .then((ok) => done({ ok }))
@@ -73,7 +75,9 @@ export async function signUpVerified(email: string, password = PASSWORD): Promis
   let link: string | undefined;
   await browser.waitUntil(
     async () => {
-      const list = (await (await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:${email}`)}&limit=1`)).json()) as {
+      const list = (await (
+        await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:${email}`)}&limit=1`)
+      ).json()) as {
         messages?: Array<{ ID: string }>;
       };
       const id = list.messages?.[0]?.ID;
@@ -115,7 +119,11 @@ export async function revokeDevice(jar: Jar, id: string): Promise<void> {
 }
 
 /** Who the scripted browser signs in as (read by browser-signin.ts). */
-export function browserAs(email: string, password = PASSWORD, checkout: "complete" | "cancel" = "complete"): void {
+export function browserAs(
+  email: string,
+  password = PASSWORD,
+  checkout: "complete" | "cancel" = "complete",
+): void {
   writeFileSync(join(home(), "e2e-browser.json"), JSON.stringify({ email, password, checkout }));
 }
 
@@ -160,7 +168,9 @@ export async function signInDesktop(email: string): Promise<void> {
   browserAs(email);
   await $("button=Continue with email").click();
   await browser.waitUntil(
-    async () => (await $('[data-testid="plan-footer"]').isExisting()) || (await $('[data-testid="onboarding"]').isExisting()),
+    async () =>
+      (await $('[data-testid="plan-footer"]').isExisting()) ||
+      (await $('[data-testid="onboarding"]').isExisting()),
     { timeout: 60_000, timeoutMsg: `sign-in didn't finish:\n${browserLog()}` },
   );
   // A brand-new profile (the first spec of a run) gets the wizard first.
@@ -171,7 +181,10 @@ export async function signInDesktop(email: string): Promise<void> {
 /** `innerText` of the first match. WebKitWebDriver's getText drops text
  * styled with text-overflow/uppercase, so read it in the page instead. */
 export async function textOf(selector: string): Promise<string> {
-  const text = await browser.execute((sel: string) => (document.querySelector(sel) as HTMLElement | null)?.innerText ?? "", selector);
+  const text = await browser.execute(
+    (sel: string) => (document.querySelector(sel) as HTMLElement | null)?.innerText ?? "",
+    selector,
+  );
   return String(text).trim();
 }
 
@@ -196,7 +209,9 @@ export async function addFolder(path: string, { added = true }: { added?: boolea
 /** Rail rows' roots, read in the page (rows re-render while a list refreshes). */
 export async function workspaceRoots(): Promise<string[]> {
   const roots = await browser.execute(() =>
-    Array.from(document.querySelectorAll<HTMLElement>('[data-testid="workspace-row"]')).map((r) => r.dataset.root ?? ""),
+    Array.from(document.querySelectorAll<HTMLElement>('[data-testid="workspace-row"]')).map(
+      (r) => r.dataset.root ?? "",
+    ),
   );
   return roots as string[];
 }
@@ -256,14 +271,28 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
   // Removing a repository removes its worktrees with it (F-CD-15).
   for (const w of list.filter((w) => !w.parentId)) await invoke("workspace_remove", { id: w.id });
   // Threads outlive specs too: archive, then delete each (F-TH-01).
-  for (const th of await invoke<Array<{ id: string }>>("thread_list", { kind: "thread", includeArchived: true })) {
+  for (const th of await invoke<Array<{ id: string }>>("thread_list", {
+    kind: "thread",
+    includeArchived: true,
+  })) {
     await invoke("thread_archive", { threadId: th.id, archived: true });
     await invoke("thread_delete", { threadId: th.id });
   }
+  // Routines outlive specs too (M11): they go, with the background runner
+  // and the global pause.
+  for (const v of await invoke<Array<{ routine: { id: string } }>>("routines_list")) {
+    await invoke("routine_delete", { id: v.routine.id });
+  }
+  await invoke("routines_background_set", { enabled: false });
+  await invoke("settings_set", { key: "pause_all_routines", value: false });
   // Teammates outlive specs too (M10): their chats go, every teammate but the
   // Lead goes, and the Lead and mail are back to their defaults.
   for (const s of await invoke<Array<{ teammate: { id: string; isLead: boolean } }>>("teammate_list")) {
-    const chats = await invoke<Array<{ id: string }>>("thread_list", { kind: "teammate_chat", teammateId: s.teammate.id, includeArchived: true });
+    const chats = await invoke<Array<{ id: string }>>("thread_list", {
+      kind: "teammate_chat",
+      teammateId: s.teammate.id,
+      includeArchived: true,
+    });
     for (const c of chats) {
       await invoke("thread_archive", { threadId: c.id, archived: true });
       await invoke("thread_delete", { threadId: c.id });
@@ -272,14 +301,30 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
     else
       await invoke("teammate_update", {
         id: s.teammate.id,
-        patch: { pinned: true, settings: { memoryCap: 4096, learnMode: "ask", mayMessage: true, maySchedule: false, defaultAccess: "edits" } },
+        patch: {
+          pinned: true,
+          settings: {
+            memoryCap: 4096,
+            learnMode: "ask",
+            mayMessage: true,
+            maySchedule: false,
+            defaultAccess: "edits",
+          },
+        },
       });
   }
   await invoke("settings_set", { key: "pause_all_mail", value: false });
+  // Plugins outlive specs too (M12): every connection goes, and its grants
+  // and held drafts with it; no Team allowlist fixture.
+  for (const c of await invoke<Array<{ connectionId: string | null }>>("plugins_catalog")) {
+    if (c.connectionId) await invoke("plugin_disconnect", { connectionId: c.connectionId });
+  }
+  await invoke("test_plugin_allowlist", { pluginIds: null });
   await invoke("auth_sign_out");
   // A first run has no engine accounts yet (the wizard's Accounts step, D-114).
   if (!onboarded) {
-    for (const a of await invoke<Array<{ id: string }>>("accounts_list")) await invoke("accounts_remove", { accountId: a.id });
+    for (const a of await invoke<Array<{ id: string }>>("accounts_list"))
+      await invoke("accounts_remove", { accountId: a.id });
   }
   // Specs start past the first-run wizard unless they test it (E2E-M5-9).
   await invoke("onboarding_set", onboarded ? { done: true } : { step: "engines" });
@@ -290,7 +335,14 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
   // Every spec starts with the default shortcuts (F-SH-09 rebinding).
   await invoke("settings_set", { key: "shortcut_overrides", value: {} });
   await invoke("sidebar_save", {
-    sidebar: { open: false, tabs: [{ id: "dashboard", kind: "dashboard", title: null, url: null }], active: "dashboard", width: 470, fullscreen: false, pinned: false },
+    sidebar: {
+      open: false,
+      tabs: [{ id: "dashboard", kind: "dashboard", title: null, url: null }],
+      active: "dashboard",
+      width: 470,
+      fullscreen: false,
+      pinned: false,
+    },
   });
   // The removals bypassed the UI's stores (the launch already showed the last
   // spec's workspace): reload so the UI starts from what the backend has.
@@ -305,7 +357,9 @@ export async function resetToWelcome(): Promise<void> {
 }
 
 /** A new verified account, signed in on the desktop, no workspaces, Free. */
-export async function freshUser(tag: string): Promise<{ email: string; jar: Awaited<ReturnType<typeof signUpVerified>> }> {
+export async function freshUser(
+  tag: string,
+): Promise<{ email: string; jar: Awaited<ReturnType<typeof signUpVerified>> }> {
   const email = uniqueEmail(tag);
   const jar = await signUpVerified(email);
   await resetState();
@@ -368,7 +422,10 @@ export async function paneIds(): Promise<string[]> {
 /** Screen text of one pane's terminal. */
 export async function paneText(paneId: string): Promise<string> {
   const text = await browser.execute(
-    (id: string) => (window as unknown as { __tandemTest?: { paneText: (id: string) => string } }).__tandemTest?.paneText(id) ?? "",
+    (id: string) =>
+      (window as unknown as { __tandemTest?: { paneText: (id: string) => string } }).__tandemTest?.paneText(
+        id,
+      ) ?? "",
     paneId,
   );
   return String(text);
@@ -383,7 +440,12 @@ export async function sendToPane(paneId: string, text: string): Promise<void> {
  * needle is looked for in the shell's command line, which zsh breaks with
  * real newlines at the pane's width (program output wraps softly and is
  * joined by `paneText` already). */
-export async function waitForPaneText(paneId: string, needle: string, timeout = 15_000, opts: { commandLine?: boolean } = {}): Promise<void> {
+export async function waitForPaneText(
+  paneId: string,
+  needle: string,
+  timeout = 15_000,
+  opts: { commandLine?: boolean } = {},
+): Promise<void> {
   const text = async () => {
     const t = await paneText(paneId);
     return opts.commandLine ? t.replace(/\n/g, "") : t;
@@ -419,7 +481,9 @@ export async function settled(): Promise<void> {
   await browser.waitUntil(
     async () =>
       browser.execute(() =>
-        document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity),
+        document
+          .getAnimations()
+          .every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity),
       ),
     { timeout: 5_000, timeoutMsg: "animations still running" },
   );
@@ -433,7 +497,15 @@ export async function split(direction: "right" | "down", tile = "shell"): Promis
     // Outside a terminal Ctrl+D splits right; Ctrl+Shift+D splits down everywhere.
     (document.activeElement as HTMLElement | null)?.blur();
     window.dispatchEvent(
-      new KeyboardEvent("keydown", { code: "KeyD", key: "d", ctrlKey: !mac, metaKey: mac, shiftKey: dir === "down", bubbles: true, cancelable: true }),
+      new KeyboardEvent("keydown", {
+        code: "KeyD",
+        key: "d",
+        ctrlKey: !mac,
+        metaKey: mac,
+        shiftKey: dir === "down",
+        bubbles: true,
+        cancelable: true,
+      }),
     );
   }, direction);
   await $(`[data-testid="tile-${tile}"]`).waitForClickable({ timeout: 10_000 });
@@ -445,7 +517,12 @@ export async function split(direction: "right" | "down", tile = "shell"): Promis
   const closed = await browser
     .waitUntil(async () => !(await $('[data-testid="pane-picker"]').isExisting()), { timeout: 2_000 })
     .catch(() => false);
-  if (!closed && (await $(`[data-testid="tile-${tile}"]`).isEnabled().catch(() => false))) {
+  if (
+    !closed &&
+    (await $(`[data-testid="tile-${tile}"]`)
+      .isEnabled()
+      .catch(() => false))
+  ) {
     console.warn(`split: the ${tile} tile click didn't register; clicking again`);
     await $(`[data-testid="tile-${tile}"]`).click();
   }
@@ -456,7 +533,9 @@ export async function split(direction: "right" | "down", tile = "shell"): Promis
     .waitUntil(
       async () => {
         const toasts = (await browser.execute(() =>
-          Array.from(document.querySelectorAll("[role=status], [role=alert]")).map((el) => (el.textContent ?? "").trim()),
+          Array.from(document.querySelectorAll("[role=status], [role=alert]")).map((el) =>
+            (el.textContent ?? "").trim(),
+          ),
         )) as string[];
         for (const t of toasts) if (t) seen.add(t);
         const now = await paneIds();
@@ -466,7 +545,9 @@ export async function split(direction: "right" | "down", tile = "shell"): Promis
       { timeout: 15_000, interval: 200 },
     )
     .catch(async () => {
-      const state = await browser.execute(() => (window as unknown as { __tandemTest?: { debug: () => unknown } }).__tandemTest?.debug());
+      const state = await browser.execute(() =>
+        (window as unknown as { __tandemTest?: { debug: () => unknown } }).__tandemTest?.debug(),
+      );
       throw new Error(`the split didn't add a pane: ${JSON.stringify({ toasts: [...seen], state })}`);
     });
   await waitForShell(added);
@@ -474,7 +555,9 @@ export async function split(direction: "right" | "down", tile = "shell"): Promis
 }
 
 /** Counters from the test harness (`test_counters`). */
-export async function counters(reset = false): Promise<{ ptyResizes: number; ptyResizesByPane: Record<string, number> }> {
+export async function counters(
+  reset = false,
+): Promise<{ ptyResizes: number; ptyResizesByPane: Record<string, number> }> {
   return invoke("test_counters", { reset });
 }
 
@@ -482,7 +565,12 @@ let rawSeq = 0;
 
 /** Puts the pane's tty in raw mode and records the next `count` bytes it
  * receives (or what arrived within `seconds`) as hex. */
-export async function rawRead(pane: string, count: number, seconds = 10, opts: { bracketed?: boolean } = {}): Promise<() => Promise<string>> {
+export async function rawRead(
+  pane: string,
+  count: number,
+  seconds = 10,
+  opts: { bracketed?: boolean } = {},
+): Promise<() => Promise<string>> {
   const tag = `raw${++rawSeq}`;
   const out = `/tmp/tandem-e2e-raw-${process.pid}-${tag}`;
   rmSync(out, { force: true });
@@ -494,7 +582,10 @@ export async function rawRead(pane: string, count: number, seconds = 10, opts: {
   );
   await waitForPaneText(pane, `ready-${tag}`);
   return async () => {
-    await browser.waitUntil(() => existsSync(`${out}.done`), { timeout: (seconds + 5) * 1000, timeoutMsg: `the read of ${count} bytes never finished` });
+    await browser.waitUntil(() => existsSync(`${out}.done`), {
+      timeout: (seconds + 5) * 1000,
+      timeoutMsg: `the read of ${count} bytes never finished`,
+    });
     const hex = readFileSync(out, "utf8").trim();
     rmSync(out, { force: true });
     rmSync(`${out}.done`, { force: true });
@@ -548,7 +639,11 @@ export async function setRegistryOverrides(overrides: unknown[]): Promise<void> 
 }
 
 /** Check again: re-reads the registry and the login env, then detects. */
-export async function checkAgain(): Promise<{ found: Array<{ engineId: string; source: string }>; slowShell: unknown; shellsAsked: string[] }> {
+export async function checkAgain(): Promise<{
+  found: Array<{ engineId: string; source: string }>;
+  slowShell: unknown;
+  shellsAsked: string[];
+}> {
   return invoke("engines_detect", {});
 }
 
@@ -557,7 +652,9 @@ export async function paneStatus(paneId: string): Promise<string> {
   return String(
     await browser.execute(
       (id: string) =>
-        document.querySelector<HTMLElement>(`[data-testid="pane"][data-pane-id="${id}"] [data-testid="pane-status"]`)?.dataset.status ?? "",
+        document.querySelector<HTMLElement>(
+          `[data-testid="pane"][data-pane-id="${id}"] [data-testid="pane-status"]`,
+        )?.dataset.status ?? "",
       paneId,
     ),
   );
@@ -604,7 +701,9 @@ export type SpawnRecord = { argv: string[]; envKeys: string[]; providerHome: str
 
 /** Spawns that started an engine in a provider home (not plain shells). */
 export async function engineSpawns(): Promise<SpawnRecord[]> {
-  return (await invoke<SpawnRecord[]>("test_spawn_log")).filter((r) => r.envKeys.includes("CLAUDE_CONFIG_DIR"));
+  return (await invoke<SpawnRecord[]>("test_spawn_log")).filter((r) =>
+    r.envKeys.includes("CLAUDE_CONFIG_DIR"),
+  );
 }
 
 /** Pane ids of the paused agent cards on screen, by card state. */
@@ -620,10 +719,20 @@ export async function pausedCards(): Promise<Array<{ paneId: string; state: stri
 /** Waits until `n` new SessionStart hooks ran after `from` log lines, then
  * a moment for their session ids to be stored. */
 export async function waitForSessionStarts(from: number, n: number): Promise<void> {
-  await browser.waitUntil(async () => fakeLog().slice(from).filter((l) => l === "hook: SessionStart").length >= n, {
-    timeout: 20_000,
-    timeoutMsg: `only ${fakeLog().slice(from).filter((l) => l === "hook: SessionStart").length} of ${n} agents reported a session`,
-  });
+  await browser.waitUntil(
+    async () =>
+      fakeLog()
+        .slice(from)
+        .filter((l) => l === "hook: SessionStart").length >= n,
+    {
+      timeout: 20_000,
+      timeoutMsg: `only ${
+        fakeLog()
+          .slice(from)
+          .filter((l) => l === "hook: SessionStart").length
+      } of ${n} agents reported a session`,
+    },
+  );
   await browser.pause(800);
 }
 

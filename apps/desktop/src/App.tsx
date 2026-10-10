@@ -16,7 +16,7 @@ import { DeepLinks } from "./features/shell/DeepLinks";
 import { useBoot } from "./features/shell/useBoot";
 import { SignIn } from "./features/signin/SignIn";
 import { Splash, type SplashPhase } from "./features/splash/Splash";
-import { t } from "./i18n";
+import { t, useCatalogVersion } from "./i18n";
 import { inTauri, invoke, usingFakeBackend } from "./ipc/invoke";
 import { installGlobalErrorLogging, log } from "./ipc/log";
 import { useSetting, useSettings, watchSettings } from "./stores/settings";
@@ -26,6 +26,8 @@ import { useWorkspaces } from "./stores/workspaces";
 import { useRestore } from "./stores/restore";
 import { useOnboarding } from "./stores/onboarding";
 import { Onboarding } from "./features/onboarding/Onboarding";
+import { DictateBridge } from "./features/dictate/DictateBridge";
+import { watchDictate } from "./stores/dictate";
 
 /** The plan check holds the splash at most this long, then the app
  * continues from the cached entitlement (F-SH-07). */
@@ -81,6 +83,7 @@ export function App() {
   const textSize = useSetting<TextSize>("interface_text_size", "default");
   const density = useSetting<Density>("density", "compact");
   const onboardingDone = useOnboarding((s) => s.state?.done ?? true);
+  const catalogVersion = useCatalogVersion();
 
   useEffect(() => {
     const onHash = () => setHash(window.location.hash);
@@ -116,7 +119,7 @@ export function App() {
           ]);
           setSplashPhase("plan");
           await bounded(session, PLAN_WAIT_MS, skipPlan.promise);
-          cleanup = [await watchSettings(), await watchSession()];
+          cleanup = [await watchSettings(), await watchSession(), await watchDictate()];
           invoke("telemetry_capture", {
             event: "app_started",
             props: { platform: b.platform, version: b.version, first_run: b.firstRun },
@@ -170,11 +173,12 @@ export function App() {
         <>
           <TerminalColorsSync />
           <SignInToast />
+          <DictateBridge />
           {canUseApp(auth) ? (
             onboardingDone ? (
               <>
                 <DeepLinks />
-                <AppShell />
+                <AppShell key={catalogVersion} />
               </>
             ) : (
               // UI-04 after Welcome (the sign-in screen), until done or skipped.

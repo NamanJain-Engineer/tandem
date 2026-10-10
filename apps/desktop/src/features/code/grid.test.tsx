@@ -688,23 +688,21 @@ describe("pane grid (F-CD-02)", () => {
     await waitFor(() => expect(document.querySelector("[role=dialog]")).toBeNull());
     const agent = paneEls()[1]?.dataset.paneId ?? "";
     act(() =>
-      useStatus
-        .getState()
-        .apply(
-          [
-            {
-              key: `pane:${agent}`,
-              status: "working",
-              reason: null,
-              since: 1,
-              ts: 1,
-              tool: null,
-              title: null,
-              preview: null,
-            },
-          ],
-          [],
-        ),
+      useStatus.getState().apply(
+        [
+          {
+            key: `pane:${agent}`,
+            status: "working",
+            reason: null,
+            since: 1,
+            ts: 1,
+            tool: null,
+            title: null,
+            preview: null,
+          },
+        ],
+        [],
+      ),
     );
     fireEvent.click(within(paneEls()[1] as HTMLElement).getByRole("button", { name: /^Close / }));
     const dialog = await screen.findByRole("alertdialog");

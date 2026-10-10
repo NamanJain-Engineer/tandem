@@ -165,7 +165,9 @@ fn start(script_args: bool) -> ChatStart {
         mcp_config: None,
         mcp: None,
         engine_version: Some("codex-cli 0.47.0".into()),
+        relocate: None,
         briefing: None,
+        stdio_servers: Vec::new(),
     }
 }
 
@@ -421,4 +423,37 @@ fn f_ag_06_codex_gets_the_briefing_as_developer_instructions() {
     req.mode = ThreadMode::Act;
     let (_, p) = protocol::V2.start_thread(&req);
     assert!(p.get("developerInstructions").is_none());
+}
+
+#[test]
+fn f_tk_02_the_tasks_server_joins_codex_with_its_connection_env() {
+    let mut req = start(false);
+    req.stdio_servers = vec![crate::chat::StdioServer {
+        name: "tandem_tasks".into(),
+        command: "/opt/vibezeo/tandem-tasks".into(),
+        args: vec![
+            "mcp".into(),
+            "--dir".into(),
+            "/home/u/.tandem/tasks".into(),
+            "--connection".into(),
+            "tc_1".into(),
+        ],
+        env_vars: vec!["TANDEM_TASKS_CONNECTION".into()],
+    }];
+    let a: Vec<String> = args(&req)
+        .iter()
+        .map(|s| s.to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        a,
+        vec![
+            "app-server",
+            "-c",
+            "mcp_servers.tandem_tasks.command=\"/opt/vibezeo/tandem-tasks\"",
+            "-c",
+            "mcp_servers.tandem_tasks.args=[\"mcp\", \"--dir\", \"/home/u/.tandem/tasks\", \"--connection\", \"tc_1\"]",
+            "-c",
+            "mcp_servers.tandem_tasks.env_vars=[\"TANDEM_TASKS_CONNECTION\"]",
+        ]
+    );
 }

@@ -178,11 +178,19 @@ fn app_turn(thread: &str, turn: &str, text: &str) {
         serde_json::json!({"threadId": thread, "turn": {"id": turn, "status": "inProgress", "items": []}}),
     );
     let item = format!("msg_{turn}");
+    // A task review (F-TK-04): a verdict instead of the echo.
+    let verdict = "Verdict: Approve\nThe change does what the task asks.";
+    let (first, rest) =
+        if text.contains("Post one comment on TAN-") && text.contains("Verdict: Approve") {
+            ("", verdict)
+        } else {
+            ("You said: ", text)
+        };
     note(
         "item/started",
         serde_json::json!({"threadId": thread, "turnId": turn, "item": {"type": "agentMessage", "id": item, "text": ""}}),
     );
-    for piece in ["You said: ", text] {
+    for piece in [first, rest] {
         note(
             "item/agentMessage/delta",
             serde_json::json!({"threadId": thread, "turnId": turn, "itemId": item, "delta": piece}),
@@ -190,7 +198,7 @@ fn app_turn(thread: &str, turn: &str, text: &str) {
     }
     note(
         "item/completed",
-        serde_json::json!({"threadId": thread, "turnId": turn, "item": {"type": "agentMessage", "id": item, "text": format!("You said: {text}")}}),
+        serde_json::json!({"threadId": thread, "turnId": turn, "item": {"type": "agentMessage", "id": item, "text": format!("{first}{rest}")}}),
     );
     note(
         "thread/tokenUsage/updated",

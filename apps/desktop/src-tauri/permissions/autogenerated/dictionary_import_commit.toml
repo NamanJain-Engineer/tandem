@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictionary-import-commit"
+description = "Enables the dictionary_import_commit command without any pre-configured scope."
+commands.allow = ["dictionary_import_commit"]
+
+[[permission]]
+identifier = "deny-dictionary-import-commit"
+description = "Denies the dictionary_import_commit command without any pre-configured scope."
+commands.deny = ["dictionary_import_commit"]

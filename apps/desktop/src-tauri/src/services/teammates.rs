@@ -808,7 +808,7 @@ impl TeammatesService {
                 session_search: true,
                 skills: true,
                 mail: teammate.settings.may_message,
-                schedule: false,
+                schedule: teammate.settings.may_schedule,
             },
         });
         if briefing.injection_lines > 0 {
@@ -1026,6 +1026,31 @@ mod tests {
         svc.delete(&lead.id).await.expect("delete");
         let (_d2, again) = (_d, svc.clone());
         assert!(again.list().await.expect("list").is_empty());
+    }
+
+    #[tokio::test]
+    async fn f_pl_05_1_a_new_teammate_has_no_plugin_grants_with_three_connected() {
+        use tandem_store::repo::plugins::{grants, insert_connection, set_grant, GrantSubject};
+        let (_d, svc) = service(None).await;
+        for id in ["test_echo", "test_upper", "test_down"] {
+            let c = insert_connection(&svc.store, id, Some("me"), "none")
+                .await
+                .expect("connect");
+            // Granting every thread doesn't grant teammates.
+            set_grant(&svc.store, &GrantSubject::AllThreads, &c.id, true)
+                .await
+                .expect("all threads");
+        }
+        let scout = svc.create(input("Scout", "claude")).await.expect("scout");
+        let mine = grants(
+            &svc.store,
+            &GrantSubject::Teammate {
+                teammate_id: scout.id.as_str().to_string(),
+            },
+        )
+        .await
+        .expect("grants");
+        assert!(mine.is_empty(), "{mine:?}");
     }
 
     #[tokio::test]

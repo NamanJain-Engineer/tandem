@@ -35,6 +35,8 @@ pub enum EnabledWhen {
     ThreadOpen,
     /// A focused pane (Code mode), or a cell of the thread grid (Thread mode).
     PaneOrCell,
+    /// The plan has routines (F-RT-04); otherwise the command is absent.
+    Routines,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -119,6 +121,10 @@ static REGISTRY: &[CommandSpec] = &[
     // F-AG-04: the New teammate sheet (no default shortcut: Mod+Shift+N is
     // Notifications, UI_SPEC UI-70).
     same("teammate.new", C::App, None, E::Always),
+    // F-TK-03: Agent mode's Tasks page.
+    same("tasks.open", C::Navigation, None, E::Always),
+    same("routines.open", C::Navigation, None, E::Always),
+    same("routines.pause", C::Navigation, None, E::Routines),
     aliased(
         "rail.toggle",
         C::Navigation,
@@ -282,6 +288,7 @@ static REGISTRY: &[CommandSpec] = &[
         Some("Mod+Shift+/"),
         E::Always,
     ),
+    same("help.diagnostics", C::Help, None, E::Always),
     same("help.copy_diagnostics", C::Help, None, E::Always),
     same("help.open_logs", C::Help, None, E::Always),
 ];

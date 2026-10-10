@@ -79,3 +79,30 @@ describe("HotkeyRecorder (F-SH-09 P2, UI-113)", () => {
     expect(status.textContent).toBe("Press keys…");
   });
 });
+
+describe("HotkeyRecorder for global push-to-talk (F-DI-01)", () => {
+  it("F-DI-01 with modifierOnly, modifiers pressed and released alone record a combo", () => {
+    const onRecord = vi.fn();
+    render(<HotkeyRecorder label="Hold to talk" idleText="Change" recordingText="Press keys…" onRecord={onRecord} modifierOnly mouseButtons />);
+    const button = screen.getByRole("button", { name: "Hold to talk" });
+    fireEvent.click(button);
+    fireEvent.keyDown(button, { code: "ControlLeft", key: "Control", ctrlKey: true });
+    fireEvent.keyDown(button, { code: "AltLeft", key: "Alt", ctrlKey: true, altKey: true });
+    fireEvent.keyUp(button, { code: "AltLeft", key: "Alt", ctrlKey: true });
+    expect(onRecord).not.toHaveBeenCalled();
+    fireEvent.keyUp(button, { code: "ControlLeft", key: "Control" });
+    expect(onRecord).toHaveBeenCalledWith({ code: "", ctrlKey: true, altKey: true, shiftKey: false, metaKey: false });
+    // Mouse 4 counts too.
+    fireEvent.click(button);
+    fireEvent.mouseDown(button, { button: 3 });
+    expect(onRecord).toHaveBeenLastCalledWith({ code: "Mouse4", ctrlKey: false, altKey: false, shiftKey: false, metaKey: false });
+  });
+
+  it("without modifierOnly, modifiers alone still record nothing", () => {
+    const { button, onRecord } = setup();
+    fireEvent.click(button);
+    fireEvent.keyDown(button, { code: "ControlLeft", key: "Control", ctrlKey: true });
+    fireEvent.keyUp(button, { code: "ControlLeft", key: "Control" });
+    expect(onRecord).not.toHaveBeenCalled();
+  });
+});

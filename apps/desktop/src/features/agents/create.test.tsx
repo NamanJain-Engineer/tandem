@@ -5,6 +5,7 @@ import { UiProvider } from "@tandem/ui";
 import { useEngines } from "../../stores/engines";
 import { useSession } from "../../stores/session";
 import { useTeammates } from "../../stores/teammates";
+import { emitLocal } from "../../ipc/events";
 import { FREE_VIEW, SIGNED_IN, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { NewTeammateSheet, useNewTeammate } from "./NewTeammateSheet";
 import { TeammateSettings, patchOf } from "./TeammateSettings";
@@ -131,6 +132,28 @@ describe("UI-72 Create with AI", () => {
     );
   });
 
+  it("F-DI-12 the description has the mic: a click starts a take, and the words land at the caret", async () => {
+    const box = (await screen.findByTestId("draft-description")) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "Someone to  our packages" } });
+    box.focus();
+    box.setSelectionRange(11, 11);
+    fireEvent.focus(box);
+    const mic = screen.getByTestId("draft-mic");
+    fireEvent.pointerDown(mic, { button: 0 });
+    fireEvent.pointerUp(mic);
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "dictate_start_take",
+        args: { origin: { type: "composer", targetId: "teammate-draft" } },
+      }),
+    );
+    act(() => emitLocal("dictate:insert", { targetId: "teammate-draft", text: "update" }));
+    expect(box.value).toBe("Someone to update our packages");
+    // Another composer's words never land here.
+    act(() => emitLocal("dictate:insert", { targetId: "thread:th_1", text: "nope" }));
+    expect(box.value).toBe("Someone to update our packages");
+  });
+
   it("F-AG-04.2 the draft prefills the form and nothing is saved until Create", async () => {
     fireEvent.change(await screen.findByTestId("draft-description"), {
       target: { value: "Write our release notes" },
@@ -196,6 +219,18 @@ describe("UI-75/76 teammate settings", () => {
     await waitFor(() => expect(screen.queryByTestId("save-bar")).toBeNull());
   });
 
+  it("F-RT-05 May create routines shows only where the plan has routines (D-909)", async () => {
+    await screen.findByTestId("teammate-settings");
+    // Free has no routines, so the setting would only lead to "Routines are part of Pro".
+    expect(screen.queryByRole("switch", { name: "May create routines" })).toBeNull();
+    act(() =>
+      useSession.setState({
+        entitlement: { ...FREE_VIEW, plan: "pro", limits: { ...FREE_VIEW.limits, routines: true } },
+      }),
+    );
+    expect(await screen.findByRole("switch", { name: "May create routines" })).toBeTruthy();
+  });
+
   it("F-AG-05 a patch carries only what changed", () => {
     const base = {
       name: "Scout",
@@ -209,6 +244,7 @@ describe("UI-75/76 teammate settings", () => {
       memoryCap: 4096,
       learnMode: "ask" as const,
       mayMessage: true,
+      maySchedule: false,
       plugins: [],
     };
     expect(patchOf(SCOUT, base, { ...base, engineId: "codex" })).toEqual({ engineId: "codex" });

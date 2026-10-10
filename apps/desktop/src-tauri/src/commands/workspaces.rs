@@ -51,9 +51,68 @@ pub async fn workspace_pick_folder(app: AppHandle) -> Result<Option<String>, Ipc
 pub async fn workspace_add(
     state: State<'_, AppState>,
     root: String,
+    kind: Option<String>,
+    host_id: Option<tandem_core::ids::HostId>,
+    wsl_distro: Option<String>,
 ) -> Result<AddedWorkspace, IpcError> {
     let limit = state.entitlements.limits().workspaces;
-    workspaces::add(&state.store, &root, limit).await
+    match kind.as_deref().unwrap_or("local") {
+        "local" => workspaces::add(&state.store, &root, limit).await,
+        "ssh" => {
+            let host = host_id.ok_or_else(|| {
+                tandem_core::IpcError::new(tandem_core::ErrorCode::Invalid, "Choose the host first")
+            })?;
+            // The host says whether the folder exists, and its real path.
+            let dir = state.remote.list_dir(&host, &root).await?;
+            workspaces::add_remote(&state.store, "ssh", &host, &dir.path, None, limit).await
+        }
+        "wsl" => {
+            let distro = wsl_distro.ok_or_else(|| {
+                tandem_core::IpcError::new(
+                    tandem_core::ErrorCode::Invalid,
+                    "Choose the distribution first",
+                )
+            })?;
+            let wsl = state.wsl.clone();
+            let d = distro.clone();
+            let root = tokio::task::spawn_blocking(move || wsl.checked_root(&d, &root))
+                .await
+                .map_err(|e| {
+                    tandem_core::IpcError::new(tandem_core::ErrorCode::Internal, e.to_string())
+                })??;
+            let host = tandem_store::repo::hosts::ensure_wsl(&state.store, &distro).await?;
+            let added = workspaces::add_remote(
+                &state.store,
+                "wsl",
+                &host.id,
+                &root,
+                Some(distro.clone()),
+                limit,
+            )
+            .await?;
+            // The + menu lists the distro's engines: detect them now, as
+            // connecting does for an SSH host.
+            let (wsl, remote) = (state.wsl.clone(), state.remote.clone());
+            let engines = state.terminals.engines.registry().all().to_vec();
+            tauri::async_runtime::spawn(async move {
+                match wsl.detect_report(&host.id, &distro, &engines).await {
+                    Ok(report) => {
+                        if let Err(e) = remote.publish_report(&host.id, &report).await {
+                            tracing::warn!(code = "wsl.detect_failed", error = %e.message, "couldn't keep the distro's engines");
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(code = "wsl.detect_failed", error = %e.message, "couldn't detect the distro's engines")
+                    }
+                }
+            });
+            Ok(added)
+        }
+        _ => Err(tandem_core::IpcError::new(
+            tandem_core::ErrorCode::Invalid,
+            "That kind of workspace doesn't exist",
+        )),
+    }
 }
 
 #[tauri::command]
@@ -100,10 +159,45 @@ pub async fn workspace_set_flags(
 #[tauri::command]
 pub async fn workspace_reveal(state: State<'_, AppState>, id: WorkspaceId) -> Result<(), IpcError> {
     let ws = repo::get(&state.store, &id).await?;
-    tauri_plugin_opener::reveal_item_in_dir(&ws.root).map_err(|e| {
+    let path = reveal_target(&ws.kind, &ws.root, ws.wsl_distro.as_deref())
+        .map_err(|m| IpcError::new(ErrorCode::Unavailable, m))?;
+    tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| {
         tracing::warn!(code = "workspace.reveal_failed", error = %e, "reveal failed");
         IpcError::new(ErrorCode::NotFound, "This folder can't be shown.")
     })
+}
+
+/// What "Reveal in file manager" opens for a workspace: its folder here; a
+/// WSL folder at its `\\wsl.localhost` path, which Windows can show; and
+/// nothing for an SSH host's folder, which isn't on this computer (F-RM-01;
+/// the rail hides the item for those).
+pub fn reveal_target(kind: &str, root: &str, distro: Option<&str>) -> Result<String, String> {
+    match (kind, distro) {
+        ("ssh", _) => {
+            Err("This folder is on another computer; open a terminal there to see it.".into())
+        }
+        ("wsl", Some(d)) => tandem_core::wslpath::from_wsl_path(d, root)
+            .ok_or_else(|| "This WSL folder can't be shown.".to_string()),
+        _ => Ok(root.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod reveal_tests {
+    use super::reveal_target;
+
+    #[test]
+    fn f_rm_01_reveal_opens_only_folders_this_computer_can_show() {
+        assert_eq!(
+            reveal_target("local", "/work/shop", None).as_deref(),
+            Ok("/work/shop")
+        );
+        assert!(reveal_target("ssh", "/home/tandem/project", None).is_err());
+        assert_eq!(
+            reveal_target("wsl", "/home/ana/shop", Some("Ubuntu")).as_deref(),
+            Ok(r"\\wsl.localhost\Ubuntu\home\ana\shop")
+        );
+    }
 }
 
 /// Reorders or pins a rail row (F-SH-03). Code mode orders workspaces; the

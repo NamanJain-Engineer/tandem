@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-plugin-detail"
+description = "Enables the plugin_detail command without any pre-configured scope."
+commands.allow = ["plugin_detail"]
+
+[[permission]]
+identifier = "deny-plugin-detail"
+description = "Denies the plugin_detail command without any pre-configured scope."
+commands.deny = ["plugin_detail"]

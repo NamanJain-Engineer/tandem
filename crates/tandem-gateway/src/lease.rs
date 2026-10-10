@@ -186,6 +186,10 @@ impl Leases {
         lock(&self.by_hash).get(&hash(token)).cloned()
     }
 
+    pub(crate) fn exists(&self, id: &LeaseId) -> bool {
+        lock(&self.by_hash).values().any(|ctx| &ctx.id == id)
+    }
+
     pub(crate) fn count(&self) -> usize {
         lock(&self.by_hash).len()
     }

@@ -4,9 +4,11 @@ import { AutoDialog } from "../auto/AutoDialog";
 import { followAuto } from "../../stores/auto";
 import { WorktreeDialogs } from "../code/Worktrees";
 import { useEffect } from "react";
-import { IconButton, useToast } from "@tandem/ui";
+import { IconButton, LiveAnnouncer, useToast } from "@tandem/ui";
 import { Plus } from "lucide-react";
-import { t } from "../../i18n";
+import { setCatalog, t } from "../../i18n";
+import en from "../../i18n/en.json";
+import { pseudoCatalog } from "../../i18n/pseudo";
 import { useLayout } from "../../stores/layout";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
@@ -18,14 +20,20 @@ import { commandRuns, setCommandToast } from "../commands/commands";
 import { AgentRail } from "../agents/AgentRail";
 import { NewTeammateSheet, useNewTeammate } from "../agents/NewTeammateSheet";
 import { AgentMain } from "../agents/TeammatePage";
+import { TasksPage } from "../tasks/TasksPanel";
+import { RoutinesPage } from "../routines/RoutinesPage";
+import { useAgentPage } from "../../stores/agentPage";
 import { TeammateSettings } from "../agents/TeammateSettings";
 import { followSuggestions } from "../agents/Suggestions";
 import { followTeammates } from "../../stores/teammates";
 import { ThreadMain } from "../thread/ThreadMain";
 import { ThreadRail } from "../thread/ThreadRail";
 import { followThreads } from "../../stores/threads";
+import { followRemote } from "../../stores/remote";
+import { RemotePrompts } from "../remote/RemotePrompts";
 import { Palette } from "../palette/Palette";
 import { Cheatsheet } from "../commands/Cheatsheet";
+import { DiagnosticsPanel } from "../diagnostics/DiagnosticsPanel";
 import { OrphansDialog } from "../restore/OrphansDialog";
 import { followEngines } from "../../stores/engines";
 import { followLimits } from "../../stores/limits";
@@ -33,6 +41,7 @@ import { followContexts } from "../../stores/contexts";
 import { followUsage } from "../../stores/usage";
 import { followStatus } from "../../stores/status";
 import { followGit } from "../../stores/git";
+import { followHealth } from "../../stores/health";
 import { followBrowser } from "../../stores/browser";
 import { followBrowserTabs } from "../../stores/sidebar";
 import { followFocus } from "../../stores/focus";
@@ -60,10 +69,12 @@ import { useShortcuts } from "./useShortcuts";
  * display:none) so terminals never re-mount (§3.4). */
 export function AppShell() {
   const { mode, settingsOpen, railCollapsed } = useUi();
+  const agentPage = useAgentPage((s) => s.page);
   const { show: toast } = useToast();
   useShortcuts();
   useEffect(() => setCommandToast(toast), [toast]);
   useEffect(followPtyState, []);
+  useEffect(followHealth, []);
   useEffect(followEngines, []);
   useEffect(followLimits, []);
   useEffect(followAuto, []);
@@ -80,6 +91,7 @@ export function AppShell() {
   useEffect(startAutoResume, []);
   useEffect(followUpdates, []);
   useEffect(followThreads, []);
+  useEffect(followRemote, []);
   useEffect(followTeammates, []);
   useEffect(followSuggestions, []);
   useVisibilityReport();
@@ -100,6 +112,8 @@ export function AppShell() {
       paneSize: (paneId: string) => terminalHandles.get(paneId)?.size() ?? null,
       reflows: (reset?: boolean) => reflowCounts(reset ?? false),
       commandRuns: () => Object.fromEntries(commandRuns),
+      // §5.5: the en-XA pseudo-locale, live (the shell re-renders).
+      pseudoLocale: (on: boolean) => setCatalog(on ? pseudoCatalog(en) : en, on ? "en-XA" : "en"),
       // State the harness saves next to a failure's screenshot.
       debug: () => {
         const ws = useWorkspaces.getState();
@@ -130,7 +144,7 @@ export function AppShell() {
   }, [dev]);
   const show = (m: typeof mode) => (!settingsOpen && mode === m ? "flex" : "none");
   return (
-    <div className="flex h-full flex-col bg-bg">
+    <div className="flex h-full flex-col bg-bg" data-testid="app-shell">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-[var(--z-max)] focus:rounded-sm focus:bg-surface-3 focus:px-3 focus:py-1.5 focus:text-fg"
@@ -174,10 +188,16 @@ export function AppShell() {
           </div>
           {/* Every surface stays mounted; hidden ones are display:none (F-SH-02). */}
           <div className="h-full" style={{ display: mode === "agent" ? "block" : "none" }}>
-            <AgentMain
-              visible={!settingsOpen && mode === "agent"}
-              settingsFor={(s) => <TeammateSettings key={s.teammate.id} s={s} />}
-            />
+            {agentPage === "tasks" ? (
+              <TasksPage />
+            ) : agentPage === "routines" ? (
+              <RoutinesPage />
+            ) : (
+              <AgentMain
+                visible={!settingsOpen && mode === "agent"}
+                settingsFor={(s) => <TeammateSettings key={s.teammate.id} s={s} />}
+              />
+            )}
           </div>
           <div className="h-full" style={{ display: mode === "thread" ? "block" : "none" }}>
             <ThreadMain visible={!settingsOpen && mode === "thread"} />
@@ -195,9 +215,14 @@ export function AppShell() {
       <AutoDialog />
       <Palette />
       <Cheatsheet />
+      <DiagnosticsPanel />
       <OrphansDialog />
       <RestartDialog />
+      <RemotePrompts />
       <UnsupportedOverlay />
+      {/* Agent waiting, done or failed and approvals requested, read out
+          politely at most once per 2 s (§5.4). */}
+      <LiveAnnouncer />
     </div>
   );
 }

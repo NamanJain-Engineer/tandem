@@ -39,11 +39,12 @@ describe("downloads and discovery (F-WB-04)", () => {
     }
     for (const p of DOCS_PAGES)
       expect(txt).toContain(`[${p.title}](https://vibezeo.com/docs/${p.slug ? `${p.slug}/` : ""})`);
-    for (const slug of ["dictate", "conductor", "tasks", "routines", "plugins", "remote"])
+    for (const slug of ["conductor"])
       expect(txt).toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*\\(Not in the app yet\\.\\)`));
-    for (const slug of ["thread-mode", "agent-mode"])
+    for (const slug of ["thread-mode", "agent-mode", "dictate", "tasks", "plugins", "routines", "remote"])
       expect(txt).not.toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*Not in the app yet`));
-    expect(txt.split("## Docs")[0]).not.toMatch(/Enhance|Polish/);
+    // F-DI-10 shipped, so Enhance and Polish is priced here as on /pricing.
+    expect(txt.split("## Docs")[0]).toContain("Dictate Enhance and Polish: 3 credits per use");
   });
 
   it("F-WB-04 /llms-full.txt carries every docs page, with the generated tables as Markdown", () => {
@@ -72,8 +73,8 @@ describe("downloads and discovery (F-WB-04)", () => {
       minSeats: PRICES.team.minSeats,
       perSeat: true,
     });
-    // Only built hosted features are priced, as on /pricing (Enhance and Polish waits for F-DI-10).
-    expect(info.pricing.creditPrices).toEqual({ title: CREDIT_PRICES.title });
+    // Only built hosted features are priced, as on /pricing.
+    expect(info.pricing.creditPrices).toEqual({ title: CREDIT_PRICES.title, rewrite: CREDIT_PRICES.rewrite });
   });
 
   it("F-WB-04 the OpenAPI 3.1 document describes the public endpoint with the same schema", async () => {

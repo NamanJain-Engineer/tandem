@@ -522,3 +522,19 @@ fn f_sh_07_quit_ends_cooperative_shells_without_waiting_for_the_deadline() {
     );
     assert_eq!(mgr.live_count(), 0);
 }
+
+#[test]
+fn nfr_5_7_diagnostics_lists_each_terminal_with_its_spawn_time_and_queue() {
+    let mgr = PtyManager::new();
+    let sink = Arc::new(VecSink::default());
+    mgr.spawn(
+        spec("dg1", "read line"),
+        Some(sink.clone() as Arc<dyn OutputSink>),
+    )
+    .expect("spawn");
+    let m = mgr.metrics();
+    let me = m.iter().find(|p| p.pane_id == "dg1").expect("dg1 listed");
+    assert!(me.spawn_ms < 5_000);
+    assert!(!me.exited);
+    let _ = mgr.kill("dg1");
+}

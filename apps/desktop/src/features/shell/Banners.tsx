@@ -3,7 +3,8 @@ import { Banner, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useSession } from "../../stores/session";
-import { openBilling } from "./actions";
+import { copyDiagnostics, openBilling } from "./actions";
+import { useHealth } from "../../stores/health";
 import { useUpdates } from "../../stores/updates";
 import { hoursLeft, updateNow } from "../updates/UnsupportedOverlay";
 
@@ -24,10 +25,21 @@ export function Banners() {
   const { show } = useToast();
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const minVersion = useUpdates((s) => s.state?.minVersion ?? null);
+  const failed = useHealth((s) => s.failed);
   if (!auth) return null;
 
   let banner: Shown | null = null;
-  if (minVersion && !minVersion.modal) {
+  const broken = failed[failed.length - 1];
+  if (broken && !dismissed.has(`failed:${broken.name}`)) {
+    // §5.2: a subsystem the watchdog gave up on is never silent.
+    banner = {
+      id: `failed:${broken.name}`,
+      tone: "error",
+      text: t("banner.subsystemFailed", { name: broken.name }),
+      action: { label: t("menu.copyDiagnostics"), onClick: () => void copyDiagnostics(show) },
+      dismissable: true,
+    };
+  } else if (minVersion && !minVersion.modal) {
     // UI-131 during the 72 h grace: terminals keep working.
     banner = {
       id: "unsupported",

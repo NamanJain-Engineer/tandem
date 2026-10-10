@@ -70,9 +70,19 @@ note "- version $version"
 # 3. build the Linux bundles.
 bundle="$root/target/$target/release/bundle"
 if [ "$build" = 1 ]; then
+  # tandem-host for SSH hosts (F-RM-01): static Linux x86_64 and aarch64
+  # (cargo-zigbuild), with their SHA-256 manifest. A macOS helper needs a Mac
+  # (release.yml builds it); this download offers Linux hosts only.
+  hostdir="$root/apps/desktop/src-tauri/resources/tandem-host"
+  find "$hostdir" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
+  rm -f "$hostdir/manifest.json"
+  (cd "$root" && sh scripts/ci/build-tandem-host.sh linux-x86_64 && sh scripts/ci/build-tandem-host.sh linux-aarch64)
+  (cd "$root" && TANDEM_HOST_PREBUILT=1 sh scripts/build-tandem-host.sh >/dev/null)
   (cd "$root" && pnpm --filter desktop build)
+  # The tasks MCP server ships beside the app (F-TK-02, bundle.externalBin).
+  sh "$root/scripts/build-sidecars.sh" "$target"
   # AppImage tooling runs without FUSE in containers.
-  (cd "$root/apps/desktop" && APPIMAGE_EXTRACT_AND_RUN=1 NO_STRIP=true pnpm tauri build --target "$target" --bundles appimage,deb)
+  (cd "$root/apps/desktop" && APPIMAGE_EXTRACT_AND_RUN=1 NO_STRIP=true pnpm tauri build --target "$target" --bundles appimage,deb --config src-tauri/tauri.sidecars.conf.json)
 fi
 
 # 4. signing, each only with its secrets; otherwise the artifact says so.
@@ -84,7 +94,8 @@ else
   note "- unsigned: Linux AppImage and deb (missing LINUX_GPG_PRIVATE_KEY, LINUX_GPG_PASSPHRASE)"
 fi
 found=0
-for f in "$bundle"/appimage/*.AppImage "$bundle"/deb/*.deb; do
+# Only this version's bundles: an earlier release's can still be in the folder.
+for f in "$bundle"/appimage/*_"$version"_*.AppImage "$bundle"/deb/*_"$version"_*.deb; do
   [ -e "$f" ] || continue
   found=1
   name="$(basename "$f")"
@@ -98,6 +109,25 @@ if [ "$found" = 0 ]; then
   echo "no bundles under $bundle (build them, or drop --skip-build)" >&2
   exit 1
 fi
+# Every bundle carries tandem-host, or SSH workspaces can't connect.
+for f in "$bundle"/appimage/*_"$version"_*.AppImage "$bundle"/deb/*_"$version"_*.deb; do
+  [ -e "$f" ] || continue
+  (cd "$root" && sh scripts/check-host-bundle.sh "$f" linux-x86_64,linux-aarch64) | sed "s|^|- $(basename "$f"): |" | tee -a "$summary"
+done
+# The sidecars sit beside the app (D-828): the tasks server and the
+# engines' status hook. Without the hook, panes fall back to heuristics.
+for bin in tandem-tasks tandem-hook; do
+  for f in "$bundle"/deb/*_"$version"_*.deb; do
+    [ -e "$f" ] || continue
+    # No grep -q: it stops reading early, and pipefail counts dpkg-deb's broken pipe.
+    dpkg-deb -c "$f" | grep "usr/bin/$bin\$" >/dev/null || { echo "$(basename "$f") has no $bin" >&2; exit 1; }
+  done
+  if [ -d "$bundle/appimage/Vibezeo.AppDir" ] && [ ! -x "$bundle/appimage/Vibezeo.AppDir/usr/bin/$bin" ]; then
+    echo "the AppImage has no $bin" >&2
+    exit 1
+  fi
+done
+note "- sidecars in every bundle: tandem-tasks, tandem-hook"
 if has TAURI_SIGNING_PRIVATE_KEY; then
   note "- updater: artifacts signed; latest.json written"
 else

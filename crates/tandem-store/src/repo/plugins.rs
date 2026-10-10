@@ -20,7 +20,7 @@ pub enum ConnectionStatus {
 }
 
 impl ConnectionStatus {
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             ConnectionStatus::Connected => "connected",
             ConnectionStatus::NeedsAttention => "needs_attention",
@@ -47,6 +47,14 @@ pub struct PluginConnection {
     pub auth_kind: String,
     pub status: ConnectionStatus,
     pub created_at: i64,
+    /// Non-secret facts (client id, token endpoint, mode, port).
+    #[serde(skip)]
+    #[ts(skip)]
+    pub meta: serde_json::Value,
+    /// `{allowPublishInFull, allowWritesInFull}`.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub options: serde_json::Value,
 }
 
 /// Who a grant is for.
@@ -84,7 +92,7 @@ pub async fn connections(store: &Store) -> Result<Vec<PluginConnection>, StoreEr
     store
         .read(|c| {
             let mut stmt = c.prepare(
-                "SELECT id, plugin_id, account_label, auth_kind, status, created_at
+                "SELECT id, plugin_id, account_label, auth_kind, status, created_at, meta_json, options_json
                  FROM plugin_connections ORDER BY created_at, id",
             )?;
             let rows = stmt.query_map([], |r| {
@@ -95,6 +103,8 @@ pub async fn connections(store: &Store) -> Result<Vec<PluginConnection>, StoreEr
                     auth_kind: r.get(3)?,
                     status: ConnectionStatus::parse(&r.get::<_, String>(4)?),
                     created_at: r.get(5)?,
+                    meta: serde_json::from_str(&r.get::<_, String>(6)?).unwrap_or_default(),
+                    options: serde_json::from_str(&r.get::<_, String>(7)?).unwrap_or_default(),
                 })
             })?;
             Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -109,33 +119,146 @@ pub async fn insert_connection(
     account_label: Option<&str>,
     auth_kind: &str,
 ) -> Result<PluginConnection, StoreError> {
+    insert_connection_with(
+        store,
+        &ConnectionId::new(),
+        plugin_id,
+        account_label,
+        auth_kind,
+        serde_json::json!({}),
+    )
+    .await
+}
+
+/// Records a connection under a chosen id (its credential was saved under
+/// that id before), with its non-secret meta.
+pub async fn insert_connection_with(
+    store: &Store,
+    id: &ConnectionId,
+    plugin_id: &str,
+    account_label: Option<&str>,
+    auth_kind: &str,
+    meta: serde_json::Value,
+) -> Result<PluginConnection, StoreError> {
     let conn = PluginConnection {
-        id: ConnectionId::new(),
+        id: id.clone(),
         plugin_id: plugin_id.to_string(),
         account_label: account_label.map(str::to_string),
         auth_kind: auth_kind.to_string(),
         status: ConnectionStatus::Connected,
         created_at: now_ms(),
+        meta,
+        options: serde_json::json!({}),
     };
     let row = conn.clone();
     store
         .write(move |t| {
             t.execute(
-                "INSERT INTO plugin_connections (id, plugin_id, account_label, auth_kind, status, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+                "INSERT INTO plugin_connections (id, plugin_id, account_label, auth_kind, status, created_at, updated_at, meta_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)",
                 params![
                     row.id.as_str(),
                     row.plugin_id,
                     row.account_label,
                     row.auth_kind,
                     row.status.as_str(),
-                    row.created_at
+                    row.created_at,
+                    row.meta.to_string()
                 ],
             )?;
             Ok(())
         })
         .await?;
     Ok(conn)
+}
+
+/// A reconnect that worked: new account label, auth kind and meta, and
+/// connected again.
+pub async fn reconnected(
+    store: &Store,
+    id: &ConnectionId,
+    account_label: Option<&str>,
+    auth_kind: &str,
+    meta: serde_json::Value,
+) -> Result<(), StoreError> {
+    let (id, label, kind, meta) = (
+        id.as_str().to_string(),
+        account_label.map(str::to_string),
+        auth_kind.to_string(),
+        meta.to_string(),
+    );
+    store
+        .write(move |t| {
+            t.execute(
+                "UPDATE plugin_connections SET account_label = ?2, auth_kind = ?3, meta_json = ?4, status = 'connected', updated_at = ?5 WHERE id = ?1",
+                params![id, label, kind, meta, now_ms()],
+            )?;
+            Ok(())
+        })
+        .await
+}
+
+/// Sets a connection's status; returns whether it changed.
+pub async fn set_status(
+    store: &Store,
+    id: &ConnectionId,
+    status: ConnectionStatus,
+) -> Result<bool, StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .write(move |t| {
+            let n = t.execute(
+                "UPDATE plugin_connections SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status != ?2",
+                params![id, status.as_str(), now_ms()],
+            )?;
+            Ok(n > 0)
+        })
+        .await
+}
+
+/// Replaces a connection's options (`options_json`).
+pub async fn set_options(
+    store: &Store,
+    id: &ConnectionId,
+    options: serde_json::Value,
+) -> Result<(), StoreError> {
+    let (id, options) = (id.as_str().to_string(), options.to_string());
+    store
+        .write(move |t| {
+            t.execute(
+                "UPDATE plugin_connections SET options_json = ?2, updated_at = ?3 WHERE id = ?1",
+                params![id, options, now_ms()],
+            )?;
+            Ok(())
+        })
+        .await
+}
+
+/// Every subject a connection is granted to.
+pub async fn subjects_of(
+    store: &Store,
+    connection: &ConnectionId,
+) -> Result<Vec<GrantSubject>, StoreError> {
+    let conn = connection.as_str().to_string();
+    store
+        .read(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT subject_kind, subject_id FROM plugin_grants WHERE connection_id = ?1 ORDER BY created_at",
+            )?;
+            let rows = stmt.query_map([conn], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+            let mut out = Vec::new();
+            for row in rows {
+                let (kind, id) = row?;
+                out.push(match kind.as_str() {
+                    "teammate" => GrantSubject::Teammate { teammate_id: id },
+                    "thread" => GrantSubject::Thread { thread_id: id },
+                    "workspace" => GrantSubject::Workspace { workspace_id: id },
+                    _ => GrantSubject::AllThreads,
+                });
+            }
+            Ok(out)
+        })
+        .await
 }
 
 /// Removes a connection and every grant of it.
@@ -248,6 +371,39 @@ mod tests {
         assert!(grants(&store, &a).await.expect("a").is_empty());
         delete_connection(&store, &upper.id).await.expect("delete");
         assert!(grants(&store, &b).await.expect("b").is_empty());
-        assert_eq!(connections(&store).await.expect("list"), vec![echo]);
+        assert_eq!(connections(&store).await.expect("list"), vec![echo.clone()]);
+        set_grant(&store, &a, &echo.id, true).await.expect("grant");
+        assert_eq!(
+            subjects_of(&store, &echo.id).await.expect("subjects"),
+            vec![a]
+        );
+        assert!(
+            set_status(&store, &echo.id, ConnectionStatus::NeedsAttention)
+                .await
+                .expect("status")
+        );
+        assert!(
+            !set_status(&store, &echo.id, ConnectionStatus::NeedsAttention)
+                .await
+                .expect("again")
+        );
+        reconnected(
+            &store,
+            &echo.id,
+            Some("me"),
+            "api_key",
+            serde_json::json!({"mode": "test"}),
+        )
+        .await
+        .expect("reconnect");
+        let c = connections(&store).await.expect("list").remove(0);
+        assert_eq!(
+            (
+                c.status,
+                c.account_label.as_deref(),
+                c.meta["mode"].as_str()
+            ),
+            (ConnectionStatus::Connected, Some("me"), Some("test"))
+        );
     }
 }

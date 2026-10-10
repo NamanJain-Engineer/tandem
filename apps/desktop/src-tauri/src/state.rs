@@ -128,6 +128,14 @@ pub struct AppState {
     pub teammate_tools: Arc<dyn crate::services::gateway::BuiltinService>,
     /// The one MCP gateway (F-PL-01).
     pub gateway: Arc<crate::services::gateway::GatewayService>,
+    /// The task tracker and its MCP server (F-TK-01, F-TK-02).
+    pub tasks: Arc<crate::services::tasks::TasksService>,
+    /// Routines and their scheduler (F-RT-01..04).
+    pub routines: Arc<crate::services::routines::RoutinesService>,
+    /// Task runs: attempts, the 4-run cap, reviews (F-TK-04).
+    pub task_exec: Arc<crate::services::tasks_exec::TaskExecService>,
+    /// Plugins: connect flows, approvals, held drafts (F-PL-03..08).
+    pub plugins: Arc<crate::services::plugins::PluginService>,
     /// The Team org's audit events (F-TL-10).
     pub audit: Arc<crate::services::audit::AuditService>,
     pub deeplinks: DeepLinkQueue,
@@ -146,13 +154,28 @@ pub struct AppState {
     pub files: Arc<crate::services::files::FilesService>,
     /// The Changes view and the status bar's branch (F-CD-20).
     pub git_panel: Arc<crate::services::git_panel::GitPanelService>,
+    /// SSH hosts and their connections (F-RM-01).
+    pub remote: Arc<crate::services::remote::RemoteService>,
+    /// WSL distributions (F-RM-02; Windows only).
+    pub wsl: Arc<crate::services::wsl::WslService>,
     /// Browser tabs and panes (F-CD-17), bound to the window in setup.
     pub browser: std::sync::OnceLock<Arc<crate::browser::BrowserService>>,
+    /// Dictate: push-to-talk, models, history and the dictionary (F-DI-*).
+    pub dictate: Arc<crate::services::dictate::DictateService>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
     pub e2e: bool,
 }
 
 impl AppState {
+    /// How subsystems started from here are supervised (§5.2).
+    pub fn supervision(&self) -> tandem_core::supervisor::Supervision {
+        tandem_core::supervisor::Supervision {
+            clock: self.clock.clone(),
+            bus: self.bus.clone(),
+            watchdog: tandem_core::supervisor::watchdog(),
+        }
+    }
+
     pub fn init() -> Result<Self, CoreError> {
         // "Delete local data" (F-TL-05) runs here, before anything opens
         // `$DATA`; the app then starts as on a first run.
@@ -281,12 +304,16 @@ impl AppState {
         }));
         let pty_bus = bus.clone();
         let mark_bus = bus.clone();
+        let reader_bus = bus.clone();
         let cwd_store = store.clone();
         // An agent exited and its pane went back to the shell: save the
         // session for the workspace's "Saved sessions" (F-CD-03 AC3).
         let handback_store = store.clone();
         let handback_bus = bus.clone();
         let handback_status = status.clone();
+        let handback_tasks: Arc<std::sync::OnceLock<Arc<crate::services::tasks::TasksService>>> =
+            Arc::default();
+        let tasks_for_handback = handback_tasks.clone();
         // Agent output drives the status heuristics (F-EN-05); the screen is
         // read only when a waiting-pattern check is due.
         let activity_status = status.clone();
@@ -340,6 +367,15 @@ impl AppState {
                 }
                 pty_bus.publish(BusEvent::new(Topic::Pty, "pty:state", state));
             }))
+            .with_reader_failure_sink(Arc::new(move |pane, restarts, failed| {
+                // A terminal's reader recovered from a panic, or gave up and
+                // passes its output through raw (§5.2).
+                let name = format!("terminal reader/{pane}");
+                tandem_core::supervisor::watchdog().record(&name, restarts, "panicked", failed);
+                if failed {
+                    tandem_core::supervisor::report_failed(&reader_bus, &name, restarts, "panicked".into());
+                }
+            }))
             .with_mark_sink(Arc::new(move |pane, mark| {
                 if let Some(event) = mark.event(pane) {
                     mark_bus.publish(BusEvent::new(Topic::Pty, "pty:mark", event));
@@ -353,6 +389,9 @@ impl AppState {
             }))
             .with_handback_sink(Arc::new(move |pane, code| {
                 handback_status.unwatch(pane);
+                if let Some(tasks) = tasks_for_handback.get() {
+                    tasks.end_session(&format!("pn:{pane}"));
+                }
                 let (store, bus) = (handback_store.clone(), handback_bus.clone());
                 let pane = tandem_core::ids::PaneId::from_db(pane.to_string());
                 tracing::info!(code = "pty.handback", exit = code, "agent handed the pane back");
@@ -376,6 +415,20 @@ impl AppState {
             engines,
             status,
         );
+        let remote = crate::services::remote::RemoteService::new(
+            store.clone(),
+            bus.clone(),
+            &data,
+            crate::services::remote::bin_dir(None),
+            terminals.pty.clone(),
+            terminals.status.clone(),
+        );
+        terminals.set_remote(remote.clone());
+        let wsl = Arc::new(crate::services::wsl::WslService::new(
+            crate::services::wsl::system(),
+        ));
+        terminals.set_wsl(wsl.clone());
+        remote.set_engines(terminals.engines.clone());
         let approvals = crate::services::approvals::ApprovalService::new(
             store.clone(),
             bus.clone(),
@@ -399,6 +452,7 @@ impl AppState {
         let telemetry = TelemetryService::new(&data, net.clone());
         let models = Arc::new(crate::services::models::RuntimeModels::default());
         let gateway = crate::services::gateway::GatewayService::new(store.clone(), data.run());
+        gateway.bind_bus(bus.clone());
         let launcher = Arc::new(crate::services::threads::AppLauncher::new(
             terminals.clone(),
             config.clone(),
@@ -429,6 +483,30 @@ impl AppState {
             clock.clone(),
         );
         launcher.set_guard(audit.clone());
+        threads.set_remote(remote.clone());
+        // Plugins (M12): credentials from the keychain, approvals in threads,
+        // held drafts, the Team allowlist.
+        let plugins = crate::services::plugins::PluginService::new(
+            store.clone(),
+            bus.clone(),
+            keychain.clone(),
+            opener.clone(),
+            notifications.clone(),
+            gateway.clone(),
+            entitlements.clone(),
+            config.clone(),
+            audit.clone(),
+        );
+        {
+            let weak: std::sync::Weak<dyn crate::services::plugins::ThreadAsk> =
+                Arc::downgrade(&threads) as _;
+            plugins.bind_threads(weak);
+        }
+        gateway.configure_plugins(
+            plugins.credentials().clone(),
+            net.clone(),
+            crate::services::plugins::Hooks(Arc::downgrade(&plugins)),
+        );
         // Thread titles: AI only with the Privacy opt-in (D-118).
         let titles_store = store.clone();
         threads.configure(
@@ -470,6 +548,47 @@ impl AppState {
             }));
         }
         launcher.bind_teammates(&teammates);
+        let tasks = crate::services::tasks::TasksService::new(
+            &data,
+            store.clone(),
+            crate::services::tasks::tasks_bin(),
+        );
+        launcher.bind_tasks(&tasks);
+        let _ = handback_tasks.set(tasks.clone());
+        let routines = crate::services::routines::RoutinesService::new(
+            store.clone(),
+            bus.clone(),
+            clock.clone(),
+            tandem_store::repo::routines::Runner::Gui,
+        );
+        routines.set_host(Arc::new(crate::services::routine_host::AppRoutineHost {
+            store: store.clone(),
+            teammates: teammates.clone(),
+            terminals: terminals.clone(),
+            auth: auth.clone(),
+            entitlements: entitlements.clone(),
+            threads: threads.clone(),
+            notifications: notifications.clone(),
+            gateway: gateway.clone(),
+        }));
+        terminals.bind_tasks(&tasks);
+        let task_exec = crate::services::tasks_exec::TaskExecService::new(
+            store.clone(),
+            bus.clone(),
+            clock.clone(),
+            tasks.tracker.clone(),
+        );
+        task_exec.set_host(Arc::new(crate::services::task_host::AppExecHost {
+            store: store.clone(),
+            data: data.clone(),
+            auth: auth.clone(),
+            entitlements: entitlements.clone(),
+            terminals: terminals.clone(),
+            teammates: teammates.clone(),
+            threads: threads.clone(),
+            notifications: notifications.clone(),
+            gateway: gateway.clone(),
+        }));
         // Teammate mail (F-AG-12) lands in teammate chats.
         let mail = crate::services::mail::MailService::new(
             store.clone(),
@@ -479,6 +598,7 @@ impl AppState {
                 store: store.clone(),
                 threads: threads.clone(),
                 teammates: teammates.clone(),
+                gateway: gateway.clone(),
             }),
         );
         // The gateway's teammate built-ins answer for the lease's teammate.
@@ -486,6 +606,7 @@ impl AppState {
             Arc::new(crate::services::teammate_tools::TeammateTools {
                 teammates: teammates.clone(),
                 mail: mail.clone(),
+                routines: routines.clone(),
             });
         gateway.bind_builtins(Arc::downgrade(&tools));
         // Learn after a turn (F-AG-08): off the turn's own path.
@@ -547,11 +668,14 @@ impl AppState {
         }));
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         let files = crate::services::files::FilesService::new(store.clone());
+        files.set_remote(remote.clone());
         let git_panel = crate::services::git_panel::GitPanelService::new(files.clone());
         let auto = Arc::new(crate::services::auto::AutoService::new(
             bus.clone(),
             crate::services::auto::AutoTiming::default(),
         ));
+        let dictate =
+            crate::services::dictate::DictateService::new(store.clone(), data.clone(), e2e);
         Self {
             data,
             store,
@@ -583,13 +707,20 @@ impl AppState {
             threads,
             models,
             gateway,
+            tasks,
+            routines,
+            task_exec,
+            plugins,
             teammates,
             teammate_tools: tools,
             learn,
             mail,
             files,
             git_panel,
+            remote,
+            wsl,
             browser: std::sync::OnceLock::new(),
+            dictate,
             e2e,
         }
     }

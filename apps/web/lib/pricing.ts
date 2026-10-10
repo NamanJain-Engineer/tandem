@@ -3,6 +3,8 @@
  * /pricing from `packages/protocol/src/plans.ts` and checks it against the
  * API's config (F-WB-01 AC3). */
 
+import { LIMITS } from "@tandem/protocol/plans";
+
 export type PlanFeature = { text: string; planned?: boolean };
 
 export type Plan = {
@@ -41,7 +43,7 @@ export const PLANS: readonly Plan[] = [
     trial: "7-day free trial · 14-day money-back on the first charge",
     features: [
       { text: "Everything in Free" },
-      { text: "Unlimited panes and workspaces" },
+      { text: `Up to ${LIMITS.pro.panes} live panes, and unlimited workspaces` },
       { text: "Thread mode with every chat engine: Cursor Agent, Grok and OpenCode too" },
       { text: "Up to 6 threads side by side" },
       { text: "Several accounts per engine" },
@@ -64,8 +66,7 @@ export const CREDIT_VALUE_USD = 0.001;
 /** What a hosted feature costs. `key` is the feature's entry in the API's
  * signed remote config (and `CREDIT_PRICES` in plans.ts); a build-time test
  * keeps the three equal (F-WB-01 AC3). `feature` is its PRODUCT_SPEC id: only
- * features ticked in docs/REMAINING.md are listed (a test checks), so Enhance
- * and Polish (`rewrite`, F-DI-10, 3 credits per use) joins when it ships. */
+ * features ticked in docs/REMAINING.md are listed (a test checks). */
 export type CreditRow = {
   key: "title" | "rewrite";
   feature: string;
@@ -76,4 +77,5 @@ export type CreditRow = {
 
 export const CREDIT_ROWS: readonly CreditRow[] = [
   { key: "title", feature: "F-BE-06", label: "Thread titles", unit: "per title", credits: 0 },
+  { key: "rewrite", feature: "F-DI-10", label: "Dictate Enhance and Polish", unit: "per use", credits: 3 },
 ];

@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { Bot, Home, MessagesSquare, Plus, Settings2 } from "lucide-react";
+import { Bot, CalendarClock, Home, MessagesSquare, Plus, Settings2 } from "lucide-react";
 import type { IpcError, PluginCard, TeammateSummary, Thread, ThreadState } from "@tandem/protocol";
 import {
   Avatar,
@@ -30,6 +30,7 @@ import { t } from "../../i18n";
 import { listen } from "../../ipc/events";
 import { invoke } from "../../ipc/invoke";
 import { useEngines } from "../../stores/engines";
+import { useAgentPage } from "../../stores/agentPage";
 import { useTeammates } from "../../stores/teammates";
 import { useThreads } from "../../stores/threads";
 import { switchMode } from "../shell/actions";
@@ -320,33 +321,37 @@ function ChatsTab({ s, visible }: { s: TeammateSummary; visible: boolean }) {
   );
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div
-        role="tablist"
-        aria-label={t("agent.chat.tabs", { name: tm.name })}
-        className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-divider px-3 py-1"
-        onKeyDown={onStripKey}
-        data-testid="chat-tabs"
-      >
-        {(chats ?? []).map((c) => (
-          <ChatPill
-            key={c.id}
-            chat={c}
-            teammateId={tm.id}
-            selected={c.id === chatId}
-            onSelect={() => selectChat(tm.id, c.id)}
-            onDragStart={(e) => {
-              e.dataTransfer.setData(DRAG_MIME, c.id);
-              e.dataTransfer.effectAllowed = "move";
-            }}
-            onDrop={(e) => {
-              const from = e.dataTransfer.getData(DRAG_MIME);
-              if (from) {
-                e.preventDefault();
-                reorder(from, c.id);
-              }
-            }}
-          />
-        ))}
+      {/* The tab list holds only the tabs (axe: aria-required-children);
+          New chat sits beside it. */}
+      <div className="flex shrink-0 items-center gap-1 border-b border-divider px-3 py-1">
+        <div
+          role="tablist"
+          aria-label={t("agent.chat.tabs", { name: tm.name })}
+          className="flex min-w-0 items-center gap-1 overflow-x-auto"
+          onKeyDown={onStripKey}
+          data-testid="chat-tabs"
+        >
+          {(chats ?? []).map((c) => (
+            <ChatPill
+              key={c.id}
+              chat={c}
+              teammateId={tm.id}
+              selected={c.id === chatId}
+              onSelect={() => selectChat(tm.id, c.id)}
+              onDragStart={(e) => {
+                e.dataTransfer.setData(DRAG_MIME, c.id);
+                e.dataTransfer.effectAllowed = "move";
+              }}
+              onDrop={(e) => {
+                const from = e.dataTransfer.getData(DRAG_MIME);
+                if (from) {
+                  e.preventDefault();
+                  reorder(from, c.id);
+                }
+              }}
+            />
+          ))}
+        </div>
         {tm.places.length > 0 ? (
           <Menu
             trigger={
@@ -526,6 +531,15 @@ export function TeammatePage({
             {t("agent.page.newChat")}
           </Button>
         )}
+        <Button
+          size="sm"
+          variant="ghost"
+          iconLeft={<CalendarClock size={14} />}
+          onClick={() => useAgentPage.getState().show("routines")}
+          data-testid="teammate-routines"
+        >
+          {t("agent.page.routines")}
+        </Button>
         {settings && (
           <Button
             size="sm"

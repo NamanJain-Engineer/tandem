@@ -13,4 +13,9 @@ root: string,
  * The context's folder inside the repository, `/`-separated; `""` at
  * the top.
  */
-folder: string, status: GitStatus, };
+folder: string, status: GitStatus, 
+/**
+ * The SSH host it's on, by name: pushes, pulls and branches run in a
+ * terminal there (D-411).
+ */
+host?: string, };

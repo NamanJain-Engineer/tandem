@@ -46,7 +46,13 @@ function record(action: string, init: KeyboardEventInit) {
 describe("Settings › Shortcuts (F-SH-09 P2, UI-113)", () => {
   it("F-SH-09.6 lists every command by §5 group with its keys, and a recorded combo replaces them", async () => {
     const calls = mount();
-    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual(["App and navigation", "Code mode: tabs and panes", "Terminal"]);
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
+      // The GLOBAL rows (Dictate) come first (D-808, M8).
+      "Global (work in every app)",
+      "App and navigation",
+      "Code mode: tabs and panes",
+      "Terminal",
+    ]);
     expect(keysIn("pane.split_right")).toBe("CtrlD");
     expect(within(row("pane.split_right")).queryByRole("button", { name: /^Reset / })).toBeNull();
     record("pane.split_right", { code: "KeyR", key: "r", ctrlKey: true, altKey: true });

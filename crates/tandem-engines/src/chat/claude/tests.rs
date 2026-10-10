@@ -17,6 +17,11 @@ fn as_json(p: &Parsed) -> Value {
         Parsed::Event(e) => serde_json::to_value(e).expect("event json"),
         Parsed::Session(s) => json!({"session": s}),
         Parsed::Ack => json!({"ack": true}),
+        Parsed::Permission {
+            request_id,
+            tool_name,
+            input,
+        } => json!({"permission": request_id, "tool": tool_name, "input": input}),
     }
 }
 
@@ -96,7 +101,9 @@ fn start(access: Access, mode: ThreadMode, attended: bool) -> ChatStart {
         mcp_config: None,
         mcp: None,
         engine_version: None,
+        relocate: None,
         briefing: None,
+        stdio_servers: Vec::new(),
     }
 }
 
@@ -204,6 +211,8 @@ async fn session(script: &str) -> (Box<dyn ChatSession>, mpsc::Receiver<AdapterE
                 turn: Arc::new(Mutex::new(None)),
                 session_id: Arc::new(Mutex::new(None)),
                 acked: Arc::new(Notify::new()),
+                asks: Arc::new(Mutex::new(HashMap::new())),
+                cwd: req.cwd.clone(),
             };
             let parser = ClaudeParser::new(req.cwd.clone(), &[], false);
             tokio::spawn(session.clone().read(parser, lines, events));
@@ -336,4 +345,132 @@ fn f_ag_06_2_a_100_kb_briefing_goes_by_file_not_argv() {
     let total: usize = a.iter().map(|x| x.len()).sum();
     assert!(total < 4096, "argv is {total} bytes");
     assert!(!a.iter().any(|x| x.to_string_lossy().contains("bbbb")));
+}
+
+#[test]
+fn f_rm_01_a_thread_on_a_host_asks_permission_in_band() {
+    // Local, with the gateway: its permission tool.
+    let mut req = start(Access::Edits, ThreadMode::Act, true);
+    req.mcp_config = Some("/data/mcp/s.json".into());
+    assert_eq!(
+        flag(&args(&req), "--permission-prompt-tool"),
+        Some(PERMISSION_TOOL)
+    );
+    // On an SSH host or in WSL: no gateway there, so stdio.
+    req.mcp_config = None;
+    req.relocate = Some(crate::chat::Relocate(Arc::new(|spec| spec)));
+    assert_eq!(flag(&args(&req), "--permission-prompt-tool"), Some("stdio"));
+    assert!(!args(&req).iter().any(|a| a == "--mcp-config"));
+    // Local without a gateway: unchanged (no prompt tool at all).
+    req.relocate = None;
+    assert_eq!(flag(&args(&req), "--permission-prompt-tool"), None);
+}
+
+#[test]
+fn f_rm_01_an_in_band_request_describes_the_card_like_the_gateway_does() {
+    let mut p = ClaudeParser::new("/repo".into(), &[], false);
+    let line = r#"{"type":"control_request","request_id":"r-1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"npm test"},"tool_use_id":"toolu_1"}}"#;
+    let parsed = p.line(line, now());
+    assert_eq!(
+        parsed,
+        vec![Parsed::Permission {
+            request_id: "r-1".into(),
+            tool_name: "Bash".into(),
+            input: json!({"command": "npm test"}),
+        }]
+    );
+    let (kind, summary, _, subject) =
+        approval_card("Bash", &json!({"command": "npm test"}), Path::new("/repo"));
+    assert_eq!(kind, ApprovalKind::Command);
+    assert_eq!(summary, "Run `npm test`");
+    assert_eq!(subject, ApprovalSubject::Command("npm test".into()));
+    // Other control requests from Claude aren't approvals.
+    assert!(p
+        .line(r#"{"type":"control_request","request_id":"r-2","request":{"subtype":"hook_callback"}}"#, now())
+        .is_empty());
+    let allow = permission_reply(
+        "r-1",
+        &json!({"command": "npm test"}),
+        &ApprovalDecision::Allow {
+            scope: tandem_core::approvals::ApprovalScope::Once,
+        },
+    );
+    let v: Value = serde_json::from_str(&allow).expect("json");
+    assert_eq!(v["type"], "control_response");
+    assert_eq!(v["response"]["request_id"], "r-1");
+    assert_eq!(v["response"]["response"]["behavior"], "allow");
+    assert_eq!(
+        v["response"]["response"]["updatedInput"]["command"],
+        "npm test"
+    );
+    let deny = permission_reply("r-1", &json!({}), &ApprovalDecision::Deny { reason: None });
+    let v: Value = serde_json::from_str(&deny).expect("json");
+    assert_eq!(v["response"]["response"]["behavior"], "deny");
+    assert_eq!(v["response"]["response"]["message"], "Denied by the user");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn f_rm_01_an_in_band_approval_reaches_the_engine() {
+    // Asks about `npm test`, then reports what the answer said.
+    let script = r#"read user
+echo '{"type":"system","subtype":"init","session_id":"s-1","model":"m"}'
+echo '{"type":"control_request","request_id":"r-1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"npm test"}}}'
+read answer
+case "$answer" in
+  *'"request_id":"r-1"'*'"behavior":"allow"'*'"command":"npm test"'*) word=allowed;;
+  *) word=refused;;
+esac
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"'"$word"'"}]},"parent_tool_use_id":null}'
+echo '{"type":"result","subtype":"success","is_error":false,"result":"x","usage":{"input_tokens":1,"output_tokens":1}}'
+read more"#;
+    let (s, mut rx) = session(script).await;
+    let turn = TurnId::new();
+    s.send_turn(TurnInput {
+        turn_id: turn.clone(),
+        text: "test it".into(),
+        images: Vec::new(),
+        files: Vec::new(),
+    })
+    .await
+    .expect("send");
+    let asked = loop {
+        match next(&mut rx).await {
+            AdapterEvent::Approval {
+                turn_id,
+                id,
+                summary,
+                subject,
+                ..
+            } => {
+                assert_eq!(turn_id, turn);
+                assert_eq!(summary, "Run `npm test`");
+                assert_eq!(subject, ApprovalSubject::Command("npm test".into()));
+                break id;
+            }
+            AdapterEvent::SessionId(_) | AdapterEvent::Event { .. } => {}
+            other => panic!("unexpected {other:?}"),
+        }
+    };
+    s.resolve_approval(
+        &asked,
+        ApprovalDecision::Allow {
+            scope: tandem_core::approvals::ApprovalScope::Once,
+        },
+    )
+    .await
+    .expect("answer");
+    let mut said = String::new();
+    loop {
+        if let AdapterEvent::Event { event, .. } = next(&mut rx).await {
+            if let ThreadEvent::Assistant { markdown } = &event {
+                said = markdown.clone();
+            }
+            if matches!(event, ThreadEvent::TurnEnd { .. }) {
+                break;
+            }
+        }
+    }
+    assert_eq!(said, "allowed");
+    s.shutdown().await.expect("shutdown");
 }

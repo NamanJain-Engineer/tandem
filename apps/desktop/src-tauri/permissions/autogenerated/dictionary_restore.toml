@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictionary-restore"
+description = "Enables the dictionary_restore command without any pre-configured scope."
+commands.allow = ["dictionary_restore"]
+
+[[permission]]
+identifier = "deny-dictionary-restore"
+description = "Denies the dictionary_restore command without any pre-configured scope."
+commands.deny = ["dictionary_restore"]

@@ -5,11 +5,11 @@ members = ["crates/*", "apps/desktop/src-tauri", "tests/invariants"]
 [workspace.package]
 edition = "2021"
 license = "MIT"
-version = "0.4.0"
+version = "0.5.0"
 publish = false
 
 [workspace.dependencies]
-tandem-core = { path = "crates/tandem-core" }
+tandem-core = { path = "crates/tandem-core", default-features = false }
 tandem-store = { path = "crates/tandem-store" }
 tandem-pty = { path = "crates/tandem-pty" }
 tandem-engines = { path = "crates/tandem-engines" }
@@ -27,6 +27,7 @@ async-trait = "0.1"
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+chrono-tz = "0.10"
 dashmap = "6"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 futures = "0.3"
@@ -35,6 +36,7 @@ git2 = { version = "0.20", default-features = false, features = ["vendored-libgi
 hex = "0.4"
 hmac = "0.12"
 http-body-util = "0.1"
+iana-time-zone = "0.1"
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 ignore = "0.4"
@@ -61,6 +63,7 @@ ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
 ulid = "1"
 url = "2"
 vte = "0.15"
+wiremock = "0.6"
 unicode-normalization = "0.1"
 zeroize = "1"
 zip = { version = "4.6", default-features = false, features = ["deflate-flate2"] }
@@ -82,3 +85,9 @@ debug-assertions = true
 lto = false
 codegen-units = 16
 strip = "none"
+
+# Dependencies keep line tables only in dev builds: full DWARF for whisper.cpp,
+# ONNX Runtime, WebKit bindings and the rest outgrew the build machines'
+# disk (D-511). Workspace crates keep full debug info.
+[profile.dev.package."*"]
+debug = "line-tables-only"

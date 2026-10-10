@@ -21,6 +21,29 @@ use ts_rs::TS;
 
 use crate::events::ThreadEvent;
 
+/// Runs a session's engine somewhere else: turns the spec the adapter
+/// built into the one that starts it there (an SSH host's `tandem-host
+/// run`, F-RM-01, D-403). The adapter's stdio handling stays as it is.
+#[derive(Clone)]
+pub struct Relocate(
+    pub std::sync::Arc<dyn Fn(process::ProcessSpec) -> process::ProcessSpec + Send + Sync>,
+);
+
+impl std::fmt::Debug for Relocate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Relocate")
+    }
+}
+
+impl Relocate {
+    pub fn apply(r: Option<&Relocate>, spec: process::ProcessSpec) -> process::ProcessSpec {
+        match r {
+            Some(r) => (r.0)(spec),
+            None => spec,
+        }
+    }
+}
+
 /// Everything an adapter needs to start a session.
 #[derive(Debug, Clone)]
 pub struct ChatStart {
@@ -46,11 +69,28 @@ pub struct ChatStart {
     pub mcp: Option<McpEndpoint>,
     /// The engine version detection found, for the adapter's version gate.
     pub engine_version: Option<String>,
+    /// Where the engine runs when it isn't this machine.
+    pub relocate: Option<Relocate>,
     /// A teammate chat's briefing (`$DATA/briefings/<thread>.md`, F-AG-06):
     /// Claude reads it with `--append-system-prompt-file`, Codex gets it as
     /// developer instructions and ACP agents as the start of the first
     /// prompt. Never argv.
     pub briefing: Option<PathBuf>,
+    /// Local stdio MCP servers besides the gateway: the tasks server
+    /// (F-TK-02), one connection per session.
+    pub stdio_servers: Vec<StdioServer>,
+}
+
+/// A stdio MCP server an engine starts itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StdioServer {
+    /// The name the engine knows it by (`tandem_tasks`).
+    pub name: String,
+    pub command: PathBuf,
+    pub args: Vec<String>,
+    /// Env vars the engine must pass through to the server (Codex starts
+    /// servers with a minimal env).
+    pub env_vars: Vec<String>,
 }
 
 impl ChatStart {

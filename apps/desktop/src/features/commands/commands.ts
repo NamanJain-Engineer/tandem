@@ -2,10 +2,12 @@
 // predicates) comes from `tandem-core` through
 // `@tandem/protocol/shortcuts.json`; the palette, the shortcut dispatcher and
 // menus all run commands through `runCommand`, so they share one handler.
+import { useAgentPage } from "../../stores/agentPage";
 import { useLaunch } from "../../stores/launch";
 import { useNotifications } from "../../stores/notifications";
 import { useCloseConfirm } from "../../stores/closeConfirm";
 import { useSidebar } from "../../stores/sidebar";
+import { useSession } from "../../stores/session";
 import { useSettings } from "../../stores/settings";
 import type { CommandSpec } from "@tandem/protocol";
 import shortcuts from "@tandem/protocol/shortcuts.json";
@@ -74,6 +76,8 @@ function activePane(): { tabId: string; paneId: string } | null {
 
 export function isEnabled(spec: CommandSpec): boolean {
   if (spec.enabledWhen === "always") return true;
+  // Pausing routines means nothing on a plan without them (F-RT-04).
+  if (spec.enabledWhen === "routines") return !!useSession.getState().entitlement?.limits.routines;
   const ui = useUi.getState();
   if (spec.enabledWhen === "thread_open")
     return ui.mode === "thread" && !ui.settingsOpen && useThreads.getState().selectedId !== null;
@@ -120,6 +124,18 @@ export const handlers: Record<string, () => void> = {
   "mode.code": () => switchMode("code"),
   "mode.thread": () => switchMode("thread"),
   "thread.changes": () => useThreads.getState().toggleChanges(),
+  "tasks.open": () => {
+    switchMode("agent");
+    useAgentPage.getState().show("tasks");
+  },
+  "routines.open": () => {
+    switchMode("agent");
+    useAgentPage.getState().show("routines");
+  },
+  "routines.pause": () => {
+    const s = useSettings.getState();
+    void s.set("pause_all_routines", !(s.values.pause_all_routines ?? false));
+  },
   "teammate.new": () => {
     switchMode("agent");
     useNewTeammate.getState().show(true);
@@ -180,6 +196,7 @@ export const handlers: Record<string, () => void> = {
   "work.find": () => useUi.getState().openFindWork(),
   "billing.plans": () => useUi.getState().openUpgrade(),
   "help.shortcuts": () => useUi.getState().setCheatsheet(!useUi.getState().cheatsheetOpen),
+  "help.diagnostics": () => useUi.getState().setDiagnostics(true),
   "help.copy_diagnostics": () => void copyDiagnostics(toast),
   "help.open_logs": () => void invoke("app_open_logs_folder").catch(() => undefined),
 };

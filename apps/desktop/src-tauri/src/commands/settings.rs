@@ -60,6 +60,9 @@ async fn apply(
     key: SettingKey,
     value: &Value,
 ) -> Result<(), IpcError> {
+    if key.as_str().starts_with("dictate_") || key == SettingKey::Theme {
+        state.dictate.reload_settings(key).await;
+    }
     match key {
         SettingKey::TelemetryUsage | SettingKey::TelemetryCrash => state.apply_settings().await,
         SettingKey::ExposeAllPluginTools => {
@@ -69,6 +72,11 @@ async fn apply(
         }
         // Paused: queued mail waits; resumed: it goes out, once (F-AG-12).
         SettingKey::PauseAllMail => state.mail.pump_soon(),
+        // The tray's check mark follows; rows re-read (F-SH-13).
+        SettingKey::PauseAllRoutines => {
+            state.routines.notify_changed();
+            crate::tray::sync(app, crate::commands::routines::background_on().await).await;
+        }
         SettingKey::LaunchAtLogin => {
             let on = value.as_bool().unwrap_or(false);
             // E2E runs never touch the real login items.

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-history-export"
+description = "Enables the dictate_history_export command without any pre-configured scope."
+commands.allow = ["dictate_history_export"]
+
+[[permission]]
+identifier = "deny-dictate-history-export"
+description = "Denies the dictate_history_export command without any pre-configured scope."
+commands.deny = ["dictate_history_export"]

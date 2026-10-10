@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ssh-askpass-reply"
+description = "Enables the ssh_askpass_reply command without any pre-configured scope."
+commands.allow = ["ssh_askpass_reply"]
+
+[[permission]]
+identifier = "deny-ssh-askpass-reply"
+description = "Denies the ssh_askpass_reply command without any pre-configured scope."
+commands.deny = ["ssh_askpass_reply"]

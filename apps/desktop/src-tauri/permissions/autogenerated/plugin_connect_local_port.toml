@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-plugin-connect-local-port"
+description = "Enables the plugin_connect_local_port command without any pre-configured scope."
+commands.allow = ["plugin_connect_local_port"]
+
+[[permission]]
+identifier = "deny-plugin-connect-local-port"
+description = "Denies the plugin_connect_local_port command without any pre-configured scope."
+commands.deny = ["plugin_connect_local_port"]

@@ -8,14 +8,18 @@ every milestone has its tasks, exit checks and E2E list in MILESTONES. Tick
 items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md`
 has every feature below with its full behaviour and acceptance tests.
 
-**Where it stands (10 October 2026, `product-m0-m5`):** M0–M7, M9 and M10
-are done, and so are M15's six features (its non-functional checks are under
-way). So is M13, apart from its voice pair (F-DI-05 and F-DI-10, which wait
-for M8's Dictate). M16 has F-SH-12, F-AC-07, F-AU-01, F-BE-03 and F-BE-12.
-That's 107 of 152 features, 56 of 65 P0. Left: 45 features in six
-milestones (M8, M11–M14, M16), of which 9 are P0, all M8's. vibezeo.com serves 0.3.0
-(M6, M7, M9 and the Scratchpad). M15 makes the P0/P1 product launchable;
-M16 adds the P2 extras and the release candidate.
+**Where it stands (10 October 2026, `product-m0-m5`):** M0–M14 are done,
+and so are M15's six features and its non-functional checks (pull request #38;
+the performance budgets still need the reference machines, `HUMAN_TODO.md`). M16
+has F-SH-12, F-AC-07, F-AU-01, F-BE-03, F-BE-12 and F-RT-05. That's 139 of 152
+features: all 65 P0s and every P1. Left: M16's 13 P2 extras, each now being
+built on its own branch: Conductor (F-CN-01 to F-CN-08), the phone companion and
+relay (F-RM-03, F-BE-11), skill sync and a teammate in a terminal (F-AG-10,
+F-AG-13) and the macOS Simulator pane (F-CD-21). vibezeo.com serves 0.5.0:
+Dictate (M8), tasks (M11), plugins (M12), SSH workspaces (M14) and Diagnostics
+(M15), on top of 0.4.0's teammates, Find work, your data, shortcut rebinding and
+usage page. Routines and running tasks are built and switch on with Pro; WSL
+workspaces wait for the Windows download.
 
 ## 0. First, before new features
 
@@ -34,6 +38,12 @@ M16 adds the P2 extras and the release candidate.
      site's plan copy matches.
    - Perf items marked [manual] (threads scroll fps, the 2 MB fence, the
      16-pane and startup suites) need the reference machines (`HUMAN_TODO.md`).
+   - Six agents' first frames regressed from 670 ms (M3) to ~1.2 s on the
+     same build VM and perf build (`perf/results/m15.json`): bisect from M3.
+   - Memory (§5.1, D-138): the base app is ~500 MB PSS on the build VM
+     (budget 350) and each background pane 34–75 MB (budget 3.9 MB). Hidden
+     panes should drop their xterm instance after a while and replay from
+     the core's ring when shown; measure again with `--suite memory`.
 
 ## 1. Features to build, by milestone
 
@@ -41,21 +51,22 @@ Build in this order; each milestone ends with its E2E specs, the full
 regression, the gate, BUILD_LOG and a tag. Prerequisites are as MILESTONES
 lists them (M9 was built ahead of M8, D-200).
 
-### M8 · Dictate (local) and onboarding (XL) · 11 features, 9 of them P0
+### M8 · Dictate (local) and onboarding (XL) · 11 features, 9 of them P0 · done
 Push-to-talk anywhere: persistent audio capture, local Whisper/Parakeet, safe
 insertion into the focused app, the widget, history and the dictionary; plus
-the complete first-run onboarding.
-- [ ] F-DI-01 Global push-to-talk (P0)
-- [ ] F-DI-02 Hotkey engine per OS (P0)
-- [ ] F-DI-03 Audio capture and microphones (P0)
-- [ ] F-DI-04 Local speech models (P0)
-- [ ] F-DI-06 Text insertion pipeline (P0)
-- [ ] F-DI-07 Dictate widget (P0)
-- [ ] F-DI-11 Onboarding and permissions (P0)
-- [ ] F-DI-12 In-app composer dictation (P0)
-- [ ] F-SH-08 First-run onboarding (P0; M5 built the framework, M6 the Accounts step)
-- [ ] F-DI-08 History and stats (P1)
-- [ ] F-DI-09 Dictionary (P1)
+the complete first-run onboarding. **Done** (branch `m8-dictate-onboarding`,
+merged 10 October 2026). F-DI-05 and F-DI-10, listed under M13, are done too.
+- [x] F-DI-01 Global push-to-talk (P0)
+- [x] F-DI-02 Hotkey engine per OS (P0)
+- [x] F-DI-03 Audio capture and microphones (P0)
+- [x] F-DI-04 Local speech models (P0)
+- [x] F-DI-06 Text insertion pipeline (P0)
+- [x] F-DI-07 Dictate widget (P0)
+- [x] F-DI-11 Onboarding and permissions (P0)
+- [x] F-DI-12 In-app composer dictation (P0)
+- [x] F-SH-08 First-run onboarding (P0; M5 built the framework, M6 the Accounts step)
+- [x] F-DI-08 History and stats (P1)
+- [x] F-DI-09 Dictionary (P1)
 
 Tasks: capture; local models; dictionary engine; takes and insertion; hotkeys;
 widget (UI-60); composer dictation (UI-68); setup and onboarding; history and
@@ -66,7 +77,7 @@ history and dictionary, model download.
 ### M10 · Teammates and gateway core (XL) · 12 features (P1)
 Agent mode: persistent teammates with a brief, memory, skills, learning,
 session search and teammate-to-teammate mail, all over the single local gateway
-with leases. **Done in pull request #5** (branch `m10-teammates-gateway`), except F-DI-12's mic in "Create with AI", which completes after M8 merges (D-300).
+with leases. **Done in pull request #5** (branch `m10-teammates-gateway`); F-DI-12's mic in "Create with AI" followed once M8 merged.
 - [x] F-PL-01 Gateway process
 - [x] F-AG-01 Teammate record
 - [x] F-AG-02 Agent rail
@@ -88,15 +99,16 @@ search, mail, settings, create with AI, gateway.
 
 ### M11 · Tasks and routines (L) · 8 features (P1)
 A local task tracker agents read and write over MCP, with Pro execution in
-lanes; scheduled routines that run in-app and in the background.
-- [ ] F-TK-01 Task store
-- [ ] F-TK-02 `tandem-tasks` MCP server
-- [ ] F-TK-03 Tasks UI
-- [ ] F-TK-04 Task execution (Pro)
-- [ ] F-RT-01 Routine model (Pro)
-- [ ] F-RT-02 In-app scheduler and runs
-- [ ] F-RT-03 Background runner (Pro)
-- [ ] F-RT-04 Routines UI
+lanes; scheduled routines that run in-app and in the background. **Done in
+pull request #36** (branch `m11-tasks-routines`), with M16's F-RT-05.
+- [x] F-TK-01 Task store
+- [x] F-TK-02 `tandem-tasks` MCP server
+- [x] F-TK-03 Tasks UI
+- [x] F-TK-04 Task execution (Pro)
+- [x] F-RT-01 Routine model (Pro)
+- [x] F-RT-02 In-app scheduler and runs
+- [x] F-RT-03 Background runner (Pro)
+- [x] F-RT-04 Routines UI
 
 Tasks: task store; MCP server; Tasks UI (UI-80/81); task execution
 (UI-82/83/84); routine model and schedules; scheduler; background runner;
@@ -105,15 +117,17 @@ E2E-M11-1…6: agents edit tasks, execute (Pro), routine, missed run, background
 
 ### M12 · Plugins and approvals (L) · 8 features (P1)
 Connect external services once, grant them per teammate or thread, and enforce
-risk-class approvals and held drafts. Engines never see a token.
-- [ ] F-PL-02 Vendor modules
-- [ ] F-PL-03 Connecting a plugin
-- [ ] F-PL-04 Credential storage and injection
-- [ ] F-PL-05 Grants
-- [ ] F-PL-06 Risk classes and approval policy
-- [ ] F-PL-07 Approval card
-- [ ] F-PL-08 Held drafts queue
-- [ ] F-PL-09 Initial catalog
+risk-class approvals and held drafts. Engines never see a token. **Done in
+pull request #34** (branch `m12-plugins-approvals`). M11's runner names its
+runs through `set_unattended_origin` (BUILD_LOG M12 item 7).
+- [x] F-PL-02 Vendor modules
+- [x] F-PL-03 Connecting a plugin
+- [x] F-PL-04 Credential storage and injection
+- [x] F-PL-05 Grants
+- [x] F-PL-06 Risk classes and approval policy
+- [x] F-PL-07 Approval card
+- [x] F-PL-08 Held drafts queue
+- [x] F-PL-09 Initial catalog
 
 Tasks: vendor modules; credentials; connect flows (UI-90/91/92); grants;
 policy engine; approval card (UI-93); held drafts; catalog.
@@ -126,8 +140,8 @@ policy and audit, and the transparency page.
 - [x] F-BE-05 Credits ledger
 - [x] F-BE-06 Hosted AI relay (titles, Enhance/Polish and teammate drafts; `/auto/next` and the voice routes come with their M16 features)
 - [x] F-BE-07 STT relay
-- [ ] F-DI-05 Cloud speech-to-text (Pro, credits): the M8 session's; the relay and the desktop client are done (M13, ARCHITECTURE §14.11)
-- [ ] F-DI-10 Enhance and Polish (Pro, credits): the M8 session's; the route and the desktop client are done (M13)
+- [x] F-DI-05 Cloud speech-to-text (Pro, credits): built on `m8-dictate-onboarding` over M13's relay client (D-516)
+- [x] F-DI-10 Enhance and Polish (Pro, credits): built on `m8-dictate-onboarding` over M13's rewrite client (D-517)
 - [x] F-BL-03 Credit packs
 - [x] F-BL-05 Refunds
 - [x] F-BL-06 Team plan (P1 core; the P2 SSO part is built on `m16-team-sso`)
@@ -145,13 +159,16 @@ and test modes until they exist.
 ### M14 · Remote: SSH and WSL (L) · 2 features (P1)
 Terminals, agents, threads, files and git on SSH hosts through `tandem-host`,
 and in WSL distros, never forwarding local credentials.
-- [ ] F-RM-01 SSH workspaces and `tandem-host`
-- [ ] F-RM-02 WSL workspaces (Windows)
+- [x] F-RM-01 SSH workspaces and `tandem-host`
+- [x] F-RM-02 WSL workspaces (Windows)
 
 Tasks: `tandem-host`; SSH transport; remote workspaces; WSL; infra (the
 compose `sshd` profile).
 E2E-M14-1…5: connect, host key, containment, re-attach, remote engines. WSL
 needs a Windows machine (manual QA in `HUMAN_TODO.md` until CI runs Windows).
+Done on `m14-remote-ssh-wsl` (PR #6): every task, E2E-M14-1…5 green; WSL is
+unit-tested with fakes, and its Windows pass, real macOS/aarch64 hosts and the
+CI-built binaries for all three targets wait in `HUMAN_TODO.md`.
 
 ### M15 · Website, docs, data controls and launch hardening (L) · 6 features (2 P0)
 Close every remaining P0 and P1 and every non-functional requirement. After
@@ -183,7 +200,7 @@ release candidate. Stop after any sub-phase if the budget runs out.
 - 16C Phone companion: [ ] F-RM-03 Phone companion · [ ] F-BE-11 Remote relay
 - 16D Extras: [x] F-SH-12 Scratchpad · [ ] F-CD-21 Simulator pane (macOS) ·
   [x] F-AC-07 Usage dashboard · [ ] F-AG-10 Skill sync to engines ·
-  [ ] F-AG-13 Teammate in a terminal · [ ] F-RT-05 Schedule tool for teammates ·
+  [ ] F-AG-13 Teammate in a terminal · [x] F-RT-05 Schedule tool for teammates ·
   [x] F-BE-03 CLI device-code sign-in · [x] F-BE-12 Admin
 - Also: [x] app-shortcut rebinding (F-SH-09 P2 part, Settings › Shortcuts UI-113),
   [x] Team SSO (F-BL-06 P2 part), [x] the remaining AI routes (`/auto/next`,

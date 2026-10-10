@@ -26,6 +26,7 @@ import type {
   ThreadEventEnvelope,
   ThreadEventPage,
   ThreadsChanged,
+  SaveIssue,
   Turn,
   WorkspaceSummary,
 } from "@tandem/protocol";
@@ -35,6 +36,7 @@ import { FrameKind, encodeFrame, type FrameChannel } from "../ipc/pty";
 import { DEMO_CHANGES, afterAllow, afterDeny, chatTurn, fixTurn, planText, planTurn, type Step } from "./agent";
 import { DemoFiles, NO_GIT } from "./files";
 import { DemoNotes } from "./notes";
+import { DemoTasks } from "./tasks";
 import { DemoShell, agentScreen } from "./shell";
 import { version } from "../../package.json";
 
@@ -320,6 +322,8 @@ export class DemoCore {
   /** The Files tab's made-up project (in memory). */
   readonly files = new DemoFiles();
   readonly notes = new DemoNotes();
+  /** The Tasks tab, kept in the page (F-TK-03). */
+  readonly tasks = new DemoTasks();
   private ids = 0;
   private timers = new Set<ReturnType<typeof setTimeout>>();
 
@@ -869,6 +873,14 @@ export class DemoCore {
           message: "Find work searches the terminals and threads running on your computer, so the demo has nothing to search.",
         };
       // A web page can't hold other pages the way the app's browser does.
+      case "ssh_host_add":
+      case "ssh_connect":
+      case "ssh_list_dir":
+        // The demo runs in a web page: there's no ssh to run.
+        throw { code: "unavailable", message: "The browser demo doesn't connect to SSH hosts. The app does, with your own ssh." };
+      case "wsl_distros":
+        // Same answer as the app on a system without WSL: the section hides.
+        throw { code: "unavailable", message: "WSL folders open on Windows only", stage: "wsl" };
       case "browser_open":
       case "browser_navigate":
         throw { code: "unavailable", message: "Web pages don't open inside this demo. In the app they open right here." };
@@ -877,6 +889,31 @@ export class DemoCore {
       case "editor_tabs_save":
         this.files.saveTabs(args?.state as EditorTabs);
         return null;
+      // Tasks are a Free feature of the download, so the demo keeps them in
+      // the page. Running one is Pro, which the download doesn't have.
+      case "tasks_meta":
+        return this.tasks.meta();
+      case "tasks_list":
+        return this.tasks.list(Boolean((args?.filter as { include_archived?: boolean } | undefined)?.include_archived));
+      case "task_get":
+        return this.tasks.get(String(args?.id ?? ""));
+      case "task_save":
+        return this.tasks.save((args?.input ?? {}) as SaveIssue);
+      case "task_comment":
+        return this.tasks.comment(String(args?.id ?? ""), String(args?.body ?? ""), typeof args?.parentId === "string" ? args.parentId : null);
+      case "task_archive":
+      case "task_restore":
+        return this.tasks.setArchived(
+          String(args?.id ?? ""),
+          cmd === "task_archive",
+          typeof args?.expectedRevision === "number" ? args.expectedRevision : undefined,
+        );
+      // Dictate and plugins reach past the browser: the microphone and other
+      // apps, and the user's own accounts.
+      case "dictate_status":
+        throw { code: "unavailable", message: "Dictate listens to your microphone and types into your other apps, so it works in the app, not in this demo." };
+      case "plugins_catalog":
+        throw { code: "unavailable", message: "Plugins sign in to your own accounts, so they don't connect inside this demo. In the app, this page lists them." };
       case "scratchpad_list":
         return this.notes.list();
       case "scratchpad_read":

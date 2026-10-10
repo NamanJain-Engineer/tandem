@@ -88,6 +88,7 @@ setting_keys! {
     AllowTeammateSkills,
     LearnAfterTurn,
     PauseAllMail,
+    PauseAllRoutines,
     ResumeAgentsAutomatically,
     TrustWorkspacesIAdd,
     ExposeTasksToTerminalAgents,
@@ -96,7 +97,11 @@ setting_keys! {
     PluginAskBeforeWrites,
     DictateEnabled,
     DictateHotkey,
-    DictateMode,
+    DictateToggleHotkey,
+    DictateLatch,
+    DictateHotkeyVerified,
+    DictateCloudConsented,
+    DictateEnhanceDisclosed,
     DictateEngine,
     DictateModel,
     DictateLanguage,
@@ -111,8 +116,12 @@ setting_keys! {
     DictatePauseMedia,
     DictateOutput,
     DictateAutoEnhance,
+    DictateQuickActions,
     DictateFormatting,
+    DictateFormattingApps,
     DictateShareHints,
+    DictateKeepHistory,
+    DictateWidgetPosition,
     ConductorName,
     ConductorVoice,
     ConductorTone,
@@ -468,6 +477,13 @@ pub static SCHEMA: &[SettingSpec] = &[
         ["mail", "pause"]
     ),
     spec!(
+        PauseAllRoutines,
+        json!(false),
+        V::Bool,
+        Teammates,
+        ["routines", "pause", "schedule"]
+    ),
+    spec!(
         ResumeAgentsAutomatically,
         json!(false),
         V::Bool,
@@ -524,12 +540,23 @@ pub static SCHEMA: &[SettingSpec] = &[
         ["hotkey", "shortcut"]
     ),
     spec!(
-        DictateMode,
-        json!("hold"),
-        V::OneOf(&["hold", "toggle", "both"]),
+        DictateToggleHotkey,
+        json!(null),
+        V::OptionalText { max: 64 },
         Dictate,
-        ["hold", "hands-free"]
+        ["toggle", "shortcut"]
     ),
+    spec!(
+        DictateLatch,
+        json!(true),
+        V::Bool,
+        Dictate,
+        ["double-tap", "hands-free", "lock"]
+    ),
+    spec!(DictateHotkeyVerified, json!(false), V::Bool, Hidden, []),
+    // F-DI-05's consent dialog was accepted; F-DI-10's disclosure was shown.
+    spec!(DictateCloudConsented, json!(false), V::Bool, Hidden, []),
+    spec!(DictateEnhanceDisclosed, json!(false), V::Bool, Hidden, []),
     spec!(
         DictateEngine,
         json!("local"),
@@ -567,28 +594,28 @@ pub static SCHEMA: &[SettingSpec] = &[
     ),
     spec!(
         DictateGain,
-        json!(100),
-        V::IntRange(25, 400),
+        json!("off"),
+        V::OneOf(&["off", "2x", "4x", "6x", "8x"]),
         Dictate,
-        ["gain", "volume"]
+        ["gain", "boost", "volume"]
     ),
     spec!(
         DictateWidgetVisibility,
-        json!("while_dictating"),
-        V::OneOf(&["always", "while_dictating", "never"]),
+        json!("while_recording"),
+        V::OneOf(&["always", "while_recording", "hidden"]),
         Dictate,
         ["widget"]
     ),
     spec!(
         DictateWidgetStyle,
-        json!("pill"),
-        V::OneOf(&["pill", "minimal"]),
+        json!("logo_text"),
+        V::OneOf(&["logo_text", "logo", "mono"]),
         Dictate,
         ["widget style"]
     ),
     spec!(
         DictateFollowCursor,
-        json!(false),
+        json!(true),
         V::Bool,
         Dictate,
         ["follow cursor"]
@@ -617,9 +644,9 @@ pub static SCHEMA: &[SettingSpec] = &[
     spec!(
         DictateOutput,
         json!("paste"),
-        V::OneOf(&["paste", "type", "clipboard"]),
+        V::OneOf(&["paste", "clipboard"]),
         Dictate,
-        ["output", "paste"]
+        ["output", "paste", "clipboard"]
     ),
     spec!(
         DictateAutoEnhance,
@@ -627,6 +654,21 @@ pub static SCHEMA: &[SettingSpec] = &[
         V::Bool,
         Dictate,
         ["enhance", "polish"]
+    ),
+    spec!(
+        DictateQuickActions,
+        json!(true),
+        V::Bool,
+        Dictate,
+        ["enhance", "polish", "after each take"]
+    ),
+    // App id → formatting instructions (≤2,000 characters each), F-DI-10.
+    spec!(
+        DictateFormattingApps,
+        json!({}),
+        V::Map,
+        Dictate,
+        ["formatting", "per app"]
     ),
     spec!(
         DictateFormatting,
@@ -641,6 +683,20 @@ pub static SCHEMA: &[SettingSpec] = &[
         V::Bool,
         Privacy,
         ["dictionary hints", "cloud"]
+    ),
+    spec!(
+        DictateKeepHistory,
+        json!("forever"),
+        V::OneOf(&["forever", "90d", "30d", "7d"]),
+        Dictate,
+        ["history", "keep"]
+    ),
+    spec!(
+        DictateWidgetPosition,
+        json!(null),
+        V::OptionalText { max: 32 },
+        Hidden,
+        []
     ),
     spec!(
         ConductorName,

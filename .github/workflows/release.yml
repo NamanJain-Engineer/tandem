@@ -95,8 +95,33 @@ jobs:
             dist/THIRD_PARTY_NOTICES.md
             dist/*.cdx.json
 
+  tandem-host:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux-x86_64, os: ubuntu-24.04 }
+          - { platform: linux-aarch64, os: ubuntu-24.04 }
+          - { platform: macos-universal, os: macos-14 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-universal' && 'aarch64-apple-darwin,x86_64-apple-darwin' || (matrix.platform == 'linux-aarch64' && 'aarch64-unknown-linux-musl' || 'x86_64-unknown-linux-musl') }}
+      - if: runner.os == 'Linux'
+        run: pip install ziglang==0.13.0 && cargo install cargo-zigbuild --locked
+      - shell: bash
+        run: bash scripts/ci/build-tandem-host.sh "${{ matrix.platform }}"
+      # Codesigning the macOS binary waits on the Apple certificate (HUMAN_TODO).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tandem-host-${{ matrix.platform }}
+          path: apps/desktop/src-tauri/resources/tandem-host/${{ matrix.platform }}/tandem-host
+
   build:
-    needs: notices
+    needs: [notices, tandem-host]
     strategy:
       fail-fast: false
       matrix:
@@ -129,6 +154,19 @@ jobs:
       - name: Embed the notices
         shell: bash
         run: cp dist/THIRD_PARTY_NOTICES.md apps/desktop/src-tauri/resources/THIRD_PARTY_NOTICES.md
+      - uses: actions/download-artifact@v4
+        with: { pattern: tandem-host-*, path: dist/tandem-host }
+      - name: Bundle tandem-host and its SHA-256 manifest
+        shell: bash
+        run: |
+          for d in dist/tandem-host/tandem-host-*; do
+            p="${d##*/tandem-host-}"
+            mkdir -p "apps/desktop/src-tauri/resources/tandem-host/$p"
+            cp "$d/tandem-host" "apps/desktop/src-tauri/resources/tandem-host/$p/tandem-host"
+          done
+          TANDEM_HOST_PREBUILT=1 sh scripts/build-tandem-host.sh
+          # All three helpers, or SSH workspaces can't connect (F-RM-01).
+          cargo run -q -p tandem-host --example manifest -- --check apps/desktop/src-tauri/resources/tandem-host --require linux-x86_64,linux-aarch64,macos-universal
 
       - id: secrets
         name: Which signing secrets exist
@@ -145,6 +183,10 @@ jobs:
           echo "azure=$(on "$AZURE_CLIENT_ID")" >> "$GITHUB_OUTPUT"
           echo "gpg=$(on "$LINUX_GPG_PRIVATE_KEY")" >> "$GITHUB_OUTPUT"
           echo "updater=$(on "$TAURI_SIGNING_PRIVATE_KEY")" >> "$GITHUB_OUTPUT"
+
+      - name: Build the sidecars
+        shell: bash
+        run: sh scripts/build-sidecars.sh ${{ matrix.target }}
 
       - name: Build
         uses: tauri-apps/tauri-action@v0
@@ -169,9 +211,18 @@ jobs:
           # with Azure credentials.
           args: >-
             --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+            --config src-tauri/tauri.sidecars.conf.json
             ${{ steps.secrets.outputs.updater == 'true' && '--config {"bundle":{"createUpdaterArtifacts":true}}' || '' }}
             ${{ matrix.name == 'macos' && steps.secrets.outputs.apple != 'true' && '--config {"bundle":{"macOS":{"signingIdentity":"-"}}}' || '' }}
             ${{ matrix.name == 'windows' && steps.secrets.outputs.azure == 'true' && format('--config {{"bundle":{{"windows":{{"signCommand":"trusted-signing-cli -e {0} -a {1} -c {2} %1"}}}}}}', secrets.AZURE_SIGNING_ENDPOINT, secrets.AZURE_SIGNING_ACCOUNT, secrets.AZURE_CERT_PROFILE) || '' }}
+
+      - if: matrix.name == 'linux'
+        name: The Linux bundles carry tandem-host
+        shell: bash
+        run: |
+          for f in target/${{ matrix.target }}/release/bundle/deb/*.deb target/${{ matrix.target }}/release/bundle/appimage/*.AppImage; do
+            sh scripts/check-host-bundle.sh "$f" linux-x86_64,linux-aarch64,macos-universal
+          done
 
       - if: matrix.name == 'linux' && steps.secrets.outputs.gpg == 'true'
         name: Sign the AppImage (detached) and the deb

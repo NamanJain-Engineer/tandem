@@ -65,8 +65,11 @@ export {
 export {
   COMPOSER_LABELS,
   Composer,
+  MicButton,
+  insertText,
   mentionAt,
   type ComposerAttachment,
+  type ComposerDictation,
   type ComposerHandle,
   type ComposerLabels,
   type ComposerProps,
@@ -145,7 +148,15 @@ export {
   type ToolIcon,
 } from "./components/ToolCallBlock";
 export { ToastProvider, useToast, type ToastInput, type ToastTone } from "./components/Toast";
+export {
+  ANNOUNCE_INTERVAL_MS,
+  LiveAnnouncer,
+  announce,
+  configureAnnouncer,
+  resetAnnouncer,
+} from "./components/LiveAnnouncer";
 export { Tooltip, TooltipProvider, type TooltipProps } from "./components/Tooltip";
+export { WaveformRing, type WaveformRingProps, type WaveformState } from "./components/WaveformRing";
 export { cx } from "./cx";
 export { isMac, shortcutCaps, shortcutLabel } from "./platform";
 export {

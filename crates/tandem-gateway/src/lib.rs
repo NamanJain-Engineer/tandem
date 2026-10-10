@@ -14,9 +14,17 @@
 
 pub mod approvals;
 pub mod builtins;
+pub mod connect;
+pub mod credentials;
+pub mod hooks;
 pub mod lease;
 pub mod metrics;
+pub mod netguard;
+pub mod oauth;
+pub mod pinned;
 mod plugins;
+pub mod policy;
+pub mod schema;
 pub mod vendors;
 
 use std::net::SocketAddr;
@@ -41,9 +49,11 @@ use tokio_util::sync::CancellationToken;
 
 pub use approvals::{ApprovalAnswer, ApprovalAsker, ToolApproval, APPROVALS_TOOL};
 pub use builtins::{Builtin, BuiltinHandler, NoBuiltins, BUILTIN_PLUGIN, CALL, SEARCH_TOOLS};
+pub use credentials::{Credential, CredentialStore};
+pub use hooks::{HeldCall, NoPluginHooks, PluginAsk, PluginHooks, PluginVerdict};
 pub use lease::{Attended, BuiltinSet, Caller, Lease, LeaseContext, SessionDescriptor};
 pub use metrics::GatewayMetrics;
-pub use vendors::{ConnectionInfo, ToolOutput, VendorModule};
+pub use vendors::{ConnectionInfo, PluginOptions, RiskClass, ToolDef, ToolOutput, VendorModule};
 
 /// How often the watchdog checks that the listener answers.
 pub const WATCHDOG_EVERY: Duration = Duration::from_secs(30);
@@ -63,9 +73,18 @@ pub struct GatewayDeps {
     pub builtins: Arc<dyn BuiltinHandler>,
     /// The vendor modules this build has.
     pub modules: Vec<Arc<dyn VendorModule>>,
+    /// Approval cards, held drafts and grant re-checks for plugin calls.
+    pub hooks: Arc<dyn PluginHooks>,
+    /// Where plugin credentials are (none: plugins run without any).
+    pub credentials: Option<CredentialStore>,
+    /// Logs where plugin requests go (`TANDEM_NET_LOG`).
+    pub net: Option<tandem_core::net::Net>,
     /// `$DATA/run`: the port goes to `gateway.json` (diagnostics).
     pub run_dir: Option<PathBuf>,
     pub watchdog_every: Duration,
+    /// Where a gateway that keeps failing is reported (`app:subsystem-failed`,
+    /// PRODUCT_SPEC §5.2): after 3 restarts in 10 minutes the watchdog stops.
+    pub bus: Option<tandem_core::bus::EventBus>,
 }
 
 impl GatewayDeps {
@@ -74,8 +93,12 @@ impl GatewayDeps {
             approvals,
             builtins: Arc::new(NoBuiltins),
             modules: vendors::registry(),
+            hooks: Arc::new(NoPluginHooks),
+            credentials: None,
+            net: None,
             run_dir: None,
             watchdog_every: WATCHDOG_EVERY,
+            bus: None,
         }
     }
 }
@@ -120,6 +143,44 @@ impl GatewayHandle {
     /// A connection went away: its tools stop at once for every lease.
     pub fn invalidate_connection(&self, connection: &tandem_core::ids::ConnectionId) {
         self.plugins.connections.remove(connection);
+    }
+
+    /// Runs a held draft the user approved (F-PL-08).
+    pub async fn run_held(
+        &self,
+        connection: &tandem_core::ids::ConnectionId,
+        tool: &str,
+        args: serde_json::Value,
+    ) -> ToolOutput {
+        self.plugins.run_held(connection, tool, args).await
+    }
+
+    /// The tools of a connection (detail page, held-draft schema checks).
+    pub async fn connection_tools(
+        &self,
+        connection: &tandem_core::ids::ConnectionId,
+    ) -> Result<Vec<ToolDef>, vendors::VendorError> {
+        let conn = self
+            .plugins
+            .connections
+            .get(connection)
+            .ok_or_else(|| vendors::VendorError::Unavailable("not connected".into()))?;
+        let module = vendors::find(&self.plugins.modules, &conn.plugin_id)
+            .ok_or_else(|| vendors::VendorError::Unavailable("unknown plugin".into()))?;
+        self.plugins.defs(&conn, module.as_ref()).await
+    }
+
+    /// Forgets "Allow for this conversation" approvals: all of them (quit,
+    /// sign-out) or one plugin's (reconnect, disconnect).
+    pub fn forget_approvals(&self, plugin: Option<&str>) {
+        match plugin {
+            Some(p) => self.plugins.remembered.clear_plugin(p),
+            None => self.plugins.remembered.clear_all(),
+        }
+    }
+
+    pub fn modules(&self) -> &[Arc<dyn VendorModule>] {
+        &self.plugins.modules
     }
 
     /// "Expose all plugin tools directly" (default off).
@@ -260,7 +321,16 @@ impl Gateway {
             .map_err(GatewayError::Bind)?;
         let addr = listener.local_addr().map_err(GatewayError::Bind)?;
         let leases = Arc::new(lease::Leases::default());
-        let plugins = Arc::new(plugins::Plugins::new(deps.modules));
+        let plugins = Arc::new(plugins::Plugins {
+            modules: deps.modules,
+            connections: Default::default(),
+            expose_all: Default::default(),
+            leases: leases.clone(),
+            hooks: deps.hooks,
+            credentials: deps.credentials,
+            remembered: Default::default(),
+            net: deps.net,
+        });
         let counters = Arc::new(Counters::default());
         let shutdown = CancellationToken::new();
         let service = Service {
@@ -282,6 +352,7 @@ impl Gateway {
             addr,
             serving.clone(),
             deps.watchdog_every,
+            deps.bus.unwrap_or_default(),
         ));
         tracing::info!(
             code = "gateway.started",
@@ -299,6 +370,16 @@ impl Gateway {
     }
 }
 
+/// The gateway's name in the watchdog and in `app:subsystem-failed`.
+const NAME: &str = "gateway";
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 /// Brings the listener back on the same port when it stopped or stopped
 /// answering, so every session's MCP config stays valid.
 async fn watchdog(
@@ -306,8 +387,13 @@ async fn watchdog(
     addr: SocketAddr,
     serving: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     every: Duration,
+    bus: tandem_core::bus::EventBus,
 ) {
     let stop = service.shutdown.clone();
+    // Shared with every supervised subsystem (Help › Diagnostics, §5.7).
+    let dog = tandem_core::supervisor::watchdog();
+    let mut budget = tandem_core::supervisor::RestartBudget::default();
+    dog.beat(NAME);
     loop {
         tokio::select! {
             _ = stop.cancelled() => return,
@@ -318,11 +404,24 @@ async fn watchdog(
             Err(_) => true,
         };
         if !finished && probe(addr).await {
+            dog.beat(NAME);
             continue;
         }
         if stop.is_cancelled() {
             return;
         }
+        // At most 3 restarts in 10 minutes, then it's reported and left down.
+        if !budget.try_restart(now_ms()) {
+            dog.record(NAME, budget.recent(), "stopped answering", true);
+            tandem_core::supervisor::report_failed(
+                &bus,
+                NAME,
+                budget.recent(),
+                "stopped answering".into(),
+            );
+            return;
+        }
+        dog.record(NAME, budget.recent(), "stopped answering", false);
         tracing::warn!(
             code = "gateway.restarting",
             "the gateway stopped answering; restarting it"

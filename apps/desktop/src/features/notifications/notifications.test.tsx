@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Notification } from "@tandem/protocol";
-import { UiProvider } from "@tandem/ui";
+import { LiveAnnouncer, UiProvider, resetAnnouncer } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { followNotifications, useNotifications } from "../../stores/notifications";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
@@ -110,5 +110,29 @@ describe("notification center (F-DB-02)", () => {
     await screen.findByRole("button", { name: "Notifications" });
     act(() => emitLocal("notifications:new", { notification: note("ntf_7", {}), sound: false }));
     expect(await screen.findByRole("button", { name: "Notifications, 1 unread" })).toBeTruthy();
+  });
+
+  it("§5.4 a new notification is read out by the polite live region: its title, not its source line", async () => {
+    resetAnnouncer();
+    setup([]);
+    followNotifications();
+    render(
+      <UiProvider>
+        <NotificationsBell />
+        <LiveAnnouncer />
+      </UiProvider>,
+    );
+    await screen.findByRole("button", { name: "Notifications" });
+    act(() =>
+      emitLocal("notifications:new", {
+        notification: note("ntf_8", { kind: "approval", title: "Bea needs approval", body: "Claude Code · shop — Run `pnpm migrate`" }),
+        sound: false,
+      }),
+    );
+    const region = screen.getByTestId("live-announcer");
+    expect(region.textContent).toBe("Bea needs approval");
+    expect(region.getAttribute("aria-live")).toBe("polite");
+    expect(region.textContent).not.toContain("pnpm migrate");
+    resetAnnouncer();
   });
 });

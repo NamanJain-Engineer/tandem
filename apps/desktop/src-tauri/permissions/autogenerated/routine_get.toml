@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-routine-get"
+description = "Enables the routine_get command without any pre-configured scope."
+commands.allow = ["routine_get"]
+
+[[permission]]
+identifier = "deny-routine-get"
+description = "Denies the routine_get command without any pre-configured scope."
+commands.deny = ["routine_get"]

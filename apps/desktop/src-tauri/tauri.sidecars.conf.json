@@ -1,0 +1,5 @@
+{
+  "bundle": {
+    "externalBin": ["binaries/tandem-tasks", "binaries/tandem-hook"]
+  }
+}
