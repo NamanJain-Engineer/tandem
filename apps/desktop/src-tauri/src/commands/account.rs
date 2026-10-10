@@ -34,6 +34,10 @@ pub fn auth_cancel(state: State<'_, AppState>, op_id: String) {
 
 #[tauri::command]
 pub async fn auth_sign_out(state: State<'_, AppState>) -> Result<(), IpcError> {
+    // Paired phones go first, while the session can still tell the relay (F-RM-03).
+    if let Err(err) = state.phone.revoke_all("signed_out", false).await {
+        tracing::warn!(error = %err.message, "couldn't revoke phone pairings at sign-out");
+    }
     state.auth.sign_out().await;
     // "Allow for this conversation" ends with the session (F-PL-06).
     state.gateway.forget_approvals(None);

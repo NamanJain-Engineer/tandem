@@ -6,6 +6,7 @@ import { ShortcutsPage } from "./ShortcutsPage";
 import { AccountsPage } from "./AccountsPage";
 import { RemoteHosts } from "../remote/RemoteHosts";
 import { WslDistros } from "../remote/WslDistros";
+import { RemotePage } from "./RemotePage";
 import { PluginsPage } from "../plugins/PluginsPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
@@ -420,15 +421,16 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
     {
       id: "remote",
       label: t("settings.remote"),
-      // WSL exists on Windows only (F-RM-02): elsewhere the page is SSH alone,
+      // WSL exists on Windows only (F-RM-02): elsewhere the page is SSH and the phone,
       // with no WSL heading or skeleton to flash and hide.
       subtitle: platform === "windows" ? t("settings.remote.subtitle") : t("settings.remote.subtitleSsh"),
-      keywords: ["ssh", "remote", "host", "server", ...(platform === "windows" ? ["wsl", "linux"] : [])],
+      keywords: ["ssh", "remote", "host", "server", ...(platform === "windows" ? ["wsl", "linux"] : []), "phone", "pair", "mobile", "qr", "relay", "approvals"],
       rows: [],
       extra: (
         <div className="flex flex-col gap-6">
           <RemoteHosts />
           {platform === "windows" && <WslDistros />}
+          <RemotePage />
         </div>
       ),
     },

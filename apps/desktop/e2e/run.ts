@@ -12,6 +12,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   symlinkSync,
@@ -20,6 +21,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Launcher } from "@wdio/cli";
+import { E2E_KNOWN_SENTENCE } from "./support/phone";
 
 const desktop = new URL("..", import.meta.url).pathname;
 const root = join(desktop, "../..");
@@ -60,8 +62,9 @@ async function waitUp(url: string, seconds: number): Promise<void> {
   if (!(await up(url))) throw new Error(`${url} didn't come up`);
 }
 
-function startDetached(cmd: string, cmdArgs: string[], env: NodeJS.ProcessEnv): ChildProcess {
-  return spawn(cmd, cmdArgs, { cwd: root, stdio: "ignore", detached: true, env: { ...process.env, ...env } });
+function startDetached(cmd: string, cmdArgs: string[], env: NodeJS.ProcessEnv, logFile?: string): ChildProcess {
+  const out = logFile ? openSync(logFile, "a") : "ignore";
+  return spawn(cmd, cmdArgs, { cwd: root, stdio: ["ignore", out, out], detached: true, env: { ...process.env, ...env } });
 }
 
 function stop(child?: ChildProcess) {
@@ -83,6 +86,10 @@ function checkArtifacts(home: string): string[] {
       if (/sk-[A-Za-z0-9]{20}|ghp_[A-Za-z0-9]{20}/.test(body))
         problems.push(`secret pattern in logs/${file}`);
     }
+  }
+  const apiLog = join(home, "api.log");
+  if (existsSync(apiLog) && readFileSync(apiLog, "utf8").includes(E2E_KNOWN_SENTENCE)) {
+    problems.push("the phone's plaintext reached the relay log (api.log)");
   }
   const net = join(home, "net.log");
   if (existsSync(net) && /posthog|sentry/.test(readFileSync(net, "utf8")))
@@ -300,14 +307,18 @@ async function main() {
 
   let api: ChildProcess | undefined;
   let web: ChildProcess | undefined;
+  // The API's log is kept for the relay check (E2E_RELAY_LOG): the phone's
+  // frames cross the relay in it, and their plaintext must never appear.
+  const relayLog = join(home, "api.log");
   if (!(await up(`${API}/v1/health`))) {
-    api = startDetached("pnpm", ["--filter", "api", "start"], {
-      TANDEM_API_TEST_ROUTES: "1",
-      BILLING_PROVIDER: "mock",
-      WEB_PUBLIC_URL: WEB,
-      LOG_LEVEL: "warn",
-    });
+    api = startDetached(
+      "pnpm",
+      ["--filter", "api", "start"],
+      { TANDEM_API_TEST_ROUTES: "1", BILLING_PROVIDER: "mock", WEB_PUBLIC_URL: WEB, API_PUBLIC_URL: API, LOG_LEVEL: "info" },
+      relayLog,
+    );
     await waitUp(`${API}/v1/health`, 60);
+    process.env.E2E_RELAY_LOG = relayLog;
   }
   if (!(await up(`${WEB}/api/health`))) {
     web = startDetached("pnpm", ["--filter", "web", "dev"], { API_INTERNAL_URL: API });

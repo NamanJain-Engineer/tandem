@@ -25,6 +25,7 @@ pub mod origin;
 pub mod paths;
 pub mod policy;
 pub mod redact;
+pub mod remote;
 pub mod remote_config;
 pub mod settings;
 pub mod shellquote;

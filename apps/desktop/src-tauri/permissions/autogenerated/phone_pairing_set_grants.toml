@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-phone-pairing-set-grants"
+description = "Enables the phone_pairing_set_grants command without any pre-configured scope."
+commands.allow = ["phone_pairing_set_grants"]
+
+[[permission]]
+identifier = "deny-phone-pairing-set-grants"
+description = "Denies the phone_pairing_set_grants command without any pre-configured scope."
+commands.deny = ["phone_pairing_set_grants"]

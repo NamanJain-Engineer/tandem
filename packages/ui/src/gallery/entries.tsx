@@ -5,6 +5,7 @@ import { Avatar, AvatarStack } from "../components/Avatar";
 import { Badge, Chip } from "../components/Badge";
 import { WaveformRing } from "../components/WaveformRing";
 import { Button } from "../components/Button";
+import { QRCode } from "../components/QRCode";
 import { Checkbox, RadioGroup, Switch } from "../components/Choice";
 import { CommandPalette } from "../components/CommandPalette";
 import { Banner, Callout, EmptyState, KeyValue, ListRow, PageHeader, SettingsGroup, SettingsRow, Stepper } from "../components/Composites";
@@ -574,6 +575,40 @@ export const galleryEntries: GalleryEntry[] = [
       },
       { name: "disabled", render: () => <Composer className="w-[720px]" value="" onChange={noop} onSend={noop} placeholder="Ask anything…" disabledReason="Claude Code isn't signed in." /> },
       { name: "drop", render: () => <Composer className="w-[720px]" value="" onChange={noop} onSend={noop} placeholder="Ask anything…" dropActive /> },
+    ],
+  },
+  {
+    id: "qrcode",
+    title: "QRCode",
+    spec: "§2.31",
+    states: [
+      {
+        name: "pairing code",
+        render: () => (
+          <QRCode
+            label="Pairing code"
+            size={168}
+            rows={[
+              "1111111010111111",
+              "1000001001100001",
+              "1011101011101101",
+              "1011101000101101",
+              "1011101010101101",
+              "1000001001100001",
+              "1111111010111111",
+              "0000000011000000",
+              "1101011101011010",
+              "0110100010110101",
+              "1111111001011010",
+              "1000001010100101",
+              "1011101001011010",
+              "1000001010100101",
+              "1111111001011010",
+              "0000000010100101",
+            ]}
+          />
+        ),
+      },
     ],
   },
 ];
