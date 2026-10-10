@@ -31,7 +31,7 @@ const REASONS: Record<string, string> = {
   pack_purchase: "Credit pack",
   pack_refund: "Credit pack refunded",
   plan_refund: "Plan refunded",
-  admin_grant: "Adjustment",
+  admin_grant: "Added by support",
 };
 
 export function ledgerLabel(row: LedgerRow): string {
