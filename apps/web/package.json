@@ -14,7 +14,8 @@
     "test": "vitest run",
     "lint": "tsc --noEmit && eslint .",
     "test:e2e": "playwright test",
-    "test:site": "playwright test -c playwright.site.config.ts"
+    "test:site": "playwright test -c playwright.site.config.ts",
+    "lhci": "lhci autorun"
   },
   "dependencies": {
     "@tandem/protocol": "workspace:*",
@@ -24,6 +25,7 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@lhci/cli": "0.15.1",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.1.11",
     "@types/node": "^22.15.30",

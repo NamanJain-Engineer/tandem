@@ -19,6 +19,8 @@ const LIMITS = [
   "This build doesn't contact our servers and carries no analytics.",
 ];
 
+const OS_NOTE = '<p data-os-note="" hidden class="mb-4 text-md text-fg"></p>';
+
 export default function DownloadPage() {
   return (
     <SiteFrame>
@@ -37,6 +39,10 @@ export default function DownloadPage() {
       </section>
 
       <section aria-label="Downloads" className="mx-auto max-w-6xl px-6 pb-12">
+        {/* /download/detect.js names the visitor's OS here (D-132); inner HTML,
+            so hydration leaves what the script writes alone (as D-128). */}
+        <div dangerouslySetInnerHTML={{ __html: OS_NOTE }} />
+        <script src="/download/detect.js" defer />
         <ul className="grid max-w-md gap-4">
           {DOWNLOADS.filter((d) => d.available).map((d) => {
             const [primary, ...others] = d.assets;
