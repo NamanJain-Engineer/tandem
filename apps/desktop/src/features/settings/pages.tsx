@@ -13,6 +13,8 @@ import { UpdatesPanel } from "../updates/UpdatesPanel";
 import { RunSetupAgain } from "../onboarding/RunSetupAgain";
 import { DictateExtras, MicSelect, ShortcutField } from "../dictate/DictatePage";
 import { LanguageSelect } from "../dictate/LanguageSelect";
+import { EngineControl } from "../dictate/EngineControl";
+import { AutoEnhanceControl, FormattingControl, QuickActionsControl } from "../dictate/EnhanceControls";
 import {
   BoolControl,
   FontControl,
@@ -441,6 +443,12 @@ export function settingsPages(platform: string): PageDef[] {
           control: (ids) => <BoolControl k="dictate_enabled" ids={ids} label={t("dictate.enabled")} />,
         },
         {
+          id: "dictate_engine",
+          label: t("dictate.engine.label"),
+          keywords: ["engine", "cloud", "local", "transcribe", "pro"],
+          control: () => <EngineControl />,
+        },
+        {
           id: "dictate_language",
           label: t("dictate.language"),
           keywords: ["language", "auto-detect"],
@@ -568,6 +576,26 @@ export function settingsPages(platform: string): PageDef[] {
           control: (ids) => (
             <BoolControl k="dictate_lock_position" ids={ids} label={t("dictate.widget.lock")} />
           ),
+        },
+        {
+          id: "dictate_quick_actions",
+          label: t("dictate.enhance.quickActions"),
+          keywords: ["enhance", "polish", "after each take", "pro"],
+          control: () => <QuickActionsControl label={t("dictate.enhance.quickActions")} />,
+        },
+        {
+          id: "dictate_auto_enhance",
+          label: t("dictate.enhance.auto"),
+          description: t("dictate.enhance.disclosure"),
+          keywords: ["enhance", "auto", "prompt", "pro"],
+          control: () => <AutoEnhanceControl label={t("dictate.enhance.auto")} />,
+        },
+        {
+          id: "dictate_formatting",
+          label: t("dictate.enhance.formatting"),
+          description: t("dictate.enhance.formattingDesc"),
+          keywords: ["formatting", "instructions", "per app", "lowercase"],
+          control: () => <FormattingControl label={t("dictate.enhance.formatting")} />,
         },
         {
           id: "dictate_keep_history",

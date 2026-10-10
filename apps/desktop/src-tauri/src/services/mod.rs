@@ -15,6 +15,7 @@ pub mod data_controls;
 pub mod deeplink;
 pub mod device_login;
 pub mod dictate;
+pub mod dictate_cloud;
 pub mod engines;
 pub mod entitlement;
 pub mod events;
