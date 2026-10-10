@@ -219,8 +219,11 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
   ```bash
   # Status codes with -w: through the agent proxy, `curl -sI | head -1` prints the
   # proxy's "200 Connection Established" instead.
-  for p in / /demo/app/ /downloads/Vibezeo_x.y.z_amd64.deb /downloads/SHA256SUMS.txt; do
+  for p in / /demo/app/ /docs/ /downloads/Vibezeo_x.y.z_amd64.deb /downloads/SHA256SUMS.txt \
+    /llms.txt /llms-full.txt /openapi.json /api/v1/site-info/; do
     echo "$p $(curl -s -o /dev/null -w '%{http_code}' https://vibezeo.com$p)"; done
+  # /api/v1/site-info answers 308 to its trailing-slash form, which is the JSON (D-135).
+  curl -sL https://vibezeo.com/api/v1/site-info | grep -o '"version": "[0-9.]*"'
   curl -sI https://vibezeo.com/ | grep -iE "^(content-security-policy|x-frame-options)"
   # React splits the text with <!-- -->: strip it before matching.
   curl -s https://vibezeo.com/ | sed 's/<!-- -->//g' | grep -o "Released · [0-9.]*"

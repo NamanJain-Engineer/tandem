@@ -13,6 +13,7 @@ export default tseslint.config(
       "**/.next/**",
       "apps/web/out/**",
       "apps/web/.source/**",
+      "**/.vercel/**",
       "apps/web/public/demo/app/**",
       "**/node_modules/**",
       "**/target/**",
