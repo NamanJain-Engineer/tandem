@@ -808,6 +808,82 @@ mod harness_tests {
         );
     }
 
+    /// §5.3: the app webview's CSP is `'self'` only, runs no remote or inline
+    /// script, and connects only to itself, the IPC bridge, loopback (the
+    /// gateway and local review) and the API with its WebSocket.
+    #[test]
+    fn nfr_5_3_csp_is_self_only_and_connects_to_the_listed_hosts() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("tauri.conf.json");
+        assert_eq!(conf["app"]["withGlobalTauri"], false);
+        let csp = &conf["app"]["security"]["csp"];
+        let dir = |k: &str| csp[k].as_str().unwrap_or_default().to_string();
+        assert_eq!(dir("default-src"), "'self'");
+        assert_eq!(
+            dir("script-src"),
+            "'self'",
+            "no remote, inline or eval script"
+        );
+        assert_eq!(dir("object-src"), "'none'");
+        assert_eq!(dir("base-uri"), "'self'");
+        assert_eq!(dir("frame-ancestors"), "'none'");
+        for k in ["img-src", "font-src", "style-src"] {
+            assert!(!dir(k).contains("http"), "{k} loads nothing remote");
+        }
+        let allowed = |src: &str| {
+            matches!(
+                src,
+                "'self'"
+                    | "ipc:"
+                    | "http://ipc.localhost"
+                    | "http://127.0.0.1:*"
+                    | "ws://127.0.0.1:*"
+                    | "http://localhost:*"
+                    | "http://api.tandem.local:8787"
+                    | "https://api.vibezeo.com"
+                    | "wss://api.vibezeo.com"
+            )
+        };
+        let connect = dir("connect-src");
+        assert!(!connect.is_empty());
+        for src in connect.split_whitespace() {
+            assert!(allowed(src), "connect-src {src} is not an allowed host");
+        }
+    }
+
+    /// §5.3 least privilege: the only capability targets the main window,
+    /// and the in-app browser's pages are plain wry webviews with no IPC
+    /// handler, so they can call no command (E2E-M9-3 probes `__TAURI__`).
+    #[test]
+    fn nfr_5_3_only_the_main_window_has_commands_and_browser_pages_have_no_ipc() {
+        let main: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/main.json")).expect("main.json");
+        assert_eq!(main["windows"], serde_json::json!(["main"]));
+        assert!(
+            main.get("webviews").is_none(),
+            "no capability names a webview"
+        );
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities");
+        let files: Vec<_> = std::fs::read_dir(&dir)
+            .expect("capabilities dir")
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(files, vec!["main.json".to_string()]);
+        let host = include_str!("browser/wry_host.rs");
+        for banned in [
+            "with_ipc_handler",
+            "WebviewBuilder",
+            "WebviewWindowBuilder",
+            "add_child",
+        ] {
+            assert!(
+                !host.contains(banned),
+                "browser pages must not use {banned}"
+            );
+        }
+    }
+
     /// Every registered command has an `allow-<name>` permission (build.rs)
     /// that the window's capability grants; otherwise the webview's call is
     /// refused at runtime (ARCHITECTURE §3.1).
