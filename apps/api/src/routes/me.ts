@@ -3,7 +3,8 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import type { Deps } from "../deps";
-import { refreshTokens, user } from "../db/schema";
+import { cancelOwnedTeams, ownsTeamWithMembers } from "../jobs/deletionJob";
+import { refreshTokens, session, user } from "../db/schema";
 import { ApiError } from "../lib/problem";
 import { parseJson } from "../lib/validate";
 import { requireUser } from "../middleware/auth";
@@ -82,18 +83,30 @@ export function meRoutes(deps: Deps) {
     return c.body(null, 204);
   });
 
-  // Account deletion request: completes within 30 days; the subscription ends now (F-TL-05).
+  // Account deletion request: completes within 30 days (jobs/deletionJob); the
+  // subscription ends and every sign-in is revoked now (F-TL-05).
   app.delete("/", requireUser("cookie"), async (c) => {
     await parseJson(c, z.object({ confirm: z.literal("DELETE") }));
     const userId = c.get("user")?.id ?? "";
-    await deps.db.update(user).set({ deletionRequestedAt: deps.clock.now() }).where(eq(user.id, userId));
+    if (await ownsTeamWithMembers(deps.db, userId)) {
+      throw new ApiError(
+        409,
+        "TEAM_HAS_MEMBERS",
+        "Conflict",
+        "You own a Team with other members. Transfer it or remove them first.",
+      );
+    }
+    // Billing first: if Stripe fails, nothing has changed and the user can try again.
     const sub = await latestSubscription(deps, userId);
     if (sub && sub.status !== "canceled") await deps.billing.cancelNow(sub.stripeSubscriptionId);
+    await cancelOwnedTeams(deps, userId);
+    await deps.db.update(user).set({ deletionRequestedAt: deps.clock.now() }).where(eq(user.id, userId));
     const families = await deps.db
       .selectDistinct({ familyId: refreshTokens.familyId })
       .from(refreshTokens)
       .where(eq(refreshTokens.userId, userId));
     for (const f of families) await revokeFamily(deps, f.familyId);
+    await deps.db.delete(session).where(eq(session.userId, userId));
     return c.json({ deletion_requested_at: deps.clock.now().toISOString(), completes_within_days: 30 }, 202);
   });
 

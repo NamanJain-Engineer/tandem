@@ -87,4 +87,14 @@ export class StripeBilling implements BillingProvider {
   async cancelNow(subscriptionId: string) {
     await this.stripe.subscriptions.cancel(subscriptionId);
   }
+
+  async deleteCustomer(customerId: string) {
+    try {
+      await this.stripe.customers.del(customerId);
+    } catch (err) {
+      // Already deleted (a purge that's being retried): nothing is left to remove.
+      if (err instanceof Stripe.errors.StripeError && err.code === "resource_missing") return;
+      throw err;
+    }
+  }
 }

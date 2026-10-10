@@ -853,6 +853,19 @@ export class DemoCore {
       case "git_switch":
       case "git_create_branch":
         throw { code: "unavailable", message: NO_GIT };
+      // Nothing typed here is kept anywhere, so there's nothing to export or delete (F-TL-05).
+      case "data_export":
+      case "data_delete_local":
+        throw {
+          code: "unavailable",
+          message: "The demo keeps nothing: what you do here stays in this page and goes when you close it.",
+        };
+      // Find work reads real terminals and threads on this computer (F-CN-05).
+      case "find_work":
+        throw {
+          code: "unavailable",
+          message: "Find work searches the terminals and threads running on your computer, so the demo has nothing to search.",
+        };
       // A web page can't hold other pages the way the app's browser does.
       case "browser_open":
       case "browser_navigate":

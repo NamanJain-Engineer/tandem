@@ -61,7 +61,8 @@ jobs:
           if [ "$version" != "$pkg" ] || [ "$version" != "$cargo_v" ]; then
             echo "::error::version mismatch: tauri.conf.json $version, package.json $pkg, Cargo.toml $cargo_v"; exit 1
           fi
-          grep -q "^## $version\b" CHANGELOG.md || { echo "::error::CHANGELOG.md has no '## $version' section"; exit 1; }
+          # F-WB-03 AC1: the format holds and this version has a section.
+          npx --yes tsx@4.23.15 scripts/check-changelog.ts --version "$version" || { echo "::error::CHANGELOG.md (scripts/check-changelog.ts)"; exit 1; }
           # Unpinned models matter once the app can download them (Dictate).
           if grep -q 'tandem-voice' apps/desktop/src-tauri/Cargo.toml && grep -q '"TBD"' crates/tandem-voice/models/catalog.json; then
             echo "::error::model sha256 values are still TBD (scripts/pin-models.ts)"; exit 1
@@ -235,6 +236,10 @@ jobs:
         run: |
           mkdir -p release
           find artifacts -type f -exec cp {} release/ \;
+          # F-WB-03: each OS's notes for the update feed, from CHANGELOG.md.
+          for os in mac win lin; do
+            npx --yes tsx@4.23.15 scripts/check-changelog.ts --version "${{ needs.verify.outputs.version }}" --notes "$os" > "release/notes-$os.txt"
+          done
           (cd release && sha256sum -- * > SHA256SUMS)
           echo "- notices, SBOMs and SHA256SUMS attached" >> "$GITHUB_STEP_SUMMARY"
           if ! ls release/*.sig >/dev/null 2>&1; then

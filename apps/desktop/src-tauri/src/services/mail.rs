@@ -105,6 +105,20 @@ pub struct Reachable {
     pub may_receive: bool,
 }
 
+/// The turn a delivery sends: "From {sender}:" and the body. A teammate's
+/// message is another agent's words, so it's labelled untrusted and fenced
+/// (F-TL-06 rule 8); the user's own mail isn't.
+pub fn delivery_text(from: &str, from_teammate: bool, body: &str) -> String {
+    if !from_teammate {
+        return format!("From {from}:\n{body}");
+    }
+    format!(
+        "From {from}:\n{}\n{}",
+        tandem_core::untrusted::label(&format!("{from}, another teammate")),
+        tandem_core::untrusted::fence("", body)
+    )
+}
+
 /// The reason in words, for the sender's tool error and the UI.
 pub fn reason_text(reason: MailReason, sender: &str, recipient: &str) -> String {
     match reason {
@@ -361,7 +375,7 @@ impl MailService {
         if let Err(e) = repo::log_turn(&self.store, &recipient.id, now).await {
             tracing::warn!(code = "mail.log_failed", error = %e, "couldn't log a mail turn");
         }
-        let text = format!("From {}:\n{}", mail.from, mail.body);
+        let text = delivery_text(&mail.from, mail.from_teammate_id.is_some(), &mail.body);
         if let Err(e) = self
             .host
             .deliver(&chat, text, Self::row_event(&mail, true))
@@ -659,8 +673,14 @@ mod tests {
         assert_eq!(delivered.len(), 1);
         assert_eq!(
             delivered[0].1,
-            "From Ada:\nCan you check CI on main?\nIt's red."
+            delivery_text("Ada", true, "Can you check CI on main?\nIt's red.")
         );
+        assert!(delivered[0]
+            .1
+            .contains("Untrusted content from Ada, another teammate"));
+        assert!(delivered[0]
+            .1
+            .ends_with("```\nCan you check CI on main?\nIt's red.\n```"));
         assert!(
             matches!(&delivered[0].2, ThreadEvent::MailRow { inbound: true, from, to, .. } if from == "Ada" && to == "Bea")
         );

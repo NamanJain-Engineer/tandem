@@ -177,6 +177,7 @@ export const handlers: Record<string, () => void> = {
   "terminal.find_next": onPane((_, paneId) => terminalHandles.get(paneId)?.find("next")),
   "terminal.find_prev": onPane((_, paneId) => terminalHandles.get(paneId)?.find("prev")),
   "terminal.copy_last_output": onPane((_, paneId) => void copyLastOutput(paneId, toast)),
+  "work.find": () => useUi.getState().openFindWork(),
   "billing.plans": () => useUi.getState().openUpgrade(),
   "help.shortcuts": () => useUi.getState().setCheatsheet(!useUi.getState().cheatsheetOpen),
   "help.copy_diagnostics": () => void copyDiagnostics(toast),

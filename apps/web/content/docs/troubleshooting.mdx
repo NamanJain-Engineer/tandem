@@ -1,0 +1,25 @@
+---
+title: Troubleshooting
+description: Engine detection, permissions and Wayland.
+---
+
+## An engine isn't detected
+
+Vibezeo looks for engines on your login shell's `PATH`, the way a terminal would, and only there: never in the project folder.
+
+- If the launch grid says your login shell's `PATH` didn't include any agent CLIs, add the folder the CLI is installed in to your shell's login profile (for example `~/.zprofile` or `~/.profile`), then choose **Check again**.
+- Make sure the CLI runs and is signed in from a normal terminal first.
+
+## Permissions
+
+- **Keychain.** Vibezeo stores secrets in the OS keychain. On Linux this needs a Secret Service provider such as GNOME Keyring or KWallet, unlocked in your session.
+- **Files.** Files inside a workspace are editable; anything else opens read-only.
+
+## Wayland
+
+- **A blank or flickering window.** Vibezeo draws its interface with WebKitGTK. If the window stays blank on your graphics driver, start it with `WEBKIT_DISABLE_DMABUF_RENDERER=1 tandem` and tell us which driver you use.
+- **Global shortcuts.** Global shortcuts for [Dictate](/docs/dictate/), when it ships, use the desktop's GlobalShortcuts portal on Wayland; where that isn't available, you'll be able to bind `xdg-open tandem://dictate/toggle` to a desktop shortcut instead.
+
+## Still stuck
+
+Settings › Advanced › **Copy diagnostics** copies a report with no prompts, file contents or tokens. Send it to [hello@vibezeo.com](mailto:hello@vibezeo.com).
