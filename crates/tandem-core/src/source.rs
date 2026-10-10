@@ -34,6 +34,8 @@ pub enum SourceRef {
         workspace_id: String,
     },
     Update,
+    /// Settings › Account & Plan (the credit-low item, F-DB-02).
+    Account,
     Plugin {
         connection_id: String,
     },

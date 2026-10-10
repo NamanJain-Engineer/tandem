@@ -1,0 +1,90 @@
+{
+  "$comment": "What leaves this machine (F-TL-07). The app's Settings > Privacy table and the website's /privacy are built from this file; keep it true to what the shipped build does. `state` says how a row's On/Off is decided: a setting's value, `on_use` (sent only when the user runs that action), `signed_in`, or an org policy field.",
+  "version": 1,
+  "features": [
+    {
+      "id": "account",
+      "label": "Account and plan",
+      "sends": "Your email, plan checks, and this device's name and platform at sign-in",
+      "destination": "Vibezeo API",
+      "state": { "kind": "signed_in" }
+    },
+    {
+      "id": "updates",
+      "label": "Update checks",
+      "sends": "The app's version and platform",
+      "destination": "Vibezeo update server",
+      "state": { "kind": "setting", "key": "auto_check_updates", "equals": true }
+    },
+    {
+      "id": "thread_titles",
+      "label": "Thread titles",
+      "sends": "The opening message of a new thread",
+      "destination": "Vibezeo API → Anthropic (Claude API)",
+      "state": { "kind": "setting", "key": "ai_thread_titles", "equals": true }
+    },
+    {
+      "id": "cloud_stt",
+      "label": "Cloud dictation",
+      "sends": "Audio of each take",
+      "destination": "Vibezeo API → speech-to-text provider",
+      "state": { "kind": "setting", "key": "dictate_engine", "equals": "cloud" }
+    },
+    {
+      "id": "dictionary_hints",
+      "label": "Dictionary hints",
+      "sends": "Your dictionary terms, with each cloud take",
+      "destination": "Vibezeo API → speech-to-text provider",
+      "state": { "kind": "setting", "key": "dictate_share_hints", "equals": true }
+    },
+    {
+      "id": "auto_enhance",
+      "label": "Auto-Enhance",
+      "sends": "Transcript text of every take",
+      "destination": "Vibezeo API → Anthropic (Claude API)",
+      "state": { "kind": "setting", "key": "dictate_auto_enhance", "equals": true }
+    },
+    {
+      "id": "enhance",
+      "label": "Enhance and Polish",
+      "sends": "Transcript text, when you press Enhance or Polish",
+      "destination": "Vibezeo API → Anthropic (Claude API)",
+      "state": { "kind": "on_use" }
+    },
+    {
+      "id": "teammate_draft",
+      "label": "Create teammate with AI",
+      "sends": "The job description you type, when you press Draft",
+      "destination": "Vibezeo API → Anthropic (Claude API)",
+      "state": { "kind": "on_use" }
+    },
+    {
+      "id": "auto",
+      "label": "Auto",
+      "sends": "Last 200 terminal lines, redacted",
+      "destination": "Vibezeo API → Anthropic (Claude API)",
+      "state": { "kind": "setting", "key": "auto_consent", "equals": true }
+    },
+    {
+      "id": "usage_stats",
+      "label": "Usage statistics",
+      "sends": "Feature counts and timings, from an allowlist",
+      "destination": "Vibezeo analytics",
+      "state": { "kind": "setting", "key": "telemetry_usage", "equals": true }
+    },
+    {
+      "id": "crash_reports",
+      "label": "Crash reports",
+      "sends": "Stack traces and the app version",
+      "destination": "Vibezeo crash reporting",
+      "state": { "kind": "setting", "key": "telemetry_crash", "equals": true }
+    },
+    {
+      "id": "team_audit",
+      "label": "Team audit log",
+      "sends": "That Full access was used or a plugin write approved (no content)",
+      "destination": "Vibezeo API → your organization's admins",
+      "state": { "kind": "policy", "field": "auditEnabled" }
+    }
+  ]
+}

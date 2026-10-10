@@ -17,6 +17,7 @@ import { BrowserView } from "../browser/BrowserView";
 import { DropZones, moveToNewTab, useDrag, type PaneDrag } from "./dnd";
 import { useDropTarget } from "./drops";
 import { PaneChrome } from "./PaneChrome";
+import { useShortcutKeys } from "../commands/useShortcutKeys";
 
 /** "Open in sidebar": a sidebar tab takes the page, then the pane goes. */
 export async function openInSidebar(tabId: string, pane: PaneRecord): Promise<string | null> {
@@ -67,6 +68,7 @@ type Props = {
 };
 
 export const BrowserPane = memo(function BrowserPane({ tabId, pane, title, visible, focused, solo, maximized, cover }: Props) {
+  const keys = useShortcutKeys();
   const { show } = useToast();
   const layout = useLayout.getState;
   const dragging = useDrag((st) => st.active !== null);
@@ -81,15 +83,15 @@ export const BrowserPane = memo(function BrowserPane({ tabId, pane, title, visib
     void openInSidebar(tabId, pane).then((message) => message && show({ tone: "error", title: message }));
   const menu: MenuEntry[] = [
     { id: "title", type: "label", label: title },
-    { id: "split-right", label: t("pane.splitRight"), kbd: ["Mod", "D"], onSelect: () => split("right") },
-    { id: "split-down", label: t("pane.splitDown"), kbd: ["Mod", "Shift", "D"], onSelect: () => split("bottom") },
+    { id: "split-right", label: t("pane.splitRight"), kbd: keys("pane.split_right"), onSelect: () => split("right") },
+    { id: "split-down", label: t("pane.splitDown"), kbd: keys("pane.split_down"), onSelect: () => split("bottom") },
     { id: "new-tab", label: t("pane.moveToNewTab"), onSelect: () => void moveToNewTab(tabId, pane.id) },
     { id: "sidebar", label: t("browser.openInSidebar"), onSelect: toSidebar },
     {
       id: "close",
       label: t("pane.closePane"),
       danger: true,
-      kbd: ["Mod", "W"],
+      kbd: keys("pane.close"),
       onSelect: () => useCloseConfirm.getState().request(tabId, pane.id),
     },
   ];

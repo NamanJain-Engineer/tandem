@@ -76,7 +76,19 @@ impl Limits {
             credit_packs: false,
         }
     }
+
+    /// Whether Thread mode may run `engine_id` on this plan (`chat_engines`:
+    /// `None` = every chat engine; Free lists Claude Code and Codex).
+    pub fn allows_chat_engine(&self, engine_id: &str) -> bool {
+        self.chat_engines
+            .as_ref()
+            .is_none_or(|allowed| allowed.iter().any(|e| e == engine_id))
+    }
 }
+
+/// Why a Free thread can't use an ACP engine (PRODUCT_SPEC §3.2).
+pub const CHAT_ENGINE_ON_PRO: &str =
+    "Free threads run Claude Code and Codex. Pro runs every chat engine.";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -87,8 +99,8 @@ pub struct EntitlementClaims {
     /// Subscription status as the server saw it (`active`, `past_due`, `none`…).
     pub status: String,
     pub limits: Limits,
-    #[ts(type = "Record<string, unknown> | null")]
-    pub policy: Option<serde_json::Value>,
+    /// A Team org's admin policy (F-BL-06).
+    pub policy: Option<crate::policy::OrgPolicy>,
     pub exp: i64,
     pub iat: i64,
     pub kid: String,
@@ -181,7 +193,7 @@ struct Payload {
     status: String,
     limits: Limits,
     #[serde(default)]
-    policy: Option<serde_json::Value>,
+    policy: Option<crate::policy::OrgPolicy>,
     exp: i64,
     iat: i64,
     iss: String,
@@ -324,6 +336,21 @@ pub(crate) mod tests {
     }
 
     const NOW: i64 = 1_800_000_000;
+
+    #[test]
+    fn f_th_06_free_threads_run_only_claude_code_and_codex() {
+        let free = Limits::free();
+        assert!(free.allows_chat_engine("claude"));
+        assert!(free.allows_chat_engine("codex"));
+        for acp in ["cursor", "grok", "opencode"] {
+            assert!(!free.allows_chat_engine(acp), "{acp} runs on Free");
+        }
+        let mut pro = Limits::free();
+        pro.chat_engines = None;
+        for any in ["claude", "codex", "cursor", "grok", "opencode"] {
+            assert!(pro.allows_chat_engine(any), "{any} blocked on Pro");
+        }
+    }
 
     #[test]
     fn f_be_04_1_tampered_token_fails_and_client_uses_free_limits() {

@@ -8,6 +8,7 @@ import { newId } from "../lib/ids";
 import { logger } from "../lib/logger";
 import type { BillingEvent } from "../providers/billing/types";
 import { addPurchased, grantMonthly, type Owner } from "./ledger";
+import { usersOf } from "./membership";
 
 type Obj = Record<string, unknown>;
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
@@ -131,16 +132,17 @@ export async function handleEvent(deps: Deps, event: BillingEvent): Promise<Webh
         }
         const pack = str(obj(object.metadata).pack) as CreditPack | undefined;
         if (str(object.mode) === "payment" && pack && pack in CREDIT_PACKS) {
-          await addPurchased(tx, owner, CREDIT_PACKS[pack].credits, event.id);
+          // The session id, so an admin can refund this pack later (F-BL-05).
+          await addPurchased(tx, owner, CREDIT_PACKS[pack].credits, str(object.id) ?? event.id);
         }
-        if (owner.kind === "user") notify.add(owner.id);
+        for (const id of await usersOf(tx, owner)) notify.add(id);
         break;
       }
       case "customer.subscription.created":
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
         const owner = await upsertSubscription(deps, tx, object, event.type.endsWith("deleted"));
-        if (owner?.kind === "user") notify.add(owner.id);
+        if (owner) for (const id of await usersOf(tx, owner)) notify.add(id);
         break;
       }
       case "invoice.paid": {
@@ -163,7 +165,7 @@ export async function handleEvent(deps: Deps, event: BillingEvent): Promise<Webh
             .set({ firstPaidAt: deps.clock.now() })
             .where(eq(subscriptions.id, sub.id));
         }
-        if (owner.kind === "user") notify.add(owner.id);
+        for (const id of await usersOf(tx, owner)) notify.add(id);
         break;
       }
       case "invoice.payment_failed": {
@@ -196,7 +198,7 @@ export async function handleEvent(deps: Deps, event: BillingEvent): Promise<Webh
               text: `We couldn't charge your card for Tandem Pro. Update your payment method to keep Pro: ${deps.env.WEB_PUBLIC_URL}/billing\n\nIf it isn't updated within 7 days, your account moves to the Free plan. Your data stays as it is.`,
             });
           }
-          if (owner.kind === "user") notify.add(owner.id);
+          for (const id of await usersOf(tx, owner)) notify.add(id);
         }
         break;
       }

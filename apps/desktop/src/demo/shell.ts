@@ -2,6 +2,8 @@
  * keys, handles Backspace, Ctrl+C and Ctrl+L, and answers a few commands
  * with canned output. Nothing runs. */
 
+import { CHECKOUT_PATCH } from "./agent";
+
 const ESC = "\x1b";
 const GREEN = `${ESC}[32m`;
 const BLUE = `${ESC}[34m`;
@@ -36,7 +38,7 @@ export function run(line: string): string[] | null {
     case "help":
       return [
         `${BOLD}This terminal is part of a browser demo.${RESET} It understands:`,
-        "  ls, pwd, git status, git log, npm test, echo, whoami, date, clear",
+        "  ls, pwd, git status, git diff, git log, npm test, echo, whoami, date, clear",
         `${DIM}In Vibezeo every pane is a real terminal on your machine.${RESET}`,
       ];
     case "ls":
@@ -59,13 +61,25 @@ export function run(line: string): string[] | null {
           `  ${ESC}[31mmodified:   src/checkout/redirect.ts${RESET}`,
           `  ${ESC}[31mmodified:   src/checkout/redirect.test.ts${RESET}`,
         ];
+      if (args[0] === "diff")
+        return CHECKOUT_PATCH.trimEnd()
+          .split("\n")
+          .map((l) =>
+            l.startsWith("+") && !l.startsWith("+++")
+              ? `${GREEN}${l}${RESET}`
+              : l.startsWith("-") && !l.startsWith("---")
+                ? `${ESC}[31m${l}${RESET}`
+                : l.startsWith("@@")
+                  ? `${ESC}[36m${l}${RESET}`
+                  : l,
+          );
       if (args[0] === "log")
         return [
           `${ESC}[33m4f2c9e1${RESET} Add cart totals endpoint`,
           `${ESC}[33m91b07aa${RESET} Checkout: keep the coupon on reload`,
           `${ESC}[33m0d5e3b2${RESET} First commit`,
         ];
-      return [`git: '${args[0] ?? ""}' isn't available in this demo. Try git status or git log.`];
+      return [`git: '${args[0] ?? ""}' isn't available in this demo. Try git status, git diff or git log.`];
     case "npm":
     case "pnpm":
       if (args[0] === "test" || args[0] === "t") return TEST_RUN;

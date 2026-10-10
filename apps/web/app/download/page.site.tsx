@@ -14,7 +14,7 @@ const START = [
 ];
 
 const LIMITS = [
-  "The Free plan: up to 4 panes and 3 workspaces.",
+  "The Free plan: up to 4 panes and 3 workspaces, and threads with Claude Code and Codex.",
   "New versions appear on this page.",
   "This build doesn't contact our servers and carries no analytics.",
 ];
