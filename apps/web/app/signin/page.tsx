@@ -6,13 +6,17 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@tandem/ui";
 import { Card, Field, Notice, Shell } from "../../components/Shell";
 import { api, ApiFailure } from "../../lib/api";
+import { SSO_ERRORS } from "../../lib/sso";
 
 function SignInForm() {
   const router = useRouter();
   const params = useSearchParams();
   const next = params.get("next") ?? "/account";
+  const ssoError = params.get("sso_error");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ tone: "error" | "success"; text: string } | null>(null);
+  const [message, setMessage] = useState<{ tone: "error" | "success"; text: string } | null>(
+    ssoError ? { tone: "error", text: SSO_ERRORS[ssoError] ?? SSO_ERRORS.SSO_ACCOUNT ?? "" } : null,
+  );
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -52,6 +56,28 @@ function SignInForm() {
     }
   }
 
+  async function sso(e: React.MouseEvent<HTMLButtonElement>) {
+    const form = e.currentTarget.form;
+    const email = form ? new FormData(form).get("email") : null;
+    if (!email) {
+      setMessage({ tone: "error", text: "Enter your work email first." });
+      return;
+    }
+    setMessage(null);
+    try {
+      const { url } = await api<{ url: string }>("/v1/sso/start", {
+        method: "POST",
+        body: { email, callbackURL: next.startsWith("/") ? next : "/account" },
+      });
+      window.location.assign(url);
+    } catch (err) {
+      setMessage({
+        tone: "error",
+        text: err instanceof ApiFailure ? err.message : "Couldn't start single sign-on.",
+      });
+    }
+  }
+
   return (
     <form onSubmit={submit} className="flex max-w-sm flex-col gap-4">
       <Field label="Email" name="email" type="email" autoComplete="email" />
@@ -68,6 +94,9 @@ function SignInForm() {
       </Button>
       <Button type="button" variant="ghost" onClick={magicLink}>
         Email me a sign-in link
+      </Button>
+      <Button type="button" variant="secondary" onClick={sso} data-testid="sso-sign-in">
+        Sign in with SSO
       </Button>
       <p className="text-sm text-fg-muted">
         <Link className="text-accent hover:underline" href="/reset">

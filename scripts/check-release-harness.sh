@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 pnpm --filter desktop build
 cargo build --release -p tandem-desktop --features custom-protocol
 bin=target/release/tandem
-if strings "$bin" | grep -Eq 'test_auth_refresh|test_spawn_log|test_clock_advance|test_browser_eval|allow-test-'; then
+if strings "$bin" | grep -Eq 'test_auth_refresh|test_spawn_log|test_clock_advance|test_browser_eval|test_plugin_connect|test_echo|allow-test-'; then
   echo "release binary contains the test harness" >&2
   exit 1
 fi

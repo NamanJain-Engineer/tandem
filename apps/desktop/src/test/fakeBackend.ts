@@ -15,6 +15,8 @@ import { useSession } from "../stores/session";
 import { useSettings } from "../stores/settings";
 import { useUi } from "../stores/ui";
 import { resetThreads } from "../stores/threads";
+import { resetTeammates } from "../stores/teammates";
+import { resetSuggestions } from "../features/agents/Suggestions";
 import { resetFiles } from "../stores/files";
 import { resetGit } from "../stores/git";
 import { resetBrowser } from "../stores/browser";
@@ -67,8 +69,9 @@ export const FREE_VIEW: EntitlementView = {
   status: "none",
   limits: FREE,
   source: "token",
-  credits: { monthly: 0, purchased: 0, resetsAt: null },
+  credits: { monthly: 0, purchased: 0, resetsAt: null, cap: null, spent: null, grant: null },
   policy: null,
+  org: null,
   paidUntil: null,
   cancelAtPeriodEnd: false,
   online: true,
@@ -126,6 +129,7 @@ export function resetStores(): void {
     returnFocus: null,
     railCollapsed: false,
     paletteOpen: false,
+    cheatsheetOpen: false,
     upgrade: { open: false },
     settingsPage: null,
   });
@@ -133,6 +137,8 @@ export function resetStores(): void {
   useUsage.setState({ byAccount: {} });
   useContexts.setState({ byPane: {} });
   resetThreads();
+  resetTeammates();
+  resetSuggestions();
   resetFiles();
   resetGit();
   resetBrowser();

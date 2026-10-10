@@ -1,3 +1,5 @@
+import { RELEASES, versionPath } from "./changelog";
+import { DOCS_PAGES, docsPath } from "./docs/pages";
 type Founder = { name: string; role: string; bio?: string; link?: string };
 /** A registered company: its name, registration number (e.g. CIN) and
  * registered address. */
@@ -13,6 +15,10 @@ export const SITE = {
   /** The name the site and the product are published under. */
   company: "Vibezeo",
   contactEmail: "hello@vibezeo.com",
+  /** No analytics, ads or cookies (D-132). Anything non-essential added
+   * here needs a consent banner that loads it only after the visitor agrees
+   * (F-WB-01 AC2); the site tests fail until then. */
+  analytics: null,
   /** Who runs the company and builds the product (home, About, Terms, Privacy). */
   founder: {
     name: "Naman Jain",
@@ -91,6 +97,11 @@ export function robotsTxt(): string {
 }
 
 export function sitemapXml(): string {
-  const urls = SITE_PAGES.map((p) => `  <url><loc>${SITE.url}${p}</loc></url>`).join("\n");
+  const pages = [
+    ...SITE_PAGES,
+    ...DOCS_PAGES.map((p) => docsPath(p.slug)),
+    ...RELEASES.map((r) => versionPath(r.version)),
+  ];
+  const urls = pages.map((p) => `  <url><loc>${SITE.url}${p}</loc></url>`).join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }

@@ -36,6 +36,7 @@ rand.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+zip.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
@@ -72,6 +73,8 @@ tokio = { workspace = true, features = ["test-util"] }
 [features]
 # Tauri uses this to switch between dev server and bundled assets.
 custom-protocol = ["tauri/custom-protocol"]
+# The gateway's test vendor modules (`test_echo` …), for E2E builds only.
+test-vendors = ["tandem-gateway/test-vendors"]
 
 [lints]
 workspace = true

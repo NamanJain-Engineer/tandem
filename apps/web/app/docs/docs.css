@@ -1,0 +1,31 @@
+/* Docs-only styles: Fumadocs' theme and the utilities its components use.
+   The site's preflight and tokens come from globals.css. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+@source "../../node_modules/fumadocs-ui/dist";
+@source "../../components/docs";
+@source "../../content/docs";
+
+/* Fumadocs' colours are the site's tokens, so the docs follow its theme. */
+:root,
+.dark {
+  --color-fd-background: var(--tn-bg);
+  --color-fd-foreground: var(--tn-text);
+  --color-fd-muted: var(--tn-surface-2);
+  --color-fd-muted-foreground: var(--tn-text-muted);
+  --color-fd-popover: var(--tn-surface-2);
+  --color-fd-popover-foreground: var(--tn-text);
+  --color-fd-card: var(--tn-surface-1);
+  --color-fd-card-foreground: var(--tn-text);
+  --color-fd-border: var(--tn-border);
+  --color-fd-primary: var(--tn-accent);
+  --color-fd-primary-foreground: var(--tn-accent-fg);
+  --color-fd-secondary: var(--tn-surface-2);
+  --color-fd-secondary-foreground: var(--tn-text);
+  --color-fd-accent: var(--tn-surface-3);
+  --color-fd-accent-foreground: var(--tn-text);
+  --color-fd-ring: var(--tn-accent);
+}

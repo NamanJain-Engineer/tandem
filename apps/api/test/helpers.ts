@@ -27,7 +27,10 @@ export function testKeys(): KeySet {
 
 export type TestEnv = Awaited<ReturnType<typeof makeTestApp>>;
 
-export async function makeTestApp(envOverrides: Record<string, string> = {}) {
+export async function makeTestApp(
+  envOverrides: Record<string, string> = {},
+  overrides: Partial<Pick<Deps, "ssoNet">> = {},
+) {
   const env = loadEnv({
     NODE_ENV: "test",
     DATABASE_URL: "postgres://tandem:tandem@localhost:5432/tandem_test",
@@ -43,12 +46,14 @@ export async function makeTestApp(envOverrides: Record<string, string> = {}) {
   const clock = new Clock();
   const keys = testKeys();
   const billing = new MockBilling(WEB, env.STRIPE_WEBHOOK_SECRET, clock);
-  const built = buildDeps(env, { email, clock, keys, billing });
+  const built = buildDeps(env, { email, clock, keys, billing, ...overrides });
   const { deps } = built;
   await deps.redis.flushdb();
   await deps.db.execute(
     sql`TRUNCATE "user", session, account, verification, refresh_tokens, desktop_login_codes, subscriptions,
-        billing_customers, webhook_events, credit_ledger, credit_reservations, credit_buckets RESTART IDENTITY CASCADE`,
+        billing_customers, webhook_events, credit_ledger, credit_reservations, credit_buckets, orgs, org_members,
+        org_invites, org_policies, member_usage, daily_usage, ai_requests, audit_events, admin_actions, device_codes,
+        voice_sessions RESTART IDENTITY CASCADE`,
   );
   const app = createApp(deps);
   return { app, deps, email, clock, billing, close: built.close };

@@ -45,6 +45,15 @@
     "enabledWhen": "always"
   },
   {
+    "id": "work.find",
+    "category": "navigation",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
     "id": "thread.changes",
     "category": "navigation",
     "mac": "Mod+Alt+C",
@@ -52,6 +61,15 @@
     "pcTerminal": "Mod+Alt+C",
     "inText": true,
     "enabledWhen": "thread_open"
+  },
+  {
+    "id": "teammate.new",
+    "category": "app",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
   },
   {
     "id": "rail.toggle",
@@ -311,6 +329,15 @@
     "mac": null,
     "pc": null,
     "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "help.shortcuts",
+    "category": "help",
+    "mac": "Mod+/",
+    "pc": "Mod+/",
+    "pcTerminal": "Mod+Shift+/",
     "inText": false,
     "enabledWhen": "always"
   },

@@ -615,8 +615,11 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `usage_get` | `{accountId?}` | `[UsageView {accountId, engineId, windows:[UsageWindow {kind, usedPct, resetsAt?}], source: "codex_app_server"\|"unavailable", estimated, reason?, fetchedAt}]` (the latest reading; probes when there's none) | — | F-AC-04 |
 | `usage_refresh` | `{accountId?}` | `[UsageView]` (probes again; the webview calls it every 5 min and after a turn) | — | F-AC-04 |
 | `contexts_list` | — | `[PaneContext {paneId, used, window}]` (context fill per agent pane, from the engine's transcript when a turn ends) | — | F-AC-06 |
-| `usage_dashboard` | `{weeks: 12}` → op | `UsageDashboard {days:[DayTotal], perEngine, perAccount, topWorkspaces, skippedLines}` | — | F-AC-07 |
-| `usage_share_card` | `{showWorkspaces}` | `String` (PNG path in `$DATA/tmp`) | — | F-AC-07 |
+| `usage_report` | — | `UsageReport {since, until, total, days:[UsageDay {date, tokens, byEngine}] (12 weeks, every day present, in the user's zone), engines:[EngineUsage], accounts:[AccountUsage], workspaces:[WorkspaceUsage] (top 8), skippedLines, filesRead, unsupported}` (read on the blocking pool from each account's `usage_log_globs` inside its provider home; D-615) | Internal | F-AC-07 |
+| `usage_share_save` | `{pngBase64}` | `String?` (the path saved, `null` when the save dialog is cancelled; the webview draws the card, the core only checks it is a PNG under 10 MB and writes it atomically where the user picks) | Invalid, Io | F-AC-07 |
+| `data_export` | — | `DataExport? {path, tables, files}` (`null` when the save dialog is cancelled). A zip of every table as JSON (`<table>.json`; FTS tables left out), `teammates/<id>/{memory,skills}/`, `tasks/`, `scratchpad/` and `manifest.json`; never `providers/`, `auth/` or keychain values; built next to the target and renamed into place (D-812) | Io | F-TL-05 |
+| `data_delete_local` | `{removeEngineSignIns}` | `()`: closes every terminal, forgets Vibezeo's keychain secrets, leaves `$DATA/.delete-pending` and relaunches; the next start deletes `$DATA` except `providers/` (unless ticked) before anything opens it (D-812). Under the E2E harness it only leaves the request | Io | F-TL-05 |
+| `find_work` | `{query: str(≤500)}` | `FindWorkResult {matches: [FindMatch {source, kind: "pane"\|"thread", label, detail?, workspaceId?, tabId?, score}] (best first, ≤20), clear}` (`clear`: the first is one clear match to go to; otherwise the close ones lead). Ranks the open panes (name, title, engine, folder or page, last 20 lines of output) and threads (title, last message) on this machine: stems, a table of same-meaning software terms and one typo (`tandem_core::find_work`, D-814). Output and messages are redacted first; nothing leaves the machine. Teammates join when M10's chats land | Invalid (over 500 characters) | F-CN-05 |
 
 #### Status, dashboard, notifications, focus [F-DB-*, F-EN-05]
 | Command | Args | Returns | Errors | IDs |
@@ -630,13 +633,13 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `notifications_list` | `{cursor?: string}` | `NotificationPage {items:[Notification {id, kind, title, body, source, state:"unread"\|"read"\|"resolved", dedupeKey?, createdAt, readAt?}], nextCursor?, unread}` (7-day window, newest first; the cursor is `"<createdAt>:<seq>"`) | — | F-DB-02 |
 | `notifications_mark_read` | `{ids?: [NotificationId], all?: bool}` | — | — | F-DB-02 |
 
-`SourceRef = {type:"pane", paneId} | {type:"thread", threadId} | {type:"teammate_chat", teammateId, threadId} | {type:"routine", routineId, runId?} | {type:"task", issueId} | {type:"lane", workspaceId} | {type:"update"} | {type:"plugin", connectionId}`.
+`SourceRef = {type:"pane", paneId} | {type:"thread", threadId} | {type:"teammate_chat", teammateId, threadId} | {type:"routine", routineId, runId?} | {type:"task", issueId} | {type:"lane", workspaceId} | {type:"update"} | {type:"account"} | {type:"plugin", connectionId}`. `account` (M13) opens Settings › Account & Plan: the credit-low item's source (F-DB-02).
 
 #### Threads and teammate chats [F-TH-*, F-AG-03]
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
-| `thread_create` | `{kind:"thread"\|"teammate_chat", workspaceId?, teammateId?, engineId?, accountId?, model?, effort?, access?, mode?}` (omitted = remembered defaults) | `Thread` | EngineMissing, ForbiddenPlan (engine not in plan) | F-TH-01, F-TH-02, F-TH-07 |
-| `thread_list` | `{kind, teammateId?, includeArchived?}` | `[Thread]` (the rail's summary is the thread row) | — | F-TH-01, F-AG-03 |
+| `thread_create` | `{kind:"thread"\|"teammate_chat", workspaceId?, teammateId?, place?, engineId?, accountId?, model?, effort?, access?, mode?}` (omitted = remembered defaults; a teammate chat takes its teammate's engine, model, preferred account and default access, and works in `place`: Home or one of the teammate's places; `Thread` gains `teammateId?` and `conversationRef?`) | `Thread` | EngineMissing, ForbiddenPlan (engine not in plan) | F-TH-01, F-TH-02, F-TH-07 |
+| `thread_list` | `{kind, teammateId?, includeArchived?}` | `[Thread]` (the rail's summary is the thread row; `teammate_chat` with `teammateId`: that teammate's chats in tab order) | — | F-TH-01, F-AG-03 |
 | `thread_get` | `{threadId}` | `ThreadDetail {thread, turns, running?, queued?, draft, attachments}` (`attachments`: the draft's unsent ones; `planRevisions`: `[PlanRevision {version, turnId, text, createdAt}]`, v1 first; pending approvals are the running turn's `approval_request` events without a resolution). Opening a thread clears its unread flag | NotFound | F-TH-01 |
 | `thread_events` | `{threadId, beforeId?, limit ≤ 500}` | `ThreadEventPage {items: [ThreadEventEnvelope] (oldest first), nextBeforeId?}` | — | F-TH-12 |
 | `thread_subscribe` | `{threadId, channel: Channel<ThreadEventEnvelope>}` | — (streams until the webview drops the channel) | NotFound | F-TH-03 |
@@ -646,6 +649,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `thread_update` | `{threadId, title?, access?, mode?, model?, effort?, pinned?, sortKey?, pluginGrants?}` (`model`/`effort` `"default"` = the engine's own; a title is a user rename, `title_source = user`; new access, mode, model or effort start a fresh session on the next turn) | `Thread` | ForbiddenPlan (Full forbidden by org policy), Invalid (empty title) | F-TH-01, F-TH-09, F-PL-05 |
 | `thread_switch_engine` | `{threadId, engineId, accountId?}` | `Thread` (next turn seeds summary; allow rules cleared) | EngineMissing, EngineUnsupported (no chat adapter), Conflict (a turn is running) | F-TH-16, F-AC-05 |
 | `thread_archive` / `thread_delete` | `{threadId, archived}` (archiving stops a running turn) / `{threadId}` (archived only; the recovery copy is `$DATA/trash/threads/<id>-<deletedAtMs>/` (0700) with `thread.json` (0600) and the attachments, removed after 7 days) | — | Invalid | F-TH-01 |
+| `thread_reorder` | `{ids}` (a teammate's chat tabs, left to right; M10) | — | — | F-AG-03 |
 | `thread_move_to_folder` | `{threadId, workspaceId}` | `Thread` | — | F-TH-02 |
 | `thread_save_draft` | `{threadId, draft: Draft {text, attachmentIds, queued?}}` | — | — | F-TH-07 |
 | `thread_attach_paths` | `{threadId, paths}` | `[Attachment]` | LimitReached (20 / 20 MB) | F-TH-07 |
@@ -718,24 +722,25 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 #### Teammates, memory, skills, mail [F-AG-*]
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
-| `teammate_list` / `teammate_get` | — / `{id}` | `[TeammateSummary]` / `Teammate` | NotFound | F-AG-01, F-AG-02 |
-| `teammate_create` | `TeammateInput` | `Teammate` | Conflict ("Name already used"), LimitReached, EngineMissing | F-AG-01, F-AG-04 |
-| `teammate_update` | `{id, patch: TeammatePatch}` | `Teammate` | Conflict, Invalid | F-AG-05 |
+| `teammate_list` / `teammate_get` | — / `{id}` | `[TeammateSummary {teammate, chatCapable, working, waiting, failed, lastLine?, lastAt?, chats}]` (the Lead is made on first use) / `Teammate {id, name, avatarHue?, avatarImage?, brief, engineId, model?, effort?, preferredAccountId?, home, places, settings: {memoryCap, learnMode, mayMessage, maySchedule, defaultAccess}, isLead, pinned, sortKey, createdAt}` | NotFound | F-AG-01, F-AG-02 |
+| `teammate_create` | `{input: TeammateInput {name, brief, engineId, model?, effort?, preferredAccountId?, places, avatarHue?, settings?}}` | `Teammate` | Conflict ("Name already used"), LimitReached, EngineMissing, Invalid | F-AG-01, F-AG-04 |
+| `teammate_update` | `{id, patch: TeammatePatch}` (only the fields given change; `model`, `effort`, `preferredAccountId`, `avatarHue` take `null` to clear; `pinned: true` unpins every other teammate: one hero; new settings or engine start the teammate's chats on fresh sessions) | `Teammate` | Conflict, Invalid, EngineMissing | F-AG-05 |
 | `teammate_delete` / `teammate_duplicate` / `teammate_reorder` | `{id}` / `{id}` / `{ids}` | — / `Teammate` / — | — | F-AG-02 |
-| `teammate_draft_with_ai` | `{description}` | `TeammateDraft {name, brief, engineId, pluginIds}` (nothing saved) | ForbiddenPlan, CreditsExhausted, Unavailable | F-AG-04 |
-| `teammate_suggestions` | `{id}` | `[String; 3]` (local) | — | F-AG-03 |
+| `teammate_draft_with_ai` | `{description}` | `TeammateDraft {name, brief, engineId, pluginIds}` (nothing saved; `engineId` only when installed and chat-capable, `pluginIds` only connected ones; debug E2E builds answer from `TANDEM_FIXTURE_TEAMMATE_DRAFT`, D-8) | ForbiddenPlan, CreditsExhausted, Unavailable | F-AG-04 |
+| `teammate_templates` | — | `[TeammateTemplate {id, name, brief}]` (Reviewer, Release notes writer, Researcher, Triage; the sheet's offline / Free choice) | — | F-AG-04 |
+| `teammate_suggestions` | `{id}` | `[String; 3]` (local: the brief's first sentences as asks, "You draft…" → "Draft…", constraints skipped, general asks to fill) | — | F-AG-03 |
 | `teammate_launch_in_terminal` | `{id, placePath, tabId}` | `PaneRecord` | EngineMissing | F-AG-13 |
-| `memory_get` | `{teammateId}` | `Memory {notes, about, cap, used, aboutCap: 2048}` | — | F-AG-07 |
-| `memory_write` | `{teammateId, file:"notes"\|"about", markdown}` | — | LimitReached (cap), Invalid ("Memory can't store credentials") | F-AG-07 |
-| `memory_suggestions_resolve` | `{suggestionSetId, keep:[index]}` | — | — | F-AG-08 |
-| `memory_undo` | `{changeId}` | — | NotFound | F-AG-08 |
+| `memory_get` | `{teammateId}` | `Memory {notes, about, cap, used, aboutCap: 2048, aboutUsed}` (lengths in characters) | — | F-AG-07 |
+| `memory_write` | `{teammateId, file:"notes"\|"about", markdown}` (the user's own edits, checked like `tandem__memory_write`; each write is a `memory_changes` row with a copy of what it replaced) | — | LimitReached (cap), Invalid ("Memory can't store credentials") | F-AG-07 |
+| `memory_suggestions_resolve` | `{suggestionSetId, keep:[index]}` (an empty `keep` discards the set; sets live until resolved or the app quits) | `changeId?` (for Undo, when memory changed) | NotFound | F-AG-08 |
+| `memory_undo` | `{changeId}` | — (puts back what the change replaced) | NotFound, Conflict (the file changed again since) | F-AG-08 |
 | `skills_list` / `skill_get` | `{teammateId}` / `{teammateId, slug}` | `[SkillEntry {slug, name, description, valid, error?, isNew, syncedTo}]` / `Skill` | — | F-AG-09 |
-| `skill_save` / `skill_remove` | `{teammateId, slug, markdown}` / `{teammateId, slug}` | — | Invalid (front matter) | F-AG-09 |
+| `skill_save` / `skill_remove` | `{teammateId, slug, markdown}` / `{teammateId, slug}` (the user's saves, opens and library adds mark a skill seen: not "New"; remove moves the folder to `<home>/.trash/skills/`) | — | Invalid (front matter, or a credential), NotFound | F-AG-09 |
 | `skills_library` / `skill_add_from_library` | — / `{teammateId, slug}` | `[SkillEntry]` / — | Conflict | F-AG-09 |
 | `skill_sync` | `{teammateId, slug, engineId, accountId, on}` | `SyncOutcome {state:"synced"\|"removed"\|"conflict"}` | — | F-AG-10 |
-| `mail_list` / `mail_get` | `{teammateId}` / `{mailId}` | `[MailRow]` / `Mail` | — | F-AG-12 |
-| `mail_send` | `{fromTeammateId?, toTeammateId, body, fromThreadId?}` (UI `@name`) | `MailRow` | Invalid (refusal reason) | F-AG-12 |
-| `mail_retry` | `{mailId}` | — | — | F-AG-12 |
+| `mail_list` / `mail_get` | `{teammateId}` / `{mailId}` | `[MailRow {id, fromTeammateId?, from, toTeammateId, to, preview, state:"queued"\|"delivered"\|"refused"\|"failed", reason?, deliveredThreadId?, createdAt}]` (sent or received, newest first) / `Mail` (the row's fields with `body`, `fromThreadId?`, `conversationRef`, `deliveredAt?`; `from` is "You" for the user's mail) | — / NotFound | F-AG-12 |
+| `mail_send` | `{fromTeammateId?, toTeammateId, body, fromThreadId?}` (UI `@name`; the composer's chat is `fromThreadId`, its teammate the sender) | `MailRow` (queued; reason `global_pause` while mail is paused) | Invalid (refusal reason; the refused row is kept), NotFound | F-AG-12 |
+| `mail_retry` | `{mailId}` (a failed or waiting mail goes back in the queue and one delivery pass runs) | — | Conflict (delivered or refused), NotFound | F-AG-12 |
 
 #### Tasks [F-TK-*]
 | Command | Args | Returns | Errors |
@@ -772,13 +777,15 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `plugin_disconnect` | `{connectionId}` | — | — |
 | `plugin_detail` | `{connectionId}` | `PluginDetail {tools:[{name, riskClass, description}], options}` | — |
 | `plugin_set_option` | `{connectionId, allowPublishInFull}` | — | — |
-| `grants_list` / `grants_set` | `{subject: GrantSubject}` / `{subject, connectionId, granted}` | `[ConnectionId]` / — | — |
+| `grants_list` / `grants_set` | `{subject: GrantSubject}` / `{subject, connectionId, granted}` (`GrantSubject = {type:"teammate", teammateId} \| {type:"thread", threadId} \| {type:"workspace", workspaceId} \| {type:"all_threads"}`; a change reaches the subject's next session) | `[ConnectionId]` / — | — |
 
 #### Auto [F-AU-01]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
-| `auto_start` | `{paneId, mode:"finish"\|"harden"\|"review"\|"explore"\|"custom", goal?, ceiling?}` | `AutoRunView` | ForbiddenPlan, Invalid ("Auto runs only in agent panes"), PermissionDenied (consent missing) |
-| `auto_pause` / `auto_resume` / `auto_stop` | `{runId}` | `AutoRunView` | — |
+| `auto_start` | `{paneId, mode:"finish"\|"harden"\|"review"\|"explore"\|"custom", goal? (custom: required, ≤2000 chars), ceiling? (custom: 1–30, default 10; other modes use their own)}` | `AutoRunView {runId, paneId, mode, goal?, ceiling, turns, state: running\|paused\|ended, paused?: user\|approval_pending, endReason?: done\|stuck\|turn_ceiling\|out_of_credits\|no_subscription\|turned_off\|signed_out\|api_unreachable\|pane_closed\|engine_exited\|engine_changed\|user_stopped, detail?, startedAt, endedAt?}` | ForbiddenPlan, Invalid ("Auto runs only in agent panes"; the agent isn't running; goal or ceiling out of range), PermissionDenied (consent missing; the Team policy's `disableAuto`), Conflict (a run is live in the pane) |
+| `auto_list` | — | `[AutoRunView]` (live runs and ended ones not yet dismissed; runs live in memory, D-621) | — |
+| `auto_pause` / `auto_resume` / `auto_stop` | `{runId}` | `AutoRunView` (pause holds the next turn; stop ends at once and nothing more is typed) | NotFound |
+| `auto_dismiss` | `{runId}` | — (clears an ended run's chip; emits `auto:dismissed`) | — |
 
 #### Dictate [F-DI-*]
 | Command | Args | Returns | Errors |
@@ -831,8 +838,8 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `auth_sign_in` | — → op | result via `auth:changed` | Unavailable (categorized: browser / callback / expired / network) |
 | `auth_cancel` / `auth_sign_out` / `auth_state` | `{opId}` / — / — | — / — / `AuthState {signedIn, email?, offlineDaysLeft?}` | — |
 | `auth_continue_offline` | — | — | — |
-| `entitlement_get` / `entitlement_refresh` | — | `EntitlementView {plan, status, limits, source:"token"\|"grace"\|"free", credits:{monthly, purchased, resetsAt}, policy?}` | — |
-| `billing_open` | `{target: {type:"upgrade", plan, interval} \| {type:"portal"} \| {type:"credits"}}` | — (system browser) | Unauthenticated |
+| `entitlement_get` / `entitlement_refresh` | — | `EntitlementView {plan, status, limits, source:"token"\|"grace"\|"free", credits:{monthly, purchased, resetsAt, cap, spent, grant}, policy: OrgPolicy?, org: {id, name, role}?, monthlyGrant, …}`. `policy` is the last verified token's (it survives a cached token that stops verifying, D-607); `OrgPolicy` mirrors `@tandem/protocol/team` (F-BL-06). The core enforces it at every engine launch (allowed engines) and thread session start (max access, Full-access audit, F-TL-10), and locks the telemetry toggles | — |
+| `billing_open` | `{target: {type:"upgrade", plan, interval} \| {type:"portal"} \| {type:"credits"} \| {type:"account"}}` (`account` opens `{web}/account`, where "Delete account…" lives, F-TL-05) | — (system browser) | Unauthenticated |
 | `updates_state` / `updates_check_now` / `updates_install` / `updates_set_channel` | — / — / — / `{channel:"stable"\|"beta"}` | `UpdateState {stage: idle\|checking\|downloading\|ready\|error\|managed\|unavailable, current, channel, version?, notes?, percent?, errorStage?: check\|download\|verify\|install, error?, lastCheck?, upToDate, minVersion?: {minVersion, graceUntil, modal}}` (`check_now` waits for a check already running; a newer release downloads and verifies before `ready`; `install` installs the staged release, stops every terminal and restarts; under the harness it records the install and keeps running) | Unavailable (stage), Invalid (channel) |
 | `whats_new_get` / `whats_new_seen` | — / `{version}` | `ReleaseNotes?` / — | — |
 | `privacy_data_flows` | — | `[DataFlowRow {feature, enabled, sends, destination}]` | — |
@@ -844,7 +851,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | Command | Args | Returns | Errors |
 |---|---|---|---|
 | `test_counters` | `{reset?: bool}` | `TestCounters {ptyResizes, ptyResizesByPane, webglContexts, domRenderers, reflows, restoreMaxSpawning}` (`restoreMaxSpawning`: most agents ever starting at once during restore, F-SH-07 AC3) | — |
-| `test_spawn_log` | — | `[SpawnRecord {argv, envKeys, providerHome?, cwd}]` (same content as `TANDEM_SPAWN_LOG`) | — |
+| `test_spawn_log` | — | `[SpawnRecord {argv, envKeys, providerHome?, cwd}]` (same content as `TANDEM_SPAWN_LOG`; chat-engine spawns are recorded too, from M10) | — |
 | `test_clock_advance` | `{ms}` | `{now}` | — |
 | `test_auth_refresh` | — | `AuthState` (forces the refresh path, e.g. to observe a revoked device) | — |
 | `test_account_create` | `{engineId, label}` | `Account` (a second account with its own provider home, without the sign-in flow; E2E-M4-4) | — |
@@ -858,6 +865,8 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `test_thread_state` | `{id}` | the thread's stored `state` | NotFound |
 | `test_browser_eval` | `{browserId, script}` | `String` (the script's value as JSON; E2E-M9-4 clicks in a page with it) | NotFound |
 | `test_thread_seed_events` | `{threadId, events, fenceBytes?}` | the number of events written (completed turns of a user message, an assistant reply, tool calls and a turn end, in one transaction; `fenceBytes` adds a last reply with a code fence that size; threads perf suite) | NotFound |
+| `test_plugin_connect` | `{pluginId}` | `PluginConnection {id, pluginId, accountLabel?, authKind, status, createdAt}` (records a connection of a test vendor module, `test_echo`/`test_upper`/`test_down`, without a sign-in; builds with the `test-vendors` feature only; M10 E2E until Settings › Plugins lands in M12) | NotFound |
+| `test_gateway_metrics` | — | `TestGateway {metrics: GatewayMetrics {port, listeners, leases, mcpSessions, requests, restarts, rssBytes?}, starts}` (`starts`: gateways this process started, F-PL-01 AC2) | Unavailable |
 
 `window.__tandemTest` in the webview wraps these commands plus UI-side counters. Not listed in `capabilities/*.json` for release.
 
@@ -891,10 +900,11 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `entitlement:changed` | `EntitlementView` | entitlement service (refresh, SSE) | F-BE-04, F-SH-03 |
 | `routines:changed` / `routines:run` | `RoutineView` / `RoutineRun` | scheduler | F-RT-02, F-RT-04 |
 | `tasks:attempt` | `AttemptView` | task runner | F-TK-04 |
-| `plugins:changed` / `plugins:connect` | `PluginCard` / `{opId, step:"discovery"\|"registration"\|"sign_in"\|"token_exchange"\|"verification"\|"timeout", state, error?}` | gateway | F-PL-03 |
-| `mail:changed` | `{teammateId, rows:[MailRow]}` | mail service | F-AG-12 |
-| `memory:suggestions` | `{teammateId, threadId, setId, items}` | learn service | F-AG-08 |
-| `auto:changed` | `AutoRunView` | Auto supervisor | F-AU-01 |
+| `plugins:changed` / `plugins:connect` | `PluginCard` / `{opId, step:"discovery"\|"registration"\|"sign_in"\|"token_exchange"\|"verification"\|"timeout", state, error?}` | gateway (`plugins:changed` after any connection is added or changes; until M12 only debug E2E builds connect, through `test_plugin_connect`) | F-PL-03 |
+| `teammates:changed` | `{teammates:[TeammateSummary]}` (a teammate or one of its chats changed; coalesced 100 ms) | teammates service | F-AG-02 |
+| `mail:changed` | `MailChanged {teammateId, rows:[MailRow]}` (the teammate's mail, newest first, after any change to a mail it sent or receives) | mail service | F-AG-12 |
+| `memory:suggestions` | `MemorySuggestions {teammateId, threadId, setId, items:[{kind:"add"\|"remove", text}], rationale, applied, changeId?}` (`applied`: Auto mode already wrote it; `changeId` undoes it) | learn service | F-AG-08 |
+| `auto:changed` / `auto:dismissed` | `AutoRunView` / `{runId}` | Auto supervisor | F-AU-01 |
 | `lanes:stale` | `{workspaceId, lanes:[StaleLane]}` | lane sweeper | F-CD-15 |
 | `dictate:state` | `{state:"idle"\|"listening"\|"transcribing"\|"inserted"\|"error"\|"reconnecting", takeId?}` (to `main` and `dictate-widget`) | TakeMachine | F-DI-07 |
 | `dictate:toast` | `{kind, message, detail}` | voice service | F-DI-07 |
@@ -1715,7 +1725,7 @@ pub enum ThreadEvent {
     Error { code: String, message: String, stage: ErrorStage /* spawn|auth|model|network|tool|unknown */, hint: Option<String>, action: Option<ErrorAction> },
     PlanRevision { version: u32 },
     Divider { text: String },                                         // "Continued on <engine> (<account>) with a summary"
-    MailRow { mail_id: MailId, from: String, to: String, preview: String },
+    MailRow { mail_id: MailId, from: String, to: String, preview: String, inbound: bool }, // inbound: the recipient's delivered turn, shown in place of its message
     TurnEnd { reason: TurnEndReason /* completed|cancelled|limit|error */, blocked_actions: u32 },
 }
 pub enum ToolVerb { Bash, Read, Grep, Glob, Edit, Write, Multiedit, Webfetch, Websearch, Task, Mcp, Other }
@@ -1803,7 +1813,7 @@ Persistence: every envelope except `*Delta` is appended to `thread_messages`; de
 <tools>{guidance: tandem__memory_write for memory, tandem__session_search, tandem__send_message, tasks via tandem_tasks, schedule tools if allowed}</tools>
 ```
 - Injection scan: lines in memory/skills matching `(?i)ignore (all|previous) instructions|system prompt|</?(brief|tandem_preamble|memory|skills)>` are escaped (angle brackets replaced) and counted in the log (by count only). Credential-shaped strings are redacted.
-- Delivery: always a file `$DATA/briefings/<session>.md` (0600): Claude `--append-system-prompt-file`; Codex `developerInstructions` (V2) or first-turn preamble (V1) read from the file by the adapter and sent over stdin; ACP: prepended to the first `session/prompt`. Never argv (F-AG-06 AC2).
+- Delivery (M10: the file is `$DATA/briefings/<thread>.md`, rewritten for each new session of the chat and removed with the chat; `ChatStart.briefing`): always a file `$DATA/briefings/<session>.md` (0600): Claude `--append-system-prompt-file`; Codex `developerInstructions` (V2) or first-turn preamble (V1) read from the file by the adapter and sent over stdin; ACP: prepended to the first `session/prompt`. Never argv (F-AG-06 AC2).
 
 ### 8.3 Memory [F-AG-07]
 - `tandem__memory_write{file:"notes"|"about", markdown}` (gateway built-in, scoped to the lease's teammate): rejects if `len > cap` (notes: 2k/4k/8k/16k; about: 2k) with "Memory is over its {cap} character budget. Condense it and try again." and if any line matches credential patterns ("Memory can't store credentials"). Writes via `atomic_write`, records a `memory_changes` row (with a backup copy) for Undo.
@@ -1830,13 +1840,14 @@ send_message(to, body) ─► check: sender may_message; recipient exists, not d
       ├─ rate guard: mail_turn_log(to) count in last 60 min ≥ 20 → state=queued reason=rate_limit, note "Rate limit reached"
       ▼
  mail row queued (id = dedupe key) ─► delivery worker (single task, FIFO per recipient)
-      ├─ recipient has an idle chat with same conversation_ref → append user turn "From {sender}:\n{body}"
+      ├─ recipient has an idle chat with same conversation_ref → append user turn "From {sender}:\n{body}" (a teammate's body behind `untrusted::label` and in `untrusted::fence`, F-TL-06 rule 8)
       └─ else → create teammate chat titled "{sender}: {first line}" (title_source=mail), attended=0, access=min(default, Edits)
  on success: state=delivered, MailRow events in both transcripts; on wake failure: state=failed (Retry in UI; never auto-retried)
 ```
 - `conversation_ref` = sender chat's `conversation_ref` (or its thread id if none). Delivery marks `(mail_id, thread_id)` so a mail is delivered at most once per chat.
 - Global pause: worker holds all queued items until resumed; on resume delivers each once (F-AG-12 AC2).
 - `tandem__list_teammates` returns `{id, name, engine, status, may_receive}` for non-paused teammates.
+- Transcripts: the sender's chat gets a `MailRow` (inbound false) in its running turn, or in a turn of its own (the row, then `turn_end`) when none runs; the recipient's delivered turn is the user message "From {sender}:\n{body}" followed by a `MailRow` with inbound true, which the transcript shows in the message's place. A turn may start with a `mail_row` (seq 0) as well as a `user` event.
 
 ### 8.8 Auto supervisor (`tandem_app::services::auto`) [F-AU-01]
 ```rust
@@ -1851,6 +1862,7 @@ loop {
 }
 ```
 - Engine change / pane close / user stop end the run with the matching reason. Consent: `AutoConsent` setting must be true (first-use dialog). All end reasons are an enum in protocol.
+- As built (D-619–D-623): "idle" means a status record (`Done`, `Idle`, `Failed` or `Waiting(Input)`) other than the one the pane had when the last prompt was typed; records are compared, not times, because status times come from the app clock. `Waiting(Question)` pauses like an approval. A 403 `FORBIDDEN_POLICY` ends the run as `turned_off`; 429 is retried like an unreachable service. The pane is re-checked after each answer, so nothing is typed into a pane whose agent exited while the supervisor thought. Typing that fails 3 turns in a row ends the run as `stuck`. The ended run raises a pane notification (`done` for done and turn ceiling, `failed` otherwise; none when the user stopped it).
 - PTY write log in tests is asserted (no writes after `engine_exited`).
 
 ---
@@ -1949,11 +1961,13 @@ All command execution goes through `CommandRunner` (fake in tests; F-RT-03 AC1 a
 - `axum` + `rmcp` Streamable HTTP transport, bound to `127.0.0.1:0` (random port), path `/mcp`. One instance per Tandem process (in-process task; `tandem-gateway` bin for sidecar/tests — F-PL-01 AC2 asserts one gateway for 10 sessions).
 - `Origin` header, if present, must be absent or `null`/loopback; `Host` must be `127.0.0.1:<port>` (DNS-rebinding guard).
 - Every request needs `Authorization: Bearer <lease>`; unknown/revoked/expired → 401 (F-PL-01 AC1). MCP sessions (`Mcp-Session-Id`) are bound to the lease that created them.
+- **Watchdog and metrics (M10):** every 30 s the gateway probes its own listener (an unauthenticated `POST /mcp` must answer 401 within 5 s); a listener that stopped or doesn't answer is reopened on the same port, so every session's MCP config stays valid. `GatewayHandle::metrics()` reports the port, open listeners, leases, MCP sessions, requests, restarts and the process's resident memory (Linux: `VmRSS`; other platforms report none yet). The app starts the gateway at launch and writes `$DATA/run/gateway.json` `{port}` (0600). Test vendor modules (`vendors/test_echo`: `test_echo`, `test_upper`, and `test_down`, which is always unreachable) build only with the `test-vendors` feature, which the E2E build turns on.
 
 ### 11.2 Leases
 `Lease {id, token_hash (sha256), caller, attended, access, granted: Vec<ConnectionId>, builtins: BuiltinSet, conversation_ref, created_at, revoked}`; token = 32 random bytes base64url, only its hash is stored; TTL = session lifetime (revoked at session end, quit, sign-out). `BuiltinSet` is computed from the caller: teammate chats get `session_search`, `memory_write`, `read_skill`, plus `send_message`/`list_teammates` if `may_message`, plus `schedule_*` if `may_schedule`; every Claude session gets `tandem_approvals__request`; threads get only approvals + granted plugins.
 
 ### 11.3 Tool listing
+- The built-ins come from one registry (`tandem_gateway::builtins::BUILTINS`: wire name, description, schema, the `BuiltinSet` flag that turns it on); the app answers them through a `BuiltinHandler` that receives the caller's lease. A lease's `granted` connections are taken when its session starts; grant changes reach the next session. The search and call tools are listed only when the lease has a granted, connected plugin. Until plugin approvals (F-PL-06, M12) only `read`-class tools run; other classes return a tool error saying approvals aren't available yet.
 - Default: `tandem__search_tools{query: str, limit?: int(1..20)}` → `[{name:"<plugin>__<tool>", description, risk_class, input_schema}]` over granted plugins; `tandem__call{tool: str, args: object}` executes one. Plus built-ins. With "Expose all plugin tools directly" on: every granted tool listed as `<plugin>__<tool>` (F-PL-01 AC3).
 - Tool discovery for remote-MCP vendors is lazy per connection (on first search/call, cached 10 min); one failing vendor returns an error entry for that plugin only (F-PL-01).
 - Disconnect/grant removal bumps a generation counter; in-flight leases see the change on their next call (F-PL-01 AC4); the server emits `notifications/tools/list_changed`.
@@ -2071,7 +2085,7 @@ Plugin count limit: Free = 1 connection (§3.2), enforced at connect.
 - **Doer loop:** on `FunctionCall act`: `POST /v1/voice/act {session_id, request, snapshot, results?}` → `{tool_calls:[{id, name, args}], say?}`; the app executes each via **`ActionRegistry` in Rust** and posts results back until the doer returns `say` (max 8 rounds); `say` becomes the `act` function output for the talker.
 - **ActionRegistry:** generated from `tandem_core::commands::registry()` entries that have `voice: Some(VoiceToolSpec)` plus voice-only tools (F-CN-02 table). Each entry maps to a Rust service call or to a `conductor:ui-action` (navigation-only). A test asserts every doer tool maps to a registry command (AC1). Rules: `set_setting` only for the closed list (AC2); `prompt_pane` refuses waiting panes (F-CN-03 AC1); `read_pane`/`read_thread` output passes the redactor (AC4); `run_command_in_shell`, `execute_task`, `create_teammate`, `close_pane` on working agents require `conductor:confirm-request` answered by an on-screen click (`conductor_confirm`) (AC3); forced lane removal, enabling Full, plugin spend/destructive approvals are **absent** from the registry. Voice approvals resolve only the approval id named in the confirm request (F-CN-03 AC2).
 - **End:** hang-up, sign-out, mic failure, `max_seconds`, 402 → stop audio, cancel pending actions (a `CancellationToken` shared by every in-flight action; delayed actions check it before executing, F-CN-01 AC2), `POST /v1/voice/session/{id}/settle {seconds}`.
-- **Find work:** local candidates (panes: human name, title, engine, last 20 redacted lines; threads: title, last message; teammates) → `POST /v1/voice/resolve` → ranked ids; on failure, local fuzzy (`nucleo-matcher`) over the same text (F-CN-05).
+- **Find work:** local candidates (panes: human name, title, engine, last 20 redacted lines; threads: title, last message; teammates) → `POST /v1/voice/resolve` → ranked ids; on failure, or with the hosted ranking off, the local ranking over the same text (F-CN-05). The local ranking is `tandem_core::find_work` (stems, same-meaning terms and a typo; D-814), not `nucleo-matcher`: its subsequence matching suits typed abbreviations, not descriptions. The palette's "Find work…" (`work.find`) runs the same search through `find_work`.
 - **Persona/memory:** `$DATA/conductor/memory.md` written only when memory is on; credential-shaped facts refused (F-CN-06).
 - **Wake phrase:** `WakeDetector` trait; implementation with `sherpa-onnx` KWS (bundled small model under `models/wake/`) behind a feature flag `wake`; disabled when the false-accept benchmark fails; paused while Dictate/a call owns the mic, while Bluetooth output is active, or on "Pause while watching videos" (F-CN-07).
 - **Audio routing:** calls use the Dictate device policy (never opens a Bluetooth mic on its own); output device = system default (F-CN-08).
@@ -2122,7 +2136,7 @@ apps/api/
   src/routes/{health, me, credits, billing, webhooks, ai, auto, stt, voice, config, updates, pairings, relay, audit, orgs, admin, dictionary, dev}
   src/services/{plans, entitlements, ledger, webhooks, orgs, configSigner, releases, deletion}
   src/providers/{ai, stt, realtime, billing, email, captcha, breach}/{real,mock}.ts
-  src/jobs/{reservationSweeper (60 s), voiceSweeper (60 s), deletionJob (daily), monthlyResetSafety (hourly)}  — each takes a Redis lock (SET NX PX) so one replica runs it
+  src/jobs/{reservationSweeper (60 s), voiceSweeper (60 s), deletionJob (hourly: purges requests over 29 days old, D-813), monthlyResetSafety (hourly)}  — each takes a Redis lock (SET NX PX) so one replica runs it
   config/remote-config.json   source of catalog, prices, flags, registry overrides, plugin client ids, min version
   test/                       vitest + testcontainers-free: uses docker-compose services from infra/
 ```
@@ -2163,6 +2177,16 @@ export const orgInvites = pgTable('org_invites', { id: text('id').primaryKey(), 
 export const orgPolicies = pgTable('org_policies', { orgId: text('org_id').primaryKey().references(() => orgs.id, { onDelete: 'cascade' }),
   policy: jsonb('policy').notNull() /* {allowedEngines?, allowedPlugins?, maxAccess?, forceTelemetryOff, disableAuto, disableConductor, disablePhone, auditEnabled} */,
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull() });
+// Team SSO (F-BL-06 P2, D-624–D-630): one connection per org, the client secret AES-256-GCM sealed with a key
+// derived from BETTER_AUTH_SECRET; a domain counts once its TXT record is verified, and only one org can verify it.
+export const orgSso = pgTable('org_sso', { orgId: text('org_id').primaryKey().references(() => orgs.id, { onDelete: 'cascade' }),
+  provider: text('provider', { enum: ['oidc', 'workos', 'mock'] }).notNull(), issuer: text('issuer'), clientId: text('client_id'),
+  clientSecretEnc: text('client_secret_enc'), organization: text('organization'), enforce: boolean('enforce').notNull().default(false),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull() });
+export const orgSsoDomains = pgTable('org_sso_domains', { orgId: text('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  domain: text('domain').notNull(), verifyToken: text('verify_token').notNull(), verifiedAt: timestamp('verified_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow() },
+  t => [primaryKey({ columns: [t.orgId, t.domain] }), uniqueIndex('org_sso_domains_verified').on(t.domain).where(sql`verified_at is not null`)]);
 export const billingCustomers = pgTable('billing_customers', { ownerKind: text('owner_kind', { enum: ['user', 'org'] }).notNull(),
   ownerId: text('owner_id').notNull(), customerId: text('customer_id').notNull().unique() }, t => [primaryKey({ columns: [t.ownerKind, t.ownerId] })]);
 export const subscriptions = pgTable('subscriptions', {
@@ -2232,7 +2256,7 @@ export const releases = pgTable('releases', { version: text('version').notNull()
   - Allowed `redirect_uri`: `^http://127\.0\.0\.1:\d{2,5}/callback$` or `^tandem(-dev)?://auth/callback$`. Code: 32 random bytes, stored hashed, 5 min, single use, bound to challenge + fingerprint.
   - **Access token:** EdDSA JWT (`jose`), `kid` `ak-<n>`, claims `{sub, sid: familyId, aud:'tandem-api', iss:'tandem-api', iat, exp: +3600}`. **Refresh:** 32 random bytes (hashed), 30 days, rotated on each use; presenting a rotated (already-used) token revokes the whole family and returns 401 `UNAUTHENTICATED` (AC3).
   - Client refresh at 80% of lifetime, on wake (OS resume notification), and on any 401 (single-flight); network errors never sign out.
-- **Device code (F-BE-03):** `user_code` = 8 chars from `BCDFGHJKLMNPQRSTVWXZ` formatted `ABCD-EFGH`; `interval` 5 s; polling faster → `slow_down` (and interval += 5); expired (10 min) → `expired_token`; denied → `access_denied`.
+- **Device code (F-BE-03):** `user_code` = 8 chars from `BCDFGHJKLMNPQRSTVWXZ` formatted `ABCD-EFGH`; `interval` 5 s; polling faster → `slow_down` (and interval += 5); expired (10 min) → `expired_token`; denied → `access_denied`; a consumed or unknown code → `invalid_grant`. The tokens are a desktop-style family (`platform: cli`, the client's name as the device name), so the Devices page lists and revokes them. The web page `/device?code=` approves; the desktop's `services/device_login.rs` polls (for the headless runner and any CLI).
 - **Revocation** from the portal (Devices page) revokes the family; the desktop's next refresh fails → sign-in prompt (F-WB-05 AC1).
 
 ### 14.4 Plans and entitlements [F-BE-04, F-BL-04, F-BL-06, §3.2]
@@ -2273,13 +2297,14 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 | `POST /v1/auth/desktop/refresh` | — | `{refresh_token}` | same as exchange | 401 `UNAUTHENTICATED` (reuse revokes family) | F-BE-02 |
 | `POST /v1/auth/desktop/logout` | B | `{refresh_token}` | 204 | — | F-BE-02 |
 | `POST /v1/auth/device/start` | — | `{client: str, version: str}` | `{user_code, verification_uri, device_code, interval, expires_in}` | `RATE_LIMITED` | F-BE-03 |
-| `POST /v1/auth/device/approve` | C | `{user_code, approve: bool}` | 204 | 404 | F-BE-03 |
+| `GET /v1/auth/device/info?user_code=` | C | — | `{user_code, client, version, expires_at}` (what the approval page names) | 404 (unknown, used or expired) | F-BE-03 |
+| `POST /v1/auth/device/approve` | C | `{user_code, approve: bool}` (any case, with or without the dash) | 204 | 404 | F-BE-03 |
 | `POST /v1/auth/device/token` | — | `{device_code}` | tokens | 400 `{error: authorization_pending\|slow_down\|expired_token\|access_denied}` | F-BE-03 |
 | `GET /v1/me` | B/C | — | `MeResponse` (§14.4) | `UNAUTHENTICATED` | F-BE-04 |
 | `GET /v1/me/events` | B | — | SSE `entitlement`, `credits`, heartbeat 25 s | — | F-BE-04 |
 | `GET /v1/me/sessions` / `DELETE /v1/me/sessions/:id` | C | — | `[{id, deviceName, platform, appVersion, lastUsedAt}]` / 204 | — | F-WB-05 |
-| `DELETE /v1/me` | C | `{confirm: 'DELETE'}` | 202 (deletion ≤30 days; subscription canceled now) | — | F-TL-05 |
-| `GET /v1/credits` | B/C | — | `{balance:{monthly, purchased, resetsAt}, ledger:[≤100]}` | — | F-BE-05 |
+| `DELETE /v1/me` | C | `{confirm: 'DELETE'}` | 202 (deletion ≤30 days by `deletionJob`; the subscription and those of Teams the user owns alone are canceled first, then every desktop sign-in and web session is revoked and new sign-ins are refused with `ACCOUNT_DELETED`, D-813) | 409 `TEAM_HAS_MEMBERS` (owns a Team with other members) | F-TL-05 |
+| `GET /v1/credits` | B/C | — | `{balance:{monthly, purchased, resetsAt}, org: {id, cap, spent} \| null, ledger:[≤100 {id, bucket, delta, reason, feature, createdAt}]}` (a Team member sees the org pool, D-601) | — | F-BE-05 |
 | `POST /v1/billing/checkout` | B/C | `{plan:'pro'\|'team', interval:'month'\|'year', seats?: int(2..500), promo?: str}` | `{url}` | `VALIDATION` | F-BL-01 |
 | `POST /v1/billing/portal` | B/C | — | `{url}` | 404 (no customer) | F-BL-02 |
 | `POST /v1/billing/credit-packs/checkout` | B/C | `{pack:'5k'\|'12k'\|'30k'}` | `{url}` | `FORBIDDEN_PLAN` | F-BL-03 |
@@ -2288,9 +2313,9 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 | `POST /v1/webhooks/stripe` | S | raw body | 200 `{received:true}` | 400 bad signature | F-BL-01..06 |
 | `POST /v1/ai/title` | B | `{text: str(1..4000)}` | `{title: str(≤60)}` | `RATE_LIMITED` (60/h) | F-TH-15 |
 | `POST /v1/ai/rewrite` | B | `{mode:'enhance'\|'polish', text: str(1..5000), instructions?: str(≤2000), protected_terms?: [str(≤100)] (≤200)}` | `{text}` · 3 cr | `FORBIDDEN_PLAN`, `CREDITS_EXHAUSTED`, `DAILY_LIMIT` | F-DI-10 |
-| `POST /v1/ai/teammate-draft` | B | `{description: str(1..2000), engines: [str], plugins: [str]}` | `{name, brief, engine, plugins}` · 10 cr | as above | F-AG-04 |
-| `POST /v1/auto/next` | B | `{mode, goal?: str(≤2000), turn: int(0..30), ceiling: int(1..30), scrollback: str(≤16384)}` | `{action:'prompt'\|'done'\|'stuck', text?, reason?}` · 6 cr | as above; `VALIDATION` if turn ≥ ceiling | F-AU-01 |
-| `POST /v1/stt/transcribe` | B | multipart `audio` (ogg/opus or wav, ≤25 MB, ≤10 min), `language?`, `hints?` (≤50 words) | `{text, language, duration}` · 2 cr/15 s | 413, `DAILY_LIMIT`, `CREDITS_EXHAUSTED` | F-BE-07 |
+| `POST /v1/ai/teammate-draft` | B | `{description: str(1..2000), engines: [str](1..20), plugins?: [str](≤100)}` | `{name: str(≤40), brief: str(≤1200), engine ∈ engines, plugins ⊆ plugins}` · 10 cr (refunded on any failure; D-603) | `FORBIDDEN_PLAN` (needs `enhance`), `CREDITS_EXHAUSTED`, `RATE_LIMITED` (10/min), 503 `AI_UNAVAILABLE` | F-AG-04 |
+| `POST /v1/auto/next` | B | `{mode, goal?: str(≤2000) (required for custom), turn: int(0..30), ceiling: int(1..30), scrollback: str(≤16384)}` | `{action:'prompt'\|'done'\|'stuck', text? (≤2000), reason? (≤300)}` · 6 cr | as above; `VALIDATION` if turn ≥ ceiling; 403 `FORBIDDEN_POLICY` when the Team policy has `disableAuto`; `RATE_LIMITED` (30/min) | F-AU-01 |
+| `POST /v1/stt/transcribe` | B | multipart, **fields first, `audio` last** (D-604): `duration_ms?` (the take's length; reserve and limit follow it), `language?` (code or `auto`), `hints?` (repeated field, ≤50, only with the user's opt-in), `audio` (`audio/ogg` Opus or `audio/wav`, ≤25 MB, ≤10 min) | `{text, language, duration}` (seconds) · 2 cr per started 15 s | 413 `PAYLOAD_TOO_LARGE` (`limit: take_minutes \| take_bytes`), 429 `DAILY_LIMIT` (`limit: stt_minutes`), 402 `CREDITS_EXHAUSTED`, 403 `FORBIDDEN_PLAN` (`cloudStt`), 415 (not Opus or WAV), 422 (audio longer than `duration_ms`), 503 `STT_UNAVAILABLE` (`retryable`) — every failure is uncharged | F-BE-07 |
 | `POST /v1/voice/session` | B | `{voice?: str}` | `{session_id, provider, ephemeral_token, ws_url, expires_at, max_seconds: 1800}` (reserves 1,200 cr) | 402, `FORBIDDEN_PLAN` | F-BE-08 |
 | `POST /v1/voice/session/:id/settle` | B | `{seconds: int(0..1800)}` | `{charged, refunded}` (`ceil(s/10)×20`) | 404 | F-BE-08 |
 | `POST /v1/voice/act` | B | `{session_id, request: str(≤2000), snapshot: WorkspaceSnapshot(≤64 KB), results?: [{id, ok, output(≤8 KB)}]}` | `{tool_calls:[{id, name, args}], say?}` | 409 (session ended) | F-CN-02 |
@@ -2300,9 +2325,11 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 | `GET /v1/updates/:channel/:target/:arch/:current_version` | — | — | 200 `{version, notes, pub_date, url, signature}` or 204 | — | F-SH-06 |
 | `POST /v1/pairings` / `DELETE /v1/pairings/:id` | B | `{pairing_id, device_label?}` / — | `{pairing_token, relay_url, expires_at}` / 204 | `FORBIDDEN_PLAN` | F-RM-03 |
 | `GET /v1/relay/:pairing_id` (WebSocket) | B (desktop) / P (phone, `Sec-WebSocket-Protocol: tandem-pair.<token>`) | binary frames ≤64 KB | forwarded frames | 1009 on >64 KB, 1008 auth | F-BE-11 |
-| `POST /v1/audit/events` | B | `{events:[{event, meta, ts}] (≤100)}` | 204 (dropped unless org audit on) | — | F-TL-10 |
-| `POST /v1/orgs` · `GET /v1/orgs/:id` · `POST /v1/orgs/:id/invites` · `POST /v1/orgs/invites/accept` · `PATCH /v1/orgs/:id/members/:userId` · `DELETE /v1/orgs/:id/members/:userId` · `PUT /v1/orgs/:id/policy` · `PUT /v1/orgs/:id/seats` · `GET /v1/orgs/:id/audit` | C (owner/admin for writes) | `{name}` · — · `{email, role}` · `{token}` · `{role?, monthly_cap?}` · — · `OrgPolicy` · `{seats: int(2..500)}` · `?cursor` | org views | `FORBIDDEN` | F-BL-06 |
-| `GET /v1/admin/users?q=` · `GET /v1/admin/users/:id` · `POST /v1/admin/users/:id/credits` · `POST /v1/admin/users/:id/refund` | A | — · — · `{amount: int(1..1e6), reason: str(3..500)}` · `{reason}` | user, plan, ledger | 403 non-admin | F-BE-12, F-BL-05 |
+| `POST /v1/audit/events` | B | `{events:[{event: 'full_access_used'\|'plugin_write_approved'\|'plugin_connected', meta: {≤10 scalar fields, strings ≤100}, ts}] (≤100)}` | 204 (kept only for a member of a paid Team org with audit on; other events dropped) | 422 | F-TL-10 |
+| `POST /v1/orgs` · `GET /v1/orgs/:id` · `POST /v1/orgs/:id/invites` · `POST /v1/orgs/invites/accept` · `PATCH /v1/orgs/:id/members/:userId` · `DELETE /v1/orgs/:id/members/:userId` · `PUT /v1/orgs/:id/policy` · `PUT /v1/orgs/:id/seats` · `GET /v1/orgs/:id/audit` | C (owner/admin for writes; `GET /:id` also B; a member may delete themselves) | `{name}` · — · `{email, role:'admin'\|'member'}` · `{token}` · `{role?, monthly_cap?: int\|null}` · — · `OrgPolicy` (`@tandem/protocol/team`) · `{seats: int(2..500)}` · `?cursor` | `OrgView {id, name, role, plan, status, seats, memberCount, members (members see only themselves), invites, policy, credits}` · `{events, next}` | `FORBIDDEN`, 404, 409 `SEATS_FULL` \| `SEATS_IN_USE` \| `NO_SUBSCRIPTION` \| `CONFLICT` | F-BL-06 |
+| `GET` · `PUT` · `DELETE /v1/orgs/:id/sso` · `POST /v1/orgs/:id/sso/domains` · `POST /v1/orgs/:id/sso/domains/:domain/verify` · `DELETE /v1/orgs/:id/sso/domains/:domain` | C (owner/admin; paid Team for `PUT` and adding domains) | — · `{provider:'oidc', issuer: url, clientId, clientSecret? (omit to keep), enforce} \| {provider:'workos', organization: 'org_…', enforce}` · — · `{domain}` · — · — | `SsoView {connection: {provider, issuer, clientId, hasSecret, organization, enforce, updatedAt} \| null, domains: [{domain, verified, record: {type:'TXT', name:'_vibezeo-sso.<domain>', value:'vibezeo-sso=<token>'}}], providers: {oidc, workos}, redirectUri}` | `FORBIDDEN`, `FORBIDDEN_PLAN`, 422 `SSO_CONFIG` (discovery unreadable) \| `SSO_UNAVAILABLE` (no WorkOS keys) \| `SSO_NO_DOMAIN` (enforce without a verified domain) \| `DOMAIN_UNVERIFIED`, 409 (domain verified by another org) | F-BL-06 P2 |
+| `POST /v1/sso/lookup` · `POST /v1/sso/start` · `GET /v1/auth/sso/callback` | — (public; the callback is a better-auth plugin endpoint so it can set the session cookie) | `{email}` · `{email, callbackURL?: path}` · `?state&code` | `{sso, required, org?}` · `{url}` (the identity provider's authorize URL; OIDC with PKCE S256 and a nonce; state one-time in Redis, 10 min) · 302 to `callbackURL` signed in, or to `/signin?sso_error=<code>` | 404 `NO_SSO`; callback codes `SSO_STATE`, `SSO_DENIED`, `SSO_EXCHANGE`, `SSO_TOKEN`, `SSO_DOMAIN`, `SEATS_FULL`, `SSO_OTHER_ORG`; with SSO required, `/v1/auth/sign-in/email`, `/sign-in/magic-link` and `/sign-up/email` answer 403 `SSO_REQUIRED` for the domain, and no other path can create a session for it | F-BL-06 P2 |
+| `GET /v1/admin/users?q=` · `GET /v1/admin/users/:id` · `POST /v1/admin/users/:id/credits` · `POST /v1/admin/users/:id/refund` | A | `q` (≥2 chars, email contains; `%` and `_` literal) · — · `{amount: int(1..1e6), reason: str(3..500), bucket?: "purchased" (default) \| "monthly"}` · `{reason: str(3..500), scope?: 'plan'\|'pack', force?: bool}` | `{users: [≤20]}` · `{user, plan, status, subscription, org, credits {…, payer}, ledger [≤50], actions [≤50]}` · `{ledgerEntry, balance}` · `{refunded: 'plan', plan}` \| `{refunded: 'pack', credits}` | 401 (no portal session; a bearer doesn't count), 403 non-admin, 404, 422; 409 `NOTHING_TO_REFUND` \| `REFUND_WINDOW_CLOSED` (>14 days, unless `force`) \| `PACK_USED` | F-BE-12, F-BL-05 |
 | `GET /v1/dev/realtime` (dev only) | token | mock realtime protocol | — | — | F-CN-01 |
 | `GET /metrics` (internal port only) | — | — | Prometheus text | — | F-BE-10 |
 
@@ -2315,7 +2342,7 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 
 ### 14.8 Relays and providers [F-BE-06..08, F-BE-11]
 - **AI:** `AiProvider.complete({feature, model, system, messages, maxTokens, json})`; `ClaudeAi` (the Claude Messages API, `https://api.anthropic.com/v1/messages`, first-party so startup-program credits apply; 30 s timeout, 1 retry on 5xx or overloaded; D-103), `MockAi` (deterministic: title = first 6 words title-cased; rewrite = normalized input; teammate-draft = fixed JSON from `test/fixtures`; auto/next = `prompt "Continue with the next step."` unless scrollback contains `ALL TESTS PASSED` → `done`; voice/act = keyword intents → tool calls; resolve = token-overlap scoring). Selected when `ANTHROPIC_API_KEY` is empty. Models per feature from remote config. Metering: reserve the per-call price up front, settle to the same (flat prices) or refund on failure. No request/response bodies are logged; `ai_requests` stores metadata only (F-BE-06 AC2 log-capture test).
-- **STT:** `SttProvider.transcribe(stream, {mime, language, hints})`; real provider configured by `STT_PROVIDER` (`openrouter` | `groq` | `openai`, keys from env), `MockStt` returns the `x-mock-transcript` header value or "hello world". Audio is piped (busboy stream → provider), never written to disk (AC3 asserts temp dir empty). Duration from container headers (Opus granule / WAV header); cost `ceil(duration/15) × 2`; daily cap check on `daily_usage` before forwarding.
+- **STT:** `SttProvider.transcribe(stream, {mime, filename, language, hints})`; the real provider is `OpenAiCompatStt` (`STT_PROVIDER=openai_compat` with `STT_API_BASE`, `STT_API_KEY`, `STT_MODEL`: any OpenAI-compatible `/v1/audio/transcriptions`, the multipart body built around the stream), `MockStt` returns the `x-mock-transcript` header value or "hello world" (`x-mock-stt-fail: 1` fails it; both headers are honoured only by the mock and redacted from logs). Audio is piped (busboy stream → `AudioMeter` → provider), never written to disk (AC3 points `TMPDIR` at an empty folder). `AudioMeter` measures as it streams (WAV header and bytes; Ogg page granules at 48 kHz less the OpusHead pre-skip) and stops the stream past the hold. The relay holds today's seconds in `daily_usage` and reserves `ceil(seconds/15) × 2` up front (D-604), then settles to the measured length; `ai_requests` gets `feature: stt`, the provider, credits and the seconds (in `tokens_in`), never audio or text.
 - **Realtime:** `RealtimeProvider.mint({instructions, voice, maxSeconds})` → ephemeral token + ws URL (`OpenAiRealtime` uses the vendor's client-secret endpoint; `MockRealtime` returns `ws://api…/v1/dev/realtime?token=…`). Reservation 10 min × 120/min = 1,200 cr (F-BE-08 AC1). Sweeper settles unsettled sessions at `max_seconds` (provider usage if available).
 - **Relay (F-BE-11):** `ws` server on `/v1/relay/:pairing_id`; auth on upgrade; pairs at most one desktop + one phone socket; forwards binary frames unchanged; frames >64 KB → close 1009; per-pairing rate limit 50 frames/s; stores nothing except connect/disconnect metadata. `src/routes/relay.ts` imports no crypto modules (lint rule `no-restricted-imports` for `crypto`, `node:crypto`, `@noble/*` in that file; AC2).
 
@@ -2326,6 +2353,13 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 
 ### 14.10 Remote config [F-BE-09, F-EN-02, F-TH-08]
 `config/remote-config.json` → `{version, min_app_version, prices, daily_caps, flags, models:{<engine>:[{id, label, description, default, effortLevels, contextWindow, deprecated}]}, registry_overrides:[EngineSpec], plugins:{<id>:{client_id?, enabled}}, telemetry_allowlist_version}`. At startup the API signs the canonical JSON (RFC 8785 JCS) with Ed25519 (`CONFIG_SIGNING_KEY`, `kid` `ck-<n>`), serves `{payload, sig, kid}` with a strong ETag = sha256 of the payload. Desktop verifies with bundled keys; failure → bundled `resources/config.json` (AC1); TTL 10 min (F-TH-08 AC1).
+
+### 14.11 Hosted calls from the desktop (the M13 contract for M8, M10 and M12)
+M13 builds the server side and these desktop pieces; the sessions that own the UI wire them (D-600).
+- **Client:** `services/api.rs` `ApiClient` (always through `AuthService::with_token`, so a 401 refreshes once): `ai_rewrite(access, mode: "enhance"|"polish", text, instructions?, protected_terms)` → text (F-DI-10, M8); `ai_teammate_draft(access, description, engines, plugins)` → `TeammateDraft {name, brief, engine, plugins}` (F-AG-04, M10); `stt_transcribe(access, SttUpload {mime: "audio/ogg"|"audio/wav", audio, duration_ms?, language?, hints})` → `Transcript {text, language, duration}` (F-DI-05, M8: send `duration_ms`; send `hints` only with `dictate_share_hints` on); `audit_events(access, [AuditEvent])` (F-TL-10). `NoHostedApi` (early-access builds) fails all of them as offline.
+- **Errors:** `HostedFailure::from_api(&ApiError, feature)` gives the words to show, one variant per limit: `OutOfCredits` (402, including a Team member's cap), `NeedsPro` ("{feature} needs Vibezeo Pro."), `DailyLimit` (the server's text, e.g. "You've reached today's cloud limit of 120 minutes. Switch to Local."), `RateLimited`, `TooLarge` (413), `SignedOut`, `Unavailable` (offline or 5xx), `Other`. F-DI-05: no silent fallback, so the Dictate UI shows the failure and offers "Use local for this take"; F-DI-10: on any failure insert the raw transcript and toast.
+- **Org policy (F-BL-06):** `EntitlementService::policy()` → `Option<OrgPolicy>`; `tandem_core::policy::{allows_access, clamp_access, allows_engine}` and `OrgPolicy::allows_plugin` (M12: refuse Connect for a plugin outside `allowedPlugins`, with "Set by your organization"); `disable_auto`, `disable_conductor` and `disable_phone` are for M16's features. Engine launches already refuse a disallowed engine (`EngineService::check_allowed`), and thread sessions are held to `maxAccess`.
+- **Audit (F-TL-10):** `AppState.audit.record(event, &[(key, value)])` queues an event only when the org turned audit on; values are short ids (an engine or plugin id), never content. Thread sessions already record `full_access_used`; M12 records `plugin_write_approved` (an approved write, with `plugin`) and `plugin_connected` (with `plugin`).
 
 ---
 
@@ -2390,7 +2424,7 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 `tracing_subscriber` with a custom `RedactingLayer` (runs `Redactor` over formatted fields and messages) → `tracing-appender` rolling file (10 MB × 5 via a size-based roller). Conventions: log ids, event codes, durations, error codes; never payloads. A unit test corpus (`crates/tandem-core/tests/redaction_corpus/{secrets.txt, benign.txt}`) asserts 100% redaction and 0 false positives (F-TL-02 AC1), and the split-at-every-offset test for `StreamRedactor` (AC2). The TS logger forwards through `app_log` (codes + scalar fields only).
 
 ### 16.5 Local data controls [F-TL-05, F-TL-07]
-Export: zip of `settings.json`, `workspaces.json`, `threads.json` (with messages), `teammates.json`, `routines.json`, `dictionary.json`, `teammates/*/memory/`, `teammates/*/skills/`, `tasks/`, plus a manifest; keychain values never included. Delete local data: native confirm → stop all subsystems → delete `$DATA` except `providers/` (unless ticked) → relaunch to onboarding. "What leaves this machine" rows are generated from the `Egress` enum (single source for the Settings table and the website).
+Export: zip of every table as `<table>.json` (`settings.json`, `workspaces.json`, `threads.json` with `thread_messages.json`, `teammates.json`, `routines.json`, `dictionary_rules.json`, …; FTS indexes left out), `teammates/*/memory/`, `teammates/*/skills/`, `tasks/`, `scratchpad/`, plus `manifest.json`; `providers/`, `auth/` and keychain values are never read (D-812). Delete local data: typed confirm → close terminals, forget Vibezeo's keychain secrets, leave `$DATA/.delete-pending` → relaunch; the next start deletes `$DATA` except `providers/` (unless ticked) before opening it, then runs onboarding. "What leaves this machine" rows are generated from the `Egress` enum (single source for the Settings table and the website).
 
 ---
 

@@ -1,4 +1,5 @@
-import { ChevronDown, Command as CommandIcon, Gem, PanelLeft, PanelRight, Search } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, Command as CommandIcon, PanelLeft, PanelRight, Search } from "lucide-react";
 import {
   Avatar,
   Badge,
@@ -14,18 +15,20 @@ import {
 } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
-import { totalCredits, useSession } from "../../stores/session";
+import { availableCredits, creditLevel, useSession } from "../../stores/session";
 import { useUi, type Mode } from "../../stores/ui";
 import { flushLayouts, useLayout } from "../../stores/layout";
 import { useSidebar } from "../../stores/sidebar";
 import { NotificationsBell } from "../notifications/NotificationsPopover";
 import { UpdatePill } from "../updates/UpdatePill";
 import { UsageChip } from "./UsageChip";
+import { UsageDialog } from "../usage/UsagePage";
 import { useWorkspaces } from "../../stores/workspaces";
 import { copyDiagnostics, switchMode } from "./actions";
 import { LogoMark } from "./LogoMark";
 import { isDesktopChrome, useBoot } from "./useBoot";
 import { WindowControls } from "./WindowControls";
+import { useShortcutKeys } from "../commands/useShortcutKeys";
 
 const MODES: Array<{
   id: Mode;
@@ -40,36 +43,33 @@ const MODES: Array<{
 /** UI-01 title bar (F-SH-01). Drag region everywhere except the controls;
  * Tab order follows the visual order. */
 export function TitleBar() {
+  const keys = useShortcutKeys();
+  const [usageOpen, setUsageOpen] = useState(false);
   const boot = useBoot((s) => s.boot);
-  const {
-    mode,
-    railCollapsed,
-    settingsOpen,
-    toggleRail,
-    setPalette,
-    openSettings,
-    openUpgrade,
-  } = useUi();
+  const { mode, railCollapsed, settingsOpen, toggleRail, setPalette, openSettings, openUpgrade } = useUi();
   const sidebarOpen = useSidebar((s) => s.open);
   const auth = useSession((s) => s.auth);
   const entitlement = useSession((s) => s.entitlement);
   const workspaces = useWorkspaces();
   const { show } = useToast();
   const chrome = isDesktopChrome(boot?.platform);
-  const credits = auth?.signedIn ? totalCredits(entitlement) : null;
-  const grant = entitlement?.monthlyGrant ?? 10_000;
+  const credits = auth?.signedIn ? availableCredits(entitlement) : null;
+  const level = creditLevel(entitlement);
   const offline = entitlement ? !entitlement.online : false;
   const active = workspaces.list.find((w) => w.id === workspaces.activeId);
 
   const appMenu: MenuEntry[] = [
-    { id: "settings", label: t("menu.settings"), kbd: ["Mod", ","], onSelect: () => openSettings() },
+    { id: "settings", label: t("menu.settings"), kbd: keys("settings.open"), onSelect: () => openSettings() },
     { id: "updates", label: t("menu.checkUpdates"), disabled: true },
-    { id: "shortcuts", label: t("menu.shortcuts"), kbd: ["Mod", "/"], disabled: true },
+    { id: "shortcuts", label: t("menu.shortcuts"), kbd: keys("help.shortcuts"), onSelect: () => useUi.getState().setCheatsheet(true) },
     { id: "sep1", type: "separator" },
     {
       id: "help",
       label: t("menu.help"),
-      onSelect: () => invoke("app_open_external", { url: "https://vibezeo.com/download/#getting-started" }).catch(() => undefined),
+      onSelect: () =>
+        invoke("app_open_external", { url: "https://vibezeo.com/download/#getting-started" }).catch(
+          () => undefined,
+        ),
     },
     { id: "diag", label: t("menu.copyDiagnostics"), onSelect: () => void copyDiagnostics(show) },
     {
@@ -127,7 +127,7 @@ export function TitleBar() {
       label: auth?.email ?? (auth && !auth.hosted ? t("menu.earlyAccess") : t("menu.offlineMode")),
     },
     { id: "billing", label: t("menu.accountBilling"), onSelect: () => openSettings("account") },
-    { id: "settings", label: t("menu.settings"), kbd: ["Mod", ","], onSelect: () => openSettings() },
+    { id: "settings", label: t("menu.settings"), kbd: keys("settings.open"), onSelect: () => openSettings() },
     { id: "plans", label: t("menu.seePlans"), onSelect: () => openUpgrade() },
     ...(auth && !auth.hosted ? [] : accountAction),
   ];
@@ -139,7 +139,7 @@ export function TitleBar() {
     {
       id: "arrange",
       label: t("menu.ws.arrange"),
-      kbd: ["Mod", "Shift", "T"],
+      kbd: keys("workspace.arrange"),
       disabled: !inCode,
       onSelect: () => activeTab && useLayout.getState().arrange(activeTab),
     },
@@ -159,9 +159,8 @@ export function TitleBar() {
       disabled: !active,
       onCheckedChange: (show) => active && void workspaces.setSessionsCollapsed(active.id, !show),
     },
-    { id: "usage", label: t("menu.ws.usage"), disabled: true },
+    { id: "usage", label: t("menu.ws.usage"), onSelect: () => setUsageOpen(true) },
   ];
-
 
   return (
     <header
@@ -198,7 +197,7 @@ export function TitleBar() {
         icon={<PanelLeft size={16} />}
         label={t("titlebar.toggleRail")}
         pressed={!railCollapsed}
-        kbd={["Mod", "\\"]}
+        kbd={keys("rail.toggle")}
         onClick={toggleRail}
       />
       {!settingsOpen && (
@@ -212,7 +211,7 @@ export function TitleBar() {
             id: m.id,
             label: t(m.key),
             tooltip: t("titlebar.mode.tooltip", { mode: t(m.key) }),
-            kbd: ["Mod", m.n],
+            kbd: keys(`mode.${m.id}`),
           }))}
         />
       )}
@@ -239,13 +238,13 @@ export function TitleBar() {
       >
         <Search size={14} aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate text-left">{t("titlebar.omnibox")}</span>
-        <Kbd keys={["Mod", "K"]} />
+        {keys("palette.open") && <Kbd keys={keys("palette.open") ?? []} />}
       </button>
       <span className="min-[1180px]:hidden">
         <IconButton
           icon={<CommandIcon size={16} />}
           label={t("titlebar.omnibox")}
-          kbd={["Mod", "K"]}
+          kbd={keys("palette.open")}
           onClick={() => setPalette(true)}
         />
       </span>
@@ -255,13 +254,15 @@ export function TitleBar() {
           <button
             type="button"
             aria-label={t("titlebar.credits", { n: credits })}
+            data-testid="titlebar-credits"
+            data-level={level ?? "normal"}
             onClick={() => openSettings("account")}
             className={cx(
               "inline-flex h-7 items-center gap-1 rounded-sm px-2 text-sm tabular-nums hover:bg-surface-4 focus-visible:shadow-focus focus-visible:outline-none",
-              credits === 0 ? "text-danger" : credits < grant * 0.1 ? "text-warning" : "text-fg-muted",
+              level === "danger" ? "text-danger" : level === "warning" ? "text-warning" : "text-fg-muted",
             )}
           >
-            <Gem size={13} aria-hidden="true" />
+            <span aria-hidden="true">{t("titlebar.creditsGlyph")}</span>
             {credits.toLocaleString("en-US")}
           </button>
         </Tooltip>
@@ -273,7 +274,7 @@ export function TitleBar() {
         icon={<PanelRight size={16} />}
         label={t("titlebar.toggleSidebar")}
         pressed={sidebarOpen}
-        kbd={["Mod", "Shift", "B"]}
+        kbd={keys("sidebar.toggle")}
         data-sidebar-toggle=""
         data-testid="sidebar-toggle"
         onClick={() => useSidebar.getState().toggle()}
@@ -293,6 +294,7 @@ export function TitleBar() {
       />
       {chrome && <WindowControls />}
       {offline && <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 bg-warning" />}
+      <UsageDialog open={usageOpen} onOpenChange={setUsageOpen} />
     </header>
   );
 }

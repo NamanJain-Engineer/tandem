@@ -6,8 +6,21 @@ import { Button } from "@tandem/ui";
 import { Card, Notice, Shell } from "../../../components/Shell";
 import { api, ApiFailure } from "../../../lib/api";
 
+/** Only a path on this site: the mock never sends anyone elsewhere. */
+function sameOrigin(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url, window.location.origin);
+    return u.origin === window.location.origin ? u.pathname + u.search : null;
+  } catch {
+    return null;
+  }
+}
+
 function MockCheckout() {
-  const session = useSearchParams().get("session") ?? "";
+  const params = useSearchParams();
+  const session = params.get("session") ?? "";
+  const next = sameOrigin(params.get("next")) ?? "/billing/success";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -15,7 +28,7 @@ function MockCheckout() {
     setBusy(true);
     try {
       await api("/v1/billing/mock/complete", { method: "POST", body: { sessionId: session } });
-      window.location.assign("/billing/success");
+      window.location.assign(next);
     } catch (err) {
       setError(err instanceof ApiFailure ? err.message : "Checkout failed.");
       setBusy(false);

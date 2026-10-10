@@ -96,6 +96,7 @@ fn start(access: Access, mode: ThreadMode, attended: bool) -> ChatStart {
         mcp_config: None,
         mcp: None,
         engine_version: None,
+        briefing: None,
     }
 }
 
@@ -105,32 +106,7 @@ fn flag<'a>(args: &'a [OsString], name: &str) -> Option<&'a str> {
         .and_then(|w| w[1].to_str())
 }
 
-/// F-TH-04 AC1/AC2 and invariant rule 1: whatever the access, mode or
-/// session, repo settings can't grant anything and only Vibezeo's MCP
-/// servers load; below Full, Bash goes through the approval card.
-#[test]
-fn invariant_rule_1_repo_settings_cannot_grant() {
-    for access in [Access::Read, Access::Edits, Access::Full] {
-        for mode in [ThreadMode::Plan, ThreadMode::Act] {
-            for attended in [true, false] {
-                let mut req = start(access, mode, attended);
-                req.resume_session = Some("sess-1".into());
-                req.mcp_config = Some("/data/mcp/th_1.json".into());
-                let a = args(&req);
-                assert_eq!(
-                    flag(&a, "--setting-sources"),
-                    Some("user"),
-                    "{access:?} {mode:?}"
-                );
-                assert!(a.iter().any(|x| x == "--strict-mcp-config"));
-                assert_eq!(flag(&a, "--mcp-config"), Some("/data/mcp/th_1.json"));
-                assert_eq!(flag(&a, "--permission-prompt-tool"), Some(PERMISSION_TOOL));
-                assert_eq!(flag(&a, "--resume"), Some("sess-1"));
-                assert!(!a.iter().any(|x| x == "--dangerously-skip-permissions"));
-            }
-        }
-    }
-}
+// F-TL-06 rule 1 is tests/invariants/tests/rule_1.rs.
 
 #[test]
 fn f_th_04_2_access_maps_to_the_permission_mode() {
@@ -339,4 +315,25 @@ async fn f_th_03_4_an_engine_exit_is_reported_with_its_code_and_stderr() {
         }
         other => panic!("unexpected {other:?}"),
     }
+}
+
+/// F-AG-06 AC2: a 100 KB briefing reaches Claude as a file named in argv,
+/// never as argv text.
+#[test]
+fn f_ag_06_2_a_100_kb_briefing_goes_by_file_not_argv() {
+    let dir = tempfile::tempdir().expect("dir");
+    let path = dir.path().join("th_1.md");
+    let text = format!("<brief>{}</brief>", "b".repeat(100 * 1024));
+    std::fs::write(&path, &text).expect("write");
+    let mut req = start(Access::Edits, ThreadMode::Act, true);
+    req.briefing = Some(path.clone());
+    let a = args(&req);
+    let at = a
+        .iter()
+        .position(|x| x == "--append-system-prompt-file")
+        .expect("the flag");
+    assert_eq!(a[at + 1], path.as_os_str());
+    let total: usize = a.iter().map(|x| x.len()).sum();
+    assert!(total < 4096, "argv is {total} bytes");
+    assert!(!a.iter().any(|x| x.to_string_lossy().contains("bbbb")));
 }

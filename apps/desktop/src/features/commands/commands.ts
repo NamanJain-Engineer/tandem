@@ -6,11 +6,13 @@ import { useLaunch } from "../../stores/launch";
 import { useNotifications } from "../../stores/notifications";
 import { useCloseConfirm } from "../../stores/closeConfirm";
 import { useSidebar } from "../../stores/sidebar";
+import { useSettings } from "../../stores/settings";
 import type { CommandSpec } from "@tandem/protocol";
 import shortcuts from "@tandem/protocol/shortcuts.json";
 import { t, type MessageKey } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
+import { useNewTeammate } from "../agents/NewTeammateSheet";
 import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
@@ -18,6 +20,7 @@ import { applyDrop } from "../code/dnd";
 import type { Side } from "../code/layout/tree";
 import { copyLastOutput, terminalHandles } from "../code/TerminalView";
 import { copyDiagnostics, pickAndAddWorkspace, switchMode } from "../shell/actions";
+import { terminalMayIntercept } from "./keys";
 
 export const COMMANDS = shortcuts as CommandSpec[];
 
@@ -33,8 +36,27 @@ export function commandTitle(id: string): string {
   return t(`cmd.${id}` as MessageKey);
 }
 
-/** The binding in effect for this platform and focus. */
-export function bindingFor(spec: CommandSpec, ctx: { mac: boolean; terminalFirst: boolean }): string | null {
+/** Rebound shortcuts (F-SH-09 P2): command id → keys, or "" for none. */
+export type ShortcutOverrides = Record<string, string>;
+
+export function shortcutOverrides(): ShortcutOverrides {
+  const value = useSettings.getState().values.shortcut_overrides;
+  return value && typeof value === "object" ? (value as ShortcutOverrides) : {};
+}
+
+/** The binding in effect for this platform and focus. A rebound shortcut
+ * replaces the default and its terminal alias; under "Terminal first" it
+ * fires in a terminal only if it's on the intercept list. */
+export function bindingFor(
+  spec: CommandSpec,
+  ctx: { mac: boolean; terminalFirst: boolean },
+  overrides: ShortcutOverrides = shortcutOverrides(),
+): string | null {
+  const rebound = overrides[spec.id];
+  if (typeof rebound === "string") {
+    if (!rebound) return null;
+    return ctx.mac || !ctx.terminalFirst || terminalMayIntercept(rebound) ? rebound : null;
+  }
   if (ctx.mac) return spec.mac;
   return ctx.terminalFirst ? spec.pcTerminal : spec.pc;
 }
@@ -98,6 +120,10 @@ export const handlers: Record<string, () => void> = {
   "mode.code": () => switchMode("code"),
   "mode.thread": () => switchMode("thread"),
   "thread.changes": () => useThreads.getState().toggleChanges(),
+  "teammate.new": () => {
+    switchMode("agent");
+    useNewTeammate.getState().show(true);
+  },
   "rail.toggle": () => useUi.getState().toggleRail(),
   "sidebar.toggle": () => useSidebar.getState().toggle(),
   "sidebar.files": () => useSidebar.getState().openTab("files"),
@@ -151,7 +177,9 @@ export const handlers: Record<string, () => void> = {
   "terminal.find_next": onPane((_, paneId) => terminalHandles.get(paneId)?.find("next")),
   "terminal.find_prev": onPane((_, paneId) => terminalHandles.get(paneId)?.find("prev")),
   "terminal.copy_last_output": onPane((_, paneId) => void copyLastOutput(paneId, toast)),
+  "work.find": () => useUi.getState().openFindWork(),
   "billing.plans": () => useUi.getState().openUpgrade(),
+  "help.shortcuts": () => useUi.getState().setCheatsheet(!useUi.getState().cheatsheetOpen),
   "help.copy_diagnostics": () => void copyDiagnostics(toast),
   "help.open_logs": () => void invoke("app_open_logs_folder").catch(() => undefined),
 };

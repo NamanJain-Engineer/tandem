@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-skill-add-from-library"
+description = "Enables the skill_add_from_library command without any pre-configured scope."
+commands.allow = ["skill_add_from_library"]
+
+[[permission]]
+identifier = "deny-skill-add-from-library"
+description = "Denies the skill_add_from_library command without any pre-configured scope."
+commands.deny = ["skill_add_from_library"]

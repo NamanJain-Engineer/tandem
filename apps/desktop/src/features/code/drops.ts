@@ -17,11 +17,18 @@ type Toast = (t: { tone?: "info" | "success" | "warning" | "error"; title: strin
 export const useDropTarget = create<{ paneId: string | null }>(() => ({ paneId: null }));
 
 /** The pane (or tab) at a point in CSS pixels. */
-export function hitTest(x: number, y: number): { paneId: string | null; tabId: string | null; workspaceId: string | null } {
+export function hitTest(
+  x: number,
+  y: number,
+): { paneId: string | null; tabId: string | null; workspaceId: string | null } {
   const el = document.elementFromPoint(x, y);
   const pane = el?.closest<HTMLElement>('[data-testid="pane"]');
   const tab = el?.closest<HTMLElement>('[data-testid="tab"]');
-  return { paneId: pane?.dataset.paneId ?? null, tabId: tab?.dataset.tabId ?? null, workspaceId: useWorkspaces.getState().activeId };
+  return {
+    paneId: pane?.dataset.paneId ?? null,
+    tabId: tab?.dataset.tabId ?? null,
+    workspaceId: useWorkspaces.getState().activeId,
+  };
 }
 
 /** Types `paths`, quoted for the pane's shell, at its caret. */
@@ -53,7 +60,10 @@ export function useFileDrops(toast: Toast): void {
         clearHover();
         if (hit.tabId && hit.workspaceId) {
           const { tabId, workspaceId } = { tabId: hit.tabId, workspaceId: hit.workspaceId };
-          hoverTab = { id: tabId, timer: setTimeout(() => useWorkspaces.getState().selectTab(workspaceId, tabId), TAB_HOVER_MS) };
+          hoverTab = {
+            id: tabId,
+            timer: setTimeout(() => useWorkspaces.getState().selectTab(workspaceId, tabId), TAB_HOVER_MS),
+          };
         }
       }
     };
@@ -65,7 +75,9 @@ export function useFileDrops(toast: Toast): void {
     };
     // Debug builds: the E2E harness drives drops through the same path,
     // because WebDriver can't produce an OS file drop.
-    const test = window as unknown as { __tandemDrop?: (paths: string[], x: number, y: number) => Promise<void> };
+    const test = window as unknown as {
+      __tandemDrop?: (paths: string[], x: number, y: number) => Promise<void>;
+    };
     test.__tandemDrop = drop;
     let unlisten: (() => void) | undefined;
     let live = true;

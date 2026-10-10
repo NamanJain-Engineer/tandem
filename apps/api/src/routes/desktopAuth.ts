@@ -43,7 +43,7 @@ function invalidGrant(detail: string): ApiError {
   return new ApiError(400, "invalid_grant", "Bad Request", detail, { error: "invalid_grant" });
 }
 
-async function issueTokens(
+export async function issueTokens(
   deps: Deps,
   userId: string,
   familyId: string,

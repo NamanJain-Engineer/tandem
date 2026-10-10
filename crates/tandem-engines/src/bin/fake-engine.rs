@@ -323,9 +323,33 @@ fn headless(name: &str) {
     let mut input = Vec::new();
     let _ = std::io::stdin().read_to_end(&mut input);
     log(&format!("headless: {name} read {} bytes", input.len()));
+    // A teammate's learn follow-up (F-AG-08): JSON memory suggestions.
+    let text = String::from_utf8_lossy(&input);
+    if text.contains("<learn_request>") {
+        println!("{}", learn_reply(&text));
+        return;
+    }
     for line in brief_lines(&format!("Fake {}", label(name))) {
         println!("{line}");
     }
+}
+
+/// `TANDEM_FAKE_LEARN` (a value or a file) is the reply; otherwise one note
+/// from the last user message: `{"add": ["The user said: <text>"], …}`.
+fn learn_reply(prompt: &str) -> String {
+    if let Ok(v) = std::env::var("TANDEM_FAKE_LEARN") {
+        return std::fs::read_to_string(&v).unwrap_or(v);
+    }
+    let said = prompt
+        .split("<user>")
+        .nth(1)
+        .and_then(|r| r.split("</user>").next())
+        .unwrap_or("")
+        .trim()
+        .replace('"', "'");
+    format!(
+        "{{\"add\": [\"The user said: {said}\"], \"remove\": [], \"rationale\": \"A preference worth keeping.\"}}"
+    )
 }
 
 /// `--resume <id>` resumes that session; otherwise each run is a new one.

@@ -43,9 +43,12 @@ export async function take(
 export const FEATURE_LIMITS = {
   title: { capacity: 60, windowMs: 3_600_000 },
   rewrite: { capacity: 60, windowMs: 60_000 },
+  teammate_draft: { capacity: 10, windowMs: 60_000 },
   stt: { capacity: 30, windowMs: 60_000 },
   auto: { capacity: 30, windowMs: 60_000 },
   voice_session: { capacity: 10, windowMs: 3_600_000 },
+  voice_act: { capacity: 60, windowMs: 60_000 },
+  voice_resolve: { capacity: 30, windowMs: 60_000 },
 } as const;
 
 export async function takeForUser(

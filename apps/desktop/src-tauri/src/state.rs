@@ -110,12 +110,26 @@ pub struct AppState {
     pub terminals: Arc<TerminalService>,
     pub approvals: Arc<crate::services::approvals::ApprovalService>,
     pub notifications: Arc<crate::services::notifications::NotificationService>,
+    pub auto: Arc<crate::services::auto::AutoService>,
     /// Paused agents and their relaunch queue (F-SH-07).
     pub restore: Arc<crate::services::restore::RestoreService>,
     /// Auto-update and the minimum-version notice (F-SH-06).
     pub updates: Arc<crate::services::updates::UpdateService>,
     pub config: Arc<ConfigService>,
     pub telemetry: Arc<TelemetryService>,
+    /// Teammates (F-AG-01).
+    pub teammates: Arc<crate::services::teammates::TeammatesService>,
+    /// Learn after a turn (F-AG-08).
+    pub learn: Arc<crate::services::learn::LearnService>,
+    /// Teammate mail (F-AG-12).
+    pub mail: Arc<crate::services::mail::MailService>,
+    /// Holds the gateway's built-ins handler alive (the gateway keeps a weak
+    /// reference).
+    pub teammate_tools: Arc<dyn crate::services::gateway::BuiltinService>,
+    /// The one MCP gateway (F-PL-01).
+    pub gateway: Arc<crate::services::gateway::GatewayService>,
+    /// The Team org's audit events (F-TL-10).
+    pub audit: Arc<crate::services::audit::AuditService>,
     pub deeplinks: DeepLinkQueue,
     /// Processes a crashed run left behind, until the user decides (UI-132).
     pub orphans: OrphanScan,
@@ -140,11 +154,24 @@ pub struct AppState {
 
 impl AppState {
     pub fn init() -> Result<Self, CoreError> {
-        let data = DataDir::resolve()?;
+        // "Delete local data" (F-TL-05) runs here, before anything opens
+        // `$DATA`; the app then starts as on a first run.
+        let root = DataDir::default_root()?;
+        let deleted = crate::services::data_controls::apply_pending_delete(&root).map_err(|e| {
+            CoreError::io(
+                "data",
+                &e,
+                "Close Vibezeo and delete the data folder by hand",
+            )
+        })?;
+        let data = DataDir::at(root)?;
         let first_run = !data.db_path().exists();
         let level = std::env::var("TANDEM_LOG").unwrap_or_else(|_| "info".to_string());
         // A second init (tests) keeps the first subscriber.
         let log = logging::init(&data.logs(), &level).ok();
+        if deleted {
+            tracing::info!("local data deleted at the user's request");
+        }
         let store = Store::open(&data).map_err(|e| {
             CoreError::new(
                 "store",
@@ -371,12 +398,15 @@ impl AppState {
         );
         let telemetry = TelemetryService::new(&data, net.clone());
         let models = Arc::new(crate::services::models::RuntimeModels::default());
+        let gateway = crate::services::gateway::GatewayService::new(store.clone(), data.run());
         let launcher = Arc::new(crate::services::threads::AppLauncher::new(
             terminals.clone(),
             config.clone(),
             models.clone(),
             crate::services::threads::AppLauncher::adapters(&terminals),
             data.mcp_configs(),
+            gateway.clone(),
+            store.clone(),
         ));
         let threads = crate::services::threads::ThreadService::new(
             store.clone(),
@@ -385,7 +415,20 @@ impl AppState {
             approvals.broker.clone(),
             launcher.clone(),
         );
-        launcher.bind(&threads);
+        gateway.bind_threads(&threads);
+        // The Team org's policy: engines at every launch, access and audit
+        // at every thread session (F-BL-06, F-TL-10).
+        let policy_source = entitlements.clone();
+        terminals
+            .engines
+            .set_policy_source(Arc::new(move || policy_source.policy()));
+        let audit = crate::services::audit::AuditService::new(
+            auth.clone(),
+            api.clone(),
+            entitlements.clone(),
+            clock.clone(),
+        );
+        launcher.set_guard(audit.clone());
         // Thread titles: AI only with the Privacy opt-in (D-118).
         let titles_store = store.clone();
         threads.configure(
@@ -408,6 +451,61 @@ impl AppState {
         let plan = entitlements.clone();
         threads.set_plan_limits(Arc::new(move || plan.limits()));
         threads.sweep_trash();
+        let limit_ent = entitlements.clone();
+        let teammates = crate::services::teammates::TeammatesService::new(
+            store.clone(),
+            bus.clone(),
+            data.clone(),
+            Arc::new(crate::services::teammates::AppEngineFacts(
+                terminals.clone(),
+            )),
+            Arc::new(move || limit_ent.limits().teammates),
+        );
+        {
+            let weak = Arc::downgrade(&teammates);
+            threads.set_chats_sink(Arc::new(move || {
+                if let Some(t) = weak.upgrade() {
+                    t.publish_soon();
+                }
+            }));
+        }
+        launcher.bind_teammates(&teammates);
+        // Teammate mail (F-AG-12) lands in teammate chats.
+        let mail = crate::services::mail::MailService::new(
+            store.clone(),
+            bus.clone(),
+            teammates.clone(),
+            Arc::new(crate::services::mail::AppMailHost {
+                store: store.clone(),
+                threads: threads.clone(),
+                teammates: teammates.clone(),
+            }),
+        );
+        // The gateway's teammate built-ins answer for the lease's teammate.
+        let tools: Arc<dyn crate::services::gateway::BuiltinService> =
+            Arc::new(crate::services::teammate_tools::TeammateTools {
+                teammates: teammates.clone(),
+                mail: mail.clone(),
+            });
+        gateway.bind_builtins(Arc::downgrade(&tools));
+        // Learn after a turn (F-AG-08): off the turn's own path.
+        let learn = crate::services::learn::LearnService::new(
+            store.clone(),
+            bus.clone(),
+            teammates.clone(),
+            Arc::new(crate::services::learn::AppLearnRunner {
+                terminals: terminals.clone(),
+            }),
+        );
+        {
+            let learn = learn.clone();
+            threads.set_turn_sink(Arc::new(move |chat, turn, reason| {
+                let learn = learn.clone();
+                tauri::async_runtime::spawn(
+                    async move { learn.after_turn(chat, turn, reason).await },
+                );
+            }));
+        }
         // Threads are Dashboard items too (F-DB-01, D-6).
         let status = terminals.status.clone();
         threads.set_status_sink(Arc::new(move |th| {
@@ -450,6 +548,10 @@ impl AppState {
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         let files = crate::services::files::FilesService::new(store.clone());
         let git_panel = crate::services::git_panel::GitPanelService::new(files.clone());
+        let auto = Arc::new(crate::services::auto::AutoService::new(
+            bus.clone(),
+            crate::services::auto::AutoTiming::default(),
+        ));
         Self {
             data,
             store,
@@ -468,16 +570,23 @@ impl AppState {
             terminals,
             approvals,
             notifications,
+            auto,
             restore,
             updates,
             config,
             telemetry,
+            audit,
             deeplinks: DeepLinkQueue::default(),
             orphans,
             logins: Arc::default(),
             usage: Arc::default(),
             threads,
             models,
+            gateway,
+            teammates,
+            teammate_tools: tools,
+            learn,
+            mail,
             files,
             git_panel,
             browser: std::sync::OnceLock::new(),
@@ -530,6 +639,37 @@ impl AppState {
                 );
             })
             .await;
+        }
+    }
+
+    /// A subject's plugin grants changed: its next session picks them up.
+    pub async fn after_grants_changed(&self, subject: &tandem_store::repo::plugins::GrantSubject) {
+        use tandem_store::repo::plugins::GrantSubject;
+        match subject {
+            GrantSubject::Thread { thread_id } => {
+                self.threads
+                    .refresh_session(&tandem_core::ids::ThreadId::from_db(thread_id.clone()))
+                    .await;
+            }
+            GrantSubject::Teammate { teammate_id } => {
+                self.refresh_teammate_sessions(&tandem_core::ids::TeammateId::from_db(
+                    teammate_id.clone(),
+                ))
+                .await;
+            }
+            _ => {}
+        }
+    }
+
+    /// A teammate's settings changed: its chats' next turns start fresh
+    /// sessions with the new lease and briefing.
+    pub async fn refresh_teammate_sessions(&self, teammate: &tandem_core::ids::TeammateId) {
+        if let Ok(chats) =
+            tandem_store::repo::threads::teammate_chats(&self.store, teammate, true).await
+        {
+            for c in chats {
+                self.threads.refresh_session(&c.id).await;
+            }
         }
     }
 

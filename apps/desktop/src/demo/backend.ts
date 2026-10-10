@@ -36,6 +36,7 @@ import { DEMO_CHANGES, afterAllow, afterDeny, chatTurn, fixTurn, planText, planT
 import { DemoFiles, NO_GIT } from "./files";
 import { DemoNotes } from "./notes";
 import { DemoShell, agentScreen } from "./shell";
+import { version } from "../../package.json";
 
 type Args = Record<string, unknown> | undefined;
 
@@ -51,7 +52,8 @@ const LIMIT_REACHED = "Demo limit reached. Download Vibezeo for Linux to keep go
 const START = Date.now() - 42 * 60_000;
 
 const BOOT: AppBoot = {
-  version: "0.3.0",
+  // The release the site offers (OPERATING §6): the demo shows the download's version.
+  version,
   build: "demo",
   platform: "linux",
   dev: false,
@@ -99,6 +101,7 @@ const ENTITLEMENT: EntitlementView = {
   source: "free",
   credits: null,
   policy: null,
+  org: null,
   paidUntil: null,
   cancelAtPeriodEnd: false,
   online: true,
@@ -365,6 +368,8 @@ export class DemoCore {
       sortKey: String(at),
       createdAt: at,
       updatedAt: at,
+      teammateId: null,
+      conversationRef: null,
     };
     const t: DemoThread = { thread, turns: [], events: [], channels: new Set(), running: null, awaiting: null, fixed: false, divider: null, draft: "{}", plans: [] };
     this.threads.set(thread.id, t);
@@ -647,6 +652,9 @@ export class DemoCore {
         return { panes: [], interruptedThreads: 0, autoResume: false };
       case "updates_state":
         return { stage: "idle", current: BOOT.version, channel: "stable", version: null, notes: null, percent: null, errorStage: null, error: null, lastCheck: null, upToDate: true, minVersion: null };
+      case "usage_report":
+        // The demo reads no engine logs: an honest empty page (F-AC-07).
+        return demoUsage();
       case "notifications_list":
         return { items: [], nextCursor: null, unread: 0 };
       case "sidebar_get":
@@ -702,7 +710,17 @@ export class DemoCore {
         return null;
       }
       case "thread_list":
+        // The demo has threads, not teammates (Agent mode stays empty there).
+        if (args?.kind === "teammate_chat") return [];
         return [...this.threads.values()].map((t) => t.thread);
+      case "teammate_list":
+        return [];
+      case "teammate_create":
+      case "teammate_draft_with_ai":
+        throw {
+          code: "unavailable",
+          message: "The browser demo doesn't make teammates. In the app you'd create one here.",
+        };
       case "thread_get":
         return this.detail(this.thread(args));
       case "thread_events": {
@@ -837,6 +855,19 @@ export class DemoCore {
       case "git_switch":
       case "git_create_branch":
         throw { code: "unavailable", message: NO_GIT };
+      // Nothing typed here is kept anywhere, so there's nothing to export or delete (F-TL-05).
+      case "data_export":
+      case "data_delete_local":
+        throw {
+          code: "unavailable",
+          message: "The demo keeps nothing: what you do here stays in this page and goes when you close it.",
+        };
+      // Find work reads real terminals and threads on this computer (F-CN-05).
+      case "find_work":
+        throw {
+          code: "unavailable",
+          message: "Find work searches the terminals and threads running on your computer, so the demo has nothing to search.",
+        };
       // A web page can't hold other pages the way the app's browser does.
       case "browser_open":
       case "browser_navigate":
@@ -867,4 +898,25 @@ export function installDemo(speed = 1): DemoCore {
   const core = new DemoCore(speed);
   setInvokeBackend(async (cmd, args) => core.handle(cmd, args));
   return core;
+}
+
+/** The Usage page in the demo: 12 empty weeks, nothing invented. */
+function demoUsage() {
+  const today = new Date();
+  const days = Array.from({ length: 84 }, (_, i) => {
+    const d = new Date(today.getTime() - (83 - i) * 86_400_000);
+    return { date: d.toISOString().slice(0, 10), tokens: 0, byEngine: {} };
+  });
+  return {
+    since: days[0]?.date ?? "",
+    until: days[83]?.date ?? "",
+    total: 0,
+    days,
+    engines: [],
+    accounts: [],
+    workspaces: [],
+    skippedLines: 0,
+    filesRead: 0,
+    unsupported: [],
+  };
 }

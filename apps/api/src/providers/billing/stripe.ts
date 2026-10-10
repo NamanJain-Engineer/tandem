@@ -71,6 +71,13 @@ export class StripeBilling implements BillingProvider {
     else if (invoice?.charge) await this.stripe.refunds.create({ charge: invoice.charge });
   }
 
+  async refundPayment(checkoutSessionId: string) {
+    const session = await this.stripe.checkout.sessions.retrieve(checkoutSessionId);
+    const intent =
+      typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
+    if (intent) await this.stripe.refunds.create({ payment_intent: intent });
+  }
+
   async updateQuantity(subscriptionId: string, seats: number) {
     const sub = await this.stripe.subscriptions.retrieve(subscriptionId);
     const item = sub.items.data[0];
@@ -79,5 +86,15 @@ export class StripeBilling implements BillingProvider {
 
   async cancelNow(subscriptionId: string) {
     await this.stripe.subscriptions.cancel(subscriptionId);
+  }
+
+  async deleteCustomer(customerId: string) {
+    try {
+      await this.stripe.customers.del(customerId);
+    } catch (err) {
+      // Already deleted (a purge that's being retried): nothing is left to remove.
+      if (err instanceof Stripe.errors.StripeError && err.code === "resource_missing") return;
+      throw err;
+    }
   }
 }

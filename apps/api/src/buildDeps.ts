@@ -3,10 +3,13 @@ import { fileURLToPath } from "node:url";
 import { createAuth } from "./auth/better-auth";
 import { loadKeys } from "./auth/keys";
 import { createDb } from "./db/client";
+import { resolveTxt } from "node:dns/promises";
 import type { Deps } from "./deps";
 import type { Env } from "./env";
 import { Clock } from "./lib/clock";
 import { selectAi } from "./providers/ai";
+import { selectRealtime } from "./providers/realtime";
+import { selectStt } from "./providers/stt";
 import { MockBilling } from "./providers/billing/mock";
 import { StripeBilling } from "./providers/billing/stripe";
 import { HibpBreachChecker, OfflineBreachList, type BreachChecker } from "./providers/breach";
@@ -23,7 +26,9 @@ const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 /** Wires real providers from the environment. Mocks are chosen when keys are absent. */
 export function buildDeps(
   env: Env,
-  overrides: Partial<Pick<Deps, "email" | "clock" | "keys" | "billing" | "breach" | "ai">> = {},
+  overrides: Partial<
+    Pick<Deps, "email" | "clock" | "keys" | "billing" | "breach" | "ai" | "stt" | "realtime" | "ssoNet">
+  > = {},
 ): Built {
   const { db, pool } = createDb(env.DATABASE_URL);
   const redis = new Redis(env.REDIS_URL, { lazyConnect: false, maxRetriesPerRequest: 2 });
@@ -57,8 +62,11 @@ export function buildDeps(
     billing,
     config: new ConfigSigner(keys, undefined, env.MIN_APP_VERSION),
     events: new EventHub(redis, sub),
-    auth: createAuth({ env, db, email, breach }),
+    auth: createAuth({ env, db, email, breach, deps: () => deps }),
     ai: overrides.ai ?? selectAi(env),
+    stt: overrides.stt ?? selectStt(env),
+    realtime: overrides.realtime ?? selectRealtime(env),
+    ssoNet: overrides.ssoNet ?? { fetch: (input, init) => fetch(input, init), resolveTxt },
   };
   return {
     deps,

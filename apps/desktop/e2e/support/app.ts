@@ -31,7 +31,7 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
 }
 
 /** A tiny cookie jar for API calls from the test process. */
-class Jar {
+export class Jar {
   private cookies = new Map<string, string>();
   store(res: Response) {
     for (const c of res.headers.getSetCookie()) {
@@ -48,7 +48,7 @@ class Jar {
   }
 }
 
-async function call(jar: Jar, method: string, path: string, body?: unknown): Promise<Response> {
+export async function call(jar: Jar, method: string, path: string, body?: unknown): Promise<Response> {
   const res = await fetch(`${API}${path}`, {
     method,
     redirect: "manual",
@@ -260,6 +260,22 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
     await invoke("thread_archive", { threadId: th.id, archived: true });
     await invoke("thread_delete", { threadId: th.id });
   }
+  // Teammates outlive specs too (M10): their chats go, every teammate but the
+  // Lead goes, and the Lead and mail are back to their defaults.
+  for (const s of await invoke<Array<{ teammate: { id: string; isLead: boolean } }>>("teammate_list")) {
+    const chats = await invoke<Array<{ id: string }>>("thread_list", { kind: "teammate_chat", teammateId: s.teammate.id, includeArchived: true });
+    for (const c of chats) {
+      await invoke("thread_archive", { threadId: c.id, archived: true });
+      await invoke("thread_delete", { threadId: c.id });
+    }
+    if (!s.teammate.isLead) await invoke("teammate_delete", { id: s.teammate.id });
+    else
+      await invoke("teammate_update", {
+        id: s.teammate.id,
+        patch: { pinned: true, settings: { memoryCap: 4096, learnMode: "ask", mayMessage: true, maySchedule: false, defaultAccess: "edits" } },
+      });
+  }
+  await invoke("settings_set", { key: "pause_all_mail", value: false });
   await invoke("auth_sign_out");
   // A first run has no engine accounts yet (the wizard's Accounts step, D-114).
   if (!onboarded) {
@@ -271,6 +287,8 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
   await invoke("settings_set", { key: "last_mode", value: "code" });
   // New threads start from the app's defaults, not a spec's last engine (F-TH-07).
   await invoke("settings_set", { key: "thread_defaults", value: {} });
+  // Every spec starts with the default shortcuts (F-SH-09 rebinding).
+  await invoke("settings_set", { key: "shortcut_overrides", value: {} });
   await invoke("sidebar_save", {
     sidebar: { open: false, tabs: [{ id: "dashboard", kind: "dashboard", title: null, url: null }], active: "dashboard", width: 470, fullscreen: false, pinned: false },
   });

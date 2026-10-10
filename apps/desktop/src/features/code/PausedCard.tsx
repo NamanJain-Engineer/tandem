@@ -54,7 +54,12 @@ export function PausedCard({
           {t("restore.resume")}
         </Button>
       )}
-      <Button size="sm" disabled={state === "queued"} data-testid="restore-fresh" onClick={() => void start(true)}>
+      <Button
+        size="sm"
+        disabled={state === "queued"}
+        data-testid="restore-fresh"
+        onClick={() => void start(true)}
+      >
         {t("restore.startFresh")}
       </Button>
     </div>
@@ -72,9 +77,14 @@ export function PausedCard({
       className="absolute inset-0 focus-visible:outline-none"
       style={{ background: options.theme.background }}
     >
-      {card?.hasScrollback !== false && <RestoredScrollback paneId={pane.id} options={options} dim={state !== "cancelled"} />}
+      {card?.hasScrollback !== false && (
+        <RestoredScrollback paneId={pane.id} options={options} dim={state !== "cancelled"} />
+      )}
       {state === "cancelled" ? (
-        <div role="status" className="absolute inset-x-0 bottom-0 flex items-center gap-3 border-t border-border bg-surface-3 px-3 py-2 text-sm">
+        <div
+          role="status"
+          className="absolute inset-x-0 bottom-0 flex items-center gap-3 border-t border-border bg-surface-3 px-3 py-2 text-sm"
+        >
           <span className="flex-1 text-fg">{t("restore.cancelled")}</span>
           {actions}
         </div>

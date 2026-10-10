@@ -7,7 +7,12 @@
     ".": "./src/index.ts",
     "./plans": "./src/plans.ts",
     "./client": "./src/client.ts",
-    "./shortcuts.json": "./shortcuts.json"
+    "./shortcuts.json": "./shortcuts.json",
+    "./team": "./src/team.ts",
+    "./hosted-features.json": "./hosted-features.json",
+    "./subprocessors.json": "./subprocessors.json",
+    "./changelog": "./src/changelog.ts",
+    "./settings.json": "./settings.json"
   },
   "scripts": {
     "test": "vitest run",

@@ -1,11 +1,12 @@
 // Credits ledger (ARCHITECTURE §14.5): buckets, the monthly grant, pack
 // purchases, and reserve → settle / refund for metered hosted features.
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { MONTHLY_CREDITS } from "@tandem/protocol/plans";
 import type { Db } from "../db/client";
-import { creditBuckets, creditLedger, creditReservations } from "../db/schema";
+import { creditBuckets, creditLedger, creditReservations, memberUsage } from "../db/schema";
 import { newId } from "../lib/ids";
 import { ApiError } from "../lib/problem";
+import { membershipOf } from "./membership";
 
 export type Owner = { kind: "user" | "org"; id: string };
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -148,6 +149,7 @@ export async function recentLedger(db: Db, owner: Owner, limit = 100) {
     bucket: kinds.get(r.bucketId),
     delta: r.delta,
     reason: r.reason,
+    feature: r.reason === "reserve" ? r.refType : null,
     createdAt: r.createdAt.toISOString(),
   }));
 }
@@ -157,57 +159,229 @@ export const RESERVATION_TTL_MS = 15 * 60_000;
 
 type Allocation = { bucketId: string; amount: number };
 
+export type ReserveArgs = {
+  /** Who pays; defaults to the user's credit owner (their org's pool when they're a member). */
+  owner?: Owner;
+  userId: string;
+  feature: string;
+  amount: number;
+  now: Date;
+  /** A retried call with the same key gets the same reservation back. */
+  idempotencyKey?: string;
+  /** When the sweeper may refund it; 15 minutes from `now` unless the feature runs longer (a voice call). */
+  expiresAt?: Date;
+};
+
+const exhausted = (needed: number, extra: Record<string, unknown> = {}, detail?: string) =>
+  new ApiError(402, "CREDITS_EXHAUSTED", "Payment Required", detail ?? "You're out of credits for now.", {
+    needed,
+    ...extra,
+  });
+
+/** The member-cap period: the org's current monthly grant period. */
+function capPeriodOf(monthly: { periodEnd: Date | null }): string {
+  return monthly.periodEnd ? monthly.periodEnd.toISOString().slice(0, 10) : "open";
+}
+
+/**
+ * Counts `amount` against a Team member's monthly cap, or throws 402 with
+ * `cap` set. The row is locked, so parallel reserves can't pass the cap together.
+ */
+async function takeCap(tx: Tx, orgId: string, userId: string, period: string, cap: number, amount: number) {
+  await tx.insert(memberUsage).values({ orgId, userId, period, spent: 0 }).onConflictDoNothing();
+  const [row] = await tx
+    .select()
+    .from(memberUsage)
+    .where(and(eq(memberUsage.orgId, orgId), eq(memberUsage.userId, userId), eq(memberUsage.period, period)))
+    .for("update");
+  const spent = row?.spent ?? 0;
+  if (spent + amount > cap) {
+    throw exhausted(
+      amount,
+      { cap, spent },
+      `You've used ${spent.toLocaleString("en-US")} of the ${cap.toLocaleString("en-US")} credits your organization allows you this month.`,
+    );
+  }
+  await tx
+    .update(memberUsage)
+    .set({ spent: sql`${memberUsage.spent} + ${amount}` })
+    .where(and(eq(memberUsage.orgId, orgId), eq(memberUsage.userId, userId), eq(memberUsage.period, period)));
+}
+
+async function releaseCap(
+  tx: Tx,
+  row: { ownerId: string; userId: string; capPeriod: string | null },
+  amount: number,
+) {
+  if (!row.capPeriod || amount <= 0) return;
+  await tx
+    .update(memberUsage)
+    .set({ spent: sql`greatest(${memberUsage.spent} - ${amount}, 0)` })
+    .where(
+      and(
+        eq(memberUsage.orgId, row.ownerId),
+        eq(memberUsage.userId, row.userId),
+        eq(memberUsage.period, row.capPeriod),
+      ),
+    );
+}
+
+async function existingReservation(db: Db | Tx, userId: string, key: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: creditReservations.id })
+    .from(creditReservations)
+    .where(and(eq(creditReservations.userId, userId), eq(creditReservations.idempotencyKey, key)))
+    .limit(1);
+  return row?.id ?? null;
+}
+
 /**
  * Takes `amount` credits, monthly first, then purchased, in one transaction.
- * The buckets are locked in a fixed order; a short balance is 402
- * CREDITS_EXHAUSTED and changes nothing.
+ * The buckets are locked in a fixed order; a short balance (or a Team
+ * member's cap) is 402 CREDITS_EXHAUSTED and changes nothing.
  */
-export async function reserve(
-  db: Db,
-  args: { owner: Owner; userId: string; feature: string; amount: number; now: Date },
-): Promise<string> {
-  return db.transaction(async (tx) => {
-    const monthly = await bucket(tx, args.owner, "monthly");
-    const purchased = await bucket(tx, args.owner, "purchased");
-    if (monthly.balance + purchased.balance < args.amount) {
-      throw new ApiError(402, "CREDITS_EXHAUSTED", "Payment Required", "You're out of credits for now.", {
-        needed: args.amount,
-      });
-    }
-    const id = newId("resv");
-    const allocations: Allocation[] = [];
-    let left = args.amount;
-    for (const b of [monthly, purchased]) {
-      const take = Math.min(b.balance, left);
-      if (take <= 0) continue;
-      allocations.push({ bucketId: b.id, amount: take });
-      left -= take;
-      await tx
-        .update(creditBuckets)
-        .set({ balance: sql`${creditBuckets.balance} - ${take}` })
-        .where(eq(creditBuckets.id, b.id));
-      await tx.insert(creditLedger).values({
-        id: newId("cl"),
-        bucketId: b.id,
+export async function reserve(db: Db, args: ReserveArgs): Promise<string> {
+  if (args.idempotencyKey) {
+    const found = await existingReservation(db, args.userId, args.idempotencyKey);
+    if (found) return found;
+  }
+  try {
+    return await db.transaction(async (tx) => {
+      const membership = await membershipOf(tx, args.userId);
+      const owner: Owner =
+        args.owner ??
+        (membership ? { kind: "org", id: membership.orgId } : { kind: "user", id: args.userId });
+      const monthly = await bucket(tx, owner, "monthly");
+      const purchased = await bucket(tx, owner, "purchased");
+      let capPeriod: string | null = null;
+      if (owner.kind === "org" && membership?.orgId === owner.id && membership.monthlyCap !== null) {
+        capPeriod = capPeriodOf(monthly);
+        await takeCap(tx, owner.id, args.userId, capPeriod, membership.monthlyCap, args.amount);
+      }
+      if (monthly.balance + purchased.balance < args.amount) throw exhausted(args.amount);
+      const id = newId("resv");
+      const allocations: Allocation[] = [];
+      let left = args.amount;
+      for (const b of [monthly, purchased]) {
+        const take = Math.min(b.balance, left);
+        if (take <= 0) continue;
+        allocations.push({ bucketId: b.id, amount: take });
+        left -= take;
+        await tx
+          .update(creditBuckets)
+          .set({ balance: sql`${creditBuckets.balance} - ${take}` })
+          .where(eq(creditBuckets.id, b.id));
+        await tx.insert(creditLedger).values({
+          id: newId("cl"),
+          bucketId: b.id,
+          userId: args.userId,
+          delta: -take,
+          reason: "reserve",
+          refType: args.feature,
+          reservationId: id,
+        });
+      }
+      await tx.insert(creditReservations).values({
+        id,
         userId: args.userId,
-        delta: -take,
-        reason: "reserve",
-        refType: args.feature,
-        reservationId: id,
+        ownerKind: owner.kind,
+        ownerId: owner.id,
+        feature: args.feature,
+        amount: args.amount,
+        allocations,
+        state: "held",
+        idempotencyKey: args.idempotencyKey ?? null,
+        capPeriod,
+        expiresAt: args.expiresAt ?? new Date(args.now.getTime() + RESERVATION_TTL_MS),
       });
-    }
-    await tx.insert(creditReservations).values({
-      id,
-      userId: args.userId,
-      ownerKind: args.owner.kind,
-      ownerId: args.owner.id,
-      feature: args.feature,
-      amount: args.amount,
-      allocations,
-      state: "held",
-      expiresAt: new Date(args.now.getTime() + RESERVATION_TTL_MS),
+      return id;
     });
-    return id;
+  } catch (err) {
+    // Two calls with one key raced: the loser returns the winner's reservation.
+    if (args.idempotencyKey && !(err instanceof ApiError)) {
+      const found = await existingReservation(db, args.userId, args.idempotencyKey);
+      if (found) return found;
+    }
+    throw err;
+  }
+}
+
+type Held = typeof creditReservations.$inferSelect;
+
+/**
+ * Takes up to `upTo` more credits into the held reservation `row`, monthly
+ * first, then purchased, within a Team member's cap. Takes what there is, so
+ * it can be less than asked, or nothing. Runs inside the caller's transaction,
+ * which has the reservation locked.
+ */
+async function takeMore(tx: Tx, row: Held, upTo: number): Promise<{ took: number; row: Held }> {
+  const owner: Owner = { kind: row.ownerKind as Owner["kind"], id: row.ownerId };
+  const monthly = await bucket(tx, owner, "monthly");
+  const purchased = await bucket(tx, owner, "purchased");
+  let take = Math.min(upTo, monthly.balance + purchased.balance);
+  if (take > 0 && row.capPeriod) {
+    const membership = await membershipOf(tx, row.userId);
+    if (membership?.orgId === row.ownerId && membership.monthlyCap !== null) {
+      const where = and(
+        eq(memberUsage.orgId, row.ownerId),
+        eq(memberUsage.userId, row.userId),
+        eq(memberUsage.period, row.capPeriod),
+      );
+      await tx
+        .insert(memberUsage)
+        .values({ orgId: row.ownerId, userId: row.userId, period: row.capPeriod, spent: 0 })
+        .onConflictDoNothing();
+      const [usage] = await tx.select().from(memberUsage).where(where).for("update");
+      take = Math.min(take, Math.max(0, membership.monthlyCap - (usage?.spent ?? 0)));
+      if (take > 0) {
+        await tx
+          .update(memberUsage)
+          .set({ spent: sql`${memberUsage.spent} + ${take}` })
+          .where(where);
+      }
+    }
+  }
+  if (take <= 0) return { took: 0, row };
+  const allocations = (row.allocations as Allocation[]).map((a) => ({ ...a }));
+  let left = take;
+  for (const b of [monthly, purchased]) {
+    const part = Math.min(b.balance, left);
+    if (part <= 0) continue;
+    left -= part;
+    await tx
+      .update(creditBuckets)
+      .set({ balance: sql`${creditBuckets.balance} - ${part}` })
+      .where(eq(creditBuckets.id, b.id));
+    await tx.insert(creditLedger).values({
+      id: newId("cl"),
+      bucketId: b.id,
+      userId: row.userId,
+      delta: -part,
+      reason: "reserve",
+      refType: row.feature,
+      reservationId: row.id,
+    });
+    const existing = allocations.find((a) => a.bucketId === b.id);
+    if (existing) existing.amount += part;
+    else allocations.push({ bucketId: b.id, amount: part });
+  }
+  // Monthly first, as `reserve` writes them, so a refund still returns purchased credits first.
+  allocations.sort((a, b) => Number(a.bucketId !== monthly.id) - Number(b.bucketId !== monthly.id));
+  const amount = row.amount + take;
+  await tx.update(creditReservations).set({ amount, allocations }).where(eq(creditReservations.id, row.id));
+  return { took: take, row: { ...row, amount, allocations } };
+}
+
+/**
+ * Takes up to `upTo` more credits into a held reservation: a voice call that
+ * outlasts its first hold (F-BE-08). The answer is what it took, which can be
+ * less than asked, or 0 when nothing is left or the reservation isn't held.
+ */
+export async function topUp(db: Db, reservationId: string, upTo: number): Promise<number> {
+  if (upTo <= 0) return 0;
+  return db.transaction(async (tx) => {
+    const row = await heldReservation(tx, reservationId);
+    return row ? (await takeMore(tx, row, upTo)).took : 0;
   });
 }
 
@@ -216,7 +390,7 @@ async function giveBack(
   tx: Tx,
   allocations: Allocation[],
   amount: number,
-  reason: "settle_refund" | "refund",
+  reason: "settle_refund" | "refund" | "expire_sweep",
   reservationId: string,
   userId: string,
 ): Promise<void> {
@@ -245,11 +419,24 @@ async function heldReservation(tx: Tx, id: string) {
   return row?.state === "held" ? row : null;
 }
 
-/** Charges `actual` (≤ the reserved amount) and returns the rest. Idempotent. */
-export async function settle(db: Db, reservationId: string, actual: number): Promise<void> {
-  await db.transaction(async (tx) => {
-    const row = await heldReservation(tx, reservationId);
-    if (!row) return;
+export type Settled = { owner: Owner; charged: number } | null;
+
+/**
+ * Charges `actual` (≤ the reserved amount) and returns the rest. With
+ * `topUp`, a charge above the reservation first takes the difference from the
+ * balance, as far as it goes (a voice call longer than its hold). Idempotent:
+ * null when already done.
+ */
+export async function settle(
+  db: Db,
+  reservationId: string,
+  actual: number,
+  opts: { topUp?: boolean } = {},
+): Promise<Settled> {
+  return db.transaction(async (tx) => {
+    let row = await heldReservation(tx, reservationId);
+    if (!row) return null;
+    if (opts.topUp && actual > row.amount) row = (await takeMore(tx, row, actual - row.amount)).row;
     const charged = Math.max(0, Math.min(actual, row.amount));
     await giveBack(
       tx,
@@ -259,22 +446,63 @@ export async function settle(db: Db, reservationId: string, actual: number): Pro
       row.id,
       row.userId,
     );
+    await releaseCap(tx, row, row.amount - charged);
     await tx
       .update(creditReservations)
       .set({ state: "settled", settledAmount: charged })
       .where(eq(creditReservations.id, row.id));
+    return { owner: { kind: row.ownerKind as Owner["kind"], id: row.ownerId }, charged };
   });
 }
 
-/** Returns everything a failed call reserved. Idempotent. */
-export async function refund(db: Db, reservationId: string): Promise<void> {
-  await db.transaction(async (tx) => {
+/** Returns everything a failed call reserved. Idempotent: null when already done. */
+export async function refund(
+  db: Db,
+  reservationId: string,
+  reason: "refund" | "expire_sweep" = "refund",
+): Promise<Settled> {
+  return db.transaction(async (tx) => {
     const row = await heldReservation(tx, reservationId);
-    if (!row) return;
-    await giveBack(tx, row.allocations as Allocation[], row.amount, "refund", row.id, row.userId);
+    if (!row) return null;
+    await giveBack(tx, row.allocations as Allocation[], row.amount, reason, row.id, row.userId);
+    await releaseCap(tx, row, row.amount);
     await tx
       .update(creditReservations)
       .set({ state: "refunded", settledAmount: 0 })
       .where(eq(creditReservations.id, row.id));
+    return { owner: { kind: row.ownerKind as Owner["kind"], id: row.ownerId }, charged: 0 };
   });
+}
+
+/** Held reservations past their 15 minutes, oldest first. */
+export async function expiredReservations(db: Db, now: Date, limit = 500): Promise<string[]> {
+  const rows = await db
+    .select({ id: creditReservations.id })
+    .from(creditReservations)
+    .where(and(eq(creditReservations.state, "held"), lt(creditReservations.expiresAt, now)))
+    .orderBy(asc(creditReservations.expiresAt))
+    .limit(limit);
+  return rows.map((r) => r.id);
+}
+
+/** A Team member's cap and what they've spent against it this period. */
+export async function memberSpend(db: Db, orgId: string, userId: string): Promise<number> {
+  const [monthly] = await db
+    .select()
+    .from(creditBuckets)
+    .where(
+      and(
+        eq(creditBuckets.ownerKind, "org"),
+        eq(creditBuckets.ownerId, orgId),
+        eq(creditBuckets.kind, "monthly"),
+      ),
+    )
+    .limit(1);
+  const period = capPeriodOf({ periodEnd: monthly?.periodEnd ?? null });
+  const [row] = await db
+    .select()
+    .from(memberUsage)
+    .where(and(eq(memberUsage.orgId, orgId), eq(memberUsage.userId, userId), eq(memberUsage.period, period)))
+    .limit(1);
+  return row?.spent ?? 0;
 }

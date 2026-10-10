@@ -24,7 +24,12 @@ export class MockBilling implements BillingProvider {
   async createCheckout(req: CheckoutRequest) {
     const id = newId("cs_mock");
     this.sessions.set(id, { ...req, id });
-    return { id, url: `${this.webUrl}/billing/mock?session=${encodeURIComponent(id)}` };
+    // `next`: where Stripe would return after paying (a pack goes back to /credits).
+    const next = req.successUrl.replace("{CHECKOUT_SESSION_ID}", id);
+    return {
+      id,
+      url: `${this.webUrl}/billing/mock?session=${encodeURIComponent(id)}&next=${encodeURIComponent(next)}`,
+    };
   }
 
   async createPortal(customerId: string, returnUrl: string) {
@@ -44,11 +49,19 @@ export class MockBilling implements BillingProvider {
     this.calls.push(`refund:${subscriptionId}`);
   }
 
+  async refundPayment(checkoutSessionId: string) {
+    this.calls.push(`refund_payment:${checkoutSessionId}`);
+  }
+
   async updateQuantity(subscriptionId: string, seats: number) {
     this.calls.push(`quantity:${subscriptionId}:${seats}`);
   }
 
   async cancelNow(subscriptionId: string) {
     this.calls.push(`cancel:${subscriptionId}`);
+  }
+
+  async deleteCustomer(customerId: string) {
+    this.calls.push(`delete_customer:${customerId}`);
   }
 }

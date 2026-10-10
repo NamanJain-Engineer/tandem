@@ -28,6 +28,7 @@ import { useSession } from "../../stores/session";
 import { useSettings } from "../../stores/settings";
 import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
+import { allowsAccess, clampAccess } from "../policy/policy";
 import { takeDropped, takeTexts, useThreadDrop } from "./drops";
 
 /** Draft saves are debounced (F-TH-07). */
@@ -118,11 +119,16 @@ export function ThreadComposer({
   composerRef,
   prefill,
   visible = true,
+  chat,
 }: {
   thread: Thread;
   detail: ThreadDetail | null;
   running: boolean;
-  tokens: { input: number; output: number; byEngine?: Array<{ engineId: string; input: number; output: number }> };
+  tokens: {
+    input: number;
+    output: number;
+    byEngine?: Array<{ engineId: string; input: number; output: number }>;
+  };
   folderName: string | null;
   lastMessage: () => string | null;
   composerRef?: React.Ref<ComposerHandle>;
@@ -130,6 +136,9 @@ export function ThreadComposer({
   prefill?: { text: string; n: number } | null;
   /** Thread mode is showing: only then does the composer take focus. */
   visible?: boolean;
+  /** A teammate chat: its placeholder, `@name` mail, and no engine switch
+   * (the teammate's settings choose its engine, F-AG-05). */
+  chat?: { placeholder: string; beforeSend?: (text: string) => Promise<boolean> };
 }) {
   const { show } = useToast();
   const engines = useEngines((s) => s.list);
@@ -196,9 +205,11 @@ export function ThreadComposer({
   const engineLabel = engines.find((e) => e.spec.id === thread.engineId)?.spec.label ?? thread.engineId;
   const placeholder = running
     ? t("thread.composer.running")
-    : folderName
-      ? t("thread.composer.placeholder", { engine: engineLabel, folder: folderName })
-      : t("thread.composer.placeholderNoFolder", { engine: engineLabel });
+    : chat
+      ? chat.placeholder
+      : folderName
+        ? t("thread.composer.placeholder", { engine: engineLabel, folder: folderName })
+        : t("thread.composer.placeholderNoFolder", { engine: engineLabel });
 
   const chatEngines = useSession((s) => s.entitlement?.limits.chatEngines ?? null);
   const openUpgrade = useUi((s) => s.openUpgrade);
@@ -237,6 +248,9 @@ export function ThreadComposer({
   const effortLabel = (e: string) =>
     ["low", "medium", "high", "max"].includes(e) ? t(`thread.effort.${e as "low"}`) : e;
 
+  const maxAccess = useSession((s) => s.entitlement?.policy?.maxAccess ?? "full");
+  const shownAccess = clampAccess(maxAccess, thread.access);
+
   const setAccess = (v: string) => {
     const access = v as Access;
     const scope = thread.workspaceId ?? "none";
@@ -253,6 +267,17 @@ export function ThreadComposer({
     // Removed from the draft at once; restored ahead of new typing on failure.
     setText("");
     setAttachments([]);
+    // `@name` in a teammate chat is mail (F-AG-12).
+    if (chat?.beforeSend && sentAttachments.length === 0) {
+      try {
+        if (await chat.beforeSend(sent)) return;
+      } catch (e) {
+        // Refused mail: the text comes back with the reason.
+        setText((typed) => restoreAfterFailure(sent, typed));
+        show({ tone: "error", title: (e as IpcError).message });
+        return;
+      }
+    }
     const res = await send(
       thread.id,
       sent,
@@ -340,16 +365,20 @@ export function ThreadComposer({
         }}
         mode={thread.mode}
         onModeChange={(mode) => void update(thread.id, { mode })}
-        engine={{
-          value: thread.engineId,
-          options: engineOptions,
-          disabled: running,
-          onChange: (engineId) =>
-            void invoke<Thread>("thread_switch_engine", { threadId: thread.id, engineId }).then(
-              () => void reloadDetail(thread.id),
-              (e: IpcError) => show({ tone: "error", title: e.message }),
-            ),
-        }}
+        engine={
+          chat
+            ? undefined
+            : {
+                value: thread.engineId,
+                options: engineOptions,
+                disabled: running,
+                onChange: (engineId) =>
+                  void invoke<Thread>("thread_switch_engine", { threadId: thread.id, engineId }).then(
+                    () => void reloadDetail(thread.id),
+                    (e: IpcError) => show({ tone: "error", title: e.message }),
+                  ),
+              }
+        }
         model={{
           value: savedModel,
           options: modelOptions,
@@ -365,13 +394,16 @@ export function ThreadComposer({
             : undefined
         }
         access={{
-          value: thread.access,
-          warning: thread.access === "full",
-          options: [
-            { value: "read", label: t("thread.access.read"), description: t("thread.access.read.desc") },
-            { value: "edits", label: t("thread.access.edits"), description: t("thread.access.edits.desc") },
-            { value: "full", label: t("thread.access.full"), description: t("thread.access.full.desc") },
-          ],
+          value: shownAccess,
+          warning: shownAccess === "full",
+          options: (["read", "edits", "full"] as const).map((value) => ({
+            value,
+            label: t(`thread.access.${value}`),
+            description: t(`thread.access.${value}.desc`),
+            // A Team org's maximum (F-BL-06): sessions are held to it in the core too.
+            disabled: !allowsAccess(maxAccess, value),
+            disabledReason: t("policy.setByOrg"),
+          })),
           onChange: setAccess,
         }}
         tokens={{
