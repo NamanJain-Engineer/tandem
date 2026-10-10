@@ -24,3 +24,4 @@ playwright-report/
 *.tsbuildinfo
 __pycache__/
 apps/web/.lighthouseci/
+apps/web/.source

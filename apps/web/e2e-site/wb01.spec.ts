@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { DOCS_PAGES, docsPath } from "../lib/docs/pages";
 import { SITE_PAGES } from "../lib/site";
 
 // F-WB-01 (M15): no analytics, ads or cookies on any page, so no consent is
@@ -9,10 +10,10 @@ test.beforeEach(async ({ context }) => {
   await context.route(/\.(webm|mp4)$/, (route) => route.fulfill({ status: 204, body: "" }));
 });
 
-test("F-WB-01 AC2 no page requests another origin, sets a cookie or stores anything", async ({ page, context }) => {
+test("F-WB-01 AC2 F-WB-02 no page (docs included) requests another origin, sets a cookie or stores anything", async ({ page, context }) => {
   const origins = new Set<string>();
   page.on("request", (r) => origins.add(new URL(r.url()).origin));
-  for (const path of SITE_PAGES) {
+  for (const path of [...SITE_PAGES, ...DOCS_PAGES.map((p) => docsPath(p.slug))]) {
     await page.goto(path);
     await page.waitForLoadState("networkidle");
     const stored = await page.evaluate(() => [localStorage.length, sessionStorage.length, document.cookie]);
