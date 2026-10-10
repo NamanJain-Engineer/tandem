@@ -1,5 +1,5 @@
 //! F-RM-03: the phone protocol's bytes match the interop vectors the PWA's
-//! `apps/web/lib/remote/protocol.test.ts` checks too (D-1005), and the
+//! `apps/web/lib/remote/protocol.test.ts` checks too (D-1905), and the
 //! session rules hold: counters, replay, epochs and rekeying.
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;

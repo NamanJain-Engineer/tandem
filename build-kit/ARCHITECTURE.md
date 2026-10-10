@@ -844,7 +844,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `phone_pair_cancel` | `{pairingId}` | — (a code nobody scanned: the relay pairing is deleted) | — |
 | `phone_pairings_list` / `phone_pairing_set_grants` / `phone_pairing_revoke` | — / `{pairingId, grants: PhoneGrants {chat, terminal, approvals, routines}}` (main window) / `{pairingId}` | `[Pairing {id, deviceName, grants, createdAt, lastSeen?, online}]` / — / — | NotFound, PermissionDenied |
 | `phone_reset` | — | — ("Reset remote access…": every pairing revoked, identity key replaced) | — |
-| `phone_arm_approvals` / `phone_arm_state` | `{hours: 8 \| 0}` (main window) / — | `PhoneArmState {armedUntil?}` (in memory: a restart disarms, D-1007) | Invalid, PermissionDenied |
+| `phone_arm_approvals` / `phone_arm_state` | `{hours: 8 \| 0}` (main window) / — | `PhoneArmState {armedUntil?}` (in memory: a restart disarms, D-1907) | Invalid, PermissionDenied |
 | `phone_queue_list` / `phone_queue_decide` | — / `{itemId, apply}` (main window) | `[QueuedPhoneAction {id, pairingId, deviceName, approvalId, summary, createdAt}]` / — | NotFound, Conflict, PermissionDenied |
 
 #### Auth, entitlements, billing, updates, privacy [F-BE-02, F-BE-04, F-BL-*, F-SH-06, F-TL-*]
@@ -1469,7 +1469,7 @@ Namespace `NS` = `app.tandem` (release) or `app.tandem.dev` (dev builds). Tests 
 |---|---|---|---|
 | `NS.plugins` (spec: `app.tandem.plugins`) | `<plugin>:<connection-id>` | JSON `{access_token, refresh_token?, expires_at?, token_type, client_secret?}` or `{api_key}`; ≤16 KB (else rejected) | gateway |
 | `NS.auth` | `credentials-key` | 32-byte AES-256-GCM key for `auth/credentials.enc` | auth service |
-| `NS.remote` | `pairing:<pairing-id>` | JSON `{phone_pk, relay_url, session}`: the session's epoch keys (current and next) and counters as of the last handshake or rekey; `pairings` holds the live counters (D-1006) | phone service |
+| `NS.remote` | `pairing:<pairing-id>` | JSON `{phone_pk, relay_url, session}`: the session's epoch keys (current and next) and counters as of the last handshake or rekey; `pairings` holds the live counters (D-1906) | phone service |
 | `NS.remote` | `identity` | desktop X25519 static secret (created on first pairing) | phone service |
 | `NS.ssh` | `password:<host-id>` | only if the user ticks "Remember password" in the askpass dialog (default off) | ssh service |
 
@@ -2157,7 +2157,7 @@ Plugin count limit: Free = 1 connection (§3.2), enforced at connect.
 - **Handshake** (over the relay): phone generates static `P`, sends `hello{P.pub, tag = HMAC-SHA256(S, "tandem-pair-v1"‖pid‖P.pub)}`; desktop verifies the tag with `S` (proves QR possession; defeats a relay MITM). Both compute `ss = X25519(D, P)`, `root = HKDF-SHA256(salt=S, ikm=ss, info="tandem-root-v1"‖pid‖D.pub‖P.pub)`, `k_d2p, k_p2d = HKDF(root, info="d2p"/"p2d")`. `S` is then discarded.
 - **Frames:** `{v, epoch, dir, ctr: u64, nonce: 24B, ct}` with XChaCha20-Poly1305, `AAD = pid‖epoch‖dir‖ctr`, nonce = `ctr (8 B LE) ‖ 16 random bytes`. Receiver requires `ctr > last_ctr[dir]` (persisted in `pairings.rx_counter`, survives rekey), else reject (AC2). Plaintext ≤ 60 KB so frames stay ≤ 64 KB; long histories paged.
 - **Rekey:** every 1 h or 2^20 frames, started by the desktop: it sends a fresh ephemeral X25519 pub and the phone answers with its own; new keys = HKDF(secret ‖ X25519(eph_a, eph_b)); `epoch += 1`; counters keep increasing.
-- **Wire format v1 (D-1005)**, shared by `tandem_core::remote` and `apps/web/lib/remote` and pinned by `crates/tandem-core/tests/fixtures/remote_v1.json`. Integers are big-endian unless noted; text is UTF-8; `‖` concatenates.
+- **Wire format v1 (D-1905)**, shared by `tandem_core::remote` and `apps/web/lib/remote` and pinned by `crates/tandem-core/tests/fixtures/remote_v1.json`. Integers are big-endian unless noted; text is UTF-8; `‖` concatenates.
   - `HELLO` (phone → desktop, plaintext): `0x01 ‖ 0x01 ‖ P.pub (32) ‖ tag (32)`, `tag = HMAC-SHA256(S, "tandem-pair-v1" ‖ pid ‖ P.pub)`.
   - `SEALED`: `0x02 ‖ 0x01 ‖ epoch u32 ‖ dir u8 (0 = desktop→phone, 1 = phone→desktop) ‖ ctr u64 ‖ nonce (24) ‖ ct`; `AAD = pid ‖ epoch u32 ‖ dir u8 ‖ ctr u64`; nonce = `ctr` as u64 little-endian ‖ 16 random bytes. Header 39 bytes, so plaintext ≤ 61,440 bytes keeps a frame under 64 KB.
   - Keys: an all-zero `X25519(D, P)` is refused. `secret₀ = root = HKDF-SHA256(salt = S, ikm = ss, info = "tandem-root-v1" ‖ pid ‖ D.pub ‖ P.pub)`. Per epoch `e`: `k_d2p = HKDF-SHA256(salt = ∅, ikm = secretₑ, info = "tandem-d2p-v1")`, `k_p2d` likewise with `"tandem-p2d-v1"`. Rekey: `secretₑ₊₁ = HKDF-SHA256(salt = secretₑ, ikm = X25519(eph_d, eph_p), info = "tandem-rekey-v1" ‖ (e+1) u32)`.

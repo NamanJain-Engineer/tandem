@@ -1,5 +1,5 @@
 //! The phone companion's wire protocol v1 (F-RM-03, ARCHITECTURE §13.3,
-//! D-1005): the QR handshake, sealed frames with monotonic counters, and
+//! D-1905): the QR handshake, sealed frames with monotonic counters, and
 //! rekeying. `apps/web/lib/remote/protocol.ts` produces the same bytes;
 //! `tests/fixtures/remote_v1.json` pins both.
 

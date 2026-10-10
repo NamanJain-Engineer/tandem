@@ -1,6 +1,6 @@
 /**
  * Lets routes tell the relay to drop a pairing's sockets (F-BE-11, revoke).
- * The relay runs in the API process (D-1003), so this stays in memory.
+ * The relay runs in the API process (D-1903), so this stays in memory.
  */
 export class RelayControl {
   private readonly listeners = new Set<(pairingId: string) => void>();

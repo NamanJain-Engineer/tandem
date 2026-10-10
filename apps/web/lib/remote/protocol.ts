@@ -1,5 +1,5 @@
 // The phone companion's wire protocol v1 (F-RM-03, ARCHITECTURE §13.3,
-// D-1005). The same bytes are produced by `tandem_core::remote` on the
+// D-1905). The same bytes are produced by `tandem_core::remote` on the
 // desktop; `crates/tandem-core/tests/fixtures/remote_v1.json` pins both.
 import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { randomBytes } from "@noble/ciphers/utils.js";

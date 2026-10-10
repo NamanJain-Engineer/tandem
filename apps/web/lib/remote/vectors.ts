@@ -1,6 +1,6 @@
 // Builds the protocol's interop vectors from fixed inputs. The committed
 // copy is crates/tandem-core/tests/fixtures/remote_v1.json; the Rust and
-// TypeScript tests both check their bytes against it (D-1005).
+// TypeScript tests both check their bytes against it (D-1905).
 import {
   b64url,
   encodeHello,

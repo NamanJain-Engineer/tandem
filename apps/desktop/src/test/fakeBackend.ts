@@ -103,7 +103,7 @@ export function fakeBackend(
     telemetry_capture: () => null,
     term_set_theme_colors: () => null,
     app_log: () => null,
-    // Settings › Remote renders the phone section beside SSH and WSL (D-1017).
+    // Settings › Remote renders the phone section beside SSH and WSL (D-1917).
     phone_pairings_list: () => [],
     phone_queue_list: () => [],
     phone_arm_state: () => ({ armedUntil: null }),

@@ -2,7 +2,7 @@
 // browser it's IndexedDB, with the pairing sealed by a non-extractable
 // AES-GCM key that also lives in IndexedDB: script on this origin can use
 // it but can't read it out. X25519 and XChaCha20 keys aren't WebCrypto key
-// types everywhere, so they can't be non-extractable themselves (D-1009).
+// types everywhere, so they can't be non-extractable themselves (D-1909).
 import { b64url, fromB64url, type EpochKeys, type PairingLink, type SessionState } from "./protocol";
 import type { PhoneGrants } from "./messages";
 
