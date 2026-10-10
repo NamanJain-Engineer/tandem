@@ -5,7 +5,7 @@
 //   /billing/mock  → sign in, complete the mock checkout
 // Credentials come from $TANDEM_HOME/e2e-browser.json, written by the spec.
 // Every step is appended to $TANDEM_HOME/e2e-browser.log.
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium, type Page } from "playwright-core";
 
@@ -14,6 +14,23 @@ const logFile = join(home, "e2e-browser.log");
 const say = (line: string) => appendFileSync(logFile, `${new Date().toISOString()} ${line}\n`);
 
 type Creds = { email: string; password: string; checkout?: "complete" | "cancel" };
+
+/** A plugin's sign-in at the mock authorization server (M12): the mock
+ * approves at once and redirects to the app's callback, which this follows.
+ * With `plugin-signin.txt` saying "hold", the URL is only written down
+ * (`plugin-authorize.txt`) for the spec to follow later (a late callback). */
+async function pluginSignIn(url: URL) {
+  writeFileSync(join(home, "plugin-authorize.txt"), url.toString());
+  const mode = existsSync(join(home, "plugin-signin.txt"))
+    ? readFileSync(join(home, "plugin-signin.txt"), "utf8").trim()
+    : "follow";
+  if (mode === "hold") {
+    say("plugin:held");
+    return;
+  }
+  const r = await fetch(url, { redirect: "follow" });
+  say(`plugin:callback ${r.status}`);
+}
 
 async function signInThenGo(page: Page, target: URL, creds: Creds) {
   const next = target.pathname + target.search;
@@ -27,6 +44,10 @@ async function main() {
   const raw = process.argv[2];
   if (!raw) throw new Error("no URL");
   const url = new URL(raw);
+  if (url.port === "8791" && url.pathname === "/authorize") {
+    await pluginSignIn(url);
+    return;
+  }
   const creds = JSON.parse(readFileSync(join(home, "e2e-browser.json"), "utf8")) as Creds;
   say(`open ${url.pathname}`);
   // A preinstalled Chromium when given (PLAYWRIGHT_CHROMIUM), else Playwright's own.

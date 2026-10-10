@@ -167,7 +167,7 @@ E2E lessons (each cost a debugging round):
 - Only one E2E run at a time: a killed run's `run.ts` can outlive `pkill` and
   share tauri-driver's :4444, so specs drive the other run's app. Check
   `pgrep -af "e2e/run.ts|tauri-driver|WebKitWebDriver"` before starting.
-- Dictate specs download models from `scripts/serve-models.ts` (:8791, the real
+- Dictate specs download models from `scripts/serve-models.ts` (:8792, the real
   `~/.cache/tandem-models`; run `bash scripts/fetch-models.sh base.en parakeet`
   first). The runner points `HOME` at the test's home, so anything that needs the
   real home must capture it before then.

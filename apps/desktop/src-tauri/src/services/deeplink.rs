@@ -38,6 +38,12 @@ const ROUTES: &[(&str, &[&str], &[&str])] = &[
     ("open", &["path"], &[]),
     // Starts or stops a take (F-DI-01), e.g. bound to a Wayland desktop shortcut.
     ("dictate/toggle", &[], &[]),
+    // A plugin sign-in that returns by the custom scheme (F-PL-03).
+    (
+        "plugin/callback",
+        &["state"],
+        &["code", "error", "error_description", "iss"],
+    ),
 ];
 
 fn scheme_ok(scheme: &str) -> bool {
@@ -158,6 +164,23 @@ mod tests {
         assert_eq!(link.route, "dictate/toggle");
         assert!(link.params.is_empty());
         assert!(parse("tandem://dictate/toggle?x=1").is_none());
+    }
+
+    #[test]
+    fn f_sh_13_plugin_callback_carries_the_sign_in_result() {
+        let link = parse("tandem://plugin/callback?code=c1&state=s1").expect("plugin callback");
+        assert_eq!(link.route, "plugin/callback");
+        assert_eq!(
+            (link.params["code"].as_str(), link.params["state"].as_str()),
+            ("c1", "s1")
+        );
+        let denied =
+            parse("tandem://plugin/callback?state=s1&error=access_denied&error_description=No")
+                .expect("denied");
+        assert_eq!(denied.params["error"], "access_denied");
+        // Without the attempt's state it's nothing to deliver.
+        assert!(parse("tandem://plugin/callback?code=c1").is_none());
+        assert!(parse("tandem://plugin/callback?code=c1&state=s1&token=x").is_none());
     }
 
     #[test]

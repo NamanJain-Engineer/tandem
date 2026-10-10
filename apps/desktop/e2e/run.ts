@@ -36,7 +36,7 @@ const API = "http://127.0.0.1:8787";
 const WEB = "http://localhost:3000";
 const FEED = "http://127.0.0.1:8790";
 /** Dictate's models, served from the local cache (scripts/serve-models.ts, E2E-M8-8). */
-const MODELS = "http://127.0.0.1:8791";
+const MODELS = "http://127.0.0.1:8792";
 /** Fixed, so a server left running from an earlier run reads the same file. */
 const MODELS_CONTROL = join(tmpdir(), "tandem-models-control.txt");
 /** The real home and model cache, read before HOME points at the test's home. */
@@ -44,6 +44,8 @@ const REAL_HOME = homedir();
 const MODEL_CACHE = process.env.TANDEM_MODEL_CACHE ?? join(REAL_HOME, ".cache", "tandem-models");
 /** The browser's fixture pages (scripts/serve-fixtures.ts, E2E-M9-3). */
 const FIXTURES = "http://127.0.0.1:5173";
+/** The mock OAuth server and plugin upstreams (`mock-plugins`, D-954). */
+const PLUGINS = "http://127.0.0.1:8791";
 
 async function up(url: string): Promise<boolean> {
   try {
@@ -120,6 +122,11 @@ async function main() {
       ["build", "-p", "tandem-desktop", "--features", "custom-protocol,test-vendors", ...cargoProfile],
       { cwd: root, stdio: "inherit" },
     );
+    // The mock authorization server and plugin upstreams (M12).
+    execFileSync("cargo", ["build", "-p", "tandem-gateway", "--features", "test-vendors", "--bin", "mock-plugins"], {
+      cwd: root,
+      stdio: "inherit",
+    });
     // The status hook and the fake engines (ARCHITECTURE §6.12).
     execFileSync("cargo", ["build", "-p", "tandem-engines", "--features", "fixtures", "--bins"], {
       cwd: root,
@@ -219,6 +226,9 @@ async function main() {
     // The local update feed (scripts/mock-update-feed.ts, E2E-M5-7); it
     // answers "nothing new" unless a spec picks a scenario.
     TANDEM_UPDATE_URL: `${FEED}/v1/updates`,
+    // Every plugin's upstream and sign-in host is this one mock (debug E2E
+    // builds; catalog::rebase).
+    TANDEM_E2E_PLUGIN_BASE: PLUGINS,
     // Scrollback snapshots often enough that a kill -9 leaves some (E2E-M5-3).
     TANDEM_SNAPSHOT_EVERY_MS: "1500",
     // Dictate downloads come from the local model server (debug builds).
@@ -282,6 +292,14 @@ async function main() {
     await fetch(`${FEED}/__scenario`, { method: "POST", body: JSON.stringify({ scenario: "none" }) });
   }
 
+  let plugins: ChildProcess | undefined;
+  if (!(await up(`${PLUGINS}/__state`))) {
+    plugins = startDetached(join(root, "target/debug/mock-plugins"), ["8791"], {});
+    await waitUp(`${PLUGINS}/__state`, 30);
+  } else {
+    await fetch(`${PLUGINS}/__reset`);
+  }
+
   let fixtures: ChildProcess | undefined;
   const fixturesUp = async () =>
     (await fetch(`${FIXTURES}/health`)
@@ -301,9 +319,9 @@ async function main() {
   let models: ChildProcess | undefined;
   const modelsUp = async () => (await fetch(`${MODELS}/health`).then((r) => r.text()).catch(() => "")) === "ok";
   if (!(await modelsUp())) {
-    models = startDetached(join(root, "node_modules/.bin/tsx"), ["scripts/serve-models.ts", "--port", "8791", "--control", MODELS_CONTROL], { HOME: REAL_HOME, TANDEM_MODEL_CACHE: MODEL_CACHE });
+    models = startDetached(join(root, "node_modules/.bin/tsx"), ["scripts/serve-models.ts", "--port", "8792", "--control", MODELS_CONTROL], { HOME: REAL_HOME, TANDEM_MODEL_CACHE: MODEL_CACHE });
     for (let i = 0; i < 60 && !(await modelsUp()); i++) await new Promise((r) => setTimeout(r, 500));
-    if (!(await modelsUp())) throw new Error(`${MODELS} didn't come up (is something else on :8791?)`);
+    if (!(await modelsUp())) throw new Error(`${MODELS} didn't come up (is something else on :8792?)`);
   }
 
   let code = 1;
@@ -317,6 +335,7 @@ async function main() {
     stop(api);
     stop(web);
     stop(feed);
+    stop(plugins);
     stop(fixtures);
     stop(models);
     stop(wm);

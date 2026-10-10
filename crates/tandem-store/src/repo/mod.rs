@@ -6,6 +6,7 @@ pub mod attachments;
 pub mod dictate;
 pub mod dump;
 pub mod editor_tabs;
+pub mod held_drafts;
 pub mod layouts;
 pub mod mail;
 pub mod memory_changes;

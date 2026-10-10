@@ -240,6 +240,16 @@ const COMMANDS: &[&str] = &[
     "plugins_catalog",
     "grants_list",
     "grants_set",
+    "plugin_connect_oauth",
+    "plugin_connect_cancel",
+    "plugin_connect_api_key",
+    "plugin_connect_local_port",
+    "plugin_disconnect",
+    "plugin_detail",
+    "plugin_set_option",
+    "held_drafts_list",
+    "held_draft_run",
+    "held_drafts_discard",
     "teammate_list",
     "teammate_get",
     "teammate_create",
@@ -289,6 +299,9 @@ const TEST_COMMANDS: &[&str] = &[
     "test_dictate_widget",
     "test_plugin_connect",
     "test_gateway_metrics",
+    "test_plugin_price",
+    "test_plugin_allowlist",
+    "test_unattended_run",
 ];
 
 /// What About › Licenses shows when the notices weren't generated (dev builds).

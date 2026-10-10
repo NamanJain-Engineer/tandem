@@ -13,10 +13,12 @@ import { useBoot } from "./useBoot";
 
 /** UI §3.6: the branch of the focused workspace (the Files tab's context)
  * with ahead/behind, which opens the Files tab's Changes view; the
- * connection and the version. */
+ * connection and the version. An early-access build has no hosted service
+ * to be connected to, so it shows no connection at all (D-816). */
 export function StatusBar() {
   const version = useBoot((s) => s.boot?.version ?? "");
   const online = useSession((s) => s.entitlement?.online ?? true);
+  const hosted = useSession((s) => s.auth?.hosted ?? true);
   const active = useActiveFiles();
   const context = active.kind === "context" ? active.context : null;
   const git = useGitContext(context);
@@ -65,9 +67,11 @@ export function StatusBar() {
       )}
       <span className="flex-1" />
       <DictateSegment />
-      <span data-testid="connection-state" className={online ? undefined : "text-warning"}>
-        {online ? t("status.online") : t("status.offline")}
-      </span>
+      {hosted && (
+        <span data-testid="connection-state" className={online ? undefined : "text-warning"}>
+          {online ? t("status.online") : t("status.offline")}
+        </span>
+      )}
       <span className="tabular-nums">{t("status.version", { version })}</span>
     </footer>
   );

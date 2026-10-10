@@ -2,7 +2,7 @@
 // $TANDEM_MODEL_CACHE) at `/<model-id>/<file>`, the layout the app asks for
 // when TANDEM_MODELS_BASE points here (debug builds). Ranges are honoured.
 //
-//   tsx scripts/serve-models.ts --port 8791 [--corrupt-byte 1000] [--control <file>]
+//   tsx scripts/serve-models.ts --port 8792 [--corrupt-byte 1000] [--control <file>]
 //
 // `--corrupt-byte N` flips byte N of every file it serves (E2E-M8-8: the
 // SHA-256 check must fail). `--control <file>` re-reads that file on each
@@ -19,7 +19,7 @@ const arg = (name: string) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
 };
-const port = Number(arg("--port") ?? 8791);
+const port = Number(arg("--port") ?? 8792);
 const fixedCorrupt = arg("--corrupt-byte");
 const control = arg("--control");
 const cache = process.env.TANDEM_MODEL_CACHE ?? join(homedir(), ".cache", "tandem-models");

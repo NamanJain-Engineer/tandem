@@ -31,6 +31,7 @@ import { useUi } from "../../stores/ui";
 import { allowsAccess, clampAccess } from "../policy/policy";
 import { takeDropped, takeTexts, useThreadDrop } from "./drops";
 import { useComposerDictation } from "../dictate/useComposerDictation";
+import { ThreadPlugins } from "../plugins/ThreadPlugins";
 
 /** Draft saves are debounced (F-TH-07). */
 export const DRAFT_DEBOUNCE_MS = 300;
@@ -305,6 +306,9 @@ export function ThreadComposer({
     }
   };
 
+  const [pluginsOpen, setPluginsOpen] = useState(false);
+  const pickFiles = () =>
+    void invoke<Attachment[]>("thread_pick_files", { threadId: thread.id }).then(attach, attach);
   const attach = (list: Attachment[] | IpcError) => {
     if ("code" in list) show({ tone: "error", title: list.message });
     else setAttachments((a) => [...a, ...list]);
@@ -440,8 +444,15 @@ export function ThreadComposer({
               : []),
           ].join(" · "),
         }}
-        onAttach={() =>
-          void invoke<Attachment[]>("thread_pick_files", { threadId: thread.id }).then(attach, attach)
+        onAttach={pickFiles}
+        attachMenu={
+          // Teammate chats use the teammate's grants (F-AG-05), not the thread's.
+          chat
+            ? undefined
+            : [
+                { id: "files", label: t("thread.composer.addFiles"), onSelect: pickFiles },
+                { id: "plugins", label: t("threadPlugins.menu"), onSelect: () => setPluginsOpen(true) },
+              ]
         }
         dropActive={dragOver}
         onPasteImage={() =>
@@ -489,6 +500,7 @@ export function ThreadComposer({
           void update(thread.id, { access: "full" });
         }}
       />
+      {!chat && <ThreadPlugins threadId={thread.id} open={pluginsOpen} onOpenChange={setPluginsOpen} />}
     </>
   );
 }
