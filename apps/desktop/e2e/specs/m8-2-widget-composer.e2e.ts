@@ -1,0 +1,79 @@
+import { $, browser } from "@wdio/globals";
+import { freshOffline, invoke, mod } from "../support/app";
+import { ensureModel, fixture, hold, key, mic, platform, resetPlatform, setSetting, waitPasted, widget } from "../support/dictate";
+
+// E2E-M8-4 Widget (F-DI-07) and E2E-M8-5 Composer (F-DI-12).
+
+describe("E2E-M8-4 Widget", () => {
+  before(async () => {
+    await freshOffline();
+    await setSetting("dictate_enabled", true);
+    await ensureModel();
+  });
+
+  it("E2E-M8-4 'While recording' shows it when recording starts and hides it 1 s after insertion", async () => {
+    await setSetting("dictate_widget_visibility", "while_recording");
+    await resetPlatform();
+    await mic({ source: "wav", path: fixture("hello_world_16k.wav") });
+    await browser.waitUntil(async () => !(await widget()).visible, { timeout: 5_000, timeoutMsg: "the widget showed while idle" });
+    await key("hold", "down");
+    await browser.waitUntil(async () => (await widget()).visible, { timeout: 2_000, timeoutMsg: "the widget didn't show" });
+    await browser.pause(2_500);
+    await key("hold", "up");
+    await waitPasted();
+    const insertedAt = Date.now();
+    await browser.waitUntil(async () => !(await widget()).visible, { timeout: 5_000, timeoutMsg: "the widget stayed up" });
+    expect(Date.now() - insertedAt).toBeGreaterThanOrEqual(700);
+  });
+
+  it("E2E-M8-4 an error toast carries the full diagnostic in its tooltip", async () => {
+    await setSetting("dictate_widget_visibility", "always");
+    await mic({ source: "zeros" });
+    const main = await browser.getWindowHandle();
+    await hold(1_800);
+    let found = false;
+    for (const h of await browser.getWindowHandles()) {
+      if (h === main) continue;
+      await browser.switchToWindow(h);
+      const pill = $('[data-testid="dictate-widget"]');
+      if (!(await pill.isExisting())) continue;
+      await browser.waitUntil(async () => (await pill.getAttribute("data-state")) === "error", {
+        timeout: 20_000,
+        timeoutMsg: "no error toast in the widget",
+      });
+      const title = await pill.getAttribute("title");
+      expect((title ?? "").length).toBeGreaterThan(20);
+      found = true;
+    }
+    await browser.switchToWindow(main);
+    expect(found).toBe(true);
+    await mic({ source: "wav", path: fixture("hello_world_16k.wav") });
+    await setSetting("dictate_widget_visibility", "while_recording");
+  });
+});
+
+describe("E2E-M8-5 Composer", () => {
+  it("E2E-M8-5 dictation goes in at the caret, and the clipboard is unchanged", async () => {
+    await resetPlatform();
+    const id = (await invoke<{ id: string }>("thread_create", { args: { kind: "thread", workspaceId: null } })).id;
+    await browser.keys([mod(), "3"]);
+    const row = $(`[data-testid="thread-row"][data-thread-id="${id}"]`);
+    await row.waitForClickable({ timeout: 10_000 });
+    await row.click();
+    const area = $(`[data-testid="thread-main"][data-thread-id="${id}"] textarea`);
+    await area.waitForDisplayed({ timeout: 10_000 });
+    await area.click();
+    await area.setValue("say  please");
+    await browser.execute((el: HTMLElement) => (el as HTMLTextAreaElement).setSelectionRange(4, 4), await area);
+    await mic({ source: "wav", path: fixture("hello_world_16k.wav") });
+    await hold(2_500);
+    await browser.waitUntil(async () => /^say .*hello.*world.* please$/i.test(await area.getValue()), {
+      timeout: 60_000,
+      timeoutMsg: `not inserted at the caret: ${await area.getValue()}`,
+    });
+    const view = await platform();
+    expect(view.pasted).toEqual([]);
+    expect(view.calls.some((c) => c.includes("clipboard"))).toBe(false);
+    expect(view.clipboard).toBe("previous clipboard");
+  });
+});

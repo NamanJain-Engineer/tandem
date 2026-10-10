@@ -12,6 +12,7 @@ pub mod config;
 pub mod dashboard;
 pub mod deeplink;
 pub mod device_login;
+pub mod dictate;
 pub mod engines;
 pub mod entitlement;
 pub mod events;
@@ -37,9 +38,11 @@ pub mod thread_files;
 pub mod thread_summary;
 pub mod thread_titles;
 pub mod threads;
+pub mod tray;
 pub mod updates;
 pub mod usage;
 pub mod usage_report;
+pub mod widget;
 pub mod workspaces;
 
 /// Debug builds: the E2E fake engines' switches (`TANDEM_FAKE_*`), for

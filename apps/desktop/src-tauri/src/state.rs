@@ -137,6 +137,8 @@ pub struct AppState {
     pub git_panel: Arc<crate::services::git_panel::GitPanelService>,
     /// Browser tabs and panes (F-CD-17), bound to the window in setup.
     pub browser: std::sync::OnceLock<Arc<crate::browser::BrowserService>>,
+    /// Dictate: push-to-talk, models, history and the dictionary (F-DI-*).
+    pub dictate: Arc<crate::services::dictate::DictateService>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
     pub e2e: bool,
 }
@@ -470,6 +472,8 @@ impl AppState {
             bus.clone(),
             crate::services::auto::AutoTiming::default(),
         ));
+        let dictate =
+            crate::services::dictate::DictateService::new(store.clone(), data.clone(), e2e);
         Self {
             data,
             store,
@@ -503,6 +507,7 @@ impl AppState {
             files,
             git_panel,
             browser: std::sync::OnceLock::new(),
+            dictate,
             e2e,
         }
     }

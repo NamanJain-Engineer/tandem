@@ -76,6 +76,9 @@ pub struct DictateToast {
     pub error: bool,
     /// `{app}` for the elevated warning.
     pub app: Option<String>,
+    /// `{model}` (and `{previous}`) for model messages.
+    pub model: Option<String>,
+    pub previous: Option<String>,
     pub detail: String,
 }
 
@@ -97,6 +100,12 @@ pub enum ToastCode {
     TranscribeFailed,
     ConductorListening,
     TimeAlmostUp,
+    /// "Couldn't load {model}. Still using {previous}."
+    ModelFailed,
+    /// "Using {model} because {previous} isn't downloaded."
+    ModelFallback,
+    /// "Microphone stopped responding" (reconnecting).
+    Reconnecting,
 }
 
 /// A finished take for the history (F-DI-08).
@@ -391,6 +400,8 @@ impl Dictate {
             code,
             error,
             app: None,
+            model: None,
+            previous: None,
             detail,
         });
     }
@@ -730,6 +741,8 @@ impl Dictate {
                         code,
                         error: false,
                         app,
+                        model: None,
+                        previous: None,
                         detail: copy_detail(reason),
                     });
                 }

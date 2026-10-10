@@ -103,6 +103,7 @@ enum Cmd {
     Cancel,
     Config(CaptureConfig),
     Lost(u64),
+    Reopen,
     Stop,
 }
 
@@ -182,6 +183,12 @@ impl AudioService {
             return Recording::default();
         }
         rx.recv_timeout(Duration::from_secs(30)).unwrap_or_default()
+    }
+
+    /// Closes the stream so the next take opens the device afresh (the
+    /// device list or a fake source changed).
+    pub fn reopen(&self) {
+        let _ = self.tx.send(Cmd::Reopen);
     }
 
     /// Drops the take's audio unread.
@@ -280,6 +287,11 @@ impl Worker {
                 self.config = config;
                 // A new mic applies after the take ("Switches after this take").
                 if device_changed && self.take.is_none() {
+                    self.stream = None;
+                }
+            }
+            Cmd::Reopen => {
+                if self.take.is_none() {
                     self.stream = None;
                 }
             }

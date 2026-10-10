@@ -60,6 +60,9 @@ async fn apply(
     key: SettingKey,
     value: &Value,
 ) -> Result<(), IpcError> {
+    if key.as_str().starts_with("dictate_") || key == SettingKey::Theme {
+        state.dictate.reload_settings(key).await;
+    }
     match key {
         SettingKey::TelemetryUsage | SettingKey::TelemetryCrash => state.apply_settings().await,
         SettingKey::LaunchAtLogin => {

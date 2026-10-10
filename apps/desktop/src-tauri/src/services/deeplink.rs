@@ -36,6 +36,8 @@ const ROUTES: &[(&str, &[&str], &[&str])] = &[
     // (route, required, optional)
     ("auth/callback", &["code", "state"], &[]),
     ("open", &["path"], &[]),
+    // Starts or stops a take (F-DI-01), e.g. bound to a Wayland desktop shortcut.
+    ("dictate/toggle", &[], &[]),
 ];
 
 fn scheme_ok(scheme: &str) -> bool {
@@ -148,6 +150,14 @@ mod tests {
         assert_eq!(link.params["path"], "/tmp/with space");
         let cb = parse("tandem://auth/callback?code=abc&state=def").expect("callback");
         assert_eq!(cb.route, "auth/callback");
+    }
+
+    #[test]
+    fn f_di_01_dictate_toggle_is_a_route_without_parameters() {
+        let link = parse("tandem://dictate/toggle").expect("toggle");
+        assert_eq!(link.route, "dictate/toggle");
+        assert!(link.params.is_empty());
+        assert!(parse("tandem://dictate/toggle?x=1").is_none());
     }
 
     #[test]

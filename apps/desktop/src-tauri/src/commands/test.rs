@@ -388,3 +388,168 @@ pub fn test_min_version_shift(
     state.updates.shift_min_version_seen(ms);
     Ok(state.updates.state())
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum TestKeyWhich {
+    Hold,
+    Toggle,
+    Esc,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum TestKeyPhase {
+    Down,
+    Up,
+}
+
+fn dictate_fakes(state: &AppState) -> Result<&crate::services::dictate::Fakes, IpcError> {
+    guard(state)?;
+    state
+        .dictate
+        .fakes
+        .as_ref()
+        .ok_or_else(|| IpcError::new(ErrorCode::Unavailable, "no fakes"))
+}
+
+/// Presses or releases the bound shortcut through the fake hotkey source.
+#[tauri::command]
+pub fn test_dictate_key(
+    state: State<'_, AppState>,
+    which: TestKeyWhich,
+    phase: TestKeyPhase,
+) -> Result<bool, IpcError> {
+    use tandem_voice::hotkey::{Phase, Which};
+    let fakes = dictate_fakes(&state)?;
+    let which = match which {
+        TestKeyWhich::Hold => Which::Hold,
+        TestKeyWhich::Toggle => Which::Toggle,
+        TestKeyWhich::Esc => Which::Esc,
+    };
+    let phase = match phase {
+        TestKeyPhase::Down => Phase::Down,
+        TestKeyPhase::Up => Phase::Up,
+    };
+    Ok(fakes.hotkeys.send(which, phase))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "source", rename_all = "snake_case")]
+#[ts(export)]
+pub enum TestMicSource {
+    Wav { path: String },
+    Silence,
+    Zeros,
+}
+
+/// What the fake microphone plays from the next take on.
+#[tauri::command]
+pub fn test_dictate_mic(state: State<'_, AppState>, source: TestMicSource) -> Result<(), IpcError> {
+    use tandem_voice::capture::FakeSource;
+    guard(&state)?;
+    let source = match source {
+        TestMicSource::Wav { path } => {
+            let (samples, rate) = tandem_voice::audio::read_wav(std::path::Path::new(&path))
+                .map_err(|e| IpcError::new(ErrorCode::NotFound, e.to_string()))?;
+            FakeSource::Samples {
+                samples: std::sync::Arc::new(samples),
+                rate,
+                speed: 1,
+            }
+        }
+        TestMicSource::Silence => FakeSource::Samples {
+            samples: std::sync::Arc::new(crate::services::dictate::dither(16_000 * 30)),
+            rate: 16_000,
+            speed: 1,
+        },
+        TestMicSource::Zeros => FakeSource::Zeros,
+    };
+    state.dictate.test_mic(source)
+}
+
+/// The recording insertion backend: its calls, what each paste typed and
+/// the clipboard; optionally reconfigured first.
+#[tauri::command]
+pub fn test_dictate_platform(
+    state: State<'_, AppState>,
+    clear: Option<bool>,
+    target: Option<tandem_voice::insert::Target>,
+    no_target: Option<bool>,
+    fail_focus: Option<bool>,
+    fail_paste: Option<bool>,
+    clipboard: Option<String>,
+) -> Result<crate::services::dictate::FakePlatformView, IpcError> {
+    use tandem_voice::insert::fake::Call;
+    use tandem_voice::insert::Clip;
+    let p = &dictate_fakes(&state)?.platform;
+    if clear.unwrap_or(false) {
+        p.clear_calls();
+    }
+    if let Some(t) = target {
+        p.set_target(Some(t));
+    }
+    if no_target.unwrap_or(false) {
+        p.set_target(None);
+    }
+    if let Some(f) = fail_focus {
+        p.fail_focus(f);
+    }
+    if let Some(f) = fail_paste {
+        p.fail_paste(f);
+    }
+    if let Some(c) = clipboard {
+        p.set_clipboard(Clip::Text(c));
+    }
+    Ok(crate::services::dictate::FakePlatformView {
+        calls: p
+            .calls()
+            .iter()
+            .map(|c| match c {
+                Call::CaptureTarget => "capture_target".to_string(),
+                Call::RestoreFocus(w) => format!("restore_focus:{w}"),
+                Call::Paste { terminal } => {
+                    format!("paste:{}", if *terminal { "terminal" } else { "text" })
+                }
+                Call::ReadClipboard => "read_clipboard".into(),
+                Call::WriteClipboard(_) => "write_clipboard".into(),
+                Call::RestoreClipboard => "restore_clipboard".into(),
+            })
+            .collect(),
+        pasted: p.pasted(),
+        clipboard: match p.clipboard() {
+            Clip::Text(t) => Some(t),
+            _ => None,
+        },
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TestWidget {
+    pub visible: bool,
+    pub x: i32,
+    pub y: i32,
+}
+
+/// The widget window as the OS sees it.
+#[tauri::command]
+pub fn test_dictate_widget(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<TestWidget, IpcError> {
+    use tauri::Manager;
+    guard(&state)?;
+    let w = app
+        .get_webview_window(crate::services::widget::LABEL)
+        .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "no widget window"))?;
+    let pos = w.outer_position().unwrap_or_default();
+    Ok(TestWidget {
+        visible: w.is_visible().unwrap_or(false),
+        x: pos.x,
+        y: pos.y,
+    })
+}

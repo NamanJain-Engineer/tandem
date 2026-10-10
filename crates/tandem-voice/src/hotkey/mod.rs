@@ -187,6 +187,7 @@ pub struct ComboTracker {
     binding: Binding,
     which: Which,
     pressed: bool,
+    interrupted: bool,
 }
 
 /// A raw key in OS-neutral terms.
@@ -204,6 +205,7 @@ impl ComboTracker {
             binding,
             which,
             pressed: false,
+            interrupted: false,
         }
     }
 
@@ -229,7 +231,22 @@ impl ComboTracker {
             }
             RawKey::Mouse4 | RawKey::Mouse5 => false,
         });
+        // Holding a modifier-only shortcut and pressing another key (Ctrl+Alt+T)
+        // was another shortcut all along: the take is cancelled, once.
+        let other_key = held.iter().any(|k| matches!(k, RawKey::Key(_)));
+        if self.pressed && self.binding.is_modifier_only() && other_key && !self.interrupted {
+            self.interrupted = true;
+            return Some(KeyEvent {
+                which: Which::Esc,
+                phase: Phase::Down,
+                native: true,
+                at_ms,
+            });
+        }
         let now = mods_ok && trigger_ok && (!self.pressed && !extra || self.pressed);
+        if !now {
+            self.interrupted = false;
+        }
         let down = now && !self.pressed;
         let up = !now && self.pressed;
         self.pressed = now;
@@ -307,17 +324,50 @@ mod tests {
             .update(&held(&[ctrl.clone(), alt.clone()]), 5)
             .expect("down");
         assert_eq!(d.phase, Phase::Down);
-        // Another key joining mid-hold doesn't release it.
+        // Another key joining mid-hold cancels it (once) rather than
+        // releasing it; the release still comes when the keys go up.
         assert_eq!(
             t.update(
                 &held(&[ctrl.clone(), alt.clone(), RawKey::Key("T".into())]),
                 9
-            ),
-            None
+            )
+            .map(|e| e.which),
+            Some(Which::Esc)
         );
         let u = t.update(&held(std::slice::from_ref(&alt)), 20).expect("up");
         assert_eq!(u.phase, Phase::Up);
         assert_eq!(t.update(&held(&[]), 30), None);
+    }
+
+    #[test]
+    fn f_di_01_another_key_during_a_modifier_only_hold_cancels_it() {
+        let b: Binding = "Ctrl+Alt".parse().expect("b");
+        let mut t = ComboTracker::new(b, Which::Hold);
+        let ctrl = RawKey::Modifier(Modifier::Ctrl);
+        let alt = RawKey::Modifier(Modifier::Alt);
+        let tkey = RawKey::Key("T".into());
+        assert_eq!(
+            t.update(&held(&[ctrl.clone(), alt.clone()]), 0)
+                .map(|e| e.phase),
+            Some(Phase::Down)
+        );
+        let e = t
+            .update(&held(&[ctrl.clone(), alt.clone(), tkey.clone()]), 50)
+            .expect("esc");
+        assert_eq!((e.which, e.phase), (Which::Esc, Phase::Down));
+        assert_eq!(
+            t.update(&held(&[ctrl.clone(), alt.clone()]), 60),
+            None,
+            "only once"
+        );
+        assert_eq!(t.update(&held(&[]), 70).map(|e| e.phase), Some(Phase::Up));
+        // A combo with its own key isn't interrupted by that key.
+        let mut k = ComboTracker::new("Ctrl+Alt+D".parse().expect("b"), Which::Toggle);
+        let d = RawKey::Key("D".into());
+        assert!(k
+            .update(&held(&[ctrl.clone(), alt.clone(), d.clone()]), 0)
+            .is_some());
+        assert_eq!(k.update(&held(&[ctrl, alt, d]), 5), None);
     }
 
     #[test]

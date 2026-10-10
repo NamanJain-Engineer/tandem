@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-model-remove"
+description = "Enables the dictate_model_remove command without any pre-configured scope."
+commands.allow = ["dictate_model_remove"]
+
+[[permission]]
+identifier = "deny-dictate-model-remove"
+description = "Denies the dictate_model_remove command without any pre-configured scope."
+commands.deny = ["dictate_model_remove"]

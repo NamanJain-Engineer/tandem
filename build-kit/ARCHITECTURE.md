@@ -798,6 +798,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `dictate_take_correct` | `{takeId, corrected, remember}` (`remember` adds a Correction rule from the changed words) | `Rule?` | NotFound, Invalid |
 | `dictate_stats` | — | `DictateStats {words, speakingMs, takes, wpm, savedMs}` (kept across Clear history) | — |
 | `dictate_save_file` | `{suggestedName, kind: "csv"\|"png"\|"json"}` | `String?` (a path from the save dialog; null when cancelled) | — |
+| `dictate_pick_file` | `{kind: "csv"\|"json"}` | `String?` (an open dialog for a dictionary import) | — |
 | `dictate_share_card_save` | `{path, pngBase64}` | — (the 1080×810 share card the UI drew) | Invalid (not a PNG), Io |
 | `dictate_rewrite` | `{text, mode:"enhance"\|"polish", appId?}` | `String` | ForbiddenPlan, CreditsExhausted, Invalid (>5,000 chars) — M13 |
 | `dictionary_list` / `dictionary_save` / `dictionary_delete` / `dictionary_restore` / `dictionary_deleted` | — / `{rule: Rule}` / `{ids}` / `{id}` / — | `[Rule]` / `Rule` / — / `Rule` / `[Rule]` (deleted within 30 days) | Invalid (empty phrase or replacement), NotFound |
@@ -867,7 +868,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `test_thread_seed_events` | `{threadId, events, fenceBytes?}` | the number of events written (completed turns of a user message, an assistant reply, tool calls and a turn end, in one transaction; `fenceBytes` adds a last reply with a code fence that size; threads perf suite) | NotFound |
 | `test_dictate_key` | `{which:"hold"\|"toggle"\|"esc", phase:"down"\|"up"}` | `bool` (the fake hotkey source delivered it; Esc only while a take listens for it) | — |
 | `test_dictate_mic` | `{source:"wav", path} \| {source:"silence"} \| {source:"zeros"}` | — (what the fake microphone plays from the next take on) | NotFound |
-| `test_dictate_platform` | `{clear?, target?: InsertTarget\|null, failFocus?, failPaste?, clipboard?: String}` | `FakePlatformView {calls:[String], pasted:[String], clipboard?}` (the recording insertion backend) | — |
+| `test_dictate_platform` | `{clear?, target?: InsertTarget, noTarget?, failFocus?, failPaste?, clipboard?: String}` | `FakePlatformView {calls:[String], pasted:[String], clipboard?}` (the recording insertion backend) | — |
 | `test_dictate_widget` | — | `{visible, x, y}` (the widget window as the OS sees it) | — |
 
 `window.__tandemTest` in the webview wraps these commands plus UI-side counters. Not listed in `capabilities/*.json` for release.
@@ -880,6 +881,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `app:deep-link` | `DeepLink {route, params}` | deeplink service | F-SH-13 |
 | `app:subsystem-failed` | `{name, code, restarts}` | Supervisor | §5.2 |
 | `app:min-version` | `{minVersion?, graceUntil?, modal}` (`null`s: a lower minimum cleared the notice) | api client (header watcher) → updater service | F-SH-06 |
+| `ui:open-settings` | `{page}` (the tray's Dictate line opens Settings › Dictate) | tray | F-SH-13 |
 | `ui:focus` | `{source: SourceRef, flash: true, location?: {workspaceId, tabId}}` (`location` for panes) | focus service (notifications, Conductor, phone) | F-CD-12, F-DB-02 |
 | `settings:changed` | `{key, value}` | settings service | F-SH-04 |
 | `status:changed` | `{records:[StatusRecord], removed:[SessionKey]}` (coalesced 50 ms; `removed` when an agent left its pane) | StatusStore forwarder | F-EN-05, F-DB-01 |

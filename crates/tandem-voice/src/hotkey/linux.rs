@@ -448,8 +448,11 @@ mod tests {
         let e = s.transition(alt.clone(), true, false, 1);
         assert_eq!(e.len(), 1);
         assert_eq!((e[0].which, e[0].phase), (Which::Hold, Phase::Down));
+        // D completes the toggle combo and interrupts the modifier-only hold.
         let e = s.transition(RawKey::Key("D".into()), true, false, 2);
-        assert_eq!((e[0].which, e[0].phase), (Which::Toggle, Phase::Down));
+        let kinds: Vec<(Which, Phase)> = e.iter().map(|e| (e.which, e.phase)).collect();
+        assert!(kinds.contains(&(Which::Toggle, Phase::Down)), "{kinds:?}");
+        assert!(kinds.contains(&(Which::Esc, Phase::Down)), "{kinds:?}");
         let e = s.transition(RawKey::Key("Esc".into()), true, true, 3);
         assert_eq!(e[0].which, Which::Esc);
         let e = s.transition(alt, false, false, 4);

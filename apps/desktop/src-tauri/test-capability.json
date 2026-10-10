@@ -21,6 +21,10 @@
     "allow-test-auth-refresh",
     "allow-test-account-create",
     "core:window:allow-set-position",
-    "core:window:allow-outer-position"
+    "core:window:allow-outer-position",
+    "allow-test-dictate-key",
+    "allow-test-dictate-mic",
+    "allow-test-dictate-platform",
+    "allow-test-dictate-widget"
   ]
 }

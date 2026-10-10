@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-composer-focus"
+description = "Enables the dictate_composer_focus command without any pre-configured scope."
+commands.allow = ["dictate_composer_focus"]
+
+[[permission]]
+identifier = "deny-dictate-composer-focus"
+description = "Denies the dictate_composer_focus command without any pre-configured scope."
+commands.deny = ["dictate_composer_focus"]

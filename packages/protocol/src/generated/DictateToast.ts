@@ -9,4 +9,8 @@ export type DictateToast = { code: ToastCode, error: boolean,
 /**
  * `{app}` for the elevated warning.
  */
-app: string | null, detail: string, };
+app: string | null, 
+/**
+ * `{model}` (and `{previous}`) for model messages.
+ */
+model: string | null, previous: string | null, detail: string, };

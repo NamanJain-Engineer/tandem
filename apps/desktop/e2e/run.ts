@@ -26,6 +26,10 @@ const spec = suite ? `e2e/perf/${suite}.perf.ts` : specIndex >= 0 ? args[specInd
 const API = "http://127.0.0.1:8787";
 const WEB = "http://localhost:3000";
 const FEED = "http://127.0.0.1:8790";
+/** Dictate's models, served from the local cache (scripts/serve-models.ts, E2E-M8-8). */
+const MODELS = "http://127.0.0.1:8791";
+/** Fixed, so a server left running from an earlier run reads the same file. */
+const MODELS_CONTROL = join(tmpdir(), "tandem-models-control.txt");
 /** The browser's fixture pages (scripts/serve-fixtures.ts, E2E-M9-3). */
 const FIXTURES = "http://127.0.0.1:5173";
 
@@ -178,6 +182,9 @@ async function main() {
     TANDEM_UPDATE_URL: `${FEED}/v1/updates`,
     // Scrollback snapshots often enough that a kill -9 leaves some (E2E-M5-3).
     TANDEM_SNAPSHOT_EVERY_MS: "1500",
+    // Dictate downloads come from the local model server (debug builds).
+    TANDEM_MODELS_BASE: MODELS,
+    TANDEM_MODELS_CONTROL: MODELS_CONTROL,
     TANDEM_APP_PATH: appPath,
     TANDEM_FAKE_ENGINE_BIN: fakeEngine,
     // Detection looks only at this run's folders (no npm, no /usr/local/bin).
@@ -238,6 +245,15 @@ async function main() {
     if (!(await fixturesUp())) throw new Error(`${FIXTURES} didn't come up (is something else on :5173?)`);
   }
 
+  // Specs steer it through models-control.txt (normal, slow or a byte to corrupt).
+  let models: ChildProcess | undefined;
+  const modelsUp = async () => (await fetch(`${MODELS}/health`).then((r) => r.text()).catch(() => "")) === "ok";
+  if (!(await modelsUp())) {
+    models = startDetached(join(root, "node_modules/.bin/tsx"), ["scripts/serve-models.ts", "--port", "8791", "--control", MODELS_CONTROL], {});
+    for (let i = 0; i < 60 && !(await modelsUp()); i++) await new Promise((r) => setTimeout(r, 500));
+    if (!(await modelsUp())) throw new Error(`${MODELS} didn't come up (is something else on :8791?)`);
+  }
+
   let code = 1;
   try {
     const launcher = new Launcher(join(desktop, "e2e/wdio.conf.ts"), spec ? { spec: [join(desktop, spec)] } : {});
@@ -247,6 +263,7 @@ async function main() {
     stop(web);
     stop(feed);
     stop(fixtures);
+    stop(models);
     stop(wm);
   }
   const problems = checkArtifacts(home);
