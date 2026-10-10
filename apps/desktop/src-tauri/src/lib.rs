@@ -1224,6 +1224,9 @@ mod harness_tests {
             assert!(cap.get("webviews").is_none(), "{file} names a webview");
         }
         // The widget gets exactly this; anything more is a reviewed change.
+        // Reviewed (D-825): emit-to carries See plans to the main window,
+        // use-local is "Use local for this take" after a cloud failure
+        // (F-DI-05), and quick-action is Enhance and Polish (F-DI-10).
         let widget: serde_json::Value =
             serde_json::from_str(include_str!("../capabilities/widget.json")).expect("widget.json");
         assert_eq!(
@@ -1231,9 +1234,12 @@ mod harness_tests {
             serde_json::json!([
                 "core:event:allow-listen",
                 "core:event:allow-unlisten",
+                "core:event:allow-emit-to",
                 "core:window:allow-start-dragging",
                 "allow-dictate-status",
                 "allow-dictate-cancel-take",
+                "allow-dictate-use-local",
+                "allow-dictate-quick-action",
                 "allow-dictate-widget-set-position",
                 "allow-app-log"
             ])
