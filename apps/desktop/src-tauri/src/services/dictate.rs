@@ -457,7 +457,7 @@ pub fn mine_suggestions(
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[ts(export, rename = "DictionarySuggestion")]
 pub struct Suggestion {
     pub id: String,
     pub term: String,

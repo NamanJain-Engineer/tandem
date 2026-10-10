@@ -81,6 +81,8 @@ tokio = { workspace = true, features = ["test-util"] }
 [features]
 # Tauri uses this to switch between dev server and bundled assets.
 custom-protocol = ["tauri/custom-protocol"]
+# The gateway's test vendor modules (`test_echo` …), for E2E builds only.
+test-vendors = ["tandem-gateway/test-vendors"]
 
 [lints]
 workspace = true

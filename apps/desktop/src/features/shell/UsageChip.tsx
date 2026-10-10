@@ -45,9 +45,7 @@ function useChipAccount(): string | null {
     return pane?.kind === "agent" ? (pane.accountId ?? null) : null;
   });
   const engine = useEngines((s) => defaultEngine(s.list));
-  const fallback = useAccounts(
-    (s) => s.list.find((a) => a.engineId === engine && a.isDefault)?.id ?? null,
-  );
+  const fallback = useAccounts((s) => s.list.find((a) => a.engineId === engine && a.isDefault)?.id ?? null);
   return focused ?? fallback;
 }
 

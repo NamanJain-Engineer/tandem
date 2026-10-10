@@ -141,9 +141,11 @@ setting_keys! {
     SettingsLastPage,
     OnboardingStep,
     OfflineStartedAt,
+    WhatsNewSeen,
     RailWidth,
     ThreadDefaults,
     ThreadGrid,
+    SkillsSeen,
 }
 
 /// How a value is checked before it is stored.
@@ -824,6 +826,14 @@ pub static SCHEMA: &[SettingSpec] = &[
         []
     ),
     spec!(OfflineStartedAt, json!(null), V::OptionalInt, Hidden, []),
+    // F-WB-03: the last version whose "What's new" was shown.
+    spec!(
+        WhatsNewSeen,
+        json!(null),
+        V::OptionalText { max: 64 },
+        Hidden,
+        []
+    ),
     // The Code rail's width (F-SH-03: 180–360 px, default 248). The Agent and
     // Thread rails get their own keys with their lists.
     spec!(RailWidth, json!(248), V::IntRange(180, 360), Hidden, []),
@@ -831,6 +841,9 @@ pub static SCHEMA: &[SettingSpec] = &[
     // per engine `<engine>.model`, `<engine>.effort`, `<engine>.access`.
     spec!(ThreadDefaults, json!({}), V::Map, Hidden, []),
     spec!(ThreadGrid, json!({"ids": []}), V::Map, Hidden, []),
+    // Per teammate, the skills the user made or opened; any other is the
+    // teammate's own and "New" (F-AG-09).
+    spec!(SkillsSeen, json!({}), V::Map, Hidden, []),
 ];
 
 pub fn spec(key: SettingKey) -> &'static SettingSpec {
@@ -1005,6 +1018,22 @@ mod tests {
         assert!(validate(k, &json!({"pane.split_right": "R"})).is_err());
         assert!(validate(k, &json!({"pane.split_right": true})).is_err());
         assert!(validate(k, &json!(["pane.split_right"])).is_err());
+    }
+
+    /// `pnpm gen:protocol` / `gen:docs` (F-WB-02): writes every setting's
+    /// key, page and default to `TANDEM_SETTINGS_OUT` for the docs.
+    #[test]
+    fn export_settings() {
+        let Ok(out) = std::env::var("TANDEM_SETTINGS_OUT") else {
+            return;
+        };
+        let rows: Vec<_> = SCHEMA
+            .iter()
+            .filter(|s| s.page != SettingsPage::Hidden)
+            .map(|s| json!({ "key": s.key, "page": s.page, "default": (s.default)() }))
+            .collect();
+        let json = serde_json::to_string_pretty(&rows).expect("json");
+        std::fs::write(out, json + "\n").expect("write settings.json");
     }
 
     #[test]

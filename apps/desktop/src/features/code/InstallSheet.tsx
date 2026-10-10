@@ -12,7 +12,11 @@ import { useLayout } from "../../stores/layout";
 import { useUi } from "../../stores/ui";
 import { switchMode } from "../shell/actions";
 
-type Step = { kind: "ready" } | { kind: "running"; paneId: string } | { kind: "installed"; version: string | null } | { kind: "missing" };
+type Step =
+  | { kind: "ready" }
+  | { kind: "running"; paneId: string }
+  | { kind: "installed"; version: string | null }
+  | { kind: "missing" };
 
 /** How long the new shell gets to show its prompt before the command is typed anyway. */
 const PROMPT_WAIT_MS = 3_000;
@@ -43,7 +47,15 @@ export function InstallHost() {
 /** UI-34 / F-EN-03: the registry's install command, exactly as listed, with
  * Copy and Run in terminal. Run types it into a visible terminal pane (never
  * hidden, never with sudo added); when it finishes, Tandem detects again. */
-export function InstallSheet({ engine, tabId, onClose }: { engine: EngineView | null; tabId: string | null; onClose: () => void }) {
+export function InstallSheet({
+  engine,
+  tabId,
+  onClose,
+}: {
+  engine: EngineView | null;
+  tabId: string | null;
+  onClose: () => void;
+}) {
   const [command, setCommand] = useState<InstallCommand | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<Step>({ kind: "ready" });
@@ -120,7 +132,13 @@ export function InstallSheet({ engine, tabId, onClose }: { engine: EngineView | 
 
   const label = engine?.spec.label ?? "";
   return (
-    <Sheet open={engine !== null} onOpenChange={(o) => !o && onClose()} title={t("install.title", { name: label })} subtitle={engine?.spec.vendor} closeLabel={t("common.close")}>
+    <Sheet
+      open={engine !== null}
+      onOpenChange={(o) => !o && onClose()}
+      title={t("install.title", { name: label })}
+      subtitle={engine?.spec.vendor}
+      closeLabel={t("common.close")}
+    >
       <div data-testid="install-sheet" className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
           <EngineGlyph letters={engine?.spec.logo ?? ""} size={20} />
@@ -128,7 +146,10 @@ export function InstallSheet({ engine, tabId, onClose }: { engine: EngineView | 
         </div>
         {error && <Callout tone="error" title={error} />}
         {command && (
-          <pre data-testid="install-command" className="whitespace-pre-wrap break-all rounded-md border border-border bg-surface-1 p-3 font-mono text-sm text-fg">
+          <pre
+            data-testid="install-command"
+            className="whitespace-pre-wrap break-all rounded-md border border-border bg-surface-1 p-3 font-mono text-sm text-fg"
+          >
             {command.display}
           </pre>
         )}
@@ -153,7 +174,11 @@ export function InstallSheet({ engine, tabId, onClose }: { engine: EngineView | 
         )}
         {step.kind === "installed" && (
           <Callout tone="success" title={t("install.done", { name: label })}>
-            <p data-testid="install-done">{step.version ? t("install.doneVersion", { name: label, version: step.version }) : t("install.doneBody")}</p>
+            <p data-testid="install-done">
+              {step.version
+                ? t("install.doneVersion", { name: label, version: step.version })
+                : t("install.doneBody")}
+            </p>
           </Callout>
         )}
         {step.kind === "missing" && (

@@ -8,7 +8,15 @@ import { base64ToBytes, fontStack, type TerminalOptions } from "./TerminalView";
 
 /** The last run's output, read-only (ARCHITECTURE §5.6: dimmed under the
  * card, with a separator). */
-export function RestoredScrollback({ paneId, options, dim }: { paneId: string; options: TerminalOptions; dim: boolean }) {
+export function RestoredScrollback({
+  paneId,
+  options,
+  dim,
+}: {
+  paneId: string;
+  options: TerminalOptions;
+  dim: boolean;
+}) {
   const host = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = host.current;

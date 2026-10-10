@@ -58,11 +58,24 @@ describe("Dashboard (F-DB-01)", () => {
       item("idle", "e"),
       item("idle", "f"),
     ]);
-    render(<UiProvider><Dashboard /></UiProvider>);
+    render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
     expect((await screen.findByTestId("dashboard-count")).textContent).toBe("6 agents");
-    expect(screen.getByTestId("dashboard-subtitle").textContent).toBe("1 waiting for you · 3 working · 0 done · 2 idle");
+    expect(screen.getByTestId("dashboard-subtitle").textContent).toBe(
+      "1 waiting for you · 3 working · 0 done · 2 idle",
+    );
     // Groups in status order: waiting first.
-    expect(cards().map((c) => c.dataset.status)).toEqual(["waiting", "working", "working", "working", "idle", "idle"]);
+    expect(cards().map((c) => c.dataset.status)).toEqual([
+      "waiting",
+      "working",
+      "working",
+      "working",
+      "idle",
+      "idle",
+    ]);
   });
 
   it("F-DB-01.2 Close idle with the search 'api' closes only matching idle agents", async () => {
@@ -72,7 +85,11 @@ describe("Dashboard (F-DB-01)", () => {
       item("working", "api refactor"),
       item("idle", "Fix API guard"),
     ]);
-    render(<UiProvider><Dashboard /></UiProvider>);
+    render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
     await waitFor(() => expect(cards()).toHaveLength(4));
     fireEvent.change(screen.getByTestId("dashboard-search"), { target: { value: "api" } });
     expect(cards()).toHaveLength(3);
@@ -81,7 +98,10 @@ describe("Dashboard (F-DB-01)", () => {
     expect(within(dialog).getByText("Close 2 idle agents?")).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Close 2 agents" }));
     await waitFor(() => expect(calls.some((c) => c.cmd === "dashboard_close_idle")).toBe(true));
-    expect(calls.find((c) => c.cmd === "dashboard_close_idle")?.args?.keys).toEqual(["pane:pn_1", "pane:pn_4"]);
+    expect(calls.find((c) => c.cmd === "dashboard_close_idle")?.args?.keys).toEqual([
+      "pane:pn_1",
+      "pane:pn_4",
+    ]);
     await waitFor(() => expect(cards().map((c) => c.dataset.key)).toEqual(["pane:pn_3"]));
   });
 
@@ -100,7 +120,11 @@ describe("Dashboard (F-DB-01)", () => {
         },
       }),
     ]);
-    render(<UiProvider><Dashboard /></UiProvider>);
+    render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
     fireEvent.click(await screen.findByTestId("card-allow"));
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "approval_resolve")?.args).toEqual({
@@ -117,19 +141,42 @@ describe("Dashboard (F-DB-01)", () => {
 
   it("F-DB-01.4 clicking a card asks the core to focus its source", async () => {
     const calls = setup([item("working", "build")]);
-    render(<UiProvider><Dashboard /></UiProvider>);
+    render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
     fireEvent.click(await screen.findByTestId("agent-card"));
-    await waitFor(() => expect(calls.find((c) => c.cmd === "focus_source")?.args).toEqual({ source: { type: "pane", paneId: "pn_1" } }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "focus_source")?.args).toEqual({
+        source: { type: "pane", paneId: "pn_1" },
+      }),
+    );
   });
 
   it("F-DB-01.5 a status change moves the card at once, from the event", async () => {
     setup([item("working", "build")]);
-    render(<UiProvider><Dashboard /></UiProvider>);
+    render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
     await waitFor(() => expect(cards()).toHaveLength(1));
     followDashboard();
     act(() =>
       emitLocal("status:changed", {
-        records: [{ key: "pane:pn_1", status: "done", reason: null, since: Date.now(), ts: 2, tool: null, title: "build", preview: null }],
+        records: [
+          {
+            key: "pane:pn_1",
+            status: "done",
+            reason: null,
+            since: Date.now(),
+            ts: 2,
+            tool: null,
+            title: "build",
+            preview: null,
+          },
+        ],
         removed: [],
       }),
     );
@@ -139,12 +186,20 @@ describe("Dashboard (F-DB-01)", () => {
 
   it("empty and filter-empty states", async () => {
     setup([]);
-    const { unmount } = render(<UiProvider><Dashboard /></UiProvider>);
+    const { unmount } = render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
     expect(await screen.findByText("No agents running")).toBeTruthy();
     unmount();
     resetStores();
     setup([item("idle", "a")]);
-    render(<UiProvider><Dashboard /></UiProvider>);
+    render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
     await waitFor(() => expect(cards()).toHaveLength(1));
     fireEvent.change(screen.getByTestId("dashboard-search"), { target: { value: "zzz" } });
     expect(screen.getByText("Nothing matches “zzz”")).toBeTruthy();
@@ -166,7 +221,11 @@ describe("Dashboard model", () => {
     const a = item("idle", "a", { workspaceId: "ws_b", workspace: "b" });
     const b = item("idle", "b", { workspaceId: "ws_a", workspace: "a" });
     const c = item("idle", "c", { workspaceId: null, workspace: null });
-    expect(group([a, b, c], "project", ["ws_a", "ws_b"], "No folder").map((g) => g.label)).toEqual(["a", "b", "No folder"]);
+    expect(group([a, b, c], "project", ["ws_a", "ws_b"], "No folder").map((g) => g.label)).toEqual([
+      "a",
+      "b",
+      "No folder",
+    ]);
     expect(closeIdleTargets([a, item("working", "w")])).toEqual([a.key]);
   });
 });

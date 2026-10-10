@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ImportPreview, IpcError, Rule, Suggestion } from "@tandem/protocol";
+import type { DictionarySuggestion as Suggestion, ImportPreview, IpcError, Rule } from "@tandem/protocol";
 import {
   Button,
   Checkbox,

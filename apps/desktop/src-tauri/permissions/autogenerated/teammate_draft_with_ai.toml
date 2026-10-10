@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-teammate-draft-with-ai"
+description = "Enables the teammate_draft_with_ai command without any pre-configured scope."
+commands.allow = ["teammate_draft_with_ai"]
+
+[[permission]]
+identifier = "deny-teammate-draft-with-ai"
+description = "Denies the teammate_draft_with_ai command without any pre-configured scope."
+commands.deny = ["teammate_draft_with_ai"]

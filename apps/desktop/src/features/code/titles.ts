@@ -16,7 +16,10 @@ export type TitleSources = {
 };
 
 /** Browser panes' page titles, from the pages' states. */
-export function browserSources(panes: Record<string, PaneRecord>, pages: Record<string, BrowserState>): Record<string, TitleSources> {
+export function browserSources(
+  panes: Record<string, PaneRecord>,
+  pages: Record<string, BrowserState>,
+): Record<string, TitleSources> {
   const out: Record<string, TitleSources> = {};
   for (const p of Object.values(panes)) {
     const page = pages[p.id];
@@ -85,7 +88,11 @@ export function paneTitles(
       const src = sources[p.id] ?? {};
       const osc = src.osc ? cleanTitle(src.osc, s?.titlePatterns ?? []) : "";
       const title =
-        (src.hook?.trim() || null) ?? (osc || null) ?? (src.firstPrompt ? promptTitle(src.firstPrompt) : null) ?? p.title ?? fallback;
+        (src.hook?.trim() || null) ??
+        (osc || null) ??
+        (src.firstPrompt ? promptTitle(src.firstPrompt) : null) ??
+        p.title ??
+        fallback;
       return [p.id, title];
     }),
   );

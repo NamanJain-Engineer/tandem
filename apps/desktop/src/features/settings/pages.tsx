@@ -232,28 +232,38 @@ export function settingsPages(platform: string): PageDef[] {
           id: "notify_system",
           label: t("settings.notify.systemToggle"),
           keywords: ["system", "os", "desktop notifications"],
-          control: (ids) => <BoolControl k="notify_system" ids={ids} label={t("settings.notify.systemToggle")} />,
+          control: (ids) => (
+            <BoolControl k="notify_system" ids={ids} label={t("settings.notify.systemToggle")} />
+          ),
         },
         {
           id: "notify_only_unseen",
           label: t("settings.notify.onlyUnseen"),
           description: t("settings.notify.onlyUnseen.desc"),
           keywords: ["background", "focused", "visible"],
-          control: (ids) => <BoolControl k="notify_only_unseen" ids={ids} label={t("settings.notify.onlyUnseen")} />,
+          control: (ids) => (
+            <BoolControl k="notify_only_unseen" ids={ids} label={t("settings.notify.onlyUnseen")} />
+          ),
         },
         {
           id: "notify_attention",
           label: mac ? t("settings.notify.bounce") : t("settings.notify.flash"),
           keywords: ["dock", "bounce", "taskbar", "flash"],
           control: (ids) => (
-            <BoolControl k="notify_attention" ids={ids} label={mac ? t("settings.notify.bounce") : t("settings.notify.flash")} />
+            <BoolControl
+              k="notify_attention"
+              ids={ids}
+              label={mac ? t("settings.notify.bounce") : t("settings.notify.flash")}
+            />
           ),
         },
         {
           id: "notify_sound",
           label: t("settings.notify.soundToggle"),
           keywords: ["sound", "chime", "audio"],
-          control: (ids) => <BoolControl k="notify_sound" ids={ids} label={t("settings.notify.soundToggle")} />,
+          control: (ids) => (
+            <BoolControl k="notify_sound" ids={ids} label={t("settings.notify.soundToggle")} />
+          ),
         },
         {
           id: "notify_sound_name",
@@ -261,7 +271,12 @@ export function settingsPages(platform: string): PageDef[] {
           keywords: ["sound", "chime", "tone"],
           control: (ids) => (
             <span className="flex items-center gap-1">
-              <SelectControl k="notify_sound_name" ids={ids} fallback="chime" options={opts(["chime", "soft", "pop", "none"], "settings.notify.tone")} />
+              <SelectControl
+                k="notify_sound_name"
+                ids={ids}
+                fallback="chime"
+                options={opts(["chime", "soft", "pop", "none"], "settings.notify.tone")}
+              />
               <SoundPreview />
             </span>
           ),
@@ -524,6 +539,39 @@ export function settingsPages(platform: string): PageDef[] {
       ],
     },
     {
+      id: "teammates",
+      label: t("settings.teammates"),
+      subtitle: t("settings.teammates.subtitle"),
+      keywords: ["teammates", "agent", "skills", "memory"],
+      rows: [
+        {
+          id: "allow_teammate_skills",
+          label: t("settings.teammateSkills"),
+          description: t("settings.teammateSkills.desc"),
+          keywords: ["skills", "write"],
+          control: (ids) => (
+            <BoolControl k="allow_teammate_skills" ids={ids} label={t("settings.teammateSkills")} />
+          ),
+        },
+        {
+          id: "learn_after_turn",
+          label: t("settings.learnAfterTurn"),
+          description: t("settings.learnAfterTurn.desc"),
+          keywords: ["learn", "memory", "notes"],
+          control: (ids) => (
+            <BoolControl k="learn_after_turn" ids={ids} label={t("settings.learnAfterTurn")} />
+          ),
+        },
+        {
+          id: "pause_all_mail",
+          label: t("settings.pauseAllMail"),
+          description: t("settings.pauseAllMail.desc"),
+          keywords: ["mail", "pause", "message"],
+          control: (ids) => <BoolControl k="pause_all_mail" ids={ids} label={t("settings.pauseAllMail")} />,
+        },
+      ],
+    },
+    {
       id: "privacy",
       label: t("settings.privacy"),
       subtitle: t("settings.privacy.subtitle"),
@@ -563,7 +611,9 @@ export function settingsPages(platform: string): PageDef[] {
           label: t("settings.aiThreadTitles"),
           description: t("settings.aiThreadTitles.desc"),
           keywords: ["titles", "ai", "thread names"],
-          control: (ids) => <BoolControl k="ai_thread_titles" ids={ids} label={t("settings.aiThreadTitles")} />,
+          control: (ids) => (
+            <BoolControl k="ai_thread_titles" ids={ids} label={t("settings.aiThreadTitles")} />
+          ),
         },
         {
           id: "auto_consent",
@@ -611,7 +661,9 @@ export function settingsPages(platform: string): PageDef[] {
           id: "auto_check_updates",
           label: t("settings.autoCheckUpdates"),
           keywords: ["automatic", "check"],
-          control: (ids) => <BoolControl k="auto_check_updates" ids={ids} label={t("settings.autoCheckUpdates")} />,
+          control: (ids) => (
+            <BoolControl k="auto_check_updates" ids={ids} label={t("settings.autoCheckUpdates")} />
+          ),
         },
       ],
       extra: <UpdatesPanel />,

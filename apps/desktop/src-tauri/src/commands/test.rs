@@ -389,6 +389,62 @@ pub fn test_min_version_shift(
     Ok(state.updates.state())
 }
 
+/// Connects a test vendor (`test_echo`, `test_upper`, `test_down`) without a
+/// sign-in: the debug build's stand-in for Settings › Plugins (M12).
+#[tauri::command]
+pub async fn test_plugin_connect(
+    state: State<'_, AppState>,
+    plugin_id: String,
+) -> Result<tandem_store::repo::plugins::PluginConnection, IpcError> {
+    guard(&state)?;
+    if !tandem_gateway::vendors::registry()
+        .iter()
+        .any(|m| m.manifest().id == plugin_id)
+    {
+        return Err(IpcError::new(
+            ErrorCode::NotFound,
+            format!("This build has no {plugin_id} module"),
+        ));
+    }
+    let conn =
+        tandem_store::repo::plugins::insert_connection(&state.store, &plugin_id, None, "none")
+            .await?;
+    state.gateway.refresh_connections().await;
+    // `plugins:changed` (F-PL-03): the new connection's card.
+    if let Some(card) = crate::commands::plugins::catalog(&state)
+        .await?
+        .into_iter()
+        .find(|c| c.connection_id.as_ref() == Some(&conn.id))
+    {
+        state.bus.publish(tandem_core::bus::BusEvent::new(
+            tandem_core::bus::Topic::Plugins,
+            "plugins:changed",
+            card,
+        ));
+    }
+    Ok(conn)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TestGateway {
+    pub metrics: tandem_gateway::GatewayMetrics,
+    /// Gateways started by this process (one, F-PL-01 AC2).
+    pub starts: u32,
+}
+
+#[tauri::command]
+pub async fn test_gateway_metrics(state: State<'_, AppState>) -> Result<TestGateway, IpcError> {
+    guard(&state)?;
+    state.gateway.handle().await?;
+    let (metrics, starts) = state
+        .gateway
+        .metrics()
+        .ok_or_else(|| IpcError::new(ErrorCode::Unavailable, "The gateway isn't running"))?;
+    Ok(TestGateway { metrics, starts })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]

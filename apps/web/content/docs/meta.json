@@ -1,0 +1,21 @@
+{
+  "title": "Docs",
+  "pages": [
+    "index",
+    "code-mode",
+    "thread-mode",
+    "agent-mode",
+    "dictate",
+    "conductor",
+    "tasks",
+    "routines",
+    "plugins",
+    "accounts-and-limits",
+    "remote",
+    "privacy",
+    "keyboard-shortcuts",
+    "settings",
+    "engines",
+    "troubleshooting"
+  ]
+}

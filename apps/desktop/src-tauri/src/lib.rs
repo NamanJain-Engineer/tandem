@@ -30,6 +30,34 @@ macro_rules! app_commands {
             commands::window::window_toggle_maximize,
             commands::window::window_minimize,
             commands::window::window_close,
+            commands::teammates::teammate_list,
+            commands::teammates::teammate_get,
+            commands::teammates::teammate_create,
+            commands::teammates::teammate_update,
+            commands::teammates::teammate_delete,
+            commands::teammates::teammate_duplicate,
+            commands::teammates::teammate_reorder,
+            commands::teammates::memory_get,
+            commands::teammates::memory_write,
+            commands::teammates::memory_undo,
+            commands::teammates::skills_list,
+            commands::teammates::skill_get,
+            commands::teammates::skill_save,
+            commands::teammates::skill_remove,
+            commands::teammates::skills_library,
+            commands::teammates::skill_add_from_library,
+            commands::teammates::teammate_suggestions,
+            commands::threads::thread_reorder,
+            commands::teammates::teammate_draft_with_ai,
+            commands::teammates::teammate_templates,
+            commands::teammates::memory_suggestions_resolve,
+            commands::teammates::mail_list,
+            commands::teammates::mail_get,
+            commands::teammates::mail_send,
+            commands::teammates::mail_retry,
+            commands::plugins::plugins_catalog,
+            commands::plugins::grants_list,
+            commands::plugins::grants_set,
             commands::shell::sidebar_get,
             commands::shell::sidebar_save,
             commands::terminal::pane_rename,
@@ -153,6 +181,7 @@ macro_rules! app_commands {
             commands::usage::usage_share_save,
             commands::data_controls::data_export,
             commands::data_controls::data_delete_local,
+            commands::find_work::find_work,
             commands::terminal::term_last_output,
             commands::terminal::term_stage_clipboard_image,
             commands::terminal::pty_type_prompt,
@@ -569,6 +598,8 @@ pub fn run() {
         commands::test::test_dictate_mic,
         commands::test::test_dictate_platform,
         commands::test::test_dictate_widget,
+        commands::test::test_plugin_connect,
+        commands::test::test_gateway_metrics,
     ]);
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(app_commands![]);
@@ -622,6 +653,17 @@ pub fn run() {
             persist_window_state(app);
             spawn_background(&state);
             state.approvals.start();
+            // One gateway for every session, up from launch (F-PL-01).
+            {
+                let gateway = state.gateway.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = gateway.handle().await {
+                        tracing::warn!(code = "gateway.start_failed", error = %e.message, "the MCP gateway didn't start");
+                    }
+                });
+            }
+            // Mail queued before the app last quit goes out (F-AG-12).
+            state.mail.pump_soon();
             // Updates (F-SH-06): the signed feed, if this build has a key.
             if let Some(key) = services::updates::pubkey(state::BUNDLED_KEYS) {
                 let record = state

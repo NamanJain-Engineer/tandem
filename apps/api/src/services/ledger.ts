@@ -168,6 +168,8 @@ export type ReserveArgs = {
   now: Date;
   /** A retried call with the same key gets the same reservation back. */
   idempotencyKey?: string;
+  /** When the sweeper may refund it; 15 minutes from `now` unless the feature runs longer (a voice call). */
+  expiresAt?: Date;
 };
 
 const exhausted = (needed: number, extra: Record<string, unknown> = {}, detail?: string) =>
@@ -290,7 +292,7 @@ export async function reserve(db: Db, args: ReserveArgs): Promise<string> {
         state: "held",
         idempotencyKey: args.idempotencyKey ?? null,
         capPeriod,
-        expiresAt: new Date(args.now.getTime() + RESERVATION_TTL_MS),
+        expiresAt: args.expiresAt ?? new Date(args.now.getTime() + RESERVATION_TTL_MS),
       });
       return id;
     });
@@ -302,6 +304,85 @@ export async function reserve(db: Db, args: ReserveArgs): Promise<string> {
     }
     throw err;
   }
+}
+
+type Held = typeof creditReservations.$inferSelect;
+
+/**
+ * Takes up to `upTo` more credits into the held reservation `row`, monthly
+ * first, then purchased, within a Team member's cap. Takes what there is, so
+ * it can be less than asked, or nothing. Runs inside the caller's transaction,
+ * which has the reservation locked.
+ */
+async function takeMore(tx: Tx, row: Held, upTo: number): Promise<{ took: number; row: Held }> {
+  const owner: Owner = { kind: row.ownerKind as Owner["kind"], id: row.ownerId };
+  const monthly = await bucket(tx, owner, "monthly");
+  const purchased = await bucket(tx, owner, "purchased");
+  let take = Math.min(upTo, monthly.balance + purchased.balance);
+  if (take > 0 && row.capPeriod) {
+    const membership = await membershipOf(tx, row.userId);
+    if (membership?.orgId === row.ownerId && membership.monthlyCap !== null) {
+      const where = and(
+        eq(memberUsage.orgId, row.ownerId),
+        eq(memberUsage.userId, row.userId),
+        eq(memberUsage.period, row.capPeriod),
+      );
+      await tx
+        .insert(memberUsage)
+        .values({ orgId: row.ownerId, userId: row.userId, period: row.capPeriod, spent: 0 })
+        .onConflictDoNothing();
+      const [usage] = await tx.select().from(memberUsage).where(where).for("update");
+      take = Math.min(take, Math.max(0, membership.monthlyCap - (usage?.spent ?? 0)));
+      if (take > 0) {
+        await tx
+          .update(memberUsage)
+          .set({ spent: sql`${memberUsage.spent} + ${take}` })
+          .where(where);
+      }
+    }
+  }
+  if (take <= 0) return { took: 0, row };
+  const allocations = (row.allocations as Allocation[]).map((a) => ({ ...a }));
+  let left = take;
+  for (const b of [monthly, purchased]) {
+    const part = Math.min(b.balance, left);
+    if (part <= 0) continue;
+    left -= part;
+    await tx
+      .update(creditBuckets)
+      .set({ balance: sql`${creditBuckets.balance} - ${part}` })
+      .where(eq(creditBuckets.id, b.id));
+    await tx.insert(creditLedger).values({
+      id: newId("cl"),
+      bucketId: b.id,
+      userId: row.userId,
+      delta: -part,
+      reason: "reserve",
+      refType: row.feature,
+      reservationId: row.id,
+    });
+    const existing = allocations.find((a) => a.bucketId === b.id);
+    if (existing) existing.amount += part;
+    else allocations.push({ bucketId: b.id, amount: part });
+  }
+  // Monthly first, as `reserve` writes them, so a refund still returns purchased credits first.
+  allocations.sort((a, b) => Number(a.bucketId !== monthly.id) - Number(b.bucketId !== monthly.id));
+  const amount = row.amount + take;
+  await tx.update(creditReservations).set({ amount, allocations }).where(eq(creditReservations.id, row.id));
+  return { took: take, row: { ...row, amount, allocations } };
+}
+
+/**
+ * Takes up to `upTo` more credits into a held reservation: a voice call that
+ * outlasts its first hold (F-BE-08). The answer is what it took, which can be
+ * less than asked, or 0 when nothing is left or the reservation isn't held.
+ */
+export async function topUp(db: Db, reservationId: string, upTo: number): Promise<number> {
+  if (upTo <= 0) return 0;
+  return db.transaction(async (tx) => {
+    const row = await heldReservation(tx, reservationId);
+    return row ? (await takeMore(tx, row, upTo)).took : 0;
+  });
 }
 
 /** Gives `amount` back across `allocations`, purchased first (the reverse of spending). */
@@ -340,11 +421,22 @@ async function heldReservation(tx: Tx, id: string) {
 
 export type Settled = { owner: Owner; charged: number } | null;
 
-/** Charges `actual` (≤ the reserved amount) and returns the rest. Idempotent: null when already done. */
-export async function settle(db: Db, reservationId: string, actual: number): Promise<Settled> {
+/**
+ * Charges `actual` (≤ the reserved amount) and returns the rest. With
+ * `topUp`, a charge above the reservation first takes the difference from the
+ * balance, as far as it goes (a voice call longer than its hold). Idempotent:
+ * null when already done.
+ */
+export async function settle(
+  db: Db,
+  reservationId: string,
+  actual: number,
+  opts: { topUp?: boolean } = {},
+): Promise<Settled> {
   return db.transaction(async (tx) => {
-    const row = await heldReservation(tx, reservationId);
+    let row = await heldReservation(tx, reservationId);
     if (!row) return null;
+    if (opts.topUp && actual > row.amount) row = (await takeMore(tx, row, actual - row.amount)).row;
     const charged = Math.max(0, Math.min(actual, row.amount));
     await giveBack(
       tx,
