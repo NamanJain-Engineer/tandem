@@ -754,11 +754,11 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 #### Routines [F-RT-*]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
-| `routines_list` / `routine_get` | — / `{id}` | `[RoutineView]` / `Routine` | — |
-| `routine_preview_schedule` | `ScheduleSpec` | `{description, next:[i64; 3]}` | Invalid (message) |
-| `routine_save` | `RoutineInput` | `Routine` | Invalid, ForbiddenPlan |
-| `routine_delete` / `routine_pause` / `routine_run_now` | `{id}` / `{id, paused}` / `{id}` | — / — / `{runId}` | Conflict ("previous run still in progress") |
-| `routine_runs` | `{id, cursor?}` | `Page<RoutineRun>` | — |
+| `routines_list` / `routine_get` | — / `{id}` | `[RoutineView {routine, words, description, running?, today}]` / `Routine` | — |
+| `routine_preview_schedule` | `{spec: ScheduleSpec}` | `SchedulePreview {words, description, next:[i64; 3]}` | Invalid (message; "This schedule never runs.") |
+| `routine_save` | `{input: RoutineInput}` (Full needs `fullConfirmed`) | `Routine` | Invalid, ForbiddenPlan |
+| `routine_delete` / `routine_pause` / `routine_run_now` | `{id}` / `{id, paused}` / `{id}` | — / — / `RunId` | Conflict ("previous run still in progress") |
+| `routine_runs` | `{id, before?}` (newest first, 25 a page) | `RunPage {runs, nextBefore?}` | — |
 | `routines_background_set` | `{enabled}` | `LauncherStatus {installed, kind:"launchd"\|"task_scheduler"\|"systemd"\|"cron", path?}` | ForbiddenPlan, Io |
 | `routines_background_status` | — | `LauncherStatus` | — |
 
@@ -893,7 +893,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `notifications:new` / `notifications:changed` | `{notification: Notification, sound: bool}` (`sound`: an OS notification went out and its type plays a sound) / `{ids, state}` | notifications service | F-DB-02, F-DB-03 |
 | `auth:changed` | `AuthState` | auth service | F-BE-02 |
 | `entitlement:changed` | `EntitlementView` | entitlement service (refresh, SSE) | F-BE-04, F-SH-03 |
-| `routines:changed` / `routines:run` | `RoutineView` / `RoutineRun` | scheduler | F-RT-02, F-RT-04 |
+| `routines:changed` / `routines:run` | `{}` (read the list again) / `RoutineRun` | scheduler | F-RT-02, F-RT-04 |
 | `tasks:attempt` | `AttemptView` | task runner | F-TK-04 |
 | `plugins:changed` / `plugins:connect` | `PluginCard` / `{opId, step:"discovery"\|"registration"\|"sign_in"\|"token_exchange"\|"verification"\|"timeout", state, error?}` | gateway | F-PL-03 |
 | `teammates:changed` | `{teammates:[TeammateSummary]}` (a teammate or one of its chats changed; coalesced 100 ms) | teammates service | F-AG-02 |

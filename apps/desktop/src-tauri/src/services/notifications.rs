@@ -198,7 +198,6 @@ impl NotificationService {
             let dedupe =
                 (rec.status == AgentStatus::Waiting).then(|| format!("waiting:{}", rec.key.0));
             self.raise(
-                &state,
                 kind,
                 title,
                 source_line(&item, None),
@@ -233,7 +232,6 @@ impl NotificationService {
                 let key =
                     key.unwrap_or_else(|| SessionKey(format!("approval:{}", view.id.as_str())));
                 self.raise(
-                    &state,
                     NotificationKind::Approval,
                     format!("{name} needs approval"),
                     body,
@@ -286,14 +284,12 @@ impl NotificationService {
     /// A pane's notification through the usual channels (Auto ending, F-AU-01).
     pub async fn raise_for_pane(
         &self,
-        state: &AppState,
         kind: NotificationKind,
         title: String,
         body: String,
         pane_id: &str,
     ) {
         self.raise(
-            state,
             kind,
             title,
             body,
@@ -304,6 +300,26 @@ impl NotificationService {
             None,
         )
         .await;
+    }
+
+    /// A routine's notification ("Ready for review — {routine}", a failed
+    /// run) through the usual channels; the headless runner uses it too.
+    pub async fn raise_routine(
+        &self,
+        kind: NotificationKind,
+        title: String,
+        body: String,
+        source: SourceRef,
+    ) {
+        let key = source
+            .session_key()
+            .unwrap_or_else(|| SessionKey(format!("routine:{title}")));
+        self.raise(kind, title, body, source, &key, None).await;
+    }
+
+    /// Sets the OS notifier when there's no window (headless routines).
+    pub fn set_notifier(&self, notifier: Arc<dyn Notifier>) {
+        let _ = self.notifier.set(notifier);
     }
 
     /// Resolves an in-app item by its dedupe key (the credit-low item).
@@ -326,7 +342,6 @@ impl NotificationService {
     #[allow(clippy::too_many_arguments)]
     async fn raise(
         &self,
-        state: &AppState,
         kind: NotificationKind,
         title: String,
         body: String,
@@ -352,7 +367,7 @@ impl NotificationService {
                 return;
             }
         };
-        let os = self.should_notify(state, &n, key).await;
+        let os = self.should_notify(&n, key).await;
         if os.system {
             if let Some(notifier) = self.notifier.get() {
                 notifier.notify(&OsNotification {
@@ -373,13 +388,8 @@ impl NotificationService {
         ));
     }
 
-    async fn should_notify(
-        &self,
-        state: &AppState,
-        n: &Notification,
-        key: &SessionKey,
-    ) -> Channels {
-        let prefs = Prefs::load(state).await;
+    async fn should_notify(&self, n: &Notification, key: &SessionKey) -> Channels {
+        let prefs = Prefs::load(&self.store).await;
         let focused = self.is_focused();
         let seen = focused
             && self
@@ -414,8 +424,8 @@ struct Prefs {
 }
 
 impl Prefs {
-    async fn load(state: &AppState) -> Self {
-        let get = |k| settings::get(&state.store, k);
+    async fn load(store: &tandem_store::Store) -> Self {
+        let get = |k| settings::get(store, k);
         let on = |v: Result<Value, _>, default: bool| {
             v.ok().and_then(|v| v.as_bool()).unwrap_or(default)
         };

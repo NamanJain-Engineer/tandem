@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-routine-delete"
+description = "Enables the routine_delete command without any pre-configured scope."
+commands.allow = ["routine_delete"]
+
+[[permission]]
+identifier = "deny-routine-delete"
+description = "Denies the routine_delete command without any pre-configured scope."
+commands.deny = ["routine_delete"]

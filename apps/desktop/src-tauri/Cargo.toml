@@ -23,6 +23,7 @@ tandem-engines.workspace = true
 tandem-gateway.workspace = true
 tandem-git.workspace = true
 tandem-pty.workspace = true
+tandem-routines.workspace = true
 tandem-store.workspace = true
 tandem-tasks.workspace = true
 aes-gcm.workspace = true
@@ -56,6 +57,7 @@ tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-window-state = "2"
 png = "0.17"
+notify-rust = "4"
 ignore.workspace = true
 # Browser panes (F-CD-17): wry webviews of our own, outside Tauri's IPC.
 # Same version and features as tauri-runtime-wry, so nothing builds twice.

@@ -4,6 +4,7 @@
 
 pub mod browser;
 pub mod commands;
+pub mod headless;
 pub mod services;
 pub mod state;
 
@@ -30,6 +31,16 @@ macro_rules! app_commands {
             commands::window::window_toggle_maximize,
             commands::window::window_minimize,
             commands::window::window_close,
+            commands::routines::routines_list,
+            commands::routines::routine_get,
+            commands::routines::routine_preview_schedule,
+            commands::routines::routine_save,
+            commands::routines::routine_delete,
+            commands::routines::routine_pause,
+            commands::routines::routine_run_now,
+            commands::routines::routine_runs,
+            commands::routines::routines_background_set,
+            commands::routines::routines_background_status,
             commands::teammates::teammate_list,
             commands::teammates::teammate_get,
             commands::teammates::teammate_create,
@@ -446,6 +457,10 @@ fn spawn_background(state: &AppState) {
 /// and logging first, then the store, then the hidden main window, which the
 /// UI shows on first paint via `app_ready`.
 pub fn run() {
+    // The OS launcher's headless pass (F-RT-03): no window at all.
+    if std::env::args().skip(1).any(|a| a == "--run-routines") {
+        std::process::exit(headless::main());
+    }
     let state = match AppState::init() {
         Ok(state) => state,
         Err(err) => {
@@ -555,6 +570,25 @@ pub fn run() {
             persist_window_state(app);
             spawn_background(&state);
             state.approvals.start();
+            // Routines: the scheduler (once it has the app lock), and the
+            // plan pausing or resuming them (F-RT-02, F-BL-04).
+            state.routines.start(state.data.run());
+            {
+                let (routines, ent) = (state.routines.clone(), state.entitlements.clone());
+                let mut events = state.bus.subscribe(tandem_core::bus::Topic::Entitlement);
+                tauri::async_runtime::spawn(async move {
+                    routines.apply_plan(&ent.limits()).await;
+                    loop {
+                        use tokio::sync::broadcast::error::RecvError;
+                        match events.recv().await {
+                            Ok(_) | Err(RecvError::Lagged(_)) => {
+                                routines.apply_plan(&ent.limits()).await
+                            }
+                            Err(RecvError::Closed) => break,
+                        }
+                    }
+                });
+            }
             // One gateway for every session, up from launch (F-PL-01).
             {
                 let gateway = state.gateway.clone();

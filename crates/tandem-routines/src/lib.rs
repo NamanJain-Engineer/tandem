@@ -6,6 +6,7 @@ pub mod cron;
 pub mod launcher;
 pub mod model;
 pub mod schedule;
+pub mod scheduler;
 
 pub use model::*;
 pub use schedule::{Schedule, ScheduleSpec, ScheduleWords};

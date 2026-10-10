@@ -126,6 +126,8 @@ pub struct AppState {
     pub gateway: Arc<crate::services::gateway::GatewayService>,
     /// The task tracker and its MCP server (F-TK-01, F-TK-02).
     pub tasks: Arc<crate::services::tasks::TasksService>,
+    /// Routines and their scheduler (F-RT-01..04).
+    pub routines: Arc<crate::services::routines::RoutinesService>,
     /// The Team org's audit events (F-TL-10).
     pub audit: Arc<crate::services::audit::AuditService>,
     pub deeplinks: DeepLinkQueue,
@@ -468,6 +470,21 @@ impl AppState {
         );
         launcher.bind_tasks(&tasks);
         let _ = handback_tasks.set(tasks.clone());
+        let routines = crate::services::routines::RoutinesService::new(
+            store.clone(),
+            bus.clone(),
+            clock.clone(),
+            tandem_store::repo::routines::Runner::Gui,
+        );
+        routines.set_host(Arc::new(crate::services::routine_host::AppRoutineHost {
+            store: store.clone(),
+            teammates: teammates.clone(),
+            terminals: terminals.clone(),
+            auth: auth.clone(),
+            entitlements: entitlements.clone(),
+            threads: threads.clone(),
+            notifications: notifications.clone(),
+        }));
         terminals.bind_tasks(&tasks);
         // The gateway's teammate built-ins answer for the lease's teammate.
         let tools: Arc<dyn crate::services::gateway::BuiltinService> =
@@ -553,6 +570,7 @@ impl AppState {
             models,
             gateway,
             tasks,
+            routines,
             teammates,
             teammate_tools: tools,
             files,

@@ -16,6 +16,7 @@ pub mod limits;
 pub mod onboarding;
 pub mod plugins;
 pub mod restore;
+pub mod routines;
 pub mod scratchpad;
 pub mod settings;
 pub mod shell;

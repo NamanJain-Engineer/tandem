@@ -2038,6 +2038,21 @@ impl AppLauncher {
         }
     }
 
+    /// Who started the thread's runs: a routine's chat runs with that
+    /// routine's own Full grant, if any (F-RT-01, rule 4).
+    async fn origin(&self, thread: &ThreadRecord) -> tandem_core::access::Origin {
+        if !thread.attended {
+            if let Ok(Some(r)) =
+                tandem_store::repo::routines::routine_of_chat(&self.store, &thread.id).await
+            {
+                return tandem_core::access::Origin::Routine {
+                    grants_full: r.access == Access::Full,
+                };
+            }
+        }
+        origin_of(thread)
+    }
+
     /// The tracker whose MCP server chat sessions get.
     pub fn bind_tasks(&self, tasks: &Arc<crate::services::tasks::TasksService>) {
         let _ = self.tasks.set(tasks.clone());
@@ -2351,7 +2366,7 @@ impl ChatLauncher for AppLauncher {
         env.extend(crate::services::fake_engine_env());
         let stdio_servers: Vec<_> = self.tasks_server(thread).await.into_iter().collect();
         let (config, endpoint) = self.mcp_config(thread, &stdio_servers).await?;
-        let origin = origin_of(thread);
+        let origin = self.origin(thread).await;
         let access = session_access(
             self.guard.get().map(|g| g.as_ref()),
             thread,
