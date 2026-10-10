@@ -56,6 +56,7 @@ fn invariant_rule_1_repo_settings_cannot_grant() {
                     !a.iter().any(|x| x == "--dangerously-skip-permissions"),
                     "{case}"
                 );
+                assert_eq!(flag(&a, "--resume"), Some("sess-1"), "{case}");
             }
         }
     }
