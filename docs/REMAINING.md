@@ -182,7 +182,7 @@ release candidate. Stop after any sub-phase if the budget runs out.
   [x] F-AC-07 Usage dashboard · [ ] F-AG-10 Skill sync to engines ·
   [ ] F-AG-13 Teammate in a terminal · [ ] F-RT-05 Schedule tool for teammates ·
   [x] F-BE-03 CLI device-code sign-in · [x] F-BE-12 Admin
-- Also: app-shortcut rebinding (F-SH-09 P2 part, Settings › Shortcuts UI-113),
+- Also: [x] app-shortcut rebinding (F-SH-09 P2 part, Settings › Shortcuts UI-113),
   [x] Team SSO (F-BL-06 P2 part), the remaining AI routes (`/auto/next`,
   `/voice/act`, `/voice/resolve`).
 E2E-M16-1…5: Conductor call, find work, Auto, phone, extras.

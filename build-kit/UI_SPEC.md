@@ -1850,8 +1850,14 @@ APP
   ...
 ```
 - One table per §5 group; each row has a HotkeyRecorder. Conflicts show inline: "Already used by {action}. [Swap] [Cancel]". OS-reserved combos are refused: "Your system uses this shortcut."
+- APP rows (F-SH-09 P2) list every registry command: its shortcut as Kbd ("None" when it has none), [Record…] and, once changed, ↺ "Reset to default".
+  - Recording: the button reads "Press keys…" and takes the next combo. Esc or leaving the button cancels, and Backspace sets "None".
+  - A combo without Ctrl, Alt or ⌘ (F-keys aside) is refused: "Hold Ctrl or Alt with the key." (macOS: "Hold ⌘, ⌃ or ⌥ with the key.").
+  - On Windows and Linux under "Terminal first", a row whose shortcut a terminal keeps says "In a terminal, this key goes to the shell."
+  - "Reset all to defaults" asks first ("Reset every shortcut?").
+  - The search box matches action names and keys. With no match: "No shortcuts match "{query}"."
 - Global rows show a status chip: "Active", "Needs permission" (→ UI-134), "Unavailable on Wayland — use the system shortcut settings" (with the `tandem://dictate/toggle` command to copy), "Paused".
-- "Printable cheatsheet" link (opens the §5 table as a page; `Mod+/` also opens it).
+- "Keyboard shortcuts" link: opens the cheatsheet, a dialog with every shortcut in effect by §5 group and a search box; `Mod+/` also opens it (D-805: a dialog, not a printable page, until printing is checked on every platform).
 
 #### UI-114 · Account & Plan · BE, BL
 ```

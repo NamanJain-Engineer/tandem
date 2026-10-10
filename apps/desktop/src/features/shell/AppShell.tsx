@@ -18,6 +18,7 @@ import { ThreadMain } from "../thread/ThreadMain";
 import { ThreadRail } from "../thread/ThreadRail";
 import { followThreads } from "../../stores/threads";
 import { Palette } from "../palette/Palette";
+import { Cheatsheet } from "../commands/Cheatsheet";
 import { OrphansDialog } from "../restore/OrphansDialog";
 import { followEngines } from "../../stores/engines";
 import { followLimits } from "../../stores/limits";
@@ -159,6 +160,7 @@ export function AppShell() {
       <HandoffDialog />
       <AutoDialog />
       <Palette />
+      <Cheatsheet />
       <OrphansDialog />
       <RestartDialog />
       <UnsupportedOverlay />

@@ -28,6 +28,7 @@ import { copyDiagnostics, switchMode } from "./actions";
 import { LogoMark } from "./LogoMark";
 import { isDesktopChrome, useBoot } from "./useBoot";
 import { WindowControls } from "./WindowControls";
+import { useShortcutKeys } from "../commands/useShortcutKeys";
 
 const MODES: Array<{
   id: Mode;
@@ -42,6 +43,7 @@ const MODES: Array<{
 /** UI-01 title bar (F-SH-01). Drag region everywhere except the controls;
  * Tab order follows the visual order. */
 export function TitleBar() {
+  const keys = useShortcutKeys();
   const [usageOpen, setUsageOpen] = useState(false);
   const boot = useBoot((s) => s.boot);
   const {
@@ -65,9 +67,9 @@ export function TitleBar() {
   const active = workspaces.list.find((w) => w.id === workspaces.activeId);
 
   const appMenu: MenuEntry[] = [
-    { id: "settings", label: t("menu.settings"), kbd: ["Mod", ","], onSelect: () => openSettings() },
+    { id: "settings", label: t("menu.settings"), kbd: keys("settings.open"), onSelect: () => openSettings() },
     { id: "updates", label: t("menu.checkUpdates"), disabled: true },
-    { id: "shortcuts", label: t("menu.shortcuts"), kbd: ["Mod", "/"], disabled: true },
+    { id: "shortcuts", label: t("menu.shortcuts"), kbd: keys("help.shortcuts"), onSelect: () => useUi.getState().setCheatsheet(true) },
     { id: "sep1", type: "separator" },
     {
       id: "help",
@@ -130,7 +132,7 @@ export function TitleBar() {
       label: auth?.email ?? (auth && !auth.hosted ? t("menu.earlyAccess") : t("menu.offlineMode")),
     },
     { id: "billing", label: t("menu.accountBilling"), onSelect: () => openSettings("account") },
-    { id: "settings", label: t("menu.settings"), kbd: ["Mod", ","], onSelect: () => openSettings() },
+    { id: "settings", label: t("menu.settings"), kbd: keys("settings.open"), onSelect: () => openSettings() },
     { id: "plans", label: t("menu.seePlans"), onSelect: () => openUpgrade() },
     ...(auth && !auth.hosted ? [] : accountAction),
   ];
@@ -142,7 +144,7 @@ export function TitleBar() {
     {
       id: "arrange",
       label: t("menu.ws.arrange"),
-      kbd: ["Mod", "Shift", "T"],
+      kbd: keys("workspace.arrange"),
       disabled: !inCode,
       onSelect: () => activeTab && useLayout.getState().arrange(activeTab),
     },
@@ -201,7 +203,7 @@ export function TitleBar() {
         icon={<PanelLeft size={16} />}
         label={t("titlebar.toggleRail")}
         pressed={!railCollapsed}
-        kbd={["Mod", "\\"]}
+        kbd={keys("rail.toggle")}
         onClick={toggleRail}
       />
       {!settingsOpen && (
@@ -215,7 +217,7 @@ export function TitleBar() {
             id: m.id,
             label: t(m.key),
             tooltip: t("titlebar.mode.tooltip", { mode: t(m.key) }),
-            kbd: ["Mod", m.n],
+            kbd: keys(`mode.${m.id}`),
           }))}
         />
       )}
@@ -242,13 +244,13 @@ export function TitleBar() {
       >
         <Search size={14} aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate text-left">{t("titlebar.omnibox")}</span>
-        <Kbd keys={["Mod", "K"]} />
+        {keys("palette.open") && <Kbd keys={keys("palette.open") ?? []} />}
       </button>
       <span className="min-[1180px]:hidden">
         <IconButton
           icon={<CommandIcon size={16} />}
           label={t("titlebar.omnibox")}
-          kbd={["Mod", "K"]}
+          kbd={keys("palette.open")}
           onClick={() => setPalette(true)}
         />
       </span>
@@ -278,7 +280,7 @@ export function TitleBar() {
         icon={<PanelRight size={16} />}
         label={t("titlebar.toggleSidebar")}
         pressed={sidebarOpen}
-        kbd={["Mod", "Shift", "B"]}
+        kbd={keys("sidebar.toggle")}
         data-sidebar-toggle=""
         data-testid="sidebar-toggle"
         onClick={() => useSidebar.getState().toggle()}

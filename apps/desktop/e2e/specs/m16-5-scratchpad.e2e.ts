@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { crash, freshOffline, home, relaunch } from "../support/app";
 import { openFromPlus } from "../support/files";
+import { expectNoSeriousA11yViolationsInBothThemes } from "../support/axe";
 
 // E2E-M16-5 Scratchpad (F-SH-12): Mod+B wraps the selection in `**`; and
 // typing without a pause, then killing the app (kill -9) within 1 s, keeps
@@ -71,6 +72,7 @@ describe("E2E-M16-5 scratchpad", () => {
         ),
       "the list doesn't name the note",
     );
+    await expectNoSeriousA11yViolationsInBothThemes();
   });
 
   it("F-SH-12.1 killing the app within 1 s of typing keeps all but the last 300 ms", async function () {
