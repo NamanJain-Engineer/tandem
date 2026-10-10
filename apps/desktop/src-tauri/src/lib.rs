@@ -296,6 +296,7 @@ macro_rules! app_commands {
             commands::dictate::dictate_cancel_take,
             commands::dictate::dictate_toggle,
         commands::dictate::dictate_use_local,
+        commands::dictate::dictate_quick_action,
             commands::dictate::dictate_composer_focus,
             commands::dictate::dictate_devices,
             commands::dictate::dictate_models,
@@ -604,6 +605,36 @@ fn setup_dictate(app: &tauri::App, state: &AppState) {
                 })
             }),
         );
+    }
+    // Enhance and Polish (F-DI-10): the AI relay's rewrite, with a token.
+    {
+        let (api, auth) = (state.api.clone(), state.auth.clone());
+        state.dictate.set_rewriter(std::sync::Arc::new(
+            move |mode, text, instructions, terms| {
+                let (api, auth) = (api.clone(), auth.clone());
+                Box::pin(async move {
+                    auth.with_token(|token| {
+                        let (api, text, instructions, terms) = (
+                            api.clone(),
+                            text.clone(),
+                            instructions.clone(),
+                            terms.clone(),
+                        );
+                        async move {
+                            api.ai_rewrite(
+                                &token,
+                                mode.as_str(),
+                                &text,
+                                instructions.as_deref(),
+                                &terms,
+                            )
+                            .await
+                        }
+                    })
+                    .await
+                })
+            },
+        ));
     }
     let dictate = state.dictate.clone();
     tauri::async_runtime::spawn(async move {

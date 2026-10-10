@@ -13,6 +13,7 @@
     "allow-dictate-status",
     "allow-dictate-cancel-take",
     "allow-dictate-use-local",
+    "allow-dictate-quick-action",
     "allow-dictate-widget-set-position",
     "allow-app-log"
   ]

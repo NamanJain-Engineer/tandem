@@ -116,7 +116,9 @@ setting_keys! {
     DictatePauseMedia,
     DictateOutput,
     DictateAutoEnhance,
+    DictateQuickActions,
     DictateFormatting,
+    DictateFormattingApps,
     DictateShareHints,
     DictateKeepHistory,
     DictateWidgetPosition,
@@ -652,6 +654,21 @@ pub static SCHEMA: &[SettingSpec] = &[
         V::Bool,
         Dictate,
         ["enhance", "polish"]
+    ),
+    spec!(
+        DictateQuickActions,
+        json!(true),
+        V::Bool,
+        Dictate,
+        ["enhance", "polish", "after each take"]
+    ),
+    // App id → formatting instructions (≤2,000 characters each), F-DI-10.
+    spec!(
+        DictateFormattingApps,
+        json!({}),
+        V::Map,
+        Dictate,
+        ["formatting", "per app"]
     ),
     spec!(
         DictateFormatting,

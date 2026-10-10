@@ -599,6 +599,7 @@ pub fn test_dictate_platform(
                 Call::ReadClipboard => "read_clipboard".into(),
                 Call::WriteClipboard(_) => "write_clipboard".into(),
                 Call::RestoreClipboard => "restore_clipboard".into(),
+                Call::Undo => "undo".into(),
             })
             .collect(),
         pasted: p.pasted(),

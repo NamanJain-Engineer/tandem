@@ -8,17 +8,14 @@ every milestone has its tasks, exit checks and E2E list in MILESTONES. Tick
 items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md`
 has every feature below with its full behaviour and acceptance tests.
 
-**Where it stands (10 October 2026, `product-m0-m5`):** M0–M12 and M14
-are done, and so are M15's six features (its non-functional checks are under
-way). So is M13, apart from F-DI-10 (Enhance and Polish), which M8's session
-builds next on M13's client; F-DI-05 (cloud speech-to-text) is done. M16 has
-F-SH-12, F-AC-07, F-AU-01, F-BE-03, F-BE-12 and F-RT-05. That's 138 of 152
-features, and all 65 P0s. Left: 14 features, none of them P0 (1 P1, 13 P2):
-F-DI-10 and M16's 13. vibezeo.com serves 0.4.0 (teammates, Find work, your
-data, shortcut rebinding and the usage page); Dictate (M8), tasks and routines
-(M11), plugins (M12) and SSH and WSL workspaces (M14) reach a download with
-the next release. M15 makes the P0/P1 product launchable; M16 adds the P2
-extras and the release candidate.
+**Where it stands (10 October 2026, `product-m0-m5`):** M0–M14 are done,
+and so are M15's six features (its non-functional checks are under way). M16
+has F-SH-12, F-AC-07, F-AU-01, F-BE-03, F-BE-12 and F-RT-05. That's 139 of 152
+features: all 65 P0s and every P1. Left: M16's 13 P2 extras. vibezeo.com serves
+0.4.0 (teammates, Find work, your data, shortcut rebinding and the usage page);
+Dictate (M8), tasks and routines (M11), plugins (M12) and SSH and WSL
+workspaces (M14) reach a download with the next release. M15 makes the P0/P1
+product launchable; M16 adds the P2 extras and the release candidate.
 
 ## 0. First, before new features
 
@@ -48,7 +45,7 @@ lists them (M9 was built ahead of M8, D-200).
 Push-to-talk anywhere: persistent audio capture, local Whisper/Parakeet, safe
 insertion into the focused app, the widget, history and the dictionary; plus
 the complete first-run onboarding. **Done** (branch `m8-dictate-onboarding`,
-merged 10 October 2026). F-DI-05 and F-DI-10 are listed under M13.
+merged 10 October 2026). F-DI-05 and F-DI-10, listed under M13, are done too.
 - [x] F-DI-01 Global push-to-talk (P0)
 - [x] F-DI-02 Hotkey engine per OS (P0)
 - [x] F-DI-03 Audio capture and microphones (P0)
@@ -134,7 +131,7 @@ policy and audit, and the transparency page.
 - [x] F-BE-06 Hosted AI relay (titles, Enhance/Polish and teammate drafts; `/auto/next` and the voice routes come with their M16 features)
 - [x] F-BE-07 STT relay
 - [x] F-DI-05 Cloud speech-to-text (Pro, credits): built on `m8-dictate-onboarding` over M13's relay client (D-516)
-- [ ] F-DI-10 Enhance and Polish (Pro, credits): the M8 session's; the route and the desktop client are done (M13)
+- [x] F-DI-10 Enhance and Polish (Pro, credits): built on `m8-dictate-onboarding` over M13's rewrite client (D-517)
 - [x] F-BL-03 Credit packs
 - [x] F-BL-05 Refunds
 - [x] F-BL-06 Team plan (P1 core; the P2 SSO part is built on `m16-team-sso`)

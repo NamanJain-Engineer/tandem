@@ -54,6 +54,41 @@ pub trait CloudStt: Send + Sync {
     fn transcribe(&self, req: CloudRequest<'_>) -> Result<String, CloudFailure>;
 }
 
+/// Enhance (a clear prompt for a coding agent) or Polish (grammar, filler,
+/// punctuation), F-DI-10.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum RewriteMode {
+    Enhance,
+    Polish,
+}
+
+impl RewriteMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Enhance => "enhance",
+            Self::Polish => "polish",
+        }
+    }
+}
+
+/// The longest transcript a rewrite takes; longer ones are refused before
+/// anything is sent (F-DI-10 AC1).
+pub const REWRITE_MAX_CHARS: usize = 5_000;
+
+/// The hosted rewrite (`POST /v1/ai/rewrite`), called from a take's thread.
+/// `text` carries protected terms wrapped as `⟦term⟧`.
+pub trait Rewriter: Send + Sync {
+    fn rewrite(
+        &self,
+        mode: RewriteMode,
+        text: &str,
+        instructions: Option<&str>,
+        protected: &[String],
+    ) -> Result<String, CloudFailure>;
+}
+
 /// What a Dictate toast offers besides its text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]

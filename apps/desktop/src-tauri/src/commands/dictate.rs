@@ -101,6 +101,21 @@ pub fn dictate_toggle(state: State<'_, AppState>) -> Result<(), IpcError> {
     Ok(())
 }
 
+/// "Enhance" / "Polish" after a take (F-DI-10): false when there's no take
+/// to rewrite or one is running. `disclosed`: the user just read the
+/// one-time disclosure in the widget, which is recorded first.
+#[tauri::command]
+pub async fn dictate_quick_action(
+    state: State<'_, AppState>,
+    mode: tandem_voice::cloud::RewriteMode,
+    disclosed: Option<bool>,
+) -> Result<bool, IpcError> {
+    if disclosed == Some(true) {
+        state.dictate.mark_enhance_disclosed().await?;
+    }
+    Ok(state.dictate.quick_action(mode))
+}
+
 /// "Use local for this take" (F-DI-05): the last failed cloud take,
 /// transcribed on this device. False when there's nothing to retry.
 #[tauri::command]

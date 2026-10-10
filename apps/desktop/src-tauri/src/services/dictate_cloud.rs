@@ -8,7 +8,9 @@ use std::sync::Arc;
 
 use futures::future::BoxFuture;
 use tandem_core::entitlement::Plan;
-use tandem_voice::cloud::{wav16k, CloudFailure, CloudFailureKind, CloudRequest, CloudStt};
+use tandem_voice::cloud::{
+    wav16k, CloudFailure, CloudFailureKind, CloudRequest, CloudStt, RewriteMode, Rewriter,
+};
 
 use crate::services::api::{ApiError, HostedFailure, SttUpload, Transcript};
 
@@ -34,9 +36,70 @@ impl HostedStt {
     }
 }
 
+/// One `POST /v1/ai/rewrite`, with a fresh token: mode, text, instructions,
+/// protected terms.
+pub type RewriteCall = Arc<
+    dyn Fn(
+            RewriteMode,
+            String,
+            Option<String>,
+            Vec<String>,
+        ) -> BoxFuture<'static, Result<String, ApiError>>
+        + Send
+        + Sync,
+>;
+
+/// Enhance and Polish over the hosted AI relay (F-DI-10). Free is refused
+/// before any text leaves.
+pub struct HostedRewriter {
+    plan: Arc<dyn Fn() -> Plan + Send + Sync>,
+    call: RewriteCall,
+    rt: tokio::runtime::Handle,
+}
+
+impl HostedRewriter {
+    pub fn new(
+        plan: Arc<dyn Fn() -> Plan + Send + Sync>,
+        call: RewriteCall,
+        rt: tokio::runtime::Handle,
+    ) -> Self {
+        Self { plan, call, rt }
+    }
+}
+
+impl Rewriter for HostedRewriter {
+    fn rewrite(
+        &self,
+        mode: RewriteMode,
+        text: &str,
+        instructions: Option<&str>,
+        protected: &[String],
+    ) -> Result<String, CloudFailure> {
+        if (self.plan)() == Plan::Free {
+            return Err(CloudFailure {
+                kind: CloudFailureKind::NeedsPro,
+                message: "Enhance needs Vibezeo Pro.".into(),
+                detail: "The plan is Free; no text was sent.".into(),
+            });
+        }
+        self.rt
+            .block_on((self.call)(
+                mode,
+                text.to_string(),
+                instructions.map(str::to_string),
+                protected.to_vec(),
+            ))
+            .map_err(|e| failure_for(&e, "Enhance"))
+    }
+}
+
 /// What a relay error means for a take, in the words the toast shows.
 pub fn failure(err: &ApiError) -> CloudFailure {
-    let hosted = HostedFailure::from_api(err, FEATURE);
+    failure_for(err, FEATURE)
+}
+
+fn failure_for(err: &ApiError, feature: &str) -> CloudFailure {
+    let hosted = HostedFailure::from_api(err, feature);
     let kind = match &hosted {
         HostedFailure::NeedsPro { .. } => CloudFailureKind::NeedsPro,
         HostedFailure::OutOfCredits { .. } => CloudFailureKind::OutOfCredits,
@@ -113,6 +176,81 @@ mod tests {
 
     fn take() -> Vec<f32> {
         vec![0.1; 16_000]
+    }
+
+    /// One rewrite the fake relay got: mode, text, instructions, terms.
+    type Sent = (RewriteMode, String, Option<String>, Vec<String>);
+
+    fn rewriter(
+        plan: Plan,
+        reply: Result<String, ApiError>,
+    ) -> (
+        HostedRewriter,
+        Arc<Mutex<Vec<Sent>>>,
+        tokio::runtime::Runtime,
+    ) {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .expect("rt");
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let log = seen.clone();
+        let reply = Arc::new(reply);
+        let call: RewriteCall = Arc::new(move |m, t, i, p| {
+            log.lock().push((m, t, i, p));
+            let reply = reply.clone();
+            Box::pin(async move { (*reply).clone() })
+        });
+        (
+            HostedRewriter::new(Arc::new(move || plan), call, rt.handle().clone()),
+            seen,
+            rt,
+        )
+    }
+
+    #[test]
+    fn f_di_10_a_rewrite_sends_mode_text_instructions_and_terms() {
+        let (rw, seen, _rt) = rewriter(Plan::Pro, Ok("Ship the ⟦Tauri⟧ build.".into()));
+        let got = rw.rewrite(
+            RewriteMode::Polish,
+            "ship the ⟦Tauri⟧ build",
+            Some("Use full sentences."),
+            &["Tauri".into()],
+        );
+        assert_eq!(got.as_deref(), Ok("Ship the ⟦Tauri⟧ build."));
+        let c = seen.lock()[0].clone();
+        assert_eq!(
+            c,
+            (
+                RewriteMode::Polish,
+                "ship the ⟦Tauri⟧ build".into(),
+                Some("Use full sentences.".into()),
+                vec!["Tauri".into()]
+            )
+        );
+    }
+
+    #[test]
+    fn f_di_10_free_sends_no_text_and_failures_name_enhance() {
+        let (rw, seen, _rt) = rewriter(Plan::Free, Ok("x".into()));
+        let err = rw
+            .rewrite(RewriteMode::Enhance, "hello", None, &[])
+            .expect_err("free");
+        assert_eq!(err.kind, CloudFailureKind::NeedsPro);
+        assert!(seen.lock().is_empty());
+        let (rw, _seen, _rt) = rewriter(
+            Plan::Pro,
+            Err(ApiError::Http {
+                status: 403,
+                code: "FORBIDDEN_PLAN".into(),
+                detail: None,
+            }),
+        );
+        let err = rw
+            .rewrite(RewriteMode::Enhance, "hello", None, &[])
+            .expect_err("403");
+        assert_eq!(err.message, "Enhance needs Vibezeo Pro.");
     }
 
     #[test]

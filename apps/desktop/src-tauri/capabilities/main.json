@@ -293,6 +293,7 @@
     "allow-dictate-cancel-take",
     "allow-dictate-toggle",
     "allow-dictate-use-local",
+    "allow-dictate-quick-action",
     "allow-dictate-composer-focus",
     "allow-dictate-devices",
     "allow-dictate-models",
