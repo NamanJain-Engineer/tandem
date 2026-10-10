@@ -53,7 +53,8 @@ pub struct SkillEntry {
     pub error: Option<String>,
     /// Written by the teammate and not opened yet.
     pub is_new: bool,
-    /// Engines the skill is synced to (F-AG-10, P2): none yet.
+    /// The engine accounts (ids) whose own skills folder has Vibezeo's copy
+    /// of it (F-AG-10).
     pub synced_to: Vec<String>,
 }
 
@@ -339,6 +340,170 @@ pub fn add_from_library(home: &Path, slug: &str) -> Result<(), SkillError> {
     write(home, slug, md)
 }
 
+/// The file that marks a synced copy as Vibezeo's (F-AG-10): it holds the
+/// path of the skill it was copied from.
+pub const SYNC_MARKER: &str = ".tandem-sync";
+
+/// One engine account's own skills folder (registry `skills_dir` under the
+/// account's provider home).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncTarget {
+    pub account_id: String,
+    pub dir: PathBuf,
+}
+
+/// What a sync did (`skill_sync`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum SyncState {
+    /// Vibezeo's copy is in the engine's skills folder.
+    Synced,
+    /// Vibezeo's copy is gone (or was never there).
+    Removed,
+    /// The engine already has a skill of that name that isn't Vibezeo's; it
+    /// was left as it is.
+    Conflict,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SyncOutcome {
+    pub state: SyncState,
+}
+
+/// What the engine's folder holds at a skill's name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Found {
+    Nothing,
+    Ours,
+    Theirs,
+}
+
+fn found(source: &Path, target: &Path) -> Found {
+    let Ok(meta) = std::fs::symlink_metadata(target) else {
+        return Found::Nothing;
+    };
+    if meta.file_type().is_symlink() {
+        // A link Vibezeo made points at the skill itself.
+        return match std::fs::read_link(target) {
+            Ok(to) if to == source => Found::Ours,
+            _ => Found::Theirs,
+        };
+    }
+    if meta.is_dir() {
+        let marker = std::fs::read_to_string(target.join(SYNC_MARKER)).ok();
+        if marker.as_deref().map(str::trim) == source.to_str() {
+            return Found::Ours;
+        }
+    }
+    Found::Theirs
+}
+
+fn io(e: std::io::Error) -> SkillError {
+    SkillError::Io(e.to_string())
+}
+
+/// Copies a skill's files (not links) into `to`, then the marker.
+fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        let dest = to.join(entry.file_name());
+        if kind.is_dir() {
+            copy_tree(&entry.path(), &dest)?;
+        } else if kind.is_file() {
+            std::fs::copy(entry.path(), dest)?;
+        }
+    }
+    Ok(())
+}
+
+/// Puts Vibezeo's copy of `slug` in the engine's skills folder (F-AG-10):
+/// a copy with the marker, so the engine reads what the user kept. A
+/// same-named folder that isn't Vibezeo's is a conflict and stays as it is;
+/// Vibezeo's own copy is refreshed.
+pub fn sync_on(home: &Path, slug: &str, target: &SyncTarget) -> Result<SyncState, SkillError> {
+    let source = slug_path(home, slug)?;
+    let md = std::fs::read_to_string(source.join("SKILL.md"))
+        .map_err(|_| SkillError::NotFound(format!("There's no skill called {slug}")))?;
+    validate(&md, slug)?;
+    let dest = target.dir.join(slug);
+    match found(&source, &dest) {
+        Found::Theirs => return Ok(SyncState::Conflict),
+        Found::Ours => remove_ours(&dest).map_err(io)?,
+        Found::Nothing => {}
+    }
+    std::fs::create_dir_all(&target.dir).map_err(io)?;
+    // Built beside the destination, then renamed in, so the engine never
+    // reads half a skill.
+    let staging = target.dir.join(format!(".{slug}.tandem-sync-tmp"));
+    let _ = std::fs::remove_dir_all(&staging);
+    let built = copy_tree(&source, &staging).and_then(|()| {
+        std::fs::write(
+            staging.join(SYNC_MARKER),
+            source.to_string_lossy().as_bytes(),
+        )
+    });
+    if let Err(e) = built.and_then(|()| std::fs::rename(&staging, &dest)) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(io(e));
+    }
+    Ok(SyncState::Synced)
+}
+
+fn remove_ours(dest: &Path) -> std::io::Result<()> {
+    let meta = std::fs::symlink_metadata(dest)?;
+    if meta.file_type().is_symlink() {
+        std::fs::remove_file(dest)
+    } else {
+        std::fs::remove_dir_all(dest)
+    }
+}
+
+/// Takes Vibezeo's copy of `slug` out of the engine's skills folder. A
+/// same-named skill that isn't Vibezeo's is never touched (a conflict).
+pub fn sync_off(home: &Path, slug: &str, target: &SyncTarget) -> Result<SyncState, SkillError> {
+    let source = slug_path(home, slug)?;
+    let dest = target.dir.join(slug);
+    match found(&source, &dest) {
+        Found::Nothing => Ok(SyncState::Removed),
+        Found::Theirs => Ok(SyncState::Conflict),
+        Found::Ours => {
+            remove_ours(&dest).map_err(io)?;
+            Ok(SyncState::Removed)
+        }
+    }
+}
+
+/// The targets that hold Vibezeo's copy of `slug`.
+pub fn synced_to(home: &Path, slug: &str, targets: &[SyncTarget]) -> Vec<String> {
+    let Ok(source) = slug_path(home, slug) else {
+        return Vec::new();
+    };
+    targets
+        .iter()
+        .filter(|t| found(&source, &t.dir.join(slug)) == Found::Ours)
+        .map(|t| t.account_id.clone())
+        .collect()
+}
+
+/// `list`, with each skill's synced targets filled in.
+pub fn list_synced(
+    home: &Path,
+    seen: &[String],
+    allow_new: bool,
+    targets: &[SyncTarget],
+) -> Vec<SkillEntry> {
+    let mut out = list(home, seen, allow_new);
+    for e in &mut out {
+        e.synced_to = synced_to(home, &e.slug, targets);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,5 +606,103 @@ mod tests {
         assert!(write(home, "bad", "---\nname: bad\n---\n").is_err());
         remove(home, "weekly-deps").expect("remove");
         assert!(!home.join("skills/weekly-deps").exists());
+    }
+
+    fn target(dir: &Path) -> SyncTarget {
+        SyncTarget {
+            account_id: "acc_claude".into(),
+            dir: dir.join("provider/skills"),
+        }
+    }
+
+    #[test]
+    fn f_ag_10_1_syncing_to_claude_creates_the_skill_md_and_removing_it_deletes_it() {
+        let dir = tempfile::tempdir().expect("dir");
+        let home = dir.path().join("teammate");
+        write(&home, "weekly-deps", OK).expect("write");
+        let t = target(dir.path());
+        assert_eq!(sync_on(&home, "weekly-deps", &t), Ok(SyncState::Synced));
+        let copy = dir.path().join("provider/skills/weekly-deps/SKILL.md");
+        assert_eq!(std::fs::read_to_string(&copy).expect("copy"), OK);
+        assert_eq!(
+            synced_to(&home, "weekly-deps", std::slice::from_ref(&t)),
+            vec!["acc_claude"]
+        );
+        let listed = list_synced(
+            &home,
+            &["weekly-deps".into()],
+            false,
+            std::slice::from_ref(&t),
+        );
+        assert_eq!(listed[0].synced_to, vec!["acc_claude"]);
+        // Syncing again refreshes Vibezeo's own copy.
+        let edited = OK.replace("every week", "every day");
+        write(&home, "weekly-deps", &edited).expect("edit");
+        assert_eq!(sync_on(&home, "weekly-deps", &t), Ok(SyncState::Synced));
+        assert_eq!(std::fs::read_to_string(&copy).expect("copy"), edited);
+        assert_eq!(sync_off(&home, "weekly-deps", &t), Ok(SyncState::Removed));
+        assert!(!dir.path().join("provider/skills/weekly-deps").exists());
+        assert!(synced_to(&home, "weekly-deps", std::slice::from_ref(&t)).is_empty());
+        // Off again is a no-op; nothing else in the folder moved.
+        assert_eq!(sync_off(&home, "weekly-deps", &t), Ok(SyncState::Removed));
+        assert!(dir.path().join("provider/skills").is_dir());
+    }
+
+    #[test]
+    fn f_ag_10_2_a_same_name_folder_that_isnt_ours_is_a_conflict_and_left_untouched() {
+        let dir = tempfile::tempdir().expect("dir");
+        let home = dir.path().join("teammate");
+        write(&home, "weekly-deps", OK).expect("write");
+        let t = target(dir.path());
+        let theirs = t.dir.join("weekly-deps");
+        std::fs::create_dir_all(&theirs).expect("dir");
+        std::fs::write(theirs.join("SKILL.md"), "the user's own").expect("w");
+        assert_eq!(sync_on(&home, "weekly-deps", &t), Ok(SyncState::Conflict));
+        assert_eq!(sync_off(&home, "weekly-deps", &t), Ok(SyncState::Conflict));
+        assert_eq!(
+            std::fs::read_to_string(theirs.join("SKILL.md")).expect("r"),
+            "the user's own"
+        );
+        assert_eq!(std::fs::read_dir(&theirs).expect("ls").count(), 1);
+        assert!(synced_to(&home, "weekly-deps", std::slice::from_ref(&t)).is_empty());
+        // Another teammate's copy of the same name isn't ours either.
+        let other = dir.path().join("other");
+        write(&other, "weekly-deps", OK).expect("write");
+        std::fs::remove_dir_all(&theirs).expect("rm");
+        assert_eq!(sync_on(&other, "weekly-deps", &t), Ok(SyncState::Synced));
+        assert_eq!(sync_on(&home, "weekly-deps", &t), Ok(SyncState::Conflict));
+        assert_eq!(sync_off(&home, "weekly-deps", &t), Ok(SyncState::Conflict));
+        assert!(theirs.join("SKILL.md").is_file());
+        // A file of that name, or a link Vibezeo didn't make, counts too.
+        let t2 = SyncTarget {
+            account_id: "acc_2".into(),
+            dir: dir.path().join("p2/skills"),
+        };
+        std::fs::create_dir_all(&t2.dir).expect("dir");
+        std::fs::write(t2.dir.join("weekly-deps"), "a file").expect("w");
+        assert_eq!(sync_on(&home, "weekly-deps", &t2), Ok(SyncState::Conflict));
+        assert_eq!(
+            std::fs::read_to_string(t2.dir.join("weekly-deps")).expect("r"),
+            "a file"
+        );
+    }
+
+    #[test]
+    fn f_ag_10_only_a_valid_existing_skill_is_synced() {
+        let dir = tempfile::tempdir().expect("dir");
+        let home = dir.path().join("teammate");
+        let t = target(dir.path());
+        assert!(matches!(
+            sync_on(&home, "missing", &t),
+            Err(SkillError::NotFound(_))
+        ));
+        std::fs::create_dir_all(home.join("skills/broken")).expect("dir");
+        std::fs::write(home.join("skills/broken/SKILL.md"), "no front matter").expect("w");
+        assert!(matches!(
+            sync_on(&home, "broken", &t),
+            Err(SkillError::Invalid(_))
+        ));
+        assert!(!t.dir.join("broken").exists());
+        assert!(sync_on(&home, "../escape", &t).is_err());
     }
 }

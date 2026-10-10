@@ -137,6 +137,7 @@ setting_keys! {
     AiThreadTitles,
     AutoConsent,
     AutoDontAsk,
+    FindWorkHosted,
     SendKey,
     ReduceMotion,
     LogLevel,
@@ -799,6 +800,15 @@ pub static SCHEMA: &[SettingSpec] = &[
         ["auto", "terminal output"]
     ),
     spec!(AutoDontAsk, json!(false), V::Bool, Hidden, []),
+    // D-1302: Find work's hosted ranking sends the search and the candidates'
+    // redacted names and last lines off the machine, so it's opt-in.
+    spec!(
+        FindWorkHosted,
+        json!(false),
+        V::Bool,
+        Privacy,
+        ["find work", "search", "ranking", "ai"]
+    ),
     spec!(
         SendKey,
         json!("enter"),
@@ -1074,6 +1084,7 @@ mod tests {
             SettingKey::AiThreadTitles,
             SettingKey::AutoConsent,
             SettingKey::DictateShareHints,
+            SettingKey::FindWorkHosted,
         ] {
             assert_eq!(default_value(key), json!(false), "{key:?}");
         }

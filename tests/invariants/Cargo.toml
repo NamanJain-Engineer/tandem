@@ -15,6 +15,7 @@ tandem-gateway = { workspace = true, features = ["test-vendors"] }
 tandem-git.workspace = true
 tandem-host.workspace = true
 tandem-pty.workspace = true
+tandem-store.workspace = true
 tandem-tasks.workspace = true
 tandem-store.workspace = true
 tandem-desktop = { path = "../../apps/desktop/src-tauri" }

@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { Bot, CalendarClock, Home, MessagesSquare, Plus, Settings2 } from "lucide-react";
+import { Bot, CalendarClock, Home, MessagesSquare, Plus, Settings2, SquareTerminal } from "lucide-react";
 import type { IpcError, PluginCard, TeammateSummary, Thread, ThreadState } from "@tandem/protocol";
 import {
   Avatar,
@@ -36,6 +36,7 @@ import { useThreads } from "../../stores/threads";
 import { switchMode } from "../shell/actions";
 import { ChatView } from "../thread/ThreadMain";
 import { teammateStatus } from "./AgentRail";
+import { launchInTerminal } from "./launchInTerminal";
 import { mailMention } from "./mention";
 import { MemoryTab } from "./MemoryTab";
 import { SkillsTab } from "./SkillsTab";
@@ -451,6 +452,7 @@ export function TeammatePage({
   const newChat = useTeammates((st) => st.newChat);
   const [tab, setTabNow] = useState<PageTab>("chats");
   const [leaving, setLeaving] = useState<PageTab | null>(null);
+  const [launching, setLaunching] = useState(false);
   const dirty = useTeammates((st) => st.dirty);
   // Unsaved settings: ask before leaving the tab (UI-75's guard).
   const setTab = (next: PageTab) => {
@@ -531,6 +533,34 @@ export function TeammatePage({
             {t("agent.page.newChat")}
           </Button>
         )}
+        <Menu
+          align="end"
+          trigger={
+            <Button
+              size="sm"
+              variant="ghost"
+              iconLeft={<SquareTerminal size={14} />}
+              disabled={launching}
+              data-testid="teammate-launch-terminal"
+            >
+              {t("agent.page.launchTerminal")}
+            </Button>
+          }
+          entries={[
+            { type: "label", id: "where", label: t("agent.page.launchWhere") },
+            ...[tm.home, ...tm.places].map((p) => ({
+              id: `launch-${p}`,
+              label: p === tm.home ? t("agent.chat.home") : baseName(p),
+              onSelect: () => {
+                setLaunching(true);
+                void launchInTerminal(tm.id, p).then((r) => {
+                  setLaunching(false);
+                  if (!r.ok) show({ tone: "error", title: r.error.message });
+                });
+              },
+            })),
+          ]}
+        />
         <Button
           size="sm"
           variant="ghost"
