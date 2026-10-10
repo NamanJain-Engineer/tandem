@@ -298,6 +298,21 @@ describe("Settings › Dictate error state", () => {
     wrap(<DictateExtras />);
     await waitFor(() => expect(screen.getByTestId("dictate-unavailable")).toBeTruthy());
   });
+
+  it("UI-62 a core that has no Dictate at all says why, in its own words (the browser demo)", async () => {
+    useDictate.setState({ status: null, unavailable: null });
+    fakeBackend({
+      dictate_status: () => {
+        throw { code: "unavailable", message: "Dictate listens to your microphone, so it works in the app." };
+      },
+    });
+    wrap(<DictateExtras />);
+    await waitFor(() =>
+      expect(screen.getByTestId("dictate-unavailable").textContent).toBe(
+        "Dictate listens to your microphone, so it works in the app.",
+      ),
+    );
+  });
 });
 
 describe("Cloud transcription (F-DI-05)", () => {

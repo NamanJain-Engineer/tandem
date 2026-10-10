@@ -5,6 +5,8 @@ import { invoke } from "../ipc/invoke";
 
 type DictateState = {
   status: DictateStatus | null;
+  /** Why this window has no Dictate, when the core says (an `unavailable` answer). */
+  unavailable: string | null;
   models: ModelsView | null;
   stats: DictateStats | null;
   /** The latest take state (widget, composers, status bar). */
@@ -19,14 +21,19 @@ type DictateState = {
 
 export const useDictate = create<DictateState>((set) => ({
   status: null,
+  unavailable: null,
   models: null,
   stats: null,
   take: null,
   level: 0,
   historyRev: 0,
   loadStatus: async () => {
-    const status = await invoke<DictateStatus>("dictate_status").catch(() => null);
-    if (status) set({ status });
+    const status = await invoke<DictateStatus>("dictate_status").catch((e: unknown) => {
+      const err = e as { code?: string; message?: string } | null;
+      if (err?.code === "unavailable" && err.message) set({ unavailable: err.message });
+      return null;
+    });
+    if (status) set({ status, unavailable: null });
   },
   loadModels: async () => {
     const models = await invoke<ModelsView>("dictate_models").catch(() => null);

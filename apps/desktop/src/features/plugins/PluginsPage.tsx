@@ -22,17 +22,29 @@ import { HeldActions } from "./HeldActions";
 import { PluginDetailView } from "./PluginDetail";
 import { CATEGORIES, filterCards, splitCards, type Category } from "./model";
 
-/** Loads the catalog and follows `plugins:changed`. */
-export function useCatalog(): { cards: PluginCard[] | null; error: string | null; reload: () => void } {
+/** Loads the catalog and follows `plugins:changed`. `unavailable` is set
+ * when this build can't have plugins at all (the browser demo), rather than
+ * a load that failed. */
+export function useCatalog(): {
+  cards: PluginCard[] | null;
+  error: string | null;
+  unavailable: boolean;
+  reload: () => void;
+} {
   const [cards, setCards] = useState<PluginCard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
   const reload = useCallback(() => {
     void invoke<PluginCard[]>("plugins_catalog").then(
       (c) => {
         setCards(c);
         setError(null);
+        setUnavailable(false);
       },
-      (e: IpcError) => setError(e.message),
+      (e: IpcError) => {
+        setError(e.message);
+        setUnavailable(e.code === "unavailable");
+      },
     );
   }, []);
   useEffect(() => {
@@ -45,13 +57,13 @@ export function useCatalog(): { cards: PluginCard[] | null; error: string | null
       off?.();
     };
   }, [reload]);
-  return { cards, error, reload };
+  return { cards, error, unavailable, reload };
 }
 
 /** UI-90 Settings › Plugins: the catalog, a connected plugin's page, and
  * the held actions; plus "Grant these plugins to all threads". */
 export function PluginsPage() {
-  const { cards, error, reload } = useCatalog();
+  const { cards, error, unavailable, reload } = useCatalog();
   const [tab, setTab] = useState("catalog");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<Category>("all");
@@ -116,6 +128,13 @@ export function PluginsPage() {
   };
 
   const body = (() => {
+    if (error && unavailable) {
+      return (
+        <div data-testid="plugins-unavailable">
+          <Banner tone="info">{error}</Banner>
+        </div>
+      );
+    }
     if (error) {
       return (
         <Banner tone="error" action={{ label: t("plugins.retry"), onClick: reload }}>
