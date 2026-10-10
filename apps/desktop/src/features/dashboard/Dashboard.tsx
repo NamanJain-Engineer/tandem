@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type { AgentStatus, DashboardItem } from "@tandem/protocol";
 import {
+  Badge,
   Button,
   ConfirmDialog,
   EmptyState,
@@ -33,6 +34,7 @@ import { useEngines } from "../../stores/engines";
 import { useSetting } from "../../stores/settings";
 import { useSidebar } from "../../stores/sidebar";
 import { useWorkspaces } from "../../stores/workspaces";
+import { parseApproval, riskLabel, riskVariant } from "../plugins/model";
 import { answer, closeAgent, closeIdle, handOff, jumpTo, stopAgent } from "./actions";
 import {
   cardMeta,
@@ -112,6 +114,7 @@ function AgentCard({ item, title, now }: { item: DashboardItem; title: string; n
   const { show } = useToast();
   const busy = item.status === "working" || item.status === "waiting";
   const approval = item.pendingApproval;
+  const plugin = approval ? parseApproval(approval.detail) : null;
   const close = () =>
     busy
       ? setConfirm(true)
@@ -204,10 +207,20 @@ function AgentCard({ item, title, now }: { item: DashboardItem; title: string; n
           {approval ? t("dashboard.wants", { summary: approval.summary }) : item.preview}
         </p>
       )}
+      {plugin && (
+        <p className="flex items-center gap-1.5 text-sm text-fg-muted" data-testid="card-plugin">
+          <EngineGlyph letters={plugin.logo} size={14} />
+          <span className="truncate">{plugin.pluginLabel}</span>
+          <Badge variant={riskVariant(plugin.riskClass)}>{riskLabel(plugin.riskClass)}</Badge>
+          {plugin.cost && (
+            <span className={plugin.riskClass === "spend" ? "text-error" : undefined}>{plugin.cost}</span>
+          )}
+        </p>
+      )}
       {approval && (
         <div className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
           <Button size="sm" variant="primary" data-testid="card-allow" onClick={() => decide(true)}>
-            {t("dashboard.allowOnce")}
+            {plugin ? t("plugins.approval.approve") : t("dashboard.allowOnce")}
           </Button>
           <Button size="sm" variant="secondary" data-testid="card-deny" onClick={() => decide(false)}>
             {t("dashboard.deny")}

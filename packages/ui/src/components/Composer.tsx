@@ -14,6 +14,7 @@ import { ArrowUp, AtSign, File, Folder, ImageIcon, MessagesSquare, Mic, Papercli
 import { cx } from "../cx";
 import { Chip } from "./Badge";
 import { IconButton } from "./IconButton";
+import { Menu, type MenuEntry } from "./Menu";
 import { SegmentedControl } from "./SegmentedControl";
 import { Select, type SelectOption } from "./Select";
 import { Tooltip } from "./Tooltip";
@@ -107,6 +108,9 @@ export type ComposerProps = {
   /** "12.4k", with "Tokens used in this thread · …" as its tooltip. */
   tokens?: { text: string; tooltip: string };
   onAttach?: () => void;
+  /** Attach ▾ (F-TH-07): the paperclip opens these entries instead of
+   * calling `onAttach`. */
+  attachMenu?: MenuEntry[];
   /** A paste that may hold an image (an image type, or no text): the app
    * reads the system clipboard natively and ignores "no image". */
   onPasteImage?: () => void;
@@ -164,6 +168,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     access,
     tokens,
     onAttach,
+    attachMenu,
     onPasteImage,
     dropActive = false,
     dictation = false,
@@ -448,7 +453,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             }}
           />
         )}
-        {onAttach && <IconButton size="sm" icon={<Paperclip size={16} />} label={labels.attach} kbd={["Mod", "U"]} onClick={onAttach} disabled={disabled} />}
+        {attachMenu ? (
+          <Menu
+            side="top"
+            trigger={<IconButton size="sm" icon={<Paperclip size={16} />} label={labels.attach} kbd={["Mod", "U"]} disabled={disabled} />}
+            entries={attachMenu}
+          />
+        ) : (
+          onAttach && <IconButton size="sm" icon={<Paperclip size={16} />} label={labels.attach} kbd={["Mod", "U"]} onClick={onAttach} disabled={disabled} />
+        )}
         {dictation && <IconButton size="sm" icon={<Mic size={16} />} label={labels.dictate} onClick={onDictate} disabled={disabled} />}
         {running && onStop ? (
           <IconButton
