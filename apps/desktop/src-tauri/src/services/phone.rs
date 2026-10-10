@@ -47,6 +47,7 @@ const IDENTITY: &str = "identity";
 const MAX_AGENTS: usize = 50;
 const MAX_APPROVALS: usize = 20;
 const MAX_THREADS: usize = 30;
+const MAX_ROUTINES: usize = 30;
 /// Transcript pages are at most this many items of at most this many
 /// characters, so a page always fits in one frame.
 pub const MAX_TRANSCRIPT_ITEMS: u32 = 40;
@@ -161,6 +162,17 @@ pub struct PhoneThread {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
+pub struct PhoneRoutine {
+    pub id: String,
+    pub name: String,
+    pub paused: bool,
+    /// A run is in progress.
+    pub running: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct PhoneTranscriptItem {
     /// `user`, `assistant` or `tool`.
     pub role: String,
@@ -187,6 +199,7 @@ pub struct PhoneSnapshot {
     pub agents: Vec<PhoneAgent>,
     pub approvals: Vec<PhoneApproval>,
     pub threads: Vec<PhoneThread>,
+    pub routines: Vec<PhoneRoutine>,
 }
 
 // ── the seams ────────────────────────────────────────────────────────────
@@ -199,6 +212,7 @@ pub trait PhoneHost: Send + Sync {
     async fn agents(&self) -> Vec<PhoneAgent>;
     fn approvals(&self) -> Vec<ApprovalView>;
     async fn threads(&self) -> Vec<PhoneThread>;
+    async fn routines(&self) -> Vec<PhoneRoutine>;
     async fn thread_read(
         &self,
         thread_id: &str,
@@ -1365,6 +1379,11 @@ impl PhoneService {
             .collect();
         let mut threads = host.threads().await;
         threads.truncate(MAX_THREADS);
+        let mut routines = host.routines().await;
+        routines.truncate(MAX_ROUTINES);
+        for r in &mut routines {
+            r.name = clip(&r.name, 120);
+        }
         for a in &mut agents {
             a.title = clip(&a.title, 120);
             a.preview = a.preview.as_deref().map(|p| clip(p, 200));
@@ -1379,6 +1398,7 @@ impl PhoneService {
             agents,
             approvals: std::mem::take(&mut approvals),
             threads,
+            routines,
         };
         // Stay within one frame however much there is.
         loop {
@@ -1386,7 +1406,9 @@ impl PhoneService {
             if v.to_string().len() + 256 <= MAX_PLAINTEXT {
                 return Ok(v);
             }
-            if snap.threads.len() > 5 {
+            if snap.routines.len() > 5 {
+                snap.routines.truncate(snap.routines.len() / 2);
+            } else if snap.threads.len() > 5 {
                 snap.threads.truncate(snap.threads.len() / 2);
             } else if snap.agents.len() > 5 {
                 snap.agents.truncate(snap.agents.len() / 2);

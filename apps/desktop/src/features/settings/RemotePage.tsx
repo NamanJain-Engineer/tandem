@@ -23,10 +23,14 @@ import { ago } from "../notifications/NotificationsPopover";
 
 type RemoteEvent = { pairingId: string | null; event: string };
 
-const GRANTS: { key: keyof PhoneGrants; label: "remote.grant.chat" | "remote.grant.terminal" | "remote.grant.approvals" }[] = [
+const GRANTS: {
+  key: keyof PhoneGrants;
+  label: "remote.grant.chat" | "remote.grant.terminal" | "remote.grant.approvals" | "remote.grant.routines";
+}[] = [
   { key: "chat", label: "remote.grant.chat" },
   { key: "terminal", label: "remote.grant.terminal" },
   { key: "approvals", label: "remote.grant.approvals" },
+  { key: "routines", label: "remote.grant.routines" },
 ];
 
 function message(err: unknown): string {

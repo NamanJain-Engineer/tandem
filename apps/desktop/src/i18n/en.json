@@ -2451,6 +2451,7 @@
   "remote.grant.chat": "Chat control: send messages to threads",
   "remote.grant.terminal": "Terminal control: type into agent panes, never plain shells",
   "remote.grant.approvals": "Approvals: answer them from the phone",
+  "remote.grant.routines": "Routines: run one now",
   "remote.revoke": "Revoke",
   "remote.revoke.title": "Revoke {device}?",
   "remote.revoke.body": "The phone is disconnected at once and its keys are deleted. Pair it again to use it.",

@@ -13,7 +13,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 
 use tandem_core::approvals::{ApprovalDecision, ApprovalScope, ApprovalVia, ApprovalView};
-use tandem_core::ids::{ApprovalId, PaneId, ThreadId};
+use tandem_core::ids::{ApprovalId, PaneId, RoutineId, ThreadId};
 use tandem_core::origin::{LocalReview, Origin};
 use tandem_core::remote::messages::{PhoneDecision, PhoneGrants};
 use tandem_core::source::SourceRef;
@@ -26,8 +26,9 @@ use tandem_store::repo::threads::ThreadKind;
 use crate::services::api::ApiError;
 use crate::services::dashboard;
 use crate::services::phone::{
-    Pairing, PairingQr, PairingTicket, PhoneAgent, PhoneArmState, PhoneHost, PhoneNet, PhoneThread,
-    PhoneTranscript, PhoneTranscriptItem, QueuedPhoneAction, RelayIn, RelayLink,
+    Pairing, PairingQr, PairingTicket, PhoneAgent, PhoneArmState, PhoneHost, PhoneNet,
+    PhoneRoutine, PhoneThread, PhoneTranscript, PhoneTranscriptItem, QueuedPhoneAction, RelayIn,
+    RelayLink,
 };
 use crate::state::AppState;
 
@@ -201,9 +202,32 @@ impl PhoneHost for AppPhoneHost {
             .map_err(|e| e.to_string())
     }
 
-    async fn routine_run_now(&self, _routine_id: &str) -> Result<(), String> {
-        // Routines (M11) aren't in this build; the grant isn't offered (D-1011).
-        Err("Routines aren't available on this computer yet.".into())
+    async fn routines(&self) -> Vec<PhoneRoutine> {
+        self.state()
+            .routines
+            .list()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|v| PhoneRoutine {
+                id: v.routine.id.to_string(),
+                name: v.routine.name,
+                paused: v.routine.paused || v.routine.paused_by_plan,
+                running: v.running.is_some(),
+            })
+            .collect()
+    }
+
+    async fn routine_run_now(&self, routine_id: &str) -> Result<(), String> {
+        let id: RoutineId = routine_id
+            .parse()
+            .map_err(|_| "No such routine".to_string())?;
+        self.state()
+            .routines
+            .run_now(&id)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.message)
     }
 
     async fn queued_notice(&self, approval: &ApprovalView, device: &str) {

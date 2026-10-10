@@ -300,7 +300,7 @@ async function main() {
     api = startDetached(
       "pnpm",
       ["--filter", "api", "start"],
-      { TANDEM_API_TEST_ROUTES: "1", BILLING_PROVIDER: "mock", WEB_PUBLIC_URL: WEB, LOG_LEVEL: "info" },
+      { TANDEM_API_TEST_ROUTES: "1", BILLING_PROVIDER: "mock", WEB_PUBLIC_URL: WEB, API_PUBLIC_URL: API, LOG_LEVEL: "info" },
       relayLog,
     );
     await waitUp(`${API}/v1/health`, 60);

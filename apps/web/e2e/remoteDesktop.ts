@@ -116,6 +116,7 @@ export class FakeDesktop {
             ],
             approvals: this.approvals,
             threads: [{ id: "th_web1", title: "Fix the login bug", state: "idle", updatedAt: 1 }],
+            routines: [{ id: "rt_web1", name: "Nightly triage", paused: false, running: false }],
           },
         };
       case "approval.decide": {

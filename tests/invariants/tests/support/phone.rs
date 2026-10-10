@@ -11,8 +11,8 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde_json::{json, Value};
 use tandem_app::services::phone::{
-    PairingTicket, PhoneAgent, PhoneHost, PhoneNet, PhoneService, PhoneThread, PhoneTranscript,
-    RekeyPolicy, RelayIn, RelayLink,
+    PairingTicket, PhoneAgent, PhoneHost, PhoneNet, PhoneRoutine, PhoneService, PhoneThread,
+    PhoneTranscript, RekeyPolicy, RelayIn, RelayLink,
 };
 use tandem_core::approvals::{ApprovalKind, ApprovalScope, ApprovalView};
 use tandem_core::bus::EventBus;
@@ -45,6 +45,9 @@ impl PhoneHost for Host {
         self.approvals.lock().expect("lock").clone()
     }
     async fn threads(&self) -> Vec<PhoneThread> {
+        Vec::new()
+    }
+    async fn routines(&self) -> Vec<PhoneRoutine> {
         Vec::new()
     }
     async fn thread_read(

@@ -17,6 +17,7 @@ struct FakeHost {
     typed: StdMutex<Vec<(String, String)>>,
     notices: StdMutex<Vec<String>>,
     agents: StdMutex<Vec<PhoneAgent>>,
+    ran: StdMutex<Vec<String>>,
 }
 
 #[async_trait]
@@ -36,6 +37,14 @@ impl PhoneHost for FakeHost {
             title: "Fix login".into(),
             state: ThreadState::Idle,
             updated_at: 1,
+        }]
+    }
+    async fn routines(&self) -> Vec<PhoneRoutine> {
+        vec![PhoneRoutine {
+            id: "rt_1".into(),
+            name: "Nightly triage".into(),
+            paused: false,
+            running: false,
         }]
     }
     async fn thread_read(
@@ -85,8 +94,9 @@ impl PhoneHost for FakeHost {
             .push((approval_id.into(), decision));
         Ok(())
     }
-    async fn routine_run_now(&self, _routine_id: &str) -> Result<(), String> {
-        Err("Routines aren't in this build yet.".into())
+    async fn routine_run_now(&self, routine_id: &str) -> Result<(), String> {
+        self.ran.lock().expect("lock").push(routine_id.into());
+        Ok(())
     }
     async fn queued_notice(&self, approval: &ApprovalView, device: &str) {
         self.notices
@@ -454,6 +464,43 @@ async fn f_rm_03_each_command_needs_its_grant_and_grants_change_only_from_the_ma
     )
     .await;
     assert_eq!(routine["error"]["code"], "forbidden");
+    assert!(r.host.ran.lock().expect("lock").is_empty());
+}
+
+#[tokio::test]
+async fn f_rm_03_routines_are_listed_with_view_and_run_now_needs_the_routines_grant() {
+    let r = rig();
+    let mut phone = paired(&r).await;
+    let snap = cmd(&r, &mut phone, 1, "view.snapshot", json!({})).await;
+    assert_eq!(snap["data"]["routines"][0]["name"], "Nightly triage");
+    let off = cmd(
+        &r,
+        &mut phone,
+        2,
+        "routine.run_now",
+        json!({"routineId": "rt_1"}),
+    )
+    .await;
+    assert_eq!(off["error"]["code"], "forbidden");
+    grant(
+        &r,
+        &phone,
+        PhoneGrants {
+            routines: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    let ran = cmd(
+        &r,
+        &mut phone,
+        3,
+        "routine.run_now",
+        json!({"routineId": "rt_1"}),
+    )
+    .await;
+    assert_eq!(ran["ok"], true);
+    assert_eq!(*r.host.ran.lock().expect("lock"), vec!["rt_1".to_string()]);
 }
 
 #[tokio::test]

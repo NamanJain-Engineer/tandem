@@ -2,6 +2,7 @@
 import type { PhoneAgent } from "./PhoneAgent";
 import type { PhoneApproval } from "./PhoneApproval";
 import type { PhoneGrants } from "./PhoneGrants";
+import type { PhoneRoutine } from "./PhoneRoutine";
 import type { PhoneThread } from "./PhoneThread";
 
-export type PhoneSnapshot = { desktop: string, grants: PhoneGrants, armedUntil: number | null, agents: Array<PhoneAgent>, approvals: Array<PhoneApproval>, threads: Array<PhoneThread>, };
+export type PhoneSnapshot = { desktop: string, grants: PhoneGrants, armedUntil: number | null, agents: Array<PhoneAgent>, approvals: Array<PhoneApproval>, threads: Array<PhoneThread>, routines: Array<PhoneRoutine>, };

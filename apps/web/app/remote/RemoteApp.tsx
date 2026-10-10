@@ -8,13 +8,13 @@ import type {
   PhoneAgent,
   PhoneApproval,
   PhoneGrants,
+  PhoneRoutine,
   PhoneSnapshot,
   PhoneThread,
   PhoneTranscript,
 } from "../../lib/remote/messages";
 import { parsePairingFragment } from "../../lib/remote/protocol";
 import { IndexedDbPairingStore } from "../../lib/remote/store";
-import { SITE } from "../../lib/site";
 
 type Phase =
   | { kind: "loading" }
@@ -24,7 +24,7 @@ type Phase =
   | { kind: "revoked" }
   | { kind: "paired" };
 
-type Tab = "agents" | "approvals" | "threads";
+type Tab = "agents" | "approvals" | "threads" | "routines";
 
 const CONNECTION_LABEL: Record<ConnectionState, string> = {
   idle: "Not connected",
@@ -49,7 +49,7 @@ function statusOf(a: PhoneAgent): Status {
 }
 
 /** F-RM-03: the phone companion. Pairs from the QR link, then shows agents, approvals and threads. */
-export function RemoteApp() {
+export function RemoteApp({ product }: { product: string }) {
   const client = useRef<PhoneClient | null>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [connection, setConnection] = useState<ConnectionState>("idle");
@@ -145,7 +145,7 @@ export function RemoteApp() {
             <circle cx="10.5" cy="14" r="7" stroke="var(--tn-accent)" strokeWidth="2.2" />
             <circle cx="17.5" cy="14" r="7" stroke="var(--tn-accent)" strokeWidth="2.2" />
           </svg>
-          <span className="font-semibold">{SITE.product}</span>
+          <span className="font-semibold">{product}</span>
           {phase.kind === "paired" && (
             <span className="ml-auto flex items-center gap-2 text-sm text-fg-muted" data-testid="remote-connection">
               <StatusDot status={connection === "online" ? "done" : "offline"} size={8} />
@@ -156,18 +156,18 @@ export function RemoteApp() {
       </header>
       <main className="mx-auto flex max-w-xl flex-col gap-4 px-4 py-6">
         {phase.kind === "loading" && <Notice>Loading…</Notice>}
-        {phase.kind === "unpaired" && <PairHelp />}
+        {phase.kind === "unpaired" && <PairHelp product={product} />}
         {phase.kind === "pairing" && <Notice>Pairing with your computer…</Notice>}
         {phase.kind === "pair_failed" && (
           <>
             <Notice tone="error">{phase.message}</Notice>
-            <PairHelp />
+            <PairHelp product={product} />
           </>
         )}
         {phase.kind === "revoked" && (
           <>
             <Notice tone="error">This phone is no longer paired. Its keys have been deleted.</Notice>
-            <PairHelp />
+            <PairHelp product={product} />
           </>
         )}
         {phase.kind === "paired" && (
@@ -186,6 +186,7 @@ export function RemoteApp() {
                 { id: "agents", label: "Agents" },
                 { id: "approvals", label: `Approvals${snapshot?.approvals.length ? ` (${snapshot.approvals.length})` : ""}` },
                 { id: "threads", label: "Threads" },
+                { id: "routines", label: "Routines" },
               ]}
             />
             {snapshotError && <Notice tone="error">{snapshotError}</Notice>}
@@ -205,6 +206,9 @@ export function RemoteApp() {
                   />
                 )}
                 {tab === "threads" && <Threads threads={snapshot.threads} grants={grants} client={client.current} />}
+                {tab === "routines" && (
+                  <Routines routines={snapshot.routines} grants={grants} client={client.current} onDone={() => void refresh()} />
+                )}
               </>
             )}
             <div className="mt-6 border-t border-border pt-4">
@@ -219,12 +223,12 @@ export function RemoteApp() {
   );
 }
 
-function PairHelp() {
+function PairHelp({ product }: { product: string }) {
   return (
     <Card>
       <h1 className="text-lg font-semibold">Pair this phone</h1>
       <p className="mt-2 text-sm text-fg-muted">
-        {`On your computer, open ${SITE.product} › Settings › Remote and choose Pair a phone. Scan the code with this phone's camera, and this page opens paired.`}
+        {`On your computer, open ${product} › Settings › Remote and choose Pair a phone. Scan the code with this phone's camera, and this page opens paired.`}
       </p>
       <p className="mt-2 text-sm text-fg-muted">
         Everything between this phone and your computer is end-to-end encrypted. The relay in between only passes
@@ -340,6 +344,48 @@ function Approvals({
                   </Button>
                 </div>
               )
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function Routines({
+  routines,
+  grants,
+  client,
+  onDone,
+}: {
+  routines: PhoneRoutine[];
+  grants: PhoneGrants;
+  client: PhoneClient;
+  onDone: () => void;
+}) {
+  const [message, setMessage] = useState<{ tone: "info" | "error"; text: string } | null>(null);
+  async function run(r: PhoneRoutine) {
+    const res = await client.command("routine.run_now", { routineId: r.id });
+    setMessage(res.ok ? { tone: "info", text: `${r.name} is running.` } : { tone: "error", text: res.message });
+    onDone();
+  }
+  return (
+    <div className="flex flex-col gap-3">
+      {message && <Notice tone={message.tone}>{message.text}</Notice>}
+      {!grants.routines && (
+        <Notice>Running routines from this phone is off. Turn it on in Settings › Remote on your computer.</Notice>
+      )}
+      {routines.length === 0 && <Notice>No routines on your computer.</Notice>}
+      <ul className="flex flex-col divide-y divide-border rounded-md border border-border bg-surface-2" data-testid="remote-routines">
+        {routines.map((r) => (
+          <li key={r.id} className="flex items-center gap-2 px-4 py-3">
+            <span className="min-w-0 flex-1 truncate">{r.name}</span>
+            {r.running && <Badge variant="working">Running</Badge>}
+            {r.paused && <Badge>Paused</Badge>}
+            {grants.routines && !r.running && (
+              <Button size="sm" variant="secondary" onClick={() => void run(r)}>
+                Run now
+              </Button>
             )}
           </li>
         ))}

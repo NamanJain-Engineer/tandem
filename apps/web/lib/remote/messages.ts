@@ -6,6 +6,7 @@ export type {
   PhoneApproval,
   PhoneDecision,
   PhoneGrants,
+  PhoneRoutine,
   PhoneSnapshot,
   PhoneThread,
   PhoneTranscript,

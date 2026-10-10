@@ -217,6 +217,7 @@ export type * from "./PhoneDecision";
 export type * from "./PhoneGrant";
 export type * from "./PhoneGrants";
 export type * from "./PhoneQueueId";
+export type * from "./PhoneRoutine";
 export type * from "./PhoneSnapshot";
 export type * from "./PhoneThread";
 export type * from "./PhoneTranscript";

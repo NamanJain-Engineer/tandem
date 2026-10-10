@@ -63,6 +63,12 @@ test.describe("@m16 phone companion PWA", () => {
     await p.getByRole("button", { name: "Send" }).click();
     await expect.poll(() => desktop.received.some((m) => m.cmd === "thread.send" && m.args?.text === "Try the root path")).toBe(true);
 
+    // Routines are listed; running one needs the Routines grant, which is off here.
+    await p.getByRole("radio", { name: "Routines" }).click();
+    await expect(p.getByTestId("remote-routines")).toContainText("Nightly triage");
+    await expect(p.getByText("Running routines from this phone is off.", { exact: false })).toBeVisible();
+    await expect(p.getByRole("button", { name: "Run now" })).toHaveCount(0);
+
     // A reload resumes the pairing from IndexedDB.
     await p.reload();
     await expect(p.getByTestId("remote-connection")).toHaveText("Work laptop");

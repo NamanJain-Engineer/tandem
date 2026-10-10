@@ -4,7 +4,7 @@ import { Key } from "webdriverio";
 import { PhoneClient } from "../../../web/lib/remote/client";
 import { parsePairingFragment } from "../../../web/lib/remote/protocol";
 import { MemoryPairingStore } from "../../../web/lib/remote/store";
-import { addFolder, freshUser, invoke, mod, paneIds, split, waitForPaneText } from "../support/app";
+import { addFolder, freshUser, invoke, mod, paneIds, paneText, split, waitForPaneText } from "../support/app";
 import { expectNoSeriousA11yViolationsInBothThemes } from "../support/axe";
 import { testRoute, waitForEntitlement } from "../support/hosted";
 import { E2E_KNOWN_SENTENCE } from "../support/phone";
@@ -36,7 +36,7 @@ async function closeSettings(): Promise<void> {
 }
 
 /** Clicks the grant switch in the paired phone's row. */
-async function grant(key: "chat" | "terminal" | "approvals"): Promise<void> {
+async function grant(key: "chat" | "terminal" | "approvals" | "routines"): Promise<void> {
   const sw = $(`[data-testid="remote-grant-${key}"] [role="switch"]`);
   await sw.waitForClickable({ timeout: 5_000 });
   if ((await sw.getAttribute("aria-checked")) !== "true") await sw.click();
@@ -118,10 +118,7 @@ describe("E2E-M16-4 Phone", () => {
     phone.sendRaw(frame!);
     await until(async () => rejected.includes("replay"), "the desktop didn't reject the replay");
     await browser.pause(1_000);
-    const text = await browser.execute(
-      (id: string) => document.querySelector(`[data-testid="pane"][data-pane-id="${id}"]`)?.textContent ?? "",
-      agent,
-    );
+    const text = await paneText(agent);
     expect(text.split("you said: replay me once").length - 1).toBe(1);
   });
 
