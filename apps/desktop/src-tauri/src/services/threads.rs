@@ -269,25 +269,6 @@ fn thread_state(reason: TurnEndReason) -> ThreadState {
     }
 }
 
-/// The approval card's kind and one-line summary for a tool use
-/// ("Run `npm test`").
-fn describe(ask: &ToolApproval, cwd: &std::path::Path) -> (ApprovalKind, String) {
-    let what = tandem_engines::chat::claude::arg_summary(&ask.tool_name, &ask.input, cwd);
-    match ask.tool_name.as_str() {
-        "Bash" => (ApprovalKind::Command, format!("Run `{what}`")),
-        "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => {
-            (ApprovalKind::FileWrite, format!("Edit `{what}`"))
-        }
-        "WebFetch" => (ApprovalKind::Network, format!("Fetch `{what}`")),
-        "WebSearch" => (
-            ApprovalKind::Network,
-            format!("Search the web for `{what}`"),
-        ),
-        t if t.starts_with("mcp__") => (ApprovalKind::Mcp, format!("Use `{what}`")),
-        _ => (ApprovalKind::Other, format!("Use `{what}`")),
-    }
-}
-
 /// Owner-only access to a directory (recovery copies).
 fn restrict_dir(dir: &std::path::Path) {
     #[cfg(unix)]
@@ -2023,14 +2004,11 @@ impl ThreadService {
         let Ok(thread) = self.thread(id).await else {
             return ApprovalAnswer::Deny { message: None };
         };
-        let (kind, summary) = describe(&ask, std::path::Path::new(&thread.cwd));
-        let detail = serde_json::to_string_pretty(&ask.input).unwrap_or_default();
-        let detail =
-            tandem_core::redact::redact(&tandem_engines::events::truncate_output(&detail).0);
-        let subject = match ask.input.get("command").and_then(serde_json::Value::as_str) {
-            Some(c) if ask.tool_name == "Bash" => ApprovalSubject::Command(c.to_string()),
-            _ => ApprovalSubject::Tool(ask.tool_name.clone()),
-        };
+        let (kind, summary, detail, subject) = tandem_engines::chat::claude::approval_card(
+            &ask.tool_name,
+            &ask.input,
+            std::path::Path::new(&thread.cwd),
+        );
         match self.ask_card(id, kind, summary, detail, subject).await {
             ApprovalOutcome::Allowed { .. } => ApprovalAnswer::Allow,
             ApprovalOutcome::Denied { reason, .. } => ApprovalAnswer::Deny { message: reason },

@@ -146,14 +146,38 @@ impl StatusService {
                 tracing::warn!(code = "status.server_failed", error = %err, "status server didn't start; using output heuristics only")
             }
         }
+        // The done/idle ticker runs under the watchdog (§5.2): a panic or a
+        // tick that stops for 10 s restarts it.
         let me = Arc::downgrade(self);
-        tauri::async_runtime::spawn(async move {
-            loop {
-                tokio::time::sleep(TICK).await;
-                let Some(me) = me.upgrade() else { break };
-                me.tick();
-            }
-        });
+        let sup = tandem_core::supervisor::Supervision {
+            clock: self.clock.clone(),
+            bus: self.bus.clone(),
+            watchdog: tandem_core::supervisor::watchdog(),
+        };
+        tauri::async_runtime::spawn(tandem_core::supervisor::supervise_task(
+            "status",
+            sup,
+            Some(TICK * 10),
+            move || {
+                let me = me.clone();
+                async move {
+                    let dog = tandem_core::supervisor::watchdog();
+                    loop {
+                        dog.beat("status");
+                        tokio::time::sleep(TICK).await;
+                        let Some(me) = me.upgrade() else {
+                            return Ok(());
+                        };
+                        me.tick();
+                    }
+                }
+            },
+        ));
+    }
+
+    /// The app's bus, for subsystems built on the status service.
+    pub fn bus(&self) -> &EventBus {
+        &self.bus
     }
 
     pub fn server(&self) -> Option<&StatusServer> {

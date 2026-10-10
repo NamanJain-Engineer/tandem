@@ -86,6 +86,7 @@ function Item({ n, now, onJump }: { n: Notification; now: number; onJump: (n: No
           <span className="shrink-0 text-sm tabular-nums text-fg-subtle">{ago(n.createdAt, now)}</span>
           {n.state === "unread" && (
             <span
+              role="img"
               aria-label={t("notifications.unread")}
               className="size-1.5 shrink-0 rounded-full bg-accent"
             />

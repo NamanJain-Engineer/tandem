@@ -71,6 +71,7 @@ export function TitleBar() {
           () => undefined,
         ),
     },
+    { id: "diagnostics", label: t("menu.diagnostics"), onSelect: () => useUi.getState().setDiagnostics(true) },
     { id: "diag", label: t("menu.copyDiagnostics"), onSelect: () => void copyDiagnostics(show) },
     {
       id: "logs",

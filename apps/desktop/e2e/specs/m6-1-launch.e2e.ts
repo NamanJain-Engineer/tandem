@@ -190,6 +190,9 @@ describe("E2E-M6-3 partial failure and saved presets", () => {
     await $('//label[normalize-space()="Command for seat 2"]/following::input[1]').setValue("echo ready");
     await $('[data-testid="launch-save"]').click();
     await $('[data-testid="preset-name"]').setValue("Nightly");
+    // Save enables once the name reaches React's state; under load that
+    // lands after setValue returns.
+    await $('[data-testid="preset-save"]').waitForClickable({ timeout: 10_000 });
     await $('[data-testid="preset-save"]').click();
     await $('[data-testid="preset-name"]').waitForExist({ reverse: true, timeout: 10_000 });
     await browser.keys("Escape");

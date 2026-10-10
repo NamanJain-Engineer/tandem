@@ -43,25 +43,36 @@ function toIpcError(e: unknown): IpcError {
   return { code: "internal", message: String(e), stage: null, hint: null, retryable: false };
 }
 
-/** Calls a Tauri command with a timeout (PRODUCT_SPEC §5.2). Rejects with an IpcError. */
+/** Calls a Tauri command with a timeout and a cancellation path (PRODUCT_SPEC
+ * §5.2). Rejects with an IpcError: `timeout` after `timeoutMs`, `cancelled`
+ * when `signal` aborts. A result that arrives after either is dropped; work
+ * that must stop in the core has its own command (a thread's Stop, a git
+ * operation's cancel). */
 export async function invoke<T>(
   cmd: string,
   args?: Record<string, unknown>,
-  { timeoutMs = DEFAULT_TIMEOUT_MS }: { timeoutMs?: number } = {},
+  { timeoutMs = DEFAULT_TIMEOUT_MS, signal }: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<T> {
+  const cancelled = () => toIpcError({ code: "cancelled", message: `${cmd} was cancelled.`, retryable: false });
+  if (signal?.aborted) throw cancelled();
   const call = await resolveBackend();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
+  let onAbort: (() => void) | undefined;
+  const stop = new Promise<never>((_, reject) => {
     timer = setTimeout(
       () => reject(toIpcError({ code: "timeout", message: `${cmd} took too long.`, retryable: true })),
       timeoutMs,
     );
+    onAbort = () => reject(cancelled());
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
   try {
-    return (await Promise.race([call(cmd, args), timeout])) as T;
+    if (signal?.aborted) throw cancelled();
+    return (await Promise.race([call(cmd, args), stop])) as T;
   } catch (e) {
     throw toIpcError(e);
   } finally {
     clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
   }
 }

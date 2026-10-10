@@ -76,6 +76,53 @@ impl Manifest {
         }
     }
 
+    /// Checks a bundle before it ships (release builds): the manifest is
+    /// for this protocol and `version`, every platform in `required` is
+    /// there, and every listed binary matches its size and SHA-256. Returns
+    /// each problem found.
+    pub fn verify(
+        dir: &Path,
+        protocol: u32,
+        version: &str,
+        required: &[&str],
+    ) -> Result<Self, Vec<String>> {
+        let m = Self::load(dir).map_err(|e| vec![e.to_string()])?;
+        let mut problems = Vec::new();
+        if m.protocol != protocol {
+            problems.push(format!("protocol {} (expected {protocol})", m.protocol));
+        }
+        if m.version != version {
+            problems.push(format!("version {} (expected {version})", m.version));
+        }
+        for p in required {
+            if !m.binaries.contains_key(*p) {
+                problems.push(format!("no binary for {p}"));
+            }
+        }
+        for (p, bin) in &m.binaries {
+            let path = dir.join(&bin.file);
+            match std::fs::metadata(&path) {
+                Ok(meta) if meta.len() != bin.size => problems.push(format!(
+                    "{p}: {} bytes, manifest says {}",
+                    meta.len(),
+                    bin.size
+                )),
+                Ok(_) => {}
+                Err(_) => problems.push(format!("{p}: {} is missing", bin.file)),
+            }
+            if let Err(e) = m.binary(dir, p) {
+                if path.exists() {
+                    problems.push(e.to_string());
+                }
+            }
+        }
+        if problems.is_empty() {
+            Ok(m)
+        } else {
+            Err(problems)
+        }
+    }
+
     /// Writes a manifest for the binaries found under `dir/<platform>/tandem-host`.
     pub fn generate(dir: &Path, protocol: u32, version: &str) -> std::io::Result<Self> {
         let mut binaries = BTreeMap::new();
@@ -108,6 +155,37 @@ impl Manifest {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn f_rm_01_a_release_bundle_is_checked_against_its_manifest() {
+        let dir = tempfile::tempdir().expect("tmp");
+        for p in ["linux-x86_64", "linux-aarch64"] {
+            std::fs::create_dir_all(dir.path().join(p)).expect("mkdir");
+            std::fs::write(dir.path().join(p).join("tandem-host"), p.as_bytes()).expect("w");
+        }
+        Manifest::generate(dir.path(), 1, "0.5.0").expect("gen");
+        let both = ["linux-x86_64", "linux-aarch64"];
+        assert!(Manifest::verify(dir.path(), 1, "0.5.0", &both).is_ok());
+        // A platform the release promises but didn't build.
+        let err =
+            Manifest::verify(dir.path(), 1, "0.5.0", &["macos-universal"]).expect_err("missing");
+        assert_eq!(err, vec!["no binary for macos-universal".to_string()]);
+        // A manifest from another version, or a binary changed after it.
+        assert!(Manifest::verify(dir.path(), 1, "0.4.0", &both).is_err());
+        std::fs::write(
+            dir.path().join("linux-aarch64/tandem-host"),
+            b"other!!!!!!!!",
+        )
+        .expect("w");
+        let err = Manifest::verify(dir.path(), 1, "0.5.0", &both).expect_err("changed");
+        assert!(err.iter().any(|e| e.contains("linux-aarch64")), "{err:?}");
+        // No manifest at all: the "Installing helper…" failure, caught at build time.
+        let empty = tempfile::tempdir().expect("tmp");
+        assert_eq!(
+            Manifest::verify(empty.path(), 1, "0.5.0", &both).expect_err("none"),
+            vec![ManifestError::Missing.to_string()]
+        );
+    }
 
     #[test]
     fn f_rm_01_platforms_from_uname() {

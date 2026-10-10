@@ -34,6 +34,12 @@ product launchable; M16 adds the P2 extras and the release candidate.
      site's plan copy matches.
    - Perf items marked [manual] (threads scroll fps, the 2 MB fence, the
      16-pane and startup suites) need the reference machines (`HUMAN_TODO.md`).
+   - Six agents' first frames regressed from 670 ms (M3) to ~1.2 s on the
+     same build VM and perf build (`perf/results/m15.json`): bisect from M3.
+   - Memory (§5.1, D-138): the base app is ~500 MB PSS on the build VM
+     (budget 350) and each background pane 34–75 MB (budget 3.9 MB). Hidden
+     panes should drop their xterm instance after a while and replay from
+     the core's ring when shown; measure again with `--suite memory`.
 
 ## 1. Features to build, by milestone
 

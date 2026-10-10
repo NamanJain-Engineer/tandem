@@ -1,8 +1,8 @@
 {
   "terminals": {
-    "date": "2026-10-06T05:06:40.848Z",
+    "date": "2026-10-10T12:06:57.101Z",
     "machine": {
-      "os": "linux 6.18.44-fc-v70 (xvfb)",
+      "os": "linux 6.18.44-fc-v114 (xvfb)",
       "cpus": 4,
       "cpuModel": "Intel(R) Xeon(R) Processor @ 2.80GHz",
       "memGb": 16,
@@ -10,21 +10,21 @@
     },
     "metrics": {
       "modeSwitchP95Ms": {
-        "value": 160,
+        "value": 187,
         "target": 100,
         "op": "<=",
         "unit": "ms",
         "pass": false
       },
       "sixAgentsFramedMs": {
-        "value": 670,
+        "value": 1155,
         "target": 300,
         "op": "<=",
         "unit": "ms",
         "pass": false
       },
       "sixAgentsMaxStallMs": {
-        "value": 526,
+        "value": 779,
         "target": 100,
         "op": "<=",
         "unit": "ms",
@@ -38,7 +38,7 @@
         "pass": false
       },
       "keyEchoP95Ms": {
-        "value": 223,
+        "value": 227,
         "target": 50,
         "op": "<=",
         "unit": "ms",
@@ -52,21 +52,21 @@
         "pass": true
       },
       "focusedFps": {
-        "value": 4.5,
+        "value": 4.6,
         "target": 50,
         "op": ">=",
         "unit": "fps",
         "pass": false
       },
       "idleCpuPercent": {
-        "value": 12.9,
+        "value": 9.8,
         "target": 2,
         "op": "<=",
         "unit": "% of a core",
         "pass": false
       },
       "sixteenPaneRssMb": {
-        "value": 2509.4,
+        "value": 2481.3,
         "target": 1229,
         "op": "<=",
         "unit": "MB",

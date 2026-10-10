@@ -635,3 +635,33 @@ async fn f_pl_01_the_port_goes_to_gateway_json_and_the_watchdog_brings_the_liste
     open(&gw.url, &lease.token).await;
     gw.shutdown();
 }
+
+#[tokio::test]
+async fn nfr_5_2_a_gateway_that_keeps_failing_is_reported_after_three_restarts() {
+    let bus = tandem_core::bus::EventBus::new();
+    let mut rx = bus.subscribe(tandem_core::bus::Topic::App);
+    let mut deps = GatewayDeps::new(Arc::new(Fake));
+    deps.watchdog_every = Duration::from_millis(50);
+    deps.bus = Some(bus);
+    let gw = Gateway::start(deps).await.expect("gateway");
+    // Kill it four times: three restarts, then the report.
+    for _ in 0..4 {
+        let before = gw.metrics().restarts;
+        gw.kill_listener();
+        for _ in 0..100 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            if gw.metrics().restarts > before || before == 3 {
+                break;
+            }
+        }
+    }
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("reported in time")
+        .expect("event");
+    assert_eq!(event.name, "app:subsystem-failed");
+    assert_eq!(event.payload["name"], "gateway");
+    assert_eq!(event.payload["restarts"], 3);
+    assert_eq!(gw.metrics().restarts, 3);
+    gw.shutdown();
+}

@@ -6,6 +6,7 @@ import { useRemote } from "../../stores/remote";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { RemoteHosts } from "./RemoteHosts";
 import { WslDistros } from "./WslDistros";
+import { settingsPages } from "../settings/pages";
 
 const DISTROS: Distro[] = [
   { name: "Ubuntu-22.04", isDefault: true, version: 2 },
@@ -39,6 +40,22 @@ describe("Settings › Remote › WSL (F-RM-02)", () => {
   beforeEach(() => {
     resetStores();
     useRemote.setState({ hosts: [], loaded: false, error: null, attempts: {}, ask: null, engines: {} });
+  });
+
+  it("F-RM-02 Settings › Remote names WSL and asks for distros on Windows only", async () => {
+    calls = fakeBackend({ wsl_distros: () => DISTROS, ssh_hosts_list: () => [] as HostView[] });
+    const page = (p: string) => settingsPages(p).find((x) => x.id === "remote");
+    expect(page("linux")?.subtitle).toBe("SSH hosts and your phone");
+    expect(page("macos")?.subtitle).toBe("SSH hosts and your phone");
+    expect(page("windows")?.subtitle).toBe("SSH hosts, WSL distributions and your phone");
+    expect(page("linux")?.keywords).not.toContain("wsl");
+    const linux = render(<UiProvider>{page("linux")?.extra}</UiProvider>);
+    await waitFor(() => expect(named("ssh_hosts_list").length).toBeGreaterThan(0));
+    expect(named("wsl_distros")).toHaveLength(0);
+    expect(screen.queryByText("WSL distributions")).toBeNull();
+    linux.unmount();
+    render(<UiProvider>{page("windows")?.extra}</UiProvider>);
+    await waitFor(() => expect(named("wsl_distros").length).toBe(1));
   });
 
   it("F-RM-02 not on Windows: the WSL section isn't shown", async () => {

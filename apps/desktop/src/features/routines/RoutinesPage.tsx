@@ -405,6 +405,8 @@ export function RoutinesPage() {
   const { list, status, error } = useRoutines();
   const limits = useSession((s) => s.entitlement?.limits);
   const signedIn = useSession((s) => s.auth?.signedIn ?? false);
+  // Builds without Vibezeo accounts can't sign in or buy Pro (D-909).
+  const hosted = useSession((s) => s.auth?.hosted ?? true);
   const now = useNow();
   const { show: toast } = useToast();
   const [editing, setEditing] = useState<EditorSeed | null>(null);
@@ -460,9 +462,15 @@ export function RoutinesPage() {
           <EmptyState
             icon={<CalendarClock size={20} />}
             title={t("routines.upsell.title")}
-            body={signedIn ? t("routines.upsell.body") : t("routines.upsell.signIn")}
+            body={
+              !hosted
+                ? t("routines.upsell.earlyAccess")
+                : signedIn
+                  ? t("routines.upsell.body")
+                  : t("routines.upsell.signIn")
+            }
             primary={
-              signedIn ? (
+              signedIn && hosted ? (
                 <Button
                   variant="primary"
                   onClick={() => useUi.getState().openUpgrade()}

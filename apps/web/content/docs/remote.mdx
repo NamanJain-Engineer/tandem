@@ -3,8 +3,26 @@ title: Remote (SSH, WSL, phone)
 description: Workspaces on SSH hosts and WSL distros, and a phone companion.
 ---
 
-> **Not in the app yet.** Remote workspaces aren't in the current release. This page describes what is being built (M14 and M16 in the build plan), and it will be filled in when it ships.
+> **Not in the app yet.** SSH and WSL workspaces arrive with the next release (0.5.0); this page describes them as they ship. The phone companion comes later (M16).
 
-- **SSH.** Terminals, agents, threads, files and git on an SSH host, through a small `tandem-host` helper that runs there. Host keys are checked, and local credentials are never forwarded.
-- **WSL.** The same for WSL distros on Windows.
-- **Phone.** A companion web app to see your agents and answer them from your phone, end-to-end encrypted, planned for Pro.
+## SSH hosts
+
+Open a folder on another machine and work there as if it were local: terminals, agents, threads, files and git all run on the host.
+
+- **Adding a host.** Settings › Remote › Add host takes an alias from your `~/.ssh/config`, a host name or `user@host:port`. Vibezeo uses your system `ssh`, your SSH agent and your config.
+- **Host keys.** The first time, Vibezeo shows the host's key fingerprint for you to check, then pins it in its own `known_hosts`. If the key changes, it refuses to connect until you choose to trust the new key.
+- **The helper.** Vibezeo copies a small helper, `tandem-host`, to `~/.tandem-host/` on the host and checks its SHA-256 there. Terminals keep running if the connection drops, and reattach when it comes back.
+- **Engines.** The `+` menu lists the coding engines installed on the host, signed in on the host. Your sign-ins, accounts, plugin credentials and the local gateway never leave this computer.
+- **Approvals.** Claude Code threads on a host ask before running commands or editing files, with the same approval card as local threads.
+
+**Which hosts.** The Linux download includes the helper for **Linux x86_64 and Linux arm64 (aarch64)** hosts. macOS hosts need the macOS helper, which is built on a Mac and isn't in this download yet. Hosts reached through `ProxyJump` or `ProxyCommand` aren't supported yet.
+
+**Not in remote folders yet:** git worktrees (agents share the checkout), plugins and task tools in threads, Reveal in file manager, live file watching (the Files tab refreshes after each action), and push, pull and branch switching from the Changes panel (use a terminal on the host). The Browser pane browses from this computer, so it can't open the host's own dev servers.
+
+## WSL (Windows)
+
+On Windows, Settings › Remote lists your WSL distributions. Open a folder inside one, and its terminals, agents and threads run in that distro with its own engines and sign-ins. You can also choose a distro for plain terminals in local folders.
+
+## Phone
+
+A companion web app to see your agents and answer them from your phone, end-to-end encrypted, planned for Pro (M16).

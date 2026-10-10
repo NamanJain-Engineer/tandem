@@ -82,6 +82,7 @@
     "allow-mail-retry",
     "allow-app-log",
     "allow-app-copy-diagnostics",
+    "allow-app-diagnostics",
     "allow-app-open-logs-folder",
     "allow-app-open-external",
     "allow-app-quit",

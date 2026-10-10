@@ -5,7 +5,9 @@
 //! What a message says decides the turn:
 //! - `run <command>`: asks the app's gateway (from `--mcp-config`) through
 //!   `tandem_approvals__request` whether Bash may run it, then reports the
-//!   tool as run or denied.
+//!   tool as run or denied. With `--permission-prompt-tool stdio` (threads on
+//!   SSH hosts and in WSL, which have no gateway) it asks the app in band
+//!   instead, as a `can_use_tool` control request on stdout.
 //! - `/slow <n>`: streams `n` pieces 150 ms apart (Stop can land mid-turn).
 //! - `/hang`: streams one piece, then reads nothing more and ignores SIGINT
 //!   (the tree must be killed, E2E-M7-3).
@@ -361,6 +363,36 @@ fn approve(gw: &(String, String), command: &str, tool_use_id: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Asks the app in band (`--permission-prompt-tool stdio`): a
+/// `can_use_tool` control request, then waits for its `control_response`
+/// (other lines are held back in order). True when it allows.
+fn approve_stdio(
+    rx: &mpsc::Receiver<Value>,
+    held: &mut Vec<Value>,
+    command: &str,
+    tool_use_id: &str,
+) -> bool {
+    let request_id = format!("perm_{tool_use_id}");
+    emit(
+        json!({"type": "control_request", "request_id": request_id, "request": {
+        "subtype": "can_use_tool", "tool_name": "Bash",
+        "input": {"command": command}, "tool_use_id": tool_use_id}}),
+    );
+    while let Ok(v) = rx.recv() {
+        let answer = v.get("type").and_then(Value::as_str) == Some("control_response")
+            && v.pointer("/response/request_id").and_then(Value::as_str)
+                == Some(request_id.as_str());
+        if answer {
+            return v
+                .pointer("/response/response/behavior")
+                .and_then(Value::as_str)
+                == Some("allow");
+        }
+        held.push(v);
+    }
+    false
+}
+
 /// Lines from stdin on a thread, so an interrupt can arrive mid-turn.
 fn reader() -> mpsc::Receiver<Value> {
     let (tx, rx) = mpsc::channel();
@@ -402,6 +434,9 @@ pub fn run(args: &[String], session: String) {
         .cloned()
         .unwrap_or_else(|| "fake-model".into());
     let gw = gateway(args);
+    let stdio_permissions = args
+        .windows(2)
+        .any(|w| w[0] == "--permission-prompt-tool" && w[1] == "stdio");
     let mut turn = Turn {
         session,
         model,
@@ -438,7 +473,11 @@ pub fn run(args: &[String], session: String) {
         if let Some(command) = first.strip_prefix("run ") {
             let id = format!("toolu_{n}");
             turn.assistant(json!([{"type": "tool_use", "id": id, "name": "Bash", "input": {"command": command}}]));
-            let allowed = gw.as_ref().is_some_and(|g| approve(g, command, &id));
+            let allowed = if stdio_permissions {
+                approve_stdio(&rx, &mut held, command, &id)
+            } else {
+                gw.as_ref().is_some_and(|g| approve(g, command, &id))
+            };
             if allowed {
                 emit(
                     json!({"type": "user", "session_id": turn.session, "parent_tool_use_id": null,

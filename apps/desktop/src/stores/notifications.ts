@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { announce, configureAnnouncer } from "@tandem/ui";
+import { t } from "../i18n";
 import type { Notification, NotificationPage, NotificationState } from "@tandem/protocol";
 import { listen } from "../ipc/events";
 import { invoke } from "../ipc/invoke";
@@ -78,12 +80,16 @@ let following = false;
 export function followNotifications(): void {
   if (following) return;
   following = true;
+  configureAnnouncer({ more: (count) => t("a11y.andMore", { count }) });
   void listen<{ notification: Notification; sound: boolean }>(
     "notifications:new",
     ({ notification, sound }) => {
       const s = useNotifications.getState();
       if (s.items.some((n) => n.id === notification.id)) return;
       useNotifications.setState({ items: [notification, ...s.items], unread: s.unread + 1 });
+      // Screen readers hear the title ("Claude Code is waiting for you"), not
+      // the source line, which can carry a command (§5.4).
+      announce(notification.title);
       if (sound) {
         const name = useSettings.getState().values.notify_sound_name;
         playSound(typeof name === "string" ? name : "chime");

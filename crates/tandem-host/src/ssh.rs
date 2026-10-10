@@ -203,6 +203,21 @@ pub fn parse_g(out: &str) -> Option<Resolved> {
     })
 }
 
+/// How `ssh -G` says the host is reached when it isn't directly:
+/// `ProxyJump` or `ProxyCommand`. The host key scan (`ssh-keyscan`) connects
+/// directly, so those hosts aren't supported yet (F-RM-01): they're refused
+/// before any scan, in words that say why.
+pub fn proxied(g_out: &str) -> Option<&'static str> {
+    for line in g_out.lines() {
+        match line.split_once(' ') {
+            Some(("proxyjump", v)) if v.trim() != "none" => return Some("ProxyJump"),
+            Some(("proxycommand", v)) if v.trim() != "none" => return Some("ProxyCommand"),
+            _ => {}
+        }
+    }
+    None
+}
+
 /// A host key as `ssh-keyscan` printed it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HostKey {
@@ -403,8 +418,17 @@ impl Ssh {
             cmd.stdin(Stdio::null()).output().await.map_err(|e| {
                 SshError::new(Category::Unreachable, format!("Couldn't run ssh: {e}"))
             })?;
-        parse_g(&String::from_utf8_lossy(&out.stdout))
-            .ok_or_else(|| fail(&String::from_utf8_lossy(&out.stderr), &t.label()))
+        let g = String::from_utf8_lossy(&out.stdout);
+        if let Some(how) = proxied(&g) {
+            return Err(SshError::new(
+                Category::Unreachable,
+                format!(
+                    "{} is reached through {how} in your SSH config, which Vibezeo doesn't support yet. Add a host it can reach directly.",
+                    t.label()
+                ),
+            ));
+        }
+        parse_g(&g).ok_or_else(|| fail(&String::from_utf8_lossy(&out.stderr), &t.label()))
     }
 
     /// The host's keys, for approval before the first connection.
@@ -820,6 +844,45 @@ Host key verification failed.";
                 user: "tandem".into()
             })
         );
+    }
+
+    #[test]
+    fn f_rm_01_hosts_behind_a_proxy_are_named_not_scanned() {
+        let direct = "user tandem\nhostname 10.0.0.5\nport 22\nproxycommand none\n";
+        assert_eq!(proxied(direct), None);
+        assert_eq!(
+            proxied("hostname inner\nproxyjump bastion.example.com\n"),
+            Some("ProxyJump")
+        );
+        assert_eq!(
+            proxied("hostname inner\nproxycommand ssh -W %h:%p bastion\n"),
+            Some("ProxyCommand")
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn f_rm_01_a_proxyjump_host_is_refused_before_any_scan() {
+        use std::os::unix::fs::PermissionsExt;
+        // An ssh whose config sends `inner` through a jump host: `-G` says so.
+        let dir = tempfile::tempdir().expect("tmp");
+        let fake = dir.path().join("ssh");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\nprintf 'user me\\nhostname 10.9.9.9\\nport 22\\nproxyjump bastion\\n'\n",
+        )
+        .expect("w");
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        let mut s = Ssh::new(dir.path().join("run"), dir.path().join("kh"));
+        s.ssh = fake;
+        // A scan would fail differently; it must never run.
+        s.keyscan = dir.path().join("no-keyscan");
+        let e = s
+            .resolve(&SshTarget::parse("me@inner").expect("t"))
+            .await
+            .expect_err("refused");
+        assert!(e.message.contains("ProxyJump"), "{}", e.message);
+        assert!(e.message.contains("doesn't support yet"), "{}", e.message);
     }
 
     #[test]

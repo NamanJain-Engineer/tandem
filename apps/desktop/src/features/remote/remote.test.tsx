@@ -200,6 +200,40 @@ describe("Settings › Remote (UI-14, UI-111)", () => {
     expect(useRemote.getState().ask).toBeNull();
   });
 
+  it("F-RM-01 a slow first listing doesn't replace the folder typed meanwhile", async () => {
+    let home: (v: unknown) => void = () => {};
+    calls = fakeBackend({
+      ssh_hosts_list: () => [{ ...HOST, state: "connected" }],
+      ssh_list_dir: (a) =>
+        a?.path === ""
+          ? new Promise((r) => (home = r))
+          : { path: String(a?.path), parent: "/home/tandem", dirs: [] },
+      engines_list: () => [],
+    });
+    render(
+      <UiProvider>
+        <RemoteHosts />
+        <RemotePrompts />
+      </UiProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Open folder…" }));
+    const field = await screen.findByTestId("remote-picker-path");
+    fireEvent.change(field, { target: { value: "/home/tandem/project" } });
+    fireEvent.submit(field.closest("form") as HTMLFormElement);
+    await waitFor(() =>
+      expect(screen.getByTestId("remote-picker").getAttribute("data-path")).toBe("/home/tandem/project"),
+    );
+    // Home answers last (a fresh helper's first call); the typed folder stays.
+    home({ path: "/home/tandem", parent: "/home", dirs: ["project"] });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByTestId("remote-picker").getAttribute("data-path")).toBe("/home/tandem/project");
+    expect(screen.getByTestId("remote-picker").getAttribute("data-state")).toBe("ready");
+    fireEvent.click(screen.getByRole("button", { name: "Open this folder" }));
+    await waitFor(() =>
+      expect(named("workspace_add")[0]?.args).toMatchObject({ root: "/home/tandem/project" }),
+    );
+  });
+
   it("F-RM-01 a connected host opens a folder through the picker", async () => {
     setup([{ ...HOST, state: "connected" }]);
     fireEvent.click(await screen.findByRole("button", { name: "Open folder…" }));

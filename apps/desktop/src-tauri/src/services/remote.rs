@@ -893,7 +893,9 @@ impl RemoteService {
                     .await
             }
         };
+        let asked = Instant::now();
         let spawned = spawn(cwd.to_string()).await.map_err(rpc_error);
+        let spawn_ms = asked.elapsed().as_millis() as u64;
         let spawned = match spawned {
             Ok(s) => s,
             Err(e) => {
@@ -915,7 +917,9 @@ impl RemoteService {
             conn: Arc::downgrade(&conn),
             id: id.clone(),
         });
-        let (info, feed) = self.pty.spawn_remote(spec, spawned.pid, backend, sink)?;
+        let (info, feed) = self
+            .pty
+            .spawn_remote(spec, spawned.pid, spawn_ms, backend, sink)?;
         if let Ok(mut p) = conn.panes.lock() {
             let link = p.entry(id.clone()).or_default();
             if !link.early.is_empty() {
