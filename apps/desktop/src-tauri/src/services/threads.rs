@@ -2408,6 +2408,9 @@ impl AppLauncher {
                 resume_session: thread.engine_session_id.clone(),
                 mcp_config: None,
                 mcp: None,
+                // No local stdio servers on a remote or WSL engine: the tasks
+                // server runs on this machine (F-TK-02).
+                stdio_servers: Vec::new(),
                 engine_version: found.version,
                 relocate: Some(relocate),
                 briefing,
@@ -2525,6 +2528,9 @@ impl AppLauncher {
                 resume_session: thread.engine_session_id.clone(),
                 mcp_config: None,
                 mcp: None,
+                // No local stdio servers on a remote or WSL engine: the tasks
+                // server runs on this machine (F-TK-02).
+                stdio_servers: Vec::new(),
                 engine_version: found.version,
                 relocate: Some(relocate),
                 briefing,
