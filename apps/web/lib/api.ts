@@ -46,7 +46,7 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
 }
 
 export type Me = {
-  user: { id: string; email: string; name: string; emailVerified: boolean };
+  user: { id: string; email: string; name: string; emailVerified: boolean; role: string };
   plan: "free" | "pro" | "team";
   status: string;
   paid_until: string | null;

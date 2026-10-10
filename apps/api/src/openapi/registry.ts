@@ -1,6 +1,6 @@
 // Public API routes and their zod schemas, the source for openapi.json (F-WB-04).
 import { z } from "zod";
-import { refundBody } from "../routes/admin";
+import { grantBody, refundBody } from "../routes/admin";
 import { draftBody, rewriteBody, titleBody } from "../routes/ai";
 import { acceptBody, createOrgBody, inviteBody, memberBody, seatsBody } from "../routes/orgs";
 import { clientAuditBody, policySchema } from "../services/orgs";
@@ -377,6 +377,30 @@ export const ROUTES: RouteDoc[] = [
       ),
       next: z.string().nullable(),
     }),
+  },
+  {
+    method: "get",
+    path: "/v1/admin/users",
+    summary: "Look users up by email (?q=, at least 2 characters, 20 results)",
+    auth: "admin",
+    response: z.object({
+      users: z.array(z.object({ id: z.string(), email: z.string(), name: z.string(), role: z.string(), createdAt: z.string() })),
+    }),
+  },
+  {
+    method: "get",
+    path: "/v1/admin/users/{id}",
+    summary: "A user's plan, subscription, org, credits, last 50 ledger rows and the admin actions on them",
+    auth: "admin",
+    response: z.object({ user: z.object({ id: z.string(), email: z.string() }).passthrough(), plan: z.string() }).passthrough(),
+  },
+  {
+    method: "post",
+    path: "/v1/admin/users/{id}/credits",
+    summary: "Grant credits (to whoever pays for the user) with a reason; recorded as an admin action",
+    auth: "admin",
+    body: grantBody,
+    response: z.object({ ledgerEntry: z.string(), balance: z.number() }),
   },
   {
     method: "post",

@@ -6,6 +6,7 @@ import { user } from "../db/schema";
 import { ApiError } from "../lib/problem";
 import { parseJson } from "../lib/validate";
 import type { AppEnv } from "../middleware/context";
+import { grantCredits, searchUsers, userDetail } from "../services/admin";
 import { refundPack, refundPlan } from "../services/refunds";
 
 export const refundBody = z.object({
@@ -27,10 +28,27 @@ export function requireAdmin(deps: Deps): MiddlewareHandler<AppEnv> {
   };
 }
 
-/** Support tools (F-BL-05 now; the rest of F-BE-12 later). */
+export const grantBody = z.object({
+  amount: z.number().int().min(1).max(1_000_000),
+  reason: z.string().trim().min(3).max(500),
+  bucket: z.enum(["monthly", "purchased"]).default("purchased"),
+});
+
+/** Support tools (F-BE-12, F-BL-05). */
 export function adminRoutes(deps: Deps) {
   const app = new Hono<AppEnv>();
   app.use("*", requireAdmin(deps));
+
+  app.get("/users", async (c) => c.json({ users: await searchUsers(deps, c.req.query("q") ?? "") }));
+
+  app.get("/users/:id", async (c) => c.json(await userDetail(deps, c.req.param("id"))));
+
+  app.post("/users/:id/credits", async (c) => {
+    const body = await parseJson(c, grantBody);
+    return c.json(
+      await grantCredits(deps, c.get("user")?.id ?? "", c.req.param("id"), body.amount, body.reason, body.bucket),
+    );
+  });
 
   app.post("/users/:id/refund", async (c) => {
     const body = await parseJson(c, refundBody);
