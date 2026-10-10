@@ -83,6 +83,10 @@ fn shown() -> &'static Shown {
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
 
+/// One show at a time: startup refreshes from Dictate and routines run on
+/// different threads, and two that both found no tray would each build one.
+static SHOWING: Mutex<()> = Mutex::new(());
+
 /// At startup: remembers the app and shows the tray if it's wanted.
 pub fn install(app: &AppHandle) {
     let _ = APP.set(app.clone());
@@ -128,6 +132,7 @@ async fn refresh(app: &AppHandle) {
     let s = shown();
     let routines = s.routines.load(Ordering::SeqCst);
     if !wanted(routines, s.dictate_on.load(Ordering::SeqCst)) {
+        let _one = SHOWING.lock().unwrap_or_else(|e| e.into_inner());
         let _ = app.remove_tray_by_id(TRAY_ID);
         return;
     }
@@ -139,6 +144,7 @@ async fn refresh(app: &AppHandle) {
 }
 
 fn show(app: &AppHandle, routines: bool, paused: bool) -> tauri::Result<()> {
+    let _one = SHOWING.lock().unwrap_or_else(|e| e.into_inner());
     let s = shown();
     let line = s.dictate_line.lock().map(|l| l.clone()).unwrap_or_default();
     let open = MenuItem::with_id(app, OPEN, "Open Vibezeo", true, None::<&str>)?;
