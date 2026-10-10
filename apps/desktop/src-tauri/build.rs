@@ -205,6 +205,8 @@ const COMMANDS: &[&str] = &[
     "skill_remove",
     "skills_library",
     "skill_add_from_library",
+    "teammate_suggestions",
+    "thread_reorder",
 ];
 
 const TEST_COMMANDS: &[&str] = &[

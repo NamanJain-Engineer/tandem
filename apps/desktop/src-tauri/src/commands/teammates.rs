@@ -196,3 +196,13 @@ pub async fn skill_add_from_library(
     state.teammates.publish().await;
     Ok(())
 }
+
+/// Empty-chat chips from the brief, made locally (F-AG-03).
+#[tauri::command]
+pub async fn teammate_suggestions(
+    state: State<'_, AppState>,
+    id: TeammateId,
+) -> Result<Vec<String>, IpcError> {
+    let teammate = state.teammates.get(&id).await?;
+    Ok(crate::services::teammates::suggestions(&teammate.brief))
+}

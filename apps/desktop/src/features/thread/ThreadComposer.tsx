@@ -90,11 +90,16 @@ export function ThreadComposer({
   composerRef,
   prefill,
   visible = true,
+  chat,
 }: {
   thread: Thread;
   detail: ThreadDetail | null;
   running: boolean;
-  tokens: { input: number; output: number; byEngine?: Array<{ engineId: string; input: number; output: number }> };
+  tokens: {
+    input: number;
+    output: number;
+    byEngine?: Array<{ engineId: string; input: number; output: number }>;
+  };
   folderName: string | null;
   lastMessage: () => string | null;
   composerRef?: React.Ref<ComposerHandle>;
@@ -102,6 +107,9 @@ export function ThreadComposer({
   prefill?: { text: string; n: number } | null;
   /** Thread mode is showing: only then does the composer take focus. */
   visible?: boolean;
+  /** A teammate chat: its placeholder, `@name` mail, and no engine switch
+   * (the teammate's settings choose its engine, F-AG-05). */
+  chat?: { placeholder: string; beforeSend?: (text: string) => Promise<boolean> };
 }) {
   const { show } = useToast();
   const engines = useEngines((s) => s.list);
@@ -168,9 +176,11 @@ export function ThreadComposer({
   const engineLabel = engines.find((e) => e.spec.id === thread.engineId)?.spec.label ?? thread.engineId;
   const placeholder = running
     ? t("thread.composer.running")
-    : folderName
-      ? t("thread.composer.placeholder", { engine: engineLabel, folder: folderName })
-      : t("thread.composer.placeholderNoFolder", { engine: engineLabel });
+    : chat
+      ? chat.placeholder
+      : folderName
+        ? t("thread.composer.placeholder", { engine: engineLabel, folder: folderName })
+        : t("thread.composer.placeholderNoFolder", { engine: engineLabel });
 
   const engineOptions: SelectOption[] = useMemo(
     () =>
@@ -231,6 +241,11 @@ export function ThreadComposer({
     // Removed from the draft at once; restored ahead of new typing on failure.
     setText("");
     setAttachments([]);
+    // `@name` in a teammate chat is mail (F-AG-12).
+    if (chat?.beforeSend && sentAttachments.length === 0) {
+      const handled = await chat.beforeSend(sent).catch(() => false);
+      if (handled) return;
+    }
     const res = await send(
       thread.id,
       sent,
@@ -299,16 +314,20 @@ export function ThreadComposer({
         }}
         mode={thread.mode}
         onModeChange={(mode) => void update(thread.id, { mode })}
-        engine={{
-          value: thread.engineId,
-          options: engineOptions,
-          disabled: running,
-          onChange: (engineId) =>
-            void invoke<Thread>("thread_switch_engine", { threadId: thread.id, engineId }).then(
-              () => void reloadDetail(thread.id),
-              (e: IpcError) => show({ tone: "error", title: e.message }),
-            ),
-        }}
+        engine={
+          chat
+            ? undefined
+            : {
+                value: thread.engineId,
+                options: engineOptions,
+                disabled: running,
+                onChange: (engineId) =>
+                  void invoke<Thread>("thread_switch_engine", { threadId: thread.id, engineId }).then(
+                    () => void reloadDetail(thread.id),
+                    (e: IpcError) => show({ tone: "error", title: e.message }),
+                  ),
+              }
+        }
         model={{
           value: savedModel,
           options: modelOptions,

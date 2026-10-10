@@ -306,6 +306,27 @@ pub async fn insert_chat(
         .await
 }
 
+/// Sets the order of these threads (a teammate's chat tabs, left to right).
+pub async fn reorder(store: &Store, ids: &[ThreadId]) -> Result<(), StoreError> {
+    let keys = sort_key::sequence(ids.len());
+    let pairs: Vec<(String, String)> = ids
+        .iter()
+        .map(|i| i.as_str().to_string())
+        .zip(keys)
+        .collect();
+    store
+        .write(move |t| {
+            for (id, key) in &pairs {
+                t.execute(
+                    "UPDATE threads SET sort_key = ?2 WHERE id = ?1",
+                    params![id, key],
+                )?;
+            }
+            Ok(())
+        })
+        .await
+}
+
 /// A teammate's chats, in tab order.
 pub async fn teammate_chats(
     store: &Store,

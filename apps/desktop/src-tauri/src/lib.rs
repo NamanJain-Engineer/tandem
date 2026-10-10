@@ -46,6 +46,8 @@ macro_rules! app_commands {
             commands::teammates::skill_remove,
             commands::teammates::skills_library,
             commands::teammates::skill_add_from_library,
+            commands::teammates::teammate_suggestions,
+            commands::threads::thread_reorder,
             commands::plugins::plugins_catalog,
             commands::plugins::grants_list,
             commands::plugins::grants_set,

@@ -642,3 +642,14 @@ pub async fn thread_unqueue(
 ) -> Result<Option<String>, IpcError> {
     state.threads.unqueue(&thread_id).await
 }
+
+/// A teammate's chat tabs in a new order (F-AG-03 AC1: it persists).
+#[tauri::command]
+pub async fn thread_reorder(
+    state: State<'_, AppState>,
+    ids: Vec<ThreadId>,
+) -> Result<(), IpcError> {
+    tandem_store::repo::threads::reorder(&state.store, &ids).await?;
+    state.teammates.publish().await;
+    Ok(())
+}

@@ -57,10 +57,13 @@ pub struct TeammateInput {
 #[ts(export)]
 pub struct TeammatePatch {
     #[serde(default)]
+    #[ts(optional)]
     pub name: Option<String>,
     #[serde(default)]
+    #[ts(optional)]
     pub brief: Option<String>,
     #[serde(default)]
+    #[ts(optional)]
     pub engine_id: Option<String>,
     #[serde(default, with = "double_option")]
     #[ts(optional, type = "string | null")]
@@ -75,10 +78,13 @@ pub struct TeammatePatch {
     #[ts(optional, type = "number | null")]
     pub avatar_hue: Option<Option<u8>>,
     #[serde(default)]
+    #[ts(optional)]
     pub places: Option<Vec<String>>,
     #[serde(default)]
+    #[ts(optional)]
     pub settings: Option<TeammateSettings>,
     #[serde(default)]
+    #[ts(optional)]
     pub pinned: Option<bool>,
 }
 
@@ -157,6 +163,52 @@ pub fn make_home(home: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Three things to ask a teammate, from its brief's first sentences, made
+/// locally (F-AG-03): "You draft our weekly changelog." → "Draft our weekly
+/// changelog". Constraints ("Never…", "Don't…") aren't tasks; the rest is
+/// filled with general asks.
+pub fn suggestions(brief: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let sentences = brief
+        .split(['.', '!', '?', '\n'])
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    for s in sentences {
+        let lower = s.to_lowercase();
+        if ["never ", "don't ", "do not ", "avoid ", "always "]
+            .iter()
+            .any(|p| lower.starts_with(p))
+        {
+            continue;
+        }
+        let task = s
+            .strip_prefix("You ")
+            .or_else(|| s.strip_prefix("you "))
+            .unwrap_or(s);
+        let mut chars = task.chars();
+        let Some(first) = chars.next() else { continue };
+        let chip: String = first.to_uppercase().chain(chars).collect();
+        let chip: String = chip.chars().take(80).collect();
+        if chip.split_whitespace().count() >= 2 && !out.contains(&chip) {
+            out.push(chip);
+        }
+        if out.len() == 3 {
+            return out;
+        }
+    }
+    for general in [
+        "What can you take off my plate today?",
+        "Summarize what you know about this work",
+        "Suggest what we should do next",
+    ] {
+        if out.len() == 3 {
+            break;
+        }
+        out.push(general.to_string());
+    }
+    out
 }
 
 /// Copies a folder's files (a duplicate's memory and skills).
@@ -1208,6 +1260,23 @@ mod tests {
                 .expect_err("missing")
                 .code,
             ErrorCode::NotFound
+        );
+    }
+
+    #[test]
+    fn f_ag_03_three_suggestion_chips_come_from_the_brief() {
+        assert_eq!(
+            suggestions("You draft our weekly changelog from merged PRs. Verify every claim against the repo. Never publish without approval."),
+            vec![
+                "Draft our weekly changelog from merged PRs".to_string(),
+                "Verify every claim against the repo".to_string(),
+                "What can you take off my plate today?".to_string(),
+            ]
+        );
+        assert_eq!(suggestions("").len(), 3);
+        assert_eq!(
+            suggestions(rules::LEAD_BRIEF)[0],
+            "Coordinate the other teammates"
         );
     }
 

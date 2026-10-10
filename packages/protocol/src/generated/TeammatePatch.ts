@@ -5,4 +5,4 @@ import type { TeammateSettings } from "./TeammateSettings";
  * `teammate_update`: only the fields given change. `model`, `effort`,
  * `preferredAccountId` and `avatarHue` take `null` to clear.
  */
-export type TeammatePatch = { name: string | null, brief: string | null, engineId: string | null, model?: string | null, effort?: string | null, preferredAccountId?: string | null, avatarHue?: number | null, places: Array<string> | null, settings: TeammateSettings | null, pinned: boolean | null, };
+export type TeammatePatch = { name?: string, brief?: string, engineId?: string, model?: string | null, effort?: string | null, preferredAccountId?: string | null, avatarHue?: number | null, places?: Array<string>, settings?: TeammateSettings, pinned?: boolean, };

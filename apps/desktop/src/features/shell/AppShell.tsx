@@ -11,7 +11,9 @@ import { UpgradeDialog } from "../billing/UpgradeDialog";
 import { CodeMain } from "../code/CodeMain";
 import { CodeRail } from "../code/CodeRail";
 import { commandRuns, setCommandToast } from "../commands/commands";
-import { InterimMain, InterimRail } from "../interim/Interim";
+import { AgentRail } from "../agents/AgentRail";
+import { AgentMain } from "../agents/TeammatePage";
+import { followTeammates } from "../../stores/teammates";
 import { ThreadMain } from "../thread/ThreadMain";
 import { ThreadRail } from "../thread/ThreadRail";
 import { followThreads } from "../../stores/threads";
@@ -69,6 +71,7 @@ export function AppShell() {
   useEffect(startAutoResume, []);
   useEffect(followUpdates, []);
   useEffect(followThreads, []);
+  useEffect(followTeammates, []);
   useVisibilityReport();
   // Debug builds: UI-side counters for the E2E harness (ARCHITECTURE §17.5).
   const dev = useBoot((st) => st.boot?.dev ?? false);
@@ -95,13 +98,22 @@ export function AppShell() {
         return {
           mode: useUi.getState().mode,
           handles: [...terminalHandles.keys()],
-          domPanes: Array.from(document.querySelectorAll<HTMLElement>('[data-testid="pane"]')).map((el) => el.dataset.paneId),
+          domPanes: Array.from(document.querySelectorAll<HTMLElement>('[data-testid="pane"]')).map(
+            (el) => el.dataset.paneId,
+          ),
           activeWorkspace: ws.activeId,
           activeTab: ws.activeTab,
-          layoutTabs: Object.fromEntries(Object.entries(layout.tabs).map(([id, tab]) => [id, { active: tab.active, panes: Object.keys(tab.panes) }])),
+          layoutTabs: Object.fromEntries(
+            Object.entries(layout.tabs).map(([id, tab]) => [
+              id,
+              { active: tab.active, panes: Object.keys(tab.panes) },
+            ]),
+          ),
           picker: layout.picker,
           activeElement: active ? `${active.tagName}.${String(active.className).slice(0, 60)}` : null,
-          dialogs: Array.from(document.querySelectorAll("[role=dialog],[role=alertdialog]")).map((el) => el.textContent?.slice(0, 80)),
+          dialogs: Array.from(document.querySelectorAll("[role=dialog],[role=alertdialog]")).map((el) =>
+            el.textContent?.slice(0, 80),
+          ),
         };
       },
     };
@@ -125,7 +137,7 @@ export function AppShell() {
           <CodeRail />
         </div>
         <div style={{ display: show("agent") }}>
-          <InterimRail mode="agent" collapsed={railCollapsed} />
+          <AgentRail collapsed={railCollapsed} />
         </div>
         <div style={{ display: show("thread") }}>
           <ThreadRail collapsed={railCollapsed} />
@@ -141,7 +153,7 @@ export function AppShell() {
           </div>
           {/* Every surface stays mounted; hidden ones are display:none (F-SH-02). */}
           <div className="h-full" style={{ display: mode === "agent" ? "block" : "none" }}>
-            <InterimMain mode="agent" />
+            <AgentMain visible={!settingsOpen && mode === "agent"} />
           </div>
           <div className="h-full" style={{ display: mode === "thread" ? "block" : "none" }}>
             <ThreadMain visible={!settingsOpen && mode === "thread"} />

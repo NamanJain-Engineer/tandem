@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { IpcError, TeammateSummary, TeammatesChanged } from "@tandem/protocol";
+import type { IpcError, Teammate, TeammatePatch, TeammateSummary, TeammatesChanged, Thread } from "@tandem/protocol";
 import { listen } from "../ipc/events";
 import { invoke } from "../ipc/invoke";
 
@@ -12,12 +12,26 @@ type TeammatesState = {
   error: IpcError | null;
   version: number;
   selectedId: string | null;
+  /** Each teammate's chats, in tab order. */
+  chats: Record<string, Thread[]>;
+  /** The open chat per teammate. */
+  chatOf: Record<string, string>;
   refresh: () => Promise<void>;
   select: (id: string | null) => void;
+  loadChats: (teammateId: string) => Promise<void>;
+  selectChat: (teammateId: string, chatId: string) => void;
+  newChat: (teammateId: string, place?: string | null) => Promise<Thread | IpcError>;
+  update: (id: string, patch: TeammatePatch) => Promise<Teammate | IpcError>;
+  remove: (id: string) => Promise<IpcError | null>;
+  duplicate: (id: string) => Promise<Teammate | IpcError>;
 };
 
 function isIpcError(e: unknown): e is IpcError {
   return !!e && typeof e === "object" && "code" in e && "message" in e;
+}
+
+function asError(e: unknown): IpcError {
+  return isIpcError(e) ? e : { code: "internal", message: String(e), stage: null, hint: null, retryable: false };
 }
 
 export const useTeammates = create<TeammatesState>((set, get) => ({
@@ -41,7 +55,73 @@ export const useTeammates = create<TeammatesState>((set, get) => ({
       set({ loaded: true, error: isIpcError(e) ? e : null });
     }
   },
-  select: (id) => set({ selectedId: id }),
+  select: (id) => {
+    set({ selectedId: id });
+    if (id) void get().loadChats(id);
+  },
+  chats: {},
+  chatOf: {},
+  loadChats: async (teammateId) => {
+    try {
+      const list = await invoke<Thread[]>("thread_list", { kind: "teammate_chat", teammateId, includeArchived: false });
+      set((s) => {
+        const open = s.chatOf[teammateId];
+        const keep = open && list.some((c) => c.id === open) ? open : (list[list.length - 1]?.id ?? undefined);
+        const chatOf = { ...s.chatOf };
+        if (keep) chatOf[teammateId] = keep;
+        else delete chatOf[teammateId];
+        return { chats: { ...s.chats, [teammateId]: list }, chatOf };
+      });
+    } catch {
+      // The next change reloads.
+    }
+  },
+  selectChat: (teammateId, chatId) => set((s) => ({ chatOf: { ...s.chatOf, [teammateId]: chatId } })),
+  newChat: async (teammateId, place) => {
+    try {
+      const chat = await invoke<Thread>("thread_create", {
+        args: { kind: "teammate_chat", teammateId, place: place ?? null },
+      });
+      set((s) => ({
+        chats: { ...s.chats, [teammateId]: [...(s.chats[teammateId] ?? []).filter((c) => c.id !== chat.id), chat] },
+        chatOf: { ...s.chatOf, [teammateId]: chat.id },
+        selectedId: teammateId,
+      }));
+      return chat;
+    } catch (e) {
+      return asError(e);
+    }
+  },
+  update: async (id, patch) => {
+    try {
+      const t = await invoke<Teammate>("teammate_update", { id, patch });
+      set((s) => ({ list: s.list.map((x) => (x.teammate.id === id ? { ...x, teammate: t } : x)) }));
+      return t;
+    } catch (e) {
+      return asError(e);
+    }
+  },
+  remove: async (id) => {
+    try {
+      await invoke("teammate_delete", { id });
+      set((s) => ({
+        list: s.list.filter((x) => x.teammate.id !== id),
+        selectedId: s.selectedId === id ? null : s.selectedId,
+      }));
+      return null;
+    } catch (e) {
+      return asError(e);
+    }
+  },
+  duplicate: async (id) => {
+    try {
+      const t = await invoke<Teammate>("teammate_duplicate", { id });
+      await get().refresh();
+      return t;
+    } catch (e) {
+      return asError(e);
+    }
+  },
 }));
 
 let following = false;
@@ -52,6 +132,8 @@ export function followTeammates(): void {
   following = true;
   void useTeammates.getState().refresh();
   void listen<TeammatesChanged>("teammates:changed", (p) => {
+    const open = useTeammates.getState().selectedId;
+    if (open) void useTeammates.getState().loadChats(open);
     useTeammates.setState((s) => ({
       list: p.teammates,
       loaded: true,
@@ -66,5 +148,5 @@ export function followTeammates(): void {
 /** Tests: an empty store. */
 export function resetTeammates(): void {
   following = false;
-  useTeammates.setState({ list: [], loaded: false, error: null, version: 0, selectedId: null });
+  useTeammates.setState({ list: [], loaded: false, error: null, version: 0, selectedId: null, chats: {}, chatOf: {} });
 }
