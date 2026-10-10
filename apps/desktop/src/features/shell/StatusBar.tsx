@@ -1,9 +1,12 @@
-import { GitBranch } from "lucide-react";
+import { GitBranch, Mic } from "lucide-react";
+import { cx } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useFiles } from "../../stores/files";
 import { gitKey, useGitContext } from "../../stores/git";
+import { useDictate } from "../../stores/dictate";
 import { useSession } from "../../stores/session";
 import { useSidebar } from "../../stores/sidebar";
+import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { useActiveFiles } from "../files/context";
 import { useBoot } from "./useBoot";
@@ -63,6 +66,7 @@ export function StatusBar() {
         </span>
       )}
       <span className="flex-1" />
+      <DictateSegment />
       {hosted && (
         <span data-testid="connection-state" className={online ? undefined : "text-warning"}>
           {online ? t("status.online") : t("status.offline")}
@@ -70,5 +74,27 @@ export function StatusBar() {
       )}
       <span className="tabular-nums">{t("status.version", { version })}</span>
     </footer>
+  );
+}
+
+/** "Dictate: Ctrl+Alt" (MILESTONES M8): opens Settings › Dictate. */
+function DictateSegment() {
+  const status = useDictate((s) => s.status);
+  const take = useDictate((s) => s.take);
+  if (!status?.enabled) return null;
+  const listening = take?.state === "listening";
+  return (
+    <button
+      type="button"
+      data-testid="status-dictate"
+      onClick={() => useUi.getState().openSettings("dictate")}
+      className={cx(
+        "inline-flex items-center gap-1 rounded-xs hover:text-fg focus-visible:shadow-focus focus-visible:outline-none",
+        listening && "text-accent",
+      )}
+    >
+      <Mic size={11} aria-hidden="true" />
+      {status.model ? t("status.dictate", { key: status.hold.label }) : t("status.dictateNoModel")}
+    </button>
   );
 }

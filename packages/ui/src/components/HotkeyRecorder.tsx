@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { cx } from "../cx";
 import { Button } from "./Button";
 
@@ -17,6 +17,11 @@ export type HotkeyRecorderProps = {
   /** Backspace while recording; without it, Backspace is a key like any other. */
   onClear?: () => void;
   disabled?: boolean;
+  /** Modifiers pressed and released on their own count as a combo
+   * (`code` is ""): global push-to-talk keys like Ctrl+Alt (F-DI-01). */
+  modifierOnly?: boolean;
+  /** Mouse buttons 4 and 5 count (`code` "Mouse4" / "Mouse5"). */
+  mouseButtons?: boolean;
   className?: string;
 };
 
@@ -39,8 +44,21 @@ const MODIFIER_CODES = new Set([
  * then press the keys: Esc or leaving the button cancels, Backspace clears
  * (with `onClear`), and Tab moves on as usual. While it records it carries
  * `data-recording`, so app shortcuts stay out of the way. */
-export function HotkeyRecorder({ label, idleText, recordingText, onRecord, onClear, disabled, className }: HotkeyRecorderProps) {
+export function HotkeyRecorder({
+  label,
+  idleText,
+  recordingText,
+  onRecord,
+  onClear,
+  disabled,
+  modifierOnly = false,
+  mouseButtons = false,
+  className,
+}: HotkeyRecorderProps) {
   const [recording, setRecording] = useState(false);
+  // Modifier-only combos: the most modifiers held at once, recorded when
+  // they're all released without another key in between.
+  const peak = useRef<RecordedKeys | null>(null);
 
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     if (!recording) return;
@@ -51,7 +69,16 @@ export function HotkeyRecorder({ label, idleText, recordingText, onRecord, onCle
     }
     e.preventDefault();
     e.stopPropagation();
-    if (MODIFIER_CODES.has(e.code) || e.key === "Dead" || e.key === "Process") return;
+    if (MODIFIER_CODES.has(e.code) || e.key === "Dead" || e.key === "Process") {
+      if (modifierOnly && (e.ctrlKey || e.altKey || e.shiftKey || e.metaKey)) {
+        const p = peak.current;
+        const now = { code: "", metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey };
+        const count = (k: RecordedKeys) => [k.metaKey, k.ctrlKey, k.altKey, k.shiftKey].filter(Boolean).length;
+        if (!p || count(now) >= count(p)) peak.current = now;
+      }
+      return;
+    }
+    peak.current = null;
     setRecording(false);
     if (e.key === "Escape" && !held && !e.shiftKey) return;
     if (e.key === "Backspace" && !held && !e.shiftKey && onClear) {
@@ -59,6 +86,24 @@ export function HotkeyRecorder({ label, idleText, recordingText, onRecord, onCle
       return;
     }
     onRecord({ code: e.code, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey });
+  };
+
+  const onKeyUp = (e: KeyboardEvent<HTMLButtonElement>) => {
+    if (!recording || !modifierOnly || !peak.current) return;
+    if (e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return;
+    e.preventDefault();
+    const keys = peak.current;
+    peak.current = null;
+    setRecording(false);
+    onRecord(keys);
+  };
+
+  const onMouseDown = (e: MouseEvent<HTMLButtonElement>) => {
+    if (!recording || !mouseButtons || (e.button !== 3 && e.button !== 4)) return;
+    e.preventDefault();
+    peak.current = null;
+    setRecording(false);
+    onRecord({ code: e.button === 3 ? "Mouse4" : "Mouse5", metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey });
   };
 
   return (
@@ -72,7 +117,12 @@ export function HotkeyRecorder({ label, idleText, recordingText, onRecord, onCle
         disabled={disabled}
         onClick={() => setRecording((r) => !r)}
         onKeyDown={onKeyDown}
-        onBlur={() => setRecording(false)}
+        onKeyUp={onKeyUp}
+        onMouseDown={onMouseDown}
+        onBlur={() => {
+          peak.current = null;
+          setRecording(false);
+        }}
         className={cx(recording && "border-accent text-accent", className)}
       >
         {recording ? recordingText : idleText}

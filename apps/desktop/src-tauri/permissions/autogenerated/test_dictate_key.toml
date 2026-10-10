@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-test-dictate-key"
+description = "Enables the test_dictate_key command without any pre-configured scope."
+commands.allow = ["test_dictate_key"]
+
+[[permission]]
+identifier = "deny-test-dictate-key"
+description = "Denies the test_dictate_key command without any pre-configured scope."
+commands.deny = ["test_dictate_key"]

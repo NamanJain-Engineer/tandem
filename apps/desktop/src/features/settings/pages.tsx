@@ -9,6 +9,8 @@ import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
 import { UpdatesPanel } from "../updates/UpdatesPanel";
 import { RunSetupAgain } from "../onboarding/RunSetupAgain";
+import { DictateExtras, MicSelect, ShortcutField } from "../dictate/DictatePage";
+import { LanguageSelect } from "../dictate/LanguageSelect";
 import {
   BoolControl,
   FontControl,
@@ -37,6 +39,8 @@ export type PageDef = {
   subtitle: string;
   keywords?: string[];
   callout?: ReactNode;
+  /** Content before the rows, unboxed (Settings › Dictate's home card). */
+  header?: ReactNode;
   rows: RowDef[];
   /** Custom content after the rows (Account, privacy table, diagnostics). */
   extra?: ReactNode;
@@ -407,6 +411,133 @@ export function settingsPages(platform: string): PageDef[] {
       keywords: ["accounts", "sign in", "login", "default", "override", "claude", "codex", "provider"],
       rows: [],
       extra: <AccountsPage />,
+    },
+    {
+      id: "dictate",
+      label: t("settings.dictate"),
+      subtitle: t("settings.dictate.subtitle"),
+      keywords: ["dictate", "voice", "speech", "microphone", "whisper", "parakeet", "push to talk"],
+      header: <DictateExtras />,
+      rows: [
+        {
+          id: "dictate_enabled",
+          label: t("dictate.enabled"),
+          keywords: ["on", "off"],
+          control: (ids) => <BoolControl k="dictate_enabled" ids={ids} label={t("dictate.enabled")} />,
+        },
+        {
+          id: "dictate_language",
+          label: t("dictate.language"),
+          keywords: ["language", "auto-detect"],
+          control: () => <LanguageSelect />,
+        },
+        {
+          id: "dictate_mic",
+          label: t("dictate.mic.label"),
+          description: t("dictate.mic.desc"),
+          keywords: ["microphone", "input", "bluetooth"],
+          control: () => <MicSelect k="dictate_mic" label={t("dictate.mic.label")} none={t("dictate.mic.none")} />,
+        },
+        {
+          id: "dictate_backup_mic",
+          label: t("dictate.mic.backup"),
+          keywords: ["backup", "fallback"],
+          control: () => <MicSelect k="dictate_backup_mic" label={t("dictate.mic.backup")} none={t("dictate.mic.none")} />,
+        },
+        {
+          id: "dictate_gain",
+          label: t("dictate.gain"),
+          keywords: ["boost", "gain", "volume"],
+          control: () => (
+            <SegmentControl k="dictate_gain" label={t("dictate.gain")} fallback="off" options={segs(["off", "2x", "4x", "6x", "8x"], "dictate.gain")} />
+          ),
+        },
+        {
+          id: "dictate_hotkey",
+          label: t("dictate.shortcut.hold"),
+          description: mac ? t("dictate.shortcut.fnHint") : undefined,
+          keywords: ["shortcut", "hotkey", "key", "hold"],
+          control: () => <ShortcutField mode="hold" label={t("dictate.shortcut.hold")} />,
+        },
+        {
+          id: "dictate_toggle_hotkey",
+          label: t("dictate.shortcut.toggle"),
+          keywords: ["toggle", "shortcut"],
+          control: () => <ShortcutField mode="toggle" label={t("dictate.shortcut.toggle")} />,
+        },
+        {
+          id: "dictate_latch",
+          label: t("dictate.latch"),
+          keywords: ["double-tap", "hands-free", "lock"],
+          control: (ids) => <BoolControl k="dictate_latch" ids={ids} label={t("dictate.latch")} />,
+        },
+        {
+          id: "dictate_output",
+          label: t("dictate.output"),
+          description: platform === "windows" ? t("dictate.output.windowsNote") : undefined,
+          keywords: ["paste", "clipboard", "insert"],
+          control: (ids) => (
+            <SelectControl k="dictate_output" ids={ids} fallback="paste" options={opts(["paste", "clipboard"], "dictate.output")} />
+          ),
+        },
+        ...(platform === "windows"
+          ? []
+          : [
+              {
+                id: "dictate_pause_media",
+                label: t("dictate.pauseMedia"),
+                keywords: ["mute", "music", "pause"],
+                control: (ids: Ids) => <BoolControl k="dictate_pause_media" ids={ids} label={t("dictate.pauseMedia")} />,
+              },
+            ]),
+        {
+          id: "dictate_sounds",
+          label: t("dictate.sounds"),
+          keywords: ["chime", "sound"],
+          control: (ids) => <BoolControl k="dictate_sounds" ids={ids} label={t("dictate.sounds")} />,
+        },
+        {
+          id: "dictate_widget_visibility",
+          label: t("dictate.widget.visibility"),
+          keywords: ["widget", "hud", "pill"],
+          control: (ids) => (
+            <SelectControl
+              k="dictate_widget_visibility"
+              ids={ids}
+              fallback="while_recording"
+              options={opts(["always", "while_recording", "hidden"], "dictate.widget.visibility")}
+            />
+          ),
+        },
+        {
+          id: "dictate_widget_style",
+          label: t("dictate.widget.style"),
+          keywords: ["widget style"],
+          control: (ids) => (
+            <SelectControl k="dictate_widget_style" ids={ids} fallback="logo_text" options={opts(["logo_text", "logo", "mono"], "dictate.widget.style")} />
+          ),
+        },
+        {
+          id: "dictate_follow_cursor",
+          label: t("dictate.widget.follow"),
+          keywords: ["displays", "monitor", "cursor"],
+          control: (ids) => <BoolControl k="dictate_follow_cursor" ids={ids} label={t("dictate.widget.follow")} />,
+        },
+        {
+          id: "dictate_lock_position",
+          label: t("dictate.widget.lock"),
+          keywords: ["position", "drag"],
+          control: (ids) => <BoolControl k="dictate_lock_position" ids={ids} label={t("dictate.widget.lock")} />,
+        },
+        {
+          id: "dictate_keep_history",
+          label: t("dictate.keepHistory"),
+          keywords: ["history", "retention"],
+          control: (ids) => (
+            <SelectControl k="dictate_keep_history" ids={ids} fallback="forever" options={opts(["forever", "90d", "30d", "7d"], "dictate.keepHistory")} />
+          ),
+        },
+      ],
     },
     {
       id: "teammates",

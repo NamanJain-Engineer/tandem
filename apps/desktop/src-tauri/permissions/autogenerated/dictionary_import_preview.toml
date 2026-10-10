@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictionary-import-preview"
+description = "Enables the dictionary_import_preview command without any pre-configured scope."
+commands.allow = ["dictionary_import_preview"]
+
+[[permission]]
+identifier = "deny-dictionary-import-preview"
+description = "Denies the dictionary_import_preview command without any pre-configured scope."
+commands.deny = ["dictionary_import_preview"]

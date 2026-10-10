@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-save-file"
+description = "Enables the dictate_save_file command without any pre-configured scope."
+commands.allow = ["dictate_save_file"]
+
+[[permission]]
+identifier = "deny-dictate-save-file"
+description = "Denies the dictate_save_file command without any pre-configured scope."
+commands.deny = ["dictate_save_file"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-models-remove-unused"
+description = "Enables the dictate_models_remove_unused command without any pre-configured scope."
+commands.allow = ["dictate_models_remove_unused"]
+
+[[permission]]
+identifier = "deny-dictate-models-remove-unused"
+description = "Denies the dictate_models_remove_unused command without any pre-configured scope."
+commands.deny = ["dictate_models_remove_unused"]

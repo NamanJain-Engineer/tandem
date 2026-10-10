@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-start-take"
+description = "Enables the dictate_start_take command without any pre-configured scope."
+commands.allow = ["dictate_start_take"]
+
+[[permission]]
+identifier = "deny-dictate-start-take"
+description = "Denies the dictate_start_take command without any pre-configured scope."
+commands.deny = ["dictate_start_take"]

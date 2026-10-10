@@ -3,6 +3,7 @@
 pub mod accounts;
 pub mod approvals;
 pub mod attachments;
+pub mod dictate;
 pub mod dump;
 pub mod editor_tabs;
 pub mod held_drafts;

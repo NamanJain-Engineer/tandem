@@ -7,6 +7,7 @@ pub mod app;
 pub mod auto;
 pub mod browser;
 pub mod data_controls;
+pub mod dictate;
 pub mod engines;
 pub mod files;
 pub mod find_work;
