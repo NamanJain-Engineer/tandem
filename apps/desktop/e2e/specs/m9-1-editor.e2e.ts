@@ -1,6 +1,6 @@
 import { $, browser } from "@wdio/globals";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { addFolder, freshOffline, mod, relaunch } from "../support/app";
+import { addFolder, freshOffline, mod, relaunch, settled } from "../support/app";
 import { expectNoSeriousA11yViolations, expectNoSeriousA11yViolationsInBothThemes } from "../support/axe";
 import { clickRow, editorTabs, editorText, openFiles, treeRows, typeAtEnd, waitForRow } from "../support/files";
 
@@ -69,7 +69,9 @@ describe("E2E-M9-1 editor", () => {
     const title = await browser.execute(() => document.querySelector('[role="dialog"] h2')?.textContent ?? "");
     expect(title).toBe("File changed on disk");
     expect(readFileSync(`${root}/src/main.rs`, "utf8")).toBe("fn main() { agent(); }\n");
-    // Compare shows both versions; Reload takes the agent's.
+    // Compare shows both versions; Reload takes the agent's. A click while the
+    // dialog zooms in can miss (D-52), which under full-suite load it did.
+    await settled();
     await $("button=Compare").click();
     await browser.waitUntil(
       async () =>
