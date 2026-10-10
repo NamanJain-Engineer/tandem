@@ -4,6 +4,7 @@ import { AccountPage } from "./AccountPage";
 import { EnginesPage } from "./EnginesPage";
 import { ShortcutsPage } from "./ShortcutsPage";
 import { AccountsPage } from "./AccountsPage";
+import { PluginsPage } from "../plugins/PluginsPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
 import { UpdatesPanel } from "../updates/UpdatesPanel";
@@ -439,6 +440,14 @@ export function settingsPages(platform: string): PageDef[] {
           control: (ids) => <BoolControl k="pause_all_mail" ids={ids} label={t("settings.pauseAllMail")} />,
         },
       ],
+    },
+    {
+      id: "plugins",
+      label: t("settings.plugins"),
+      subtitle: t("settings.plugins.subtitle"),
+      keywords: ["plugins", "connect", "github", "oauth", "api key", "grants", "approvals", "held"],
+      rows: [],
+      extra: <PluginsPage />,
     },
     {
       id: "privacy",

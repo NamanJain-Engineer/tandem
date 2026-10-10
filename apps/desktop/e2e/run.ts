@@ -37,6 +37,8 @@ const WEB = "http://localhost:3000";
 const FEED = "http://127.0.0.1:8790";
 /** The browser's fixture pages (scripts/serve-fixtures.ts, E2E-M9-3). */
 const FIXTURES = "http://127.0.0.1:5173";
+/** The mock OAuth server and plugin upstreams (`mock-plugins`, D-954). */
+const PLUGINS = "http://127.0.0.1:8791";
 
 async function up(url: string): Promise<boolean> {
   try {
@@ -113,6 +115,11 @@ async function main() {
       ["build", "-p", "tandem-desktop", "--features", "custom-protocol,test-vendors", ...cargoProfile],
       { cwd: root, stdio: "inherit" },
     );
+    // The mock authorization server and plugin upstreams (M12).
+    execFileSync("cargo", ["build", "-p", "tandem-gateway", "--features", "test-vendors", "--bin", "mock-plugins"], {
+      cwd: root,
+      stdio: "inherit",
+    });
     // The status hook and the fake engines (ARCHITECTURE §6.12).
     execFileSync("cargo", ["build", "-p", "tandem-engines", "--features", "fixtures", "--bins"], {
       cwd: root,
@@ -212,6 +219,9 @@ async function main() {
     // The local update feed (scripts/mock-update-feed.ts, E2E-M5-7); it
     // answers "nothing new" unless a spec picks a scenario.
     TANDEM_UPDATE_URL: `${FEED}/v1/updates`,
+    // Every plugin's upstream and sign-in host is this one mock (debug E2E
+    // builds; catalog::rebase).
+    TANDEM_E2E_PLUGIN_BASE: PLUGINS,
     // Scrollback snapshots often enough that a kill -9 leaves some (E2E-M5-3).
     TANDEM_SNAPSHOT_EVERY_MS: "1500",
     TANDEM_APP_PATH: appPath,
@@ -272,6 +282,14 @@ async function main() {
     await fetch(`${FEED}/__scenario`, { method: "POST", body: JSON.stringify({ scenario: "none" }) });
   }
 
+  let plugins: ChildProcess | undefined;
+  if (!(await up(`${PLUGINS}/__state`))) {
+    plugins = startDetached(join(root, "target/debug/mock-plugins"), ["8791"], {});
+    await waitUp(`${PLUGINS}/__state`, 30);
+  } else {
+    await fetch(`${PLUGINS}/__reset`);
+  }
+
   let fixtures: ChildProcess | undefined;
   const fixturesUp = async () =>
     (await fetch(`${FIXTURES}/health`)
@@ -298,6 +316,7 @@ async function main() {
     stop(api);
     stop(web);
     stop(feed);
+    stop(plugins);
     stop(fixtures);
     stop(wm);
   }

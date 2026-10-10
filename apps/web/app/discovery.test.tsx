@@ -39,9 +39,10 @@ describe("downloads and discovery (F-WB-04)", () => {
     }
     for (const p of DOCS_PAGES)
       expect(txt).toContain(`[${p.title}](https://vibezeo.com/docs/${p.slug ? `${p.slug}/` : ""})`);
-    for (const slug of ["agent-mode", "dictate", "conductor", "tasks", "routines", "plugins", "remote"])
+    for (const slug of ["dictate", "conductor", "tasks", "routines", "plugins", "remote"])
       expect(txt).toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*\\(Not in the app yet\\.\\)`));
-    expect(txt).not.toMatch(/\/docs\/thread-mode\/\): [^\n]*Not in the app yet/);
+    for (const slug of ["thread-mode", "agent-mode"])
+      expect(txt).not.toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*Not in the app yet`));
     expect(txt.split("## Docs")[0]).not.toMatch(/Enhance|Polish/);
   });
 
@@ -101,7 +102,7 @@ describe("downloads and discovery (F-WB-04)", () => {
       }
     }
     expect(siteInfo().platforms.find((p) => p.os === "linux")?.downloads[0]?.sha256).toBe(
-      sums.get("Vibezeo_0.3.0_amd64.deb"),
+      sums.get(DOWNLOADS.find((d) => d.os === "linux")?.assets[0]?.file ?? ""),
     );
   });
 

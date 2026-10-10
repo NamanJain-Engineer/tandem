@@ -32,6 +32,7 @@ pub trait BuiltinService: Send + Sync {
 struct AppHooks {
     threads: OnceLock<Weak<ThreadService>>,
     builtins: OnceLock<Weak<dyn BuiltinService>>,
+    plugins: OnceLock<crate::services::plugins::Hooks>,
 }
 
 struct Asker(Arc<AppHooks>);
@@ -43,6 +44,51 @@ impl ApprovalAsker for Asker {
         match (caller.thread(), threads) {
             (Some(thread), Some(threads)) => threads.ask_approval(thread, ask).await,
             _ => ApprovalAnswer::Deny { message: None },
+        }
+    }
+}
+
+/// Plugin approvals, holds and re-checks go to the plugin service.
+struct Plugins(Arc<AppHooks>);
+
+#[async_trait]
+impl tandem_gateway::PluginHooks for Plugins {
+    async fn ask(
+        &self,
+        lease: &LeaseContext,
+        ask: tandem_gateway::PluginAsk,
+    ) -> tandem_gateway::PluginVerdict {
+        match self.0.plugins.get() {
+            Some(h) => h.ask(lease, ask).await,
+            None => tandem_gateway::PluginVerdict::Cancelled,
+        }
+    }
+
+    async fn hold(
+        &self,
+        lease: &LeaseContext,
+        call: tandem_gateway::HeldCall,
+    ) -> Result<String, String> {
+        match self.0.plugins.get() {
+            Some(h) => h.hold(lease, call).await,
+            None => Err("Held drafts aren't available yet".into()),
+        }
+    }
+
+    async fn grant_present(
+        &self,
+        lease: &LeaseContext,
+        connection: &tandem_core::ids::ConnectionId,
+    ) -> bool {
+        match self.0.plugins.get() {
+            Some(h) => h.grant_present(lease, connection).await,
+            None => false,
+        }
+    }
+
+    async fn needs_attention(&self, connection: &ConnectionInfo) {
+        if let Some(h) = self.0.plugins.get() {
+            h.needs_attention(connection).await;
         }
     }
 }
@@ -69,6 +115,11 @@ pub struct GatewayService {
     cell: tokio::sync::OnceCell<GatewayHandle>,
     /// Times a gateway was started in this process (always 1 once up).
     starts: AtomicU32,
+    /// Where plugin credentials are (the keychain).
+    credentials: OnceLock<tandem_gateway::CredentialStore>,
+    net: OnceLock<tandem_core::net::Net>,
+    /// Unattended threads → the run they belong to (`routine:<id>:<run>`).
+    origins: std::sync::Mutex<std::collections::HashMap<String, String>>,
     /// Where a gateway that keeps failing is reported (§5.2).
     bus: OnceLock<tandem_core::bus::EventBus>,
 }
@@ -81,7 +132,11 @@ impl GatewayService {
             hooks: Arc::new(AppHooks {
                 threads: OnceLock::new(),
                 builtins: OnceLock::new(),
+                plugins: OnceLock::new(),
             }),
+            credentials: OnceLock::new(),
+            net: OnceLock::new(),
+            origins: std::sync::Mutex::default(),
             cell: tokio::sync::OnceCell::new(),
             starts: AtomicU32::new(0),
             bus: OnceLock::new(),
@@ -103,6 +158,61 @@ impl GatewayService {
         let _ = self.hooks.builtins.set(service);
     }
 
+    /// Plugins: credentials from the keychain, approvals and holds through
+    /// the plugin service. Set before the gateway starts.
+    pub fn configure_plugins(
+        &self,
+        credentials: tandem_gateway::CredentialStore,
+        net: tandem_core::net::Net,
+        hooks: crate::services::plugins::Hooks,
+    ) {
+        let _ = self.credentials.set(credentials);
+        let _ = self.net.set(net);
+        let _ = self.hooks.plugins.set(hooks);
+    }
+
+    /// The run an unattended thread belongs to; what it holds for review
+    /// is filed under it (F-PL-08). Set by whoever starts the run.
+    pub fn set_unattended_origin(&self, thread: &tandem_core::ids::ThreadId, origin: &str) {
+        if let Ok(mut o) = self.origins.lock() {
+            o.insert(thread.as_str().to_string(), origin.to_string());
+        }
+    }
+
+    pub fn unattended_origin(&self, thread: &tandem_core::ids::ThreadId) -> Option<String> {
+        self.origins
+            .lock()
+            .ok()
+            .and_then(|o| o.get(thread.as_str()).cloned())
+    }
+
+    /// A connection went away: its tools stop for every lease at once.
+    pub fn invalidate_connection(&self, connection: &tandem_core::ids::ConnectionId) {
+        if let Some(handle) = self.cell.get() {
+            handle.invalidate_connection(connection);
+        }
+    }
+
+    /// Forgets "Allow for this conversation" (a plugin's, or all of them on
+    /// sign-out).
+    pub fn forget_approvals(&self, plugin: Option<&str>) {
+        if let Some(handle) = self.cell.get() {
+            handle.forget_approvals(plugin);
+        }
+    }
+
+    /// A connection's tools (detail page, held-draft schemas).
+    pub async fn connection_tools(
+        &self,
+        connection: &tandem_core::ids::ConnectionId,
+    ) -> Result<Vec<tandem_gateway::ToolDef>, IpcError> {
+        let handle = self.handle().await?;
+        handle
+            .connection_tools(connection)
+            .await
+            .map_err(|e| IpcError::new(ErrorCode::Unavailable, e.to_string()))
+    }
+
     /// The gateway, started on first use.
     pub async fn handle(&self) -> Result<&GatewayHandle, IpcError> {
         self.cell
@@ -110,6 +220,9 @@ impl GatewayService {
                 let mut deps =
                     tandem_gateway::GatewayDeps::new(Arc::new(Asker(self.hooks.clone())));
                 deps.builtins = Arc::new(Builtins(self.hooks.clone()));
+                deps.hooks = Arc::new(Plugins(self.hooks.clone()));
+                deps.credentials = self.credentials.get().cloned();
+                deps.net = self.net.get().cloned();
                 deps.run_dir = Some(self.run_dir.clone());
                 deps.bus = self.bus.get().cloned();
                 let handle = tandem_gateway::Gateway::start(deps).await.map_err(|e| {
@@ -167,6 +280,8 @@ async fn load_connections(store: &Store) -> Vec<ConnectionInfo> {
                 plugin_id: c.plugin_id,
                 account_label: c.account_label,
                 connected: c.status == ConnectionStatus::Connected,
+                meta: c.meta,
+                options: serde_json::from_value(c.options).unwrap_or_default(),
             })
             .collect(),
         Err(e) => {

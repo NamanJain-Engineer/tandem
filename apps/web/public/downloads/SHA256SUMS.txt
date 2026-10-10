@@ -1,1 +1,1 @@
-d51d07b848911b4bdd18dd99d412eeda2bbddd71e9d30e00e6ae2c71065bbc99  Vibezeo_0.3.0_amd64.deb
+b6ea61eb6c8eb56b8edf05424daabe20b6fa318b363f2e78444a4b2bddcbb679  Vibezeo_0.4.0_amd64.deb

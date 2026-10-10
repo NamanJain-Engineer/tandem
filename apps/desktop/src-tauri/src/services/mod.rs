@@ -32,6 +32,7 @@ pub mod names;
 pub mod notifications;
 pub mod notifier;
 pub mod opener;
+pub mod plugins;
 pub mod restore;
 pub mod staging;
 pub mod status;

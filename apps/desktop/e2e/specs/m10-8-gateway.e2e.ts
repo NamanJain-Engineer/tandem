@@ -68,9 +68,10 @@ describe("E2E-M10-8 gateway", () => {
       "The tool failed: The test_upper plugin isn't enabled for this session",
     );
     const own = await sendAndWait(a, 'mcp tandem__call {"tool":"test_echo__echo","args":{"text":"mine"}}');
-    expect(own.join(" ")).toContain("The tool said: mine");
+    // A vendor's answer reaches the engine labelled untrusted (F-TL-06 rule 8).
+    expect(own.join(" ")).toMatch(/The tool said:[\s\S]*Untrusted content from the Test Echo plugin[\s\S]*mine/);
     const theirs = await sendAndWait(b, 'mcp tandem__call {"tool":"test_upper__upper","args":{"text":"hi"}}');
-    expect(theirs.join(" ")).toContain("The tool said: HI");
+    expect(theirs.join(" ")).toMatch(/The tool said:[\s\S]*Test Upper plugin[\s\S]*HI/);
   });
 
   it("F-PL-01.3 with 3 plugins granted, tools/list is the search and call tools plus the built-ins", async function () {
@@ -83,7 +84,7 @@ describe("E2E-M10-8 gateway", () => {
     );
     // The vendor that's down doesn't break the others.
     const ok = await sendAndWait(t, 'mcp tandem__call {"tool":"test_upper__upper","args":{"text":"up"}}');
-    expect(ok.join(" ")).toContain("The tool said: UP");
+    expect(ok.join(" ")).toMatch(/The tool said:[\s\S]*Test Upper plugin[\s\S]*UP/);
   });
 
   it("F-PL-01.2 ten sessions use one gateway listener", async function () {

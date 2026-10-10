@@ -771,13 +771,14 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 #### Plugins and grants [F-PL-*]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
-| `plugins_catalog` | — | `[PluginCard {pluginId, label, category, description, status:"ready"\|"preview", state:"connected"\|"available"\|"needs_attention"\|"blocked_by_org", accountLabel?, connectionId?}]` | — |
-| `plugin_connect_oauth` | `{pluginId}` → op | progress via `plugins:connect` | ForbiddenPlan (allowlist / Free limit) |
-| `plugin_connect_api_key` | `{pluginId, key}` (empty = cancel) | `PluginCard` | Invalid (verification: message untruncated) |
-| `plugin_connect_local_port` | `{pluginId, port}` | `PluginCard` | Unavailable ("wrong server listening") |
+| `plugins_catalog` | — | `[PluginCard {pluginId, label, category, logo, description, status:"ready"\|"preview", state:"connected"\|"available"\|"needs_attention"\|"blocked_by_org", accountLabel?, connectionId?, authKind, takesKey, keyHint?, teammates, limitReached}]` (one card per connection, one per module without any) | — |
+| `plugin_connect_oauth` | `{pluginId, connectionId?}` (`connectionId` = reconnect; the old credential stays until the new one verifies) | `{opId}`; progress via `plugins:connect` | ForbiddenPlan (allowlist / Free limit), Invalid (preview, not a browser sign-in) |
+| `plugin_connect_cancel` | `{opId}` | — (the attempt stops waiting; its late callback is ignored, F-PL-03 AC4) | — |
+| `plugin_connect_api_key` | `{pluginId, key, connectionId?}` (empty key = cancel, returns `null`; `connectionId` = reconnect) | `PluginCard \| null` | Invalid (verification: message untruncated; `stage` names the step), ForbiddenPlan |
+| `plugin_connect_local_port` | `{pluginId, port?}` (`port` null connects a built-in with no sign-in, e.g. Web fetch) | `PluginCard` | Unavailable ("wrong server listening") |
 | `plugin_disconnect` | `{connectionId}` | — | — |
 | `plugin_detail` | `{connectionId}` | `PluginDetail {tools:[{name, riskClass, description}], options}` | — |
-| `plugin_set_option` | `{connectionId, allowPublishInFull}` | — | — |
+| `plugin_set_option` | `{connectionId, allowPublishInFull, allowWritesInFull}` (UI-93's two switches) | — | — |
 | `grants_list` / `grants_set` | `{subject: GrantSubject}` / `{subject, connectionId, granted}` (`GrantSubject = {type:"teammate", teammateId} \| {type:"thread", threadId} \| {type:"workspace", workspaceId} \| {type:"all_threads"}`; a change reaches the subject's next session) | `[ConnectionId]` / — | — |
 
 #### Auto [F-AU-01]
@@ -867,6 +868,9 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `test_browser_eval` | `{browserId, script}` | `String` (the script's value as JSON; E2E-M9-4 clicks in a page with it) | NotFound |
 | `test_thread_seed_events` | `{threadId, events, fenceBytes?}` | the number of events written (completed turns of a user message, an assistant reply, tool calls and a turn end, in one transaction; `fenceBytes` adds a last reply with a code fence that size; threads perf suite) | NotFound |
 | `test_plugin_connect` | `{pluginId}` | `PluginConnection {id, pluginId, accountLabel?, authKind, status, createdAt}` (records a connection of a test vendor module, `test_echo`/`test_upper`/`test_down`, without a sign-in; builds with the `test-vendors` feature only; M10 E2E until Settings › Plugins lands in M12) | NotFound |
+| `test_plugin_price` | `{cents}` | — (what `test_echo__charge` costs from now on, so an amount can change between approval and execution, F-PL-06 AC2; `test-vendors` builds) | — |
+| `test_plugin_allowlist` | `{pluginIds?}` | — (a Team allowlist fixture as if the org's policy listed these plugins; `null` clears it, F-PL-05 AC2) | — |
+| `test_unattended_run` | `{workspaceId, routineId, runId}` | `Thread` (an unattended Edits thread filed under `routine:<routineId>:<runId>`, as M11's runner starts one, F-PL-08) | NotFound |
 | `test_gateway_metrics` | — | `TestGateway {metrics: GatewayMetrics {port, listeners, leases, mcpSessions, requests, restarts, rssBytes?}, starts}` (`starts`: gateways this process started, F-PL-01 AC2) | Unavailable |
 
 `window.__tandemTest` in the webview wraps these commands plus UI-side counters. Not listed in `capabilities/*.json` for release.
@@ -895,13 +899,13 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `limit:changed` | `{paneId, limit: LimitView \| null}` (scheduled, cancelled, resumed, moved or dismissed) | limits service | F-AC-05 |
 | `threads:changed` | `{threads:[Thread]}` | threads service | F-TH-01 |
 | `approvals:changed` | `{upserted:[ApprovalView], resolved:[ApprovalId]}` | approval service | F-TH-11, F-PL-07 |
-| `held:changed` | `{drafts:[HeldDraft]}` | gateway | F-PL-08 |
+| `held:changed` | `{originId, held}` (the run whose drafts changed and how many it still holds; the list re-reads `held_drafts_list`) | plugin service | F-PL-08 |
 | `notifications:new` / `notifications:changed` | `{notification: Notification, sound: bool}` (`sound`: an OS notification went out and its type plays a sound) / `{ids, state}` | notifications service | F-DB-02, F-DB-03 |
 | `auth:changed` | `AuthState` | auth service | F-BE-02 |
 | `entitlement:changed` | `EntitlementView` | entitlement service (refresh, SSE) | F-BE-04, F-SH-03 |
 | `routines:changed` / `routines:run` | `RoutineView` / `RoutineRun` | scheduler | F-RT-02, F-RT-04 |
 | `tasks:attempt` | `AttemptView` | task runner | F-TK-04 |
-| `plugins:changed` / `plugins:connect` | `PluginCard` / `{opId, step:"discovery"\|"registration"\|"sign_in"\|"token_exchange"\|"verification"\|"timeout", state, error?}` | gateway (`plugins:changed` after any connection is added or changes; until M12 only debug E2E builds connect, through `test_plugin_connect`) | F-PL-03 |
+| `plugins:changed` / `plugins:connect` | `PluginCard` (or `{}` when several changed: re-read `plugins_catalog`) / `{opId, pluginId, step:"discovery"\|"registration"\|"sign_in"\|"token_exchange"\|"verification"\|"timeout", state:"active"\|"done"\|"failed", authorizeUrl?, error?, card?}` (`card` on the final, successful step) | plugin service (`plugins:changed` after any connection is added, changes or goes, the allowlist changes or a grant changes a card's teammate count) | F-PL-03 |
 | `teammates:changed` | `{teammates:[TeammateSummary]}` (a teammate or one of its chats changed; coalesced 100 ms) | teammates service | F-AG-02 |
 | `mail:changed` | `MailChanged {teammateId, rows:[MailRow]}` (the teammate's mail, newest first, after any change to a mail it sent or receives) | mail service | F-AG-12 |
 | `memory:suggestions` | `MemorySuggestions {teammateId, threadId, setId, items:[{kind:"add"\|"remove", text}], rationale, applied, changeId?}` (`applied`: Auto mode already wrote it; `changeId` undoes it) | learn service | F-AG-08 |
