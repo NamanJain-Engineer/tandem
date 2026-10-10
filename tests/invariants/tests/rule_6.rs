@@ -89,3 +89,37 @@ async fn invariant_rule_6_read_ops_no_repo_helpers() {
         "a repo helper ran during a read"
     );
 }
+
+/// On an SSH host (F-RM-01) the git panel's reads run the host's git
+/// through `tandem-host`, hardened the same way: the trap repository's
+/// helpers stay silent.
+#[cfg(unix)]
+#[test]
+fn invariant_rule_6_remote_reads_no_repo_helpers() {
+    let trap = support::trap::trapped_repo();
+    let repo_dir = trap.f.repo.clone();
+    std::process::Command::new("git")
+        .current_dir(&repo_dir)
+        .args(["status", "--porcelain"])
+        .output()
+        .expect("git status");
+    let live = support::trap::fired(&trap.marks);
+    assert!(!live.is_empty(), "the trap didn't fire for plain git");
+    for mark in &live {
+        std::fs::remove_file(trap.marks.join(mark)).expect("reset");
+    }
+    for _ in 0..3 {
+        let state = tandem_host::gitops::status(&repo_dir)
+            .expect("status")
+            .expect("repo");
+        assert!(state.status.unstaged.iter().any(|f| f.path == "a.txt"));
+    }
+    let diff = tandem_host::gitops::diff(&repo_dir, "a.txt", false).expect("diff");
+    assert!(diff.patch.contains("+four"), "{}", diff.patch);
+    tandem_host::gitops::diff(&repo_dir, "a.txt", true).expect("staged diff");
+    assert_eq!(
+        support::trap::fired(&trap.marks),
+        Vec::<String>::new(),
+        "a repo helper ran during a remote read"
+    );
+}

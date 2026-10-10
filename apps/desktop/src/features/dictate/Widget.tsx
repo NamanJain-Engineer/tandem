@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy, Lock, TriangleAlert, X } from "lucide-react";
-import type { DictateStateEvent, DictateStatus, DictateToast } from "@tandem/protocol";
-import { WaveformRing, cx, type WaveformState } from "@tandem/ui";
+import type { DictateStateEvent, DictateStatus, DictateToast, RewriteMode } from "@tandem/protocol";
+import { Button, WaveformRing, cx, type WaveformState } from "@tandem/ui";
 import { t } from "../../i18n";
 import { listen } from "../../ipc/events";
 import { invoke } from "../../ipc/invoke";
+import { ToastActions } from "./ToastActions";
 import { toastText } from "./toasts";
 
 /** mm:ss */
@@ -22,7 +23,8 @@ type View =
   | { kind: "inserted"; words: number }
   | { kind: "copied" }
   | { kind: "error"; toast: DictateToast | null }
-  | { kind: "reconnecting" };
+  | { kind: "reconnecting" }
+  | { kind: "rewriting"; mode: RewriteMode };
 
 /** What the pill shows for a state event; toasts can replace it. */
 export function viewFor(e: DictateStateEvent, now: number): View {
@@ -39,6 +41,10 @@ export function viewFor(e: DictateStateEvent, now: number): View {
       return { kind: "error", toast: null };
     case "reconnecting":
       return { kind: "reconnecting" };
+    case "enhancing":
+      return { kind: "rewriting", mode: "enhance" };
+    case "polishing":
+      return { kind: "rewriting", mode: "polish" };
     default:
       return { kind: "idle" };
   }
@@ -51,6 +57,7 @@ export function DictateWidget() {
   const [level, setLevel] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [toast, setToast] = useState<DictateToast | null>(null);
+  const [disclose, setDisclose] = useState<RewriteMode | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -88,16 +95,44 @@ export function DictateWidget() {
   const mono = style === "mono";
   const key = status?.hold.label ?? "";
   const cancel = () => void invoke("dictate_cancel_take").catch(() => undefined);
+  // Enhance and Polish after a take (F-DI-10); the first click shows the
+  // one-time disclosure in the pill instead.
+  const quick = (mode: RewriteMode) => {
+    if (!status?.enhanceDisclosed) return setDisclose(mode);
+    void invoke<boolean>("dictate_quick_action", { mode }).catch(() => false);
+  };
 
   let ring: WaveformState = "idle";
   let text = t("dictate.widget.idle");
   let icon: React.ReactNode = null;
   let tail: React.ReactNode = null;
   let error = false;
-  if (toast && (toast.error || view.kind !== "listening")) {
+  if (disclose) {
+    text = t("dictate.enhance.disclosureShort");
+    tail = (
+      <span className="flex shrink-0 items-center gap-1">
+        <Button size="sm" variant="ghost" onClick={() => setDisclose(null)}>
+          {t("dictionary.cancel")}
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          data-testid="widget-disclosure-continue"
+          onClick={() => {
+            const mode = disclose;
+            setDisclose(null);
+            void invoke<boolean>("dictate_quick_action", { mode, disclosed: true }).catch(() => false);
+          }}
+        >
+          {t("dictate.enhance.continue")}
+        </Button>
+      </span>
+    );
+  } else if (toast && (toast.error || view.kind !== "listening")) {
     error = toast.error;
     ring = toast.error ? "error" : "idle";
     text = toastText(toast);
+    if (toast.actions.length > 0) tail = <ToastActions actions={toast.actions} onDone={() => setToast(null)} />;
     if (toast.code === "copied" || toast.code === "elevated") icon = <Copy size={16} aria-hidden="true" />;
     else if (toast.error) icon = <TriangleAlert size={16} aria-hidden="true" className="text-[var(--tn-status-error)]" />;
   } else if (view.kind === "listening") {
@@ -126,9 +161,24 @@ export function DictateWidget() {
   } else if (view.kind === "transcribing" || view.kind === "reconnecting") {
     ring = "thinking";
     text = view.kind === "transcribing" ? t("dictate.widget.transcribing") : t("dictate.widget.reconnecting");
+  } else if (view.kind === "rewriting") {
+    ring = "thinking";
+    text = view.mode === "enhance" ? t("dictate.widget.enhancing") : t("dictate.widget.polishing");
+    tail = <span className="text-sm text-fg-muted">{t("dictate.enhance.cost")}</span>;
   } else if (view.kind === "inserted") {
     icon = <Check size={16} aria-hidden="true" className="text-[var(--tn-status-done)]" />;
     text = t("dictate.widget.inserted", { n: view.words });
+    if (status?.quickActions)
+      tail = (
+        <span className="flex shrink-0 items-center gap-1" data-testid="widget-quick-actions">
+          <Button size="sm" variant="ghost" onClick={() => quick("enhance")} data-testid="widget-enhance">
+            {t("dictate.enhance.enhanceAction")}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => quick("polish")} data-testid="widget-polish">
+            {t("dictate.enhance.polishAction")}
+          </Button>
+        </span>
+      );
   } else if (view.kind === "copied") {
     icon = <Copy size={16} aria-hidden="true" />;
     text = t("dictate.toast.copied", { mod: navigator.platform.includes("Mac") ? "⌘" : "Ctrl+" });
@@ -146,7 +196,9 @@ export function DictateWidget() {
       aria-description={toast?.detail}
       className={cx(
         "flex h-10 items-center gap-2 rounded-full border border-border bg-surface-3 pl-1.5 pr-2 shadow-3 select-none",
-        error ? "w-[360px]" : showText ? "w-[280px]" : "w-auto",
+        disclose || (toast && toast.actions.length > 0) || (view.kind === "inserted" && status?.quickActions)
+          ? "w-auto max-w-[540px]"
+          : error ? "w-[360px]" : showText ? "w-[280px]" : "w-auto",
         mono && "grayscale",
       )}
       onMouseUp={() => {

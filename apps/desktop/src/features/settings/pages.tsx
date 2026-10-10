@@ -4,6 +4,8 @@ import { AccountPage } from "./AccountPage";
 import { EnginesPage } from "./EnginesPage";
 import { ShortcutsPage } from "./ShortcutsPage";
 import { AccountsPage } from "./AccountsPage";
+import { RemoteHosts } from "../remote/RemoteHosts";
+import { WslDistros } from "../remote/WslDistros";
 import { PluginsPage } from "../plugins/PluginsPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
@@ -11,6 +13,8 @@ import { UpdatesPanel } from "../updates/UpdatesPanel";
 import { RunSetupAgain } from "../onboarding/RunSetupAgain";
 import { DictateExtras, MicSelect, ShortcutField } from "../dictate/DictatePage";
 import { LanguageSelect } from "../dictate/LanguageSelect";
+import { EngineControl } from "../dictate/EngineControl";
+import { AutoEnhanceControl, FormattingControl, QuickActionsControl } from "../dictate/EnhanceControls";
 import {
   BoolControl,
   FontControl,
@@ -414,6 +418,19 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
       extra: <AccountsPage />,
     },
     {
+      id: "remote",
+      label: t("settings.remote"),
+      subtitle: t("settings.remote.subtitle"),
+      keywords: ["ssh", "remote", "host", "server", "wsl", "linux"],
+      rows: [],
+      extra: (
+        <div className="flex flex-col gap-6">
+          <RemoteHosts />
+          <WslDistros />
+        </div>
+      ),
+    },
+    {
       id: "dictate",
       label: t("settings.dictate"),
       subtitle: t("settings.dictate.subtitle"),
@@ -425,6 +442,12 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
           label: t("dictate.enabled"),
           keywords: ["on", "off"],
           control: (ids) => <BoolControl k="dictate_enabled" ids={ids} label={t("dictate.enabled")} />,
+        },
+        {
+          id: "dictate_engine",
+          label: t("dictate.engine.label"),
+          keywords: ["engine", "cloud", "local", "transcribe", "pro"],
+          control: () => <EngineControl />,
         },
         {
           id: "dictate_language",
@@ -554,6 +577,26 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
           control: (ids) => (
             <BoolControl k="dictate_lock_position" ids={ids} label={t("dictate.widget.lock")} />
           ),
+        },
+        {
+          id: "dictate_quick_actions",
+          label: t("dictate.enhance.quickActions"),
+          keywords: ["enhance", "polish", "after each take", "pro"],
+          control: () => <QuickActionsControl label={t("dictate.enhance.quickActions")} />,
+        },
+        {
+          id: "dictate_auto_enhance",
+          label: t("dictate.enhance.auto"),
+          description: t("dictate.enhance.disclosure"),
+          keywords: ["enhance", "auto", "prompt", "pro"],
+          control: () => <AutoEnhanceControl label={t("dictate.enhance.auto")} />,
+        },
+        {
+          id: "dictate_formatting",
+          label: t("dictate.enhance.formatting"),
+          description: t("dictate.enhance.formattingDesc"),
+          keywords: ["formatting", "instructions", "per app", "lowercase"],
+          control: () => <FormattingControl label={t("dictate.enhance.formatting")} />,
         },
         {
           id: "dictate_keep_history",

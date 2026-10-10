@@ -154,6 +154,10 @@ pub struct AppState {
     pub files: Arc<crate::services::files::FilesService>,
     /// The Changes view and the status bar's branch (F-CD-20).
     pub git_panel: Arc<crate::services::git_panel::GitPanelService>,
+    /// SSH hosts and their connections (F-RM-01).
+    pub remote: Arc<crate::services::remote::RemoteService>,
+    /// WSL distributions (F-RM-02; Windows only).
+    pub wsl: Arc<crate::services::wsl::WslService>,
     /// Browser tabs and panes (F-CD-17), bound to the window in setup.
     pub browser: std::sync::OnceLock<Arc<crate::browser::BrowserService>>,
     /// Dictate: push-to-talk, models, history and the dictionary (F-DI-*).
@@ -392,6 +396,20 @@ impl AppState {
             engines,
             status,
         );
+        let remote = crate::services::remote::RemoteService::new(
+            store.clone(),
+            bus.clone(),
+            &data,
+            crate::services::remote::bin_dir(None),
+            terminals.pty.clone(),
+            terminals.status.clone(),
+        );
+        terminals.set_remote(remote.clone());
+        let wsl = Arc::new(crate::services::wsl::WslService::new(
+            crate::services::wsl::system(),
+        ));
+        terminals.set_wsl(wsl.clone());
+        remote.set_engines(terminals.engines.clone());
         let approvals = crate::services::approvals::ApprovalService::new(
             store.clone(),
             bus.clone(),
@@ -445,6 +463,7 @@ impl AppState {
             clock.clone(),
         );
         launcher.set_guard(audit.clone());
+        threads.set_remote(remote.clone());
         // Plugins (M12): credentials from the keychain, approvals in threads,
         // held drafts, the Team allowlist.
         let plugins = crate::services::plugins::PluginService::new(
@@ -559,6 +578,7 @@ impl AppState {
                 store: store.clone(),
                 threads: threads.clone(),
                 teammates: teammates.clone(),
+                gateway: gateway.clone(),
             }),
         );
         // The gateway's teammate built-ins answer for the lease's teammate.
@@ -628,6 +648,7 @@ impl AppState {
         }));
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         let files = crate::services::files::FilesService::new(store.clone());
+        files.set_remote(remote.clone());
         let git_panel = crate::services::git_panel::GitPanelService::new(files.clone());
         let auto = Arc::new(crate::services::auto::AutoService::new(
             bus.clone(),
@@ -676,6 +697,8 @@ impl AppState {
             mail,
             files,
             git_panel,
+            remote,
+            wsl,
             browser: std::sync::OnceLock::new(),
             dictate,
             e2e,

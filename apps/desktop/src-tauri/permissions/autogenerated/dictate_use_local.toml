@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-use-local"
+description = "Enables the dictate_use_local command without any pre-configured scope."
+commands.allow = ["dictate_use_local"]
+
+[[permission]]
+identifier = "deny-dictate-use-local"
+description = "Denies the dictate_use_local command without any pre-configured scope."
+commands.deny = ["dictate_use_local"]

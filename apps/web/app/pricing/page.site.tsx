@@ -67,7 +67,8 @@ export default function PricingPage() {
             <h2 className="text-xl font-semibold tracking-tight">What credits pay for</h2>
             <p className="text-md text-fg-muted">
               Credits come with Pro and Team, when {SITE.product} accounts open. They pay only for hosted AI
-              features, which run on the Claude API; today that&apos;s thread titles. One credit is{" "}
+              features, which run on the Claude API: thread titles, and Dictate&apos;s Enhance and Polish, which
+              switch on with a Pro account (the download, on the Free plan, never uses them). One credit is{" "}
               {`$${CREDIT_VALUE_USD.toFixed(3)}`} of usage. They never pay for your engines.
             </p>
             <table className="mt-2 text-left text-sm">

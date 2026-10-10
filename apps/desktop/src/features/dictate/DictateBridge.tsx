@@ -5,6 +5,7 @@ import { listen } from "../../ipc/events";
 import { useDictate } from "../../stores/dictate";
 import { useSetting } from "../../stores/settings";
 import { useUi } from "../../stores/ui";
+import { runToastAction, toastActionLabel } from "./ToastActions";
 import { mainWindowShows, toastText } from "./toasts";
 
 /** The main window's side of Dictate: its toasts (composer takes, model
@@ -24,9 +25,19 @@ export function DictateBridge() {
       }),
       listen<DictateToast>("dictate:toast", (toast) => {
         if (!mainWindowShows(toast, lastComposer.current, hidden.current)) return;
-        show({ tone: toast.error ? "error" : "info", title: toastText(toast), body: toast.detail || undefined });
+        const action = toast.actions[0];
+        show({
+          tone: toast.error ? "error" : "info",
+          title: toastText(toast),
+          body: toast.detail || undefined,
+          action: action ? { label: toastActionLabel(action), onClick: () => runToastAction(action) } : undefined,
+        });
       }),
       listen<{ page: string }>("ui:open-settings", (e) => useUi.getState().openSettings(e.page)),
+      // Verified anywhere (Try it, or the fallback link on Wayland): the home card updates.
+      listen<null>("dictate:verified", () => void useDictate.getState().loadStatus()),
+      // "See plans" from the widget (F-DI-05).
+      listen<null>("ui:open-plans", () => useUi.getState().openUpgrade()),
     ];
     return () => offs.forEach((o) => void o.then((off) => off()));
   }, [show]);

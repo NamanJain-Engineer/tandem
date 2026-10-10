@@ -335,6 +335,16 @@
     "page": "dictate"
   },
   {
+    "default": true,
+    "key": "dictate_quick_actions",
+    "page": "dictate"
+  },
+  {
+    "default": {},
+    "key": "dictate_formatting_apps",
+    "page": "dictate"
+  },
+  {
     "default": null,
     "key": "dictate_formatting",
     "page": "dictate"

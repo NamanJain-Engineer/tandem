@@ -5,9 +5,37 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[lib]
+name = "tandem_host"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tandem-host"
+path = "src/main.rs"
+
 [dependencies]
+# No OS keychain: the host keeps no secrets and builds as a static musl binary.
 tandem-core.workspace = true
+base64.workspace = true
+hex.workspace = true
+parking_lot.workspace = true
+portable-pty.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[features]
+# The integration test against the `sshd` compose service (MILESTONES M14):
+#   cargo test -p tandem-host --features e2e-ssh -- --include-ignored f_rm_01
+e2e-ssh = []
 
 [lints]
 workspace = true

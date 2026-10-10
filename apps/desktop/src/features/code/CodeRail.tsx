@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AlertTriangle, Folder, GitBranch, Globe, Plus, SquareTerminal } from "lucide-react";
+import { AlertTriangle, Cloud, Folder, GitBranch, Globe, Plus, SquareTerminal } from "lucide-react";
 import type { SavedSession, WorkspaceSummary } from "@tandem/protocol";
 import {
   Badge,
+  Button,
   ConfirmDialog,
   EngineGlyph,
   IconButton,
@@ -21,6 +22,7 @@ import { useSetting, useSettings } from "../../stores/settings";
 import { paneKey, statusView, useStatus } from "../../stores/status";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
+import { useRemote } from "../../stores/remote";
 import { RailList } from "../rail/RailList";
 import { topLevel, useWorktrees, worktreesOf } from "../../stores/worktrees";
 import { WorktreeRow } from "./Worktrees";
@@ -266,6 +268,17 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
   );
 }
 
+/** The host a remote workspace lives on, as the rail names it. */
+function hostLabel(ws: WorkspaceSummary): string {
+  if (ws.kind === "wsl") return ws.wslDistro ?? ws.hostId;
+  return useRemote.getState().hostOf(ws.hostId)?.label ?? ws.hostId;
+}
+
+/** "Remote · build box" or "WSL · Ubuntu". */
+function placeBadge(ws: WorkspaceSummary): string {
+  return t(ws.kind === "wsl" ? "rail.wslBadge" : "rail.remoteBadge", { host: hostLabel(ws) });
+}
+
 /** UI_SPEC §3.3 Code rail: WORKSPACES + "+", the shared RailList, footer. */
 export function CodeRail() {
   const { list, activeId, select, remove, move, rename, setCollapsed, confirmRemove, askRemove } =
@@ -352,10 +365,16 @@ export function CodeRail() {
           testId: "workspace-row",
           data: { root: ws.root },
           name: ws.name,
-          tooltip: ws.missing ? t("rail.missing") : ws.root,
+          tooltip: ws.missing
+            ? t("rail.missing")
+            : ws.kind !== "local"
+              ? `${placeBadge(ws)} · ${ws.root}`
+              : ws.root,
           warning: ws.missing,
           icon: ws.missing ? (
             <AlertTriangle size={14} aria-label={t("rail.missing")} className="text-warning" />
+          ) : ws.kind !== "local" ? (
+            <Cloud size={14} aria-label={placeBadge(ws)} className="text-fg-muted" />
           ) : (
             <Folder size={14} aria-hidden="true" className="text-fg-muted" />
           ),
@@ -397,6 +416,20 @@ export function CodeRail() {
         }
         onRemove={(ws) => askRemove(ws)}
       />
+      {!collapsed && (
+        <div className="border-t border-divider px-1.5 pt-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            fullWidth
+            data-testid="rail-remote-hosts"
+            iconLeft={<Cloud size={14} />}
+            onClick={() => useUi.getState().openSettings("remote")}
+          >
+            {t("rail.remoteHosts")}
+          </Button>
+        </div>
+      )}
       <PlanFooter collapsed={collapsed} />
       {!collapsed && <RailResizer width={shown} onWidth={onWidth} />}
       <ConfirmDialog

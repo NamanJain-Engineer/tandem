@@ -291,7 +291,12 @@ const PaneView = memo(function PaneView({
     { id: "title", type: "label", label: title },
     { id: "rename", label: t("pane.rename"), onSelect: () => setRenaming(true) },
     { id: "sep-title", type: "separator" },
-    { id: "split-right", label: t("pane.splitRight"), kbd: keys("pane.split_right"), onSelect: () => split("right") },
+    {
+      id: "split-right",
+      label: t("pane.splitRight"),
+      kbd: keys("pane.split_right"),
+      onSelect: () => split("right"),
+    },
     {
       id: "split-down",
       label: t("pane.splitDown"),

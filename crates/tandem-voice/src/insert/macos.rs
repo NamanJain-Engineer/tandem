@@ -285,6 +285,10 @@ impl Platform for MacPlatform {
         super::chord(&[enigo::Key::Meta], enigo::Key::Unicode('v'))
     }
 
+    fn undo(&self) -> Result<(), InsertError> {
+        super::chord(&[enigo::Key::Meta], enigo::Key::Unicode('z'))
+    }
+
     fn read_clipboard(&self) -> Result<Clip, InsertError> {
         self.board.read()
     }

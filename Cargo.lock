@@ -5964,6 +5964,7 @@ dependencies = [
  "tandem-engines",
  "tandem-gateway",
  "tandem-git",
+ "tandem-host",
  "tandem-pty",
  "tandem-routines",
  "tandem-store",
@@ -6071,8 +6072,18 @@ dependencies = [
 name = "tandem-host"
 version = "0.4.0"
 dependencies = [
+ "base64 0.22.1",
+ "hex",
+ "libc",
+ "parking_lot",
+ "portable-pty",
+ "serde",
+ "serde_json",
+ "sha2",
  "tandem-core",
+ "tempfile",
  "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]
@@ -6080,6 +6091,7 @@ name = "tandem-invariants"
 version = "0.4.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "reqwest 0.12.28",
  "serde_json",
  "tandem-core",
@@ -6087,6 +6099,7 @@ dependencies = [
  "tandem-engines",
  "tandem-gateway",
  "tandem-git",
+ "tandem-host",
  "tandem-pty",
  "tandem-tasks",
  "tempfile",

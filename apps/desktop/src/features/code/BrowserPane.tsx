@@ -45,7 +45,10 @@ export async function moveToPane(tab: SidebarTab): Promise<string | null> {
   const layout = useLayout.getState();
   const page = useBrowser.getState().pages[tab.id];
   // With no page yet, the pane opens the tab's address itself.
-  const res = await layout.split(codeTab, layout.tabs[codeTab]?.active ?? null, "right", { kind: "browser", url: page ? null : tab.url });
+  const res = await layout.split(codeTab, layout.tabs[codeTab]?.active ?? null, "right", {
+    kind: "browser",
+    url: page ? null : tab.url,
+  });
   if (!res.ok) return res.error.message;
   if (page) {
     const err = await useBrowser.getState().move(tab.id, res.pane.id);
@@ -67,7 +70,16 @@ type Props = {
   cover: "card" | "line" | null;
 };
 
-export const BrowserPane = memo(function BrowserPane({ tabId, pane, title, visible, focused, solo, maximized, cover }: Props) {
+export const BrowserPane = memo(function BrowserPane({
+  tabId,
+  pane,
+  title,
+  visible,
+  focused,
+  solo,
+  maximized,
+  cover,
+}: Props) {
   const keys = useShortcutKeys();
   const { show } = useToast();
   const layout = useLayout.getState;
@@ -77,14 +89,25 @@ export const BrowserPane = memo(function BrowserPane({ tabId, pane, title, visib
   const drag: PaneDrag = { kind: "pane", paneId: pane.id, tabId, title };
   const { attributes, listeners, setNodeRef } = useDraggable({ id: `pane:${pane.id}`, data: drag });
   const split = (side: "right" | "bottom") => {
-    if (layout().requestSplit(tabId, pane.id, side) === "no_room") show({ tone: "warning", title: t("split.noRoom") });
+    if (layout().requestSplit(tabId, pane.id, side) === "no_room")
+      show({ tone: "warning", title: t("split.noRoom") });
   };
   const toSidebar = () =>
     void openInSidebar(tabId, pane).then((message) => message && show({ tone: "error", title: message }));
   const menu: MenuEntry[] = [
     { id: "title", type: "label", label: title },
-    { id: "split-right", label: t("pane.splitRight"), kbd: keys("pane.split_right"), onSelect: () => split("right") },
-    { id: "split-down", label: t("pane.splitDown"), kbd: keys("pane.split_down"), onSelect: () => split("bottom") },
+    {
+      id: "split-right",
+      label: t("pane.splitRight"),
+      kbd: keys("pane.split_right"),
+      onSelect: () => split("right"),
+    },
+    {
+      id: "split-down",
+      label: t("pane.splitDown"),
+      kbd: keys("pane.split_down"),
+      onSelect: () => split("bottom"),
+    },
     { id: "new-tab", label: t("pane.moveToNewTab"), onSelect: () => void moveToNewTab(tabId, pane.id) },
     { id: "sidebar", label: t("browser.openInSidebar"), onSelect: toSidebar },
     {
