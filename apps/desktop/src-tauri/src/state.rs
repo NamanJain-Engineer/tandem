@@ -147,11 +147,24 @@ pub struct AppState {
 
 impl AppState {
     pub fn init() -> Result<Self, CoreError> {
-        let data = DataDir::resolve()?;
+        // "Delete local data" (F-TL-05) runs here, before anything opens
+        // `$DATA`; the app then starts as on a first run.
+        let root = DataDir::default_root()?;
+        let deleted = crate::services::data_controls::apply_pending_delete(&root).map_err(|e| {
+            CoreError::io(
+                "data",
+                &e,
+                "Close Vibezeo and delete the data folder by hand",
+            )
+        })?;
+        let data = DataDir::at(root)?;
         let first_run = !data.db_path().exists();
         let level = std::env::var("TANDEM_LOG").unwrap_or_else(|_| "info".to_string());
         // A second init (tests) keeps the first subscriber.
         let log = logging::init(&data.logs(), &level).ok();
+        if deleted {
+            tracing::info!("local data deleted at the user's request");
+        }
         let store = Store::open(&data).map_err(|e| {
             CoreError::new(
                 "store",
