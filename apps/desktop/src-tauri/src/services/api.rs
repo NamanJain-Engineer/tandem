@@ -406,6 +406,25 @@ pub trait ApiClient: Send + Sync {
     async fn audit_events(&self, _access: &str, _events: &[AuditEvent]) -> Result<(), ApiError> {
         Err(no_hosted_service())
     }
+    /// `POST /v1/auth/device/start` (F-BE-03): a code for the user to approve on the web.
+    async fn device_start(&self, _client: &str, _version: &str) -> Result<DeviceStart, ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `POST /v1/auth/device/token`: tokens once approved; the OAuth error code otherwise.
+    async fn device_token(&self, _device_code: &str) -> Result<TokenPair, ApiError> {
+        Err(no_hosted_service())
+    }
+}
+
+/// `POST /v1/auth/device/start` (F-BE-03).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceStart {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub verification_uri_complete: String,
+    pub interval: u64,
+    pub expires_in: u64,
 }
 
 /// The API client of an early-access build (D-105): every call fails as
@@ -718,6 +737,24 @@ impl ApiClient for HttpApi {
             .bearer_auth(access)
             .json(&json!({ "events": events }));
         self.call_empty(req).await
+    }
+
+    async fn device_start(&self, client: &str, version: &str) -> Result<DeviceStart, ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/auth/device/start"))
+            .json(&json!({ "client": client, "version": version }));
+        self.call(req).await
+    }
+
+    async fn device_token(&self, device_code: &str) -> Result<TokenPair, ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/auth/device/token"))
+            .json(&json!({ "device_code": device_code }));
+        self.call(req).await
     }
 
     async fn events(

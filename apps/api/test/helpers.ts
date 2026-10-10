@@ -49,7 +49,7 @@ export async function makeTestApp(envOverrides: Record<string, string> = {}) {
   await deps.db.execute(
     sql`TRUNCATE "user", session, account, verification, refresh_tokens, desktop_login_codes, subscriptions,
         billing_customers, webhook_events, credit_ledger, credit_reservations, credit_buckets, orgs, org_members,
-        org_invites, org_policies, member_usage, daily_usage, ai_requests, audit_events, admin_actions RESTART IDENTITY CASCADE`,
+        org_invites, org_policies, member_usage, daily_usage, ai_requests, audit_events, admin_actions, device_codes RESTART IDENTITY CASCADE`,
   );
   const app = createApp(deps);
   return { app, deps, email, clock, billing, close: built.close };
