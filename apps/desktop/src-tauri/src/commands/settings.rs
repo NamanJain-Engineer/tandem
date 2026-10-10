@@ -72,6 +72,11 @@ async fn apply(
         }
         // Paused: queued mail waits; resumed: it goes out, once (F-AG-12).
         SettingKey::PauseAllMail => state.mail.pump_soon(),
+        // The tray's check mark follows; rows re-read (F-SH-13).
+        SettingKey::PauseAllRoutines => {
+            state.routines.notify_changed();
+            crate::tray::sync(app, crate::commands::routines::background_on().await).await;
+        }
         SettingKey::LaunchAtLogin => {
             let on = value.as_bool().unwrap_or(false);
             // E2E runs never touch the real login items.

@@ -123,6 +123,14 @@ pub trait ChatLauncher: Send + Sync {
 
     /// The models an engine reported (ACP agents), for the picker.
     fn models_reported(&self, _engine_id: &str, _models: &[ModelOffer]) {}
+
+    /// A thread's engine session ended (its process exited).
+    fn session_ended(&self, _thread_id: &ThreadId) {}
+}
+
+/// The key a thread's engine session has in per-session registries.
+pub fn session_key(thread: &ThreadId) -> String {
+    format!("th:{}", thread.as_str())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1638,6 +1646,7 @@ impl ThreadService {
                 }
                 guard.session = None;
                 guard.lost = true;
+                self.launcher.session_ended(thread);
                 tracing::info!(code = "threads.engine_exited", exit = ?code, "engine process ended");
                 let stopping = guard.turn.as_ref().map(|r| r.stopping);
                 match stopping {
@@ -2103,6 +2112,8 @@ pub struct AppLauncher {
     /// The live lease per thread; a new session revokes the last one.
     leases: StdMutex<HashMap<String, tandem_core::ids::LeaseId>>,
     teammates: std::sync::OnceLock<std::sync::Weak<crate::services::teammates::TeammatesService>>,
+    /// The tasks server sessions get (F-TK-02).
+    tasks: std::sync::OnceLock<Arc<crate::services::tasks::TasksService>>,
     /// The Team org's policy and audit log (F-BL-06, F-TL-10).
     guard: std::sync::OnceLock<Arc<dyn crate::services::audit::OrgGuard>>,
 }
@@ -2130,8 +2141,58 @@ impl AppLauncher {
             store,
             leases: StdMutex::default(),
             teammates: std::sync::OnceLock::new(),
+            tasks: std::sync::OnceLock::new(),
             guard: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Who started the thread's runs: a routine's chat runs with that
+    /// routine's own Full grant, if any (F-RT-01, rule 4).
+    async fn origin(&self, thread: &ThreadRecord) -> tandem_core::access::Origin {
+        if !thread.attended {
+            // A task run's session: the task's own Full grant, if any.
+            if let Ok(Some(a)) =
+                tandem_store::repo::task_attempts::for_thread(&self.store, &thread.id).await
+            {
+                return tandem_core::access::Origin::Task {
+                    grants_full: a.access == Access::Full,
+                };
+            }
+            if let Ok(Some(r)) =
+                tandem_store::repo::routines::routine_of_chat(&self.store, &thread.id).await
+            {
+                return tandem_core::access::Origin::Routine {
+                    grants_full: r.access == Access::Full,
+                };
+            }
+        }
+        origin_of(thread)
+    }
+
+    /// The tracker whose MCP server chat sessions get.
+    pub fn bind_tasks(&self, tasks: &Arc<crate::services::tasks::TasksService>) {
+        let _ = self.tasks.set(tasks.clone());
+    }
+
+    /// The tasks server for a thread's new session, with its own connection.
+    async fn tasks_server(
+        &self,
+        thread: &ThreadRecord,
+    ) -> Option<tandem_engines::chat::StdioServer> {
+        let tasks = self.tasks.get()?;
+        let teammate = self.teammate_of(thread).await;
+        let (label, actor) = match &teammate {
+            Some(t) => (t.name.clone(), t.id.as_str().to_string()),
+            None => (
+                if thread.title.is_empty() {
+                    "Thread".to_string()
+                } else {
+                    thread.title.clone()
+                },
+                thread.id.as_str().to_string(),
+            ),
+        };
+        tasks.chat_server(&session_key(&thread.id), &label, &actor)
     }
 
     /// The teammates whose chats this launcher starts.
@@ -2256,6 +2317,7 @@ impl AppLauncher {
     async fn mcp_config(
         &self,
         thread: &ThreadRecord,
+        stdio: &[tandem_engines::chat::StdioServer],
     ) -> Result<(std::path::PathBuf, tandem_engines::chat::McpEndpoint), IpcError> {
         let gateway = self.gateway.handle().await?;
         let teammate = self.teammate_of(thread).await;
@@ -2295,8 +2357,10 @@ impl AppLauncher {
                 // A teammate chat: memory, skills, search and (when it may
                 // message) mail; the teammate's own plugin grants (F-PL-05).
                 let approvals = session.builtins.approvals;
-                session.builtins =
-                    tandem_gateway::BuiltinSet::for_teammate(t.settings.may_message, false);
+                session.builtins = tandem_gateway::BuiltinSet::for_teammate(
+                    t.settings.may_message,
+                    t.settings.may_schedule,
+                );
                 session.builtins.approvals = approvals;
                 session.granted = tandem_store::repo::plugins::grants(
                     &self.store,
@@ -2320,11 +2384,18 @@ impl AppLauncher {
         if let Some(old) = previous {
             gateway.revoke(&old);
         }
-        let config = serde_json::json!({"mcpServers": {"tandem": {
+        let mut config = serde_json::json!({"mcpServers": {"tandem": {
             "type": "http",
             "url": gateway.url,
             "headers": {"Authorization": format!("Bearer {}", lease.token)}
         }}});
+        for s in stdio {
+            config["mcpServers"][&s.name] = serde_json::json!({
+                "type": "stdio",
+                "command": s.command,
+                "args": s.args,
+            });
+        }
         std::fs::create_dir_all(&self.mcp_dir)
             .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
         let path = self.mcp_dir.join(format!("{}.json", thread.id.as_str()));
@@ -2356,6 +2427,12 @@ impl ChatLauncher for AppLauncher {
         let catalog =
             crate::services::models::catalog_for(&thread.engine_id, &self.models, &self.config);
         crate::services::models::resolve(thread.model.as_deref(), &catalog)
+    }
+
+    fn session_ended(&self, thread_id: &ThreadId) {
+        if let Some(tasks) = self.tasks.get() {
+            tasks.end_session(&session_key(thread_id));
+        }
     }
 
     fn models_reported(&self, engine_id: &str, models: &[ModelOffer]) {
@@ -2423,8 +2500,9 @@ impl ChatLauncher for AppLauncher {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         env.extend(crate::services::fake_engine_env());
-        let (config, endpoint) = self.mcp_config(thread).await?;
-        let origin = origin_of(thread);
+        let stdio_servers: Vec<_> = self.tasks_server(thread).await.into_iter().collect();
+        let (config, endpoint) = self.mcp_config(thread, &stdio_servers).await?;
+        let origin = self.origin(thread).await;
         let access = session_access(
             self.guard.get().map(|g| g.as_ref()),
             thread,
@@ -2442,6 +2520,7 @@ impl ChatLauncher for AppLauncher {
                 env,
                 model: thread.model.clone(),
                 effort: thread.effort.clone(),
+                // The one place a session's access is decided (F-TH-09).
                 access,
                 mode: thread.mode,
                 attended: thread.attended,
@@ -2455,6 +2534,7 @@ impl ChatLauncher for AppLauncher {
                         .and_then(|f| f.version)
                 }),
                 briefing,
+                stdio_servers,
             },
         ))
     }
@@ -2728,6 +2808,7 @@ mod tests {
                     mcp: None,
                     engine_version: None,
                     briefing: None,
+                    stdio_servers: Vec::new(),
                 },
             ))
         }
@@ -3930,6 +4011,7 @@ mod tests {
                         mcp: None,
                         engine_version: None,
                         briefing: None,
+                        stdio_servers: Vec::new(),
                     },
                 ))
             }

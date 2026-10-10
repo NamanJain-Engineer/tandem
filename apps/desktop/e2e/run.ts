@@ -139,6 +139,7 @@ async function main() {
       cwd: root,
       stdio: "inherit",
     });
+    execFileSync("cargo", ["build", "-p", "tandem-tasks", "--bins"], { cwd: root, stdio: "inherit" });
   }
   const home = mkdtempSync(join(tmpdir(), "tandem-e2e-"));
   const results = join(root, "test-results");
@@ -171,7 +172,23 @@ async function main() {
   const nodeBin = join(home, "nodebin");
   mkdirSync(nodeBin, { recursive: true });
   symlinkSync(process.execPath, join(nodeBin, "node"));
+  // Recording `systemctl` and `crontab` for the background runner (F-RT-03,
+  // E2E-M11-5): its unit files go under TANDEM_LAUNCHER_ROOT and nothing
+  // touches this machine's real timers or crontab.
+  const shims = join(home, "shims");
+  mkdirSync(shims, { recursive: true });
+  writeFileSync(
+    join(shims, "systemctl"),
+    `#!/bin/sh\necho "$*" >>"${join(home, "systemctl.log")}"\nexit 0\n`,
+  );
+  writeFileSync(
+    join(shims, "crontab"),
+    `#!/bin/sh\nf="${join(home, "crontab.txt")}"\nif [ "$1" = "-l" ]; then [ -f "$f" ] && exec cat "$f"; exit 1; fi\ncat >"$f"\n`,
+  );
+  chmodSync(join(shims, "systemctl"), 0o755);
+  chmodSync(join(shims, "crontab"), 0o755);
   const appPath = [
+    shims,
     nodeBin,
     "/usr/local/sbin",
     "/usr/local/bin",
@@ -227,6 +244,8 @@ async function main() {
     // Where the usage share card "saves" (debug builds; F-AC-07).
     TANDEM_FAKE_SAVE_PATH: join(home, "save-path.txt"),
     TANDEM_HOOK_BIN: join(root, "target/debug/tandem-hook"),
+    TANDEM_TASKS_BIN: join(root, "target/debug/tandem-tasks"),
+    TANDEM_LAUNCHER_ROOT: join(home, "launcher"),
     TANDEM_SPAWN_LOG: join(home, "spawn.log"),
     // "Create with AI" answers from this file (debug builds; E2E-M10-7, D-8).
     TANDEM_FIXTURE_TEAMMATE_DRAFT: join(home, "teammate-draft.json"),

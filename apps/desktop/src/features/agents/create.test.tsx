@@ -209,6 +209,7 @@ describe("UI-75/76 teammate settings", () => {
       memoryCap: 4096,
       learnMode: "ask" as const,
       mayMessage: true,
+      maySchedule: false,
       plugins: [],
     };
     expect(patchOf(SCOUT, base, { ...base, engineId: "codex" })).toEqual({ engineId: "codex" });

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-task-archive"
+description = "Enables the task_archive command without any pre-configured scope."
+commands.allow = ["task_archive"]
+
+[[permission]]
+identifier = "deny-task-archive"
+description = "Denies the task_archive command without any pre-configured scope."
+commands.deny = ["task_archive"]
