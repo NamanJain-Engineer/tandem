@@ -83,3 +83,9 @@ debug-assertions = true
 lto = false
 codegen-units = 16
 strip = "none"
+
+# Dependencies keep line tables only in dev builds: full DWARF for whisper.cpp,
+# ONNX Runtime, WebKit bindings and the rest outgrew the build machines'
+# disk (D-511). Workspace crates keep full debug info.
+[profile.dev.package."*"]
+debug = "line-tables-only"

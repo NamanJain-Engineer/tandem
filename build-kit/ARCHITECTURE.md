@@ -497,7 +497,7 @@ src-tauri/
 - **Serde:** `#[serde(rename_all = "camelCase")]` on structs, `#[serde(tag = "type", rename_all = "snake_case")]` on enums. Timestamps are `i64` Unix milliseconds. Paths are strings (UTF-8; non-UTF-8 paths are rejected with `Invalid` and logged by code only).
 - **Errors:** every command returns `Result<T, IpcError>` (§2.2). The TS wrapper rejects with a typed `IpcError`. The column "Errors" below lists the `ErrorCode`s a caller must handle beyond `Internal`/`Timeout`.
 - **Timeouts and cancellation [§5.2]:** the TS wrapper applies 10 s by default. Commands that can exceed it return an `OpHandle { opId }` immediately and report through `op:progress`; `op_cancel(opId)` cancels. Such commands are marked "op" in the table.
-- **Capabilities [§5.3]:** `capabilities/main.json` allows all commands for window `main`; `widget.json` allows only `dictate_status`, `dictate_cancel_take`, `dictate_widget_set_position`, `app_log`; `ring.json` allows `conductor_start_call`, `conductor_end_call`, `conductor_mute`, `app_log`. Browser webviews get no capability (they aren't Tauri webviews, D-206). Implement with `tauri_build::Attributes::app_manifest(AppManifest::new().commands(ALL_COMMANDS))` so each command has an `allow-<name>` permission.
+- **Capabilities [§5.3]:** `capabilities/main.json` allows all commands for window `main`; `widget.json` (window `dictate-widget`) allows only `dictate_status`, `dictate_cancel_take`, `dictate_widget_set_position`, `app_log` and listening to events; `ring.json` allows `conductor_start_call`, `conductor_end_call`, `conductor_mute`, `app_log`. Browser webviews get no capability (they aren't Tauri webviews, D-206). Implement with `tauri_build::Attributes::app_manifest(AppManifest::new().commands(ALL_COMMANDS))` so each command has an `allow-<name>` permission.
 - **Origin:** commands that must not be reachable from voice or phone (forced lane removal, enabling Full, shell commands) are never exposed through the Conductor action registry or the phone command set (§12.6, §13.3). Local-review actions additionally check the calling window label is `main`.
 
 ### 3.2 Commands
@@ -520,7 +520,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `app_log` | `{level, target, code, fields:Record<string,string\|number\|boolean>}` | — | — | F-SH-11 |
 | `deeplink_pending` | — | `[DeepLink]` | — | F-SH-13 |
 | `op_cancel` | `{opId}` | — | NotFound | §5.2 |
-| `onboarding_get` / `onboarding_set` | — / `{step?, done?}` | `OnboardingState {step?, done, steps}` (both; `steps` = the wizard after Welcome, in order: engines, privacy, workspace; accounts and dictate join with M6/M12; a profile that never ran it but has workspaces counts as done) | Invalid (unknown step) | F-SH-08 |
+| `onboarding_get` / `onboarding_set` | — / `{step?, done?}` | `OnboardingState {step?, done, steps}` (both; `steps` = the wizard after Welcome, in order: engines, accounts, dictate, privacy, workspace; a profile that never ran it but has workspaces counts as done) | Invalid (unknown step) | F-SH-08 |
 | `commands_registry` | — | `[CommandSpec]` | — | F-SH-09 |
 | `redact_text` | `{text}` | `String` | — | F-TL-02 |
 | `diagnostics_subscribe` | `{channel: Channel<MetricsFrame>}` | `SubId` | — | §5.7 |
@@ -792,23 +792,29 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 #### Dictate [F-DI-*]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
-| `dictate_status` | — | `DictateStatus {hotkey: HotkeyStatus, verified, mic, engine, model, state}` | — |
-| `dictate_set_binding` | `{binding: Binding, mode:"hold"\|"toggle"\|"latch"}` | `HotkeyStatus` | Invalid (modifier-only toggle) |
-| `dictate_verify_start` / `dictate_verify_stop` | — | — (events `dictate:key`) | — |
-| `dictate_start_take` / `dictate_stop_take` / `dictate_cancel_take` | `{origin: {type:"global"} \| {type:"composer", targetId}}` / — / — | `{takeId}` / — / — | Unavailable (Conductor owns mic) |
+| `dictate_status` | — | `DictateStatus {enabled, hotkey: HotkeyStatus, verified, hold: {binding, label}, toggle?: {binding, label}, latch, session: "x11"\|"wayland"\|"mac"\|"windows"\|"none", deepLinkCommand?, mic?: DeviceInfo, engine: "local", model?: {id, name}, modelStage: "none"\|"verifying"\|"loading"\|"ready"\|"failed", fallback?: {using, missing}, state: TakeState, missingTools?: MissingTools}` (also the widget's; D-505) | — |
+| `dictate_set_binding` | `{binding: String\|null, mode:"hold"\|"toggle"}` (`null` = the OS default for hold, none for toggle) | `HotkeyStatus` (and `verified` resets for hold) | Invalid (modifier-only toggle, unknown key, Esc, Alt+Space off macOS, Fn off macOS) |
+| `dictate_verify_start` / `dictate_verify_stop` | — | — (events `dictate:key`, then `dictate:verified`) | — |
+| `dictate_start_take` / `dictate_stop_take` / `dictate_cancel_take` | `{origin: {type:"global"} \| {type:"composer", targetId}}` / — / — | `{takeId}` / — / — | Unavailable (Conductor owns the mic; no model) |
+| `dictate_toggle` | — | — (the `tandem://dictate/toggle` route, F-SH-13) | — |
 | `dictate_composer_focus` | `{targetId?}` (null on blur) | — | — |
-| `dictate_devices` | — | `[DeviceInfo {id, name, isDefault, bluetooth, loopback}]` | — |
-| `dictate_models` / `dictate_model_download` / `dictate_model_remove` / `dictate_model_select` | — / `{modelId}` → op / `{modelId}` / `{modelId}` | `[ModelView]` | Io, Invalid (sha mismatch) |
-| `dictate_history` | `{query?, cursor?}` | `Page<Take>` | — |
-| `dictate_take_delete` / `dictate_history_clear` / `dictate_history_export` | `{takeId}` / — / `{path}` | — | — |
-| `dictate_take_correct` | `{takeId, corrected, remember}` | — | — |
-| `dictate_rewrite` | `{text, mode:"enhance"\|"polish", appId?}` | `String` | ForbiddenPlan, CreditsExhausted, Invalid (>5,000 chars) |
-| `dictate_stats` | — | `DictateStats` | — |
-| `dictionary_list` / `dictionary_save` / `dictionary_delete` / `dictionary_restore` | … | `[Rule]` / `Rule` / — | Invalid |
+| `dictate_devices` | — | `[DeviceInfo {id, name, isDefault, bluetooth, loopback}]` (with `chosen`: the id the device policy picks, F-DI-03) | — |
+| `dictate_models` / `dictate_model_download` / `dictate_model_cancel` / `dictate_model_remove` / `dictate_model_select` / `dictate_models_remove_unused` | — / `{modelId}` / `{modelId}` / `{modelId}` / `{modelId}` / — | `ModelsView {models:[ModelView {id, name, bytes, langsLabel, recommended, available, cpuWarning, state: "absent"\|"queued"\|"downloading"\|"verifying"\|"loading"\|"downloaded"\|"active"\|"failed", progress?, error?}], usedBytes, freeBytes?, active?, pending?}` (download and select return at once; progress comes as `dictate:models`) | NotFound, Unavailable (not on this platform) |
+| `dictate_history` | `{query?, before?: {createdAt, id}, limit?}` | `TakePage {takes:[TakeRow {id, createdAt, text, engine, model, wordCount, durationMs, appId?}], next?}` (FTS5 when `query`) | — |
+| `dictate_take_delete` / `dictate_history_clear` / `dictate_history_export` | `{takeId}` / — / `{path}` | — | Io |
+| `dictate_take_correct` | `{takeId, corrected, remember}` (`remember` adds a Correction rule from the changed words) | `Rule?` | NotFound, Invalid |
+| `dictate_stats` | — | `DictateStats {words, speakingMs, takes, wpm, savedMs}` (kept across Clear history) | — |
+| `dictate_save_file` | `{suggestedName, kind: "csv"\|"png"\|"json"}` | `String?` (a path from the save dialog; null when cancelled) | — |
+| `dictate_pick_file` | `{kind: "csv"\|"json"}` | `String?` (an open dialog for a dictionary import) | — |
+| `dictate_share_card_save` | `{path, pngBase64}` | — (the 1080×810 share card the UI drew) | Invalid (not a PNG), Io |
+| `dictate_rewrite` | `{text, mode:"enhance"\|"polish", appId?}` | `String` | ForbiddenPlan, CreditsExhausted, Invalid (>5,000 chars) — M13 |
+| `dictionary_list` / `dictionary_save` / `dictionary_delete` / `dictionary_restore` / `dictionary_deleted` | — / `{rule: Rule}` / `{ids}` / `{id}` / — | `[Rule]` / `Rule` / — / `Rule` / `[Rule]` (deleted within 30 days) | Invalid (empty phrase or replacement), NotFound |
 | `dictionary_test` | `{sample, appId?, lang?}` | `String` | — |
-| `dictionary_import_preview` / `dictionary_import_commit` / `dictionary_export` | `{path, format:"json"\|"csv"}` / `{previewId}` / `{path, format}` | `ImportPreview` / — / — | Invalid |
-| `dictionary_suggestions` / `dictionary_suggestion_resolve` | — / `{id, remember}` | `[Suggestion]` / — | — |
-| `dictate_permissions` / `dictate_open_permission_settings` | — / `{kind}` | `PermissionStatus {mic, inputMonitoring, accessibility}` / — | — |
+| `dictionary_import_preview` / `dictionary_import_commit` / `dictionary_export` | `{path, format:"json"\|"csv"}` / `{previewId}` / `{path, format}` | `ImportPreview {previewId, added:[Rule], updated:[Rule], skipped:[{line, reason}]}` / `{added, updated}` / — | Invalid, Io |
+| `dictionary_suggestions` / `dictionary_suggestion_resolve` | — / `{id, remember}` | `[Suggestion {id, term, kind:"spelling"\|"unknown"\|"acronym"\|"proper_noun", evidence:[String], count, lastSeen}]` / `Rule?` | NotFound |
+| `dictionary_sync` | — | `SyncResult {pushed, pulled, conflicts:[{id, local: Rule, remote: Rule}], syncedAt}` (Pro, hosted builds; `POST /v1/dictionary/sync`) | ForbiddenPlan, Unavailable (no hosted service), Unauthenticated |
+| `dictate_permissions` / `dictate_open_permission_settings` | — / `{kind:"microphone"\|"input_monitoring"\|"accessibility"}` | `PermissionStatus {mic, inputMonitoring, accessibility}` (each `"granted"\|"denied"\|"unknown"\|"not_needed"`) / — | — |
+| `dictate_relaunch` | — | — (macOS "Quit & Reopen" after granting Input Monitoring) | — |
 | `dictate_widget_set_position` | `{x, y, locked}` | — | — |
 
 #### Conductor [F-CN-*]
@@ -867,6 +873,10 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `test_thread_state` | `{id}` | the thread's stored `state` | NotFound |
 | `test_browser_eval` | `{browserId, script}` | `String` (the script's value as JSON; E2E-M9-4 clicks in a page with it) | NotFound |
 | `test_thread_seed_events` | `{threadId, events, fenceBytes?}` | the number of events written (completed turns of a user message, an assistant reply, tool calls and a turn end, in one transaction; `fenceBytes` adds a last reply with a code fence that size; threads perf suite) | NotFound |
+| `test_dictate_key` | `{which:"hold"\|"toggle"\|"esc", phase:"down"\|"up"}` | `bool` (the fake hotkey source delivered it; Esc only while a take listens for it) | — |
+| `test_dictate_mic` | `{source:"wav", path} \| {source:"silence"} \| {source:"zeros"}` | — (what the fake microphone plays from the next take on) | NotFound |
+| `test_dictate_platform` | `{clear?, target?: InsertTarget, noTarget?, failFocus?, failPaste?, clipboard?: String}` | `FakePlatformView {calls:[String], pasted:[String], clipboard?}` (the recording insertion backend) | — |
+| `test_dictate_widget` | — | `{visible, x, y}` (the widget window as the OS sees it) | — |
 | `test_plugin_connect` | `{pluginId}` | `PluginConnection {id, pluginId, accountLabel?, authKind, status, createdAt}` (records a connection of a test vendor module, `test_echo`/`test_upper`/`test_down`, without a sign-in; builds with the `test-vendors` feature only; M10 E2E until Settings › Plugins lands in M12) | NotFound |
 | `test_plugin_price` | `{cents}` | — (what `test_echo__charge` costs from now on, so an amount can change between approval and execution, F-PL-06 AC2; `test-vendors` builds) | — |
 | `test_plugin_allowlist` | `{pluginIds?}` | — (a Team allowlist fixture as if the org's policy listed these plugins; `null` clears it, F-PL-05 AC2) | — |
@@ -883,6 +893,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `app:deep-link` | `DeepLink {route, params}` | deeplink service | F-SH-13 |
 | `app:subsystem-failed` | `{name, code, restarts}` | Supervisor | §5.2 |
 | `app:min-version` | `{minVersion?, graceUntil?, modal}` (`null`s: a lower minimum cleared the notice) | api client (header watcher) → updater service | F-SH-06 |
+| `ui:open-settings` | `{page}` (the tray's Dictate line opens Settings › Dictate) | tray | F-SH-13 |
 | `ui:focus` | `{source: SourceRef, flash: true, location?: {workspaceId, tabId}}` (`location` for panes) | focus service (notifications, Conductor, phone) | F-CD-12, F-DB-02 |
 | `settings:changed` | `{key, value}` | settings service | F-SH-04 |
 | `status:changed` | `{records:[StatusRecord], removed:[SessionKey]}` (coalesced 50 ms; `removed` when an agent left its pane) | StatusStore forwarder | F-EN-05, F-DB-01 |
@@ -911,10 +922,15 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `memory:suggestions` | `MemorySuggestions {teammateId, threadId, setId, items:[{kind:"add"\|"remove", text}], rationale, applied, changeId?}` (`applied`: Auto mode already wrote it; `changeId` undoes it) | learn service | F-AG-08 |
 | `auto:changed` / `auto:dismissed` | `AutoRunView` / `{runId}` | Auto supervisor | F-AU-01 |
 | `lanes:stale` | `{workspaceId, lanes:[StaleLane]}` | lane sweeper | F-CD-15 |
-| `dictate:state` | `{state:"idle"\|"listening"\|"transcribing"\|"inserted"\|"error"\|"reconnecting", takeId?}` (to `main` and `dictate-widget`) | TakeMachine | F-DI-07 |
-| `dictate:toast` | `{kind, message, detail}` | voice service | F-DI-07 |
+| `dictate:state` | `DictateStateEvent {state:"idle"\|"listening"\|"transcribing"\|"inserted"\|"copied"\|"error"\|"reconnecting", takeId?, handsFree, composer?, words?}` (to `main` and `dictate-widget`) | Dictate controller | F-DI-07, F-DI-12 |
+| `dictate:toast` | `DictateToast {code, error, app?, detail}` (the UI renders `code` from its catalog; `detail` is the diagnostic for the tooltip, never transcript text; to `main` and `dictate-widget`) | Dictate controller | F-DI-07 |
+| `dictate:level` | `f32` 0–1, at most 30 a second, only while recording (to `dictate-widget` and `main`; D-506) | capture | F-DI-07 |
 | `dictate:key` | `{phase:"down"\|"up", native: bool}` | hotkey verify | F-DI-02, F-DI-11 |
-| `dictate:insert` | `{targetId, text}` (composer direct insertion) | voice service | F-DI-12 |
+| `dictate:verified` | — (press and release both seen) | hotkey verify | F-DI-11 |
+| `dictate:insert` | `{targetId, text}` (composer direct insertion) | Dictate controller | F-DI-12 |
+| `dictate:status` | `DictateStatus` (after a binding, model, permission or hotkey-status change) | voice service | F-DI-02, F-DI-04 |
+| `dictate:models` | `ModelsView` (download progress at most 4 a second, stages, failures) | voice service | F-DI-04 |
+| `dictate:history` | — (a take was stored or the history changed) | voice service | F-DI-08 |
 | `conductor:state` | `{state:"connecting"\|"listening"\|"thinking"\|"speaking"\|"ended", utterance?, chips:[Chip], question?}` (to `main`, `conductor-ring`) | CallController | F-CN-04 |
 | `conductor:ui-action` | `{action, args}` (navigation-only actions) | ActionRegistry | F-CN-02 |
 | `conductor:confirm-request` | `{requestId, summary, kind}` | ActionRegistry | F-CN-03 |

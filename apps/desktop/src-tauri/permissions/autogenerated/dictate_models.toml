@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-models"
+description = "Enables the dictate_models command without any pre-configured scope."
+commands.allow = ["dictate_models"]
+
+[[permission]]
+identifier = "deny-dictate-models"
+description = "Denies the dictate_models command without any pre-configured scope."
+commands.deny = ["dictate_models"]

@@ -4,7 +4,8 @@
 // and the cheatsheet read it from there.
 import { useMemo, useState } from "react";
 import { Keyboard, RotateCcw, Search } from "lucide-react";
-import { Button, ConfirmDialog, HotkeyRecorder, IconButton, Input, Kbd, SettingsGroup, Spinner, type RecordedKeys } from "@tandem/ui";
+import { Button, ConfirmDialog, HotkeyRecorder, IconButton, Input, Kbd, SettingsGroup, SettingsRow, Spinner, type RecordedKeys } from "@tandem/ui";
+import { ShortcutField } from "../dictate/DictatePage";
 import { t } from "../../i18n";
 import { useSettings } from "../../stores/settings";
 import { useUi } from "../../stores/ui";
@@ -158,6 +159,19 @@ export function ShortcutsPage() {
           {t("shortcuts.saveFailed")}
         </p>
       )}
+      {/* The GLOBAL rows (D-808): Dictate's push-to-talk keys work in every app. */}
+      <SettingsGroup label={t("shortcuts.global")}>
+        <SettingsRow
+          label={t("dictate.shortcut.hold")}
+          description={t("dictate.shortcut.holdDesc")}
+          control={() => <ShortcutField mode="hold" label={t("dictate.shortcut.hold")} />}
+        />
+        <SettingsRow
+          label={t("dictate.shortcut.toggle")}
+          description={t("dictate.shortcut.toggleDesc")}
+          control={() => <ShortcutField mode="toggle" label={t("dictate.shortcut.toggle")} />}
+        />
+      </SettingsGroup>
       {groups.length === 0 ? (
         <p className="px-3 py-6 text-center text-base text-fg-muted">{t("shortcuts.noMatch", { query: query.trim() })}</p>
       ) : (

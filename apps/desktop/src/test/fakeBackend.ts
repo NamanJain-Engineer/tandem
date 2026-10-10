@@ -10,6 +10,7 @@ import { useContexts } from "../stores/contexts";
 import { useUsage } from "../stores/usage";
 import type { AppBoot, AuthState, EntitlementView, Limits, WorkspaceSummary } from "@tandem/protocol";
 import { setInvokeBackend } from "../ipc/invoke";
+import { useDictate } from "../stores/dictate";
 import { useBoot } from "../features/shell/useBoot";
 import { useSession } from "../stores/session";
 import { useSettings } from "../stores/settings";
@@ -142,5 +143,6 @@ export function resetStores(): void {
   resetFiles();
   resetGit();
   resetBrowser();
+  useDictate.setState({ status: null, models: null, stats: null, take: null, level: 0, historyRev: 0 });
   resetScratchpad();
 }
