@@ -1839,7 +1839,7 @@ send_message(to, body) ─► check: sender may_message; recipient exists, not d
       ├─ rate guard: mail_turn_log(to) count in last 60 min ≥ 20 → state=queued reason=rate_limit, note "Rate limit reached"
       ▼
  mail row queued (id = dedupe key) ─► delivery worker (single task, FIFO per recipient)
-      ├─ recipient has an idle chat with same conversation_ref → append user turn "From {sender}:\n{body}"
+      ├─ recipient has an idle chat with same conversation_ref → append user turn "From {sender}:\n{body}" (a teammate's body behind `untrusted::label` and in `untrusted::fence`, F-TL-06 rule 8)
       └─ else → create teammate chat titled "{sender}: {first line}" (title_source=mail), attended=0, access=min(default, Edits)
  on success: state=delivered, MailRow events in both transcripts; on wake failure: state=failed (Retry in UI; never auto-retried)
 ```
