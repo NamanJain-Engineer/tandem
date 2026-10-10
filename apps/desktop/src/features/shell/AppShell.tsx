@@ -4,16 +4,23 @@ import { AutoDialog } from "../auto/AutoDialog";
 import { followAuto } from "../../stores/auto";
 import { WorktreeDialogs } from "../code/Worktrees";
 import { useEffect } from "react";
-import { useToast } from "@tandem/ui";
+import { IconButton, useToast } from "@tandem/ui";
+import { Plus } from "lucide-react";
 import { t } from "../../i18n";
 import { useLayout } from "../../stores/layout";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { UpgradeDialog } from "../billing/UpgradeDialog";
+import { WhatsNew } from "../whatsnew/WhatsNew";
 import { CodeMain } from "../code/CodeMain";
 import { CodeRail } from "../code/CodeRail";
 import { commandRuns, setCommandToast } from "../commands/commands";
-import { InterimMain, InterimRail } from "../interim/Interim";
+import { AgentRail } from "../agents/AgentRail";
+import { NewTeammateSheet, useNewTeammate } from "../agents/NewTeammateSheet";
+import { AgentMain } from "../agents/TeammatePage";
+import { TeammateSettings } from "../agents/TeammateSettings";
+import { followSuggestions } from "../agents/Suggestions";
+import { followTeammates } from "../../stores/teammates";
 import { ThreadMain } from "../thread/ThreadMain";
 import { ThreadRail } from "../thread/ThreadRail";
 import { followThreads } from "../../stores/threads";
@@ -76,6 +83,8 @@ export function AppShell() {
   useEffect(followUpdates, []);
   useEffect(followThreads, []);
   useEffect(followRemote, []);
+  useEffect(followTeammates, []);
+  useEffect(followSuggestions, []);
   useVisibilityReport();
   // Debug builds: UI-side counters for the E2E harness (ARCHITECTURE §17.5).
   const dev = useBoot((st) => st.boot?.dev ?? false);
@@ -102,13 +111,22 @@ export function AppShell() {
         return {
           mode: useUi.getState().mode,
           handles: [...terminalHandles.keys()],
-          domPanes: Array.from(document.querySelectorAll<HTMLElement>('[data-testid="pane"]')).map((el) => el.dataset.paneId),
+          domPanes: Array.from(document.querySelectorAll<HTMLElement>('[data-testid="pane"]')).map(
+            (el) => el.dataset.paneId,
+          ),
           activeWorkspace: ws.activeId,
           activeTab: ws.activeTab,
-          layoutTabs: Object.fromEntries(Object.entries(layout.tabs).map(([id, tab]) => [id, { active: tab.active, panes: Object.keys(tab.panes) }])),
+          layoutTabs: Object.fromEntries(
+            Object.entries(layout.tabs).map(([id, tab]) => [
+              id,
+              { active: tab.active, panes: Object.keys(tab.panes) },
+            ]),
+          ),
           picker: layout.picker,
           activeElement: active ? `${active.tagName}.${String(active.className).slice(0, 60)}` : null,
-          dialogs: Array.from(document.querySelectorAll("[role=dialog],[role=alertdialog]")).map((el) => el.textContent?.slice(0, 80)),
+          dialogs: Array.from(document.querySelectorAll("[role=dialog],[role=alertdialog]")).map((el) =>
+            el.textContent?.slice(0, 80),
+          ),
         };
       },
     };
@@ -132,7 +150,18 @@ export function AppShell() {
           <CodeRail />
         </div>
         <div style={{ display: show("agent") }}>
-          <InterimRail mode="agent" collapsed={railCollapsed} />
+          <AgentRail
+            collapsed={railCollapsed}
+            actions={
+              <IconButton
+                size="sm"
+                icon={<Plus size={16} />}
+                label={t("agent.rail.new")}
+                onClick={() => useNewTeammate.getState().show(true)}
+                data-testid="teammate-new"
+              />
+            }
+          />
         </div>
         <div style={{ display: show("thread") }}>
           <ThreadRail collapsed={railCollapsed} />
@@ -148,7 +177,10 @@ export function AppShell() {
           </div>
           {/* Every surface stays mounted; hidden ones are display:none (F-SH-02). */}
           <div className="h-full" style={{ display: mode === "agent" ? "block" : "none" }}>
-            <InterimMain mode="agent" />
+            <AgentMain
+              visible={!settingsOpen && mode === "agent"}
+              settingsFor={(s) => <TeammateSettings key={s.teammate.id} s={s} />}
+            />
           </div>
           <div className="h-full" style={{ display: mode === "thread" ? "block" : "none" }}>
             <ThreadMain visible={!settingsOpen && mode === "thread"} />
@@ -158,9 +190,11 @@ export function AppShell() {
       </div>
       <StatusBar />
       <UpgradeDialog />
+      <WhatsNew />
       <WorktreeDialogs />
       <LaunchSheet />
       <HandoffDialog />
+      <NewTeammateSheet />
       <AutoDialog />
       <Palette />
       <Cheatsheet />

@@ -1,6 +1,15 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BrowserState, Device, IpcError, PaneRecord, PickedElement, Rect, SidebarState, Thread } from "@tandem/protocol";
+import type {
+  BrowserState,
+  Device,
+  IpcError,
+  PaneRecord,
+  PickedElement,
+  Rect,
+  SidebarState,
+  Thread,
+} from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { followBrowser, useBrowser } from "../../stores/browser";
@@ -20,7 +29,8 @@ const PLACE: Rect = { x: 900, y: 80, width: 470, height: 700 };
 const AWAY: Rect = { x: 100, y: 60, width: 200, height: 120 };
 let menuRect: Rect = AWAY;
 
-const domRect = (r: Rect) => ({ ...r, top: r.y, left: r.x, right: r.x + r.width, bottom: r.y + r.height, toJSON: () => r }) as DOMRect;
+const domRect = (r: Rect) =>
+  ({ ...r, top: r.y, left: r.x, right: r.x + r.width, bottom: r.y + r.height, toJSON: () => r }) as DOMRect;
 
 function layOut() {
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
@@ -53,11 +63,21 @@ const state = (patch: Partial<BrowserState> = {}): BrowserState => ({
   ...patch,
 });
 
-const ipcError = (code: string, message: string): IpcError => ({ code: code as IpcError["code"], message, stage: "browser", hint: null, retryable: false });
+const ipcError = (code: string, message: string): IpcError => ({
+  code: code as IpcError["code"],
+  message,
+  stage: "browser",
+  hint: null,
+  retryable: false,
+});
 
 /** A core with one browser page per id. */
 function setup(
-  opts: { unavailable?: string; sidebar?: Partial<SidebarState>; open?: (a?: Record<string, unknown>) => BrowserState } = {},
+  opts: {
+    unavailable?: string;
+    sidebar?: Partial<SidebarState>;
+    open?: (a?: Record<string, unknown>) => BrowserState;
+  } = {},
 ): Call[] {
   const pages = new Map<string, BrowserState>();
   const publish = (s: BrowserState) => {
@@ -65,7 +85,15 @@ function setup(
     emitLocal("browser:state", s);
   };
   return fakeBackend({
-    sidebar_get: () => ({ open: true, tabs: [], active: null, width: 470, fullscreen: false, pinned: false, ...opts.sidebar }),
+    sidebar_get: () => ({
+      open: true,
+      tabs: [],
+      active: null,
+      width: 470,
+      fullscreen: false,
+      pinned: false,
+      ...opts.sidebar,
+    }),
     sidebar_save: (a) => a?.sidebar,
     status_list: () => [],
     browser_open: (a) => {
@@ -92,7 +120,13 @@ function setup(
     browser_set_device: (a) => {
       const id = String(a?.browserId);
       const device = a?.device as Device;
-      const s = { ...(pages.get(id) ?? state({ browserId: id })), device, rotated: a?.rotated === true, zoom: device === "desktop" ? 1 : 0.5, seq: ++seq };
+      const s = {
+        ...(pages.get(id) ?? state({ browserId: id })),
+        device,
+        rotated: a?.rotated === true,
+        zoom: device === "desktop" ? 1 : 0.5,
+        seq: ++seq,
+      };
       pages.set(id, s);
       return s;
     },
@@ -105,7 +139,8 @@ function setup(
       pages.set(id, s);
       return s;
     },
-    browser_picker_brief: (a) => `# Picked elements\n\nPage: http://localhost:5173/react\n\nNote: ${String(a?.note)}\n\n## 1. \`#save\``,
+    browser_picker_brief: (a) =>
+      `# Picked elements\n\nPage: http://localhost:5173/react\n\nNote: ${String(a?.note)}\n\n## 1. \`#save\``,
   });
 }
 
@@ -114,7 +149,15 @@ const pickedEl = (selector: string, component: string | null): PickedElement => 
   selector,
   component: component ? { name: component, framework: "React" } : null,
   rect: { x: 0, y: 0, width: 10, height: 10 },
-  styles: { display: "block", position: "static", font: "", color: "", background: "", margin: "0px", padding: "0px" },
+  styles: {
+    display: "block",
+    position: "static",
+    font: "",
+    color: "",
+    background: "",
+    margin: "0px",
+    padding: "0px",
+  },
   html: "<button></button>",
   truncated: false,
 });
@@ -161,13 +204,18 @@ describe("browser (F-CD-17)", () => {
     const open = calls.find((c) => c.cmd === "browser_open");
     // A blank page, hidden until it has something to show.
     expect(open?.args).toMatchObject({ browserId: "b1", url: null, bounds: PLACE, visible: false });
-    expect(calls.find((c) => c.cmd === "browser_navigate")?.args).toEqual({ browserId: "b1", input: "localhost:5173" });
+    expect(calls.find((c) => c.cmd === "browser_navigate")?.args).toEqual({
+      browserId: "b1",
+      input: "localhost:5173",
+    });
     // What was asked for shows until the page commits.
     expect(address().value).toBe("localhost:5173");
     act(() => emitLocal("browser:state", state({ loading: true })));
     await waitFor(() => expect(lastShown(calls)).toBe(true));
     expect(screen.queryByText("Open a page")).toBeNull();
-    act(() => emitLocal("browser:state", state({ url: "http://localhost:5173/", loading: false, title: "Fixtures" })));
+    act(() =>
+      emitLocal("browser:state", state({ url: "http://localhost:5173/", loading: false, title: "Fixtures" })),
+    );
     expect(address().value).toBe("http://localhost:5173/");
   });
 
@@ -176,7 +224,10 @@ describe("browser (F-CD-17)", () => {
     const initial = state({ url: "http://localhost:5173/", loading: true });
     setup({
       open: () => {
-        emitLocal("browser:state", state({ url: "http://localhost:5173/", loading: false, title: "Fixtures" }));
+        emitLocal(
+          "browser:state",
+          state({ url: "http://localhost:5173/", loading: false, title: "Fixtures" }),
+        );
         return initial;
       },
     });
@@ -190,7 +241,12 @@ describe("browser (F-CD-17)", () => {
   it("F-CD-17 the address bar shows only the committed URL, whatever the page says", async () => {
     setup();
     view();
-    act(() => emitLocal("browser:state", state({ url: "http://localhost:5173/", title: "https://bank.example/login" })));
+    act(() =>
+      emitLocal(
+        "browser:state",
+        state({ url: "http://localhost:5173/", title: "https://bank.example/login" }),
+      ),
+    );
     await waitFor(() => expect(address().value).toBe("http://localhost:5173/"));
     // A page loading somewhere else isn't there yet.
     act(() => emitLocal("browser:state", state({ url: "http://localhost:5173/", loading: true })));
@@ -212,7 +268,9 @@ describe("browser (F-CD-17)", () => {
     act(() => emitLocal("browser:state", state({ url: "http://localhost:5173/" })));
     for (const input of ["javascript:alert(1)", "tandem://settings"]) {
       await go(input);
-      await waitFor(() => expect(screen.getByTestId("browser-blocked").textContent).toContain(`Blocked ${input}.`));
+      await waitFor(() =>
+        expect(screen.getByTestId("browser-blocked").textContent).toContain(`Blocked ${input}.`),
+      );
       // The bar keeps the page that's really there.
       await waitFor(() => expect(address().value).toBe("http://localhost:5173/"));
     }
@@ -266,21 +324,37 @@ describe("browser (F-CD-17)", () => {
     const calls = setup();
     view("http://localhost:5173/");
     act(() => emitLocal("browser:state", state({ url: "http://localhost:5173/" })));
-    await waitFor(() => expect((screen.getByTestId("browser-device") as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((screen.getByTestId("browser-device") as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.keyDown(screen.getByTestId("browser-device"), { key: "Enter" });
     fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Phone · 390 × 844" }));
-    await waitFor(() => expect(screen.getByTestId("browser-device-label").textContent).toBe("390 × 844 · 50%"));
-    expect(calls.find((c) => c.cmd === "browser_set_device")?.args).toEqual({ browserId: "b1", device: "phone", rotated: false });
+    await waitFor(() =>
+      expect(screen.getByTestId("browser-device-label").textContent).toBe("390 × 844 · 50%"),
+    );
+    expect(calls.find((c) => c.cmd === "browser_set_device")?.args).toEqual({
+      browserId: "b1",
+      device: "phone",
+      rotated: false,
+    });
     fireEvent.keyDown(screen.getByTestId("browser-device"), { key: "Enter" });
     fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Rotate" }));
-    await waitFor(() => expect(screen.getByTestId("browser-device-label").textContent).toBe("844 × 390 · 50%"));
+    await waitFor(() =>
+      expect(screen.getByTestId("browser-device-label").textContent).toBe("844 × 390 · 50%"),
+    );
     fireEvent.keyDown(screen.getByTestId("browser-device"), { key: "Enter" });
     fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Tablet · 820 × 1180" }));
-    await waitFor(() => expect(screen.getByTestId("browser-device-label").textContent).toBe("1180 × 820 · 50%"));
+    await waitFor(() =>
+      expect(screen.getByTestId("browser-device-label").textContent).toBe("1180 × 820 · 50%"),
+    );
     fireEvent.keyDown(screen.getByTestId("browser-device"), { key: "Enter" });
     fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Desktop" }));
     await waitFor(() => expect(screen.queryByTestId("browser-device-label")).toBeNull());
-    expect(calls.filter((c) => c.cmd === "browser_set_device").at(-1)?.args).toEqual({ browserId: "b1", device: "desktop", rotated: false });
+    expect(calls.filter((c) => c.cmd === "browser_set_device").at(-1)?.args).toEqual({
+      browserId: "b1",
+      device: "desktop",
+      rotated: false,
+    });
   });
 
   it("F-CD-17 where pages can't be embedded the tab says why and offers the system browser", async () => {
@@ -289,7 +363,11 @@ describe("browser (F-CD-17)", () => {
     expect(await screen.findByText("Pages can't open inside Vibezeo here")).toBeTruthy();
     expect(screen.getByText("Web pages can't be shown inside the app on this system.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open in your browser" }));
-    await waitFor(() => expect(calls.find((c) => c.cmd === "app_open_external")?.args).toEqual({ url: "http://localhost:5173/" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "app_open_external")?.args).toEqual({
+        url: "http://localhost:5173/",
+      }),
+    );
     // It doesn't keep asking.
     await new Promise((r) => setTimeout(r, 600));
     expect(calls.filter((c) => c.cmd === "browser_open")).toHaveLength(1);
@@ -301,22 +379,45 @@ describe("browser (F-CD-17)", () => {
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     const paste = vi.fn();
     terminalHandles.set("pn_ada", { paste } as unknown as TerminalHandle);
-    const agent = { id: "pn_ada", kind: "agent", engineId: "claude", humanName: "Ada", createdAt: 1 } as PaneRecord;
-    useLayout.setState({ tabs: { tb_1: { tree: null, active: null, maximized: null, panes: { pn_ada: agent }, keepEmpty: false } } });
+    const agent = {
+      id: "pn_ada",
+      kind: "agent",
+      engineId: "claude",
+      humanName: "Ada",
+      createdAt: 1,
+    } as PaneRecord;
+    useLayout.setState({
+      tabs: {
+        tb_1: { tree: null, active: null, maximized: null, panes: { pn_ada: agent }, keepEmpty: false },
+      },
+    });
     useThreads.setState({ list: [{ id: "th_1", title: "Fix login" } as Thread], selectedId: "th_1" });
     view("http://localhost:5173/react");
     act(() => emitLocal("browser:state", state({ url: "http://localhost:5173/react" })));
     fireEvent.click(await screen.findByTestId("browser-pick"));
-    await waitFor(() => expect(calls.find((c) => c.cmd === "browser_picker")?.args).toEqual({ browserId: "b1", on: true }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "browser_picker")?.args).toEqual({ browserId: "b1", on: true }),
+    );
     expect(await screen.findByText(/Shift\+click adds one/)).toBeTruthy();
     expect(screen.getByText("Nothing picked yet.")).toBeTruthy();
-    act(() => emitLocal("browser:picker", { browserId: "b1", elements: [pickedEl("#save", "SaveButton"), pickedEl("main > ul > li:nth-of-type(2)", null)] }));
+    act(() =>
+      emitLocal("browser:picker", {
+        browserId: "b1",
+        elements: [pickedEl("#save", "SaveButton"), pickedEl("main > ul > li:nth-of-type(2)", null)],
+      }),
+    );
     const rows = screen.getAllByTestId("browser-picked");
-    expect(rows.map((r) => r.textContent)).toEqual(["1#saveSaveButton (React)", "2main > ul > li:nth-of-type(2)"]);
+    expect(rows.map((r) => r.textContent)).toEqual([
+      "1#saveSaveButton (React)",
+      "2main > ul > li:nth-of-type(2)",
+    ]);
     fireEvent.change(screen.getByRole("textbox", { name: "Note" }), { target: { value: "bigger" } });
     fireEvent.click(screen.getByTestId("browser-brief-copy"));
     await waitFor(() => expect(writeText).toHaveBeenCalled());
-    expect(calls.find((c) => c.cmd === "browser_picker_brief")?.args).toEqual({ browserId: "b1", note: "bigger" });
+    expect(calls.find((c) => c.cmd === "browser_picker_brief")?.args).toEqual({
+      browserId: "b1",
+      note: "bigger",
+    });
     expect(writeText.mock.calls[0]?.[0]).toContain("Note: bigger");
     // Send to: the agent pane gets a paste with nothing after the brief.
     fireEvent.keyDown(screen.getByTestId("browser-brief-send"), { key: "Enter" });
@@ -346,11 +447,15 @@ describe("browser (F-CD-17)", () => {
     expect(pill.textContent).toBe("Browser");
     await waitFor(() => expect(document.activeElement).toBe(address()));
     const id = String(pill.dataset.tabId);
-    act(() => emitLocal("browser:state", state({ browserId: id, url: "http://localhost:5173/", title: "Fixtures" })));
+    act(() =>
+      emitLocal("browser:state", state({ browserId: id, url: "http://localhost:5173/", title: "Fixtures" })),
+    );
     await waitFor(() => expect(pill.textContent).toBe("Fixtures"));
     expect(useSidebar.getState().tabs.find((x) => x.id === id)?.url).toBe("http://localhost:5173/");
     act(() => useSidebar.getState().close(id));
-    await waitFor(() => expect(calls.find((c) => c.cmd === "browser_close")?.args).toEqual({ browserId: id }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "browser_close")?.args).toEqual({ browserId: id }),
+    );
     expect(useBrowser.getState().pages[id]).toBeUndefined();
   });
 
@@ -373,7 +478,13 @@ describe("browser (F-CD-17)", () => {
     await new Promise((r) => setTimeout(r, 300));
     expect(calls.some((c) => c.cmd === "browser_open")).toBe(false);
     fireEvent.click(screen.getByTestId("sidebar-pill-browser"));
-    await waitFor(() => expect(calls.find((c) => c.cmd === "browser_open")?.args).toMatchObject({ browserId: "browser-1", url: "http://localhost:5173/", visible: true }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "browser_open")?.args).toMatchObject({
+        browserId: "browser-1",
+        url: "http://localhost:5173/",
+        visible: true,
+      }),
+    );
   });
 });
 
@@ -391,7 +502,9 @@ describe("browser placement (F-CD-17, D-206)", () => {
     const menu = document.createElement("div");
     menu.setAttribute("role", "menu");
     document.body.append(menu);
-    const at = vi.spyOn(menu, "getBoundingClientRect").mockReturnValue(domRect({ x: 10, y: 10, width: 50, height: 50 }));
+    const at = vi
+      .spyOn(menu, "getBoundingClientRect")
+      .mockReturnValue(domRect({ x: 10, y: 10, width: 50, height: 50 }));
     expect(covered(place)).toBe(false);
     at.mockReturnValue(domRect({ x: 350, y: 120, width: 100, height: 100 }));
     expect(covered(place)).toBe(true);
@@ -422,10 +535,24 @@ describe("browser placement (F-CD-17, D-206)", () => {
   });
 
   it("a pill names a page by its title, else its host or file", () => {
-    const base = { browserId: "b", canBack: false, canForward: false, loading: false, device: "desktop" as const, rotated: false, frame: { x: 0, y: 0, width: 0, height: 0 }, zoom: 1, blocked: null, picking: false, seq: 1 };
+    const base = {
+      browserId: "b",
+      canBack: false,
+      canForward: false,
+      loading: false,
+      device: "desktop" as const,
+      rotated: false,
+      frame: { x: 0, y: 0, width: 0, height: 0 },
+      zoom: 1,
+      blocked: null,
+      picking: false,
+      seq: 1,
+    };
     expect(pageTitle({ ...base, url: "http://localhost:5173/x", title: "  Fixtures " })).toBe("Fixtures");
     expect(pageTitle({ ...base, url: "http://localhost:5173/x", title: "" })).toBe("localhost:5173");
-    expect(pageTitle({ ...base, url: "file:///work/site/index%20page.html", title: "" })).toBe("index page.html");
+    expect(pageTitle({ ...base, url: "file:///work/site/index%20page.html", title: "" })).toBe(
+      "index page.html",
+    );
     expect(pageTitle({ ...base, url: "", title: "" })).toBeNull();
   });
 });

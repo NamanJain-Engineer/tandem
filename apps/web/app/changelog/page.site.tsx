@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SiteFrame } from "../../components/site/SiteFrame";
+import { RELEASES, versionPath } from "../../lib/changelog";
 import { MILESTONES, PROGRESS } from "../../lib/progress";
 import { RELEASE, RELEASE_URL } from "../../lib/release";
 import { SITE } from "../../lib/site";
@@ -26,6 +27,22 @@ export default function ChangelogPage() {
           </a>
           .
         </p>
+      </section>
+      <section aria-labelledby="releases-title" className="mx-auto flex max-w-3xl flex-col gap-3 px-6 pb-8">
+        <h2 id="releases-title" className="text-xl font-semibold tracking-tight">
+          Releases
+        </h2>
+        <ul className="flex flex-col gap-2">
+          {RELEASES.map((r) => (
+            <li key={r.version} className="flex flex-col gap-0.5">
+              <a href={versionPath(r.version)} className="font-medium text-accent hover:underline">
+                {SITE.product} {r.version}
+              </a>
+              {r.summary && <span className="text-sm text-fg-muted">{r.summary.split("\n\n")[0]}</span>}
+            </li>
+          ))}
+        </ul>
+        <h2 className="mt-6 text-xl font-semibold tracking-tight">Milestones</h2>
       </section>
       <ol className="mx-auto flex max-w-3xl flex-col px-6 pb-16">
         {MILESTONES.map((m) => (

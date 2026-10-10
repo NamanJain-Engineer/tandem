@@ -19,9 +19,15 @@ thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
+ts-rs.workspace = true
 
 [dev-dependencies]
 reqwest.workspace = true
+tempfile.workspace = true
+
+[features]
+# Test-only vendor modules (`test_echo` and friends); never in a release.
+test-vendors = []
 
 [lints]
 workspace = true

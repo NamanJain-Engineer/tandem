@@ -32,7 +32,11 @@ function setup(hosts: HostView[] | (() => HostView[])) {
     ssh_hosts_list: () => (typeof hosts === "function" ? hosts() : hosts),
     ssh_connect: () => ({ opId: "op_1" }),
     ssh_host_add: (a) => ({ ...HOST, id: "host_02", sshTarget: String(a?.target) }),
-    ssh_list_dir: (a) => ({ path: a?.path === "" ? "/home/tandem" : String(a?.path), parent: "/home", dirs: ["project", ".config"] }),
+    ssh_list_dir: (a) => ({
+      path: a?.path === "" ? "/home/tandem" : String(a?.path),
+      parent: "/home",
+      dirs: ["project", ".config"],
+    }),
     engines_list: () => [],
   });
   return render(
@@ -76,7 +80,9 @@ describe("Settings › Remote (UI-14, UI-111)", () => {
     expect(screen.getByText("1 workspace")).toBeTruthy();
     expect(screen.getByText("Disconnected")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Connect" }));
-    await waitFor(() => expect(named("ssh_connect")).toEqual([{ cmd: "ssh_connect", args: { hostId: "host_01" } }]));
+    await waitFor(() =>
+      expect(named("ssh_connect")).toEqual([{ cmd: "ssh_connect", args: { hostId: "host_01" } }]),
+    );
   });
 
   it("F-RM-01 Add host sends the target, user, port and key file, then connects", async () => {
@@ -106,7 +112,9 @@ describe("Settings › Remote (UI-14, UI-111)", () => {
     fireEvent.change(await screen.findByLabelText("Host"), { target: { value: "h" } });
     fireEvent.change(screen.getByLabelText("Port"), { target: { value: "70000" } });
     expect(screen.getByText("Use a port from 1 to 65535")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Save and connect" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Save and connect" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
   });
 
   it("F-RM-01.2 a changed host key shows the warning and Trust new key…", async () => {
@@ -121,18 +129,25 @@ describe("Settings › Remote (UI-14, UI-111)", () => {
         prompt: null,
         error: {
           code: "unavailable",
-          message: "The host key for tandem@10.0.0.5:2222 changed. Vibezeo won't connect until you verify it.",
+          message:
+            "The host key for tandem@10.0.0.5:2222 changed. Vibezeo won't connect until you verify it.",
           stage: "host_key",
           hint: null,
           retryable: false,
         },
       });
     });
-    expect(await screen.findByText("Host key changed for Build box. Vibezeo won't connect until you verify it.")).toBeTruthy();
+    expect(
+      await screen.findByText("Host key changed for Build box. Vibezeo won't connect until you verify it."),
+    ).toBeTruthy();
     expect(screen.getByText("Pinned key: SHA256:old")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Trust new key…" }));
     fireEvent.click(await screen.findByRole("button", { name: "Forget the old key" }));
-    await waitFor(() => expect(named("ssh_host_reset_key")).toEqual([{ cmd: "ssh_host_reset_key", args: { hostId: "host_01" } }]));
+    await waitFor(() =>
+      expect(named("ssh_host_reset_key")).toEqual([
+        { cmd: "ssh_host_reset_key", args: { hostId: "host_01" } },
+      ]),
+    );
   });
 
   it("F-RM-01 an unknown host's fingerprint is shown and the answer goes back", async () => {
@@ -143,14 +158,21 @@ describe("Settings › Remote (UI-14, UI-111)", () => {
         opId: "op_7",
         hostId: "host_01",
         stage: "hostkey",
-        prompt: { kind: "hostkey", host: "tandem@10.0.0.5:2222", fingerprint: "SHA256:abc", keyType: "ssh-ed25519" },
+        prompt: {
+          kind: "hostkey",
+          host: "tandem@10.0.0.5:2222",
+          fingerprint: "SHA256:abc",
+          keyType: "ssh-ed25519",
+        },
         error: null,
       });
     });
     expect(await screen.findByText("SHA256:abc")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Trust and connect" }));
     await waitFor(() =>
-      expect(named("ssh_hostkey_decide")).toEqual([{ cmd: "ssh_hostkey_decide", args: { opId: "op_7", accept: true } }]),
+      expect(named("ssh_hostkey_decide")).toEqual([
+        { cmd: "ssh_hostkey_decide", args: { opId: "op_7", accept: true } },
+      ]),
     );
   });
 
@@ -166,10 +188,14 @@ describe("Settings › Remote (UI-14, UI-111)", () => {
         error: null,
       });
     });
-    fireEvent.change(await screen.findByLabelText("tandem@10.0.0.5's password:"), { target: { value: "s3cret" } });
+    fireEvent.change(await screen.findByLabelText("tandem@10.0.0.5's password:"), {
+      target: { value: "s3cret" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() =>
-      expect(named("ssh_askpass_reply")).toEqual([{ cmd: "ssh_askpass_reply", args: { opId: "op_8", secret: "s3cret" } }]),
+      expect(named("ssh_askpass_reply")).toEqual([
+        { cmd: "ssh_askpass_reply", args: { opId: "op_8", secret: "s3cret" } },
+      ]),
     );
     expect(useRemote.getState().ask).toBeNull();
   });
@@ -179,10 +205,17 @@ describe("Settings › Remote (UI-14, UI-111)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Open folder…" }));
     expect(await screen.findByText("project")).toBeTruthy();
     fireEvent.click(screen.getByText("project"));
-    await waitFor(() => expect(named("ssh_list_dir").at(-1)?.args).toEqual({ hostId: "host_01", path: "/home/tandem/project" }));
+    await waitFor(() =>
+      expect(named("ssh_list_dir").at(-1)?.args).toEqual({ hostId: "host_01", path: "/home/tandem/project" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Open this folder" }));
     await waitFor(() =>
-      expect(named("workspace_add")[0]?.args).toEqual({ root: "/home/tandem/project", kind: "ssh", hostId: "host_01", wslDistro: null }),
+      expect(named("workspace_add")[0]?.args).toEqual({
+        root: "/home/tandem/project",
+        kind: "ssh",
+        hostId: "host_01",
+        wslDistro: null,
+      }),
     );
   });
 });

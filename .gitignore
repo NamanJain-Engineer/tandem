@@ -29,3 +29,5 @@ infra/ssh/id_ed25519.pub
 # tandem-host binaries and manifest (scripts/build-tandem-host.sh, CI).
 apps/desktop/src-tauri/resources/tandem-host/*
 !apps/desktop/src-tauri/resources/tandem-host/README.md
+apps/web/.lighthouseci/
+apps/web/.source

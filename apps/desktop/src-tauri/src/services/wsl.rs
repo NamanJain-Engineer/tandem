@@ -429,6 +429,44 @@ mod tests {
     }
 
     #[test]
+    fn f_rm_02_f_ag_06_a_teammate_briefing_is_read_from_its_mnt_path() {
+        let spec = tandem_engines::chat::process::ProcessSpec::new(
+            "/home/ana/.local/bin/claude".into(),
+            vec![
+                "-p".into(),
+                "--append-system-prompt-file".into(),
+                r"C:\Users\ana\.tandem\briefings\th_1.md".into(),
+                "--permission-mode".into(),
+                "default".into(),
+            ],
+            Vec::new(),
+            r"C:\Users\ana".into(),
+        );
+        let there = tandem_core::wslpath::to_wsl_path(r"C:\Users\ana\.tandem\briefings\th_1.md");
+        let out = crate::services::threads::swap_briefing_path(spec.clone(), there.as_deref());
+        let args: Vec<String> = out
+            .args
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args,
+            [
+                "-p",
+                "--append-system-prompt-file",
+                "/mnt/c/Users/ana/.tandem/briefings/th_1.md",
+                "--permission-mode",
+                "default"
+            ]
+        );
+        // No briefing copy: the command is left as it is.
+        assert_eq!(
+            crate::services::threads::swap_briefing_path(spec.clone(), None).args,
+            spec.args
+        );
+    }
+
+    #[test]
     fn f_rm_02_threads_run_the_distros_engine_with_nothing_of_windows() {
         let spec = tandem_engines::chat::process::ProcessSpec::new(
             "/home/ana/.local/bin/claude".into(),

@@ -12,6 +12,7 @@ import shortcuts from "@tandem/protocol/shortcuts.json";
 import { t, type MessageKey } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
+import { useNewTeammate } from "../agents/NewTeammateSheet";
 import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
@@ -119,6 +120,10 @@ export const handlers: Record<string, () => void> = {
   "mode.code": () => switchMode("code"),
   "mode.thread": () => switchMode("thread"),
   "thread.changes": () => useThreads.getState().toggleChanges(),
+  "teammate.new": () => {
+    switchMode("agent");
+    useNewTeammate.getState().show(true);
+  },
   "rail.toggle": () => useUi.getState().toggleRail(),
   "sidebar.toggle": () => useSidebar.getState().toggle(),
   "sidebar.files": () => useSidebar.getState().openTab("files"),
@@ -172,6 +177,7 @@ export const handlers: Record<string, () => void> = {
   "terminal.find_next": onPane((_, paneId) => terminalHandles.get(paneId)?.find("next")),
   "terminal.find_prev": onPane((_, paneId) => terminalHandles.get(paneId)?.find("prev")),
   "terminal.copy_last_output": onPane((_, paneId) => void copyLastOutput(paneId, toast)),
+  "work.find": () => useUi.getState().openFindWork(),
   "billing.plans": () => useUi.getState().openUpgrade(),
   "help.shortcuts": () => useUi.getState().setCheatsheet(!useUi.getState().cheatsheetOpen),
   "help.copy_diagnostics": () => void copyDiagnostics(toast),

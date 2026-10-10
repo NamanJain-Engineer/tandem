@@ -4,9 +4,31 @@
 // address bar shows what the core reports as committed, never what a page
 // says about itself.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, Crosshair, Ellipsis, Globe, Monitor, RotateCw, Smartphone, Tablet, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Crosshair,
+  Ellipsis,
+  Globe,
+  Monitor,
+  RotateCw,
+  Smartphone,
+  Tablet,
+  X,
+} from "lucide-react";
 import type { BrowserCmd, BrowserState, Device, Rect } from "@tandem/protocol";
-import { Banner, Button, ConfirmDialog, EmptyState, IconButton, Input, Menu, Spinner, useToast, type MenuEntry } from "@tandem/ui";
+import {
+  Banner,
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  IconButton,
+  Input,
+  Menu,
+  Spinner,
+  useToast,
+  type MenuEntry,
+} from "@tandem/ui";
 import { t } from "../../i18n";
 import { copyText } from "../../ipc/clipboard";
 import { invoke } from "../../ipc/invoke";
@@ -58,7 +80,9 @@ function DeviceFrame({ state, bounds }: { state: BrowserState; bounds: Rect }) {
         className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-center text-2xs tabular-nums text-fg-muted"
         style={{ height: LABEL }}
       >
-        {zoom < 100 ? t("browser.deviceZoom", { ...size, zoom: String(zoom) }) : t("browser.deviceSize", size)}
+        {zoom < 100
+          ? t("browser.deviceZoom", { ...size, zoom: String(zoom) })
+          : t("browser.deviceSize", size)}
       </div>
       <div
         aria-hidden="true"
@@ -177,7 +201,12 @@ export function BrowserView({ id, url, suspended = false, actions = [] }: Browse
     const was = before.current;
     before.current = page;
     if (!page || !was) return;
-    if (page.url !== was.url || (page.blocked !== null && page.blocked !== was.blocked) || (was.loading && !page.loading)) setPending(null);
+    if (
+      page.url !== was.url ||
+      (page.blocked !== null && page.blocked !== was.blocked) ||
+      (was.loading && !page.loading)
+    )
+      setPending(null);
   }, [page]);
 
   const go = async (text: string) => {
@@ -193,7 +222,8 @@ export function BrowserView({ id, url, suspended = false, actions = [] }: Browse
   };
 
   const command = (cmd: BrowserCmd) => useBrowser.getState().command(id, cmd);
-  const setDevice = (device: Device, rotated: boolean) => useBrowser.getState().setDevice(id, device, rotated);
+  const setDevice = (device: Device, rotated: boolean) =>
+    useBrowser.getState().setDevice(id, device, rotated);
 
   const committed = page?.url || url || "";
   const value = draft ?? pending ?? committed;
@@ -205,9 +235,27 @@ export function BrowserView({ id, url, suspended = false, actions = [] }: Browse
   const target = isWeb(url) ? url : typed ? externalFor(typed) : null;
 
   const devices: MenuEntry[] = [
-    { type: "checkbox", id: "desktop", label: t("browser.device.desktop"), checked: device === "desktop", onCheckedChange: () => setDevice("desktop", false) },
-    { type: "checkbox", id: "phone", label: t("browser.device.phone"), checked: device === "phone", onCheckedChange: () => setDevice("phone", rotated) },
-    { type: "checkbox", id: "tablet", label: t("browser.device.tablet"), checked: device === "tablet", onCheckedChange: () => setDevice("tablet", rotated) },
+    {
+      type: "checkbox",
+      id: "desktop",
+      label: t("browser.device.desktop"),
+      checked: device === "desktop",
+      onCheckedChange: () => setDevice("desktop", false),
+    },
+    {
+      type: "checkbox",
+      id: "phone",
+      label: t("browser.device.phone"),
+      checked: device === "phone",
+      onCheckedChange: () => setDevice("phone", rotated),
+    },
+    {
+      type: "checkbox",
+      id: "tablet",
+      label: t("browser.device.tablet"),
+      checked: device === "tablet",
+      onCheckedChange: () => setDevice("tablet", rotated),
+    },
     { type: "separator", id: "sep" },
     {
       type: "checkbox",
@@ -219,17 +267,37 @@ export function BrowserView({ id, url, suspended = false, actions = [] }: Browse
     },
   ];
   const more: MenuEntry[] = [
-    { id: "external", label: t("browser.openExternal"), disabled: !isWeb(committed), onSelect: () => openExternal(committed) },
-    { id: "copy", label: t("browser.copyAddress"), disabled: !committed, onSelect: () => void copyText(committed) },
+    {
+      id: "external",
+      label: t("browser.openExternal"),
+      disabled: !isWeb(committed),
+      onSelect: () => openExternal(committed),
+    },
+    {
+      id: "copy",
+      label: t("browser.copyAddress"),
+      disabled: !committed,
+      onSelect: () => void copyText(committed),
+    },
     ...(actions.length > 0 ? [{ type: "separator" as const, id: "sep-move" }, ...actions] : []),
     { id: "clear", label: t("browser.clear"), danger: true, onSelect: () => setClearing(true) },
   ];
 
   return (
     <div className="flex h-full flex-col" data-testid="browser-view" data-browser-id={id}>
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-divider px-2" data-testid="browser-toolbar">
+      <div
+        className="flex h-9 shrink-0 items-center gap-1 border-b border-divider px-2"
+        data-testid="browser-toolbar"
+      >
         {/* Tooltips go up: below, the page would cover them. */}
-        <IconButton size="sm" tooltipSide="top" icon={<ArrowLeft size={14} />} label={t("browser.back")} disabled={!page?.canBack} onClick={() => command("back")} />
+        <IconButton
+          size="sm"
+          tooltipSide="top"
+          icon={<ArrowLeft size={14} />}
+          label={t("browser.back")}
+          disabled={!page?.canBack}
+          onClick={() => command("back")}
+        />
         <IconButton
           size="sm"
           tooltipSide="top"
@@ -239,9 +307,22 @@ export function BrowserView({ id, url, suspended = false, actions = [] }: Browse
           onClick={() => command("forward")}
         />
         {loading ? (
-          <IconButton size="sm" tooltipSide="top" icon={<X size={14} />} label={t("browser.stop")} onClick={() => command("stop")} />
+          <IconButton
+            size="sm"
+            tooltipSide="top"
+            icon={<X size={14} />}
+            label={t("browser.stop")}
+            onClick={() => command("stop")}
+          />
         ) : (
-          <IconButton size="sm" tooltipSide="top" icon={<RotateCw size={14} />} label={t("browser.reload")} disabled={!showable} onClick={() => command("reload")} />
+          <IconButton
+            size="sm"
+            tooltipSide="top"
+            icon={<RotateCw size={14} />}
+            label={t("browser.reload")}
+            disabled={!showable}
+            onClick={() => command("reload")}
+          />
         )}
         <Input
           ref={field}
@@ -286,10 +367,31 @@ export function BrowserView({ id, url, suspended = false, actions = [] }: Browse
         />
         <Menu
           align="end"
-          trigger={<IconButton size="sm" tooltipSide="top" icon={DEVICE_ICON[device]} label={t("browser.device")} disabled={!page} data-testid="browser-device" />}
+          trigger={
+            <IconButton
+              size="sm"
+              tooltipSide="top"
+              icon={DEVICE_ICON[device]}
+              label={t("browser.device")}
+              disabled={!page}
+              data-testid="browser-device"
+            />
+          }
           entries={devices}
         />
-        <Menu align="end" trigger={<IconButton size="sm" tooltipSide="top" icon={<Ellipsis size={14} />} label={t("browser.more")} data-testid="browser-more" />} entries={more} />
+        <Menu
+          align="end"
+          trigger={
+            <IconButton
+              size="sm"
+              tooltipSide="top"
+              icon={<Ellipsis size={14} />}
+              label={t("browser.more")}
+              data-testid="browser-more"
+            />
+          }
+          entries={more}
+        />
       </div>
       {blocked !== null && blocked !== dismissed && (
         <Banner tone="warning" onDismiss={() => setDismissed(blocked)} dismissLabel={t("common.dismiss")}>
@@ -306,10 +408,18 @@ export function BrowserView({ id, url, suspended = false, actions = [] }: Browse
               icon={<Globe size={20} />}
               title={t("browser.unavailable.title")}
               body={unavailable}
-              primary={target ? <Button onClick={() => openExternal(target)}>{t("browser.openInBrowser")}</Button> : undefined}
+              primary={
+                target ? (
+                  <Button onClick={() => openExternal(target)}>{t("browser.openInBrowser")}</Button>
+                ) : undefined
+              }
             />
           ) : (
-            <EmptyState icon={<Globe size={20} />} title={t("browser.empty.title")} body={t("browser.empty.body")} />
+            <EmptyState
+              icon={<Globe size={20} />}
+              title={t("browser.empty.title")}
+              body={t("browser.empty.body")}
+            />
           ))}
       </div>
       <ConfirmDialog
@@ -324,7 +434,13 @@ export function BrowserView({ id, url, suspended = false, actions = [] }: Browse
           void useBrowser
             .getState()
             .clearData()
-            .then((err) => toast.show(err ? { tone: "error", title: t("browser.clear.failed"), body: err.message } : { title: t("browser.cleared") }))
+            .then((err) =>
+              toast.show(
+                err
+                  ? { tone: "error", title: t("browser.clear.failed"), body: err.message }
+                  : { title: t("browser.cleared") },
+              ),
+            )
         }
       />
     </div>

@@ -75,6 +75,12 @@ pub fn args(req: &ChatStart) -> Vec<OsString> {
         a.push("--permission-prompt-tool".into());
         a.push(PERMISSION_TOOL.into());
     }
+    // The teammate briefing, from its file: a large one never reaches argv
+    // (F-AG-06 AC2).
+    if let Some(briefing) = &req.briefing {
+        a.push("--append-system-prompt-file".into());
+        a.push(briefing.into());
+    }
     let (mode, disallowed) = permissions(req.access, req.mode);
     a.push("--permission-mode".into());
     a.push(mode.into());

@@ -1,6 +1,17 @@
 import { useEffect, useState } from "react";
 import type { Distro, IpcError } from "@tandem/protocol";
-import { Badge, Button, Callout, Dialog, EmptyState, Input, ListRow, RadioGroup, Skeleton, useToast } from "@tandem/ui";
+import {
+  Badge,
+  Button,
+  Callout,
+  Dialog,
+  EmptyState,
+  Input,
+  ListRow,
+  RadioGroup,
+  Skeleton,
+  useToast,
+} from "@tandem/ui";
 import { Folder, Terminal } from "lucide-react";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
@@ -9,7 +20,11 @@ import { useWorkspaces } from "../../stores/workspaces";
 import { useUi } from "../../stores/ui";
 import { useSession } from "../../stores/session";
 
-type Load = { state: "loading" } | { state: "hidden" } | { state: "error"; message: string } | { state: "ready"; distros: Distro[] };
+type Load =
+  | { state: "loading" }
+  | { state: "hidden" }
+  | { state: "error"; message: string }
+  | { state: "ready"; distros: Distro[] };
 
 /** UI-111's WSL section (F-RM-02): the distros `wsl.exe -l -v` lists, the
  * one plain terminals open in, and "Open WSL folder". Windows only: on any
@@ -25,7 +40,11 @@ export function WslDistros() {
       setLoad({ state: "ready", distros: await invoke<Distro[]>("wsl_distros", {}, { timeoutMs: 30_000 }) });
     } catch (e) {
       const err = e as IpcError;
-      setLoad(err.stage === "wsl" && err.code === "unavailable" ? { state: "hidden" } : { state: "error", message: err.message });
+      setLoad(
+        err.stage === "wsl" && err.code === "unavailable"
+          ? { state: "hidden" }
+          : { state: "error", message: err.message },
+      );
     }
   };
   useEffect(() => {
@@ -55,7 +74,11 @@ export function WslDistros() {
           {load.message}
         </Callout>
       ) : load.distros.length === 0 ? (
-        <EmptyState icon={<Terminal size={20} />} title={t("remote.wsl.empty.title")} body={t("remote.wsl.empty.body")} />
+        <EmptyState
+          icon={<Terminal size={20} />}
+          title={t("remote.wsl.empty.title")}
+          body={t("remote.wsl.empty.body")}
+        />
       ) : (
         <>
           <ul className="flex flex-col gap-1">
@@ -71,7 +94,12 @@ export function WslDistros() {
                     </span>
                   }
                   trailing={
-                    <Button size="sm" variant="secondary" iconLeft={<Folder size={14} />} onClick={() => setOpening(d.name)}>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      iconLeft={<Folder size={14} />}
+                      onClick={() => setOpening(d.name)}
+                    >
                       {t("remote.wsl.openFolder")}
                     </Button>
                   }
@@ -85,7 +113,10 @@ export function WslDistros() {
             onValueChange={(v) => void choose(v)}
             items={[
               { value: "", label: t("remote.wsl.plainWindows") },
-              ...load.distros.map((d) => ({ value: d.name, label: t("remote.wsl.plainIn", { distro: d.name }) })),
+              ...load.distros.map((d) => ({
+                value: d.name,
+                label: t("remote.wsl.plainIn", { distro: d.name }),
+              })),
             ]}
           />
         </>
@@ -111,11 +142,18 @@ function WslFolderDialog({ distro, onClose }: { distro: string | null; onClose: 
     if (!distro) return;
     setAdding(true);
     setError(null);
-    const err = await useWorkspaces.getState().addRemote({ kind: "wsl", root: path.trim(), wslDistro: distro });
+    const err = await useWorkspaces
+      .getState()
+      .addRemote({ kind: "wsl", root: path.trim(), wslDistro: distro });
     setAdding(false);
     if (err) {
       if (err.code === "limit_reached")
-        useUi.getState().openUpgrade({ kind: "workspaces", limit: useSession.getState().entitlement?.limits.workspaces ?? 3 });
+        useUi
+          .getState()
+          .openUpgrade({
+            kind: "workspaces",
+            limit: useSession.getState().entitlement?.limits.workspaces ?? 3,
+          });
       else setError(err.message);
       return;
     }
@@ -133,7 +171,13 @@ function WslFolderDialog({ distro, onClose }: { distro: string | null; onClose: 
           <Button variant="ghost" onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button variant="primary" data-testid="wsl-folder-open" disabled={!path.trim() || adding} loading={adding} onClick={() => void open()}>
+          <Button
+            variant="primary"
+            data-testid="wsl-folder-open"
+            disabled={!path.trim() || adding}
+            loading={adding}
+            onClick={() => void open()}
+          >
             {t("remote.picker.open")}
           </Button>
         </>

@@ -7,7 +7,16 @@
 // After the run it enforces the M2 checks: no secret patterns in the logs and
 // no analytics or crash hosts in the network log (telemetry is off).
 import { execFileSync, spawnSync, spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Launcher } from "@wdio/cli";
@@ -62,17 +71,23 @@ function checkArtifacts(home: string): string[] {
   if (existsSync(logs)) {
     for (const file of readdirSync(logs)) {
       const body = readFileSync(join(logs, file), "utf8");
-      if (/sk-[A-Za-z0-9]{20}|ghp_[A-Za-z0-9]{20}/.test(body)) problems.push(`secret pattern in logs/${file}`);
+      if (/sk-[A-Za-z0-9]{20}|ghp_[A-Za-z0-9]{20}/.test(body))
+        problems.push(`secret pattern in logs/${file}`);
     }
   }
   const net = join(home, "net.log");
-  if (existsSync(net) && /posthog|sentry/.test(readFileSync(net, "utf8"))) problems.push("analytics or crash host in net.log");
+  if (existsSync(net) && /posthog|sentry/.test(readFileSync(net, "utf8")))
+    problems.push("analytics or crash host in net.log");
   return problems;
 }
 
 function startKeyring(): void {
   if (!process.env.DBUS_SESSION_BUS_ADDRESS) {
-    const address = execFileSync("dbus-daemon", ["--session", "--fork", "--print-address=1"], { encoding: "utf8" }).trim().split("\n")[0];
+    const address = execFileSync("dbus-daemon", ["--session", "--fork", "--print-address=1"], {
+      encoding: "utf8",
+    })
+      .trim()
+      .split("\n")[0];
     if (address) process.env.DBUS_SESSION_BUS_ADDRESS = address;
   }
   const r = spawnSync("gnome-keyring-daemon", ["--unlock", "--components=secrets", "--daemonize"], {
@@ -80,7 +95,8 @@ function startKeyring(): void {
     encoding: "utf8",
     env: process.env,
   });
-  if (r.status !== 0) throw new Error(`gnome-keyring-daemon didn't start (apt-get install gnome-keyring): ${r.stderr}`);
+  if (r.status !== 0)
+    throw new Error(`gnome-keyring-daemon didn't start (apt-get install gnome-keyring): ${r.stderr}`);
   for (const line of r.stdout.split("\n")) {
     const [k, v] = line.split("=");
     if (k && v) process.env[k] = v;
@@ -92,9 +108,16 @@ async function main() {
     execFileSync("pnpm", ["build"], { cwd: desktop, stdio: "inherit" });
     // Perf suites measure an optimised build (the `perf` profile keeps the test harness).
     const cargoProfile = suite && process.env.TANDEM_PERF_BUILD !== "debug" ? ["--profile", "perf"] : [];
-    execFileSync("cargo", ["build", "-p", "tandem-desktop", "--features", "custom-protocol", ...cargoProfile], { cwd: root, stdio: "inherit" });
+    execFileSync(
+      "cargo",
+      ["build", "-p", "tandem-desktop", "--features", "custom-protocol,test-vendors", ...cargoProfile],
+      { cwd: root, stdio: "inherit" },
+    );
     // The status hook and the fake engines (ARCHITECTURE §6.12).
-    execFileSync("cargo", ["build", "-p", "tandem-engines", "--features", "fixtures", "--bins"], { cwd: root, stdio: "inherit" });
+    execFileSync("cargo", ["build", "-p", "tandem-engines", "--features", "fixtures", "--bins"], {
+      cwd: root,
+      stdio: "inherit",
+    });
   }
   // Remote workspaces (E2E-M14): the bundled tandem-host and the sshd
   // fixture (infra/docker-compose.yml, profile remote). Without Docker or
@@ -141,7 +164,15 @@ async function main() {
   const nodeBin = join(home, "nodebin");
   mkdirSync(nodeBin, { recursive: true });
   symlinkSync(process.execPath, join(nodeBin, "node"));
-  const appPath = [nodeBin, "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"].join(":");
+  const appPath = [
+    nodeBin,
+    "/usr/local/sbin",
+    "/usr/local/bin",
+    "/usr/sbin",
+    "/usr/bin",
+    "/sbin",
+    "/bin",
+  ].join(":");
   // TANDEM_* variables never reach panes from the app; the profile sets the
   // test-only ones for the shells and engines started in them.
   const profile = [
@@ -165,7 +196,10 @@ async function main() {
     TANDEM_E2E: "1",
     // TANDEM_PERF_BUILD=debug runs a suite on the debug build (quick
     // iterations; results record the build).
-    TANDEM_APP_BINARY: join(root, suite && process.env.TANDEM_PERF_BUILD !== "debug" ? "target/perf/tandem" : "target/debug/tandem"),
+    TANDEM_APP_BINARY: join(
+      root,
+      suite && process.env.TANDEM_PERF_BUILD !== "debug" ? "target/perf/tandem" : "target/debug/tandem",
+    ),
     TANDEM_API_URL: API,
     TANDEM_WEB_URL: WEB,
     TANDEM_OPEN_URL_CMD: opener,
@@ -187,6 +221,8 @@ async function main() {
     TANDEM_FAKE_SAVE_PATH: join(home, "save-path.txt"),
     TANDEM_HOOK_BIN: join(root, "target/debug/tandem-hook"),
     TANDEM_SPAWN_LOG: join(home, "spawn.log"),
+    // "Create with AI" answers from this file (debug builds; E2E-M10-7, D-8).
+    TANDEM_FIXTURE_TEAMMATE_DRAFT: join(home, "teammate-draft.json"),
     // The local update feed (scripts/mock-update-feed.ts, E2E-M5-7); it
     // answers "nothing new" unless a spec picks a scenario.
     TANDEM_UPDATE_URL: `${FEED}/v1/updates`,
@@ -198,7 +234,9 @@ async function main() {
     TANDEM_DETECT_SYSTEM_DIRS: "",
     TANDEM_DETECT_NO_NPM: "1",
     ...(suite ? { TANDEM_MOCHA_TIMEOUT: "900000" } : {}),
-    PLAYWRIGHT_CHROMIUM: process.env.PLAYWRIGHT_CHROMIUM ?? (existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : ""),
+    PLAYWRIGHT_CHROMIUM:
+      process.env.PLAYWRIGHT_CHROMIUM ??
+      (existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : ""),
     PATH: process.env.PATH ?? "",
     // The specs are written for a zsh login shell (E2E-M4-1 writes ~/.zshrc),
     // and the runner's own login shell may put a real engine on PATH through
@@ -238,23 +276,37 @@ async function main() {
   }
   let feed: ChildProcess | undefined;
   if (!(await up(`${FEED}/health`))) {
-    feed = startDetached(join(root, "node_modules/.bin/tsx"), ["scripts/mock-update-feed.ts", "--port", "8790", "--scenario", "none"], {});
+    feed = startDetached(
+      join(root, "node_modules/.bin/tsx"),
+      ["scripts/mock-update-feed.ts", "--port", "8790", "--scenario", "none"],
+      {},
+    );
     await waitUp(`${FEED}/health`, 30);
   } else {
     await fetch(`${FEED}/__scenario`, { method: "POST", body: JSON.stringify({ scenario: "none" }) });
   }
 
   let fixtures: ChildProcess | undefined;
-  const fixturesUp = async () => (await fetch(`${FIXTURES}/health`).then((r) => r.text()).catch(() => "")) === "ok";
+  const fixturesUp = async () =>
+    (await fetch(`${FIXTURES}/health`)
+      .then((r) => r.text())
+      .catch(() => "")) === "ok";
   if (!(await fixturesUp())) {
-    fixtures = startDetached(join(root, "node_modules/.bin/tsx"), ["scripts/serve-fixtures.ts", "--port", "5173"], {});
+    fixtures = startDetached(
+      join(root, "node_modules/.bin/tsx"),
+      ["scripts/serve-fixtures.ts", "--port", "5173"],
+      {},
+    );
     for (let i = 0; i < 60 && !(await fixturesUp()); i++) await new Promise((r) => setTimeout(r, 500));
     if (!(await fixturesUp())) throw new Error(`${FIXTURES} didn't come up (is something else on :5173?)`);
   }
 
   let code = 1;
   try {
-    const launcher = new Launcher(join(desktop, "e2e/wdio.conf.ts"), spec ? { spec: [join(desktop, spec)] } : {});
+    const launcher = new Launcher(
+      join(desktop, "e2e/wdio.conf.ts"),
+      spec ? { spec: [join(desktop, spec)] } : {},
+    );
     code = (await launcher.run()) ?? 1;
   } finally {
     stop(api);

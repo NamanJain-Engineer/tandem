@@ -27,6 +27,7 @@ import { orgRoutes } from "./routes/orgs";
 import { ssoRoutes } from "./routes/sso";
 import { sttRoutes } from "./routes/stt";
 import { testRoutes } from "./routes/testRoutes";
+import { voiceRoutes } from "./routes/voice";
 import { webhookRoutes } from "./routes/webhooks";
 
 /**
@@ -65,6 +66,7 @@ export function createApp(deps: Deps) {
   app.route("/v1/ai", aiRoutes(deps));
   app.route("/v1/auto", autoRoutes(deps));
   app.route("/v1/stt", sttRoutes(deps));
+  app.route("/v1/voice", voiceRoutes(deps));
   app.route("/v1/orgs", orgRoutes(deps));
   app.route("/v1/sso", ssoRoutes(deps));
   app.route("/v1/audit", auditRoutes(deps));

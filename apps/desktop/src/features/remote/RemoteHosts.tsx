@@ -38,7 +38,10 @@ const STAGE: Record<string, MessageKey> = {
 };
 
 /** What the row says about its connection. */
-function useHostStatus(h: HostView): { text: string; tone: "done" | "working" | "waiting" | "error" | "idle" } {
+function useHostStatus(h: HostView): {
+  text: string;
+  tone: "done" | "working" | "waiting" | "error" | "idle";
+} {
   const attempt = useRemote((s) => s.attempts[h.id]);
   if (h.state === "connected") return { text: t("remote.state.connected"), tone: "done" };
   if (h.state === "reconnecting") return { text: t("remote.state.reconnecting"), tone: "waiting" };
@@ -77,7 +80,12 @@ function HostRow({ h, onOpenFolder }: { h: HostView; onOpenFolder: (h: HostView)
             {busy && <Spinner size={14} label={status.text} />}
             {isUp(h.state) ? (
               <>
-                <Button size="sm" variant="primary" iconLeft={<Folder size={14} />} onClick={() => onOpenFolder(h)}>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  iconLeft={<Folder size={14} />}
+                  onClick={() => onOpenFolder(h)}
+                >
                   {t("remote.openFolder")}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => void disconnect(h.id)}>
@@ -130,9 +138,7 @@ function HostRow({ h, onOpenFolder }: { h: HostView; onOpenFolder: (h: HostView)
         body={t("remote.remove.body")}
         confirmLabel={t("remote.remove")}
         danger
-        onConfirm={() =>
-          void remove(h.id).then((e) => e && show({ tone: "error", title: e.message }))
-        }
+        onConfirm={() => void remove(h.id).then((e) => e && show({ tone: "error", title: e.message }))}
       />
       <ConfirmDialog
         open={confirmKey}
@@ -169,7 +175,8 @@ function AddHost({ open, onOpenChange }: { open: boolean; onOpenChange: (o: bool
     }
   }, [open]);
   const portNumber = port.trim() === "" ? null : Number(port);
-  const portBad = portNumber !== null && !(Number.isInteger(portNumber) && portNumber > 0 && portNumber < 65536);
+  const portBad =
+    portNumber !== null && !(Number.isInteger(portNumber) && portNumber > 0 && portNumber < 65536);
   const save = async () => {
     setSaving(true);
     setError(null);
@@ -220,7 +227,12 @@ function AddHost({ open, onOpenChange }: { open: boolean; onOpenChange: (o: bool
           void save();
         }}
       >
-        <Input label={t("remote.add.name")} value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t("remote.add.namePlaceholder")} />
+        <Input
+          label={t("remote.add.name")}
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder={t("remote.add.namePlaceholder")}
+        />
         <Input
           label={t("remote.add.host")}
           data-testid="remote-add-host"
@@ -319,7 +331,12 @@ export function RemoteFolderPicker({ host, onClose }: { host: HostView | null; o
     setAdding(false);
     if (err) {
       if (err.code === "limit_reached")
-        useUi.getState().openUpgrade({ kind: "workspaces", limit: useSession.getState().entitlement?.limits.workspaces ?? 3 });
+        useUi
+          .getState()
+          .openUpgrade({
+            kind: "workspaces",
+            limit: useSession.getState().entitlement?.limits.workspaces ?? 3,
+          });
       else show({ tone: "error", title: err.message });
       return;
     }
@@ -338,7 +355,13 @@ export function RemoteFolderPicker({ host, onClose }: { host: HostView | null; o
           <Button variant="ghost" onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button variant="primary" data-testid="remote-picker-open" disabled={!path || adding} loading={adding} onClick={() => void open()}>
+          <Button
+            variant="primary"
+            data-testid="remote-picker-open"
+            disabled={!path || adding}
+            loading={adding}
+            onClick={() => void open()}
+          >
             {t("remote.picker.open")}
           </Button>
         </>
@@ -365,7 +388,10 @@ export function RemoteFolderPicker({ host, onClose }: { host: HostView | null; o
           </Button>
         </form>
         {error && <Callout tone="error">{error}</Callout>}
-        <ul className="max-h-72 overflow-y-auto rounded-sm border border-border" aria-label={t("remote.picker.folders")}>
+        <ul
+          className="max-h-72 overflow-y-auto rounded-sm border border-border"
+          aria-label={t("remote.picker.folders")}
+        >
           {parent && (
             <li>
               <ListRow
@@ -421,7 +447,13 @@ export function RemoteHosts() {
     <section className="flex flex-col gap-3" data-testid="remote-hosts">
       <div className="flex items-center justify-between">
         <h3 className="text-md font-semibold text-fg">{t("remote.ssh.title")}</h3>
-        <Button size="sm" variant="secondary" iconLeft={<Plus size={14} />} data-testid="remote-add" onClick={() => setAdding(true)}>
+        <Button
+          size="sm"
+          variant="secondary"
+          iconLeft={<Plus size={14} />}
+          data-testid="remote-add"
+          onClick={() => setAdding(true)}
+        >
           {t("remote.addHost")}
         </Button>
       </div>

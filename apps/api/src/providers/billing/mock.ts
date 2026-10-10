@@ -60,4 +60,8 @@ export class MockBilling implements BillingProvider {
   async cancelNow(subscriptionId: string) {
     this.calls.push(`cancel:${subscriptionId}`);
   }
+
+  async deleteCustomer(customerId: string) {
+    this.calls.push(`delete_customer:${customerId}`);
+  }
 }

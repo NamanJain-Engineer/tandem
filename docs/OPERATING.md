@@ -124,7 +124,8 @@ Checklists that bite if skipped:
 sh scripts/agent/with-infra.sh bash scripts/gate.sh     # the gate (G): lint, all tests, desktop build, clippy, fmt, protocol drift (~20 min)
 pnpm --filter desktop exec vitest run src/features/thread   # one area's TS tests
 cargo test -p tandem-desktop --lib f_th_16                  # Rust tests by name
-pnpm gen:protocol                                           # regenerate TS types + shortcuts.json
+pnpm gen:protocol                                           # regenerate TS types + shortcuts.json + settings.json
+pnpm gen:docs                                               # just the docs' generated sources (shortcuts, settings)
 
 # Desktop E2E (real Tauri binary via tauri-driver; builds first, ~10 min for all 60 files)
 sh scripts/agent/with-infra.sh dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e
@@ -177,7 +178,9 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
 1. Full E2E regression green; gate green.
 2. Bump the version in `apps/desktop/src-tauri/tauri.conf.json`,
    `apps/desktop/package.json` and the root `Cargo.toml` (Cargo.lock follows).
-   Add a `## x.y.z` section to `CHANGELOG.md`: only what the build really does,
+   Add a `## x.y.z` section to `CHANGELOG.md` in its format (a summary, then `### Added` /
+   `Changed` / `Fixed` / `Security`, each bullet tagged `[lin]`, `[mac]`, `[win]` or `[all]`;
+   `pnpm exec tsx scripts/check-changelog.ts` checks it): only what the build really does,
    and plan limits stated (for example, the six-thread grid is Pro-only).
 3. `TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run` (needs ~5 GB free;
    `TANDEM_HOSTED=0` = no hosted services, the Free plan runs locally, nothing is
@@ -188,7 +191,9 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    display (see the script's header).
 5. Site: copy `dist/Vibezeo_x.y.z_amd64-unsigned.deb` to
    `apps/web/public/downloads/Vibezeo_x.y.z_amd64.deb`, remove the old one,
-   regenerate `SHA256SUMS` (`sha256sum Vibezeo_x.y.z_amd64.deb > SHA256SUMS`), and
+   regenerate the checksums (`sha256sum Vibezeo_x.y.z_amd64.deb | tee SHA256SUMS > SHA256SUMS.txt`;
+   the site links the `.txt`, which downloads under its own name: an extension-less file gets a
+   trailing-slash redirect), and
    update `apps/web/lib/release.ts` (version, file names), `apps/web/lib/progress.ts`
    (milestone entries and counts taken from the gate output and the spec files) and
    the home page's feature and roadmap lists. The site tests check the file exists.
@@ -211,9 +216,9 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
 - Check a site change before deploying: `pnpm --filter web exec vitest run`,
   `pnpm --filter web build:site`, the home page's demo in a real browser
   (`PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium pnpm --filter web test:site`,
-  against `apps/web/out`), Lighthouse on `/` (90 or more for performance and
-  accessibility; measure behind a compressing server such as `npx serve out`,
-  since Vercel compresses and `http.server` doesn't), then walk the demo:
+  against `apps/web/out`), Lighthouse CI on `/` and `/pricing/`
+  (`CHROME_PATH=/opt/pw-browsers/chromium pnpm --filter web lhci`: 90 or more for
+  performance and accessibility, three runs each, served compressed), then walk the demo:
   `(cd apps/web/public && python3 -m http.server 4321 &)` and
   `node scripts/agent/demo-walkthrough.mjs /tmp/demo-shots` (screenshots plus any
   console errors). A clean-clone build with Vercel's exact install command is the
@@ -223,11 +228,17 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
   the owner merges on GitHub). Vercel builds in a few minutes.
 - After deploying, verify on the live site:
   ```bash
-  curl -sI https://vibezeo.com/ | grep -iE "^(HTTP|content-security-policy)"
-  curl -s https://vibezeo.com/ | grep -o "Released · [0-9.]*"
-  curl -sI https://vibezeo.com/demo/app/ | head -1
-  curl -sI https://vibezeo.com/downloads/Vibezeo_x.y.z_amd64.deb | head -1
-  curl -s https://vibezeo.com/downloads/SHA256SUMS
+  # Status codes with -w: through the agent proxy, `curl -sI | head -1` prints the
+  # proxy's "200 Connection Established" instead.
+  for p in / /demo/app/ /docs/ /downloads/Vibezeo_x.y.z_amd64.deb /downloads/SHA256SUMS.txt \
+    /llms.txt /llms-full.txt /openapi.json /api/v1/site-info/; do
+    echo "$p $(curl -s -o /dev/null -w '%{http_code}' https://vibezeo.com$p)"; done
+  # /api/v1/site-info answers 308 to its trailing-slash form, which is the JSON (D-135).
+  curl -sL https://vibezeo.com/api/v1/site-info | grep -o '"version": "[0-9.]*"'
+  curl -sI https://vibezeo.com/ | grep -iE "^(content-security-policy|x-frame-options)"
+  # React splits the text with <!-- -->: strip it before matching.
+  curl -s https://vibezeo.com/ | sed 's/<!-- -->//g' | grep -o "Released · [0-9.]*"
+  curl -s https://vibezeo.com/downloads/SHA256SUMS.txt
   ```
   and the deployment's status on the `main` commit (GitHub commit status from
   Vercel, or the Vercel dashboard).

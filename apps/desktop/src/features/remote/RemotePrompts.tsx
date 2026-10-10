@@ -21,10 +21,18 @@ export function RemotePrompts() {
         description={t("remote.hostkey.body")}
         footer={
           <>
-            <Button variant="ghost" data-testid="remote-hostkey-reject" onClick={() => useRemote.getState().answerHostKey(false)}>
+            <Button
+              variant="ghost"
+              data-testid="remote-hostkey-reject"
+              onClick={() => useRemote.getState().answerHostKey(false)}
+            >
               {t("remote.hostkey.reject")}
             </Button>
-            <Button variant="primary" data-testid="remote-hostkey-accept" onClick={() => useRemote.getState().answerHostKey(true)}>
+            <Button
+              variant="primary"
+              data-testid="remote-hostkey-accept"
+              onClick={() => useRemote.getState().answerHostKey(true)}
+            >
               {t("remote.hostkey.accept")}
             </Button>
           </>

@@ -19,7 +19,12 @@ function setup(distros: () => Distro[]) {
   calls = fakeBackend({
     wsl_distros: distros,
     workspace_add: (a) => {
-      if (a?.root === "/nope") throw { code: "not_found", message: "That folder doesn't exist in Debian.", stage: "folder_missing" } as IpcError;
+      if (a?.root === "/nope")
+        throw {
+          code: "not_found",
+          message: "That folder doesn't exist in Debian.",
+          stage: "folder_missing",
+        } as IpcError;
       return { workspace: { id: "ws_9" }, tab: { id: "tab_9" } };
     },
   });
@@ -49,7 +54,11 @@ describe("Settings › Remote › WSL (F-RM-02)", () => {
     expect(await screen.findByText("No WSL distributions")).toBeTruthy();
     unmount();
     setup(() => {
-      throw { code: "unavailable", message: "Couldn't run wsl.exe: access denied", stage: "wsl_exe" } as IpcError;
+      throw {
+        code: "unavailable",
+        message: "Couldn't run wsl.exe: access denied",
+        stage: "wsl_exe",
+      } as IpcError;
     });
     expect(await screen.findByText("Couldn't run wsl.exe: access denied")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
@@ -66,9 +75,16 @@ describe("Settings › Remote › WSL (F-RM-02)", () => {
   it("F-RM-02 'Use for plain terminals' saves wsl_default_distro", async () => {
     setup(() => DISTROS);
     fireEvent.click(await screen.findByRole("radio", { name: "Debian" }));
-    await waitFor(() => expect(named("settings_set").at(-1)?.args).toMatchObject({ key: "wsl_default_distro", value: "Debian" }));
+    await waitFor(() =>
+      expect(named("settings_set").at(-1)?.args).toMatchObject({
+        key: "wsl_default_distro",
+        value: "Debian",
+      }),
+    );
     fireEvent.click(screen.getByRole("radio", { name: "Windows (your default shell)" }));
-    await waitFor(() => expect(named("settings_set").at(-1)?.args).toMatchObject({ key: "wsl_default_distro", value: null }));
+    await waitFor(() =>
+      expect(named("settings_set").at(-1)?.args).toMatchObject({ key: "wsl_default_distro", value: null }),
+    );
   });
 
   it("F-RM-02 Open WSL folder adds a wsl workspace in that distro, and shows the core's refusal", async () => {
@@ -82,7 +98,11 @@ describe("Settings › Remote › WSL (F-RM-02)", () => {
     fireEvent.change(input, { target: { value: "/home/ana/shop" } });
     fireEvent.click(screen.getByTestId("wsl-folder-open"));
     await waitFor(() =>
-      expect(named("workspace_add").at(-1)?.args).toMatchObject({ kind: "wsl", root: "/home/ana/shop", wslDistro: "Debian" }),
+      expect(named("workspace_add").at(-1)?.args).toMatchObject({
+        kind: "wsl",
+        root: "/home/ana/shop",
+        wslDistro: "Debian",
+      }),
     );
   });
 

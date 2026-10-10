@@ -55,7 +55,11 @@ function NameDialog({ ask, onClose }: { ask: NameAsk; onClose: () => void }) {
   }, [ask]);
   if (!ask) return null;
   const title =
-    ask.kind === "file" ? t("files.dialog.newFile") : ask.kind === "dir" ? t("files.dialog.newFolder") : t("files.dialog.rename", { name: ask.node?.name ?? "" });
+    ask.kind === "file"
+      ? t("files.dialog.newFile")
+      : ask.kind === "dir"
+        ? t("files.dialog.newFolder")
+        : t("files.dialog.rename", { name: ask.node?.name ?? "" });
   const submit = async () => {
     const clean = name.trim();
     if (!clean || clean.includes("/") || clean.includes("\\") || clean === "." || clean === "..") {
@@ -67,7 +71,10 @@ function NameDialog({ ask, onClose }: { ask: NameAsk; onClose: () => void }) {
     const target = ask.dir ? `${ask.dir}/${clean}` : clean;
     const err =
       ask.kind === "rename" && ask.node
-        ? await store.rename(ask.node.path, `${parentOf(ask.node.path) ? `${parentOf(ask.node.path)}/` : ""}${clean}`)
+        ? await store.rename(
+            ask.node.path,
+            `${parentOf(ask.node.path) ? `${parentOf(ask.node.path)}/` : ""}${clean}`,
+          )
         : await store.create(target, (ask.kind === "dir" ? "dir" : "file") as FsKind);
     setBusy(false);
     if (err) setError(err.message);
@@ -96,7 +103,14 @@ function NameDialog({ ask, onClose }: { ask: NameAsk; onClose: () => void }) {
           void submit();
         }}
       >
-        <Input label={t("files.dialog.name")} value={name} autoFocus onChange={(e) => setName(e.target.value)} error={error ?? undefined} data-testid="files-name-input" />
+        <Input
+          label={t("files.dialog.name")}
+          value={name}
+          autoFocus
+          onChange={(e) => setName(e.target.value)}
+          error={error ?? undefined}
+          data-testid="files-name-input"
+        />
       </form>
     </Dialog>
   );
@@ -146,7 +160,8 @@ export function FilesPanel() {
   const git = useGitContext(context);
   const batches = ctx?.batches ?? 0;
   useEffect(() => {
-    if (batches > 0 && ctxJson) void useGit.getState().refresh(JSON.parse(ctxJson) as NonNullable<typeof context>);
+    if (batches > 0 && ctxJson)
+      void useGit.getState().refresh(JSON.parse(ctxJson) as NonNullable<typeof context>);
   }, [batches, ctxJson]);
   // Picking a change in the narrow layout shows its diff.
   const picked = git?.picked ?? null;
@@ -180,9 +195,17 @@ export function FilesPanel() {
     return (
       <div ref={ref} className="flex h-full flex-col" data-testid="files-panel" data-state={active.kind}>
         {active.kind === "none" ? (
-          <EmptyState icon={<FolderTree size={18} />} title={t("files.none.title")} body={t("files.none.body")} />
+          <EmptyState
+            icon={<FolderTree size={18} />}
+            title={t("files.none.title")}
+            body={t("files.none.body")}
+          />
         ) : (
-          <EmptyState icon={<FolderTree size={18} />} title={t("files.noFolder.title")} body={t("files.noFolder.body")} />
+          <EmptyState
+            icon={<FolderTree size={18} />}
+            title={t("files.noFolder.title")}
+            body={t("files.noFolder.body")}
+          />
         )}
       </div>
     );
@@ -230,7 +253,10 @@ export function FilesPanel() {
         label: isMac() ? t("files.menu.revealMac") : t("files.menu.reveal"),
         onSelect: () => {
           const p = abs(node.path);
-          if (p) void invoke("app_reveal_path", { path: p }).catch((e: { message?: string }) => show({ tone: "error", title: e.message ?? "" }));
+          if (p)
+            void invoke("app_reveal_path", { path: p }).catch((e: { message?: string }) =>
+              show({ tone: "error", title: e.message ?? "" }),
+            );
         },
       },
       { id: "terminal", label: t("files.menu.openTerminal"), onSelect: () => void openTerminal(dir) },
@@ -245,7 +271,12 @@ export function FilesPanel() {
         },
       });
     }
-    entriesList.push({ id: "delete", label: t("files.menu.delete"), danger: true, onSelect: () => setDeleting(node) });
+    entriesList.push({
+      id: "delete",
+      label: t("files.menu.delete"),
+      danger: true,
+      onSelect: () => setDeleting(node),
+    });
     return entriesList;
   };
 
@@ -264,9 +295,24 @@ export function FilesPanel() {
         data-testid="files-show-ignored"
         onClick={() => store().setShowIgnored(!ctx?.showIgnored)}
       />
-      <IconButton size="sm" icon={<FilePlus size={13} />} label={t("files.newFile")} onClick={() => setAsk({ kind: "file", dir: "" })} />
-      <IconButton size="sm" icon={<FolderPlus size={13} />} label={t("files.newFolder")} onClick={() => setAsk({ kind: "dir", dir: "" })} />
-      <IconButton size="sm" icon={<RefreshCw size={13} />} label={t("files.refresh")} onClick={() => void store().refreshAll()} />
+      <IconButton
+        size="sm"
+        icon={<FilePlus size={13} />}
+        label={t("files.newFile")}
+        onClick={() => setAsk({ kind: "file", dir: "" })}
+      />
+      <IconButton
+        size="sm"
+        icon={<FolderPlus size={13} />}
+        label={t("files.newFolder")}
+        onClick={() => setAsk({ kind: "dir", dir: "" })}
+      />
+      <IconButton
+        size="sm"
+        icon={<RefreshCw size={13} />}
+        label={t("files.refresh")}
+        onClick={() => void store().refreshAll()}
+      />
       <IconButton
         size="sm"
         icon={<ChevronsDownUp size={13} />}
@@ -320,7 +366,8 @@ export function FilesPanel() {
     e.preventDefault();
     const x0 = e.clientX;
     const w0 = divider;
-    const move = (ev: PointerEvent) => setLiveDivider(Math.max(TREE_MIN, Math.min(width - 280, w0 + ev.clientX - x0)));
+    const move = (ev: PointerEvent) =>
+      setLiveDivider(Math.max(TREE_MIN, Math.min(width - 280, w0 + ev.clientX - x0)));
     const up = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
@@ -334,14 +381,20 @@ export function FilesPanel() {
   const view: FilesView = ctx?.view ?? "files";
   const changes = changeCount(git?.panel);
   const header = (
-    <div className="flex h-9 shrink-0 items-center gap-2 border-b border-divider px-2" data-testid="files-header">
+    <div
+      className="flex h-9 shrink-0 items-center gap-2 border-b border-divider px-2"
+      data-testid="files-header"
+    >
       <SegmentedControl
         size="sm"
         label={t("files.view.label")}
         value={view}
         items={[
           { id: "files", label: t("files.view.files") },
-          { id: "changes", label: changes > 0 ? t("files.view.changesCount", { n: changes }) : t("files.view.changes") },
+          {
+            id: "changes",
+            label: changes > 0 ? t("files.view.changesCount", { n: changes }) : t("files.view.changes"),
+          },
         ]}
         onValueChange={(v) => store().setView(v as FilesView)}
       />
@@ -356,7 +409,12 @@ export function FilesPanel() {
     store().setView("files");
     void store().open(`${panel.root.replace(/[\\/]$/, "")}/${path}`);
   };
-  const left = view === "changes" && context ? <ChangesList context={context} view={git} onOpenFile={openChange} /> : tree;
+  const left =
+    view === "changes" && context ? (
+      <ChangesList context={context} view={git} onOpenFile={openChange} />
+    ) : (
+      tree
+    );
   const narrowChanges =
     showDiff && git?.picked && context ? (
       <ChangeDiff

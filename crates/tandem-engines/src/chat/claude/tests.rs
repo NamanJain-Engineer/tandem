@@ -97,6 +97,7 @@ fn start(access: Access, mode: ThreadMode, attended: bool) -> ChatStart {
         mcp: None,
         engine_version: None,
         relocate: None,
+        briefing: None,
     }
 }
 
@@ -315,4 +316,25 @@ async fn f_th_03_4_an_engine_exit_is_reported_with_its_code_and_stderr() {
         }
         other => panic!("unexpected {other:?}"),
     }
+}
+
+/// F-AG-06 AC2: a 100 KB briefing reaches Claude as a file named in argv,
+/// never as argv text.
+#[test]
+fn f_ag_06_2_a_100_kb_briefing_goes_by_file_not_argv() {
+    let dir = tempfile::tempdir().expect("dir");
+    let path = dir.path().join("th_1.md");
+    let text = format!("<brief>{}</brief>", "b".repeat(100 * 1024));
+    std::fs::write(&path, &text).expect("write");
+    let mut req = start(Access::Edits, ThreadMode::Act, true);
+    req.briefing = Some(path.clone());
+    let a = args(&req);
+    let at = a
+        .iter()
+        .position(|x| x == "--append-system-prompt-file")
+        .expect("the flag");
+    assert_eq!(a[at + 1], path.as_os_str());
+    let total: usize = a.iter().map(|x| x.len()).sum();
+    assert!(total < 4096, "argv is {total} bytes");
+    assert!(!a.iter().any(|x| x.to_string_lossy().contains("bbbb")));
 }

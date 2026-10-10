@@ -97,3 +97,80 @@ describe("ClaudeAi (D-103)", () => {
     expect(() => selectAi(loadEnv({ AI_PROVIDER: "claude" }))).toThrow("ANTHROPIC_API_KEY");
   });
 });
+
+describe("ClaudeAi tool use and JSON output (F-CN-02, F-CN-05)", () => {
+  const LIST_PANES = {
+    name: "list_panes",
+    description: "List the panes.",
+    input_schema: {
+      type: "object",
+      properties: { workspace: { type: "string" } },
+      additionalProperties: false,
+    },
+  };
+
+  it("F-CN-02 sends the tools, tool choice, effort and a cached system, and returns the tool calls", async () => {
+    const seen: Seen[] = [];
+    const reply = () =>
+      new Response(
+        JSON.stringify({
+          model: "claude-haiku-5-5",
+          stop_reason: "tool_use",
+          content: [
+            { type: "thinking", thinking: "", signature: "sig" },
+            { type: "text", text: "On it." },
+            { type: "tool_use", id: "toolu_1", name: "list_panes", input: { workspace: "w1" } },
+          ],
+          usage: {
+            input_tokens: 90,
+            cache_read_input_tokens: 800,
+            cache_creation_input_tokens: 10,
+            output_tokens: 30,
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    const ai = new ClaudeAi({ apiKey: "k", fetch: fakeFetch([reply], seen) });
+    const req: AiRequest = {
+      feature: "voice_act",
+      model: "claude-haiku-5-5",
+      system: "Doer rules.",
+      messages: [{ role: "user", content: "<request>\nlist the panes\n</request>" }],
+      maxTokens: 4096,
+      tools: [LIST_PANES],
+      toolChoice: "auto",
+      effort: "low",
+      cacheSystem: true,
+    };
+    expect(await ai.complete(req)).toEqual({
+      text: "On it.",
+      tokensIn: 900,
+      tokensOut: 30,
+      model: "claude-haiku-5-5",
+      stopReason: "tool_use",
+      toolCalls: [{ id: "toolu_1", name: "list_panes", input: { workspace: "w1" } }],
+    });
+    expect(JSON.parse(String(seen[0]?.init.body))).toEqual({
+      model: "claude-haiku-5-5",
+      max_tokens: 4096,
+      system: [{ type: "text", text: "Doer rules.", cache_control: { type: "ephemeral" } }],
+      messages: req.messages,
+      tools: [LIST_PANES],
+      tool_choice: { type: "auto" },
+      output_config: { effort: "low" },
+    });
+  });
+
+  it("F-CN-05 asks for JSON by schema, and leaves effort out for a model that doesn't take it", async () => {
+    const seen: Seen[] = [];
+    const ai = new ClaudeAi({ apiKey: "k", fetch: fakeFetch([ok('{"matches":[]}')], seen) });
+    const schema = { type: "object", properties: {}, additionalProperties: false };
+    const out = await ai.complete({ ...REQ, feature: "voice_resolve", effort: "low", jsonSchema: schema });
+    expect(out.text).toBe('{"matches":[]}');
+    expect(out.toolCalls).toBeUndefined();
+    const body = JSON.parse(String(seen[0]?.init.body)) as Record<string, unknown>;
+    expect(body.output_config).toEqual({ format: { type: "json_schema", schema } });
+    expect(body.system).toBe(REQ.system);
+    expect(body.tools).toBeUndefined();
+  });
+});

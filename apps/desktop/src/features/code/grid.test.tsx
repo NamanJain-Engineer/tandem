@@ -1,6 +1,13 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BrowserState, PaneRecord, SidebarState, Tab, TabLayout, WorkspaceSummary } from "@tandem/protocol";
+import type {
+  BrowserState,
+  PaneRecord,
+  SidebarState,
+  Tab,
+  TabLayout,
+  WorkspaceSummary,
+} from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { setInvokeBackend } from "../../ipc/invoke";
@@ -38,7 +45,11 @@ vi.mock("./RestoredScrollback", async () => {
   const React = await import("react");
   return {
     RestoredScrollback: ({ paneId }: { paneId: string }) =>
-      React.createElement("div", { "data-testid": "restored-scrollback", "data-pane-id": paneId }, "saved output"),
+      React.createElement(
+        "div",
+        { "data-testid": "restored-scrollback", "data-pane-id": paneId },
+        "saved output",
+      ),
   };
 });
 
@@ -119,7 +130,13 @@ function core(
   const tabs: Tab[] = [TAB];
   const panes: PaneRecord[] = (opts.panes ?? []).map((id, i) =>
     opts.paused && id in opts.paused
-      ? { ...pane(id, TAB.id, i), kind: "agent", engineId: "claude", humanName: "Ada", restoreState: "paused" }
+      ? {
+          ...pane(id, TAB.id, i),
+          kind: "agent",
+          engineId: "claude",
+          humanName: "Ada",
+          restoreState: "paused",
+        }
       : opts.browsers && id in opts.browsers
         ? { ...pane(id, TAB.id, i), kind: "browser", browserUrl: opts.browsers[id] ?? null }
         : pane(id, TAB.id, i),
@@ -214,7 +231,8 @@ function core(
         ...pane(`pn_${++n}`, String(a?.tabId), 100 + n),
         kind: String(a?.kind),
         engineId: (a?.engineId as string | undefined) ?? null,
-        humanName: a?.kind === "agent" ? (names[panes.filter((x) => x.kind === "agent").length] ?? null) : null,
+        humanName:
+          a?.kind === "agent" ? (names[panes.filter((x) => x.kind === "agent").length] ?? null) : null,
         browserUrl: a?.kind === "browser" ? ((a?.url as string | null | undefined) ?? null) : null,
       };
       panes.push(p);
@@ -575,7 +593,9 @@ describe("pane grid (F-CD-02)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close Shell · 1" }));
     const grid = await screen.findByTestId("launch-grid");
     await waitFor(() => expect(within(grid).getByTestId("tile-claude")).toBeTruthy());
-    const tiles = within(grid).getAllByRole("button").filter((b) => b.dataset.testid?.startsWith("tile-"));
+    const tiles = within(grid)
+      .getAllByRole("button")
+      .filter((b) => b.dataset.testid?.startsWith("tile-"));
     expect(tiles.map((b) => b.dataset.testid)).toEqual(["tile-claude", "tile-shell"]);
     const more = within(grid).getByTestId("more-engines");
     expect(more.textContent).toContain("1 more not installed");
@@ -592,11 +612,15 @@ describe("pane grid (F-CD-02)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close Shell · 1" }));
     const diag = await screen.findByTestId("engines-diagnostics");
     // The cached report shows at once, before any Check again (a webview reload).
-    await waitFor(() => expect(within(diag).getByTestId("shells-asked").textContent).toContain("/bin/zsh -lic"));
+    await waitFor(() =>
+      expect(within(diag).getByTestId("shells-asked").textContent).toContain("/bin/zsh -lic"),
+    );
     expect(calls.some((c) => c.cmd === "engines_detect")).toBe(false);
     fireEvent.click(within(diag).getByTestId("check-again"));
     await waitFor(() => expect(calls.some((c) => c.cmd === "engines_detect")).toBe(true));
-    await waitFor(() => expect(within(diag).getByTestId("shells-asked").textContent).toContain("/bin/zsh -lic"));
+    await waitFor(() =>
+      expect(within(diag).getByTestId("shells-asked").textContent).toContain("/bin/zsh -lic"),
+    );
     expect(within(diag).getByText(/~\/\.nvm\/versions\/node/)).toBeTruthy();
   });
 
@@ -616,7 +640,9 @@ describe("pane grid (F-CD-02)", () => {
     const paneId = paneEls()[0]?.dataset.paneId ?? "";
     act(() => emitLocal("pty:mark", { paneId, kind: "A", exit: null, ts: 1 }));
     await waitFor(() =>
-      expect(calls.find((c) => c.cmd === "pty_write" && c.args?.paneId === paneId)?.args?.data).toBe("npm install -g kimi-cli\r"),
+      expect(calls.find((c) => c.cmd === "pty_write" && c.args?.paneId === paneId)?.args?.data).toBe(
+        "npm install -g kimi-cli\r",
+      ),
     );
     act(() => emitLocal("pty:mark", { paneId, kind: "D", exit: 0, ts: 2 }));
     await waitFor(() => expect(calls.some((c) => c.cmd === "engines_detect")).toBe(true));
@@ -634,7 +660,9 @@ describe("pane grid (F-CD-02)", () => {
       fireEvent.click(within(picker).getByTestId("tile-claude"));
       await waitFor(() => expect(document.querySelector("[role=dialog]")).toBeNull());
     }
-    await waitFor(() => expect(screen.getAllByTestId("pane-name").map((el) => el.textContent)).toEqual(["Ada", "Bea"]));
+    await waitFor(() =>
+      expect(screen.getAllByTestId("pane-name").map((el) => el.textContent)).toEqual(["Ada", "Bea"]),
+    );
     fireEvent.doubleClick(screen.getAllByTestId("pane-name")[1] as HTMLElement);
     const input = await screen.findByRole("textbox", { name: "New name for Bea" });
     fireEvent.change(input, { target: { value: "Ada" } });
@@ -642,7 +670,9 @@ describe("pane grid (F-CD-02)", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("Another pane is already called Ada");
     fireEvent.change(input, { target: { value: "Rhea" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(screen.getAllByTestId("pane-name").map((el) => el.textContent)).toEqual(["Ada", "Rhea"]));
+    await waitFor(() =>
+      expect(screen.getAllByTestId("pane-name").map((el) => el.textContent)).toEqual(["Ada", "Rhea"]),
+    );
   });
 
   it("F-CD-12.2 closing a working agent asks first and closes only after Stop and close", async () => {
@@ -658,7 +688,21 @@ describe("pane grid (F-CD-02)", () => {
     await waitFor(() => expect(document.querySelector("[role=dialog]")).toBeNull());
     const agent = paneEls()[1]?.dataset.paneId ?? "";
     act(() =>
-      useStatus.getState().apply([{ key: `pane:${agent}`, status: "working", reason: null, since: 1, ts: 1, tool: null, title: null, preview: null }], []),
+      useStatus.getState().apply(
+        [
+          {
+            key: `pane:${agent}`,
+            status: "working",
+            reason: null,
+            since: 1,
+            ts: 1,
+            tool: null,
+            title: null,
+            preview: null,
+          },
+        ],
+        [],
+      ),
     );
     fireEvent.click(within(paneEls()[1] as HTMLElement).getByRole("button", { name: /^Close / }));
     const dialog = await screen.findByRole("alertdialog");
@@ -666,7 +710,9 @@ describe("pane grid (F-CD-02)", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Keep running" }));
     expect(calls.some((c) => c.cmd === "pane_close")).toBe(false);
     fireEvent.click(within(paneEls()[1] as HTMLElement).getByRole("button", { name: /^Close / }));
-    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Stop and close" }));
+    fireEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Stop and close" }),
+    );
     await waitFor(() => expect(paneEls()).toHaveLength(1));
     expect(calls.filter((c) => c.cmd === "pane_close").map((c) => c.args?.paneId)).toEqual([agent]);
   });
@@ -674,13 +720,25 @@ describe("pane grid (F-CD-02)", () => {
   it("F-CD-12.3 ui:focus shows the pane and flashes it for 1.2 s", async () => {
     core({
       panes: ["pn_a", "pn_b"],
-      tree: { type: "split", dir: "row", ratio: 0.5, a: { type: "leaf", paneId: "pn_a" }, b: { type: "leaf", paneId: "pn_b" } },
+      tree: {
+        type: "split",
+        dir: "row",
+        ratio: 0.5,
+        a: { type: "leaf", paneId: "pn_a" },
+        b: { type: "leaf", paneId: "pn_b" },
+      },
     });
     renderCode();
     followFocus();
     await waitFor(() => expect(paneEls()).toHaveLength(2));
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    act(() => emitLocal("ui:focus", { source: { type: "pane", paneId: "pn_b" }, flash: true, location: { workspaceId: WS.id, tabId: TAB.id } }));
+    act(() =>
+      emitLocal("ui:focus", {
+        source: { type: "pane", paneId: "pn_b" },
+        flash: true,
+        location: { workspaceId: WS.id, tabId: TAB.id },
+      }),
+    );
     await waitFor(() => expect(paneEls()[1]?.className).toContain("tn-flash"));
     expect(useLayout.getState().tabs[TAB.id]?.active).toBe("pn_b");
     await act(async () => {
@@ -697,7 +755,11 @@ describe("pane grid (F-CD-02)", () => {
 
 describe("restore (F-SH-07)", () => {
   async function restored(paused: Record<string, string | null>) {
-    const backend = core({ panes: Object.keys(paused), tree: { type: "leaf", paneId: Object.keys(paused)[0] }, paused });
+    const backend = core({
+      panes: Object.keys(paused),
+      tree: { type: "leaf", paneId: Object.keys(paused)[0] },
+      paused,
+    });
     await useRestore.getState().load();
     renderCode();
     await waitFor(() => expect(paneEls()).toHaveLength(1));
@@ -775,7 +837,9 @@ describe("browser panes (F-CD-17)", () => {
     fireEvent.click(within(await screen.findByTestId("pane-picker")).getByTestId("tile-browser"));
     await waitFor(() => expect(paneEls()).toHaveLength(2));
     const browserPane = () => paneEls().find((el) => el.dataset.kind === "browser") as HTMLElement;
-    expect(calls.find((c) => c.cmd === "pane_create" && c.args?.kind === "browser")?.args).toMatchObject({ url: null });
+    expect(calls.find((c) => c.cmd === "pane_create" && c.args?.kind === "browser")?.args).toMatchObject({
+      url: null,
+    });
     expect(within(browserPane()).getByTestId("pane-title").textContent).toBe("Browser");
     expect(within(browserPane()).getByText("Open a page")).toBeTruthy();
     // Only the shell has a terminal.
@@ -789,7 +853,13 @@ describe("browser panes (F-CD-17)", () => {
     const { calls } = core({
       panes: ["pn_a", "pn_b"],
       browsers: { pn_b: "http://localhost:5173/" },
-      tree: { type: "split", dir: "row", ratio: 0.5, a: { type: "leaf", paneId: "pn_a" }, b: { type: "leaf", paneId: "pn_b" } },
+      tree: {
+        type: "split",
+        dir: "row",
+        ratio: 0.5,
+        a: { type: "leaf", paneId: "pn_a" },
+        b: { type: "leaf", paneId: "pn_b" },
+      },
     });
     renderCode();
     await waitFor(() => expect(paneEls()).toHaveLength(2));
@@ -799,7 +869,9 @@ describe("browser panes (F-CD-17)", () => {
     await waitFor(() => expect(paneEls()).toHaveLength(1));
     const tab = useSidebar.getState().tabs.find((x) => x.kind === "browser");
     expect(tab).toMatchObject({ title: "Fixtures", url: "http://localhost:5173/" });
-    const moves = calls.filter((c) => c.cmd === "browser_move" || c.cmd === "pane_close").map((c) => [c.cmd, c.args]);
+    const moves = calls
+      .filter((c) => c.cmd === "browser_move" || c.cmd === "pane_close")
+      .map((c) => [c.cmd, c.args]);
     expect(moves).toEqual([
       ["browser_move", { from: "pn_b", to: tab?.id }],
       ["pane_close", { paneId: "pn_b" }],

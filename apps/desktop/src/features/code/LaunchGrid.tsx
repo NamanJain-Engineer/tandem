@@ -43,10 +43,20 @@ function RemoteLaunchGrid({
   if (!list) return <Spinner />;
   const installed = list.filter((e) => e.install);
   // "Claude Code (in Ubuntu)" for a WSL distro, "On <host>" for SSH.
-  const where = host?.kind === "wsl" ? t("picker.inDistro", { distro: host.wslDistro ?? host.label }) : t("picker.onHost", { host: host?.label ?? "" });
+  const where =
+    host?.kind === "wsl"
+      ? t("picker.inDistro", { distro: host.wslDistro ?? host.label })
+      : t("picker.onHost", { host: host?.label ?? "" });
   const tile = (id: string, label: string, glyph: React.ReactNode, detail: string | null, first: boolean) => (
     <li key={id}>
-      <button type="button" data-testid={`tile-${id}`} autoFocus={autoFocus && first} disabled={busy !== null} onClick={() => onPick(id)} className={TILE}>
+      <button
+        type="button"
+        data-testid={`tile-${id}`}
+        autoFocus={autoFocus && first}
+        disabled={busy !== null}
+        onClick={() => onPick(id)}
+        className={TILE}
+      >
         {busy === id ? <Spinner /> : glyph}
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-base font-medium text-fg">{label}</span>
@@ -61,14 +71,40 @@ function RemoteLaunchGrid({
         {installed.map((e, i) =>
           tile(e.spec.id, e.spec.label, <EngineGlyph letters={e.spec.logo} size={20} />, where, i === 0),
         )}
-        {tile("shell", t("picker.terminal"), <SquareTerminal size={20} className="text-fg-muted" aria-hidden="true" />, null, installed.length === 0)}
-        {browser && tile("browser", t("picker.browser"), <Globe size={20} className="text-fg-muted" aria-hidden="true" />, null, false)}
+        {tile(
+          "shell",
+          t("picker.terminal"),
+          <SquareTerminal size={20} className="text-fg-muted" aria-hidden="true" />,
+          null,
+          installed.length === 0,
+        )}
+        {browser &&
+          tile(
+            "browser",
+            t("picker.browser"),
+            <Globe size={20} className="text-fg-muted" aria-hidden="true" />,
+            null,
+            false,
+          )}
       </ul>
       {installed.length === 0 && (
-        <div data-testid="engines-diagnostics" className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3">
-          <p className="text-sm text-fg">{t("picker.noneOnHost", { host: host?.kind === "wsl" ? (host.wslDistro ?? host.label) : (host?.label ?? "") })}</p>
+        <div
+          data-testid="engines-diagnostics"
+          className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3"
+        >
+          <p className="text-sm text-fg">
+            {t("picker.noneOnHost", {
+              host: host?.kind === "wsl" ? (host.wslDistro ?? host.label) : (host?.label ?? ""),
+            })}
+          </p>
           <div>
-            <Button size="sm" variant="secondary" disabled={checking} onClick={() => void check()} data-testid="check-again">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={checking}
+              onClick={() => void check()}
+              data-testid="check-again"
+            >
               {checking ? <Spinner /> : <RefreshCw size={14} aria-hidden="true" />}
               {t("engines.checkAgain")}
             </Button>
@@ -110,9 +146,13 @@ export function LaunchGrid({
   hostId?: string | null;
 }) {
   if (hostId && hostId !== "local") {
-    return <RemoteLaunchGrid hostId={hostId} onPick={onPick} busy={busy} autoFocus={autoFocus} browser={browser} />;
+    return (
+      <RemoteLaunchGrid hostId={hostId} onPick={onPick} busy={busy} autoFocus={autoFocus} browser={browser} />
+    );
   }
-  return <LocalLaunchGrid tabId={tabId} onPick={onPick} busy={busy} autoFocus={autoFocus} browser={browser} />;
+  return (
+    <LocalLaunchGrid tabId={tabId} onPick={onPick} busy={busy} autoFocus={autoFocus} browser={browser} />
+  );
 }
 
 function LocalLaunchGrid({
@@ -134,7 +174,14 @@ function LocalLaunchGrid({
   const [more, setMore] = useState(false);
   const tile = (id: string, label: string, glyph: React.ReactNode, detail: string | null, first: boolean) => (
     <li key={id}>
-      <button type="button" data-testid={`tile-${id}`} autoFocus={autoFocus && first} disabled={busy !== null} onClick={() => onPick(id)} className={TILE}>
+      <button
+        type="button"
+        data-testid={`tile-${id}`}
+        autoFocus={autoFocus && first}
+        disabled={busy !== null}
+        onClick={() => onPick(id)}
+        className={TILE}
+      >
         {busy === id ? <Spinner /> : glyph}
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-base font-medium text-fg">{label}</span>
@@ -148,9 +195,30 @@ function LocalLaunchGrid({
   return (
     <div className="flex flex-col gap-3" data-testid="launch-grid">
       <ul className="grid grid-cols-2 gap-2">
-        {installed.map((e, i) => tile(e.spec.id, e.spec.label, <EngineGlyph letters={e.spec.logo} size={20} />, e.install?.version ?? null, i === 0))}
-        {tile("shell", t("picker.terminal"), <SquareTerminal size={20} className="text-fg-muted" aria-hidden="true" />, null, installed.length === 0)}
-        {browser && tile("browser", t("picker.browser"), <Globe size={20} className="text-fg-muted" aria-hidden="true" />, null, false)}
+        {installed.map((e, i) =>
+          tile(
+            e.spec.id,
+            e.spec.label,
+            <EngineGlyph letters={e.spec.logo} size={20} />,
+            e.install?.version ?? null,
+            i === 0,
+          ),
+        )}
+        {tile(
+          "shell",
+          t("picker.terminal"),
+          <SquareTerminal size={20} className="text-fg-muted" aria-hidden="true" />,
+          null,
+          installed.length === 0,
+        )}
+        {browser &&
+          tile(
+            "browser",
+            t("picker.browser"),
+            <Globe size={20} className="text-fg-muted" aria-hidden="true" />,
+            null,
+            false,
+          )}
       </ul>
       {report?.slowShell && (
         // Known folders were still checked: what's above is real (F-EN-01 AC2).
@@ -159,7 +227,10 @@ function LocalLaunchGrid({
         </p>
       )}
       {installed.length === 0 && (
-        <div data-testid="engines-diagnostics" className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3">
+        <div
+          data-testid="engines-diagnostics"
+          className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3"
+        >
           <p className="text-sm text-fg">{t("engines.noneFound")}</p>
           {report && (
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
@@ -172,7 +243,13 @@ function LocalLaunchGrid({
             </dl>
           )}
           <div>
-            <Button size="sm" variant="secondary" disabled={detecting} onClick={() => void useEngines.getState().detect()} data-testid="check-again">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={detecting}
+              onClick={() => void useEngines.getState().detect()}
+              data-testid="check-again"
+            >
               {detecting ? <Spinner /> : <RefreshCw size={14} aria-hidden="true" />}
               {t("engines.checkAgain")}
             </Button>
@@ -188,16 +265,29 @@ function LocalLaunchGrid({
             onClick={() => setMore((m) => !m)}
             className="inline-flex items-center gap-1 self-start rounded-sm text-sm text-fg-muted hover:text-fg focus-visible:shadow-focus focus-visible:outline-none"
           >
-            {more ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
+            {more ? (
+              <ChevronDown size={14} aria-hidden="true" />
+            ) : (
+              <ChevronRight size={14} aria-hidden="true" />
+            )}
             {t("engines.moreNotInstalled", { n: missing.length })}
           </button>
           {more && (
             <ul className="flex flex-col">
               {missing.map((e) => (
-                <li key={e.spec.id} data-testid={`missing-${e.spec.id}`} className="flex h-9 items-center gap-2 border-b border-divider px-1 last:border-b-0">
+                <li
+                  key={e.spec.id}
+                  data-testid={`missing-${e.spec.id}`}
+                  className="flex h-9 items-center gap-2 border-b border-divider px-1 last:border-b-0"
+                >
                   <EngineGlyph letters={e.spec.logo} size={16} />
                   <span className="flex-1 truncate text-sm text-fg">{e.spec.label}</span>
-                  <Button size="sm" variant="ghost" onClick={() => useInstall.getState().open(e, tabId)} data-testid={`install-${e.spec.id}`}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => useInstall.getState().open(e, tabId)}
+                    data-testid={`install-${e.spec.id}`}
+                  >
                     {t("engines.install")}
                   </Button>
                 </li>
