@@ -8,6 +8,8 @@ perf/results/*.tmp
 dist
 .next
 apps/web/out
+# The browser demo, built from apps/desktop by `pnpm --filter web build:site`.
+apps/web/public/demo/app/
 .vercel
 .turbo
 
@@ -20,3 +22,4 @@ apps/desktop/src-tauri/resources/THIRD_PARTY_NOTICES.md
 test-results/
 playwright-report/
 *.tsbuildinfo
+__pycache__/

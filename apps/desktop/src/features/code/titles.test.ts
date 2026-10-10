@@ -13,6 +13,7 @@ const pane = (id: string, at: number, extra: Partial<PaneRecord> = {}): PaneReco
   humanName: null,
   title: null,
   restoreState: "none",
+  browserUrl: null,
   createdAt: at,
   ...extra,
 });
@@ -22,6 +23,23 @@ const engines = [
 ] as unknown as EngineView[];
 
 describe("pane titles (F-EN-06)", () => {
+  it("F-CD-17 a browser pane is named after its page, else the host it was on, and takes no shell number", () => {
+    const shell = { kind: "terminal", engineId: null };
+    const panes = {
+      a: pane("a", 1, shell),
+      b: pane("b", 2, { kind: "browser", engineId: null, browserUrl: "http://localhost:5173/docs" }),
+      c: pane("c", 3, shell),
+      d: pane("d", 4, { kind: "browser", engineId: null }),
+    };
+    expect(paneTitles(panes, engines, { b: { page: "Fixtures" } })).toEqual({
+      a: "Shell · 1",
+      b: "Fixtures",
+      c: "Shell · 2",
+      d: "Browser",
+    });
+    expect(paneTitles(panes, engines).b).toBe("localhost:5173");
+  });
+
   it("F-EN-06 hook > OSC (spinner stripped) > first prompt (8 words) > Engine · n", () => {
     const panes = { a: pane("a", 1), b: pane("b", 2), c: pane("c", 3), d: pane("d", 4) };
     const titles = paneTitles(panes, engines, {

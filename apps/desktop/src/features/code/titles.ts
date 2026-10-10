@@ -1,6 +1,7 @@
-import type { EngineView, PaneRecord } from "@tandem/protocol";
+import type { BrowserState, EngineView, PaneRecord } from "@tandem/protocol";
 import { create } from "zustand";
 import { t } from "../../i18n";
+import { pageTitle } from "../../stores/browser";
 
 /** What an agent pane's title can come from, besides its record. */
 export type TitleSources = {
@@ -10,7 +11,30 @@ export type TitleSources = {
   osc?: string | null;
   /** The first prompt typed into the pane. */
   firstPrompt?: string | null;
+  /** A browser pane's page title (F-CD-17). */
+  page?: string | null;
 };
+
+/** Browser panes' page titles, from the pages' states. */
+export function browserSources(panes: Record<string, PaneRecord>, pages: Record<string, BrowserState>): Record<string, TitleSources> {
+  const out: Record<string, TitleSources> = {};
+  for (const p of Object.values(panes)) {
+    const page = pages[p.id];
+    if (p.kind === "browser" && page) out[p.id] = { page: pageTitle(page) };
+  }
+  return out;
+}
+
+/** A browser pane's name: its page's title, else the host it was on. */
+function browserTitle(p: PaneRecord, page: string | null | undefined): string {
+  if (page) return page;
+  try {
+    if (p.browserUrl) return new URL(p.browserUrl).host || t("browser.pane");
+  } catch {
+    // Not an address: fall through.
+  }
+  return t("browser.pane");
+}
 
 /** Spinner and status glyphs TUIs put before their titles. */
 const SPINNER = /^[\s⠀-⣿✳✶✻✽✢·*•◐◓◑◒○●◌⏺|/\\-]+/u;
@@ -50,6 +74,7 @@ export function paneTitles(
   const counts = new Map<string, number>();
   return Object.fromEntries(
     sorted.map((p) => {
+      if (p.kind === "browser") return [p.id, browserTitle(p, sources[p.id]?.page)];
       const key = p.kind === "agent" ? (p.engineId ?? "agent") : "shell";
       const n = (counts.get(key) ?? 0) + 1;
       counts.set(key, n);

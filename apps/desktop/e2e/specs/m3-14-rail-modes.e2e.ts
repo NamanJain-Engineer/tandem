@@ -1,12 +1,27 @@
 import { $, browser } from "@wdio/globals";
 import { rmSync } from "node:fs";
-import { addFolder, freshOffline, invoke, mod, paneIds, paneText, relaunch, sendToPane, shellPid, waitForPaneText, waitForShell, workspaceRoots } from "../support/app";
+import {
+  addFolder,
+  freshOffline,
+  invoke,
+  mod,
+  paneIds,
+  paneText,
+  relaunch,
+  sendToPane,
+  shellPid,
+  waitForPaneText,
+  waitForShell,
+  workspaceRoots,
+} from "../support/app";
 
 const base = `/tmp/tandem-e2e-m3-14-${Date.now()}`;
 
 async function rowNames(): Promise<string[]> {
   const names = await browser.execute(() =>
-    Array.from(document.querySelectorAll<HTMLElement>('[data-testid="workspace-row"] [data-testid="rail-row-name"]')).map((el) => el.innerText.trim()),
+    Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid="workspace-row"] [data-testid="rail-row-name"]'),
+    ).map((el) => el.innerText.trim()),
   );
   return names as string[];
 }
@@ -17,7 +32,9 @@ async function count(selector: string): Promise<number> {
 
 async function tabIds(): Promise<string[]> {
   return (await browser.execute(() =>
-    Array.from(document.querySelectorAll<HTMLElement>('[data-testid="tab"]')).map((el) => el.dataset.tabId ?? ""),
+    Array.from(document.querySelectorAll<HTMLElement>('[data-testid="tab"]')).map(
+      (el) => el.dataset.tabId ?? "",
+    ),
   )) as string[];
 }
 
@@ -31,8 +48,16 @@ async function drag(selector: string, to: { x: number; y: number }): Promise<voi
   const at = await el.getLocation();
   const size = await el.getSize();
   const start = { x: Math.round(at.x + size.width / 2), y: Math.round(at.y + size.height / 2) };
-  const action = browser.action("pointer", { parameters: { pointerType: "mouse" } }).move(start).down({ button: 0 });
-  for (let i = 1; i <= 10; i++) action.move({ x: Math.round(start.x + ((to.x - start.x) * i) / 10), y: Math.round(start.y + ((to.y - start.y) * i) / 10), duration: 30 });
+  const action = browser
+    .action("pointer", { parameters: { pointerType: "mouse" } })
+    .move(start)
+    .down({ button: 0 });
+  for (let i = 1; i <= 10; i++)
+    action.move({
+      x: Math.round(start.x + ((to.x - start.x) * i) / 10),
+      y: Math.round(start.y + ((to.y - start.y) * i) / 10),
+      duration: 30,
+    });
   await action.up({ button: 0 }).perform();
 }
 
@@ -62,21 +87,36 @@ describe("E2E-M3-14 rail and modes", () => {
 
   it("F-SH-03.2 dragging a row above the band pins it; tab order and pins survive a relaunch", async () => {
     const top = await locate('[data-testid="workspace-row"]');
-    await drag('[data-testid="workspace-row"][data-root$="/d"]', { x: Math.round(top.x + 40), y: Math.round(top.y - 12) });
-    await browser.waitUntil(async () => (await $('[data-testid="workspace-row"][data-root$="/d"]').getAttribute("data-pinned")) === "true", {
-      timeout: 5_000,
-      timeoutMsg: `rows: ${await rowNames()}`,
+    await drag('[data-testid="workspace-row"][data-root$="/d"]', {
+      x: Math.round(top.x + 40),
+      y: Math.round(top.y - 12),
     });
+    await browser.waitUntil(
+      async () =>
+        (await $('[data-testid="workspace-row"][data-root$="/d"]').getAttribute("data-pinned")) === "true",
+      {
+        timeout: 5_000,
+        timeoutMsg: `rows: ${await rowNames()}`,
+      },
+    );
     // Two tabs in d, reordered by drag.
     await $('button[aria-label="New tab"]').click();
     await browser.waitUntil(async () => (await count('[data-testid="tab"]')) === 2, { timeout: 10_000 });
     const firstTab = await locate('[data-testid="tab"]');
     const ids = await tabIds();
-    await drag(`[data-testid="tab"][data-tab-id="${ids[1]}"] button`, { x: Math.round(firstTab.x + 2), y: Math.round(firstTab.y + 10) });
-    await browser.waitUntil(async () => (await tabIds())[0] === ids[1], { timeout: 5_000, timeoutMsg: `tabs: ${await tabIds()}` });
+    await drag(`[data-testid="tab"][data-tab-id="${ids[1]}"] button`, {
+      x: Math.round(firstTab.x + 2),
+      y: Math.round(firstTab.y + 10),
+    });
+    await browser.waitUntil(async () => (await tabIds())[0] === ids[1], {
+      timeout: 5_000,
+      timeoutMsg: `tabs: ${await tabIds()}`,
+    });
     await relaunch();
     await $('[data-testid="workspace-row"]').waitForExist({ timeout: 20_000 });
-    expect(await $('[data-testid="workspace-row"][data-root$="/d"]').getAttribute("data-pinned")).toBe("true");
+    expect(await $('[data-testid="workspace-row"][data-root$="/d"]').getAttribute("data-pinned")).toBe(
+      "true",
+    );
     expect((await rowNames())[0]).toBe("d");
     await $('[data-testid="workspace-row"][data-root$="/d"]').click();
     await browser.waitUntil(async () => (await count('[data-testid="tab"]')) === 2, { timeout: 10_000 });
@@ -86,7 +126,12 @@ describe("E2E-M3-14 rail and modes", () => {
   it("F-SH-03.3 a deleted folder shows the warning; Remove only drops the row; re-adding restores its tabs", async () => {
     const c = `${base}/c`;
     await $('[data-testid="workspace-row"][data-root$="/c"]').click();
-    await invoke("tab_rename", { id: (await invoke<Array<{ root: string; tabs: Array<{ id: string }> }>>("workspace_list")).find((w) => w.root === c)?.tabs[0]?.id, name: "Kept tab" });
+    await invoke("tab_rename", {
+      id: (await invoke<Array<{ root: string; tabs: Array<{ id: string }> }>>("workspace_list")).find(
+        (w) => w.root === c,
+      )?.tabs[0]?.id,
+      name: "Kept tab",
+    });
     rmSync(c, { recursive: true, force: true });
     await relaunch();
     const row = await $('[data-testid="workspace-row"][data-root$="/c"]');
@@ -102,7 +147,10 @@ describe("E2E-M3-14 rail and modes", () => {
     expect(await workspaceRoots()).toEqual(others);
     await addFolder(c);
     await browser.waitUntil(async () => (await workspaceRoots()).includes(c), { timeout: 10_000 });
-    await browser.waitUntil(async () => (await browser.execute(() => document.body.innerText.includes("Kept tab"))) === true, { timeout: 10_000 });
+    await browser.waitUntil(
+      async () => (await browser.execute(() => document.body.innerText.includes("Kept tab"))) === true,
+      { timeout: 10_000 },
+    );
   });
 
   it("F-SH-02 modes keep terminals: Code → Thread → Code has the same PID and scrollback", async () => {
@@ -114,7 +162,9 @@ describe("E2E-M3-14 rail and modes", () => {
     await waitForPaneText(pane, "mode-marker");
     const pid = await shellPid(pane);
     await browser.execute(() =>
-      Array.from(document.querySelectorAll<HTMLElement>('[role="radiogroup"][aria-label="Work mode"] [role="radio"]'))
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[role="radiogroup"][aria-label="Work mode"] [role="radio"]'),
+      )
         .find((r) => r.innerText.trim() === "Thread")
         ?.click(),
     );
@@ -135,9 +185,19 @@ describe("E2E-M3-14 rail and modes", () => {
   it("F-SH-02 the mode switch reads as a radio group: Work mode, Code, selected, 2 of 3", async () => {
     expect(await $('[role="radiogroup"][aria-label="Work mode"]').isExisting()).toBe(true);
     const checked = await browser.execute(() =>
-      Array.from(document.querySelectorAll('[role="radiogroup"][aria-label="Work mode"] [role="radio"]')).map((r) => r.getAttribute("aria-checked")),
+      Array.from(document.querySelectorAll('[role="radiogroup"][aria-label="Work mode"] [role="radio"]')).map(
+        (r) => r.getAttribute("aria-checked"),
+      ),
     );
     expect(checked).toEqual(["false", "true", "false"]);
-    expect(await browser.execute(() => (document.querySelector('[role="radiogroup"][aria-label="Work mode"] [aria-checked="true"]') as HTMLElement | null)?.innerText.trim())).toBe("Code");
+    expect(
+      await browser.execute(() =>
+        (
+          document.querySelector(
+            '[role="radiogroup"][aria-label="Work mode"] [aria-checked="true"]',
+          ) as HTMLElement | null
+        )?.innerText.trim(),
+      ),
+    ).toBe("Code");
   });
 });

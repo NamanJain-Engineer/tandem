@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AlertTriangle, Folder, GitBranch, Plus, SquareTerminal } from "lucide-react";
+import { AlertTriangle, Folder, GitBranch, Globe, Plus, SquareTerminal } from "lucide-react";
 import type { SavedSession, WorkspaceSummary } from "@tandem/protocol";
 import { Badge, ConfirmDialog, EngineGlyph, IconButton, StatusDot, cx, useToast, type MenuEntry } from "@tandem/ui";
 import { t } from "../../i18n";
@@ -13,7 +13,10 @@ import { paneKey, statusView, useStatus } from "../../stores/status";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { RailList } from "../rail/RailList";
-import { paneTitles } from "./titles";
+import { topLevel, useWorktrees, worktreesOf } from "../../stores/worktrees";
+import { WorktreeRow } from "./Worktrees";
+import { browserSources, paneTitles } from "./titles";
+import { useBrowser } from "../../stores/browser";
 import { pickAndAddWorkspace, switchMode } from "../shell/actions";
 import { PlanFooter } from "../shell/PlanFooter";
 import { useBoot } from "../shell/useBoot";
@@ -143,6 +146,7 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
   const savedCount = useSavedCount(ws.id);
   const engines = useEngines((st) => st.list);
   const tabs = useLayout((s) => s.tabs);
+  const pages = useBrowser((s) => s.pages);
   const loaded = useLayout((s) => s.loaded[ws.id] ?? false);
   useEffect(() => {
     if (!loaded)
@@ -154,7 +158,7 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
   const rows = ws.tabs.flatMap((tab) => {
     const t2 = tabs[tab.id];
     if (!t2?.tree) return [];
-    const names = paneTitles(t2.panes, engines);
+    const names = paneTitles(t2.panes, engines, browserSources(t2.panes, pages));
     return Object.values(t2.panes)
       .sort((a, b) => a.createdAt - b.createdAt)
       .map((p) => ({ tab, pane: p, title: names[p.id] ?? "" }));
@@ -216,6 +220,8 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
           <SessionDot paneId={pane.id} />
           {pane.kind === "agent" ? (
             <EngineGlyph letters={engines.find((e) => e.spec.id === pane.engineId)?.spec.logo ?? ""} size={14} />
+          ) : pane.kind === "browser" ? (
+            <Globe size={12} aria-hidden="true" className="shrink-0" />
           ) : (
             <SquareTerminal size={12} aria-hidden="true" className="shrink-0" />
           )}
@@ -255,6 +261,13 @@ export function CodeRail() {
   ): MenuEntry[] => [
     { id: "pin", label: ws.pinned ? t("rail.unpin") : t("rail.pin"), onSelect: a.togglePin },
     { id: "rename", label: t("rail.rename"), kbd: ["F2"], onSelect: a.rename },
+    {
+      // Only a repository can have worktrees; the label says why it's off.
+      id: "new-worktree",
+      label: ws.branch ? t("worktree.new") : t("worktree.needsRepo"),
+      disabled: !ws.branch || ws.missing,
+      onSelect: () => useWorktrees.getState().open({ kind: "new", workspaceId: ws.id }),
+    },
     { id: "up", label: t("rail.moveUp"), onSelect: a.moveUp },
     { id: "down", label: t("rail.moveDown"), onSelect: a.moveDown },
     { id: "sep", type: "separator" },
@@ -297,7 +310,7 @@ export function CodeRail() {
       </div>
       <RailList
         label={t("rail.workspaces")}
-        items={list}
+        items={topLevel(list)}
         selectedId={activeId}
         collapsed={collapsed}
         expanded={Object.fromEntries(list.map((w) => [w.id, !w.collapsed]))}
@@ -329,7 +342,14 @@ export function CodeRail() {
               )}
             </>
           ),
-          children: <WorkspaceSessions ws={ws} />,
+          children: (
+            <>
+              <WorkspaceSessions ws={ws} />
+              {worktreesOf(list, ws.id).map((wt) => (
+                <WorktreeRow key={wt.id} wt={wt} base={ws.branch ?? "HEAD"} slot={<WorkspaceSlot ws={wt} />} />
+              ))}
+            </>
+          ),
         })}
         menu={menu}
         onOpen={(ws) => select(ws.id)}

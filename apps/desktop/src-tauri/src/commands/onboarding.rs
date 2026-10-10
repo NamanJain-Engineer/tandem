@@ -2,7 +2,7 @@
 //!
 //! Welcome is the sign-in screen (UI-03); after it come the wizard's steps.
 //! The current step is persisted, so quitting mid-way resumes there (AC2).
-//! Accounts (M6) and Dictate (M12) join `STEPS` with their features.
+//! Dictate (M12) joins `STEPS` with its feature.
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -16,7 +16,7 @@ use tandem_store::Store;
 use crate::state::AppState;
 
 /// The wizard after Welcome, in order.
-pub const STEPS: &[&str] = &["engines", "privacy", "workspace"];
+pub const STEPS: &[&str] = &["engines", "accounts", "privacy", "workspace"];
 const DONE: &str = "done";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -116,7 +116,9 @@ mod tests {
     #[tokio::test]
     async fn f_sh_08_2_the_step_survives_a_relaunch() {
         let (dir, store) = store().await;
-        write(&store, Some("workspace"), false)
+        // Step 3 counts Welcome: Welcome, Engines, Accounts.
+        assert_eq!(STEPS[1], "accounts");
+        write(&store, Some("accounts"), false)
             .await
             .expect("step 3");
         drop(store);
@@ -124,7 +126,7 @@ mod tests {
             Store::open(&DataDir::at(dir.path().to_path_buf()).expect("data")).expect("store");
         assert_eq!(
             read(&again).await.expect("read").step.as_deref(),
-            Some("workspace")
+            Some("accounts")
         );
     }
 

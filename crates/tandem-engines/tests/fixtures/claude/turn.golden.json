@@ -1,0 +1,38 @@
+[
+  {
+    "session": "5f1c2b9e-0d7a-4b8e-9c1f-2a3b4c5d6e7f"
+  },
+  {
+    "text": "Session started",
+    "type": "note"
+  },
+  {
+    "text": "Hello",
+    "type": "assistant_delta"
+  },
+  {
+    "text": " there.",
+    "type": "assistant_delta"
+  },
+  {
+    "markdown": "Hello there.",
+    "type": "assistant"
+  },
+  {
+    "ack": true
+  },
+  {
+    "cacheRead": 12000,
+    "cacheWrite": 2000,
+    "contextFillPct": 7.0,
+    "costUsd": 0.0123,
+    "input": 3,
+    "output": 5,
+    "type": "usage"
+  },
+  {
+    "blockedActions": 0,
+    "reason": "completed",
+    "type": "turn_end"
+  }
+]

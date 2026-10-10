@@ -1,0 +1,16 @@
+{"client":["\"method\":\"initialize\"","\"protocolVersion\":1","\"readTextFile\":true","\"writeTextFile\":true"]}
+{"agent":{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":false,"promptCapabilities":{"image":false},"mcpCapabilities":{"http":true}},"authMethods":[]}}}
+{"client":["\"method\":\"session/new\"","\"cwd\":\"{cwd}\"","\"name\":\"tandem\"","\"url\":\"http://127.0.0.1:4000/mcp\"","\"value\":\"Bearer lease-token\""]}
+{"agent":{"jsonrpc":"2.0","id":2,"result":{"sessionId":"sess_1"}}}
+{"client":["\"method\":\"session/prompt\"","\"sessionId\":\"sess_1\"","\"text\":\"tidy the tests\""]}
+{"agent":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess_1","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"The suite is slow."}}}}}
+{"agent":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess_1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Running the tests first."}}}}}
+{"agent":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess_1","update":{"sessionUpdate":"tool_call","toolCallId":"call_1","title":"npm test","kind":"execute","status":"pending","rawInput":{"command":"npm test"}}}}}
+{"agent":{"jsonrpc":"2.0","id":100,"method":"session/request_permission","params":{"sessionId":"sess_1","toolCall":{"toolCallId":"call_1"},"options":[{"optionId":"allow-once","name":"Allow","kind":"allow_once"},{"optionId":"allow-always","name":"Always allow","kind":"allow_always"},{"optionId":"reject","name":"Reject","kind":"reject_once"}]}}}
+{"client":["\"id\":100","\"outcome\":\"selected\"","\"optionId\":\"allow-once\""]}
+{"agent":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess_1","update":{"sessionUpdate":"tool_call_update","toolCallId":"call_1","status":"completed","content":[{"type":"content","content":{"type":"text","text":"Tests: 12 passed"}}]}}}}
+{"agent":{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}}
+{"client":["\"method\":\"session/prompt\"","\"text\":\"now split the module\""]}
+{"agent":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess_1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Splitting"}}}}}
+{"client":["\"method\":\"session/cancel\"","\"sessionId\":\"sess_1\""]}
+{"agent":{"jsonrpc":"2.0","id":4,"result":{"stopReason":"cancelled"}}}

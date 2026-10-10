@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-thread-subscribe"
+description = "Enables the thread_subscribe command without any pre-configured scope."
+commands.allow = ["thread_subscribe"]
+
+[[permission]]
+identifier = "deny-thread-subscribe"
+description = "Denies the thread_subscribe command without any pre-configured scope."
+commands.deny = ["thread_subscribe"]

@@ -1,10 +1,11 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceSummary } from "@tandem/protocol";
-import { UiProvider } from "@tandem/ui";
+import { CodeEditor, NoteEditor, UiProvider } from "@tandem/ui";
 import en from "../../i18n/en.json";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
+import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { BOOT, fakeBackend, resetStores } from "../../test/fakeBackend";
@@ -210,13 +211,44 @@ describe("command registry (F-SH-09)", () => {
     ).toBe(false);
   });
 
+  it("F-SH-09.3 in release builds an editor still gets the keys it handles: Mod+S saves a file, Mod+U underlines a note", () => {
+    setup("linux", false);
+    const onSave = vi.fn();
+    const onNote = vi.fn();
+    render(
+      <>
+        <CodeEditor value="x" docKey="f" path="a.ts" label="file" onSave={onSave} />
+        <NoteEditor value="word" docKey="n" label="note" taskLabel="Done" onChange={onNote} />
+      </>,
+    );
+    const content = (label: string) => screen.getByLabelText(label);
+    expect(press(content("file"), { key: "s", code: "KeyS", ctrlKey: true }).prevented).toBe(true);
+    expect(onSave).toHaveBeenCalledTimes(1);
+    // The cursor starts before "word": the marks go in around it.
+    const note = content("note");
+    expect(press(note, { key: "u", code: "KeyU", ctrlKey: true }).prevented).toBe(true);
+    expect(onNote).toHaveBeenLastCalledWith("<u></u>word");
+    // What the editor doesn't handle is still kept from the webview.
+    expect(press(note, { key: "p", code: "KeyP", ctrlKey: true }).prevented).toBe(true);
+    expect(press(note, { key: "r", code: "KeyR", ctrlKey: true }).prevented).toBe(true);
+  });
+
   it("F-SH-09.4 every registry command is in the palette and runs the shortcut's handler", () => {
     setup();
     for (const spec of COMMANDS) {
       if (spec.id === "palette.open") continue;
-      act(() =>
-        useUi.setState({ paletteOpen: true, mode: "code", settingsOpen: false, upgrade: { open: false } }),
-      );
+      // Each command where it's enabled: Thread mode with a thread open for
+      // the thread commands, Code mode with a pane for the rest.
+      const inThread = spec.enabledWhen === "thread_open";
+      act(() => {
+        useThreads.setState({ selectedId: inThread ? "thr_open" : null });
+        useUi.setState({
+          paletteOpen: true,
+          mode: inThread ? "thread" : "code",
+          settingsOpen: false,
+          upgrade: { open: false },
+        });
+      });
       const spy = vi.spyOn(handlers, spec.id).mockImplementation(() => undefined);
       const option = screen
         .getAllByRole("option")

@@ -27,10 +27,12 @@ pub struct PaneRecord {
     /// restart) | `cancelled` (its restore was cancelled; F-SH-07).
     pub restore_state: String,
     pub created_at: i64,
+    /// A browser pane's page: the URL it last committed (F-CD-17).
+    pub browser_url: Option<String>,
 }
 
 const COLUMNS: &str =
-    "id, tab_id, workspace_id, kind, cwd, engine_id, human_name, title, created_at, account_id, restore_state";
+    "id, tab_id, workspace_id, kind, cwd, engine_id, human_name, title, created_at, account_id, restore_state, browser_url";
 
 fn from_row(r: &Row<'_>) -> rusqlite::Result<PaneRecord> {
     Ok(PaneRecord {
@@ -45,6 +47,7 @@ fn from_row(r: &Row<'_>) -> rusqlite::Result<PaneRecord> {
         created_at: r.get(8)?,
         account_id: r.get::<_, Option<String>>(9)?.map(AccountId::from_db),
         restore_state: r.get(10)?,
+        browser_url: r.get(11)?,
     })
 }
 
@@ -87,6 +90,7 @@ pub async fn create_with(
                 title: None,
                 restore_state: "none".into(),
                 created_at: now_ms(),
+                browser_url: None,
             };
             t.execute(
                 "INSERT INTO panes (id, tab_id, workspace_id, kind, cwd, engine_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -279,6 +283,25 @@ pub async fn set_cwd(store: &Store, id: &PaneId, cwd: String) -> Result<(), Stor
         .await
 }
 
+/// A browser pane's page (F-CD-17): what a relaunch opens again.
+pub async fn set_browser_url(
+    store: &Store,
+    id: &PaneId,
+    url: Option<String>,
+) -> Result<(), StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .write(move |t| {
+            t.execute(
+                "UPDATE panes SET browser_url = ?2 WHERE id = ?1 AND kind = 'browser' AND closed_at IS NULL \
+                 AND browser_url IS NOT ?2",
+                params![id, url],
+            )?;
+            Ok(())
+        })
+        .await
+}
+
 /// Moves an open pane into another tab (drag to the tab strip, "Move to new
 /// tab"). The process keeps running; only the pane's place changes.
 pub async fn move_to_tab(
@@ -354,6 +377,63 @@ mod tests {
             create(&store, &tab.id, "toaster", None).await,
             Err(StoreError::Invalid(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn f_cd_17_a_browser_pane_keeps_the_page_it_was_on() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = tandem_core::DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = Store::open(&data).expect("store");
+        let (ws, _) = workspaces::add(
+            &store,
+            workspaces::NewWorkspace {
+                kind: "local".into(),
+                host_id: "local".into(),
+                root: "/p".into(),
+                name: "p".into(),
+                wsl_distro: None,
+            },
+            None,
+        )
+        .await
+        .expect("ws");
+        let tab = tabs::create(&store, &ws.id, None).await.expect("tab");
+        let page = create(&store, &tab.id, "browser", None)
+            .await
+            .expect("browser");
+        let shell = create(&store, &tab.id, "terminal", None)
+            .await
+            .expect("terminal");
+        assert_eq!(page.browser_url, None);
+        set_browser_url(&store, &page.id, Some("http://localhost:5173/".into()))
+            .await
+            .expect("url");
+        // Only browser panes have a page.
+        set_browser_url(&store, &shell.id, Some("http://x/".into()))
+            .await
+            .expect("ignored");
+        let listed = list_open(&store, &tab.id).await.expect("list");
+        let url = |id: &PaneId| {
+            listed
+                .iter()
+                .find(|p| &p.id == id)
+                .and_then(|p| p.browser_url.clone())
+        };
+        assert_eq!(url(&page.id).as_deref(), Some("http://localhost:5173/"));
+        assert_eq!(url(&shell.id), None);
+        // A closed pane keeps the last page it had.
+        close(&store, &page.id).await.expect("close");
+        set_browser_url(&store, &page.id, Some("http://later/".into()))
+            .await
+            .expect("no-op");
+        assert_eq!(
+            get(&store, &page.id)
+                .await
+                .expect("get")
+                .browser_url
+                .as_deref(),
+            Some("http://localhost:5173/")
+        );
     }
 
     #[tokio::test]

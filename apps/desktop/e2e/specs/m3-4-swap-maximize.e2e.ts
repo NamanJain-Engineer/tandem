@@ -1,5 +1,16 @@
 import { $, browser } from "@wdio/globals";
-import { addFolder, counters, freshOffline, paneIds, paneText, sendToPane, shellPid, split, waitForPaneText, waitForShell } from "../support/app";
+import {
+  addFolder,
+  counters,
+  freshOffline,
+  paneIds,
+  paneText,
+  sendToPane,
+  shellPid,
+  split,
+  waitForPaneText,
+  waitForShell,
+} from "../support/app";
 
 /** Drags pane `from`'s header to the centre of pane `to` with real pointer input. */
 async function dragHeader(from: string, to: string, opts: { cancel?: boolean } = {}): Promise<void> {
@@ -11,14 +22,25 @@ async function dragHeader(from: string, to: string, opts: { cancel?: boolean } =
   const start = { x: Math.round(a.x + 10), y: Math.round(a.y + 5) };
   const end = { x: Math.round(t.x + ts.width / 2), y: Math.round(t.y + ts.height / 2) };
   const steps = 8;
-  const pointer = browser.action("pointer", { parameters: { pointerType: "mouse" } }).move(start).down({ button: 0 });
+  const pointer = browser
+    .action("pointer", { parameters: { pointerType: "mouse" } })
+    .move(start)
+    .down({ button: 0 });
   for (let i = 1; i <= steps; i++) {
-    pointer.move({ x: Math.round(start.x + ((end.x - start.x) * i) / steps), y: Math.round(start.y + ((end.y - start.y) * i) / steps), duration: 30 });
+    pointer.move({
+      x: Math.round(start.x + ((end.x - start.x) * i) / steps),
+      y: Math.round(start.y + ((end.y - start.y) * i) / steps),
+      duration: 30,
+    });
   }
   if (opts.cancel) {
     await pointer.perform(true);
     await browser.keys("Escape");
-    await browser.action("pointer", { parameters: { pointerType: "mouse" } }).move(end).up({ button: 0 }).perform();
+    await browser
+      .action("pointer", { parameters: { pointerType: "mouse" } })
+      .move(end)
+      .up({ button: 0 })
+      .perform();
     return;
   }
   await pointer.up({ button: 0 }).perform();
@@ -52,7 +74,10 @@ describe("E2E-M3-4 swap, maximize, cancel", () => {
   it("F-CD-02.2 swapping two panes keeps both processes and their scrollback", async () => {
     const pids = [await shellPid(left), await shellPid(right)];
     await dragHeader(left, right);
-    await browser.waitUntil(async () => (await paneIds()).join() === [right, left].join(), { timeout: 5_000, timeoutMsg: `order: ${await paneIds()}` });
+    await browser.waitUntil(async () => (await paneIds()).join() === [right, left].join(), {
+      timeout: 5_000,
+      timeoutMsg: `order: ${await paneIds()}`,
+    });
     expect([await shellPid(left), await shellPid(right)]).toEqual(pids);
     expect(await paneText(left)).toContain("left-marker");
     expect(await paneText(right)).toContain("right-marker");
@@ -60,10 +85,14 @@ describe("E2E-M3-4 swap, maximize, cancel", () => {
 
   it("F-CD-02.3 maximize and restore don't resize a pane whose size didn't change", async () => {
     const before = await sttySize(left);
-    const maximize = await $(`[data-testid="pane"][data-pane-id="${right}"] button[aria-label="Maximize pane"]`);
+    const maximize = await $(
+      `[data-testid="pane"][data-pane-id="${right}"] button[aria-label="Maximize pane"]`,
+    );
     await maximize.click();
     await browser.waitUntil(async () => (await paneIds()).join() === right, { timeout: 5_000 });
-    await (await $(`[data-testid="pane"][data-pane-id="${right}"] button[aria-label="Restore pane"]`)).click();
+    await (
+      await $(`[data-testid="pane"][data-pane-id="${right}"] button[aria-label="Restore pane"]`)
+    ).click();
     await browser.waitUntil(async () => (await paneIds()).length === 2, { timeout: 5_000 });
     expect(await sttySize(left)).toBe(before);
   });

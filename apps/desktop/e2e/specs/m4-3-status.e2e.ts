@@ -1,5 +1,16 @@
 import { $, browser } from "@wdio/globals";
-import { addFolder, counters, freshOffline, hookLog, paneIds, paneStatus, sendToPane, split, waitForPaneText, waitForStatus } from "../support/app";
+import {
+  addFolder,
+  counters,
+  freshOffline,
+  hookLog,
+  paneIds,
+  paneStatus,
+  sendToPane,
+  split,
+  waitForPaneText,
+  waitForStatus,
+} from "../support/app";
 
 // E2E-M4-3 Status lifecycle (F-EN-05, F-SH-03): the fake Claude runs the
 // hooks Tandem wrote into its provider home.
@@ -15,10 +26,21 @@ describe("E2E-M4-3 status lifecycle", () => {
     await sendToPane(agent, "/script\r");
     await waitForStatus(agent, "working");
     const slot = '[data-testid="workspace-row"] [data-testid="workspace-status"]';
-    await browser.waitUntil(async () => (await $(slot).getText().catch(() => "")) === "WORKING 1" || (await $(slot).getText().catch(() => "")) === "Working 1", {
-      timeout: 5_000,
-      timeoutMsg: `rail: ${await $(slot).getText().catch(() => "")}`,
-    });
+    await browser.waitUntil(
+      async () =>
+        (await $(slot)
+          .getText()
+          .catch(() => "")) === "WORKING 1" ||
+        (await $(slot)
+          .getText()
+          .catch(() => "")) === "Working 1",
+      {
+        timeout: 5_000,
+        timeoutMsg: `rail: ${await $(slot)
+          .getText()
+          .catch(() => "")}`,
+      },
+    );
     await waitForStatus(agent, "waiting");
     expect((await $(slot).getText()).toLowerCase()).toBe("waiting on you");
     // Look away before it finishes: it ends unread.

@@ -990,6 +990,9 @@ pub mod tests {
         async fn logout(&self, _a: &str, _r: &str) -> Result<(), ApiError> {
             Ok(())
         }
+        async fn ai_title(&self, _a: &str, _t: &str) -> Result<String, ApiError> {
+            Err(ApiError::Network("down".into()))
+        }
         async fn me(&self, access: &str) -> Result<MeResponse, ApiError> {
             if *self.offline.lock().expect("lock") {
                 return Err(ApiError::Network("down".into()));

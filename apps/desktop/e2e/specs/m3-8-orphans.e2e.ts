@@ -4,7 +4,10 @@ import { addFolder, freshOffline, paneIds, relaunch, sendToPane, waitForShell } 
 
 function sleepers(arg: string): string[] {
   try {
-    return execFileSync("pgrep", ["-f", `^sleep ${arg}$`], { encoding: "utf8" }).trim().split("\n").filter(Boolean);
+    return execFileSync("pgrep", ["-f", `^sleep ${arg}$`], { encoding: "utf8" })
+      .trim()
+      .split("\n")
+      .filter(Boolean);
   } catch {
     return [];
   }
@@ -26,10 +29,15 @@ describe("E2E-M3-8 orphans", () => {
     execFileSync("pkill", ["-9", "-f", `^${app}`]);
     await relaunch();
     await $('[data-testid="orphans"]').waitForDisplayed({ timeout: 20_000 });
-    const title = await browser.execute(() => document.querySelector('[role="dialog"] h2')?.textContent ?? "");
+    const title = await browser.execute(
+      () => document.querySelector('[role="dialog"] h2')?.textContent ?? "",
+    );
     expect(title).toBe("1 agent process from your last session is still running");
     expect(sleepers("1001")).toHaveLength(1);
     await $('[data-testid="orphans-stop"]').click();
-    await browser.waitUntil(() => sleepers("1001").length === 0, { timeout: 5_000, timeoutMsg: "the orphan is still running" });
+    await browser.waitUntil(() => sleepers("1001").length === 0, {
+      timeout: 5_000,
+      timeoutMsg: "the orphan is still running",
+    });
   });
 });

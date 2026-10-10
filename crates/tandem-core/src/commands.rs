@@ -31,6 +31,10 @@ pub enum EnabledWhen {
     CodeMode,
     WorkspaceOpen,
     PaneFocused,
+    /// Thread mode shows a thread.
+    ThreadOpen,
+    /// A focused pane (Code mode), or a cell of the thread grid (Thread mode).
+    PaneOrCell,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -104,6 +108,12 @@ static REGISTRY: &[CommandSpec] = &[
     in_text(same("mode.agent", C::Navigation, Some("Mod+1"), E::Always)),
     in_text(same("mode.code", C::Navigation, Some("Mod+2"), E::Always)),
     in_text(same("mode.thread", C::Navigation, Some("Mod+3"), E::Always)),
+    in_text(same(
+        "thread.changes",
+        C::Navigation,
+        Some("Mod+Alt+C"),
+        E::ThreadOpen,
+    )),
     aliased(
         "rail.toggle",
         C::Navigation,
@@ -117,6 +127,8 @@ static REGISTRY: &[CommandSpec] = &[
         Some("Mod+Shift+B"),
         E::Always,
     ),
+    // F-CD-19: the sidebar's Files tab (UI_SPEC §5).
+    same("sidebar.files", C::Navigation, Some("Mod+Alt+F"), E::Always),
     same(
         "notifications.open",
         C::Navigation,
@@ -130,6 +142,13 @@ static REGISTRY: &[CommandSpec] = &[
         E::Always,
     ),
     same("workspace.open_folder", C::Workspace, None, E::Always),
+    // The launch sheet (F-CD-14, UI-12).
+    same(
+        "workspace.launch",
+        C::Workspace,
+        Some("Mod+Shift+L"),
+        E::WorkspaceOpen,
+    ),
     aliased(
         "workspace.new_tab",
         C::Workspace,
@@ -179,20 +198,20 @@ static REGISTRY: &[CommandSpec] = &[
         "pane.focus_left",
         C::Pane,
         Some("Mod+Alt+Left"),
-        E::PaneFocused,
+        E::PaneOrCell,
     ),
     same(
         "pane.focus_right",
         C::Pane,
         Some("Mod+Alt+Right"),
-        E::PaneFocused,
+        E::PaneOrCell,
     ),
-    same("pane.focus_up", C::Pane, Some("Mod+Alt+Up"), E::PaneFocused),
+    same("pane.focus_up", C::Pane, Some("Mod+Alt+Up"), E::PaneOrCell),
     same(
         "pane.focus_down",
         C::Pane,
         Some("Mod+Alt+Down"),
-        E::PaneFocused,
+        E::PaneOrCell,
     ),
     CommandSpec {
         mac: Some("Mod+["),

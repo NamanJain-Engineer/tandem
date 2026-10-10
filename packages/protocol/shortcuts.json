@@ -45,6 +45,15 @@
     "enabledWhen": "always"
   },
   {
+    "id": "thread.changes",
+    "category": "navigation",
+    "mac": "Mod+Alt+C",
+    "pc": "Mod+Alt+C",
+    "pcTerminal": "Mod+Alt+C",
+    "inText": true,
+    "enabledWhen": "thread_open"
+  },
+  {
     "id": "rail.toggle",
     "category": "navigation",
     "mac": "Mod+\\",
@@ -59,6 +68,15 @@
     "mac": "Mod+Shift+B",
     "pc": "Mod+Shift+B",
     "pcTerminal": "Mod+Shift+B",
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "sidebar.files",
+    "category": "navigation",
+    "mac": "Mod+Alt+F",
+    "pc": "Mod+Alt+F",
+    "pcTerminal": "Mod+Alt+F",
     "inText": false,
     "enabledWhen": "always"
   },
@@ -88,6 +106,15 @@
     "pcTerminal": null,
     "inText": false,
     "enabledWhen": "always"
+  },
+  {
+    "id": "workspace.launch",
+    "category": "workspace",
+    "mac": "Mod+Shift+L",
+    "pc": "Mod+Shift+L",
+    "pcTerminal": "Mod+Shift+L",
+    "inText": false,
+    "enabledWhen": "workspace_open"
   },
   {
     "id": "workspace.new_tab",
@@ -159,7 +186,7 @@
     "pc": "Mod+Alt+Left",
     "pcTerminal": "Mod+Alt+Left",
     "inText": false,
-    "enabledWhen": "pane_focused"
+    "enabledWhen": "pane_or_cell"
   },
   {
     "id": "pane.focus_right",
@@ -168,7 +195,7 @@
     "pc": "Mod+Alt+Right",
     "pcTerminal": "Mod+Alt+Right",
     "inText": false,
-    "enabledWhen": "pane_focused"
+    "enabledWhen": "pane_or_cell"
   },
   {
     "id": "pane.focus_up",
@@ -177,7 +204,7 @@
     "pc": "Mod+Alt+Up",
     "pcTerminal": "Mod+Alt+Up",
     "inText": false,
-    "enabledWhen": "pane_focused"
+    "enabledWhen": "pane_or_cell"
   },
   {
     "id": "pane.focus_down",
@@ -186,7 +213,7 @@
     "pc": "Mod+Alt+Down",
     "pcTerminal": "Mod+Alt+Down",
     "inText": false,
-    "enabledWhen": "pane_focused"
+    "enabledWhen": "pane_or_cell"
   },
   {
     "id": "pane.focus_prev",

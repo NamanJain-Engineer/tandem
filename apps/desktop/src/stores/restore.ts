@@ -42,7 +42,8 @@ export const useRestore = create<RestoreStore>((set, get) => ({
     } catch (e) {
       const err = e as IpcError;
       // Back to the card it came from, unless Ctrl+C cancelled it meanwhile.
-      if (err.code !== "cancelled") get().setState(paneId, get().cards[paneId]?.state === "cancelled" ? "cancelled" : "paused");
+      if (err.code !== "cancelled")
+        get().setState(paneId, get().cards[paneId]?.state === "cancelled" ? "cancelled" : "paused");
       return err.code === "cancelled" ? null : (err.message ?? "");
     }
   },
@@ -53,7 +54,10 @@ export const useRestore = create<RestoreStore>((set, get) => ({
 }));
 
 /** An agent pane shows its card instead of a terminal until it runs. */
-export function waitingOnCard(pane: Pick<PaneRecord, "id" | "kind" | "restoreState">, card: PaneRestore | undefined): boolean {
+export function waitingOnCard(
+  pane: Pick<PaneRecord, "id" | "kind" | "restoreState">,
+  card: PaneRestore | undefined,
+): boolean {
   if (pane.kind !== "agent") return false;
   if (card) return card.state !== "live";
   return pane.restoreState === "paused" || pane.restoreState === "cancelled";

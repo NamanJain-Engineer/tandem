@@ -40,6 +40,13 @@ export function outcomeLabel(target: DropTarget | null): string | null {
 }
 
 /** What a drop does to the layout. */
+/** "Move to new tab" (F-CD-02): the pane, process or page and all. */
+export async function moveToNewTab(tabId: string, paneId: string): Promise<void> {
+  const pane = useLayout.getState().tabs[tabId]?.panes[paneId];
+  if (pane)
+    await applyDrop({ kind: "pane", paneId, tabId, title: "" }, { kind: "new_tab", workspaceId: pane.workspaceId });
+}
+
 export async function applyDrop(drag: PaneDrag, target: DropTarget): Promise<void> {
   const layout = useLayout.getState();
   if (target.kind === "new_tab") {

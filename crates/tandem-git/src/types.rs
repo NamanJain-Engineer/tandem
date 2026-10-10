@@ -98,3 +98,18 @@ pub struct StaleLane {
     /// Days since the last commit or checkout activity in the lane.
     pub idle_days: u32,
 }
+
+/// A branch the switcher offers (F-CD-20).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Branch {
+    /// `main`, or `origin/feature` for a remote branch with no local one.
+    pub name: String,
+    pub current: bool,
+    /// A remote branch: switching creates its local tracking branch.
+    pub remote: bool,
+    pub upstream: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
+}

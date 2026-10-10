@@ -25,8 +25,9 @@ import { useEngines } from "../../stores/engines";
 import { useSetting } from "../../stores/settings";
 import { useSidebar } from "../../stores/sidebar";
 import { useWorkspaces } from "../../stores/workspaces";
-import { answer, closeAgent, closeIdle, jumpTo, stopAgent } from "./actions";
-import { cardMeta, cardTitle, closeIdleTargets, counts, group, visible, type Group } from "./model";
+import { answer, closeAgent, closeIdle, handOff, jumpTo, stopAgent } from "./actions";
+import { cardMeta, cardTitle, closeIdleTargets, counts, group, visible, type Group, type Lanes } from "./model";
+import { isWorktree } from "../../stores/worktrees";
 
 const view = (s: AgentStatus): Status => (s === "failed" ? "error" : s);
 
@@ -101,6 +102,9 @@ function AgentCard({ item, title, now }: { item: DashboardItem; title: string; n
     { id: "open", label: t("dashboard.open"), onSelect: () => void jumpTo(item) },
     ...(item.status === "done"
       ? [{ id: "seen", label: t("dashboard.markSeen"), onSelect: () => void invoke("status_mark_seen", { key: item.key }).catch(() => undefined) }]
+      : []),
+    ...(item.source.type === "pane"
+      ? [{ id: "handoff", label: t("dashboard.handoff"), onSelect: () => handOff(item) }]
       : []),
     ...(item.status === "working"
       ? [{ id: "stop", label: t("dashboard.stop"), danger: true, onSelect: () => void stopAgent(item) }]
@@ -215,7 +219,21 @@ export function Dashboard() {
   }, [all, engines]);
   const c = counts(all);
   const shown = visible(all, filter, query, (i) => titles[i.key] ?? "");
-  const groups = group(shown, groupBy, order, t("dashboard.noFolder"));
+  const lanes = useMemo<Lanes>(
+    () =>
+      Object.fromEntries(
+        workspaces.filter(isWorktree).map((w) => [
+          w.id,
+          {
+            parentId: w.parentId ?? "",
+            parentName: workspaces.find((p) => p.id === w.parentId)?.name ?? "",
+            branch: w.laneBranch ?? w.name,
+          },
+        ]),
+      ),
+    [workspaces],
+  );
+  const groups = group(shown, groupBy, order, t("dashboard.noFolder"), lanes);
   const idle = closeIdleTargets(shown);
   const narrowed = filter !== "all" || query.trim() !== "";
 
@@ -241,7 +259,8 @@ export function Dashboard() {
 
   const renderGroup = (g: Group) => {
     const open = !collapsed[g.id];
-    const label = g.status ? GROUP_LABEL[g.status](g.items.length) : `${g.label} · ${g.items.length}`;
+    const total = g.items.length + (g.children ?? []).reduce((n, c) => n + c.items.length, 0);
+    const label = g.status ? GROUP_LABEL[g.status](g.items.length) : `${g.label} · ${total}`;
     return (
       <section key={g.id} aria-label={label} data-testid={`group-${g.id}`} className="flex flex-col gap-1.5">
         <div className="flex h-6 items-center gap-1">
@@ -267,6 +286,11 @@ export function Dashboard() {
               <AgentCard key={i.key} item={i} title={titles[i.key] ?? ""} now={now} />
             ))}
           </ul>
+        )}
+        {open && g.children && (
+          <div data-testid={`worktrees-${g.id}`} className="ml-1.5 flex flex-col gap-2 border-l border-divider pl-2.5">
+            {g.children.map(renderGroup)}
+          </div>
         )}
       </section>
     );

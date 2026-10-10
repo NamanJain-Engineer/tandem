@@ -173,6 +173,8 @@ pub trait ApiClient: Send + Sync {
     async fn checkout(&self, access: &str, plan: &str, interval: &str) -> Result<String, ApiError>;
     async fn portal(&self, access: &str) -> Result<String, ApiError>;
     async fn config(&self) -> Result<SignedConfig, ApiError>;
+    /// `POST /v1/ai/title` (F-TH-15): a thread title of at most 60 characters.
+    async fn ai_title(&self, access: &str, text: &str) -> Result<String, ApiError>;
     /// `GET /v1/me/events` as a stream of event names (`entitlement`, `credits`).
     async fn events(
         &self,
@@ -209,6 +211,9 @@ impl ApiClient for NoHostedApi {
         Err(no_hosted_service())
     }
     async fn config(&self) -> Result<SignedConfig, ApiError> {
+        Err(no_hosted_service())
+    }
+    async fn ai_title(&self, _: &str, _: &str) -> Result<String, ApiError> {
         Err(no_hosted_service())
     }
     async fn events(
@@ -396,6 +401,20 @@ impl ApiClient for HttpApi {
     async fn config(&self) -> Result<SignedConfig, ApiError> {
         self.call(self.net.client().get(self.url("/v1/config")))
             .await
+    }
+
+    async fn ai_title(&self, access: &str, text: &str) -> Result<String, ApiError> {
+        #[derive(Deserialize)]
+        struct TitleBody {
+            title: String,
+        }
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/ai/title"))
+            .bearer_auth(access)
+            .json(&json!({ "text": text }));
+        self.call::<TitleBody>(req).await.map(|b| b.title)
     }
 
     async fn events(

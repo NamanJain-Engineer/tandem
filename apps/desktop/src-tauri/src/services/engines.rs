@@ -355,6 +355,62 @@ impl EngineService {
         })
     }
 
+    /// The account a new agent pane of `engine` in `workspace` runs on: the
+    /// explicit pick, else the workspace's override, else the engine's
+    /// default (created on first use). `None` for engines without homes.
+    /// The pane keeps it for as long as it lives (F-AC-03).
+    pub async fn account_for_new_session(
+        &self,
+        engine: &EngineSpec,
+        workspace: &tandem_core::ids::WorkspaceId,
+        explicit: Option<&AccountId>,
+    ) -> Result<Option<AccountId>, IpcError> {
+        if explicit.is_some() {
+            return Ok(explicit.cloned());
+        }
+        if engine.provider_home_env.is_none()
+            && engine.home_strategy != tandem_engines::registry::HomeStrategy::Xdg
+        {
+            return Ok(None);
+        }
+        // A worktree follows its repository's choice unless it has its own.
+        let mut workspace_pick =
+            accounts::workspace_override(&self.store, workspace, &engine.id).await?;
+        if workspace_pick.is_none() {
+            if let Some(parent) = tandem_store::repo::workspaces::get(&self.store, workspace)
+                .await
+                .ok()
+                .and_then(|w| w.parent_id)
+            {
+                workspace_pick =
+                    accounts::workspace_override(&self.store, &parent, &engine.id).await?;
+            }
+        }
+        let default = match workspace_pick {
+            Some(_) => None,
+            None => {
+                let root = self.homes.root().to_path_buf();
+                let engine_id = engine.id.clone();
+                Some(
+                    accounts::ensure_default(&self.store, &engine.id, move |id| {
+                        root.join(&engine_id)
+                            .join(id.as_str())
+                            .to_string_lossy()
+                            .into_owned()
+                    })
+                    .await?
+                    .id,
+                )
+            }
+        };
+        Ok(tandem_core::accounts::resolve(
+            None,
+            None,
+            workspace_pick.as_ref(),
+            default.as_ref(),
+        ))
+    }
+
     /// A named account with its own home (the full sign-in flow is F-AC-02).
     pub async fn create_account(
         &self,
@@ -381,7 +437,7 @@ impl EngineService {
         Ok(account)
     }
 
-    async fn theme(&self) -> String {
+    pub(crate) async fn theme(&self) -> String {
         let theme = settings::get(&self.store, SettingKey::Theme)
             .await
             .ok()

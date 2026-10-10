@@ -36,8 +36,48 @@ pub async fn pane_create(
     cwd: Option<String>,
     engine_id: Option<String>,
     account_id: Option<tandem_core::ids::AccountId>,
+    url: Option<String>,
 ) -> Result<PaneRecord, IpcError> {
-    match kind.as_str() {
+    // A browser pane runs no process: the live-pane limit doesn't count it.
+    if kind == "browser" {
+        return create_browser_pane(&state, &tab_id, url).await;
+    }
+    state
+        .terminals
+        .check_live_limit(state.entitlements.limits().panes)?;
+    create_pane(&state, &tab_id, &kind, cwd, engine_id, account_id).await
+}
+
+/// A browser pane (F-CD-17). `url`, read like the address bar, is its first
+/// page; without one it starts empty.
+pub(crate) async fn create_browser_pane(
+    state: &AppState,
+    tab_id: &TabId,
+    url: Option<String>,
+) -> Result<PaneRecord, IpcError> {
+    let url = match url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
+        Some(input) => Some(crate::commands::browser::resolve(state, input).await?),
+        None => None,
+    };
+    let mut pane = panes::create(&state.store, tab_id, "browser", None).await?;
+    if let Some(url) = url {
+        panes::set_browser_url(&state.store, &pane.id, Some(url.clone())).await?;
+        pane.browser_url = Some(url);
+    }
+    Ok(pane)
+}
+
+/// A pane record in `tab` (the view starts its process). Callers check the
+/// plan's live-pane cap first: one pane (`pane_create`) or a whole lineup.
+pub(crate) async fn create_pane(
+    state: &AppState,
+    tab_id: &TabId,
+    kind: &str,
+    cwd: Option<String>,
+    engine_id: Option<String>,
+    account_id: Option<tandem_core::ids::AccountId>,
+) -> Result<PaneRecord, IpcError> {
+    match kind {
         "terminal" => {}
         "agent" => {
             let known = engine_id
@@ -47,16 +87,14 @@ pub async fn pane_create(
                 return Err(IpcError::new(ErrorCode::NotFound, "No engine with that id"));
             }
         }
+        "browser" => return create_browser_pane(state, tab_id, None).await,
         _ => {
             return Err(IpcError::new(
                 ErrorCode::Invalid,
-                "Browser and Simulator panes aren't available yet",
+                "Simulator panes aren't available yet",
             ))
         }
     }
-    state
-        .terminals
-        .check_live_limit(state.entitlements.limits().panes)?;
     let engine_id = engine_id.filter(|_| kind == "agent");
     // An account must belong to the pane's engine (F-AC-01).
     if let Some(account) = &account_id {
@@ -68,7 +106,21 @@ pub async fn pane_create(
             ));
         }
     }
-    let mut pane = panes::create_with(&state.store, &tab_id, &kind, cwd, engine_id).await?;
+    let mut pane = panes::create_with(&state.store, tab_id, kind, cwd, engine_id.clone()).await?;
+    // An agent pane is pinned to the account it starts on (F-AC-03).
+    let engine = engine_id
+        .as_deref()
+        .and_then(|id| state.terminals.engines.get(id));
+    let account_id = match &engine {
+        Some(engine) => {
+            state
+                .terminals
+                .engines
+                .account_for_new_session(engine, &pane.workspace_id, account_id.as_ref())
+                .await?
+        }
+        None => account_id,
+    };
     if let Some(account) = account_id {
         panes::set_account(&state.store, &pane.id, &account).await?;
         pane.account_id = Some(account);
@@ -118,6 +170,11 @@ pub async fn close_pane(state: &AppState, pane_id: &PaneId) -> Result<(), IpcErr
     state.restore.forget(pane_id);
     let _ = state.terminals.pty.kill(pane_id.as_str());
     state.terminals.status.unwatch(pane_id.as_str());
+    // A browser pane's page goes with it (one moved to the sidebar has
+    // another id by now).
+    if let Some(browser) = state.browser.get() {
+        browser.close(pane_id.as_str());
+    }
     state
         .approvals
         .broker
@@ -309,6 +366,24 @@ pub fn term_quote_paths(
     paths: Vec<String>,
 ) -> Result<String, IpcError> {
     state.terminals.quote_paths(&pane_id, &paths)
+}
+
+/// What a link a pane printed opens (F-CD-09): a URL, or a file that exists,
+/// with relative paths taken from the pane's folder (its shell's last OSC 7,
+/// so they follow `cd`), read-only outside every workspace.
+#[tauri::command]
+pub async fn pane_resolve_link(
+    state: State<'_, AppState>,
+    pane_id: PaneId,
+    text: String,
+) -> Result<Option<tandem_core::files::links::ResolvedLink>, IpcError> {
+    let cwd = state.terminals.link_cwd(&pane_id).await;
+    let roots = state.files.workspace_roots().await?;
+    tokio::task::spawn_blocking(move || {
+        tandem_core::files::links::resolve(&text, cwd.as_deref(), &roots)
+    })
+    .await
+    .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))
 }
 
 /// Saves the clipboard image as a PNG under `$DATA/staging/<pane>/` and

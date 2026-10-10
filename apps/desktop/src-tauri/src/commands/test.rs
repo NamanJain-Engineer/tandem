@@ -271,6 +271,90 @@ pub async fn test_thread_seed(
     Ok(id)
 }
 
+/// Writes `events` stored events into a thread as finished turns (threads
+/// perf suite): a message, a reply, tool calls and the turn end, each turn
+/// 6 events; `fence_bytes` adds a last reply holding a code fence that big.
+#[tauri::command]
+pub async fn test_thread_seed_events(
+    state: State<'_, AppState>,
+    thread_id: String,
+    events: u32,
+    fence_bytes: Option<u32>,
+) -> Result<u32, IpcError> {
+    use tandem_engines::events::{ThreadEvent, ToolStatus, ToolVerb, TurnEndReason};
+    guard(&state)?;
+    let now = chrono::Utc::now().timestamp_millis();
+    let turns = events.div_ceil(6).max(1);
+    let fence = fence_bytes.map(|n| {
+        let line = "let value = compute(input, options);\n";
+        let mut body = String::with_capacity(n as usize + 16);
+        while body.len() < n as usize {
+            body.push_str(line);
+        }
+        format!("A long listing:\n\n```rust\n{body}```\n")
+    });
+    let written = state
+        .store
+        .write(move |t| {
+            let mut written = 0u32;
+            let first: u32 = t.query_row(
+                "SELECT COALESCE(MAX(n), 0) FROM thread_turns WHERE thread_id = ?1",
+                [&thread_id],
+                |r| r.get(0),
+            )?;
+            for i in 0..turns {
+                let turn = format!("turn_seed{i}_{now}");
+                let at = now - i64::from(turns - i) * 1000;
+                t.execute(
+                    "INSERT INTO thread_turns (id, thread_id, n, engine_id, state, blocked_actions, started_at, ended_at)
+                     VALUES (?1, ?2, ?3, 'claude', 'completed', 0, ?4, ?4)",
+                    rusqlite::params![turn, thread_id, first + i + 1, at],
+                )?;
+                let last = i + 1 == turns;
+                let reply = match (&fence, last) {
+                    (Some(f), true) => f.clone(),
+                    _ => format!(
+                        "## Step {i}\n\nThe change in `src/module_{i}.rs` keeps the **cache** warm. It touches:\n\n- the reader\n- the writer\n- [docs](https://vibezeo.com/docs)\n"
+                    ),
+                };
+                let mut evs = vec![
+                    ThreadEvent::User { text: format!("Message {i}: tidy the module and run the tests"), attachments: Vec::new() },
+                    ThreadEvent::Assistant { markdown: reply },
+                ];
+                for k in 0..3 {
+                    evs.push(ThreadEvent::Tool {
+                        id: format!("tool_{i}_{k}"),
+                        verb: if k == 0 { ToolVerb::Read } else { ToolVerb::Bash },
+                        arg_summary: format!("src/module_{i}_{k}.rs"),
+                        status: ToolStatus::Ok,
+                        output: Some("ok".into()),
+                        output_truncated: false,
+                        output_file: None,
+                        diff: None,
+                        detail: None,
+                    });
+                }
+                evs.push(ThreadEvent::TurnEnd { reason: TurnEndReason::Completed, blocked_actions: 0 });
+                for (seq, ev) in evs.iter().enumerate() {
+                    let payload = serde_json::to_string(ev).map_err(|e| tandem_store::StoreError::Invalid(e.to_string()))?;
+                    let kind = serde_json::to_value(ev)
+                        .ok()
+                        .and_then(|v| v.get("type").and_then(|k| k.as_str()).map(str::to_string))
+                        .unwrap_or_default();
+                    t.execute(
+                        "INSERT INTO thread_messages (thread_id, turn_id, seq, type, payload_json, created_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                        rusqlite::params![thread_id, turn, seq as i64, kind, payload, at],
+                    )?;
+                    written += 1;
+                }
+            }
+            Ok(written)
+        })
+        .await?;
+    Ok(written)
+}
+
 /// A thread's stored state (E2E-M5-3).
 #[tauri::command]
 pub async fn test_thread_state(state: State<'_, AppState>, id: String) -> Result<String, IpcError> {

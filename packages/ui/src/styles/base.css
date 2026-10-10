@@ -58,6 +58,15 @@
 .tn-dialog { animation: tn-dialog-in var(--dur-slow) var(--ease-enter); }
 .tn-sheet { animation: tn-sheet-in var(--dur-slow) var(--ease-enter); }
 .tn-toast { animation: tn-toast-in var(--dur-slow) var(--ease-spring); }
+/* These are entry animations: closing content never animates. Radix keeps
+   closing content mounted while an animation it hasn't seen start runs, and
+   a popper starts its animation only once it's positioned, so a menu closed
+   in that gap stayed up (with its outside-click layer) for the animation's
+   length and swallowed the next click on its trigger. */
+.tn-fade[data-state="closed"],
+.tn-pop[data-state="closed"],
+.tn-dialog[data-state="closed"],
+.tn-sheet[data-state="closed"] { animation: none; }
 .tn-dot { animation: tn-dot-pulse 1.2s ease-in-out infinite; }
 .tn-dot-2 { animation-delay: 0.2s; }
 .tn-dot-3 { animation-delay: 0.4s; }
@@ -87,4 +96,12 @@
 [data-motion="reduced"] .tn-flash { animation: none; outline-color: var(--tn-accent); }
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion="full"]) .tn-flash { animation: none; outline-color: var(--tn-accent); }
+}
+
+/* The app's browser pages draw above everything (D-206): while one covers
+   the toasts' corner, toasts show bottom-left. */
+:root[data-toasts="left"] [data-toast-region] {
+  right: auto;
+  left: calc(var(--spacing) * 4);
+  align-items: flex-start;
 }

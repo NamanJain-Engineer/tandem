@@ -271,9 +271,9 @@
   --z-rail: 20;
   --z-titlebar: 30;
   --z-sidebar: 40;
-  --z-popover: 100;       /* menus, selects, tooltips anchored */
   --z-sheet: 200;
   --z-dialog: 300;
+  --z-popover: 350;       /* menus, selects, tooltips anchored: above the sheet or dialog they open from (D-109) */
   --z-toast: 400;
   --z-hud: 500;           /* Dictate/Conductor HUD */
   --z-command: 600;       /* command palette sits above everything but HUD? no: above HUD */

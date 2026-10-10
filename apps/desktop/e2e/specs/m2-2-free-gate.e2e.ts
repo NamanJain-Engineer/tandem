@@ -10,7 +10,9 @@ describe("E2E-M2-2 free gate", () => {
     await freshUser("gate");
     for (const n of [1, 2, 3]) {
       await addFolder(`${base}/w${n}`);
-      await browser.waitUntil(async () => (await workspaceRoots()).includes(`${base}/w${n}`), { timeout: 10_000 });
+      await browser.waitUntil(async () => (await workspaceRoots()).includes(`${base}/w${n}`), {
+        timeout: 10_000,
+      });
     }
     expect(await planFooter()).toBe("FREE");
   });
@@ -25,9 +27,15 @@ describe("E2E-M2-2 free gate", () => {
 
   it("mock checkout turns the footer to PRO within 5 s", async () => {
     await $('[data-testid="upgrade-pro"]').click();
-    await browser.waitUntil(() => browserLog().includes("checkout:complete"), { timeout: 60_000, timeoutMsg: `checkout: ${browserLog()}` });
+    await browser.waitUntil(() => browserLog().includes("checkout:complete"), {
+      timeout: 60_000,
+      timeoutMsg: `checkout: ${browserLog()}`,
+    });
     const completed = Date.now();
-    await browser.waitUntil(async () => (await planFooter()) === "PRO · 10,000 credits", { timeout: 5_000, timeoutMsg: `footer: ${await planFooter()}` });
+    await browser.waitUntil(async () => (await planFooter()) === "PRO · 10,000 credits", {
+      timeout: 5_000,
+      timeoutMsg: `footer: ${await planFooter()}`,
+    });
     expect(Date.now() - completed).toBeLessThan(5_000);
   });
 

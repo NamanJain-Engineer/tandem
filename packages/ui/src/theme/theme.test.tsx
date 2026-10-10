@@ -73,6 +73,14 @@ describe("ThemeProvider (F-SH-05)", () => {
     expect(rule).toContain("*::before");
   });
 
+  it("UI-12 menus, selects and tooltips open above the sheet or dialog they're in, and below toasts", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/styles/tokens.css"), "utf8");
+    const z = (name: string) => Number(new RegExp(`--z-${name}:\\s*(\\d+)`).exec(css)?.[1]);
+    expect(z("popover")).toBeGreaterThan(z("dialog"));
+    expect(z("dialog")).toBeGreaterThan(z("sheet"));
+    expect(z("popover")).toBeLessThan(z("toast"));
+  });
+
   it("F-SH-05 derives high contrast from the OS", () => {
     const media = fakeMedia({ "(prefers-contrast: more)": false });
     render(<ThemeProvider>x</ThemeProvider>);

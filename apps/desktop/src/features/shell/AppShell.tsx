@@ -1,3 +1,6 @@
+import { LaunchSheet } from "../code/LaunchSheet";
+import { HandoffDialog } from "../code/HandoffDialog";
+import { WorktreeDialogs } from "../code/Worktrees";
 import { useEffect } from "react";
 import { useToast } from "@tandem/ui";
 import { t } from "../../i18n";
@@ -9,10 +12,19 @@ import { CodeMain } from "../code/CodeMain";
 import { CodeRail } from "../code/CodeRail";
 import { commandRuns, setCommandToast } from "../commands/commands";
 import { InterimMain, InterimRail } from "../interim/Interim";
+import { ThreadMain } from "../thread/ThreadMain";
+import { ThreadRail } from "../thread/ThreadRail";
+import { followThreads } from "../../stores/threads";
 import { Palette } from "../palette/Palette";
 import { OrphansDialog } from "../restore/OrphansDialog";
 import { followEngines } from "../../stores/engines";
+import { followLimits } from "../../stores/limits";
+import { followContexts } from "../../stores/contexts";
+import { followUsage } from "../../stores/usage";
 import { followStatus } from "../../stores/status";
+import { followGit } from "../../stores/git";
+import { followBrowser } from "../../stores/browser";
+import { followBrowserTabs } from "../../stores/sidebar";
 import { followFocus } from "../../stores/focus";
 import { followDashboard } from "../../stores/dashboard";
 import { followNotifications } from "../../stores/notifications";
@@ -43,13 +55,20 @@ export function AppShell() {
   useEffect(() => setCommandToast(toast), [toast]);
   useEffect(followPtyState, []);
   useEffect(followEngines, []);
+  useEffect(followLimits, []);
+  useEffect(followContexts, []);
+  useEffect(followUsage, []);
   useEffect(followStatus, []);
+  useEffect(followGit, []);
+  useEffect(followBrowser, []);
+  useEffect(followBrowserTabs, []);
   useEffect(followFocus, []);
   useEffect(followDashboard, []);
   useEffect(followNotifications, []);
   useEffect(followRestore, []);
   useEffect(startAutoResume, []);
   useEffect(followUpdates, []);
+  useEffect(followThreads, []);
   useVisibilityReport();
   // Debug builds: UI-side counters for the E2E harness (ARCHITECTURE §17.5).
   const dev = useBoot((st) => st.boot?.dev ?? false);
@@ -62,6 +81,7 @@ export function AppShell() {
       paneScreen: (paneId: string) => terminalHandles.get(paneId)?.serialize() ?? "",
       paneCursor: (paneId: string) => terminalHandles.get(paneId)?.cursor() ?? null,
       paneMetrics: (paneId: string) => terminalHandles.get(paneId)?.metrics() ?? null,
+      panePoint: (paneId: string, needle: string) => terminalHandles.get(paneId)?.pointAt(needle) ?? null,
       webglHolds: (paneId: string) => webglPool.holds(paneId),
       perf: { enable: enablePerfMarks, times: perfTimes, writes: writeCounts, spans: perfSpans },
       paneSize: (paneId: string) => terminalHandles.get(paneId)?.size() ?? null,
@@ -108,7 +128,7 @@ export function AppShell() {
           <InterimRail mode="agent" collapsed={railCollapsed} />
         </div>
         <div style={{ display: show("thread") }}>
-          <InterimRail mode="thread" collapsed={railCollapsed} />
+          <ThreadRail collapsed={railCollapsed} />
         </div>
         <main
           id={settingsOpen ? undefined : "main"}
@@ -124,13 +144,16 @@ export function AppShell() {
             <InterimMain mode="agent" />
           </div>
           <div className="h-full" style={{ display: mode === "thread" ? "block" : "none" }}>
-            <InterimMain mode="thread" />
+            <ThreadMain visible={!settingsOpen && mode === "thread"} />
           </div>
         </main>
         {!settingsOpen && <Sidebar />}
       </div>
       <StatusBar />
       <UpgradeDialog />
+      <WorktreeDialogs />
+      <LaunchSheet />
+      <HandoffDialog />
       <Palette />
       <OrphansDialog />
       <RestartDialog />

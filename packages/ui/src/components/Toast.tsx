@@ -71,7 +71,9 @@ function ToastCard({ item, onDismiss, dismissLabel }: { item: ToastItem; onDismi
   );
 }
 
-/** UI_SPEC §2.12: bottom-right, max 3 stacked, older ones collapse to "+n more". */
+/** UI_SPEC §2.12: bottom-right, max 3 stacked, older ones collapse to "+n more".
+ * Bottom-left while `data-toasts="left"` is on the root (a page of the
+ * app's browser covers the corner, base.css). */
 export function ToastProvider({
   children,
   moreLabel = (n: number) => `+${n} more`,
@@ -95,7 +97,7 @@ export function ToastProvider({
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div aria-label="Notifications" role="region" className="pointer-events-none fixed bottom-8 right-4 z-[var(--z-toast)] flex flex-col items-end gap-2 [&>*]:pointer-events-auto">
+      <div aria-label="Notifications" role="region" data-toast-region="" className="pointer-events-none fixed bottom-8 right-4 z-[var(--z-toast)] flex flex-col items-end gap-2 [&>*]:pointer-events-auto">
         {hidden > 0 && <span className="rounded-full bg-surface-3 px-2 py-0.5 text-2xs text-fg-muted shadow-1">{moreLabel(hidden)}</span>}
         {visible.map((t) => (
           <ToastCard key={t.id} item={t} onDismiss={() => dismiss(t.id)} dismissLabel={dismissLabel} />

@@ -252,13 +252,25 @@ export function mod(): string {
  * back signed out; specs that relaunch use offline mode instead. */
 async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): Promise<void> {
   await waitForApp();
-  const list = await invoke<Array<{ id: string }>>("workspace_list");
-  for (const w of list) await invoke("workspace_remove", { id: w.id });
+  const list = await invoke<Array<{ id: string; parentId: string | null }>>("workspace_list");
+  // Removing a repository removes its worktrees with it (F-CD-15).
+  for (const w of list.filter((w) => !w.parentId)) await invoke("workspace_remove", { id: w.id });
+  // Threads outlive specs too: archive, then delete each (F-TH-01).
+  for (const th of await invoke<Array<{ id: string }>>("thread_list", { kind: "thread", includeArchived: true })) {
+    await invoke("thread_archive", { threadId: th.id, archived: true });
+    await invoke("thread_delete", { threadId: th.id });
+  }
   await invoke("auth_sign_out");
+  // A first run has no engine accounts yet (the wizard's Accounts step, D-114).
+  if (!onboarded) {
+    for (const a of await invoke<Array<{ id: string }>>("accounts_list")) await invoke("accounts_remove", { accountId: a.id });
+  }
   // Specs start past the first-run wizard unless they test it (E2E-M5-9).
   await invoke("onboarding_set", onboarded ? { done: true } : { step: "engines" });
   // UI state that outlives a spec: start in Code mode with the sidebar closed.
   await invoke("settings_set", { key: "last_mode", value: "code" });
+  // New threads start from the app's defaults, not a spec's last engine (F-TH-07).
+  await invoke("settings_set", { key: "thread_defaults", value: {} });
   await invoke("sidebar_save", {
     sidebar: { open: false, tabs: [{ id: "dashboard", kind: "dashboard", title: null, url: null }], active: "dashboard", width: 470, fullscreen: false, pinned: false },
   });
@@ -281,6 +293,12 @@ export async function freshUser(tag: string): Promise<{ email: string; jar: Awai
   await resetState();
   await signInDesktop(email);
   return { email, jar };
+}
+
+/** Signed out at the sign-in screen, past the wizard, with no workspaces:
+ * whatever an earlier spec file left (files run in name order). */
+export async function freshSignedOut(): Promise<void> {
+  await resetState();
 }
 
 /** A profile as on first launch: signed out, no workspaces, the wizard not run. */

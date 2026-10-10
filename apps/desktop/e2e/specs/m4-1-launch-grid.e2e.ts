@@ -1,7 +1,16 @@
 import { $, $$, browser } from "@wdio/globals";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, checkAgain, fakeEngine, freshOffline, paneIds, profileWithoutEngines, setProfile, userHome } from "../support/app";
+import {
+  addFolder,
+  checkAgain,
+  fakeEngine,
+  freshOffline,
+  paneIds,
+  profileWithoutEngines,
+  setProfile,
+  userHome,
+} from "../support/app";
 
 // E2E-M4-1 Launch grid (F-CD-13, F-EN-01).
 describe("E2E-M4-1 launch grid", () => {
@@ -30,9 +39,14 @@ describe("E2E-M4-1 launch grid", () => {
     const report = await checkAgain();
     expect(report.found.map((f) => [f.engineId, f.source])).toEqual([["claude", "known"]]);
     await emptyTab();
-    await browser.waitUntil(async () => (await $$('[data-testid="launch-grid"] [data-testid^="tile-"]').length) === 2, { timeout: 10_000 });
+    await browser.waitUntil(
+      async () => (await $$('[data-testid="launch-grid"] [data-testid^="tile-"]').length) === 2,
+      { timeout: 10_000 },
+    );
     const tiles = await browser.execute(() =>
-      Array.from(document.querySelectorAll<HTMLElement>('[data-testid="launch-grid"] [data-testid^="tile-"]')).map((el) => el.dataset.testid),
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[data-testid="launch-grid"] [data-testid^="tile-"]'),
+      ).map((el) => el.dataset.testid),
     );
     expect(tiles).toEqual(["tile-claude", "tile-shell"]);
     expect(await $('[data-testid="more-engines"]').getText()).toContain("10 more not installed");

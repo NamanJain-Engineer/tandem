@@ -5,11 +5,19 @@ import { addFolder, freshOffline, mod, paneIds, paneText, sendToPane, waitForPan
 
 const GOLDENS = new URL("../goldens", import.meta.url).pathname;
 
-type Hook = { paneScreen: (id: string) => string; paneSize: (id: string) => { cols: number; rows: number } | null };
+type Hook = {
+  paneScreen: (id: string) => string;
+  paneSize: (id: string) => { cols: number; rows: number } | null;
+};
 
 /** The screen as rows, from the serialize addon (the alternate screen when a TUI has it). */
 async function screen(pane: string): Promise<string[]> {
-  const raw = String(await browser.execute((id: string) => (window as unknown as { __tandemTest: Hook }).__tandemTest.paneScreen(id), pane));
+  const raw = String(
+    await browser.execute(
+      (id: string) => (window as unknown as { __tandemTest: Hook }).__tandemTest.paneScreen(id),
+      pane,
+    ),
+  );
   const parts = raw.split("\x1b[?1049h\x1b[H");
   return (parts[parts.length - 1] ?? "").split("\r\n");
 }
@@ -32,7 +40,10 @@ async function stable(pane: string): Promise<string[]> {
 }
 
 async function size(pane: string): Promise<string> {
-  const s = (await browser.execute((id: string) => (window as unknown as { __tandemTest: Hook }).__tandemTest.paneSize(id), pane)) as {
+  const s = (await browser.execute(
+    (id: string) => (window as unknown as { __tandemTest: Hook }).__tandemTest.paneSize(id),
+    pane,
+  )) as {
     cols: number;
     rows: number;
   } | null;
@@ -58,16 +69,21 @@ async function toggleRail(pane?: string): Promise<void> {
   const before = pane ? await size(pane) : "";
   await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
   await browser.keys([mod(), "\\"]);
-  if (pane) await browser.waitUntil(async () => (await size(pane)) !== before, { timeout: 5_000, timeoutMsg: `still ${before}` });
+  if (pane)
+    await browser.waitUntil(async () => (await size(pane)) !== before, {
+      timeout: 5_000,
+      timeoutMsg: `still ${before}`,
+    });
   await browser.pause(300);
 }
 
 /** Rows as text: cursor-forward runs (the serializer's blanks) become spaces, other sequences go. */
 const plain = (rows: string[]) =>
-  rows.map((r) =>
-    r
-      .replace(/\x1b\[(\d*)C/g, (_, n: string) => " ".repeat(Number(n || "1"))) // eslint-disable-line no-control-regex
-      .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, ""), // eslint-disable-line no-control-regex
+  rows.map(
+    (r) =>
+      r
+        .replace(/\x1b\[(\d*)C/g, (_, n: string) => " ".repeat(Number(n || "1"))) // eslint-disable-line no-control-regex
+        .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, ""), // eslint-disable-line no-control-regex
   );
 
 // E2E-M3-2 TUIs (F-CD-03, F-CD-04): vim, htop and less render and redraw
@@ -78,7 +94,12 @@ describe("E2E-M3-2 TUIs", () => {
 
   before(async () => {
     mkdirSync(root, { recursive: true });
-    writeFileSync(join(root, "notes.txt"), Array.from({ length: 60 }, (_, i) => `line ${String(i + 1).padStart(2, "0")} the quick brown fox`).join("\n") + "\n");
+    writeFileSync(
+      join(root, "notes.txt"),
+      Array.from({ length: 60 }, (_, i) => `line ${String(i + 1).padStart(2, "0")} the quick brown fox`).join(
+        "\n",
+      ) + "\n",
+    );
     await freshOffline();
     await addFolder(root);
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
@@ -97,15 +118,20 @@ describe("E2E-M3-2 TUIs", () => {
 
   it("vim: :e a file, resize, :q", async () => {
     await sendToPane(pane, "vim -u NONE -N -i NONE --cmd 'set shortmess+=I'\n");
-    await browser.waitUntil(async () => plain(await screen(pane)).some((r) => r.startsWith("~")), { timeout: 10_000 });
+    await browser.waitUntil(async () => plain(await screen(pane)).some((r) => r.startsWith("~")), {
+      timeout: 10_000,
+    });
     // vim reads its terminal-query replies right after drawing; keys typed
     // then can be taken as part of a reply.
     await browser.pause(500);
     await sendToPane(pane, ":e notes.txt\r");
-    await browser.waitUntil(async () => plain(await screen(pane)).some((r) => r.includes('"notes.txt" 60L')), {
-      timeout: 10_000,
-      timeoutMsg: `vim's file message: ${JSON.stringify((await screen(pane)).slice(-2))}`,
-    });
+    await browser.waitUntil(
+      async () => plain(await screen(pane)).some((r) => r.includes('"notes.txt" 60L')),
+      {
+        timeout: 10_000,
+        timeoutMsg: `vim's file message: ${JSON.stringify((await screen(pane)).slice(-2))}`,
+      },
+    );
     await golden("vim-edit", pane, await stable(pane));
     await toggleRail(pane);
     const resized = await stable(pane);
@@ -113,19 +139,34 @@ describe("E2E-M3-2 TUIs", () => {
     await golden("vim-resized", pane, resized);
     await sendToPane(pane, ":q\r");
     await waitForPaneText(pane, "vim -u NONE");
-    await browser.waitUntil(async () => !(await screen(pane)).join("").includes("line 01 the quick"), { timeout: 5_000, timeoutMsg: "vim's screen is still up" });
+    await browser.waitUntil(async () => !(await screen(pane)).join("").includes("line 01 the quick"), {
+      timeout: 5_000,
+      timeoutMsg: "vim's screen is still up",
+    });
     await toggleRail(pane);
   });
 
   it("htop: resize", async () => {
     await sendToPane(pane, "clear; htop\n");
-    await browser.waitUntil(async () => plain(await screen(pane)).some((r) => r.includes("F10Quit")), { timeout: 10_000 });
+    await browser.waitUntil(async () => plain(await screen(pane)).some((r) => r.includes("F10Quit")), {
+      timeout: 10_000,
+    });
     await toggleRail(pane);
     // htop's numbers move; its column header and key bar don't.
-    await browser.waitUntil(async () => plain(await screen(pane)).some((r) => r.includes("F10Quit")), { timeout: 10_000 });
+    await browser.waitUntil(async () => plain(await screen(pane)).some((r) => r.includes("F10Quit")), {
+      timeout: 10_000,
+    });
     const rows = plain(await screen(pane));
-    const header = rows.find((r) => /\bPID\b.*\bCommand\b/.test(r))?.trim().replace(/\s+/g, " ") ?? "";
-    const keys = rows.find((r) => r.includes("F10Quit"))?.trim().replace(/\s+/g, " ") ?? "";
+    const header =
+      rows
+        .find((r) => /\bPID\b.*\bCommand\b/.test(r))
+        ?.trim()
+        .replace(/\s+/g, " ") ?? "";
+    const keys =
+      rows
+        .find((r) => r.includes("F10Quit"))
+        ?.trim()
+        .replace(/\s+/g, " ") ?? "";
     await golden("htop-resized", pane, [header, keys]);
     await sendToPane(pane, "q");
     await toggleRail(pane);
@@ -133,9 +174,13 @@ describe("E2E-M3-2 TUIs", () => {
 
   it("less: open a file and page through it", async () => {
     await sendToPane(pane, "clear; less notes.txt\n");
-    await browser.waitUntil(async () => plain(await screen(pane)).some((r) => r.includes("line 01")), { timeout: 10_000 });
+    await browser.waitUntil(async () => plain(await screen(pane)).some((r) => r.includes("line 01")), {
+      timeout: 10_000,
+    });
     await sendToPane(pane, " ");
-    await browser.waitUntil(async () => !plain(await screen(pane)).some((r) => r.includes("line 01 ")), { timeout: 5_000 });
+    await browser.waitUntil(async () => !plain(await screen(pane)).some((r) => r.includes("line 01 ")), {
+      timeout: 5_000,
+    });
     await golden("less-page2", pane, await stable(pane));
     await sendToPane(pane, "q");
   });

@@ -6,6 +6,7 @@
   ],
   "permissions": [
     "allow-test-counters",
+    "allow-test-browser-eval",
     "allow-test-spawn-log",
     "allow-test-clock-advance",
     "allow-test-fixture-agent",
@@ -14,6 +15,7 @@
     "allow-test-set-window-focused",
     "allow-test-thread-seed",
     "allow-test-thread-state",
+    "allow-test-thread-seed-events",
     "allow-test-update-installed",
     "allow-test-min-version-shift",
     "allow-test-auth-refresh",

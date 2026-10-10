@@ -18,9 +18,13 @@ describe("E2E-M2-4 single instance and window state", () => {
   it("F-SH-01.4 the maximize label toggles Maximize / Restore", async () => {
     const button = $('[data-testid="window-maximize"]');
     if ((await button.getAttribute("aria-label")) === "Restore") await button.click();
-    await browser.waitUntil(async () => (await button.getAttribute("aria-label")) === "Maximize", { timeout: 5_000 });
+    await browser.waitUntil(async () => (await button.getAttribute("aria-label")) === "Maximize", {
+      timeout: 5_000,
+    });
     await button.click();
-    await browser.waitUntil(async () => (await button.getAttribute("aria-label")) === "Restore", { timeout: 5_000 });
+    await browser.waitUntil(async () => (await button.getAttribute("aria-label")) === "Restore", {
+      timeout: 5_000,
+    });
     expect(await isMaximized()).toBe(true);
   });
 
@@ -37,11 +41,17 @@ describe("E2E-M2-4 single instance and window state", () => {
     if (await isMaximized()) await $('[data-testid="window-maximize"]').click();
     await browser.waitUntil(async () => !(await isMaximized()), { timeout: 5_000 });
     // Park the window where no display is; the app saves the position.
-    await invoke("plugin:window|set_position", { label: "main", value: { Physical: { x: 20000, y: 20000 } } });
+    await invoke("plugin:window|set_position", {
+      label: "main",
+      value: { Physical: { x: 20000, y: 20000 } },
+    });
     await browser.pause(1_000);
     await relaunch();
     const rect = await browser.getWindowRect();
-    const screen = (await browser.execute(() => [window.screen.width, window.screen.height])) as [number, number];
+    const screen = (await browser.execute(() => [window.screen.width, window.screen.height])) as [
+      number,
+      number,
+    ];
     expect(rect.x).toBeGreaterThanOrEqual(0);
     expect(rect.y).toBeGreaterThanOrEqual(0);
     expect(rect.x + rect.width).toBeLessThanOrEqual(screen[0]);
@@ -52,10 +62,13 @@ describe("E2E-M2-4 single instance and window state", () => {
     const order = (await browser.execute(() => {
       const bar = document.querySelector('header[role="banner"]');
       if (!bar) return [];
-      const focusable = Array.from(bar.querySelectorAll<HTMLElement>("button, [href], [tabindex]:not([tabindex='-1']), [role=radio]")).filter(
-        (el) => el.offsetParent !== null && el.tabIndex >= 0,
-      );
-      return focusable.map((el) => ({ left: Math.round(el.getBoundingClientRect().left), name: el.getAttribute("aria-label") ?? el.textContent?.trim() ?? "" }));
+      const focusable = Array.from(
+        bar.querySelectorAll<HTMLElement>("button, [href], [tabindex]:not([tabindex='-1']), [role=radio]"),
+      ).filter((el) => el.offsetParent !== null && el.tabIndex >= 0);
+      return focusable.map((el) => ({
+        left: Math.round(el.getBoundingClientRect().left),
+        name: el.getAttribute("aria-label") ?? el.textContent?.trim() ?? "",
+      }));
     })) as Array<{ left: number; name: string }>;
     expect(order.length).toBeGreaterThan(5);
     for (const c of order) expect(c.name).not.toBe("");

@@ -1,0 +1,13 @@
+[
+  {
+    "kind": "session",
+    "message": "You've hit your usage limit. Try again in 2h 5m.",
+    "resetsAt": 1791461100000,
+    "type": "limit"
+  },
+  {
+    "blockedActions": 0,
+    "reason": "limit",
+    "type": "turn_end"
+  }
+]

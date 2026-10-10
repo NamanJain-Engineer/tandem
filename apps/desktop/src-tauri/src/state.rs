@@ -119,6 +119,21 @@ pub struct AppState {
     pub deeplinks: DeepLinkQueue,
     /// Processes a crashed run left behind, until the user decides (UI-132).
     pub orphans: OrphanScan,
+    /// Engine-account sign-ins and sign-outs in flight (F-AC-02).
+    pub logins: Arc<crate::services::accounts::LoginOps>,
+    /// The latest usage per engine account (F-AC-04).
+    pub usage: Arc<crate::services::usage::UsageBoard>,
+    /// Thread mode: turns, their events and the chat adapters (F-TH-03).
+    pub threads: Arc<crate::services::threads::ThreadService>,
+    /// Models engines reported at runtime (F-TH-08).
+    pub models: Arc<crate::services::models::RuntimeModels>,
+    /// The Files tab and the repository status it shares with the git
+    /// panel (F-CD-19, F-CD-20).
+    pub files: Arc<crate::services::files::FilesService>,
+    /// The Changes view and the status bar's branch (F-CD-20).
+    pub git_panel: Arc<crate::services::git_panel::GitPanelService>,
+    /// Browser tabs and panes (F-CD-17), bound to the window in setup.
+    pub browser: std::sync::OnceLock<Arc<crate::browser::BrowserService>>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
     pub e2e: bool,
 }
@@ -250,6 +265,39 @@ impl AppState {
         let activity_status = status.clone();
         let screen_pty: Arc<std::sync::OnceLock<PtyManager>> = Arc::new(std::sync::OnceLock::new());
         let screen_for_sink = screen_pty.clone();
+        let screen_for_tick = screen_pty.clone();
+        // A turn ended: the context fill from the engine's own transcript,
+        // only when it's inside the pane's provider home (F-AC-06).
+        let (turn_store, turn_contexts) = (store.clone(), status.contexts.clone());
+        status.set_turn_sink(Arc::new(move |pane, transcript| {
+            let (store, contexts) = (turn_store.clone(), turn_contexts.clone());
+            let (pane, transcript) = (pane.to_string(), std::path::PathBuf::from(transcript));
+            tauri::async_runtime::spawn(async move {
+                let id = tandem_core::ids::PaneId::from_db(pane.clone());
+                let Ok(record) = tandem_store::repo::panes::get(&store, &id).await else {
+                    return;
+                };
+                let Some(account) = record.account_id else {
+                    return;
+                };
+                let Ok(account) = tandem_store::repo::accounts::get(&store, &account).await else {
+                    return;
+                };
+                let home = std::path::PathBuf::from(account.home_path);
+                let fill = tokio::task::spawn_blocking(move || {
+                    tandem_engines::transcript::context_fill(&transcript, &home)
+                })
+                .await
+                .ok()
+                .flatten();
+                if let Some(fill) = fill {
+                    contexts.set(&pane, fill);
+                }
+            });
+        }));
+        status.set_screen_source(Arc::new(move |pane| {
+            screen_for_tick.get().and_then(|p| p.screen_text(pane))
+        }));
         let pty = PtyManager::new()
             .with_registry(registry)
             .with_state_sink(Arc::new(move |state| {
@@ -322,7 +370,86 @@ impl AppState {
             bus.clone(),
         );
         let telemetry = TelemetryService::new(&data, net.clone());
+        let models = Arc::new(crate::services::models::RuntimeModels::default());
+        let launcher = Arc::new(crate::services::threads::AppLauncher::new(
+            terminals.clone(),
+            config.clone(),
+            models.clone(),
+            crate::services::threads::AppLauncher::adapters(&terminals),
+            data.mcp_configs(),
+        ));
+        let threads = crate::services::threads::ThreadService::new(
+            store.clone(),
+            bus.clone(),
+            clock.clone(),
+            approvals.broker.clone(),
+            launcher.clone(),
+        );
+        launcher.bind(&threads);
+        // Thread titles: AI only with the Privacy opt-in (D-118).
+        let titles_store = store.clone();
+        threads.configure(
+            Arc::new(crate::services::thread_titles::ApiTitler {
+                auth: auth.clone(),
+                api: api.clone(),
+                enabled: Arc::new(move || {
+                    tandem_store::repo::settings::get_blocking(
+                        &titles_store,
+                        tandem_core::settings::SettingKey::AiThreadTitles,
+                    )
+                    .ok()
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                }),
+            }),
+            data.clone(),
+        );
+        // Free threads run Claude Code and Codex only (PRODUCT_SPEC §3.2).
+        let plan = entitlements.clone();
+        threads.set_plan_limits(Arc::new(move || plan.limits()));
+        threads.sweep_trash();
+        // Threads are Dashboard items too (F-DB-01, D-6).
+        let status = terminals.status.clone();
+        threads.set_status_sink(Arc::new(move |th| {
+            use tandem_core::status::{AgentStatus, StatusUpdate, WaitingReason};
+            use tandem_store::repo::threads::ThreadState;
+            let source = tandem_core::source::SourceRef::Thread {
+                thread_id: th.id.as_str().to_string(),
+            };
+            if th.archived {
+                if let Some(key) = source.session_key() {
+                    status.remove_external(&key);
+                }
+                return;
+            }
+            let (agent, reason) = match th.state {
+                ThreadState::Working => (AgentStatus::Working, None),
+                ThreadState::Waiting => (AgentStatus::Waiting, Some(WaitingReason::Approval)),
+                ThreadState::Done => (AgentStatus::Done, None),
+                ThreadState::Failed => (AgentStatus::Failed, None),
+                ThreadState::Idle | ThreadState::Interrupted => (AgentStatus::Idle, None),
+            };
+            let title = (!th.title.is_empty()).then(|| th.title.clone());
+            status.set_external(
+                crate::services::status::ExternalMeta {
+                    source,
+                    title: title.clone().unwrap_or_else(|| "New thread".into()),
+                    engine_id: Some(th.engine_id.clone()),
+                    workspace_id: th.workspace_id.as_ref().map(|w| w.as_str().to_string()),
+                },
+                StatusUpdate {
+                    status: agent,
+                    reason,
+                    ts: th.updated_at,
+                    tool: None,
+                    title,
+                    preview: None,
+                },
+            );
+        }));
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
+        let files = crate::services::files::FilesService::new(store.clone());
+        let git_panel = crate::services::git_panel::GitPanelService::new(files.clone());
         Self {
             data,
             store,
@@ -347,6 +474,13 @@ impl AppState {
             telemetry,
             deeplinks: DeepLinkQueue::default(),
             orphans,
+            logins: Arc::default(),
+            usage: Arc::default(),
+            threads,
+            models,
+            files,
+            git_panel,
+            browser: std::sync::OnceLock::new(),
             e2e,
         }
     }

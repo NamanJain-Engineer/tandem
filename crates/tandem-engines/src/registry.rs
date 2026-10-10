@@ -127,6 +127,10 @@ pub struct EngineSpec {
     /// Probes whether the engine is signed in (exit code 0 = yes).
     #[serde(default)]
     pub status_cmd: Option<Vec<String>>,
+    /// A file in the provider home that exists once the engine is signed in;
+    /// only its presence is checked, never its contents (F-AC-01).
+    #[serde(default)]
+    pub signed_in_file: Option<String>,
     /// `claude`, `codex` or `acp`; none = terminal only.
     #[serde(default)]
     pub chat_adapter: Option<String>,
@@ -159,6 +163,16 @@ pub struct EngineSpec {
     /// The engine's cheapest model, for headless helper runs.
     #[serde(default)]
     pub cheap_model: Option<String>,
+    /// Arguments for a one-shot run that reads its prompt on stdin and
+    /// prints the answer, with no MCP servers (handoff briefs, F-CD-16).
+    /// `{model}` becomes `cheap_model`; without one, it and the flag before
+    /// it are left out.
+    #[serde(default)]
+    pub headless_cmd: Option<Vec<String>>,
+    /// Where the engine reports its usage windows (F-AC-04):
+    /// `codex_app_server`; none = "Usage unavailable".
+    #[serde(default)]
+    pub usage_probe: Option<String>,
     /// OSC titles: the first capture group is the work title.
     #[serde(default)]
     pub title_patterns: Vec<String>,
@@ -229,6 +243,7 @@ impl EngineSpec {
             .version_cmd
             .iter()
             .chain(self.login_cmd.iter().flatten())
+            .chain(self.headless_cmd.iter().flatten())
             .any(|a| a.chars().any(char::is_control))
         {
             return fail("arguments can't hold control characters");
@@ -239,6 +254,16 @@ impl EngineSpec {
         {
             if cmd.trim().is_empty() || cmd.chars().any(char::is_control) || cmd.contains("sudo ") {
                 return fail("install commands are one line, without sudo");
+            }
+        }
+        if let Some(probe) = &self.usage_probe {
+            if probe != "codex_app_server" {
+                return fail("usage_probe is codex_app_server");
+            }
+        }
+        if let Some(f) = &self.signed_in_file {
+            if !bare_name(f) || f.starts_with("..") {
+                return fail("signed_in_file is a file name in the provider home");
             }
         }
         if let Some(var) = &self.provider_home_env {

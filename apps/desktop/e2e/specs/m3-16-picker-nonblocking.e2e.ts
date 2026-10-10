@@ -16,7 +16,10 @@ describe("E2E-M3-16 picker non-blocking", () => {
     await $('input[placeholder="Type a command or search…"]').waitForDisplayed({ timeout: 3_000 });
     await typeKeys("Toggle left rail");
     await browser.keys("Enter");
-    await browser.waitUntil(async () => (await $('nav[aria-label="Workspaces"]').getSize("width")) < 100, { timeout: 3_000, timeoutMsg: "the rail didn't collapse" });
+    await browser.waitUntil(async () => (await $('nav[aria-label="Workspaces"]').getSize("width")) < 100, {
+      timeout: 3_000,
+      timeoutMsg: "the rail didn't collapse",
+    });
     expect(Date.now() - opened).toBeLessThan(4_000);
     expect(await workspaceRoots()).not.toContain(folder);
     await browser.waitUntil(async () => (await workspaceRoots()).includes(folder), { timeout: 10_000 });

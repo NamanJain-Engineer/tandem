@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-thread-move-to-folder"
+description = "Enables the thread_move_to_folder command without any pre-configured scope."
+commands.allow = ["thread_move_to_folder"]
+
+[[permission]]
+identifier = "deny-thread-move-to-folder"
+description = "Denies the thread_move_to_folder command without any pre-configured scope."
+commands.deny = ["thread_move_to_folder"]

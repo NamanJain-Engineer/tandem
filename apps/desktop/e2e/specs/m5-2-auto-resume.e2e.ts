@@ -15,7 +15,8 @@ import {
   waitForSessionStarts,
 } from "../support/app";
 
-type Node = { type: "leaf"; paneId: string } | { type: "split"; dir: "row" | "col"; ratio: number; a: Node; b: Node };
+type Node =
+  { type: "leaf"; paneId: string } | { type: "split"; dir: "row" | "col"; ratio: number; a: Node; b: Node };
 
 // E2E-M5-2 Auto-resume (F-SH-07 AC3): never more than 2 engines spawning.
 describe("E2E-M5-2 auto-resume", () => {
@@ -37,10 +38,26 @@ describe("E2E-M5-2 auto-resume", () => {
     await invoke("pane_close", { paneId: shell });
     const logFrom = fakeLog().length;
     const agents: string[] = [];
-    for (let i = 0; i < 4; i++) agents.push((await invoke<{ id: string }>("pane_create", { tabId, kind: "agent", cwd: null, engineId: "claude" })).id);
+    for (let i = 0; i < 4; i++)
+      agents.push(
+        (await invoke<{ id: string }>("pane_create", { tabId, kind: "agent", cwd: null, engineId: "claude" }))
+          .id,
+      );
     const leaf = (paneId: string): Node => ({ type: "leaf", paneId });
-    const row = (a: string, b: string): Node => ({ type: "split", dir: "row", ratio: 0.5, a: leaf(a), b: leaf(b) });
-    const tree: Node = { type: "split", dir: "col", ratio: 0.5, a: row(agents[0] ?? "", agents[1] ?? ""), b: row(agents[2] ?? "", agents[3] ?? "") };
+    const row = (a: string, b: string): Node => ({
+      type: "split",
+      dir: "row",
+      ratio: 0.5,
+      a: leaf(a),
+      b: leaf(b),
+    });
+    const tree: Node = {
+      type: "split",
+      dir: "col",
+      ratio: 0.5,
+      a: row(agents[0] ?? "", agents[1] ?? ""),
+      b: row(agents[2] ?? "", agents[3] ?? ""),
+    };
     await invoke("layout_save", { tabId, tree, activePaneId: agents[0], maximizedPaneId: null });
     await browser.refresh();
     await waitForApp();

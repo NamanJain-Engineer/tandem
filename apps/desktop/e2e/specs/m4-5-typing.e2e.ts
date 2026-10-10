@@ -1,5 +1,16 @@
 import { browser } from "@wdio/globals";
-import { addFolder, fakeLog, freshOffline, invoke, paneIds, sendToPane, split, textOf, waitForPaneText, waitForStatus } from "../support/app";
+import {
+  addFolder,
+  fakeLog,
+  freshOffline,
+  invoke,
+  paneIds,
+  sendToPane,
+  split,
+  textOf,
+  waitForPaneText,
+  waitForStatus,
+} from "../support/app";
 
 const hex = (s: string) => Buffer.from(s, "utf8").toString("hex");
 

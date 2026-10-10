@@ -1,11 +1,14 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PaneRecord, Tab, TabLayout, WorkspaceSummary } from "@tandem/protocol";
+import type { BrowserState, PaneRecord, SidebarState, Tab, TabLayout, WorkspaceSummary } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { setInvokeBackend } from "../../ipc/invoke";
+import { followContexts } from "../../stores/contexts";
 import { followFocus } from "../../stores/focus";
+import { followBrowser } from "../../stores/browser";
 import { flushLayouts, useLayout } from "../../stores/layout";
+import { followBrowserTabs, useSidebar } from "../../stores/sidebar";
 import { useRestore } from "../../stores/restore";
 import { useStatus } from "../../stores/status";
 import { useSession } from "../../stores/session";
@@ -40,6 +43,7 @@ vi.mock("./RestoredScrollback", async () => {
 });
 
 const { CodeMain } = await import("./CodeMain");
+const { Sidebar } = await import("../shell/Sidebar");
 const { InstallHost } = await import("./InstallSheet");
 
 const TAB: Tab = { id: "tb_1", workspaceId: "ws_1", name: "Tab 1", sortKey: "a0", createdAt: 0 };
@@ -74,6 +78,26 @@ const REPORT = {
   slowShell: null,
 };
 
+/** A browser page's state as the core reports it, each newer than the last. */
+let pageSeq = 0;
+function page(browserId: string, url: string, title = ""): BrowserState {
+  return {
+    seq: ++pageSeq,
+    browserId,
+    url,
+    title,
+    canBack: false,
+    canForward: false,
+    loading: false,
+    device: "desktop",
+    rotated: false,
+    frame: { x: 0, y: 0, width: 400, height: 300 },
+    zoom: 1,
+    blocked: null,
+    picking: false,
+  };
+}
+
 /** A small core: tabs, panes and saved layouts. */
 function core(
   opts: {
@@ -85,6 +109,10 @@ function core(
     noEngines?: boolean;
     /** Agent panes paused after a restart, with the reason Resume isn't offered. */
     paused?: Record<string, string | null>;
+    /** Browser panes and the page each was on. */
+    browsers?: Record<string, string | null>;
+    /** The saved sidebar, for tests that show it. */
+    sidebar?: SidebarState;
   } = {},
 ) {
   let n = 0;
@@ -92,7 +120,9 @@ function core(
   const panes: PaneRecord[] = (opts.panes ?? []).map((id, i) =>
     opts.paused && id in opts.paused
       ? { ...pane(id, TAB.id, i), kind: "agent", engineId: "claude", humanName: "Ada", restoreState: "paused" }
-      : pane(id, TAB.id, i),
+      : opts.browsers && id in opts.browsers
+        ? { ...pane(id, TAB.id, i), kind: "browser", browserUrl: opts.browsers[id] ?? null }
+        : pane(id, TAB.id, i),
   );
   let saved: { tree: unknown; activePaneId: string | null; maximizedPaneId: string | null } | null = opts.tree
     ? { tree: opts.tree, activePaneId: null, maximizedPaneId: null }
@@ -109,6 +139,7 @@ function core(
       humanName: null,
       title: null,
       restoreState: "none",
+      browserUrl: null,
       createdAt: at,
     };
   }
@@ -184,6 +215,7 @@ function core(
         kind: String(a?.kind),
         engineId: (a?.engineId as string | undefined) ?? null,
         humanName: a?.kind === "agent" ? (names[panes.filter((x) => x.kind === "agent").length] ?? null) : null,
+        browserUrl: a?.kind === "browser" ? ((a?.url as string | null | undefined) ?? null) : null,
       };
       panes.push(p);
       return p;
@@ -227,6 +259,12 @@ function core(
     restore_resume: () => ({ pid: 42, startedAt: 1 }),
     restore_start_fresh: () => ({ pid: 43, startedAt: 1 }),
     restore_cancel: () => null,
+    browser_open: (a) => page(String(a?.browserId), (a?.url as string | null) ?? ""),
+    browser_set_bounds: () => null,
+    browser_close: () => null,
+    browser_move: (a) => page(String(a?.to), "http://localhost:5173/", "Fixtures"),
+    sidebar_get: () => opts.sidebar ?? null,
+    sidebar_save: () => null,
   });
   return { calls, panes, saved: () => saved };
 }
@@ -667,6 +705,23 @@ describe("restore (F-SH-07)", () => {
   }
   const card = () => screen.getByTestId("paused-card");
 
+  it("F-AC-06.1 an agent pane's header shows its context fill: 150k of 200k is 75% and neutral, 170k amber", async () => {
+    core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" }, paused: { pn_a: null } });
+    const stop = followContexts();
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    expect(screen.queryByRole("meter", { name: "Context" })).toBeNull();
+    act(() => emitLocal("context:changed", { paneId: "pn_a", used: 150_000, window: 200_000 }));
+    const meter = await screen.findByRole("meter", { name: "Context" });
+    expect(meter.getAttribute("aria-valuenow")).toBe("75");
+    expect(meter.textContent).toBe("150K / 200K");
+    expect(meter.dataset.tone).toBe("muted");
+    expect(meter.title).toBe("Context used by this session. Near the limit, the engine may compact or stop.");
+    act(() => emitLocal("context:changed", { paneId: "pn_a", used: 170_000, window: 200_000 }));
+    await waitFor(() => expect(screen.getByRole("meter", { name: "Context" }).dataset.tone).toBe("warning"));
+    stop();
+  });
+
   it("F-SH-07.1 a restored agent pane shows its paused card over the saved output, never a terminal", async () => {
     const { calls } = await restored({ pn_a: null });
     expect(card().dataset.state).toBe("paused");
@@ -703,5 +758,82 @@ describe("restore (F-SH-07)", () => {
     expect(within(card()).getByTestId("restored-scrollback")).toBeTruthy();
     expect(within(card()).getByRole("status").textContent).toContain("Restore cancelled");
     expect(screen.queryByTestId("terminal")).toBeNull();
+  });
+});
+
+describe("browser panes (F-CD-17)", () => {
+  beforeEach(() => {
+    followBrowser();
+    followBrowserTabs();
+  });
+
+  it("F-CD-17 the picker opens a Browser pane: no process, the browser's empty state, named after its page", async () => {
+    const { calls } = core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    act(() => void useLayout.getState().requestSplit(TAB.id, "pn_a", "right"));
+    fireEvent.click(within(await screen.findByTestId("pane-picker")).getByTestId("tile-browser"));
+    await waitFor(() => expect(paneEls()).toHaveLength(2));
+    const browserPane = () => paneEls().find((el) => el.dataset.kind === "browser") as HTMLElement;
+    expect(calls.find((c) => c.cmd === "pane_create" && c.args?.kind === "browser")?.args).toMatchObject({ url: null });
+    expect(within(browserPane()).getByTestId("pane-title").textContent).toBe("Browser");
+    expect(within(browserPane()).getByText("Open a page")).toBeTruthy();
+    // Only the shell has a terminal.
+    expect(screen.getAllByTestId("terminal")).toHaveLength(1);
+    const id = String(browserPane().dataset.paneId);
+    act(() => emitLocal("browser:state", page(id, "http://localhost:5173/", "Fixtures")));
+    await waitFor(() => expect(within(browserPane()).getByTestId("pane-title").textContent).toBe("Fixtures"));
+  });
+
+  it("F-CD-17 Open in sidebar moves the page, history and all, then closes the pane", async () => {
+    const { calls } = core({
+      panes: ["pn_a", "pn_b"],
+      browsers: { pn_b: "http://localhost:5173/" },
+      tree: { type: "split", dir: "row", ratio: 0.5, a: { type: "leaf", paneId: "pn_a" }, b: { type: "leaf", paneId: "pn_b" } },
+    });
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(2));
+    act(() => emitLocal("browser:state", page("pn_b", "http://localhost:5173/", "Fixtures")));
+    fireEvent.keyDown(await screen.findByRole("button", { name: "Actions for Fixtures" }), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Open in sidebar" }));
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    const tab = useSidebar.getState().tabs.find((x) => x.kind === "browser");
+    expect(tab).toMatchObject({ title: "Fixtures", url: "http://localhost:5173/" });
+    const moves = calls.filter((c) => c.cmd === "browser_move" || c.cmd === "pane_close").map((c) => [c.cmd, c.args]);
+    expect(moves).toEqual([
+      ["browser_move", { from: "pn_b", to: tab?.id }],
+      ["pane_close", { paneId: "pn_b" }],
+    ]);
+    // The page goes on in the sidebar: nothing closed it.
+    expect(calls.some((c) => c.cmd === "browser_close")).toBe(false);
+  });
+
+  it("F-CD-17 Move to a pane brings a sidebar page back beside the focused pane", async () => {
+    const saved: SidebarState = {
+      open: true,
+      tabs: [{ id: "browser-1", kind: "browser", title: "Fixtures", url: "http://localhost:5173/" }],
+      active: "browser-1",
+      width: 470,
+      fullscreen: false,
+      pinned: false,
+    };
+    const { calls } = core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" }, sidebar: saved });
+    renderCode();
+    render(
+      <UiProvider>
+        <Sidebar />
+      </UiProvider>,
+    );
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    act(() => emitLocal("browser:state", page("browser-1", "http://localhost:5173/", "Fixtures")));
+    fireEvent.keyDown(await screen.findByTestId("browser-more"), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Move to a pane" }));
+    await waitFor(() => expect(paneEls()).toHaveLength(2));
+    await waitFor(() => expect(useSidebar.getState().tabs).toHaveLength(0));
+    const created = useLayout.getState().tabs[TAB.id]?.active as string;
+    const sent = calls.filter((c) => ["pane_create", "browser_move"].includes(c.cmd));
+    expect(sent.map((c) => c.cmd)).toEqual(["pane_create", "browser_move"]);
+    expect(sent[0]?.args).toMatchObject({ kind: "browser", url: null });
+    expect(sent[1]?.args).toEqual({ from: "browser-1", to: created });
   });
 });

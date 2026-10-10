@@ -61,7 +61,8 @@ pub struct NotificationService {
     /// Test harness: pretend the window is (un)focused.
     focus_override: Mutex<Option<bool>>,
     visible: Mutex<HashSet<String>>,
-    last: Mutex<HashMap<String, AgentStatus>>,
+    /// Each session's last status and when it began (`since`).
+    last: Mutex<HashMap<String, (AgentStatus, i64)>>,
 }
 
 impl NotificationService {
@@ -172,32 +173,17 @@ impl NotificationService {
                 .last
                 .lock()
                 .ok()
-                .and_then(|mut l| l.insert(rec.key.0.clone(), rec.status));
-            if prev == Some(rec.status) {
+                .and_then(|mut l| l.insert(rec.key.0.clone(), (rec.status, rec.since)));
+            if prev == Some((rec.status, rec.since)) {
                 continue;
             }
-            if prev == Some(AgentStatus::Waiting) {
+            if prev.map(|p| p.0) == Some(AgentStatus::Waiting) && rec.status != AgentStatus::Waiting
+            {
                 self.resolve(&format!("waiting:{}", rec.key.0)).await;
             }
-            let kind = match rec.status {
-                // Terminal agents wait on their own dialogs; approvals from
-                // the broker notify through `on_approval`.
-                AgentStatus::Waiting if rec.key.0.starts_with("pane:") => Some(match rec.reason {
-                    Some(WaitingReason::Question) => NotificationKind::Question,
-                    _ => NotificationKind::Approval,
-                }),
-                AgentStatus::Done
-                    if matches!(
-                        prev,
-                        Some(AgentStatus::Working) | Some(AgentStatus::Waiting)
-                    ) =>
-                {
-                    Some(NotificationKind::Done)
-                }
-                AgentStatus::Failed => Some(NotificationKind::Failed),
-                _ => None,
+            let Some(kind) = notification_for(prev, &rec) else {
+                continue;
             };
-            let Some(kind) = kind else { continue };
             let state = app.state::<AppState>();
             let Some(item) = dashboard::item_for(&state, rec.clone()).await else {
                 continue;
@@ -470,6 +456,34 @@ fn source_line(item: &DashboardItem, detail: Option<&str>) -> String {
     }
 }
 
+/// What a status change notifies, given the session's previous status and
+/// when it began. A "done" that began after the last one seen is a new
+/// finished turn even when its "working" fell inside one status batch (a
+/// quick turn), so it notifies too.
+fn notification_for(
+    prev: Option<(AgentStatus, i64)>,
+    rec: &StatusRecord,
+) -> Option<NotificationKind> {
+    let again = prev.is_some_and(|(_, since)| since != rec.since);
+    match (rec.status, prev.map(|p| p.0)) {
+        (_, Some(status)) if status == rec.status && !again => None,
+        // Terminal agents wait on their own dialogs; approvals from the
+        // broker notify through `on_approval`.
+        (AgentStatus::Waiting, _) if rec.key.0.starts_with("pane:") => Some(match rec.reason {
+            Some(WaitingReason::Question) => NotificationKind::Question,
+            _ => NotificationKind::Approval,
+        }),
+        (AgentStatus::Done, Some(AgentStatus::Working | AgentStatus::Waiting)) => {
+            Some(NotificationKind::Done)
+        }
+        (AgentStatus::Done, Some(AgentStatus::Done | AgentStatus::Idle)) if again => {
+            Some(NotificationKind::Done)
+        }
+        (AgentStatus::Failed, _) => Some(NotificationKind::Failed),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -482,6 +496,42 @@ mod tests {
             attention: true,
             types,
         }
+    }
+
+    fn rec(status: AgentStatus, since: i64) -> StatusRecord {
+        serde_json::from_value(serde_json::json!({
+            "key": "pane:pn_1", "status": status, "reason": null, "since": since, "ts": since,
+            "tool": null, "title": null, "preview": null
+        }))
+        .expect("record")
+    }
+
+    #[test]
+    fn f_db_03_a_quick_turn_whose_working_state_was_batched_away_still_notifies() {
+        use AgentStatus::*;
+        // working → done seen separately.
+        assert_eq!(
+            notification_for(Some((Working, 1)), &rec(Done, 2)),
+            Some(NotificationKind::Done)
+        );
+        // The same done again (a re-sent batch): nothing.
+        assert_eq!(notification_for(Some((Done, 2)), &rec(Done, 2)), None);
+        // A second turn whose working fell inside one batch: done began anew.
+        assert_eq!(
+            notification_for(Some((Done, 2)), &rec(Done, 9)),
+            Some(NotificationKind::Done)
+        );
+        assert_eq!(
+            notification_for(Some((Idle, 2)), &rec(Done, 9)),
+            Some(NotificationKind::Done)
+        );
+        // At startup a restored done isn't news.
+        assert_eq!(notification_for(None, &rec(Done, 2)), None);
+        assert_eq!(notification_for(Some((Done, 2)), &rec(Idle, 5)), None);
+        assert_eq!(
+            notification_for(Some((Working, 2)), &rec(Failed, 5)),
+            Some(NotificationKind::Failed)
+        );
     }
 
     #[test]

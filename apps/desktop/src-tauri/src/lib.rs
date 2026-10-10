@@ -2,6 +2,7 @@
 //! Services take their dependencies explicitly so they run in `cargo test`
 //! without a window (ARCHITECTURE §2.12).
 
+pub mod browser;
 pub mod commands;
 pub mod services;
 pub mod state;
@@ -71,12 +72,53 @@ macro_rules! app_commands {
             commands::workspaces::workspace_list,
             commands::workspaces::workspace_rename,
             commands::workspaces::workspace_remove,
+            commands::launch::presets_list,
+            commands::launch::preset_save,
+            commands::launch::preset_delete,
+            commands::launch::launch_lineup,
+            commands::launch::launch_retry_seat,
+            commands::handoff::handoff_brief,
+            commands::handoff::handoff_start,
+            commands::handoff::handoff_to_thread,
             commands::lanes::lane_create,
             commands::lanes::lane_diff,
             commands::lanes::lane_merge,
             commands::lanes::lane_create_pr,
             commands::lanes::lane_remove,
             commands::lanes::lanes_sweep,
+            commands::files::fs_list,
+            commands::files::fs_read,
+            commands::files::fs_write,
+            commands::files::fs_compare,
+            commands::files::fs_create,
+            commands::files::fs_rename,
+            commands::files::fs_delete,
+            commands::files::fs_watch,
+            commands::files::fs_unwatch,
+            commands::files::editor_tabs_get,
+            commands::files::editor_tabs_save,
+            commands::files::app_reveal_path,
+            commands::git::git_status,
+            commands::git::git_diff,
+            commands::git::git_stage,
+            commands::git::git_unstage,
+            commands::git::git_discard,
+            commands::git::git_commit,
+            commands::git::git_push,
+            commands::git::git_pull,
+            commands::git::git_branches,
+            commands::git::git_switch,
+            commands::git::git_create_branch,
+            commands::browser::browser_open,
+            commands::browser::browser_navigate,
+            commands::browser::browser_command,
+            commands::browser::browser_set_bounds,
+            commands::browser::browser_set_device,
+            commands::browser::browser_move,
+            commands::browser::browser_picker,
+            commands::browser::browser_picker_brief,
+            commands::browser::browser_close,
+            commands::browser::browser_clear_data,
             commands::workspaces::workspace_locate,
             commands::workspaces::workspace_set_flags,
             commands::workspaces::workspace_reveal,
@@ -102,6 +144,11 @@ macro_rules! app_commands {
             commands::terminal::orphans_resolve,
             commands::terminal::sessions_saved_list,
             commands::terminal::term_quote_paths,
+            commands::terminal::pane_resolve_link,
+            commands::scratchpad::scratchpad_list,
+            commands::scratchpad::scratchpad_read,
+            commands::scratchpad::scratchpad_write,
+            commands::scratchpad::scratchpad_delete,
             commands::terminal::term_last_output,
             commands::terminal::term_stage_clipboard_image,
             commands::terminal::pty_type_prompt,
@@ -111,6 +158,49 @@ macro_rules! app_commands {
             commands::engines::engines_install_command,
             commands::engines::engines_set_extra_args,
             commands::engines::accounts_list,
+            commands::accounts::accounts_begin_add,
+            commands::accounts::accounts_begin_session,
+            commands::accounts::accounts_finish_login,
+            commands::accounts::accounts_cancel_login,
+            commands::accounts::accounts_update,
+            commands::accounts::accounts_set_default,
+            commands::accounts::accounts_remove,
+            commands::accounts::accounts_status,
+            commands::accounts::accounts_overrides,
+            commands::accounts::workspace_set_account_override,
+            commands::accounts::usage_get,
+            commands::accounts::usage_refresh,
+            commands::limits::limits_list,
+            commands::limits::limit_resume_at_reset,
+            commands::limits::limit_resume_now,
+            commands::limits::limit_cancel_resume,
+            commands::limits::limit_dismiss,
+            commands::limits::limit_continue,
+            commands::limits::contexts_list,
+            commands::threads::thread_create,
+            commands::threads::thread_list,
+            commands::threads::thread_get,
+            commands::threads::thread_events,
+            commands::threads::thread_subscribe,
+            commands::threads::thread_send,
+            commands::threads::thread_stop,
+            commands::threads::thread_retry,
+            commands::threads::thread_update,
+            commands::threads::thread_archive,
+            commands::threads::thread_delete,
+            commands::threads::thread_switch_engine,
+            commands::threads::thread_move_to_folder,
+            commands::threads::thread_save_draft,
+            commands::threads::thread_attach_paths,
+            commands::threads::thread_attach_clipboard_image,
+            commands::threads::attachment_remove,
+            commands::threads::thread_mention_search,
+            commands::threads::models_list,
+            commands::threads::thread_pick_files,
+            commands::threads::thread_unqueue,
+            commands::threads::thread_implement_plan,
+            commands::threads::thread_changes,
+            commands::threads::thread_file_read,
             commands::engines::engines_report,
             $($extra),*
         ]
@@ -362,6 +452,7 @@ pub fn run() {
     #[cfg(debug_assertions)]
     let builder = builder.invoke_handler(app_commands![
         commands::test::test_counters,
+        commands::browser::test_browser_eval,
         commands::test::test_spawn_log,
         commands::test::test_clock_advance,
         commands::test::test_fixture_agent,
@@ -370,6 +461,7 @@ pub fn run() {
         commands::test::test_set_window_focused,
         commands::test::test_thread_seed,
         commands::test::test_thread_state,
+        commands::test::test_thread_seed_events,
         commands::test::test_update_installed,
         commands::test::test_min_version_shift,
         commands::test::test_auth_refresh,
@@ -393,6 +485,33 @@ pub fn run() {
             paint_theme_background(app, &state);
             if let Some(window) = app.get_webview_window("main") {
                 window.set_title("Vibezeo")?;
+                // The browser's layer goes in before the window first shows
+                // (app_ready shows it): a WebKitGTK view moved after it has
+                // painted stays blank (D-206).
+                #[cfg(target_os = "linux")]
+                browser::wry_host::install_overlay(&window);
+            }
+            {
+                let profile = state.data.browser_profile();
+                let host_app = handle.clone();
+                let service = browser::BrowserService::new(move |policy, sink| {
+                    std::sync::Arc::new(browser::wry_host::WryHost::new(
+                        host_app, profile, policy, sink,
+                    ))
+                });
+                let emit_app = handle.clone();
+                let keep = commands::browser::keep_pane_pages(state.store.clone());
+                service.set_emitter(std::sync::Arc::new(move |s: &browser::BrowserState| {
+                    keep(s);
+                    let _ = emit_app.emit_to("main", "browser:state", s);
+                }));
+                let picked_app = handle.clone();
+                service.set_picker_emitter(std::sync::Arc::new(
+                    move |p: &browser::picker::BrowserPicked| {
+                        let _ = picked_app.emit_to("main", "browser:picker", p);
+                    },
+                ));
+                let _ = state.browser.set(service);
             }
             services::events::forward(handle.clone(), &state.bus);
             ensure_on_screen(app);
@@ -456,6 +575,24 @@ pub fn run() {
                 state.terminals.engines.apply_config(&config);
                 let login = state.terminals.login_env().await;
                 state.terminals.engines.detect(&login).await;
+            });
+            // Threads on the Dashboard from the start (D-6).
+            let threads_state = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                threads_state.state::<AppState>().threads.announce().await;
+            });
+            // Remote config (model catalog, registry overrides) has a 10-min
+            // TTL: a model added remotely shows up without an update (F-TH-08 AC1).
+            let config_state = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut tick = tokio::time::interval(services::config::CONFIG_TTL);
+                tick.tick().await;
+                loop {
+                    tick.tick().await;
+                    let state = config_state.state::<AppState>();
+                    let config = state.config.refresh().await;
+                    state.terminals.engines.apply_config(&config);
+                }
             });
             // Worktree sweep: at startup, then every 6 h (F-CD-15). It never
             // deletes anything; finished worktrees become one notification.
@@ -651,5 +788,38 @@ mod harness_tests {
             commands.contains("#[cfg(debug_assertions)]\npub mod test;"),
             "the harness module is debug-only"
         );
+    }
+
+    /// Every registered command has an `allow-<name>` permission (build.rs)
+    /// that the window's capability grants; otherwise the webview's call is
+    /// refused at runtime (ARCHITECTURE §3.1).
+    #[test]
+    fn every_registered_command_is_permitted() {
+        let lib = include_str!("lib.rs");
+        let build = include_str!("../build.rs");
+        let main = include_str!("../capabilities/main.json");
+        let harness = include_str!("../test-capability.json");
+        let names: Vec<&str> = lib
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("commands::")?.strip_suffix(','))
+            .filter_map(|path| path.split("::").nth(1))
+            .collect();
+        assert!(names.len() > 100, "found {} commands", names.len());
+        for name in names {
+            assert!(
+                build.contains(&format!("\"{name}\",")),
+                "{name} is missing from build.rs COMMANDS"
+            );
+            let allow = format!("\"allow-{}\"", name.replace('_', "-"));
+            let granted = if name.starts_with("test_") {
+                harness
+            } else {
+                main
+            };
+            assert!(
+                granted.contains(&allow),
+                "{allow} is missing from the capability"
+            );
+        }
     }
 }

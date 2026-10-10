@@ -1,0 +1,32 @@
+[
+  {
+    "session": "sess-limit"
+  },
+  {
+    "text": "Session started",
+    "type": "note"
+  },
+  {
+    "ack": true
+  },
+  {
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "contextFillPct": 0.0,
+    "costUsd": null,
+    "input": 0,
+    "output": 0,
+    "type": "usage"
+  },
+  {
+    "kind": "session",
+    "message": "Claude AI usage limit reached",
+    "resetsAt": 1791418440000,
+    "type": "limit"
+  },
+  {
+    "blockedActions": 0,
+    "reason": "limit",
+    "type": "turn_end"
+  }
+]

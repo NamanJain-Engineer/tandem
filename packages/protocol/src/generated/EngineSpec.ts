@@ -26,6 +26,11 @@ versionRegex: string, install: InstallCommands, loginCmd: Array<string> | null, 
  */
 statusCmd: Array<string> | null, 
 /**
+ * A file in the provider home that exists once the engine is signed in;
+ * only its presence is checked, never its contents (F-AC-01).
+ */
+signedInFile: string | null, 
+/**
  * `claude`, `codex` or `acp`; none = terminal only.
  */
 chatAdapter: string | null, acpCmd: Array<string> | null, adapterVersions: string | null, 
@@ -49,6 +54,18 @@ usageLogGlobs: Array<string>, skillsDir: string | null,
  * The engine's cheapest model, for headless helper runs.
  */
 cheapModel: string | null, 
+/**
+ * Arguments for a one-shot run that reads its prompt on stdin and
+ * prints the answer, with no MCP servers (handoff briefs, F-CD-16).
+ * `{model}` becomes `cheap_model`; without one, it and the flag before
+ * it are left out.
+ */
+headlessCmd: Array<string> | null, 
+/**
+ * Where the engine reports its usage windows (F-AC-04):
+ * `codex_app_server`; none = "Usage unavailable".
+ */
+usageProbe: string | null, 
 /**
  * OSC titles: the first capture group is the work title.
  */

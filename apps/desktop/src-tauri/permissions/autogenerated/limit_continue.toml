@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-limit-continue"
+description = "Enables the limit_continue command without any pre-configured scope."
+commands.allow = ["limit_continue"]
+
+[[permission]]
+identifier = "deny-limit-continue"
+description = "Denies the limit_continue command without any pre-configured scope."
+commands.deny = ["limit_continue"]

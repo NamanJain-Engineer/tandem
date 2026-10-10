@@ -19,6 +19,7 @@ import {
   type Side,
 } from "../features/code/layout/tree";
 import { releasePaneHost } from "../features/code/paneHosts";
+import { useBrowser } from "./browser";
 
 /** One tab's panes and split tree (F-CD-02). The UI owns the tree; Rust
  * validates and persists it (`layout_save`, debounced 500 ms). */
@@ -33,7 +34,7 @@ export type TabPanes = {
 };
 
 /** What a new pane runs: a shell, or an engine under the login shell. */
-export type Launch = { kind: "terminal" } | { kind: "agent"; engineId: string };
+export type Launch = { kind: "terminal" } | { kind: "agent"; engineId: string } | { kind: "browser"; url?: string | null };
 
 export type SplitRequest = { tabId: string; target: string | null; side: Side };
 export type SplitResult = { ok: true; pane: PaneRecord } | { ok: false; error: IpcError };
@@ -58,6 +59,9 @@ type LayoutState = {
   requestSplit: (tabId: string, target: string | null, side: Side) => RequestResult;
   closePicker: () => void;
   split: (tabId: string, target: string | null, side: Side, launch?: Launch) => Promise<SplitResult>;
+  /** Places a pane the core already created (a worktree's pull-request
+   * shell) beside `target`, or the active pane, and focuses it. */
+  insert: (tabId: string, pane: PaneRecord, target: string | null, side: Side) => void;
   close: (tabId: string, paneId: string) => Promise<void>;
   /** A pane the core already closed (Dashboard Close idle): out of its tree. */
   dropPane: (paneId: string) => void;
@@ -87,7 +91,12 @@ const ensuring = new Map<string, Promise<void>>();
 
 function save(tabId: string, t: TabPanes): Promise<void> {
   if (!t.tree) return Promise.resolve();
-  return invoke("layout_save", { tabId, tree: t.tree, activePaneId: t.active, maximizedPaneId: t.maximized }).then(
+  return invoke("layout_save", {
+    tabId,
+    tree: t.tree,
+    activePaneId: t.active,
+    maximizedPaneId: t.maximized,
+  }).then(
     () => undefined,
     () => undefined,
   );
@@ -159,9 +168,11 @@ export const useLayout = create<LayoutState>((set, get) => {
       if (pending) return pending;
       const run = (async () => {
         const layouts = await invoke<TabLayout[]>("layout_get", { workspaceId });
-        const tabs = { ...get().tabs };
+        // Only this workspace's tabs: other workspaces may load meanwhile, and
+        // writing back a copy taken now would drop their panes.
+        const tabs: Record<string, TabPanes> = {};
         for (const l of layouts) {
-          if (tabs[l.tab.id]?.tree) continue;
+          if (get().tabs[l.tab.id]?.tree) continue;
           const panes = await invoke<PaneRecord[]>("pane_list", { tabId: l.tab.id });
           const byId = Object.fromEntries(panes.map((p) => [p.id, p]));
           let tree = (l.tree as LayoutNode | null) ?? null;
@@ -178,10 +189,10 @@ export const useLayout = create<LayoutState>((set, get) => {
                 ? l.maximizedPaneId
                 : null,
             panes: byId,
-            keepEmpty: tabs[l.tab.id]?.keepEmpty ?? false,
+            keepEmpty: get().tabs[l.tab.id]?.keepEmpty ?? false,
           };
         }
-        set({ tabs, loaded: { ...get().loaded, [workspaceId]: true } });
+        set({ tabs: { ...get().tabs, ...tabs }, loaded: { ...get().loaded, [workspaceId]: true } });
       })().finally(() => loading.delete(workspaceId));
       loading.set(workspaceId, run);
       return run;
@@ -244,28 +255,35 @@ export const useLayout = create<LayoutState>((set, get) => {
           tabId,
           kind: launch.kind,
           engineId: launch.kind === "agent" ? launch.engineId : undefined,
+          url: launch.kind === "browser" ? (launch.url ?? null) : undefined,
         });
-        const t = get().tabs[tabId] ?? EMPTY;
-        const anchor = target && contains(t.tree, target) ? target : (t.active ?? leaves(t.tree)[0] ?? null);
-        const tree = t.tree && anchor ? splitNode(t.tree, anchor, pane.id, side) : leaf(pane.id);
-        put(tabId, {
-          ...t,
-          tree,
-          active: pane.id,
-          maximized: null,
-          panes: { ...t.panes, [pane.id]: pane },
-          keepEmpty: false,
-        });
+        get().insert(tabId, pane, target, side);
         return { ok: true, pane };
       } catch (e) {
         return { ok: false, error: e as IpcError };
       }
     },
 
+    insert: (tabId, pane, target, side) => {
+      const t = get().tabs[tabId] ?? EMPTY;
+      const anchor = target && contains(t.tree, target) ? target : (t.active ?? leaves(t.tree)[0] ?? null);
+      const tree = t.tree && anchor ? splitNode(t.tree, anchor, pane.id, side) : leaf(pane.id);
+      put(tabId, {
+        ...t,
+        tree,
+        active: pane.id,
+        maximized: null,
+        panes: { ...t.panes, [pane.id]: pane },
+        keepEmpty: false,
+      });
+    },
+
     close: async (tabId, paneId) => {
       await invoke("pane_close", { paneId }).catch(() => undefined);
       update(tabId, (t) => without(t, paneId));
       releasePaneHost(paneId);
+      // A browser pane's page closed with it in the core.
+      useBrowser.getState().forget(paneId);
     },
 
     dropPane: (paneId) => {
@@ -342,14 +360,21 @@ export const useLayout = create<LayoutState>((set, get) => {
 
     arrange: (tabId) => {
       const box = get().boxes[tabId];
-      update(tabId, (t) => (t.tree ? { ...t, tree: autoGrid(leaves(t.tree), box, GUTTER), maximized: null } : t));
+      update(tabId, (t) =>
+        t.tree ? { ...t, tree: autoGrid(leaves(t.tree), box, GUTTER), maximized: null } : t,
+      );
     },
 
     setHumanName: (tabId, paneId, name) => {
       const tab = get().tabs[tabId];
       const pane = tab?.panes[paneId];
       if (!tab || !pane) return;
-      set({ tabs: { ...get().tabs, [tabId]: { ...tab, panes: { ...tab.panes, [paneId]: { ...pane, humanName: name } } } } });
+      set({
+        tabs: {
+          ...get().tabs,
+          [tabId]: { ...tab, panes: { ...tab.panes, [paneId]: { ...pane, humanName: name } } },
+        },
+      });
     },
 
     toggleCards: (tabId) => {

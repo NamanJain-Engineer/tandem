@@ -1,7 +1,10 @@
 //! Shared, dependency-light building blocks for every Tandem crate:
 //! paths, errors, ids, settings schema, event bus, status store, redaction,
-//! path containment, clock, keychain, command registry and logging.
+//! path containment, files, clock, keychain, command registry and logging.
 
+pub mod access;
+pub mod accounts;
+pub mod allow_rules;
 pub mod approvals;
 pub mod atomic;
 pub mod bus;
@@ -11,8 +14,10 @@ pub mod contain;
 pub mod diagnostics;
 pub mod entitlement;
 pub mod error;
+pub mod files;
 pub mod ids;
 pub mod keychain;
+pub mod limits;
 pub mod logging;
 pub mod net;
 pub mod origin;

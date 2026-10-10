@@ -14,6 +14,7 @@ pub mod quote;
 pub mod responder;
 pub mod ring;
 pub mod side;
+pub mod text;
 pub mod typing;
 
 use std::collections::BTreeMap;
@@ -637,6 +638,19 @@ impl PtyManager {
         let session = self.sessions.get(pane)?;
         let text = session.side.lock().ok().map(|s| s.screen_text());
         text
+    }
+
+    /// The last `lines` lines of output as plain text, laid out at the
+    /// pane's width (handoff briefs, F-CD-16).
+    pub fn plain_tail(&self, pane: &str, lines: u16) -> Result<String, PtyError> {
+        let session = self.get(pane)?;
+        let cols = session.side.lock().map(|s| s.cols()).unwrap_or(120);
+        let bytes = session
+            .ring
+            .lock()
+            .map(|r| r.tail(lines as usize))
+            .unwrap_or_default();
+        Ok(text::render_plain(&bytes, lines, cols))
     }
 
     /// The last `lines` lines of the ring (raw bytes): the quit snapshot.

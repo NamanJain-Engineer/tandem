@@ -4,12 +4,19 @@ import { SortableContext, arrayMove, horizontalListSortingStrategy, useSortable 
 import { CSS } from "@dnd-kit/utilities";
 import { Globe, LayoutDashboard, ListTodo, Maximize2, Minimize2, NotebookPen, Pin, PinOff, Plus, FolderTree, X } from "lucide-react";
 import type { SidebarTab, SidebarTabKind } from "@tandem/protocol";
-import { Badge, EmptyState, IconButton, Menu, cx, type MenuEntry } from "@tandem/ui";
+import { Badge, EmptyState, IconButton, Menu, cx, useToast, type MenuEntry } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useLayout } from "../../stores/layout";
 import { FLOAT_BELOW, SIDEBAR_MAX, SIDEBAR_MIN, useSidebar } from "../../stores/sidebar";
 import { useStatus } from "../../stores/status";
+import { focusAddressOnMount } from "../../stores/browser";
+import { BrowserView } from "../browser/BrowserView";
+import { moveToPane } from "../code/BrowserPane";
+import { useUi } from "../../stores/ui";
+import { useWorkspaces } from "../../stores/workspaces";
 import { Dashboard } from "../dashboard/Dashboard";
+import { FilesPanel } from "../files/FilesPanel";
+import { ScratchpadPanel } from "../scratchpad/ScratchpadPanel";
 
 const ICONS: Record<SidebarTabKind, ReactNode> = {
   dashboard: <LayoutDashboard size={13} aria-hidden="true" />,
@@ -61,6 +68,7 @@ function Pill({ tab, active }: { tab: SidebarTab; active: boolean }) {
   return (
     <li
       ref={setNodeRef}
+      role="presentation"
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cx(
         "group flex h-6 shrink-0 items-center rounded-full border text-sm",
@@ -80,6 +88,7 @@ function Pill({ tab, active }: { tab: SidebarTab; active: boolean }) {
         role="tab"
         aria-roledescription={undefined}
         aria-describedby={undefined}
+        aria-keyshortcuts="Delete"
         tabIndex={active ? 0 : -1}
         onClick={() => store().activate(tab.id)}
         onKeyDown={(e) => {
@@ -101,14 +110,17 @@ function Pill({ tab, active }: { tab: SidebarTab; active: boolean }) {
           </span>
         )}
       </button>
-      <button
-        type="button"
-        aria-label={t("sidebar.closeTab", { name: label })}
+      {/* A tab list may only hold tabs: × is for the mouse; the keyboard
+          closes the focused tab with Delete (aria-keyshortcuts). */}
+      <span
+        aria-hidden="true"
+        title={t("sidebar.closeTab", { name: label })}
+        data-testid="sidebar-pill-close"
         onClick={() => store().close(tab.id)}
-        className="mr-1 inline-flex size-4 items-center justify-center rounded-full text-fg-subtle opacity-0 hover:bg-surface-4 hover:text-fg focus-visible:opacity-100 focus-visible:shadow-focus focus-visible:outline-none group-hover:opacity-100"
+        className="mr-1 inline-flex size-4 cursor-default items-center justify-center rounded-full text-fg-subtle opacity-0 hover:bg-surface-4 hover:text-fg group-hover:opacity-100"
       >
         <X size={11} aria-hidden="true" />
-      </button>
+      </span>
     </li>
   );
 }
@@ -154,8 +166,29 @@ function Resizer({ width, onLive }: { width: number; onLive: (w: number | null) 
   );
 }
 
+/** A browser tab: its page, and "Move to a pane" in Code mode. */
+function BrowserTab({ tab }: { tab: SidebarTab }) {
+  const { show } = useToast();
+  const code = useUi((s) => s.mode === "code");
+  const codeTab = useWorkspaces((s) => (s.activeId ? s.activeTab[s.activeId] : undefined));
+  const actions: MenuEntry[] =
+    code && codeTab
+      ? [
+          {
+            id: "to-pane",
+            label: t("browser.moveToPane"),
+            onSelect: () => void moveToPane(tab).then((message) => message && show({ tone: "error", title: message })),
+          },
+        ]
+      : [];
+  return <BrowserView id={tab.id} url={tab.url} actions={actions} />;
+}
+
 function Panel({ tab }: { tab: SidebarTab }) {
   if (tab.kind === "dashboard") return <Dashboard />;
+  if (tab.kind === "files") return <FilesPanel />;
+  if (tab.kind === "browser") return <BrowserTab tab={tab} />;
+  if (tab.kind === "scratchpad") return <ScratchpadPanel />;
   return <EmptyState title={t("sidebar.soon")} />;
 }
 
@@ -168,6 +201,8 @@ export function Sidebar() {
   const narrow = useNarrow();
   const aside = useRef<HTMLElement>(null);
   const [liveWidth, setLiveWidth] = useState<number | null>(null);
+  /** The "+" menu gives focus back to "+" unless an item moved it. */
+  const focusMoved = useRef(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   useEffect(() => {
@@ -205,7 +240,15 @@ export function Sidebar() {
   const floating = narrow && !fullscreen;
   const docked = !narrow;
   const plus: MenuEntry[] = [
-    { id: "browser", label: t("sidebar.newBrowser"), disabled: true },
+    {
+      id: "browser",
+      label: t("sidebar.newBrowser"),
+      onSelect: () => {
+        // A new tab's address field takes the focus.
+        focusAddressOnMount(useSidebar.getState().openTab("browser"));
+        focusMoved.current = true;
+      },
+    },
     { id: "dashboard", label: t("sidebar.dashboard"), onSelect: () => useSidebar.getState().openTab("dashboard") },
     { id: "files", label: t("sidebar.files"), onSelect: () => useSidebar.getState().openTab("files") },
     { id: "tasks", label: t("sidebar.tasks"), onSelect: () => useSidebar.getState().openTab("tasks") },
@@ -258,6 +301,10 @@ export function Sidebar() {
             align="end"
             trigger={<IconButton size="sm" icon={<Plus size={14} />} label={t("sidebar.openIn")} data-testid="sidebar-plus" />}
             entries={plus}
+            onCloseAutoFocus={(e) => {
+              if (focusMoved.current) e.preventDefault();
+              focusMoved.current = false;
+            }}
           />
           {floating && (
             <IconButton

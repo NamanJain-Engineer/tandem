@@ -1,0 +1,17 @@
+{
+  "name": "vibezeo-product-video",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@fontsource-variable/inter": "*",
+    "@fontsource-variable/jetbrains-mono": "*",
+    "@remotion/bundler": "4.0.509",
+    "@remotion/cli": "4.0.509",
+    "@remotion/renderer": "4.0.509",
+    "@types/react": "^19.1.2",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "remotion": "4.0.509",
+    "typescript": "^5.6.3"
+  }
+}

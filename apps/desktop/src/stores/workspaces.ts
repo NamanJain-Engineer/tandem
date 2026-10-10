@@ -119,7 +119,9 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
   },
   setSessionsCollapsed: async (id, sessionsCollapsed) => {
     set({ list: get().list.map((w) => (w.id === id ? { ...w, sessionsCollapsed } : w)) });
-    await invoke("workspace_set_flags", { id, showSessionsCollapsed: sessionsCollapsed }).catch(() => undefined);
+    await invoke("workspace_set_flags", { id, showSessionsCollapsed: sessionsCollapsed }).catch(
+      () => undefined,
+    );
   },
   setCollapsed: (id, collapsed) => {
     set({ list: get().list.map((w) => (w.id === id ? { ...w, collapsed } : w)) });

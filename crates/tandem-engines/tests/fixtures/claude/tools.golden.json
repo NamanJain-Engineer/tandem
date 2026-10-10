@@ -1,0 +1,106 @@
+[
+  {
+    "session": "sess-tools"
+  },
+  {
+    "text": "Session started",
+    "type": "note"
+  },
+  {
+    "markdown": "I'll run the tests first.",
+    "type": "assistant"
+  },
+  {
+    "argSummary": "npm test",
+    "detail": "{\n  \"command\": \"npm test\\n# then lint\",\n  \"description\": \"Run the test suite\"\n}",
+    "diff": null,
+    "id": "toolu_01",
+    "output": null,
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "running",
+    "type": "tool",
+    "verb": "bash"
+  },
+  {
+    "argSummary": "npm test",
+    "detail": "{\n  \"command\": \"npm test\\n# then lint\",\n  \"description\": \"Run the test suite\"\n}",
+    "diff": null,
+    "id": "toolu_01",
+    "output": "42 passing",
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "ok",
+    "type": "tool",
+    "verb": "bash"
+  },
+  {
+    "argSummary": "src/cart.ts",
+    "detail": "{\n  \"file_path\": \"/work/shop/src/cart.ts\"\n}",
+    "diff": null,
+    "id": "toolu_02",
+    "output": null,
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "running",
+    "type": "tool",
+    "verb": "read"
+  },
+  {
+    "argSummary": "src/cart.ts",
+    "detail": "{\n  \"file_path\": \"/work/shop/src/cart.ts\"\n}",
+    "diff": null,
+    "id": "toolu_02",
+    "output": "export const cart = [];",
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "ok",
+    "type": "tool",
+    "verb": "read"
+  },
+  {
+    "argSummary": "linear › create_issue",
+    "detail": "{\n  \"title\": \"Flaky cart test\"\n}",
+    "diff": null,
+    "id": "toolu_03",
+    "output": null,
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "running",
+    "type": "tool",
+    "verb": "mcp"
+  },
+  {
+    "argSummary": "linear › create_issue",
+    "detail": "{\n  \"title\": \"Flaky cart test\"\n}",
+    "diff": null,
+    "id": "toolu_03",
+    "output": "Error: upstream timed out",
+    "outputFile": null,
+    "outputTruncated": false,
+    "status": "error",
+    "type": "tool",
+    "verb": "mcp"
+  },
+  {
+    "markdown": "Tests pass; the issue couldn't be filed.",
+    "type": "assistant"
+  },
+  {
+    "ack": true
+  },
+  {
+    "cacheRead": 90000,
+    "cacheWrite": 0,
+    "contextFillPct": 9.0,
+    "costUsd": 0.05,
+    "input": 10,
+    "output": 120,
+    "type": "usage"
+  },
+  {
+    "blockedActions": 0,
+    "reason": "completed",
+    "type": "turn_end"
+  }
+]

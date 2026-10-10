@@ -1,0 +1,9 @@
+{"client":["\"method\":\"initialize\""]}
+{"agent":{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true}}}}
+{"client":["\"method\":\"session/load\"","\"sessionId\":\"sess_old\""]}
+{"agent":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess_old","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"replayed history"}}}}}
+{"agent":{"jsonrpc":"2.0","id":2,"result":{"models":{"availableModels":[{"modelId":"grok-4","name":"Grok 4"},{"modelId":"grok-code-fast","name":"Grok Code Fast"}],"currentModelId":"grok-4"}}}}
+{"client":["\"method\":\"session/set_model\"","\"modelId\":\"grok-code-fast\"","\"sessionId\":\"sess_old\""]}
+{"agent":{"jsonrpc":"2.0","id":3,"result":{}}}
+{"client":["\"method\":\"session/prompt\"","\"sessionId\":\"sess_old\"","\"text\":\"hello\""]}
+{"agent":{"jsonrpc":"2.0","id":4,"error":{"code":-32603,"message":"Rate limit reached, try again later"}}}

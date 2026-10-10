@@ -1,0 +1,7 @@
+{"client":["\"method\":\"initialize\""]}
+{"agent":{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":false,"mcpCapabilities":{"http":false}}}}}
+{"client":["\"method\":\"session/new\"","\"mcpServers\":[]"]}
+{"agent":{"jsonrpc":"2.0","id":2,"result":{"sessionId":"sess_2","models":{"availableModels":[{"modelId":"grok-4","name":"Grok 4"},{"modelId":"grok-code-fast","name":"Grok Code Fast"}],"currentModelId":"grok-4"}}}}
+{"client":["\"method\":\"session/prompt\"","\"text\":\"hello\""]}
+{"agent":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess_2","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hi"}}}}}
+{"agent":{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}}

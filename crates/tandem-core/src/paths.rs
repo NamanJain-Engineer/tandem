@@ -106,6 +106,10 @@ impl DataDir {
     pub fn attachments(&self) -> PathBuf {
         self.root.join("attachments")
     }
+    /// Non-git threads' starting manifests (F-TH-13).
+    pub fn snapshots(&self) -> PathBuf {
+        self.root.join("snapshots")
+    }
     pub fn staging(&self) -> PathBuf {
         self.root.join("staging")
     }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, RefreshCw, SquareTerminal } from "lucide-react";
+import { ChevronDown, ChevronRight, Globe, RefreshCw, SquareTerminal } from "lucide-react";
 import type { EngineView } from "@tandem/protocol";
 import { Button, EngineGlyph, Spinner, cx } from "@tandem/ui";
 import { t } from "../../i18n";
@@ -29,11 +29,14 @@ export function LaunchGrid({
   onPick,
   busy,
   autoFocus,
+  browser,
 }: {
   tabId: string;
   onPick: (tileId: string) => void;
   busy: string | null;
   autoFocus?: boolean;
+  /** The pane picker also offers a Browser pane (F-CD-17). */
+  browser?: boolean;
 }) {
   const { installed, missing, loaded } = useEngineList();
   const report = useEngines((s) => s.report);
@@ -57,6 +60,7 @@ export function LaunchGrid({
       <ul className="grid grid-cols-2 gap-2">
         {installed.map((e, i) => tile(e.spec.id, e.spec.label, <EngineGlyph letters={e.spec.logo} size={20} />, e.install?.version ?? null, i === 0))}
         {tile("shell", t("picker.terminal"), <SquareTerminal size={20} className="text-fg-muted" aria-hidden="true" />, null, installed.length === 0)}
+        {browser && tile("browser", t("picker.browser"), <Globe size={20} className="text-fg-muted" aria-hidden="true" />, null, false)}
       </ul>
       {report?.slowShell && (
         // Known folders were still checked: what's above is real (F-EN-01 AC2).

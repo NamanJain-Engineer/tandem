@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-thread-switch-engine"
+description = "Enables the thread_switch_engine command without any pre-configured scope."
+commands.allow = ["thread_switch_engine"]
+
+[[permission]]
+identifier = "deny-thread-switch-engine"
+description = "Denies the thread_switch_engine command without any pre-configured scope."
+commands.deny = ["thread_switch_engine"]

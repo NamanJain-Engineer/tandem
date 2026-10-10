@@ -63,6 +63,12 @@ impl Repo {
         &self.common_dir
     }
 
+    /// This working tree's own git directory: `.git` for the main
+    /// checkout, `.git/worktrees/<name>` for a lane (HEAD and index).
+    pub fn git_dir(&self) -> &Path {
+        &self.git_dir
+    }
+
     /// The top folder of the main checkout, where `.tandem/worktrees` lives,
     /// also when this is a linked worktree.
     pub fn main_root(&self) -> PathBuf {
@@ -244,9 +250,23 @@ impl Repo {
         self.blocking(move |r| r.diff_since_blocking(&base)).await
     }
 
+    /// Like [`Repo::diff_since`]; with no base (a repository that had no
+    /// commits yet), everything in the working tree counts as added.
+    pub async fn diff_from(&self, base: Option<String>) -> Result<Vec<FileDiff>, GitError> {
+        self.blocking(move |r| r.diff_from_blocking(base.as_deref()))
+            .await
+    }
+
     pub fn diff_since_blocking(&self, base: &str) -> Result<Vec<FileDiff>, GitError> {
+        self.diff_from_blocking(Some(base))
+    }
+
+    fn diff_from_blocking(&self, base: Option<&str>) -> Result<Vec<FileDiff>, GitError> {
         let repo = self.open()?;
-        let tree = repo.revparse_single(base)?.peel_to_commit()?.tree()?;
+        let tree = match base {
+            Some(base) => Some(repo.revparse_single(base)?.peel_to_commit()?.tree()?),
+            None => None,
+        };
         let mut opts = DiffOptions::new();
         opts.include_untracked(true)
             .recurse_untracked_dirs(true)
@@ -256,65 +276,129 @@ impl Repo {
         if let Some(spec) = self.pathspec() {
             opts.pathspec(spec);
         }
-        let mut diff = repo.diff_tree_to_workdir_with_index(Some(&tree), Some(&mut opts))?;
+        let mut diff = repo.diff_tree_to_workdir_with_index(tree.as_ref(), Some(&mut opts))?;
         diff.find_similar(Some(DiffFindOptions::new().renames(true)))?;
-        let mut files = Vec::with_capacity(diff.deltas().len());
-        for idx in 0..diff.deltas().len() {
-            let Some(delta) = diff.get_delta(idx) else {
-                continue;
-            };
-            let change = match delta.status() {
-                git2::Delta::Added | git2::Delta::Untracked | git2::Delta::Copied => {
-                    FileChange::Added
-                }
-                git2::Delta::Deleted => FileChange::Deleted,
-                git2::Delta::Renamed => FileChange::Renamed,
-                git2::Delta::Typechange => FileChange::TypeChanged,
-                git2::Delta::Conflicted => FileChange::Conflicted,
-                _ => FileChange::Modified,
-            };
-            let path = delta
-                .new_file()
-                .path()
-                .or_else(|| delta.old_file().path())
-                .map(path_string)
-                .unwrap_or_default();
-            let old_path = (change == FileChange::Renamed)
-                .then(|| delta.old_file().path().map(path_string))
-                .flatten();
-            let patch = git2::Patch::from_diff(&diff, idx)?;
-            let binary = delta.flags().is_binary() || patch.is_none();
-            let (mut additions, mut deletions, mut text, mut truncated) =
-                (0, 0, String::new(), false);
-            if let (false, Some(mut patch)) = (binary, patch) {
-                let (_, add, del) = patch.line_stats()?;
-                additions = u32::try_from(add).unwrap_or(u32::MAX);
-                deletions = u32::try_from(del).unwrap_or(u32::MAX);
-                let buf = patch.to_buf()?;
-                let bytes: &[u8] = &buf;
-                if bytes.len() > MAX_PATCH_BYTES {
-                    truncated = true;
-                    text = String::from_utf8_lossy(&bytes[..MAX_PATCH_BYTES]).into_owned();
-                    // Don't end on half a line.
-                    if let Some(cut) = text.rfind('\n') {
-                        text.truncate(cut + 1);
-                    }
-                } else {
-                    text = String::from_utf8_lossy(bytes).into_owned();
-                }
-            }
-            files.push(FileDiff {
-                path,
-                old_path,
-                change,
-                additions,
-                deletions,
-                binary,
-                patch: text,
-                truncated,
-            });
-        }
+        let files = files_of(&diff)?;
         Ok(files)
+    }
+
+    /// One file's diff for the git panel: staged (HEAD → index, or
+    /// everything staged before the first commit) or not (index → working
+    /// tree, an untracked file as added).
+    pub async fn diff_file(&self, path: &str, staged: bool) -> Result<FileDiff, GitError> {
+        let path = path.to_string();
+        self.blocking(move |r| {
+            let repo = r.open()?;
+            let mut opts = DiffOptions::new();
+            opts.pathspec(&path)
+                .disable_pathspec_match(true)
+                .ignore_submodules(true)
+                .context_lines(3);
+            let diff = if staged {
+                let tree = match repo.head() {
+                    Ok(head) => Some(head.peel_to_tree()?),
+                    Err(e) if is_unborn(&e) => None,
+                    Err(e) => return Err(e.into()),
+                };
+                repo.diff_tree_to_index(tree.as_ref(), None, Some(&mut opts))?
+            } else {
+                opts.include_untracked(true)
+                    .recurse_untracked_dirs(true)
+                    .show_untracked_content(true);
+                repo.diff_index_to_workdir(None, Some(&mut opts))?
+            };
+            Ok(files_of(&diff)?.into_iter().next().unwrap_or(FileDiff {
+                path,
+                old_path: None,
+                change: FileChange::Modified,
+                additions: 0,
+                deletions: 0,
+                binary: false,
+                patch: String::new(),
+                truncated: false,
+            }))
+        })
+        .await
+    }
+
+    /// The branch switcher's list: local branches with their upstream's
+    /// ahead/behind, then remote branches that have no local branch yet.
+    pub async fn branches(&self) -> Result<Vec<crate::types::Branch>, GitError> {
+        use crate::types::Branch;
+        self.blocking(|r| {
+            let repo = r.open()?;
+            let current = match repo.head() {
+                Ok(head) if head.is_branch() => head.shorthand().map(str::to_string),
+                Ok(_) => None,
+                Err(e) if is_unborn(&e) => repo
+                    .find_reference("HEAD")
+                    .ok()
+                    .and_then(|h| h.symbolic_target().map(str::to_string))
+                    .map(|t| t.trim_start_matches("refs/heads/").to_string()),
+                Err(e) => return Err(e.into()),
+            };
+            let mut out = Vec::new();
+            let mut local = std::collections::HashSet::new();
+            for item in repo.branches(Some(git2::BranchType::Local))? {
+                let (branch, _) = item?;
+                let Some(name) = branch.name()?.map(str::to_string) else {
+                    continue;
+                };
+                let (mut ahead, mut behind, mut upstream) = (0, 0, None);
+                if let Ok(up) = branch.upstream() {
+                    upstream = up.name()?.map(str::to_string);
+                    if let (Some(l), Some(u)) = (branch.get().target(), up.get().target()) {
+                        let (a, b) = repo.graph_ahead_behind(l, u)?;
+                        ahead = u32::try_from(a).unwrap_or(u32::MAX);
+                        behind = u32::try_from(b).unwrap_or(u32::MAX);
+                    }
+                }
+                local.insert(name.clone());
+                out.push(Branch {
+                    current: current.as_deref() == Some(name.as_str()),
+                    name,
+                    remote: false,
+                    upstream,
+                    ahead,
+                    behind,
+                });
+            }
+            // A branch about to be born (no commits yet) is still the current one.
+            if let Some(name) = current.as_ref().filter(|n| !local.contains(*n)) {
+                local.insert(name.clone());
+                out.push(Branch {
+                    name: name.clone(),
+                    current: true,
+                    remote: false,
+                    upstream: None,
+                    ahead: 0,
+                    behind: 0,
+                });
+            }
+            for item in repo.branches(Some(git2::BranchType::Remote))? {
+                let (branch, _) = item?;
+                let Some(full) = branch.name()?.map(str::to_string) else {
+                    continue;
+                };
+                let short = full.split_once('/').map(|(_, s)| s).unwrap_or(&full);
+                if short == "HEAD" || local.contains(short) {
+                    continue;
+                }
+                out.push(Branch {
+                    name: full,
+                    current: false,
+                    remote: true,
+                    upstream: None,
+                    ahead: 0,
+                    behind: 0,
+                });
+            }
+            out.sort_by(|a, b| {
+                (a.remote, a.name.to_lowercase()).cmp(&(b.remote, b.name.to_lowercase()))
+            });
+            Ok(out)
+        })
+        .await
     }
 
     /// Whether `branch`'s tip is `into` or one of its ancestors.
@@ -361,6 +445,106 @@ impl Repo {
         spec.push('/');
         Some(spec)
     }
+}
+
+/// Each file of `diff` as the DiffView renders it (UI_SPEC §2.25).
+fn files_of(diff: &git2::Diff<'_>) -> Result<Vec<FileDiff>, GitError> {
+    let mut files = Vec::with_capacity(diff.deltas().len());
+    for idx in 0..diff.deltas().len() {
+        let Some(delta) = diff.get_delta(idx) else {
+            continue;
+        };
+        let change = match delta.status() {
+            git2::Delta::Added | git2::Delta::Untracked | git2::Delta::Copied => FileChange::Added,
+            git2::Delta::Deleted => FileChange::Deleted,
+            git2::Delta::Renamed => FileChange::Renamed,
+            git2::Delta::Typechange => FileChange::TypeChanged,
+            git2::Delta::Conflicted => FileChange::Conflicted,
+            _ => FileChange::Modified,
+        };
+        let path = delta
+            .new_file()
+            .path()
+            .or_else(|| delta.old_file().path())
+            .map(path_string)
+            .unwrap_or_default();
+        let old_path = (change == FileChange::Renamed)
+            .then(|| delta.old_file().path().map(path_string))
+            .flatten();
+        let patch = git2::Patch::from_diff(diff, idx)?;
+        let binary = delta.flags().is_binary() || patch.is_none();
+        let (mut additions, mut deletions, mut text, mut truncated) = (0, 0, String::new(), false);
+        if let (false, Some(mut patch)) = (binary, patch) {
+            let (_, add, del) = patch.line_stats()?;
+            additions = u32::try_from(add).unwrap_or(u32::MAX);
+            deletions = u32::try_from(del).unwrap_or(u32::MAX);
+            let buf = patch.to_buf()?;
+            let bytes: &[u8] = &buf;
+            if bytes.len() > MAX_PATCH_BYTES {
+                truncated = true;
+                text = String::from_utf8_lossy(&bytes[..MAX_PATCH_BYTES]).into_owned();
+                // Don't end on half a line.
+                if let Some(cut) = text.rfind('\n') {
+                    text.truncate(cut + 1);
+                }
+            } else {
+                text = String::from_utf8_lossy(bytes).into_owned();
+            }
+        }
+        files.push(FileDiff {
+            path,
+            old_path,
+            change,
+            additions,
+            deletions,
+            binary,
+            patch: text,
+            truncated,
+        });
+    }
+    Ok(files)
+}
+
+/// `old` → `new` as one file of a diff (the editor's "Compare": the file on
+/// disk against the unsaved text). Nothing is read from a repository.
+pub fn diff_texts(path: &str, old: &[u8], new: &[u8]) -> Result<FileDiff, GitError> {
+    let mut opts = DiffOptions::new();
+    opts.context_lines(3);
+    let mut patch = git2::Patch::from_buffers(
+        old,
+        Some(Path::new(path)),
+        new,
+        Some(Path::new(path)),
+        Some(&mut opts),
+    )?;
+    let binary = patch.delta().flags().is_binary();
+    let (mut additions, mut deletions, mut text, mut truncated) = (0, 0, String::new(), false);
+    if !binary {
+        let (_, add, del) = patch.line_stats()?;
+        additions = u32::try_from(add).unwrap_or(u32::MAX);
+        deletions = u32::try_from(del).unwrap_or(u32::MAX);
+        let buf = patch.to_buf()?;
+        let bytes: &[u8] = &buf;
+        if bytes.len() > MAX_PATCH_BYTES {
+            truncated = true;
+            text = String::from_utf8_lossy(&bytes[..MAX_PATCH_BYTES]).into_owned();
+            if let Some(cut) = text.rfind('\n') {
+                text.truncate(cut + 1);
+            }
+        } else {
+            text = String::from_utf8_lossy(bytes).into_owned();
+        }
+    }
+    Ok(FileDiff {
+        path: path.to_string(),
+        old_path: None,
+        change: FileChange::Modified,
+        additions,
+        deletions,
+        binary,
+        patch: text,
+        truncated,
+    })
 }
 
 fn is_unborn(e: &git2::Error) -> bool {

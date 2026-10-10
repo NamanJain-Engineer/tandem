@@ -8,8 +8,8 @@ import {
   type ImperativePanelGroupHandle,
 } from "react-resizable-panels";
 import type { IpcError, PaneRecord, WorkspaceSummary } from "@tandem/protocol";
-import { SquareTerminal } from "lucide-react";
-import { Badge, EngineGlyph, Spinner, StatusDot, Tooltip, cx, useToast, type MenuEntry, type Status } from "@tandem/ui";
+import { ArrowRightLeft, SquareTerminal, X } from "lucide-react";
+import { Badge, Button, ContextMeter, EngineGlyph, IconButton, Spinner, StatusDot, Tooltip, cx, useToast, type MenuEntry, type Status } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useEngines } from "../../stores/engines";
 import { paneKey, statusView, useStatus } from "../../stores/status";
@@ -18,13 +18,16 @@ import { useBoot } from "../shell/useBoot";
 import { useCloseConfirm } from "../../stores/closeConfirm";
 import { useFlash } from "../../stores/focus";
 import { useWorkspaces } from "../../stores/workspaces";
+import { useLaunch } from "../../stores/launch";
 import { useRestore, waitingOnCard } from "../../stores/restore";
 import { invoke } from "../../ipc/invoke";
 import { useLayout, type Box, type TabPanes } from "../../stores/layout";
-import { DropZones, applyDrop, type PaneDrag } from "./dnd";
+import { DropZones, moveToNewTab, type PaneDrag } from "./dnd";
 import { useDropTarget } from "./drops";
 import { GUTTER, leaves, minExtent, type LayoutNode } from "./layout/tree";
 import { PaneChrome } from "./PaneChrome";
+import { BrowserPane } from "./BrowserPane";
+import { pageTitle, useBrowser } from "../../stores/browser";
 import { attachPaneHost, paneHost } from "./paneHosts";
 import { LaunchGrid } from "./LaunchGrid";
 import { launchFor } from "./PanePicker";
@@ -33,6 +36,12 @@ import { webglPool } from "./webglPool";
 import type { Activity } from "./commandMarks";
 import { TerminalView, copyLastOutput, terminalHandles, type Phase, type TerminalOptions } from "./TerminalView";
 import { PausedCard } from "./PausedCard";
+import { WorktreeChip, worktreeMenu } from "./Worktrees";
+import { useHandoff } from "../../stores/handoff";
+import { AccountChip } from "./AccountChip";
+import { LimitBanner } from "./LimitCard";
+import { useContexts } from "../../stores/contexts";
+import { baseBranch, isWorktree } from "../../stores/worktrees";
 
 const BOX_THROTTLE_MS = 50;
 
@@ -235,8 +244,14 @@ const PaneView = memo(function PaneView({
   const flashing = useFlash((st) => st.flashing[pane.id] !== undefined);
   // Location metadata: the cwd relative to the workspace root (F-CD-12).
   const cwd = useTerminals((st) => st.states[pane.id]?.cwd ?? null);
-  const root = useWorkspaces((st) => st.list.find((w) => w.id === pane.workspaceId)?.root ?? null);
+  const home = useWorkspaces((st) => st.list.find((w) => w.id === pane.workspaceId));
+  const root = home?.root ?? null;
+  // A pane in a worktree shows its branch and the worktree actions (UI_SPEC §4.3).
+  const wt = home && isWorktree(home) ? home : null;
+  const base = useWorkspaces((st) => (wt ? baseBranch(st.list, wt) : ""));
   const meta = relativeCwd(cwd ?? pane.cwd, root);
+  const note = useHandoff((st) => st.notes[pane.id]);
+  const context = useContexts((st) => st.byPane[pane.id]);
   const rename = async (name: string): Promise<string | null> => {
     try {
       const stored = await invoke<string>("pane_rename", { paneId: pane.id, humanName: name });
@@ -260,6 +275,14 @@ const PaneView = memo(function PaneView({
     },
     { id: "new-tab", label: t("pane.moveToNewTab"), onSelect: () => void moveToNewTab(tabId, pane.id) },
     { id: "restart", label: t("pane.restart"), onSelect: () => terminalHandles.get(pane.id)?.restart() },
+    {
+      id: "handoff",
+      label: t("pane.handoff"),
+      onSelect: () =>
+        useHandoff
+          .getState()
+          .open({ paneId: pane.id, workspaceId: pane.workspaceId, kind: pane.kind, engineId: pane.engineId }),
+    },
     { id: "sep-copy", type: "separator" },
     {
       id: "copy-last-output",
@@ -279,6 +302,7 @@ const PaneView = memo(function PaneView({
           ?.copyLast(n)
           .then((ok) => ok && show({ tone: "success", title: t("terminal.copied") })),
     })),
+    ...(wt ? [{ id: "sep-worktree", type: "separator" as const }, ...worktreeMenu(wt, base, show)] : []),
     {
       id: "close",
       label: t("pane.closePane"),
@@ -317,21 +341,54 @@ const PaneView = memo(function PaneView({
         glyph={pane.kind === "agent" && glyph ? <EngineGlyph letters={glyph} size={14} /> : undefined}
         name={pane.humanName}
         meta={meta}
+        location={
+          <>
+            {wt && <WorktreeChip wt={wt} />}
+            <AccountChip pane={pane} />
+          </>
+        }
         onRename={rename}
         renaming={renaming}
         onRenamingChange={setRenaming}
         badges={
-          lite && visible && options.gpu !== false ? (
-            <Tooltip label={t("pane.liteTooltip")}>
-              <span data-testid="lite-badge" tabIndex={0} className="rounded-xs focus-visible:shadow-focus focus-visible:outline-none">
-                <Badge>{t("pane.lite")}</Badge>
-              </span>
-            </Tooltip>
-          ) : undefined
+          <>
+            {context && (
+              <ContextMeter
+                label={t("pane.context")}
+                used={Number(context.used)}
+                window={Number(context.window)}
+                tooltip={t("pane.contextTooltip")}
+              />
+            )}
+            {lite && visible && options.gpu !== false && (
+              <Tooltip label={t("pane.liteTooltip")}>
+                <span data-testid="lite-badge" tabIndex={0} className="rounded-xs focus-visible:shadow-focus focus-visible:outline-none">
+                  <Badge>{t("pane.lite")}</Badge>
+                </span>
+              </Tooltip>
+            )}
+          </>
         }
         dragRef={setNodeRef}
         dragProps={{ ...attributes, ...listeners, tabIndex: -1, role: "toolbar" }}
       />
+      <LimitBanner pane={pane} />
+      {note && (
+        // F-CD-16: where the work went, until dismissed.
+        <div
+          data-testid="handoff-note"
+          className="flex h-6 shrink-0 items-center gap-1.5 border-b border-divider bg-surface-2 pl-2 pr-1 text-xs text-fg-muted"
+        >
+          <ArrowRightLeft size={12} aria-hidden="true" className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">{note}</span>
+          <IconButton
+            size="sm"
+            icon={<X size={12} />}
+            label={t("handoff.dismissNote")}
+            onClick={() => useHandoff.getState().note(pane.id, null)}
+          />
+        </div>
+      )}
       <div className="relative min-h-0 flex-1">
         {cover && (
           <PaneCover
@@ -435,15 +492,6 @@ function PaneCover({
   );
 }
 
-async function moveToNewTab(tabId: string, paneId: string): Promise<void> {
-  const pane = useLayout.getState().tabs[tabId]?.panes[paneId];
-  if (pane)
-    await applyDrop(
-      { kind: "pane", paneId, tabId, title: "" },
-      { kind: "new_tab", workspaceId: pane.workspaceId },
-    );
-}
-
 /** The empty tab (UI-10): launch tiles instead of a shell. */
 function EmptyTab({ tabId, workspace }: { tabId: string; workspace: WorkspaceSummary }) {
   const [busy, setBusy] = useState<string | null>(null);
@@ -466,6 +514,9 @@ function EmptyTab({ tabId, workspace }: { tabId: string; workspace: WorkspaceSum
           <p className="text-sm text-fg-muted">{t("code.startBody")}</p>
         </div>
         <LaunchGrid tabId={tabId} busy={busy} onPick={(id) => void start(id)} />
+        <Button size="sm" variant="ghost" className="self-start" onClick={() => useLaunch.getState().open(workspace.id)} data-testid="launch-several">
+          {t("launch.several")}
+        </Button>
       </div>
     </div>
   );
@@ -530,12 +581,20 @@ export function PaneGrid({
   const records = useStatus((st) => st.records);
   const ptyStates = useTerminals((st) => st.states);
   const prompts = useFirstPrompts((st) => st.prompts);
+  const pages = useBrowser((st) => st.pages);
   const names = useMemo(() => {
     const sources: Record<string, TitleSources> = {};
-    for (const id of Object.keys(tab?.panes ?? {}))
-      sources[id] = { hook: records[paneKey(id)]?.title, osc: ptyStates[id]?.title, firstPrompt: prompts[id] };
+    for (const id of Object.keys(tab?.panes ?? {})) {
+      const page = pages[id];
+      sources[id] = {
+        hook: records[paneKey(id)]?.title,
+        osc: ptyStates[id]?.title,
+        firstPrompt: prompts[id],
+        page: page ? pageTitle(page) : null,
+      };
+    }
     return paneTitles(tab?.panes ?? {}, engines, sources);
-  }, [tab?.panes, engines, records, ptyStates, prompts]);
+  }, [tab?.panes, engines, records, ptyStates, prompts, pages]);
   // The pane in front never turns unread (F-SH-03).
   const active = tab?.active ?? null;
   useEffect(() => {
@@ -577,18 +636,32 @@ export function PaneGrid({
       {ids.map((id) => {
         const pane = tab.panes[id];
         if (!pane) return null;
+        const cover = cards && !cards.flipped[id] ? "card" : workspace.sessionsCollapsed ? "line" : null;
         return createPortal(
-          <PaneView
-            tabId={tabId}
-            pane={pane}
-            title={names[id] ?? ""}
-            visible={visible && (!tab.maximized || tab.maximized === id)}
-            focused={tab.active === id}
-            solo={solo}
-            maximized={tab.maximized === id}
-            options={options}
-            cover={cards && !cards.flipped[id] ? "card" : workspace.sessionsCollapsed ? "line" : null}
-          />,
+          pane.kind === "browser" ? (
+            <BrowserPane
+              tabId={tabId}
+              pane={pane}
+              title={names[id] ?? ""}
+              visible={visible && (!tab.maximized || tab.maximized === id)}
+              focused={tab.active === id}
+              solo={solo}
+              maximized={tab.maximized === id}
+              cover={cover}
+            />
+          ) : (
+            <PaneView
+              tabId={tabId}
+              pane={pane}
+              title={names[id] ?? ""}
+              visible={visible && (!tab.maximized || tab.maximized === id)}
+              focused={tab.active === id}
+              solo={solo}
+              maximized={tab.maximized === id}
+              options={options}
+              cover={cover}
+            />
+          ),
           paneHost(id),
           id,
         );

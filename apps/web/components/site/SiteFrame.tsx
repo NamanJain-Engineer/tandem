@@ -13,7 +13,7 @@ export function Mark({ size = 22 }: { size?: number }) {
 
 const NAV = [
   { href: "/download/", label: "Download" },
-  { href: "/#demo", label: "Demo" },
+  { href: "/demo/", label: "Live demo" },
   { href: "/#claude", label: "Claude" },
   { href: "/pricing/", label: "Pricing" },
   { href: "/changelog/", label: "Changelog" },

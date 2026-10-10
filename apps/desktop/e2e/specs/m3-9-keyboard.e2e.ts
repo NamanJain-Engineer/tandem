@@ -1,11 +1,41 @@
 import { $, browser } from "@wdio/globals";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshOffline, invoke, mod, paneIds, rawRead, sendToPane, typeKeys, waitForPaneText } from "../support/app";
+import {
+  addFolder,
+  freshOffline,
+  invoke,
+  mod,
+  paneIds,
+  rawRead,
+  sendToPane,
+  typeKeys,
+  waitForPaneText,
+} from "../support/app";
 
 const root = new URL("../../../..", import.meta.url).pathname;
-const COMMANDS = JSON.parse(readFileSync(join(root, "packages/protocol/shortcuts.json"), "utf8")) as Array<{ id: string }>;
-const EN = JSON.parse(readFileSync(join(root, "apps/desktop/src/i18n/en.json"), "utf8")) as Record<string, string>;
+const COMMANDS = JSON.parse(readFileSync(join(root, "packages/protocol/shortcuts.json"), "utf8")) as Array<{
+  id: string;
+  enabledWhen: string;
+}>;
+const EN = JSON.parse(readFileSync(join(root, "apps/desktop/src/i18n/en.json"), "utf8")) as Record<
+  string,
+  string
+>;
+
+/** Thread mode with a thread open, for commands that act on the open thread. */
+async function openThread(): Promise<void> {
+  const list = await invoke<Array<{ id: string }>>("thread_list", { kind: "thread" });
+  const id =
+    list[0]?.id ??
+    (await invoke<{ id: string }>("thread_create", { args: { kind: "thread", workspaceId: null } })).id;
+  await browser.keys([mod(), "3"]);
+  await browser.waitUntil(async () => (await mode()) === "Thread", { timeout: 3_000 });
+  const row = $(`[data-testid="thread-row"][data-thread-id="${id}"]`);
+  await row.waitForClickable({ timeout: 10_000 });
+  await row.click();
+  await $(`[data-testid="thread-main"][data-thread-id="${id}"]`).waitForExist({ timeout: 10_000 });
+}
 
 async function focusTerminal(pane: string): Promise<void> {
   await $(`[data-testid="terminal"][data-pane-id="${pane}"]`).click();
@@ -14,16 +44,22 @@ async function focusTerminal(pane: string): Promise<void> {
 async function mode(): Promise<string> {
   return String(
     await browser.execute(
-      () => document.querySelector<HTMLElement>('[role="radiogroup"][aria-label="Work mode"] [role="radio"][aria-checked="true"]')?.innerText.trim() ?? "",
+      () =>
+        document
+          .querySelector<HTMLElement>(
+            '[role="radiogroup"][aria-label="Work mode"] [role="radio"][aria-checked="true"]',
+          )
+          ?.innerText.trim() ?? "",
     ),
   );
 }
 
 async function runs(): Promise<Record<string, number>> {
-  return (await browser.execute(() => (window as unknown as { __tandemTest: { commandRuns: () => Record<string, number> } }).__tandemTest.commandRuns())) as Record<
-    string,
-    number
-  >;
+  return (await browser.execute(() =>
+    (
+      window as unknown as { __tandemTest: { commandRuns: () => Record<string, number> } }
+    ).__tandemTest.commandRuns(),
+  )) as Record<string, number>;
 }
 
 // E2E-M3-9 Keyboard (F-SH-09, F-CD-05 AC1).
@@ -65,12 +101,21 @@ describe("E2E-M3-9 keyboard", () => {
     await waitForPaneText(pane, "copy-me-9");
     read = await rawRead(pane, 1, 3);
     await focusTerminal(pane);
-    await browser.execute((id: string) => (window as unknown as { __tandemTest: { selectAll: (p: string) => void } }).__tandemTest.selectAll(id), pane);
+    await browser.execute(
+      (id: string) =>
+        (window as unknown as { __tandemTest: { selectAll: (p: string) => void } }).__tandemTest.selectAll(
+          id,
+        ),
+      pane,
+    );
     await browser.keys(["Control", "c"]);
-    await browser.waitUntil(async () => String(await invoke("plugin:clipboard-manager|read_text")).includes("copy-me-9"), {
-      timeout: 5_000,
-      timeoutMsg: "the selection wasn't copied",
-    });
+    await browser.waitUntil(
+      async () => String(await invoke("plugin:clipboard-manager|read_text")).includes("copy-me-9"),
+      {
+        timeout: 5_000,
+        timeoutMsg: "the selection wasn't copied",
+      },
+    );
     expect(await read()).toBe("");
   });
 
@@ -82,16 +127,26 @@ describe("E2E-M3-9 keyboard", () => {
     await browser.keys("F5");
     await browser.keys(["Control", "r"]);
     await browser.pause(1_000);
-    expect(await browser.execute(() => (window as unknown as { __noReload?: boolean }).__noReload === true)).toBe(true);
+    expect(
+      await browser.execute(() => (window as unknown as { __noReload?: boolean }).__noReload === true),
+    ).toBe(true);
   });
 
   it("F-SH-09.5 Mod+1 during composition doesn't switch mode", async () => {
     await focusTerminal(pane);
-    await browser.execute(() => document.activeElement?.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "" })));
+    await browser.execute(() =>
+      document.activeElement?.dispatchEvent(
+        new CompositionEvent("compositionstart", { bubbles: true, data: "" }),
+      ),
+    );
     await browser.keys([mod(), "1"]);
     await browser.pause(300);
     expect(await mode()).toBe("Code");
-    await browser.execute(() => document.activeElement?.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "" })));
+    await browser.execute(() =>
+      document.activeElement?.dispatchEvent(
+        new CompositionEvent("compositionend", { bubbles: true, data: "" }),
+      ),
+    );
     await browser.keys([mod(), "1"]);
     await browser.waitUntil(async () => (await mode()) === "Agent", { timeout: 3_000 });
     await browser.keys([mod(), "2"]);
@@ -112,6 +167,7 @@ describe("E2E-M3-9 keyboard", () => {
     ids.push(...last);
     for (const id of ids) {
       const was = (await runs())[id] ?? 0;
+      if (COMMANDS.find((c) => c.id === id)?.enabledWhen === "thread_open") await openThread();
       await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
       await browser.keys([mod(), "k"]);
       const input = $('input[placeholder="Type a command or search…"]');

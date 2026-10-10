@@ -15,7 +15,41 @@
 //!
 //! Lines: `/exit` quits; `/ask` asks for approval (Notification);
 //! `/script` runs UserPromptSubmit → Notification → Stop two seconds apart;
-//! `/title <t>` sets the OSC title; anything else is answered, then Stop.
+//! `/title <t>` sets the OSC title; a handoff brief request (F-CD-16) is
+//! answered with a brief between its markers; anything else is answered,
+//! then Stop.
+//!
+//! As `codex`, `app-server` answers JSON-RPC lines: `initialize`,
+//! `account/rateLimits/read` from `TANDEM_FAKE_USAGE` ("40,85": a 5-hour and
+//! a weekly window; empty or `none`: an error), F-AC-04, and the V2 thread
+//! protocol (`thread/start|resume`, `turn/start` answered "You said: …").
+//!
+//! `TANDEM_FAKE_VERSION` (a value or a file of `<name> <version>` lines) sets
+//! the version an engine reports (`--version`, Codex's `userAgent`).
+//!
+//! `/context <tokens>` (as `claude`) ends a turn whose transcript, under
+//! `$CLAUDE_CONFIG_DIR/projects/`, reports that many context tokens (F-AC-06).
+//!
+//! `/limit <delay>` prints a usage-limit message that resets after the delay
+//! ("5s", "2h"), as engines do (F-AC-05).
+//!
+//! Sign-in (F-AC-02): `/login` asks for a code like a device flow and, once a
+//! line is typed, writes `$CLAUDE_CONFIG_DIR/.credentials.json`; `/logout`
+//! deletes it. As `codex`, `login` does the same with `$CODEX_HOME/auth.json`,
+//! `login status` exits 0 when it exists and `logout` deletes it.
+//!
+//! As `claude -p --input-format stream-json` (Thread mode), it is a chat
+//! engine: see `fake-engine/chat.rs`. As `<engine> acp` it is an Agent Client
+//! Protocol agent: see `fake-engine/acp.rs`.
+//!
+//! Run headless (`claude -p`, `codex exec`), it reads its prompt from stdin,
+//! logs its size and prints a brief. `TANDEM_FAKE_BRIEF` (a value, or a
+//! file holding it) set to `empty` makes both briefs empty.
+
+#[path = "fake-engine/acp.rs"]
+mod acp;
+#[path = "fake-engine/chat.rs"]
+mod chat;
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -55,6 +89,243 @@ fn out(s: &str) {
     let mut o = std::io::stdout();
     let _ = o.write_all(s.as_bytes());
     let _ = o.flush();
+}
+
+/// `TANDEM_FAKE_BRIEF`: the value, or the contents of the file it names.
+fn brief_mode() -> String {
+    let Ok(v) = std::env::var("TANDEM_FAKE_BRIEF") else {
+        return String::new();
+    };
+    std::fs::read_to_string(&v).unwrap_or(v).trim().to_string()
+}
+
+/// A brief under the template's headings, one line each.
+fn brief_lines(label: &str) -> Vec<String> {
+    if brief_mode() == "empty" {
+        return Vec::new();
+    }
+    [
+        "## Goal".to_string(),
+        format!("Finish the work {label} started."),
+        "## What's done".into(),
+        "The parser is fixed.".into(),
+        "## Current state".into(),
+        "Tests are running.".into(),
+        "## Files touched".into(),
+        "src/parse.rs".into(),
+        "## Open problems".into(),
+        "None known.".into(),
+        "## Next steps".into(),
+        "Run the tests.".into(),
+    ]
+    .to_vec()
+}
+
+/// Where this engine keeps its fake sign-in.
+fn credentials(name: &str) -> Option<PathBuf> {
+    let (var, file) = if name == "codex" {
+        ("CODEX_HOME", "auth.json")
+    } else {
+        ("CLAUDE_CONFIG_DIR", ".credentials.json")
+    };
+    std::env::var_os(var).map(|home| PathBuf::from(home).join(file))
+}
+
+static AWAITING_CODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn sign_in(name: &str) {
+    if let Some(path) = credentials(name) {
+        let _ = std::fs::write(&path, "{}");
+    }
+    log(&format!("signed in: {name}"));
+    out("Login successful\r\n");
+}
+
+fn usage_mode() -> String {
+    let Ok(v) = std::env::var("TANDEM_FAKE_USAGE") else {
+        return String::new();
+    };
+    std::fs::read_to_string(&v).unwrap_or(v).trim().to_string()
+}
+
+/// The version this engine reports: `TANDEM_FAKE_VERSION` (a value or a file
+/// of `<name> <version>` lines), else 1.2.3.
+fn version(name: &str) -> String {
+    let Ok(v) = std::env::var("TANDEM_FAKE_VERSION") else {
+        return "1.2.3".into();
+    };
+    let text = std::fs::read_to_string(&v).unwrap_or(v);
+    text.lines()
+        .filter_map(|l| l.trim().split_once(' '))
+        .find(|(n, _)| *n == name)
+        .map(|(_, ver)| ver.trim().to_string())
+        .unwrap_or_else(|| "1.2.3".into())
+}
+
+fn send_line(v: serde_json::Value) {
+    println!("{v}");
+    let _ = std::io::stdout().flush();
+}
+
+/// A turn of the stand-in app-server: "You said: <text>" as an agent message,
+/// token usage, then `turn/completed` (Thread mode, E2E-M7-5).
+fn app_turn(thread: &str, turn: &str, text: &str) {
+    let note = |method: &str, params: serde_json::Value| {
+        send_line(serde_json::json!({"jsonrpc": "2.0", "method": method, "params": params}));
+    };
+    note(
+        "turn/started",
+        serde_json::json!({"threadId": thread, "turn": {"id": turn, "status": "inProgress", "items": []}}),
+    );
+    let item = format!("msg_{turn}");
+    note(
+        "item/started",
+        serde_json::json!({"threadId": thread, "turnId": turn, "item": {"type": "agentMessage", "id": item, "text": ""}}),
+    );
+    for piece in ["You said: ", text] {
+        note(
+            "item/agentMessage/delta",
+            serde_json::json!({"threadId": thread, "turnId": turn, "itemId": item, "delta": piece}),
+        );
+    }
+    note(
+        "item/completed",
+        serde_json::json!({"threadId": thread, "turnId": turn, "item": {"type": "agentMessage", "id": item, "text": format!("You said: {text}")}}),
+    );
+    note(
+        "thread/tokenUsage/updated",
+        serde_json::json!({"threadId": thread, "turnId": turn, "tokenUsage": {
+        "total": {"totalTokens": 120, "inputTokens": 100, "cachedInputTokens": 0, "outputTokens": 20, "reasoningOutputTokens": 0},
+        "last": {"totalTokens": 120, "inputTokens": 100, "cachedInputTokens": 0, "outputTokens": 20, "reasoningOutputTokens": 0},
+        "modelContextWindow": 272000}}),
+    );
+    note(
+        "turn/completed",
+        serde_json::json!({"threadId": thread, "turn": {"id": turn, "status": "completed", "items": []}}),
+    );
+}
+
+/// A stand-in `codex app-server`: one JSON-RPC message per line.
+fn app_server() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let stdin = std::io::stdin();
+    let mut line = String::new();
+    let mut turns = 0;
+    while stdin.read_line(&mut line).is_ok_and(|n| n > 0) {
+        let msg: serde_json::Value = serde_json::from_str(line.trim()).unwrap_or_default();
+        line.clear();
+        let Some(id) = msg.get("id").cloned() else {
+            continue;
+        };
+        let reply = match msg.get("method").and_then(serde_json::Value::as_str) {
+            Some("account/rateLimits/read") => {
+                let pcts: Vec<f64> = usage_mode()
+                    .split(',')
+                    .filter_map(|p| p.trim().parse().ok())
+                    .collect();
+                log(&format!("app-server: rateLimits {pcts:?}"));
+                match pcts.as_slice() {
+                    [primary, rest @ ..] => serde_json::json!({"id": id, "result": {"rateLimits": {
+                        "primary": {"usedPercent": primary, "windowMinutes": 300, "resetsAt": now + 7_200},
+                        "secondary": rest.first().map(|s| serde_json::json!({"usedPercent": s, "windowMinutes": 10_080, "resetsAt": now + 259_200})),
+                    }}}),
+                    [] => {
+                        serde_json::json!({"id": id, "error": {"code": -32000, "message": "no usage data"}})
+                    }
+                }
+            }
+            Some("initialize") => {
+                serde_json::json!({"id": id, "result": {"userAgent": format!("codex_cli_rs/{}", version("codex"))}})
+            }
+            Some("thread/start") => {
+                let thread = format!("thr_fake_{}", std::process::id());
+                log(&format!("app-server: thread/start {thread}"));
+                serde_json::json!({"id": id, "result": {"thread": {"id": thread}}})
+            }
+            Some("thread/resume") => {
+                let thread = msg
+                    .pointer("/params/threadId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                log(&format!("app-server: thread/resume {thread}"));
+                serde_json::json!({"id": id, "result": {"thread": {"id": thread}}})
+            }
+            Some("turn/start") => {
+                turns += 1;
+                let thread = msg
+                    .pointer("/params/threadId")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let text = msg
+                    .pointer("/params/input/0/text")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let turn = format!("turn_{turns}");
+                send_line(
+                    serde_json::json!({"id": id, "result": {"turn": {"id": turn, "status": "inProgress", "items": []}}}),
+                );
+                app_turn(&thread, &turn, &text);
+                continue;
+            }
+            _ => serde_json::json!({"id": id, "result": {}}),
+        };
+        println!("{reply}");
+        let _ = std::io::stdout().flush();
+    }
+}
+
+/// `codex login` / `login status` / `logout`; true when handled.
+fn account_command(name: &str, args: &[String]) -> Option<i32> {
+    if name != "codex" {
+        return None;
+    }
+    match args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        ["login", "status"] => Some(if credentials(name).is_some_and(|p| p.exists()) {
+            0
+        } else {
+            1
+        }),
+        ["login"] => {
+            out("Open https://example.invalid/device and enter ABCD-1234\r\nPaste the code to finish: ");
+            let mut line = String::new();
+            let _ = std::io::stdin().read_line(&mut line);
+            sign_in(name);
+            Some(0)
+        }
+        ["app-server", ..] => {
+            app_server();
+            Some(0)
+        }
+        ["logout"] => {
+            if let Some(p) = credentials(name) {
+                let _ = std::fs::remove_file(p);
+            }
+            out("Logged out\r\n");
+            Some(0)
+        }
+        _ => None,
+    }
+}
+
+/// One-shot mode: the prompt on stdin, the answer on stdout.
+fn headless(name: &str) {
+    let mut input = Vec::new();
+    let _ = std::io::stdin().read_to_end(&mut input);
+    log(&format!("headless: {name} read {} bytes", input.len()));
+    for line in brief_lines(&format!("Fake {}", label(name))) {
+        println!("{line}");
+    }
 }
 
 /// `--resume <id>` resumes that session; otherwise each run is a new one.
@@ -157,14 +428,37 @@ fn main() {
             .unwrap_or_default()
     });
     if argv.iter().skip(1).any(|a| a == "--version" || a == "-v") {
-        println!("{name} 1.2.3 (test engine)");
+        println!("{name} {} (test engine)", version(&name));
+        return;
+    }
+    let args = &argv[1.min(argv.len())..];
+    if let Some(code) = account_command(&name, args) {
+        log(&format!("start: {name} args={args:?}"));
+        std::process::exit(code);
+    }
+    if name == "claude"
+        && args
+            .windows(2)
+            .any(|w| w[0] == "--input-format" && w[1] == "stream-json")
+    {
+        log(&format!("start: {name} args={args:?}"));
+        chat::run(args, session_id());
+        return;
+    }
+    if args.first().is_some_and(|a| a == "acp") {
+        log(&format!("start: {name} args={args:?}"));
+        acp::run(&name);
+        return;
+    }
+    if (name == "claude" && args.iter().any(|a| a == "-p"))
+        || (name == "codex" && args.first().is_some_and(|a| a == "exec"))
+    {
+        log(&format!("start: {name} args={args:?}"));
+        headless(&name);
         return;
     }
     let label = label(&name).to_string();
-    log(&format!(
-        "start: {name} args={:?}",
-        &argv[1.min(argv.len())..]
-    ));
+    log(&format!("start: {name} args={args:?}"));
     #[cfg(unix)]
     let saved = raw_mode();
     out("\x1b[?2004h");
@@ -235,8 +529,80 @@ fn answer(name: &str, text: &str) -> bool {
     if t.is_empty() {
         return true;
     }
+    if AWAITING_CODE.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        sign_in(name);
+        return true;
+    }
+    if t == "/login" {
+        AWAITING_CODE.store(true, std::sync::atomic::Ordering::SeqCst);
+        out("Open https://example.invalid/device and enter ABCD-1234\r\nPaste the code to finish:\r\n");
+        return true;
+    }
+    if t == "/logout" {
+        if let Some(p) = credentials(name) {
+            let _ = std::fs::remove_file(p);
+        }
+        out("Logged out\r\n");
+        return true;
+    }
     if claude {
         hook("UserPromptSubmit", serde_json::json!({}));
+    }
+    if let Some(rest) = t.split("--- handoff brief ").nth(1) {
+        let nonce = rest.split_whitespace().next().unwrap_or("");
+        out(&format!("⏺ --- handoff brief {nonce} ---\r\n"));
+        for line in brief_lines(&format!("Fake {}", label(name))) {
+            out(&format!("  {line}\r\n"));
+        }
+        out(&format!("  --- end of brief {nonce} ---\r\n"));
+        if claude {
+            hook("Stop", serde_json::json!({ "stop_hook_active": false }));
+        }
+        return true;
+    }
+    if let Some(tokens) = t.strip_prefix("/context ") {
+        let tokens: u64 = tokens.trim().parse().unwrap_or(0);
+        let Some(home) = std::env::var_os("CLAUDE_CONFIG_DIR") else {
+            return true;
+        };
+        let dir = PathBuf::from(home).join("projects").join("fake");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join(format!("{}.jsonl", session_id()));
+        let line = serde_json::json!({
+            "type": "assistant",
+            "message": {
+                "model": "claude-sonnet-4-5",
+                "content": [{"type": "text", "text": "SECRET ANSWER TEXT"}],
+                "usage": {"input_tokens": tokens.saturating_sub(2_000), "cache_read_input_tokens": 2_000, "cache_creation_input_tokens": 0, "output_tokens": 40}
+            }
+        });
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            let _ = writeln!(f, "{line}");
+        }
+        out(&format!("context: {tokens} tokens\r\n"));
+        if claude {
+            hook(
+                "Stop",
+                serde_json::json!({ "stop_hook_active": false, "transcript_path": path.to_string_lossy() }),
+            );
+        }
+        return true;
+    }
+    if let Some(delay) = t.strip_prefix("/limit") {
+        let delay = delay.trim();
+        let delay = if delay.is_empty() { "2h" } else { delay };
+        out(&format!(
+            "{} usage limit reached. Try again in {delay}.\r\n",
+            label(name)
+        ));
+        if claude {
+            hook("Stop", serde_json::json!({ "stop_hook_active": false }));
+        }
+        return true;
     }
     if let Some(title) = t.strip_prefix("/title ") {
         out(&format!("\x1b]2;{title}\x07"));

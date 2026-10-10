@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,7 +11,9 @@
     "test": "vitest run",
     "lint": "tsc --noEmit && tsc --noEmit -p e2e && eslint .",
     "e2e": "tsx e2e/run.ts",
-    "perf": "tsx e2e/run.ts"
+    "perf": "tsx e2e/run.ts",
+    "build:demo": "tsc --noEmit && vite build -c vite.demo.config.ts && node -e \"require('fs').renameSync('../web/public/demo/app/demo.html','../web/public/demo/app/index.html')\"",
+    "dev:demo": "vite -c vite.demo.config.ts --host 127.0.0.1 --port 1421 --strictPort"
   },
   "dependencies": {
     "@dnd-kit/core": "^6",

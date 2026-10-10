@@ -12,6 +12,7 @@ export default tseslint.config(
       "**/dist/**",
       "**/.next/**",
       "apps/web/out/**",
+      "apps/web/public/demo/app/**",
       "**/node_modules/**",
       "**/target/**",
       "**/src-tauri/gen/**",
@@ -32,6 +33,12 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
+  },
+  {
+    // Scripts that run in web pages: the element picker (F-CD-18) and the
+    // site's demo loader (D-128).
+    files: ["apps/desktop/src-tauri/src/**/*.js", "src-tauri/src/**/*.js", "apps/web/public/**/*.js", "public/**/*.js"],
+    languageOptions: { ecmaVersion: 2022, sourceType: "script", globals: globals.browser },
   },
   {
     files: ["**/*.tsx"],

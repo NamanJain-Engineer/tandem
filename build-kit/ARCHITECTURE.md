@@ -118,13 +118,13 @@ All locally generated ids are `<prefix>_<ULID>` (Crockford base32, 26 chars), st
 | Main webview | system WebView (WKWebView / WebView2 / WebKitGTK) | Tauri | app session | main via IPC | F-SH-* |
 | Dictate widget webview | window label `dictate-widget` | main, when Dictate enabled | app session, shown/hidden | main via events + 3 commands | F-DI-07 |
 | Conductor ring webview | window label `conductor-ring` | main, when "floating ring" on | while enabled | main via events | F-CN-04 |
-| Browser webviews | child webviews labelled `browser-<id>` | main | per browser tab | none (no IPC access) | F-CD-17 |
+| Browser webviews | wry webviews the browser service creates itself, not Tauri webviews, so no IPC bridge is injected (D-206). Linux: a GTK overlay layer over the main webview, installed before the window first shows; macOS and Windows: wry child webviews | main | per browser tab or pane | none (no IPC access) | F-CD-17 |
 | PTY children | user's login shell (and engine TUI as its child) | tandem-pty | until pane close/exit | PTY master | F-CD-03 |
 | Chat engine processes | `claude`, `codex app-server`, `<engine> acp` | tandem-engines adapter | per thread session (idle-killed after 30 min, resumed on next turn) | stdio | F-TH-04..06 |
 | Headless helpers | engine one-shots for handoff briefs, learn-after-turn, reviews | tandem-engines | one call | stdio | F-CD-16, F-AG-08, F-TK-04 |
 | `tandem-hook` | bundled sidecar | engine hooks / Codex `notify` | ≤500 ms per event | status bus | F-EN-05 |
 | `tandem-tasks` | bundled sidecar | engine (from injected MCP config) | engine session | files under `$DATA/tasks` | F-TK-02 |
-| Gateway | in-process tokio task (default); `tandem-gateway` bin for sidecar mode/tests | main at startup | app session | engines (HTTP), upstream vendors | F-PL-01 |
+| Gateway | in-process tokio task (default); `tandem-gateway` bin for sidecar mode/tests | the threads launcher, on the first engine session that needs it (D-116) | app session | engines (HTTP), upstream vendors | F-PL-01 |
 | Headless routines | `tandem --run-routines` | OS launcher | one pass, exits | SQLite, engines, gateway (in-process) | F-RT-03 |
 | `tandem-host` | static binary on SSH hosts | ssh | `serve` per connection; `daemon` keeps PTYs 10 min | JSON-RPC over ssh stdio | F-RM-01 |
 | API | `node apps/api/dist/server.js` | docker/PM | server | Postgres, Redis, Stripe, providers | F-BE-* |
@@ -497,7 +497,7 @@ src-tauri/
 - **Serde:** `#[serde(rename_all = "camelCase")]` on structs, `#[serde(tag = "type", rename_all = "snake_case")]` on enums. Timestamps are `i64` Unix milliseconds. Paths are strings (UTF-8; non-UTF-8 paths are rejected with `Invalid` and logged by code only).
 - **Errors:** every command returns `Result<T, IpcError>` (§2.2). The TS wrapper rejects with a typed `IpcError`. The column "Errors" below lists the `ErrorCode`s a caller must handle beyond `Internal`/`Timeout`.
 - **Timeouts and cancellation [§5.2]:** the TS wrapper applies 10 s by default. Commands that can exceed it return an `OpHandle { opId }` immediately and report through `op:progress`; `op_cancel(opId)` cancels. Such commands are marked "op" in the table.
-- **Capabilities [§5.3]:** `capabilities/main.json` allows all commands for window `main`; `widget.json` allows only `dictate_status`, `dictate_cancel_take`, `dictate_widget_set_position`, `app_log`; `ring.json` allows `conductor_start_call`, `conductor_end_call`, `conductor_mute`, `app_log`. Browser webviews get no capability. Implement with `tauri_build::Attributes::app_manifest(AppManifest::new().commands(ALL_COMMANDS))` so each command has an `allow-<name>` permission.
+- **Capabilities [§5.3]:** `capabilities/main.json` allows all commands for window `main`; `widget.json` allows only `dictate_status`, `dictate_cancel_take`, `dictate_widget_set_position`, `app_log`; `ring.json` allows `conductor_start_call`, `conductor_end_call`, `conductor_mute`, `app_log`. Browser webviews get no capability (they aren't Tauri webviews, D-206). Implement with `tauri_build::Attributes::app_manifest(AppManifest::new().commands(ALL_COMMANDS))` so each command has an `allow-<name>` permission.
 - **Origin:** commands that must not be reachable from voice or phone (forced lane removal, enabling Full, shell commands) are never exposed through the Conductor action registry or the phone command set (§12.6, §13.3). Local-review actions additionally check the calling window label is `main`.
 
 ### 3.2 Commands
@@ -557,7 +557,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 #### Panes and terminals [F-CD-03..12, F-EN-04, F-EN-06]
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
-| `pane_create` | `{tabId, kind:"terminal"\|"agent"\|"browser"\|"simulator", engineId?, accountId?, cwd?, humanName?}` | `PaneRecord` (assigns unique human name for agents) | NotFound, LimitReached | F-CD-02, F-CD-12 |
+| `pane_create` | `{tabId, kind:"terminal"\|"agent"\|"browser"\|"simulator", engineId?, accountId?, cwd?, humanName?, url?}` (`url`: a browser pane's first page, read like the address bar; a browser pane runs no process and doesn't count against the live-pane limit) | `PaneRecord` (assigns unique human name for agents; `browserUrl`: the page a browser pane last committed, kept by the core) | NotFound, LimitReached, Invalid (a blocked `url`) | F-CD-02, F-CD-12, F-CD-17 |
 | `pane_list` | `{tabId}` | `[PaneRecord]` (open panes, oldest first) | — | F-CD-02 |
 | `pty_spawn` | `{paneId, cols, rows, shell?, engine?: EngineLaunch {engineId, accountId?, oneOffHome?, extraArgs?, firstPrompt?, resumeSessionId?}, channel: Channel<PtyFrame>}` | `PtyInfo {pid, startedAt, launchConfigId?}` | LimitReached (plan), EngineMissing, NotFound (cwd → falls back to root with notice, not an error), Unavailable (config gone), Conflict (an agent paused after a restart starts only from its card: `restore_resume` / `restore_start_fresh`) | F-CD-03, F-EN-04, F-AC-01, F-SH-07 |
 | `pty_attach` | `{paneId, channel}` | `AttachSnapshot {replay: base64, state: PtyState}` (after webview reload) | NotFound | F-CD-03 |
@@ -573,9 +573,9 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `term_stage_clipboard_image` | `{paneId}` | `String` (quoted staged PNG path) | NotFound (no image) | F-CD-05 |
 | `term_last_output` | `{paneId}` | `LastOutput?` `{text, exitCode?}`: the last finished command's plain-text output, from its OSC 133 C and D marks ("Copy last command output") | — | F-CD-10 |
 | `pane_rename` | `{paneId, humanName}` | `String` (the stored name, trimmed; 1–32 chars) | Conflict (name taken), Invalid | F-CD-12 |
-| `pane_close` | `{paneId}` (UI already confirmed if working) | — | — | F-CD-12, F-SH-07 |
+| `pane_close` | `{paneId}` (UI already confirmed if working; a browser pane's page closes with it) | — | — | F-CD-12, F-SH-07, F-CD-17 |
 | `pane_move` | `{paneId, tabId}` (same workspace; drop on the tab strip, "Move to new tab") | `PaneRecord` (same process) | NotFound | F-CD-02 |
-| `pane_resolve_link` | `{paneId, text}` | `ResolvedLink? {kind:"url"\|"file", target, line?, col?, readonly}` | — | F-CD-09 |
+| `pane_resolve_link` | `{paneId, text}` (a path with optional `:line[:col]`, relative to the pane's folder: its shell's last OSC 7, else the pane's stored cwd, else its workspace root; punctuation a sentence put after it is tried without; only regular files that exist; http(s) URLs come back as they are) | `ResolvedLink? {kind:"url"\|"file", target (the URL, or the file's absolute path), line?, col?, readonly}` | — | F-CD-09 |
 | `sessions_saved_list` | `{workspaceId}` | `[SavedSession]` | — | F-CD-03 |
 | `sessions_resume_saved` | `{savedId, tabId}` | `PaneRecord` | Unavailable | F-CD-03 |
 | `orphans_list` / `orphans_resolve` | — / `{action:"stop"\|"keep"}` | `[OrphanInfo]` / — | — | F-CD-03 |
@@ -600,13 +600,21 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `engines_set_extra_args` | `{engineId, args:[String]}` | — | Invalid (secret-shaped) | F-SH-04 |
 | `models_list` | `{engineId, accountId?}` | `[ModelEntry {id, label, description, isDefault, effortLevels, contextWindow, source}]` (Automatic first) | — | F-TH-08 |
 | `accounts_list` | — | `[Account]` | — | F-AC-02 |
-| `accounts_begin_add` | `{engineId, label, channel: Channel<PtyFrame>}` → op | `LoginSession {opId, paneId}` (mini PTY in a fresh home) | LimitReached (Free: 1/engine), Unavailable (mac Keychain single-account) | F-AC-01, F-AC-02 |
-| `accounts_cancel_add` | `{opId}` | — (kills login tree, deletes the home) | — | F-AC-02 |
-| `accounts_update` | `{accountId, label?}` | — | Conflict | F-AC-02 |
-| `accounts_set_default` | `{engineId, accountId}` | — | — | F-AC-02, F-AC-03 |
-| `accounts_sign_out` / `accounts_remove` | `{accountId}` / `{accountId, deleteHome}` | — | — | F-AC-02 |
-| `usage_get` | `{accountId?}` | `[UsageView {accountId, windows:[UsageWindow {kind, usedPct, resetsAt?}], source, estimated}]` | — | F-AC-04 |
-| `usage_refresh` | `{accountId?}` | — | — | F-AC-04 |
+| `accounts_begin_add` | `{engineId, label}` | `LoginSession {opId, paneId, accountId, action, reports}` (mini PTY in a fresh home; the sheet `pty_attach`es `paneId`; `reports` false = the engine can't say when it's signed in, so the user clicks Done); the end arrives as `accounts:login-finished` | LimitReached (Free: 1/engine), Unavailable (mac Keychain single-account), Conflict (name taken), EngineMissing | F-AC-01, F-AC-02 |
+| `accounts_begin_session` | `{accountId, action: "sign_in"\|"sign_out"}` | `LoginSession` (Sign in again / Sign out, in the account's own home) | EngineMissing | F-AC-02 |
+| `accounts_finish_login` / `accounts_cancel_login` | `{opId}` | — (Done for engines that can't report; Cancel kills the login tree, and a new account's home is deleted with no account created) | NotFound (already ended) | F-AC-02 |
+| `accounts_update` | `{accountId, label}` | `Account` | Conflict, Invalid | F-AC-02 |
+| `accounts_set_default` | `{accountId}` | — | — | F-AC-02, F-AC-03 |
+| `accounts_remove` | `{accountId}` | — (deletes its provider home; the engine's oldest other account becomes default; workspace overrides naming it are dropped) | — | F-AC-02 |
+| `accounts_status` | `{accountId}` | `"signed_in"\|"signed_out"\|"unknown"` (`signed_in_file` presence or `status_cmd` exit code, never the token) | — | F-AC-02 |
+| `accounts_overrides` | — | `[AccountOverride {workspaceId, engineId, accountId}]` | — | F-AC-03 |
+| `limits_list` | — | `[LimitView {paneId, accountId?, message, resetsAt?, resumeAt?}]` (limits showing on panes) | — | F-AC-05 |
+| `limit_resume_at_reset` / `limit_cancel_resume` | `{paneId}` | `LimitView` (`resumeAt` set / cleared; "continue" is typed at `resetsAt` via the Clock if the app is open) | NotFound (no limit), Invalid (no reset time) | F-AC-05 |
+| `limit_resume_now` / `limit_dismiss` | `{paneId}` | — (types "continue" now / "Stop here"; both clear the limit) | NotFound | F-AC-05 |
+| `limit_continue` | `{paneId, engineId, accountId?}` | `HandoffResult` (a new pane split right with the brief fallback: the last 200 redacted lines under the brief headings; only ever from the user's click) | NotFound, EngineMissing, LimitReached | F-AC-05 |
+| `usage_get` | `{accountId?}` | `[UsageView {accountId, engineId, windows:[UsageWindow {kind, usedPct, resetsAt?}], source: "codex_app_server"\|"unavailable", estimated, reason?, fetchedAt}]` (the latest reading; probes when there's none) | — | F-AC-04 |
+| `usage_refresh` | `{accountId?}` | `[UsageView]` (probes again; the webview calls it every 5 min and after a turn) | — | F-AC-04 |
+| `contexts_list` | — | `[PaneContext {paneId, used, window}]` (context fill per agent pane, from the engine's transcript when a turn ends) | — | F-AC-06 |
 | `usage_dashboard` | `{weeks: 12}` → op | `UsageDashboard {days:[DayTotal], perEngine, perAccount, topWorkspaces, skippedLines}` | — | F-AC-07 |
 | `usage_share_card` | `{showWorkspaces}` | `String` (PNG path in `$DATA/tmp`) | — | F-AC-07 |
 
@@ -628,24 +636,27 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
 | `thread_create` | `{kind:"thread"\|"teammate_chat", workspaceId?, teammateId?, engineId?, accountId?, model?, effort?, access?, mode?}` (omitted = remembered defaults) | `Thread` | EngineMissing, ForbiddenPlan (engine not in plan) | F-TH-01, F-TH-02, F-TH-07 |
-| `thread_list` | `{kind, teammateId?, includeArchived?}` | `[ThreadSummary]` | — | F-TH-01, F-AG-03 |
-| `thread_get` | `{threadId}` | `ThreadDetail {thread, turns, planRevisions, attachments, draft, pendingApprovals}` | NotFound | F-TH-01 |
-| `thread_events` | `{threadId, beforeId?, limit ≤ 500}` | `Page<ThreadEventEnvelope>` | — | F-TH-12 |
-| `thread_subscribe` | `{threadId, channel: Channel<ThreadEventEnvelope>}` | `SubId` | NotFound | F-TH-03 |
+| `thread_list` | `{kind, teammateId?, includeArchived?}` | `[Thread]` (the rail's summary is the thread row) | — | F-TH-01, F-AG-03 |
+| `thread_get` | `{threadId}` | `ThreadDetail {thread, turns, running?, queued?, draft, attachments}` (`attachments`: the draft's unsent ones; `planRevisions`: `[PlanRevision {version, turnId, text, createdAt}]`, v1 first; pending approvals are the running turn's `approval_request` events without a resolution). Opening a thread clears its unread flag | NotFound | F-TH-01 |
+| `thread_events` | `{threadId, beforeId?, limit ≤ 500}` | `ThreadEventPage {items: [ThreadEventEnvelope] (oldest first), nextBeforeId?}` | — | F-TH-12 |
+| `thread_subscribe` | `{threadId, channel: Channel<ThreadEventEnvelope>}` | — (streams until the webview drops the channel) | NotFound | F-TH-03 |
 | `thread_send` | `{threadId, text, attachmentIds:[AttachmentId], queueIfBusy: bool}` | `SendResult {turnId?, queued: bool}` | Conflict (a queued message already exists), EngineMissing, LimitReached, Unauthenticated (engine sign-in) | F-TH-03, F-TH-07 |
 | `thread_stop` | `{threadId}` | `InterruptOutcome {acked: bool, killed: bool}` (≤3.5 s) | — | F-TH-03 |
 | `thread_retry` | `{threadId}` | `SendResult` | — | F-TH-03, F-TH-15 |
-| `thread_update` | `{threadId, title?, access?, mode?, model?, effort?, pinned?, sortKey?, pluginGrants?}` | `Thread` | ForbiddenPlan (Full forbidden by org policy) | F-TH-01, F-TH-09, F-PL-05 |
-| `thread_switch_engine` | `{threadId, engineId, accountId?}` | `Thread` (next turn seeds summary) | EngineMissing | F-TH-16, F-AC-05 |
-| `thread_archive` / `thread_delete` | `{threadId, archived}` / `{threadId}` (archived only) | — | Invalid | F-TH-01 |
+| `thread_update` | `{threadId, title?, access?, mode?, model?, effort?, pinned?, sortKey?, pluginGrants?}` (`model`/`effort` `"default"` = the engine's own; a title is a user rename, `title_source = user`; new access, mode, model or effort start a fresh session on the next turn) | `Thread` | ForbiddenPlan (Full forbidden by org policy), Invalid (empty title) | F-TH-01, F-TH-09, F-PL-05 |
+| `thread_switch_engine` | `{threadId, engineId, accountId?}` | `Thread` (next turn seeds summary; allow rules cleared) | EngineMissing, EngineUnsupported (no chat adapter), Conflict (a turn is running) | F-TH-16, F-AC-05 |
+| `thread_archive` / `thread_delete` | `{threadId, archived}` (archiving stops a running turn) / `{threadId}` (archived only; the recovery copy is `$DATA/trash/threads/<id>-<deletedAtMs>/` (0700) with `thread.json` (0600) and the attachments, removed after 7 days) | — | Invalid | F-TH-01 |
 | `thread_move_to_folder` | `{threadId, workspaceId}` | `Thread` | — | F-TH-02 |
 | `thread_save_draft` | `{threadId, draft: Draft {text, attachmentIds, queued?}}` | — | — | F-TH-07 |
 | `thread_attach_paths` | `{threadId, paths}` | `[Attachment]` | LimitReached (20 / 20 MB) | F-TH-07 |
-| `thread_attach_clipboard_image` | `{threadId}` | `Attachment` | NotFound | F-TH-07 |
+| `thread_attach_clipboard_image` | `{threadId}` (Rust reads the system clipboard; the PNG is saved 0600) | `Attachment {id, threadId, kind, path, name, mime?, bytes, sent, error?}` | NotFound (no image on the clipboard) | F-TH-07 |
 | `attachment_remove` | `{attachmentId}` | — | — | F-TH-07 |
+| `thread_pick_files` | `{threadId}` (native multi-file picker; debug builds read `TANDEM_FAKE_PICK_FILES`, newline-separated paths) | `[Attachment]` (empty when cancelled) | LimitReached | F-TH-07 |
+| `thread_unqueue` | `{threadId}` | `string?` (the queued follow-up's text, for the composer; its attachments go back to the draft) | — | F-TH-07 |
 | `thread_mention_search` | `{threadId, query}` | `[PathEntry]` (≤50, gitignore-aware) | — | F-TH-07 |
-| `thread_implement_plan` | `{threadId, version, access}` | `SendResult` | NotFound | F-TH-10 |
-| `thread_changes` | `{threadId}` | `[FileDiff]` | — | F-TH-13 |
+| `thread_implement_plan` | `{threadId, version, access?}`: the thread goes to Act (at `access` when given) and sends "Implement plan version {n} exactly as written:" + the plan; the draft stays | `SendResult` | NotFound, Conflict (a turn is running) | F-TH-10 |
+| `thread_changes` | `{threadId}` | `ThreadChanges {source: "git"\|"snapshot"\|"not_started", files: [FileDiff]}`: since the thread's first turn (its `start_commit`, empty for a repository with no commits yet, or its `$DATA/snapshots/<thread>.json` manifest) | NotFound | F-TH-13 |
+| `thread_file_read` | `{threadId, path}` (relative to the thread's folder) | `FileText {path, content, truncated, binary}`: at most 256 KB; never outside the folder or a private file (`contain`, Read policy) | PathEscape, NotFound | F-TH-13 |
 | `thread_summarize_continue` | `{threadId}` | `Thread` (new thread seeded with summary) | — | F-TH-04 |
 
 #### Approvals and held drafts [F-TH-11, F-PL-06..08, F-DB-01]
@@ -660,42 +671,49 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 #### Launch, handoff, lanes, git [F-CD-14..16, F-CD-20]
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
-| `presets_list` / `preset_save` / `preset_delete` | — / `Preset` / `{id}` | `[Preset]` / `Preset` / — | Invalid (builtin) | F-CD-14 |
-| `launch_lineup` | `{workspaceId, seats:[Seat], task?, isolation:"shared"\|"worktree"}` → op | `LaunchReport {launched:[{seatIndex, paneId}], failed:[{seatIndex, error: IpcError}]}` | LimitReached (whole lineup over plan cap → nothing launched) | F-CD-14, F-CD-15 |
-| `launch_retry_seat` | `{workspaceId, seat, task?, isolation}` | `{paneId}` | as above | F-CD-14 |
-| `handoff_start` | `{source: SourceRef, engineId, accountId?, teammateId?, extra?}` → op | `{target: SourceRef}` | EngineMissing | F-CD-16 |
+| `presets_list` / `preset_save` / `preset_delete` | — / `{id?, name, seats:[Seat], isolation}` / `{id}` | `[Preset]` (the 4 built-ins, defined in code with `pst_builtin_*` ids, then saved ones) / `Preset` / — | Invalid (builtin) · Conflict (name taken) | F-CD-14 |
+| `launch_lineup` | `{workspaceId, seats:[Seat], task?, isolation:"shared"\|"worktree"}` → op | `LaunchReport {launched:[{seatIndex, pane, workspaceId, tabId, laneBranch?}], failed:[{seatIndex, seat, error: IpcError}], sharedTabId?}` (seats expanded by `count`; shared-checkout seats open in one new tab named after the task; agents type `briefing? + role brief + task` once ready) | LimitReached (whole lineup over plan cap → nothing launched) | F-CD-14, F-CD-15 |
+| `launch_retry_seat` | `{workspaceId, seat, task?, isolation, tabId?}` (`tabId`: the lineup's shared tab) | `LaunchedSeat` | as above | F-CD-14 |
+| `handoff_brief` | `{paneId, engineId, accountId?}` (up to 120 s per strategy; UI-13 shows "Writing summary…") | `HandoffBrief {text, source: "source"\|"headless"\|"fallback"}` (§6.11 strategies in order; always returns text unless the pane is gone) | NotFound | F-CD-16 |
+| `handoff_start` | `{paneId, engineId, accountId?, brief, place: "same"\|"new_worktree", closeSource}` | `HandoffResult {pane, workspaceId, tabId, laneBranch?, sourceClosed}` (the client splits it right of the source; briefs over 8 KB go via `$DATA/briefings/<pane>.md`) | EngineMissing, LimitReached, Invalid (empty brief) | F-CD-16 |
+| `handoff_to_thread` | `{paneId, engineId, accountId?, brief, closeSource}` | `HandoffThread {thread, sourceClosed}` (a new Thread in the source's workspace with the engine's remembered settings; the brief is its first message, §6.11 chat target) | EngineMissing, EngineUnsupported (no chat adapter), Invalid (empty brief) | F-CD-16 |
 | `lane_create` | `{workspaceId, slugSource}` | `Workspace` (child) | Conflict, Io | F-CD-15 |
 | `lane_diff` | `{laneId}` | `[FileDiff]` | — | F-CD-15 |
 | `lane_merge` | `{laneId}` | `MergeReport {merged, conflicts:[path], commit?}` | — | F-CD-15 |
 | `lane_create_pr` | `{laneId, tabId}` | `PaneRecord` | EngineMissing ("gh not found") | F-CD-15 |
 | `lane_remove` | `{laneId, force}` (force only from window `main`; shows a native confirm in Rust) | — | Conflict ("Uncommitted changes"), PermissionDenied | F-CD-15 |
 | `lanes_sweep` | — | `[StaleLane]` | — | F-CD-15 |
-| `git_status` | `{workspaceId}` | `GitStatus {branch?, upstream?, ahead, behind, staged:[FileStatus], unstaged:[FileStatus], noCommits}` | NotFound (not a repo) | F-CD-20 |
-| `git_diff` | `{workspaceId, path, staged}` | `UnifiedDiff` | — | F-CD-20 |
-| `git_stage` / `git_unstage` / `git_discard` | `{workspaceId, paths}` | — | — | F-CD-20 |
-| `git_commit` | `{workspaceId, message}` | `{sha}` | Invalid (empty) | F-CD-20 |
-| `git_push` / `git_pull` | `{workspaceId, publish?}` | — | Unauthenticated, Conflict | F-CD-20 |
-| `git_branches` / `git_switch` / `git_create_branch` | `{workspaceId}` / `{workspaceId, branch}` / `{workspaceId, name}` | `[Branch]` / — | Conflict | F-CD-20 |
+| `git_status` | `{context: FileContext}` (the Files tab's context; the status bar passes the focused workspace) | `GitPanel {root, folder, status: GitStatus {branch?, upstream?, ahead, behind, staged:[FileStatus], unstaged:[FileStatus], noCommits}}` (paths relative to the repository `root`; `folder` is the context's folder inside it, `""` at the top), or `null` outside a repository. Read with libgit2, so no repository helper runs (TL-06 rule 6) | NotFound (folder missing) | F-CD-20 |
+| `git_diff` | `{context, path, staged}` (`path` relative to the repository) | `FileDiff` (index → working tree, or HEAD → index when `staged`) | — | F-CD-20 |
+| `git_stage` / `git_unstage` / `git_discard` | `{context, paths}` (relative to the repository; the UI confirms a discard first) | — (discard restores tracked files and deletes untracked ones) | Invalid (a path outside the repository; a conflicted file to discard) | F-CD-20 |
+| `git_commit` | `{context, message}` | `{sha}` (the repository's hooks run) | Invalid (empty message, nothing staged) | F-CD-20 |
+| `git_push` / `git_pull` | `{context, publish?}` / `{context}` (`publish`: a branch with no upstream gets one on `origin`, or the only remote; 120 s timeout) | — | Unauthenticated (git couldn't sign in without a prompt), Conflict ("Pull first", diverged, pull conflicts), Invalid (no upstream or remote; timed out) | F-CD-20 |
+| `git_branches` / `git_switch` / `git_create_branch` | `{context}` / `{context, branch}` (a local branch, or a remote one like `origin/x`, which creates its tracking branch) / `{context, name}` (from HEAD; before the first commit it names the branch to be born) | `[Branch {name, current, remote, upstream?, ahead, behind}]` / — / — | Conflict (changes the switch would overwrite; the name exists), Invalid | F-CD-20 |
+
+The git panel's actions (`git_stage` … `git_create_branch`) run the user's `git` with their config, hooks and credential helpers, never a repository fsmonitor and never a prompt (`GIT_TERMINAL_PROMPT=0`), one at a time per repository; each drops the cached status the Files tab's badges use.
 
 #### Files, editor, browser, scratchpad [F-CD-17..19, F-SH-12]
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
-| `fs_list` | `{context: FileContext, dir, showIgnored}` | `[FsEntry {name, path, kind, gitStatus?, ignored}]` | NotFound | F-CD-19 |
-| `fs_read` | `{context, path}` | `FileContent {kind:"text"\|"binary"\|"image", text?, size, readonly, hash, mtime}` | NotFound | F-CD-19 |
-| `fs_write` | `{context, path, text, expectedHash}` | `{hash}` | Conflict ("File changed on disk"), PermissionDenied (read-only) | F-CD-19 |
-| `fs_watch` | `{context, channel: Channel<FsChange>}` | `SubId` | — | F-CD-19, F-CD-20 |
-| `editor_tabs_get` / `editor_tabs_save` | `{contextKey}` / `{contextKey, tabs, active?, expanded}` | `EditorTabs` / — | — | F-CD-19 |
-| `browser_open` | `{browserId?, url, placement: {type:"pane", paneId} \| {type:"sidebar"}, bounds: Rect}` | `BrowserInfo {browserId, url}` | Unavailable (Linux child webview) | F-CD-17 |
-| `browser_navigate` | `{browserId, input}` | `{committedUrl}` | Invalid (blocked scheme) | F-CD-17 |
-| `browser_command` | `{browserId, cmd:"back"\|"forward"\|"reload"\|"stop"}` | — | — | F-CD-17 |
-| `browser_set_bounds` | `{browserId, bounds, visible}` | — | — | F-CD-17 |
-| `browser_set_device` | `{browserId, device:"desktop"\|"phone"\|"tablet", rotated}` | — | — | F-CD-17 |
-| `browser_close` / `browser_clear_data` | `{browserId}` / — | — | — | F-CD-17 |
-| `browser_picker` | `{browserId, on}` | — (selections via `browser:picker`) | — | F-CD-18 |
-| `browser_picker_brief` | `{browserId, note}` | `String` (Markdown) | — | F-CD-18 |
-| `scratchpad_list` / `scratchpad_read` / `scratchpad_write` / `scratchpad_delete` | `{}` / `{id}` / `{id?, markdown}` / `{id}` | … | — | F-SH-12 |
+| `fs_list` | `{context: FileContext, dir, showIgnored}` (`dir` relative to the context root, `""` for the root) | `[FsEntry {name, path, kind:"file"\|"dir", symlink, gitStatus?, ignored}]` (one level, lazily; folders first; `.git` never listed; `path` relative to the root, `/`-separated) | NotFound | F-CD-19 |
+| `fs_read` | `{context, path}` (relative to the context root, or absolute) | `FileContent {path, kind:"text"\|"binary"\|"image", text?, size, readonly, readonlyReason?: "outside"\|"large"\|"permission", truncated, hash, mtime, dataUrl? (images up to 10 MB), hex? (binary: the first 256 bytes)}` (over 5 MB: read-only; text over 20 MB is cut) | NotFound | F-CD-19, F-CD-09 |
+| `fs_write` | `{context, path, text, expectedHash?}` (no hash: a new file that mustn't exist yet) | `{hash, mtime}` (written to a symlink's target, keeping the file's line endings, BOM and mode) | Conflict ("File changed on disk"), PermissionDenied (read-only) | F-CD-19 |
+| `fs_compare` | `{context, path, text}` | `FileDiff` (the file on disk → `text`, for the conflict dialog's Compare) | NotFound | F-CD-19 |
+| `fs_create` / `fs_rename` / `fs_delete` | `{context, path, kind:"file"\|"dir"}` / `{context, from, to}` / `{context, path}` (the UI confirms a delete first) | — | Conflict (exists), PermissionDenied (read-only) | F-CD-19 |
+| `fs_watch` / `fs_unwatch` | `{context, channel: Channel<FsChange {paths, git, overflow}>}` / `{subId}` | `SubId` / — (debounced 500 ms; `paths` relative to the root; `git`: the repository's index, HEAD or refs changed; `overflow`: too many to list, re-read everything shown) | NotFound | F-CD-19, F-CD-20 |
+| `editor_tabs_get` / `editor_tabs_save` | `{contextKey}` / `{contextKey, state: EditorTabs}` | `EditorTabs {tabs:[{path, line?, col?}], active?, expanded:[dir], showIgnored, divider?, view?: "files"\|"changes"}` / — (`contextKey`: `ws:<workspaceId>` or `th:<threadId>`) | — | F-CD-19 |
+| `browser_open` | `{browserId, url?, bounds: Rect, visible}` (`browserId`: the sidebar tab's or the pane's id; opening an open one just moves it) | `BrowserState` | Unavailable (the system webview can't be embedded here), Invalid (a blocked address) | F-CD-17 |
+| `browser_move` | `{from, to}` (the page goes on under a new id, history and all: a pane opened in the sidebar, a sidebar tab moved to a pane) | `BrowserState` | NotFound (`from`), Conflict (`to` has a page) | F-CD-17 |
+| `browser_navigate` | `{browserId, input}` (an address; a bare host like `localhost:5173` becomes `http://`; anything else searches with the `search_engine` setting, DuckDuckGo by default) | `{url}` (where it's going; the address bar shows the committed URL from `browser:state`) | Invalid (a scheme other than http, https and file; `file:` outside every workspace) | F-CD-17 |
+| `browser_command` | `{browserId, cmd:"back"\|"forward"\|"reload"\|"stop"}` | — | NotFound | F-CD-17 |
+| `browser_set_bounds` | `{browserId, bounds: Rect, visible}` (window coordinates in CSS px; hidden while its place isn't shown or a menu or dialog covers it) | — | NotFound | F-CD-17 |
+| `browser_set_device` | `{browserId, device:"desktop"\|"phone"\|"tablet", rotated}` (phone 390×844, tablet 820×1180 CSS px, fitted into the bounds with a page zoom of at most 1) | `BrowserState` | NotFound | F-CD-17 |
+| `browser_close` / `browser_clear_data` | `{browserId}` / — (cookies, storage and cache of the one profile at `$DATA/browser-profile`) | — | — | F-CD-17 |
+| `browser_picker` | `{browserId, on}` (injects the element picker into the page, again after each load while on; Esc in the page or `on: false` stops it; the selection arrives as `browser:picker` and clears when the page navigates. The page reports through a navigation to `tandem-picker://<nonce>/<selection>` from a hidden frame, or a new-window request where the browser doesn't see a frame's navigations (WebView2) or the page's CSP refuses the frame; the browser takes it and never loads it, so the page gets no IPC; D-210) | `BrowserState` (`picking`) | NotFound | F-CD-18 |
+| `browser_picker_brief` | `{browserId, note}` | `String` (Markdown: the page's URL, the note, then per element its unique selector, React/Vue component, size and position, key computed styles and outerHTML cut at 4 KB; no trailing newline) | NotFound | F-CD-18 |
+| `scratchpad_list` / `scratchpad_read` / `scratchpad_write` / `scratchpad_delete` | `{}` / `{id}` / `{id?, markdown}` (no `id`: a new note; with one, the note must still exist, so a save that lands after a delete doesn't bring it back) / `{id}` | `[ScratchNote {id: "note_<ULID>", title (the first line with words, without its Markdown marks), updatedAt, bytes}]` (newest first) / `String` / `ScratchNote` / `()`. Notes are `$DATA/scratchpad/<id>.md`, each save atomic | NotFound, Invalid (over 1 MB) | F-SH-12 |
 
-`FileContext = {type:"workspace", workspaceId} | {type:"thread", threadId} | {type:"teammate", teammateId}`. Files outside the context root open `readonly: true`; `fs_write` refuses them.
+`FileContext = {type:"workspace", workspaceId} | {type:"thread", threadId} | {type:"teammate", teammateId}` (the teammate Home arrives with M10). Files outside every workspace open `readonly: true` and `fs_write` refuses them (PRODUCT_SPEC F-CD-09: files inside any workspace are editable, D-201). These commands serve the local UI; any other origin (agents, Conductor, phone) goes through `contain()` first.
 
 #### Teammates, memory, skills, mail [F-AG-*]
 | Command | Args | Returns | Errors | IDs |
@@ -838,6 +856,8 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `test_min_version_shift` | `{ms}` | `UpdateState` (moves the minimum-version notice `ms` into the past: the 72 h grace, time-mocked) | — |
 | `test_thread_seed` | `{threadState}` | thread id (writes a bare `threads` row in that state, e.g. one a crash left `working`; E2E-M5-3 until threads land in M7) | — |
 | `test_thread_state` | `{id}` | the thread's stored `state` | NotFound |
+| `test_browser_eval` | `{browserId, script}` | `String` (the script's value as JSON; E2E-M9-4 clicks in a page with it) | NotFound |
+| `test_thread_seed_events` | `{threadId, events, fenceBytes?}` | the number of events written (completed turns of a user message, an assistant reply, tool calls and a turn end, in one transaction; `fenceBytes` adds a last reply with a code fence that size; threads perf suite) | NotFound |
 
 `window.__tandemTest` in the webview wraps these commands plus UI-side counters. Not listed in `capabilities/*.json` for release.
 
@@ -858,10 +878,12 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `restore:changed` | `{paneId, state: queued\|live\|paused\|cancelled}` (a paused card was queued, started, failed back to its card, or cancelled) | restore service | F-SH-07 |
 | `engines:detected` | `{hostId, report: DetectionReport}` | Detector | F-EN-01 |
 | `accounts:changed` | `{accounts:[Account]}` | accounts service | F-AC-02 |
-| `accounts:login-finished` | `{opId, ok, account?, error?}` | accounts service | F-AC-02 |
-| `usage:changed` | `UsageView` | UsageProbe | F-AC-04, F-AC-06 |
-| `limit:hit` | `{source: SourceRef, accountId, resetsAt?, kind}` | adapters / pattern matcher | F-AC-05 |
-| `threads:changed` | `{threads:[ThreadSummary]}` | threads service | F-TH-01 |
+| `accounts:login-finished` | `{opId, accountId, state: "signed_in"\|"signed_out"\|"failed"\|"cancelled", message?}` (`message`: the engine's last line, redacted) | accounts service | F-AC-02 |
+| `usage:changed` | `UsageView` | UsageProbe | F-AC-04 |
+| `context:changed` | `PaneContext {paneId, used, window}` | status service (Stop hook → transcript tail) | F-AC-06 |
+| `limit:hit` | `LimitView {paneId, accountId?, message, resetsAt?, resumeAt?}` (terminals: a new screen line matching the engine's `limit_patterns`; threads add `kind` in M7) | status service (pattern matcher) | F-AC-05 |
+| `limit:changed` | `{paneId, limit: LimitView \| null}` (scheduled, cancelled, resumed, moved or dismissed) | limits service | F-AC-05 |
+| `threads:changed` | `{threads:[Thread]}` | threads service | F-TH-01 |
 | `approvals:changed` | `{upserted:[ApprovalView], resolved:[ApprovalId]}` | approval service | F-TH-11, F-PL-07 |
 | `held:changed` | `{drafts:[HeldDraft]}` | gateway | F-PL-08 |
 | `notifications:new` / `notifications:changed` | `{notification: Notification, sound: bool}` (`sound`: an OS notification went out and its type plays a sound) / `{ids, state}` | notifications service | F-DB-02, F-DB-03 |
@@ -885,7 +907,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `remote:host` | `{hostId, state:"connected"\|"reconnecting"\|"down"}` | ssh service | F-RM-01 |
 | `remote:phone` | `{pairingId, event:"connected"\|"command"\|"queued"\|"revoked"}` | phone service | F-RM-03 |
 | `updates:state` | `UpdateState` (see `updates_state`; during a download at most one event per 5 %) | updater service | F-SH-06 |
-| `browser:state` / `browser:picker` | `{browserId, url, title, canBack, canForward, loading}` / `{browserId, elements:[PickedElement]}` | browser service | F-CD-17, F-CD-18 |
+| `browser:state` / `browser:picker` | `BrowserState {browserId, url, title, canBack, canForward, loading, device, rotated, frame: Rect (the page inside the bounds), zoom, blocked?, picking, seq}` (`seq` grows with every change: a view drops a reply or event older than what it holds) / `{browserId, elements:[PickedElement {tag, selector (unique in the page), component?: {name, framework: "React"\|"Vue"}, rect: Rect (page coordinates), styles: {display, position, font, color, background, margin, padding}, html (outerHTML, cut at 4 KB), truncated}]}` | browser service | F-CD-17, F-CD-18 |
 | `op:progress` | `{opId, stage, pct?, done, error?: IpcError}` | any op | §5.2 |
 
 ### 3.4 Streaming patterns
@@ -902,7 +924,7 @@ offset 12 …    payload   kind 1: raw PTY bytes; kind 2/3: UTF-8 JSON {code?, s
 - Exit frames are always sent **after** the final data frame (the reader drains to EOF, flushes the batcher, then emits exit).
 - Seq gaps are impossible within a launch; on `pty_attach` Rust sends `replay-begin`, the ring contents, `replay-end`, then live frames.
 
-**Thread events (per subscription) [F-TH-03, F-TH-12].** `thread_subscribe(threadId, channel)` sends `ThreadEventEnvelope` JSON (§6.9). On subscribe, Rust first sends events of the current turn from the DB (so a remounted view is exact), then live events. Assistant text arrives as `assistant_delta` envelopes; the UI reducer appends them to the open block and replaces it with the compacted `assistant` event at `turn_end`. The reducer ignores envelopes whose `turnId` is not the thread's current turn (F-TH-03 AC3).
+**Thread events (per subscription) [F-TH-03, F-TH-12].** `thread_subscribe(threadId, channel)` sends `ThreadEventEnvelope` JSON (§6.9). On subscribe, Rust first sends the running turn from the DB (so a remounted view is exact), with the open text block as its text so far (an `assistant`/`reasoning` event at the block's `seq`), then live events. Assistant text arrives as `assistant_delta` envelopes carrying their block's `seq`; the UI reducer appends them to the item at that `seq` and replaces it with the compacted `assistant` event when the block closes (the next non-delta event, or `turn_end`). A subscriber that falls behind gets the running turn again; the reducer replaces by `seq`, so text is never doubled. A turn starts with its `user` event at `seq` 0; the reducer ignores envelopes of any other turn than the current one (F-TH-03 AC3).
 
 **Other channels:** `fs_watch` (`FsChange {paths, kind}` debounced 500 ms), `tasks_subscribe`, `diagnostics_subscribe`, Dictate/Conductor audio levels (`Channel<f32>` at ≤30 Hz, only while the widget/ring is visible; paused when hidden, F-CN-04 AC2).
 
@@ -1671,6 +1693,7 @@ Common: each adapter owns a child process (spawned via `tokio::process` with `ki
 - **Agent→client requests:** `session/request_permission{toolCall, options:[{optionId, kind}]}` → `approval_request`; reply `{outcome:{outcome:"selected", optionId}}` choosing `allow_once` / `allow_always` (for thread scope) / `reject_once`, or `{outcome:{outcome:"cancelled"}}` on expiry. `fs/read_text_file` and `fs/write_text_file` are served through `contain(thread cwd)`; writes are refused at Read access.
 - **Cancel:** `session/cancel` notification; 3 s → tree kill.
 - **Credential pickup:** each turn re-reads the account env (no restart needed) since ACP agents read their own config per request (F-TH-06).
+- **Models (D-120):** `models.availableModels` / `currentModelId` on the `session/new|load` result go to the picker (`AdapterEvent::Models`); the thread's model is chosen with `session/set_model`. A model no longer offered (or refused) clears the thread's model, and the next turn opens with the note. After a sign-in error the session is retired, so the next turn's agent starts with the account's current env.
 
 ### 6.9 Normalized events [F-TH-03]
 ```rust
@@ -1699,7 +1722,7 @@ pub enum ToolVerb { Bash, Read, Grep, Glob, Edit, Write, Multiedit, Webfetch, We
 pub enum ToolStatus { Pending, Running, Ok, Error, Denied }
 pub enum ApprovalKind { Command, FileWrite, FileDelete, Network, Mcp, PluginAction, Spend, Question, Other }
 ```
-Persistence: every envelope except `*Delta` is appended to `thread_messages`; deltas are buffered in memory (and flushed as a partial `assistant` row every 2 s so a crash keeps partial text); at `turn_end` the partial rows of that turn are replaced by the final `assistant` rows in one transaction (F-TH-03). Reducer (`apps/desktop/src/features/thread/reducer.ts`) is pure and unit-tested (F-TH-03 AC3).
+Persistence: every envelope except `*Delta` is appended to `thread_messages`; deltas are buffered in memory per text block (and flushed as a partial `assistant`/`reasoning` row every 2 s so a crash keeps partial text); when the block closes (the adapter's own final text, the next non-delta event, or `turn_end`), its final text replaces the partial row in place, so each block is one row at its `seq` (F-TH-03, D-115). Reducer (`apps/desktop/src/features/thread/reducer.ts`) is pure and unit-tested (F-TH-03 AC3).
 
 ### 6.10 Approvals mapping and thread allow-rules [F-TH-11, F-TH-09]
 | Source | Kind | Summary | Options offered | Decision sent back |
@@ -1754,7 +1777,7 @@ Persistence: every envelope except `*Delta` is appended to `thread_messages`; de
   - **Remove:** stop lane panes → `git worktree remove <path>`; if it fails for uncommitted changes → `Conflict`; force requires `force: true` from window `main` plus a Rust-side native confirm dialog; never available through Conductor or phone (F-CD-15 AC2).
   - **Merge into base:** in the parent checkout: refuse if the parent has uncommitted changes; `git merge --no-ff tandem/<slug>`; on conflict leave the conflicted state, return `conflicts` (from `git diff --name-only --diff-filter=U`), create no commit (F-CD-15 AC3).
   - **Sweep** (startup + every 6 h): `git worktree prune`; list lanes whose branch is merged into base and idle >7 days → one "Clean up lanes" notification; never deletes.
-- **Changes panel** (`thread_changes`): git repos → diff between `threads.start_commit` and the working tree (tracked + untracked, within prefix); non-git → a manifest `{path: (size, mtime, blake3)}` captured at thread start (skipping ignored/large >5 MB files, max 20k files) compared at each turn end (F-TH-13).
+- **Changes panel** (`thread_changes`): git repos → diff between `threads.start_commit` and the working tree (tracked + untracked, within prefix); non-git → a manifest `{path: (size, mtime, sha256)}` captured before the thread's first turn (`$DATA/snapshots/<thread>.json`, D-122) (skipping ignored/large >5 MB files, max 20k files) compared at each turn end (F-TH-13).
 
 ---
 

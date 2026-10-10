@@ -1,0 +1,37 @@
+[
+  {
+    "sessionId": "sess_old"
+  },
+  {
+    "models": {
+      "available": [
+        [
+          "grok-4",
+          "Grok 4"
+        ],
+        [
+          "grok-code-fast",
+          "Grok Code Fast"
+        ]
+      ],
+      "withdrawn": null
+    }
+  },
+  {
+    "event": {
+      "kind": "rate",
+      "message": "Rate limit reached, try again later",
+      "resetsAt": null,
+      "type": "limit"
+    },
+    "turn": 1
+  },
+  {
+    "event": {
+      "blockedActions": 0,
+      "reason": "limit",
+      "type": "turn_end"
+    },
+    "turn": 1
+  }
+]

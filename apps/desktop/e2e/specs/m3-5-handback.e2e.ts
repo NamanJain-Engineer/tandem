@@ -1,5 +1,14 @@
 import { $, browser } from "@wdio/globals";
-import { addFolder, freshOffline, paneIds, paneText, sendToPane, split, textOf, waitForPaneText } from "../support/app";
+import {
+  addFolder,
+  freshOffline,
+  paneIds,
+  paneText,
+  sendToPane,
+  split,
+  textOf,
+  waitForPaneText,
+} from "../support/app";
 
 // E2E-M3-5 Handback (F-CD-03 AC3): the test engine on PATH stands in for `claude`.
 describe("E2E-M3-5 handback", () => {

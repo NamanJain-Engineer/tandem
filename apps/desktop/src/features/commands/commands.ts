@@ -2,6 +2,7 @@
 // predicates) comes from `tandem-core` through
 // `@tandem/protocol/shortcuts.json`; the palette, the shortcut dispatcher and
 // menus all run commands through `runCommand`, so they share one handler.
+import { useLaunch } from "../../stores/launch";
 import { useNotifications } from "../../stores/notifications";
 import { useCloseConfirm } from "../../stores/closeConfirm";
 import { useSidebar } from "../../stores/sidebar";
@@ -10,6 +11,7 @@ import shortcuts from "@tandem/protocol/shortcuts.json";
 import { t, type MessageKey } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
+import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { applyDrop } from "../code/dnd";
@@ -51,6 +53,10 @@ function activePane(): { tabId: string; paneId: string } | null {
 export function isEnabled(spec: CommandSpec): boolean {
   if (spec.enabledWhen === "always") return true;
   const ui = useUi.getState();
+  if (spec.enabledWhen === "thread_open")
+    return ui.mode === "thread" && !ui.settingsOpen && useThreads.getState().selectedId !== null;
+  if (spec.enabledWhen === "pane_or_cell" && ui.mode === "thread")
+    return !ui.settingsOpen && useThreads.getState().grid.length > 1;
   if (ui.mode !== "code" || ui.settingsOpen) return false;
   if (spec.enabledWhen === "code_mode") return true;
   const ws = useWorkspaces.getState();
@@ -91,8 +97,10 @@ export const handlers: Record<string, () => void> = {
   "mode.agent": () => switchMode("agent"),
   "mode.code": () => switchMode("code"),
   "mode.thread": () => switchMode("thread"),
+  "thread.changes": () => useThreads.getState().toggleChanges(),
   "rail.toggle": () => useUi.getState().toggleRail(),
   "sidebar.toggle": () => useSidebar.getState().toggle(),
+  "sidebar.files": () => useSidebar.getState().openTab("files"),
   "notifications.open": () => useNotifications.getState().setOpen(true),
   "dashboard.full_view": () => {
     const sb = useSidebar.getState();
@@ -104,6 +112,7 @@ export const handlers: Record<string, () => void> = {
     const ws = useWorkspaces.getState();
     if (ws.activeId) void ws.createTab(ws.activeId);
   },
+  "workspace.launch": () => useLaunch.getState().open(null),
   "workspace.next_tab": () => cycleTab(1),
   "workspace.prev_tab": () => cycleTab(-1),
   "workspace.arrange": () => {
@@ -113,10 +122,22 @@ export const handlers: Record<string, () => void> = {
   "pane.split_right": () => split("right"),
   "pane.split_down": () => split("bottom"),
   "pane.close": onPane((tabId, paneId) => useCloseConfirm.getState().request(tabId, paneId)),
-  "pane.focus_left": onPane((tabId) => useLayout.getState().focusDirection(tabId, "left")),
-  "pane.focus_right": onPane((tabId) => useLayout.getState().focusDirection(tabId, "right")),
-  "pane.focus_up": onPane((tabId) => useLayout.getState().focusDirection(tabId, "top")),
-  "pane.focus_down": onPane((tabId) => useLayout.getState().focusDirection(tabId, "bottom")),
+  "pane.focus_left": () =>
+    useUi.getState().mode === "thread"
+      ? useThreads.getState().focusCell("left")
+      : onPane((tabId) => useLayout.getState().focusDirection(tabId, "left"))(),
+  "pane.focus_right": () =>
+    useUi.getState().mode === "thread"
+      ? useThreads.getState().focusCell("right")
+      : onPane((tabId) => useLayout.getState().focusDirection(tabId, "right"))(),
+  "pane.focus_up": () =>
+    useUi.getState().mode === "thread"
+      ? useThreads.getState().focusCell("up")
+      : onPane((tabId) => useLayout.getState().focusDirection(tabId, "top"))(),
+  "pane.focus_down": () =>
+    useUi.getState().mode === "thread"
+      ? useThreads.getState().focusCell("down")
+      : onPane((tabId) => useLayout.getState().focusDirection(tabId, "bottom"))(),
   "pane.focus_prev": onPane((tabId) => useLayout.getState().focusCycle(tabId, -1)),
   "pane.focus_next": onPane((tabId) => useLayout.getState().focusCycle(tabId, 1)),
   "pane.maximize": onPane((tabId, paneId) => useLayout.getState().toggleMaximize(tabId, paneId)),

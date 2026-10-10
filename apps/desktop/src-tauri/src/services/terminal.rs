@@ -123,6 +123,22 @@ impl TerminalService {
         Self::with_integration(pty, store, None)
     }
 
+    /// Where a pane's relative paths start (F-CD-09): the shell's folder as
+    /// its last OSC 7 said, else the folder the pane opens in.
+    pub async fn link_cwd(&self, pane: &PaneId) -> Option<PathBuf> {
+        if let Some(cwd) = self.pty.state(pane.as_str()).and_then(|s| s.cwd) {
+            return Some(PathBuf::from(cwd));
+        }
+        let record = panes::get(&self.store, pane).await.ok()?;
+        match record.cwd {
+            Some(cwd) => Some(PathBuf::from(cwd)),
+            None => workspaces::get(&self.store, &record.workspace_id)
+                .await
+                .ok()
+                .map(|w| PathBuf::from(w.root)),
+        }
+    }
+
     /// `integration_root` holds the shell-integration scripts (F-CD-10).
     pub fn with_integration(
         pty: PtyManager,
@@ -263,6 +279,37 @@ impl TerminalService {
 
     /// The plan's live-pane limit: at the limit no pane or process is
     /// created and the picker shows the upgrade card (F-CD-03).
+    /// Room for `opening` more live panes under the plan's cap: a lineup
+    /// launches whole or not at all (F-CD-14).
+    pub fn check_room(&self, max_live: Option<u32>, opening: u32) -> Result<(), IpcError> {
+        match max_live {
+            Some(max) if self.pty.live_count() as u32 + opening > max => Err(IpcError::new(
+                ErrorCode::LimitReached,
+                format!("Free includes {max} live panes"),
+            )
+            .with_stage("panes")),
+            _ => Ok(()),
+        }
+    }
+
+    /// Types `text` as the pane's first prompt once its view has started it
+    /// and its TUI is ready (F-CD-14 AC1). Timeout when it never starts.
+    pub async fn type_prompt_when_live(
+        &self,
+        pane: &PaneId,
+        text: &str,
+        timeout: Duration,
+    ) -> Result<(), IpcError> {
+        let until = std::time::Instant::now() + timeout;
+        while !self.pty.is_live(pane.as_str()) {
+            if std::time::Instant::now() >= until {
+                return Err(IpcError::new(ErrorCode::Timeout, "The pane didn't start"));
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        self.type_prompt(pane, text).await
+    }
+
     pub fn check_live_limit(&self, max_live: Option<u32>) -> Result<(), IpcError> {
         match max_live {
             Some(max) if self.pty.live_count() as u32 >= max => Err(IpcError::new(
@@ -423,15 +470,40 @@ impl TerminalService {
             // Status hooks report with this launch's secret (§6.6).
             let status = self
                 .status
-                .watch(pane.as_str(), &engine.waiting_patterns)
+                .watch(
+                    pane.as_str(),
+                    &engine.waiting_patterns,
+                    &engine.limit_patterns,
+                    record.account_id.as_ref().map(|a| a.as_str()),
+                )
                 .map(|(url, secret)| StatusEnv { url, secret });
             let relaunch = plan.as_ref().map(|p| Relaunch {
                 resume: Some(p.engine_session_id.as_str()),
                 config: &p.config,
             });
+            // A resumed session keeps its account; a new one takes the pane's
+            // explicit pick, then the workspace's override, then the
+            // engine's default (F-AC-03; teammates arrive with M11).
+            let workspace_pick = match (&plan, &record.account_id) {
+                (None, None) => tandem_store::repo::accounts::workspace_override(
+                    &self.store,
+                    &record.workspace_id,
+                    &engine.id,
+                )
+                .await
+                .ok()
+                .flatten(),
+                _ => None,
+            };
+            let chosen = tandem_core::accounts::resolve(
+                record.account_id.as_ref(),
+                None,
+                workspace_pick.as_ref(),
+                None,
+            );
             let account = match &plan {
                 Some(p) => p.session.account_id.as_ref(),
-                None => record.account_id.as_ref(),
+                None => chosen.as_ref(),
             };
             let launch = self
                 .engines
@@ -800,6 +872,66 @@ mod tests {
             .filter_map(|v| v["message"].as_str().map(str::to_string))
             .collect();
         assert_eq!(notices, vec![FOLDER_NOT_FOUND.to_string()]);
+        svc.pty.kill(pane.id.as_str()).expect("kill");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_cd_09_3_a_panes_links_start_from_its_shells_latest_folder() {
+        if !Path::new("/bin/bash").is_file() {
+            return;
+        }
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let root = std::fs::canonicalize(dir.path())
+            .expect("canonical")
+            .join("ws1");
+        std::fs::create_dir_all(root.join("sub")).expect("mkdir");
+        settings::set(
+            &store,
+            SettingKey::DefaultShell,
+            serde_json::json!("/bin/bash"),
+        )
+        .await
+        .expect("shell");
+        let added = crate::services::workspaces::add(&store, root.to_str().expect("utf8"), Some(3))
+            .await
+            .expect("ws");
+        let tab = tabs::list(&store, &added.workspace.id)
+            .await
+            .expect("tabs")
+            .remove(0);
+        let pane = panes::create(&store, &tab.id, "terminal", None)
+            .await
+            .expect("pane");
+        let svc = TerminalService::with_integration(
+            PtyManager::new(),
+            store.clone(),
+            Some(data.shell_integration()),
+        );
+        // Before its shell says where it is: the folder the pane opens in.
+        assert_eq!(svc.link_cwd(&pane.id).await, Some(root.clone()));
+        svc.spawn(&pane.id, 80, 24, Some(4), Arc::new(VecSink::default()))
+            .await
+            .expect("spawn");
+        let cwd = || svc.pty.state(pane.id.as_str()).and_then(|s| s.cwd);
+        let root_text = root.to_string_lossy().into_owned();
+        assert!(
+            wait_until(Duration::from_secs(10), || cwd().as_deref()
+                == Some(root_text.as_str())),
+            "the shell never said where it was: {:?}",
+            cwd()
+        );
+        // `cd sub`: the shell's next OSC 7 moves where links start.
+        svc.pty.write(pane.id.as_str(), b"cd sub\n").expect("write");
+        let sub = root.join("sub").to_string_lossy().into_owned();
+        assert!(
+            wait_until(Duration::from_secs(10), || cwd().as_deref()
+                == Some(sub.as_str())),
+            "{:?}",
+            cwd()
+        );
+        assert_eq!(svc.link_cwd(&pane.id).await, Some(root.join("sub")));
         svc.pty.kill(pane.id.as_str()).expect("kill");
     }
 

@@ -53,11 +53,27 @@ export function visible(
   return items.filter((i) => (filter === "all" || i.status === filter) && matches(i, query, titleOf(i)));
 }
 
-export type Group = { id: string; label: string; items: DashboardItem[]; status?: AgentStatus };
+export type Group = {
+  id: string;
+  label: string;
+  items: DashboardItem[];
+  status?: AgentStatus;
+  /** Project grouping: the repository's worktrees, each with its branch. */
+  children?: Group[];
+};
+
+/** Worktrees by workspace id: the repository they belong to and their branch. */
+export type Lanes = Record<string, { parentId: string; parentName: string; branch: string }>;
 
 /** Status groups in a fixed order, or workspaces in rail order with "No
  * folder" last. Empty groups are left out. Newest first within a group. */
-export function group(items: DashboardItem[], by: GroupBy, workspaceOrder: string[], noFolder: string): Group[] {
+export function group(
+  items: DashboardItem[],
+  by: GroupBy,
+  workspaceOrder: string[],
+  noFolder: string,
+  lanes: Lanes = {},
+): Group[] {
   const newest = (a: DashboardItem, b: DashboardItem) => b.since - a.since || a.key.localeCompare(b.key);
   if (by === "status")
     return STATUS_ORDER.map((status) => ({
@@ -66,15 +82,31 @@ export function group(items: DashboardItem[], by: GroupBy, workspaceOrder: strin
       status,
       items: items.filter((i) => i.status === status).sort(newest),
     })).filter((g) => g.items.length > 0);
-  const byWs = new Map<string, DashboardItem[]>();
-  for (const i of items) {
+  // A worktree's agents count toward its repository's group.
+  const home = (i: DashboardItem) => {
     const k = i.workspaceId ?? "";
-    byWs.set(k, [...(byWs.get(k) ?? []), i]);
-  }
+    return lanes[k]?.parentId ?? k;
+  };
+  const byWs = new Map<string, DashboardItem[]>();
+  for (const i of items) byWs.set(home(i), [...(byWs.get(home(i)) ?? []), i]);
   const order = [...workspaceOrder.filter((id) => byWs.has(id)), ...[...byWs.keys()].filter((k) => k && !workspaceOrder.includes(k))];
+  const rank = (id: string) => {
+    const n = workspaceOrder.indexOf(id);
+    return n < 0 ? Number.MAX_SAFE_INTEGER : n;
+  };
   const groups: Group[] = order.map((id) => {
     const list = byWs.get(id) ?? [];
-    return { id: `ws:${id}`, label: list[0]?.workspace ?? id, items: [...list].sort(newest) };
+    const own = list.filter((i) => (i.workspaceId ?? "") === id);
+    const laneIds = [...new Set(list.map((i) => i.workspaceId ?? "").filter((k) => k !== id && lanes[k]))].sort(
+      (a, b) => rank(a) - rank(b) || a.localeCompare(b),
+    );
+    const children = laneIds.map((laneId) => ({
+      id: `ws:${laneId}`,
+      label: lanes[laneId]?.branch ?? laneId,
+      items: list.filter((i) => i.workspaceId === laneId).sort(newest),
+    }));
+    const label = Object.values(lanes).find((l) => l.parentId === id)?.parentName || own[0]?.workspace || id;
+    return { id: `ws:${id}`, label, items: own.sort(newest), ...(children.length > 0 ? { children } : {}) };
   });
   const loose = byWs.get("");
   if (loose) groups.push({ id: "ws:none", label: noFolder, items: [...loose].sort(newest) });

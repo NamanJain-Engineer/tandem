@@ -6,12 +6,19 @@ import { resetRestore } from "../stores/restore";
 import { resetUpdates } from "../stores/updates";
 import { resetOnboarding } from "../stores/onboarding";
 import { useEngines } from "../stores/engines";
+import { useContexts } from "../stores/contexts";
+import { useUsage } from "../stores/usage";
 import type { AppBoot, AuthState, EntitlementView, Limits, WorkspaceSummary } from "@tandem/protocol";
 import { setInvokeBackend } from "../ipc/invoke";
 import { useBoot } from "../features/shell/useBoot";
 import { useSession } from "../stores/session";
 import { useSettings } from "../stores/settings";
 import { useUi } from "../stores/ui";
+import { resetThreads } from "../stores/threads";
+import { resetFiles } from "../stores/files";
+import { resetGit } from "../stores/git";
+import { resetBrowser } from "../stores/browser";
+import { resetScratchpad } from "../stores/scratchpad";
 import { useWorkspaces } from "../stores/workspaces";
 
 export const FREE: Limits = {
@@ -123,4 +130,11 @@ export function resetStores(): void {
     settingsPage: null,
   });
   useWorkspaces.setState({ list: [], activeId: null, activeTab: {} });
+  useUsage.setState({ byAccount: {} });
+  useContexts.setState({ byPane: {} });
+  resetThreads();
+  resetFiles();
+  resetGit();
+  resetBrowser();
+  resetScratchpad();
 }

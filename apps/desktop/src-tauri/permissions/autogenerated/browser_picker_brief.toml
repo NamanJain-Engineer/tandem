@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-browser-picker-brief"
+description = "Enables the browser_picker_brief command without any pre-configured scope."
+commands.allow = ["browser_picker_brief"]
+
+[[permission]]
+identifier = "deny-browser-picker-brief"
+description = "Denies the browser_picker_brief command without any pre-configured scope."
+commands.deny = ["browser_picker_brief"]
