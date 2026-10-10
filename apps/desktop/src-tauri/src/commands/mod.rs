@@ -5,6 +5,7 @@ pub mod account;
 pub mod accounts;
 pub mod app;
 pub mod auto;
+pub mod bestof;
 pub mod browser;
 pub mod checkpoints;
 pub mod engines;

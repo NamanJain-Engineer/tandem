@@ -1886,8 +1886,8 @@ cargo test -p tandem-invariants && bash scripts/release-local.sh --dry-run
    - `tandem_pty::ports`: a `PortProbe` trait with Linux (`/proc/net/tcp{,6}` + `/proc/<pid>/fd`), macOS (`lsof`) and Windows (`netstat -ano`) implementations, each unit-tested on recorded output; a pane's process tree from the PTY's pid.
    - `ports_list`, `ports_stop` (rechecks pane ownership and start time); the Ports sidebar tab (UI-142).
 4. **Best of N (F-EX-04).**
-   - `BestOfService` over the launch service (worktree isolation, one shared tab) and lanes; `bestof_*` commands; check runs in the login shell with a 10-minute limit and a 200-line tail.
-   - The Best of N sheet (UI-143) and Compare page (UI-144).
+   - `BestOfService` over the launch service (worktree isolation, a lane per agent) and lanes; `bestof_*` commands; checks run with the login environment, a 10-minute limit and a 200-line tail.
+   - The Best of N sheet (UI-143) and the Compare dialog (UI-144) (D-710).
 5. **Prompt library (F-EX-05).**
    - `tandem_core::prompts`: list (front matter, 64 KB limit, `contain()`), variables, render; `prompts_*` commands; the exclude-line narrowing.
    - The prompt picker (UI-145) as a `QuickPicker`, its variables form, and insertion into composers and panes without submitting.

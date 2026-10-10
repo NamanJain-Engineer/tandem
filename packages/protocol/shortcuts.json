@@ -144,6 +144,24 @@
     "enabledWhen": "always"
   },
   {
+    "id": "bestof.open",
+    "category": "workspace",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "workspace_open"
+  },
+  {
+    "id": "bestof.compare",
+    "category": "workspace",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "workspace_open"
+  },
+  {
     "id": "workspace.launch",
     "category": "workspace",
     "mac": "Mod+Shift+L",

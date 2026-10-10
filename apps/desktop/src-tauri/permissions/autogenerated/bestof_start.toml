@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-bestof-start"
+description = "Enables the bestof_start command without any pre-configured scope."
+commands.allow = ["bestof_start"]
+
+[[permission]]
+identifier = "deny-bestof-start"
+description = "Denies the bestof_start command without any pre-configured scope."
+commands.deny = ["bestof_start"]

@@ -3,6 +3,7 @@
 pub mod accounts;
 pub mod approvals;
 pub mod attachments;
+pub mod bestof;
 pub mod checkpoints;
 pub mod command_history;
 pub mod editor_tabs;

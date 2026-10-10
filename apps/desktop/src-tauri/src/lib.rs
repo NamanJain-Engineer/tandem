@@ -111,6 +111,13 @@ macro_rules! app_commands {
             commands::prompts::prompts_render,
             commands::prompts::prompts_create,
             commands::prompts::prompts_share_repo,
+            commands::bestof::bestof_start,
+            commands::bestof::bestof_list,
+            commands::bestof::bestof_get,
+            commands::bestof::bestof_check,
+            commands::bestof::bestof_check_stop,
+            commands::bestof::bestof_keep,
+            commands::bestof::bestof_discard,
             commands::files::editor_tabs_get,
             commands::files::editor_tabs_save,
             commands::files::app_reveal_path,
@@ -423,6 +430,11 @@ fn spawn_background(state: &AppState) {
     let checkpoints = state.checkpoints.clone();
     tauri::async_runtime::spawn(async move {
         checkpoints.prune_all().await;
+    });
+    // A Best of N check can't outlive the app that ran it (F-EX-04).
+    let store = state.store.clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = tandem_store::repo::bestof::settle_checks(&store).await;
     });
     // Command recall keeps its retention at startup and hourly (F-EX-02).
     let recall = state.recall.clone();

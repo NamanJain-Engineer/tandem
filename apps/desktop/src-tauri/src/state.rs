@@ -139,6 +139,8 @@ pub struct AppState {
     pub checkpoints: Arc<crate::services::checkpoints::CheckpointService>,
     /// Command recall (F-EX-02).
     pub recall: Arc<crate::services::recall::RecallService>,
+    /// Best of N's running checks (F-EX-04).
+    pub bestof_checks: crate::services::bestof::Checks,
     /// The Ports panel (F-EX-03).
     pub ports: Arc<crate::services::ports::PortsService>,
     /// Browser tabs and panes (F-CD-17), bound to the window in setup.
@@ -555,6 +557,7 @@ impl AppState {
             checkpoints,
             recall,
             ports,
+            bestof_checks: Default::default(),
             browser: std::sync::OnceLock::new(),
             e2e,
         }

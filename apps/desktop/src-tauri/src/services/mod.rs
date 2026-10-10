@@ -7,6 +7,7 @@ pub mod approvals;
 pub mod audit;
 pub mod auth;
 pub mod auto;
+pub mod bestof;
 pub mod boot;
 pub mod checkpoints;
 pub mod config;

@@ -2297,12 +2297,12 @@ A sidebar tab "Ports" (singleton; "+" menu item "Ports").
 
 #### UI-143 · Best of N sheet · EX
 A Sheet md 480, title "Best of N", subtitle the workspace name.
-- A Textarea "Prompt" ("Describe the change. Each agent gets the same prompt."), 2–3 seat rows (engine Select, account Select, remove ×; "+ Add agent" up to 3), an Input "Check command (optional)" with placeholder "pnpm test", and the live summary "This opens {n} agents in {n} worktrees (tandem/{slug}-1 … -{n}) on a new tab."
+- A Textarea "Prompt" ("Describe the change. Each agent gets the same prompt."), 2–3 seat rows (engine Select, "Remove"; "+ Add agent" up to 3), an Input "Check command (optional)" with placeholder "pnpm test", and the live summary "This opens {n} agents in {n} worktrees (tandem/{slug}-1 … -{n}), one per agent."
 - A Callout when the workspace has uncommitted changes: "Worktrees start from the last commit; your uncommitted changes aren't in them."
-- Actions "Cancel" / "Start {n} agents ⌘↩". Not a repository: the palette item is disabled with "Best of N needs a git repository".
+- Actions "Cancel" / "Start {n} agents ⌘↩". Not a repository: the sheet shows only "Best of N needs a git repository".
 
 #### UI-144 · Best of N compare · EX
-A page in the main area, opened from the Best of N tab's header chip "Compare" (or the palette "Compare Best of N").
+A Dialog lg, opened after Start and from the palette ("Compare Best of N", the folder's newest running run; D-710).
 ```
 Best of N · Fix login redirect                [Run check] [Discard all…]
 ┌ (C) Claude Code ──────┐┌ (X) Codex ────────────┐┌ (C) Claude Code ──────┐
@@ -2312,9 +2312,9 @@ Best of N · Fix login redirect                [Run check] [Discard all…]
 │ [Keep this one…]       ││ [Keep this one…]      ││ [Keep this one…]       │
 └────────────────────────┘└───────────────────────┘└────────────────────────┘
 ```
-- Columns share the width (1–3); under 960 px they become Tabs. A file filter (Select "All files" or one path) lines up the same file in each column.
-- "Out" opens a Dialog with the check's last 200 lines (mono). Keep this one… and Discard all… use the destructive confirmation with the F-EX-04 copy.
-- States: loading (Skeleton columns), a lane that failed to start (Banner in its column with Retry), merged ("Merged {branch} into {base}" with "Close"), discarded.
+- Columns share the width (1–3); under 960 px they stack. A file filter (Select "All files" or one path) lines up the same file in each column.
+- "Output" opens a Dialog with the check's last 200 lines (mono). Keep this one… and Discard all… ask in the native confirm with the F-EX-04 copy (TL-06 rule 5: discarding uncommitted work always asks natively, so there's no second, in-page dialog).
+- States: loading (Skeleton columns), a lane that failed to start (Banner in its column), merged ("Merged into {base}. The other worktrees are gone; their branches stay."), discarded.
 
 #### UI-145 · Prompt picker · EX
 A palette-style picker with the command palette's shell (`Mod+Alt+P`, "Insert prompt…"; D-706): rows show the title, the description and a Badge "This repository" or "Yours"; each row has "Edit" (opens it in the Files editor). The last row is "New prompt…".
