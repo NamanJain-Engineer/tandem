@@ -697,6 +697,7 @@ Built on branch `m16c-phone-companion` (from `product-m0-m5`, D-1000). Owns F-BE
 - D-1014: The QR code is drawn by a new `@tandem/ui` `QRCode` from the module rows Rust computes (`QrMatrix`, replacing ARCHITECTURE's `qrSvg`), dark on a light panel in both themes because phone cameras read inverted codes poorly.
 - D-1015: The desktop's relay socket uses tokio-tungstenite with the bearer in an `Authorization` header, reconnecting with backoff (1 s doubling to 60 s; 30 s after a 1008). It doesn't go through an HTTP proxy.
 - D-1016: Desktop E2E runs keep the API's log (`api.log` in the run's home, level info) and start the API with `API_PUBLIC_URL` set to itself. The log is what the relay check greps for the known sentence (MILESTONES M16 verification), and the public URL is what the relay URL in each pairing is built from.
+- D-1017: Settings › Remote is one page shared with M14, as UI-111 lays it out: SSH hosts, WSL distributions, then the phone (`RemotePage`). Both sessions had added a `remote` page; the merge keeps M14's entry, adds the phone section to it, and widens its subtitle to "SSH hosts, WSL distributions and your phone".
 
 ### M16C log
 - F-BE-11: pairings, the relay, the lint rule and 17 API tests. The first run's one failure was in the test: it added a second, canceled subscription instead of lapsing the first.
@@ -706,6 +707,7 @@ Built on branch `m16c-phone-companion` (from `product-m0-m5`, D-1000). Owns F-BE
   - E2E runs started the API without `API_PUBLIC_URL`, so pairings got `ws://api.tandem.local:8787` relay URLs that don't resolve on the E2E machine. `run.ts` now sets it to the API it starts, as the web Playwright config already did.
   - The replay test first counted lines in the pane's DOM text, which the terminal doesn't render into; it reads the pane through the test bridge now.
   - The full desktop E2E regression: 90 of 94 spec files on the first run; the 4 that failed were the Dictate specs (m8-1, m8-2, m8-4, m8-5), because this container's model cache was empty (OPERATING §5: `bash scripts/fetch-models.sh base.en parakeet`). With the models fetched, all 5 m8 spec files pass, so 94 of 94.
+  - Merged `product-m0-m5` twice more (M11 tasks and routines, then M14 SSH and WSL). After M14, both sessions' Settings › Remote pages became one (D-1017).
   - A gate run was lost to a full disk (test binaries of ~500 MB each pile up); deleting stale test executables in `target/debug/deps` freed 12 GB.
 
 ## Decisions
