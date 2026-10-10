@@ -1,0 +1,3 @@
+# Built per release target by scripts/build-sidecars.sh; never committed.
+*
+!.gitignore

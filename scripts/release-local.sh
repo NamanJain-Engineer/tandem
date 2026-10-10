@@ -71,8 +71,10 @@ note "- version $version"
 bundle="$root/target/$target/release/bundle"
 if [ "$build" = 1 ]; then
   (cd "$root" && pnpm --filter desktop build)
+  # The tasks MCP server ships beside the app (F-TK-02, bundle.externalBin).
+  sh "$root/scripts/build-sidecars.sh" "$target"
   # AppImage tooling runs without FUSE in containers.
-  (cd "$root/apps/desktop" && APPIMAGE_EXTRACT_AND_RUN=1 NO_STRIP=true pnpm tauri build --target "$target" --bundles appimage,deb)
+  (cd "$root/apps/desktop" && APPIMAGE_EXTRACT_AND_RUN=1 NO_STRIP=true pnpm tauri build --target "$target" --bundles appimage,deb --config src-tauri/tauri.sidecars.conf.json)
 fi
 
 # 4. signing, each only with its secrets; otherwise the artifact says so.

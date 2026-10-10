@@ -48,18 +48,28 @@ pub fn issue_of(path: &std::path::Path) -> Option<String> {
 /// `tandem-tasks` next to the app binary (`TANDEM_TASKS_BIN` in debug
 /// builds), like `tandem-hook` (D-68).
 pub fn tasks_bin() -> Option<PathBuf> {
-    if cfg!(debug_assertions) {
-        if let Some(p) = std::env::var_os("TANDEM_TASKS_BIN") {
-            return Some(PathBuf::from(p));
-        }
-    }
-    let exe = std::env::current_exe().ok()?;
-    let name = if cfg!(windows) {
-        "tandem-tasks.exe"
+    let dev = if cfg!(debug_assertions) {
+        std::env::var_os("TANDEM_TASKS_BIN").map(PathBuf::from)
     } else {
-        "tandem-tasks"
+        None
     };
-    let p = exe.parent()?.join(name);
+    tasks_bin_from(dev, &std::env::current_exe().ok()?)
+}
+
+/// The sidecar's file name: what Tauri installs from `bundle.externalBin`
+/// (`binaries/tandem-tasks-<target>`) without the target suffix.
+pub const TASKS_BIN_NAME: &str = if cfg!(windows) {
+    "tandem-tasks.exe"
+} else {
+    "tandem-tasks"
+};
+
+/// The dev override, else the bundled sidecar beside the app's executable.
+pub fn tasks_bin_from(dev: Option<PathBuf>, exe: &std::path::Path) -> Option<PathBuf> {
+    if let Some(p) = dev {
+        return Some(p);
+    }
+    let p = exe.parent()?.join(TASKS_BIN_NAME);
     p.is_file().then_some(p)
 }
 
@@ -230,6 +240,44 @@ impl TasksService {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn f_tk_02_the_bundled_server_is_found_beside_the_apps_executable() {
+        let dir = tempfile::tempdir().expect("dir");
+        let exe = dir.path().join("tandem");
+        assert_eq!(tasks_bin_from(None, &exe), None, "not bundled: none");
+        std::fs::write(dir.path().join(TASKS_BIN_NAME), b"").expect("sidecar");
+        assert_eq!(
+            tasks_bin_from(None, &exe),
+            Some(dir.path().join(TASKS_BIN_NAME))
+        );
+        // The dev override wins.
+        let dev = std::path::PathBuf::from("/dev/tandem-tasks");
+        assert_eq!(tasks_bin_from(Some(dev.clone()), &exe), Some(dev));
+    }
+
+    #[test]
+    fn f_tk_02_release_builds_bundle_the_tasks_server_as_a_sidecar() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let conf: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("tauri.sidecars.conf.json")).expect("conf"),
+        )
+        .expect("json");
+        assert_eq!(
+            conf["bundle"]["externalBin"],
+            serde_json::json!(["binaries/tandem-tasks"])
+        );
+        // Both release paths build the sidecar and pass that config.
+        let repo = root.join("../../..");
+        for script in ["scripts/release-local.sh", ".github/workflows/release.yml"] {
+            let text = std::fs::read_to_string(repo.join(script)).expect(script);
+            assert!(text.contains("build-sidecars.sh"), "{script}");
+            assert!(
+                text.contains("--config src-tauri/tauri.sidecars.conf.json"),
+                "{script}"
+            );
+        }
+    }
     use super::*;
 
     async fn service(bin: Option<PathBuf>) -> (tempfile::TempDir, Arc<TasksService>) {

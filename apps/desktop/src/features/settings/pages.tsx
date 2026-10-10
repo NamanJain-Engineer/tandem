@@ -55,8 +55,9 @@ const opts = (keys: string[], prefix: string) =>
 const segs = (keys: string[], prefix: string) =>
   keys.map((k) => ({ id: k, label: t(`${prefix}.${k}` as Parameters<typeof t>[0]) }));
 
-/** The pages shipped so far (UI-101, 102, 104, 105, 112, 113, 114, 115, 116), in UI-100 order. */
-export function settingsPages(platform: string): PageDef[] {
+/** The pages shipped so far (UI-101, 102, 104, 105, 112, 113, 114, 115, 116), in UI-100 order.
+ * `routines`: the plan has routines; without them "Pause routines" is absent. */
+export function settingsPages(platform: string, routines = false): PageDef[] {
   const mac = platform === "macos";
   return [
     {
@@ -643,15 +644,19 @@ export function settingsPages(platform: string): PageDef[] {
           keywords: ["mail", "pause", "message"],
           control: (ids) => <BoolControl k="pause_all_mail" ids={ids} label={t("settings.pauseAllMail")} />,
         },
-        {
-          id: "pause_all_routines",
-          label: t("settings.pauseAllRoutines"),
-          description: t("settings.pauseAllRoutines.desc"),
-          keywords: ["routines", "pause", "schedule"],
-          control: (ids) => (
-            <BoolControl k="pause_all_routines" ids={ids} label={t("settings.pauseAllRoutines")} />
-          ),
-        },
+        ...(routines
+          ? [
+              {
+                id: "pause_all_routines",
+                label: t("settings.pauseAllRoutines"),
+                description: t("settings.pauseAllRoutines.desc"),
+                keywords: ["routines", "pause", "schedule"],
+                control: (ids: Ids) => (
+                  <BoolControl k="pause_all_routines" ids={ids} label={t("settings.pauseAllRoutines")} />
+                ),
+              },
+            ]
+          : []),
       ],
     },
     {
