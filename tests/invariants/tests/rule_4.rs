@@ -15,6 +15,12 @@ fn invariant_rule_4_unattended_never_full() {
         Origin::Task { grants_full: false },
     ] {
         assert!(!origin.attended(), "{origin:?}");
+        // Full is lowered to Edits, never refused outright or kept.
+        assert_eq!(
+            resolve(Access::Full, ThreadMode::Act, origin),
+            Access::Edits,
+            "{origin:?}"
+        );
         for mode in [ThreadMode::Act, ThreadMode::Plan] {
             assert_ne!(
                 resolve(Access::Full, mode, origin),
@@ -29,4 +35,14 @@ fn invariant_rule_4_unattended_never_full() {
     ] {
         assert_eq!(resolve(Access::Full, ThreadMode::Act, origin), Access::Full);
     }
+    // A person at the keyboard keeps the Full they chose.
+    assert_eq!(
+        resolve(Access::Full, ThreadMode::Act, Origin::Interactive),
+        Access::Full
+    );
+    // Lower levels are never raised.
+    assert_eq!(
+        resolve(Access::Read, ThreadMode::Act, Origin::Mail),
+        Access::Read
+    );
 }
