@@ -483,3 +483,45 @@ fn f_rt_01_full_access_must_be_chosen_explicitly() {
     .validate()
     .is_err());
 }
+
+#[test]
+fn f_rt_01_3_weekly_schedules_follow_the_dst_rule_on_both_changes() {
+    // Sundays: 2026-03-08 (spring forward) and 2026-11-01 (fall back) in
+    // New York are both Sundays.
+    let weekly = |time: &str| ScheduleSpec {
+        schedule: Schedule::Weekly {
+            days: vec![0],
+            times: vec![time.into()],
+        },
+        timezone: "America/New_York".into(),
+    };
+    // 2:30 doesn't exist on 03-08: it runs at 3:30 EDT, once.
+    assert_eq!(
+        weekly("02:30")
+            .next_after(utc("2026-03-07T12:00:00Z"))
+            .expect("ok"),
+        Some(utc("2026-03-08T07:30:00Z"))
+    );
+    // 1:30 happens twice on 11-01: the first (EDT), then a week later.
+    let runs = weekly("01:30")
+        .next_n(utc("2026-10-31T12:00:00Z"), 2)
+        .expect("next");
+    assert_eq!(
+        runs,
+        [utc("2026-11-01T05:30:00Z"), utc("2026-11-08T06:30:00Z")]
+    );
+}
+
+#[test]
+fn f_rt_01_3_intervals_keep_real_time_across_both_changes() {
+    let hourly = ScheduleSpec {
+        schedule: Schedule::Interval { every_minutes: 60 },
+        timezone: "America/New_York".into(),
+    };
+    for from in ["2026-03-08T05:10:00Z", "2026-11-01T04:10:00Z"] {
+        let runs = hourly.next_n(utc(from), 4).expect("next");
+        for pair in runs.windows(2) {
+            assert_eq!((pair[1] - pair[0]).num_minutes(), 60, "{from}: {runs:?}");
+        }
+    }
+}

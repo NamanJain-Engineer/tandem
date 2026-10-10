@@ -5381,6 +5381,7 @@ dependencies = [
  "tandem-gateway",
  "tandem-git",
  "tandem-pty",
+ "tandem-tasks",
  "tempfile",
  "tokio",
 ]
