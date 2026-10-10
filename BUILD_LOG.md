@@ -763,6 +763,59 @@ Built on branch `m16c-phone-companion` (from `product-m0-m5`, D-1900). Owns F-BE
   - The full desktop E2E regression: 90 of 94 spec files on the first run; the 4 that failed were the Dictate specs (m8-1, m8-2, m8-4, m8-5), because this container's model cache was empty (OPERATING §5: `bash scripts/fetch-models.sh base.en parakeet`). With the models fetched, all 5 m8 spec files pass, so 94 of 94.
   - Merged `product-m0-m5` twice more (M11 tasks and routines, then M14 SSH and WSL). After M14, both sessions' Settings › Remote pages became one (D-1917).
   - A gate run was lost to a full disk (test binaries of ~500 MB each pile up); deleting stale test executables in `target/debug/deps` freed 12 GB.
+## M16 · 16A Conductor core (F-CN-01…04, F-CN-08)
+Built on branch `m16a-conductor` (from `product-m0-m5`), in parallel with F-CN-06 and F-CN-07 on `m16a-persona-wake`, whose seams are agreed: that branch's persona and memory reach a call as a `PersonaBrief` read once at start, and its wake detector starts calls through `ConductorService::start(CallOrigin::Wake)`. Decisions are numbered from D-1100.
+- [x] F-CN-01 Call lifecycle, F-CN-02 talker/doer and tool catalog, F-CN-03 delivery rules and safety, F-CN-04 HUD, ring and call log, F-CN-08 audio routing (first slice).
+  - **`tandem-core::voice_tools`.** The closed catalog: 47 tools, each mapped to registry commands or marked voice-only, with what it needs on screen (`Review`), and the closed `set_setting` list. Tests hold it equal to `apps/api/voice-tools.json` (names, groups, which tools confirm) and check that every mapped command exists (AC1).
+  - **`tandem-voice::realtime`.** `RealtimeProvider` gives normalized `ClientEvent`s and `ServerEvent`s. `MockRealtime` is a tokio-tungstenite client for the dev mock's protocol. There is also the 3 s pre-connect buffer (`buffer::PreConnect`) and the PCM16 24 kHz helpers (a streaming resampler and base64).
+  - **`tandem-voice::conductor`.**
+    - `CallController` handles start, connect, the talker, doer rounds, mute, the cap, end and settle.
+    - `Executor` is the local tool executor. A second closed-schema check uses the same JSON, and it enforces the closed list, the confirmations, the waiting- and shell-pane refusals, control-character stripping, redaction and cancellation.
+    - `Confirms` holds questions bound to request ids. A yes on a screen-only question needs a `LocalReview`.
+    - The rest: the view types for the HUD, `PersonaBrief`, and `Speaker` (cpal, or silent for tests).
+  - **Mic (F-CN-08).** `AudioService::begin_stream` streams a call through Dictate's device policy, gain and silent-mic recovery; recovery events go to the call, not to Dictate. While a call holds the mic, Dictate refuses every take, from the global key and from composers ("Conductor is listening").
+  - **Desktop.**
+    - `services/conductor.rs` holds the service, the hosted-error mapping, the workspace snapshot (names and states only) and the call-log tidy at startup: unsettled calls settle, and logs past 7 days go.
+    - `commands/conductor.rs` has the `AppHost` and the commands `conductor_start_call`, `end_call`, `mute`, `confirm` (main window only), `state`, `call_log` and `call_delete`, plus the debug-only `test_conductor_inject` and `test_conductor_clock`.
+    - `ApiClient` gains `voice_session`, `voice_act` and `voice_settle`.
+    - `tandem-store::repo::conductor` keeps the call log in the existing tables.
+    - `type_prompt_with` adds a `send` flag, and `settings::store_and_apply` is the path `set_setting` uses.
+    - Sign-out ends a call first, so it can still settle.
+  - **UI.**
+    - The title-bar ring (UI-01 item 8): Pro only; a click toggles a call, holding it is push-to-talk.
+    - The HUD (UI-61): state, utterance, newest 3 chips plus "+N", the question row with "Confirm on screen", Mute, Call log and End, the credits meter, errors with their actions, and the 3 s receipt.
+    - The call log sheet (UI-66), with empty, loading, error and populated states.
+    - Palette commands `conductor.call` (Mod+Shift+Space; on Free it opens the plans), `conductor.mute` and `conductor.log`.
+    - `WaveformRing` gains `paused`: no animation frames while the window is hidden or the app inactive. `ringStats` counts frames.
+  - **Mock and harness.** `scripts/mock-realtime.ts` is a dependency-free WebSocket server with a control API. The API takes `REALTIME_MOCK_URL`, and the E2E runner starts the mock and points the API at it.
+  - **Tests.**
+    - Rust: catalog 4; schema 3; confirmations 3; executor 13; call controller 15 (AC1 65 s = 140 credits, AC2, AC3, AC4, mute, hang-up while connecting, startup errors, chips, voice-answer binding, 402, barge-in, one call at a time, injection); realtime 8; speaker 2; capture 2 (F-CN-08); Dictate 1; store 2; desktop service 3.
+    - UI: ring pause 1; HUD, ring, commands and call log 13.
+    - API: mock provider 2.
+    - Invariants: rule 5's live voice path, 2 new.
+    - E2E-M16-1 (`m16-1-conductor.e2e.ts`): all 8 cases.
+  - **Not in this slice.**
+    - 23 tools answer honestly that they "aren't available by voice in this version yet" (D-1107): launch_agents, wait_for_pane, handoff, the thread tools besides listing, the teammate tools besides listing, the task tools, run_routine, list_routines, get_usage and check_updates. Wiring them to their services is the next slice.
+    - Also not built yet: the floating ring window, the "Keep call logs" setting, "talk faster/slower", and the vendor realtime client (D-1113).
+
+### M16 · 16A Conductor core decisions
+- D-1100: Conductor's logic lives in `tandem-voice` (`realtime`, `conductor`) behind host traits (`ToolHost`, `CallHost`), so every rule is tested with fakes; the desktop's `AppHost` is the running app. Calls run on a runtime handle the controller keeps, so any thread can start one (the wake detector included).
+- D-1101: F-CN-02 AC1 reads "every tool maps to a registry command, or is one of the table's voice-only tools", since half the table (`prompt_pane`, `read_pane`, …) has no palette command and adding one each would put voice-only actions in the palette. The app holds its catalog equal to the API's `voice-tools.json` and checks each call against that file's schemas again before it runs.
+- D-1102: The dev mock's protocol is the app's own: JSON text frames, PCM16 24 kHz base64, events `session.update`, `input_audio.append`, `function_call.output`, `response.create` and back `session.ready`, `speech.started`, `transcript.user|assistant`, `audio.delta`, `function_call`, `response.done`, `error`. It is served by `scripts/mock-realtime.ts` (not the API's `/v1/dev/realtime`, which D-1006 left to this branch); the API's `MockRealtime` points there when `REALTIME_MOCK_URL` is set. The token goes in the handshake's Authorization header and is never logged.
+- D-1103: The pre-connect buffer keeps the latest 3 s; audio while muted is never buffered, and mute or hang-up empties it.
+- D-1104: `prompt_pane` refuses a pane waiting on an approval or a question at once ("waiting for approval", nothing typed) and refuses shell panes; a busy agent gets the prompt once it is back at its prompt, waiting up to 60 s, and checks the call's cancellation right before typing, so a hang-up while it waits delivers nothing (AC2).
+- D-1105: A spoken answer is `act("answer <request id> yes|no")`, or a bare yes/no for the question the HUD shows; the app handles it without a doer round and resolves exactly that id. A spoken yes for a shell command is refused; only `conductor_confirm` from the `main` window makes the `LocalReview` that `run_in_shell` takes. The HUD shows one question at a time, oldest first; the talker is told each question's id as it comes up.
+- D-1106: A call's id is the API's session id. The call log uses the existing `conductor_calls` and `conductor_call_events` tables, so there is no migration to collide with parallel branches. Connected seconds are saved every 10 s, so a call interrupted by a crash settles at the next start. Settled calls older than 7 days are purged at startup.
+- D-1107: Tools not yet wired to an app service return a plain failure ("… isn't available by voice in this version yet; it's in the app.") rather than pretending; the doer tells the user so.
+- D-1108: Two debug-only harness commands: `test_conductor_inject` runs doer tool calls the mock doer doesn't plan through the same executor, chips and log; `test_conductor_clock` moves only the call's clock, because `TANDEM_FAKE_CLOCK` would freeze the whole app. The 65 s case runs in real time, so the API's settle clamp (D-1002) holds and the credits are the real ones.
+- D-1109: Sign-out ends a call and waits up to 3 s for its settle before the tokens go.
+- D-1110: While a call holds the mic, Dictate refuses every take: from the global key and from composers. The owner is set through Dictate's `set_mic_owner` until `m16a-persona-wake`'s `MicOwners` registry lands. The composer mic shows "Conductor is listening".
+- D-1111: The persona seam is `PersonaBrief {voice, instructions}`, read once per call; the app's rules and the fenced workspace summary follow it. Built-in defaults until F-CN-06's `CallContext` is mapped onto it.
+- D-1112: The desktop's balance doesn't show the 10-minute hold while a call runs (the API sends no credits event on reserve); the HUD's minutes-left reads the balance as shown and the settle corrects it.
+- D-1113: Only the mock provider is built on the desktop. A session minted for another provider ends with "Couldn't connect to Conductor" and settles at 0 s; the vendor client waits for the key (HUMAN_TODO).
+
+### M16 · 16A Conductor core log
+- Tests first from the eight E2E-M16-1 cases, the four F-CN-02 and two F-CN-03 acceptance criteria. The first E2E run crashed the app: `conductor_start_call` is a sync command and spawned on a thread outside the runtime (D-1100's runtime handle fixes it). Then the test-only commands lacked their capability (added to `test-capability.json`), `getText()` read "" while the HUD faded in (read `innerText`), and a key off the closed list was refused by the schema check with a generic reason; the executor now says "Conductor can't change that setting." first. One unit test raced the call's tick, and was fixed in the test rather than slowed.
 
 ## Decisions
 - D-1: F-CD-09 owned by M9. It needs the Files editor and the Tandem browser.

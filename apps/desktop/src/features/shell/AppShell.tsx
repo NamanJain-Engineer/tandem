@@ -2,9 +2,12 @@ import { LaunchSheet } from "../code/LaunchSheet";
 import { HandoffDialog } from "../code/HandoffDialog";
 import { AutoDialog } from "../auto/AutoDialog";
 import { followAuto } from "../../stores/auto";
+import { followConductor } from "../../stores/conductor";
+import { CallLog } from "../conductor/CallLog";
+import { Hud } from "../conductor/Hud";
 import { WorktreeDialogs } from "../code/Worktrees";
 import { useEffect } from "react";
-import { IconButton, LiveAnnouncer, useToast } from "@tandem/ui";
+import { IconButton, LiveAnnouncer, ringStats, useToast } from "@tandem/ui";
 import { Plus } from "lucide-react";
 import { setCatalog, t } from "../../i18n";
 import en from "../../i18n/en.json";
@@ -78,6 +81,7 @@ export function AppShell() {
   useEffect(followEngines, []);
   useEffect(followLimits, []);
   useEffect(followAuto, []);
+  useEffect(followConductor, []);
   useEffect(followContexts, []);
   useEffect(followUsage, []);
   useEffect(followStatus, []);
@@ -112,6 +116,8 @@ export function AppShell() {
       paneSize: (paneId: string) => terminalHandles.get(paneId)?.size() ?? null,
       reflows: (reset?: boolean) => reflowCounts(reset ?? false),
       commandRuns: () => Object.fromEntries(commandRuns),
+      // F-CN-04 AC2: animation frames every WaveformRing has drawn.
+      ringFrames: () => ringStats.frames,
       // §5.5: the en-XA pseudo-locale, live (the shell re-renders).
       pseudoLocale: (on: boolean) => setCatalog(on ? pseudoCatalog(en) : en, on ? "en-XA" : "en"),
       // State the harness saves next to a failure's screenshot.
@@ -213,6 +219,8 @@ export function AppShell() {
       <HandoffDialog />
       <NewTeammateSheet />
       <AutoDialog />
+      <Hud />
+      <CallLog />
       <Palette />
       <Cheatsheet />
       <DiagnosticsPanel />

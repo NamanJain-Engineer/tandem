@@ -12,8 +12,15 @@ export type WaveformRingProps = {
   size?: number;
   /** Announced politely when it changes ("Listening", "Transcribing"). */
   label: string;
+  /** Stops the animation loop: the window is hidden or the app inactive
+   * (F-CN-04 AC2). The ring keeps its last frame. */
+  paused?: boolean;
   className?: string;
 };
+
+/** Animation frames every ring has drawn, for the check that a hidden
+ * window draws none (F-CN-04 AC2). */
+export const ringStats = { frames: 0 };
 
 const BARS = 48;
 
@@ -33,13 +40,14 @@ const COLOR: Record<WaveformState, string> = {
  * level; thinking rotates one accent highlight; error is a static rose ring
  * with a gap at the top. Reduced motion: no rotation, and the ring's
  * thickness shows the level instead, updated at most every 150 ms. */
-export function WaveformRing({ state, level = 0, size = 28, label, className }: WaveformRingProps) {
+export function WaveformRing({ state, level = 0, size = 28, label, paused = false, className }: WaveformRingProps) {
   const { reducedMotion } = useTheme();
   const [smooth, setSmooth] = useState(0);
   const target = useRef(level);
   target.current = state === "listening" || state === "speaking" ? level : 0;
 
   useEffect(() => {
+    if (paused) return;
     if (reducedMotion) {
       const id = setInterval(() => setSmooth(target.current), 150);
       return () => clearInterval(id);
@@ -47,6 +55,7 @@ export function WaveformRing({ state, level = 0, size = 28, label, className }: 
     let raf = 0;
     let current = 0;
     const step = () => {
+      ringStats.frames++;
       // Fast attack, slower release.
       const t = target.current;
       current += (t - current) * (t > current ? 0.5 : 0.15);
@@ -55,7 +64,7 @@ export function WaveformRing({ state, level = 0, size = 28, label, className }: 
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [reducedMotion]);
+  }, [reducedMotion, paused]);
 
   const r = size / 2;
   const inner = r * 0.52;
@@ -87,6 +96,7 @@ export function WaveformRing({ state, level = 0, size = 28, label, className }: 
         aria-label={label}
         data-state={state}
         data-testid="waveform-ring"
+        data-paused={paused ? "" : undefined}
       >
         {reducedMotion && (
           <circle
@@ -99,7 +109,7 @@ export function WaveformRing({ state, level = 0, size = 28, label, className }: 
           />
         )}
         {!reducedMotion && bars}
-        {state === "thinking" && !reducedMotion && (
+        {state === "thinking" && !reducedMotion && !paused && (
           <g className="origin-center animate-[spin_1.2s_linear_infinite]" style={{ transformOrigin: "50% 50%" }}>
             <line
               x1={r}

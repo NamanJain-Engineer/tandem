@@ -127,6 +127,13 @@ const COMMANDS: &[&str] = &[
     "limits_list",
     "limit_resume_at_reset",
     "limit_resume_now",
+    "conductor_start_call",
+    "conductor_end_call",
+    "conductor_mute",
+    "conductor_confirm",
+    "conductor_state",
+    "conductor_call_log",
+    "conductor_call_delete",
     "auto_start",
     "auto_list",
     "auto_pause",
@@ -327,6 +334,8 @@ const COMMANDS: &[&str] = &[
 ];
 
 const TEST_COMMANDS: &[&str] = &[
+    "test_conductor_inject",
+    "test_conductor_clock",
     "test_counters",
     "test_browser_eval",
     "test_spawn_log",

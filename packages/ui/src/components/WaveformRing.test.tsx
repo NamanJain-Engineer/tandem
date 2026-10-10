@@ -1,8 +1,8 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { insertText } from "./Composer";
-import { WaveformRing } from "./WaveformRing";
+import { ringStats, WaveformRing } from "./WaveformRing";
 
 describe("WaveformRing (UI_SPEC §2.30)", () => {
   it("F-DI-07 draws 48 bars, a gap at the top on error, and names its state", () => {
@@ -31,6 +31,33 @@ describe("WaveformRing (UI_SPEC §2.30)", () => {
     const ring = screen.getByRole("img", { name: "Transcribing" });
     expect(ring.querySelectorAll("line").length).toBe(0);
     expect(ring.querySelector("circle")).toBeTruthy();
+  });
+});
+
+describe("WaveformRing animation (F-CN-04)", () => {
+  it("F-CN-04.2 a paused ring runs no animation frames", () => {
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
+    try {
+      const { rerender } = render(
+        <ThemeProvider motion="off">
+          <WaveformRing state="listening" level={0.6} label="Listening" />
+        </ThemeProvider>,
+      );
+      const before = ringStats.frames;
+      act(() => vi.advanceTimersByTime(200));
+      expect(ringStats.frames).toBeGreaterThan(before);
+      rerender(
+        <ThemeProvider motion="off">
+          <WaveformRing state="listening" level={0.6} label="Listening" paused />
+        </ThemeProvider>,
+      );
+      const paused = ringStats.frames;
+      act(() => vi.advanceTimersByTime(500));
+      expect(ringStats.frames).toBe(paused);
+      expect(screen.getByRole("img").hasAttribute("data-paused")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

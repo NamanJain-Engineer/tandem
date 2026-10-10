@@ -48,6 +48,8 @@ const MODEL_CACHE = process.env.TANDEM_MODEL_CACHE ?? join(REAL_HOME, ".cache", 
 const FIXTURES = "http://127.0.0.1:5173";
 /** The mock OAuth server and plugin upstreams (`mock-plugins`, D-954). */
 const PLUGINS = "http://127.0.0.1:8791";
+// Conductor's realtime voice provider stand-in (F-CN-01, D-1102).
+const REALTIME = "http://127.0.0.1:8794";
 
 async function up(url: string): Promise<boolean> {
   try {
@@ -314,7 +316,14 @@ async function main() {
     api = startDetached(
       "pnpm",
       ["--filter", "api", "start"],
-      { TANDEM_API_TEST_ROUTES: "1", BILLING_PROVIDER: "mock", WEB_PUBLIC_URL: WEB, API_PUBLIC_URL: API, LOG_LEVEL: "info" },
+      {
+        TANDEM_API_TEST_ROUTES: "1",
+        BILLING_PROVIDER: "mock",
+        WEB_PUBLIC_URL: WEB,
+        API_PUBLIC_URL: API,
+        LOG_LEVEL: "info",
+        REALTIME_MOCK_URL: "ws://127.0.0.1:8794/realtime",
+      },
       relayLog,
     );
     await waitUp(`${API}/v1/health`, 60);
@@ -334,6 +343,14 @@ async function main() {
     await waitUp(`${FEED}/health`, 30);
   } else {
     await fetch(`${FEED}/__scenario`, { method: "POST", body: JSON.stringify({ scenario: "none" }) });
+  }
+
+  let realtime: ChildProcess | undefined;
+  if (!(await up(`${REALTIME}/health`))) {
+    realtime = startDetached(join(root, "node_modules/.bin/tsx"), ["scripts/mock-realtime.ts", "--port", "8794"], {});
+    await waitUp(`${REALTIME}/health`, 30);
+  } else {
+    await fetch(`${REALTIME}/__reset`, { method: "POST" });
   }
 
   let plugins: ChildProcess | undefined;
@@ -380,6 +397,7 @@ async function main() {
     stop(web);
     stop(feed);
     stop(plugins);
+    stop(realtime);
     stop(fixtures);
     stop(models);
     stop(wm);

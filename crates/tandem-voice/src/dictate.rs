@@ -705,6 +705,16 @@ impl Dictate {
         if !enabled {
             return;
         }
+        // A Conductor call holds the mic (F-CN-08): no take of any kind.
+        if self.inner.lock().mic_owner.is_some() {
+            self.toast(
+                ToastCode::ConductorListening,
+                true,
+                "Conductor is listening".into(),
+            );
+            self.inner.lock().gesture.reset();
+            return;
+        }
         // A clipboard waiting to come back from the last take does now, so
         // this take saves the user's real clipboard.
         if let Some(r) = restore {
@@ -1882,6 +1892,19 @@ mod tests {
             }),
             Err(DictateError::MicBusy)
         );
+    }
+
+    #[test]
+    fn f_cn_08_a_call_holding_the_mic_refuses_the_global_key_too() {
+        let r = rig(speech(), "x");
+        r.d.set_mic_owner(Some("conductor".into()));
+        r.keys.send(Which::Hold, Phase::Down);
+        std::thread::sleep(Duration::from_millis(300));
+        r.keys.send(Which::Hold, Phase::Up);
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(r.d.current_take().is_none());
+        assert!(r.platform.pasted().is_empty());
+        r.d.set_mic_owner(None);
     }
 
     #[test]

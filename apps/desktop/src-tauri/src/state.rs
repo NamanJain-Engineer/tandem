@@ -113,6 +113,8 @@ pub struct AppState {
     pub auto: Arc<crate::services::auto::AutoService>,
     /// The phone companion (F-RM-03).
     pub phone: Arc<crate::services::phone::PhoneService>,
+    /// Conductor calls (F-CN-01…04).
+    pub conductor: Arc<crate::services::conductor::ConductorService>,
     /// Paused agents and their relaunch queue (F-SH-07).
     pub restore: Arc<crate::services::restore::RestoreService>,
     /// Auto-update and the minimum-version notice (F-SH-06).
@@ -706,6 +708,7 @@ impl AppState {
             notifications,
             auto,
             phone,
+            conductor: crate::services::conductor::ConductorService::new(),
             restore,
             updates,
             config,

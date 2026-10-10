@@ -824,10 +824,14 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 #### Conductor [F-CN-*]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
-| `conductor_start_call` | `{wake: bool}` | `CallView` | ForbiddenPlan, CreditsExhausted, Unavailable |
-| `conductor_end_call` / `conductor_mute` | — / `{muted}` | — | — |
-| `conductor_confirm` | `{requestId, yes}` (on-screen click only) | — | NotFound |
-| `conductor_call_log` | `{cursor?}` | `Page<CallLogEntry>` | — |
+| `conductor_start_call` | `{wake: bool, pushToTalk?: bool}` (the one entry point: ring, palette, shortcut, wake phrase; a running call is returned as it is) | `CallView` | ForbiddenPlan, PermissionDenied (org policy), Unavailable (no hosted service); mint and connect failures arrive as the view's `error` |
+| `conductor_end_call` / `conductor_mute` | — / `{muted}` | — (`end_call` with no call clears an ended call's receipt or error) | — |
+| `conductor_confirm` | `{requestId, yes}` (on-screen click only: `yes` needs the calling window to be `main`, which makes the `LocalReview`) | — | NotFound, PermissionDenied |
+| `conductor_state` | — | `CallView` (the HUD after a reload) | — |
+| `conductor_call_log` | `{callId?}` | `[CallLogEntry {call: CallRow, events: [CallEventRow]}]`, newest first; events for `callId` (default the newest) | — |
+| `conductor_call_delete` | `{callId}` | — | — |
+| `test_conductor_clock` (debug, `TANDEM_E2E=1`) | `{advanceMs}` | the call clock's offset (ms) | PermissionDenied |
+| `test_conductor_inject` (debug, `TANDEM_E2E=1`) | `{calls: [{id, name, args}]}` | `bool` (false without a call): doer tool calls run through the executor | PermissionDenied |
 | `conductor_memory_get` / `conductor_memory_resolve` | — / `{proposalIds, keep}` | `ConductorMemory` / — | Invalid (credential) |
 | `find_work` | `{query}` | `[FindMatch {source, label, score, lastActivity}]` | — |
 
@@ -942,9 +946,10 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `dictate:status` | `DictateStatus` (after a binding, model, permission or hotkey-status change) | voice service | F-DI-02, F-DI-04 |
 | `dictate:models` | `ModelsView` (download progress at most 4 a second, stages, failures) | voice service | F-DI-04 |
 | `dictate:history` | — (a take was stored or the history changed) | voice service | F-DI-08 |
-| `conductor:state` | `{state:"connecting"\|"listening"\|"thinking"\|"speaking"\|"ended", utterance?, chips:[Chip], question?}` (to `main`, `conductor-ring`) | CallController | F-CN-04 |
-| `conductor:ui-action` | `{action, args}` (navigation-only actions) | ActionRegistry | F-CN-02 |
-| `conductor:confirm-request` | `{requestId, summary, kind}` | ActionRegistry | F-CN-03 |
+| `conductor:state` | `CallView {callId?, phase:"idle"\|"connecting"\|"listening"\|"thinking"\|"acting"\|"speaking"\|"ended"\|"error", muted, utterance?, caption?, chips:[ChipView], question?: QuestionView, elapsedMs, maxSeconds, error?: {code, message}, notice?, receipt?: {callId, seconds, credits, actions}}` (to `main`) | CallController | F-CN-04 |
+| `conductor:level` | `number` 0–1, ≤10 Hz, only during a call | CallController | F-CN-04 |
+| `conductor:ui-action` | `{action, args}` (navigation-only tools: `switch_mode`, `open_settings`, `toggle_sidebar`, `open_sidebar_tab`, `open_launch_wizard`, `open_routines`, `dismiss`, `tidy`, `flip`, and a confirmed `close_pane`) | ActionRegistry | F-CN-02 |
+| `conductor:confirm-request` | `QuestionView {requestId, tool, summary, verb, review:"voice_or_screen"\|"screen_only"}` | ActionRegistry | F-CN-03 |
 | `remote:ssh` | `SshProgress {opId, hostId, stage: "resolving"\|"hostkey"\|"password"\|"connecting"\|"installing"\|"starting"\|"connected"\|"failed", prompt?: {kind:"hostkey", host, fingerprint, keyType} \| {kind:"password", label}, error?}` | ssh service | F-RM-01 |
 | `remote:host` | `{hostId, state:"connected"\|"connecting"\|"reconnecting"\|"down"}` | ssh service | F-RM-01 |
 | `remote:phone` | `{pairingId, event:"paired"\|"connected"\|"disconnected"\|"command"\|"queued"\|"changed"\|"revoked"\|"armed"}` (`pairingId` null for `armed`) | phone service | F-RM-03 |

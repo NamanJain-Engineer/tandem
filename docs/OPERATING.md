@@ -184,6 +184,12 @@ E2E lessons (each cost a debugging round):
 - Only one E2E run at a time: a killed run's `run.ts` can outlive `pkill` and
   share tauri-driver's :4444, so specs drive the other run's app. Check
   `pgrep -af "e2e/run.ts|tauri-driver|WebKitWebDriver"` before starting.
+- Conductor specs (`m16-1-*`) talk to `scripts/mock-realtime.ts` on :8794 (the runner
+  starts it and starts the API with `REALTIME_MOCK_URL=ws://127.0.0.1:8794/realtime`;
+  an API already running from elsewhere lacks it, so stop it first). The mock's
+  `/__say`, `/__state`, `/__control` and `/__close` steer it; `test_conductor_inject`
+  runs doer tool calls the mock doer doesn't plan, and `test_conductor_clock` moves
+  only the call's clock (the 30-minute cap).
 - Dictate specs download models from `scripts/serve-models.ts` (:8792, the real
   `~/.cache/tandem-models`; run `bash scripts/fetch-models.sh base.en parakeet`
   first). The runner points `HOME` at the test's home, so anything that needs the
