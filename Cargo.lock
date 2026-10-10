@@ -6101,6 +6101,7 @@ dependencies = [
  "tandem-git",
  "tandem-host",
  "tandem-pty",
+ "tandem-store",
  "tandem-tasks",
  "tempfile",
  "tokio",
