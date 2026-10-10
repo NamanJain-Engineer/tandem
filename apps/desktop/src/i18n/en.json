@@ -2546,5 +2546,6 @@
   "dictate.enhance.appId": "App identifier",
   "dictate.enhance.appInstructions": "Instructions",
   "dictate.enhance.addApp": "Add app",
-  "dictate.enhance.removeApp": "Remove"
+  "dictate.enhance.removeApp": "Remove",
+  "dictate.setup.linkHint": "Here the global shortcut is the one you bind to {command} in your system settings: press it once to finish setup."
 }

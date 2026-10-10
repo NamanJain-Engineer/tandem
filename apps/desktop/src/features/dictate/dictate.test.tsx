@@ -421,3 +421,16 @@ describe("Enhance and Polish (F-DI-10)", () => {
     expect(screen.getByTestId("dictate-formatting-count").textContent).toBe("2,000/2,000");
   });
 });
+
+describe("Setup without a global hotkey (F-DI-11, D-515)", () => {
+  it("F-DI-11 on Wayland without the portal, Try it names the command and the link verifies", async () => {
+    fakeBackend({ dictate_status: () => ({ ...STATUS, verified: true }) });
+    useDictate.setState({ status: { ...STATUS, session: "wayland", deepLinkCommand: "xdg-open tandem://dictate/toggle" } });
+    wrap(<TryIt />);
+    fireEvent.click(screen.getByTestId("dictate-verify"));
+    expect(screen.getByTestId("dictate-try-link").textContent).toContain("xdg-open tandem://dictate/toggle");
+    act(() => emitLocal("dictate:verified", null));
+    await waitFor(() => expect(screen.getByTestId("dictate-key-detected")).toBeTruthy());
+    expect(screen.queryByTestId("dictate-try-link")).toBeNull();
+  });
+});

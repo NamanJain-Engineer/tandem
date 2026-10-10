@@ -1180,6 +1180,9 @@ impl DictateService {
         let Some(c) = self.controller() else {
             return false;
         };
+        // Here the link is the documented trigger, not a key the verifier can
+        // hear: reaching the controller through it verifies the setup (F-DI-11).
+        Sink(self.shared.clone()).verified();
         self.shared.link_take.store(true, Ordering::Release);
         c.toggle();
         // Refused at once (no model, Dictate off) or a stop: nothing to show.
@@ -2348,6 +2351,10 @@ mod tests {
             seen.lock()
         );
         assert!(!svc.shared.link_take.load(Ordering::Acquire));
+        assert!(
+            !svc.setting(SettingKey::DictateHotkeyVerified, false).await,
+            "a refused link verifies nothing"
+        );
         // Allowed: the controller acts (with no model here it answers with
         // "Download a model", which is still the take being asked for).
         assert!(svc.toggle_from_link_in("wayland", false, true));
@@ -2360,6 +2367,16 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         assert!(acted, "the allowed link reaches the controller");
+        // In the fallback mode the link verifies the setup (F-DI-11).
+        let mut verified = false;
+        for _ in 0..50 {
+            if svc.setting(SettingKey::DictateHotkeyVerified, false).await {
+                verified = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(verified, "an allowed link marks the shortcut verified");
         if let Some(c) = svc.controller() {
             c.cancel();
         }

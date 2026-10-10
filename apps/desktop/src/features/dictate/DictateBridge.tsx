@@ -34,6 +34,8 @@ export function DictateBridge() {
         });
       }),
       listen<{ page: string }>("ui:open-settings", (e) => useUi.getState().openSettings(e.page)),
+      // Verified anywhere (Try it, or the fallback link on Wayland): the home card updates.
+      listen<null>("dictate:verified", () => void useDictate.getState().loadStatus()),
       // "See plans" from the widget (F-DI-05).
       listen<null>("ui:open-plans", () => useUi.getState().openUpgrade()),
     ];

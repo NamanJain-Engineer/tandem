@@ -54,6 +54,11 @@ export function TryIt() {
         </span>
       )}
       {status?.session === "mac" && phase === "waiting" && <span className="text-sm text-fg-muted">{t("dictate.setup.fnHint")}</span>}
+      {status?.deepLinkCommand && phase !== "done" && (
+        <span className="text-sm text-fg-muted" data-testid="dictate-try-link">
+          {t("dictate.setup.linkHint", { command: status.deepLinkCommand })}
+        </span>
+      )}
     </div>
   );
 }
