@@ -40,21 +40,21 @@ Build in this order; each milestone ends with its E2E specs, the full
 regression, the gate, BUILD_LOG and a tag. Prerequisites are as MILESTONES
 lists them (M9 was built ahead of M8, D-200).
 
-### M8 · Dictate (local) and onboarding (XL) · 11 features, 9 of them P0
+### M8 · Dictate (local) and onboarding (XL) · 11 features, 9 of them P0 · done on `m8-dictate-onboarding`
 Push-to-talk anywhere: persistent audio capture, local Whisper/Parakeet, safe
 insertion into the focused app, the widget, history and the dictionary; plus
 the complete first-run onboarding.
-- [ ] F-DI-01 Global push-to-talk (P0)
-- [ ] F-DI-02 Hotkey engine per OS (P0)
-- [ ] F-DI-03 Audio capture and microphones (P0)
-- [ ] F-DI-04 Local speech models (P0)
-- [ ] F-DI-06 Text insertion pipeline (P0)
-- [ ] F-DI-07 Dictate widget (P0)
-- [ ] F-DI-11 Onboarding and permissions (P0)
-- [ ] F-DI-12 In-app composer dictation (P0)
-- [ ] F-SH-08 First-run onboarding (P0; M5 built the framework, M6 the Accounts step)
-- [ ] F-DI-08 History and stats (P1)
-- [ ] F-DI-09 Dictionary (P1)
+- [x] F-DI-01 Global push-to-talk (P0)
+- [x] F-DI-02 Hotkey engine per OS (P0)
+- [x] F-DI-03 Audio capture and microphones (P0)
+- [x] F-DI-04 Local speech models (P0)
+- [x] F-DI-06 Text insertion pipeline (P0)
+- [x] F-DI-07 Dictate widget (P0)
+- [x] F-DI-11 Onboarding and permissions (P0)
+- [x] F-DI-12 In-app composer dictation (P0)
+- [x] F-SH-08 First-run onboarding (P0; M5 built the framework, M6 the Accounts step)
+- [x] F-DI-08 History and stats (P1)
+- [x] F-DI-09 Dictionary (P1)
 
 Tasks: capture; local models; dictionary engine; takes and insertion; hotkeys;
 widget (UI-60); composer dictation (UI-68); setup and onboarding; history and

@@ -160,6 +160,9 @@ E2E lessons (each cost a debugging round):
 - WDIO reads a test's timeout before its body runs, so `this.timeout()` inside an
   `it` or hook does nothing past `mochaOpts.timeout` (60 s): set it on the suite,
   `describe("…", function () { this.timeout(300_000); … })`.
+- Sign-up or `/__test/*` answering 500 or "No user owner@tandem.test" in many
+  unrelated specs means the dev database is behind: `cd apps/api && pnpm db:migrate
+  && pnpm db:seed` (with the infra up) after merging a branch that adds migrations.
 - Only one E2E run at a time: a killed run's `run.ts` can outlive `pkill` and
   share tauri-driver's :4444, so specs drive the other run's app. Check
   `pgrep -af "e2e/run.ts|tauri-driver|WebKitWebDriver"` before starting.
