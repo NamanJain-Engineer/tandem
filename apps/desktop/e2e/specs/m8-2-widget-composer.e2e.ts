@@ -51,7 +51,9 @@ describe("E2E-M8-4 Widget", function () {
     await setSetting("dictate_widget_visibility", "always");
     await mic({ source: "zeros" });
     const main = await browser.getWindowHandle();
-    await hold(1_800);
+    // Zeros: a rebuild at 1 s, then "isn't delivering audio" at about 2 s,
+    // while the key is still held (released sooner, it's just silence).
+    await hold(3_500);
     let found = false;
     try {
       for (const h of await browser.getWindowHandles()) {
