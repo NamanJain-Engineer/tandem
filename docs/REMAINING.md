@@ -8,12 +8,12 @@ every milestone has its tasks, exit checks and E2E list in MILESTONES. Tick
 items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md`
 has every feature below with its full behaviour and acceptance tests.
 
-**Where it stands (10 October 2026, `product-m0-m5`):** M0–M7 and M9 are
-done, and so are M15's six features (its non-functional checks are under
+**Where it stands (10 October 2026, `product-m0-m5`):** M0–M7, M9 and M10
+are done, and so are M15's six features (its non-functional checks are under
 way). So is M13, apart from its voice pair (F-DI-05 and F-DI-10, which wait
 for M8's Dictate). M16 has F-SH-12, F-AC-07, F-AU-01, F-BE-03 and F-BE-12.
-That's 94 of 152 features, 56 of 65 P0. Left: 58 features in seven
-milestones (M8, M10–M14, M16), of which 9 are P0. vibezeo.com serves 0.3.0
+That's 106 of 152 features, 56 of 65 P0. Left: 46 features in six
+milestones (M8, M11–M14, M16), of which 9 are P0, all M8's. vibezeo.com serves 0.3.0
 (M6, M7, M9 and the Scratchpad). M15 makes the P0/P1 product launchable;
 M16 adds the P2 extras and the release candidate.
 
