@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-skill-sync"
+description = "Enables the skill_sync command without any pre-configured scope."
+commands.allow = ["skill_sync"]
+
+[[permission]]
+identifier = "deny-skill-sync"
+description = "Denies the skill_sync command without any pre-configured scope."
+commands.deny = ["skill_sync"]

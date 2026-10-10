@@ -10,8 +10,9 @@ has every feature below with its full behaviour and acceptance tests.
 
 **Where it stands (10 October 2026, `product-m0-m5`):** M0–M14 are done,
 and so are M15's six features (its non-functional checks are under way). M16
-has F-SH-12, F-AC-07, F-AU-01, F-BE-03, F-BE-12 and F-RT-05. That's 139 of 152
-features: all 65 P0s and every P1. Left: M16's 13 P2 extras. vibezeo.com serves
+has F-SH-12, F-AC-07, F-AU-01, F-BE-03, F-BE-12 and F-RT-05, and on
+`m16d-teammate-extras` F-AG-10, F-AG-13 and F-CN-05. That's 142 of 152
+features: all 65 P0s and every P1. Left: M16's 10 P2 extras. vibezeo.com serves
 0.4.0 (teammates, Find work, your data, shortcut rebinding and the usage page);
 Dictate (M8), tasks and routines (M11), plugins (M12) and SSH and WSL
 workspaces (M14) reach a download with the next release. M15 makes the P0/P1
@@ -189,14 +190,14 @@ In independent sub-phases, each green and tagged (`m16a` … `m16d`), then the
 release candidate. Stop after any sub-phase if the budget runs out.
 - 16A Conductor (voice): [ ] F-CN-01 Call lifecycle · [ ] F-CN-02 Talker/doer
   architecture and tool catalog · [ ] F-CN-03 Delivery rules and safety ·
-  [ ] F-CN-04 Conductor UI · [ ] F-CN-05 Find work by meaning (local search and the palette, D-814; the API's ranking, #30; next, the app's opt-in to it and teammates) · [ ] F-CN-06
+  [ ] F-CN-04 Conductor UI · [x] F-CN-05 Find work by meaning (local search and the palette, D-814; the API's ranking, #30; teammates and the app's opt-in to the hosted ranking, D-1302; the Conductor's spoken answer comes with F-CN-02) · [ ] F-CN-06
   Persona and memory · [ ] F-CN-07 Wake phrase · [ ] F-CN-08 Audio routing for
   calls · [x] F-BE-08 Voice session minting (pull request #30, D-1000–D-1008)
 - 16B Auto: [x] F-AU-01 Auto (Pro, credits)
 - 16C Phone companion: [ ] F-RM-03 Phone companion · [ ] F-BE-11 Remote relay
 - 16D Extras: [x] F-SH-12 Scratchpad · [ ] F-CD-21 Simulator pane (macOS) ·
-  [x] F-AC-07 Usage dashboard · [ ] F-AG-10 Skill sync to engines ·
-  [ ] F-AG-13 Teammate in a terminal · [x] F-RT-05 Schedule tool for teammates ·
+  [x] F-AC-07 Usage dashboard · [x] F-AG-10 Skill sync to engines ·
+  [x] F-AG-13 Teammate in a terminal · [x] F-RT-05 Schedule tool for teammates ·
   [x] F-BE-03 CLI device-code sign-in · [x] F-BE-12 Admin
 - Also: [x] app-shortcut rebinding (F-SH-09 P2 part, Settings › Shortcuts UI-113),
   [x] Team SSO (F-BL-06 P2 part), [x] the remaining AI routes (`/auto/next`,

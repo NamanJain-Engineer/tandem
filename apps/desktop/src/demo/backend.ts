@@ -866,8 +866,13 @@ export class DemoCore {
       case "find_work":
         throw {
           code: "unavailable",
-          message: "Find work searches the terminals and threads running on your computer, so the demo has nothing to search.",
+          message: "Find work searches the terminals, threads and teammates running on your computer, so the demo has nothing to search.",
         };
+      // Teammates' engines run on your computer (F-AG-10, F-AG-13).
+      case "teammate_launch_in_terminal":
+        throw { code: "unavailable", message: "The demo has no engines to launch. In the app, the teammate opens in a terminal pane." };
+      case "skill_sync":
+        throw { code: "unavailable", message: "The demo has no engines to install skills for." };
       // A web page can't hold other pages the way the app's browser does.
       case "ssh_host_add":
       case "ssh_connect":
