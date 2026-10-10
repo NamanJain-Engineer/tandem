@@ -58,6 +58,16 @@ macro_rules! app_commands {
             commands::plugins::plugins_catalog,
             commands::plugins::grants_list,
             commands::plugins::grants_set,
+            commands::plugins::plugin_connect_oauth,
+            commands::plugins::plugin_connect_cancel,
+            commands::plugins::plugin_connect_api_key,
+            commands::plugins::plugin_connect_local_port,
+            commands::plugins::plugin_disconnect,
+            commands::plugins::plugin_detail,
+            commands::plugins::plugin_set_option,
+            commands::plugins::held_drafts_list,
+            commands::plugins::held_draft_run,
+            commands::plugins::held_drafts_discard,
             commands::shell::sidebar_get,
             commands::shell::sidebar_save,
             commands::terminal::pane_rename,
@@ -266,6 +276,18 @@ pub fn route_link(app: &AppHandle, raw: &str) {
         state.auth.handle_callback(Callback {
             code: code.clone(),
             state: st.clone(),
+        });
+        return;
+    }
+    if link.route == "plugin/callback" {
+        // To the attempt waiting for this `state`; a late or unknown one is
+        // ignored there (F-PL-03 AC4).
+        let query: String = url::form_urlencoded::Serializer::new(String::new())
+            .extend_pairs(link.params.iter())
+            .finish();
+        let plugins = state.plugins.clone();
+        tauri::async_runtime::spawn(async move {
+            plugins.deep_link_callback(&query).await;
         });
         return;
     }
@@ -515,6 +537,9 @@ pub fn run() {
         commands::test::test_account_create,
         commands::test::test_plugin_connect,
         commands::test::test_gateway_metrics,
+        commands::test::test_plugin_price,
+        commands::test::test_plugin_allowlist,
+        commands::test::test_unattended_run,
     ]);
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(app_commands![]);

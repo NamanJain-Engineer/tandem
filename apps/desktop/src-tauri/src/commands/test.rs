@@ -411,7 +411,9 @@ pub async fn test_plugin_connect(
             .await?;
     state.gateway.refresh_connections().await;
     // `plugins:changed` (F-PL-03): the new connection's card.
-    if let Some(card) = crate::commands::plugins::catalog(&state)
+    if let Some(card) = state
+        .plugins
+        .catalog()
         .await?
         .into_iter()
         .find(|c| c.connection_id.as_ref() == Some(&conn.id))
@@ -443,4 +445,63 @@ pub async fn test_gateway_metrics(state: State<'_, AppState>) -> Result<TestGate
         .metrics()
         .ok_or_else(|| IpcError::new(ErrorCode::Unavailable, "The gateway isn't running"))?;
     Ok(TestGateway { metrics, starts })
+}
+
+/// What `test_echo__charge` costs now (F-PL-06 AC2: the amount changes
+/// between approval and execution).
+#[tauri::command]
+pub fn test_plugin_price(state: State<'_, AppState>, cents: i64) -> Result<(), IpcError> {
+    guard(&state)?;
+    #[cfg(feature = "test-vendors")]
+    tandem_gateway::vendors::test_echo::set_price(cents);
+    #[cfg(not(feature = "test-vendors"))]
+    let _ = cents;
+    Ok(())
+}
+
+/// A Team allowlist fixture (F-PL-05 AC2), as if the org's policy listed
+/// these plugin ids; `null` clears it.
+#[tauri::command]
+pub fn test_plugin_allowlist(
+    state: State<'_, AppState>,
+    plugin_ids: Option<Vec<String>>,
+) -> Result<(), IpcError> {
+    guard(&state)?;
+    state.plugins.set_allowlist_fixture(plugin_ids);
+    Ok(())
+}
+
+/// An unattended run's thread, as a routine run would start one (M11's
+/// runner calls the same `set_unattended_origin`): Edits, no one there.
+#[tauri::command]
+pub async fn test_unattended_run(
+    state: State<'_, AppState>,
+    workspace_id: tandem_core::ids::WorkspaceId,
+    routine_id: String,
+    run_id: String,
+) -> Result<tandem_store::repo::threads::ThreadRecord, IpcError> {
+    guard(&state)?;
+    let ws = tandem_store::repo::workspaces::get(&state.store, &workspace_id)
+        .await
+        .map_err(|e| IpcError::new(ErrorCode::NotFound, e.to_string()))?;
+    let thread = state
+        .threads
+        .create(tandem_store::repo::threads::NewThread {
+            id: tandem_core::ids::ThreadId::new(),
+            kind: tandem_store::repo::threads::ThreadKind::Thread,
+            workspace_id: Some(workspace_id),
+            cwd: ws.root,
+            engine_id: "claude".into(),
+            account_id: None,
+            model: None,
+            effort: None,
+            access: tandem_core::access::Access::Edits,
+            mode: tandem_core::access::ThreadMode::Act,
+            attended: false,
+        })
+        .await?;
+    state
+        .gateway
+        .set_unattended_origin(&thread.id, &format!("routine:{routine_id}:{run_id}"));
+    Ok(thread)
 }

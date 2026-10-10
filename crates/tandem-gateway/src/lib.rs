@@ -24,6 +24,7 @@ pub mod oauth;
 pub mod pinned;
 mod plugins;
 pub mod policy;
+pub mod schema;
 pub mod vendors;
 
 use std::net::SocketAddr;

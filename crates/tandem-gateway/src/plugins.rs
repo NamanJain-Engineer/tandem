@@ -472,7 +472,25 @@ impl Plugins {
                 }
                 let approved_cost = description.cost.clone();
                 let approved = policy::approval_hash(tool, &args, approved_cost.as_ref());
-                let masker = |s: &str| s.to_string();
+                // The card's request never shows this connection's secrets,
+                // whether or not this run has read them yet (F-PL-07).
+                let secrets: Vec<String> = self
+                    .credentials
+                    .as_ref()
+                    .and_then(|store| store.load(&conn.plugin_id, &conn.id).ok().flatten())
+                    .map(|c| {
+                        c.secrets()
+                            .into_iter()
+                            .filter(|s| !s.is_empty())
+                            .map(str::to_string)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let masker = move |s: &str| {
+                    secrets.iter().fold(s.to_string(), |acc, secret| {
+                        acc.replace(secret.as_str(), "••••")
+                    })
+                };
                 let ask = PluginAsk {
                     connection_id: conn.id.clone(),
                     plugin_id: conn.plugin_id.clone(),
@@ -1011,6 +1029,51 @@ mod tests {
             assert_eq!(w.runs(), 1, "{access:?}: only the read ran");
             assert_eq!(w.hooks.held.lock().expect("held").len(), 6);
         }
+    }
+
+    #[tokio::test]
+    async fn f_pl_07_1_the_full_request_never_contains_the_credential() {
+        let mut w = world(PluginVerdict::Deny { reason: None });
+        let store = CredentialStore::new(Arc::new(tandem_core::keychain::MemoryKeychain::new()));
+        // Written as an earlier run left it: this run hasn't read it yet.
+        let raw = Credential::ApiKey {
+            api_key: "acme-key-for-the-card-7731".into(),
+        };
+        store
+            .keychain()
+            .set(
+                &crate::credentials::service(),
+                &crate::credentials::account("acme", &w.conn.id),
+                &serde_json::to_vec(&raw).expect("json"),
+            )
+            .expect("set");
+        let plugins = Plugins {
+            modules: vec![w.vendor.clone()],
+            connections: Connections::default(),
+            expose_all: AtomicBool::new(false),
+            leases: Arc::new(Leases::default()),
+            hooks: w.hooks.clone(),
+            credentials: Some(store),
+            remembered: Remembered::default(),
+            net: None,
+        };
+        plugins.connections.replace(vec![w.conn.clone()]);
+        w.plugins = Arc::new(plugins);
+        let lease = w.lease(Attended::Interactive, Access::Edits);
+        w.plugins
+            .call(
+                &lease,
+                "acme__write",
+                json!({"repo": "o/r", "title": "x", "note": "key acme-key-for-the-card-7731 ok"}),
+            )
+            .await;
+        let asks = w.asks();
+        assert_eq!(asks.len(), 1);
+        let request = asks[0].request.to_string();
+        assert!(!request.contains("acme-key-for-the-card-7731"), "{request}");
+        assert!(request.contains("\"title\":\"x\""), "{request}");
+        assert_eq!(asks[0].account_label, w.conn.account_label);
+        assert_eq!(w.runs(), 0, "denied: nothing ran");
     }
 
     /// An OAuth connection whose token is about to expire, with its token

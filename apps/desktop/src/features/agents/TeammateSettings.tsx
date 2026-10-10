@@ -28,6 +28,7 @@ import { invoke } from "../../ipc/invoke";
 import { accountsFor, useAccounts } from "../../stores/accounts";
 import { useEngines } from "../../stores/engines";
 import { useTeammates } from "../../stores/teammates";
+import { useUi } from "../../stores/ui";
 import { HuePicker, Places } from "./NewTeammateSheet";
 
 type Form = {
@@ -355,6 +356,16 @@ export function TeammateSettings({ s }: { s: TeammateSummary }) {
                 </label>
               ))
             )}
+            <span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => useUi.getState().openSettings("plugins")}
+                data-testid="connect-more-plugins"
+              >
+                {t("agent.settings.connectMore")}
+              </Button>
+            </span>
           </div>
         </SettingsGroup>
         <SettingsGroup label={t("agent.settings.learning")}>
