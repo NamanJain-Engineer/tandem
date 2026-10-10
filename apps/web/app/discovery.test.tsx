@@ -42,6 +42,7 @@ describe("downloads and discovery (F-WB-04)", () => {
     for (const slug of ["agent-mode", "dictate", "conductor", "tasks", "routines", "plugins", "remote"])
       expect(txt).toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*\\(Not in the app yet\\.\\)`));
     expect(txt).not.toMatch(/\/docs\/thread-mode\/\): [^\n]*Not in the app yet/);
+    expect(txt.split("## Docs")[0]).not.toMatch(/Enhance|Polish/);
   });
 
   it("F-WB-04 /llms-full.txt carries every docs page, with the generated tables as Markdown", () => {
@@ -70,7 +71,8 @@ describe("downloads and discovery (F-WB-04)", () => {
       minSeats: PRICES.team.minSeats,
       perSeat: true,
     });
-    expect(info.pricing.creditPrices).toEqual({ title: CREDIT_PRICES.title, rewrite: CREDIT_PRICES.rewrite });
+    // Only built hosted features are priced, as on /pricing (Enhance and Polish waits for F-DI-10).
+    expect(info.pricing.creditPrices).toEqual({ title: CREDIT_PRICES.title });
   });
 
   it("F-WB-04 the OpenAPI 3.1 document describes the public endpoint with the same schema", async () => {
