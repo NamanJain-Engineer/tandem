@@ -2421,5 +2421,7 @@
   "threadPlugins.openSettings": "Open Settings › Plugins",
   "threadPlugins.allThreads": "Granted to all threads in Settings › Plugins.",
   "threadPlugins.nextTurn": "Changes apply from this thread's next message.",
+
+  "agent.new.dictate": "Dictate",
   "plugins.state.unavailable": "Not available yet"
 }
