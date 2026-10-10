@@ -290,7 +290,12 @@ describe("public site", () => {
 
   it("F-WB-01 Vercel's ignore step builds main, product-m0-m5 and release-* only, and builds when the last deployed commit isn't in its shallow clone (D-809)", () => {
     const web = join(import.meta.dirname, "..");
-    const { ignoreCommand } = JSON.parse(readFileSync(join(web, "vercel.json"), "utf8")) as { ignoreCommand: string };
+    const config = JSON.parse(readFileSync(join(web, "vercel.json"), "utf8")) as Record<string, unknown>;
+    // Vercel rejects a vercel.json whose commands are over 256 characters.
+    for (const key of ["installCommand", "buildCommand", "ignoreCommand"]) {
+      expect(String(config[key]).length, key).toBeLessThanOrEqual(256);
+    }
+    const ignoreCommand = String(config.ignoreCommand);
     // Vercel runs the step in the Root Directory: exit 0 skips, 1 builds.
     const step = (ref: string, previous = "") =>
       spawnSync("sh", ["-c", ignoreCommand], {

@@ -2,7 +2,7 @@
 
 The public site is the static export of `apps/web` (D-102): Home, About, Privacy, Terms, Security, a 404 page, `robots.txt`, `sitemap.xml` and `/.well-known/security.txt`. It needs no server, database or API, and is hosted on Vercel.
 
-Vercel deploys it from `main`. Every push to `main` that changes `apps/web`, `packages/ui`, `packages/protocol`, the desktop interface (`apps/desktop/src`, `demo.html`, `vite.demo.config.ts`, `package.json`) or `pnpm-lock.yaml` updates the live site. Other pushes are skipped by the rule in `apps/web/vercel.json` (`ignoreCommand`).
+Vercel deploys it from `main`. Every push to `main` that changes `apps/web`, `packages/ui`, `packages/protocol`, the desktop interface (`apps/desktop/src`, `demo.html`, `vite.demo.config.ts`, `package.json`) or `pnpm-lock.yaml` updates the live site. Other pushes are skipped by `apps/web/scripts/vercel-ignore.sh`, which `vercel.json` runs as its `ignoreCommand` (Vercel caps the command itself at 256 characters).
 
 **Which branches build.**
 - Production builds `main`.
@@ -24,7 +24,7 @@ pnpm install --frozen-lockfile --filter web... --filter desktop... && pnpm build
 ```
 
 - **Content:** company, founder, contact email and optional legal details (registered name, CIN, address, city) live in `apps/web/lib/site.ts`.
-- **Hosting config:** `apps/web/vercel.json` holds the build commands, response headers (CSP, framing, caching) and the skip rule.
+- **Hosting config:** `apps/web/vercel.json` holds the build commands, response headers (CSP, framing, caching) and the skip rule's command; the rule itself is `apps/web/scripts/vercel-ignore.sh`.
 
 ## 1. The Vercel project (done once)
 
