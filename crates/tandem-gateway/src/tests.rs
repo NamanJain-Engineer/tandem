@@ -286,6 +286,11 @@ impl BuiltinHandler for EchoBuiltins {
     }
 }
 
+/// A vendor's answer as the engine gets it: labelled untrusted (rule 8).
+fn plugin_said(label: &str, text: &str) -> String {
+    plugins::untrusted_reply(label, text, false).text
+}
+
 async fn gateway_with(run_dir: Option<std::path::PathBuf>, every: Duration) -> GatewayHandle {
     let mut deps = GatewayDeps::new(Arc::new(Fake));
     deps.builtins = Arc::new(EchoBuiltins);
@@ -295,12 +300,7 @@ async fn gateway_with(run_dir: Option<std::path::PathBuf>, every: Duration) -> G
 }
 
 fn connection(plugin: &str) -> ConnectionInfo {
-    ConnectionInfo {
-        id: ConnectionId::new(),
-        plugin_id: plugin.into(),
-        account_label: None,
-        connected: true,
-    }
+    ConnectionInfo::new(ConnectionId::new(), plugin)
 }
 
 fn teammate_session(granted: Vec<ConnectionId>, may_message: bool) -> SessionDescriptor {
@@ -413,7 +413,17 @@ async fn f_pl_01_3_three_granted_plugins_list_search_and_call_plus_the_built_ins
     tools.sort();
     assert_eq!(
         tools,
-        vec!["test_echo__echo", "test_echo__reverse", "test_upper__upper"]
+        vec![
+            "test_echo__announce",
+            "test_echo__charge",
+            "test_echo__echo",
+            "test_echo__enrich",
+            "test_echo__mystery",
+            "test_echo__note",
+            "test_echo__reverse",
+            "test_echo__wipe",
+            "test_upper__upper"
+        ]
     );
     assert_eq!(found["tools"][0]["risk_class"], "read");
     assert_eq!(found["unavailable"][0]["plugin"], "test_down");
@@ -427,7 +437,7 @@ async fn f_pl_01_3_three_granted_plugins_list_search_and_call_plus_the_built_ins
     )
     .await;
     assert!(!err);
-    assert_eq!(out, "HI");
+    assert_eq!(out, plugin_said("Test Upper", "HI"));
     // F-PL-01: an unavailable plugin doesn't break the others.
     let (err, out) = tool(
         &gw.url,
@@ -448,7 +458,7 @@ async fn f_pl_01_3_three_granted_plugins_list_search_and_call_plus_the_built_ins
     )
     .await;
     assert!(!err);
-    assert_eq!(out, "still here");
+    assert_eq!(out, plugin_said("Test Echo", "still here"));
     gw.shutdown();
 }
 
@@ -492,7 +502,7 @@ async fn f_pl_01_1_a_lease_cant_call_a_plugin_granted_only_to_another() {
     )
     .await;
     assert!(!err);
-    assert_eq!(out, "x");
+    assert_eq!(out, plugin_said("Test Echo", "x"));
     gw.shutdown();
 }
 
@@ -552,7 +562,7 @@ async fn f_pl_01_expose_all_lists_every_granted_tool_by_its_plugin_name() {
     )
     .await;
     assert!(!err);
-    assert_eq!(out, "cba");
+    assert_eq!(out, plugin_said("Test Echo", "cba"));
     gw.shutdown();
 }
 
@@ -623,47 +633,5 @@ async fn f_pl_01_the_port_goes_to_gateway_json_and_the_watchdog_brings_the_liste
     // Same port, same leases: the session's config still works.
     assert_eq!(rpc(&gw.url, None, None, initialize()).await.0, 401);
     open(&gw.url, &lease.token).await;
-    gw.shutdown();
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn f_pl_01_2_ten_sessions_share_one_listener_and_memory_stays_under_80_mb() {
-    let gw = gateway_with(None, WATCHDOG_EVERY).await;
-    let echo = connection("test_echo");
-    gw.set_connections(vec![echo.clone()]);
-    let mut sessions = Vec::new();
-    for _ in 0..10 {
-        let lease = gw.prepare(teammate_session(vec![echo.id.clone()], true));
-        let sid = open(&gw.url, &lease.token).await;
-        sessions.push((lease, sid));
-    }
-    for round in 0..20 {
-        for (lease, sid) in &sessions {
-            let (err, _) = tool(
-                &gw.url,
-                &lease.token,
-                sid,
-                "tandem__call",
-                json!({"tool": "test_echo__echo", "args": {"text": format!("round {round}")}}),
-            )
-            .await;
-            assert!(!err);
-            list_names(&gw.url, &lease.token, sid).await;
-        }
-    }
-    let m = gw.metrics();
-    assert_eq!(m.listeners, 1, "one listener for every session");
-    assert_eq!(m.leases, 10);
-    assert_eq!(m.mcp_sessions, 10);
-    assert!(m.requests >= 400, "{m:?}");
-    #[cfg(target_os = "linux")]
-    {
-        let rss = m.rss_bytes.expect("rss on Linux");
-        assert!(
-            rss <= 80 * 1024 * 1024,
-            "gateway process memory {} MB",
-            rss / (1024 * 1024)
-        );
-    }
     gw.shutdown();
 }

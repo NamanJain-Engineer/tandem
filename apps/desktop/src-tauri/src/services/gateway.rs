@@ -158,6 +158,8 @@ async fn load_connections(store: &Store) -> Vec<ConnectionInfo> {
                 plugin_id: c.plugin_id,
                 account_label: c.account_label,
                 connected: c.status == ConnectionStatus::Connected,
+                meta: c.meta,
+                options: serde_json::from_value(c.options).unwrap_or_default(),
             })
             .collect(),
         Err(e) => {

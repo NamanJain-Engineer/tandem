@@ -61,6 +61,7 @@ ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
 ulid = "1"
 url = "2"
 vte = "0.15"
+wiremock = "0.6"
 unicode-normalization = "0.1"
 zeroize = "1"
 
