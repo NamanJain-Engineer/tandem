@@ -374,6 +374,24 @@ Built on branch `m16-team-sso` by the M13 session, as the coordinator added to i
   - The full web E2E suite (15) passes. The M13 Team specs still pass with the new card on `/team`.
   - The gate's web typecheck then caught that a Next.js page may not export anything but its page. The error messages moved to `lib/sso.ts`, and E2E-M16-8 passed again afterwards.
 
+## M16C checklist (Phone companion)
+Built on branch `m16c-phone-companion` (from `product-m0-m5`, D-1000). Owns F-BE-11 Remote relay and F-RM-03 Phone companion (MILESTONES M16 §16C) and extends F-TL-06 rule 5 with the live phone path. Decisions are D-1000–D-1049.
+- [x] F-BE-11 Remote relay.
+  - **Pairings.** `POST /v1/pairings` (desktop bearer) checks the plan includes `phone` (403 `FORBIDDEN_PLAN`) and that a Team admin hasn't set `disablePhone` (403 `FORBIDDEN_POLICY`). It stores only the pairing id, owner and a SHA-256 of a fresh 32-byte token, and answers `{pairing_token, relay_url, expires_at}` (10 minutes). `DELETE /v1/pairings/:id` marks it revoked (404 for anyone but the owner, idempotent) and drops the relay's sockets (`services/pairings.ts`, `routes/pairings.ts`).
+  - **Relay.** `routes/relay.ts` serves `GET /v1/relay/:pairing_id` on the API's port with `ws`. The desktop authenticates with its bearer and the phone with `Sec-WebSocket-Protocol: tandem-pair.<token>`, which is echoed back. A live pairing and a plan that still includes the phone are required, or the socket closes with 1008. It holds at most one desktop and one phone socket, and a newer one replaces the older (4000). Binary frames up to 64 KB are forwarded unchanged; larger close with 1009 (`maxPayload`) and text frames with 1003. A token bucket allows 50 frames a second per pairing. It tells each end when its peer comes and goes, and pings every 30 s. It logs pairing id, role and close code only.
+  - **No key material (AC2).** `routes/relay.ts` imports no crypto. ESLint `no-restricted-imports` covers `crypto`, `node:crypto`, `jose`, `@noble/*` and `lib/ids` in that file, and a test reads its imports.
+  - **Tests.** API: 17, `test/relay.test.ts` (F-BE-11.1 forwarding and the 65 KB close, F-BE-11.2 imports, auth, replace, peer notices, revoke, lapsed plan, rate limit, and a log capture that never holds a sent sentence).
+
+### M16C decisions
+- D-1000: 16C is built on `m16c-phone-companion`, the branch this session was assigned. The coordinating session asked for `m16-phone-relay` and a pull request per slice; this session pushes each green slice to its own branch, reports the head, and opens one pull request when 16C is complete, as its brief says.
+- D-1001: A refused relay connection is upgraded and then closed with 1008, with the offered subprotocol echoed. A browser that gets a refused handshake sees only a generic error, so the phone couldn't tell "revoked" from "offline". Text frames from either end close with 1003. The relay's own messages are the only text frames: `{type:"peer", up}` and `{type:"rate_limited"}`. Ciphertext is always binary.
+- D-1002: The rate limit is a token bucket of 50 frames a second with a burst of 50, per pairing, both directions together. Frames over it are dropped, and the sender gets `rate_limited` at most once a second. The socket stays open, because the frame counters tolerate gaps.
+- D-1003: The relay runs inside the API process, on its port, and revocation reaches it in memory (`RelayControl`). More than one API instance would need the drop fanned out over Redis, so that's a hosting item in `HUMAN_TODO.md`.
+- D-1004: A pairing token lasts until the pairing is revoked. The 10-minute QR lifetime is held by the desktop, which discards the one-time secret `S` after 10 minutes; without `S` no handshake can complete, whoever holds the token. A lapsed plan or a Team's `disablePhone` refuses relay connections as well as new pairings.
+
+### M16C log
+- F-BE-11: pairings, the relay, the lint rule and 17 API tests. The first run's one failure was in the test: it added a second, canceled subscription instead of lapsing the first.
+
 ## Decisions
 - D-1: F-CD-09 owned by M9. It needs the Files editor and the Tandem browser.
 - D-2: F-SH-08 framework slice in M5, Accounts step in M6, owned by M8.

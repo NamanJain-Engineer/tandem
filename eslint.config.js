@@ -61,5 +61,18 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // The phone relay never holds key material (F-BE-11 AC2): no crypto here.
+    files: ["apps/api/src/routes/relay.ts", "src/routes/relay.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: ["crypto", "node:crypto", "jose", "tweetnacl", "libsodium-wrappers"],
+          patterns: ["@noble/*", "**/lib/ids"],
+        },
+      ],
+    },
+  },
   prettier,
 );
