@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { Key } from "webdriverio";
-import { addFolder, freshOffline, home, mod, split } from "../support/app";
+import { addFolder, freshOffline, home, mod, split, waitForShell } from "../support/app";
 import { expectNoSeriousA11yViolationsInBothThemes } from "../support/axe";
 
 // E2E-M15-4 Axe sweep (PRODUCT_SPEC §5.4): zero serious or critical axe
@@ -36,8 +36,10 @@ describe("E2E-M15-4 axe sweep", () => {
   it("§5.4 Code mode, empty and with split panes", async () => {
     await press([mod(), "2"]);
     await expectNoSeriousA11yViolationsInBothThemes();
-    await split("right");
-    await split("down");
+    // Each new shell settles before the next split, so its terminal can't
+    // take the keystroke (the full run's timing).
+    await waitForShell(await split("right"));
+    await waitForShell(await split("down"));
     await expectNoSeriousA11yViolationsInBothThemes();
   });
 
