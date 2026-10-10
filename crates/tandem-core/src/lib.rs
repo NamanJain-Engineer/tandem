@@ -32,6 +32,7 @@ pub mod status_heuristics;
 pub mod status_report;
 pub mod supervisor;
 pub mod telemetry;
+pub mod untrusted;
 pub mod wslpath;
 
 pub use error::{CoreError, ErrorCode, IpcError};

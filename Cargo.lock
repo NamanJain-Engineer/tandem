@@ -5334,6 +5334,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "tandem-invariants"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "reqwest 0.12.28",
+ "serde_json",
+ "tandem-core",
+ "tandem-desktop",
+ "tandem-engines",
+ "tandem-gateway",
+ "tandem-git",
+ "tandem-pty",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "tandem-pty"
 version = "0.2.0"
 dependencies = [
