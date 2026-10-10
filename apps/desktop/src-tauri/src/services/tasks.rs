@@ -28,6 +28,21 @@ pub struct TasksService {
     store: Store,
     /// The live connection per session key (`th:<id>`, `pn:<id>`).
     sessions: Mutex<HashMap<String, String>>,
+    /// The `issues/` watcher, while it runs.
+    watcher: Mutex<Option<notify::RecommendedWatcher>>,
+}
+
+/// How long changes are gathered before `tasks:changed` goes out.
+pub const WATCH_BATCH: std::time::Duration = std::time::Duration::from_millis(120);
+
+/// `ISSUE-12.json` (or its history and comments) → `TAN-12`.
+pub fn issue_of(path: &std::path::Path) -> Option<String> {
+    let name = path.file_name()?.to_str()?;
+    let n = name.strip_prefix("ISSUE-")?;
+    let digits: String = n.chars().take_while(char::is_ascii_digit).collect();
+    let rest = &n[digits.len()..];
+    let known = [".json", ".history.jsonl", ".comments.jsonl"];
+    (!digits.is_empty() && known.contains(&rest)).then(|| format!("TAN-{digits}"))
 }
 
 /// `tandem-tasks` next to the app binary (`TANDEM_TASKS_BIN` in debug
@@ -72,7 +87,61 @@ impl TasksService {
             bin,
             store,
             sessions: Mutex::default(),
+            watcher: Mutex::default(),
         })
+    }
+
+    /// Watches `issues/` and publishes `tasks:changed {ids}` within
+    /// [`WATCH_BATCH`] of a change by anyone: the UI, an MCP server, another
+    /// process (F-TK-03, "within 500 ms").
+    pub fn watch(&self, bus: tandem_core::bus::EventBus) {
+        use notify::Watcher;
+        let Some(tracker) = &self.tracker else {
+            return;
+        };
+        let (tx, rx) = std::sync::mpsc::channel::<Vec<String>>();
+        let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+            if let Ok(ev) = res {
+                let ids: Vec<String> = ev.paths.iter().filter_map(|p| issue_of(p)).collect();
+                if !ids.is_empty() {
+                    let _ = tx.send(ids);
+                }
+            }
+        });
+        let mut watcher = match watcher {
+            Ok(w) => w,
+            Err(e) => {
+                tracing::warn!(code = "tasks.watch_failed", error = %e, "tasks won't refresh by themselves");
+                return;
+            }
+        };
+        if let Err(e) = watcher.watch(&tracker.issues_dir(), notify::RecursiveMode::NonRecursive) {
+            tracing::warn!(code = "tasks.watch_failed", error = %e, "tasks won't refresh by themselves");
+            return;
+        }
+        std::thread::spawn(move || {
+            while let Ok(first) = rx.recv() {
+                let mut ids = first;
+                let until = std::time::Instant::now() + WATCH_BATCH;
+                while let Some(left) = until.checked_duration_since(std::time::Instant::now()) {
+                    match rx.recv_timeout(left) {
+                        Ok(more) => ids.extend(more),
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+                    }
+                }
+                ids.sort();
+                ids.dedup();
+                bus.publish(tandem_core::bus::BusEvent::new(
+                    tandem_core::bus::Topic::Tasks,
+                    "tasks:changed",
+                    serde_json::json!({ "ids": ids }),
+                ));
+            }
+        });
+        if let Ok(mut w) = self.watcher.lock() {
+            *w = Some(watcher);
+        }
     }
 
     /// A new connection for the session `key`; the session's previous one
@@ -218,5 +287,48 @@ mod tests {
             .expect("tracker")
             .connection(&conn)
             .is_err());
+    }
+
+    #[test]
+    fn f_tk_03_issue_files_map_to_their_ids() {
+        use std::path::Path;
+        assert_eq!(
+            issue_of(Path::new("/t/issues/ISSUE-12.json")).as_deref(),
+            Some("TAN-12")
+        );
+        assert_eq!(
+            issue_of(Path::new("ISSUE-3.history.jsonl")).as_deref(),
+            Some("TAN-3")
+        );
+        assert_eq!(issue_of(Path::new(".ISSUE-3.json.1.0.tmp")), None);
+        assert_eq!(issue_of(Path::new("ISSUE-.json")), None);
+        assert_eq!(issue_of(Path::new("meta.json")), None);
+    }
+
+    #[tokio::test]
+    async fn f_tk_03_a_write_by_anyone_is_announced_within_500_ms() {
+        let (_d, tasks) = service(None).await;
+        let bus = tandem_core::bus::EventBus::new();
+        let mut rx = bus.subscribe(tandem_core::bus::Topic::Tasks);
+        tasks.watch(bus.clone());
+        let tracker = tasks.tracker.clone().expect("tracker");
+        // Another process's write looks the same: a file in issues/.
+        let started = std::time::Instant::now();
+        tracker
+            .save_issue(
+                tandem_tasks::SaveIssue {
+                    title: Some("Agent wrote this".into()),
+                    ..Default::default()
+                },
+                &tandem_tasks::Writer::agent("me", "tc_1"),
+            )
+            .expect("save");
+        let ev = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
+            .await
+            .expect("within 500 ms")
+            .expect("event");
+        assert!(started.elapsed() < std::time::Duration::from_millis(500));
+        assert_eq!(ev.name, "tasks:changed");
+        assert_eq!(ev.payload["ids"], serde_json::json!(["TAN-1"]));
     }
 }

@@ -18,6 +18,8 @@ import { commandRuns, setCommandToast } from "../commands/commands";
 import { AgentRail } from "../agents/AgentRail";
 import { NewTeammateSheet, useNewTeammate } from "../agents/NewTeammateSheet";
 import { AgentMain } from "../agents/TeammatePage";
+import { TasksPage } from "../tasks/TasksPanel";
+import { useAgentPage } from "../../stores/agentPage";
 import { TeammateSettings } from "../agents/TeammateSettings";
 import { followSuggestions } from "../agents/Suggestions";
 import { followTeammates } from "../../stores/teammates";
@@ -60,6 +62,7 @@ import { useShortcuts } from "./useShortcuts";
  * display:none) so terminals never re-mount (§3.4). */
 export function AppShell() {
   const { mode, settingsOpen, railCollapsed } = useUi();
+  const agentPage = useAgentPage((s) => s.page);
   const { show: toast } = useToast();
   useShortcuts();
   useEffect(() => setCommandToast(toast), [toast]);
@@ -174,10 +177,14 @@ export function AppShell() {
           </div>
           {/* Every surface stays mounted; hidden ones are display:none (F-SH-02). */}
           <div className="h-full" style={{ display: mode === "agent" ? "block" : "none" }}>
-            <AgentMain
-              visible={!settingsOpen && mode === "agent"}
-              settingsFor={(s) => <TeammateSettings key={s.teammate.id} s={s} />}
-            />
+            {agentPage === "tasks" ? (
+              <TasksPage />
+            ) : (
+              <AgentMain
+                visible={!settingsOpen && mode === "agent"}
+                settingsFor={(s) => <TeammateSettings key={s.teammate.id} s={s} />}
+              />
+            )}
           </div>
           <div className="h-full" style={{ display: mode === "thread" ? "block" : "none" }}>
             <ThreadMain visible={!settingsOpen && mode === "thread"} />

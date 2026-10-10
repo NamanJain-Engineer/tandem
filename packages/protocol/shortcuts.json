@@ -72,6 +72,15 @@
     "enabledWhen": "always"
   },
   {
+    "id": "tasks.open",
+    "category": "navigation",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
     "id": "rail.toggle",
     "category": "navigation",
     "mac": "Mod+\\",

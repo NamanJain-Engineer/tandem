@@ -745,13 +745,13 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 #### Tasks [F-TK-*]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
-| `tasks_meta` | — | `TasksMeta {projects, labels, statuses, actors}` | — |
-| `tasks_list` | `{filter: IssueFilter, cursor?}` | `Page<IssueSummary>` | — |
-| `task_get` | `{id}` | `Issue` | NotFound |
-| `task_save` | `SaveIssue` (§9.3) | `Issue` | RevisionConflict |
-| `task_comment` | `{id, body, idempotencyKey}` | `Comment` | — |
-| `task_archive` / `task_restore` | `{id}` | — | — |
-| `tasks_subscribe` | `{channel: Channel<TaskChange>}` | `SubId` | — |
+| `tasks_meta` | — | `TasksMeta {projects, labels, statuses, actors, …}` (teammates synced as actors first) | Unavailable |
+| `tasks_list` | `{filter: IssueFilter, cursor?}` | `TaskPage<IssueSummary>` (≤ 50, `next_cursor`) | Invalid (cursor) |
+| `task_get` | `{id}` | `TaskDetail {issue, comments, history}` | NotFound |
+| `task_save` | `{input: SaveIssue}` (§9.3; the UI writes as `me`) | `Issue` | RevisionConflict, Invalid |
+| `task_comment` | `{id, body, parentId?, idempotencyKey?}` | `TaskComment` | NotFound, Invalid |
+| `task_archive` / `task_restore` | `{id, expectedRevision}` | `Issue` | RevisionConflict |
+| event `tasks:changed` | `{ids: [TAN-n]}` from the `issues/` watcher (≤ 500 ms after a write by anyone; D-905) | — | — |
 | `task_execute` | `{issueId, workspaceId, teammateId?, engineId?, accountId?, isolation:"lane"\|"shared", access, review: bool}` | `AttemptView {state:"queued"\|"setup"\|…, queuePosition?}` | ForbiddenPlan, Unauthenticated |
 | `task_attempt_stop` / `task_attempt_resume` / `task_attempt_retry` | `{attemptId}` | `AttemptView` | Conflict |
 | `task_connections_list` / `task_connection_revoke` | — / `{connectionId}` | `[TaskConnection]` / — | — |
@@ -899,6 +899,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `auth:changed` | `AuthState` | auth service | F-BE-02 |
 | `entitlement:changed` | `EntitlementView` | entitlement service (refresh, SSE) | F-BE-04, F-SH-03 |
 | `routines:changed` / `routines:run` | `{}` (read the list again) / `RoutineRun` | scheduler | F-RT-02, F-RT-04 |
+| `tasks:changed` | `{ids: [String]}` (issue ids whose files changed; empty = reload all) | tasks watcher | F-TK-03 |
 | `tasks:attempt` | `AttemptView` | task runner | F-TK-04 |
 | `plugins:changed` / `plugins:connect` | `PluginCard` / `{opId, step:"discovery"\|"registration"\|"sign_in"\|"token_exchange"\|"verification"\|"timeout", state, error?}` | gateway (`plugins:changed` after any connection is added or changes; until M12 only debug E2E builds connect, through `test_plugin_connect`) | F-PL-03 |
 | `teammates:changed` | `{teammates:[TeammateSummary]}` (a teammate or one of its chats changed; coalesced 100 ms) | teammates service | F-AG-02 |

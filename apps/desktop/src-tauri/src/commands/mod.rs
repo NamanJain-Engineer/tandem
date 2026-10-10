@@ -22,6 +22,7 @@ pub mod routines;
 pub mod scratchpad;
 pub mod settings;
 pub mod shell;
+pub mod tasks;
 pub mod teammates;
 pub mod terminal;
 #[cfg(debug_assertions)]

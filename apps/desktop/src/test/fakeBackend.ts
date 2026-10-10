@@ -21,6 +21,7 @@ import { resetFiles } from "../stores/files";
 import { resetGit } from "../stores/git";
 import { resetBrowser } from "../stores/browser";
 import { resetScratchpad } from "../stores/scratchpad";
+import { resetTasks } from "../stores/tasks";
 import { useWorkspaces } from "../stores/workspaces";
 
 export const FREE: Limits = {
@@ -113,6 +114,7 @@ export function fakeBackend(
 /** Resets the stores to a signed-in Free session on Linux. */
 export function resetStores(): void {
   resetSidebar();
+  resetTasks();
   resetDashboard();
   resetNotifications();
   resetRestore();

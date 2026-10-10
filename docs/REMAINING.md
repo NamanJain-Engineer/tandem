@@ -89,11 +89,11 @@ search, mail, settings, create with AI, gateway.
 ### M11 · Tasks and routines (L) · 8 features (P1)
 A local task tracker agents read and write over MCP, with Pro execution in
 lanes; scheduled routines that run in-app and in the background.
-- [ ] F-TK-01 Task store
-- [ ] F-TK-02 `tandem-tasks` MCP server
-- [ ] F-TK-03 Tasks UI
+- [x] F-TK-01 Task store
+- [x] F-TK-02 `tandem-tasks` MCP server
+- [x] F-TK-03 Tasks UI
 - [ ] F-TK-04 Task execution (Pro)
-- [ ] F-RT-01 Routine model (Pro)
+- [x] F-RT-01 Routine model (Pro)
 - [ ] F-RT-02 In-app scheduler and runs
 - [ ] F-RT-03 Background runner (Pro)
 - [ ] F-RT-04 Routines UI

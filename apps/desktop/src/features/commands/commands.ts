@@ -2,6 +2,7 @@
 // predicates) comes from `tandem-core` through
 // `@tandem/protocol/shortcuts.json`; the palette, the shortcut dispatcher and
 // menus all run commands through `runCommand`, so they share one handler.
+import { useAgentPage } from "../../stores/agentPage";
 import { useLaunch } from "../../stores/launch";
 import { useNotifications } from "../../stores/notifications";
 import { useCloseConfirm } from "../../stores/closeConfirm";
@@ -120,6 +121,10 @@ export const handlers: Record<string, () => void> = {
   "mode.code": () => switchMode("code"),
   "mode.thread": () => switchMode("thread"),
   "thread.changes": () => useThreads.getState().toggleChanges(),
+  "tasks.open": () => {
+    switchMode("agent");
+    useAgentPage.getState().show("tasks");
+  },
   "teammate.new": () => {
     switchMode("agent");
     useNewTeammate.getState().show(true);

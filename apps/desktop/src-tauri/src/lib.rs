@@ -41,6 +41,15 @@ macro_rules! app_commands {
             commands::routines::routine_runs,
             commands::routines::routines_background_set,
             commands::routines::routines_background_status,
+            commands::tasks::tasks_meta,
+            commands::tasks::tasks_list,
+            commands::tasks::task_get,
+            commands::tasks::task_save,
+            commands::tasks::task_comment,
+            commands::tasks::task_archive,
+            commands::tasks::task_restore,
+            commands::tasks::task_connections_list,
+            commands::tasks::task_connection_revoke,
             commands::teammates::teammate_list,
             commands::teammates::teammate_get,
             commands::teammates::teammate_create,
@@ -585,6 +594,8 @@ pub fn run() {
             // Routines: the scheduler (once it has the app lock), and the
             // plan pausing or resuming them (F-RT-02, F-BL-04).
             state.routines.start(state.data.run());
+            // Tasks refresh when anyone writes them (F-TK-03).
+            state.tasks.watch(state.bus.clone());
             {
                 let (routines, ent) = (state.routines.clone(), state.entitlements.clone());
                 let mut events = state.bus.subscribe(tandem_core::bus::Topic::Entitlement);

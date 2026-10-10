@@ -5253,6 +5253,7 @@ dependencies = [
  "gtk",
  "hex",
  "ignore",
+ "notify",
  "notify-rust",
  "png 0.17.16",
  "rand 0.8.8",

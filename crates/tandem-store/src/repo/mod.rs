@@ -19,6 +19,7 @@ pub mod sessions;
 pub mod settings;
 pub mod sidebar;
 pub mod tabs;
+pub mod task_attempts;
 pub mod teammates;
 pub mod threads;
 pub mod workspaces;
