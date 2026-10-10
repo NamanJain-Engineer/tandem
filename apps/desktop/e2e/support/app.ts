@@ -492,6 +492,29 @@ export async function settled(): Promise<void> {
   );
 }
 
+/** Picks a tile in the open pane picker. Under load WebKitWebDriver has
+ * dropped a click on a dialog that had just opened (D-52), in every spec that
+ * clicked a picker tile directly (D-830). Tiles are disabled while a pick
+ * runs, so one more click can only start a pick that never started. */
+export async function pickTile(tile: string): Promise<void> {
+  const selector = `[data-testid="pane-picker"] [data-testid="tile-${tile}"]`;
+  await $(selector).waitForClickable({ timeout: 10_000 });
+  await settled();
+  await $(selector).click();
+  const closed = await browser
+    .waitUntil(async () => !(await $('[data-testid="pane-picker"]').isExisting()), { timeout: 2_000 })
+    .catch(() => false);
+  if (
+    !closed &&
+    (await $(selector)
+      .isEnabled()
+      .catch(() => false))
+  ) {
+    console.warn(`pickTile: the ${tile} tile click didn't register; clicking again`);
+    await $(selector).click();
+  }
+}
+
 /** Splits the focused pane (Mod+D or Mod+Shift+D) and picks a tile. */
 export async function split(direction: "right" | "down", tile = "shell"): Promise<string> {
   const before = await paneIds();
@@ -511,24 +534,7 @@ export async function split(direction: "right" | "down", tile = "shell"): Promis
       }),
     );
   }, direction);
-  await $(`[data-testid="tile-${tile}"]`).waitForClickable({ timeout: 10_000 });
-  await settled();
-  await $(`[data-testid="tile-${tile}"]`).click();
-  // Under load WebKitWebDriver has dropped a click on a dialog that had just
-  // opened (D-52). Tiles are disabled while a pick runs, so one more click
-  // can only start a pick that never started.
-  const closed = await browser
-    .waitUntil(async () => !(await $('[data-testid="pane-picker"]').isExisting()), { timeout: 2_000 })
-    .catch(() => false);
-  if (
-    !closed &&
-    (await $(`[data-testid="tile-${tile}"]`)
-      .isEnabled()
-      .catch(() => false))
-  ) {
-    console.warn(`split: the ${tile} tile click didn't register; clicking again`);
-    await $(`[data-testid="tile-${tile}"]`).click();
-  }
+  await pickTile(tile);
   let added = "";
   // Toasts expire before the timeout; keep any seen while waiting.
   const seen = new Set<string>();
