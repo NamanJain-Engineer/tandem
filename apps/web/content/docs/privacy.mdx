@@ -1,0 +1,14 @@
+---
+title: Privacy and data flows
+description: What stays on your computer and what the app can send.
+---
+
+The download on this site doesn't contact Vibezeo's servers at all: no sign-in, no analytics, no crash reports and no update checks.
+
+- **On your computer.** Workspaces, layouts, settings, threads, teammates and notes are stored in the app's data folder, `~/.tandem/`.
+- **Your data.** Settings › Privacy exports it to a zip (every table as JSON, teammates' memory and skills, your notes), without engine sign-ins or secrets, and can delete Vibezeo's data from this computer. Engine sign-ins stay unless you tick **Also remove engine sign-ins**.
+- **Secrets** are stored only in your operating system's keychain. Logs are scrubbed of tokens and keys, and diagnostics contain no prompts, file contents or tokens.
+- **Engines** talk to their vendors directly, under those vendors' terms, from their own provider homes. Vibezeo doesn't send your prompts, code or terminal output to us.
+- **Usage statistics and crash reports** are off by default and stay off unless you turn them on in Settings › Privacy.
+
+The full list of what the app can send once Vibezeo accounts open, where to and when, and who processes it, is on the [privacy page](/privacy/). The app shows the same list in Settings › Privacy.

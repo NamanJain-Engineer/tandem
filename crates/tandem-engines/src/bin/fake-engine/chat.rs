@@ -5,13 +5,27 @@
 //! What a message says decides the turn:
 //! - `run <command>`: asks the app's gateway (from `--mcp-config`) through
 //!   `tandem_approvals__request` whether Bash may run it, then reports the
-//!   tool as run or denied.
+//!   tool as run or denied. With `--permission-prompt-tool stdio` (threads on
+//!   SSH hosts and in WSL, which have no gateway) it asks the app in band
+//!   instead, as a `can_use_tool` control request on stdout.
 //! - `/slow <n>`: streams `n` pieces 150 ms apart (Stop can land mid-turn).
 //! - `/hang`: streams one piece, then reads nothing more and ignores SIGINT
 //!   (the tree must be killed, E2E-M7-3).
 //! - `/crash`: streams one piece and exits 3 mid-turn.
 //! - `write <path>=<text>;<path>=<text>…`: writes each file (`\n` is a line
 //!   break) in its folder as Write tool calls, then says how many (E2E-M7-9).
+//! - `mcp <tool> <json>`: calls a gateway tool (a `tandem__*` built-in, a
+//!   plugin tool, `tandem__call`) as a tool row and says what it answered.
+//! - `/tool-output <word>`: a Bash tool whose output holds the word
+//!   reversed, and the reply "Read the notes." (session search, E2E-M10-4).
+//! - `tools`: says the names the gateway's `tools/list` gives this session.
+//! - `tasks <tool> <json>`: calls a tool of the `tandem_tasks` stdio server
+//!   named in `--mcp-config` (F-TK-02, E2E-M11-1) and says what it answered.
+//! - a task run's briefing ("Report progress with save_comment on TAN-<n>"):
+//!   a progress comment through the tasks server, a pause of N seconds when
+//!   the task says `[hold N]`, then a one-line summary (F-TK-04, E2E-M11-2).
+//! - a task review ("Post one comment on TAN-<n>… Verdict"): "Verdict:
+//!   Approve" and a reason.
 //! - anything else: "You said: <text>" in two pieces.
 //!
 //! An interrupt (`control_request`) is acknowledged and ends the turn.
@@ -125,6 +139,75 @@ fn gateway(args: &[String]) -> Option<(String, String)> {
     ))
 }
 
+/// The `tandem_tasks` stdio server from `--mcp-config`: command and args.
+fn tasks_server(args: &[String]) -> Option<(String, Vec<String>)> {
+    let at = args.iter().position(|a| a == "--mcp-config")?;
+    let file = std::fs::read_to_string(args.get(at + 1)?).ok()?;
+    let v: Value = serde_json::from_str(&file).ok()?;
+    let server = v.pointer("/mcpServers/tandem_tasks")?;
+    let argv = server
+        .get("args")?
+        .as_array()?
+        .iter()
+        .filter_map(|a| a.as_str().map(str::to_string))
+        .collect();
+    Some((server.get("command")?.as_str()?.to_string(), argv))
+}
+
+/// One tool call on a fresh stdio server: (is_error, text).
+fn call_stdio(server: &(String, Vec<String>), name: &str, args: Value) -> (bool, String) {
+    use std::process::{Command, Stdio};
+    let Ok(mut child) = Command::new(&server.0)
+        .args(&server.1)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return (true, "the tasks server didn't start".into());
+    };
+    let (Some(mut stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
+        return (true, "no pipes".into());
+    };
+    let msgs = [
+        json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "fake-claude", "version": "1"}}}),
+        json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+        json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": name, "arguments": args}}),
+    ];
+    for m in msgs {
+        let _ = writeln!(stdin, "{m}");
+    }
+    let _ = stdin.flush();
+    let mut out = (true, "the tasks server didn't answer".to_string());
+    for line in std::io::BufReader::new(stdout).lines() {
+        let Ok(line) = line else { break };
+        let Ok(m) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if m.get("id") != Some(&json!(2)) {
+            continue;
+        }
+        out = match m.get("error") {
+            Some(e) => (true, e.to_string()),
+            None => (
+                m.pointer("/result/isError")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                m.pointer("/result/content/0/text")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+            ),
+        };
+        break;
+    }
+    drop(stdin);
+    let _ = child.kill();
+    let _ = child.wait();
+    out
+}
+
 /// An HTTP response: status, lowercase headers, body.
 type Response = (u16, Vec<(String, String)>, String);
 
@@ -187,52 +270,127 @@ fn message(body: &str) -> Option<Value> {
     })
 }
 
-/// Asks the gateway's approvals tool; true when it allows.
-fn approve(gw: &(String, String), command: &str, tool_use_id: &str) -> bool {
+/// Opens an MCP session on the gateway; the headers for its requests.
+fn open_session(gw: &(String, String)) -> Option<Vec<(&'static str, String)>> {
     let (url, auth) = gw;
     let init = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
         "protocolVersion": "2025-03-26", "capabilities": {},
         "clientInfo": {"name": "fake-claude", "version": "1"}}});
     let Some((200, headers, _)) = post(url, &[("Authorization", auth)], &init.to_string()) else {
-        return false;
+        return None;
     };
-    let Some(session) = headers
+    let session = headers
         .iter()
         .find(|(k, _)| k == "mcp-session-id")
-        .map(|(_, v)| v.clone())
-    else {
-        return false;
-    };
-    let with_session = [
-        ("Authorization", auth.as_str()),
-        ("mcp-session-id", session.as_str()),
-        ("mcp-protocol-version", "2025-03-26"),
+        .map(|(_, v)| v.clone())?;
+    let with_session = vec![
+        ("Authorization", auth.clone()),
+        ("mcp-session-id", session),
+        ("mcp-protocol-version", "2025-03-26".to_string()),
     ];
+    let refs: Vec<(&str, &str)> = with_session.iter().map(|(k, v)| (*k, v.as_str())).collect();
     let _ = post(
         url,
-        &with_session,
+        &refs,
         &json!({"jsonrpc": "2.0", "method": "notifications/initialized"}).to_string(),
     );
-    let call = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
-        "name": "tandem_approvals__request",
-        "arguments": {"tool_name": "Bash", "input": {"command": command}, "tool_use_id": tool_use_id}}});
-    let Some((_, _, body)) = post(url, &with_session, &call.to_string()) else {
-        return false;
-    };
-    let reply = message(&body)
-        .and_then(|m| {
-            m.pointer("/result/content/0/text")
+    Some(with_session)
+}
+
+/// One JSON-RPC request on a fresh MCP session: the message with its id.
+fn rpc(gw: &(String, String), method: &str, params: Value) -> Option<Value> {
+    let headers = open_session(gw)?;
+    let refs: Vec<(&str, &str)> = headers.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let req = json!({"jsonrpc": "2.0", "id": 2, "method": method, "params": params});
+    let (_, _, body) = post(&gw.0, &refs, &req.to_string())?;
+    message(&body)
+}
+
+/// Calls a gateway tool: (is_error, text).
+fn call_tool(gw: &(String, String), name: &str, args: Value) -> (bool, String) {
+    match rpc(gw, "tools/call", json!({"name": name, "arguments": args})) {
+        Some(m) => {
+            let result = m.get("result").cloned().unwrap_or_default();
+            let text = result
+                .pointer("/content/0/text")
                 .and_then(Value::as_str)
                 .map(str::to_string)
+                .or_else(|| {
+                    m.pointer("/error/message")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+                .unwrap_or_default();
+            (
+                result
+                    .get("isError")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(m.get("error").is_some()),
+                text,
+            )
+        }
+        None => (true, "the gateway didn't answer".into()),
+    }
+}
+
+/// The names `tools/list` gives this session.
+fn list_tools(gw: &(String, String)) -> Vec<String> {
+    rpc(gw, "tools/list", json!({}))
+        .and_then(|m| m.pointer("/result/tools").cloned())
+        .and_then(|t| t.as_array().cloned())
+        .map(|t| {
+            t.iter()
+                .filter_map(|t| t.get("name").and_then(Value::as_str).map(str::to_string))
+                .collect()
         })
-        .and_then(|t| serde_json::from_str::<Value>(&t).ok());
-    reply
+        .unwrap_or_default()
+}
+
+/// Asks the gateway's approvals tool; true when it allows.
+fn approve(gw: &(String, String), command: &str, tool_use_id: &str) -> bool {
+    let (_, text) = call_tool(
+        gw,
+        "tandem_approvals__request",
+        json!({"tool_name": "Bash", "input": {"command": command}, "tool_use_id": tool_use_id}),
+    );
+    serde_json::from_str::<Value>(&text)
+        .ok()
         .and_then(|r| {
             r.get("behavior")
                 .and_then(Value::as_str)
                 .map(|b| b == "allow")
         })
         .unwrap_or(false)
+}
+
+/// Asks the app in band (`--permission-prompt-tool stdio`): a
+/// `can_use_tool` control request, then waits for its `control_response`
+/// (other lines are held back in order). True when it allows.
+fn approve_stdio(
+    rx: &mpsc::Receiver<Value>,
+    held: &mut Vec<Value>,
+    command: &str,
+    tool_use_id: &str,
+) -> bool {
+    let request_id = format!("perm_{tool_use_id}");
+    emit(
+        json!({"type": "control_request", "request_id": request_id, "request": {
+        "subtype": "can_use_tool", "tool_name": "Bash",
+        "input": {"command": command}, "tool_use_id": tool_use_id}}),
+    );
+    while let Ok(v) = rx.recv() {
+        let answer = v.get("type").and_then(Value::as_str) == Some("control_response")
+            && v.pointer("/response/request_id").and_then(Value::as_str)
+                == Some(request_id.as_str());
+        if answer {
+            return v
+                .pointer("/response/response/behavior")
+                .and_then(Value::as_str)
+                == Some("allow");
+        }
+        held.push(v);
+    }
+    false
 }
 
 /// Lines from stdin on a thread, so an interrupt can arrive mid-turn.
@@ -276,6 +434,9 @@ pub fn run(args: &[String], session: String) {
         .cloned()
         .unwrap_or_else(|| "fake-model".into());
     let gw = gateway(args);
+    let stdio_permissions = args
+        .windows(2)
+        .any(|w| w[0] == "--permission-prompt-tool" && w[1] == "stdio");
     let mut turn = Turn {
         session,
         model,
@@ -312,7 +473,11 @@ pub fn run(args: &[String], session: String) {
         if let Some(command) = first.strip_prefix("run ") {
             let id = format!("toolu_{n}");
             turn.assistant(json!([{"type": "tool_use", "id": id, "name": "Bash", "input": {"command": command}}]));
-            let allowed = gw.as_ref().is_some_and(|g| approve(g, command, &id));
+            let allowed = if stdio_permissions {
+                approve_stdio(&rx, &mut held, command, &id)
+            } else {
+                gw.as_ref().is_some_and(|g| approve(g, command, &id))
+            };
             if allowed {
                 emit(
                     json!({"type": "user", "session_id": turn.session, "parent_tool_use_id": null,
@@ -382,6 +547,109 @@ pub fn run(args: &[String], session: String) {
             let said = format!("Wrote {count} files.");
             turn.say(&[&said]);
             turn.done("done");
+        } else if let Some(rest) = first.strip_prefix("mcp ") {
+            // `mcp <tool> <json args>`: one gateway tool call, shown as a
+            // tool row (teammate built-ins and plugins, E2E-M10-*).
+            let (tool, args) = rest.split_once(' ').unwrap_or((rest, "{}"));
+            let args: Value = serde_json::from_str(args).unwrap_or_else(|_| json!({}));
+            let id = format!("toolu_{n}");
+            turn.assistant(json!([{"type": "tool_use", "id": id,
+                "name": format!("mcp__tandem__{tool}"), "input": args}]));
+            let (is_error, text) = match gw.as_ref() {
+                Some(g) => call_tool(g, tool, args),
+                None => (true, "no gateway".into()),
+            };
+            emit(
+                json!({"type": "user", "session_id": turn.session, "parent_tool_use_id": null,
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": id,
+                    "content": text, "is_error": is_error}]}}),
+            );
+            let said = if is_error {
+                format!("The tool failed: {text}")
+            } else {
+                format!("The tool said: {text}")
+            };
+            turn.say(&[&said]);
+            turn.done(&said);
+        } else if let Some(word) = first.strip_prefix("/tool-output ") {
+            // A word that ends up only in a tool's output (reversed), never
+            // in the user's or the assistant's prose (E2E-M10-4).
+            let id = format!("toolu_{n}");
+            turn.assistant(json!([{"type": "tool_use", "id": id, "name": "Bash",
+                "input": {"command": "cat notes.txt"}}]));
+            let hidden: String = word.trim().chars().rev().collect();
+            emit(
+                json!({"type": "user", "session_id": turn.session, "parent_tool_use_id": null,
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": id,
+                    "content": format!("notes: {hidden}"), "is_error": false}]}}),
+            );
+            turn.say(&["Read the notes."]);
+            turn.done("Read the notes.");
+        } else if let Some(rest) = first.strip_prefix("tasks ") {
+            // `tasks <tool> <json args>`: the tasks server, as a tool row.
+            let (tool, targs) = rest.split_once(' ').unwrap_or((rest, "{}"));
+            let targs: Value = serde_json::from_str(targs).unwrap_or_else(|_| json!({}));
+            let id = format!("toolu_{n}");
+            turn.assistant(json!([{"type": "tool_use", "id": id,
+                "name": format!("mcp__tandem_tasks__{tool}"), "input": targs}]));
+            let (is_error, text) = match tasks_server(args) {
+                Some(s) => call_stdio(&s, tool, targs),
+                None => (true, "no tasks server".into()),
+            };
+            emit(
+                json!({"type": "user", "session_id": turn.session, "parent_tool_use_id": null,
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": id,
+                    "content": text, "is_error": is_error}]}}),
+            );
+            let said = if is_error {
+                "The tasks tool failed."
+            } else {
+                "Saved the task."
+            };
+            turn.say(&[said]);
+            turn.done(said);
+        } else if first == "tools" {
+            // The gateway tools this session sees, sorted.
+            let mut names = gw.as_ref().map(list_tools).unwrap_or_default();
+            names.sort();
+            let said = format!("Tools: {}", names.join(", "));
+            turn.say(&[&said]);
+            turn.done(&said);
+        } else if let Some(issue) = text
+            .split("Report progress with save_comment on ")
+            .nth(1)
+            .and_then(|r| r.split(['.', ' ']).next())
+            .filter(|i| i.starts_with("TAN-"))
+            .map(str::to_string)
+        {
+            // A task run: progress through the tasks server, then the summary.
+            let comment = json!({"id": issue, "body": "Progress: reproduced the problem and working on a fix."});
+            let id = format!("toolu_{n}");
+            turn.assistant(json!([{"type": "tool_use", "id": id,
+                "name": "mcp__tandem_tasks__save_comment", "input": comment}]));
+            let (is_error, out) = match tasks_server(args) {
+                Some(s) => call_stdio(&s, "save_comment", comment),
+                None => (true, "no tasks server".into()),
+            };
+            emit(
+                json!({"type": "user", "session_id": turn.session, "parent_tool_use_id": null,
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": id,
+                    "content": out, "is_error": is_error}]}}),
+            );
+            let hold: u64 = text
+                .split("[hold ")
+                .nth(1)
+                .and_then(|r| r.split(']').next())
+                .and_then(|n| n.trim().parse().ok())
+                .unwrap_or(0);
+            std::thread::sleep(Duration::from_secs(hold.min(120)));
+            let said = format!("Fixed {issue}: the change is in the worktree.");
+            turn.say(&[&said]);
+            turn.done(&said);
+        } else if text.contains("Post one comment on TAN-") && text.contains("Verdict: Approve") {
+            let said = "Verdict: Approve\nThe change does what the task asks.";
+            turn.say(&[said]);
+            turn.done(said);
         } else if first == "/crash" {
             turn.delta("About to fail");
             std::process::exit(3);

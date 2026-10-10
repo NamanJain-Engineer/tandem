@@ -2,6 +2,7 @@
 // predicates) comes from `tandem-core` through
 // `@tandem/protocol/shortcuts.json`; the palette, the shortcut dispatcher and
 // menus all run commands through `runCommand`, so they share one handler.
+import { useAgentPage } from "../../stores/agentPage";
 import { useLaunch } from "../../stores/launch";
 import { useNotifications } from "../../stores/notifications";
 import { useCloseConfirm } from "../../stores/closeConfirm";
@@ -9,12 +10,14 @@ import { useSidebar } from "../../stores/sidebar";
 import { useRecall } from "../recall/RecallPicker";
 import { usePrompts } from "../prompts/PromptPicker";
 import { latestRun, useBestOf } from "../bestof/BestOf";
+import { useSession } from "../../stores/session";
 import { useSettings } from "../../stores/settings";
 import type { CommandSpec } from "@tandem/protocol";
 import shortcuts from "@tandem/protocol/shortcuts.json";
 import { t, type MessageKey } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
+import { useNewTeammate } from "../agents/NewTeammateSheet";
 import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
@@ -76,6 +79,8 @@ function activePane(): { tabId: string; paneId: string } | null {
 
 export function isEnabled(spec: CommandSpec): boolean {
   if (spec.enabledWhen === "always") return true;
+  // Pausing routines means nothing on a plan without them (F-RT-04).
+  if (spec.enabledWhen === "routines") return !!useSession.getState().entitlement?.limits.routines;
   const ui = useUi.getState();
   if (spec.enabledWhen === "thread_open")
     return ui.mode === "thread" && !ui.settingsOpen && useThreads.getState().selectedId !== null;
@@ -122,6 +127,22 @@ export const handlers: Record<string, () => void> = {
   "mode.code": () => switchMode("code"),
   "mode.thread": () => switchMode("thread"),
   "thread.changes": () => useThreads.getState().toggleChanges(),
+  "tasks.open": () => {
+    switchMode("agent");
+    useAgentPage.getState().show("tasks");
+  },
+  "routines.open": () => {
+    switchMode("agent");
+    useAgentPage.getState().show("routines");
+  },
+  "routines.pause": () => {
+    const s = useSettings.getState();
+    void s.set("pause_all_routines", !(s.values.pause_all_routines ?? false));
+  },
+  "teammate.new": () => {
+    switchMode("agent");
+    useNewTeammate.getState().show(true);
+  },
   "rail.toggle": () => useUi.getState().toggleRail(),
   "sidebar.toggle": () => useSidebar.getState().toggle(),
   "sidebar.files": () => useSidebar.getState().openTab("files"),
@@ -187,8 +208,10 @@ export const handlers: Record<string, () => void> = {
   "terminal.find_next": onPane((_, paneId) => terminalHandles.get(paneId)?.find("next")),
   "terminal.find_prev": onPane((_, paneId) => terminalHandles.get(paneId)?.find("prev")),
   "terminal.copy_last_output": onPane((_, paneId) => void copyLastOutput(paneId, toast)),
+  "work.find": () => useUi.getState().openFindWork(),
   "billing.plans": () => useUi.getState().openUpgrade(),
   "help.shortcuts": () => useUi.getState().setCheatsheet(!useUi.getState().cheatsheetOpen),
+  "help.diagnostics": () => useUi.getState().setDiagnostics(true),
   "help.copy_diagnostics": () => void copyDiagnostics(toast),
   "help.open_logs": () => void invoke("app_open_logs_folder").catch(() => undefined),
 };

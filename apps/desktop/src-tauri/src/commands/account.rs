@@ -35,6 +35,8 @@ pub fn auth_cancel(state: State<'_, AppState>, op_id: String) {
 #[tauri::command]
 pub async fn auth_sign_out(state: State<'_, AppState>) -> Result<(), IpcError> {
     state.auth.sign_out().await;
+    // "Allow for this conversation" ends with the session (F-PL-06).
+    state.gateway.forget_approvals(None);
     // Signing out returns to UI-03, not to offline mode.
     settings::reset(&state.store, Some(vec![SettingKey::OfflineStartedAt])).await?;
     Ok(())
@@ -71,13 +73,18 @@ pub async fn entitlement_refresh(state: State<'_, AppState>) -> Result<Entitleme
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(export)]
 pub enum BillingTarget {
-    Upgrade { plan: String, interval: String },
+    Upgrade {
+        plan: String,
+        interval: String,
+    },
     Portal,
     Credits,
+    /// The web account page, where "Delete account…" lives (F-TL-05).
+    Account,
 }
 
-/// Opens checkout, the billing portal or the credits page in the system
-/// browser (never an in-app webview for payment, UI-121).
+/// Opens checkout, the billing portal, the credits page or the account page
+/// in the system browser (never an in-app webview for payment, UI-121).
 #[tauri::command]
 pub async fn billing_open(
     state: State<'_, AppState>,
@@ -115,6 +122,7 @@ pub async fn billing_open(
                 .await
         }
         BillingTarget::Credits => Ok(format!("{}/credits", state.endpoints.web)),
+        BillingTarget::Account => Ok(format!("{}/account", state.endpoints.web)),
     }
     .map_err(|e| {
         if e.is_network() {

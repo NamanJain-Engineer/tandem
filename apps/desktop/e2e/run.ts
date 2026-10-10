@@ -7,8 +7,17 @@
 // After the run it enforces the M2 checks: no secret patterns in the logs and
 // no analytics or crash hosts in the network log (telemetry is off).
 import { execFileSync, spawnSync, spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Launcher } from "@wdio/cli";
 
@@ -26,8 +35,17 @@ const spec = suite ? `e2e/perf/${suite}.perf.ts` : specIndex >= 0 ? args[specInd
 const API = "http://127.0.0.1:8787";
 const WEB = "http://localhost:3000";
 const FEED = "http://127.0.0.1:8790";
+/** Dictate's models, served from the local cache (scripts/serve-models.ts, E2E-M8-8). */
+const MODELS = "http://127.0.0.1:8792";
+/** Fixed, so a server left running from an earlier run reads the same file. */
+const MODELS_CONTROL = join(tmpdir(), "tandem-models-control.txt");
+/** The real home and model cache, read before HOME points at the test's home. */
+const REAL_HOME = homedir();
+const MODEL_CACHE = process.env.TANDEM_MODEL_CACHE ?? join(REAL_HOME, ".cache", "tandem-models");
 /** The browser's fixture pages (scripts/serve-fixtures.ts, E2E-M9-3). */
 const FIXTURES = "http://127.0.0.1:5173";
+/** The mock OAuth server and plugin upstreams (`mock-plugins`, D-954). */
+const PLUGINS = "http://127.0.0.1:8791";
 
 async function up(url: string): Promise<boolean> {
   try {
@@ -62,17 +80,23 @@ function checkArtifacts(home: string): string[] {
   if (existsSync(logs)) {
     for (const file of readdirSync(logs)) {
       const body = readFileSync(join(logs, file), "utf8");
-      if (/sk-[A-Za-z0-9]{20}|ghp_[A-Za-z0-9]{20}/.test(body)) problems.push(`secret pattern in logs/${file}`);
+      if (/sk-[A-Za-z0-9]{20}|ghp_[A-Za-z0-9]{20}/.test(body))
+        problems.push(`secret pattern in logs/${file}`);
     }
   }
   const net = join(home, "net.log");
-  if (existsSync(net) && /posthog|sentry/.test(readFileSync(net, "utf8"))) problems.push("analytics or crash host in net.log");
+  if (existsSync(net) && /posthog|sentry/.test(readFileSync(net, "utf8")))
+    problems.push("analytics or crash host in net.log");
   return problems;
 }
 
 function startKeyring(): void {
   if (!process.env.DBUS_SESSION_BUS_ADDRESS) {
-    const address = execFileSync("dbus-daemon", ["--session", "--fork", "--print-address=1"], { encoding: "utf8" }).trim().split("\n")[0];
+    const address = execFileSync("dbus-daemon", ["--session", "--fork", "--print-address=1"], {
+      encoding: "utf8",
+    })
+      .trim()
+      .split("\n")[0];
     if (address) process.env.DBUS_SESSION_BUS_ADDRESS = address;
   }
   const r = spawnSync("gnome-keyring-daemon", ["--unlock", "--components=secrets", "--daemonize"], {
@@ -80,7 +104,8 @@ function startKeyring(): void {
     encoding: "utf8",
     env: process.env,
   });
-  if (r.status !== 0) throw new Error(`gnome-keyring-daemon didn't start (apt-get install gnome-keyring): ${r.stderr}`);
+  if (r.status !== 0)
+    throw new Error(`gnome-keyring-daemon didn't start (apt-get install gnome-keyring): ${r.stderr}`);
   for (const line of r.stdout.split("\n")) {
     const [k, v] = line.split("=");
     if (k && v) process.env[k] = v;
@@ -92,9 +117,36 @@ async function main() {
     execFileSync("pnpm", ["build"], { cwd: desktop, stdio: "inherit" });
     // Perf suites measure an optimised build (the `perf` profile keeps the test harness).
     const cargoProfile = suite && process.env.TANDEM_PERF_BUILD !== "debug" ? ["--profile", "perf"] : [];
-    execFileSync("cargo", ["build", "-p", "tandem-desktop", "--features", "custom-protocol", ...cargoProfile], { cwd: root, stdio: "inherit" });
+    execFileSync(
+      "cargo",
+      ["build", "-p", "tandem-desktop", "--features", "custom-protocol,test-vendors", ...cargoProfile],
+      { cwd: root, stdio: "inherit" },
+    );
+    // The mock authorization server and plugin upstreams (M12).
+    execFileSync("cargo", ["build", "-p", "tandem-gateway", "--features", "test-vendors", "--bin", "mock-plugins"], {
+      cwd: root,
+      stdio: "inherit",
+    });
     // The status hook and the fake engines (ARCHITECTURE §6.12).
-    execFileSync("cargo", ["build", "-p", "tandem-engines", "--features", "fixtures", "--bins"], { cwd: root, stdio: "inherit" });
+    execFileSync("cargo", ["build", "-p", "tandem-engines", "--features", "fixtures", "--bins"], {
+      cwd: root,
+      stdio: "inherit",
+    });
+    execFileSync("cargo", ["build", "-p", "tandem-tasks", "--bins"], { cwd: root, stdio: "inherit" });
+  }
+  // Remote workspaces (E2E-M14): the bundled tandem-host and the sshd
+  // fixture (infra/docker-compose.yml, profile remote). Without Docker or
+  // the musl target the m14 specs fail and say so; the others don't care.
+  if (!spec || spec.includes("m14")) {
+    const quiet = { cwd: root, stdio: "ignore" as const };
+    if (!process.env.TANDEM_E2E_SKIP_BUILD && spawnSync("sh", ["scripts/build-tandem-host.sh"], quiet).status !== 0)
+      console.warn("E2E: couldn't build tandem-host (rustup target add x86_64-unknown-linux-musl; apt install musl-tools)");
+    const up = spawnSync(
+      "sh",
+      ["-c", "bash scripts/gen-ssh-fixture.sh >/dev/null && docker compose -f infra/docker-compose.yml --profile remote up -d --wait sshd"],
+      quiet,
+    );
+    if (up.status !== 0) console.warn("E2E: the sshd fixture didn't start (Docker?); the m14 specs will fail");
   }
   const home = mkdtempSync(join(tmpdir(), "tandem-e2e-"));
   const results = join(root, "test-results");
@@ -127,7 +179,31 @@ async function main() {
   const nodeBin = join(home, "nodebin");
   mkdirSync(nodeBin, { recursive: true });
   symlinkSync(process.execPath, join(nodeBin, "node"));
-  const appPath = [nodeBin, "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"].join(":");
+  // Recording `systemctl` and `crontab` for the background runner (F-RT-03,
+  // E2E-M11-5): its unit files go under TANDEM_LAUNCHER_ROOT and nothing
+  // touches this machine's real timers or crontab.
+  const shims = join(home, "shims");
+  mkdirSync(shims, { recursive: true });
+  writeFileSync(
+    join(shims, "systemctl"),
+    `#!/bin/sh\necho "$*" >>"${join(home, "systemctl.log")}"\nexit 0\n`,
+  );
+  writeFileSync(
+    join(shims, "crontab"),
+    `#!/bin/sh\nf="${join(home, "crontab.txt")}"\nif [ "$1" = "-l" ]; then [ -f "$f" ] && exec cat "$f"; exit 1; fi\ncat >"$f"\n`,
+  );
+  chmodSync(join(shims, "systemctl"), 0o755);
+  chmodSync(join(shims, "crontab"), 0o755);
+  const appPath = [
+    shims,
+    nodeBin,
+    "/usr/local/sbin",
+    "/usr/local/bin",
+    "/usr/sbin",
+    "/usr/bin",
+    "/sbin",
+    "/bin",
+  ].join(":");
   // TANDEM_* variables never reach panes from the app; the profile sets the
   // test-only ones for the shells and engines started in them.
   const profile = [
@@ -151,7 +227,10 @@ async function main() {
     TANDEM_E2E: "1",
     // TANDEM_PERF_BUILD=debug runs a suite on the debug build (quick
     // iterations; results record the build).
-    TANDEM_APP_BINARY: join(root, suite && process.env.TANDEM_PERF_BUILD !== "debug" ? "target/perf/tandem" : "target/debug/tandem"),
+    TANDEM_APP_BINARY: join(
+      root,
+      suite && process.env.TANDEM_PERF_BUILD !== "debug" ? "target/perf/tandem" : "target/debug/tandem",
+    ),
     TANDEM_API_URL: API,
     TANDEM_WEB_URL: WEB,
     TANDEM_OPEN_URL_CMD: opener,
@@ -172,19 +251,31 @@ async function main() {
     // Where the usage share card "saves" (debug builds; F-AC-07).
     TANDEM_FAKE_SAVE_PATH: join(home, "save-path.txt"),
     TANDEM_HOOK_BIN: join(root, "target/debug/tandem-hook"),
+    TANDEM_TASKS_BIN: join(root, "target/debug/tandem-tasks"),
+    TANDEM_LAUNCHER_ROOT: join(home, "launcher"),
     TANDEM_SPAWN_LOG: join(home, "spawn.log"),
+    // "Create with AI" answers from this file (debug builds; E2E-M10-7, D-8).
+    TANDEM_FIXTURE_TEAMMATE_DRAFT: join(home, "teammate-draft.json"),
     // The local update feed (scripts/mock-update-feed.ts, E2E-M5-7); it
     // answers "nothing new" unless a spec picks a scenario.
     TANDEM_UPDATE_URL: `${FEED}/v1/updates`,
+    // Every plugin's upstream and sign-in host is this one mock (debug E2E
+    // builds; catalog::rebase).
+    TANDEM_E2E_PLUGIN_BASE: PLUGINS,
     // Scrollback snapshots often enough that a kill -9 leaves some (E2E-M5-3).
     TANDEM_SNAPSHOT_EVERY_MS: "1500",
+    // Dictate downloads come from the local model server (debug builds).
+    TANDEM_MODELS_BASE: MODELS,
+    TANDEM_MODELS_CONTROL: MODELS_CONTROL,
     TANDEM_APP_PATH: appPath,
     TANDEM_FAKE_ENGINE_BIN: fakeEngine,
     // Detection looks only at this run's folders (no npm, no /usr/local/bin).
     TANDEM_DETECT_SYSTEM_DIRS: "",
     TANDEM_DETECT_NO_NPM: "1",
     ...(suite ? { TANDEM_MOCHA_TIMEOUT: "900000" } : {}),
-    PLAYWRIGHT_CHROMIUM: process.env.PLAYWRIGHT_CHROMIUM ?? (existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : ""),
+    PLAYWRIGHT_CHROMIUM:
+      process.env.PLAYWRIGHT_CHROMIUM ??
+      (existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : ""),
     PATH: process.env.PATH ?? "",
     // The specs are written for a zsh login shell (E2E-M4-1 writes ~/.zshrc),
     // and the runner's own login shell may put a real engine on PATH through
@@ -224,29 +315,62 @@ async function main() {
   }
   let feed: ChildProcess | undefined;
   if (!(await up(`${FEED}/health`))) {
-    feed = startDetached(join(root, "node_modules/.bin/tsx"), ["scripts/mock-update-feed.ts", "--port", "8790", "--scenario", "none"], {});
+    feed = startDetached(
+      join(root, "node_modules/.bin/tsx"),
+      ["scripts/mock-update-feed.ts", "--port", "8790", "--scenario", "none"],
+      {},
+    );
     await waitUp(`${FEED}/health`, 30);
   } else {
     await fetch(`${FEED}/__scenario`, { method: "POST", body: JSON.stringify({ scenario: "none" }) });
   }
 
+  let plugins: ChildProcess | undefined;
+  if (!(await up(`${PLUGINS}/__state`))) {
+    plugins = startDetached(join(root, "target/debug/mock-plugins"), ["8791"], {});
+    await waitUp(`${PLUGINS}/__state`, 30);
+  } else {
+    await fetch(`${PLUGINS}/__reset`);
+  }
+
   let fixtures: ChildProcess | undefined;
-  const fixturesUp = async () => (await fetch(`${FIXTURES}/health`).then((r) => r.text()).catch(() => "")) === "ok";
+  const fixturesUp = async () =>
+    (await fetch(`${FIXTURES}/health`)
+      .then((r) => r.text())
+      .catch(() => "")) === "ok";
   if (!(await fixturesUp())) {
-    fixtures = startDetached(join(root, "node_modules/.bin/tsx"), ["scripts/serve-fixtures.ts", "--port", "5173"], {});
+    fixtures = startDetached(
+      join(root, "node_modules/.bin/tsx"),
+      ["scripts/serve-fixtures.ts", "--port", "5173"],
+      {},
+    );
     for (let i = 0; i < 60 && !(await fixturesUp()); i++) await new Promise((r) => setTimeout(r, 500));
     if (!(await fixturesUp())) throw new Error(`${FIXTURES} didn't come up (is something else on :5173?)`);
   }
 
+  // Specs steer it through models-control.txt (normal, slow or a byte to corrupt).
+  let models: ChildProcess | undefined;
+  const modelsUp = async () => (await fetch(`${MODELS}/health`).then((r) => r.text()).catch(() => "")) === "ok";
+  if (!(await modelsUp())) {
+    models = startDetached(join(root, "node_modules/.bin/tsx"), ["scripts/serve-models.ts", "--port", "8792", "--control", MODELS_CONTROL], { HOME: REAL_HOME, TANDEM_MODEL_CACHE: MODEL_CACHE });
+    for (let i = 0; i < 60 && !(await modelsUp()); i++) await new Promise((r) => setTimeout(r, 500));
+    if (!(await modelsUp())) throw new Error(`${MODELS} didn't come up (is something else on :8792?)`);
+  }
+
   let code = 1;
   try {
-    const launcher = new Launcher(join(desktop, "e2e/wdio.conf.ts"), spec ? { spec: [join(desktop, spec)] } : {});
+    const launcher = new Launcher(
+      join(desktop, "e2e/wdio.conf.ts"),
+      spec ? { spec: [join(desktop, spec)] } : {},
+    );
     code = (await launcher.run()) ?? 1;
   } finally {
     stop(api);
     stop(web);
     stop(feed);
+    stop(plugins);
     stop(fixtures);
+    stop(models);
     stop(wm);
   }
   const problems = checkArtifacts(home);

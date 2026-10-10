@@ -3,14 +3,18 @@ import { t } from "../../i18n";
 import { totalCredits, useSession } from "../../stores/session";
 import { useUi } from "../../stores/ui";
 
-/** Rail footer: "FREE", or "PRO · 10,000 credits" (F-SH-03 slice). */
+/** Rail footer: "FREE", "OFFLINE" (a hosted build not signed in), or
+ * "PRO · 10,000 credits" (F-SH-03 slice). */
 export function PlanFooter({ collapsed }: { collapsed?: boolean }) {
   const auth = useSession((s) => s.auth);
   const e = useSession((s) => s.entitlement);
   const openSettings = useUi((s) => s.openSettings);
   const credits = totalCredits(e) ?? 0;
+  // An early-access build has no hosted services: it simply runs Free.
   const text = !auth?.signedIn
-    ? t("plan.footer.offline")
+    ? auth?.hosted === false
+      ? t("plan.footer.free")
+      : t("plan.footer.offline")
     : !e || e.plan === "free"
       ? t("plan.footer.free")
       : t("plan.footer.paid", { plan: e.plan.toUpperCase(), n: credits });

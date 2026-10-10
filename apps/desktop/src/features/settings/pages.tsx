@@ -4,12 +4,19 @@ import { AccountPage } from "./AccountPage";
 import { EnginesPage } from "./EnginesPage";
 import { ShortcutsPage } from "./ShortcutsPage";
 import { AccountsPage } from "./AccountsPage";
+import { RemoteHosts } from "../remote/RemoteHosts";
+import { WslDistros } from "../remote/WslDistros";
+import { PluginsPage } from "../plugins/PluginsPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
 import { UpdatesPanel } from "../updates/UpdatesPanel";
 import { RunSetupAgain } from "../onboarding/RunSetupAgain";
 import { CheckpointsSettingsExtra } from "../checkpoints/CheckpointsSettings";
 import { RecallSettingsExtra } from "../recall/RecallSettings";
+import { DictateExtras, MicSelect, ShortcutField } from "../dictate/DictatePage";
+import { LanguageSelect } from "../dictate/LanguageSelect";
+import { EngineControl } from "../dictate/EngineControl";
+import { AutoEnhanceControl, FormattingControl, QuickActionsControl } from "../dictate/EnhanceControls";
 import {
   BoolControl,
   FontControl,
@@ -38,6 +45,8 @@ export type PageDef = {
   subtitle: string;
   keywords?: string[];
   callout?: ReactNode;
+  /** Content before the rows, unboxed (Settings › Dictate's home card). */
+  header?: ReactNode;
   rows: RowDef[];
   /** Custom content after the rows (Account, privacy table, diagnostics). */
   extra?: ReactNode;
@@ -48,8 +57,9 @@ const opts = (keys: string[], prefix: string) =>
 const segs = (keys: string[], prefix: string) =>
   keys.map((k) => ({ id: k, label: t(`${prefix}.${k}` as Parameters<typeof t>[0]) }));
 
-/** The pages shipped so far (UI-101, 102, 104, 105, 112, 113, 114, 115, 116), in UI-100 order. */
-export function settingsPages(platform: string): PageDef[] {
+/** The pages shipped so far (UI-101, 102, 104, 105, 112, 113, 114, 115, 116), in UI-100 order.
+ * `routines`: the plan has routines; without them "Pause routines" is absent. */
+export function settingsPages(platform: string, routines = false): PageDef[] {
   const mac = platform === "macos";
   return [
     {
@@ -230,28 +240,38 @@ export function settingsPages(platform: string): PageDef[] {
           id: "notify_system",
           label: t("settings.notify.systemToggle"),
           keywords: ["system", "os", "desktop notifications"],
-          control: (ids) => <BoolControl k="notify_system" ids={ids} label={t("settings.notify.systemToggle")} />,
+          control: (ids) => (
+            <BoolControl k="notify_system" ids={ids} label={t("settings.notify.systemToggle")} />
+          ),
         },
         {
           id: "notify_only_unseen",
           label: t("settings.notify.onlyUnseen"),
           description: t("settings.notify.onlyUnseen.desc"),
           keywords: ["background", "focused", "visible"],
-          control: (ids) => <BoolControl k="notify_only_unseen" ids={ids} label={t("settings.notify.onlyUnseen")} />,
+          control: (ids) => (
+            <BoolControl k="notify_only_unseen" ids={ids} label={t("settings.notify.onlyUnseen")} />
+          ),
         },
         {
           id: "notify_attention",
           label: mac ? t("settings.notify.bounce") : t("settings.notify.flash"),
           keywords: ["dock", "bounce", "taskbar", "flash"],
           control: (ids) => (
-            <BoolControl k="notify_attention" ids={ids} label={mac ? t("settings.notify.bounce") : t("settings.notify.flash")} />
+            <BoolControl
+              k="notify_attention"
+              ids={ids}
+              label={mac ? t("settings.notify.bounce") : t("settings.notify.flash")}
+            />
           ),
         },
         {
           id: "notify_sound",
           label: t("settings.notify.soundToggle"),
           keywords: ["sound", "chime", "audio"],
-          control: (ids) => <BoolControl k="notify_sound" ids={ids} label={t("settings.notify.soundToggle")} />,
+          control: (ids) => (
+            <BoolControl k="notify_sound" ids={ids} label={t("settings.notify.soundToggle")} />
+          ),
         },
         {
           id: "notify_sound_name",
@@ -259,7 +279,12 @@ export function settingsPages(platform: string): PageDef[] {
           keywords: ["sound", "chime", "tone"],
           control: (ids) => (
             <span className="flex items-center gap-1">
-              <SelectControl k="notify_sound_name" ids={ids} fallback="chime" options={opts(["chime", "soft", "pop", "none"], "settings.notify.tone")} />
+              <SelectControl
+                k="notify_sound_name"
+                ids={ids}
+                fallback="chime"
+                options={opts(["chime", "soft", "pop", "none"], "settings.notify.tone")}
+              />
               <SoundPreview />
             </span>
           ),
@@ -413,6 +438,258 @@ export function settingsPages(platform: string): PageDef[] {
       extra: <AccountsPage />,
     },
     {
+      id: "remote",
+      label: t("settings.remote"),
+      // WSL exists on Windows only (F-RM-02): elsewhere the page is SSH alone,
+      // with no WSL heading or skeleton to flash and hide.
+      subtitle: platform === "windows" ? t("settings.remote.subtitle") : t("settings.remote.subtitleSsh"),
+      keywords: ["ssh", "remote", "host", "server", ...(platform === "windows" ? ["wsl", "linux"] : [])],
+      rows: [],
+      extra: (
+        <div className="flex flex-col gap-6">
+          <RemoteHosts />
+          {platform === "windows" && <WslDistros />}
+        </div>
+      ),
+    },
+    {
+      id: "dictate",
+      label: t("settings.dictate"),
+      subtitle: t("settings.dictate.subtitle"),
+      keywords: ["dictate", "voice", "speech", "microphone", "whisper", "parakeet", "push to talk"],
+      header: <DictateExtras />,
+      rows: [
+        {
+          id: "dictate_enabled",
+          label: t("dictate.enabled"),
+          keywords: ["on", "off"],
+          control: (ids) => <BoolControl k="dictate_enabled" ids={ids} label={t("dictate.enabled")} />,
+        },
+        {
+          id: "dictate_engine",
+          label: t("dictate.engine.label"),
+          keywords: ["engine", "cloud", "local", "transcribe", "pro"],
+          control: () => <EngineControl />,
+        },
+        {
+          id: "dictate_language",
+          label: t("dictate.language"),
+          keywords: ["language", "auto-detect"],
+          control: () => <LanguageSelect />,
+        },
+        {
+          id: "dictate_mic",
+          label: t("dictate.mic.label"),
+          description: t("dictate.mic.desc"),
+          keywords: ["microphone", "input", "bluetooth"],
+          control: () => (
+            <MicSelect k="dictate_mic" label={t("dictate.mic.label")} none={t("dictate.mic.none")} />
+          ),
+        },
+        {
+          id: "dictate_backup_mic",
+          label: t("dictate.mic.backup"),
+          keywords: ["backup", "fallback"],
+          control: () => (
+            <MicSelect k="dictate_backup_mic" label={t("dictate.mic.backup")} none={t("dictate.mic.none")} />
+          ),
+        },
+        {
+          id: "dictate_gain",
+          label: t("dictate.gain"),
+          keywords: ["boost", "gain", "volume"],
+          control: () => (
+            <SegmentControl
+              k="dictate_gain"
+              label={t("dictate.gain")}
+              fallback="off"
+              options={segs(["off", "2x", "4x", "6x", "8x"], "dictate.gain")}
+            />
+          ),
+        },
+        {
+          id: "dictate_hotkey",
+          label: t("dictate.shortcut.hold"),
+          description: mac ? t("dictate.shortcut.fnHint") : undefined,
+          keywords: ["shortcut", "hotkey", "key", "hold"],
+          control: () => <ShortcutField mode="hold" label={t("dictate.shortcut.hold")} />,
+        },
+        {
+          id: "dictate_toggle_hotkey",
+          label: t("dictate.shortcut.toggle"),
+          keywords: ["toggle", "shortcut"],
+          control: () => <ShortcutField mode="toggle" label={t("dictate.shortcut.toggle")} />,
+        },
+        {
+          id: "dictate_latch",
+          label: t("dictate.latch"),
+          keywords: ["double-tap", "hands-free", "lock"],
+          control: (ids) => <BoolControl k="dictate_latch" ids={ids} label={t("dictate.latch")} />,
+        },
+        {
+          id: "dictate_output",
+          label: t("dictate.output"),
+          description: platform === "windows" ? t("dictate.output.windowsNote") : undefined,
+          keywords: ["paste", "clipboard", "insert"],
+          control: (ids) => (
+            <SelectControl
+              k="dictate_output"
+              ids={ids}
+              fallback="paste"
+              options={opts(["paste", "clipboard"], "dictate.output")}
+            />
+          ),
+        },
+        ...(platform === "windows"
+          ? []
+          : [
+              {
+                id: "dictate_pause_media",
+                label: t("dictate.pauseMedia"),
+                keywords: ["mute", "music", "pause"],
+                control: (ids: Ids) => (
+                  <BoolControl k="dictate_pause_media" ids={ids} label={t("dictate.pauseMedia")} />
+                ),
+              },
+            ]),
+        {
+          id: "dictate_sounds",
+          label: t("dictate.sounds"),
+          keywords: ["chime", "sound"],
+          control: (ids) => <BoolControl k="dictate_sounds" ids={ids} label={t("dictate.sounds")} />,
+        },
+        {
+          id: "dictate_widget_visibility",
+          label: t("dictate.widget.visibility"),
+          keywords: ["widget", "hud", "pill"],
+          control: (ids) => (
+            <SelectControl
+              k="dictate_widget_visibility"
+              ids={ids}
+              fallback="while_recording"
+              options={opts(["always", "while_recording", "hidden"], "dictate.widget.visibility")}
+            />
+          ),
+        },
+        {
+          id: "dictate_widget_style",
+          label: t("dictate.widget.style"),
+          keywords: ["widget style"],
+          control: (ids) => (
+            <SelectControl
+              k="dictate_widget_style"
+              ids={ids}
+              fallback="logo_text"
+              options={opts(["logo_text", "logo", "mono"], "dictate.widget.style")}
+            />
+          ),
+        },
+        {
+          id: "dictate_follow_cursor",
+          label: t("dictate.widget.follow"),
+          keywords: ["displays", "monitor", "cursor"],
+          control: (ids) => (
+            <BoolControl k="dictate_follow_cursor" ids={ids} label={t("dictate.widget.follow")} />
+          ),
+        },
+        {
+          id: "dictate_lock_position",
+          label: t("dictate.widget.lock"),
+          keywords: ["position", "drag"],
+          control: (ids) => (
+            <BoolControl k="dictate_lock_position" ids={ids} label={t("dictate.widget.lock")} />
+          ),
+        },
+        {
+          id: "dictate_quick_actions",
+          label: t("dictate.enhance.quickActions"),
+          keywords: ["enhance", "polish", "after each take", "pro"],
+          control: () => <QuickActionsControl label={t("dictate.enhance.quickActions")} />,
+        },
+        {
+          id: "dictate_auto_enhance",
+          label: t("dictate.enhance.auto"),
+          description: t("dictate.enhance.disclosure"),
+          keywords: ["enhance", "auto", "prompt", "pro"],
+          control: () => <AutoEnhanceControl label={t("dictate.enhance.auto")} />,
+        },
+        {
+          id: "dictate_formatting",
+          label: t("dictate.enhance.formatting"),
+          description: t("dictate.enhance.formattingDesc"),
+          keywords: ["formatting", "instructions", "per app", "lowercase"],
+          control: () => <FormattingControl label={t("dictate.enhance.formatting")} />,
+        },
+        {
+          id: "dictate_keep_history",
+          label: t("dictate.keepHistory"),
+          keywords: ["history", "retention"],
+          control: (ids) => (
+            <SelectControl
+              k="dictate_keep_history"
+              ids={ids}
+              fallback="forever"
+              options={opts(["forever", "90d", "30d", "7d"], "dictate.keepHistory")}
+            />
+          ),
+        },
+      ],
+    },
+    {
+      id: "teammates",
+      label: t("settings.teammates"),
+      subtitle: t("settings.teammates.subtitle"),
+      keywords: ["teammates", "agent", "skills", "memory"],
+      rows: [
+        {
+          id: "allow_teammate_skills",
+          label: t("settings.teammateSkills"),
+          description: t("settings.teammateSkills.desc"),
+          keywords: ["skills", "write"],
+          control: (ids) => (
+            <BoolControl k="allow_teammate_skills" ids={ids} label={t("settings.teammateSkills")} />
+          ),
+        },
+        {
+          id: "learn_after_turn",
+          label: t("settings.learnAfterTurn"),
+          description: t("settings.learnAfterTurn.desc"),
+          keywords: ["learn", "memory", "notes"],
+          control: (ids) => (
+            <BoolControl k="learn_after_turn" ids={ids} label={t("settings.learnAfterTurn")} />
+          ),
+        },
+        {
+          id: "pause_all_mail",
+          label: t("settings.pauseAllMail"),
+          description: t("settings.pauseAllMail.desc"),
+          keywords: ["mail", "pause", "message"],
+          control: (ids) => <BoolControl k="pause_all_mail" ids={ids} label={t("settings.pauseAllMail")} />,
+        },
+        ...(routines
+          ? [
+              {
+                id: "pause_all_routines",
+                label: t("settings.pauseAllRoutines"),
+                description: t("settings.pauseAllRoutines.desc"),
+                keywords: ["routines", "pause", "schedule"],
+                control: (ids: Ids) => (
+                  <BoolControl k="pause_all_routines" ids={ids} label={t("settings.pauseAllRoutines")} />
+                ),
+              },
+            ]
+          : []),
+      ],
+    },
+    {
+      id: "plugins",
+      label: t("settings.plugins"),
+      subtitle: t("settings.plugins.subtitle"),
+      keywords: ["plugins", "connect", "github", "oauth", "api key", "grants", "approvals", "held"],
+      rows: [],
+      extra: <PluginsPage />,
+    },
+    {
       id: "privacy",
       label: t("settings.privacy"),
       subtitle: t("settings.privacy.subtitle"),
@@ -452,7 +729,9 @@ export function settingsPages(platform: string): PageDef[] {
           label: t("settings.aiThreadTitles"),
           description: t("settings.aiThreadTitles.desc"),
           keywords: ["titles", "ai", "thread names"],
-          control: (ids) => <BoolControl k="ai_thread_titles" ids={ids} label={t("settings.aiThreadTitles")} />,
+          control: (ids) => (
+            <BoolControl k="ai_thread_titles" ids={ids} label={t("settings.aiThreadTitles")} />
+          ),
         },
         {
           id: "auto_consent",
@@ -460,7 +739,12 @@ export function settingsPages(platform: string): PageDef[] {
           description: t("settings.autoConsent.desc"),
           keywords: ["auto", "terminal output"],
           control: (ids) => (
-            <PolicyBoolControl k="auto_consent" ids={ids} label={t("settings.autoConsent")} lockedBy={(p) => p.disableAuto} />
+            <PolicyBoolControl
+              k="auto_consent"
+              ids={ids}
+              label={t("settings.autoConsent")}
+              lockedBy={(p) => p.disableAuto}
+            />
           ),
         },
         {
@@ -538,7 +822,9 @@ export function settingsPages(platform: string): PageDef[] {
           id: "auto_check_updates",
           label: t("settings.autoCheckUpdates"),
           keywords: ["automatic", "check"],
-          control: (ids) => <BoolControl k="auto_check_updates" ids={ids} label={t("settings.autoCheckUpdates")} />,
+          control: (ids) => (
+            <BoolControl k="auto_check_updates" ids={ids} label={t("settings.autoCheckUpdates")} />
+          ),
         },
       ],
       extra: <UpdatesPanel />,

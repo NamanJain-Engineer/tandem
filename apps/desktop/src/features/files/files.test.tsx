@@ -1,6 +1,14 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { EditorTabs, FileContent, FsChange, FsEntry, IpcError, Thread, WorkspaceSummary } from "@tandem/protocol";
+import type {
+  EditorTabs,
+  FileContent,
+  FsChange,
+  FsEntry,
+  IpcError,
+  Thread,
+  WorkspaceSummary,
+} from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { AUTOSAVE_MS, useFiles } from "../../stores/files";
 import { useSidebar } from "../../stores/sidebar";
@@ -12,7 +20,12 @@ import { useThreadDrop } from "../thread/drops";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { FilesPanel } from "./FilesPanel";
 
-const WS = { id: "ws_1", root: "/work/shop", name: "shop", tabs: [{ id: "tab_1" }] } as unknown as WorkspaceSummary;
+const WS = {
+  id: "ws_1",
+  root: "/work/shop",
+  name: "shop",
+  tabs: [{ id: "tab_1" }],
+} as unknown as WorkspaceSummary;
 
 type Channel = { onmessage: (c: FsChange) => void };
 
@@ -30,10 +43,24 @@ function setup(opts: { saved?: Partial<EditorTabs>; outside?: boolean } = {}) {
     ["README.md", "# shop\n"],
   ]);
   const channels: Channel[] = [];
-  const err = (code: string, message: string): IpcError => ({ code: code as IpcError["code"], message, stage: "files", hint: null, retryable: false });
+  const err = (code: string, message: string): IpcError => ({
+    code: code as IpcError["code"],
+    message,
+    stage: "files",
+    hint: null,
+    retryable: false,
+  });
   const calls = fakeBackend({
     workspace_list: () => [WS],
-    editor_tabs_get: () => ({ tabs: [], active: null, expanded: [], showIgnored: false, divider: null, view: null, ...opts.saved }),
+    editor_tabs_get: () => ({
+      tabs: [],
+      active: null,
+      expanded: [],
+      showIgnored: false,
+      divider: null,
+      view: null,
+      ...opts.saved,
+    }),
     editor_tabs_save: () => null,
     fs_watch: (a) => {
       channels.push(a?.channel as Channel);
@@ -46,17 +73,42 @@ function setup(opts: { saved?: Partial<EditorTabs>; outside?: boolean } = {}) {
         const list = [entry("src", "dir", { gitStatus: "modified" }), entry("README.md", "file")];
         return a?.showIgnored ? [entry("node_modules", "dir", { ignored: true }), ...list] : list;
       }
-      if (dir === "src") return [entry("src/lib.rs", "file"), entry("src/main.rs", "file", { gitStatus: "modified" })];
+      if (dir === "src")
+        return [entry("src/lib.rs", "file"), entry("src/main.rs", "file", { gitStatus: "modified" })];
       return [];
     },
     fs_read: (a) => {
       const path = String(a?.path);
       if (path === "/etc/hosts") {
-        return { path, kind: "text", text: "127.0.0.1 localhost\n", size: 20, readonly: true, readonlyReason: "outside", truncated: false, hash: "x", mtime: 1, dataUrl: null, hex: null } satisfies FileContent;
+        return {
+          path,
+          kind: "text",
+          text: "127.0.0.1 localhost\n",
+          size: 20,
+          readonly: true,
+          readonlyReason: "outside",
+          truncated: false,
+          hash: "x",
+          mtime: 1,
+          dataUrl: null,
+          hex: null,
+        } satisfies FileContent;
       }
       const text = disk.get(path);
       if (text === undefined) throw err("not_found", "That file or folder doesn't exist");
-      return { path, kind: "text", text, size: text.length, readonly: false, readonlyReason: null, truncated: false, hash: hash(text), mtime: 1, dataUrl: null, hex: null } satisfies FileContent;
+      return {
+        path,
+        kind: "text",
+        text,
+        size: text.length,
+        readonly: false,
+        readonlyReason: null,
+        truncated: false,
+        hash: hash(text),
+        mtime: 1,
+        dataUrl: null,
+        hex: null,
+      } satisfies FileContent;
     },
     fs_write: (a) => {
       const path = String(a?.path);
@@ -202,8 +254,19 @@ describe("Files tab (F-CD-19)", () => {
   });
 
   it("F-CD-19.4 the same tabs reopen for the workspace, and changes are saved per context", async () => {
-    const { calls } = setup({ saved: { tabs: [{ path: "README.md" }, { path: "src/main.rs" }], active: "src/main.rs", expanded: ["src"] } });
-    await waitFor(() => expect(screen.getAllByTestId("editor-tab").map((t) => t.dataset.path)).toEqual(["README.md", "src/main.rs"]));
+    const { calls } = setup({
+      saved: {
+        tabs: [{ path: "README.md" }, { path: "src/main.rs" }],
+        active: "src/main.rs",
+        expanded: ["src"],
+      },
+    });
+    await waitFor(() =>
+      expect(screen.getAllByTestId("editor-tab").map((t) => t.dataset.path)).toEqual([
+        "README.md",
+        "src/main.rs",
+      ]),
+    );
     expect(calls.find((c) => c.cmd === "editor_tabs_get")?.args?.contextKey).toBe("ws:ws_1");
     // The expanded folder comes back too (listed, though the narrow layout shows the editor).
     await waitFor(() => expect(calls.some((c) => c.cmd === "fs_list" && c.args?.dir === "src")).toBe(true));
@@ -215,7 +278,12 @@ describe("Files tab (F-CD-19)", () => {
   });
 
   it("closing a tab selects its left neighbour", async () => {
-    setup({ saved: { tabs: [{ path: "README.md" }, { path: "src/lib.rs" }, { path: "src/main.rs" }], active: "src/lib.rs" } });
+    setup({
+      saved: {
+        tabs: [{ path: "README.md" }, { path: "src/lib.rs" }, { path: "src/main.rs" }],
+        active: "src/lib.rs",
+      },
+    });
     await waitFor(() => expect(screen.getAllByTestId("editor-tab")).toHaveLength(3));
     act(() => useFiles.getState().close("src/lib.rs"));
     expect(ctxState()?.active).toBe("README.md");
@@ -229,18 +297,26 @@ describe("Files tab (F-CD-19)", () => {
     const tab = screen.getByRole("tab", { name: "main.rs" });
     expect(tab.getAttribute("aria-keyshortcuts")).toBe("Delete");
     fireEvent.keyDown(tab, { key: "Delete" });
-    await waitFor(() => expect(screen.getAllByTestId("editor-tab").map((t) => t.dataset.path)).toEqual(["README.md"]));
+    await waitFor(() =>
+      expect(screen.getAllByTestId("editor-tab").map((t) => t.dataset.path)).toEqual(["README.md"]),
+    );
   });
 
   it("a clean open file follows the disk; an edited one keeps its text and says the file changed", async () => {
-    const { disk, watch } = setup({ saved: { tabs: [{ path: "src/main.rs" }, { path: "README.md" }], active: "src/main.rs" } });
+    const { disk, watch } = setup({
+      saved: { tabs: [{ path: "src/main.rs" }, { path: "README.md" }], active: "src/main.rs" },
+    });
     await waitFor(() => expect(ctxState()?.tabs.every((f) => f.status === "ready")).toBe(true));
     act(() => useFiles.getState().edit("src/main.rs", "mine\n"));
     disk.set("src/main.rs", "agent\n");
     disk.set("README.md", "# changed\n");
     await watch({ paths: ["src/main.rs", "README.md"] });
-    await waitFor(() => expect(ctxState()?.tabs.find((f) => f.path === "README.md")?.text).toBe("# changed\n"));
-    await waitFor(() => expect(ctxState()?.tabs.find((f) => f.path === "src/main.rs")?.changedOnDisk).toBe(true));
+    await waitFor(() =>
+      expect(ctxState()?.tabs.find((f) => f.path === "README.md")?.text).toBe("# changed\n"),
+    );
+    await waitFor(() =>
+      expect(ctxState()?.tabs.find((f) => f.path === "src/main.rs")?.changedOnDisk).toBe(true),
+    );
     expect(ctxState()?.tabs.find((f) => f.path === "src/main.rs")?.text).toBe("mine\n");
     expect(screen.getByText("This file changed on disk while you were editing it.")).toBeTruthy();
   });
@@ -260,7 +336,8 @@ describe("Files tab (F-CD-19)", () => {
   it("follows the thread's folder in Thread mode; a folderless thread says it has no folder", async () => {
     setup();
     await waitFor(() => expect(rows()).toContain("src"));
-    const thread = (id: string, workspaceId: string | null) => ({ id, workspaceId, cwd: "/work/shop", title: id }) as unknown as Thread;
+    const thread = (id: string, workspaceId: string | null) =>
+      ({ id, workspaceId, cwd: "/work/shop", title: id }) as unknown as Thread;
     act(() => {
       useThreads.setState({ list: [thread("th_1", "ws_1"), thread("th_2", null)], selectedId: "th_1" });
       useUi.setState({ mode: "thread" });
@@ -286,14 +363,19 @@ describe("Files tab (F-CD-19)", () => {
     // button and coordinates the same way.
     const pointer = (target: EventTarget, type: string, x: number, y: number) =>
       act(() => {
-        target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y }));
+        target.dispatchEvent(
+          new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y }),
+        );
       });
     pointer(row, "pointerdown", 10, 10);
     pointer(window, "pointermove", 200, 200);
     expect(document.querySelector('[data-testid="file-drag-ghost"]')?.textContent).toBe("README.md");
     pointer(window, "pointerup", 200, 200);
     await waitFor(() => expect(calls.some((c) => c.cmd === "pty_write")).toBe(true));
-    expect(calls.find((c) => c.cmd === "term_quote_paths")?.args).toMatchObject({ paneId: "pane_3", paths: ["/work/shop/README.md"] });
+    expect(calls.find((c) => c.cmd === "term_quote_paths")?.args).toMatchObject({
+      paneId: "pane_3",
+      paths: ["/work/shop/README.md"],
+    });
     expect(calls.find((c) => c.cmd === "pty_write")?.args?.data).toBe("'/work/shop/README.md'");
     expect(document.querySelector('[data-testid="file-drag-ghost"]')).toBeNull();
     delete (document as { elementFromPoint?: unknown }).elementFromPoint;
@@ -312,14 +394,21 @@ describe("Files tab (F-CD-19)", () => {
     const row = screen.getByRole("treeitem", { name: "README.md" });
     const pointer = (target: EventTarget, type: string, x: number, y: number) =>
       act(() => {
-        target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y }));
+        target.dispatchEvent(
+          new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y }),
+        );
       });
     pointer(row, "pointerdown", 10, 10);
     pointer(window, "pointermove", 300, 120);
     expect(useThreadDrop.getState().over).toBe(true);
     pointer(window, "pointerup", 300, 120);
-    await waitFor(() => expect(useThreadDrop.getState().dropped.th_1?.map((a) => a.path)).toEqual(["/work/shop/README.md"]));
-    expect(calls.find((c) => c.cmd === "thread_attach_paths")?.args).toMatchObject({ threadId: "th_1", paths: ["/work/shop/README.md"] });
+    await waitFor(() =>
+      expect(useThreadDrop.getState().dropped.th_1?.map((a) => a.path)).toEqual(["/work/shop/README.md"]),
+    );
+    expect(calls.find((c) => c.cmd === "thread_attach_paths")?.args).toMatchObject({
+      threadId: "th_1",
+      paths: ["/work/shop/README.md"],
+    });
     expect(useThreadDrop.getState().over).toBe(false);
     expect(calls.some((c) => c.cmd === "pty_write")).toBe(false);
     delete (document as { elementFromPoint?: unknown }).elementFromPoint;

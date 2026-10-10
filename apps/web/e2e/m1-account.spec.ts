@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { API, clearMail, latestMail, me, signIn, testRoute } from "./helpers";
+import { API, clearMail, latestMail, me, SEED_PASSWORD, signIn, testRoute } from "./helpers";
 
 test.describe("@m1 accounts and billing", () => {
   test.beforeEach(async ({ request }) => {
@@ -159,5 +159,51 @@ test.describe("@m1 accounts and billing", () => {
     expect(sinceStart).toHaveLength(1);
     const subs = await page.request.get("http://127.0.0.1:8787/__test/subscriptions?email=pro@tandem.test");
     expect((await subs.json()).count).toBe(1);
+  });
+
+  test("E2E-M1-6 delete account: a Team owner with members transfers it first; anyone else is closed out at once and gone within 30 days @m1", async ({
+    page,
+    request,
+  }) => {
+    const [lead, mate, leaver] = ["lead@tandem.test", "mate@tandem.test", "leaver@tandem.test"];
+    for (const email of [lead, mate, leaver])
+      await testRoute(request, "user", { email, password: SEED_PASSWORD });
+    await testRoute(request, "team", { owner: lead, members: [mate] });
+    page.on("dialog", (dialog) => void dialog.accept("DELETE"));
+    const meStatus = () =>
+      page.evaluate(async () => (await fetch("/v1/me", { credentials: "include" })).status);
+    const exists = async (email: string) =>
+      (await request.get(`${API}/__test/user?email=${encodeURIComponent(email)}`)).status() === 200;
+
+    // F-TL-05: the owner of a Team with other members is asked to transfer it, and nothing changes.
+    await signIn(page, lead);
+    await page.getByRole("button", { name: "Delete account…" }).click();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "You own a Team with other members." }),
+    ).toHaveText("You own a Team with other members. Transfer it or remove them first.");
+    expect(await meStatus()).toBe(200);
+
+    // Anyone else is signed out, can't sign back in, and is gone after the purge.
+    await page.context().clearCookies();
+    await signIn(page, leaver);
+    await page.getByRole("button", { name: "Delete account…" }).click();
+    await page.waitForURL((url) => url.pathname === "/");
+    expect(await meStatus()).toBe(401);
+    await page.goto("/signin");
+    await page.getByLabel("Email").fill(leaver);
+    await page.getByLabel("Password").fill(SEED_PASSWORD);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "This account is being deleted" })).toHaveText(
+      "This account is being deleted, so it can't be signed in to.",
+    );
+
+    await testRoute(request, "purge", {});
+    expect(await exists(leaver)).toBe(true);
+    await testRoute(request, "clock", { advanceMs: 29 * 86_400_000 + 60_000 });
+    await testRoute(request, "purge", {});
+    expect(await exists(leaver)).toBe(false);
+
+    await testRoute(request, "clock", { reset: true });
+    for (const email of [lead, mate]) await testRoute(request, "user/delete", { email });
   });
 });

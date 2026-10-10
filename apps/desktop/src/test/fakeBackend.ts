@@ -10,15 +10,20 @@ import { useContexts } from "../stores/contexts";
 import { useUsage } from "../stores/usage";
 import type { AppBoot, AuthState, EntitlementView, Limits, WorkspaceSummary } from "@tandem/protocol";
 import { setInvokeBackend } from "../ipc/invoke";
+import { useDictate } from "../stores/dictate";
 import { useBoot } from "../features/shell/useBoot";
 import { useSession } from "../stores/session";
 import { useSettings } from "../stores/settings";
 import { useUi } from "../stores/ui";
 import { resetThreads } from "../stores/threads";
+import { resetTeammates } from "../stores/teammates";
+import { resetSuggestions } from "../features/agents/Suggestions";
 import { resetFiles } from "../stores/files";
 import { resetGit } from "../stores/git";
 import { resetBrowser } from "../stores/browser";
 import { resetScratchpad } from "../stores/scratchpad";
+import { resetTasks } from "../stores/tasks";
+import { resetRoutines } from "../stores/routines";
 import { useWorkspaces } from "../stores/workspaces";
 
 export const FREE: Limits = {
@@ -111,6 +116,8 @@ export function fakeBackend(
 /** Resets the stores to a signed-in Free session on Linux. */
 export function resetStores(): void {
   resetSidebar();
+  resetTasks();
+  resetRoutines();
   resetDashboard();
   resetNotifications();
   resetRestore();
@@ -135,8 +142,11 @@ export function resetStores(): void {
   useUsage.setState({ byAccount: {} });
   useContexts.setState({ byPane: {} });
   resetThreads();
+  resetTeammates();
+  resetSuggestions();
   resetFiles();
   resetGit();
   resetBrowser();
+  useDictate.setState({ status: null, models: null, stats: null, take: null, level: 0, historyRev: 0 });
   resetScratchpad();
 }

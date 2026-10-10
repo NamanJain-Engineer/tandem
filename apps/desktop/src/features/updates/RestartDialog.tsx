@@ -36,7 +36,12 @@ export function RestartDialog() {
           <Button variant="ghost" onClick={() => useUpdates.getState().setRestartOpen(false)}>
             {t("update.dialog.later")}
           </Button>
-          <Button variant="primary" data-testid="update-restart-now" disabled={busy} onClick={() => void restart()}>
+          <Button
+            variant="primary"
+            data-testid="update-restart-now"
+            disabled={busy}
+            onClick={() => void restart()}
+          >
             {t("update.dialog.now")}
           </Button>
         </>

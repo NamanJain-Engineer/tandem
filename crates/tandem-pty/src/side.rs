@@ -102,6 +102,16 @@ impl SideChannel {
         }
     }
 
+    /// After a panic while feeding: a fresh screen of the same size and a
+    /// fresh responder and capture, keeping the mark token, so the pane
+    /// carries on (§5.2 watchdog).
+    pub fn recover(&mut self) {
+        let (rows, cols) = self.screen.screen().size();
+        self.screen = vt100::Parser::new_with_callbacks(rows, cols, 0, TitleCallbacks::default());
+        self.responder = QueryResponder::new();
+        self.capture = OutputCapture::default();
+    }
+
     /// Feeds raw output: marks come out first, then the screen, the query
     /// responder and the output capture see the rest, with each mark applied
     /// where it sat in the stream.

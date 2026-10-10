@@ -17,12 +17,15 @@ import {
   type DiffFile,
 } from "@tandem/ui";
 import { t } from "../../i18n";
+import { MailRowView } from "./MailRow";
+import { PluginApprovalFields, pluginApprovalLabels } from "../plugins/PluginApproval";
+import { parseApproval } from "../plugins/model";
 import { groupStatus, type Row, type ToolEvent } from "./rows";
 import { diffCounts, statusLabel, toolView } from "./tool";
 import { VirtualList } from "./VirtualList";
 
 export type TranscriptActions = {
-  approve: (id: string, scope: "once" | "thread") => void;
+  approve: (id: string, scope: "once" | "thread" | "conversation") => void;
   deny: (id: string, reason: string | null) => void;
   retry: () => void;
   openTerminal: () => void;
@@ -146,7 +149,12 @@ function decisionText(d: ApprovalDecisionView): { tone: "allowed" | "denied"; te
   if (d.type === "allow")
     return {
       tone: "allowed",
-      text: d.scope === "once" ? t("thread.approval.allowedOnce") : t("thread.approval.allowedThread"),
+      text:
+        d.scope === "once"
+          ? t("thread.approval.allowedOnce")
+          : d.scope === "conversation"
+            ? t("plugins.approval.allowedChat")
+            : t("thread.approval.allowedThread"),
     };
   if (d.type === "deny")
     return {
@@ -174,7 +182,15 @@ function Working({ startedAt }: { startedAt: number | null }) {
   );
 }
 
-function Hover({ children, actions, className }: { children: ReactNode; actions: ReactNode; className?: string }) {
+function Hover({
+  children,
+  actions,
+  className,
+}: {
+  children: ReactNode;
+  actions: ReactNode;
+  className?: string;
+}) {
   return (
     <div className={cx("group relative", className)}>
       {children}
@@ -340,6 +356,23 @@ const RowView = memo(function RowView({
           />
         );
       }
+      const plugin = parseApproval(r.detail);
+      if (plugin) {
+        return (
+          <ApprovalCard
+            kind={r.kind}
+            title={t("plugins.approval.title", { plugin: plugin.pluginLabel })}
+            detail={<PluginApprovalFields detail={plugin} />}
+            risk={plugin.riskClass === "spend" ? "high" : "low"}
+            riskText={plugin.cost ? t("plugins.approval.spendNote", { cost: plugin.cost }) : undefined}
+            allowThread={r.options.includes("conversation")}
+            onAllow={() => actions.approve(r.id, "once")}
+            onAllowThread={() => actions.approve(r.id, "conversation")}
+            onDeny={(reason) => actions.deny(r.id, reason)}
+            labels={{ ...approvalLabels(r.kind), ...pluginApprovalLabels() }}
+          />
+        );
+      }
       return (
         <ApprovalCard
           kind={r.kind}
@@ -406,6 +439,8 @@ const RowView = memo(function RowView({
             : ""}
         </Callout>
       );
+    case "mail":
+      return <MailRowView mailId={row.mailId} from={row.from} to={row.to} preview={row.preview} />;
     case "divider":
       return (
         <div className="flex items-center gap-3 py-1 text-sm text-fg-subtle">

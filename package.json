@@ -15,14 +15,15 @@
     "ci:local": "bash scripts/ci-local.sh",
     "infra:up": "docker compose -f infra/docker-compose.yml up -d --wait",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
-    "gen:protocol": "tsx scripts/gen-protocol.ts && tsx scripts/gen-shortcuts.ts",
+    "gen:protocol": "tsx scripts/gen-protocol.ts && tsx scripts/gen-shortcuts.ts && tsx scripts/gen-docs.ts",
     "gen:shortcuts": "tsx scripts/gen-shortcuts.ts",
     "gen:pseudo": "tsx scripts/gen-pseudo.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "keys:dev": "tsx scripts/dev-keys.ts",
     "db:migrate": "pnpm --filter api db:migrate",
-    "db:seed": "pnpm --filter api db:seed"
+    "db:seed": "pnpm --filter api db:seed",
+    "gen:docs": "tsx scripts/gen-shortcuts.ts && tsx scripts/gen-docs.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",
@@ -36,5 +37,13 @@
     "tsx": "^4.20.3",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.35.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "happy-dom": "^20.8.9",
+      "postcss@<8.5.23": "^8.5.23",
+      "serialize-javascript@<7.0.5": "^7.0.5",
+      "basic-ftp@<6.2.1": "^6.2.1"
+    }
   }
 }

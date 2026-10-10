@@ -47,6 +47,8 @@ function thread(extra: Partial<Thread> = {}): Thread {
     sortKey: "a",
     createdAt: 1_000 + n,
     updatedAt: 1_000 + n,
+    teammateId: null,
+    conversationRef: null,
     ...extra,
   };
 }
@@ -613,11 +615,15 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     act(() => insertIntoComposer(th.id, "# Picked elements\n\nPage: http://localhost:5173/"));
     await act(async () => loaded());
     await waitFor(() =>
-      expect((box() as HTMLTextAreaElement).value).toBe("from before\n\n# Picked elements\n\nPage: http://localhost:5173/"),
+      expect((box() as HTMLTextAreaElement).value).toBe(
+        "from before\n\n# Picked elements\n\nPage: http://localhost:5173/",
+      ),
     );
     fireEvent.change(box(), { target: { value: "look at these  " } });
     act(() => insertIntoComposer(th.id, "# Picked elements"));
-    await waitFor(() => expect((box() as HTMLTextAreaElement).value).toBe("look at these\n\n# Picked elements"));
+    await waitFor(() =>
+      expect((box() as HTMLTextAreaElement).value).toBe("look at these\n\n# Picked elements"),
+    );
     expect(calls.some((c) => c.cmd === "thread_send")).toBe(false);
   });
 

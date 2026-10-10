@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AlertTriangle, Folder, GitBranch, Globe, Plus, SquareTerminal } from "lucide-react";
+import { AlertTriangle, Cloud, Folder, GitBranch, Globe, Plus, SquareTerminal } from "lucide-react";
 import type { SavedSession, WorkspaceSummary } from "@tandem/protocol";
-import { Badge, ConfirmDialog, EngineGlyph, IconButton, StatusDot, cx, useToast, type MenuEntry } from "@tandem/ui";
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  EngineGlyph,
+  IconButton,
+  StatusDot,
+  cx,
+  useToast,
+  type MenuEntry,
+} from "@tandem/ui";
 import { t } from "../../i18n";
 import { copyText } from "../../ipc/clipboard";
 import { listen } from "../../ipc/events";
@@ -12,6 +22,7 @@ import { useSetting, useSettings } from "../../stores/settings";
 import { paneKey, statusView, useStatus } from "../../stores/status";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
+import { useRemote } from "../../stores/remote";
 import { RailList } from "../rail/RailList";
 import { topLevel, useWorktrees, worktreesOf } from "../../stores/worktrees";
 import { WorktreeRow } from "./Worktrees";
@@ -95,16 +106,31 @@ function SessionDot({ paneId }: { paneId: string }) {
   const status = useStatus((st) => st.records[paneKey(paneId)]?.status);
   const unread = useStatus((st) => st.unread[paneKey(paneId)] ?? false);
   return (
-    <span className="relative inline-flex shrink-0" data-testid="rail-session-status" data-status={status ?? "idle"}>
+    <span
+      className="relative inline-flex shrink-0"
+      data-testid="rail-session-status"
+      data-status={status ?? "idle"}
+    >
       <StatusDot status={status ? statusView(status) : "idle"} size={6} />
-      {unread && <span data-testid="unread-dot" aria-label={t("rail.unread")} className="absolute -right-1 -top-1 size-1.5 rounded-full bg-accent" />}
+      {unread && (
+        <span
+          data-testid="unread-dot"
+          aria-label={t("rail.unread")}
+          className="absolute -right-1 -top-1 size-1.5 rounded-full bg-accent"
+        />
+      )}
     </span>
   );
 }
 
 /** The right slot of a workspace row (F-SH-03): Working n, Waiting on you,
  * Failed, or nothing; and the unread dot when something finished unseen. */
-function useWorkspaceStatus(ws: WorkspaceSummary): { working: number; waiting: boolean; failed: boolean; unread: boolean } {
+function useWorkspaceStatus(ws: WorkspaceSummary): {
+  working: number;
+  waiting: boolean;
+  failed: boolean;
+  unread: boolean;
+} {
   const tabs = useLayout((s) => s.tabs);
   const records = useStatus((s) => s.records);
   const unread = useStatus((s) => s.unread);
@@ -136,7 +162,13 @@ function WorkspaceSlot({ ws }: { ws: WorkspaceSummary }) {
           {slot}
         </span>
       )}
-      {s.unread && <span data-testid="workspace-unread" aria-label={t("rail.unread")} className="size-1.5 shrink-0 rounded-full bg-accent" />}
+      {s.unread && (
+        <span
+          data-testid="workspace-unread"
+          aria-label={t("rail.unread")}
+          className="size-1.5 shrink-0 rounded-full bg-accent"
+        />
+      )}
     </>
   );
 }
@@ -219,7 +251,10 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
         >
           <SessionDot paneId={pane.id} />
           {pane.kind === "agent" ? (
-            <EngineGlyph letters={engines.find((e) => e.spec.id === pane.engineId)?.spec.logo ?? ""} size={14} />
+            <EngineGlyph
+              letters={engines.find((e) => e.spec.id === pane.engineId)?.spec.logo ?? ""}
+              size={14}
+            />
           ) : pane.kind === "browser" ? (
             <Globe size={12} aria-hidden="true" className="shrink-0" />
           ) : (
@@ -231,6 +266,17 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
       {saved}
     </>
   );
+}
+
+/** The host a remote workspace lives on, as the rail names it. */
+function hostLabel(ws: WorkspaceSummary): string {
+  if (ws.kind === "wsl") return ws.wslDistro ?? ws.hostId;
+  return useRemote.getState().hostOf(ws.hostId)?.label ?? ws.hostId;
+}
+
+/** "Remote · build box" or "WSL · Ubuntu". */
+function placeBadge(ws: WorkspaceSummary): string {
+  return t(ws.kind === "wsl" ? "rail.wslBadge" : "rail.remoteBadge", { host: hostLabel(ws) });
 }
 
 /** UI_SPEC §3.3 Code rail: WORKSPACES + "+", the shared RailList, footer. */
@@ -264,22 +310,28 @@ export function CodeRail() {
     {
       // Only a repository can have worktrees; the label says why it's off.
       id: "new-worktree",
-      label: ws.branch ? t("worktree.new") : t("worktree.needsRepo"),
-      disabled: !ws.branch || ws.missing,
+      label:
+        ws.kind !== "local" ? t("worktree.remote") : ws.branch ? t("worktree.new") : t("worktree.needsRepo"),
+      disabled: ws.kind !== "local" || !ws.branch || ws.missing,
       onSelect: () => useWorktrees.getState().open({ kind: "new", workspaceId: ws.id }),
     },
     { id: "up", label: t("rail.moveUp"), onSelect: a.moveUp },
     { id: "down", label: t("rail.moveDown"), onSelect: a.moveDown },
     { id: "sep", type: "separator" },
-    {
-      id: "reveal",
-      label: platform === "macos" ? t("rail.revealMac") : t("rail.reveal"),
-      disabled: ws.missing,
-      onSelect: () =>
-        void invoke("workspace_reveal", { id: ws.id }).catch((e: { message?: string }) =>
-          show({ tone: "error", title: e.message ?? "" }),
-        ),
-    },
+    // An SSH host's folder isn't on this computer to show (F-RM-01).
+    ...(ws.kind === "ssh"
+      ? []
+      : [
+          {
+            id: "reveal",
+            label: platform === "macos" ? t("rail.revealMac") : t("rail.reveal"),
+            disabled: ws.missing,
+            onSelect: () =>
+              void invoke("workspace_reveal", { id: ws.id }).catch((e: { message?: string }) =>
+                show({ tone: "error", title: e.message ?? "" }),
+              ),
+          },
+        ]),
     {
       id: "copy",
       label: t("rail.copyPath"),
@@ -319,10 +371,16 @@ export function CodeRail() {
           testId: "workspace-row",
           data: { root: ws.root },
           name: ws.name,
-          tooltip: ws.missing ? t("rail.missing") : ws.root,
+          tooltip: ws.missing
+            ? t("rail.missing")
+            : ws.kind !== "local"
+              ? `${placeBadge(ws)} · ${ws.root}`
+              : ws.root,
           warning: ws.missing,
           icon: ws.missing ? (
             <AlertTriangle size={14} aria-label={t("rail.missing")} className="text-warning" />
+          ) : ws.kind !== "local" ? (
+            <Cloud size={14} aria-label={placeBadge(ws)} className="text-fg-muted" />
           ) : (
             <Folder size={14} aria-hidden="true" className="text-fg-muted" />
           ),
@@ -352,7 +410,12 @@ export function CodeRail() {
             <>
               <WorkspaceSessions ws={ws} />
               {worktreesOf(list, ws.id).map((wt) => (
-                <WorktreeRow key={wt.id} wt={wt} base={ws.branch ?? "HEAD"} slot={<WorkspaceSlot ws={wt} />} />
+                <WorktreeRow
+                  key={wt.id}
+                  wt={wt}
+                  base={ws.branch ?? "HEAD"}
+                  slot={<WorkspaceSlot ws={wt} />}
+                />
               ))}
             </>
           ),
@@ -365,6 +428,20 @@ export function CodeRail() {
         }
         onRemove={(ws) => askRemove(ws)}
       />
+      {!collapsed && (
+        <div className="border-t border-divider px-1.5 pt-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            fullWidth
+            data-testid="rail-remote-hosts"
+            iconLeft={<Cloud size={14} />}
+            onClick={() => useUi.getState().openSettings("remote")}
+          >
+            {t("rail.remoteHosts")}
+          </Button>
+        </div>
+      )}
       <PlanFooter collapsed={collapsed} />
       {!collapsed && <RailResizer width={shown} onWidth={onWidth} />}
       <ConfirmDialog

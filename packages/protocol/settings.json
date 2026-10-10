@@ -1,0 +1,487 @@
+[
+  {
+    "default": "dark",
+    "key": "theme",
+    "page": "appearance"
+  },
+  {
+    "default": "follow_app",
+    "key": "terminal_theme",
+    "page": "appearance"
+  },
+  {
+    "default": true,
+    "key": "terminals_match_theme",
+    "page": "appearance"
+  },
+  {
+    "default": "default",
+    "key": "interface_text_size",
+    "page": "appearance"
+  },
+  {
+    "default": "compact",
+    "key": "density",
+    "page": "appearance"
+  },
+  {
+    "default": true,
+    "key": "show_status_previews",
+    "page": "appearance"
+  },
+  {
+    "default": "en",
+    "key": "language",
+    "page": "general"
+  },
+  {
+    "default": true,
+    "key": "auto_save_files",
+    "page": "general"
+  },
+  {
+    "default": false,
+    "key": "launch_at_login",
+    "page": "general"
+  },
+  {
+    "default": false,
+    "key": "keep_running_in_tray",
+    "page": "general"
+  },
+  {
+    "default": "stable",
+    "key": "update_channel",
+    "page": "updates"
+  },
+  {
+    "default": true,
+    "key": "auto_check_updates",
+    "page": "updates"
+  },
+  {
+    "default": true,
+    "key": "notify_system",
+    "page": "notifications"
+  },
+  {
+    "default": true,
+    "key": "notify_sound",
+    "page": "notifications"
+  },
+  {
+    "default": "chime",
+    "key": "notify_sound_name",
+    "page": "notifications"
+  },
+  {
+    "default": true,
+    "key": "notify_attention",
+    "page": "notifications"
+  },
+  {
+    "default": {},
+    "key": "notify_types",
+    "page": "notifications"
+  },
+  {
+    "default": true,
+    "key": "notify_only_unseen",
+    "page": "notifications"
+  },
+  {
+    "default": null,
+    "key": "default_shell",
+    "page": "terminal"
+  },
+  {
+    "default": null,
+    "key": "wsl_default_distro",
+    "page": "terminal"
+  },
+  {
+    "default": "JetBrains Mono",
+    "key": "term_font_family",
+    "page": "appearance"
+  },
+  {
+    "default": 13,
+    "key": "term_font_size",
+    "page": "appearance"
+  },
+  {
+    "default": "bar",
+    "key": "term_cursor_style",
+    "page": "terminal"
+  },
+  {
+    "default": false,
+    "key": "term_cursor_blink",
+    "page": "terminal"
+  },
+  {
+    "default": 10000,
+    "key": "term_scrollback",
+    "page": "terminal"
+  },
+  {
+    "default": false,
+    "key": "term_copy_on_select",
+    "page": "terminal"
+  },
+  {
+    "default": true,
+    "key": "term_confirm_multiline_paste",
+    "page": "general"
+  },
+  {
+    "default": true,
+    "key": "term_option_as_meta",
+    "page": "terminal"
+  },
+  {
+    "default": false,
+    "key": "term_screen_reader",
+    "page": "terminal"
+  },
+  {
+    "default": {
+      "bash": true,
+      "fish": true,
+      "pwsh": true,
+      "zsh": true
+    },
+    "key": "term_shell_integration",
+    "page": "terminal"
+  },
+  {
+    "default": "terminal",
+    "key": "term_shortcut_priority",
+    "page": "terminal"
+  },
+  {
+    "default": {},
+    "key": "shortcut_overrides",
+    "page": "shortcuts"
+  },
+  {
+    "default": "auto",
+    "key": "term_gpu_rendering",
+    "page": "terminal"
+  },
+  {
+    "default": true,
+    "key": "open_links_in_tandem",
+    "page": "general"
+  },
+  {
+    "default": "duckduckgo",
+    "key": "search_engine",
+    "page": "general"
+  },
+  {
+    "default": {},
+    "key": "engine_extra_args",
+    "page": "engines"
+  },
+  {
+    "default": "edits",
+    "key": "default_access",
+    "page": "teammates"
+  },
+  {
+    "default": "read",
+    "key": "routine_access",
+    "page": "teammates"
+  },
+  {
+    "default": true,
+    "key": "allow_teammate_skills",
+    "page": "teammates"
+  },
+  {
+    "default": true,
+    "key": "learn_after_turn",
+    "page": "teammates"
+  },
+  {
+    "default": false,
+    "key": "pause_all_mail",
+    "page": "teammates"
+  },
+  {
+    "default": false,
+    "key": "pause_all_routines",
+    "page": "teammates"
+  },
+  {
+    "default": false,
+    "key": "resume_agents_automatically",
+    "page": "general"
+  },
+  {
+    "default": false,
+    "key": "trust_workspaces_i_add",
+    "page": "general"
+  },
+  {
+    "default": true,
+    "key": "expose_tasks_to_terminal_agents",
+    "page": "teammates"
+  },
+  {
+    "default": false,
+    "key": "expose_all_plugin_tools",
+    "page": "plugins"
+  },
+  {
+    "default": false,
+    "key": "grant_plugins_to_all_threads",
+    "page": "plugins"
+  },
+  {
+    "default": true,
+    "key": "plugin_ask_before_writes",
+    "page": "plugins"
+  },
+  {
+    "default": true,
+    "key": "dictate_enabled",
+    "page": "dictate"
+  },
+  {
+    "default": null,
+    "key": "dictate_hotkey",
+    "page": "dictate"
+  },
+  {
+    "default": null,
+    "key": "dictate_toggle_hotkey",
+    "page": "dictate"
+  },
+  {
+    "default": true,
+    "key": "dictate_latch",
+    "page": "dictate"
+  },
+  {
+    "default": "local",
+    "key": "dictate_engine",
+    "page": "dictate"
+  },
+  {
+    "default": null,
+    "key": "dictate_model",
+    "page": "dictate"
+  },
+  {
+    "default": "auto",
+    "key": "dictate_language",
+    "page": "dictate"
+  },
+  {
+    "default": null,
+    "key": "dictate_mic",
+    "page": "dictate"
+  },
+  {
+    "default": null,
+    "key": "dictate_backup_mic",
+    "page": "dictate"
+  },
+  {
+    "default": "off",
+    "key": "dictate_gain",
+    "page": "dictate"
+  },
+  {
+    "default": "while_recording",
+    "key": "dictate_widget_visibility",
+    "page": "dictate"
+  },
+  {
+    "default": "logo_text",
+    "key": "dictate_widget_style",
+    "page": "dictate"
+  },
+  {
+    "default": true,
+    "key": "dictate_follow_cursor",
+    "page": "dictate"
+  },
+  {
+    "default": false,
+    "key": "dictate_lock_position",
+    "page": "dictate"
+  },
+  {
+    "default": true,
+    "key": "dictate_sounds",
+    "page": "dictate"
+  },
+  {
+    "default": false,
+    "key": "dictate_pause_media",
+    "page": "dictate"
+  },
+  {
+    "default": "paste",
+    "key": "dictate_output",
+    "page": "dictate"
+  },
+  {
+    "default": false,
+    "key": "dictate_auto_enhance",
+    "page": "dictate"
+  },
+  {
+    "default": true,
+    "key": "dictate_quick_actions",
+    "page": "dictate"
+  },
+  {
+    "default": {},
+    "key": "dictate_formatting_apps",
+    "page": "dictate"
+  },
+  {
+    "default": null,
+    "key": "dictate_formatting",
+    "page": "dictate"
+  },
+  {
+    "default": false,
+    "key": "dictate_share_hints",
+    "page": "privacy"
+  },
+  {
+    "default": "forever",
+    "key": "dictate_keep_history",
+    "page": "dictate"
+  },
+  {
+    "default": "Conductor",
+    "key": "conductor_name",
+    "page": "conductor"
+  },
+  {
+    "default": "default",
+    "key": "conductor_voice",
+    "page": "conductor"
+  },
+  {
+    "default": "friendly",
+    "key": "conductor_tone",
+    "page": "conductor"
+  },
+  {
+    "default": "brief",
+    "key": "conductor_verbosity",
+    "page": "conductor"
+  },
+  {
+    "default": 100,
+    "key": "conductor_speed",
+    "page": "conductor"
+  },
+  {
+    "default": null,
+    "key": "conductor_about_you",
+    "page": "conductor"
+  },
+  {
+    "default": false,
+    "key": "conductor_memory",
+    "page": "conductor"
+  },
+  {
+    "default": false,
+    "key": "conductor_reflection",
+    "page": "conductor"
+  },
+  {
+    "default": false,
+    "key": "conductor_wake",
+    "page": "conductor"
+  },
+  {
+    "default": false,
+    "key": "conductor_floating_ring",
+    "page": "conductor"
+  },
+  {
+    "default": false,
+    "key": "telemetry_usage",
+    "page": "privacy"
+  },
+  {
+    "default": false,
+    "key": "telemetry_crash",
+    "page": "privacy"
+  },
+  {
+    "default": false,
+    "key": "ai_thread_titles",
+    "page": "privacy"
+  },
+  {
+    "default": false,
+    "key": "auto_consent",
+    "page": "privacy"
+  },
+  {
+    "default": "enter",
+    "key": "send_key",
+    "page": "general"
+  },
+  {
+    "default": "system",
+    "key": "reduce_motion",
+    "page": "appearance"
+  },
+  {
+    "default": "normal",
+    "key": "log_level",
+    "page": "advanced"
+  },
+  {
+    "default": false,
+    "key": "perf_hud",
+    "page": "advanced"
+  },
+  {
+    "default": "ask",
+    "key": "orphan_policy",
+    "page": "advanced"
+  },
+  {
+    "default": true,
+    "key": "checkpoints_enabled",
+    "page": "checkpoints"
+  },
+  {
+    "default": 100,
+    "key": "checkpoints_keep",
+    "page": "checkpoints"
+  },
+  {
+    "default": 14,
+    "key": "checkpoints_days",
+    "page": "checkpoints"
+  },
+  {
+    "default": 5,
+    "key": "checkpoints_max_file_mb",
+    "page": "checkpoints"
+  },
+  {
+    "default": true,
+    "key": "command_history_enabled",
+    "page": "terminal"
+  },
+  {
+    "default": 90,
+    "key": "command_history_days",
+    "page": "terminal"
+  }
+]

@@ -11,10 +11,21 @@ export function fnv1a32(text: string): number {
   return h >>> 0;
 }
 
-/** UI_SPEC §1.7: hue from the id, skipping the reds near the error colour. */
-export function avatarHue(id: string): number {
-  const h = fnv1a32(id) % 360;
-  return h <= 15 || h >= 345 ? (h + 30) % 360 : h;
+/**
+ * The 12-hue palette (F-AG-01, D-302): evenly spread, none in the reds near
+ * the error colour (UI_SPEC §1.7 skips 0–15 and 345–360).
+ */
+export const AVATAR_HUES = [25, 52, 80, 108, 136, 164, 192, 220, 248, 276, 304, 332] as const;
+
+/** The palette index for an id: the user's pick, else `fnv1a32(id) % 12`. */
+export function hueIndex(id: string, picked?: number | null): number {
+  if (picked !== undefined && picked !== null && picked >= 0 && picked < AVATAR_HUES.length) return picked;
+  return fnv1a32(id) % AVATAR_HUES.length;
+}
+
+/** The hue an avatar draws with. */
+export function avatarHue(id: string, picked?: number | null): number {
+  return AVATAR_HUES[hueIndex(id, picked)] ?? AVATAR_HUES[0];
 }
 
 export function initials(name: string): string {
@@ -30,11 +41,13 @@ export type AvatarProps = {
   size?: 20 | 24 | 32 | 48 | 72;
   status?: Status;
   imageUrl?: string;
+  /** A picked palette index (0–11); the id decides otherwise. */
+  hue?: number | null;
   className?: string;
 };
 
-export function Avatar({ name, id, size = 24, status, imageUrl, className }: AvatarProps) {
-  const h = avatarHue(id);
+export function Avatar({ name, id, size = 24, status, imageUrl, hue, className }: AvatarProps) {
+  const h = avatarHue(id, hue);
   return (
     <span className={cx("relative inline-flex shrink-0", className)} style={{ width: size, height: size }}>
       {imageUrl ? (

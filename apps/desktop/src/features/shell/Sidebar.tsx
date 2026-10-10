@@ -1,8 +1,29 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import { SortableContext, arrayMove, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Globe, History, LayoutDashboard, ListTodo, Maximize2, Minimize2, NotebookPen, Pin, PinOff, Plug, Plus, FolderTree, X } from "lucide-react";
+import {
+  Globe,
+  History,
+  LayoutDashboard,
+  ListTodo,
+  Maximize2,
+  Minimize2,
+  NotebookPen,
+  Pin,
+  PinOff,
+  Plug,
+  Plus,
+  FolderTree,
+  X,
+} from "lucide-react";
 import type { SidebarTab, SidebarTabKind } from "@tandem/protocol";
 import { Badge, EmptyState, IconButton, Menu, cx, useToast, type MenuEntry } from "@tandem/ui";
 import { t } from "../../i18n";
@@ -19,6 +40,7 @@ import { CheckpointsPanel } from "../checkpoints/CheckpointsPanel";
 import { FilesPanel } from "../files/FilesPanel";
 import { PortsPanel } from "../ports/PortsPanel";
 import { ScratchpadPanel } from "../scratchpad/ScratchpadPanel";
+import { TasksPanel } from "../tasks/TasksPanel";
 import { useShortcutKeys } from "../commands/useShortcutKeys";
 
 const ICONS: Record<SidebarTabKind, ReactNode> = {
@@ -61,7 +83,9 @@ function useWaitingCount(): number {
 }
 
 function Pill({ tab, active }: { tab: SidebarTab; active: boolean }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tab.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: tab.id,
+  });
   const waiting = useWaitingCount();
   const label = tabLabel(tab);
   const store = useSidebar.getState;
@@ -79,7 +103,9 @@ function Pill({ tab, active }: { tab: SidebarTab; active: boolean }) {
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cx(
         "group flex h-6 shrink-0 items-center rounded-full border text-sm",
-        active ? "border-border-strong bg-surface-3 text-fg" : "border-transparent text-fg-muted hover:bg-surface-2",
+        active
+          ? "border-border-strong bg-surface-3 text-fg"
+          : "border-transparent text-fg-muted hover:bg-surface-2",
         isDragging && "z-10 opacity-80",
       )}
     >
@@ -137,7 +163,10 @@ function Pill({ tab, active }: { tab: SidebarTab; active: boolean }) {
 function Resizer({ width, onLive }: { width: number; onLive: (w: number | null) => void }) {
   const start = useRef<{ x: number; w: number } | null>(null);
   const at = (e: ReactPointerEvent) =>
-    Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, start.current ? start.current.w - (e.clientX - start.current.x) : width));
+    Math.min(
+      SIDEBAR_MAX,
+      Math.max(SIDEBAR_MIN, start.current ? start.current.w - (e.clientX - start.current.x) : width),
+    );
   return (
     <div
       role="separator"
@@ -184,7 +213,8 @@ function BrowserTab({ tab }: { tab: SidebarTab }) {
           {
             id: "to-pane",
             label: t("browser.moveToPane"),
-            onSelect: () => void moveToPane(tab).then((message) => message && show({ tone: "error", title: message })),
+            onSelect: () =>
+              void moveToPane(tab).then((message) => message && show({ tone: "error", title: message })),
           },
         ]
       : [];
@@ -198,6 +228,7 @@ function Panel({ tab, shown }: { tab: SidebarTab; shown: boolean }) {
   if (tab.kind === "checkpoints") return <CheckpointsPanel />;
   if (tab.kind === "ports") return <PortsPanel visible={shown} />;
   if (tab.kind === "scratchpad") return <ScratchpadPanel />;
+  if (tab.kind === "tasks") return <TasksPanel />;
   return <EmptyState title={t("sidebar.soon")} />;
 }
 
@@ -239,7 +270,10 @@ export function Sidebar() {
       const target = e.target as Element | null;
       if (!target || aside.current?.contains(target)) return;
       // Menus and dialogs portal out of the sidebar; the toggle toggles.
-      if (target.closest("[data-radix-popper-content-wrapper],[role=dialog],[role=menu],[data-sidebar-toggle]")) return;
+      if (
+        target.closest("[data-radix-popper-content-wrapper],[role=dialog],[role=menu],[data-sidebar-toggle]")
+      )
+        return;
       useSidebar.getState().setOpen(false);
     };
     document.addEventListener("pointerdown", onDown, true);
@@ -259,12 +293,20 @@ export function Sidebar() {
         focusMoved.current = true;
       },
     },
-    { id: "dashboard", label: t("sidebar.dashboard"), onSelect: () => useSidebar.getState().openTab("dashboard") },
+    {
+      id: "dashboard",
+      label: t("sidebar.dashboard"),
+      onSelect: () => useSidebar.getState().openTab("dashboard"),
+    },
     { id: "files", label: t("sidebar.files"), onSelect: () => useSidebar.getState().openTab("files") },
     { id: "checkpoints", label: t("sidebar.checkpoints"), onSelect: () => useSidebar.getState().openTab("checkpoints") },
     { id: "ports", label: t("sidebar.ports"), onSelect: () => useSidebar.getState().openTab("ports") },
     { id: "tasks", label: t("sidebar.tasks"), onSelect: () => useSidebar.getState().openTab("tasks") },
-    { id: "scratchpad", label: t("sidebar.scratchpad"), onSelect: () => useSidebar.getState().openTab("scratchpad") },
+    {
+      id: "scratchpad",
+      label: t("sidebar.scratchpad"),
+      onSelect: () => useSidebar.getState().openTab("scratchpad"),
+    },
   ];
   const onDragEnd = (e: DragEndEvent) => {
     const over = e.over ? String(e.over.id) : null;
@@ -300,9 +342,18 @@ export function Sidebar() {
       >
         {docked && !fullscreen && <Resizer width={width} onLive={setLiveWidth} />}
         <div className="flex h-8 shrink-0 items-center gap-1 border-b border-divider px-2">
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd} accessibility={{ screenReaderInstructions: { draggable: "" } }}>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={onDragEnd}
+            accessibility={{ screenReaderInstructions: { draggable: "" } }}
+          >
             <SortableContext items={tabs.map((x) => x.id)} strategy={horizontalListSortingStrategy}>
-              <ul role="tablist" aria-label={t("sidebar.label")} className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+              <ul
+                role="tablist"
+                aria-label={t("sidebar.label")}
+                className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+              >
                 {tabs.map((tab) => (
                   <Pill key={tab.id} tab={tab} active={tab.id === active} />
                 ))}
@@ -311,7 +362,14 @@ export function Sidebar() {
           </DndContext>
           <Menu
             align="end"
-            trigger={<IconButton size="sm" icon={<Plus size={14} />} label={t("sidebar.openIn")} data-testid="sidebar-plus" />}
+            trigger={
+              <IconButton
+                size="sm"
+                icon={<Plus size={14} />}
+                label={t("sidebar.openIn")}
+                data-testid="sidebar-plus"
+              />
+            }
             entries={plus}
             onCloseAutoFocus={(e) => {
               if (focusMoved.current) e.preventDefault();
@@ -335,7 +393,13 @@ export function Sidebar() {
             pressed={fullscreen}
             onClick={() => useSidebar.getState().setFullscreen(!fullscreen)}
           />
-          <IconButton size="sm" icon={<X size={14} />} label={t("sidebar.close")} kbd={keys("sidebar.toggle")} onClick={() => useSidebar.getState().setOpen(false)} />
+          <IconButton
+            size="sm"
+            icon={<X size={14} />}
+            label={t("sidebar.close")}
+            kbd={keys("sidebar.toggle")}
+            onClick={() => useSidebar.getState().setOpen(false)}
+          />
         </div>
         <div className="relative min-h-0 flex-1">
           {tabs.length === 0 && <EmptyState title={t("sidebar.empty")} />}

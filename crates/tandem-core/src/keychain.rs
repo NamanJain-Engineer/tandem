@@ -88,10 +88,13 @@ impl Keychain for MemoryKeychain {
 }
 
 /// The OS keychain: Keychain Services on macOS, Credential Manager on Windows,
-/// Secret Service on Linux.
+/// Secret Service on Linux. Behind the default `os-keychain` feature, which
+/// `tandem-host` leaves out (it keeps no secrets and must build static).
+#[cfg(feature = "os-keychain")]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct OsKeychain;
 
+#[cfg(feature = "os-keychain")]
 fn map_err(err: keyring::Error) -> KeychainError {
     match err {
         keyring::Error::PlatformFailure(e) | keyring::Error::NoStorageAccess(e) => {
@@ -101,6 +104,7 @@ fn map_err(err: keyring::Error) -> KeychainError {
     }
 }
 
+#[cfg(feature = "os-keychain")]
 impl Keychain for OsKeychain {
     fn get(
         &self,
@@ -133,6 +137,7 @@ impl Keychain for OsKeychain {
     }
 }
 
+#[cfg(feature = "os-keychain")]
 /// `TANDEM_FAKE_KEYCHAIN=1` selects the in-memory keychain; otherwise the OS one.
 pub fn open_keychain() -> Arc<dyn Keychain> {
     if std::env::var("TANDEM_FAKE_KEYCHAIN").as_deref() == Ok("1") {

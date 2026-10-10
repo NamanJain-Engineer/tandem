@@ -29,9 +29,13 @@ describe("terminal keys (F-CD-05, F-CD-07)", () => {
     expect(keyAction(key({ code: "KeyV", key: "v", ctrlKey: true }), linux)).toBe("pass");
     const mac = { ...linux, mac: true };
     expect(keyAction(key({ code: "KeyV", key: "v", metaKey: true }), mac)).toBe("paste");
-    expect(keyAction(key({ code: "KeyC", key: "c", metaKey: true }), { ...mac, hasSelection: true })).toBe("copy");
+    expect(keyAction(key({ code: "KeyC", key: "c", metaKey: true }), { ...mac, hasSelection: true })).toBe(
+      "copy",
+    );
     // macOS terminals keep every Ctrl key.
-    expect(keyAction(key({ code: "KeyC", key: "c", ctrlKey: true }), { ...mac, hasSelection: true })).toBe("pass");
+    expect(keyAction(key({ code: "KeyC", key: "c", ctrlKey: true }), { ...mac, hasSelection: true })).toBe(
+      "pass",
+    );
   });
 
   it("F-CD-07.1 Shift+Enter in an agent pane types the newline sequence; shells get Enter", () => {
@@ -44,7 +48,9 @@ describe("terminal keys (F-CD-05, F-CD-07)", () => {
   it("F-CD-07.2 nothing is intercepted during IME composition", () => {
     const composing = key({ key: "Enter", code: "Enter", shiftKey: true, isComposing: true });
     expect(keyAction(composing, { ...linux, agent: true })).toBe("pass");
-    expect(keyAction(key({ code: "KeyC", ctrlKey: true, isComposing: true }), { ...linux, hasSelection: true })).toBe("pass");
+    expect(
+      keyAction(key({ code: "KeyC", ctrlKey: true, isComposing: true }), { ...linux, hasSelection: true }),
+    ).toBe("pass");
   });
 });
 

@@ -183,8 +183,10 @@ pub struct MeResponse {
 }
 
 /// `POST /v1/ai/teammate-draft` (F-AG-04): a draft to review, never saved by the API.
+/// The protocol calls it `ApiTeammateDraft`: the app's checked draft is
+/// `services::teammate_draft::TeammateDraft`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[ts(export, rename = "ApiTeammateDraft")]
 pub struct TeammateDraft {
     pub name: String,
     pub brief: String,

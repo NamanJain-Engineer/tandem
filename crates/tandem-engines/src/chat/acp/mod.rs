@@ -635,12 +635,13 @@ impl AcpAdapter {
             .filter(|(k, _)| !k.starts_with("TANDEM_STATUS"))
             .cloned()
             .collect();
-        ProcessSpec::new(
+        let spec = ProcessSpec::new(
             req.program.clone(),
             self.args.iter().map(OsString::from).collect(),
             env,
             req.cwd.clone(),
-        )
+        );
+        super::Relocate::apply(req.relocate.as_ref(), spec)
     }
 
     pub(crate) async fn start_with(
@@ -665,6 +666,7 @@ impl AcpAdapter {
             approvals: Arc::default(),
             note: Arc::new(Mutex::new(None)),
             images: Arc::new(Mutex::new(false)),
+            briefing_due: Arc::new(std::sync::atomic::AtomicBool::new(true)),
         };
         tokio::spawn(session.clone().read(AcpParser::new(req.cwd.clone()), lines));
         if let Err(e) = session.handshake().await {
@@ -720,6 +722,8 @@ struct AcpSession {
     note: Arc<Mutex<Option<String>>>,
     /// The agent takes images in prompts.
     images: Arc<Mutex<bool>>,
+    /// The teammate briefing still has to open a prompt (F-AG-06).
+    briefing_due: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl AcpSession {
@@ -776,15 +780,25 @@ impl AcpSession {
             .pointer("/agentCapabilities/mcpCapabilities/http")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        match (&self.req.mcp, http) {
-            (Some(mcp), true) => json!([{
+        let mut servers = match (&self.req.mcp, http) {
+            (Some(mcp), true) => vec![json!({
                 "type": "http",
                 "name": "tandem",
                 "url": mcp.url,
                 "headers": [{"name": "Authorization", "value": format!("Bearer {}", mcp.token)}],
-            }]),
-            _ => json!([]),
-        }
+            })],
+            _ => Vec::new(),
+        };
+        // Every ACP agent takes stdio servers.
+        servers.extend(self.req.stdio_servers.iter().map(|s| {
+            json!({
+                "name": s.name,
+                "command": s.command,
+                "args": s.args,
+                "env": [],
+            })
+        }));
+        Value::Array(servers)
     }
 
     /// `initialize`, then a loaded or new session, and the thread's model.
@@ -907,7 +921,18 @@ impl AcpSession {
     }
 
     fn prompt(&self, turn: &TurnInput) -> Result<Value, AdapterError> {
-        let mut blocks = vec![json!({"type": "text", "text": turn.text})];
+        let mut blocks = Vec::new();
+        // ACP agents take no system prompt: a teammate's briefing opens the
+        // session's first prompt (F-AG-06).
+        if self
+            .briefing_due
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            if let Some(text) = self.req.briefing_text() {
+                blocks.push(json!({"type": "text", "text": text}));
+            }
+        }
+        blocks.push(json!({"type": "text", "text": turn.text}));
         let images = *lock(&self.images);
         for image in &turn.images {
             let name = image

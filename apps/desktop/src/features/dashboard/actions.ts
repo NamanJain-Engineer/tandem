@@ -19,12 +19,20 @@ export async function jumpTo(item: DashboardItem): Promise<boolean> {
 /** "Hand off to…" (UI-13) for the card's pane. */
 export function handOff(item: DashboardItem): void {
   if (item.source.type !== "pane" || !item.workspaceId) return;
-  useHandoff.getState().open({ paneId: item.source.paneId, workspaceId: item.workspaceId, kind: "agent", engineId: item.engineId });
+  useHandoff
+    .getState()
+    .open({
+      paneId: item.source.paneId,
+      workspaceId: item.workspaceId,
+      kind: "agent",
+      engineId: item.engineId,
+    });
 }
 
 /** Ends the agent's process; the pane stays with its output. */
 export async function stopAgent(item: DashboardItem): Promise<void> {
-  if (item.source.type === "pane") await invoke("pty_kill", { paneId: item.source.paneId }).catch(() => undefined);
+  if (item.source.type === "pane")
+    await invoke("pty_kill", { paneId: item.source.paneId }).catch(() => undefined);
 }
 
 /** Closes the card's pane (its conversation is saved by the engine). */
@@ -40,7 +48,9 @@ export async function closeAgent(item: DashboardItem): Promise<void> {
 
 /** Close idle: the core re-checks each is idle and closes only those. */
 export async function closeIdle(keys: string[]): Promise<string[]> {
-  const res = await invoke<{ closed: string[] }>("dashboard_close_idle", { keys }).catch(() => ({ closed: [] as string[] }));
+  const res = await invoke<{ closed: string[] }>("dashboard_close_idle", { keys }).catch(() => ({
+    closed: [] as string[],
+  }));
   for (const key of res.closed) if (key.startsWith("pane:")) useLayout.getState().dropPane(key.slice(5));
   useDashboard.getState().forget(res.closed);
   return res.closed;

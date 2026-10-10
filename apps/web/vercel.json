@@ -4,6 +4,12 @@
   "installCommand": "pnpm install --frozen-lockfile --filter web... --filter desktop...",
   "buildCommand": "pnpm build:site",
   "ignoreCommand": "sh ./scripts/vercel-ignore.sh",
+  "rewrites": [
+    {
+      "source": "/api/v1/site-info/",
+      "destination": "/api/v1/site-info.json"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
@@ -53,6 +59,15 @@
         {
           "key": "Cache-Control",
           "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/api/v1/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
         }
       ]
     }

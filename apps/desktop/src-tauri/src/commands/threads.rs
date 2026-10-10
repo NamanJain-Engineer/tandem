@@ -4,7 +4,7 @@
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use tandem_core::access::{Access, ThreadMode};
-use tandem_core::ids::{AccountId, AttachmentId, ThreadId, WorkspaceId};
+use tandem_core::ids::{AccountId, AttachmentId, TeammateId, ThreadId, WorkspaceId};
 use tandem_core::settings::SettingKey;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_engines::chat::InterruptOutcome;
@@ -36,6 +36,13 @@ pub struct ThreadCreate {
     pub effort: Option<String>,
     pub access: Option<Access>,
     pub mode: Option<ThreadMode>,
+    /// `teammate_chat`: whose chat.
+    #[serde(default)]
+    pub teammate_id: Option<TeammateId>,
+    /// `teammate_chat`: the folder it works in (Home when omitted, or one of
+    /// the teammate's places).
+    #[serde(default)]
+    pub place: Option<String>,
 }
 
 /// Thread mode's remembered defaults (F-TH-07 AC4): `last_engine`, and per
@@ -83,8 +90,9 @@ async fn remember(state: &AppState, thread: &ThreadRecord) {
 }
 
 /// The engine a thread starts with: Claude Code when it's installed, else
-/// the first installed engine that has a chat adapter and the plan runs.
-fn default_engine(state: &AppState) -> Option<String> {
+/// the first installed engine (here, or on the thread's host) that has a
+/// chat adapter and the plan runs.
+fn default_engine(state: &AppState, installed: &dyn Fn(&str) -> bool) -> Option<String> {
     let engines = &state.terminals.engines;
     let registry = engines.registry();
     let limits = state.entitlements.limits();
@@ -93,7 +101,7 @@ fn default_engine(state: &AppState) -> Option<String> {
         .iter()
         .filter(|e| {
             crate::services::threads::has_chat_adapter(e)
-                && engines.installed(&e.id).is_some()
+                && installed(&e.id)
                 && limits.allows_chat_engine(&e.id)
         })
         .map(|e| e.id.as_str())
@@ -120,11 +128,32 @@ pub(crate) async fn create_thread(
     state: &AppState,
     args: ThreadCreate,
 ) -> Result<ThreadRecord, IpcError> {
+    if args.kind == ThreadKind::TeammateChat {
+        return create_teammate_chat(state, args).await;
+    }
     let defaults = remembered(state).await;
+    // A remote workspace's thread runs one of the host's engines (F-RM-01).
+    let host_report = match &args.workspace_id {
+        Some(ws) => match workspaces::get(&state.store, ws).await {
+            Ok(w) if w.kind == "ssh" => Some(
+                state
+                    .remote
+                    .report(&tandem_core::ids::HostId::from_db(w.host_id))
+                    .await
+                    .unwrap_or_default(),
+            ),
+            _ => None,
+        },
+        None => None,
+    };
+    let installed = |e: &str| match &host_report {
+        Some(r) => r.get(e).is_some(),
+        None => state.terminals.engines.installed(e).is_some(),
+    };
     // The last engine, unless the plan no longer runs it (a lapse to Free).
     let last = text(&defaults, "last_engine").filter(|e| {
         state.entitlements.limits().allows_chat_engine(e)
-            && state.terminals.engines.installed(e).is_some()
+            && installed(e)
             && state
                 .terminals
                 .engines
@@ -133,7 +162,7 @@ pub(crate) async fn create_thread(
     });
     let engine_id = match args.engine_id.or(last) {
         Some(id) => id,
-        None => default_engine(state).ok_or_else(|| {
+        None => default_engine(state, &installed).ok_or_else(|| {
             IpcError::new(
                 ErrorCode::EngineMissing,
                 "No coding agent that works in Thread mode is installed",
@@ -192,12 +221,71 @@ pub(crate) async fn create_thread(
         .await
 }
 
+/// A teammate chat (F-AG-03): the teammate's engine, model, preferred
+/// account (F-AC-03) and default access, in its Home or one of its places.
+async fn create_teammate_chat(
+    state: &AppState,
+    args: ThreadCreate,
+) -> Result<ThreadRecord, IpcError> {
+    let id = args
+        .teammate_id
+        .ok_or_else(|| IpcError::new(ErrorCode::Invalid, "Which teammate's chat?"))?;
+    let teammate = state.teammates.get(&id).await?;
+    let chat_capable = state
+        .terminals
+        .engines
+        .get(&teammate.engine_id)
+        .is_some_and(|s| crate::services::threads::has_chat_adapter(&s));
+    if !chat_capable {
+        return Err(IpcError::new(
+            ErrorCode::EngineUnsupported,
+            "Only chat engines carry memory and skills.",
+        ));
+    }
+    let cwd =
+        crate::services::teammates::TeammatesService::place_for(&teammate, args.place.as_deref())?;
+    std::fs::create_dir_all(&cwd).map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
+    let thread = state
+        .threads
+        .create_chat(
+            NewThread {
+                id: ThreadId::new(),
+                kind: ThreadKind::TeammateChat,
+                workspace_id: None,
+                cwd,
+                engine_id: teammate.engine_id.clone(),
+                account_id: args.account_id.or(teammate.preferred_account_id.clone()),
+                model: teammate.model.clone(),
+                effort: teammate.effort.clone(),
+                access: args.access.unwrap_or(teammate.settings.default_access),
+                mode: args.mode.unwrap_or(ThreadMode::Act),
+                attended: true,
+            },
+            tandem_store::repo::threads::ChatExtra {
+                teammate_id: Some(teammate.id.clone()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    state.teammates.publish().await;
+    Ok(thread)
+}
+
 #[tauri::command]
 pub async fn thread_list(
     state: State<'_, AppState>,
     kind: ThreadKind,
+    teammate_id: Option<TeammateId>,
     include_archived: Option<bool>,
 ) -> Result<Vec<ThreadRecord>, IpcError> {
+    if let (ThreadKind::TeammateChat, Some(teammate)) = (kind, &teammate_id) {
+        return Ok(tandem_store::repo::threads::teammate_chats(
+            &state.store,
+            teammate,
+            include_archived.unwrap_or(false),
+        )
+        .await?);
+    }
     state
         .threads
         .list(kind, include_archived.unwrap_or(false))
@@ -577,4 +665,15 @@ pub async fn thread_unqueue(
     thread_id: ThreadId,
 ) -> Result<Option<String>, IpcError> {
     state.threads.unqueue(&thread_id).await
+}
+
+/// A teammate's chat tabs in a new order (F-AG-03 AC1: it persists).
+#[tauri::command]
+pub async fn thread_reorder(
+    state: State<'_, AppState>,
+    ids: Vec<ThreadId>,
+) -> Result<(), IpcError> {
+    tandem_store::repo::threads::reorder(&state.store, &ids).await?;
+    state.teammates.publish().await;
+    Ok(())
 }

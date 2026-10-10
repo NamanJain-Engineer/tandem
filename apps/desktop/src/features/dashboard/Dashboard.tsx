@@ -1,7 +1,16 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
-import { ChevronDown, ChevronRight, LayoutDashboard, MoreHorizontal, Search, SquareTerminal, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  LayoutDashboard,
+  MoreHorizontal,
+  Search,
+  SquareTerminal,
+  X,
+} from "lucide-react";
 import type { AgentStatus, DashboardItem } from "@tandem/protocol";
 import {
+  Badge,
   Button,
   ConfirmDialog,
   EmptyState,
@@ -25,8 +34,18 @@ import { useEngines } from "../../stores/engines";
 import { useSetting } from "../../stores/settings";
 import { useSidebar } from "../../stores/sidebar";
 import { useWorkspaces } from "../../stores/workspaces";
+import { parseApproval, riskLabel, riskVariant } from "../plugins/model";
 import { answer, closeAgent, closeIdle, handOff, jumpTo, stopAgent } from "./actions";
-import { cardMeta, cardTitle, closeIdleTargets, counts, group, visible, type Group, type Lanes } from "./model";
+import {
+  cardMeta,
+  cardTitle,
+  closeIdleTargets,
+  counts,
+  group,
+  visible,
+  type Group,
+  type Lanes,
+} from "./model";
 import { isWorktree } from "../../stores/worktrees";
 
 const view = (s: AgentStatus): Status => (s === "failed" ? "error" : s);
@@ -89,19 +108,30 @@ function useNow(): number {
 
 function AgentCard({ item, title, now }: { item: DashboardItem; title: string; now: number }) {
   const showPreview = useSetting("show_status_previews", true);
-  const logo = useEngines((s) => s.list.find((e) => e.spec.id === item.engineId)?.spec.logo) ?? item.engineLogo;
+  const logo =
+    useEngines((s) => s.list.find((e) => e.spec.id === item.engineId)?.spec.logo) ?? item.engineLogo;
   const [confirm, setConfirm] = useState(false);
   const { show } = useToast();
   const busy = item.status === "working" || item.status === "waiting";
   const approval = item.pendingApproval;
-  const close = () => (busy ? setConfirm(true) : void closeAgent(item).then(() => show({ title: t("dashboard.closed", { title }) })));
+  const plugin = approval ? parseApproval(approval.detail) : null;
+  const close = () =>
+    busy
+      ? setConfirm(true)
+      : void closeAgent(item).then(() => show({ title: t("dashboard.closed", { title }) }));
   const decide = (allow: boolean) =>
     approval &&
     void answer(approval.id, allow).then((err) => err && show({ tone: "error", title: err.message }));
   const menu: MenuEntry[] = [
     { id: "open", label: t("dashboard.open"), onSelect: () => void jumpTo(item) },
     ...(item.status === "done"
-      ? [{ id: "seen", label: t("dashboard.markSeen"), onSelect: () => void invoke("status_mark_seen", { key: item.key }).catch(() => undefined) }]
+      ? [
+          {
+            id: "seen",
+            label: t("dashboard.markSeen"),
+            onSelect: () => void invoke("status_mark_seen", { key: item.key }).catch(() => undefined),
+          },
+        ]
       : []),
     ...(item.source.type === "pane"
       ? [{ id: "handoff", label: t("dashboard.handoff"), onSelect: () => handOff(item) }]
@@ -134,16 +164,41 @@ function AgentCard({ item, title, now }: { item: DashboardItem; title: string; n
     >
       <div className="flex items-center gap-2">
         <StatusDot status={view(item.status)} size={8} />
-        {logo ? <EngineGlyph letters={logo} size={16} /> : <SquareTerminal size={14} aria-hidden="true" className="text-fg-muted" />}
-        <span data-testid="agent-card-title" className="min-w-0 flex-1 truncate text-base font-medium text-fg">
+        {logo ? (
+          <EngineGlyph letters={logo} size={16} />
+        ) : (
+          <SquareTerminal size={14} aria-hidden="true" className="text-fg-muted" />
+        )}
+        <span
+          data-testid="agent-card-title"
+          className="min-w-0 flex-1 truncate text-base font-medium text-fg"
+        >
           {title}
         </span>
         <span className="shrink-0 text-sm tabular-nums text-fg-muted">
           {STATUS_LABEL[item.status]()} · {elapsed(item.since, now)}
         </span>
-        <span className="flex shrink-0 items-center opacity-0 group-focus-within:opacity-100 group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
-          <Menu align="end" trigger={<IconButton size="sm" icon={<MoreHorizontal size={14} />} label={t("dashboard.menu", { title })} />} entries={menu} />
-          <IconButton size="sm" icon={<X size={14} />} label={t("dashboard.closeCard", { title })} onClick={close} />
+        <span
+          className="flex shrink-0 items-center opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Menu
+            align="end"
+            trigger={
+              <IconButton
+                size="sm"
+                icon={<MoreHorizontal size={14} />}
+                label={t("dashboard.menu", { title })}
+              />
+            }
+            entries={menu}
+          />
+          <IconButton
+            size="sm"
+            icon={<X size={14} />}
+            label={t("dashboard.closeCard", { title })}
+            onClick={close}
+          />
         </span>
       </div>
       {cardMeta(item) && <p className="truncate text-sm text-fg-muted">{cardMeta(item)}</p>}
@@ -152,10 +207,20 @@ function AgentCard({ item, title, now }: { item: DashboardItem; title: string; n
           {approval ? t("dashboard.wants", { summary: approval.summary }) : item.preview}
         </p>
       )}
+      {plugin && (
+        <p className="flex items-center gap-1.5 text-sm text-fg-muted" data-testid="card-plugin">
+          <EngineGlyph letters={plugin.logo} size={14} />
+          <span className="truncate">{plugin.pluginLabel}</span>
+          <Badge variant={riskVariant(plugin.riskClass)}>{riskLabel(plugin.riskClass)}</Badge>
+          {plugin.cost && (
+            <span className={plugin.riskClass === "spend" ? "text-error" : undefined}>{plugin.cost}</span>
+          )}
+        </p>
+      )}
       {approval && (
         <div className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
           <Button size="sm" variant="primary" data-testid="card-allow" onClick={() => decide(true)}>
-            {t("dashboard.allowOnce")}
+            {plugin ? t("plugins.approval.approve") : t("dashboard.allowOnce")}
           </Button>
           <Button size="sm" variant="secondary" data-testid="card-deny" onClick={() => decide(false)}>
             {t("dashboard.deny")}
@@ -249,11 +314,17 @@ export function Dashboard() {
   if (all.length === 0)
     return (
       <div data-testid="dashboard" className="p-3">
-        <EmptyState icon={<LayoutDashboard size={20} />} title={t("dashboard.emptyTitle")} body={t("dashboard.emptyBody")} />
+        <EmptyState
+          icon={<LayoutDashboard size={20} />}
+          title={t("dashboard.emptyTitle")}
+          body={t("dashboard.emptyBody")}
+        />
       </div>
     );
 
-  const segments: { status: AgentStatus; n: number }[] = (["waiting", "working", "done", "idle", "failed"] as const)
+  const segments: { status: AgentStatus; n: number }[] = (
+    ["waiting", "working", "done", "idle", "failed"] as const
+  )
     .map((status) => ({ status, n: c[status] }))
     .filter((x) => x.status !== "failed" || x.n > 0);
 
@@ -270,25 +341,44 @@ export function Dashboard() {
             onClick={() => useDashboard.getState().toggleGroup(g.id)}
             className="flex items-center gap-1 rounded-xs text-2xs font-semibold uppercase tracking-caps text-fg-subtle focus-visible:shadow-focus focus-visible:outline-none"
           >
-            {open ? <ChevronDown size={12} aria-hidden="true" /> : <ChevronRight size={12} aria-hidden="true" />}
+            {open ? (
+              <ChevronDown size={12} aria-hidden="true" />
+            ) : (
+              <ChevronRight size={12} aria-hidden="true" />
+            )}
             {label}
           </button>
           <span className="flex-1" />
           {g.status === "idle" && idle.length > 0 && (
-            <Button size="sm" variant="secondary" data-testid="close-idle" onClick={() => setConfirmIdle(idle)}>
-              {narrowed ? t("dashboard.closeMatchingIdle", { n: idle.length }) : t("dashboard.closeIdle", { n: idle.length })}
+            <Button
+              size="sm"
+              variant="secondary"
+              data-testid="close-idle"
+              onClick={() => setConfirmIdle(idle)}
+            >
+              {narrowed
+                ? t("dashboard.closeMatchingIdle", { n: idle.length })
+                : t("dashboard.closeIdle", { n: idle.length })}
             </Button>
           )}
         </div>
         {open && (
-          <ul className={cx("grid gap-2", fullscreen ? "grid-cols-[repeat(auto-fill,minmax(280px,1fr))] 2xl:grid-cols-4" : "grid-cols-1")}>
+          <ul
+            className={cx(
+              "grid gap-2",
+              fullscreen ? "grid-cols-[repeat(auto-fill,minmax(280px,1fr))] 2xl:grid-cols-4" : "grid-cols-1",
+            )}
+          >
             {g.items.map((i) => (
               <AgentCard key={i.key} item={i} title={titles[i.key] ?? ""} now={now} />
             ))}
           </ul>
         )}
         {open && g.children && (
-          <div data-testid={`worktrees-${g.id}`} className="ml-1.5 flex flex-col gap-2 border-l border-divider pl-2.5">
+          <div
+            data-testid={`worktrees-${g.id}`}
+            className="ml-1.5 flex flex-col gap-2 border-l border-divider pl-2.5"
+          >
             {g.children.map(renderGroup)}
           </div>
         )}
@@ -316,7 +406,11 @@ export function Dashboard() {
             </span>
           ))}
         </p>
-        <div role="img" aria-label={t("dashboard.barLabel")} className="flex h-1.5 overflow-hidden rounded-full bg-surface-3">
+        <div
+          role="img"
+          aria-label={t("dashboard.barLabel")}
+          className="flex h-1.5 overflow-hidden rounded-full bg-surface-3"
+        >
           {segments.map((x) =>
             x.n > 0 ? (
               <span
@@ -331,7 +425,11 @@ export function Dashboard() {
       </header>
       <div className="flex items-center gap-2">
         <div className="relative min-w-0 flex-1">
-          <Search size={13} aria-hidden="true" className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-fg-subtle" />
+          <Search
+            size={13}
+            aria-hidden="true"
+            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-fg-subtle"
+          />
           <Input
             aria-label={t("dashboard.search")}
             placeholder={t("dashboard.search")}
@@ -370,7 +468,11 @@ export function Dashboard() {
                 key={f}
                 id={f}
                 active={filter === f}
-                label={matching === total ? label : t("dashboard.chipOf", { label: CHIP[f].name(), n: matching, total })}
+                label={
+                  matching === total
+                    ? label
+                    : t("dashboard.chipOf", { label: CHIP[f].name(), n: matching, total })
+                }
               />
             );
           })}
@@ -379,7 +481,11 @@ export function Dashboard() {
         <EmptyState
           title={t("dashboard.noMatch", { q: query })}
           primary={
-            <Button size="sm" variant="secondary" onClick={() => useDashboard.setState({ query: "", filter: "all" })}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => useDashboard.setState({ query: "", filter: "all" })}
+            >
               {t("dashboard.clearSearch")}
             </Button>
           }
@@ -396,7 +502,9 @@ export function Dashboard() {
         onConfirm={() => {
           const keys = confirmIdle ?? [];
           setConfirmIdle(null);
-          void closeIdle(keys).then((closed) => show({ title: t("dashboard.closedIdle", { n: closed.length }) }));
+          void closeIdle(keys).then((closed) =>
+            show({ title: t("dashboard.closedIdle", { n: closed.length }) }),
+          );
         }}
       />
     </div>

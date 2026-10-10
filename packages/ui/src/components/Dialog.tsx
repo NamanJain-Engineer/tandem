@@ -69,6 +69,8 @@ export type ConfirmDialogProps = {
   requireText?: string;
   requireLabel?: (text: string) => string;
   onConfirm: () => void;
+  /** Extra controls (a checkbox, say) between the body and the typed confirmation. */
+  children?: ReactNode;
 };
 
 /** UI_SPEC §2.10 / UI-135. Danger confirms are `alertdialog` with focus on
@@ -84,6 +86,7 @@ export function ConfirmDialog({
   requireText,
   requireLabel = (t) => `Type "${t}" to confirm`,
   onConfirm,
+  children,
 }: ConfirmDialogProps) {
   const [typed, setTyped] = useState("");
   const allowed = !requireText || typed === requireText;
@@ -106,7 +109,8 @@ export function ConfirmDialog({
         <A.Content className={cx(PANEL, WIDTH.sm, "gap-4 p-6")} onKeyDown={onKeyDown} role={danger ? "alertdialog" : "dialog"}>
           <A.Title className="text-lg font-semibold text-fg">{title}</A.Title>
           {body ? <A.Description className="text-base text-fg-muted">{body}</A.Description> : <A.Description className="sr-only">{confirmLabel}</A.Description>}
-          {requireText && <Input label={requireLabel(requireText)} value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />}
+          {children}
+          {requireText &&<Input label={requireLabel(requireText)} value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />}
           <div className="flex justify-end gap-2">
             <A.Cancel asChild>
               <Button variant="ghost" autoFocus={danger}>

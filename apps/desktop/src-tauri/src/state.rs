@@ -117,6 +117,25 @@ pub struct AppState {
     pub updates: Arc<crate::services::updates::UpdateService>,
     pub config: Arc<ConfigService>,
     pub telemetry: Arc<TelemetryService>,
+    /// Teammates (F-AG-01).
+    pub teammates: Arc<crate::services::teammates::TeammatesService>,
+    /// Learn after a turn (F-AG-08).
+    pub learn: Arc<crate::services::learn::LearnService>,
+    /// Teammate mail (F-AG-12).
+    pub mail: Arc<crate::services::mail::MailService>,
+    /// Holds the gateway's built-ins handler alive (the gateway keeps a weak
+    /// reference).
+    pub teammate_tools: Arc<dyn crate::services::gateway::BuiltinService>,
+    /// The one MCP gateway (F-PL-01).
+    pub gateway: Arc<crate::services::gateway::GatewayService>,
+    /// The task tracker and its MCP server (F-TK-01, F-TK-02).
+    pub tasks: Arc<crate::services::tasks::TasksService>,
+    /// Routines and their scheduler (F-RT-01..04).
+    pub routines: Arc<crate::services::routines::RoutinesService>,
+    /// Task runs: attempts, the 4-run cap, reviews (F-TK-04).
+    pub task_exec: Arc<crate::services::tasks_exec::TaskExecService>,
+    /// Plugins: connect flows, approvals, held drafts (F-PL-03..08).
+    pub plugins: Arc<crate::services::plugins::PluginService>,
     /// The Team org's audit events (F-TL-10).
     pub audit: Arc<crate::services::audit::AuditService>,
     pub deeplinks: DeepLinkQueue,
@@ -143,19 +162,47 @@ pub struct AppState {
     pub bestof_checks: crate::services::bestof::Checks,
     /// The Ports panel (F-EX-03).
     pub ports: Arc<crate::services::ports::PortsService>,
+    /// SSH hosts and their connections (F-RM-01).
+    pub remote: Arc<crate::services::remote::RemoteService>,
+    /// WSL distributions (F-RM-02; Windows only).
+    pub wsl: Arc<crate::services::wsl::WslService>,
     /// Browser tabs and panes (F-CD-17), bound to the window in setup.
     pub browser: std::sync::OnceLock<Arc<crate::browser::BrowserService>>,
+    /// Dictate: push-to-talk, models, history and the dictionary (F-DI-*).
+    pub dictate: Arc<crate::services::dictate::DictateService>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
     pub e2e: bool,
 }
 
 impl AppState {
+    /// How subsystems started from here are supervised (§5.2).
+    pub fn supervision(&self) -> tandem_core::supervisor::Supervision {
+        tandem_core::supervisor::Supervision {
+            clock: self.clock.clone(),
+            bus: self.bus.clone(),
+            watchdog: tandem_core::supervisor::watchdog(),
+        }
+    }
+
     pub fn init() -> Result<Self, CoreError> {
-        let data = DataDir::resolve()?;
+        // "Delete local data" (F-TL-05) runs here, before anything opens
+        // `$DATA`; the app then starts as on a first run.
+        let root = DataDir::default_root()?;
+        let deleted = crate::services::data_controls::apply_pending_delete(&root).map_err(|e| {
+            CoreError::io(
+                "data",
+                &e,
+                "Close Vibezeo and delete the data folder by hand",
+            )
+        })?;
+        let data = DataDir::at(root)?;
         let first_run = !data.db_path().exists();
         let level = std::env::var("TANDEM_LOG").unwrap_or_else(|_| "info".to_string());
         // A second init (tests) keeps the first subscriber.
         let log = logging::init(&data.logs(), &level).ok();
+        if deleted {
+            tracing::info!("local data deleted at the user's request");
+        }
         let store = Store::open(&data).map_err(|e| {
             CoreError::new(
                 "store",
@@ -268,12 +315,16 @@ impl AppState {
         // Finished commands go to command recall (F-EX-02).
         let recall = crate::services::recall::RecallService::new(store.clone(), clock.clone());
         let mark_recall = recall.clone();
+        let reader_bus = bus.clone();
         let cwd_store = store.clone();
         // An agent exited and its pane went back to the shell: save the
         // session for the workspace's "Saved sessions" (F-CD-03 AC3).
         let handback_store = store.clone();
         let handback_bus = bus.clone();
         let handback_status = status.clone();
+        let handback_tasks: Arc<std::sync::OnceLock<Arc<crate::services::tasks::TasksService>>> =
+            Arc::default();
+        let tasks_for_handback = handback_tasks.clone();
         // Agent output drives the status heuristics (F-EN-05); the screen is
         // read only when a waiting-pattern check is due.
         let activity_status = status.clone();
@@ -327,6 +378,15 @@ impl AppState {
                 }
                 pty_bus.publish(BusEvent::new(Topic::Pty, "pty:state", state));
             }))
+            .with_reader_failure_sink(Arc::new(move |pane, restarts, failed| {
+                // A terminal's reader recovered from a panic, or gave up and
+                // passes its output through raw (§5.2).
+                let name = format!("terminal reader/{pane}");
+                tandem_core::supervisor::watchdog().record(&name, restarts, "panicked", failed);
+                if failed {
+                    tandem_core::supervisor::report_failed(&reader_bus, &name, restarts, "panicked".into());
+                }
+            }))
             .with_mark_sink(Arc::new(move |pane, mark| {
                 if let tandem_pty::Mark::Ran(ran) = mark {
                     let (recall, pane, ran) = (mark_recall.clone(), pane.to_string(), ran.clone());
@@ -345,6 +405,9 @@ impl AppState {
             }))
             .with_handback_sink(Arc::new(move |pane, code| {
                 handback_status.unwatch(pane);
+                if let Some(tasks) = tasks_for_handback.get() {
+                    tasks.end_session(&format!("pn:{pane}"));
+                }
                 let (store, bus) = (handback_store.clone(), handback_bus.clone());
                 let pane = tandem_core::ids::PaneId::from_db(pane.to_string());
                 tracing::info!(code = "pty.handback", exit = code, "agent handed the pane back");
@@ -368,6 +431,20 @@ impl AppState {
             engines,
             status,
         );
+        let remote = crate::services::remote::RemoteService::new(
+            store.clone(),
+            bus.clone(),
+            &data,
+            crate::services::remote::bin_dir(None),
+            terminals.pty.clone(),
+            terminals.status.clone(),
+        );
+        terminals.set_remote(remote.clone());
+        let wsl = Arc::new(crate::services::wsl::WslService::new(
+            crate::services::wsl::system(),
+        ));
+        terminals.set_wsl(wsl.clone());
+        remote.set_engines(terminals.engines.clone());
         let approvals = crate::services::approvals::ApprovalService::new(
             store.clone(),
             bus.clone(),
@@ -390,12 +467,16 @@ impl AppState {
         );
         let telemetry = TelemetryService::new(&data, net.clone());
         let models = Arc::new(crate::services::models::RuntimeModels::default());
+        let gateway = crate::services::gateway::GatewayService::new(store.clone(), data.run());
+        gateway.bind_bus(bus.clone());
         let launcher = Arc::new(crate::services::threads::AppLauncher::new(
             terminals.clone(),
             config.clone(),
             models.clone(),
             crate::services::threads::AppLauncher::adapters(&terminals),
             data.mcp_configs(),
+            gateway.clone(),
+            store.clone(),
         ));
         let threads = crate::services::threads::ThreadService::new(
             store.clone(),
@@ -404,7 +485,7 @@ impl AppState {
             approvals.broker.clone(),
             launcher.clone(),
         );
-        launcher.bind(&threads);
+        gateway.bind_threads(&threads);
         // The Team org's policy: engines at every launch, access and audit
         // at every thread session (F-BL-06, F-TL-10).
         let policy_source = entitlements.clone();
@@ -418,6 +499,30 @@ impl AppState {
             clock.clone(),
         );
         launcher.set_guard(audit.clone());
+        threads.set_remote(remote.clone());
+        // Plugins (M12): credentials from the keychain, approvals in threads,
+        // held drafts, the Team allowlist.
+        let plugins = crate::services::plugins::PluginService::new(
+            store.clone(),
+            bus.clone(),
+            keychain.clone(),
+            opener.clone(),
+            notifications.clone(),
+            gateway.clone(),
+            entitlements.clone(),
+            config.clone(),
+            audit.clone(),
+        );
+        {
+            let weak: std::sync::Weak<dyn crate::services::plugins::ThreadAsk> =
+                Arc::downgrade(&threads) as _;
+            plugins.bind_threads(weak);
+        }
+        gateway.configure_plugins(
+            plugins.credentials().clone(),
+            net.clone(),
+            crate::services::plugins::Hooks(Arc::downgrade(&plugins)),
+        );
         // Thread titles: AI only with the Privacy opt-in (D-118).
         let titles_store = store.clone();
         threads.configure(
@@ -440,6 +545,104 @@ impl AppState {
         let plan = entitlements.clone();
         threads.set_plan_limits(Arc::new(move || plan.limits()));
         threads.sweep_trash();
+        let limit_ent = entitlements.clone();
+        let teammates = crate::services::teammates::TeammatesService::new(
+            store.clone(),
+            bus.clone(),
+            data.clone(),
+            Arc::new(crate::services::teammates::AppEngineFacts(
+                terminals.clone(),
+            )),
+            Arc::new(move || limit_ent.limits().teammates),
+        );
+        {
+            let weak = Arc::downgrade(&teammates);
+            threads.set_chats_sink(Arc::new(move || {
+                if let Some(t) = weak.upgrade() {
+                    t.publish_soon();
+                }
+            }));
+        }
+        launcher.bind_teammates(&teammates);
+        let tasks = crate::services::tasks::TasksService::new(
+            &data,
+            store.clone(),
+            crate::services::tasks::tasks_bin(),
+        );
+        launcher.bind_tasks(&tasks);
+        let _ = handback_tasks.set(tasks.clone());
+        let routines = crate::services::routines::RoutinesService::new(
+            store.clone(),
+            bus.clone(),
+            clock.clone(),
+            tandem_store::repo::routines::Runner::Gui,
+        );
+        routines.set_host(Arc::new(crate::services::routine_host::AppRoutineHost {
+            store: store.clone(),
+            teammates: teammates.clone(),
+            terminals: terminals.clone(),
+            auth: auth.clone(),
+            entitlements: entitlements.clone(),
+            threads: threads.clone(),
+            notifications: notifications.clone(),
+            gateway: gateway.clone(),
+        }));
+        terminals.bind_tasks(&tasks);
+        let task_exec = crate::services::tasks_exec::TaskExecService::new(
+            store.clone(),
+            bus.clone(),
+            clock.clone(),
+            tasks.tracker.clone(),
+        );
+        task_exec.set_host(Arc::new(crate::services::task_host::AppExecHost {
+            store: store.clone(),
+            data: data.clone(),
+            auth: auth.clone(),
+            entitlements: entitlements.clone(),
+            terminals: terminals.clone(),
+            teammates: teammates.clone(),
+            threads: threads.clone(),
+            notifications: notifications.clone(),
+            gateway: gateway.clone(),
+        }));
+        // Teammate mail (F-AG-12) lands in teammate chats.
+        let mail = crate::services::mail::MailService::new(
+            store.clone(),
+            bus.clone(),
+            teammates.clone(),
+            Arc::new(crate::services::mail::AppMailHost {
+                store: store.clone(),
+                threads: threads.clone(),
+                teammates: teammates.clone(),
+                gateway: gateway.clone(),
+            }),
+        );
+        // The gateway's teammate built-ins answer for the lease's teammate.
+        let tools: Arc<dyn crate::services::gateway::BuiltinService> =
+            Arc::new(crate::services::teammate_tools::TeammateTools {
+                teammates: teammates.clone(),
+                mail: mail.clone(),
+                routines: routines.clone(),
+            });
+        gateway.bind_builtins(Arc::downgrade(&tools));
+        // Learn after a turn (F-AG-08): off the turn's own path.
+        let learn = crate::services::learn::LearnService::new(
+            store.clone(),
+            bus.clone(),
+            teammates.clone(),
+            Arc::new(crate::services::learn::AppLearnRunner {
+                terminals: terminals.clone(),
+            }),
+        );
+        {
+            let learn = learn.clone();
+            threads.set_turn_sink(Arc::new(move |chat, turn, reason| {
+                let learn = learn.clone();
+                tauri::async_runtime::spawn(
+                    async move { learn.after_turn(chat, turn, reason).await },
+                );
+            }));
+        }
         // Threads are Dashboard items too (F-DB-01, D-6).
         let status = terminals.status.clone();
         threads.set_status_sink(Arc::new(move |th| {
@@ -517,11 +720,14 @@ impl AppState {
         let files = crate::services::files::FilesService::new(store.clone());
         // The profile's prompts open editable in the Files editor (F-EX-05).
         files.allow_editing(data.prompts());
+        files.set_remote(remote.clone());
         let git_panel = crate::services::git_panel::GitPanelService::new(files.clone());
         let auto = Arc::new(crate::services::auto::AutoService::new(
             bus.clone(),
             crate::services::auto::AutoTiming::default(),
         ));
+        let dictate =
+            crate::services::dictate::DictateService::new(store.clone(), data.clone(), e2e);
         Self {
             data,
             store,
@@ -552,13 +758,25 @@ impl AppState {
             usage: Arc::default(),
             threads,
             models,
+            gateway,
+            tasks,
+            routines,
+            task_exec,
+            plugins,
+            teammates,
+            teammate_tools: tools,
+            learn,
+            mail,
             files,
             git_panel,
             checkpoints,
             recall,
             ports,
             bestof_checks: Default::default(),
+            remote,
+            wsl,
             browser: std::sync::OnceLock::new(),
+            dictate,
             e2e,
         }
     }
@@ -608,6 +826,37 @@ impl AppState {
                 );
             })
             .await;
+        }
+    }
+
+    /// A subject's plugin grants changed: its next session picks them up.
+    pub async fn after_grants_changed(&self, subject: &tandem_store::repo::plugins::GrantSubject) {
+        use tandem_store::repo::plugins::GrantSubject;
+        match subject {
+            GrantSubject::Thread { thread_id } => {
+                self.threads
+                    .refresh_session(&tandem_core::ids::ThreadId::from_db(thread_id.clone()))
+                    .await;
+            }
+            GrantSubject::Teammate { teammate_id } => {
+                self.refresh_teammate_sessions(&tandem_core::ids::TeammateId::from_db(
+                    teammate_id.clone(),
+                ))
+                .await;
+            }
+            _ => {}
+        }
+    }
+
+    /// A teammate's settings changed: its chats' next turns start fresh
+    /// sessions with the new lease and briefing.
+    pub async fn refresh_teammate_sessions(&self, teammate: &tandem_core::ids::TeammateId) {
+        if let Ok(chats) =
+            tandem_store::repo::threads::teammate_chats(&self.store, teammate, true).await
+        {
+            for c in chats {
+                self.threads.refresh_session(&c.id).await;
+            }
         }
     }
 

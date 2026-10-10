@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-verify-start"
+description = "Enables the dictate_verify_start command without any pre-configured scope."
+commands.allow = ["dictate_verify_start"]
+
+[[permission]]
+identifier = "deny-dictate-verify-start"
+description = "Denies the dictate_verify_start command without any pre-configured scope."
+commands.deny = ["dictate_verify_start"]

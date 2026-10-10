@@ -59,6 +59,11 @@ export function PanePicker({ workspaceName }: { workspaceName: string }) {
   const [limited, setLimited] = useState(false);
   const [checking, setChecking] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  // A remote or WSL workspace's + menu lists its own engines (F-RM-01, F-RM-02).
+  const remoteHost = useWorkspaces((s) => {
+    const ws = picker ? s.list.find((w) => w.tabs.some((tab) => tab.id === picker.tabId)) : undefined;
+    return ws && (ws.kind === "ssh" || ws.kind === "wsl") ? ws.hostId : null;
+  });
 
   useEffect(() => {
     if (!picker) return;
@@ -108,7 +113,14 @@ export function PanePicker({ workspaceName }: { workspaceName: string }) {
           <PaneLimitCard onManage={closePicker} />
         ) : (
           picker && (
-            <LaunchGrid tabId={picker.tabId} busy={busy ?? (checking ? "checking" : null)} onPick={(id) => void pick(id)} autoFocus browser />
+            <LaunchGrid
+              tabId={picker.tabId}
+              busy={busy ?? (checking ? "checking" : null)}
+              onPick={(id) => void pick(id)}
+              autoFocus
+              browser
+              hostId={remoteHost}
+            />
           )
         )}
       </div>

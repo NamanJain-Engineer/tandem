@@ -10,7 +10,9 @@
     "./shortcuts.json": "./shortcuts.json",
     "./team": "./src/team.ts",
     "./hosted-features.json": "./hosted-features.json",
-    "./subprocessors.json": "./subprocessors.json"
+    "./subprocessors.json": "./subprocessors.json",
+    "./changelog": "./src/changelog.ts",
+    "./settings.json": "./settings.json"
   },
   "scripts": {
     "test": "vitest run",
@@ -18,6 +20,6 @@
   },
   "devDependencies": {
     "typescript": "~5.8.3",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.11"
   }
 }

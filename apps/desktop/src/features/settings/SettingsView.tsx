@@ -4,6 +4,7 @@ import { Callout, Input, PageHeader, SettingsGroup, SettingsRow, cx } from "@tan
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useSettings } from "../../stores/settings";
+import { useSession } from "../../stores/session";
 import { useUi } from "../../stores/ui";
 import { useBoot } from "../shell/useBoot";
 import { matchPage, matchRow, settingsPages } from "./pages";
@@ -12,7 +13,8 @@ import { matchPage, matchRow, settingsPages } from "./pages";
  * narrows pages and highlights rows, Esc returns to the previous mode. */
 export function SettingsView() {
   const platform = useBoot((s) => s.boot?.platform ?? "linux");
-  const pages = useMemo(() => settingsPages(platform), [platform]);
+  const routines = useSession((s) => !!s.entitlement?.limits.routines);
+  const pages = useMemo(() => settingsPages(platform, routines), [platform, routines]);
   const closeSettings = useUi((s) => s.closeSettings);
   const requested = useUi((s) => s.settingsPage);
   const lastPage = useSettings((s) => s.values.settings_last_page as string | undefined);
@@ -120,6 +122,7 @@ export function SettingsView() {
           >
             <PageHeader title={current.label} subtitle={current.subtitle} />
             {current.callout && <Callout>{current.callout}</Callout>}
+            {current.header}
             {current.rows.length > 0 && (
               <SettingsGroup>
                 {current.rows.map((row) => (

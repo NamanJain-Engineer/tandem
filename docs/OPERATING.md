@@ -52,10 +52,14 @@ hand-edited).
 ## 3. Setting up a machine (Ubuntu 24.04 / Debian 12, root)
 
 ```bash
-bash scripts/bootstrap-linux.sh                  # WebKitGTK, webkit2gtk-driver, xvfb, dbus, openbox, xclip, tauri-driver, …
+bash scripts/bootstrap-linux.sh                  # WebKitGTK, webkit2gtk-driver, xvfb, dbus, openbox, xclip, tauri-driver,
+                                                 # openssh-client (ssh, ssh-keygen, ssh-keyscan) and musl-tools, …
 apt-get install -y zsh fish                      # the shell-integration E2E specs need them
+rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl  # tandem-host (M14)
+pip install ziglang==0.13.0 && cargo install cargo-zigbuild --locked     # release-local.sh: the aarch64 helper
 cargo install cargo-audit --locked
-cargo install cargo-about --locked --features cli # release-local.sh: notices (and cargo-cyclonedx for SBOMs)
+cargo install cargo-about --locked --features cli # release-local.sh: notices
+cargo install cargo-cyclonedx --locked           # release-local.sh: SBOMs
 pnpm install
 pnpm keys:dev                                    # local Ed25519 dev keys in .dev-keys/ (git-ignored)
 sh scripts/agent/with-infra.sh true              # proves Docker + Postgres/Redis/Mailpit/stripe-mock come up
@@ -124,18 +128,32 @@ Checklists that bite if skipped:
 sh scripts/agent/with-infra.sh bash scripts/gate.sh     # the gate (G): lint, all tests, desktop build, clippy, fmt, protocol drift (~20 min)
 pnpm --filter desktop exec vitest run src/features/thread   # one area's TS tests
 cargo test -p tandem-desktop --lib f_th_16                  # Rust tests by name
-pnpm gen:protocol                                           # regenerate TS types + shortcuts.json
+pnpm gen:protocol                                           # regenerate TS types + shortcuts.json + settings.json
+pnpm gen:docs                                               # just the docs' generated sources (shortcuts, settings)
 
 # Desktop E2E (real Tauri binary via tauri-driver; builds first, ~10 min for all 60 files)
 sh scripts/agent/with-infra.sh dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e
 # one or a few specs: ONE --spec with a glob (the runner keeps only the first --spec)
 ... pnpm --filter desktop e2e -- --spec 'e2e/specs/m7-{8,10}-*.e2e.ts'
 TANDEM_E2E_SKIP_BUILD=1 ...                                 # reuse the last build after test-only edits
+# "sign-up failed: 500" in many specs after a merge: the local database lacks the
+# new API migrations (relation "…" does not exist in the API's log). Run
+pnpm db:migrate && pnpm db:seed                             # inside with-infra, then E2E again
+# Plain xvfb-run (no session bus, small screen) fails F-SH-01.1, the TUI goldens
+# and ls's column order: always use the dbus-run-session line above.
+
+# Remote (M14): the sshd fixture, the bundled tandem-host, the SSH integration test
+bash scripts/gen-ssh-fixture.sh && docker compose -f infra/docker-compose.yml --profile remote up -d --wait sshd
+sh scripts/agent/build-sshd-image.sh                        # agent containers (HTTPS proxy only): build the sshd image first
+sh scripts/build-tandem-host.sh                             # musl binary + manifest into src-tauri/resources/tandem-host
+cargo test -p tandem-host --features e2e-ssh -- --include-ignored f_rm_01
 
 pnpm --filter desktop perf -- --suite threads               # perf suites (threads, terminals, startup); TANDEM_PERF_BUILD=debug
 pnpm --filter desktop build:demo                            # the browser demo → apps/web/public/demo/app/
 pnpm --filter web build:site                                # the public site (demo included) → apps/web/out
-TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run     # Linux .deb + AppImage → dist/
+TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run     # Linux .deb + AppImage → dist/ (builds tandem-host
+                                                            # for Linux x86_64 and aarch64 first; needs cargo-zigbuild)
+sh scripts/check-host-bundle.sh dist/<name>.deb             # the bundle carries tandem-host (release-local runs it)
 ```
 
 E2E lessons (each cost a debugging round):
@@ -157,6 +175,19 @@ E2E lessons (each cost a debugging round):
 - A test that hard-codes a date breaks the next day: pin the clock
   (`vi.useFakeTimers({ toFake: ["Date"] })`).
 - When an E2E fails, take a screenshot (`browser.saveScreenshot`) before guessing.
+- WDIO reads a test's timeout before its body runs, so `this.timeout()` inside an
+  `it` or hook does nothing past `mochaOpts.timeout` (60 s): set it on the suite,
+  `describe("…", function () { this.timeout(300_000); … })`.
+- Sign-up or `/__test/*` answering 500 or "No user owner@tandem.test" in many
+  unrelated specs means the dev database is behind: `cd apps/api && pnpm db:migrate
+  && pnpm db:seed` (with the infra up) after merging a branch that adds migrations.
+- Only one E2E run at a time: a killed run's `run.ts` can outlive `pkill` and
+  share tauri-driver's :4444, so specs drive the other run's app. Check
+  `pgrep -af "e2e/run.ts|tauri-driver|WebKitWebDriver"` before starting.
+- Dictate specs download models from `scripts/serve-models.ts` (:8792, the real
+  `~/.cache/tandem-models`; run `bash scripts/fetch-models.sh base.en parakeet`
+  first). The runner points `HOME` at the test's home, so anything that needs the
+  real home must capture it before then.
 
 ## 6. Releasing the desktop app (Linux, local)
 
@@ -166,7 +197,9 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
 1. Full E2E regression green; gate green.
 2. Bump the version in `apps/desktop/src-tauri/tauri.conf.json`,
    `apps/desktop/package.json` and the root `Cargo.toml` (Cargo.lock follows).
-   Add a `## x.y.z` section to `CHANGELOG.md`: only what the build really does,
+   Add a `## x.y.z` section to `CHANGELOG.md` in its format (a summary, then `### Added` /
+   `Changed` / `Fixed` / `Security`, each bullet tagged `[lin]`, `[mac]`, `[win]` or `[all]`;
+   `pnpm exec tsx scripts/check-changelog.ts` checks it): only what the build really does,
    and plan limits stated (for example, the six-thread grid is Pro-only).
 3. `TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run` (needs ~5 GB free;
    `TANDEM_HOSTED=0` = no hosted services, the Free plan runs locally, nothing is
@@ -177,7 +210,9 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    display (see the script's header).
 5. Site: copy `dist/Vibezeo_x.y.z_amd64-unsigned.deb` to
    `apps/web/public/downloads/Vibezeo_x.y.z_amd64.deb`, remove the old one,
-   regenerate `SHA256SUMS` (`sha256sum Vibezeo_x.y.z_amd64.deb > SHA256SUMS`), and
+   regenerate the checksums (`sha256sum Vibezeo_x.y.z_amd64.deb | tee SHA256SUMS > SHA256SUMS.txt`;
+   the site links the `.txt`, which downloads under its own name: an extension-less file gets a
+   trailing-slash redirect), and
    update `apps/web/lib/release.ts` (version, file names), `apps/web/lib/progress.ts`
    (milestone entries and counts taken from the gate output and the spec files) and
    the home page's feature and roadmap lists. The site tests check the file exists.
@@ -200,9 +235,9 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
 - Check a site change before deploying: `pnpm --filter web exec vitest run`,
   `pnpm --filter web build:site`, the home page's demo in a real browser
   (`PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium pnpm --filter web test:site`,
-  against `apps/web/out`), Lighthouse on `/` (90 or more for performance and
-  accessibility; measure behind a compressing server such as `npx serve out`,
-  since Vercel compresses and `http.server` doesn't), then walk the demo:
+  against `apps/web/out`), Lighthouse CI on `/` and `/pricing/`
+  (`CHROME_PATH=/opt/pw-browsers/chromium pnpm --filter web lhci`: 90 or more for
+  performance and accessibility, three runs each, served compressed), then walk the demo:
   `(cd apps/web/public && python3 -m http.server 4321 &)` and
   `node scripts/agent/demo-walkthrough.mjs /tmp/demo-shots` (screenshots plus any
   console errors). A clean-clone build with Vercel's exact install command is the
@@ -212,11 +247,17 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
   the owner merges on GitHub). Vercel builds in a few minutes.
 - After deploying, verify on the live site:
   ```bash
-  curl -sI https://vibezeo.com/ | grep -iE "^(HTTP|content-security-policy)"
-  curl -s https://vibezeo.com/ | grep -o "Released · [0-9.]*"
-  curl -sI https://vibezeo.com/demo/app/ | head -1
-  curl -sI https://vibezeo.com/downloads/Vibezeo_x.y.z_amd64.deb | head -1
-  curl -s https://vibezeo.com/downloads/SHA256SUMS
+  # Status codes with -w: through the agent proxy, `curl -sI | head -1` prints the
+  # proxy's "200 Connection Established" instead.
+  for p in / /demo/app/ /docs/ /downloads/Vibezeo_x.y.z_amd64.deb /downloads/SHA256SUMS.txt \
+    /llms.txt /llms-full.txt /openapi.json /api/v1/site-info/; do
+    echo "$p $(curl -s -o /dev/null -w '%{http_code}' https://vibezeo.com$p)"; done
+  # /api/v1/site-info answers 308 to its trailing-slash form, which is the JSON (D-135).
+  curl -sL https://vibezeo.com/api/v1/site-info | grep -o '"version": "[0-9.]*"'
+  curl -sI https://vibezeo.com/ | grep -iE "^(content-security-policy|x-frame-options)"
+  # React splits the text with <!-- -->: strip it before matching.
+  curl -s https://vibezeo.com/ | sed 's/<!-- -->//g' | grep -o "Released · [0-9.]*"
+  curl -s https://vibezeo.com/downloads/SHA256SUMS.txt
   ```
   and the deployment's status on the `main` commit (GitHub commit status from
   Vercel, or the Vercel dashboard).

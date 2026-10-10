@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-widget-set-position"
+description = "Enables the dictate_widget_set_position command without any pre-configured scope."
+commands.allow = ["dictate_widget_set_position"]
+
+[[permission]]
+identifier = "deny-dictate-widget-set-position"
+description = "Denies the dictate_widget_set_position command without any pre-configured scope."
+commands.deny = ["dictate_widget_set_position"]

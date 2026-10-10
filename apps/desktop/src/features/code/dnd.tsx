@@ -44,7 +44,10 @@ export function outcomeLabel(target: DropTarget | null): string | null {
 export async function moveToNewTab(tabId: string, paneId: string): Promise<void> {
   const pane = useLayout.getState().tabs[tabId]?.panes[paneId];
   if (pane)
-    await applyDrop({ kind: "pane", paneId, tabId, title: "" }, { kind: "new_tab", workspaceId: pane.workspaceId });
+    await applyDrop(
+      { kind: "pane", paneId, tabId, title: "" },
+      { kind: "new_tab", workspaceId: pane.workspaceId },
+    );
 }
 
 export async function applyDrop(drag: PaneDrag, target: DropTarget): Promise<void> {

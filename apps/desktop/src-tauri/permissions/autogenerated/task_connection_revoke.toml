@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-task-connection-revoke"
+description = "Enables the task_connection_revoke command without any pre-configured scope."
+commands.allow = ["task_connection_revoke"]
+
+[[permission]]
+identifier = "deny-task-connection-revoke"
+description = "Denies the task_connection_revoke command without any pre-configured scope."
+commands.deny = ["task_connection_revoke"]

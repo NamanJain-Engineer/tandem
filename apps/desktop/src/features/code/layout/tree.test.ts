@@ -217,7 +217,11 @@ describe("layout tree (F-CD-02)", () => {
     const t = autoGrid(["a", "b", "c", "d", "e"], box, GUTTER);
     // Panels share what the dividers leave (react-resizable-panels).
     const widths = (n: LayoutNode, w: number): number[] =>
-      n.type === "leaf" ? [w] : n.dir === "row" ? [...widths(n.a, n.ratio * (w - GUTTER)), ...widths(n.b, (1 - n.ratio) * (w - GUTTER))] : [w];
+      n.type === "leaf"
+        ? [w]
+        : n.dir === "row"
+          ? [...widths(n.a, n.ratio * (w - GUTTER)), ...widths(n.b, (1 - n.ratio) * (w - GUTTER))]
+          : [w];
     if (!t || t.type !== "split" || t.dir !== "col") throw new Error("expected rows");
     const top = widths(t.a, box.w);
     const bottom = widths(t.b, box.w);

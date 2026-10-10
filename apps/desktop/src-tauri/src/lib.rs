@@ -4,9 +4,12 @@
 
 pub mod browser;
 pub mod commands;
+pub mod headless;
 pub mod services;
 pub mod state;
+mod tray;
 
+use tandem_core::supervisor;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_window_state::StateFlags;
 
@@ -21,6 +24,7 @@ macro_rules! app_commands {
             commands::app::app_ready,
             commands::app::app_log,
             commands::app::app_copy_diagnostics,
+            commands::app::app_diagnostics,
             commands::app::app_open_logs_folder,
             commands::app::app_open_external,
             commands::app::app_quit,
@@ -30,6 +34,68 @@ macro_rules! app_commands {
             commands::window::window_toggle_maximize,
             commands::window::window_minimize,
             commands::window::window_close,
+            commands::routines::routines_list,
+            commands::routines::routine_get,
+            commands::routines::routine_preview_schedule,
+            commands::routines::routine_save,
+            commands::routines::routine_delete,
+            commands::routines::routine_pause,
+            commands::routines::routine_run_now,
+            commands::routines::routine_runs,
+            commands::routines::routines_background_set,
+            commands::routines::routines_background_status,
+            commands::tasks::tasks_meta,
+            commands::tasks::tasks_list,
+            commands::tasks::task_get,
+            commands::tasks::task_save,
+            commands::tasks::task_comment,
+            commands::tasks::task_archive,
+            commands::tasks::task_restore,
+            commands::tasks::task_connections_list,
+            commands::tasks::task_connection_revoke,
+            commands::task_exec::task_execute,
+            commands::task_exec::task_attempts_list,
+            commands::task_exec::task_attempt_stop,
+            commands::task_exec::task_attempt_resume,
+            commands::task_exec::task_attempt_retry,
+            commands::teammates::teammate_list,
+            commands::teammates::teammate_get,
+            commands::teammates::teammate_create,
+            commands::teammates::teammate_update,
+            commands::teammates::teammate_delete,
+            commands::teammates::teammate_duplicate,
+            commands::teammates::teammate_reorder,
+            commands::teammates::memory_get,
+            commands::teammates::memory_write,
+            commands::teammates::memory_undo,
+            commands::teammates::skills_list,
+            commands::teammates::skill_get,
+            commands::teammates::skill_save,
+            commands::teammates::skill_remove,
+            commands::teammates::skills_library,
+            commands::teammates::skill_add_from_library,
+            commands::teammates::teammate_suggestions,
+            commands::threads::thread_reorder,
+            commands::teammates::teammate_draft_with_ai,
+            commands::teammates::teammate_templates,
+            commands::teammates::memory_suggestions_resolve,
+            commands::teammates::mail_list,
+            commands::teammates::mail_get,
+            commands::teammates::mail_send,
+            commands::teammates::mail_retry,
+            commands::plugins::plugins_catalog,
+            commands::plugins::grants_list,
+            commands::plugins::grants_set,
+            commands::plugins::plugin_connect_oauth,
+            commands::plugins::plugin_connect_cancel,
+            commands::plugins::plugin_connect_api_key,
+            commands::plugins::plugin_connect_local_port,
+            commands::plugins::plugin_disconnect,
+            commands::plugins::plugin_detail,
+            commands::plugins::plugin_set_option,
+            commands::plugins::held_drafts_list,
+            commands::plugins::held_draft_run,
+            commands::plugins::held_drafts_discard,
             commands::shell::sidebar_get,
             commands::shell::sidebar_save,
             commands::terminal::pane_rename,
@@ -69,6 +135,16 @@ macro_rules! app_commands {
             commands::account::telemetry_capture,
             commands::workspaces::workspace_pick_folder,
             commands::workspaces::workspace_add,
+            commands::remote::ssh_hosts_list,
+            commands::remote::ssh_host_add,
+            commands::remote::ssh_host_remove,
+            commands::remote::ssh_connect,
+            commands::remote::ssh_hostkey_decide,
+            commands::remote::ssh_askpass_reply,
+            commands::remote::ssh_disconnect,
+            commands::remote::ssh_list_dir,
+            commands::remote::ssh_host_reset_key,
+            commands::remote::wsl_distros,
             commands::workspaces::workspace_list,
             commands::workspaces::workspace_rename,
             commands::workspaces::workspace_remove,
@@ -174,6 +250,9 @@ macro_rules! app_commands {
             commands::scratchpad::scratchpad_delete,
             commands::usage::usage_report,
             commands::usage::usage_share_save,
+            commands::data_controls::data_export,
+            commands::data_controls::data_delete_local,
+            commands::find_work::find_work,
             commands::terminal::term_last_output,
             commands::terminal::term_stage_clipboard_image,
             commands::terminal::pty_type_prompt,
@@ -233,6 +312,48 @@ macro_rules! app_commands {
             commands::threads::thread_changes,
             commands::threads::thread_file_read,
             commands::engines::engines_report,
+            commands::dictate::dictate_status,
+            commands::dictate::dictate_set_binding,
+            commands::dictate::dictate_verify_start,
+            commands::dictate::dictate_verify_stop,
+            commands::dictate::dictate_start_take,
+            commands::dictate::dictate_stop_take,
+            commands::dictate::dictate_cancel_take,
+            commands::dictate::dictate_toggle,
+        commands::dictate::dictate_use_local,
+        commands::dictate::dictate_quick_action,
+            commands::dictate::dictate_composer_focus,
+            commands::dictate::dictate_devices,
+            commands::dictate::dictate_models,
+            commands::dictate::dictate_model_download,
+            commands::dictate::dictate_model_cancel,
+            commands::dictate::dictate_model_remove,
+            commands::dictate::dictate_model_select,
+            commands::dictate::dictate_models_remove_unused,
+            commands::dictate::dictate_history,
+            commands::dictate::dictate_take_delete,
+            commands::dictate::dictate_history_clear,
+            commands::dictate::dictate_history_export,
+            commands::dictate::dictate_take_correct,
+            commands::dictate::dictate_stats,
+            commands::dictate::dictate_save_file,
+            commands::dictate::dictate_pick_file,
+            commands::dictate::dictate_share_card_save,
+            commands::dictate::dictionary_list,
+            commands::dictate::dictionary_save,
+            commands::dictate::dictionary_delete,
+            commands::dictate::dictionary_restore,
+            commands::dictate::dictionary_deleted,
+            commands::dictate::dictionary_test,
+            commands::dictate::dictionary_import_preview,
+            commands::dictate::dictionary_import_commit,
+            commands::dictate::dictionary_export,
+            commands::dictate::dictionary_suggestions,
+            commands::dictate::dictionary_suggestion_resolve,
+            commands::dictate::dictate_permissions,
+            commands::dictate::dictate_open_permission_settings,
+            commands::dictate::dictate_relaunch,
+            commands::dictate::dictate_widget_set_position,
             $($extra),*
         ]
     };
@@ -250,6 +371,12 @@ pub fn route_link(app: &AppHandle, raw: &str) {
         );
         DeepLink::unrecognized()
     });
+    // The toggle drives Dictate where the user is: focusing Vibezeo would
+    // move the insertion target (F-DI-01 "Deep link").
+    if link.route == "dictate/toggle" {
+        state.dictate.toggle_from_link();
+        return;
+    }
     focus_main(app);
     if link.route == "auth/callback" {
         let (Some(code), Some(st)) = (link.params.get("code"), link.params.get("state")) else {
@@ -258,6 +385,18 @@ pub fn route_link(app: &AppHandle, raw: &str) {
         state.auth.handle_callback(Callback {
             code: code.clone(),
             state: st.clone(),
+        });
+        return;
+    }
+    if link.route == "plugin/callback" {
+        // To the attempt waiting for this `state`; a late or unknown one is
+        // ignored there (F-PL-03 AC4).
+        let query: String = url::form_urlencoded::Serializer::new(String::new())
+            .extend_pairs(link.params.iter())
+            .finish();
+        let plugins = state.plugins.clone();
+        tauri::async_runtime::spawn(async move {
+            plugins.deep_link_callback(&query).await;
         });
         return;
     }
@@ -453,22 +592,120 @@ fn spawn_background(state: &AppState) {
     // something to show on restore (§5.4).
     let terminals = state.terminals.clone();
     let snapshots = state.data.scrollback();
-    tauri::async_runtime::spawn(async move {
-        let mut tick = tokio::time::interval(services::terminal::snapshot_every());
-        tick.tick().await;
-        loop {
-            tick.tick().await;
-            let (t, dir) = (terminals.clone(), snapshots.clone());
-            let _ = tokio::task::spawn_blocking(move || t.snapshot_all(&dir)).await;
-        }
-    });
+    tauri::async_runtime::spawn(supervisor::supervise_task(
+        "scheduler/scrollback",
+        state.supervision(),
+        None,
+        move || {
+            let (terminals, snapshots) = (terminals.clone(), snapshots.clone());
+            async move {
+                let mut tick = tokio::time::interval(services::terminal::snapshot_every());
+                tick.tick().await;
+                loop {
+                    tick.tick().await;
+                    let (t, dir) = (terminals.clone(), snapshots.clone());
+                    // A panicking snapshot fails this job and restarts it.
+                    tokio::task::spawn_blocking(move || t.snapshot_all(&dir))
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+        },
+    ));
     let _ = telemetry;
+}
+
+/// Dictate (F-DI-*): events to the main window and the widget, the widget
+/// window itself, the tray, then the voice service (mic, hotkeys, model).
+fn setup_dictate(app: &tauri::App, state: &AppState) {
+    use services::dictate::To;
+    let emit_app = app.handle().clone();
+    state
+        .dictate
+        .set_emitter(std::sync::Arc::new(move |name, payload, to| {
+            let _ = emit_app.emit_to("main", name, payload.clone());
+            if to == To::Both {
+                let _ = emit_app.emit_to(services::widget::LABEL, name, payload);
+            }
+        }));
+    match services::widget::create(app.handle()) {
+        Ok(()) => {
+            state
+                .dictate
+                .set_widget(std::sync::Arc::new(services::widget::TauriWidget::new(
+                    app.handle().clone(),
+                    state.store.clone(),
+                )))
+        }
+        Err(err) => tracing::warn!(error = %err, "dictate: widget window not created"),
+    }
+    tray::install(app.handle());
+    // Cloud takes (F-DI-05): the plan check and the STT relay, with a token.
+    {
+        let (api, auth, ents) = (
+            state.api.clone(),
+            state.auth.clone(),
+            state.entitlements.clone(),
+        );
+        state.dictate.set_cloud(
+            std::sync::Arc::new(move || ents.view().plan),
+            std::sync::Arc::new(move |upload| {
+                let (api, auth) = (api.clone(), auth.clone());
+                Box::pin(async move {
+                    auth.with_token(|token| {
+                        let (api, upload) = (api.clone(), upload.clone());
+                        async move { api.stt_transcribe(&token, upload).await }
+                    })
+                    .await
+                })
+            }),
+        );
+    }
+    // Enhance and Polish (F-DI-10): the AI relay's rewrite, with a token.
+    {
+        let (api, auth) = (state.api.clone(), state.auth.clone());
+        state.dictate.set_rewriter(std::sync::Arc::new(
+            move |mode, text, instructions, terms| {
+                let (api, auth) = (api.clone(), auth.clone());
+                Box::pin(async move {
+                    auth.with_token(|token| {
+                        let (api, text, instructions, terms) = (
+                            api.clone(),
+                            text.clone(),
+                            instructions.clone(),
+                            terms.clone(),
+                        );
+                        async move {
+                            api.ai_rewrite(
+                                &token,
+                                mode.as_str(),
+                                &text,
+                                instructions.as_deref(),
+                                &terms,
+                            )
+                            .await
+                        }
+                    })
+                    .await
+                })
+            },
+        ));
+    }
+    let dictate = state.dictate.clone();
+    tauri::async_runtime::spawn(async move {
+        dictate.start().await;
+    });
 }
 
 /// Builds and runs the Tauri app. Startup follows ARCHITECTURE §1.3: data dir
 /// and logging first, then the store, then the hidden main window, which the
 /// UI shows on first paint via `app_ready`.
 pub fn run() {
+    // The OS launcher's headless pass (F-RT-03): no window at all.
+    if std::env::args().skip(1).any(|a| a == "--run-routines") {
+        std::process::exit(headless::main());
+    }
+    commands::app::mark_started();
     let state = match AppState::init() {
         Ok(state) => state,
         Err(err) => {
@@ -524,6 +761,17 @@ pub fn run() {
         commands::test::test_min_version_shift,
         commands::test::test_auth_refresh,
         commands::test::test_account_create,
+        commands::test::test_dictate_key,
+        commands::test::test_dictate_mic,
+        commands::test::test_dictate_platform,
+        commands::test::test_dictate_widget,
+        commands::test::test_plugin_connect,
+        commands::test::test_gateway_metrics,
+        commands::test::test_task_lane_delay,
+        commands::test::test_routines_tick,
+        commands::test::test_plugin_price,
+        commands::test::test_plugin_allowlist,
+        commands::test::test_unattended_run,
     ]);
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(app_commands![]);
@@ -571,11 +819,80 @@ pub fn run() {
                 ));
                 let _ = state.browser.set(service);
             }
-            services::events::forward(handle.clone(), &state.bus);
+            services::events::forward(handle.clone(), &state.bus, state.clock.clone());
+            setup_dictate(app, &state);
             ensure_on_screen(app);
             persist_window_state(app);
             spawn_background(&state);
             state.approvals.start();
+            // Routines: the scheduler (once it has the app lock), and the
+            // plan pausing or resuming them (F-RT-02, F-BL-04).
+            state.routines.start(state.data.run(), state.supervision());
+            // The tray, while background routines are on (F-SH-13).
+            {
+                let app = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    tray::sync(&app, commands::routines::background_on().await).await;
+                });
+            }
+            // Tasks refresh when anyone writes them (F-TK-03).
+            state.tasks.watch(state.bus.clone());
+            // Task runs: those the last run left are stopped; signing out
+            // or losing Pro stops the active ones (F-TK-04, UI-84).
+            {
+                let exec = state.task_exec.clone();
+                let (auth, ent) = (state.auth.clone(), state.entitlements.clone());
+                let mut app_events = state.bus.subscribe(tandem_core::bus::Topic::App);
+                let mut plan_events = state.bus.subscribe(tandem_core::bus::Topic::Entitlement);
+                tauri::async_runtime::spawn(async move {
+                    exec.settle().await;
+                    loop {
+                        use tokio::sync::broadcast::error::RecvError;
+                        let (app, plan) = tokio::select! {
+                            e = app_events.recv() => (Some(e), None),
+                            e = plan_events.recv() => (None, Some(e)),
+                        };
+                        if matches!(app, Some(Err(RecvError::Closed))) || matches!(plan, Some(Err(RecvError::Closed))) {
+                            break;
+                        }
+                        if let Some(Ok(e)) = &app {
+                            if e.name == "auth:changed" && !auth.is_signed_in() {
+                                exec.stop_all("you signed out").await;
+                            }
+                        }
+                        if plan.is_some() && !ent.limits().task_execution {
+                            exec.stop_all("plan changed").await;
+                        }
+                    }
+                });
+            }
+            {
+                let (routines, ent) = (state.routines.clone(), state.entitlements.clone());
+                let mut events = state.bus.subscribe(tandem_core::bus::Topic::Entitlement);
+                tauri::async_runtime::spawn(async move {
+                    routines.apply_plan(&ent.limits()).await;
+                    loop {
+                        use tokio::sync::broadcast::error::RecvError;
+                        match events.recv().await {
+                            Ok(_) | Err(RecvError::Lagged(_)) => {
+                                routines.apply_plan(&ent.limits()).await
+                            }
+                            Err(RecvError::Closed) => break,
+                        }
+                    }
+                });
+            }
+            // One gateway for every session, up from launch (F-PL-01).
+            {
+                let gateway = state.gateway.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = gateway.handle().await {
+                        tracing::warn!(code = "gateway.start_failed", error = %e.message, "the MCP gateway didn't start");
+                    }
+                });
+            }
+            // Mail queued before the app last quit goes out (F-AG-12).
+            state.mail.pump_soon();
             // Updates (F-SH-06): the signed feed, if this build has a key.
             if let Some(key) = services::updates::pubkey(state::BUNDLED_KEYS) {
                 let record = state
@@ -634,6 +951,21 @@ pub fn run() {
                 let login = state.terminals.login_env().await;
                 state.terminals.engines.detect(&login).await;
             });
+            // SSH hosts (F-RM-01): the bundled helper binaries and the
+            // askpass helper's loopback endpoint.
+            {
+                let state = handle.state::<AppState>();
+                state
+                    .remote
+                    .set_bin_dir(services::remote::bin_dir(handle.path().resource_dir().ok()));
+                let remote_state = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    match services::askpass::AskpassServer::start().await {
+                        Ok(server) => remote_state.state::<AppState>().remote.set_askpass(server),
+                        Err(err) => tracing::warn!(code = "remote.askpass_failed", error = %err, "SSH password prompts are off"),
+                    }
+                });
+            }
             // Threads on the Dashboard from the start (D-6).
             let threads_state = handle.clone();
             tauri::async_runtime::spawn(async move {
@@ -642,38 +974,55 @@ pub fn run() {
             // Remote config (model catalog, registry overrides) has a 10-min
             // TTL: a model added remotely shows up without an update (F-TH-08 AC1).
             let config_state = handle.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut tick = tokio::time::interval(services::config::CONFIG_TTL);
-                tick.tick().await;
-                loop {
-                    tick.tick().await;
-                    let state = config_state.state::<AppState>();
-                    let config = state.config.refresh().await;
-                    state.terminals.engines.apply_config(&config);
-                }
-            });
+            tauri::async_runtime::spawn(supervisor::supervise_task(
+                "scheduler/config",
+                state.supervision(),
+                None,
+                move || {
+                    let config_state = config_state.clone();
+                    async move {
+                        let mut tick = tokio::time::interval(services::config::CONFIG_TTL);
+                        tick.tick().await;
+                        loop {
+                            tick.tick().await;
+                            let state = config_state.state::<AppState>();
+                            let config = state.config.refresh().await;
+                            state.terminals.engines.apply_config(&config);
+                        }
+                    }
+                },
+            ));
             // Worktree sweep: at startup, then every 6 h (F-CD-15). It never
             // deletes anything; finished worktrees become one notification.
             let sweep_state = handle.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut tick = tokio::time::interval(services::lanes::SWEEP_EVERY);
-                loop {
-                    tick.tick().await;
-                    let state = sweep_state.state::<AppState>();
-                    if let Err(err) = services::lanes::sweep_and_notify(&state).await {
-                        tracing::info!(error = %err, "worktree sweep skipped");
+            tauri::async_runtime::spawn(supervisor::supervise_task(
+                "scheduler/worktree-sweep",
+                state.supervision(),
+                None,
+                move || {
+                    let sweep_state = sweep_state.clone();
+                    async move {
+                        let mut tick = tokio::time::interval(services::lanes::SWEEP_EVERY);
+                        loop {
+                            tick.tick().await;
+                            let state = sweep_state.state::<AppState>();
+                            if let Err(err) = services::lanes::sweep_and_notify(&state).await {
+                                tracing::info!(error = %err, "worktree sweep skipped");
+                            }
+                        }
                     }
-                }
-            });
+                },
+            ));
             // Detect again when the window comes back, at most once a minute.
             if let Some(window) = app.get_webview_window("main") {
                 let focus = handle.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::Focused(focused) = event {
-                        focus
-                            .state::<AppState>()
-                            .notifications
-                            .set_focused(*focused);
+                        let state = focus.state::<AppState>();
+                        state.notifications.set_focused(*focused);
+                        // A composer counts as the Dictate target only while
+                        // the main window has focus (F-DI-12).
+                        state.dictate.set_main_focused(*focused);
                     }
                     if let tauri::WindowEvent::Focused(true) = event {
                         let focus = focus.clone();
@@ -723,6 +1072,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 let state = handle.state::<AppState>();
                 state.terminals.shutdown(&state.data.scrollback());
+                state.remote.shutdown();
             }
         }),
         Err(err) => {
@@ -846,6 +1196,108 @@ mod harness_tests {
             commands.contains("#[cfg(debug_assertions)]\npub mod test;"),
             "the harness module is debug-only"
         );
+    }
+
+    /// §5.3: the app webview's CSP is `'self'` only, runs no remote or inline
+    /// script, and connects only to itself, the IPC bridge, loopback (the
+    /// gateway and local review) and the API with its WebSocket.
+    #[test]
+    fn nfr_5_3_csp_is_self_only_and_connects_to_the_listed_hosts() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("tauri.conf.json");
+        assert_eq!(conf["app"]["withGlobalTauri"], false);
+        let csp = &conf["app"]["security"]["csp"];
+        let dir = |k: &str| csp[k].as_str().unwrap_or_default().to_string();
+        assert_eq!(dir("default-src"), "'self'");
+        assert_eq!(
+            dir("script-src"),
+            "'self'",
+            "no remote, inline or eval script"
+        );
+        assert_eq!(dir("object-src"), "'none'");
+        assert_eq!(dir("base-uri"), "'self'");
+        assert_eq!(dir("frame-ancestors"), "'none'");
+        for k in ["img-src", "font-src", "style-src"] {
+            assert!(!dir(k).contains("http"), "{k} loads nothing remote");
+        }
+        let allowed = |src: &str| {
+            matches!(
+                src,
+                "'self'"
+                    | "ipc:"
+                    | "http://ipc.localhost"
+                    | "http://127.0.0.1:*"
+                    | "ws://127.0.0.1:*"
+                    | "http://localhost:*"
+                    | "http://api.tandem.local:8787"
+                    | "https://api.vibezeo.com"
+                    | "wss://api.vibezeo.com"
+            )
+        };
+        let connect = dir("connect-src");
+        assert!(!connect.is_empty());
+        for src in connect.split_whitespace() {
+            assert!(allowed(src), "connect-src {src} is not an allowed host");
+        }
+    }
+
+    /// §5.3 least privilege: each capability names its app window (the main
+    /// window, and the Dictate widget with only what it needs); none names a
+    /// webview, and the in-app browser's pages are plain wry webviews with no
+    /// IPC handler, so they can call no command (E2E-M9-3 probes `__TAURI__`).
+    #[test]
+    fn nfr_5_3_only_app_windows_have_commands_and_browser_pages_have_no_ipc() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities");
+        let mut files: Vec<_> = std::fs::read_dir(&dir)
+            .expect("capabilities dir")
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        files.sort();
+        assert_eq!(
+            files,
+            vec!["main.json".to_string(), "widget.json".to_string()]
+        );
+        for (file, window) in [("main.json", "main"), ("widget.json", "dictate-widget")] {
+            let cap: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(dir.join(file)).expect("read"))
+                    .expect("json");
+            assert_eq!(cap["windows"], serde_json::json!([window]), "{file}");
+            assert!(cap.get("webviews").is_none(), "{file} names a webview");
+        }
+        // The widget gets exactly this; anything more is a reviewed change.
+        // Reviewed (D-825): emit-to carries See plans to the main window,
+        // use-local is "Use local for this take" after a cloud failure
+        // (F-DI-05), and quick-action is Enhance and Polish (F-DI-10).
+        let widget: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/widget.json")).expect("widget.json");
+        assert_eq!(
+            widget["permissions"],
+            serde_json::json!([
+                "core:event:allow-listen",
+                "core:event:allow-unlisten",
+                "core:event:allow-emit-to",
+                "core:window:allow-start-dragging",
+                "allow-dictate-status",
+                "allow-dictate-cancel-take",
+                "allow-dictate-use-local",
+                "allow-dictate-quick-action",
+                "allow-dictate-widget-set-position",
+                "allow-app-log"
+            ])
+        );
+        let host = include_str!("browser/wry_host.rs");
+        for banned in [
+            "with_ipc_handler",
+            "WebviewBuilder",
+            "WebviewWindowBuilder",
+            "add_child",
+        ] {
+            assert!(
+                !host.contains(banned),
+                "browser pages must not use {banned}"
+            );
+        }
     }
 
     /// Every registered command has an `allow-<name>` permission (build.rs)

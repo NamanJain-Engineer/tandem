@@ -112,6 +112,14 @@ pub struct TerminalService {
         std::collections::HashMap<String, tokio::sync::mpsc::UnboundedSender<Vec<u8>>>,
     >,
     agent_panes: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// SSH hosts: panes of remote workspaces run there (F-RM-01).
+    remote: std::sync::OnceLock<Arc<crate::services::remote::RemoteService>>,
+    /// WSL distributions: panes of WSL workspaces run there (F-RM-02).
+    wsl: std::sync::OnceLock<Arc<crate::services::wsl::WslService>>,
+    /// Panes running in a WSL distro: drops are Linux paths there.
+    wsl_panes: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// The tasks server terminal agents get (F-TK-02).
+    tasks: std::sync::OnceLock<Arc<crate::services::tasks::TasksService>>,
 }
 
 /// Takes a checkpoint of an agent pane's folder (F-EX-01). The flag turns
@@ -201,6 +209,10 @@ impl TerminalService {
             prompt_hook: std::sync::OnceLock::new(),
             agent_inputs: Default::default(),
             agent_panes: Default::default(),
+            remote: std::sync::OnceLock::new(),
+            wsl: std::sync::OnceLock::new(),
+            wsl_panes: Default::default(),
+            tasks: std::sync::OnceLock::new(),
         })
     }
 
@@ -262,6 +274,71 @@ impl TerminalService {
         drop(inputs);
         tx.send(data.to_vec())
             .map_err(|_| IpcError::new(ErrorCode::NotFound, "This pane isn't running"))
+    }
+
+    pub fn set_wsl(&self, wsl: Arc<crate::services::wsl::WslService>) {
+        let _ = self.wsl.set(wsl);
+    }
+
+    pub fn wsl(&self) -> Option<&Arc<crate::services::wsl::WslService>> {
+        self.wsl.get()
+    }
+
+    pub fn store(&self) -> &Store {
+        &self.store
+    }
+
+    pub fn set_remote(&self, remote: Arc<crate::services::remote::RemoteService>) {
+        let _ = self.remote.set(remote);
+    }
+
+    pub fn remote(&self) -> Option<&Arc<crate::services::remote::RemoteService>> {
+        self.remote.get()
+    }
+
+    /// The tracker whose MCP server terminal agents get.
+    pub fn bind_tasks(&self, tasks: &Arc<crate::services::tasks::TasksService>) {
+        let _ = self.tasks.set(tasks.clone());
+    }
+
+    /// The pane's agent session ended or the pane closed: its task
+    /// connection is revoked.
+    pub fn end_tasks_session(&self, pane: &str) {
+        if let Some(tasks) = self.tasks.get() {
+            tasks.end_session(&format!("pn:{pane}"));
+        }
+    }
+
+    /// "Expose tasks to terminal agents" (F-TK-02): the tasks server goes in
+    /// (or out of) the engine's own config in the pane's provider home, and
+    /// the pane gets a fresh connection in its env.
+    async fn tasks_env(
+        &self,
+        engine: &tandem_engines::registry::EngineSpec,
+        home: Option<&Path>,
+        pane: &str,
+    ) -> Vec<(String, String)> {
+        let (Some(tasks), Some(home)) = (self.tasks.get(), home) else {
+            return Vec::new();
+        };
+        let on = tasks.expose_to_terminals().await;
+        let server = if on { tasks.terminal_server() } else { None };
+        if let Err(e) = self.engines.homes.set_stdio_server(
+            engine,
+            home,
+            crate::services::tasks::SERVER_NAME,
+            server.as_ref(),
+        ) {
+            tracing::warn!(code = "tasks.native_config_failed", error = %e, "couldn't update the engine's MCP config");
+            return Vec::new();
+        }
+        if server.is_none() {
+            return Vec::new();
+        }
+        match tasks.begin_session(&format!("pn:{pane}"), &engine.label, "me") {
+            Some(conn) => vec![(crate::services::tasks::CONNECTION_ENV.to_string(), conn)],
+            None => Vec::new(),
+        }
     }
 
     /// The shell's integration and the scripts' folder, unless the shell has
@@ -504,6 +581,23 @@ impl TerminalService {
             sessions::save_on_handback(&self.store, pane, None).await?;
         }
         let ws = workspaces::get(&self.store, &record.workspace_id).await?;
+        if ws.kind == "wsl" {
+            return self
+                .spawn_in_wsl(pane, &record, &ws, cols, rows, sink, mode)
+                .await;
+        }
+        if ws.kind == "ssh" {
+            if plan.is_some() {
+                return Err(IpcError::new(
+                    ErrorCode::Unavailable,
+                    "Agents on remote hosts start fresh: they can't resume a saved conversation",
+                )
+                .with_stage("resume"));
+            }
+            return self
+                .spawn_on_host(pane, &record, &ws, cols, rows, sink, mode)
+                .await;
+        }
         let root = PathBuf::from(&ws.root);
         if !root.is_dir() {
             return Err(IpcError::new(
@@ -522,6 +616,15 @@ impl TerminalService {
             (root.clone(), Some(FOLDER_NOT_FOUND))
         };
 
+        if record.kind != "agent" {
+            if let Some(distro) = self.plain_wsl_distro().await {
+                if let Some(linux) = tandem_core::wslpath::to_wsl_path(&cwd.to_string_lossy()) {
+                    return self
+                        .launch_wsl(pane, &distro, &linux, None, cols, rows, sink, mode)
+                        .await;
+                }
+            }
+        }
         let login = self.login_env().await;
         let configured = settings::get(&self.store, SettingKey::DefaultShell).await?;
         let shell = configured
@@ -608,7 +711,11 @@ impl TerminalService {
                     "The engine's path can't be launched safely",
                 )
             })?;
-            let env: Vec<(String, String)> = launch.spec.env.clone().into_iter().collect();
+            let mut env: Vec<(String, String)> = launch.spec.env.clone().into_iter().collect();
+            env.extend(
+                self.tasks_env(&engine, launch.home.as_deref(), pane.as_str())
+                    .await,
+            );
             (args, env, Some(engine), Some(launch))
         } else if let Some((kind, dir)) = &integration {
             let launch =
@@ -699,6 +806,295 @@ impl TerminalService {
             let _ = self.pty.notice(pane.as_str(), text);
         }
         tracing::info!(code = "pty.spawned", pid = info.pid, "terminal started");
+        Ok(info)
+    }
+
+    /// A pane of a WSL workspace (F-RM-02): `wsl.exe -d <distro> --cd
+    /// <folder>`, an agent first when it's an agent pane (the engine found
+    /// inside the distro). Only `WSLENV`'s variables cross into the distro.
+    #[allow(clippy::too_many_arguments)]
+    async fn spawn_in_wsl(
+        &self,
+        pane: &PaneId,
+        record: &PaneRecord,
+        ws: &tandem_store::repo::workspaces::Workspace,
+        cols: u16,
+        rows: u16,
+        sink: Option<Arc<dyn OutputSink>>,
+        mode: LaunchMode,
+    ) -> Result<PtyInfo, IpcError> {
+        if self.wsl.get().is_none() || crate::services::wsl::system().is_none() {
+            return Err(
+                IpcError::new(ErrorCode::Unavailable, "WSL folders open on Windows only")
+                    .with_stage("wsl"),
+            );
+        }
+        let distro = ws.wsl_distro.clone().ok_or_else(|| {
+            IpcError::new(ErrorCode::Invalid, "This WSL workspace has no distribution")
+        })?;
+        let host = tandem_core::ids::HostId::from_db(ws.host_id.clone());
+        let cwd = record.cwd.clone().unwrap_or_else(|| ws.root.clone());
+        let mut command = None;
+        if record.kind == "agent" {
+            let engine = record
+                .engine_id
+                .as_deref()
+                .and_then(|id| self.engines.get(id))
+                .ok_or_else(|| {
+                    IpcError::new(ErrorCode::NotFound, "This pane's engine isn't known")
+                })?;
+            self.engines.check_allowed(&engine)?;
+            let found = match self.remote.get() {
+                Some(r) => r.report(&host).await,
+                None => None,
+            }
+            .and_then(|r| r.get(&engine.id).map(|f| PathBuf::from(&f.path)))
+            .ok_or_else(|| {
+                IpcError::new(
+                    ErrorCode::EngineMissing,
+                    format!("{} isn't installed in {distro}.", engine.label),
+                )
+            })?;
+            let req = tandem_engines::launch::TerminalLaunchRequest {
+                engine: &engine,
+                program: found,
+                extra_args: self.engines.extra_args(&engine.id).await,
+                resume: None,
+                host: tandem_engines::launch::HostKind::Wsl,
+                home: None,
+                providers_root: PathBuf::new(),
+                status: None,
+            };
+            let launch = tandem_engines::launch::terminal_launch(&req).map_err(|e| {
+                IpcError::new(ErrorCode::Invalid, e.to_string()).with_stage("launch")
+            })?;
+            let _ = self.status.watch(
+                pane.as_str(),
+                &engine.waiting_patterns,
+                &engine.limit_patterns,
+                None,
+            );
+            command = Some(tandem_host::quote_argv(&launch.argv()));
+        }
+        self.launch_wsl(
+            pane,
+            &distro,
+            &cwd,
+            command.as_deref(),
+            cols,
+            rows,
+            sink,
+            mode,
+        )
+        .await
+    }
+
+    /// Settings › Remote "Use for plain terminals" (F-RM-02): the distro a
+    /// local workspace's plain terminals open in, on Windows.
+    async fn plain_wsl_distro(&self) -> Option<String> {
+        self.wsl.get()?;
+        crate::services::wsl::system()?;
+        let value = settings::get(&self.store, SettingKey::WslDefaultDistro)
+            .await
+            .ok()?;
+        plain_distro(&value)
+    }
+
+    /// `wsl.exe` in a pane: the distro, its folder and, for an agent, its
+    /// command. Only `WSLENV`'s variables cross into the distro.
+    #[allow(clippy::too_many_arguments)]
+    async fn launch_wsl(
+        &self,
+        pane: &PaneId,
+        distro: &str,
+        cwd: &str,
+        command: Option<&str>,
+        cols: u16,
+        rows: u16,
+        sink: Option<Arc<dyn OutputSink>>,
+        mode: LaunchMode,
+    ) -> Result<PtyInfo, IpcError> {
+        let scrollback = settings::get(&self.store, SettingKey::TermScrollback)
+            .await?
+            .as_u64()
+            .unwrap_or(10_000) as usize;
+        let (program, args) = crate::services::wsl::pane_command(distro, cwd, command);
+        let login = self.login_env().await;
+        let mut child_env = env::pane_env(&login, pane.as_str(), env!("CARGO_PKG_VERSION"));
+        child_env.insert("WSLENV".into(), tandem_core::wslpath::WSLENV.into());
+        if let Ok(mut d) = self.dialects.lock() {
+            d.insert(pane.to_string(), ShellDialect::Posix);
+        }
+        if let Ok(mut w) = self.wsl_panes.lock() {
+            w.insert(pane.to_string());
+        }
+        let spec = SpawnSpec {
+            pane_id: pane.to_string(),
+            program: PathBuf::from(program),
+            args,
+            cwd: std::env::var_os("USERPROFILE")
+                .map(PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir),
+            env: child_env,
+            cols,
+            rows,
+            scrollback_lines: scrollback,
+            mark_token: None,
+        };
+        self.log_spawn(&spec, None);
+        let info = self
+            .pty
+            .spawn(spec, sink)
+            .inspect_err(|_| self.status.unwatch(pane.as_str()))?;
+        if mode != LaunchMode::Normal {
+            restore::set_state(&self.store, pane, "live").await?;
+        }
+        Ok(info)
+    }
+
+    /// A pane of an SSH workspace (F-RM-01): a login shell on the host, an
+    /// agent first when it's an agent pane. Only the allowlisted variables
+    /// cross (`tandem_host::env`): never a provider home or Vibezeo's own
+    /// paths; the engine signs in with the host's own sign-in.
+    #[allow(clippy::too_many_arguments)]
+    async fn spawn_on_host(
+        &self,
+        pane: &PaneId,
+        record: &PaneRecord,
+        ws: &tandem_store::repo::workspaces::Workspace,
+        cols: u16,
+        rows: u16,
+        sink: Option<Arc<dyn OutputSink>>,
+        mode: LaunchMode,
+    ) -> Result<PtyInfo, IpcError> {
+        let remote = self.remote.get().cloned().ok_or_else(|| {
+            IpcError::new(
+                ErrorCode::Unavailable,
+                "Remote hosts aren't available in this build",
+            )
+        })?;
+        let host = tandem_core::ids::HostId::from_db(ws.host_id.clone());
+        let scrollback = settings::get(&self.store, SettingKey::TermScrollback)
+            .await?
+            .as_u64()
+            .unwrap_or(10_000) as usize;
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("TERM".to_string(), "xterm-256color".to_string());
+        env.insert("COLORTERM".to_string(), "truecolor".to_string());
+        env.insert("TERM_PROGRAM".to_string(), "Vibezeo".to_string());
+        env.insert("TANDEM_PANE_ID".to_string(), pane.to_string());
+        let mut command = None;
+        if record.kind == "agent" {
+            let engine = record
+                .engine_id
+                .as_deref()
+                .and_then(|id| self.engines.get(id))
+                .ok_or_else(|| {
+                    IpcError::new(ErrorCode::NotFound, "This pane's engine isn't known")
+                })?;
+            // The org's engine policy holds on hosts too (F-BL-06).
+            self.engines.check_allowed(&engine)?;
+            let found = remote
+                .report(&host)
+                .await
+                .and_then(|r| r.get(&engine.id).map(|f| PathBuf::from(&f.path)))
+                .ok_or_else(|| {
+                    IpcError::new(
+                        ErrorCode::EngineMissing,
+                        format!("{} isn't installed on this host.", engine.label),
+                    )
+                })?;
+            let req = tandem_engines::launch::TerminalLaunchRequest {
+                engine: &engine,
+                program: found,
+                extra_args: self.engines.extra_args(&engine.id).await,
+                resume: None,
+                host: tandem_engines::launch::HostKind::Ssh,
+                home: None,
+                providers_root: PathBuf::new(),
+                status: None,
+            };
+            let launch = tandem_engines::launch::terminal_launch(&req).map_err(|e| {
+                IpcError::new(ErrorCode::Invalid, e.to_string()).with_stage("launch")
+            })?;
+            // Heuristics from the relayed output; a hook's report would
+            // need this secret (D-406).
+            if let Some((_, secret)) = self.status.watch(
+                pane.as_str(),
+                &engine.waiting_patterns,
+                &engine.limit_patterns,
+                None,
+            ) {
+                env.insert("TANDEM_STATUS_SECRET".to_string(), secret);
+            }
+            command = Some(tandem_host::quote_argv(&launch.argv()));
+        }
+        if let Ok(mut d) = self.dialects.lock() {
+            d.insert(pane.to_string(), ShellDialect::Posix);
+        }
+        let spec = SpawnSpec {
+            pane_id: pane.to_string(),
+            program: PathBuf::from("ssh"),
+            args: command.iter().cloned().collect(),
+            cwd: PathBuf::from(record.cwd.as_deref().unwrap_or(&ws.root)),
+            env,
+            cols,
+            rows,
+            scrollback_lines: scrollback,
+            mark_token: None,
+        };
+        self.log_spawn(
+            &SpawnSpec {
+                env: tandem_host::env::allowed(&spec.env),
+                ..spec.clone()
+            },
+            None,
+        );
+        let cwd = record.cwd.clone().unwrap_or_else(|| ws.root.clone());
+        let spawned = remote
+            .spawn_pane(&host, spec, &cwd, command.clone(), sink.clone())
+            .await;
+        let info = match spawned {
+            Err(e) if e.code == ErrorCode::NotFound && cwd != ws.root => {
+                // The pane's folder went: open at the workspace's root.
+                let spec = SpawnSpec {
+                    pane_id: pane.to_string(),
+                    program: PathBuf::from("ssh"),
+                    args: Vec::new(),
+                    cwd: PathBuf::from(&ws.root),
+                    env: std::collections::BTreeMap::from([
+                        ("TERM".to_string(), "xterm-256color".to_string()),
+                        ("TANDEM_PANE_ID".to_string(), pane.to_string()),
+                    ]),
+                    cols,
+                    rows,
+                    scrollback_lines: scrollback,
+                    mark_token: None,
+                };
+                let info = remote
+                    .spawn_pane(&host, spec, &ws.root, command, sink)
+                    .await?;
+                let _ = self.pty.notice(pane.as_str(), FOLDER_NOT_FOUND);
+                info
+            }
+            Err(e) => {
+                self.status.unwatch(pane.as_str());
+                return Err(e);
+            }
+            Ok(info) => info,
+        };
+        if panes::get_open(&self.store, pane).await.is_err() {
+            let _ = self.pty.kill(pane.as_str());
+            return Err(IpcError::new(ErrorCode::NotFound, "This pane was closed"));
+        }
+        if mode != LaunchMode::Normal {
+            restore::set_state(&self.store, pane, "live").await?;
+        }
+        tracing::info!(
+            code = "pty.spawned_remote",
+            pid = info.pid,
+            "remote terminal started"
+        );
         Ok(info)
     }
 
@@ -830,7 +1226,31 @@ impl TerminalService {
             } else {
                 ShellDialect::Posix
             });
+        // A WSL pane gets the distro's own paths (F-CD-06, F-RM-02 AC2).
+        let in_wsl = self
+            .wsl_panes
+            .lock()
+            .map(|w| w.contains(pane.as_str()))
+            .unwrap_or(false);
+        if in_wsl {
+            let linux: Vec<String> = paths
+                .iter()
+                .map(|p| {
+                    tandem_core::wslpath::to_wsl_path(p).ok_or_else(|| {
+                        IpcError::new(ErrorCode::Invalid, format!("{p} can't be reached from WSL"))
+                    })
+                })
+                .collect::<Result<_, _>>()?;
+            return Ok(shellquote::quote_paths(&linux, ShellDialect::Posix)?);
+        }
         Ok(shellquote::quote_paths(paths, dialect)?)
+    }
+
+    /// Marks a pane as running inside WSL (its drops are Linux paths).
+    pub fn mark_wsl_pane(&self, pane: &str) {
+        if let Ok(mut w) = self.wsl_panes.lock() {
+            w.insert(pane.to_string());
+        }
     }
 
     /// The engine's executable from the login PATH only, never the workspace
@@ -898,6 +1318,15 @@ impl TerminalService {
             .filter_map(|l| serde_json::from_str(l).ok())
             .collect()
     }
+}
+
+/// The `wsl_default_distro` setting as a distro name `wsl.exe -d` can take.
+fn plain_distro(value: &serde_json::Value) -> Option<String> {
+    value
+        .as_str()
+        .map(str::trim)
+        .filter(|d| tandem_core::wslpath::valid_distro(d))
+        .map(str::to_string)
 }
 
 #[cfg(all(test, unix))]
@@ -1169,5 +1598,38 @@ mod tests {
             .expect_err("missing");
         assert_eq!(err.code, ErrorCode::EngineMissing);
         assert_eq!(svc.pty.live_count(), 0);
+    }
+
+    #[test]
+    fn f_rm_02_plain_terminals_use_the_chosen_distro() {
+        assert_eq!(
+            plain_distro(&serde_json::json!("Ubuntu-22.04")).as_deref(),
+            Some("Ubuntu-22.04")
+        );
+        assert_eq!(plain_distro(&serde_json::json!(null)), None);
+        assert_eq!(plain_distro(&serde_json::json!("")), None);
+        assert_eq!(plain_distro(&serde_json::json!("--exec")), None);
+    }
+
+    #[tokio::test]
+    async fn f_rm_02_2_drops_into_a_wsl_pane_are_linux_paths() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let svc = TerminalService::new(PtyManager::new(), store);
+        let pane = PaneId::from_db("pn_wsl".to_string());
+        svc.mark_wsl_pane(pane.as_str());
+        assert_eq!(
+            svc.quote_paths(
+                &pane,
+                &[r"C:\x y\z".to_string(), r"\\wsl$\Ubuntu\home\a".to_string()]
+            )
+            .expect("quoted"),
+            "'/mnt/c/x y/z' '/home/a'"
+        );
+        let err = svc
+            .quote_paths(&pane, &[r"\\server\share\x".to_string()])
+            .expect_err("no WSL path");
+        assert_eq!(err.code, ErrorCode::Invalid);
     }
 }

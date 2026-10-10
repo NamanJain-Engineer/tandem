@@ -32,7 +32,7 @@ use tandem_engines::events::{
     ApprovalDecisionView, ErrorAction, ErrorStage, ThreadEvent, ThreadEventEnvelope, ToolStatus,
     TurnEndReason,
 };
-use tandem_gateway::{ApprovalAnswer, ApprovalAsker, Caller, ToolApproval};
+use tandem_gateway::{ApprovalAnswer, Caller, ToolApproval};
 use tandem_store::repo::attachments::{self as attachments_repo, Attachment, AttachmentKind};
 use tandem_store::repo::threads::ThreadPatch;
 use tandem_store::repo::threads::{
@@ -123,6 +123,14 @@ pub trait ChatLauncher: Send + Sync {
 
     /// The models an engine reported (ACP agents), for the picker.
     fn models_reported(&self, _engine_id: &str, _models: &[ModelOffer]) {}
+
+    /// A thread's engine session ended (its process exited).
+    fn session_ended(&self, _thread_id: &ThreadId) {}
+}
+
+/// The key a thread's engine session has in per-session registries.
+pub fn session_key(thread: &ThreadId) -> String {
+    format!("th:{}", thread.as_str())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -218,9 +226,18 @@ pub struct ThreadService {
     status_sink: std::sync::OnceLock<ThreadStatusSink>,
     /// Saves the folder before each turn (F-EX-01); unset in tests.
     checkpoints: std::sync::OnceLock<Arc<crate::services::checkpoints::CheckpointService>>,
+    /// Tells the teammates service that chats changed.
+    chats_sink: std::sync::OnceLock<Arc<dyn Fn() + Send + Sync>>,
+    /// Hears every teammate chat turn that ended (learning, F-AG-08).
+    turn_sink: std::sync::OnceLock<TurnSink>,
     /// The plan's limits right now; unset (tests) runs every engine.
     plan_limits: std::sync::OnceLock<PlanLimits>,
+    /// Threads in SSH workspaces (F-RM-01).
+    remote: std::sync::OnceLock<Arc<crate::services::remote::RemoteService>>,
 }
+
+/// A teammate chat's turn ended: the chat, the turn and why.
+pub type TurnSink = Arc<dyn Fn(ThreadRecord, TurnId, TurnEndReason) + Send + Sync>;
 
 /// Reads the plan's current limits (the entitlement service in the app).
 pub type PlanLimits = Arc<dyn Fn() -> tandem_core::entitlement::Limits + Send + Sync>;
@@ -251,25 +268,6 @@ fn thread_state(reason: TurnEndReason) -> ThreadState {
         TurnEndReason::Completed => ThreadState::Done,
         TurnEndReason::Cancelled | TurnEndReason::Limit => ThreadState::Idle,
         TurnEndReason::Error => ThreadState::Failed,
-    }
-}
-
-/// The approval card's kind and one-line summary for a tool use
-/// ("Run `npm test`").
-fn describe(ask: &ToolApproval, cwd: &std::path::Path) -> (ApprovalKind, String) {
-    let what = tandem_engines::chat::claude::arg_summary(&ask.tool_name, &ask.input, cwd);
-    match ask.tool_name.as_str() {
-        "Bash" => (ApprovalKind::Command, format!("Run `{what}`")),
-        "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => {
-            (ApprovalKind::FileWrite, format!("Edit `{what}`"))
-        }
-        "WebFetch" => (ApprovalKind::Network, format!("Fetch `{what}`")),
-        "WebSearch" => (
-            ApprovalKind::Network,
-            format!("Search the web for `{what}`"),
-        ),
-        t if t.starts_with("mcp__") => (ApprovalKind::Mcp, format!("Use `{what}`")),
-        _ => (ApprovalKind::Other, format!("Use `{what}`")),
     }
 }
 
@@ -315,23 +313,6 @@ fn turn_input(
     }
 }
 
-/// The gateway's approvals tool, answered by the thread that asked.
-pub struct GatewayAsker {
-    threads: std::sync::Weak<ThreadService>,
-}
-
-#[async_trait]
-impl ApprovalAsker for GatewayAsker {
-    async fn ask(&self, caller: &Caller, ask: ToolApproval) -> ApprovalAnswer {
-        match (caller, self.threads.upgrade()) {
-            (Caller::Thread { thread_id }, Some(threads)) => {
-                threads.ask_approval(thread_id, ask).await
-            }
-            _ => ApprovalAnswer::Deny { message: None },
-        }
-    }
-}
-
 /// A streaming piece: its block kind and text.
 fn delta_parts(event: &ThreadEvent) -> Option<(BlockKind, &str)> {
     match event {
@@ -374,7 +355,10 @@ impl ThreadService {
             data: std::sync::OnceLock::new(),
             status_sink: std::sync::OnceLock::new(),
             checkpoints: std::sync::OnceLock::new(),
+            chats_sink: std::sync::OnceLock::new(),
+            turn_sink: std::sync::OnceLock::new(),
             plan_limits: std::sync::OnceLock::new(),
+            remote: std::sync::OnceLock::new(),
         })
     }
 
@@ -422,6 +406,100 @@ impl ThreadService {
         let _ = self.status_sink.set(sink);
     }
 
+    pub fn set_remote(&self, remote: Arc<crate::services::remote::RemoteService>) {
+        let _ = self.remote.set(remote);
+    }
+
+    /// A thread whose folder is on an SSH host: the host's service and the
+    /// folder there.
+    async fn remote_root(
+        &self,
+        thread: &ThreadRecord,
+    ) -> Option<(
+        Arc<crate::services::remote::RemoteService>,
+        crate::services::remote_files::RemoteRoot,
+    )> {
+        let ws = tandem_store::repo::workspaces::get(&self.store, thread.workspace_id.as_ref()?)
+            .await
+            .ok()?;
+        if ws.kind != "ssh" {
+            return None;
+        }
+        Some((
+            self.remote.get()?.clone(),
+            crate::services::remote_files::RemoteRoot {
+                host: tandem_core::ids::HostId::from_db(ws.host_id),
+                root: thread.cwd.clone(),
+            },
+        ))
+    }
+
+    /// Where this machine reads a thread's folder: a WSL thread's Linux
+    /// folder is `\\wsl.localhost\<distro>\…` from Windows (F-RM-02).
+    async fn local_cwd(&self, thread: &ThreadRecord) -> String {
+        let ws = match &thread.workspace_id {
+            Some(ws) => tandem_store::repo::workspaces::get(&self.store, ws)
+                .await
+                .ok(),
+            None => None,
+        };
+        match ws {
+            Some(ws) if ws.kind == "wsl" => ws
+                .wsl_distro
+                .as_deref()
+                .and_then(|d| tandem_core::wslpath::from_wsl_path(d, &thread.cwd))
+                .unwrap_or_else(|| thread.cwd.clone()),
+            _ => thread.cwd.clone(),
+        }
+    }
+
+    /// A remote thread's attachments go to the host first (F-RM-01
+    /// "Conversation attachments are stored under the remote workspace"):
+    /// each local file is copied to `<root>/.tandem/attachments/<thread>/`
+    /// and the engine gets that path. Paths already on the host stay; a
+    /// local folder can't be sent and is left out.
+    async fn carry_to_host(
+        &self,
+        thread: &ThreadRecord,
+        carried: Vec<Attachment>,
+    ) -> Result<Vec<Attachment>, IpcError> {
+        let Some((remote, root)) = self.remote_root(thread).await else {
+            return Ok(carried);
+        };
+        let mut out = Vec::with_capacity(carried.len());
+        for mut a in carried {
+            if a.path
+                .starts_with(&format!("{}/", root.root.trim_end_matches('/')))
+            {
+                out.push(a);
+                continue;
+            }
+            let local = std::path::PathBuf::from(&a.path);
+            if !matches!(
+                a.kind,
+                AttachmentKind::Image | AttachmentKind::File | AttachmentKind::ToolOutput
+            ) || !local.is_file()
+            {
+                tracing::info!(
+                    code = "threads.remote_attachment_skipped",
+                    "a local folder can't go to a remote thread"
+                );
+                continue;
+            }
+            let bytes = tokio::fs::read(&local).await.map_err(|e| {
+                IpcError::new(ErrorCode::Io, format!("Couldn't read {}: {e}", a.name))
+            })?;
+            a.path = remote
+                .files
+                .upload(&remote, &root, thread.id.as_str(), &a.name, &bytes)
+                .await?;
+            // The engine reads it on the host by path, images too.
+            a.kind = AttachmentKind::File;
+            out.push(a);
+        }
+        Ok(out)
+    }
+
     fn data_dir(&self) -> Result<&tandem_core::DataDir, IpcError> {
         self.data
             .get()
@@ -444,6 +522,9 @@ impl ThreadService {
     }
 
     async fn publish_threads(&self) {
+        if let Some(sink) = self.chats_sink.get() {
+            sink();
+        }
         if let Ok(threads) = repo::list(&self.store, ThreadKind::Thread, true).await {
             if let Some(sink) = self.status_sink.get() {
                 for t in &threads {
@@ -471,6 +552,30 @@ impl ThreadService {
         tracing::info!(code = "threads.created", engine = %thread.engine_id, "thread created");
         self.publish_threads().await;
         Ok(thread)
+    }
+
+    /// A teammate chat (F-AG-03): after its teammate's other chats.
+    pub async fn create_chat(
+        &self,
+        new: NewThread,
+        extra: repo::ChatExtra,
+    ) -> Result<ThreadRecord, IpcError> {
+        let thread = repo::insert_chat(&self.store, new, extra)
+            .await
+            .map_err(store_err)?;
+        tracing::info!(code = "threads.chat_created", engine = %thread.engine_id, "teammate chat created");
+        self.publish_threads().await;
+        Ok(thread)
+    }
+
+    /// Hears teammate chats' finished turns.
+    pub fn set_turn_sink(&self, sink: TurnSink) {
+        let _ = self.turn_sink.set(sink);
+    }
+
+    /// Teammate chats changed state: the Agent views hear about it.
+    pub fn set_chats_sink(&self, sink: Arc<dyn Fn() + Send + Sync>) {
+        let _ = self.chats_sink.set(sink);
     }
 
     pub async fn list(
@@ -568,6 +673,12 @@ impl ThreadService {
         }
         self.publish_threads().await;
         Ok(thread)
+    }
+
+    /// The next turn starts a fresh session (resuming the engine's
+    /// conversation), so new grants or built-ins reach its lease.
+    pub async fn refresh_session(&self, id: &ThreadId) {
+        self.runtime(id).lock().await.stale = true;
     }
 
     /// Ends the engine session between turns; the next turn starts anew.
@@ -699,6 +810,8 @@ impl ThreadService {
         }
         // Its Changes snapshot isn't needed any more.
         let _ = std::fs::remove_file(data.snapshots().join(format!("{}.json", id.as_str())));
+        // Nor its briefing (teammate chats).
+        let _ = std::fs::remove_file(data.briefings().join(format!("{}.md", id.as_str())));
         // The engine session ends with the thread.
         let rt = self.runtime(id);
         if let Some(session) = rt.lock().await.session.take() {
@@ -774,7 +887,6 @@ impl ThreadService {
         id: &ThreadId,
         paths: Vec<String>,
     ) -> Result<Vec<Attachment>, IpcError> {
-        self.thread(id).await?;
         let pending = attachments_repo::unsent(&self.store, id)
             .await
             .map_err(store_err)?
@@ -785,9 +897,31 @@ impl ThreadService {
                 "A message can carry up to 20 attachments",
             ));
         }
+        let thread = self.thread(id).await?;
+        let remote = self.remote_root(&thread).await;
         let mut out = Vec::new();
         for p in paths {
-            let a = thread_files::for_path(id, std::path::Path::new(&p))?;
+            let a = match &remote {
+                // A file from the host's own Files tab: it's already there.
+                Some((svc, root))
+                    if p.starts_with(&format!("{}/", root.root.trim_end_matches('/'))) =>
+                {
+                    let stat: tandem_host::protocol::FsStat = svc
+                        .call(
+                            &root.host,
+                            tandem_host::protocol::method::FS_STAT,
+                            serde_json::json!({"root": root.root, "path": p}),
+                        )
+                        .await?;
+                    thread_files::on_host(
+                        id,
+                        &p,
+                        stat.kind == tandem_host::protocol::EntryKind::Dir,
+                        stat.size,
+                    )
+                }
+                _ => thread_files::for_path(id, std::path::Path::new(&p))?,
+            };
             out.push(
                 attachments_repo::insert(&self.store, a)
                     .await
@@ -839,7 +973,7 @@ impl ThreadService {
         query: String,
     ) -> Result<Vec<PathEntry>, IpcError> {
         let thread = self.thread(id).await?;
-        let root = std::path::PathBuf::from(thread.cwd);
+        let root = std::path::PathBuf::from(self.local_cwd(&thread).await);
         tokio::task::spawn_blocking(move || thread_files::mention_search(&root, &query))
             .await
             .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))
@@ -1010,6 +1144,10 @@ impl ThreadService {
     /// Records where the Changes panel starts, before the thread's first
     /// turn runs (F-TH-13): the folder's commit, or a snapshot manifest.
     async fn ensure_start(&self, thread: &ThreadRecord) {
+        // A host's folder isn't read from here: no start point (D-411).
+        if self.remote_root(thread).await.is_some() {
+            return;
+        }
         if !matches!(
             repo::start_point(&self.store, &thread.id).await,
             Ok((None, None))
@@ -1021,7 +1159,8 @@ impl ThreadService {
             data.snapshots()
                 .join(format!("{}.json", thread.id.as_str()))
         });
-        let start = match thread_changes::capture(thread.cwd.clone().into(), snapshot).await {
+        let cwd = self.local_cwd(thread).await;
+        let start = match thread_changes::capture(cwd.into(), snapshot).await {
             Ok(s) => s,
             Err(e) => {
                 tracing::warn!(code = "threads.start_failed", error = %e.message, "couldn't record where the thread starts");
@@ -1044,7 +1183,14 @@ impl ThreadService {
         path: String,
     ) -> Result<thread_files::FileText, IpcError> {
         let thread = self.thread(id).await?;
-        let root = std::path::PathBuf::from(thread.cwd);
+        if let Some((remote, root)) = self.remote_root(&thread).await {
+            if tandem_core::contain::is_private_file(std::path::Path::new(&path)) {
+                return Err(IpcError::new(ErrorCode::PathEscape, "that file is private"));
+            }
+            let f = remote.files.read(&remote, &root, path).await?;
+            return thread_files::remote_text(f);
+        }
+        let root = std::path::PathBuf::from(self.local_cwd(&thread).await);
         tokio::task::spawn_blocking(move || thread_files::read_text(&root, &path))
             .await
             .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?
@@ -1054,6 +1200,13 @@ impl ThreadService {
     /// turn (F-TH-13).
     pub async fn changes(&self, id: &ThreadId) -> Result<thread_changes::ThreadChanges, IpcError> {
         let thread = self.thread(id).await?;
+        if self.remote_root(&thread).await.is_some() {
+            return Err(IpcError::new(
+                ErrorCode::Unavailable,
+                "The Changes panel follows local folders. This thread's folder is on a remote host: its Files tab shows git changes there.",
+            )
+            .with_stage("remote"));
+        }
         let start = match repo::start_point(&self.store, id)
             .await
             .map_err(store_err)?
@@ -1062,7 +1215,7 @@ impl ThreadService {
             (None, Some(path)) => Some(thread_changes::Start::Snapshot(path.into())),
             (None, None) => None,
         };
-        thread_changes::changes(thread.cwd.into(), start).await
+        thread_changes::changes(self.local_cwd(&thread).await.into(), start).await
     }
 
     /// In Plan mode a completed turn's last reply is the thread's next plan
@@ -1176,6 +1329,20 @@ impl ThreadService {
         if let Err(e) = repo::end_turn(&self.store, &run.id, turn_state(reason), blocked).await {
             tracing::warn!(code = "threads.turn_end_failed", error = %e, "couldn't end a turn");
         }
+        // A teammate chat's prose becomes searchable (F-AG-11).
+        if let Ok(Some(record)) = repo::get(&self.store, thread).await {
+            if let Some(teammate) = &record.teammate_id {
+                if let Err(e) =
+                    tandem_store::repo::search::index_turn(&self.store, thread, &run.id, teammate)
+                        .await
+                {
+                    tracing::warn!(code = "threads.index_failed", error = %e, "couldn't index a turn");
+                }
+                if let Some(sink) = self.turn_sink.get() {
+                    sink(record.clone(), run.id.clone(), reason);
+                }
+            }
+        }
         tracing::info!(code = "threads.turn_ended", reason = ?reason, "turn ended");
         // Unread until the thread is opened again (F-TH-01 AC2).
         if let Err(e) = repo::set_unread(&self.store, thread, true).await {
@@ -1221,6 +1388,75 @@ impl ThreadService {
         text: String,
         attachments: Vec<AttachmentId>,
         queue_if_busy: bool,
+    ) -> Result<SendResult, IpcError> {
+        self.send_with(id, text, attachments, queue_if_busy, None)
+            .await
+    }
+
+    /// Delivers teammate mail (F-AG-12): a turn whose message is `text`,
+    /// followed by the mail's row (shown in the message's place).
+    pub async fn send_mail(
+        self: &Arc<Self>,
+        id: &ThreadId,
+        text: String,
+        row: ThreadEvent,
+    ) -> Result<SendResult, IpcError> {
+        self.send_with(id, text, Vec::new(), false, Some(row)).await
+    }
+
+    /// A mail row in a chat (F-AG-12): in its running turn, or in a turn of
+    /// its own (the row, then its end) when none runs.
+    pub async fn note_mail(&self, id: &ThreadId, row: ThreadEvent) -> Result<(), IpcError> {
+        let rt = self.runtime(id);
+        let mut guard = rt.lock().await;
+        if let Some(run) = guard.turn.as_mut() {
+            self.emit(id, run, row).await;
+            return Ok(());
+        }
+        let thread = self.thread(id).await?;
+        let turn_id = TurnId::new();
+        repo::start_turn(
+            &self.store,
+            id,
+            &turn_id,
+            &thread.engine_id,
+            thread.account_id.as_ref(),
+        )
+        .await
+        .map_err(store_err)?;
+        let mut run = Running {
+            id: turn_id.clone(),
+            next_seq: 0,
+            open: None,
+            stopping: false,
+            blocked: 0,
+            title_from: None,
+            last_output: self.clock.now_ms(),
+            silence_noted: false,
+        };
+        self.emit(id, &mut run, row).await;
+        self.emit(
+            id,
+            &mut run,
+            ThreadEvent::TurnEnd {
+                reason: TurnEndReason::Completed,
+                blocked_actions: 0,
+            },
+        )
+        .await;
+        repo::end_turn(&self.store, &turn_id, TurnState::Completed, 0)
+            .await
+            .map_err(store_err)?;
+        Ok(())
+    }
+
+    async fn send_with(
+        self: &Arc<Self>,
+        id: &ThreadId,
+        text: String,
+        attachments: Vec<AttachmentId>,
+        queue_if_busy: bool,
+        mail_row: Option<ThreadEvent>,
     ) -> Result<SendResult, IpcError> {
         let thread = self.thread(id).await?;
         self.check_plan_engine(thread.kind, &thread.engine_id)?;
@@ -1318,6 +1554,9 @@ impl ThreadService {
                 },
             )
             .await;
+        if let Some(row) = mail_row {
+            self.emit(id, &mut run, row).await;
+        }
         // A turn starts with its message; the transcript shows the divider
         // above it.
         if let Some(text) = guard.pending_switch.take() {
@@ -1397,6 +1636,25 @@ impl ThreadService {
         let text = match seed {
             Some(summary) => thread_summary::seeded(&summary, &text),
             None => text,
+        };
+        let carried = match self.carry_to_host(&thread, carried).await {
+            Ok(c) => c,
+            Err(e) => {
+                let mut guard = rt.lock().await;
+                self.fail_turn(
+                    id,
+                    &mut guard,
+                    "spawn_failed",
+                    &e.message,
+                    ErrorStage::Spawn,
+                    ErrorAction::Retry,
+                )
+                .await;
+                return Ok(SendResult {
+                    turn_id: Some(turn_id),
+                    queued: false,
+                });
+            }
         };
         let input = turn_input(&turn_id, text, &carried, std::path::Path::new(&thread.cwd));
         let sent = session.send_turn(input).await;
@@ -1552,6 +1810,7 @@ impl ThreadService {
                 }
                 guard.session = None;
                 guard.lost = true;
+                self.launcher.session_ended(thread);
                 tracing::info!(code = "threads.engine_exited", exit = ?code, "engine process ended");
                 let stopping = guard.turn.as_ref().map(|r| r.stopping);
                 match stopping {
@@ -1772,14 +2031,11 @@ impl ThreadService {
         let Ok(thread) = self.thread(id).await else {
             return ApprovalAnswer::Deny { message: None };
         };
-        let (kind, summary) = describe(&ask, std::path::Path::new(&thread.cwd));
-        let detail = serde_json::to_string_pretty(&ask.input).unwrap_or_default();
-        let detail =
-            tandem_core::redact::redact(&tandem_engines::events::truncate_output(&detail).0);
-        let subject = match ask.input.get("command").and_then(serde_json::Value::as_str) {
-            Some(c) if ask.tool_name == "Bash" => ApprovalSubject::Command(c.to_string()),
-            _ => ApprovalSubject::Tool(ask.tool_name.clone()),
-        };
+        let (kind, summary, detail, subject) = tandem_engines::chat::claude::approval_card(
+            &ask.tool_name,
+            &ask.input,
+            std::path::Path::new(&thread.cwd),
+        );
         match self.ask_card(id, kind, summary, detail, subject).await {
             ApprovalOutcome::Allowed { .. } => ApprovalAnswer::Allow,
             ApprovalOutcome::Denied { reason, .. } => ApprovalAnswer::Deny { message: reason },
@@ -1813,7 +2069,15 @@ impl ThreadService {
                 via: tandem_core::approvals::ApprovalVia::Rule,
             };
         }
-        let outcome = self.ask_user(id, kind, summary, detail).await;
+        let outcome = self
+            .ask_user(
+                id,
+                kind,
+                summary,
+                detail,
+                vec![ApprovalScope::Once, ApprovalScope::Thread],
+            )
+            .await;
         if let ApprovalOutcome::Allowed {
             scope: ApprovalScope::Thread,
             ..
@@ -1839,6 +2103,19 @@ impl ThreadService {
             .unwrap_or_default()
     }
 
+    /// A plugin approval (F-PL-07): the card in the thread with the scopes
+    /// the gateway offers ("Allow once", maybe "for this conversation").
+    pub async fn ask_with_options(
+        &self,
+        id: &ThreadId,
+        kind: ApprovalKind,
+        summary: String,
+        detail: String,
+        options: Vec<ApprovalScope>,
+    ) -> ApprovalOutcome {
+        self.ask_user(id, kind, summary, detail, options).await
+    }
+
     /// The card itself.
     async fn ask_user(
         &self,
@@ -1846,6 +2123,7 @@ impl ThreadService {
         kind: ApprovalKind,
         summary: String,
         detail: String,
+        options: Vec<ApprovalScope>,
     ) -> ApprovalOutcome {
         let rt = self.runtime(id);
         let (view, ticket, turn) = {
@@ -1865,7 +2143,7 @@ impl ThreadService {
                 kind,
                 summary,
                 detail,
-                options: vec![ApprovalScope::Once, ApprovalScope::Thread],
+                options,
             });
             self.emit(
                 id,
@@ -1990,21 +2268,289 @@ pub struct AppLauncher {
     adapters: HashMap<String, Arc<dyn ChatAdapter>>,
     /// `$DATA/mcp`: one 0600 config per thread session.
     mcp_dir: std::path::PathBuf,
-    gateway: tokio::sync::OnceCell<tandem_gateway::GatewayHandle>,
-    threads: std::sync::OnceLock<std::sync::Weak<ThreadService>>,
+    gateway: Arc<crate::services::gateway::GatewayService>,
+    store: Store,
     /// The live lease per thread; a new session revokes the last one.
     leases: StdMutex<HashMap<String, tandem_core::ids::LeaseId>>,
+    teammates: std::sync::OnceLock<std::sync::Weak<crate::services::teammates::TeammatesService>>,
+    /// The tasks server sessions get (F-TK-02).
+    tasks: std::sync::OnceLock<Arc<crate::services::tasks::TasksService>>,
     /// The Team org's policy and audit log (F-BL-06, F-TL-10).
     guard: std::sync::OnceLock<Arc<dyn crate::services::audit::OrgGuard>>,
 }
 
 impl AppLauncher {
+    /// The SSH host a thread's folder is on, when it's a remote workspace.
+    async fn remote_host(
+        &self,
+        thread: &ThreadRecord,
+    ) -> Result<
+        Option<(
+            Arc<crate::services::remote::RemoteService>,
+            tandem_core::ids::HostId,
+        )>,
+        IpcError,
+    > {
+        let Some(ws) = &thread.workspace_id else {
+            return Ok(None);
+        };
+        let ws = tandem_store::repo::workspaces::get(self.terminals.store(), ws)
+            .await
+            .map_err(store_err)?;
+        if ws.kind != "ssh" {
+            return Ok(None);
+        }
+        let remote = self.terminals.remote().cloned().ok_or_else(|| {
+            IpcError::new(
+                ErrorCode::Unavailable,
+                "Remote hosts aren't available in this build",
+            )
+        })?;
+        Ok(Some((
+            remote,
+            tandem_core::ids::HostId::from_db(ws.host_id),
+        )))
+    }
+
+    /// A thread on an SSH host (F-RM-01): the host's own engine, run
+    /// through `tandem-host run` over the host's connection (D-403), with
+    /// the host's own sign-in. Nothing local crosses: no provider home, no
+    /// account, and no gateway (plugins are local-only, D-408).
+    async fn prepare_remote(
+        &self,
+        thread: &ThreadRecord,
+        engine: &tandem_engines::EngineSpec,
+        adapter: Arc<dyn ChatAdapter>,
+        remote: Arc<crate::services::remote::RemoteService>,
+        host: tandem_core::ids::HostId,
+    ) -> Result<(Arc<dyn ChatAdapter>, ChatStart), IpcError> {
+        // The org's engine policy holds on hosts too (F-BL-06).
+        self.terminals.engines.check_allowed(engine)?;
+        // The connection first: its detection names the host's engines.
+        remote.client(&host).await?;
+        let mut report = remote.report(&host).await;
+        if report.as_ref().and_then(|r| r.get(&engine.id)).is_none() {
+            let list = self.terminals.engines.registry().all().to_vec();
+            report = remote.detect(&host, &list).await.ok();
+        }
+        let found = report
+            .as_ref()
+            .and_then(|r| r.get(&engine.id))
+            .cloned()
+            .ok_or_else(|| {
+                IpcError::new(
+                    ErrorCode::EngineMissing,
+                    format!("{} isn't installed on this host.", engine.label),
+                )
+            })?;
+        let (ssh, target) = remote.transport(&host).await?;
+        let access = session_access(
+            self.guard.get().map(|g| g.as_ref()),
+            thread,
+            origin_of(thread),
+            &engine.id,
+        );
+        // A teammate's briefing (F-AG-06): Codex and ACP agents get its text
+        // from here; Claude reads a file, so a copy goes to the host over
+        // stdin (never argv) and the relocated command names that copy.
+        let briefing = self
+            .briefing_file(thread, std::path::Path::new(&thread.cwd), access)
+            .await?;
+        let remote_briefing = match &briefing {
+            Some(local) => Some(copy_briefing_to_host(&ssh, &target, &thread.id, local).await?),
+            None => None,
+        };
+        let cwd = thread.cwd.clone();
+        let local_env: Vec<(String, String)> = std::env::vars()
+            .filter(|(k, _)| {
+                matches!(
+                    k.as_str(),
+                    "HOME"
+                        | "USER"
+                        | "LOGNAME"
+                        | "PATH"
+                        | "SSH_AUTH_SOCK"
+                        | "LANG"
+                        | "LC_ALL"
+                        | "TMPDIR"
+                        | "XDG_RUNTIME_DIR"
+                )
+            })
+            .collect();
+        let here = std::env::var_os("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir);
+        let relocate = tandem_engines::chat::Relocate(Arc::new(
+            move |spec: tandem_engines::chat::process::ProcessSpec| {
+                let spec = swap_briefing_path(spec, remote_briefing.as_deref());
+                let mut argv = vec![spec.program.to_string_lossy().into_owned()];
+                argv.extend(spec.args.iter().map(|a| a.to_string_lossy().into_owned()));
+                let env: std::collections::BTreeMap<String, String> =
+                    spec.env.iter().cloned().collect();
+                let (program, args) = ssh.run_args(&target, &cwd, &env, &argv);
+                tandem_engines::chat::process::ProcessSpec {
+                    program,
+                    args: args.into_iter().map(std::ffi::OsString::from).collect(),
+                    env: local_env.clone(),
+                    cwd: here.clone(),
+                    ..spec
+                }
+            },
+        ));
+        Ok((
+            adapter,
+            ChatStart {
+                thread_id: thread.id.clone(),
+                engine_id: engine.id.clone(),
+                program: std::path::PathBuf::from(&found.path),
+                cwd: std::path::PathBuf::from(&thread.cwd),
+                env: vec![("TERM".into(), "dumb".into())],
+                model: thread.model.clone(),
+                effort: thread.effort.clone(),
+                access,
+                mode: thread.mode,
+                attended: thread.attended,
+                resume_session: thread.engine_session_id.clone(),
+                mcp_config: None,
+                mcp: None,
+                // No local stdio servers on a remote or WSL engine: the tasks
+                // server runs on this machine (F-TK-02).
+                stdio_servers: Vec::new(),
+                engine_version: found.version,
+                relocate: Some(relocate),
+                briefing,
+            },
+        ))
+    }
+
+    /// The WSL distro a thread's folder is in, when it's a WSL workspace.
+    async fn wsl_host(
+        &self,
+        thread: &ThreadRecord,
+    ) -> Result<Option<(tandem_core::ids::HostId, String)>, IpcError> {
+        let Some(ws) = &thread.workspace_id else {
+            return Ok(None);
+        };
+        let ws = tandem_store::repo::workspaces::get(self.terminals.store(), ws)
+            .await
+            .map_err(store_err)?;
+        if ws.kind != "wsl" {
+            return Ok(None);
+        }
+        let distro = ws.wsl_distro.ok_or_else(|| {
+            IpcError::new(ErrorCode::Invalid, "This WSL workspace has no distribution")
+        })?;
+        Ok(Some((
+            tandem_core::ids::HostId::from_db(ws.host_id),
+            distro,
+        )))
+    }
+
+    /// A thread in a WSL workspace (F-RM-02): the distro's own engine, run
+    /// through `wsl.exe` with the distro's own sign-in. As on SSH hosts,
+    /// nothing local crosses: no provider home, no account, no gateway.
+    async fn prepare_wsl(
+        &self,
+        thread: &ThreadRecord,
+        engine: &tandem_engines::EngineSpec,
+        adapter: Arc<dyn ChatAdapter>,
+        host: tandem_core::ids::HostId,
+        distro: String,
+    ) -> Result<(Arc<dyn ChatAdapter>, ChatStart), IpcError> {
+        self.terminals.engines.check_allowed(engine)?;
+        let wsl = self
+            .terminals
+            .wsl()
+            .cloned()
+            .filter(|_| crate::services::wsl::system().is_some())
+            .ok_or_else(|| {
+                IpcError::new(ErrorCode::Unavailable, "WSL folders open on Windows only")
+                    .with_stage("wsl")
+            })?;
+        let remote = self.terminals.remote().cloned();
+        let mut report = match &remote {
+            Some(r) => r.report(&host).await,
+            None => None,
+        };
+        if report.as_ref().and_then(|r| r.get(&engine.id)).is_none() {
+            let list = self.terminals.engines.registry().all().to_vec();
+            let fresh = wsl.detect_report(&host, &distro, &list).await?;
+            if let Some(r) = &remote {
+                r.publish_report(&host, &fresh).await?;
+            }
+            report = Some(fresh);
+        }
+        let found = report
+            .as_ref()
+            .and_then(|r| r.get(&engine.id))
+            .cloned()
+            .ok_or_else(|| {
+                IpcError::new(
+                    ErrorCode::EngineMissing,
+                    format!("{} isn't installed in {distro}.", engine.label),
+                )
+            })?;
+        let access = session_access(
+            self.guard.get().map(|g| g.as_ref()),
+            thread,
+            origin_of(thread),
+            &engine.id,
+        );
+        // Claude reads a teammate's briefing from a file: the distro reaches
+        // this machine's copy at its /mnt path.
+        let briefing = self
+            .briefing_file(thread, std::path::Path::new(&thread.cwd), access)
+            .await?;
+        let wsl_briefing = match &briefing {
+            Some(local) => Some(
+                tandem_core::wslpath::to_wsl_path(&local.to_string_lossy()).ok_or_else(|| {
+                    IpcError::new(ErrorCode::Io, "The briefing isn't reachable from WSL")
+                        .with_stage("briefing")
+                })?,
+            ),
+            None => None,
+        };
+        let cwd = thread.cwd.clone();
+        let relocate = tandem_engines::chat::Relocate(Arc::new(
+            move |spec: tandem_engines::chat::process::ProcessSpec| {
+                let spec = swap_briefing_path(spec, wsl_briefing.as_deref());
+                crate::services::wsl::thread_spec(&distro, &cwd, spec, std::env::vars())
+            },
+        ));
+        Ok((
+            adapter,
+            ChatStart {
+                thread_id: thread.id.clone(),
+                engine_id: engine.id.clone(),
+                program: std::path::PathBuf::from(&found.path),
+                cwd: std::path::PathBuf::from(&thread.cwd),
+                env: vec![("TERM".into(), "dumb".into())],
+                model: thread.model.clone(),
+                effort: thread.effort.clone(),
+                access,
+                mode: thread.mode,
+                attended: thread.attended,
+                resume_session: thread.engine_session_id.clone(),
+                mcp_config: None,
+                mcp: None,
+                // No local stdio servers on a remote or WSL engine: the tasks
+                // server runs on this machine (F-TK-02).
+                stdio_servers: Vec::new(),
+                engine_version: found.version,
+                relocate: Some(relocate),
+                briefing,
+            },
+        ))
+    }
+
     pub fn new(
         terminals: Arc<crate::services::terminal::TerminalService>,
         config: Arc<crate::services::config::ConfigService>,
         models: Arc<crate::services::models::RuntimeModels>,
         adapters: Vec<Arc<dyn ChatAdapter>>,
         mcp_dir: std::path::PathBuf,
+        gateway: Arc<crate::services::gateway::GatewayService>,
+        store: Store,
     ) -> Self {
         Self {
             terminals,
@@ -2015,11 +2561,103 @@ impl AppLauncher {
                 .map(|a| (a.engine_id().to_string(), a))
                 .collect(),
             mcp_dir,
-            gateway: tokio::sync::OnceCell::new(),
-            threads: std::sync::OnceLock::new(),
+            gateway,
+            store,
             leases: StdMutex::default(),
+            teammates: std::sync::OnceLock::new(),
+            tasks: std::sync::OnceLock::new(),
             guard: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Who started the thread's runs: a routine's chat runs with that
+    /// routine's own Full grant, if any (F-RT-01, rule 4).
+    async fn origin(&self, thread: &ThreadRecord) -> tandem_core::access::Origin {
+        if !thread.attended {
+            // A task run's session: the task's own Full grant, if any.
+            if let Ok(Some(a)) =
+                tandem_store::repo::task_attempts::for_thread(&self.store, &thread.id).await
+            {
+                return tandem_core::access::Origin::Task {
+                    grants_full: a.access == Access::Full,
+                };
+            }
+            if let Ok(Some(r)) =
+                tandem_store::repo::routines::routine_of_chat(&self.store, &thread.id).await
+            {
+                return tandem_core::access::Origin::Routine {
+                    grants_full: r.access == Access::Full,
+                };
+            }
+        }
+        origin_of(thread)
+    }
+
+    /// The tracker whose MCP server chat sessions get.
+    pub fn bind_tasks(&self, tasks: &Arc<crate::services::tasks::TasksService>) {
+        let _ = self.tasks.set(tasks.clone());
+    }
+
+    /// The tasks server for a thread's new session, with its own connection.
+    async fn tasks_server(
+        &self,
+        thread: &ThreadRecord,
+    ) -> Option<tandem_engines::chat::StdioServer> {
+        let tasks = self.tasks.get()?;
+        let teammate = self.teammate_of(thread).await;
+        let (label, actor) = match &teammate {
+            Some(t) => (t.name.clone(), t.id.as_str().to_string()),
+            None => (
+                if thread.title.is_empty() {
+                    "Thread".to_string()
+                } else {
+                    thread.title.clone()
+                },
+                thread.id.as_str().to_string(),
+            ),
+        };
+        tasks.chat_server(&session_key(&thread.id), &label, &actor)
+    }
+
+    /// The teammates whose chats this launcher starts.
+    pub fn bind_teammates(&self, teammates: &Arc<crate::services::teammates::TeammatesService>) {
+        let _ = self.teammates.set(Arc::downgrade(teammates));
+    }
+
+    /// A teammate chat's briefing, written for this session to
+    /// `$DATA/briefings/<thread>.md` (0600; F-AG-06). Threads have none.
+    async fn briefing_file(
+        &self,
+        thread: &ThreadRecord,
+        cwd: &std::path::Path,
+        access: tandem_core::access::Access,
+    ) -> Result<Option<std::path::PathBuf>, IpcError> {
+        let (Some(teammate), Some(service)) = (
+            self.teammate_of(thread).await,
+            self.teammates.get().and_then(std::sync::Weak::upgrade),
+        ) else {
+            return Ok(None);
+        };
+        let date = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let briefing = service
+            .briefing(&teammate, cwd, access, !thread.attended, &date)
+            .await;
+        let dir = service.data().briefings();
+        tandem_engines::briefing::write_file(&dir, thread.id.as_str(), &briefing)
+            .map(Some)
+            .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()).with_stage("briefing"))
+    }
+
+    /// A teammate chat's teammate, if the thread is one.
+    async fn teammate_of(
+        &self,
+        thread: &ThreadRecord,
+    ) -> Option<tandem_store::repo::teammates::Teammate> {
+        let id = thread.teammate_id.as_ref()?;
+        tandem_store::repo::teammates::get(&self.store, id)
+            .await
+            .ok()
+            .flatten()
     }
 
     /// The org policy and audit log every session start consults.
@@ -2062,24 +2700,40 @@ impl AppLauncher {
         adapters
     }
 
-    /// The threads the gateway's approvals tool reports to.
-    pub fn bind(&self, threads: &Arc<ThreadService>) {
-        let _ = self.threads.set(Arc::downgrade(threads));
-    }
-
-    async fn gateway(&self) -> Result<&tandem_gateway::GatewayHandle, IpcError> {
-        self.gateway
-            .get_or_try_init(|| async {
-                let threads = self.threads.get().cloned().unwrap_or_default();
-                tandem_gateway::Gateway::start(tandem_gateway::GatewayDeps {
-                    approvals: Arc::new(GatewayAsker { threads }),
-                })
-                .await
-                .map_err(|e| {
-                    IpcError::new(ErrorCode::Unavailable, e.to_string()).with_stage("gateway")
-                })
-            })
+    /// The plugin connections a thread's session may use: its own grants
+    /// and those given to every thread (F-PL-05).
+    async fn thread_grants(&self, thread: &ThreadRecord) -> Vec<tandem_core::ids::ConnectionId> {
+        use tandem_store::repo::plugins::{grants, GrantSubject};
+        let mut out = grants(
+            &self.store,
+            &GrantSubject::Thread {
+                thread_id: thread.id.as_str().to_string(),
+            },
+        )
+        .await
+        .unwrap_or_default();
+        // Plus "all threads" and the thread's workspace (F-PL-05).
+        let mut more = grants(&self.store, &GrantSubject::AllThreads)
             .await
+            .unwrap_or_default();
+        if let Some(ws) = &thread.workspace_id {
+            more.extend(
+                grants(
+                    &self.store,
+                    &GrantSubject::Workspace {
+                        workspace_id: ws.as_str().to_string(),
+                    },
+                )
+                .await
+                .unwrap_or_default(),
+            );
+        }
+        for c in more {
+            if !out.contains(&c) {
+                out.push(c);
+            }
+        }
+        out
     }
 
     /// A lease for the thread's new session, in a config only the user can
@@ -2087,27 +2741,66 @@ impl AppLauncher {
     async fn mcp_config(
         &self,
         thread: &ThreadRecord,
+        stdio: &[tandem_engines::chat::StdioServer],
     ) -> Result<(std::path::PathBuf, tandem_engines::chat::McpEndpoint), IpcError> {
-        let gateway = self.gateway().await?;
-        let lease = gateway.prepare(tandem_gateway::SessionDescriptor {
-            caller: Caller::Thread {
+        let gateway = self.gateway.handle().await?;
+        let teammate = self.teammate_of(thread).await;
+        let caller = match &teammate {
+            Some(t) => Caller::TeammateChat {
+                teammate_id: t.id.clone(),
                 thread_id: thread.id.clone(),
             },
-            attended: if thread.attended {
+            None => Caller::Thread {
+                thread_id: thread.id.clone(),
+            },
+        };
+        let mut session = tandem_gateway::SessionDescriptor::new(
+            caller,
+            if thread.attended {
                 tandem_gateway::Attended::Interactive
             } else {
+                // Who started the run (a routine, task, mail or Auto) names
+                // it, so what it holds for review says where it came from.
                 tandem_gateway::Attended::Unattended {
-                    origin: "thread".into(),
+                    origin: self
+                        .gateway
+                        .unattended_origin(&thread.id)
+                        .unwrap_or_else(|| "thread".into()),
                 }
             },
-            access: thread.access,
+            thread.access,
             // Claude asks through the gateway; Codex and ACP agents ask in-band.
-            builtins: if thread.engine_id == "claude" {
+            if thread.engine_id == "claude" {
                 tandem_gateway::BuiltinSet::for_thread()
             } else {
                 tandem_gateway::BuiltinSet::default()
             },
-        });
+        );
+        match &teammate {
+            Some(t) => {
+                // A teammate chat: memory, skills, search and (when it may
+                // message) mail; the teammate's own plugin grants (F-PL-05).
+                let approvals = session.builtins.approvals;
+                session.builtins = tandem_gateway::BuiltinSet::for_teammate(
+                    t.settings.may_message,
+                    t.settings.may_schedule,
+                );
+                session.builtins.approvals = approvals;
+                session.granted = tandem_store::repo::plugins::grants(
+                    &self.store,
+                    &tandem_store::repo::plugins::GrantSubject::Teammate {
+                        teammate_id: t.id.as_str().to_string(),
+                    },
+                )
+                .await
+                .unwrap_or_default();
+            }
+            None => session.granted = self.thread_grants(thread).await,
+        }
+        if let Some(r) = &thread.conversation_ref {
+            session.conversation_ref = r.clone();
+        }
+        let lease = gateway.prepare(session);
         let previous = match self.leases.lock() {
             Ok(mut l) => l.insert(thread.id.as_str().to_string(), lease.id.clone()),
             Err(_) => None,
@@ -2115,11 +2808,18 @@ impl AppLauncher {
         if let Some(old) = previous {
             gateway.revoke(&old);
         }
-        let config = serde_json::json!({"mcpServers": {"tandem": {
+        let mut config = serde_json::json!({"mcpServers": {"tandem": {
             "type": "http",
             "url": gateway.url,
             "headers": {"Authorization": format!("Bearer {}", lease.token)}
         }}});
+        for s in stdio {
+            config["mcpServers"][&s.name] = serde_json::json!({
+                "type": "stdio",
+                "command": s.command,
+                "args": s.args,
+            });
+        }
         std::fs::create_dir_all(&self.mcp_dir)
             .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
         let path = self.mcp_dir.join(format!("{}.json", thread.id.as_str()));
@@ -2151,6 +2851,12 @@ impl ChatLauncher for AppLauncher {
         let catalog =
             crate::services::models::catalog_for(&thread.engine_id, &self.models, &self.config);
         crate::services::models::resolve(thread.model.as_deref(), &catalog)
+    }
+
+    fn session_ended(&self, thread_id: &ThreadId) {
+        if let Some(tasks) = self.tasks.get() {
+            tasks.end_session(&session_key(thread_id));
+        }
     }
 
     fn models_reported(&self, engine_id: &str, models: &[ModelOffer]) {
@@ -2189,6 +2895,16 @@ impl ChatLauncher for AppLauncher {
                 ),
             )
         })?;
+        if let Some((remote, host)) = self.remote_host(thread).await? {
+            return self
+                .prepare_remote(thread, &engine, adapter, remote, host)
+                .await;
+        }
+        if let Some((host, distro)) = self.wsl_host(thread).await? {
+            return self
+                .prepare_wsl(thread, &engine, adapter, host, distro)
+                .await;
+        }
         let program = self
             .terminals
             .resolve_engine(&engine)
@@ -2218,14 +2934,16 @@ impl ChatLauncher for AppLauncher {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         env.extend(crate::services::fake_engine_env());
-        let (config, endpoint) = self.mcp_config(thread).await?;
-        let origin = origin_of(thread);
+        let stdio_servers: Vec<_> = self.tasks_server(thread).await.into_iter().collect();
+        let (config, endpoint) = self.mcp_config(thread, &stdio_servers).await?;
+        let origin = self.origin(thread).await;
         let access = session_access(
             self.guard.get().map(|g| g.as_ref()),
             thread,
             origin,
             &engine.id,
         );
+        let briefing = self.briefing_file(thread, &cwd, access).await?;
         Ok((
             adapter,
             ChatStart {
@@ -2236,6 +2954,7 @@ impl ChatLauncher for AppLauncher {
                 env,
                 model: thread.model.clone(),
                 effort: thread.effort.clone(),
+                // The one place a session's access is decided (F-TH-09).
                 access,
                 mode: thread.mode,
                 attended: thread.attended,
@@ -2248,6 +2967,9 @@ impl ChatLauncher for AppLauncher {
                         .find(|f| f.engine_id == engine.id)
                         .and_then(|f| f.version)
                 }),
+                relocate: None,
+                briefing,
+                stdio_servers,
             },
         ))
     }
@@ -2302,6 +3024,8 @@ mod policy_tests {
             sort_key: "a".into(),
             created_at: 0,
             updated_at: 0,
+            teammate_id: None,
+            conversation_ref: None,
         }
     }
 
@@ -2364,6 +3088,57 @@ mod policy_tests {
             Access::Full
         );
     }
+}
+
+/// Points Claude's `--append-system-prompt-file` at the briefing's copy where
+/// the engine runs (an SSH host or a WSL distro). Other engines take the
+/// briefing as text and have no such flag.
+pub(crate) fn swap_briefing_path(
+    mut spec: tandem_engines::chat::process::ProcessSpec,
+    there: Option<&str>,
+) -> tandem_engines::chat::process::ProcessSpec {
+    let Some(there) = there else {
+        return spec;
+    };
+    if let Some(i) = spec
+        .args
+        .iter()
+        .position(|a| a == "--append-system-prompt-file")
+    {
+        if let Some(path) = spec.args.get_mut(i + 1) {
+            *path = there.into();
+        }
+    }
+    spec
+}
+
+/// Copies a teammate briefing to `~/.tandem-host/briefings/<thread>.md` on
+/// the host (private to the user) through ssh's stdin, and returns its path
+/// there.
+async fn copy_briefing_to_host(
+    ssh: &tandem_host::ssh::Ssh,
+    target: &tandem_host::ssh::SshTarget,
+    thread: &ThreadId,
+    local: &std::path::Path,
+) -> Result<String, IpcError> {
+    let id = thread.as_str();
+    if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(IpcError::new(ErrorCode::Invalid, "Unexpected thread id"));
+    }
+    let text = std::fs::read(local)
+        .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()).with_stage("briefing"))?;
+    let script = format!(
+        "umask 077 && mkdir -p \"$HOME\"/.tandem-host/briefings && \
+         cat > \"$HOME\"/.tandem-host/briefings/{id}.md && printf %s \"$HOME\""
+    );
+    let home = ssh
+        .exec(target, &script, Some(&text))
+        .await
+        .map_err(crate::services::remote::ssh_error)?;
+    Ok(format!(
+        "{}/.tandem-host/briefings/{id}.md",
+        home.trim_end()
+    ))
 }
 
 #[cfg(test)]
@@ -2518,6 +3293,9 @@ mod tests {
                     mcp_config: None,
                     mcp: None,
                     engine_version: None,
+                    relocate: None,
+                    briefing: None,
+                    stdio_servers: Vec::new(),
                 },
             ))
         }
@@ -3034,10 +3812,17 @@ mod tests {
             }
         );
         assert_eq!(events[3], end(TurnEndReason::Error));
-        assert_eq!(
-            f.svc.get(id).await.expect("detail").thread.state,
-            ThreadState::Failed
-        );
+        // The state is written just after the turn's end is stored: wait for
+        // it rather than read it once (it raced under the full suite's load).
+        let mut state = f.svc.get(id).await.expect("detail").thread.state;
+        for _ in 0..100 {
+            if state == ThreadState::Failed {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            state = f.svc.get(id).await.expect("detail").thread.state;
+        }
+        assert_eq!(state, ThreadState::Failed);
 
         // Retry sends the same message on a new session.
         let again = f.svc.retry(id).await.expect("retry");
@@ -3304,21 +4089,20 @@ mod tests {
     async fn f_th_04_4_the_gateway_tool_asks_the_thread_and_allow_returns_behavior_allow() {
         let f = fixture(OnStop::Ack, hang()).await;
         let id = f.thread.id.clone();
-        let gateway = tandem_gateway::Gateway::start(tandem_gateway::GatewayDeps {
-            approvals: Arc::new(GatewayAsker {
-                threads: Arc::downgrade(&f.svc),
-            }),
-        })
-        .await
-        .expect("gateway");
-        let lease = gateway.prepare(tandem_gateway::SessionDescriptor {
-            caller: Caller::Thread {
+        let service = crate::services::gateway::GatewayService::new(
+            f.store.clone(),
+            f._dir.path().join("run"),
+        );
+        service.bind_threads(&f.svc);
+        let gateway = service.handle().await.expect("gateway").clone();
+        let lease = gateway.prepare(tandem_gateway::SessionDescriptor::new(
+            Caller::Thread {
                 thread_id: id.clone(),
             },
-            attended: tandem_gateway::Attended::Interactive,
-            access: tandem_core::access::Access::Edits,
-            builtins: tandem_gateway::BuiltinSet::for_thread(),
-        });
+            tandem_gateway::Attended::Interactive,
+            tandem_core::access::Access::Edits,
+            tandem_gateway::BuiltinSet::for_thread(),
+        ));
         f.svc
             .send(&id, "test it".into(), Vec::new(), false)
             .await
@@ -3817,6 +4601,9 @@ mod tests {
                         mcp_config: None,
                         mcp: None,
                         engine_version: None,
+                        relocate: None,
+                        briefing: None,
+                        stdio_servers: Vec::new(),
                     },
                 ))
             }
@@ -4405,6 +5192,48 @@ mod tests {
         }
         assert_eq!(stored(&f).await.iter().filter(|e| **e == note).count(), 1);
         svc.stop(&f.thread.id).await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn f_ag_12_1_mail_rows_go_in_a_turn_of_their_own_and_a_delivery_opens_with_its_message() {
+        let f = fixture(OnStop::Ack, reply("on it")).await;
+        let row = |inbound| ThreadEvent::MailRow {
+            mail_id: tandem_core::ids::MailId::new(),
+            from: "Ada".into(),
+            to: "Bea".into(),
+            preview: "Check CI".into(),
+            inbound,
+        };
+        // No turn runs: the row is a turn of its own, already ended.
+        let sent = row(false);
+        f.svc
+            .note_mail(&f.thread.id, sent.clone())
+            .await
+            .expect("note");
+        assert_eq!(turn_states(&f).await, vec![TurnState::Completed]);
+        assert_eq!(stored(&f).await[0], sent);
+        // A delivery: the message, then the row; the engine hears the message.
+        let got = row(true);
+        f.svc
+            .send_mail(&f.thread.id, "From Ada:\nCheck CI".into(), got.clone())
+            .await
+            .expect("deliver");
+        ended(&f, 2).await;
+        let turn = repo::turns(&f.store, &f.thread.id).await.expect("turns")[1].clone();
+        let rows: Vec<ThreadEvent> = repo::turn_messages(&f.store, &turn.id)
+            .await
+            .expect("rows")
+            .iter()
+            .filter_map(envelope)
+            .map(|e| e.event)
+            .collect();
+        assert!(
+            matches!(&rows[0], ThreadEvent::User { text, .. } if text == "From Ada:\nCheck CI")
+        );
+        assert_eq!(rows[1], got);
+        let inputs = f.adapter.inputs.lock().expect("inputs").clone();
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0].text, "From Ada:\nCheck CI");
     }
 
     #[tokio::test]

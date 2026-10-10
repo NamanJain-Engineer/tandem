@@ -40,6 +40,8 @@ jobs:
       - name: Protocol drift
         run: pnpm gen:protocol && git diff --exit-code packages/protocol
       - run: bash scripts/check-coverage.sh
+      # F-DI-02 AC2: the Windows keyboard hook never consumes an event.
+      - run: bash scripts/guards/no-consuming-hook.sh
 
   test-rust:
     strategy:
@@ -61,6 +63,45 @@ jobs:
       - name: Build UI assets for the Tauri crate
         run: pnpm --filter desktop build
       - run: cargo test --workspace
+      # F-DI-04 AC2 / F-DI-01 AC1: the real base.en model on the committed
+      # fixture, cached by the catalog's hash so it downloads once.
+      - name: Dictate model cache
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/tandem-models
+          key: tandem-models-${{ hashFiles('crates/tandem-voice/models/catalog.json') }}
+      - name: Dictate transcription (whisper base.en)
+        if: runner.os == 'Linux'
+        run: |
+          bash scripts/fetch-models.sh base.en
+          cargo test -p tandem-voice --features whisper -- --include-ignored f_di_04_2 f_di_01_1
+
+  # tandem-host for SSH hosts (F-RM-01, MILESTONES M14): static binaries for
+  # the three host platforms. macOS minutes cost more, so macOS builds on
+  # merges to main and by hand, like test-rust.
+  tandem-host:
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"platform":"linux-x86_64","os":"ubuntu-24.04"},{"platform":"linux-aarch64","os":"ubuntu-24.04"}]' || '[{"platform":"linux-x86_64","os":"ubuntu-24.04"},{"platform":"linux-aarch64","os":"ubuntu-24.04"},{"platform":"macos-universal","os":"macos-14"}]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-universal' && 'aarch64-apple-darwin,x86_64-apple-darwin' || (matrix.platform == 'linux-aarch64' && 'aarch64-unknown-linux-musl' || 'x86_64-unknown-linux-musl') }}
+      - uses: Swatinem/rust-cache@v2
+      - if: runner.os == 'Linux'
+        name: Zig linker for static musl builds
+        run: pip install ziglang==0.13.0 && cargo install cargo-zigbuild --locked
+      - name: Build
+        shell: bash
+        run: bash scripts/ci/build-tandem-host.sh "${{ matrix.platform }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tandem-host-${{ matrix.platform }}
+          path: apps/desktop/src-tauri/resources/tandem-host/${{ matrix.platform }}/tandem-host
 
   test-ts:
     runs-on: ubuntu-24.04

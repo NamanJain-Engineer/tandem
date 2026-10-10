@@ -14,7 +14,9 @@ export function cardTitle(item: DashboardItem, titlePatterns: string[] = []): st
 
 /** "Claude Code · shop · tandem/fix-auth · Work", leaving out what's unknown. */
 export function cardMeta(item: DashboardItem): string {
-  return [item.engineLabel ?? item.engineId, item.workspace, item.branch, item.accountLabel].filter(Boolean).join(" · ");
+  return [item.engineLabel ?? item.engineId, item.workspace, item.branch, item.accountLabel]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 const fold = (s: string) =>
@@ -29,7 +31,16 @@ export function matches(item: DashboardItem, query: string, title: string = card
   const words = fold(query).split(/\s+/).filter(Boolean);
   if (words.length === 0) return true;
   const hay = fold(
-    [title, item.humanName, item.engineLabel, item.engineId, item.workspace, item.branch, item.accountLabel, item.preview]
+    [
+      title,
+      item.humanName,
+      item.engineLabel,
+      item.engineId,
+      item.workspace,
+      item.branch,
+      item.accountLabel,
+      item.preview,
+    ]
       .filter(Boolean)
       .join(" \u0000 "),
   );
@@ -89,7 +100,10 @@ export function group(
   };
   const byWs = new Map<string, DashboardItem[]>();
   for (const i of items) byWs.set(home(i), [...(byWs.get(home(i)) ?? []), i]);
-  const order = [...workspaceOrder.filter((id) => byWs.has(id)), ...[...byWs.keys()].filter((k) => k && !workspaceOrder.includes(k))];
+  const order = [
+    ...workspaceOrder.filter((id) => byWs.has(id)),
+    ...[...byWs.keys()].filter((k) => k && !workspaceOrder.includes(k)),
+  ];
   const rank = (id: string) => {
     const n = workspaceOrder.indexOf(id);
     return n < 0 ? Number.MAX_SAFE_INTEGER : n;
@@ -97,9 +111,9 @@ export function group(
   const groups: Group[] = order.map((id) => {
     const list = byWs.get(id) ?? [];
     const own = list.filter((i) => (i.workspaceId ?? "") === id);
-    const laneIds = [...new Set(list.map((i) => i.workspaceId ?? "").filter((k) => k !== id && lanes[k]))].sort(
-      (a, b) => rank(a) - rank(b) || a.localeCompare(b),
-    );
+    const laneIds = [
+      ...new Set(list.map((i) => i.workspaceId ?? "").filter((k) => k !== id && lanes[k])),
+    ].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
     const children = laneIds.map((laneId) => ({
       id: `ws:${laneId}`,
       label: lanes[laneId]?.branch ?? laneId,

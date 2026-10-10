@@ -55,7 +55,12 @@ export function UnsupportedOverlay() {
           <Button variant="ghost" onClick={() => invoke("app_quit").catch(() => undefined)}>
             {t("unsupported.quit")}
           </Button>
-          <Button variant="primary" data-testid="unsupported-update" disabled={stage === "checking" || stage === "downloading"} onClick={() => void updateNow()}>
+          <Button
+            variant="primary"
+            data-testid="unsupported-update"
+            disabled={stage === "checking" || stage === "downloading"}
+            onClick={() => void updateNow()}
+          >
             {t("unsupported.update")}
           </Button>
         </div>

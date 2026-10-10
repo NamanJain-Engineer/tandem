@@ -6,6 +6,7 @@ import { useSession } from "../../stores/session";
 import { useSettings } from "../../stores/settings";
 import { copyDiagnostics } from "../shell/actions";
 import { useBoot } from "../shell/useBoot";
+import { DataControls } from "./DataControls";
 import { type FlowRow, flowRows } from "./flows";
 
 /** "What leaves this machine" (F-TL-07): built from hosted-features.json,
@@ -49,6 +50,7 @@ export function PrivacyFlows() {
           </tbody>
         </table>
       </div>
+      <DataControls />
     </section>
   );
 }

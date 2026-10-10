@@ -281,7 +281,13 @@ function evenStack(nodes: LayoutNode[], extent: number | undefined, gutter: numb
   if (nodes.length === 1) return nodes[0] as LayoutNode;
   const ratio = evenRatio(nodes.length, extent, gutter);
   const restExtent = extent === undefined ? undefined : (1 - ratio) * (extent - gutter);
-  return { type: "split", dir: "col", ratio, a: nodes[0] as LayoutNode, b: evenStack(nodes.slice(1), restExtent, gutter) };
+  return {
+    type: "split",
+    dir: "col",
+    ratio,
+    a: nodes[0] as LayoutNode,
+    b: evenStack(nodes.slice(1), restExtent, gutter),
+  };
 }
 
 /** Auto-arrange (F-CD-11): an even grid with the fewest rows — cols =

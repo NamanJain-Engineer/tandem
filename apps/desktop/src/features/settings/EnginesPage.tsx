@@ -103,7 +103,11 @@ function EngineRow({ engine, onInstall }: { engine: EngineView; onInstall: () =>
           onClick={() => setOpen((o) => !o)}
           className="inline-flex size-6 items-center justify-center rounded-sm text-fg-muted hover:text-fg focus-visible:shadow-focus focus-visible:outline-none"
         >
-          {open ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
+          {open ? (
+            <ChevronDown size={14} aria-hidden="true" />
+          ) : (
+            <ChevronRight size={14} aria-hidden="true" />
+          )}
         </button>
         <EngineGlyph letters={engine.spec.logo} size={20} />
         <span className="w-36 truncate text-base text-fg">{engine.spec.label}</span>
@@ -112,8 +116,12 @@ function EngineRow({ engine, onInstall }: { engine: EngineView; onInstall: () =>
             <Spinner />
           ) : installed ? (
             <>
-              <span data-testid={`engine-version-${engine.spec.id}`}>{engine.install?.version ?? t("engines.versionUnknown")}</span>
-              {engine.install?.source === "known" && <Badge variant="waiting">{t("engines.notOnPath")}</Badge>}
+              <span data-testid={`engine-version-${engine.spec.id}`}>
+                {engine.install?.version ?? t("engines.versionUnknown")}
+              </span>
+              {engine.install?.source === "known" && (
+                <Badge variant="waiting">{t("engines.notOnPath")}</Badge>
+              )}
               <span>· {engine.chatCapable ? t("engines.thread") : t("engines.terminalOnly")}</span>
             </>
           ) : (
@@ -121,7 +129,12 @@ function EngineRow({ engine, onInstall }: { engine: EngineView; onInstall: () =>
           )}
         </span>
         {!installed && (
-          <Button size="sm" variant="secondary" onClick={onInstall} data-testid={`engine-install-${engine.spec.id}`}>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={onInstall}
+            data-testid={`engine-install-${engine.spec.id}`}
+          >
             {t("engines.install")}
           </Button>
         )}
@@ -130,7 +143,10 @@ function EngineRow({ engine, onInstall }: { engine: EngineView; onInstall: () =>
         <div className="flex flex-col gap-3 px-10 pb-3">
           <KeyValue
             items={[
-              { key: t("engines.path"), value: <span className="font-mono">{engine.install?.path ?? "—"}</span> },
+              {
+                key: t("engines.path"),
+                value: <span className="font-mono">{engine.install?.path ?? "—"}</span>,
+              },
               { key: t("engines.version"), value: engine.install?.version ?? "—" },
               { key: t("engines.newline"), value: keysOf(engine.spec.newlineSequence) },
               { key: t("engines.vendor"), value: engine.spec.vendor },
@@ -160,7 +176,13 @@ export function EnginesPage() {
     <div className="flex flex-col gap-4" data-testid="engines-page">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-fg-muted">{t("engines.pageBody")}</p>
-        <Button size="sm" variant="secondary" disabled={detecting} onClick={() => void useEngines.getState().detect()} data-testid="engines-rescan">
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={detecting}
+          onClick={() => void useEngines.getState().detect()}
+          data-testid="engines-rescan"
+        >
           {detecting ? <Spinner /> : <RefreshCw size={14} aria-hidden="true" />}
           {t("engines.checkAgain")}
         </Button>
@@ -170,7 +192,11 @@ export function EnginesPage() {
       ) : (
         <ul className="rounded-md border border-border bg-surface-2">
           {sorted.map((e) => (
-            <EngineRow key={e.spec.id} engine={e} onInstall={() => useInstall.getState().open(e, tabId ?? null)} />
+            <EngineRow
+              key={e.spec.id}
+              engine={e}
+              onInstall={() => useInstall.getState().open(e, tabId ?? null)}
+            />
           ))}
         </ul>
       )}
@@ -178,15 +204,26 @@ export function EnginesPage() {
         <div className="flex flex-col gap-2 text-sm">
           <div className="flex items-center gap-2 text-fg-muted">
             <span data-testid="engines-detection">
-              {t("engines.detectionSummary", { shells: report.shellsAsked.join(", "), n: report.foldersChecked.length })}
+              {t("engines.detectionSummary", {
+                shells: report.shellsAsked.join(", "),
+                n: report.foldersChecked.length,
+              })}
             </span>
             <Button size="sm" variant="ghost" onClick={() => setDetails((d) => !d)} aria-expanded={details}>
               {details ? t("engines.hideDetails") : t("engines.showDetails")}
             </Button>
           </div>
-          {report.slowShell && <p className="text-warning-text">{t("engines.slowShell", { seconds: report.slowShell.seconds })}</p>}
+          {report.slowShell && (
+            <p className="text-warning-text">
+              {t("engines.slowShell", { seconds: report.slowShell.seconds })}
+            </p>
+          )}
           {details && (
-            <div className={cx("flex flex-col gap-2 rounded-md border border-border bg-surface-1 p-3 font-mono text-xs text-fg-muted")}>
+            <div
+              className={cx(
+                "flex flex-col gap-2 rounded-md border border-border bg-surface-1 p-3 font-mono text-xs text-fg-muted",
+              )}
+            >
               {report.foldersChecked.map((f) => (
                 <span key={f}>{f}</span>
               ))}
