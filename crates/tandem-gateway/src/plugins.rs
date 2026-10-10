@@ -606,6 +606,7 @@ mod tests {
                 target_keys: vec!["repo"],
                 key_hint: None,
                 scopes: Vec::new(),
+                oauth_client: crate::vendors::OAuthClient::Dynamic,
             },
             runs: AtomicU64::new(0),
             price: AtomicI64::new(500),

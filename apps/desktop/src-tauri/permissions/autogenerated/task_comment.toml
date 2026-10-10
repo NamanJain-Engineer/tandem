@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-task-comment"
+description = "Enables the task_comment command without any pre-configured scope."
+commands.allow = ["task_comment"]
+
+[[permission]]
+identifier = "deny-task-comment"
+description = "Denies the task_comment command without any pre-configured scope."
+commands.deny = ["task_comment"]

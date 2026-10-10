@@ -808,7 +808,7 @@ impl TeammatesService {
                 session_search: true,
                 skills: true,
                 mail: teammate.settings.may_message,
-                schedule: false,
+                schedule: teammate.settings.may_schedule,
             },
         });
         if briefing.injection_lines > 0 {

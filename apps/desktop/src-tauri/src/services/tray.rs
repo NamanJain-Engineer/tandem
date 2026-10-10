@@ -1,13 +1,5 @@
-//! The tray icon (F-SH-13, MILESTONES M8 task 11): Open Vibezeo, the
-//! Dictate status line (it opens Settings › Dictate) and Quit.
-
-use std::sync::OnceLock;
-
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::TrayIconBuilder;
-use tauri::Emitter;
-
-static STATUS: OnceLock<MenuItem<tauri::Wry>> = OnceLock::new();
+//! The tray's Dictate status line (F-SH-13, MILESTONES M8 task 11). The
+//! tray itself is `crate::tray`, shared with background routines.
 
 /// The status line for a `DictateStatus`.
 pub fn status_line(status: &crate::services::dictate::DictateStatus) -> String {
@@ -29,47 +21,10 @@ pub fn status_line(status: &crate::services::dictate::DictateStatus) -> String {
     }
 }
 
-pub fn install(app: &tauri::App) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "tray-open", "Open Vibezeo", true, None::<&str>)?;
-    let status = MenuItem::with_id(
-        app,
-        "tray-dictate",
-        "Dictate: starting…",
-        true,
-        None::<&str>,
-    )?;
-    let quit = MenuItem::with_id(app, "tray-quit", "Quit Vibezeo", true, None::<&str>)?;
-    let sep = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&open, &status, &sep, &quit])?;
-    let _ = STATUS.set(status);
-    let mut builder = TrayIconBuilder::with_id("main")
-        .tooltip("Vibezeo")
-        .menu(&menu)
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "tray-open" => crate::focus_main(app),
-            "tray-dictate" => {
-                crate::focus_main(app);
-                let _ = app.emit_to(
-                    "main",
-                    "ui:open-settings",
-                    serde_json::json!({ "page": "dictate" }),
-                );
-            }
-            "tray-quit" => app.exit(0),
-            _ => {}
-        });
-    if let Some(icon) = app.default_window_icon() {
-        builder = builder.icon(icon.clone());
-    }
-    builder.build(app)?;
-    Ok(())
-}
-
-/// Keeps the status line current.
+/// Keeps the tray's Dictate line current, and the tray shown while
+/// Dictate is on (`crate::tray`, D-819).
 pub fn update(status: &crate::services::dictate::DictateStatus) {
-    if let Some(item) = STATUS.get() {
-        let _ = item.set_text(status_line(status));
-    }
+    crate::tray::dictate_changed(status.enabled, status_line(status));
 }
 
 #[cfg(test)]

@@ -19,9 +19,12 @@ pub mod limits;
 pub mod onboarding;
 pub mod plugins;
 pub mod restore;
+pub mod routines;
 pub mod scratchpad;
 pub mod settings;
 pub mod shell;
+pub mod task_exec;
+pub mod tasks;
 pub mod teammates;
 pub mod terminal;
 #[cfg(debug_assertions)]
