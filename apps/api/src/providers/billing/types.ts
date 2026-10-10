@@ -34,4 +34,9 @@ export interface BillingProvider {
   refundPayment(checkoutSessionId: string): Promise<void>;
   updateQuantity(subscriptionId: string, seats: number): Promise<void>;
   cancelNow(subscriptionId: string): Promise<void>;
+  /**
+   * Deletes the customer and the billing details Stripe holds for it, which
+   * also cancels its subscriptions. A customer that's already gone is done (F-TL-05).
+   */
+  deleteCustomer(customerId: string): Promise<void>;
 }

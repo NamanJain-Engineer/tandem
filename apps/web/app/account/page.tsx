@@ -9,6 +9,7 @@ import { useMe } from "../../lib/useMe";
 export default function AccountPage() {
   const { me, error } = useMe();
   const [message, setMessage] = useState<{ tone: "error" | "success"; text: string } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function changePassword(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -33,10 +34,17 @@ export default function AccountPage() {
 
   async function deleteAccount() {
     const typed = window.prompt(
-      "Type DELETE to delete your account. This cancels your subscription now and removes your data within 30 days.",
+      "Type DELETE to delete your account. This cancels your subscription now, signs you out on every device and removes your data within 30 days.",
     );
     if (typed !== "DELETE") return;
-    await api("/v1/me", { method: "DELETE", body: { confirm: "DELETE" } });
+    setDeleteError(null);
+    try {
+      await api("/v1/me", { method: "DELETE", body: { confirm: "DELETE" } });
+    } catch (err) {
+      // A Team owner with members is asked to transfer it first (F-TL-05).
+      setDeleteError(err instanceof ApiFailure ? err.message : "Couldn't request the deletion. Try again.");
+      return;
+    }
     await api("/v1/auth/sign-out", { method: "POST", body: {} }).catch(() => undefined);
     window.location.replace("/");
   }
@@ -84,8 +92,14 @@ export default function AccountPage() {
           <Card>
             <h2 className="text-lg font-semibold">Delete account</h2>
             <p className="mt-1 text-sm text-fg-muted">
-              Cancels your subscription now and deletes your account and personal data within 30 days.
+              Cancels your subscription now, signs you out on every device and deletes your account and
+              personal data within 30 days.
             </p>
+            {deleteError && (
+              <div className="mt-3">
+                <Notice tone="error">{deleteError}</Notice>
+              </div>
+            )}
             <div className="mt-4">
               <Button variant="danger" onClick={deleteAccount}>
                 Delete account…
