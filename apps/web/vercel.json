@@ -4,6 +4,12 @@
   "installCommand": "pnpm install --frozen-lockfile --filter web... --filter desktop...",
   "buildCommand": "pnpm build:site",
   "ignoreCommand": "sh ./scripts/vercel-ignore.sh",
+  "git": {
+    "deploymentEnabled": {
+      "**": false,
+      "main": true
+    }
+  },
   "rewrites": [
     {
       "source": "/api/v1/site-info/",

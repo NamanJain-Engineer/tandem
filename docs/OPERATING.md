@@ -253,6 +253,7 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
   unused client runtime from the marketing pages (not the docs or the demo app)
   and fails the build if any page then has a script beyond `/demo/embed.js` on `/`
   and `/download/detect.js` on `/download/`. Site components stay server-only.
+- **Deployment limit (D-829):** Vercel's plan caps deployments per day, and every push to a branch Vercel deploys counts. Only `main` deploys (`git.deploymentEnabled`). Batch: merge features into `product-m0-m5` as they're ready, and move `main` only for a release that bundles them all. One release is one deployment. Never merge into `main` for a single small change unless it's a hotfix the live site needs. If Vercel answers "Deployment rate limited", wait it out (the limit is a rolling day) or use **Redeploy** on the latest `main` deployment once it clears.
 - **Deploy** = merge the product branch into `main` and push, only with the
   owner's go-ahead (some agent environments block pushes to `main` outright; then
   the owner merges on GitHub). Vercel builds in a few minutes.

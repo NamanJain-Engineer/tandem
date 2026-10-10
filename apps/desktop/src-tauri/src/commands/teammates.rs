@@ -96,17 +96,7 @@ pub async fn memory_undo(state: State<'_, AppState>, change_id: String) -> Resul
     state.teammates.undo_memory(&change_id).await
 }
 
-fn skill_err(e: tandem_store::skills::SkillError) -> IpcError {
-    use tandem_core::ErrorCode;
-    use tandem_store::skills::SkillError;
-    let code = match &e {
-        SkillError::Invalid(_) => ErrorCode::Invalid,
-        SkillError::NotFound(_) => ErrorCode::NotFound,
-        SkillError::Exists(_) => ErrorCode::Conflict,
-        SkillError::Io(_) => ErrorCode::Io,
-    };
-    IpcError::new(code, e.to_string())
-}
+use crate::services::teammates::skill_error as skill_err;
 
 #[tauri::command]
 pub async fn skills_list(
@@ -158,6 +148,8 @@ pub async fn skill_save(
         .teammates
         .mark_skills_seen(&teammate_id, std::slice::from_ref(&slug))
         .await;
+    // Engines it's installed for read the saved text (F-AG-10).
+    state.teammates.resync_skill(&teammate, &slug, true).await;
     state.teammates.publish().await;
     Ok(())
 }
@@ -170,9 +162,31 @@ pub async fn skill_remove(
     slug: String,
 ) -> Result<(), IpcError> {
     let teammate = state.teammates.get(&teammate_id).await?;
+    // Its synced copies go first (F-AG-10).
+    state.teammates.resync_skill(&teammate, &slug, false).await;
     tandem_store::skills::remove(std::path::Path::new(&teammate.home), &slug).map_err(skill_err)?;
     state.teammates.publish().await;
     Ok(())
+}
+
+/// `skill_sync` (F-AG-10): "Also install for …" on or off for one engine
+/// account. A same-named skill the engine already has is left as it is.
+#[tauri::command]
+pub async fn skill_sync(
+    state: State<'_, AppState>,
+    teammate_id: TeammateId,
+    slug: String,
+    engine_id: String,
+    account_id: tandem_core::ids::AccountId,
+    on: bool,
+) -> Result<tandem_store::skills::SyncOutcome, IpcError> {
+    let teammate = state.teammates.get(&teammate_id).await?;
+    let st = state
+        .teammates
+        .sync_skill(&teammate, &slug, &engine_id, &account_id, on)
+        .await?;
+    state.teammates.publish().await;
+    Ok(tandem_store::skills::SyncOutcome { state: st })
 }
 
 #[tauri::command]
@@ -341,4 +355,105 @@ pub async fn mail_retry(
     mail_id: tandem_core::ids::MailId,
 ) -> Result<(), IpcError> {
     state.mail.retry(&mail_id).await
+}
+
+/// `teammate_launch_in_terminal` (F-AG-13): a Code-mode agent pane with the
+/// teammate's engine and account in one of its places (or its Home), named
+/// after it, whose first prompt is its brief. Without `tab_id` the place
+/// opens as a workspace (an open one is reused) and the pane joins its
+/// first tab.
+#[tauri::command]
+pub async fn teammate_launch_in_terminal(
+    state: State<'_, AppState>,
+    id: TeammateId,
+    place_path: String,
+    tab_id: Option<tandem_core::ids::TabId>,
+) -> Result<tandem_store::repo::panes::PaneRecord, IpcError> {
+    use crate::services::teammates::{pane_name, TeammatesService};
+    use tandem_core::ErrorCode;
+    use tandem_store::repo::{accounts, panes, tabs};
+    let teammate = state.teammates.get(&id).await?;
+    let place = TeammatesService::place_for(&teammate, Some(&place_path))?;
+    let engines = &state.terminals.engines;
+    let engine = engines.get(&teammate.engine_id).ok_or_else(|| {
+        IpcError::new(
+            ErrorCode::EngineMissing,
+            "This engine isn't known to Vibezeo",
+        )
+    })?;
+    if engines.installed(&teammate.engine_id).is_none() {
+        return Err(IpcError::new(
+            ErrorCode::EngineMissing,
+            format!("{} isn't installed", engine.label),
+        ));
+    }
+    state
+        .terminals
+        .check_live_limit(state.entitlements.limits().panes)?;
+    let tab = match tab_id {
+        Some(tab) => tab,
+        None => {
+            let added = crate::services::workspaces::add(
+                &state.store,
+                &place,
+                state.entitlements.limits().workspaces,
+            )
+            .await?;
+            tabs::list(&state.store, &added.workspace.id)
+                .await?
+                .into_iter()
+                .next()
+                .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "The workspace has no tab"))?
+                .id
+        }
+    };
+    // Its preferred account, while it's still one of the engine's.
+    let account = match &teammate.preferred_account_id {
+        Some(a) => accounts::get(&state.store, a)
+            .await
+            .ok()
+            .filter(|acc| acc.engine_id == teammate.engine_id)
+            .map(|acc| acc.id),
+        None => None,
+    };
+    let mut pane = crate::commands::terminal::create_pane(
+        &state,
+        &tab,
+        "agent",
+        Some(place),
+        Some(teammate.engine_id.clone()),
+        account,
+    )
+    .await?;
+    // Named after the teammate, so the Dashboard shows it under its name.
+    let name = pane_name(&teammate.name);
+    let named = match panes::rename(&state.store, &pane.id, &name).await {
+        Ok(n) => n,
+        Err(_) => panes::assign_human_name(&state.store, &pane.id, &[name], |_| 0).await?,
+    };
+    pane.human_name = Some(named);
+    // The brief is typed whole (at most 8,000 characters, D-1301).
+    let prompt = teammate.brief.trim().to_string();
+    let terminals = state.terminals.clone();
+    let pane_id = pane.id.clone();
+    tauri::async_runtime::spawn(async move {
+        if prompt.is_empty() {
+            return;
+        }
+        if let Err(e) = terminals
+            .type_prompt_when_live(
+                &pane_id,
+                &prompt,
+                crate::services::launch::FIRST_PROMPT_WAIT,
+            )
+            .await
+        {
+            tracing::warn!(code = "teammates.terminal_prompt", error = %e.message, "the brief wasn't typed");
+        }
+    });
+    tracing::info!(
+        code = "teammates.launch_in_terminal",
+        "teammate launched in a terminal"
+    );
+    Ok(pane)
 }
