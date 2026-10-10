@@ -3,6 +3,7 @@ import { expectNoSeriousA11yViolationsInBothThemes } from "../support/axe";
 import {
   addFolder,
   browserLog,
+  freshSignedOut,
   planFooter,
   signInDesktop,
   signUpVerified,
@@ -25,6 +26,8 @@ describe("E2E-M2-1 walking skeleton", () => {
 
   it("launches fresh at sign-in, which passes axe", async () => {
     await waitForApp();
+    // `m16-5-*` runs before this file (name order) and leaves an offline profile.
+    await freshSignedOut();
     await $("#signin-title").waitForDisplayed({ timeout: 20_000 });
     expect(await $("#signin-title").getText()).toBe("Welcome to Vibezeo");
     await expectNoSeriousA11yViolationsInBothThemes();
