@@ -52,10 +52,14 @@ hand-edited).
 ## 3. Setting up a machine (Ubuntu 24.04 / Debian 12, root)
 
 ```bash
-bash scripts/bootstrap-linux.sh                  # WebKitGTK, webkit2gtk-driver, xvfb, dbus, openbox, xclip, tauri-driver, …
+bash scripts/bootstrap-linux.sh                  # WebKitGTK, webkit2gtk-driver, xvfb, dbus, openbox, xclip, tauri-driver,
+                                                 # openssh-client (ssh, ssh-keygen, ssh-keyscan) and musl-tools, …
 apt-get install -y zsh fish                      # the shell-integration E2E specs need them
+rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl  # tandem-host (M14)
+pip install ziglang==0.13.0 && cargo install cargo-zigbuild --locked     # release-local.sh: the aarch64 helper
 cargo install cargo-audit --locked
-cargo install cargo-about --locked --features cli # release-local.sh: notices (and cargo-cyclonedx for SBOMs)
+cargo install cargo-about --locked --features cli # release-local.sh: notices
+cargo install cargo-cyclonedx --locked           # release-local.sh: SBOMs
 pnpm install
 pnpm keys:dev                                    # local Ed25519 dev keys in .dev-keys/ (git-ignored)
 sh scripts/agent/with-infra.sh true              # proves Docker + Postgres/Redis/Mailpit/stripe-mock come up
@@ -147,7 +151,9 @@ cargo test -p tandem-host --features e2e-ssh -- --include-ignored f_rm_01
 pnpm --filter desktop perf -- --suite threads               # perf suites (threads, terminals, startup); TANDEM_PERF_BUILD=debug
 pnpm --filter desktop build:demo                            # the browser demo → apps/web/public/demo/app/
 pnpm --filter web build:site                                # the public site (demo included) → apps/web/out
-TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run     # Linux .deb + AppImage → dist/
+TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run     # Linux .deb + AppImage → dist/ (builds tandem-host
+                                                            # for Linux x86_64 and aarch64 first; needs cargo-zigbuild)
+sh scripts/check-host-bundle.sh dist/<name>.deb             # the bundle carries tandem-host (release-local runs it)
 ```
 
 E2E lessons (each cost a debugging round):

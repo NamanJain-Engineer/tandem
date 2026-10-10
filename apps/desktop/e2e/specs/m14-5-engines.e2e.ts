@@ -122,6 +122,15 @@ describe("E2E-M14-5 remote engines", () => {
     await invoke("thread_send", { threadId: thread.id, text: "see attached", attachmentIds: [chip?.id] });
     await waitForAssistant("You said: see attached @.tandem/attachments/", 60_000);
     expect(inContainer(`cat /home/tandem/project/.tandem/attachments/${thread.id}/*`)).toBe("local notes\n");
+    // No gateway reaches the host, so Claude asks in band
+    // (`--permission-prompt-tool stdio`): the same approval card, and Allow
+    // reaches the engine there.
+    await sendMessage("run echo remote-approved");
+    const card = '[data-testid="thread-pending"]';
+    await $(card).waitForExist({ timeout: 30_000, timeoutMsg: "no approval card for the remote thread" });
+    expect(await $(card).getText()).toContain("echo remote-approved");
+    await $(`${card} [data-testid="approval-allow"]`).click();
+    await waitForAssistant("Ran echo remote-approved.", 60_000);
     // Nothing of this machine's engine homes reached the host.
     expect(inContainer("grep -rl 'tandem/providers' /home/tandem/project 2>/dev/null || true").trim()).toBe(
       "",

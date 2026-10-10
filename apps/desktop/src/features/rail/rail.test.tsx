@@ -104,6 +104,17 @@ describe("rail (F-SH-03)", () => {
     expect(rows()[0]?.getAttribute("data-pinned")).toBe("true");
   });
 
+  it("F-RM-01 a host's folder offers no Reveal, and says worktrees aren't available there", async () => {
+    setup([ws("a", { kind: "ssh", hostId: "hst_1", branch: "main" })]);
+    fireEvent.contextMenu(rows()[0] as HTMLElement);
+    const item = await screen.findByRole("menuitem", {
+      name: "Worktrees aren't available in remote folders yet",
+    });
+    expect(item.getAttribute("aria-disabled") ?? item.getAttribute("data-disabled")).not.toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /Reveal|Show in/ })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Copy path" })).toBeTruthy();
+  });
+
   it("F-SH-03 Move down puts the row after its next neighbour", async () => {
     setup([ws("a"), ws("b"), ws("c")]);
     fireEvent.contextMenu(rows()[0] as HTMLElement);

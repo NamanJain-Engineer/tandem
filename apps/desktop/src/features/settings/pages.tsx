@@ -420,13 +420,15 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
     {
       id: "remote",
       label: t("settings.remote"),
-      subtitle: t("settings.remote.subtitle"),
-      keywords: ["ssh", "remote", "host", "server", "wsl", "linux"],
+      // WSL exists on Windows only (F-RM-02): elsewhere the page is SSH alone,
+      // with no WSL heading or skeleton to flash and hide.
+      subtitle: platform === "windows" ? t("settings.remote.subtitle") : t("settings.remote.subtitleSsh"),
+      keywords: ["ssh", "remote", "host", "server", ...(platform === "windows" ? ["wsl", "linux"] : [])],
       rows: [],
       extra: (
         <div className="flex flex-col gap-6">
           <RemoteHosts />
-          <WslDistros />
+          {platform === "windows" && <WslDistros />}
         </div>
       ),
     },

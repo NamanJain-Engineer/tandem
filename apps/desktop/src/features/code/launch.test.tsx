@@ -195,6 +195,25 @@ describe("launch sheet (F-CD-14, UI-12)", () => {
     expect(screen.getByTestId("launch-summary").textContent).toBe("This opens 2 panes.");
   });
 
+  it("F-RM-01 a folder on a host lists the host's engines and launches shared", async () => {
+    const remote = { ...ws("project", "main"), kind: "ssh", hostId: "hst_1", root: "/home/tandem/project" };
+    open(remote, {
+      engines_list: (a) =>
+        (a as { hostId?: string }).hostId === "hst_1"
+          ? [engine("aider", "Aider")]
+          : [engine("claude", "Claude Code")],
+    });
+    await preset("Fleet");
+    // The host's Aider, not this computer's Claude Code.
+    const seats = await screen.findAllByRole("combobox", { name: /Engine/ });
+    expect(seats[0]?.textContent).toContain("Aider");
+    const box = screen.getByRole("checkbox", { name: /Give each agent its own worktree/ });
+    expect(box.getAttribute("aria-checked")).toBe("false");
+    expect(box.getAttribute("data-disabled")).not.toBeNull();
+    expect(screen.getByText("Worktrees aren't available in remote folders yet")).toBeTruthy();
+    expect(named("engines_list").some((c) => (c.args as { hostId?: string }).hostId === "hst_1")).toBe(true);
+  });
+
   it("UI-12 outside a git repository the worktree box is off and says why", async () => {
     open(ws("notes", null));
     await preset("Fleet");

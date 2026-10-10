@@ -214,6 +214,9 @@ export function FilesPanel() {
   const store = useFiles.getState;
   const root = context ? absolutePath(context, "") : null;
   const abs = (path: string) => (context ? absolutePath(context, path) : null);
+  // Read when a menu opens: a host's (or distro's) files aren't on this computer.
+  const remoteFolder = () =>
+    (useWorkspaces.getState().list.find((w) => w.id === active.workspaceId)?.kind ?? "local") !== "local";
 
   const openTerminal = async (dir: string) => {
     const path = abs(dir);
@@ -248,17 +251,22 @@ export function FilesPanel() {
         },
       },
       { id: "copy-relative", label: t("files.menu.copyRelative"), onSelect: () => void copyText(node.path) },
-      {
-        id: "reveal",
-        label: isMac() ? t("files.menu.revealMac") : t("files.menu.reveal"),
-        onSelect: () => {
-          const p = abs(node.path);
-          if (p)
-            void invoke("app_reveal_path", { path: p }).catch((e: { message?: string }) =>
-              show({ tone: "error", title: e.message ?? "" }),
-            );
-        },
-      },
+      // A host's (or a distro's) files aren't at this path on this computer.
+      ...(remoteFolder()
+        ? []
+        : [
+            {
+              id: "reveal",
+              label: isMac() ? t("files.menu.revealMac") : t("files.menu.reveal"),
+              onSelect: () => {
+                const p = abs(node.path);
+                if (p)
+                  void invoke("app_reveal_path", { path: p }).catch((e: { message?: string }) =>
+                    show({ tone: "error", title: e.message ?? "" }),
+                  );
+              },
+            },
+          ]),
       { id: "terminal", label: t("files.menu.openTerminal"), onSelect: () => void openTerminal(dir) },
     ];
     if (mode === "thread") {
