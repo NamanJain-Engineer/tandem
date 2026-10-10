@@ -35,6 +35,7 @@ pub mod thread_titles;
 pub mod threads;
 pub mod updates;
 pub mod usage;
+pub mod usage_report;
 pub mod workspaces;
 
 /// Debug builds: the E2E fake engines' switches (`TANDEM_FAKE_*`), for
