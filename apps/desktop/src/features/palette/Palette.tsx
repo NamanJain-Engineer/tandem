@@ -2,6 +2,7 @@ import { Folder, Settings } from "lucide-react";
 import { CommandPalette, type PaletteGroup, type PaletteItem } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useLayout } from "../../stores/layout";
+import { useSettings } from "../../stores/settings";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { COMMANDS, bindingFor, commandTitle, isEnabled, runCommand } from "../commands/commands";
@@ -20,6 +21,8 @@ export function Palette() {
   useUi((s) => s.mode);
   const platform = useBoot((s) => s.boot?.platform ?? "linux");
   const mac = platform === "macos";
+  // Rebound shortcuts show as soon as they change.
+  useSettings((s) => s.values.shortcut_overrides);
   const item = (id: string): PaletteItem | null => {
     const spec = COMMANDS.find((c) => c.id === id);
     if (!spec || !isEnabled(spec)) return null;

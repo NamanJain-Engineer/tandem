@@ -78,6 +78,7 @@ setting_keys! {
     TermScreenReader,
     TermShellIntegration,
     TermShortcutPriority,
+    ShortcutOverrides,
     TermGpuRendering,
     OpenLinksInTandem,
     SearchEngine,
@@ -155,6 +156,9 @@ pub enum Validator {
     },
     /// A JSON object whose values are strings, booleans or string lists.
     Map,
+    /// Command id → a shortcut in the registry's form, or "" for none
+    /// (F-SH-09 rebinding).
+    Shortcuts,
     OptionalInt,
 }
 
@@ -388,6 +392,15 @@ pub static SCHEMA: &[SettingSpec] = &[
         V::OneOf(&["terminal", "tandem"]),
         Terminal,
         ["shortcut priority"]
+    ),
+    // Rebound app shortcuts (F-SH-09 P2, UI-113): command id → shortcut, or
+    // "" for none. Commands not listed keep the registry's default.
+    spec!(
+        ShortcutOverrides,
+        json!({}),
+        V::Shortcuts,
+        Shortcuts,
+        ["shortcuts", "keyboard", "keys", "rebind", "hotkey"]
     ),
     spec!(
         TermGpuRendering,
@@ -877,6 +890,19 @@ pub fn validate(key: SettingKey, v: &Value) -> Result<(), CoreError> {
             v if v.is_i64() => Ok(()),
             _ => Err(invalid(key, "must be empty or a number")),
         },
+        Validator::Shortcuts => match v.as_object() {
+            Some(map)
+                if map.iter().all(|(id, keys)| {
+                    crate::commands::find(id).is_some()
+                        && keys
+                            .as_str()
+                            .is_some_and(|k| k.is_empty() || crate::commands::valid_binding(k))
+                }) =>
+            {
+                Ok(())
+            }
+            _ => Err(invalid(key, "must map commands to shortcuts")),
+        },
     }
 }
 
@@ -901,6 +927,7 @@ pub fn sample_non_default(key: SettingKey) -> Value {
         Validator::OptionalText { .. } => json!("sample"),
         Validator::Map => json!({"sample": true}),
         Validator::OptionalInt => json!(1_700_000_000_000_i64),
+        Validator::Shortcuts => json!({"pane.split_right": "Mod+Alt+R"}),
     }
 }
 
@@ -935,6 +962,23 @@ mod tests {
         assert!(validate(SettingKey::Theme, &json!("pink")).is_err());
         assert!(validate(SettingKey::DefaultAccess, &json!("full")).is_ok());
         assert!(validate(SettingKey::RoutineAccess, &json!("full")).is_err());
+    }
+
+    #[test]
+    fn f_sh_09_6_shortcut_overrides_name_commands_and_valid_shortcuts() {
+        let k = SettingKey::ShortcutOverrides;
+        assert_eq!(default_value(k), json!({}));
+        assert_eq!(spec(k).page, SettingsPage::Shortcuts);
+        // A new shortcut, or "" for none.
+        assert!(validate(
+            k,
+            &json!({"pane.split_right": "Mod+Alt+R", "pane.close": ""})
+        )
+        .is_ok());
+        assert!(validate(k, &json!({"no.such_command": "Mod+Alt+R"})).is_err());
+        assert!(validate(k, &json!({"pane.split_right": "R"})).is_err());
+        assert!(validate(k, &json!({"pane.split_right": true})).is_err());
+        assert!(validate(k, &json!(["pane.split_right"])).is_err());
     }
 
     #[test]

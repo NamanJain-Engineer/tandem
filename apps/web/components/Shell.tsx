@@ -34,6 +34,12 @@ export function Shell({
           <Link href="/devices" className="text-fg-muted hover:text-fg">
             Devices
           </Link>
+          <Link href="/team" className="text-fg-muted hover:text-fg">
+            Team
+          </Link>
+          <Link href="/transparency" className="text-fg-muted hover:text-fg">
+            Transparency
+          </Link>
         </nav>
       </header>
       <main className="mx-auto max-w-4xl px-6 py-10">

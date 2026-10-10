@@ -315,6 +315,15 @@
     "enabledWhen": "always"
   },
   {
+    "id": "help.shortcuts",
+    "category": "help",
+    "mac": "Mod+/",
+    "pc": "Mod+/",
+    "pcTerminal": "Mod+Shift+/",
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
     "id": "help.copy_diagnostics",
     "category": "help",
     "mac": null,

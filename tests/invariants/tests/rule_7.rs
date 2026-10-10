@@ -1,7 +1,13 @@
 //! F-TL-06 rule 7: nothing leaves the machine without an opt-in (F-TL-01).
 //! Every Privacy switch starts off, Dictate starts local, and with
-//! telemetry off nothing is sent. Auto, cloud STT, Conductor and Enhance
-//! add their cases here as M8 and M13 build them.
+//! telemetry off nothing is sent. M13's hosted features have two more
+//! rule-7 tests next to their mechanism, because they need the app's
+//! private sign-in rig: `services::hosted::tests::
+//! invariant_rule_7_no_egress_without_optin` (a signed-in session with every
+//! opt-in off sends nothing: AI titles, audit, telemetry) and
+//! `invariant_rule_7_every_hosted_feature_defaults_to_off`
+//! (hosted-features.json). Cloud STT, Conductor and Enhance in the app add
+//! their cases as M8 builds them.
 
 use serde_json::{json, Value};
 use tandem_app::services::telemetry::{capture, TelemetryService};

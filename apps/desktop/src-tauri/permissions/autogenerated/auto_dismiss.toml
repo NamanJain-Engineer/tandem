@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-auto-dismiss"
+description = "Enables the auto_dismiss command without any pre-configured scope."
+commands.allow = ["auto_dismiss"]
+
+[[permission]]
+identifier = "deny-auto-dismiss"
+description = "Denies the auto_dismiss command without any pre-configured scope."
+commands.deny = ["auto_dismiss"]

@@ -14,6 +14,7 @@ import {
 } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useEngines } from "../../stores/engines";
+import { useSession } from "../../stores/session";
 import {
   defaultTarget,
   generateBrief,
@@ -73,7 +74,10 @@ function HandoffBody({ source }: { source: HandoffSource }) {
   const target = (engineId && label(engineId)) ?? "";
   const current = source.kind === "agent" ? (label(source.engineId) ?? t("handoff.thisAgent")) : null;
   const inWorktree = ws ? isWorktree(ws) : false;
-  const chatCapable = engines.some((e) => e.spec.id === engineId && e.chatCapable);
+  const chatEngines = useSession((s) => s.entitlement?.limits.chatEngines ?? null);
+  // Free threads run Claude Code and Codex only (PRODUCT_SPEC §3.2).
+  const onPlan = chatEngines === null || (engineId !== null && chatEngines.includes(engineId));
+  const chatCapable = engines.some((e) => e.spec.id === engineId && e.chatCapable) && onPlan;
   const place = where === "thread" && !chatCapable ? "same" : where;
   const places: SelectOption[] = [
     { value: "same", label: inWorktree ? t("handoff.sameWorktree") : t("handoff.sameFolder") },
@@ -84,7 +88,11 @@ function HandoffBody({ source }: { source: HandoffSource }) {
     },
     {
       value: "thread",
-      label: chatCapable ? t("handoff.thread") : t("handoff.threadUnsupported", { target }),
+      label: chatCapable
+        ? t("handoff.thread")
+        : onPlan
+          ? t("handoff.threadUnsupported", { target })
+          : t("handoff.threadPro", { target }),
       disabled: !chatCapable,
     },
   ];

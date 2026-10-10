@@ -110,12 +110,15 @@ pub struct AppState {
     pub terminals: Arc<TerminalService>,
     pub approvals: Arc<crate::services::approvals::ApprovalService>,
     pub notifications: Arc<crate::services::notifications::NotificationService>,
+    pub auto: Arc<crate::services::auto::AutoService>,
     /// Paused agents and their relaunch queue (F-SH-07).
     pub restore: Arc<crate::services::restore::RestoreService>,
     /// Auto-update and the minimum-version notice (F-SH-06).
     pub updates: Arc<crate::services::updates::UpdateService>,
     pub config: Arc<ConfigService>,
     pub telemetry: Arc<TelemetryService>,
+    /// The Team org's audit events (F-TL-10).
+    pub audit: Arc<crate::services::audit::AuditService>,
     pub deeplinks: DeepLinkQueue,
     /// Processes a crashed run left behind, until the user decides (UI-132).
     pub orphans: OrphanScan,
@@ -386,6 +389,19 @@ impl AppState {
             launcher.clone(),
         );
         launcher.bind(&threads);
+        // The Team org's policy: engines at every launch, access and audit
+        // at every thread session (F-BL-06, F-TL-10).
+        let policy_source = entitlements.clone();
+        terminals
+            .engines
+            .set_policy_source(Arc::new(move || policy_source.policy()));
+        let audit = crate::services::audit::AuditService::new(
+            auth.clone(),
+            api.clone(),
+            entitlements.clone(),
+            clock.clone(),
+        );
+        launcher.set_guard(audit.clone());
         // Thread titles: AI only with the Privacy opt-in (D-118).
         let titles_store = store.clone();
         threads.configure(
@@ -404,6 +420,9 @@ impl AppState {
             }),
             data.clone(),
         );
+        // Free threads run Claude Code and Codex only (PRODUCT_SPEC §3.2).
+        let plan = entitlements.clone();
+        threads.set_plan_limits(Arc::new(move || plan.limits()));
         threads.sweep_trash();
         // Threads are Dashboard items too (F-DB-01, D-6).
         let status = terminals.status.clone();
@@ -447,6 +466,10 @@ impl AppState {
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         let files = crate::services::files::FilesService::new(store.clone());
         let git_panel = crate::services::git_panel::GitPanelService::new(files.clone());
+        let auto = Arc::new(crate::services::auto::AutoService::new(
+            bus.clone(),
+            crate::services::auto::AutoTiming::default(),
+        ));
         Self {
             data,
             store,
@@ -465,10 +488,12 @@ impl AppState {
             terminals,
             approvals,
             notifications,
+            auto,
             restore,
             updates,
             config,
             telemetry,
+            audit,
             deeplinks: DeepLinkQueue::default(),
             orphans,
             logins: Arc::default(),

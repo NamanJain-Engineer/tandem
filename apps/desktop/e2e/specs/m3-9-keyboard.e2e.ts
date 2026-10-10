@@ -153,7 +153,7 @@ describe("E2E-M3-9 keyboard", () => {
     await browser.waitUntil(async () => (await mode()) === "Code", { timeout: 3_000 });
   });
 
-  it("F-SH-09.6 every registry command runs from the palette through its handler", async () => {
+  it("F-SH-09.4 every registry command runs from the palette through its handler", async () => {
     const before = await runs();
     await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
     await browser.keys([mod(), "k"]);

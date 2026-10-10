@@ -5,6 +5,8 @@ const apiEnv = {
   TANDEM_API_TEST_ROUTES: "1",
   BILLING_PROVIDER: "mock",
   WEB_PUBLIC_URL: "http://localhost:3000",
+  // The test identity provider's page lives on the API (F-BL-06 P2 SSO).
+  API_PUBLIC_URL: "http://127.0.0.1:8787",
   LOG_LEVEL: "warn",
 };
 

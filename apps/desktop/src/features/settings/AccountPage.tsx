@@ -55,7 +55,10 @@ export function AccountPage() {
           ? `${t(`settings.account.status.${status}` as "settings.account.status.active")}${e?.paidUntil && status !== "past_due" ? ` · ${t("settings.account.renews", { date: date(e.paidUntil) })}` : ""}`
           : null;
   const total = totalCredits(e) ?? 0;
-  const grant = e?.monthlyGrant ?? 10_000;
+  const grant = e?.credits?.grant ?? e?.monthlyGrant ?? 10_000;
+  // Team: billing is the org owner's and admins' (UI-114).
+  const org = plan === "team" ? (e?.org ?? null) : null;
+  const billingAdmin = !org || org.role !== "member";
 
   return (
     <div className="flex flex-col gap-6">
@@ -79,6 +82,11 @@ export function AccountPage() {
                   <span className="inline-flex items-center gap-2" data-testid="account-plan">
                     <Badge variant={plan === "free" ? "neutral" : "accent"}>{plan.toUpperCase()}</Badge>
                     {statusText && <span className="text-fg-muted">{statusText}</span>}
+                    {org && (
+                      <span className="text-fg-muted" data-testid="account-org">
+                        {t("settings.account.managedBy", { org: org.name })}
+                      </span>
+                    )}
                   </span>
                 ),
               },
@@ -100,6 +108,11 @@ export function AccountPage() {
                               purchased: e.credits.purchased,
                             })}
                           </span>
+                          {e.credits.cap !== null && (
+                            <span className="text-sm text-fg-subtle tabular-nums" data-testid="account-cap">
+                              {t("settings.account.cap", { spent: e.credits.spent ?? 0, cap: e.credits.cap })}
+                            </span>
+                          )}
                         </span>
                       ),
                     },
@@ -112,20 +125,26 @@ export function AccountPage() {
               <Button variant="primary" onClick={() => openUpgrade()}>
                 {t("settings.account.seePlans")}
               </Button>
-            ) : (
+            ) : billingAdmin ? (
               <Button
                 iconRight={<ExternalLink size={14} />}
                 onClick={() => void openBilling({ type: "portal" }, show)}
               >
                 {t("settings.account.manageBilling")}
               </Button>
+            ) : (
+              <span className="self-center text-sm text-fg-muted" data-testid="account-ask-admin">
+                {t("settings.account.askAdmin")}
+              </span>
             )}
-            <Button
-              iconRight={<ExternalLink size={14} />}
-              onClick={() => void openBilling({ type: "credits" }, show)}
-            >
-              {t("settings.account.buyCredits")}
-            </Button>
+            {billingAdmin && (
+              <Button
+                iconRight={<ExternalLink size={14} />}
+                onClick={() => void openBilling({ type: "credits" }, show)}
+              >
+                {t("settings.account.buyCredits")}
+              </Button>
+            )}
             <Button variant="link" onClick={() => void refresh()}>
               {t("settings.account.refresh")}
             </Button>
