@@ -515,6 +515,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `app_open_external` | `{url}` (http/https/mailto only) | — | Invalid | F-CD-09 |
 | `app_reveal_path` | `{path}` | — | NotFound | F-SH-03 |
 | `app_copy_diagnostics` | — | `String` (also placed on clipboard) | — | F-SH-11 |
+| `app_diagnostics` | — | `Diagnostics {uptimeMs, subsystems: SubsystemHealth[], panes: PaneMetrics[], bus: BusDepth[]}` (local only; Help › Diagnostics polls it while open) | — | §5.7 |
 | `app_open_logs_folder` | — | — | — | F-SH-11 |
 | `app_log` | `{level, target, code, fields:Record<string,string\|number\|boolean>}` | — | — | F-SH-11 |
 | `deeplink_pending` | — | `[DeepLink]` | — | F-SH-13 |

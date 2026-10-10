@@ -90,6 +90,22 @@ describe("E2E-M15-4 axe sweep", () => {
     });
   }
 
+  it("§5.4 §5.7 Help › Diagnostics lists the supervised subsystems, live", async () => {
+    await $('button[aria-label="Vibezeo menu"]').click();
+    const item = $('//*[@role="menuitem"][normalize-space()="Diagnostics…"]');
+    await item.waitForClickable({ timeout: 10_000 });
+    await item.click();
+    const panel = $('[data-testid="diagnostics"]');
+    await panel.waitForDisplayed({ timeout: 10_000 });
+    const text = await panel.getText();
+    // The status bus, the status ticker and the terminals under the watchdog (§5.2).
+    expect(text).toContain("status bus/status");
+    expect(text).toContain("status");
+    expect(text).toMatch(/Started in \d+ ms/);
+    await expectNoSeriousA11yViolationsInBothThemes();
+    await close();
+  });
+
   it("§5.4 the sidebar's Files tab", async () => {
     await press([mod(), Key.Alt, "f"]);
     await $('[role="tree"]').waitForDisplayed({ timeout: 10_000 });

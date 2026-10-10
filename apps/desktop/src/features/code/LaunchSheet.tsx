@@ -461,17 +461,19 @@ function LaunchSheetBody({ workspaceId }: { workspaceId: string }) {
         />
       )}
 
-      <div className="flex items-center gap-2 border-t border-divider pt-3">
+      {/* Wraps rather than pushing Launch off the sheet when labels run long
+          (§5.5: found by the en-XA run). */}
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-divider pt-3">
         <Button
           variant="ghost"
           size="sm"
+          className="mr-auto"
           onClick={() => setSaving(true)}
           disabled={!ready}
           data-testid="launch-save"
         >
           {t("launch.saveAs")}
         </Button>
-        <span className="flex-1" />
         <Button variant="secondary" onClick={close}>
           {report ? t("common.close") : t("common.cancel")}
         </Button>

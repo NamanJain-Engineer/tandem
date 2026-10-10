@@ -76,6 +76,7 @@ export function TitleBar() {
       label: t("menu.help"),
       onSelect: () => invoke("app_open_external", { url: "https://vibezeo.com/download/#getting-started" }).catch(() => undefined),
     },
+    { id: "diagnostics", label: t("menu.diagnostics"), onSelect: () => useUi.getState().setDiagnostics(true) },
     { id: "diag", label: t("menu.copyDiagnostics"), onSelect: () => void copyDiagnostics(show) },
     {
       id: "logs",

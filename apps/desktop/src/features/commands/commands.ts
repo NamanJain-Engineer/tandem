@@ -174,6 +174,7 @@ export const handlers: Record<string, () => void> = {
   "terminal.copy_last_output": onPane((_, paneId) => void copyLastOutput(paneId, toast)),
   "billing.plans": () => useUi.getState().openUpgrade(),
   "help.shortcuts": () => useUi.getState().setCheatsheet(!useUi.getState().cheatsheetOpen),
+  "help.diagnostics": () => useUi.getState().setDiagnostics(true),
   "help.copy_diagnostics": () => void copyDiagnostics(toast),
   "help.open_logs": () => void invoke("app_open_logs_folder").catch(() => undefined),
 };

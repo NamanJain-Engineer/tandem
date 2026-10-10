@@ -12,6 +12,8 @@ type UiState = {
   paletteOpen: boolean;
   /** The keyboard shortcuts cheatsheet (Mod+/). */
   cheatsheetOpen: boolean;
+  /** Help › Diagnostics, the live panel (§5.7). */
+  diagnosticsOpen: boolean;
   upgrade: { open: boolean; gate?: UpgradeGate; retry?: () => void };
   setMode: (m: Mode) => void;
   openSettings: (page?: string) => void;
@@ -20,6 +22,7 @@ type UiState = {
   toggleRail: () => void;
   setPalette: (open: boolean) => void;
   setCheatsheet: (open: boolean) => void;
+  setDiagnostics: (open: boolean) => void;
   openUpgrade: (gate?: UpgradeGate, retry?: () => void) => void;
   closeUpgrade: () => void;
 };
@@ -31,6 +34,7 @@ export const useUi = create<UiState>((set, get) => ({
   railCollapsed: false,
   paletteOpen: false,
   cheatsheetOpen: false,
+  diagnosticsOpen: false,
   upgrade: { open: false },
   settingsPage: null,
   setMode: (mode) => set({ mode }),
@@ -51,6 +55,7 @@ export const useUi = create<UiState>((set, get) => ({
   toggleRail: () => set({ railCollapsed: !get().railCollapsed }),
   setPalette: (paletteOpen) => set({ paletteOpen }),
   setCheatsheet: (cheatsheetOpen) => set({ cheatsheetOpen }),
+  setDiagnostics: (diagnosticsOpen) => set({ diagnosticsOpen }),
   openUpgrade: (gate, retry) => set({ upgrade: { open: true, gate, retry } }),
   closeUpgrade: () => set({ upgrade: { open: false } }),
 }));

@@ -70,6 +70,56 @@ pub fn app_log(level: LogLevel, target: String, code: String, fields: BTreeMap<S
     }
 }
 
+/// One topic's queue on the event bus.
+#[derive(Debug, Clone, serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct BusDepth {
+    pub topic: tandem_core::bus::Topic,
+    pub queued: u32,
+}
+
+/// Help › Diagnostics, the live panel (PRODUCT_SPEC §5.7): kept on this
+/// machine, never sent anywhere.
+#[derive(Debug, Clone, serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Diagnostics {
+    #[ts(type = "number")]
+    pub uptime_ms: u64,
+    pub subsystems: Vec<tandem_core::supervisor::SubsystemHealth>,
+    pub panes: Vec<tandem_pty::PaneMetrics>,
+    pub bus: Vec<BusDepth>,
+}
+
+static STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+/// Marks the process start for the uptime (called at startup).
+pub fn mark_started() {
+    let _ = STARTED.set(std::time::Instant::now());
+}
+
+#[tauri::command]
+pub fn app_diagnostics(state: State<'_, AppState>) -> Diagnostics {
+    Diagnostics {
+        uptime_ms: STARTED
+            .get_or_init(std::time::Instant::now)
+            .elapsed()
+            .as_millis() as u64,
+        subsystems: tandem_core::supervisor::watchdog().snapshot(),
+        panes: state.terminals.pty.metrics(),
+        bus: state
+            .bus
+            .depths()
+            .into_iter()
+            .map(|(topic, n)| BusDepth {
+                topic,
+                queued: n as u32,
+            })
+            .collect(),
+    }
+}
+
 /// Help → Copy diagnostics (F-SH-11): version, OS and the last 200
 /// sanitized log lines, also placed on the clipboard.
 #[tauri::command]

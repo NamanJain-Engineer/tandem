@@ -5,7 +5,9 @@ import { followAuto } from "../../stores/auto";
 import { WorktreeDialogs } from "../code/Worktrees";
 import { useEffect } from "react";
 import { LiveAnnouncer, useToast } from "@tandem/ui";
-import { t } from "../../i18n";
+import { setCatalog, t } from "../../i18n";
+import en from "../../i18n/en.json";
+import { pseudoCatalog } from "../../i18n/pseudo";
 import { useLayout } from "../../stores/layout";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
@@ -19,6 +21,7 @@ import { ThreadRail } from "../thread/ThreadRail";
 import { followThreads } from "../../stores/threads";
 import { Palette } from "../palette/Palette";
 import { Cheatsheet } from "../commands/Cheatsheet";
+import { DiagnosticsPanel } from "../diagnostics/DiagnosticsPanel";
 import { OrphansDialog } from "../restore/OrphansDialog";
 import { followEngines } from "../../stores/engines";
 import { followLimits } from "../../stores/limits";
@@ -93,6 +96,8 @@ export function AppShell() {
       paneSize: (paneId: string) => terminalHandles.get(paneId)?.size() ?? null,
       reflows: (reset?: boolean) => reflowCounts(reset ?? false),
       commandRuns: () => Object.fromEntries(commandRuns),
+      // §5.5: the en-XA pseudo-locale, live (the shell re-renders).
+      pseudoLocale: (on: boolean) => setCatalog(on ? pseudoCatalog(en) : en, on ? "en-XA" : "en"),
       // State the harness saves next to a failure's screenshot.
       debug: () => {
         const ws = useWorkspaces.getState();
@@ -163,6 +168,7 @@ export function AppShell() {
       <AutoDialog />
       <Palette />
       <Cheatsheet />
+      <DiagnosticsPanel />
       <OrphansDialog />
       <RestartDialog />
       <UnsupportedOverlay />

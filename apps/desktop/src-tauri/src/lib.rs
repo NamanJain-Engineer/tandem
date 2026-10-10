@@ -22,6 +22,7 @@ macro_rules! app_commands {
             commands::app::app_ready,
             commands::app::app_log,
             commands::app::app_copy_diagnostics,
+            commands::app::app_diagnostics,
             commands::app::app_open_logs_folder,
             commands::app::app_open_external,
             commands::app::app_quit,
@@ -441,6 +442,7 @@ fn spawn_background(state: &AppState) {
 /// and logging first, then the store, then the hidden main window, which the
 /// UI shows on first paint via `app_ready`.
 pub fn run() {
+    commands::app::mark_started();
     let state = match AppState::init() {
         Ok(state) => state,
         Err(err) => {

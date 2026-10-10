@@ -123,6 +123,21 @@ pub struct PtyInfo {
     pub started_at: i64,
 }
 
+/// One live terminal's numbers, for Help › Diagnostics (§5.7).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PaneMetrics {
+    pub pane_id: String,
+    /// How long opening the PTY and starting the program took.
+    #[ts(type = "number")]
+    pub spawn_ms: u64,
+    /// Output sent to the UI that it hasn't acknowledged yet (bytes).
+    #[ts(type = "number")]
+    pub queued_bytes: u64,
+    pub exited: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -158,6 +173,8 @@ struct Session {
     side: Mutex<SideChannel>,
     /// A `pty:state` change not sent yet (debounced).
     state_dirty: AtomicBool,
+    /// How long the spawn took (Diagnostics).
+    spawn_ms: AtomicU64,
     /// Windows: the kill-on-close Job Object holding the tree.
     #[cfg(windows)]
     job: Option<job::Job>,
@@ -251,6 +268,7 @@ impl PtyManager {
         spec: SpawnSpec,
         sink: Option<Arc<dyn OutputSink>>,
     ) -> Result<PtyInfo, PtyError> {
+        let spawn_started = Instant::now();
         let pty = native_pty_system()
             .openpty(PtySize {
                 rows: spec.rows.max(2),
@@ -302,9 +320,14 @@ impl PtyManager {
                 spec.mark_token.clone(),
             )),
             state_dirty: AtomicBool::new(false),
+            spawn_ms: AtomicU64::new(0),
             #[cfg(windows)]
             job: job::Job::for_process(pid),
         });
+        session.spawn_ms.store(
+            spawn_started.elapsed().as_millis() as u64,
+            Ordering::Release,
+        );
         self.sessions.insert(spec.pane_id.clone(), session.clone());
         let started_at = now_ms();
         if let Some(reg) = &self.registry {
@@ -755,6 +778,27 @@ impl PtyManager {
                 code: None,
                 signal: Some("SIGKILL".into()),
             }))
+    }
+
+    /// Every live terminal's numbers (Help › Diagnostics).
+    pub fn metrics(&self) -> Vec<PaneMetrics> {
+        let mut out: Vec<PaneMetrics> = self
+            .sessions
+            .iter()
+            .map(|e| PaneMetrics {
+                pane_id: e.key().clone(),
+                spawn_ms: e.value().spawn_ms.load(Ordering::Acquire),
+                queued_bytes: e.value().flow.unacked(),
+                exited: e
+                    .value()
+                    .exited
+                    .lock()
+                    .map(|x| x.is_some())
+                    .unwrap_or(false),
+            })
+            .collect();
+        out.sort_by(|a, b| a.pane_id.cmp(&b.pane_id));
+        out
     }
 
     pub fn kill_all(&self) {

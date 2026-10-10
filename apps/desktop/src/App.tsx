@@ -16,7 +16,7 @@ import { DeepLinks } from "./features/shell/DeepLinks";
 import { useBoot } from "./features/shell/useBoot";
 import { SignIn } from "./features/signin/SignIn";
 import { Splash, type SplashPhase } from "./features/splash/Splash";
-import { t } from "./i18n";
+import { t, useCatalogVersion } from "./i18n";
 import { inTauri, invoke, usingFakeBackend } from "./ipc/invoke";
 import { installGlobalErrorLogging, log } from "./ipc/log";
 import { useSetting, useSettings, watchSettings } from "./stores/settings";
@@ -81,6 +81,7 @@ export function App() {
   const textSize = useSetting<TextSize>("interface_text_size", "default");
   const density = useSetting<Density>("density", "compact");
   const onboardingDone = useOnboarding((s) => s.state?.done ?? true);
+  const catalogVersion = useCatalogVersion();
 
   useEffect(() => {
     const onHash = () => setHash(window.location.hash);
@@ -174,7 +175,7 @@ export function App() {
             onboardingDone ? (
               <>
                 <DeepLinks />
-                <AppShell />
+                <AppShell key={catalogVersion} />
               </>
             ) : (
               // UI-04 after Welcome (the sign-in screen), until done or skipped.
