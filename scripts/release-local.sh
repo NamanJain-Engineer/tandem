@@ -82,20 +82,20 @@ if [ "$build" = 1 ]; then
   # The tasks MCP server ships beside the app (F-TK-02, bundle.externalBin).
   sh "$root/scripts/build-sidecars.sh" "$target"
   # AppImage tooling runs without FUSE in containers.
-  (cd "$root/apps/desktop" && APPIMAGE_EXTRACT_AND_RUN=1 NO_STRIP=true pnpm tauri build --target "$target" --bundles appimage,deb --config src-tauri/tauri.sidecars.conf.json)
+  (cd "$root/apps/desktop" && APPIMAGE_EXTRACT_AND_RUN=1 NO_STRIP=true pnpm tauri build --target "$target" --bundles appimage,deb,rpm --config src-tauri/tauri.sidecars.conf.json)
 fi
 
 # 4. signing, each only with its secrets; otherwise the artifact says so.
 suffix=""
 if has LINUX_GPG_PRIVATE_KEY; then
-  note "- Linux: AppImage and deb signed with the release GPG key"
+  note "- Linux: AppImage, deb and rpm signed with the release GPG key"
 else
   suffix="-unsigned"
-  note "- unsigned: Linux AppImage and deb (missing LINUX_GPG_PRIVATE_KEY, LINUX_GPG_PASSPHRASE)"
+  note "- unsigned: Linux AppImage, deb and rpm (missing LINUX_GPG_PRIVATE_KEY, LINUX_GPG_PASSPHRASE)"
 fi
 found=0
 # Only this version's bundles: an earlier release's can still be in the folder.
-for f in "$bundle"/appimage/*_"$version"_*.AppImage "$bundle"/deb/*_"$version"_*.deb; do
+for f in "$bundle"/appimage/*_"$version"_*.AppImage "$bundle"/deb/*_"$version"_*.deb "$bundle"/rpm/*-"$version"-*.rpm; do
   [ -e "$f" ] || continue
   found=1
   name="$(basename "$f")"
@@ -110,7 +110,7 @@ if [ "$found" = 0 ]; then
   exit 1
 fi
 # Every bundle carries tandem-host, or SSH workspaces can't connect.
-for f in "$bundle"/appimage/*_"$version"_*.AppImage "$bundle"/deb/*_"$version"_*.deb; do
+for f in "$bundle"/appimage/*_"$version"_*.AppImage "$bundle"/deb/*_"$version"_*.deb "$bundle"/rpm/*-"$version"-*.rpm; do
   [ -e "$f" ] || continue
   (cd "$root" && sh scripts/check-host-bundle.sh "$f" linux-x86_64,linux-aarch64) | sed "s|^|- $(basename "$f"): |" | tee -a "$summary"
 done
@@ -121,6 +121,10 @@ for bin in tandem-tasks tandem-hook; do
     [ -e "$f" ] || continue
     # No grep -q: it stops reading early, and pipefail counts dpkg-deb's broken pipe.
     dpkg-deb -c "$f" | grep "usr/bin/$bin\$" >/dev/null || { echo "$(basename "$f") has no $bin" >&2; exit 1; }
+  done
+  for f in "$bundle"/rpm/*-"$version"-*.rpm; do
+    [ -e "$f" ] || continue
+    rpm2cpio "$f" | cpio -t --quiet | grep "usr/bin/$bin\$" >/dev/null || { echo "$(basename "$f") has no $bin" >&2; exit 1; }
   done
   if [ -d "$bundle/appimage/Vibezeo.AppDir" ] && [ ! -x "$bundle/appimage/Vibezeo.AppDir/usr/bin/$bin" ]; then
     echo "the AppImage has no $bin" >&2
@@ -143,7 +147,7 @@ find "$root/crates" "$root/tests" -name 'tandem-rust.cdx.json' -delete 2>/dev/nu
 note "- SBOMs: tandem-rust.cdx.json, tandem-npm.cdx.json (CycloneDX 1.5); THIRD_PARTY_NOTICES.md (embedded in the build)"
 
 # 6. checksums.
-(cd "$dist" && sha256sum -- *.AppImage *.deb *.cdx.json THIRD_PARTY_NOTICES.md 2>/dev/null >SHA256SUMS)
+(cd "$dist" && sha256sum -- *.AppImage *.deb *.rpm *.cdx.json THIRD_PARTY_NOTICES.md 2>/dev/null >SHA256SUMS)
 if [ "$dry" = 1 ]; then
   note "- dry run: nothing published"
 fi
