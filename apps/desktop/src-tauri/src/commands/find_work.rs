@@ -8,11 +8,16 @@ use tandem_core::{ErrorCode, IpcError};
 use tandem_store::repo::panes::{self, PaneRecord};
 use tandem_store::repo::threads::{self, ThreadKind, ThreadRecord};
 
-use crate::services::find_work::{self, FindHost, FindWorkResult, MAX_QUERY_CHARS, OUTPUT_LINES};
+use crate::services::api::ResolveCandidate;
+use crate::services::find_work::{
+    self, FindHost, FindWorkResult, HostedAnswer, TeammateFacts, MAX_QUERY_CHARS, OUTPUT_LINES,
+};
 use crate::state::AppState;
 
 /// The stored events read back for a thread's last message.
 const MESSAGES_READ: u32 = 40;
+/// How long the hosted ranking may take before the local one answers.
+const HOSTED_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// The running app as a search's host.
 struct AppHost {
@@ -93,9 +98,75 @@ impl FindHost for AppHost {
             .rev()
             .find_map(|row| find_work::message_text(&row.kind, &row.payload_json))
     }
+
+    async fn teammates(&self) -> Vec<TeammateFacts> {
+        let store = &self.state().store;
+        let teammates = tandem_store::repo::teammates::list(store)
+            .await
+            .unwrap_or_default();
+        let chats = threads::list(store, ThreadKind::TeammateChat, false)
+            .await
+            .unwrap_or_default();
+        let mut out = Vec::new();
+        for t in teammates {
+            let latest = chats
+                .iter()
+                .filter(|c| c.teammate_id.as_ref() == Some(&t.id))
+                .max_by_key(|c| c.updated_at);
+            let last_message = match latest {
+                Some(chat) => self.last_message(chat).await,
+                None => None,
+            };
+            out.push(TeammateFacts {
+                id: t.id.as_str().to_string(),
+                name: t.name,
+                brief: t.brief,
+                last_message,
+            });
+        }
+        out
+    }
+
+    /// Only with the Privacy opt-in on (D-1302); any failure, the local
+    /// ranking answers.
+    async fn hosted_rank(
+        &self,
+        query: &str,
+        candidates: &[ResolveCandidate],
+    ) -> Option<HostedAnswer> {
+        let state = self.state();
+        let on = tandem_store::repo::settings::get(
+            &state.store,
+            tandem_core::settings::SettingKey::FindWorkHosted,
+        )
+        .await
+        .ok()
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+        if !on {
+            return None;
+        }
+        if !state.endpoints.hosted {
+            return Some(Err("this build has no hosted service".into()));
+        }
+        if !state.auth.is_signed_in() {
+            return Some(Err("signed out".into()));
+        }
+        let api = state.api.clone();
+        let asked = state.auth.with_token(|token| {
+            let (api, query, candidates) = (api.clone(), query.to_string(), candidates.to_vec());
+            async move { api.voice_resolve(&token, &query, &candidates).await }
+        });
+        Some(match tokio::time::timeout(HOSTED_WAIT, asked).await {
+            Err(_) => Err("timed out".into()),
+            Ok(Err(e)) => Err(e.to_string()),
+            Ok(Ok(matches)) => Ok(matches.into_iter().map(|m| (m.id, m.score)).collect()),
+        })
+    }
 }
 
-/// Ranks the open panes and threads for `query`, on this machine.
+/// Ranks the open panes, threads and teammates for `query`: on this
+/// machine, or with the hosted ranking when the user turned it on.
 #[tauri::command]
 pub async fn find_work(app: AppHandle, query: String) -> Result<FindWorkResult, IpcError> {
     if query.chars().count() > MAX_QUERY_CHARS {

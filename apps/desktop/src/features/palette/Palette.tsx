@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Folder, MessagesSquare, Settings, SquareTerminal } from "lucide-react";
+import { Bot, Folder, MessagesSquare, Settings, SquareTerminal } from "lucide-react";
 import type { FindMatch, FindWorkResult, IpcError } from "@tandem/protocol";
 import { CommandPalette, type PaletteGroup, type PaletteItem } from "@tandem/ui";
 import { t } from "../../i18n";
@@ -18,14 +18,19 @@ import { useBoot } from "../shell/useBoot";
 
 /** Waits this long after typing stops before searching. */
 const FIND_DEBOUNCE_MS = 120;
+/** With the hosted ranking on, a search is a credit: wait for a real pause. */
+const FIND_HOSTED_DEBOUNCE_MS = 600;
 
 type Found = { query: string; result: FindWorkResult } | { query: string; error: string };
 
-/** "Find work…" (F-CN-05): searches the open panes and threads by meaning
- * as the user types, on this computer. */
+/** "Find work…" (F-CN-05): searches the open panes, threads and teammates
+ * by meaning as the user types: on this computer, or with the hosted
+ * ranking when Settings › Privacy turns it on (each search then costs a
+ * credit, so it waits for a longer pause). */
 function useFindWork(active: boolean) {
   const [query, setQuery] = useState("");
   const [found, setFound] = useState<Found | null>(null);
+  const hosted = useSettings((s) => s.values.find_work_hosted === true);
   const q = query.trim();
   useEffect(() => {
     if (!active || !q) {
@@ -37,25 +42,38 @@ function useFindWork(active: boolean) {
       invoke<FindWorkResult>("find_work", { query: q })
         .then((result) => current && setFound({ query: q, result }))
         .catch((e: IpcError) => current && setFound({ query: q, error: e.message }));
-    }, FIND_DEBOUNCE_MS);
+    }, hosted ? FIND_HOSTED_DEBOUNCE_MS : FIND_DEBOUNCE_MS);
     return () => {
       current = false;
       clearTimeout(timer);
     };
-  }, [active, q]);
+  }, [active, q, hosted]);
   const settled = found !== null && found.query === q;
-  return { query: q, setQuery, found: settled ? found : null };
+  return { query: q, setQuery, found: settled ? found : null, hosted };
 }
 
 function matchItem(m: FindMatch): PaletteItem {
   const key =
-    m.source.type === "pane" ? m.source.paneId : m.source.type === "thread" ? m.source.threadId : m.label;
+    m.source.type === "pane"
+      ? m.source.paneId
+      : m.source.type === "thread"
+        ? m.source.threadId
+        : m.source.type === "teammate"
+          ? m.source.teammateId
+          : m.label;
   const location = m.workspaceId && m.tabId ? { workspaceId: m.workspaceId, tabId: m.tabId } : null;
   return {
     id: `find.${key}`,
     label: m.label,
     description: m.detail ?? undefined,
-    icon: m.kind === "pane" ? <SquareTerminal size={16} /> : <MessagesSquare size={16} />,
+    icon:
+      m.kind === "pane" ? (
+        <SquareTerminal size={16} />
+      ) : m.kind === "teammate" ? (
+        <Bot size={16} />
+      ) : (
+        <MessagesSquare size={16} />
+      ),
     onSelect: () => void showSource(m.source, location),
   };
 }
@@ -131,12 +149,24 @@ export function Palette() {
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPalette}
-        groups={matches.length ? [{ heading: t("palette.findWork"), items: matches.map(matchItem) }] : []}
+        groups={
+          matches.length
+            ? [
+                {
+                  heading:
+                    found && "result" in found && found.result.ranking === "hosted"
+                      ? t("palette.findHosted")
+                      : t("palette.findWork"),
+                  items: matches.map(matchItem),
+                },
+              ]
+            : []
+        }
         title={t("palette.findWork")}
         placeholder={t("palette.findPlaceholder")}
         emptyText={(q) =>
           !q.trim()
-            ? t("palette.findHint")
+            ? t(find.hosted ? "palette.findHintHosted" : "palette.findHint")
             : !found
               ? t("palette.findLooking")
               : "error" in found
