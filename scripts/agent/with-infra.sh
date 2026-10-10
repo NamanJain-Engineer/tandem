@@ -15,7 +15,11 @@ if ! docker info >/dev/null 2>&1; then
     sleep 1
   done
 fi
-cd "$ROOT" && pnpm infra:up >/dev/null 2>&1
+cd "$ROOT" || exit 1
+# A failed pull (Docker Hub's 429) otherwise shows up later as API errors.
+if ! pnpm infra:up >"${TMPDIR:-/tmp}/infra-up.log" 2>&1; then
+  echo "with-infra: infra:up failed, see ${TMPDIR:-/tmp}/infra-up.log (docs/OPERATING.md §3)" >&2
+fi
 "$@"
 STATUS=$?
 if [ -n "$STARTED" ]; then kill $STARTED; wait $STARTED 2>/dev/null; fi

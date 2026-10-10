@@ -25,9 +25,10 @@ export const PLANS: readonly Plan[] = [
     features: [
       { text: "Up to 4 live terminal and agent panes" },
       { text: "3 workspaces" },
-      { text: "Every supported engine, on your own accounts" },
+      { text: "Every supported engine in terminal panes, on your own accounts" },
+      { text: "One account per engine" },
       { text: "Dashboard, notifications and crash-safe restore" },
-      { text: "Thread mode, one thread at a time" },
+      { text: "Thread mode with Claude Code and Codex, one thread at a time" },
       { text: "Signed updates, always, even after a paid plan ends" },
     ],
   },
@@ -41,7 +42,9 @@ export const PLANS: readonly Plan[] = [
     features: [
       { text: "Everything in Free" },
       { text: "Unlimited panes and workspaces" },
+      { text: "Thread mode with every chat engine: Cursor Agent, Grok and OpenCode too" },
       { text: "Up to 6 threads side by side" },
+      { text: "Several accounts per engine" },
     ],
   },
   {

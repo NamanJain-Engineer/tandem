@@ -105,32 +105,7 @@ fn flag<'a>(args: &'a [OsString], name: &str) -> Option<&'a str> {
         .and_then(|w| w[1].to_str())
 }
 
-/// F-TH-04 AC1/AC2 and invariant rule 1: whatever the access, mode or
-/// session, repo settings can't grant anything and only Vibezeo's MCP
-/// servers load; below Full, Bash goes through the approval card.
-#[test]
-fn invariant_rule_1_repo_settings_cannot_grant() {
-    for access in [Access::Read, Access::Edits, Access::Full] {
-        for mode in [ThreadMode::Plan, ThreadMode::Act] {
-            for attended in [true, false] {
-                let mut req = start(access, mode, attended);
-                req.resume_session = Some("sess-1".into());
-                req.mcp_config = Some("/data/mcp/th_1.json".into());
-                let a = args(&req);
-                assert_eq!(
-                    flag(&a, "--setting-sources"),
-                    Some("user"),
-                    "{access:?} {mode:?}"
-                );
-                assert!(a.iter().any(|x| x == "--strict-mcp-config"));
-                assert_eq!(flag(&a, "--mcp-config"), Some("/data/mcp/th_1.json"));
-                assert_eq!(flag(&a, "--permission-prompt-tool"), Some(PERMISSION_TOOL));
-                assert_eq!(flag(&a, "--resume"), Some("sess-1"));
-                assert!(!a.iter().any(|x| x == "--dangerously-skip-permissions"));
-            }
-        }
-    }
-}
+// F-TL-06 rule 1 is tests/invariants/tests/rule_1.rs.
 
 #[test]
 fn f_th_04_2_access_maps_to_the_permission_mode() {

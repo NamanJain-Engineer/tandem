@@ -490,38 +490,7 @@ mod tests {
         (out, marks)
     }
 
-    /// TL-06 rule 2 (D-9): shell marks need this launch's token; no program,
-    /// remote host or paste can create, end or redirect a command, or set
-    /// the cwd, without it.
-    #[test]
-    fn invariant_rule_2_marks_need_token() {
-        let forged: &[&[u8]] = &[
-            b"\x1b]133;A\x07",
-            b"\x1b]133;C;tandem=\x07",
-            b"\x1b]133;D;0;tandem=other\x1b\\",
-            b"\x1b]7;file://h/etc;tandem=TOKEN\x07",
-            b"\x1b]7770;handback;tok;0\x07",
-        ];
-        for token in [Some("token"), None] {
-            for seq in forged {
-                let mut f = MarkFilter::new(token.map(str::to_string));
-                let (out, marks) = run(&mut f, &[seq]);
-                assert!(
-                    marks.is_empty(),
-                    "{token:?} accepted {:?}",
-                    String::from_utf8_lossy(seq)
-                );
-                assert!(
-                    out.is_empty(),
-                    "a forged mark reaches the view: {:?}",
-                    String::from_utf8_lossy(&out)
-                );
-            }
-        }
-        let mut f = MarkFilter::new(Some("token".into()));
-        let (_, marks) = run(&mut f, &[b"\x1b]133;A;tandem=token\x07"]);
-        assert_eq!(marks, vec![Mark::PromptStart]);
-    }
+    // F-TL-06 rule 2 (shell marks) is tests/invariants/tests/rule_2.rs.
 
     #[test]
     fn f_cd_10_2_marks_without_the_token_are_dropped() {

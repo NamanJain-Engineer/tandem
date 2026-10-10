@@ -1850,8 +1850,14 @@ APP
   ...
 ```
 - One table per §5 group; each row has a HotkeyRecorder. Conflicts show inline: "Already used by {action}. [Swap] [Cancel]". OS-reserved combos are refused: "Your system uses this shortcut."
+- APP rows (F-SH-09 P2) list every registry command: its shortcut as Kbd ("None" when it has none), [Record…] and, once changed, ↺ "Reset to default".
+  - Recording: the button reads "Press keys…" and takes the next combo. Esc or leaving the button cancels, and Backspace sets "None".
+  - A combo without Ctrl, Alt or ⌘ (F-keys aside) is refused: "Hold Ctrl or Alt with the key." (macOS: "Hold ⌘, ⌃ or ⌥ with the key.").
+  - On Windows and Linux under "Terminal first", a row whose shortcut a terminal keeps says "In a terminal, this key goes to the shell."
+  - "Reset all to defaults" asks first ("Reset every shortcut?").
+  - The search box matches action names and keys. With no match: "No shortcuts match "{query}"."
 - Global rows show a status chip: "Active", "Needs permission" (→ UI-134), "Unavailable on Wayland — use the system shortcut settings" (with the `tandem://dictate/toggle` command to copy), "Paused".
-- "Printable cheatsheet" link (opens the §5 table as a page; `Mod+/` also opens it).
+- "Keyboard shortcuts" link: opens the cheatsheet, a dialog with every shortcut in effect by §5 group and a search box; `Mod+/` also opens it (D-805: a dialog, not a printable page, until printing is checked on every platform).
 
 #### UI-114 · Account & Plan · BE, BL
 ```
@@ -2269,7 +2275,7 @@ A sidebar tab "Checkpoints" (singleton; "+" menu item "Checkpoints"), following 
 - Settings › Checkpoints (UI-117): Switch "Save checkpoints before agent turns", NumberControl "Keep per folder" (10–1,000), "Keep for (days)" (1–90), "Skip files larger than (MB)" (1–100), KeyValue "Space used", and the danger Button "Delete all checkpoints…".
 
 #### UI-141 · Recall palette · EX
-A palette-style picker with the command palette's shell (`Mod+Alt+R`, or "Recall a command…"; D-706): the input's placeholder is "Search commands you've run", a SegmentedControl "This workspace | Everywhere" sits under it.
+A palette-style picker with the command palette's shell (`Mod+Alt+J`, or "Recall a command…"; D-706): the input's placeholder is "Search commands you've run", a SegmentedControl "This workspace | Everywhere" sits under it.
 - Rows: the command in mono (truncated with the full text in a tooltip), then a second line with the folder, ✓ or "✗ {code}", duration, age and pane name, and "×{n}" when it ran more than once.
 - Footer Kbd hints: "↩ Insert", "⌘↩ Run" (hidden for a command with `[REDACTED]` or when the focused pane can't run it), "⌘⌫ Delete".
 - Empty: "No commands yet" / "Commands you run in Vibezeo terminals show up here." Off: "Command recall is off" [Turn on]. No results: "No commands match "{query}"".
@@ -2341,7 +2347,7 @@ A palette-style picker with the command palette's shell (`Mod+Alt+P`, "Insert pr
 | Toggle right sidebar | ⇧⌘B | Ctrl+Shift+B | same |
 | Sidebar: Files / Dashboard / Tasks tab | ⌥⌘F / ⌥⌘D / ⌥⌘K | Ctrl+Alt+F / D / K | same |
 | Dashboard full view | ⌥⇧⌘D | Ctrl+Alt+Shift+D | same |
-| Recall a command / insert a prompt (M17) | ⌥⌘R / ⌥⌘P | Ctrl+Alt+R / Ctrl+Alt+P | same |
+| Recall a command / insert a prompt (M17) | ⌥⌘J / ⌥⌘P | Ctrl+Alt+J / Ctrl+Alt+P | same |
 | Notifications | ⇧⌘N | Ctrl+Shift+N | same |
 | Jump to next agent waiting for you | ⇧⌘J | Ctrl+Shift+J | same |
 | Search the current mode's list | ⇧⌘F | Ctrl+Shift+F | (this is Find in terminal) |

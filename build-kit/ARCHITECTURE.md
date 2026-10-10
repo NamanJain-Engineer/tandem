@@ -615,8 +615,8 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `usage_get` | `{accountId?}` | `[UsageView {accountId, engineId, windows:[UsageWindow {kind, usedPct, resetsAt?}], source: "codex_app_server"\|"unavailable", estimated, reason?, fetchedAt}]` (the latest reading; probes when there's none) | — | F-AC-04 |
 | `usage_refresh` | `{accountId?}` | `[UsageView]` (probes again; the webview calls it every 5 min and after a turn) | — | F-AC-04 |
 | `contexts_list` | — | `[PaneContext {paneId, used, window}]` (context fill per agent pane, from the engine's transcript when a turn ends) | — | F-AC-06 |
-| `usage_dashboard` | `{weeks: 12}` → op | `UsageDashboard {days:[DayTotal], perEngine, perAccount, topWorkspaces, skippedLines}` | — | F-AC-07 |
-| `usage_share_card` | `{showWorkspaces}` | `String` (PNG path in `$DATA/tmp`) | — | F-AC-07 |
+| `usage_report` | — | `UsageReport {since, until, total, days:[UsageDay {date, tokens, byEngine}] (12 weeks, every day present, in the user's zone), engines:[EngineUsage], accounts:[AccountUsage], workspaces:[WorkspaceUsage] (top 8), skippedLines, filesRead, unsupported}` (read on the blocking pool from each account's `usage_log_globs` inside its provider home; D-615) | Internal | F-AC-07 |
+| `usage_share_save` | `{pngBase64}` | `String?` (the path saved, `null` when the save dialog is cancelled; the webview draws the card, the core only checks it is a PNG under 10 MB and writes it atomically where the user picks) | Invalid, Io | F-AC-07 |
 
 #### Status, dashboard, notifications, focus [F-DB-*, F-EN-05]
 | Command | Args | Returns | Errors | IDs |
@@ -630,7 +630,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `notifications_list` | `{cursor?: string}` | `NotificationPage {items:[Notification {id, kind, title, body, source, state:"unread"\|"read"\|"resolved", dedupeKey?, createdAt, readAt?}], nextCursor?, unread}` (7-day window, newest first; the cursor is `"<createdAt>:<seq>"`) | — | F-DB-02 |
 | `notifications_mark_read` | `{ids?: [NotificationId], all?: bool}` | — | — | F-DB-02 |
 
-`SourceRef = {type:"pane", paneId} | {type:"thread", threadId} | {type:"teammate_chat", teammateId, threadId} | {type:"routine", routineId, runId?} | {type:"task", issueId} | {type:"lane", workspaceId} | {type:"update"} | {type:"plugin", connectionId}`.
+`SourceRef = {type:"pane", paneId} | {type:"thread", threadId} | {type:"teammate_chat", teammateId, threadId} | {type:"routine", routineId, runId?} | {type:"task", issueId} | {type:"lane", workspaceId} | {type:"update"} | {type:"account"} | {type:"plugin", connectionId}`. `account` (M13) opens Settings › Account & Plan: the credit-low item's source (F-DB-02).
 
 #### Threads and teammate chats [F-TH-*, F-AG-03]
 | Command | Args | Returns | Errors | IDs |
@@ -800,8 +800,10 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 #### Auto [F-AU-01]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
-| `auto_start` | `{paneId, mode:"finish"\|"harden"\|"review"\|"explore"\|"custom", goal?, ceiling?}` | `AutoRunView` | ForbiddenPlan, Invalid ("Auto runs only in agent panes"), PermissionDenied (consent missing) |
-| `auto_pause` / `auto_resume` / `auto_stop` | `{runId}` | `AutoRunView` | — |
+| `auto_start` | `{paneId, mode:"finish"\|"harden"\|"review"\|"explore"\|"custom", goal? (custom: required, ≤2000 chars), ceiling? (custom: 1–30, default 10; other modes use their own)}` | `AutoRunView {runId, paneId, mode, goal?, ceiling, turns, state: running\|paused\|ended, paused?: user\|approval_pending, endReason?: done\|stuck\|turn_ceiling\|out_of_credits\|no_subscription\|turned_off\|signed_out\|api_unreachable\|pane_closed\|engine_exited\|engine_changed\|user_stopped, detail?, startedAt, endedAt?}` | ForbiddenPlan, Invalid ("Auto runs only in agent panes"; the agent isn't running; goal or ceiling out of range), PermissionDenied (consent missing; the Team policy's `disableAuto`), Conflict (a run is live in the pane) |
+| `auto_list` | — | `[AutoRunView]` (live runs and ended ones not yet dismissed; runs live in memory, D-621) | — |
+| `auto_pause` / `auto_resume` / `auto_stop` | `{runId}` | `AutoRunView` (pause holds the next turn; stop ends at once and nothing more is typed) | NotFound |
+| `auto_dismiss` | `{runId}` | — (clears an ended run's chip; emits `auto:dismissed`) | — |
 
 #### Dictate [F-DI-*]
 | Command | Args | Returns | Errors |
@@ -854,7 +856,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `auth_sign_in` | — → op | result via `auth:changed` | Unavailable (categorized: browser / callback / expired / network) |
 | `auth_cancel` / `auth_sign_out` / `auth_state` | `{opId}` / — / — | — / — / `AuthState {signedIn, email?, offlineDaysLeft?}` | — |
 | `auth_continue_offline` | — | — | — |
-| `entitlement_get` / `entitlement_refresh` | — | `EntitlementView {plan, status, limits, source:"token"\|"grace"\|"free", credits:{monthly, purchased, resetsAt}, policy?}` | — |
+| `entitlement_get` / `entitlement_refresh` | — | `EntitlementView {plan, status, limits, source:"token"\|"grace"\|"free", credits:{monthly, purchased, resetsAt, cap, spent, grant}, policy: OrgPolicy?, org: {id, name, role}?, monthlyGrant, …}`. `policy` is the last verified token's (it survives a cached token that stops verifying, D-607); `OrgPolicy` mirrors `@tandem/protocol/team` (F-BL-06). The core enforces it at every engine launch (allowed engines) and thread session start (max access, Full-access audit, F-TL-10), and locks the telemetry toggles | — |
 | `billing_open` | `{target: {type:"upgrade", plan, interval} \| {type:"portal"} \| {type:"credits"}}` | — (system browser) | Unauthenticated |
 | `updates_state` / `updates_check_now` / `updates_install` / `updates_set_channel` | — / — / — / `{channel:"stable"\|"beta"}` | `UpdateState {stage: idle\|checking\|downloading\|ready\|error\|managed\|unavailable, current, channel, version?, notes?, percent?, errorStage?: check\|download\|verify\|install, error?, lastCheck?, upToDate, minVersion?: {minVersion, graceUntil, modal}}` (`check_now` waits for a check already running; a newer release downloads and verifies before `ready`; `install` installs the staged release, stops every terminal and restarts; under the harness it records the install and keeps running) | Unavailable (stage), Invalid (channel) |
 | `whats_new_get` / `whats_new_seen` | — / `{version}` | `ReleaseNotes?` / — | — |
@@ -917,7 +919,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `plugins:changed` / `plugins:connect` | `PluginCard` / `{opId, step:"discovery"\|"registration"\|"sign_in"\|"token_exchange"\|"verification"\|"timeout", state, error?}` | gateway | F-PL-03 |
 | `mail:changed` | `{teammateId, rows:[MailRow]}` | mail service | F-AG-12 |
 | `memory:suggestions` | `{teammateId, threadId, setId, items}` | learn service | F-AG-08 |
-| `auto:changed` | `AutoRunView` | Auto supervisor | F-AU-01 |
+| `auto:changed` / `auto:dismissed` | `AutoRunView` / `{runId}` | Auto supervisor | F-AU-01 |
 | `lanes:stale` | `{workspaceId, lanes:[StaleLane]}` | lane sweeper | F-CD-15 |
 | `dictate:state` | `{state:"idle"\|"listening"\|"transcribing"\|"inserted"\|"error"\|"reconnecting", takeId?}` (to `main` and `dictate-widget`) | TakeMachine | F-DI-07 |
 | `dictate:toast` | `{kind, message, detail}` | voice service | F-DI-07 |
@@ -1878,6 +1880,7 @@ loop {
 }
 ```
 - Engine change / pane close / user stop end the run with the matching reason. Consent: `AutoConsent` setting must be true (first-use dialog). All end reasons are an enum in protocol.
+- As built (D-619–D-623): "idle" means a status record (`Done`, `Idle`, `Failed` or `Waiting(Input)`) other than the one the pane had when the last prompt was typed; records are compared, not times, because status times come from the app clock. `Waiting(Question)` pauses like an approval. A 403 `FORBIDDEN_POLICY` ends the run as `turned_off`; 429 is retried like an unreachable service. The pane is re-checked after each answer, so nothing is typed into a pane whose agent exited while the supervisor thought. Typing that fails 3 turns in a row ends the run as `stuck`. The ended run raises a pane notification (`done` for done and turn ceiling, `failed` otherwise; none when the user stopped it).
 - PTY write log in tests is asserted (no writes after `engine_exited`).
 
 ---
@@ -2190,6 +2193,16 @@ export const orgInvites = pgTable('org_invites', { id: text('id').primaryKey(), 
 export const orgPolicies = pgTable('org_policies', { orgId: text('org_id').primaryKey().references(() => orgs.id, { onDelete: 'cascade' }),
   policy: jsonb('policy').notNull() /* {allowedEngines?, allowedPlugins?, maxAccess?, forceTelemetryOff, disableAuto, disableConductor, disablePhone, auditEnabled} */,
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull() });
+// Team SSO (F-BL-06 P2, D-624–D-630): one connection per org, the client secret AES-256-GCM sealed with a key
+// derived from BETTER_AUTH_SECRET; a domain counts once its TXT record is verified, and only one org can verify it.
+export const orgSso = pgTable('org_sso', { orgId: text('org_id').primaryKey().references(() => orgs.id, { onDelete: 'cascade' }),
+  provider: text('provider', { enum: ['oidc', 'workos', 'mock'] }).notNull(), issuer: text('issuer'), clientId: text('client_id'),
+  clientSecretEnc: text('client_secret_enc'), organization: text('organization'), enforce: boolean('enforce').notNull().default(false),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull() });
+export const orgSsoDomains = pgTable('org_sso_domains', { orgId: text('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+  domain: text('domain').notNull(), verifyToken: text('verify_token').notNull(), verifiedAt: timestamp('verified_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow() },
+  t => [primaryKey({ columns: [t.orgId, t.domain] }), uniqueIndex('org_sso_domains_verified').on(t.domain).where(sql`verified_at is not null`)]);
 export const billingCustomers = pgTable('billing_customers', { ownerKind: text('owner_kind', { enum: ['user', 'org'] }).notNull(),
   ownerId: text('owner_id').notNull(), customerId: text('customer_id').notNull().unique() }, t => [primaryKey({ columns: [t.ownerKind, t.ownerId] })]);
 export const subscriptions = pgTable('subscriptions', {
@@ -2259,7 +2272,7 @@ export const releases = pgTable('releases', { version: text('version').notNull()
   - Allowed `redirect_uri`: `^http://127\.0\.0\.1:\d{2,5}/callback$` or `^tandem(-dev)?://auth/callback$`. Code: 32 random bytes, stored hashed, 5 min, single use, bound to challenge + fingerprint.
   - **Access token:** EdDSA JWT (`jose`), `kid` `ak-<n>`, claims `{sub, sid: familyId, aud:'tandem-api', iss:'tandem-api', iat, exp: +3600}`. **Refresh:** 32 random bytes (hashed), 30 days, rotated on each use; presenting a rotated (already-used) token revokes the whole family and returns 401 `UNAUTHENTICATED` (AC3).
   - Client refresh at 80% of lifetime, on wake (OS resume notification), and on any 401 (single-flight); network errors never sign out.
-- **Device code (F-BE-03):** `user_code` = 8 chars from `BCDFGHJKLMNPQRSTVWXZ` formatted `ABCD-EFGH`; `interval` 5 s; polling faster → `slow_down` (and interval += 5); expired (10 min) → `expired_token`; denied → `access_denied`.
+- **Device code (F-BE-03):** `user_code` = 8 chars from `BCDFGHJKLMNPQRSTVWXZ` formatted `ABCD-EFGH`; `interval` 5 s; polling faster → `slow_down` (and interval += 5); expired (10 min) → `expired_token`; denied → `access_denied`; a consumed or unknown code → `invalid_grant`. The tokens are a desktop-style family (`platform: cli`, the client's name as the device name), so the Devices page lists and revokes them. The web page `/device?code=` approves; the desktop's `services/device_login.rs` polls (for the headless runner and any CLI).
 - **Revocation** from the portal (Devices page) revokes the family; the desktop's next refresh fails → sign-in prompt (F-WB-05 AC1).
 
 ### 14.4 Plans and entitlements [F-BE-04, F-BL-04, F-BL-06, §3.2]
@@ -2300,13 +2313,14 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 | `POST /v1/auth/desktop/refresh` | — | `{refresh_token}` | same as exchange | 401 `UNAUTHENTICATED` (reuse revokes family) | F-BE-02 |
 | `POST /v1/auth/desktop/logout` | B | `{refresh_token}` | 204 | — | F-BE-02 |
 | `POST /v1/auth/device/start` | — | `{client: str, version: str}` | `{user_code, verification_uri, device_code, interval, expires_in}` | `RATE_LIMITED` | F-BE-03 |
-| `POST /v1/auth/device/approve` | C | `{user_code, approve: bool}` | 204 | 404 | F-BE-03 |
+| `GET /v1/auth/device/info?user_code=` | C | — | `{user_code, client, version, expires_at}` (what the approval page names) | 404 (unknown, used or expired) | F-BE-03 |
+| `POST /v1/auth/device/approve` | C | `{user_code, approve: bool}` (any case, with or without the dash) | 204 | 404 | F-BE-03 |
 | `POST /v1/auth/device/token` | — | `{device_code}` | tokens | 400 `{error: authorization_pending\|slow_down\|expired_token\|access_denied}` | F-BE-03 |
 | `GET /v1/me` | B/C | — | `MeResponse` (§14.4) | `UNAUTHENTICATED` | F-BE-04 |
 | `GET /v1/me/events` | B | — | SSE `entitlement`, `credits`, heartbeat 25 s | — | F-BE-04 |
 | `GET /v1/me/sessions` / `DELETE /v1/me/sessions/:id` | C | — | `[{id, deviceName, platform, appVersion, lastUsedAt}]` / 204 | — | F-WB-05 |
 | `DELETE /v1/me` | C | `{confirm: 'DELETE'}` | 202 (deletion ≤30 days; subscription canceled now) | — | F-TL-05 |
-| `GET /v1/credits` | B/C | — | `{balance:{monthly, purchased, resetsAt}, ledger:[≤100]}` | — | F-BE-05 |
+| `GET /v1/credits` | B/C | — | `{balance:{monthly, purchased, resetsAt}, org: {id, cap, spent} \| null, ledger:[≤100 {id, bucket, delta, reason, feature, createdAt}]}` (a Team member sees the org pool, D-601) | — | F-BE-05 |
 | `POST /v1/billing/checkout` | B/C | `{plan:'pro'\|'team', interval:'month'\|'year', seats?: int(2..500), promo?: str}` | `{url}` | `VALIDATION` | F-BL-01 |
 | `POST /v1/billing/portal` | B/C | — | `{url}` | 404 (no customer) | F-BL-02 |
 | `POST /v1/billing/credit-packs/checkout` | B/C | `{pack:'5k'\|'12k'\|'30k'}` | `{url}` | `FORBIDDEN_PLAN` | F-BL-03 |
@@ -2315,9 +2329,9 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 | `POST /v1/webhooks/stripe` | S | raw body | 200 `{received:true}` | 400 bad signature | F-BL-01..06 |
 | `POST /v1/ai/title` | B | `{text: str(1..4000)}` | `{title: str(≤60)}` | `RATE_LIMITED` (60/h) | F-TH-15 |
 | `POST /v1/ai/rewrite` | B | `{mode:'enhance'\|'polish', text: str(1..5000), instructions?: str(≤2000), protected_terms?: [str(≤100)] (≤200)}` | `{text}` · 3 cr | `FORBIDDEN_PLAN`, `CREDITS_EXHAUSTED`, `DAILY_LIMIT` | F-DI-10 |
-| `POST /v1/ai/teammate-draft` | B | `{description: str(1..2000), engines: [str], plugins: [str]}` | `{name, brief, engine, plugins}` · 10 cr | as above | F-AG-04 |
-| `POST /v1/auto/next` | B | `{mode, goal?: str(≤2000), turn: int(0..30), ceiling: int(1..30), scrollback: str(≤16384)}` | `{action:'prompt'\|'done'\|'stuck', text?, reason?}` · 6 cr | as above; `VALIDATION` if turn ≥ ceiling | F-AU-01 |
-| `POST /v1/stt/transcribe` | B | multipart `audio` (ogg/opus or wav, ≤25 MB, ≤10 min), `language?`, `hints?` (≤50 words) | `{text, language, duration}` · 2 cr/15 s | 413, `DAILY_LIMIT`, `CREDITS_EXHAUSTED` | F-BE-07 |
+| `POST /v1/ai/teammate-draft` | B | `{description: str(1..2000), engines: [str](1..20), plugins?: [str](≤100)}` | `{name: str(≤40), brief: str(≤1200), engine ∈ engines, plugins ⊆ plugins}` · 10 cr (refunded on any failure; D-603) | `FORBIDDEN_PLAN` (needs `enhance`), `CREDITS_EXHAUSTED`, `RATE_LIMITED` (10/min), 503 `AI_UNAVAILABLE` | F-AG-04 |
+| `POST /v1/auto/next` | B | `{mode, goal?: str(≤2000) (required for custom), turn: int(0..30), ceiling: int(1..30), scrollback: str(≤16384)}` | `{action:'prompt'\|'done'\|'stuck', text? (≤2000), reason? (≤300)}` · 6 cr | as above; `VALIDATION` if turn ≥ ceiling; 403 `FORBIDDEN_POLICY` when the Team policy has `disableAuto`; `RATE_LIMITED` (30/min) | F-AU-01 |
+| `POST /v1/stt/transcribe` | B | multipart, **fields first, `audio` last** (D-604): `duration_ms?` (the take's length; reserve and limit follow it), `language?` (code or `auto`), `hints?` (repeated field, ≤50, only with the user's opt-in), `audio` (`audio/ogg` Opus or `audio/wav`, ≤25 MB, ≤10 min) | `{text, language, duration}` (seconds) · 2 cr per started 15 s | 413 `PAYLOAD_TOO_LARGE` (`limit: take_minutes \| take_bytes`), 429 `DAILY_LIMIT` (`limit: stt_minutes`), 402 `CREDITS_EXHAUSTED`, 403 `FORBIDDEN_PLAN` (`cloudStt`), 415 (not Opus or WAV), 422 (audio longer than `duration_ms`), 503 `STT_UNAVAILABLE` (`retryable`) — every failure is uncharged | F-BE-07 |
 | `POST /v1/voice/session` | B | `{voice?: str}` | `{session_id, provider, ephemeral_token, ws_url, expires_at, max_seconds: 1800}` (reserves 1,200 cr) | 402, `FORBIDDEN_PLAN` | F-BE-08 |
 | `POST /v1/voice/session/:id/settle` | B | `{seconds: int(0..1800)}` | `{charged, refunded}` (`ceil(s/10)×20`) | 404 | F-BE-08 |
 | `POST /v1/voice/act` | B | `{session_id, request: str(≤2000), snapshot: WorkspaceSnapshot(≤64 KB), results?: [{id, ok, output(≤8 KB)}]}` | `{tool_calls:[{id, name, args}], say?}` | 409 (session ended) | F-CN-02 |
@@ -2327,9 +2341,11 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 | `GET /v1/updates/:channel/:target/:arch/:current_version` | — | — | 200 `{version, notes, pub_date, url, signature}` or 204 | — | F-SH-06 |
 | `POST /v1/pairings` / `DELETE /v1/pairings/:id` | B | `{pairing_id, device_label?}` / — | `{pairing_token, relay_url, expires_at}` / 204 | `FORBIDDEN_PLAN` | F-RM-03 |
 | `GET /v1/relay/:pairing_id` (WebSocket) | B (desktop) / P (phone, `Sec-WebSocket-Protocol: tandem-pair.<token>`) | binary frames ≤64 KB | forwarded frames | 1009 on >64 KB, 1008 auth | F-BE-11 |
-| `POST /v1/audit/events` | B | `{events:[{event, meta, ts}] (≤100)}` | 204 (dropped unless org audit on) | — | F-TL-10 |
-| `POST /v1/orgs` · `GET /v1/orgs/:id` · `POST /v1/orgs/:id/invites` · `POST /v1/orgs/invites/accept` · `PATCH /v1/orgs/:id/members/:userId` · `DELETE /v1/orgs/:id/members/:userId` · `PUT /v1/orgs/:id/policy` · `PUT /v1/orgs/:id/seats` · `GET /v1/orgs/:id/audit` | C (owner/admin for writes) | `{name}` · — · `{email, role}` · `{token}` · `{role?, monthly_cap?}` · — · `OrgPolicy` · `{seats: int(2..500)}` · `?cursor` | org views | `FORBIDDEN` | F-BL-06 |
-| `GET /v1/admin/users?q=` · `GET /v1/admin/users/:id` · `POST /v1/admin/users/:id/credits` · `POST /v1/admin/users/:id/refund` | A | — · — · `{amount: int(1..1e6), reason: str(3..500)}` · `{reason}` | user, plan, ledger | 403 non-admin | F-BE-12, F-BL-05 |
+| `POST /v1/audit/events` | B | `{events:[{event: 'full_access_used'\|'plugin_write_approved'\|'plugin_connected', meta: {≤10 scalar fields, strings ≤100}, ts}] (≤100)}` | 204 (kept only for a member of a paid Team org with audit on; other events dropped) | 422 | F-TL-10 |
+| `POST /v1/orgs` · `GET /v1/orgs/:id` · `POST /v1/orgs/:id/invites` · `POST /v1/orgs/invites/accept` · `PATCH /v1/orgs/:id/members/:userId` · `DELETE /v1/orgs/:id/members/:userId` · `PUT /v1/orgs/:id/policy` · `PUT /v1/orgs/:id/seats` · `GET /v1/orgs/:id/audit` | C (owner/admin for writes; `GET /:id` also B; a member may delete themselves) | `{name}` · — · `{email, role:'admin'\|'member'}` · `{token}` · `{role?, monthly_cap?: int\|null}` · — · `OrgPolicy` (`@tandem/protocol/team`) · `{seats: int(2..500)}` · `?cursor` | `OrgView {id, name, role, plan, status, seats, memberCount, members (members see only themselves), invites, policy, credits}` · `{events, next}` | `FORBIDDEN`, 404, 409 `SEATS_FULL` \| `SEATS_IN_USE` \| `NO_SUBSCRIPTION` \| `CONFLICT` | F-BL-06 |
+| `GET` · `PUT` · `DELETE /v1/orgs/:id/sso` · `POST /v1/orgs/:id/sso/domains` · `POST /v1/orgs/:id/sso/domains/:domain/verify` · `DELETE /v1/orgs/:id/sso/domains/:domain` | C (owner/admin; paid Team for `PUT` and adding domains) | — · `{provider:'oidc', issuer: url, clientId, clientSecret? (omit to keep), enforce} \| {provider:'workos', organization: 'org_…', enforce}` · — · `{domain}` · — · — | `SsoView {connection: {provider, issuer, clientId, hasSecret, organization, enforce, updatedAt} \| null, domains: [{domain, verified, record: {type:'TXT', name:'_vibezeo-sso.<domain>', value:'vibezeo-sso=<token>'}}], providers: {oidc, workos}, redirectUri}` | `FORBIDDEN`, `FORBIDDEN_PLAN`, 422 `SSO_CONFIG` (discovery unreadable) \| `SSO_UNAVAILABLE` (no WorkOS keys) \| `SSO_NO_DOMAIN` (enforce without a verified domain) \| `DOMAIN_UNVERIFIED`, 409 (domain verified by another org) | F-BL-06 P2 |
+| `POST /v1/sso/lookup` · `POST /v1/sso/start` · `GET /v1/auth/sso/callback` | — (public; the callback is a better-auth plugin endpoint so it can set the session cookie) | `{email}` · `{email, callbackURL?: path}` · `?state&code` | `{sso, required, org?}` · `{url}` (the identity provider's authorize URL; OIDC with PKCE S256 and a nonce; state one-time in Redis, 10 min) · 302 to `callbackURL` signed in, or to `/signin?sso_error=<code>` | 404 `NO_SSO`; callback codes `SSO_STATE`, `SSO_DENIED`, `SSO_EXCHANGE`, `SSO_TOKEN`, `SSO_DOMAIN`, `SEATS_FULL`, `SSO_OTHER_ORG`; with SSO required, `/v1/auth/sign-in/email`, `/sign-in/magic-link` and `/sign-up/email` answer 403 `SSO_REQUIRED` for the domain, and no other path can create a session for it | F-BL-06 P2 |
+| `GET /v1/admin/users?q=` · `GET /v1/admin/users/:id` · `POST /v1/admin/users/:id/credits` · `POST /v1/admin/users/:id/refund` | A | `q` (≥2 chars, email contains; `%` and `_` literal) · — · `{amount: int(1..1e6), reason: str(3..500), bucket?: "purchased" (default) \| "monthly"}` · `{reason: str(3..500), scope?: 'plan'\|'pack', force?: bool}` | `{users: [≤20]}` · `{user, plan, status, subscription, org, credits {…, payer}, ledger [≤50], actions [≤50]}` · `{ledgerEntry, balance}` · `{refunded: 'plan', plan}` \| `{refunded: 'pack', credits}` | 401 (no portal session; a bearer doesn't count), 403 non-admin, 404, 422; 409 `NOTHING_TO_REFUND` \| `REFUND_WINDOW_CLOSED` (>14 days, unless `force`) \| `PACK_USED` | F-BE-12, F-BL-05 |
 | `GET /v1/dev/realtime` (dev only) | token | mock realtime protocol | — | — | F-CN-01 |
 | `GET /metrics` (internal port only) | — | — | Prometheus text | — | F-BE-10 |
 
@@ -2342,7 +2358,7 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 
 ### 14.8 Relays and providers [F-BE-06..08, F-BE-11]
 - **AI:** `AiProvider.complete({feature, model, system, messages, maxTokens, json})`; `ClaudeAi` (the Claude Messages API, `https://api.anthropic.com/v1/messages`, first-party so startup-program credits apply; 30 s timeout, 1 retry on 5xx or overloaded; D-103), `MockAi` (deterministic: title = first 6 words title-cased; rewrite = normalized input; teammate-draft = fixed JSON from `test/fixtures`; auto/next = `prompt "Continue with the next step."` unless scrollback contains `ALL TESTS PASSED` → `done`; voice/act = keyword intents → tool calls; resolve = token-overlap scoring). Selected when `ANTHROPIC_API_KEY` is empty. Models per feature from remote config. Metering: reserve the per-call price up front, settle to the same (flat prices) or refund on failure. No request/response bodies are logged; `ai_requests` stores metadata only (F-BE-06 AC2 log-capture test).
-- **STT:** `SttProvider.transcribe(stream, {mime, language, hints})`; real provider configured by `STT_PROVIDER` (`openrouter` | `groq` | `openai`, keys from env), `MockStt` returns the `x-mock-transcript` header value or "hello world". Audio is piped (busboy stream → provider), never written to disk (AC3 asserts temp dir empty). Duration from container headers (Opus granule / WAV header); cost `ceil(duration/15) × 2`; daily cap check on `daily_usage` before forwarding.
+- **STT:** `SttProvider.transcribe(stream, {mime, filename, language, hints})`; the real provider is `OpenAiCompatStt` (`STT_PROVIDER=openai_compat` with `STT_API_BASE`, `STT_API_KEY`, `STT_MODEL`: any OpenAI-compatible `/v1/audio/transcriptions`, the multipart body built around the stream), `MockStt` returns the `x-mock-transcript` header value or "hello world" (`x-mock-stt-fail: 1` fails it; both headers are honoured only by the mock and redacted from logs). Audio is piped (busboy stream → `AudioMeter` → provider), never written to disk (AC3 points `TMPDIR` at an empty folder). `AudioMeter` measures as it streams (WAV header and bytes; Ogg page granules at 48 kHz less the OpusHead pre-skip) and stops the stream past the hold. The relay holds today's seconds in `daily_usage` and reserves `ceil(seconds/15) × 2` up front (D-604), then settles to the measured length; `ai_requests` gets `feature: stt`, the provider, credits and the seconds (in `tokens_in`), never audio or text.
 - **Realtime:** `RealtimeProvider.mint({instructions, voice, maxSeconds})` → ephemeral token + ws URL (`OpenAiRealtime` uses the vendor's client-secret endpoint; `MockRealtime` returns `ws://api…/v1/dev/realtime?token=…`). Reservation 10 min × 120/min = 1,200 cr (F-BE-08 AC1). Sweeper settles unsettled sessions at `max_seconds` (provider usage if available).
 - **Relay (F-BE-11):** `ws` server on `/v1/relay/:pairing_id`; auth on upgrade; pairs at most one desktop + one phone socket; forwards binary frames unchanged; frames >64 KB → close 1009; per-pairing rate limit 50 frames/s; stores nothing except connect/disconnect metadata. `src/routes/relay.ts` imports no crypto modules (lint rule `no-restricted-imports` for `crypto`, `node:crypto`, `@noble/*` in that file; AC2).
 
@@ -2353,6 +2369,13 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 
 ### 14.10 Remote config [F-BE-09, F-EN-02, F-TH-08]
 `config/remote-config.json` → `{version, min_app_version, prices, daily_caps, flags, models:{<engine>:[{id, label, description, default, effortLevels, contextWindow, deprecated}]}, registry_overrides:[EngineSpec], plugins:{<id>:{client_id?, enabled}}, telemetry_allowlist_version}`. At startup the API signs the canonical JSON (RFC 8785 JCS) with Ed25519 (`CONFIG_SIGNING_KEY`, `kid` `ck-<n>`), serves `{payload, sig, kid}` with a strong ETag = sha256 of the payload. Desktop verifies with bundled keys; failure → bundled `resources/config.json` (AC1); TTL 10 min (F-TH-08 AC1).
+
+### 14.11 Hosted calls from the desktop (the M13 contract for M8, M10 and M12)
+M13 builds the server side and these desktop pieces; the sessions that own the UI wire them (D-600).
+- **Client:** `services/api.rs` `ApiClient` (always through `AuthService::with_token`, so a 401 refreshes once): `ai_rewrite(access, mode: "enhance"|"polish", text, instructions?, protected_terms)` → text (F-DI-10, M8); `ai_teammate_draft(access, description, engines, plugins)` → `TeammateDraft {name, brief, engine, plugins}` (F-AG-04, M10); `stt_transcribe(access, SttUpload {mime: "audio/ogg"|"audio/wav", audio, duration_ms?, language?, hints})` → `Transcript {text, language, duration}` (F-DI-05, M8: send `duration_ms`; send `hints` only with `dictate_share_hints` on); `audit_events(access, [AuditEvent])` (F-TL-10). `NoHostedApi` (early-access builds) fails all of them as offline.
+- **Errors:** `HostedFailure::from_api(&ApiError, feature)` gives the words to show, one variant per limit: `OutOfCredits` (402, including a Team member's cap), `NeedsPro` ("{feature} needs Vibezeo Pro."), `DailyLimit` (the server's text, e.g. "You've reached today's cloud limit of 120 minutes. Switch to Local."), `RateLimited`, `TooLarge` (413), `SignedOut`, `Unavailable` (offline or 5xx), `Other`. F-DI-05: no silent fallback, so the Dictate UI shows the failure and offers "Use local for this take"; F-DI-10: on any failure insert the raw transcript and toast.
+- **Org policy (F-BL-06):** `EntitlementService::policy()` → `Option<OrgPolicy>`; `tandem_core::policy::{allows_access, clamp_access, allows_engine}` and `OrgPolicy::allows_plugin` (M12: refuse Connect for a plugin outside `allowedPlugins`, with "Set by your organization"); `disable_auto`, `disable_conductor` and `disable_phone` are for M16's features. Engine launches already refuse a disallowed engine (`EngineService::check_allowed`), and thread sessions are held to `maxAccess`.
+- **Audit (F-TL-10):** `AppState.audit.record(event, &[(key, value)])` queues an event only when the org turned audit on; values are short ids (an engine or plugin id), never content. Thread sessions already record `full_access_used`; M12 records `plugin_write_approved` (an approved write, with `plugin`) and `plugin_connected` (with `plugin`).
 
 ---
 

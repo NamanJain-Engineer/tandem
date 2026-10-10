@@ -92,9 +92,9 @@
   {
     "id": "recall.open",
     "category": "terminal",
-    "mac": "Mod+Alt+R",
-    "pc": "Mod+Alt+R",
-    "pcTerminal": "Mod+Alt+R",
+    "mac": "Mod+Alt+J",
+    "pc": "Mod+Alt+J",
+    "pcTerminal": "Mod+Alt+J",
     "inText": true,
     "enabledWhen": "always"
   },
@@ -329,6 +329,15 @@
     "mac": null,
     "pc": null,
     "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "help.shortcuts",
+    "category": "help",
+    "mac": "Mod+/",
+    "pc": "Mod+/",
+    "pcTerminal": "Mod+Shift+/",
     "inText": false,
     "enabledWhen": "always"
   },

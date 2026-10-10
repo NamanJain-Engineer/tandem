@@ -424,6 +424,10 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 - **Terminal passthrough rule:** when a terminal has focus, only shortcuts that include `Mod` and are in the map are intercepted. Everything else goes to the PTY, including Ctrl+D/T/W/[/] on Windows and Linux, where `Mod` is Ctrl. So on Windows and Linux terminals, the app intercepts only `Ctrl+Shift+…` variants, the `Ctrl+Alt+…` combos in the map, `Ctrl+K`, `Ctrl+,`, `Ctrl+1..3`, `Ctrl+Tab`/`Ctrl+Shift+Tab` and `F6` (the UI_SPEC §5 intercept list). Everything else passes through. Document this table in docs.
 - WebView-native shortcuts (F5, Ctrl+R, Ctrl+P, Ctrl+F, F3, Ctrl+S, Ctrl+Shift+I in release builds) are suppressed.
 - App shortcuts never fire while an IME composition is active or while a text field has focus, unless the shortcut is explicitly global (palette, settings, mode switch).
+- **Rebinding (P2, Settings › Shortcuts, UI-113).** Every registry command can get a new shortcut or none. The change is stored in `settings` (`shortcut_overrides`) and replaces the default everywhere: the dispatcher, the palette, the cheatsheet (`Mod+/`) and tooltips.
+  - A shortcut needs `Mod`, `Ctrl` or `Alt`, except F1–F12.
+  - Combos the operating system or text editing owns are refused.
+  - On Windows and Linux under "Terminal first", a new shortcut outside the intercept list doesn't fire in a terminal (the key goes to the shell), and the row says so.
 
 **Acceptance:**
 1. With a terminal focused on Linux, pressing Ctrl+W, Ctrl+T, Ctrl+D, Ctrl+[ and Ctrl+] sends bytes 0x17, 0x14, 0x04, 0x1b and 0x1d to the PTY (verified by an echo harness).
@@ -431,6 +435,10 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 3. F5 and Ctrl+R never reload the webview in release builds.
 4. Every registry command appears in the palette, and invoking it from the palette runs the same handler as its shortcut (tested via a registry spy).
 5. During IME composition (a simulated `compositionstart`), `Mod+1` does not switch mode.
+6. (P2) Recording `Mod+Alt+J` for "Split right" makes `Mod+Alt+J` split the focused pane and `Mod+D` no longer does; the palette shows the new shortcut, and it survives a restart.
+7. (P2) Recording a combo another command uses shows "Already used by {action}." with Swap and Cancel. Swap gives that command the edited command's old shortcut; Cancel changes nothing.
+8. (P2) A combo the system or text editing owns (⌘Q, ⌘H, ⌘Space, Alt+F4, Alt+Tab, Ctrl+Alt+Delete, `Mod+C/V/X/Z/A`) is refused with "Your system uses this shortcut."; a combo without `Mod`, `Ctrl` or `Alt` (F1–F12 aside) is refused too; both leave the shortcut unchanged.
+9. (P2) ↺ restores one command's default; "Reset all to defaults" restores every command after a confirm.
 
 #### F-SH-10 Right sidebar (P0)
 **Behavior:**
@@ -2849,7 +2857,7 @@ Features beyond the original spec that make working with coding agents faster, s
 - **Recording:** every command a shell runs in a pane with shell integration (F-CD-10) is kept: the command line, the folder it ran in, the exit code, how long it took, the pane and workspace, and when. The shell reports the command line on its command-start mark, which carries the pane's token, so a program can't add entries. A command line never reaches the terminal view, the scrollback or a snapshot.
 - **Not recorded:** a command line that starts with a space (the shells' own "keep out of history" convention), anything bash keeps out of its history, commands in panes without shell integration, and every command while recall is off.
 - **Secrets:** before a command is stored, the redactor (F-TL-02) replaces anything that looks like a secret (tokens, keys, passwords in URLs, `--password=…`, `export X_TOKEN=…`) with `[REDACTED]`. The raw text is never written to disk.
-- **Recall palette** (`Mod+Alt+R`, or "Recall a command…" in the palette): a search box over the history, newest first, one row per distinct command per folder with how often it ran ("×12"). Each row: the command (monospace), its folder, the last exit code (✓, or ✗ with the code), duration and age, and the pane. A filter: **This workspace** (default) / **Everywhere**.
+- **Recall palette** (`Mod+Alt+J`, or "Recall a command…" in the palette): a search box over the history, newest first, one row per distinct command per folder with how often it ran ("×12"). Each row: the command (monospace), its folder, the last exit code (✓, or ✗ with the code), duration and age, and the pane. A filter: **This workspace** (default) / **Everywhere**.
   - **Enter inserts** the command into the focused pane (bracketed paste, no newline) or the focused composer, or copies it when neither is focused ("Copied"). Nothing runs.
   - **Run** (`Mod+Enter`, or the row's Run button) types it and presses Enter in the focused terminal pane, only when that pane is a shell at its prompt. It's not offered for a command with a `[REDACTED]` in it ("Insert it and fill in the secret") or for an agent pane.
   - **Delete** (`Mod+Backspace`) removes that command from the history.

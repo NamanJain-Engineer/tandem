@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { t } from "../../i18n";
 import { AccountPage } from "./AccountPage";
 import { EnginesPage } from "./EnginesPage";
+import { ShortcutsPage } from "./ShortcutsPage";
 import { AccountsPage } from "./AccountsPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
@@ -13,6 +14,7 @@ import {
   BoolControl,
   FontControl,
   NumberControl,
+  PolicyBoolControl,
   SegmentControl,
   SelectControl,
   ShellIntegrationControl,
@@ -46,7 +48,7 @@ const opts = (keys: string[], prefix: string) =>
 const segs = (keys: string[], prefix: string) =>
   keys.map((k) => ({ id: k, label: t(`${prefix}.${k}` as Parameters<typeof t>[0]) }));
 
-/** The pages shipped so far (UI-101, 102, 104, 105, 112, 114, 115, 116), in UI-100 order. */
+/** The pages shipped so far (UI-101, 102, 104, 105, 112, 113, 114, 115, 116), in UI-100 order. */
 export function settingsPages(platform: string): PageDef[] {
   const mac = platform === "macos";
   return [
@@ -422,14 +424,28 @@ export function settingsPages(platform: string): PageDef[] {
           label: t("settings.usageStats"),
           description: t("settings.usageStats.desc"),
           keywords: ["analytics", "telemetry", "statistics"],
-          control: (ids) => <BoolControl k="telemetry_usage" ids={ids} label={t("settings.usageStats")} />,
+          control: (ids) => (
+            <PolicyBoolControl
+              k="telemetry_usage"
+              ids={ids}
+              label={t("settings.usageStats")}
+              lockedBy={(p) => p.forceTelemetryOff}
+            />
+          ),
         },
         {
           id: "telemetry_crash",
           label: t("settings.crashReports"),
           description: t("settings.crashReports.desc"),
           keywords: ["crash", "errors"],
-          control: (ids) => <BoolControl k="telemetry_crash" ids={ids} label={t("settings.crashReports")} />,
+          control: (ids) => (
+            <PolicyBoolControl
+              k="telemetry_crash"
+              ids={ids}
+              label={t("settings.crashReports")}
+              lockedBy={(p) => p.forceTelemetryOff}
+            />
+          ),
         },
         {
           id: "ai_thread_titles",
@@ -443,7 +459,9 @@ export function settingsPages(platform: string): PageDef[] {
           label: t("settings.autoConsent"),
           description: t("settings.autoConsent.desc"),
           keywords: ["auto", "terminal output"],
-          control: (ids) => <BoolControl k="auto_consent" ids={ids} label={t("settings.autoConsent")} />,
+          control: (ids) => (
+            <PolicyBoolControl k="auto_consent" ids={ids} label={t("settings.autoConsent")} lockedBy={(p) => p.disableAuto} />
+          ),
         },
         {
           id: "dictate_share_hints",
@@ -493,6 +511,14 @@ export function settingsPages(platform: string): PageDef[] {
         },
       ],
       extra: <CheckpointsSettingsExtra />,
+    },
+    {
+      id: "shortcuts",
+      label: t("settings.shortcuts"),
+      subtitle: t("settings.shortcuts.subtitle"),
+      keywords: ["shortcuts", "keyboard", "keys", "hotkeys", "rebind"],
+      rows: [],
+      extra: <ShortcutsPage />,
     },
     {
       id: "account",

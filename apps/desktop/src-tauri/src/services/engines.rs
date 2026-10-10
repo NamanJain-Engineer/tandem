@@ -34,7 +34,12 @@ pub struct EngineService {
     hook_bin: Option<PathBuf>,
     store: Store,
     bus: EventBus,
+    /// The Team org's policy, read at each launch (F-BL-06).
+    policy: std::sync::OnceLock<PolicySource>,
 }
+
+/// Reads the org policy in force (the entitlement service's).
+pub type PolicySource = Arc<dyn Fn() -> Option<tandem_core::policy::OrgPolicy> + Send + Sync>;
 
 /// What an agent pane launches with.
 pub struct AgentLaunch {
@@ -67,7 +72,26 @@ impl EngineService {
             hook_bin: hook_bin(),
             store,
             bus,
+            policy: std::sync::OnceLock::new(),
         })
+    }
+
+    /// Where launches read the org policy from (set once at startup).
+    pub fn set_policy_source(&self, source: PolicySource) {
+        let _ = self.policy.set(source);
+    }
+
+    /// Refuses an engine the user's Team org doesn't allow (F-BL-06).
+    pub fn check_allowed(&self, engine: &EngineSpec) -> Result<(), IpcError> {
+        let policy = self.policy.get().and_then(|p| p());
+        if tandem_core::policy::allows_engine(policy.as_ref(), &engine.id) {
+            return Ok(());
+        }
+        Err(IpcError::new(
+            ErrorCode::PermissionDenied,
+            format!("Your organization doesn't allow {}.", engine.label),
+        )
+        .with_hint("Ask an admin of your organization to allow it on the Team page."))
     }
 
     pub fn registry(&self) -> EngineRegistry {
@@ -222,6 +246,7 @@ impl EngineService {
         account: Option<&AccountId>,
         relaunch: Option<Relaunch<'_>>,
     ) -> Result<AgentLaunch, IpcError> {
+        self.check_allowed(engine)?;
         if let Some(r) = relaunch {
             return self.relaunch(engine, program, status, account, r).await;
         }
@@ -500,4 +525,32 @@ fn hook_bin() -> Option<PathBuf> {
     };
     let p = exe.parent()?.join(name);
     p.is_file().then_some(p)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tandem_core::policy::OrgPolicy;
+
+    #[test]
+    fn f_bl_06_an_engine_the_org_doesnt_allow_never_launches() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let data = tandem_core::DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = Store::open(&data).expect("store");
+        let svc = EngineService::new(store, EventBus::new(), dir.path().join("providers"));
+        let claude = svc.get("claude").expect("claude");
+        let codex = svc.get("codex").expect("codex");
+        // No policy (not on Team): everything launches.
+        assert!(svc.check_allowed(&codex).is_ok());
+        svc.set_policy_source(Arc::new(|| {
+            Some(OrgPolicy {
+                allowed_engines: Some(vec!["claude".into()]),
+                ..OrgPolicy::default()
+            })
+        }));
+        assert!(svc.check_allowed(&claude).is_ok());
+        let err = svc.check_allowed(&codex).expect_err("refused");
+        assert_eq!(err.code, ErrorCode::PermissionDenied);
+        assert_eq!(err.message, "Your organization doesn't allow Codex.");
+    }
 }

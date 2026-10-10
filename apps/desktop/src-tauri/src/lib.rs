@@ -159,6 +159,8 @@ macro_rules! app_commands {
             commands::scratchpad::scratchpad_read,
             commands::scratchpad::scratchpad_write,
             commands::scratchpad::scratchpad_delete,
+            commands::usage::usage_report,
+            commands::usage::usage_share_save,
             commands::terminal::term_last_output,
             commands::terminal::term_stage_clipboard_image,
             commands::terminal::pty_type_prompt,
@@ -183,6 +185,12 @@ macro_rules! app_commands {
             commands::limits::limits_list,
             commands::limits::limit_resume_at_reset,
             commands::limits::limit_resume_now,
+            commands::auto::auto_start,
+            commands::auto::auto_list,
+            commands::auto::auto_pause,
+            commands::auto::auto_resume,
+            commands::auto::auto_stop,
+            commands::auto::auto_dismiss,
             commands::limits::limit_cancel_resume,
             commands::limits::limit_dismiss,
             commands::limits::limit_continue,
@@ -393,6 +401,14 @@ fn spawn_background(state: &AppState) {
     });
     let telemetry = state.telemetry.clone();
     tauri::async_runtime::spawn(telemetry.clone().run_uploader());
+    tauri::async_runtime::spawn(state.audit.clone().run());
+    tauri::async_runtime::spawn(crate::services::hosted::run(
+        state.entitlements.clone(),
+        state.store.clone(),
+        telemetry.clone(),
+        state.notifications.clone(),
+        state.bus.clone(),
+    ));
     let terminals = state.terminals.clone();
     tauri::async_runtime::spawn(async move {
         terminals.login_env().await;

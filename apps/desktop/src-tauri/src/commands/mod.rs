@@ -4,6 +4,7 @@
 pub mod account;
 pub mod accounts;
 pub mod app;
+pub mod auto;
 pub mod browser;
 pub mod checkpoints;
 pub mod engines;
@@ -24,5 +25,6 @@ pub mod terminal;
 pub mod test;
 pub mod threads;
 pub mod updates;
+pub mod usage;
 pub mod window;
 pub mod workspaces;

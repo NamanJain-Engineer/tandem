@@ -7,6 +7,7 @@ export type SubscriptionRow = {
   cancelAtPeriodEnd: boolean;
   pastDueSince: Date | null;
   trialEnd: Date | null;
+  refundedAt?: Date | null;
 };
 
 export type EffectivePlan = { plan: Plan; status: PlanStatus; limits: Limits; paidUntil: Date | null };
@@ -17,7 +18,7 @@ const DAY_MS = 86_400_000;
  * Lapse rules (PRODUCT_SPEC §3.2, F-BL-04): trialing or active is paid, except
  * a cancel-at-period-end subscription past its period end; past_due stays paid
  * for 7 days; a canceled subscription stays paid until its period end.
- * Everything else is Free. Data is never touched.
+ * Everything else, and a refunded subscription (F-BL-05), is Free. Data is never touched.
  */
 export function effectivePlan(sub: SubscriptionRow | null, now: Date): EffectivePlan {
   const free: EffectivePlan = {
@@ -26,7 +27,7 @@ export function effectivePlan(sub: SubscriptionRow | null, now: Date): Effective
     limits: LIMITS.free,
     paidUntil: null,
   };
-  if (!sub) return free;
+  if (!sub || sub.refundedAt) return free;
   const t = now.getTime();
   const end = sub.currentPeriodEnd.getTime();
   let paid = false;

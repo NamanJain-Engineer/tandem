@@ -18,6 +18,7 @@ import { Dashboard } from "../dashboard/Dashboard";
 import { CheckpointsPanel } from "../checkpoints/CheckpointsPanel";
 import { FilesPanel } from "../files/FilesPanel";
 import { ScratchpadPanel } from "../scratchpad/ScratchpadPanel";
+import { useShortcutKeys } from "../commands/useShortcutKeys";
 
 const ICONS: Record<SidebarTabKind, ReactNode> = {
   dashboard: <LayoutDashboard size={13} aria-hidden="true" />,
@@ -203,6 +204,7 @@ function Panel({ tab }: { tab: SidebarTab }) {
  * content without resizing it (a spacer keeps the docked width), so
  * terminals never reflow. Every tab stays mounted. */
 export function Sidebar() {
+  const keys = useShortcutKeys();
   const { open, tabs, active, width, fullscreen, pinned, loaded } = useSidebar();
   const narrow = useNarrow();
   const aside = useRef<HTMLElement>(null);
@@ -330,7 +332,7 @@ export function Sidebar() {
             pressed={fullscreen}
             onClick={() => useSidebar.getState().setFullscreen(!fullscreen)}
           />
-          <IconButton size="sm" icon={<X size={14} />} label={t("sidebar.close")} kbd={["Mod", "Shift", "B"]} onClick={() => useSidebar.getState().setOpen(false)} />
+          <IconButton size="sm" icon={<X size={14} />} label={t("sidebar.close")} kbd={keys("sidebar.toggle")} onClick={() => useSidebar.getState().setOpen(false)} />
         </div>
         <div className="relative min-h-0 flex-1">
           {tabs.length === 0 && <EmptyState title={t("sidebar.empty")} />}

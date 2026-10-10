@@ -15,11 +15,11 @@ async function history(query = ""): Promise<Entry[]> {
   return invoke<Entry[]>("history_search", { query, workspaceId: null, limit: 50 });
 }
 
-/** Opens the recall palette with its shortcut (Ctrl+Alt+R). */
+/** Opens the recall palette with its shortcut (Ctrl+Alt+J). */
 async function openRecall(): Promise<void> {
   await browser.execute(() => {
     const mac = navigator.platform.toLowerCase().includes("mac");
-    window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyR", key: "r", ctrlKey: !mac, metaKey: mac, altKey: true, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyJ", key: "j", ctrlKey: !mac, metaKey: mac, altKey: true, bubbles: true, cancelable: true }));
   });
   await $('[data-testid="quick-picker"]').waitForDisplayed({ timeout: 10_000 });
 }

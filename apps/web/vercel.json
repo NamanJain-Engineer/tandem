@@ -3,7 +3,7 @@
   "framework": "nextjs",
   "installCommand": "pnpm install --frozen-lockfile --filter web... --filter desktop...",
   "buildCommand": "pnpm build:site",
-  "ignoreCommand": "[ -n \"$VERCEL_GIT_PREVIOUS_SHA\" ] && git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD -- . ../desktop/src ../desktop/demo.html ../desktop/vite.demo.config.ts ../desktop/package.json ../../packages/ui ../../packages/protocol ../../pnpm-lock.yaml",
+  "ignoreCommand": "sh ./scripts/vercel-ignore.sh",
   "headers": [
     {
       "source": "/(.*)",
@@ -31,6 +31,19 @@
         {
           "key": "Content-Security-Policy",
           "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'"
+        }
+      ]
+    },
+    {
+      "source": "/demo/app/(.*)",
+      "headers": [
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'none'"
         }
       ]
     },

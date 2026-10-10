@@ -74,8 +74,10 @@ export {
   type TextareaProps,
 } from "./components/Field";
 export { EngineBadge, EngineGlyph } from "./components/EngineGlyph";
+export { Heatmap, heatLevel, type HeatmapDay } from "./components/Heatmap";
 export { CodeEditor, languageFor, type CodeEditorProps } from "./components/CodeEditor";
 export { NoteEditor, type NoteEditorHandle, type NoteEditorProps } from "./components/NoteEditor";
+export { HotkeyRecorder, type HotkeyRecorderProps, type RecordedKeys } from "./components/HotkeyRecorder";
 export { NOTE_FORMATS, continueList, taskBoxes, tickAt, toggleBold, toggleBullet, toggleItalic, toggleTask, toggleUnderline, toggleWrap, type NoteFormat } from "./components/noteCommands";
 export {
   FILE_ROW_HEIGHT,

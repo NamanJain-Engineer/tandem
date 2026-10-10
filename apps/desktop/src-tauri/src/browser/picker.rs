@@ -194,6 +194,13 @@ pub fn brief(url: &str, note: &str, elements: &[PickedElement]) -> String {
     if !note.is_empty() {
         out.push_str(&format!("\nNote: {note}\n"));
     }
+    // Selectors, component names and HTML come from the page (F-TL-06 rule 8).
+    if !elements.is_empty() {
+        out.push_str(&format!(
+            "\n{}\n",
+            tandem_core::untrusted::label("the web page")
+        ));
+    }
     for (i, e) in elements.iter().enumerate() {
         out.push_str(&format!("\n## {}. {}\n", i + 1, code(&e.selector)));
         if let Some(c) = &e.component {
@@ -334,6 +341,11 @@ mod tests {
         assert!(md.contains("## 2. `main > ul > li:nth-of-type(2)`\n- Size and position"));
         // A fence the element's own backticks can't close, and the cut said.
         assert!(md.contains("````html\n<li>has ``` fences</li>\n<!-- cut at 4 KB -->\n````"));
+        // F-TL-06 rule 8: the page's content is labelled untrusted.
+        assert!(md.contains(&format!(
+            "Note: make it bigger\n\n{}\n\n## 1.",
+            tandem_core::untrusted::label("the web page")
+        )));
         // F-CD-18.2: nothing after the last fence.
         assert!(md.ends_with("````"));
         assert_eq!(

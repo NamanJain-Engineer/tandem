@@ -9,7 +9,7 @@ import { EARLY_ACCESS_HREF, ENGINES, SITE } from "../lib/site";
 
 export const metadata: Metadata = { alternates: { canonical: "/" } };
 
-/** What the desktop app does today (milestones M0–M7). */
+/** What the desktop app does today (milestones M0–M7 and M9). */
 const FEATURES = [
   {
     title: "Real terminals, side by side",
@@ -29,7 +29,7 @@ const FEATURES = [
   },
   {
     title: "Thread mode",
-    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched.",
+    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched. Free threads run Claude Code and Codex; Cursor Agent, Grok and OpenCode threads need Pro.",
   },
   {
     title: "Switch engines mid-thread",
@@ -40,8 +40,12 @@ const FEATURES = [
     body: "Run a task in its own git worktree and branch, then merge it back. Hand a session to another engine with a written summary, in a pane beside it or as a thread.",
   },
   {
+    title: "Files, git and a browser",
+    body: "A file tree and code editor beside your agents, a git panel to stage, commit, push and switch branches with your own git, and a browser in the sidebar or a pane. Pick elements on a page and send them to an agent; paths and URLs in terminals open with Ctrl+Click. A Scratchpad keeps Markdown notes beside it all, on your computer.",
+  },
+  {
     title: "Several accounts per engine",
-    body: "Keep work and personal accounts apart, each signed in by itself, with usage, limits and context in view.",
+    body: "Keep work and personal accounts apart, each signed in by itself, with usage, limits and context in view. Free has one account per engine; Pro has as many as you need.",
   },
   {
     title: "Notifications that matter",
@@ -85,10 +89,6 @@ const ROADMAP = [
   {
     title: "Dictate",
     body: "Push-to-talk anywhere in the app, with speech recognized on your machine.",
-  },
-  {
-    title: "Files, git and a browser",
-    body: "Your files, diffs and a preview browser beside the agents.",
   },
   {
     title: "Teammates (Agent mode)",
@@ -183,6 +183,18 @@ function Screenshot({
   );
 }
 
+/** The home page's demo frame (D-128): a still image until /demo/embed.js
+ * frames the live demo here. Inner HTML, so hydration never replaces what the
+ * loader puts in it. */
+const DEMO_STAGE = `<div data-demo-stage="" class="absolute inset-0 overflow-hidden rounded-lg border border-border bg-surface-1 shadow-3">
+<div data-demo-bar="" hidden class="absolute inset-x-0 top-0 flex h-10 items-center gap-3 border-b border-border bg-surface-2 px-4 text-sm">
+<span class="text-fg-muted">Interactive demo · simulated agents, sample data</span>
+<button type="button" data-demo-close="" class="ml-auto rounded-sm px-3 py-1 font-medium text-fg hover:bg-surface-3">Close (Esc)</button>
+</div>
+<img data-demo-still="" src="/demo/still.jpg" width="1280" height="800" loading="lazy" decoding="async" alt="Vibezeo's Thread mode in the demo: a thread about a redirect loop with its first message ready to send, the thread list, and the composer." class="block h-full w-full">
+<a href="/demo/app/" data-demo-open="" class="absolute inset-0 flex items-center justify-center bg-black/40 text-md font-semibold text-white lg:hidden"><span class="rounded-sm bg-accent px-4 py-2 text-accent-fg">Tap to explore</span></a>
+</div>`;
+
 const STATS = [
   { value: String(PROGRESS.milestones), label: `milestones in the ${RELEASE.version} release` },
   {
@@ -241,6 +253,41 @@ export default function HomePage() {
           alt="The Vibezeo desktop app with four terminal panes over its own repository: the git history, htop, vim open on the Claude Code hook handler, and a passing cargo test run."
           caption="The Vibezeo desktop app on Linux, four real terminals over its own repository: git history, htop, the Claude Code hook handler in vim, and a test run."
         />
+      </section>
+
+      <section id="try" aria-labelledby="try-title" className="scroll-mt-16 border-t border-divider">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-12">
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge variant="accent" dot>
+              Interactive demo · sample data
+            </Badge>
+            <h2 id="try-title" className="text-xl font-semibold tracking-tight">
+              Try {SITE.product} right here
+            </h2>
+          </div>
+          {/* D-128: /demo/embed.js frames /demo/app/ here once the section is near. */}
+          {/* The loader changes what's inside; React's hydration leaves inner HTML alone. */}
+          <div
+            data-demo-embed=""
+            className="relative w-full"
+            style={{ aspectRatio: "1280 / 800" }}
+            dangerouslySetInnerHTML={{ __html: DEMO_STAGE }}
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="max-w-3xl text-sm text-fg-muted">
+              This is {SITE.product} itself, running in your browser with sample data. Click around. Its agents are
+              simulated: nothing runs and nothing you type leaves your browser.
+            </p>
+            <a
+              href="/demo/app/"
+              data-demo-open=""
+              className="hidden rounded-sm border border-border-strong px-4 py-2 text-md font-medium text-fg hover:bg-surface-3 lg:ml-auto lg:inline-flex"
+            >
+              Explore full screen
+            </a>
+          </div>
+        </div>
+        <script src="/demo/embed.js" defer />
       </section>
 
       <section aria-label="Progress" className="border-t border-divider">

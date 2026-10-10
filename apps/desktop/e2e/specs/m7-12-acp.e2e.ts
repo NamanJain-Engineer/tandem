@@ -2,7 +2,7 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { checkAgain, fakeEngine, freshOffline, home, invoke } from "../support/app";
+import { checkAgain, fakeEngine, freshUser, home, invoke, planFooter, setPlan } from "../support/app";
 import { assistantTexts, composer, sendMessage, threadMode, waitForAssistant } from "../support/thread";
 
 type Thread = { id: string; model: string | null };
@@ -21,6 +21,12 @@ function killAgent(): void {
   }
 }
 
+async function toasts(): Promise<string> {
+  return browser.execute(
+    () => document.querySelector<HTMLElement>('[role="region"][aria-label="Notifications"]')?.textContent ?? "",
+  );
+}
+
 async function transcriptText(): Promise<string> {
   return browser.execute(
     () => document.querySelector<HTMLElement>('[data-testid="thread-main"] [role="log"]')?.innerText ?? "",
@@ -32,13 +38,19 @@ async function transcriptText(): Promise<string> {
 // cancels the prompt, the agent's models reach the picker and the chosen one
 // is selected; when the agent stops offering it the thread falls back with
 // "Model no longer offered by OpenCode"; a sign-in error offers Sign in.
+// ACP engines run threads on Pro; on Free the thread stays readable and says
+// so (PRODUCT_SPEC §3.2, D-127).
 describe("E2E-M7-12 ACP", () => {
   let threadId = "";
+  let email = "";
 
   before(async function () {
-    this.timeout(60_000);
+    this.timeout(120_000);
     models("opencode oc-fast,oc-deep");
-    await freshOffline();
+    ({ email } = await freshUser("m7-12"));
+    await setPlan(email, "pro");
+    await invoke("entitlement_refresh");
+    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
     fakeEngine("opencode", join(home(), "fakebin"));
     const report = await checkAgain();
     expect(report.found.map((f) => f.engineId)).toContain("opencode");
@@ -119,5 +131,42 @@ describe("E2E-M7-12 ACP", () => {
     models("opencode oc-fast");
     await sendMessage("back");
     await waitForAssistant("You said: back");
+  });
+
+  it("F-TH-06 on Free an ACP thread stays readable, says it needs Pro, and runs no turn", async function () {
+    this.timeout(60_000);
+    await setPlan(email, "free");
+    await invoke("entitlement_refresh");
+    await browser.waitUntil(async () => (await planFooter()).startsWith("FREE"), { timeout: 20_000 });
+    const gate = $('[data-testid="thread-engine-gate"]');
+    await gate.waitForExist({ timeout: 10_000 });
+    const said = await browser.execute(
+      () => document.querySelector('[data-testid="thread-engine-gate"]')?.textContent ?? "",
+    );
+    expect(said).toContain("Free threads run Claude Code and Codex");
+    expect(said).toContain("OpenCode needs Pro");
+    // The history is still there.
+    expect(await transcriptText()).toContain("You said: back");
+
+    await sendMessage("one more");
+    await browser.waitUntil(
+      async () => (await toasts()).includes("Free threads run Claude Code and Codex. Pro runs every chat engine."),
+      { timeout: 5_000, timeoutMsg: `toasts: ${await toasts()}` },
+    );
+    expect(await transcriptText()).not.toContain("You said: one more");
+    // A new thread can't start on it either.
+    await expect(
+      invoke("thread_create", { args: { kind: "thread", workspaceId: null, engineId: "opencode" } }),
+    ).rejects.toThrow(/forbidden_plan/);
+
+    // See plans names the limit.
+    await gate.$("button=See plans").click();
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(() => document.querySelector('[data-testid="upgrade-gate"]')?.textContent ?? "")) ===
+        "Free threads run Claude Code and Codex. Pro runs every chat engine.",
+      { timeout: 5_000 },
+    );
+    await browser.keys("Escape");
   });
 });
