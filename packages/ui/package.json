@@ -8,6 +8,7 @@
     "./tokens.css": "./src/styles/tokens.css",
     "./fonts.css": "./src/styles/fonts.css",
     "./base.css": "./src/styles/base.css",
+    "./site.css": "./src/styles/site.css",
     "./gallery": "./src/gallery/Gallery.tsx",
     "./components/*": "./src/components/*.tsx"
   },

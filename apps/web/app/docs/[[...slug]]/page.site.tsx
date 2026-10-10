@@ -2,6 +2,7 @@ import defaultMdxComponents from "fumadocs-ui/mdx";
 import { DocsBody, DocsDescription, DocsPage, DocsTitle } from "fumadocs-ui/page";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { DocsFooter } from "../../../components/docs/DocsFooter";
 import { DOCS_COMPONENTS } from "../../../components/docs/Generated";
 import { source } from "../../../lib/docs/source";
 
@@ -34,6 +35,7 @@ export default async function DocPage({ params }: Props) {
       <DocsBody>
         <Body components={{ ...defaultMdxComponents, ...DOCS_COMPONENTS }} />
       </DocsBody>
+      <DocsFooter />
     </DocsPage>
   );
 }

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { DOWNLOADS, assetUrl } from "./release";
 import { SITE } from "./site";
@@ -16,11 +16,17 @@ export function releaseChecksums(dir = join(process.cwd(), "public/downloads")):
   return sums;
 }
 
-export type ReleaseAsset = { file: string; label: string; url: string; sha256: string };
+export type ReleaseAsset = { file: string; label: string; url: string; sha256: string; bytes: number };
+
+/** A file size as people read it: decimal megabytes, one decimal ("33.2 MB"). */
+export const formatSize = (bytes: number): string => `${(bytes / 1_000_000).toFixed(1)} MB`;
 
 /** The available builds with their SHA-256. A build missing from the
  * manifest fails the site build: a download is never shown unchecked. */
-export function releaseAssets(sums = releaseChecksums()): Map<string, ReleaseAsset[]> {
+export function releaseAssets(
+  sums = releaseChecksums(),
+  dir = join(process.cwd(), "public/downloads"),
+): Map<string, ReleaseAsset[]> {
   const out = new Map<string, ReleaseAsset[]>();
   for (const d of DOWNLOADS.filter((d) => d.available)) {
     out.set(
@@ -28,7 +34,9 @@ export function releaseAssets(sums = releaseChecksums()): Map<string, ReleaseAss
       d.assets.map((a) => {
         const sha256 = sums.get(a.file);
         if (!sha256) throw new Error(`${a.file} is not in public/downloads/SHA256SUMS.txt`);
-        return { ...a, url: `${SITE.url}${assetUrl(a.file)}`, sha256 };
+        // Sizes come from the file served, so the page can't drift from it.
+        const bytes = statSync(join(dir, a.file)).size;
+        return { ...a, url: `${SITE.url}${assetUrl(a.file)}`, sha256, bytes };
       }),
     );
   }
