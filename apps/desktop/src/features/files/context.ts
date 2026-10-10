@@ -33,7 +33,12 @@ function pick(
     };
   }
   if (workspaceId && workspace) {
-    return { kind: "context", context: { type: "workspace", workspaceId }, name: workspace.name, workspaceId };
+    return {
+      kind: "context",
+      context: { type: "workspace", workspaceId },
+      name: workspace.name,
+      workspaceId,
+    };
   }
   return { kind: "none" };
 }
@@ -44,7 +49,9 @@ export function useActiveFiles(): ActiveFiles {
   const thread = useThreads((s) => (s.selectedId ? s.list.find((t) => t.id === s.selectedId) : undefined));
   const workspaceId = useWorkspaces((s) => s.activeId);
   const workspace = useWorkspaces((s) => (s.activeId ? s.list.find((w) => w.id === s.activeId) : undefined));
-  const threadWs = useWorkspaces((s) => (thread?.workspaceId ? s.list.find((w) => w.id === thread.workspaceId) : undefined));
+  const threadWs = useWorkspaces((s) =>
+    thread?.workspaceId ? s.list.find((w) => w.id === thread.workspaceId) : undefined,
+  );
   return useMemo<ActiveFiles>(
     () => pick(mode, threadId, thread, workspaceId, workspace, threadWs),
     [mode, threadId, thread, workspaceId, workspace, threadWs],

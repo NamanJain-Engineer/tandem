@@ -108,12 +108,17 @@ static REGISTRY: &[CommandSpec] = &[
     in_text(same("mode.agent", C::Navigation, Some("Mod+1"), E::Always)),
     in_text(same("mode.code", C::Navigation, Some("Mod+2"), E::Always)),
     in_text(same("mode.thread", C::Navigation, Some("Mod+3"), E::Always)),
+    // F-CN-05: the palette's "Find work…".
+    same("work.find", C::Navigation, None, E::Always),
     in_text(same(
         "thread.changes",
         C::Navigation,
         Some("Mod+Alt+C"),
         E::ThreadOpen,
     )),
+    // F-AG-04: the New teammate sheet (no default shortcut: Mod+Shift+N is
+    // Notifications, UI_SPEC UI-70).
+    same("teammate.new", C::App, None, E::Always),
     aliased(
         "rail.toggle",
         C::Navigation,

@@ -10,14 +10,20 @@ const DOWNLOAD_PAGE = "https://vibezeo.com/download/";
 export function UpdatesPanel() {
   const state = useUpdates((s) => s.state);
   const boot = useBoot((s) => s.boot);
-  const version = t("settings.updates.versionValue", { version: boot?.version ?? state?.current ?? "", build: boot?.build ?? "" });
+  const version = t("settings.updates.versionValue", {
+    version: boot?.version ?? state?.current ?? "",
+    build: boot?.build ?? "",
+  });
   if (state?.stage === "managed")
     return (
       <div className="flex flex-col gap-2 text-sm text-fg" data-testid="updates-panel" data-stage="managed">
         <p>{version}</p>
         <p>
           {t("settings.updates.managed")}{" "}
-          <Button variant="link" onClick={() => invoke("app_open_external", { url: DOWNLOAD_PAGE }).catch(() => undefined)}>
+          <Button
+            variant="link"
+            onClick={() => invoke("app_open_external", { url: DOWNLOAD_PAGE }).catch(() => undefined)}
+          >
             {t("settings.updates.downloadPage")}
           </Button>
         </p>
@@ -30,7 +36,10 @@ export function UpdatesPanel() {
       case "checking":
         return t("settings.updates.checking");
       case "downloading":
-        return t("settings.updates.downloading", { version: state.version ?? "", percent: state.percent ?? 0 });
+        return t("settings.updates.downloading", {
+          version: state.version ?? "",
+          percent: state.percent ?? 0,
+        });
       case "ready":
         return t("settings.updates.ready", { version: state.version ?? "" });
       case "unavailable":
@@ -74,12 +83,18 @@ export function UpdatesPanel() {
           </Button>
         )}
         {line && (
-          <span role="status" data-testid="updates-status" className={stage === "error" ? "text-danger" : "text-fg-muted"}>
+          <span
+            role="status"
+            data-testid="updates-status"
+            className={stage === "error" ? "text-danger" : "text-fg-muted"}
+          >
             {line}
           </span>
         )}
       </div>
-      {stage === "downloading" && <ProgressBar value={(state?.percent ?? 0) / 100} label={t("settings.updates.checkNow")} />}
+      {stage === "downloading" && (
+        <ProgressBar value={(state?.percent ?? 0) / 100} label={t("settings.updates.checkNow")} />
+      )}
     </div>
   );
 }

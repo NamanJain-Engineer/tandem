@@ -14,7 +14,9 @@ describe("Find in terminal (F-CD-08)", () => {
     term.loadAddon(search);
     let result: FindResult | null = null;
     search.onDidChangeResults((r) => (result = { index: r.resultIndex, count: r.resultCount }));
-    const lines = Array.from({ length: 1_000 }, (_, i) => ([10, 500, 900].includes(i + 1) ? `line ${i + 1} needle` : `line ${i + 1}`));
+    const lines = Array.from({ length: 1_000 }, (_, i) =>
+      [10, 500, 900].includes(i + 1) ? `line ${i + 1} needle` : `line ${i + 1}`,
+    );
     await write(term, lines.join("\r\n"));
     const opts = searchOptions({ caseSensitive: false, regex: false }, tandemNight);
     const flags = { caseSensitive: false, regex: false };

@@ -266,11 +266,15 @@ describe("public site", () => {
     expect(DEMO_APP).toBe("/demo/app/");
   });
 
-  it("F-WB-01 AC2 (D-128) only the home page loads a script, the first-party demo loader; no page has a frame or a third-party resource", () => {
+  it("F-WB-01 AC2 (D-128, D-132) only the home page's demo loader and the download page's OS note load scripts, both first-party; no page has a frame or a third-party resource", () => {
     for (const [name, Page] of Object.entries(PAGES)) {
       const h = html(<Page />);
       const scripts = [...h.matchAll(/<script[^>]*>/g)].map((m) => m[0]);
-      expect(scripts, name).toEqual(name === "home" ? ['<script src="/demo/embed.js" defer="">'] : []);
+      const allowed: Record<string, string[]> = {
+        home: ['<script src="/demo/embed.js" defer="">'],
+        download: ['<script src="/download/detect.js" defer="">'],
+      };
+      expect(scripts, name).toEqual(allowed[name] ?? []);
       expect(h, name).not.toMatch(/<iframe[\s>]/);
       const external = [...h.matchAll(/src="((?:https?:)?\/\/[^"]+)"/g)].map((m) => m[1]);
       expect(external, name).toEqual([]);

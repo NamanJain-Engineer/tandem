@@ -1,0 +1,16 @@
+---
+title: Code mode
+description: Real terminals in split layouts, one per agent or shell.
+---
+
+Code mode is a grid of real PTY terminals. Each pane runs an agent CLI or a shell exactly as it would in your own terminal, so full-screen programs such as vim and htop work as usual.
+
+- **Panes.** Split right with <kbd>Mod+D</kbd> and down with <kbd>Mod+Shift+D</kbd>. Drag a pane to move it, swap two panes, or maximize one.
+- **Launching.** The launch grid lists the engines Vibezeo found. The launch sheet keeps saved presets and lineups of several agents.
+- **Status.** Each pane shows whether its agent is working, waiting for you, finished or failed. The Dashboard lists every live agent across workspaces.
+- **Lanes.** Run a task in its own git worktree, under `<repo>/.tandem/worktrees/<name>` on a `tandem/<name>` branch, then merge it back or clean it up.
+- **Handoff.** Hand a session to another engine with a written summary, in a pane beside it or as a thread.
+- **Around the terminals.** A Files tab with a code editor, a git panel, a browser and a Scratchpad sit in the sidebar. Paths and URLs a program prints open with <kbd>Mod</kbd>+Click.
+- **Restore.** After a crash or relaunch, layouts come back and agents return paused, ready to resume their session.
+
+On the Free plan you can have 4 live panes and 3 workspaces; see [Accounts and limits](/docs/accounts-and-limits/).

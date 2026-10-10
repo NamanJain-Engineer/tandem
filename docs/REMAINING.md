@@ -8,11 +8,12 @@ every milestone has its tasks, exit checks and E2E list in MILESTONES. Tick
 items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md`
 has every feature below with its full behaviour and acceptance tests.
 
-**Where it stands (10 October 2026, `product-m0-m5`):** M0–M7 and M9 are
-done. So is M13, apart from its voice pair (F-DI-05 and F-DI-10, which wait
+**Where it stands (10 October 2026, `product-m0-m5`):** M0–M7, M9 and M10
+are done, and so are M15's six features (its non-functional checks are under
+way). So is M13, apart from its voice pair (F-DI-05 and F-DI-10, which wait
 for M8's Dictate). M16 has F-SH-12, F-AC-07, F-AU-01, F-BE-03 and F-BE-12.
-That's 88 of 152 features, 54 of 65 P0. Left: 64 features in eight
-milestones (M8, M10–M16), of which 11 are P0. vibezeo.com serves 0.3.0
+That's 106 of 152 features, 56 of 65 P0. Left: 46 features in six
+milestones (M8, M11–M14, M16), of which 9 are P0, all M8's. vibezeo.com serves 0.3.0
 (M6, M7, M9 and the Scratchpad). M15 makes the P0/P1 product launchable;
 M16 adds the P2 extras and the release candidate.
 
@@ -65,19 +66,19 @@ history and dictionary, model download.
 ### M10 · Teammates and gateway core (XL) · 12 features (P1)
 Agent mode: persistent teammates with a brief, memory, skills, learning,
 session search and teammate-to-teammate mail, all over the single local gateway
-with leases.
-- [ ] F-PL-01 Gateway process (M7 built its skeleton, D-4; in progress in pull request #5)
-- [ ] F-AG-01 Teammate record
-- [ ] F-AG-02 Agent rail
-- [ ] F-AG-03 Teammate page and chats
-- [ ] F-AG-04 Create teammate
-- [ ] F-AG-05 Teammate settings
-- [ ] F-AG-06 Briefing assembly
-- [ ] F-AG-07 Memory
-- [ ] F-AG-08 Learn after a turn
-- [ ] F-AG-09 Skills
-- [ ] F-AG-11 Session search tool
-- [ ] F-AG-12 Teammate mail
+with leases. **Done in pull request #5** (branch `m10-teammates-gateway`), except F-DI-12's mic in "Create with AI", which completes after M8 merges (D-300).
+- [x] F-PL-01 Gateway process
+- [x] F-AG-01 Teammate record
+- [x] F-AG-02 Agent rail
+- [x] F-AG-03 Teammate page and chats
+- [x] F-AG-04 Create teammate
+- [x] F-AG-05 Teammate settings
+- [x] F-AG-06 Briefing assembly
+- [x] F-AG-07 Memory
+- [x] F-AG-08 Learn after a turn
+- [x] F-AG-09 Skills
+- [x] F-AG-11 Session search tool
+- [x] F-AG-12 Teammate mail
 
 Tasks: gateway; teammate record; briefing; memory (UI-73); skills (UI-74);
 session search; Agent rail (UI-70); teammate page and chats (UI-71); settings
@@ -155,12 +156,12 @@ needs a Windows machine (manual QA in `HUMAN_TODO.md` until CI runs Windows).
 ### M15 · Website, docs, data controls and launch hardening (L) · 6 features (2 P0)
 Close every remaining P0 and P1 and every non-functional requirement. After
 this milestone the P0/P1 product is launchable.
-- [ ] F-WB-01 Marketing site (P0; the site and its interactive demo exist, D-126: M15 completes the site, checks the demo against the spec's three surfaces and label, and checks prices against the API's plans, AC3)
+- [x] F-WB-01 Marketing site (P0; D-128, D-132)
 - [x] F-TL-06 Threat-model rules (P0; `tests/invariants`, one file per rule, D-131; rules 3, 4, 5, 7 and 8 gain cases as M8 and M10–M13, M16 build their paths)
-- [ ] F-WB-02 Docs
-- [ ] F-WB-03 Changelog (in-app "What's new" too)
-- [ ] F-WB-04 Downloads and machine-readable discovery
-- [ ] F-TL-05 Local data controls (export and delete): the desktop's export and delete are done (D-812); the server's 30-day account purge is next
+- [x] F-WB-02 Docs (Fumadocs at /docs, tables generated from code; D-134)
+- [x] F-WB-03 Changelog (in-app "What's new" too; D-133)
+- [x] F-WB-04 Downloads and machine-readable discovery (D-135)
+- [x] F-TL-05 Local data controls (export and delete: the desktop's export and delete, D-812; the web's Delete account and the server's 30-day purge, D-813)
 
 Tasks: marketing site; docs; changelog; downloads and discovery; data
 controls; invariants; performance (§5.1); reliability (§5.2); security (§5.3);
@@ -175,7 +176,7 @@ In independent sub-phases, each green and tagged (`m16a` … `m16d`), then the
 release candidate. Stop after any sub-phase if the budget runs out.
 - 16A Conductor (voice): [ ] F-CN-01 Call lifecycle · [ ] F-CN-02 Talker/doer
   architecture and tool catalog · [ ] F-CN-03 Delivery rules and safety ·
-  [ ] F-CN-04 Conductor UI · [ ] F-CN-05 Find work by meaning · [ ] F-CN-06
+  [ ] F-CN-04 Conductor UI · [ ] F-CN-05 Find work by meaning (local search and the palette done, D-814; the hosted ranking and teammates are next) · [ ] F-CN-06
   Persona and memory · [ ] F-CN-07 Wake phrase · [ ] F-CN-08 Audio routing for
   calls · [ ] F-BE-08 Voice session minting
 - 16B Auto: [x] F-AU-01 Auto (Pro, credits)

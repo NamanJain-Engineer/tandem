@@ -40,12 +40,13 @@ export function ledgerLabel(row: LedgerRow): string {
   return feature ? `${reason} · ${feature}` : reason;
 }
 
-/** The hosted features that cost credits today, and their prices (from plans.ts, PRODUCT_SPEC §3.3). */
+/** The hosted features that cost credits today, and their prices (from
+ * plans.ts, PRODUCT_SPEC §3.3). Only features the app has (ticked in
+ * docs/REMAINING.md, a test checks): Cloud dictation (F-DI-05, 2 per started
+ * 15 s) and Enhance or Polish (F-DI-10, 3 per call) join when they ship. */
 export const PRICE_LIST = [
-  { feature: "Cloud dictation", price: `${CREDIT_PRICES.stt_15s} per started 15 seconds of audio` },
-  { feature: "Enhance or Polish", price: `${CREDIT_PRICES.rewrite} per call` },
-  { feature: "Create a teammate with AI", price: `${CREDIT_PRICES.teammate_draft} per draft` },
-  { feature: "Thread titles", price: "Free" },
+  { id: "F-AG-04", feature: "Create a teammate with AI", price: `${CREDIT_PRICES.teammate_draft} per draft` },
+  { id: "F-BE-06", feature: "Thread titles", price: "Free" },
 ] as const;
 
 export const formatCredits = (v: number) => new Intl.NumberFormat("en-US").format(v);

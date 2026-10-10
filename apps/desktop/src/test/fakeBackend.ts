@@ -15,6 +15,8 @@ import { useSession } from "../stores/session";
 import { useSettings } from "../stores/settings";
 import { useUi } from "../stores/ui";
 import { resetThreads } from "../stores/threads";
+import { resetTeammates } from "../stores/teammates";
+import { resetSuggestions } from "../features/agents/Suggestions";
 import { resetFiles } from "../stores/files";
 import { resetGit } from "../stores/git";
 import { resetBrowser } from "../stores/browser";
@@ -135,6 +137,8 @@ export function resetStores(): void {
   useUsage.setState({ byAccount: {} });
   useContexts.setState({ byPane: {} });
   resetThreads();
+  resetTeammates();
+  resetSuggestions();
   resetFiles();
   resetGit();
   resetBrowser();

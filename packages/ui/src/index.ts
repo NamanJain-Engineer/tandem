@@ -5,7 +5,16 @@ export {
   type ApprovalCardLabels,
   type ApprovalCardProps,
 } from "./components/ApprovalCard";
-export { Avatar, AvatarStack, avatarHue, fnv1a32, initials, type AvatarProps } from "./components/Avatar";
+export {
+  AVATAR_HUES,
+  Avatar,
+  AvatarStack,
+  avatarHue,
+  fnv1a32,
+  hueIndex,
+  initials,
+  type AvatarProps,
+} from "./components/Avatar";
 export { Badge, Chip, type BadgeVariant, type ChipProps } from "./components/Badge";
 export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from "./components/Button";
 export {

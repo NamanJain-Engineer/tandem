@@ -12,20 +12,28 @@
     "build:site": "pnpm --filter desktop build:demo && SITE_EXPORT=1 next build",
     "start": "next start --port 3000",
     "test": "vitest run",
-    "lint": "tsc --noEmit && eslint .",
+    "lint": "fumadocs-mdx && tsc --noEmit && eslint .",
     "test:e2e": "playwright test",
-    "test:site": "playwright test -c playwright.site.config.ts"
+    "test:site": "playwright test -c playwright.site.config.ts",
+    "lhci": "lhci autorun",
+    "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
     "@tandem/protocol": "workspace:*",
     "@tandem/ui": "workspace:*",
+    "fumadocs-core": "15.8.5",
+    "fumadocs-mdx": "12.0.3",
+    "fumadocs-ui": "15.8.5",
     "next": "^15.4.1",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@lhci/cli": "0.15.1",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.1.11",
+    "@types/mdx": "^2.0.14",
     "@types/node": "^22.15.30",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",

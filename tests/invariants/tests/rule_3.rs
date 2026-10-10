@@ -26,21 +26,18 @@ impl ApprovalAsker for Deny {
 
 #[tokio::test]
 async fn invariant_rule_3_the_gateway_lease_is_served_on_loopback_only() {
-    let gw = Gateway::start(GatewayDeps {
-        approvals: Arc::new(Deny),
-        bus: None,
-    })
-    .await
-    .expect("gateway");
+    let gw = Gateway::start(GatewayDeps::new(Arc::new(Deny)))
+        .await
+        .expect("gateway");
     assert!(gw.url.starts_with("http://127.0.0.1:"), "{}", gw.url);
-    let lease = gw.prepare(SessionDescriptor {
-        caller: Caller::Thread {
+    let lease = gw.prepare(SessionDescriptor::new(
+        Caller::Thread {
             thread_id: ThreadId::new(),
         },
-        attended: Attended::Interactive,
-        access: Access::Edits,
-        builtins: BuiltinSet::for_thread(),
-    });
+        Attended::Interactive,
+        Access::Edits,
+        BuiltinSet::for_thread(),
+    ));
     let init = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
         "protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "rule-3", "version": "1"}
     }});

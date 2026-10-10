@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-skills-library"
+description = "Enables the skills_library command without any pre-configured scope."
+commands.allow = ["skills_library"]
+
+[[permission]]
+identifier = "deny-skills-library"
+description = "Denies the skills_library command without any pre-configured scope."
+commands.deny = ["skills_library"]

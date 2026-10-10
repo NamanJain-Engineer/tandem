@@ -26,6 +26,14 @@ export type CommandPaletteProps = {
   title?: string;
   recentKey?: string;
   recentHeading?: string;
+  /**
+   * False when the caller searches itself (Find work, F-CN-05): rows show
+   * as given, prefixes and recents are off, and `onQueryChange` gets the text.
+   */
+  shouldFilter?: boolean;
+  onQueryChange?: (query: string) => void;
+  /** A new value clears the input, like reopening (switching what it searches). */
+  resetKey?: string;
 };
 
 const RECENT_MAX = 10;
@@ -50,28 +58,46 @@ export function CommandPalette({
   title = "Command palette",
   recentKey = "tandem.palette.recent",
   recentHeading = "Suggestions",
+  shouldFilter = true,
+  onQueryChange,
+  resetKey,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
   useEffect(() => {
     if (open) {
       setQuery("");
-      setRecent(readRecent(recentKey));
+      onQueryChange?.("");
+      setRecent(shouldFilter ? readRecent(recentKey) : []);
     }
-  }, [open, recentKey]);
+    // onQueryChange is the caller's callback; only these say "start over".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, recentKey, resetKey, shouldFilter]);
+  const changeQuery = (q: string) => {
+    setQuery(q);
+    onQueryChange?.(q);
+  };
 
-  const prefix = ([">", "@", "#", "/", "?"] as const).find((p) => query.startsWith(p));
+  const prefix = shouldFilter
+    ? ([">", "@", "#", "/", "?"] as const).find((p) => query.startsWith(p))
+    : undefined;
   const search = prefix ? query.slice(1).trimStart() : query;
-  const visible = useMemo(() => (prefix ? groups.filter((g) => g.prefix === prefix) : groups), [groups, prefix]);
+  const visible = useMemo(
+    () => (prefix ? groups.filter((g) => g.prefix === prefix) : groups),
+    [groups, prefix],
+  );
   const all = useMemo(() => new Map(groups.flatMap((g) => g.items).map((i) => [i.id, i])), [groups]);
-  const recentItems = !prefix && !search ? recent.map((id) => all.get(id)).filter((i): i is PaletteItem => !!i) : [];
+  const recentItems =
+    !prefix && !search ? recent.map((id) => all.get(id)).filter((i): i is PaletteItem => !!i) : [];
 
   const run = (item: PaletteItem) => {
-    const next = [item.id, ...recent.filter((r) => r !== item.id)].slice(0, RECENT_MAX);
-    try {
-      localStorage.setItem(recentKey, JSON.stringify(next));
-    } catch {
-      /* storage can be unavailable */
+    if (shouldFilter) {
+      const next = [item.id, ...recent.filter((r) => r !== item.id)].slice(0, RECENT_MAX);
+      try {
+        localStorage.setItem(recentKey, JSON.stringify(next));
+      } catch {
+        /* storage can be unavailable */
+      }
     }
     onOpenChange(false);
     item.onSelect();
@@ -84,7 +110,11 @@ export function CommandPalette({
       onSelect={() => run(item)}
       className="flex h-9 cursor-default items-center gap-2.5 rounded-sm px-2.5 text-base text-fg outline-none data-[selected=true]:bg-surface-4"
     >
-      {item.icon && <span aria-hidden="true" className="inline-flex text-fg-muted">{item.icon}</span>}
+      {item.icon && (
+        <span aria-hidden="true" className="inline-flex text-fg-muted">
+          {item.icon}
+        </span>
+      )}
       <span className="truncate">{item.label}</span>
       {item.description && <span className="truncate text-sm text-fg-subtle">{item.description}</span>}
       {item.kbd && <Kbd keys={item.kbd} className="ml-auto" />}
@@ -102,19 +132,22 @@ export function CommandPalette({
           <D.Title className="sr-only">{title}</D.Title>
           <Command
             label={title}
+            shouldFilter={shouldFilter}
             filter={(value, s, keywords) => defaultFilter(value, s.replace(/^[>@#/?]\s*/, ""), keywords)}
           >
             <div className="flex items-center gap-2 border-b border-divider px-3">
               <Search size={16} aria-hidden="true" className="text-fg-subtle" />
               <Command.Input
                 value={query}
-                onValueChange={setQuery}
+                onValueChange={changeQuery}
                 placeholder={placeholder}
                 className="h-11 flex-1 bg-transparent text-md text-fg placeholder:text-fg-subtle focus:outline-none"
               />
             </div>
             <Command.List className="max-h-[50vh] overflow-y-auto p-1.5">
-              <Command.Empty className="px-3 py-6 text-center text-base text-fg-muted">{emptyText(search)}</Command.Empty>
+              <Command.Empty className="px-3 py-6 text-center text-base text-fg-muted">
+                {emptyText(search)}
+              </Command.Empty>
               {recentItems.length > 0 && (
                 <Command.Group heading={recentHeading} className="tn-cmd-group">
                   {recentItems.map((i) => row(i, `recent:${i.id}`))}

@@ -620,6 +620,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `usage_share_save` | `{pngBase64}` | `String?` (the path saved, `null` when the save dialog is cancelled; the webview draws the card, the core only checks it is a PNG under 10 MB and writes it atomically where the user picks) | Invalid, Io | F-AC-07 |
 | `data_export` | — | `DataExport? {path, tables, files}` (`null` when the save dialog is cancelled). A zip of every table as JSON (`<table>.json`; FTS tables left out), `teammates/<id>/{memory,skills}/`, `tasks/`, `scratchpad/` and `manifest.json`; never `providers/`, `auth/` or keychain values; built next to the target and renamed into place (D-812) | Io | F-TL-05 |
 | `data_delete_local` | `{removeEngineSignIns}` | `()`: closes every terminal, forgets Vibezeo's keychain secrets, leaves `$DATA/.delete-pending` and relaunches; the next start deletes `$DATA` except `providers/` (unless ticked) before anything opens it (D-812). Under the E2E harness it only leaves the request | Io | F-TL-05 |
+| `find_work` | `{query: str(≤500)}` | `FindWorkResult {matches: [FindMatch {source, kind: "pane"\|"thread", label, detail?, workspaceId?, tabId?, score}] (best first, ≤20), clear}` (`clear`: the first is one clear match to go to; otherwise the close ones lead). Ranks the open panes (name, title, engine, folder or page, last 20 lines of output) and threads (title, last message) on this machine: stems, a table of same-meaning software terms and one typo (`tandem_core::find_work`, D-814). Output and messages are redacted first; nothing leaves the machine. Teammates join when M10's chats land | Invalid (over 500 characters) | F-CN-05 |
 
 #### Status, dashboard, notifications, focus [F-DB-*, F-EN-05]
 | Command | Args | Returns | Errors | IDs |
@@ -638,8 +639,8 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 #### Threads and teammate chats [F-TH-*, F-AG-03]
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
-| `thread_create` | `{kind:"thread"\|"teammate_chat", workspaceId?, teammateId?, engineId?, accountId?, model?, effort?, access?, mode?}` (omitted = remembered defaults) | `Thread` | EngineMissing, ForbiddenPlan (engine not in plan) | F-TH-01, F-TH-02, F-TH-07 |
-| `thread_list` | `{kind, teammateId?, includeArchived?}` | `[Thread]` (the rail's summary is the thread row) | — | F-TH-01, F-AG-03 |
+| `thread_create` | `{kind:"thread"\|"teammate_chat", workspaceId?, teammateId?, place?, engineId?, accountId?, model?, effort?, access?, mode?}` (omitted = remembered defaults; a teammate chat takes its teammate's engine, model, preferred account and default access, and works in `place`: Home or one of the teammate's places; `Thread` gains `teammateId?` and `conversationRef?`) | `Thread` | EngineMissing, ForbiddenPlan (engine not in plan) | F-TH-01, F-TH-02, F-TH-07 |
+| `thread_list` | `{kind, teammateId?, includeArchived?}` | `[Thread]` (the rail's summary is the thread row; `teammate_chat` with `teammateId`: that teammate's chats in tab order) | — | F-TH-01, F-AG-03 |
 | `thread_get` | `{threadId}` | `ThreadDetail {thread, turns, running?, queued?, draft, attachments}` (`attachments`: the draft's unsent ones; `planRevisions`: `[PlanRevision {version, turnId, text, createdAt}]`, v1 first; pending approvals are the running turn's `approval_request` events without a resolution). Opening a thread clears its unread flag | NotFound | F-TH-01 |
 | `thread_events` | `{threadId, beforeId?, limit ≤ 500}` | `ThreadEventPage {items: [ThreadEventEnvelope] (oldest first), nextBeforeId?}` | — | F-TH-12 |
 | `thread_subscribe` | `{threadId, channel: Channel<ThreadEventEnvelope>}` | — (streams until the webview drops the channel) | NotFound | F-TH-03 |
@@ -649,6 +650,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `thread_update` | `{threadId, title?, access?, mode?, model?, effort?, pinned?, sortKey?, pluginGrants?}` (`model`/`effort` `"default"` = the engine's own; a title is a user rename, `title_source = user`; new access, mode, model or effort start a fresh session on the next turn) | `Thread` | ForbiddenPlan (Full forbidden by org policy), Invalid (empty title) | F-TH-01, F-TH-09, F-PL-05 |
 | `thread_switch_engine` | `{threadId, engineId, accountId?}` | `Thread` (next turn seeds summary; allow rules cleared) | EngineMissing, EngineUnsupported (no chat adapter), Conflict (a turn is running) | F-TH-16, F-AC-05 |
 | `thread_archive` / `thread_delete` | `{threadId, archived}` (archiving stops a running turn) / `{threadId}` (archived only; the recovery copy is `$DATA/trash/threads/<id>-<deletedAtMs>/` (0700) with `thread.json` (0600) and the attachments, removed after 7 days) | — | Invalid | F-TH-01 |
+| `thread_reorder` | `{ids}` (a teammate's chat tabs, left to right; M10) | — | — | F-AG-03 |
 | `thread_move_to_folder` | `{threadId, workspaceId}` | `Thread` | — | F-TH-02 |
 | `thread_save_draft` | `{threadId, draft: Draft {text, attachmentIds, queued?}}` | — | — | F-TH-07 |
 | `thread_attach_paths` | `{threadId, paths}` | `[Attachment]` | LimitReached (20 / 20 MB) | F-TH-07 |
@@ -721,24 +723,25 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 #### Teammates, memory, skills, mail [F-AG-*]
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
-| `teammate_list` / `teammate_get` | — / `{id}` | `[TeammateSummary]` / `Teammate` | NotFound | F-AG-01, F-AG-02 |
-| `teammate_create` | `TeammateInput` | `Teammate` | Conflict ("Name already used"), LimitReached, EngineMissing | F-AG-01, F-AG-04 |
-| `teammate_update` | `{id, patch: TeammatePatch}` | `Teammate` | Conflict, Invalid | F-AG-05 |
+| `teammate_list` / `teammate_get` | — / `{id}` | `[TeammateSummary {teammate, chatCapable, working, waiting, failed, lastLine?, lastAt?, chats}]` (the Lead is made on first use) / `Teammate {id, name, avatarHue?, avatarImage?, brief, engineId, model?, effort?, preferredAccountId?, home, places, settings: {memoryCap, learnMode, mayMessage, maySchedule, defaultAccess}, isLead, pinned, sortKey, createdAt}` | NotFound | F-AG-01, F-AG-02 |
+| `teammate_create` | `{input: TeammateInput {name, brief, engineId, model?, effort?, preferredAccountId?, places, avatarHue?, settings?}}` | `Teammate` | Conflict ("Name already used"), LimitReached, EngineMissing, Invalid | F-AG-01, F-AG-04 |
+| `teammate_update` | `{id, patch: TeammatePatch}` (only the fields given change; `model`, `effort`, `preferredAccountId`, `avatarHue` take `null` to clear; `pinned: true` unpins every other teammate: one hero; new settings or engine start the teammate's chats on fresh sessions) | `Teammate` | Conflict, Invalid, EngineMissing | F-AG-05 |
 | `teammate_delete` / `teammate_duplicate` / `teammate_reorder` | `{id}` / `{id}` / `{ids}` | — / `Teammate` / — | — | F-AG-02 |
-| `teammate_draft_with_ai` | `{description}` | `TeammateDraft {name, brief, engineId, pluginIds}` (nothing saved) | ForbiddenPlan, CreditsExhausted, Unavailable | F-AG-04 |
-| `teammate_suggestions` | `{id}` | `[String; 3]` (local) | — | F-AG-03 |
+| `teammate_draft_with_ai` | `{description}` | `TeammateDraft {name, brief, engineId, pluginIds}` (nothing saved; `engineId` only when installed and chat-capable, `pluginIds` only connected ones; debug E2E builds answer from `TANDEM_FIXTURE_TEAMMATE_DRAFT`, D-8) | ForbiddenPlan, CreditsExhausted, Unavailable | F-AG-04 |
+| `teammate_templates` | — | `[TeammateTemplate {id, name, brief}]` (Reviewer, Release notes writer, Researcher, Triage; the sheet's offline / Free choice) | — | F-AG-04 |
+| `teammate_suggestions` | `{id}` | `[String; 3]` (local: the brief's first sentences as asks, "You draft…" → "Draft…", constraints skipped, general asks to fill) | — | F-AG-03 |
 | `teammate_launch_in_terminal` | `{id, placePath, tabId}` | `PaneRecord` | EngineMissing | F-AG-13 |
-| `memory_get` | `{teammateId}` | `Memory {notes, about, cap, used, aboutCap: 2048}` | — | F-AG-07 |
-| `memory_write` | `{teammateId, file:"notes"\|"about", markdown}` | — | LimitReached (cap), Invalid ("Memory can't store credentials") | F-AG-07 |
-| `memory_suggestions_resolve` | `{suggestionSetId, keep:[index]}` | — | — | F-AG-08 |
-| `memory_undo` | `{changeId}` | — | NotFound | F-AG-08 |
+| `memory_get` | `{teammateId}` | `Memory {notes, about, cap, used, aboutCap: 2048, aboutUsed}` (lengths in characters) | — | F-AG-07 |
+| `memory_write` | `{teammateId, file:"notes"\|"about", markdown}` (the user's own edits, checked like `tandem__memory_write`; each write is a `memory_changes` row with a copy of what it replaced) | — | LimitReached (cap), Invalid ("Memory can't store credentials") | F-AG-07 |
+| `memory_suggestions_resolve` | `{suggestionSetId, keep:[index]}` (an empty `keep` discards the set; sets live until resolved or the app quits) | `changeId?` (for Undo, when memory changed) | NotFound | F-AG-08 |
+| `memory_undo` | `{changeId}` | — (puts back what the change replaced) | NotFound, Conflict (the file changed again since) | F-AG-08 |
 | `skills_list` / `skill_get` | `{teammateId}` / `{teammateId, slug}` | `[SkillEntry {slug, name, description, valid, error?, isNew, syncedTo}]` / `Skill` | — | F-AG-09 |
-| `skill_save` / `skill_remove` | `{teammateId, slug, markdown}` / `{teammateId, slug}` | — | Invalid (front matter) | F-AG-09 |
+| `skill_save` / `skill_remove` | `{teammateId, slug, markdown}` / `{teammateId, slug}` (the user's saves, opens and library adds mark a skill seen: not "New"; remove moves the folder to `<home>/.trash/skills/`) | — | Invalid (front matter, or a credential), NotFound | F-AG-09 |
 | `skills_library` / `skill_add_from_library` | — / `{teammateId, slug}` | `[SkillEntry]` / — | Conflict | F-AG-09 |
 | `skill_sync` | `{teammateId, slug, engineId, accountId, on}` | `SyncOutcome {state:"synced"\|"removed"\|"conflict"}` | — | F-AG-10 |
-| `mail_list` / `mail_get` | `{teammateId}` / `{mailId}` | `[MailRow]` / `Mail` | — | F-AG-12 |
-| `mail_send` | `{fromTeammateId?, toTeammateId, body, fromThreadId?}` (UI `@name`) | `MailRow` | Invalid (refusal reason) | F-AG-12 |
-| `mail_retry` | `{mailId}` | — | — | F-AG-12 |
+| `mail_list` / `mail_get` | `{teammateId}` / `{mailId}` | `[MailRow {id, fromTeammateId?, from, toTeammateId, to, preview, state:"queued"\|"delivered"\|"refused"\|"failed", reason?, deliveredThreadId?, createdAt}]` (sent or received, newest first) / `Mail` (the row's fields with `body`, `fromThreadId?`, `conversationRef`, `deliveredAt?`; `from` is "You" for the user's mail) | — / NotFound | F-AG-12 |
+| `mail_send` | `{fromTeammateId?, toTeammateId, body, fromThreadId?}` (UI `@name`; the composer's chat is `fromThreadId`, its teammate the sender) | `MailRow` (queued; reason `global_pause` while mail is paused) | Invalid (refusal reason; the refused row is kept), NotFound | F-AG-12 |
+| `mail_retry` | `{mailId}` (a failed or waiting mail goes back in the queue and one delivery pass runs) | — | Conflict (delivered or refused), NotFound | F-AG-12 |
 
 #### Tasks [F-TK-*]
 | Command | Args | Returns | Errors |
@@ -775,7 +778,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `plugin_disconnect` | `{connectionId}` | — | — |
 | `plugin_detail` | `{connectionId}` | `PluginDetail {tools:[{name, riskClass, description}], options}` | — |
 | `plugin_set_option` | `{connectionId, allowPublishInFull}` | — | — |
-| `grants_list` / `grants_set` | `{subject: GrantSubject}` / `{subject, connectionId, granted}` | `[ConnectionId]` / — | — |
+| `grants_list` / `grants_set` | `{subject: GrantSubject}` / `{subject, connectionId, granted}` (`GrantSubject = {type:"teammate", teammateId} \| {type:"thread", threadId} \| {type:"workspace", workspaceId} \| {type:"all_threads"}`; a change reaches the subject's next session) | `[ConnectionId]` / — | — |
 
 #### Auto [F-AU-01]
 | Command | Args | Returns | Errors |
@@ -849,7 +852,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | Command | Args | Returns | Errors |
 |---|---|---|---|
 | `test_counters` | `{reset?: bool}` | `TestCounters {ptyResizes, ptyResizesByPane, webglContexts, domRenderers, reflows, restoreMaxSpawning}` (`restoreMaxSpawning`: most agents ever starting at once during restore, F-SH-07 AC3) | — |
-| `test_spawn_log` | — | `[SpawnRecord {argv, envKeys, providerHome?, cwd}]` (same content as `TANDEM_SPAWN_LOG`) | — |
+| `test_spawn_log` | — | `[SpawnRecord {argv, envKeys, providerHome?, cwd}]` (same content as `TANDEM_SPAWN_LOG`; chat-engine spawns are recorded too, from M10) | — |
 | `test_clock_advance` | `{ms}` | `{now}` | — |
 | `test_auth_refresh` | — | `AuthState` (forces the refresh path, e.g. to observe a revoked device) | — |
 | `test_account_create` | `{engineId, label}` | `Account` (a second account with its own provider home, without the sign-in flow; E2E-M4-4) | — |
@@ -863,6 +866,8 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `test_thread_state` | `{id}` | the thread's stored `state` | NotFound |
 | `test_browser_eval` | `{browserId, script}` | `String` (the script's value as JSON; E2E-M9-4 clicks in a page with it) | NotFound |
 | `test_thread_seed_events` | `{threadId, events, fenceBytes?}` | the number of events written (completed turns of a user message, an assistant reply, tool calls and a turn end, in one transaction; `fenceBytes` adds a last reply with a code fence that size; threads perf suite) | NotFound |
+| `test_plugin_connect` | `{pluginId}` | `PluginConnection {id, pluginId, accountLabel?, authKind, status, createdAt}` (records a connection of a test vendor module, `test_echo`/`test_upper`/`test_down`, without a sign-in; builds with the `test-vendors` feature only; M10 E2E until Settings › Plugins lands in M12) | NotFound |
+| `test_gateway_metrics` | — | `TestGateway {metrics: GatewayMetrics {port, listeners, leases, mcpSessions, requests, restarts, rssBytes?}, starts}` (`starts`: gateways this process started, F-PL-01 AC2) | Unavailable |
 
 `window.__tandemTest` in the webview wraps these commands plus UI-side counters. Not listed in `capabilities/*.json` for release.
 
@@ -896,9 +901,10 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `entitlement:changed` | `EntitlementView` | entitlement service (refresh, SSE) | F-BE-04, F-SH-03 |
 | `routines:changed` / `routines:run` | `RoutineView` / `RoutineRun` | scheduler | F-RT-02, F-RT-04 |
 | `tasks:attempt` | `AttemptView` | task runner | F-TK-04 |
-| `plugins:changed` / `plugins:connect` | `PluginCard` / `{opId, step:"discovery"\|"registration"\|"sign_in"\|"token_exchange"\|"verification"\|"timeout", state, error?}` | gateway | F-PL-03 |
-| `mail:changed` | `{teammateId, rows:[MailRow]}` | mail service | F-AG-12 |
-| `memory:suggestions` | `{teammateId, threadId, setId, items}` | learn service | F-AG-08 |
+| `plugins:changed` / `plugins:connect` | `PluginCard` / `{opId, step:"discovery"\|"registration"\|"sign_in"\|"token_exchange"\|"verification"\|"timeout", state, error?}` | gateway (`plugins:changed` after any connection is added or changes; until M12 only debug E2E builds connect, through `test_plugin_connect`) | F-PL-03 |
+| `teammates:changed` | `{teammates:[TeammateSummary]}` (a teammate or one of its chats changed; coalesced 100 ms) | teammates service | F-AG-02 |
+| `mail:changed` | `MailChanged {teammateId, rows:[MailRow]}` (the teammate's mail, newest first, after any change to a mail it sent or receives) | mail service | F-AG-12 |
+| `memory:suggestions` | `MemorySuggestions {teammateId, threadId, setId, items:[{kind:"add"\|"remove", text}], rationale, applied, changeId?}` (`applied`: Auto mode already wrote it; `changeId` undoes it) | learn service | F-AG-08 |
 | `auto:changed` / `auto:dismissed` | `AutoRunView` / `{runId}` | Auto supervisor | F-AU-01 |
 | `lanes:stale` | `{workspaceId, lanes:[StaleLane]}` | lane sweeper | F-CD-15 |
 | `dictate:state` | `{state:"idle"\|"listening"\|"transcribing"\|"inserted"\|"error"\|"reconnecting", takeId?}` (to `main` and `dictate-widget`) | TakeMachine | F-DI-07 |
@@ -1720,7 +1726,7 @@ pub enum ThreadEvent {
     Error { code: String, message: String, stage: ErrorStage /* spawn|auth|model|network|tool|unknown */, hint: Option<String>, action: Option<ErrorAction> },
     PlanRevision { version: u32 },
     Divider { text: String },                                         // "Continued on <engine> (<account>) with a summary"
-    MailRow { mail_id: MailId, from: String, to: String, preview: String },
+    MailRow { mail_id: MailId, from: String, to: String, preview: String, inbound: bool }, // inbound: the recipient's delivered turn, shown in place of its message
     TurnEnd { reason: TurnEndReason /* completed|cancelled|limit|error */, blocked_actions: u32 },
 }
 pub enum ToolVerb { Bash, Read, Grep, Glob, Edit, Write, Multiedit, Webfetch, Websearch, Task, Mcp, Other }
@@ -1808,7 +1814,7 @@ Persistence: every envelope except `*Delta` is appended to `thread_messages`; de
 <tools>{guidance: tandem__memory_write for memory, tandem__session_search, tandem__send_message, tasks via tandem_tasks, schedule tools if allowed}</tools>
 ```
 - Injection scan: lines in memory/skills matching `(?i)ignore (all|previous) instructions|system prompt|</?(brief|tandem_preamble|memory|skills)>` are escaped (angle brackets replaced) and counted in the log (by count only). Credential-shaped strings are redacted.
-- Delivery: always a file `$DATA/briefings/<session>.md` (0600): Claude `--append-system-prompt-file`; Codex `developerInstructions` (V2) or first-turn preamble (V1) read from the file by the adapter and sent over stdin; ACP: prepended to the first `session/prompt`. Never argv (F-AG-06 AC2).
+- Delivery (M10: the file is `$DATA/briefings/<thread>.md`, rewritten for each new session of the chat and removed with the chat; `ChatStart.briefing`): always a file `$DATA/briefings/<session>.md` (0600): Claude `--append-system-prompt-file`; Codex `developerInstructions` (V2) or first-turn preamble (V1) read from the file by the adapter and sent over stdin; ACP: prepended to the first `session/prompt`. Never argv (F-AG-06 AC2).
 
 ### 8.3 Memory [F-AG-07]
 - `tandem__memory_write{file:"notes"|"about", markdown}` (gateway built-in, scoped to the lease's teammate): rejects if `len > cap` (notes: 2k/4k/8k/16k; about: 2k) with "Memory is over its {cap} character budget. Condense it and try again." and if any line matches credential patterns ("Memory can't store credentials"). Writes via `atomic_write`, records a `memory_changes` row (with a backup copy) for Undo.
@@ -1835,13 +1841,14 @@ send_message(to, body) ─► check: sender may_message; recipient exists, not d
       ├─ rate guard: mail_turn_log(to) count in last 60 min ≥ 20 → state=queued reason=rate_limit, note "Rate limit reached"
       ▼
  mail row queued (id = dedupe key) ─► delivery worker (single task, FIFO per recipient)
-      ├─ recipient has an idle chat with same conversation_ref → append user turn "From {sender}:\n{body}"
+      ├─ recipient has an idle chat with same conversation_ref → append user turn "From {sender}:\n{body}" (a teammate's body behind `untrusted::label` and in `untrusted::fence`, F-TL-06 rule 8)
       └─ else → create teammate chat titled "{sender}: {first line}" (title_source=mail), attended=0, access=min(default, Edits)
  on success: state=delivered, MailRow events in both transcripts; on wake failure: state=failed (Retry in UI; never auto-retried)
 ```
 - `conversation_ref` = sender chat's `conversation_ref` (or its thread id if none). Delivery marks `(mail_id, thread_id)` so a mail is delivered at most once per chat.
 - Global pause: worker holds all queued items until resumed; on resume delivers each once (F-AG-12 AC2).
 - `tandem__list_teammates` returns `{id, name, engine, status, may_receive}` for non-paused teammates.
+- Transcripts: the sender's chat gets a `MailRow` (inbound false) in its running turn, or in a turn of its own (the row, then `turn_end`) when none runs; the recipient's delivered turn is the user message "From {sender}:\n{body}" followed by a `MailRow` with inbound true, which the transcript shows in the message's place. A turn may start with a `mail_row` (seq 0) as well as a `user` event.
 
 ### 8.8 Auto supervisor (`tandem_app::services::auto`) [F-AU-01]
 ```rust
@@ -1955,11 +1962,13 @@ All command execution goes through `CommandRunner` (fake in tests; F-RT-03 AC1 a
 - `axum` + `rmcp` Streamable HTTP transport, bound to `127.0.0.1:0` (random port), path `/mcp`. One instance per Tandem process (in-process task; `tandem-gateway` bin for sidecar/tests — F-PL-01 AC2 asserts one gateway for 10 sessions).
 - `Origin` header, if present, must be absent or `null`/loopback; `Host` must be `127.0.0.1:<port>` (DNS-rebinding guard).
 - Every request needs `Authorization: Bearer <lease>`; unknown/revoked/expired → 401 (F-PL-01 AC1). MCP sessions (`Mcp-Session-Id`) are bound to the lease that created them.
+- **Watchdog and metrics (M10):** every 30 s the gateway probes its own listener (an unauthenticated `POST /mcp` must answer 401 within 5 s); a listener that stopped or doesn't answer is reopened on the same port, so every session's MCP config stays valid. `GatewayHandle::metrics()` reports the port, open listeners, leases, MCP sessions, requests, restarts and the process's resident memory (Linux: `VmRSS`; other platforms report none yet). The app starts the gateway at launch and writes `$DATA/run/gateway.json` `{port}` (0600). Test vendor modules (`vendors/test_echo`: `test_echo`, `test_upper`, and `test_down`, which is always unreachable) build only with the `test-vendors` feature, which the E2E build turns on.
 
 ### 11.2 Leases
 `Lease {id, token_hash (sha256), caller, attended, access, granted: Vec<ConnectionId>, builtins: BuiltinSet, conversation_ref, created_at, revoked}`; token = 32 random bytes base64url, only its hash is stored; TTL = session lifetime (revoked at session end, quit, sign-out). `BuiltinSet` is computed from the caller: teammate chats get `session_search`, `memory_write`, `read_skill`, plus `send_message`/`list_teammates` if `may_message`, plus `schedule_*` if `may_schedule`; every Claude session gets `tandem_approvals__request`; threads get only approvals + granted plugins.
 
 ### 11.3 Tool listing
+- The built-ins come from one registry (`tandem_gateway::builtins::BUILTINS`: wire name, description, schema, the `BuiltinSet` flag that turns it on); the app answers them through a `BuiltinHandler` that receives the caller's lease. A lease's `granted` connections are taken when its session starts; grant changes reach the next session. The search and call tools are listed only when the lease has a granted, connected plugin. Until plugin approvals (F-PL-06, M12) only `read`-class tools run; other classes return a tool error saying approvals aren't available yet.
 - Default: `tandem__search_tools{query: str, limit?: int(1..20)}` → `[{name:"<plugin>__<tool>", description, risk_class, input_schema}]` over granted plugins; `tandem__call{tool: str, args: object}` executes one. Plus built-ins. With "Expose all plugin tools directly" on: every granted tool listed as `<plugin>__<tool>` (F-PL-01 AC3).
 - Tool discovery for remote-MCP vendors is lazy per connection (on first search/call, cached 10 min); one failing vendor returns an error entry for that plugin only (F-PL-01).
 - Disconnect/grant removal bumps a generation counter; in-flight leases see the change on their next call (F-PL-01 AC4); the server emits `notifications/tools/list_changed`.
@@ -2077,7 +2086,7 @@ Plugin count limit: Free = 1 connection (§3.2), enforced at connect.
 - **Doer loop:** on `FunctionCall act`: `POST /v1/voice/act {session_id, request, snapshot, results?}` → `{tool_calls:[{id, name, args}], say?}`; the app executes each via **`ActionRegistry` in Rust** and posts results back until the doer returns `say` (max 8 rounds); `say` becomes the `act` function output for the talker.
 - **ActionRegistry:** generated from `tandem_core::commands::registry()` entries that have `voice: Some(VoiceToolSpec)` plus voice-only tools (F-CN-02 table). Each entry maps to a Rust service call or to a `conductor:ui-action` (navigation-only). A test asserts every doer tool maps to a registry command (AC1). Rules: `set_setting` only for the closed list (AC2); `prompt_pane` refuses waiting panes (F-CN-03 AC1); `read_pane`/`read_thread` output passes the redactor (AC4); `run_command_in_shell`, `execute_task`, `create_teammate`, `close_pane` on working agents require `conductor:confirm-request` answered by an on-screen click (`conductor_confirm`) (AC3); forced lane removal, enabling Full, plugin spend/destructive approvals are **absent** from the registry. Voice approvals resolve only the approval id named in the confirm request (F-CN-03 AC2).
 - **End:** hang-up, sign-out, mic failure, `max_seconds`, 402 → stop audio, cancel pending actions (a `CancellationToken` shared by every in-flight action; delayed actions check it before executing, F-CN-01 AC2), `POST /v1/voice/session/{id}/settle {seconds}`.
-- **Find work:** local candidates (panes: human name, title, engine, last 20 redacted lines; threads: title, last message; teammates) → `POST /v1/voice/resolve` → ranked ids; on failure, local fuzzy (`nucleo-matcher`) over the same text (F-CN-05).
+- **Find work:** local candidates (panes: human name, title, engine, last 20 redacted lines; threads: title, last message; teammates) → `POST /v1/voice/resolve` → ranked ids; on failure, or with the hosted ranking off, the local ranking over the same text (F-CN-05). The local ranking is `tandem_core::find_work` (stems, same-meaning terms and a typo; D-814), not `nucleo-matcher`: its subsequence matching suits typed abbreviations, not descriptions. The palette's "Find work…" (`work.find`) runs the same search through `find_work`.
 - **Persona/memory:** `$DATA/conductor/memory.md` written only when memory is on; credential-shaped facts refused (F-CN-06).
 - **Wake phrase:** `WakeDetector` trait; implementation with `sherpa-onnx` KWS (bundled small model under `models/wake/`) behind a feature flag `wake`; disabled when the false-accept benchmark fails; paused while Dictate/a call owns the mic, while Bluetooth output is active, or on "Pause while watching videos" (F-CN-07).
 - **Audio routing:** calls use the Dictate device policy (never opens a Bluetooth mic on its own); output device = system default (F-CN-08).
@@ -2128,7 +2137,7 @@ apps/api/
   src/routes/{health, me, credits, billing, webhooks, ai, auto, stt, voice, config, updates, pairings, relay, audit, orgs, admin, dictionary, dev}
   src/services/{plans, entitlements, ledger, webhooks, orgs, configSigner, releases, deletion}
   src/providers/{ai, stt, realtime, billing, email, captcha, breach}/{real,mock}.ts
-  src/jobs/{reservationSweeper (60 s), voiceSweeper (60 s), deletionJob (daily), monthlyResetSafety (hourly)}  — each takes a Redis lock (SET NX PX) so one replica runs it
+  src/jobs/{reservationSweeper (60 s), voiceSweeper (60 s), deletionJob (hourly: purges requests over 29 days old, D-813), monthlyResetSafety (hourly)}  — each takes a Redis lock (SET NX PX) so one replica runs it
   config/remote-config.json   source of catalog, prices, flags, registry overrides, plugin client ids, min version
   test/                       vitest + testcontainers-free: uses docker-compose services from infra/
 ```
@@ -2295,7 +2304,7 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 | `GET /v1/me` | B/C | — | `MeResponse` (§14.4) | `UNAUTHENTICATED` | F-BE-04 |
 | `GET /v1/me/events` | B | — | SSE `entitlement`, `credits`, heartbeat 25 s | — | F-BE-04 |
 | `GET /v1/me/sessions` / `DELETE /v1/me/sessions/:id` | C | — | `[{id, deviceName, platform, appVersion, lastUsedAt}]` / 204 | — | F-WB-05 |
-| `DELETE /v1/me` | C | `{confirm: 'DELETE'}` | 202 (deletion ≤30 days; subscription canceled now) | — | F-TL-05 |
+| `DELETE /v1/me` | C | `{confirm: 'DELETE'}` | 202 (deletion ≤30 days by `deletionJob`; the subscription and those of Teams the user owns alone are canceled first, then every desktop sign-in and web session is revoked and new sign-ins are refused with `ACCOUNT_DELETED`, D-813) | 409 `TEAM_HAS_MEMBERS` (owns a Team with other members) | F-TL-05 |
 | `GET /v1/credits` | B/C | — | `{balance:{monthly, purchased, resetsAt}, org: {id, cap, spent} \| null, ledger:[≤100 {id, bucket, delta, reason, feature, createdAt}]}` (a Team member sees the org pool, D-601) | — | F-BE-05 |
 | `POST /v1/billing/checkout` | B/C | `{plan:'pro'\|'team', interval:'month'\|'year', seats?: int(2..500), promo?: str}` | `{url}` | `VALIDATION` | F-BL-01 |
 | `POST /v1/billing/portal` | B/C | — | `{url}` | 404 (no customer) | F-BL-02 |
