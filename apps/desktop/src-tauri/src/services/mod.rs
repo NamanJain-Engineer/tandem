@@ -4,6 +4,7 @@
 pub mod accounts;
 pub mod api;
 pub mod approvals;
+pub mod askpass;
 pub mod audit;
 pub mod auth;
 pub mod auto;
@@ -35,6 +36,8 @@ pub mod notifier;
 pub mod opener;
 pub mod phone;
 pub mod plugins;
+pub mod remote;
+pub mod remote_files;
 pub mod restore;
 pub mod routine_host;
 pub mod routines;
@@ -59,6 +62,7 @@ pub mod usage;
 pub mod usage_report;
 pub mod widget;
 pub mod workspaces;
+pub mod wsl;
 
 /// Debug builds: the E2E fake engines' switches (`TANDEM_FAKE_*`), for
 /// engine runs that aren't panes and so don't read the test profile.

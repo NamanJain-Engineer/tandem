@@ -15,7 +15,7 @@ futures.workspace = true
 hex.workspace = true
 hkdf.workspace = true
 hmac.workspace = true
-keyring.workspace = true
+keyring = { workspace = true, optional = true }
 ignore.workspace = true
 notify.workspace = true
 rand_core.workspace = true
@@ -39,6 +39,11 @@ x25519-dalek.workspace = true
 rand.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+
+[features]
+default = ["os-keychain"]
+# The OS keychain (`keyring`); `tandem-host` builds without it (D-401).
+os-keychain = ["dep:keyring"]
 
 [lints]
 workspace = true

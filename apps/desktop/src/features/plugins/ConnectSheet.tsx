@@ -210,6 +210,12 @@ export function ConnectSheet({
     >
       <div className="flex flex-col gap-4" data-testid="connect-sheet">
         {reconnect && <p className="text-sm text-fg-muted">{t("plugins.connect.reconnectNote")}</p>}
+        {card.unavailableReason && (
+          // Why only a token is offered (GitHub, Slack: D-961).
+          <p className="text-sm text-fg-muted" data-testid="connect-why-token">
+            {card.unavailableReason}
+          </p>
+        )}
         {ways.length > 1 && (
           <SegmentedControl
             label={t("plugins.connect.method")}

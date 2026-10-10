@@ -103,6 +103,7 @@ impl TestModule {
                 target_keys: vec!["target"],
                 key_hint: None,
                 scopes: Vec::new(),
+                oauth_client: super::OAuthClient::Dynamic,
             },
         }
     }

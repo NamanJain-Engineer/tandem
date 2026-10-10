@@ -19,6 +19,7 @@ pub mod limits;
 pub mod onboarding;
 pub mod phone;
 pub mod plugins;
+pub mod remote;
 pub mod restore;
 pub mod routines;
 pub mod scratchpad;

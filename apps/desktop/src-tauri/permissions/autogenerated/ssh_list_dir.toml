@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ssh-list-dir"
+description = "Enables the ssh_list_dir command without any pre-configured scope."
+commands.allow = ["ssh_list_dir"]
+
+[[permission]]
+identifier = "deny-ssh-list-dir"
+description = "Denies the ssh_list_dir command without any pre-configured scope."
+commands.deny = ["ssh_list_dir"]

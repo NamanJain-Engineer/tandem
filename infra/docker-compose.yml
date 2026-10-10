@@ -44,3 +44,20 @@ services:
       timeout: 3s
       retries: 10
       disable: true
+
+  # The SSH host for remote workspaces (F-RM-01, MILESTONES M14). Not started
+  # by `pnpm infra:up`; run scripts/gen-ssh-fixture.sh first, then
+  #   docker compose -f infra/docker-compose.yml --profile remote up -d --wait sshd
+  sshd:
+    profiles: ["remote"]
+    build: ./ssh
+    image: tandem-sshd:dev
+    ports:
+      - "2222:22"
+    volumes:
+      - ./ssh/id_ed25519.pub:/fixture/id_ed25519.pub:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x sshd >/dev/null"]
+      interval: 2s
+      timeout: 2s
+      retries: 30

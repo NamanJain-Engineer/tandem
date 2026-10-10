@@ -61,11 +61,7 @@ export function parseApproval(detail: string): PluginApprovalDetail | null {
   return null;
 }
 
-/** The connect sheet's methods for a card. */
+/** The connect sheet's methods for a card: what this build offers (D-960). */
 export function methods(card: PluginCard): Array<"oauth" | "key" | "none"> {
-  const out: Array<"oauth" | "key" | "none"> = [];
-  if (card.authKind === "oauth_dcr" || card.authKind === "oauth_static") out.push("oauth");
-  if (card.takesKey) out.push("key");
-  if (card.authKind === "none") out.push("none");
-  return out;
+  return card.methods.filter((m): m is "oauth" | "key" | "none" => m !== "local");
 }

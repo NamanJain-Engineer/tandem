@@ -109,6 +109,24 @@ impl StatusServer {
         secret
     }
 
+    /// Checks a report another machine relayed (an SSH host's status
+    /// socket, F-RM-01) exactly as one posted here: the pane's secret signs
+    /// it, its timestamp is recent.
+    pub fn accept_relayed(
+        &self,
+        body: &[u8],
+        signature: Option<&str>,
+    ) -> Result<StatusReport, ReportError> {
+        let pane = claimed_pane(body)?;
+        let secret = self
+            .secrets
+            .lock()
+            .ok()
+            .and_then(|s| s.get(&pane).cloned())
+            .ok_or(ReportError::Unauthorized)?;
+        accept(&secret, body, signature, now_ms())
+    }
+
     pub fn unregister(&self, pane_id: &str) {
         if let Ok(mut s) = self.secrets.lock() {
             s.remove(pane_id);
@@ -356,5 +374,31 @@ mod tests {
             .as_bytes()
             .to_vec();
         assert_eq!(post(&s.url(), health).await, 200);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_rm_01_a_relayed_report_needs_the_panes_secret() {
+        let (_d, s, _got) = server().await;
+        let secret = s.register("pn_r");
+        let body = format!(
+            r#"{{"v":1,"pane_id":"pn_r","event":"working","ts":{},"payload":{{}}}}"#,
+            now_ms()
+        );
+        let report = s
+            .accept_relayed(body.as_bytes(), Some(&sign(&secret, body.as_bytes())))
+            .expect("signed by the pane");
+        assert_eq!(report.event, ReportEvent::Working);
+        assert_eq!(
+            s.accept_relayed(body.as_bytes(), Some(&sign("other", body.as_bytes()))),
+            Err(ReportError::Unauthorized)
+        );
+        assert_eq!(
+            s.accept_relayed(body.as_bytes(), None),
+            Err(ReportError::Unauthorized)
+        );
+        s.unregister("pn_r");
+        assert!(s
+            .accept_relayed(body.as_bytes(), Some(&sign(&secret, body.as_bytes())))
+            .is_err());
     }
 }
