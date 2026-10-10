@@ -2,6 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
+import { inlineAsset } from "./src/demo/assets";
 
 // The browser demo (vibezeo.com/demo/app/): the same interface against a
 // simulated core, built into the website's static files.
@@ -11,6 +12,7 @@ export default defineConfig({
   build: {
     target: "es2022",
     sourcemap: false,
+    assetsInlineLimit: inlineAsset,
     chunkSizeWarningLimit: 4096,
     outDir: resolve(__dirname, "../web/public/demo/app"),
     emptyOutDir: true,

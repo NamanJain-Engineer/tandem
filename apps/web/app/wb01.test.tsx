@@ -37,10 +37,21 @@ describe("F-WB-01 marketing site (M15)", () => {
     }
   });
 
+  it("F-WB-01 /pricing prices only hosted features that are built (ticked in REMAINING)", () => {
+    const remaining = readFileSync(join(import.meta.dirname, "../../../docs/REMAINING.md"), "utf8");
+    const page = html(<PricingPage />);
+    for (const row of CREDIT_ROWS) expect(remaining, row.feature).toContain(`- [x] ${row.feature} `);
+    // F-DI-10 is open: Enhance and Polish isn't in the app, so it isn't priced or named.
+    expect(remaining).toContain("- [ ] F-DI-10 ");
+    expect(page).not.toContain('data-credit-price="rewrite"');
+    expect(page).not.toMatch(/Enhance|Polish/);
+  });
+
   it("F-WB-01 /privacy lists what the app can send, when, and who processes it", () => {
     const h = html(<PrivacyPage />);
     for (const f of hosted.features) expect(h, f.id).toContain(`data-hosted-feature="${f.id}"`);
-    for (const s of subprocessors.subprocessors as Array<{ name: string }>) expect(h, s.name).toContain(s.name);
+    for (const s of subprocessors.subprocessors as Array<{ name: string }>)
+      expect(h, s.name).toContain(s.name);
     // What the released download does: hosted services are off in it.
     expect(h).toContain("The download on this site runs with Vibezeo&#x27;s hosted services turned off");
   });
@@ -51,7 +62,9 @@ describe("F-WB-01 marketing site (M15)", () => {
     expect(vercel).not.toMatch(/set-cookie/i);
     for (const script of ["demo/embed.js", "download/detect.js"]) {
       const src = readFileSync(pub(script), "utf8");
-      expect(src, script).not.toMatch(/https?:\/\/|document\.cookie|localStorage|sessionStorage|sendBeacon|fetch\(/);
+      expect(src, script).not.toMatch(
+        /https?:\/\/|document\.cookie|localStorage|sessionStorage|sendBeacon|fetch\(/,
+      );
     }
   });
 
