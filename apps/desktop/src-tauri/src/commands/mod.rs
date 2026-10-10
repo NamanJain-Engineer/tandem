@@ -16,6 +16,7 @@ pub mod launch;
 pub mod limits;
 pub mod onboarding;
 pub mod ports;
+pub mod prompts;
 pub mod recall;
 pub mod restore;
 pub mod scratchpad;

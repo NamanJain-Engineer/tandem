@@ -19,6 +19,7 @@ import { ThreadRail } from "../thread/ThreadRail";
 import { followThreads } from "../../stores/threads";
 import { Palette } from "../palette/Palette";
 import { RecallPicker } from "../recall/RecallPicker";
+import { PromptPicker } from "../prompts/PromptPicker";
 import { Cheatsheet } from "../commands/Cheatsheet";
 import { OrphansDialog } from "../restore/OrphansDialog";
 import { followEngines } from "../../stores/engines";
@@ -162,6 +163,7 @@ export function AppShell() {
       <AutoDialog />
       <Palette />
       <RecallPicker />
+      <PromptPicker />
       <Cheatsheet />
       <OrphansDialog />
       <RestartDialog />

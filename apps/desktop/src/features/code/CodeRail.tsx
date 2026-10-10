@@ -329,7 +329,13 @@ export function CodeRail() {
           trailing: (
             <>
               {ws.branch && (
-                <span className="inline-flex max-w-[84px] shrink-0 items-center gap-0.5 truncate text-sm text-fg-subtle">
+                <span
+                  className={
+                    "inline-flex max-w-[84px] shrink-0 items-center gap-0.5 truncate text-sm " +
+                    // fg-subtle fails AA on the selected row's accent-soft (D-705).
+                    (ws.id === activeId ? "text-fg-muted" : "text-fg-subtle")
+                  }
+                >
                   <GitBranch size={12} aria-hidden="true" />
                   <span className="truncate">{ws.branch}</span>
                 </span>

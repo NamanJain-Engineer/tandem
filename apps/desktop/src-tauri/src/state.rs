@@ -513,6 +513,8 @@ impl AppState {
         let ports = crate::services::ports::PortsService::new(store.clone());
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         let files = crate::services::files::FilesService::new(store.clone());
+        // The profile's prompts open editable in the Files editor (F-EX-05).
+        files.allow_editing(data.prompts());
         let git_panel = crate::services::git_panel::GitPanelService::new(files.clone());
         let auto = Arc::new(crate::services::auto::AutoService::new(
             bus.clone(),

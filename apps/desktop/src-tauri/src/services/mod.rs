@@ -29,6 +29,7 @@ pub mod notifications;
 pub mod notifier;
 pub mod opener;
 pub mod ports;
+pub mod prompts;
 pub mod recall;
 pub mod restore;
 pub mod staging;
