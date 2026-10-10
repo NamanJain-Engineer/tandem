@@ -92,7 +92,9 @@ describe("public site", () => {
       expect(h).toContain(`src="/screens/${name}.png"`);
       expect(existsSync(join(import.meta.dirname, `../public/screens/${name}.png`)), name).toBe(true);
     }
-    expect(h).not.toContain("sample data");
+    // Only the labelled interactive demo (D-128) runs on sample data.
+    const outsideDemo = h.replace(/<section id="try"[\s\S]*?<\/section>/, "");
+    expect(outsideDemo).not.toContain("sample data");
   });
 
   it("F-WB-01 Built with Claude separates what's shipped from what's built but not live", () => {
@@ -241,7 +243,7 @@ describe("public site", () => {
   it("F-WB-01 the changelog lists every closed milestone", () => {
     const h = html(<ChangelogPage />);
     for (const m of MILESTONES) expect(h).toContain(`id="${m.id.toLowerCase()}"`);
-    expect(MILESTONES.map((m) => m.id)).toEqual(["M7", "M6", "M5", "M4", "M3", "M2", "M1", "M0"]);
+    expect(MILESTONES.map((m) => m.id)).toEqual(["M9", "M7", "M6", "M5", "M4", "M3", "M2", "M1", "M0"]);
   });
 
   it("F-WB-01 every page has one h1, the legal links and the contact address", () => {
@@ -263,13 +265,32 @@ describe("public site", () => {
     expect(DEMO_APP).toBe("/demo/app/");
   });
 
-  it("F-WB-01 AC2 no page loads a script, iframe or third-party resource", () => {
+  it("F-WB-01 AC2 (D-128) only the home page loads a script, the first-party demo loader; no page has a frame or a third-party resource", () => {
     for (const [name, Page] of Object.entries(PAGES)) {
       const h = html(<Page />);
-      expect(h, name).not.toMatch(/<(script|iframe)[\s>]/);
+      const scripts = [...h.matchAll(/<script[^>]*>/g)].map((m) => m[0]);
+      expect(scripts, name).toEqual(name === "home" ? ['<script src="/demo/embed.js" defer="">'] : []);
+      expect(h, name).not.toMatch(/<iframe[\s>]/);
       const external = [...h.matchAll(/src="((?:https?:)?\/\/[^"]+)"/g)].map((m) => m[1]);
       expect(external, name).toEqual([]);
     }
+    // The loader names no other origin and frames only /demo/app/.
+    const loader = readFileSync(join(import.meta.dirname, "../public/demo/embed.js"), "utf8");
+    expect(loader).not.toMatch(/https?:\/\//);
+    expect(loader).toContain("IntersectionObserver");
+    expect(loader).toContain('"/demo/app/?embed=1"');
+  });
+
+  it("demo AC1 the home page shows the interactive demo: label, line, a still image of the same size, Explore full screen and Tap to explore", () => {
+    const h = html(<HomePage />);
+    expect(h).toContain("Interactive demo · sample data");
+    expect(h).toContain("This is Vibezeo itself, running in your browser with sample data. Click around.");
+    expect(h).toContain("agents are simulated");
+    expect(h).toMatch(/<img[^>]*src="\/demo\/still\.jpg"[^>]*>/);
+    expect(h).toMatch(/data-demo-embed=""/);
+    expect(h).toContain("Explore full screen");
+    expect(h).toContain("Tap to explore");
+    expect(existsSync(join(import.meta.dirname, "../public/demo/still.jpg"))).toBe(true);
   });
 
   it("F-WB-01 Vercel serves the export with headers that forbid framing and third-party origins", () => {
@@ -295,6 +316,19 @@ describe("public site", () => {
     expect(csp).toContain("default-src 'self'");
     expect(csp).not.toMatch(/https?:/);
     expect(header("X-Content-Type-Options")).toBe("nosniff");
+    expect(header("X-Frame-Options")).toBe("DENY");
+    // D-128: only the demo app may be framed, and only by this site.
+    const demo = config.headers.find((r) => r.source === "/demo/app/(.*)")?.headers ?? [];
+    const demoHeader = (key: string) => demo.find((h) => h.key === key)?.value ?? "";
+    expect(config.headers.indexOf(config.headers.find((r) => r.source === "/demo/app/(.*)") as Rule)).toBeGreaterThan(
+      config.headers.findIndex((r) => r.source === "/(.*)"),
+    );
+    expect(demoHeader("X-Frame-Options")).toBe("SAMEORIGIN");
+    const demoCsp = demoHeader("Content-Security-Policy");
+    expect(demoCsp).toContain("frame-ancestors 'self'");
+    expect(demoCsp).toContain("connect-src 'self'");
+    expect(demoCsp).not.toMatch(/https?:/);
+    expect(header("Permissions-Policy")).toContain("microphone=()");
   });
 
   it("F-WB-01 robots, sitemap and security.txt point at the site", () => {

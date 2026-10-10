@@ -10,7 +10,8 @@
     "start": "next start --port 3000",
     "test": "vitest run",
     "lint": "tsc --noEmit && eslint .",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:site": "playwright test -c playwright.site.config.ts"
   },
   "dependencies": {
     "@tandem/protocol": "workspace:*",

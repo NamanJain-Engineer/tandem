@@ -186,3 +186,22 @@ export function chatTurn(text: string): Step[] {
     { wait: 100, event: usage(4_200 + text.length * 3, 180, 3.1) },
   ];
 }
+
+/** A Plan-mode answer: numbered steps for what was asked (F-TH-10). */
+export function planText(text: string): string {
+  const what = text.trim().replace(/\s+/g, " ").slice(0, 80) || "the change";
+  return [
+    `1. Find the code behind "${what}" and the tests that cover it.`,
+    "2. Write a failing test for the new behaviour.",
+    "3. Make the smallest change that passes it.",
+    "4. Run the related tests, then the whole suite.",
+  ].join("\n");
+}
+
+export function planTurn(plan: string): Step[] {
+  return [
+    { wait: 400, event: { type: "reasoning", text: "Planning only: nothing is edited in Plan mode.", durationMs: 700 } },
+    { wait: 500, event: { type: "assistant", markdown: plan } },
+    { wait: 100, event: usage(5_100, 220, 3.4) },
+  ];
+}

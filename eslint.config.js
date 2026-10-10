@@ -35,8 +35,9 @@ export default tseslint.config(
     },
   },
   {
-    // Scripts the app runs inside web pages (the element picker, F-CD-18).
-    files: ["apps/desktop/src-tauri/src/**/*.js", "src-tauri/src/**/*.js"],
+    // Scripts that run in web pages: the element picker (F-CD-18) and the
+    // site's demo loader (D-128).
+    files: ["apps/desktop/src-tauri/src/**/*.js", "src-tauri/src/**/*.js", "apps/web/public/**/*.js", "public/**/*.js"],
     languageOptions: { ecmaVersion: 2022, sourceType: "script", globals: globals.browser },
   },
   {
