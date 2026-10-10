@@ -452,3 +452,20 @@ pub async fn test_task_lane_delay(state: State<'_, AppState>, ms: u64) -> Result
     state.task_exec.set_test_lane_delay(ms);
     Ok(())
 }
+
+/// One scheduler pass as if the clock said `at` (ms), without moving the
+/// app's clock: E2E-M11-3/4 "advance the clock to 09:00".
+#[tauri::command]
+pub async fn test_routines_tick(
+    state: State<'_, AppState>,
+    at: i64,
+) -> Result<Vec<String>, IpcError> {
+    guard(&state)?;
+    Ok(state
+        .routines
+        .tick_at(at)
+        .await
+        .into_iter()
+        .map(|r| r.as_str().to_string())
+        .collect())
+}

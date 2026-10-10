@@ -47,7 +47,7 @@ ts-rs.workspace = true
 url.workspace = true
 uuid = { version = "1", features = ["v4"] }
 zeroize.workspace = true
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-deep-link = "2"

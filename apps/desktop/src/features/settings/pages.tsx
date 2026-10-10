@@ -438,6 +438,15 @@ export function settingsPages(platform: string): PageDef[] {
           keywords: ["mail", "pause", "message"],
           control: (ids) => <BoolControl k="pause_all_mail" ids={ids} label={t("settings.pauseAllMail")} />,
         },
+        {
+          id: "pause_all_routines",
+          label: t("settings.pauseAllRoutines"),
+          description: t("settings.pauseAllRoutines.desc"),
+          keywords: ["routines", "pause", "schedule"],
+          control: (ids) => (
+            <BoolControl k="pause_all_routines" ids={ids} label={t("settings.pauseAllRoutines")} />
+          ),
+        },
       ],
     },
     {
@@ -490,7 +499,12 @@ export function settingsPages(platform: string): PageDef[] {
           description: t("settings.autoConsent.desc"),
           keywords: ["auto", "terminal output"],
           control: (ids) => (
-            <PolicyBoolControl k="auto_consent" ids={ids} label={t("settings.autoConsent")} lockedBy={(p) => p.disableAuto} />
+            <PolicyBoolControl
+              k="auto_consent"
+              ids={ids}
+              label={t("settings.autoConsent")}
+              lockedBy={(p) => p.disableAuto}
+            />
           ),
         },
         {

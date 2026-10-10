@@ -94,9 +94,9 @@ lanes; scheduled routines that run in-app and in the background.
 - [x] F-TK-03 Tasks UI
 - [x] F-TK-04 Task execution (Pro)
 - [x] F-RT-01 Routine model (Pro)
-- [ ] F-RT-02 In-app scheduler and runs
-- [ ] F-RT-03 Background runner (Pro)
-- [ ] F-RT-04 Routines UI
+- [x] F-RT-02 In-app scheduler and runs
+- [x] F-RT-03 Background runner (Pro)
+- [x] F-RT-04 Routines UI
 
 Tasks: task store; MCP server; Tasks UI (UI-80/81); task execution
 (UI-82/83/84); routine model and schedules; scheduler; background runner;

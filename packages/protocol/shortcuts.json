@@ -81,6 +81,24 @@
     "enabledWhen": "always"
   },
   {
+    "id": "routines.open",
+    "category": "navigation",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "routines.pause",
+    "category": "navigation",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
     "id": "rail.toggle",
     "category": "navigation",
     "mac": "Mod+\\",

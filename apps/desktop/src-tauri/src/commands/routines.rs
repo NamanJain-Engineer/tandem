@@ -34,6 +34,7 @@ pub async fn routine_preview_schedule(
 
 #[tauri::command]
 pub async fn routine_save(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     input: RoutineInput,
 ) -> Result<Routine, IpcError> {
@@ -41,8 +42,11 @@ pub async fn routine_save(
     let saved = state.routines.save(input, None).await?;
     // A routine that runs while Vibezeo is closed needs the launcher.
     if background && !launcher().status().installed {
-        if let Err(e) = set_background(&state, true) {
-            tracing::warn!(code = "routines.launcher_failed", error = %e.message, "couldn't install the background runner");
+        match set_background(&state, true) {
+            Ok(s) => crate::tray::sync(&app, s.installed).await,
+            Err(e) => {
+                tracing::warn!(code = "routines.launcher_failed", error = %e.message, "couldn't install the background runner")
+            }
         }
     }
     Ok(saved)
@@ -125,10 +129,13 @@ fn set_background(state: &AppState, enabled: bool) -> Result<LauncherStatus, Ipc
 /// once (F-RT-03 AC1).
 #[tauri::command]
 pub async fn routines_background_set(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     enabled: bool,
 ) -> Result<LauncherStatus, IpcError> {
-    set_background(&state, enabled)
+    let status = set_background(&state, enabled)?;
+    crate::tray::sync(&app, status.installed).await;
+    Ok(status)
 }
 
 #[tauri::command]
@@ -136,4 +143,12 @@ pub async fn routines_background_status() -> Result<LauncherStatus, IpcError> {
     tokio::task::spawn_blocking(|| launcher().status())
         .await
         .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))
+}
+
+/// Whether the background runner is installed (the tray shows then).
+pub async fn background_on() -> bool {
+    routines_background_status()
+        .await
+        .map(|s| s.installed)
+        .unwrap_or(false)
 }

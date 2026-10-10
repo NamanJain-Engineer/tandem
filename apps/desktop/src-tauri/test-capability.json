@@ -23,6 +23,7 @@
     "allow-test-plugin-connect",
     "allow-test-gateway-metrics",
     "allow-test-task-lane-delay",
+    "allow-test-routines-tick",
     "core:window:allow-set-position",
     "core:window:allow-outer-position"
   ]

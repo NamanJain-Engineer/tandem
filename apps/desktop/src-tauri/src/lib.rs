@@ -7,6 +7,7 @@ pub mod commands;
 pub mod headless;
 pub mod services;
 pub mod state;
+mod tray;
 
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_window_state::StateFlags;
@@ -545,6 +546,7 @@ pub fn run() {
         commands::test::test_plugin_connect,
         commands::test::test_gateway_metrics,
         commands::test::test_task_lane_delay,
+        commands::test::test_routines_tick,
     ]);
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(app_commands![]);
@@ -600,6 +602,13 @@ pub fn run() {
             // Routines: the scheduler (once it has the app lock), and the
             // plan pausing or resuming them (F-RT-02, F-BL-04).
             state.routines.start(state.data.run());
+            // The tray, while background routines are on (F-SH-13).
+            {
+                let app = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    tray::sync(&app, commands::routines::background_on().await).await;
+                });
+            }
             // Tasks refresh when anyone writes them (F-TK-03).
             state.tasks.watch(state.bus.clone());
             // Task runs: those the last run left are stopped; signing out

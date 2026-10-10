@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { Bot, ListTodo, MoreHorizontal, Pin, Plus } from "lucide-react";
+import { Bot, CalendarClock, ListTodo, MoreHorizontal, Pin, Plus } from "lucide-react";
 import type { TeammateSummary } from "@tandem/protocol";
 import {
   Avatar,
@@ -18,6 +18,7 @@ import { t } from "../../i18n";
 import { useSetting, useSettings } from "../../stores/settings";
 import { useTeammates } from "../../stores/teammates";
 import { useAgentPage, type AgentPage } from "../../stores/agentPage";
+import { useRoutines } from "../../stores/routines";
 import { age } from "../thread/groups";
 
 /** The rail's status for a teammate: failed, waiting, working or idle. */
@@ -356,8 +357,20 @@ export function AgentRail({ collapsed, actions }: { collapsed: boolean; actions?
 /** UI-70 footer: the pages beside the teammates. */
 function RailFooter() {
   const page = useAgentPage((s) => s.page);
-  const rows: Array<{ id: AgentPage; label: string; icon: React.ReactNode }> = [
+  const active = useRoutines(
+    (s) => s.list.filter((v) => !v.routine.paused && !v.routine.pausedByPlan).length,
+  );
+  useEffect(() => {
+    void useRoutines.getState().load();
+  }, []);
+  const rows: Array<{ id: AgentPage; label: string; icon: React.ReactNode; count?: number }> = [
     { id: "tasks", label: t("agent.footer.tasks"), icon: <ListTodo size={14} aria-hidden="true" /> },
+    {
+      id: "routines",
+      label: t("agent.footer.routines"),
+      icon: <CalendarClock size={14} aria-hidden="true" />,
+      count: active,
+    },
   ];
   return (
     <div
@@ -377,7 +390,8 @@ function RailFooter() {
           )}
         >
           {r.icon}
-          {r.label}
+          <span className="flex-1">{r.label}</span>
+          {!!r.count && <span className="text-xs text-fg-muted">{r.count}</span>}
         </button>
       ))}
     </div>

@@ -19,6 +19,7 @@ import { AgentRail } from "../agents/AgentRail";
 import { NewTeammateSheet, useNewTeammate } from "../agents/NewTeammateSheet";
 import { AgentMain } from "../agents/TeammatePage";
 import { TasksPage } from "../tasks/TasksPanel";
+import { RoutinesPage } from "../routines/RoutinesPage";
 import { useAgentPage } from "../../stores/agentPage";
 import { TeammateSettings } from "../agents/TeammateSettings";
 import { followSuggestions } from "../agents/Suggestions";
@@ -179,6 +180,8 @@ export function AppShell() {
           <div className="h-full" style={{ display: mode === "agent" ? "block" : "none" }}>
             {agentPage === "tasks" ? (
               <TasksPage />
+            ) : agentPage === "routines" ? (
+              <RoutinesPage />
             ) : (
               <AgentMain
                 visible={!settingsOpen && mode === "agent"}

@@ -868,6 +868,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `test_thread_seed_events` | `{threadId, events, fenceBytes?}` | the number of events written (completed turns of a user message, an assistant reply, tool calls and a turn end, in one transaction; `fenceBytes` adds a last reply with a code fence that size; threads perf suite) | NotFound |
 | `test_plugin_connect` | `{pluginId}` | `PluginConnection {id, pluginId, accountLabel?, authKind, status, createdAt}` (records a connection of a test vendor module, `test_echo`/`test_upper`/`test_down`, without a sign-in; builds with the `test-vendors` feature only; M10 E2E until Settings › Plugins lands in M12) | NotFound |
 | `test_task_lane_delay` | `{ms}` | — (each task run pauses this long before making its lane, so E2E can stop one during setup, F-TK-04 AC3) | — |
+| `test_routines_tick` | `{at}` | `string[]` (one scheduler pass as if the clock said `at` ms; the runs it started. E2E-M11-3/4 move the scheduler's time without moving the app's) | — |
 | `test_gateway_metrics` | — | `TestGateway {metrics: GatewayMetrics {port, listeners, leases, mcpSessions, requests, restarts, rssBytes?}, starts}` (`starts`: gateways this process started, F-PL-01 AC2) | Unavailable |
 
 `window.__tandemTest` in the webview wraps these commands plus UI-side counters. Not listed in `capabilities/*.json` for release.

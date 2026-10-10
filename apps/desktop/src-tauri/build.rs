@@ -270,6 +270,7 @@ const TEST_COMMANDS: &[&str] = &[
     "test_plugin_connect",
     "test_gateway_metrics",
     "test_task_lane_delay",
+    "test_routines_tick",
 ];
 
 /// What About › Licenses shows when the notices weren't generated (dev builds).

@@ -125,6 +125,14 @@ export const handlers: Record<string, () => void> = {
     switchMode("agent");
     useAgentPage.getState().show("tasks");
   },
+  "routines.open": () => {
+    switchMode("agent");
+    useAgentPage.getState().show("routines");
+  },
+  "routines.pause": () => {
+    const s = useSettings.getState();
+    void s.set("pause_all_routines", !(s.values.pause_all_routines ?? false));
+  },
   "teammate.new": () => {
     switchMode("agent");
     useNewTeammate.getState().show(true);

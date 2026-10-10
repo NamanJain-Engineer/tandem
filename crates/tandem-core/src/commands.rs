@@ -121,6 +121,8 @@ static REGISTRY: &[CommandSpec] = &[
     same("teammate.new", C::App, None, E::Always),
     // F-TK-03: Agent mode's Tasks page.
     same("tasks.open", C::Navigation, None, E::Always),
+    same("routines.open", C::Navigation, None, E::Always),
+    same("routines.pause", C::Navigation, None, E::Always),
     aliased(
         "rail.toggle",
         C::Navigation,

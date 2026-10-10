@@ -22,6 +22,7 @@ import { resetGit } from "../stores/git";
 import { resetBrowser } from "../stores/browser";
 import { resetScratchpad } from "../stores/scratchpad";
 import { resetTasks } from "../stores/tasks";
+import { resetRoutines } from "../stores/routines";
 import { useWorkspaces } from "../stores/workspaces";
 
 export const FREE: Limits = {
@@ -115,6 +116,7 @@ export function fakeBackend(
 export function resetStores(): void {
   resetSidebar();
   resetTasks();
+  resetRoutines();
   resetDashboard();
   resetNotifications();
   resetRestore();

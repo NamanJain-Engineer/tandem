@@ -18,4 +18,8 @@ running: RoutineRun | null,
 /**
  * Today's runs (for the timeline strip), oldest first.
  */
-today: Array<RoutineRun>, };
+today: Array<RoutineRun>, 
+/**
+ * The newest run, for the row's last result.
+ */
+last: RoutineRun | null, };

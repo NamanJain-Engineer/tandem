@@ -18,6 +18,7 @@ use tandem_core::bus::{BusEvent, EventBus, Topic};
 use tandem_core::clock::Clock;
 use tandem_core::entitlement::Limits;
 use tandem_core::ids::{RoutineId, RunId, TeammateId, ThreadId};
+use tandem_core::settings::SettingKey;
 use tandem_core::source::SourceRef;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_routines::schedule::{describe_en, words, ScheduleWords};
@@ -73,6 +74,8 @@ pub struct RoutineView {
     pub running: Option<RoutineRun>,
     /// Today's runs (for the timeline strip), oldest first.
     pub today: Vec<RoutineRun>,
+    /// The newest run, for the row's last result.
+    pub last: Option<RoutineRun>,
 }
 
 /// `routine_preview_schedule`.
@@ -202,6 +205,11 @@ impl RoutinesService {
         ));
     }
 
+    /// Tells the UI to read the list again (a setting changed).
+    pub fn notify_changed(&self) {
+        self.changed();
+    }
+
     fn run_event(&self, run: &RoutineRun) {
         self.bus.publish(BusEvent::new(
             Topic::Routines,
@@ -217,9 +225,11 @@ impl RoutinesService {
         let description = w.as_ref().map(describe_en).unwrap_or_default();
         let running = repo::running(&self.store, &r.id).await.ok().flatten();
         let day_start = self.day_start();
-        let mut today = repo::runs(&self.store, &r.id, None, 50)
+        let recent = repo::runs(&self.store, &r.id, None, 50)
             .await
-            .unwrap_or_default()
+            .unwrap_or_default();
+        let last = recent.first().cloned();
+        let mut today = recent
             .into_iter()
             .filter(|run| run.due_at >= day_start)
             .collect::<Vec<_>>();
@@ -230,6 +240,7 @@ impl RoutinesService {
             description,
             running,
             today,
+            last,
         }
     }
 
@@ -439,11 +450,36 @@ impl RoutinesService {
     /// skips overlaps, schedules routines that have no next run. Returns
     /// the runs it started.
     pub async fn tick(self: &Arc<Self>) -> Vec<RunId> {
+        self.tick_at(self.now()).await
+    }
+
+    /// "Pause routines" (the tray, the palette, Settings): nothing fires,
+    /// and the slots that pass meanwhile are dropped, not caught up.
+    async fn paused_all(&self) -> bool {
+        tandem_store::repo::settings::get(&self.store, SettingKey::PauseAllRoutines)
+            .await
+            .ok()
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
+
+    /// [`tick`](Self::tick) as if the clock said `now` (E2E's
+    /// `test_routines_tick` moves the scheduler's time without moving the
+    /// app's).
+    pub async fn tick_at(self: &Arc<Self>, now: i64) -> Vec<RunId> {
         let mut started = Vec::new();
         let Ok(routines) = repo::list(&self.store).await else {
             return started;
         };
-        let now = self.now();
+        if self.paused_all().await {
+            for r in routines {
+                if r.next_run_at.is_some_and(|due| due <= now) {
+                    let _ = repo::set_next(&self.store, &r.id, next_run(&r.schedule, now)).await;
+                    self.changed();
+                }
+            }
+            return started;
+        }
         let headless = self.runner() == Runner::Headless;
         for r in routines {
             if headless && r.run_mode != tandem_routines::RunMode::Background {
@@ -964,6 +1000,45 @@ mod tests {
         assert!(runs[0].late, "marked late");
         // The next slot (11:30) runs on time.
         assert_eq!(ticks(&f, 20).await, 1);
+    }
+
+    #[tokio::test]
+    async fn f_sh_13_pause_routines_fires_nothing_and_drops_the_slots_it_covered() {
+        let f = fixture("2026-10-12T08:58:00Z", Runner::Gui).await;
+        let r = f.svc.save(input(&f, daily9()), None).await.expect("save");
+        tandem_store::repo::settings::set(
+            &f.store,
+            SettingKey::PauseAllRoutines,
+            serde_json::json!(true),
+        )
+        .await
+        .expect("pause");
+        assert_eq!(ticks(&f, 21).await, 0, "nothing fires while paused");
+        assert_eq!(f.host.chats(), 0);
+        assert_eq!(
+            f.svc.get(&r.id).await.expect("get").next_run_at,
+            Some(t("2026-10-13T09:00:00Z").timestamp_millis()),
+            "09:00 passed while paused: dropped, not caught up"
+        );
+        tandem_store::repo::settings::set(
+            &f.store,
+            SettingKey::PauseAllRoutines,
+            serde_json::json!(false),
+        )
+        .await
+        .expect("resume");
+        assert_eq!(ticks(&f, 3).await, 0, "no late run for the paused slot");
+    }
+
+    #[tokio::test]
+    async fn f_rt_02_tick_at_runs_the_scheduler_at_a_given_time() {
+        let f = fixture("2026-10-12T08:00:00Z", Runner::Gui).await;
+        let r = f.svc.save(input(&f, daily9()), None).await.expect("save");
+        let at = t("2026-10-12T09:00:10Z").timestamp_millis();
+        assert_eq!(f.svc.tick_at(at).await.len(), 1);
+        assert!(f.svc.tick_at(at + 30_000).await.is_empty(), "once");
+        f.svc.wait_idle(Duration::from_secs(5)).await;
+        assert_eq!(f.svc.runs(&r.id, None).await.expect("runs").runs.len(), 1);
     }
 
     #[tokio::test]
