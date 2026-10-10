@@ -126,6 +126,10 @@ pub struct DictateStatus {
     pub theme: String,
     pub widget_style: String,
     pub lock_position: bool,
+    /// Show Enhance and Polish after a take (the setting, on a paid plan).
+    pub quick_actions: bool,
+    /// F-DI-10's one-time disclosure was shown.
+    pub enhance_disclosed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -677,6 +681,9 @@ struct Shared {
     /// The current take came from `tandem://dictate/toggle`: the widget shows
     /// even with "Show widget: Hidden" (D-515).
     link_take: AtomicBool,
+    /// The widget shows Enhance and Polish after a take, so it stays up long
+    /// enough to click them (D-517).
+    quick_actions: AtomicBool,
     switch: OnceLock<Arc<dyn Fn(String) + Send + Sync>>,
 }
 
@@ -697,7 +704,11 @@ impl Shared {
         if self.link_take.load(Ordering::Acquire) && e.composer.is_none() {
             if !matches!(
                 e.state,
-                DictatePhase::Listening | DictatePhase::Transcribing | DictatePhase::Reconnecting
+                DictatePhase::Listening
+                    | DictatePhase::Transcribing
+                    | DictatePhase::Reconnecting
+                    | DictatePhase::Enhancing
+                    | DictatePhase::Polishing
             ) {
                 self.link_take.store(false, Ordering::Release);
             }
@@ -713,9 +724,16 @@ impl Shared {
             return;
         }
         let hide_after = match e.state {
-            DictatePhase::Listening | DictatePhase::Transcribing | DictatePhase::Reconnecting => {
+            DictatePhase::Listening
+            | DictatePhase::Transcribing
+            | DictatePhase::Reconnecting
+            | DictatePhase::Enhancing
+            | DictatePhase::Polishing => {
                 w.show();
                 None
+            }
+            DictatePhase::Inserted if self.quick_actions.load(Ordering::Acquire) => {
+                Some(Duration::from_secs(4))
             }
             DictatePhase::Inserted => Some(Duration::from_secs(1)),
             DictatePhase::Copied => Some(Duration::from_secs(4)),
@@ -884,6 +902,11 @@ pub struct DictateService {
     started: AtomicBool,
     /// The plan check and the relay call for cloud takes (F-DI-05).
     cloud: OnceLock<(PlanFn, crate::services::dictate_cloud::SttCall)>,
+    rewriter: OnceLock<crate::services::dictate_cloud::RewriteCall>,
+}
+
+fn clamp_chars(s: &str, max: usize) -> String {
+    s.chars().take(max).collect()
 }
 
 pub type PlanFn = Arc<dyn Fn() -> tandem_core::entitlement::Plan + Send + Sync>;
@@ -972,6 +995,7 @@ impl DictateService {
                 widget_gen: Arc::new(std::sync::atomic::AtomicU64::new(0)),
                 visibility: Mutex::new("while_recording".into()),
                 link_take: AtomicBool::new(false),
+                quick_actions: AtomicBool::new(false),
                 switch: OnceLock::new(),
             }),
             catalog,
@@ -988,6 +1012,7 @@ impl DictateService {
             previews: Mutex::new(HashMap::new()),
             started: AtomicBool::new(false),
             cloud: OnceLock::new(),
+            rewriter: OnceLock::new(),
         })
     }
 
@@ -1036,12 +1061,65 @@ impl DictateService {
                 EngineChoice::Local
             },
             share_hints: self.setting(SettingKey::DictateShareHints, false).await,
+            auto_enhance: self.setting(SettingKey::DictateAutoEnhance, false).await,
+            formatting: self
+                .setting::<Option<String>>(SettingKey::DictateFormatting, None)
+                .await
+                .map(|t| clamp_chars(&t, 2_000))
+                .filter(|t| !t.trim().is_empty()),
+            formatting_apps: self
+                .setting::<serde_json::Map<String, Value>>(
+                    SettingKey::DictateFormattingApps,
+                    serde_json::Map::new(),
+                )
+                .await
+                .into_iter()
+                .filter_map(|(app, v)| {
+                    let text = clamp_chars(v.as_str()?, 2_000);
+                    (!app.trim().is_empty() && !text.trim().is_empty()).then_some((app, text))
+                })
+                .collect(),
         }
     }
 
     /// Gives cloud takes their plan check and relay call (set before `start`).
     pub fn set_cloud(&self, plan: PlanFn, call: crate::services::dictate_cloud::SttCall) {
         let _ = self.cloud.set((plan, call));
+    }
+
+    /// Gives Enhance and Polish their relay call (set before `start`; the
+    /// plan check is the cloud's).
+    pub fn set_rewriter(&self, call: crate::services::dictate_cloud::RewriteCall) {
+        let _ = self.rewriter.set(call);
+    }
+
+    fn plan(&self) -> tandem_core::entitlement::Plan {
+        self.cloud
+            .get()
+            .map(|(plan, _)| plan())
+            .unwrap_or(tandem_core::entitlement::Plan::Free)
+    }
+
+    /// Records that F-DI-10's disclosure was shown.
+    pub async fn mark_enhance_disclosed(&self) -> Result<(), IpcError> {
+        settings::set(
+            &self.store,
+            SettingKey::DictateEnhanceDisclosed,
+            json!(true),
+        )
+        .await?;
+        self.emit(
+            "settings:changed",
+            json!({ "key": "dictate_enhance_disclosed", "value": true }),
+            To::Main,
+        );
+        self.emit_status().await;
+        Ok(())
+    }
+
+    /// "Enhance" / "Polish" after a take (F-DI-10).
+    pub fn quick_action(&self, mode: tandem_voice::cloud::RewriteMode) -> bool {
+        self.controller().is_some_and(|c| c.quick_action(mode))
     }
 
     /// "Use local for this take" (F-DI-05).
@@ -1170,6 +1248,17 @@ impl DictateService {
                         tokio::runtime::Handle::current(),
                     )) as Arc<dyn tandem_voice::cloud::CloudStt>
                 }),
+                rewriter: match (self.cloud.get(), self.rewriter.get()) {
+                    (Some((plan, _)), Some(call)) => Some(Arc::new(
+                        crate::services::dictate_cloud::HostedRewriter::new(
+                            plan.clone(),
+                            call.clone(),
+                            tokio::runtime::Handle::current(),
+                        ),
+                    )
+                        as Arc<dyn tandem_voice::cloud::Rewriter>),
+                    _ => None,
+                },
             },
             self.config().await,
         );
@@ -1311,6 +1400,12 @@ impl DictateService {
             .setting(SettingKey::DictateWidgetStyle, "logo_text".to_string())
             .await;
         let lock_position = self.setting(SettingKey::DictateLockPosition, false).await;
+        let quick_actions = self.setting(SettingKey::DictateQuickActions, true).await
+            && self.rewriter.get().is_some()
+            && self.plan() != tandem_core::entitlement::Plan::Free;
+        self.shared
+            .quick_actions
+            .store(quick_actions, Ordering::Release);
         let mic_id = devices::choose(&devices, &prefs);
         let active = self.engine.current_id();
         let session = session();
@@ -1368,6 +1463,10 @@ impl DictateService {
             theme,
             widget_style,
             lock_position,
+            quick_actions,
+            enhance_disclosed: self
+                .setting(SettingKey::DictateEnhanceDisclosed, false)
+                .await,
         }
     }
 

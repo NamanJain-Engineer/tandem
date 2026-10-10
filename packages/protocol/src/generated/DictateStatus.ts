@@ -29,4 +29,12 @@ restoresClipboard: boolean,
  * For the widget, which can't read settings: the app theme, its style
  * and whether its position is locked.
  */
-theme: string, widgetStyle: string, lockPosition: boolean, };
+theme: string, widgetStyle: string, lockPosition: boolean, 
+/**
+ * Show Enhance and Polish after a take (the setting, on a paid plan).
+ */
+quickActions: boolean, 
+/**
+ * F-DI-10's one-time disclosure was shown.
+ */
+enhanceDisclosed: boolean, };

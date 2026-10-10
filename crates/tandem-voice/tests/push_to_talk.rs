@@ -89,6 +89,7 @@ fn f_di_01_1_hold_wav_release_pastes_hello_world_with_real_whisper() {
             media: None,
             sink: sink.clone(),
             cloud: None,
+            rewriter: None,
         },
         DictateConfig::default(),
     );

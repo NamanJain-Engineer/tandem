@@ -3147,10 +3147,17 @@ mod tests {
             }
         );
         assert_eq!(events[3], end(TurnEndReason::Error));
-        assert_eq!(
-            f.svc.get(id).await.expect("detail").thread.state,
-            ThreadState::Failed
-        );
+        // The state is written just after the turn's end is stored: wait for
+        // it rather than read it once (it raced under the full suite's load).
+        let mut state = f.svc.get(id).await.expect("detail").thread.state;
+        for _ in 0..100 {
+            if state == ThreadState::Failed {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            state = f.svc.get(id).await.expect("detail").thread.state;
+        }
+        assert_eq!(state, ThreadState::Failed);
 
         // Retry sends the same message on a new session.
         let again = f.svc.retry(id).await.expect("retry");

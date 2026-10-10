@@ -206,6 +206,7 @@ const COMMANDS: &[&str] = &[
     "dictate_cancel_take",
     "dictate_toggle",
     "dictate_use_local",
+    "dictate_quick_action",
     "dictate_composer_focus",
     "dictate_devices",
     "dictate_models",

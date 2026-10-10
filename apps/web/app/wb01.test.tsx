@@ -41,10 +41,9 @@ describe("F-WB-01 marketing site (M15)", () => {
     const remaining = readFileSync(join(import.meta.dirname, "../../../docs/REMAINING.md"), "utf8");
     const page = html(<PricingPage />);
     for (const row of CREDIT_ROWS) expect(remaining, row.feature).toContain(`- [x] ${row.feature} `);
-    // F-DI-10 is open: Enhance and Polish isn't in the app, so it isn't priced or named.
-    expect(remaining).toContain("- [ ] F-DI-10 ");
-    expect(page).not.toContain('data-credit-price="rewrite"');
-    expect(page).not.toMatch(/Enhance|Polish/);
+    // F-DI-10 shipped: Enhance and Polish is priced, at 3 credits a use.
+    expect(remaining).toContain("- [x] F-DI-10 ");
+    expect(page).toContain('data-credit-price="rewrite"');
   });
 
   it("F-WB-01 /privacy lists what the app can send, when, and who processes it", () => {

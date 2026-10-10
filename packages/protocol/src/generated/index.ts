@@ -221,6 +221,7 @@ export type * from "./ReportEvent";
 export type * from "./ReportPayload";
 export type * from "./ResolvedLink";
 export type * from "./RestoreSnapshot";
+export type * from "./RewriteMode";
 export type * from "./RiskClass";
 export type * from "./RoutineId";
 export type * from "./Rule";

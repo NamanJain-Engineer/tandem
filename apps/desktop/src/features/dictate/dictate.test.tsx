@@ -10,6 +10,7 @@ import { fakeBackend, resetStores } from "../../test/fakeBackend";
 import { bindingFrom, keyName, presets } from "./binding";
 import { DictateExtras, ShortcutField } from "./DictatePage";
 import { EngineControl } from "./EngineControl";
+import { AutoEnhanceControl, FormattingControl } from "./EnhanceControls";
 import { useSettings } from "../../stores/settings";
 import { useSession } from "../../stores/session";
 import { useUi } from "../../stores/ui";
@@ -45,6 +46,8 @@ const STATUS: DictateStatus = {
   theme: "dark",
   widgetStyle: "logo_text",
   lockPosition: false,
+  quickActions: false,
+  enhanceDisclosed: false,
 };
 
 const wrap = (ui: React.ReactNode) => render(<UiProvider>{ui}</UiProvider>);
@@ -340,5 +343,81 @@ describe("Cloud transcription (F-DI-05)", () => {
     await waitFor(() => expect(useSettings.getState().values.dictate_engine).toBe("cloud"));
     expect(screen.getByTestId("dictate-engine-help").textContent).toContain("Audio is sent");
     expect(screen.getByText("Share dictionary hints with cloud")).toBeTruthy();
+  });
+});
+
+describe("Enhance and Polish (F-DI-10)", () => {
+  const inserted = { state: "inserted" as const, takeId: "take_1", handsFree: false, composer: null, words: 2 };
+
+  it("F-DI-10 the first quick action shows the disclosure, then sends with it acknowledged", async () => {
+    const calls = fakeBackend({ dictate_status: () => ({ ...STATUS, quickActions: true }), dictate_quick_action: () => true });
+    wrap(<DictateWidget />);
+    await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Vibezeo"));
+    act(() => emitLocal("dictate:state", inserted));
+    fireEvent.click(await screen.findByTestId("widget-enhance"));
+    expect(screen.getByTestId("widget-text").textContent).toContain("not audio");
+    expect(calls.some((c) => c.cmd === "dictate_quick_action")).toBe(false);
+    fireEvent.click(screen.getByTestId("widget-disclosure-continue"));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "dictate_quick_action")?.args).toEqual({ mode: "enhance", disclosed: true }),
+    );
+  });
+
+  it("F-DI-10 once disclosed, Polish sends straight away and shows Polishing with its cost", async () => {
+    const calls = fakeBackend({
+      dictate_status: () => ({ ...STATUS, quickActions: true, enhanceDisclosed: true }),
+      dictate_quick_action: () => true,
+    });
+    wrap(<DictateWidget />);
+    await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Vibezeo"));
+    act(() => emitLocal("dictate:state", inserted));
+    fireEvent.click(await screen.findByTestId("widget-polish"));
+    await waitFor(() => expect(calls.find((c) => c.cmd === "dictate_quick_action")?.args).toEqual({ mode: "polish" }));
+    act(() => emitLocal("dictate:state", { ...inserted, state: "polishing", words: null }));
+    await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Polishing…"));
+    expect(screen.getByText("◈ 3")).toBeTruthy();
+  });
+
+  it("F-DI-10 no quick actions without the setting or Pro", async () => {
+    fakeBackend({ dictate_status: () => STATUS });
+    wrap(<DictateWidget />);
+    await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Vibezeo"));
+    act(() => emitLocal("dictate:state", inserted));
+    await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Inserted · 2 words"));
+    expect(screen.queryByTestId("widget-quick-actions")).toBeNull();
+  });
+
+  it("F-DI-10.1 F-DI-10.2 the toasts say what happened to the text", () => {
+    const base = { error: false, app: null, model: null, previous: null, detail: "", message: null, actions: [] };
+    expect(toastText({ ...base, code: "too_long_to_enhance" })).toBe("That's too long to enhance (5,000 characters max).");
+    expect(toastText({ ...base, code: "enhance_failed" })).toBe("Enhance didn't work, so your exact words were used.");
+  });
+
+  it("F-DI-10 Auto-Enhance asks once before any text is sent; Free can't turn it on", async () => {
+    const calls = fakeBackend();
+    useSession.setState({ entitlement: { ...useSession.getState().entitlement!, plan: "free" } });
+    const { unmount } = wrap(<AutoEnhanceControl label="Enhance every take automatically" />);
+    expect((screen.getByRole("switch", { name: "Enhance every take automatically" }) as HTMLButtonElement).disabled).toBe(true);
+    unmount();
+    useSession.setState({ entitlement: { ...useSession.getState().entitlement!, plan: "pro" } });
+    wrap(<AutoEnhanceControl label="Enhance every take automatically" />);
+    fireEvent.click(screen.getByRole("switch", { name: "Enhance every take automatically" }));
+    expect(calls.some((c) => c.cmd === "settings_set")).toBe(false);
+    fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
+    await waitFor(() =>
+      expect(calls.filter((c) => c.cmd === "settings_set").map((c) => [c.args?.key, c.args?.value])).toEqual([
+        ["dictate_enhance_disclosed", true],
+        ["dictate_auto_enhance", true],
+      ]),
+    );
+  });
+
+  it("F-DI-10 formatting instructions stop at 2,000 characters", async () => {
+    fakeBackend();
+    useSession.setState({ entitlement: { ...useSession.getState().entitlement!, plan: "pro" } });
+    wrap(<FormattingControl label="Formatting instructions" />);
+    const box = screen.getByRole("textbox", { name: "Formatting instructions" });
+    fireEvent.change(box, { target: { value: "x".repeat(2_500) } });
+    expect(screen.getByTestId("dictate-formatting-count").textContent).toBe("2,000/2,000");
   });
 });

@@ -106,6 +106,8 @@ mod tests {
             theme: "dark".into(),
             widget_style: "logo_text".into(),
             lock_position: false,
+            quick_actions: false,
+            enhance_disclosed: false,
         }
     }
 

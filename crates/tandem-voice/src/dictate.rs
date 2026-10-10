@@ -15,7 +15,9 @@ use ts_rs::TS;
 
 use crate::capture::{AudioService, CaptureError, CaptureEvent};
 use crate::chimes::{Chime, ChimePlayer};
-use crate::cloud::{CloudRequest, CloudStt, EngineChoice, ToastAction};
+use crate::cloud::{
+    CloudRequest, CloudStt, EngineChoice, RewriteMode, Rewriter, ToastAction, REWRITE_MAX_CHARS,
+};
 use crate::dictionary::{Dictionary, Rule};
 use crate::guards::{self, Verdict};
 use crate::hotkey::{
@@ -39,6 +41,9 @@ pub enum DictatePhase {
     Copied,
     Error,
     Reconnecting,
+    /// A rewrite is running (F-DI-10): "Enhancing…" / "Polishing…".
+    Enhancing,
+    Polishing,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -113,6 +118,10 @@ pub enum ToastCode {
     Reconnecting,
     /// A cloud take failed: `message` says why (F-DI-05).
     CloudFailed,
+    /// "That's too long to enhance (5,000 characters max)." Nothing was sent.
+    TooLongToEnhance,
+    /// "Enhance didn't work, so your exact words were used."
+    EnhanceFailed,
 }
 
 /// A finished take for the history (F-DI-08).
@@ -158,6 +167,25 @@ pub struct DictateConfig {
     pub engine: EngineChoice,
     /// "Share dictionary hints with cloud".
     pub share_hints: bool,
+    /// "Enhance every take automatically" (F-DI-10).
+    pub auto_enhance: bool,
+    /// Formatting instructions for every take, and per app (app id, text).
+    pub formatting: Option<String>,
+    pub formatting_apps: Vec<(String, String)>,
+}
+
+impl DictateConfig {
+    /// The instructions for a take in `app`: its own, else the general ones.
+    pub fn instructions_for(&self, app: Option<&str>) -> Option<String> {
+        app.and_then(|a| {
+            self.formatting_apps
+                .iter()
+                .find(|(id, _)| id.eq_ignore_ascii_case(a))
+                .map(|(_, t)| t.clone())
+        })
+        .or_else(|| self.formatting.clone())
+        .filter(|t| !t.trim().is_empty())
+    }
 }
 
 impl Default for DictateConfig {
@@ -171,6 +199,9 @@ impl Default for DictateConfig {
             latch: true,
             engine: EngineChoice::Local,
             share_hints: false,
+            auto_enhance: false,
+            formatting: None,
+            formatting_apps: Vec::new(),
         }
     }
 }
@@ -185,6 +216,18 @@ pub struct DictateDeps {
     pub sink: Arc<dyn DictateSink>,
     /// The hosted transcription service (F-DI-05), when there is one.
     pub cloud: Option<Arc<dyn CloudStt>>,
+    /// The hosted rewrite (F-DI-10), when there is one.
+    pub rewriter: Option<Arc<dyn Rewriter>>,
+}
+
+/// The last take typed into another app, for the quick actions (F-DI-10).
+#[derive(Clone)]
+struct LastTake {
+    text: String,
+    target: Option<Target>,
+    app: Option<String>,
+    pasted: bool,
+    config: DictateConfig,
 }
 
 /// A cloud take that failed, kept so "Use local for this take" can run it
@@ -216,6 +259,7 @@ struct Inner {
     restore: Option<PendingRestore>,
     mic_owner: Option<String>,
     retry: Option<Retry>,
+    last: Option<LastTake>,
 }
 
 /// Cheap to clone; every clone drives the same controller.
@@ -243,6 +287,7 @@ impl Dictate {
                 restore: None,
                 mic_owner: None,
                 retry: None,
+                last: None,
             })),
             deps: Arc::new(deps),
             stop: Arc::new(AtomicBool::new(false)),
@@ -454,6 +499,151 @@ impl Dictate {
                 )
             });
         true
+    }
+
+    /// One rewrite of `text` (F-DI-10): protected spellings go up wrapped and
+    /// must come back unchanged, or the corrected un-rewritten text is kept.
+    /// Over 5,000 characters nothing is sent; any failure keeps `text`. Both
+    /// say so in a toast.
+    fn rewrite(
+        &self,
+        mode: RewriteMode,
+        text: &str,
+        instructions: Option<&str>,
+        rules: &[Rule],
+        config: &DictateConfig,
+        app: Option<&str>,
+    ) -> String {
+        let Some(rewriter) = self.deps.rewriter.clone() else {
+            return text.to_string();
+        };
+        if text.chars().count() > REWRITE_MAX_CHARS {
+            self.toast(
+                ToastCode::TooLongToEnhance,
+                false,
+                format!(
+                    "{} characters; the limit is {REWRITE_MAX_CHARS}.",
+                    text.chars().count()
+                ),
+            );
+            return text.to_string();
+        }
+        let terms = crate::dictionary::protected_terms(rules, config.language.as_deref(), app);
+        let wrapped = crate::dictionary::wrap_protected(text, &terms);
+        match rewriter.rewrite(mode, &wrapped, instructions, &terms) {
+            Ok(out) => {
+                let kept = crate::dictionary::accept_rewrite(text, &wrapped, &out);
+                if kept.trim().is_empty() {
+                    text.to_string()
+                } else {
+                    kept
+                }
+            }
+            Err(f) => {
+                self.deps.sink.toast(DictateToast {
+                    code: ToastCode::EnhanceFailed,
+                    error: false,
+                    app: None,
+                    model: None,
+                    previous: None,
+                    detail: f.detail,
+                    message: None,
+                    actions: Vec::new(),
+                });
+                text.to_string()
+            }
+        }
+    }
+
+    /// "Enhance" / "Polish" after a take (F-DI-10, UI-60): rewrites the last
+    /// take typed into another app. If that window still has focus the
+    /// result replaces the pasted text (undo, then paste); otherwise it's
+    /// copied. False when there's no such take or one is running.
+    pub fn quick_action(&self, mode: RewriteMode) -> bool {
+        if self.deps.rewriter.is_none() {
+            return false;
+        }
+        let last = {
+            let i = self.inner.lock();
+            if i.machine.current().is_some() {
+                return false;
+            }
+            match i.last.clone() {
+                Some(l) => l,
+                None => return false,
+            }
+        };
+        let me = self.clone();
+        let _ = std::thread::Builder::new()
+            .name("dictate-rewrite".into())
+            .spawn(move || me.run_quick_action(mode, last));
+        true
+    }
+
+    fn run_quick_action(&self, mode: RewriteMode, last: LastTake) {
+        self.emit(DictateStateEvent::new(phase_for(mode), None));
+        let rules = self.deps.sink.rules();
+        let instructions = last.config.instructions_for(last.app.as_deref());
+        let out = self.rewrite(
+            mode,
+            &last.text,
+            instructions.as_deref(),
+            &rules,
+            &last.config,
+            last.app.as_deref(),
+        );
+        if out == last.text || self.inner.lock().machine.current().is_some() {
+            // Unchanged (a failure, which toasted) or a new take started.
+            self.emit(DictateStateEvent::new(DictatePhase::Idle, None));
+            return;
+        }
+        let platform = self.deps.platform.as_ref();
+        let same_window = || {
+            let now = platform.capture_target().ok().flatten().map(|t| t.window);
+            now.is_some() && now == last.target.as_ref().map(|t| t.window)
+        };
+        let terminal = last.target.as_ref().is_some_and(|t| t.terminal);
+        let replaced = last.pasted
+            && !terminal
+            && last.config.output == Output::Paste
+            && same_window()
+            && platform.undo().is_ok();
+        let outcome = if replaced {
+            let (outcome, restore) =
+                insert::insert(platform, last.target.as_ref(), &out, Output::Paste, &|| {
+                    true
+                });
+            if let Some(r) = restore {
+                self.schedule_restore(r);
+            }
+            outcome
+        } else {
+            match platform.write_clipboard(&out) {
+                Ok(()) => Outcome::Copied(CopyReason::Chosen),
+                Err(_) => Outcome::Dropped,
+            }
+        };
+        match outcome {
+            Outcome::Pasted => {
+                let mut e = DictateStateEvent::new(DictatePhase::Inserted, None);
+                e.words = Some(postproc::word_count(&out));
+                self.emit(e);
+            }
+            Outcome::Copied(_) => {
+                self.toast(
+                    ToastCode::Copied,
+                    false,
+                    "The rewrite was copied: the field it was for no longer has focus.".into(),
+                );
+                self.emit(DictateStateEvent::new(DictatePhase::Copied, None));
+            }
+            Outcome::Dropped => self.emit(DictateStateEvent::new(DictatePhase::Idle, None)),
+        }
+        let mut i = self.inner.lock();
+        if let Some(l) = &mut i.last {
+            l.text = out;
+            l.pasted = outcome == Outcome::Pasted;
+        }
     }
 
     pub fn stop_take(&self) {
@@ -859,6 +1049,32 @@ impl Dictate {
             );
             return;
         }
+        // Auto-Enhance, or the formatting instructions as a Polish (F-DI-10).
+        let instructions = config.instructions_for(app.as_deref());
+        let mode = if config.auto_enhance {
+            Some(RewriteMode::Enhance)
+        } else {
+            instructions.as_ref().map(|_| RewriteMode::Polish)
+        };
+        let text = match mode {
+            Some(mode) => {
+                let origin = self.inner.lock().machine.origin(&id).cloned();
+                let mut e = DictateStateEvent::new(phase_for(mode), Some(id.clone()));
+                if let Some(Origin::Composer { target_id }) = origin {
+                    e.composer = Some(target_id);
+                }
+                self.emit(e);
+                self.rewrite(
+                    mode,
+                    &text,
+                    instructions.as_deref(),
+                    &rules,
+                    &config,
+                    app.as_deref(),
+                )
+            }
+            None => text,
+        };
         {
             let mut i = self.inner.lock();
             if !i.machine.advance(&id, TakeState::PostProcessing)
@@ -869,6 +1085,7 @@ impl Dictate {
             }
         }
         let origin = self.inner.lock().machine.origin(&id).cloned();
+        let global = matches!(origin, Some(Origin::Global));
         let words = postproc::word_count(&text);
         let outcome = match origin {
             Some(Origin::Composer { target_id }) => {
@@ -926,6 +1143,15 @@ impl Dictate {
                 ));
             }
             Outcome::Dropped => {}
+        }
+        if global && outcome != Outcome::Dropped {
+            self.inner.lock().last = Some(LastTake {
+                text: text.clone(),
+                target: cur.target.clone(),
+                app: app.clone(),
+                pasted: outcome == Outcome::Pasted,
+                config: config.clone(),
+            });
         }
         if outcome != Outcome::Dropped {
             self.deps.sink.finished(FinishedTake {
@@ -988,6 +1214,13 @@ fn initial_prompt(rules: &[Rule], lang: Option<&str>, app: Option<&str>) -> Opti
     (!words.is_empty()).then(|| words.join(", "))
 }
 
+fn phase_for(mode: RewriteMode) -> DictatePhase {
+    match mode {
+        RewriteMode::Enhance => DictatePhase::Enhancing,
+        RewriteMode::Polish => DictatePhase::Polishing,
+    }
+}
+
 /// The preferred spellings sent with a cloud take when the user shares
 /// dictionary hints (F-DI-05): the same words the local prompt gets.
 fn cloud_hints(rules: &[Rule], lang: Option<&str>, app: Option<&str>) -> Vec<String> {
@@ -1018,6 +1251,46 @@ mod tests {
     use crate::insert::fake::FakePlatform;
     use crate::insert::Clip;
     use crate::stt::FakeStt;
+
+    /// One rewrite the fake saw: mode, text, instructions, protected terms.
+    type RewriteCall = (RewriteMode, String, Option<String>, Vec<String>);
+
+    type Reply = Box<dyn Fn(&str) -> Result<String, CloudFailure> + Send + Sync>;
+
+    /// A scripted rewriter: `reply` maps the text it gets to its answer.
+    struct FakeRewriter {
+        reply: Reply,
+        calls: Mutex<Vec<RewriteCall>>,
+    }
+
+    impl FakeRewriter {
+        fn new(
+            reply: impl Fn(&str) -> Result<String, CloudFailure> + Send + Sync + 'static,
+        ) -> Arc<Self> {
+            Arc::new(Self {
+                reply: Box::new(reply),
+                calls: Mutex::new(Vec::new()),
+            })
+        }
+    }
+
+    impl Rewriter for FakeRewriter {
+        fn rewrite(
+            &self,
+            mode: RewriteMode,
+            text: &str,
+            instructions: Option<&str>,
+            protected: &[String],
+        ) -> Result<String, CloudFailure> {
+            self.calls.lock().push((
+                mode,
+                text.to_string(),
+                instructions.map(str::to_string),
+                protected.to_vec(),
+            ));
+            (self.reply)(text)
+        }
+    }
 
     /// One request the fake cloud saw: samples, language, hints.
     type CloudCall = (usize, Option<String>, Vec<String>);
@@ -1105,6 +1378,15 @@ mod tests {
     }
 
     fn rig_with(samples: Vec<f32>, text: &str, cloud: Option<Arc<FakeCloud>>) -> Rig {
+        rig_full(samples, text, cloud, None)
+    }
+
+    fn rig_full(
+        samples: Vec<f32>,
+        text: &str,
+        cloud: Option<Arc<FakeCloud>>,
+        rewriter: Option<Arc<FakeRewriter>>,
+    ) -> Rig {
         let backend = Arc::new(FakeAudioBackend::with_samples(samples, 4));
         let audio = Arc::new(AudioService::start(
             backend,
@@ -1137,6 +1419,7 @@ mod tests {
                 media: None,
                 sink: sink.clone(),
                 cloud: cloud.map(|c| c as Arc<dyn CloudStt>),
+                rewriter: rewriter.map(|r| r as Arc<dyn Rewriter>),
             },
             DictateConfig::default(),
         );
@@ -1172,6 +1455,192 @@ mod tests {
         r.keys.send(Which::Hold, Phase::Down);
         std::thread::sleep(Duration::from_millis(600));
         r.keys.send(Which::Hold, Phase::Up);
+    }
+
+    fn enhance(auto: bool, formatting: Option<&str>, apps: &[(&str, &str)]) -> DictateConfig {
+        DictateConfig {
+            auto_enhance: auto,
+            formatting: formatting.map(str::to_string),
+            formatting_apps: apps
+                .iter()
+                .map(|(a, t)| (a.to_string(), t.to_string()))
+                .collect(),
+            ..DictateConfig::default()
+        }
+    }
+
+    fn failure() -> CloudFailure {
+        CloudFailure {
+            kind: CloudFailureKind::Other,
+            message: "x".into(),
+            detail: "HTTP 503 UNAVAILABLE".into(),
+        }
+    }
+
+    fn word_rule(word: &str) -> Rule {
+        Rule {
+            id: word.into(),
+            kind: crate::dictionary::RuleKind::Word,
+            replacement: word.into(),
+            phrases: vec![],
+            match_case: false,
+            protect: true,
+            spacing: crate::dictionary::Spacing::Exact,
+            enabled: true,
+            lang: "*".into(),
+            app_profiles: vec![],
+            updated_at: 0,
+            deleted_at: None,
+        }
+    }
+
+    #[test]
+    fn f_di_10_auto_enhance_rewrites_every_take_before_it_is_inserted() {
+        let rw = FakeRewriter::new(|t| Ok(format!("Goal: {t}")));
+        let r = rig_full(speech(), "fix the login test", None, Some(rw.clone()));
+        r.d.set_config(enhance(true, None, &[]));
+        hold_and_release(&r);
+        wait(|| !r.platform.pasted().is_empty());
+        assert_eq!(
+            r.platform.pasted(),
+            vec!["Goal: fix the login test".to_string()]
+        );
+        assert_eq!(rw.calls.lock()[0].0, RewriteMode::Enhance);
+        let phases: Vec<DictatePhase> = r.sink.states.lock().iter().map(|e| e.state).collect();
+        assert!(phases.contains(&DictatePhase::Enhancing), "{phases:?}");
+    }
+
+    #[test]
+    fn f_di_10_formatting_instructions_polish_every_take_and_an_app_has_its_own() {
+        let rw = FakeRewriter::new(|t| Ok(t.to_lowercase()));
+        let r = rig_full(speech(), "Ship It", None, Some(rw.clone()));
+        // The rig's target is gedit: its own instructions win.
+        r.d.set_config(enhance(
+            false,
+            Some("Use full sentences."),
+            &[("org.gnome.gedit", "Use lowercase.")],
+        ));
+        hold_and_release(&r);
+        wait(|| !r.platform.pasted().is_empty());
+        assert_eq!(r.platform.pasted(), vec!["ship it".to_string()]);
+        let c = rw.calls.lock()[0].clone();
+        assert_eq!(
+            (c.0, c.2.as_deref()),
+            (RewriteMode::Polish, Some("Use lowercase."))
+        );
+        assert_eq!(
+            enhance(false, Some("Use full sentences."), &[]).instructions_for(Some("slack")),
+            Some("Use full sentences.".into())
+        );
+        assert_eq!(enhance(false, None, &[]).instructions_for(None), None);
+    }
+
+    #[test]
+    fn f_di_10_1_over_5000_characters_is_refused_before_any_call() {
+        let rw = FakeRewriter::new(|t| Ok(t.to_string()));
+        let long = "word ".repeat(1_100);
+        let r = rig_full(speech(), long.trim(), None, Some(rw.clone()));
+        r.d.set_config(enhance(true, None, &[]));
+        hold_and_release(&r);
+        wait(|| !r.platform.pasted().is_empty());
+        assert!(rw.calls.lock().is_empty(), "no call was made");
+        assert!(r
+            .sink
+            .toasts
+            .lock()
+            .iter()
+            .any(|t| t.code == ToastCode::TooLongToEnhance));
+        assert_eq!(
+            r.platform.pasted()[0].chars().count(),
+            long.trim().chars().count()
+        );
+    }
+
+    #[test]
+    fn f_di_10_2_a_failed_rewrite_inserts_the_raw_transcript_and_says_so() {
+        let rw = FakeRewriter::new(|_| Err(failure()));
+        let r = rig_full(speech(), "hello world", None, Some(rw));
+        r.d.set_config(enhance(true, None, &[]));
+        hold_and_release(&r);
+        wait(|| !r.platform.pasted().is_empty());
+        assert_eq!(r.platform.pasted(), vec!["hello world".to_string()]);
+        let t = r
+            .sink
+            .toasts
+            .lock()
+            .iter()
+            .find(|t| t.code == ToastCode::EnhanceFailed)
+            .cloned();
+        assert_eq!(t.map(|t| t.detail), Some("HTTP 503 UNAVAILABLE".into()));
+    }
+
+    #[test]
+    fn f_di_09_a_rewrite_that_changes_a_protected_spelling_is_not_used() {
+        // The rewrite "corrects" Tauri to Tory: the un-rewritten text wins.
+        let rw = FakeRewriter::new(|t| Ok(t.replace("⟦Tauri⟧", "⟦Tory⟧").replace("ship", "Ship")));
+        let r = rig_full(speech(), "ship the Tauri build", None, Some(rw.clone()));
+        *r.sink.rules.lock() = vec![word_rule("Tauri")];
+        r.d.set_config(enhance(true, None, &[]));
+        hold_and_release(&r);
+        wait(|| !r.platform.pasted().is_empty());
+        assert_eq!(
+            r.platform.pasted(),
+            vec!["ship the Tauri build".to_string()]
+        );
+        let c = rw.calls.lock()[0].clone();
+        assert_eq!(
+            c.1, "ship the ⟦Tauri⟧ build",
+            "protected terms go up wrapped"
+        );
+        assert_eq!(c.3, vec!["Tauri".to_string()]);
+    }
+
+    #[test]
+    fn f_di_10_a_quick_action_replaces_the_pasted_text_while_its_field_has_focus() {
+        let rw = FakeRewriter::new(|_| Ok("Hello, world.".into()));
+        let r = rig_full(speech(), "hello world", None, Some(rw.clone()));
+        hold_and_release(&r);
+        wait(|| !r.platform.pasted().is_empty());
+        assert!(rw.calls.lock().is_empty(), "no rewrite without asking");
+        wait(|| r.platform.clipboard() == Clip::Text("previous".into()));
+        assert!(r.d.quick_action(RewriteMode::Polish));
+        wait(|| r.platform.pasted().first().map(String::as_str) == Some("Hello, world."));
+        assert_eq!(r.platform.pasted(), vec!["Hello, world.".to_string()]);
+        assert!(r
+            .platform
+            .calls()
+            .contains(&crate::insert::fake::Call::Undo));
+        assert_eq!(rw.calls.lock()[0].0, RewriteMode::Polish);
+    }
+
+    #[test]
+    fn f_di_10_a_quick_action_copies_when_the_field_lost_focus() {
+        let rw = FakeRewriter::new(|_| Ok("Goal: say hello.".into()));
+        let r = rig_full(speech(), "hello world", None, Some(rw));
+        hold_and_release(&r);
+        wait(|| !r.platform.pasted().is_empty());
+        wait(|| r.platform.clipboard() == Clip::Text("previous".into()));
+        // The user moved to another window.
+        r.platform.set_target(Some(Target {
+            app_id: Some("org.mozilla.firefox".into()),
+            app_name: Some("Firefox".into()),
+            window: 99,
+            element: 0,
+            terminal: false,
+            elevated: false,
+            own: false,
+        }));
+        assert!(r.d.quick_action(RewriteMode::Enhance));
+        wait(|| r.platform.clipboard() == Clip::Text("Goal: say hello.".into()));
+        assert!(!r
+            .platform
+            .calls()
+            .contains(&crate::insert::fake::Call::Undo));
+        assert_eq!(
+            r.platform.pasted(),
+            vec!["hello world".to_string()],
+            "nothing typed elsewhere"
+        );
     }
 
     #[test]

@@ -132,7 +132,7 @@ policy and audit, and the transparency page.
 - [x] F-BE-06 Hosted AI relay (titles, Enhance/Polish and teammate drafts; `/auto/next` and the voice routes come with their M16 features)
 - [x] F-BE-07 STT relay
 - [x] F-DI-05 Cloud speech-to-text (Pro, credits): built on `m8-dictate-onboarding` over M13's relay client (D-516)
-- [ ] F-DI-10 Enhance and Polish (Pro, credits): the M8 session's; the route and the desktop client are done (M13)
+- [x] F-DI-10 Enhance and Polish (Pro, credits): built on `m8-dictate-onboarding` over M13's rewrite client (D-517)
 - [x] F-BL-03 Credit packs
 - [x] F-BL-05 Refunds
 - [x] F-BL-06 Team plan (P1 core; the P2 SSO part is built on `m16-team-sso`)
