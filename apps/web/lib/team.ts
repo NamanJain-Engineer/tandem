@@ -39,6 +39,34 @@ const EVENTS: Record<string, string> = {
   full_access_used: "Full access used",
   plugin_write_approved: "Plugin write approved",
   plugin_connected: "Plugin connected",
+  sso_changed: "Single sign-on changed",
+  sso_removed: "Single sign-on removed",
+  sso_domain_added: "SSO domain added",
+  sso_domain_verified: "SSO domain verified",
+  sso_domain_removed: "SSO domain removed",
+  sso_sign_in: "Signed in with SSO",
+};
+
+/** `GET /v1/orgs/:id/sso` (F-BL-06 P2). */
+export type SsoView = {
+  connection: {
+    provider: "oidc" | "workos" | "mock";
+    issuer: string | null;
+    clientId: string | null;
+    hasSecret: boolean;
+    organization: string | null;
+    enforce: boolean;
+    updatedAt: string;
+  } | null;
+  domains: Array<{ domain: string; verified: boolean; record: { type: "TXT"; name: string; value: string } }>;
+  providers: { oidc: boolean; workos: boolean };
+  redirectUri: string;
+};
+
+export const SSO_PROVIDER_LABEL: Record<"oidc" | "workos" | "mock", string> = {
+  oidc: "OpenID Connect",
+  workos: "SAML through WorkOS",
+  mock: "Test identity provider",
 };
 
 export function auditLabel(row: AuditRow): string {
@@ -47,6 +75,7 @@ export function auditLabel(row: AuditRow): string {
   if (row.event === "seats_changed") return `${base}: ${String(m.from)} → ${String(m.to)}`;
   if (row.event === "policy_changed" && typeof m.changed === "string" && m.changed) return `${base}: ${m.changed}`;
   if (row.event === "full_access_used" && typeof m.engine === "string") return `${base} · ${m.engine}`;
+  if (row.event.startsWith("sso_domain_") && typeof m.domain === "string") return `${base}: ${m.domain}`;
   return base;
 }
 

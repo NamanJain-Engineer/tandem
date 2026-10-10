@@ -86,7 +86,7 @@ export async function notifyOrg(deps: Deps, orgId: string, kind: "entitlement" |
 }
 
 /** The caller's role in `orgId`, or 403/404. */
-async function roleIn(deps: Deps, orgId: string, userId: string, need: "admin" | "member"): Promise<OrgRole> {
+export async function roleIn(deps: Deps, orgId: string, userId: string, need: "admin" | "member"): Promise<OrgRole> {
   const [org] = await deps.db.select({ id: orgs.id }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
   if (!org) throw notFound();
   const m = await membershipOf(deps.db, userId);
@@ -192,7 +192,7 @@ export async function orgView(deps: Deps, orgId: string, viewerId: string) {
   };
 }
 
-async function seatsInUse(deps: Deps, orgId: string): Promise<number> {
+export async function seatsInUse(deps: Deps, orgId: string): Promise<number> {
   const [members] = await deps.db
     .select({ n: sql<number>`count(*)::int` })
     .from(orgMembers)

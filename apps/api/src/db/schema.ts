@@ -104,6 +104,36 @@ export const orgPolicies = pgTable("org_policies", {
     ).notNull() /* {allowedEngines?, allowedPlugins?, maxAccess?, forceTelemetryOff, disableAuto, disableConductor, disablePhone, auditEnabled} */,
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
+/** An org's single sign-on connection (F-BL-06 P2). The client secret is encrypted (D-626). */
+export const orgSso = pgTable("org_sso", {
+  orgId: text("org_id")
+    .primaryKey()
+    .references(() => orgs.id, { onDelete: "cascade" }),
+  provider: text("provider", { enum: ["oidc", "workos", "mock"] }).notNull(),
+  issuer: text("issuer"),
+  clientId: text("client_id"),
+  clientSecretEnc: text("client_secret_enc"),
+  organization: text("organization"),
+  enforce: boolean("enforce").notNull().default(false),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+});
+/** Email domains an org signs in with; one only counts once its DNS TXT record proves it (D-627). */
+export const orgSsoDomains = pgTable(
+  "org_sso_domains",
+  {
+    orgId: text("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    domain: text("domain").notNull(),
+    verifyToken: text("verify_token").notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.domain] }),
+    uniqueIndex("org_sso_domains_verified").on(t.domain).where(sql`${t.verifiedAt} is not null`),
+  ],
+);
 export const billingCustomers = pgTable(
   "billing_customers",
   {
