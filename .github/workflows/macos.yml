@@ -1,0 +1,90 @@
+name: macOS
+
+# The macOS bring-up checks (D-2103), started by hand so they spend minutes
+# only when asked: the workspace's tests, a debug app with a smoke test, and
+# optionally the universal release path without secrets (ad-hoc signed,
+# every Mach-O checked). Runs on a GitHub-hosted Mac or on a self-hosted
+# runner labelled macOS (free; PLATFORMS_PLAN §3.6). Tags still build
+# releases through release.yml.
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Where to run: a GitHub-hosted image, or a self-hosted runner labelled macOS"
+        type: choice
+        options: [macos-14, macos-15, self-hosted]
+        default: macos-14
+      universal:
+        description: "Also build the universal release bundle (app and dmg, ad-hoc signed; about 30 more minutes)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  TANDEM_FAKE_KEYCHAIN: "1"
+  # No account and no API calls, like early-access builds (D-105).
+  TANDEM_HOSTED: "0"
+
+jobs:
+  test:
+    runs-on: ${{ inputs.runner == 'self-hosted' && fromJSON('["self-hosted","macOS"]') || inputs.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: clippy }
+      - uses: Swatinem/rust-cache@v2
+      - run: pnpm install --frozen-lockfile
+      - name: Build UI assets for the Tauri crate
+        run: pnpm --filter desktop build
+      - name: Clippy on macOS (the code Linux only type-checks)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - name: Debug app (native architecture)
+        run: pnpm --filter desktop tauri build --debug --bundles app
+      - name: Smoke test
+        run: bash scripts/ci/macos-smoke.sh "$(ls -d target/debug/bundle/macos/*.app | head -1)" "$RUNNER_TEMP/smoke"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-smoke
+          path: ${{ runner.temp }}/smoke
+          if-no-files-found: ignore
+
+  universal:
+    if: inputs.universal
+    needs: test
+    runs-on: ${{ inputs.runner == 'self-hosted' && fromJSON('["self-hosted","macOS"]') || inputs.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin,x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with: { tool: "cargo-about,cargo-zigbuild" }
+      - name: Zig for the Linux helpers
+        run: pip3 install --break-system-packages ziglang==0.13.0 || pip3 install ziglang==0.13.0
+      - run: pnpm install --frozen-lockfile
+      # No secrets here on purpose: the path forks and dry runs take.
+      - name: Universal app and dmg, ad-hoc signed and verified
+        run: bash scripts/ci/macos-release.sh "$RUNNER_TEMP/out"
+      - name: Smoke test of the universal app
+        run: bash scripts/ci/macos-smoke.sh "$(ls -d target/universal-apple-darwin/release/bundle/macos/*.app | head -1)" "$RUNNER_TEMP/smoke-universal"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal-unsigned
+          path: |
+            ${{ runner.temp }}/out
+            ${{ runner.temp }}/smoke-universal

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged by Tauri into the macOS app's Info.plist (D-2101). Tauri writes the
+  bundle keys itself (identifier, version, LSMinimumSystemVersion from
+  tauri.macos.conf.json, the tandem:// URL type from the deep-link plugin);
+  this file adds only the privacy strings macOS shows in its prompts.
+  apps/desktop/src-tauri/src/lib.rs pins each key
+  (nfr_macos_bundle_config_is_pinned).
+-->
+<plist version="1.0">
+<dict>
+  <!-- Dictate records from the microphone (F-DI-01). Under the hardened
+       runtime a missing usage string ends the app at the first access. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Vibezeo records your voice only while you hold or toggle the Dictate shortcut, and turns it into text on this Mac.</string>
+</dict>
+</plist>

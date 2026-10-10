@@ -2175,12 +2175,40 @@ pub fn dither(n: usize) -> Vec<f32> {
         .collect()
 }
 
+#[cfg(feature = "os-audio")]
 fn native_backend() -> Arc<dyn AudioBackend> {
     Arc::new(tandem_voice::capture_cpal::CpalBackend)
 }
 
+#[cfg(feature = "os-audio")]
 fn native_chimes() -> Arc<dyn ChimePlayer> {
     Arc::new(tandem_voice::chimes::CpalPlayer)
+}
+
+/// Type-check builds without `os-audio` (D-2105): no microphone, no chimes.
+#[cfg(not(feature = "os-audio"))]
+fn native_backend() -> Arc<dyn AudioBackend> {
+    struct NoMicrophone;
+    impl AudioBackend for NoMicrophone {
+        fn devices(&self) -> Vec<DeviceInfo> {
+            Vec::new()
+        }
+        fn open(
+            &self,
+            _device: &str,
+            _sink: tandem_voice::capture::SampleSink,
+            _on_error: tandem_voice::capture::ErrorSink,
+        ) -> Result<Box<dyn tandem_voice::capture::InputStream>, tandem_voice::capture::CaptureError>
+        {
+            Err(tandem_voice::capture::CaptureError::NoDevice)
+        }
+    }
+    Arc::new(NoMicrophone)
+}
+
+#[cfg(not(feature = "os-audio"))]
+fn native_chimes() -> Arc<dyn ChimePlayer> {
+    Arc::new(SilentPlayer::default())
 }
 
 #[cfg(test)]

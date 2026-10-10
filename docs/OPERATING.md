@@ -24,6 +24,7 @@ still uses the working name *tandem* (crates, commands, bundle id); keep it.
 | Release notes | `CHANGELOG.md` |
 | The public site's hosting | `docs/DEPLOY_SITE.md` |
 | Helper scripts for agents | `scripts/agent/` |
+| macOS: checks from Linux, Mac CI, signing, notarization, distribution | `docs/MACOS.md` |
 | Product video sources | `media/product-video/` |
 
 Code layout: `apps/desktop` (Tauri 2: Rust in `src-tauri`, React 19 + zustand

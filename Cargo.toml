@@ -17,7 +17,8 @@ tandem-git = { path = "crates/tandem-git" }
 tandem-gateway = { path = "crates/tandem-gateway" }
 tandem-tasks = { path = "crates/tandem-tasks" }
 tandem-routines = { path = "crates/tandem-routines" }
-tandem-voice = { path = "crates/tandem-voice" }
+# Members ask for the OS microphone (`cpal`) themselves (D-2105).
+tandem-voice = { path = "crates/tandem-voice", default-features = false }
 tandem-host = { path = "crates/tandem-host" }
 
 aes-gcm = "0.10"
