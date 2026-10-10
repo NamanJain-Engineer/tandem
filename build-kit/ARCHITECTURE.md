@@ -2127,7 +2127,7 @@ apps/api/
   src/routes/{health, me, credits, billing, webhooks, ai, auto, stt, voice, config, updates, pairings, relay, audit, orgs, admin, dictionary, dev}
   src/services/{plans, entitlements, ledger, webhooks, orgs, configSigner, releases, deletion}
   src/providers/{ai, stt, realtime, billing, email, captcha, breach}/{real,mock}.ts
-  src/jobs/{reservationSweeper (60 s), voiceSweeper (60 s), deletionJob (daily), monthlyResetSafety (hourly)}  — each takes a Redis lock (SET NX PX) so one replica runs it
+  src/jobs/{reservationSweeper (60 s), voiceSweeper (60 s), deletionJob (hourly: purges requests over 29 days old, D-813), monthlyResetSafety (hourly)}  — each takes a Redis lock (SET NX PX) so one replica runs it
   config/remote-config.json   source of catalog, prices, flags, registry overrides, plugin client ids, min version
   test/                       vitest + testcontainers-free: uses docker-compose services from infra/
 ```
@@ -2294,7 +2294,7 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 | `GET /v1/me` | B/C | — | `MeResponse` (§14.4) | `UNAUTHENTICATED` | F-BE-04 |
 | `GET /v1/me/events` | B | — | SSE `entitlement`, `credits`, heartbeat 25 s | — | F-BE-04 |
 | `GET /v1/me/sessions` / `DELETE /v1/me/sessions/:id` | C | — | `[{id, deviceName, platform, appVersion, lastUsedAt}]` / 204 | — | F-WB-05 |
-| `DELETE /v1/me` | C | `{confirm: 'DELETE'}` | 202 (deletion ≤30 days; subscription canceled now) | — | F-TL-05 |
+| `DELETE /v1/me` | C | `{confirm: 'DELETE'}` | 202 (deletion ≤30 days by `deletionJob`; the subscription and those of Teams the user owns alone are canceled first, then every desktop sign-in and web session is revoked and new sign-ins are refused with `ACCOUNT_DELETED`, D-813) | 409 `TEAM_HAS_MEMBERS` (owns a Team with other members) | F-TL-05 |
 | `GET /v1/credits` | B/C | — | `{balance:{monthly, purchased, resetsAt}, org: {id, cap, spent} \| null, ledger:[≤100 {id, bucket, delta, reason, feature, createdAt}]}` (a Team member sees the org pool, D-601) | — | F-BE-05 |
 | `POST /v1/billing/checkout` | B/C | `{plan:'pro'\|'team', interval:'month'\|'year', seats?: int(2..500), promo?: str}` | `{url}` | `VALIDATION` | F-BL-01 |
 | `POST /v1/billing/portal` | B/C | — | `{url}` | 404 (no customer) | F-BL-02 |
