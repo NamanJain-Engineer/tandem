@@ -96,7 +96,7 @@
     "pc": null,
     "pcTerminal": null,
     "inText": false,
-    "enabledWhen": "always"
+    "enabledWhen": "routines"
   },
   {
     "id": "rail.toggle",
@@ -365,6 +365,15 @@
     "mac": "Mod+/",
     "pc": "Mod+/",
     "pcTerminal": "Mod+Shift+/",
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "help.diagnostics",
+    "category": "help",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
     "inText": false,
     "enabledWhen": "always"
   },

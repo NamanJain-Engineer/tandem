@@ -143,19 +143,26 @@ export async function openRemoteFolder(path = PROJECT): Promise<string> {
   await field.clearValue();
   await field.setValue(path);
   await browser.keys("Enter");
+  // The listing of `path`, not just the typed text: "Open this folder" opens
+  // the folder last listed, and is off until a listing arrives. The first
+  // listing after the helper's upload can take a while.
   await until(
     async () =>
-      (await browser.execute(
-        () =>
-          (document.querySelector('[data-testid="remote-picker-path"]') as HTMLInputElement | null)?.value ??
-          "",
-      )) === path,
-    `the picker didn't go to ${path}`,
+      (await browser.execute(() => {
+        const p = document.querySelector('[data-testid="remote-picker"]');
+        return p?.getAttribute("data-state") === "ready" ? (p.getAttribute("data-path") ?? "") : "";
+      })) === path,
+    `the picker didn't list ${path}`,
+    60_000,
   );
+  await $('[data-testid="remote-picker-open"]').waitForEnabled({ timeout: 10_000 });
+  // A click while the dialog animates can miss (D-52).
+  await settled();
   await $('[data-testid="remote-picker-open"]').click();
   await until(
     async () => (await workspaceRoots()).includes(path),
     `${path} wasn't added: ${JSON.stringify(await workspaceRoots())}`,
+    60_000,
   );
   await until(async () => (await paneIds()).length >= 1, "the remote shell didn't open");
   return (await paneIds())[0] ?? "";

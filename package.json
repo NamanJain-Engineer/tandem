@@ -37,5 +37,13 @@
     "tsx": "^4.20.3",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.35.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "happy-dom": "^20.8.9",
+      "postcss@<8.5.23": "^8.5.23",
+      "serialize-javascript@<7.0.5": "^7.0.5",
+      "basic-ftp@<6.2.1": "^6.2.1"
+    }
   }
 }

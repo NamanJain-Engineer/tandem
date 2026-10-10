@@ -34,6 +34,8 @@ const ACTIVE = new Set(["setup", "running", "reviewing"]);
 export function useExecuteBlock(): { reason: string; upgrade: boolean } | null {
   const auth = useSession((s) => s.auth);
   const ent = useSession((s) => s.entitlement);
+  // Builds without Vibezeo accounts can't sign in or buy Pro: say so (D-909).
+  if (auth && !auth.hosted) return { reason: t("tasks.exec.earlyAccess"), upgrade: false };
   if (!auth?.signedIn) return { reason: t("tasks.exec.signIn"), upgrade: false };
   if (!ent?.limits.taskExecution) return { reason: t("tasks.exec.pro"), upgrade: true };
   return null;

@@ -60,6 +60,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       type={type}
+      data-variant={variant}
       className={cx(
         "inline-flex select-none items-center justify-center whitespace-nowrap rounded-sm font-medium",
         "transition-colors duration-[var(--dur-instant)] focus-visible:shadow-focus focus-visible:outline-none",

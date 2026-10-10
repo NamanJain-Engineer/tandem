@@ -9,6 +9,7 @@ pub mod services;
 pub mod state;
 mod tray;
 
+use tandem_core::supervisor;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_window_state::StateFlags;
 
@@ -23,6 +24,7 @@ macro_rules! app_commands {
             commands::app::app_ready,
             commands::app::app_log,
             commands::app::app_copy_diagnostics,
+            commands::app::app_diagnostics,
             commands::app::app_open_logs_folder,
             commands::app::app_open_external,
             commands::app::app_quit,
@@ -576,15 +578,26 @@ fn spawn_background(state: &AppState) {
     // something to show on restore (§5.4).
     let terminals = state.terminals.clone();
     let snapshots = state.data.scrollback();
-    tauri::async_runtime::spawn(async move {
-        let mut tick = tokio::time::interval(services::terminal::snapshot_every());
-        tick.tick().await;
-        loop {
-            tick.tick().await;
-            let (t, dir) = (terminals.clone(), snapshots.clone());
-            let _ = tokio::task::spawn_blocking(move || t.snapshot_all(&dir)).await;
-        }
-    });
+    tauri::async_runtime::spawn(supervisor::supervise_task(
+        "scheduler/scrollback",
+        state.supervision(),
+        None,
+        move || {
+            let (terminals, snapshots) = (terminals.clone(), snapshots.clone());
+            async move {
+                let mut tick = tokio::time::interval(services::terminal::snapshot_every());
+                tick.tick().await;
+                loop {
+                    tick.tick().await;
+                    let (t, dir) = (terminals.clone(), snapshots.clone());
+                    // A panicking snapshot fails this job and restarts it.
+                    tokio::task::spawn_blocking(move || t.snapshot_all(&dir))
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+        },
+    ));
     let _ = telemetry;
 }
 
@@ -678,6 +691,7 @@ pub fn run() {
     if std::env::args().skip(1).any(|a| a == "--run-routines") {
         std::process::exit(headless::main());
     }
+    commands::app::mark_started();
     let state = match AppState::init() {
         Ok(state) => state,
         Err(err) => {
@@ -791,7 +805,7 @@ pub fn run() {
                 ));
                 let _ = state.browser.set(service);
             }
-            services::events::forward(handle.clone(), &state.bus);
+            services::events::forward(handle.clone(), &state.bus, state.clock.clone());
             setup_dictate(app, &state);
             ensure_on_screen(app);
             persist_window_state(app);
@@ -799,7 +813,7 @@ pub fn run() {
             state.approvals.start();
             // Routines: the scheduler (once it has the app lock), and the
             // plan pausing or resuming them (F-RT-02, F-BL-04).
-            state.routines.start(state.data.run());
+            state.routines.start(state.data.run(), state.supervision());
             // The tray, while background routines are on (F-SH-13).
             {
                 let app = handle.clone();
@@ -946,29 +960,45 @@ pub fn run() {
             // Remote config (model catalog, registry overrides) has a 10-min
             // TTL: a model added remotely shows up without an update (F-TH-08 AC1).
             let config_state = handle.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut tick = tokio::time::interval(services::config::CONFIG_TTL);
-                tick.tick().await;
-                loop {
-                    tick.tick().await;
-                    let state = config_state.state::<AppState>();
-                    let config = state.config.refresh().await;
-                    state.terminals.engines.apply_config(&config);
-                }
-            });
+            tauri::async_runtime::spawn(supervisor::supervise_task(
+                "scheduler/config",
+                state.supervision(),
+                None,
+                move || {
+                    let config_state = config_state.clone();
+                    async move {
+                        let mut tick = tokio::time::interval(services::config::CONFIG_TTL);
+                        tick.tick().await;
+                        loop {
+                            tick.tick().await;
+                            let state = config_state.state::<AppState>();
+                            let config = state.config.refresh().await;
+                            state.terminals.engines.apply_config(&config);
+                        }
+                    }
+                },
+            ));
             // Worktree sweep: at startup, then every 6 h (F-CD-15). It never
             // deletes anything; finished worktrees become one notification.
             let sweep_state = handle.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut tick = tokio::time::interval(services::lanes::SWEEP_EVERY);
-                loop {
-                    tick.tick().await;
-                    let state = sweep_state.state::<AppState>();
-                    if let Err(err) = services::lanes::sweep_and_notify(&state).await {
-                        tracing::info!(error = %err, "worktree sweep skipped");
+            tauri::async_runtime::spawn(supervisor::supervise_task(
+                "scheduler/worktree-sweep",
+                state.supervision(),
+                None,
+                move || {
+                    let sweep_state = sweep_state.clone();
+                    async move {
+                        let mut tick = tokio::time::interval(services::lanes::SWEEP_EVERY);
+                        loop {
+                            tick.tick().await;
+                            let state = sweep_state.state::<AppState>();
+                            if let Err(err) = services::lanes::sweep_and_notify(&state).await {
+                                tracing::info!(error = %err, "worktree sweep skipped");
+                            }
+                        }
                     }
-                }
-            });
+                },
+            ));
             // Detect again when the window comes back, at most once a minute.
             if let Some(window) = app.get_webview_window("main") {
                 let focus = handle.clone();
@@ -1155,6 +1185,108 @@ mod harness_tests {
             commands.contains("#[cfg(debug_assertions)]\npub mod test;"),
             "the harness module is debug-only"
         );
+    }
+
+    /// §5.3: the app webview's CSP is `'self'` only, runs no remote or inline
+    /// script, and connects only to itself, the IPC bridge, loopback (the
+    /// gateway and local review) and the API with its WebSocket.
+    #[test]
+    fn nfr_5_3_csp_is_self_only_and_connects_to_the_listed_hosts() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("tauri.conf.json");
+        assert_eq!(conf["app"]["withGlobalTauri"], false);
+        let csp = &conf["app"]["security"]["csp"];
+        let dir = |k: &str| csp[k].as_str().unwrap_or_default().to_string();
+        assert_eq!(dir("default-src"), "'self'");
+        assert_eq!(
+            dir("script-src"),
+            "'self'",
+            "no remote, inline or eval script"
+        );
+        assert_eq!(dir("object-src"), "'none'");
+        assert_eq!(dir("base-uri"), "'self'");
+        assert_eq!(dir("frame-ancestors"), "'none'");
+        for k in ["img-src", "font-src", "style-src"] {
+            assert!(!dir(k).contains("http"), "{k} loads nothing remote");
+        }
+        let allowed = |src: &str| {
+            matches!(
+                src,
+                "'self'"
+                    | "ipc:"
+                    | "http://ipc.localhost"
+                    | "http://127.0.0.1:*"
+                    | "ws://127.0.0.1:*"
+                    | "http://localhost:*"
+                    | "http://api.tandem.local:8787"
+                    | "https://api.vibezeo.com"
+                    | "wss://api.vibezeo.com"
+            )
+        };
+        let connect = dir("connect-src");
+        assert!(!connect.is_empty());
+        for src in connect.split_whitespace() {
+            assert!(allowed(src), "connect-src {src} is not an allowed host");
+        }
+    }
+
+    /// §5.3 least privilege: each capability names its app window (the main
+    /// window, and the Dictate widget with only what it needs); none names a
+    /// webview, and the in-app browser's pages are plain wry webviews with no
+    /// IPC handler, so they can call no command (E2E-M9-3 probes `__TAURI__`).
+    #[test]
+    fn nfr_5_3_only_app_windows_have_commands_and_browser_pages_have_no_ipc() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities");
+        let mut files: Vec<_> = std::fs::read_dir(&dir)
+            .expect("capabilities dir")
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        files.sort();
+        assert_eq!(
+            files,
+            vec!["main.json".to_string(), "widget.json".to_string()]
+        );
+        for (file, window) in [("main.json", "main"), ("widget.json", "dictate-widget")] {
+            let cap: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(dir.join(file)).expect("read"))
+                    .expect("json");
+            assert_eq!(cap["windows"], serde_json::json!([window]), "{file}");
+            assert!(cap.get("webviews").is_none(), "{file} names a webview");
+        }
+        // The widget gets exactly this; anything more is a reviewed change.
+        // Reviewed (D-825): emit-to carries See plans to the main window,
+        // use-local is "Use local for this take" after a cloud failure
+        // (F-DI-05), and quick-action is Enhance and Polish (F-DI-10).
+        let widget: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/widget.json")).expect("widget.json");
+        assert_eq!(
+            widget["permissions"],
+            serde_json::json!([
+                "core:event:allow-listen",
+                "core:event:allow-unlisten",
+                "core:event:allow-emit-to",
+                "core:window:allow-start-dragging",
+                "allow-dictate-status",
+                "allow-dictate-cancel-take",
+                "allow-dictate-use-local",
+                "allow-dictate-quick-action",
+                "allow-dictate-widget-set-position",
+                "allow-app-log"
+            ])
+        );
+        let host = include_str!("browser/wry_host.rs");
+        for banned in [
+            "with_ipc_handler",
+            "WebviewBuilder",
+            "WebviewWindowBuilder",
+            "add_child",
+        ] {
+            assert!(
+                !host.contains(banned),
+                "browser pages must not use {banned}"
+            );
+        }
     }
 
     /// Every registered command has an `allow-<name>` permission (build.rs)

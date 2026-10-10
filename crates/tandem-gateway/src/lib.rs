@@ -82,6 +82,9 @@ pub struct GatewayDeps {
     /// `$DATA/run`: the port goes to `gateway.json` (diagnostics).
     pub run_dir: Option<PathBuf>,
     pub watchdog_every: Duration,
+    /// Where a gateway that keeps failing is reported (`app:subsystem-failed`,
+    /// PRODUCT_SPEC §5.2): after 3 restarts in 10 minutes the watchdog stops.
+    pub bus: Option<tandem_core::bus::EventBus>,
 }
 
 impl GatewayDeps {
@@ -95,6 +98,7 @@ impl GatewayDeps {
             net: None,
             run_dir: None,
             watchdog_every: WATCHDOG_EVERY,
+            bus: None,
         }
     }
 }
@@ -348,6 +352,7 @@ impl Gateway {
             addr,
             serving.clone(),
             deps.watchdog_every,
+            deps.bus.unwrap_or_default(),
         ));
         tracing::info!(
             code = "gateway.started",
@@ -365,6 +370,16 @@ impl Gateway {
     }
 }
 
+/// The gateway's name in the watchdog and in `app:subsystem-failed`.
+const NAME: &str = "gateway";
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 /// Brings the listener back on the same port when it stopped or stopped
 /// answering, so every session's MCP config stays valid.
 async fn watchdog(
@@ -372,8 +387,13 @@ async fn watchdog(
     addr: SocketAddr,
     serving: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     every: Duration,
+    bus: tandem_core::bus::EventBus,
 ) {
     let stop = service.shutdown.clone();
+    // Shared with every supervised subsystem (Help › Diagnostics, §5.7).
+    let dog = tandem_core::supervisor::watchdog();
+    let mut budget = tandem_core::supervisor::RestartBudget::default();
+    dog.beat(NAME);
     loop {
         tokio::select! {
             _ = stop.cancelled() => return,
@@ -384,11 +404,24 @@ async fn watchdog(
             Err(_) => true,
         };
         if !finished && probe(addr).await {
+            dog.beat(NAME);
             continue;
         }
         if stop.is_cancelled() {
             return;
         }
+        // At most 3 restarts in 10 minutes, then it's reported and left down.
+        if !budget.try_restart(now_ms()) {
+            dog.record(NAME, budget.recent(), "stopped answering", true);
+            tandem_core::supervisor::report_failed(
+                &bus,
+                NAME,
+                budget.recent(),
+                "stopped answering".into(),
+            );
+            return;
+        }
+        dog.record(NAME, budget.recent(), "stopped answering", false);
         tracing::warn!(
             code = "gateway.restarting",
             "the gateway stopped answering; restarting it"

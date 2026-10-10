@@ -120,6 +120,8 @@ pub struct GatewayService {
     net: OnceLock<tandem_core::net::Net>,
     /// Unattended threads → the run they belong to (`routine:<id>:<run>`).
     origins: std::sync::Mutex<std::collections::HashMap<String, String>>,
+    /// Where a gateway that keeps failing is reported (§5.2).
+    bus: OnceLock<tandem_core::bus::EventBus>,
 }
 
 impl GatewayService {
@@ -137,7 +139,13 @@ impl GatewayService {
             origins: std::sync::Mutex::default(),
             cell: tokio::sync::OnceCell::new(),
             starts: AtomicU32::new(0),
+            bus: OnceLock::new(),
         })
+    }
+
+    /// The app's bus, for the watchdog's report (§5.2).
+    pub fn bind_bus(&self, bus: tandem_core::bus::EventBus) {
+        let _ = self.bus.set(bus);
     }
 
     /// The threads the approvals tool reports to.
@@ -216,6 +224,7 @@ impl GatewayService {
                 deps.credentials = self.credentials.get().cloned();
                 deps.net = self.net.get().cloned();
                 deps.run_dir = Some(self.run_dir.clone());
+                deps.bus = self.bus.get().cloned();
                 let handle = tandem_gateway::Gateway::start(deps).await.map_err(|e| {
                     IpcError::new(ErrorCode::Unavailable, e.to_string()).with_stage("gateway")
                 })?;

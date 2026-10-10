@@ -5,6 +5,7 @@ const COMMANDS: &[&str] = &[
     "app_ready",
     "app_log",
     "app_copy_diagnostics",
+    "app_diagnostics",
     "app_open_logs_folder",
     "app_open_external",
     "app_quit",

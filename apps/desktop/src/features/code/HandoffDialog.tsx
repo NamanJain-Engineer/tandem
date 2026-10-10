@@ -83,8 +83,13 @@ function HandoffBody({ source }: { source: HandoffSource }) {
     { value: "same", label: inWorktree ? t("handoff.sameWorktree") : t("handoff.sameFolder") },
     {
       value: "new_worktree",
-      label: isRepo(ws) ? t("handoff.newWorktree") : t("handoff.newWorktreeNeedsRepo"),
-      disabled: !isRepo(ws),
+      label:
+        ws && ws.kind !== "local"
+          ? t("handoff.newWorktreeRemote")
+          : isRepo(ws)
+            ? t("handoff.newWorktree")
+            : t("handoff.newWorktreeNeedsRepo"),
+      disabled: !isRepo(ws) || (ws?.kind ?? "local") !== "local",
     },
     {
       value: "thread",

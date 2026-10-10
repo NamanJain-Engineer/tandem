@@ -312,22 +312,28 @@ export function CodeRail() {
     {
       // Only a repository can have worktrees; the label says why it's off.
       id: "new-worktree",
-      label: ws.branch ? t("worktree.new") : t("worktree.needsRepo"),
-      disabled: !ws.branch || ws.missing,
+      label:
+        ws.kind !== "local" ? t("worktree.remote") : ws.branch ? t("worktree.new") : t("worktree.needsRepo"),
+      disabled: ws.kind !== "local" || !ws.branch || ws.missing,
       onSelect: () => useWorktrees.getState().open({ kind: "new", workspaceId: ws.id }),
     },
     { id: "up", label: t("rail.moveUp"), onSelect: a.moveUp },
     { id: "down", label: t("rail.moveDown"), onSelect: a.moveDown },
     { id: "sep", type: "separator" },
-    {
-      id: "reveal",
-      label: platform === "macos" ? t("rail.revealMac") : t("rail.reveal"),
-      disabled: ws.missing,
-      onSelect: () =>
-        void invoke("workspace_reveal", { id: ws.id }).catch((e: { message?: string }) =>
-          show({ tone: "error", title: e.message ?? "" }),
-        ),
-    },
+    // An SSH host's folder isn't on this computer to show (F-RM-01).
+    ...(ws.kind === "ssh"
+      ? []
+      : [
+          {
+            id: "reveal",
+            label: platform === "macos" ? t("rail.revealMac") : t("rail.reveal"),
+            disabled: ws.missing,
+            onSelect: () =>
+              void invoke("workspace_reveal", { id: ws.id }).catch((e: { message?: string }) =>
+                show({ tone: "error", title: e.message ?? "" }),
+              ),
+          },
+        ]),
     {
       id: "copy",
       label: t("rail.copyPath"),

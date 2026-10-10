@@ -22,6 +22,7 @@ import {
 } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useEngines } from "../../stores/engines";
+import { useRemote } from "../../stores/remote";
 import {
   MAX_COUNT,
   ROLES,
@@ -277,12 +278,20 @@ function Lineup({
 
 function LaunchSheetBody({ workspaceId }: { workspaceId: string }) {
   const ws = useWorkspaces((s) => s.list.find((w) => w.id === workspaceId));
-  const engines = useEngines((s) => s.list);
+  // A folder on a host lists the host's engines, not this computer's (F-RM-01).
+  const remote = ws && ws.kind !== "local" ? ws.hostId : null;
+  const localEngines = useEngines((s) => s.list);
+  const hostEngines = useRemote((s) => (remote ? s.engines[remote] : undefined));
+  const engines = useMemo(
+    () => (remote ? (hostEngines ?? []) : localEngines),
+    [remote, hostEngines, localEngines],
+  );
   const presets = useLaunch((s) => s.presets);
   const { show } = useToast();
 
   const engine = defaultEngine(engines);
-  const repo = isRepo(ws);
+  // Worktrees use this computer's git, so a remote folder launches shared.
+  const repo = isRepo(ws) && !remote;
   const [presetId, setPresetId] = useState(SOLO);
   const [seats, setSeats] = useState<Seat[]>(() => [agentSeat(engine)]);
   const [isolation, setIsolation] = useState<Isolation>("shared");
@@ -424,7 +433,9 @@ function LaunchSheetBody({ workspaceId }: { workspaceId: string }) {
               : c.shells > 0
                 ? t("launch.worktreesShellNote")
                 : undefined
-            : t("launch.needsRepo")
+            : remote
+              ? t("worktree.remote")
+              : t("launch.needsRepo")
         }
         checked={isolation === "worktree"}
         disabled={!repo || c.agents === 0}
@@ -461,17 +472,19 @@ function LaunchSheetBody({ workspaceId }: { workspaceId: string }) {
         />
       )}
 
-      <div className="flex items-center gap-2 border-t border-divider pt-3">
+      {/* Wraps rather than pushing Launch off the sheet when labels run long
+          (§5.5: found by the en-XA run). */}
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-divider pt-3">
         <Button
           variant="ghost"
           size="sm"
+          className="mr-auto"
           onClick={() => setSaving(true)}
           disabled={!ready}
           data-testid="launch-save"
         >
           {t("launch.saveAs")}
         </Button>
-        <span className="flex-1" />
         <Button variant="secondary" onClick={close}>
           {report ? t("common.close") : t("common.cancel")}
         </Button>
@@ -509,12 +522,18 @@ export function LaunchSheet() {
  * waits for both: after a restore, nothing else has loaded the engines. */
 function LaunchSheetLoader({ workspaceId }: { workspaceId: string }) {
   const presetsLoaded = useLaunch((s) => s.loaded);
-  const enginesLoaded = useEngines((s) => s.loaded);
+  const ws = useWorkspaces((s) => s.list.find((w) => w.id === workspaceId));
+  const remote = ws && ws.kind !== "local" ? ws.hostId : null;
+  const hostLoaded = useRemote((s) => (remote ? s.engines[remote] !== undefined : true));
+  useEffect(() => {
+    if (remote) void useRemote.getState().loadEngines(remote);
+  }, [remote]);
+  const enginesLoaded = useEngines((s) => s.loaded) && hostLoaded;
   useEffect(() => {
     if (!presetsLoaded) void useLaunch.getState().loadPresets();
   }, [presetsLoaded]);
   useEffect(() => {
-    if (!enginesLoaded) void useEngines.getState().refresh();
+    if (!useEngines.getState().loaded) void useEngines.getState().refresh();
   }, [enginesLoaded]);
   return (
     <SkeletonGate

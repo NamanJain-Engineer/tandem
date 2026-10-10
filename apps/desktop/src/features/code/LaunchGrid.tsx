@@ -83,7 +83,8 @@ function RemoteLaunchGrid({
             "browser",
             t("picker.browser"),
             <Globe size={20} className="text-fg-muted" aria-hidden="true" />,
-            null,
+            // It browses from here: the host's own dev servers aren't reachable.
+            t("picker.browserHere"),
             false,
           )}
       </ul>

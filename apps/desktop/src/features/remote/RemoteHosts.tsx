@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { HostView, IpcError } from "@tandem/protocol";
 import {
   Badge,
@@ -305,17 +305,24 @@ export function RemoteFolderPicker({ host, onClose }: { host: HostView | null; o
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const { show } = useToast();
+  // Only the latest listing counts: on a host whose helper was just
+  // installed, the first listing (home) can come back after the folder the
+  // user typed, and mustn't replace it.
+  const latest = useRef(0);
   const go = async (to: string) => {
     if (!host) return;
+    const n = ++latest.current;
     setDirs(null);
     setError(null);
     try {
       const l = await useRemote.getState().listDir(host.id, to);
+      if (n !== latest.current) return;
       setPath(l.path);
       setTyped(l.path);
       setParent(l.parent);
       setDirs(l.dirs);
     } catch (e) {
+      if (n !== latest.current) return;
       setError((e as IpcError).message);
       setDirs([]);
     }
@@ -331,12 +338,10 @@ export function RemoteFolderPicker({ host, onClose }: { host: HostView | null; o
     setAdding(false);
     if (err) {
       if (err.code === "limit_reached")
-        useUi
-          .getState()
-          .openUpgrade({
-            kind: "workspaces",
-            limit: useSession.getState().entitlement?.limits.workspaces ?? 3,
-          });
+        useUi.getState().openUpgrade({
+          kind: "workspaces",
+          limit: useSession.getState().entitlement?.limits.workspaces ?? 3,
+        });
       else show({ tone: "error", title: err.message });
       return;
     }
@@ -367,7 +372,12 @@ export function RemoteFolderPicker({ host, onClose }: { host: HostView | null; o
         </>
       }
     >
-      <div className="flex flex-col gap-3" data-testid="remote-picker">
+      <div
+        className="flex flex-col gap-3"
+        data-testid="remote-picker"
+        data-path={path}
+        data-state={dirs === null ? "loading" : "ready"}
+      >
         <form
           className="flex items-end gap-2"
           onSubmit={(e) => {

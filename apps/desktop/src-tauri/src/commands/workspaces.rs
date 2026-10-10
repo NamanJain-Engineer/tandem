@@ -159,10 +159,45 @@ pub async fn workspace_set_flags(
 #[tauri::command]
 pub async fn workspace_reveal(state: State<'_, AppState>, id: WorkspaceId) -> Result<(), IpcError> {
     let ws = repo::get(&state.store, &id).await?;
-    tauri_plugin_opener::reveal_item_in_dir(&ws.root).map_err(|e| {
+    let path = reveal_target(&ws.kind, &ws.root, ws.wsl_distro.as_deref())
+        .map_err(|m| IpcError::new(ErrorCode::Unavailable, m))?;
+    tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| {
         tracing::warn!(code = "workspace.reveal_failed", error = %e, "reveal failed");
         IpcError::new(ErrorCode::NotFound, "This folder can't be shown.")
     })
+}
+
+/// What "Reveal in file manager" opens for a workspace: its folder here; a
+/// WSL folder at its `\\wsl.localhost` path, which Windows can show; and
+/// nothing for an SSH host's folder, which isn't on this computer (F-RM-01;
+/// the rail hides the item for those).
+pub fn reveal_target(kind: &str, root: &str, distro: Option<&str>) -> Result<String, String> {
+    match (kind, distro) {
+        ("ssh", _) => {
+            Err("This folder is on another computer; open a terminal there to see it.".into())
+        }
+        ("wsl", Some(d)) => tandem_core::wslpath::from_wsl_path(d, root)
+            .ok_or_else(|| "This WSL folder can't be shown.".to_string()),
+        _ => Ok(root.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod reveal_tests {
+    use super::reveal_target;
+
+    #[test]
+    fn f_rm_01_reveal_opens_only_folders_this_computer_can_show() {
+        assert_eq!(
+            reveal_target("local", "/work/shop", None).as_deref(),
+            Ok("/work/shop")
+        );
+        assert!(reveal_target("ssh", "/home/tandem/project", None).is_err());
+        assert_eq!(
+            reveal_target("wsl", "/home/ana/shop", Some("Ubuntu")).as_deref(),
+            Ok(r"\\wsl.localhost\Ubuntu\home\ana\shop")
+        );
+    }
 }
 
 /// Reorders or pins a rail row (F-SH-03). Code mode orders workspaces; the

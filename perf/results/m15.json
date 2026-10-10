@@ -1,0 +1,231 @@
+{
+  "memory": {
+    "date": "2026-10-10T11:57:54.224Z",
+    "machine": {
+      "os": "linux 6.18.44-fc-v114 (xvfb)",
+      "cpus": 4,
+      "cpuModel": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+      "memGb": 16,
+      "build": "perf"
+    },
+    "metrics": {
+      "baseAppMb": {
+        "value": 484.3,
+        "target": 350,
+        "op": "<=",
+        "unit": "MB",
+        "pass": false
+      },
+      "perBackgroundPaneMb": {
+        "value": 65.2,
+        "target": 3.9,
+        "op": "<=",
+        "unit": "MB",
+        "pass": false
+      },
+      "perBackgroundPaneNoGpuMb": {
+        "value": 33.9,
+        "target": 3.9,
+        "op": "<=",
+        "unit": "MB",
+        "pass": false
+      }
+    }
+  },
+  "terminals": {
+    "date": "2026-10-10T12:00:48.762Z",
+    "machine": {
+      "os": "linux 6.18.44-fc-v114 (xvfb)",
+      "cpus": 4,
+      "cpuModel": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+      "memGb": 16,
+      "build": "perf"
+    },
+    "metrics": {
+      "modeSwitchP95Ms": {
+        "value": 184,
+        "target": 100,
+        "op": "<=",
+        "unit": "ms",
+        "pass": false
+      },
+      "sixAgentsFramedMs": {
+        "value": 1293,
+        "target": 300,
+        "op": "<=",
+        "unit": "ms",
+        "pass": false
+      },
+      "sixAgentsMaxStallMs": {
+        "value": 677,
+        "target": 100,
+        "op": "<=",
+        "unit": "ms",
+        "pass": false
+      },
+      "domVsWebglPixelDiffPercent": {
+        "value": 1.3,
+        "target": 1,
+        "op": "<=",
+        "unit": "%",
+        "pass": false
+      },
+      "keyEchoP95Ms": {
+        "value": 278,
+        "target": 50,
+        "op": "<=",
+        "unit": "ms",
+        "pass": false
+      },
+      "unfocusedWritesPerSec": {
+        "value": 1.3,
+        "target": 30,
+        "op": "<=",
+        "unit": "writes/s",
+        "pass": true
+      },
+      "focusedFps": {
+        "value": 4.9,
+        "target": 50,
+        "op": ">=",
+        "unit": "fps",
+        "pass": false
+      },
+      "idleCpuPercent": {
+        "value": 8.1,
+        "target": 2,
+        "op": "<=",
+        "unit": "% of a core",
+        "pass": false
+      },
+      "sixteenPaneRssMb": {
+        "value": 2554.2,
+        "target": 1229,
+        "op": "<=",
+        "unit": "MB",
+        "pass": false
+      }
+    }
+  },
+  "startup": {
+    "date": "2026-10-10T12:04:20.658Z",
+    "machine": {
+      "os": "linux 6.18.44-fc-v114 (xvfb)",
+      "cpus": 4,
+      "cpuModel": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+      "memGb": 16,
+      "build": "perf"
+    },
+    "metrics": {
+      "coldStartInteractiveP50Ms": {
+        "value": 3802,
+        "target": 2000,
+        "op": "<=",
+        "unit": "ms",
+        "pass": false
+      },
+      "coldStartAllShellsP50Ms": {
+        "value": 10729,
+        "target": 4000,
+        "op": "<=",
+        "unit": "ms",
+        "pass": false
+      },
+      "dashboardOpenP50Ms": {
+        "value": 296,
+        "target": 500,
+        "op": "<=",
+        "unit": "ms",
+        "pass": true
+      }
+    }
+  },
+  "threads": {
+    "date": "2026-10-10T12:01:28.906Z",
+    "machine": {
+      "os": "linux 6.18.44-fc-v114 (xvfb)",
+      "cpus": 4,
+      "cpuModel": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+      "memGb": 16,
+      "build": "perf"
+    },
+    "metrics": {
+      "threadOpenMs": {
+        "value": 240,
+        "target": 500,
+        "op": "<=",
+        "unit": "ms",
+        "pass": true
+      },
+      "transcriptScrollFps": {
+        "value": 37.4,
+        "target": 55,
+        "op": ">=",
+        "unit": "fps",
+        "pass": false
+      },
+      "olderPageMs": {
+        "value": 62,
+        "target": 99,
+        "op": "<=",
+        "unit": "ms",
+        "pass": true
+      },
+      "bigFenceWorstFrameMs": {
+        "value": 166,
+        "target": 50,
+        "op": "<=",
+        "unit": "ms",
+        "pass": false
+      }
+    },
+    "baseline": {
+      "coldFirstOpenMs": 476,
+      "coldFirstWorstFrameMs": 569,
+      "idleFps": 55.4,
+      "idleWorstFrameMs": 113,
+      "plainOpenWorstFrameMs": 78
+    }
+  },
+  "summary": {
+    "terminals": {
+      "measured": 9,
+      "met": 1,
+      "missed": [
+        "modeSwitchP95Ms 184 ms (target <= 100)",
+        "sixAgentsFramedMs 1293 ms (target <= 300)",
+        "sixAgentsMaxStallMs 677 ms (target <= 100)",
+        "domVsWebglPixelDiffPercent 1.3 % (target <= 1)",
+        "keyEchoP95Ms 278 ms (target <= 50)",
+        "focusedFps 4.9 fps (target >= 50)",
+        "idleCpuPercent 8.1 % of a core (target <= 2)",
+        "sixteenPaneRssMb 2554.2 MB (target <= 1229)"
+      ]
+    },
+    "startup": {
+      "measured": 3,
+      "met": 1,
+      "missed": [
+        "coldStartInteractiveP50Ms 3802 ms (target <= 2000)",
+        "coldStartAllShellsP50Ms 10729 ms (target <= 4000)"
+      ]
+    },
+    "threads": {
+      "measured": 4,
+      "met": 2,
+      "missed": [
+        "transcriptScrollFps 37.4 fps (target >= 55)",
+        "bigFenceWorstFrameMs 166 ms (target <= 50)"
+      ]
+    },
+    "memory": {
+      "measured": 3,
+      "met": 0,
+      "missed": [
+        "baseAppMb 484.3 MB (target <= 350)",
+        "perBackgroundPaneMb 65.2 MB (target <= 3.9)",
+        "perBackgroundPaneNoGpuMb 33.9 MB (target <= 3.9)"
+      ]
+    }
+  }
+}

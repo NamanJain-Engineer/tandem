@@ -716,8 +716,14 @@ impl RoutinesService {
 
     /// The GUI's scheduler: it takes the app lock (waiting while a headless
     /// pass has it, ARCHITECTURE §10.4), holds it for the app's life, then
-    /// ticks at once (catch-up) and every 30 s of the clock.
-    pub fn start(self: &Arc<Self>, run_dir: std::path::PathBuf) {
+    /// ticks at once (catch-up) and every 30 s of the clock. The tick loop
+    /// runs under the watchdog as "scheduler/routines" (§5.2): a panicking
+    /// tick restarts it, and three in ten minutes are reported.
+    pub fn start(
+        self: &Arc<Self>,
+        run_dir: std::path::PathBuf,
+        sup: tandem_core::supervisor::Supervision,
+    ) {
         let me = self.clone();
         tauri::async_runtime::spawn(async move {
             let lock = loop {
@@ -733,10 +739,16 @@ impl RoutinesService {
             let _held = lock;
             me.settle().await;
             me.changed();
-            loop {
-                me.tick().await;
-                me.clock.sleep(scheduler::TICK).await;
-            }
+            tandem_core::supervisor::supervise_task("scheduler/routines", sup, None, move || {
+                let me = me.clone();
+                async move {
+                    loop {
+                        me.tick().await;
+                        me.clock.sleep(scheduler::TICK).await;
+                    }
+                }
+            })
+            .await;
         });
     }
 

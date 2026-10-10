@@ -92,6 +92,15 @@ impl EventBus {
         }
     }
 
+    /// Events queued per topic that its slowest subscriber hasn't taken yet
+    /// (Help › Diagnostics, §5.7).
+    pub fn depths(&self) -> Vec<(Topic, usize)> {
+        Topic::ALL
+            .iter()
+            .map(|t| (*t, self.channels.get(t).map(|tx| tx.len()).unwrap_or(0)))
+            .collect()
+    }
+
     /// Publishing with no subscribers is not an error.
     pub fn publish(&self, event: BusEvent) {
         if let Some(tx) = self.channels.get(&event.topic) {
