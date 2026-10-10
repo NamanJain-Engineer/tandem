@@ -285,3 +285,40 @@ describe("Routines page (F-RT-04, UI-50..53)", () => {
     expect(screen.queryByTestId("cron-words")).toBeNull();
   });
 });
+
+describe("routines a teammate made (F-RT-05)", () => {
+  it("F-RT-05 a routine made with the schedule tool says created by {name}", async () => {
+    pro();
+    backend([view(routine({ createdByTeammateId: "tm_lead" })), view(routine({ id: "rt_2", name: "Mine" }))]);
+    renderPage();
+    const rows = await screen.findAllByTestId("routine-row");
+    const made = rows.find((r) => r.dataset.id === "rt_1")!;
+    expect(within(made).getByTestId("routine-created-by").textContent).toBe("created by Lead");
+    const mine = rows.find((r) => r.dataset.id === "rt_2")!;
+    expect(within(mine).queryByTestId("routine-created-by")).toBeNull();
+  });
+});
+
+describe("May create routines (F-RT-05)", () => {
+  it("F-RT-05 turning the setting on saves maySchedule with the teammate's settings", async () => {
+    const { patchOf } = await import("../agents/TeammateSettings");
+    const base = {
+      name: "Lead",
+      avatarHue: null,
+      brief: "",
+      engineId: "claude",
+      model: null,
+      preferredAccountId: null,
+      places: [],
+      defaultAccess: "edits" as const,
+      memoryCap: 4096,
+      learnMode: "ask" as const,
+      mayMessage: true,
+      maySchedule: false,
+      plugins: [],
+    };
+    const p = patchOf(LEAD, base, { ...base, maySchedule: true });
+    expect(p.settings?.maySchedule).toBe(true);
+    expect(p.settings?.mayMessage).toBe(true);
+  });
+});

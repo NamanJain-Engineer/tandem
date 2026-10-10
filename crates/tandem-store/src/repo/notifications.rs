@@ -30,6 +30,8 @@ pub enum NotificationKind {
     PluginAttention,
     HeldActions,
     MailRefused,
+    /// A teammate made or changed a routine (F-RT-05).
+    RoutineChanged,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

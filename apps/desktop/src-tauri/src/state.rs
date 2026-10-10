@@ -564,6 +564,7 @@ impl AppState {
             Arc::new(crate::services::teammate_tools::TeammateTools {
                 teammates: teammates.clone(),
                 mail: mail.clone(),
+                routines: routines.clone(),
             });
         gateway.bind_builtins(Arc::downgrade(&tools));
         // Learn after a turn (F-AG-08): off the turn's own path.
