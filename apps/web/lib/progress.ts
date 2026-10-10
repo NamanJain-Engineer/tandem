@@ -1,12 +1,12 @@
-/** What's in the 0.4.0 release, for the home page's progress strip and the
+/** What's in the 0.5.0 release, for the home page's progress strip and the
  * changelog. Figures are counted in the code the release was built from
- * (product branch): `scripts/gate.sh` output (919 Rust and 998 TypeScript
+ * (product branch): `scripts/gate.sh` output (1384 Rust and 1130 TypeScript
  * tests) and the files in `apps/desktop/e2e/specs`. Update them with each
  * release. */
 export const PROGRESS = {
-  milestones: 10,
-  automatedTests: 1917,
-  endToEndSuites: 82,
+  milestones: 14,
+  automatedTests: 2514,
+  endToEndSuites: 109,
   engines: 11,
 } as const;
 
@@ -18,6 +18,37 @@ export type Milestone = {
 
 /** Newest first. Each entry is a closed milestone of the build plan. */
 export const MILESTONES: readonly Milestone[] = [
+  {
+    id: "M14",
+    title: "SSH workspaces",
+    items: [
+      "Open a folder on an SSH host: its terminals, agents, threads, files and git run there, with your own ssh, agent and config.",
+      "The host's key is pinned the first time; if it changes, Vibezeo stops until you trust the new one.",
+      "A small helper on the host, checked against its SHA-256, keeps terminals running through a dropped connection (up to 10 minutes) and reattaches them.",
+      "Engines run signed in on the host, and your sign-ins, plugin credentials and the local gateway stay on your computer.",
+      "WSL folders, written for the Windows download (not yet tried on Windows).",
+    ],
+  },
+  {
+    id: "M12",
+    title: "Plugins and approvals",
+    items: [
+      "Connect a service once in Settings › Plugins: Web fetch, Notion, Sentry, Cloudflare, Linear, Supabase, Stripe and PostHog, and GitHub and Slack with a token.",
+      "Grants per teammate, per thread or for every thread.",
+      "Risk classes: reads run; writes, posts, spending and deletions ask you first, and a spend's amount is checked again before it runs.",
+      "Held actions: what a run nobody is watching wants to change waits for your approval.",
+      "Credentials in your system keychain, never shown to engines.",
+    ],
+  },
+  {
+    id: "M11",
+    title: "Tasks and routines",
+    items: [
+      "A task tracker on your computer, with statuses, priorities, labels, comments and history, updated live as anyone changes it.",
+      "Agents in threads, teammate chats and terminal panes read and update the same tasks through Vibezeo's tasks server.",
+      "Running tasks in their own lanes, and routines that run teammates on a schedule, are built for Pro and switch on with Vibezeo accounts.",
+    ],
+  },
   {
     id: "M10",
     title: "Teammates",
@@ -38,6 +69,16 @@ export const MILESTONES: readonly Milestone[] = [
       "An element picker that sends what you pick on a page to a pane or a thread.",
       "File paths and URLs in terminals open with Ctrl+Click, following the shell's current folder.",
       "A Scratchpad in the sidebar: local Markdown notes with lists and checklists, saved as you type.",
+    ],
+  },
+  {
+    id: "M8",
+    title: "Dictate and onboarding",
+    items: [
+      "Push-to-talk dictation into any app: hold Ctrl+Alt, speak and let go.",
+      "Speech models that run on your computer (Parakeet and Whisper), downloaded when you choose and checked against pinned SHA-256s.",
+      "A widget while you talk, history and stats, and a dictionary for names and terms.",
+      "A mic in the message box, and a Dictate step in the first-run setup.",
     ],
   },
   {

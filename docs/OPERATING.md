@@ -263,7 +263,7 @@ apt-get update && apt-get install -y --install-recommends winehq-stable
   helpers already in `resources/tandem-host` (the full run builds the Linux ones
   with cargo-zigbuild, §3). Don't publish it.
 - `scripts/check-windows-bundle.sh <setup.exe>` lists the installer with 7-Zip and
-  fails unless the app, `tandem-tasks.exe`, `DirectML.dll` and the tandem-host
+  fails unless the app, `tandem-tasks.exe`, `tandem-hook.exe`, `DirectML.dll` and the tandem-host
   helpers are in it, and checks the generated `installer.nsi` for the Start Menu
   shortcut's AppUserModelID (`com.vibezeo.tandem`, which toasts use), the
   `tandem://` scheme and the WebView2 bootstrapper.

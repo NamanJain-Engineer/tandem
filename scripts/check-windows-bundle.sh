@@ -15,7 +15,7 @@ fail=0
 bad() { echo "check-windows-bundle: $*" >&2; fail=1; }
 
 listing="$(7z l -ba -slt "$installer" | sed -n 's/^Path = //p')"
-for want in tandem.exe tandem-tasks.exe DirectML.dll uninstall.exe host-binaries/manifest.json host-binaries/linux-x86_64/tandem-host; do
+for want in tandem.exe tandem-tasks.exe tandem-hook.exe DirectML.dll uninstall.exe host-binaries/manifest.json host-binaries/linux-x86_64/tandem-host; do
   grep -qx "$want" <<<"$listing" || bad "the installer has no $want"
 done
 

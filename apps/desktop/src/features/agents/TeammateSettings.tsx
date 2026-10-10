@@ -26,6 +26,7 @@ import {
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { accountsFor, useAccounts } from "../../stores/accounts";
+import { useSession } from "../../stores/session";
 import { useEngines } from "../../stores/engines";
 import { useTeammates } from "../../stores/teammates";
 import { useUi } from "../../stores/ui";
@@ -110,6 +111,8 @@ export function TeammateSettings({ s }: { s: TeammateSummary }) {
     if (!enginesLoaded) void useEngines.getState().refresh();
   }, [enginesLoaded]);
   const accounts = useAccounts((st) => st.list);
+  // Only where routines can run: the plan has them (D-909).
+  const routines = useSession((st) => !!st.entitlement?.limits.routines);
   const update = useTeammates((st) => st.update);
   const remove = useTeammates((st) => st.remove);
   const setDirty = useTeammates((st) => st.setDirty);
@@ -331,17 +334,19 @@ export function TeammateSettings({ s }: { s: TeammateSummary }) {
               />
             )}
           />
-          <SettingsRow
-            label={t("agent.settings.maySchedule")}
-            description={t("agent.settings.mayScheduleHint")}
-            control={() => (
-              <Switch
-                checked={form.maySchedule}
-                onCheckedChange={(v) => set({ maySchedule: v })}
-                aria-label={t("agent.settings.maySchedule")}
-              />
-            )}
-          />
+          {routines && (
+            <SettingsRow
+              label={t("agent.settings.maySchedule")}
+              description={t("agent.settings.mayScheduleHint")}
+              control={() => (
+                <Switch
+                  checked={form.maySchedule}
+                  onCheckedChange={(v) => set({ maySchedule: v })}
+                  aria-label={t("agent.settings.maySchedule")}
+                />
+              )}
+            />
+          )}
           <div className="flex flex-col gap-1 px-3 py-2.5" data-testid="settings-plugins">
             <span className="text-base text-fg">{t("agent.settings.plugins")}</span>
             <span className="text-sm text-fg-muted">{t("agent.settings.pluginsHint")}</span>
