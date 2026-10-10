@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-stop-take"
+description = "Enables the dictate_stop_take command without any pre-configured scope."
+commands.allow = ["dictate_stop_take"]
+
+[[permission]]
+identifier = "deny-dictate-stop-take"
+description = "Denies the dictate_stop_take command without any pre-configured scope."
+commands.deny = ["dictate_stop_take"]

@@ -61,6 +61,7 @@ ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
 ulid = "1"
 url = "2"
 vte = "0.15"
+wiremock = "0.6"
 unicode-normalization = "0.1"
 zeroize = "1"
 zip = { version = "4.6", default-features = false, features = ["deflate-flate2"] }
@@ -82,3 +83,9 @@ debug-assertions = true
 lto = false
 codegen-units = 16
 strip = "none"
+
+# Dependencies keep line tables only in dev builds: full DWARF for whisper.cpp,
+# ONNX Runtime, WebKit bindings and the rest outgrew the build machines'
+# disk (D-511). Workspace crates keep full debug info.
+[profile.dev.package."*"]
+debug = "line-tables-only"

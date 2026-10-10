@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-toggle"
+description = "Enables the dictate_toggle command without any pre-configured scope."
+commands.allow = ["dictate_toggle"]
+
+[[permission]]
+identifier = "deny-dictate-toggle"
+description = "Denies the dictate_toggle command without any pre-configured scope."
+commands.deny = ["dictate_toggle"]

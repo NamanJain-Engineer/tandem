@@ -25,6 +25,9 @@ tandem-git.workspace = true
 tandem-host.workspace = true
 tandem-pty.workspace = true
 tandem-store.workspace = true
+tandem-voice = { workspace = true, features = ["whisper"] }
+parking_lot.workspace = true
+ulid.workspace = true
 aes-gcm.workspace = true
 async-trait.workspace = true
 base64.workspace = true
@@ -41,13 +44,13 @@ zip.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 tracing.workspace = true
 ts-rs.workspace = true
 url.workspace = true
 uuid = { version = "1", features = ["v4"] }
-ulid.workspace = true
 zeroize.workspace = true
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-deep-link = "2"
@@ -62,6 +65,10 @@ ignore.workspace = true
 # Browser panes (F-CD-17): wry webviews of our own, outside Tauri's IPC.
 # Same version and features as tauri-runtime-wry, so nothing builds twice.
 wry = { version = "0.57.0", default-features = false, features = ["os-webview", "linux-body"] }
+
+# Parakeet (ONNX Runtime) everywhere but Intel Macs (F-DI-04, D-509).
+[target.'cfg(not(all(target_os = "macos", target_arch = "x86_64")))'.dependencies]
+tandem-voice = { workspace = true, features = ["whisper", "parakeet"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = { version = "0.18", features = ["v3_24"] }

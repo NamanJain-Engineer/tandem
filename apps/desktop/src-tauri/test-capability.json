@@ -22,7 +22,14 @@
     "allow-test-account-create",
     "allow-test-plugin-connect",
     "allow-test-gateway-metrics",
+    "allow-test-plugin-price",
+    "allow-test-plugin-allowlist",
+    "allow-test-unattended-run",
     "core:window:allow-set-position",
-    "core:window:allow-outer-position"
+    "core:window:allow-outer-position",
+    "allow-test-dictate-key",
+    "allow-test-dictate-mic",
+    "allow-test-dictate-platform",
+    "allow-test-dictate-widget"
   ]
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-relaunch"
+description = "Enables the dictate_relaunch command without any pre-configured scope."
+commands.allow = ["dictate_relaunch"]
+
+[[permission]]
+identifier = "deny-dictate-relaunch"
+description = "Denies the dictate_relaunch command without any pre-configured scope."
+commands.deny = ["dictate_relaunch"]

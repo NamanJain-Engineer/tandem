@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-model-cancel"
+description = "Enables the dictate_model_cancel command without any pre-configured scope."
+commands.allow = ["dictate_model_cancel"]
+
+[[permission]]
+identifier = "deny-dictate-model-cancel"
+description = "Denies the dictate_model_cancel command without any pre-configured scope."
+commands.deny = ["dictate_model_cancel"]

@@ -45,6 +45,8 @@ import { ThreadComposer } from "./ThreadComposer";
 import { ChangesPanel, ChangesToggle } from "./ChangesPanel";
 import { columnsFor, GRID_MAX } from "./grid";
 import { PlanCard, Transcript, approvalLabels, type TranscriptActions } from "./Transcript";
+import { pluginApprovalLabels } from "../plugins/PluginApproval";
+import { parseApproval } from "../plugins/model";
 
 const STATE_DOT = {
   idle: "idle",
@@ -73,7 +75,8 @@ function approvalTitle(engine: string, kind: string): string {
 
 async function resolve(
   approvalId: string,
-  decision: { type: "allow"; scope: "once" | "thread" } | { type: "deny"; reason: string | null },
+  decision:
+    { type: "allow"; scope: "once" | "thread" | "conversation" } | { type: "deny"; reason: string | null },
 ) {
   await invoke("approval_resolve", { approvalId, decision, via: "inline" });
 }
@@ -563,19 +566,27 @@ function ThreadView({
             )}
             {pending.length > 0 && (
               <div className="flex flex-col gap-2" data-testid="thread-pending">
-                {(expanded ? pending : pending.slice(0, 1)).map((p) => (
-                  <ApprovalCard
-                    key={p.request.id}
-                    compact
-                    kind={p.request.kind}
-                    title={`${approvalTitle(engineLabel, p.request.kind)}: ${p.request.summary}`}
-                    allowThread={p.request.options.includes("thread")}
-                    onAllow={() => actions.approve(p.request.id, "once")}
-                    onAllowThread={() => actions.approve(p.request.id, "thread")}
-                    onDeny={(reason) => actions.deny(p.request.id, reason)}
-                    labels={approvalLabels(p.request.kind)}
-                  />
-                ))}
+                {(expanded ? pending : pending.slice(0, 1)).map((p) => {
+                  // A plugin's card answers "for this chat" (F-PL-07).
+                  const plugin = parseApproval(p.request.detail);
+                  const wide = plugin ? "conversation" : "thread";
+                  return (
+                    <ApprovalCard
+                      key={p.request.id}
+                      compact
+                      kind={p.request.kind}
+                      title={`${approvalTitle(engineLabel, p.request.kind)}: ${p.request.summary}`}
+                      allowThread={p.request.options.includes(wide)}
+                      onAllow={() => actions.approve(p.request.id, "once")}
+                      onAllowThread={() => actions.approve(p.request.id, wide)}
+                      onDeny={(reason) => actions.deny(p.request.id, reason)}
+                      labels={{
+                        ...approvalLabels(p.request.kind),
+                        ...(plugin ? pluginApprovalLabels() : {}),
+                      }}
+                    />
+                  );
+                })}
                 {pending.length > 1 && !expanded && (
                   <Button size="sm" variant="ghost" className="self-start" onClick={() => setExpanded(true)}>
                     {t("thread.approval.more", { n: pending.length - 1 })}

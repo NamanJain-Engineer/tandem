@@ -2055,7 +2055,15 @@ impl ThreadService {
                 via: tandem_core::approvals::ApprovalVia::Rule,
             };
         }
-        let outcome = self.ask_user(id, kind, summary, detail).await;
+        let outcome = self
+            .ask_user(
+                id,
+                kind,
+                summary,
+                detail,
+                vec![ApprovalScope::Once, ApprovalScope::Thread],
+            )
+            .await;
         if let ApprovalOutcome::Allowed {
             scope: ApprovalScope::Thread,
             ..
@@ -2081,6 +2089,19 @@ impl ThreadService {
             .unwrap_or_default()
     }
 
+    /// A plugin approval (F-PL-07): the card in the thread with the scopes
+    /// the gateway offers ("Allow once", maybe "for this conversation").
+    pub async fn ask_with_options(
+        &self,
+        id: &ThreadId,
+        kind: ApprovalKind,
+        summary: String,
+        detail: String,
+        options: Vec<ApprovalScope>,
+    ) -> ApprovalOutcome {
+        self.ask_user(id, kind, summary, detail, options).await
+    }
+
     /// The card itself.
     async fn ask_user(
         &self,
@@ -2088,6 +2109,7 @@ impl ThreadService {
         kind: ApprovalKind,
         summary: String,
         detail: String,
+        options: Vec<ApprovalScope>,
     ) -> ApprovalOutcome {
         let rt = self.runtime(id);
         let (view, ticket, turn) = {
@@ -2107,7 +2129,7 @@ impl ThreadService {
                 kind,
                 summary,
                 detail,
-                options: vec![ApprovalScope::Once, ApprovalScope::Thread],
+                options,
             });
             self.emit(
                 id,
@@ -2618,10 +2640,23 @@ impl AppLauncher {
         )
         .await
         .unwrap_or_default();
-        for c in grants(&self.store, &GrantSubject::AllThreads)
+        // Plus "all threads" and the thread's workspace (F-PL-05).
+        let mut more = grants(&self.store, &GrantSubject::AllThreads)
             .await
-            .unwrap_or_default()
-        {
+            .unwrap_or_default();
+        if let Some(ws) = &thread.workspace_id {
+            more.extend(
+                grants(
+                    &self.store,
+                    &GrantSubject::Workspace {
+                        workspace_id: ws.as_str().to_string(),
+                    },
+                )
+                .await
+                .unwrap_or_default(),
+            );
+        }
+        for c in more {
             if !out.contains(&c) {
                 out.push(c);
             }
@@ -2651,8 +2686,13 @@ impl AppLauncher {
             if thread.attended {
                 tandem_gateway::Attended::Interactive
             } else {
+                // Who started the run (a routine, task, mail or Auto) names
+                // it, so what it holds for review says where it came from.
                 tandem_gateway::Attended::Unattended {
-                    origin: "thread".into(),
+                    origin: self
+                        .gateway
+                        .unattended_origin(&thread.id)
+                        .unwrap_or_else(|| "thread".into()),
                 }
             },
             thread.access,
