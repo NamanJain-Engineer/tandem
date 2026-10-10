@@ -13,6 +13,10 @@ export const SITE = {
   /** The name the site and the product are published under. */
   company: "Vibezeo",
   contactEmail: "hello@vibezeo.com",
+  /** No analytics, ads or cookies (D-132). Anything non-essential added
+   * here needs a consent banner that loads it only after the visitor agrees
+   * (F-WB-01 AC2); the site tests fail until then. */
+  analytics: null,
   /** Who runs the company and builds the product (home, About, Terms, Privacy). */
   founder: {
     name: "Naman Jain",

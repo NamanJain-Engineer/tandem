@@ -60,3 +60,14 @@ export const PLANS: readonly Plan[] = [
 
 /** 1 credit is US$0.001 of list value (PRODUCT_SPEC §3.3). */
 export const CREDIT_VALUE_USD = 0.001;
+
+/** What a hosted feature costs, for the features Pro and Team bring today.
+ * `key` is the feature's entry in the API's signed remote config (and
+ * `CREDIT_PRICES` in plans.ts); a build-time test keeps the three equal
+ * (F-WB-01 AC3). Features that aren't in the app yet aren't listed. */
+export type CreditRow = { key: "title" | "rewrite"; label: string; unit: string; credits: number };
+
+export const CREDIT_ROWS: readonly CreditRow[] = [
+  { key: "title", label: "Thread titles", unit: "per title", credits: 0 },
+  { key: "rewrite", label: "Enhance and Polish", unit: "per use", credits: 3 },
+];

@@ -177,7 +177,9 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    display (see the script's header).
 5. Site: copy `dist/Vibezeo_x.y.z_amd64-unsigned.deb` to
    `apps/web/public/downloads/Vibezeo_x.y.z_amd64.deb`, remove the old one,
-   regenerate `SHA256SUMS` (`sha256sum Vibezeo_x.y.z_amd64.deb > SHA256SUMS`), and
+   regenerate the checksums (`sha256sum Vibezeo_x.y.z_amd64.deb | tee SHA256SUMS > SHA256SUMS.txt`;
+   the site links the `.txt`, which downloads under its own name: an extension-less file gets a
+   trailing-slash redirect), and
    update `apps/web/lib/release.ts` (version, file names), `apps/web/lib/progress.ts`
    (milestone entries and counts taken from the gate output and the spec files) and
    the home page's feature and roadmap lists. The site tests check the file exists.
@@ -200,9 +202,9 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
 - Check a site change before deploying: `pnpm --filter web exec vitest run`,
   `pnpm --filter web build:site`, the home page's demo in a real browser
   (`PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium pnpm --filter web test:site`,
-  against `apps/web/out`), Lighthouse on `/` (90 or more for performance and
-  accessibility; measure behind a compressing server such as `npx serve out`,
-  since Vercel compresses and `http.server` doesn't), then walk the demo:
+  against `apps/web/out`), Lighthouse CI on `/` and `/pricing/`
+  (`CHROME_PATH=/opt/pw-browsers/chromium pnpm --filter web lhci`: 90 or more for
+  performance and accessibility, three runs each, served compressed), then walk the demo:
   `(cd apps/web/public && python3 -m http.server 4321 &)` and
   `node scripts/agent/demo-walkthrough.mjs /tmp/demo-shots` (screenshots plus any
   console errors). A clean-clone build with Vercel's exact install command is the
@@ -212,11 +214,14 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
   the owner merges on GitHub). Vercel builds in a few minutes.
 - After deploying, verify on the live site:
   ```bash
-  curl -sI https://vibezeo.com/ | grep -iE "^(HTTP|content-security-policy)"
-  curl -s https://vibezeo.com/ | grep -o "Released · [0-9.]*"
-  curl -sI https://vibezeo.com/demo/app/ | head -1
-  curl -sI https://vibezeo.com/downloads/Vibezeo_x.y.z_amd64.deb | head -1
-  curl -s https://vibezeo.com/downloads/SHA256SUMS
+  # Status codes with -w: through the agent proxy, `curl -sI | head -1` prints the
+  # proxy's "200 Connection Established" instead.
+  for p in / /demo/app/ /downloads/Vibezeo_x.y.z_amd64.deb /downloads/SHA256SUMS.txt; do
+    echo "$p $(curl -s -o /dev/null -w '%{http_code}' https://vibezeo.com$p)"; done
+  curl -sI https://vibezeo.com/ | grep -iE "^(content-security-policy|x-frame-options)"
+  # React splits the text with <!-- -->: strip it before matching.
+  curl -s https://vibezeo.com/ | sed 's/<!-- -->//g' | grep -o "Released · [0-9.]*"
+  curl -s https://vibezeo.com/downloads/SHA256SUMS.txt
   ```
   and the deployment's status on the `main` commit (GitHub commit status from
   Vercel, or the Vercel dashboard).

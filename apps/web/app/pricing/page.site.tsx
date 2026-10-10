@@ -1,7 +1,7 @@
 import { Badge } from "@tandem/ui/components/Badge";
 import type { Metadata } from "next";
 import { SiteFrame } from "../../components/site/SiteFrame";
-import { CREDIT_VALUE_USD, PLANS } from "../../lib/pricing";
+import { CREDIT_ROWS, CREDIT_VALUE_USD, PLANS } from "../../lib/pricing";
 import { RELEASE } from "../../lib/release";
 import { SITE } from "../../lib/site";
 
@@ -70,6 +70,21 @@ export default function PricingPage() {
               Enhance and Polish for your prompts. One credit is ${CREDIT_VALUE_USD.toFixed(3)} of usage. They
               never pay for your engines.
             </p>
+            <table className="mt-2 text-left text-sm">
+              <caption className="sr-only">Credits per hosted feature</caption>
+              <tbody>
+                {CREDIT_ROWS.map((row) => (
+                  <tr key={row.key} data-credit-price={row.key} className="border-t border-divider">
+                    <th scope="row" className="py-1.5 pr-6 font-medium text-fg">
+                      {row.label}
+                    </th>
+                    <td className="py-1.5 text-fg-muted">
+                      {row.credits === 0 ? "Free" : `${row.credits} credits ${row.unit}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
           <div className="flex flex-col items-start gap-3">
             <h2 className="text-xl font-semibold tracking-tight">Try the Free plan now</h2>
