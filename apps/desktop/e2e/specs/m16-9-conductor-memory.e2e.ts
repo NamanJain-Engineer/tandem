@@ -63,11 +63,11 @@ describe("F-CN-06 Conductor persona and memory", () => {
 
     await editor.setValue(`- my token is ${FAKE_KEY}\n`);
     await $("button=Save").click();
-    await $("*=That looks like a secret, so Conductor won't remember it.").waitForDisplayed({ timeout: 10_000 });
+    await $(`//*[contains(text(), "That looks like a secret, so Conductor won't remember it.")]`).waitForDisplayed({ timeout: 10_000 });
     expect((await invoke<Memory>("conductor_memory_get")).text).not.toContain(FAKE_KEY);
 
     await $("button=Forget everything…").click();
-    const confirm = $('[role="alertdialog"] button=Forget everything');
+    const confirm = $('[role="alertdialog"]').$('button=Forget everything');
     await confirm.waitForClickable({ timeout: 5_000 });
     await confirm.click();
     await browser.waitUntil(async () => (await invoke<Memory>("conductor_memory_get")).text === "", {

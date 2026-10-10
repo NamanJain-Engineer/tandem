@@ -14,6 +14,7 @@ import { RunSetupAgain } from "../onboarding/RunSetupAgain";
 import { DictateExtras, MicSelect, ShortcutField } from "../dictate/DictatePage";
 import { LanguageSelect } from "../dictate/LanguageSelect";
 import { AboutYou, MemoryPanel, NameControl, SpeedControl, WakeControl } from "../conductor/ConductorSettings";
+import { ConductorCallSettings } from "../conductor/CallSettingsSlot";
 import { EngineControl } from "../dictate/EngineControl";
 import { AutoEnhanceControl, FormattingControl, QuickActionsControl } from "../dictate/EnhanceControls";
 import {
@@ -729,6 +730,7 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
       ],
       extra: (
         <>
+          <ConductorCallSettings />
           <AboutYou />
           <MemoryPanel />
           <p className="text-sm text-fg-muted">{t("conductor.safety")}</p>
