@@ -334,6 +334,34 @@ macro_rules! app_commands {
     };
 }
 
+/// `app_commands!` plus the platform's own: the Simulator's on macOS only
+/// (F-CD-21; absent elsewhere, D-1400).
+#[cfg(target_os = "macos")]
+macro_rules! platform_commands {
+    ($($extra:path),* $(,)?) => {
+        app_commands![
+            commands::simulator::sim_status,
+            commands::simulator::sim_boot,
+            commands::simulator::sim_shutdown,
+            commands::simulator::sim_install,
+            commands::simulator::sim_stream_start,
+            commands::simulator::sim_stream_stop,
+            commands::simulator::sim_screen,
+            commands::simulator::sim_tap,
+            commands::simulator::sim_text,
+            commands::simulator::sim_key,
+            commands::simulator::sim_home,
+            $($extra),*
+        ]
+    };
+}
+#[cfg(not(target_os = "macos"))]
+macro_rules! platform_commands {
+    ($($extra:path),* $(,)?) => {
+        app_commands![$($extra),*]
+    };
+}
+
 /// Routes one `tandem://` link (F-SH-13). Sign-in callbacks go straight to
 /// the auth service; everything else is for the UI, queued until it's ready.
 pub fn route_link(app: &AppHandle, raw: &str) {
@@ -689,7 +717,7 @@ pub fn run() {
         ))
         .manage(state);
     #[cfg(debug_assertions)]
-    let builder = builder.invoke_handler(app_commands![
+    let builder = builder.invoke_handler(platform_commands![
         commands::test::test_counters,
         commands::browser::test_browser_eval,
         commands::test::test_spawn_log,
@@ -718,7 +746,7 @@ pub fn run() {
         commands::test::test_unattended_run,
     ]);
     #[cfg(not(debug_assertions))]
-    let builder = builder.invoke_handler(app_commands![]);
+    let builder = builder.invoke_handler(platform_commands![]);
 
     let mut context = tauri::generate_context!();
     // The local test feed is plain HTTP on loopback (debug builds only).
@@ -974,6 +1002,9 @@ pub fn run() {
             if e2e {
                 app.add_capability(include_str!("../test-capability.json"))?;
             }
+            // The Simulator's permissions exist only in macOS builds (build.rs).
+            #[cfg(target_os = "macos")]
+            app.add_capability(include_str!("../sim-capability.json"))?;
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let links = handle.clone();
@@ -1135,6 +1166,7 @@ mod harness_tests {
         let build = include_str!("../build.rs");
         let main = include_str!("../capabilities/main.json");
         let harness = include_str!("../test-capability.json");
+        let sim = include_str!("../sim-capability.json");
         let names: Vec<&str> = lib
             .lines()
             .filter_map(|l| l.trim().strip_prefix("commands::")?.strip_suffix(','))
@@ -1149,6 +1181,8 @@ mod harness_tests {
             let allow = format!("\"allow-{}\"", name.replace('_', "-"));
             let granted = if name.starts_with("test_") {
                 harness
+            } else if name.starts_with("sim_") {
+                sim
             } else {
                 main
             };
@@ -1156,6 +1190,47 @@ mod harness_tests {
                 granted.contains(&allow),
                 "{allow} is missing from the capability"
             );
+        }
+    }
+
+    /// F-CD-21 AC2 off macOS: the Simulator's commands are registered only in
+    /// the macOS macro, their permissions are generated only for macOS
+    /// targets, the shipped capability grants none, and the module isn't in
+    /// a non-macOS, non-test build (D-1400).
+    #[test]
+    fn f_cd_21_2_the_simulator_exists_only_on_macos() {
+        let lib = include_str!("lib.rs");
+        let mac_macro = lib
+            .split("#[cfg(target_os = \"macos\")]\nmacro_rules! platform_commands")
+            .nth(1)
+            .and_then(|rest| rest.split("#[cfg(not(target_os = \"macos\"))]").next())
+            .expect("the macOS command list");
+        let everywhere = lib
+            .split("macro_rules! platform_commands")
+            .next()
+            .unwrap_or("");
+        assert!(mac_macro.contains("commands::simulator::sim_status,"));
+        assert!(
+            !everywhere.contains("commands::simulator::"),
+            "a simulator command outside the macOS list"
+        );
+        let build = include_str!("../build.rs");
+        assert!(build
+            .contains("if target_os == \"macos\" {\n        all.extend_from_slice(SIM_COMMANDS);"));
+        let commands_list = build.split("const SIM_COMMANDS").next().unwrap_or("");
+        assert!(
+            !commands_list.contains("\"sim_"),
+            "a simulator command in COMMANDS"
+        );
+        let main = include_str!("../capabilities/main.json");
+        assert!(
+            !main.contains("allow-sim-"),
+            "the shipped capability grants a simulator command"
+        );
+        let modules = include_str!("commands/mod.rs");
+        assert!(modules.contains("#[cfg(any(target_os = \"macos\", test))]\npub mod simulator;"));
+        if !cfg!(target_os = "macos") {
+            assert!(crate::services::simulator::host().is_none());
         }
     }
 }

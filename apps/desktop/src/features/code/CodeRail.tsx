@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AlertTriangle, Cloud, Folder, GitBranch, Globe, Plus, SquareTerminal } from "lucide-react";
+import { AlertTriangle, Cloud, Folder, GitBranch, Globe, Plus, Smartphone, SquareTerminal } from "lucide-react";
 import type { SavedSession, WorkspaceSummary } from "@tandem/protocol";
 import {
   Badge,
@@ -257,6 +257,8 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
             />
           ) : pane.kind === "browser" ? (
             <Globe size={12} aria-hidden="true" className="shrink-0" />
+          ) : pane.kind === "simulator" ? (
+            <Smartphone size={12} aria-hidden="true" className="shrink-0" />
           ) : (
             <SquareTerminal size={12} aria-hidden="true" className="shrink-0" />
           )}

@@ -1,0 +1,20 @@
+{
+  "identifier": "simulator",
+  "description": "The Simulator pane (F-CD-21; macOS builds only, added at runtime).",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "allow-sim-status",
+    "allow-sim-boot",
+    "allow-sim-shutdown",
+    "allow-sim-install",
+    "allow-sim-stream-start",
+    "allow-sim-stream-stop",
+    "allow-sim-screen",
+    "allow-sim-tap",
+    "allow-sim-text",
+    "allow-sim-key",
+    "allow-sim-home"
+  ]
+}

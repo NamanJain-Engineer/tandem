@@ -1,3 +1,4 @@
+import { useSimulator, useSimulatorOffered } from "../../stores/simulator";
 import { useEffect, useState } from "react";
 import type { IpcError } from "@tandem/protocol";
 import { Button, Callout, Dialog, useToast } from "@tandem/ui";
@@ -46,6 +47,7 @@ export function PaneLimitCard({ onManage }: { onManage: () => void }) {
 export function launchFor(tileId: string): Launch {
   if (tileId === "shell") return { kind: "terminal" };
   if (tileId === "browser") return { kind: "browser" };
+  if (tileId === "simulator") return { kind: "simulator" };
   return { kind: "agent", engineId: tileId };
 }
 
@@ -65,9 +67,13 @@ export function PanePicker({ workspaceName }: { workspaceName: string }) {
     return ws && (ws.kind === "ssh" || ws.kind === "wsl") ? ws.hostId : null;
   });
 
+  // macOS only; elsewhere this never asks the core (F-CD-21 AC2).
+  const simulator = useSimulatorOffered();
+
   useEffect(() => {
     if (!picker) return;
     void useEngines.getState().refresh();
+    void useSimulator.getState().load();
     setBusy(null);
     setLimited(atPaneLimit());
     setChecking(true);
@@ -119,6 +125,7 @@ export function PanePicker({ workspaceName }: { workspaceName: string }) {
               onPick={(id) => void pick(id)}
               autoFocus
               browser
+              simulator={simulator && remoteHost === null}
               hostId={remoteHost}
             />
           )

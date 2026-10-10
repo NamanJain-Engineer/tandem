@@ -158,6 +158,8 @@ pub struct AppState {
     pub remote: Arc<crate::services::remote::RemoteService>,
     /// WSL distributions (F-RM-02; Windows only).
     pub wsl: Arc<crate::services::wsl::WslService>,
+    /// The Simulator pane (F-CD-21): macOS only, `None` elsewhere.
+    pub simulator: Option<Arc<crate::services::simulator::SimulatorService>>,
     /// Browser tabs and panes (F-CD-17), bound to the window in setup.
     pub browser: std::sync::OnceLock<Arc<crate::browser::BrowserService>>,
     /// Dictate: push-to-talk, models, history and the dictionary (F-DI-*).
@@ -699,6 +701,8 @@ impl AppState {
             git_panel,
             remote,
             wsl,
+            simulator: crate::services::simulator::host()
+                .map(|h| Arc::new(crate::services::simulator::SimulatorService::new(h))),
             browser: std::sync::OnceLock::new(),
             dictate,
             e2e,

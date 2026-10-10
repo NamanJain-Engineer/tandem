@@ -24,6 +24,8 @@ pub mod routines;
 pub mod scratchpad;
 pub mod settings;
 pub mod shell;
+#[cfg(any(target_os = "macos", test))]
+pub mod simulator;
 pub mod task_exec;
 pub mod tasks;
 pub mod teammates;

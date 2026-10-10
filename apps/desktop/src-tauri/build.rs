@@ -313,6 +313,21 @@ const COMMANDS: &[&str] = &[
     "mail_retry",
 ];
 
+/// The Simulator pane's commands (F-CD-21): macOS builds only (D-1400).
+const SIM_COMMANDS: &[&str] = &[
+    "sim_status",
+    "sim_boot",
+    "sim_shutdown",
+    "sim_install",
+    "sim_stream_start",
+    "sim_stream_stop",
+    "sim_screen",
+    "sim_tap",
+    "sim_text",
+    "sim_key",
+    "sim_home",
+];
+
 const TEST_COMMANDS: &[&str] = &[
     "test_counters",
     "test_browser_eval",
@@ -361,6 +376,10 @@ fn main() {
     let mut all: Vec<&'static str> = COMMANDS.to_vec();
     if debug {
         all.extend_from_slice(TEST_COMMANDS);
+    }
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if target_os == "macos" {
+        all.extend_from_slice(SIM_COMMANDS);
     }
     // AppManifest wants a 'static list; a build script can leak it.
     let all: &'static [&'static str] = Box::leak(all.into_boxed_slice());

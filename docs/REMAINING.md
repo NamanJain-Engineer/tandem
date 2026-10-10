@@ -188,7 +188,7 @@ release candidate. Stop after any sub-phase if the budget runs out.
   calls · [x] F-BE-08 Voice session minting (pull request #30, D-1000–D-1008)
 - 16B Auto: [x] F-AU-01 Auto (Pro, credits)
 - 16C Phone companion: [ ] F-RM-03 Phone companion · [ ] F-BE-11 Remote relay
-- 16D Extras: [x] F-SH-12 Scratchpad · [ ] F-CD-21 Simulator pane (macOS) ·
+- 16D Extras: [x] F-SH-12 Scratchpad · [x] F-CD-21 Simulator pane (macOS; manual QA on a Mac pending) ·
   [x] F-AC-07 Usage dashboard · [ ] F-AG-10 Skill sync to engines ·
   [ ] F-AG-13 Teammate in a terminal · [x] F-RT-05 Schedule tool for teammates ·
   [x] F-BE-03 CLI device-code sign-in · [x] F-BE-12 Admin

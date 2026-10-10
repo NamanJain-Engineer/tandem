@@ -666,6 +666,33 @@ Built on branch `m16-voice-api` (from `product-m0-m5`), in `apps/api` only, whil
 - The existing guard that every hosted route is plan-gated (`test/hosted.test.ts`) then failed for the new routes, as it should. It now lists session, act and resolve under `conductor`, and settle as the one route that reaches only the caller's own call (with a test that it can't reach anyone else's).
 - The whole API suite passes: 24 files, 180 tests. Gate, after merging the latest `product-m0-m5`: green (Rust 818, desktop 362, UI 358, API 180, web 53, protocol 9; clippy, fmt and the protocol drift check).
 
+## M16 · F-CD-21 Simulator pane (macOS)
+Built on branch `m16d-simulator` (from `product-m0-m5` 7f6d875) by the M13 session at the coordinator's request, the last of 16D's extras. Decisions are numbered from D-1400.
+- [x] F-CD-21 Simulator pane (code; the [manual] AC1 waits for a Mac, HUMAN_TODO).
+  - **Shared code** (every platform, tested here). `services::simulator` holds the `SimHost` trait over `xcrun simctl` and `idb`, and `parse_list` for `simctl list --json devices runtimes`: available iOS runtimes newest first, their available devices, booted first. It maps `xcrun` failures to "no Xcode" or a short message. `SimulatorService` covers status, boot (`bootstatus -b`, so "already booted" is success), shutdown, install of a `.app`, screenshots, the screen size from `idb describe`, and tap, text, key and Home through `idb ui`. The 10 fps frame loop skips unchanged frames and stops on stop, on a closed channel, or after ~3 s of failures. A udid must be a UUID before it reaches any process.
+  - **macOS only.** `services/simulator/macos.rs` is `XcrunHost`: tokio processes with a timeout and an `idb` lookup on PATH. It is small, uses only std and tokio, and is compiled in tests everywhere so the Linux gate type-checks it, but only macOS builds construct it.
+    - `commands/simulator.rs` has 11 commands. It is compiled on macOS and in tests, and registered only in the macOS `platform_commands!` macro.
+    - Its permissions come from build.rs `SIM_COMMANDS`, generated only when `CARGO_CFG_TARGET_OS` is macos. Its capability (`sim-capability.json`) is added at runtime on macOS.
+    - `pane_create {kind:"simulator"}` makes a process-less pane on macOS and is refused elsewhere.
+    - No mac-only crate dependency was added: `xcrun`, `simctl` and `idb` are external tools.
+  - **UI.**
+    - `features/simulator`: the pane's state machine (loading, unavailable, empty, off, booting, live, stopping, failed), click→point mapping for an `object-fit: contain` frame, and the key mapping.
+    - `SimulatorPane` has a device picker grouped by runtime, Boot, Shut down, Home and Install app…, the live frame (clicks and typing when idb is installed, otherwise a "view only" line), and a state for each phase.
+    - The picker's Simulator tile shows only when the platform is macOS and `sim_status` says available. Nothing calls `sim_*` elsewhere.
+  - **Tests.**
+    - Rust: 14 (`f_cd_21_*`, including the Linux absence tests: no host, refused pane, commands only in the macOS list and permissions only for macOS targets).
+    - UI: 5 model and 4 grid tests (absent on Linux, absent on a Mac without a runtime, the stream and a click mapped to points, boot and view-only).
+- The website doesn't mention the Simulator, and nothing was added to it. It shouldn't offer the feature until a Mac build exists.
+
+### M16 · F-CD-21 decisions
+- D-1400: "Absent elsewhere" means the commands, their permissions and capability, the picker tile and any setting don't exist outside macOS. It isn't just hidden. The command module and the real host still compile in test builds on every platform, so the Linux gate type-checks the macOS code. Tests prove the absence by reading lib.rs, build.rs and the capability, and by the refused `pane_create`.
+- D-1401: The screen is a `simctl io screenshot` PNG every 100 ms, written to a scratch file and read back. Unchanged frames aren't sent. Frames travel as raw bytes over a `Channel`, like PTY output, and the pane shows them as object URLs. ScreenCaptureKit needs a Screen Recording permission and a native host, so it can be added later.
+- D-1402: Input goes through `idb` (`ui tap` in points, `ui text`, `ui key` with HID usages, `ui button HOME`), because `simctl` has no input commands. Without idb the pane is view only and says how to install it.
+- D-1403: A Simulator pane doesn't count against the live-pane limit (no process, like Browser), doesn't restore a device after a restart (it picks the booted device again, or the first one), and doesn't shut its device down when it closes, since the device is shared with Xcode.
+
+### M16 · F-CD-21 log
+- F-CD-21: the shared service, the macOS host and commands, the pane, the tile and the tests. The disk allowance filled twice during builds (a linker bus error, then `gen:protocol` cut off mid-write, which had deleted the generated types). Deleting stale `target/debug` artifacts freed it, and `gen:protocol` was re-run.
+
 ## Decisions
 - D-1: F-CD-09 owned by M9. It needs the Files editor and the Tandem browser.
 - D-2: F-SH-08 framework slice in M5, Accounts step in M6, owned by M8.

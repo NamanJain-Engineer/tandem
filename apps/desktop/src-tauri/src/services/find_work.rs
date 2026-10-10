@@ -115,6 +115,7 @@ async fn pane_candidate(host: &dyn FindHost, pane: PaneRecord) -> (Candidate, Fi
         .or_else(|| engine.clone())
         .unwrap_or_else(|| match pane.kind.as_str() {
             "browser" => "Browser".into(),
+            "simulator" => "Simulator".into(),
             "agent" => "Agent".into(),
             _ => "Terminal".into(),
         });
