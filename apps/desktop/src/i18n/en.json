@@ -1694,6 +1694,8 @@
   "agent.settings.accessHint": "Unattended runs (mail) are capped at Edits.",
   "agent.settings.mayMessage": "May message teammates",
   "agent.settings.mayMessageHint": "Mail can start a chat with the recipient. It never carries Full access.",
+  "agent.settings.maySchedule": "May create routines",
+  "agent.settings.mayScheduleHint": "Lets this teammate schedule its own routines (Edits at most). You're told about each one, and they're marked as made by it.",
   "agent.settings.plugins": "Plugins",
   "agent.settings.pluginsHint": "Only enabled plugins are exposed. Spending, external writes, and unknown actions still ask.",
   "agent.settings.noPlugins": "No plugins are connected.",

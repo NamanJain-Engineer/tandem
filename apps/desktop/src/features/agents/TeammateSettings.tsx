@@ -42,6 +42,7 @@ type Form = {
   memoryCap: number;
   learnMode: LearnMode;
   mayMessage: boolean;
+  maySchedule: boolean;
   plugins: string[];
 };
 
@@ -60,6 +61,7 @@ function formOf(tm: Teammate, plugins: string[]): Form {
     memoryCap: tm.settings.memoryCap,
     learnMode: tm.settings.learnMode,
     mayMessage: tm.settings.mayMessage,
+    maySchedule: tm.settings.maySchedule,
     plugins,
   };
 }
@@ -82,7 +84,8 @@ export function patchOf(tm: Teammate, base: Form, next: Form): TeammatePatch {
     next.defaultAccess !== base.defaultAccess ||
     next.memoryCap !== base.memoryCap ||
     next.learnMode !== base.learnMode ||
-    next.mayMessage !== base.mayMessage
+    next.mayMessage !== base.mayMessage ||
+    next.maySchedule !== base.maySchedule
   ) {
     p.settings = {
       ...tm.settings,
@@ -90,6 +93,7 @@ export function patchOf(tm: Teammate, base: Form, next: Form): TeammatePatch {
       memoryCap: next.memoryCap,
       learnMode: next.learnMode,
       mayMessage: next.mayMessage,
+      maySchedule: next.maySchedule,
     };
   }
   return p;
@@ -323,6 +327,17 @@ export function TeammateSettings({ s }: { s: TeammateSummary }) {
                 checked={form.mayMessage}
                 onCheckedChange={(v) => set({ mayMessage: v })}
                 aria-label={t("agent.settings.mayMessage")}
+              />
+            )}
+          />
+          <SettingsRow
+            label={t("agent.settings.maySchedule")}
+            description={t("agent.settings.mayScheduleHint")}
+            control={() => (
+              <Switch
+                checked={form.maySchedule}
+                onCheckedChange={(v) => set({ maySchedule: v })}
+                aria-label={t("agent.settings.maySchedule")}
               />
             )}
           />

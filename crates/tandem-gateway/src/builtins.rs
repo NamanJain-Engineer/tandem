@@ -29,6 +29,14 @@ pub enum Builtin {
     SendMessage,
     /// F-AG-12.
     ListTeammates,
+    /// F-RT-05.
+    ScheduleList,
+    /// F-RT-05.
+    ScheduleCreate,
+    /// F-RT-05.
+    ScheduleUpdate,
+    /// F-RT-05.
+    ScheduleDelete,
 }
 
 /// One built-in: its wire name, what the engine is told, its input schema
@@ -55,7 +63,7 @@ impl BuiltinTool {
     }
 }
 
-/// The built-ins registry. The schedule tools join it with routines (M11).
+/// The built-ins registry.
 pub static BUILTINS: &[BuiltinTool] = &[
     BuiltinTool {
         builtin: Builtin::SessionSearch,
@@ -125,7 +133,62 @@ pub static BUILTINS: &[BuiltinTool] = &[
         schema: || json!({"type": "object", "properties": {}}),
         enabled: |s| s.mail,
     },
+    BuiltinTool {
+        builtin: Builtin::ScheduleList,
+        name: "tandem__schedule_list",
+        description: "Lists the routines you made: id, name, schedule, access, whether paused, and the next run.",
+        schema: || json!({"type": "object", "properties": {}}),
+        enabled: |s| s.schedule,
+    },
+    BuiltinTool {
+        builtin: Builtin::ScheduleCreate,
+        name: "tandem__schedule_create",
+        description: "Makes a routine you run on a schedule, in a fresh chat each time. The instruction must stand on its own. Access is Read only or Edits (the default); Full access isn't allowed. The user is told.",
+        schema: schedule_schema,
+        enabled: |s| s.schedule,
+    },
+    BuiltinTool {
+        builtin: Builtin::ScheduleUpdate,
+        name: "tandem__schedule_update",
+        description: "Changes one of your routines by id: any of name, instruction, cron, timezone, access (read or edits) and paused. The user is told.",
+        schema: || {
+            let mut s = schedule_schema();
+            s["properties"]["id"] = json!({"type": "string"});
+            s["properties"]["paused"] = json!({"type": "boolean"});
+            s["required"] = json!(["id"]);
+            s
+        },
+        enabled: |s| s.schedule,
+    },
+    BuiltinTool {
+        builtin: Builtin::ScheduleDelete,
+        name: "tandem__schedule_delete",
+        description: "Deletes one of your routines by id. Its past run chats stay.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {"id": {"type": "string"}},
+                "required": ["id"]
+            })
+        },
+        enabled: |s| s.schedule,
+    },
 ];
+
+/// `tandem__schedule_create`'s input (and `_update`'s, all optional there).
+fn schedule_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "maxLength": 80},
+            "instruction": {"type": "string", "description": "What each run does: what to produce, where to look, which time window, the output format."},
+            "cron": {"type": "string", "description": "5 fields: minute hour day-of-month month day-of-week, e.g. \"0 9 * * 1-5\"."},
+            "timezone": {"type": "string", "description": "IANA zone, e.g. Europe/Berlin. Defaults to this computer's zone."},
+            "access": {"type": "string", "enum": ["read", "edits"]}
+        },
+        "required": ["name", "instruction", "cron"]
+    })
+}
 
 /// The built-in a wire name stands for, if the lease has it.
 pub fn find(name: &str, set: &BuiltinSet) -> Option<&'static BuiltinTool> {
@@ -207,5 +270,43 @@ mod tests {
         assert!(find("tandem__send_message", &quiet).is_none());
         assert!(find("tandem__list_teammates", &quiet).is_none());
         assert!(find("tandem__memory_write", &BuiltinSet::for_thread()).is_none());
+    }
+
+    const SCHEDULE: [&str; 4] = [
+        "tandem__schedule_list",
+        "tandem__schedule_create",
+        "tandem__schedule_update",
+        "tandem__schedule_delete",
+    ];
+
+    #[test]
+    fn f_rt_05_1_a_teammate_without_may_create_routines_gets_no_schedule_tools() {
+        let without = BuiltinSet::for_teammate(true, false);
+        let with = BuiltinSet::for_teammate(true, true);
+        for name in SCHEDULE {
+            assert!(find(name, &without).is_none(), "{name}");
+            assert!(find(name, &BuiltinSet::for_thread()).is_none(), "{name}");
+            assert!(find(name, &with).is_some(), "{name}");
+        }
+    }
+
+    #[test]
+    fn f_rt_05_2_schedule_create_offers_no_full_access() {
+        let create = find(
+            "tandem__schedule_create",
+            &BuiltinSet::for_teammate(false, true),
+        )
+        .expect("create");
+        let schema = create.schema();
+        assert_eq!(
+            schema["properties"]["access"]["enum"],
+            json!(["read", "edits"])
+        );
+        let update = find(
+            "tandem__schedule_update",
+            &BuiltinSet::for_teammate(false, true),
+        )
+        .expect("update");
+        assert_eq!(update.schema()["required"], json!(["id"]));
     }
 }

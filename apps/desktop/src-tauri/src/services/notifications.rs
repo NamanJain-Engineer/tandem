@@ -45,7 +45,7 @@ fn type_key(kind: NotificationKind) -> &'static str {
         NotificationKind::Approval | NotificationKind::Question => "approval",
         NotificationKind::Done => "done",
         NotificationKind::Failed => "failed",
-        NotificationKind::RoutineReady => "routines",
+        NotificationKind::RoutineReady | NotificationKind::RoutineChanged => "routines",
         NotificationKind::TaskReview => "tasks",
         _ => "other",
     }

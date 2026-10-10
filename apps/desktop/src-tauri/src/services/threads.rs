@@ -2317,8 +2317,10 @@ impl AppLauncher {
                 // A teammate chat: memory, skills, search and (when it may
                 // message) mail; the teammate's own plugin grants (F-PL-05).
                 let approvals = session.builtins.approvals;
-                session.builtins =
-                    tandem_gateway::BuiltinSet::for_teammate(t.settings.may_message, false);
+                session.builtins = tandem_gateway::BuiltinSet::for_teammate(
+                    t.settings.may_message,
+                    t.settings.may_schedule,
+                );
                 session.builtins.approvals = approvals;
                 session.granted = tandem_store::repo::plugins::grants(
                     &self.store,

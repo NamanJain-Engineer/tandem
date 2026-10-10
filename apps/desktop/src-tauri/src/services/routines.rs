@@ -14,6 +14,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use chrono::DateTime;
 use serde::{Deserialize, Serialize};
+use tandem_core::access::Access;
 use tandem_core::bus::{BusEvent, EventBus, Topic};
 use tandem_core::clock::Clock;
 use tandem_core::entitlement::Limits;
@@ -97,6 +98,19 @@ pub struct RunPage {
     pub runs: Vec<RoutineRun>,
     /// Pass back as `before` for older runs.
     pub next_before: Option<i64>,
+}
+
+/// What a teammate's schedule tool asks for (F-RT-05); on update every
+/// field but `id` is optional.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AgentRoutine {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub instruction: Option<String>,
+    pub cron: Option<String>,
+    pub timezone: Option<String>,
+    pub access: Option<String>,
+    pub paused: Option<bool>,
 }
 
 /// Why a run didn't start (`last_error_kind`, ARCHITECTURE §10.2).
@@ -444,6 +458,155 @@ impl RoutinesService {
         Ok(run)
     }
 
+    // ── a teammate's own routines (F-RT-05) ─────────────────────────────
+
+    /// The routines `teammate` made with the schedule tools.
+    pub async fn made_by(&self, teammate: &TeammateId) -> Result<Vec<Routine>, IpcError> {
+        Ok(repo::list(&self.store)
+            .await
+            .map_err(store_err)?
+            .into_iter()
+            .filter(|r| r.created_by_teammate_id.as_ref() == Some(teammate))
+            .collect())
+    }
+
+    async fn own(&self, teammate: &TeammateId, id: &str) -> Result<Routine, IpcError> {
+        let r = repo::get(&self.store, &RoutineId::from_db(id.to_string()))
+            .await
+            .ok()
+            .filter(|r| r.created_by_teammate_id.as_ref() == Some(teammate));
+        r.ok_or_else(|| {
+            IpcError::new(
+                ErrorCode::NotFound,
+                "You have no routine with that id; tandem__schedule_list shows yours.",
+            )
+        })
+    }
+
+    /// `tandem__schedule_create` / `_update`: the teammate's own routines,
+    /// run as itself, Edits at most; the user is told each time.
+    pub async fn save_for_teammate(
+        &self,
+        teammate: &Teammate,
+        req: AgentRoutine,
+    ) -> Result<Routine, IpcError> {
+        let access = match req.access.as_deref() {
+            None => None,
+            Some("read") => Some(Access::Read),
+            Some("edits") => Some(Access::Edits),
+            Some("full") => {
+                return Err(IpcError::new(
+                    ErrorCode::Invalid,
+                    "Routines a teammate makes can't have Full access; use read or edits.",
+                ))
+            }
+            Some(other) => {
+                return Err(IpcError::new(
+                    ErrorCode::Invalid,
+                    format!("access is read or edits, not {other}"),
+                ))
+            }
+        };
+        let current = match &req.id {
+            Some(id) => Some(self.own(&teammate.id, id).await?),
+            None => None,
+        };
+        let need = |v: Option<String>, what: &str| {
+            v.ok_or_else(|| IpcError::new(ErrorCode::Invalid, format!("{what} is required")))
+        };
+        let name = match (&req.name, &current) {
+            (Some(n), _) => n.clone(),
+            (None, Some(c)) => c.name.clone(),
+            (None, None) => need(None, "name")?,
+        };
+        let instruction = match (&req.instruction, &current) {
+            (Some(i), _) => i.clone(),
+            (None, Some(c)) => c.instruction.clone(),
+            (None, None) => need(None, "instruction")?,
+        };
+        let timezone = req
+            .timezone
+            .clone()
+            .or_else(|| current.as_ref().map(|c| c.schedule.timezone.clone()))
+            .unwrap_or_else(tandem_routines::schedule::local_timezone);
+        let schedule = match (&req.cron, &current) {
+            (Some(expr), _) => ScheduleSpec {
+                schedule: tandem_routines::Schedule::Cron { expr: expr.clone() },
+                timezone,
+            },
+            (None, Some(c)) => ScheduleSpec {
+                timezone,
+                ..c.schedule.clone()
+            },
+            (None, None) => {
+                return Err(IpcError::new(ErrorCode::Invalid, "cron is required"));
+            }
+        };
+        // An update that doesn't say keeps the access, Full included when
+        // the user chose it; a teammate can only lower it.
+        let (access, full_confirmed) = match (access, &current) {
+            (Some(a), _) => (a, false),
+            (None, Some(c)) => (c.access, c.access == Access::Full),
+            (None, None) => (Access::Edits, false),
+        };
+        let input = RoutineInput {
+            id: current.as_ref().map(|c| c.id.as_str().to_string()),
+            teammate_id: current
+                .as_ref()
+                .and_then(|c| c.teammate_id.clone())
+                .unwrap_or_else(|| teammate.id.clone())
+                .as_str()
+                .to_string(),
+            name,
+            instruction,
+            schedule,
+            access,
+            full_confirmed,
+            run_mode: current
+                .as_ref()
+                .map(|c| c.run_mode)
+                .unwrap_or(tandem_routines::RunMode::InApp),
+        };
+        let mut saved = self.save(input, Some(teammate.id.clone())).await?;
+        if let Some(paused) = req.paused {
+            if paused != saved.paused {
+                self.set_paused(&saved.id, paused).await?;
+                saved = self.get(&saved.id).await?;
+            }
+        }
+        let words = words(&saved.schedule.schedule)
+            .map(|w| describe_en(&w))
+            .unwrap_or_default();
+        let title = if current.is_some() {
+            format!("{} changed the routine {}", teammate.name, saved.name)
+        } else {
+            format!("{} scheduled a routine: {}", teammate.name, saved.name)
+        };
+        if let Ok(host) = self.host() {
+            host.notify(
+                NotificationKind::RoutineChanged,
+                title,
+                words,
+                SourceRef::Routine {
+                    routine_id: saved.id.as_str().to_string(),
+                    run_id: None,
+                },
+            )
+            .await;
+        }
+        Ok(saved)
+    }
+
+    /// `tandem__schedule_delete`: only the teammate's own.
+    pub async fn delete_for_teammate(
+        &self,
+        teammate: &TeammateId,
+        id: &str,
+    ) -> Result<(), IpcError> {
+        let r = self.own(teammate, id).await?;
+        self.delete(&r.id).await
+    }
+
     // ── the scheduler ───────────────────────────────────────────────────
 
     /// One pass: fires what's due (missed runs within 24 h once, late),
@@ -767,7 +930,6 @@ impl RoutinesService {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use tandem_core::access::Access;
     use tandem_core::clock::MockClock;
     use tandem_core::DataDir;
     use tandem_routines::{RunMode, Schedule};
@@ -1000,6 +1162,99 @@ mod tests {
         assert!(runs[0].late, "marked late");
         // The next slot (11:30) runs on time.
         assert_eq!(ticks(&f, 20).await, 1);
+    }
+
+    #[tokio::test]
+    async fn f_rt_05_a_teammates_routines_are_its_own_edits_at_most_and_the_user_is_told() {
+        let f = fixture("2026-10-12T08:00:00Z", Runner::Gui).await;
+        let create = AgentRoutine {
+            name: Some("Changelog".into()),
+            instruction: Some("Add yesterday's merged work to CHANGELOG.md.".into()),
+            cron: Some("0 7 * * 1-5".into()),
+            timezone: Some("UTC".into()),
+            ..AgentRoutine::default()
+        };
+        let r = f
+            .svc
+            .save_for_teammate(&f.teammate, create.clone())
+            .await
+            .expect("create");
+        assert_eq!(r.access, Access::Edits, "Edits by default");
+        assert_eq!(r.created_by_teammate_id.as_ref(), Some(&f.teammate.id));
+        assert_eq!(
+            r.teammate_id.as_ref(),
+            Some(&f.teammate.id),
+            "runs as itself"
+        );
+        assert_eq!(
+            r.next_run_at,
+            Some(t("2026-10-12T07:00:00Z").timestamp_millis() + 86_400_000)
+        );
+        // Full is refused, on create and on update.
+        let full = AgentRoutine {
+            access: Some("full".into()),
+            ..create.clone()
+        };
+        assert!(f.svc.save_for_teammate(&f.teammate, full).await.is_err());
+        let raise = AgentRoutine {
+            id: Some(r.id.as_str().to_string()),
+            access: Some("full".into()),
+            ..AgentRoutine::default()
+        };
+        assert!(f.svc.save_for_teammate(&f.teammate, raise).await.is_err());
+        // Update: only what it says changes.
+        let renamed = f
+            .svc
+            .save_for_teammate(
+                &f.teammate,
+                AgentRoutine {
+                    id: Some(r.id.as_str().to_string()),
+                    name: Some("Changelog draft".into()),
+                    paused: Some(true),
+                    ..AgentRoutine::default()
+                },
+            )
+            .await
+            .expect("update");
+        assert_eq!(renamed.name, "Changelog draft");
+        assert_eq!(renamed.instruction, r.instruction);
+        assert!(renamed.paused);
+        // A routine the user made isn't the teammate's to list, change or
+        // delete.
+        let mine = f.svc.save(input(&f, daily9()), None).await.expect("mine");
+        let listed = f.svc.made_by(&f.teammate.id).await.expect("list");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, r.id);
+        let hijack = AgentRoutine {
+            id: Some(mine.id.as_str().to_string()),
+            name: Some("Mine now".into()),
+            ..AgentRoutine::default()
+        };
+        assert!(f.svc.save_for_teammate(&f.teammate, hijack).await.is_err());
+        assert!(f
+            .svc
+            .delete_for_teammate(&f.teammate.id, mine.id.as_str())
+            .await
+            .is_err());
+        f.svc
+            .delete_for_teammate(&f.teammate.id, r.id.as_str())
+            .await
+            .expect("delete own");
+        // The user heard about the create and the update.
+        let told: Vec<String> = f
+            .host
+            .notes()
+            .into_iter()
+            .filter(|(k, _)| *k == NotificationKind::RoutineChanged)
+            .map(|(_, title)| title)
+            .collect();
+        assert_eq!(
+            told,
+            vec![
+                "Lead scheduled a routine: Changelog".to_string(),
+                "Lead changed the routine Changelog draft".to_string()
+            ]
+        );
     }
 
     #[tokio::test]

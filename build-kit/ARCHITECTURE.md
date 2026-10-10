@@ -1317,7 +1317,7 @@ CREATE TABLE held_drafts (
 -- ── notifications, status snapshot ──────────────────────────── F-DB-*, F-EN-05
 CREATE TABLE notifications (
   id          TEXT PRIMARY KEY,
-  kind        TEXT NOT NULL,                   -- approval|question|done|failed|routine_ready|task_review|lane_cleanup|update_ready|credit_low|plugin_attention|held_actions|mail_refused
+  kind        TEXT NOT NULL,                   -- approval|question|done|failed|routine_ready|task_review|lane_cleanup|update_ready|credit_low|plugin_attention|held_actions|mail_refused|routine_changed
   title       TEXT NOT NULL, body TEXT NOT NULL,   -- redacted
   source_json TEXT NOT NULL,                   -- SourceRef
   state       TEXT NOT NULL CHECK (state IN ('unread','read','resolved')),
