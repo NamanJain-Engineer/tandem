@@ -168,6 +168,32 @@ pub fn toplevel(root: &Path) -> Result<Option<PathBuf>, RpcError> {
     })
 }
 
+/// Where the repository at `root` keeps its data, for the watcher (the
+/// index, HEAD and refs): `None` outside a repository.
+pub fn dirs(root: &Path) -> Option<tandem_core::files::watch::GitDirs> {
+    let out = read(
+        root,
+        &[
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-dir",
+            "--git-common-dir",
+        ],
+    )
+    .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut lines = text.lines().map(str::trim).filter(|l| !l.is_empty());
+    let git_dir = PathBuf::from(lines.next()?);
+    let common_dir = PathBuf::from(lines.next()?);
+    Some(tandem_core::files::watch::GitDirs {
+        git_dir,
+        common_dir,
+    })
+}
+
 /// Keeps Vibezeo's own folder (`.tandem/`, attachments of remote threads)
 /// out of the host repository's status, as locally: one line in
 /// `info/exclude`, never `.gitignore`. Nothing outside a repository.

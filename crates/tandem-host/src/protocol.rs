@@ -253,6 +253,25 @@ pub struct FsPath {
     pub path: String,
 }
 
+/// `fs.watch`: a workspace folder on the host.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FsWatch {
+    pub root: String,
+}
+
+/// `fs.watch`'s answer, and what `fs.unwatch` takes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FsWatching {
+    pub id: String,
+}
+
+/// `fs.changed`: one batch from a watch (`tandem_core::files::watch`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FsChanged {
+    pub id: String,
+    pub change: tandem_core::files::watch::FsChange,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReadKind {
@@ -427,10 +446,16 @@ pub mod method {
     pub const GIT_STATUS: &str = "git.status";
     pub const GIT_DIFF: &str = "git.diff";
     pub const GIT_OP: &str = "git.op";
+    /// Watch a folder (`FsWatch`), answered with `FsWatching`; batches come
+    /// as `fs.changed` notifications to this connection only, until
+    /// `fs.unwatch` or the connection closes (D-1600).
+    pub const FS_WATCH: &str = "fs.watch";
+    pub const FS_UNWATCH: &str = "fs.unwatch";
     // Host → client notifications.
     pub const PTY_OUTPUT: &str = "pty.output";
     pub const PTY_EXIT: &str = "pty.exit";
     pub const STATUS_EVENT: &str = "status.event";
+    pub const FS_CHANGED: &str = "fs.changed";
 }
 
 #[cfg(test)]
