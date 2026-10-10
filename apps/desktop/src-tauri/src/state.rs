@@ -113,6 +113,8 @@ pub struct AppState {
     pub auto: Arc<crate::services::auto::AutoService>,
     /// The phone companion (F-RM-03).
     pub phone: Arc<crate::services::phone::PhoneService>,
+    /// LAN mode for the phone companion (F-RM-04): off until turned on.
+    pub phone_lan: Arc<crate::services::phone_lan::LanNet>,
     /// Paused agents and their relaunch queue (F-SH-07).
     pub restore: Arc<crate::services::restore::RestoreService>,
     /// Auto-update and the minimum-version notice (F-SH-06).
@@ -686,6 +688,19 @@ impl AppState {
             endpoints.web.clone(),
             crate::services::phone::RekeyPolicy::default(),
         );
+        let phone_lan = {
+            use crate::services::phone_lan::{
+                LanHub, LanNet, LanServer, SystemInterfaces, WebFiles,
+            };
+            LanNet::new(
+                LanServer::new(
+                    LanHub::new(),
+                    WebFiles::default(),
+                    Arc::new(SystemInterfaces),
+                ),
+                keychain.clone(),
+            )
+        };
         Self {
             data,
             store,
@@ -706,6 +721,7 @@ impl AppState {
             notifications,
             auto,
             phone,
+            phone_lan,
             restore,
             updates,
             config,

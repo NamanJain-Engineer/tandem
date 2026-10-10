@@ -143,6 +143,8 @@ const COMMANDS: &[&str] = &[
     "phone_arm_state",
     "phone_queue_list",
     "phone_queue_decide",
+    "phone_lan_state",
+    "phone_lan_set",
     "limit_cancel_resume",
     "limit_dismiss",
     "limit_continue",

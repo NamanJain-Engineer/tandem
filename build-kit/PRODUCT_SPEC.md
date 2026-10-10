@@ -2438,6 +2438,59 @@ Each ready module needs:
 3. A phone approval with no local arming is queued, not applied.
 4. After Revoke, the next phone command is rejected.
 
+#### F-RM-04 LAN pairing (P2, all plans)
+Added on `mobile-apps` (D-2001). The free download has no hosted relay, so the desktop can play the relay's part itself on the local network.
+**Behavior:**
+- Settings → Remote → **Pair over your local network**: off by default; a switch in the main window turns it on, and the choice is remembered.
+- While on, the desktop listens only on its private addresses (RFC 1918, and 100.64.0.0/10 for a VPN such as Tailscale), never on all interfaces or a public address, and closes connections from anything outside the local network unread.
+- The QR code and link work as in F-RM-03 (same handshake, frames, counters, rekeying, grants, approvals step-up and revocation), with the desktop's own address as the relay and the web app. No account, plan or hosted service is needed.
+- Away from home, a VPN address (for example Tailscale's free plan) is used the same way; nothing is exposed to the internet.
+
+**Acceptance:**
+1. LAN mode starts off; with it on, only private and VPN addresses are listened on, and a peer outside the LAN gets no answer.
+2. A phone pairs over the LAN relay and runs a command; a replayed frame is rejected.
+3. The LAN relay refuses a wrong token (1008), text frames (1003) and frames over 64 KB (1009), and a newer phone socket replaces the older (4000).
+4. After Revoke, the phone is told, its socket closes and its token is refused.
+5. The desktop serves the phone web app on the LAN with a strict CSP, nothing outside it, and refuses requests not addressed to its own IP (DNS rebinding).
+6. The phone apps follow `ws://` codes only to private and VPN addresses.
+
+#### F-RM-05 Vibezeo Remote app (P2, all plans)
+Added on `mobile-apps` (D-2000). The phone companion as a native Android and iOS app (Expo / React Native, `apps/mobile`), since phones can't run the coding CLIs.
+**Behavior:**
+- Pair by scanning the QR code in the app, or by opening a pairing link (`vibezeo-remote://pair#p=…`, or the desktop's `…/remote#p=…` link pasted in).
+- Agents and their status, approvals (Deny always applies; Allow applies only while the desktop is armed, else waits there), threads and teammate chats (read, and send with Chat control), typing into agent panes (Terminal control; never plain shells), routines (Run now), the phone's grants, and Unpair.
+- In-app and local notifications for new approvals and agents that finish or need you, on the phone only.
+- A demo mode that runs a made-up computer inside the app, labelled as a demo.
+- Keys live in the iOS Keychain or Android Keystore, never in plain storage.
+
+**Acceptance:**
+1. The app reads pairing codes from the desktop's web link, a LAN link and its own link.
+2. Demo mode runs every screen's commands over the real protocol and reaches nothing else.
+3. New approvals and finished or waiting agents become notifications, once each.
+4. Unpairing forgets the computer.
+5. The pairing is stored only through the platform keystore, and an interrupted save keeps the previous pairing.
+6. The runtime provides a CSPRNG and UTF-8 decoding, and the protocol matches the interop vectors (`remote_v1.json`).
+7. The app's colours match `packages/ui`'s tokens.
+
+#### F-RM-06 Encrypted push notifications (P2, opt-in)
+Added on `mobile-apps` (D-2020). Alerts for a paired phone that isn't open, at no cost (FCM on Android; APNs on iOS once the Apple account exists).
+**Behavior:**
+- Off by default; turned on per phone in Vibezeo Remote's settings. Needs a pairing through the hosted relay (LAN mode has no server to push from).
+- The phone tells the desktop its push token inside the encrypted channel; the API stores it against the pairing. The desktop seals each alert with a per-pairing push key; the API forwards only those opaque bytes to FCM or APNs and never sees the text.
+- Turning push off, unpairing or revoking deletes the token.
+
+**Acceptance:**
+1. Push starts off, and nothing is registered until the person turns it on.
+2. A push payload is sealed so only the phone can open it, and the API's push route stores and forwards bytes it can't read (no crypto imports; logs hold no payload).
+3. Revoking a pairing deletes its push token.
+
+#### F-RM-07 Linux store packages (P2)
+Added on `mobile-apps` (D-2030). Flathub and Snap Store packages for the desktop app, which are free to publish.
+**Behavior:** a Flatpak manifest (`app.vibezeo.Vibezeo`-style id from the bundle id) and a `snapcraft.yaml` that package the release build, with the permissions the app needs and nothing more.
+**Acceptance:**
+1. The manifest and snapcraft.yaml are valid and reference the release build and its checksum.
+2. The packaged app starts (where the container allows building the package).
+
 ### 4.15 BE: Backend (apps/api)
 
 All endpoints are under `https://api.tandem.dev/v1` (dev: `http://api.tandem.local:8787/v1`). Every endpoint follows these rules:

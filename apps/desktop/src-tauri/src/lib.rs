@@ -270,6 +270,8 @@ macro_rules! app_commands {
             commands::phone::phone_arm_state,
             commands::phone::phone_queue_list,
             commands::phone::phone_queue_decide,
+            commands::phone::phone_lan_state,
+            commands::phone::phone_lan_set,
             commands::limits::limit_cancel_resume,
             commands::limits::limit_dismiss,
             commands::limits::limit_continue,

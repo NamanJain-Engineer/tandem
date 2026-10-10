@@ -15,6 +15,7 @@ export default tseslint.config(
       "apps/web/.source/**",
       "**/.vercel/**",
       "apps/web/public/demo/app/**",
+      "**/src-tauri/resources/remote-web/**",
       "**/node_modules/**",
       "**/target/**",
       "**/src-tauri/gen/**",

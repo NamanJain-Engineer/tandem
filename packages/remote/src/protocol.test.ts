@@ -24,7 +24,7 @@ import {
 import { buildVectors } from "./vectors";
 
 const fixture = JSON.parse(
-  readFileSync(new URL("../../../../crates/tandem-core/tests/fixtures/remote_v1.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../../../crates/tandem-core/tests/fixtures/remote_v1.json", import.meta.url), "utf8"),
 );
 
 function paired(pid = "pr_testpair01") {

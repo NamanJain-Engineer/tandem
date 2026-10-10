@@ -37,6 +37,7 @@ impl PhoneHost for FakeHost {
             title: "Fix login".into(),
             state: ThreadState::Idle,
             updated_at: 1,
+            teammate: false,
         }]
     }
     async fn routines(&self) -> Vec<PhoneRoutine> {
@@ -125,6 +126,7 @@ impl PhoneNet for FakeNet {
         Ok(PairingTicket {
             pairing_token: "tok_test".into(),
             relay_url: format!("ws://relay.test/v1/relay/{pid}"),
+            web_base: None,
         })
     }
     async fn delete_pairing(&self, pid: &str) -> Result<(), String> {

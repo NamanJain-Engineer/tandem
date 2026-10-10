@@ -1781,7 +1781,7 @@ bash scripts/check-no-interim.sh && pnpm tsx scripts/trace-tests.ts --all --fail
 
 **Goal.** Ship the P2 set in independent sub-phases, each ending green and tagged (`m16a` … `m16d`). Then cut the release candidate. If the budget runs out, stop after any sub-phase and list what remains as next steps in `BUILD_LOG.md`.
 
-**Owns (P2):** F-CN-01, F-CN-02, F-CN-03, F-CN-04, F-CN-05, F-CN-06, F-CN-07, F-CN-08, F-BE-08, F-AU-01, F-RM-03, F-BE-11, F-SH-12, F-CD-21, F-AC-07, F-AG-10, F-AG-13, F-RT-05, F-BE-03, F-BE-12
+**Owns (P2):** F-CN-01, F-CN-02, F-CN-03, F-CN-04, F-CN-05, F-CN-06, F-CN-07, F-CN-08, F-BE-08, F-AU-01, F-RM-03, F-BE-11, F-SH-12, F-CD-21, F-AC-07, F-AG-10, F-AG-13, F-RT-05, F-BE-03, F-BE-12, F-RM-04, F-RM-05, F-RM-06, F-RM-07
 **Extends:** the P2 app-shortcut rebinding portion of F-SH-09 (Settings › Shortcuts, UI-113: edit, conflict detection, reset to defaults; persisted in `settings`); the SSO portion of F-BL-06 (P2; the P1 core is owned by M13); the remaining F-BE-06 routes (`/auto/next`, `/voice/act`, `/voice/resolve`); F-TL-06 rule 5 (live voice and phone paths).
 
 **16A: Conductor (CN-01…08, BE-08).**
@@ -1908,8 +1908,9 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **152 features** (6
 | F-WB-02 | P1 | M15 | F-WB-03 | P1 | M15 | F-WB-04 | P1 | M15 | F-WB-05 | P0 | M2 |
 | F-TL-01 | P0 | M2 | F-TL-02 | P0 | M0 | F-TL-03 | P0 | M0 | F-TL-04 | P0 | M5 |
 | F-TL-05 | P1 | M15 | F-TL-06 | P0 | M15 | F-TL-07 | P1 | M13 | F-TL-10 | P1 | M13 |
+| F-RM-04 | P2 | M16 | F-RM-05 | P2 | M16 | F-RM-06 | P2 | M16 | F-RM-07 | P2 | M16 |
 
-**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 20 = 152.
+**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 = 156 (F-RM-04 to F-RM-07 added on `mobile-apps`).
 
 ### 20.1 Completeness check (run in M0, and at every milestone close)
 `scripts/check-coverage.sh` implements the check below. It passed when this plan was written: 152 spec IDs, 152 owned, 0 missing, 0 duplicates, 0 unknown, and no P2 outside M16 and no P0/P1 inside it.

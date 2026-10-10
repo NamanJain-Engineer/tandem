@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import type { IpcError, Pairing, PairingQr, PhoneArmState, PhoneGrants, QueuedPhoneAction } from "@tandem/protocol";
+import type {
+  IpcError,
+  LanState,
+  Pairing,
+  PairingQr,
+  PhoneArmState,
+  PhoneGrants,
+  QueuedPhoneAction,
+} from "@tandem/protocol";
 import {
   Badge,
   Button,
@@ -8,6 +16,7 @@ import {
   Dialog,
   EmptyState,
   QRCode,
+  Select,
   SettingsGroup,
   SettingsRow,
   Skeleton,
@@ -45,7 +54,9 @@ export function RemotePage() {
   const [queue, setQueue] = useState<QueuedPhoneAction[]>([]);
   const [arm, setArm] = useState<PhoneArmState>({ armedUntil: null });
   const [error, setError] = useState<string | null>(null);
-  const [pairing, setPairing] = useState(false);
+  const [pairing, setPairing] = useState<PairVia | null>(null);
+  const [lan, setLan] = useState<LanState | null>(null);
+  const [lanAddress, setLanAddress] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<Pairing | null>(null);
   const [resetting, setResetting] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -60,6 +71,7 @@ export function RemotePage() {
       ]);
       setPairings(list);
       setQueue(items);
+      setLan(await invoke<LanState>("phone_lan_state").catch(() => null));
       setArm(armed);
       setError(null);
       setNow(Date.now());
@@ -79,6 +91,14 @@ export function RemotePage() {
   const proOff = !(entitlement?.limits as { phone?: boolean } | undefined)?.phone;
   const signedOut = !auth?.signedIn;
   const blocked = policyOff ? t("policy.setByOrg") : signedOut ? t("remote.needsSignIn") : proOff ? t("remote.needsPro") : null;
+
+  async function setLanOn(on: boolean) {
+    try {
+      setLan(await invoke<LanState>("phone_lan_set", { enabled: on }));
+    } catch (err) {
+      show({ title: message(err), tone: "error" });
+    }
+  }
 
   async function setGrant(p: Pairing, key: keyof PhoneGrants, on: boolean) {
     const grants = { ...p.grants, [key]: on };
@@ -116,10 +136,19 @@ export function RemotePage() {
       </div>
       {blocked && <Callout>{blocked}</Callout>}
       <div>
-        <Button variant="primary" disabled={!!blocked} onClick={() => setPairing(true)} data-testid="remote-pair">
+        <Button variant="primary" disabled={!!blocked} onClick={() => setPairing({ kind: "relay" })} data-testid="remote-pair">
           {t("remote.pair")}
         </Button>
       </div>
+
+      <LanSection
+        lan={lan}
+        policyOff={policyOff}
+        address={lanAddress}
+        onAddress={setLanAddress}
+        onToggle={(on) => void setLanOn(on)}
+        onPair={(address) => setPairing({ kind: "lan", address })}
+      />
 
       {queue.length > 0 && (
         <SettingsGroup label={t("remote.queue")}>
@@ -211,7 +240,7 @@ export function RemotePage() {
         </Button>
       </div>
 
-      {pairing && <PairDialog onClose={() => setPairing(false)} />}
+      {pairing && <PairDialog via={pairing} onClose={() => setPairing(null)} />}
       <ConfirmDialog
         open={revoking !== null}
         onOpenChange={(o) => !o && setRevoking(null)}
@@ -237,7 +266,87 @@ export function RemotePage() {
   );
 }
 
-function PairDialog({ onClose }: { onClose: () => void }) {
+type PairVia = { kind: "relay" } | { kind: "lan"; address: string | null };
+
+/** F-RM-04: pairing over the local network, with the desktop as the relay. */
+function LanSection({
+  lan,
+  policyOff,
+  address,
+  onAddress,
+  onToggle,
+  onPair,
+}: {
+  lan: LanState | null;
+  policyOff: boolean;
+  address: string | null;
+  onAddress: (ip: string) => void;
+  onToggle: (on: boolean) => void;
+  onPair: (address: string | null) => void;
+}) {
+  const chosen = lan?.addresses.find((a) => a.ip === address)?.ip ?? lan?.addresses[0]?.ip ?? null;
+  return (
+    <SettingsGroup label={t("remote.lan.title")}>
+      <div data-testid="remote-lan">
+        <SettingsRow
+          settingKey="phone_lan"
+          label={t("remote.lan.toggle")}
+          description={t("remote.lan.desc")}
+          control={(ids) => (
+            <Switch
+              id={ids.id}
+              aria-describedby={ids.describedBy}
+              aria-label={t("remote.lan.toggle")}
+              checked={!!lan?.enabled}
+              disabled={lan === null || policyOff}
+              onCheckedChange={onToggle}
+            />
+          )}
+        />
+        {lan === null && (
+          <div className="px-4 py-3" aria-label={t("remote.lan.loading")}>
+            <Skeleton className="h-5 w-56" />
+          </div>
+        )}
+        {lan?.enabled && (
+          <div className="flex flex-col gap-3 px-4 py-3">
+            {lan.error && (
+              <div data-testid="remote-lan-error">
+                <Callout tone="error">{lan.error}</Callout>
+              </div>
+            )}
+            {lan.running && (
+              <>
+                <span className="text-sm text-fg-muted" data-testid="remote-lan-listening">
+                  {t("remote.lan.listening", { addresses: lan.addresses.map((a) => `${a.ip}:${lan.port}`).join(", ") })}
+                </span>
+                {lan.addresses.length > 1 && chosen && (
+                  <Select
+                    label={t("remote.lan.address")}
+                    value={chosen}
+                    onValueChange={onAddress}
+                    options={lan.addresses.map((a) => ({
+                      value: a.ip,
+                      label: t(a.kind === "vpn" ? "remote.lan.kind.vpn" : "remote.lan.kind.lan", { ip: a.ip }),
+                    }))}
+                  />
+                )}
+                <div>
+                  <Button variant="primary" onClick={() => onPair(chosen)} data-testid="remote-pair-lan">
+                    {t("remote.lan.pair")}
+                  </Button>
+                </div>
+              </>
+            )}
+            <span className="text-sm text-fg-subtle">{t("remote.lan.away")}</span>
+          </div>
+        )}
+      </div>
+    </SettingsGroup>
+  );
+}
+
+function PairDialog({ via, onClose }: { via: PairVia; onClose: () => void }) {
   const [qr, setQr] = useState<PairingQr | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [paired, setPaired] = useState<string | null>(null);
@@ -247,7 +356,8 @@ function PairDialog({ onClose }: { onClose: () => void }) {
     let live = true;
     let id: string | null = null;
     let off: (() => void) | undefined;
-    invoke<PairingQr>("phone_pair_begin", undefined, { timeoutMs: 30_000 })
+    const args = via.kind === "lan" ? { via: "lan", address: via.address } : undefined;
+    invoke<PairingQr>("phone_pair_begin", args, { timeoutMs: 30_000 })
       .then((code) => {
         if (!live) {
           void invoke("phone_pair_cancel", { pairingId: code.pairingId }).catch(() => undefined);
@@ -269,6 +379,8 @@ function PairDialog({ onClose }: { onClose: () => void }) {
       // A code nobody scanned is dropped when the dialog closes.
       if (id) void invoke("phone_pair_cancel", { pairingId: id }).catch(() => undefined);
     };
+    // The dialog pairs once, the way it was opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -276,7 +388,7 @@ function PairDialog({ onClose }: { onClose: () => void }) {
       open
       onOpenChange={(o) => !o && onClose()}
       title={t("remote.dialog.title")}
-      description={t("remote.dialog.body")}
+      description={t(via.kind === "lan" ? "remote.dialog.bodyLan" : "remote.dialog.body")}
       footer={
         <Button variant={paired ? "primary" : "secondary"} onClick={onClose}>
           {paired ? t("remote.dialog.done") : t("remote.dialog.cancel")}

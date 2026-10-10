@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Pairing, PairingQr, QueuedPhoneAction } from "@tandem/protocol";
+import type { LanState, Pairing, PairingQr, QueuedPhoneAction } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { setInvokeBackend } from "../../ipc/invoke";
@@ -26,6 +26,18 @@ const QR: PairingQr = {
   expiresAt: Date.now() + 600_000,
 };
 
+const LAN_OFF: LanState = { enabled: false, running: false, port: 47800, addresses: [], error: null };
+const LAN_ON: LanState = {
+  enabled: true,
+  running: true,
+  port: 47800,
+  addresses: [
+    { ip: "192.168.1.20", kind: "lan" },
+    { ip: "100.101.2.3", kind: "vpn" },
+  ],
+  error: null,
+};
+
 let calls: Call[] = [];
 const named = (cmd: string) => calls.filter((c) => c.cmd === cmd);
 
@@ -34,6 +46,7 @@ function setup(handlers: Parameters<typeof fakeBackend>[0] = {}) {
     phone_pairings_list: () => [],
     phone_queue_list: () => [],
     phone_arm_state: () => ({ armedUntil: null }),
+    phone_lan_state: () => LAN_OFF,
     ...handlers,
   });
   useSession.setState({ entitlement: PRO_VIEW });
@@ -134,5 +147,42 @@ describe("F-RM-03 Settings › Remote", () => {
     list = [{ ...PHONE, id: QR.pairingId }];
     act(() => emitLocal("remote:phone", { pairingId: QR.pairingId, event: "paired" }));
     expect(await screen.findByText("Paired with iPhone · Safari.")).toBeTruthy();
+  });
+});
+
+describe("F-RM-04 Settings › Remote › Local network", () => {
+  it("F-RM-04.1 LAN mode starts off and turns on with a switch, on any plan and signed out", async () => {
+    setup({ phone_lan_set: () => LAN_ON });
+    act(() => useSession.setState({ entitlement: FREE_VIEW, auth: { signedIn: false } as never }));
+    const toggle = await screen.findByRole("switch", { name: "Pair over your local network" });
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
+    expect(screen.queryByTestId("remote-pair-lan")).toBeNull();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(named("phone_lan_set")[0]?.args).toEqual({ enabled: true }));
+    expect(await screen.findByText("Listening on 192.168.1.20:47800, 100.101.2.3:47800")).toBeTruthy();
+    expect((screen.getByTestId("remote-pair-lan") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("F-RM-04.2 pairing on the network asks for a LAN code on the chosen address", async () => {
+    const lanQr = { ...QR, link: "http://192.168.1.20:47800/remote#p=abc" };
+    setup({ phone_lan_state: () => LAN_ON, phone_pair_begin: () => lanQr, phone_pair_cancel: () => null });
+    fireEvent.click(await screen.findByTestId("remote-pair-lan"));
+    expect(await screen.findByRole("img", { name: "Pairing code" })).toBeTruthy();
+    expect(named("phone_pair_begin")[0]?.args).toEqual({ via: "lan", address: "192.168.1.20" });
+    expect(screen.getByTestId("remote-pair-link").textContent).toBe(lanQr.link);
+    expect(screen.getByText(/same network as this computer/)).toBeTruthy();
+  });
+
+  it("F-RM-04.1 error: a port in use is shown; an org policy keeps it off", async () => {
+    setup({ phone_lan_state: () => ({ ...LAN_ON, running: false, addresses: [], error: "Port 47800 is in use. Pick another port." }) });
+    expect(await screen.findByTestId("remote-lan-error")).toBeTruthy();
+    expect(screen.queryByTestId("remote-pair-lan")).toBeNull();
+    act(() =>
+      useSession.setState({
+        entitlement: { ...PRO_VIEW, policy: { ...(FREE_VIEW.policy ?? {}), disablePhone: true } } as typeof PRO_VIEW,
+      }),
+    );
+    const toggle = screen.getByRole("switch", { name: "Pair over your local network" });
+    await waitFor(() => expect(toggle.hasAttribute("disabled") || toggle.getAttribute("data-disabled") !== null).toBe(true));
   });
 });

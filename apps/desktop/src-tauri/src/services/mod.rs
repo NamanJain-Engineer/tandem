@@ -36,6 +36,7 @@ pub mod notifications;
 pub mod notifier;
 pub mod opener;
 pub mod phone;
+pub mod phone_lan;
 pub mod plugins;
 pub mod remote;
 pub mod remote_files;

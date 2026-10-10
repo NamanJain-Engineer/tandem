@@ -157,6 +157,9 @@ pub struct PhoneThread {
     pub title: String,
     pub state: ThreadState,
     pub updated_at: i64,
+    /// A chat with a teammate rather than a thread (F-RM-03 Chat control).
+    #[serde(default)]
+    pub teammate: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -255,6 +258,31 @@ pub trait PhoneNet: Send + Sync {
     ) -> Result<PairingTicket, IpcError>;
     async fn delete_pairing(&self, pairing_id: &str) -> Result<(), String>;
     async fn dial(&self, relay_url: &str) -> Result<RelayLink, String>;
+    /// A pairing the desktop relays itself on the local network (F-RM-04),
+    /// on `address` when that's one it listens on.
+    async fn create_lan_pairing(
+        &self,
+        _pairing_id: &str,
+        _address: Option<&str>,
+    ) -> Result<PairingTicket, IpcError> {
+        Err(IpcError::new(
+            ErrorCode::Unavailable,
+            "Pairing over the local network isn't available",
+        ))
+    }
+    /// A pairing revoked on this side only (a dropped session): forget any
+    /// local relay state for it. The hosted relay learns from the API.
+    fn forget_local(&self, _pairing_id: &str) {}
+}
+
+/// Which relay a new pairing uses.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum PairVia {
+    /// The hosted relay (F-BE-11; Pro).
+    #[default]
+    Relay,
+    /// The desktop itself, on the local network (F-RM-04).
+    Lan { address: Option<String> },
 }
 
 /// When the desktop starts a rekey.
@@ -508,16 +536,28 @@ impl PhoneService {
     /// returns the QR code. The one-time secret stays in memory and is
     /// dropped when the handshake completes or the code expires.
     pub async fn pair_begin(self: &Arc<Self>) -> Result<PairingQr, IpcError> {
+        self.pair_begin_via(PairVia::Relay).await
+    }
+
+    /// [`Self::pair_begin`] through the hosted relay or the LAN (F-RM-04).
+    pub async fn pair_begin_via(self: &Arc<Self>, via: PairVia) -> Result<PairingQr, IpcError> {
         let host = self.host()?.clone();
         let net = self.net()?.clone();
         let identity = self.identity()?;
         let pid = PairingId::new();
-        let ticket = net
-            .create_pairing(pid.as_str(), Some(&host.desktop_name()))
-            .await?;
+        let ticket = match &via {
+            PairVia::Relay => {
+                net.create_pairing(pid.as_str(), Some(&host.desktop_name()))
+                    .await?
+            }
+            PairVia::Lan { address } => {
+                net.create_lan_pairing(pid.as_str(), address.as_deref())
+                    .await?
+            }
+        };
         let s = Secret32::random();
         let link = pairing_link(
-            &self.web_base,
+            ticket.web_base.as_deref().unwrap_or(&self.web_base),
             pid.as_str(),
             &identity.public,
             &s,
@@ -756,6 +796,9 @@ impl PhoneService {
             inner.live.remove(pid);
         }
         self.stop_link(pid);
+        if let Ok(net) = self.net() {
+            net.forget_local(pid);
+        }
         if let Err(err) = self
             .keychain
             .delete(&remote_service(), &pairing_account(pid))

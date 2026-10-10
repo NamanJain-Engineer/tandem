@@ -466,6 +466,10 @@ pub trait ApiClient: Send + Sync {
 pub struct PairingTicket {
     pub pairing_token: String,
     pub relay_url: String,
+    /// Where the code's web app link points; the hosted portal when absent.
+    /// LAN pairings use the desktop's own address (F-RM-04).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web_base: Option<String>,
 }
 
 /// `POST /v1/auth/device/start` (F-BE-03).
