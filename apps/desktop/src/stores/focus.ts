@@ -5,6 +5,7 @@ import { invoke } from "../ipc/invoke";
 import { switchMode } from "../features/shell/actions";
 import { useLayout } from "./layout";
 import { useThreads } from "./threads";
+import { useUi } from "./ui";
 import { useWorkspaces } from "./workspaces";
 
 /** How long a focused pane shows its accent ring (F-CD-12 AC3). */
@@ -44,6 +45,11 @@ export async function showSource(source: SourceRef, location?: FocusLocation | n
     // A thread card or notification opens the thread in Thread mode.
     switchMode("thread");
     useThreads.getState().select(source.threadId);
+    return;
+  }
+  if (source.type === "account") {
+    // The credit-low item opens Settings › Account & Plan (F-DB-02).
+    useUi.getState().openSettings("account");
     return;
   }
   if (source.type !== "pane") return;

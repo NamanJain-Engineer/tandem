@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import { CREDIT_PACKS, PRICES } from "@tandem/protocol/plans";
@@ -12,6 +12,9 @@ import type { AppEnv } from "../middleware/context";
 import { MockBilling } from "../providers/billing/mock";
 import type { BillingEvent } from "../providers/billing/types";
 import { planFor } from "../services/entitlements";
+import type { Owner } from "../services/ledger";
+import { membershipOf } from "../services/membership";
+import { orgForCheckout } from "../services/orgs";
 import { customerFor, handleEvent } from "../services/webhooks";
 
 export const checkoutBody = z.object({
@@ -42,6 +45,21 @@ async function emailOf(deps: Deps, userId: string): Promise<string> {
   return u.email;
 }
 
+/**
+ * Whose billing a caller manages: a Team owner or admin manages the org's,
+ * a Team member none (403), everyone else their own.
+ */
+async function billingOwner(deps: Deps, userId: string): Promise<Owner> {
+  const m = await membershipOf(deps.db, userId);
+  if (!m) return { kind: "user", id: userId };
+  const { effective } = await planFor(deps, userId);
+  if (effective.plan !== "team") return { kind: "user", id: userId };
+  if (m.role === "member") {
+    throw new ApiError(403, "FORBIDDEN", "Forbidden", "Ask your organization's admin to change billing.");
+  }
+  return { kind: "org", id: m.orgId };
+}
+
 /** Synthetic Stripe-shaped events for mock checkout and the mock portal. */
 function event(type: string, object: Record<string, unknown>, nowSec: number): BillingEvent {
   return { id: newId("evt_mock"), type, created: nowSec, data: { object } };
@@ -53,7 +71,11 @@ export function billingRoutes(deps: Deps) {
   app.post("/checkout", requireUser(), async (c) => {
     const body = await parseJson(c, checkoutBody);
     const userId = c.get("user")?.id ?? "";
-    const owner = { kind: "user" as const, id: userId };
+    // Team is bought for an org: the caller's, or a new one they own (D-606).
+    const owner: Owner =
+      body.plan === "team"
+        ? { kind: "org", id: await orgForCheckout(deps, userId) }
+        : { kind: "user", id: userId };
     const quantity =
       body.plan === "team" ? Math.max(PRICES.team.minSeats, body.seats ?? PRICES.team.minSeats) : 1;
     const session = await deps.billing.createCheckout({
@@ -74,7 +96,7 @@ export function billingRoutes(deps: Deps) {
   });
 
   app.post("/portal", requireUser(), async (c) => {
-    const customer = await customerFor(deps, { kind: "user", id: c.get("user")?.id ?? "" });
+    const customer = await customerFor(deps, await billingOwner(deps, c.get("user")?.id ?? ""));
     if (!customer) throw new ApiError(404, "NOT_FOUND", "Not Found", "There's no billing account yet.");
     return c.json(await deps.billing.createPortal(customer, `${deps.env.WEB_PUBLIC_URL}/billing`));
   });
@@ -88,7 +110,7 @@ export function billingRoutes(deps: Deps) {
         feature: "creditPacks",
       });
     }
-    const owner = { kind: "user" as const, id: userId };
+    const owner = await billingOwner(deps, userId);
     const session = await deps.billing.createCheckout({
       ownerKind: owner.kind,
       ownerId: owner.id,
@@ -110,8 +132,13 @@ export function billingRoutes(deps: Deps) {
     if (!(billing instanceof MockBilling)) throw new ApiError(404, "NOT_FOUND", "Not Found");
     const { sessionId } = await parseJson(c, z.object({ sessionId: z.string() }));
     const pending = billing.sessions.get(sessionId);
-    if (!pending || pending.ownerId !== c.get("user")?.id)
-      throw new ApiError(404, "NOT_FOUND", "Not Found", "Unknown checkout session.");
+    const userId = c.get("user")?.id ?? "";
+    const mine =
+      pending &&
+      (pending.ownerKind === "user"
+        ? pending.ownerId === userId
+        : (await membershipOf(deps.db, userId))?.orgId === pending.ownerId);
+    if (!pending || !mine) throw new ApiError(404, "NOT_FOUND", "Not Found", "Unknown checkout session.");
     billing.sessions.delete(sessionId);
     const now = deps.clock.nowSec();
     const customer = pending.customerId ?? newId("cus_mock");
@@ -173,20 +200,21 @@ export function billingRoutes(deps: Deps) {
       c,
       z.object({ action: z.enum(["cancel_at_period_end", "resume", "cancel_now"]) }),
     );
-    const userId = c.get("user")?.id ?? "";
+    const owner = await billingOwner(deps, c.get("user")?.id ?? "");
     const [sub] = await deps.db
       .select()
       .from(subscriptions)
-      .where(eq(subscriptions.ownerId, userId))
+      .where(and(eq(subscriptions.ownerKind, owner.kind), eq(subscriptions.ownerId, owner.id)))
+      .orderBy(desc(subscriptions.updatedAt))
       .limit(1);
     if (!sub) throw new ApiError(404, "NOT_FOUND", "Not Found", "There's no subscription.");
-    const customer = (await customerFor(deps, { kind: "user", id: userId })) ?? undefined;
+    const customer = (await customerFor(deps, owner)) ?? undefined;
     const now = deps.clock.nowSec();
     const object = {
       id: sub.stripeSubscriptionId,
       customer,
       status: action === "cancel_now" ? "canceled" : sub.status,
-      metadata: { owner_kind: "user", owner_id: userId, plan: sub.plan, interval: sub.interval },
+      metadata: { owner_kind: owner.kind, owner_id: owner.id, plan: sub.plan, interval: sub.interval },
       items: {
         data: [
           {

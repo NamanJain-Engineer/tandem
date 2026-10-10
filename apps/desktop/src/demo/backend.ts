@@ -14,6 +14,7 @@ import type {
   LayoutNode,
   ModelEntry,
   PaneRecord,
+  PlanRevision,
   SendResult,
   StatusRecord,
   Tab,
@@ -31,7 +32,7 @@ import type {
 import { emitLocal } from "../ipc/events";
 import { setInvokeBackend } from "../ipc/invoke";
 import { FrameKind, encodeFrame, type FrameChannel } from "../ipc/pty";
-import { DEMO_CHANGES, afterAllow, afterDeny, chatTurn, fixTurn, type Step } from "./agent";
+import { DEMO_CHANGES, afterAllow, afterDeny, chatTurn, fixTurn, planText, planTurn, type Step } from "./agent";
 import { DemoFiles, NO_GIT } from "./files";
 import { DemoNotes } from "./notes";
 import { DemoShell, agentScreen } from "./shell";
@@ -40,10 +41,17 @@ type Args = Record<string, unknown> | undefined;
 
 const WS = "ws_demo";
 const TAB = "tb_demo";
+const WS_API = "ws_api";
+const WS_DOCS = "ws_docs";
+
+/** Messages a visit can send, and their length (the page's limits). */
+export const DEMO_MESSAGE_LIMIT = 12;
+export const DEMO_MESSAGE_MAX = 500;
+const LIMIT_REACHED = "Demo limit reached. Download Vibezeo for Linux to keep going, or reset the demo.";
 const START = Date.now() - 42 * 60_000;
 
 const BOOT: AppBoot = {
-  version: "0.1.0",
+  version: "0.3.0",
   build: "demo",
   platform: "linux",
   dev: false,
@@ -53,29 +61,32 @@ const BOOT: AppBoot = {
   dataDirDisplay: "~/.vibezeo",
 };
 
+/** Early access, as the released download runs it after "Start using
+ * Vibezeo": no account, so no avatar email and no credits (D-810). */
 const AUTH: AuthState = {
-  signedIn: true,
-  email: "demo@vibezeo.com",
-  offline: false,
+  signedIn: false,
+  email: null,
+  offline: true,
   offlineDaysLeft: null,
   hosted: false,
   pending: null,
   error: null,
 };
 
+/** The Free plan, as the released download runs it (D-128). */
 const ENTITLEMENT: EntitlementView = {
-  plan: "pro",
-  status: "active",
+  plan: "free",
+  status: "none",
   limits: {
-    panes: 16,
-    workspaces: 10,
-    threadGrid: 6,
-    teammates: 3,
+    panes: 4,
+    workspaces: 3,
+    threadGrid: 1,
+    teammates: 1,
     routines: false,
     backgroundRoutines: false,
     taskExecution: false,
     pluginConnections: 1,
-    accountsPerEngine: 3,
+    accountsPerEngine: 1,
     cloudStt: false,
     enhance: false,
     conductor: false,
@@ -85,14 +96,15 @@ const ENTITLEMENT: EntitlementView = {
     chatEngines: ["claude", "codex"],
     creditPacks: false,
   },
-  source: "token",
-  credits: { monthly: 1_000, purchased: 0, resetsAt: null },
+  source: "free",
+  credits: null,
   policy: null,
+  org: null,
   paidUntil: null,
   cancelAtPeriodEnd: false,
   online: true,
   confirmedUntil: null,
-  monthlyGrant: 1_000,
+  monthlyGrant: 10_000,
 };
 
 function spec(id: string, label: string, vendor: string, logo: string, chatAdapter: string | null): EngineSpec {
@@ -158,35 +170,45 @@ const MODELS: Record<string, ModelEntry[]> = {
 };
 
 const TAB_RECORD: Tab = { id: TAB, workspaceId: WS, name: "checkout", sortKey: "a0", createdAt: START };
+const TABS: Tab[] = [
+  TAB_RECORD,
+  { id: "tb_api", workspaceId: WS_API, name: "docs", sortKey: "a0", createdAt: START },
+  { id: "tb_docs", workspaceId: WS_DOCS, name: "main", sortKey: "a0", createdAt: START },
+];
 
-const WORKSPACE: WorkspaceSummary = {
-  id: WS,
-  kind: "local",
-  hostId: "local",
-  root: "/home/you/shop",
-  wslDistro: null,
-  name: "shop",
-  parentId: null,
-  laneBranch: null,
-  laneBase: null,
-  sortKey: "a0",
-  pinned: false,
-  collapsed: false,
-  sessionsCollapsed: false,
-  createdAt: START,
-  missing: false,
-  branch: "main",
-  liveCount: 3,
-  tabs: [TAB_RECORD],
-};
-
-function pane(id: string, kind: string, engineId: string | null, humanName: string | null): PaneRecord {
+function workspace(id: string, name: string, branch: string, liveCount: number, sortKey: string): WorkspaceSummary {
   return {
     id,
-    tabId: TAB,
-    workspaceId: WS,
+    kind: "local",
+    hostId: "local",
+    root: `/home/you/${name}`,
+    wslDistro: null,
+    name,
+    parentId: null,
+    laneBranch: null,
+    laneBase: null,
+    sortKey,
+    pinned: false,
+    collapsed: false,
+    sessionsCollapsed: false,
+    createdAt: START,
+    missing: false,
+    branch,
+    liveCount,
+    tabs: TABS.filter((t) => t.workspaceId === id),
+  };
+}
+
+const WORKSPACE = workspace(WS, "shop", "main", 3, "a0");
+const WORKSPACES: WorkspaceSummary[] = [WORKSPACE, workspace(WS_API, "api", "main", 1, "a1"), workspace(WS_DOCS, "docs-site", "main", 0, "a2")];
+
+function pane(id: string, kind: string, engineId: string | null, humanName: string | null, ws = WORKSPACE): PaneRecord {
+  return {
+    id,
+    tabId: ws.tabs[0]?.id ?? TAB,
+    workspaceId: ws.id,
     kind,
-    cwd: WORKSPACE.root,
+    cwd: ws.root,
     engineId,
     accountId: null,
     humanName,
@@ -197,10 +219,14 @@ function pane(id: string, kind: string, engineId: string | null, humanName: stri
   };
 }
 
+const API_WS = WORKSPACES[1] ?? WORKSPACE;
+
+/** Four live panes: the Free plan's limit. */
 const PANES: PaneRecord[] = [
   pane("pn_claude", "agent", "claude", "Fixer"),
   pane("pn_codex", "agent", "codex", "Reviewer"),
   pane("pn_shell", "terminal", null, null),
+  pane("pn_gemini", "agent", "gemini", "Docs", API_WS),
 ];
 
 const TREE: LayoutNode = {
@@ -217,6 +243,14 @@ const TREE: LayoutNode = {
   },
 };
 
+function layoutOf(workspaceId: unknown): TabLayout[] {
+  const tab = TABS.find((t) => t.workspaceId === workspaceId);
+  if (!tab) return [];
+  if (tab.id === TAB) return [{ tab, tree: TREE, activePaneId: "pn_claude", maximizedPaneId: null }];
+  if (tab.id === "tb_api") return [{ tab, tree: { type: "leaf", paneId: "pn_gemini" }, activePaneId: "pn_gemini", maximizedPaneId: null }];
+  return [{ tab, tree: null, activePaneId: null, maximizedPaneId: null }];
+}
+
 const AGENT_SCREENS: Record<string, string> = {
   pn_claude: agentScreen("Claude Code", "Fix the redirect loop after login", [
     "● Read src/checkout/redirect.ts",
@@ -232,11 +266,18 @@ const AGENT_SCREENS: Record<string, string> = {
     "",
     "Working…",
   ]),
+  pn_gemini: agentScreen("Gemini CLI", "Update the API docs for the new rate limit", [
+    "✦ Read docs/orders.md",
+    "✦ Drafted the \"Rate limits\" section (20 requests a minute per user)",
+    "",
+    "Allow running npm run docs:build? (y/n)",
+  ]),
 };
 
 const STATUS: Record<string, { status: StatusRecord["status"]; title: string; preview: string }> = {
   pn_claude: { status: "done", title: "Fix the redirect loop after login", preview: "Fixed, with a test. 13 tests pass." },
   pn_codex: { status: "working", title: "Review the open diff", preview: "Checking callers of nextStep()" },
+  pn_gemini: { status: "waiting", title: "Update the API docs", preview: "Allow running npm run docs:build?" },
 };
 
 type Pty = { channel: FrameChannel; seq: number; screen: string; shell: DemoShell | null };
@@ -253,6 +294,8 @@ type DemoThread = {
   divider: string | null;
   /** The composer's draft (`{text, attachmentIds}` JSON). */
   draft: string;
+  /** Plan versions from Plan-mode turns (F-TH-10). */
+  plans: PlanRevision[];
 };
 
 /** What the first thread's composer starts with. */
@@ -326,7 +369,7 @@ export class DemoCore {
       teammateId: null,
       conversationRef: null,
     };
-    const t: DemoThread = { thread, turns: [], events: [], channels: new Set(), running: null, awaiting: null, fixed: false, divider: null, draft: "{}" };
+    const t: DemoThread = { thread, turns: [], events: [], channels: new Set(), running: null, awaiting: null, fixed: false, divider: null, draft: "{}", plans: [] };
     this.threads.set(thread.id, t);
     return t;
   }
@@ -351,6 +394,27 @@ export class DemoCore {
     for (const e of steps) this.push(done, turn, e);
     this.endTurn(done, turn, "completed");
     done.thread.state = "done";
+    done.thread.updatedAt = START + 20 * 60_000;
+
+    // A thread moved from Claude Code to Codex (F-TH-16).
+    const moved = this.newThread("Speed up the product search", "claude", WS, START + 30_000);
+    const first = this.startTurn(moved, "Product search takes two seconds. Find the slow part.");
+    this.push(moved, first, { type: "tool", id: "m1", verb: "read", argSummary: "src/search/query.ts", status: "ok", output: "(61 lines)", outputTruncated: false, outputFile: null, diff: null, detail: null });
+    this.push(moved, first, {
+      type: "assistant",
+      markdown: "The search loads every product and filters in memory (`src/search/query.ts`, line 18). A `LIKE` query with an index on `name` would let the database do it.",
+    });
+    this.endTurn(moved, first, "completed");
+    moved.thread.engineId = "codex";
+    moved.divider = "Continued on Codex (Default) with a summary";
+    const second = this.startTurn(moved, "Make that change and measure it.");
+    this.push(moved, second, { type: "tool", id: "m2", verb: "edit", argSummary: "src/search/query.ts", status: "ok", output: null, outputTruncated: false, outputFile: null, diff: null, detail: null });
+    this.push(moved, second, {
+      type: "assistant",
+      markdown: "Search now filters in the database with an index on `name`. The same query takes **40 ms** instead of two seconds on the sample data.",
+    });
+    this.endTurn(moved, second, "completed");
+    moved.thread.updatedAt = START + 35 * 60_000;
 
     const fresh = this.newThread("Fix the redirect loop after login", "claude", WS, START + 60_000);
     fresh.draft = JSON.stringify({ text: FIRST_MESSAGE, attachmentIds: [] });
@@ -427,9 +491,12 @@ export class DemoCore {
   }
 
   /** Plays steps in order; an approval stops until it's answered. */
-  private play(t: DemoThread, turnId: string, steps: Step[]): void {
+  private play(t: DemoThread, turnId: string, steps: Step[], atEnd?: () => void): void {
     const [step, ...rest] = steps;
-    if (!step) return this.endTurn(t, turnId, "completed");
+    if (!step) {
+      atEnd?.();
+      return this.endTurn(t, turnId, "completed");
+    }
     if ("approval" in step) {
       t.awaiting = { approvalId: step.approval.id, turnId };
       t.thread.state = "waiting";
@@ -440,7 +507,7 @@ export class DemoCore {
     this.later(step.wait, () => {
       if (t.running !== turnId) return;
       this.push(t, turnId, step.event);
-      this.play(t, turnId, rest);
+      this.play(t, turnId, rest, atEnd);
     });
   }
 
@@ -458,17 +525,54 @@ export class DemoCore {
       queued: null,
       draft: t.draft,
       attachments: [],
-      planRevisions: [],
+      planRevisions: t.plans,
     };
   }
 
   private send(t: DemoThread, text: string): SendResult {
     if (t.running) throw { code: "conflict", message: "Working — send when it's done, or stop it" };
+    if (text.length > DEMO_MESSAGE_MAX) throw { code: "invalid", message: `Demo messages are up to ${DEMO_MESSAGE_MAX} characters` };
+    if (this.sent >= DEMO_MESSAGE_LIMIT) {
+      this.notify();
+      throw { code: "limit_reached", message: LIMIT_REACHED };
+    }
+    this.sent += 1;
+    this.notify();
     const turnId = this.startTurn(t, text);
     this.changed(t);
-    const first = !t.fixed && t.thread.workspaceId !== null && t.turns.length === 1;
-    this.play(t, turnId, first ? fixTurn(this.id("apr"), Date.now() + 10 * 60_000) : chatTurn(text));
+    const first = !t.fixed && t.thread.workspaceId !== null && t.turns.length === 1 && t.thread.mode === "act";
+    if (t.thread.mode === "plan") {
+      const plan = planText(text);
+      this.play(t, turnId, planTurn(plan), () => {
+        const version = t.plans.length + 1;
+        t.plans.push({ version, turnId, text: plan, createdAt: Date.now() });
+        this.push(t, turnId, { type: "plan_revision", version });
+      });
+    } else {
+      this.play(t, turnId, first ? fixTurn(this.id("apr"), Date.now() + 10 * 60_000) : chatTurn(text));
+    }
     return { turnId, queued: false };
+  }
+
+  /** Messages sent this visit, and who wants to hear about it (DemoBar). */
+  private sent = 0;
+  private listeners = new Set<() => void>();
+
+  messagesLeft(): number {
+    return Math.max(0, DEMO_MESSAGE_LIMIT - this.sent);
+  }
+
+  limitReached(): boolean {
+    return this.sent >= DEMO_MESSAGE_LIMIT;
+  }
+
+  subscribe(fn: () => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  private notify(): void {
+    for (const fn of this.listeners) fn();
   }
 
   private frame(pty: Pty, text: string): void {
@@ -493,8 +597,8 @@ export class DemoCore {
         engineLabel: engine?.spec.label ?? null,
         engineLogo: engine?.spec.logo ?? null,
         accountLabel: null,
-        workspaceId: WS,
-        workspace: WORKSPACE.name,
+        workspaceId: p.workspaceId,
+        workspace: WORKSPACES.find((w) => w.id === p.workspaceId)?.name ?? null,
         branch: "main",
         preview: s.preview,
         pendingApproval: null,
@@ -545,7 +649,10 @@ export class DemoCore {
       case "restore_get_snapshot":
         return { panes: [], interruptedThreads: 0, autoResume: false };
       case "updates_state":
-        return { stage: "idle", current: "0.1.0", channel: "stable", version: null, notes: null, percent: null, errorStage: null, error: null, lastCheck: null, upToDate: true, minVersion: null };
+        return { stage: "idle", current: BOOT.version, channel: "stable", version: null, notes: null, percent: null, errorStage: null, error: null, lastCheck: null, upToDate: true, minVersion: null };
+      case "usage_report":
+        // The demo reads no engine logs: an honest empty page (F-AC-07).
+        return demoUsage();
       case "notifications_list":
         return { items: [], nextCursor: null, unread: 0 };
       case "sidebar_get":
@@ -553,13 +660,11 @@ export class DemoCore {
       case "accounts_status":
         return "signed_in";
       case "workspace_list":
-        return [WORKSPACE];
-      case "layout_get": {
-        const layout: TabLayout = { tab: TAB_RECORD, tree: TREE, activePaneId: "pn_claude", maximizedPaneId: null };
-        return args?.workspaceId === WS ? [layout] : [];
-      }
+        return WORKSPACES;
+      case "layout_get":
+        return layoutOf(args?.workspaceId);
       case "pane_list":
-        return PANES;
+        return typeof args?.tabId === "string" ? PANES.filter((p) => p.tabId === args.tabId) : PANES;
       case "engines_list":
         return ENGINES;
       case "engines_detect":
@@ -694,6 +799,13 @@ export class DemoCore {
       }
       case "thread_mention_search":
         return ["src/checkout/redirect.ts", "src/checkout/redirect.test.ts", "src/api/orders.ts", "package.json"].map((path) => ({ path, kind: "file" }));
+      case "thread_implement_plan": {
+        const t = this.thread(args);
+        const plan = t.plans.find((p) => p.version === Number(args?.version));
+        if (!plan) throw { code: "not_found", message: `There's no plan version ${String(args?.version)}` };
+        t.thread.mode = "act";
+        return this.send(t, `Implement plan version ${plan.version} exactly as written:\n\n${plan.text}`);
+      }
       case "thread_retry": {
         const t = this.thread(args);
         const last = [...t.events].reverse().find((e) => e.event.type === "user");
@@ -761,4 +873,25 @@ export function installDemo(speed = 1): DemoCore {
   const core = new DemoCore(speed);
   setInvokeBackend(async (cmd, args) => core.handle(cmd, args));
   return core;
+}
+
+/** The Usage page in the demo: 12 empty weeks, nothing invented. */
+function demoUsage() {
+  const today = new Date();
+  const days = Array.from({ length: 84 }, (_, i) => {
+    const d = new Date(today.getTime() - (83 - i) * 86_400_000);
+    return { date: d.toISOString().slice(0, 10), tokens: 0, byEngine: {} };
+  });
+  return {
+    since: days[0]?.date ?? "",
+    until: days[83]?.date ?? "",
+    total: 0,
+    days,
+    engines: [],
+    accounts: [],
+    workspaces: [],
+    skippedLines: 0,
+    filesRead: 0,
+    unsupported: [],
+  };
 }

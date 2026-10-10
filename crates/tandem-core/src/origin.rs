@@ -42,25 +42,4 @@ impl LocalReview {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn invariant_rule_5_local_review_origin() {
-        assert!(LocalReview::check(&Origin::main_window()).is_some());
-        for origin in [
-            Origin::Conductor,
-            Origin::Phone,
-            Origin::Unattended,
-            Origin::Local {
-                window: "dictate-overlay".into(),
-            },
-        ] {
-            assert!(
-                LocalReview::check(&origin).is_none(),
-                "{origin:?} must not pass local review"
-            );
-        }
-    }
-}
+// F-TL-06 rule 5's test is tests/invariants/tests/rule_5.rs.

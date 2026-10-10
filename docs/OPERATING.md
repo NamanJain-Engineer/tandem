@@ -55,6 +55,7 @@ hand-edited).
 bash scripts/bootstrap-linux.sh                  # WebKitGTK, webkit2gtk-driver, xvfb, dbus, openbox, xclip, tauri-driver, …
 apt-get install -y zsh fish                      # the shell-integration E2E specs need them
 cargo install cargo-audit --locked
+cargo install cargo-about --locked --features cli # release-local.sh: notices (and cargo-cyclonedx for SBOMs)
 pnpm install
 pnpm keys:dev                                    # local Ed25519 dev keys in .dev-keys/ (git-ignored)
 sh scripts/agent/with-infra.sh true              # proves Docker + Postgres/Redis/Mailpit/stripe-mock come up
@@ -70,6 +71,18 @@ sh scripts/agent/with-infra.sh true              # proves Docker + Postgres/Redi
   `CARGO_INCREMENTAL=0`.
 - The shell may be zsh: an unquoted `$VAR` holding several paths is **one** word
   there. Use arrays or quote per item.
+- Docker Hub may answer image pulls with `429 Too Many Requests`, and
+  `with-infra.sh` hides the failure (the run then fails later: sign-up 500s,
+  `ECONNREFUSED 127.0.0.1:5432`). Pull through the mirror and retag, then
+  migrate a fresh database once:
+  ```bash
+  for i in library/postgres:16 library/redis:7 axllent/mailpit:v1.21 stripe/stripe-mock:v0.197.0; do
+    docker pull -q mirror.gcr.io/$i && docker tag mirror.gcr.io/$i ${i#library/}; done
+  pnpm infra:up && pnpm db:migrate && pnpm db:seed
+  ```
+- The E2E runner gives the app a zsh login shell whatever `$SHELL` is (some
+  containers put a real `claude` on bash's login PATH via `/etc/profile.d`,
+  which E2E-M4-1 must not see).
 
 ## 4. The work loop (one slice at a time)
 
@@ -168,6 +181,13 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    update `apps/web/lib/release.ts` (version, file names), `apps/web/lib/progress.ts`
    (milestone entries and counts taken from the gate output and the spec files) and
    the home page's feature and roadmap lists. The site tests check the file exists.
+   Then the demo (D-128): every surface the demo at `/demo/app/` shows must be in
+   the download being released (Thread mode with the scripted fix, Plan mode,
+   the engine-switch divider, Code mode with agent panes and a shell, the
+   Dashboard, Files, the git panel, the Scratchpad, the command palette), its
+   plan must match the download's (`ENTITLEMENT` in `src/demo/backend.ts`), and
+   anything new and visible in the release should be added to it with a test in
+   `demo.test.ts`. List the surfaces in the release pull request.
 6. Gate, commit, push, then deploy (§7) with the owner's go-ahead.
 
 ## 7. Deploying the website
@@ -178,7 +198,11 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
 - `apps/web/vercel.json` holds the install (`--filter web... --filter desktop...`),
   the build (`pnpm build:site`), headers (CSP, no framing) and the skip rule.
 - Check a site change before deploying: `pnpm --filter web exec vitest run`,
-  `pnpm --filter web build:site`, then walk the demo:
+  `pnpm --filter web build:site`, the home page's demo in a real browser
+  (`PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium pnpm --filter web test:site`,
+  against `apps/web/out`), Lighthouse on `/` (90 or more for performance and
+  accessibility; measure behind a compressing server such as `npx serve out`,
+  since Vercel compresses and `http.server` doesn't), then walk the demo:
   `(cd apps/web/public && python3 -m http.server 4321 &)` and
   `node scripts/agent/demo-walkthrough.mjs /tmp/demo-shots` (screenshots plus any
   console errors). A clean-clone build with Vercel's exact install command is the

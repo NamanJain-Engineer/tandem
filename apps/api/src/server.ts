@@ -2,11 +2,13 @@ import { serve } from "@hono/node-server";
 import { createApp } from "./app";
 import { buildDeps } from "./buildDeps";
 import { loadEnv } from "./env";
+import { startReservationSweeper } from "./jobs/reservationSweeper";
 import { logger } from "./lib/logger";
 
 const env = loadEnv();
 const { deps, close } = buildDeps(env);
 const app = createApp(deps);
+const stopSweeper = startReservationSweeper(deps);
 const server = serve({ fetch: app.fetch, port: env.PORT, hostname: "0.0.0.0" }, (info) => {
   logger.info({ port: info.port, billing: deps.billing.kind }, "api listening");
 });
@@ -14,6 +16,7 @@ const server = serve({ fetch: app.fetch, port: env.PORT, hostname: "0.0.0.0" }, 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     logger.info({ signal }, "shutting down");
+    stopSweeper();
     server.close(() => {
       void close().finally(() => process.exit(0));
     });
