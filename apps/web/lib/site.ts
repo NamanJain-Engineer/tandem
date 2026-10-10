@@ -1,3 +1,4 @@
+import { RELEASES, versionPath } from "./changelog";
 type Founder = { name: string; role: string; bio?: string; link?: string };
 /** A registered company: its name, registration number (e.g. CIN) and
  * registered address. */
@@ -95,6 +96,7 @@ export function robotsTxt(): string {
 }
 
 export function sitemapXml(): string {
-  const urls = SITE_PAGES.map((p) => `  <url><loc>${SITE.url}${p}</loc></url>`).join("\n");
+  const pages = [...SITE_PAGES, ...RELEASES.map((r) => versionPath(r.version))];
+  const urls = pages.map((p) => `  <url><loc>${SITE.url}${p}</loc></url>`).join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }

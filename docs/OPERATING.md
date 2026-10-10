@@ -166,7 +166,9 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
 1. Full E2E regression green; gate green.
 2. Bump the version in `apps/desktop/src-tauri/tauri.conf.json`,
    `apps/desktop/package.json` and the root `Cargo.toml` (Cargo.lock follows).
-   Add a `## x.y.z` section to `CHANGELOG.md`: only what the build really does,
+   Add a `## x.y.z` section to `CHANGELOG.md` in its format (a summary, then `### Added` /
+   `Changed` / `Fixed` / `Security`, each bullet tagged `[lin]`, `[mac]`, `[win]` or `[all]`;
+   `pnpm exec tsx scripts/check-changelog.ts` checks it): only what the build really does,
    and plan limits stated (for example, the six-thread grid is Pro-only).
 3. `TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run` (needs ~5 GB free;
    `TANDEM_HOSTED=0` = no hosted services, the Free plan runs locally, nothing is

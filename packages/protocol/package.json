@@ -10,7 +10,8 @@
     "./shortcuts.json": "./shortcuts.json",
     "./team": "./src/team.ts",
     "./hosted-features.json": "./hosted-features.json",
-    "./subprocessors.json": "./subprocessors.json"
+    "./subprocessors.json": "./subprocessors.json",
+    "./changelog": "./src/changelog.ts"
   },
   "scripts": {
     "test": "vitest run",
