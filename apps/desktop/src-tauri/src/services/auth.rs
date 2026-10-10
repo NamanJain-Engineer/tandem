@@ -937,6 +937,8 @@ pub mod tests {
         pub revoked: Mutex<bool>,
         pub offline: Mutex<bool>,
         pub me: Mutex<Option<MeResponse>>,
+        /// What `audit_events` was sent (F-TL-10).
+        pub audits: Mutex<Vec<crate::services::api::AuditEvent>>,
     }
 
     fn pair(n: u32) -> TokenPair {
@@ -988,6 +990,17 @@ pub mod tests {
             Ok(pair(*n))
         }
         async fn logout(&self, _a: &str, _r: &str) -> Result<(), ApiError> {
+            Ok(())
+        }
+        async fn audit_events(
+            &self,
+            _a: &str,
+            events: &[crate::services::api::AuditEvent],
+        ) -> Result<(), ApiError> {
+            if *self.offline.lock().expect("lock") {
+                return Err(ApiError::Network("down".into()));
+            }
+            self.audits.lock().expect("lock").extend_from_slice(events);
             Ok(())
         }
         async fn ai_title(&self, _a: &str, _t: &str) -> Result<String, ApiError> {

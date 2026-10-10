@@ -31,7 +31,7 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
 }
 
 /** A tiny cookie jar for API calls from the test process. */
-class Jar {
+export class Jar {
   private cookies = new Map<string, string>();
   store(res: Response) {
     for (const c of res.headers.getSetCookie()) {
@@ -48,7 +48,7 @@ class Jar {
   }
 }
 
-async function call(jar: Jar, method: string, path: string, body?: unknown): Promise<Response> {
+export async function call(jar: Jar, method: string, path: string, body?: unknown): Promise<Response> {
   const res = await fetch(`${API}${path}`, {
     method,
     redirect: "manual",

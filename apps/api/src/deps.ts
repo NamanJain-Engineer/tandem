@@ -6,6 +6,7 @@ import type { Env } from "./env";
 import type { Clock } from "./lib/clock";
 import type { AiProvider } from "./providers/ai/types";
 import type { BillingProvider } from "./providers/billing/types";
+import type { SttProvider } from "./providers/stt/types";
 import type { BreachChecker } from "./providers/breach";
 import type { CaptchaVerifier } from "./providers/captcha";
 import type { EmailProvider } from "./providers/email/types";
@@ -27,4 +28,5 @@ export type Deps = {
   events: EventHub;
   auth: Auth;
   ai: AiProvider;
+  stt: SttProvider;
 };

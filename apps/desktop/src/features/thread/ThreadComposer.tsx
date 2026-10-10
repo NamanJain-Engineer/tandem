@@ -21,8 +21,10 @@ import {
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useEngines } from "../../stores/engines";
+import { useSession } from "../../stores/session";
 import { useSettings } from "../../stores/settings";
 import { useThreads } from "../../stores/threads";
+import { allowsAccess, clampAccess } from "../policy/policy";
 import { takeDropped, takeTexts, useThreadDrop } from "./drops";
 
 /** Draft saves are debounced (F-TH-07). */
@@ -215,6 +217,9 @@ export function ThreadComposer({
   const effortLabel = (e: string) =>
     ["low", "medium", "high", "max"].includes(e) ? t(`thread.effort.${e as "low"}`) : e;
 
+  const maxAccess = useSession((s) => s.entitlement?.policy?.maxAccess ?? "full");
+  const shownAccess = clampAccess(maxAccess, thread.access);
+
   const setAccess = (v: string) => {
     const access = v as Access;
     const scope = thread.workspaceId ?? "none";
@@ -324,13 +329,16 @@ export function ThreadComposer({
             : undefined
         }
         access={{
-          value: thread.access,
-          warning: thread.access === "full",
-          options: [
-            { value: "read", label: t("thread.access.read"), description: t("thread.access.read.desc") },
-            { value: "edits", label: t("thread.access.edits"), description: t("thread.access.edits.desc") },
-            { value: "full", label: t("thread.access.full"), description: t("thread.access.full.desc") },
-          ],
+          value: shownAccess,
+          warning: shownAccess === "full",
+          options: (["read", "edits", "full"] as const).map((value) => ({
+            value,
+            label: t(`thread.access.${value}`),
+            description: t(`thread.access.${value}.desc`),
+            // A Team org's maximum (F-BL-06): sessions are held to it in the core too.
+            disabled: !allowsAccess(maxAccess, value),
+            disabledReason: t("policy.setByOrg"),
+          })),
           onChange: setAccess,
         }}
         tokens={{

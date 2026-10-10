@@ -51,8 +51,15 @@ export type Me = {
   status: string;
   paid_until: string | null;
   cancel_at_period_end: boolean;
-  limits: { panes: number | null };
-  credits: { monthly: number; purchased: number; resets_at: string | null };
+  limits: { panes: number | null; creditPacks: boolean; admin: boolean };
+  credits: {
+    monthly: number;
+    purchased: number;
+    resets_at: string | null;
+    cap: number | null;
+    spent: number | null;
+  };
+  org: { id: string; name: string; role: "owner" | "admin" | "member" } | null;
 };
 
 export function formatDate(iso: string | null): string {

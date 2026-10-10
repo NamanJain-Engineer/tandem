@@ -87,8 +87,8 @@ pub struct EntitlementClaims {
     /// Subscription status as the server saw it (`active`, `past_due`, `none`…).
     pub status: String,
     pub limits: Limits,
-    #[ts(type = "Record<string, unknown> | null")]
-    pub policy: Option<serde_json::Value>,
+    /// A Team org's admin policy (F-BL-06).
+    pub policy: Option<crate::policy::OrgPolicy>,
     pub exp: i64,
     pub iat: i64,
     pub kid: String,
@@ -181,7 +181,7 @@ struct Payload {
     status: String,
     limits: Limits,
     #[serde(default)]
-    policy: Option<serde_json::Value>,
+    policy: Option<crate::policy::OrgPolicy>,
     exp: i64,
     iat: i64,
     iss: String,
