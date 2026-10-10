@@ -24,6 +24,7 @@ import { FindBar } from "./FindBar";
 import { keyAction, lastLines, lineCount, needsConfirm, pasteBytes } from "./terminalInput";
 import { openFileLink, opensLink, openUrl, pathLinkProvider, resolveLink } from "./links";
 import { mountQueue } from "./mountQueue";
+import { PARK_AFTER_MS, parkChunks, type ParkMark, type ParkTerminal } from "./park";
 import { PromptCapture, useFirstPrompts } from "./titles";
 import { webglPool } from "./webglPool";
 import { writeScheduler } from "./writeScheduler";
@@ -111,6 +112,14 @@ export type TerminalHandle = {
 };
 export const terminalHandles = new Map<string, TerminalHandle>();
 
+/** Panes whose view is parked (§5.1, D-139), and how long a hidden pane
+ * waits before parking (the E2E harness shortens it). */
+export const parkedPanes = new Set<string>();
+let parkAfterMs = PARK_AFTER_MS;
+export function setParkAfter(ms: number | null): void {
+  parkAfterMs = ms ?? PARK_AFTER_MS;
+}
+
 type Toast = (t: { tone?: "info" | "success" | "warning" | "error"; title: string }) => void;
 
 /** "Copy last command output" from the pane menu and the palette (F-CD-10 AC3). */
@@ -156,12 +165,12 @@ async function connect(
   cols: number,
   rows: number,
   channel: () => Promise<FrameChannel>,
-): Promise<{ replay?: Uint8Array; live: boolean; state?: PtyState | null }> {
+): Promise<{ replay?: Uint8Array; end?: number; live: boolean; state?: PtyState | null }> {
   const pending = spawning.get(paneId);
   if (pending) await pending.catch(() => undefined);
   try {
     const snap = await invoke<AttachSnapshot>("pty_attach", { paneId, channel: await channel() });
-    return { replay: base64ToBytes(snap.replay), live: snap.live, state: snap.state };
+    return { replay: base64ToBytes(snap.replay), end: snap.end, live: snap.live, state: snap.state };
   } catch (e) {
     if ((e as IpcError).code !== "not_found") throw e;
   }
@@ -223,6 +232,11 @@ export function TerminalView({
   const measured = useRef(false);
   const [phase, setPhase] = useState<Phase>({ kind: "starting" });
   const [generation, setGeneration] = useState(0);
+  /** Hidden long enough that the xterm was handed to the core (§5.1, D-139). */
+  const [parked, setParked] = useState(false);
+  /** While parked: the size and scroll position to come back to. */
+  const parkedAt = useRef<{ cols: number; rows: number; fromBottom: number } | null>(null);
+  const parkNow = useRef<() => Promise<boolean>>(async () => false);
   const [scrolledUp, setScrolledUp] = useState(false);
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
   const search = useRef<SearchAddon | null>(null);
@@ -257,11 +271,11 @@ export function TerminalView({
 
   useEffect(() => {
     const el = host.current;
-    if (!el) return;
+    if (!el || parked) return;
     markPhase(paneId, "effect");
     // Opened one per frame when several views mount together (mountQueue).
     return mountQueue.add(() => openViewRef.current(el), focusedRef.current);
-  }, [paneId, generation]);
+  }, [paneId, generation, parked]);
 
   /** Creates the xterm in `el` and connects it to the pane's PTY; returns
    * the teardown. */
@@ -318,10 +332,13 @@ export function TerminalView({
     // Shell-integration marks reach xterm only when they carried this
     // launch's token (Rust drops the rest): ✓/✗ beside each command's prompt
     // and working/idle for the pane's status (F-CD-10).
+    // ✓/✗ marks still in the buffer, for parking (their lines move as it scrolls).
+    const decorated: Array<{ marker: IMarker; ok: boolean }> = [];
     const commands = new CommandMarks<IMarker>({
       marker: () => xterm.registerMarker(0),
       release: (m) => m.dispose(),
       decorate: (marker, ok) => {
+        decorated.push({ marker, ok });
         const deco = xterm.registerDecoration({ marker, x: 0, width: 1, layer: "top" });
         deco?.onRender((node) => {
           node.classList.add("tn-cmd-mark");
@@ -406,12 +423,25 @@ export function TerminalView({
     const onParsed = xterm.onWriteParsed(scrolled);
     term.current = xterm;
     fit.current = fitAddon;
-    try {
-      fitAddon.fit();
-    } catch {
-      /* hidden: fit later */
-    }
+    // A parked view comes back at the size it parked at, so the replay lays
+    // out as it did; it fits once the replay is in.
+    const back = parkedAt.current;
+    if (back) xterm.resize(back.cols, back.rows);
+    else
+      try {
+        fitAddon.fit();
+      } catch {
+        /* hidden: fit later */
+      }
     let disposed = false;
+    // Where the view stands in the core's ring: the position the replay ends
+    // at plus every frame byte xterm has parsed since (§5.1, D-139).
+    let ringBase = 0;
+    let parsedBytes = 0;
+    // Frames that arrive before the replay is written wait for it.
+    let ready = false;
+    const early: Frame[] = [];
+    let parking = false;
     let unacked = 0;
     let ackTimer: ReturnType<typeof setTimeout> | undefined;
     const flushAck = () => {
@@ -429,6 +459,7 @@ export function TerminalView({
       markWrite(paneId);
       xterm.write(data, () => {
         markFirstOutput(paneId);
+        parsedBytes += len;
         unacked += len;
         if (unacked >= 64 * 1024) flushAck();
         else ackTimer ??= setTimeout(flushAck, 50);
@@ -441,7 +472,13 @@ export function TerminalView({
     flushNow.current = () => writeScheduler.flush(paneId);
     const onFrame = (f: Frame) => {
       if (disposed) return;
+      if (!ready) {
+        early.push(f.kind === FrameKind.Data ? { ...f, payload: f.payload.slice() } : f);
+        return;
+      }
       if (f.kind === FrameKind.Data) {
+        // Parking: this output stays in the ring, after the handed-over position.
+        if (parking) return;
         markPhase(paneId, "firstFrame");
         commands.output();
         if (focusedRef.current && writeScheduler.pending(paneId) === 0) write(f.payload);
@@ -489,17 +526,66 @@ export function TerminalView({
     const selection = xterm.onSelectionChange(() => {
       if (optionsRef.current.copyOnSelect && xterm.hasSelection()) void copyText(xterm.getSelection());
     });
+    // Hands the terminal to the core: what xterm holds becomes the ring's
+    // base, and the view can be disposed (§5.1, D-139).
+    parkNow.current = async () => {
+      if (disposed || !ready || parking) return false;
+      parking = true;
+      // Output still queued for this pane is in the ring after `at`.
+      writeScheduler.unregister(paneId, write);
+      await new Promise<void>((r) => xterm.write("", r));
+      if (disposed) return false;
+      const at = ringBase + parsedBytes;
+      serializer.current ??= (() => {
+        const addon = new SerializeAddon();
+        xterm.loadAddon(addon);
+        return addon;
+      })();
+      const marks: ParkMark[] = decorated
+        .filter((d) => !d.marker.isDisposed && d.marker.line >= 0)
+        .map((d) => ({ line: d.marker.line, kind: "done" as const, ok: d.ok }));
+      const open = commands.state();
+      if (open.running && open.running.line >= 0) marks.push({ line: open.running.line, kind: "running" });
+      else if (open.prompt && open.prompt.line >= 0) marks.push({ line: open.prompt.line, kind: "prompt" });
+      const o = optionsRef.current;
+      const base = timed("park.serialize", () =>
+        parkChunks(xterm as unknown as ParkTerminal, serializer.current as SerializeAddon, marks, {
+          cursorStyle: o.cursorStyle,
+          cursorBlink: o.cursorBlink,
+        }),
+      );
+      const buf = xterm.buffer.active;
+      parkedAt.current = { cols: xterm.cols, rows: xterm.rows, fromBottom: buf.baseY - buf.viewportY };
+      // When the core can't take it (the pane closed, the ring moved on), the
+      // next attach replays the ring as it is.
+      await invoke<boolean>("pty_park", { paneId, at, base }).catch(() => false);
+      return true;
+    };
     void (async () => {
       try {
         const cols = Math.max(xterm.cols, 2);
         const rows = Math.max(xterm.rows, 2);
         size.current = { cols, rows };
         markPhase(paneId, "connect");
-        const { replay, live, state } = await connect(paneId, cols, rows, () => createFrameChannel(onFrame));
+        const { replay, end, live, state } = await connect(paneId, cols, rows, () =>
+          createFrameChannel(onFrame),
+        );
         markPhase(paneId, "connected");
         if (state) useTerminals.getState().put(state);
         if (disposed) return;
+        ringBase = end ?? 0;
         if (replay?.byteLength) xterm.write(replay);
+        ready = true;
+        for (const f of early.splice(0)) onFrame(f);
+        if (back) {
+          parkedAt.current = null;
+          // Scrolled up when it parked: the same lines are on screen again.
+          if (back.fromBottom > 0)
+            xterm.write("", () => {
+              xterm.scrollLines(-back.fromBottom);
+              scrolled();
+            });
+        }
         setPhase(live ? { kind: "live" } : { kind: "exited", code: null });
         // The view may have been measured or resized while the PTY started.
         refit.current();
@@ -516,6 +602,7 @@ export function TerminalView({
     })();
     return () => {
       disposed = true;
+      parkNow.current = async () => false;
       clearTimeout(ackTimer);
       writeScheduler.unregister(paneId, write);
       flushAck();
@@ -540,6 +627,29 @@ export function TerminalView({
   const openViewRef = useRef(openView);
   openViewRef.current = openView;
 
+  // A pane hidden for a while hands its xterm to the core; shown again, it
+  // attaches and replays (§5.1, D-139). Only live sessions park: an exited
+  // one keeps its exit code on screen.
+  useEffect(() => {
+    if (visible) {
+      if (parked) {
+        parkedPanes.delete(paneId);
+        setParked(false);
+      }
+      return;
+    }
+    if (parked || phase.kind !== "live") return;
+    const timer = setTimeout(() => {
+      void parkNow.current().then((ok) => {
+        if (!ok) return;
+        parkedPanes.add(paneId);
+        setParked(true);
+      });
+    }, parkAfterMs);
+    return () => clearTimeout(timer);
+  }, [visible, parked, phase.kind, paneId, generation]);
+  useEffect(() => () => void parkedPanes.delete(paneId), [paneId]);
+
   // Visibility and focus decide who holds a WebGL context (§5.6).
   useEffect(() => {
     webglPool.update(paneId, { visible, focused });
@@ -556,17 +666,18 @@ export function TerminalView({
   /** Types a paste, bracketed when the program asked for it (F-CD-05 AC2). */
   const sendPaste = (text: string) => {
     const xterm = term.current;
-    if (!xterm) return;
-    const data = pasteBytes(text, xterm.modes.bracketedPasteMode);
-    xterm.scrollToBottom();
+    // A parked view's modes are the core's (§5.1).
+    const bracketed = xterm
+      ? xterm.modes.bracketedPasteMode
+      : (useTerminals.getState().states[paneId]?.bracketedPaste ?? false);
+    const data = pasteBytes(text, bracketed);
+    xterm?.scrollToBottom();
     invoke("pty_write", { paneId, data }).catch(() => undefined);
   };
 
   /** Pastes `given` text, or the clipboard: confirms multi-line shell pastes,
    * stages an image for agents, and brackets it when the program asked. */
   const pasteFrom = async (given: string | undefined) => {
-    const xterm = term.current;
-    if (!xterm) return;
     const text = given ?? (await readText());
     if (!text) {
       if (!inputCtx.current.agent) return;

@@ -690,7 +690,7 @@ export class DemoCore {
         const pty = this.ptys.get(String(args?.paneId));
         if (!pty) throw { code: "not_found", message: "Not running" };
         pty.channel = args?.channel as FrameChannel;
-        const snap: AttachSnapshot = { replay: base64(pty.screen), live: true, state: null };
+        const snap: AttachSnapshot = { replay: base64(pty.screen), end: encoder.encode(pty.screen).length, live: true, state: null };
         return snap;
       }
       case "pty_spawn": {

@@ -5,7 +5,12 @@ export type AttachSnapshot = {
 /**
  * Ring contents, base64.
  */
-replay: string, live: boolean, 
+replay: string, 
+/**
+ * The ring position the replay ends at: the view adds each frame's
+ * length to know exactly what it has parsed (§5.1, D-139).
+ */
+end: number, live: boolean, 
 /**
  * Modes and title as of the attach (later changes arrive as `pty:state`).
  */
