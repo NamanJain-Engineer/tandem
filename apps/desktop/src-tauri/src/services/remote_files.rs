@@ -173,7 +173,9 @@ impl RemoteFiles {
         };
         if let Some((host, id)) = stop {
             let remote = remote.clone();
-            tokio::spawn(async move {
+            // `fs_unwatch` is a sync command on the main thread, outside any
+            // Tokio context: Tauri's runtime takes the call from there.
+            tauri::async_runtime::spawn(async move {
                 let _ = remote
                     .call::<serde_json::Value>(&host, method::FS_UNWATCH, json!({"id": id}))
                     .await;
@@ -513,14 +515,89 @@ impl RemoteFiles {
     }
 }
 
-/// What a remote Changes view can't do here (D-411): the host's own
-/// network sign-in decides pushes and pulls, so they run in its terminal.
-pub fn not_remote(action: &str) -> IpcError {
-    IpcError::new(
-        ErrorCode::Unavailable,
-        format!(
-            "{action} isn't available for remote folders yet. Run it in a terminal on the host."
-        ),
-    )
-    .with_stage("remote")
+impl RemoteFiles {
+    /// Push, publish, pull, switch and new branch on the host (D-1601), by
+    /// the host's own git with its own credentials: nothing of this
+    /// computer's reaches it. The network ones wait out the host's 120 s.
+    pub async fn git_sync(
+        &self,
+        remote: &Arc<RemoteService>,
+        r: &RemoteRoot,
+        op: &str,
+        branch: Option<&str>,
+    ) -> Result<(), IpcError> {
+        let client = remote.client(&r.host).await?;
+        let wait = tandem_host::gitops::NETWORK_TIMEOUT + std::time::Duration::from_secs(15);
+        let out = client
+            .call_within::<_, Option<String>>(
+                method::GIT_OP,
+                json!({"root": r.root, "op": op, "paths": [], "branch": branch}),
+                wait,
+            )
+            .await
+            .map(|_| ())
+            .map_err(crate::services::remote::rpc_error);
+        self.invalidate(&r.host);
+        out
+    }
+
+    /// The branch switcher's rows from the host (`git.branches`).
+    pub async fn git_branches(
+        &self,
+        remote: &Arc<RemoteService>,
+        r: &RemoteRoot,
+    ) -> Result<Vec<tandem_git::types::Branch>, IpcError> {
+        remote
+            .call(&r.host, method::GIT_BRANCHES, json!({"root": r.root}))
+            .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `fs_unwatch` runs on the main thread with no Tokio runtime: the
+    /// last subscriber leaving a host folder mustn't panic there (it did,
+    /// and took the app down when a remote Files tab closed).
+    #[test]
+    fn f_rm_01_unwatching_a_host_folder_works_outside_tokio() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let data = tandem_core::DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = tandem_store::Store::open(&data).expect("store");
+        let bus = tandem_core::bus::EventBus::new();
+        let status = crate::services::status::StatusService::new(
+            bus.clone(),
+            Arc::new(tandem_core::clock::SystemClock),
+        );
+        let svc = RemoteService::new(
+            store,
+            bus,
+            &data,
+            dir.path().join("bin"),
+            tandem_pty::PtyManager::new(),
+            status,
+        );
+        let r = RemoteRoot {
+            host: HostId::from_db("hst_x".into()),
+            root: "/home/me/project".into(),
+        };
+        if let Ok(mut all) = svc.files.watches.lock() {
+            let mut w = Watched {
+                host_watch: Some("w1".into()),
+                ..Watched::default()
+            };
+            w.sinks
+                .insert("fsw_1".into(), Arc::new(|_: &FsChange| true));
+            all.insert(r, w);
+        }
+        let svc2 = svc.clone();
+        std::thread::spawn(move || {
+            assert!(svc2.files.unwatch(&svc2, "fsw_1"));
+            assert!(!svc2.files.unwatch(&svc2, "fsw_1"));
+        })
+        .join()
+        .expect("no panic outside Tokio");
+        assert!(svc.files.watched().is_empty());
+    }
 }

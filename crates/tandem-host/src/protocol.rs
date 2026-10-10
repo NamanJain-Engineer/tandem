@@ -377,6 +377,15 @@ pub enum GitOpKind {
     Unstage,
     Discard,
     Commit,
+    /// The branch's upstream (D-1601), with the host's own credentials.
+    Push,
+    /// The first push of a branch: `push -u <origin or the only remote>`.
+    Publish,
+    Pull,
+    /// To `branch`: a local one, or a remote one by its tracking branch.
+    Switch,
+    /// A new branch `branch` from HEAD, switched to.
+    CreateBranch,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -387,6 +396,21 @@ pub struct GitOp {
     pub paths: Vec<String>,
     #[serde(default)]
     pub message: Option<String>,
+    /// `switch` and `create_branch`.
+    #[serde(default)]
+    pub branch: Option<String>,
+}
+
+/// `git.branches`'s rows: the shape of `tandem_git::types::Branch`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostBranch {
+    pub name: String,
+    pub current: bool,
+    pub remote: bool,
+    pub upstream: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
 }
 
 // ── engines ────────────────────────────────────────────────────────────
@@ -446,6 +470,8 @@ pub mod method {
     pub const GIT_STATUS: &str = "git.status";
     pub const GIT_DIFF: &str = "git.diff";
     pub const GIT_OP: &str = "git.op";
+    /// `GitRoot` → `Vec<HostBranch>` (D-1601).
+    pub const GIT_BRANCHES: &str = "git.branches";
     /// Watch a folder (`FsWatch`), answered with `FsWatching`; batches come
     /// as `fs.changed` notifications to this connection only, until
     /// `fs.unwatch` or the connection closes (D-1600).

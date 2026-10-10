@@ -407,6 +407,10 @@ impl Daemon {
                 to_value(gitops::diff(Path::new(&g.root), &g.path, g.staged)?)
             }
             method::GIT_OP => to_value(gitops::op(&params::<GitOp>(p)?)?),
+            method::GIT_BRANCHES => {
+                let r: GitRoot = params(p)?;
+                to_value(gitops::branches(Path::new(&r.root))?)
+            }
             method::FS_WATCH => to_value(self.watch(client, params::<FsWatch>(p)?)?),
             method::FS_UNWATCH => {
                 let w: FsWatching = params(p)?;
