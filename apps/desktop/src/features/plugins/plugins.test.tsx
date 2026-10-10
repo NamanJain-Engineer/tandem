@@ -23,6 +23,8 @@ function card(id: string, label: string, extra: Partial<PluginCard> = {}): Plugi
     accountLabel: null,
     connectionId: null,
     authKind: "oauth_dcr",
+    methods: ["oauth"],
+    unavailableReason: null,
     takesKey: false,
     keyHint: null,
     teammates: 0,
@@ -37,8 +39,10 @@ const GITHUB = card("github", "GitHub", {
   connectionId: "pc_gh",
   teammates: 3,
   takesKey: true,
+  methods: ["oauth", "key"],
 });
 const LINEAR = card("linear", "Linear", {
+  methods: ["oauth", "key"],
   category: "business",
   takesKey: true,
   keyHint: "Create a key in Linear › Settings › API.",
@@ -82,6 +86,27 @@ describe("F-PL-03 UI-90 catalog", () => {
     expect(screen.getByTestId("plugin-connect-stripe").hasAttribute("disabled")).toBe(true);
     expect(screen.getByTestId("plugin-why-stripe").textContent).toBe(
       "Your organization doesn't allow Stripe.",
+    );
+  });
+
+  it("F-PL-09 a ready plugin this build can't connect says why and can't be connected (D-960)", async () => {
+    fakeBackend({
+      plugins_catalog: () => [
+        card("gmail", "Gmail", {
+          state: "unavailable",
+          methods: [],
+          unavailableReason: "Gmail needs an app registration that this build doesn't have yet.",
+        }),
+      ],
+      held_drafts_list: () => [],
+      grants_list: () => [],
+    });
+    ui(<PluginsPage />);
+    const gmail = await screen.findByTestId("plugin-card-gmail");
+    expect(within(gmail).getByText("Not available yet")).toBeTruthy();
+    expect(screen.getByTestId("plugin-connect-gmail").hasAttribute("disabled")).toBe(true);
+    expect(screen.getByTestId("plugin-why-gmail").textContent).toBe(
+      "Gmail needs an app registration that this build doesn't have yet.",
     );
   });
 
@@ -247,6 +272,27 @@ const DETAIL: PluginApprovalDetail = {
     2,
   ),
 };
+
+describe("F-PL-03 token-only plugins (D-961)", () => {
+  it("F-PL-03 offers only the token, and says why, when the browser sign-in isn't in this build", () => {
+    resetStores();
+    fakeBackend({});
+    const github = card("github", "GitHub", {
+      authKind: "oauth_static",
+      takesKey: true,
+      methods: ["key"],
+      unavailableReason: "GitHub's browser sign-in isn't supported in this build yet.",
+      keyHint: "Create a fine-grained personal access token.",
+    });
+    ui(<ConnectSheet card={github} open onOpenChange={() => undefined} />);
+    expect(screen.queryByRole("radio", { name: "Browser sign-in" })).toBeNull();
+    expect(screen.queryByTestId("connect-start")).toBeNull();
+    expect(screen.getByTestId("connect-key-input")).toBeTruthy();
+    expect(screen.getByTestId("connect-why-token").textContent).toBe(
+      "GitHub's browser sign-in isn't supported in this build yet.",
+    );
+  });
+});
 
 describe("F-PL-07 plugin approval card", () => {
   beforeEach(() => {

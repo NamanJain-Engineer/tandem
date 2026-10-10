@@ -1,6 +1,7 @@
 import canonicalize from "canonicalize";
 import { createHash, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
+import type { PluginClient } from "@tandem/protocol";
 import { currentKey, type KeySet } from "../auth/keys";
 
 export type SignedConfig = { payload: string; sig: string; kid: string; etag: string };
@@ -61,6 +62,7 @@ export type RemoteConfig = {
   /** The Claude model each hosted AI feature uses (D-103). */
   ai_models?: Record<string, string>;
   registry_overrides: unknown[];
-  plugins: Record<string, { client_id?: string; enabled: boolean }>;
+  /** Per plugin: Vibezeo's OAuth client with that vendor, and an off switch (F-PL-09). */
+  plugins: Record<string, PluginClient>;
   telemetry_allowlist_version: number;
 };
