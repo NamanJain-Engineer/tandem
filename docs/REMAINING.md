@@ -160,7 +160,7 @@ this milestone the P0/P1 product is launchable.
 - [ ] F-WB-02 Docs
 - [x] F-WB-03 Changelog (in-app "What's new" too; D-133)
 - [ ] F-WB-04 Downloads and machine-readable discovery
-- [ ] F-TL-05 Local data controls (export and delete)
+- [ ] F-TL-05 Local data controls (export and delete): the desktop's export and delete are done (D-812); the server's 30-day account purge is next
 
 Tasks: marketing site; docs; changelog; downloads and discovery; data
 controls; invariants; performance (§5.1); reliability (§5.2); security (§5.3);
