@@ -14,6 +14,8 @@ type WorkspacesState = {
   activeTab: Record<string, string>;
   refresh: () => Promise<void>;
   add: (root: string) => Promise<AddResult>;
+  /** An SSH or WSL folder (F-RM-01, F-RM-02); the error, or null once it's active. */
+  addRemote: (w: { kind: "ssh" | "wsl"; root: string; hostId?: string; wslDistro?: string }) => Promise<IpcError | null>;
   remove: (id: string) => Promise<void>;
   select: (id: string) => void;
   selectTab: (workspaceId: string, tabId: string) => void;
@@ -83,6 +85,20 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
     } catch (e) {
       const error = e as IpcError;
       return { ok: false, limit: error.code === "limit_reached", error } as AddResult;
+    }
+  },
+  addRemote: async (w) => {
+    try {
+      const added = await invoke<AddedWorkspace>(
+        "workspace_add",
+        { root: w.root, kind: w.kind, hostId: w.hostId ?? null, wslDistro: w.wslDistro ?? null },
+        { timeoutMs: 60_000 },
+      );
+      await get().refresh();
+      set({ activeId: added.workspace.id });
+      return null;
+    } catch (e) {
+      return e as IpcError;
     }
   },
   remove: async (id) => {

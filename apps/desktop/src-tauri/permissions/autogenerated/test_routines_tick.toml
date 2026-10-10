@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-test-routines-tick"
+description = "Enables the test_routines_tick command without any pre-configured scope."
+commands.allow = ["test_routines_tick"]
+
+[[permission]]
+identifier = "deny-test-routines-tick"
+description = "Denies the test_routines_tick command without any pre-configured scope."
+commands.deny = ["test_routines_tick"]

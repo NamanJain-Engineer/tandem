@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-task-save"
+description = "Enables the task_save command without any pre-configured scope."
+commands.allow = ["task_save"]
+
+[[permission]]
+identifier = "deny-task-save"
+description = "Denies the task_save command without any pre-configured scope."
+commands.deny = ["task_save"]

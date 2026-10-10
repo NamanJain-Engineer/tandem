@@ -244,7 +244,9 @@ fn start(cwd: &std::path::Path) -> ChatStart {
         mcp_config: None,
         mcp: None,
         engine_version: None,
+        relocate: None,
         briefing: None,
+        stdio_servers: Vec::new(),
     }
 }
 

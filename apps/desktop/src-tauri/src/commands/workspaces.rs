@@ -51,9 +51,68 @@ pub async fn workspace_pick_folder(app: AppHandle) -> Result<Option<String>, Ipc
 pub async fn workspace_add(
     state: State<'_, AppState>,
     root: String,
+    kind: Option<String>,
+    host_id: Option<tandem_core::ids::HostId>,
+    wsl_distro: Option<String>,
 ) -> Result<AddedWorkspace, IpcError> {
     let limit = state.entitlements.limits().workspaces;
-    workspaces::add(&state.store, &root, limit).await
+    match kind.as_deref().unwrap_or("local") {
+        "local" => workspaces::add(&state.store, &root, limit).await,
+        "ssh" => {
+            let host = host_id.ok_or_else(|| {
+                tandem_core::IpcError::new(tandem_core::ErrorCode::Invalid, "Choose the host first")
+            })?;
+            // The host says whether the folder exists, and its real path.
+            let dir = state.remote.list_dir(&host, &root).await?;
+            workspaces::add_remote(&state.store, "ssh", &host, &dir.path, None, limit).await
+        }
+        "wsl" => {
+            let distro = wsl_distro.ok_or_else(|| {
+                tandem_core::IpcError::new(
+                    tandem_core::ErrorCode::Invalid,
+                    "Choose the distribution first",
+                )
+            })?;
+            let wsl = state.wsl.clone();
+            let d = distro.clone();
+            let root = tokio::task::spawn_blocking(move || wsl.checked_root(&d, &root))
+                .await
+                .map_err(|e| {
+                    tandem_core::IpcError::new(tandem_core::ErrorCode::Internal, e.to_string())
+                })??;
+            let host = tandem_store::repo::hosts::ensure_wsl(&state.store, &distro).await?;
+            let added = workspaces::add_remote(
+                &state.store,
+                "wsl",
+                &host.id,
+                &root,
+                Some(distro.clone()),
+                limit,
+            )
+            .await?;
+            // The + menu lists the distro's engines: detect them now, as
+            // connecting does for an SSH host.
+            let (wsl, remote) = (state.wsl.clone(), state.remote.clone());
+            let engines = state.terminals.engines.registry().all().to_vec();
+            tauri::async_runtime::spawn(async move {
+                match wsl.detect_report(&host.id, &distro, &engines).await {
+                    Ok(report) => {
+                        if let Err(e) = remote.publish_report(&host.id, &report).await {
+                            tracing::warn!(code = "wsl.detect_failed", error = %e.message, "couldn't keep the distro's engines");
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(code = "wsl.detect_failed", error = %e.message, "couldn't detect the distro's engines")
+                    }
+                }
+            });
+            Ok(added)
+        }
+        _ => Err(tandem_core::IpcError::new(
+            tandem_core::ErrorCode::Invalid,
+            "That kind of workspace doesn't exist",
+        )),
+    }
 }
 
 #[tauri::command]

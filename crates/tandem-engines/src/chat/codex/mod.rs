@@ -491,6 +491,33 @@ pub fn args(req: &ChatStart) -> Vec<OsString> {
             .into(),
         );
     }
+    for server in &req.stdio_servers {
+        let key = format!("mcp_servers.{}", server.name);
+        let list = |items: &[String]| {
+            format!(
+                "[{}]",
+                items
+                    .iter()
+                    .map(|i| toml_string(i))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        a.push("-c".into());
+        a.push(
+            format!(
+                "{key}.command={}",
+                toml_string(&server.command.to_string_lossy())
+            )
+            .into(),
+        );
+        a.push("-c".into());
+        a.push(format!("{key}.args={}", list(&server.args)).into());
+        if !server.env_vars.is_empty() {
+            a.push("-c".into());
+            a.push(format!("{key}.env_vars={}", list(&server.env_vars)).into());
+        }
+    }
     a
 }
 
@@ -556,6 +583,7 @@ impl ChatAdapter for CodexAdapter {
             env.push((LEASE_ENV.into(), mcp.token.clone()));
         }
         let spec = ProcessSpec::new(req.program.clone(), args(&req), env, req.cwd.clone());
+        let spec = super::Relocate::apply(req.relocate.as_ref(), spec);
         let (process, lines) = ChatProcess::spawn(spec)?;
         let session = CodexSession {
             process: Arc::new(process),

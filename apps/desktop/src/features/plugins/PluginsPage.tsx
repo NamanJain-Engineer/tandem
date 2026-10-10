@@ -249,6 +249,9 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 function Card({ card, onOpen, onConnect }: { card: PluginCard; onOpen: () => void; onConnect: () => void }) {
   const preview = card.status === "preview";
   const blocked = card.state === "blocked_by_org";
+  // Ready, but this build can't connect it yet (D-960).
+  const unavailable = card.state === "unavailable";
+  const off = preview || blocked || unavailable;
   const connected = card.state === "connected" || card.state === "needs_attention";
   const status = (() => {
     if (card.state === "connected")
@@ -263,6 +266,7 @@ function Card({ card, onOpen, onConnect }: { card: PluginCard; onOpen: () => voi
           {t("plugins.state.needsAttention")}
         </Badge>
       );
+    if (unavailable) return <Badge variant="outline">{t("plugins.state.unavailable")}</Badge>;
     if (preview)
       return (
         <Tooltip label={t("plugins.previewTip")}>
@@ -277,9 +281,11 @@ function Card({ card, onOpen, onConnect }: { card: PluginCard; onOpen: () => voi
     ? t("plugins.previewTip")
     : blocked
       ? t("plugins.blockedByOrg", { plugin: card.label })
-      : card.limitReached
-        ? t("plugins.freeLimit")
-        : null;
+      : unavailable
+        ? (card.unavailableReason ?? t("plugins.state.unavailable"))
+        : card.limitReached
+          ? t("plugins.freeLimit")
+          : null;
   return (
     <li
       data-testid={`plugin-card-${card.pluginId}`}
@@ -287,7 +293,7 @@ function Card({ card, onOpen, onConnect }: { card: PluginCard; onOpen: () => voi
       className={cx(
         "flex flex-col gap-2 rounded-md border border-border p-3",
         // Quieter, not faded: dimmed text would fail contrast.
-        preview || blocked ? "bg-surface-1" : "bg-surface-2",
+        off ? "bg-surface-1" : "bg-surface-2",
       )}
     >
       <div className="flex items-center gap-2">
@@ -332,12 +338,12 @@ function Card({ card, onOpen, onConnect }: { card: PluginCard; onOpen: () => voi
           <Button
             size="sm"
             variant="secondary"
-            disabled={preview || blocked || card.limitReached}
+            disabled={off || card.limitReached}
             onClick={onConnect}
             data-testid={`plugin-connect-${card.pluginId}`}
             aria-label={t("plugins.connectTo", { plugin: card.label })}
           >
-            {card.limitReached && !preview && !blocked ? t("plugins.pro") : t("plugins.connect")}
+            {card.limitReached && !off ? t("plugins.pro") : t("plugins.connect")}
           </Button>
         </div>
       )}

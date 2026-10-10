@@ -21,7 +21,8 @@ use tandem_gateway::credentials::CredentialStore;
 use tandem_gateway::lease::LeaseContext;
 use tandem_gateway::oauth::{Loopback, Step, SIGN_IN_TIMEOUT};
 use tandem_gateway::vendors::{
-    self, AuthKind, ModuleStatus, PluginOptions, RiskClass, VendorModule,
+    self, AuthKind, Availability, ConnectMethod, ModuleStatus, PluginOptions, RiskClass,
+    VendorModule,
 };
 use tandem_gateway::{ConnectionInfo, HeldCall, PluginAsk, PluginHooks, PluginVerdict};
 use tandem_store::repo::held_drafts::{self, HeldDraftRow, HeldState, NewDraft, OriginKind};
@@ -41,6 +42,9 @@ pub enum PluginState {
     Available,
     NeedsAttention,
     BlockedByOrg,
+    /// Listed as ready, but this build can't connect it yet (no OAuth client
+    /// in the config, or turned off): `unavailableReason` says why (D-960).
+    Unavailable,
 }
 
 /// One card of Settings › Plugins (UI-90).
@@ -60,6 +64,10 @@ pub struct PluginCard {
     pub account_label: Option<String>,
     pub connection_id: Option<ConnectionId>,
     pub auth_kind: AuthKind,
+    /// The ways this build can connect it, in the connect sheet's order.
+    pub methods: Vec<ConnectMethod>,
+    /// Why the browser sign-in isn't offered, or why it can't connect at all.
+    pub unavailable_reason: Option<String>,
     /// Also takes an API key (the connect sheet offers it).
     pub takes_key: bool,
     pub key_hint: Option<String>,
@@ -293,6 +301,31 @@ impl PluginService {
         self.publish_all();
     }
 
+    /// The module's entry in the config's `plugins` map (D-960).
+    fn client(&self, plugin_id: &str) -> Option<tandem_core::remote_config::PluginClient> {
+        tandem_core::remote_config::plugin_clients(&self.config.value()).remove(plugin_id)
+    }
+
+    /// The ways this build can connect `module` (D-960).
+    fn availability(&self, module: &dyn VendorModule) -> Availability {
+        let m = module.manifest();
+        vendors::availability(m, self.client(m.id).as_ref())
+    }
+
+    /// Refuses a way this build doesn't offer, with the card's reason.
+    fn offers(&self, module: &dyn VendorModule, method: ConnectMethod) -> Result<(), IpcError> {
+        let can = self.availability(module);
+        if can.offers(method) {
+            return Ok(());
+        }
+        Err(IpcError::new(
+            ErrorCode::Invalid,
+            can.reason.unwrap_or_else(|| {
+                format!("{} can't be connected that way", module.manifest().label)
+            }),
+        ))
+    }
+
     fn blocked(&self, plugin_id: &str) -> bool {
         self.allowlist()
             .is_some_and(|list| !list.iter().any(|p| p == plugin_id))
@@ -334,6 +367,7 @@ impl PluginService {
         limit_reached: bool,
     ) -> PluginCard {
         let m = module.manifest();
+        let can = self.availability(module);
         let category = serde_json::to_value(m.category)
             .ok()
             .and_then(|v| v.as_str().map(str::to_string))
@@ -342,6 +376,9 @@ impl PluginService {
             Some(ConnectionStatus::Connected) => PluginState::Connected,
             Some(ConnectionStatus::NeedsAttention) => PluginState::NeedsAttention,
             _ if self.blocked(m.id) => PluginState::BlockedByOrg,
+            _ if m.status == ModuleStatus::Ready && can.methods.is_empty() => {
+                PluginState::Unavailable
+            }
             _ => PluginState::Available,
         };
         PluginCard {
@@ -359,6 +396,8 @@ impl PluginService {
             account_label: conn.and_then(|c| c.account_label.clone()),
             connection_id: conn.map(|c| c.id.clone()),
             auth_kind: m.auth,
+            methods: can.methods.clone(),
+            unavailable_reason: can.reason.clone(),
             takes_key: m.auth == AuthKind::ApiKey || m.alt_auth == Some(AuthKind::ApiKey),
             key_hint: m.key_hint.map(str::to_string),
             teammates,
@@ -535,12 +574,7 @@ impl PluginService {
         let module = self.module(plugin_id)?;
         let reconnect = connection.is_some();
         self.may_connect(module.as_ref(), reconnect).await?;
-        if !module.manifest().auth.is_oauth() {
-            return Err(IpcError::new(
-                ErrorCode::Invalid,
-                format!("{} doesn't sign in in the browser", module.manifest().label),
-            ));
-        }
+        self.offers(module.as_ref(), ConnectMethod::Oauth)?;
         let loopback = self.loopback().await?.clone();
         let op = OpId::new().as_str().to_string();
         let cancel = CancellationToken::new();
@@ -548,17 +582,7 @@ impl PluginService {
             ops.insert(op.clone(), cancel.clone());
         }
         let conn = connection.unwrap_or_default();
-        let static_client = self
-            .config
-            .value()
-            .pointer(&format!("/plugin_oauth_clients/{plugin_id}"))
-            .and_then(|v| {
-                v.as_str().map(str::to_string).or_else(|| {
-                    v.get("client_id")
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                })
-            });
+        let static_client = self.client(plugin_id).and_then(|c| c.client_id);
         let me = self.clone();
         let (op_id, pid) = (op.clone(), plugin_id.to_string());
         let progress_bus = self.bus.clone();
@@ -666,6 +690,7 @@ impl PluginService {
         let module = self.module(plugin_id)?;
         let reconnect = connection.is_some();
         self.may_connect(module.as_ref(), reconnect).await?;
+        self.offers(module.as_ref(), ConnectMethod::Key)?;
         let conn = connection.unwrap_or_default();
         let done = connect::api_key(&self.credentials, module.as_ref(), &conn, key)
             .await
@@ -685,6 +710,12 @@ impl PluginService {
     ) -> Result<PluginCard, IpcError> {
         let module = self.module(plugin_id)?;
         self.may_connect(module.as_ref(), false).await?;
+        let method = if port.is_some() {
+            ConnectMethod::Local
+        } else {
+            ConnectMethod::None
+        };
+        self.offers(module.as_ref(), method)?;
         let done = match (module.manifest().auth, port) {
             (AuthKind::None, _) => Connected {
                 account: Default::default(),

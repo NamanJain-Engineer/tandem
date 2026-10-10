@@ -14,8 +14,8 @@ use super::mcp::{McpModule, WhoAmI};
 use super::rest::{arg, check_status, seg, RestModule, RestRequest, RestTool};
 use super::web_fetch::WebFetch;
 use super::{
-    AuthKind, Category, ModuleStatus, PinnedHost, RiskClass, RiskRule, Upstream, VendorError,
-    VendorManifest, VendorModule,
+    AuthKind, Category, ModuleStatus, OAuthClient, PinnedHost, RiskClass, RiskRule, Upstream,
+    VendorError, VendorManifest, VendorModule,
 };
 
 use RiskClass::*;
@@ -46,6 +46,11 @@ pub fn rebase(mut m: VendorManifest, base: &str) -> VendorManifest {
         Upstream::Rest { base: b } => Upstream::Rest { base: map(b) },
         other => other.clone(),
     };
+    // The one mock registers every client itself (RFC 7591), whatever the
+    // real vendor needs.
+    if m.auth.is_oauth() {
+        m.oauth_client = OAuthClient::Dynamic;
+    }
     if let Some(origin) = PinnedHost::from_url(base) {
         let id = m.id;
         if !m.pinned.is_empty() {
@@ -101,6 +106,11 @@ fn manifest(
         target_keys: Vec::new(),
         key_hint: None,
         scopes: Vec::new(),
+        // Hand-registered clients need a secret unless a module says so.
+        oauth_client: match auth {
+            AuthKind::OauthStatic => OAuthClient::Registered { public: false },
+            _ => OAuthClient::Dynamic,
+        },
     }
 }
 
@@ -245,6 +255,8 @@ pub fn vercel() -> VendorManifest {
     let (up, pins) = mcp(&["https://mcp.vercel.com/"]);
     VendorManifest {
         target_keys: vec!["teamId", "projectId"],
+        // Vercel registers only clients it has approved (D-953).
+        oauth_client: OAuthClient::Reviewed,
         ..manifest(
             "vercel",
             "Vercel",
@@ -516,6 +528,9 @@ pub fn slack_tools() -> Vec<RestTool> {
 pub fn gmail_manifest() -> VendorManifest {
     VendorManifest {
         target_keys: vec!["to"],
+        // Google's installed-app flow takes PKCE without a client secret
+        // (D-961); the client id comes from the config.
+        oauth_client: OAuthClient::Registered { public: true },
         scopes: vec![
             "https://www.googleapis.com/auth/gmail.readonly",
             "https://www.googleapis.com/auth/gmail.compose",
@@ -880,5 +895,67 @@ mod tests {
             m.auth_hosts,
             vec![PinnedHost::new("http", "127.0.0.1", 8791, "/")]
         );
+    }
+
+    #[test]
+    fn f_pl_09_what_each_module_offers_follows_its_client_and_the_config() {
+        use super::super::{availability, ConnectMethod as M};
+        use tandem_core::remote_config::PluginClient;
+        let with = |id: &str| PluginClient {
+            client_id: Some(id.into()),
+            enabled: true,
+        };
+        let off = PluginClient {
+            client_id: None,
+            enabled: false,
+        };
+        // No config (a download today).
+        let a = availability(&github(), None);
+        assert_eq!(a.methods, vec![M::Key], "GitHub: token only");
+        assert!(a.reason.is_some());
+        assert_eq!(availability(&slack_manifest(), None).methods, vec![M::Key]);
+        let gmail = availability(&gmail_manifest(), None);
+        assert!(gmail.methods.is_empty());
+        assert_eq!(
+            gmail.reason.as_deref(),
+            Some("Gmail needs an app registration that this build doesn't have yet.")
+        );
+        let v = availability(&vercel(), None);
+        assert!(v.methods.is_empty());
+        assert_eq!(
+            v.reason.as_deref(),
+            Some("Vercel hasn't approved Vibezeo's sign-in yet.")
+        );
+        assert_eq!(
+            availability(&linear(), None).methods,
+            vec![M::Oauth, M::Key]
+        );
+        assert_eq!(availability(&notion(), None).methods, vec![M::Oauth]);
+        let web: Vec<_> = modules(None)
+            .into_iter()
+            .filter(|m| m.manifest().id == "web_fetch")
+            .collect();
+        assert_eq!(availability(web[0].manifest(), None).methods, vec![M::None]);
+        // With a registered client.
+        assert_eq!(
+            availability(&gmail_manifest(), Some(&with("g.apps"))).methods,
+            vec![M::Oauth]
+        );
+        assert_eq!(
+            availability(&vercel(), Some(&with("cl_1"))).methods,
+            vec![M::Oauth]
+        );
+        // A client id can't make a secret-needing exchange work (D-961).
+        assert_eq!(
+            availability(&github(), Some(&with("Iv1.x"))).methods,
+            vec![M::Key]
+        );
+        // Turned off in the config: nothing, whatever it takes.
+        let a = availability(&linear(), Some(&off));
+        assert!(a.methods.is_empty());
+        assert_eq!(a.reason.as_deref(), Some("Linear is turned off for now."));
+        // The E2E mock registers every client itself.
+        let rebased = rebase(github(), "http://127.0.0.1:8791");
+        assert_eq!(availability(&rebased, None).methods, vec![M::Oauth, M::Key]);
     }
 }

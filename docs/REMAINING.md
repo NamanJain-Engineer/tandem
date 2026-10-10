@@ -8,16 +8,17 @@ every milestone has its tasks, exit checks and E2E list in MILESTONES. Tick
 items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md`
 has every feature below with its full behaviour and acceptance tests.
 
-**Where it stands (10 October 2026, `product-m0-m5`):** M0–M10 and M12
+**Where it stands (10 October 2026, `product-m0-m5`):** M0–M12 and M14
 are done, and so are M15's six features (its non-functional checks are under
-way). So is M13, apart from its voice pair (F-DI-05 and F-DI-10, which M8's
-session builds next on M13's clients). M16 has F-SH-12, F-AC-07, F-AU-01,
-F-BE-03 and F-BE-12. That's 126 of 152 features, and all 65 P0s. Left: 26
-features, none of them P0 (12 P1, 14 P2): M11's 8, M13's voice pair, M14's 2
-and M16's 14. vibezeo.com serves 0.4.0 (teammates, Find work, your data,
-shortcut rebinding and the usage page); Dictate (M8) and plugins (M12) reach a
-download with the next release. M15 makes the P0/P1 product launchable;
-M16 adds the P2 extras and the release candidate.
+way). So is M13, apart from F-DI-10 (Enhance and Polish), which M8's session
+builds next on M13's client; F-DI-05 (cloud speech-to-text) is done. M16 has
+F-SH-12, F-AC-07, F-AU-01, F-BE-03, F-BE-12 and F-RT-05. That's 138 of 152
+features, and all 65 P0s. Left: 14 features, none of them P0 (1 P1, 13 P2):
+F-DI-10 and M16's 13. vibezeo.com serves 0.4.0 (teammates, Find work, your
+data, shortcut rebinding and the usage page); Dictate (M8), tasks and routines
+(M11), plugins (M12) and SSH and WSL workspaces (M14) reach a download with
+the next release. M15 makes the P0/P1 product launchable; M16 adds the P2
+extras and the release candidate.
 
 ## 0. First, before new features
 
@@ -69,7 +70,7 @@ history and dictionary, model download.
 ### M10 · Teammates and gateway core (XL) · 12 features (P1)
 Agent mode: persistent teammates with a brief, memory, skills, learning,
 session search and teammate-to-teammate mail, all over the single local gateway
-with leases. **Done in pull request #5** (branch `m10-teammates-gateway`), except F-DI-12's mic in "Create with AI", which completes after M8 merges (D-300).
+with leases. **Done in pull request #5** (branch `m10-teammates-gateway`); F-DI-12's mic in "Create with AI" followed once M8 merged.
 - [x] F-PL-01 Gateway process
 - [x] F-AG-01 Teammate record
 - [x] F-AG-02 Agent rail
@@ -91,15 +92,16 @@ search, mail, settings, create with AI, gateway.
 
 ### M11 · Tasks and routines (L) · 8 features (P1)
 A local task tracker agents read and write over MCP, with Pro execution in
-lanes; scheduled routines that run in-app and in the background.
-- [ ] F-TK-01 Task store
-- [ ] F-TK-02 `tandem-tasks` MCP server
-- [ ] F-TK-03 Tasks UI
-- [ ] F-TK-04 Task execution (Pro)
-- [ ] F-RT-01 Routine model (Pro)
-- [ ] F-RT-02 In-app scheduler and runs
-- [ ] F-RT-03 Background runner (Pro)
-- [ ] F-RT-04 Routines UI
+lanes; scheduled routines that run in-app and in the background. **Done in
+pull request #36** (branch `m11-tasks-routines`), with M16's F-RT-05.
+- [x] F-TK-01 Task store
+- [x] F-TK-02 `tandem-tasks` MCP server
+- [x] F-TK-03 Tasks UI
+- [x] F-TK-04 Task execution (Pro)
+- [x] F-RT-01 Routine model (Pro)
+- [x] F-RT-02 In-app scheduler and runs
+- [x] F-RT-03 Background runner (Pro)
+- [x] F-RT-04 Routines UI
 
 Tasks: task store; MCP server; Tasks UI (UI-80/81); task execution
 (UI-82/83/84); routine model and schedules; scheduler; background runner;
@@ -150,13 +152,16 @@ and test modes until they exist.
 ### M14 · Remote: SSH and WSL (L) · 2 features (P1)
 Terminals, agents, threads, files and git on SSH hosts through `tandem-host`,
 and in WSL distros, never forwarding local credentials.
-- [ ] F-RM-01 SSH workspaces and `tandem-host`
-- [ ] F-RM-02 WSL workspaces (Windows)
+- [x] F-RM-01 SSH workspaces and `tandem-host`
+- [x] F-RM-02 WSL workspaces (Windows)
 
 Tasks: `tandem-host`; SSH transport; remote workspaces; WSL; infra (the
 compose `sshd` profile).
 E2E-M14-1…5: connect, host key, containment, re-attach, remote engines. WSL
 needs a Windows machine (manual QA in `HUMAN_TODO.md` until CI runs Windows).
+Done on `m14-remote-ssh-wsl` (PR #6): every task, E2E-M14-1…5 green; WSL is
+unit-tested with fakes, and its Windows pass, real macOS/aarch64 hosts and the
+CI-built binaries for all three targets wait in `HUMAN_TODO.md`.
 
 ### M15 · Website, docs, data controls and launch hardening (L) · 6 features (2 P0)
 Close every remaining P0 and P1 and every non-functional requirement. After
@@ -188,7 +193,7 @@ release candidate. Stop after any sub-phase if the budget runs out.
 - 16C Phone companion: [ ] F-RM-03 Phone companion · [ ] F-BE-11 Remote relay
 - 16D Extras: [x] F-SH-12 Scratchpad · [ ] F-CD-21 Simulator pane (macOS) ·
   [x] F-AC-07 Usage dashboard · [ ] F-AG-10 Skill sync to engines ·
-  [ ] F-AG-13 Teammate in a terminal · [ ] F-RT-05 Schedule tool for teammates ·
+  [ ] F-AG-13 Teammate in a terminal · [x] F-RT-05 Schedule tool for teammates ·
   [x] F-BE-03 CLI device-code sign-in · [x] F-BE-12 Admin
 - Also: [x] app-shortcut rebinding (F-SH-09 P2 part, Settings › Shortcuts UI-113),
   [x] Team SSO (F-BL-06 P2 part), [x] the remaining AI routes (`/auto/next`,

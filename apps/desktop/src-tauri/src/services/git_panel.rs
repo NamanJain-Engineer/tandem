@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use crate::services::remote_files::not_remote;
 use serde::{Deserialize, Serialize};
 use tandem_core::error::IpcError;
 use tandem_git::cli::Git;
@@ -28,6 +29,11 @@ pub struct GitPanel {
     /// the top.
     pub folder: String,
     pub status: GitStatus,
+    /// The SSH host it's on, by name: pushes, pulls and branches run in a
+    /// terminal there (D-411).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -109,6 +115,17 @@ impl GitPanelService {
 
     /// `git_status`: `None` outside a repository.
     pub async fn status(&self, ctx: &FileContext) -> Result<Option<GitPanel>, IpcError> {
+        if let Some((remote, r)) = self.files.remote_of(ctx).await? {
+            let label = remote.label(&r.host).await;
+            return Ok(remote.files.git_status(&remote, &r).await?.map(
+                |(root, folder, status)| GitPanel {
+                    root,
+                    folder,
+                    status,
+                    host: Some(label.clone()),
+                },
+            ));
+        }
         let (folder, repo) = self.open(ctx).await?;
         let Some(repo) = repo else {
             return Ok(None);
@@ -122,6 +139,7 @@ impl GitPanelService {
             root: repo.root().to_string_lossy().into_owned(),
             folder: inside,
             status,
+            host: None,
         }))
     }
 
@@ -131,10 +149,16 @@ impl GitPanelService {
         path: &str,
         staged: bool,
     ) -> Result<FileDiff, IpcError> {
+        if let Some((remote, r)) = self.files.remote_of(ctx).await? {
+            return remote.files.git_diff(&remote, &r, path, staged).await;
+        }
         Ok(self.repo(ctx).await?.diff_file(path, staged).await?)
     }
 
     pub async fn branches(&self, ctx: &FileContext) -> Result<Vec<Branch>, IpcError> {
+        if self.files.remote_of(ctx).await?.is_some() {
+            return Err(not_remote("Switching branches"));
+        }
         Ok(self.repo(ctx).await?.branches().await?)
     }
 
@@ -144,6 +168,13 @@ impl GitPanelService {
         ctx: &FileContext,
         paths: &[String],
     ) -> Result<(), IpcError> {
+        if let Some((remote, r)) = self.files.remote_of(ctx).await? {
+            return remote
+                .files
+                .git_op(&remote, &r, "stage", paths, None)
+                .await
+                .map(|_| ());
+        }
         self.act(ctx, |r| async move { ops::stage(git, &r, paths).await })
             .await
     }
@@ -154,6 +185,13 @@ impl GitPanelService {
         ctx: &FileContext,
         paths: &[String],
     ) -> Result<(), IpcError> {
+        if let Some((remote, r)) = self.files.remote_of(ctx).await? {
+            return remote
+                .files
+                .git_op(&remote, &r, "unstage", paths, None)
+                .await
+                .map(|_| ());
+        }
         self.act(ctx, |r| async move { ops::unstage(git, &r, paths).await })
             .await
     }
@@ -165,6 +203,13 @@ impl GitPanelService {
         ctx: &FileContext,
         paths: &[String],
     ) -> Result<(), IpcError> {
+        if let Some((remote, r)) = self.files.remote_of(ctx).await? {
+            return remote
+                .files
+                .git_op(&remote, &r, "discard", paths, None)
+                .await
+                .map(|_| ());
+        }
         self.act(ctx, |r| async move { ops::discard(git, &r, paths).await })
             .await
     }
@@ -175,6 +220,15 @@ impl GitPanelService {
         ctx: &FileContext,
         message: &str,
     ) -> Result<Committed, IpcError> {
+        if let Some((remote, r)) = self.files.remote_of(ctx).await? {
+            let sha = remote
+                .files
+                .git_op(&remote, &r, "commit", &[], Some(message))
+                .await?;
+            return Ok(Committed {
+                sha: sha.unwrap_or_default(),
+            });
+        }
         let sha = self
             .act(ctx, |r| async move { ops::commit(git, &r, message).await })
             .await?;
@@ -182,16 +236,25 @@ impl GitPanelService {
     }
 
     pub async fn push(&self, git: &Git, ctx: &FileContext, publish: bool) -> Result<(), IpcError> {
+        if self.files.remote_of(ctx).await?.is_some() {
+            return Err(not_remote("Push"));
+        }
         self.act(ctx, |r| async move { ops::push(git, &r, publish).await })
             .await
     }
 
     pub async fn pull(&self, git: &Git, ctx: &FileContext) -> Result<(), IpcError> {
+        if self.files.remote_of(ctx).await?.is_some() {
+            return Err(not_remote("Pull"));
+        }
         self.act(ctx, |r| async move { ops::pull(git, &r).await })
             .await
     }
 
     pub async fn switch(&self, git: &Git, ctx: &FileContext, branch: &str) -> Result<(), IpcError> {
+        if self.files.remote_of(ctx).await?.is_some() {
+            return Err(not_remote("Switching branches"));
+        }
         self.act(ctx, |r| async move { ops::switch(git, &r, branch).await })
             .await
     }
@@ -202,6 +265,9 @@ impl GitPanelService {
         ctx: &FileContext,
         name: &str,
     ) -> Result<(), IpcError> {
+        if self.files.remote_of(ctx).await?.is_some() {
+            return Err(not_remote("New branch"));
+        }
         self.act(
             ctx,
             |r| async move { ops::create_branch(git, &r, name).await },

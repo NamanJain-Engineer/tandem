@@ -138,7 +138,6 @@ impl AutoHost for AppHost {
         state
             .notifications
             .raise_for_pane(
-                &state,
                 kind,
                 title.into(),
                 tandem_core::redact::redact(&body),
