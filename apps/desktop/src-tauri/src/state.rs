@@ -559,6 +559,7 @@ impl AppState {
                 store: store.clone(),
                 threads: threads.clone(),
                 teammates: teammates.clone(),
+                gateway: gateway.clone(),
             }),
         );
         // The gateway's teammate built-ins answer for the lease's teammate.

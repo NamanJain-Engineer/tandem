@@ -58,7 +58,7 @@ pub struct OAuthRequest {
     pub module: Arc<dyn VendorModule>,
     /// The connection this credential is for (new, or the one reconnected).
     pub connection: ConnectionId,
-    /// A client id from the remote config (`plugin_oauth_clients.<id>`) for
+    /// A client id from the config (`plugins.<id>.client_id`, D-960) for
     /// servers that don't register apps.
     pub static_client_id: Option<String>,
     pub open: OpenFn,
@@ -155,15 +155,21 @@ pub async fn oauth(
 
         let redirect_uri = loopback.redirect_uri();
         emit(p, Step::Registration, StepState::Active);
-        let client = if found.metadata.registration_endpoint.is_some() {
-            oauth::register(&scope, &found.metadata, &redirect_uri)
-                .await
-                .map_err(|e| failed(p, e))?
-        } else if let Some(id) = req.static_client_id.clone().filter(|s| !s.is_empty()) {
+        // A client the config names wins (a hand-registered one, or the one
+        // a reviewing vendor approved); otherwise the server registers us.
+        let client = if let Some(id) = req
+            .static_client_id
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+        {
             ClientReg {
                 client_id: id,
                 client_secret: None,
             }
+        } else if found.metadata.registration_endpoint.is_some() {
+            oauth::register(&scope, &found.metadata, &redirect_uri)
+                .await
+                .map_err(|e| failed(p, e))?
         } else {
             return Err(failed(
                 p,

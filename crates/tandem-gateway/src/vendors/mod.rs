@@ -61,6 +61,105 @@ impl AuthKind {
     }
 }
 
+/// Where a module's OAuth client comes from (D-960). It decides whether a
+/// build can offer the browser sign-in at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OAuthClient {
+    /// The vendor's server registers Vibezeo itself (RFC 7591).
+    Dynamic,
+    /// The vendor registers only clients it has reviewed (Vercel): the
+    /// approved client's id comes from the config.
+    Reviewed,
+    /// A client Vibezeo registers by hand, its id in the config. `public`:
+    /// the vendor lets a desktop app exchange the code with PKCE alone, no
+    /// client secret.
+    Registered { public: bool },
+}
+
+/// How a card may be connected in this build.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum ConnectMethod {
+    /// Browser sign-in (OAuth).
+    Oauth,
+    /// An API key or token.
+    Key,
+    /// A built-in with no sign-in.
+    None,
+    /// A local app's port.
+    Local,
+}
+
+/// What a module can do in this build, given its entry in the config's
+/// `plugins` map (D-960): the ways to connect, or why there are none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Availability {
+    pub methods: Vec<ConnectMethod>,
+    /// Set when the browser sign-in isn't offered although the module has
+    /// one; the card says it when no other way is left.
+    pub reason: Option<String>,
+}
+
+impl Availability {
+    pub fn offers(&self, method: ConnectMethod) -> bool {
+        self.methods.contains(&method)
+    }
+}
+
+/// The ways `m` can be connected with `client` (its config entry).
+pub fn availability(
+    m: &VendorManifest,
+    client: Option<&tandem_core::remote_config::PluginClient>,
+) -> Availability {
+    let label = m.label;
+    if client.is_some_and(|c| !c.enabled) {
+        return Availability {
+            methods: Vec::new(),
+            reason: Some(format!("{label} is turned off for now.")),
+        };
+    }
+    let client_id = client
+        .and_then(|c| c.client_id.as_deref())
+        .is_some_and(|id| !id.trim().is_empty());
+    let mut methods = Vec::new();
+    let mut reason = None;
+    for kind in std::iter::once(m.auth).chain(m.alt_auth) {
+        let method = match kind {
+            AuthKind::OauthDcr | AuthKind::OauthStatic => {
+                let why = match m.oauth_client {
+                    OAuthClient::Dynamic => None,
+                    OAuthClient::Reviewed if client_id => None,
+                    OAuthClient::Reviewed => {
+                        Some(format!("{label} hasn't approved Vibezeo's sign-in yet."))
+                    }
+                    OAuthClient::Registered { public: true } if client_id => None,
+                    OAuthClient::Registered { public: true } => Some(format!(
+                        "{label} needs an app registration that this build doesn't have yet."
+                    )),
+                    OAuthClient::Registered { public: false } => Some(format!(
+                        "{label}'s browser sign-in isn't supported in this build yet."
+                    )),
+                };
+                match why {
+                    None => ConnectMethod::Oauth,
+                    Some(why) => {
+                        reason = Some(why);
+                        continue;
+                    }
+                }
+            }
+            AuthKind::ApiKey => ConnectMethod::Key,
+            AuthKind::LocalPort => ConnectMethod::Local,
+            AuthKind::None => ConnectMethod::None,
+        };
+        if !methods.contains(&method) {
+            methods.push(method);
+        }
+    }
+    Availability { methods, reason }
+}
+
 /// What a tool may do (F-PL-06); decides whether a call asks first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -222,6 +321,8 @@ pub struct VendorManifest {
     pub key_hint: Option<&'static str>,
     /// OAuth scopes to ask for.
     pub scopes: Vec<&'static str>,
+    /// Where its OAuth client comes from (D-960).
+    pub oauth_client: OAuthClient,
 }
 
 /// One tool of a module, before the gateway names it `<plugin>__<tool>`.

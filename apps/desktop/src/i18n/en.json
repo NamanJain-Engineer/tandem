@@ -2420,5 +2420,6 @@
   "threadPlugins.noneBody": "Connect a service in Settings › Plugins, then choose it here.",
   "threadPlugins.openSettings": "Open Settings › Plugins",
   "threadPlugins.allThreads": "Granted to all threads in Settings › Plugins.",
-  "threadPlugins.nextTurn": "Changes apply from this thread's next message."
+  "threadPlugins.nextTurn": "Changes apply from this thread's next message.",
+  "plugins.state.unavailable": "Not available yet"
 }
