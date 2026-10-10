@@ -51,6 +51,10 @@ impl AppHost {
         self.app.state::<AppState>()
     }
 
+    pub(crate) fn app(&self) -> AppHandle {
+        self.app.clone()
+    }
+
     fn publish(&self, name: &str, payload: Value) {
         self.state()
             .bus
@@ -146,13 +150,6 @@ fn status_word(s: AgentStatus) -> &'static str {
         AgentStatus::Idle => "idle",
         AgentStatus::Failed => "failed",
     }
-}
-
-fn not_yet(tool: &str) -> String {
-    format!(
-        "{} isn't available by voice in this version yet; it's in the app.",
-        tool.replace('_', " ")
-    )
 }
 
 #[async_trait]
@@ -302,7 +299,7 @@ impl ToolHost for AppHost {
                     None => "Credits aren't known right now.".into(),
                 })
             }
-            other => Err(not_yet(other)),
+            other => crate::commands::conductor_tools::run(self, other, args).await,
         }
     }
 

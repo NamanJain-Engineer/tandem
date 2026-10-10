@@ -7,6 +7,7 @@ pub mod app;
 pub mod auto;
 pub mod browser;
 pub mod conductor;
+pub mod conductor_tools;
 pub mod data_controls;
 pub mod dictate;
 pub mod engines;

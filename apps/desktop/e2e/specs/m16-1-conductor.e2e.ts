@@ -270,6 +270,37 @@ describe("E2E-M16-1 Conductor call", function () {
     expect(log[0]?.events.some((e) => e.text.includes("Confirmed on screen"))).toBe(true);
   });
 
+  it("F-CN-02 the app's own tools answer by voice: launch, wait, usage, updates", async function () {
+    this.timeout(120_000);
+    await startCall();
+    const before = await paneIds();
+    const ids = await inject([
+      { name: "launch_agents", args: { engine: "claude", count: 1, workspace: "current" } },
+      { name: "get_usage", args: {} },
+      { name: "check_updates", args: {} },
+      { name: "list_routines", args: {} },
+    ]);
+    const v = await until(
+      (x) => ids.every((id) => x.chips.some((c) => c.id === id && c.state !== "running")),
+      "the four tools ran",
+      60_000,
+    );
+    for (const id of ids) expect(v.chips.find((c) => c.id === id)?.state).toBe("done");
+    // The launched agent is placed in the window, in its own tab (as the launch sheet does).
+    let launched = "";
+    await browser.waitUntil(
+      async () => {
+        launched = (await paneIds()).find((p) => !before.includes(p)) ?? "";
+        return launched !== "";
+      },
+      { timeout: 30_000, timeoutMsg: "the launched pane" },
+    );
+    await waitForPaneText(launched, "Fake Claude Code");
+    const [wait] = await inject([{ name: "wait_for_pane", args: { pane: launched, timeout: 5 } }]);
+    await until((x) => x.chips.some((c) => c.id === wait && c.state === "done"), "waited");
+    await endCall();
+  });
+
   it("F-CN-03.2 a voice allow for approval A can't resolve approval B", async () => {
     await startCall();
     await inject([{ name: "execute_task", args: { task: "TAN-1" } }]);

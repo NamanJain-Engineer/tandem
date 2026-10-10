@@ -740,6 +740,8 @@ Built on branch `m16a-conductor` (from `product-m0-m5`), in parallel with F-CN-0
 - D-1112: The desktop's balance doesn't show the 10-minute hold while a call runs (the API sends no credits event on reserve); the HUD's minutes-left reads the balance as shown and the settle corrects it.
 - D-1113: Only the mock provider is built on the desktop. A session minted for another provider ends with "Couldn't connect to Conductor" and settles at 0 s; the vendor client waits for the key (HUMAN_TODO).
 
+- D-1115: `panes::list_all_open` sorted panes created in the same millisecond by id, whose ULID suffix is random, so F-CN-05's store test failed now and then in the gate. It now sorts by `created_at`, then insertion order (`rowid`), which is what "oldest first" means.
+
 ### M16 · 16A Conductor core log
 - Tests first from the eight E2E-M16-1 cases, the four F-CN-02 and two F-CN-03 acceptance criteria. The first E2E run crashed the app: `conductor_start_call` is a sync command and spawned on a thread outside the runtime (D-1100's runtime handle fixes it). Then the test-only commands lacked their capability (added to `test-capability.json`), `getText()` read "" while the HUD faded in (read `innerText`), and a key off the closed list was refused by the schema check with a generic reason; the executor now says "Conductor can't change that setting." first. One unit test raced the call's tick, and was fixed in the test rather than slowed.
 

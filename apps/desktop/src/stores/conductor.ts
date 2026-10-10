@@ -3,12 +3,12 @@ import type { CallLogEntry, CallView, IpcError, UiAction } from "@tandem/protoco
 import { listen } from "../ipc/events";
 import { invoke } from "../ipc/invoke";
 import { switchMode } from "../features/shell/actions";
-import { useLaunch } from "./launch";
+import { place, useLaunch } from "./launch";
 import { useLayout } from "./layout";
 import { useSession } from "./session";
 import { useSidebar } from "./sidebar";
 import { useUi } from "./ui";
-import type { SidebarTabKind } from "@tandem/protocol";
+import type { LaunchedSeat, SidebarTabKind } from "@tandem/protocol";
 
 export const IDLE: CallView = {
   callId: null,
@@ -98,6 +98,22 @@ export function performUiAction({ action, args }: UiAction): void {
     }
     case "flip":
       switchMode(useUi.getState().mode === "code" ? "thread" : "code");
+      break;
+    case "place_launched": {
+      const launched = (args.launched ?? []) as LaunchedSeat[];
+      const shared = typeof args.sharedTabId === "string" ? args.sharedTabId : null;
+      void place(launched, shared);
+      break;
+    }
+    case "open_teammate":
+      switchMode("agent");
+      if (s("teammate")) void import("./teammates").then(({ useTeammates }) => useTeammates.getState().select(s("teammate")));
+      break;
+    case "new_teammate":
+      switchMode("agent");
+      void import("../features/agents/NewTeammateSheet").then(({ useNewTeammate }) =>
+        useNewTeammate.getState().show(true, s("description") || undefined),
+      );
       break;
     case "close_pane":
       if (s("pane")) closePane(s("pane"));

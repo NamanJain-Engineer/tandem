@@ -31,10 +31,16 @@ import { useBoot } from "../shell/useBoot";
 import { useInstall } from "../code/InstallSheet";
 import { useComposerDictation } from "../dictate/useComposerDictation";
 
-/** Opens the New teammate sheet from anywhere (rail +, palette). */
-export const useNewTeammate = create<{ open: boolean; show: (o: boolean) => void }>((set) => ({
+/** Opens the New teammate sheet from anywhere (rail +, palette, and
+ * Conductor's `create_teammate`, which fills in the description). */
+export const useNewTeammate = create<{
+  open: boolean;
+  prefill: string | null;
+  show: (o: boolean, prefill?: string) => void;
+}>((set) => ({
   open: false,
-  show: (open) => set({ open }),
+  prefill: null,
+  show: (open, prefill) => set({ open, prefill: prefill ?? null }),
 }));
 
 const NAME_MAX = 40;
@@ -119,6 +125,12 @@ function SheetBody({ onClose }: { onClose: () => void }) {
   const dataDir = useBoot((s) => s.boot?.dataDirDisplay ?? "~/.vibezeo");
   const { show } = useToast();
   const drafting = canDraft();
+  const prefill = useNewTeammate((s) => s.prefill);
+  useEffect(() => {
+    if (!prefill) return;
+    if (drafting) setDescription(prefill);
+    else setBrief(prefill);
+  }, [prefill, drafting]);
   const [name, setName] = useState("");
   const [brief, setBrief] = useState("");
   const [engineId, setEngineId] = useState<string | null>(null);
