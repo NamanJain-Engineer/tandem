@@ -19,6 +19,9 @@
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
+    "@noble/ciphers": "^2.4.0",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
     "@tandem/protocol": "workspace:*",
     "@tandem/ui": "workspace:*",
     "fumadocs-core": "15.8.5",
@@ -37,8 +40,10 @@
     "@types/node": "^22.15.30",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
+    "@types/ws": "^8.5.12",
     "tailwindcss": "^4.1.11",
     "typescript": "~5.8.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "ws": "^8.18.0"
   }
 }

@@ -11,6 +11,7 @@ pub mod layouts;
 pub mod mail;
 pub mod memory_changes;
 pub mod notifications;
+pub mod pairings;
 pub mod panes;
 pub mod plugins;
 pub mod presets;

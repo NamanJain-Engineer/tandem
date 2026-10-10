@@ -60,6 +60,8 @@ tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-window-state = "2"
 png = "0.17"
+qrcode.workspace = true
+tokio-tungstenite.workspace = true
 ignore.workspace = true
 # Browser panes (F-CD-17): wry webviews of our own, outside Tauri's IPC.
 # Same version and features as tauri-runtime-wry, so nothing builds twice.

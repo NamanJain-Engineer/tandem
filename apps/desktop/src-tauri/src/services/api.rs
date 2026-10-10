@@ -442,10 +442,30 @@ pub trait ApiClient: Send + Sync {
     async fn device_start(&self, _client: &str, _version: &str) -> Result<DeviceStart, ApiError> {
         Err(no_hosted_service())
     }
+    /// `POST /v1/pairings` (F-RM-03): registers a phone pairing with the relay.
+    async fn pairing_create(
+        &self,
+        _access: &str,
+        _pairing_id: &str,
+        _device_label: Option<&str>,
+    ) -> Result<PairingTicket, ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `DELETE /v1/pairings/:id`: the relay drops the pairing's sockets.
+    async fn pairing_delete(&self, _access: &str, _pairing_id: &str) -> Result<(), ApiError> {
+        Err(no_hosted_service())
+    }
     /// `POST /v1/auth/device/token`: tokens once approved; the OAuth error code otherwise.
     async fn device_token(&self, _device_code: &str) -> Result<TokenPair, ApiError> {
         Err(no_hosted_service())
     }
+}
+
+/// `POST /v1/pairings`'s answer (F-RM-03).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PairingTicket {
+    pub pairing_token: String,
+    pub relay_url: String,
 }
 
 /// `POST /v1/auth/device/start` (F-BE-03).
@@ -782,6 +802,33 @@ impl ApiClient for HttpApi {
             .post(self.url("/v1/audit/events"))
             .bearer_auth(access)
             .json(&json!({ "events": events }));
+        self.call_empty(req).await
+    }
+
+    async fn pairing_create(
+        &self,
+        access: &str,
+        pairing_id: &str,
+        device_label: Option<&str>,
+    ) -> Result<PairingTicket, ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/pairings"))
+            .bearer_auth(access)
+            .json(&match device_label {
+                Some(label) => json!({ "pairing_id": pairing_id, "device_label": label }),
+                None => json!({ "pairing_id": pairing_id }),
+            });
+        self.call(req).await
+    }
+
+    async fn pairing_delete(&self, access: &str, pairing_id: &str) -> Result<(), ApiError> {
+        let req = self
+            .net
+            .client()
+            .delete(self.url(&format!("/v1/pairings/{pairing_id}")))
+            .bearer_auth(access);
         self.call_empty(req).await
     }
 

@@ -111,6 +111,8 @@ pub struct AppState {
     pub approvals: Arc<crate::services::approvals::ApprovalService>,
     pub notifications: Arc<crate::services::notifications::NotificationService>,
     pub auto: Arc<crate::services::auto::AutoService>,
+    /// The phone companion (F-RM-03).
+    pub phone: Arc<crate::services::phone::PhoneService>,
     /// Paused agents and their relaunch queue (F-SH-07).
     pub restore: Arc<crate::services::restore::RestoreService>,
     /// Auto-update and the minimum-version notice (F-SH-06).
@@ -581,6 +583,14 @@ impl AppState {
         ));
         let dictate =
             crate::services::dictate::DictateService::new(store.clone(), data.clone(), e2e);
+        let phone = crate::services::phone::PhoneService::new(
+            store.clone(),
+            bus.clone(),
+            keychain.clone(),
+            clock.clone(),
+            endpoints.web.clone(),
+            crate::services::phone::RekeyPolicy::default(),
+        );
         Self {
             data,
             store,
@@ -600,6 +610,7 @@ impl AppState {
             approvals,
             notifications,
             auto,
+            phone,
             restore,
             updates,
             config,

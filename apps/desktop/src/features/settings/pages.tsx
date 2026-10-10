@@ -4,6 +4,7 @@ import { AccountPage } from "./AccountPage";
 import { EnginesPage } from "./EnginesPage";
 import { ShortcutsPage } from "./ShortcutsPage";
 import { AccountsPage } from "./AccountsPage";
+import { RemotePage } from "./RemotePage";
 import { PluginsPage } from "../plugins/PluginsPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
@@ -579,6 +580,14 @@ export function settingsPages(platform: string): PageDef[] {
       keywords: ["plugins", "connect", "github", "oauth", "api key", "grants", "approvals", "held"],
       rows: [],
       extra: <PluginsPage />,
+    },
+    {
+      id: "remote",
+      label: t("settings.remote"),
+      subtitle: t("settings.remote.subtitle"),
+      keywords: ["remote", "phone", "pair", "mobile", "qr", "relay", "approvals"],
+      rows: [],
+      extra: <RemotePage />,
     },
     {
       id: "privacy",

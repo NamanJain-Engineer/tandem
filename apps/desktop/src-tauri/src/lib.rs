@@ -222,6 +222,16 @@ macro_rules! app_commands {
             commands::auto::auto_resume,
             commands::auto::auto_stop,
             commands::auto::auto_dismiss,
+            commands::phone::phone_pair_begin,
+            commands::phone::phone_pair_cancel,
+            commands::phone::phone_pairings_list,
+            commands::phone::phone_pairing_set_grants,
+            commands::phone::phone_pairing_revoke,
+            commands::phone::phone_reset,
+            commands::phone::phone_arm_approvals,
+            commands::phone::phone_arm_state,
+            commands::phone::phone_queue_list,
+            commands::phone::phone_queue_decide,
             commands::limits::limit_cancel_resume,
             commands::limits::limit_dismiss,
             commands::limits::limit_continue,
@@ -689,6 +699,7 @@ pub fn run() {
             }
             // Mail queued before the app last quit goes out (F-AG-12).
             state.mail.pump_soon();
+            commands::phone::start(&handle);
             // Updates (F-SH-06): the signed feed, if this build has a key.
             if let Some(key) = services::updates::pubkey(state::BUNDLED_KEYS) {
                 let record = state

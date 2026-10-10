@@ -14,8 +14,11 @@ tandem-engines.workspace = true
 tandem-gateway = { workspace = true, features = ["test-vendors"] }
 tandem-git.workspace = true
 tandem-pty.workspace = true
+tandem-store.workspace = true
 tandem-desktop = { path = "../../apps/desktop/src-tauri" }
 async-trait.workspace = true
+base64.workspace = true
+chrono.workspace = true
 reqwest.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true

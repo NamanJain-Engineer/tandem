@@ -100,6 +100,7 @@ prefixed_id!(CallId, "call");
 prefixed_id!(NotificationId, "ntf");
 prefixed_id!(AttemptId, "atm");
 prefixed_id!(PresetId, "pst");
+prefixed_id!(PhoneQueueId, "pq");
 
 /// `local` is the fixed id of this machine; remote hosts are `host_<ULID>`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
