@@ -462,9 +462,10 @@ mod tests {
             Some(Path::new("/d/si")),
         )
         .expect("wrap");
-        assert!(args[1].ends_with(
-            "unset c; TANDEM_SHELL_TOKEN=\"$t\" TANDEM_REAL_ZDOTDIR=\"${ZDOTDIR-}\" ZDOTDIR='/d/si/zsh' exec '/bin/zsh' -l"
-        ));
+        let s = std::path::MAIN_SEPARATOR;
+        assert!(args[1].ends_with(&format!(
+            "unset c; TANDEM_SHELL_TOKEN=\"$t\" TANDEM_REAL_ZDOTDIR=\"${{ZDOTDIR-}}\" ZDOTDIR='/d/si{s}zsh' exec '/bin/zsh' -l"
+        )));
         let fish =
             agent_wrapper(Path::new("/usr/bin/fish"), &["codex".into()], None).expect("wrap");
         assert!(

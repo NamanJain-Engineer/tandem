@@ -260,7 +260,8 @@ pub struct LaunchdLauncher {
 impl LaunchdLauncher {
     pub fn plist_path(&self) -> PathBuf {
         self.home
-            .join("Library/LaunchAgents")
+            .join("Library")
+            .join("LaunchAgents")
             .join(format!("{LAUNCHD_LABEL}.plist"))
     }
 

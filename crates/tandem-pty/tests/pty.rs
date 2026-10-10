@@ -1,4 +1,4 @@
-//! Real-PTY tests (unix). Windows ConPTY gets its own suite in M3.
+//! Real-PTY tests (unix). Windows ConPTY has its own suite, `tests/pty_windows.rs`.
 #![cfg(unix)]
 
 use std::collections::BTreeMap;

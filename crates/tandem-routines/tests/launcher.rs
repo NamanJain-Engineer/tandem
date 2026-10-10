@@ -28,10 +28,13 @@ fn f_rt_03_1_launchd_writes_the_plist_and_bootstraps_it_then_removes_it() {
     assert_eq!(status.kind, LauncherKind::Launchd);
     let plist = dir
         .path()
-        .join("Library/LaunchAgents/app.tandem.routines.plist");
+        .join("Library")
+        .join("LaunchAgents")
+        .join("app.tandem.routines.plist");
+    // Compared as paths: the tests also run on Windows, where `/` and `\` mix.
     assert_eq!(
-        status.path.as_deref(),
-        Some(plist.to_string_lossy().as_ref())
+        status.path.as_deref().map(std::path::Path::new),
+        Some(plist.as_path())
     );
     let body = std::fs::read_to_string(&plist).expect("plist");
     for needle in [
@@ -41,7 +44,13 @@ fn f_rt_03_1_launchd_writes_the_plist_and_bootstraps_it_then_removes_it() {
         "<integer>300</integer>",
         "<key>RunAtLoad</key>\n  <false/>",
         "<string>Background</string>",
-        "<string>/data/logs/routines-launchd.log</string>",
+        &format!(
+            "<string>{}</string>",
+            spec(None)
+                .logs
+                .join("routines-launchd.log")
+                .to_string_lossy()
+        ),
         "<key>TANDEM_HOME</key>\n    <string>/tmp/h</string>",
     ] {
         assert!(body.contains(needle), "plist has {needle}:\n{body}");

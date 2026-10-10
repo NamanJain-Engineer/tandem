@@ -342,7 +342,9 @@ async fn run_probe(probe: Probe, vars: &BTreeMap<String, String>) -> BTreeMap<St
 }
 
 /// Kills the probe's whole process group when the deadline drops the probe
-/// (an rc file's `sleep` would otherwise outlive it).
+/// (an rc file's `sleep` would otherwise outlive it). Unix only: on Windows
+/// the probe is a single PowerShell process and `kill_on_drop` ends it.
+#[cfg_attr(not(unix), allow(dead_code))]
 struct GroupGuard(Option<u32>);
 
 impl Drop for GroupGuard {

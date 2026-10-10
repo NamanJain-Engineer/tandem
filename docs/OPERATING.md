@@ -225,6 +225,52 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    `demo.test.ts`. List the surfaces in the release pull request.
 6. Gate, commit, push, then deploy (§7) with the owner's go-ahead.
 
+### 6a. Windows from Linux (no Windows CI until Actions minutes return)
+
+Nothing here has run on a real Windows machine; HUMAN_TODO's "M15 Windows first
+run" has the steps, and Windows stays "Coming soon" on the site until they pass.
+
+One-time setup (on top of §3):
+```bash
+apt-get install -y mingw-w64 nsis p7zip-full clang-19 lld-19 llvm-19
+rustup target add x86_64-pc-windows-gnu x86_64-pc-windows-msvc
+cargo install cargo-xwin --locked        # downloads the MSVC CRT and SDK on first use (~1 GB in ~/.cache/cargo-xwin)
+# Wine 11 from WineHQ (Ubuntu's Wine 9 also runs the tests):
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://dl.winehq.org/wine-builds/winehq.key -o /etc/apt/keyrings/winehq-archive.key
+curl -fsSL https://dl.winehq.org/wine-builds/ubuntu/dists/noble/winehq-noble.sources -o /etc/apt/sources.list.d/winehq-noble.sources
+apt-get update && apt-get install -y --install-recommends winehq-stable
+```
+
+| Command | What it checks | Time (4 vCPU) |
+|---|---|---|
+| `bash scripts/windows-check.sh --clippy` | `cfg(windows)` code in every crate but the app, `x86_64-pc-windows-gnu`. In the gate. | ~40 s warm |
+| `bash scripts/windows-check.sh --msvc` | The whole workspace, app included, for `x86_64-pc-windows-msvc` through cargo-xwin. In `ci:local`. | ~70 s warm, ~4 min cold |
+| `bash scripts/windows-check.sh --wine` | tandem-pty, tandem-core, tandem-routines, tandem-voice and tandem-host tests under Wine. In `ci:local`. | ~75 s warm |
+| `bash scripts/build-windows-installer.sh` | Unsigned NSIS installer, then `scripts/check-windows-bundle.sh` on it. | ~20 min cold, the app 11 min of it |
+
+- The app isn't in the GNU check: ONNX Runtime has no prebuilt MinGW binaries and
+  whisper.cpp doesn't compile against Ubuntu's mingw-w64 11 headers. The MSVC
+  build needs clang 19 or later (the MSVC STL headers refuse 18); the scripts put
+  `/usr/lib/llvm-19/bin` first on PATH.
+- What Wine can't run (`windows-check.sh` says why for each): ConPTY (Wine's
+  conhost rejects `--inheritcursor` and exits, so `tests/pty_windows.rs` waits for
+  real Windows), recursive file watching of folders that existed before the
+  watch, and the git-backed tandem-host tests.
+- The installer: `target/x86_64-pc-windows-msvc/release/bundle/nsis/Vibezeo_<version>_x64-setup.exe`.
+  Only NSIS cross-builds; the MSI needs WiX on Windows (release.yml builds both).
+  `TANDEM_HOSTED=0` as for Linux releases. `--skip-host` reuses the tandem-host
+  helpers already in `resources/tandem-host` (the full run builds the Linux ones
+  with cargo-zigbuild, §3). Don't publish it.
+- `scripts/check-windows-bundle.sh <setup.exe>` lists the installer with 7-Zip and
+  fails unless the app, `tandem-tasks.exe`, `DirectML.dll` and the tandem-host
+  helpers are in it, and checks the generated `installer.nsi` for the Start Menu
+  shortcut's AppUserModelID (`com.vibezeo.tandem`, which toasts use), the
+  `tandem://` scheme and the WebView2 bootstrapper.
+- Disk: the MSVC release build takes ~2.5 GB under `target/x86_64-pc-windows-msvc`
+  and the Wine test binaries ~3 GB under `target/x86_64-pc-windows-gnu`; delete
+  them after use when space is short.
+
 ## 7. Deploying the website
 
 - The site is the static export of `apps/web` (pages are `*.site.tsx`, no

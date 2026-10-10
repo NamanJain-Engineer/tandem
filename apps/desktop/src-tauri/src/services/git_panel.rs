@@ -337,7 +337,7 @@ mod tests {
 
     impl Fx {
         fn path(&self, rel: &str) -> PathBuf {
-            std::fs::canonicalize(self.dir.path())
+            tandem_core::contain::canonical(self.dir.path())
                 .expect("canon")
                 .join(rel)
         }

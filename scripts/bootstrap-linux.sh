@@ -10,3 +10,4 @@ $SUDO env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-conf
   espeak-ng sox vim htop less patchelf file \
   dbus xclip openbox xdotool gcc-mingw-w64-x86-64 openssh-client musl-tools
 command -v tauri-driver >/dev/null || cargo install tauri-driver --locked
+rustup target add x86_64-pc-windows-gnu   # the gate's Windows clippy (scripts/windows-check.sh)

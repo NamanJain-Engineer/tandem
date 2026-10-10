@@ -85,6 +85,12 @@ fn file(text: &str, cwd: Option<&Path>, roots: &[PathBuf]) -> Option<ResolvedLin
     if path.is_empty() {
         return None;
     }
+    // Windows ignores a name's trailing dots and spaces, so `src/a.rs.` would
+    // open `src/a.rs` with the sentence's full stop in the link: no file
+    // name there ends that way, so it's punctuation.
+    if cfg!(windows) && path.ends_with(['.', ' ']) {
+        return None;
+    }
     let path = Path::new(path);
     let abs = if path.is_absolute() {
         tidy(path)
@@ -143,7 +149,7 @@ mod tests {
     /// folder outside it.
     fn fixture() -> Fixture {
         let dir = tempfile::tempdir().expect("tempdir");
-        let base = fs::canonicalize(dir.path()).expect("canonical");
+        let base = crate::contain::canonical(dir.path()).expect("canonical");
         let root = base.join("repo");
         fs::create_dir_all(root.join("src")).expect("src");
         fs::create_dir_all(root.join("sub/src")).expect("sub");
@@ -178,7 +184,7 @@ mod tests {
     fn f_cd_09_1_a_relative_path_with_line_and_column_resolves_against_the_cwd() {
         let f = fixture();
         let roots = [f.root.clone()];
-        let main = f.root.join("src/main.rs");
+        let main = f.root.join("src").join("main.rs");
         assert_eq!(
             resolve("src/main.rs:42:7", Some(&f.root), &roots),
             file_link(&main, Some(42), Some(7), false)
@@ -240,7 +246,7 @@ mod tests {
         let sub = f.root.join("sub");
         assert_eq!(
             resolve("src/main.rs:1", Some(&sub), &roots),
-            file_link(&sub.join("src/main.rs"), Some(1), None, false)
+            file_link(&sub.join("src").join("main.rs"), Some(1), None, false)
         );
     }
 
@@ -248,7 +254,7 @@ mod tests {
     fn f_cd_09_only_files_that_exist_are_links_and_a_sentence_s_punctuation_is_dropped() {
         let f = fixture();
         let roots = [f.root.clone()];
-        let main = f.root.join("src/main.rs");
+        let main = f.root.join("src").join("main.rs");
         for text in [
             "src/main.rs.",
             "src/main.rs:42:7,",

@@ -9,6 +9,7 @@ publish.workspace = true
 base64.workspace = true
 chrono.workspace = true
 dashmap.workspace = true
+dunce = "1"
 ed25519-dalek.workspace = true
 futures.workspace = true
 hex.workspace = true

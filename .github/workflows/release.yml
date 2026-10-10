@@ -188,6 +188,16 @@ jobs:
         shell: bash
         run: sh scripts/build-sidecars.sh ${{ matrix.target }}
 
+      - if: matrix.name == 'windows'
+        name: Stage DirectML.dll beside the app
+        # ONNX Runtime (Parakeet) links DirectML.dll; ship ort's copy rather
+        # than rely on an older one in System32 (D-1704). It exists once
+        # ort-sys has built, before the app's build script copies resources.
+        shell: bash
+        run: |
+          cargo build --release -p tandem-voice --features whisper,parakeet --target ${{ matrix.target }}
+          cp "target/${{ matrix.target }}/release/DirectML.dll" apps/desktop/src-tauri/binaries/DirectML.dll
+
       - name: Build
         uses: tauri-apps/tauri-action@v0
         env:
@@ -212,6 +222,7 @@ jobs:
           args: >-
             --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
             --config src-tauri/tauri.sidecars.conf.json
+            ${{ matrix.name == 'windows' && '--config src-tauri/tauri.directml.conf.json' || '' }}
             ${{ steps.secrets.outputs.updater == 'true' && '--config {"bundle":{"createUpdaterArtifacts":true}}' || '' }}
             ${{ matrix.name == 'macos' && steps.secrets.outputs.apple != 'true' && '--config {"bundle":{"macOS":{"signingIdentity":"-"}}}' || '' }}
             ${{ matrix.name == 'windows' && steps.secrets.outputs.azure == 'true' && format('--config {{"bundle":{{"windows":{{"signCommand":"trusted-signing-cli -e {0} -a {1} -c {2} %1"}}}}}}', secrets.AZURE_SIGNING_ENDPOINT, secrets.AZURE_SIGNING_ACCOUNT, secrets.AZURE_CERT_PROFILE) || '' }}

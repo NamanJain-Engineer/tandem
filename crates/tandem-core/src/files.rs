@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ts_rs::TS;
 
-use crate::contain::{contain, ContainError, ContainPolicy};
+use crate::contain::{canonical, contain, ContainError, ContainPolicy};
 use crate::error::{ErrorCode, IpcError};
 use crate::origin::Origin;
 
@@ -482,7 +482,7 @@ fn uses_crlf(bytes: &[u8]) -> bool {
 /// - The file keeps its line endings (CRLF stays CRLF), BOM and mode, and
 ///   is replaced atomically.
 pub fn write_file(path: &Path, text: &str, expected: Option<&str>) -> Result<Written, FilesError> {
-    let (target, current) = match fs::canonicalize(path) {
+    let (target, current) = match canonical(path) {
         Ok(target) => {
             let meta = fs::metadata(&target)?;
             if meta.is_dir() {
@@ -501,7 +501,7 @@ pub fn write_file(path: &Path, text: &str, expected: Option<&str>) -> Result<Wri
             }
             let parent = path.parent().ok_or(FilesError::NotFound)?;
             let name = path.file_name().ok_or(FilesError::NotFound)?;
-            (fs::canonicalize(parent)?.join(name), None)
+            (canonical(parent)?.join(name), None)
         }
         Err(e) => return Err(e.into()),
     };
@@ -648,11 +648,11 @@ pub fn resolve(
 
 /// Inside one of `roots` (all canonical), after resolving symlinks.
 pub fn inside_any(path: &Path, roots: &[PathBuf]) -> bool {
-    let canon = fs::canonicalize(path).or_else(|_| {
+    let canon = canonical(path).or_else(|_| {
         // A new file: its folder decides.
         let parent = path.parent().ok_or(std::io::ErrorKind::NotFound)?;
         let name = path.file_name().ok_or(std::io::ErrorKind::NotFound)?;
-        fs::canonicalize(parent).map(|p| p.join(name))
+        canonical(parent).map(|p| p.join(name))
     });
     match canon {
         Ok(canon) => roots.iter().any(|r| canon.starts_with(r)),
@@ -675,7 +675,7 @@ mod tests {
 
     fn tree() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().expect("tmp");
-        let root = fs::canonicalize(dir.path()).expect("canon").join("ws");
+        let root = canonical(dir.path()).expect("canon").join("ws");
         fs::create_dir_all(root.join("src/deep")).expect("mkdir");
         fs::create_dir_all(root.join("node_modules/react")).expect("mkdir");
         fs::create_dir_all(root.join(".git")).expect("mkdir");
@@ -857,7 +857,7 @@ mod tests {
         );
         assert_eq!(
             written.target,
-            fs::canonicalize(root.join("shared/config.json")).expect("canon")
+            canonical(&root.join("shared/config.json")).expect("canon")
         );
         // A link to nothing has no target to write.
         std::os::unix::fs::symlink("nowhere.txt", root.join("dangling")).expect("symlink");
@@ -1039,9 +1039,7 @@ mod tests {
             inside_any(&root.join("src/new-file.rs"), &roots),
             "a new file's folder decides"
         );
-        let elsewhere = fs::canonicalize(d.path())
-            .expect("canon")
-            .join("elsewhere.txt");
+        let elsewhere = canonical(d.path()).expect("canon").join("elsewhere.txt");
         fs::write(&elsewhere, "x").expect("write");
         assert!(!inside_any(&elsewhere, &roots));
         #[cfg(unix)]
