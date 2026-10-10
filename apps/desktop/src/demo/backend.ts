@@ -36,6 +36,7 @@ import { DEMO_CHANGES, afterAllow, afterDeny, chatTurn, fixTurn, planText, planT
 import { DemoFiles, NO_GIT } from "./files";
 import { DemoNotes } from "./notes";
 import { DemoShell, agentScreen } from "./shell";
+import { version } from "../../package.json";
 
 type Args = Record<string, unknown> | undefined;
 
@@ -51,7 +52,8 @@ const LIMIT_REACHED = "Demo limit reached. Download Vibezeo for Linux to keep go
 const START = Date.now() - 42 * 60_000;
 
 const BOOT: AppBoot = {
-  version: "0.3.0",
+  // The release the site offers (OPERATING §6): the demo shows the download's version.
+  version,
   build: "demo",
   platform: "linux",
   dev: false,

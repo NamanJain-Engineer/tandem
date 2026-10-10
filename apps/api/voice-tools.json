@@ -1,0 +1,1133 @@
+{
+  "$comment": "Generated from apps/api/src/services/voiceTools.ts by `pnpm --filter api openapi`. The Conductor doer's closed tool catalog (PRODUCT_SPEC F-CN-02); the desktop's ActionRegistry maps every tool here to a command.",
+  "version": 1,
+  "settable_settings": [
+    "theme",
+    "notify_system",
+    "notify_sound",
+    "dictate_engine",
+    "dictate_mic",
+    "pause_all_mail",
+    "conductor_voice",
+    "conductor_tone",
+    "conductor_verbosity"
+  ],
+  "tools": [
+    {
+      "name": "switch_mode",
+      "group": "navigation",
+      "description": "Switch the app to Agent, Code or Thread mode.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "code",
+              "thread"
+            ]
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "open_settings",
+      "group": "navigation",
+      "description": "Open Settings, at a page when the user names one.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string",
+            "enum": [
+              "general",
+              "appearance",
+              "notifications",
+              "terminal",
+              "engines",
+              "accounts",
+              "teammates",
+              "dictate",
+              "conductor",
+              "plugins",
+              "remote",
+              "privacy",
+              "shortcuts",
+              "account",
+              "updates",
+              "advanced"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "toggle_sidebar",
+      "group": "navigation",
+      "description": "Show or hide the left rail or the right sidebar.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "side": {
+            "type": "string",
+            "enum": [
+              "left",
+              "right"
+            ]
+          }
+        },
+        "required": [
+          "side"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "open_sidebar_tab",
+      "group": "navigation",
+      "description": "Open a tab of the right sidebar.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "tab": {
+            "type": "string",
+            "enum": [
+              "dashboard",
+              "browser",
+              "files",
+              "tasks",
+              "scratchpad"
+            ]
+          }
+        },
+        "required": [
+          "tab"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "open_launch_wizard",
+      "group": "navigation",
+      "description": "Open the launch wizard, for when the user wants to pick the agents and options on screen.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A workspace id from the snapshot."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "open_routines",
+      "group": "navigation",
+      "description": "Open the routines view, where scheduled teammate runs are listed.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "dismiss",
+      "group": "navigation",
+      "description": "Close the dialog, sheet or menu that is open on screen.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_workspaces",
+      "group": "awareness",
+      "description": "List the workspaces (folders) with their ids, when the snapshot doesn't say enough.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_panes",
+      "group": "awareness",
+      "description": "List panes with their ids, names, engines and statuses, in one workspace or all of them.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A workspace id; every workspace when left out."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_threads",
+      "group": "awareness",
+      "description": "List threads with their ids, titles and statuses.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_teammates",
+      "group": "awareness",
+      "description": "List teammates with their ids and names.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_waiting",
+      "group": "awareness",
+      "description": "List everything waiting for the user: approvals, questions and finished work. Call it when the user asks what needs them.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "launch_agents",
+      "group": "panes",
+      "description": "Start coding agents in new panes of a workspace, optionally with a first task each.",
+      "confirm": false,
+      "free_text": [
+        "task"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "engine": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "An engine id, such as claude or codex."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8
+          },
+          "workspace": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A workspace id from the snapshot."
+          },
+          "task": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "The first task, as a clear instruction."
+          },
+          "isolation": {
+            "description": "worktree gives each agent its own branch.",
+            "type": "string",
+            "enum": [
+              "shared",
+              "worktree"
+            ]
+          }
+        },
+        "required": [
+          "engine",
+          "count",
+          "workspace"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "prompt_pane",
+      "group": "panes",
+      "description": "Type a prompt into an agent's pane. send presses Enter. The app refuses a pane waiting for approval; tell the user then.",
+      "confirm": false,
+      "free_text": [
+        "text"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pane": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A pane id from the snapshot."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "The prompt."
+          },
+          "send": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pane",
+          "text",
+          "send"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "prompt_panes",
+      "group": "panes",
+      "description": "Type a prompt into each of several agents' panes: texts[i] goes to panes[i], and each is sent.",
+      "confirm": false,
+      "free_text": [
+        "texts"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "panes": {
+            "minItems": 1,
+            "maxItems": 8,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "A pane id from the snapshot."
+            }
+          },
+          "texts": {
+            "minItems": 1,
+            "maxItems": 8,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000,
+              "description": "The prompt."
+            }
+          }
+        },
+        "required": [
+          "panes",
+          "texts"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "read_pane",
+      "group": "panes",
+      "description": "Read the last lines of a pane's terminal; the app redacts secrets first.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pane": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A pane id from the snapshot."
+          },
+          "lines": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "pane"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "wait_for_pane",
+      "group": "panes",
+      "description": "Wait until the agent in a pane finishes or needs the user, for at most timeout seconds.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pane": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A pane id from the snapshot."
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300
+          }
+        },
+        "required": [
+          "pane",
+          "timeout"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "focus_pane",
+      "group": "panes",
+      "description": "Bring a pane into view and focus it.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pane": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A pane id from the snapshot."
+          }
+        },
+        "required": [
+          "pane"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "close_pane",
+      "group": "panes",
+      "description": "Close a pane. The app asks the user to confirm on screen when its agent is working.",
+      "confirm": true,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pane": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A pane id from the snapshot."
+          }
+        },
+        "required": [
+          "pane"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tidy",
+      "group": "panes",
+      "description": "Auto-arrange a workspace's panes into an even grid.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A workspace id; the current one when left out."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "flip",
+      "group": "panes",
+      "description": "Toggle Card view for the current workspace: cards instead of terminals, and back.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "handoff",
+      "group": "panes",
+      "description": "Hand a pane's work to another engine, with a brief of what was done.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pane": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A pane id from the snapshot."
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The engine id to hand the work to."
+          }
+        },
+        "required": [
+          "pane",
+          "target"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "run_command_in_shell",
+      "group": "panes",
+      "description": "Run a shell command in a pane's terminal, only when the user asked for that command. The user always confirms it on screen first.",
+      "confirm": true,
+      "free_text": [
+        "cmd"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pane": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A pane id from the snapshot."
+          },
+          "cmd": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "The command."
+          }
+        },
+        "required": [
+          "pane",
+          "cmd"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "open_thread",
+      "group": "threads",
+      "description": "Open a thread in Thread mode to show it to the user.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "thread": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A thread id from the snapshot."
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "new_thread",
+      "group": "threads",
+      "description": "Start a new thread, optionally in a folder, with an engine and a first message.",
+      "confirm": false,
+      "free_text": [
+        "folder",
+        "text"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "folder": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "The folder's path, from the snapshot."
+          },
+          "engine": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "An engine id."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "The first message, as a clear instruction."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "send_to_thread",
+      "group": "threads",
+      "description": "Send a message to a thread. send false leaves it in the composer for the user to review.",
+      "confirm": false,
+      "free_text": [
+        "text"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "thread": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A thread id from the snapshot; the open thread when left out."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "The message."
+          },
+          "send": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text",
+          "send"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "read_thread",
+      "group": "threads",
+      "description": "Read the last messages of a thread; the app redacts secrets first.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "thread": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A thread id from the snapshot; the open thread when left out."
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stop_thread",
+      "group": "threads",
+      "description": "Stop the turn a thread is running.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "thread": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A thread id from the snapshot; the open thread when left out."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_thread_mode",
+      "group": "threads",
+      "description": "Switch a thread between Plan (it proposes) and Act (it works).",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "thread": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A thread id from the snapshot; the open thread when left out."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "plan",
+              "act"
+            ]
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "rename_thread",
+      "group": "threads",
+      "description": "Give a thread the title the user asks for.",
+      "confirm": false,
+      "free_text": [
+        "title"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "thread": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A thread id from the snapshot; the open thread when left out."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The new title."
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "archive_thread",
+      "group": "threads",
+      "description": "Archive a thread the user is done with: it leaves the list and isn't deleted.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "thread": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A thread id."
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "open_teammate",
+      "group": "teammates",
+      "description": "Open a teammate's page: its brief, memory and runs.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "teammate": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A teammate id from the snapshot."
+          }
+        },
+        "required": [
+          "teammate"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "message_teammate",
+      "group": "teammates",
+      "description": "Send a message to a teammate, as the user would from its page.",
+      "confirm": false,
+      "free_text": [
+        "text"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "teammate": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A teammate id."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "The message."
+          }
+        },
+        "required": [
+          "teammate",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_teammate",
+      "group": "teammates",
+      "description": "Draft a new teammate from a job description. The user confirms on screen before it is saved.",
+      "confirm": true,
+      "free_text": [
+        "description"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "What the teammate does."
+          }
+        },
+        "required": [
+          "description"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pin_teammate",
+      "group": "teammates",
+      "description": "Pin a teammate to the rail, or unpin it with pinned false.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "teammate": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A teammate id."
+          },
+          "pinned": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "teammate"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "read_teammate_memory",
+      "group": "teammates",
+      "description": "Read what a teammate remembers.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "teammate": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A teammate id."
+          }
+        },
+        "required": [
+          "teammate"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_routines",
+      "group": "teammates",
+      "description": "List routines with their ids and schedules.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "run_routine",
+      "group": "teammates",
+      "description": "Run a routine now, outside its schedule.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "routine": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A routine id."
+          }
+        },
+        "required": [
+          "routine"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_task",
+      "group": "tasks",
+      "description": "Create a task with a title and, when the user gives them, details.",
+      "confirm": false,
+      "free_text": [
+        "title",
+        "description"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The title."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "The details."
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "execute_task",
+      "group": "tasks",
+      "description": "Start agents on a task. The user confirms on screen first.",
+      "confirm": true,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A task id."
+          },
+          "engine": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "An engine id."
+          },
+          "workspace": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A workspace id."
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_tasks",
+      "group": "tasks",
+      "description": "List tasks with their ids, titles and statuses.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "find_work",
+      "group": "find",
+      "description": "Find the pane, thread or teammate the user describes by what it is about, and show it.",
+      "confirm": false,
+      "free_text": [
+        "query"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "What the user is looking for."
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_setting",
+      "group": "app",
+      "description": "Read one of the settings Conductor may change.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "theme",
+              "notify_system",
+              "notify_sound",
+              "dictate_engine",
+              "dictate_mic",
+              "pause_all_mail",
+              "conductor_voice",
+              "conductor_tone",
+              "conductor_verbosity"
+            ]
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_setting",
+      "group": "app",
+      "description": "Change one setting from a closed list: theme (light, dark, system), notify_system and notify_sound (true or false), dictate_engine (local or cloud), dictate_mic (a microphone's name), pause_all_mail (true or false), conductor_voice, conductor_tone (neutral, warm, brief) and conductor_verbosity (short, normal, detailed).",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "theme",
+              "notify_system",
+              "notify_sound",
+              "dictate_engine",
+              "dictate_mic",
+              "pause_all_mail",
+              "conductor_voice",
+              "conductor_tone",
+              "conductor_verbosity"
+            ]
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_usage",
+      "group": "app",
+      "description": "Read the engines' usage and limits.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_credits",
+      "group": "app",
+      "description": "Read the credit balance that pays for Conductor.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "check_updates",
+      "group": "app",
+      "description": "Check whether a newer version of the app is available.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  ]
+}

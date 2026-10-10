@@ -23,11 +23,12 @@ describe("the website changelog from CHANGELOG.md (F-WB-03)", () => {
 
   it("F-WB-03 each version has a static page with its summary, categories and platforms", async () => {
     expect(generateStaticParams().map((p) => p.version)).toEqual(RELEASES.map((r) => r.version));
-    const latest = RELEASES[0];
-    if (!latest) throw new Error("no release");
-    const h = html(await VersionPage({ params: Promise.resolve({ version: latest.version }) }));
+    // 0.3.0's notes have the Markdown this checks; every version renders the same way.
+    const release = RELEASES.find((r) => r.version === "0.3.0");
+    if (!release) throw new Error("no 0.3.0 release");
+    const h = html(await VersionPage({ params: Promise.resolve({ version: release.version }) }));
     expect(h).toContain(`<h1`);
-    expect(h).toContain(latest.version);
+    expect(h).toContain(release.version);
     expect(h).toContain("<h2");
     expect(h).toContain("Added");
     // Markdown in bullets is rendered, and the platform reads in words.

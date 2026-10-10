@@ -277,17 +277,25 @@ export const aiRequests = pgTable("ai_requests", {
   credits: integer("credits").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
-export const voiceSessions = pgTable("voice_sessions", {
-  id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
-  provider: text("provider").notNull(),
-  reservationId: text("reservation_id").notNull(),
-  maxSeconds: integer("max_seconds").notNull(),
-  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  settledAt: timestamp("settled_at", { withTimezone: true }),
-  seconds: integer("seconds"),
-});
+export const voiceSessions = pgTable(
+  "voice_sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    provider: text("provider").notNull(),
+    reservationId: text("reservation_id").notNull(),
+    maxSeconds: integer("max_seconds").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+    seconds: integer("seconds"),
+    /** The provider's id for the session, to ask for its usage report (F-BE-08). */
+    providerSessionId: text("provider_session_id"),
+    /** The last doer round: the call ran at least this long (a settle can't claim less). */
+    lastActAt: timestamp("last_act_at", { withTimezone: true }),
+  },
+  (t) => [index("voice_open").on(t.expiresAt).where(sql`${t.settledAt} is null`)],
+);
 export const dictionarySync = pgTable(
   "dictionary_sync",
   {

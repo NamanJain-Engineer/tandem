@@ -53,12 +53,23 @@ export function ThemeProvider({ theme = "dark", motion = "system", textSize = "d
 
   useEffect(() => {
     const el = target ?? document.documentElement;
+    // A new theme or contrast lands without transitions (D-815).
+    const switching = el.dataset.theme !== resolved || (el.dataset.contrast === "more") !== highContrast;
+    if (switching) el.dataset.themeSwitching = "";
     el.dataset.theme = resolved;
     el.dataset.motion = reducedMotion ? "reduced" : "full";
     el.dataset.textSize = textSize;
     el.dataset.density = density;
     if (highContrast) el.dataset.contrast = "more";
     else delete el.dataset.contrast;
+    if (!switching) return;
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => delete el.dataset.themeSwitching);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      delete el.dataset.themeSwitching;
+    };
   }, [target, resolved, reducedMotion, highContrast, textSize, density]);
 
   const value = useMemo(() => ({ resolved, reducedMotion, highContrast }), [resolved, reducedMotion, highContrast]);
