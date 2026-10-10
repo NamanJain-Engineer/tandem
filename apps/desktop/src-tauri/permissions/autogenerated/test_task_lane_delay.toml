@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-test-task-lane-delay"
+description = "Enables the test_task_lane_delay command without any pre-configured scope."
+commands.allow = ["test_task_lane_delay"]
+
+[[permission]]
+identifier = "deny-test-task-lane-delay"
+description = "Denies the test_task_lane_delay command without any pre-configured scope."
+commands.deny = ["test_task_lane_delay"]

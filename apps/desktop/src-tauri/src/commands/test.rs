@@ -447,6 +447,31 @@ pub async fn test_gateway_metrics(state: State<'_, AppState>) -> Result<TestGate
     Ok(TestGateway { metrics, starts })
 }
 
+/// Each task run pauses `ms` before making its lane (F-TK-04 AC3's E2E).
+#[tauri::command]
+pub async fn test_task_lane_delay(state: State<'_, AppState>, ms: u64) -> Result<(), IpcError> {
+    guard(&state)?;
+    state.task_exec.set_test_lane_delay(ms);
+    Ok(())
+}
+
+/// One scheduler pass as if the clock said `at` (ms), without moving the
+/// app's clock: E2E-M11-3/4 "advance the clock to 09:00".
+#[tauri::command]
+pub async fn test_routines_tick(
+    state: State<'_, AppState>,
+    at: i64,
+) -> Result<Vec<String>, IpcError> {
+    guard(&state)?;
+    Ok(state
+        .routines
+        .tick_at(at)
+        .await
+        .into_iter()
+        .map(|r| r.as_str().to_string())
+        .collect())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]

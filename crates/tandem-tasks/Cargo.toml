@@ -6,8 +6,20 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+anyhow.workspace = true
+base64.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rmcp = { workspace = true, features = ["transport-io"] }
 tandem-core.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
+tokio = { workspace = true, features = ["io-std"] }
+ts-rs.workspace = true
+
+[dev-dependencies]
+chrono.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

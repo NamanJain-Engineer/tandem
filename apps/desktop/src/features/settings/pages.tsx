@@ -615,6 +615,15 @@ export function settingsPages(platform: string): PageDef[] {
           keywords: ["mail", "pause", "message"],
           control: (ids) => <BoolControl k="pause_all_mail" ids={ids} label={t("settings.pauseAllMail")} />,
         },
+        {
+          id: "pause_all_routines",
+          label: t("settings.pauseAllRoutines"),
+          description: t("settings.pauseAllRoutines.desc"),
+          keywords: ["routines", "pause", "schedule"],
+          control: (ids) => (
+            <BoolControl k="pause_all_routines" ids={ids} label={t("settings.pauseAllRoutines")} />
+          ),
+        },
       ],
     },
     {

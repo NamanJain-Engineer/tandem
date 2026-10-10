@@ -491,6 +491,33 @@ pub fn args(req: &ChatStart) -> Vec<OsString> {
             .into(),
         );
     }
+    for server in &req.stdio_servers {
+        let key = format!("mcp_servers.{}", server.name);
+        let list = |items: &[String]| {
+            format!(
+                "[{}]",
+                items
+                    .iter()
+                    .map(|i| toml_string(i))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        a.push("-c".into());
+        a.push(
+            format!(
+                "{key}.command={}",
+                toml_string(&server.command.to_string_lossy())
+            )
+            .into(),
+        );
+        a.push("-c".into());
+        a.push(format!("{key}.args={}", list(&server.args)).into());
+        if !server.env_vars.is_empty() {
+            a.push("-c".into());
+            a.push(format!("{key}.env_vars={}", list(&server.env_vars)).into());
+        }
+    }
     a
 }
 

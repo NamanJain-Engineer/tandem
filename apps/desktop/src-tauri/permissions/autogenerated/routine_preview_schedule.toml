@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-routine-preview-schedule"
+description = "Enables the routine_preview_schedule command without any pre-configured scope."
+commands.allow = ["routine_preview_schedule"]
+
+[[permission]]
+identifier = "deny-routine-preview-schedule"
+description = "Denies the routine_preview_schedule command without any pre-configured scope."
+commands.deny = ["routine_preview_schedule"]

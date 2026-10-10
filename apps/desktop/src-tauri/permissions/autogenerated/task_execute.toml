@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-task-execute"
+description = "Enables the task_execute command without any pre-configured scope."
+commands.allow = ["task_execute"]
+
+[[permission]]
+identifier = "deny-task-execute"
+description = "Denies the task_execute command without any pre-configured scope."
+commands.deny = ["task_execute"]

@@ -1,7 +1,8 @@
 //! The gateway's teammate built-ins (ARCHITECTURE §11.2): each call is
 //! scoped to the lease's teammate. `tandem__memory_write` (F-AG-07),
 //! `tandem__read_skill` (F-AG-06, F-AG-09), `tandem__session_search`
-//! (F-AG-11), `tandem__send_message` and `tandem__list_teammates` (F-AG-12).
+//! (F-AG-11), `tandem__send_message` and `tandem__list_teammates` (F-AG-12),
+//! and `tandem__schedule_*` (F-RT-05: only the teammate's own routines).
 
 use std::sync::Arc;
 
@@ -12,6 +13,7 @@ use tandem_store::memory::MemoryFile;
 
 use crate::services::gateway::BuiltinService;
 use crate::services::mail::{MailService, Outgoing, Recipient};
+use crate::services::routines::{AgentRoutine, RoutinesService};
 use crate::services::teammates::TeammatesService;
 
 fn ok(text: impl Into<String>) -> ToolOutput {
@@ -31,6 +33,24 @@ fn err(text: impl Into<String>) -> ToolOutput {
 pub struct TeammateTools {
     pub teammates: Arc<TeammatesService>,
     pub mail: Arc<MailService>,
+    pub routines: Arc<RoutinesService>,
+}
+
+/// What the schedule tools say about a routine.
+fn routine_json(r: &tandem_store::repo::routines::Routine) -> Value {
+    let words = tandem_routines::schedule::words(&r.schedule.schedule)
+        .map(|w| tandem_routines::schedule::describe_en(&w))
+        .unwrap_or_default();
+    serde_json::json!({
+        "id": r.id.as_str(),
+        "name": r.name,
+        "schedule": words,
+        "timezone": r.schedule.timezone,
+        "access": r.access.as_str(),
+        "paused": r.paused,
+        "next_run_at": r.next_run_at,
+        "last_status": r.last_status,
+    })
 }
 
 #[async_trait]
@@ -123,6 +143,34 @@ impl BuiltinService for TeammateTools {
                 Ok(list) => ok(serde_json::to_string(&list).unwrap_or_else(|_| "[]".into())),
                 Err(e) => err(e.message),
             },
+            Builtin::ScheduleList => match self.routines.made_by(&teammate.id).await {
+                Ok(list) => ok(Value::Array(list.iter().map(routine_json).collect()).to_string()),
+                Err(e) => err(e.message),
+            },
+            Builtin::ScheduleCreate | Builtin::ScheduleUpdate => {
+                let mut req: AgentRoutine = match serde_json::from_value(args) {
+                    Ok(r) => r,
+                    Err(e) => return err(format!("Couldn't read the arguments: {e}")),
+                };
+                if builtin == Builtin::ScheduleCreate {
+                    req.id = None;
+                } else if req.id.is_none() {
+                    return err("id is required");
+                }
+                match self.routines.save_for_teammate(&teammate, req).await {
+                    Ok(r) => ok(routine_json(&r).to_string()),
+                    Err(e) => err(e.message),
+                }
+            }
+            Builtin::ScheduleDelete => {
+                let Some(id) = args.get("id").and_then(Value::as_str) else {
+                    return err("id is required");
+                };
+                match self.routines.delete_for_teammate(&teammate.id, id).await {
+                    Ok(()) => ok("Deleted. Its past run chats stay."),
+                    Err(e) => err(e.message),
+                }
+            }
         }
     }
 }
@@ -150,6 +198,48 @@ mod tests {
         }
     }
 
+    /// A routines service with no host: enough for the checks that come
+    /// before a save (the full flow is `routines::tests::f_rt_05_*`).
+    fn routines_for(svc: &Arc<TeammatesService>) -> Arc<RoutinesService> {
+        RoutinesService::new(
+            svc.store().clone(),
+            tandem_core::bus::EventBus::new(),
+            Arc::new(tandem_core::clock::SystemClock),
+            tandem_store::repo::routines::Runner::Gui,
+        )
+    }
+
+    #[tokio::test]
+    async fn f_rt_05_2_schedule_create_with_full_access_is_rejected() {
+        let (_d, svc) = service(None).await;
+        let scout = svc.create(input("Scout", "claude")).await.expect("scout");
+        let tools = TeammateTools {
+            teammates: svc.clone(),
+            mail: crate::services::mail::MailService::new(
+                svc.store().clone(),
+                tandem_core::bus::EventBus::new(),
+                svc.clone(),
+                Arc::new(crate::services::mail::tests_support::Host::default()),
+            ),
+            routines: routines_for(&svc),
+        };
+        let out = tools
+            .call(
+                &lease(&scout.id),
+                Builtin::ScheduleCreate,
+                serde_json::json!({"name": "Cleanup", "instruction": "Delete old branches every night.", "cron": "0 3 * * *", "access": "full"}),
+            )
+            .await;
+        assert!(out.is_error);
+        assert!(out.text.contains("can't have Full access"), "{}", out.text);
+        assert!(tools
+            .routines
+            .made_by(&scout.id)
+            .await
+            .expect("list")
+            .is_empty());
+    }
+
     #[tokio::test]
     async fn f_ag_07_1_tandem_memory_write_writes_the_leases_teammate_and_refuses_over_the_cap() {
         let (_d, svc) = service(None).await;
@@ -162,6 +252,7 @@ mod tests {
                 svc.clone(),
                 Arc::new(crate::services::mail::tests_support::Host::default()),
             ),
+            routines: routines_for(&svc),
         };
         let l = lease(&scout.id);
         let out = tools
@@ -218,6 +309,7 @@ mod tests {
         let tools = TeammateTools {
             teammates: svc.clone(),
             mail: mail.clone(),
+            routines: routines_for(&svc),
         };
         let l = lease(&ada.id);
         let out = tools
