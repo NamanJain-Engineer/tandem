@@ -400,6 +400,7 @@ No Windows CI until Actions minutes return (about November 1), and nobody had co
 - D-1710: Windows bundle settings. WebView2: the silent download bootstrapper (the installer stays small; Windows 11 already has the runtime). NSIS per user (`%LOCALAPPDATA%`, no UAC prompt, matches updating without admin). English only until the app has other locales. The shortcut's AppUserModelID and the scheme come from Tauri's NSIS template, so `check-windows-bundle.sh` asserts them in the generated script rather than the config.
 
 ### M15 · Windows log
+- Checks on the tree merged with `product-m0-m5` (0.5.0): G green (1,385 Rust and 1,130 TypeScript tests, the Windows clippy step included); the SSH integration tests 7/7 with the new no-ControlMaster one; full desktop E2E 103/109, the six failures all M8 Dictate specs in a container without `~/.cache/tandem-models`, and after `bash scripts/fetch-models.sh base.en parakeet` the `m8-*` spec files pass 7/7.
 - 10 October 2026: Windows clippy (GNU in the gate, MSVC in ci:local), Wine runs of the platform crates with five Windows bugs fixed, the ConPTY suite for real Windows, SSH without ControlMaster, the unsigned NSIS cross-build with DirectML and its checks, `bundle.windows`, OPERATING §6a and HUMAN_TODO's Windows first run.
 
 ## M13 checklist (MILESTONES M13)
