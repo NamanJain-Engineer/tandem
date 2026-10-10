@@ -1,4 +1,4 @@
-// `/__test/*`: clock, plan, team, credits, audit and mail helpers for E2E tests. Mounted only
+// `/__test/*`: clock, plan, team, credits, users, the purge, audit and mail helpers for E2E tests. Mounted only
 // with TANDEM_API_TEST_ROUTES=1 and never with NODE_ENV=production.
 import { and, eq } from "drizzle-orm";
 import { DEFAULT_POLICY } from "@tandem/protocol/team";
@@ -16,6 +16,7 @@ import {
   subscriptions,
   user,
 } from "../db/schema";
+import { purgeAccounts } from "../jobs/deletionJob";
 import { MockBilling } from "../providers/billing/mock";
 import { notifyCredits } from "../services/credits";
 import { grantMonthly, type Owner } from "../services/ledger";
@@ -123,9 +124,26 @@ export function testRoutes(deps: Deps) {
 
   app.post("/user/delete", async (c) => {
     const body = await parseJson(c, z.object({ email: z.string() }));
-    await deps.db.delete(user).where(eq(user.email, body.email));
+    await deleteUser(deps, body.email);
     return c.body(null, 204);
   });
+
+  // A fresh verified account (E2E-M1-6): any earlier one with the address goes first.
+  app.post("/user", async (c) => {
+    const body = await parseJson(
+      c,
+      z.object({ email: z.string(), password: z.string(), name: z.string().default("Test") }),
+    );
+    await deleteUser(deps, body.email);
+    await deps.auth.api.signUpEmail({
+      body: { email: body.email, password: body.password, name: body.name },
+    });
+    await deps.db.update(user).set({ emailVerified: true }).where(eq(user.email, body.email));
+    return c.json({ id: await userIdFor(deps, body.email) });
+  });
+
+  // One pass of the account-deletion job on the test clock (F-TL-05).
+  app.post("/purge", async (c) => c.json({ result: await purgeAccounts(deps) }));
 
   app.get("/mail/latest", async (c) => {
     const to = c.req.query("to") ?? "";
@@ -285,6 +303,14 @@ export function testRoutes(deps: Deps) {
   });
 
   return app;
+}
+
+/** Deletes a user and the Teams they own (an org's owner isn't a foreign key, so nothing cascades to it). */
+async function deleteUser(deps: Deps, email: string): Promise<void> {
+  const [u] = await deps.db.select({ id: user.id }).from(user).where(eq(user.email, email)).limit(1);
+  if (!u) return;
+  await deps.db.delete(orgs).where(eq(orgs.ownerId, u.id));
+  await deps.db.delete(user).where(eq(user.id, u.id));
 }
 
 /** Sets an owner's buckets to exact balances, through the ledger (`admin_grant`). */

@@ -15,6 +15,7 @@ pub mod diagnostics;
 pub mod entitlement;
 pub mod error;
 pub mod files;
+pub mod find_work;
 pub mod ids;
 pub mod keychain;
 pub mod limits;

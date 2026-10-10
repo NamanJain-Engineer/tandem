@@ -64,6 +64,7 @@ vte = "0.15"
 wiremock = "0.6"
 unicode-normalization = "0.1"
 zeroize = "1"
+zip = { version = "4.6", default-features = false, features = ["deflate-flate2"] }
 
 [workspace.lints.clippy]
 unwrap_used = "deny"

@@ -617,6 +617,9 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `contexts_list` | — | `[PaneContext {paneId, used, window}]` (context fill per agent pane, from the engine's transcript when a turn ends) | — | F-AC-06 |
 | `usage_report` | — | `UsageReport {since, until, total, days:[UsageDay {date, tokens, byEngine}] (12 weeks, every day present, in the user's zone), engines:[EngineUsage], accounts:[AccountUsage], workspaces:[WorkspaceUsage] (top 8), skippedLines, filesRead, unsupported}` (read on the blocking pool from each account's `usage_log_globs` inside its provider home; D-615) | Internal | F-AC-07 |
 | `usage_share_save` | `{pngBase64}` | `String?` (the path saved, `null` when the save dialog is cancelled; the webview draws the card, the core only checks it is a PNG under 10 MB and writes it atomically where the user picks) | Invalid, Io | F-AC-07 |
+| `data_export` | — | `DataExport? {path, tables, files}` (`null` when the save dialog is cancelled). A zip of every table as JSON (`<table>.json`; FTS tables left out), `teammates/<id>/{memory,skills}/`, `tasks/`, `scratchpad/` and `manifest.json`; never `providers/`, `auth/` or keychain values; built next to the target and renamed into place (D-812) | Io | F-TL-05 |
+| `data_delete_local` | `{removeEngineSignIns}` | `()`: closes every terminal, forgets Vibezeo's keychain secrets, leaves `$DATA/.delete-pending` and relaunches; the next start deletes `$DATA` except `providers/` (unless ticked) before anything opens it (D-812). Under the E2E harness it only leaves the request | Io | F-TL-05 |
+| `find_work` | `{query: str(≤500)}` | `FindWorkResult {matches: [FindMatch {source, kind: "pane"\|"thread", label, detail?, workspaceId?, tabId?, score}] (best first, ≤20), clear}` (`clear`: the first is one clear match to go to; otherwise the close ones lead). Ranks the open panes (name, title, engine, folder or page, last 20 lines of output) and threads (title, last message) on this machine: stems, a table of same-meaning software terms and one typo (`tandem_core::find_work`, D-814). Output and messages are redacted first; nothing leaves the machine. Teammates join when M10's chats land | Invalid (over 500 characters) | F-CN-05 |
 
 #### Status, dashboard, notifications, focus [F-DB-*, F-EN-05]
 | Command | Args | Returns | Errors | IDs |
@@ -836,7 +839,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `auth_cancel` / `auth_sign_out` / `auth_state` | `{opId}` / — / — | — / — / `AuthState {signedIn, email?, offlineDaysLeft?}` | — |
 | `auth_continue_offline` | — | — | — |
 | `entitlement_get` / `entitlement_refresh` | — | `EntitlementView {plan, status, limits, source:"token"\|"grace"\|"free", credits:{monthly, purchased, resetsAt, cap, spent, grant}, policy: OrgPolicy?, org: {id, name, role}?, monthlyGrant, …}`. `policy` is the last verified token's (it survives a cached token that stops verifying, D-607); `OrgPolicy` mirrors `@tandem/protocol/team` (F-BL-06). The core enforces it at every engine launch (allowed engines) and thread session start (max access, Full-access audit, F-TL-10), and locks the telemetry toggles | — |
-| `billing_open` | `{target: {type:"upgrade", plan, interval} \| {type:"portal"} \| {type:"credits"}}` | — (system browser) | Unauthenticated |
+| `billing_open` | `{target: {type:"upgrade", plan, interval} \| {type:"portal"} \| {type:"credits"} \| {type:"account"}}` (`account` opens `{web}/account`, where "Delete account…" lives, F-TL-05) | — (system browser) | Unauthenticated |
 | `updates_state` / `updates_check_now` / `updates_install` / `updates_set_channel` | — / — / — / `{channel:"stable"\|"beta"}` | `UpdateState {stage: idle\|checking\|downloading\|ready\|error\|managed\|unavailable, current, channel, version?, notes?, percent?, errorStage?: check\|download\|verify\|install, error?, lastCheck?, upToDate, minVersion?: {minVersion, graceUntil, modal}}` (`check_now` waits for a check already running; a newer release downloads and verifies before `ready`; `install` installs the staged release, stops every terminal and restarts; under the harness it records the install and keeps running) | Unavailable (stage), Invalid (channel) |
 | `whats_new_get` / `whats_new_seen` | — / `{version}` | `ReleaseNotes?` / — | — |
 | `privacy_data_flows` | — | `[DataFlowRow {feature, enabled, sends, destination}]` | — |
@@ -1837,7 +1840,7 @@ send_message(to, body) ─► check: sender may_message; recipient exists, not d
       ├─ rate guard: mail_turn_log(to) count in last 60 min ≥ 20 → state=queued reason=rate_limit, note "Rate limit reached"
       ▼
  mail row queued (id = dedupe key) ─► delivery worker (single task, FIFO per recipient)
-      ├─ recipient has an idle chat with same conversation_ref → append user turn "From {sender}:\n{body}"
+      ├─ recipient has an idle chat with same conversation_ref → append user turn "From {sender}:\n{body}" (a teammate's body behind `untrusted::label` and in `untrusted::fence`, F-TL-06 rule 8)
       └─ else → create teammate chat titled "{sender}: {first line}" (title_source=mail), attended=0, access=min(default, Edits)
  on success: state=delivered, MailRow events in both transcripts; on wake failure: state=failed (Retry in UI; never auto-retried)
 ```
@@ -2082,7 +2085,7 @@ Plugin count limit: Free = 1 connection (§3.2), enforced at connect.
 - **Doer loop:** on `FunctionCall act`: `POST /v1/voice/act {session_id, request, snapshot, results?}` → `{tool_calls:[{id, name, args}], say?}`; the app executes each via **`ActionRegistry` in Rust** and posts results back until the doer returns `say` (max 8 rounds); `say` becomes the `act` function output for the talker.
 - **ActionRegistry:** generated from `tandem_core::commands::registry()` entries that have `voice: Some(VoiceToolSpec)` plus voice-only tools (F-CN-02 table). Each entry maps to a Rust service call or to a `conductor:ui-action` (navigation-only). A test asserts every doer tool maps to a registry command (AC1). Rules: `set_setting` only for the closed list (AC2); `prompt_pane` refuses waiting panes (F-CN-03 AC1); `read_pane`/`read_thread` output passes the redactor (AC4); `run_command_in_shell`, `execute_task`, `create_teammate`, `close_pane` on working agents require `conductor:confirm-request` answered by an on-screen click (`conductor_confirm`) (AC3); forced lane removal, enabling Full, plugin spend/destructive approvals are **absent** from the registry. Voice approvals resolve only the approval id named in the confirm request (F-CN-03 AC2).
 - **End:** hang-up, sign-out, mic failure, `max_seconds`, 402 → stop audio, cancel pending actions (a `CancellationToken` shared by every in-flight action; delayed actions check it before executing, F-CN-01 AC2), `POST /v1/voice/session/{id}/settle {seconds}`.
-- **Find work:** local candidates (panes: human name, title, engine, last 20 redacted lines; threads: title, last message; teammates) → `POST /v1/voice/resolve` → ranked ids; on failure, local fuzzy (`nucleo-matcher`) over the same text (F-CN-05).
+- **Find work:** local candidates (panes: human name, title, engine, last 20 redacted lines; threads: title, last message; teammates) → `POST /v1/voice/resolve` → ranked ids; on failure, or with the hosted ranking off, the local ranking over the same text (F-CN-05). The local ranking is `tandem_core::find_work` (stems, same-meaning terms and a typo; D-814), not `nucleo-matcher`: its subsequence matching suits typed abbreviations, not descriptions. The palette's "Find work…" (`work.find`) runs the same search through `find_work`.
 - **Persona/memory:** `$DATA/conductor/memory.md` written only when memory is on; credential-shaped facts refused (F-CN-06).
 - **Wake phrase:** `WakeDetector` trait; implementation with `sherpa-onnx` KWS (bundled small model under `models/wake/`) behind a feature flag `wake`; disabled when the false-accept benchmark fails; paused while Dictate/a call owns the mic, while Bluetooth output is active, or on "Pause while watching videos" (F-CN-07).
 - **Audio routing:** calls use the Dictate device policy (never opens a Bluetooth mic on its own); output device = system default (F-CN-08).
@@ -2133,7 +2136,7 @@ apps/api/
   src/routes/{health, me, credits, billing, webhooks, ai, auto, stt, voice, config, updates, pairings, relay, audit, orgs, admin, dictionary, dev}
   src/services/{plans, entitlements, ledger, webhooks, orgs, configSigner, releases, deletion}
   src/providers/{ai, stt, realtime, billing, email, captcha, breach}/{real,mock}.ts
-  src/jobs/{reservationSweeper (60 s), voiceSweeper (60 s), deletionJob (daily), monthlyResetSafety (hourly)}  — each takes a Redis lock (SET NX PX) so one replica runs it
+  src/jobs/{reservationSweeper (60 s), voiceSweeper (60 s), deletionJob (hourly: purges requests over 29 days old, D-813), monthlyResetSafety (hourly)}  — each takes a Redis lock (SET NX PX) so one replica runs it
   config/remote-config.json   source of catalog, prices, flags, registry overrides, plugin client ids, min version
   test/                       vitest + testcontainers-free: uses docker-compose services from infra/
 ```
@@ -2300,7 +2303,7 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 | `GET /v1/me` | B/C | — | `MeResponse` (§14.4) | `UNAUTHENTICATED` | F-BE-04 |
 | `GET /v1/me/events` | B | — | SSE `entitlement`, `credits`, heartbeat 25 s | — | F-BE-04 |
 | `GET /v1/me/sessions` / `DELETE /v1/me/sessions/:id` | C | — | `[{id, deviceName, platform, appVersion, lastUsedAt}]` / 204 | — | F-WB-05 |
-| `DELETE /v1/me` | C | `{confirm: 'DELETE'}` | 202 (deletion ≤30 days; subscription canceled now) | — | F-TL-05 |
+| `DELETE /v1/me` | C | `{confirm: 'DELETE'}` | 202 (deletion ≤30 days by `deletionJob`; the subscription and those of Teams the user owns alone are canceled first, then every desktop sign-in and web session is revoked and new sign-ins are refused with `ACCOUNT_DELETED`, D-813) | 409 `TEAM_HAS_MEMBERS` (owns a Team with other members) | F-TL-05 |
 | `GET /v1/credits` | B/C | — | `{balance:{monthly, purchased, resetsAt}, org: {id, cap, spent} \| null, ledger:[≤100 {id, bucket, delta, reason, feature, createdAt}]}` (a Team member sees the org pool, D-601) | — | F-BE-05 |
 | `POST /v1/billing/checkout` | B/C | `{plan:'pro'\|'team', interval:'month'\|'year', seats?: int(2..500), promo?: str}` | `{url}` | `VALIDATION` | F-BL-01 |
 | `POST /v1/billing/portal` | B/C | — | `{url}` | 404 (no customer) | F-BL-02 |
@@ -2421,7 +2424,7 @@ M13 builds the server side and these desktop pieces; the sessions that own the U
 `tracing_subscriber` with a custom `RedactingLayer` (runs `Redactor` over formatted fields and messages) → `tracing-appender` rolling file (10 MB × 5 via a size-based roller). Conventions: log ids, event codes, durations, error codes; never payloads. A unit test corpus (`crates/tandem-core/tests/redaction_corpus/{secrets.txt, benign.txt}`) asserts 100% redaction and 0 false positives (F-TL-02 AC1), and the split-at-every-offset test for `StreamRedactor` (AC2). The TS logger forwards through `app_log` (codes + scalar fields only).
 
 ### 16.5 Local data controls [F-TL-05, F-TL-07]
-Export: zip of `settings.json`, `workspaces.json`, `threads.json` (with messages), `teammates.json`, `routines.json`, `dictionary.json`, `teammates/*/memory/`, `teammates/*/skills/`, `tasks/`, plus a manifest; keychain values never included. Delete local data: native confirm → stop all subsystems → delete `$DATA` except `providers/` (unless ticked) → relaunch to onboarding. "What leaves this machine" rows are generated from the `Egress` enum (single source for the Settings table and the website).
+Export: zip of every table as `<table>.json` (`settings.json`, `workspaces.json`, `threads.json` with `thread_messages.json`, `teammates.json`, `routines.json`, `dictionary_rules.json`, …; FTS indexes left out), `teammates/*/memory/`, `teammates/*/skills/`, `tasks/`, `scratchpad/`, plus `manifest.json`; `providers/`, `auth/` and keychain values are never read (D-812). Delete local data: typed confirm → close terminals, forget Vibezeo's keychain secrets, leave `$DATA/.delete-pending` → relaunch; the next start deletes `$DATA` except `providers/` (unless ticked) before opening it, then runs onboarding. "What leaves this machine" rows are generated from the `Egress` enum (single source for the Settings table and the website).
 
 ---
 

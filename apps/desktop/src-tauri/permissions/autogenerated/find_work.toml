@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-find-work"
+description = "Enables the find_work command without any pre-configured scope."
+commands.allow = ["find_work"]
+
+[[permission]]
+identifier = "deny-find-work"
+description = "Denies the find_work command without any pre-configured scope."
+commands.deny = ["find_work"]

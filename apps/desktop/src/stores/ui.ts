@@ -13,6 +13,8 @@ type UiState = {
   returnFocus: HTMLElement | null;
   railCollapsed: boolean;
   paletteOpen: boolean;
+  /** What the palette searches: commands, or open work by meaning (F-CN-05). */
+  paletteMode: "commands" | "find";
   /** The keyboard shortcuts cheatsheet (Mod+/). */
   cheatsheetOpen: boolean;
   upgrade: { open: boolean; gate?: UpgradeGate; retry?: () => void };
@@ -22,6 +24,8 @@ type UiState = {
   settingsPage: string | null;
   toggleRail: () => void;
   setPalette: (open: boolean) => void;
+  /** Opens the palette as "Find work…". */
+  openFindWork: () => void;
   setCheatsheet: (open: boolean) => void;
   openUpgrade: (gate?: UpgradeGate, retry?: () => void) => void;
   closeUpgrade: () => void;
@@ -33,6 +37,7 @@ export const useUi = create<UiState>((set, get) => ({
   returnFocus: null,
   railCollapsed: false,
   paletteOpen: false,
+  paletteMode: "commands",
   cheatsheetOpen: false,
   upgrade: { open: false },
   settingsPage: null,
@@ -52,7 +57,9 @@ export const useUi = create<UiState>((set, get) => ({
     requestAnimationFrame(() => target?.isConnected && target.focus());
   },
   toggleRail: () => set({ railCollapsed: !get().railCollapsed }),
-  setPalette: (paletteOpen) => set({ paletteOpen }),
+  // Closing it goes back to commands, so Mod+K always opens the commands.
+  setPalette: (paletteOpen) => set(paletteOpen ? { paletteOpen } : { paletteOpen, paletteMode: "commands" }),
+  openFindWork: () => set({ paletteOpen: true, paletteMode: "find" }),
   setCheatsheet: (cheatsheetOpen) => set({ cheatsheetOpen }),
   openUpgrade: (gate, retry) => set({ upgrade: { open: true, gate, retry } }),
   closeUpgrade: () => set({ upgrade: { open: false } }),
