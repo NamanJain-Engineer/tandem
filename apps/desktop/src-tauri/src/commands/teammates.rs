@@ -268,3 +268,14 @@ pub async fn teammate_draft_with_ai(
 pub fn teammate_templates() -> Vec<crate::services::teammate_draft::TeammateTemplate> {
     crate::services::teammate_draft::templates()
 }
+
+/// Keep the chosen memory suggestions (F-AG-08 Ask); an empty `keep`
+/// discards the set. Returns the change id (for Undo) when memory changed.
+#[tauri::command]
+pub async fn memory_suggestions_resolve(
+    state: State<'_, AppState>,
+    suggestion_set_id: String,
+    keep: Vec<u32>,
+) -> Result<Option<String>, IpcError> {
+    state.learn.resolve(&suggestion_set_id, &keep).await
+}

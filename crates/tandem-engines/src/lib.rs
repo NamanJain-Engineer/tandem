@@ -14,6 +14,7 @@ pub mod handoff;
 pub mod homes;
 pub mod hook;
 pub mod launch;
+pub mod learn;
 pub mod registry;
 pub mod status_server;
 pub mod transcript;

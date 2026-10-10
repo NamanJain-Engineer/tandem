@@ -729,7 +729,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `teammate_launch_in_terminal` | `{id, placePath, tabId}` | `PaneRecord` | EngineMissing | F-AG-13 |
 | `memory_get` | `{teammateId}` | `Memory {notes, about, cap, used, aboutCap: 2048, aboutUsed}` (lengths in characters) | — | F-AG-07 |
 | `memory_write` | `{teammateId, file:"notes"\|"about", markdown}` (the user's own edits, checked like `tandem__memory_write`; each write is a `memory_changes` row with a copy of what it replaced) | — | LimitReached (cap), Invalid ("Memory can't store credentials") | F-AG-07 |
-| `memory_suggestions_resolve` | `{suggestionSetId, keep:[index]}` | — | — | F-AG-08 |
+| `memory_suggestions_resolve` | `{suggestionSetId, keep:[index]}` (an empty `keep` discards the set; sets live until resolved or the app quits) | `changeId?` (for Undo, when memory changed) | NotFound | F-AG-08 |
 | `memory_undo` | `{changeId}` | — (puts back what the change replaced) | NotFound, Conflict (the file changed again since) | F-AG-08 |
 | `skills_list` / `skill_get` | `{teammateId}` / `{teammateId, slug}` | `[SkillEntry {slug, name, description, valid, error?, isNew, syncedTo}]` / `Skill` | — | F-AG-09 |
 | `skill_save` / `skill_remove` | `{teammateId, slug, markdown}` / `{teammateId, slug}` (the user's saves, opens and library adds mark a skill seen: not "New"; remove moves the folder to `<home>/.trash/skills/`) | — | Invalid (front matter, or a credential), NotFound | F-AG-09 |
@@ -898,7 +898,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `plugins:changed` / `plugins:connect` | `PluginCard` / `{opId, step:"discovery"\|"registration"\|"sign_in"\|"token_exchange"\|"verification"\|"timeout", state, error?}` | gateway | F-PL-03 |
 | `teammates:changed` | `{teammates:[TeammateSummary]}` (a teammate or one of its chats changed; coalesced 100 ms) | teammates service | F-AG-02 |
 | `mail:changed` | `{teammateId, rows:[MailRow]}` | mail service | F-AG-12 |
-| `memory:suggestions` | `{teammateId, threadId, setId, items}` | learn service | F-AG-08 |
+| `memory:suggestions` | `MemorySuggestions {teammateId, threadId, setId, items:[{kind:"add"\|"remove", text}], rationale, applied, changeId?}` (`applied`: Auto mode already wrote it; `changeId` undoes it) | learn service | F-AG-08 |
 | `auto:changed` | `AutoRunView` | Auto supervisor | F-AU-01 |
 | `lanes:stale` | `{workspaceId, lanes:[StaleLane]}` | lane sweeper | F-CD-15 |
 | `dictate:state` | `{state:"idle"\|"listening"\|"transcribing"\|"inserted"\|"error"\|"reconnecting", takeId?}` (to `main` and `dictate-widget`) | TakeMachine | F-DI-07 |

@@ -18,6 +18,7 @@ pub mod git_panel;
 pub mod handoff;
 pub mod lanes;
 pub mod launch;
+pub mod learn;
 pub mod limits;
 pub mod models;
 pub mod names;

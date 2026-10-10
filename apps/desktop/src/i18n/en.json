@@ -1581,5 +1581,17 @@
   "agent.settings.leaveOk": "Discard",
 
   "settings.learnAfterTurn": "Learn after each turn",
-  "settings.learnAfterTurn.desc": "Lets teammates update NOTES.md with a short follow-up on their own engine, as each teammate's Learn setting says. Off stops it for everyone."
+  "settings.learnAfterTurn.desc": "Lets teammates update NOTES.md with a short follow-up on their own engine, as each teammate's Learn setting says. Off stops it for everyone.",
+
+  "agent.learn.title": "Memory suggestions",
+  "agent.learn.add": "Remember: {text}",
+  "agent.learn.remove": "Forget: {text}",
+  "agent.learn.keep": "Keep",
+  "agent.learn.discard": "Discard",
+  "agent.learn.keeping": "Kept",
+  "agent.learn.discarded": "Discarded",
+  "agent.learn.kept": "{n, plural, one {# note} other {# notes}} saved to memory",
+  "agent.learn.updated": "Memory updated ({n, plural, one {# change} other {# changes}})",
+  "agent.learn.undo": "Undo",
+  "agent.learn.dismiss": "Dismiss"
 }

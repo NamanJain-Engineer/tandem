@@ -218,7 +218,12 @@ pub struct ThreadService {
     status_sink: std::sync::OnceLock<ThreadStatusSink>,
     /// Tells the teammates service that chats changed.
     chats_sink: std::sync::OnceLock<Arc<dyn Fn() + Send + Sync>>,
+    /// Hears every teammate chat turn that ended (learning, F-AG-08).
+    turn_sink: std::sync::OnceLock<TurnSink>,
 }
+
+/// A teammate chat's turn ended: the chat, the turn and why.
+pub type TurnSink = Arc<dyn Fn(ThreadRecord, TurnId, TurnEndReason) + Send + Sync>;
 
 /// Receives every thread whenever the list changes; an archived thread
 /// leaves the Dashboard.
@@ -352,6 +357,7 @@ impl ThreadService {
             data: std::sync::OnceLock::new(),
             status_sink: std::sync::OnceLock::new(),
             chats_sink: std::sync::OnceLock::new(),
+            turn_sink: std::sync::OnceLock::new(),
         })
     }
 
@@ -435,6 +441,11 @@ impl ThreadService {
         tracing::info!(code = "threads.chat_created", engine = %thread.engine_id, "teammate chat created");
         self.publish_threads().await;
         Ok(thread)
+    }
+
+    /// Hears teammate chats' finished turns.
+    pub fn set_turn_sink(&self, sink: TurnSink) {
+        let _ = self.turn_sink.set(sink);
     }
 
     /// Teammate chats changed state: the Agent views hear about it.
@@ -1158,6 +1169,9 @@ impl ThreadService {
                         .await
                 {
                     tracing::warn!(code = "threads.index_failed", error = %e, "couldn't index a turn");
+                }
+                if let Some(sink) = self.turn_sink.get() {
+                    sink(record.clone(), run.id.clone(), reason);
                 }
             }
         }

@@ -64,30 +64,46 @@ impl ProcessSpec {
 /// as the terminal service writes for panes (argv, env keys, cwd; values of
 /// secret-shaped variables never). The E2E harness reads it.
 fn log_spawn(spec: &ProcessSpec) {
+    let args: Vec<String> = spec
+        .args
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    log_spawn_of(&spec.program, &args, &spec.env, &spec.cwd);
+}
+
+/// One `TANDEM_SPAWN_LOG` line for any engine run (chat or headless).
+pub fn log_spawn_of(
+    program: &std::path::Path,
+    args: &[String],
+    env: &[(String, String)],
+    cwd: &std::path::Path,
+) {
     if !cfg!(debug_assertions) {
         return;
     }
     let Some(path) = std::env::var_os("TANDEM_SPAWN_LOG") else {
         return;
     };
-    let mut argv = vec![spec.program.to_string_lossy().into_owned()];
-    argv.extend(spec.args.iter().map(|a| a.to_string_lossy().into_owned()));
+    let spec = (program, args, env, cwd);
+    let mut argv = vec![spec.0.to_string_lossy().into_owned()];
+    argv.extend(spec.1.iter().cloned());
     let home = spec
-        .env
+        .2
         .iter()
         .find(|(k, _)| matches!(k.as_str(), "CLAUDE_CONFIG_DIR" | "CODEX_HOME"))
         .map(|(_, v)| v.clone());
     let record = serde_json::json!({
         "argv": argv,
-        "envKeys": spec.env.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>(),
+        "envKeys": spec.2.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>(),
         "secretEnvKeys": spec
-            .env
+            .2
             .iter()
             .filter(|(_, v)| crate::launch::looks_secret(v))
             .map(|(k, _)| k.clone())
             .collect::<Vec<_>>(),
         "providerHome": home,
-        "cwd": spec.cwd.to_string_lossy(),
+        "cwd": spec.3.to_string_lossy(),
     });
     use std::io::Write;
     if let Ok(mut f) = std::fs::OpenOptions::new()

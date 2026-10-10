@@ -36,6 +36,7 @@ import { ChatView } from "../thread/ThreadMain";
 import { teammateStatus } from "./AgentRail";
 import { MemoryTab } from "./MemoryTab";
 import { SkillsTab } from "./SkillsTab";
+import { SuggestionCards } from "./Suggestions";
 
 const CHAT_DOT: Record<ThreadState, Status> = {
   idle: "idle",
@@ -361,7 +362,12 @@ function ChatsTab({ s, visible }: { s: TeammateSummary; visible: boolean }) {
             chat={{
               placeholder: t("agent.chat.placeholder", { name: tm.name }),
               empty: emptyState,
-              above: <PluginNudge s={s} />,
+              above: (
+                <>
+                  <SuggestionCards threadId={open.id} />
+                  <PluginNudge s={s} />
+                </>
+              ),
               header: (
                 <div
                   className="flex h-7 shrink-0 items-center gap-1.5 border-b border-divider px-3 text-sm text-fg-muted"

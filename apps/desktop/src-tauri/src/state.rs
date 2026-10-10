@@ -118,6 +118,8 @@ pub struct AppState {
     pub telemetry: Arc<TelemetryService>,
     /// Teammates (F-AG-01).
     pub teammates: Arc<crate::services::teammates::TeammatesService>,
+    /// Learn after a turn (F-AG-08).
+    pub learn: Arc<crate::services::learn::LearnService>,
     /// Holds the gateway's built-ins handler alive (the gateway keeps a weak
     /// reference).
     pub teammate_tools: Arc<dyn crate::services::gateway::BuiltinService>,
@@ -440,6 +442,24 @@ impl AppState {
                 teammates: teammates.clone(),
             });
         gateway.bind_builtins(Arc::downgrade(&tools));
+        // Learn after a turn (F-AG-08): off the turn's own path.
+        let learn = crate::services::learn::LearnService::new(
+            store.clone(),
+            bus.clone(),
+            teammates.clone(),
+            Arc::new(crate::services::learn::AppLearnRunner {
+                terminals: terminals.clone(),
+            }),
+        );
+        {
+            let learn = learn.clone();
+            threads.set_turn_sink(Arc::new(move |chat, turn, reason| {
+                let learn = learn.clone();
+                tauri::async_runtime::spawn(
+                    async move { learn.after_turn(chat, turn, reason).await },
+                );
+            }));
+        }
         // Threads are Dashboard items too (F-DB-01, D-6).
         let status = terminals.status.clone();
         threads.set_status_sink(Arc::new(move |th| {
@@ -513,6 +533,7 @@ impl AppState {
             gateway,
             teammates,
             teammate_tools: tools,
+            learn,
             files,
             git_panel,
             browser: std::sync::OnceLock::new(),

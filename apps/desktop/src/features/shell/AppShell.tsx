@@ -16,6 +16,7 @@ import { AgentRail } from "../agents/AgentRail";
 import { NewTeammateSheet, useNewTeammate } from "../agents/NewTeammateSheet";
 import { AgentMain } from "../agents/TeammatePage";
 import { TeammateSettings } from "../agents/TeammateSettings";
+import { followSuggestions } from "../agents/Suggestions";
 import { followTeammates } from "../../stores/teammates";
 import { ThreadMain } from "../thread/ThreadMain";
 import { ThreadRail } from "../thread/ThreadRail";
@@ -75,6 +76,7 @@ export function AppShell() {
   useEffect(followUpdates, []);
   useEffect(followThreads, []);
   useEffect(followTeammates, []);
+  useEffect(followSuggestions, []);
   useVisibilityReport();
   // Debug builds: UI-side counters for the E2E harness (ARCHITECTURE §17.5).
   const dev = useBoot((st) => st.boot?.dev ?? false);

@@ -41,6 +41,7 @@
     "allow-thread-reorder",
     "allow-teammate-draft-with-ai",
     "allow-teammate-templates",
+    "allow-memory-suggestions-resolve",
     "allow-app-log",
     "allow-app-copy-diagnostics",
     "allow-app-open-logs-folder",

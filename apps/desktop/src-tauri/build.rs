@@ -209,6 +209,7 @@ const COMMANDS: &[&str] = &[
     "thread_reorder",
     "teammate_draft_with_ai",
     "teammate_templates",
+    "memory_suggestions_resolve",
 ];
 
 const TEST_COMMANDS: &[&str] = &[
