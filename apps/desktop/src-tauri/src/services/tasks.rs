@@ -263,9 +263,13 @@ mod tests {
             &std::fs::read_to_string(root.join("tauri.sidecars.conf.json")).expect("conf"),
         )
         .expect("json");
-        assert_eq!(
-            conf["bundle"]["externalBin"],
-            serde_json::json!(["binaries/tandem-tasks"])
+        // Beside tandem-hook since D-828 (services::engines checks both).
+        let bins = conf["bundle"]["externalBin"]
+            .as_array()
+            .expect("externalBin");
+        assert!(
+            bins.iter().any(|b| b == "binaries/tandem-tasks"),
+            "{bins:?}"
         );
         // Both release paths build the sidecar and pass that config.
         let repo = root.join("../../..");

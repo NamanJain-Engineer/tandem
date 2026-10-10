@@ -9,7 +9,7 @@ import { EARLY_ACCESS_HREF, ENGINES, SITE } from "../lib/site";
 
 export const metadata: Metadata = { alternates: { canonical: "/" } };
 
-/** What the desktop app does today (milestones M0–M7 and M9). */
+/** What the released desktop app does (the milestones `lib/progress.ts` lists). */
 const FEATURES = [
   {
     title: "Real terminals, side by side",
@@ -44,12 +44,28 @@ const FEATURES = [
     body: "A file tree and code editor beside your agents, a git panel to stage, commit, push and switch branches with your own git, and a browser in the sidebar or a pane. Pick elements on a page and send them to an agent; paths and URLs in terminals open with Ctrl+Click. A Scratchpad keeps Markdown notes beside it all, on your computer.",
   },
   {
+    title: "SSH workspaces",
+    body: "Open a folder on another machine and its terminals, agents, threads, files and git run there. Vibezeo connects with your own ssh, agent and config, pins the host's key, and keeps terminals running through a dropped connection (up to 10 minutes). Engines run signed in on the host; your sign-ins stay on your computer. Linux hosts, x86-64 and arm64.",
+  },
+  {
     title: "Teammates",
     body: "Agent mode keeps named teammates that run on the engines you already use. Each has a brief, notes it remembers between chats and skills it can read; after a turn it can suggest what to remember, for you to keep or discard. Teammates search their past chats and send each other mail. Free includes one teammate besides Lead.",
   },
   {
     title: "Find work by what it's about",
     body: "Type \u201cthe login tests\u201d into Find work in the command palette and it takes you to the pane or thread doing them, even if nothing is named that. The search runs on your computer.",
+  },
+  {
+    title: "Dictate",
+    body: "Hold Ctrl+Alt in any app, speak and let go: the words are typed where your cursor was. Speech is recognized on your computer by a model you choose to download, and audio is never saved. History, stats and a dictionary for names and terms stay on your computer too.",
+  },
+  {
+    title: "Plugins with approvals",
+    body: "Connect services such as Linear, Notion, Sentry or GitHub once, then choose which teammates and threads may use them. Reads run; writes, posts, spending and deletions ask you first, and runs nobody is watching hold them for your review. Credentials stay in your keychain and engines never see them. Free includes one connection.",
+  },
+  {
+    title: "Tasks",
+    body: "A task tracker on your computer that your agents read and update too, with statuses, priorities, labels, comments and a history of who changed what. Changes from anyone show up at once, and your unsaved edits survive them.",
   },
   {
     title: "Several accounts per engine",
@@ -88,27 +104,23 @@ const CLAUDE = [
   {
     tag: "Built, live when accounts open",
     title: "Hosted features on the Claude API",
-    body: "Vibezeo's hosted AI runs on the Claude API. Session titles, teammate drafts and the Auto supervisor are built in the app and the backend, and so is Enhance and Polish for dictated prompts on the backend: it calls Claude, meters credits, and stores no prompts or responses. They go live when accounts open; Enhance and Polish arrives with Dictate in the app.",
+    body: "Vibezeo's hosted AI runs on the Claude API. Session titles, teammate drafts, Enhance and Polish for dictated prompts, and the Auto supervisor are built in the app and the backend: it calls Claude, meters credits, and stores no prompts or responses. They go live when accounts open.",
   },
 ] as const;
 
 /** Later milestones, in build order. */
 const ROADMAP = [
   {
-    title: "Dictate",
-    body: "Push-to-talk anywhere in the app, with speech recognized on your machine.",
-  },
-  {
-    title: "Tasks, routines and plugins",
-    body: "A local task tracker agents can read and write, scheduled routines, and connected services behind explicit approvals.",
-  },
-  {
-    title: "Remote",
-    body: "Run agents over SSH and WSL, and check on them from your phone.",
+    title: "Your phone, and WSL",
+    body: "Check on your agents and answer them from your phone, and run them in WSL when the Windows download arrives.",
   },
   {
     title: "Conductor",
     body: "Talk to Vibezeo and it works the app for you: starts agents, prompts them and finds work.",
+  },
+  {
+    title: "Pro, when accounts open",
+    body: "Routines that run teammates on a schedule and tasks run in their own lanes are built into the app, along with the hosted features. They switch on with Vibezeo accounts.",
   },
 ] as const;
 
@@ -334,7 +346,7 @@ export default function HomePage() {
             <source src="/screens/product.mp4" type="video/mp4" />
           </video>
           <figcaption className="text-sm text-fg-muted">
-            Every shot of the app is a screen recording of the Linux {RELEASE.version} build. The terminal
+            Every shot of the app is a screen recording of the first Linux release, 0.1.0; the changelog lists what each release since has added. The terminal
             part plays at 2.3× speed (marked on screen), and the live-status scene is an illustration. 0:08 A
             new tab finds Claude Code on the machine. 0:14 Four terminals over Vibezeo's own repository: htop,
             the test suite and vim. 0:34 The app is killed with kill -9. 0:36 Relaunched, the layout comes

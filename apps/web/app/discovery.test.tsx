@@ -39,9 +39,9 @@ describe("downloads and discovery (F-WB-04)", () => {
     }
     for (const p of DOCS_PAGES)
       expect(txt).toContain(`[${p.title}](https://vibezeo.com/docs/${p.slug ? `${p.slug}/` : ""})`);
-    for (const slug of ["dictate", "conductor", "tasks", "routines", "plugins", "remote"])
+    for (const slug of ["conductor"])
       expect(txt).toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*\\(Not in the app yet\\.\\)`));
-    for (const slug of ["thread-mode", "agent-mode"])
+    for (const slug of ["thread-mode", "agent-mode", "dictate", "tasks", "plugins", "routines", "remote"])
       expect(txt).not.toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*Not in the app yet`));
     // F-DI-10 shipped, so Enhance and Polish is priced here as on /pricing.
     expect(txt.split("## Docs")[0]).toContain("Dictate Enhance and Polish: 3 credits per use");
