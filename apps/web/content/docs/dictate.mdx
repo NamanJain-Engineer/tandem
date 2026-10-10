@@ -1,8 +1,54 @@
 ---
 title: Dictate
-description: Push-to-talk dictation into any app, with local speech models.
+description: Push-to-talk dictation into any app, with speech models that run on your computer.
 ---
 
-> **Not in the app yet.** Dictate isn't in the current release. This page describes what is being built (M8 in the build plan), and it will be filled in when it ships. [The changelog](/changelog/) says what each release contains.
+Dictate types what you say into the app you're working in. Hold the shortcut, speak, and let go: the words land where your cursor was. Speech is recognized on your computer by a model you download once.
 
-Dictate turns speech into text in any app with a push-to-talk key, using speech models that run on your computer. Cloud speech-to-text, and Enhance and Polish for your prompts, are planned for Pro and use credits.
+## Set it up
+
+The setup's **Dictate** step and **Settings › Dictate › Set up** walk through the same choices:
+
+- **Shortcut.** Ctrl+Alt on Linux. Hold it in any app to dictate; double-tap it to keep listening hands-free, and press it again to stop. A quick tap does nothing, and holding Ctrl+Alt while you press another key (Ctrl+Alt+T) is left to that shortcut. An optional toggle shortcut starts and stops a take with single presses. Esc cancels a take.
+- **Try it.** Press and release your shortcut once, so Vibezeo knows the key reaches it.
+- **Microphone.** Pick one, or follow the system default, with a backup that takes over if the first stops delivering sound. A Bluetooth headset's mic is never picked on its own while another mic exists, which keeps headphones out of low-quality call mode, and neither are loopback or virtual inputs.
+- **Model.** Download a speech model (below).
+- **Where text goes.** Into the focused app (the default) or onto the clipboard. After a paste, the clipboard gets back what it held before.
+
+## Models
+
+Models are downloaded only when you ask, from Hugging Face at pinned versions. Each file is checked against a pinned SHA-256 and size before it's used, and a file that doesn't match is deleted.
+
+| Model | Download | Languages | Licence |
+| --- | --- | --- | --- |
+| Parakeet v3 (recommended) | 671 MB | 25 European languages | CC-BY-4.0 |
+| Whisper Turbo | 574 MB | About 100 | MIT |
+| Whisper Base (English) | 148 MB | English | MIT |
+| Distil-Whisper (English) | 1.5 GB | English | MIT |
+
+**Manage models…** in Settings › Dictate downloads, switches and removes them; on Linux it marks Distil-Whisper as CPU transcription. A switch during a take applies when the take ends.
+
+## While you talk
+
+The widget shows Listening with a timer, then Transcribing, then how many words went in. It appears while recording (or always, or never: **Show widget**), and its × discards the take. A take stops at 10 minutes; the widget counts down the last 30 seconds. Takes too short or silent to transcribe insert nothing and say why.
+
+In Vibezeo's own message boxes, the mic button records while you hold it or toggles with a click, and so does holding your Dictate key while the box has focus; the text goes in at the caret without touching the clipboard. The status bar shows your Dictate key, and the tray icon shows Dictate's status.
+
+## History, stats and the dictionary
+
+- **History** keeps the text of each take on this computer, never the audio: forever by default, or 90, 30 or 7 days. Search, copy, correct, delete, export to CSV, or clear it; clearing keeps your totals.
+- **Stats** count words, speaking time, takes and words per minute, and estimate time saved against typing at 40 words a minute.
+- **Dictionary** holds words Dictate should spell your way and corrections ("tandem" → "Tandem"), optionally only in some apps or languages, and a rule can leave links, email addresses and code alone. Its Review tab suggests names and terms that keep coming back; only **Remember** adds them. Deleted rules can be restored for 30 days, and the dictionary imports and exports JSON or CSV.
+
+## Linux
+
+- **X11:** nothing else to install.
+- **Wayland:** the shortcut uses your desktop's global-shortcuts portal. Without one, Settings shows a command (`xdg-open tandem://dictate/toggle`) to bind to a shortcut in your system settings. The link works only then, or when the shortcut can't be registered; press it once to finish setup. Typing into other apps needs `wtype` and `wl-clipboard`, and Settings shows the install command if they're missing. Esc can't cancel a take there; the widget's × does.
+
+## Privacy
+
+With local models, audio never leaves your computer and is never saved; the only network request Dictate makes is the model download you start. **Transcribe with › Cloud** sends a take to Vibezeo's speech-to-text service instead. It's built for Pro, uses credits, and shows what it sends the first time you switch to it. **Share dictionary hints with cloud** (off by default) also sends your preferred spellings, up to 40, with each take.
+
+**Enhance** and **Polish** send the transcript's text, never audio, to Vibezeo's AI service, even when speech is recognized locally: 3 credits each. They're refused over 5,000 characters, and on any failure your exact words are used. Formatting instructions (up to 2,000 characters, and per app) apply to every take as a Polish.
+
+Cloud, Enhance and Polish are Pro features that switch on with Vibezeo accounts. This download runs the Free plan, so its Dictate is local and sends nothing.
