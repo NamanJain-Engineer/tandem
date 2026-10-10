@@ -15,11 +15,8 @@ import sys
 from PIL import Image, features
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent / "public"
-SOURCES = [
-    ROOT / "demo" / "still.jpg",
-    ROOT / "screens" / "code-mode.png",
-    ROOT / "screens" / "launch-grid.png",
-]
+# The demo still and every PNG capture in public/screens.
+SOURCES = [ROOT / "demo" / "still.jpg", *sorted((ROOT / "screens").glob("*.png"))]
 QUALITY = {"avif": 60, "webp": 80}
 
 
