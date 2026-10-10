@@ -359,6 +359,19 @@ describe("public site", () => {
     expect(step("main", head)).toBe(0);
   });
 
+  it("F-WB-01 only main, product-m0-m5 and release-* create Vercel deployments at all (D-829)", () => {
+    const config = JSON.parse(readFileSync(join(import.meta.dirname, "../vercel.json"), "utf8")) as {
+      git?: { deploymentEnabled?: Record<string, boolean> };
+    };
+    // Minimatch rules; a branch deploys when any rule that matches it is true.
+    expect(config.git?.deploymentEnabled).toEqual({
+      "**": false,
+      main: true,
+      "product-m0-m5": true,
+      "release-*": true,
+    });
+  });
+
   it("F-WB-01 robots, sitemap and security.txt point at the site", () => {
     expect(robotsTxt()).toContain(`Sitemap: ${SITE.url}/sitemap.xml`);
     const map = sitemapXml();
