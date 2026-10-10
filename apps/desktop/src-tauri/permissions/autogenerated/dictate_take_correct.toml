@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-take-correct"
+description = "Enables the dictate_take_correct command without any pre-configured scope."
+commands.allow = ["dictate_take_correct"]
+
+[[permission]]
+identifier = "deny-dictate-take-correct"
+description = "Denies the dictate_take_correct command without any pre-configured scope."
+commands.deny = ["dictate_take_correct"]

@@ -1,6 +1,14 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { Branch, FileStatus, FsChange, GitPanel, IpcError, StatusRecord, WorkspaceSummary } from "@tandem/protocol";
+import type {
+  Branch,
+  FileStatus,
+  FsChange,
+  GitPanel,
+  IpcError,
+  StatusRecord,
+  WorkspaceSummary,
+} from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { useFiles } from "../../stores/files";
 import { resetGit, useGit } from "../../stores/git";
@@ -11,7 +19,13 @@ import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { StatusBar } from "../shell/StatusBar";
 import { FilesPanel } from "./FilesPanel";
 
-const WS = { id: "ws_1", root: "/work/shop", name: "shop", tabs: [{ id: "tab_1" }], branch: "main" } as unknown as WorkspaceSummary;
+const WS = {
+  id: "ws_1",
+  root: "/work/shop",
+  name: "shop",
+  tabs: [{ id: "tab_1" }],
+  branch: "main",
+} as unknown as WorkspaceSummary;
 
 type Repo = {
   branch: string | null;
@@ -35,7 +49,14 @@ const ipcError = (code: string, message: string): IpcError => ({
 function setup(repo: Repo | null, opts: { commitFails?: string } = {}) {
   const channels: Array<{ onmessage: (c: FsChange) => void }> = [];
   const branches: Branch[] = [
-    { name: repo?.branch ?? "main", current: true, remote: false, upstream: repo?.upstream ?? null, ahead: 0, behind: 0 },
+    {
+      name: repo?.branch ?? "main",
+      current: true,
+      remote: false,
+      upstream: repo?.upstream ?? null,
+      ahead: 0,
+      behind: 0,
+    },
     { name: "feature", current: false, remote: false, upstream: null, ahead: 0, behind: 0 },
   ];
   const move = (paths: string[], from: FileStatus[], to: FileStatus[]) => {
@@ -48,7 +69,14 @@ function setup(repo: Repo | null, opts: { commitFails?: string } = {}) {
   };
   const calls = fakeBackend({
     workspace_list: () => [WS],
-    editor_tabs_get: () => ({ tabs: [], active: null, expanded: [], showIgnored: false, divider: null, view: null }),
+    editor_tabs_get: () => ({
+      tabs: [],
+      active: null,
+      expanded: [],
+      showIgnored: false,
+      divider: null,
+      view: null,
+    }),
     editor_tabs_save: () => null,
     fs_watch: (a) => {
       channels.push(a?.channel as { onmessage: (c: FsChange) => void });
@@ -57,7 +85,13 @@ function setup(repo: Repo | null, opts: { commitFails?: string } = {}) {
     fs_unwatch: () => null,
     fs_list: () => [],
     git_status: (): GitPanel | null =>
-      repo ? { root: "/work/shop", folder: "", status: { ...repo, staged: [...repo.staged], unstaged: [...repo.unstaged] } } : null,
+      repo
+        ? {
+            root: "/work/shop",
+            folder: "",
+            status: { ...repo, staged: [...repo.staged], unstaged: [...repo.unstaged] },
+          }
+        : null,
     git_diff: (a) => ({
       path: String(a?.path),
       change: "modified",
@@ -152,21 +186,36 @@ describe("Changes view (F-CD-20)", () => {
   });
 
   it("F-CD-20.2 stage, commit and push: the branch chip comes back to 0/0", async () => {
-    const repo: Repo = { branch: "main", upstream: "origin/main", ahead: 0, behind: 0, staged: [], unstaged: [modified("a.txt"), modified("b.txt")], noCommits: false };
+    const repo: Repo = {
+      branch: "main",
+      upstream: "origin/main",
+      ahead: 0,
+      behind: 0,
+      staged: [],
+      unstaged: [modified("a.txt"), modified("b.txt")],
+      noCommits: false,
+    };
     const { calls } = setup(repo);
     await showChanges();
     await waitFor(() => expect(changeRows()).toEqual(["U:a.txt", "U:b.txt"]));
     expect(screen.getByRole("radio", { name: "Changes (2)" })).toBeTruthy();
     fireEvent.click(screen.getByTestId("git-stage-all"));
     await waitFor(() => expect(changeRows()).toEqual(["S:a.txt", "S:b.txt"]));
-    expect(calls.find((c) => c.cmd === "git_stage")?.args).toMatchObject({ paths: ["a.txt", "b.txt"], context: { type: "workspace", workspaceId: "ws_1" } });
+    expect(calls.find((c) => c.cmd === "git_stage")?.args).toMatchObject({
+      paths: ["a.txt", "b.txt"],
+      context: { type: "workspace", workspaceId: "ws_1" },
+    });
     const commit = screen.getByTestId("git-commit") as HTMLButtonElement;
     expect(commit.disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText("Commit message"), { target: { value: "Fix the second line\n\nAnd add b." } });
+    fireEvent.change(screen.getByLabelText("Commit message"), {
+      target: { value: "Fix the second line\n\nAnd add b." },
+    });
     expect(commit.disabled).toBe(false);
     fireEvent.click(commit);
     await waitFor(() => expect(chip().dataset.ahead).toBe("1"));
-    expect(calls.find((c) => c.cmd === "git_commit")?.args?.message).toBe("Fix the second line\n\nAnd add b.");
+    expect(calls.find((c) => c.cmd === "git_commit")?.args?.message).toBe(
+      "Fix the second line\n\nAnd add b.",
+    );
     expect((screen.getByLabelText("Commit message") as HTMLTextAreaElement).value).toBe("");
     expect(chip().textContent).toContain("↑1 ↓0");
     await chipMenu(/^Push$/);
@@ -184,7 +233,10 @@ describe("Changes view (F-CD-20)", () => {
       ahead: 0,
       behind: 0,
       staged: [],
-      unstaged: [{ path: "README.md", change: "untracked" }, { path: "src/lib.rs", change: "untracked" }],
+      unstaged: [
+        { path: "README.md", change: "untracked" },
+        { path: "src/lib.rs", change: "untracked" },
+      ],
       noCommits: true,
     };
     const { calls } = setup(repo);
@@ -195,7 +247,11 @@ describe("Changes view (F-CD-20)", () => {
     fireEvent.click(screen.getByTestId("git-stage-all"));
     await waitFor(() => expect(changeRows()).toEqual(["S:README.md", "S:src/lib.rs"]));
     fireEvent.change(screen.getByLabelText("Commit message"), { target: { value: "First commit" } });
-    fireEvent.keyDown(screen.getByLabelText("Commit message"), { key: "Enter", ctrlKey: true, metaKey: true });
+    fireEvent.keyDown(screen.getByLabelText("Commit message"), {
+      key: "Enter",
+      ctrlKey: true,
+      metaKey: true,
+    });
     await waitFor(() => expect(count(calls, "git_commit")).toBe(1));
     await waitFor(() => expect(screen.getByText("No changes")).toBeTruthy());
     // Publishing gives the new branch its upstream.
@@ -205,7 +261,15 @@ describe("Changes view (F-CD-20)", () => {
   });
 
   it("F-CD-20 discarding asks first, and Cancel keeps the change", async () => {
-    const repo: Repo = { branch: "main", upstream: null, ahead: 0, behind: 0, staged: [], unstaged: [modified("a.txt")], noCommits: false };
+    const repo: Repo = {
+      branch: "main",
+      upstream: null,
+      ahead: 0,
+      behind: 0,
+      staged: [],
+      unstaged: [modified("a.txt")],
+      noCommits: false,
+    };
     const { calls } = setup(repo);
     await showChanges();
     await waitFor(() => expect(changeRows()).toEqual(["U:a.txt"]));
@@ -222,7 +286,15 @@ describe("Changes view (F-CD-20)", () => {
   });
 
   it("F-CD-20 picking a change shows its diff, staged or not", async () => {
-    const repo: Repo = { branch: "main", upstream: null, ahead: 0, behind: 0, staged: [modified("s.txt")], unstaged: [modified("a.txt")], noCommits: false };
+    const repo: Repo = {
+      branch: "main",
+      upstream: null,
+      ahead: 0,
+      behind: 0,
+      staged: [modified("s.txt")],
+      unstaged: [modified("a.txt")],
+      noCommits: false,
+    };
     const { calls } = setup(repo);
     await showChanges();
     await waitFor(() => expect(changeRows()).toEqual(["S:s.txt", "U:a.txt"]));
@@ -234,7 +306,10 @@ describe("Changes view (F-CD-20)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to changes" }));
     fireEvent.click(await screen.findByRole("button", { name: "s.txt, modified" }));
     await waitFor(() => expect(screen.getByTestId("git-diff").textContent).toContain("new staged"));
-    expect(calls.filter((c) => c.cmd === "git_diff").pop()?.args).toMatchObject({ path: "s.txt", staged: true });
+    expect(calls.filter((c) => c.cmd === "git_diff").pop()?.args).toMatchObject({
+      path: "s.txt",
+      staged: true,
+    });
   });
 
   it("F-CD-20 outside a repository the view says so", async () => {
@@ -246,7 +321,15 @@ describe("Changes view (F-CD-20)", () => {
   });
 
   it("F-CD-20 a commit git refuses keeps the message and says why", async () => {
-    const repo: Repo = { branch: "main", upstream: null, ahead: 0, behind: 0, staged: [modified("a.txt")], unstaged: [], noCommits: false };
+    const repo: Repo = {
+      branch: "main",
+      upstream: null,
+      ahead: 0,
+      behind: 0,
+      staged: [modified("a.txt")],
+      unstaged: [],
+      noCommits: false,
+    };
     setup(repo, { commitFails: "git commit failed: the pre-commit hook said no" });
     await showChanges();
     await waitFor(() => expect(changeRows()).toEqual(["S:a.txt"]));
@@ -258,7 +341,15 @@ describe("Changes view (F-CD-20)", () => {
   });
 
   it("F-CD-20 the status is read again on a watch batch and when an agent finishes", async () => {
-    const repo: Repo = { branch: "main", upstream: null, ahead: 0, behind: 0, staged: [], unstaged: [], noCommits: false };
+    const repo: Repo = {
+      branch: "main",
+      upstream: null,
+      ahead: 0,
+      behind: 0,
+      staged: [],
+      unstaged: [],
+      noCommits: false,
+    };
     const { calls, batch } = setup(repo);
     await waitFor(() => expect(count(calls, "git_status")).toBeGreaterThan(0));
     const { followGit } = await import("../../stores/git");
@@ -277,7 +368,15 @@ describe("Changes view (F-CD-20)", () => {
   });
 
   it("F-CD-20 the status bar shows the branch with ahead/behind and opens Changes", async () => {
-    const repo: Repo = { branch: "main", upstream: "origin/main", ahead: 2, behind: 1, staged: [], unstaged: [], noCommits: false };
+    const repo: Repo = {
+      branch: "main",
+      upstream: "origin/main",
+      ahead: 2,
+      behind: 1,
+      staged: [],
+      unstaged: [],
+      noCommits: false,
+    };
     setup(repo);
     const segment = await screen.findByTestId("status-branch");
     await waitFor(() => expect(segment.textContent).toContain("main↑2 ↓1"));
@@ -290,7 +389,15 @@ describe("Changes view (F-CD-20)", () => {
   });
 
   it("F-CD-20 New branch creates and switches; Switch branch lists the others", async () => {
-    const repo: Repo = { branch: "main", upstream: "origin/main", ahead: 0, behind: 0, staged: [], unstaged: [], noCommits: false };
+    const repo: Repo = {
+      branch: "main",
+      upstream: "origin/main",
+      ahead: 0,
+      behind: 0,
+      staged: [],
+      unstaged: [],
+      noCommits: false,
+    };
     const { calls } = setup(repo);
     await showChanges();
     await waitFor(() => expect(chip().dataset.branch).toBe("main"));

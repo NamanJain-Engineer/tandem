@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bell, Check } from "lucide-react";
 import type { Notification } from "@tandem/protocol";
-import { Button, EmptyState, IconButton, Popover, SegmentedControl, StatusDot, cx, useToast, type Status } from "@tandem/ui";
+import {
+  Button,
+  EmptyState,
+  IconButton,
+  Popover,
+  SegmentedControl,
+  StatusDot,
+  cx,
+  useToast,
+  type Status,
+} from "@tandem/ui";
 import { t } from "../../i18n";
 import { focusSource } from "../../stores/focus";
 import { useNotifications } from "../../stores/notifications";
@@ -31,11 +41,16 @@ export function ago(ms: number, now: number): string {
 
 function Item({ n, now, onJump }: { n: Notification; now: number; onJump: (n: Notification) => void }) {
   const { show } = useToast();
-  const approvalId = n.kind === "approval" && n.state !== "resolved" && n.dedupeKey?.startsWith("approval:") ? n.dedupeKey.slice(9) : null;
+  const approvalId =
+    n.kind === "approval" && n.state !== "resolved" && n.dedupeKey?.startsWith("approval:")
+      ? n.dedupeKey.slice(9)
+      : null;
   const status = dot(n);
   const decide = (allow: boolean) =>
     approvalId &&
-    void answer(approvalId, allow, "notification").then((err) => err && show({ tone: "error", title: err.message }));
+    void answer(approvalId, allow, "notification").then(
+      (err) => err && show({ tone: "error", title: err.message }),
+    );
   return (
     <li
       data-testid="notification"
@@ -52,13 +67,29 @@ function Item({ n, now, onJump }: { n: Notification; now: number; onJump: (n: No
       className="flex cursor-pointer gap-2.5 rounded-sm px-2.5 py-2 outline-none hover:bg-surface-4 focus-visible:shadow-focus"
     >
       <span className="mt-1 inline-flex size-3 shrink-0 items-center justify-center">
-        {status ? <StatusDot status={status} size={8} /> : <Bell size={12} aria-hidden="true" className="text-fg-muted" />}
+        {status ? (
+          <StatusDot status={status} size={8} />
+        ) : (
+          <Bell size={12} aria-hidden="true" className="text-fg-muted" />
+        )}
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex items-center gap-2">
-          <span className={cx("min-w-0 flex-1 truncate text-base", n.state === "unread" ? "font-medium text-fg" : "text-fg-muted")}>{n.title}</span>
+          <span
+            className={cx(
+              "min-w-0 flex-1 truncate text-base",
+              n.state === "unread" ? "font-medium text-fg" : "text-fg-muted",
+            )}
+          >
+            {n.title}
+          </span>
           <span className="shrink-0 text-sm tabular-nums text-fg-subtle">{ago(n.createdAt, now)}</span>
-          {n.state === "unread" && <span aria-label={t("notifications.unread")} className="size-1.5 shrink-0 rounded-full bg-accent" />}
+          {n.state === "unread" && (
+            <span
+              aria-label={t("notifications.unread")}
+              className="size-1.5 shrink-0 rounded-full bg-accent"
+            />
+          )}
         </span>
         {n.body && <span className="truncate text-sm text-fg-muted">{n.body}</span>}
         {WAITING_KINDS.has(n.kind) && n.state === "resolved" && (
@@ -130,7 +161,12 @@ export function NotificationsBell() {
       <div data-testid="notifications-popover" className="flex min-h-0 flex-col">
         <div className="flex items-center gap-2 border-b border-divider px-3 py-2">
           <h2 className="flex-1 text-md font-semibold text-fg">{t("notifications.title")}</h2>
-          <Button size="sm" variant="ghost" disabled={unread === 0} onClick={() => void useNotifications.getState().markAllRead()}>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={unread === 0}
+            onClick={() => void useNotifications.getState().markAllRead()}
+          >
             {t("notifications.markAllRead")}
           </Button>
         </div>
@@ -147,7 +183,11 @@ export function NotificationsBell() {
           />
         </div>
         {shown.length === 0 ? (
-          <EmptyState icon={<Bell size={20} />} title={t("notifications.emptyTitle")} body={t("notifications.emptyBody")} />
+          <EmptyState
+            icon={<Bell size={20} />}
+            title={t("notifications.emptyTitle")}
+            body={t("notifications.emptyBody")}
+          />
         ) : (
           <ul className="min-h-0 flex-1 overflow-auto p-1.5">
             {shown.map((n) => (

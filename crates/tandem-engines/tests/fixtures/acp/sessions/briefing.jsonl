@@ -1,0 +1,8 @@
+{"client":["\"method\":\"initialize\""]}
+{"agent":{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":false,"promptCapabilities":{"image":false},"mcpCapabilities":{"http":false}},"authMethods":[]}}}
+{"client":["\"method\":\"session/new\""]}
+{"agent":{"jsonrpc":"2.0","id":2,"result":{"sessionId":"sess_b"}}}
+{"client":["\"method\":\"session/prompt\"","\"text\":\"<brief>Keep the changelog.</brief>\"","\"text\":\"hello\""]}
+{"agent":{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}}
+{"client":["\"method\":\"session/prompt\"","\"prompt\":[{\"text\":\"again\""]}
+{"agent":{"jsonrpc":"2.0","id":4,"result":{"stopReason":"end_turn"}}}

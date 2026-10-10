@@ -33,6 +33,7 @@ import { invoke } from "../../ipc/invoke";
 import { useAccounts } from "../../stores/accounts";
 import { useEngines } from "../../stores/engines";
 import { useSession } from "../../stores/session";
+import { useTeammates } from "../../stores/teammates";
 import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
@@ -44,6 +45,8 @@ import { ThreadComposer } from "./ThreadComposer";
 import { ChangesPanel, ChangesToggle } from "./ChangesPanel";
 import { columnsFor, GRID_MAX } from "./grid";
 import { PlanCard, Transcript, approvalLabels, type TranscriptActions } from "./Transcript";
+import { pluginApprovalLabels } from "../plugins/PluginApproval";
+import { parseApproval } from "../plugins/model";
 
 const STATE_DOT = {
   idle: "idle",
@@ -72,7 +75,8 @@ function approvalTitle(engine: string, kind: string): string {
 
 async function resolve(
   approvalId: string,
-  decision: { type: "allow"; scope: "once" | "thread" } | { type: "deny"; reason: string | null },
+  decision:
+    { type: "allow"; scope: "once" | "thread" | "conversation" } | { type: "deny"; reason: string | null },
 ) {
   await invoke("approval_resolve", { approvalId, decision, via: "inline" });
 }
@@ -316,8 +320,55 @@ const SUGGESTIONS = ["thread.suggest.explain", "thread.suggest.test", "thread.su
 
 /** UI-20/21/22/23: one thread. */
 /** `visible`: Thread mode is showing (every surface stays mounted, F-SH-02). */
-function ThreadView({ threadId, visible, cell }: { threadId: string; visible: boolean; cell?: GridCell }) {
-  const thread = useThreads((s) => s.list.find((th) => th.id === threadId) ?? null);
+/** What a teammate chat changes about the thread view (F-AG-03). */
+export type ChatOptions = {
+  /** "Message {name}…". */
+  placeholder: string;
+  /** The empty chat's state (suggestion chips from the brief). */
+  empty: (prefill: (text: string) => void) => ReactNode;
+  /** Above the composer: the plugin nudge. */
+  above?: ReactNode;
+  /** Typed `@name` mail, handled before the message is sent; `true` when it
+   * was mail and nothing else should go out. */
+  beforeSend?: (text: string) => Promise<boolean>;
+  /** The thin header (place chip). */
+  header?: ReactNode;
+};
+
+/** A teammate chat: the same transcript and composer as a thread. */
+export function ChatView({
+  threadId,
+  visible,
+  chat,
+}: {
+  threadId: string;
+  visible: boolean;
+  chat: ChatOptions;
+}) {
+  return <ThreadView threadId={threadId} visible={visible} chat={chat} />;
+}
+
+function ThreadView({
+  threadId,
+  visible,
+  cell,
+  chat,
+}: {
+  threadId: string;
+  visible: boolean;
+  cell?: GridCell;
+  chat?: ChatOptions;
+}) {
+  const listed = useThreads((s) => s.list.find((th) => th.id === threadId) ?? null);
+  const loaded = useThreads((s) => s.byId[threadId]?.detail?.thread ?? null);
+  const chatRow = useTeammates((s) => {
+    for (const list of Object.values(s.chats)) {
+      const found = list.find((c) => c.id === threadId);
+      if (found) return found;
+    }
+    return null;
+  });
+  const thread = listed ?? loaded ?? chatRow;
   const live = useThreads((s) => s.byId[threadId]);
   const open = useThreads((s) => s.open);
   const loadOlder = useThreads((s) => s.loadOlder);
@@ -413,14 +464,18 @@ function ThreadView({ threadId, visible, cell }: { threadId: string; visible: bo
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="thread-main" data-thread-id={thread.id}>
       {login && <LoginSheet request={login} onClose={() => setLogin(null)} />}
-      <Header
-        thread={thread}
-        contextFill={usage.contextFillPct}
-        plans={plans ?? NO_PLANS}
-        actions={actions}
-        changes={<ChangesToggle open={changesOpen} onToggle={toggleChanges} />}
-        onClose={cell?.onClose}
-      />
+      {chat ? (
+        chat.header
+      ) : (
+        <Header
+          thread={thread}
+          contextFill={usage.contextFillPct}
+          plans={plans ?? NO_PLANS}
+          actions={actions}
+          changes={<ChangesToggle open={changesOpen} onToggle={toggleChanges} />}
+          onClose={cell?.onClose}
+        />
+      )}
       <div className="relative flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {live?.status === "error" ? (
@@ -449,7 +504,11 @@ function ThreadView({ threadId, visible, cell }: { threadId: string; visible: bo
                 </div>
               }
             >
-              {empty ? (
+              {empty && chat ? (
+                <div className="flex min-h-0 flex-1 items-center justify-center">
+                  {chat.empty((text) => setPrefill({ text, n: Date.now() }))}
+                </div>
+              ) : empty ? (
                 <div className="flex min-h-0 flex-1 items-center justify-center">
                   {workspace ? (
                     <EmptyState
@@ -507,19 +566,27 @@ function ThreadView({ threadId, visible, cell }: { threadId: string; visible: bo
             )}
             {pending.length > 0 && (
               <div className="flex flex-col gap-2" data-testid="thread-pending">
-                {(expanded ? pending : pending.slice(0, 1)).map((p) => (
-                  <ApprovalCard
-                    key={p.request.id}
-                    compact
-                    kind={p.request.kind}
-                    title={`${approvalTitle(engineLabel, p.request.kind)}: ${p.request.summary}`}
-                    allowThread={p.request.options.includes("thread")}
-                    onAllow={() => actions.approve(p.request.id, "once")}
-                    onAllowThread={() => actions.approve(p.request.id, "thread")}
-                    onDeny={(reason) => actions.deny(p.request.id, reason)}
-                    labels={approvalLabels(p.request.kind)}
-                  />
-                ))}
+                {(expanded ? pending : pending.slice(0, 1)).map((p) => {
+                  // A plugin's card answers "for this chat" (F-PL-07).
+                  const plugin = parseApproval(p.request.detail);
+                  const wide = plugin ? "conversation" : "thread";
+                  return (
+                    <ApprovalCard
+                      key={p.request.id}
+                      compact
+                      kind={p.request.kind}
+                      title={`${approvalTitle(engineLabel, p.request.kind)}: ${p.request.summary}`}
+                      allowThread={p.request.options.includes(wide)}
+                      onAllow={() => actions.approve(p.request.id, "once")}
+                      onAllowThread={() => actions.approve(p.request.id, wide)}
+                      onDeny={(reason) => actions.deny(p.request.id, reason)}
+                      labels={{
+                        ...approvalLabels(p.request.kind),
+                        ...(plugin ? pluginApprovalLabels() : {}),
+                      }}
+                    />
+                  );
+                })}
                 {pending.length > 1 && !expanded && (
                   <Button size="sm" variant="ghost" className="self-start" onClick={() => setExpanded(true)}>
                     {t("thread.approval.more", { n: pending.length - 1 })}
@@ -527,9 +594,11 @@ function ThreadView({ threadId, visible, cell }: { threadId: string; visible: bo
                 )}
               </div>
             )}
+            {chat?.above}
             <ThreadComposer
               key={thread.id}
               thread={thread}
+              chat={chat ? { placeholder: chat.placeholder, beforeSend: chat.beforeSend } : undefined}
               detail={live?.detail ?? null}
               running={running !== null}
               tokens={usage}

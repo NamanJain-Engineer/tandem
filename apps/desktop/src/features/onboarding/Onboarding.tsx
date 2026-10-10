@@ -21,10 +21,12 @@ import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { LoginSheet, SignInState, type LoginRequest } from "../settings/AccountsPage";
 import { addWorkspace } from "../shell/actions";
+import { DictateSetupBody } from "../dictate/DictateSetup";
 
 const TITLES: Record<string, MessageKey> = {
   engines: "onboarding.engines.title",
   accounts: "onboarding.accounts.title",
+  dictate: "onboarding.dictate.title",
   privacy: "onboarding.privacy.title",
   workspace: "onboarding.workspace.title",
 };
@@ -287,6 +289,7 @@ export function Onboarding() {
         </h1>
         {step === "engines" && <EnginesStep />}
         {step === "accounts" && <AccountsStep />}
+        {step === "dictate" && <DictateSetupBody />}
         {step === "privacy" && <PrivacyStep />}
         {step === "workspace" && <WorkspaceStep onAdded={(root) => void finish(root)} />}
         <footer className="flex items-center justify-between border-t border-divider pt-4">

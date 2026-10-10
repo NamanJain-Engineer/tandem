@@ -60,8 +60,18 @@ async fn apply(
     key: SettingKey,
     value: &Value,
 ) -> Result<(), IpcError> {
+    if key.as_str().starts_with("dictate_") || key == SettingKey::Theme {
+        state.dictate.reload_settings(key).await;
+    }
     match key {
         SettingKey::TelemetryUsage | SettingKey::TelemetryCrash => state.apply_settings().await,
+        SettingKey::ExposeAllPluginTools => {
+            state
+                .gateway
+                .set_expose_all(value.as_bool().unwrap_or(false));
+        }
+        // Paused: queued mail waits; resumed: it goes out, once (F-AG-12).
+        SettingKey::PauseAllMail => state.mail.pump_soon(),
         SettingKey::LaunchAtLogin => {
             let on = value.as_bool().unwrap_or(false);
             // E2E runs never touch the real login items.

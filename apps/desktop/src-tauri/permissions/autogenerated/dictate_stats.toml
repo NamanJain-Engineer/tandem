@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-stats"
+description = "Enables the dictate_stats command without any pre-configured scope."
+commands.allow = ["dictate_stats"]
+
+[[permission]]
+identifier = "deny-dictate-stats"
+description = "Denies the dictate_stats command without any pre-configured scope."
+commands.deny = ["dictate_stats"]

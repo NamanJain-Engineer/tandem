@@ -24,6 +24,9 @@ export type AuthDeps = {
   deps: () => Deps;
 };
 
+/** A deleted account stays closed while its data is removed (F-TL-05). */
+export const ACCOUNT_DELETED_MESSAGE = "This account is being deleted, so it can't be signed in to.";
+
 export const SSO_REQUIRED_MESSAGE = "Your organization signs in with single sign-on. Use “Sign in with SSO”.";
 /** Ways in that skip the org's identity provider (F-BL-06 P2 "SSO only"). */
 const SSO_GUARDED_PATHS = new Set(["/sign-in/email", "/sign-in/magic-link", "/sign-up/email"]);
@@ -113,15 +116,20 @@ export function createAuth({ env, db, email, breach, deps }: AuthDeps) {
     databaseHooks: {
       session: {
         create: {
-          // The backstop for "SSO only": no session for an enforced address
-          // except from the SSO callback, whatever way in was tried.
+          // The backstop for deleted accounts and for "SSO only" (no session
+          // for an enforced address except from the SSO callback), whatever
+          // way in was tried.
           before: async (session, ctx) => {
-            if (ctx?.path === SSO_CALLBACK_PATH) return;
             const [u] = await db
-              .select({ email: schema.user.email })
+              .select({ email: schema.user.email, deletionRequestedAt: schema.user.deletionRequestedAt })
               .from(schema.user)
               .where(eq(schema.user.id, session.userId))
               .limit(1);
+            // No way back in once "Delete account" ran, SSO included (F-TL-05).
+            if (u?.deletionRequestedAt) {
+              throw new APIError("FORBIDDEN", { message: ACCOUNT_DELETED_MESSAGE, code: "ACCOUNT_DELETED" });
+            }
+            if (ctx?.path === SSO_CALLBACK_PATH) return;
             if (u && (await ssoRequiredFor(deps(), u.email))) {
               throw new APIError("FORBIDDEN", { message: SSO_REQUIRED_MESSAGE, code: "SSO_REQUIRED" });
             }

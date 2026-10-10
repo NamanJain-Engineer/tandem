@@ -68,6 +68,9 @@ describe("E2E-M5-9 onboarding", () => {
     await atStep("accounts");
 
     await $('[data-testid="onboarding-continue"]').click();
+    // M8 added Dictate's setup between Accounts and Privacy (F-DI-11).
+    await atStep("dictate");
+    await $('[data-testid="onboarding-continue"]').click();
     await atStep("privacy");
     expect(await checked("Share anonymous usage statistics")).toBe("false");
     expect(await checked("Send crash reports")).toBe("false");
@@ -108,7 +111,7 @@ describe("E2E-M5-9 onboarding", () => {
     await typeKeys("setup");
     await $('[data-testid="run-setup-again"]').waitForExist({ timeout: 10_000 });
     await $('[data-testid="run-setup-again"]').click();
-    for (const s of ["engines", "accounts", "privacy", "workspace"]) {
+    for (const s of ["engines", "accounts", "dictate", "privacy", "workspace"]) {
       await atStep(s);
       await $('[data-testid="onboarding-skip"]').click();
     }

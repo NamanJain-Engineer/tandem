@@ -4,6 +4,7 @@ import { grantBody, refundBody } from "../routes/admin";
 import { draftBody, rewriteBody, titleBody } from "../routes/ai";
 import { autoNextBody } from "../routes/auto";
 import { createPairingBody } from "../services/pairings";
+import { actBody, resolveBody, settleBody, voiceSessionBody } from "../routes/voice";
 import { acceptBody, createOrgBody, inviteBody, memberBody, seatsBody } from "../routes/orgs";
 import { clientAuditBody, policySchema } from "../services/orgs";
 import { domainBody, ssoBody } from "../services/sso";
@@ -341,6 +342,50 @@ export const ROUTES: RouteDoc[] = [
       text: z.string().optional(),
       reason: z.string().optional(),
     }),
+  },
+  {
+    method: "post",
+    path: "/v1/voice/session",
+    summary:
+      "Start a Conductor call: an ephemeral token and socket for the realtime provider (Pro; holds 1,200 credits, 20 per started 10 s, at most 30 minutes)",
+    auth: "bearer",
+    body: voiceSessionBody,
+    response: z.object({
+      session_id: z.string(),
+      provider: z.string(),
+      ephemeral_token: z.string(),
+      ws_url: z.string(),
+      expires_at: z.string(),
+      max_seconds: z.number().int(),
+    }),
+  },
+  {
+    method: "post",
+    path: "/v1/voice/session/{id}/settle",
+    summary: "End a Conductor call: charge 20 credits per started 10 s and refund the rest of the hold (idempotent)",
+    auth: "bearer",
+    body: settleBody,
+    response: z.object({ charged: z.number().int(), refunded: z.number().int() }),
+  },
+  {
+    method: "post",
+    path: "/v1/voice/act",
+    summary:
+      "One round of Conductor's doer during a live call: tool calls from the closed catalog (voice-tools.json), or what to say (included in the call's rate)",
+    auth: "bearer",
+    body: actBody,
+    response: z.object({
+      tool_calls: z.array(z.object({ id: z.string(), name: z.string(), args: z.record(z.string(), z.unknown()) })),
+      say: z.string().optional(),
+    }),
+  },
+  {
+    method: "post",
+    path: "/v1/voice/resolve",
+    summary: "Find work by meaning: rank panes, threads and teammates for a query (Pro, 1 credit)",
+    auth: "bearer",
+    body: resolveBody,
+    response: z.object({ matches: z.array(z.object({ id: z.string(), score: z.number() })) }),
   },
   {
     method: "post",

@@ -44,6 +44,14 @@ const FEATURES = [
     body: "A file tree and code editor beside your agents, a git panel to stage, commit, push and switch branches with your own git, and a browser in the sidebar or a pane. Pick elements on a page and send them to an agent; paths and URLs in terminals open with Ctrl+Click. A Scratchpad keeps Markdown notes beside it all, on your computer.",
   },
   {
+    title: "Teammates",
+    body: "Agent mode keeps named teammates that run on the engines you already use. Each has a brief, notes it remembers between chats and skills it can read; after a turn it can suggest what to remember, for you to keep or discard. Teammates search their past chats and send each other mail. Free includes one teammate besides Lead.",
+  },
+  {
+    title: "Find work by what it's about",
+    body: "Type \u201cthe login tests\u201d into Find work in the command palette and it takes you to the pane or thread doing them, even if nothing is named that. The search runs on your computer.",
+  },
+  {
     title: "Several accounts per engine",
     body: "Keep work and personal accounts apart, each signed in by itself, with usage, limits and context in view. Free has one account per engine; Pro has as many as you need.",
   },
@@ -61,7 +69,7 @@ const FEATURES = [
   },
   {
     title: "Private by default",
-    body: "Usage statistics and crash reports are off until you turn them on. Secrets live in your OS keychain, and logs are scrubbed of tokens and keys.",
+    body: "Usage statistics and crash reports are off until you turn them on. Secrets live in your OS keychain, and logs are scrubbed of tokens and keys. Export your data to a zip, or delete it from your computer, from Settings.",
   },
 ] as const;
 
@@ -80,7 +88,7 @@ const CLAUDE = [
   {
     tag: "Built, live when accounts open",
     title: "Hosted features on the Claude API",
-    body: "Vibezeo's hosted AI runs on the Claude API. Session titles and Enhance and Polish for dictated prompts are built: the backend calls Claude, meters credits, and stores no prompts or responses. They go live when accounts open, alongside Dictate in the app. Teammate drafts and the Auto supervisor come next.",
+    body: "Vibezeo's hosted AI runs on the Claude API. Session titles, teammate drafts and the Auto supervisor are built in the app and the backend, and so is Enhance and Polish for dictated prompts on the backend: it calls Claude, meters credits, and stores no prompts or responses. They go live when accounts open; Enhance and Polish arrives with Dictate in the app.",
   },
 ] as const;
 
@@ -91,16 +99,16 @@ const ROADMAP = [
     body: "Push-to-talk anywhere in the app, with speech recognized on your machine.",
   },
   {
-    title: "Teammates (Agent mode)",
-    body: "Persistent agents with memory, skills and routines that can message each other.",
-  },
-  {
     title: "Tasks, routines and plugins",
     body: "A local task tracker agents can read and write, scheduled routines, and connected services behind explicit approvals.",
   },
   {
     title: "Remote",
     body: "Run agents over SSH and WSL, and check on them from your phone.",
+  },
+  {
+    title: "Conductor",
+    body: "Talk to Vibezeo and it works the app for you: starts agents, prompts them and finds work.",
   },
 ] as const;
 

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-skill-get"
+description = "Enables the skill_get command without any pre-configured scope."
+commands.allow = ["skill_get"]
+
+[[permission]]
+identifier = "deny-skill-get"
+description = "Denies the skill_get command without any pre-configured scope."
+commands.deny = ["skill_get"]

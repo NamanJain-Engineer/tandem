@@ -43,7 +43,10 @@ export function pathCandidates(line: string): Candidate[] {
 
 /** Whether a click on a link opens it: Mod+Click (Cmd on macOS, Ctrl
  * elsewhere), and never while the pane is hidden or a pane is dragged. */
-export function opensLink(event: MouseEvent, pane: { mac: boolean; visible: boolean; dragging: boolean }): boolean {
+export function opensLink(
+  event: MouseEvent,
+  pane: { mac: boolean; visible: boolean; dragging: boolean },
+): boolean {
   const mod = pane.mac ? event.metaKey : event.ctrlKey;
   return mod && pane.visible && !pane.dragging;
 }

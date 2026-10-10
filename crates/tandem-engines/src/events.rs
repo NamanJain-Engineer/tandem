@@ -105,6 +105,8 @@ pub enum ThreadEvent {
         from: String,
         to: String,
         preview: String,
+        /// The recipient's delivered turn: shown in place of its message.
+        inbound: bool,
     },
     TurnEnd {
         reason: TurnEndReason,

@@ -106,14 +106,22 @@ describe("element picker script (F-CD-18)", () => {
     function SaveButton() {
       return null;
     }
-    Object.assign(save, { "__reactFiber$x1": { type: "button", return: { type: SaveButton, return: null } } });
+    Object.assign(save, { __reactFiber$x1: { type: "button", return: { type: SaveButton, return: null } } });
     Object.assign($("li"), { __vueParentComponent: { type: { __name: "TodoItem" } } });
     click(save);
     const [e] = last().elements;
     expect(e?.component).toEqual({ name: "SaveButton", framework: "React" });
     expect(e?.html).toBe('<button id="dup">A</button>');
     expect(e?.truncated).toBe(false);
-    expect(Object.keys(e?.styles ?? {})).toEqual(["display", "position", "font", "color", "background", "margin", "padding"]);
+    expect(Object.keys(e?.styles ?? {})).toEqual([
+      "display",
+      "position",
+      "font",
+      "color",
+      "background",
+      "margin",
+      "padding",
+    ]);
     expect(e?.rect).toMatchObject({ width: expect.any(Number), height: expect.any(Number) });
     // A duplicated id names nothing: the selector says where it is instead.
     expect(document.querySelectorAll(e?.selector ?? "")).toHaveLength(1);
@@ -135,7 +143,9 @@ describe("element picker script (F-CD-18)", () => {
       opened.push(String(url));
       return null;
     });
-    document.dispatchEvent(Object.assign(new Event("securitypolicyviolation"), { blockedURI: "tandem-picker" }));
+    document.dispatchEvent(
+      Object.assign(new Event("securitypolicyviolation"), { blockedURI: "tandem-picker" }),
+    );
     click($("b"));
     expect(reports).toHaveLength(1);
     expect(opened).toHaveLength(1);

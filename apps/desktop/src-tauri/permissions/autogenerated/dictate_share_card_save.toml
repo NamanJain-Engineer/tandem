@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-share-card-save"
+description = "Enables the dictate_share_card_save command without any pre-configured scope."
+commands.allow = ["dictate_share_card_save"]
+
+[[permission]]
+identifier = "deny-dictate-share-card-save"
+description = "Denies the dictate_share_card_save command without any pre-configured scope."
+commands.deny = ["dictate_share_card_save"]

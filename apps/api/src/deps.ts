@@ -6,6 +6,7 @@ import type { Env } from "./env";
 import type { Clock } from "./lib/clock";
 import type { AiProvider } from "./providers/ai/types";
 import type { BillingProvider } from "./providers/billing/types";
+import type { RealtimeProvider } from "./providers/realtime/types";
 import type { SttProvider } from "./providers/stt/types";
 import type { BreachChecker } from "./providers/breach";
 import type { CaptchaVerifier } from "./providers/captcha";
@@ -32,6 +33,8 @@ export type Deps = {
   stt: SttProvider;
   /** Tells the phone relay to drop a revoked pairing's sockets (F-BE-11). */
   relay: RelayControl;
+  /** Conductor's realtime voice: mints a session for the app to connect to (F-BE-08). */
+  realtime: RealtimeProvider;
   /** What Team SSO reaches out with: the identity provider and DNS (faked in tests). */
   ssoNet: SsoNet;
 };

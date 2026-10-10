@@ -96,7 +96,9 @@ setting_keys! {
     PluginAskBeforeWrites,
     DictateEnabled,
     DictateHotkey,
-    DictateMode,
+    DictateToggleHotkey,
+    DictateLatch,
+    DictateHotkeyVerified,
     DictateEngine,
     DictateModel,
     DictateLanguage,
@@ -113,6 +115,8 @@ setting_keys! {
     DictateAutoEnhance,
     DictateFormatting,
     DictateShareHints,
+    DictateKeepHistory,
+    DictateWidgetPosition,
     ConductorName,
     ConductorVoice,
     ConductorTone,
@@ -137,9 +141,11 @@ setting_keys! {
     SettingsLastPage,
     OnboardingStep,
     OfflineStartedAt,
+    WhatsNewSeen,
     RailWidth,
     ThreadDefaults,
     ThreadGrid,
+    SkillsSeen,
 }
 
 /// How a value is checked before it is stored.
@@ -522,12 +528,20 @@ pub static SCHEMA: &[SettingSpec] = &[
         ["hotkey", "shortcut"]
     ),
     spec!(
-        DictateMode,
-        json!("hold"),
-        V::OneOf(&["hold", "toggle", "both"]),
+        DictateToggleHotkey,
+        json!(null),
+        V::OptionalText { max: 64 },
         Dictate,
-        ["hold", "hands-free"]
+        ["toggle", "shortcut"]
     ),
+    spec!(
+        DictateLatch,
+        json!(true),
+        V::Bool,
+        Dictate,
+        ["double-tap", "hands-free", "lock"]
+    ),
+    spec!(DictateHotkeyVerified, json!(false), V::Bool, Hidden, []),
     spec!(
         DictateEngine,
         json!("local"),
@@ -565,28 +579,28 @@ pub static SCHEMA: &[SettingSpec] = &[
     ),
     spec!(
         DictateGain,
-        json!(100),
-        V::IntRange(25, 400),
+        json!("off"),
+        V::OneOf(&["off", "2x", "4x", "6x", "8x"]),
         Dictate,
-        ["gain", "volume"]
+        ["gain", "boost", "volume"]
     ),
     spec!(
         DictateWidgetVisibility,
-        json!("while_dictating"),
-        V::OneOf(&["always", "while_dictating", "never"]),
+        json!("while_recording"),
+        V::OneOf(&["always", "while_recording", "hidden"]),
         Dictate,
         ["widget"]
     ),
     spec!(
         DictateWidgetStyle,
-        json!("pill"),
-        V::OneOf(&["pill", "minimal"]),
+        json!("logo_text"),
+        V::OneOf(&["logo_text", "logo", "mono"]),
         Dictate,
         ["widget style"]
     ),
     spec!(
         DictateFollowCursor,
-        json!(false),
+        json!(true),
         V::Bool,
         Dictate,
         ["follow cursor"]
@@ -615,9 +629,9 @@ pub static SCHEMA: &[SettingSpec] = &[
     spec!(
         DictateOutput,
         json!("paste"),
-        V::OneOf(&["paste", "type", "clipboard"]),
+        V::OneOf(&["paste", "clipboard"]),
         Dictate,
-        ["output", "paste"]
+        ["output", "paste", "clipboard"]
     ),
     spec!(
         DictateAutoEnhance,
@@ -639,6 +653,20 @@ pub static SCHEMA: &[SettingSpec] = &[
         V::Bool,
         Privacy,
         ["dictionary hints", "cloud"]
+    ),
+    spec!(
+        DictateKeepHistory,
+        json!("forever"),
+        V::OneOf(&["forever", "90d", "30d", "7d"]),
+        Dictate,
+        ["history", "keep"]
+    ),
+    spec!(
+        DictateWidgetPosition,
+        json!(null),
+        V::OptionalText { max: 32 },
+        Hidden,
+        []
     ),
     spec!(
         ConductorName,
@@ -798,6 +826,14 @@ pub static SCHEMA: &[SettingSpec] = &[
         []
     ),
     spec!(OfflineStartedAt, json!(null), V::OptionalInt, Hidden, []),
+    // F-WB-03: the last version whose "What's new" was shown.
+    spec!(
+        WhatsNewSeen,
+        json!(null),
+        V::OptionalText { max: 64 },
+        Hidden,
+        []
+    ),
     // The Code rail's width (F-SH-03: 180–360 px, default 248). The Agent and
     // Thread rails get their own keys with their lists.
     spec!(RailWidth, json!(248), V::IntRange(180, 360), Hidden, []),
@@ -805,6 +841,9 @@ pub static SCHEMA: &[SettingSpec] = &[
     // per engine `<engine>.model`, `<engine>.effort`, `<engine>.access`.
     spec!(ThreadDefaults, json!({}), V::Map, Hidden, []),
     spec!(ThreadGrid, json!({"ids": []}), V::Map, Hidden, []),
+    // Per teammate, the skills the user made or opened; any other is the
+    // teammate's own and "New" (F-AG-09).
+    spec!(SkillsSeen, json!({}), V::Map, Hidden, []),
 ];
 
 pub fn spec(key: SettingKey) -> &'static SettingSpec {
@@ -979,6 +1018,22 @@ mod tests {
         assert!(validate(k, &json!({"pane.split_right": "R"})).is_err());
         assert!(validate(k, &json!({"pane.split_right": true})).is_err());
         assert!(validate(k, &json!(["pane.split_right"])).is_err());
+    }
+
+    /// `pnpm gen:protocol` / `gen:docs` (F-WB-02): writes every setting's
+    /// key, page and default to `TANDEM_SETTINGS_OUT` for the docs.
+    #[test]
+    fn export_settings() {
+        let Ok(out) = std::env::var("TANDEM_SETTINGS_OUT") else {
+            return;
+        };
+        let rows: Vec<_> = SCHEMA
+            .iter()
+            .filter(|s| s.page != SettingsPage::Hidden)
+            .map(|s| json!({ "key": s.key, "page": s.page, "default": (s.default)() }))
+            .collect();
+        let json = serde_json::to_string_pretty(&rows).expect("json");
+        std::fs::write(out, json + "\n").expect("write settings.json");
     }
 
     #[test]

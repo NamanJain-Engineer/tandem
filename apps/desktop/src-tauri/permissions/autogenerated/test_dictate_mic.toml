@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-test-dictate-mic"
+description = "Enables the test_dictate_mic command without any pre-configured scope."
+commands.allow = ["test_dictate_mic"]
+
+[[permission]]
+identifier = "deny-test-dictate-mic"
+description = "Denies the test_dictate_mic command without any pre-configured scope."
+commands.deny = ["test_dictate_mic"]

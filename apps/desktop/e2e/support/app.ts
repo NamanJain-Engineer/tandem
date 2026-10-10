@@ -260,6 +260,28 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
     await invoke("thread_archive", { threadId: th.id, archived: true });
     await invoke("thread_delete", { threadId: th.id });
   }
+  // Teammates outlive specs too (M10): their chats go, every teammate but the
+  // Lead goes, and the Lead and mail are back to their defaults.
+  for (const s of await invoke<Array<{ teammate: { id: string; isLead: boolean } }>>("teammate_list")) {
+    const chats = await invoke<Array<{ id: string }>>("thread_list", { kind: "teammate_chat", teammateId: s.teammate.id, includeArchived: true });
+    for (const c of chats) {
+      await invoke("thread_archive", { threadId: c.id, archived: true });
+      await invoke("thread_delete", { threadId: c.id });
+    }
+    if (!s.teammate.isLead) await invoke("teammate_delete", { id: s.teammate.id });
+    else
+      await invoke("teammate_update", {
+        id: s.teammate.id,
+        patch: { pinned: true, settings: { memoryCap: 4096, learnMode: "ask", mayMessage: true, maySchedule: false, defaultAccess: "edits" } },
+      });
+  }
+  await invoke("settings_set", { key: "pause_all_mail", value: false });
+  // Plugins outlive specs too (M12): every connection goes, and its grants
+  // and held drafts with it; no Team allowlist fixture.
+  for (const c of await invoke<Array<{ connectionId: string | null }>>("plugins_catalog")) {
+    if (c.connectionId) await invoke("plugin_disconnect", { connectionId: c.connectionId });
+  }
+  await invoke("test_plugin_allowlist", { pluginIds: null });
   await invoke("auth_sign_out");
   // A first run has no engine accounts yet (the wizard's Accounts step, D-114).
   if (!onboarded) {

@@ -33,7 +33,12 @@ const account = (id: string, engineId: string, label: string, isDefault = false)
 });
 
 const RESET = new Date(2026, 9, 8, 16, 10).getTime();
-const view = (accountId: string, engineId: string, pcts: number[], reason: string | null = null): UsageView => ({
+const view = (
+  accountId: string,
+  engineId: string,
+  pcts: number[],
+  reason: string | null = null,
+): UsageView => ({
   accountId,
   engineId,
   windows: pcts.map((usedPct, i) => ({ kind: i === 0 ? "5h" : "week", usedPct, resetsAt: RESET + i })),
@@ -44,7 +49,14 @@ const view = (accountId: string, engineId: string, pcts: number[], reason: strin
 });
 
 const pane = (id: string, accountId: string | null, kind = "agent"): PaneRecord =>
-  ({ id, tabId: "tb_1", workspaceId: "ws_1", kind, engineId: kind === "agent" ? "codex" : null, accountId }) as PaneRecord;
+  ({
+    id,
+    tabId: "tb_1",
+    workspaceId: "ws_1",
+    kind,
+    engineId: kind === "agent" ? "codex" : null,
+    accountId,
+  }) as PaneRecord;
 
 let calls: Call[] = [];
 const named = (cmd: string) => calls.filter((c) => c.cmd === cmd);
@@ -125,7 +137,10 @@ describe("usage chip (F-AC-04)", () => {
     expect(chip.title).toBe(reason);
     expect(chip.dataset.tone).toBe("muted");
     // Not read yet: still unavailable, and the tooltip says it's checking.
-    expect(usageChip(undefined, "Codex")).toMatchObject({ text: "Usage unavailable", tooltip: "Checking usage…" });
+    expect(usageChip(undefined, "Codex")).toMatchObject({
+      text: "Usage unavailable",
+      tooltip: "Checking usage…",
+    });
   });
 
   it("F-AC-04 with nothing focused the chip follows the default engine's default account", () => {

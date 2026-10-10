@@ -24,7 +24,9 @@ export const useThreadDrop = create<{
 
 /** Adds `text` to a thread's composer, after what's typed; nothing sends. */
 export function insertIntoComposer(threadId: string, text: string): void {
-  useThreadDrop.setState((s) => ({ texts: { ...s.texts, [threadId]: [...(s.texts[threadId] ?? []), text] } }));
+  useThreadDrop.setState((s) => ({
+    texts: { ...s.texts, [threadId]: [...(s.texts[threadId] ?? []), text] },
+  }));
 }
 
 /** Takes the text sent to a thread's composer (once). */

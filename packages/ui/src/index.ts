@@ -5,7 +5,16 @@ export {
   type ApprovalCardLabels,
   type ApprovalCardProps,
 } from "./components/ApprovalCard";
-export { Avatar, AvatarStack, avatarHue, fnv1a32, initials, type AvatarProps } from "./components/Avatar";
+export {
+  AVATAR_HUES,
+  Avatar,
+  AvatarStack,
+  avatarHue,
+  fnv1a32,
+  hueIndex,
+  initials,
+  type AvatarProps,
+} from "./components/Avatar";
 export { Badge, Chip, type BadgeVariant, type ChipProps } from "./components/Badge";
 export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from "./components/Button";
 export {
@@ -56,8 +65,10 @@ export {
 export {
   COMPOSER_LABELS,
   Composer,
+  insertText,
   mentionAt,
   type ComposerAttachment,
+  type ComposerDictation,
   type ComposerHandle,
   type ComposerLabels,
   type ComposerProps,
@@ -137,6 +148,7 @@ export {
 } from "./components/ToolCallBlock";
 export { ToastProvider, useToast, type ToastInput, type ToastTone } from "./components/Toast";
 export { Tooltip, TooltipProvider, type TooltipProps } from "./components/Tooltip";
+export { WaveformRing, type WaveformRingProps, type WaveformState } from "./components/WaveformRing";
 export { cx } from "./cx";
 export { isMac, shortcutCaps, shortcutLabel } from "./platform";
 export {
