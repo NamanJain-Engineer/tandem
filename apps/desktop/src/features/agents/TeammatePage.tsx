@@ -34,6 +34,7 @@ import { useThreads } from "../../stores/threads";
 import { switchMode } from "../shell/actions";
 import { ChatView } from "../thread/ThreadMain";
 import { teammateStatus } from "./AgentRail";
+import { mailMention } from "./mention";
 import { MemoryTab } from "./MemoryTab";
 import { SkillsTab } from "./SkillsTab";
 import { SuggestionCards } from "./Suggestions";
@@ -362,6 +363,18 @@ function ChatsTab({ s, visible }: { s: TeammateSummary; visible: boolean }) {
             chat={{
               placeholder: t("agent.chat.placeholder", { name: tm.name }),
               empty: emptyState,
+              beforeSend: async (text) => {
+                const all = useTeammates.getState().list.map((x) => x.teammate);
+                const m = mailMention(text, all, tm.id);
+                if (!m) return false;
+                await invoke("mail_send", {
+                  fromTeammateId: tm.id,
+                  toTeammateId: m.to.id,
+                  body: m.body,
+                  fromThreadId: open.id,
+                });
+                return true;
+              },
               above: (
                 <>
                   <SuggestionCards threadId={open.id} />

@@ -735,9 +735,9 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `skill_save` / `skill_remove` | `{teammateId, slug, markdown}` / `{teammateId, slug}` (the user's saves, opens and library adds mark a skill seen: not "New"; remove moves the folder to `<home>/.trash/skills/`) | — | Invalid (front matter, or a credential), NotFound | F-AG-09 |
 | `skills_library` / `skill_add_from_library` | — / `{teammateId, slug}` | `[SkillEntry]` / — | Conflict | F-AG-09 |
 | `skill_sync` | `{teammateId, slug, engineId, accountId, on}` | `SyncOutcome {state:"synced"\|"removed"\|"conflict"}` | — | F-AG-10 |
-| `mail_list` / `mail_get` | `{teammateId}` / `{mailId}` | `[MailRow]` / `Mail` | — | F-AG-12 |
-| `mail_send` | `{fromTeammateId?, toTeammateId, body, fromThreadId?}` (UI `@name`) | `MailRow` | Invalid (refusal reason) | F-AG-12 |
-| `mail_retry` | `{mailId}` | — | — | F-AG-12 |
+| `mail_list` / `mail_get` | `{teammateId}` / `{mailId}` | `[MailRow {id, fromTeammateId?, from, toTeammateId, to, preview, state:"queued"\|"delivered"\|"refused"\|"failed", reason?, deliveredThreadId?, createdAt}]` (sent or received, newest first) / `Mail` (the row's fields with `body`, `fromThreadId?`, `conversationRef`, `deliveredAt?`; `from` is "You" for the user's mail) | — / NotFound | F-AG-12 |
+| `mail_send` | `{fromTeammateId?, toTeammateId, body, fromThreadId?}` (UI `@name`; the composer's chat is `fromThreadId`, its teammate the sender) | `MailRow` (queued; reason `global_pause` while mail is paused) | Invalid (refusal reason; the refused row is kept), NotFound | F-AG-12 |
+| `mail_retry` | `{mailId}` (a failed or waiting mail goes back in the queue and one delivery pass runs) | — | Conflict (delivered or refused), NotFound | F-AG-12 |
 
 #### Tasks [F-TK-*]
 | Command | Args | Returns | Errors |
@@ -897,7 +897,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `tasks:attempt` | `AttemptView` | task runner | F-TK-04 |
 | `plugins:changed` / `plugins:connect` | `PluginCard` / `{opId, step:"discovery"\|"registration"\|"sign_in"\|"token_exchange"\|"verification"\|"timeout", state, error?}` | gateway | F-PL-03 |
 | `teammates:changed` | `{teammates:[TeammateSummary]}` (a teammate or one of its chats changed; coalesced 100 ms) | teammates service | F-AG-02 |
-| `mail:changed` | `{teammateId, rows:[MailRow]}` | mail service | F-AG-12 |
+| `mail:changed` | `MailChanged {teammateId, rows:[MailRow]}` (the teammate's mail, newest first, after any change to a mail it sent or receives) | mail service | F-AG-12 |
 | `memory:suggestions` | `MemorySuggestions {teammateId, threadId, setId, items:[{kind:"add"\|"remove", text}], rationale, applied, changeId?}` (`applied`: Auto mode already wrote it; `changeId` undoes it) | learn service | F-AG-08 |
 | `auto:changed` | `AutoRunView` | Auto supervisor | F-AU-01 |
 | `lanes:stale` | `{workspaceId, lanes:[StaleLane]}` | lane sweeper | F-CD-15 |
@@ -1720,7 +1720,7 @@ pub enum ThreadEvent {
     Error { code: String, message: String, stage: ErrorStage /* spawn|auth|model|network|tool|unknown */, hint: Option<String>, action: Option<ErrorAction> },
     PlanRevision { version: u32 },
     Divider { text: String },                                         // "Continued on <engine> (<account>) with a summary"
-    MailRow { mail_id: MailId, from: String, to: String, preview: String },
+    MailRow { mail_id: MailId, from: String, to: String, preview: String, inbound: bool }, // inbound: the recipient's delivered turn, shown in place of its message
     TurnEnd { reason: TurnEndReason /* completed|cancelled|limit|error */, blocked_actions: u32 },
 }
 pub enum ToolVerb { Bash, Read, Grep, Glob, Edit, Write, Multiedit, Webfetch, Websearch, Task, Mcp, Other }
@@ -1842,6 +1842,7 @@ send_message(to, body) ─► check: sender may_message; recipient exists, not d
 - `conversation_ref` = sender chat's `conversation_ref` (or its thread id if none). Delivery marks `(mail_id, thread_id)` so a mail is delivered at most once per chat.
 - Global pause: worker holds all queued items until resumed; on resume delivers each once (F-AG-12 AC2).
 - `tandem__list_teammates` returns `{id, name, engine, status, may_receive}` for non-paused teammates.
+- Transcripts: the sender's chat gets a `MailRow` (inbound false) in its running turn, or in a turn of its own (the row, then `turn_end`) when none runs; the recipient's delivered turn is the user message "From {sender}:\n{body}" followed by a `MailRow` with inbound true, which the transcript shows in the message's place. A turn may start with a `mail_row` (seq 0) as well as a `user` event.
 
 ### 8.8 Auto supervisor (`tandem_app::services::auto`) [F-AU-01]
 ```rust

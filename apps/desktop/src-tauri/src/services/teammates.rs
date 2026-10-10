@@ -333,6 +333,11 @@ impl TeammatesService {
         &self.store
     }
 
+    /// The engine has a chat adapter (memory, skills, mail).
+    pub fn chat_capable(&self, engine_id: &str) -> bool {
+        self.engines.chat_capable(engine_id)
+    }
+
     /// The Lead, made once per profile (a deleted Lead isn't made again).
     pub async fn ensure_lead(&self) {
         let _ = self

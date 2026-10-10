@@ -1,7 +1,7 @@
 //! The gateway's teammate built-ins (ARCHITECTURE §11.2): each call is
 //! scoped to the lease's teammate. `tandem__memory_write` (F-AG-07),
-//! `tandem__read_skill` (F-AG-06, F-AG-09); session search and mail join
-//! with their tasks.
+//! `tandem__read_skill` (F-AG-06, F-AG-09), `tandem__session_search`
+//! (F-AG-11), `tandem__send_message` and `tandem__list_teammates` (F-AG-12).
 
 use std::sync::Arc;
 
@@ -11,6 +11,7 @@ use tandem_gateway::{Builtin, LeaseContext, ToolOutput};
 use tandem_store::memory::MemoryFile;
 
 use crate::services::gateway::BuiltinService;
+use crate::services::mail::{MailService, Outgoing, Recipient};
 use crate::services::teammates::TeammatesService;
 
 fn ok(text: impl Into<String>) -> ToolOutput {
@@ -29,6 +30,7 @@ fn err(text: impl Into<String>) -> ToolOutput {
 
 pub struct TeammateTools {
     pub teammates: Arc<TeammatesService>,
+    pub mail: Arc<MailService>,
 }
 
 #[async_trait]
@@ -86,7 +88,41 @@ impl BuiltinService for TeammateTools {
                     Err(e) => err(e.to_string()),
                 }
             }
-            _ => err("This tool isn't available yet"),
+            Builtin::SendMessage => {
+                let to = args.get("to").and_then(Value::as_str);
+                let body = args.get("body").and_then(Value::as_str);
+                let (Some(to), Some(body)) = (to, body) else {
+                    return err("to and body are required");
+                };
+                let from_thread = match &lease.session.caller {
+                    tandem_gateway::Caller::TeammateChat { thread_id, .. } => {
+                        Some(thread_id.clone())
+                    }
+                    _ => None,
+                };
+                let sent = self
+                    .mail
+                    .send(Outgoing {
+                        from: Some(teammate.id.clone()),
+                        from_thread,
+                        conversation_ref: Some(lease.session.conversation_ref.clone()),
+                        to: Recipient::Name(to.to_string()),
+                        body: body.to_string(),
+                    })
+                    .await;
+                match sent {
+                    Ok(row) if row.reason.is_some() => ok(format!(
+                        "Queued for {}: mail is paused, so it's delivered when mail resumes.",
+                        row.to
+                    )),
+                    Ok(row) => ok(format!("Sent to {}.", row.to)),
+                    Err(e) => err(e.message),
+                }
+            }
+            Builtin::ListTeammates => match self.mail.reachable(&teammate.id).await {
+                Ok(list) => ok(serde_json::to_string(&list).unwrap_or_else(|_| "[]".into())),
+                Err(e) => err(e.message),
+            },
         }
     }
 }
@@ -120,6 +156,12 @@ mod tests {
         let scout = svc.create(input("Scout", "claude")).await.expect("scout");
         let tools = TeammateTools {
             teammates: svc.clone(),
+            mail: crate::services::mail::MailService::new(
+                svc.store().clone(),
+                tandem_core::bus::EventBus::new(),
+                svc.clone(),
+                Arc::new(crate::services::mail::tests_support::Host::default()),
+            ),
         };
         let l = lease(&scout.id);
         let out = tools
@@ -158,5 +200,51 @@ mod tests {
                 .await
                 .is_error
         );
+    }
+
+    #[tokio::test]
+    async fn f_ag_12_send_message_queues_mail_from_the_leases_teammate_and_list_teammates_names_the_others(
+    ) {
+        let (_d, svc) = service(None).await;
+        let ada = svc.create(input("Ada", "claude")).await.expect("ada");
+        svc.create(input("Bea", "claude")).await.expect("bea");
+        let host = Arc::new(crate::services::mail::tests_support::Host::default());
+        let mail = crate::services::mail::MailService::new(
+            svc.store().clone(),
+            tandem_core::bus::EventBus::new(),
+            svc.clone(),
+            host.clone(),
+        );
+        let tools = TeammateTools {
+            teammates: svc.clone(),
+            mail: mail.clone(),
+        };
+        let l = lease(&ada.id);
+        let out = tools
+            .call(
+                &l,
+                Builtin::SendMessage,
+                serde_json::json!({"to": "Bea", "body": "CI is red"}),
+            )
+            .await;
+        assert!(!out.is_error, "{}", out.text);
+        assert_eq!(out.text, "Sent to Bea.");
+        let rows = mail.list(&ada.id).await.expect("rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].from, "Ada");
+        let nobody = tools
+            .call(
+                &l,
+                Builtin::SendMessage,
+                serde_json::json!({"to": "Nobody", "body": "hi"}),
+            )
+            .await;
+        assert!(nobody.is_error);
+        let list = tools
+            .call(&l, Builtin::ListTeammates, serde_json::json!({}))
+            .await;
+        assert!(!list.is_error, "{}", list.text);
+        assert!(list.text.contains("\"name\":\"Bea\""), "{}", list.text);
+        assert!(!list.text.contains("\"name\":\"Ada\""), "{}", list.text);
     }
 }

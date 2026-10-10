@@ -17,6 +17,7 @@ import {
   type DiffFile,
 } from "@tandem/ui";
 import { t } from "../../i18n";
+import { MailRowView } from "./MailRow";
 import { groupStatus, type Row, type ToolEvent } from "./rows";
 import { diffCounts, statusLabel, toolView } from "./tool";
 import { VirtualList } from "./VirtualList";
@@ -414,6 +415,8 @@ const RowView = memo(function RowView({
             : ""}
         </Callout>
       );
+    case "mail":
+      return <MailRowView mailId={row.mailId} from={row.from} to={row.to} preview={row.preview} />;
     case "divider":
       return (
         <div className="flex items-center gap-3 py-1 text-sm text-fg-subtle">

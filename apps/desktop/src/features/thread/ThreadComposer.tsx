@@ -243,8 +243,14 @@ export function ThreadComposer({
     setAttachments([]);
     // `@name` in a teammate chat is mail (F-AG-12).
     if (chat?.beforeSend && sentAttachments.length === 0) {
-      const handled = await chat.beforeSend(sent).catch(() => false);
-      if (handled) return;
+      try {
+        if (await chat.beforeSend(sent)) return;
+      } catch (e) {
+        // Refused mail: the text comes back with the reason.
+        setText((typed) => restoreAfterFailure(sent, typed));
+        show({ tone: "error", title: (e as IpcError).message });
+        return;
+      }
     }
     const res = await send(
       thread.id,

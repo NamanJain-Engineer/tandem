@@ -3,6 +3,7 @@ import { Bot, MoreHorizontal, Pin, Plus } from "lucide-react";
 import type { TeammateSummary } from "@tandem/protocol";
 import {
   Avatar,
+  Banner,
   ConfirmDialog,
   ContextMenu,
   IconButton,
@@ -14,6 +15,7 @@ import {
   type Status,
 } from "@tandem/ui";
 import { t } from "../../i18n";
+import { useSetting, useSettings } from "../../stores/settings";
 import { useTeammates } from "../../stores/teammates";
 import { age } from "../thread/groups";
 
@@ -302,8 +304,12 @@ export function AgentRail({ collapsed, actions }: { collapsed: boolean; actions?
         <h2 className="text-2xs font-semibold uppercase tracking-caps text-fg-subtle">
           {t("rail.teammates").toUpperCase()}
         </h2>
-        <span className="flex items-center gap-0.5">{actions}</span>
+        <span className="flex items-center gap-0.5">
+          {actions}
+          <RailMenu />
+        </span>
       </header>
+      <MailPaused />
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
         {error && !loaded ? (
           <div className="flex flex-col items-start gap-2 px-2 py-3 text-sm text-fg-muted">
@@ -329,5 +335,45 @@ export function AgentRail({ collapsed, actions }: { collapsed: boolean; actions?
         )}
       </div>
     </nav>
+  );
+}
+
+/** UI-70 header ⋯: "Pause teammate mail". */
+function RailMenu() {
+  const paused = useSetting<boolean>("pause_all_mail", false);
+  return (
+    <Menu
+      align="end"
+      trigger={<IconButton size="sm" icon={<MoreHorizontal size={14} />} label={t("agent.rail.menu")} />}
+      entries={[
+        {
+          type: "checkbox",
+          id: "pause-mail",
+          label: t("agent.mail.pauseToggle"),
+          checked: paused,
+          onCheckedChange: (on) => void useSettings.getState().set("pause_all_mail", on),
+        },
+      ]}
+    />
+  );
+}
+
+/** UI-107: while "Pause all teammate mail" is on, the rail says so. */
+function MailPaused() {
+  const paused = useSetting<boolean>("pause_all_mail", false);
+  if (!paused) return null;
+  return (
+    <div className="px-1.5 pb-1.5" data-testid="mail-paused">
+      <Banner
+        tone="warning"
+        className="rounded-md"
+        action={{
+          label: t("agent.mail.resume"),
+          onClick: () => void useSettings.getState().set("pause_all_mail", false),
+        }}
+      >
+        {t("agent.mail.paused")}
+      </Banner>
+    </div>
   );
 }

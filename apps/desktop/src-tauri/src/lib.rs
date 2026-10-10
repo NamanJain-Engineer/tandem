@@ -51,6 +51,10 @@ macro_rules! app_commands {
             commands::teammates::teammate_draft_with_ai,
             commands::teammates::teammate_templates,
             commands::teammates::memory_suggestions_resolve,
+            commands::teammates::mail_list,
+            commands::teammates::mail_get,
+            commands::teammates::mail_send,
+            commands::teammates::mail_retry,
             commands::plugins::plugins_catalog,
             commands::plugins::grants_list,
             commands::plugins::grants_set,
@@ -553,6 +557,8 @@ pub fn run() {
                     }
                 });
             }
+            // Mail queued before the app last quit goes out (F-AG-12).
+            state.mail.pump_soon();
             // Updates (F-SH-06): the signed feed, if this build has a key.
             if let Some(key) = services::updates::pubkey(state::BUNDLED_KEYS) {
                 let record = state

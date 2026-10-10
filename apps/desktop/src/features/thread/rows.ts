@@ -23,9 +23,14 @@ export type Row =
   | { kind: "error"; key: string; turnId: string; error: Ev<"error">; last: boolean }
   | { kind: "limit"; key: string; limit: Ev<"limit"> }
   | { kind: "divider"; key: string; text: string }
+  | { kind: "mail"; key: string; mailId: string; from: string; to: string; preview: string }
   | { kind: "plan"; key: string; version: number }
   | { kind: "end"; key: string; reason: TurnEndReason; blocked: number }
   | { kind: "working"; key: string; turnId: string };
+
+function mailRow(key: string, e: Ev<"mail_row">): Row {
+  return { kind: "mail", key, mailId: e.mailId, from: e.from, to: e.to, preview: e.preview };
+}
 
 /** Consecutive tool calls fold from this many (UI-21). */
 export const FOLD_AT = 3;
@@ -66,9 +71,19 @@ export function toRows(view: ThreadView): Row[] {
           const divider = turn.items.find((i) => i.event.type === "divider");
           if (divider?.event.type === "divider")
             rows.push({ kind: "divider", key: `${turn.id}:${divider.seq}`, text: divider.event.text });
+          // Delivered mail (F-AG-12): its row stands in for the message.
+          const mail = turn.items.find((i) => i.event.type === "mail_row" && i.event.inbound);
+          if (mail?.event.type === "mail_row") {
+            rows.push(mailRow(`${turn.id}:${mail.seq}`, mail.event));
+            break;
+          }
           rows.push({ kind: "user", key, turnId: turn.id, text: e.text, attachments: e.attachments });
           break;
         }
+        case "mail_row":
+          // A delivery's row is shown with its message (above).
+          if (!e.inbound) rows.push(mailRow(key, e));
+          break;
         case "reasoning":
           if (e.text.trim())
             rows.push({

@@ -279,3 +279,60 @@ pub async fn memory_suggestions_resolve(
 ) -> Result<Option<String>, IpcError> {
     state.learn.resolve(&suggestion_set_id, &keep).await
 }
+
+/// `mail_list` (F-AG-12): a teammate's mail, sent or received, newest first.
+#[tauri::command]
+pub async fn mail_list(
+    state: State<'_, AppState>,
+    teammate_id: TeammateId,
+) -> Result<Vec<tandem_store::repo::mail::MailRow>, IpcError> {
+    state.mail.list(&teammate_id).await
+}
+
+/// `mail_get`: one mail with its body.
+#[tauri::command]
+pub async fn mail_get(
+    state: State<'_, AppState>,
+    mail_id: tandem_core::ids::MailId,
+) -> Result<tandem_store::repo::mail::Mail, IpcError> {
+    state.mail.get(&mail_id).await
+}
+
+/// `mail_send`: the composer's `@name` (the chat's teammate is the sender).
+#[tauri::command]
+pub async fn mail_send(
+    state: State<'_, AppState>,
+    from_teammate_id: Option<TeammateId>,
+    to_teammate_id: TeammateId,
+    body: String,
+    from_thread_id: Option<tandem_core::ids::ThreadId>,
+) -> Result<tandem_store::repo::mail::MailRow, IpcError> {
+    // The sender's thread of work is its chat's.
+    let conversation_ref = match &from_thread_id {
+        Some(t) => tandem_store::repo::threads::get(&state.store, t)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|r| r.conversation_ref),
+        None => None,
+    };
+    state
+        .mail
+        .send(crate::services::mail::Outgoing {
+            from: from_teammate_id,
+            from_thread: from_thread_id,
+            conversation_ref,
+            to: crate::services::mail::Recipient::Id(to_teammate_id),
+            body,
+        })
+        .await
+}
+
+/// `mail_retry`: a failed or waiting mail goes back in the queue.
+#[tauri::command]
+pub async fn mail_retry(
+    state: State<'_, AppState>,
+    mail_id: tandem_core::ids::MailId,
+) -> Result<(), IpcError> {
+    state.mail.retry(&mail_id).await
+}

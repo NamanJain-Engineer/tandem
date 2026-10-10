@@ -20,6 +20,7 @@ pub mod lanes;
 pub mod launch;
 pub mod learn;
 pub mod limits;
+pub mod mail;
 pub mod models;
 pub mod names;
 pub mod notifications;

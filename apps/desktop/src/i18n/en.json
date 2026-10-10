@@ -1593,5 +1593,28 @@
   "agent.learn.kept": "{n, plural, one {# note} other {# notes}} saved to memory",
   "agent.learn.updated": "Memory updated ({n, plural, one {# change} other {# changes}})",
   "agent.learn.undo": "Undo",
-  "agent.learn.dismiss": "Dismiss"
+  "agent.learn.dismiss": "Dismiss",
+
+  "thread.mail.row": "{from} → {to}: “{preview}”",
+  "thread.mail.open": "Open",
+  "thread.mail.title": "Message from {from} to {to}",
+  "thread.mail.titleLoading": "Message",
+  "thread.mail.when": "Sent {at}",
+  "thread.mail.delivered": "Delivered",
+  "thread.mail.queued": "Queued",
+  "thread.mail.queuedPaused": "Queued · mail is paused",
+  "thread.mail.queuedRate": "Queued · Rate limit reached",
+  "thread.mail.refused": "Refused: {name} can't receive mail",
+  "thread.mail.refusedSender": "Refused: {name} isn't allowed to message teammates",
+  "thread.mail.refusedDeleted": "Refused: {name} was deleted",
+  "thread.mail.failed": "Failed: {name} couldn't start a chat",
+  "thread.mail.retry": "Retry",
+
+  "agent.mail.paused": "Teammate mail is paused. Messages wait until you resume.",
+  "agent.mail.resume": "Resume",
+  "settings.pauseAllMail": "Pause all teammate mail",
+  "settings.pauseAllMail.desc": "Stops every delivery, queued mail included, until you turn it off. Then each waiting message is delivered once.",
+
+  "agent.rail.menu": "Teammate options",
+  "agent.mail.pauseToggle": "Pause teammate mail"
 }

@@ -210,6 +210,10 @@ const COMMANDS: &[&str] = &[
     "teammate_draft_with_ai",
     "teammate_templates",
     "memory_suggestions_resolve",
+    "mail_list",
+    "mail_get",
+    "mail_send",
+    "mail_retry",
 ];
 
 const TEST_COMMANDS: &[&str] = &[
