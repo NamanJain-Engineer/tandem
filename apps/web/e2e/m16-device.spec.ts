@@ -20,12 +20,10 @@ test.describe("@m16 device-code sign-in", () => {
     await page.getByRole("button", { name: "Approve" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Approved" })).toBeVisible();
 
-    // The CLI polls at its interval and gets tokens.
-    await expect
-      .poll(
-        async () => (await request.post(`${API}/v1/auth/device/token`, { data: { device_code: s.device_code } })).status(),
-        { intervals: [5_500], timeout: 20_000 },
-      )
-      .toBe(200);
+    // The CLI waits out its 5 s interval (polling sooner is slow_down) and gets tokens.
+    await page.waitForTimeout(5_500);
+    const token = await request.post(`${API}/v1/auth/device/token`, { data: { device_code: s.device_code } });
+    expect(token.status()).toBe(200);
+    expect((await token.json()).token_type).toBe("Bearer");
   });
 });
