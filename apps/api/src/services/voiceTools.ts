@@ -3,6 +3,7 @@
 // which mirrors this list (`voice-tools.json`); calls outside it, or with
 // arguments outside their types, never reach the app. Local-review actions
 // (forced lane removal, Full access, plugin spend) are absent (F-CN-03).
+import type { Isolation, SettingKey, SettingsPage, SidebarTabKind, ThreadMode } from "@tandem/protocol";
 import { z } from "zod";
 import type { AiTool } from "../providers/ai/types";
 
@@ -17,7 +18,7 @@ export const SETTABLE_SETTINGS = [
   "conductor_voice",
   "conductor_tone",
   "conductor_verbosity",
-] as const;
+] as const satisfies readonly SettingKey[];
 
 const SETTINGS_PAGES = [
   "general",
@@ -36,7 +37,18 @@ const SETTINGS_PAGES = [
   "account",
   "updates",
   "advanced",
-] as const;
+] as const satisfies readonly SettingsPage[];
+
+// The app's own types, so a rename there fails this build instead of the call.
+const MODES = ["plan", "act"] as const satisfies readonly ThreadMode[];
+const TABS = [
+  "dashboard",
+  "browser",
+  "files",
+  "tasks",
+  "scratchpad",
+] as const satisfies readonly SidebarTabKind[];
+const ISOLATION = ["shared", "worktree"] as const satisfies readonly Isolation[];
 
 export type VoiceToolGroup =
   "navigation" | "awareness" | "panes" | "threads" | "teammates" | "tasks" | "find" | "app";
@@ -93,7 +105,7 @@ export const VOICE_TOOLS: VoiceTool[] = [
     "navigation",
     "open_sidebar_tab",
     "Open a tab of the right sidebar.",
-    z.strictObject({ tab: z.enum(["dashboard", "browser", "files", "tasks", "scratchpad"]) }),
+    z.strictObject({ tab: z.enum(TABS) }),
   ),
   tool(
     "navigation",
@@ -139,10 +151,7 @@ export const VOICE_TOOLS: VoiceTool[] = [
       count: z.number().int().min(1).max(8),
       workspace: ref("A workspace id from the snapshot."),
       task: said("The first task, as a clear instruction.", 2000).optional(),
-      isolation: z
-        .enum(["shared", "worktree"])
-        .optional()
-        .describe("worktree gives each agent its own branch."),
+      isolation: z.enum(ISOLATION).optional().describe("worktree gives each agent its own branch."),
     }),
     { freeText: ["task"] },
   ),
@@ -251,7 +260,7 @@ export const VOICE_TOOLS: VoiceTool[] = [
     "threads",
     "set_thread_mode",
     "Switch a thread between Plan (it proposes) and Act (it works).",
-    z.strictObject({ thread: ref(THREAD_OPEN).optional(), mode: z.enum(["plan", "act"]) }),
+    z.strictObject({ thread: ref(THREAD_OPEN).optional(), mode: z.enum(MODES) }),
   ),
   tool(
     "threads",

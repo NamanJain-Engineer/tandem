@@ -439,6 +439,7 @@ Built on branch `m16-voice-api` (from `product-m0-m5`), in `apps/api` only, whil
   - Parameter names are this branch's; the spec lists only some.
   - `set_setting` and `get_setting` take the closed list as real `SettingKey`s: `theme`, `notify_system`, `notify_sound`, `dictate_engine`, `dictate_mic`, `pause_all_mail`, `conductor_voice`, `conductor_tone`, `conductor_verbosity`.
   - `set_thread_mode` takes the real `ThreadMode` values `plan` and `act`; the spec's table says plan/agent.
+  - The setting keys, settings pages, thread modes, sidebar tabs and isolation choices are checked against the app's generated protocol types (`satisfies`), so a rename in the app fails the API's typecheck instead of a call.
   - Calls outside the catalog or its types never reach the app. When nothing usable is left, the answer is "I can't do that by voice." Forced lane removal, Full access and plugin spend are absent (F-CN-03).
   - The request, snapshot and results pass the server's redactor before the model sees them, on top of the app's own redaction (F-CN-03), and `<` is escaped so data can't close its tag.
 - D-1006: Realtime providers sit behind `RealtimeProvider.mint({instructions, voice, maxSeconds})`.
@@ -453,7 +454,7 @@ Built on branch `m16-voice-api` (from `product-m0-m5`), in `apps/api` only, whil
 ### M16 · F-BE-08 log
 - Tests first, then the code. On the first full run every voice route test passed. One catalog test failed: 9 tool descriptions (such as "Open a thread.") were too short to tell the model when to use them. The descriptions were rewritten rather than the check relaxed.
 - The existing guard that every hosted route is plan-gated (`test/hosted.test.ts`) then failed for the new routes, as it should. It now lists session, act and resolve under `conductor`, and settle as the one route that reaches only the caller's own call (with a test that it can't reach anyone else's).
-- The whole API suite passes: 24 files, 180 tests. Gate: green (Rust 799, desktop 352, UI 358, API 180, web 30, protocol 3; clippy, fmt and the protocol drift check).
+- The whole API suite passes: 24 files, 180 tests. Gate, after merging the latest `product-m0-m5`: green (Rust 818, desktop 362, UI 358, API 180, web 53, protocol 9; clippy, fmt and the protocol drift check).
 
 ## Decisions
 - D-1: F-CD-09 owned by M9. It needs the Files editor and the Tandem browser.
