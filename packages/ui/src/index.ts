@@ -136,6 +136,13 @@ export {
   type ToolIcon,
 } from "./components/ToolCallBlock";
 export { ToastProvider, useToast, type ToastInput, type ToastTone } from "./components/Toast";
+export {
+  ANNOUNCE_INTERVAL_MS,
+  LiveAnnouncer,
+  announce,
+  configureAnnouncer,
+  resetAnnouncer,
+} from "./components/LiveAnnouncer";
 export { Tooltip, TooltipProvider, type TooltipProps } from "./components/Tooltip";
 export { cx } from "./cx";
 export { isMac, shortcutCaps, shortcutLabel } from "./platform";

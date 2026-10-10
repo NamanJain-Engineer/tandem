@@ -581,6 +581,7 @@
   "status.noBranch": "No branch",
   "status.branch": "Branch {name}, {counts}. Open changes",
 
+  "a11y.andMore": "{count, plural, one {And # more} other {And # more}}",
   "notifications.empty": "Nothing needs you right now.",
 
   "banner.offlineValid": "You're offline. Local features keep working; your plan stays confirmed until {time}.",

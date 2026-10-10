@@ -31,8 +31,8 @@
 
   --amber-300: #fcd34d;  --amber-400: #fbbf24; --amber-500: #f59e0b; --amber-600: #d97706; --amber-700: #b45309;
   --sky-300:   #7dd3fc;  --sky-400:   #38bdf8; --sky-500:   #0ea5e9; --sky-600:   #0284c7; --sky-700: #0369a1;
-  --green-300: #86efac;  --green-400: #4ade80; --green-500: #22c55e; --green-600: #16a34a; --green-700: #15803d;
-  --rose-300:  #fda4af;  --rose-400:  #fb7185; --rose-500:  #f43f5e; --rose-600:  #e11d48; --rose-700:  #be123c;
+  --green-300: #86efac;  --green-400: #4ade80; --green-500: #22c55e; --green-600: #16a34a; --green-700: #15803d; --green-800: #166534;
+  --rose-300:  #fda4af;  --rose-400:  #fb7185; --rose-500:  #f43f5e; --rose-600:  #e11d48; --rose-700:  #be123c; --rose-800: #9f1239;
   --violet-400:#a78bfa;  --violet-500:#8b5cf6;
   --orange-400:#fb923c;
 }
@@ -132,14 +132,14 @@
   --tn-accent-press:  var(--teal-900);
   --tn-accent-fg:     #ffffff;
   --tn-accent-soft:   rgb(15 118 110 / 0.10);
-  --tn-accent-ring:   rgb(15 118 110 / 0.50);
+  --tn-accent-ring:   rgb(15 118 110 / 0.85);  /* §5.4: 3.6:1 on every surface (0.50 was 2.1:1) */
 
   --tn-status-working:      var(--sky-600);
   --tn-status-working-soft: rgb(2 132 199 / 0.10);
   --tn-status-working-text: var(--sky-700);    /* 5.9:1 on white (§7.3) */
   --tn-status-waiting-text: var(--amber-700);  /* 5.0:1 */
   --tn-status-done-text:    var(--green-700);  /* 5.0:1 */
-  --tn-status-waiting:      var(--amber-600);
+  --tn-status-waiting:      var(--amber-700);  /* §5.4: 3:1 as a dot (amber-600 was 2.9:1 on bg) */
   --tn-status-waiting-soft: rgb(217 119 6 / 0.12);
   --tn-status-done:         var(--green-600);
   --tn-status-done-soft:    rgb(22 163 74 / 0.10);
@@ -150,13 +150,13 @@
 
   --tn-success: var(--green-600);
   --tn-warning: var(--amber-600);
-  --tn-danger:  var(--rose-600);
-  --tn-danger-hover: var(--rose-700);
+  --tn-danger:  var(--rose-700);   /* §5.4: 4.5:1 as text (rose-600 was 4.3:1 on bg) */
+  --tn-danger-hover: var(--rose-800);
   --tn-danger-fg: #ffffff;
   --tn-info:    var(--sky-600);
 
   --tn-diff-add-bg:   rgb(22 163 74 / 0.10);
-  --tn-diff-add-fg:   var(--green-700);
+  --tn-diff-add-fg:   var(--green-800);  /* §5.4: green-700 was 4.49:1 on its tint */
   --tn-diff-del-bg:   rgb(225 29 72 / 0.08);
   --tn-diff-del-fg:   var(--rose-700);
   --tn-diff-hunk-bg:  rgb(2 132 199 / 0.06);

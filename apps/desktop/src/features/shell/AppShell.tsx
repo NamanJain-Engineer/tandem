@@ -4,7 +4,7 @@ import { AutoDialog } from "../auto/AutoDialog";
 import { followAuto } from "../../stores/auto";
 import { WorktreeDialogs } from "../code/Worktrees";
 import { useEffect } from "react";
-import { useToast } from "@tandem/ui";
+import { LiveAnnouncer, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useLayout } from "../../stores/layout";
 import { useUi } from "../../stores/ui";
@@ -112,7 +112,7 @@ export function AppShell() {
   }, [dev]);
   const show = (m: typeof mode) => (!settingsOpen && mode === m ? "flex" : "none");
   return (
-    <div className="flex h-full flex-col bg-bg">
+    <div className="flex h-full flex-col bg-bg" data-testid="app-shell">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-[var(--z-max)] focus:rounded-sm focus:bg-surface-3 focus:px-3 focus:py-1.5 focus:text-fg"
@@ -164,6 +164,9 @@ export function AppShell() {
       <OrphansDialog />
       <RestartDialog />
       <UnsupportedOverlay />
+      {/* Agent waiting, done or failed and approvals requested, read out
+          politely at most once per 2 s (§5.4). */}
+      <LiveAnnouncer />
     </div>
   );
 }
