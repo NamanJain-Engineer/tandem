@@ -174,6 +174,96 @@ impl ProviderHomes {
         }
     }
 
+    /// Adds (or with `None` removes) a stdio MCP server in the engine's own
+    /// config in this home: `.claude.json` `mcpServers` for Claude Code,
+    /// `config.toml` `[mcp_servers.<name>]` for Codex (F-TK-02, "Expose
+    /// tasks to terminal agents"). Other engines are left alone.
+    pub fn set_stdio_server(
+        &self,
+        engine: &EngineSpec,
+        home: &Path,
+        name: &str,
+        server: Option<&crate::chat::StdioServer>,
+    ) -> Result<(), HomeError> {
+        if !self.owns(home) {
+            return Err(HomeError::NotOwned);
+        }
+        match engine.hooks_support {
+            HooksSupport::ClaudeHooks => {
+                let file = home.join(".claude.json");
+                let mut doc = read_json(&file)?;
+                let Some(root) = doc.as_object_mut() else {
+                    return Ok(());
+                };
+                let servers = root.entry("mcpServers").or_insert_with(|| json!({}));
+                let Some(servers) = servers.as_object_mut() else {
+                    return Ok(());
+                };
+                match server {
+                    Some(s) => {
+                        servers.insert(
+                            name.to_string(),
+                            json!({
+                                "type": "stdio",
+                                "command": s.command,
+                                "args": s.args,
+                                "env": {},
+                            }),
+                        );
+                    }
+                    None => {
+                        if servers.remove(name).is_none() {
+                            return Ok(());
+                        }
+                    }
+                }
+                write_json(&file, &doc)
+            }
+            HooksSupport::CodexNotify => {
+                let file = home.join("config.toml");
+                let mut doc = read_toml(&file)?;
+                let had = doc.get("mcp_servers").and_then(|t| t.get(name)).is_some();
+                match server {
+                    Some(s) => {
+                        if doc.get("mcp_servers").is_none() {
+                            let mut t = toml_edit::Table::new();
+                            t.set_implicit(true);
+                            doc["mcp_servers"] = toml_edit::Item::Table(t);
+                        }
+                        let mut t = toml_edit::Table::new();
+                        t["command"] = toml_edit::value(s.command.to_string_lossy().into_owned());
+                        let mut args = toml_edit::Array::new();
+                        for a in &s.args {
+                            args.push(a.as_str());
+                        }
+                        t["args"] = toml_edit::value(args);
+                        if !s.env_vars.is_empty() {
+                            let mut vars = toml_edit::Array::new();
+                            for v in &s.env_vars {
+                                vars.push(v.as_str());
+                            }
+                            t["env_vars"] = toml_edit::value(vars);
+                        }
+                        doc["mcp_servers"][name] = toml_edit::Item::Table(t);
+                    }
+                    None => {
+                        if !had {
+                            return Ok(());
+                        }
+                        if let Some(t) = doc
+                            .get_mut("mcp_servers")
+                            .and_then(|t| t.as_table_like_mut())
+                        {
+                            t.remove(name);
+                        }
+                    }
+                }
+                write_private(&file, doc.to_string().as_bytes())
+            }
+            HooksSupport::None => Ok(()),
+        }
+    }
+
     /// Pre-answers the engine's "trust this folder" question for one
     /// workspace. Called only when "Trust workspaces I add" is on.
     pub fn trust_workspace(
@@ -587,5 +677,83 @@ mod tests {
             homes.create(claude, "../escape", &Seed::default()),
             Err(HomeError::NotOwned)
         ));
+    }
+
+    #[test]
+    fn f_tk_02_the_tasks_server_goes_into_terminal_engines_native_config() {
+        let (_d, homes, reg) = setup();
+        let server = crate::chat::StdioServer {
+            name: "tandem_tasks".into(),
+            command: "/opt/v/tandem-tasks".into(),
+            args: vec![
+                "mcp".into(),
+                "--dir".into(),
+                "/d/tasks".into(),
+                "--connection-env".into(),
+                "TANDEM_TASKS_CONNECTION".into(),
+            ],
+            env_vars: vec!["TANDEM_TASKS_CONNECTION".into()],
+        };
+        let claude = reg.get("claude").expect("claude");
+        let home = homes
+            .create(claude, "acc_1", &Seed::default())
+            .expect("home");
+        homes
+            .set_stdio_server(claude, &home, "tandem_tasks", Some(&server))
+            .expect("set");
+        let doc: Value =
+            serde_json::from_slice(&std::fs::read(home.join(".claude.json")).expect("read"))
+                .expect("json");
+        assert_eq!(
+            doc["mcpServers"]["tandem_tasks"]["command"],
+            "/opt/v/tandem-tasks"
+        );
+        assert_eq!(
+            doc["mcpServers"]["tandem_tasks"]["args"][3],
+            "--connection-env"
+        );
+        // Seeded onboarding keys stay.
+        assert!(doc.as_object().expect("obj").len() > 1);
+        homes
+            .set_stdio_server(claude, &home, "tandem_tasks", None)
+            .expect("unset");
+        let doc: Value =
+            serde_json::from_slice(&std::fs::read(home.join(".claude.json")).expect("read"))
+                .expect("json");
+        assert!(doc["mcpServers"].get("tandem_tasks").is_none());
+
+        let codex = reg.get("codex").expect("codex");
+        let home = homes
+            .create(codex, "acc_2", &Seed::default())
+            .expect("home");
+        std::fs::write(home.join("config.toml"), "model = \"o4\"\n").expect("seed");
+        homes
+            .set_stdio_server(codex, &home, "tandem_tasks", Some(&server))
+            .expect("set");
+        let text = std::fs::read_to_string(home.join("config.toml")).expect("read");
+        let doc: toml_edit::DocumentMut = text.parse().expect("toml");
+        assert_eq!(doc["model"].as_str(), Some("o4"));
+        assert_eq!(
+            doc["mcp_servers"]["tandem_tasks"]["command"].as_str(),
+            Some("/opt/v/tandem-tasks")
+        );
+        assert_eq!(
+            doc["mcp_servers"]["tandem_tasks"]["env_vars"]
+                .as_array()
+                .and_then(|a| a.get(0))
+                .and_then(|v| v.as_str()),
+            Some("TANDEM_TASKS_CONNECTION")
+        );
+        homes
+            .set_stdio_server(codex, &home, "tandem_tasks", None)
+            .expect("unset");
+        let text = std::fs::read_to_string(home.join("config.toml")).expect("read");
+        assert!(!text.contains("tandem_tasks"), "{text}");
+        assert!(text.contains("model"));
+        // Not a home Vibezeo owns: refused.
+        let outside = tempfile::tempdir().expect("dir");
+        assert!(homes
+            .set_stdio_server(claude, outside.path(), "tandem_tasks", Some(&server))
+            .is_err());
     }
 }

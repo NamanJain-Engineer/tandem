@@ -8,16 +8,16 @@ every milestone has its tasks, exit checks and E2E list in MILESTONES. Tick
 items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md`
 has every feature below with its full behaviour and acceptance tests.
 
-**Where it stands (10 October 2026, `product-m0-m5`):** M0–M10 and M12
-are done, and so are M15's six features (its non-functional checks are under
-way). So is M13, apart from its voice pair (F-DI-05 and F-DI-10, which M8's
-session builds next on M13's clients). M16 has F-SH-12, F-AC-07, F-AU-01,
-F-BE-03 and F-BE-12. That's 126 of 152 features, and all 65 P0s. Left: 26
-features, none of them P0 (12 P1, 14 P2): M11's 8, M13's voice pair, M14's 2
-and M16's 14. vibezeo.com serves 0.4.0 (teammates, Find work, your data,
-shortcut rebinding and the usage page); Dictate (M8) and plugins (M12) reach a
-download with the next release. M15 makes the P0/P1 product launchable;
-M16 adds the P2 extras and the release candidate.
+**Where it stands (10 October 2026, `product-m0-m5`):** M0–M12 are done,
+and so are M15's six features (its non-functional checks are under way). So
+is M13, apart from its voice pair (F-DI-05 and F-DI-10, which M8's session
+builds next on M13's clients). M16 has F-SH-12, F-AC-07, F-AU-01, F-BE-03,
+F-BE-12 and F-RT-05. That's 135 of 152 features, and all 65 P0s. Left: 17
+features, none of them P0 (4 P1, 13 P2): M13's voice pair, M14's 2 and M16's 13.
+vibezeo.com serves 0.4.0 (teammates, Find work, your data, shortcut rebinding
+and the usage page); Dictate (M8), tasks and routines (M11) and plugins (M12)
+reach a download with the next release. M15 makes the P0/P1 product
+launchable; M16 adds the P2 extras and the release candidate.
 
 ## 0. First, before new features
 
@@ -97,15 +97,16 @@ search, mail, settings, create with AI, gateway.
 
 ### M11 · Tasks and routines (L) · 8 features (P1)
 A local task tracker agents read and write over MCP, with Pro execution in
-lanes; scheduled routines that run in-app and in the background.
-- [ ] F-TK-01 Task store
-- [ ] F-TK-02 `tandem-tasks` MCP server
-- [ ] F-TK-03 Tasks UI
-- [ ] F-TK-04 Task execution (Pro)
-- [ ] F-RT-01 Routine model (Pro)
-- [ ] F-RT-02 In-app scheduler and runs
-- [ ] F-RT-03 Background runner (Pro)
-- [ ] F-RT-04 Routines UI
+lanes; scheduled routines that run in-app and in the background. **Done in
+pull request #36** (branch `m11-tasks-routines`), with M16's F-RT-05.
+- [x] F-TK-01 Task store
+- [x] F-TK-02 `tandem-tasks` MCP server
+- [x] F-TK-03 Tasks UI
+- [x] F-TK-04 Task execution (Pro)
+- [x] F-RT-01 Routine model (Pro)
+- [x] F-RT-02 In-app scheduler and runs
+- [x] F-RT-03 Background runner (Pro)
+- [x] F-RT-04 Routines UI
 
 Tasks: task store; MCP server; Tasks UI (UI-80/81); task execution
 (UI-82/83/84); routine model and schedules; scheduler; background runner;
@@ -194,7 +195,7 @@ release candidate. Stop after any sub-phase if the budget runs out.
 - 16C Phone companion: [ ] F-RM-03 Phone companion · [ ] F-BE-11 Remote relay
 - 16D Extras: [x] F-SH-12 Scratchpad · [ ] F-CD-21 Simulator pane (macOS) ·
   [x] F-AC-07 Usage dashboard · [ ] F-AG-10 Skill sync to engines ·
-  [ ] F-AG-13 Teammate in a terminal · [ ] F-RT-05 Schedule tool for teammates ·
+  [ ] F-AG-13 Teammate in a terminal · [x] F-RT-05 Schedule tool for teammates ·
   [x] F-BE-03 CLI device-code sign-in · [x] F-BE-12 Admin
 - Also: [x] app-shortcut rebinding (F-SH-09 P2 part, Settings › Shortcuts UI-113),
   [x] Team SSO (F-BL-06 P2 part), [x] the remaining AI routes (`/auto/next`,

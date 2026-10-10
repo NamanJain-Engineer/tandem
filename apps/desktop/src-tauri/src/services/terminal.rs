@@ -102,6 +102,8 @@ pub struct TerminalService {
     integration_root: Option<PathBuf>,
     /// The installed scripts' folder, written on first use.
     integration_dir: std::sync::OnceLock<Option<PathBuf>>,
+    /// The tasks server terminal agents get (F-TK-02).
+    tasks: std::sync::OnceLock<Arc<crate::services::tasks::TasksService>>,
 }
 
 /// One line of `TANDEM_SPAWN_LOG` (debug builds): what was started, with
@@ -180,7 +182,53 @@ impl TerminalService {
             spawn_log,
             integration_root,
             integration_dir: std::sync::OnceLock::new(),
+            tasks: std::sync::OnceLock::new(),
         })
+    }
+
+    /// The tracker whose MCP server terminal agents get.
+    pub fn bind_tasks(&self, tasks: &Arc<crate::services::tasks::TasksService>) {
+        let _ = self.tasks.set(tasks.clone());
+    }
+
+    /// The pane's agent session ended or the pane closed: its task
+    /// connection is revoked.
+    pub fn end_tasks_session(&self, pane: &str) {
+        if let Some(tasks) = self.tasks.get() {
+            tasks.end_session(&format!("pn:{pane}"));
+        }
+    }
+
+    /// "Expose tasks to terminal agents" (F-TK-02): the tasks server goes in
+    /// (or out of) the engine's own config in the pane's provider home, and
+    /// the pane gets a fresh connection in its env.
+    async fn tasks_env(
+        &self,
+        engine: &tandem_engines::registry::EngineSpec,
+        home: Option<&Path>,
+        pane: &str,
+    ) -> Vec<(String, String)> {
+        let (Some(tasks), Some(home)) = (self.tasks.get(), home) else {
+            return Vec::new();
+        };
+        let on = tasks.expose_to_terminals().await;
+        let server = if on { tasks.terminal_server() } else { None };
+        if let Err(e) = self.engines.homes.set_stdio_server(
+            engine,
+            home,
+            crate::services::tasks::SERVER_NAME,
+            server.as_ref(),
+        ) {
+            tracing::warn!(code = "tasks.native_config_failed", error = %e, "couldn't update the engine's MCP config");
+            return Vec::new();
+        }
+        if server.is_none() {
+            return Vec::new();
+        }
+        match tasks.begin_session(&format!("pn:{pane}"), &engine.label, "me") {
+            Some(conn) => vec![(crate::services::tasks::CONNECTION_ENV.to_string(), conn)],
+            None => Vec::new(),
+        }
     }
 
     /// The shell's integration and the scripts' folder, unless the shell has
@@ -522,7 +570,11 @@ impl TerminalService {
                     "The engine's path can't be launched safely",
                 )
             })?;
-            let env: Vec<(String, String)> = launch.spec.env.clone().into_iter().collect();
+            let mut env: Vec<(String, String)> = launch.spec.env.clone().into_iter().collect();
+            env.extend(
+                self.tasks_env(&engine, launch.home.as_deref(), pane.as_str())
+                    .await,
+            );
             (args, env, Some(engine), Some(launch))
         } else if let Some((kind, dir)) = &integration {
             let launch =

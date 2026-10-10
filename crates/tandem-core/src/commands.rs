@@ -119,6 +119,10 @@ static REGISTRY: &[CommandSpec] = &[
     // F-AG-04: the New teammate sheet (no default shortcut: Mod+Shift+N is
     // Notifications, UI_SPEC UI-70).
     same("teammate.new", C::App, None, E::Always),
+    // F-TK-03: Agent mode's Tasks page.
+    same("tasks.open", C::Navigation, None, E::Always),
+    same("routines.open", C::Navigation, None, E::Always),
+    same("routines.pause", C::Navigation, None, E::Always),
     aliased(
         "rail.toggle",
         C::Navigation,

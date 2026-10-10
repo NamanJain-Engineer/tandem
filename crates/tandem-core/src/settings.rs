@@ -88,6 +88,7 @@ setting_keys! {
     AllowTeammateSkills,
     LearnAfterTurn,
     PauseAllMail,
+    PauseAllRoutines,
     ResumeAgentsAutomatically,
     TrustWorkspacesIAdd,
     ExposeTasksToTerminalAgents,
@@ -470,6 +471,13 @@ pub static SCHEMA: &[SettingSpec] = &[
         V::Bool,
         Teammates,
         ["mail", "pause"]
+    ),
+    spec!(
+        PauseAllRoutines,
+        json!(false),
+        V::Bool,
+        Teammates,
+        ["routines", "pause", "schedule"]
     ),
     spec!(
         ResumeAgentsAutomatically,

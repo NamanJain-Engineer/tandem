@@ -211,6 +211,11 @@
   },
   {
     "default": false,
+    "key": "pause_all_routines",
+    "page": "teammates"
+  },
+  {
+    "default": false,
     "key": "resume_agents_automatically",
     "page": "general"
   },

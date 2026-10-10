@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { Bot, Home, MessagesSquare, Plus, Settings2 } from "lucide-react";
+import { Bot, CalendarClock, Home, MessagesSquare, Plus, Settings2 } from "lucide-react";
 import type { IpcError, PluginCard, TeammateSummary, Thread, ThreadState } from "@tandem/protocol";
 import {
   Avatar,
@@ -30,6 +30,7 @@ import { t } from "../../i18n";
 import { listen } from "../../ipc/events";
 import { invoke } from "../../ipc/invoke";
 import { useEngines } from "../../stores/engines";
+import { useAgentPage } from "../../stores/agentPage";
 import { useTeammates } from "../../stores/teammates";
 import { useThreads } from "../../stores/threads";
 import { switchMode } from "../shell/actions";
@@ -530,6 +531,15 @@ export function TeammatePage({
             {t("agent.page.newChat")}
           </Button>
         )}
+        <Button
+          size="sm"
+          variant="ghost"
+          iconLeft={<CalendarClock size={14} />}
+          onClick={() => useAgentPage.getState().show("routines")}
+          data-testid="teammate-routines"
+        >
+          {t("agent.page.routines")}
+        </Button>
         {settings && (
           <Button
             size="sm"
