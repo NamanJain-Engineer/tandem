@@ -10,14 +10,26 @@ export function UpdatePill() {
   if (!pill || !state) return null;
   if (pill === "ready")
     return (
-      <Button size="sm" variant="primary" data-testid="update-pill" data-stage="ready" onClick={() => useUpdates.getState().setRestartOpen(true)}>
+      <Button
+        size="sm"
+        variant="primary"
+        data-testid="update-pill"
+        data-stage="ready"
+        onClick={() => useUpdates.getState().setRestartOpen(true)}
+      >
         {t("update.restart")}
       </Button>
     );
   const stage = state.errorStage ?? "download";
   return (
     <Tooltip label={t("update.failedAt", { stage: t(`update.stage.${stage}`) })}>
-      <Button size="sm" variant="danger" data-testid="update-pill" data-stage={stage} onClick={() => void useUpdates.getState().checkNow()}>
+      <Button
+        size="sm"
+        variant="danger"
+        data-testid="update-pill"
+        data-stage={stage}
+        onClick={() => void useUpdates.getState().checkNow()}
+      >
         {t("update.failed")}
       </Button>
     </Tooltip>

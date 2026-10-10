@@ -65,9 +65,11 @@ function append(turn: TurnView, env: ThreadEventEnvelope): TurnView {
 export function reduce(state: ThreadView, env: ThreadEventEnvelope): ThreadView {
   const at = state.turns.findIndex((t) => t.id === env.turnId);
   if (env.turnId !== state.current) {
-    // A turn starts with its message (seq 0); anything else from another
-    // turn is a straggler and changes nothing.
-    if (at >= 0 || env.seq !== 0 || env.event.type !== "user") return state;
+    // A turn starts with its message (seq 0), or a mail row of its own
+    // (F-AG-12); anything else from another turn is a straggler and changes
+    // nothing.
+    const opens = env.event.type === "user" || env.event.type === "mail_row";
+    if (at >= 0 || env.seq !== 0 || !opens) return state;
     return {
       turns: [
         ...state.turns,

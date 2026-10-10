@@ -108,7 +108,13 @@ export function PanePicker({ workspaceName }: { workspaceName: string }) {
           <PaneLimitCard onManage={closePicker} />
         ) : (
           picker && (
-            <LaunchGrid tabId={picker.tabId} busy={busy ?? (checking ? "checking" : null)} onPick={(id) => void pick(id)} autoFocus browser />
+            <LaunchGrid
+              tabId={picker.tabId}
+              busy={busy ?? (checking ? "checking" : null)}
+              onPick={(id) => void pick(id)}
+              autoFocus
+              browser
+            />
           )
         )}
       </div>

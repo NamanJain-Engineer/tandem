@@ -223,6 +223,15 @@ const COMMANDS: &[&str] = &[
     "skill_remove",
     "skills_library",
     "skill_add_from_library",
+    "teammate_suggestions",
+    "thread_reorder",
+    "teammate_draft_with_ai",
+    "teammate_templates",
+    "memory_suggestions_resolve",
+    "mail_list",
+    "mail_get",
+    "mail_send",
+    "mail_retry",
 ];
 
 const TEST_COMMANDS: &[&str] = &[

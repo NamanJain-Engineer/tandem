@@ -196,3 +196,149 @@ pub async fn skill_add_from_library(
     state.teammates.publish().await;
     Ok(())
 }
+
+/// Empty-chat chips from the brief, made locally (F-AG-03).
+#[tauri::command]
+pub async fn teammate_suggestions(
+    state: State<'_, AppState>,
+    id: TeammateId,
+) -> Result<Vec<String>, IpcError> {
+    let teammate = state.teammates.get(&id).await?;
+    Ok(crate::services::teammates::suggestions(&teammate.brief))
+}
+
+/// `teammate_draft_with_ai` (F-AG-04): Pro, signed in and online; nothing
+/// is saved.
+#[tauri::command]
+pub async fn teammate_draft_with_ai(
+    state: State<'_, AppState>,
+    description: String,
+) -> Result<crate::services::teammate_draft::TeammateDraft, IpcError> {
+    use crate::services::teammate_draft as draft;
+    use tandem_core::ErrorCode;
+    if description.trim().is_empty() {
+        return Err(IpcError::new(ErrorCode::Invalid, "Describe the job first"));
+    }
+    let view = state.entitlements.view();
+    if view.plan == tandem_core::entitlement::Plan::Free {
+        return Err(IpcError::new(
+            ErrorCode::ForbiddenPlan,
+            "Create with AI is part of Pro.",
+        ));
+    }
+    if !state.endpoints.hosted || !view.online || !state.auth.is_signed_in() {
+        return Err(IpcError::new(ErrorCode::Unavailable, draft::COULDNT_DRAFT));
+    }
+    let engines: Vec<String> = {
+        let e = &state.terminals.engines;
+        e.registry()
+            .all()
+            .iter()
+            .filter(|s| {
+                crate::services::threads::has_chat_adapter(s) && e.installed(&s.id).is_some()
+            })
+            .map(|s| s.id.clone())
+            .collect()
+    };
+    let plugins: Vec<String> = tandem_store::repo::plugins::connections(&state.store)
+        .await?
+        .into_iter()
+        .map(|c| c.plugin_id)
+        .collect();
+    let raw = match draft::fixture() {
+        Some(v) => v,
+        None => {
+            let job = draft::job(&description);
+            let api = state.api.clone();
+            let got = state
+                .auth
+                .with_token(|token| {
+                    let (api, job, engines, plugins) =
+                        (api.clone(), job.clone(), engines.clone(), plugins.clone());
+                    async move {
+                        api.ai_teammate_draft(&token, &job, &engines, &plugins)
+                            .await
+                    }
+                })
+                .await
+                .map_err(|e| draft::api_error(&e))?;
+            serde_json::to_value(got)
+                .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?
+        }
+    };
+    draft::sanitize(&raw, &engines, &plugins)
+        .ok_or_else(|| IpcError::new(ErrorCode::Unavailable, draft::COULDNT_DRAFT))
+}
+
+#[tauri::command]
+pub fn teammate_templates() -> Vec<crate::services::teammate_draft::TeammateTemplate> {
+    crate::services::teammate_draft::templates()
+}
+
+/// Keep the chosen memory suggestions (F-AG-08 Ask); an empty `keep`
+/// discards the set. Returns the change id (for Undo) when memory changed.
+#[tauri::command]
+pub async fn memory_suggestions_resolve(
+    state: State<'_, AppState>,
+    suggestion_set_id: String,
+    keep: Vec<u32>,
+) -> Result<Option<String>, IpcError> {
+    state.learn.resolve(&suggestion_set_id, &keep).await
+}
+
+/// `mail_list` (F-AG-12): a teammate's mail, sent or received, newest first.
+#[tauri::command]
+pub async fn mail_list(
+    state: State<'_, AppState>,
+    teammate_id: TeammateId,
+) -> Result<Vec<tandem_store::repo::mail::MailRow>, IpcError> {
+    state.mail.list(&teammate_id).await
+}
+
+/// `mail_get`: one mail with its body.
+#[tauri::command]
+pub async fn mail_get(
+    state: State<'_, AppState>,
+    mail_id: tandem_core::ids::MailId,
+) -> Result<tandem_store::repo::mail::Mail, IpcError> {
+    state.mail.get(&mail_id).await
+}
+
+/// `mail_send`: the composer's `@name` (the chat's teammate is the sender).
+#[tauri::command]
+pub async fn mail_send(
+    state: State<'_, AppState>,
+    from_teammate_id: Option<TeammateId>,
+    to_teammate_id: TeammateId,
+    body: String,
+    from_thread_id: Option<tandem_core::ids::ThreadId>,
+) -> Result<tandem_store::repo::mail::MailRow, IpcError> {
+    // The sender's thread of work is its chat's.
+    let conversation_ref = match &from_thread_id {
+        Some(t) => tandem_store::repo::threads::get(&state.store, t)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|r| r.conversation_ref),
+        None => None,
+    };
+    state
+        .mail
+        .send(crate::services::mail::Outgoing {
+            from: from_teammate_id,
+            from_thread: from_thread_id,
+            conversation_ref,
+            to: crate::services::mail::Recipient::Id(to_teammate_id),
+            body,
+        })
+        .await
+}
+
+/// `mail_retry`: a failed or waiting mail goes back in the queue.
+#[tauri::command]
+pub async fn mail_retry(
+    state: State<'_, AppState>,
+    mail_id: tandem_core::ids::MailId,
+) -> Result<(), IpcError> {
+    state.mail.retry(&mail_id).await
+}

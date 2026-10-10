@@ -120,6 +120,12 @@ fn name_taken(
     Ok(other.is_some_and(|id| Some(id.as_str()) != except))
 }
 
+/// Whether a teammate that isn't deleted already has this name (folded).
+pub async fn name_used(store: &Store, name: &str) -> Result<bool, StoreError> {
+    let fold = fold_name(name);
+    store.read(move |c| name_taken(c, &fold, None)).await
+}
+
 /// Every teammate that isn't deleted: pinned first, then in the rail's
 /// order.
 pub async fn list(store: &Store) -> Result<Vec<Teammate>, StoreError> {

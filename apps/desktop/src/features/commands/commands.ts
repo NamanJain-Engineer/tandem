@@ -12,6 +12,7 @@ import shortcuts from "@tandem/protocol/shortcuts.json";
 import { t, type MessageKey } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
+import { useNewTeammate } from "../agents/NewTeammateSheet";
 import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
@@ -119,6 +120,10 @@ export const handlers: Record<string, () => void> = {
   "mode.code": () => switchMode("code"),
   "mode.thread": () => switchMode("thread"),
   "thread.changes": () => useThreads.getState().toggleChanges(),
+  "teammate.new": () => {
+    switchMode("agent");
+    useNewTeammate.getState().show(true);
+  },
   "rail.toggle": () => useUi.getState().toggleRail(),
   "sidebar.toggle": () => useSidebar.getState().toggle(),
   "sidebar.files": () => useSidebar.getState().openTab("files"),

@@ -226,9 +226,14 @@ pub struct ThreadService {
     status_sink: std::sync::OnceLock<ThreadStatusSink>,
     /// Tells the teammates service that chats changed.
     chats_sink: std::sync::OnceLock<Arc<dyn Fn() + Send + Sync>>,
+    /// Hears every teammate chat turn that ended (learning, F-AG-08).
+    turn_sink: std::sync::OnceLock<TurnSink>,
     /// The plan's limits right now; unset (tests) runs every engine.
     plan_limits: std::sync::OnceLock<PlanLimits>,
 }
+
+/// A teammate chat's turn ended: the chat, the turn and why.
+pub type TurnSink = Arc<dyn Fn(ThreadRecord, TurnId, TurnEndReason) + Send + Sync>;
 
 /// Reads the plan's current limits (the entitlement service in the app).
 pub type PlanLimits = Arc<dyn Fn() -> tandem_core::entitlement::Limits + Send + Sync>;
@@ -365,6 +370,7 @@ impl ThreadService {
             data: std::sync::OnceLock::new(),
             status_sink: std::sync::OnceLock::new(),
             chats_sink: std::sync::OnceLock::new(),
+            turn_sink: std::sync::OnceLock::new(),
             plan_limits: std::sync::OnceLock::new(),
         })
     }
@@ -475,6 +481,11 @@ impl ThreadService {
         tracing::info!(code = "threads.chat_created", engine = %thread.engine_id, "teammate chat created");
         self.publish_threads().await;
         Ok(thread)
+    }
+
+    /// Hears teammate chats' finished turns.
+    pub fn set_turn_sink(&self, sink: TurnSink) {
+        let _ = self.turn_sink.set(sink);
     }
 
     /// Teammate chats changed state: the Agent views hear about it.
@@ -1202,6 +1213,9 @@ impl ThreadService {
                 {
                     tracing::warn!(code = "threads.index_failed", error = %e, "couldn't index a turn");
                 }
+                if let Some(sink) = self.turn_sink.get() {
+                    sink(record.clone(), run.id.clone(), reason);
+                }
             }
         }
         tracing::info!(code = "threads.turn_ended", reason = ?reason, "turn ended");
@@ -1249,6 +1263,75 @@ impl ThreadService {
         text: String,
         attachments: Vec<AttachmentId>,
         queue_if_busy: bool,
+    ) -> Result<SendResult, IpcError> {
+        self.send_with(id, text, attachments, queue_if_busy, None)
+            .await
+    }
+
+    /// Delivers teammate mail (F-AG-12): a turn whose message is `text`,
+    /// followed by the mail's row (shown in the message's place).
+    pub async fn send_mail(
+        self: &Arc<Self>,
+        id: &ThreadId,
+        text: String,
+        row: ThreadEvent,
+    ) -> Result<SendResult, IpcError> {
+        self.send_with(id, text, Vec::new(), false, Some(row)).await
+    }
+
+    /// A mail row in a chat (F-AG-12): in its running turn, or in a turn of
+    /// its own (the row, then its end) when none runs.
+    pub async fn note_mail(&self, id: &ThreadId, row: ThreadEvent) -> Result<(), IpcError> {
+        let rt = self.runtime(id);
+        let mut guard = rt.lock().await;
+        if let Some(run) = guard.turn.as_mut() {
+            self.emit(id, run, row).await;
+            return Ok(());
+        }
+        let thread = self.thread(id).await?;
+        let turn_id = TurnId::new();
+        repo::start_turn(
+            &self.store,
+            id,
+            &turn_id,
+            &thread.engine_id,
+            thread.account_id.as_ref(),
+        )
+        .await
+        .map_err(store_err)?;
+        let mut run = Running {
+            id: turn_id.clone(),
+            next_seq: 0,
+            open: None,
+            stopping: false,
+            blocked: 0,
+            title_from: None,
+            last_output: self.clock.now_ms(),
+            silence_noted: false,
+        };
+        self.emit(id, &mut run, row).await;
+        self.emit(
+            id,
+            &mut run,
+            ThreadEvent::TurnEnd {
+                reason: TurnEndReason::Completed,
+                blocked_actions: 0,
+            },
+        )
+        .await;
+        repo::end_turn(&self.store, &turn_id, TurnState::Completed, 0)
+            .await
+            .map_err(store_err)?;
+        Ok(())
+    }
+
+    async fn send_with(
+        self: &Arc<Self>,
+        id: &ThreadId,
+        text: String,
+        attachments: Vec<AttachmentId>,
+        queue_if_busy: bool,
+        mail_row: Option<ThreadEvent>,
     ) -> Result<SendResult, IpcError> {
         let thread = self.thread(id).await?;
         self.check_plan_engine(thread.kind, &thread.engine_id)?;
@@ -1346,6 +1429,9 @@ impl ThreadService {
                 },
             )
             .await;
+        if let Some(row) = mail_row {
+            self.emit(id, &mut run, row).await;
+        }
         // A turn starts with its message; the transcript shows the divider
         // above it.
         if let Some(text) = guard.pending_switch.take() {
@@ -4464,6 +4550,48 @@ mod tests {
         }
         assert_eq!(stored(&f).await.iter().filter(|e| **e == note).count(), 1);
         svc.stop(&f.thread.id).await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn f_ag_12_1_mail_rows_go_in_a_turn_of_their_own_and_a_delivery_opens_with_its_message() {
+        let f = fixture(OnStop::Ack, reply("on it")).await;
+        let row = |inbound| ThreadEvent::MailRow {
+            mail_id: tandem_core::ids::MailId::new(),
+            from: "Ada".into(),
+            to: "Bea".into(),
+            preview: "Check CI".into(),
+            inbound,
+        };
+        // No turn runs: the row is a turn of its own, already ended.
+        let sent = row(false);
+        f.svc
+            .note_mail(&f.thread.id, sent.clone())
+            .await
+            .expect("note");
+        assert_eq!(turn_states(&f).await, vec![TurnState::Completed]);
+        assert_eq!(stored(&f).await[0], sent);
+        // A delivery: the message, then the row; the engine hears the message.
+        let got = row(true);
+        f.svc
+            .send_mail(&f.thread.id, "From Ada:\nCheck CI".into(), got.clone())
+            .await
+            .expect("deliver");
+        ended(&f, 2).await;
+        let turn = repo::turns(&f.store, &f.thread.id).await.expect("turns")[1].clone();
+        let rows: Vec<ThreadEvent> = repo::turn_messages(&f.store, &turn.id)
+            .await
+            .expect("rows")
+            .iter()
+            .filter_map(envelope)
+            .map(|e| e.event)
+            .collect();
+        assert!(
+            matches!(&rows[0], ThreadEvent::User { text, .. } if text == "From Ada:\nCheck CI")
+        );
+        assert_eq!(rows[1], got);
+        let inputs = f.adapter.inputs.lock().expect("inputs").clone();
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0].text, "From Ada:\nCheck CI");
     }
 
     #[tokio::test]

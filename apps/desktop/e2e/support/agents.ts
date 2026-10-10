@@ -77,6 +77,13 @@ export async function chatSpawns(): Promise<SpawnLine[]> {
   return (await invoke<SpawnLine[]>("test_spawn_log")).filter((r) => r.argv.includes("--input-format"));
 }
 
+/** Headless one-shot spawns (Claude `-p`: learn follow-ups, briefs), oldest first. */
+export async function headlessSpawns(): Promise<SpawnLine[]> {
+  return (await invoke<SpawnLine[]>("test_spawn_log")).filter(
+    (r) => r.argv.includes("-p") && !r.argv.includes("--input-format"),
+  );
+}
+
 /** The value after `flag` in an argv. */
 export function argAfter(argv: string[], flag: string): string | null {
   const i = argv.indexOf(flag);

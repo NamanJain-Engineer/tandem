@@ -200,6 +200,7 @@ pub async fn run_headless(
     input: &str,
     timeout: Duration,
 ) -> Result<String, HeadlessError> {
+    crate::chat::process::log_spawn_of(program, args, env, cwd);
     let mut cmd = tokio::process::Command::new(program);
     cmd.args(args)
         .env_clear()

@@ -646,6 +646,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `thread_update` | `{threadId, title?, access?, mode?, model?, effort?, pinned?, sortKey?, pluginGrants?}` (`model`/`effort` `"default"` = the engine's own; a title is a user rename, `title_source = user`; new access, mode, model or effort start a fresh session on the next turn) | `Thread` | ForbiddenPlan (Full forbidden by org policy), Invalid (empty title) | F-TH-01, F-TH-09, F-PL-05 |
 | `thread_switch_engine` | `{threadId, engineId, accountId?}` | `Thread` (next turn seeds summary; allow rules cleared) | EngineMissing, EngineUnsupported (no chat adapter), Conflict (a turn is running) | F-TH-16, F-AC-05 |
 | `thread_archive` / `thread_delete` | `{threadId, archived}` (archiving stops a running turn) / `{threadId}` (archived only; the recovery copy is `$DATA/trash/threads/<id>-<deletedAtMs>/` (0700) with `thread.json` (0600) and the attachments, removed after 7 days) | — | Invalid | F-TH-01 |
+| `thread_reorder` | `{ids}` (a teammate's chat tabs, left to right; M10) | — | — | F-AG-03 |
 | `thread_move_to_folder` | `{threadId, workspaceId}` | `Thread` | — | F-TH-02 |
 | `thread_save_draft` | `{threadId, draft: Draft {text, attachmentIds, queued?}}` | — | — | F-TH-07 |
 | `thread_attach_paths` | `{threadId, paths}` | `[Attachment]` | LimitReached (20 / 20 MB) | F-TH-07 |
@@ -722,20 +723,21 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `teammate_create` | `{input: TeammateInput {name, brief, engineId, model?, effort?, preferredAccountId?, places, avatarHue?, settings?}}` | `Teammate` | Conflict ("Name already used"), LimitReached, EngineMissing, Invalid | F-AG-01, F-AG-04 |
 | `teammate_update` | `{id, patch: TeammatePatch}` (only the fields given change; `model`, `effort`, `preferredAccountId`, `avatarHue` take `null` to clear; `pinned: true` unpins every other teammate: one hero; new settings or engine start the teammate's chats on fresh sessions) | `Teammate` | Conflict, Invalid, EngineMissing | F-AG-05 |
 | `teammate_delete` / `teammate_duplicate` / `teammate_reorder` | `{id}` / `{id}` / `{ids}` | — / `Teammate` / — | — | F-AG-02 |
-| `teammate_draft_with_ai` | `{description}` | `TeammateDraft {name, brief, engineId, pluginIds}` (nothing saved) | ForbiddenPlan, CreditsExhausted, Unavailable | F-AG-04 |
-| `teammate_suggestions` | `{id}` | `[String; 3]` (local) | — | F-AG-03 |
+| `teammate_draft_with_ai` | `{description}` | `TeammateDraft {name, brief, engineId, pluginIds}` (nothing saved; `engineId` only when installed and chat-capable, `pluginIds` only connected ones; debug E2E builds answer from `TANDEM_FIXTURE_TEAMMATE_DRAFT`, D-8) | ForbiddenPlan, CreditsExhausted, Unavailable | F-AG-04 |
+| `teammate_templates` | — | `[TeammateTemplate {id, name, brief}]` (Reviewer, Release notes writer, Researcher, Triage; the sheet's offline / Free choice) | — | F-AG-04 |
+| `teammate_suggestions` | `{id}` | `[String; 3]` (local: the brief's first sentences as asks, "You draft…" → "Draft…", constraints skipped, general asks to fill) | — | F-AG-03 |
 | `teammate_launch_in_terminal` | `{id, placePath, tabId}` | `PaneRecord` | EngineMissing | F-AG-13 |
 | `memory_get` | `{teammateId}` | `Memory {notes, about, cap, used, aboutCap: 2048, aboutUsed}` (lengths in characters) | — | F-AG-07 |
 | `memory_write` | `{teammateId, file:"notes"\|"about", markdown}` (the user's own edits, checked like `tandem__memory_write`; each write is a `memory_changes` row with a copy of what it replaced) | — | LimitReached (cap), Invalid ("Memory can't store credentials") | F-AG-07 |
-| `memory_suggestions_resolve` | `{suggestionSetId, keep:[index]}` | — | — | F-AG-08 |
+| `memory_suggestions_resolve` | `{suggestionSetId, keep:[index]}` (an empty `keep` discards the set; sets live until resolved or the app quits) | `changeId?` (for Undo, when memory changed) | NotFound | F-AG-08 |
 | `memory_undo` | `{changeId}` | — (puts back what the change replaced) | NotFound, Conflict (the file changed again since) | F-AG-08 |
 | `skills_list` / `skill_get` | `{teammateId}` / `{teammateId, slug}` | `[SkillEntry {slug, name, description, valid, error?, isNew, syncedTo}]` / `Skill` | — | F-AG-09 |
 | `skill_save` / `skill_remove` | `{teammateId, slug, markdown}` / `{teammateId, slug}` (the user's saves, opens and library adds mark a skill seen: not "New"; remove moves the folder to `<home>/.trash/skills/`) | — | Invalid (front matter, or a credential), NotFound | F-AG-09 |
 | `skills_library` / `skill_add_from_library` | — / `{teammateId, slug}` | `[SkillEntry]` / — | Conflict | F-AG-09 |
 | `skill_sync` | `{teammateId, slug, engineId, accountId, on}` | `SyncOutcome {state:"synced"\|"removed"\|"conflict"}` | — | F-AG-10 |
-| `mail_list` / `mail_get` | `{teammateId}` / `{mailId}` | `[MailRow]` / `Mail` | — | F-AG-12 |
-| `mail_send` | `{fromTeammateId?, toTeammateId, body, fromThreadId?}` (UI `@name`) | `MailRow` | Invalid (refusal reason) | F-AG-12 |
-| `mail_retry` | `{mailId}` | — | — | F-AG-12 |
+| `mail_list` / `mail_get` | `{teammateId}` / `{mailId}` | `[MailRow {id, fromTeammateId?, from, toTeammateId, to, preview, state:"queued"\|"delivered"\|"refused"\|"failed", reason?, deliveredThreadId?, createdAt}]` (sent or received, newest first) / `Mail` (the row's fields with `body`, `fromThreadId?`, `conversationRef`, `deliveredAt?`; `from` is "You" for the user's mail) | — / NotFound | F-AG-12 |
+| `mail_send` | `{fromTeammateId?, toTeammateId, body, fromThreadId?}` (UI `@name`; the composer's chat is `fromThreadId`, its teammate the sender) | `MailRow` (queued; reason `global_pause` while mail is paused) | Invalid (refusal reason; the refused row is kept), NotFound | F-AG-12 |
+| `mail_retry` | `{mailId}` (a failed or waiting mail goes back in the queue and one delivery pass runs) | — | Conflict (delivered or refused), NotFound | F-AG-12 |
 
 #### Tasks [F-TK-*]
 | Command | Args | Returns | Errors |
@@ -895,10 +897,10 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `entitlement:changed` | `EntitlementView` | entitlement service (refresh, SSE) | F-BE-04, F-SH-03 |
 | `routines:changed` / `routines:run` | `{}` (read the list again) / `RoutineRun` | scheduler | F-RT-02, F-RT-04 |
 | `tasks:attempt` | `AttemptView` | task runner | F-TK-04 |
-| `plugins:changed` / `plugins:connect` | `PluginCard` / `{opId, step:"discovery"\|"registration"\|"sign_in"\|"token_exchange"\|"verification"\|"timeout", state, error?}` | gateway | F-PL-03 |
+| `plugins:changed` / `plugins:connect` | `PluginCard` / `{opId, step:"discovery"\|"registration"\|"sign_in"\|"token_exchange"\|"verification"\|"timeout", state, error?}` | gateway (`plugins:changed` after any connection is added or changes; until M12 only debug E2E builds connect, through `test_plugin_connect`) | F-PL-03 |
 | `teammates:changed` | `{teammates:[TeammateSummary]}` (a teammate or one of its chats changed; coalesced 100 ms) | teammates service | F-AG-02 |
-| `mail:changed` | `{teammateId, rows:[MailRow]}` | mail service | F-AG-12 |
-| `memory:suggestions` | `{teammateId, threadId, setId, items}` | learn service | F-AG-08 |
+| `mail:changed` | `MailChanged {teammateId, rows:[MailRow]}` (the teammate's mail, newest first, after any change to a mail it sent or receives) | mail service | F-AG-12 |
+| `memory:suggestions` | `MemorySuggestions {teammateId, threadId, setId, items:[{kind:"add"\|"remove", text}], rationale, applied, changeId?}` (`applied`: Auto mode already wrote it; `changeId` undoes it) | learn service | F-AG-08 |
 | `auto:changed` / `auto:dismissed` | `AutoRunView` / `{runId}` | Auto supervisor | F-AU-01 |
 | `lanes:stale` | `{workspaceId, lanes:[StaleLane]}` | lane sweeper | F-CD-15 |
 | `dictate:state` | `{state:"idle"\|"listening"\|"transcribing"\|"inserted"\|"error"\|"reconnecting", takeId?}` (to `main` and `dictate-widget`) | TakeMachine | F-DI-07 |
@@ -1720,7 +1722,7 @@ pub enum ThreadEvent {
     Error { code: String, message: String, stage: ErrorStage /* spawn|auth|model|network|tool|unknown */, hint: Option<String>, action: Option<ErrorAction> },
     PlanRevision { version: u32 },
     Divider { text: String },                                         // "Continued on <engine> (<account>) with a summary"
-    MailRow { mail_id: MailId, from: String, to: String, preview: String },
+    MailRow { mail_id: MailId, from: String, to: String, preview: String, inbound: bool }, // inbound: the recipient's delivered turn, shown in place of its message
     TurnEnd { reason: TurnEndReason /* completed|cancelled|limit|error */, blocked_actions: u32 },
 }
 pub enum ToolVerb { Bash, Read, Grep, Glob, Edit, Write, Multiedit, Webfetch, Websearch, Task, Mcp, Other }
@@ -1842,6 +1844,7 @@ send_message(to, body) ─► check: sender may_message; recipient exists, not d
 - `conversation_ref` = sender chat's `conversation_ref` (or its thread id if none). Delivery marks `(mail_id, thread_id)` so a mail is delivered at most once per chat.
 - Global pause: worker holds all queued items until resumed; on resume delivers each once (F-AG-12 AC2).
 - `tandem__list_teammates` returns `{id, name, engine, status, may_receive}` for non-paused teammates.
+- Transcripts: the sender's chat gets a `MailRow` (inbound false) in its running turn, or in a turn of its own (the row, then `turn_end`) when none runs; the recipient's delivered turn is the user message "From {sender}:\n{body}" followed by a `MailRow` with inbound true, which the transcript shows in the message's place. A turn may start with a `mail_row` (seq 0) as well as a `user` event.
 
 ### 8.8 Auto supervisor (`tandem_app::services::auto`) [F-AU-01]
 ```rust

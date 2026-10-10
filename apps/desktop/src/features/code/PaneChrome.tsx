@@ -96,7 +96,10 @@ function PaneName({
           )}
         />
         {error && (
-          <span role="alert" className="absolute left-0 top-6 z-10 whitespace-nowrap rounded-xs bg-surface-3 px-1.5 py-0.5 text-xs text-error shadow-2">
+          <span
+            role="alert"
+            className="absolute left-0 top-6 z-10 whitespace-nowrap rounded-xs bg-surface-3 px-1.5 py-0.5 text-xs text-error shadow-2"
+          >
             {error}
           </span>
         )}
@@ -161,7 +164,12 @@ export function PaneChrome({
         {glyph ?? <SquareTerminal size={13} />}
       </span>
       {name && (
-        <PaneName name={name} onRename={onRename} editing={renaming} setEditing={(on) => onRenamingChange?.(on)} />
+        <PaneName
+          name={name}
+          onRename={onRename}
+          editing={renaming}
+          setEditing={(on) => onRenamingChange?.(on)}
+        />
       )}
       {/* Never narrower than 12 characters; the full title is in the tooltip. */}
       <Tooltip label={title}>

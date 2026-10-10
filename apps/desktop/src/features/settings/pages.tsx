@@ -422,6 +422,22 @@ export function settingsPages(platform: string): PageDef[] {
             <BoolControl k="allow_teammate_skills" ids={ids} label={t("settings.teammateSkills")} />
           ),
         },
+        {
+          id: "learn_after_turn",
+          label: t("settings.learnAfterTurn"),
+          description: t("settings.learnAfterTurn.desc"),
+          keywords: ["learn", "memory", "notes"],
+          control: (ids) => (
+            <BoolControl k="learn_after_turn" ids={ids} label={t("settings.learnAfterTurn")} />
+          ),
+        },
+        {
+          id: "pause_all_mail",
+          label: t("settings.pauseAllMail"),
+          description: t("settings.pauseAllMail.desc"),
+          keywords: ["mail", "pause", "message"],
+          control: (ids) => <BoolControl k="pause_all_mail" ids={ids} label={t("settings.pauseAllMail")} />,
+        },
       ],
     },
     {

@@ -119,6 +119,10 @@ pub struct AppState {
     pub telemetry: Arc<TelemetryService>,
     /// Teammates (F-AG-01).
     pub teammates: Arc<crate::services::teammates::TeammatesService>,
+    /// Learn after a turn (F-AG-08).
+    pub learn: Arc<crate::services::learn::LearnService>,
+    /// Teammate mail (F-AG-12).
+    pub mail: Arc<crate::services::mail::MailService>,
     /// Holds the gateway's built-ins handler alive (the gateway keeps a weak
     /// reference).
     pub teammate_tools: Arc<dyn crate::services::gateway::BuiltinService>,
@@ -486,12 +490,42 @@ impl AppState {
             notifications: notifications.clone(),
         }));
         terminals.bind_tasks(&tasks);
+        // Teammate mail (F-AG-12) lands in teammate chats.
+        let mail = crate::services::mail::MailService::new(
+            store.clone(),
+            bus.clone(),
+            teammates.clone(),
+            Arc::new(crate::services::mail::AppMailHost {
+                store: store.clone(),
+                threads: threads.clone(),
+                teammates: teammates.clone(),
+            }),
+        );
         // The gateway's teammate built-ins answer for the lease's teammate.
         let tools: Arc<dyn crate::services::gateway::BuiltinService> =
             Arc::new(crate::services::teammate_tools::TeammateTools {
                 teammates: teammates.clone(),
+                mail: mail.clone(),
             });
         gateway.bind_builtins(Arc::downgrade(&tools));
+        // Learn after a turn (F-AG-08): off the turn's own path.
+        let learn = crate::services::learn::LearnService::new(
+            store.clone(),
+            bus.clone(),
+            teammates.clone(),
+            Arc::new(crate::services::learn::AppLearnRunner {
+                terminals: terminals.clone(),
+            }),
+        );
+        {
+            let learn = learn.clone();
+            threads.set_turn_sink(Arc::new(move |chat, turn, reason| {
+                let learn = learn.clone();
+                tauri::async_runtime::spawn(
+                    async move { learn.after_turn(chat, turn, reason).await },
+                );
+            }));
+        }
         // Threads are Dashboard items too (F-DB-01, D-6).
         let status = terminals.status.clone();
         threads.set_status_sink(Arc::new(move |th| {
@@ -573,6 +607,8 @@ impl AppState {
             routines,
             teammates,
             teammate_tools: tools,
+            learn,
+            mail,
             files,
             git_panel,
             browser: std::sync::OnceLock::new(),

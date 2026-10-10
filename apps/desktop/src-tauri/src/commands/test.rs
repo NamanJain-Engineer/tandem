@@ -410,6 +410,18 @@ pub async fn test_plugin_connect(
         tandem_store::repo::plugins::insert_connection(&state.store, &plugin_id, None, "none")
             .await?;
     state.gateway.refresh_connections().await;
+    // `plugins:changed` (F-PL-03): the new connection's card.
+    if let Some(card) = crate::commands::plugins::catalog(&state)
+        .await?
+        .into_iter()
+        .find(|c| c.connection_id.as_ref() == Some(&conn.id))
+    {
+        state.bus.publish(tandem_core::bus::BusEvent::new(
+            tandem_core::bus::Topic::Plugins,
+            "plugins:changed",
+            card,
+        ));
+    }
     Ok(conn)
 }
 

@@ -59,7 +59,15 @@ export class WebglPool {
       clearTimeout(prev.hideTimer);
       if (prev.holds) prev.renderer.detach();
     }
-    this.entries.set(paneId, { renderer, focused: false, visible: false, touched: this.touch(), order: ++this.registered, holds: false, failed: false });
+    this.entries.set(paneId, {
+      renderer,
+      focused: false,
+      visible: false,
+      touched: this.touch(),
+      order: ++this.registered,
+      holds: false,
+      failed: false,
+    });
   }
 
   /** A pane leaves (unmounted): its context goes back. With `renderer`, only

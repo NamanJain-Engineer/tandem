@@ -708,7 +708,17 @@ export class DemoCore {
         return null;
       }
       case "thread_list":
+        // The demo has threads, not teammates (Agent mode stays empty there).
+        if (args?.kind === "teammate_chat") return [];
         return [...this.threads.values()].map((t) => t.thread);
+      case "teammate_list":
+        return [];
+      case "teammate_create":
+      case "teammate_draft_with_ai":
+        throw {
+          code: "unavailable",
+          message: "The browser demo doesn't make teammates. In the app you'd create one here.",
+        };
       case "thread_get":
         return this.detail(this.thread(args));
       case "thread_events": {
