@@ -1,8 +1,8 @@
 {
   "threads": {
-    "date": "2026-10-08T17:55:56.866Z",
+    "date": "2026-10-10T12:01:28.906Z",
     "machine": {
-      "os": "linux 6.18.44-fc-v80 (xvfb)",
+      "os": "linux 6.18.44-fc-v114 (xvfb)",
       "cpus": 4,
       "cpuModel": "Intel(R) Xeon(R) Processor @ 2.80GHz",
       "memGb": 16,
@@ -10,28 +10,28 @@
     },
     "metrics": {
       "threadOpenMs": {
-        "value": 221,
+        "value": 240,
         "target": 500,
         "op": "<=",
         "unit": "ms",
         "pass": true
       },
       "transcriptScrollFps": {
-        "value": 34.8,
+        "value": 37.4,
         "target": 55,
         "op": ">=",
         "unit": "fps",
         "pass": false
       },
       "olderPageMs": {
-        "value": 43,
+        "value": 62,
         "target": 99,
         "op": "<=",
         "unit": "ms",
         "pass": true
       },
       "bigFenceWorstFrameMs": {
-        "value": 165,
+        "value": 166,
         "target": 50,
         "op": "<=",
         "unit": "ms",
@@ -39,11 +39,11 @@
       }
     },
     "baseline": {
-      "coldFirstOpenMs": 1447,
-      "coldFirstWorstFrameMs": 1447,
-      "idleFps": 58.9,
-      "idleWorstFrameMs": 35,
-      "plainOpenWorstFrameMs": 76
+      "coldFirstOpenMs": 476,
+      "coldFirstWorstFrameMs": 569,
+      "idleFps": 55.4,
+      "idleWorstFrameMs": 113,
+      "plainOpenWorstFrameMs": 78
     }
   }
 }
