@@ -2,7 +2,10 @@
 //! stream-json on both sides. Repo settings can't grant anything
 //! (`--setting-sources user`), the only MCP servers are Vibezeo's
 //! (`--strict-mcp-config`), and tool permissions go to the gateway's
-//! `tandem_approvals__request`.
+//! `tandem_approvals__request`, or, for a thread on an SSH host or in WSL
+//! (which reaches no gateway), in band: `--permission-prompt-tool stdio`
+//! sends `can_use_tool` control requests on stdout and takes the answer on
+//! stdin, so the approval card works there too.
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -16,7 +19,8 @@ use chrono::{DateTime, FixedOffset};
 use regex::Regex;
 use serde_json::{json, Value};
 use tandem_core::access::{Access, ThreadMode};
-use tandem_core::approvals::ApprovalDecision;
+use tandem_core::allow_rules::ApprovalSubject;
+use tandem_core::approvals::{ApprovalDecision, ApprovalKind};
 use tandem_core::ids::{ApprovalId, TurnId};
 use tandem_core::limits;
 use tokio::sync::{mpsc, Notify};
@@ -74,6 +78,10 @@ pub fn args(req: &ChatStart) -> Vec<OsString> {
         a.push(cfg.into());
         a.push("--permission-prompt-tool".into());
         a.push(PERMISSION_TOOL.into());
+    } else if req.relocate.is_some() {
+        // No gateway where the engine runs: ask in band (F-RM-01).
+        a.push("--permission-prompt-tool".into());
+        a.push("stdio".into());
     }
     // The teammate briefing, from its file: a large one never reaches argv
     // (F-AG-06 AC2).
@@ -106,6 +114,59 @@ pub enum Parsed {
     Session(String),
     /// The engine answered an interrupt (or ended the turn).
     Ack,
+    /// A tool use Claude asks about in band (`--permission-prompt-tool
+    /// stdio`); answered with a `control_response` to `request_id`.
+    Permission {
+        request_id: String,
+        tool_name: String,
+        input: Value,
+    },
+}
+
+/// The approval card for a tool use Claude asks about: its kind, one-line
+/// summary ("Run `npm test`"), the redacted input as detail, and what an
+/// "Allow for this thread" rule matches on. The gateway's permission tool
+/// and the in-band path describe it the same way.
+pub fn approval_card(
+    tool_name: &str,
+    input: &Value,
+    cwd: &Path,
+) -> (ApprovalKind, String, String, ApprovalSubject) {
+    let what = arg_summary(tool_name, input, cwd);
+    let (kind, summary) = match tool_name {
+        "Bash" => (ApprovalKind::Command, format!("Run `{what}`")),
+        "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => {
+            (ApprovalKind::FileWrite, format!("Edit `{what}`"))
+        }
+        "WebFetch" => (ApprovalKind::Network, format!("Fetch `{what}`")),
+        "WebSearch" => (
+            ApprovalKind::Network,
+            format!("Search the web for `{what}`"),
+        ),
+        t if t.starts_with("mcp__") => (ApprovalKind::Mcp, format!("Use `{what}`")),
+        _ => (ApprovalKind::Other, format!("Use `{what}`")),
+    };
+    let detail = serde_json::to_string_pretty(input).unwrap_or_default();
+    let detail = tandem_core::redact::redact(&truncate_output(&detail).0);
+    let subject = match input.get("command").and_then(Value::as_str) {
+        Some(c) if tool_name == "Bash" => ApprovalSubject::Command(c.to_string()),
+        _ => ApprovalSubject::Tool(tool_name.to_string()),
+    };
+    (kind, summary, detail, subject)
+}
+
+/// The `control_response` that answers an in-band permission request.
+pub fn permission_reply(request_id: &str, input: &Value, decision: &ApprovalDecision) -> String {
+    let answer = match decision {
+        ApprovalDecision::Allow { .. } => json!({"behavior": "allow", "updatedInput": input}),
+        ApprovalDecision::Deny { reason } => json!({
+            "behavior": "deny",
+            "message": reason.as_deref().unwrap_or("Denied by the user"),
+        }),
+    };
+    json!({"type": "control_response", "response": {
+        "subtype": "success", "request_id": request_id, "response": answer}})
+    .to_string()
 }
 
 pub fn verb(tool: &str) -> ToolVerb {
@@ -208,8 +269,38 @@ impl ClaudeParser {
             "user" => self.tool_results(&v),
             "result" => self.result(&v, now),
             "control_response" => vec![Parsed::Ack],
+            "control_request" => self.control_request(&v),
             _ => Vec::new(),
         }
+    }
+
+    /// Claude asking us something: only `can_use_tool` (in-band
+    /// permissions) is answered; anything else is left alone.
+    fn control_request(&mut self, v: &Value) -> Vec<Parsed> {
+        let request = v.get("request");
+        if request
+            .and_then(|r| r.get("subtype"))
+            .and_then(Value::as_str)
+            != Some("can_use_tool")
+        {
+            return Vec::new();
+        }
+        let (Some(request_id), Some(tool_name)) = (
+            v.get("request_id").and_then(Value::as_str),
+            request
+                .and_then(|r| r.get("tool_name"))
+                .and_then(Value::as_str),
+        ) else {
+            return Vec::new();
+        };
+        vec![Parsed::Permission {
+            request_id: request_id.to_string(),
+            tool_name: tool_name.to_string(),
+            input: request
+                .and_then(|r| r.get("input"))
+                .cloned()
+                .unwrap_or_else(|| json!({})),
+        }]
     }
 
     fn system(&mut self, v: &Value) -> Vec<Parsed> {
@@ -523,6 +614,8 @@ impl ChatAdapter for ClaudeAdapter {
             turn: Arc::new(Mutex::new(None)),
             session_id: Arc::new(Mutex::new(req.resume_session.clone())),
             acked: Arc::new(Notify::new()),
+            asks: Arc::new(Mutex::new(HashMap::new())),
+            cwd: req.cwd.clone(),
         };
         let parser = ClaudeParser::new(
             req.cwd.clone(),
@@ -540,6 +633,10 @@ struct ClaudeSession {
     turn: Arc<Mutex<Option<TurnId>>>,
     session_id: Arc<Mutex<Option<String>>>,
     acked: Arc<Notify>,
+    /// In-band permission requests waiting on a card: approval id →
+    /// (Claude's request id, the tool input to hand back on Allow).
+    asks: Arc<Mutex<HashMap<String, (String, Value)>>>,
+    cwd: PathBuf,
 }
 
 impl ClaudeSession {
@@ -563,6 +660,36 @@ impl ClaudeSession {
             for p in parsed {
                 match p {
                     Parsed::Ack => self.acked.notify_waiters(),
+                    Parsed::Permission {
+                        request_id,
+                        tool_name,
+                        input,
+                    } => {
+                        let turn = lock(&self.turn).clone();
+                        let Some(turn_id) = turn else {
+                            // Nothing to show a card in: no.
+                            let deny = ApprovalDecision::Deny { reason: None };
+                            let _ = self
+                                .process
+                                .write_line(&permission_reply(&request_id, &input, &deny))
+                                .await;
+                            continue;
+                        };
+                        let (kind, summary, detail, subject) =
+                            approval_card(&tool_name, &input, &self.cwd);
+                        let id = ApprovalId::new();
+                        lock(&self.asks).insert(id.as_str().to_string(), (request_id, input));
+                        let _ = events
+                            .send(AdapterEvent::Approval {
+                                turn_id,
+                                id,
+                                kind,
+                                summary,
+                                detail,
+                                subject,
+                            })
+                            .await;
+                    }
                     Parsed::Session(id) => {
                         *lock(&self.session_id) = Some(id.clone());
                         let _ = events.send(AdapterEvent::SessionId(id)).await;
@@ -627,10 +754,17 @@ impl ChatSession for ClaudeSession {
 
     async fn resolve_approval(
         &self,
-        _id: &ApprovalId,
-        _decision: ApprovalDecision,
+        id: &ApprovalId,
+        decision: ApprovalDecision,
     ) -> Result<(), AdapterError> {
-        // Claude's approvals go through the gateway's permission tool.
+        // Gateway approvals are answered by the gateway; only in-band ones
+        // (threads on SSH hosts and in WSL) are waiting here.
+        let Some((request_id, input)) = lock(&self.asks).remove(id.as_str()) else {
+            return Ok(());
+        };
+        self.process
+            .write_line(&permission_reply(&request_id, &input, &decision))
+            .await?;
         Ok(())
     }
 

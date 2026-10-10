@@ -147,7 +147,9 @@ cargo test -p tandem-host --features e2e-ssh -- --include-ignored f_rm_01
 pnpm --filter desktop perf -- --suite threads               # perf suites (threads, terminals, startup); TANDEM_PERF_BUILD=debug
 pnpm --filter desktop build:demo                            # the browser demo → apps/web/public/demo/app/
 pnpm --filter web build:site                                # the public site (demo included) → apps/web/out
-TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run     # Linux .deb + AppImage → dist/
+TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run     # Linux .deb + AppImage → dist/ (builds tandem-host
+                                                            # for Linux x86_64 and aarch64 first; needs cargo-zigbuild)
+sh scripts/check-host-bundle.sh dist/<name>.deb             # the bundle carries tandem-host (release-local runs it)
 ```
 
 E2E lessons (each cost a debugging round):

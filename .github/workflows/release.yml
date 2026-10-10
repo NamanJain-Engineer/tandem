@@ -165,6 +165,8 @@ jobs:
             cp "$d/tandem-host" "apps/desktop/src-tauri/resources/tandem-host/$p/tandem-host"
           done
           TANDEM_HOST_PREBUILT=1 sh scripts/build-tandem-host.sh
+          # All three helpers, or SSH workspaces can't connect (F-RM-01).
+          cargo run -q -p tandem-host --example manifest -- --check apps/desktop/src-tauri/resources/tandem-host --require linux-x86_64,linux-aarch64,macos-universal
 
       - id: secrets
         name: Which signing secrets exist
@@ -208,6 +210,14 @@ jobs:
             ${{ steps.secrets.outputs.updater == 'true' && '--config {"bundle":{"createUpdaterArtifacts":true}}' || '' }}
             ${{ matrix.name == 'macos' && steps.secrets.outputs.apple != 'true' && '--config {"bundle":{"macOS":{"signingIdentity":"-"}}}' || '' }}
             ${{ matrix.name == 'windows' && steps.secrets.outputs.azure == 'true' && format('--config {{"bundle":{{"windows":{{"signCommand":"trusted-signing-cli -e {0} -a {1} -c {2} %1"}}}}}}', secrets.AZURE_SIGNING_ENDPOINT, secrets.AZURE_SIGNING_ACCOUNT, secrets.AZURE_CERT_PROFILE) || '' }}
+
+      - if: matrix.name == 'linux'
+        name: The Linux bundles carry tandem-host
+        shell: bash
+        run: |
+          for f in target/${{ matrix.target }}/release/bundle/deb/*.deb target/${{ matrix.target }}/release/bundle/appimage/*.AppImage; do
+            sh scripts/check-host-bundle.sh "$f" linux-x86_64,linux-aarch64,macos-universal
+          done
 
       - if: matrix.name == 'linux' && steps.secrets.outputs.gpg == 'true'
         name: Sign the AppImage (detached) and the deb
