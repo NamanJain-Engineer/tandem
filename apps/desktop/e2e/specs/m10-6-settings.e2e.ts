@@ -28,7 +28,11 @@ async function openTeammate(id: string): Promise<void> {
 
 async function save(): Promise<void> {
   await $('[data-testid="settings-save"]').click();
-  await $('[data-testid="save-bar"]').waitForExist({ reverse: true, timeout: 10_000 });
+  // The bar re-renders while it saves: poll the DOM rather than hold an element.
+  await browser.waitUntil(
+    async () => browser.execute(() => !document.querySelector('[data-testid="save-bar"]')),
+    { timeout: 10_000, timeoutMsg: "the Save bar stayed" },
+  );
 }
 
 async function tabOrder(): Promise<string[]> {

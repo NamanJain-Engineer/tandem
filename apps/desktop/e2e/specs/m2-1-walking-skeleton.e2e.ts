@@ -12,6 +12,7 @@ import {
   uniqueEmail,
   waitForApp,
   workspaceRoots,
+  resetToWelcome,
 } from "../support/app";
 
 // E2E-M2-1 Walking skeleton (MILESTONES M2).
@@ -25,6 +26,9 @@ describe("E2E-M2-1 walking skeleton", () => {
 
   it("launches fresh at sign-in, which passes axe", async () => {
     await waitForApp();
+    // The spec before may leave offline mode on (it survives relaunches):
+    // start from the signed-out welcome screen whatever ran first.
+    await resetToWelcome();
     await $("#signin-title").waitForDisplayed({ timeout: 20_000 });
     expect(await $("#signin-title").getText()).toBe("Welcome to Vibezeo");
     await expectNoSeriousA11yViolationsInBothThemes();

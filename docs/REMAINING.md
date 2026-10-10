@@ -63,19 +63,19 @@ history and dictionary, model download.
 ### M10 · Teammates and gateway core (XL) · 12 features (P1)
 Agent mode: persistent teammates with a brief, memory, skills, learning,
 session search and teammate-to-teammate mail, all over the single local gateway
-with leases.
-- [ ] F-PL-01 Gateway process (M7 built its skeleton, D-4; in progress in pull request #5)
-- [ ] F-AG-01 Teammate record
-- [ ] F-AG-02 Agent rail
-- [ ] F-AG-03 Teammate page and chats
-- [ ] F-AG-04 Create teammate
-- [ ] F-AG-05 Teammate settings
-- [ ] F-AG-06 Briefing assembly
-- [ ] F-AG-07 Memory
-- [ ] F-AG-08 Learn after a turn
-- [ ] F-AG-09 Skills
-- [ ] F-AG-11 Session search tool
-- [ ] F-AG-12 Teammate mail
+with leases. **Done in pull request #5** (branch `m10-teammates-gateway`), except F-DI-12's mic in "Create with AI", which completes after M8 merges (D-300).
+- [x] F-PL-01 Gateway process
+- [x] F-AG-01 Teammate record
+- [x] F-AG-02 Agent rail
+- [x] F-AG-03 Teammate page and chats
+- [x] F-AG-04 Create teammate
+- [x] F-AG-05 Teammate settings
+- [x] F-AG-06 Briefing assembly
+- [x] F-AG-07 Memory
+- [x] F-AG-08 Learn after a turn
+- [x] F-AG-09 Skills
+- [x] F-AG-11 Session search tool
+- [x] F-AG-12 Teammate mail
 
 Tasks: gateway; teammate record; briefing; memory (UI-73); skills (UI-74);
 session search; Agent rail (UI-70); teammate page and chats (UI-71); settings
