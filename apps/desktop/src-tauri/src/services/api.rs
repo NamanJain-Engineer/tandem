@@ -426,6 +426,31 @@ pub trait ApiClient: Send + Sync {
     ) -> Result<AutoNextResponse, ApiError> {
         Err(no_hosted_service())
     }
+    /// `POST /v1/voice/session` (F-CN-01): mints a Conductor call.
+    async fn voice_session(
+        &self,
+        _access: &str,
+        _voice: Option<&str>,
+    ) -> Result<tandem_voice::conductor::call::SessionGrant, ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `POST /v1/voice/act` (F-CN-02): one doer round.
+    async fn voice_act(
+        &self,
+        _access: &str,
+        _req: &tandem_voice::conductor::call::ActRequest,
+    ) -> Result<tandem_voice::conductor::call::ActResponse, ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `POST /v1/voice/session/{id}/settle` (F-CN-01): idempotent.
+    async fn voice_settle(
+        &self,
+        _access: &str,
+        _session_id: &str,
+        _seconds: u32,
+    ) -> Result<tandem_voice::conductor::call::Settlement, ApiError> {
+        Err(no_hosted_service())
+    }
     /// `POST /v1/stt/transcribe` (F-BE-07, for F-DI-05).
     async fn stt_transcribe(
         &self,
@@ -751,6 +776,54 @@ impl ApiClient for HttpApi {
             .post(self.url("/v1/auto/next"))
             .bearer_auth(access)
             .json(req);
+        self.call(req).await
+    }
+
+    async fn voice_session(
+        &self,
+        access: &str,
+        voice: Option<&str>,
+    ) -> Result<tandem_voice::conductor::call::SessionGrant, ApiError> {
+        let body = match voice {
+            Some(v) => serde_json::json!({ "voice": v }),
+            None => serde_json::json!({}),
+        };
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/voice/session"))
+            .bearer_auth(access)
+            .json(&body);
+        self.call(req).await
+    }
+
+    async fn voice_act(
+        &self,
+        access: &str,
+        req: &tandem_voice::conductor::call::ActRequest,
+    ) -> Result<tandem_voice::conductor::call::ActResponse, ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/voice/act"))
+            .bearer_auth(access)
+            .json(req);
+        self.call(req).await
+    }
+
+    async fn voice_settle(
+        &self,
+        access: &str,
+        session_id: &str,
+        seconds: u32,
+    ) -> Result<tandem_voice::conductor::call::Settlement, ApiError> {
+        let id: String = url::form_urlencoded::byte_serialize(session_id.as_bytes()).collect();
+        let req = self
+            .net
+            .client()
+            .post(self.url(&format!("/v1/voice/session/{id}/settle")))
+            .bearer_auth(access)
+            .json(&serde_json::json!({ "seconds": seconds }));
         self.call(req).await
     }
 

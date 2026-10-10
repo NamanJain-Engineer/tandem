@@ -280,6 +280,11 @@ static REGISTRY: &[CommandSpec] = &[
         ..same("terminal.jump_bottom", C::Terminal, None, E::PaneFocused)
     },
     same("billing.plans", C::App, None, E::Always),
+    // F-CN-01, F-CN-04: Conductor (UI_SPEC §5). On the Free plan the call
+    // command opens the plans instead.
+    same("conductor.call", C::App, Some("Mod+Shift+Space"), E::Always),
+    same("conductor.mute", C::App, Some("Mod+Shift+M"), E::Always),
+    same("conductor.log", C::App, Some("Mod+Shift+."), E::Always),
     // The cheatsheet (UI_SPEC §5, UI-113).
     aliased(
         "help.shortcuts",

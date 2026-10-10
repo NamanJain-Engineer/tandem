@@ -9,6 +9,7 @@ pub mod audit;
 pub mod auth;
 pub mod auto;
 pub mod boot;
+pub mod conductor;
 pub mod config;
 pub mod dashboard;
 pub mod data_controls;

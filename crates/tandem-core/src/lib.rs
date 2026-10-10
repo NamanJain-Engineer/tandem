@@ -36,6 +36,7 @@ pub mod supervisor;
 pub mod teammates;
 pub mod telemetry;
 pub mod untrusted;
+pub mod voice_tools;
 pub mod wslpath;
 
 pub use error::{CoreError, ErrorCode, IpcError};

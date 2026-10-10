@@ -254,6 +254,13 @@ macro_rules! app_commands {
             commands::limits::limits_list,
             commands::limits::limit_resume_at_reset,
             commands::limits::limit_resume_now,
+            commands::conductor::conductor_start_call,
+            commands::conductor::conductor_end_call,
+            commands::conductor::conductor_mute,
+            commands::conductor::conductor_confirm,
+            commands::conductor::conductor_state,
+            commands::conductor::conductor_call_log,
+            commands::conductor::conductor_call_delete,
             commands::auto::auto_start,
             commands::auto::auto_list,
             commands::auto::auto_pause,
@@ -576,6 +583,8 @@ fn spawn_background(state: &AppState) {
 /// Dictate (F-DI-*): events to the main window and the widget, the widget
 /// window itself, the tray, then the voice service (mic, hotkeys, model).
 fn setup_dictate(app: &tauri::App, state: &AppState) {
+    // Conductor shares the Dictate microphone (F-CN-08).
+    commands::conductor::install(app.handle());
     use services::dictate::To;
     let emit_app = app.handle().clone();
     state
@@ -730,6 +739,8 @@ pub fn run() {
         commands::test::test_plugin_price,
         commands::test::test_plugin_allowlist,
         commands::test::test_unattended_run,
+        commands::conductor::test_conductor_inject,
+        commands::conductor::test_conductor_clock,
     ]);
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(app_commands![]);

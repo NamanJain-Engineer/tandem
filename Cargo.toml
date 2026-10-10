@@ -55,6 +55,8 @@ sha2 = "0.10"
 tempfile = "3"
 thiserror = "2"
 tokio-util = "0.7"
+# The Conductor realtime client (ARCHITECTURE §12.6); TLS through rustls, as reqwest.
+tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
 tokio = { version = "1", features = ["sync", "rt", "rt-multi-thread", "macros", "time", "process", "io-util", "fs", "net"] }
 toml_edit = "0.25"
 tracing = "0.1"

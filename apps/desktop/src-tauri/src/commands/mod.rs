@@ -6,6 +6,7 @@ pub mod accounts;
 pub mod app;
 pub mod auto;
 pub mod browser;
+pub mod conductor;
 pub mod data_controls;
 pub mod dictate;
 pub mod engines;

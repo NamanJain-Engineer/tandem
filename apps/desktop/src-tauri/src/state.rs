@@ -111,6 +111,8 @@ pub struct AppState {
     pub approvals: Arc<crate::services::approvals::ApprovalService>,
     pub notifications: Arc<crate::services::notifications::NotificationService>,
     pub auto: Arc<crate::services::auto::AutoService>,
+    /// Conductor calls (F-CN-01…04).
+    pub conductor: Arc<crate::services::conductor::ConductorService>,
     /// Paused agents and their relaunch queue (F-SH-07).
     pub restore: Arc<crate::services::restore::RestoreService>,
     /// Auto-update and the minimum-version notice (F-SH-06).
@@ -695,6 +697,7 @@ impl AppState {
             approvals,
             notifications,
             auto,
+            conductor: crate::services::conductor::ConductorService::new(),
             restore,
             updates,
             config,

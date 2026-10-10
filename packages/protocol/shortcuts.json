@@ -360,6 +360,33 @@
     "enabledWhen": "always"
   },
   {
+    "id": "conductor.call",
+    "category": "app",
+    "mac": "Mod+Shift+Space",
+    "pc": "Mod+Shift+Space",
+    "pcTerminal": "Mod+Shift+Space",
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "conductor.mute",
+    "category": "app",
+    "mac": "Mod+Shift+M",
+    "pc": "Mod+Shift+M",
+    "pcTerminal": "Mod+Shift+M",
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
+    "id": "conductor.log",
+    "category": "app",
+    "mac": "Mod+Shift+.",
+    "pc": "Mod+Shift+.",
+    "pcTerminal": "Mod+Shift+.",
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
     "id": "help.shortcuts",
     "category": "help",
     "mac": "Mod+/",

@@ -16,6 +16,9 @@ tandem-git.workspace = true
 tandem-host.workspace = true
 tandem-pty.workspace = true
 tandem-tasks.workspace = true
+tandem-voice.workspace = true
+parking_lot.workspace = true
+tokio-util.workspace = true
 tandem-desktop = { path = "../../apps/desktop/src-tauri" }
 async-trait.workspace = true
 reqwest.workspace = true

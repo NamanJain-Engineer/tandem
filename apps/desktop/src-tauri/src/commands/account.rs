@@ -34,6 +34,16 @@ pub fn auth_cancel(state: State<'_, AppState>, op_id: String) {
 
 #[tauri::command]
 pub async fn auth_sign_out(state: State<'_, AppState>) -> Result<(), IpcError> {
+    // A call ends first, and settles while the session still can (F-CN-01).
+    if let Some(c) = state.conductor.controller() {
+        c.end_with(tandem_voice::conductor::call::EndReason::SignedOut);
+        for _ in 0..30 {
+            if !c.is_live() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
     state.auth.sign_out().await;
     // "Allow for this conversation" ends with the session (F-PL-06).
     state.gateway.forget_approvals(None);

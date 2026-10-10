@@ -156,7 +156,7 @@ export {
   resetAnnouncer,
 } from "./components/LiveAnnouncer";
 export { Tooltip, TooltipProvider, type TooltipProps } from "./components/Tooltip";
-export { WaveformRing, type WaveformRingProps, type WaveformState } from "./components/WaveformRing";
+export { WaveformRing, ringStats, type WaveformRingProps, type WaveformState } from "./components/WaveformRing";
 export { cx } from "./cx";
 export { isMac, shortcutCaps, shortcutLabel } from "./platform";
 export {
