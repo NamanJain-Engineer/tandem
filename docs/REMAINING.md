@@ -155,9 +155,9 @@ needs a Windows machine (manual QA in `HUMAN_TODO.md` until CI runs Windows).
 ### M15 · Website, docs, data controls and launch hardening (L) · 6 features (2 P0)
 Close every remaining P0 and P1 and every non-functional requirement. After
 this milestone the P0/P1 product is launchable.
-- [x] F-WB-01 Marketing site (P0; `/docs` arrives with F-WB-02; D-128, D-132)
+- [x] F-WB-01 Marketing site (P0; D-128, D-132)
 - [x] F-TL-06 Threat-model rules (P0; `tests/invariants`, one file per rule, D-131; rules 3, 4, 5, 7 and 8 gain cases as M8 and M10–M13, M16 build their paths)
-- [ ] F-WB-02 Docs
+- [x] F-WB-02 Docs (Fumadocs at /docs, tables generated from code; D-134)
 - [x] F-WB-03 Changelog (in-app "What's new" too; D-133)
 - [ ] F-WB-04 Downloads and machine-readable discovery
 - [ ] F-TL-05 Local data controls (export and delete)

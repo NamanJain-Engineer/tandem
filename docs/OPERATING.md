@@ -124,7 +124,8 @@ Checklists that bite if skipped:
 sh scripts/agent/with-infra.sh bash scripts/gate.sh     # the gate (G): lint, all tests, desktop build, clippy, fmt, protocol drift (~20 min)
 pnpm --filter desktop exec vitest run src/features/thread   # one area's TS tests
 cargo test -p tandem-desktop --lib f_th_16                  # Rust tests by name
-pnpm gen:protocol                                           # regenerate TS types + shortcuts.json
+pnpm gen:protocol                                           # regenerate TS types + shortcuts.json + settings.json
+pnpm gen:docs                                               # just the docs' generated sources (shortcuts, settings)
 
 # Desktop E2E (real Tauri binary via tauri-driver; builds first, ~10 min for all 60 files)
 sh scripts/agent/with-infra.sh dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e

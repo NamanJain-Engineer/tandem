@@ -990,6 +990,22 @@ mod tests {
         assert!(validate(k, &json!(["pane.split_right"])).is_err());
     }
 
+    /// `pnpm gen:protocol` / `gen:docs` (F-WB-02): writes every setting's
+    /// key, page and default to `TANDEM_SETTINGS_OUT` for the docs.
+    #[test]
+    fn export_settings() {
+        let Ok(out) = std::env::var("TANDEM_SETTINGS_OUT") else {
+            return;
+        };
+        let rows: Vec<_> = SCHEMA
+            .iter()
+            .filter(|s| s.page != SettingsPage::Hidden)
+            .map(|s| json!({ "key": s.key, "page": s.page, "default": (s.default)() }))
+            .collect();
+        let json = serde_json::to_string_pretty(&rows).expect("json");
+        std::fs::write(out, json + "\n").expect("write settings.json");
+    }
+
     #[test]
     fn privacy_toggles_default_off() {
         for key in [

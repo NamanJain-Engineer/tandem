@@ -12,6 +12,7 @@ export default tseslint.config(
       "**/dist/**",
       "**/.next/**",
       "apps/web/out/**",
+      "apps/web/.source/**",
       "apps/web/public/demo/app/**",
       "**/node_modules/**",
       "**/target/**",

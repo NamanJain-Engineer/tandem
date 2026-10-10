@@ -11,7 +11,8 @@
     "./team": "./src/team.ts",
     "./hosted-features.json": "./hosted-features.json",
     "./subprocessors.json": "./subprocessors.json",
-    "./changelog": "./src/changelog.ts"
+    "./changelog": "./src/changelog.ts",
+    "./settings.json": "./settings.json"
   },
   "scripts": {
     "test": "vitest run",
