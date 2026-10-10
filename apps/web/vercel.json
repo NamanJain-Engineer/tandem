@@ -7,9 +7,7 @@
   "git": {
     "deploymentEnabled": {
       "**": false,
-      "main": true,
-      "product-m0-m5": true,
-      "release-*": true
+      "main": true
     }
   },
   "rewrites": [
