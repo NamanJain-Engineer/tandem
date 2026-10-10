@@ -161,6 +161,12 @@ describe("UI-71 teammate page", () => {
         state: "connected",
         accountLabel: null,
         connectionId: "pc_1",
+        logo: "TE",
+        authKind: "none",
+        takesKey: false,
+        keyHint: null,
+        teammates: 0,
+        limitReached: false,
       },
       {
         pluginId: "test_down",
@@ -171,6 +177,12 @@ describe("UI-71 teammate page", () => {
         state: "available",
         accountLabel: null,
         connectionId: null,
+        logo: "TD",
+        authKind: "none",
+        takesKey: false,
+        keyHint: null,
+        teammates: 0,
+        limitReached: false,
       },
     ];
     calls = fakeBackend({

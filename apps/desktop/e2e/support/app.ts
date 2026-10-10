@@ -314,6 +314,12 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
       });
   }
   await invoke("settings_set", { key: "pause_all_mail", value: false });
+  // Plugins outlive specs too (M12): every connection goes, and its grants
+  // and held drafts with it; no Team allowlist fixture.
+  for (const c of await invoke<Array<{ connectionId: string | null }>>("plugins_catalog")) {
+    if (c.connectionId) await invoke("plugin_disconnect", { connectionId: c.connectionId });
+  }
+  await invoke("test_plugin_allowlist", { pluginIds: null });
   await invoke("auth_sign_out");
   // A first run has no engine accounts yet (the wizard's Accounts step, D-114).
   if (!onboarded) {

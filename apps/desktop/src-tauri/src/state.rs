@@ -134,6 +134,8 @@ pub struct AppState {
     pub routines: Arc<crate::services::routines::RoutinesService>,
     /// Task runs: attempts, the 4-run cap, reviews (F-TK-04).
     pub task_exec: Arc<crate::services::tasks_exec::TaskExecService>,
+    /// Plugins: connect flows, approvals, held drafts (F-PL-03..08).
+    pub plugins: Arc<crate::services::plugins::PluginService>,
     /// The Team org's audit events (F-TL-10).
     pub audit: Arc<crate::services::audit::AuditService>,
     pub deeplinks: DeepLinkQueue,
@@ -154,6 +156,8 @@ pub struct AppState {
     pub git_panel: Arc<crate::services::git_panel::GitPanelService>,
     /// Browser tabs and panes (F-CD-17), bound to the window in setup.
     pub browser: std::sync::OnceLock<Arc<crate::browser::BrowserService>>,
+    /// Dictate: push-to-talk, models, history and the dictionary (F-DI-*).
+    pub dictate: Arc<crate::services::dictate::DictateService>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
     pub e2e: bool,
 }
@@ -441,6 +445,29 @@ impl AppState {
             clock.clone(),
         );
         launcher.set_guard(audit.clone());
+        // Plugins (M12): credentials from the keychain, approvals in threads,
+        // held drafts, the Team allowlist.
+        let plugins = crate::services::plugins::PluginService::new(
+            store.clone(),
+            bus.clone(),
+            keychain.clone(),
+            opener.clone(),
+            notifications.clone(),
+            gateway.clone(),
+            entitlements.clone(),
+            config.clone(),
+            audit.clone(),
+        );
+        {
+            let weak: std::sync::Weak<dyn crate::services::plugins::ThreadAsk> =
+                Arc::downgrade(&threads) as _;
+            plugins.bind_threads(weak);
+        }
+        gateway.configure_plugins(
+            plugins.credentials().clone(),
+            net.clone(),
+            crate::services::plugins::Hooks(Arc::downgrade(&plugins)),
+        );
         // Thread titles: AI only with the Privacy opt-in (D-118).
         let titles_store = store.clone();
         threads.configure(
@@ -603,6 +630,8 @@ impl AppState {
             bus.clone(),
             crate::services::auto::AutoTiming::default(),
         ));
+        let dictate =
+            crate::services::dictate::DictateService::new(store.clone(), data.clone(), e2e);
         Self {
             data,
             store,
@@ -637,6 +666,7 @@ impl AppState {
             tasks,
             routines,
             task_exec,
+            plugins,
             teammates,
             teammate_tools: tools,
             learn,
@@ -644,6 +674,7 @@ impl AppState {
             files,
             git_panel,
             browser: std::sync::OnceLock::new(),
+            dictate,
             e2e,
         }
     }

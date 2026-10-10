@@ -1029,6 +1029,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn f_pl_05_1_a_new_teammate_has_no_plugin_grants_with_three_connected() {
+        use tandem_store::repo::plugins::{grants, insert_connection, set_grant, GrantSubject};
+        let (_d, svc) = service(None).await;
+        for id in ["test_echo", "test_upper", "test_down"] {
+            let c = insert_connection(&svc.store, id, Some("me"), "none")
+                .await
+                .expect("connect");
+            // Granting every thread doesn't grant teammates.
+            set_grant(&svc.store, &GrantSubject::AllThreads, &c.id, true)
+                .await
+                .expect("all threads");
+        }
+        let scout = svc.create(input("Scout", "claude")).await.expect("scout");
+        let mine = grants(
+            &svc.store,
+            &GrantSubject::Teammate {
+                teammate_id: scout.id.as_str().to_string(),
+            },
+        )
+        .await
+        .expect("grants");
+        assert!(mine.is_empty(), "{mine:?}");
+    }
+
+    #[tokio::test]
     async fn f_ag_01_1_scout_then_scout_is_refused_with_name_already_used() {
         let (_d, svc) = service(None).await;
         svc.create(input("Scout", "claude")).await.expect("scout");

@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "widget",
+  "description": "The Dictate widget window: its status, cancelling a take, its position and logs (ARCHITECTURE \u00a73.1).",
+  "windows": [
+    "dictate-widget"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-start-dragging",
+    "allow-dictate-status",
+    "allow-dictate-cancel-take",
+    "allow-dictate-widget-set-position",
+    "allow-app-log"
+  ]
+}

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-model-download"
+description = "Enables the dictate_model_download command without any pre-configured scope."
+commands.allow = ["dictate_model_download"]
+
+[[permission]]
+identifier = "deny-dictate-model-download"
+description = "Denies the dictate_model_download command without any pre-configured scope."
+commands.deny = ["dictate_model_download"]

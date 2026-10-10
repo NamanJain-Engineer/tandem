@@ -255,8 +255,13 @@
     "page": "dictate"
   },
   {
-    "default": "hold",
-    "key": "dictate_mode",
+    "default": null,
+    "key": "dictate_toggle_hotkey",
+    "page": "dictate"
+  },
+  {
+    "default": true,
+    "key": "dictate_latch",
     "page": "dictate"
   },
   {
@@ -285,22 +290,22 @@
     "page": "dictate"
   },
   {
-    "default": 100,
+    "default": "off",
     "key": "dictate_gain",
     "page": "dictate"
   },
   {
-    "default": "while_dictating",
+    "default": "while_recording",
     "key": "dictate_widget_visibility",
     "page": "dictate"
   },
   {
-    "default": "pill",
+    "default": "logo_text",
     "key": "dictate_widget_style",
     "page": "dictate"
   },
   {
-    "default": false,
+    "default": true,
     "key": "dictate_follow_cursor",
     "page": "dictate"
   },
@@ -338,6 +343,11 @@
     "default": false,
     "key": "dictate_share_hints",
     "page": "privacy"
+  },
+  {
+    "default": "forever",
+    "key": "dictate_keep_history",
+    "page": "dictate"
   },
   {
     "default": "Conductor",

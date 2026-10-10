@@ -411,7 +411,9 @@ pub async fn test_plugin_connect(
             .await?;
     state.gateway.refresh_connections().await;
     // `plugins:changed` (F-PL-03): the new connection's card.
-    if let Some(card) = crate::commands::plugins::catalog(&state)
+    if let Some(card) = state
+        .plugins
+        .catalog()
         .await?
         .into_iter()
         .find(|c| c.connection_id.as_ref() == Some(&conn.id))
@@ -468,4 +470,228 @@ pub async fn test_routines_tick(
         .into_iter()
         .map(|r| r.as_str().to_string())
         .collect())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum TestKeyWhich {
+    Hold,
+    Toggle,
+    Esc,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum TestKeyPhase {
+    Down,
+    Up,
+}
+
+fn dictate_fakes(state: &AppState) -> Result<&crate::services::dictate::Fakes, IpcError> {
+    guard(state)?;
+    state
+        .dictate
+        .fakes
+        .as_ref()
+        .ok_or_else(|| IpcError::new(ErrorCode::Unavailable, "no fakes"))
+}
+
+/// Presses or releases the bound shortcut through the fake hotkey source.
+#[tauri::command]
+pub fn test_dictate_key(
+    state: State<'_, AppState>,
+    which: TestKeyWhich,
+    phase: TestKeyPhase,
+) -> Result<bool, IpcError> {
+    use tandem_voice::hotkey::{Phase, Which};
+    let fakes = dictate_fakes(&state)?;
+    let which = match which {
+        TestKeyWhich::Hold => Which::Hold,
+        TestKeyWhich::Toggle => Which::Toggle,
+        TestKeyWhich::Esc => Which::Esc,
+    };
+    let phase = match phase {
+        TestKeyPhase::Down => Phase::Down,
+        TestKeyPhase::Up => Phase::Up,
+    };
+    Ok(fakes.hotkeys.send(which, phase))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "source", rename_all = "snake_case")]
+#[ts(export)]
+pub enum TestMicSource {
+    Wav { path: String },
+    Silence,
+    Zeros,
+}
+
+/// What the fake microphone plays from the next take on.
+#[tauri::command]
+pub fn test_dictate_mic(state: State<'_, AppState>, source: TestMicSource) -> Result<(), IpcError> {
+    use tandem_voice::capture::FakeSource;
+    guard(&state)?;
+    let source = match source {
+        TestMicSource::Wav { path } => {
+            let (samples, rate) = tandem_voice::audio::read_wav(std::path::Path::new(&path))
+                .map_err(|e| IpcError::new(ErrorCode::NotFound, e.to_string()))?;
+            FakeSource::Samples {
+                samples: std::sync::Arc::new(samples),
+                rate,
+                speed: 1,
+            }
+        }
+        TestMicSource::Silence => FakeSource::Samples {
+            samples: std::sync::Arc::new(crate::services::dictate::dither(16_000 * 30)),
+            rate: 16_000,
+            speed: 1,
+        },
+        TestMicSource::Zeros => FakeSource::Zeros,
+    };
+    state.dictate.test_mic(source)
+}
+
+/// The recording insertion backend: its calls, what each paste typed and
+/// the clipboard; optionally reconfigured first.
+#[tauri::command]
+pub fn test_dictate_platform(
+    state: State<'_, AppState>,
+    clear: Option<bool>,
+    target: Option<tandem_voice::insert::Target>,
+    no_target: Option<bool>,
+    fail_focus: Option<bool>,
+    fail_paste: Option<bool>,
+    clipboard: Option<String>,
+) -> Result<crate::services::dictate::FakePlatformView, IpcError> {
+    use tandem_voice::insert::fake::Call;
+    use tandem_voice::insert::Clip;
+    let p = &dictate_fakes(&state)?.platform;
+    if clear.unwrap_or(false) {
+        p.clear_calls();
+    }
+    if let Some(t) = target {
+        p.set_target(Some(t));
+    }
+    if no_target.unwrap_or(false) {
+        p.set_target(None);
+    }
+    if let Some(f) = fail_focus {
+        p.fail_focus(f);
+    }
+    if let Some(f) = fail_paste {
+        p.fail_paste(f);
+    }
+    if let Some(c) = clipboard {
+        p.set_clipboard(Clip::Text(c));
+    }
+    Ok(crate::services::dictate::FakePlatformView {
+        calls: p
+            .calls()
+            .iter()
+            .map(|c| match c {
+                Call::CaptureTarget => "capture_target".to_string(),
+                Call::RestoreFocus(w) => format!("restore_focus:{w}"),
+                Call::Paste { terminal } => {
+                    format!("paste:{}", if *terminal { "terminal" } else { "text" })
+                }
+                Call::ReadClipboard => "read_clipboard".into(),
+                Call::WriteClipboard(_) => "write_clipboard".into(),
+                Call::RestoreClipboard => "restore_clipboard".into(),
+            })
+            .collect(),
+        pasted: p.pasted(),
+        clipboard: match p.clipboard() {
+            Clip::Text(t) => Some(t),
+            _ => None,
+        },
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TestWidget {
+    pub visible: bool,
+    pub x: i32,
+    pub y: i32,
+}
+
+/// The widget window as the OS sees it.
+#[tauri::command]
+pub fn test_dictate_widget(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<TestWidget, IpcError> {
+    use tauri::Manager;
+    guard(&state)?;
+    let w = app
+        .get_webview_window(crate::services::widget::LABEL)
+        .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "no widget window"))?;
+    let pos = w.outer_position().unwrap_or_default();
+    Ok(TestWidget {
+        visible: w.is_visible().unwrap_or(false),
+        x: pos.x,
+        y: pos.y,
+    })
+}
+
+/// What `test_echo__charge` costs now (F-PL-06 AC2: the amount changes
+/// between approval and execution).
+#[tauri::command]
+pub fn test_plugin_price(state: State<'_, AppState>, cents: i64) -> Result<(), IpcError> {
+    guard(&state)?;
+    #[cfg(feature = "test-vendors")]
+    tandem_gateway::vendors::test_echo::set_price(cents);
+    #[cfg(not(feature = "test-vendors"))]
+    let _ = cents;
+    Ok(())
+}
+
+/// A Team allowlist fixture (F-PL-05 AC2), as if the org's policy listed
+/// these plugin ids; `null` clears it.
+#[tauri::command]
+pub fn test_plugin_allowlist(
+    state: State<'_, AppState>,
+    plugin_ids: Option<Vec<String>>,
+) -> Result<(), IpcError> {
+    guard(&state)?;
+    state.plugins.set_allowlist_fixture(plugin_ids);
+    Ok(())
+}
+
+/// An unattended run's thread, as a routine run would start one (M11's
+/// runner calls the same `set_unattended_origin`): Edits, no one there.
+#[tauri::command]
+pub async fn test_unattended_run(
+    state: State<'_, AppState>,
+    workspace_id: tandem_core::ids::WorkspaceId,
+    routine_id: String,
+    run_id: String,
+) -> Result<tandem_store::repo::threads::ThreadRecord, IpcError> {
+    guard(&state)?;
+    let ws = tandem_store::repo::workspaces::get(&state.store, &workspace_id)
+        .await
+        .map_err(|e| IpcError::new(ErrorCode::NotFound, e.to_string()))?;
+    let thread = state
+        .threads
+        .create(tandem_store::repo::threads::NewThread {
+            id: tandem_core::ids::ThreadId::new(),
+            kind: tandem_store::repo::threads::ThreadKind::Thread,
+            workspace_id: Some(workspace_id),
+            cwd: ws.root,
+            engine_id: "claude".into(),
+            account_id: None,
+            model: None,
+            effort: None,
+            access: tandem_core::access::Access::Edits,
+            mode: tandem_core::access::ThreadMode::Act,
+            attended: false,
+        })
+        .await?;
+    state
+        .gateway
+        .set_unattended_origin(&thread.id, &format!("routine:{routine_id}:{run_id}"));
+    Ok(thread)
 }
