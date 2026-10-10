@@ -2,12 +2,25 @@
 
 The public site is the static export of `apps/web` (D-102): Home, About, Privacy, Terms, Security, a 404 page, `robots.txt`, `sitemap.xml` and `/.well-known/security.txt`. It needs no server, database or API, and is hosted on Vercel.
 
-Vercel deploys it from `main`. Every push to `main` that changes `apps/web`, `packages/ui`, `packages/protocol`, the desktop interface (`apps/desktop/src`, `demo.html`, `vite.demo.config.ts`, `package.json`) or `pnpm-lock.yaml` updates the live site. Other pushes are skipped by the rule in `apps/web/vercel.json`.
+Vercel deploys it from `main`. Every push to `main` that changes `apps/web`, `packages/ui`, `packages/protocol`, the desktop interface (`apps/desktop/src`, `demo.html`, `vite.demo.config.ts`, `package.json`) or `pnpm-lock.yaml` updates the live site. Other pushes are skipped by the rule in `apps/web/vercel.json` (`ignoreCommand`).
 
-The live demo at `/demo/app/` is the desktop interface built for the browser against a simulated core (`apps/desktop/src/demo`, D-126). `build:site` builds it first (`pnpm --filter desktop build:demo`, into `apps/web/public/demo/app/`, which git ignores), so Vercel installs the desktop app's dependencies too (`--filter desktop...`). It's the only page with scripts; they're first-party and make no network requests. Other branches get preview deployments, which Vercel's Deployment Protection keeps behind a Vercel login.
+**Which branches build.**
+- Production builds `main`.
+- Preview deployments are built only for `product-m0-m5` and `release-*` branches, the ones whose site someone checks before a release.
+- Pushes to any other branch are skipped. Vercel lists them as "Canceled" with the message "Only main, product-m0-m5 and release-* deploy". Each feature branch's site is checked by its local gate instead.
+
+**Why the rule is written as it is.**
+- Vercel clones only the last few commits. When the commit of the last deployment isn't in that clone (after a large merge), the rule builds instead of letting `git diff` fail with "bad object".
+- Many parallel branches would otherwise also use up the plan's daily deployment allowance.
+
+**Node.** `apps/web/package.json` pins Node 22 (`engines`), which overrides the project's Node setting. The demo's Vite build needs Node 20.19+ or 22.12+.
+
+The live demo at `/demo/app/` is the desktop interface built for the browser against a simulated core (`apps/desktop/src/demo`, D-126). `build:site` builds it first (`pnpm --filter desktop build:demo`, into `apps/web/public/demo/app/`, which git ignores), so Vercel installs the desktop app's dependencies too (`--filter desktop...`). It's the only page with scripts; they're first-party and make no network requests. Preview deployments (`product-m0-m5`, `release-*`) stay behind a Vercel login (Deployment Protection).
 
 ```bash
 pnpm --filter web build:site     # writes apps/web/out
+# exactly what Vercel runs, from apps/web:
+pnpm install --frozen-lockfile --filter web... --filter desktop... && pnpm build:site
 ```
 
 - **Content:** company, founder, contact email and optional legal details (registered name, CIN, address, city) live in `apps/web/lib/site.ts`.

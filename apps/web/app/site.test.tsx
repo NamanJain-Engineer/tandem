@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ReactElement } from "react";
@@ -285,6 +286,24 @@ describe("public site", () => {
     expect(csp).toContain("default-src 'self'");
     expect(csp).not.toMatch(/https?:/);
     expect(header("X-Content-Type-Options")).toBe("nosniff");
+  });
+
+  it("F-WB-01 Vercel's ignore step builds main, product-m0-m5 and release-* only, and builds when the last deployed commit isn't in its shallow clone (D-809)", () => {
+    const web = join(import.meta.dirname, "..");
+    const { ignoreCommand } = JSON.parse(readFileSync(join(web, "vercel.json"), "utf8")) as { ignoreCommand: string };
+    // Vercel runs the step in the Root Directory: exit 0 skips, 1 builds.
+    const step = (ref: string, previous = "") =>
+      spawnSync("sh", ["-c", ignoreCommand], {
+        cwd: web,
+        env: { ...process.env, VERCEL_GIT_COMMIT_REF: ref, VERCEL_GIT_PREVIOUS_SHA: previous },
+      }).status;
+    expect(step("m10-teammates-gateway")).toBe(0);
+    expect(step("product-m0-m5")).toBe(1);
+    expect(step("release-0.3.0")).toBe(1);
+    // A commit Vercel's clone doesn't have builds instead of failing on "bad object".
+    expect(step("main", "0123456789abcdef0123456789abcdef01234567")).toBe(1);
+    const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: web, encoding: "utf8" }).stdout.trim();
+    expect(step("main", head)).toBe(0);
   });
 
   it("F-WB-01 robots, sitemap and security.txt point at the site", () => {
