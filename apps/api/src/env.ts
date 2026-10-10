@@ -40,6 +40,11 @@ const schema = z.object({
   STT_API_KEY: z.string().optional(),
   STT_API_BASE: z.string().optional(),
   STT_MODEL: z.string().optional(),
+  /** Conductor's realtime voice (F-BE-08): `openai` needs OPENAI_API_KEY; `mock` mints dev tokens. */
+  REALTIME_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_API_BASE: z.string().optional(),
+  REALTIME_MODEL: z.string().optional(),
   /** Team SSO over SAML through WorkOS (F-BL-06 P2, D-625); unset means OIDC only. */
   WORKOS_CLIENT_ID: z.string().optional(),
   WORKOS_API_KEY: z.string().optional(),
