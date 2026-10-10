@@ -1,6 +1,7 @@
 import { Badge } from "@tandem/ui/components/Badge";
 import type { Metadata } from "next";
 import { SiteFrame } from "../../components/site/SiteFrame";
+import { releaseAssets } from "../../lib/manifest";
 import { CHECKSUMS_URL, DOWNLOADS, RELEASE, RELEASE_URL, assetUrl } from "../../lib/release";
 import { SITE } from "../../lib/site";
 
@@ -22,6 +23,7 @@ const LIMITS = [
 const OS_NOTE = '<p data-os-note="" hidden class="mb-4 text-md text-fg"></p>';
 
 export default function DownloadPage() {
+  const assets = releaseAssets();
   return (
     <SiteFrame>
       <section className="mx-auto flex max-w-6xl flex-col items-start gap-4 px-6 pb-8 pt-16">
@@ -83,6 +85,16 @@ export default function DownloadPage() {
                     </a>
                   ))}
                 {d.available && (
+                  <dl className="flex flex-col gap-1 text-xs text-fg-muted">
+                    {(assets.get(d.os) ?? []).map((a) => (
+                      <div key={a.file} data-sha256={a.file} className="flex flex-col gap-0.5">
+                        <dt>SHA-256 of {a.file}</dt>
+                        <dd className="break-all font-mono text-fg">{a.sha256}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+                {d.available && (
                   <ol className="flex flex-col gap-1.5 border-t border-divider pt-4 text-sm text-fg-muted">
                     {d.steps.map((s) => (
                       <li key={s} className="ml-4 list-decimal">
@@ -96,11 +108,12 @@ export default function DownloadPage() {
           })}
         </ul>
         <p className="mt-4 text-sm text-fg-muted">
-          Check a download against{" "}
+          The .deb isn&apos;t code-signed, so the checksum is how you confirm it&apos;s ours: compare the
+          output of <code className="font-mono">sha256sum</code> with the value above, or with{" "}
           <a href={CHECKSUMS_URL} className="text-accent hover:underline">
             SHA256SUMS
           </a>
-          : the .deb isn&apos;t code-signed, so the checksum is how you confirm it&apos;s ours.
+          .
         </p>
       </section>
 

@@ -159,7 +159,7 @@ this milestone the P0/P1 product is launchable.
 - [x] F-TL-06 Threat-model rules (P0; `tests/invariants`, one file per rule, D-131; rules 3, 4, 5, 7 and 8 gain cases as M8 and M10–M13, M16 build their paths)
 - [x] F-WB-02 Docs (Fumadocs at /docs, tables generated from code; D-134)
 - [x] F-WB-03 Changelog (in-app "What's new" too; D-133)
-- [ ] F-WB-04 Downloads and machine-readable discovery
+- [x] F-WB-04 Downloads and machine-readable discovery (D-135)
 - [ ] F-TL-05 Local data controls (export and delete)
 
 Tasks: marketing site; docs; changelog; downloads and discovery; data

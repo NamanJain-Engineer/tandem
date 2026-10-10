@@ -10,7 +10,10 @@ test.beforeEach(async ({ context }) => {
   await context.route(/\.(webm|mp4)$/, (route) => route.fulfill({ status: 204, body: "" }));
 });
 
-test("F-WB-01 AC2 F-WB-02 no page (docs included) requests another origin, sets a cookie or stores anything", async ({ page, context }) => {
+test("F-WB-01 AC2 F-WB-02 no page (docs included) requests another origin, sets a cookie or stores anything", async ({
+  page,
+  context,
+}) => {
   const origins = new Set<string>();
   page.on("request", (r) => origins.add(new URL(r.url()).origin));
   for (const path of [...SITE_PAGES, ...DOCS_PAGES.map((p) => docsPath(p.slug))]) {
@@ -19,14 +22,24 @@ test("F-WB-01 AC2 F-WB-02 no page (docs included) requests another origin, sets 
     const stored = await page.evaluate(() => [localStorage.length, sessionStorage.length, document.cookie]);
     expect(stored, path).toEqual([0, 0, ""]);
   }
-  expect([...origins].filter((o) => o !== "null" && !o.startsWith("data:"))).toEqual([new URL(page.url()).origin]);
+  expect([...origins].filter((o) => o !== "null" && !o.startsWith("data:"))).toEqual([
+    new URL(page.url()).origin,
+  ]);
   expect(await context.cookies()).toEqual([]);
 });
 
 for (const [os, ua, says] of [
   ["Linux", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.36", "You're on Linux"],
-  ["macOS", "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 Chrome/126 Safari/537.36", "There's no macOS build yet"],
-  ["Windows", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36", "There's no Windows build yet"],
+  [
+    "macOS",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 Chrome/126 Safari/537.36",
+    "There's no macOS build yet",
+  ],
+  [
+    "Windows",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36",
+    "There's no Windows build yet",
+  ],
 ] as const) {
   test(`F-WB-01 /download names ${os} and keeps the Linux build the only button`, async ({ browser }) => {
     const context = await browser.newContext({ userAgent: ua });

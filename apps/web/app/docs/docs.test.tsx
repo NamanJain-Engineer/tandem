@@ -32,7 +32,9 @@ describe("docs (F-WB-02)", () => {
   it("F-WB-02.2 every Settings page has a docs anchor, and every setting is listed under its page", () => {
     const h = html(<DOCS_COMPONENTS.SettingsReference />);
     const pages = new Set(settings.map((s) => s.page));
-    for (const p of Object.keys(labels).filter((k) => /^settings\.[a-z]+$/.test(k)).map((k) => k.slice(9)))
+    for (const p of Object.keys(labels)
+      .filter((k) => /^settings\.[a-z]+$/.test(k))
+      .map((k) => k.slice(9)))
       if (DOCS_SETTINGS_PAGES.includes(p)) pages.add(p);
     for (const p of pages) expect(h, p).toContain(`id="settings-${p}"`);
     for (const s of settings) expect(h, s.key).toContain(`<code>${s.key}</code>`);
@@ -69,7 +71,8 @@ describe("docs (F-WB-02)", () => {
 
   it("F-WB-02 engines and platforms come from the registry and the release", () => {
     const engines = html(<DOCS_COMPONENTS.EnginesTable />);
-    for (const id of ["claude", "codex", "gemini", "cursor-agent", "aider"]) expect(engines).toContain(`data-engine="${id}"`);
+    for (const id of ["claude", "codex", "gemini", "cursor-agent", "aider"])
+      expect(engines).toContain(`data-engine="${id}"`);
     expect(html(<DOCS_COMPONENTS.PlatformMatrix />)).toContain("Linux");
   });
 
@@ -84,7 +87,9 @@ describe("docs (F-WB-02)", () => {
   });
 
   it("F-WB-02 the sidebar lists the pages in DOCS_PAGES order", () => {
-    const meta = JSON.parse(readFileSync(join(import.meta.dirname, "../../content/docs/meta.json"), "utf8")) as {
+    const meta = JSON.parse(
+      readFileSync(join(import.meta.dirname, "../../content/docs/meta.json"), "utf8"),
+    ) as {
       pages: string[];
     };
     expect(meta.pages).toEqual(DOCS_PAGES.map((p) => p.slug || "index"));
