@@ -6019,7 +6019,7 @@ dependencies = [
 
 [[package]]
 name = "tandem-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -6051,7 +6051,7 @@ dependencies = [
 
 [[package]]
 name = "tandem-desktop"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "aes-gcm",
  "async-trait",
@@ -6111,7 +6111,7 @@ dependencies = [
 
 [[package]]
 name = "tandem-engines"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -6138,7 +6138,7 @@ dependencies = [
 
 [[package]]
 name = "tandem-gateway"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -6167,7 +6167,7 @@ dependencies = [
 
 [[package]]
 name = "tandem-git"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "git2",
@@ -6183,7 +6183,7 @@ dependencies = [
 
 [[package]]
 name = "tandem-host"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "base64 0.22.1",
  "hex",
@@ -6201,7 +6201,7 @@ dependencies = [
 
 [[package]]
 name = "tandem-invariants"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -6214,6 +6214,7 @@ dependencies = [
  "tandem-git",
  "tandem-host",
  "tandem-pty",
+ "tandem-store",
  "tandem-tasks",
  "tempfile",
  "tokio",
@@ -6223,7 +6224,7 @@ dependencies = [
 
 [[package]]
 name = "tandem-pty"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dashmap",
  "libc",
@@ -6245,7 +6246,7 @@ dependencies = [
 
 [[package]]
 name = "tandem-routines"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -6261,7 +6262,7 @@ dependencies = [
 
 [[package]]
 name = "tandem-store"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "futures",
  "hex",
@@ -6280,7 +6281,7 @@ dependencies = [
 
 [[package]]
 name = "tandem-tasks"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -6298,7 +6299,7 @@ dependencies = [
 
 [[package]]
 name = "tandem-voice"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "aho-corasick",
  "arboard",

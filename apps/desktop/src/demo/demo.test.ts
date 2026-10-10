@@ -5,9 +5,14 @@ import type {
   DashboardItem,
   EntitlementView,
   GitPanel,
+  Issue,
+  IssueSummary,
   PaneRecord,
   ScratchNote,
   TabLayout,
+  TaskDetail,
+  TaskPage,
+  TasksMeta,
   Thread,
   ThreadChanges,
   ThreadDetail,
@@ -250,6 +255,44 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     }
     expect(error.code).toBe("unavailable");
     expect(error.message).toContain("running on your computer");
+  });
+
+  it("F-TK-03 the demo keeps tasks in the page: quick add, edits with revisions and history, comments, archive", () => {
+    core = new DemoCore(0);
+    const page = () => core?.handle("tasks_list", { filter: { include_archived: false }, cursor: null }) as TaskPage<IssueSummary>;
+    expect(page()).toEqual({ items: [], next_cursor: null });
+    expect((core.handle("tasks_meta", {}) as TasksMeta).statuses).toContain("in_review");
+    const a = core.handle("task_save", { input: { title: "  Fix the login redirect ", status: "todo" } }) as Issue;
+    expect([a.id, a.title, a.revision, a.status]).toEqual(["TAN-1", "Fix the login redirect", 1, "todo"]);
+    const b = core.handle("task_save", { input: { id: a.id, status: "in_progress", expected_revision: 1 } }) as Issue;
+    expect(b.revision).toBe(2);
+    // A save on an old revision is refused, as the app refuses it.
+    expect(() => core?.handle("task_save", { input: { id: a.id, title: "x", expected_revision: 1 } })).toThrow();
+    core.handle("task_comment", { id: a.id, body: "Repro in staging", parentId: null });
+    const detail = core.handle("task_get", { id: a.id }) as TaskDetail;
+    expect(detail.history.map((h) => [h.field, h.to])).toEqual([["status", "in_progress"]]);
+    expect(detail.comments.map((c) => c.body)).toEqual(["Repro in staging"]);
+    core.handle("task_archive", { id: a.id, expectedRevision: 2 });
+    expect(page().items).toEqual([]);
+    core.handle("task_restore", { id: a.id, expectedRevision: 3 });
+    expect(page().items.map((i) => i.id)).toEqual(["TAN-1"]);
+  });
+
+  it("F-DI-01 F-PL-03 the demo says Dictate and plugins need the app, instead of pretending to", () => {
+    core = new DemoCore(0);
+    for (const [cmd, words] of [
+      ["dictate_status", "microphone"],
+      ["plugins_catalog", "your own accounts"],
+    ] as const) {
+      let error: { code?: string; message?: string } = {};
+      try {
+        core.handle(cmd, {});
+      } catch (e) {
+        error = e as typeof error;
+      }
+      expect(error.code, cmd).toBe("unavailable");
+      expect(error.message, cmd).toContain(words);
+    }
   });
 
   it("demo the sample world: three workspaces, Claude Code, Codex and Gemini CLI panes, and the Dashboard's states", () => {

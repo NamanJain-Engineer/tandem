@@ -244,7 +244,7 @@ describe("public site", () => {
   it("F-WB-01 the changelog lists every closed milestone", () => {
     const h = html(<ChangelogPage />);
     for (const m of MILESTONES) expect(h).toContain(`id="${m.id.toLowerCase()}"`);
-    expect(MILESTONES.map((m) => m.id)).toEqual(["M10", "M9", "M7", "M6", "M5", "M4", "M3", "M2", "M1", "M0"]);
+    expect(MILESTONES.map((m) => m.id)).toEqual(["M14", "M12", "M11", "M10", "M9", "M8", "M7", "M6", "M5", "M4", "M3", "M2", "M1", "M0"]);
   });
 
   it("F-WB-01 every page has one h1, the legal links and the contact address", () => {
@@ -357,6 +357,14 @@ describe("public site", () => {
     expect(step("main", "0123456789abcdef0123456789abcdef01234567")).toBe(1);
     const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: web, encoding: "utf8" }).stdout.trim();
     expect(step("main", head)).toBe(0);
+  });
+
+  it("F-WB-01 only main creates Vercel deployments, one per release (D-829)", () => {
+    const config = JSON.parse(readFileSync(join(import.meta.dirname, "../vercel.json"), "utf8")) as {
+      git?: { deploymentEnabled?: Record<string, boolean> };
+    };
+    // Minimatch rules; a branch deploys when any rule that matches it is true.
+    expect(config.git?.deploymentEnabled).toEqual({ "**": false, main: true });
   });
 
   it("F-WB-01 robots, sitemap and security.txt point at the site", () => {

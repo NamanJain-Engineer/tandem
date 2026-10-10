@@ -3,6 +3,8 @@
  * /pricing from `packages/protocol/src/plans.ts` and checks it against the
  * API's config (F-WB-01 AC3). */
 
+import { LIMITS } from "@tandem/protocol/plans";
+
 export type PlanFeature = { text: string; planned?: boolean };
 
 export type Plan = {
@@ -41,7 +43,7 @@ export const PLANS: readonly Plan[] = [
     trial: "7-day free trial · 14-day money-back on the first charge",
     features: [
       { text: "Everything in Free" },
-      { text: "Unlimited panes and workspaces" },
+      { text: `Up to ${LIMITS.pro.panes} live panes, and unlimited workspaces` },
       { text: "Thread mode with every chat engine: Cursor Agent, Grok and OpenCode too" },
       { text: "Up to 6 threads side by side" },
       { text: "Several accounts per engine" },

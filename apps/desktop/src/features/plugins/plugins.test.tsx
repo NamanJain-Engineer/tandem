@@ -461,3 +461,23 @@ describe("F-PL-05 plugins for this thread (F-TH-07)", () => {
     });
   });
 });
+
+describe("F-PL-03 a build without plugins (the browser demo)", () => {
+  beforeEach(() => {
+    resetStores();
+    fakeBackend({
+      plugins_catalog: () => {
+        throw { code: "unavailable", message: "Plugins sign in to your own accounts, so they don't connect inside this demo." };
+      },
+      held_drafts_list: () => [],
+    });
+  });
+
+  it("F-PL-03 says why there are no plugins, as information with nothing to retry", async () => {
+    ui(<PluginsPage />);
+    const note = await screen.findByTestId("plugins-unavailable");
+    expect(note.textContent).toContain("your own accounts");
+    expect(within(note).queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});

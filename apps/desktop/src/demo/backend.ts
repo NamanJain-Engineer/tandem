@@ -26,6 +26,7 @@ import type {
   ThreadEventEnvelope,
   ThreadEventPage,
   ThreadsChanged,
+  SaveIssue,
   Turn,
   WorkspaceSummary,
 } from "@tandem/protocol";
@@ -35,6 +36,7 @@ import { FrameKind, encodeFrame, type FrameChannel } from "../ipc/pty";
 import { DEMO_CHANGES, afterAllow, afterDeny, chatTurn, fixTurn, planText, planTurn, type Step } from "./agent";
 import { DemoFiles, NO_GIT } from "./files";
 import { DemoNotes } from "./notes";
+import { DemoTasks } from "./tasks";
 import { DemoShell, agentScreen } from "./shell";
 import { version } from "../../package.json";
 
@@ -320,6 +322,8 @@ export class DemoCore {
   /** The Files tab's made-up project (in memory). */
   readonly files = new DemoFiles();
   readonly notes = new DemoNotes();
+  /** The Tasks tab, kept in the page (F-TK-03). */
+  readonly tasks = new DemoTasks();
   private ids = 0;
   private timers = new Set<ReturnType<typeof setTimeout>>();
 
@@ -879,8 +883,13 @@ export class DemoCore {
       case "find_work":
         throw {
           code: "unavailable",
-          message: "Find work searches the terminals and threads running on your computer, so the demo has nothing to search.",
+          message: "Find work searches the terminals, threads and teammates running on your computer, so the demo has nothing to search.",
         };
+      // Teammates' engines run on your computer (F-AG-10, F-AG-13).
+      case "teammate_launch_in_terminal":
+        throw { code: "unavailable", message: "The demo has no engines to launch. In the app, the teammate opens in a terminal pane." };
+      case "skill_sync":
+        throw { code: "unavailable", message: "The demo has no engines to install skills for." };
       // A web page can't hold other pages the way the app's browser does.
       case "ssh_host_add":
       case "ssh_connect":
@@ -898,6 +907,31 @@ export class DemoCore {
       case "editor_tabs_save":
         this.files.saveTabs(args?.state as EditorTabs);
         return null;
+      // Tasks are a Free feature of the download, so the demo keeps them in
+      // the page. Running one is Pro, which the download doesn't have.
+      case "tasks_meta":
+        return this.tasks.meta();
+      case "tasks_list":
+        return this.tasks.list(Boolean((args?.filter as { include_archived?: boolean } | undefined)?.include_archived));
+      case "task_get":
+        return this.tasks.get(String(args?.id ?? ""));
+      case "task_save":
+        return this.tasks.save((args?.input ?? {}) as SaveIssue);
+      case "task_comment":
+        return this.tasks.comment(String(args?.id ?? ""), String(args?.body ?? ""), typeof args?.parentId === "string" ? args.parentId : null);
+      case "task_archive":
+      case "task_restore":
+        return this.tasks.setArchived(
+          String(args?.id ?? ""),
+          cmd === "task_archive",
+          typeof args?.expectedRevision === "number" ? args.expectedRevision : undefined,
+        );
+      // Dictate and plugins reach past the browser: the microphone and other
+      // apps, and the user's own accounts.
+      case "dictate_status":
+        throw { code: "unavailable", message: "Dictate listens to your microphone and types into your other apps, so it works in the app, not in this demo." };
+      case "plugins_catalog":
+        throw { code: "unavailable", message: "Plugins sign in to your own accounts, so they don't connect inside this demo. In the app, this page lists them." };
       case "scratchpad_list":
         return this.notes.list();
       case "scratchpad_read":

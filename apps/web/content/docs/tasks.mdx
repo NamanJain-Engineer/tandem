@@ -3,6 +3,16 @@ title: Tasks
 description: A local task tracker your agents read and write.
 ---
 
-> **Not in the app yet.** Tasks isn't in the current release. This page describes what is being built (M11 in the build plan), and it will be filled in when it ships. [The changelog](/changelog/) says what each release contains.
+Tasks is a task tracker stored on your computer, in the app's data folder. Open it from the sidebar's **Tasks** tab, from **Tasks** at the foot of Agent mode's rail, or with **Open Tasks** in the command palette.
 
-Tasks is a task tracker stored on your computer. Agents read and update it over an MCP server, and on Pro a task can be run in its own lane.
+- **Tasks** have an ID (TAN-1, TAN-2…), a title, a description, a status (Backlog, To do, In progress, In review, Done or Canceled), a priority, labels, an assignee and a project, with threaded comments and a history of every change.
+- **Quick add** puts a task in To do. The list groups tasks by status. Archive a task with its ×, and bring it back from **Show archived**.
+- **Edits from anyone show up at once.** When an agent or another window changes a task you're editing, its other fields update and your unsaved text stays. If they changed the same field, Vibezeo says so and you choose **Keep mine** or **Take theirs**.
+
+## Agents
+
+Agents in your threads and teammate chats read and update the same tasks through Vibezeo's tasks server, and so do Claude Code and Codex in terminal panes. Every change lands in the task's history with who made it, so you can see what an agent did. Threads on an SSH host or in WSL don't get the tasks server: it runs on this computer.
+
+## Plans
+
+Tracking tasks is free. Running a task for you, in its own lane with progress posted as comments and an optional review, by a different engine when you have one, is part of Pro, which comes with Vibezeo accounts. The current download runs the Free plan, so it doesn't run tasks.

@@ -3,8 +3,9 @@
 # `bundle.externalBin` (apps/desktop/src-tauri/tauri.sidecars.conf.json)
 # looks: src-tauri/binaries/<name>-<target-triple>[.exe]. Tauri installs each
 # beside the app's executable without the suffix, which is where the app
-# looks for it (services::tasks::tasks_bin; TANDEM_TASKS_BIN overrides it in
-# debug builds).
+# looks for it: tandem-tasks (services::tasks::tasks_bin; TANDEM_TASKS_BIN in
+# debug builds) and tandem-hook, the engines' status hook
+# (services::engines::hook_bin; TANDEM_HOOK_BIN in debug builds, D-828).
 #
 #   sh scripts/build-sidecars.sh x86_64-unknown-linux-gnu
 #   sh scripts/build-sidecars.sh universal-apple-darwin   # both arches, lipo'd
@@ -16,6 +17,7 @@ mkdir -p "$out"
 
 build() {
   (cd "$root" && cargo build --release -p tandem-tasks --bin tandem-tasks --target "$1")
+  (cd "$root" && cargo build --release -p tandem-engines --bin tandem-hook --target "$1")
   # The wake-phrase keyword spotter (F-CN-07) runs beside the app.
   (cd "$root" && cargo build --release -p tandem-voice --features kws --bin tandem-wake --target "$1")
 }
@@ -43,5 +45,6 @@ case "$target" in
   *) build "$target" ;;
 esac
 place tandem-tasks
+place tandem-hook
 place tandem-wake
 echo "sidecars: $out"
