@@ -298,6 +298,7 @@
     "allow-pane-move",
     "allow-pty-spawn",
     "allow-pty-attach",
+    "allow-pty-park",
     "allow-pty-write",
     "allow-pty-ack",
     "allow-pty-resize",

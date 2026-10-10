@@ -7,7 +7,7 @@
 // loosened here.
 import { browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { cpus, release, totalmem } from "node:os";
 import { join } from "node:path";
 import {
@@ -16,6 +16,7 @@ import {
   invoke,
   mod,
   paneIds,
+  relaunch,
   sendToPane,
   waitForApp,
   waitForPaneText,
@@ -120,9 +121,11 @@ async function settledMb(): Promise<number> {
   return last;
 }
 
-/** Opens PANES shells, fills each past its scrollback, moves them to a
- * background tab and returns what each added pane costs (MB). */
-async function perBackgroundPane(): Promise<number> {
+/** Opens PANES shells, fills each past its scrollback and moves them to a
+ * background tab (or, with `hiddenFill`, moves them first and fills them
+ * there, as a background agent does), then returns what each added pane
+ * costs (MB). */
+async function perBackgroundPane(hiddenFill = false): Promise<number> {
   await addFolder(`/tmp/tandem-perf-memory-${Date.now()}`);
   await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
   const [ws] = await invoke<Array<{ id: string; tabs: Array<{ id: string }> }>>("workspace_list");
@@ -149,10 +152,15 @@ async function perBackgroundPane(): Promise<number> {
   await waitForApp();
   await browser.waitUntil(async () => (await paneIds()).length === PANES, { timeout: 30_000 });
   for (const id of ids) await waitForPaneText(id, "#", 30_000);
-  for (const id of ids) {
-    await sendToPane(id, `seq 1 ${SCROLLBACK_LINES * 2}; echo full-$((6*7))\r`);
+  const done = `/tmp/tandem-perf-filled-${Date.now()}`;
+  const fill = async () => {
+    for (const id of ids)
+      await sendToPane(id, `seq 1 ${SCROLLBACK_LINES * 2}; echo full-$((6*7)); touch ${done}-${id}\r`);
+  };
+  if (!hiddenFill) {
+    await fill();
+    for (const id of ids) await waitForPaneText(id, "full-42", 120_000);
   }
-  for (const id of ids) await waitForPaneText(id, "full-42", 120_000);
   // A new tab puts the four panes in the background.
   await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
   await browser.keys([mod(), "t"]);
@@ -165,6 +173,25 @@ async function perBackgroundPane(): Promise<number> {
       )) === 0,
     { timeout: 30_000, timeoutMsg: "background panes kept their WebGL contexts" },
   );
+  // And after 30 s, their xterm instances (§5.1, D-139).
+  await browser.waitUntil(
+    async () => {
+      const parked = (await browser.execute(() =>
+        (window as unknown as { __tandemTest: { parkedPanes: () => string[] } }).__tandemTest.parkedPanes(),
+      )) as string[];
+      return ids.every((id) => parked.includes(id));
+    },
+    { timeout: 60_000, timeoutMsg: "background panes never parked" },
+  );
+  if (hiddenFill) {
+    await fill();
+    // Parked panes show nothing: each shell marks when its output is done.
+    await browser.waitUntil(() => ids.every((id) => existsSync(`${done}-${id}`)), {
+      timeout: 120_000,
+      timeoutMsg: "the hidden panes never finished filling",
+    });
+    for (const id of ids) rmSync(`${done}-${id}`, { force: true });
+  }
   const after = await settledMb();
   // Conservative: the growth covers three new panes and four full
   // scrollbacks (the first pane's too), divided by the three added.
@@ -204,15 +231,27 @@ describe("perf: memory", () => {
 
   it("§5.1 each background pane with full scrollback ≤ (lines × 200 B) + 2 MB", async function () {
     this.timeout(600_000);
+    // Each measurement starts a new app: WebKit keeps its heap at its high
+    // point, so a second run in the same process would look cheaper.
+    await relaunch();
+    await freshOffline();
     record("perBackgroundPaneMb", await perBackgroundPane(), "<=", BUDGET_MB, "MB");
   });
 
   it("§5.1 the same with GPU rendering off (xterm's own memory, no WebGL)", async function () {
     this.timeout(600_000);
+    await relaunch();
     await freshOffline();
     await invoke("settings_set", { key: "term_gpu_rendering", value: "off" });
     record("perBackgroundPaneNoGpuMb", await perBackgroundPane(), "<=", BUDGET_MB, "MB");
     await invoke("settings_set", { key: "term_gpu_rendering", value: "auto" });
+  });
+
+  it("§5.1 the same for panes that fill while in the background (they park first, D-139)", async function () {
+    this.timeout(600_000);
+    await relaunch();
+    await freshOffline();
+    record("perBackgroundPaneHiddenFillMb", await perBackgroundPane(true), "<=", BUDGET_MB, "MB");
   });
 
   it("§5.1 every memory budget measured here is met", () => {

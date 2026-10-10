@@ -102,4 +102,19 @@ describe("command marks (F-CD-10)", () => {
     s.advance(IDLE_AFTER_MS * 2);
     expect(s.activity).toEqual(["working", "idle", "working", "working"]);
   });
+
+  it("NFR-5.1 F-CD-10 parking reads the open prompt and the running command's prompt", () => {
+    const s = setup();
+    expect(s.marks.state()).toEqual({ prompt: undefined, running: undefined });
+    s.at(3);
+    s.marks.mark("A");
+    expect(s.marks.state()).toEqual({ prompt: 3, running: undefined });
+    s.marks.mark("C");
+    expect(s.marks.state()).toEqual({ prompt: undefined, running: 3 });
+    s.at(9);
+    s.marks.mark("D;0");
+    expect(s.marks.state()).toEqual({ prompt: undefined, running: undefined });
+    s.marks.mark("A");
+    expect(s.marks.state()).toEqual({ prompt: 9, running: undefined });
+  });
 });
