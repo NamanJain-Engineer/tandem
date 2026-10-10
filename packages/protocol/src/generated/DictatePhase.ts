@@ -3,4 +3,4 @@
 /**
  * What the widget and the composers show (`dictate:state`).
  */
-export type DictatePhase = "idle" | "listening" | "transcribing" | "inserted" | "copied" | "error" | "reconnecting";
+export type DictatePhase = "idle" | "listening" | "transcribing" | "inserted" | "copied" | "error" | "reconnecting" | "enhancing" | "polishing";

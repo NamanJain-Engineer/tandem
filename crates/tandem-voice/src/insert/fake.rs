@@ -13,6 +13,7 @@ pub enum Call {
     ReadClipboard,
     WriteClipboard(String),
     RestoreClipboard,
+    Undo,
 }
 
 struct Inner {
@@ -103,6 +104,14 @@ impl Platform for FakePlatform {
         } else {
             Ok(())
         }
+    }
+
+    fn undo(&self) -> Result<(), InsertError> {
+        let mut i = self.inner.lock();
+        i.calls.push(Call::Undo);
+        // The field loses what was pasted last.
+        i.pasted.pop();
+        Ok(())
     }
 
     fn paste(&self, terminal: bool) -> Result<(), InsertError> {

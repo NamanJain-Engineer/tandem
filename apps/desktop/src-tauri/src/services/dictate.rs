@@ -25,6 +25,7 @@ use tandem_voice::capture::{
     AudioBackend, AudioService, CaptureConfig, CaptureEvent, FakeAudioBackend, FakeSource,
 };
 use tandem_voice::chimes::{ChimePlayer, SilentPlayer};
+use tandem_voice::cloud::EngineChoice;
 use tandem_voice::devices::{self, DeviceInfo, MicPrefs};
 use tandem_voice::dictate::{
     Dictate, DictateConfig, DictateDeps, DictatePhase, DictateSink, DictateStateEvent,
@@ -39,7 +40,7 @@ use tandem_voice::insert::{MissingTools, Output, Platform};
 use tandem_voice::media::PauseMedia;
 use tandem_voice::models::{Catalog, DownloadProgress, Downloader, ModelError, ModelStore};
 use tandem_voice::stt::{self, EngineSlot, Switch};
-use tandem_voice::take::Origin;
+use tandem_voice::take::{Origin, TakeState};
 
 /// Where an event goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,6 +126,10 @@ pub struct DictateStatus {
     pub theme: String,
     pub widget_style: String,
     pub lock_position: bool,
+    /// Show Enhance and Polish after a take (the setting, on a paid plan).
+    pub quick_actions: bool,
+    /// F-DI-10's one-time disclosure was shown.
+    pub enhance_disclosed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -673,6 +678,12 @@ struct Shared {
     widget: OnceLock<Arc<dyn WidgetHost>>,
     widget_gen: Arc<std::sync::atomic::AtomicU64>,
     visibility: Mutex<String>,
+    /// The current take came from `tandem://dictate/toggle`: the widget shows
+    /// even with "Show widget: Hidden" (D-515).
+    link_take: AtomicBool,
+    /// The widget shows Enhance and Polish after a take, so it stays up long
+    /// enough to click them (D-517).
+    quick_actions: AtomicBool,
     switch: OnceLock<Arc<dyn Fn(String) + Send + Sync>>,
 }
 
@@ -688,7 +699,23 @@ impl Shared {
     /// (4 s after "Copied", 6 s after an error).
     fn widget_for(&self, e: &DictateStateEvent) {
         let Some(w) = self.widget.get() else { return };
-        let vis = self.visibility.lock().clone();
+        let mut vis = self.visibility.lock().clone();
+        // A take started from outside the app is never invisible (D-515).
+        if self.link_take.load(Ordering::Acquire) && e.composer.is_none() {
+            if !matches!(
+                e.state,
+                DictatePhase::Listening
+                    | DictatePhase::Transcribing
+                    | DictatePhase::Reconnecting
+                    | DictatePhase::Enhancing
+                    | DictatePhase::Polishing
+            ) {
+                self.link_take.store(false, Ordering::Release);
+            }
+            if vis == "hidden" {
+                vis = "while_recording".into();
+            }
+        }
         let gen = self.widget_gen.fetch_add(1, Ordering::AcqRel) + 1;
         if vis == "hidden" || e.composer.is_some() {
             if vis != "always" {
@@ -697,9 +724,16 @@ impl Shared {
             return;
         }
         let hide_after = match e.state {
-            DictatePhase::Listening | DictatePhase::Transcribing | DictatePhase::Reconnecting => {
+            DictatePhase::Listening
+            | DictatePhase::Transcribing
+            | DictatePhase::Reconnecting
+            | DictatePhase::Enhancing
+            | DictatePhase::Polishing => {
                 w.show();
                 None
+            }
+            DictatePhase::Inserted if self.quick_actions.load(Ordering::Acquire) => {
+                Some(Duration::from_secs(4))
             }
             DictatePhase::Inserted => Some(Duration::from_secs(1)),
             DictatePhase::Copied => Some(Duration::from_secs(4)),
@@ -753,7 +787,12 @@ impl DictateSink for Sink {
             id: take.id.as_str().to_string(),
             created_at: tandem_store::now_ms(),
             text: take.text,
-            engine: "local".into(),
+            engine: if take.model == "cloud" {
+                "cloud"
+            } else {
+                "local"
+            }
+            .into(),
             model: take.model,
             word_count: take.word_count,
             duration_ms: take.duration_ms,
@@ -861,6 +900,24 @@ pub struct DictateService {
     hotkey_status: Mutex<HotkeyStatus>,
     previews: Mutex<HashMap<String, Vec<Rule>>>,
     started: AtomicBool,
+    /// The plan check and the relay call for cloud takes (F-DI-05).
+    cloud: OnceLock<(PlanFn, crate::services::dictate_cloud::SttCall)>,
+    rewriter: OnceLock<crate::services::dictate_cloud::RewriteCall>,
+}
+
+fn clamp_chars(s: &str, max: usize) -> String {
+    s.chars().take(max).collect()
+}
+
+pub type PlanFn = Arc<dyn Fn() -> tandem_core::entitlement::Plan + Send + Sync>;
+
+/// Whether `tandem://dictate/toggle` may start or stop a take (D-515): only
+/// where it's the documented fallback, a Wayland session or a Linux desktop
+/// whose global shortcut is unavailable. Browsers open `tandem://` links (after
+/// a prompt the user can tick away), so anywhere else a web page could start a
+/// take and have the transcript pasted into its own focused field.
+pub fn deep_link_toggle_allowed(session: &str, hotkey_unavailable: bool, linux: bool) -> bool {
+    linux && (session == "wayland" || hotkey_unavailable)
 }
 
 fn session() -> String {
@@ -937,6 +994,8 @@ impl DictateService {
                 widget: OnceLock::new(),
                 widget_gen: Arc::new(std::sync::atomic::AtomicU64::new(0)),
                 visibility: Mutex::new("while_recording".into()),
+                link_take: AtomicBool::new(false),
+                quick_actions: AtomicBool::new(false),
                 switch: OnceLock::new(),
             }),
             catalog,
@@ -952,6 +1011,8 @@ impl DictateService {
             hotkey_status: Mutex::new(HotkeyStatus::NotRunning),
             previews: Mutex::new(HashMap::new()),
             started: AtomicBool::new(false),
+            cloud: OnceLock::new(),
+            rewriter: OnceLock::new(),
         })
     }
 
@@ -990,7 +1051,80 @@ impl DictateService {
             pause_media: self.setting(SettingKey::DictatePauseMedia, false).await,
             language: (lang != "auto").then_some(lang),
             latch: self.setting(SettingKey::DictateLatch, true).await,
+            engine: if self
+                .setting::<String>(SettingKey::DictateEngine, "local".into())
+                .await
+                == "cloud"
+            {
+                EngineChoice::Cloud
+            } else {
+                EngineChoice::Local
+            },
+            share_hints: self.setting(SettingKey::DictateShareHints, false).await,
+            auto_enhance: self.setting(SettingKey::DictateAutoEnhance, false).await,
+            formatting: self
+                .setting::<Option<String>>(SettingKey::DictateFormatting, None)
+                .await
+                .map(|t| clamp_chars(&t, 2_000))
+                .filter(|t| !t.trim().is_empty()),
+            formatting_apps: self
+                .setting::<serde_json::Map<String, Value>>(
+                    SettingKey::DictateFormattingApps,
+                    serde_json::Map::new(),
+                )
+                .await
+                .into_iter()
+                .filter_map(|(app, v)| {
+                    let text = clamp_chars(v.as_str()?, 2_000);
+                    (!app.trim().is_empty() && !text.trim().is_empty()).then_some((app, text))
+                })
+                .collect(),
         }
+    }
+
+    /// Gives cloud takes their plan check and relay call (set before `start`).
+    pub fn set_cloud(&self, plan: PlanFn, call: crate::services::dictate_cloud::SttCall) {
+        let _ = self.cloud.set((plan, call));
+    }
+
+    /// Gives Enhance and Polish their relay call (set before `start`; the
+    /// plan check is the cloud's).
+    pub fn set_rewriter(&self, call: crate::services::dictate_cloud::RewriteCall) {
+        let _ = self.rewriter.set(call);
+    }
+
+    fn plan(&self) -> tandem_core::entitlement::Plan {
+        self.cloud
+            .get()
+            .map(|(plan, _)| plan())
+            .unwrap_or(tandem_core::entitlement::Plan::Free)
+    }
+
+    /// Records that F-DI-10's disclosure was shown.
+    pub async fn mark_enhance_disclosed(&self) -> Result<(), IpcError> {
+        settings::set(
+            &self.store,
+            SettingKey::DictateEnhanceDisclosed,
+            json!(true),
+        )
+        .await?;
+        self.emit(
+            "settings:changed",
+            json!({ "key": "dictate_enhance_disclosed", "value": true }),
+            To::Main,
+        );
+        self.emit_status().await;
+        Ok(())
+    }
+
+    /// "Enhance" / "Polish" after a take (F-DI-10).
+    pub fn quick_action(&self, mode: tandem_voice::cloud::RewriteMode) -> bool {
+        self.controller().is_some_and(|c| c.quick_action(mode))
+    }
+
+    /// "Use local for this take" (F-DI-05).
+    pub fn use_local(&self) -> bool {
+        self.controller().is_some_and(|c| c.use_local())
     }
 
     async fn capture_config(&self) -> CaptureConfig {
@@ -1024,6 +1158,41 @@ impl DictateService {
 
     pub fn controller(&self) -> Option<&Dictate> {
         self.controller.get()
+    }
+
+    /// `tandem://dictate/toggle` (F-DI-01 "Deep link"): honoured only where
+    /// it's the documented fallback (D-515); elsewhere it's logged and ignored.
+    /// True when it reached the controller.
+    pub fn toggle_from_link(&self) -> bool {
+        let unavailable = matches!(*self.hotkey_status.lock(), HotkeyStatus::Unavailable { .. });
+        self.toggle_from_link_in(&session(), unavailable, cfg!(target_os = "linux"))
+    }
+
+    fn toggle_from_link_in(&self, session: &str, unavailable: bool, linux: bool) -> bool {
+        if !deep_link_toggle_allowed(session, unavailable, linux) {
+            tracing::warn!(
+                code = "dictate.deep_link_refused",
+                session,
+                "ignored tandem://dictate/toggle: the global shortcut works here"
+            );
+            return false;
+        }
+        let Some(c) = self.controller() else {
+            return false;
+        };
+        // Here the link is the documented trigger, not a key the verifier can
+        // hear: reaching the controller through it verifies the setup (F-DI-11).
+        Sink(self.shared.clone()).verified();
+        self.shared.link_take.store(true, Ordering::Release);
+        c.toggle();
+        // Refused at once (no model, Dictate off) or a stop: nothing to show.
+        if matches!(
+            c.state(),
+            TakeState::Idle | TakeState::Cancelled | TakeState::Done
+        ) {
+            self.shared.link_take.store(false, Ordering::Release);
+        }
+        true
     }
 
     /// Opens everything: called once from the app's setup.
@@ -1075,6 +1244,24 @@ impl DictateService {
                 chimes,
                 media: if self.e2e { None } else { media },
                 sink: Arc::new(Sink(shared.clone())),
+                cloud: self.cloud.get().map(|(plan, call)| {
+                    Arc::new(crate::services::dictate_cloud::HostedStt::new(
+                        plan.clone(),
+                        call.clone(),
+                        tokio::runtime::Handle::current(),
+                    )) as Arc<dyn tandem_voice::cloud::CloudStt>
+                }),
+                rewriter: match (self.cloud.get(), self.rewriter.get()) {
+                    (Some((plan, _)), Some(call)) => Some(Arc::new(
+                        crate::services::dictate_cloud::HostedRewriter::new(
+                            plan.clone(),
+                            call.clone(),
+                            tokio::runtime::Handle::current(),
+                        ),
+                    )
+                        as Arc<dyn tandem_voice::cloud::Rewriter>),
+                    _ => None,
+                },
             },
             self.config().await,
         );
@@ -1216,6 +1403,12 @@ impl DictateService {
             .setting(SettingKey::DictateWidgetStyle, "logo_text".to_string())
             .await;
         let lock_position = self.setting(SettingKey::DictateLockPosition, false).await;
+        let quick_actions = self.setting(SettingKey::DictateQuickActions, true).await
+            && self.rewriter.get().is_some()
+            && self.plan() != tandem_core::entitlement::Plan::Free;
+        self.shared
+            .quick_actions
+            .store(quick_actions, Ordering::Release);
         let mic_id = devices::choose(&devices, &prefs);
         let active = self.engine.current_id();
         let session = session();
@@ -1238,11 +1431,17 @@ impl DictateService {
                 label: t.label(os),
             }),
             latch,
-            deep_link_command: (session == "wayland" || unavailable && cfg!(target_os = "linux"))
-                .then(|| "xdg-open tandem://dictate/toggle".to_string()),
+            deep_link_command: deep_link_toggle_allowed(
+                &session,
+                unavailable,
+                cfg!(target_os = "linux"),
+            )
+            .then(|| "xdg-open tandem://dictate/toggle".to_string()),
             session,
             mic: mic_id.and_then(|id| devices.into_iter().find(|d| d.id == id)),
-            engine: "local".into(),
+            engine: self
+                .setting::<String>(SettingKey::DictateEngine, "local".into())
+                .await,
             model: active
                 .as_deref()
                 .and_then(|id| self.catalog.get(id))
@@ -1260,13 +1459,17 @@ impl DictateService {
                 .controller
                 .get()
                 .map(|c| c.state())
-                .unwrap_or(tandem_voice::take::TakeState::Idle),
+                .unwrap_or(TakeState::Idle),
             missing_tools: self.platform.missing_tools(),
             can_pause_media: !cfg!(windows),
             restores_clipboard: self.platform.restores_clipboard(),
             theme,
             widget_style,
             lock_position,
+            quick_actions,
+            enhance_disclosed: self
+                .setting(SettingKey::DictateEnhanceDisclosed, false)
+                .await,
         }
     }
 
@@ -1464,6 +1667,8 @@ impl DictateService {
                     app: None,
                     model: Some(name(&best)),
                     previous: Some(name(&wanted)),
+                    message: None,
+                    actions: Vec::new(),
                     detail: format!("{wanted} isn't in the models folder."),
                 }),
                 To::Main,
@@ -1552,6 +1757,8 @@ impl DictateService {
                             app: None,
                             model: Some(model.name.clone()),
                             previous: Some(name(&prev)),
+                            message: None,
+                            actions: Vec::new(),
                             detail: err.to_string(),
                         }),
                         To::Main,
@@ -2103,6 +2310,105 @@ mod tests {
         fn hide(&self) {
             self.0.lock().push(false);
         }
+    }
+
+    #[test]
+    fn d_515_the_toggle_link_is_honoured_only_where_it_is_the_fallback() {
+        // Wayland: the portal can't bind every key, so the link is documented.
+        assert!(deep_link_toggle_allowed("wayland", false, true));
+        // X11 or no session with the shortcut unavailable: the fallback too.
+        assert!(deep_link_toggle_allowed("x11", true, true));
+        assert!(deep_link_toggle_allowed("none", true, true));
+        // A working global shortcut, or any other OS: a web page's link.
+        assert!(!deep_link_toggle_allowed("x11", false, true));
+        assert!(!deep_link_toggle_allowed("mac", false, false));
+        assert!(!deep_link_toggle_allowed("mac", true, false));
+        assert!(!deep_link_toggle_allowed("windows", true, false));
+    }
+
+    #[tokio::test]
+    async fn d_515_a_refused_link_reaches_nothing_and_an_allowed_one_reaches_the_controller() {
+        let dir = tempfile::tempdir().expect("dir");
+        let data = DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = Store::open(&data).expect("store");
+        let svc = DictateService::new(store, data, true);
+        // Every take event and toast the controller sends.
+        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+        let log = seen.clone();
+        svc.set_emitter(Arc::new(move |name: &str, _v: Value, _to: To| {
+            if name == "dictate:state" || name == "dictate:toast" {
+                log.lock().push(name.to_string());
+            }
+        }));
+        svc.start().await;
+        assert!(!svc.toggle_from_link_in("x11", false, true));
+        assert!(!svc.toggle_from_link_in("mac", false, false));
+        assert!(!svc.toggle_from_link_in("windows", true, false));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(
+            seen.lock().is_empty(),
+            "a refused link reaches nothing: {:?}",
+            seen.lock()
+        );
+        assert!(!svc.shared.link_take.load(Ordering::Acquire));
+        assert!(
+            !svc.setting(SettingKey::DictateHotkeyVerified, false).await,
+            "a refused link verifies nothing"
+        );
+        // Allowed: the controller acts (with no model here it answers with
+        // "Download a model", which is still the take being asked for).
+        assert!(svc.toggle_from_link_in("wayland", false, true));
+        let mut acted = false;
+        for _ in 0..50 {
+            if !seen.lock().is_empty() {
+                acted = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(acted, "the allowed link reaches the controller");
+        // In the fallback mode the link verifies the setup (F-DI-11).
+        let mut verified = false;
+        for _ in 0..50 {
+            if svc.setting(SettingKey::DictateHotkeyVerified, false).await {
+                verified = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(verified, "an allowed link marks the shortcut verified");
+        if let Some(c) = svc.controller() {
+            c.cancel();
+        }
+    }
+
+    #[test]
+    fn d_515_a_link_take_shows_the_widget_even_when_hidden() {
+        let dir = tempfile::tempdir().expect("dir");
+        let data = DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = Store::open(&data).expect("store");
+        let svc = DictateService::new(store, data, true);
+        let w = Arc::new(FakeWidget(Mutex::new(Vec::new())));
+        svc.set_widget(w.clone());
+        *svc.shared.visibility.lock() = "hidden".into();
+        let ev = |state| DictateStateEvent {
+            state,
+            take_id: None,
+            hands_free: false,
+            composer: None,
+            words: Some(2),
+        };
+        svc.shared.link_take.store(true, Ordering::Release);
+        svc.shared.widget_for(&ev(DictatePhase::Listening));
+        assert_eq!(w.0.lock().last(), Some(&true), "shown although Hidden");
+        svc.shared.widget_for(&ev(DictatePhase::Inserted));
+        assert!(
+            !svc.shared.link_take.load(Ordering::Acquire),
+            "cleared when the take ends"
+        );
+        // The next take from the shortcut follows the setting again.
+        svc.shared.widget_for(&ev(DictatePhase::Listening));
+        assert_eq!(w.0.lock().last(), Some(&false));
     }
 
     #[test]

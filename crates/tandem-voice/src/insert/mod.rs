@@ -112,6 +112,11 @@ pub trait Platform: Send + Sync {
     /// macOS and Linux restore the previous clipboard; Windows doesn't, so a
     /// clipboard-history app can't capture the text twice.
     fn restores_clipboard(&self) -> bool;
+    /// Undoes the last edit in the focused field (Mod+Z): a quick action
+    /// replacing the text it just pasted (F-DI-10).
+    fn undo(&self) -> Result<(), InsertError> {
+        Err(InsertError::Paste("undo isn't available here".into()))
+    }
     /// Whether `capture_target` can name a target at all here.
     fn can_capture(&self) -> bool {
         true
