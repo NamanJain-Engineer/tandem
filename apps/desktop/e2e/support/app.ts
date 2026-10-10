@@ -295,6 +295,12 @@ export async function freshUser(tag: string): Promise<{ email: string; jar: Awai
   return { email, jar };
 }
 
+/** Signed out at the sign-in screen, past the wizard, with no workspaces:
+ * whatever an earlier spec file left (files run in name order). */
+export async function freshSignedOut(): Promise<void> {
+  await resetState();
+}
+
 /** A profile as on first launch: signed out, no workspaces, the wizard not run. */
 export async function freshProfile(): Promise<void> {
   await resetState({ onboarded: false });

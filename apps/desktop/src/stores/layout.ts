@@ -168,9 +168,11 @@ export const useLayout = create<LayoutState>((set, get) => {
       if (pending) return pending;
       const run = (async () => {
         const layouts = await invoke<TabLayout[]>("layout_get", { workspaceId });
-        const tabs = { ...get().tabs };
+        // Only this workspace's tabs: other workspaces may load meanwhile, and
+        // writing back a copy taken now would drop their panes.
+        const tabs: Record<string, TabPanes> = {};
         for (const l of layouts) {
-          if (tabs[l.tab.id]?.tree) continue;
+          if (get().tabs[l.tab.id]?.tree) continue;
           const panes = await invoke<PaneRecord[]>("pane_list", { tabId: l.tab.id });
           const byId = Object.fromEntries(panes.map((p) => [p.id, p]));
           let tree = (l.tree as LayoutNode | null) ?? null;
@@ -187,10 +189,10 @@ export const useLayout = create<LayoutState>((set, get) => {
                 ? l.maximizedPaneId
                 : null,
             panes: byId,
-            keepEmpty: tabs[l.tab.id]?.keepEmpty ?? false,
+            keepEmpty: get().tabs[l.tab.id]?.keepEmpty ?? false,
           };
         }
-        set({ tabs, loaded: { ...get().loaded, [workspaceId]: true } });
+        set({ tabs: { ...get().tabs, ...tabs }, loaded: { ...get().loaded, [workspaceId]: true } });
       })().finally(() => loading.delete(workspaceId));
       loading.set(workspaceId, run);
       return run;

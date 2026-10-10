@@ -15,7 +15,7 @@ M16 adds the P2 extras and the release candidate.
 
 ## 0. First, before new features
 
-1. **Release 0.3.0 with the interactive demo on the home page, and deploy the site.** The demo moves from its own page into the home page, explorable full screen and on phones, with message limits and a reset (full spec: "The interactive demo on the website" in `docs/FEATURES_TO_BUILD.md`). Vibezeo 0.2.0 (M6 + M7) and the
+1. [x] **Release 0.3.0 with the interactive demo on the home page** (prepared on `release-0.3.0`: D-128, the .deb, CHANGELOG, site copy; deploying is the coordinating session's merge into `main`). **And deploy the site.** The demo moves from its own page into the home page, explorable full screen and on phones, with message limits and a reset (full spec: "The interactive demo on the website" in `docs/FEATURES_TO_BUILD.md`). Vibezeo 0.2.0 (M6 + M7) and the
    browser demo are committed but were never deployed: vibezeo.com (`main`)
    still serves 0.1.0. M9 has landed since, and the demo already shows its Files
    tab, so ship them together: 0.3.0 = M6 + M7 + M9. Bump the version, add the
@@ -25,10 +25,9 @@ M16 adds the P2 extras and the release candidate.
    `main` and check the live site (`docs/OPERATING.md` §6–7).
 2. **Keep the live demo in step with every release.** vibezeo.com/demo (the page) opens /demo/app/: the real desktop interface running in the browser against a simulated core, built with the site (D-126; the Files tab, D-204). Its code is `apps/desktop/src/demo/`: `backend.ts` answers the app's commands, `agent.ts` scripts the agent's turns, `shell.ts` the terminal, `files.ts` the Files tab, `DemoBar.tsx` the strip that says it's a demo. When a release ships something visible in the interface, make it work in the demo too wherever it can be simulated honestly (sample data, no network, no microphone), add a test to `demo.test.ts`, and walk it with `scripts/agent/demo-walkthrough.mjs` before deploying. The demo shows only what the released download does, never more, and always says its agents are simulated.
 3. **Close known gaps:**
-   - The Free plan's `chatEngines` limit (Claude Code and Codex in Thread mode,
-     PRODUCT_SPEC §3.1) is defined but not enforced; Free threads also run the
-     ACP engines. Enforce it with the entitlement checks, with a test, and keep
-     the site's plan copy matching.
+   - [x] The Free plan's `chatEngines` limit (Claude Code and Codex in Thread
+     mode, PRODUCT_SPEC §3.2) is enforced from the entitlement (D-127), and the
+     site's plan copy matches.
    - Perf items marked [manual] (threads scroll fps, the 2 MB fence, the
      16-pane and startup suites) need the reference machines (`HUMAN_TODO.md`).
 

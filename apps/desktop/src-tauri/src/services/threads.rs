@@ -216,7 +216,12 @@ pub struct ThreadService {
     data: std::sync::OnceLock<tandem_core::DataDir>,
     /// Tells the status bus each thread's state (Dashboard, D-6).
     status_sink: std::sync::OnceLock<ThreadStatusSink>,
+    /// The plan's limits right now; unset (tests) runs every engine.
+    plan_limits: std::sync::OnceLock<PlanLimits>,
 }
+
+/// Reads the plan's current limits (the entitlement service in the app).
+pub type PlanLimits = Arc<dyn Fn() -> tandem_core::entitlement::Limits + Send + Sync>;
 
 /// Receives every thread whenever the list changes; an archived thread
 /// leaves the Dashboard.
@@ -366,6 +371,7 @@ impl ThreadService {
             titler: std::sync::OnceLock::new(),
             data: std::sync::OnceLock::new(),
             status_sink: std::sync::OnceLock::new(),
+            plan_limits: std::sync::OnceLock::new(),
         })
     }
 
@@ -378,6 +384,31 @@ impl ThreadService {
     /// Publishes every thread (at launch: the Dashboard shows them).
     pub async fn announce(&self) {
         self.publish_threads().await;
+    }
+
+    /// Where the plan's limits come from (the app's entitlement service).
+    pub fn set_plan_limits(&self, limits: PlanLimits) {
+        let _ = self.plan_limits.set(limits);
+    }
+
+    /// Free threads run only the plan's chat engines (PRODUCT_SPEC §3.2,
+    /// D-127). Checked when a thread is made, switched or starts a turn, so
+    /// a thread made on Pro stays readable after a lapse but can't run.
+    /// Teammate chats follow their own limits (M10).
+    fn check_plan_engine(&self, kind: ThreadKind, engine_id: &str) -> Result<(), IpcError> {
+        let allowed = kind != ThreadKind::Thread
+            || self
+                .plan_limits
+                .get()
+                .is_none_or(|limits| limits().allows_chat_engine(engine_id));
+        if allowed {
+            Ok(())
+        } else {
+            Err(IpcError::new(
+                ErrorCode::ForbiddenPlan,
+                tandem_core::entitlement::CHAT_ENGINE_ON_PRO,
+            ))
+        }
     }
 
     pub fn set_status_sink(&self, sink: ThreadStatusSink) {
@@ -428,6 +459,7 @@ impl ThreadService {
     }
 
     pub async fn create(&self, new: NewThread) -> Result<ThreadRecord, IpcError> {
+        self.check_plan_engine(new.kind, &new.engine_id)?;
         let thread = repo::insert(&self.store, new).await.map_err(store_err)?;
         tracing::info!(code = "threads.created", engine = %thread.engine_id, "thread created");
         self.publish_threads().await;
@@ -567,6 +599,7 @@ impl ThreadService {
         if thread.engine_id == engine_id && thread.account_id.as_ref() == account_id {
             return Ok(thread);
         }
+        self.check_plan_engine(thread.kind, engine_id)?;
         self.retire_session(id).await?;
         repo::set_engine(&self.store, id, engine_id, account_id)
             .await
@@ -1060,6 +1093,8 @@ impl ThreadService {
         version: u32,
         access: Option<Access>,
     ) -> Result<SendResult, IpcError> {
+        let thread = self.thread(id).await?;
+        self.check_plan_engine(thread.kind, &thread.engine_id)?;
         let plan = repo::plan_revisions(&self.store, id)
             .await
             .map_err(store_err)?
@@ -1181,6 +1216,7 @@ impl ThreadService {
         queue_if_busy: bool,
     ) -> Result<SendResult, IpcError> {
         let thread = self.thread(id).await?;
+        self.check_plan_engine(thread.kind, &thread.engine_id)?;
         // What the message carries, checked before anything starts (F-TH-07).
         let carried = attachments_repo::get_many(&self.store, id, &attachments)
             .await
@@ -4213,5 +4249,142 @@ mod tests {
         );
         assert_eq!(f.svc.unqueue(&f.thread.id).await.expect("unqueue"), None);
         f.svc.stop(&f.thread.id).await.expect("stop");
+    }
+
+    /// A plan switch the tests can flip: Pro (every engine) until `free`.
+    fn plan_switch(svc: &ThreadService) -> Arc<std::sync::atomic::AtomicBool> {
+        let free = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let on_free = free.clone();
+        svc.set_plan_limits(Arc::new(move || {
+            let mut limits = tandem_core::entitlement::Limits::free();
+            if !on_free.load(Ordering::SeqCst) {
+                limits.chat_engines = None;
+            }
+            limits
+        }));
+        free
+    }
+
+    fn new_thread(f: &Fixture, engine: &str, kind: ThreadKind) -> NewThread {
+        NewThread {
+            id: ThreadId::new(),
+            kind,
+            workspace_id: None,
+            cwd: f.thread.cwd.clone(),
+            engine_id: engine.into(),
+            account_id: None,
+            model: None,
+            effort: None,
+            access: Access::Edits,
+            mode: ThreadMode::Act,
+            attended: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn f_th_06_free_plan_starts_threads_only_on_claude_code_and_codex() {
+        let f = fixture(OnStop::Ack, hang()).await;
+        plan_switch(&f.svc).store(true, Ordering::SeqCst);
+        for engine in ["claude", "codex"] {
+            let made = f
+                .svc
+                .create(new_thread(&f, engine, ThreadKind::Thread))
+                .await;
+            assert!(made.is_ok(), "{engine}: {made:?}");
+        }
+        for engine in ["cursor", "grok", "opencode"] {
+            let err = f
+                .svc
+                .create(new_thread(&f, engine, ThreadKind::Thread))
+                .await
+                .expect_err(engine);
+            assert_eq!(err.code, ErrorCode::ForbiddenPlan, "{engine}");
+            assert_eq!(err.message, tandem_core::entitlement::CHAT_ENGINE_ON_PRO);
+        }
+    }
+
+    #[tokio::test]
+    async fn f_th_06_pro_plan_starts_threads_on_every_chat_engine() {
+        let f = fixture(OnStop::Ack, hang()).await;
+        plan_switch(&f.svc);
+        for engine in ["claude", "codex", "cursor", "grok", "opencode"] {
+            let made = f
+                .svc
+                .create(new_thread(&f, engine, ThreadKind::Thread))
+                .await;
+            assert!(made.is_ok(), "{engine}: {made:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn f_th_06_free_plan_refuses_switching_a_thread_to_an_acp_engine() {
+        let f = fixture(OnStop::Ack, hang()).await;
+        plan_switch(&f.svc).store(true, Ordering::SeqCst);
+        let err = f
+            .svc
+            .switch_engine(&f.thread.id, "cursor", None, "divider".into())
+            .await
+            .expect_err("cursor on Free");
+        assert_eq!(err.code, ErrorCode::ForbiddenPlan);
+        let kept = f.svc.thread(&f.thread.id).await.expect("thread");
+        assert_eq!(kept.engine_id, "claude");
+        let codex = f
+            .svc
+            .switch_engine(&f.thread.id, "codex", None, "divider".into())
+            .await
+            .expect("codex on Free");
+        assert_eq!(codex.engine_id, "codex");
+    }
+
+    #[tokio::test]
+    async fn f_th_06_after_a_lapse_an_acp_thread_keeps_its_history_but_starts_no_turn() {
+        let f = fixture(OnStop::Ack, hang()).await;
+        let free = plan_switch(&f.svc);
+        let acp = f
+            .svc
+            .create(new_thread(&f, "grok", ThreadKind::Thread))
+            .await
+            .expect("grok on Pro");
+        free.store(true, Ordering::SeqCst);
+        let err = f
+            .svc
+            .send(&acp.id, "hello".into(), Vec::new(), false)
+            .await
+            .expect_err("grok on Free");
+        assert_eq!(err.code, ErrorCode::ForbiddenPlan);
+        let err = f
+            .svc
+            .send(&acp.id, "hello".into(), Vec::new(), true)
+            .await
+            .expect_err("queued on Free");
+        assert_eq!(err.code, ErrorCode::ForbiddenPlan);
+        assert_eq!(f.adapter.starts.load(Ordering::SeqCst), 0);
+        assert!(repo::turns(&f.store, &acp.id)
+            .await
+            .expect("turns")
+            .is_empty());
+        // Still readable, and it can move to an engine Free runs.
+        assert!(f.svc.get(&acp.id).await.is_ok());
+        assert!(f.svc.events(&acp.id, None, 50).await.is_ok());
+        f.svc
+            .switch_engine(&acp.id, "claude", None, "divider".into())
+            .await
+            .expect("back to Claude Code");
+        f.svc
+            .send(&acp.id, "hello".into(), Vec::new(), false)
+            .await
+            .expect("Claude Code on Free");
+        f.svc.stop(&acp.id).await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn f_th_06_the_thread_limit_leaves_teammate_chats_to_their_own_limits() {
+        let f = fixture(OnStop::Ack, hang()).await;
+        plan_switch(&f.svc).store(true, Ordering::SeqCst);
+        let made = f
+            .svc
+            .create(new_thread(&f, "cursor", ThreadKind::TeammateChat))
+            .await;
+        assert!(made.is_ok(), "{made:?}");
     }
 }
