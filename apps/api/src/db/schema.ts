@@ -104,6 +104,36 @@ export const orgPolicies = pgTable("org_policies", {
     ).notNull() /* {allowedEngines?, allowedPlugins?, maxAccess?, forceTelemetryOff, disableAuto, disableConductor, disablePhone, auditEnabled} */,
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
+/** An org's single sign-on connection (F-BL-06 P2). The client secret is encrypted (D-626). */
+export const orgSso = pgTable("org_sso", {
+  orgId: text("org_id")
+    .primaryKey()
+    .references(() => orgs.id, { onDelete: "cascade" }),
+  provider: text("provider", { enum: ["oidc", "workos", "mock"] }).notNull(),
+  issuer: text("issuer"),
+  clientId: text("client_id"),
+  clientSecretEnc: text("client_secret_enc"),
+  organization: text("organization"),
+  enforce: boolean("enforce").notNull().default(false),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+});
+/** Email domains an org signs in with; one only counts once its DNS TXT record proves it (D-627). */
+export const orgSsoDomains = pgTable(
+  "org_sso_domains",
+  {
+    orgId: text("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    domain: text("domain").notNull(),
+    verifyToken: text("verify_token").notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.domain] }),
+    uniqueIndex("org_sso_domains_verified").on(t.domain).where(sql`${t.verifiedAt} is not null`),
+  ],
+);
 export const billingCustomers = pgTable(
   "billing_customers",
   {
@@ -132,6 +162,8 @@ export const subscriptions = pgTable(
     trialEnd: timestamp("trial_end", { withTimezone: true }),
     pastDueSince: timestamp("past_due_since", { withTimezone: true }),
     firstPaidAt: timestamp("first_paid_at", { withTimezone: true }),
+    /** Set by a refund (F-BL-05): paid access ends at once, whatever Stripe says later. */
+    refundedAt: timestamp("refunded_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
   },
   (t) => [index("sub_owner").on(t.ownerKind, t.ownerId)],
@@ -177,6 +209,7 @@ export const creditLedger = pgTable(
         "pack_purchase",
         "admin_grant",
         "plan_refund",
+        "pack_refund",
         "expire_sweep",
       ],
     }).notNull(),
@@ -202,6 +235,8 @@ export const creditReservations = pgTable(
     state: text("state", { enum: ["held", "settled", "refunded"] }).notNull(),
     settledAmount: integer("settled_amount"),
     idempotencyKey: text("idempotency_key"),
+    /** The member-cap period this reservation counted against (org pools with a cap). */
+    capPeriod: text("cap_period"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

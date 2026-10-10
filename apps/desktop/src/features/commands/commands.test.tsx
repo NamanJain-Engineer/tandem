@@ -5,6 +5,7 @@ import { CodeEditor, NoteEditor, UiProvider } from "@tandem/ui";
 import en from "../../i18n/en.json";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
+import { useSettings } from "../../stores/settings";
 import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
@@ -273,3 +274,62 @@ describe("command registry (F-SH-09)", () => {
     }
   }, 20_000); // one palette round trip per command
 });
+
+describe("rebound shortcuts (F-SH-09 P2)", () => {
+  const rebind = (overrides: Record<string, string>, priority = "terminal") =>
+    act(() => useSettings.setState({ values: { ...useSettings.getState().values, shortcut_overrides: overrides, term_shortcut_priority: priority } }));
+  const elsewhere = () => screen.getByText("elsewhere");
+
+  it("F-SH-09.6 a new shortcut runs the command, the old keys don't, and the palette shows it", () => {
+    setup();
+    const split = vi.spyOn(handlers, "pane.split_right").mockImplementation(() => undefined);
+    rebind({ "pane.split_right": "Mod+Alt+R" });
+    expect(press(elsewhere(), { code: "KeyD", key: "d", ctrlKey: true }).prevented).toBe(false);
+    expect(split).not.toHaveBeenCalled();
+    press(elsewhere(), { code: "KeyR", key: "r", ctrlKey: true, altKey: true });
+    expect(split).toHaveBeenCalledTimes(1);
+    // Ctrl+Alt+… is on the terminal's intercept list, so it works there too,
+    // and the old terminal alias is gone with the old shortcut.
+    press(terminal(), { code: "KeyR", key: "r", ctrlKey: true, altKey: true });
+    expect(split).toHaveBeenCalledTimes(2);
+    expect(press(terminal(), { code: "KeyE", key: "E", ctrlKey: true, shiftKey: true }).reachedTarget).toBe(true);
+    expect(split).toHaveBeenCalledTimes(2);
+    act(() => useUi.setState({ paletteOpen: true, mode: "code", settingsOpen: false }));
+    const option = screen.getAllByRole("option").find((o) => o.textContent?.startsWith(commandTitle("pane.split_right")));
+    expect(option?.textContent).toBe(`${commandTitle("pane.split_right")}CtrlAltR`);
+  });
+
+  it("F-SH-09.6 a command set to no shortcut runs only from the palette", () => {
+    setup();
+    const split = vi.spyOn(handlers, "pane.split_right").mockImplementation(() => undefined);
+    rebind({ "pane.split_right": "" });
+    press(elsewhere(), { code: "KeyD", key: "d", ctrlKey: true });
+    press(terminal(), { code: "KeyE", key: "E", ctrlKey: true, shiftKey: true });
+    expect(split).not.toHaveBeenCalled();
+  });
+
+  it("F-SH-09.6 under Terminal first, a new shortcut a shell needs still reaches the shell", () => {
+    setup();
+    const split = vi.spyOn(handlers, "pane.split_right").mockImplementation(() => undefined);
+    rebind({ "pane.split_right": "Mod+E" });
+    expect(press(terminal(), { code: "KeyE", key: "e", ctrlKey: true })).toEqual({ prevented: false, reachedTarget: true });
+    expect(split).not.toHaveBeenCalled();
+    press(elsewhere(), { code: "KeyE", key: "e", ctrlKey: true });
+    expect(split).toHaveBeenCalledTimes(1);
+    rebind({ "pane.split_right": "Mod+E" }, "tandem");
+    press(terminal(), { code: "KeyE", key: "e", ctrlKey: true });
+    expect(split).toHaveBeenCalledTimes(2);
+  });
+
+  it("F-SH-09.6 no shortcut fires while a shortcut recorder listens", () => {
+    setup();
+    const split = vi.spyOn(handlers, "pane.split_down").mockImplementation(() => undefined);
+    const recorder = document.createElement("button");
+    recorder.setAttribute("data-recording", "true");
+    document.body.append(recorder);
+    expect(press(recorder, { code: "KeyD", key: "D", ctrlKey: true, shiftKey: true }).reachedTarget).toBe(true);
+    expect(split).not.toHaveBeenCalled();
+    recorder.remove();
+  });
+});
+

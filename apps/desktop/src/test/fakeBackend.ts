@@ -69,8 +69,9 @@ export const FREE_VIEW: EntitlementView = {
   status: "none",
   limits: FREE,
   source: "token",
-  credits: { monthly: 0, purchased: 0, resetsAt: null },
+  credits: { monthly: 0, purchased: 0, resetsAt: null, cap: null, spent: null, grant: null },
   policy: null,
+  org: null,
   paidUntil: null,
   cancelAtPeriodEnd: false,
   online: true,
@@ -128,6 +129,7 @@ export function resetStores(): void {
     returnFocus: null,
     railCollapsed: false,
     paletteOpen: false,
+    cheatsheetOpen: false,
     upgrade: { open: false },
     settingsPage: null,
   });

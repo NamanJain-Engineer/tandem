@@ -22,7 +22,9 @@ const SENSITIVE_HEADERS = new Set(["authorization", "cookie", "set-cookie", "x-a
 export function redactHeaders(headers: Headers): Record<string, string> {
   const out: Record<string, string> = {};
   headers.forEach((value, key) => {
-    out[key] = SENSITIVE_HEADERS.has(key.toLowerCase()) ? "[REDACTED]" : redactText(value);
+    const k = key.toLowerCase();
+    // Dev mocks' headers carry stand-in content (a transcript), never logged.
+    out[key] = SENSITIVE_HEADERS.has(k) || k.startsWith("x-mock-") ? "[REDACTED]" : redactText(value);
   });
   return out;
 }

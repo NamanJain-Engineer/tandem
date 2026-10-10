@@ -8,7 +8,7 @@
 //! fixture file (`TANDEM_FIXTURE_TEAMMATE_DRAFT`, debug builds only).
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use tandem_core::{ErrorCode, IpcError};
 use ts_rs::TS;
 
@@ -128,13 +128,9 @@ pub fn api_error(e: &ApiError) -> IpcError {
     }
 }
 
-/// The request body (ARCHITECTURE §14.6).
-pub fn body(description: &str, engines: &[String], plugins: &[String]) -> Value {
-    json!({
-        "description": description.trim().chars().take(2000).collect::<String>(),
-        "engines": engines,
-        "plugins": plugins,
-    })
+/// The job description the request carries (at most 2,000 characters).
+pub fn job(description: &str) -> String {
+    description.trim().chars().take(2000).collect()
 }
 
 /// Debug builds under the E2E harness: the fixture's answer, if one is set.
@@ -149,6 +145,7 @@ pub fn fixture() -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn f_ag_04_2_a_draft_is_checked_before_it_prefills_anything() {

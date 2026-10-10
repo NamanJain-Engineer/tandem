@@ -248,16 +248,22 @@ pub async fn teammate_draft_with_ai(
     let raw = match draft::fixture() {
         Some(v) => v,
         None => {
-            let body = draft::body(&description, &engines, &plugins);
+            let job = draft::job(&description);
             let api = state.api.clone();
-            state
+            let got = state
                 .auth
                 .with_token(|token| {
-                    let (api, body) = (api.clone(), body.clone());
-                    async move { api.ai_teammate_draft(&token, body).await }
+                    let (api, job, engines, plugins) =
+                        (api.clone(), job.clone(), engines.clone(), plugins.clone());
+                    async move {
+                        api.ai_teammate_draft(&token, &job, &engines, &plugins)
+                            .await
+                    }
                 })
                 .await
-                .map_err(|e| draft::api_error(&e))?
+                .map_err(|e| draft::api_error(&e))?;
+            serde_json::to_value(got)
+                .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?
         }
     };
     draft::sanitize(&raw, &engines, &plugins)

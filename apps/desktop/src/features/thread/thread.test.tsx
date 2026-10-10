@@ -13,11 +13,12 @@ import { useEngines } from "../../stores/engines";
 import { useThreads } from "../../stores/threads";
 import { useWorkspaces } from "../../stores/workspaces";
 import { useSession } from "../../stores/session";
+import { useUi } from "../../stores/ui";
 import { FREE, FREE_VIEW, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { referencedFiles } from "./ChangesPanel";
 import type { Row, ToolEvent } from "./rows";
 import { dropOnThread, insertIntoComposer } from "./drops";
-import { restoreAfterFailure } from "./ThreadComposer";
+import { engineOptionsFor, restoreAfterFailure } from "./ThreadComposer";
 import { age, groupThreads } from "./groups";
 import { ThreadMain } from "./ThreadMain";
 import { ThreadRail } from "./ThreadRail";
@@ -635,5 +636,78 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     expect(age(now - 5 * 60_000, now)).toBe("5m");
     expect(age(now - 3 * 3600_000, now)).toBe("3h");
     expect(age(now - 30 * 3600_000, now)).toBe("yesterday");
+  });
+});
+
+const chatEngine = (id: string, label: string, logo: string): EngineView => ({
+  ...CLAUDE,
+  spec: { id, label, logo } as EngineView["spec"],
+});
+const CODEX = chatEngine("codex", "Codex", "CX");
+const OPENCODE = chatEngine("opencode", "OpenCode", "OC");
+const GROK = chatEngine("grok", "Grok", "GK");
+const PRO_VIEW = { ...FREE_VIEW, plan: "pro" as const, limits: { ...FREE, chatEngines: null } };
+
+describe("Free plan chat engines (F-TH-06, PRODUCT_SPEC §3.2)", () => {
+  beforeEach(() => {
+    resetStores();
+    n = 0;
+    useEngines.setState({ list: [CLAUDE, CODEX, OPENCODE, GROK], loaded: true });
+  });
+
+  it("F-TH-06 on Free the engine picker enables Claude Code and Codex; the others show Pro", () => {
+    const options = engineOptionsFor([CLAUDE, CODEX, OPENCODE, GROK], FREE.chatEngines);
+    expect(options.map((o) => [o.value, Boolean(o.disabled), o.disabledReason ?? null])).toEqual([
+      ["claude", false, null],
+      ["codex", false, null],
+      ["opencode", true, "Pro"],
+      ["grok", true, "Pro"],
+    ]);
+  });
+
+  it("F-TH-06 on Pro every chat engine is enabled", () => {
+    const options = engineOptionsFor([CLAUDE, CODEX, OPENCODE, GROK], null);
+    expect(options.every((o) => !o.disabled)).toBe(true);
+  });
+
+  it("F-TH-06 a thread on a Pro-only engine shows the Free gate; See plans opens the plans", async () => {
+    const th = thread({ engineId: "opencode" });
+    fakeBackend({
+      thread_list: () => [th],
+      thread_get: () => detail(th),
+      thread_events: () => ({ items: [], nextBeforeId: null }),
+      thread_subscribe: () => null,
+      models_list: () => [],
+    });
+    await act(async () => {
+      await useThreads.getState().refresh();
+      useThreads.getState().select(th.id);
+    });
+    mount(<ThreadMain />);
+    const gate = await screen.findByTestId("thread-engine-gate");
+    expect(gate.textContent).toContain("Free threads run Claude Code and Codex");
+    expect(gate.textContent).toContain("OpenCode needs Pro");
+    fireEvent.click(within(gate).getByRole("button", { name: "See plans" }));
+    expect(useUi.getState().upgrade).toMatchObject({ open: true, gate: { kind: "chat_engines" } });
+  });
+
+  it("F-TH-06 on Pro the same thread shows no gate", async () => {
+    useSession.setState({ entitlement: PRO_VIEW });
+    const th = thread({ engineId: "opencode" });
+    fakeBackend({
+      thread_list: () => [th],
+      thread_get: () => detail(th),
+      thread_events: () => ({ items: [], nextBeforeId: null }),
+      thread_subscribe: () => null,
+      models_list: () => [],
+      entitlement_get: () => PRO_VIEW,
+    });
+    await act(async () => {
+      await useThreads.getState().refresh();
+      useThreads.getState().select(th.id);
+    });
+    mount(<ThreadMain />);
+    await screen.findByRole("textbox", { name: "Message" });
+    expect(screen.queryByTestId("thread-engine-gate")).toBeNull();
   });
 });

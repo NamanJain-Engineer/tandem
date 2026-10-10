@@ -252,6 +252,20 @@ pub async fn resolve(store: &Store, dedupe_key: &str) -> Result<Vec<Notification
         .await
 }
 
+/// Whether an item with this dedupe key is still open (not resolved).
+pub async fn has_open(store: &Store, dedupe_key: &str) -> Result<bool, StoreError> {
+    let key = dedupe_key.to_string();
+    store
+        .read(move |c| {
+            Ok(c.query_row(
+                "SELECT EXISTS(SELECT 1 FROM notifications WHERE dedupe_key = ?1 AND state <> 'resolved')",
+                [&key],
+                |r| r.get::<_, bool>(0),
+            )?)
+        })
+        .await
+}
+
 /// Drops items older than the retention window.
 pub async fn prune(store: &Store) -> Result<usize, StoreError> {
     let before = now_ms() - RETENTION_MS;
@@ -307,6 +321,18 @@ mod tests {
             mark_read(&store, vec![], true).await.expect("all"),
             vec![b.id]
         );
+    }
+
+    #[tokio::test]
+    async fn f_db_02_an_open_item_is_found_by_its_dedupe_key_until_resolved() {
+        let (_d, store) = crate::tests::temp_store().await;
+        assert!(!has_open(&store, "credit_low").await.expect("none"));
+        insert(&store, new(NotificationKind::CreditLow, Some("credit_low")))
+            .await
+            .expect("insert");
+        assert!(has_open(&store, "credit_low").await.expect("open"));
+        resolve(&store, "credit_low").await.expect("resolve");
+        assert!(!has_open(&store, "credit_low").await.expect("resolved"));
     }
 
     #[tokio::test]

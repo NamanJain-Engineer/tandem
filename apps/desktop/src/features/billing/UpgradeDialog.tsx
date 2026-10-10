@@ -84,13 +84,7 @@ export function UpgradeDialog() {
         <div className="flex flex-col gap-4">
           {gate && (
             <p className="text-base text-fg" data-testid="upgrade-gate">
-              {gate.kind === "workspaces"
-                ? t("upgrade.gate.workspaces", { n: gate.limit })
-                : gate.kind === "teammates"
-                  ? t("upgrade.gate.teammates", { n: gate.limit })
-                  : gate.kind === "thread_grid"
-                    ? t("upgrade.gate.thread_grid", { n: gate.limit })
-                    : t("upgrade.gate.panes", { n: gate.limit })}
+              {t(`upgrade.gate.${gate.kind}`, { n: gate.limit })}
             </p>
           )}
           {!hosted && (
@@ -121,9 +115,13 @@ export function UpgradeDialog() {
                     "[&>li:nth-child(2)]:rounded-xs [&>li:nth-child(2)]:bg-accent-soft",
                 )}
               >
-                {[t("upgrade.free.f1"), t("upgrade.free.f2"), t("upgrade.free.f3"), t("upgrade.free.f4")].map(
-                  feature,
-                )}
+                {[
+                  t("upgrade.free.f1"),
+                  t("upgrade.free.f2"),
+                  t("upgrade.free.f5"),
+                  t("upgrade.free.f3"),
+                  t("upgrade.free.f4"),
+                ].map(feature)}
               </ul>
               <Button disabled={plan === "free"} fullWidth>
                 {t("upgrade.current")}

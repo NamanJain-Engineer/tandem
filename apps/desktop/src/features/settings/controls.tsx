@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import type { SettingKey } from "@tandem/protocol";
+import type { OrgPolicy, SettingKey } from "@tandem/protocol";
 import { Checkbox, Combobox, Input, SegmentedControl, Select, Switch, cx, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
+import { useSession } from "../../stores/session";
 import { useSetting, useSettings } from "../../stores/settings";
 
 type Ids = { id: string; describedBy?: string };
@@ -45,6 +46,28 @@ export function BoolControl({
       aria-label={label}
       onCheckedChange={(v) => void save(k, v)}
     />
+  );
+}
+
+/** A toggle a Team org can force off (UI-112 "Set by your organization"). */
+export function PolicyBoolControl({
+  k,
+  ids,
+  label,
+  lockedBy,
+}: {
+  k: SettingKey;
+  ids: Ids;
+  label: string;
+  lockedBy: (policy: OrgPolicy) => boolean;
+}) {
+  const policy = useSession((s) => s.entitlement?.policy ?? null);
+  if (!policy || !lockedBy(policy)) return <BoolControl k={k} ids={ids} label={label} />;
+  return (
+    <span className="flex items-center gap-2" data-testid={`locked-${k}`}>
+      <span className="text-sm text-fg-subtle">{t("policy.setByOrg")}</span>
+      <Switch id={ids.id} aria-describedby={ids.describedBy} checked={false} disabled aria-label={label} />
+    </span>
   );
 }
 

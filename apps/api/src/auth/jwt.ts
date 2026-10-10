@@ -1,6 +1,7 @@
 // Access JWTs (1 h) and entitlement tokens (24 h), both EdDSA via jose.
 import { SignJWT, jwtVerify, decodeProtectedHeader } from "jose";
 import type { Limits, Plan, PlanStatus } from "@tandem/protocol/plans";
+import type { OrgPolicy } from "@tandem/protocol/team";
 import { currentKey, type KeySet } from "./keys";
 
 export const ISSUER = "tandem-api";
@@ -48,7 +49,7 @@ export type EntitlementPayload = {
   plan: Plan;
   status: PlanStatus;
   limits: Limits;
-  policy: Record<string, unknown> | null;
+  policy: OrgPolicy | null;
 };
 
 export async function signEntitlement(

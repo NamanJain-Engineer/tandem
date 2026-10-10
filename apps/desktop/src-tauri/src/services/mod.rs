@@ -4,11 +4,14 @@
 pub mod accounts;
 pub mod api;
 pub mod approvals;
+pub mod audit;
 pub mod auth;
+pub mod auto;
 pub mod boot;
 pub mod config;
 pub mod dashboard;
 pub mod deeplink;
+pub mod device_login;
 pub mod engines;
 pub mod entitlement;
 pub mod events;
@@ -16,6 +19,7 @@ pub mod files;
 pub mod gateway;
 pub mod git_panel;
 pub mod handoff;
+pub mod hosted;
 pub mod lanes;
 pub mod launch;
 pub mod learn;
@@ -41,6 +45,7 @@ pub mod thread_titles;
 pub mod threads;
 pub mod updates;
 pub mod usage;
+pub mod usage_report;
 pub mod workspaces;
 
 /// Debug builds: the E2E fake engines' switches (`TANDEM_FAKE_*`), for

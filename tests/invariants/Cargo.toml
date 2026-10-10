@@ -1,0 +1,25 @@
+[package]
+name = "tandem-invariants"
+description = "F-TL-06: one test per threat-model rule (D-10)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+tandem-core.workspace = true
+tandem-engines.workspace = true
+tandem-gateway.workspace = true
+tandem-git.workspace = true
+tandem-pty.workspace = true
+tandem-desktop = { path = "../../apps/desktop/src-tauri" }
+async-trait.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

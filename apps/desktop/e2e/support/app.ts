@@ -31,7 +31,7 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
 }
 
 /** A tiny cookie jar for API calls from the test process. */
-class Jar {
+export class Jar {
   private cookies = new Map<string, string>();
   store(res: Response) {
     for (const c of res.headers.getSetCookie()) {
@@ -48,7 +48,7 @@ class Jar {
   }
 }
 
-async function call(jar: Jar, method: string, path: string, body?: unknown): Promise<Response> {
+export async function call(jar: Jar, method: string, path: string, body?: unknown): Promise<Response> {
   const res = await fetch(`${API}${path}`, {
     method,
     redirect: "manual",
@@ -287,6 +287,8 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
   await invoke("settings_set", { key: "last_mode", value: "code" });
   // New threads start from the app's defaults, not a spec's last engine (F-TH-07).
   await invoke("settings_set", { key: "thread_defaults", value: {} });
+  // Every spec starts with the default shortcuts (F-SH-09 rebinding).
+  await invoke("settings_set", { key: "shortcut_overrides", value: {} });
   await invoke("sidebar_save", {
     sidebar: { open: false, tabs: [{ id: "dashboard", kind: "dashboard", title: null, url: null }], active: "dashboard", width: 470, fullscreen: false, pinned: false },
   });
@@ -309,6 +311,12 @@ export async function freshUser(tag: string): Promise<{ email: string; jar: Awai
   await resetState();
   await signInDesktop(email);
   return { email, jar };
+}
+
+/** Signed out at the sign-in screen, past the wizard, with no workspaces:
+ * whatever an earlier spec file left (files run in name order). */
+export async function freshSignedOut(): Promise<void> {
+  await resetState();
 }
 
 /** A profile as on first launch: signed out, no workspaces, the wizard not run. */
