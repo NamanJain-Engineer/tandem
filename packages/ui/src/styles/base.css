@@ -9,6 +9,14 @@
   transition-duration: 0.01ms !important;
   scroll-behavior: auto !important;
 }
+/* A theme or contrast switch is instant: colours jump instead of each
+   element fading through its own transition, which left the page part-way
+   between themes for a moment (D-815). ThemeProvider sets this for two frames. */
+[data-theme-switching] *,
+[data-theme-switching] *::before,
+[data-theme-switching] *::after {
+  transition: none !important;
+}
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion="full"]) *,
   :root:not([data-motion="full"]) *::before,

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type {
+  AppBoot,
   AuthState,
   DashboardItem,
   EntitlementView,
@@ -14,6 +15,7 @@ import type {
   ThreadEventEnvelope,
   WorkspaceSummary,
 } from "@tandem/protocol";
+import pkg from "../../package.json";
 import { setInvokeBackend } from "../ipc/invoke";
 import { FREE } from "../test/fakeBackend";
 import { DEMO_MESSAGE_LIMIT, DemoCore, FIRST_MESSAGE } from "./backend";
@@ -196,15 +198,16 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     expect(c.limitReached()).toBe(true);
   });
 
-  it("demo the sample world runs the Free plan the 0.3.0 download runs", () => {
+  it("demo the sample world runs the Free plan the download runs, at the download's version", () => {
     core = new DemoCore(0);
     const view = core.handle("entitlement_get", {}) as EntitlementView;
     expect(view.plan).toBe("free");
     expect(view.limits).toEqual(FREE);
     expect((core.handle("auth_state", {}) as AuthState).hosted).toBe(false);
+    expect((core.handle("app_ready", {}) as AppBoot).version).toBe(pkg.version);
   });
 
-  it("F-WB-01 demo runs early access as the 0.3.0 download does: no account, no credits", () => {
+  it("F-WB-01 demo runs early access as the download does: no account, no credits", () => {
     core = new DemoCore(0);
     // What the core reports after "Start using Vibezeo" (AuthService::continue_offline, hosted off).
     const earlyAccess: AuthState = {

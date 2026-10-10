@@ -3,6 +3,17 @@ title: Agent mode
 description: Persistent teammates with a brief, memory and skills.
 ---
 
-> **Not in the app yet.** Agent mode isn't in the current release. This page describes what is being built (M10 in the build plan), and it will be filled in when it ships. [The changelog](/changelog/) says what each release contains.
+Agent mode keeps named teammates that run on the engines you already use. Each teammate has a brief, notes it remembers between chats, skills it can read, and chats you can come back to. Lead is made for you the first time you open Agent mode; add others with **New teammate** in the rail or the command palette.
 
-Agent mode gives you persistent teammates: each has a brief, memory, skills and its own chats, learns after a turn, can search past sessions and can mail other teammates, all through one local gateway.
+- **Brief.** Standing instructions, up to 8,000 characters, that open every turn.
+- **Memory.** Notes the teammate keeps within a budget you set (2k, 4k, 8k or 16k characters; 4k at first), plus a separate note about you of up to 2k. A line that looks like a password or a key is refused.
+- **Skills.** Folders with a `SKILL.md` the teammate reads when a job needs one. A skill that doesn't parse is listed with the reason, and left out.
+- **Learning.** After a turn, a teammate can propose memory updates. **Ask** (the first setting) shows them for you to keep or discard; **Auto** writes them, and you can undo; **Off** changes memory only when you or the teammate edit it in a chat.
+- **Search.** A teammate can search its past chats: your messages and its replies, never tool calls or their output.
+- **Mail.** Teammates can send each other mail, and `@name` in a chat writes to one. **Pause all teammate mail** in Settings holds every message until you turn it off.
+
+All of this runs through one gateway on your computer.
+
+## Plans
+
+Free includes one teammate besides Lead, on Claude Code or Codex. Pro has as many teammates as you need. **Create with AI**, which drafts a teammate from a description, needs Pro and a Vibezeo account; the current download runs without accounts, so it isn't there yet.

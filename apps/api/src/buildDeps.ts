@@ -8,6 +8,7 @@ import type { Deps } from "./deps";
 import type { Env } from "./env";
 import { Clock } from "./lib/clock";
 import { selectAi } from "./providers/ai";
+import { selectRealtime } from "./providers/realtime";
 import { selectStt } from "./providers/stt";
 import { MockBilling } from "./providers/billing/mock";
 import { StripeBilling } from "./providers/billing/stripe";
@@ -25,7 +26,9 @@ const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 /** Wires real providers from the environment. Mocks are chosen when keys are absent. */
 export function buildDeps(
   env: Env,
-  overrides: Partial<Pick<Deps, "email" | "clock" | "keys" | "billing" | "breach" | "ai" | "stt" | "ssoNet">> = {},
+  overrides: Partial<
+    Pick<Deps, "email" | "clock" | "keys" | "billing" | "breach" | "ai" | "stt" | "realtime" | "ssoNet">
+  > = {},
 ): Built {
   const { db, pool } = createDb(env.DATABASE_URL);
   const redis = new Redis(env.REDIS_URL, { lazyConnect: false, maxRetriesPerRequest: 2 });
@@ -62,6 +65,7 @@ export function buildDeps(
     auth: createAuth({ env, db, email, breach, deps: () => deps }),
     ai: overrides.ai ?? selectAi(env),
     stt: overrides.stt ?? selectStt(env),
+    realtime: overrides.realtime ?? selectRealtime(env),
     ssoNet: overrides.ssoNet ?? { fetch: (input, init) => fetch(input, init), resolveTxt },
   };
   return {

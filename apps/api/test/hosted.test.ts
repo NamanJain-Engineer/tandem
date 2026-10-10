@@ -55,9 +55,40 @@ const GUARDED: Array<{
       });
     },
   },
+  {
+    method: "POST",
+    path: "/v1/voice/session",
+    feature: "conductor",
+    send: (bearer) => json(t, "POST", "/v1/voice/session", { bearer, body: {} }),
+  },
+  {
+    method: "POST",
+    path: "/v1/voice/act",
+    feature: "conductor",
+    send: (bearer) =>
+      json(t, "POST", "/v1/voice/act", {
+        bearer,
+        body: { session_id: "vs_x", request: "list the panes", snapshot: {} },
+      }),
+  },
+  {
+    method: "POST",
+    path: "/v1/voice/resolve",
+    feature: "conductor",
+    send: (bearer) =>
+      json(t, "POST", "/v1/voice/resolve", {
+        bearer,
+        body: { query: "docs", candidates: [{ id: "p1", kind: "pane", text: "docs" }] },
+      }),
+  },
 ];
 /** Hosted routes that are free for everyone signed in (rate-limited instead). */
 const FREE = ["POST /v1/ai/title"];
+/**
+ * Settling a call (F-BE-08) is never gated: a call whose plan or policy lapses
+ * mid-way still settles, so its hold comes back. It only reaches the caller's own calls.
+ */
+const OWN_CALL = ["POST /v1/voice/session/:id/settle"];
 const HOSTED_PREFIXES = ["/v1/ai/", "/v1/stt/", "/v1/auto/", "/v1/voice/"];
 
 describe("M13 exit: every hosted route is in the requirePlan table", () => {
@@ -65,7 +96,7 @@ describe("M13 exit: every hosted route is in the requirePlan table", () => {
     const mounted = t.app.routes
       .filter((r) => HOSTED_PREFIXES.some((p) => r.path.startsWith(p)) && r.method !== "ALL")
       .map((r) => `${r.method} ${r.path}`);
-    const listed = [...GUARDED.map((g) => `${g.method} ${g.path}`), ...FREE];
+    const listed = [...GUARDED.map((g) => `${g.method} ${g.path}`), ...FREE, ...OWN_CALL];
     expect([...new Set(mounted)].sort()).toEqual(listed.sort());
   });
 
@@ -82,6 +113,15 @@ describe("M13 exit: every hosted route is in the requirePlan table", () => {
       expect(await res.json()).toMatchObject({ code: "FORBIDDEN_PLAN", feature: g.feature });
     },
   );
+
+  it("F-BE-08 settling on Free reaches no one else's call: 404", async () => {
+    const { userId } = await signUpVerified(t, "free-settle@tandem.test");
+    const res = await json(t, "POST", "/v1/voice/session/vs_someone_else/settle", {
+      bearer: await bearerFor(t.deps, userId),
+      body: { seconds: 0 },
+    });
+    expect(res.status).toBe(404);
+  });
 
   it("a settled call tells the desktop its balance changed (SSE `credits`)", async () => {
     const { userId } = await signUpVerified(t, "sse@tandem.test");
