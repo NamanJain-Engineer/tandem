@@ -574,8 +574,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 });
 
 /** The mic: a press shorter than 300 ms is a click (toggle hands-free), a
- * longer one records while held. While a take runs it shows the ring. */
-function MicButton({ dictation, label, disabled }: { dictation: ComposerDictation; label: string; disabled: boolean }) {
+ * longer one records while held. While a take runs it shows the ring.
+ * Exported for text fields that dictate without being a Composer
+ * ("Create with AI", F-DI-12). */
+export function MicButton({ dictation, label, disabled = false, testId = "composer-mic" }: { dictation: ComposerDictation; label: string; disabled?: boolean; testId?: string }) {
   const pressed = useRef<number | null>(null);
   const off = disabled || dictation.disabledReason !== undefined;
   const busy = dictation.state !== "idle";
@@ -584,7 +586,7 @@ function MicButton({ dictation, label, disabled }: { dictation: ComposerDictatio
       type="button"
       aria-label={label}
       aria-pressed={dictation.state === "listening"}
-      data-testid="composer-mic"
+      data-testid={testId}
       data-state={dictation.state}
       disabled={off}
       onPointerDown={(e) => {
