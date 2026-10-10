@@ -75,7 +75,7 @@ fn invariant_rule_2_remote_output_makes_no_marks() {
         mark_token: None,
     };
     let (_, feed) = mgr
-        .spawn_remote(spec, 4242, Arc::new(Host), None)
+        .spawn_remote(spec, 4242, 0, Arc::new(Host), None)
         .expect("spawn");
     feed.data(
         b"\x1b]133;A;tandem=guess\x07\x1b]133;D;0\x07\x1b]7770;handback;x;0\x07done\r\n".to_vec(),

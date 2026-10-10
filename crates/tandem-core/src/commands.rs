@@ -288,6 +288,7 @@ static REGISTRY: &[CommandSpec] = &[
         Some("Mod+Shift+/"),
         E::Always,
     ),
+    same("help.diagnostics", C::Help, None, E::Always),
     same("help.copy_diagnostics", C::Help, None, E::Always),
     same("help.open_logs", C::Help, None, E::Always),
 ];

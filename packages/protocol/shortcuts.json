@@ -369,6 +369,15 @@
     "enabledWhen": "always"
   },
   {
+    "id": "help.diagnostics",
+    "category": "help",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
     "id": "help.copy_diagnostics",
     "category": "help",
     "mac": null,

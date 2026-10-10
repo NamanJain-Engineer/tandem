@@ -60,6 +60,15 @@ pub type MarkSink = Arc<dyn Fn(&str, &Mark) + Send + Sync>;
 /// Called with each chunk's size as a pane's program writes (status
 /// heuristics, F-EN-05). Runs on the pane's reader thread: keep it short.
 pub type ActivitySink = Arc<dyn Fn(&str, usize) + Send + Sync>;
+/// Called when a pane's reader recovered from a panic (`failed` false) or
+/// gave up after 3 in 10 minutes (`failed` true): `(pane, restarts, failed)`.
+/// Output keeps flowing either way; after giving up it's passed through raw.
+pub type ReaderFailureSink = Arc<dyn Fn(&str, usize, bool) + Send + Sync>;
+
+/// Tests: the next N feeds panic, to exercise the reader's recovery.
+#[cfg(test)]
+pub(crate) static PANIC_NEXT_FEEDS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 #[derive(Debug, thiserror::Error)]
 pub enum PtyError {
@@ -116,6 +125,21 @@ pub struct PtyInfo {
     pub started_at: i64,
 }
 
+/// One live terminal's numbers, for Help › Diagnostics (§5.7).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PaneMetrics {
+    pub pane_id: String,
+    /// How long opening the PTY and starting the program took.
+    #[ts(type = "number")]
+    pub spawn_ms: u64,
+    /// Output sent to the UI that it hasn't acknowledged yet (bytes).
+    #[ts(type = "number")]
+    pub queued_bytes: u64,
+    pub exited: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -154,6 +178,8 @@ struct Session {
     side: Mutex<SideChannel>,
     /// A `pty:state` change not sent yet (debounced).
     state_dirty: AtomicBool,
+    /// How long the spawn took (Diagnostics).
+    spawn_ms: AtomicU64,
     /// Windows: the kill-on-close Job Object holding the tree.
     #[cfg(windows)]
     job: Option<job::Job>,
@@ -169,6 +195,7 @@ pub struct PtyManager {
     on_handback: Option<HandbackSink>,
     on_mark: Option<MarkSink>,
     on_activity: Option<ActivitySink>,
+    on_reader_failure: Option<ReaderFailureSink>,
 }
 
 enum Msg {
@@ -212,6 +239,12 @@ impl PtyManager {
         self
     }
 
+    /// Where reader recoveries and failures go (the watchdog, §5.2).
+    pub fn with_reader_failure_sink(mut self, sink: ReaderFailureSink) -> Self {
+        self.on_reader_failure = Some(sink);
+        self
+    }
+
     /// Where `pty:state` changes go.
     pub fn with_state_sink(mut self, sink: StateSink) -> Self {
         self.on_state = Some(sink);
@@ -240,6 +273,7 @@ impl PtyManager {
         spec: SpawnSpec,
         sink: Option<Arc<dyn OutputSink>>,
     ) -> Result<PtyInfo, PtyError> {
+        let spawn_started = Instant::now();
         let pty = native_pty_system()
             .openpty(PtySize {
                 rows: spec.rows.max(2),
@@ -292,9 +326,14 @@ impl PtyManager {
                 spec.mark_token.clone(),
             )),
             state_dirty: AtomicBool::new(false),
+            spawn_ms: AtomicU64::new(0),
             #[cfg(windows)]
             job: job::Job::for_process(pid),
         });
+        session.spawn_ms.store(
+            spawn_started.elapsed().as_millis() as u64,
+            Ordering::Release,
+        );
         self.sessions.insert(spec.pane_id.clone(), session.clone());
         let started_at = now_ms();
         if let Some(reg) = &self.registry {
@@ -324,11 +363,13 @@ impl PtyManager {
     /// A PTY that runs on an SSH host (F-RM-01): `pid` is the remote one,
     /// its output and exit arrive through the returned feed, and writes,
     /// resizes and kills go to `backend`. It's never in the child registry
-    /// and never signalled locally.
+    /// and never signalled locally. `spawn_ms` is how long the host took to
+    /// start it, as Diagnostics shows it (D-823).
     pub fn spawn_remote(
         &self,
         spec: SpawnSpec,
         pid: u32,
+        spawn_ms: u64,
         backend: Arc<dyn RemotePty>,
         sink: Option<Arc<dyn OutputSink>>,
     ) -> Result<(PtyInfo, RemoteFeed), PtyError> {
@@ -355,6 +396,7 @@ impl PtyManager {
                 spec.mark_token.clone(),
             )),
             state_dirty: AtomicBool::new(false),
+            spawn_ms: AtomicU64::new(spawn_ms),
             #[cfg(windows)]
             job: None,
         });
@@ -392,10 +434,13 @@ impl PtyManager {
         let on_handback = self.on_handback.clone();
         let on_mark = self.on_mark.clone();
         let on_activity = self.on_activity.clone();
+        let on_failure = self.on_reader_failure.clone();
         let pane_id = pane.to_string();
         let name = format!("pty-read-{pane}");
         let spawned = std::thread::Builder::new().name(name).spawn(move || {
             let mut buf = vec![0u8; READ_BUF];
+            let mut budget = tandem_core::supervisor::RestartBudget::default();
+            let mut gave_up = false;
             loop {
                 // Backpressure only while a UI is attached (§5.5).
                 if session.sink.read().is_some() && session.flow.unacked() > ACK_HIGH {
@@ -418,18 +463,52 @@ impl PtyManager {
                         // Marks come out of the stream first; queries are
                         // answered here, for visible and hidden panes alike,
                         // within the same read (§5.7, §5.8).
-                        let fed = match session.side.lock() {
-                            Ok(mut side) => {
-                                let fed = side.feed_raw(&buf[..n], &colors.read());
-                                if side.state() != side_published(&side) {
-                                    session.state_dirty.store(true, Ordering::Release);
+                        let raw = || Fed {
+                            output: buf[..n].to_vec(),
+                            ..Fed::default()
+                        };
+                        let fed = if gave_up {
+                            raw()
+                        } else {
+                            let fed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                match session.side.lock() {
+                                    Ok(mut side) => {
+                                        #[cfg(test)]
+                                        if PANIC_NEXT_FEEDS
+                                            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                                                n.checked_sub(1)
+                                            })
+                                            .is_ok()
+                                        {
+                                            panic!("test: a feed panicked");
+                                        }
+                                        let fed = side.feed_raw(&buf[..n], &colors.read());
+                                        if side.state() != side_published(&side) {
+                                            session.state_dirty.store(true, Ordering::Release);
+                                        }
+                                        fed
+                                    }
+                                    Err(_) => raw(),
                                 }
-                                fed
+                            }));
+                            match fed {
+                                Ok(fed) => fed,
+                                Err(_) => {
+                                    // The watchdog (§5.2): a fresh parser and
+                                    // on, at most 3 times per 10 minutes; then
+                                    // the output is passed through raw.
+                                    session.side.clear_poison();
+                                    if let Ok(mut side) = session.side.lock() {
+                                        side.recover();
+                                    }
+                                    gave_up = !budget.try_restart(now_ms());
+                                    tracing::warn!(pane = %pane_id, gave_up, "pty reader recovered from a panic");
+                                    if let Some(sink) = &on_failure {
+                                        sink(&pane_id, budget.recent(), gave_up);
+                                    }
+                                    raw()
+                                }
                             }
-                            Err(_) => Fed {
-                                output: buf[..n].to_vec(),
-                                ..Fed::default()
-                            },
                         };
                         for mark in &fed.marks {
                             match (mark, &on_handback, &on_mark) {
@@ -795,6 +874,27 @@ impl PtyManager {
             }))
     }
 
+    /// Every live terminal's numbers (Help › Diagnostics).
+    pub fn metrics(&self) -> Vec<PaneMetrics> {
+        let mut out: Vec<PaneMetrics> = self
+            .sessions
+            .iter()
+            .map(|e| PaneMetrics {
+                pane_id: e.key().clone(),
+                spawn_ms: e.value().spawn_ms.load(Ordering::Acquire),
+                queued_bytes: e.value().flow.unacked(),
+                exited: e
+                    .value()
+                    .exited
+                    .lock()
+                    .map(|x| x.is_some())
+                    .unwrap_or(false),
+            })
+            .collect();
+        out.sort_by(|a, b| a.pane_id.cmp(&b.pane_id));
+        out
+    }
+
     pub fn kill_all(&self) {
         let panes: Vec<String> = self.sessions.iter().map(|e| e.key().clone()).collect();
         for pane in panes {
@@ -1047,5 +1147,86 @@ impl OutputSink for VecSink {
         }
         self.frames.lock().map_err(|_| SinkClosed)?.push(frame);
         Ok(())
+    }
+}
+
+#[cfg(all(test, unix))]
+mod watchdog_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+    use std::sync::atomic::Ordering;
+
+    fn spec(pane: &str, script: &str) -> SpawnSpec {
+        let mut env = BTreeMap::new();
+        env.insert(
+            "PATH".into(),
+            std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".into()),
+        );
+        SpawnSpec {
+            pane_id: pane.into(),
+            program: PathBuf::from("/bin/sh"),
+            args: vec!["-c".into(), script.into()],
+            cwd: std::env::temp_dir(),
+            env,
+            cols: 80,
+            rows: 24,
+            scrollback_lines: 1000,
+            mark_token: None,
+        }
+    }
+
+    #[test]
+    fn nfr_5_2_a_reader_that_panics_recovers_three_times_then_reports_and_keeps_the_output() {
+        let reports: Arc<Mutex<Vec<(String, usize, bool)>>> = Arc::default();
+        let seen = reports.clone();
+        let mgr = PtyManager::new().with_reader_failure_sink(Arc::new(move |pane, n, failed| {
+            if let Ok(mut r) = seen.lock() {
+                r.push((pane.to_string(), n, failed));
+            }
+        }));
+        let sink = Arc::new(VecSink::default());
+        mgr.spawn(
+            spec(
+                "wd1",
+                "for i in 1 2 3 4 5 6; do read line; echo out-$line; done",
+            ),
+            Some(sink.clone() as Arc<dyn OutputSink>),
+        )
+        .expect("spawn");
+        let text = || String::from_utf8_lossy(&sink.data()).into_owned();
+        let count = || reports.lock().map(|r| r.len()).unwrap_or(0);
+        for i in 1..=4 {
+            PANIC_NEXT_FEEDS.store(1, Ordering::SeqCst);
+            mgr.write("wd1", format!("p{i}\r").as_bytes())
+                .expect("write");
+            assert!(
+                wait_until(Duration::from_secs(5), || count() >= i),
+                "panic {i} reported"
+            );
+            // The output still reaches the pane.
+            assert!(
+                wait_until(Duration::from_secs(5), || text()
+                    .contains(&format!("out-p{i}"))),
+                "out-p{i} shown: {}",
+                text()
+            );
+        }
+        let r = reports.lock().expect("reports").clone();
+        assert_eq!(
+            r,
+            vec![
+                ("wd1".to_string(), 1, false),
+                ("wd1".to_string(), 2, false),
+                ("wd1".to_string(), 3, false),
+                ("wd1".to_string(), 3, true),
+            ]
+        );
+        // After giving up the output is passed through raw: no more panics.
+        mgr.write("wd1", b"after\r").expect("write");
+        assert!(wait_until(Duration::from_secs(5), || text().contains("out-after")));
+        assert_eq!(count(), 4);
+        PANIC_NEXT_FEEDS.store(0, Ordering::SeqCst);
+        let _ = mgr.kill("wd1");
     }
 }

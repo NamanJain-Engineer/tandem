@@ -17,6 +17,8 @@ type UiState = {
   paletteMode: "commands" | "find";
   /** The keyboard shortcuts cheatsheet (Mod+/). */
   cheatsheetOpen: boolean;
+  /** Help › Diagnostics, the live panel (§5.7). */
+  diagnosticsOpen: boolean;
   upgrade: { open: boolean; gate?: UpgradeGate; retry?: () => void };
   setMode: (m: Mode) => void;
   openSettings: (page?: string) => void;
@@ -27,6 +29,7 @@ type UiState = {
   /** Opens the palette as "Find work…". */
   openFindWork: () => void;
   setCheatsheet: (open: boolean) => void;
+  setDiagnostics: (open: boolean) => void;
   openUpgrade: (gate?: UpgradeGate, retry?: () => void) => void;
   closeUpgrade: () => void;
 };
@@ -39,6 +42,7 @@ export const useUi = create<UiState>((set, get) => ({
   paletteOpen: false,
   paletteMode: "commands",
   cheatsheetOpen: false,
+  diagnosticsOpen: false,
   upgrade: { open: false },
   settingsPage: null,
   setMode: (mode) => set({ mode }),
@@ -61,6 +65,7 @@ export const useUi = create<UiState>((set, get) => ({
   setPalette: (paletteOpen) => set(paletteOpen ? { paletteOpen } : { paletteOpen, paletteMode: "commands" }),
   openFindWork: () => set({ paletteOpen: true, paletteMode: "find" }),
   setCheatsheet: (cheatsheetOpen) => set({ cheatsheetOpen }),
+  setDiagnostics: (diagnosticsOpen) => set({ diagnosticsOpen }),
   openUpgrade: (gate, retry) => set({ upgrade: { open: true, gate, retry } }),
   closeUpgrade: () => set({ upgrade: { open: false } }),
 }));

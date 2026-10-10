@@ -3,3 +3,25 @@
 # id = "RUSTSEC-0000-0000"      # or a GHSA id for npm
 # reason = "Why it does not affect Tandem"
 # expires = "2026-12-31"
+
+# extract-zip (high, no patched release): reached only through the desktop
+# E2E tooling (@wdio/cli > @puppeteer/browsers), which would use it to unzip a
+# downloaded browser or driver. The E2E suite drives the app via tauri-driver
+# and downloads no browser, and none of it ships in the app or the site.
+[[waiver]]
+id = "GHSA-jmr9-qjv8-65gv"
+reason = "dev-only: @wdio/cli > @puppeteer/browsers; E2E downloads no browser; not shipped"
+expires = "2027-01-31"
+
+[[waiver]]
+id = "GHSA-7pqw-9j4j-h8q3"
+reason = "dev-only: @wdio/cli > @puppeteer/browsers; E2E downloads no browser; not shipped"
+expires = "2027-01-31"
+
+# braces (high, no patched release): stack exhaustion on hostile glob
+# patterns, reached through mocha's chokidar (@wdio/mocha-framework), which
+# only ever sees the repo's own spec globs. Dev-only; not shipped.
+[[waiver]]
+id = "GHSA-vfj7-8cjw-p6xm"
+reason = "dev-only: @wdio/mocha-framework > mocha > chokidar; globs are our own spec paths; not shipped"
+expires = "2027-01-31"

@@ -196,6 +196,7 @@ export const handlers: Record<string, () => void> = {
   "work.find": () => useUi.getState().openFindWork(),
   "billing.plans": () => useUi.getState().openUpgrade(),
   "help.shortcuts": () => useUi.getState().setCheatsheet(!useUi.getState().cheatsheetOpen),
+  "help.diagnostics": () => useUi.getState().setDiagnostics(true),
   "help.copy_diagnostics": () => void copyDiagnostics(toast),
   "help.open_logs": () => void invoke("app_open_logs_folder").catch(() => undefined),
 };
