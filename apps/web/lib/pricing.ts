@@ -63,19 +63,17 @@ export const CREDIT_VALUE_USD = 0.001;
 
 /** What a hosted feature costs. `key` is the feature's entry in the API's
  * signed remote config (and `CREDIT_PRICES` in plans.ts); a build-time test
- * keeps the three equal (F-WB-01 AC3). `feature` is its PRODUCT_SPEC id: a
- * row whose feature isn't built yet (open in docs/REMAINING.md) must be
- * `planned`, and the page badges it, as the plan cards do (a test checks). */
+ * keeps the three equal (F-WB-01 AC3). `feature` is its PRODUCT_SPEC id: only
+ * features ticked in docs/REMAINING.md are listed (a test checks), so Enhance
+ * and Polish (`rewrite`, F-DI-10, 3 credits per use) joins when it ships. */
 export type CreditRow = {
   key: "title" | "rewrite";
   feature: string;
   label: string;
   unit: string;
   credits: number;
-  planned?: boolean;
 };
 
 export const CREDIT_ROWS: readonly CreditRow[] = [
   { key: "title", feature: "F-BE-06", label: "Thread titles", unit: "per title", credits: 0 },
-  { key: "rewrite", feature: "F-DI-10", label: "Enhance and Polish", unit: "per use", credits: 3, planned: true },
 ];
