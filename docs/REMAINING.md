@@ -176,7 +176,7 @@ In independent sub-phases, each green and tagged (`m16a` … `m16d`), then the
 release candidate. Stop after any sub-phase if the budget runs out.
 - 16A Conductor (voice): [ ] F-CN-01 Call lifecycle · [ ] F-CN-02 Talker/doer
   architecture and tool catalog · [ ] F-CN-03 Delivery rules and safety ·
-  [ ] F-CN-04 Conductor UI · [ ] F-CN-05 Find work by meaning · [ ] F-CN-06
+  [ ] F-CN-04 Conductor UI · [ ] F-CN-05 Find work by meaning (local search and the palette done, D-814; the hosted ranking and teammates are next) · [ ] F-CN-06
   Persona and memory · [ ] F-CN-07 Wake phrase · [ ] F-CN-08 Audio routing for
   calls · [ ] F-BE-08 Voice session minting
 - 16B Auto: [x] F-AU-01 Auto (Pro, credits)

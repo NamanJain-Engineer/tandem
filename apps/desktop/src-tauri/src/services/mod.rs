@@ -17,6 +17,7 @@ pub mod engines;
 pub mod entitlement;
 pub mod events;
 pub mod files;
+pub mod find_work;
 pub mod git_panel;
 pub mod handoff;
 pub mod hosted;
