@@ -10,6 +10,7 @@ pub mod auto;
 pub mod boot;
 pub mod config;
 pub mod dashboard;
+pub mod data_controls;
 pub mod deeplink;
 pub mod device_login;
 pub mod engines;
