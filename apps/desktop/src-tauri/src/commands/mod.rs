@@ -6,6 +6,7 @@ pub mod accounts;
 pub mod app;
 pub mod auto;
 pub mod browser;
+pub mod data_controls;
 pub mod engines;
 pub mod files;
 pub mod git;
