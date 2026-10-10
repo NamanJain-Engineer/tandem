@@ -14,6 +14,7 @@ import { requestContext } from "./middleware/requestContext";
 import { turnstile } from "./middleware/turnstile";
 import { adminRoutes } from "./routes/admin";
 import { aiRoutes } from "./routes/ai";
+import { autoRoutes } from "./routes/auto";
 import { auditRoutes } from "./routes/audit";
 import { billingRoutes } from "./routes/billing";
 import { configRoutes } from "./routes/config";
@@ -61,6 +62,7 @@ export function createApp(deps: Deps) {
   app.route("/v1/credits", creditsRoutes(deps));
   app.route("/v1/billing", billingRoutes(deps));
   app.route("/v1/ai", aiRoutes(deps));
+  app.route("/v1/auto", autoRoutes(deps));
   app.route("/v1/stt", sttRoutes(deps));
   app.route("/v1/orgs", orgRoutes(deps));
   app.route("/v1/audit", auditRoutes(deps));

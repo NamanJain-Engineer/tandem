@@ -253,6 +253,36 @@ Built on branch `m16-usage-dashboard` (from `product-m0-m5`) by the M13 session 
 ### M16 · F-AC-07 log
 - F-AC-07: the parser, the report, the two commands, `Heatmap`, the page, the share card and E2E-M16-6, which passed on its first run. While writing the page test I found that "1.5K" isn't how `tokenCount` rounds (it shows "2K"), so the test fixtures use round thousands. The E2E writes three days of Claude log lines (1K, 2K and 3K tokens) and a broken line into a test account's home. It checks "6K tokens", the last three heatmap levels, the engine and workspace lists, "1 line skipped", and a PNG saved through the fake save dialog.
 
+## M16 · F-AU-01 Auto
+Built on branch `m16-auto` by the M13 session as part of its follow-on chain. It is stacked on `m13-hosted-services` (D-618), and its decisions come from the M13 range (D-600–D-699).
+- [x] F-AU-01 Auto (Pro, credits).
+  - **API.** `POST /v1/auto/next` (`routes/auto.ts`, `services/ai.ts` `autoNext`) runs one metered turn at 6 credits (remote-config price `auto_turn`), uses the per-mode supervisor instruction, and holds the answer to `{action, text|reason}` (`parseAutoNext`). It needs Pro (`requirePlan(auto)`), refuses a Team whose policy has `disableAuto` (403 `FORBIDDEN_POLICY`), applies the existing 30/min limit, and refuses `turn ≥ ceiling` before any model call. An unusable answer refunds the turn, and the goal and scrollback are never logged. `MockAi` answers `prompt "Continue with the next step."` until the scrollback shows `ALL TESTS PASSED`, then `done` (ARCHITECTURE §14.8).
+  - **Desktop.** `services::auto::AutoService` is the loop in §8.8. It sits behind an `AutoHost` trait (pane, status, tail, typing, API, notification), so every rule is unit-tested with a fake host and a write log.
+  - **Commands.** `auto_start`, `auto_list`, `auto_pause`, `auto_resume`, `auto_stop` and `auto_dismiss` are declared in ARCHITECTURE §3. `auto_start` checks for an agent pane with its agent running, the policy, the plan and the consent.
+  - **UI.** Pane `⋯` → **Auto…** opens `AutoDialog`, where you pick a mode (Custom takes a goal and 1–30 turns) and see the consent step until "Don't ask again". The header chip `AutoChip` reads "⚡ Finish · 3/20" with a spinning ring while live; it has Pause, Resume and Stop, and it shows Done, Stuck or Stopped with the reason until you dismiss it.
+  - **Tests.**
+    - API: 9, `test/auto.test.ts` (F-AU-01.4 included).
+    - Supervisor: 12 (`f_au_01_1`–`5`, plus retries, end-reason mapping, pane close and engine change, stop and pause, and start checks).
+    - UI: 4.
+    - E2E-M16-7: 5 tests (consent and a Custom run to its ceiling, F-AU-01.5 approval pause, done, F-AU-01.2 engine exit, F-AU-01.4 no credits).
+
+### M16 · F-AU-01 decisions
+- D-618: Auto is stacked on `m13-hosted-services`, as admin is (D-613). It needs M13's metering, plan limits and Team policy, and its PR targets that branch until #9 merges.
+- D-619: A Team member whose admin turned Auto off ends with a 13th reason, `turned_off` ("Your organization turned Auto off."). PRODUCT_SPEC's list has no reason for this, and "no subscription" would be untrue for a paying Team. The server enforces the policy too (403 `FORBIDDEN_POLICY`), so an outdated client can't get around it.
+- D-620: "Idle at its prompt" compares status records, not times. A turn is ready on `Done`, `Idle`, `Failed` or `Waiting(Input)` only when that status record differs from the one the pane had when the last prompt was typed. Status times come from the app clock, which E2E runs can stop, so a time comparison could wait forever. `Waiting(Question)` pauses like an approval, because it asks a person. `type_prompt` now refuses only a pane waiting on an approval or a question: an agent waiting for input is exactly where Auto types. F-EN-06 AC2's case is the permission dialog, which still refuses with "<name> is waiting for your approval".
+- D-621: Runs live in memory, and the `auto_runs` table stays unused. A restart restarts the pane's engine, which would end the run as engine exited anyway. Pause takes effect at the next turn. Stop takes effect at once: nothing more is typed, even if an answer is on its way, and that answer's 6 credits are spent. 429 is retried like an unreachable service (1 s, 3 s, 9 s, then `api_unreachable`). Typing that fails 3 turns in a row ends the run as stuck, so a pane that won't take input can't keep spending credits.
+- D-622: The consent dialog shows whenever `auto_consent` or `auto_dont_ask` is off. Continue turns `auto_consent` on, and "Don't ask again" turns `auto_dont_ask` on. Turning the Settings → Privacy switch off withdraws consent: `auto_start` refuses (PermissionDenied) and the dialog asks again.
+- D-623: An ended run raises a pane notification through the usual channels. Done and turn ceiling use the `done` kind and the other reasons use `failed`. Nothing is raised when the user stopped the run. The body is the supervisor's reason or "Mode · n of m turns", redacted.
+
+### M16 · F-AU-01 log
+- F-AU-01: the route, the supervisor, the commands, the dialog, the chip and E2E-M16-7.
+  - Results: 5 of 5 in each of the last 2 runs, and E2E-M4-5 still passes with the narrower `type_prompt` check (D-620).
+  - The first run found three test problems, none in the app:
+    - The fake engine logs what it reads as hex, so the spec now counts prompts from that PTY write log.
+    - The header chip is clipped at the pane's width, so the spec reads its `textContent`.
+    - The scrollback still held a previous test's `ALL TESTS PASSED`, so the mock supervisor rightly said done; the done test now runs last, on its own pane.
+  - The run to its ceiling spends exactly 3 × 6 credits, and its end raises "Auto reached its turn limit".
+
 ## Decisions
 - D-1: F-CD-09 owned by M9. It needs the Files editor and the Tandem browser.
 - D-2: F-SH-08 framework slice in M5, Accounts step in M6, owned by M8.

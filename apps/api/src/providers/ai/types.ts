@@ -1,5 +1,5 @@
 /** The hosted AI features that call a model (F-BE-06). */
-export type AiFeature = "title" | "rewrite" | "teammate_draft";
+export type AiFeature = "title" | "rewrite" | "teammate_draft" | "auto_next";
 
 export type AiMessage = { role: "user" | "assistant"; content: string };
 
