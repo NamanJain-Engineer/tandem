@@ -31,6 +31,13 @@
       "chosen": false
     },
     {
+      "id": "workos",
+      "name": "WorkOS",
+      "purpose": "SAML single sign-on, only for Team organizations that choose it",
+      "data": "The sign-in's email address and name from your identity provider",
+      "chosen": true
+    },
+    {
       "id": "hosting",
       "name": "API hosting provider (not yet chosen)",
       "purpose": "Runs the Vibezeo API and its database",

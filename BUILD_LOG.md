@@ -283,6 +283,51 @@ Built on branch `m16-auto` by the M13 session as part of its follow-on chain. It
     - The scrollback still held a previous test's `ALL TESTS PASSED`, so the mock supervisor rightly said done; the done test now runs last, on its own pane.
   - The run to its ceiling spends exactly 3 × 6 credits, and its end raises "Auto reached its turn limit".
 
+## M16 · F-BL-06 P2 Team SSO
+Built on branch `m16-team-sso` by the M13 session, as the coordinator added to its chain. It is stacked on `m13-hosted-services`, and its decisions come from the M13 range.
+- [x] F-BL-06 SSO (P2).
+  - **API.**
+    - `providers/sso`: an `SsoProvider` interface with three implementations.
+      - `OidcSso` handles any OpenID Connect provider: discovery, authorization code with PKCE S256 and a nonce, and an ID token checked with jose for signature, issuer, audience, expiry and nonce. It falls back to userinfo when the token has no email.
+      - `WorkOsSso` handles SAML through WorkOS.
+      - `MockSso` is the test identity provider.
+    - `services/sso.ts` covers the connection, the domains, sign-in and enforcement. Its admin routes sit under `/v1/orgs/:id/sso`; `/v1/sso/lookup` and `/v1/sso/start` are public.
+    - The return leg `GET /v1/auth/sso/callback` is a better-auth plugin endpoint. It finds or creates the account, joins the org and sets an ordinary better-auth session cookie.
+    - Migration `0002_m16_team_sso` adds `org_sso` and `org_sso_domains`. WorkOS is in the subprocessor list.
+  - **Web.**
+    - `/signin` gets "Sign in with SSO" and explains each `sso_error` code.
+    - `/team` gets a "Single sign-on" card for owners and admins: domains with their TXT record and Check DNS, the protocol, the OIDC fields (the secret is never shown again) or the WorkOS organization, the redirect URI to register, "Require SSO" and Remove.
+    - Audit labels are added for the SSO events.
+  - **Desktop.** No change. The desktop signs in through the web page (F-BE-02), which now offers SSO. That path is not covered by an E2E yet.
+  - **Tests.**
+    - API: 12 tests in `test/sso.test.ts`. They run a real OIDC flow against an in-process provider with a real RS256 key. They also cover a forged token, an unverified address, an address outside the domains, a replayed state, a denial, seats, another org, enforcement and the WorkOS adapter.
+    - Web E2E-M16-8: 3 tests. All 15 web E2E pass.
+
+### M16 · F-BL-06 P2 decisions
+- D-624: SSO is our own small module behind `SsoProvider`, not the `@better-auth/sso` package. Connections are per org and change at runtime, and the domain proof and seat rules are ours anyway. Only the callback lives inside better-auth (as a plugin endpoint), so sessions and cookies stay better-auth's. Like admin (D-613), this branch is stacked on `m13-hosted-services` because it needs M13's orgs, seats and audit.
+- D-625: OIDC is spoken directly, and SAML goes through WorkOS. Parsing and verifying SAML's signed XML ourselves is a known source of account-takeover bugs. WorkOS needs `WORKOS_CLIENT_ID` and `WORKOS_API_KEY` (HUMAN_TODO). Until they are set, the Team page shows SAML as not available and the API refuses it (`SSO_UNAVAILABLE`).
+- D-626: The OIDC client secret is stored sealed with AES-256-GCM, using a key derived with HKDF from `BETTER_AUTH_SECRET`. No API response contains it (`hasSecret` only), and saving without a secret keeps the stored one. Rotating `BETTER_AUTH_SECRET` means admins re-enter their secrets. CLAUDE.md's keychain rule is about the desktop; this secret lives on the server.
+- D-627: An org proves an email domain with a DNS TXT record (`_vibezeo-sso.<domain>` = `vibezeo-sso=<token>`).
+  - Its provider can sign in only addresses on its verified domains, so an org's identity provider can't assert someone else's address and take over their account.
+  - Only one org can verify a domain (a partial unique index).
+  - An address the provider marks `email_verified: false` is refused.
+- D-628: The first SSO sign-in creates the account with its email verified and joins the org as a member if a seat is free (just-in-time). An existing account with that address is the same person and joins. An account already in another org is refused, so the one-org-per-user rule stays. Each sign-in is in the org's audit log.
+- D-629: "Require SSO" needs a verified domain.
+  - For those addresses, password, magic-link and sign-up requests answer 403 `SSO_REQUIRED` with the reason.
+  - A session-create database hook refuses every other way in (Google, the auto sign-in after email verification) except the SSO callback.
+  - It applies only while the org's Team plan is active, so a lapsed plan can't lock members out.
+  - Removing the last verified domain turns it off.
+- D-630: The test identity provider (`provider: "mock"`) exists only with test routes on.
+  - `/__test/sso` sets an org up with a verified domain.
+  - `/__test/idp/next` picks who signs in, and `/__test/idp/authorize` hands the code back.
+  - The web E2E API now runs with `API_PUBLIC_URL=http://127.0.0.1:8787` so the browser can reach that page.
+
+### M16 · F-BL-06 P2 log
+- F-BL-06 SSO: the provider interface, the service, the plugin callback, enforcement, the web pages, 12 API tests and E2E-M16-8. Both suites passed on their first run.
+  - The only fix was in my own code: the error redirect went to `/sign-in`, but the page is `/signin`. Reading the web app before writing its E2E caught it.
+  - The full web E2E suite (15) passes. The M13 Team specs still pass with the new card on `/team`.
+  - The gate's web typecheck then caught that a Next.js page may not export anything but its page. The error messages moved to `lib/sso.ts`, and E2E-M16-8 passed again afterwards.
+
 ## Decisions
 - D-1: F-CD-09 owned by M9. It needs the Files editor and the Tandem browser.
 - D-2: F-SH-08 framework slice in M5, Accounts step in M6, owned by M8.

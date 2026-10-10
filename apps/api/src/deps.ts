@@ -29,4 +29,11 @@ export type Deps = {
   auth: Auth;
   ai: AiProvider;
   stt: SttProvider;
+  /** What Team SSO reaches out with: the identity provider and DNS (faked in tests). */
+  ssoNet: SsoNet;
+};
+
+export type SsoNet = {
+  fetch: (input: string, init?: RequestInit) => Promise<Response>;
+  resolveTxt: (name: string) => Promise<string[][]>;
 };

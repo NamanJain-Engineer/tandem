@@ -5,6 +5,8 @@ import { draftBody, rewriteBody, titleBody } from "../routes/ai";
 import { autoNextBody } from "../routes/auto";
 import { acceptBody, createOrgBody, inviteBody, memberBody, seatsBody } from "../routes/orgs";
 import { clientAuditBody, policySchema } from "../services/orgs";
+import { domainBody, ssoBody } from "../services/sso";
+import { ssoLookupBody, ssoStartBody } from "../routes/sso";
 import { checkoutBody, packBody } from "../routes/billing";
 import { authorizeBody, exchangeBody, refreshBody, tokenResponse } from "../routes/desktopAuth";
 import { approveBody, startBody, startResponse, tokenBody } from "../routes/deviceAuth";
@@ -102,6 +104,29 @@ const devices = z.array(
     lastUsedAt: z.string(),
   }),
 );
+
+const SSO_VIEW = z.object({
+      connection: z
+        .object({
+          provider: z.enum(["oidc", "workos", "mock"]),
+          issuer: z.string().nullable(),
+          clientId: z.string().nullable(),
+          hasSecret: z.boolean(),
+          organization: z.string().nullable(),
+          enforce: z.boolean(),
+          updatedAt: z.string(),
+        })
+        .nullable(),
+      domains: z.array(
+        z.object({
+          domain: z.string(),
+          verified: z.boolean(),
+          record: z.object({ type: z.literal("TXT"), name: z.string(), value: z.string() }),
+        }),
+      ),
+      providers: z.object({ oidc: z.boolean(), workos: z.boolean() }),
+      redirectUri: z.string(),
+    });
 
 export type RouteDoc = {
   method: "get" | "post" | "delete" | "put" | "patch";
@@ -372,6 +397,67 @@ export const ROUTES: RouteDoc[] = [
     auth: "cookie",
     body: seatsBody,
     response: z.object({ seats: z.number() }),
+  },
+  {
+    method: "get",
+    path: "/v1/orgs/{id}/sso",
+    summary: "The org's single sign-on connection and domains (owner or admin)",
+    auth: "cookie",
+    response: SSO_VIEW,
+  },
+  {
+    method: "put",
+    path: "/v1/orgs/{id}/sso",
+    summary: "Set the identity provider (OIDC, or SAML through WorkOS) and whether SSO is required",
+    auth: "cookie",
+    body: ssoBody,
+    response: SSO_VIEW,
+  },
+  {
+    method: "delete",
+    path: "/v1/orgs/{id}/sso",
+    summary: "Remove single sign-on",
+    auth: "cookie",
+    status: 204,
+  },
+  {
+    method: "post",
+    path: "/v1/orgs/{id}/sso/domains",
+    summary: "Add an email domain; it counts once its DNS TXT record is verified",
+    auth: "cookie",
+    body: domainBody,
+    response: SSO_VIEW,
+    status: 201,
+  },
+  {
+    method: "post",
+    path: "/v1/orgs/{id}/sso/domains/{domain}/verify",
+    summary: "Check the domain's TXT record",
+    auth: "cookie",
+    response: SSO_VIEW,
+  },
+  {
+    method: "delete",
+    path: "/v1/orgs/{id}/sso/domains/{domain}",
+    summary: "Remove a domain",
+    auth: "cookie",
+    status: 204,
+  },
+  {
+    method: "post",
+    path: "/v1/sso/lookup",
+    summary: "Whether an address signs in with its organization's SSO, and must",
+    auth: "none",
+    body: ssoLookupBody,
+    response: z.object({ sso: z.boolean(), required: z.boolean(), org: z.string().nullable().optional() }),
+  },
+  {
+    method: "post",
+    path: "/v1/sso/start",
+    summary: "Where to send the browser to sign in with the organization's identity provider",
+    auth: "none",
+    body: ssoStartBody,
+    response: z.object({ url: z.string() }),
   },
   {
     method: "get",

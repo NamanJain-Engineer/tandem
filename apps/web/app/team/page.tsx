@@ -7,7 +7,7 @@ import { DEFAULT_POLICY, type MaxAccess, type OrgPolicy } from "@tandem/protocol
 import { Card, Notice, Shell } from "../../components/Shell";
 import { api, ApiFailure, formatDate, type Me } from "../../lib/api";
 import { formatCredits as n } from "../../lib/credits";
-import { type AuditRow, auditLabel, ENGINE_CHOICES, type OrgView, ROLE_LABEL } from "../../lib/team";
+import { type AuditRow, auditLabel, ENGINE_CHOICES, type OrgView, ROLE_LABEL, SSO_PROVIDER_LABEL, type SsoView } from "../../lib/team";
 import { useMe } from "../../lib/useMe";
 
 const dollars = (cents: number) => `$${(cents / 100).toFixed(0)}`;
@@ -154,6 +154,7 @@ function Org({ me, onLeft }: { me: Me; onLeft: () => Promise<void> }) {
           <Members org={org} me={me} act={act} />
           <Invite org={org} act={act} />
           <Policy org={org} act={act} />
+          {org.plan === "team" && <Sso orgId={orgId} act={act} rev={rev} />}
           <Audit orgId={orgId} rev={rev} />
         </>
       )}
@@ -460,6 +461,159 @@ function Audit({ orgId, rev }: { orgId: string; rev: number }) {
           </Button>
         </div>
       )}
+    </Card>
+  );
+}
+
+/** Single sign-on (F-BL-06 P2): the identity provider, the domains it signs in, and "SSO only". */
+function Sso({ orgId, act, rev }: { orgId: string; act: Act; rev: number }) {
+  const [view, setView] = useState<SsoView | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [provider, setProvider] = useState<"oidc" | "workos">("oidc");
+  const [issuer, setIssuer] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [secret, setSecret] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [enforce, setEnforce] = useState(false);
+  const [domain, setDomain] = useState("");
+
+  useEffect(() => {
+    let live = true;
+    api<SsoView>(`/v1/orgs/${orgId}/sso`)
+      .then((v) => {
+        if (!live) return;
+        setView(v);
+        const c = v.connection;
+        if (c && c.provider !== "mock") setProvider(c.provider);
+        setIssuer(c?.issuer ?? "");
+        setClientId(c?.clientId ?? "");
+        setOrganization(c?.organization ?? "");
+        setEnforce(c?.enforce ?? false);
+        setSecret("");
+      })
+      .catch((e: unknown) => live && setErr(failed(e)));
+    return () => {
+      live = false;
+    };
+  }, [orgId, rev]);
+
+  if (!view) {
+    return (
+      <Card>
+        <h2 className="text-lg font-semibold">Single sign-on</h2>
+        {err ? <Notice tone="error">{err}</Notice> : <p className="mt-2 text-sm text-fg-muted">Loading…</p>}
+      </Card>
+    );
+  }
+  const c = view.connection;
+  const verified = view.domains.filter((d) => d.verified).map((d) => d.domain);
+  const body =
+    provider === "oidc"
+      ? { provider, issuer, clientId, clientSecret: secret || undefined, enforce }
+      : { provider, organization, enforce };
+  return (
+    <Card>
+      <h2 className="text-lg font-semibold">Single sign-on</h2>
+      <p className="mt-1 text-sm text-fg-muted" data-testid="sso-status">
+        {c
+          ? `${SSO_PROVIDER_LABEL[c.provider]}${c.issuer ? ` · ${c.issuer}` : ""}${c.organization ? ` · ${c.organization}` : ""} · ${
+              c.enforce ? `required for ${verified.join(", ")}` : "optional"
+            }`
+          : "Not set up. Members sign in with email and password, a link, or Google."}
+      </p>
+
+      <h3 className="mt-5 text-md font-semibold">Email domains</h3>
+      <p className="mt-1 text-sm text-fg-muted">
+        Single sign-on works for addresses on domains you prove you own. Add the TXT record we show to your DNS, then check it.
+      </p>
+      <ul className="mt-2 flex flex-col gap-2 text-sm" data-testid="sso-domains">
+        {view.domains.map((d) => (
+          <li key={d.domain} className="flex flex-wrap items-center gap-3">
+            <span className="font-medium">{d.domain}</span>
+            {d.verified ? (
+              <span className="text-success">Verified</span>
+            ) : (
+              <>
+                <code className="rounded-xs bg-surface-3 px-1 text-xs">{`${d.record.name} TXT "${d.record.value}"`}</code>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void act(() => api(`/v1/orgs/${orgId}/sso/domains/${d.domain}/verify`, { method: "POST" }), `${d.domain} is verified.`)}
+                >
+                  Check DNS
+                </Button>
+              </>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void act(() => api(`/v1/orgs/${orgId}/sso/domains/${d.domain}`, { method: "DELETE" }), `${d.domain} removed.`)}
+            >
+              Remove
+            </Button>
+          </li>
+        ))}
+      </ul>
+      <form
+        className="mt-3 flex flex-wrap items-end gap-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void act(() => api(`/v1/orgs/${orgId}/sso/domains`, { method: "POST", body: { domain } }), `Added ${domain}.`).then(() => setDomain(""));
+        }}
+      >
+        <Input label="Domain" placeholder="example.com" value={domain} onChange={(e) => setDomain(e.target.value)} className="w-64" required />
+        <Button type="submit" variant="secondary">
+          Add domain
+        </Button>
+      </form>
+
+      <h3 className="mt-6 text-md font-semibold">Identity provider</h3>
+      <p className="mt-1 text-sm text-fg-muted">
+        Register this redirect URI with your provider: <code className="rounded-xs bg-surface-3 px-1 text-xs">{view.redirectUri}</code>
+      </p>
+      <div className="mt-3 flex flex-col gap-3">
+        <Select
+          label="Protocol"
+          value={provider}
+          onValueChange={(v) => setProvider(v as "oidc" | "workos")}
+          options={[
+            { value: "oidc", label: SSO_PROVIDER_LABEL.oidc },
+            { value: "workos", label: view.providers.workos ? SSO_PROVIDER_LABEL.workos : `${SSO_PROVIDER_LABEL.workos} (not available yet)`, disabled: !view.providers.workos },
+          ]}
+        />
+        {provider === "oidc" ? (
+          <>
+            <Input label="Issuer URL" placeholder="https://login.example.com" value={issuer} onChange={(e) => setIssuer(e.target.value)} />
+            <Input label="Client ID" value={clientId} onChange={(e) => setClientId(e.target.value)} />
+            <Input
+              label="Client secret"
+              type="password"
+              autoComplete="off"
+              placeholder={c?.hasSecret ? "Saved. Leave empty to keep it." : ""}
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+            />
+          </>
+        ) : (
+          <Input label="WorkOS organization ID" placeholder="org_01H…" value={organization} onChange={(e) => setOrganization(e.target.value)} />
+        )}
+        <Switch
+          label={verified.length ? `Require SSO for ${verified.join(", ")}` : "Require SSO (verify a domain first)"}
+          checked={enforce}
+          disabled={verified.length === 0}
+          onCheckedChange={setEnforce}
+        />
+        <div className="flex gap-3">
+          <Button variant="primary" onClick={() => void act(() => api(`/v1/orgs/${orgId}/sso`, { method: "PUT", body }), "Single sign-on saved.")}>
+            Save
+          </Button>
+          {c && (
+            <Button variant="ghost" onClick={() => void act(() => api(`/v1/orgs/${orgId}/sso`, { method: "DELETE" }), "Single sign-on removed.")}>
+              Remove single sign-on
+            </Button>
+          )}
+        </div>
+      </div>
     </Card>
   );
 }

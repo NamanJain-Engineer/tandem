@@ -24,6 +24,7 @@ import { deviceAuthRoutes } from "./routes/deviceAuth";
 import { health } from "./routes/health";
 import { meRoutes } from "./routes/me";
 import { orgRoutes } from "./routes/orgs";
+import { ssoRoutes } from "./routes/sso";
 import { sttRoutes } from "./routes/stt";
 import { testRoutes } from "./routes/testRoutes";
 import { webhookRoutes } from "./routes/webhooks";
@@ -65,6 +66,7 @@ export function createApp(deps: Deps) {
   app.route("/v1/auto", autoRoutes(deps));
   app.route("/v1/stt", sttRoutes(deps));
   app.route("/v1/orgs", orgRoutes(deps));
+  app.route("/v1/sso", ssoRoutes(deps));
   app.route("/v1/audit", auditRoutes(deps));
   app.route("/v1/admin", adminRoutes(deps));
   app.route("/v1/webhooks", webhookRoutes(deps));

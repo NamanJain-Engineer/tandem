@@ -21,6 +21,9 @@ import { notifyCredits } from "../services/credits";
 import { grantMonthly, type Owner } from "../services/ledger";
 import { creditOwnerOf, membershipOf } from "../services/membership";
 import { createOrg, policySchema } from "../services/orgs";
+import { markVerified } from "../services/sso";
+import { mockIdpCode, mockIdpNext } from "../providers/sso/mock";
+import { orgSso, orgSsoDomains } from "../db/schema";
 import { newId } from "../lib/ids";
 import { ApiError } from "../lib/problem";
 import { parseJson } from "../lib/validate";
@@ -210,6 +213,39 @@ export function testRoutes(deps: Deps) {
     await setBalance(deps, owner, body.monthly, body.purchased);
     await notifyCredits(deps, owner);
     return c.body(null, 204);
+  });
+
+  // Team SSO (F-BL-06 P2): the owner's org signs in through the test
+  // identity provider for `domain`, verified without DNS.
+  app.post("/sso", async (c) => {
+    const body = await parseJson(
+      c,
+      z.object({ email: z.string(), domain: z.string().toLowerCase(), enforce: z.boolean().default(false) }),
+    );
+    const orgId = (await membershipOf(deps.db, await userIdFor(deps, body.email)))?.orgId;
+    if (!orgId) throw new ApiError(404, "NOT_FOUND", "Not Found", "That user has no org.");
+    await deps.db.delete(orgSsoDomains).where(eq(orgSsoDomains.domain, body.domain));
+    await deps.db.insert(orgSsoDomains).values({ orgId, domain: body.domain, verifyToken: "test" });
+    await markVerified(deps, orgId, body.domain);
+    const values = { provider: "mock" as const, enforce: body.enforce, updatedAt: deps.clock.now() };
+    await deps.db.insert(orgSso).values({ orgId, ...values }).onConflictDoUpdate({ target: orgSso.orgId, set: values });
+    return c.json({ orgId });
+  });
+
+  // The test identity provider: who signs in next, and its authorize step.
+  app.post("/idp/next", async (c) => {
+    const body = await parseJson(c, z.object({ email: z.string(), name: z.string().nullable().default(null) }));
+    await mockIdpNext(deps.redis, { subject: `mock-${body.email}`, email: body.email.toLowerCase(), name: body.name });
+    return c.body(null, 204);
+  });
+
+  app.get("/idp/authorize", async (c) => {
+    const redirect = new URL(c.req.query("redirect_uri") ?? "");
+    redirect.searchParams.set("state", c.req.query("state") ?? "");
+    const code = await mockIdpCode(deps.redis);
+    if (code) redirect.searchParams.set("code", code);
+    else redirect.searchParams.set("error", "access_denied");
+    return c.redirect(redirect.toString(), 302);
   });
 
   // Support tools need an admin (F-BL-05): a fresh E2E account becomes one.

@@ -17,6 +17,7 @@ import {
   setSeats,
   updateMember,
 } from "../services/orgs";
+import { addDomain, domainBody, removeDomain, removeSso, setSso, ssoBody, ssoView, verifyDomain } from "../services/sso";
 
 export const createOrgBody = z.object({ name: z.string().trim().min(1).max(80) });
 export const inviteBody = z.object({
@@ -77,6 +78,33 @@ export function orgRoutes(deps: Deps) {
   app.put("/:id/seats", requireUser("cookie"), async (c) => {
     const body = await parseJson(c, seatsBody);
     return c.json(await setSeats(deps, c.req.param("id"), uid(c), body.seats));
+  });
+
+  // Single sign-on (F-BL-06 P2): owners and admins, on a paid Team.
+  app.get("/:id/sso", requireUser("cookie"), async (c) => c.json(await ssoView(deps, c.req.param("id"), uid(c))));
+
+  app.put("/:id/sso", requireUser("cookie"), async (c) => {
+    const body = await parseJson(c, ssoBody);
+    return c.json(await setSso(deps, c.req.param("id"), uid(c), body));
+  });
+
+  app.delete("/:id/sso", requireUser("cookie"), async (c) => {
+    await removeSso(deps, c.req.param("id"), uid(c));
+    return c.body(null, 204);
+  });
+
+  app.post("/:id/sso/domains", requireUser("cookie"), async (c) => {
+    const body = await parseJson(c, domainBody);
+    return c.json(await addDomain(deps, c.req.param("id"), uid(c), body.domain), 201);
+  });
+
+  app.post("/:id/sso/domains/:domain/verify", requireUser("cookie"), async (c) =>
+    c.json(await verifyDomain(deps, c.req.param("id"), uid(c), c.req.param("domain").toLowerCase())),
+  );
+
+  app.delete("/:id/sso/domains/:domain", requireUser("cookie"), async (c) => {
+    await removeDomain(deps, c.req.param("id"), uid(c), c.req.param("domain").toLowerCase());
+    return c.body(null, 204);
   });
 
   app.get("/:id/audit", requireUser("cookie"), async (c) => {
