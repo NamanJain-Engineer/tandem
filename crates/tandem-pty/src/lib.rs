@@ -363,11 +363,13 @@ impl PtyManager {
     /// A PTY that runs on an SSH host (F-RM-01): `pid` is the remote one,
     /// its output and exit arrive through the returned feed, and writes,
     /// resizes and kills go to `backend`. It's never in the child registry
-    /// and never signalled locally.
+    /// and never signalled locally. `spawn_ms` is how long the host took to
+    /// start it, as Diagnostics shows it (D-823).
     pub fn spawn_remote(
         &self,
         spec: SpawnSpec,
         pid: u32,
+        spawn_ms: u64,
         backend: Arc<dyn RemotePty>,
         sink: Option<Arc<dyn OutputSink>>,
     ) -> Result<(PtyInfo, RemoteFeed), PtyError> {
@@ -394,6 +396,7 @@ impl PtyManager {
                 spec.mark_token.clone(),
             )),
             state_dirty: AtomicBool::new(false),
+            spawn_ms: AtomicU64::new(spawn_ms),
             #[cfg(windows)]
             job: None,
         });

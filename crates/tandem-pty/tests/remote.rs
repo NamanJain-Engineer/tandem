@@ -57,12 +57,22 @@ fn f_rm_01_remote_pane_streams_writes_resizes_and_ends_through_its_host() {
         .spawn_remote(
             spec("r1"),
             4242,
+            37,
             host.clone(),
             Some(sink.clone() as Arc<dyn OutputSink>),
         )
         .expect("spawn");
     *host.feed.lock().expect("feed") = Some(feed.clone());
     assert_eq!(info.pid, 4242, "the remote PID");
+    // Diagnostics shows how long the host took to start it (NFR §5.7, D-823).
+    let metrics = mgr.metrics();
+    assert_eq!(
+        metrics
+            .iter()
+            .find(|p| p.pane_id == "r1")
+            .map(|p| p.spawn_ms),
+        Some(37)
+    );
     assert_eq!(mgr.pid("r1"), Some(4242));
     assert!(mgr.is_remote("r1"));
     feed.data(b"hi\r\n".to_vec());
@@ -88,7 +98,7 @@ fn f_rm_01_quitting_ends_remote_panes_through_the_host_not_local_signals() {
     let host = Arc::new(FakeHost::default());
     // A PID that is ours locally must never be signalled for a remote pane.
     let (_, feed) = mgr
-        .spawn_remote(spec("r2"), std::process::id(), host.clone(), None)
+        .spawn_remote(spec("r2"), std::process::id(), 0, host.clone(), None)
         .expect("spawn");
     *host.feed.lock().expect("feed") = Some(feed);
     mgr.shutdown_within(Duration::from_secs(2));

@@ -12,15 +12,15 @@ describe("F-WB-05 credits page copy", () => {
   });
 
   it("takes every price from plans.ts", () => {
+    expect(PRICE_LIST.find((p) => p.id === "F-DI-05")?.price).toContain(String(CREDIT_PRICES.stt_15s));
+    expect(PRICE_LIST.find((p) => p.id === "F-DI-10")?.price).toContain(String(CREDIT_PRICES.rewrite));
     expect(PRICE_LIST.find((p) => p.id === "F-AG-04")?.price).toContain(String(CREDIT_PRICES.teammate_draft));
   });
 
   it("prices only features the app has: each row's feature is ticked in REMAINING", () => {
     const remaining = readFileSync(join(import.meta.dirname, "../../../docs/REMAINING.md"), "utf8");
     for (const p of PRICE_LIST) expect(remaining, p.id).toContain(`- [x] ${p.id} `);
-    // Cloud dictation and Enhance or Polish wait for M8's Dictate.
-    expect(remaining).toContain("- [ ] F-DI-05 ");
-    expect(remaining).toContain("- [ ] F-DI-10 ");
-    expect(PRICE_LIST.map((p) => p.feature).join(" ")).not.toMatch(/dictation|Enhance|Polish/);
+    // Cloud dictation and Enhance or Polish shipped with M8's Dictate (D-824).
+    expect(PRICE_LIST.map((p) => p.id)).toEqual(expect.arrayContaining(["F-DI-05", "F-DI-10"]));
   });
 });
