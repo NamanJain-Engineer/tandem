@@ -191,6 +191,8 @@
     "allow-scratchpad-read",
     "allow-scratchpad-write",
     "allow-scratchpad-delete",
+    "allow-usage-report",
+    "allow-usage-share-save",
     "allow-term-last-output",
     "allow-term-stage-clipboard-image",
     "allow-engines-list",

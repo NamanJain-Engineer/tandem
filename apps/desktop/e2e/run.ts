@@ -167,6 +167,8 @@ async function main() {
     TANDEM_FAKE_MODELS: join(home, "fake-models.txt"),
     // The fake `codex app-server`'s usage windows, e.g. "40,85" (E2E-M6-8).
     TANDEM_FAKE_USAGE: join(home, "usage.txt"),
+    // Where the usage share card "saves" (debug builds; F-AC-07).
+    TANDEM_FAKE_SAVE_PATH: join(home, "save-path.txt"),
     TANDEM_HOOK_BIN: join(root, "target/debug/tandem-hook"),
     TANDEM_SPAWN_LOG: join(home, "spawn.log"),
     // The local update feed (scripts/mock-update-feed.ts, E2E-M5-7); it

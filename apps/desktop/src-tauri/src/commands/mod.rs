@@ -22,5 +22,6 @@ pub mod terminal;
 pub mod test;
 pub mod threads;
 pub mod updates;
+pub mod usage;
 pub mod window;
 pub mod workspaces;

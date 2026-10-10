@@ -149,6 +149,8 @@ macro_rules! app_commands {
             commands::scratchpad::scratchpad_read,
             commands::scratchpad::scratchpad_write,
             commands::scratchpad::scratchpad_delete,
+            commands::usage::usage_report,
+            commands::usage::usage_share_save,
             commands::terminal::term_last_output,
             commands::terminal::term_stage_clipboard_image,
             commands::terminal::pty_type_prompt,

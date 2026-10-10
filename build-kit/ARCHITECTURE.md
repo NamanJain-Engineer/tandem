@@ -615,8 +615,8 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `usage_get` | `{accountId?}` | `[UsageView {accountId, engineId, windows:[UsageWindow {kind, usedPct, resetsAt?}], source: "codex_app_server"\|"unavailable", estimated, reason?, fetchedAt}]` (the latest reading; probes when there's none) | — | F-AC-04 |
 | `usage_refresh` | `{accountId?}` | `[UsageView]` (probes again; the webview calls it every 5 min and after a turn) | — | F-AC-04 |
 | `contexts_list` | — | `[PaneContext {paneId, used, window}]` (context fill per agent pane, from the engine's transcript when a turn ends) | — | F-AC-06 |
-| `usage_dashboard` | `{weeks: 12}` → op | `UsageDashboard {days:[DayTotal], perEngine, perAccount, topWorkspaces, skippedLines}` | — | F-AC-07 |
-| `usage_share_card` | `{showWorkspaces}` | `String` (PNG path in `$DATA/tmp`) | — | F-AC-07 |
+| `usage_report` | — | `UsageReport {since, until, total, days:[UsageDay {date, tokens, byEngine}] (12 weeks, every day present, in the user's zone), engines:[EngineUsage], accounts:[AccountUsage], workspaces:[WorkspaceUsage] (top 8), skippedLines, filesRead, unsupported}` (read on the blocking pool from each account's `usage_log_globs` inside its provider home; D-615) | Internal | F-AC-07 |
+| `usage_share_save` | `{pngBase64}` | `String?` (the path saved, `null` when the save dialog is cancelled; the webview draws the card, the core only checks it is a PNG under 10 MB and writes it atomically where the user picks) | Invalid, Io | F-AC-07 |
 
 #### Status, dashboard, notifications, focus [F-DB-*, F-EN-05]
 | Command | Args | Returns | Errors | IDs |

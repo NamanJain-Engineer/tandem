@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ChevronDown, Command as CommandIcon, PanelLeft, PanelRight, Search } from "lucide-react";
 import {
   Avatar,
@@ -21,6 +22,7 @@ import { useSidebar } from "../../stores/sidebar";
 import { NotificationsBell } from "../notifications/NotificationsPopover";
 import { UpdatePill } from "../updates/UpdatePill";
 import { UsageChip } from "./UsageChip";
+import { UsageDialog } from "../usage/UsagePage";
 import { useWorkspaces } from "../../stores/workspaces";
 import { copyDiagnostics, switchMode } from "./actions";
 import { LogoMark } from "./LogoMark";
@@ -40,6 +42,7 @@ const MODES: Array<{
 /** UI-01 title bar (F-SH-01). Drag region everywhere except the controls;
  * Tab order follows the visual order. */
 export function TitleBar() {
+  const [usageOpen, setUsageOpen] = useState(false);
   const boot = useBoot((s) => s.boot);
   const {
     mode,
@@ -159,7 +162,7 @@ export function TitleBar() {
       disabled: !active,
       onCheckedChange: (show) => active && void workspaces.setSessionsCollapsed(active.id, !show),
     },
-    { id: "usage", label: t("menu.ws.usage"), disabled: true },
+    { id: "usage", label: t("menu.ws.usage"), onSelect: () => setUsageOpen(true) },
   ];
 
 
@@ -295,6 +298,7 @@ export function TitleBar() {
       />
       {chrome && <WindowControls />}
       {offline && <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 bg-warning" />}
+      <UsageDialog open={usageOpen} onOpenChange={setUsageOpen} />
     </header>
   );
 }
