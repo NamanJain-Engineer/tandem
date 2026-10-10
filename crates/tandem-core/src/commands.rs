@@ -108,6 +108,8 @@ static REGISTRY: &[CommandSpec] = &[
     in_text(same("mode.agent", C::Navigation, Some("Mod+1"), E::Always)),
     in_text(same("mode.code", C::Navigation, Some("Mod+2"), E::Always)),
     in_text(same("mode.thread", C::Navigation, Some("Mod+3"), E::Always)),
+    // F-CN-05: the palette's "Find work…".
+    same("work.find", C::Navigation, None, E::Always),
     in_text(same(
         "thread.changes",
         C::Navigation,

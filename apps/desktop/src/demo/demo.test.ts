@@ -237,6 +237,18 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     }
   });
 
+  it("F-CN-05 the demo says Find work searches the user's own computer, instead of pretending to", () => {
+    core = new DemoCore(0);
+    let error: { code?: string; message?: string } = {};
+    try {
+      core.handle("find_work", { query: "login tests" });
+    } catch (e) {
+      error = e as typeof error;
+    }
+    expect(error.code).toBe("unavailable");
+    expect(error.message).toContain("running on your computer");
+  });
+
   it("demo the sample world: three workspaces, Claude Code, Codex and Gemini CLI panes, and the Dashboard's states", () => {
     core = new DemoCore(0);
     const workspaces = core.handle("workspace_list", {}) as WorkspaceSummary[];

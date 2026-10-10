@@ -9,10 +9,11 @@ items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md
 has every feature below with its full behaviour and acceptance tests.
 
 **Where it stands (10 October 2026, `product-m0-m5`):** M0–M7 and M9 are
-done. So is M13, apart from its voice pair (F-DI-05 and F-DI-10, which wait
+done, and so are M15's six features (its non-functional checks are under
+way). So is M13, apart from its voice pair (F-DI-05 and F-DI-10, which wait
 for M8's Dictate). M16 has F-SH-12, F-AC-07, F-AU-01, F-BE-03 and F-BE-12.
-That's 88 of 152 features, 54 of 65 P0. Left: 64 features in eight
-milestones (M8, M10–M16), of which 11 are P0. vibezeo.com serves 0.3.0
+That's 94 of 152 features, 56 of 65 P0. Left: 58 features in seven
+milestones (M8, M10–M14, M16), of which 9 are P0. vibezeo.com serves 0.3.0
 (M6, M7, M9 and the Scratchpad). M15 makes the P0/P1 product launchable;
 M16 adds the P2 extras and the release candidate.
 
@@ -160,7 +161,7 @@ this milestone the P0/P1 product is launchable.
 - [x] F-WB-02 Docs (Fumadocs at /docs, tables generated from code; D-134)
 - [x] F-WB-03 Changelog (in-app "What's new" too; D-133)
 - [x] F-WB-04 Downloads and machine-readable discovery (D-135)
-- [ ] F-TL-05 Local data controls (export and delete): the desktop's export and delete are done (D-812); the server's 30-day account purge is next
+- [x] F-TL-05 Local data controls (export and delete: the desktop's export and delete, D-812; the web's Delete account and the server's 30-day purge, D-813)
 
 Tasks: marketing site; docs; changelog; downloads and discovery; data
 controls; invariants; performance (§5.1); reliability (§5.2); security (§5.3);
@@ -175,7 +176,7 @@ In independent sub-phases, each green and tagged (`m16a` … `m16d`), then the
 release candidate. Stop after any sub-phase if the budget runs out.
 - 16A Conductor (voice): [ ] F-CN-01 Call lifecycle · [ ] F-CN-02 Talker/doer
   architecture and tool catalog · [ ] F-CN-03 Delivery rules and safety ·
-  [ ] F-CN-04 Conductor UI · [ ] F-CN-05 Find work by meaning · [ ] F-CN-06
+  [ ] F-CN-04 Conductor UI · [ ] F-CN-05 Find work by meaning (local search and the palette done, D-814; the hosted ranking and teammates are next) · [ ] F-CN-06
   Persona and memory · [ ] F-CN-07 Wake phrase · [ ] F-CN-08 Audio routing for
   calls · [ ] F-BE-08 Voice session minting
 - 16B Auto: [x] F-AU-01 Auto (Pro, credits)
