@@ -12,6 +12,7 @@ use futures::stream::BoxStream;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use ts_rs::TS;
 
 use tandem_core::entitlement::{Limits, Plan};
 use tandem_core::net::Net;
@@ -139,6 +140,25 @@ pub struct MeCredits {
     pub monthly: i64,
     pub purchased: i64,
     pub resets_at: Option<String>,
+    /// A Team member's monthly cap and what they've spent against it.
+    #[serde(default)]
+    pub cap: Option<i64>,
+    #[serde(default)]
+    pub spent: Option<i64>,
+    /// What arrives each month (10,000 × seats, a member's cap, 0 on Free).
+    #[serde(default)]
+    pub grant: Option<i64>,
+}
+
+/// The org a Team member belongs to (F-BL-06).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MeOrg {
+    pub id: String,
+    pub name: String,
+    /// `owner`, `admin` or `member`.
+    pub role: String,
 }
 
 /// `GET /v1/me` (ARCHITECTURE §14.4).
@@ -154,8 +174,203 @@ pub struct MeResponse {
     pub credits: MeCredits,
     #[serde(default)]
     pub flags: BTreeMap<String, bool>,
+    /// The org's policy; the app trusts only the signed token's copy.
+    #[serde(default)]
     pub policy: Option<Value>,
+    #[serde(default)]
+    pub org: Option<MeOrg>,
     pub entitlement_token: String,
+}
+
+/// `POST /v1/ai/teammate-draft` (F-AG-04): a draft to review, never saved by the API.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct TeammateDraft {
+    pub name: String,
+    pub brief: String,
+    pub engine: String,
+    pub plugins: Vec<String>,
+}
+
+/// `POST /v1/auto/next` (F-AU-01): one supervisor turn. `scrollback` is
+/// already redacted and at most 16 KB.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AutoNextRequest {
+    pub mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub goal: Option<String>,
+    pub turn: u32,
+    pub ceiling: u32,
+    pub scrollback: String,
+}
+
+/// The supervisor's answer: `prompt` with `text`, or `done` / `stuck` with `reason`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct AutoNextResponse {
+    pub action: String,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+/// `POST /v1/stt/transcribe` (F-BE-07). `duration` is in seconds.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Transcript {
+    pub text: String,
+    pub language: Option<String>,
+    pub duration: f64,
+}
+
+/// One take for the STT relay. The fields go before the audio (D-604).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SttUpload {
+    /// `audio/ogg` (Opus) or `audio/wav`.
+    pub mime: String,
+    pub audio: Vec<u8>,
+    pub duration_ms: Option<u64>,
+    /// A language code, or `None` to auto-detect.
+    pub language: Option<String>,
+    /// Preferred words; send them only with the user's opt-in.
+    pub hints: Vec<String>,
+}
+
+/// One metadata-only audit event (F-TL-10).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AuditEvent {
+    pub event: String,
+    pub meta: serde_json::Map<String, Value>,
+    /// RFC 3339.
+    pub ts: String,
+}
+
+/// Why a hosted call failed, in the words the app shows (F-DI-05: errors
+/// name the limit that was hit; nothing falls back silently).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(export)]
+pub enum HostedFailure {
+    /// 402: the balance (or a Team member's cap) is spent.
+    OutOfCredits {
+        message: String,
+    },
+    /// 403 FORBIDDEN_PLAN: the feature needs Pro.
+    NeedsPro {
+        message: String,
+    },
+    /// 429 DAILY_LIMIT: the day's cap for this feature.
+    DailyLimit {
+        message: String,
+    },
+    /// 429 RATE_LIMITED.
+    RateLimited {
+        message: String,
+    },
+    /// 413: a take over 10 minutes or 25 MB.
+    TooLarge {
+        message: String,
+    },
+    /// Signed out.
+    SignedOut {
+        message: String,
+    },
+    /// Offline, timed out, or the service failed (5xx).
+    Unavailable {
+        message: String,
+    },
+    Other {
+        message: String,
+    },
+}
+
+impl HostedFailure {
+    pub fn message(&self) -> &str {
+        match self {
+            HostedFailure::OutOfCredits { message }
+            | HostedFailure::NeedsPro { message }
+            | HostedFailure::DailyLimit { message }
+            | HostedFailure::RateLimited { message }
+            | HostedFailure::TooLarge { message }
+            | HostedFailure::SignedOut { message }
+            | HostedFailure::Unavailable { message }
+            | HostedFailure::Other { message } => message,
+        }
+    }
+
+    /// Maps an API error; `feature` names it in the Pro message ("Cloud transcription").
+    pub fn from_api(err: &ApiError, feature: &str) -> Self {
+        let detail = |fallback: &str| match err {
+            ApiError::Http {
+                detail: Some(d), ..
+            } if !d.is_empty() => d.clone(),
+            _ => fallback.to_string(),
+        };
+        match err {
+            ApiError::Network(_) => HostedFailure::Unavailable {
+                message: "Couldn't reach Vibezeo. Check your connection and try again.".into(),
+            },
+            ApiError::Decode(_) => HostedFailure::Other {
+                message: "Vibezeo answered in a way this version doesn't understand.".into(),
+            },
+            ApiError::Http { status, code, .. } => match (*status, code.as_str()) {
+                (401, _) => HostedFailure::SignedOut {
+                    message: "Sign in to use hosted features.".into(),
+                },
+                (402, _) => HostedFailure::OutOfCredits {
+                    message: detail("You're out of credits for now."),
+                },
+                (403, "FORBIDDEN_PLAN") => HostedFailure::NeedsPro {
+                    message: format!("{feature} needs Vibezeo Pro."),
+                },
+                (429, "DAILY_LIMIT") => HostedFailure::DailyLimit {
+                    message: detail("You've reached today's limit."),
+                },
+                (429, _) => HostedFailure::RateLimited {
+                    message: "Too many requests. Try again in a moment.".into(),
+                },
+                (413, _) => HostedFailure::TooLarge {
+                    message: detail("That's too long to send."),
+                },
+                _ => HostedFailure::Other {
+                    message: detail("That didn't work."),
+                },
+            },
+        }
+    }
+}
+
+/// The STT relay's multipart body: fields first, the audio last (D-604).
+pub fn stt_body(upload: &SttUpload, boundary: &str) -> Vec<u8> {
+    let mut body = Vec::with_capacity(upload.audio.len() + 1024);
+    let mut field = |name: &str, value: &str| {
+        body.extend_from_slice(
+            format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n")
+                .as_bytes(),
+        );
+    };
+    if let Some(ms) = upload.duration_ms {
+        field("duration_ms", &ms.to_string());
+    }
+    field("language", upload.language.as_deref().unwrap_or("auto"));
+    for hint in &upload.hints {
+        field("hints", &hint.replace(['\r', '\n'], " "));
+    }
+    let ext = if upload.mime.contains("wav") {
+        "wav"
+    } else {
+        "opus"
+    };
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"audio\"; filename=\"take.{ext}\"\r\nContent-Type: {}\r\n\r\n",
+            upload.mime
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(&upload.audio);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    body
 }
 
 #[async_trait]
@@ -180,6 +395,66 @@ pub trait ApiClient: Send + Sync {
         &self,
         access: &str,
     ) -> Result<BoxStream<'static, Result<String, ApiError>>, ApiError>;
+    /// `POST /v1/ai/rewrite` (F-DI-10): Enhance (`enhance`) or Polish (`polish`).
+    async fn ai_rewrite(
+        &self,
+        _access: &str,
+        _mode: &str,
+        _text: &str,
+        _instructions: Option<&str>,
+        _protected_terms: &[String],
+    ) -> Result<String, ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `POST /v1/ai/teammate-draft` (F-AG-04).
+    async fn ai_teammate_draft(
+        &self,
+        _access: &str,
+        _description: &str,
+        _engines: &[String],
+        _plugins: &[String],
+    ) -> Result<TeammateDraft, ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `POST /v1/auto/next` (F-AU-01).
+    async fn auto_next(
+        &self,
+        _access: &str,
+        _req: &AutoNextRequest,
+    ) -> Result<AutoNextResponse, ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `POST /v1/stt/transcribe` (F-BE-07, for F-DI-05).
+    async fn stt_transcribe(
+        &self,
+        _access: &str,
+        _upload: SttUpload,
+    ) -> Result<Transcript, ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `POST /v1/audit/events` (F-TL-10).
+    async fn audit_events(&self, _access: &str, _events: &[AuditEvent]) -> Result<(), ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `POST /v1/auth/device/start` (F-BE-03): a code for the user to approve on the web.
+    async fn device_start(&self, _client: &str, _version: &str) -> Result<DeviceStart, ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `POST /v1/auth/device/token`: tokens once approved; the OAuth error code otherwise.
+    async fn device_token(&self, _device_code: &str) -> Result<TokenPair, ApiError> {
+        Err(no_hosted_service())
+    }
+}
+
+/// `POST /v1/auth/device/start` (F-BE-03).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceStart {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub verification_uri_complete: String,
+    pub interval: u64,
+    pub expires_in: u64,
 }
 
 /// The API client of an early-access build (D-105): every call fails as
@@ -270,6 +545,11 @@ impl HttpApi {
             .header("x-tandem-version", env!("CARGO_PKG_VERSION"))
             .header("x-tandem-platform", platform())
             .timeout(Duration::from_secs(20))
+    }
+
+    /// A call whose success has no body (204).
+    async fn call_empty(&self, req: reqwest::RequestBuilder) -> Result<(), ApiError> {
+        self.call::<Value>(req).await.map(|_| ())
     }
 
     async fn call<T: for<'de> Deserialize<'de>>(
@@ -417,6 +697,110 @@ impl ApiClient for HttpApi {
         self.call::<TitleBody>(req).await.map(|b| b.title)
     }
 
+    async fn ai_rewrite(
+        &self,
+        access: &str,
+        mode: &str,
+        text: &str,
+        instructions: Option<&str>,
+        protected_terms: &[String],
+    ) -> Result<String, ApiError> {
+        #[derive(Deserialize)]
+        struct TextBody {
+            text: String,
+        }
+        let mut body = json!({ "mode": mode, "text": text, "protected_terms": protected_terms });
+        if let Some(i) = instructions.filter(|i| !i.is_empty()) {
+            body["instructions"] = json!(i);
+        }
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/ai/rewrite"))
+            .bearer_auth(access)
+            .json(&body);
+        self.call::<TextBody>(req).await.map(|b| b.text)
+    }
+
+    async fn ai_teammate_draft(
+        &self,
+        access: &str,
+        description: &str,
+        engines: &[String],
+        plugins: &[String],
+    ) -> Result<TeammateDraft, ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/ai/teammate-draft"))
+            .bearer_auth(access)
+            .json(&json!({ "description": description, "engines": engines, "plugins": plugins }));
+        self.call(req).await
+    }
+
+    async fn auto_next(
+        &self,
+        access: &str,
+        req: &AutoNextRequest,
+    ) -> Result<AutoNextResponse, ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/auto/next"))
+            .bearer_auth(access)
+            .json(req);
+        self.call(req).await
+    }
+
+    async fn stt_transcribe(
+        &self,
+        access: &str,
+        upload: SttUpload,
+    ) -> Result<Transcript, ApiError> {
+        let boundary = format!("tandem-{}", uuid::Uuid::new_v4().simple());
+        let body = stt_body(&upload, &boundary);
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/stt/transcribe"))
+            .bearer_auth(access)
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(body);
+        // A 10-minute take takes a while to upload and transcribe.
+        self.call(req.timeout(Duration::from_secs(180))).await
+    }
+
+    async fn audit_events(&self, access: &str, events: &[AuditEvent]) -> Result<(), ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/audit/events"))
+            .bearer_auth(access)
+            .json(&json!({ "events": events }));
+        self.call_empty(req).await
+    }
+
+    async fn device_start(&self, client: &str, version: &str) -> Result<DeviceStart, ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/auth/device/start"))
+            .json(&json!({ "client": client, "version": version }));
+        self.call(req).await
+    }
+
+    async fn device_token(&self, device_code: &str) -> Result<TokenPair, ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/auth/device/token"))
+            .json(&json!({ "device_code": device_code }));
+        self.call(req).await
+    }
+
     async fn events(
         &self,
         access: &str,
@@ -511,6 +895,82 @@ mod tests {
         assert_eq!(p.feed(b"data: hi\n\n"), vec!["message"]);
     }
 
+    #[test]
+    fn f_be_07_the_stt_body_sends_its_fields_before_the_audio() {
+        let upload = SttUpload {
+            mime: "audio/ogg".into(),
+            audio: b"OggS-AUDIO".to_vec(),
+            duration_ms: Some(31_000),
+            language: Some("de".into()),
+            hints: vec!["Vibezeo".into(), "two\nlines".into()],
+        };
+        let body = String::from_utf8_lossy(&stt_body(&upload, "B")).into_owned();
+        let field = |name: &str| body.find(&format!("name=\"{name}\"")).expect(name);
+        assert!(field("duration_ms") < field("audio"));
+        assert!(field("language") < field("audio"));
+        assert!(body.contains("\r\n\r\n31000\r\n"));
+        assert!(
+            body.contains("\r\n\r\ntwo lines\r\n"),
+            "a hint can't break the framing"
+        );
+        assert!(body.contains(
+            "filename=\"take.opus\"\r\nContent-Type: audio/ogg\r\n\r\nOggS-AUDIO\r\n--B--"
+        ));
+        let auto = stt_body(
+            &SttUpload {
+                language: None,
+                hints: vec![],
+                duration_ms: None,
+                ..upload
+            },
+            "B",
+        );
+        assert!(String::from_utf8_lossy(&auto).contains("\r\n\r\nauto\r\n"));
+    }
+
+    #[test]
+    fn f_di_05_hosted_errors_name_the_limit_that_was_hit() {
+        let http = |status, code: &str, detail: Option<&str>| ApiError::Http {
+            status,
+            code: code.into(),
+            detail: detail.map(str::to_string),
+        };
+        assert_eq!(
+            HostedFailure::from_api(&http(403, "FORBIDDEN_PLAN", None), "Cloud transcription")
+                .message(),
+            "Cloud transcription needs Vibezeo Pro."
+        );
+        assert!(matches!(
+            HostedFailure::from_api(
+                &http(
+                    402,
+                    "CREDITS_EXHAUSTED",
+                    Some("You're out of credits for now.")
+                ),
+                "x"
+            ),
+            HostedFailure::OutOfCredits { .. }
+        ));
+        let daily = HostedFailure::from_api(
+            &http(
+                429,
+                "DAILY_LIMIT",
+                Some("You've reached today's cloud limit of 120 minutes. Switch to Local."),
+            ),
+            "x",
+        );
+        assert!(matches!(daily, HostedFailure::DailyLimit { .. }));
+        assert!(daily.message().contains("Switch to Local"));
+        assert!(matches!(
+            HostedFailure::from_api(&http(413, "PAYLOAD_TOO_LARGE", None), "x"),
+            HostedFailure::TooLarge { .. }
+        ));
+        assert!(matches!(
+            HostedFailure::from_api(&ApiError::Network("down".into()), "x"),
+            HostedFailure::Unavailable { .. }
+        ));
+    }
+
     #[tokio::test]
     async fn early_access_api_never_reaches_the_network() {
         // NoHostedApi holds no client at all; every call is "offline".
@@ -519,6 +979,14 @@ mod tests {
         assert!(matches!(api.refresh("r").await, Err(ApiError::Network(_))));
         assert!(matches!(
             api.checkout("a", "pro", "month").await,
+            Err(ApiError::Network(_))
+        ));
+        assert!(matches!(
+            api.ai_rewrite("a", "polish", "hi", None, &[]).await,
+            Err(ApiError::Network(_))
+        ));
+        assert!(matches!(
+            api.audit_events("a", &[]).await,
             Err(ApiError::Network(_))
         ));
     }

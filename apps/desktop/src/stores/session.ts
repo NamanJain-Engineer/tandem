@@ -53,3 +53,20 @@ export function totalCredits(e: EntitlementView | null): number | null {
   if (!e?.credits) return null;
   return e.credits.monthly + e.credits.purchased;
 }
+
+/** What can be spent now: the balance, held to a Team member's remaining cap (F-BL-06). */
+export function availableCredits(e: EntitlementView | null): number | null {
+  const total = totalCredits(e);
+  if (total === null || !e?.credits) return total;
+  const { cap, spent } = e.credits;
+  return cap === null ? total : Math.min(total, Math.max(0, cap - (spent ?? 0)));
+}
+
+/** The ◈ display's state (UI_SPEC §3, F-SH-01): warning at 10% of the monthly grant, danger at 0. */
+export function creditLevel(e: EntitlementView | null): "normal" | "warning" | "danger" | null {
+  const left = availableCredits(e);
+  if (left === null) return null;
+  if (left <= 0) return "danger";
+  const grant = e?.credits?.grant ?? e?.monthlyGrant ?? 0;
+  return grant > 0 && left * 10 <= grant ? "warning" : "normal";
+}

@@ -35,6 +35,7 @@ import { PaneGrid } from "./PaneGrid";
 import { PanePicker } from "./PanePicker";
 import type { TerminalOptions } from "./TerminalView";
 import { webglPool } from "./webglPool";
+import { useShortcutKeys } from "../commands/useShortcutKeys";
 
 function useTerminalOptions(): TerminalOptions {
   const { resolved, highContrast } = useTheme();
@@ -254,6 +255,7 @@ function CloseConfirm() {
 }
 
 export function CodeMain({ visible }: { visible: boolean }) {
+  const keys = useShortcutKeys();
   const { list, activeId, activeTab, selectTab, createTab, closeTab } = useWorkspaces();
   const { show } = useToast();
   const options = useTerminalOptions();
@@ -313,7 +315,7 @@ export function CodeMain({ visible }: { visible: boolean }) {
             size="sm"
             icon={<Plus size={14} />}
             label={t("code.newTab")}
-            kbd={["Mod", "T"]}
+            kbd={keys("workspace.new_tab")}
             onClick={() => void createTab(active.id)}
           />
           {activeTabId && (

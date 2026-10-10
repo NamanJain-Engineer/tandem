@@ -2,6 +2,7 @@ import { useRef, useState, type HTMLAttributes, type ReactNode, type Ref } from 
 import { GripVertical, Maximize2, Minimize2, MoreHorizontal, SquareTerminal, X } from "lucide-react";
 import { IconButton, Menu, StatusDot, Tooltip, cx, type MenuEntry, type Status } from "@tandem/ui";
 import { t } from "../../i18n";
+import { useShortcutKeys } from "../commands/useShortcutKeys";
 
 export type PaneChromeProps = {
   title: string;
@@ -134,6 +135,7 @@ export function PaneChrome({
   renaming = false,
   onRenamingChange,
 }: PaneChromeProps) {
+  const keys = useShortcutKeys();
   return (
     <div
       ref={dragRef}
@@ -189,7 +191,7 @@ export function PaneChrome({
             size="sm"
             icon={maximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
             label={maximized ? t("pane.restore") : t("pane.maximize")}
-            kbd={["Mod", "Shift", "Enter"]}
+            kbd={keys("pane.maximize")}
             pressed={maximized}
             onClick={onMaximize}
           />
@@ -209,7 +211,7 @@ export function PaneChrome({
           size="sm"
           icon={<X size={14} />}
           label={t("pane.close", { name: title })}
-          kbd={["Mod", "W"]}
+          kbd={keys("pane.close")}
           onClick={onClose}
         />
       </div>

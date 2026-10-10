@@ -26,7 +26,7 @@ describe("E2E-M2-1 walking skeleton", () => {
 
   it("launches fresh at sign-in, which passes axe", async () => {
     await waitForApp();
-    // `m16-5-*` runs before this file (name order) and leaves an offline profile.
+    // Spec files run in name order, and `m13-*` and `m16-*` come first: they leave other profiles.
     await freshSignedOut();
     await $("#signin-title").waitForDisplayed({ timeout: 20_000 });
     expect(await $("#signin-title").getText()).toBe("Welcome to Vibezeo");

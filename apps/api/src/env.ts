@@ -35,6 +35,15 @@ const schema = z.object({
   AI_PROVIDER: z.enum(["mock", "claude"]).default("mock"),
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_API_BASE: z.string().optional(),
+  /** Cloud STT (F-BE-07): `openai_compat` needs the key, base and model; `mock` answers deterministically. */
+  STT_PROVIDER: z.enum(["mock", "openai_compat"]).default("mock"),
+  STT_API_KEY: z.string().optional(),
+  STT_API_BASE: z.string().optional(),
+  STT_MODEL: z.string().optional(),
+  /** Team SSO over SAML through WorkOS (F-BL-06 P2, D-625); unset means OIDC only. */
+  WORKOS_CLIENT_ID: z.string().optional(),
+  WORKOS_API_KEY: z.string().optional(),
+  WORKOS_API_BASE: z.string().optional(),
 });
 
 export type Env = z.infer<typeof schema>;

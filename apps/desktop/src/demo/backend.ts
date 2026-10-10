@@ -99,6 +99,7 @@ const ENTITLEMENT: EntitlementView = {
   source: "free",
   credits: null,
   policy: null,
+  org: null,
   paidUntil: null,
   cancelAtPeriodEnd: false,
   online: true,
@@ -647,6 +648,9 @@ export class DemoCore {
         return { panes: [], interruptedThreads: 0, autoResume: false };
       case "updates_state":
         return { stage: "idle", current: BOOT.version, channel: "stable", version: null, notes: null, percent: null, errorStage: null, error: null, lastCheck: null, upToDate: true, minVersion: null };
+      case "usage_report":
+        // The demo reads no engine logs: an honest empty page (F-AC-07).
+        return demoUsage();
       case "notifications_list":
         return { items: [], nextCursor: null, unread: 0 };
       case "sidebar_get":
@@ -867,4 +871,25 @@ export function installDemo(speed = 1): DemoCore {
   const core = new DemoCore(speed);
   setInvokeBackend(async (cmd, args) => core.handle(cmd, args));
   return core;
+}
+
+/** The Usage page in the demo: 12 empty weeks, nothing invented. */
+function demoUsage() {
+  const today = new Date();
+  const days = Array.from({ length: 84 }, (_, i) => {
+    const d = new Date(today.getTime() - (83 - i) * 86_400_000);
+    return { date: d.toISOString().slice(0, 10), tokens: 0, byEngine: {} };
+  });
+  return {
+    since: days[0]?.date ?? "",
+    until: days[83]?.date ?? "",
+    total: 0,
+    days,
+    engines: [],
+    accounts: [],
+    workspaces: [],
+    skippedLines: 0,
+    filesRead: 0,
+    unsupported: [],
+  };
 }

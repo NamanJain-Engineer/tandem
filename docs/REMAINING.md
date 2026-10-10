@@ -8,14 +8,17 @@ every milestone has its tasks, exit checks and E2E list in MILESTONES. Tick
 items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md`
 has every feature below with its full behaviour and acceptance tests.
 
-**Where it stands (9 October 2026, `product-m0-m5`):** M0–M7 and M9 are done
-(75 of 152 features, 54 of 65 P0). Left: 77 features in eight milestones
-(M8, M10–M16), of which 11 are P0. M15 makes the P0/P1 product launchable;
+**Where it stands (10 October 2026, `product-m0-m5`):** M0–M7 and M9 are
+done. So is M13, apart from its voice pair (F-DI-05 and F-DI-10, which wait
+for M8's Dictate). M16 has F-SH-12, F-AC-07, F-AU-01, F-BE-03 and F-BE-12.
+That's 88 of 152 features, 54 of 65 P0. Left: 64 features in eight
+milestones (M8, M10–M16), of which 11 are P0. vibezeo.com serves 0.3.0
+(M6, M7, M9 and the Scratchpad). M15 makes the P0/P1 product launchable;
 M16 adds the P2 extras and the release candidate.
 
 ## 0. First, before new features
 
-1. [x] **Release 0.3.0 with the interactive demo on the home page** (prepared on `release-0.3.0`: D-128, the .deb, CHANGELOG, site copy; deploying is the coordinating session's merge into `main`). **And deploy the site.** The demo moves from its own page into the home page, explorable full screen and on phones, with message limits and a reset (full spec: "The interactive demo on the website" in `docs/FEATURES_TO_BUILD.md`). Vibezeo 0.2.0 (M6 + M7) and the
+1. [x] **Release 0.3.0 with the interactive demo on the home page. And deploy the site.** Done: vibezeo.com serves 0.3.0 since 10 October 2026 (pull requests #18, #20 and #16; D-128, D-810). The demo moves from its own page into the home page, explorable full screen and on phones, with message limits and a reset (full spec: "The interactive demo on the website" in `docs/FEATURES_TO_BUILD.md`). Vibezeo 0.2.0 (M6 + M7) and the
    browser demo are committed but were never deployed: vibezeo.com (`main`)
    still serves 0.1.0. M9 has landed since, and the demo already shows its Files
    tab, so ship them together: 0.3.0 = M6 + M7 + M9. Bump the version, add the
@@ -119,16 +122,16 @@ E2E-M12-1…6: OAuth, OAuth failures, grants, interactive approval, held draft, 
 The metered hosted features (credits ledger, AI and STT relays, cloud
 Dictate, Enhance and Polish, credit packs), refunds, the Team plan with admin
 policy and audit, and the transparency page.
-- [ ] F-BE-05 Credits ledger
-- [ ] F-BE-06 Hosted AI relay (titles and Enhance/Polish routes exist, D-103/D-106)
-- [ ] F-BE-07 STT relay
-- [ ] F-DI-05 Cloud speech-to-text (Pro, credits)
-- [ ] F-DI-10 Enhance and Polish (Pro, credits)
-- [ ] F-BL-03 Credit packs
-- [ ] F-BL-05 Refunds
-- [ ] F-BL-06 Team plan (P1 core; SSO is P2, M16)
-- [ ] F-TL-07 Transparency page
-- [ ] F-TL-10 Audit log (Team)
+- [x] F-BE-05 Credits ledger
+- [x] F-BE-06 Hosted AI relay (titles, Enhance/Polish and teammate drafts; `/auto/next` and the voice routes come with their M16 features)
+- [x] F-BE-07 STT relay
+- [ ] F-DI-05 Cloud speech-to-text (Pro, credits): the M8 session's; the relay and the desktop client are done (M13, ARCHITECTURE §14.11)
+- [ ] F-DI-10 Enhance and Polish (Pro, credits): the M8 session's; the route and the desktop client are done (M13)
+- [x] F-BL-03 Credit packs
+- [x] F-BL-05 Refunds
+- [x] F-BL-06 Team plan (P1 core; the P2 SSO part is built on `m16-team-sso`)
+- [x] F-TL-07 Transparency page
+- [x] F-TL-10 Audit log (Team)
 
 Tasks: ledger; AI relay; STT relay; cloud Dictate; Enhance and Polish; credit
 packs; refunds; Team core; audit; transparency.
@@ -175,14 +178,14 @@ release candidate. Stop after any sub-phase if the budget runs out.
   [ ] F-CN-04 Conductor UI · [ ] F-CN-05 Find work by meaning · [ ] F-CN-06
   Persona and memory · [ ] F-CN-07 Wake phrase · [ ] F-CN-08 Audio routing for
   calls · [ ] F-BE-08 Voice session minting
-- 16B Auto: [ ] F-AU-01 Auto (Pro, credits)
+- 16B Auto: [x] F-AU-01 Auto (Pro, credits)
 - 16C Phone companion: [ ] F-RM-03 Phone companion · [ ] F-BE-11 Remote relay
 - 16D Extras: [x] F-SH-12 Scratchpad · [ ] F-CD-21 Simulator pane (macOS) ·
-  [ ] F-AC-07 Usage dashboard · [ ] F-AG-10 Skill sync to engines ·
+  [x] F-AC-07 Usage dashboard · [ ] F-AG-10 Skill sync to engines ·
   [ ] F-AG-13 Teammate in a terminal · [ ] F-RT-05 Schedule tool for teammates ·
-  [ ] F-BE-03 CLI device-code sign-in · [ ] F-BE-12 Admin
-- Also: app-shortcut rebinding (F-SH-09 P2 part, Settings › Shortcuts UI-113),
-  Team SSO (F-BL-06 P2 part), the remaining AI routes (`/auto/next`,
+  [x] F-BE-03 CLI device-code sign-in · [x] F-BE-12 Admin
+- Also: [x] app-shortcut rebinding (F-SH-09 P2 part, Settings › Shortcuts UI-113),
+  [x] Team SSO (F-BL-06 P2 part), the remaining AI routes (`/auto/next`,
   `/voice/act`, `/voice/resolve`).
 E2E-M16-1…5: Conductor call, find work, Auto, phone, extras.
 

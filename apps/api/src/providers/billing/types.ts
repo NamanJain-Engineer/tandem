@@ -30,6 +30,8 @@ export interface BillingProvider {
   /** Verifies the `stripe-signature` header; throws on mismatch. */
   constructEvent(rawBody: string, signature: string | undefined): BillingEvent;
   refundLatestCharge(subscriptionId: string): Promise<void>;
+  /** Refunds a one-time Checkout payment (a credit pack). */
+  refundPayment(checkoutSessionId: string): Promise<void>;
   updateQuantity(subscriptionId: string, seats: number): Promise<void>;
   cancelNow(subscriptionId: string): Promise<void>;
 }

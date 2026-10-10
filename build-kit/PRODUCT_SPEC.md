@@ -424,6 +424,10 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 - **Terminal passthrough rule:** when a terminal has focus, only shortcuts that include `Mod` and are in the map are intercepted. Everything else goes to the PTY, including Ctrl+D/T/W/[/] on Windows and Linux, where `Mod` is Ctrl. So on Windows and Linux terminals, the app intercepts only `Ctrl+Shift+…` variants, the `Ctrl+Alt+…` combos in the map, `Ctrl+K`, `Ctrl+,`, `Ctrl+1..3`, `Ctrl+Tab`/`Ctrl+Shift+Tab` and `F6` (the UI_SPEC §5 intercept list). Everything else passes through. Document this table in docs.
 - WebView-native shortcuts (F5, Ctrl+R, Ctrl+P, Ctrl+F, F3, Ctrl+S, Ctrl+Shift+I in release builds) are suppressed.
 - App shortcuts never fire while an IME composition is active or while a text field has focus, unless the shortcut is explicitly global (palette, settings, mode switch).
+- **Rebinding (P2, Settings › Shortcuts, UI-113).** Every registry command can get a new shortcut or none. The change is stored in `settings` (`shortcut_overrides`) and replaces the default everywhere: the dispatcher, the palette, the cheatsheet (`Mod+/`) and tooltips.
+  - A shortcut needs `Mod`, `Ctrl` or `Alt`, except F1–F12.
+  - Combos the operating system or text editing owns are refused.
+  - On Windows and Linux under "Terminal first", a new shortcut outside the intercept list doesn't fire in a terminal (the key goes to the shell), and the row says so.
 
 **Acceptance:**
 1. With a terminal focused on Linux, pressing Ctrl+W, Ctrl+T, Ctrl+D, Ctrl+[ and Ctrl+] sends bytes 0x17, 0x14, 0x04, 0x1b and 0x1d to the PTY (verified by an echo harness).
@@ -431,6 +435,10 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 3. F5 and Ctrl+R never reload the webview in release builds.
 4. Every registry command appears in the palette, and invoking it from the palette runs the same handler as its shortcut (tested via a registry spy).
 5. During IME composition (a simulated `compositionstart`), `Mod+1` does not switch mode.
+6. (P2) Recording `Mod+Alt+R` for "Split right" makes `Mod+Alt+R` split the focused pane and `Mod+D` no longer does; the palette shows the new shortcut, and it survives a restart.
+7. (P2) Recording a combo another command uses shows "Already used by {action}." with Swap and Cancel. Swap gives that command the edited command's old shortcut; Cancel changes nothing.
+8. (P2) A combo the system or text editing owns (⌘Q, ⌘H, ⌘Space, Alt+F4, Alt+Tab, Ctrl+Alt+Delete, `Mod+C/V/X/Z/A`) is refused with "Your system uses this shortcut."; a combo without `Mod`, `Ctrl` or `Alt` (F1–F12 aside) is refused too; both leave the shortcut unchanged.
+9. (P2) ↺ restores one command's default; "Reset all to defaults" restores every command after a confirm.
 
 #### F-SH-10 Right sidebar (P0)
 **Behavior:**
