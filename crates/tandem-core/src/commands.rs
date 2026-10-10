@@ -269,6 +269,14 @@ static REGISTRY: &[CommandSpec] = &[
         ..same("terminal.jump_bottom", C::Terminal, None, E::PaneFocused)
     },
     same("billing.plans", C::App, None, E::Always),
+    // The cheatsheet (UI_SPEC §5, UI-113).
+    aliased(
+        "help.shortcuts",
+        C::Help,
+        "Mod+/",
+        Some("Mod+Shift+/"),
+        E::Always,
+    ),
     same("help.copy_diagnostics", C::Help, None, E::Always),
     same("help.open_logs", C::Help, None, E::Always),
 ];
@@ -279,6 +287,67 @@ pub fn registry() -> &'static [CommandSpec] {
 
 pub fn find(id: &str) -> Option<&'static CommandSpec> {
     REGISTRY.iter().find(|c| c.id == id)
+}
+
+/// The keys a shortcut can end in, by name (UI_SPEC §5).
+const NAMED_KEYS: &[&str] = &[
+    "Enter",
+    "Tab",
+    "Space",
+    "Escape",
+    "Backspace",
+    "Delete",
+    "Insert",
+    "Home",
+    "End",
+    "PageUp",
+    "PageDown",
+    "Left",
+    "Right",
+    "Up",
+    "Down",
+    "[",
+    "]",
+    "\\",
+    ",",
+    ".",
+    "/",
+    ";",
+    "'",
+    "`",
+    "-",
+    "=",
+];
+
+fn is_function_key(key: &str) -> bool {
+    key.strip_prefix('F')
+        .and_then(|n| n.parse::<u8>().ok())
+        .is_some_and(|n| (1..=24).contains(&n))
+}
+
+/// Whether `keys` is a shortcut in the registry's form (F-SH-09 rebinding):
+/// modifiers from `Mod`, `Ctrl`, `Alt` and `Shift`, each at most once, then
+/// one key. A shortcut needs `Mod`, `Ctrl` or `Alt`, except an F-key alone
+/// or with Shift.
+pub fn valid_binding(keys: &str) -> bool {
+    let parts: Vec<&str> = keys.split('+').collect();
+    let Some((key, mods)) = parts.split_last() else {
+        return false;
+    };
+    let mut seen: Vec<&str> = Vec::new();
+    for m in mods {
+        if !["Mod", "Ctrl", "Alt", "Shift"].contains(m) || seen.contains(m) {
+            return false;
+        }
+        seen.push(m);
+    }
+    let single = key.len() == 1
+        && key
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit());
+    let known = single || is_function_key(key) || NAMED_KEYS.contains(key);
+    let held = seen.iter().any(|m| *m != "Shift");
+    known && (held || is_function_key(key))
 }
 
 /// The Windows/Linux terminal intercept list (UI_SPEC §5): with a terminal
@@ -339,6 +408,49 @@ mod tests {
             find("pane.split_down").and_then(|c| c.pc_terminal),
             Some("Mod+Shift+D")
         );
+    }
+
+    #[test]
+    fn f_sh_09_6_a_shortcut_is_modifiers_then_one_key() {
+        for c in registry() {
+            for k in [c.mac, c.pc, c.pc_terminal].into_iter().flatten() {
+                assert!(valid_binding(k), "{}: {k}", c.id);
+            }
+        }
+        for k in [
+            "Mod+Alt+R",
+            "Ctrl+Shift+Tab",
+            "Mod+/",
+            "Alt+Up",
+            "F2",
+            "Shift+F6",
+            "Mod+Shift+'",
+        ] {
+            assert!(valid_binding(k), "{k}");
+        }
+        // A shortcut needs Mod, Ctrl or Alt (F-keys aside), one key, and no
+        // modifier twice.
+        for k in [
+            "",
+            "R",
+            "Shift+R",
+            "Mod+",
+            "Mod+Mod+R",
+            "Hyper+R",
+            "Mod+Foo",
+            "Mod+F25",
+            "Mod+r",
+            "Mod+R+T",
+        ] {
+            assert!(!valid_binding(k), "{k}");
+        }
+    }
+
+    #[test]
+    fn f_sh_09_the_cheatsheet_has_a_terminal_safe_alias() {
+        let c = find("help.shortcuts").expect("help.shortcuts");
+        assert_eq!((c.mac, c.pc), (Some("Mod+/"), Some("Mod+/")));
+        assert_eq!(c.pc_terminal, Some("Mod+Shift+/"));
     }
 
     /// `pnpm gen:shortcuts` → `packages/protocol/shortcuts.json`, the table

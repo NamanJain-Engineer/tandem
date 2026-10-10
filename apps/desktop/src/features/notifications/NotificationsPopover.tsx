@@ -6,6 +6,7 @@ import { t } from "../../i18n";
 import { focusSource } from "../../stores/focus";
 import { useNotifications } from "../../stores/notifications";
 import { answer } from "../dashboard/actions";
+import { useShortcutKeys } from "../commands/useShortcutKeys";
 
 const WAITING_KINDS = new Set(["approval", "question"]);
 
@@ -83,6 +84,7 @@ function Item({ n, now, onJump }: { n: Notification; now: number; onJump: (n: No
 
 /** UI-40 / F-DB-02: the bell and its "Waiting on you" popover. */
 export function NotificationsBell() {
+  const keys = useShortcutKeys();
   const { items, unread, loaded, nextCursor, open, setOpen } = useNotifications();
   const waiting = useMemo(() => items.filter(isWaiting), [items]);
   const [tab, setTab] = useState<"waiting" | "all">("all");
@@ -120,7 +122,7 @@ export function NotificationsBell() {
           label={unread > 0 ? t("notifications.bellUnread", { n: unread }) : t("titlebar.notifications")}
           badge={unread > 0 ? unread : undefined}
           badgeTone={waiting.some((n) => n.state === "unread") ? "waiting" : "neutral"}
-          kbd={["Mod", "Shift", "N"]}
+          kbd={keys("notifications.open")}
           data-testid="notifications-bell"
         />
       }

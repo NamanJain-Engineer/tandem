@@ -1,16 +1,33 @@
-import { useEffect } from "react";
-import { Download, FlaskConical } from "lucide-react";
-import { Badge } from "@tandem/ui";
+import { useEffect, useSyncExternalStore } from "react";
+import { Download, FlaskConical, RotateCcw } from "lucide-react";
+import { Badge, Button } from "@tandem/ui";
 import { t } from "../i18n";
 import { useEngines } from "../stores/engines";
 import { useThreads } from "../stores/threads";
 import { useUi } from "../stores/ui";
+import type { DemoCore } from "./backend";
 
 const LINK =
   "inline-flex h-7 items-center gap-1.5 rounded-sm px-2.5 text-sm font-medium focus-visible:shadow-focus focus-visible:outline-none";
 
-/** The strip above the demo: what this is, and where the real app is. */
-export function DemoBar({ firstThread }: { firstThread: string }) {
+/** The strip above the demo: what this is, where the real app is, the
+ * message limit and Reset. Embedded in the home page, it leaves out the link
+ * back to the site the visitor is already on. */
+export function DemoBar({
+  core,
+  firstThread,
+  embedded = false,
+  onReset = () => window.location.reload(),
+}: {
+  core: DemoCore;
+  firstThread: string;
+  embedded?: boolean;
+  onReset?: () => void;
+}) {
+  const limited = useSyncExternalStore(
+    (fn) => core.subscribe(fn),
+    () => core.limitReached(),
+  );
   // The core announces detection at startup; the demo's engines are known.
   useEffect(() => {
     void useEngines.getState().refresh();
@@ -33,10 +50,20 @@ export function DemoBar({ firstThread }: { firstThread: string }) {
       <span className="hidden min-w-0 truncate text-fg-muted md:inline">{t("demo.note")}</span>
       <span className="min-w-0 truncate text-fg-muted md:hidden">{t("demo.noteShort")}</span>
       <span className="ml-auto flex shrink-0 items-center gap-1">
-        <a href="/" className={`${LINK} text-fg-muted hover:bg-surface-3 hover:text-fg`}>
-          {t("demo.back")}
-        </a>
-        <a href="/download/" className={`${LINK} bg-accent text-accent-fg hover:bg-accent-hover`}>
+        {limited && (
+          <span data-testid="demo-limit">
+            <Badge variant="waiting">{t("demo.limit")}</Badge>
+          </span>
+        )}
+        <Button size="sm" variant="ghost" iconLeft={<RotateCcw size={14} />} onClick={onReset}>
+          {t("demo.reset")}
+        </Button>
+        {!embedded && (
+          <a href="/" className={`${LINK} text-fg-muted hover:bg-surface-3 hover:text-fg`}>
+            {t("demo.back")}
+          </a>
+        )}
+        <a href="/download/" target={embedded ? "_top" : undefined} className={`${LINK} bg-accent text-accent-fg hover:bg-accent-hover`}>
           <Download size={14} aria-hidden="true" />
           {t("demo.download")}
         </a>

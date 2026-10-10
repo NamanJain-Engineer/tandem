@@ -330,28 +330,7 @@ mod tests {
         }
     }
 
-    /// TL-06 rule 2 (status-bus half): a spoofed status report changes nothing.
-    #[tokio::test(flavor = "multi_thread")]
-    async fn invariant_rule_2_status_needs_hmac() {
-        let (_d, s, got) = server().await;
-        let secret = s.register("pn_1");
-        let body = format!(
-            r#"{{"pane_id":"pn_1","event":"waiting","ts":{}}}"#,
-            now_ms()
-        );
-        for sig in [
-            None,
-            Some("sha256=00"),
-            Some(sign("not-the-secret", body.as_bytes())).as_deref(),
-        ] {
-            assert_eq!(post(&s.url(), raw(&body, sig)).await, 401, "{sig:?}");
-        }
-        assert!(got.lock().expect("lock").is_empty());
-        assert_eq!(
-            post(&s.url(), raw(&body, Some(&sign(&secret, body.as_bytes())))).await,
-            204
-        );
-    }
+    // F-TL-06 rule 2 (status reports) is tests/invariants/tests/rule_2.rs.
 
     #[tokio::test(flavor = "multi_thread")]
     async fn secrets_rotate_per_launch_and_unknown_panes_are_refused() {

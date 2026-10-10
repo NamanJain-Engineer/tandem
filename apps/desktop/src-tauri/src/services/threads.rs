@@ -216,7 +216,12 @@ pub struct ThreadService {
     data: std::sync::OnceLock<tandem_core::DataDir>,
     /// Tells the status bus each thread's state (Dashboard, D-6).
     status_sink: std::sync::OnceLock<ThreadStatusSink>,
+    /// The plan's limits right now; unset (tests) runs every engine.
+    plan_limits: std::sync::OnceLock<PlanLimits>,
 }
+
+/// Reads the plan's current limits (the entitlement service in the app).
+pub type PlanLimits = Arc<dyn Fn() -> tandem_core::entitlement::Limits + Send + Sync>;
 
 /// Receives every thread whenever the list changes; an archived thread
 /// leaves the Dashboard.
@@ -366,6 +371,7 @@ impl ThreadService {
             titler: std::sync::OnceLock::new(),
             data: std::sync::OnceLock::new(),
             status_sink: std::sync::OnceLock::new(),
+            plan_limits: std::sync::OnceLock::new(),
         })
     }
 
@@ -378,6 +384,31 @@ impl ThreadService {
     /// Publishes every thread (at launch: the Dashboard shows them).
     pub async fn announce(&self) {
         self.publish_threads().await;
+    }
+
+    /// Where the plan's limits come from (the app's entitlement service).
+    pub fn set_plan_limits(&self, limits: PlanLimits) {
+        let _ = self.plan_limits.set(limits);
+    }
+
+    /// Free threads run only the plan's chat engines (PRODUCT_SPEC §3.2,
+    /// D-127). Checked when a thread is made, switched or starts a turn, so
+    /// a thread made on Pro stays readable after a lapse but can't run.
+    /// Teammate chats follow their own limits (M10).
+    fn check_plan_engine(&self, kind: ThreadKind, engine_id: &str) -> Result<(), IpcError> {
+        let allowed = kind != ThreadKind::Thread
+            || self
+                .plan_limits
+                .get()
+                .is_none_or(|limits| limits().allows_chat_engine(engine_id));
+        if allowed {
+            Ok(())
+        } else {
+            Err(IpcError::new(
+                ErrorCode::ForbiddenPlan,
+                tandem_core::entitlement::CHAT_ENGINE_ON_PRO,
+            ))
+        }
     }
 
     pub fn set_status_sink(&self, sink: ThreadStatusSink) {
@@ -428,6 +459,7 @@ impl ThreadService {
     }
 
     pub async fn create(&self, new: NewThread) -> Result<ThreadRecord, IpcError> {
+        self.check_plan_engine(new.kind, &new.engine_id)?;
         let thread = repo::insert(&self.store, new).await.map_err(store_err)?;
         tracing::info!(code = "threads.created", engine = %thread.engine_id, "thread created");
         self.publish_threads().await;
@@ -567,6 +599,7 @@ impl ThreadService {
         if thread.engine_id == engine_id && thread.account_id.as_ref() == account_id {
             return Ok(thread);
         }
+        self.check_plan_engine(thread.kind, engine_id)?;
         self.retire_session(id).await?;
         repo::set_engine(&self.store, id, engine_id, account_id)
             .await
@@ -1060,6 +1093,8 @@ impl ThreadService {
         version: u32,
         access: Option<Access>,
     ) -> Result<SendResult, IpcError> {
+        let thread = self.thread(id).await?;
+        self.check_plan_engine(thread.kind, &thread.engine_id)?;
         let plan = repo::plan_revisions(&self.store, id)
             .await
             .map_err(store_err)?
@@ -1181,6 +1216,7 @@ impl ThreadService {
         queue_if_busy: bool,
     ) -> Result<SendResult, IpcError> {
         let thread = self.thread(id).await?;
+        self.check_plan_engine(thread.kind, &thread.engine_id)?;
         // What the message carries, checked before anything starts (F-TH-07).
         let carried = attachments_repo::get_many(&self.store, id, &attachments)
             .await
@@ -1869,6 +1905,31 @@ impl ThreadService {
     }
 }
 
+/// The one place a session's access is decided (F-TH-09): the thread's
+/// level and mode for its origin, then held to the Team org's maximum
+/// (F-BL-06). An interactive Full session is reported to the org's audit
+/// log when the org turned it on (F-TL-10).
+fn session_access(
+    guard: Option<&dyn crate::services::audit::OrgGuard>,
+    thread: &ThreadRecord,
+    origin: tandem_core::access::Origin,
+    engine_id: &str,
+) -> tandem_core::access::Access {
+    use tandem_core::access::Origin;
+    let resolved = tandem_core::access::resolve(thread.access, thread.mode, origin);
+    let policy = guard.and_then(|g| g.policy());
+    let access = tandem_core::policy::clamp_access(policy.as_ref(), resolved);
+    if access == Access::Full && matches!(origin, Origin::Interactive) {
+        if let Some(g) = guard {
+            g.audit(
+                crate::services::audit::FULL_ACCESS_USED,
+                &[("engine", engine_id), ("surface", "thread")],
+            );
+        }
+    }
+    access
+}
+
 /// Who started a thread's runs. Routines and tasks pass their own explicit
 /// Full grant when they arrive (M13, M15); until then unattended runs grant
 /// nothing.
@@ -1906,6 +1967,8 @@ pub struct AppLauncher {
     threads: std::sync::OnceLock<std::sync::Weak<ThreadService>>,
     /// The live lease per thread; a new session revokes the last one.
     leases: StdMutex<HashMap<String, tandem_core::ids::LeaseId>>,
+    /// The Team org's policy and audit log (F-BL-06, F-TL-10).
+    guard: std::sync::OnceLock<Arc<dyn crate::services::audit::OrgGuard>>,
 }
 
 impl AppLauncher {
@@ -1928,7 +1991,13 @@ impl AppLauncher {
             gateway: tokio::sync::OnceCell::new(),
             threads: std::sync::OnceLock::new(),
             leases: StdMutex::default(),
+            guard: std::sync::OnceLock::new(),
         }
+    }
+
+    /// The org policy and audit log every session start consults.
+    pub fn set_guard(&self, guard: Arc<dyn crate::services::audit::OrgGuard>) {
+        let _ = self.guard.set(guard);
     }
 
     /// The engines Thread mode supports now.
@@ -2123,6 +2192,13 @@ impl ChatLauncher for AppLauncher {
             .collect();
         env.extend(crate::services::fake_engine_env());
         let (config, endpoint) = self.mcp_config(thread).await?;
+        let origin = origin_of(thread);
+        let access = session_access(
+            self.guard.get().map(|g| g.as_ref()),
+            thread,
+            origin,
+            &engine.id,
+        );
         Ok((
             adapter,
             ChatStart {
@@ -2133,8 +2209,7 @@ impl ChatLauncher for AppLauncher {
                 env,
                 model: thread.model.clone(),
                 effort: thread.effort.clone(),
-                // The one place a session's access is decided (F-TH-09).
-                access: tandem_core::access::resolve(thread.access, thread.mode, origin_of(thread)),
+                access,
                 mode: thread.mode,
                 attended: thread.attended,
                 resume_session: thread.engine_session_id.clone(),
@@ -2148,6 +2223,119 @@ impl ChatLauncher for AppLauncher {
                 }),
             },
         ))
+    }
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::*;
+    use tandem_core::access::Origin;
+    use tandem_core::policy::OrgPolicy;
+
+    struct Guard {
+        policy: Option<OrgPolicy>,
+        audits: StdMutex<Vec<(String, String)>>,
+    }
+
+    impl crate::services::audit::OrgGuard for Guard {
+        fn policy(&self) -> Option<OrgPolicy> {
+            self.policy.clone()
+        }
+        fn audit(&self, event: &str, meta: &[(&str, &str)]) {
+            let engine = meta
+                .iter()
+                .find(|(k, _)| *k == "engine")
+                .map(|(_, v)| v.to_string());
+            self.audits
+                .lock()
+                .expect("lock")
+                .push((event.to_string(), engine.unwrap_or_default()));
+        }
+    }
+
+    fn thread(access: Access) -> ThreadRecord {
+        ThreadRecord {
+            id: ThreadId::new(),
+            kind: ThreadKind::Thread,
+            workspace_id: None,
+            cwd: "/tmp".into(),
+            engine_id: "claude".into(),
+            account_id: None,
+            model: None,
+            effort: None,
+            access,
+            mode: ThreadMode::Act,
+            title: String::new(),
+            state: ThreadState::Idle,
+            attended: true,
+            engine_session_id: None,
+            pinned: false,
+            archived: false,
+            unread: false,
+            sort_key: "a".into(),
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    fn guard(policy: Option<OrgPolicy>) -> Guard {
+        Guard {
+            policy,
+            audits: StdMutex::default(),
+        }
+    }
+
+    #[test]
+    fn f_bl_06_1_max_access_edits_holds_a_full_thread_to_edits() {
+        let g = guard(Some(OrgPolicy {
+            max_access: Access::Edits,
+            audit_enabled: true,
+            ..OrgPolicy::default()
+        }));
+        let got = session_access(
+            Some(&g),
+            &thread(Access::Full),
+            Origin::Interactive,
+            "claude",
+        );
+        assert_eq!(got, Access::Edits);
+        // Nothing ran with Full, so nothing is audited.
+        assert!(g.audits.lock().expect("lock").is_empty());
+    }
+
+    #[test]
+    fn f_tl_10_1_a_full_session_start_is_offered_to_the_audit_log() {
+        let g = guard(Some(OrgPolicy::default()));
+        let got = session_access(
+            Some(&g),
+            &thread(Access::Full),
+            Origin::Interactive,
+            "codex",
+        );
+        assert_eq!(got, Access::Full);
+        assert_eq!(
+            g.audits.lock().expect("lock").as_slice(),
+            [("full_access_used".to_string(), "codex".to_string())]
+        );
+        // Edits sessions and unattended runs (never Full, D-4) aren't Full access.
+        session_access(
+            Some(&g),
+            &thread(Access::Edits),
+            Origin::Interactive,
+            "codex",
+        );
+        session_access(
+            Some(&g),
+            &thread(Access::Full),
+            Origin::Routine { grants_full: false },
+            "codex",
+        );
+        assert_eq!(g.audits.lock().expect("lock").len(), 1);
+        // Without a guard (no org) nothing changes.
+        assert_eq!(
+            session_access(None, &thread(Access::Full), Origin::Interactive, "codex"),
+            Access::Full
+        );
     }
 }
 
@@ -4213,5 +4401,142 @@ mod tests {
         );
         assert_eq!(f.svc.unqueue(&f.thread.id).await.expect("unqueue"), None);
         f.svc.stop(&f.thread.id).await.expect("stop");
+    }
+
+    /// A plan switch the tests can flip: Pro (every engine) until `free`.
+    fn plan_switch(svc: &ThreadService) -> Arc<std::sync::atomic::AtomicBool> {
+        let free = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let on_free = free.clone();
+        svc.set_plan_limits(Arc::new(move || {
+            let mut limits = tandem_core::entitlement::Limits::free();
+            if !on_free.load(Ordering::SeqCst) {
+                limits.chat_engines = None;
+            }
+            limits
+        }));
+        free
+    }
+
+    fn new_thread(f: &Fixture, engine: &str, kind: ThreadKind) -> NewThread {
+        NewThread {
+            id: ThreadId::new(),
+            kind,
+            workspace_id: None,
+            cwd: f.thread.cwd.clone(),
+            engine_id: engine.into(),
+            account_id: None,
+            model: None,
+            effort: None,
+            access: Access::Edits,
+            mode: ThreadMode::Act,
+            attended: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn f_th_06_free_plan_starts_threads_only_on_claude_code_and_codex() {
+        let f = fixture(OnStop::Ack, hang()).await;
+        plan_switch(&f.svc).store(true, Ordering::SeqCst);
+        for engine in ["claude", "codex"] {
+            let made = f
+                .svc
+                .create(new_thread(&f, engine, ThreadKind::Thread))
+                .await;
+            assert!(made.is_ok(), "{engine}: {made:?}");
+        }
+        for engine in ["cursor", "grok", "opencode"] {
+            let err = f
+                .svc
+                .create(new_thread(&f, engine, ThreadKind::Thread))
+                .await
+                .expect_err(engine);
+            assert_eq!(err.code, ErrorCode::ForbiddenPlan, "{engine}");
+            assert_eq!(err.message, tandem_core::entitlement::CHAT_ENGINE_ON_PRO);
+        }
+    }
+
+    #[tokio::test]
+    async fn f_th_06_pro_plan_starts_threads_on_every_chat_engine() {
+        let f = fixture(OnStop::Ack, hang()).await;
+        plan_switch(&f.svc);
+        for engine in ["claude", "codex", "cursor", "grok", "opencode"] {
+            let made = f
+                .svc
+                .create(new_thread(&f, engine, ThreadKind::Thread))
+                .await;
+            assert!(made.is_ok(), "{engine}: {made:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn f_th_06_free_plan_refuses_switching_a_thread_to_an_acp_engine() {
+        let f = fixture(OnStop::Ack, hang()).await;
+        plan_switch(&f.svc).store(true, Ordering::SeqCst);
+        let err = f
+            .svc
+            .switch_engine(&f.thread.id, "cursor", None, "divider".into())
+            .await
+            .expect_err("cursor on Free");
+        assert_eq!(err.code, ErrorCode::ForbiddenPlan);
+        let kept = f.svc.thread(&f.thread.id).await.expect("thread");
+        assert_eq!(kept.engine_id, "claude");
+        let codex = f
+            .svc
+            .switch_engine(&f.thread.id, "codex", None, "divider".into())
+            .await
+            .expect("codex on Free");
+        assert_eq!(codex.engine_id, "codex");
+    }
+
+    #[tokio::test]
+    async fn f_th_06_after_a_lapse_an_acp_thread_keeps_its_history_but_starts_no_turn() {
+        let f = fixture(OnStop::Ack, hang()).await;
+        let free = plan_switch(&f.svc);
+        let acp = f
+            .svc
+            .create(new_thread(&f, "grok", ThreadKind::Thread))
+            .await
+            .expect("grok on Pro");
+        free.store(true, Ordering::SeqCst);
+        let err = f
+            .svc
+            .send(&acp.id, "hello".into(), Vec::new(), false)
+            .await
+            .expect_err("grok on Free");
+        assert_eq!(err.code, ErrorCode::ForbiddenPlan);
+        let err = f
+            .svc
+            .send(&acp.id, "hello".into(), Vec::new(), true)
+            .await
+            .expect_err("queued on Free");
+        assert_eq!(err.code, ErrorCode::ForbiddenPlan);
+        assert_eq!(f.adapter.starts.load(Ordering::SeqCst), 0);
+        assert!(repo::turns(&f.store, &acp.id)
+            .await
+            .expect("turns")
+            .is_empty());
+        // Still readable, and it can move to an engine Free runs.
+        assert!(f.svc.get(&acp.id).await.is_ok());
+        assert!(f.svc.events(&acp.id, None, 50).await.is_ok());
+        f.svc
+            .switch_engine(&acp.id, "claude", None, "divider".into())
+            .await
+            .expect("back to Claude Code");
+        f.svc
+            .send(&acp.id, "hello".into(), Vec::new(), false)
+            .await
+            .expect("Claude Code on Free");
+        f.svc.stop(&acp.id).await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn f_th_06_the_thread_limit_leaves_teammate_chats_to_their_own_limits() {
+        let f = fixture(OnStop::Ack, hang()).await;
+        plan_switch(&f.svc).store(true, Ordering::SeqCst);
+        let made = f
+            .svc
+            .create(new_thread(&f, "cursor", ThreadKind::TeammateChat))
+            .await;
+        assert!(made.is_ok(), "{made:?}");
     }
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-auto-stop"
+description = "Enables the auto_stop command without any pre-configured scope."
+commands.allow = ["auto_stop"]
+
+[[permission]]
+identifier = "deny-auto-stop"
+description = "Denies the auto_stop command without any pre-configured scope."
+commands.deny = ["auto_stop"]

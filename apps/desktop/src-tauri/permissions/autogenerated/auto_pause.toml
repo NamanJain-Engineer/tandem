@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-auto-pause"
+description = "Enables the auto_pause command without any pre-configured scope."
+commands.allow = ["auto_pause"]
+
+[[permission]]
+identifier = "deny-auto-pause"
+description = "Denies the auto_pause command without any pre-configured scope."
+commands.deny = ["auto_pause"]

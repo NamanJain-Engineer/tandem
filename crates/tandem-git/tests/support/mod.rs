@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+pub mod trap;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Once;

@@ -12,7 +12,7 @@ use tandem_core::clock::SystemClock;
 use tandem_core::ids::PaneId;
 use tandem_core::settings::SettingKey;
 use tandem_core::shellquote::{self, ShellDialect};
-use tandem_core::status::{AgentStatus, SessionKey};
+use tandem_core::status::{AgentStatus, SessionKey, WaitingReason};
 use tandem_core::{ErrorCode, IpcError};
 use tandem_engines::launch::StatusEnv;
 use tandem_engines::EngineSpec;
@@ -861,7 +861,11 @@ impl TerminalService {
             .status
             .store
             .get(&SessionKey::pane(pane.as_str()))
-            .is_some_and(|r| r.status == AgentStatus::Waiting);
+            // A prompt waiting for input takes typing (Auto, F-AU-01); a
+            // permission dialog or a question never does (F-EN-06 AC2).
+            .is_some_and(|r| {
+                r.status == AgentStatus::Waiting && r.reason != Some(WaitingReason::Input)
+            });
         if waiting {
             return Err(IpcError::new(
                 ErrorCode::Waiting,

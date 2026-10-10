@@ -1,9 +1,13 @@
 import { and, desc, eq } from "drizzle-orm";
-import type { Limits, Plan, PlanStatus } from "@tandem/protocol/plans";
+import { MONTHLY_CREDITS, type Limits, type Plan, type PlanStatus } from "@tandem/protocol/plans";
 import { signEntitlement } from "../auth/jwt";
 import type { Deps } from "../deps";
 import { subscriptions, user } from "../db/schema";
-import { balance } from "./ledger";
+import type { OrgPolicy, OrgRole } from "@tandem/protocol/team";
+import { orgs } from "../db/schema";
+import { creditsFor } from "./credits";
+import { membershipOf } from "./membership";
+import { orgPlan, policyOf } from "./orgs";
 import { effectivePlan, type SubscriptionRow } from "./plan";
 
 export type MeResponse = {
@@ -13,10 +17,20 @@ export type MeResponse = {
   limits: Limits;
   paid_until: string | null;
   cancel_at_period_end: boolean;
-  credits: { monthly: number; purchased: number; resets_at: string | null };
+  credits: {
+    monthly: number;
+    purchased: number;
+    resets_at: string | null;
+    /** Team members: their monthly cap and what they've spent against it. */
+    cap: number | null;
+    spent: number | null;
+    /** What arrives each month for this user: 10,000 × seats, a Team member's cap, or 0 on Free. */
+    grant: number;
+  };
   flags: Record<string, boolean>;
-  policy: Record<string, unknown> | null;
-  org: null;
+  /** The org's admin policy while its Team plan is paid (F-BL-06). */
+  policy: OrgPolicy | null;
+  org: { id: string; name: string; role: OrgRole } | null;
   entitlement_token: string;
 };
 
@@ -30,20 +44,39 @@ export async function latestSubscription(deps: Deps, userId: string) {
   return sub ?? null;
 }
 
-/** Recomputes the plan from the database. Client-sent claims are never read (F-BE-04 AC4). */
+/**
+ * Recomputes the plan from the database. Client-sent claims are never read
+ * (F-BE-04 AC4). A member of an org with a paid Team plan is on Team;
+ * otherwise their own subscription decides.
+ */
 export async function planFor(deps: Deps, userId: string) {
   const sub = await latestSubscription(deps, userId);
-  return { sub, effective: effectivePlan(sub as SubscriptionRow | null, deps.clock.now()) };
+  const membership = await membershipOf(deps.db, userId);
+  if (membership) {
+    const team = await orgPlan(deps, membership.orgId);
+    if (team.effective.plan === "team") return { sub: team.sub, effective: team.effective, membership };
+  }
+  return { sub, effective: effectivePlan(sub as SubscriptionRow | null, deps.clock.now()), membership };
 }
 
 export async function buildMe(deps: Deps, userId: string): Promise<MeResponse | null> {
   const [u] = await deps.db.select().from(user).where(eq(user.id, userId)).limit(1);
   if (!u) return null;
-  const { sub, effective } = await planFor(deps, userId);
-  const credits = await balance(deps.db, { kind: "user", id: userId });
+  const { sub, effective, membership } = await planFor(deps, userId);
+  const credits = await creditsFor(deps, userId);
+  const policy = membership && effective.plan === "team" ? await policyOf(deps, membership.orgId) : null;
+  let org: MeResponse["org"] = null;
+  if (membership) {
+    const [row] = await deps.db
+      .select({ name: orgs.name })
+      .from(orgs)
+      .where(eq(orgs.id, membership.orgId))
+      .limit(1);
+    org = { id: membership.orgId, name: row?.name ?? "", role: membership.role };
+  }
   const token = await signEntitlement(
     deps.keys,
-    { sub: userId, plan: effective.plan, status: effective.status, limits: effective.limits, policy: null },
+    { sub: userId, plan: effective.plan, status: effective.status, limits: effective.limits, policy },
     deps.clock.nowSec(),
   );
   return {
@@ -53,10 +86,20 @@ export async function buildMe(deps: Deps, userId: string): Promise<MeResponse | 
     limits: effective.limits,
     paid_until: effective.paidUntil?.toISOString() ?? null,
     cancel_at_period_end: sub?.cancelAtPeriodEnd ?? false,
-    credits: { monthly: credits.monthly, purchased: credits.purchased, resets_at: credits.resetsAt },
+    credits: {
+      monthly: credits.monthly,
+      purchased: credits.purchased,
+      resets_at: credits.resetsAt,
+      cap: credits.org?.cap ?? null,
+      spent: credits.org ? credits.org.spent : null,
+      grant:
+        effective.plan === "free"
+          ? 0
+          : (credits.org?.cap ?? MONTHLY_CREDITS * (effective.plan === "team" ? Math.max(1, sub?.seats ?? 1) : 1)),
+    },
     flags: deps.config.config.flags,
-    policy: null,
-    org: null,
+    policy,
+    org,
     entitlement_token: token,
   };
 }

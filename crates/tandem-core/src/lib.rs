@@ -22,6 +22,7 @@ pub mod logging;
 pub mod net;
 pub mod origin;
 pub mod paths;
+pub mod policy;
 pub mod redact;
 pub mod remote_config;
 pub mod settings;
@@ -32,6 +33,7 @@ pub mod status_heuristics;
 pub mod status_report;
 pub mod supervisor;
 pub mod telemetry;
+pub mod untrusted;
 pub mod wslpath;
 
 pub use error::{CoreError, ErrorCode, IpcError};
