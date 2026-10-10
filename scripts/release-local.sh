@@ -94,7 +94,8 @@ else
   note "- unsigned: Linux AppImage and deb (missing LINUX_GPG_PRIVATE_KEY, LINUX_GPG_PASSPHRASE)"
 fi
 found=0
-for f in "$bundle"/appimage/*.AppImage "$bundle"/deb/*.deb; do
+# Only this version's bundles: an earlier release's can still be in the folder.
+for f in "$bundle"/appimage/*_"$version"_*.AppImage "$bundle"/deb/*_"$version"_*.deb; do
   [ -e "$f" ] || continue
   found=1
   name="$(basename "$f")"
@@ -109,10 +110,24 @@ if [ "$found" = 0 ]; then
   exit 1
 fi
 # Every bundle carries tandem-host, or SSH workspaces can't connect.
-for f in "$bundle"/appimage/*.AppImage "$bundle"/deb/*.deb; do
+for f in "$bundle"/appimage/*_"$version"_*.AppImage "$bundle"/deb/*_"$version"_*.deb; do
   [ -e "$f" ] || continue
   (cd "$root" && sh scripts/check-host-bundle.sh "$f" linux-x86_64,linux-aarch64) | sed "s|^|- $(basename "$f"): |" | tee -a "$summary"
 done
+# The sidecars sit beside the app (D-828): the tasks server and the
+# engines' status hook. Without the hook, panes fall back to heuristics.
+for bin in tandem-tasks tandem-hook; do
+  for f in "$bundle"/deb/*_"$version"_*.deb; do
+    [ -e "$f" ] || continue
+    # No grep -q: it stops reading early, and pipefail counts dpkg-deb's broken pipe.
+    dpkg-deb -c "$f" | grep "usr/bin/$bin\$" >/dev/null || { echo "$(basename "$f") has no $bin" >&2; exit 1; }
+  done
+  if [ -d "$bundle/appimage/Vibezeo.AppDir" ] && [ ! -x "$bundle/appimage/Vibezeo.AppDir/usr/bin/$bin" ]; then
+    echo "the AppImage has no $bin" >&2
+    exit 1
+  fi
+done
+note "- sidecars in every bundle: tandem-tasks, tandem-hook"
 if has TAURI_SIGNING_PRIVATE_KEY; then
   note "- updater: artifacts signed; latest.json written"
 else

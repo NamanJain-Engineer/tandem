@@ -3,6 +3,8 @@ title: Routines
 description: Scheduled agent runs, in the app or in the background.
 ---
 
-> **Not in the app yet.** Routines isn't in the current release. This page describes what is being built (M11 in the build plan), and it will be filled in when it ships. [The changelog](/changelog/) says what each release contains.
+> **Part of Pro.** Routines are in the app, and they run on Pro, which comes with Vibezeo accounts. The current download runs the Free plan, so it shows where routines live but can't run them. [The changelog](/changelog/) says what each release contains.
 
-Routines run an agent on a schedule, while the app is open or, on Pro, in the background, and show each run and anything missed.
+A routine runs a teammate on a schedule: every day at a set time, on chosen weekdays, at a fixed interval (15 minutes or more), or on a cron expression, with the next runs shown as you type. Each run is a fresh chat named after the routine, and a finished run says **Ready for review**. A run missed while the computer was asleep or Vibezeo was closed catches up once, late, if it's less than a day late. A run that would overlap the previous one is skipped, with the reason.
+
+Routines run while the app is open, or, if you turn it on, in the background through your system's scheduler (a systemd user timer on Linux, or a crontab line where systemd user services aren't available). Full access needs an explicit choice ("This routine will act without asking"). A teammate can also schedule its own routines when its **May create routines** setting is on; Vibezeo tells you whenever one is made or changed.

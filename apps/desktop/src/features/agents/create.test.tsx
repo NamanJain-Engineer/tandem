@@ -219,6 +219,18 @@ describe("UI-75/76 teammate settings", () => {
     await waitFor(() => expect(screen.queryByTestId("save-bar")).toBeNull());
   });
 
+  it("F-RT-05 May create routines shows only where the plan has routines (D-909)", async () => {
+    await screen.findByTestId("teammate-settings");
+    // Free has no routines, so the setting would only lead to "Routines are part of Pro".
+    expect(screen.queryByRole("switch", { name: "May create routines" })).toBeNull();
+    act(() =>
+      useSession.setState({
+        entitlement: { ...FREE_VIEW, plan: "pro", limits: { ...FREE_VIEW.limits, routines: true } },
+      }),
+    );
+    expect(await screen.findByRole("switch", { name: "May create routines" })).toBeTruthy();
+  });
+
   it("F-AG-05 a patch carries only what changed", () => {
     const base = {
       name: "Scout",

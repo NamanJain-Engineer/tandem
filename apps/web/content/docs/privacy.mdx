@@ -5,10 +5,13 @@ description: What stays on your computer and what the app can send.
 
 The download on this site doesn't contact Vibezeo's servers at all: no sign-in, no analytics, no crash reports and no update checks.
 
-- **On your computer.** Workspaces, layouts, settings, threads, teammates and notes are stored in the app's data folder, `~/.tandem/`.
+- **On your computer.** Workspaces, layouts, settings, threads, teammates, tasks, notes and Dictate's history and dictionary are stored in the app's data folder, `~/.tandem/`.
 - **Your data.** Settings › Privacy exports it to a zip (every table as JSON, teammates' memory and skills, your notes), without engine sign-ins or secrets, and can delete Vibezeo's data from this computer. Engine sign-ins stay unless you tick **Also remove engine sign-ins**.
 - **Secrets** are stored only in your operating system's keychain. Logs are scrubbed of tokens and keys, and diagnostics contain no prompts, file contents or tokens.
 - **Engines** talk to their vendors directly, under those vendors' terms, from their own provider homes. Vibezeo doesn't send your prompts, code or terminal output to us.
+- **Dictate** recognizes speech on your computer. Audio is never saved or sent; the only network request is the model download you start, from Hugging Face.
+- **Plugins** talk to each service directly from your computer, with the credential from your keychain. Nothing goes through Vibezeo's servers.
+- **SSH hosts** you add are reached with your own `ssh`. Vibezeo keeps each host's name, address, port, key file path and key fingerprint, never a password or a key.
 - **Usage statistics and crash reports** are off by default and stay off unless you turn them on in Settings › Privacy.
 
 The full list of what the app can send once Vibezeo accounts open, where to and when, and who processes it, is on the [privacy page](/privacy/). The app shows the same list in Settings › Privacy.

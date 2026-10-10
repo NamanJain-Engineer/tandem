@@ -532,6 +532,20 @@ mod tests {
     use super::*;
     use tandem_core::policy::OrgPolicy;
 
+    /// D-828: release bundles carry `tandem-hook` beside the app, where
+    /// `hook_bin` looks; without it panes fall back to heuristics.
+    #[test]
+    fn f_en_05_the_release_bundle_carries_tandem_hook() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../../tauri.sidecars.conf.json")).expect("json");
+        let bins = conf["bundle"]["externalBin"]
+            .as_array()
+            .expect("externalBin");
+        for name in ["binaries/tandem-hook", "binaries/tandem-tasks"] {
+            assert!(bins.iter().any(|b| b == name), "{name} isn't bundled");
+        }
+    }
+
     #[test]
     fn f_bl_06_an_engine_the_org_doesnt_allow_never_launches() {
         let dir = tempfile::tempdir().expect("tmp");
