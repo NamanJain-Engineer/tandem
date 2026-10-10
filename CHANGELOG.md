@@ -7,6 +7,94 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## 0.5.0
+
+Linux (x86-64). macOS and Windows are next. Like 0.4.0, this build runs the
+Free plan on your computer, with no account and nothing sent to our servers.
+
+Plan limits in this build (Free): 4 live panes, 3 workspaces, one thread at a
+time, one account per engine, threads with Claude Code and Codex, one teammate
+besides Lead, and one plugin connection.
+
+### Added
+
+- [lin] **Dictate.** Hold Ctrl+Alt in any app, speak and let go: the words are
+  typed where your cursor was. Speech is recognized on your computer, by a
+  model you choose to download in Settings › Dictate: Parakeet v3 (671 MB,
+  recommended), Whisper Turbo (574 MB), Whisper Base (English, 148 MB) or
+  Distil-Whisper (English, 1.5 GB). Each file is checked against a pinned
+  SHA-256 before it's used. Audio isn't saved. Each take's text is kept in
+  History on this computer, with stats and a dictionary for names and terms.
+  The message box has a mic, and the setup has a Dictate step. On X11 it needs
+  nothing else. On Wayland it uses the desktop's global-shortcuts portal, or a
+  command you bind to a system shortcut, and typing needs `wtype` and
+  `wl-clipboard`. Cloud dictation and Enhance or Polish are Pro features that
+  switch on with Vibezeo accounts; this build recognizes speech only on your
+  computer.
+- [lin] **Plugins.** Settings › Plugins connects a service once; then you
+  choose which teammates and threads may use it. Every action has a risk
+  class: reads run, and writes, posts, spending and deletions ask you first
+  in the chat. Runs nobody is watching hold them in Held actions for you to
+  approve. Credentials stay in your system keychain, and engines never see
+  them. In this build: Web fetch (built in); Notion, Sentry, Cloudflare,
+  Linear, Supabase, Stripe and PostHog with their own sign-in (Linear,
+  Supabase, Stripe and PostHog also with an API key); GitHub and Slack with a
+  token. Gmail and Vercel are listed as not available yet. Free includes one
+  connection.
+- [lin] **Tasks.** A task tracker on your computer: the Tasks tab in the
+  sidebar and in Agent mode, with statuses, priorities, labels, comments and
+  a history of every change. Agents in your threads and teammate chats, and
+  Claude Code and Codex in terminal panes, read and update the same tasks, and
+  each change records who made it. Running tasks for you, and routines, are
+  Pro features that come with Vibezeo accounts.
+- [lin] **SSH workspaces.** Settings › Remote › Add host, then open a folder on
+  that machine: its terminals, agents, threads, files and git run there.
+  Vibezeo connects with your own `ssh`, agent and config, shows the host's key
+  fingerprint the first time and pins it, and installs a small helper whose
+  SHA-256 is checked on the host before it's used. Terminals keep running for
+  up to 10 minutes if the connection drops, and reattach when it's back.
+  Engines run signed in on the host; your sign-ins, plugin credentials and the
+  local gateway stay on this computer. Threads on a host ask for approval just
+  as local ones do. Hosts: Linux x86-64 and arm64. Not in remote folders yet:
+  hosts behind ProxyJump or ProxyCommand, git worktrees, plugins and task
+  tools in threads, live file watching, and push, pull and branch switching
+  from the Changes panel.
+- [lin] **Diagnostics.** "Diagnostics…" in the app menu shows, live, how each
+  part of the app is doing, how long each terminal took to start and what it
+  has waiting, the event queues, uptime and frame rate, with Copy diagnostics.
+  It's measured on your computer and never sent anywhere.
+- [lin] **Tray icon.** While Dictate is on, a tray icon shows its status, such
+  as "Dictate: ready · hold Ctrl+Alt", with Open Vibezeo and Quit Vibezeo.
+
+### Changed
+
+- [lin] When a background part of Vibezeo keeps failing (three restarts in
+  ten minutes), a banner names it and offers Copy diagnostics.
+- [lin] Screen readers hear new notifications politely, at most one every two
+  seconds, with a burst folded into "And N more".
+- [lin] The light theme's danger red, added-line green, waiting colour and
+  focus ring meet WCAG contrast.
+
+### Fixed
+
+- [lin] The download now includes `tandem-hook`, the small helper that Claude
+  Code's hooks and Codex's notifications report through, so their panes show
+  exactly when they're working, need you or finish. 0.4.0 left it out, and
+  those panes' status came only from what the terminal showed.
+- [lin] The status bar no longer says Online in a build that has no Vibezeo
+  service to be online to.
+- [lin] The New chat button and the unread dot are announced correctly to
+  screen readers.
+
+### Security
+
+- [lin] Plugin writes from runs nobody is watching are held for you, never
+  run, and say which teammate mail, task or routine they came from.
+- [lin] SSH hosts: passwords and key passphrases are typed into a dialog and
+  handed to `ssh` through a one-time, loopback-only helper. They're never
+  saved or logged, so you're asked again when it reconnects. A changed host
+  key stops the connection until you trust the new one.
+
 ## 0.4.0
 
 Linux (x86-64). macOS and Windows are next. Like 0.3.0, this build runs the

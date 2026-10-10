@@ -180,6 +180,7 @@ export function DictateHomeCard({ onTry, onHistory }: { onTry: () => void; onHis
 export function DictateExtras() {
   const status = useDictate((s) => s.status);
   const models = useDictate((s) => s.models);
+  const unavailable = useDictate((s) => s.unavailable);
   const { show } = useToast();
   const [sheet, setSheet] = useState<"models" | "dictionary" | "history" | "setup" | null>(null);
   const rules = useRuleCount(sheet);
@@ -194,7 +195,7 @@ export function DictateExtras() {
   if (!status && failed)
     return (
       <p role="alert" className="text-sm text-fg-muted" data-testid="dictate-unavailable">
-        {t("dictate.unavailable")}
+        {unavailable ?? t("dictate.unavailable")}
       </p>
     );
   if (!status)

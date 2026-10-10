@@ -27,6 +27,7 @@
     "allow-test-plugin-price",
     "allow-test-plugin-allowlist",
     "allow-test-unattended-run",
+    "allow-test-find-work-server",
     "core:window:allow-set-position",
     "core:window:allow-outer-position",
     "allow-test-dictate-key",

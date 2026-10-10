@@ -15,6 +15,7 @@ tandem-gateway = { workspace = true, features = ["test-vendors"] }
 tandem-git.workspace = true
 tandem-host.workspace = true
 tandem-pty.workspace = true
+tandem-store.workspace = true
 tandem-tasks.workspace = true
 tandem-voice.workspace = true
 parking_lot.workspace = true

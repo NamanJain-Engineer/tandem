@@ -696,3 +696,14 @@ pub async fn test_unattended_run(
         .set_unattended_origin(&thread.id, &format!("routine:{routine_id}:{run_id}"));
     Ok(thread)
 }
+
+/// Takes Find work's hosted ranking server down (`down`: its requests go to
+/// a closed port) or brings it back (E2E-M16-2).
+#[tauri::command]
+pub fn test_find_work_server(state: State<'_, AppState>, down: bool) -> Result<(), IpcError> {
+    guard(&state)?;
+    if let Ok(mut base) = crate::services::api::TEST_RESOLVE_BASE.lock() {
+        *base = down.then(|| "http://127.0.0.1:9".to_string());
+    }
+    Ok(())
+}

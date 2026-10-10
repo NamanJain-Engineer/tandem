@@ -430,6 +430,11 @@
     "page": "privacy"
   },
   {
+    "default": false,
+    "key": "find_work_hosted",
+    "page": "privacy"
+  },
+  {
     "default": "enter",
     "key": "send_key",
     "page": "general"

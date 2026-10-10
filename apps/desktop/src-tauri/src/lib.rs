@@ -74,6 +74,8 @@ macro_rules! app_commands {
             commands::teammates::skill_remove,
             commands::teammates::skills_library,
             commands::teammates::skill_add_from_library,
+            commands::teammates::skill_sync,
+            commands::teammates::teammate_launch_in_terminal,
             commands::teammates::teammate_suggestions,
             commands::threads::thread_reorder,
             commands::teammates::teammate_draft_with_ai,
@@ -741,6 +743,7 @@ pub fn run() {
         commands::test::test_unattended_run,
         commands::conductor::test_conductor_inject,
         commands::conductor::test_conductor_clock,
+        commands::test::test_find_work_server,
     ]);
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(app_commands![]);
