@@ -204,6 +204,24 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     expect((core.handle("auth_state", {}) as AuthState).hosted).toBe(false);
   });
 
+  it("F-WB-01 demo runs early access as the 0.3.0 download does: no account, no credits", () => {
+    core = new DemoCore(0);
+    // What the core reports after "Start using Vibezeo" (AuthService::continue_offline, hosted off).
+    const earlyAccess: AuthState = {
+      signedIn: false,
+      email: null,
+      offline: true,
+      offlineDaysLeft: null,
+      hosted: false,
+      pending: null,
+      error: null,
+    };
+    expect(core.handle("auth_state", {})).toEqual(earlyAccess);
+    const view = core.handle("entitlement_get", {}) as EntitlementView;
+    expect(view.source).toBe("free");
+    expect(view.credits).toBeNull();
+  });
+
   it("demo the sample world: three workspaces, Claude Code, Codex and Gemini CLI panes, and the Dashboard's states", () => {
     core = new DemoCore(0);
     const workspaces = core.handle("workspace_list", {}) as WorkspaceSummary[];

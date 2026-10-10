@@ -61,10 +61,12 @@ const BOOT: AppBoot = {
   dataDirDisplay: "~/.vibezeo",
 };
 
+/** Early access, as the released download runs it after "Start using
+ * Vibezeo": no account, so no avatar email and no credits (D-810). */
 const AUTH: AuthState = {
-  signedIn: true,
-  email: "demo@vibezeo.com",
-  offline: false,
+  signedIn: false,
+  email: null,
+  offline: true,
   offlineDaysLeft: null,
   hosted: false,
   pending: null,
@@ -94,8 +96,8 @@ const ENTITLEMENT: EntitlementView = {
     chatEngines: ["claude", "codex"],
     creditPacks: false,
   },
-  source: "token",
-  credits: { monthly: 0, purchased: 0, resetsAt: null },
+  source: "free",
+  credits: null,
   policy: null,
   paidUntil: null,
   cancelAtPeriodEnd: false,
