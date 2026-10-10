@@ -37,6 +37,20 @@ describe("F-WB-01 marketing site (M15)", () => {
     }
   });
 
+  it("F-WB-01 a credit price for a feature that isn't built is marked Planned, on the row and in the text", () => {
+    const remaining = readFileSync(join(import.meta.dirname, "../../../docs/REMAINING.md"), "utf8");
+    const page = html(<PricingPage />);
+    for (const row of CREDIT_ROWS) {
+      const open = remaining.includes(`- [ ] ${row.feature} `);
+      const done = remaining.includes(`- [x] ${row.feature} `);
+      expect(open || done, `${row.feature} is in REMAINING`).toBe(true);
+      expect(row.planned ?? false, row.key).toBe(open);
+      const tr = page.match(new RegExp(`<tr data-credit-price="${row.key}"[^>]*>(.*?)</tr>`))?.[1] ?? "";
+      expect(tr.includes("Planned"), row.key).toBe(open);
+      if (open) expect(page).toContain(`(planned) ${row.label}`);
+    }
+  });
+
   it("F-WB-01 /privacy lists what the app can send, when, and who processes it", () => {
     const h = html(<PrivacyPage />);
     for (const f of hosted.features) expect(h, f.id).toContain(`data-hosted-feature="${f.id}"`);

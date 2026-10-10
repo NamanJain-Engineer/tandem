@@ -66,9 +66,9 @@ export default function PricingPage() {
           <div className="flex flex-col gap-2">
             <h2 className="text-xl font-semibold tracking-tight">What credits pay for</h2>
             <p className="text-md text-fg-muted">
-              Credits pay only for hosted AI features, which run on the Claude API: session titles, and
-              Enhance and Polish for your prompts. One credit is ${CREDIT_VALUE_USD.toFixed(3)} of usage. They
-              never pay for your engines.
+              Credits come with Pro and Team, when {SITE.product} accounts open. They pay only for hosted AI
+              features, which run on the Claude API: thread titles, and (planned) Enhance and Polish for your
+              prompts. One credit is ${CREDIT_VALUE_USD.toFixed(3)} of usage. They never pay for your engines.
             </p>
             <table className="mt-2 text-left text-sm">
               <caption className="sr-only">Credits per hosted feature</caption>
@@ -76,7 +76,10 @@ export default function PricingPage() {
                 {CREDIT_ROWS.map((row) => (
                   <tr key={row.key} data-credit-price={row.key} className="border-t border-divider">
                     <th scope="row" className="py-1.5 pr-6 font-medium text-fg">
-                      {row.label}
+                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className={row.planned ? "text-fg-muted" : "text-fg"}>{row.label}</span>
+                        {row.planned && <Badge variant="outline">Planned</Badge>}
+                      </span>
                     </th>
                     <td className="py-1.5 text-fg-muted">
                       {row.credits === 0 ? "Free" : `${row.credits} credits ${row.unit}`}
