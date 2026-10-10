@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { t } from "../../i18n";
 import { AccountPage } from "./AccountPage";
 import { EnginesPage } from "./EnginesPage";
+import { ShortcutsPage } from "./ShortcutsPage";
 import { AccountsPage } from "./AccountsPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
@@ -44,7 +45,7 @@ const opts = (keys: string[], prefix: string) =>
 const segs = (keys: string[], prefix: string) =>
   keys.map((k) => ({ id: k, label: t(`${prefix}.${k}` as Parameters<typeof t>[0]) }));
 
-/** The pages shipped so far (UI-101, 102, 104, 105, 112, 114, 115, 116), in UI-100 order. */
+/** The pages shipped so far (UI-101, 102, 104, 105, 112, 113, 114, 115, 116), in UI-100 order. */
 export function settingsPages(platform: string): PageDef[] {
   const mac = platform === "macos";
   return [
@@ -435,6 +436,14 @@ export function settingsPages(platform: string): PageDef[] {
         },
       ],
       extra: <PrivacyFlows />,
+    },
+    {
+      id: "shortcuts",
+      label: t("settings.shortcuts"),
+      subtitle: t("settings.shortcuts.subtitle"),
+      keywords: ["shortcuts", "keyboard", "keys", "hotkeys", "rebind"],
+      rows: [],
+      extra: <ShortcutsPage />,
     },
     {
       id: "account",

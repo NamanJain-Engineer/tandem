@@ -42,6 +42,7 @@ import { AccountChip } from "./AccountChip";
 import { LimitBanner } from "./LimitCard";
 import { useContexts } from "../../stores/contexts";
 import { baseBranch, isWorktree } from "../../stores/worktrees";
+import { useShortcutKeys } from "../commands/useShortcutKeys";
 
 const BOX_THROTTLE_MS = 50;
 
@@ -208,6 +209,7 @@ const PaneView = memo(function PaneView({
   options,
   cover,
 }: PaneViewProps) {
+  const keys = useShortcutKeys();
   const [phase, setPhase] = useState<Phase>({ kind: "starting" });
   const [activity, setActivity] = useState<Activity>("idle");
   // A restored agent waits on its card until resumed (F-SH-07).
@@ -266,11 +268,11 @@ const PaneView = memo(function PaneView({
     { id: "title", type: "label", label: title },
     { id: "rename", label: t("pane.rename"), onSelect: () => setRenaming(true) },
     { id: "sep-title", type: "separator" },
-    { id: "split-right", label: t("pane.splitRight"), kbd: ["Mod", "D"], onSelect: () => split("right") },
+    { id: "split-right", label: t("pane.splitRight"), kbd: keys("pane.split_right"), onSelect: () => split("right") },
     {
       id: "split-down",
       label: t("pane.splitDown"),
-      kbd: ["Mod", "Shift", "D"],
+      kbd: keys("pane.split_down"),
       onSelect: () => split("bottom"),
     },
     { id: "new-tab", label: t("pane.moveToNewTab"), onSelect: () => void moveToNewTab(tabId, pane.id) },
@@ -307,7 +309,7 @@ const PaneView = memo(function PaneView({
       id: "close",
       label: t("pane.closePane"),
       danger: true,
-      kbd: ["Mod", "W"],
+      kbd: keys("pane.close"),
       onSelect: () => useCloseConfirm.getState().request(tabId, pane.id),
     },
   ];

@@ -271,6 +271,8 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
   await invoke("settings_set", { key: "last_mode", value: "code" });
   // New threads start from the app's defaults, not a spec's last engine (F-TH-07).
   await invoke("settings_set", { key: "thread_defaults", value: {} });
+  // Every spec starts with the default shortcuts (F-SH-09 rebinding).
+  await invoke("settings_set", { key: "shortcut_overrides", value: {} });
   await invoke("sidebar_save", {
     sidebar: { open: false, tabs: [{ id: "dashboard", kind: "dashboard", title: null, url: null }], active: "dashboard", width: 470, fullscreen: false, pinned: false },
   });

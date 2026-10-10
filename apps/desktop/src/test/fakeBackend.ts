@@ -126,6 +126,7 @@ export function resetStores(): void {
     returnFocus: null,
     railCollapsed: false,
     paletteOpen: false,
+    cheatsheetOpen: false,
     upgrade: { open: false },
     settingsPage: null,
   });
