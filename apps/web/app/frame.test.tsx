@@ -1,5 +1,5 @@
 import shortcuts from "@tandem/protocol/shortcuts.json";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -59,5 +59,12 @@ describe("site frame", () => {
     expect(caps).toContain(">Ctrl<");
     expect(caps).toContain(">K<");
     expect(() => linuxKeys("no.such.command")).toThrow();
+  });
+
+  it("F-WB-01 AC2 site components stay server-only, so stripping the runtime can't break them (D-1813)", () => {
+    const dir = join(import.meta.dirname, "../components/site");
+    const files = readdirSync(dir, { recursive: true, encoding: "utf8" }).filter((f) => /\.tsx?$/.test(f));
+    expect(files.length).toBeGreaterThan(10);
+    for (const f of files) expect(readFileSync(join(dir, f), "utf8"), f).not.toMatch(/^\s*["']use client["']/m);
   });
 });

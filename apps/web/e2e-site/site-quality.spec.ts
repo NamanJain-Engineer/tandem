@@ -77,3 +77,27 @@ test("F-WB-01 with reduced motion nothing on the home page animates", async ({ b
   expect(running).toEqual([]);
   await context.close();
 });
+
+test("F-WB-01 AC2 marketing pages load no framework JavaScript (D-1813), and still work", async ({ page }) => {
+  const chunks: string[] = [];
+  page.on("request", (r) => {
+    const path = new URL(r.url()).pathname;
+    if (path.startsWith("/_next/static/chunks/")) chunks.push(path);
+  });
+  for (const path of SITE_PAGES) {
+    await page.goto(path);
+    await page.waitForLoadState("networkidle");
+  }
+  expect(chunks).toEqual([]);
+  // What used to need a script works without one: the phone menu and the FAQ.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Menu" }).click();
+  await expect(page.locator("#site-menu")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#site-menu")).toBeHidden();
+  const second = page.locator("details[name=faq]").nth(1);
+  await second.locator("summary").click();
+  await expect(second).toHaveAttribute("open", "");
+  await expect(page.locator("details[name=faq]").first()).not.toHaveAttribute("open", "");
+});
