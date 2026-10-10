@@ -3,6 +3,7 @@ import { Bell, Folder, PanelLeft, Plus, Settings, Terminal } from "lucide-react"
 import { ApprovalCard } from "../components/ApprovalCard";
 import { Avatar, AvatarStack } from "../components/Avatar";
 import { Badge, Chip } from "../components/Badge";
+import { WaveformRing } from "../components/WaveformRing";
 import { Button } from "../components/Button";
 import { Checkbox, RadioGroup, Switch } from "../components/Choice";
 import { CommandPalette } from "../components/CommandPalette";
@@ -327,6 +328,17 @@ export const galleryEntries: GalleryEntry[] = [
       { name: "callout", render: () => <Callout tone="accent" title="Free includes 3 workspaces" actions={<Button size="sm" variant="primary">See plans</Button>}>Remove one from the rail (nothing on disk is deleted) or upgrade.</Callout> },
       { name: "key value", render: () => <KeyValue items={[{ key: "Plan", value: "PRO · renews 12 Oct" }, { key: "Credits", value: "8,420 of 10,000" }]} /> },
       { name: "stepper", render: () => <Stepper steps={["Theme", "Engines", "Dictate", "Workspace"]} current={1} /> },
+    ],
+  },
+  {
+    id: "waveform-ring",
+    title: "WaveformRing",
+    spec: "§2.30",
+    states: [
+      { name: "idle", render: () => <WaveformRing state="idle" label="Dictate" /> },
+      { name: "listening", render: () => <WaveformRing state="listening" level={0.6} size={56} label="Listening" /> },
+      { name: "error", render: () => <WaveformRing state="error" label="Your microphone isn't delivering audio" /> },
+      { name: "onboarding", render: () => <WaveformRing state="idle" size={120} label="Dictate" /> },
     ],
   },
   {

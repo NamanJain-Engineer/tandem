@@ -8,14 +8,16 @@ every milestone has its tasks, exit checks and E2E list in MILESTONES. Tick
 items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md`
 has every feature below with its full behaviour and acceptance tests.
 
-**Where it stands (10 October 2026, `product-m0-m5`):** M0–M7, M9 and M10
-are done, and so are M15's six features (its non-functional checks are under
-way). So is M13, apart from its voice pair (F-DI-05 and F-DI-10, which wait
-for M8's Dictate). M16 has F-SH-12, F-AC-07, F-AU-01, F-BE-03 and F-BE-12.
-That's 107 of 152 features, 56 of 65 P0. Left: 45 features in six
-milestones (M8, M11–M14, M16), of which 9 are P0, all M8's. vibezeo.com serves 0.3.0
-(M6, M7, M9 and the Scratchpad). M15 makes the P0/P1 product launchable;
-M16 adds the P2 extras and the release candidate.
+**Where it stands (10 October 2026, `product-m0-m5`):** M0–M12 are done,
+and so are M15's six features (its non-functional checks are under way). So
+is M13, apart from its voice pair (F-DI-05 and F-DI-10, which M8's session
+builds next on M13's clients). M16 has F-SH-12, F-AC-07, F-AU-01, F-BE-03,
+F-BE-12 and F-RT-05. That's 135 of 152 features, and all 65 P0s. Left: 17
+features, none of them P0 (4 P1, 13 P2): M13's voice pair, M14's 2 and M16's 13.
+vibezeo.com serves 0.4.0 (teammates, Find work, your data, shortcut rebinding
+and the usage page); Dictate (M8), tasks and routines (M11) and plugins (M12)
+reach a download with the next release. M15 makes the P0/P1 product
+launchable; M16 adds the P2 extras and the release candidate.
 
 ## 0. First, before new features
 
@@ -41,21 +43,22 @@ Build in this order; each milestone ends with its E2E specs, the full
 regression, the gate, BUILD_LOG and a tag. Prerequisites are as MILESTONES
 lists them (M9 was built ahead of M8, D-200).
 
-### M8 · Dictate (local) and onboarding (XL) · 11 features, 9 of them P0
+### M8 · Dictate (local) and onboarding (XL) · 11 features, 9 of them P0 · done
 Push-to-talk anywhere: persistent audio capture, local Whisper/Parakeet, safe
 insertion into the focused app, the widget, history and the dictionary; plus
-the complete first-run onboarding.
-- [ ] F-DI-01 Global push-to-talk (P0)
-- [ ] F-DI-02 Hotkey engine per OS (P0)
-- [ ] F-DI-03 Audio capture and microphones (P0)
-- [ ] F-DI-04 Local speech models (P0)
-- [ ] F-DI-06 Text insertion pipeline (P0)
-- [ ] F-DI-07 Dictate widget (P0)
-- [ ] F-DI-11 Onboarding and permissions (P0)
-- [ ] F-DI-12 In-app composer dictation (P0)
-- [ ] F-SH-08 First-run onboarding (P0; M5 built the framework, M6 the Accounts step)
-- [ ] F-DI-08 History and stats (P1)
-- [ ] F-DI-09 Dictionary (P1)
+the complete first-run onboarding. **Done** (branch `m8-dictate-onboarding`,
+merged 10 October 2026). F-DI-05 and F-DI-10 are listed under M13.
+- [x] F-DI-01 Global push-to-talk (P0)
+- [x] F-DI-02 Hotkey engine per OS (P0)
+- [x] F-DI-03 Audio capture and microphones (P0)
+- [x] F-DI-04 Local speech models (P0)
+- [x] F-DI-06 Text insertion pipeline (P0)
+- [x] F-DI-07 Dictate widget (P0)
+- [x] F-DI-11 Onboarding and permissions (P0)
+- [x] F-DI-12 In-app composer dictation (P0)
+- [x] F-SH-08 First-run onboarding (P0; M5 built the framework, M6 the Accounts step)
+- [x] F-DI-08 History and stats (P1)
+- [x] F-DI-09 Dictionary (P1)
 
 Tasks: capture; local models; dictionary engine; takes and insertion; hotkeys;
 widget (UI-60); composer dictation (UI-68); setup and onboarding; history and
@@ -88,15 +91,16 @@ search, mail, settings, create with AI, gateway.
 
 ### M11 · Tasks and routines (L) · 8 features (P1)
 A local task tracker agents read and write over MCP, with Pro execution in
-lanes; scheduled routines that run in-app and in the background.
-- [ ] F-TK-01 Task store
-- [ ] F-TK-02 `tandem-tasks` MCP server
-- [ ] F-TK-03 Tasks UI
-- [ ] F-TK-04 Task execution (Pro)
-- [ ] F-RT-01 Routine model (Pro)
-- [ ] F-RT-02 In-app scheduler and runs
-- [ ] F-RT-03 Background runner (Pro)
-- [ ] F-RT-04 Routines UI
+lanes; scheduled routines that run in-app and in the background. **Done in
+pull request #36** (branch `m11-tasks-routines`), with M16's F-RT-05.
+- [x] F-TK-01 Task store
+- [x] F-TK-02 `tandem-tasks` MCP server
+- [x] F-TK-03 Tasks UI
+- [x] F-TK-04 Task execution (Pro)
+- [x] F-RT-01 Routine model (Pro)
+- [x] F-RT-02 In-app scheduler and runs
+- [x] F-RT-03 Background runner (Pro)
+- [x] F-RT-04 Routines UI
 
 Tasks: task store; MCP server; Tasks UI (UI-80/81); task execution
 (UI-82/83/84); routine model and schedules; scheduler; background runner;
@@ -105,15 +109,17 @@ E2E-M11-1…6: agents edit tasks, execute (Pro), routine, missed run, background
 
 ### M12 · Plugins and approvals (L) · 8 features (P1)
 Connect external services once, grant them per teammate or thread, and enforce
-risk-class approvals and held drafts. Engines never see a token.
-- [ ] F-PL-02 Vendor modules
-- [ ] F-PL-03 Connecting a plugin
-- [ ] F-PL-04 Credential storage and injection
-- [ ] F-PL-05 Grants
-- [ ] F-PL-06 Risk classes and approval policy
-- [ ] F-PL-07 Approval card
-- [ ] F-PL-08 Held drafts queue
-- [ ] F-PL-09 Initial catalog
+risk-class approvals and held drafts. Engines never see a token. **Done in
+pull request #34** (branch `m12-plugins-approvals`). M11's runner names its
+runs through `set_unattended_origin` (BUILD_LOG M12 item 7).
+- [x] F-PL-02 Vendor modules
+- [x] F-PL-03 Connecting a plugin
+- [x] F-PL-04 Credential storage and injection
+- [x] F-PL-05 Grants
+- [x] F-PL-06 Risk classes and approval policy
+- [x] F-PL-07 Approval card
+- [x] F-PL-08 Held drafts queue
+- [x] F-PL-09 Initial catalog
 
 Tasks: vendor modules; credentials; connect flows (UI-90/91/92); grants;
 policy engine; approval card (UI-93); held drafts; catalog.
@@ -183,7 +189,7 @@ release candidate. Stop after any sub-phase if the budget runs out.
 - 16C Phone companion: [ ] F-RM-03 Phone companion · [ ] F-BE-11 Remote relay
 - 16D Extras: [x] F-SH-12 Scratchpad · [ ] F-CD-21 Simulator pane (macOS) ·
   [x] F-AC-07 Usage dashboard · [ ] F-AG-10 Skill sync to engines ·
-  [ ] F-AG-13 Teammate in a terminal · [ ] F-RT-05 Schedule tool for teammates ·
+  [ ] F-AG-13 Teammate in a terminal · [x] F-RT-05 Schedule tool for teammates ·
   [x] F-BE-03 CLI device-code sign-in · [x] F-BE-12 Admin
 - Also: [x] app-shortcut rebinding (F-SH-09 P2 part, Settings › Shortcuts UI-113),
   [x] Team SSO (F-BL-06 P2 part), [x] the remaining AI routes (`/auto/next`,

@@ -18,6 +18,7 @@ import { Menu, type MenuEntry } from "./Menu";
 import { SegmentedControl } from "./SegmentedControl";
 import { Select, type SelectOption } from "./Select";
 import { Tooltip } from "./Tooltip";
+import { WaveformRing } from "./WaveformRing";
 
 export type ComposerAttachment = {
   id: string;
@@ -75,6 +76,26 @@ export const COMPOSER_LABELS: ComposerLabels = {
   removeAttachment: (label) => `Remove ${label}`,
 };
 
+/** The composer's mic (Dictate, F-DI-12, UI-68). */
+export type ComposerDictation = {
+  state: "idle" | "listening" | "transcribing";
+  /** 0–1 while listening. */
+  level?: number;
+  /** Disables the mic with this tooltip ("Conductor is listening"). */
+  disabledReason?: string;
+  /** The placeholder while listening ("Listening…"). */
+  listeningPlaceholder: string;
+  /** The ring's spoken labels. */
+  listeningLabel: string;
+  transcribingLabel: string;
+  /** Pointer down on the mic. */
+  onPressStart: () => void;
+  /** Pointer up, with how long it was held (press-and-hold vs a click). */
+  onPressEnd: (heldMs: number) => void;
+  /** ⌥Space held in the composer (macOS only): `true` on press, `false` on release. */
+  onHoldKey?: (down: boolean) => void;
+};
+
 export type ComposerSelect = {
   value: string;
   options: SelectOption[];
@@ -116,9 +137,10 @@ export type ComposerProps = {
   onPasteImage?: () => void;
   /** Files are being dragged over the thread. */
   dropActive?: boolean;
-  /** Shows the mic (Dictate, M8). */
-  dictation?: boolean;
-  onDictate?: () => void;
+  /** Shows the mic (Dictate): press-and-hold records, a click toggles. */
+  dictation?: ComposerDictation;
+  /** The text field gained or lost focus (Dictate's composer target). */
+  onFocusChange?: (focused: boolean) => void;
   /** `@` opens a picker over these; picking one becomes a chip. */
   mentions?: (query: string) => Promise<MentionItem[]> | MentionItem[];
   onMention?: (item: MentionItem) => void;
@@ -129,7 +151,23 @@ export type ComposerProps = {
   className?: string;
 };
 
-export type ComposerHandle = { focus: () => void };
+export type ComposerHandle = {
+  focus: () => void;
+  /** Inserts dictated text at the caret (or over the selection), spaced
+   * from its neighbours, without touching the clipboard (F-DI-12). */
+  insertAtCaret: (text: string) => void;
+};
+
+/** `value` with `text` put between `start` and `end`, plus the caret after it. */
+export function insertText(value: string, start: number, end: number, text: string): { value: string; caret: number } {
+  const before = value.slice(0, start);
+  const after = value.slice(end);
+  const lead = before && !/\s$/.test(before) ? " " : "";
+  const trail = after && !/^[\s.,;:!?)\]}]/.test(after) ? " " : "";
+  return { value: before + lead + text + trail + after, caret: start + lead.length + text.length };
+}
+
+const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 const MIN_H = 88;
 const MAX_H = 320;
@@ -171,8 +209,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     attachMenu,
     onPasteImage,
     dropActive = false,
-    dictation = false,
-    onDictate,
+    dictation,
+    onFocusChange,
     mentions,
     onMention,
     disabledReason,
@@ -190,7 +228,25 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const disabled = disabledReason !== undefined && disabledReason !== null;
   const empty = !value.trim() && attachments.length === 0;
 
-  useImperativeHandle(ref, () => ({ focus: () => area.current?.focus() }), []);
+  const latest = useRef({ value, onChange });
+  latest.current = { value, onChange };
+  const holdKey = useRef(false);
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: () => area.current?.focus(),
+      insertAtCaret: (text: string) => {
+        const el = area.current;
+        const cur = latest.current.value;
+        const start = el?.selectionStart ?? cur.length;
+        const end = el?.selectionEnd ?? start;
+        const next = insertText(cur, Math.min(start, cur.length), Math.min(end, cur.length), text);
+        latest.current.onChange(next.value);
+        requestAnimationFrame(() => el?.setSelectionRange(next.caret, next.caret));
+      },
+    }),
+    [],
+  );
 
   useLayoutEffect(() => {
     const el = area.current;
@@ -235,6 +291,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // IME: Enter that confirms a composition never sends (UI-22).
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    // ⌥Space held in a focused composer dictates (macOS only; Alt+Space
+    // belongs to the window menu elsewhere, UI_SPEC §5).
+    if (MAC && dictation?.onHoldKey && !dictation.disabledReason && e.code === "Space" && e.altKey && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      if (!holdKey.current && !e.repeat) {
+        holdKey.current = true;
+        dictation.onHoldKey(true);
+      }
+      return;
+    }
     if (picker && picker.items.length > 0) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -275,6 +341,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         e.preventDefault();
         onChange(last);
       }
+    }
+  };
+
+  const onKeyUp = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (holdKey.current && (e.code === "Space" || e.key === "Alt")) {
+      holdKey.current = false;
+      dictation?.onHoldKey?.(false);
     }
   };
 
@@ -379,15 +452,24 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         aria-activedescendant={activeId}
         aria-autocomplete={mentions ? "list" : undefined}
         value={value}
-        placeholder={placeholder}
+        placeholder={dictation?.state === "listening" ? dictation.listeningPlaceholder : placeholder}
         disabled={disabled}
         onChange={(e) => {
           onChange(e.target.value);
           refreshPicker(e.target.value, e.target.selectionStart);
         }}
         onKeyDown={onKeyDown}
+        onKeyUp={onKeyUp}
         onPaste={onPaste}
-        onBlur={() => setPicker(null)}
+        onFocus={() => onFocusChange?.(true)}
+        onBlur={() => {
+          setPicker(null);
+          onFocusChange?.(false);
+          if (holdKey.current) {
+            holdKey.current = false;
+            dictation?.onHoldKey?.(false);
+          }
+        }}
         style={{ minHeight: MIN_H, maxHeight: MAX_H }}
         className="w-full resize-none overflow-y-auto bg-transparent px-3 py-2.5 text-md text-fg placeholder:text-fg-subtle focus:outline-none disabled:cursor-not-allowed"
       />
@@ -462,7 +544,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         ) : (
           onAttach && <IconButton size="sm" icon={<Paperclip size={16} />} label={labels.attach} kbd={["Mod", "U"]} onClick={onAttach} disabled={disabled} />
         )}
-        {dictation && <IconButton size="sm" icon={<Mic size={16} />} label={labels.dictate} onClick={onDictate} disabled={disabled} />}
+        {dictation && <MicButton dictation={dictation} label={labels.dictate} disabled={disabled} />}
         {running && onStop ? (
           <IconButton
             size="sm"
@@ -490,3 +572,65 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     </div>
   );
 });
+
+/** The mic: a press shorter than 300 ms is a click (toggle hands-free), a
+ * longer one records while held. While a take runs it shows the ring. */
+function MicButton({ dictation, label, disabled }: { dictation: ComposerDictation; label: string; disabled: boolean }) {
+  const pressed = useRef<number | null>(null);
+  const off = disabled || dictation.disabledReason !== undefined;
+  const busy = dictation.state !== "idle";
+  const button = (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={dictation.state === "listening"}
+      data-testid="composer-mic"
+      data-state={dictation.state}
+      disabled={off}
+      onPointerDown={(e) => {
+        if (e.button > 0) return;
+        e.preventDefault();
+        pressed.current = performance.now();
+        dictation.onPressStart();
+      }}
+      onPointerUp={() => {
+        if (pressed.current === null) return;
+        const held = performance.now() - pressed.current;
+        pressed.current = null;
+        dictation.onPressEnd(held);
+      }}
+      onPointerCancel={() => {
+        if (pressed.current === null) return;
+        pressed.current = null;
+        dictation.onPressEnd(0);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          if (e.repeat) return;
+          dictation.onPressStart();
+          dictation.onPressEnd(0);
+        }
+      }}
+      className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-fg-muted hover:bg-surface-4 hover:text-fg focus-visible:shadow-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      {busy ? (
+        <WaveformRing
+          size={24}
+          state={dictation.state === "listening" ? "listening" : "thinking"}
+          level={dictation.level ?? 0}
+          label={dictation.state === "listening" ? dictation.listeningLabel : dictation.transcribingLabel}
+        />
+      ) : (
+        <Mic size={16} aria-hidden="true" />
+      )}
+    </button>
+  );
+  return dictation.disabledReason ? (
+    <Tooltip label={dictation.disabledReason}>
+      <span className="inline-flex">{button}</span>
+    </Tooltip>
+  ) : (
+    button
+  );
+}

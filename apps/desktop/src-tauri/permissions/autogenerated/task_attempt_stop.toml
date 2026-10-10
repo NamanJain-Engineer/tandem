@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-task-attempt-stop"
+description = "Enables the task_attempt_stop command without any pre-configured scope."
+commands.allow = ["task_attempt_stop"]
+
+[[permission]]
+identifier = "deny-task-attempt-stop"
+description = "Denies the task_attempt_stop command without any pre-configured scope."
+commands.deny = ["task_attempt_stop"]

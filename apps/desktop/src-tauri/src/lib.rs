@@ -4,8 +4,10 @@
 
 pub mod browser;
 pub mod commands;
+pub mod headless;
 pub mod services;
 pub mod state;
+mod tray;
 
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_window_state::StateFlags;
@@ -30,6 +32,30 @@ macro_rules! app_commands {
             commands::window::window_toggle_maximize,
             commands::window::window_minimize,
             commands::window::window_close,
+            commands::routines::routines_list,
+            commands::routines::routine_get,
+            commands::routines::routine_preview_schedule,
+            commands::routines::routine_save,
+            commands::routines::routine_delete,
+            commands::routines::routine_pause,
+            commands::routines::routine_run_now,
+            commands::routines::routine_runs,
+            commands::routines::routines_background_set,
+            commands::routines::routines_background_status,
+            commands::tasks::tasks_meta,
+            commands::tasks::tasks_list,
+            commands::tasks::task_get,
+            commands::tasks::task_save,
+            commands::tasks::task_comment,
+            commands::tasks::task_archive,
+            commands::tasks::task_restore,
+            commands::tasks::task_connections_list,
+            commands::tasks::task_connection_revoke,
+            commands::task_exec::task_execute,
+            commands::task_exec::task_attempts_list,
+            commands::task_exec::task_attempt_stop,
+            commands::task_exec::task_attempt_resume,
+            commands::task_exec::task_attempt_retry,
             commands::teammates::teammate_list,
             commands::teammates::teammate_get,
             commands::teammates::teammate_create,
@@ -251,6 +277,46 @@ macro_rules! app_commands {
             commands::threads::thread_changes,
             commands::threads::thread_file_read,
             commands::engines::engines_report,
+            commands::dictate::dictate_status,
+            commands::dictate::dictate_set_binding,
+            commands::dictate::dictate_verify_start,
+            commands::dictate::dictate_verify_stop,
+            commands::dictate::dictate_start_take,
+            commands::dictate::dictate_stop_take,
+            commands::dictate::dictate_cancel_take,
+            commands::dictate::dictate_toggle,
+            commands::dictate::dictate_composer_focus,
+            commands::dictate::dictate_devices,
+            commands::dictate::dictate_models,
+            commands::dictate::dictate_model_download,
+            commands::dictate::dictate_model_cancel,
+            commands::dictate::dictate_model_remove,
+            commands::dictate::dictate_model_select,
+            commands::dictate::dictate_models_remove_unused,
+            commands::dictate::dictate_history,
+            commands::dictate::dictate_take_delete,
+            commands::dictate::dictate_history_clear,
+            commands::dictate::dictate_history_export,
+            commands::dictate::dictate_take_correct,
+            commands::dictate::dictate_stats,
+            commands::dictate::dictate_save_file,
+            commands::dictate::dictate_pick_file,
+            commands::dictate::dictate_share_card_save,
+            commands::dictate::dictionary_list,
+            commands::dictate::dictionary_save,
+            commands::dictate::dictionary_delete,
+            commands::dictate::dictionary_restore,
+            commands::dictate::dictionary_deleted,
+            commands::dictate::dictionary_test,
+            commands::dictate::dictionary_import_preview,
+            commands::dictate::dictionary_import_commit,
+            commands::dictate::dictionary_export,
+            commands::dictate::dictionary_suggestions,
+            commands::dictate::dictionary_suggestion_resolve,
+            commands::dictate::dictate_permissions,
+            commands::dictate::dictate_open_permission_settings,
+            commands::dictate::dictate_relaunch,
+            commands::dictate::dictate_widget_set_position,
             $($extra),*
         ]
     };
@@ -268,6 +334,14 @@ pub fn route_link(app: &AppHandle, raw: &str) {
         );
         DeepLink::unrecognized()
     });
+    // The toggle drives Dictate where the user is: focusing Vibezeo would
+    // move the insertion target (F-DI-01 "Deep link").
+    if link.route == "dictate/toggle" {
+        if let Some(c) = state.dictate.controller() {
+            c.toggle();
+        }
+        return;
+    }
     focus_main(app);
     if link.route == "auth/callback" {
         let (Some(code), Some(st)) = (link.params.get("code"), link.params.get("state")) else {
@@ -476,10 +550,45 @@ fn spawn_background(state: &AppState) {
     let _ = telemetry;
 }
 
+/// Dictate (F-DI-*): events to the main window and the widget, the widget
+/// window itself, the tray, then the voice service (mic, hotkeys, model).
+fn setup_dictate(app: &tauri::App, state: &AppState) {
+    use services::dictate::To;
+    let emit_app = app.handle().clone();
+    state
+        .dictate
+        .set_emitter(std::sync::Arc::new(move |name, payload, to| {
+            let _ = emit_app.emit_to("main", name, payload.clone());
+            if to == To::Both {
+                let _ = emit_app.emit_to(services::widget::LABEL, name, payload);
+            }
+        }));
+    match services::widget::create(app.handle()) {
+        Ok(()) => {
+            state
+                .dictate
+                .set_widget(std::sync::Arc::new(services::widget::TauriWidget::new(
+                    app.handle().clone(),
+                    state.store.clone(),
+                )))
+        }
+        Err(err) => tracing::warn!(error = %err, "dictate: widget window not created"),
+    }
+    tray::install(app.handle());
+    let dictate = state.dictate.clone();
+    tauri::async_runtime::spawn(async move {
+        dictate.start().await;
+    });
+}
+
 /// Builds and runs the Tauri app. Startup follows ARCHITECTURE §1.3: data dir
 /// and logging first, then the store, then the hidden main window, which the
 /// UI shows on first paint via `app_ready`.
 pub fn run() {
+    // The OS launcher's headless pass (F-RT-03): no window at all.
+    if std::env::args().skip(1).any(|a| a == "--run-routines") {
+        std::process::exit(headless::main());
+    }
     let state = match AppState::init() {
         Ok(state) => state,
         Err(err) => {
@@ -535,8 +644,14 @@ pub fn run() {
         commands::test::test_min_version_shift,
         commands::test::test_auth_refresh,
         commands::test::test_account_create,
+        commands::test::test_dictate_key,
+        commands::test::test_dictate_mic,
+        commands::test::test_dictate_platform,
+        commands::test::test_dictate_widget,
         commands::test::test_plugin_connect,
         commands::test::test_gateway_metrics,
+        commands::test::test_task_lane_delay,
+        commands::test::test_routines_tick,
         commands::test::test_plugin_price,
         commands::test::test_plugin_allowlist,
         commands::test::test_unattended_run,
@@ -588,10 +703,68 @@ pub fn run() {
                 let _ = state.browser.set(service);
             }
             services::events::forward(handle.clone(), &state.bus);
+            setup_dictate(app, &state);
             ensure_on_screen(app);
             persist_window_state(app);
             spawn_background(&state);
             state.approvals.start();
+            // Routines: the scheduler (once it has the app lock), and the
+            // plan pausing or resuming them (F-RT-02, F-BL-04).
+            state.routines.start(state.data.run());
+            // The tray, while background routines are on (F-SH-13).
+            {
+                let app = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    tray::sync(&app, commands::routines::background_on().await).await;
+                });
+            }
+            // Tasks refresh when anyone writes them (F-TK-03).
+            state.tasks.watch(state.bus.clone());
+            // Task runs: those the last run left are stopped; signing out
+            // or losing Pro stops the active ones (F-TK-04, UI-84).
+            {
+                let exec = state.task_exec.clone();
+                let (auth, ent) = (state.auth.clone(), state.entitlements.clone());
+                let mut app_events = state.bus.subscribe(tandem_core::bus::Topic::App);
+                let mut plan_events = state.bus.subscribe(tandem_core::bus::Topic::Entitlement);
+                tauri::async_runtime::spawn(async move {
+                    exec.settle().await;
+                    loop {
+                        use tokio::sync::broadcast::error::RecvError;
+                        let (app, plan) = tokio::select! {
+                            e = app_events.recv() => (Some(e), None),
+                            e = plan_events.recv() => (None, Some(e)),
+                        };
+                        if matches!(app, Some(Err(RecvError::Closed))) || matches!(plan, Some(Err(RecvError::Closed))) {
+                            break;
+                        }
+                        if let Some(Ok(e)) = &app {
+                            if e.name == "auth:changed" && !auth.is_signed_in() {
+                                exec.stop_all("you signed out").await;
+                            }
+                        }
+                        if plan.is_some() && !ent.limits().task_execution {
+                            exec.stop_all("plan changed").await;
+                        }
+                    }
+                });
+            }
+            {
+                let (routines, ent) = (state.routines.clone(), state.entitlements.clone());
+                let mut events = state.bus.subscribe(tandem_core::bus::Topic::Entitlement);
+                tauri::async_runtime::spawn(async move {
+                    routines.apply_plan(&ent.limits()).await;
+                    loop {
+                        use tokio::sync::broadcast::error::RecvError;
+                        match events.recv().await {
+                            Ok(_) | Err(RecvError::Lagged(_)) => {
+                                routines.apply_plan(&ent.limits()).await
+                            }
+                            Err(RecvError::Closed) => break,
+                        }
+                    }
+                });
+            }
             // One gateway for every session, up from launch (F-PL-01).
             {
                 let gateway = state.gateway.clone();
@@ -697,10 +870,11 @@ pub fn run() {
                 let focus = handle.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::Focused(focused) = event {
-                        focus
-                            .state::<AppState>()
-                            .notifications
-                            .set_focused(*focused);
+                        let state = focus.state::<AppState>();
+                        state.notifications.set_focused(*focused);
+                        // A composer counts as the Dictate target only while
+                        // the main window has focus (F-DI-12).
+                        state.dictate.set_main_focused(*focused);
                     }
                     if let tauri::WindowEvent::Focused(true) = event {
                         let focus = focus.clone();

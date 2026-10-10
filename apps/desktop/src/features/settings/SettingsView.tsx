@@ -120,6 +120,7 @@ export function SettingsView() {
           >
             <PageHeader title={current.label} subtitle={current.subtitle} />
             {current.callout && <Callout>{current.callout}</Callout>}
+            {current.header}
             {current.rows.length > 0 && (
               <SettingsGroup>
                 {current.rows.map((row) => (

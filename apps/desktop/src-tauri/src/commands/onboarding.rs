@@ -2,7 +2,7 @@
 //!
 //! Welcome is the sign-in screen (UI-03); after it come the wizard's steps.
 //! The current step is persisted, so quitting mid-way resumes there (AC2).
-//! Dictate (M12) joins `STEPS` with its feature.
+//! Dictate's setup (F-DI-11) is the step after Accounts.
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -16,7 +16,7 @@ use tandem_store::Store;
 use crate::state::AppState;
 
 /// The wizard after Welcome, in order.
-pub const STEPS: &[&str] = &["engines", "accounts", "privacy", "workspace"];
+pub const STEPS: &[&str] = &["engines", "accounts", "dictate", "privacy", "workspace"];
 const DONE: &str = "done";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

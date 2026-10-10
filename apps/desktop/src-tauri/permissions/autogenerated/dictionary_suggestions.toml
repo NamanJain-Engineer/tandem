@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictionary-suggestions"
+description = "Enables the dictionary_suggestions command without any pre-configured scope."
+commands.allow = ["dictionary_suggestions"]
+
+[[permission]]
+identifier = "deny-dictionary-suggestions"
+description = "Denies the dictionary_suggestions command without any pre-configured scope."
+commands.deny = ["dictionary_suggestions"]

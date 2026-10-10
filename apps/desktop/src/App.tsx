@@ -26,6 +26,8 @@ import { useWorkspaces } from "./stores/workspaces";
 import { useRestore } from "./stores/restore";
 import { useOnboarding } from "./stores/onboarding";
 import { Onboarding } from "./features/onboarding/Onboarding";
+import { DictateBridge } from "./features/dictate/DictateBridge";
+import { watchDictate } from "./stores/dictate";
 
 /** The plan check holds the splash at most this long, then the app
  * continues from the cached entitlement (F-SH-07). */
@@ -116,7 +118,7 @@ export function App() {
           ]);
           setSplashPhase("plan");
           await bounded(session, PLAN_WAIT_MS, skipPlan.promise);
-          cleanup = [await watchSettings(), await watchSession()];
+          cleanup = [await watchSettings(), await watchSession(), await watchDictate()];
           invoke("telemetry_capture", {
             event: "app_started",
             props: { platform: b.platform, version: b.version, first_run: b.firstRun },
@@ -170,6 +172,7 @@ export function App() {
         <>
           <TerminalColorsSync />
           <SignInToast />
+          <DictateBridge />
           {canUseApp(auth) ? (
             onboardingDone ? (
               <>

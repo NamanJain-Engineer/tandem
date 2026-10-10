@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictate-status"
+description = "Enables the dictate_status command without any pre-configured scope."
+commands.allow = ["dictate_status"]
+
+[[permission]]
+identifier = "deny-dictate-status"
+description = "Denies the dictate_status command without any pre-configured scope."
+commands.deny = ["dictate_status"]
