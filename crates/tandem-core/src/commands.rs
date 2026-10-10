@@ -131,6 +131,8 @@ static REGISTRY: &[CommandSpec] = &[
     same("sidebar.files", C::Navigation, Some("Mod+Alt+F"), E::Always),
     // F-EX-01: the sidebar's Checkpoints tab (UI-140).
     same("sidebar.checkpoints", C::Navigation, None, E::Always),
+    // F-EX-03: the sidebar's Ports tab (UI-142).
+    same("sidebar.ports", C::Navigation, None, E::Always),
     // F-EX-02: the recall palette (UI-141).
     in_text(same(
         "recall.open",

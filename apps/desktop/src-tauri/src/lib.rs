@@ -105,6 +105,8 @@ macro_rules! app_commands {
             commands::recall::history_run,
             commands::recall::history_delete,
             commands::recall::history_clear,
+            commands::ports::ports_list,
+            commands::ports::ports_stop,
             commands::files::editor_tabs_get,
             commands::files::editor_tabs_save,
             commands::files::app_reveal_path,

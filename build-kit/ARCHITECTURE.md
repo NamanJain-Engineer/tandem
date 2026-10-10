@@ -736,7 +736,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `prompts_list` | `{context?: FileContext}` | `PromptList {items: [PromptInfo {path, title, description?, source: "repo"\|"profile", variables: [String]}], skipped: [{path, reason: "large"\|"outside"\|"unreadable"}], excludeHidesRepo}` | — | F-EX-05 |
 | `prompts_render` | `{path, context?, values: Record<string,string>}` (`selection`, `file` and typed values come from the UI; the core fills `branch` and reads `clipboard` only when the prompt uses it and no value was given) | `Rendered {text, missing: [String], values: Record<string,string>}` (`missing`: variables still empty, for the form) | NotFound, PathEscape | F-EX-05 |
 | `prompts_create` | `{context?, scope: "repo"\|"profile", name}` | `{path}` (a new Markdown file from the template) | Conflict (exists), Invalid | F-EX-05 |
-| `prompts_share_repo` | `{context}` (replaces `.tandem/` in `.git/info/exclude` with `.tandem/worktrees/`) | — | NotFound (not a repository) | F-EX-05 |
+| `prompts_share_repo` | `{context}` (replaces `.tandem/` in `.git/info/exclude` with `.tandem/*` and `!.tandem/prompts/`; lanes treat `.tandem/*` as excluding their worktrees, D-709) | — | NotFound (not a repository) | F-EX-05 |
 
 #### Teammates, memory, skills, mail [F-AG-*]
 | Command | Args | Returns | Errors | IDs |

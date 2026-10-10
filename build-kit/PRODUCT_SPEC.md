@@ -2927,7 +2927,7 @@ Features beyond the original spec that make working with coding agents faster, s
   - `{{clipboard}}`: the clipboard's text, read only when the prompt uses it;
   - any other name asks for a value in a small form before inserting, as do the known ones when they're empty (no selection, no open file). `\{{` keeps a literal `{{`.
 - **Insert** ("Insert prompt…" in the palette, `Mod+Alt+P`, or the composer's ⋯): a searchable list showing each prompt's title, description and source ("This repository" or "Yours"). Choosing one fills its variables and inserts the text into the focused composer at the cursor, or into the focused pane as a bracketed paste. It's never sent: no Enter, no submit.
-- **Manage:** "New prompt…" asks for a name and where ("This repository" / "Yours"), creates the file with a template and opens it in the Files editor (F-CD-19); each row's **Edit** opens it there. A repository whose `.git/info/exclude` hides `.tandem/` (older lanes wrote that line) gets a note in the list, "Prompts in this repository aren't shared: .git/info/exclude hides .tandem/", with **Share with the repository**, which narrows the line to `.tandem/worktrees/`.
+- **Manage:** "New prompt…" asks for a name and where ("This repository" / "Yours"), creates the file with a template and opens it in the Files editor (F-CD-19); each row's **Edit** opens it there. A repository whose `.git/info/exclude` hides `.tandem/` (older lanes wrote that line) gets a note in the list, "Prompts in this repository aren't shared: .git/info/exclude hides .tandem/", with **Share with the repository**, which replaces the line with `.tandem/*` and `!.tandem/prompts/` (D-709).
 - States: empty ("No saved prompts" / "Save prompts you reuse as Markdown files." [New prompt…]), loading, error, populated, no results.
 
 **Data:** Files only (`<workspace>/.tandem/prompts/*.md`, `$DATA/prompts/*.md`).
@@ -2936,7 +2936,7 @@ Features beyond the original spec that make working with coding agents faster, s
 1. Prompts from the workspace and from the profile are both listed with their source; front matter sets title and description; a file over 64 KB or a symlink leading out of the folder is skipped.
 2. `{{branch}}`, `{{file}}`, `{{selection}}` and `{{clipboard}}` are filled in; an unknown variable asks for a value; `\{{x}}` stays literal.
 3. Inserting into a terminal pane writes a bracketed paste with no carriage return after it, and inserting into a composer leaves the text in the composer unsent.
-4. New prompt creates the file in the chosen place and opens it in the editor; "Share with the repository" replaces the `.tandem/` exclude line with `.tandem/worktrees/` and the prompt shows in `git status`.
+4. New prompt creates the file in the chosen place and opens it in the editor; "Share with the repository" replaces the `.tandem/` exclude line so the prompt shows in `git status`, and a new worktree lane doesn't hide it again.
 
 ---
 

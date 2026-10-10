@@ -17,6 +17,7 @@ import { useWorkspaces } from "../../stores/workspaces";
 import { Dashboard } from "../dashboard/Dashboard";
 import { CheckpointsPanel } from "../checkpoints/CheckpointsPanel";
 import { FilesPanel } from "../files/FilesPanel";
+import { PortsPanel } from "../ports/PortsPanel";
 import { ScratchpadPanel } from "../scratchpad/ScratchpadPanel";
 import { useShortcutKeys } from "../commands/useShortcutKeys";
 
@@ -190,11 +191,12 @@ function BrowserTab({ tab }: { tab: SidebarTab }) {
   return <BrowserView id={tab.id} url={tab.url} actions={actions} />;
 }
 
-function Panel({ tab }: { tab: SidebarTab }) {
+function Panel({ tab, shown }: { tab: SidebarTab; shown: boolean }) {
   if (tab.kind === "dashboard") return <Dashboard />;
   if (tab.kind === "files") return <FilesPanel />;
   if (tab.kind === "browser") return <BrowserTab tab={tab} />;
   if (tab.kind === "checkpoints") return <CheckpointsPanel />;
+  if (tab.kind === "ports") return <PortsPanel visible={shown} />;
   if (tab.kind === "scratchpad") return <ScratchpadPanel />;
   return <EmptyState title={t("sidebar.soon")} />;
 }
@@ -260,6 +262,7 @@ export function Sidebar() {
     { id: "dashboard", label: t("sidebar.dashboard"), onSelect: () => useSidebar.getState().openTab("dashboard") },
     { id: "files", label: t("sidebar.files"), onSelect: () => useSidebar.getState().openTab("files") },
     { id: "checkpoints", label: t("sidebar.checkpoints"), onSelect: () => useSidebar.getState().openTab("checkpoints") },
+    { id: "ports", label: t("sidebar.ports"), onSelect: () => useSidebar.getState().openTab("ports") },
     { id: "tasks", label: t("sidebar.tasks"), onSelect: () => useSidebar.getState().openTab("tasks") },
     { id: "scratchpad", label: t("sidebar.scratchpad"), onSelect: () => useSidebar.getState().openTab("scratchpad") },
   ];
@@ -346,7 +349,7 @@ export function Sidebar() {
               className="absolute inset-0 overflow-auto"
               style={{ display: tab.id === active ? "block" : "none" }}
             >
-              <Panel tab={tab} />
+              <Panel tab={tab} shown={open && tab.id === active} />
             </div>
           ))}
         </div>

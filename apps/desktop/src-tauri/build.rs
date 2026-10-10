@@ -81,6 +81,8 @@ const COMMANDS: &[&str] = &[
     "history_run",
     "history_delete",
     "history_clear",
+    "ports_list",
+    "ports_stop",
     "editor_tabs_get",
     "editor_tabs_save",
     "app_reveal_path",

@@ -96,6 +96,8 @@
     "allow-history-run",
     "allow-history-delete",
     "allow-history-clear",
+    "allow-ports-list",
+    "allow-ports-stop",
     "allow-editor-tabs-get",
     "allow-editor-tabs-save",
     "allow-app-reveal-path",

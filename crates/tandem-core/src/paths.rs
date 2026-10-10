@@ -141,6 +141,10 @@ impl DataDir {
     pub fn shell_integration(&self) -> PathBuf {
         self.root.join("shell-integration")
     }
+    /// The user's own prompt library (F-EX-05).
+    pub fn prompts(&self) -> PathBuf {
+        self.root.join("prompts")
+    }
     pub fn mcp_configs(&self) -> PathBuf {
         self.root.join("mcp")
     }

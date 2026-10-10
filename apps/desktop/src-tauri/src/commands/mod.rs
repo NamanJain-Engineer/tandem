@@ -15,6 +15,7 @@ pub mod lanes;
 pub mod launch;
 pub mod limits;
 pub mod onboarding;
+pub mod ports;
 pub mod recall;
 pub mod restore;
 pub mod scratchpad;

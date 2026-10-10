@@ -139,6 +139,8 @@ pub struct AppState {
     pub checkpoints: Arc<crate::services::checkpoints::CheckpointService>,
     /// Command recall (F-EX-02).
     pub recall: Arc<crate::services::recall::RecallService>,
+    /// The Ports panel (F-EX-03).
+    pub ports: Arc<crate::services::ports::PortsService>,
     /// Browser tabs and panes (F-CD-17), bound to the window in setup.
     pub browser: std::sync::OnceLock<Arc<crate::browser::BrowserService>>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
@@ -508,6 +510,7 @@ impl AppState {
                 .await;
             })
         }));
+        let ports = crate::services::ports::PortsService::new(store.clone());
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         let files = crate::services::files::FilesService::new(store.clone());
         let git_panel = crate::services::git_panel::GitPanelService::new(files.clone());
@@ -549,6 +552,7 @@ impl AppState {
             git_panel,
             checkpoints,
             recall,
+            ports,
             browser: std::sync::OnceLock::new(),
             e2e,
         }

@@ -124,6 +124,7 @@ export const handlers: Record<string, () => void> = {
   "sidebar.toggle": () => useSidebar.getState().toggle(),
   "sidebar.files": () => useSidebar.getState().openTab("files"),
   "sidebar.checkpoints": () => useSidebar.getState().openTab("checkpoints"),
+  "sidebar.ports": () => useSidebar.getState().openTab("ports"),
   "recall.open": () => useRecall.getState().show(),
   "notifications.open": () => useNotifications.getState().setOpen(true),
   "dashboard.full_view": () => {
