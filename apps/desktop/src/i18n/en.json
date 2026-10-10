@@ -1991,7 +1991,6 @@
   "dictionary.preview.skip": "Line {line}: {reason}",
   "dictionary.preview.import": "Import",
   "dictate.unavailable": "Dictate isn't available in this window.",
-
   "plugins.intro": "Connect a service once. Then choose which teammates can use it.",
   "plugins.search": "Search plugins",
   "plugins.categories": "Categories",
@@ -2144,5 +2143,19 @@
   "threadPlugins.noneBody": "Connect a service in Settings › Plugins, then choose it here.",
   "threadPlugins.openSettings": "Open Settings › Plugins",
   "threadPlugins.allThreads": "Granted to all threads in Settings › Plugins.",
-  "threadPlugins.nextTurn": "Changes apply from this thread's next message."
+  "threadPlugins.nextTurn": "Changes apply from this thread's next message.",
+  "dictate.toast.cloud_failed": "{message}",
+  "dictate.action.useLocal": "Use local for this take",
+  "dictate.action.seePlans": "See plans",
+  "dictate.engine.label": "Transcribe with",
+  "dictate.engine.local": "Local",
+  "dictate.engine.cloud": "Cloud ◈ PRO",
+  "dictate.engine.needsPro": "Cloud transcription needs Vibezeo Pro",
+  "dictate.engine.localHelp": "Free and private. Works offline.",
+  "dictate.engine.cloudHelp": "More languages. Audio is sent to Vibezeo's transcription service and uses about 8 credits a minute (daily cap 120 minutes).",
+  "dictate.engine.shareHints": "Share dictionary hints with cloud",
+  "dictate.engine.consentTitle": "Send audio to the cloud?",
+  "dictate.engine.consentBody": "While Cloud is on, each take's audio goes to Vibezeo's transcription service and isn't kept after transcription. Your history stays on this device.",
+  "dictate.engine.consentConfirm": "Use cloud",
+  "dictate.home.cloudChip": "Cloud · Auto-detect"
 }

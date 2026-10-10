@@ -88,6 +88,7 @@ fn f_di_01_1_hold_wav_release_pastes_hello_world_with_real_whisper() {
             chimes: Arc::new(SilentPlayer::default()),
             media: None,
             sink: sink.clone(),
+            cloud: None,
         },
         DictateConfig::default(),
     );

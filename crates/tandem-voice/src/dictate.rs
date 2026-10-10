@@ -15,6 +15,7 @@ use ts_rs::TS;
 
 use crate::capture::{AudioService, CaptureError, CaptureEvent};
 use crate::chimes::{Chime, ChimePlayer};
+use crate::cloud::{CloudRequest, CloudStt, EngineChoice, ToastAction};
 use crate::dictionary::{Dictionary, Rule};
 use crate::guards::{self, Verdict};
 use crate::hotkey::{
@@ -80,6 +81,10 @@ pub struct DictateToast {
     pub model: Option<String>,
     pub previous: Option<String>,
     pub detail: String,
+    /// The line itself when it comes from the server (a cloud limit).
+    pub message: Option<String>,
+    /// What the toast offers ("Use local for this take").
+    pub actions: Vec<ToastAction>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -106,6 +111,8 @@ pub enum ToastCode {
     ModelFallback,
     /// "Microphone stopped responding" (reconnecting).
     Reconnecting,
+    /// A cloud take failed: `message` says why (F-DI-05).
+    CloudFailed,
 }
 
 /// A finished take for the history (F-DI-08).
@@ -147,6 +154,10 @@ pub struct DictateConfig {
     /// `None` = detect.
     pub language: Option<String>,
     pub latch: bool,
+    /// Local or Cloud (F-DI-05); Cloud needs `DictateDeps::cloud`.
+    pub engine: EngineChoice,
+    /// "Share dictionary hints with cloud".
+    pub share_hints: bool,
 }
 
 impl Default for DictateConfig {
@@ -158,6 +169,8 @@ impl Default for DictateConfig {
             pause_media: false,
             language: None,
             latch: true,
+            engine: EngineChoice::Local,
+            share_hints: false,
         }
     }
 }
@@ -170,6 +183,19 @@ pub struct DictateDeps {
     pub chimes: Arc<dyn ChimePlayer>,
     pub media: Option<Arc<PauseMedia>>,
     pub sink: Arc<dyn DictateSink>,
+    /// The hosted transcription service (F-DI-05), when there is one.
+    pub cloud: Option<Arc<dyn CloudStt>>,
+}
+
+/// A cloud take that failed, kept so "Use local for this take" can run it
+/// on this device. A new take drops it.
+struct Retry {
+    origin: Origin,
+    target: Option<Target>,
+    samples: Vec<f32>,
+    end: usize,
+    duration: Duration,
+    config: DictateConfig,
 }
 
 struct Current {
@@ -189,6 +215,7 @@ struct Inner {
     verifier: Option<Verifier>,
     restore: Option<PendingRestore>,
     mic_owner: Option<String>,
+    retry: Option<Retry>,
 }
 
 /// Cheap to clone; every clone drives the same controller.
@@ -215,6 +242,7 @@ impl Dictate {
                 verifier: None,
                 restore: None,
                 mic_owner: None,
+                retry: None,
             })),
             deps: Arc::new(deps),
             stop: Arc::new(AtomicBool::new(false)),
@@ -375,6 +403,59 @@ impl Dictate {
         self.current_take().ok_or(DictateError::NotStarted)
     }
 
+    /// "Use local for this take" (F-DI-05): transcribes the last failed cloud
+    /// take on this device. False when there's nothing to retry, a newer take
+    /// started, or no local model is loaded.
+    pub fn use_local(&self) -> bool {
+        if self.deps.engine.current().is_none() {
+            self.toast(
+                ToastCode::NoModel,
+                true,
+                "No local speech model is downloaded and loaded.".into(),
+            );
+            return false;
+        }
+        let (retry, id) = {
+            let mut i = self.inner.lock();
+            if i.machine.current().is_some() {
+                return false;
+            }
+            let Some(retry) = i.retry.take() else {
+                return false;
+            };
+            let (id, _) = i.machine.begin(retry.origin.clone());
+            i.machine.advance(&id, TakeState::Transcribing);
+            (retry, id)
+        };
+        let mut e = DictateStateEvent::new(DictatePhase::Transcribing, Some(id.clone()));
+        if let Origin::Composer { target_id } = &retry.origin {
+            e.composer = Some(target_id.clone());
+        }
+        self.emit(e);
+        let cur = Current {
+            id,
+            target: retry.target,
+            started: Instant::now(),
+            shown: true,
+            hands_free: false,
+            warned: false,
+        };
+        let me = self.clone();
+        let _ = std::thread::Builder::new()
+            .name("dictate-take".into())
+            .spawn(move || {
+                me.run_take(
+                    cur,
+                    retry.samples,
+                    retry.end,
+                    retry.duration,
+                    retry.config,
+                    false,
+                )
+            });
+        true
+    }
+
     pub fn stop_take(&self) {
         self.inner.lock().gesture.reset();
         self.act(Action::Stop, None);
@@ -403,6 +484,8 @@ impl Dictate {
             model: None,
             previous: None,
             detail,
+            message: None,
+            actions: Vec::new(),
         });
     }
 
@@ -421,9 +504,13 @@ impl Dictate {
     }
 
     fn arm(&self, origin: Option<Origin>) {
-        let (enabled, restore) = {
+        let (enabled, restore, cloud) = {
             let mut i = self.inner.lock();
-            (i.config.enabled, i.restore.take())
+            (
+                i.config.enabled,
+                i.restore.take(),
+                i.config.engine == EngineChoice::Cloud && self.deps.cloud.is_some(),
+            )
         };
         if !enabled {
             return;
@@ -433,7 +520,8 @@ impl Dictate {
         if let Some(r) = restore {
             insert::restore(self.deps.platform.as_ref(), &r);
         }
-        if self.deps.engine.current().is_none() {
+        // Cloud takes don't need a local model (F-DI-05).
+        if !cloud && self.deps.engine.current().is_none() {
             self.toast(
                 ToastCode::NoModel,
                 true,
@@ -448,7 +536,12 @@ impl Dictate {
             }
             _ => Origin::Global,
         });
-        let (id, replaced) = self.inner.lock().machine.begin(origin.clone());
+        let (id, replaced) = {
+            let mut i = self.inner.lock();
+            // A new take: the last failed cloud take can't be retried now.
+            i.retry = None;
+            i.machine.begin(origin.clone())
+        };
         if replaced.is_some() {
             self.deps.audio.cancel_take();
         }
@@ -608,6 +701,52 @@ impl Dictate {
         recording: crate::capture::Recording,
         config: DictateConfig,
     ) {
+        let samples = recording.samples;
+        let duration = recording.duration;
+        let id = cur.id.clone();
+        let verdict = guards::check(&samples);
+        let fail_guard = |code: ToastCode, detail: &str| {
+            let mut i = self.inner.lock();
+            if i.machine.fail(&id) {
+                drop(i);
+                self.toast(code, false, detail.into());
+                self.emit(DictateStateEvent::new(
+                    DictatePhase::Error,
+                    Some(id.clone()),
+                ));
+            }
+            self.after_take();
+        };
+        let end = match verdict {
+            Verdict::Speech { end } => end,
+            Verdict::NoSpeech => {
+                return fail_guard(
+                    ToastCode::NoSpeech,
+                    "The whole take was quieter than -50 dBFS.",
+                )
+            }
+            Verdict::TooShort => {
+                return fail_guard(
+                    ToastCode::TooShort,
+                    "Less than 300 ms of the take was voiced.",
+                )
+            }
+        };
+        let use_cloud = config.engine == EngineChoice::Cloud && self.deps.cloud.is_some();
+        self.run_take(cur, samples, end, duration, config, use_cloud);
+    }
+
+    /// Transcribes a voiced take (locally or in the cloud), cleans it up
+    /// and inserts it. A cloud failure keeps the audio for `use_local`.
+    fn run_take(
+        &self,
+        cur: Current,
+        samples: Vec<f32>,
+        end: usize,
+        duration: Duration,
+        config: DictateConfig,
+        use_cloud: bool,
+    ) {
         let id = cur.id.clone();
         let fail = |code: ToastCode, detail: String| {
             let mut i = self.inner.lock();
@@ -624,51 +763,84 @@ impl Dictate {
                 ));
             }
         };
-        let samples = recording.samples;
-        let verdict = guards::check(&samples);
-        let end = match verdict {
-            Verdict::Speech { end } => end,
-            Verdict::NoSpeech => {
-                fail(
-                    ToastCode::NoSpeech,
-                    "The whole take was quieter than -50 dBFS.".into(),
-                );
-                self.after_take();
-                return;
-            }
-            Verdict::TooShort => {
-                fail(
-                    ToastCode::TooShort,
-                    "Less than 300 ms of the take was voiced.".into(),
-                );
-                self.after_take();
-                return;
-            }
-        };
-        let Some(engine) = self.deps.engine.current() else {
-            fail(
-                ToastCode::NoModel,
-                "No local speech model is loaded.".into(),
-            );
-            self.after_take();
-            return;
-        };
         let rules = self.deps.sink.rules();
         let app = cur.target.as_ref().and_then(|t| t.app_id.clone());
         let dict = Dictionary::compile(&rules, config.language.as_deref(), app.as_deref());
-        let prompt = initial_prompt(&rules, config.language.as_deref(), app.as_deref());
-        let opts = SttOptions {
-            language: config.language.clone(),
-            initial_prompt: prompt,
-        };
         let voiced = guards::voiced_ratio(&samples[..end]);
-        let result = engine.transcribe(&samples[..end], &opts);
-        let model = engine.model_id().to_string();
-        self.after_take();
+        let (result, model) = if use_cloud {
+            let Some(cloud) = self.deps.cloud.clone() else {
+                return;
+            };
+            let hints = if config.share_hints {
+                cloud_hints(&rules, config.language.as_deref(), app.as_deref())
+            } else {
+                Vec::new()
+            };
+            let got = cloud.transcribe(CloudRequest {
+                pcm16k: &samples[..end],
+                language: config.language.clone(),
+                hints,
+            });
+            self.after_take();
+            match got {
+                Ok(text) => (Ok(text), "cloud".to_string()),
+                Err(f) => {
+                    // No silent fallback (F-DI-05): keep the audio and offer
+                    // "Use local for this take".
+                    let origin = self.inner.lock().machine.origin(&id).cloned();
+                    let mut i = self.inner.lock();
+                    if i.machine.fail(&id) {
+                        if let Some(origin) = origin {
+                            i.retry = Some(Retry {
+                                origin,
+                                target: cur.target.clone(),
+                                samples,
+                                end,
+                                duration,
+                                config: config.clone(),
+                            });
+                        }
+                        drop(i);
+                        self.deps.sink.toast(DictateToast {
+                            code: ToastCode::CloudFailed,
+                            error: true,
+                            app: None,
+                            model: None,
+                            previous: None,
+                            detail: f.detail,
+                            message: Some(f.message),
+                            actions: f.kind.actions(),
+                        });
+                        self.emit(DictateStateEvent::new(
+                            DictatePhase::Error,
+                            Some(id.clone()),
+                        ));
+                    }
+                    return;
+                }
+            }
+        } else {
+            let Some(engine) = self.deps.engine.current() else {
+                fail(
+                    ToastCode::NoModel,
+                    "No local speech model is loaded.".into(),
+                );
+                self.after_take();
+                return;
+            };
+            let opts = SttOptions {
+                language: config.language.clone(),
+                initial_prompt: initial_prompt(&rules, config.language.as_deref(), app.as_deref()),
+            };
+            let result = engine.transcribe(&samples[..end], &opts);
+            let model = engine.model_id().to_string();
+            self.after_take();
+            (result.map(|t| t.text).map_err(|e| e.to_string()), model)
+        };
         let raw = match result {
-            Ok(t) => t.text,
+            Ok(t) => t,
             Err(err) => {
-                fail(ToastCode::TranscribeFailed, err.to_string());
+                fail(ToastCode::TranscribeFailed, err);
                 return;
             }
         };
@@ -744,6 +916,8 @@ impl Dictate {
                         model: None,
                         previous: None,
                         detail: copy_detail(reason),
+                        message: None,
+                        actions: Vec::new(),
                     });
                 }
                 self.emit(DictateStateEvent::new(
@@ -759,7 +933,7 @@ impl Dictate {
                 text,
                 model,
                 word_count: words,
-                duration_ms: recording.duration.as_millis() as u64,
+                duration_ms: duration.as_millis() as u64,
                 app_id: app,
             });
         }
@@ -814,6 +988,18 @@ fn initial_prompt(rules: &[Rule], lang: Option<&str>, app: Option<&str>) -> Opti
     (!words.is_empty()).then(|| words.join(", "))
 }
 
+/// The preferred spellings sent with a cloud take when the user shares
+/// dictionary hints (F-DI-05): the same words the local prompt gets.
+fn cloud_hints(rules: &[Rule], lang: Option<&str>, app: Option<&str>) -> Vec<String> {
+    let mut words: Vec<String> = rules
+        .iter()
+        .filter(|r| r.kind == crate::dictionary::RuleKind::Word && r.in_scope(lang, app))
+        .map(|r| r.replacement.clone())
+        .collect();
+    words.truncate(40);
+    words
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DictateError {
     #[error("Conductor is listening")]
@@ -827,10 +1013,38 @@ mod tests {
     use super::*;
     use crate::capture::{CaptureConfig, FakeAudioBackend};
     use crate::chimes::SilentPlayer;
+    use crate::cloud::{CloudFailure, CloudFailureKind};
     use crate::hotkey::FakeHotkeys;
     use crate::insert::fake::FakePlatform;
     use crate::insert::Clip;
     use crate::stt::FakeStt;
+
+    /// One request the fake cloud saw: samples, language, hints.
+    type CloudCall = (usize, Option<String>, Vec<String>);
+
+    /// A scripted cloud: answers with `reply`, recording each request.
+    struct FakeCloud {
+        reply: Mutex<Result<String, CloudFailure>>,
+        calls: Mutex<Vec<CloudCall>>,
+    }
+
+    impl FakeCloud {
+        fn new(reply: Result<String, CloudFailure>) -> Arc<Self> {
+            Arc::new(Self {
+                reply: Mutex::new(reply),
+                calls: Mutex::new(Vec::new()),
+            })
+        }
+    }
+
+    impl CloudStt for FakeCloud {
+        fn transcribe(&self, req: CloudRequest<'_>) -> Result<String, CloudFailure> {
+            self.calls
+                .lock()
+                .push((req.pcm16k.len(), req.language.clone(), req.hints.clone()));
+            self.reply.lock().clone()
+        }
+    }
 
     #[derive(Default)]
     struct Sink {
@@ -887,6 +1101,10 @@ mod tests {
     }
 
     fn rig(samples: Vec<f32>, text: &str) -> Rig {
+        rig_with(samples, text, None)
+    }
+
+    fn rig_with(samples: Vec<f32>, text: &str, cloud: Option<Arc<FakeCloud>>) -> Rig {
         let backend = Arc::new(FakeAudioBackend::with_samples(samples, 4));
         let audio = Arc::new(AudioService::start(
             backend,
@@ -918,6 +1136,7 @@ mod tests {
                 chimes: Arc::new(SilentPlayer::default()),
                 media: None,
                 sink: sink.clone(),
+                cloud: cloud.map(|c| c as Arc<dyn CloudStt>),
             },
             DictateConfig::default(),
         );
@@ -939,6 +1158,142 @@ mod tests {
         while !cond() && t.elapsed() < Duration::from_secs(10) {
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    fn cloud_config(share_hints: bool) -> DictateConfig {
+        DictateConfig {
+            engine: EngineChoice::Cloud,
+            share_hints,
+            ..DictateConfig::default()
+        }
+    }
+
+    fn hold_and_release(r: &Rig) {
+        r.keys.send(Which::Hold, Phase::Down);
+        std::thread::sleep(Duration::from_millis(600));
+        r.keys.send(Which::Hold, Phase::Up);
+    }
+
+    #[test]
+    fn f_di_05_1_a_cloud_take_inserts_the_returned_text_and_never_runs_local() {
+        let cloud = FakeCloud::new(Ok("cloud words".into()));
+        let r = rig_with(speech(), "local words", Some(cloud.clone()));
+        r.d.set_config(cloud_config(false));
+        hold_and_release(&r);
+        wait(|| !r.platform.pasted().is_empty());
+        assert_eq!(r.platform.pasted(), vec!["cloud words".to_string()]);
+        assert_eq!(r.stt.calls(), 0, "local transcription never ran");
+        let calls = cloud.calls.lock().clone();
+        assert_eq!(calls.len(), 1);
+        assert!(calls[0].0 > 0, "the voiced audio went up");
+        assert!(calls[0].2.is_empty(), "no hints without the opt-in");
+        wait(|| !r.sink.finished.lock().is_empty());
+        assert_eq!(r.sink.finished.lock()[0].model, "cloud");
+    }
+
+    #[test]
+    fn f_di_05_hints_go_up_only_with_the_opt_in() {
+        let cloud = FakeCloud::new(Ok("use Tandem".into()));
+        let r = rig_with(speech(), "x", Some(cloud.clone()));
+        *r.sink.rules.lock() = vec![Rule {
+            id: "r1".into(),
+            kind: crate::dictionary::RuleKind::Word,
+            replacement: "Tandem".into(),
+            phrases: vec![],
+            match_case: false,
+            protect: true,
+            spacing: crate::dictionary::Spacing::Exact,
+            enabled: true,
+            lang: "*".into(),
+            app_profiles: vec![],
+            updated_at: 0,
+            deleted_at: None,
+        }];
+        r.d.set_config(cloud_config(true));
+        hold_and_release(&r);
+        wait(|| !cloud.calls.lock().is_empty());
+        assert_eq!(cloud.calls.lock()[0].2, vec!["Tandem".to_string()]);
+    }
+
+    #[test]
+    fn f_di_05_2_a_402_says_out_of_credits_and_inserts_nothing() {
+        let cloud = FakeCloud::new(Err(CloudFailure {
+            kind: CloudFailureKind::OutOfCredits,
+            message: "Out of credits for cloud transcription".into(),
+            detail: "402 CREDITS_EXHAUSTED".into(),
+        }));
+        let r = rig_with(speech(), "local words", Some(cloud.clone()));
+        r.d.set_config(cloud_config(false));
+        hold_and_release(&r);
+        wait(|| !r.sink.toasts.lock().is_empty());
+        std::thread::sleep(Duration::from_millis(300));
+        let t = r.sink.toasts.lock()[0].clone();
+        assert_eq!(t.code, ToastCode::CloudFailed);
+        assert_eq!(
+            t.message.as_deref(),
+            Some("Out of credits for cloud transcription")
+        );
+        assert_eq!(t.actions, vec![ToastAction::UseLocal]);
+        assert!(r.platform.pasted().is_empty(), "nothing inserted");
+        assert_eq!(r.stt.calls(), 0, "no silent fallback to local");
+        assert!(r.sink.finished.lock().is_empty());
+    }
+
+    #[test]
+    fn f_di_05_3_use_local_runs_the_failed_take_on_this_device_only_when_asked() {
+        let cloud = FakeCloud::new(Err(CloudFailure {
+            kind: CloudFailureKind::Offline,
+            message: "You're offline".into(),
+            detail: "connection refused".into(),
+        }));
+        let r = rig_with(speech(), "local words", Some(cloud));
+        r.d.set_config(cloud_config(false));
+        hold_and_release(&r);
+        wait(|| !r.sink.toasts.lock().is_empty());
+        std::thread::sleep(Duration::from_millis(300));
+        assert_eq!(r.stt.calls(), 0);
+        assert!(r.d.use_local(), "the take is kept for the action");
+        wait(|| !r.platform.pasted().is_empty());
+        assert_eq!(r.platform.pasted(), vec!["local words".to_string()]);
+        assert_eq!(r.stt.calls(), 1);
+        assert!(!r.d.use_local(), "only once");
+    }
+
+    #[test]
+    fn f_di_05_a_new_take_drops_the_retry() {
+        let cloud = FakeCloud::new(Err(CloudFailure {
+            kind: CloudFailureKind::Other,
+            message: "Cloud transcription didn't work".into(),
+            detail: "500".into(),
+        }));
+        let r = rig_with(speech(), "local words", Some(cloud));
+        r.d.set_config(cloud_config(false));
+        hold_and_release(&r);
+        wait(|| !r.sink.toasts.lock().is_empty());
+        std::thread::sleep(Duration::from_millis(200));
+        // The user starts speaking again instead, then discards it.
+        r.keys.send(Which::Hold, Phase::Down);
+        std::thread::sleep(Duration::from_millis(300));
+        r.d.cancel();
+        r.keys.send(Which::Hold, Phase::Up);
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(
+            !r.d.use_local(),
+            "the old take can't be inserted after a newer one"
+        );
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(r.platform.pasted().is_empty());
+    }
+
+    #[test]
+    fn f_di_05_cloud_takes_need_no_local_model() {
+        let cloud = FakeCloud::new(Ok("from the cloud".into()));
+        let r = rig_with(speech(), "x", Some(cloud));
+        r.d.deps.engine.clear();
+        r.d.set_config(cloud_config(false));
+        hold_and_release(&r);
+        wait(|| !r.platform.pasted().is_empty());
+        assert_eq!(r.platform.pasted(), vec!["from the cloud".to_string()]);
     }
 
     #[test]

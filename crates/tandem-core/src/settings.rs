@@ -99,6 +99,8 @@ setting_keys! {
     DictateToggleHotkey,
     DictateLatch,
     DictateHotkeyVerified,
+    DictateCloudConsented,
+    DictateEnhanceDisclosed,
     DictateEngine,
     DictateModel,
     DictateLanguage,
@@ -542,6 +544,9 @@ pub static SCHEMA: &[SettingSpec] = &[
         ["double-tap", "hands-free", "lock"]
     ),
     spec!(DictateHotkeyVerified, json!(false), V::Bool, Hidden, []),
+    // F-DI-05's consent dialog was accepted; F-DI-10's disclosure was shown.
+    spec!(DictateCloudConsented, json!(false), V::Bool, Hidden, []),
+    spec!(DictateEnhanceDisclosed, json!(false), V::Bool, Hidden, []),
     spec!(
         DictateEngine,
         json!("local"),

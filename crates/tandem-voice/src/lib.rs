@@ -6,6 +6,7 @@ pub mod capture;
 #[cfg(feature = "cpal")]
 pub mod capture_cpal;
 pub mod chimes;
+pub mod cloud;
 pub mod devices;
 pub mod dictate;
 pub mod dictionary;

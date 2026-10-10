@@ -259,6 +259,7 @@ macro_rules! app_commands {
             commands::dictate::dictate_stop_take,
             commands::dictate::dictate_cancel_take,
             commands::dictate::dictate_toggle,
+        commands::dictate::dictate_use_local,
             commands::dictate::dictate_composer_focus,
             commands::dictate::dictate_devices,
             commands::dictate::dictate_models,
@@ -548,6 +549,27 @@ fn setup_dictate(app: &tauri::App, state: &AppState) {
     }
     if let Err(err) = services::tray::install(app) {
         tracing::warn!(error = %err, "tray icon not installed");
+    }
+    // Cloud takes (F-DI-05): the plan check and the STT relay, with a token.
+    {
+        let (api, auth, ents) = (
+            state.api.clone(),
+            state.auth.clone(),
+            state.entitlements.clone(),
+        );
+        state.dictate.set_cloud(
+            std::sync::Arc::new(move || ents.view().plan),
+            std::sync::Arc::new(move |upload| {
+                let (api, auth) = (api.clone(), auth.clone());
+                Box::pin(async move {
+                    auth.with_token(|token| {
+                        let (api, upload) = (api.clone(), upload.clone());
+                        async move { api.stt_transcribe(&token, upload).await }
+                    })
+                    .await
+                })
+            }),
+        );
     }
     let dictate = state.dictate.clone();
     tauri::async_runtime::spawn(async move {

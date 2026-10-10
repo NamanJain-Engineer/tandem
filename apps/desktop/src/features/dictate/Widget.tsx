@@ -5,6 +5,7 @@ import { WaveformRing, cx, type WaveformState } from "@tandem/ui";
 import { t } from "../../i18n";
 import { listen } from "../../ipc/events";
 import { invoke } from "../../ipc/invoke";
+import { ToastActions } from "./ToastActions";
 import { toastText } from "./toasts";
 
 /** mm:ss */
@@ -98,6 +99,7 @@ export function DictateWidget() {
     error = toast.error;
     ring = toast.error ? "error" : "idle";
     text = toastText(toast);
+    if (toast.actions.length > 0) tail = <ToastActions actions={toast.actions} onDone={() => setToast(null)} />;
     if (toast.code === "copied" || toast.code === "elevated") icon = <Copy size={16} aria-hidden="true" />;
     else if (toast.error) icon = <TriangleAlert size={16} aria-hidden="true" className="text-[var(--tn-status-error)]" />;
   } else if (view.kind === "listening") {
@@ -146,7 +148,7 @@ export function DictateWidget() {
       aria-description={toast?.detail}
       className={cx(
         "flex h-10 items-center gap-2 rounded-full border border-border bg-surface-3 pl-1.5 pr-2 shadow-3 select-none",
-        error ? "w-[360px]" : showText ? "w-[280px]" : "w-auto",
+        toast && toast.actions.length > 0 ? "w-auto max-w-[540px]" : error ? "w-[360px]" : showText ? "w-[280px]" : "w-auto",
         mono && "grayscale",
       )}
       onMouseUp={() => {

@@ -11,6 +11,7 @@ import { useSetting, useSettings } from "../../stores/settings";
 import { useBoot } from "../shell/useBoot";
 import { presets } from "./binding";
 import { MicSelect, ShortcutField } from "./DictatePage";
+import { EngineControl } from "./EngineControl";
 import { useComposerDictation } from "./useComposerDictation";
 
 /** "Try it" (F-DI-11 AC2): passes only once a native press and release of
@@ -187,6 +188,7 @@ function Engine() {
   return (
     <section className="flex flex-col gap-2" aria-label={t("dictate.setup.engine")} data-testid="dictate-setup-engine">
       <h3 className="text-sm font-semibold text-fg">{t("dictate.setup.engine")}</h3>
+      <EngineControl />
       {active ? (
         <span className="text-sm text-fg">{t("dictate.setup.usingModel", { name: active.name })}</span>
       ) : (

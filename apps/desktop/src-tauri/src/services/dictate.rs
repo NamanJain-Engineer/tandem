@@ -25,6 +25,7 @@ use tandem_voice::capture::{
     AudioBackend, AudioService, CaptureConfig, CaptureEvent, FakeAudioBackend, FakeSource,
 };
 use tandem_voice::chimes::{ChimePlayer, SilentPlayer};
+use tandem_voice::cloud::EngineChoice;
 use tandem_voice::devices::{self, DeviceInfo, MicPrefs};
 use tandem_voice::dictate::{
     Dictate, DictateConfig, DictateDeps, DictatePhase, DictateSink, DictateStateEvent,
@@ -768,7 +769,12 @@ impl DictateSink for Sink {
             id: take.id.as_str().to_string(),
             created_at: tandem_store::now_ms(),
             text: take.text,
-            engine: "local".into(),
+            engine: if take.model == "cloud" {
+                "cloud"
+            } else {
+                "local"
+            }
+            .into(),
             model: take.model,
             word_count: take.word_count,
             duration_ms: take.duration_ms,
@@ -876,7 +882,11 @@ pub struct DictateService {
     hotkey_status: Mutex<HotkeyStatus>,
     previews: Mutex<HashMap<String, Vec<Rule>>>,
     started: AtomicBool,
+    /// The plan check and the relay call for cloud takes (F-DI-05).
+    cloud: OnceLock<(PlanFn, crate::services::dictate_cloud::SttCall)>,
 }
+
+pub type PlanFn = Arc<dyn Fn() -> tandem_core::entitlement::Plan + Send + Sync>;
 
 /// Whether `tandem://dictate/toggle` may start or stop a take (D-515): only
 /// where it's the documented fallback, a Wayland session or a Linux desktop
@@ -977,6 +987,7 @@ impl DictateService {
             hotkey_status: Mutex::new(HotkeyStatus::NotRunning),
             previews: Mutex::new(HashMap::new()),
             started: AtomicBool::new(false),
+            cloud: OnceLock::new(),
         })
     }
 
@@ -1015,7 +1026,27 @@ impl DictateService {
             pause_media: self.setting(SettingKey::DictatePauseMedia, false).await,
             language: (lang != "auto").then_some(lang),
             latch: self.setting(SettingKey::DictateLatch, true).await,
+            engine: if self
+                .setting::<String>(SettingKey::DictateEngine, "local".into())
+                .await
+                == "cloud"
+            {
+                EngineChoice::Cloud
+            } else {
+                EngineChoice::Local
+            },
+            share_hints: self.setting(SettingKey::DictateShareHints, false).await,
         }
+    }
+
+    /// Gives cloud takes their plan check and relay call (set before `start`).
+    pub fn set_cloud(&self, plan: PlanFn, call: crate::services::dictate_cloud::SttCall) {
+        let _ = self.cloud.set((plan, call));
+    }
+
+    /// "Use local for this take" (F-DI-05).
+    pub fn use_local(&self) -> bool {
+        self.controller().is_some_and(|c| c.use_local())
     }
 
     async fn capture_config(&self) -> CaptureConfig {
@@ -1132,6 +1163,13 @@ impl DictateService {
                 chimes,
                 media: if self.e2e { None } else { media },
                 sink: Arc::new(Sink(shared.clone())),
+                cloud: self.cloud.get().map(|(plan, call)| {
+                    Arc::new(crate::services::dictate_cloud::HostedStt::new(
+                        plan.clone(),
+                        call.clone(),
+                        tokio::runtime::Handle::current(),
+                    )) as Arc<dyn tandem_voice::cloud::CloudStt>
+                }),
             },
             self.config().await,
         );
@@ -1303,7 +1341,9 @@ impl DictateService {
             .then(|| "xdg-open tandem://dictate/toggle".to_string()),
             session,
             mic: mic_id.and_then(|id| devices.into_iter().find(|d| d.id == id)),
-            engine: "local".into(),
+            engine: self
+                .setting::<String>(SettingKey::DictateEngine, "local".into())
+                .await,
             model: active
                 .as_deref()
                 .and_then(|id| self.catalog.get(id))
@@ -1525,6 +1565,8 @@ impl DictateService {
                     app: None,
                     model: Some(name(&best)),
                     previous: Some(name(&wanted)),
+                    message: None,
+                    actions: Vec::new(),
                     detail: format!("{wanted} isn't in the models folder."),
                 }),
                 To::Main,
@@ -1613,6 +1655,8 @@ impl DictateService {
                             app: None,
                             model: Some(model.name.clone()),
                             previous: Some(name(&prev)),
+                            message: None,
+                            actions: Vec::new(),
                             detail: err.to_string(),
                         }),
                         To::Main,

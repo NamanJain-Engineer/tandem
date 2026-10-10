@@ -796,6 +796,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `dictate_verify_start` / `dictate_verify_stop` | — | — (events `dictate:key`, then `dictate:verified`) | — |
 | `dictate_start_take` / `dictate_stop_take` / `dictate_cancel_take` | `{origin: {type:"global"} \| {type:"composer", targetId}}` / — / — | `{takeId}` / — / — | Unavailable (Conductor owns the mic; no model) |
 | `dictate_toggle` | — | — (the `tandem://dictate/toggle` route, F-SH-13; honoured only on Wayland or with the Linux shortcut unavailable, and its take always shows the widget, D-515) | — |
+| `dictate_use_local` | — | `bool` ("Use local for this take": the last failed cloud take, transcribed on this device; false when there's none or a newer take started, F-DI-05) | — |
 | `dictate_composer_focus` | `{targetId?}` (null on blur) | — | — |
 | `dictate_devices` | — | `[DeviceInfo {id, name, isDefault, bluetooth, loopback}]` (with `chosen`: the id the device policy picks, F-DI-03) | — |
 | `dictate_models` / `dictate_model_download` / `dictate_model_cancel` / `dictate_model_remove` / `dictate_model_select` / `dictate_models_remove_unused` | — / `{modelId}` / `{modelId}` / `{modelId}` / `{modelId}` / — | `ModelsView {models:[ModelView {id, name, bytes, langsLabel, recommended, available, cpuWarning, state: "absent"\|"queued"\|"downloading"\|"verifying"\|"loading"\|"downloaded"\|"active"\|"failed", progress?, error?}], usedBytes, freeBytes?, active?, pending?}` (download and select return at once; progress comes as `dictate:models`) | NotFound, Unavailable (not on this platform) |
@@ -922,7 +923,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `auto:changed` / `auto:dismissed` | `AutoRunView` / `{runId}` | Auto supervisor | F-AU-01 |
 | `lanes:stale` | `{workspaceId, lanes:[StaleLane]}` | lane sweeper | F-CD-15 |
 | `dictate:state` | `DictateStateEvent {state:"idle"\|"listening"\|"transcribing"\|"inserted"\|"copied"\|"error"\|"reconnecting", takeId?, handsFree, composer?, words?}` (to `main` and `dictate-widget`) | Dictate controller | F-DI-07, F-DI-12 |
-| `dictate:toast` | `DictateToast {code, error, app?, detail}` (the UI renders `code` from its catalog; `detail` is the diagnostic for the tooltip, never transcript text; to `main` and `dictate-widget`) | Dictate controller | F-DI-07 |
+| `dictate:toast` | `DictateToast {code, error, app?, model?, previous?, detail, message?, actions}` (the UI renders `code` from its catalog; `cloud_failed` shows `message`, the server's words for a limit; `actions`: `use_local` → `dictate_use_local`, `see_plans` → the upgrade sheet; `detail` is the diagnostic for the tooltip, never transcript text; to `main` and `dictate-widget`) | Dictate controller | F-DI-07, F-DI-05 |
 | `dictate:level` | `f32` 0–1, at most 30 a second, only while recording (to `dictate-widget` and `main`; D-506) | capture | F-DI-07 |
 | `dictate:key` | `{phase:"down"\|"up", native: bool}` | hotkey verify | F-DI-02, F-DI-11 |
 | `dictate:verified` | — (press and release both seen) | hotkey verify | F-DI-11 |

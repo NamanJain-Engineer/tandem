@@ -101,6 +101,13 @@ pub fn dictate_toggle(state: State<'_, AppState>) -> Result<(), IpcError> {
     Ok(())
 }
 
+/// "Use local for this take" (F-DI-05): the last failed cloud take,
+/// transcribed on this device. False when there's nothing to retry.
+#[tauri::command]
+pub fn dictate_use_local(state: State<'_, AppState>) -> bool {
+    state.dictate.use_local()
+}
+
 #[tauri::command]
 pub fn dictate_composer_focus(
     state: State<'_, AppState>,

@@ -11,6 +11,7 @@ import { UpdatesPanel } from "../updates/UpdatesPanel";
 import { RunSetupAgain } from "../onboarding/RunSetupAgain";
 import { DictateExtras, MicSelect, ShortcutField } from "../dictate/DictatePage";
 import { LanguageSelect } from "../dictate/LanguageSelect";
+import { EngineControl } from "../dictate/EngineControl";
 import {
   BoolControl,
   FontControl,
@@ -424,6 +425,12 @@ export function settingsPages(platform: string): PageDef[] {
           label: t("dictate.enabled"),
           keywords: ["on", "off"],
           control: (ids) => <BoolControl k="dictate_enabled" ids={ids} label={t("dictate.enabled")} />,
+        },
+        {
+          id: "dictate_engine",
+          label: t("dictate.engine.label"),
+          keywords: ["engine", "cloud", "local", "transcribe", "pro"],
+          control: () => <EngineControl />,
         },
         {
           id: "dictate_language",
