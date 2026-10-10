@@ -15,7 +15,7 @@ M16 adds the P2 extras and the release candidate.
 
 ## 0. First, before new features
 
-1. **Release 0.3.0 with the interactive demo on the home page, and deploy the site.** The demo moves from its own page into the home page, explorable full screen and on phones, with message limits and a reset (full spec: "The interactive demo on the website" in `docs/FEATURES_TO_BUILD.md`). Vibezeo 0.2.0 (M6 + M7) and the
+1. [x] **Release 0.3.0 with the interactive demo on the home page** (prepared on `release-0.3.0`: D-128, the .deb, CHANGELOG, site copy; deploying is the coordinating session's merge into `main`). **And deploy the site.** The demo moves from its own page into the home page, explorable full screen and on phones, with message limits and a reset (full spec: "The interactive demo on the website" in `docs/FEATURES_TO_BUILD.md`). Vibezeo 0.2.0 (M6 + M7) and the
    browser demo are committed but were never deployed: vibezeo.com (`main`)
    still serves 0.1.0. M9 has landed since, and the demo already shows its Files
    tab, so ship them together: 0.3.0 = M6 + M7 + M9. Bump the version, add the
