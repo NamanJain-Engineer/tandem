@@ -18,13 +18,13 @@ async function atStep(name: string): Promise<void> {
   );
 }
 
-describe("E2E-M8-6 Onboarding", () => {
+describe("E2E-M8-6 Onboarding", function () {
+  this.timeout(300_000);
   after(async () => {
     await invoke("onboarding_set", { done: true }).catch(() => undefined);
   });
 
   it("E2E-M8-6 Try it passes only after press and release; the step survives a relaunch; the folder opens in Code mode", async function () {
-    this.timeout(180_000);
     await freshProfile();
     await setSetting("dictate_enabled", true);
     await $("#signin-title").waitForDisplayed({ timeout: 20_000 });

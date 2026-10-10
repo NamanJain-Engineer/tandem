@@ -21,9 +21,9 @@ import {
 type Stats = { words: number; takes: number };
 const stats = () => invoke<Stats>("dictate_stats");
 
-describe("E2E-M8-1 Push-to-talk", () => {
+describe("E2E-M8-1 Push-to-talk", function () {
+  this.timeout(300_000);
   before(async function () {
-    this.timeout(300_000);
     await freshOffline();
     await setSetting("dictate_enabled", true);
     await setSetting("dictate_output", "paste");
@@ -31,7 +31,6 @@ describe("E2E-M8-1 Push-to-talk", () => {
   });
 
   it("E2E-M8-1 hold → WAV → release pastes 'hello world' and restores the clipboard", async function () {
-    this.timeout(180_000);
     await resetPlatform();
     await mic({ source: "wav", path: fixture("hello_world_16k.wav") });
     await hold(2_500);
@@ -46,9 +45,9 @@ describe("E2E-M8-1 Push-to-talk", () => {
   });
 });
 
-describe("E2E-M8-2 Taps and cancel", () => {
+describe("E2E-M8-2 Taps and cancel", function () {
+  this.timeout(300_000);
   it("E2E-M8-2 a 100 ms tap records nothing", async function () {
-    this.timeout(180_000);
     await resetPlatform();
     const before = await stats();
     await hold(100);
@@ -58,7 +57,6 @@ describe("E2E-M8-2 Taps and cancel", () => {
   });
 
   it("E2E-M8-2 Esc while recording: no transcription and no insertion", async function () {
-    this.timeout(180_000);
     await resetPlatform();
     await mic({ source: "wav", path: fixture("hello_world_16k.wav") });
     const before = await stats();
@@ -73,7 +71,6 @@ describe("E2E-M8-2 Taps and cancel", () => {
   });
 
   it("E2E-M8-2 a toggle binding of a bare modifier is refused", async function () {
-    this.timeout(180_000);
     let message = "";
     try {
       await invoke("dictate_set_binding", { binding: "Ctrl", mode: "toggle" });
@@ -84,9 +81,11 @@ describe("E2E-M8-2 Taps and cancel", () => {
   });
 });
 
-describe("E2E-M8-3 Guards", () => {
+describe("E2E-M8-3 Guards", function () {
+  this.timeout(300_000);
   it("E2E-M8-3 2 s of silence says No speech detected and inserts nothing", async function () {
-    this.timeout(180_000);
+    // With the widget hidden, the main window shows the toast (D-505).
+    await setSetting("dictate_widget_visibility", "hidden");
     await resetPlatform();
     await mic({ source: "wav", path: fixture("silence_2s.wav") });
     await hold(2_200);
@@ -98,10 +97,10 @@ describe("E2E-M8-3 Guards", () => {
       { timeout: 30_000, timeoutMsg: "no 'No speech detected' toast" },
     );
     expect((await platform()).pasted).toEqual([]);
+    await setSetting("dictate_widget_visibility", "while_recording");
   });
 
   it("E2E-M8-3 a focus-restore failure leaves the text on the clipboard", async function () {
-    this.timeout(180_000);
     await resetPlatform();
     await platform({ failFocus: true });
     await mic({ source: "wav", path: fixture("hello_world_16k.wav") });
@@ -115,7 +114,6 @@ describe("E2E-M8-3 Guards", () => {
   });
 
   it("E2E-M8-3 control characters never reach a terminal, and no CR is sent", async function () {
-    this.timeout(180_000);
     // A correction that writes an escape sequence and a carriage return.
     const rule = await invoke<{ id: string }>("dictionary_save", {
       rule: {

@@ -15,16 +15,15 @@ import {
 
 // E2E-M8-4 Widget (F-DI-07) and E2E-M8-5 Composer (F-DI-12).
 
-describe("E2E-M8-4 Widget", () => {
+describe("E2E-M8-4 Widget", function () {
+  this.timeout(300_000);
   before(async function () {
-    this.timeout(300_000);
     await freshOffline();
     await setSetting("dictate_enabled", true);
     await ensureModel();
   });
 
   it("E2E-M8-4 'While recording' shows it when recording starts and hides it 1 s after insertion", async function () {
-    this.timeout(180_000);
     await setSetting("dictate_widget_visibility", "while_recording");
     await resetPlatform();
     await mic({ source: "wav", path: fixture("hello_world_16k.wav") });
@@ -49,35 +48,37 @@ describe("E2E-M8-4 Widget", () => {
   });
 
   it("E2E-M8-4 an error toast carries the full diagnostic in its tooltip", async function () {
-    this.timeout(180_000);
     await setSetting("dictate_widget_visibility", "always");
     await mic({ source: "zeros" });
     const main = await browser.getWindowHandle();
     await hold(1_800);
     let found = false;
-    for (const h of await browser.getWindowHandles()) {
-      if (h === main) continue;
-      await browser.switchToWindow(h);
-      const pill = $('[data-testid="dictate-widget"]');
-      if (!(await pill.isExisting())) continue;
-      await browser.waitUntil(async () => (await pill.getAttribute("data-state")) === "error", {
-        timeout: 20_000,
-        timeoutMsg: "no error toast in the widget",
-      });
-      const title = await pill.getAttribute("title");
-      expect((title ?? "").length).toBeGreaterThan(20);
-      found = true;
+    try {
+      for (const h of await browser.getWindowHandles()) {
+        if (h === main) continue;
+        await browser.switchToWindow(h);
+        const pill = $('[data-testid="dictate-widget"]');
+        if (!(await pill.isExisting())) continue;
+        // The state event says "error" first; the toast brings the detail.
+        await browser.waitUntil(async () => ((await pill.getAttribute("title")) ?? "").length > 20, {
+          timeout: 20_000,
+          timeoutMsg: "no error toast with a diagnostic in the widget",
+        });
+        expect(await pill.getAttribute("data-state")).toBe("error");
+        found = true;
+      }
+    } finally {
+      await browser.switchToWindow(main);
     }
-    await browser.switchToWindow(main);
     expect(found).toBe(true);
     await mic({ source: "wav", path: fixture("hello_world_16k.wav") });
     await setSetting("dictate_widget_visibility", "while_recording");
   });
 });
 
-describe("E2E-M8-5 Composer", () => {
+describe("E2E-M8-5 Composer", function () {
+  this.timeout(300_000);
   it("E2E-M8-5 dictation goes in at the caret, and the clipboard is unchanged", async function () {
-    this.timeout(180_000);
     await resetPlatform();
     const id = (
       await invoke<{ id: string }>("thread_create", { args: { kind: "thread", workspaceId: null } })

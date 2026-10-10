@@ -157,6 +157,16 @@ E2E lessons (each cost a debugging round):
 - A test that hard-codes a date breaks the next day: pin the clock
   (`vi.useFakeTimers({ toFake: ["Date"] })`).
 - When an E2E fails, take a screenshot (`browser.saveScreenshot`) before guessing.
+- WDIO reads a test's timeout before its body runs, so `this.timeout()` inside an
+  `it` or hook does nothing past `mochaOpts.timeout` (60 s): set it on the suite,
+  `describe("…", function () { this.timeout(300_000); … })`.
+- Only one E2E run at a time: a killed run's `run.ts` can outlive `pkill` and
+  share tauri-driver's :4444, so specs drive the other run's app. Check
+  `pgrep -af "e2e/run.ts|tauri-driver|WebKitWebDriver"` before starting.
+- Dictate specs download models from `scripts/serve-models.ts` (:8791, the real
+  `~/.cache/tandem-models`; run `bash scripts/fetch-models.sh base.en parakeet`
+  first). The runner points `HOME` at the test's home, so anything that needs the
+  real home must capture it before then.
 
 ## 6. Releasing the desktop app (Linux, local)
 

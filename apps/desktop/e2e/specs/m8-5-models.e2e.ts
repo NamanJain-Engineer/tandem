@@ -17,16 +17,15 @@ import {
 // check, deletes the file and offers Retry; a switch asked for mid-take
 // applies once the take ends.
 
-describe("E2E-M8-8 Model download", () => {
+describe("E2E-M8-8 Model download", function () {
+  this.timeout(300_000);
   before(async function () {
-    this.timeout(300_000);
     await freshOffline();
     await setSetting("dictate_enabled", true);
   });
   after(() => modelServer("normal"));
 
   it("E2E-M8-8 a corrupt byte fails verification, deletes the file and offers Retry", async function () {
-    this.timeout(180_000);
     let view = await models();
     if (view.models.find((m) => m.id === BASE_EN)?.state !== "absent")
       await invoke("dictate_model_remove", { modelId: BASE_EN });
@@ -48,7 +47,6 @@ describe("E2E-M8-8 Model download", () => {
   });
 
   it("E2E-M8-8 switching model mid-take applies after the take ends", async function () {
-    this.timeout(180_000);
     await ensureModel();
     const other = (await models()).models.find((m) => m.id !== BASE_EN && m.state === "downloaded");
     // The switch needs a second model on disk; Parakeet is in the cache when fetched.
@@ -59,14 +57,19 @@ describe("E2E-M8-8 Model download", () => {
       if (!candidate) throw new Error("no second model to switch to (run scripts/fetch-models.sh parakeet)");
       await invoke("dictate_model_download", { modelId: candidate.id });
       await browser.waitUntil(
-        async () => (await models()).models.find((m) => m.id === candidate.id)?.state === "downloaded",
+        // A finished download becomes the active model; base.en goes back below.
+        async () =>
+          ["downloaded", "active"].includes(
+            (await models()).models.find((m) => m.id === candidate.id)?.state ?? "",
+          ),
         {
-          timeout: 300_000,
+          timeout: 240_000,
           interval: 500,
           timeoutMsg: `${candidate.id} didn't download`,
         },
       );
     }
+    await ensureModel();
     const target = (await models()).models.find((m) => m.id !== BASE_EN && m.state === "downloaded");
     if (!target) throw new Error("no second model");
     await resetPlatform();

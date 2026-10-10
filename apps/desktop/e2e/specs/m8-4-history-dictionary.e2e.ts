@@ -32,16 +32,15 @@ const correction = (phrase: string, replacement: string, appProfiles: string[] =
   deletedAt: null,
 });
 
-describe("E2E-M8-7 History and dictionary", () => {
+describe("E2E-M8-7 History and dictionary", function () {
+  this.timeout(300_000);
   before(async function () {
-    this.timeout(300_000);
     await freshOffline();
     await setSetting("dictate_enabled", true);
     await ensureModel();
   });
 
   it("E2E-M8-7 search finds a stored take; the CSV has the exact header; clearing keeps the word total", async function () {
-    this.timeout(180_000);
     await resetPlatform();
     await mic({ source: "wav", path: fixture("hello_world_16k.wav") });
     await hold(2_500);
@@ -72,7 +71,6 @@ describe("E2E-M8-7 History and dictionary", () => {
   });
 
   it("E2E-M8-7 'tandem'→'Tandem' leaves the URL alone", async function () {
-    this.timeout(180_000);
     const rule = await invoke<Rule>("dictionary_save", { rule: correction("tandem", "Tandem") });
     try {
       const out = await invoke<string>("dictionary_test", {
@@ -87,7 +85,6 @@ describe("E2E-M8-7 History and dictionary", () => {
   });
 
   it("E2E-M8-7 an app-scoped rule applies only in that app", async function () {
-    this.timeout(180_000);
     const rule = await invoke<Rule>("dictionary_save", {
       rule: correction("world", "WORLD", ["org.gnome.Terminal"]),
     });
@@ -118,7 +115,6 @@ describe("E2E-M8-7 History and dictionary", () => {
   });
 
   it("E2E-M8-7 a JSON export imports back", async function () {
-    this.timeout(180_000);
     const rule = await invoke<Rule>("dictionary_save", { rule: correction("vibe zeo", "Vibezeo") });
     const file = join(home(), "dictionary.json");
     await invoke("dictionary_export", { path: file, format: "json" });
