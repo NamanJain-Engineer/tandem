@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { Bot, MoreHorizontal, Pin, Plus } from "lucide-react";
+import { Bot, CalendarClock, ListTodo, MoreHorizontal, Pin, Plus } from "lucide-react";
 import type { TeammateSummary } from "@tandem/protocol";
 import {
   Avatar,
@@ -17,6 +17,8 @@ import {
 import { t } from "../../i18n";
 import { useSetting, useSettings } from "../../stores/settings";
 import { useTeammates } from "../../stores/teammates";
+import { useAgentPage, type AgentPage } from "../../stores/agentPage";
+import { useRoutines } from "../../stores/routines";
 import { age } from "../thread/groups";
 
 /** The rail's status for a teammate: failed, waiting, working or idle. */
@@ -28,7 +30,7 @@ export function teammateStatus(s: TeammateSummary): Status {
 }
 
 /** UI-70 trailing slot: ▲ Failed > ◆ Waiting on you > ● n working > age. */
-function Trailing({ s, now }: { s: TeammateSummary; now: number }) {
+function Trailing({ s, now, selected }: { s: TeammateSummary; now: number; selected: boolean }) {
   if (s.failed)
     return (
       <span className="shrink-0 text-sm text-danger" data-testid="teammate-trailing">
@@ -48,7 +50,11 @@ function Trailing({ s, now }: { s: TeammateSummary; now: number }) {
       </span>
     );
   return (
-    <span className="shrink-0 text-sm text-fg-subtle" data-testid="teammate-trailing">
+    // On the selected row's accent tint, subtle text falls below AA.
+    <span
+      className={cx("shrink-0 text-sm", selected ? "text-fg-muted" : "text-fg-subtle")}
+      data-testid="teammate-trailing"
+    >
       {s.lastAt ? age(s.lastAt, now) : ""}
     </span>
   );
@@ -88,7 +94,7 @@ function useActions(s: TeammateSummary, onRename: () => void, onDelete: () => vo
 function Row({
   s,
   hero,
-  selected,
+  selected: selectedId,
   now,
 }: {
   s: TeammateSummary;
@@ -96,6 +102,9 @@ function Row({
   selected: boolean;
   now: number;
 }) {
+  // While a footer page (Tasks, Routines) is open, no teammate is "the page".
+  const onTeammate = useAgentPage((p) => p.page === "teammate");
+  const selected = selectedId && onTeammate;
   const select = useTeammates((st) => st.select);
   const update = useTeammates((st) => st.update);
   const remove = useTeammates((st) => st.remove);
@@ -149,7 +158,10 @@ function Row({
             data-status={status}
             aria-current={selected ? "page" : undefined}
             title={tm.name}
-            onClick={() => select(tm.id)}
+            onClick={() => {
+              select(tm.id);
+              useAgentPage.getState().show("teammate");
+            }}
             onKeyDown={(e) => {
               if (e.key === "F2") {
                 e.preventDefault();
@@ -176,7 +188,7 @@ function Row({
               )}
             </span>
             <span className="flex items-center group-hover:hidden group-focus-within:hidden">
-              <Trailing s={s} now={now} />
+              <Trailing s={s} now={now} selected={selected} />
             </span>
           </button>
         </ContextMenu>
@@ -277,7 +289,10 @@ export function AgentRail({ collapsed, actions }: { collapsed: boolean; actions?
             title={s.teammate.name}
             aria-label={s.teammate.name}
             aria-current={s.teammate.id === selectedId ? "page" : undefined}
-            onClick={() => select(s.teammate.id)}
+            onClick={() => {
+              select(s.teammate.id);
+              useAgentPage.getState().show("teammate");
+            }}
             className="rounded-md focus-visible:shadow-focus focus-visible:outline-none"
           >
             <Avatar
@@ -334,7 +349,52 @@ export function AgentRail({ collapsed, actions }: { collapsed: boolean; actions?
           </ul>
         )}
       </div>
+      <RailFooter />
     </nav>
+  );
+}
+
+/** UI-70 footer: the pages beside the teammates. */
+function RailFooter() {
+  const page = useAgentPage((s) => s.page);
+  const active = useRoutines(
+    (s) => s.list.filter((v) => !v.routine.paused && !v.routine.pausedByPlan).length,
+  );
+  useEffect(() => {
+    void useRoutines.getState().load();
+  }, []);
+  const rows: Array<{ id: AgentPage; label: string; icon: React.ReactNode; count?: number }> = [
+    { id: "tasks", label: t("agent.footer.tasks"), icon: <ListTodo size={14} aria-hidden="true" /> },
+    {
+      id: "routines",
+      label: t("agent.footer.routines"),
+      icon: <CalendarClock size={14} aria-hidden="true" />,
+      count: active,
+    },
+  ];
+  return (
+    <div
+      className="flex shrink-0 flex-col gap-0.5 border-t border-divider p-1.5"
+      data-testid="agent-rail-footer"
+    >
+      {rows.map((r) => (
+        <button
+          key={r.id}
+          type="button"
+          aria-current={page === r.id ? "page" : undefined}
+          onClick={() => useAgentPage.getState().show(r.id)}
+          data-testid={`agent-footer-${r.id}`}
+          className={cx(
+            "flex h-8 items-center gap-2 rounded-sm px-2 text-left text-sm text-fg-muted outline-none hover:bg-surface-4 hover:text-fg focus-visible:shadow-focus",
+            page === r.id && "bg-accent-soft text-fg hover:bg-accent-soft",
+          )}
+        >
+          {r.icon}
+          <span className="flex-1">{r.label}</span>
+          {!!r.count && <span className="text-xs text-fg-muted">{r.count}</span>}
+        </button>
+      ))}
+    </div>
   );
 }
 
