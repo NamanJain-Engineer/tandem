@@ -777,8 +777,10 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 #### Auto [F-AU-01]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
-| `auto_start` | `{paneId, mode:"finish"\|"harden"\|"review"\|"explore"\|"custom", goal?, ceiling?}` | `AutoRunView` | ForbiddenPlan, Invalid ("Auto runs only in agent panes"), PermissionDenied (consent missing) |
-| `auto_pause` / `auto_resume` / `auto_stop` | `{runId}` | `AutoRunView` | — |
+| `auto_start` | `{paneId, mode:"finish"\|"harden"\|"review"\|"explore"\|"custom", goal? (custom: required, ≤2000 chars), ceiling? (custom: 1–30, default 10; other modes use their own)}` | `AutoRunView {runId, paneId, mode, goal?, ceiling, turns, state: running\|paused\|ended, paused?: user\|approval_pending, endReason?: done\|stuck\|turn_ceiling\|out_of_credits\|no_subscription\|turned_off\|signed_out\|api_unreachable\|pane_closed\|engine_exited\|engine_changed\|user_stopped, detail?, startedAt, endedAt?}` | ForbiddenPlan, Invalid ("Auto runs only in agent panes"; the agent isn't running; goal or ceiling out of range), PermissionDenied (consent missing; the Team policy's `disableAuto`), Conflict (a run is live in the pane) |
+| `auto_list` | — | `[AutoRunView]` (live runs and ended ones not yet dismissed; runs live in memory, D-621) | — |
+| `auto_pause` / `auto_resume` / `auto_stop` | `{runId}` | `AutoRunView` (pause holds the next turn; stop ends at once and nothing more is typed) | NotFound |
+| `auto_dismiss` | `{runId}` | — (clears an ended run's chip; emits `auto:dismissed`) | — |
 
 #### Dictate [F-DI-*]
 | Command | Args | Returns | Errors |
@@ -894,7 +896,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `plugins:changed` / `plugins:connect` | `PluginCard` / `{opId, step:"discovery"\|"registration"\|"sign_in"\|"token_exchange"\|"verification"\|"timeout", state, error?}` | gateway | F-PL-03 |
 | `mail:changed` | `{teammateId, rows:[MailRow]}` | mail service | F-AG-12 |
 | `memory:suggestions` | `{teammateId, threadId, setId, items}` | learn service | F-AG-08 |
-| `auto:changed` | `AutoRunView` | Auto supervisor | F-AU-01 |
+| `auto:changed` / `auto:dismissed` | `AutoRunView` / `{runId}` | Auto supervisor | F-AU-01 |
 | `lanes:stale` | `{workspaceId, lanes:[StaleLane]}` | lane sweeper | F-CD-15 |
 | `dictate:state` | `{state:"idle"\|"listening"\|"transcribing"\|"inserted"\|"error"\|"reconnecting", takeId?}` (to `main` and `dictate-widget`) | TakeMachine | F-DI-07 |
 | `dictate:toast` | `{kind, message, detail}` | voice service | F-DI-07 |
@@ -1851,6 +1853,7 @@ loop {
 }
 ```
 - Engine change / pane close / user stop end the run with the matching reason. Consent: `AutoConsent` setting must be true (first-use dialog). All end reasons are an enum in protocol.
+- As built (D-619–D-623): "idle" means a status record (`Done`, `Idle`, `Failed` or `Waiting(Input)`) other than the one the pane had when the last prompt was typed; records are compared, not times, because status times come from the app clock. `Waiting(Question)` pauses like an approval. A 403 `FORBIDDEN_POLICY` ends the run as `turned_off`; 429 is retried like an unreachable service. The pane is re-checked after each answer, so nothing is typed into a pane whose agent exited while the supervisor thought. Typing that fails 3 turns in a row ends the run as `stuck`. The ended run raises a pane notification (`done` for done and turn ceiling, `failed` otherwise; none when the user stopped it).
 - PTY write log in tests is asserted (no writes after `engine_exited`).
 
 ---
@@ -2289,7 +2292,7 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 | `POST /v1/ai/title` | B | `{text: str(1..4000)}` | `{title: str(≤60)}` | `RATE_LIMITED` (60/h) | F-TH-15 |
 | `POST /v1/ai/rewrite` | B | `{mode:'enhance'\|'polish', text: str(1..5000), instructions?: str(≤2000), protected_terms?: [str(≤100)] (≤200)}` | `{text}` · 3 cr | `FORBIDDEN_PLAN`, `CREDITS_EXHAUSTED`, `DAILY_LIMIT` | F-DI-10 |
 | `POST /v1/ai/teammate-draft` | B | `{description: str(1..2000), engines: [str](1..20), plugins?: [str](≤100)}` | `{name: str(≤40), brief: str(≤1200), engine ∈ engines, plugins ⊆ plugins}` · 10 cr (refunded on any failure; D-603) | `FORBIDDEN_PLAN` (needs `enhance`), `CREDITS_EXHAUSTED`, `RATE_LIMITED` (10/min), 503 `AI_UNAVAILABLE` | F-AG-04 |
-| `POST /v1/auto/next` | B | `{mode, goal?: str(≤2000), turn: int(0..30), ceiling: int(1..30), scrollback: str(≤16384)}` | `{action:'prompt'\|'done'\|'stuck', text?, reason?}` · 6 cr | as above; `VALIDATION` if turn ≥ ceiling | F-AU-01 |
+| `POST /v1/auto/next` | B | `{mode, goal?: str(≤2000) (required for custom), turn: int(0..30), ceiling: int(1..30), scrollback: str(≤16384)}` | `{action:'prompt'\|'done'\|'stuck', text? (≤2000), reason? (≤300)}` · 6 cr | as above; `VALIDATION` if turn ≥ ceiling; 403 `FORBIDDEN_POLICY` when the Team policy has `disableAuto`; `RATE_LIMITED` (30/min) | F-AU-01 |
 | `POST /v1/stt/transcribe` | B | multipart, **fields first, `audio` last** (D-604): `duration_ms?` (the take's length; reserve and limit follow it), `language?` (code or `auto`), `hints?` (repeated field, ≤50, only with the user's opt-in), `audio` (`audio/ogg` Opus or `audio/wav`, ≤25 MB, ≤10 min) | `{text, language, duration}` (seconds) · 2 cr per started 15 s | 413 `PAYLOAD_TOO_LARGE` (`limit: take_minutes \| take_bytes`), 429 `DAILY_LIMIT` (`limit: stt_minutes`), 402 `CREDITS_EXHAUSTED`, 403 `FORBIDDEN_PLAN` (`cloudStt`), 415 (not Opus or WAV), 422 (audio longer than `duration_ms`), 503 `STT_UNAVAILABLE` (`retryable`) — every failure is uncharged | F-BE-07 |
 | `POST /v1/voice/session` | B | `{voice?: str}` | `{session_id, provider, ephemeral_token, ws_url, expires_at, max_seconds: 1800}` (reserves 1,200 cr) | 402, `FORBIDDEN_PLAN` | F-BE-08 |
 | `POST /v1/voice/session/:id/settle` | B | `{seconds: int(0..1800)}` | `{charged, refunded}` (`ceil(s/10)×20`) | 404 | F-BE-08 |

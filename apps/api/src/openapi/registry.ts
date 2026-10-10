@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { refundBody } from "../routes/admin";
 import { draftBody, rewriteBody, titleBody } from "../routes/ai";
+import { autoNextBody } from "../routes/auto";
 import { acceptBody, createOrgBody, inviteBody, memberBody, seatsBody } from "../routes/orgs";
 import { clientAuditBody, policySchema } from "../services/orgs";
 import { checkoutBody, packBody } from "../routes/billing";
@@ -246,6 +247,18 @@ export const ROUTES: RouteDoc[] = [
       brief: z.string(),
       engine: z.string(),
       plugins: z.array(z.string()),
+    }),
+  },
+  {
+    method: "post",
+    path: "/v1/auto/next",
+    summary: "One Auto turn: the supervisor's next prompt, or done or stuck (Claude API, Pro, 6 credits)",
+    auth: "bearer",
+    body: autoNextBody,
+    response: z.object({
+      action: z.enum(["prompt", "done", "stuck"]),
+      text: z.string().optional(),
+      reason: z.string().optional(),
     }),
   },
   {

@@ -1,5 +1,7 @@
 import { LaunchSheet } from "../code/LaunchSheet";
 import { HandoffDialog } from "../code/HandoffDialog";
+import { AutoDialog } from "../auto/AutoDialog";
+import { followAuto } from "../../stores/auto";
 import { WorktreeDialogs } from "../code/Worktrees";
 import { useEffect } from "react";
 import { useToast } from "@tandem/ui";
@@ -56,6 +58,7 @@ export function AppShell() {
   useEffect(followPtyState, []);
   useEffect(followEngines, []);
   useEffect(followLimits, []);
+  useEffect(followAuto, []);
   useEffect(followContexts, []);
   useEffect(followUsage, []);
   useEffect(followStatus, []);
@@ -154,6 +157,7 @@ export function AppShell() {
       <WorktreeDialogs />
       <LaunchSheet />
       <HandoffDialog />
+      <AutoDialog />
       <Palette />
       <OrphansDialog />
       <RestartDialog />

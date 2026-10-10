@@ -110,6 +110,7 @@ pub struct AppState {
     pub terminals: Arc<TerminalService>,
     pub approvals: Arc<crate::services::approvals::ApprovalService>,
     pub notifications: Arc<crate::services::notifications::NotificationService>,
+    pub auto: Arc<crate::services::auto::AutoService>,
     /// Paused agents and their relaunch queue (F-SH-07).
     pub restore: Arc<crate::services::restore::RestoreService>,
     /// Auto-update and the minimum-version notice (F-SH-06).
@@ -462,6 +463,10 @@ impl AppState {
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         let files = crate::services::files::FilesService::new(store.clone());
         let git_panel = crate::services::git_panel::GitPanelService::new(files.clone());
+        let auto = Arc::new(crate::services::auto::AutoService::new(
+            bus.clone(),
+            crate::services::auto::AutoTiming::default(),
+        ));
         Self {
             data,
             store,
@@ -480,6 +485,7 @@ impl AppState {
             terminals,
             approvals,
             notifications,
+            auto,
             restore,
             updates,
             config,

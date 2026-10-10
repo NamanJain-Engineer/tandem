@@ -1,3 +1,5 @@
+import { AutoChip } from "../auto/AutoChip";
+import { useAuto } from "../../stores/auto";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDraggable } from "@dnd-kit/core";
@@ -283,6 +285,9 @@ const PaneView = memo(function PaneView({
           .getState()
           .open({ paneId: pane.id, workspaceId: pane.workspaceId, kind: pane.kind, engineId: pane.engineId }),
     },
+    ...(pane.kind === "agent" && pane.engineId
+      ? [{ id: "auto", label: t("pane.auto"), onSelect: () => useAuto.getState().openDialog(pane.id) }]
+      : []),
     { id: "sep-copy", type: "separator" },
     {
       id: "copy-last-output",
@@ -352,6 +357,7 @@ const PaneView = memo(function PaneView({
         onRenamingChange={setRenaming}
         badges={
           <>
+            <AutoChip paneId={pane.id} />
             {context && (
               <ContextMeter
                 label={t("pane.context")}

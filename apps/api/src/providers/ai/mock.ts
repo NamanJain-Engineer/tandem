@@ -12,7 +12,9 @@ import { type AiProvider, type AiRequest, type AiResult, AiUnavailableError, tag
 /**
  * Deterministic answers for dev and tests (ARCHITECTURE §14.8): a title is
  * the first 6 words title-cased; a rewrite is the input with whitespace
- * normalized; a teammate draft is `MOCK_TEAMMATE_DRAFT`.
+ * normalized; a teammate draft is `MOCK_TEAMMATE_DRAFT`; an Auto turn
+ * prompts "Continue with the next step." until the scrollback shows
+ * `ALL TESTS PASSED`, then says done.
  */
 export class MockAi implements AiProvider {
   readonly name = "mock" as const;
@@ -29,7 +31,13 @@ export class MockAi implements AiProvider {
     const last = req.messages.at(-1)?.content ?? "";
     const input = taggedText(last) ?? last;
     const text =
-      req.feature === "teammate_draft"
+      req.feature === "auto_next"
+        ? JSON.stringify(
+            input.includes("ALL TESTS PASSED")
+              ? { action: "done", reason: "The tests pass." }
+              : { action: "prompt", text: "Continue with the next step." },
+          )
+        : req.feature === "teammate_draft"
         ? JSON.stringify(MOCK_TEAMMATE_DRAFT)
         : req.feature === "title"
           ? input

@@ -192,6 +192,28 @@ pub struct TeammateDraft {
     pub plugins: Vec<String>,
 }
 
+/// `POST /v1/auto/next` (F-AU-01): one supervisor turn. `scrollback` is
+/// already redacted and at most 16 KB.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AutoNextRequest {
+    pub mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub goal: Option<String>,
+    pub turn: u32,
+    pub ceiling: u32,
+    pub scrollback: String,
+}
+
+/// The supervisor's answer: `prompt` with `text`, or `done` / `stuck` with `reason`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct AutoNextResponse {
+    pub action: String,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
 /// `POST /v1/stt/transcribe` (F-BE-07). `duration` is in seconds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -392,6 +414,14 @@ pub trait ApiClient: Send + Sync {
         _engines: &[String],
         _plugins: &[String],
     ) -> Result<TeammateDraft, ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `POST /v1/auto/next` (F-AU-01).
+    async fn auto_next(
+        &self,
+        _access: &str,
+        _req: &AutoNextRequest,
+    ) -> Result<AutoNextResponse, ApiError> {
         Err(no_hosted_service())
     }
     /// `POST /v1/stt/transcribe` (F-BE-07, for F-DI-05).
@@ -686,6 +716,20 @@ impl ApiClient for HttpApi {
             .post(self.url("/v1/ai/teammate-draft"))
             .bearer_auth(access)
             .json(&json!({ "description": description, "engines": engines, "plugins": plugins }));
+        self.call(req).await
+    }
+
+    async fn auto_next(
+        &self,
+        access: &str,
+        req: &AutoNextRequest,
+    ) -> Result<AutoNextResponse, ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/auto/next"))
+            .bearer_auth(access)
+            .json(req);
         self.call(req).await
     }
 

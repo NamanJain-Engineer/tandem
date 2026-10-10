@@ -283,6 +283,29 @@ impl NotificationService {
         }
     }
 
+    /// A pane's notification through the usual channels (Auto ending, F-AU-01).
+    pub async fn raise_for_pane(
+        &self,
+        state: &AppState,
+        kind: NotificationKind,
+        title: String,
+        body: String,
+        pane_id: &str,
+    ) {
+        self.raise(
+            state,
+            kind,
+            title,
+            body,
+            SourceRef::Pane {
+                pane_id: pane_id.to_string(),
+            },
+            &SessionKey::pane(pane_id),
+            None,
+        )
+        .await;
+    }
+
     /// Resolves an in-app item by its dedupe key (the credit-low item).
     pub async fn resolve_key(&self, dedupe: &str) {
         self.resolve(dedupe).await;

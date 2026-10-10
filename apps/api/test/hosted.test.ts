@@ -34,6 +34,16 @@ const GUARDED: Array<{
   },
   {
     method: "POST",
+    path: "/v1/auto/next",
+    feature: "auto",
+    send: (bearer) =>
+      json(t, "POST", "/v1/auto/next", {
+        bearer,
+        body: { mode: "finish", turn: 0, ceiling: 20, scrollback: "> " },
+      }),
+  },
+  {
+    method: "POST",
     path: "/v1/stt/transcribe",
     feature: "cloudStt",
     send: async (bearer) => {

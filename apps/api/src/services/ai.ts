@@ -323,3 +323,67 @@ export async function teammateDraft(deps: Deps, userId: string, input: DraftInpu
     parse: (text) => parseDraft(text, input),
   });
 }
+
+export const AUTO_MODES = ["finish", "harden", "review", "explore", "custom"] as const;
+export type AutoMode = (typeof AUTO_MODES)[number];
+export type AutoInput = { mode: AutoMode; goal?: string; turn: number; ceiling: number; scrollback: string };
+export type AutoNext = { action: "prompt" | "done" | "stuck"; text?: string; reason?: string };
+
+/** The supervisor's instruction per mode (PRODUCT_SPEC F-AU-01). */
+const AUTO_MODE_TEXT: Record<Exclude<AutoMode, "custom">, string> = {
+  finish: "Keep prompting until the stated task is complete and verified.",
+  harden: "Drive tests, edge cases and error handling for the recent changes.",
+  review: "Ask the agent to self-review its diff and fix the issues it finds.",
+  explore: "Propose and try small improvements, and have the agent report each one.",
+};
+
+export function autoSystem(input: AutoInput): string {
+  return [
+    "You supervise an AI coding agent working in a terminal. You read the end of its terminal and decide the next message to type to it.",
+    input.mode === "custom" ? "Your goal is the user's, given between <goal> tags." : AUTO_MODE_TEXT[input.mode],
+    `Turn ${input.turn + 1} of ${input.ceiling}.`,
+    'Reply with one JSON object and nothing else: {"action": "prompt", "text": string} to send the agent its next message (at most 2,000 characters, plain instructions),',
+    '{"action": "done", "reason": string} when the goal is met and verified, or {"action": "stuck", "reason": string} when the agent can\'t make progress without a person.',
+    "Never ask the agent to approve its own permission requests, delete data, push, deploy or spend money.",
+    DATA_NOTE,
+  ].join(" ");
+}
+
+/** The model's answer held to the contract: a known action, a non-empty prompt, bounded text. */
+export function parseAutoNext(text: string): AutoNext | null {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max).trim() : "");
+  if (o.action === "prompt") {
+    const prompt = str(o.text, 2000);
+    return prompt ? { action: "prompt", text: prompt } : null;
+  }
+  if (o.action === "done" || o.action === "stuck") {
+    return { action: o.action, reason: str(o.reason, 300) || "The supervisor gave no reason." };
+  }
+  return null;
+}
+
+/** `POST /v1/auto/next`: one Auto turn, 6 credits (F-AU-01). Nothing is stored but metadata. */
+export async function autoNext(deps: Deps, userId: string, input: AutoInput): Promise<AutoNext> {
+  const goal = input.goal ? `<goal>\n${input.goal}\n</goal>\n` : "";
+  return metered(deps, userId, {
+    feature: "auto_next",
+    price: "auto_turn",
+    request: {
+      system: autoSystem(input),
+      messages: [{ role: "user", content: `${goal}${wrap(input.scrollback)}` }],
+      maxTokens: 1024,
+    },
+    parse: parseAutoNext,
+  });
+}

@@ -6,6 +6,7 @@ pub mod api;
 pub mod approvals;
 pub mod audit;
 pub mod auth;
+pub mod auto;
 pub mod boot;
 pub mod config;
 pub mod dashboard;
