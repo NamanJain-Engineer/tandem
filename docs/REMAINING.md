@@ -156,7 +156,7 @@ needs a Windows machine (manual QA in `HUMAN_TODO.md` until CI runs Windows).
 Close every remaining P0 and P1 and every non-functional requirement. After
 this milestone the P0/P1 product is launchable.
 - [ ] F-WB-01 Marketing site (P0; the site and its interactive demo exist, D-126: M15 completes the site, checks the demo against the spec's three surfaces and label, and checks prices against the API's plans, AC3)
-- [ ] F-TL-06 Threat-model rules (P0; invariant tests for every rule)
+- [x] F-TL-06 Threat-model rules (P0; `tests/invariants`, one file per rule, D-131; rules 3, 4, 5, 7 and 8 gain cases as M8 and M10–M13, M16 build their paths)
 - [ ] F-WB-02 Docs
 - [ ] F-WB-03 Changelog (in-app "What's new" too)
 - [ ] F-WB-04 Downloads and machine-readable discovery

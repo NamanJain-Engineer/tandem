@@ -113,48 +113,7 @@ mod tests {
         assert_eq!(Access::parse("admin"), None);
     }
 
-    #[test]
-    fn invariant_rule_4_unattended_never_full() {
-        for origin in [
-            Origin::Mail,
-            Origin::Auto,
-            Origin::Routine { grants_full: false },
-            Origin::Task { grants_full: false },
-        ] {
-            assert_eq!(
-                resolve(Access::Full, ThreadMode::Act, origin),
-                Access::Edits,
-                "{origin:?}"
-            );
-            assert!(!origin.attended());
-        }
-        // Only the routine's or task's own setting grants Full.
-        assert_eq!(
-            resolve(
-                Access::Full,
-                ThreadMode::Act,
-                Origin::Routine { grants_full: true }
-            ),
-            Access::Full
-        );
-        assert_eq!(
-            resolve(
-                Access::Full,
-                ThreadMode::Act,
-                Origin::Task { grants_full: true }
-            ),
-            Access::Full
-        );
-        assert_eq!(
-            resolve(Access::Full, ThreadMode::Act, Origin::Interactive),
-            Access::Full
-        );
-        // Lower levels are never raised.
-        assert_eq!(
-            resolve(Access::Read, ThreadMode::Act, Origin::Mail),
-            Access::Read
-        );
-    }
+    // F-TL-06 rule 4 is tests/invariants/tests/rule_4.rs.
 
     #[test]
     fn f_th_09_2_plan_mode_reads_only_at_any_level() {
