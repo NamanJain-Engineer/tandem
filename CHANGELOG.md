@@ -7,6 +7,51 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## 0.4.0
+
+Linux (x86-64). macOS and Windows are next. Like 0.3.0, this build runs the
+Free plan on your computer, with no account and nothing sent to our servers.
+
+Plan limits in this build (Free): 4 live panes, 3 workspaces, one thread at a
+time, one account per engine, threads with Claude Code and Codex, and one
+teammate besides Lead.
+
+### Added
+
+- [lin] **Teammates.** Agent mode now holds named teammates that run on the
+  engines you already use. Each has a brief, notes it remembers between chats
+  (within a budget you set), skills it can read, and chats you can come back
+  to. After a turn, a teammate can suggest what to remember, for you to keep
+  or discard. Teammates can search their past chats and send each other mail.
+  Lead is made for you, and Free includes one teammate besides Lead.
+- [lin] **Find work.** "Find work…" in the command palette (Ctrl+K) finds an
+  open pane or thread from a description such as "the login tests" and takes
+  you to it. The search runs on your computer.
+- [lin] **Your data.** Settings › Privacy exports your data to a zip (every
+  table as JSON, teammates' memory and skills, your notes), leaving out engine
+  sign-ins and secrets. It can also delete Vibezeo's data from this computer;
+  engine sign-ins stay unless you tick "Also remove engine sign-ins".
+- [lin] **Your shortcuts.** Settings › Shortcuts lists every app shortcut and
+  records new keys. It says when a combination is already used, with Swap, and
+  refuses keys the system or text editing owns. Ctrl+/ shows the shortcuts in
+  effect.
+- [lin] **Usage.** "Usage…" in the workspace menu shows 12 weeks of tokens per
+  day, per engine and per account, read from Claude Code's and Codex's own
+  logs on your computer.
+- [lin] **What's new.** From the next update on, the app shows once what
+  changed in it. (0.3.0 kept no record of what you'd seen, so this update
+  shows nothing.)
+
+### Fixed
+
+- [lin] The plan at the foot of the left rail says FREE. In 0.3.0 it said
+  OFFLINE, which read like a connection problem; this build simply runs Free.
+
+### Security
+
+- [lin] A teammate's memory, skills, roster and mail reach its engine marked as
+  data to read, never as instructions to follow.
+
 ## 0.3.0
 
 Linux (x86-64). macOS and Windows are next. This build runs the Free plan on

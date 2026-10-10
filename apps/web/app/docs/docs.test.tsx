@@ -96,7 +96,9 @@ describe("docs (F-WB-02)", () => {
   });
 
   it("F-WB-02 pages for features not in the release say so", () => {
-    for (const slug of ["agent-mode", "dictate", "conductor", "tasks", "routines", "plugins", "remote"])
+    for (const slug of ["dictate", "conductor", "tasks", "routines", "plugins", "remote"])
       expect(readFileSync(content(slug), "utf8"), slug).toContain("**Not in the app yet.**");
+    // Shipped: Agent mode since 0.4.0.
+    expect(readFileSync(content("agent-mode"), "utf8")).not.toContain("Not in the app yet");
   });
 });

@@ -12,7 +12,7 @@ has every feature below with its full behaviour and acceptance tests.
 are done, and so are M15's six features (its non-functional checks are under
 way). So is M13, apart from its voice pair (F-DI-05 and F-DI-10, which wait
 for M8's Dictate). M16 has F-SH-12, F-AC-07, F-AU-01, F-BE-03 and F-BE-12.
-That's 106 of 152 features, 56 of 65 P0. Left: 46 features in six
+That's 107 of 152 features, 56 of 65 P0. Left: 45 features in six
 milestones (M8, M11–M14, M16), of which 9 are P0, all M8's. vibezeo.com serves 0.3.0
 (M6, M7, M9 and the Scratchpad). M15 makes the P0/P1 product launchable;
 M16 adds the P2 extras and the release candidate.
@@ -176,9 +176,9 @@ In independent sub-phases, each green and tagged (`m16a` … `m16d`), then the
 release candidate. Stop after any sub-phase if the budget runs out.
 - 16A Conductor (voice): [ ] F-CN-01 Call lifecycle · [ ] F-CN-02 Talker/doer
   architecture and tool catalog · [ ] F-CN-03 Delivery rules and safety ·
-  [ ] F-CN-04 Conductor UI · [ ] F-CN-05 Find work by meaning (local search and the palette done, D-814; the hosted ranking and teammates are next) · [ ] F-CN-06
+  [ ] F-CN-04 Conductor UI · [ ] F-CN-05 Find work by meaning (local search and the palette, D-814; the API's ranking, #30; next, the app's opt-in to it and teammates) · [ ] F-CN-06
   Persona and memory · [ ] F-CN-07 Wake phrase · [ ] F-CN-08 Audio routing for
-  calls · [ ] F-BE-08 Voice session minting
+  calls · [x] F-BE-08 Voice session minting (pull request #30, D-1000–D-1008)
 - 16B Auto: [x] F-AU-01 Auto (Pro, credits)
 - 16C Phone companion: [ ] F-RM-03 Phone companion · [ ] F-BE-11 Remote relay
 - 16D Extras: [x] F-SH-12 Scratchpad · [ ] F-CD-21 Simulator pane (macOS) ·
@@ -186,8 +186,8 @@ release candidate. Stop after any sub-phase if the budget runs out.
   [ ] F-AG-13 Teammate in a terminal · [ ] F-RT-05 Schedule tool for teammates ·
   [x] F-BE-03 CLI device-code sign-in · [x] F-BE-12 Admin
 - Also: [x] app-shortcut rebinding (F-SH-09 P2 part, Settings › Shortcuts UI-113),
-  [x] Team SSO (F-BL-06 P2 part), the remaining AI routes (`/auto/next`,
-  `/voice/act`, `/voice/resolve`).
+  [x] Team SSO (F-BL-06 P2 part), [x] the remaining AI routes (`/auto/next`,
+  `/voice/act`, `/voice/resolve`; pull request #30).
 E2E-M16-1…5: Conductor call, find work, Auto, phone, extras.
 
 ## 2. What only a person can do

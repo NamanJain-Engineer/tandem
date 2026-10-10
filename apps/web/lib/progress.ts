@@ -1,12 +1,12 @@
-/** What's in the 0.3.0 release, for the home page's progress strip and the
+/** What's in the 0.4.0 release, for the home page's progress strip and the
  * changelog. Figures are counted in the code the release was built from
- * (product branch): `scripts/gate.sh` output (729 Rust and 742 TypeScript
+ * (product branch): `scripts/gate.sh` output (919 Rust and 998 TypeScript
  * tests) and the files in `apps/desktop/e2e/specs`. Update them with each
  * release. */
 export const PROGRESS = {
-  milestones: 9,
-  automatedTests: 1471,
-  endToEndSuites: 66,
+  milestones: 10,
+  automatedTests: 1917,
+  endToEndSuites: 82,
   engines: 11,
 } as const;
 
@@ -18,6 +18,16 @@ export type Milestone = {
 
 /** Newest first. Each entry is a closed milestone of the build plan. */
 export const MILESTONES: readonly Milestone[] = [
+  {
+    id: "M10",
+    title: "Teammates",
+    items: [
+      "Named teammates in Agent mode that run on the engines you already use, each with a brief, notes it remembers between chats and skills it can read.",
+      "Chats you can come back to, and after a turn a suggestion of what to remember, for you to keep or discard.",
+      "Teammates search their past chats and send each other mail, through one local gateway.",
+      "Lead is made for you; Free includes one teammate besides Lead.",
+    ],
+  },
   {
     id: "M9",
     title: "Files, git and a browser",

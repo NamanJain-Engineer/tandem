@@ -45,6 +45,31 @@ describe("ThemeProvider (F-SH-05)", () => {
     expect(root().theme).toBe("light");
   });
 
+  it("F-SH-05 a theme switch is instant: transitions are off until the new colours land", () => {
+    fakeMedia({});
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => frames.push(cb));
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+    const { rerender } = render(<ThemeProvider theme="dark">x</ThemeProvider>);
+    const settle = () => {
+      while (frames.length) frames.shift()?.(0);
+    };
+    settle();
+    expect(root().themeSwitching).toBeUndefined();
+    rerender(<ThemeProvider theme="light">x</ThemeProvider>);
+    expect(root().theme).toBe("light");
+    expect(root().themeSwitching).toBe("");
+    settle();
+    expect(root().themeSwitching).toBeUndefined();
+    // Settings that don't change colours leave transitions alone.
+    rerender(<ThemeProvider theme="light" density="comfortable">x</ThemeProvider>);
+    expect(root().themeSwitching).toBeUndefined();
+    const css = readFileSync(resolve(process.cwd(), "src/styles/base.css"), "utf8");
+    const start = css.indexOf("[data-theme-switching] *,");
+    expect(css.slice(start, css.indexOf("}", start))).toContain("transition: none !important");
+    vi.restoreAllMocks();
+  });
+
   it("F-SH-05 system follows the OS live", () => {
     const media = fakeMedia({ "(prefers-color-scheme: light)": false });
     render(<ThemeProvider theme="system">x</ThemeProvider>);
