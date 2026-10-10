@@ -39,7 +39,7 @@ use tandem_voice::insert::{MissingTools, Output, Platform};
 use tandem_voice::media::PauseMedia;
 use tandem_voice::models::{Catalog, DownloadProgress, Downloader, ModelError, ModelStore};
 use tandem_voice::stt::{self, EngineSlot, Switch};
-use tandem_voice::take::Origin;
+use tandem_voice::take::{Origin, TakeState};
 
 /// Where an event goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -673,6 +673,9 @@ struct Shared {
     widget: OnceLock<Arc<dyn WidgetHost>>,
     widget_gen: Arc<std::sync::atomic::AtomicU64>,
     visibility: Mutex<String>,
+    /// The current take came from `tandem://dictate/toggle`: the widget shows
+    /// even with "Show widget: Hidden" (D-515).
+    link_take: AtomicBool,
     switch: OnceLock<Arc<dyn Fn(String) + Send + Sync>>,
 }
 
@@ -688,7 +691,19 @@ impl Shared {
     /// (4 s after "Copied", 6 s after an error).
     fn widget_for(&self, e: &DictateStateEvent) {
         let Some(w) = self.widget.get() else { return };
-        let vis = self.visibility.lock().clone();
+        let mut vis = self.visibility.lock().clone();
+        // A take started from outside the app is never invisible (D-515).
+        if self.link_take.load(Ordering::Acquire) && e.composer.is_none() {
+            if !matches!(
+                e.state,
+                DictatePhase::Listening | DictatePhase::Transcribing | DictatePhase::Reconnecting
+            ) {
+                self.link_take.store(false, Ordering::Release);
+            }
+            if vis == "hidden" {
+                vis = "while_recording".into();
+            }
+        }
         let gen = self.widget_gen.fetch_add(1, Ordering::AcqRel) + 1;
         if vis == "hidden" || e.composer.is_some() {
             if vis != "always" {
@@ -863,6 +878,15 @@ pub struct DictateService {
     started: AtomicBool,
 }
 
+/// Whether `tandem://dictate/toggle` may start or stop a take (D-515): only
+/// where it's the documented fallback, a Wayland session or a Linux desktop
+/// whose global shortcut is unavailable. Browsers open `tandem://` links (after
+/// a prompt the user can tick away), so anywhere else a web page could start a
+/// take and have the transcript pasted into its own focused field.
+pub fn deep_link_toggle_allowed(session: &str, hotkey_unavailable: bool, linux: bool) -> bool {
+    linux && (session == "wayland" || hotkey_unavailable)
+}
+
 fn session() -> String {
     if cfg!(target_os = "macos") {
         "mac".into()
@@ -937,6 +961,7 @@ impl DictateService {
                 widget: OnceLock::new(),
                 widget_gen: Arc::new(std::sync::atomic::AtomicU64::new(0)),
                 visibility: Mutex::new("while_recording".into()),
+                link_take: AtomicBool::new(false),
                 switch: OnceLock::new(),
             }),
             catalog,
@@ -1024,6 +1049,38 @@ impl DictateService {
 
     pub fn controller(&self) -> Option<&Dictate> {
         self.controller.get()
+    }
+
+    /// `tandem://dictate/toggle` (F-DI-01 "Deep link"): honoured only where
+    /// it's the documented fallback (D-515); elsewhere it's logged and ignored.
+    /// True when it reached the controller.
+    pub fn toggle_from_link(&self) -> bool {
+        let unavailable = matches!(*self.hotkey_status.lock(), HotkeyStatus::Unavailable { .. });
+        self.toggle_from_link_in(&session(), unavailable, cfg!(target_os = "linux"))
+    }
+
+    fn toggle_from_link_in(&self, session: &str, unavailable: bool, linux: bool) -> bool {
+        if !deep_link_toggle_allowed(session, unavailable, linux) {
+            tracing::warn!(
+                code = "dictate.deep_link_refused",
+                session,
+                "ignored tandem://dictate/toggle: the global shortcut works here"
+            );
+            return false;
+        }
+        let Some(c) = self.controller() else {
+            return false;
+        };
+        self.shared.link_take.store(true, Ordering::Release);
+        c.toggle();
+        // Refused at once (no model, Dictate off) or a stop: nothing to show.
+        if matches!(
+            c.state(),
+            TakeState::Idle | TakeState::Cancelled | TakeState::Done
+        ) {
+            self.shared.link_take.store(false, Ordering::Release);
+        }
+        true
     }
 
     /// Opens everything: called once from the app's setup.
@@ -1238,8 +1295,12 @@ impl DictateService {
                 label: t.label(os),
             }),
             latch,
-            deep_link_command: (session == "wayland" || unavailable && cfg!(target_os = "linux"))
-                .then(|| "xdg-open tandem://dictate/toggle".to_string()),
+            deep_link_command: deep_link_toggle_allowed(
+                &session,
+                unavailable,
+                cfg!(target_os = "linux"),
+            )
+            .then(|| "xdg-open tandem://dictate/toggle".to_string()),
             session,
             mic: mic_id.and_then(|id| devices.into_iter().find(|d| d.id == id)),
             engine: "local".into(),
@@ -1260,7 +1321,7 @@ impl DictateService {
                 .controller
                 .get()
                 .map(|c| c.state())
-                .unwrap_or(tandem_voice::take::TakeState::Idle),
+                .unwrap_or(TakeState::Idle),
             missing_tools: self.platform.missing_tools(),
             can_pause_media: !cfg!(windows),
             restores_clipboard: self.platform.restores_clipboard(),
@@ -2103,6 +2164,91 @@ mod tests {
         fn hide(&self) {
             self.0.lock().push(false);
         }
+    }
+
+    #[test]
+    fn d_515_the_toggle_link_is_honoured_only_where_it_is_the_fallback() {
+        // Wayland: the portal can't bind every key, so the link is documented.
+        assert!(deep_link_toggle_allowed("wayland", false, true));
+        // X11 or no session with the shortcut unavailable: the fallback too.
+        assert!(deep_link_toggle_allowed("x11", true, true));
+        assert!(deep_link_toggle_allowed("none", true, true));
+        // A working global shortcut, or any other OS: a web page's link.
+        assert!(!deep_link_toggle_allowed("x11", false, true));
+        assert!(!deep_link_toggle_allowed("mac", false, false));
+        assert!(!deep_link_toggle_allowed("mac", true, false));
+        assert!(!deep_link_toggle_allowed("windows", true, false));
+    }
+
+    #[tokio::test]
+    async fn d_515_a_refused_link_reaches_nothing_and_an_allowed_one_reaches_the_controller() {
+        let dir = tempfile::tempdir().expect("dir");
+        let data = DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = Store::open(&data).expect("store");
+        let svc = DictateService::new(store, data, true);
+        // Every take event and toast the controller sends.
+        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+        let log = seen.clone();
+        svc.set_emitter(Arc::new(move |name: &str, _v: Value, _to: To| {
+            if name == "dictate:state" || name == "dictate:toast" {
+                log.lock().push(name.to_string());
+            }
+        }));
+        svc.start().await;
+        assert!(!svc.toggle_from_link_in("x11", false, true));
+        assert!(!svc.toggle_from_link_in("mac", false, false));
+        assert!(!svc.toggle_from_link_in("windows", true, false));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(
+            seen.lock().is_empty(),
+            "a refused link reaches nothing: {:?}",
+            seen.lock()
+        );
+        assert!(!svc.shared.link_take.load(Ordering::Acquire));
+        // Allowed: the controller acts (with no model here it answers with
+        // "Download a model", which is still the take being asked for).
+        assert!(svc.toggle_from_link_in("wayland", false, true));
+        let mut acted = false;
+        for _ in 0..50 {
+            if !seen.lock().is_empty() {
+                acted = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(acted, "the allowed link reaches the controller");
+        if let Some(c) = svc.controller() {
+            c.cancel();
+        }
+    }
+
+    #[test]
+    fn d_515_a_link_take_shows_the_widget_even_when_hidden() {
+        let dir = tempfile::tempdir().expect("dir");
+        let data = DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = Store::open(&data).expect("store");
+        let svc = DictateService::new(store, data, true);
+        let w = Arc::new(FakeWidget(Mutex::new(Vec::new())));
+        svc.set_widget(w.clone());
+        *svc.shared.visibility.lock() = "hidden".into();
+        let ev = |state| DictateStateEvent {
+            state,
+            take_id: None,
+            hands_free: false,
+            composer: None,
+            words: Some(2),
+        };
+        svc.shared.link_take.store(true, Ordering::Release);
+        svc.shared.widget_for(&ev(DictatePhase::Listening));
+        assert_eq!(w.0.lock().last(), Some(&true), "shown although Hidden");
+        svc.shared.widget_for(&ev(DictatePhase::Inserted));
+        assert!(
+            !svc.shared.link_take.load(Ordering::Acquire),
+            "cleared when the take ends"
+        );
+        // The next take from the shortcut follows the setting again.
+        svc.shared.widget_for(&ev(DictatePhase::Listening));
+        assert_eq!(w.0.lock().last(), Some(&false));
     }
 
     #[test]

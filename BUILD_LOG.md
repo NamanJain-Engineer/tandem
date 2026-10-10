@@ -199,6 +199,7 @@ Built on branch `m8-dictate-onboarding` (from `product-m0-m5`), in parallel with
 - D-512: The widget's error detail is the pill's native `title` tooltip: the window is 64 px tall, and the OS draws a native tooltip outside it.
 - D-513: A modifier-only push-to-talk key held while another key is pressed (Ctrl+Alt+T) was another shortcut all along: the take is cancelled once, as if Esc had been pressed, rather than recording the user's shortcut.
 - D-514: E2E downloads models from `scripts/serve-models.ts` (port 8792 since D-817; 8791 before, the local cache) through `TANDEM_MODELS_BASE` (debug builds only); specs steer it through a control file (`normal`, `slow`, or a byte to corrupt).
+- D-515: `tandem://dictate/toggle` is honoured only where it's the documented fallback: a Wayland session, or Linux with the global shortcut unavailable (`deep_link_toggle_allowed`, the same rule that shows the command in Settings › Dictate). Elsewhere it logs `dictate.deep_link_refused` and does nothing. Browsers open `tandem://` links (after a prompt the user can tick away for good), so otherwise a web page could start a take and have the transcript pasted into its own focused field. A take the link starts always shows the widget, even with "Show widget: Hidden", so dictation started from outside the app is never invisible.
 - D-510: On Windows the Start-menu mask key (0xE8) is tapped when a take starts with Win held, not on its release: injected from inside the hook it could arrive after the Win key-up the shell acts on.
 
 ### M8 log

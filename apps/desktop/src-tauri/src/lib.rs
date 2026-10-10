@@ -311,9 +311,7 @@ pub fn route_link(app: &AppHandle, raw: &str) {
     // The toggle drives Dictate where the user is: focusing Vibezeo would
     // move the insertion target (F-DI-01 "Deep link").
     if link.route == "dictate/toggle" {
-        if let Some(c) = state.dictate.controller() {
-            c.toggle();
-        }
+        state.dictate.toggle_from_link();
         return;
     }
     focus_main(app);

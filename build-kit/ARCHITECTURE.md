@@ -795,7 +795,7 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `dictate_set_binding` | `{binding: String\|null, mode:"hold"\|"toggle"}` (`null` = the OS default for hold, none for toggle) | `HotkeyStatus` (and `verified` resets for hold) | Invalid (modifier-only toggle, unknown key, Esc, Alt+Space off macOS, Fn off macOS) |
 | `dictate_verify_start` / `dictate_verify_stop` | — | — (events `dictate:key`, then `dictate:verified`) | — |
 | `dictate_start_take` / `dictate_stop_take` / `dictate_cancel_take` | `{origin: {type:"global"} \| {type:"composer", targetId}}` / — / — | `{takeId}` / — / — | Unavailable (Conductor owns the mic; no model) |
-| `dictate_toggle` | — | — (the `tandem://dictate/toggle` route, F-SH-13) | — |
+| `dictate_toggle` | — | — (the `tandem://dictate/toggle` route, F-SH-13; honoured only on Wayland or with the Linux shortcut unavailable, and its take always shows the widget, D-515) | — |
 | `dictate_composer_focus` | `{targetId?}` (null on blur) | — | — |
 | `dictate_devices` | — | `[DeviceInfo {id, name, isDefault, bluetooth, loopback}]` (with `chosen`: the id the device policy picks, F-DI-03) | — |
 | `dictate_models` / `dictate_model_download` / `dictate_model_cancel` / `dictate_model_remove` / `dictate_model_select` / `dictate_models_remove_unused` | — / `{modelId}` / `{modelId}` / `{modelId}` / `{modelId}` / — | `ModelsView {models:[ModelView {id, name, bytes, langsLabel, recommended, available, cpuWarning, state: "absent"\|"queued"\|"downloading"\|"verifying"\|"loading"\|"downloaded"\|"active"\|"failed", progress?, error?}], usedBytes, freeBytes?, active?, pending?}` (download and select return at once; progress comes as `dictate:models`) | NotFound, Unavailable (not on this platform) |
