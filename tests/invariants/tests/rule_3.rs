@@ -28,6 +28,7 @@ impl ApprovalAsker for Deny {
 async fn invariant_rule_3_the_gateway_lease_is_served_on_loopback_only() {
     let gw = Gateway::start(GatewayDeps {
         approvals: Arc::new(Deny),
+        bus: None,
     })
     .await
     .expect("gateway");

@@ -40,6 +40,8 @@ pub enum GatewayError {
 /// What the gateway serves with.
 pub struct GatewayDeps {
     pub approvals: Arc<dyn ApprovalAsker>,
+    /// Where a gateway that keeps failing is reported (`app:subsystem-failed`).
+    pub bus: Option<tandem_core::bus::EventBus>,
 }
 
 /// The running gateway. Cloning shares it.
@@ -49,6 +51,9 @@ pub struct GatewayHandle {
     pub url: String,
     leases: Arc<lease::Leases>,
     shutdown: CancellationToken,
+    /// Ends the current run as a failure would (tests of the watchdog).
+    #[cfg_attr(not(test), allow(dead_code))]
+    fail_run: Arc<std::sync::Mutex<CancellationToken>>,
 }
 
 impl GatewayHandle {
@@ -65,6 +70,15 @@ impl GatewayHandle {
 
     pub fn shutdown(&self) {
         self.shutdown.cancel();
+    }
+
+    /// Stops the server as if it had failed; the watchdog brings it back on
+    /// the same address.
+    #[cfg(test)]
+    pub(crate) fn fail_for_test(&self) {
+        let mut current = self.fail_run.lock().unwrap_or_else(|e| e.into_inner());
+        current.cancel();
+        *current = CancellationToken::new();
     }
 }
 
@@ -100,14 +114,49 @@ impl Gateway {
         let router = axum::Router::new()
             .nest_service("/mcp", mcp)
             .layer(axum::middleware::from_fn_with_state(leases.clone(), guard));
-        let stop = shutdown.clone();
+        // The server runs under the watchdog (§5.2): if it stops without a
+        // shutdown it's served again on the same address, at most 3 times
+        // per 10 minutes, then reported.
+        let fail_run = Arc::new(std::sync::Mutex::new(CancellationToken::new()));
+        let first = Arc::new(std::sync::Mutex::new(Some(listener)));
+        let sup = tandem_core::supervisor::Supervision {
+            clock: Arc::new(tandem_core::clock::SystemClock),
+            bus: deps.bus.unwrap_or_default(),
+            watchdog: tandem_core::supervisor::watchdog(),
+        };
+        let (stop, failing) = (shutdown.clone(), fail_run.clone());
         tokio::spawn(async move {
-            let served = axum::serve(listener, router)
-                .with_graceful_shutdown(async move { stop.cancelled_owned().await })
-                .await;
-            if let Err(e) = served {
-                tracing::warn!(code = "gateway.stopped", error = %e, "the gateway stopped");
-            }
+            tandem_core::supervisor::supervise_task("gateway", sup, None, move || {
+                let (router, stop) = (router.clone(), stop.clone());
+                let fail = failing.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                let first = first.lock().unwrap_or_else(|e| e.into_inner()).take();
+                async move {
+                    let listener = match first {
+                        Some(l) => l,
+                        None => tokio::net::TcpListener::bind(addr)
+                            .await
+                            .map_err(|e| format!("couldn't listen again: {e}"))?,
+                    };
+                    let ended = stop.clone();
+                    let served = axum::serve(listener, router)
+                        .with_graceful_shutdown(async move {
+                            tokio::select! {
+                                _ = ended.cancelled() => {}
+                                _ = fail.cancelled() => {}
+                            }
+                        })
+                        .await;
+                    if stop.is_cancelled() {
+                        return Ok(());
+                    }
+                    tracing::warn!(code = "gateway.stopped", "the gateway stopped");
+                    Err(match served {
+                        Err(e) => e.to_string(),
+                        Ok(()) => "the server stopped".to_string(),
+                    })
+                }
+            })
+            .await;
         });
         tracing::info!(
             code = "gateway.started",
@@ -117,6 +166,7 @@ impl Gateway {
             url: format!("http://{addr}/mcp"),
             leases,
             shutdown,
+            fail_run,
         })
     }
 }

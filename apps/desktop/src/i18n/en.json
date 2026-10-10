@@ -585,6 +585,7 @@
   "notifications.empty": "Nothing needs you right now.",
 
   "banner.offlineValid": "You're offline. Local features keep working; your plan stays confirmed until {time}.",
+  "banner.subsystemFailed": "Part of Vibezeo stopped working ({name}) and didn't recover after 3 restarts. Restart Vibezeo to bring it back.",
   "banner.graceOver": "We couldn't confirm your plan, so Free limits apply until Vibezeo reconnects. Nothing running was stopped.",
   "banner.offlineMode": "Sign in within {n, plural, one {# day} other {# days}} to keep using Vibezeo.",
   "banner.pastDue": "Payment failed — update your card. Pro stays on for {n, plural, one {# more day} other {# more days}}.",

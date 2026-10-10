@@ -2046,6 +2046,7 @@ impl AppLauncher {
                 let threads = self.threads.get().cloned().unwrap_or_default();
                 tandem_gateway::Gateway::start(tandem_gateway::GatewayDeps {
                     approvals: Arc::new(GatewayAsker { threads }),
+                    bus: Some(self.terminals.status.bus().clone()),
                 })
                 .await
                 .map_err(|e| {
@@ -3184,6 +3185,7 @@ mod tests {
             approvals: Arc::new(GatewayAsker {
                 threads: Arc::downgrade(&f.svc),
             }),
+            bus: None,
         })
         .await
         .expect("gateway");

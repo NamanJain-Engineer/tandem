@@ -37,6 +37,7 @@ fn thread_session() -> SessionDescriptor {
 async fn gateway() -> GatewayHandle {
     Gateway::start(GatewayDeps {
         approvals: Arc::new(Fake),
+        bus: None,
     })
     .await
     .expect("gateway")
@@ -262,5 +263,30 @@ async fn f_pl_01_only_loopback_host_and_origin_are_served() {
         .await
         .expect("send");
     assert!(rebound.status().is_client_error());
+    gw.shutdown();
+}
+
+#[tokio::test]
+async fn nfr_5_2_a_gateway_that_stops_is_served_again_on_the_same_url_with_its_leases() {
+    let gw = gateway().await;
+    let lease = gw.prepare(thread_session());
+    open(&gw.url, &lease.token).await;
+    gw.fail_for_test();
+    // The watchdog serves it again on the same port; the lease still works.
+    let mut status = 0;
+    for _ in 0..50 {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        status = rpc(&gw.url, Some(&lease.token), None, initialize()).await.0;
+        if status == 200 {
+            break;
+        }
+    }
+    assert_eq!(status, 200, "served again at {}", gw.url);
+    let health = tandem_core::supervisor::watchdog().snapshot();
+    let me = health
+        .iter()
+        .find(|h| h.name == "gateway")
+        .expect("gateway health");
+    assert!(me.restarts >= 1);
     gw.shutdown();
 }

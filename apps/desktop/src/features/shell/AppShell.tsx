@@ -26,6 +26,7 @@ import { followContexts } from "../../stores/contexts";
 import { followUsage } from "../../stores/usage";
 import { followStatus } from "../../stores/status";
 import { followGit } from "../../stores/git";
+import { followHealth } from "../../stores/health";
 import { followBrowser } from "../../stores/browser";
 import { followBrowserTabs } from "../../stores/sidebar";
 import { followFocus } from "../../stores/focus";
@@ -57,6 +58,7 @@ export function AppShell() {
   useShortcuts();
   useEffect(() => setCommandToast(toast), [toast]);
   useEffect(followPtyState, []);
+  useEffect(followHealth, []);
   useEffect(followEngines, []);
   useEffect(followLimits, []);
   useEffect(followAuto, []);

@@ -7,6 +7,7 @@ pub mod commands;
 pub mod services;
 pub mod state;
 
+use tandem_core::supervisor;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_window_state::StateFlags;
 
@@ -413,15 +414,26 @@ fn spawn_background(state: &AppState) {
     // something to show on restore (§5.4).
     let terminals = state.terminals.clone();
     let snapshots = state.data.scrollback();
-    tauri::async_runtime::spawn(async move {
-        let mut tick = tokio::time::interval(services::terminal::snapshot_every());
-        tick.tick().await;
-        loop {
-            tick.tick().await;
-            let (t, dir) = (terminals.clone(), snapshots.clone());
-            let _ = tokio::task::spawn_blocking(move || t.snapshot_all(&dir)).await;
-        }
-    });
+    tauri::async_runtime::spawn(supervisor::supervise_task(
+        "scheduler/scrollback",
+        state.supervision(),
+        None,
+        move || {
+            let (terminals, snapshots) = (terminals.clone(), snapshots.clone());
+            async move {
+                let mut tick = tokio::time::interval(services::terminal::snapshot_every());
+                tick.tick().await;
+                loop {
+                    tick.tick().await;
+                    let (t, dir) = (terminals.clone(), snapshots.clone());
+                    // A panicking snapshot fails this job and restarts it.
+                    tokio::task::spawn_blocking(move || t.snapshot_all(&dir))
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+        },
+    ));
     let _ = telemetry;
 }
 
@@ -531,7 +543,7 @@ pub fn run() {
                 ));
                 let _ = state.browser.set(service);
             }
-            services::events::forward(handle.clone(), &state.bus);
+            services::events::forward(handle.clone(), &state.bus, state.clock.clone());
             ensure_on_screen(app);
             persist_window_state(app);
             spawn_background(&state);
@@ -602,29 +614,45 @@ pub fn run() {
             // Remote config (model catalog, registry overrides) has a 10-min
             // TTL: a model added remotely shows up without an update (F-TH-08 AC1).
             let config_state = handle.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut tick = tokio::time::interval(services::config::CONFIG_TTL);
-                tick.tick().await;
-                loop {
-                    tick.tick().await;
-                    let state = config_state.state::<AppState>();
-                    let config = state.config.refresh().await;
-                    state.terminals.engines.apply_config(&config);
-                }
-            });
+            tauri::async_runtime::spawn(supervisor::supervise_task(
+                "scheduler/config",
+                state.supervision(),
+                None,
+                move || {
+                    let config_state = config_state.clone();
+                    async move {
+                        let mut tick = tokio::time::interval(services::config::CONFIG_TTL);
+                        tick.tick().await;
+                        loop {
+                            tick.tick().await;
+                            let state = config_state.state::<AppState>();
+                            let config = state.config.refresh().await;
+                            state.terminals.engines.apply_config(&config);
+                        }
+                    }
+                },
+            ));
             // Worktree sweep: at startup, then every 6 h (F-CD-15). It never
             // deletes anything; finished worktrees become one notification.
             let sweep_state = handle.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut tick = tokio::time::interval(services::lanes::SWEEP_EVERY);
-                loop {
-                    tick.tick().await;
-                    let state = sweep_state.state::<AppState>();
-                    if let Err(err) = services::lanes::sweep_and_notify(&state).await {
-                        tracing::info!(error = %err, "worktree sweep skipped");
+            tauri::async_runtime::spawn(supervisor::supervise_task(
+                "scheduler/worktree-sweep",
+                state.supervision(),
+                None,
+                move || {
+                    let sweep_state = sweep_state.clone();
+                    async move {
+                        let mut tick = tokio::time::interval(services::lanes::SWEEP_EVERY);
+                        loop {
+                            tick.tick().await;
+                            let state = sweep_state.state::<AppState>();
+                            if let Err(err) = services::lanes::sweep_and_notify(&state).await {
+                                tracing::info!(error = %err, "worktree sweep skipped");
+                            }
+                        }
                     }
-                }
-            });
+                },
+            ));
             // Detect again when the window comes back, at most once a minute.
             if let Some(window) = app.get_webview_window("main") {
                 let focus = handle.clone();

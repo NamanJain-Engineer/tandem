@@ -142,6 +142,15 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// How subsystems started from here are supervised (§5.2).
+    pub fn supervision(&self) -> tandem_core::supervisor::Supervision {
+        tandem_core::supervisor::Supervision {
+            clock: self.clock.clone(),
+            bus: self.bus.clone(),
+            watchdog: tandem_core::supervisor::watchdog(),
+        }
+    }
+
     pub fn init() -> Result<Self, CoreError> {
         // "Delete local data" (F-TL-05) runs here, before anything opens
         // `$DATA`; the app then starts as on a first run.
@@ -270,6 +279,7 @@ impl AppState {
         }));
         let pty_bus = bus.clone();
         let mark_bus = bus.clone();
+        let reader_bus = bus.clone();
         let cwd_store = store.clone();
         // An agent exited and its pane went back to the shell: save the
         // session for the workspace's "Saved sessions" (F-CD-03 AC3).
@@ -328,6 +338,15 @@ impl AppState {
                     });
                 }
                 pty_bus.publish(BusEvent::new(Topic::Pty, "pty:state", state));
+            }))
+            .with_reader_failure_sink(Arc::new(move |pane, restarts, failed| {
+                // A terminal's reader recovered from a panic, or gave up and
+                // passes its output through raw (§5.2).
+                let name = format!("terminal reader/{pane}");
+                tandem_core::supervisor::watchdog().record(&name, restarts, "panicked", failed);
+                if failed {
+                    tandem_core::supervisor::report_failed(&reader_bus, &name, restarts, "panicked".into());
+                }
             }))
             .with_mark_sink(Arc::new(move |pane, mark| {
                 if let Some(event) = mark.event(pane) {
