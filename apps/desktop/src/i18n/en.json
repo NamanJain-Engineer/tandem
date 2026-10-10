@@ -1579,7 +1579,6 @@
   "picker.onHost": "On {host}",
   "picker.inDistro": "In {distro}",
   "picker.noneOnHost": "No coding engines found on {host}. Install one there, then check again.",
-  "git.remoteOnly": "Push, pull and branches: run git in a terminal on {host}",
   "worktree.remote": "Worktrees aren't available in remote folders yet",
   "handoff.newWorktreeRemote": "New worktree (not available in remote folders yet)",
   "picker.browserHere": "Browses from this computer",

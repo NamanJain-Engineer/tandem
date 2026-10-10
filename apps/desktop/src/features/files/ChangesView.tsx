@@ -499,59 +499,57 @@ export function BranchChip({ context, view }: { context: FileContext; view: GitV
     show(err ? { tone: "error", title: err.message } : { tone: "success", title: success });
 
   const others = (branches ?? []).filter((b) => !b.current);
-  // A remote folder: the host's own sign-in pushes and pulls (D-411).
-  const entries: MenuEntry[] = panel.host
-    ? [{ id: "remote", label: t("git.remoteOnly", { host: panel.host }), disabled: true }]
-    : [
-        {
-          id: "pull",
-          label: t("git.pull"),
-          disabled: !s.upstream || busy !== null,
+  // On a host these run its own git, with its own sign-in (D-1601).
+  const entries: MenuEntry[] = [
+    {
+      id: "pull",
+      label: t("git.pull"),
+      disabled: !s.upstream || busy !== null,
+      onSelect: () =>
+        void git()
+          .pull(context)
+          .then((err) => done(err, t("git.pulled", { branch: name }))),
+    },
+    s.upstream
+      ? {
+          id: "push",
+          label: t("git.push"),
+          disabled: s.noCommits || busy !== null,
           onSelect: () =>
             void git()
-              .pull(context)
-              .then((err) => done(err, t("git.pulled", { branch: name }))),
+              .push(context)
+              .then((err) => done(err, t("git.pushed", { branch: name }))),
+        }
+      : {
+          id: "publish",
+          label: t("git.publish"),
+          disabled: s.noCommits || !s.branch || busy !== null,
+          onSelect: () =>
+            void git()
+              .push(context, true)
+              .then((err) => done(err, t("git.published", { branch: name }))),
         },
-        s.upstream
-          ? {
-              id: "push",
-              label: t("git.push"),
-              disabled: s.noCommits || busy !== null,
-              onSelect: () =>
-                void git()
-                  .push(context)
-                  .then((err) => done(err, t("git.pushed", { branch: name }))),
-            }
-          : {
-              id: "publish",
-              label: t("git.publish"),
-              disabled: s.noCommits || !s.branch || busy !== null,
-              onSelect: () =>
-                void git()
-                  .push(context, true)
-                  .then((err) => done(err, t("git.published", { branch: name }))),
-            },
-        { type: "separator", id: "sep" },
-        {
-          id: "switch",
-          label: t("git.switch"),
-          disabled: busy !== null,
-          submenu:
-            branches === null
-              ? [{ id: "loading", label: t("git.switch.loading"), disabled: true }]
-              : others.length === 0
-                ? [{ id: "none", label: t("git.switch.none"), disabled: true }]
-                : others.map((b) => ({
-                    id: `b:${b.name}`,
-                    label: b.name,
-                    onSelect: () =>
-                      void git()
-                        .switchTo(context, b.name)
-                        .then((err) => done(err, t("git.switched", { branch: b.name }))),
-                  })),
-        },
-        { id: "new", label: t("git.newBranch"), disabled: busy !== null, onSelect: () => setNaming(true) },
-      ];
+    { type: "separator", id: "sep" },
+    {
+      id: "switch",
+      label: t("git.switch"),
+      disabled: busy !== null,
+      submenu:
+        branches === null
+          ? [{ id: "loading", label: t("git.switch.loading"), disabled: true }]
+          : others.length === 0
+            ? [{ id: "none", label: t("git.switch.none"), disabled: true }]
+            : others.map((b) => ({
+                id: `b:${b.name}`,
+                label: b.name,
+                onSelect: () =>
+                  void git()
+                    .switchTo(context, b.name)
+                    .then((err) => done(err, t("git.switched", { branch: b.name }))),
+              })),
+    },
+    { id: "new", label: t("git.newBranch"), disabled: busy !== null, onSelect: () => setNaming(true) },
+  ];
 
   const counts = s.upstream
     ? t("git.branch.counts", { ahead: s.ahead, behind: s.behind })
@@ -560,7 +558,7 @@ export function BranchChip({ context, view }: { context: FileContext; view: GitV
     <>
       <Menu
         align="end"
-        onOpenChange={(open) => open && !panel.host && void git().loadBranches(context)}
+        onOpenChange={(open) => open && void git().loadBranches(context)}
         trigger={
           <button
             type="button"
