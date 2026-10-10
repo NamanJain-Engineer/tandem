@@ -5,11 +5,12 @@ import { CodeEditor, NoteEditor, UiProvider } from "@tandem/ui";
 import en from "../../i18n/en.json";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
+import { useSession } from "../../stores/session";
 import { useSettings } from "../../stores/settings";
 import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
-import { BOOT, fakeBackend, resetStores } from "../../test/fakeBackend";
+import { BOOT, FREE_VIEW, fakeBackend, resetStores } from "../../test/fakeBackend";
 import { Palette } from "../palette/Palette";
 import { useBoot } from "../shell/useBoot";
 import { isWebviewShortcut, useShortcuts } from "../shell/useShortcuts";
@@ -241,7 +242,13 @@ describe("command registry (F-SH-09)", () => {
       // Each command where it's enabled: Thread mode with a thread open for
       // the thread commands, Code mode with a pane for the rest.
       const inThread = spec.enabledWhen === "thread_open";
+      // Plan-gated commands where the plan has them (absent otherwise:
+      // features/tasks/hosted.test.tsx).
+      const routines = spec.enabledWhen === "routines";
       act(() => {
+        useSession.setState({
+          entitlement: { ...FREE_VIEW, limits: { ...FREE_VIEW.limits, routines } },
+        });
         useThreads.setState({ selectedId: inThread ? "thr_open" : null });
         useUi.setState({
           paletteOpen: true,
@@ -277,7 +284,15 @@ describe("command registry (F-SH-09)", () => {
 
 describe("rebound shortcuts (F-SH-09 P2)", () => {
   const rebind = (overrides: Record<string, string>, priority = "terminal") =>
-    act(() => useSettings.setState({ values: { ...useSettings.getState().values, shortcut_overrides: overrides, term_shortcut_priority: priority } }));
+    act(() =>
+      useSettings.setState({
+        values: {
+          ...useSettings.getState().values,
+          shortcut_overrides: overrides,
+          term_shortcut_priority: priority,
+        },
+      }),
+    );
   const elsewhere = () => screen.getByText("elsewhere");
 
   it("F-SH-09.6 a new shortcut runs the command, the old keys don't, and the palette shows it", () => {
@@ -292,10 +307,14 @@ describe("rebound shortcuts (F-SH-09 P2)", () => {
     // and the old terminal alias is gone with the old shortcut.
     press(terminal(), { code: "KeyR", key: "r", ctrlKey: true, altKey: true });
     expect(split).toHaveBeenCalledTimes(2);
-    expect(press(terminal(), { code: "KeyE", key: "E", ctrlKey: true, shiftKey: true }).reachedTarget).toBe(true);
+    expect(press(terminal(), { code: "KeyE", key: "E", ctrlKey: true, shiftKey: true }).reachedTarget).toBe(
+      true,
+    );
     expect(split).toHaveBeenCalledTimes(2);
     act(() => useUi.setState({ paletteOpen: true, mode: "code", settingsOpen: false }));
-    const option = screen.getAllByRole("option").find((o) => o.textContent?.startsWith(commandTitle("pane.split_right")));
+    const option = screen
+      .getAllByRole("option")
+      .find((o) => o.textContent?.startsWith(commandTitle("pane.split_right")));
     expect(option?.textContent).toBe(`${commandTitle("pane.split_right")}CtrlAltR`);
   });
 
@@ -312,7 +331,10 @@ describe("rebound shortcuts (F-SH-09 P2)", () => {
     setup();
     const split = vi.spyOn(handlers, "pane.split_right").mockImplementation(() => undefined);
     rebind({ "pane.split_right": "Mod+E" });
-    expect(press(terminal(), { code: "KeyE", key: "e", ctrlKey: true })).toEqual({ prevented: false, reachedTarget: true });
+    expect(press(terminal(), { code: "KeyE", key: "e", ctrlKey: true })).toEqual({
+      prevented: false,
+      reachedTarget: true,
+    });
     expect(split).not.toHaveBeenCalled();
     press(elsewhere(), { code: "KeyE", key: "e", ctrlKey: true });
     expect(split).toHaveBeenCalledTimes(1);
@@ -327,9 +349,10 @@ describe("rebound shortcuts (F-SH-09 P2)", () => {
     const recorder = document.createElement("button");
     recorder.setAttribute("data-recording", "true");
     document.body.append(recorder);
-    expect(press(recorder, { code: "KeyD", key: "D", ctrlKey: true, shiftKey: true }).reachedTarget).toBe(true);
+    expect(press(recorder, { code: "KeyD", key: "D", ctrlKey: true, shiftKey: true }).reachedTarget).toBe(
+      true,
+    );
     expect(split).not.toHaveBeenCalled();
     recorder.remove();
   });
 });
-

@@ -35,6 +35,8 @@ pub enum EnabledWhen {
     ThreadOpen,
     /// A focused pane (Code mode), or a cell of the thread grid (Thread mode).
     PaneOrCell,
+    /// The plan has routines (F-RT-04); otherwise the command is absent.
+    Routines,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -122,7 +124,7 @@ static REGISTRY: &[CommandSpec] = &[
     // F-TK-03: Agent mode's Tasks page.
     same("tasks.open", C::Navigation, None, E::Always),
     same("routines.open", C::Navigation, None, E::Always),
-    same("routines.pause", C::Navigation, None, E::Always),
+    same("routines.pause", C::Navigation, None, E::Routines),
     aliased(
         "rail.toggle",
         C::Navigation,

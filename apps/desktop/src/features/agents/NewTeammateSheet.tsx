@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { create } from "zustand";
 import { FolderPlus, RefreshCw, Sparkles, X } from "lucide-react";
 import type { EngineView, IpcError, Teammate, TeammateDraft, TeammateTemplate } from "@tandem/protocol";
@@ -11,11 +11,15 @@ import {
   EngineGlyph,
   IconButton,
   Input,
+  MicButton,
   Sheet,
   Skeleton,
   Textarea,
   cx,
+  insertText,
+  isMac,
   useToast,
+  type ComposerHandle,
 } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
@@ -25,6 +29,7 @@ import { useTeammates } from "../../stores/teammates";
 import { useUi } from "../../stores/ui";
 import { useBoot } from "../shell/useBoot";
 import { useInstall } from "../code/InstallSheet";
+import { useComposerDictation } from "../dictate/useComposerDictation";
 
 /** Opens the New teammate sheet from anywhere (rail +, palette). */
 export const useNewTeammate = create<{ open: boolean; show: (o: boolean) => void }>((set) => ({
@@ -245,15 +250,10 @@ function SheetBody({ onClose }: { onClose: () => void }) {
               <Sparkles size={14} aria-hidden="true" />
               {t("agent.new.draftTitle")}
             </h3>
-            <Textarea
-              label={t("agent.new.draftLabel")}
-              hideLabel
-              placeholder={t("agent.new.draftPlaceholder")}
+            <DraftDescription
               value={description}
-              minRows={2}
-              maxRows={5}
-              onChange={(e) => setDescription(e.target.value)}
-              data-testid="draft-description"
+              onChange={setDescription}
+              onError={(message) => show({ tone: "error", title: message })}
             />
             <div className="flex items-center gap-2">
               <span className="min-w-0 flex-1 text-sm text-fg-muted">
@@ -480,6 +480,75 @@ export function Places({ places, onChange }: { places: string[]; onChange: (p: s
         {t("agent.new.addPlace")}
       </Button>
       <span className="text-sm text-fg-muted">{t("agent.new.placesHelp")}</span>
+    </div>
+  );
+}
+
+/** "What's the job?" with the mic (F-DI-12): dictation lands at the caret,
+ * as in every composer, and ⌥Space held dictates on macOS. */
+function DraftDescription({
+  value,
+  onChange,
+  onError,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  onError: (message: string) => void;
+}) {
+  const area = useRef<HTMLTextAreaElement | null>(null);
+  const current = useRef(value);
+  current.current = value;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const handle = useRef<ComposerHandle | null>({
+    focus: () => area.current?.focus(),
+    insertAtCaret: (text) => {
+      const el = area.current;
+      const at = el ? [el.selectionStart, el.selectionEnd] : [current.current.length, current.current.length];
+      const next = insertText(current.current, at[0] ?? 0, at[1] ?? 0, text);
+      onChangeRef.current(next.value);
+      requestAnimationFrame(() => area.current?.setSelectionRange(next.caret, next.caret));
+    },
+  });
+  const { dictation, onFocusChange } = useComposerDictation("teammate-draft", handle, onError);
+  const holding = useRef(false);
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isMac() && !dictation.disabledReason && e.code === "Space" && e.altKey && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      if (!holding.current && !e.repeat) {
+        holding.current = true;
+        dictation.onHoldKey?.(true);
+      }
+    }
+  };
+  const onKeyUp = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (holding.current && (e.code === "Space" || e.key === "Alt")) {
+      holding.current = false;
+      dictation.onHoldKey?.(false);
+    }
+  };
+  return (
+    <div className="flex items-start gap-1">
+      <div className="min-w-0 flex-1">
+        <Textarea
+          ref={area}
+          label={t("agent.new.draftLabel")}
+          hideLabel
+          placeholder={
+            dictation.state === "listening" ? dictation.listeningPlaceholder : t("agent.new.draftPlaceholder")
+          }
+          value={value}
+          minRows={2}
+          maxRows={5}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => onFocusChange(true)}
+          onBlur={() => onFocusChange(false)}
+          onKeyDown={onKeyDown}
+          onKeyUp={onKeyUp}
+          data-testid="draft-description"
+        />
+      </div>
+      <MicButton dictation={dictation} label={t("agent.new.dictate")} testId="draft-mic" />
     </div>
   );
 }

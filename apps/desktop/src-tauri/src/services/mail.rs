@@ -482,6 +482,17 @@ pub struct AppMailHost {
     pub store: Store,
     pub threads: Arc<ThreadService>,
     pub teammates: Arc<TeammatesService>,
+    /// Files each mail run with the gateway, so what it holds for review says
+    /// which mail it came from (F-PL-08).
+    pub gateway: Arc<crate::services::gateway::GatewayService>,
+}
+
+/// `mail:<mail-id>`: the run a delivered mail starts, as held drafts name it.
+pub fn mail_origin(row: &ThreadEvent) -> Option<String> {
+    match row {
+        ThreadEvent::MailRow { mail_id, .. } => Some(format!("mail:{}", mail_id.as_str())),
+        _ => None,
+    }
 }
 
 #[async_trait]
@@ -542,6 +553,11 @@ impl MailHost for AppMailHost {
         text: String,
         row: ThreadEvent,
     ) -> Result<(), IpcError> {
+        // An unattended chat may carry several mails: the turn this one
+        // starts is filed under it. An attended chat asks instead of holding.
+        if let Some(origin) = mail_origin(&row) {
+            self.gateway.set_unattended_origin(chat, &origin);
+        }
         self.threads.send_mail(chat, text, row).await.map(|_| ())
     }
 
@@ -606,6 +622,41 @@ pub(crate) mod tests_support {
 #[cfg(test)]
 mod tests {
     use super::tests_support::Host;
+
+    #[test]
+    fn f_pl_08_a_mail_run_is_filed_under_its_mail() {
+        let dir = tempfile::tempdir().expect("dir");
+        let data = tandem_core::paths::DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = Store::open(&data).expect("store");
+        let gateway = crate::services::gateway::GatewayService::new(store, data.run());
+        let mail = MailId::new();
+        let row = ThreadEvent::MailRow {
+            mail_id: mail.clone(),
+            from: "Ada".into(),
+            to: "Bea".into(),
+            preview: "hi".into(),
+            inbound: true,
+        };
+        let origin = mail_origin(&row).expect("a mail row names its run");
+        let chat = ThreadId::new();
+        gateway.set_unattended_origin(&chat, &origin);
+        assert_eq!(gateway.unattended_origin(&chat), Some(origin.clone()));
+        // Held drafts read it back as a mail run with that id.
+        assert_eq!(
+            crate::services::plugins::parse_origin(&origin),
+            Some((
+                tandem_store::repo::held_drafts::OriginKind::Mail,
+                mail.as_str().to_string(),
+                None
+            ))
+        );
+        assert_eq!(
+            mail_origin(&ThreadEvent::Assistant {
+                markdown: "hi".into()
+            }),
+            None
+        );
+    }
     use super::*;
     use crate::services::teammates::tests_support::{input, service};
 

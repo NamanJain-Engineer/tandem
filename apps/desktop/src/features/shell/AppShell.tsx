@@ -29,6 +29,8 @@ import { followTeammates } from "../../stores/teammates";
 import { ThreadMain } from "../thread/ThreadMain";
 import { ThreadRail } from "../thread/ThreadRail";
 import { followThreads } from "../../stores/threads";
+import { followRemote } from "../../stores/remote";
+import { RemotePrompts } from "../remote/RemotePrompts";
 import { Palette } from "../palette/Palette";
 import { Cheatsheet } from "../commands/Cheatsheet";
 import { DiagnosticsPanel } from "../diagnostics/DiagnosticsPanel";
@@ -89,6 +91,7 @@ export function AppShell() {
   useEffect(startAutoResume, []);
   useEffect(followUpdates, []);
   useEffect(followThreads, []);
+  useEffect(followRemote, []);
   useEffect(followTeammates, []);
   useEffect(followSuggestions, []);
   useVisibilityReport();
@@ -215,6 +218,7 @@ export function AppShell() {
       <DiagnosticsPanel />
       <OrphansDialog />
       <RestartDialog />
+      <RemotePrompts />
       <UnsupportedOverlay />
       {/* Agent waiting, done or failed and approvals requested, read out
           politely at most once per 2 s (§5.4). */}

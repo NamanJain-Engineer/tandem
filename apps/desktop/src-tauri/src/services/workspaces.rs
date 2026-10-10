@@ -113,6 +113,60 @@ pub async fn add(
     })
 }
 
+/// An SSH or WSL workspace (F-CD-01 kinds): the host already said `root`
+/// exists and gave its real path.
+pub async fn add_remote(
+    store: &Store,
+    kind: &str,
+    host: &tandem_core::ids::HostId,
+    root: &str,
+    wsl_distro: Option<String>,
+    max_workspaces: Option<u32>,
+) -> Result<AddedWorkspace, IpcError> {
+    if !root.starts_with('/') {
+        return Err(IpcError::new(
+            ErrorCode::Invalid,
+            "Choose a folder with a full path",
+        ));
+    }
+    let name = root
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .filter(|n| !n.is_empty())
+        .unwrap_or(root)
+        .to_string();
+    let new = NewWorkspace {
+        kind: kind.into(),
+        host_id: host.as_str().to_string(),
+        root: root.to_string(),
+        name,
+        wsl_distro,
+    };
+    let (workspace, how) =
+        workspaces::add(store, new, max_workspaces)
+            .await
+            .map_err(|e| match e {
+                StoreError::LimitReached(msg) => {
+                    IpcError::new(ErrorCode::LimitReached, msg).with_stage("workspaces")
+                }
+                other => other.into(),
+            })?;
+    if tabs::list(store, &workspace.id).await?.is_empty() {
+        tabs::create(store, &workspace.id, None).await?;
+    }
+    tracing::info!(
+        code = "workspace.added",
+        kind,
+        created = how == Added::Created,
+        "workspace added"
+    );
+    Ok(AddedWorkspace {
+        workspace,
+        created: how != Added::Existing,
+    })
+}
+
 pub async fn list(store: &Store, pty: &PtyManager) -> Result<Vec<WorkspaceSummary>, IpcError> {
     let mut out = Vec::new();
     for ws in workspaces::list(store).await? {
@@ -126,9 +180,11 @@ pub async fn list(store: &Store, pty: &PtyManager) -> Result<Vec<WorkspaceSummar
                 .count() as u32;
         }
         let root = Path::new(&ws.root);
+        // A remote folder is checked when its host is reached.
+        let local = ws.kind == "local";
         out.push(WorkspaceSummary {
-            missing: !root.is_dir(),
-            branch: git_branch(root),
+            missing: local && !root.is_dir(),
+            branch: if local { git_branch(root) } else { None },
             live_count: live,
             tabs,
             workspace: ws,

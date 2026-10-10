@@ -135,6 +135,16 @@ macro_rules! app_commands {
             commands::account::telemetry_capture,
             commands::workspaces::workspace_pick_folder,
             commands::workspaces::workspace_add,
+            commands::remote::ssh_hosts_list,
+            commands::remote::ssh_host_add,
+            commands::remote::ssh_host_remove,
+            commands::remote::ssh_connect,
+            commands::remote::ssh_hostkey_decide,
+            commands::remote::ssh_askpass_reply,
+            commands::remote::ssh_disconnect,
+            commands::remote::ssh_list_dir,
+            commands::remote::ssh_host_reset_key,
+            commands::remote::wsl_distros,
             commands::workspaces::workspace_list,
             commands::workspaces::workspace_rename,
             commands::workspaces::workspace_remove,
@@ -287,6 +297,8 @@ macro_rules! app_commands {
             commands::dictate::dictate_stop_take,
             commands::dictate::dictate_cancel_take,
             commands::dictate::dictate_toggle,
+        commands::dictate::dictate_use_local,
+        commands::dictate::dictate_quick_action,
             commands::dictate::dictate_composer_focus,
             commands::dictate::dictate_devices,
             commands::dictate::dictate_models,
@@ -339,9 +351,7 @@ pub fn route_link(app: &AppHandle, raw: &str) {
     // The toggle drives Dictate where the user is: focusing Vibezeo would
     // move the insertion target (F-DI-01 "Deep link").
     if link.route == "dictate/toggle" {
-        if let Some(c) = state.dictate.controller() {
-            c.toggle();
-        }
+        state.dictate.toggle_from_link();
         return;
     }
     focus_main(app);
@@ -588,6 +598,57 @@ fn setup_dictate(app: &tauri::App, state: &AppState) {
         Err(err) => tracing::warn!(error = %err, "dictate: widget window not created"),
     }
     tray::install(app.handle());
+    // Cloud takes (F-DI-05): the plan check and the STT relay, with a token.
+    {
+        let (api, auth, ents) = (
+            state.api.clone(),
+            state.auth.clone(),
+            state.entitlements.clone(),
+        );
+        state.dictate.set_cloud(
+            std::sync::Arc::new(move || ents.view().plan),
+            std::sync::Arc::new(move |upload| {
+                let (api, auth) = (api.clone(), auth.clone());
+                Box::pin(async move {
+                    auth.with_token(|token| {
+                        let (api, upload) = (api.clone(), upload.clone());
+                        async move { api.stt_transcribe(&token, upload).await }
+                    })
+                    .await
+                })
+            }),
+        );
+    }
+    // Enhance and Polish (F-DI-10): the AI relay's rewrite, with a token.
+    {
+        let (api, auth) = (state.api.clone(), state.auth.clone());
+        state.dictate.set_rewriter(std::sync::Arc::new(
+            move |mode, text, instructions, terms| {
+                let (api, auth) = (api.clone(), auth.clone());
+                Box::pin(async move {
+                    auth.with_token(|token| {
+                        let (api, text, instructions, terms) = (
+                            api.clone(),
+                            text.clone(),
+                            instructions.clone(),
+                            terms.clone(),
+                        );
+                        async move {
+                            api.ai_rewrite(
+                                &token,
+                                mode.as_str(),
+                                &text,
+                                instructions.as_deref(),
+                                &terms,
+                            )
+                            .await
+                        }
+                    })
+                    .await
+                })
+            },
+        ));
+    }
     let dictate = state.dictate.clone();
     tauri::async_runtime::spawn(async move {
         dictate.start().await;
@@ -848,6 +909,21 @@ pub fn run() {
                 let login = state.terminals.login_env().await;
                 state.terminals.engines.detect(&login).await;
             });
+            // SSH hosts (F-RM-01): the bundled helper binaries and the
+            // askpass helper's loopback endpoint.
+            {
+                let state = handle.state::<AppState>();
+                state
+                    .remote
+                    .set_bin_dir(services::remote::bin_dir(handle.path().resource_dir().ok()));
+                let remote_state = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    match services::askpass::AskpassServer::start().await {
+                        Ok(server) => remote_state.state::<AppState>().remote.set_askpass(server),
+                        Err(err) => tracing::warn!(code = "remote.askpass_failed", error = %err, "SSH password prompts are off"),
+                    }
+                });
+            }
             // Threads on the Dashboard from the start (D-6).
             let threads_state = handle.clone();
             tauri::async_runtime::spawn(async move {
@@ -954,6 +1030,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 let state = handle.state::<AppState>();
                 state.terminals.shutdown(&state.data.scrollback());
+                state.remote.shutdown();
             }
         }),
         Err(err) => {

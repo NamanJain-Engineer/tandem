@@ -49,6 +49,27 @@ fn image_mime(path: &Path) -> Option<&'static str> {
 
 /// An attachment for a dropped or picked path. Files over the limit come
 /// back as error chips rather than failing the whole drop.
+/// A file or folder already on a remote thread's host (dragged from its
+/// Files tab): the engine reads it there.
+pub fn on_host(thread: &ThreadId, path: &str, dir: bool, bytes: u64) -> Attachment {
+    let name = path.rsplit('/').next().unwrap_or(path).to_string();
+    Attachment {
+        id: AttachmentId::new(),
+        thread_id: thread.clone(),
+        kind: if dir {
+            AttachmentKind::Folder
+        } else {
+            AttachmentKind::File
+        },
+        path: path.to_string(),
+        name,
+        mime: None,
+        bytes,
+        sent: false,
+        error: (bytes > MAX_BYTES).then(too_large),
+    }
+}
+
 pub fn for_path(thread: &ThreadId, path: &Path) -> Result<Attachment, IpcError> {
     let meta = std::fs::metadata(path).map_err(|e| {
         IpcError::new(
@@ -178,6 +199,33 @@ pub struct FileText {
     pub truncated: bool,
     /// Not text: `content` is empty.
     pub binary: bool,
+}
+
+/// [`read_text`]'s answer for a file read on an SSH host (the host held
+/// it to the root). Private files stay unread there too.
+pub fn remote_text(f: crate::services::files::FileContent) -> Result<FileText, IpcError> {
+    if tandem_core::contain::is_private_file(Path::new(&f.path)) {
+        return Err(IpcError::new(ErrorCode::PathEscape, "that file is private"));
+    }
+    let binary = f.kind != tandem_core::files::FileKind::Text;
+    let mut content = f.text.unwrap_or_default();
+    let truncated = f.truncated || content.len() > FILE_SHOWN;
+    if content.len() > FILE_SHOWN {
+        let mut cut = FILE_SHOWN;
+        while !content.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        content.truncate(cut);
+        if let Some(line) = content.rfind('\n') {
+            content.truncate(line + 1);
+        }
+    }
+    Ok(FileText {
+        path: f.path,
+        content: if binary { String::new() } else { content },
+        truncated,
+        binary,
+    })
 }
 
 /// Reads `rel` inside `root` for the Files tab: never outside the folder,

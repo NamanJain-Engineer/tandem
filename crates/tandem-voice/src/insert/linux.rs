@@ -219,6 +219,26 @@ impl Platform for LinuxPlatform {
         super::chord(mods, Key::Unicode('v'))
     }
 
+    fn undo(&self) -> Result<(), InsertError> {
+        if self.session == Session::Wayland {
+            let ok = on_path("wtype")
+                && Command::new("wtype")
+                    .args(["-M", "ctrl", "-k", "z", "-m", "ctrl"])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false);
+            return if ok {
+                Ok(())
+            } else {
+                Err(InsertError::Paste("wtype failed".into()))
+            };
+        }
+        super::chord(&[enigo::Key::Control], enigo::Key::Unicode('z'))
+    }
+
     fn read_clipboard(&self) -> Result<Clip, InsertError> {
         match self.board.read() {
             Ok(c) => Ok(c),

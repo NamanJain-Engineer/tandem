@@ -12,7 +12,9 @@ use crate::services::dictate::WidgetHost;
 
 pub const LABEL: &str = "dictate-widget";
 /// Logical size: room for the 360 px error pill and its shadow.
-pub const WIDTH: f64 = 380.0;
+/// Wide enough for an error with its actions ("Use local for this take",
+/// F-DI-05); the window is transparent around the pill.
+pub const WIDTH: f64 = 560.0;
 pub const HEIGHT: f64 = 64.0;
 const ABOVE_BOTTOM: f64 = 48.0;
 
@@ -138,10 +140,10 @@ mod tests {
     #[test]
     fn f_di_07_bottom_centre_48px_above_the_work_area() {
         // 1920×1040 work area (taskbar below), scale 1.
-        assert_eq!(place(0, 0, 1920, 1040, 1.0), (770, 928));
+        assert_eq!(place(0, 0, 1920, 1040, 1.0), (680, 928));
         // Second display to the right at 2×.
         let (x, y) = place(1920, 0, 2560, 1600, 2.0);
-        assert_eq!(x, 1920 + (2560 - 760) / 2);
+        assert_eq!(x, 1920 + (2560 - 1120) / 2);
         assert_eq!(y, 1600 - 128 - 96);
     }
 

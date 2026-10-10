@@ -43,6 +43,7 @@ impl WebFetch {
                 target_keys: vec!["url"],
                 key_hint: None,
                 scopes: Vec::new(),
+                oauth_client: super::OAuthClient::Dynamic,
             },
             allow_private: false,
         }

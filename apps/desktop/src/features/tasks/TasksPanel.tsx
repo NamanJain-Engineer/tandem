@@ -20,6 +20,7 @@ import {
 } from "@tandem/ui";
 import { t } from "../../i18n";
 import { STATUS_ORDER, useTasks } from "../../stores/tasks";
+import { useExecuteBlock } from "./Execute";
 import { TaskDetailView, actorName, priorityLabel, statusLabel } from "./TaskDetail";
 
 /** Wide enough for the list beside the open task. */
@@ -181,6 +182,8 @@ function ListPane({ header }: { header?: ReactNode }) {
   const issues = useTasks((s) => s.issues);
   const showArchived = useTasks((s) => s.showArchived);
   const hasVisible = issues.some((i) => showArchived || !i.archived);
+  // "Nothing runs until you choose Execute" only where Execute can run.
+  const canRun = useExecuteBlock() === null;
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="tasks-panel">
       {header}
@@ -209,7 +212,7 @@ function ListPane({ header }: { header?: ReactNode }) {
         <EmptyState
           icon={<ListTodo size={20} />}
           title={t("tasks.empty.title")}
-          body={t("tasks.empty.body")}
+          body={canRun ? t("tasks.empty.body") : t("tasks.empty.bodyTrack")}
         />
       ) : (
         <Groups />

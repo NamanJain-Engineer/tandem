@@ -7,6 +7,7 @@ import { useLaunch } from "../../stores/launch";
 import { useNotifications } from "../../stores/notifications";
 import { useCloseConfirm } from "../../stores/closeConfirm";
 import { useSidebar } from "../../stores/sidebar";
+import { useSession } from "../../stores/session";
 import { useSettings } from "../../stores/settings";
 import type { CommandSpec } from "@tandem/protocol";
 import shortcuts from "@tandem/protocol/shortcuts.json";
@@ -75,6 +76,8 @@ function activePane(): { tabId: string; paneId: string } | null {
 
 export function isEnabled(spec: CommandSpec): boolean {
   if (spec.enabledWhen === "always") return true;
+  // Pausing routines means nothing on a plan without them (F-RT-04).
+  if (spec.enabledWhen === "routines") return !!useSession.getState().entitlement?.limits.routines;
   const ui = useUi.getState();
   if (spec.enabledWhen === "thread_open")
     return ui.mode === "thread" && !ui.settingsOpen && useThreads.getState().selectedId !== null;

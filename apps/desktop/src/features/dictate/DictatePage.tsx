@@ -139,7 +139,7 @@ export function DictateHomeCard({ onTry, onHistory }: { onTry: () => void; onHis
     void useDictate.getState().loadStats();
   }, []);
   if (!status) return null;
-  const ready = status.verified && status.model !== null;
+  const ready = status.verified && (status.model !== null || status.engine === "cloud");
   return (
     <section
       aria-label={t("dictate.home.label")}
@@ -151,7 +151,11 @@ export function DictateHomeCard({ onTry, onHistory }: { onTry: () => void; onHis
         <h2 className="text-lg font-semibold text-fg">{ready ? t("dictate.home.ready") : t("dictate.home.finish")}</h2>
         <span className="text-sm text-fg-muted">{t("dictate.home.hold", { key: status.hold.label })}</span>
         <Badge variant="idle">
-          {status.model ? t("dictate.home.engineChip", { model: status.model.name }) : t("dictate.home.noModel")}
+          {status.engine === "cloud"
+            ? t("dictate.home.cloudChip")
+            : status.model
+              ? t("dictate.home.engineChip", { model: status.model.name })
+              : t("dictate.home.noModel")}
         </Badge>
         <span className="flex-1" />
         <Button size="sm" variant={ready ? "secondary" : "primary"} onClick={onTry} data-testid="dictate-try">

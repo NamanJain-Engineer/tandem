@@ -65,6 +65,7 @@ export {
 export {
   COMPOSER_LABELS,
   Composer,
+  MicButton,
   insertText,
   mentionAt,
   type ComposerAttachment,

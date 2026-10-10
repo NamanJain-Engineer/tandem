@@ -8,16 +8,14 @@ every milestone has its tasks, exit checks and E2E list in MILESTONES. Tick
 items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md`
 has every feature below with its full behaviour and acceptance tests.
 
-**Where it stands (10 October 2026, `product-m0-m5`):** M0–M12 are done,
-and so are M15's six features (its non-functional checks are under way). So
-is M13, apart from its voice pair (F-DI-05 and F-DI-10, which M8's session
-builds next on M13's clients). M16 has F-SH-12, F-AC-07, F-AU-01, F-BE-03,
-F-BE-12 and F-RT-05. That's 135 of 152 features, and all 65 P0s. Left: 17
-features, none of them P0 (4 P1, 13 P2): M13's voice pair, M14's 2 and M16's 13.
-vibezeo.com serves 0.4.0 (teammates, Find work, your data, shortcut rebinding
-and the usage page); Dictate (M8), tasks and routines (M11) and plugins (M12)
-reach a download with the next release. M15 makes the P0/P1 product
-launchable; M16 adds the P2 extras and the release candidate.
+**Where it stands (10 October 2026, `product-m0-m5`):** M0–M14 are done,
+and so are M15's six features (its non-functional checks are under way). M16
+has F-SH-12, F-AC-07, F-AU-01, F-BE-03, F-BE-12 and F-RT-05. That's 139 of 152
+features: all 65 P0s and every P1. Left: M16's 13 P2 extras. vibezeo.com serves
+0.4.0 (teammates, Find work, your data, shortcut rebinding and the usage page);
+Dictate (M8), tasks and routines (M11), plugins (M12) and SSH and WSL
+workspaces (M14) reach a download with the next release. M15 makes the P0/P1
+product launchable; M16 adds the P2 extras and the release candidate.
 
 ## 0. First, before new features
 
@@ -53,7 +51,7 @@ lists them (M9 was built ahead of M8, D-200).
 Push-to-talk anywhere: persistent audio capture, local Whisper/Parakeet, safe
 insertion into the focused app, the widget, history and the dictionary; plus
 the complete first-run onboarding. **Done** (branch `m8-dictate-onboarding`,
-merged 10 October 2026). F-DI-05 and F-DI-10 are listed under M13.
+merged 10 October 2026). F-DI-05 and F-DI-10, listed under M13, are done too.
 - [x] F-DI-01 Global push-to-talk (P0)
 - [x] F-DI-02 Hotkey engine per OS (P0)
 - [x] F-DI-03 Audio capture and microphones (P0)
@@ -75,7 +73,7 @@ history and dictionary, model download.
 ### M10 · Teammates and gateway core (XL) · 12 features (P1)
 Agent mode: persistent teammates with a brief, memory, skills, learning,
 session search and teammate-to-teammate mail, all over the single local gateway
-with leases. **Done in pull request #5** (branch `m10-teammates-gateway`), except F-DI-12's mic in "Create with AI", which completes after M8 merges (D-300).
+with leases. **Done in pull request #5** (branch `m10-teammates-gateway`); F-DI-12's mic in "Create with AI" followed once M8 merged.
 - [x] F-PL-01 Gateway process
 - [x] F-AG-01 Teammate record
 - [x] F-AG-02 Agent rail
@@ -138,8 +136,8 @@ policy and audit, and the transparency page.
 - [x] F-BE-05 Credits ledger
 - [x] F-BE-06 Hosted AI relay (titles, Enhance/Polish and teammate drafts; `/auto/next` and the voice routes come with their M16 features)
 - [x] F-BE-07 STT relay
-- [ ] F-DI-05 Cloud speech-to-text (Pro, credits): the M8 session's; the relay and the desktop client are done (M13, ARCHITECTURE §14.11)
-- [ ] F-DI-10 Enhance and Polish (Pro, credits): the M8 session's; the route and the desktop client are done (M13)
+- [x] F-DI-05 Cloud speech-to-text (Pro, credits): built on `m8-dictate-onboarding` over M13's relay client (D-516)
+- [x] F-DI-10 Enhance and Polish (Pro, credits): built on `m8-dictate-onboarding` over M13's rewrite client (D-517)
 - [x] F-BL-03 Credit packs
 - [x] F-BL-05 Refunds
 - [x] F-BL-06 Team plan (P1 core; the P2 SSO part is built on `m16-team-sso`)
@@ -157,13 +155,16 @@ and test modes until they exist.
 ### M14 · Remote: SSH and WSL (L) · 2 features (P1)
 Terminals, agents, threads, files and git on SSH hosts through `tandem-host`,
 and in WSL distros, never forwarding local credentials.
-- [ ] F-RM-01 SSH workspaces and `tandem-host`
-- [ ] F-RM-02 WSL workspaces (Windows)
+- [x] F-RM-01 SSH workspaces and `tandem-host`
+- [x] F-RM-02 WSL workspaces (Windows)
 
 Tasks: `tandem-host`; SSH transport; remote workspaces; WSL; infra (the
 compose `sshd` profile).
 E2E-M14-1…5: connect, host key, containment, re-attach, remote engines. WSL
 needs a Windows machine (manual QA in `HUMAN_TODO.md` until CI runs Windows).
+Done on `m14-remote-ssh-wsl` (PR #6): every task, E2E-M14-1…5 green; WSL is
+unit-tested with fakes, and its Windows pass, real macOS/aarch64 hosts and the
+CI-built binaries for all three targets wait in `HUMAN_TODO.md`.
 
 ### M15 · Website, docs, data controls and launch hardening (L) · 6 features (2 P0)
 Close every remaining P0 and P1 and every non-functional requirement. After

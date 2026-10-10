@@ -375,6 +375,20 @@ impl StatusService {
         let _ = self.screen.set(source);
     }
 
+    /// A hook report an SSH host relayed (D-406): applied only when the
+    /// pane's own secret signed it.
+    pub fn relayed(self: &Arc<Self>, body: &[u8], signature: Option<&str>) {
+        let Some(server) = self.server.get() else {
+            return;
+        };
+        match server.accept_relayed(body, signature) {
+            Ok(report) => self.on_report(report),
+            Err(err) => {
+                tracing::debug!(code = "status.relay_refused", error = ?err, "a relayed report was refused")
+            }
+        }
+    }
+
     /// A verified hook report.
     pub fn on_report(self: &Arc<Self>, report: StatusReport) {
         let pane = report.pane_id.clone();

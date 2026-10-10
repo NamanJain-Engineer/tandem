@@ -11,6 +11,7 @@ mod job;
 pub mod marks;
 pub mod orphans;
 pub mod quote;
+pub mod remote;
 pub mod responder;
 pub mod ring;
 pub mod side;
@@ -33,6 +34,7 @@ use ts_rs::TS;
 
 pub use frame::{FrameKind, PtyFrame};
 pub use marks::Mark;
+pub use remote::{RemoteFeed, RemotePty};
 pub use responder::{QueryResponder, TermColors};
 pub use ring::ScrollbackRing;
 pub use side::{Fed, PtyState, SideChannel};
@@ -163,7 +165,10 @@ impl FlowControl {
 
 struct Session {
     pid: u32,
-    master: Mutex<Box<dyn MasterPty + Send>>,
+    /// `None` for a remote PTY (F-RM-01): it resizes through `remote`.
+    master: Mutex<Option<Box<dyn MasterPty + Send>>>,
+    /// A PTY on an SSH host: its PID isn't ours to signal.
+    remote: Option<Arc<dyn RemotePty>>,
     writer: Mutex<Box<dyn Write + Send>>,
     sink: Arc<RwLock<Option<Arc<dyn OutputSink>>>>,
     ring: Arc<Mutex<ScrollbackRing>>,
@@ -301,7 +306,8 @@ impl PtyManager {
 
         let session = Arc::new(Session {
             pid,
-            master: Mutex::new(pty.master),
+            master: Mutex::new(Some(pty.master)),
+            remote: None,
             writer: Mutex::new(writer),
             sink: Arc::new(RwLock::new(sink)),
             ring: Arc::new(Mutex::new(ScrollbackRing::new(spec.scrollback_lines))),
@@ -352,6 +358,66 @@ impl PtyManager {
         Self::start_waiter(session.clone(), child, child_done.clone(), registered);
         Self::start_batcher(session, rx, child_done, self.on_state.clone());
         Ok(PtyInfo { pid, started_at })
+    }
+
+    /// A PTY that runs on an SSH host (F-RM-01): `pid` is the remote one,
+    /// its output and exit arrive through the returned feed, and writes,
+    /// resizes and kills go to `backend`. It's never in the child registry
+    /// and never signalled locally.
+    pub fn spawn_remote(
+        &self,
+        spec: SpawnSpec,
+        pid: u32,
+        backend: Arc<dyn RemotePty>,
+        sink: Option<Arc<dyn OutputSink>>,
+    ) -> Result<(PtyInfo, RemoteFeed), PtyError> {
+        let (feed, reader, child) = remote::channel(pid, backend.clone());
+        let session = Arc::new(Session {
+            pid,
+            master: Mutex::new(None),
+            remote: Some(backend.clone()),
+            writer: Mutex::new(Box::new(remote::RemoteWriter(backend))),
+            sink: Arc::new(RwLock::new(sink)),
+            ring: Arc::new(Mutex::new(ScrollbackRing::new(spec.scrollback_lines))),
+            flow: Arc::new(FlowControl {
+                sent: AtomicU64::new(0),
+                acked: AtomicU64::new(0),
+                gate: Mutex::new(()),
+                resume: Condvar::new(),
+            }),
+            exited: Arc::new(Mutex::new(None)),
+            seq: Arc::new(AtomicU64::new(0)),
+            side: Mutex::new(SideChannel::with_token(
+                &spec.pane_id,
+                spec.rows,
+                spec.cols,
+                spec.mark_token.clone(),
+            )),
+            state_dirty: AtomicBool::new(false),
+            #[cfg(windows)]
+            job: None,
+        });
+        self.sessions.insert(spec.pane_id.clone(), session.clone());
+        let (tx, rx) = mpsc::sync_channel::<Msg>(256);
+        self.start_reader(&spec.pane_id, session.clone(), Box::new(reader), tx);
+        let child_done = Arc::new((Mutex::new(false), Condvar::new()));
+        Self::start_waiter(session.clone(), Box::new(child), child_done.clone(), None);
+        Self::start_batcher(session, rx, child_done, self.on_state.clone());
+        Ok((
+            PtyInfo {
+                pid,
+                started_at: now_ms(),
+            },
+            feed,
+        ))
+    }
+
+    /// True for a PTY on an SSH host.
+    pub fn is_remote(&self, pane: &str) -> bool {
+        self.sessions
+            .get(pane)
+            .map(|s| s.remote.is_some())
+            .unwrap_or(false)
     }
 
     fn start_reader(
@@ -658,10 +724,17 @@ impl PtyManager {
         if let Ok(mut side) = session.side.lock() {
             side.resize(rows, cols);
         }
+        if let Some(remote) = &session.remote {
+            remote.resize(cols.max(2), rows.max(2));
+            return Ok(());
+        }
         let master = session
             .master
             .lock()
             .map_err(|_| PtyError::Io("master poisoned".into()))?;
+        let Some(master) = master.as_ref() else {
+            return Err(PtyError::NotFound);
+        };
         master
             .resize(PtySize {
                 rows: rows.max(2),
@@ -763,6 +836,24 @@ impl PtyManager {
     /// Ends the process tree: SIGHUP, then SIGTERM, then SIGKILL, 2 s apart (§5.3).
     pub fn kill(&self, pane: &str) -> Result<ExitInfo, PtyError> {
         let session = self.get(pane)?;
+        if let Some(remote) = &session.remote {
+            // The host ends the tree; its exit comes back through the feed.
+            remote.kill();
+            let until = Instant::now() + Duration::from_secs(5);
+            while !exited(&session.exited) && Instant::now() < until {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            self.sessions.remove(pane);
+            return Ok(session
+                .exited
+                .lock()
+                .ok()
+                .and_then(|e| e.clone())
+                .unwrap_or(ExitInfo {
+                    code: None,
+                    signal: Some("SIGHUP".into()),
+                }));
+        }
         #[cfg(windows)]
         if let Some(job) = &session.job {
             job.terminate();
@@ -822,6 +913,11 @@ impl PtyManager {
         let sessions: Vec<Arc<Session>> = self.sessions.iter().map(|e| e.value().clone()).collect();
         let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
         for session in &sessions {
+            if let Some(remote) = &session.remote {
+                remote.kill();
+                let _ = done_tx.send(());
+                continue;
+            }
             #[cfg(windows)]
             if let Some(job) = &session.job {
                 job.terminate();
@@ -847,14 +943,20 @@ impl PtyManager {
                 Err(_) => break,
             }
         }
-        let forced = sessions.iter().filter(|s| !exited(&s.exited)).count();
+        let forced = sessions
+            .iter()
+            .filter(|s| s.remote.is_none() && !exited(&s.exited))
+            .count();
         if forced > 0 {
             tracing::warn!(
                 code = "pty.quit_forced",
                 count = forced,
                 "processes outlived the quit deadline; force-killing"
             );
-            for s in sessions.iter().filter(|s| !exited(&s.exited)) {
+            for s in sessions
+                .iter()
+                .filter(|s| s.remote.is_none() && !exited(&s.exited))
+            {
                 force_kill(s.pid);
             }
         }

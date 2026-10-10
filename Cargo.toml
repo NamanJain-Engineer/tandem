@@ -9,7 +9,7 @@ version = "0.4.0"
 publish = false
 
 [workspace.dependencies]
-tandem-core = { path = "crates/tandem-core" }
+tandem-core = { path = "crates/tandem-core", default-features = false }
 tandem-store = { path = "crates/tandem-store" }
 tandem-pty = { path = "crates/tandem-pty" }
 tandem-engines = { path = "crates/tandem-engines" }

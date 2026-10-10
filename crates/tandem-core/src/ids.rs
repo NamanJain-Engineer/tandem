@@ -116,6 +116,11 @@ impl HostId {
         Self(new_id("host"))
     }
 
+    /// A stored id, trusted as written.
+    pub fn from_db(raw: String) -> Self {
+        Self(raw)
+    }
+
     pub fn is_local(&self) -> bool {
         self.0 == "local"
     }
