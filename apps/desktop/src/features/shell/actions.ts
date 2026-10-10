@@ -52,7 +52,7 @@ export async function copyDiagnostics(toast: Toast): Promise<void> {
 }
 
 export async function openBilling(
-  target: { type: "upgrade"; plan: string; interval: string } | { type: "portal" } | { type: "credits" },
+  target: { type: "upgrade"; plan: string; interval: string } | { type: "portal" } | { type: "credits" } | { type: "account" },
   toast: Toast,
 ): Promise<boolean> {
   try {

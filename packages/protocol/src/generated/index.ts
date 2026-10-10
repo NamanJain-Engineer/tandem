@@ -50,6 +50,7 @@ export type * from "./ContextFill";
 export type * from "./CopyReason";
 export type * from "./CreditsView";
 export type * from "./DashboardItem";
+export type * from "./DataExport";
 export type * from "./DeepLink";
 export type * from "./DetectionReport";
 export type * from "./Device";

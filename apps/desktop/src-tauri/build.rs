@@ -184,6 +184,8 @@ const COMMANDS: &[&str] = &[
     "scratchpad_delete",
     "usage_report",
     "usage_share_save",
+    "data_export",
+    "data_delete_local",
     "term_stage_clipboard_image",
     "term_last_output",
     "pty_type_prompt",
