@@ -530,6 +530,7 @@ impl AppState {
             entitlements: entitlements.clone(),
             threads: threads.clone(),
             notifications: notifications.clone(),
+            gateway: gateway.clone(),
         }));
         terminals.bind_tasks(&tasks);
         let task_exec = crate::services::tasks_exec::TaskExecService::new(
@@ -547,6 +548,7 @@ impl AppState {
             teammates: teammates.clone(),
             threads: threads.clone(),
             notifications: notifications.clone(),
+            gateway: gateway.clone(),
         }));
         // Teammate mail (F-AG-12) lands in teammate chats.
         let mail = crate::services::mail::MailService::new(

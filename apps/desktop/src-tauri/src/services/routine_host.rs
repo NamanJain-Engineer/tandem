@@ -7,7 +7,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tandem_core::access::ThreadMode;
 use tandem_core::entitlement::Limits;
-use tandem_core::ids::{TeammateId, ThreadId};
+use tandem_core::ids::{RoutineId, TeammateId, ThreadId};
 use tandem_core::source::SourceRef;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_store::repo::notifications::NotificationKind;
@@ -18,6 +18,12 @@ use tandem_store::Store;
 
 use crate::services::routines::RoutineHost;
 
+/// How a routine's run is named to the gateway (F-PL-08):
+/// `plugins::parse_origin` reads it back for Held actions.
+fn routine_origin(id: &RoutineId) -> String {
+    format!("routine:{}", id.as_str())
+}
+
 pub struct AppRoutineHost {
     pub store: Store,
     pub teammates: Arc<crate::services::teammates::TeammatesService>,
@@ -26,6 +32,8 @@ pub struct AppRoutineHost {
     pub entitlements: Arc<crate::services::entitlement::EntitlementService>,
     pub threads: Arc<crate::services::threads::ThreadService>,
     pub notifications: Arc<crate::services::notifications::NotificationService>,
+    /// Files what the run holds for review under the routine (F-PL-08).
+    pub gateway: Arc<crate::services::gateway::GatewayService>,
 }
 
 #[async_trait]
@@ -87,6 +95,10 @@ impl RoutineHost for AppRoutineHost {
             .await
             .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
         self.teammates.publish().await;
+        // Before the first message starts the session: plugin writes it
+        // holds say which routine they came from (F-PL-08).
+        self.gateway
+            .set_unattended_origin(&chat.id, &routine_origin(&routine.id));
         self.threads
             .send(&chat.id, routine.instruction.clone(), Vec::new(), false)
             .await?;
@@ -105,5 +117,21 @@ impl RoutineHost for AppRoutineHost {
         self.notifications
             .raise_routine(kind, title, body, source)
             .await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::plugins::parse_origin;
+    use tandem_store::repo::held_drafts::OriginKind;
+
+    #[test]
+    fn f_pl_08_a_routine_run_files_held_drafts_under_its_routine() {
+        let id = RoutineId::new();
+        assert_eq!(
+            parse_origin(&routine_origin(&id)),
+            Some((OriginKind::Routine, id.as_str().to_string(), None))
+        );
     }
 }

@@ -574,9 +574,7 @@ fn setup_dictate(app: &tauri::App, state: &AppState) {
         }
         Err(err) => tracing::warn!(error = %err, "dictate: widget window not created"),
     }
-    if let Err(err) = services::tray::install(app) {
-        tracing::warn!(error = %err, "tray icon not installed");
-    }
+    tray::install(app.handle());
     let dictate = state.dictate.clone();
     tauri::async_runtime::spawn(async move {
         dictate.start().await;

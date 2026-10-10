@@ -7,7 +7,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tandem_core::access::ThreadMode;
 use tandem_core::entitlement::Limits;
-use tandem_core::ids::{AccountId, TeammateId, ThreadId, WorkspaceId};
+use tandem_core::ids::{AccountId, AttemptId, TeammateId, ThreadId, WorkspaceId};
 use tandem_core::source::SourceRef;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_engines::events::ThreadEvent;
@@ -16,6 +16,12 @@ use tandem_store::repo::threads::{ChatExtra, NewThread, ThreadKind, ThreadState}
 use tandem_store::Store;
 
 use crate::services::tasks_exec::{ExecHost, SessionStart};
+
+/// How a task run is named to the gateway (F-PL-08):
+/// `plugins::parse_origin` reads it back for Held actions.
+fn task_origin(issue_id: &str, attempt: &AttemptId) -> String {
+    format!("task:{issue_id}:{}", attempt.as_str())
+}
 
 pub struct AppExecHost {
     pub store: Store,
@@ -26,6 +32,8 @@ pub struct AppExecHost {
     pub teammates: Arc<crate::services::teammates::TeammatesService>,
     pub threads: Arc<crate::services::threads::ThreadService>,
     pub notifications: Arc<crate::services::notifications::NotificationService>,
+    /// Files what a run holds for review under its task (F-PL-08).
+    pub gateway: Arc<crate::services::gateway::GatewayService>,
 }
 
 impl AppExecHost {
@@ -124,6 +132,10 @@ impl ExecHost for AppExecHost {
             }
             None => self.threads.create(new).await?,
         };
+        // Before the first message starts the session: plugin writes it
+        // holds say which task they came from (F-PL-08).
+        self.gateway
+            .set_unattended_origin(&thread.id, &task_origin(&s.issue_id, &s.attempt));
         if !s.review {
             tandem_store::repo::task_attempts::update(
                 &self.store,
@@ -211,5 +223,25 @@ impl ExecHost for AppExecHost {
                 },
             )
             .await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::plugins::parse_origin;
+    use tandem_store::repo::held_drafts::OriginKind;
+
+    #[test]
+    fn f_pl_08_a_task_run_files_held_drafts_under_its_task_and_attempt() {
+        let attempt = AttemptId::new();
+        assert_eq!(
+            parse_origin(&task_origin("ISS-4", &attempt)),
+            Some((
+                OriginKind::Task,
+                "ISS-4".to_string(),
+                Some(attempt.as_str().to_string())
+            ))
+        );
     }
 }

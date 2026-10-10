@@ -8,16 +8,16 @@ every milestone has its tasks, exit checks and E2E list in MILESTONES. Tick
 items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md`
 has every feature below with its full behaviour and acceptance tests.
 
-**Where it stands (10 October 2026, `product-m0-m5`):** M0–M10 and M12
-are done, and so are M15's six features (its non-functional checks are under
-way). So is M13, apart from its voice pair (F-DI-05 and F-DI-10, which M8's
-session builds next on M13's clients). M16 has F-SH-12, F-AC-07, F-AU-01,
-F-BE-03 and F-BE-12. That's 126 of 152 features, and all 65 P0s. Left: 26
-features, none of them P0 (12 P1, 14 P2): M11's 8, M13's voice pair, M14's 2
-and M16's 14. vibezeo.com serves 0.4.0 (teammates, Find work, your data,
-shortcut rebinding and the usage page); Dictate (M8) and plugins (M12) reach a
-download with the next release. M15 makes the P0/P1 product launchable;
-M16 adds the P2 extras and the release candidate.
+**Where it stands (10 October 2026, `product-m0-m5`):** M0–M12 are done,
+and so are M15's six features (its non-functional checks are under way). So
+is M13, apart from its voice pair (F-DI-05 and F-DI-10, which M8's session
+builds next on M13's clients). M16 has F-SH-12, F-AC-07, F-AU-01, F-BE-03,
+F-BE-12 and F-RT-05. That's 135 of 152 features, and all 65 P0s. Left: 17
+features, none of them P0 (4 P1, 13 P2): M13's voice pair, M14's 2 and M16's 13.
+vibezeo.com serves 0.4.0 (teammates, Find work, your data, shortcut rebinding
+and the usage page); Dictate (M8), tasks and routines (M11) and plugins (M12)
+reach a download with the next release. M15 makes the P0/P1 product
+launchable; M16 adds the P2 extras and the release candidate.
 
 ## 0. First, before new features
 
@@ -91,7 +91,8 @@ search, mail, settings, create with AI, gateway.
 
 ### M11 · Tasks and routines (L) · 8 features (P1)
 A local task tracker agents read and write over MCP, with Pro execution in
-lanes; scheduled routines that run in-app and in the background.
+lanes; scheduled routines that run in-app and in the background. **Done in
+pull request #36** (branch `m11-tasks-routines`), with M16's F-RT-05.
 - [x] F-TK-01 Task store
 - [x] F-TK-02 `tandem-tasks` MCP server
 - [x] F-TK-03 Tasks UI
