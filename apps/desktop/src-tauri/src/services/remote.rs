@@ -300,6 +300,10 @@ impl RemoteService {
         if let Some(p) = std::env::var_os("TANDEM_SSH_BIN").filter(|_| cfg!(debug_assertions)) {
             ssh.ssh = PathBuf::from(p);
         }
+        // An ssh config used instead of the user's own (debug builds; E2E-M14-9).
+        if let Some(p) = std::env::var_os("TANDEM_SSH_CONFIG").filter(|_| cfg!(debug_assertions)) {
+            ssh.config = Some(PathBuf::from(p));
+        }
         Arc::new(Self {
             files: Default::default(),
             store,
@@ -548,7 +552,7 @@ impl RemoteService {
                     ),
                 )));
             }
-            let keys = ssh.scan(&resolved).await.map_err(ssh_error)?;
+            let keys = ssh.host_keys(&target, &resolved).await.map_err(ssh_error)?;
             let key = keys[0].clone();
             let prompt = SshPrompt::Hostkey {
                 host: target.label(),

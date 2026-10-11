@@ -1,6 +1,7 @@
 //! The SSH transport (ARCHITECTURE §13.1, F-RM-01): the system `ssh` with
 //! one ControlMaster per host (`ControlPath=$DATA/run/ssh-%C`), host keys
-//! checked strictly against Vibezeo's own `known_hosts`, and `tandem-host`
+//! checked strictly against Vibezeo's own `known_hosts` (read through ssh
+//! itself for hosts behind `ProxyJump` or `ProxyCommand`), and `tandem-host`
 //! installed into `~/.tandem-host/<protocol>/` with its SHA-256 checked on
 //! the host before use.
 //!
@@ -11,6 +12,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use base64::Engine;
@@ -182,6 +184,9 @@ pub struct Resolved {
     pub hostname: String,
     pub port: u16,
     pub user: String,
+    /// `ProxyJump` or `ProxyCommand` when the user's config reaches the
+    /// host through one (D-1603).
+    pub via: Option<&'static str>,
 }
 
 pub fn parse_g(out: &str) -> Option<Resolved> {
@@ -200,13 +205,13 @@ pub fn parse_g(out: &str) -> Option<Resolved> {
         hostname: hostname?,
         port,
         user,
+        via: proxied(out),
     })
 }
 
 /// How `ssh -G` says the host is reached when it isn't directly:
-/// `ProxyJump` or `ProxyCommand`. The host key scan (`ssh-keyscan`) connects
-/// directly, so those hosts aren't supported yet (F-RM-01): they're refused
-/// before any scan, in words that say why.
+/// `ProxyJump` or `ProxyCommand`. `ssh-keyscan` connects directly, so such
+/// a host's key is read through ssh itself (`Ssh::host_keys`, D-1603).
 pub fn proxied(g_out: &str) -> Option<&'static str> {
     for line in g_out.lines() {
         match line.split_once(' ') {
@@ -308,7 +313,12 @@ pub struct Ssh {
     /// `$DATA/ssh/known_hosts`.
     pub known_hosts: PathBuf,
     pub askpass: Option<Askpass>,
+    /// `ssh -F`: a config file instead of the user's own (tests).
+    pub config: Option<PathBuf>,
 }
+
+/// Names each host key probe's throwaway `known_hosts`.
+static PROBES: AtomicU64 = AtomicU64::new(0);
 
 /// What `install` did.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -326,6 +336,7 @@ impl Ssh {
             run_dir,
             known_hosts,
             askpass: None,
+            config: None,
         }
     }
 
@@ -336,6 +347,10 @@ impl Ssh {
     /// Every option before the target.
     pub fn options(&self, t: &SshTarget, master: bool) -> Vec<String> {
         let mut o: Vec<String> = Vec::new();
+        if let Some(c) = &self.config {
+            o.push("-F".into());
+            o.push(c.display().to_string());
+        }
         let mut opt = |kv: String| {
             o.push("-o".into());
             o.push(kv);
@@ -419,19 +434,100 @@ impl Ssh {
                 SshError::new(Category::Unreachable, format!("Couldn't run ssh: {e}"))
             })?;
         let g = String::from_utf8_lossy(&out.stdout);
-        if let Some(how) = proxied(&g) {
-            return Err(SshError::new(
-                Category::Unreachable,
-                format!(
-                    "{} is reached through {how} in your SSH config, which Vibezeo doesn't support yet. Add a host it can reach directly.",
-                    t.label()
-                ),
-            ));
-        }
         parse_g(&g).ok_or_else(|| fail(&String::from_utf8_lossy(&out.stderr), &t.label()))
     }
 
-    /// The host's keys, for approval before the first connection.
+    /// The host's keys, for approval before the first connection:
+    /// `ssh-keyscan` for a host reached directly, else ssh itself through
+    /// the user's `ProxyJump` or `ProxyCommand` (D-1603). That connection
+    /// reaches the jump host as the user's config says and offers the host
+    /// no sign-in at all (every method off, no agent, no forwarding), so all
+    /// it learns is the key the host showed, which `accept-new` writes to a
+    /// throwaway `known_hosts`. Nothing is trusted until the user approves.
+    pub async fn host_keys(&self, t: &SshTarget, r: &Resolved) -> Result<Vec<HostKey>, SshError> {
+        let Some(via) = r.via else {
+            return self.scan(r).await;
+        };
+        std::fs::create_dir_all(&self.run_dir)
+            .map_err(|e| SshError::new(Category::Unreachable, e.to_string()))?;
+        let file = self.run_dir.join(format!(
+            "probe-{}-{}",
+            std::process::id(),
+            PROBES.fetch_add(1, Ordering::Relaxed)
+        ));
+        let mut cmd = self.base(&self.ssh);
+        if let Some(c) = &self.config {
+            cmd.arg("-F").arg(c);
+        }
+        for kv in [
+            "ControlMaster=no".to_string(),
+            "ControlPath=none".into(),
+            "StrictHostKeyChecking=accept-new".into(),
+            format!("UserKnownHostsFile={}", file.display()),
+            "GlobalKnownHostsFile=/dev/null".into(),
+            "HashKnownHosts=no".into(),
+            "UpdateHostKeys=no".into(),
+            "CheckHostIP=no".into(),
+            "BatchMode=yes".into(),
+            "PubkeyAuthentication=no".into(),
+            "PasswordAuthentication=no".into(),
+            "KbdInteractiveAuthentication=no".into(),
+            "HostbasedAuthentication=no".into(),
+            "GSSAPIAuthentication=no".into(),
+            "ForwardAgent=no".into(),
+            "ForwardX11=no".into(),
+            "ClearAllForwardings=yes".into(),
+            "PermitLocalCommand=no".into(),
+            "LogLevel=ERROR".into(),
+            format!("ConnectTimeout={CONNECT_TIMEOUT_SECS}"),
+        ] {
+            cmd.arg("-o").arg(kv);
+        }
+        if let Some(p) = t.port {
+            cmd.arg("-p").arg(p.to_string());
+        }
+        if let Some(u) = &t.user {
+            cmd.arg("-l").arg(u);
+        }
+        cmd.args(["-T", "--", &t.target, "true"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        let out = tokio::time::timeout(EXEC_TIMEOUT, cmd.output()).await;
+        let seen = std::fs::read_to_string(&file).unwrap_or_default();
+        let _ = std::fs::remove_file(&file);
+        let name = known_name(r);
+        let keys: Vec<HostKey> = parse_keyscan(&seen)
+            .into_iter()
+            .map(|k| HostKey {
+                line: match k.line.split_once(' ') {
+                    Some((_, rest)) => format!("{name} {rest}"),
+                    None => k.line,
+                },
+                ..k
+            })
+            .collect();
+        if !keys.is_empty() {
+            return Ok(keys);
+        }
+        let stderr = match out {
+            Ok(Ok(o)) => String::from_utf8_lossy(&o.stderr).into_owned(),
+            Ok(Err(e)) => format!("Couldn't run ssh: {e}"),
+            Err(_) => String::new(),
+        };
+        Err(SshError::new(
+            Category::Unreachable,
+            format!(
+                "Couldn't reach {} through {via} in your SSH config. {}",
+                t.label(),
+                last_lines(&stderr)
+            )
+            .trim_end()
+            .to_string(),
+        ))
+    }
+
+    /// `ssh-keyscan`: the keys of a host reached directly.
     pub async fn scan(&self, r: &Resolved) -> Result<Vec<HostKey>, SshError> {
         let out = Command::new(&self.keyscan)
             .args([
@@ -810,6 +906,7 @@ Host key verification failed.";
             hostname: "127.0.0.1".into(),
             port: 2222,
             user: "tandem".into(),
+            via: None,
         };
         let dir = tempfile::tempdir().expect("tmp");
         let s = Ssh::new(dir.path().join("run"), dir.path().join("ssh/known_hosts"));
@@ -821,6 +918,7 @@ Host key verification failed.";
             hostname: "h2".into(),
             port: 22,
             user: String::new(),
+            via: None,
         };
         s.trust(
             &other,
@@ -841,7 +939,8 @@ Host key verification failed.";
             Some(Resolved {
                 hostname: "10.0.0.5".into(),
                 port: 2222,
-                user: "tandem".into()
+                user: "tandem".into(),
+                via: None,
             })
         );
     }
@@ -862,27 +961,87 @@ Host key verification failed.";
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn f_rm_01_a_proxyjump_host_is_refused_before_any_scan() {
+    async fn f_rm_01_a_proxyjump_hosts_key_is_read_through_ssh_offering_no_sign_in() {
         use std::os::unix::fs::PermissionsExt;
-        // An ssh whose config sends `inner` through a jump host: `-G` says so.
+        // An ssh whose config sends `inner` through a jump host: `-G` says
+        // so, and a connection writes the key the host showed to the
+        // `known_hosts` it was given, then fails to sign in (none offered).
         let dir = tempfile::tempdir().expect("tmp");
         let fake = dir.path().join("ssh");
+        let args = dir.path().join("args");
         std::fs::write(
             &fake,
-            "#!/bin/sh\nprintf 'user me\\nhostname 10.9.9.9\\nport 22\\nproxyjump bastion\\n'\n",
+            format!(
+                r#"#!/bin/sh
+if [ "$1" = -G ]; then printf 'user me\nhostname 10.9.9.9\nport 22\nproxyjump bastion\n'; exit 0; fi
+printf '%s\n' "$@" > {args}
+for a in "$@"; do case "$a" in UserKnownHostsFile=*) kh="${{a#UserKnownHostsFile=}}";; esac; done
+echo "10.9.9.9 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > "$kh"
+echo "me@10.9.9.9: Permission denied (publickey)." >&2
+exit 255
+"#,
+                args = args.display()
+            ),
         )
         .expect("w");
         std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).expect("chmod");
         let mut s = Ssh::new(dir.path().join("run"), dir.path().join("kh"));
         s.ssh = fake;
-        // A scan would fail differently; it must never run.
+        // `ssh-keyscan` would connect directly; it must never run.
         s.keyscan = dir.path().join("no-keyscan");
-        let e = s
-            .resolve(&SshTarget::parse("me@inner").expect("t"))
-            .await
-            .expect_err("refused");
-        assert!(e.message.contains("ProxyJump"), "{}", e.message);
-        assert!(e.message.contains("doesn't support yet"), "{}", e.message);
+        s.config = Some(dir.path().join("config"));
+        let t = SshTarget::parse("me@inner").expect("t");
+        let r = s.resolve(&t).await.expect("resolved");
+        assert_eq!(r.via, Some("ProxyJump"));
+        let keys = s.host_keys(&t, &r).await.expect("keys");
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].key_type, "ssh-ed25519");
+        assert!(
+            keys[0].line.starts_with("10.9.9.9 ssh-ed25519 "),
+            "{}",
+            keys[0].line
+        );
+        let sent = std::fs::read_to_string(&args).expect("args");
+        let sent: Vec<&str> = sent.lines().collect();
+        for must in [
+            "PubkeyAuthentication=no",
+            "PasswordAuthentication=no",
+            "KbdInteractiveAuthentication=no",
+            "ForwardAgent=no",
+            "StrictHostKeyChecking=accept-new",
+            "ControlPath=none",
+        ] {
+            assert!(sent.contains(&must), "{must} in {sent:?}");
+        }
+        assert_eq!(
+            sent[..2],
+            ["-F", dir.path().join("config").to_str().expect("utf8")]
+        );
+        assert!(!sent.contains(&"-i"), "no key is offered: {sent:?}");
+        assert!(
+            !sent
+                .iter()
+                .any(|a| a.contains(&*s.known_hosts.to_string_lossy())),
+            "the probe never touches the pinned keys: {sent:?}"
+        );
+        // Nothing is trusted, and the throwaway file is gone.
+        assert!(s.known(&r).is_empty());
+        let left: Vec<_> = std::fs::read_dir(dir.path().join("run"))
+            .expect("run")
+            .flatten()
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+        // A jump that fails leaves nothing to approve, and says through what.
+        std::fs::write(
+            &s.ssh,
+            "#!/bin/sh\nif [ \"$1\" = -G ]; then printf 'hostname inner\\nport 22\\nproxycommand nc %h %p\\n'; exit 0; fi\necho 'ssh: connect to host bastion port 22: Connection refused' >&2\nexit 255\n",
+        )
+        .expect("w");
+        let r = s.resolve(&t).await.expect("resolved");
+        let e = s.host_keys(&t, &r).await.expect_err("unreachable");
+        assert_eq!(e.category, Category::Unreachable);
+        assert!(e.message.contains("through ProxyCommand"), "{}", e.message);
+        assert!(e.message.contains("Connection refused"), "{}", e.message);
     }
 
     #[test]

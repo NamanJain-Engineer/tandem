@@ -1528,7 +1528,7 @@
   "remote.add.name": "Name",
   "remote.add.namePlaceholder": "Build box",
   "remote.add.host": "Host",
-  "remote.add.hostHint": "An alias from ~/.ssh/config, a host name, or user@host:port. Hosts reached through ProxyJump or ProxyCommand aren't supported yet.",
+  "remote.add.hostHint": "An alias from ~/.ssh/config, a host name, or user@host:port. Hosts behind ProxyJump or ProxyCommand are reached as your config says.",
   "remote.add.user": "User",
   "remote.add.port": "Port",
   "remote.add.portBad": "Use a port from 1 to 65535",
