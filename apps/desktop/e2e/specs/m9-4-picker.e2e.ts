@@ -11,7 +11,7 @@ import {
   invoke,
   mod,
   paneIds,
-  settled,
+  pickTile,
   split,
   waitForPaneText,
 } from "../support/app";
@@ -49,9 +49,7 @@ async function browserSplit(): Promise<string> {
     (document.activeElement as HTMLElement | null)?.blur();
     window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyD", key: "d", ctrlKey: !mac, metaKey: mac, bubbles: true, cancelable: true }));
   }, mod() === "Meta");
-  await $('[data-testid="tile-browser"]').waitForClickable({ timeout: 10_000 });
-  await settled();
-  await $('[data-testid="tile-browser"]').click();
+  await pickTile("browser");
   let added = "";
   await until(async () => {
     added = (await paneIds()).find((id) => !before.includes(id)) ?? "";

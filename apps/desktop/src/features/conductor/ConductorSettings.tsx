@@ -42,7 +42,7 @@ export function NameControl({ ids }: { ids: Ids }) {
       <Input
         id={ids.id}
         aria-describedby={ids.describedBy}
-        aria-label={t("conductor.name")}
+        aria-label={t("conductor.persona.name")}
         className="w-56"
         maxLength={40}
         value={draft}

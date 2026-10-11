@@ -2163,6 +2163,35 @@ impl DictateService {
     }
 
     /// The harness's fake mic source for the next take.
+    /// A Conductor call claims the mic (F-CN-08): the same device, gain and
+    /// recovery as Dictate, streamed to `tap`; every Dictate take is refused
+    /// ("Conductor is listening") until [`DictateService::call_mic_stop`].
+    pub fn call_mic_start(&self, tap: tandem_voice::capture::StreamTap) -> Result<(), String> {
+        let audio = self.audio.get().ok_or("The microphone isn't ready yet.")?;
+        if let Some(c) = self.controller() {
+            if c.current_take().is_some() {
+                return Err("Finish dictating first.".into());
+            }
+            c.set_mic_owner(Some("conductor".into()));
+        }
+        audio.begin_stream(tap).map_err(|e| {
+            if let Some(c) = self.controller() {
+                c.set_mic_owner(None);
+            }
+            e.to_string()
+        })
+    }
+
+    /// The call is over: the mic goes back to Dictate.
+    pub fn call_mic_stop(&self) {
+        if let Some(a) = self.audio.get() {
+            a.cancel_take();
+        }
+        if let Some(c) = self.controller() {
+            c.set_mic_owner(None);
+        }
+    }
+
     pub fn test_mic(&self, source: FakeSource) -> Result<(), IpcError> {
         let fakes = self
             .fakes

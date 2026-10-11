@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-checkpoints-list"
+description = "Enables the checkpoints_list command without any pre-configured scope."
+commands.allow = ["checkpoints_list"]
+
+[[permission]]
+identifier = "deny-checkpoints-list"
+description = "Denies the checkpoints_list command without any pre-configured scope."
+commands.deny = ["checkpoints_list"]

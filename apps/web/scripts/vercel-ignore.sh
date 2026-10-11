@@ -4,11 +4,12 @@
 # project's Root Directory, on a shallow clone. It lives in this file because
 # Vercel caps the command itself at 256 characters.
 
-# Only main (production), product-m0-m5 and release-* (previews) deploy.
+# Only main deploys (D-829). vercel.json's git.deploymentEnabled already
+# keeps other branches from creating deployments; this is the second guard.
 case "$VERCEL_GIT_COMMIT_REF" in
-  main | product-m0-m5 | release-*) ;;
+  main) ;;
   *)
-    echo "Only main, product-m0-m5 and release-* deploy (docs/DEPLOY_SITE.md)"
+    echo "Only main deploys (docs/DEPLOY_SITE.md)"
     exit 0
     ;;
 esac

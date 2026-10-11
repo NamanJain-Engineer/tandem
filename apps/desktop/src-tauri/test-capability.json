@@ -33,6 +33,8 @@
     "allow-test-dictate-key",
     "allow-test-dictate-mic",
     "allow-test-dictate-platform",
-    "allow-test-dictate-widget"
+    "allow-test-dictate-widget",
+    "allow-test-conductor-inject",
+    "allow-test-conductor-clock"
   ]
 }

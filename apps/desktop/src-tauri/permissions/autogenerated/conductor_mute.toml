@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-conductor-mute"
+description = "Enables the conductor_mute command without any pre-configured scope."
+commands.allow = ["conductor_mute"]
+
+[[permission]]
+identifier = "deny-conductor-mute"
+description = "Denies the conductor_mute command without any pre-configured scope."
+commands.deny = ["conductor_mute"]

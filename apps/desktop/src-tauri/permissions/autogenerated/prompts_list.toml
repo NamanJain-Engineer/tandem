@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-prompts-list"
+description = "Enables the prompts_list command without any pre-configured scope."
+commands.allow = ["prompts_list"]
+
+[[permission]]
+identifier = "deny-prompts-list"
+description = "Denies the prompts_list command without any pre-configured scope."
+commands.deny = ["prompts_list"]
