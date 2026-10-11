@@ -18,3 +18,6 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 pnpm gen:protocol
 git diff --exit-code packages/protocol
+# The cfg(target_os = "macos") code, both Mac architectures, from Linux
+# (D-2105; docs/MACOS.md §2).
+bash scripts/macos-check.sh --clippy

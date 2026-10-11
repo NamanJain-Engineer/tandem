@@ -14,6 +14,14 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub const LAUNCHD_LABEL: &str = "app.tandem.routines";
+/// The app's bundle id (tauri.conf.json `identifier`). The LaunchAgent names
+/// it so System Settings › Login Items shows the background item as
+/// Vibezeo's (macOS 13+), not as a bare executable.
+pub const MAC_BUNDLE_ID: &str = "com.vibezeo.tandem";
+/// How often `launchctl bootstrap` is tried: right after a `bootout` it can
+/// fail with "Bootstrap failed: 5: Input/output error" while launchd is still
+/// removing the old job.
+pub const BOOTSTRAP_TRIES: u32 = 3;
 pub const SCHTASKS_NAME: &str = "Tandem\\Routines";
 pub const SYSTEMD_UNIT: &str = "tandem-routines";
 /// Marks Vibezeo's crontab line.
@@ -27,6 +35,11 @@ pub enum LauncherError {
     Io(#[from] std::io::Error),
     #[error("{program} failed: {message}")]
     Command { program: String, message: String },
+    /// macOS runs a downloaded app from a temporary, read-only copy (App
+    /// Translocation) or straight from the mounted disk image; a LaunchAgent
+    /// pointing there breaks as soon as the copy or the image goes.
+    #[error("Vibezeo is running from {0}. Move Vibezeo to Applications, open it from there, then turn this on again.")]
+    NotInstalled(&'static str),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -257,6 +270,22 @@ pub struct LaunchdLauncher {
     pub uid: u32,
 }
 
+/// Where a LaunchAgent mustn't point: a translocated copy
+/// (`…/AppTranslocation/<uuid>/d/Vibezeo.app/…`) or an app run from its
+/// mounted disk image (`/Volumes/<image>/Vibezeo.app/…`).
+pub fn transient_app_location(exe: &Path) -> Option<&'static str> {
+    let s = exe.to_string_lossy();
+    if s.contains("/AppTranslocation/") {
+        return Some("a temporary copy macOS made of the download");
+    }
+    let parts: Vec<&str> = s.split('/').collect();
+    // ["", "Volumes", "<image>", "Vibezeo.app", …]
+    if parts.len() > 3 && parts[1] == "Volumes" && parts[3].ends_with(".app") {
+        return Some("its disk image");
+    }
+    None
+}
+
 impl LaunchdLauncher {
     pub fn plist_path(&self) -> PathBuf {
         self.home
@@ -292,6 +321,8 @@ impl LaunchdLauncher {
   <false/>
   <key>ProcessType</key>
   <string>Background</string>
+  <key>AssociatedBundleIdentifiers</key>
+  <string>{MAC_BUNDLE_ID}</string>
   <key>StandardOutPath</key>
   <string>{log}</string>
   <key>StandardErrorPath</key>
@@ -314,6 +345,9 @@ impl OsLauncher for LaunchdLauncher {
     }
 
     fn install(&self, spec: &LauncherSpec) -> Result<LauncherStatus, LauncherError> {
+        if let Some(place) = transient_app_location(&spec.exe) {
+            return Err(LauncherError::NotInstalled(place));
+        }
         let path = self.plist_path();
         write_file(&path, &Self::plist(spec))?;
         // A loaded older copy goes first (its failure means none was loaded).
@@ -322,16 +356,20 @@ impl OsLauncher for LaunchdLauncher {
             &args(&["bootout", &format!("{}/{LAUNCHD_LABEL}", self.domain())]),
             None,
         );
-        let out = self.runner.run(
-            "launchctl",
-            &[
-                "bootstrap".to_string(),
-                self.domain(),
-                path.to_string_lossy().into_owned(),
-            ],
-            None,
-        );
-        if let Err(e) = check("launchctl", out) {
+        let bootstrap = [
+            "bootstrap".to_string(),
+            self.domain(),
+            path.to_string_lossy().into_owned(),
+        ];
+        let mut result = check("launchctl", self.runner.run("launchctl", &bootstrap, None));
+        for _ in 1..BOOTSTRAP_TRIES {
+            if result.is_ok() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            result = check("launchctl", self.runner.run("launchctl", &bootstrap, None));
+        }
+        if let Err(e) = result {
             let _ = remove_file(&path);
             return Err(e);
         }

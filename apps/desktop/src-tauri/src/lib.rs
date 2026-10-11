@@ -1311,6 +1311,109 @@ mod harness_tests {
         assert!(include_str!("../../../../scripts/check-host-bundle.sh").contains("*.rpm)"));
     }
 
+    /// macOS bundle (D-2101, NFR macOS): macOS 14 or later as DECISIONS
+    /// says, the hardened runtime with only the microphone entitlement, no
+    /// App Sandbox (D-2106), and the microphone's usage string, without which
+    /// the first take would end the app. Tauri reads these files only when
+    /// building for macOS, so this test is what keeps them valid elsewhere.
+    #[test]
+    fn nfr_macos_bundle_config_is_pinned() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.macos.conf.json"))
+                .expect("tauri.macos.conf.json");
+        let mac = &conf["bundle"]["macOS"];
+        // Tauri's own schema accepts it (unknown keys are an error there).
+        let parsed: tauri::utils::config::MacConfig =
+            serde_json::from_value(mac.clone()).expect("a valid bundle.macOS");
+        assert_eq!(parsed.minimum_system_version.as_deref(), Some("14.0"));
+        assert!(parsed.hardened_runtime);
+        assert_eq!(parsed.entitlements.as_deref(), Some("./Entitlements.plist"));
+        assert!(
+            parsed.signing_identity.is_none(),
+            "the identity comes from CI (APPLE_SIGNING_IDENTITY), never the repo"
+        );
+        assert_eq!(conf["app"]["windows"][0]["title"], "Vibezeo");
+
+        let ent = plist::Value::from_file(root.join("Entitlements.plist")).expect("entitlements");
+        let ent = ent.as_dictionary().expect("dict");
+        let keys: Vec<&str> = ent.keys().map(String::as_str).collect();
+        assert_eq!(
+            keys,
+            ["com.apple.security.device.audio-input"],
+            "each entitlement is justified in Entitlements.plist; add it there and here"
+        );
+        assert_eq!(
+            ent["com.apple.security.device.audio-input"].as_boolean(),
+            Some(true)
+        );
+
+        let info = plist::Value::from_file(root.join("Info.plist")).expect("Info.plist");
+        let info = info.as_dictionary().expect("dict");
+        let mic = info
+            .get("NSMicrophoneUsageDescription")
+            .and_then(plist::Value::as_string)
+            .expect("NSMicrophoneUsageDescription");
+        assert!(mic.contains("Vibezeo") && mic.contains("Dictate"), "{mic}");
+        for owned_by_tauri in [
+            "CFBundleIdentifier",
+            "LSMinimumSystemVersion",
+            "CFBundleURLTypes",
+        ] {
+            assert!(
+                !info.contains_key(owned_by_tauri),
+                "{owned_by_tauri} comes from the config"
+            );
+        }
+    }
+
+    /// macOS release (D-2102): notarization rejects an unsigned Mach-O
+    /// anywhere in the bundle, and Tauri doesn't sign resources. Both macOS
+    /// release paths sign every sidecar in `externalBin` and the bundled
+    /// tandem-host before bundling, notarize the dmg and verify the app.
+    #[test]
+    fn nfr_macos_release_signs_every_bundled_executable() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let repo = root.join("../../..");
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.sidecars.conf.json")).expect("json");
+        let sidecars: Vec<String> = conf["bundle"]["externalBin"]
+            .as_array()
+            .expect("externalBin")
+            .iter()
+            .filter_map(|b| b.as_str())
+            .map(str::to_string)
+            .collect();
+        assert!(sidecars.len() >= 2, "{sidecars:?}");
+        let workflow = std::fs::read_to_string(repo.join(".github/workflows/release.yml"))
+            .expect("release.yml");
+        let local =
+            std::fs::read_to_string(repo.join("scripts/ci/macos-release.sh")).expect("script");
+        for (name, text) in [("release.yml", &workflow), ("macos-release.sh", &local)] {
+            for bin in &sidecars {
+                // `binaries/tandem-tasks` → signed as `binaries/tandem-tasks-<target>`.
+                assert!(text.contains(&format!("{bin}-")), "{name} signs {bin}");
+            }
+            assert!(
+                text.contains("tandem-host/macos-universal/tandem-host"),
+                "{name} signs the macOS tandem-host"
+            );
+            for step in [" identity)", " notarize ", "verify --notarized"] {
+                assert!(text.contains(step), "{name}: {step}");
+            }
+        }
+        // The helper is signed where it's built, before its SHA-256 manifest.
+        let host_job = workflow
+            .split("\n  build:\n")
+            .next()
+            .expect("jobs before build");
+        assert!(host_job.contains(
+            "sign \"$id\" apps/desktop/src-tauri/resources/tandem-host/macos-universal/tandem-host"
+        ));
+        // The release builds the UI it embeds (no beforeBuildCommand).
+        assert!(workflow.contains("pnpm --filter desktop build"));
+    }
+
     /// §5.3: the app webview's CSP is `'self'` only, runs no remote or inline
     /// script, and connects only to itself, the IPC bridge, loopback (the
     /// gateway and local review) and the API with its WebSocket.

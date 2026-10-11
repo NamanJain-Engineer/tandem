@@ -17,6 +17,7 @@ pub mod insert;
 pub mod media;
 pub mod mic_owner;
 pub mod models;
+pub mod permissions;
 pub mod postproc;
 pub mod realtime;
 pub mod stt;
