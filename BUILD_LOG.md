@@ -718,6 +718,10 @@ Built on branch `m16d-simulator` (from `product-m0-m5` 7f6d875) by the M13 sessi
 
 ### M16 · F-CD-21 log
 - F-CD-21: the shared service, the macOS host and commands, the pane, the tile and the tests. The disk allowance filled twice during builds (a linker bus error, then `gen:protocol` cut off mid-write, which had deleted the generated types). Deleting stale `target/debug` artifacts freed it, and `gen:protocol` was re-run.
+- Full E2E regression on the branch, merged with `product-m0-m5` d1060d3 (batch 2 and 0.5.0): 109/109 spec files.
+  - The M14 specs need the sshd fixture: `scripts/agent/build-sshd-image.sh`, `gen-ssh-fixture.sh` (openssh-client) and `build-tandem-host.sh` (musl-tools and the musl target).
+  - The M8 specs need the model cache: `bash scripts/fetch-models.sh base.en parakeet`. Without these, those 11 spec files fail for setup reasons only.
+  - One full run failed E2E-M16-7 F-AU-01.4 (Auto with 0 credits), which passed alone. The test swallowed a missed wait for the new pane's idle status, and Auto rightly waits for the prompt before asking. Its timeout message was also built before polling, so it always read "undefined". The wait is now an explicit 45 s precondition, a timeout reports the run as last seen, and the next full run passed.
 
 ## Decisions
 - D-1: F-CD-09 owned by M9. It needs the Files editor and the Tandem browser.
