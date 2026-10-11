@@ -2878,7 +2878,7 @@ Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1â€
 
 **Behavior:**
 - **Overlap:** for a worktree, the files it changed (since its base commit, uncommitted work included) are compared with each sibling worktree's (same repository). Each sibling with shared files is listed with them.
-- **Forecast:** `git merge-tree --write-tree --name-only` of the repository's current HEAD and the worktree's branch, which merges in memory and writes no files, index or refs. It covers committed work; uncommitted changes are counted and named ("3 uncommitted changes aren't in the forecast"). It needs git 2.38 or later and says so on older git.
+- **Forecast:** `git merge-tree --write-tree --name-only` of the repository's current HEAD and the worktree's branch, which merges without touching the working tree, the index or any ref (it only adds unreferenced objects, which git prunes). It covers committed work; uncommitted changes are counted ("3 uncommitted changes aren't in the forecast"). It needs git 2.38 or later and says so on older git.
 - "Check overlapâ€¦" in the worktree menu opens UI-153 with both. The merge confirm (F-CD-15) shows the forecast's verdict before the user confirms: "Merging will conflict in 2 files" (with the list) or "No conflicts expected".
 
 **Acceptance:**

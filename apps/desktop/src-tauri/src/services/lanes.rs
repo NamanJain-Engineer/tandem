@@ -314,8 +314,7 @@ pub async fn remove_with_teardown(
     let mut report = RemoveReport::default();
     if let Some((data, login)) = teardown {
         report.teardown =
-            worktree_setup::teardown(data, login, &lane.root, worktree_setup::TEARDOWN_LIMIT)
-                .await;
+            worktree_setup::teardown(data, login, &lane.root, worktree_setup::TEARDOWN_LIMIT).await;
     }
     let repo = discover(&parent.root, "Folder not found")?;
     LaneManager::remove(git, &repo, lane_path, force).await?;
@@ -702,7 +701,11 @@ pub struct OverlapReport {
 }
 
 /// `lane_overlap` (F-WT-03). Reads only: the forecast merges in memory.
-pub async fn overlap(store: &Store, git: &Git, id: &WorkspaceId) -> Result<OverlapReport, IpcError> {
+pub async fn overlap(
+    store: &Store,
+    git: &Git,
+    id: &WorkspaceId,
+) -> Result<OverlapReport, IpcError> {
     use tandem_git::overlap::{changed_files, forecast, shared};
     let (lane, parent) = lane_row(store, id).await?;
     let lane_repo = discover(&lane.root, FOLDER_MISSING)?;
@@ -781,6 +784,9 @@ mod forge_tests {
             assert_eq!(forge_for(Some(url)), Forge::Github, "{url}");
         }
         assert_eq!(forge_for(None), Forge::Github);
-        assert_eq!(remote_host("ssh://git@host.example:22/x").as_deref(), Some("host.example"));
+        assert_eq!(
+            remote_host("ssh://git@host.example:22/x").as_deref(),
+            Some("host.example")
+        );
     }
 }

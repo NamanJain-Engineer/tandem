@@ -43,10 +43,22 @@ async function pick(label: string): Promise<void> {
 }
 
 async function worktreeAction(branch: string, label: string): Promise<void> {
-  await browser.execute((b: string) => {
-    document.querySelector<HTMLElement>(`button[aria-label="Actions for ${b}"]`)?.focus();
-  }, branch);
-  await browser.keys("Enter");
+  // The row's ⋯ button shows on focus; under load the first Enter can land
+  // before the row is there, so open the menu until it is.
+  await browser.waitUntil(
+    async () => {
+      const opened = await browser.execute((b: string) => {
+        const button = document.querySelector<HTMLElement>(`button[aria-label="Actions for ${b}"]`);
+        button?.focus();
+        return button !== null && document.activeElement === button;
+      }, branch);
+      if (!opened) return false;
+      await browser.keys("Enter");
+      await browser.pause(300);
+      return browser.execute(() => document.querySelectorAll("[role=menuitem]").length > 0);
+    },
+    { timeout: 15_000, timeoutMsg: `no menu for ${branch}` },
+  );
   await pick(label);
 }
 

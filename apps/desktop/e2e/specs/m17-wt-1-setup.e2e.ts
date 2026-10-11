@@ -2,7 +2,7 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshOffline, home, userHome } from "../support/app";
+import { addFolder, freshOffline, home, invoke, userHome } from "../support/app";
 
 const GIT_ENV = {
   ...process.env,
@@ -55,10 +55,22 @@ async function newWorktree(root: string, task: string): Promise<void> {
 }
 
 async function worktreeAction(branch: string, label: string): Promise<void> {
-  await browser.execute((b: string) => {
-    document.querySelector<HTMLElement>(`button[aria-label="Actions for ${b}"]`)?.focus();
-  }, branch);
-  await browser.keys("Enter");
+  // The row's ⋯ button shows on focus; under load the first Enter can land
+  // before the row is there, so open the menu until it is.
+  await browser.waitUntil(
+    async () => {
+      const opened = await browser.execute((b: string) => {
+        const button = document.querySelector<HTMLElement>(`button[aria-label="Actions for ${b}"]`);
+        button?.focus();
+        return button !== null && document.activeElement === button;
+      }, branch);
+      if (!opened) return false;
+      await browser.keys("Enter");
+      await browser.pause(300);
+      return browser.execute(() => document.querySelectorAll("[role=menuitem]").length > 0);
+    },
+    { timeout: 15_000, timeoutMsg: `no menu for ${branch}` },
+  );
   await pick(label);
 }
 
@@ -132,6 +144,10 @@ describe("E2E-M17-WT-1 worktree setup", function () {
   });
 
   it("F-WT-01.4 saving from Worktree setup writes the file, and the next worktree runs it without asking", async () => {
+    // Free allows 4 live panes: make room for the next worktree and its setup.
+    for (const ws of await invoke<Array<{ id: string; laneBranch: string | null }>>("workspace_list"))
+      if (ws.laneBranch === "tandem/setup-one" || ws.laneBranch === "tandem/setup-two")
+        await invoke("lane_remove", { laneId: ws.id, force: false });
     await repoMenu(repo);
     await pick("Worktree setup…");
     const command = $('[data-testid="worktree-setup-command"]');

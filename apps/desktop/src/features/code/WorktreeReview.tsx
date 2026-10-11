@@ -228,7 +228,11 @@ export function ReviewDiff({
         files={files}
         labels={labels}
         comments={{
-          label: (tg) => t("worktree.review.commentOn", { path: tg.path, line: tg.line }),
+          label: (tg) =>
+            t(tg.side === "new" ? "worktree.review.commentOn" : "worktree.review.commentOnRemoved", {
+              path: tg.path,
+              line: tg.line,
+            }),
           onComment: (tg) => {
             const existing = comments.find((c) => diffLineKey(c) === diffLineKey(tg));
             setEditing(

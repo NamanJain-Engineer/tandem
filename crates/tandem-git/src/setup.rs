@@ -242,9 +242,7 @@ impl Walk<'_> {
 
     /// Walks `rel` (a folder under the main checkout) for matches.
     fn dir(&mut self, rel: &Path) -> std::io::Result<()> {
-        let mut entries: Vec<_> = std::fs::read_dir(self.main.join(rel))?
-            .flatten()
-            .collect();
+        let mut entries: Vec<_> = std::fs::read_dir(self.main.join(rel))?.flatten().collect();
         entries.sort_by_key(|e| e.file_name());
         for entry in entries {
             self.seen += 1;
@@ -288,9 +286,7 @@ impl Walk<'_> {
 
     /// A matched folder: everything under it.
     fn copy_tree(&mut self, rel: &Path) -> std::io::Result<()> {
-        let mut entries: Vec<_> = std::fs::read_dir(self.main.join(rel))?
-            .flatten()
-            .collect();
+        let mut entries: Vec<_> = std::fs::read_dir(self.main.join(rel))?.flatten().collect();
         entries.sort_by_key(|e| e.file_name());
         for entry in entries {
             self.seen += 1;
@@ -314,10 +310,7 @@ impl Walk<'_> {
     }
 
     fn copy_file(&mut self, rel: &Path) -> std::io::Result<()> {
-        if rel
-            .components()
-            .any(|c| !matches!(c, Component::Normal(_)))
-        {
+        if rel.components().any(|c| !matches!(c, Component::Normal(_))) {
             self.skip(rel, SkipReason::Outside);
             return Ok(());
         }
@@ -415,7 +408,14 @@ mod tests {
 
     fn git(dir: &Path, args: &[&str]) {
         let ok = Command::new("git")
-            .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
+            .args([
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "commit.gpgsign=false",
+            ])
             .args(args)
             .current_dir(dir)
             .output()
@@ -437,7 +437,10 @@ mod tests {
         let main = tmp.path().join("app");
         std::fs::create_dir(&main).expect("mkdir");
         git(&main, &["init", "-q", "-b", "main"]);
-        put(&main.join(".gitignore"), ".env\n.env.local\nconfig/local.yml\nnode_modules/\nsecrets/\n");
+        put(
+            &main.join(".gitignore"),
+            ".env\n.env.local\nconfig/local.yml\nnode_modules/\nsecrets/\n",
+        );
         put(&main.join(".env.example"), "TRACKED=main\n");
         put(&main.join("src/a.ts"), "export {};\n");
         git(&main, &["add", "."]);
@@ -445,11 +448,24 @@ mod tests {
         put(&main.join(".env"), "KEY=1\n");
         put(&main.join(".env.local"), "LOCAL=1\n");
         put(&main.join("config/local.yml"), "db: dev\n");
-        put(&main.join("node_modules/.env.cache"), "should not be read\n");
+        put(
+            &main.join("node_modules/.env.cache"),
+            "should not be read\n",
+        );
         put(&main.join("secrets/dev.key"), "k\n");
         put(&main.join(".env.example"), "TRACKED=changed-in-main\n");
         let wt = tmp.path().join("wt");
-        git(&main, &["worktree", "add", "-q", wt.to_str().expect("utf8"), "-b", "tandem/wt"]);
+        git(
+            &main,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                wt.to_str().expect("utf8"),
+                "-b",
+                "tandem/wt",
+            ],
+        );
         (tmp, main, wt)
     }
 
@@ -461,7 +477,10 @@ mod tests {
     fn f_wt_01_1_copies_ignored_matches_and_keeps_tracked_files() {
         let (_tmp, main, wt) = fixture();
         let report = copy_into(&main, &wt, &pats(&[".env*", "config/local.yml"])).expect("copy");
-        assert_eq!(report.copied, vec![".env", ".env.local", "config/local.yml"]);
+        assert_eq!(
+            report.copied,
+            vec![".env", ".env.local", "config/local.yml"]
+        );
         for f in [".env", ".env.local", "config/local.yml"] {
             assert_eq!(
                 std::fs::read(main.join(f)).expect("src"),
@@ -470,7 +489,10 @@ mod tests {
             );
         }
         // The tracked file keeps the branch's version.
-        assert_eq!(std::fs::read_to_string(wt.join(".env.example")).expect("read"), "TRACKED=main\n");
+        assert_eq!(
+            std::fs::read_to_string(wt.join(".env.example")).expect("read"),
+            "TRACKED=main\n"
+        );
         assert!(report
             .skipped
             .iter()
@@ -501,7 +523,10 @@ mod tests {
         std::fs::write(wt.join(".env"), "EDITED\n").expect("edit");
         let again = copy_into(&main, &wt, &pats(&[".env"])).expect("copy");
         assert!(again.copied.is_empty());
-        assert_eq!(std::fs::read_to_string(wt.join(".env")).expect("read"), "EDITED\n");
+        assert_eq!(
+            std::fs::read_to_string(wt.join(".env")).expect("read"),
+            "EDITED\n"
+        );
     }
 
     #[cfg(unix)]
@@ -515,8 +540,12 @@ mod tests {
         std::os::unix::fs::symlink("/etc", main.join("etc-link")).expect("link");
         // A symlinked folder in the worktree must not carry a copy out.
         std::os::unix::fs::symlink(&outside, wt.join("config")).expect("link");
-        let report =
-            copy_into(&main, &wt, &pats(&["../secret", "etc-link", "config/local.yml"])).expect("copy");
+        let report = copy_into(
+            &main,
+            &wt,
+            &pats(&["../secret", "etc-link", "config/local.yml"]),
+        )
+        .expect("copy");
         assert!(report.copied.is_empty(), "{report:?}");
         assert!(report
             .skipped
@@ -578,7 +607,11 @@ mod tests {
     #[test]
     fn f_wt_01_6_malformed_files_say_where() {
         let err = WorktreeSetup::parse(b"{ \"copy\": [\".env\" ").expect_err("bad");
-        assert!(err.to_string().contains(".vibezeo/worktree.json isn't valid"), "{err}");
+        assert!(
+            err.to_string()
+                .contains(".vibezeo/worktree.json isn't valid"),
+            "{err}"
+        );
         assert!(WorktreeSetup::parse(br#"{"setup":"a\nb"}"#).is_err());
         assert!(WorktreeSetup::parse(br#"{"copy":"not a list"}"#).is_err());
         let long = format!(r#"{{"setup":"{}"}}"#, "x".repeat(MAX_COMMAND_CHARS + 1));
@@ -590,7 +623,10 @@ mod tests {
 
     #[test]
     fn f_wt_01_1_fixed_prefixes() {
-        assert_eq!(fixed_prefix("config/local.yml").as_deref(), Some("config/local.yml"));
+        assert_eq!(
+            fixed_prefix("config/local.yml").as_deref(),
+            Some("config/local.yml")
+        );
         assert_eq!(fixed_prefix("/secrets/*.key").as_deref(), Some("secrets"));
         assert_eq!(fixed_prefix(".env*"), None);
         assert_eq!(fixed_prefix("**/.env"), None);

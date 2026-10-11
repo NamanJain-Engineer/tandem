@@ -324,6 +324,7 @@
   "worktree.discardType": "Type {text} to confirm",
   "worktree.discarded": "Discarded {branch}",
   "worktree.review.commentOn": "Comment on {path} line {line}",
+  "worktree.review.commentOnRemoved": "Comment on {path} removed line {line}",
   "worktree.review.commentLabel": "Comment",
   "worktree.review.saveComment": "Add comment",
   "worktree.review.edit": "Edit",

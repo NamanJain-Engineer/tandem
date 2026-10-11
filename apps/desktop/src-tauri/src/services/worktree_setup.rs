@@ -65,11 +65,15 @@ pub struct LaneSetup {
 #[serde(rename_all = "snake_case", tag = "kind")]
 #[ts(export)]
 pub enum TeardownOutcome {
-    Ran { code: Option<i32> },
+    Ran {
+        code: Option<i32>,
+    },
     TimedOut,
     /// The command isn't trusted, so it didn't run.
     Untrusted,
-    Failed { message: String },
+    Failed {
+        message: String,
+    },
 }
 
 /// `lane_remove`'s result.
@@ -122,8 +126,8 @@ pub fn trust(data: &DataDir, main: &Path, digest: &str) -> Result<(), IpcError> 
     let _guard = TRUST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let mut all = read_trust(data);
     all.insert(trust_key(main), digest.to_string());
-    let bytes = serde_json::to_vec_pretty(&all)
-        .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
+    let bytes =
+        serde_json::to_vec_pretty(&all).map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
     tandem_core::atomic::atomic_write(&data.root().join(TRUST_FILE), &bytes, Some(0o600))
         .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()).with_stage("setup"))
 }
@@ -257,7 +261,10 @@ pub async fn copy_for_new_lane(lane: &Workspace) {
             "worktree setup copy"
         ),
         Ok(None) => {}
-        Err(_) => tracing::warn!(code = "worktree_setup.copy_failed", "worktree setup copy failed"),
+        Err(_) => tracing::warn!(
+            code = "worktree_setup.copy_failed",
+            "worktree setup copy failed"
+        ),
     }
     let entry = match result {
         Ok(Some(report)) => Ok(report),
@@ -280,7 +287,10 @@ pub async fn lane_setup(
 ) -> Result<LaneSetup, IpcError> {
     let row = workspaces::get(store, lane).await?;
     if row.lane_branch.is_none() {
-        return Err(IpcError::new(ErrorCode::Invalid, "That workspace isn't a worktree"));
+        return Err(IpcError::new(
+            ErrorCode::Invalid,
+            "That workspace isn't a worktree",
+        ));
     }
     let copied = COPIES
         .lock()
@@ -310,10 +320,16 @@ pub async fn setup_pane(
 ) -> Result<(PaneRecord, String), IpcError> {
     let row = workspaces::get(store, lane).await?;
     if row.lane_branch.is_none() {
-        return Err(IpcError::new(ErrorCode::Invalid, "That workspace isn't a worktree"));
+        return Err(IpcError::new(
+            ErrorCode::Invalid,
+            "That workspace isn't a worktree",
+        ));
     }
     if !Path::new(&row.root).is_dir() {
-        return Err(IpcError::new(ErrorCode::NotFound, "The worktree folder is missing"));
+        return Err(IpcError::new(
+            ErrorCode::NotFound,
+            "The worktree folder is missing",
+        ));
     }
     let main = main_root(&row.root)?;
     let state = state_at(data, &main);
@@ -371,7 +387,10 @@ pub async fn teardown(
     let state = state_at(data, &main);
     let command = state.config.and_then(|c| c.teardown)?;
     if !state.trusted {
-        tracing::info!(code = "worktree_setup.teardown_untrusted", "teardown skipped");
+        tracing::info!(
+            code = "worktree_setup.teardown_untrusted",
+            "teardown skipped"
+        );
         return Some(TeardownOutcome::Untrusted);
     }
     let outcome = match teardown_command(login, &command, cwd).spawn() {
@@ -402,7 +421,14 @@ mod tests {
 
     fn git(dir: &Path, args: &[&str]) {
         let ok = Command::new("git")
-            .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
+            .args([
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "commit.gpgsign=false",
+            ])
             .args(args)
             .current_dir(dir)
             .output()
@@ -422,7 +448,17 @@ mod tests {
         git(&main, &["commit", "-q", "-m", "init"]);
         std::fs::write(main.join(SETUP_FILE), setup_json).expect("write");
         let wt = tmp.path().join("wt");
-        git(&main, &["worktree", "add", "-q", wt.to_str().expect("utf8"), "-b", "tandem/wt"]);
+        git(
+            &main,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                wt.to_str().expect("utf8"),
+                "-b",
+                "tandem/wt",
+            ],
+        );
         let data = DataDir::at(tmp.path().join("data")).expect("data dir");
         (tmp, main, wt, data)
     }
@@ -444,7 +480,11 @@ mod tests {
         trust(&data, &main, &digest).expect("trust");
         assert!(state_at(&data, &main).trusted);
         // Editing the command outside the app needs review again.
-        std::fs::write(main.join(SETUP_FILE), r#"{"setup":"echo changed > marker"}"#).expect("edit");
+        std::fs::write(
+            main.join(SETUP_FILE),
+            r#"{"setup":"echo changed > marker"}"#,
+        )
+        .expect("edit");
         let changed = state_at(&data, &main);
         assert!(!changed.trusted);
         assert_ne!(changed.digest.as_deref(), Some(digest.as_str()));
@@ -459,7 +499,10 @@ mod tests {
         let state = state_at(&data, &main);
         assert!(state.exists);
         assert!(state.config.is_none());
-        assert!(state.error.as_deref().is_some_and(|e| e.contains("isn't valid")));
+        assert!(state
+            .error
+            .as_deref()
+            .is_some_and(|e| e.contains("isn't valid")));
         assert!(!state.trusted);
     }
 

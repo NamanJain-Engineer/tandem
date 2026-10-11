@@ -29,8 +29,8 @@ and metered models) and most orchestrators (macOS only, or a sign-in first),
 1. runs any of 11 engines' own CLIs, unmodified, signed in with your own
    accounts;
 2. works on Linux today, with the same features on every OS as the goal;
-3. never resells or meters your coding: no markup on inference, because we
-   don't sell inference;
+3. never resells or meters your coding: we don't sell inference (keep this
+   point off the site; it's a positioning note, not public copy);
 4. needs no account, and nothing leaves your computer unless you turn it on.
 
 Each point answers a top complaint about the category (analysis §2): lock-in,
@@ -141,9 +141,10 @@ the same time; it erodes the trust the positioning relies on.
 
 ## 7. Distribution
 
-- **Linux packages:** add `.rpm` (Fedora, openSUSE), a Flatpak on Flathub and
-  an AUR package beside the `.deb` and AppImage. Rivals' Linux apps skip
-  Fedora/Arch or lack Flatpak (analysis §1.3). Owner: the packaging session.
+- **Linux packages:** `.rpm` (Fedora, openSUSE) joins the release (the
+  coordinator), Flatpak and Snap sit with the mobile-apps session, and an AUR
+  package needs the owner's account (HUMAN_TODO). Rivals' Linux apps skip
+  Fedora/Arch or lack Flatpak (analysis §1.3).
 - **Package managers:** a Homebrew cask and winget manifest when those builds
   exist.
 - **Machine-readable discovery** already exists (F-WB-04); keep `SHA256SUMS`

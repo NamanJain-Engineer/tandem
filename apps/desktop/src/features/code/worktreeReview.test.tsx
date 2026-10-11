@@ -130,7 +130,7 @@ describe("review comments to the agent (F-WT-02)", () => {
     // Lines: keep() (new 1), old() (old 2), fresh() (new 2).
     expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual([
       "Comment on a.ts line 1",
-      "Comment on a.ts line 2",
+      "Comment on a.ts removed line 2",
       "Comment on a.ts line 2",
     ]);
     fireEvent.click(buttons[2] as HTMLElement);

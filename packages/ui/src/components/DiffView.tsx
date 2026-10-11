@@ -184,7 +184,8 @@ function FileBlock({
                     role="row"
                     data-kind={l.kind}
                     className={cx(
-                      "group/line flex",
+                      "flex",
+                      comments && "group/line",
                       l.kind === "add" && "bg-diff-add-bg",
                       l.kind === "del" && "bg-diff-del-bg",
                     )}
