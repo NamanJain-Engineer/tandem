@@ -8,23 +8,20 @@ every milestone has its tasks, exit checks and E2E list in MILESTONES. Tick
 items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md`
 has every feature below with its full behaviour and acceptance tests.
 
-**Where it stands (10 October 2026, `product-m0-m5`):** M0–M14 are done,
-and so are M15's six features and its non-functional checks (pull request #38;
-the performance budgets still need the reference machines, `HUMAN_TODO.md`). M16
-has F-SH-12, F-AC-07, F-AU-01, F-BE-03, F-BE-12, F-RT-05, F-AG-10, F-AG-13,
-F-CN-05 and the phone companion and relay (F-RM-03, F-BE-11). That's 144 of 152
-features: all 65 P0s and every P1. Left: 8 of M16's P2 extras, each being built
-on its own branch. Conductor's core (F-CN-01 to F-CN-04, F-CN-08) has its first
-slice merged: calls run end to end against the dev mock, while 23 tools, the
-floating ring window, the call-log setting and the vendor realtime client are
-still to come. Then Conductor's persona, memory and wake phrase (F-CN-06,
-F-CN-07) and the macOS Simulator pane (F-CD-21). M17 adds five extras beyond
-the spec (F-EX-01 to F-EX-05).
-vibezeo.com still serves 0.4.0: 0.5.0 (Dictate, tasks, plugins, SSH workspaces
-and Diagnostics) is merged into `main`, but Vercel refused its deploy at the
-daily deployment limit (D-829), so it goes out with the next release. Routines
-and running tasks are built and switch on with Pro; WSL workspaces wait for the
-Windows download.
+**Where it stands (11 October 2026, `product-m0-m5`):** M0–M14 are done, and
+so are M15's six features and its non-functional checks (pull request #38; the
+performance budgets still need the reference machines, `HUMAN_TODO.md`). 145
+of the original 152 features are done: all 65 P0s, every P1 and 13 of M16's 20
+P2s; the macOS Simulator pane (F-CD-21) came with the `chain5` batch. The spec
+has 165 IDs now, and the 13 added since are done: M17's five extras (F-EX-01
+to F-EX-05) and worktree workflow (F-WT-01 to F-WT-04), and M16's phone apps
+and Linux store packages (F-RM-04 to F-RM-07). The 7 left are Conductor's:
+F-CN-01 to F-CN-04 and F-CN-08 run end to end against the dev mock and lack
+only the vendor realtime client, which waits on a key; F-CN-06 and F-CN-07
+(persona, memory and wake phrase) are merged and wait on Conductor wiring them
+into calls. vibezeo.com serves 0.6.0 (pull request #49). Routines and running
+tasks are built and switch on with Pro; WSL workspaces wait for the Windows
+download.
 
 ## 0. First, before new features
 
