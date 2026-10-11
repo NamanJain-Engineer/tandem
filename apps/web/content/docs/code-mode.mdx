@@ -10,6 +10,7 @@ Code mode is a grid of real PTY terminals. Each pane runs an agent CLI or a shel
 - **Status.** Each pane shows whether its agent is working, waiting for you, finished or failed. The Dashboard lists every live agent across workspaces.
 - **Lanes.** Run a task in its own git worktree, under `<repo>/.tandem/worktrees/<name>` on a `tandem/<name>` branch, then merge it back or clean it up.
 - **Handoff.** Hand a session to another engine with a written summary, in a pane beside it or as a thread.
+- **Find work.** **Find work…** in the command palette (<kbd>Mod+K</kbd>) finds work by what it's about. Describe it, such as "the login tests", and it lists open panes, threads and teammates, best first; choose one to go to it, and a pane flashes. It reads each pane's name, title, engine, folder and last 20 lines of output, each thread's title and last message, and each teammate's name, the first line of its brief and its last message, with anything that looks like a key or password removed first. It ranks them on your computer. Ranking them with Vibezeo's AI is a Pro feature that comes with Vibezeo accounts.
 - **Around the terminals.** A Files tab with a code editor, a git panel, a browser and a Scratchpad sit in the sidebar. Paths and URLs a program prints open with <kbd>Mod</kbd>+Click.
 - **Restore.** After a crash or relaunch, layouts come back and agents return paused, ready to resume their session.
 
