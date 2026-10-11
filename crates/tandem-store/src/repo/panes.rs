@@ -267,7 +267,7 @@ pub async fn list_all_open(store: &Store) -> Result<Vec<PaneRecord>, StoreError>
                 .join(", ");
             let mut stmt = c.prepare(&format!(
                 "SELECT {columns} FROM panes p JOIN workspaces w ON w.id = p.workspace_id
-                 WHERE p.closed_at IS NULL AND w.removed_at IS NULL ORDER BY p.created_at, p.id"
+                 WHERE p.closed_at IS NULL AND w.removed_at IS NULL ORDER BY p.created_at, p.rowid"
             ))?;
             let rows = stmt
                 .query_map([], from_row)?
