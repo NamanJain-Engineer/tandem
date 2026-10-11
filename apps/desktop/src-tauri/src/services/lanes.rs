@@ -370,9 +370,12 @@ pub async fn create_pr_pane(
         if !found {
             return Err(IpcError::new(ErrorCode::EngineMissing, GH_MISSING).with_stage("gh"));
         }
-        return Ok(
+        // The host's lanes get gh only: telling GitLab apart there needs the
+        // host's origin, so merge requests stay local-only for now.
+        return Ok((
             panes::create_with(store, tab, "terminal", Some(lane.root.clone()), None).await?,
-        );
+            PR_COMMAND,
+        ));
     }
     if !Path::new(&lane.root).is_dir() {
         return Err(IpcError::new(ErrorCode::NotFound, FOLDER_MISSING));
@@ -475,7 +478,8 @@ pub async fn remove_with_teardown(
             })?;
         workspaces::remove(store, &lane.id).await?;
         tracing::info!(code = "lane.removed", remote = true, "worktree removed");
-        return Ok(());
+        // The repository's teardown is a local command; a host's lane has none.
+        return Ok(RemoveReport::default());
     }
     let lane_path = Path::new(&lane.root);
     if force.is_none() && lane_path.is_dir() {
