@@ -613,9 +613,37 @@ impl RemoteService {
         self.pump(conn.clone(), notes);
         self.reattach(conn, &client).await;
         self.files.rewatch(&conn.host_id, &client).await;
+        self.warm_git(conn.host_id.clone());
         self.set_state(conn, HostState::Connected);
         self.watch(conn.clone(), client);
         Ok(())
+    }
+
+    /// Reads the git status of this host's folders once it's connected, so
+    /// the rail names their branches and offers worktrees (D-1602); then
+    /// says so (`remote:git`).
+    fn warm_git(self: &Arc<Self>, host: HostId) {
+        let me = self.clone();
+        tokio::spawn(async move {
+            let Ok(rows) = tandem_store::repo::workspaces::list(&me.store).await else {
+                return;
+            };
+            for ws in rows
+                .iter()
+                .filter(|w| w.kind == "ssh" && w.host_id == host.as_str())
+            {
+                let r = crate::services::remote_files::RemoteRoot {
+                    host: host.clone(),
+                    root: ws.root.clone(),
+                };
+                let _ = me.files.status(&me, &r).await;
+            }
+            me.bus.publish(BusEvent::new(
+                Topic::Remote,
+                "remote:git",
+                serde_json::json!({"hostId": host}),
+            ));
+        });
     }
 
     /// Routes the host's notifications to panes and the status service.

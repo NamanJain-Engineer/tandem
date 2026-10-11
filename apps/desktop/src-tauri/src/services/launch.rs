@@ -162,13 +162,14 @@ fn opening(seats: &[Seat]) -> u32 {
 
 /// `launch_lineup`: the whole lineup, or nothing when it would go over the
 /// plan's live-pane cap.
-/// Worktrees are made with this machine's git, so a folder on an SSH host or
-/// in WSL can't have them (F-RM-01; the sheet offers Shared only there).
+/// A folder on an SSH host gets its worktrees from the host's git (D-1602);
+/// a WSL folder has none yet (its git runs inside the distro), so the sheet
+/// offers Shared only there.
 fn check_isolation(ws: &Workspace, isolation: Isolation) -> Result<(), IpcError> {
-    if isolation == Isolation::Worktree && ws.kind != "local" {
+    if isolation == Isolation::Worktree && ws.kind == "wsl" {
         return Err(IpcError::new(
             ErrorCode::Unavailable,
-            "Worktrees aren't available in remote folders yet",
+            "Worktrees aren't available in WSL folders yet",
         ));
     }
     Ok(())
@@ -416,7 +417,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn f_rm_01_a_remote_folder_launches_shared_never_in_worktrees() {
+    fn f_rm_01_worktrees_launch_on_hosts_but_not_in_wsl_folders() {
         let ws = |kind: &str| Workspace {
             id: WorkspaceId::new(),
             kind: kind.into(),
@@ -433,12 +434,12 @@ mod tests {
             sessions_collapsed: false,
             created_at: 0,
         };
-        assert!(check_isolation(&ws("local"), Isolation::Worktree).is_ok());
-        for kind in ["ssh", "wsl"] {
-            assert!(check_isolation(&ws(kind), Isolation::Shared).is_ok());
-            let e = check_isolation(&ws(kind), Isolation::Worktree).expect_err("refused");
-            assert_eq!(e.code, ErrorCode::Unavailable);
+        for kind in ["local", "ssh"] {
+            assert!(check_isolation(&ws(kind), Isolation::Worktree).is_ok());
         }
+        assert!(check_isolation(&ws("wsl"), Isolation::Shared).is_ok());
+        let e = check_isolation(&ws("wsl"), Isolation::Worktree).expect_err("refused");
+        assert_eq!(e.code, ErrorCode::Unavailable);
     }
 
     #[test]

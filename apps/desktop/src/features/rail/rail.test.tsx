@@ -104,15 +104,22 @@ describe("rail (F-SH-03)", () => {
     expect(rows()[0]?.getAttribute("data-pinned")).toBe("true");
   });
 
-  it("F-RM-01 a host's folder offers no Reveal, and says worktrees aren't available there", async () => {
+  it("F-RM-01 a host's folder offers worktrees (D-1602) but no Reveal", async () => {
     setup([ws("a", { kind: "ssh", hostId: "hst_1", branch: "main" })]);
     fireEvent.contextMenu(rows()[0] as HTMLElement);
-    const item = await screen.findByRole("menuitem", {
-      name: "Worktrees aren't available in remote folders yet",
-    });
-    expect(item.getAttribute("aria-disabled") ?? item.getAttribute("data-disabled")).not.toBeNull();
+    const item = await screen.findByRole("menuitem", { name: "New worktree…" });
+    expect(item.getAttribute("aria-disabled") ?? item.getAttribute("data-disabled")).toBeNull();
     expect(screen.queryByRole("menuitem", { name: /Reveal|Show in/ })).toBeNull();
     expect(screen.getByRole("menuitem", { name: "Copy path" })).toBeTruthy();
+  });
+
+  it("F-RM-02 a WSL folder says worktrees aren't available there yet", async () => {
+    setup([ws("a", { kind: "wsl", hostId: "hst_2", wslDistro: "Ubuntu", branch: "main" })]);
+    fireEvent.contextMenu(rows()[0] as HTMLElement);
+    const item = await screen.findByRole("menuitem", {
+      name: "Worktrees aren't available in WSL folders yet",
+    });
+    expect(item.getAttribute("aria-disabled") ?? item.getAttribute("data-disabled")).not.toBeNull();
   });
 
   it("F-SH-03 Move down puts the row after its next neighbour", async () => {

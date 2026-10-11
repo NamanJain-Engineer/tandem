@@ -2,11 +2,11 @@
 
 pub mod cli;
 mod error;
-pub mod exclude;
+pub use tandem_core::lanes::exclude;
 pub mod lanes;
 pub mod ops;
 pub mod repo;
-pub mod slug;
+pub use tandem_core::lanes::slug;
 pub mod types;
 
 pub use cli::{Git, Mode};

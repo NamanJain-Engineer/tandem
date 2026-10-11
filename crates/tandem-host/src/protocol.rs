@@ -401,6 +401,65 @@ pub struct GitOp {
     pub branch: Option<String>,
 }
 
+/// `lane.create`: a worktree from the HEAD of the checkout at `root`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LaneCreate {
+    pub root: String,
+    pub slug_source: String,
+    /// Slugs reserved by other lanes of the same launch.
+    #[serde(default)]
+    pub also_taken: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LaneCreated {
+    pub slug: String,
+    pub branch: String,
+    pub path: String,
+    pub base: String,
+}
+
+/// `lane.remove`: the worktree at `path`, from the repository at `root`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LaneRemove {
+    pub root: String,
+    pub path: String,
+    #[serde(default)]
+    pub force: bool,
+}
+
+/// `lane.merge`: `branch` into the checkout at `root`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LaneMerge {
+    pub root: String,
+    pub branch: String,
+}
+
+/// The shape of `tandem_git::types::MergeReport`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaneMergeReport {
+    pub merged: bool,
+    pub conflicts: Vec<String>,
+    pub commit: Option<String>,
+}
+
+/// `lane.diff`: the lane at `root` against the commit it started from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LaneDiff {
+    pub root: String,
+    pub base: String,
+}
+
+/// The shape of `tandem_git::types::StaleLane`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaneStale {
+    pub branch: String,
+    pub path: String,
+    pub idle_days: u32,
+}
+
 /// `git.branches`'s rows: the shape of `tandem_git::types::Branch`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -470,6 +529,14 @@ pub mod method {
     pub const GIT_STATUS: &str = "git.status";
     pub const GIT_DIFF: &str = "git.diff";
     pub const GIT_OP: &str = "git.op";
+    /// Worktree lanes on the host (D-1602): `LaneCreate` → `LaneCreated`,
+    /// `LaneRemove`, `LaneMerge` → `LaneMergeReport`, `LaneDiff` →
+    /// `Vec<FileDiff>`, `GitRoot` → `Vec<LaneStale>`.
+    pub const LANE_CREATE: &str = "lane.create";
+    pub const LANE_REMOVE: &str = "lane.remove";
+    pub const LANE_MERGE: &str = "lane.merge";
+    pub const LANE_DIFF: &str = "lane.diff";
+    pub const LANE_SWEEP: &str = "lane.sweep";
     /// `GitRoot` → `Vec<HostBranch>` (D-1601).
     pub const GIT_BRANCHES: &str = "git.branches";
     /// Watch a folder (`FsWatch`), answered with `FsWatching`; batches come

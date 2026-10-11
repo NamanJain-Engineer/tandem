@@ -24,11 +24,12 @@ use serde_json::{json, Value};
 
 use crate::protocol::{
     method, DirListing, EnginesDetect, ErrorKind, FsChanged, FsCreate, FsDirs, FsList, FsPath,
-    FsRename, FsWatch, FsWatching, FsWrite, GitDiff, GitOp, GitRoot, Hello, HelloReply, Message,
-    PtyAttach, PtyAttached, PtyEntry, PtyExit, PtyId, PtyOutput, PtyResize, PtySpawn, PtySpawned,
-    PtyWrite, RpcError, StatusEvent, MAX_LINE, PROTOCOL, VERSION,
+    FsRename, FsWatch, FsWatching, FsWrite, GitDiff, GitOp, GitRoot, Hello, HelloReply, LaneCreate,
+    LaneDiff, LaneMerge, LaneRemove, Message, PtyAttach, PtyAttached, PtyEntry, PtyExit, PtyId,
+    PtyOutput, PtyResize, PtySpawn, PtySpawned, PtyWrite, RpcError, StatusEvent, MAX_LINE,
+    PROTOCOL, VERSION,
 };
-use crate::{detect, env, fsops, gitops};
+use crate::{detect, env, fsops, gitops, lanes};
 use tandem_core::files::watch::{self, DirWatcher};
 
 /// Output kept per PTY for re-attach.
@@ -407,6 +408,11 @@ impl Daemon {
                 to_value(gitops::diff(Path::new(&g.root), &g.path, g.staged)?)
             }
             method::GIT_OP => to_value(gitops::op(&params::<GitOp>(p)?)?),
+            method::LANE_CREATE => to_value(lanes::create(&params::<LaneCreate>(p)?)?),
+            method::LANE_REMOVE => to_value(lanes::remove(&params::<LaneRemove>(p)?)?),
+            method::LANE_MERGE => to_value(lanes::merge(&params::<LaneMerge>(p)?)?),
+            method::LANE_DIFF => to_value(lanes::diff(&params::<LaneDiff>(p)?)?),
+            method::LANE_SWEEP => to_value(lanes::sweep(&params::<GitRoot>(p)?.root)?),
             method::GIT_BRANCHES => {
                 let r: GitRoot = params(p)?;
                 to_value(gitops::branches(Path::new(&r.root))?)

@@ -18,6 +18,7 @@ pub mod files;
 pub mod find_work;
 pub mod ids;
 pub mod keychain;
+pub mod lanes;
 pub mod limits;
 pub mod logging;
 pub mod net;

@@ -8,6 +8,7 @@ pub mod detect;
 pub mod env;
 pub mod fsops;
 pub mod gitops;
+pub mod lanes;
 pub mod manifest;
 pub mod protocol;
 pub mod ssh;
