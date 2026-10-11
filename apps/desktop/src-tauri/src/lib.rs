@@ -292,6 +292,8 @@ macro_rules! app_commands {
             commands::conductor::conductor_state,
             commands::conductor::conductor_call_log,
             commands::conductor::conductor_call_delete,
+            commands::conductor::conductor_ring_set_position,
+            commands::conductor::conductor_ring_state,
             commands::auto::auto_start,
             commands::auto::auto_list,
             commands::auto::auto_pause,
@@ -921,13 +923,16 @@ pub fn run() {
             {
                 let (routines, ent) = (state.routines.clone(), state.entitlements.clone());
                 let mut events = state.bus.subscribe(tandem_core::bus::Topic::Entitlement);
+                let ring_app = handle.clone();
                 tauri::async_runtime::spawn(async move {
                     routines.apply_plan(&ent.limits()).await;
                     loop {
                         use tokio::sync::broadcast::error::RecvError;
                         match events.recv().await {
                             Ok(_) | Err(RecvError::Lagged(_)) => {
-                                routines.apply_plan(&ent.limits()).await
+                                routines.apply_plan(&ent.limits()).await;
+                                // The floating ring needs Conductor on the plan (F-CN-04).
+                                commands::conductor::sync_ring(&ring_app).await;
                             }
                             Err(RecvError::Closed) => break,
                         }
@@ -1333,15 +1338,45 @@ mod harness_tests {
         files.sort();
         assert_eq!(
             files,
-            vec!["main.json".to_string(), "widget.json".to_string()]
+            vec![
+                "main.json".to_string(),
+                "ring.json".to_string(),
+                "widget.json".to_string()
+            ]
         );
-        for (file, window) in [("main.json", "main"), ("widget.json", "dictate-widget")] {
+        for (file, window) in [
+            ("main.json", "main"),
+            ("ring.json", "conductor-ring"),
+            ("widget.json", "dictate-widget"),
+        ] {
             let cap: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(dir.join(file)).expect("read"))
                     .expect("json");
             assert_eq!(cap["windows"], serde_json::json!([window]), "{file}");
             assert!(cap.get("webviews").is_none(), "{file} names a webview");
         }
+        // Conductor's floating ring gets exactly this (D-1117): start, end
+        // and mute a call, its state and position, the call log through an
+        // event to the main window. Never `conductor_confirm`: a click there
+        // can't confirm anything (F-CN-03).
+        let ring: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/ring.json")).expect("ring.json");
+        assert_eq!(
+            ring["permissions"],
+            serde_json::json!([
+                "core:event:allow-listen",
+                "core:event:allow-unlisten",
+                "core:event:allow-emit-to",
+                "core:window:allow-start-dragging",
+                "core:window:allow-outer-position",
+                "allow-conductor-start-call",
+                "allow-conductor-end-call",
+                "allow-conductor-mute",
+                "allow-conductor-ring-state",
+                "allow-conductor-ring-set-position",
+                "allow-app-log"
+            ])
+        );
         // The widget gets exactly this; anything more is a reviewed change.
         // Reviewed (D-825): emit-to carries See plans to the main window,
         // use-local is "Use local for this take" after a cloud failure

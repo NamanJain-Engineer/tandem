@@ -236,6 +236,8 @@
     "allow-conductor-state",
     "allow-conductor-call-log",
     "allow-conductor-call-delete",
+    "allow-conductor-ring-state",
+    "allow-conductor-ring-set-position",
     "allow-auto-start",
     "allow-auto-list",
     "allow-auto-pause",

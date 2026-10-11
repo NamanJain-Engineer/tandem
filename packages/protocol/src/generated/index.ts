@@ -303,6 +303,7 @@ export type * from "./RestoreReport";
 export type * from "./RestoreSnapshot";
 export type * from "./Review";
 export type * from "./RewriteMode";
+export type * from "./RingState";
 export type * from "./RiskClass";
 export type * from "./Routine";
 export type * from "./RoutineId";

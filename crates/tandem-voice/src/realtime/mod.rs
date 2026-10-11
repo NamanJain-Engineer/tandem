@@ -37,6 +37,8 @@ pub enum ClientEvent {
     FunctionOutput { call_id: String, output: String },
     /// Something for the talker to say now (a notice, a question).
     Say(String),
+    /// The talker's speech rate (1.0 normal): "talk faster / slower".
+    SetSpeed(f32),
 }
 
 /// What the talker sends the app, normalized across providers.

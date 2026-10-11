@@ -90,6 +90,8 @@ async fn apply(
         }
         // Paused: queued mail waits; resumed: it goes out, once (F-AG-12).
         SettingKey::PauseAllMail => state.mail.pump_soon(),
+        // The floating ring shows or hides (F-CN-04).
+        SettingKey::ConductorFloatingRing => crate::commands::conductor::sync_ring(app).await,
         // The tray's check mark follows; rows re-read (F-SH-13).
         SettingKey::PauseAllRoutines => {
             state.routines.notify_changed();

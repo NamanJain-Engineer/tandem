@@ -10,6 +10,7 @@ pub mod browser;
 pub mod checkpoints;
 pub mod conductor;
 pub mod conductor_persona;
+pub mod conductor_tools;
 pub mod data_controls;
 pub mod dictate;
 pub mod engines;

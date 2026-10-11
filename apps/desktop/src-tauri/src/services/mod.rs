@@ -13,6 +13,7 @@ pub mod boot;
 pub mod checkpoints;
 pub mod conductor;
 pub mod conductor_persona;
+pub mod conductor_ring;
 pub mod config;
 pub mod dashboard;
 pub mod data_controls;

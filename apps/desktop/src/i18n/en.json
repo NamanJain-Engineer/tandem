@@ -2959,5 +2959,12 @@
   "conductor.log.loading": "Loading calls",
   "conductor.log.loadFailed": "Couldn't load the call log.",
   "conductor.log.retry": "Try again",
-  "conductor.log.turn": "{who}: {text}"
+  "conductor.log.turn": "{who}: {text}",
+  "conductor.settings.keepLogs": "Keep call logs",
+  "conductor.settings.keepLogsHint": "Each call's turns and actions, kept only on this computer.",
+  "conductor.settings.keep.off": "Don't keep",
+  "conductor.settings.keep.7": "7 days",
+  "conductor.settings.keep.30": "30 days",
+  "conductor.settings.floatingRing": "Floating ring",
+  "conductor.settings.floatingRingHint": "A ring that floats over every app: drag it anywhere, hover for Mute, Call log and End."
 }
