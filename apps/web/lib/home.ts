@@ -284,8 +284,11 @@ export function releaseTiles(release: Release | undefined = RELEASES.find((r) =>
 export function linuxFacts(): string[] {
   const linux = DOWNLOADS.find((d) => d.os === "linux" && d.available);
   const distros = linux?.requirement.split(": ")[1] ?? "";
+  const kinds = [...new Set((linux?.assets ?? []).map((a) => a.file.slice(a.file.lastIndexOf("."))))];
+  const named = kinds.map((k) => `${/^\.[aeiou]|^\.r/i.test(k) ? "an" : "a"} ${k}`);
+  const packages = named.length > 1 ? `${named.slice(0, -1).join(", ")} and ${named.at(-1)}` : (named[0] ?? "");
   return [
-    `A .deb for ${distros}`,
+    `${packages.charAt(0).toUpperCase()}${packages.slice(1)} for ${distros}`,
     "Dictate on X11 and Wayland",
     "SSH hosts on x86-64 and arm64",
   ];

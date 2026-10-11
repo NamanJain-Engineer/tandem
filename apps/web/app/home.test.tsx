@@ -8,7 +8,7 @@ import { RELEASES } from "../lib/changelog";
 import { CAPABILITIES, FEATURES, MODE_ROWS, RELEASE_TILE_MAP, linuxFacts, releaseTiles } from "../lib/home";
 import { formatSize, releaseAssets } from "../lib/manifest";
 import { VIDEO } from "../lib/media";
-import { RELEASE } from "../lib/release";
+import { DOWNLOADS, RELEASE } from "../lib/release";
 import { ENGINES, SITE } from "../lib/site";
 import HomePage from "./page.site";
 
@@ -88,8 +88,12 @@ describe("home page", () => {
 
   it("F-WB-01 \"Linux first\" says only what this build ships", () => {
     const facts = linuxFacts();
-    expect(facts[0]).toContain("Ubuntu 22.04+");
-    const notes = (RELEASES.find((r) => r.version === RELEASE.version)?.entries ?? []).map((e) => e.text).join(" ");
+    const linux = DOWNLOADS.find((d) => d.os === "linux" && d.available);
+    for (const a of linux?.assets ?? []) expect(facts[0]).toContain(a.file.slice(a.file.lastIndexOf(".")));
+    expect(facts[0]).toContain(linux?.requirement.split(": ")[1] ?? "?");
+    // The download carries every release's features up to this one.
+    const shipped = RELEASES.slice(RELEASES.findIndex((r) => r.version === RELEASE.version));
+    const notes = shipped.flatMap((r) => r.entries.map((e) => e.text)).join(" ");
     for (const word of ["X11", "Wayland", "arm64", "x86-64"]) expect(notes, word).toContain(word);
     for (const f of facts) expect(text(home)).toContain(f);
   });
