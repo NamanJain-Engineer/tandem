@@ -135,6 +135,9 @@ async fn invariant_rule_5_live_phone_allow_is_queued_until_the_main_window_confi
     assert_eq!(
         *rig.host.resolved.lock().expect("lock"),
         vec![(id, PhoneDecision::Allow)]
+    );
+}
+
 /// The app as Conductor sees it: one shell pane; what ran is recorded.
 #[derive(Default)]
 struct Host {
