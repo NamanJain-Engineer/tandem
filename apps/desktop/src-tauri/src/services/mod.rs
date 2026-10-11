@@ -51,6 +51,7 @@ pub mod remote_mcp;
 pub mod restore;
 pub mod routine_host;
 pub mod routines;
+pub mod simulator;
 pub mod staging;
 pub mod status;
 pub mod task_host;

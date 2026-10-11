@@ -964,6 +964,36 @@ Built on branch `m16a-persona-wake` (from `product-m0-m5`), alongside the Conduc
 - D-1206: Known limits. Output-route probing (media playing, Bluetooth output) is Linux-only through `pactl`; macOS and Windows report nothing playing, so those two pauses don't act there yet. Echo cancellation for wake detection isn't built: cpal has none, and platform voice processing (macOS VPIO, Windows AEC) is future work. Both are in HUMAN_TODO.
 - D-1207: Settings shows and edits `memory.md` inline (UI-67 says "Open memory file" in the Files editor). Settings has no workspace context for the Files editor, and the task asks for the memory to be viewable, editable and clearable from Settings.
 - D-1208: Containers whose proxy re-signs TLS can't let `sherpa-onnx-sys` download its static libraries. `scripts/fetch-sherpa.sh` fetches the archive with curl, and `scripts/gate.sh` points `SHERPA_ONNX_ARCHIVE_DIR` at `~/.cache/sherpa-onnx` when it's there. CI downloads it directly.
+## M16 · F-CD-21 Simulator pane (macOS)
+Built on branch `m16d-simulator` (from `product-m0-m5` 7f6d875) by the M13 session at the coordinator's request, the last of 16D's extras. Decisions are numbered from D-1400.
+- [x] F-CD-21 Simulator pane (code; the [manual] AC1 waits for a Mac, HUMAN_TODO).
+  - **Shared code** (every platform, tested here). `services::simulator` holds the `SimHost` trait over `xcrun simctl` and `idb`, and `parse_list` for `simctl list --json devices runtimes`: available iOS runtimes newest first, their available devices, booted first. It maps `xcrun` failures to "no Xcode" or a short message. `SimulatorService` covers status, boot (`bootstatus -b`, so "already booted" is success), shutdown, install of a `.app`, screenshots, the screen size from `idb describe`, and tap, text, key and Home through `idb ui`. The 10 fps frame loop skips unchanged frames and stops on stop, on a closed channel, or after ~3 s of failures. A udid must be a UUID before it reaches any process.
+  - **macOS only.** `services/simulator/macos.rs` is `XcrunHost`: tokio processes with a timeout and an `idb` lookup on PATH. It is small, uses only std and tokio, and is compiled in tests everywhere so the Linux gate type-checks it, but only macOS builds construct it.
+    - `commands/simulator.rs` has 11 commands. It is compiled on macOS and in tests, and registered only in the macOS `platform_commands!` macro.
+    - Its permissions come from build.rs `SIM_COMMANDS`, generated only when `CARGO_CFG_TARGET_OS` is macos. Its capability (`sim-capability.json`) is added at runtime on macOS.
+    - `pane_create {kind:"simulator"}` makes a process-less pane on macOS and is refused elsewhere.
+    - No mac-only crate dependency was added: `xcrun`, `simctl` and `idb` are external tools.
+  - **UI.**
+    - `features/simulator`: the pane's state machine (loading, unavailable, empty, off, booting, live, stopping, failed), click→point mapping for an `object-fit: contain` frame, and the key mapping.
+    - `SimulatorPane` has a device picker grouped by runtime, Boot, Shut down, Home and Install app…, the live frame (clicks and typing when idb is installed, otherwise a "view only" line), and a state for each phase.
+    - The picker's Simulator tile shows only when the platform is macOS and `sim_status` says available. Nothing calls `sim_*` elsewhere.
+  - **Tests.**
+    - Rust: 14 (`f_cd_21_*`, including the Linux absence tests: no host, refused pane, commands only in the macOS list and permissions only for macOS targets).
+    - UI: 5 model and 4 grid tests (absent on Linux, absent on a Mac without a runtime, the stream and a click mapped to points, boot and view-only).
+- The website doesn't mention the Simulator, and nothing was added to it. It shouldn't offer the feature until a Mac build exists.
+
+### M16 · F-CD-21 decisions
+- D-1400: "Absent elsewhere" means the commands, their permissions and capability, the picker tile and any setting don't exist outside macOS. It isn't just hidden. The command module and the real host still compile in test builds on every platform, so the Linux gate type-checks the macOS code. Tests prove the absence by reading lib.rs, build.rs and the capability, and by the refused `pane_create`.
+- D-1401: The screen is a `simctl io screenshot` PNG every 100 ms, written to a scratch file and read back. Unchanged frames aren't sent. Frames travel as raw bytes over a `Channel`, like PTY output, and the pane shows them as object URLs. ScreenCaptureKit needs a Screen Recording permission and a native host, so it can be added later.
+- D-1402: Input goes through `idb` (`ui tap` in points, `ui text`, `ui key` with HID usages, `ui button HOME`), because `simctl` has no input commands. Without idb the pane is view only and says how to install it.
+- D-1403: A Simulator pane doesn't count against the live-pane limit (no process, like Browser), doesn't restore a device after a restart (it picks the booted device again, or the first one), and doesn't shut its device down when it closes, since the device is shared with Xcode.
+
+### M16 · F-CD-21 log
+- F-CD-21: the shared service, the macOS host and commands, the pane, the tile and the tests. The disk allowance filled twice during builds (a linker bus error, then `gen:protocol` cut off mid-write, which had deleted the generated types). Deleting stale `target/debug` artifacts freed it, and `gen:protocol` was re-run.
+- Full E2E regression on the branch, merged with `product-m0-m5` d1060d3 (batch 2 and 0.5.0): 109/109 spec files.
+  - The M14 specs need the sshd fixture: `scripts/agent/build-sshd-image.sh`, `gen-ssh-fixture.sh` (openssh-client) and `build-tandem-host.sh` (musl-tools and the musl target).
+  - The M8 specs need the model cache: `bash scripts/fetch-models.sh base.en parakeet`. Without these, those 11 spec files fail for setup reasons only.
+  - One full run failed E2E-M16-7 F-AU-01.4 (Auto with 0 credits), which passed alone. The test swallowed a missed wait for the new pane's idle status, and Auto rightly waits for the prompt before asking. Its timeout message was also built before polling, so it always read "undefined". The wait is now an explicit 45 s precondition, a timeout reports the run as last seen, and the next full run passed.
 
 ## Decisions
 - D-1: F-CD-09 owned by M9. It needs the Files editor and the Tandem browser.

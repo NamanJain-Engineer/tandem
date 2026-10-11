@@ -42,6 +42,10 @@ pub async fn pane_create(
     if kind == "browser" {
         return create_browser_pane(&state, &tab_id, url).await;
     }
+    // A simulator pane runs no process of its own either (F-CD-21).
+    if kind == "simulator" {
+        return create_simulator_pane(&state, &tab_id).await;
+    }
     state
         .terminals
         .check_live_limit(state.entitlements.limits().panes)?;
@@ -67,6 +71,20 @@ pub(crate) async fn create_browser_pane(
     Ok(pane)
 }
 
+/// A Simulator pane (F-CD-21): macOS only; elsewhere the kind is refused.
+pub(crate) async fn create_simulator_pane(
+    state: &AppState,
+    tab_id: &TabId,
+) -> Result<PaneRecord, IpcError> {
+    if state.simulator.is_none() {
+        return Err(IpcError::new(
+            ErrorCode::Unavailable,
+            "Simulator panes run on macOS only.",
+        ));
+    }
+    Ok(panes::create(&state.store, tab_id, "simulator", None).await?)
+}
+
 /// A pane record in `tab` (the view starts its process). Callers check the
 /// plan's live-pane cap first: one pane (`pane_create`) or a whole lineup.
 pub(crate) async fn create_pane(
@@ -88,12 +106,8 @@ pub(crate) async fn create_pane(
             }
         }
         "browser" => return create_browser_pane(state, tab_id, None).await,
-        _ => {
-            return Err(IpcError::new(
-                ErrorCode::Invalid,
-                "Simulator panes aren't available yet",
-            ))
-        }
+        "simulator" => return create_simulator_pane(state, tab_id).await,
+        _ => return Err(IpcError::new(ErrorCode::Invalid, "Unknown pane kind")),
     }
     let engine_id = engine_id.filter(|_| kind == "agent");
     // An account must belong to the pane's engine (F-AC-01).
@@ -427,4 +441,42 @@ pub async fn term_stage_clipboard_image(
     state
         .terminals
         .quote_paths(&pane_id, &[path.to_string_lossy().into_owned()])
+}
+
+#[cfg(test)]
+mod simulator_tests {
+    use super::*;
+    use tandem_core::DataDir;
+    use tandem_store::Store;
+
+    /// F-CD-21 AC2 off macOS: a simulator pane can't be made, and no pane
+    /// record is left behind.
+    #[tokio::test]
+    async fn f_cd_21_2_a_simulator_pane_is_refused_off_macos() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let state = AppState::for_tests(data, store.clone());
+        let root = dir.path().join("proj");
+        std::fs::create_dir_all(&root).expect("mkdir");
+        let ws = crate::services::workspaces::add(&store, root.to_str().expect("utf8"), None)
+            .await
+            .expect("workspace");
+        let tab = tandem_store::repo::tabs::create(&store, &ws.workspace.id, None)
+            .await
+            .expect("tab");
+        let out = create_simulator_pane(&state, &tab.id).await;
+        if cfg!(target_os = "macos") {
+            assert!(out.is_ok());
+        } else {
+            let err = out.expect_err("refused");
+            assert_eq!(err.code, ErrorCode::Unavailable);
+            assert_eq!(err.message, "Simulator panes run on macOS only.");
+            let made = panes::list_open(&store, &tab.id)
+                .await
+                .map(|p| p.len())
+                .unwrap_or(0);
+            assert_eq!(made, 0);
+        }
+    }
 }

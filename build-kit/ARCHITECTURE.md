@@ -816,6 +816,17 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `auto_pause` / `auto_resume` / `auto_stop` | `{runId}` | `AutoRunView` (pause holds the next turn; stop ends at once and nothing more is typed) | NotFound |
 | `auto_dismiss` | `{runId}` | — (clears an ended run's chip; emits `auto:dismissed`) | — |
 
+#### Simulator [F-CD-21] (macOS builds only)
+Registered, permitted (build.rs `SIM_COMMANDS` for macOS targets, `sim-capability.json` added at runtime) and present only on macOS. Elsewhere none of these exists, `pane_create {kind:"simulator"}` answers Unavailable "Simulator panes run on macOS only.", and the picker has no Simulator tile (D-1400).
+| Command | Args | Returns | Errors |
+|---|---|---|---|
+| `sim_status` | — | `SimStatus {available, reason?, runtimes:[SimRuntime {identifier, name, version}], devices:[SimDevice {udid, name, runtime, state: shutdown\|booting\|booted\|shutting_down\|unknown}] (available iOS devices, booted first, newest runtime first), input}` (`available`: Xcode's tools answer and ≥1 iOS runtime is installed, F-CD-21 AC2; `input`: `idb` is installed) | — |
+| `sim_boot` / `sim_shutdown` | `{udid}` | `SimDevice` (boot runs `simctl bootstatus <udid> -b` and returns once booted, up to 180 s; booting a booted device or shutting a shut one is fine) | Invalid (not a UUID), NotFound, Unavailable (no Xcode), Timeout |
+| `sim_install` | `{udid}` | `bool` (opens a folder picker for a built `.app`; `false` when cancelled) | Invalid (not a `.app`, or the device isn't booted) |
+| `sim_stream_start` / `sim_stream_stop` | `{paneId, udid, channel: Channel<bytes>}` / `{paneId}` | — (a PNG of the screen every 100 ms via `simctl io screenshot`, sent only when it changed; ends on stop, when the channel closes, or after ~3 s of failed screenshots) | Invalid |
+| `sim_screen` | `{udid}` | `SimScreen {widthPoints, heightPoints, widthPixels, heightPixels}` (`idb describe`, cached) | Unavailable (no idb) |
+| `sim_tap` / `sim_text` / `sim_key` / `sim_home` | `{udid, x, y}` (points) / `{udid, text}` (control characters dropped, ≤1,000) / `{udid, key: enter\|backspace\|tab\|escape\|left\|right\|up\|down}` / `{udid}` | — (through `idb ui tap\|text\|key\|button HOME`) | Invalid (off the screen), Unavailable (no idb: the pane says it is view only) |
+
 #### Dictate [F-DI-*]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
