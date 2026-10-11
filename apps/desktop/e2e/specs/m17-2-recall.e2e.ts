@@ -82,6 +82,8 @@ describe("E2E-M17-2 command recall", () => {
     // The command line never shows in the terminal as a mark.
     expect(await paneText(shell)).not.toContain("cmdline_url");
     await openRecall();
+    // The list loads after the picker opens.
+    await browser.waitUntil(async () => (await rows()).length === 2, { timeout: 10_000, timeoutMsg: `rows: ${JSON.stringify(await rows())}` });
     const shown = await rows();
     expect(shown.map((r) => r.split("|")[0])).toEqual(["false", "echo one"]);
     expect(shown[0]).toContain("✗ 1");
