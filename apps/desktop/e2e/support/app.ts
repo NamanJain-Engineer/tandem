@@ -534,6 +534,11 @@ export async function split(direction: "right" | "down", tile = "shell"): Promis
       }),
     );
   }, direction);
+  // Where the picker opened, for the failure message below.
+  await $('[data-testid="pane-picker"]').waitForExist({ timeout: 10_000 });
+  const opened = (await browser.execute(
+    () => (window as unknown as { __tandemTest?: { debug: () => { picker?: unknown } } }).__tandemTest?.debug().picker,
+  )) as { tabId?: string } | null | undefined;
   await pickTile(tile);
   let added = "";
   // Toasts expire before the timeout; keep any seen while waiting.
@@ -557,7 +562,15 @@ export async function split(direction: "right" | "down", tile = "shell"): Promis
       const state = await browser.execute(() =>
         (window as unknown as { __tandemTest?: { debug: () => unknown } }).__tandemTest?.debug(),
       );
-      throw new Error(`the split didn't add a pane: ${JSON.stringify({ toasts: [...seen], state })}`);
+      // Whether the core made the pane, in the tab the picker opened for.
+      const inCore = opened?.tabId
+        ? await invoke<Array<{ id: string }>>("pane_list", { tabId: opened.tabId })
+            .then((panes) => panes.map((p) => p.id))
+            .catch((e: unknown) => String(e))
+        : null;
+      throw new Error(
+        `the split didn't add a pane: ${JSON.stringify({ toasts: [...seen], pickerOpened: opened ?? null, inCore, state })}`,
+      );
     });
   await waitForShell(added);
   return added;
