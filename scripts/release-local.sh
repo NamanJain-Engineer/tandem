@@ -124,7 +124,8 @@ for bin in tandem-tasks tandem-hook; do
   done
   for f in "$bundle"/rpm/*-"$version"-*.rpm; do
     [ -e "$f" ] || continue
-    rpm2cpio "$f" | cpio -t --quiet | grep "usr/bin/$bin\$" >/dev/null || { echo "$(basename "$f") has no $bin" >&2; exit 1; }
+    # rpm reads the package itself: rpm2cpio | cpio -t breaks rpm2cpio's pipe at cpio's trailer.
+    rpm -qlp "$f" | grep -x "/usr/bin/$bin" >/dev/null || { echo "$(basename "$f") has no $bin" >&2; exit 1; }
   done
   if [ -d "$bundle/appimage/Vibezeo.AppDir" ] && [ ! -x "$bundle/appimage/Vibezeo.AppDir/usr/bin/$bin" ]; then
     echo "the AppImage has no $bin" >&2

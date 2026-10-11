@@ -60,7 +60,7 @@ pip install ziglang==0.13.0 && cargo install cargo-zigbuild --locked     # relea
 cargo install cargo-audit --locked
 cargo install cargo-about --locked --features cli # release-local.sh: notices
 cargo install cargo-cyclonedx --locked           # release-local.sh: SBOMs
-apt-get install -y rpm2cpio cpio                # release-local.sh: reads the .rpm (D-832)
+apt-get install -y rpm rpm2cpio cpio            # release-local.sh: reads the .rpm (D-832)
 pnpm install
 pnpm keys:dev                                    # local Ed25519 dev keys in .dev-keys/ (git-ignored)
 sh scripts/agent/with-infra.sh true              # proves Docker + Postgres/Redis/Mailpit/stripe-mock come up
