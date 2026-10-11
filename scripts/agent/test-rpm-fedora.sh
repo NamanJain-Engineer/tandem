@@ -25,6 +25,9 @@ docker run "$@" "fedora:$VER" sh -c '
   if [ -f /etc/pki/ca-trust/source/anchors/proxy-ca.crt ]; then
     update-ca-trust
     sed -i "s/^metalink=\(.*\)$/metalink=\1\&protocol=https/" /etc/yum.repos.d/*.repo
+    # Cisco serves openh264 over plain http only, which the proxy refuses; it
+    # is an optional codec, so the check runs without that repository.
+    rm -f /etc/yum.repos.d/fedora-cisco-openh264.repo
   fi
   rpm -qpR /pkg/vibezeo.rpm > /out/requires.txt
   if ! dnf -y install /pkg/vibezeo.rpm > /out/dnf.log 2>&1; then

@@ -229,7 +229,7 @@ export const MODE_ROWS = [
 export const CAPABILITIES = [
   { title: "Worktree lanes and handoff", icon: "branch", docs: docsPath("code-mode") },
   { title: "Files, git and a browser", icon: "files", docs: docsPath("code-mode") },
-  { title: "Find work by what it's about", icon: "search", docs: docsPath("keyboard-shortcuts") },
+  { title: "Find work by what it's about", icon: "search", docs: docsPath("code-mode") },
   { title: "Several accounts per engine", icon: "users", docs: docsPath("accounts-and-limits") },
   { title: "Your accounts, untouched", icon: "key", docs: docsPath("privacy") },
   { title: "Notifications that matter", icon: "bell", docs: docsPath("settings") },

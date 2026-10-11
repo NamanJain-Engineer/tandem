@@ -50,7 +50,7 @@ export const DOWNLOADS: Download[] = [
   {
     os: "linux",
     name: "Linux",
-    requirement: "x86-64 with WebKitGTK 4.1: Ubuntu 22.04+, Debian 12+ or FEDORA_VERSIONS",
+    requirement: "x86-64 with WebKitGTK 4.1: Ubuntu 22.04+, Debian 12+ or Fedora 42+",
     assets: [
       { file: "Vibezeo_0.6.0_amd64.deb", label: "Download for Linux (.deb)" },
       { file: "Vibezeo-0.6.0-1.x86_64.rpm", label: "Fedora (.rpm)" },
