@@ -10,7 +10,7 @@
   pnpm -r lint && pnpm -r test && cargo test --workspace && pnpm --filter desktop build
   cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check
   bash scripts/windows-check.sh --clippy   # cfg(windows) code, x86_64-pc-windows-gnu
-  pnpm gen:protocol && git diff --exit-code packages/protocol
+  pnpm gen:protocol && git diff --exit-code packages/protocol && test -z "$(git status --porcelain packages/protocol)"
   bash scripts/macos-check.sh --clippy     # cfg(target_os = "macos") code, both Mac architectures
   ```
 - Make small commits: `M<n>: F-XX-nn <what>`.

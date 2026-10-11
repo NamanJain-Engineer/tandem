@@ -21,6 +21,13 @@ bash scripts/windows-check.sh --clippy
 cargo fmt --all --check
 pnpm gen:protocol
 git diff --exit-code packages/protocol
+# New or deleted generated files don't show in git diff: one merge committed
+# the folder empty and still passed (D-836).
+if [ -n "$(git status --porcelain packages/protocol)" ]; then
+  git status --short packages/protocol
+  echo "packages/protocol: generated files are untracked or deleted; stage them" >&2
+  exit 1
+fi
 # The cfg(target_os = "macos") code, both Mac architectures, from Linux
 # (D-2105; docs/MACOS.md §2).
 bash scripts/macos-check.sh --clippy
