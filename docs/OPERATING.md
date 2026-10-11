@@ -60,6 +60,7 @@ pip install ziglang==0.13.0 && cargo install cargo-zigbuild --locked     # relea
 cargo install cargo-audit --locked
 cargo install cargo-about --locked --features cli # release-local.sh: notices
 cargo install cargo-cyclonedx --locked           # release-local.sh: SBOMs
+apt-get install -y rpm rpm2cpio cpio            # release-local.sh: reads the .rpm (D-832)
 pnpm install
 pnpm keys:dev                                    # local Ed25519 dev keys in .dev-keys/ (git-ignored)
 sh scripts/agent/with-infra.sh true              # proves Docker + Postgres/Redis/Mailpit/stripe-mock come up
@@ -151,9 +152,13 @@ cargo test -p tandem-host --features e2e-ssh -- --include-ignored f_rm_01
 pnpm --filter desktop perf -- --suite threads               # perf suites (threads, terminals, startup); TANDEM_PERF_BUILD=debug
 pnpm --filter desktop build:demo                            # the browser demo → apps/web/public/demo/app/
 pnpm --filter web build:site                                # the public site (demo included) → apps/web/out
-TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run     # Linux .deb + AppImage → dist/ (builds tandem-host
+TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run     # Linux .deb, .rpm + AppImage → dist/ (builds tandem-host
                                                             # for Linux x86_64 and aarch64 first; needs cargo-zigbuild)
-sh scripts/check-host-bundle.sh dist/<name>.deb             # the bundle carries tandem-host (release-local runs it)
+sh scripts/check-host-bundle.sh dist/<name>.deb             # the bundle carries tandem-host (.deb, .rpm or AppImage;
+                                                            # release-local runs it)
+sh scripts/agent/test-rpm-fedora.sh dist/<name>.rpm 43      # the .rpm installs, finds its libraries and starts in a
+                                                            # clean Fedora container (D-832); the site names only the
+                                                            # Fedora releases it passes on
 ```
 
 E2E lessons (each cost a debugging round):

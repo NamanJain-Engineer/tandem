@@ -1224,6 +1224,30 @@ mod harness_tests {
         );
     }
 
+    /// F-TL-04: Linux releases come as a .deb, an .rpm and an AppImage from
+    /// both release paths, and each is checked for tandem-host (D-832).
+    #[test]
+    fn f_tl_04_linux_releases_build_deb_rpm_and_appimage() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("tauri.conf.json");
+        let targets: Vec<&str> = conf["bundle"]["targets"]
+            .as_array()
+            .expect("bundle.targets")
+            .iter()
+            .filter_map(|t| t.as_str())
+            .collect();
+        for t in ["appimage", "deb", "rpm"] {
+            assert!(targets.contains(&t), "{t} in {targets:?}");
+        }
+        let local = include_str!("../../../../scripts/release-local.sh");
+        assert!(local.contains("--bundles appimage,deb,rpm"));
+        assert!(local.contains(r#""$bundle"/rpm/*-"$version"-*.rpm"#));
+        let workflow = include_str!("../../../../.github/workflows/release.yml");
+        assert!(workflow.contains(r#"bundles: "appimage,deb,rpm""#));
+        assert!(workflow.contains("bundle/rpm/*.rpm"));
+        assert!(include_str!("../../../../scripts/check-host-bundle.sh").contains("*.rpm)"));
+    }
+
     /// §5.3: the app webview's CSP is `'self'` only, runs no remote or inline
     /// script, and connects only to itself, the IPC bridge, loopback (the
     /// gateway and local review) and the API with its WebSocket.

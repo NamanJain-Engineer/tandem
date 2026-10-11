@@ -2904,7 +2904,7 @@ Features beyond the original spec that make working with coding agents faster, s
   - **Keep this one…** asks in the native confirm (the one confirmation, D-710): "Merge {branch} into {base}?" / "Commits {engine}'s uncommitted changes on {branch}, merges it into {base}, and deletes the other {n} worktrees and their uncommitted changes. Their branches stay." [Merge and clean up]. Agents in the lanes are stopped first. A conflict leaves the base checkout conflicted, as "Merge into {base}" does (F-CD-15), and keeps all lanes. A base checkout with uncommitted changes refuses: "Commit or stash your changes in {base} first."
   - **Discard all…** asks and removes every lane's worktree and pane; branches stay.
 - A run survives relaunch: its lanes, check results and state are kept until it's merged or discarded.
-- States: no git ("Best of N needs a git repository"), launching ("Starting 3 agents…"), comparing, a lane failed to start (its column shows the error; the others go on), done (merged, or discarded).
+- States: no git ("Best of N needs a git repository"), a folder on an SSH host or in WSL ("Best of N works in folders on this computer only"), launching ("Starting 3 agents…"), comparing, a lane failed to start (its column shows the error; the others go on), done (merged, or discarded).
 
 **Data:** SQLite `bestof_runs` (id, workspace_id, title, base_commit, check_command?, state, created_at) and `bestof_lanes` (run_id, lane_workspace_id, pane_id?, engine_id, account_id?, check_state, check_exit?, check_output_tail?).
 
