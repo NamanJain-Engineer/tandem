@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Globe, RefreshCw, SquareTerminal } from "lucide-react";
+import { ChevronDown, ChevronRight, Globe, RefreshCw, Smartphone, SquareTerminal } from "lucide-react";
 import type { EngineView } from "@tandem/protocol";
 import { Button, EngineGlyph, Spinner, cx } from "@tandem/ui";
 import { t } from "../../i18n";
@@ -135,6 +135,7 @@ export function LaunchGrid({
   busy,
   autoFocus,
   browser,
+  simulator,
   hostId,
 }: {
   tabId: string;
@@ -143,6 +144,8 @@ export function LaunchGrid({
   autoFocus?: boolean;
   /** The pane picker also offers a Browser pane (F-CD-17). */
   browser?: boolean;
+  /** …and, on a Mac with an iOS Simulator runtime, a Simulator pane (F-CD-21). */
+  simulator?: boolean;
   /** A remote workspace's host: its engines instead of this machine's. */
   hostId?: string | null;
 }) {
@@ -152,7 +155,14 @@ export function LaunchGrid({
     );
   }
   return (
-    <LocalLaunchGrid tabId={tabId} onPick={onPick} busy={busy} autoFocus={autoFocus} browser={browser} />
+    <LocalLaunchGrid
+      tabId={tabId}
+      onPick={onPick}
+      busy={busy}
+      autoFocus={autoFocus}
+      browser={browser}
+      simulator={simulator}
+    />
   );
 }
 
@@ -162,12 +172,14 @@ function LocalLaunchGrid({
   busy,
   autoFocus,
   browser,
+  simulator,
 }: {
   tabId: string;
   onPick: (tileId: string) => void;
   busy: string | null;
   autoFocus?: boolean;
   browser?: boolean;
+  simulator?: boolean;
 }) {
   const { installed, missing, loaded } = useEngineList();
   const report = useEngines((s) => s.report);
@@ -217,6 +229,14 @@ function LocalLaunchGrid({
             "browser",
             t("picker.browser"),
             <Globe size={20} className="text-fg-muted" aria-hidden="true" />,
+            null,
+            false,
+          )}
+        {simulator &&
+          tile(
+            "simulator",
+            t("picker.simulator"),
+            <Smartphone size={20} className="text-fg-muted" aria-hidden="true" />,
             null,
             false,
           )}

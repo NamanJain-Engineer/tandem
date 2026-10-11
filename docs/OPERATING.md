@@ -24,6 +24,7 @@ still uses the working name *tandem* (crates, commands, bundle id); keep it.
 | Release notes | `CHANGELOG.md` |
 | The public site's hosting | `docs/DEPLOY_SITE.md` |
 | Helper scripts for agents | `scripts/agent/` |
+| macOS: checks from Linux, Mac CI, signing, notarization, distribution | `docs/MACOS.md` |
 | Product video sources | `media/product-video/` |
 
 Code layout: `apps/desktop` (Tauri 2: Rust in `src-tauri`, React 19 + zustand
@@ -199,6 +200,13 @@ E2E lessons (each cost a debugging round):
   `~/.cache/tandem-models`; run `bash scripts/fetch-models.sh base.en parakeet`
   first). The runner points `HOME` at the test's home, so anything that needs the
   real home must capture it before then.
+- The wake phrase (F-CN-07) runs in the `tandem-wake` sidecar, built with
+  `cargo build -p tandem-voice --features kws --bin tandem-wake` (release
+  builds: `scripts/build-sidecars.sh`). Behind a TLS-intercepting proxy, run
+  `bash scripts/fetch-sherpa.sh` first: `sherpa-onnx-sys` can't verify the
+  proxy's CA, so it reads the archive from `SHERPA_ONNX_ARCHIVE_DIR` (the gate
+  sets it). Its benchmark: `cargo test -p tandem-voice --features kws --
+  --include-ignored f_cn_07_1` (about a minute).
 
 ## 6. Releasing the desktop app (Linux, local)
 
@@ -240,6 +248,98 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    anything new and visible in the release should be added to it with a test in
    `demo.test.ts`. List the surfaces in the release pull request.
 6. Gate, commit, push, then deploy (§7) with the owner's go-ahead.
+
+### 6a. Windows from Linux (no Windows CI until Actions minutes return)
+
+Nothing here has run on a real Windows machine; HUMAN_TODO's "M15 Windows first
+run" has the steps, and Windows stays "Coming soon" on the site until they pass.
+
+One-time setup (on top of §3):
+```bash
+apt-get install -y mingw-w64 nsis p7zip-full clang-19 lld-19 llvm-19
+rustup target add x86_64-pc-windows-gnu x86_64-pc-windows-msvc
+cargo install cargo-xwin --locked        # downloads the MSVC CRT and SDK on first use (~1 GB in ~/.cache/cargo-xwin):
+                                         # only after the owner accepts Microsoft's licence (HUMAN_TODO, D-1711);
+                                         # then export TANDEM_MSVC_LICENSE_ACCEPTED=1
+# Wine 11 from WineHQ (Ubuntu's Wine 9 also runs the tests):
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://dl.winehq.org/wine-builds/winehq.key -o /etc/apt/keyrings/winehq-archive.key
+curl -fsSL https://dl.winehq.org/wine-builds/ubuntu/dists/noble/winehq-noble.sources -o /etc/apt/sources.list.d/winehq-noble.sources
+apt-get update && apt-get install -y --install-recommends winehq-stable
+```
+
+| Command | What it checks | Time (4 vCPU) |
+|---|---|---|
+| `bash scripts/windows-check.sh --clippy` | `cfg(windows)` code in every crate but the app, `x86_64-pc-windows-gnu`. In the gate. | ~40 s warm |
+| `bash scripts/windows-check.sh --msvc` | The whole workspace, app included, for `x86_64-pc-windows-msvc` through cargo-xwin. In `ci:local` once the licence is accepted. | ~70 s warm, ~4 min cold |
+| `bash scripts/windows-check.sh --wine` | tandem-pty, tandem-core, tandem-routines, tandem-voice and tandem-host tests under Wine. In `ci:local`. | ~75 s warm |
+| `bash scripts/build-windows-installer.sh` | Needs the licence too. Unsigned NSIS installer, then `scripts/check-windows-bundle.sh` on it. | ~20 min cold, the app 11 min of it |
+
+- The app isn't in the GNU check: ONNX Runtime has no prebuilt MinGW binaries and
+  whisper.cpp doesn't compile against Ubuntu's mingw-w64 11 headers. The MSVC
+  build needs clang 19 or later (the MSVC STL headers refuse 18); the scripts put
+  `/usr/lib/llvm-19/bin` first on PATH.
+- What Wine can't run (`windows-check.sh` says why for each): ConPTY (Wine's
+  conhost rejects `--inheritcursor` and exits, so `tests/pty_windows.rs` waits for
+  real Windows), recursive file watching of folders that existed before the
+  watch, and the git-backed tandem-host tests.
+- The installer: `target/x86_64-pc-windows-msvc/release/bundle/nsis/Vibezeo_<version>_x64-setup.exe`.
+  Only NSIS cross-builds; the MSI needs WiX on Windows (release.yml builds both).
+  `TANDEM_HOSTED=0` as for Linux releases. `--skip-host` reuses the tandem-host
+  helpers already in `resources/tandem-host` (the full run builds the Linux ones
+  with cargo-zigbuild, §3). Don't publish it.
+- `scripts/check-windows-bundle.sh <setup.exe>` lists the installer with 7-Zip and
+  fails unless the app, `tandem-tasks.exe`, `tandem-hook.exe`, `DirectML.dll` and the tandem-host
+  helpers are in it, and checks the generated `installer.nsi` for the Start Menu
+  shortcut's AppUserModelID (`com.vibezeo.tandem`, which toasts use), the
+  `tandem://` scheme and the WebView2 bootstrapper.
+- Disk: the MSVC release build takes ~2.5 GB under `target/x86_64-pc-windows-msvc`
+  and the Wine test binaries ~3 GB under `target/x86_64-pc-windows-gnu`; delete
+  them after use when space is short.
+
+### 6b. Microsoft Store (MSIX)
+
+The Store signs, hosts and updates MSIX packages for free (D-1713). The package
+holds the same files as the NSIS installer (the app, `tandem-tasks.exe`,
+`tandem-hook.exe`, `DirectML.dll`, the tandem-host helpers) plus
+`packaging/msix/AppxManifest.xml.in`: a full-trust app (`runFullTrust`), the
+`tandem://` protocol, the `vibezeo.exe` execution alias (Task Scheduler runs
+routines through it) and the microphone.
+
+```bash
+bash scripts/get-makemsix.sh                       # once: builds makemsix (MIT) from a pinned commit (~6 min; cmake ≥ 3.29: pip install cmake)
+TANDEM_MSVC_LICENSE_ACCEPTED=1 bash scripts/build-windows-installer.sh   # the binaries (D-1711)
+MSIX_IDENTITY_NAME=… MSIX_PUBLISHER='CN=…' MSIX_PUBLISHER_DISPLAY_NAME=… \
+  bash scripts/build-msix.sh --from-installer target/x86_64-pc-windows-msvc/release/bundle/nsis/Vibezeo_<v>_x64-setup.exe
+# → dist/Vibezeo_<v>_x64.msix, then scripts/check-msix.sh on it
+```
+
+- The three `MSIX_*` values come from Partner Center (Product management ›
+  Product identity) once the name is reserved; without them the package gets dev
+  values that a Store upload refuses. Version is `tauri.conf.json`'s plus `.0`.
+- A Store install never runs the app's own updater (`tandem_core::install`).
+- To try a package on Windows without the Store: unzip it, then in PowerShell with
+  Developer Mode on, `Add-AppxPackage -Register .\AppxManifest.xml`.
+
+### 6c. Windows signing, winget and E2E (when Actions minutes exist)
+
+- **Trusted Signing (D-1715).** With the `AZURE_*` secrets set, release.yml installs
+  `trusted-signing-cli` on the Windows runner and passes it to Tauri as the
+  `signCommand`, which signs the app, both sidecars and the NSIS and MSI
+  installers. Without them the artifacts are marked `-unsigned`.
+- **MSIX.** The `msix` job packs the Store package from the Windows installer
+  (§6b) into the `store-msix` artifact; it never goes into the public release.
+- **winget (D-1715).** For a signed early-access release, `publish` writes the
+  manifests (`scripts/gen-winget.sh`, validated against `packaging/winget/schemas`)
+  into the `winget-manifests` artifact. By hand:
+  `bash scripts/gen-winget.sh <setup.exe> <its public https URL>` (needs
+  `pip install pyyaml jsonschema`).
+- **Windows E2E (D-1714).** `ci.yml`'s `e2e-windows` job (merges to main and by
+  hand) installs tauri-driver, fetches the `msedgedriver` matching the runner's
+  WebView2, and runs `pnpm --filter desktop e2e -- --spec-list e2e/windows-smoke.txt`
+  with `TANDEM_E2E_OFFLINE=1` (no API, web app or mock servers: they need Docker).
+  On Linux the same command checks the list:
+  `TANDEM_E2E_OFFLINE=1 dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec-list e2e/windows-smoke.txt`.
 
 ## 7. Deploying the website
 

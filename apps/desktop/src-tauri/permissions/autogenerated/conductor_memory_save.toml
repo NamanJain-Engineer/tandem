@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-conductor-memory-save"
+description = "Enables the conductor_memory_save command without any pre-configured scope."
+commands.allow = ["conductor_memory_save"]
+
+[[permission]]
+identifier = "deny-conductor-memory-save"
+description = "Denies the conductor_memory_save command without any pre-configured scope."
+commands.deny = ["conductor_memory_save"]

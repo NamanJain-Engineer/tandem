@@ -79,6 +79,8 @@ if [ "$build" = 1 ]; then
   (cd "$root" && sh scripts/ci/build-tandem-host.sh linux-x86_64 && sh scripts/ci/build-tandem-host.sh linux-aarch64)
   (cd "$root" && TANDEM_HOST_PREBUILT=1 sh scripts/build-tandem-host.sh >/dev/null)
   (cd "$root" && pnpm --filter desktop build)
+  # The phone web app LAN mode serves at /remote (F-RM-04).
+  (cd "$root" && sh scripts/build-remote-web.sh)
   # The tasks MCP server ships beside the app (F-TK-02, bundle.externalBin).
   sh "$root/scripts/build-sidecars.sh" "$target"
   # AppImage tooling runs without FUSE in containers.
@@ -116,7 +118,7 @@ for f in "$bundle"/appimage/*_"$version"_*.AppImage "$bundle"/deb/*_"$version"_*
 done
 # The sidecars sit beside the app (D-828): the tasks server and the
 # engines' status hook. Without the hook, panes fall back to heuristics.
-for bin in tandem-tasks tandem-hook; do
+for bin in tandem-tasks tandem-hook tandem-wake; do
   for f in "$bundle"/deb/*_"$version"_*.deb; do
     [ -e "$f" ] || continue
     # No grep -q: it stops reading early, and pipefail counts dpkg-deb's broken pipe.
@@ -132,7 +134,7 @@ for bin in tandem-tasks tandem-hook; do
     exit 1
   fi
 done
-note "- sidecars in every bundle: tandem-tasks, tandem-hook"
+note "- sidecars in every bundle: tandem-tasks, tandem-hook, tandem-wake"
 if has TAURI_SIGNING_PRIVATE_KEY; then
   note "- updater: artifacts signed; latest.json written"
 else

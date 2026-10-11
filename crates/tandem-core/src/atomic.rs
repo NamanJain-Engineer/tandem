@@ -38,7 +38,7 @@ pub fn atomic_write(path: &Path, bytes: &[u8], mode: Option<u32>) -> io::Result<
         drop(file);
         #[cfg(not(unix))]
         let _ = mode;
-        fs::rename(&tmp, path)?;
+        replace(&tmp, path)?;
         if let Ok(dir) = File::open(parent) {
             // Directory fsync is unsupported on some platforms; the rename is
             // already durable there.
@@ -50,6 +50,34 @@ pub fn atomic_write(path: &Path, bytes: &[u8], mode: Option<u32>) -> io::Result<
         let _ = fs::remove_file(&tmp);
     }
     result
+}
+
+#[cfg(not(windows))]
+fn replace(tmp: &Path, path: &Path) -> io::Result<()> {
+    fs::rename(tmp, path)
+}
+
+/// Windows refuses to replace a file another writer is replacing at the same
+/// moment, or one a virus scanner or the indexer briefly holds open (access
+/// denied, or a sharing violation). Those clear in milliseconds, so retry for
+/// up to about a second.
+#[cfg(windows)]
+fn replace(tmp: &Path, path: &Path) -> io::Result<()> {
+    const ERROR_SHARING_VIOLATION: i32 = 32;
+    let mut attempt = 0u64;
+    loop {
+        match fs::rename(tmp, path) {
+            Err(e)
+                if attempt < 40
+                    && (e.kind() == io::ErrorKind::PermissionDenied
+                        || e.raw_os_error() == Some(ERROR_SHARING_VIOLATION)) =>
+            {
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(attempt.min(50)));
+            }
+            other => return other,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -133,7 +133,11 @@ setting_keys! {
     ConductorMemory,
     ConductorReflection,
     ConductorWake,
+    ConductorWakeSensitivity,
+    ConductorWakePauseVideos,
     ConductorFloatingRing,
+    ConductorCallLogs,
+    ConductorRingPosition,
     TelemetryUsage,
     TelemetryCrash,
     AiThreadTitles,
@@ -723,29 +727,29 @@ pub static SCHEMA: &[SettingSpec] = &[
     ),
     spec!(
         ConductorTone,
-        json!("friendly"),
-        V::OneOf(&["friendly", "direct", "playful"]),
+        json!("neutral"),
+        V::OneOf(&["neutral", "warm", "brief"]),
         Conductor,
         ["tone"]
     ),
     spec!(
         ConductorVerbosity,
-        json!("brief"),
-        V::OneOf(&["brief", "normal", "detailed"]),
+        json!("normal"),
+        V::OneOf(&["short", "normal", "detailed"]),
         Conductor,
         ["verbosity"]
     ),
     spec!(
         ConductorSpeed,
-        json!(100),
-        V::IntRange(75, 150),
+        json!(3),
+        V::IntRange(1, 5),
         Conductor,
         ["speed"]
     ),
     spec!(
         ConductorAboutYou,
         json!(null),
-        V::OptionalText { max: 2_000 },
+        V::OptionalText { max: 1_000 },
         Conductor,
         ["about you"]
     ),
@@ -758,8 +762,8 @@ pub static SCHEMA: &[SettingSpec] = &[
     ),
     spec!(
         ConductorReflection,
-        json!(false),
-        V::Bool,
+        json!("ask"),
+        V::OneOf(&["ask", "auto", "off"]),
         Conductor,
         ["reflection", "journal"]
     ),
@@ -771,11 +775,39 @@ pub static SCHEMA: &[SettingSpec] = &[
         ["wake", "hey conductor"]
     ),
     spec!(
+        ConductorWakeSensitivity,
+        json!("medium"),
+        V::OneOf(&["low", "medium", "high"]),
+        Conductor,
+        ["wake", "sensitivity"]
+    ),
+    spec!(
+        ConductorWakePauseVideos,
+        json!(true),
+        V::Bool,
+        Conductor,
+        ["wake", "videos", "pause"]
+    ),
+    spec!(
         ConductorFloatingRing,
         json!(false),
         V::Bool,
         Conductor,
         ["floating", "ring"]
+    ),
+    spec!(
+        ConductorCallLogs,
+        json!("7"),
+        V::OneOf(&["off", "7", "30"]),
+        Conductor,
+        ["call log", "history", "keep"]
+    ),
+    spec!(
+        ConductorRingPosition,
+        json!(null),
+        V::OptionalText { max: 32 },
+        Hidden,
+        []
     ),
     spec!(
         TelemetryUsage,

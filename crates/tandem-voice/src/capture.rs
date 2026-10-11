@@ -21,7 +21,7 @@ use crate::devices::{self, DeviceInfo, MicPrefs};
 pub enum CaptureError {
     #[error("No microphone found")]
     NoDevice,
-    #[error("Tandem can't use the microphone")]
+    #[error("Vibezeo can't use the microphone")]
     PermissionDenied,
     #[error("Your microphone isn't delivering audio")]
     NotDelivering,

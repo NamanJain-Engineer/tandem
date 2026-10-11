@@ -1,0 +1,9 @@
+# The desktop E2E specs the Windows CI job runs (D-1714): offline
+# (TANDEM_E2E_OFFLINE=1: no API, web app or mock servers) and free of POSIX
+# shells. Each passes offline on Linux too. m2-5, m2-7 and m3-12 need the
+# servers (they pass online); grow the list as Windows passes more.
+e2e/specs/m0-boot.e2e.ts
+e2e/specs/m2-3-deep-links.e2e.ts
+e2e/specs/m2-4-window.e2e.ts
+e2e/specs/m3-14-rail-modes.e2e.ts
+e2e/specs/m3-16-picker-nonblocking.e2e.ts

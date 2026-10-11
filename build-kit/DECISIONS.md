@@ -3,7 +3,7 @@
 These are final. Don't re-debate them during the build; if one proves impossible, log it in `BUILD_LOG.md` with the reason and the smallest deviation.
 
 ## Identity
-- Working product name: **Tandem** (placeholder; rename before launch after a trademark check). Package prefix `tandem`, bundle id `app.tandem.desktop`, API host `api.tandem.local` (dev).
+- Working product name: **Tandem** (placeholder; rename before launch after a trademark check). Package prefix `tandem`, bundle id `com.vibezeo.tandem` (as shipped in `tauri.conf.json`; bundle ids are permanent once published, D-2100), API host `api.tandem.local` (dev).
 - This is a **clean-room** product in the same category as BridgeMind. Never use BridgeMind names ("BridgeMind", "BridgeVoice", "Bridge", "BridgeSpace", "Hey Bridge"), logos, orb artwork, copy, or code. Own names:
 
   | Concept | Tandem name |

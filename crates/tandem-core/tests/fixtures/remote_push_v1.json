@@ -1,0 +1,8 @@
+{
+  "pid": "pr_01JTESTVECTOR0000000000000",
+  "key": "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI",
+  "nonce": "JCQkJCQkJCQkJCQk",
+  "seq": 7,
+  "plaintext": "{\"kind\":\"approval\",\"id\":\"ap_1\",\"title\":\"Approval needed\",\"body\":\"Run pnpm test\",\"at\":1700000000000}",
+  "frame": "AwEAAAAAAAAAByQkJCQkJCQkJCQkJJ8l7meFunqSpwr4-5Z4a_mT62WTz0d2DfRb-HVGSp7zJoUWycYFuGCqg_CTNcoq4_9u8EpJ_AHuIoloGYz0mxA28p1IwgZR_bpa8ecGav6bdtUpfd5VyXdh44jmEjxZuQrXa5Ix85PFgpyQ0m70h1hfqqA"
+}

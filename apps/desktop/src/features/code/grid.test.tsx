@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AppBoot, SimStatus } from "@tandem/protocol";
 import type {
   BrowserState,
   PaneRecord,
@@ -20,6 +21,8 @@ import { useRestore } from "../../stores/restore";
 import { useStatus } from "../../stores/status";
 import { useSession } from "../../stores/session";
 import { useWorkspaces } from "../../stores/workspaces";
+import { useSimulator } from "../../stores/simulator";
+import { useBoot } from "../shell/useBoot";
 import { FREE_VIEW, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { applyDrop } from "./dnd";
 import { leaves } from "./layout/tree";
@@ -56,6 +59,9 @@ vi.mock("./RestoredScrollback", async () => {
 const { CodeMain } = await import("./CodeMain");
 const { Sidebar } = await import("../shell/Sidebar");
 const { InstallHost } = await import("./InstallSheet");
+
+type SimChannel = { onmessage: (m: Uint8Array) => void };
+const simFrames: { channel: SimChannel | null } = { channel: null };
 
 const TAB: Tab = { id: "tb_1", workspaceId: "ws_1", name: "Tab 1", sortKey: "a0", createdAt: 0 };
 const WS: WorkspaceSummary = {
@@ -124,6 +130,8 @@ function core(
     browsers?: Record<string, string | null>;
     /** The saved sidebar, for tests that show it. */
     sidebar?: SidebarState;
+    /** What `sim_status` answers (the Simulator, F-CD-21). */
+    sim?: SimStatus;
   } = {},
 ) {
   let n = 0;
@@ -283,6 +291,15 @@ function core(
     browser_move: (a) => page(String(a?.to), "http://localhost:5173/", "Fixtures"),
     sidebar_get: () => opts.sidebar ?? null,
     sidebar_save: () => null,
+    sim_status: () => opts.sim ?? null,
+    sim_stream_start: (a) => {
+      simFrames.channel = a?.channel as SimChannel;
+      return null;
+    },
+    sim_stream_stop: () => null,
+    sim_screen: () => ({ widthPoints: 393, heightPoints: 852, widthPixels: 1179, heightPixels: 2556 }),
+    sim_tap: () => null,
+    sim_boot: () => null,
   });
   return { calls, panes, saved: () => saved };
 }
@@ -907,5 +924,108 @@ describe("browser panes (F-CD-17)", () => {
     expect(sent.map((c) => c.cmd)).toEqual(["pane_create", "browser_move"]);
     expect(sent[0]?.args).toMatchObject({ kind: "browser", url: null });
     expect(sent[1]?.args).toEqual({ from: "browser-1", to: created });
+  });
+});
+
+describe("Simulator panes (F-CD-21)", () => {
+  const PHONE = "8A3F1C2E-1111-4A6B-9C1D-0123456789AB";
+  const sim = (over: Partial<SimStatus> = {}): SimStatus => ({
+    available: true,
+    reason: null,
+    runtimes: [{ identifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-0", name: "iOS 18.0", version: "18.0" }],
+    devices: [{ udid: PHONE, name: "iPhone 16", runtime: "iOS 18.0", state: "booted" }],
+    input: true,
+    ...over,
+  });
+  const platform = (p: string) =>
+    act(() => useBoot.setState({ boot: { ...(useBoot.getState().boot as AppBoot), platform: p } }));
+
+  beforeEach(() => {
+    simFrames.channel = null;
+    useSimulator.setState({ status: null });
+  });
+
+  it("F-CD-21.2 off macOS the picker has no Simulator and never asks the core, whatever it would answer", async () => {
+    const { calls } = core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" }, sim: sim() });
+    platform("linux");
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    act(() => void useLayout.getState().requestSplit(TAB.id, "pn_a", "right"));
+    const picker = await screen.findByTestId("pane-picker");
+    await waitFor(() => expect(within(picker).getByTestId("tile-browser")).toBeTruthy());
+    expect(within(picker).queryByTestId("tile-simulator")).toBeNull();
+    expect(calls.some((c) => c.cmd.startsWith("sim_"))).toBe(false);
+  });
+
+  it("F-CD-21.2 on a Mac without an iOS runtime the picker has no Simulator", async () => {
+    core({
+      panes: ["pn_a"],
+      tree: { type: "leaf", paneId: "pn_a" },
+      sim: sim({ available: false, reason: "No iOS Simulator runtime is installed.", runtimes: [], devices: [] }),
+    });
+    platform("macos");
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    act(() => void useLayout.getState().requestSplit(TAB.id, "pn_a", "right"));
+    const picker = await screen.findByTestId("pane-picker");
+    await waitFor(() => expect(useSimulator.getState().status).not.toBeNull());
+    expect(within(picker).queryByTestId("tile-simulator")).toBeNull();
+  });
+
+  it("F-CD-21 on a Mac with a runtime the picker opens a Simulator pane that streams the booted device and forwards clicks", async () => {
+    const { calls } = core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" }, sim: sim() });
+    platform("macos");
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    act(() => void useLayout.getState().requestSplit(TAB.id, "pn_a", "right"));
+    const picker = await screen.findByTestId("pane-picker");
+    fireEvent.click(await within(picker).findByTestId("tile-simulator"));
+    await waitFor(() => expect(paneEls()).toHaveLength(2));
+    expect(calls.find((c) => c.cmd === "pane_create" && c.args?.kind === "simulator")).toBeTruthy();
+    const simPane = () => paneEls().find((el) => el.dataset.kind === "simulator") as HTMLElement;
+    expect(within(simPane()).getByTestId("pane-title").textContent).toBe("Simulator");
+    // The booted iPhone streams; a frame shows as the device's screen.
+    await waitFor(() => expect(simFrames.channel).not.toBeNull());
+    expect(calls.find((c) => c.cmd === "sim_stream_start")?.args).toMatchObject({ udid: PHONE });
+    // jsdom has no object URLs.
+    URL.createObjectURL = vi.fn(() => "blob:frame-1");
+    URL.revokeObjectURL = vi.fn();
+    act(() => simFrames.channel?.onmessage(new Uint8Array([137, 80, 78, 71])));
+    const img = (await within(simPane()).findByTestId("sim-frame")) as HTMLImageElement;
+    expect(img.alt).toBe("iPhone 16 screen");
+    expect(img.getAttribute("src")).toBe("blob:frame-1");
+    expect(within(simPane()).queryByTestId("sim-view-only")).toBeNull();
+    await waitFor(() => expect(calls.some((c) => c.cmd === "sim_screen")).toBe(true));
+    Object.defineProperty(img, "naturalWidth", { value: 1179 });
+    Object.defineProperty(img, "naturalHeight", { value: 2556 });
+    img.getBoundingClientRect = () => ({ left: 0, top: 0, width: 393, height: 852, right: 393, bottom: 852, x: 0, y: 0, toJSON: () => ({}) });
+    await act(async () => {
+      fireEvent.click(img, { clientX: 196.5, clientY: 426 });
+    });
+    await waitFor(() => expect(calls.find((c) => c.cmd === "sim_tap")?.args).toMatchObject({ udid: PHONE, x: 196.5, y: 426 }));
+  });
+
+  it("F-CD-21 a shut-down device boots from the toolbar; without idb the pane says it's view only", async () => {
+    const { calls } = core({
+      panes: ["pn_a"],
+      tree: { type: "leaf", paneId: "pn_a" },
+      sim: sim({ input: false, devices: [{ udid: PHONE, name: "iPhone 16", runtime: "iOS 18.0", state: "shutdown" }] }),
+    });
+    platform("macos");
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    act(() => void useLayout.getState().requestSplit(TAB.id, "pn_a", "right"));
+    fireEvent.click(await within(await screen.findByTestId("pane-picker")).findByTestId("tile-simulator"));
+    const pane = await waitFor(() => {
+      const el = paneEls().find((x) => x.dataset.kind === "simulator");
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await waitFor(() => expect(within(pane).getByText("iPhone 16 is shut down. Boot it to see its screen.")).toBeTruthy());
+    expect(calls.some((c) => c.cmd === "sim_stream_start")).toBe(false);
+    fireEvent.click(within(pane).getByTestId("sim-boot"));
+    await waitFor(() => expect(calls.find((c) => c.cmd === "sim_boot")?.args).toMatchObject({ udid: PHONE }));
+    await waitFor(() => expect(within(pane).getByTestId("sim-view-only")).toBeTruthy());
+    expect(within(pane).getByTestId("sim-shutdown")).toBeTruthy();
   });
 });

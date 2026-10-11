@@ -1,0 +1,57 @@
+# start end text (samples at 16 kHz in speech_corpus.wav)
+0 40681 Can you open the billing pane and run the tests again
+42281 70516 I think the auth tests are failing on main
+72116 111497 Okay let me read the error message first
+113097 144490 We should refactor the parser before Friday
+146090 183427 Please summarize what the agent did in the docs pane
+185027 224408 Can you hear me now, the microphone was muted
+226008 266132 Running the migration on the staging database now
+267732 314171 The deadline moved to next week, so relax
+315771 356080 Make sure the worktree is clean before merging
+357680 382571 We need more coffee in the kitchen
+384171 415564 Open settings and change the theme to dark
+417164 440012 That was a great conference talk
+441612 470962 The contractor is coming on Monday
+472562 495967 I'll ask the driver when we arrive
+497567 534161 Let me share my screen so you can see the logs
+535761 574956 The build takes about four minutes on my laptop
+576556 612407 Did anyone update the changelog for this release
+614007 650973 I'm going to grab lunch, back in twenty minutes
+652573 679879 The weather looks great for the weekend
+681479 714358 Turn the volume down a little please
+715958 752738 My cat keeps walking across the keyboard
+754338 786288 Ship it once the reviewer approves
+787888 815380 Which branch has the fix for the login bug
+816980 845772 The meeting starts at half past two
+847372 883037 Let's pair on the flaky test this afternoon
+884637 914915 Restart the server and clear the cache
+916515 957196 I prefer tabs, but the formatter uses spaces
+958796 995947 Write a short note in the pull request description
+997547 1019838 Where did I put my headphones
+1021438 1066020 The dashboard shows three agents waiting for approval
+1067620 1097341 Could you call me back in an hour
+1098941 1132749 This function is way too long, split it up
+1134349 1164813 Thanks, that fixed the problem
+1166413 1193348 Remind me to water the plants tomorrow
+1194948 1236186 Hello everyone, welcome to the stand up
+1237786 1262677 Hi there, is this seat taken
+1264277 1289540 Good morning, how did you sleep
+1291140 1327920 Hang on, someone is at the door
+1329520 1364257 The doctor said to rest for a few days
+1365857 1402265 He played the cello in the school orchestra
+1403865 1439902 Copper wire carries the current to the motor
+1441502 1467879 The concert was sold out in minutes
+1469479 1498271 Let's conclude the review and merge it
+1499871 1530521 The condo downtown has a nice view
+1532121 1575217 Configure the linter to ignore generated files
+1576817 1603937 Connect the monitor with the other cable
+1605537 1642503 The construction noise starts at eight
+1644103 1676239 Consider caching the response for a minute
+1677839 1712761 Can we discuss the contract terms on Thursday
+1714361 1741296 Say, could you pass the salt
+1742896 1771502 Okay computer, play some music
+1773102 1797250 Hey, wait for me at the corner
+1798850 1819283 Hey you, over here
+1820883 1845960 Hey, nice work on the demo
+1847560 1875795 Hey, did the deploy finish
+1877395 1913432 Hey team, quick update on the release

@@ -59,9 +59,16 @@ struct Fixture {
 /// A fresh data folder, the host's key approved (as the user would after
 /// seeing its fingerprint), and the master connection up.
 async fn connected() -> Fixture {
+    connected_sharing(true).await
+}
+
+/// [`connected`], with or without one shared connection per host (Windows'
+/// OpenSSH has none).
+async fn connected_sharing(multiplex: bool) -> Fixture {
     let dir = tempfile::tempdir().expect("tmp");
     // Control sockets need a short path.
-    let ssh = Ssh::new(dir.path().join("run"), dir.path().join("ssh/known_hosts"));
+    let mut ssh = Ssh::new(dir.path().join("run"), dir.path().join("ssh/known_hosts"));
+    ssh.multiplex = multiplex;
     let t = target();
     let r = ssh.resolve(&t).await.expect("ssh -G");
     assert_eq!(
@@ -192,6 +199,47 @@ async fn f_rm_01_1_connect_upload_host_open_terminal_echo_hi() {
         .call(method::PTY_KILL, json!({"id": "pn_echo"}))
         .await
         .expect("kill");
+}
+
+/// The Windows path (no ControlMaster): the host key is still checked,
+/// "connecting" only proves the host answers, and every command, the
+/// helper's session included, opens its own connection.
+#[tokio::test]
+#[ignore = "needs the sshd compose service (profile remote)"]
+async fn f_rm_01_without_connection_sharing_as_on_windows() {
+    let _g = SERIAL.lock().await;
+    let f = connected_sharing(false).await;
+    assert!(!f.ssh.master_running(&f.t).await);
+    let sockets = std::fs::read_dir(f.ssh.run_dir.as_path())
+        .map(|d| d.flatten().count())
+        .unwrap_or(0);
+    assert_eq!(sockets, 0, "no control socket");
+    let who = f.ssh.exec(&f.t, "whoami", None).await.expect("exec");
+    assert_eq!(who.trim(), "tandem");
+    f.ssh.install(&f.t, &bin_dir()).await.expect("install");
+    let (c, mut notes, _child) = open(&f).await;
+    let _: PtySpawned = c
+        .call(
+            method::PTY_SPAWN,
+            json!({"id": "pn_win", "cwd": "/home/tandem/project", "cols": 80, "rows": 24,
+                   "env": {"TERM": "xterm-256color", "TANDEM_PANE_ID": "pn_win"}}),
+        )
+        .await
+        .expect("spawn");
+    let _: Value = c
+        .call(
+            method::PTY_WRITE,
+            json!({"id": "pn_win", "data_b64": b64("echo win-ok\n")}),
+        )
+        .await
+        .expect("write");
+    output_until(&mut notes, "pn_win", "win-ok").await;
+    let _: Value = c
+        .call(method::PTY_KILL, json!({"id": "pn_win"}))
+        .await
+        .expect("kill");
+    // Nothing to end.
+    f.ssh.master_exit(&f.t).await;
 }
 
 #[tokio::test]
@@ -400,4 +448,78 @@ async fn f_rm_01_remote_engines_are_detected_and_run_through_tandem_host() {
         String::from_utf8_lossy(&out.stdout).trim(),
         "got-ping-/home/tandem/project"
     );
+}
+
+/// D-1603: a host behind `ProxyJump` and one behind `ProxyCommand`, both
+/// the fixture's own `localhost:22` reached through the fixture: the key is
+/// read through the jump (nothing listens on this machine's :22, so a direct
+/// scan couldn't), it's the fixture's, and once pinned the master connects
+/// through the jump and checks it.
+#[tokio::test]
+#[ignore = "needs the sshd compose service (profile remote)"]
+async fn f_rm_01_hosts_behind_proxyjump_and_proxycommand_connect_through_the_users_config() {
+    let _g = SERIAL.lock().await;
+    let dir = tempfile::tempdir().expect("tmp");
+    let key = repo().join("infra/ssh/id_ed25519");
+    let config = dir.path().join("config");
+    let inner = |alias: &str, how: &str| {
+        format!(
+            "Host {alias}\n  HostName localhost\n  Port 22\n  User tandem\n  IdentityFile {}\n  IdentitiesOnly yes\n  {how}\n",
+            key.display()
+        )
+    };
+    std::fs::write(
+        &config,
+        format!(
+            "Host tandem-jump\n  HostName 127.0.0.1\n  Port 2222\n  User tandem\n  IdentityFile {}\n  IdentitiesOnly yes\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n  LogLevel ERROR\n{}{}",
+            key.display(),
+            inner("via-jump", "ProxyJump tandem-jump"),
+            inner(
+                "via-command",
+                &format!("ProxyCommand ssh -F {} -W %h:%p tandem-jump", config.display())
+            ),
+        ),
+    )
+    .expect("config");
+    // The fixture's own keys, scanned directly on its published port.
+    let direct = Ssh::new(dir.path().join("d"), dir.path().join("d/kh"));
+    let fixture = direct
+        .scan(&direct.resolve(&target()).await.expect("resolve"))
+        .await
+        .expect("scan");
+    for (alias, how) in [("via-jump", "ProxyJump"), ("via-command", "ProxyCommand")] {
+        let data = dir.path().join(alias);
+        let mut ssh = Ssh::new(data.join("run"), data.join("ssh/known_hosts"));
+        ssh.config = Some(config.clone());
+        let t = SshTarget::parse(alias).expect("target");
+        let r = ssh.resolve(&t).await.expect("ssh -G");
+        assert_eq!(r.via, Some(how));
+        assert_eq!((r.hostname.as_str(), r.port), ("localhost", 22));
+        // Unknown: refused until approved, as for a direct host.
+        let refused = ssh.master_up(&t).await.expect_err("unknown host");
+        assert_eq!(refused.category, Category::HostKey, "{}", refused.message);
+        let keys = ssh.host_keys(&t, &r).await.expect("keys through the jump");
+        assert!(
+            fixture.iter().any(|k| k.fingerprint == keys[0].fingerprint),
+            "{how}: {keys:?} vs {fixture:?}"
+        );
+        assert!(ssh.known(&r).is_empty(), "nothing pinned before approval");
+        ssh.trust(&r, &keys[0]).expect("trust");
+        ssh.master_up(&t).await.expect("master through the jump");
+        let out = ssh.exec(&t, "echo via-$USER", None).await.expect("exec");
+        assert_eq!(out.trim(), "via-tandem");
+        ssh.master_exit(&t).await;
+        // A different pinned key refuses, through the jump too.
+        let wrong = HostKey {
+            line: format!(
+                "localhost ssh-ed25519 {}",
+                "AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+            ),
+            key_type: "ssh-ed25519".into(),
+            fingerprint: String::new(),
+        };
+        ssh.trust(&r, &wrong).expect("pin another key");
+        let e = ssh.master_up(&t).await.expect_err("changed key");
+        assert_eq!(e.category, Category::HostKey, "{}", e.message);
+    }
 }

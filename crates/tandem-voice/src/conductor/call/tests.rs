@@ -709,3 +709,60 @@ async fn f_cn_02_injected_calls_run_through_the_same_rules() {
     until("ended", || !c.is_live()).await;
     assert!(!c.inject(vec![]));
 }
+
+#[tokio::test]
+async fn f_cn_01_talk_faster_and_slower_move_the_speech_rate_a_step() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    let (_c, mut wire) = connected(&host, &mut wires, CallOrigin::Button).await;
+    let _ = drain(&mut wire);
+    let mut speeds = Vec::new();
+    let mut outputs = Vec::new();
+    for (i, req) in ["Talk faster.", "speed up", "talk faster", "slow down"]
+        .iter()
+        .enumerate()
+    {
+        wire.to_app
+            .send(act(&format!("f{i}"), req))
+            .await
+            .expect("send");
+        // Each request: one speed change, then the spoken answer.
+        loop {
+            let e = tokio::time::timeout(Duration::from_secs(5), wire.from_app.recv())
+                .await
+                .expect("an event")
+                .expect("open");
+            match e {
+                ClientEvent::SetSpeed(s) => speeds.push(s),
+                ClientEvent::FunctionOutput { output, .. } => {
+                    outputs.push(output);
+                    break;
+                }
+                _ => {}
+            }
+        }
+    }
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    for e in drain(&mut wire).0 {
+        if let ClientEvent::SetSpeed(s) = e {
+            speeds.push(s);
+        }
+    }
+    // 1.0 → 1.1 → 1.2 → 1.2 (the top) → 1.1; the doer never heard any of it.
+    assert_eq!(speeds, vec![1.1, 1.2, 1.2, 1.1]);
+    assert_eq!(outputs[0], "Okay, I'll talk faster.");
+    assert_eq!(outputs[3], "Okay, I'll talk slower.");
+    assert!(host.act_requests.lock().is_empty());
+}
+
+#[test]
+fn f_cn_01_speed_requests_parse_and_others_do_not() {
+    assert_eq!(parse_speed("Talk faster"), Some(1));
+    assert_eq!(parse_speed("speak a bit slower."), Some(-1));
+    assert_eq!(parse_speed("slow down"), Some(-1));
+    assert_eq!(
+        parse_speed("tell the agent to talk faster to the API"),
+        None
+    );
+    assert_eq!(persona::speed_step(1.0), 2);
+    assert_eq!(persona::speed_step(0.82), 0);
+}

@@ -1,0 +1,45 @@
+# Snap Store package for Vibezeo (F-RM-07, D-2031). Classic confinement:
+# Vibezeo starts the person's own shells and coding-agent CLIs in their own
+# folders, which strict confinement can't allow (the same reason editors and
+# terminals ship classic). Classic needs the Snap Store's manual approval
+# (HUMAN_TODO "Linux stores"). It repackages the released .deb.
+name: vibezeo
+title: Vibezeo
+version: "0.5.0"
+summary: A desktop workspace for coding-agent CLIs
+description: |
+  Vibezeo runs the coding-agent command-line tools you already use (such as
+  Claude Code, Codex and Gemini CLI) side by side in terminals and threads,
+  with approvals, git and files in one window. It works offline on the Free
+  plan; nothing leaves your computer unless you turn on a hosted feature.
+website: https://vibezeo.com/
+contact: hello@vibezeo.com
+license: Proprietary
+icon: snap/gui/vibezeo.png
+base: core24
+grade: stable
+confinement: classic
+platforms:
+  amd64:
+
+apps:
+  vibezeo:
+    command: usr/bin/tandem
+    desktop: usr/share/applications/Vibezeo.desktop
+
+parts:
+  vibezeo:
+    plugin: dump
+    source: https://vibezeo.com/downloads/Vibezeo_0.5.0_amd64.deb
+    source-type: deb
+    source-checksum: sha256/bca51bddf4f8dc90673d85b8875f385de43655fc9d25fe71485991a719de067d
+    build-attributes: [enable-patchelf]
+    stage-packages:
+      - libwebkit2gtk-4.1-0
+      - libgtk-3-0
+      - libayatana-appindicator3-1
+      - libasound2t64
+      - libxdo3
+    override-prime: |
+      craftctl default
+      sed -i 's|^Icon=.*|Icon=${SNAP}/snap/gui/vibezeo.png|; s|^Exec=tandem|Exec=vibezeo|' usr/share/applications/Vibezeo.desktop

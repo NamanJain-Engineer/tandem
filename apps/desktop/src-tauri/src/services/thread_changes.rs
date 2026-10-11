@@ -271,7 +271,9 @@ mod tests {
 
     fn repo() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().expect("tmp");
-        let root = dir.path().canonicalize().expect("canonical").join("repo");
+        let root = tandem_core::contain::canonical(dir.path())
+            .expect("canonical")
+            .join("repo");
         std::fs::create_dir_all(root.join("app")).expect("mkdir");
         git(&root, &["-c", "init.defaultBranch=main", "init", "-q"]);
         std::fs::write(root.join("app/a.txt"), "one\ntwo\n").expect("write");

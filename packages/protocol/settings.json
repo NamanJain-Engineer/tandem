@@ -370,17 +370,17 @@
     "page": "conductor"
   },
   {
-    "default": "friendly",
+    "default": "neutral",
     "key": "conductor_tone",
     "page": "conductor"
   },
   {
-    "default": "brief",
+    "default": "normal",
     "key": "conductor_verbosity",
     "page": "conductor"
   },
   {
-    "default": 100,
+    "default": 3,
     "key": "conductor_speed",
     "page": "conductor"
   },
@@ -395,7 +395,7 @@
     "page": "conductor"
   },
   {
-    "default": false,
+    "default": "ask",
     "key": "conductor_reflection",
     "page": "conductor"
   },
@@ -405,8 +405,23 @@
     "page": "conductor"
   },
   {
+    "default": "medium",
+    "key": "conductor_wake_sensitivity",
+    "page": "conductor"
+  },
+  {
+    "default": true,
+    "key": "conductor_wake_pause_videos",
+    "page": "conductor"
+  },
+  {
     "default": false,
     "key": "conductor_floating_ring",
+    "page": "conductor"
+  },
+  {
+    "default": "7",
+    "key": "conductor_call_logs",
     "page": "conductor"
   },
   {

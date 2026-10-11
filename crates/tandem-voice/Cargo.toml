@@ -5,6 +5,12 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[[bin]]
+# The wake-phrase keyword spotter as a sidecar (F-CN-07): its ONNX Runtime
+# can't share the app binary with Parakeet's.
+name = "tandem-wake"
+required-features = ["kws"]
+
 [features]
 default = ["cpal"]
 # The OS microphone and chimes through cpal (ALSA on Linux).
@@ -13,6 +19,9 @@ cpal = ["dep:cpal"]
 whisper = ["dep:whisper-rs"]
 # Parakeet through ONNX Runtime (F-DI-04); not built for Intel Macs.
 parakeet = ["dep:transcribe-rs"]
+# The "Hey Conductor" wake phrase through a bundled sherpa-onnx keyword
+# spotter (F-CN-07).
+kws = ["dep:sherpa-onnx"]
 
 [dependencies]
 tandem-core.workspace = true
@@ -40,6 +49,7 @@ rubato = "0.16"
 cpal = { version = "0.15", optional = true }
 whisper-rs = { version = "0.15", optional = true }
 transcribe-rs = { version = "0.3", optional = true, default-features = false, features = ["onnx"] }
+sherpa-onnx = { version = "=1.13.8", optional = true }
 arboard = "3.6"
 enigo = "0.6"
 

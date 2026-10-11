@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-conductor-ring-state"
+description = "Enables the conductor_ring_state command without any pre-configured scope."
+commands.allow = ["conductor_ring_state"]
+
+[[permission]]
+identifier = "deny-conductor-ring-state"
+description = "Denies the conductor_ring_state command without any pre-configured scope."
+commands.deny = ["conductor_ring_state"]

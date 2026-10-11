@@ -34,7 +34,11 @@ export type TabPanes = {
 };
 
 /** What a new pane runs: a shell, or an engine under the login shell. */
-export type Launch = { kind: "terminal" } | { kind: "agent"; engineId: string } | { kind: "browser"; url?: string | null };
+export type Launch =
+  | { kind: "terminal" }
+  | { kind: "agent"; engineId: string }
+  | { kind: "browser"; url?: string | null }
+  | { kind: "simulator" };
 
 export type SplitRequest = { tabId: string; target: string | null; side: Side };
 export type SplitResult = { ok: true; pane: PaneRecord } | { ok: false; error: IpcError };

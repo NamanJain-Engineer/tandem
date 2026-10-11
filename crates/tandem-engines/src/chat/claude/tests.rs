@@ -1,3 +1,7 @@
+// The session tests drive `/bin/sh` fake engines, so they and their helpers
+// are Unix only; the parsing and mapping tests run everywhere.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use super::*;
 use std::time::Duration;
 
@@ -364,6 +368,40 @@ fn f_rm_01_a_thread_on_a_host_asks_permission_in_band() {
     // Local without a gateway: unchanged (no prompt tool at all).
     req.relocate = None;
     assert_eq!(flag(&args(&req), "--permission-prompt-tool"), None);
+}
+
+#[test]
+fn f_rm_01_a_thread_on_a_host_names_its_relayed_servers_inline() {
+    // D-1604: the relays to this machine's gateway and tasks server, given
+    // inline (no file on the host), still asking permission in band.
+    let mut req = start(Access::Edits, ThreadMode::Act, true);
+    req.relocate = Some(crate::chat::Relocate(Arc::new(|spec| spec)));
+    req.stdio_servers = ["tandem", "tandem_tasks"]
+        .iter()
+        .enumerate()
+        .map(|(i, name)| crate::chat::StdioServer {
+            name: (*name).into(),
+            command: "/home/me/.tandem-host/1/tandem-host".into(),
+            args: vec!["mcp".into(), "--channel".into(), format!("{i:032x}")],
+            env_vars: Vec::new(),
+        })
+        .collect();
+    let a = args(&req);
+    let cfg: Value =
+        serde_json::from_str(flag(&a, "--mcp-config").expect("inline config")).expect("json");
+    assert_eq!(
+        cfg["mcpServers"]["tandem"]["command"],
+        "/home/me/.tandem-host/1/tandem-host"
+    );
+    assert_eq!(
+        cfg["mcpServers"]["tandem_tasks"]["args"],
+        json!(["mcp", "--channel", format!("{:032x}", 1)])
+    );
+    assert_eq!(cfg["mcpServers"].as_object().map(|m| m.len()), Some(2));
+    // No URL, header or token: only the relays.
+    assert!(!cfg.to_string().contains("http"), "{cfg}");
+    assert_eq!(flag(&a, "--permission-prompt-tool"), Some("stdio"));
+    assert!(a.iter().any(|x| x == "--strict-mcp-config"));
 }
 
 #[test]

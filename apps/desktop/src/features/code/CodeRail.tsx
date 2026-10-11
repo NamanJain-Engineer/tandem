@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AlertTriangle, Cloud, Folder, GitBranch, Globe, Plus, SquareTerminal } from "lucide-react";
+import { AlertTriangle, Cloud, Folder, GitBranch, Globe, Plus, Smartphone, SquareTerminal } from "lucide-react";
 import type { SavedSession, WorkspaceSummary } from "@tandem/protocol";
 import {
   Badge,
@@ -257,6 +257,8 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
             />
           ) : pane.kind === "browser" ? (
             <Globe size={12} aria-hidden="true" className="shrink-0" />
+          ) : pane.kind === "simulator" ? (
+            <Smartphone size={12} aria-hidden="true" className="shrink-0" />
           ) : (
             <SquareTerminal size={12} aria-hidden="true" className="shrink-0" />
           )}
@@ -311,9 +313,16 @@ export function CodeRail() {
       // Only a repository can have worktrees; the label says why it's off.
       id: "new-worktree",
       label:
-        ws.kind !== "local" ? t("worktree.remote") : ws.branch ? t("worktree.new") : t("worktree.needsRepo"),
-      disabled: ws.kind !== "local" || !ws.branch || ws.missing,
+        ws.kind === "wsl" ? t("worktree.remote") : ws.branch ? t("worktree.new") : t("worktree.needsRepo"),
+      disabled: ws.kind === "wsl" || !ws.branch || ws.missing,
       onSelect: () => useWorktrees.getState().open({ kind: "new", workspaceId: ws.id }),
+    },
+    {
+      // F-WT-01: what every new worktree of this repository gets.
+      id: "worktree-setup",
+      label: t("worktree.setup.menu"),
+      disabled: ws.kind !== "local" || !ws.branch || ws.missing,
+      onSelect: () => useWorktrees.getState().open({ kind: "setup", workspaceId: ws.id }),
     },
     { id: "up", label: t("rail.moveUp"), onSelect: a.moveUp },
     { id: "down", label: t("rail.moveDown"), onSelect: a.moveDown },

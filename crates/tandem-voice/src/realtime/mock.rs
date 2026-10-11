@@ -57,6 +57,11 @@ pub fn encode(event: &ClientEvent) -> Value {
             json!({"type": "function_call.output", "call_id": call_id, "output": output})
         }
         ClientEvent::Say(text) => json!({"type": "response.create", "instructions": text}),
+        // f32 → two decimals, so 1.1 goes out as 1.1, not 1.100000023841858.
+        ClientEvent::SetSpeed(speed) => json!({
+            "type": "session.update",
+            "session": {"speed": (f64::from(*speed) * 100.0).round() / 100.0}
+        }),
     }
 }
 
@@ -192,6 +197,8 @@ mod tests {
             Some(1)
         );
         assert_eq!(session["session"]["tools"][0]["name"], "act");
+        let speed = encode(&ClientEvent::SetSpeed(1.1));
+        assert_eq!(speed["session"]["speed"].to_string(), "1.1");
     }
 
     #[tokio::test]

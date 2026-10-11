@@ -1,0 +1,21 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "ring",
+  "description": "Conductor's floating ring window: start, end and mute a call, the call's state, its own position, opening the call log (an event to the main window) and logs (ARCHITECTURE §3.1, F-CN-04).",
+  "windows": [
+    "conductor-ring"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:event:allow-emit-to",
+    "core:window:allow-start-dragging",
+    "core:window:allow-outer-position",
+    "allow-conductor-start-call",
+    "allow-conductor-end-call",
+    "allow-conductor-mute",
+    "allow-conductor-ring-state",
+    "allow-conductor-ring-set-position",
+    "allow-app-log"
+  ]
+}

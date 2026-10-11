@@ -1,9 +1,9 @@
 import { $, browser } from "@wdio/globals";
 import { existsSync, readFileSync } from "node:fs";
 import { Key } from "webdriverio";
-import { PhoneClient } from "../../../web/lib/remote/client";
-import { parsePairingFragment } from "../../../web/lib/remote/protocol";
-import { MemoryPairingStore } from "../../../web/lib/remote/store";
+import { PhoneClient } from "@tandem/remote/client";
+import { parsePairingFragment } from "@tandem/remote/protocol";
+import { MemoryPairingStore } from "@tandem/remote/store";
 import { addFolder, freshUser, invoke, mod, paneIds, paneText, split, waitForPaneText } from "../support/app";
 import { expectNoSeriousA11yViolationsInBothThemes } from "../support/axe";
 import { testRoute, waitForEntitlement } from "../support/hosted";

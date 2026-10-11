@@ -78,10 +78,18 @@ pub fn args(req: &ChatStart) -> Vec<OsString> {
         a.push(cfg.into());
         a.push("--permission-prompt-tool".into());
         a.push(PERMISSION_TOOL.into());
-    } else if req.relocate.is_some() {
-        // No gateway where the engine runs: ask in band (F-RM-01).
-        a.push("--permission-prompt-tool".into());
-        a.push("stdio".into());
+    } else {
+        // An engine on a host: its servers (relays to this machine,
+        // D-1604) inline, so no file is written there; it holds no secret.
+        if !req.stdio_servers.is_empty() {
+            a.push("--mcp-config".into());
+            a.push(stdio_config(&req.stdio_servers).into());
+        }
+        if req.relocate.is_some() {
+            // Asked in band (F-RM-01, D-414).
+            a.push("--permission-prompt-tool".into());
+            a.push("stdio".into());
+        }
     }
     // The teammate briefing, from its file: a large one never reaches argv
     // (F-AG-06 AC2).
@@ -105,6 +113,18 @@ pub fn args(req: &ChatStart) -> Vec<OsString> {
         a.push(session.into());
     }
     a
+}
+
+/// `--mcp-config`'s JSON for stdio servers alone.
+fn stdio_config(servers: &[super::StdioServer]) -> String {
+    let mut all = serde_json::Map::new();
+    for s in servers {
+        all.insert(
+            s.name.clone(),
+            serde_json::json!({"type": "stdio", "command": s.command, "args": s.args}),
+        );
+    }
+    serde_json::json!({ "mcpServers": all }).to_string()
 }
 
 /// What a stdout line means to the session.

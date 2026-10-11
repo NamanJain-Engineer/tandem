@@ -56,8 +56,29 @@
     ],
     "category": "DeveloperTool",
     "shortDescription": "A desktop workspace for coding agents",
+    "publisher": "Vibezeo",
+    "homepage": "https://vibezeo.com",
     "resources": {
-      "resources/tandem-host/": "host-binaries/"
+      "resources/tandem-host/": "host-binaries/",
+      "../../../crates/tandem-voice/models/wake/": "models/wake/",
+      "resources/remote-web/": "remote-web/"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "English"
+        ],
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico"
+      },
+      "wix": {
+        "language": "en-US"
+      }
     }
   },
   "plugins": {

@@ -17,8 +17,18 @@ use tandem_voice::conductor::view::CallView;
 
 use crate::services::api::ApiError;
 
-/// How long call logs are kept (UI-66, F-CN-04).
+/// How long call logs are kept by default (UI-66, F-CN-04).
 pub const KEEP_DAYS: i64 = 7;
+
+/// "Keep call logs" (`conductor_call_logs`, UI-67): days, or `None` for
+/// "Don't keep".
+pub fn keep_days(value: &serde_json::Value) -> Option<i64> {
+    match value.as_str() {
+        Some("off") => None,
+        Some(days) => days.parse().ok(),
+        None => Some(KEEP_DAYS),
+    }
+}
 
 #[derive(Default)]
 pub struct ConductorService {
@@ -142,7 +152,7 @@ impl Snapshot {
 
 /// Startup: calls that never settled (the app stopped mid-call) settle now
 /// with their last known seconds, and logs past their week go.
-pub async fn tidy_log<F, Fut>(store: &Store, now: i64, settle: F)
+pub async fn tidy_log<F, Fut>(store: &Store, now: i64, keep: Option<i64>, settle: F)
 where
     F: Fn(String, u32) -> Fut,
     Fut: std::future::Future<Output = Option<u32>>,
@@ -155,7 +165,12 @@ where
             }
         }
     }
-    let _ = log::purge(store, now - KEEP_DAYS * 86_400_000).await;
+    // "Don't keep" purges every settled call.
+    let _ = log::purge(
+        store,
+        now - keep.unwrap_or(0) * 86_400_000 + i64::from(keep.is_none()),
+    )
+    .await;
 }
 
 #[cfg(test)]
@@ -240,7 +255,7 @@ mod tests {
             .expect("e");
         let seen = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let s2 = seen.clone();
-        tidy_log(&store, now, move |id, secs| {
+        tidy_log(&store, now, Some(KEEP_DAYS), move |id, secs| {
             let s2 = s2.clone();
             async move {
                 s2.lock().push((id, secs));
@@ -252,5 +267,16 @@ mod tests {
         let calls = log::list(&store, 10).await.expect("list");
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].credits, Some(100));
+        // "Don't keep": every settled call goes.
+        tidy_log(&store, now, None, |_, _| async { None }).await;
+        assert!(log::list(&store, 10).await.expect("list").is_empty());
+    }
+
+    #[test]
+    fn f_cn_04_keep_call_logs_reads_days_or_off() {
+        assert_eq!(keep_days(&serde_json::json!("7")), Some(7));
+        assert_eq!(keep_days(&serde_json::json!("30")), Some(30));
+        assert_eq!(keep_days(&serde_json::json!("off")), None);
+        assert_eq!(keep_days(&serde_json::Value::Null), Some(KEEP_DAYS));
     }
 }

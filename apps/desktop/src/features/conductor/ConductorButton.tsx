@@ -69,7 +69,11 @@ export function ConductorButton() {
           state={ringState(view)}
           level={level}
           size={28}
-          label={view.phase === "idle" ? t("conductor.ring.idle") : t(`conductor.phase.${view.phase}` as MessageKey)}
+          label={
+            view.phase === "idle"
+              ? t("conductor.ring.idle")
+              : t(`conductor.phase.${view.phase}` as MessageKey)
+          }
           paused={!active || !live}
         />
       </button>

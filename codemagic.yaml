@@ -1,0 +1,87 @@
+# Codemagic, an alternative macOS build host (D-2104; PLATFORMS_PLAN §3.6): the
+# individual plan includes 500 Apple-silicon minutes a month, builds up to
+# 120 minutes. Both workflows start by hand (no triggering section).
+#
+# Secrets live in Codemagic's environment groups, never in this file:
+#   vibezeo_apple   APPLE_CERTIFICATE (base64 .p12 of the Developer ID
+#                   Application certificate), APPLE_CERTIFICATE_PASSWORD,
+#                   optional APPLE_SIGNING_IDENTITY; for notarization either
+#                   APPLE_API_ISSUER, APPLE_API_KEY and APPLE_API_KEY_P8 (the
+#                   App Store Connect key's .p8 text) or APPLE_ID,
+#                   APPLE_PASSWORD (app-specific) and APPLE_TEAM_ID.
+#   vibezeo_updater TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+#                   and TAURI_SIGNING_PUBLIC_KEY (the updater's minisign key).
+# Without the groups' values the release workflow still runs and produces
+# ad-hoc signed builds named -unsigned (scripts/ci/macos-release.sh).
+definitions:
+  env: &env
+    TANDEM_FAKE_KEYCHAIN: "1"
+    CARGO_TERM_COLOR: always
+  setup: &setup
+    name: Rust, Node and pnpm
+    script: |
+      if ! command -v rustup >/dev/null; then
+        curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+      fi
+      echo "PATH=$HOME/.cargo/bin:$PATH" >> "$CM_ENV"
+      export PATH="$HOME/.cargo/bin:$PATH"
+      rustup show
+      rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      corepack enable
+      pnpm install --frozen-lockfile
+
+workflows:
+  macos-tests:
+    name: macOS tests and smoke
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    environment:
+      node: 22
+      xcode: latest
+      vars:
+        <<: *env
+        TANDEM_HOSTED: "0"
+    scripts:
+      - *setup
+      - name: UI assets
+        script: pnpm --filter desktop build
+      - name: Clippy on macOS
+        script: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Tests
+        script: cargo test --workspace
+      - name: Debug app and smoke test
+        script: |
+          pnpm --filter desktop tauri build --debug --bundles app
+          bash scripts/ci/macos-smoke.sh "$(ls -d target/debug/bundle/macos/*.app | head -1)" "$CM_BUILD_DIR/smoke"
+    artifacts:
+      - smoke/**
+
+  macos-release:
+    name: macOS release (universal, signed, notarized)
+    instance_type: mac_mini_m2
+    max_build_duration: 120
+    environment:
+      node: 22
+      xcode: latest
+      groups:
+        - vibezeo_apple
+        - vibezeo_updater
+      vars:
+        <<: *env
+        # Early access: the Free plan locally, no hosted service (D-105).
+        TANDEM_HOSTED: "0"
+    scripts:
+      - *setup
+      - name: Linux helper toolchain and notices tool
+        script: |
+          rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+          pip3 install ziglang==0.13.0 || pip3 install --break-system-packages ziglang==0.13.0
+          cargo install cargo-zigbuild --locked
+          cargo install cargo-about --locked --features cli
+      - name: Build, sign, notarize, staple, verify
+        script: bash scripts/ci/macos-release.sh "$CM_BUILD_DIR/out"
+      - name: Smoke test
+        script: bash scripts/ci/macos-smoke.sh "$(ls -d target/universal-apple-darwin/release/bundle/macos/*.app | head -1)" "$CM_BUILD_DIR/smoke"
+    artifacts:
+      - out/**
+      - smoke/**

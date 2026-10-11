@@ -113,6 +113,8 @@ pub struct AppState {
     pub auto: Arc<crate::services::auto::AutoService>,
     /// The phone companion (F-RM-03).
     pub phone: Arc<crate::services::phone::PhoneService>,
+    /// LAN mode for the phone companion (F-RM-04): off until turned on.
+    pub phone_lan: Arc<crate::services::phone_lan::LanNet>,
     /// Conductor calls (F-CN-01…04).
     pub conductor: Arc<crate::services::conductor::ConductorService>,
     /// Paused agents and their relaunch queue (F-SH-07).
@@ -170,10 +172,20 @@ pub struct AppState {
     pub remote: Arc<crate::services::remote::RemoteService>,
     /// WSL distributions (F-RM-02; Windows only).
     pub wsl: Arc<crate::services::wsl::WslService>,
+    /// The Simulator pane (F-CD-21): macOS only, `None` elsewhere.
+    pub simulator: Option<Arc<crate::services::simulator::SimulatorService>>,
     /// Browser tabs and panes (F-CD-17), bound to the window in setup.
     pub browser: std::sync::OnceLock<Arc<crate::browser::BrowserService>>,
     /// Dictate: push-to-talk, models, history and the dictionary (F-DI-*).
     pub dictate: Arc<crate::services::dictate::DictateService>,
+    /// Who holds the microphone: Dictate takes and Conductor calls
+    /// (F-CN-07 shares it).
+    pub mic: tandem_voice::mic_owner::MicOwners,
+    /// Conductor's persona and opt-in memory (F-CN-06).
+    pub persona: Arc<crate::services::conductor_persona::ConductorPersona>,
+    /// "Hey Conductor" (F-CN-07), created in setup once the resource
+    /// directory is known.
+    pub wake: std::sync::OnceLock<Arc<crate::services::wake::WakeService>>,
     /// Debug + `TANDEM_E2E=1`: the `test_*` harness is reachable.
     pub e2e: bool,
 }
@@ -459,9 +471,12 @@ impl AppState {
         // Before the UI lists anything: agents pause, crashed threads settle.
         let restore = crate::services::restore::RestoreService::new(store.clone(), bus.clone());
         restore.settle_at_launch();
+        // A deb, or a Microsoft Store package: someone else updates the app.
         let managed = crate::services::updates::managed_by_package_manager(
             std::path::Path::new("/usr/share/doc/tandem"),
             std::env::var("APPIMAGE").ok().as_deref(),
+        ) || tandem_core::install::managed_by_store(
+            tandem_core::install::windows_package_full_name().as_deref(),
         );
         let updates = crate::services::updates::UpdateService::new(
             managed,
@@ -725,6 +740,7 @@ impl AppState {
         // The profile's prompts open editable in the Files editor (F-EX-05).
         files.allow_editing(data.prompts());
         files.set_remote(remote.clone());
+        crate::services::lanes::set_remote(&remote);
         let git_panel = crate::services::git_panel::GitPanelService::new(files.clone());
         let auto = Arc::new(crate::services::auto::AutoService::new(
             bus.clone(),
@@ -732,6 +748,10 @@ impl AppState {
         ));
         let dictate =
             crate::services::dictate::DictateService::new(store.clone(), data.clone(), e2e);
+        let persona = Arc::new(crate::services::conductor_persona::ConductorPersona::new(
+            store.clone(),
+            &data,
+        ));
         let phone = crate::services::phone::PhoneService::new(
             store.clone(),
             bus.clone(),
@@ -740,6 +760,19 @@ impl AppState {
             endpoints.web.clone(),
             crate::services::phone::RekeyPolicy::default(),
         );
+        let phone_lan = {
+            use crate::services::phone_lan::{
+                LanHub, LanNet, LanServer, SystemInterfaces, WebFiles,
+            };
+            LanNet::new(
+                LanServer::new(
+                    LanHub::new(),
+                    WebFiles::default(),
+                    Arc::new(SystemInterfaces),
+                ),
+                keychain.clone(),
+            )
+        };
         Self {
             data,
             store,
@@ -760,6 +793,7 @@ impl AppState {
             notifications,
             auto,
             phone,
+            phone_lan,
             conductor: crate::services::conductor::ConductorService::new(),
             restore,
             updates,
@@ -789,8 +823,13 @@ impl AppState {
             bestof_checks: Default::default(),
             remote,
             wsl,
+            simulator: crate::services::simulator::host()
+                .map(|h| Arc::new(crate::services::simulator::SimulatorService::new(h))),
             browser: std::sync::OnceLock::new(),
             dictate,
+            mic: tandem_voice::mic_owner::MicOwners::new(),
+            persona,
+            wake: std::sync::OnceLock::new(),
             e2e,
         }
     }

@@ -2,6 +2,7 @@
 //! output). Audio arrives as PCM16 at 24 kHz and waits in a queue the output
 //! stream drains; barge-in and hang-up empty it at once.
 
+#[cfg(any(feature = "cpal", test))]
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -10,15 +11,20 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 
 use super::call::Speaker;
-use crate::realtime::{pcm, SAMPLE_RATE};
+use crate::realtime::pcm;
+#[cfg(any(feature = "cpal", test))]
+use crate::realtime::SAMPLE_RATE;
 
-/// Audio waiting to be played, shared with the output stream.
+/// Audio waiting to be played, shared with the output stream (cpal only;
+/// builds without it, such as the macOS cross-check, play through nothing).
+#[cfg(any(feature = "cpal", test))]
 #[derive(Default)]
 pub struct Queue {
     buf: Mutex<VecDeque<i16>>,
     level: AtomicU32,
 }
 
+#[cfg(any(feature = "cpal", test))]
 impl Queue {
     fn push(&self, samples: &[i16]) {
         self.level

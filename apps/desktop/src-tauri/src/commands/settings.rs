@@ -73,6 +73,14 @@ async fn apply(
     if key.as_str().starts_with("dictate_") || key == SettingKey::Theme {
         state.dictate.reload_settings(key).await;
     }
+    // The wake listener follows its own settings and the Dictate mic (F-CN-07).
+    if key.as_str().starts_with("conductor_wake")
+        || matches!(key, SettingKey::DictateMic | SettingKey::DictateBackupMic)
+    {
+        if let Some(w) = state.wake.get() {
+            w.reload(state.dictate.mic_prefs().await).await;
+        }
+    }
     match key {
         SettingKey::TelemetryUsage | SettingKey::TelemetryCrash => state.apply_settings().await,
         SettingKey::ExposeAllPluginTools => {
@@ -82,6 +90,8 @@ async fn apply(
         }
         // Paused: queued mail waits; resumed: it goes out, once (F-AG-12).
         SettingKey::PauseAllMail => state.mail.pump_soon(),
+        // The floating ring shows or hides (F-CN-04).
+        SettingKey::ConductorFloatingRing => crate::commands::conductor::sync_ring(app).await,
         // The tray's check mark follows; rows re-read (F-SH-13).
         SettingKey::PauseAllRoutines => {
             state.routines.notify_changed();

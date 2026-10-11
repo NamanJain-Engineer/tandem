@@ -2272,6 +2272,8 @@ pub struct AppLauncher {
     store: Store,
     /// The live lease per thread; a new session revokes the last one.
     leases: StdMutex<HashMap<String, tandem_core::ids::LeaseId>>,
+    /// Each remote thread session's MCP channels (D-1604), by thread.
+    remote_mcp: StdMutex<HashMap<String, crate::services::remote_mcp::RemoteMcp>>,
     teammates: std::sync::OnceLock<std::sync::Weak<crate::services::teammates::TeammatesService>>,
     /// The tasks server sessions get (F-TK-02).
     tasks: std::sync::OnceLock<Arc<crate::services::tasks::TasksService>>,
@@ -2315,7 +2317,8 @@ impl AppLauncher {
     /// A thread on an SSH host (F-RM-01): the host's own engine, run
     /// through `tandem-host run` over the host's connection (D-403), with
     /// the host's own sign-in. Nothing local crosses: no provider home, no
-    /// account, and no gateway (plugins are local-only, D-408).
+    /// account, no gateway lease or port (D-408); plugins and task tools
+    /// reach it as stdio servers relayed over the connection (D-1604).
     async fn prepare_remote(
         &self,
         thread: &ThreadRecord,
@@ -2360,6 +2363,7 @@ impl AppLauncher {
             Some(local) => Some(copy_briefing_to_host(&ssh, &target, &thread.id, local).await?),
             None => None,
         };
+        let stdio_servers = self.remote_tools(thread, &remote, &host).await;
         let cwd = thread.cwd.clone();
         let local_env: Vec<(String, String)> = std::env::vars()
             .filter(|(k, _)| {
@@ -2413,9 +2417,8 @@ impl AppLauncher {
                 resume_session: thread.engine_session_id.clone(),
                 mcp_config: None,
                 mcp: None,
-                // No local stdio servers on a remote or WSL engine: the tasks
-                // server runs on this machine (F-TK-02).
-                stdio_servers: Vec::new(),
+                // Relayed to this machine's gateway and tasks server (D-1604).
+                stdio_servers,
                 engine_version: found.version,
                 relocate: Some(relocate),
                 briefing,
@@ -2564,6 +2567,7 @@ impl AppLauncher {
             gateway,
             store,
             leases: StdMutex::default(),
+            remote_mcp: StdMutex::default(),
             teammates: std::sync::OnceLock::new(),
             tasks: std::sync::OnceLock::new(),
             guard: std::sync::OnceLock::new(),
@@ -2743,6 +2747,39 @@ impl AppLauncher {
         thread: &ThreadRecord,
         stdio: &[tandem_engines::chat::StdioServer],
     ) -> Result<(std::path::PathBuf, tandem_engines::chat::McpEndpoint), IpcError> {
+        let (gateway, lease) = self.lease(thread).await?;
+        let mut config = serde_json::json!({"mcpServers": {"tandem": {
+            "type": "http",
+            "url": gateway.url,
+            "headers": {"Authorization": format!("Bearer {}", lease.token)}
+        }}});
+        for s in stdio {
+            config["mcpServers"][&s.name] = serde_json::json!({
+                "type": "stdio",
+                "command": s.command,
+                "args": s.args,
+            });
+        }
+        std::fs::create_dir_all(&self.mcp_dir)
+            .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
+        let path = self.mcp_dir.join(format!("{}.json", thread.id.as_str()));
+        tandem_core::atomic::atomic_write(&path, config.to_string().as_bytes(), Some(0o600))
+            .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
+        Ok((
+            path,
+            tandem_engines::chat::McpEndpoint {
+                url: gateway.url.clone(),
+                token: lease.token,
+            },
+        ))
+    }
+
+    /// A gateway lease for the thread's new session (its previous one is
+    /// revoked): its caller, access, built-ins and plugin grants.
+    async fn lease(
+        &self,
+        thread: &ThreadRecord,
+    ) -> Result<(tandem_gateway::GatewayHandle, tandem_gateway::Lease), IpcError> {
         let gateway = self.gateway.handle().await?;
         let teammate = self.teammate_of(thread).await;
         let caller = match &teammate {
@@ -2808,30 +2845,63 @@ impl AppLauncher {
         if let Some(old) = previous {
             gateway.revoke(&old);
         }
-        let mut config = serde_json::json!({"mcpServers": {"tandem": {
-            "type": "http",
-            "url": gateway.url,
-            "headers": {"Authorization": format!("Bearer {}", lease.token)}
-        }}});
-        for s in stdio {
-            config["mcpServers"][&s.name] = serde_json::json!({
-                "type": "stdio",
-                "command": s.command,
-                "args": s.args,
-            });
+        Ok((gateway.clone(), lease))
+    }
+
+    /// Plugins and task tools for a session on a host (D-1604): a channel
+    /// for the gateway, bound here to the session's lease, and one for the
+    /// tasks server, which runs here. The engine there gets two stdio
+    /// servers, `tandem-host mcp --channel <id>`; nothing else crosses. A
+    /// channel that can't open leaves the thread without those tools.
+    async fn remote_tools(
+        &self,
+        thread: &ThreadRecord,
+        remote: &Arc<crate::services::remote::RemoteService>,
+        host: &tandem_core::ids::HostId,
+    ) -> Vec<tandem_engines::chat::StdioServer> {
+        use crate::services::remote_mcp::{GatewayBackend, ProcessBackend, RemoteMcp};
+        let mut mcp = RemoteMcp::new(remote.clone());
+        let mut servers = Vec::new();
+        match self.lease(thread).await {
+            Ok((gateway, lease)) => {
+                match mcp
+                    .add(host, "tandem", Arc::new(GatewayBackend { gateway, lease }))
+                    .await
+                {
+                    Ok(s) => servers.push(s),
+                    Err(e) => {
+                        tracing::warn!(code = "remote.mcp_unavailable", error = %e.message, "no plugin tools for a remote thread")
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::info!(code = "remote.gateway_unavailable", error = %e.message, "no gateway for a remote thread")
+            }
         }
-        std::fs::create_dir_all(&self.mcp_dir)
-            .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
-        let path = self.mcp_dir.join(format!("{}.json", thread.id.as_str()));
-        tandem_core::atomic::atomic_write(&path, config.to_string().as_bytes(), Some(0o600))
-            .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
-        Ok((
-            path,
-            tandem_engines::chat::McpEndpoint {
-                url: gateway.url.clone(),
-                token: lease.token,
-            },
-        ))
+        if let Some(server) = self.tasks_server(thread).await {
+            let name = server.name.clone();
+            match mcp
+                .add(
+                    host,
+                    &name,
+                    Arc::new(ProcessBackend {
+                        server,
+                        env: Vec::new(),
+                    }),
+                )
+                .await
+            {
+                Ok(s) => servers.push(s),
+                Err(e) => {
+                    tracing::warn!(code = "remote.mcp_unavailable", error = %e.message, "no task tools for a remote thread")
+                }
+            }
+        }
+        // The thread's previous session's channels close here.
+        if let Ok(mut m) = self.remote_mcp.lock() {
+            m.insert(thread.id.as_str().to_string(), mcp);
+        }
+        servers
     }
 }
 
@@ -2857,6 +2927,13 @@ impl ChatLauncher for AppLauncher {
         if let Some(tasks) = self.tasks.get() {
             tasks.end_session(&session_key(thread_id));
         }
+        // A remote session's channels close: its servers on the host end.
+        let ended = self
+            .remote_mcp
+            .lock()
+            .ok()
+            .and_then(|mut m| m.remove(thread_id.as_str()));
+        drop(ended);
     }
 
     fn models_reported(&self, engine_id: &str, models: &[ModelOffer]) {
@@ -3581,7 +3658,17 @@ mod tests {
                 (5, "turn_end"),
             ]
         );
-        let detail = f.svc.get(&f.thread.id).await.expect("detail");
+        // As in f_th_03_4 below: the state is written just after the turn's end
+        // is stored, so wait for it rather than read it once (it raced under
+        // the full gate's load in chain5).
+        let mut detail = f.svc.get(&f.thread.id).await.expect("detail");
+        for _ in 0..100 {
+            if detail.thread.state != ThreadState::Working {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            detail = f.svc.get(&f.thread.id).await.expect("detail");
+        }
         assert_eq!(detail.thread.state, ThreadState::Done);
         assert_eq!(detail.running, None);
     }
