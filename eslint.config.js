@@ -38,6 +38,12 @@ export default tseslint.config(
     },
   },
   {
+    // Expo config plugins run in Node as CommonJS (apps/mobile/plugins).
+    files: ["apps/mobile/plugins/**/*.js", "plugins/**/*.js"],
+    languageOptions: { ecmaVersion: 2022, sourceType: "commonjs", globals: globals.node },
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
+  {
     // Scripts that run in web pages: the element picker (F-CD-18) and the
     // site's demo loader (D-128).
     files: ["apps/desktop/src-tauri/src/**/*.js", "src-tauri/src/**/*.js", "apps/web/public/**/*.js", "public/**/*.js"],

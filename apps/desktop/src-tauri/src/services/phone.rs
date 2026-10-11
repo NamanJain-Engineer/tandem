@@ -29,12 +29,13 @@ use tandem_core::keychain::{self, Keychain};
 use tandem_core::origin::LocalReview;
 use tandem_core::remote::messages::{
     approval_route, ApprovalRoute, CommandError, FromPhone, PhoneCommand, PhoneDecision,
-    PhoneGrants, ResError, ToPhone, ARM_HOURS,
+    PhoneGrants, PushPlatform, ResError, ToPhone, ARM_HOURS,
 };
 use tandem_core::remote::protocol::{
     decode_hello, frame_kind, root_secret, verify_hello, KeyPair, ProtocolError, Role, Secret32,
     Session, KIND_HELLO, KIND_SEALED, MAX_PLAINTEXT,
 };
+use tandem_core::remote::push::{seal_push, PushAlert};
 use tandem_core::status::AgentStatus;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_store::repo::pairings as repo;
@@ -56,6 +57,10 @@ const MAX_DEVICE_NAME: usize = 60;
 
 fn pairing_account(pid: &str) -> String {
     format!("pairing:{pid}")
+}
+
+fn push_account(pid: &str) -> String {
+    format!("push:{pid}")
 }
 
 fn remote_service() -> String {
@@ -273,6 +278,35 @@ pub trait PhoneNet: Send + Sync {
     /// A pairing revoked on this side only (a dropped session): forget any
     /// local relay state for it. The hosted relay learns from the API.
     fn forget_local(&self, _pairing_id: &str) {}
+    /// Forwards a sealed alert to the phone's push service (F-RM-06): only
+    /// through the hosted API, which can't read it. LAN mode has no push.
+    async fn push(
+        &self,
+        _pairing_id: &str,
+        _platform: PushPlatform,
+        _token: &str,
+        _payload: &str,
+    ) -> Result<PushOutcome, String> {
+        Err("push isn't available".into())
+    }
+}
+
+/// What the push service said about a phone's token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PushOutcome {
+    Sent,
+    /// The token is gone (app removed, push turned off): forget it.
+    Unregistered,
+}
+
+/// The keychain entry `NS.remote / push:<id>`: where and how to reach a
+/// phone that turned push on.
+#[derive(Serialize, Deserialize)]
+struct StoredPush {
+    platform: PushPlatform,
+    token: String,
+    key: Secret32,
+    seq: u64,
 }
 
 /// Which relay a new pairing uses.
@@ -341,6 +375,14 @@ struct Inner {
     live: HashMap<String, Arc<tokio::sync::Mutex<Live>>>,
     links: HashMap<String, Link>,
     armed_until: Option<i64>,
+    /// What the last push check saw, so only changes become alerts.
+    seen: Option<Seen>,
+}
+
+#[derive(Default)]
+struct Seen {
+    approvals: std::collections::HashSet<String>,
+    agents: HashMap<String, AgentStatus>,
 }
 
 pub struct PhoneService {
@@ -799,6 +841,7 @@ impl PhoneService {
         if let Ok(net) = self.net() {
             net.forget_local(pid);
         }
+        let _ = self.keychain.delete(&remote_service(), &push_account(pid));
         if let Err(err) = self
             .keychain
             .delete(&remote_service(), &pairing_account(pid))
@@ -856,6 +899,134 @@ impl PhoneService {
         }
     }
 
+    // ── push (F-RM-06) ───────────────────────────────────────────────────
+
+    fn save_push(&self, pid: &str, push: &StoredPush) -> Result<(), String> {
+        let bytes = serde_json::to_vec(push).map_err(|e| e.to_string())?;
+        self.keychain
+            .set(&remote_service(), &push_account(pid), &bytes)
+            .map_err(|e| e.to_string())
+    }
+
+    fn load_push(&self, pid: &str) -> Option<StoredPush> {
+        let raw = self
+            .keychain
+            .get(&remote_service(), &push_account(pid))
+            .ok()??;
+        serde_json::from_slice(&raw).ok()
+    }
+
+    /// Whether this phone turned push on.
+    pub fn push_enabled(&self, pid: &str) -> bool {
+        self.load_push(pid).is_some()
+    }
+
+    /// What changed since the last check that a phone should hear about:
+    /// new approvals, and agents that finished, need input or failed.
+    async fn alerts(&self, host: &dyn PhoneHost) -> Vec<PushAlert> {
+        let approvals = host.approvals();
+        let agents = host.agents().await;
+        let now = self.clock.now_ms();
+        let mut inner_seen = Seen::default();
+        for a in &approvals {
+            inner_seen.approvals.insert(a.id.to_string());
+        }
+        for a in &agents {
+            inner_seen.agents.insert(a.key.clone(), a.status);
+        }
+        let prev = self.lock().seen.replace(inner_seen);
+        let Some(prev) = prev else { return Vec::new() };
+        let mut out = Vec::new();
+        for a in &approvals {
+            if !prev.approvals.contains(&a.id.to_string()) {
+                out.push(PushAlert {
+                    kind: "approval".into(),
+                    id: a.id.to_string(),
+                    title: "Approval needed".into(),
+                    body: clip(&tandem_core::redact::redact(&a.summary), 160),
+                    at: now,
+                });
+            }
+        }
+        for a in &agents {
+            let Some(before) = prev.agents.get(&a.key) else {
+                continue;
+            };
+            let title = match (before, a.status) {
+                (b, s) if *b == s => continue,
+                (_, AgentStatus::Waiting) => format!("{} needs you", a.title),
+                (AgentStatus::Working, AgentStatus::Done) => format!("{} finished", a.title),
+                (_, AgentStatus::Failed) => format!("{} stopped with an error", a.title),
+                _ => continue,
+            };
+            out.push(PushAlert {
+                kind: "agent".into(),
+                id: a.key.clone(),
+                title: clip(&title, 80),
+                body: clip(
+                    &tandem_core::redact::redact(a.preview.as_deref().unwrap_or_default()),
+                    160,
+                ),
+                at: now,
+            });
+        }
+        out
+    }
+
+    /// Seals each new alert for every phone that turned push on and isn't
+    /// connected now, and hands it to the API (F-RM-06).
+    pub async fn push_alerts(&self) {
+        let Ok(host) = self.host().cloned() else {
+            return;
+        };
+        let alerts = self.alerts(host.as_ref()).await;
+        if alerts.is_empty() {
+            return;
+        }
+        let Ok(net) = self.net().cloned() else { return };
+        let Ok(rows) = repo::list_active(&self.store).await else {
+            return;
+        };
+        for row in rows {
+            let online = self.lock().links.get(&row.id).is_some_and(|l| l.online);
+            if online {
+                continue;
+            }
+            let Some(mut push) = self.load_push(&row.id) else {
+                continue;
+            };
+            for alert in &alerts {
+                push.seq += 1;
+                let Ok(plain) = serde_json::to_vec(alert) else {
+                    continue;
+                };
+                let Ok(frame) = seal_push(&row.id, &push.key, push.seq, &plain) else {
+                    continue;
+                };
+                // The sequence number is saved before the alert leaves.
+                if self.save_push(&row.id, &push).is_err() {
+                    break;
+                }
+                match net
+                    .push(&row.id, push.platform, &push.token, &b64(&frame))
+                    .await
+                {
+                    Ok(PushOutcome::Sent) => {}
+                    Ok(PushOutcome::Unregistered) => {
+                        let _ = self
+                            .keychain
+                            .delete(&remote_service(), &push_account(&row.id));
+                        break;
+                    }
+                    Err(err) => {
+                        tracing::debug!(code = "phone.push_failed", error = %err, "push not sent");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     // ── links ────────────────────────────────────────────────────────────
 
     /// Reopens every live pairing's link, and follows the app for `changed`
@@ -873,6 +1044,10 @@ impl PhoneService {
                     }
                 }
             }
+        }
+        // What's there at start isn't news.
+        if let Ok(host) = self.host().cloned() {
+            let _ = self.alerts(host.as_ref()).await;
         }
         let me = self.clone();
         let mut approvals = self.bus.subscribe(Topic::Approvals);
@@ -895,6 +1070,7 @@ impl PhoneService {
                     || threads.try_recv().is_ok()
                 {}
                 me.push_all(ToPhone::Changed).await;
+                me.push_alerts().await;
             }
         });
         let me = self.clone();
@@ -983,6 +1159,15 @@ impl PhoneService {
                 backoff = (backoff * 2).min(60);
             }
         });
+    }
+
+    /// Tests: drops every link, as a shutdown does.
+    #[cfg(test)]
+    pub fn stop_all_links_for_tests(&self) {
+        let ids: Vec<String> = self.lock().links.keys().cloned().collect();
+        for id in ids {
+            self.stop_link(&id);
+        }
     }
 
     fn stop_link(&self, pid: &str) {
@@ -1390,6 +1575,40 @@ impl PhoneService {
                     Ok(()) => res_ok(id, json!({})),
                     Err(m) => res_err(id, "unavailable", &m),
                 }
+            }
+            PhoneCommand::PushRegister {
+                platform,
+                token,
+                key,
+            } => {
+                if !live.relay_url.starts_with("wss://") {
+                    return res_err(
+                        id,
+                        "unavailable",
+                        "Push needs pairing through the Vibezeo relay. LAN pairings can't push.",
+                    );
+                }
+                let stored = StoredPush {
+                    platform,
+                    token,
+                    key: Secret32(key),
+                    seq: 0,
+                };
+                match self.save_push(pid, &stored) {
+                    Ok(()) => {
+                        tracing::info!(
+                            code = "phone.push_on",
+                            platform = platform.as_str(),
+                            "phone turned push on"
+                        );
+                        res_ok(id, json!({}))
+                    }
+                    Err(m) => res_err(id, "failed", &m),
+                }
+            }
+            PhoneCommand::PushUnregister => {
+                let _ = self.keychain.delete(&remote_service(), &push_account(pid));
+                res_ok(id, json!({}))
             }
         }
     }

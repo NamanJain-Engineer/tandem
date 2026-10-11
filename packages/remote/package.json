@@ -13,7 +13,8 @@
     "./browser": "./src/browser.ts",
     "./vectors": "./src/vectors.ts",
     "./session": "./src/session.ts",
-    "./demo": "./src/demo.ts"
+    "./demo": "./src/demo.ts",
+    "./push": "./src/push.ts"
   },
   "scripts": {
     "test": "vitest run",

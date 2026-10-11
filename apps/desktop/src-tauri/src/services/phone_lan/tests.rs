@@ -616,3 +616,22 @@ async fn f_rm_04_1_turning_lan_mode_off_closes_phones() {
     .await
     .is_err());
 }
+
+#[tokio::test]
+async fn f_rm_04_2_when_the_desktop_lets_go_of_its_link_the_phone_hears_it() {
+    let rig = rig(WebFiles::default()).await;
+    let (mut phone, _) = pair(&rig).await;
+    // The phone service stops the link (as on revoke or shutdown): the
+    // relay tells the phone the desktop went away.
+    rig.svc.stop_all_links_for_tests();
+    let mut down = false;
+    for _ in 0..5 {
+        if let Message::Text(t) = next(&mut phone.ws).await {
+            if t.as_str().contains("\"up\":false") {
+                down = true;
+                break;
+            }
+        }
+    }
+    assert!(down);
+}

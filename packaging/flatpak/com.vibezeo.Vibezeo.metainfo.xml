@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata (F-RM-07). Every claim must be true of the packaged release. -->
+<component type="desktop-application">
+  <id>com.vibezeo.Vibezeo</id>
+  <name>Vibezeo</name>
+  <summary>A desktop workspace for coding-agent CLIs</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary</project_license>
+  <developer id="com.vibezeo">
+    <name>Vibezeo</name>
+  </developer>
+  <url type="homepage">https://vibezeo.com/</url>
+  <url type="contact">https://vibezeo.com/about/</url>
+  <description>
+    <p>Vibezeo runs the coding-agent command-line tools you already use (such as Claude Code, Codex and Gemini CLI) side by side in terminals and threads, with approvals, git and files in one window.</p>
+    <p>It works offline on the Free plan. Nothing leaves your computer unless you turn on a hosted feature.</p>
+  </description>
+  <launchable type="desktop-id">com.vibezeo.Vibezeo.desktop</launchable>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.5.0" date="2026-10-10"/>
+  </releases>
+  <categories>
+    <category>Development</category>
+  </categories>
+  <requires>
+    <display_length compare="ge">1024</display_length>
+  </requires>
+</component>

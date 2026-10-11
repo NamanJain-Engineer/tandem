@@ -15,7 +15,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tandem_core::approvals::{ApprovalDecision, ApprovalScope, ApprovalVia, ApprovalView};
 use tandem_core::ids::{ApprovalId, PaneId, RoutineId, ThreadId};
 use tandem_core::origin::{LocalReview, Origin};
-use tandem_core::remote::messages::{PhoneDecision, PhoneGrants};
+use tandem_core::remote::messages::{PhoneDecision, PhoneGrants, PushPlatform};
 use tandem_core::source::SourceRef;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_engines::events::ThreadEvent;
@@ -27,8 +27,8 @@ use crate::services::api::ApiError;
 use crate::services::dashboard;
 use crate::services::phone::{
     PairVia, Pairing, PairingQr, PairingTicket, PhoneAgent, PhoneArmState, PhoneHost, PhoneNet,
-    PhoneRoutine, PhoneThread, PhoneTranscript, PhoneTranscriptItem, QueuedPhoneAction, RelayIn,
-    RelayLink,
+    PhoneRoutine, PhoneThread, PhoneTranscript, PhoneTranscriptItem, PushOutcome,
+    QueuedPhoneAction, RelayIn, RelayLink,
 };
 use crate::services::phone_lan::{pid_of_relay_url, LanConfig, LanState, WebFiles};
 use crate::state::AppState;
@@ -333,6 +333,32 @@ impl PhoneNet for AppPhoneNet {
         let state = self.app.state::<AppState>();
         if state.phone_lan.owns(pairing_id) {
             state.phone_lan.delete_pairing(pairing_id);
+        }
+    }
+
+    async fn push(
+        &self,
+        pairing_id: &str,
+        platform: PushPlatform,
+        token: &str,
+        payload: &str,
+    ) -> Result<PushOutcome, String> {
+        let state = self.app.state::<AppState>();
+        let api = state.api.clone();
+        let result = state
+            .auth
+            .with_token(|access| {
+                let api = api.clone();
+                async move {
+                    api.pairing_push(&access, pairing_id, platform.as_str(), token, payload)
+                        .await
+                }
+            })
+            .await;
+        match result {
+            Ok(()) => Ok(PushOutcome::Sent),
+            Err(ApiError::Http { status: 410, .. }) => Ok(PushOutcome::Unregistered),
+            Err(e) => Err(e.to_string()),
         }
     }
 

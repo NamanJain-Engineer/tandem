@@ -248,6 +248,21 @@ export class RemoteSession {
     return r;
   }
 
+  /** F-RM-06: gives the desktop this phone's push token and alert key. */
+  registerPush(platform: "fcm" | "apns", token: string, key: string): Promise<CommandResult> {
+    return this.client.command("push.register", { platform, token, key });
+  }
+
+  unregisterPush(): Promise<CommandResult> {
+    return this.client.command("push.unregister");
+  }
+
+  /** The pairing's id and relay (push needs the hosted relay, F-RM-06). */
+  get pairing(): { pid: string; relay: string } | null {
+    const p = this.client.paired;
+    return p ? { pid: p.link.pid, relay: p.link.relay } : null;
+  }
+
   async unpair(): Promise<void> {
     await this.client.unpair();
     this.set({ phase: { kind: "unpaired" }, snapshot: null, desktop: "", grants: null });

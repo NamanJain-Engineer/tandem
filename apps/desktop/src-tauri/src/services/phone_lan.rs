@@ -243,12 +243,17 @@ struct PhoneConn {
 struct DesktopConn {
     id: u64,
     tx: mpsc::UnboundedSender<RelayIn>,
+    /// The desktop's own outgoing queue: a revoke closes the phone after
+    /// what the desktop already sent (its `bye`), never before.
+    fwd: mpsc::WeakUnboundedSender<Vec<u8>>,
 }
 
 struct Slot {
     token: [u8; 32],
     desktop: Option<DesktopConn>,
     phone: Option<PhoneConn>,
+    /// Revoked, closing once the desktop's queue drains.
+    revoked: bool,
     tokens: f64,
     refilled: Instant,
     noticed: Option<Instant>,
@@ -260,6 +265,7 @@ impl Slot {
             token,
             desktop: None,
             phone: None,
+            revoked: false,
             tokens: FRAMES_PER_SECOND,
             refilled: Instant::now(),
             noticed: None,
@@ -301,12 +307,27 @@ impl LanHub {
     }
 
     pub fn knows(&self, pid: &str) -> bool {
-        self.lock().contains_key(pid)
+        self.lock().get(pid).is_some_and(|s| !s.revoked)
     }
 
     /// Forgets a pairing: its phone socket closes with 1008 and the
     /// desktop's link is told the same, as the hosted relay does on revoke.
     pub fn remove(&self, pid: &str) {
+        let mut slots = self.lock();
+        if let Some(slot) = slots.get_mut(pid) {
+            slot.revoked = true;
+            // An empty frame marks the end of the desktop's queue.
+            if let Some(d) = &slot.desktop {
+                if d.fwd.upgrade().is_some_and(|f| f.send(Vec::new()).is_ok()) {
+                    return;
+                }
+            }
+        }
+        drop(slots);
+        self.finish_remove(pid);
+    }
+
+    fn finish_remove(&self, pid: &str) {
         if let Some(slot) = self.lock().remove(pid) {
             if let Some(p) = slot.phone {
                 let _ = p.tx.send(Out::Close(1008, "revoked"));
@@ -333,7 +354,7 @@ impl LanHub {
     /// The token's subprotocol when one offered matches the pairing's token.
     pub fn authenticate(&self, pid: &str, offered: &[String]) -> Option<String> {
         let slots = self.lock();
-        let slot = slots.get(pid)?;
+        let slot = slots.get(pid).filter(|s| !s.revoked)?;
         offered.iter().find_map(|p| {
             let token = p.strip_prefix(PROTOCOL_PREFIX)?;
             same(&sha256(token.as_bytes()), &slot.token).then(|| p.clone())
@@ -352,10 +373,11 @@ impl LanHub {
         let id = self.id();
         {
             let mut slots = self.lock();
-            let slot = slots.get_mut(pid)?;
+            let slot = slots.get_mut(pid).filter(|s| !s.revoked)?;
             if let Some(old) = slot.desktop.replace(DesktopConn {
                 id,
                 tx: in_tx.clone(),
+                fwd: tx.downgrade(),
             }) {
                 let _ = old.tx.send(RelayIn::Closed(Some(4000)));
             }
@@ -368,6 +390,10 @@ impl LanHub {
         let pid = pid.to_string();
         tokio::spawn(async move {
             while let Some(frame) = out_rx.recv().await {
+                if frame.is_empty() {
+                    hub.finish_remove(&pid);
+                    return;
+                }
                 let slots = hub.lock();
                 let Some(slot) = slots.get(&pid) else { break };
                 if slot.desktop.as_ref().map(|d| d.id) != Some(id) {
@@ -394,7 +420,7 @@ impl LanHub {
     fn join_phone(&self, pid: &str, tx: mpsc::UnboundedSender<Out>) -> Option<u64> {
         let id = self.id();
         let mut slots = self.lock();
-        let slot = slots.get_mut(pid)?;
+        let slot = slots.get_mut(pid).filter(|s| !s.revoked)?;
         let _ = tx.send(Out::Text(peer_text(slot.desktop.is_some())));
         if let Some(old) = slot.phone.replace(PhoneConn { id, tx }) {
             let _ = old.tx.send(Out::Close(4000, "replaced"));
