@@ -117,7 +117,7 @@ fn f_cd_03_conpty_input_reaches_the_process() {
     let replay = mgr
         .attach("w2", Arc::new(VecSink::default()))
         .expect("attach");
-    assert!(String::from_utf8_lossy(&replay).contains("got:ping"));
+    assert!(String::from_utf8_lossy(&replay.replay).contains("got:ping"));
 }
 
 /// F-CD-03.4 on Windows: closing a pane ends its whole tree through the
