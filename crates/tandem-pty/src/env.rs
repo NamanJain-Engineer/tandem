@@ -101,8 +101,25 @@ pub fn capture(shell: &Path, timeout: Duration) -> LoginEnv {
 fn run_capture(shell: &Path, timeout: Duration) -> Option<BTreeMap<String, String>> {
     use std::os::unix::process::CommandExt;
     let script = r#"printf '\000__TANDEM_ENV__\000'; env -0"#;
-    let mut child = Command::new(shell)
-        .args(["-l", "-i", "-c", script])
+    let args = ["-l", "-i", "-c", script];
+    let mut cmd = if tandem_core::sandbox::in_flatpak() {
+        // The host's login shell, not the sandbox's (D-2032).
+        let host: Vec<std::ffi::OsString> = args.iter().map(Into::into).collect();
+        let argv = tandem_core::sandbox::flatpak_host_argv::<&str, &str>(
+            shell.as_os_str(),
+            &host,
+            None,
+            None,
+        );
+        let mut cmd = Command::new(&argv[0]);
+        cmd.args(&argv[1..]);
+        cmd
+    } else {
+        let mut cmd = Command::new(shell);
+        cmd.args(args);
+        cmd
+    };
+    let mut child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

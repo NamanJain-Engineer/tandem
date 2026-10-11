@@ -1,0 +1,5 @@
+shared-modules/
+.flatpak-builder/
+build/
+repo/
+.local-test.yml

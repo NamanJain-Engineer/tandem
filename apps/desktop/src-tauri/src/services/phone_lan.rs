@@ -316,11 +316,15 @@ impl LanHub {
         let mut slots = self.lock();
         if let Some(slot) = slots.get_mut(pid) {
             slot.revoked = true;
-            // An empty frame marks the end of the desktop's queue.
+            // The desktop's forwarding task finishes the removal once what
+            // the desktop already sent (its `bye`) has gone out: an empty
+            // frame marks the end of the queue, or the task sees `revoked`
+            // when the queue closes.
             if let Some(d) = &slot.desktop {
-                if d.fwd.upgrade().is_some_and(|f| f.send(Vec::new()).is_ok()) {
-                    return;
+                if let Some(f) = d.fwd.upgrade() {
+                    let _ = f.send(Vec::new());
                 }
+                return;
             }
         }
         drop(slots);
@@ -404,13 +408,19 @@ impl LanHub {
                 }
             }
             let mut slots = hub.lock();
+            let mut revoked = false;
             if let Some(slot) = slots.get_mut(&pid) {
                 if slot.desktop.as_ref().map(|d| d.id) == Some(id) {
+                    revoked = slot.revoked;
                     slot.desktop = None;
-                    if let Some(p) = &slot.phone {
+                    if let Some(p) = slot.phone.as_ref().filter(|_| !revoked) {
                         let _ = p.tx.send(Out::Text(peer_text(false)));
                     }
                 }
+            }
+            drop(slots);
+            if revoked {
+                hub.finish_remove(&pid);
             }
         });
         Some(RelayLink { tx, rx })

@@ -5,7 +5,7 @@
 # set; D-2032). Submission steps: HUMAN_TODO "Linux stores".
 id: com.vibezeo.Vibezeo
 runtime: org.gnome.Platform
-runtime-version: "48"
+runtime-version: "51"
 sdk: org.gnome.Sdk
 command: vibezeo
 finish-args:
@@ -28,6 +28,18 @@ finish-args:
 modules:
   # From flathub/shared-modules (a git submodule in the Flathub repository).
   - shared-modules/libappindicator/libappindicator-gtk3-12.10.json
+  # Git runs inside the sandbox on the person's folders (tandem-git).
+  - name: git
+    buildsystem: simple
+    build-commands:
+      - make -j$FLATPAK_BUILDER_N_JOBS prefix=/app NO_TCLTK=1 NO_PERL=1 NO_PYTHON=1 NO_GETTEXT=1 INSTALL_SYMLINKS=1 install
+    sources:
+      - type: archive
+        url: https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.51.0.tar.xz
+        sha256: 60a7c2251cc2e588d5cd87bae567260617c6de0c22dca9cdbfc4c7d2b8990b62
+    cleanup:
+      - /share/man
+      - /share/gitweb
   - name: vibezeo
     buildsystem: simple
     sources:
