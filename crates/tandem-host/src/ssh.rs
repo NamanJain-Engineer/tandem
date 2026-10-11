@@ -1,5 +1,5 @@
 //! The SSH transport (ARCHITECTURE §13.1, F-RM-01): the system `ssh` with
-//! one ControlMaster per host (`ControlPath=$DATA/run/ssh-%C`), host keys
+//! one ControlMaster per host entry (`ControlPath=$DATA/run/ssh-<entry>-%C`), host keys
 //! checked strictly against Vibezeo's own `known_hosts` (read through ssh
 //! itself for hosts behind `ProxyJump` or `ProxyCommand`), and `tandem-host`
 //! installed into `~/.tandem-host/<protocol>/` with its SHA-256 checked on
@@ -348,8 +348,26 @@ impl Ssh {
         }
     }
 
-    pub fn control_path(&self) -> PathBuf {
-        self.run_dir.join("ssh-%C")
+    /// One master per host entry: `%C` names the destination (host, port,
+    /// user, jump), and the prefix names the entry, so two entries that
+    /// reach one destination (two aliases, two hosts behind one jump)
+    /// don't share a master that either one's `-O exit` would end.
+    pub fn control_path(&self, t: &SshTarget) -> PathBuf {
+        let mut h = Sha256::new();
+        for part in [
+            t.target.as_str(),
+            &t.port.map(|p| p.to_string()).unwrap_or_default(),
+            t.user.as_deref().unwrap_or(""),
+            t.identity_file.as_deref().unwrap_or(""),
+        ] {
+            h.update(part.as_bytes());
+            h.update([0]);
+        }
+        let tag: String = h.finalize()[..4]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        self.run_dir.join(format!("ssh-{tag}-%C"))
     }
 
     /// Every option before the target.
@@ -368,7 +386,7 @@ impl Ssh {
                 "ControlMaster={}",
                 if master { "yes" } else { "no" }
             ));
-            opt(format!("ControlPath={}", self.control_path().display()));
+            opt(format!("ControlPath={}", self.control_path(t).display()));
             opt("ControlPersist=10m".into());
         }
         opt("StrictHostKeyChecking=yes".into());
@@ -894,10 +912,10 @@ Host key verification failed.";
             identity_file: Some("/k".into()),
         };
         let o = s.options(&t, false).join(" ");
-        let control = format!("ControlPath={}", s.control_path().display());
+        let control = format!("ControlPath={}", s.control_path(&t).display());
         for want in [
             "ControlMaster=no",
-            &control,
+            control.as_str(),
             "ControlPersist=10m",
             "StrictHostKeyChecking=yes",
             "UserKnownHostsFile=/d/ssh/known_hosts",
@@ -923,6 +941,26 @@ Host key verification failed.";
     fn f_rm_01_multiplexing_is_off_only_on_windows() {
         let s = Ssh::new(PathBuf::from("/d/run"), PathBuf::from("/d/kh"));
         assert_eq!(s.multiplex, !cfg!(windows));
+    }
+
+    #[test]
+    fn f_rm_01_each_host_entry_has_its_own_master() {
+        let s = Ssh::new(PathBuf::from("/d/run"), PathBuf::from("/d/ssh/known_hosts"));
+        let t = |target: &str, port: Option<u16>| SshTarget {
+            target: target.into(),
+            port,
+            user: None,
+            identity_file: None,
+        };
+        let a = s.control_path(&t("same-a", None));
+        // Stable across runs, so a reconnect finds the master it left.
+        assert_eq!(a, s.control_path(&t("same-a", None)));
+        let name = a.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        assert!(name.starts_with("ssh-") && name.ends_with("-%C"), "{name}");
+        assert_eq!(name.len(), "ssh-12345678-%C".len(), "{name}");
+        // Two aliases for one destination: two masters.
+        assert_ne!(a, s.control_path(&t("same-b", None)));
+        assert_ne!(a, s.control_path(&t("same-a", Some(2222))));
     }
 
     #[test]
