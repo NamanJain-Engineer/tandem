@@ -730,6 +730,15 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
           ),
         },
         {
+          id: "find_work_hosted",
+          label: t("settings.findWorkHosted"),
+          description: t("settings.findWorkHosted.desc"),
+          keywords: ["find work", "search", "ranking", "ai"],
+          control: (ids) => (
+            <BoolControl k="find_work_hosted" ids={ids} label={t("settings.findWorkHosted")} />
+          ),
+        },
+        {
           id: "dictate_share_hints",
           label: t("settings.dictionaryHints"),
           keywords: ["dictionary", "dictate"],

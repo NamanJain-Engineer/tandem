@@ -216,6 +216,32 @@ pub struct AutoNextResponse {
     pub reason: Option<String>,
 }
 
+/// One thing Find work's hosted ranking may choose (`POST /v1/voice/resolve`,
+/// F-CN-05): its id, kind and text, without file contents.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ResolveCandidate {
+    pub id: String,
+    pub kind: String,
+    pub text: String,
+}
+
+/// A ranked id (score 0..1, best first).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ResolveMatch {
+    pub id: String,
+    pub score: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ResolveBody {
+    matches: Vec<ResolveMatch>,
+}
+
+/// Debug builds only: where Find work's hosted ranking is sent instead of
+/// the API (`test_find_work_server`), so E2E can take the server down.
+#[cfg(debug_assertions)]
+pub static TEST_RESOLVE_BASE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
 /// `POST /v1/stt/transcribe` (F-BE-07). `duration` is in seconds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -436,6 +462,15 @@ pub trait ApiClient: Send + Sync {
     }
     /// `POST /v1/audit/events` (F-TL-10).
     async fn audit_events(&self, _access: &str, _events: &[AuditEvent]) -> Result<(), ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `POST /v1/voice/resolve` (F-CN-05): Find work's hosted ranking, 1 credit.
+    async fn voice_resolve(
+        &self,
+        _access: &str,
+        _query: &str,
+        _candidates: &[ResolveCandidate],
+    ) -> Result<Vec<ResolveMatch>, ApiError> {
         Err(no_hosted_service())
     }
     /// `POST /v1/auth/device/start` (F-BE-03): a code for the user to approve on the web.
@@ -762,6 +797,28 @@ impl ApiClient for HttpApi {
             .bearer_auth(access)
             .json(&json!({ "description": description, "engines": engines, "plugins": plugins }));
         self.call(req).await
+    }
+
+    async fn voice_resolve(
+        &self,
+        access: &str,
+        query: &str,
+        candidates: &[ResolveCandidate],
+    ) -> Result<Vec<ResolveMatch>, ApiError> {
+        #[cfg(debug_assertions)]
+        let url = match TEST_RESOLVE_BASE.lock().ok().and_then(|b| b.clone()) {
+            Some(base) => format!("{base}/v1/voice/resolve"),
+            None => self.url("/v1/voice/resolve"),
+        };
+        #[cfg(not(debug_assertions))]
+        let url = self.url("/v1/voice/resolve");
+        let req = self
+            .net
+            .client()
+            .post(url)
+            .bearer_auth(access)
+            .json(&json!({ "query": query, "candidates": candidates }));
+        self.call::<ResolveBody>(req).await.map(|b| b.matches)
     }
 
     async fn auto_next(

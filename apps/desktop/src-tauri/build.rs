@@ -315,6 +315,8 @@ const COMMANDS: &[&str] = &[
     "skill_remove",
     "skills_library",
     "skill_add_from_library",
+    "skill_sync",
+    "teammate_launch_in_terminal",
     "teammate_suggestions",
     "thread_reorder",
     "teammate_draft_with_ai",
@@ -353,6 +355,7 @@ const TEST_COMMANDS: &[&str] = &[
     "test_plugin_price",
     "test_plugin_allowlist",
     "test_unattended_run",
+    "test_find_work_server",
 ];
 
 /// What About › Licenses shows when the notices weren't generated (dev builds).
