@@ -12,6 +12,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   symlinkSync,
@@ -20,6 +21,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Launcher } from "@wdio/cli";
+import { E2E_KNOWN_SENTENCE } from "./support/phone";
 
 const desktop = new URL("..", import.meta.url).pathname;
 const root = join(desktop, "../..");
@@ -46,6 +48,8 @@ const MODEL_CACHE = process.env.TANDEM_MODEL_CACHE ?? join(REAL_HOME, ".cache", 
 const FIXTURES = "http://127.0.0.1:5173";
 /** The mock OAuth server and plugin upstreams (`mock-plugins`, D-954). */
 const PLUGINS = "http://127.0.0.1:8791";
+// Conductor's realtime voice provider stand-in (F-CN-01, D-1102).
+const REALTIME = "http://127.0.0.1:8794";
 
 async function up(url: string): Promise<boolean> {
   try {
@@ -60,8 +64,19 @@ async function waitUp(url: string, seconds: number): Promise<void> {
   if (!(await up(url))) throw new Error(`${url} didn't come up`);
 }
 
-function startDetached(cmd: string, cmdArgs: string[], env: NodeJS.ProcessEnv): ChildProcess {
-  return spawn(cmd, cmdArgs, { cwd: root, stdio: "ignore", detached: true, env: { ...process.env, ...env } });
+function startDetached(
+  cmd: string,
+  cmdArgs: string[],
+  env: NodeJS.ProcessEnv,
+  logFile?: string,
+): ChildProcess {
+  const out = logFile ? openSync(logFile, "a") : "ignore";
+  return spawn(cmd, cmdArgs, {
+    cwd: root,
+    stdio: ["ignore", out, out],
+    detached: true,
+    env: { ...process.env, ...env },
+  });
 }
 
 function stop(child?: ChildProcess) {
@@ -83,6 +98,10 @@ function checkArtifacts(home: string): string[] {
       if (/sk-[A-Za-z0-9]{20}|ghp_[A-Za-z0-9]{20}/.test(body))
         problems.push(`secret pattern in logs/${file}`);
     }
+  }
+  const apiLog = join(home, "api.log");
+  if (existsSync(apiLog) && readFileSync(apiLog, "utf8").includes(E2E_KNOWN_SENTENCE)) {
+    problems.push("the phone's plaintext reached the relay log (api.log)");
   }
   const net = join(home, "net.log");
   if (existsSync(net) && /posthog|sentry/.test(readFileSync(net, "utf8")))
@@ -116,20 +135,16 @@ async function main() {
   // Remote workspaces (E2E-M14): the bundled tandem-host and the sshd
   // fixture (infra/docker-compose.yml, profile remote). Without Docker or
   // the musl target the m14 specs fail and say so; the others don't care.
-  const remoteSpecs = !spec || spec.includes("m14");
+  const remote = !spec || spec.includes("m14");
   const quiet = { cwd: root, stdio: "ignore" as const };
-  // The helper first: the app's build copies resources/tandem-host into
-  // target/<profile>/host-binaries, which a debug app uploads from, so a
-  // helper built after it would reach hosts one run late.
-  if (
-    remoteSpecs &&
-    !process.env.TANDEM_E2E_SKIP_BUILD &&
-    spawnSync("sh", ["scripts/build-tandem-host.sh"], quiet).status !== 0
-  )
-    console.warn(
-      "E2E: couldn't build tandem-host (rustup target add x86_64-unknown-linux-musl; apt install musl-tools)",
-    );
   if (!process.env.TANDEM_E2E_SKIP_BUILD) {
+    // The helper first: the app's build copies resources/tandem-host into
+    // target/, so a helper built after it isn't the one the app installs on
+    // the host (the M14 specs then met the previous build's helper).
+    if (remote && spawnSync("sh", ["scripts/build-tandem-host.sh"], quiet).status !== 0)
+      console.warn(
+        "E2E: couldn't build tandem-host (rustup target add x86_64-unknown-linux-musl; apt install musl-tools)",
+      );
     execFileSync("pnpm", ["build"], { cwd: desktop, stdio: "inherit" });
     // Perf suites measure an optimised build (the `perf` profile keeps the test harness).
     const cargoProfile = suite && process.env.TANDEM_PERF_BUILD !== "debug" ? ["--profile", "perf"] : [];
@@ -154,7 +169,7 @@ async function main() {
     });
     execFileSync("cargo", ["build", "-p", "tandem-tasks", "--bins"], { cwd: root, stdio: "inherit" });
   }
-  if (remoteSpecs) {
+  if (remote) {
     const up = spawnSync(
       "sh",
       [
@@ -322,14 +337,25 @@ async function main() {
 
   let api: ChildProcess | undefined;
   let web: ChildProcess | undefined;
+  // The API's log is kept for the relay check (E2E_RELAY_LOG): the phone's
+  // frames cross the relay in it, and their plaintext must never appear.
+  const relayLog = join(home, "api.log");
   if (!(await up(`${API}/v1/health`))) {
-    api = startDetached("pnpm", ["--filter", "api", "start"], {
-      TANDEM_API_TEST_ROUTES: "1",
-      BILLING_PROVIDER: "mock",
-      WEB_PUBLIC_URL: WEB,
-      LOG_LEVEL: "warn",
-    });
+    api = startDetached(
+      "pnpm",
+      ["--filter", "api", "start"],
+      {
+        TANDEM_API_TEST_ROUTES: "1",
+        BILLING_PROVIDER: "mock",
+        WEB_PUBLIC_URL: WEB,
+        API_PUBLIC_URL: API,
+        LOG_LEVEL: "info",
+        REALTIME_MOCK_URL: "ws://127.0.0.1:8794/realtime",
+      },
+      relayLog,
+    );
     await waitUp(`${API}/v1/health`, 60);
+    process.env.E2E_RELAY_LOG = relayLog;
   }
   if (!(await up(`${WEB}/api/health`))) {
     web = startDetached("pnpm", ["--filter", "web", "dev"], { API_INTERNAL_URL: API });
@@ -345,6 +371,18 @@ async function main() {
     await waitUp(`${FEED}/health`, 30);
   } else {
     await fetch(`${FEED}/__scenario`, { method: "POST", body: JSON.stringify({ scenario: "none" }) });
+  }
+
+  let realtime: ChildProcess | undefined;
+  if (!(await up(`${REALTIME}/health`))) {
+    realtime = startDetached(
+      join(root, "node_modules/.bin/tsx"),
+      ["scripts/mock-realtime.ts", "--port", "8794"],
+      {},
+    );
+    await waitUp(`${REALTIME}/health`, 30);
+  } else {
+    await fetch(`${REALTIME}/__reset`, { method: "POST" });
   }
 
   let plugins: ChildProcess | undefined;
@@ -398,6 +436,7 @@ async function main() {
     stop(web);
     stop(feed);
     stop(plugins);
+    stop(realtime);
     stop(fixtures);
     stop(models);
     stop(wm);

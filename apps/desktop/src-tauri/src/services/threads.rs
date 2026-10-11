@@ -224,6 +224,8 @@ pub struct ThreadService {
     data: std::sync::OnceLock<tandem_core::DataDir>,
     /// Tells the status bus each thread's state (Dashboard, D-6).
     status_sink: std::sync::OnceLock<ThreadStatusSink>,
+    /// Saves the folder before each turn (F-EX-01); unset in tests.
+    checkpoints: std::sync::OnceLock<Arc<crate::services::checkpoints::CheckpointService>>,
     /// Tells the teammates service that chats changed.
     chats_sink: std::sync::OnceLock<Arc<dyn Fn() + Send + Sync>>,
     /// Hears every teammate chat turn that ended (learning, F-AG-08).
@@ -352,11 +354,16 @@ impl ThreadService {
             titler: std::sync::OnceLock::new(),
             data: std::sync::OnceLock::new(),
             status_sink: std::sync::OnceLock::new(),
+            checkpoints: std::sync::OnceLock::new(),
             chats_sink: std::sync::OnceLock::new(),
             turn_sink: std::sync::OnceLock::new(),
             plan_limits: std::sync::OnceLock::new(),
             remote: std::sync::OnceLock::new(),
         })
+    }
+
+    pub fn set_checkpoints(&self, c: Arc<crate::services::checkpoints::CheckpointService>) {
+        let _ = self.checkpoints.set(c);
     }
 
     /// The app's titler and data folder (tests may leave them unset).
@@ -1605,6 +1612,26 @@ impl ThreadService {
 
         // Outside the lock: a slow stdin never holds up the event stream.
         self.ensure_start(&thread).await;
+        // F-EX-01: the folder as it was before the engine hears the message.
+        if let (Some(cps), Some(ws)) = (self.checkpoints.get(), thread.workspace_id.as_ref()) {
+            cps.before_turn(
+                crate::services::checkpoints::Request {
+                    folder: std::path::PathBuf::from(&thread.cwd),
+                    workspace_id: Some(ws.as_str().to_string()),
+                    thread_id: Some(id.as_str().to_string()),
+                    turn_id: Some(turn_id.as_str().to_string()),
+                    label: repo::get(&self.store, id)
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|t| t.title)
+                        .unwrap_or_default(),
+                    ..Default::default()
+                },
+                tandem_store::repo::checkpoints::CheckpointReason::Turn,
+            )
+            .await;
+        }
         let seeded = seed.is_some();
         let text = match seed {
             Some(summary) => thread_summary::seeded(&summary, &text),
@@ -3401,6 +3428,103 @@ mod tests {
             adapter,
             thread,
         }
+    }
+
+    #[tokio::test]
+    async fn f_ex_01_9_a_turns_checkpoint_has_the_files_from_before_the_engine_saw_the_message() {
+        use tandem_store::repo::workspaces::{self, NewWorkspace};
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let folder = dir.path().join("work");
+        std::fs::create_dir_all(&folder).expect("mkdir");
+        std::fs::write(folder.join("a.txt"), "before").expect("write");
+        let folder = std::fs::canonicalize(&folder).expect("canon");
+        // The "engine" edits the file the moment it gets the turn.
+        let edit = folder.join("a.txt");
+        let script: Script = Arc::new(move |turn, tx| {
+            std::fs::write(&edit, "after").expect("edit");
+            play(tx, vec![ev(&turn, end(TurnEndReason::Completed))]);
+        });
+        let adapter = Arc::new(ScriptedAdapter {
+            script,
+            on_stop: OnStop::Ack,
+            starts: AtomicUsize::new(0),
+            resumed: StdMutex::default(),
+            answers: Arc::default(),
+            inputs: Arc::default(),
+        });
+        let svc = ThreadService::new(
+            store.clone(),
+            EventBus::new(),
+            Arc::new(SystemClock),
+            ApprovalBroker::new(Arc::new(SystemClock)),
+            Arc::new(ScriptedLauncher(adapter)),
+        );
+        let terminals = crate::services::terminal::TerminalService::new(
+            tandem_pty::PtyManager::new(),
+            store.clone(),
+        );
+        terminals.set_login_env(tandem_pty::env::LoginEnv {
+            vars: std::env::vars().collect(),
+            shell: "/bin/sh".into(),
+            degraded: false,
+        });
+        let cps = crate::services::checkpoints::CheckpointService::new(
+            data,
+            store.clone(),
+            EventBus::new(),
+            Arc::new(SystemClock),
+            terminals,
+        );
+        svc.set_checkpoints(cps.clone());
+        let (ws, _) = workspaces::add(
+            &store,
+            NewWorkspace {
+                kind: "local".into(),
+                host_id: "local".into(),
+                root: folder.display().to_string(),
+                name: "work".into(),
+                wsl_distro: None,
+            },
+            None,
+        )
+        .await
+        .expect("workspace");
+        let thread = svc
+            .create(NewThread {
+                id: ThreadId::new(),
+                kind: ThreadKind::Thread,
+                workspace_id: Some(ws.id),
+                cwd: folder.display().to_string(),
+                engine_id: "claude".into(),
+                account_id: None,
+                model: None,
+                effort: None,
+                access: Access::Edits,
+                mode: ThreadMode::Act,
+                attended: true,
+            })
+            .await
+            .expect("thread");
+        svc.send(&thread.id, "change a".into(), vec![], false)
+            .await
+            .expect("send");
+        assert_eq!(
+            std::fs::read_to_string(folder.join("a.txt")).expect("read"),
+            "after"
+        );
+        let tl = cps
+            .timeline(&folder, Some(thread.id.as_str().to_string()))
+            .await
+            .expect("timeline");
+        assert_eq!(tl.items.len(), 1);
+        assert_eq!(tl.items[0].differs, 1);
+        cps.restore(&tl.items[0].id, None).await.expect("restore");
+        assert_eq!(
+            std::fs::read_to_string(folder.join("a.txt")).expect("read"),
+            "before"
+        );
     }
 
     fn ev(turn: &TurnId, event: ThreadEvent) -> AdapterEvent {

@@ -2249,6 +2249,81 @@ Default focus is on the cancel button for danger confirms, on the confirm button
 
 ---
 
+### 4.16 Extras (M17)
+
+ID range UI-140–149. Every screen here uses only the §2 components and tokens and has empty, loading, error and populated states.
+
+#### UI-140 · Checkpoints sidebar tab · EX
+A sidebar tab "Checkpoints" (singleton; "+" menu item "Checkpoints"), following the context on screen like Files: the open thread's checkpoints in Thread mode, the active workspace's or lane's in Code mode.
+```
+┌ Checkpoints · shop ─────────────────────── [Checkpoint now] ┐
+│ ● Before a turn · Fix checkout redirect · 2m   3 files differ │
+│ ○ Before a prompt · Claude Code · 2 · 14m      5 files differ │
+│ ○ Before restore · 1h                             Same as now │
+├────────────────────────────────────────────────────────────────┤
+│ ☑ src/cart.ts            +4 −12                                 │
+│ ☑ src/new-helper.ts      created since                         │
+│ ☐ README.md              +1 −1                                  │
+│ (DiffView of the selected file: checkpoint → now)              │
+│                  [Restore 2 files…]  [Restore all files…]       │
+└────────────────────────────────────────────────────────────────┘
+```
+- Rows are ListRows: label, source (thread title or pane name), age (§6.3), and a Badge "{n} files differ" (none: "Same as now"). A checkpoint taken late (F-EX-01) adds a warning Badge "Late"; a partial one "Partial".
+- The diff list shows one row per file with a Checkbox (all checked), the change ("+a −d", "created since", "deleted since") and a DiffView of the selected file, from the checkpoint to now.
+- Restore opens the §4.15 destructive confirmation with the F-EX-01 copy; the primary is "Restore files". Success toast "Restored {n} files" with "Undo" (restores the Before restore checkpoint).
+- Notes above the list: not a git repository (Callout, info), git missing (EmptyState with no action), off (EmptyState "Checkpoints are off" with "Turn on").
+- Settings › Checkpoints (UI-117): Switch "Save checkpoints before agent turns", NumberControl "Keep per folder" (10–1,000), "Keep for (days)" (1–90), "Skip files larger than (MB)" (1–100), KeyValue "Space used", and the danger Button "Delete all checkpoints…".
+
+#### UI-141 · Recall palette · EX
+A palette-style picker with the command palette's shell (`Mod+Alt+J`, or "Recall a command…"; D-706): the input's placeholder is "Search commands you've run", a SegmentedControl "This workspace | Everywhere" sits under it.
+- Rows: the command in mono (truncated with the full text in a tooltip), then a second line with the folder, ✓ or "✗ {code}", duration, age and pane name, and "×{n}" when it ran more than once.
+- Footer Kbd hints: "↩ Insert", "⌘↩ Run" (hidden for a command with `[REDACTED]` or when the focused pane can't run it), "⌘⌫ Delete".
+- Empty: "No commands yet" / "Commands you run in Vibezeo terminals show up here." Off: "Command recall is off" [Turn on]. No results: "No commands match "{query}"".
+- Settings › Terminal gains a "Command recall" group: Switch "Remember commands I run", NumberControl "Keep for (days)", and "Clear command history…".
+
+#### UI-142 · Ports sidebar tab · EX
+A sidebar tab "Ports" (singleton; "+" menu item "Ports").
+```
+┌ Ports ─────────────────────────────────────────── [Refresh] ┐
+│ :5173  node (41822) · dev server · shop       localhost    │
+│        [Open]  [Copy URL]  [Stop…]                          │
+│ :8080  python3 (41990) · shell · api   ⚠ all networks       │
+│        [Open]  [Copy URL]  [Stop…]                          │
+└──────────────────────────────────────────────────────────────┘
+```
+- The port is mono `text-lg`; the pane name is a link button that focuses the pane. "all networks" is a warning Badge with the tooltip "Reachable from your network".
+- Stop… opens the destructive confirmation with the F-EX-03 copy ("Stop process"). "Still running" shows inline with "Force stop…".
+- Loading: Skeleton rows. Error: "Couldn't list ports." [Retry]. Empty: "No ports open" / "Servers started from your panes show up here."
+
+#### UI-143 · Best of N sheet · EX
+A Sheet md 480, title "Best of N", subtitle the workspace name.
+- A Textarea "Prompt" ("Describe the change. Each agent gets the same prompt."), 2–3 seat rows (engine Select, "Remove"; "+ Add agent" up to 3), an Input "Check command (optional)" with placeholder "pnpm test", and the live summary "This opens {n} agents in {n} worktrees (tandem/{slug}-1 … -{n}), one per agent."
+- A Callout when the workspace has uncommitted changes: "Worktrees start from the last commit; your uncommitted changes aren't in them."
+- Actions "Cancel" / "Start {n} agents ⌘↩". Not a repository: the sheet shows only "Best of N needs a git repository".
+
+#### UI-144 · Best of N compare · EX
+A Dialog lg, opened after Start and from the palette ("Compare Best of N", the folder's newest running run; D-710).
+```
+Best of N · Fix login redirect                [Run check] [Discard all…]
+┌ (C) Claude Code ──────┐┌ (X) Codex ────────────┐┌ (C) Claude Code ──────┐
+│ ● Done · 3 files +40 −12││ ● Working · 2 files   ││ ● Done · 4 files +61 −9 │
+│ Passed                 ││ Failed · exit 1 [Out] ││ Running…               │
+│ (DiffView)             ││ (DiffView)            ││ (DiffView)             │
+│ [Keep this one…]       ││ [Keep this one…]      ││ [Keep this one…]       │
+└────────────────────────┘└───────────────────────┘└────────────────────────┘
+```
+- Columns share the width (1–3); under 960 px they stack. A file filter (Select "All files" or one path) lines up the same file in each column.
+- "Output" opens a Dialog with the check's last 200 lines (mono). Keep this one… and Discard all… ask in the native confirm with the F-EX-04 copy (TL-06 rule 5: discarding uncommitted work always asks natively, so there's no second, in-page dialog).
+- States: loading (Skeleton columns), a lane that failed to start (Banner in its column), merged ("Merged into {base}. The other worktrees are gone; their branches stay."), discarded.
+
+#### UI-145 · Prompt picker · EX
+A palette-style picker with the command palette's shell (`Mod+Alt+P`, "Insert prompt…"; D-706): rows show the title, the description and a Badge "This repository" or "Yours"; each row has "Edit" (opens it in the Files editor). The last row is "New prompt…".
+- Choosing a prompt with variables to fill opens a Dialog sm "Fill in the prompt": one Input per variable (label `{{name}}`, prefilled with what Vibezeo found), a read-only preview, and "Cancel" / "Insert ⌘↩". Insert never sends.
+- "New prompt…": Dialog sm with "Name" and a SegmentedControl "This repository | Yours", then the file opens in the editor.
+- A Callout at the top when `.git/info/exclude` hides `.tandem/` (F-EX-05) with "Share with the repository".
+
+---
+
 ## 5. Keyboard shortcut map
 
 `Mod` = ⌘ on macOS, Ctrl on Windows/Linux. All shortcuts come from the command registry (F-SH-09); rebinding happens in Settings › Shortcuts (UI-113). Kbd renders per platform.
@@ -2272,6 +2347,7 @@ Default focus is on the cancel button for danger confirms, on the confirm button
 | Toggle right sidebar | ⇧⌘B | Ctrl+Shift+B | same |
 | Sidebar: Files / Dashboard / Tasks tab | ⌥⌘F / ⌥⌘D / ⌥⌘K | Ctrl+Alt+F / D / K | same |
 | Dashboard full view | ⌥⇧⌘D | Ctrl+Alt+Shift+D | same |
+| Recall a command / insert a prompt (M17) | ⌥⌘J / ⌥⌘P | Ctrl+Alt+J / Ctrl+Alt+P | same |
 | Notifications | ⇧⌘N | Ctrl+Shift+N | same |
 | Jump to next agent waiting for you | ⇧⌘J | Ctrl+Shift+J | same |
 | Search the current mode's list | ⇧⌘F | Ctrl+Shift+F | (this is Find in terminal) |
@@ -2488,7 +2564,7 @@ With OS or in-app Reduce motion: no transforms or pulses (§1.8). In this part s
 
 ## 8. Screen index
 
-ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 Thread, engines and accounts · UI-40–49 Dashboard and notifications · UI-50–53 Routines · UI-60–69 Dictate and Conductor · UI-70–94 Teammates, Tasks and Plugins (ui_part3) · UI-100–116 Settings · UI-120–124 Plans · UI-130–135 System dialogs. Unused numbers inside a range are reserved for that range.
+ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 Thread, engines and accounts · UI-40–49 Dashboard and notifications · UI-50–53 Routines · UI-60–69 Dictate and Conductor · UI-70–94 Teammates, Tasks and Plugins (ui_part3) · UI-100–116 Settings · UI-120–124 Plans · UI-130–135 System dialogs · UI-140–149 Extras (M17). Unused numbers inside a range are reserved for that range.
 
 | ID | Screen | Section | Areas |
 |---|---|---|---|
@@ -2575,6 +2651,12 @@ ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 T
 | UI-133 | Connectivity and entitlement banners | §4.15 | SH, BE, BL |
 | UI-134 | Permission prompts | §4.15 | DI, CN, SH |
 | UI-135 | Destructive confirmations | §4.15 | all |
+| UI-140 | Checkpoints sidebar tab (and Settings › Checkpoints, UI-117) | §4.16 | EX |
+| UI-141 | Recall palette | §4.16 | EX |
+| UI-142 | Ports sidebar tab | §4.16 | EX |
+| UI-143 | Best of N sheet | §4.16 | EX |
+| UI-144 | Best of N compare | §4.16 | EX |
+| UI-145 | Prompt picker | §4.16 | EX |
 
 ### 8.1 Cross-document conflicts found while writing this part
 All items below were fixed at the source during the consistency pass (see CONSISTENCY_REPORT.md); they are kept as a record.

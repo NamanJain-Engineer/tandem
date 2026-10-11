@@ -3,6 +3,10 @@
 pub mod accounts;
 pub mod approvals;
 pub mod attachments;
+pub mod bestof;
+pub mod checkpoints;
+pub mod command_history;
+pub mod conductor;
 pub mod dictate;
 pub mod dump;
 pub mod editor_tabs;
@@ -12,6 +16,7 @@ pub mod layouts;
 pub mod mail;
 pub mod memory_changes;
 pub mod notifications;
+pub mod pairings;
 pub mod panes;
 pub mod plugins;
 pub mod presets;

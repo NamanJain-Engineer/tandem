@@ -562,7 +562,8 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `pane_create` | `{tabId, kind:"terminal"\|"agent"\|"browser"\|"simulator", engineId?, accountId?, cwd?, humanName?, url?}` (`url`: a browser pane's first page, read like the address bar; a browser pane runs no process and doesn't count against the live-pane limit) | `PaneRecord` (assigns unique human name for agents; `browserUrl`: the page a browser pane last committed, kept by the core) | NotFound, LimitReached, Invalid (a blocked `url`) | F-CD-02, F-CD-12, F-CD-17 |
 | `pane_list` | `{tabId}` | `[PaneRecord]` (open panes, oldest first) | — | F-CD-02 |
 | `pty_spawn` | `{paneId, cols, rows, shell?, engine?: EngineLaunch {engineId, accountId?, oneOffHome?, extraArgs?, firstPrompt?, resumeSessionId?}, channel: Channel<PtyFrame>}` | `PtyInfo {pid, startedAt, launchConfigId?}` | LimitReached (plan), EngineMissing, NotFound (cwd → falls back to root with notice, not an error), Unavailable (config gone), Conflict (an agent paused after a restart starts only from its card: `restore_resume` / `restore_start_fresh`) | F-CD-03, F-EN-04, F-AC-01, F-SH-07 |
-| `pty_attach` | `{paneId, channel}` | `AttachSnapshot {replay: base64, state: PtyState}` (after webview reload) | NotFound | F-CD-03 |
+| `pty_attach` | `{paneId, channel}` | `AttachSnapshot {replay: base64, end: u64, state: PtyState}` (after webview reload, or showing a parked pane; `end` is the ring position the replay ends at, so the view can count where it stands) | NotFound | F-CD-03, §5.1 |
+| `pty_park` | `{paneId, at: u64, base: [string]}` | `bool` (a hidden view gave up its terminal, §5.1/D-139: `base`, one chunk per line then the screen, replaces the ring up to `at`, the position the view had parsed; the sink is dropped so the program runs on unthrottled; false = the ring no longer held the output after `at` and replays as it is) | NotFound | §5.1 |
 | `pty_write` | `{paneId, data: string}` | — | NotFound | F-CD-03, F-CD-07 |
 | `pty_ack` | `{paneId, bytes: u64}` | — | — | F-CD-04 |
 | `pty_resize` | `{paneId, cols, rows}` | — | NotFound | F-CD-02 |
@@ -721,6 +722,29 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 
 `FileContext = {type:"workspace", workspaceId} | {type:"thread", threadId} | {type:"teammate", teammateId}` (the teammate Home arrives with M10). Files outside every workspace open `readonly: true` and `fs_write` refuses them (PRODUCT_SPEC F-CD-09: files inside any workspace are editable, D-201). These commands serve the local UI; any other origin (agents, Conductor, phone) goes through `contain()` first.
 
+#### Extras: checkpoints, command recall, ports, Best of N, prompts [F-EX-*] (M17)
+| Command | Args | Returns | Errors | IDs |
+|---|---|---|---|---|
+| `checkpoints_list` | `{context: FileContext}` (a thread: its own checkpoints; a workspace or lane: all of its folder's) | `CheckpointTimeline {folder, store: "repo"\|"folder"\|"no_git", enabled, items: [Checkpoint {id, reason: "turn"\|"prompt"\|"manual"\|"restore", label, threadId?, paneId?, turnId?, createdAt, files, skipped: [String], partial, late, differs: u32}]}` (newest first; `differs`: files that differ from now) | NotFound (folder missing) | F-EX-01 |
+| `checkpoint_create` | `{context}` ("Checkpoint now") | `Checkpoint?` (`null`: nothing changed since the last one) | Unavailable (git missing), NotFound | F-EX-01 |
+| `checkpoint_diff` | `{checkpointId}` | `[FileDiff]` (the checkpoint → the folder now; `added` = created since, `deleted` = deleted since) | NotFound | F-EX-01 |
+| `checkpoint_restore` | `{checkpointId, paths?}` (no `paths`: every file that differs; the UI confirms first) | `RestoreReport {restored: [String], failed: [{path, message}], undoId?}` (`undoId`: the "Before restore" checkpoint saved first) | NotFound, Unavailable | F-EX-01 |
+| `checkpoints_usage` / `checkpoints_delete_all` | — / — | `{bytes, folders}` / — | — | F-EX-01 |
+| `history_search` | `{query, workspaceId?, limit ≤ 200}` (`workspaceId`: "This workspace") | `[HistoryEntry {id, command (redacted), cwd, exitCode?, durationMs?, paneId, paneName?, workspaceId?, lastRunAt, runs, secret}]` (one per distinct command and folder, newest first) | — | F-EX-02 |
+| `history_run` | `{id, paneId}` (types the command and Enter into a shell pane at its prompt) | — | Invalid (an agent or browser pane, a command still running, a `[REDACTED]` in the command), NotFound | F-EX-02 |
+| `history_delete` / `history_clear` | `{id}` (every run of that command in that folder) / — | — / `u32` (deleted) | — | F-EX-02 |
+| `ports_list` | — | `[ListeningPort {port, address, allInterfaces, pid, process, startTime, paneId, paneName, workspaceId?, workspaceName?}]` (only processes in a pane's tree) | Unavailable (the probe failed) | F-EX-03 |
+| `ports_stop` | `{paneId, pid, startTime, force}` (the UI confirms first; the core checks the PID is still that process in that pane's tree) | `{stopped}` (`false`: still running after 3 s) | Conflict (the PID no longer belongs to the pane, or its start time changed) | F-EX-03 |
+| `bestof_start` | `{workspaceId, prompt, seats: [{engineId, accountId?}] (2–3), checkCommand?}` → op | `BestOfRun {id, workspaceId, title, tabId, base, state, lanes: [BestOfLane {laneId, branch, engineId, accountId?, paneId?, error?, check: CheckState}]}` | LimitReached (nothing launched), Invalid (not a repository, seats out of range, empty prompt) | F-EX-04 |
+| `bestof_list` / `bestof_get` | `{workspaceId?}` / `{runId}` | `[BestOfRun]` (newest first) / `BestOfDetail {run, diffs: [LaneDiff {seat, files: [FileDiff], error?}]}` | NotFound | F-EX-04 |
+| `bestof_check` / `bestof_check_stop` | `{runId}` | — (progress through `bestof:changed`) | Invalid (no check command), NotFound | F-EX-04 |
+| `bestof_keep` | `{runId, seat}` (refuses a dirty base first, then the native confirm with the F-EX-04 copy; stops the lanes' agents, commits the lane's changes, merges into the base, removes the other worktrees; branches stay) | `MergeReport` | Conflict (the base has uncommitted changes, the run is finished), Cancelled (the confirm said Cancel), NotFound | F-EX-04 |
+| `bestof_discard` | `{runId}` (after the native confirm) | — | Cancelled, NotFound | F-EX-04 |
+| `prompts_list` | `{context?: FileContext}` | `PromptList {items: [PromptInfo {path, title, description?, source: "repo"\|"profile", variables: [String]}], skipped: [{path, reason: "large"\|"outside"\|"unreadable"}], excludeHidesRepo}` | — | F-EX-05 |
+| `prompts_render` | `{path, context?, values: Record<string,string>}` (`selection`, `file` and typed values come from the UI; the core fills `branch` and reads `clipboard` only when the prompt uses it and no value was given) | `Rendered {text, missing: [String], values: Record<string,string>}` (`missing`: variables still empty, for the form) | NotFound, PathEscape | F-EX-05 |
+| `prompts_create` | `{context?, scope: "repo"\|"profile", name}` | `{path}` (a new Markdown file from the template) | Conflict (exists), Invalid | F-EX-05 |
+| `prompts_share_repo` | `{context}` (replaces `.tandem/` in `.git/info/exclude` with `.tandem/*` and `!.tandem/prompts/`; lanes treat `.tandem/*` as excluding their worktrees, D-709) | — | NotFound (not a repository) | F-EX-05 |
+
 #### Teammates, memory, skills, mail [F-AG-*]
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
@@ -824,10 +848,14 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 #### Conductor [F-CN-*]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
-| `conductor_start_call` | `{wake: bool}` | `CallView` | ForbiddenPlan, CreditsExhausted, Unavailable |
-| `conductor_end_call` / `conductor_mute` | — / `{muted}` | — | — |
-| `conductor_confirm` | `{requestId, yes}` (on-screen click only) | — | NotFound |
-| `conductor_call_log` | `{cursor?}` | `Page<CallLogEntry>` | — |
+| `conductor_start_call` | `{wake: bool, pushToTalk?: bool}` (the one entry point: ring, palette, shortcut, wake phrase; a running call is returned as it is) | `CallView` | ForbiddenPlan, PermissionDenied (org policy), Unavailable (no hosted service); mint and connect failures arrive as the view's `error` |
+| `conductor_end_call` / `conductor_mute` | — / `{muted}` | — (`end_call` with no call clears an ended call's receipt or error) | — |
+| `conductor_confirm` | `{requestId, yes}` (on-screen click only: `yes` needs the calling window to be `main`, which makes the `LocalReview`) | — | NotFound, PermissionDenied |
+| `conductor_state` | — | `CallView` (the HUD after a reload) | — |
+| `conductor_call_log` | `{callId?}` | `[CallLogEntry {call: CallRow, events: [CallEventRow]}]`, newest first; events for `callId` (default the newest) | — |
+| `conductor_call_delete` | `{callId}` | — | — |
+| `test_conductor_clock` (debug, `TANDEM_E2E=1`) | `{advanceMs}` | the call clock's offset (ms) | PermissionDenied |
+| `test_conductor_inject` (debug, `TANDEM_E2E=1`) | `{calls: [{id, name, args}]}` | `bool` (false without a call): doer tool calls run through the executor | PermissionDenied |
 | `conductor_memory_get` / `conductor_memory_resolve` | — / `{proposalIds, keep}` | `ConductorMemory` / — | Invalid (credential) |
 | `find_work` | `{query}` | `[FindMatch {source, label, score, lastActivity}]` | — |
 
@@ -840,10 +868,12 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `ssh_disconnect` / `ssh_list_dir` | `{hostId}` (ends the host's panes) / `{hostId, path}` (absolute, or empty / `~` for home) | — / `RemoteDir {path, parent?, dirs}` (folders only, for the remote folder picker) | NotFound |
 | `ssh_host_reset_key` | `{hostId}` ("Trust new key…" after a danger confirm: forgets the pinned key; the next connect shows the new fingerprint) | — | — |
 | `wsl_distros` | — | `[Distro]` (`{name, isDefault, version}`, from `wsl.exe -l -v`) | Unavailable, stage `wsl` (non-Windows) |
-| `phone_pair_begin` | — | `PairingQr {pairingId, qrSvg, expiresAt}` | ForbiddenPlan |
-| `phone_pairings_list` / `phone_pairing_set_grants` / `phone_pairing_revoke` | — / `{pairingId, grants}` / `{pairingId}` | `[Pairing]` / — / — | — |
-| `phone_arm_approvals` | `{hours: 8 \| 0}` | `{armedUntil?}` | — |
-| `phone_queue_list` / `phone_queue_decide` | — / `{itemId, apply}` | `[QueuedPhoneAction]` / — | — |
+| `phone_pair_begin` | — (main window) | `PairingQr {pairingId, link, qr: QrMatrix {size, rows}, expiresAt}` (`rows`: one `0`/`1` string per module row; `link` is the URL the code encodes) | ForbiddenPlan, PermissionDenied (org policy, other window), Unauthenticated, Unavailable |
+| `phone_pair_cancel` | `{pairingId}` | — (a code nobody scanned: the relay pairing is deleted) | — |
+| `phone_pairings_list` / `phone_pairing_set_grants` / `phone_pairing_revoke` | — / `{pairingId, grants: PhoneGrants {chat, terminal, approvals, routines}}` (main window) / `{pairingId}` | `[Pairing {id, deviceName, grants, createdAt, lastSeen?, online}]` / — / — | NotFound, PermissionDenied |
+| `phone_reset` | — | — ("Reset remote access…": every pairing revoked, identity key replaced) | — |
+| `phone_arm_approvals` / `phone_arm_state` | `{hours: 8 \| 0}` (main window) / — | `PhoneArmState {armedUntil?}` (in memory: a restart disarms, D-1907) | Invalid, PermissionDenied |
+| `phone_queue_list` / `phone_queue_decide` | — / `{itemId, apply}` (main window) | `[QueuedPhoneAction {id, pairingId, deviceName, approvalId, summary, createdAt}]` / — | NotFound, Conflict, PermissionDenied |
 
 #### Auth, entitlements, billing, updates, privacy [F-BE-02, F-BE-04, F-BL-*, F-SH-06, F-TL-*]
 | Command | Args | Returns | Errors |
@@ -940,15 +970,18 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `dictate:status` | `DictateStatus` (after a binding, model, permission or hotkey-status change) | voice service | F-DI-02, F-DI-04 |
 | `dictate:models` | `ModelsView` (download progress at most 4 a second, stages, failures) | voice service | F-DI-04 |
 | `dictate:history` | — (a take was stored or the history changed) | voice service | F-DI-08 |
-| `conductor:state` | `{state:"connecting"\|"listening"\|"thinking"\|"speaking"\|"ended", utterance?, chips:[Chip], question?}` (to `main`, `conductor-ring`) | CallController | F-CN-04 |
-| `conductor:ui-action` | `{action, args}` (navigation-only actions) | ActionRegistry | F-CN-02 |
-| `conductor:confirm-request` | `{requestId, summary, kind}` | ActionRegistry | F-CN-03 |
+| `conductor:state` | `CallView {callId?, phase:"idle"\|"connecting"\|"listening"\|"thinking"\|"acting"\|"speaking"\|"ended"\|"error", muted, utterance?, caption?, chips:[ChipView], question?: QuestionView, elapsedMs, maxSeconds, error?: {code, message}, notice?, receipt?: {callId, seconds, credits, actions}}` (to `main`) | CallController | F-CN-04 |
+| `conductor:level` | `number` 0–1, ≤10 Hz, only during a call | CallController | F-CN-04 |
+| `conductor:ui-action` | `{action, args}` (navigation-only tools: `switch_mode`, `open_settings`, `toggle_sidebar`, `open_sidebar_tab`, `open_launch_wizard`, `open_routines`, `dismiss`, `tidy`, `flip`, and a confirmed `close_pane`) | ActionRegistry | F-CN-02 |
+| `conductor:confirm-request` | `QuestionView {requestId, tool, summary, verb, review:"voice_or_screen"\|"screen_only"}` | ActionRegistry | F-CN-03 |
 | `remote:ssh` | `SshProgress {opId, hostId, stage: "resolving"\|"hostkey"\|"password"\|"connecting"\|"installing"\|"starting"\|"connected"\|"failed", prompt?: {kind:"hostkey", host, fingerprint, keyType} \| {kind:"password", label}, error?}` | ssh service | F-RM-01 |
 | `remote:host` | `{hostId, state:"connected"\|"connecting"\|"reconnecting"\|"down"}` | ssh service | F-RM-01 |
 | `remote:git` | `{hostId}`: the host's folders' git status was read after it connected, so `workspace_list` now names their branches (D-1602) | ssh service | F-RM-01 |
-| `remote:phone` | `{pairingId, event:"connected"\|"command"\|"queued"\|"revoked"}` | phone service | F-RM-03 |
+| `remote:phone` | `{pairingId, event:"paired"\|"connected"\|"disconnected"\|"command"\|"queued"\|"changed"\|"revoked"\|"armed"}` (`pairingId` null for `armed`) | phone service | F-RM-03 |
 | `updates:state` | `UpdateState` (see `updates_state`; during a download at most one event per 5 %) | updater service | F-SH-06 |
 | `browser:state` / `browser:picker` | `BrowserState {browserId, url, title, canBack, canForward, loading, device, rotated, frame: Rect (the page inside the bounds), zoom, blocked?, picking, seq}` (`seq` grows with every change: a view drops a reply or event older than what it holds) / `{browserId, elements:[PickedElement {tag, selector (unique in the page), component?: {name, framework: "React"\|"Vue"}, rect: Rect (page coordinates), styles: {display, position, font, color, background, margin, padding}, html (outerHTML, cut at 4 KB), truncated}]}` | browser service | F-CD-17, F-CD-18 |
+| `checkpoint:created` | `{folder, checkpoint: Checkpoint}` | checkpoint service | F-EX-01 |
+| `bestof:changed` | `{runId}` (a lane, its agent state or its check changed) | Best of N service | F-EX-04 |
 | `op:progress` | `{opId, stage, pct?, done, error?: IpcError}` | any op | §5.2 |
 
 ### 3.4 Streaming patterns
@@ -1469,7 +1502,7 @@ Namespace `NS` = `app.tandem` (release) or `app.tandem.dev` (dev builds). Tests 
 |---|---|---|---|
 | `NS.plugins` (spec: `app.tandem.plugins`) | `<plugin>:<connection-id>` | JSON `{access_token, refresh_token?, expires_at?, token_type, client_secret?}` or `{api_key}`; ≤16 KB (else rejected) | gateway |
 | `NS.auth` | `credentials-key` | 32-byte AES-256-GCM key for `auth/credentials.enc` | auth service |
-| `NS.remote` | `pairing:<pairing-id>` | JSON `{desktop_static_sk, phone_pk, root_key, epoch}` | phone service |
+| `NS.remote` | `pairing:<pairing-id>` | JSON `{phone_pk, relay_url, session}`: the session's epoch keys (current and next) and counters as of the last handshake or rekey; `pairings` holds the live counters (D-1906) | phone service |
 | `NS.remote` | `identity` | desktop X25519 static secret (created on first pairing) | phone service |
 | `NS.ssh` | `password:<host-id>` | only if the user ticks "Remember password" in the askpass dialog (default off) | ssh service |
 
@@ -1558,6 +1591,7 @@ pty_kill / pane_close → tree kill (§5.3) → unregister status secret → rev
 - Emitted sequences: `OSC 7;file://<host><cwd> ST`, `OSC 133;A;tandem=<token> ST` (prompt start), `B` (prompt end), `C` (command start), `D;<exit>` (command end). The token is read from the env var and then `unset` in the shell so child programs can't read it from the environment (they could still read `/proc/<shell>/environ` on Linux; accepted residual risk, logged in threat model §16).
 - A `MarkFilter` takes every OSC 133, OSC 7 and handback (`OSC 7770`) sequence out of the output before the ring, the side channel and the view see it. With the matching token it becomes a mark, and OSC 133 goes back into the stream without the token (the view decorates commands from it); without it, it is dropped, so a program, a remote host or pasted text can't spoof a mark (F-CD-10 AC2), and the token never reaches the webview, the ring or snapshots. The side channel captures the plain text between the last `C` and `D` marks (vte-stripped, `\r` overwrite and `ESC[K` applied): "Copy last command output" (F-CD-10 AC3, `term_last_output`).
 - Plain-shell idle: `D` received and no output for 2 s → idle.
+- **Command lines (F-EX-02, M17).** The scripts add the command line to the `C` mark as `cmdline_url=<percent-encoded>` (bash: the newest history entry when the history number moved; zsh and fish: their preexec argument; PowerShell: the last history entry, on the `D` mark). A line starting with a space is never sent. `MarkFilter` takes it only with the token and never puts it back into the stream, so it never reaches the view, the ring or a snapshot; the side channel times C → D and hands `{command, cwd, exit, started, duration}` to the history service, which redacts before storing.
 
 ### 5.9 Input: keys, paste, drops, links [F-CD-05..07, F-CD-09, F-SH-09]
 - **Key interception** is decided in TS by `attachCustomKeyEventHandler`: intercept only chords in the registry table containing `Mod` (on Win/Linux: `Ctrl+Shift+…`, the registry's `Ctrl+Alt+…` combos, `Ctrl+K`, `Ctrl+,`, `Ctrl+1..3`, `Ctrl+Tab`/`Ctrl+Shift+Tab`, `F6`; the UI_SPEC §5 intercept list); everything else goes to the PTY (F-SH-09 AC1/2). Ctrl+C with a selection copies (and sends nothing); without selection it passes through (0x03).
@@ -1818,6 +1852,7 @@ Persistence: every envelope except `*Delta` is appended to `thread_messages`; de
   - **Remove:** stop lane panes → `git worktree remove <path>`; if it fails for uncommitted changes → `Conflict`; force requires `force: true` from window `main` plus a Rust-side native confirm dialog; never available through Conductor or phone (F-CD-15 AC2).
   - **Merge into base:** in the parent checkout: refuse if the parent has uncommitted changes; `git merge --no-ff tandem/<slug>`; on conflict leave the conflicted state, return `conflicts` (from `git diff --name-only --diff-filter=U`), create no commit (F-CD-15 AC3).
   - **Sweep** (startup + every 6 h): `git worktree prune`; list lanes whose branch is merged into base and idle >7 days → one "Clean up lanes" notification; never deletes.
+- **Checkpoints (F-EX-01, M17):** `tandem_git::checkpoint`. One bare store per folder at `$DATA/checkpoints/<key>/store.git` (`<key>` = the first 16 hex of SHA-256 of the canonical folder path) with its own index file (`git add` reuses its stat data), so unchanged files are never rehashed. List: in a repository `ls-files -z --cached --others --exclude-standard --full-name` (read mode, the user's index only read, `GIT_OPTIONAL_LOCKS=0`), else an `ignore` walk (20,000 files); `.git` and `.tandem/worktrees` never; files over the limit skipped. Hash: `git --git-dir=<store> --work-tree=<folder> --attr-source=<empty tree> -c core.autocrlf=false -c core.symlinks=true update-index --add/--force-remove -z --stdin` with `GIT_INDEX_FILE` set to the store's index, `write-tree`; the tree itself is kept as `refs/checkpoints/<id>` (no commit, so no identity is needed). Equal to the previous tree → no checkpoint. Restore reads blobs with git2 from the store and writes them in Rust (atomic replace, mode, symlinks, `contain()`); it deletes only files the "now" snapshot lists. Pruning deletes refs and rows, then `git gc --prune=now --quiet` in the store. One queue per folder; a thread turn and an agent pane's Enter wait for it (Enter at most 2 s).
 - **Changes panel** (`thread_changes`): git repos → diff between `threads.start_commit` and the working tree (tracked + untracked, within prefix); non-git → a manifest `{path: (size, mtime, sha256)}` captured before the thread's first turn (`$DATA/snapshots/<thread>.json`, D-122) (skipping ignored/large >5 MB files, max 20k files) compared at each turn end (F-TH-13).
 
 ---
@@ -2160,7 +2195,13 @@ Plugin count limit: Free = 1 connection (§3.2), enforced at connect.
 - **Pairing:** `phone_pair_begin` → desktop ensures its static X25519 key `D` (keychain `NS.remote/identity`), generates `pairing_id` (`pr_…`) and a 32-byte one-time `S`, calls `POST /v1/pairings {pairing_id, device_label?}` → `{pairing_token, relay_url, expires_at}`. QR = `https://app.vibezeo.com/remote#p=<base64url(JSON{v:1, pid, dpk: D.pub, s: S, relay, ptok})>` (fragment never reaches servers). Valid 10 min.
 - **Handshake** (over the relay): phone generates static `P`, sends `hello{P.pub, tag = HMAC-SHA256(S, "tandem-pair-v1"‖pid‖P.pub)}`; desktop verifies the tag with `S` (proves QR possession; defeats a relay MITM). Both compute `ss = X25519(D, P)`, `root = HKDF-SHA256(salt=S, ikm=ss, info="tandem-root-v1"‖pid‖D.pub‖P.pub)`, `k_d2p, k_p2d = HKDF(root, info="d2p"/"p2d")`. `S` is then discarded.
 - **Frames:** `{v, epoch, dir, ctr: u64, nonce: 24B, ct}` with XChaCha20-Poly1305, `AAD = pid‖epoch‖dir‖ctr`, nonce = `ctr (8 B LE) ‖ 16 random bytes`. Receiver requires `ctr > last_ctr[dir]` (persisted in `pairings.rx_counter`, survives rekey), else reject (AC2). Plaintext ≤ 60 KB so frames stay ≤ 64 KB; long histories paged.
-- **Rekey:** every 1 h or 2^20 frames: sender includes a fresh ephemeral X25519 pub; new keys = HKDF(root ‖ X25519(eph_a, eph_b)); `epoch += 1`; counters keep increasing.
+- **Rekey:** every 1 h or 2^20 frames, started by the desktop: it sends a fresh ephemeral X25519 pub and the phone answers with its own; new keys = HKDF(secret ‖ X25519(eph_a, eph_b)); `epoch += 1`; counters keep increasing.
+- **Wire format v1 (D-1905)**, shared by `tandem_core::remote` and `apps/web/lib/remote` and pinned by `crates/tandem-core/tests/fixtures/remote_v1.json`. Integers are big-endian unless noted; text is UTF-8; `‖` concatenates.
+  - `HELLO` (phone → desktop, plaintext): `0x01 ‖ 0x01 ‖ P.pub (32) ‖ tag (32)`, `tag = HMAC-SHA256(S, "tandem-pair-v1" ‖ pid ‖ P.pub)`.
+  - `SEALED`: `0x02 ‖ 0x01 ‖ epoch u32 ‖ dir u8 (0 = desktop→phone, 1 = phone→desktop) ‖ ctr u64 ‖ nonce (24) ‖ ct`; `AAD = pid ‖ epoch u32 ‖ dir u8 ‖ ctr u64`; nonce = `ctr` as u64 little-endian ‖ 16 random bytes. Header 39 bytes, so plaintext ≤ 61,440 bytes keeps a frame under 64 KB.
+  - Keys: an all-zero `X25519(D, P)` is refused. `secret₀ = root = HKDF-SHA256(salt = S, ikm = ss, info = "tandem-root-v1" ‖ pid ‖ D.pub ‖ P.pub)`. Per epoch `e`: `k_d2p = HKDF-SHA256(salt = ∅, ikm = secretₑ, info = "tandem-d2p-v1")`, `k_p2d` likewise with `"tandem-p2d-v1"`. Rekey: `secretₑ₊₁ = HKDF-SHA256(salt = secretₑ, ikm = X25519(eph_d, eph_p), info = "tandem-rekey-v1" ‖ (e+1) u32)`.
+  - Rekey steps: the desktop sends `{t:"rekey", eph}`. The phone answers `{t:"rekey_ack", eph}` under the old keys and holds the new keys as *next*. The desktop then sends under the next epoch, and keeps accepting the old epoch until the phone's first next-epoch frame. The phone switches when the desktop's first next-epoch frame arrives. Each side accepts only its current or next epoch. Both persist the next keys, so a dropped connection mid-rekey resumes.
+  - Messages (JSON, inside `SEALED`): phone → desktop `{t:"hi", device}`, `{t:"cmd", id, cmd, args}`, `{t:"rekey_ack", eph}`; desktop → phone `{t:"welcome", desktop, grants, armedUntil?}`, `{t:"res", id, ok, data?|error?}`, `{t:"rekey", eph}`, `{t:"changed"}`, `{t:"reject", reason}` (a frame refused as `replay`, `epoch` or `bad_frame`), `{t:"bye", reason}` (revoked).
 - **Commands** (phone → desktop): `view.snapshot`, `thread.read`, `thread.send` (needs Chat control grant), `pane.type` (Terminal control; agent panes only, via `type_prompt`), `approval.decide` (Approvals grant; `allow` applies only if the desktop armed "Allow approvals from phone for the next 8 hours", else stored in `phone_queue` and confirmed locally; `deny` always applies, AC3), `routine.run_now` (Routines grant). Local-review actions have no phone command.
 - **Revocation:** `phone_pairing_revoke`, sign-out or account change → mark revoked, delete keychain entry, `DELETE /v1/pairings/{id}` (relay drops both sockets); later frames → rejected (AC4).
 - **PWA** (`apps/web/app/remote`): Next.js route, service worker for install, `@noble/curves` (X25519), `@noble/hashes` (HKDF, HMAC), `@noble/ciphers` (XChaCha20-Poly1305); keys in IndexedDB (non-extractable where WebCrypto allows; otherwise encrypted with a device passphrase-less wrapping key — documented residual risk).

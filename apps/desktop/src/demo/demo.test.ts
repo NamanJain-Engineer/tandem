@@ -97,7 +97,10 @@ describe("browser demo (vibezeo.com/demo)", () => {
     core = new DemoCore(0);
     const id = core.firstThread;
     const seen: ThreadEvent[] = [];
-    core.handle("thread_subscribe", { threadId: id, channel: { onmessage: (e: ThreadEventEnvelope) => seen.push(e.event) } });
+    core.handle("thread_subscribe", {
+      threadId: id,
+      channel: { onmessage: (e: ThreadEventEnvelope) => seen.push(e.event) },
+    });
     core.handle("thread_send", { threadId: id, text: "hi", attachments: [] });
     core.handle("thread_stop", { threadId: id });
     core.handle("thread_switch_engine", { threadId: id, engineId: "codex" });
@@ -118,16 +121,37 @@ describe("browser demo (vibezeo.com/demo)", () => {
 describe("browser demo Files tab (F-CD-19)", () => {
   it("lists the demo project the terminal shows, edits in memory and refuses stale saves", () => {
     core = new DemoCore(0);
-    const top = core.handle("fs_list", { dir: "" }) as Array<{ path: string; kind: string; gitStatus?: string }>;
-    expect(top.map((e) => e.path)).toEqual(["src", "tests", "package.json", "README.md", "tsconfig.json", "vite.config.ts"]);
+    const top = core.handle("fs_list", { dir: "" }) as Array<{
+      path: string;
+      kind: string;
+      gitStatus?: string;
+    }>;
+    expect(top.map((e) => e.path)).toEqual([
+      "src",
+      "tests",
+      "package.json",
+      "README.md",
+      "tsconfig.json",
+      "vite.config.ts",
+    ]);
     expect(top.find((e) => e.path === "src")?.gitStatus).toBe("modified");
-    const checkout = core.handle("fs_list", { dir: "src/checkout" }) as Array<{ path: string; gitStatus?: string }>;
+    const checkout = core.handle("fs_list", { dir: "src/checkout" }) as Array<{
+      path: string;
+      gitStatus?: string;
+    }>;
     expect(checkout.find((e) => e.path === "src/checkout/redirect.ts")?.gitStatus).toBe("modified");
-    const file = core.handle("fs_read", { path: "src/checkout/redirect.ts" }) as { text: string; hash: string };
+    const file = core.handle("fs_read", { path: "src/checkout/redirect.ts" }) as {
+      text: string;
+      hash: string;
+    };
     expect(file.text).toContain("export function nextStep");
     core.handle("fs_write", { path: "src/checkout/redirect.ts", text: "edited\n", expectedHash: file.hash });
-    expect((core.handle("fs_read", { path: "src/checkout/redirect.ts" }) as { text: string }).text).toBe("edited\n");
-    expect(() => core?.handle("fs_write", { path: "src/checkout/redirect.ts", text: "x", expectedHash: file.hash })).toThrow();
+    expect((core.handle("fs_read", { path: "src/checkout/redirect.ts" }) as { text: string }).text).toBe(
+      "edited\n",
+    );
+    expect(() =>
+      core?.handle("fs_write", { path: "src/checkout/redirect.ts", text: "x", expectedHash: file.hash }),
+    ).toThrow();
     expect(() => core?.handle("fs_delete", { path: "README.md" })).toThrow();
   });
 
@@ -138,14 +162,21 @@ describe("browser demo Files tab (F-CD-19)", () => {
     expect(before.status.branch).toBe("main");
     expect(terminal).toContain("On branch main");
     for (const f of before.status.unstaged) expect(terminal).toContain(f.path);
-    expect(before.status.unstaged.map((f) => f.path)).toEqual(["src/checkout/redirect.test.ts", "src/checkout/redirect.ts"]);
-    const diff = core.handle("git_diff", { path: "src/checkout/redirect.ts", staged: false }) as { patch: string };
+    expect(before.status.unstaged.map((f) => f.path)).toEqual([
+      "src/checkout/redirect.test.ts",
+      "src/checkout/redirect.ts",
+    ]);
+    const diff = core.handle("git_diff", { path: "src/checkout/redirect.ts", staged: false }) as {
+      patch: string;
+    };
     expect(diff.patch).toContain("Don't send the login page back to itself.");
     const readme = core.handle("fs_read", { path: "README.md" }) as { hash: string };
     core.handle("fs_write", { path: "README.md", text: "# shop, edited\n", expectedHash: readme.hash });
     const after = core.handle("git_status", {}) as GitPanel;
     expect(after.status.unstaged.map((f) => f.path)).toContain("README.md");
-    expect((core.handle("git_diff", { path: "README.md", staged: false }) as { patch: string }).patch).toContain("+# shop, edited");
+    expect(
+      (core.handle("git_diff", { path: "README.md", staged: false }) as { patch: string }).patch,
+    ).toContain("+# shop, edited");
     for (const cmd of ["git_stage", "git_commit", "git_push", "git_switch"]) {
       expect(() => core?.handle(cmd, { paths: ["README.md"] })).toThrow();
     }
@@ -181,7 +212,8 @@ describe("browser demo Scratchpad (F-SH-12)", () => {
 });
 
 describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () => {
-  const send = (c: DemoCore, threadId: string, text: string) => c.handle("thread_send", { threadId, text, attachments: [] });
+  const send = (c: DemoCore, threadId: string, text: string) =>
+    c.handle("thread_send", { threadId, text, attachments: [] });
 
   it("demo AC5 the 13th message says Demo limit reached, and a message is up to 500 characters", async () => {
     core = new DemoCore(0);
@@ -259,15 +291,25 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
 
   it("F-TK-03 the demo keeps tasks in the page: quick add, edits with revisions and history, comments, archive", () => {
     core = new DemoCore(0);
-    const page = () => core?.handle("tasks_list", { filter: { include_archived: false }, cursor: null }) as TaskPage<IssueSummary>;
+    const page = () =>
+      core?.handle("tasks_list", {
+        filter: { include_archived: false },
+        cursor: null,
+      }) as TaskPage<IssueSummary>;
     expect(page()).toEqual({ items: [], next_cursor: null });
     expect((core.handle("tasks_meta", {}) as TasksMeta).statuses).toContain("in_review");
-    const a = core.handle("task_save", { input: { title: "  Fix the login redirect ", status: "todo" } }) as Issue;
+    const a = core.handle("task_save", {
+      input: { title: "  Fix the login redirect ", status: "todo" },
+    }) as Issue;
     expect([a.id, a.title, a.revision, a.status]).toEqual(["TAN-1", "Fix the login redirect", 1, "todo"]);
-    const b = core.handle("task_save", { input: { id: a.id, status: "in_progress", expected_revision: 1 } }) as Issue;
+    const b = core.handle("task_save", {
+      input: { id: a.id, status: "in_progress", expected_revision: 1 },
+    }) as Issue;
     expect(b.revision).toBe(2);
     // A save on an old revision is refused, as the app refuses it.
-    expect(() => core?.handle("task_save", { input: { id: a.id, title: "x", expected_revision: 1 } })).toThrow();
+    expect(() =>
+      core?.handle("task_save", { input: { id: a.id, title: "x", expected_revision: 1 } }),
+    ).toThrow();
     core.handle("task_comment", { id: a.id, body: "Repro in staging", parentId: null });
     const detail = core.handle("task_get", { id: a.id }) as TaskDetail;
     expect(detail.history.map((h) => [h.field, h.to])).toEqual([["status", "in_progress"]]);
@@ -295,12 +337,43 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     }
   });
 
+  it("F-EX-01 F-EX-05 F-RM-03 the demo's new screens get their own shapes or say they need the app (D-833)", () => {
+    core = new DemoCore(0);
+    for (const [cmd, words] of [
+      ["checkpoints_list", "folders on your computer"],
+      ["checkpoint_create", "folders on your computer"],
+      ["prompts_create", "files in your folders"],
+      ["bestof_start", "git worktrees"],
+      ["phone_pair_begin", "part of Pro"],
+    ] as const) {
+      let error: { code?: string; message?: string } = {};
+      try {
+        core.handle(cmd, {});
+      } catch (e) {
+        error = e as typeof error;
+      }
+      expect(error.code, cmd).toBe("unavailable");
+      expect(error.message, cmd).toContain(words);
+    }
+    // An object where the screen reads an object, never the [] or null that
+    // blanked the page.
+    expect(core.handle("phone_arm_state", {})).toEqual({ armedUntil: null });
+    expect(core.handle("prompts_list", {})).toEqual({ items: [], skipped: [], excludeHidesRepo: false });
+    expect(core.handle("checkpoints_usage", {})).toEqual({ bytes: 0, folders: 0 });
+    expect(core.handle("history_search", {})).toEqual([]);
+  });
+
   it("demo the sample world: three workspaces, Claude Code, Codex and Gemini CLI panes, and the Dashboard's states", () => {
     core = new DemoCore(0);
     const workspaces = core.handle("workspace_list", {}) as WorkspaceSummary[];
     expect(workspaces.map((w) => w.name)).toEqual(["shop", "api", "docs-site"]);
     const panes = core.handle("pane_list", {}) as PaneRecord[];
-    expect(panes.filter((p) => p.kind === "agent").map((p) => p.engineId).sort()).toEqual(["claude", "codex", "gemini"]);
+    expect(
+      panes
+        .filter((p) => p.kind === "agent")
+        .map((p) => p.engineId)
+        .sort(),
+    ).toEqual(["claude", "codex", "gemini"]);
     // The Free plan's 4 live panes.
     expect(panes.length).toBeLessThanOrEqual(FREE.panes ?? 0);
     for (const w of workspaces) {
@@ -308,16 +381,24 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
       expect(layouts.length, w.name).toBe(1);
       // Each tab lists only its own panes.
       const tabPanes = core.handle("pane_list", { tabId: layouts[0]?.tab.id }) as PaneRecord[];
-      expect(tabPanes.every((p) => p.workspaceId === w.id), w.name).toBe(true);
+      expect(
+        tabPanes.every((p) => p.workspaceId === w.id),
+        w.name,
+      ).toBe(true);
     }
-    expect((core.handle("pane_list", { tabId: "tb_demo" }) as PaneRecord[]).map((p) => p.id)).toEqual(["pn_claude", "pn_codex", "pn_shell"]);
+    expect((core.handle("pane_list", { tabId: "tb_demo" }) as PaneRecord[]).map((p) => p.id)).toEqual([
+      "pn_claude",
+      "pn_codex",
+      "pn_shell",
+    ]);
     const states = new Set((core.handle("status_snapshot", {}) as DashboardItem[]).map((d) => d.status));
     for (const s of ["working", "waiting", "done"] as const) expect(states.has(s), s).toBe(true);
   });
 
   it("demo the shell answers help, ls, pwd, git status, git diff, git log, npm test and clear", () => {
     const help = run("help")?.join("\n") ?? "";
-    for (const c of ["ls", "pwd", "git status", "git diff", "git log", "npm test", "clear"]) expect(help).toContain(c);
+    for (const c of ["ls", "pwd", "git status", "git diff", "git log", "npm test", "clear"])
+      expect(help).toContain(c);
     expect(run("git diff")?.join("\n")).toContain("Don't send the login page back to itself.");
   });
 
@@ -332,7 +413,10 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
 
     const id = (c.handle("thread_create", { args: { workspaceId: "ws_demo" } }) as Thread).id;
     const seen: ThreadEvent[] = [];
-    c.handle("thread_subscribe", { threadId: id, channel: { onmessage: (e: ThreadEventEnvelope) => seen.push(e.event) } });
+    c.handle("thread_subscribe", {
+      threadId: id,
+      channel: { onmessage: (e: ThreadEventEnvelope) => seen.push(e.event) },
+    });
     c.handle("thread_update", { threadId: id, mode: "plan" });
     send(c, id, "add a coupon field to checkout");
     await until(() => seen.some((e) => e.type === "turn_end"));

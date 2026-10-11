@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { axe } from "vitest-axe";
 import { describe, expect, it, vi } from "vitest";
-import { Button, type ButtonVariant } from "./Button";
+import { Button, buttonClass, type ButtonVariant } from "./Button";
 
 const variants: ButtonVariant[] = ["primary", "secondary", "ghost", "danger", "link"];
 const states = ["default", "disabled", "loading"] as const;
@@ -45,5 +45,19 @@ describe("Button (UI_SPEC §2.1)", () => {
   it("has no axe violations", async () => {
     const { container } = render(<Button variant="primary">Continue</Button>);
     expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
+describe("buttonClass (the public site's link-buttons)", () => {
+  it("F-WB-01 gives a link the same classes as the button it imitates", () => {
+    const { container } = render(<Button variant="primary" size="lg">Go</Button>);
+    const button = container.querySelector("button")?.className ?? "";
+    expect(button.startsWith(buttonClass("primary", "lg"))).toBe(true);
+  });
+
+  it("F-WB-01 xl is 44 px tall and outline is transparent with a strong border", () => {
+    expect(buttonClass("primary", "xl")).toContain("h-11");
+    expect(buttonClass("outline", "xl")).toContain("border-border-strong");
+    expect(buttonClass("outline", "xl")).toContain("bg-transparent");
   });
 });

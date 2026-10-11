@@ -13,7 +13,11 @@ export class MockRealtime implements RealtimeProvider {
   /** Tests: what the "provider" reports per session id; unset means no report. */
   readonly usage = new Map<string, number>();
 
-  constructor(private readonly apiPublicUrl: string) {}
+  /** `mockUrl`: the dev mock socket (`scripts/mock-realtime.ts`) instead of the API's own path. */
+  constructor(
+    private readonly apiPublicUrl: string,
+    private readonly mockUrl?: string,
+  ) {}
 
   async mint(req: MintRequest): Promise<Minted> {
     this.calls.push(req);
@@ -23,9 +27,10 @@ export class MockRealtime implements RealtimeProvider {
     }
     const token = `rt_mock_${randomToken(24)}`;
     const base = this.apiPublicUrl.replace(/\/$/, "").replace(/^http/, "ws");
+    const url = this.mockUrl ?? `${base}/v1/dev/realtime`;
     return {
       token,
-      wsUrl: `${base}/v1/dev/realtime?token=${encodeURIComponent(token)}`,
+      wsUrl: `${url}?token=${encodeURIComponent(token)}`,
       providerSessionId: `mock_sess_${randomToken(9)}`,
     };
   }

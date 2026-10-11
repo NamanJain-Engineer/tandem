@@ -245,9 +245,10 @@ describe("command registry (F-SH-09)", () => {
       // Plan-gated commands where the plan has them (absent otherwise:
       // features/tasks/hosted.test.tsx).
       const routines = spec.enabledWhen === "routines";
+      const conductor = spec.enabledWhen === "conductor";
       act(() => {
         useSession.setState({
-          entitlement: { ...FREE_VIEW, limits: { ...FREE_VIEW.limits, routines } },
+          entitlement: { ...FREE_VIEW, limits: { ...FREE_VIEW.limits, routines, conductor } },
         });
         useThreads.setState({ selectedId: inThread ? "thr_open" : null });
         useUi.setState({

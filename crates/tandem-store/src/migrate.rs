@@ -6,8 +6,10 @@ use rusqlite::Connection;
 
 use crate::StoreError;
 
-pub const MIGRATIONS: &[(&str, &str)] =
-    &[("0001_init", include_str!("../migrations/0001_init.sql"))];
+pub const MIGRATIONS: &[(&str, &str)] = &[
+    ("0001_init", include_str!("../migrations/0001_init.sql")),
+    ("0002_extras", include_str!("../migrations/0002_extras.sql")),
+];
 
 pub const KEEP_BACKUPS: usize = 3;
 

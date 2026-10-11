@@ -3,6 +3,7 @@ import { z } from "zod";
 import { grantBody, refundBody } from "../routes/admin";
 import { draftBody, rewriteBody, titleBody } from "../routes/ai";
 import { autoNextBody } from "../routes/auto";
+import { createPairingBody } from "../services/pairings";
 import { actBody, resolveBody, settleBody, voiceSessionBody } from "../routes/voice";
 import { acceptBody, createOrgBody, inviteBody, memberBody, seatsBody } from "../routes/orgs";
 import { clientAuditBody, policySchema } from "../services/orgs";
@@ -306,6 +307,29 @@ export const ROUTES: RouteDoc[] = [
       engine: z.string(),
       plugins: z.array(z.string()),
     }),
+  },
+  {
+    method: "post",
+    path: "/v1/pairings",
+    summary: "Register a phone pairing: a token for the phone and the relay URL (Pro)",
+    auth: "bearer",
+    body: createPairingBody,
+    response: z.object({ pairing_token: z.string(), relay_url: z.string(), expires_at: z.string() }),
+  },
+  {
+    method: "delete",
+    path: "/v1/pairings/{id}",
+    summary: "Revoke a phone pairing; the relay drops both sockets",
+    auth: "bearer",
+    status: 204,
+  },
+  {
+    method: "get",
+    path: "/v1/relay/{pairing_id}",
+    summary:
+      "Phone relay WebSocket: the desktop (bearer) or the phone (Sec-WebSocket-Protocol tandem-pair.<token>); opaque binary frames up to 64 KB, 1009 when larger, 1008 when refused",
+    auth: "bearer",
+    status: 101,
   },
   {
     method: "post",

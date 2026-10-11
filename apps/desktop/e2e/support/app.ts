@@ -278,6 +278,9 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
     await invoke("thread_archive", { threadId: th.id, archived: true });
     await invoke("thread_delete", { threadId: th.id });
   }
+  // Command history outlives specs too (F-EX-02): a command one spec's
+  // shell ran must not show in another's recall.
+  await invoke("history_clear");
   // Routines outlive specs too (M11): they go, with the background runner
   // and the global pause.
   for (const v of await invoke<Array<{ routine: { id: string } }>>("routines_list")) {
@@ -489,6 +492,29 @@ export async function settled(): Promise<void> {
   );
 }
 
+/** Picks a tile in the open pane picker. Under load WebKitWebDriver has
+ * dropped a click on a dialog that had just opened (D-52), in every spec that
+ * clicked a picker tile directly (D-830). Tiles are disabled while a pick
+ * runs, so one more click can only start a pick that never started. */
+export async function pickTile(tile: string): Promise<void> {
+  const selector = `[data-testid="pane-picker"] [data-testid="tile-${tile}"]`;
+  await $(selector).waitForClickable({ timeout: 10_000 });
+  await settled();
+  await $(selector).click();
+  const closed = await browser
+    .waitUntil(async () => !(await $('[data-testid="pane-picker"]').isExisting()), { timeout: 2_000 })
+    .catch(() => false);
+  if (
+    !closed &&
+    (await $(selector)
+      .isEnabled()
+      .catch(() => false))
+  ) {
+    console.warn(`pickTile: the ${tile} tile click didn't register; clicking again`);
+    await $(selector).click();
+  }
+}
+
 /** Splits the focused pane (Mod+D or Mod+Shift+D) and picks a tile. */
 export async function split(direction: "right" | "down", tile = "shell"): Promise<string> {
   const before = await paneIds();
@@ -508,24 +534,12 @@ export async function split(direction: "right" | "down", tile = "shell"): Promis
       }),
     );
   }, direction);
-  await $(`[data-testid="tile-${tile}"]`).waitForClickable({ timeout: 10_000 });
-  await settled();
-  await $(`[data-testid="tile-${tile}"]`).click();
-  // Under load WebKitWebDriver has dropped a click on a dialog that had just
-  // opened (D-52). Tiles are disabled while a pick runs, so one more click
-  // can only start a pick that never started.
-  const closed = await browser
-    .waitUntil(async () => !(await $('[data-testid="pane-picker"]').isExisting()), { timeout: 2_000 })
-    .catch(() => false);
-  if (
-    !closed &&
-    (await $(`[data-testid="tile-${tile}"]`)
-      .isEnabled()
-      .catch(() => false))
-  ) {
-    console.warn(`split: the ${tile} tile click didn't register; clicking again`);
-    await $(`[data-testid="tile-${tile}"]`).click();
-  }
+  // Where the picker opened, for the failure message below.
+  await $('[data-testid="pane-picker"]').waitForExist({ timeout: 10_000 });
+  const opened = (await browser.execute(
+    () => (window as unknown as { __tandemTest?: { debug: () => { picker?: unknown } } }).__tandemTest?.debug().picker,
+  )) as { tabId?: string } | null | undefined;
+  await pickTile(tile);
   let added = "";
   // Toasts expire before the timeout; keep any seen while waiting.
   const seen = new Set<string>();
@@ -548,7 +562,15 @@ export async function split(direction: "right" | "down", tile = "shell"): Promis
       const state = await browser.execute(() =>
         (window as unknown as { __tandemTest?: { debug: () => unknown } }).__tandemTest?.debug(),
       );
-      throw new Error(`the split didn't add a pane: ${JSON.stringify({ toasts: [...seen], state })}`);
+      // Whether the core made the pane, in the tab the picker opened for.
+      const inCore = opened?.tabId
+        ? await invoke<Array<{ id: string }>>("pane_list", { tabId: opened.tabId })
+            .then((panes) => panes.map((p) => p.id))
+            .catch((e: unknown) => String(e))
+        : null;
+      throw new Error(
+        `the split didn't add a pane: ${JSON.stringify({ toasts: [...seen], pickerOpened: opened ?? null, inCore, state })}`,
+      );
     });
   await waitForShell(added);
   return added;

@@ -336,7 +336,7 @@ describe("public site", () => {
     expect(header("Permissions-Policy")).toContain("microphone=()");
   });
 
-  it("F-WB-01 Vercel's ignore step builds main, product-m0-m5 and release-* only, and builds when the last deployed commit isn't in its shallow clone (D-809)", () => {
+  it("F-WB-01 Vercel's ignore step builds main only (D-829), and builds when the last deployed commit isn't in its shallow clone (D-809)", () => {
     const web = join(import.meta.dirname, "..");
     const config = JSON.parse(readFileSync(join(web, "vercel.json"), "utf8")) as Record<string, unknown>;
     // Vercel rejects a vercel.json whose commands are over 256 characters.
@@ -351,8 +351,9 @@ describe("public site", () => {
         env: { ...process.env, VERCEL_GIT_COMMIT_REF: ref, VERCEL_GIT_PREVIOUS_SHA: previous },
       }).status;
     expect(step("m10-teammates-gateway")).toBe(0);
-    expect(step("product-m0-m5")).toBe(1);
-    expect(step("release-0.3.0")).toBe(1);
+    // No previews since D-829: the integration and release branches are skipped too.
+    expect(step("product-m0-m5")).toBe(0);
+    expect(step("release-0.3.0")).toBe(0);
     // A commit Vercel's clone doesn't have builds instead of failing on "bad object".
     expect(step("main", "0123456789abcdef0123456789abcdef01234567")).toBe(1);
     const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: web, encoding: "utf8" }).stdout.trim();

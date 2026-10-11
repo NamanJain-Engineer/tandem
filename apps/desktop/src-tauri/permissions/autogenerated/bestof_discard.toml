@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-bestof-discard"
+description = "Enables the bestof_discard command without any pre-configured scope."
+commands.allow = ["bestof_discard"]
+
+[[permission]]
+identifier = "deny-bestof-discard"
+description = "Denies the bestof_discard command without any pre-configured scope."
+commands.deny = ["bestof_discard"]

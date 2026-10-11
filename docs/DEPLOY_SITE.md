@@ -5,13 +5,13 @@ The public site is the static export of `apps/web` (D-102): Home, About, Privacy
 Vercel deploys it from `main`. Every push to `main` that changes `apps/web`, `packages/ui`, `packages/protocol`, the desktop interface (`apps/desktop/src`, `demo.html`, `vite.demo.config.ts`, `package.json`) or `pnpm-lock.yaml` updates the live site. Other pushes are skipped by `apps/web/scripts/vercel-ignore.sh`, which `vercel.json` runs as its `ignoreCommand` (Vercel caps the command itself at 256 characters).
 
 **Which branches build.**
-- Production builds `main`.
-- Preview deployments are built only for `product-m0-m5` and `release-*` branches, the ones whose site someone checks before a release.
-- Pushes to any other branch are skipped. Vercel lists them as "Canceled" with the message "Only main, product-m0-m5 and release-* deploy". Each feature branch's site is checked by its local gate instead.
+- Only `main` creates deployments: `git.deploymentEnabled` in `vercel.json` turns every other branch off (D-829). Vercel's plan caps deployments per day, so the site goes out once per release, with everything merged since the last one.
+- There are no preview deployments. A release's site is checked locally before it's merged into `main`: `build:site`, `test:site`, Lighthouse and the demo walkthrough (`docs/OPERATING.md` §6–7). Each feature branch's site is checked by its local gate.
+- On `main`, the ignore step still skips a push that changes nothing the site uses.
 
 **Why the rule is written as it is.**
 - Vercel clones only the last few commits. When the commit of the last deployment isn't in that clone (after a large merge), the rule builds instead of letting `git diff` fail with "bad object".
-- Many parallel branches would otherwise also use up the plan's daily deployment allowance.
+- Before D-829, branch pushes from many parallel sessions used up the plan's daily deployment allowance, and the 0.5.0 production deploy was refused.
 
 **Node.** `apps/web/package.json` pins Node 22 (`engines`), which overrides the project's Node setting. The demo's Vite build needs Node 20.19+ or 22.12+.
 

@@ -4,6 +4,7 @@ import type { IpcError } from "@tandem/protocol";
 import { t } from "../../i18n";
 import { listen } from "../../ipc/events";
 import { invoke } from "../../ipc/invoke";
+import { inCall, useConductor } from "../../stores/conductor";
 import { useDictate } from "../../stores/dictate";
 
 /** A press longer than this on the mic is press-and-hold; shorter is a click. */
@@ -24,6 +25,7 @@ export function useComposerDictation(
 ): { dictation: ComposerDictation; onFocusChange: (focused: boolean) => void } {
   const take = useDictate((s) => s.take);
   const level = useDictate((s) => s.level);
+  const callOn = useConductor((s) => inCall(s.view));
   const focused = useRef(false);
   const mine = take?.composer === targetId;
   const state: ComposerDictation["state"] =
@@ -58,8 +60,8 @@ export function useComposerDictation(
     dictation: {
       state,
       level: mine ? level : 0,
-      // Conductor (M16) owning the mic disables it; nothing else does.
-      disabledReason: undefined,
+      // A Conductor call owning the mic disables it; nothing else does (F-CN-08).
+      disabledReason: callOn ? t("dictate.toast.conductor_listening") : undefined,
       listeningPlaceholder: t("dictate.composer.listening"),
       listeningLabel: t("dictate.ring.listening"),
       transcribingLabel: t("dictate.ring.transcribing"),

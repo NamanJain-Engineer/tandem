@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use tandem_core::origin::LocalReview;
 
 use crate::cli::{Git, Mode};
-use crate::exclude::{ensure_excluded, TANDEM_DIR_LINE};
+use crate::exclude::ensure_tandem_excluded;
 use crate::repo::{path_string, Repo};
 use crate::slug::{dedupe, slugify};
 use crate::types::{MergeReport, StaleLane};
@@ -95,7 +95,7 @@ impl LaneManager {
         taken.extend(also_taken.iter().cloned());
         let slug = dedupe(&slugify(slug_source), &taken);
         let branch = format!("{BRANCH_PREFIX}{slug}");
-        ensure_excluded(repo.common_dir(), TANDEM_DIR_LINE)?;
+        ensure_tandem_excluded(repo.common_dir())?;
         let dir = repo.main_root().join(WORKTREES_DIR);
         std::fs::create_dir_all(&dir)?;
         let path = dir.join(&slug);
