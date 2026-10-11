@@ -25,6 +25,7 @@ use crate::services::{lanes, launch};
 use crate::state::AppState;
 
 pub const NOT_A_REPO: &str = "Best of N needs a git repository";
+pub const LOCAL_ONLY: &str = "Best of N works in folders on this computer only";
 pub const SEATS: &str = "Choose 2 or 3 agents";
 pub const NO_CHECK: &str = "Add a check command first";
 /// A check stops after this long.
@@ -108,6 +109,9 @@ pub async fn start(
         return Err(invalid(SEATS));
     }
     let ws = workspaces::get(&state.store, workspace).await?;
+    if ws.kind != "local" {
+        return Err(IpcError::new(ErrorCode::Unavailable, LOCAL_ONLY).with_stage("bestof"));
+    }
     let repo = Repo::discover(Path::new(&ws.root))
         .ok()
         .flatten()
@@ -885,6 +889,33 @@ mod tests {
             .await
             .expect_err("no git");
         assert_eq!(err.message, NOT_A_REPO);
+        // A folder on an SSH host or in WSL is refused before anything
+        // starts, even when the same path is a repository here.
+        for kind in ["ssh", "wsl"] {
+            let dir = tmp.path().join(kind);
+            std::fs::create_dir_all(&dir).expect("mkdir");
+            git(&dir, &["init", "-q", "-b", "main"]);
+            let (remote, _) = workspaces::add(
+                &state.store,
+                NewWorkspace {
+                    kind: kind.into(),
+                    host_id: "local".into(),
+                    root: dir.display().to_string(),
+                    name: kind.into(),
+                    wsl_distro: None,
+                },
+                None,
+            )
+            .await
+            .expect("ws");
+            let err = start(&state, &remote.id, "do it", &seats, None)
+                .await
+                .expect_err("remote");
+            assert_eq!(
+                (err.code, err.message.as_str()),
+                (ErrorCode::Unavailable, LOCAL_ONLY)
+            );
+        }
         let err = start(&state, &ws.id, "do it", &seats[..1], None)
             .await
             .expect_err("one seat");
