@@ -256,6 +256,11 @@ macro_rules! app_commands {
             commands::data_controls::data_export,
             commands::data_controls::data_delete_local,
             commands::find_work::find_work,
+            commands::conductor_persona::conductor_memory_get,
+            commands::conductor_persona::conductor_memory_save,
+            commands::conductor_persona::conductor_memory_clear,
+            commands::conductor_persona::conductor_memory_resolve,
+            commands::conductor_persona::conductor_wake_status,
             commands::terminal::term_last_output,
             commands::terminal::term_stage_clipboard_image,
             commands::terminal::pty_type_prompt,
@@ -714,8 +719,30 @@ fn setup_dictate(app: &tauri::App, state: &AppState) {
         ));
     }
     let dictate = state.dictate.clone();
+    // "Hey Conductor" (F-CN-07): the bundled model ships as a resource; dev
+    // builds read it from the source tree.
+    let model_dir = app
+        .path()
+        .resource_dir()
+        .map(|d| d.join("models/wake"))
+        .ok()
+        .filter(|d| d.is_dir())
+        .unwrap_or_else(tandem_voice::wake::source_model_dir);
+    let wake = services::wake::WakeService::new(
+        state.store.clone(),
+        state.mic.clone(),
+        model_dir,
+        tandem_voice::wake::process::sidecar(),
+    );
+    let wake_app = app.handle().clone();
+    wake.set_emitter(std::sync::Arc::new(move |s| {
+        let _ = wake_app.emit_to("main", "conductor:wake-state", s);
+    }));
+    let _ = state.wake.set(wake.clone());
     tauri::async_runtime::spawn(async move {
         dictate.start().await;
+        let prefs = dictate.mic_prefs().await;
+        wake.start(dictate, prefs).await;
     });
 }
 

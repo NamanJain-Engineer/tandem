@@ -18,30 +18,33 @@ mkdir -p "$out"
 build() {
   (cd "$root" && cargo build --release -p tandem-tasks --bin tandem-tasks --target "$1")
   (cd "$root" && cargo build --release -p tandem-engines --bin tandem-hook --target "$1")
+  # The wake-phrase keyword spotter (F-CN-07) runs beside the app.
+  (cd "$root" && cargo build --release -p tandem-voice --features kws --bin tandem-wake --target "$1")
+}
+
+# Copies one built sidecar into binaries/ under Tauri's name.
+place() {
+  name=$1
+  case "$target" in
+    universal-apple-darwin)
+      lipo -create \
+        "$root/target/aarch64-apple-darwin/release/$name" \
+        "$root/target/x86_64-apple-darwin/release/$name" \
+        -output "$out/$name-$target"
+      ;;
+    *windows*) cp "$root/target/$target/release/$name.exe" "$out/$name-$target.exe" ;;
+    *) cp "$root/target/$target/release/$name" "$out/$name-$target" ;;
+  esac
 }
 
 case "$target" in
   universal-apple-darwin)
     build aarch64-apple-darwin
     build x86_64-apple-darwin
-    for bin in tandem-tasks tandem-hook; do
-      lipo -create \
-        "$root/target/aarch64-apple-darwin/release/$bin" \
-        "$root/target/x86_64-apple-darwin/release/$bin" \
-        -output "$out/$bin-$target"
-    done
     ;;
-  *windows*)
-    build "$target"
-    for bin in tandem-tasks tandem-hook; do
-      cp "$root/target/$target/release/$bin.exe" "$out/$bin-$target.exe"
-    done
-    ;;
-  *)
-    build "$target"
-    for bin in tandem-tasks tandem-hook; do
-      cp "$root/target/$target/release/$bin" "$out/$bin-$target"
-    done
-    ;;
+  *) build "$target" ;;
 esac
+place tandem-tasks
+place tandem-hook
+place tandem-wake
 echo "sidecars: $out"

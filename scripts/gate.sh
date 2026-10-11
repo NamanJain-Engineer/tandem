@@ -5,6 +5,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export TANDEM_FAKE_KEYCHAIN=1
+# The wake phrase links sherpa-onnx (F-CN-07); use a pre-fetched archive when
+# there is one (scripts/fetch-sherpa.sh).
+if [ -z "${SHERPA_ONNX_ARCHIVE_DIR:-}" ] && ls "$HOME"/.cache/sherpa-onnx/sherpa-onnx-v*.tar.bz2 >/dev/null 2>&1; then
+  export SHERPA_ONNX_ARCHIVE_DIR="$HOME/.cache/sherpa-onnx"
+fi
 pnpm -r lint
 pnpm -r test
 cargo test --workspace

@@ -211,6 +211,7 @@ pub enum SettingKey { Theme, TerminalsMatchTheme, Language, AutoSaveFiles, Launc
     DictateSounds, DictatePauseMedia, DictateOutput, DictateAutoEnhance, DictateFormatting,
     DictateShareHints, ConductorName, ConductorVoice, ConductorTone, ConductorVerbosity,
     ConductorSpeed, ConductorAboutYou, ConductorMemory, ConductorReflection, ConductorWake,
+    ConductorWakeSensitivity, ConductorWakePauseVideos,
     ConductorFloatingRing, TelemetryUsage, TelemetryCrash, AutoConsent, AutoDontAsk, SendKey,
     ReduceMotion, LastMode, SettingsLastPage, OnboardingStep, OfflineStartedAt, RailWidth }
 pub struct SettingsSchema;                     // table-driven: key → (default JSON, validator, page, anchor)
@@ -856,7 +857,9 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `conductor_call_delete` | `{callId}` | — | — |
 | `test_conductor_clock` (debug, `TANDEM_E2E=1`) | `{advanceMs}` | the call clock's offset (ms) | PermissionDenied |
 | `test_conductor_inject` (debug, `TANDEM_E2E=1`) | `{calls: [{id, name, args}]}` | `bool` (false without a call): doer tool calls run through the executor | PermissionDenied |
-| `conductor_memory_get` / `conductor_memory_resolve` | — / `{proposalIds, keep}` | `ConductorMemory` / — | Invalid (credential) |
+| `conductor_memory_get` / `conductor_memory_resolve` | — / `{proposalIds, keep}` | `ConductorMemory` / `ConductorMemory` | Invalid (credential) |
+| `conductor_memory_save` / `conductor_memory_clear` | `{text}` / — | `ConductorMemory` | Invalid (credential), Unavailable (memory off; clearing is always allowed) |
+| `conductor_wake_status` | — | `WakeStatus {state: WakeState, unavailable?: WakeUnavailable}` | Unavailable (still starting) |
 | `find_work` | `{query}` | `[FindMatch {source, label, score, lastActivity}]` | — |
 
 #### Remote [F-RM-*]
@@ -974,6 +977,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `conductor:level` | `number` 0–1, ≤10 Hz, only during a call | CallController | F-CN-04 |
 | `conductor:ui-action` | `{action, args}` (navigation-only tools: `switch_mode`, `open_settings`, `toggle_sidebar`, `open_sidebar_tab`, `open_launch_wizard`, `open_routines`, `dismiss`, `tidy`, `flip`, and a confirmed `close_pane`) | ActionRegistry | F-CN-02 |
 | `conductor:confirm-request` | `QuestionView {requestId, tool, summary, verb, review:"voice_or_screen"\|"screen_only"}` | ActionRegistry | F-CN-03 |
+| `conductor:wake-state` | `WakeStatus` (to `main`) | WakeService | F-CN-07 |
 | `remote:ssh` | `SshProgress {opId, hostId, stage: "resolving"\|"hostkey"\|"password"\|"connecting"\|"installing"\|"starting"\|"connected"\|"failed", prompt?: {kind:"hostkey", host, fingerprint, keyType} \| {kind:"password", label}, error?}` | ssh service | F-RM-01 |
 | `remote:host` | `{hostId, state:"connected"\|"connecting"\|"reconnecting"\|"down"}` | ssh service | F-RM-01 |
 | `remote:phone` | `{pairingId, event:"paired"\|"connected"\|"disconnected"\|"command"\|"queued"\|"changed"\|"revoked"\|"armed"}` (`pairingId` null for `armed`) | phone service | F-RM-03 |
@@ -2152,8 +2156,8 @@ Plugin count limit: Free = 1 connection (§3.2), enforced at connect.
 - **ActionRegistry:** generated from `tandem_core::commands::registry()` entries that have `voice: Some(VoiceToolSpec)` plus voice-only tools (F-CN-02 table). Each entry maps to a Rust service call or to a `conductor:ui-action` (navigation-only). A test asserts every doer tool maps to a registry command (AC1). Rules: `set_setting` only for the closed list (AC2); `prompt_pane` refuses waiting panes (F-CN-03 AC1); `read_pane`/`read_thread` output passes the redactor (AC4); `run_command_in_shell`, `execute_task`, `create_teammate`, `close_pane` on working agents require `conductor:confirm-request` answered by an on-screen click (`conductor_confirm`) (AC3); forced lane removal, enabling Full, plugin spend/destructive approvals are **absent** from the registry. Voice approvals resolve only the approval id named in the confirm request (F-CN-03 AC2).
 - **End:** hang-up, sign-out, mic failure, `max_seconds`, 402 → stop audio, cancel pending actions (a `CancellationToken` shared by every in-flight action; delayed actions check it before executing, F-CN-01 AC2), `POST /v1/voice/session/{id}/settle {seconds}`.
 - **Find work:** local candidates (panes: human name, title, engine, last 20 redacted lines; threads: title, last message; teammates) → `POST /v1/voice/resolve` → ranked ids; on failure, or with the hosted ranking off (Settings › Privacy `find_work_hosted`, off by default, D-1302), the local ranking over the same text (F-CN-05). The local ranking is `tandem_core::find_work` (stems, same-meaning terms and a typo; D-814), not `nucleo-matcher`: its subsequence matching suits typed abbreviations, not descriptions. The palette's "Find work…" (`work.find`) runs the same search through `find_work`.
-- **Persona/memory:** `$DATA/conductor/memory.md` written only when memory is on; credential-shaped facts refused (F-CN-06).
-- **Wake phrase:** `WakeDetector` trait; implementation with `sherpa-onnx` KWS (bundled small model under `models/wake/`) behind a feature flag `wake`; disabled when the false-accept benchmark fails; paused while Dictate/a call owns the mic, while Bluetooth output is active, or on "Pause while watching videos" (F-CN-07).
+- **Persona/memory:** `$DATA/conductor/memory.md` written only when memory is on; credential-shaped facts refused (F-CN-06). A call reads persona and memory once at start with `ConductorPersona::call_context()` → `CallContext {persona, memory?, memoryEnabled}`; `CallContext::instructions()` renders the persona part of the talker instructions. Voice tools use `remember` / `recall` / `forget`; post-call reflection uses `reflect` (Ask → proposal cards in `conductor/proposals.json`, Auto → saved, Off). A short call journal goes to `conductor/journal/<date>.md` only while memory is on.
+- **Wake phrase:** `WakeDetector` trait; implementation with `sherpa-onnx` KWS (bundled 3.3M zipformer, int8, under `crates/tandem-voice/models/wake/`, shipped as the `models/wake/` resource) behind the `tandem-voice` feature `kws`; unavailable when `models/wake/benchmark.json` records a failed false-accept benchmark; paused while Dictate/a call owns the mic (`tandem_voice::mic_owner::MicOwners`, plus a recording Dictate take), while media plays on a Bluetooth output, or on "Pause while watching videos" (F-CN-07). The listener never claims the mic and opens it through the DI-03 policy (`devices::choose` over the Dictate mic setting). When it hears the phrase, `WakeService` calls the Conductor's entry point through `CallStarter::start_call_from_wake` (= `conductor_start_call {wake: true}`).
 - **Audio routing:** calls use the Dictate device policy (never opens a Bluetooth mic on its own); output device = system default (F-CN-08).
 
 ---

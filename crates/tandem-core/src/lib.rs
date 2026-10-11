@@ -10,6 +10,7 @@ pub mod atomic;
 pub mod bus;
 pub mod clock;
 pub mod commands;
+pub mod conductor_persona;
 pub mod contain;
 pub mod diagnostics;
 pub mod entitlement;

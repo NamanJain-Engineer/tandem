@@ -9,6 +9,7 @@ pub mod bestof;
 pub mod browser;
 pub mod checkpoints;
 pub mod conductor;
+pub mod conductor_persona;
 pub mod data_controls;
 pub mod dictate;
 pub mod engines;
