@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import shortcuts from "@tandem/protocol/shortcuts.json";
 import settings from "@tandem/protocol/settings.json";
 import en from "../../../desktop/src/i18n/en.json";
+import { DocsFooter } from "../../components/docs/DocsFooter";
 import { DOCS_COMPONENTS, DOCS_SETTINGS_PAGES, NO_SHORTCUT } from "../../components/docs/Generated";
 import { LIMITS } from "@tandem/protocol/plans";
 import { DOCS_PAGES } from "../../lib/docs/pages";
@@ -92,7 +93,8 @@ describe("docs (F-WB-02)", () => {
     ) as {
       pages: string[];
     };
-    expect(meta.pages).toEqual(DOCS_PAGES.map((p) => p.slug || "index"));
+    // Group labels ("---Modes---") are separators, not pages (D-1812).
+    expect(meta.pages.filter((p) => !p.startsWith("---"))).toEqual(DOCS_PAGES.map((p) => p.slug || "index"));
   });
 
   it("F-WB-02 pages for features not in the release say so", () => {
@@ -103,5 +105,14 @@ describe("docs (F-WB-02)", () => {
       expect(readFileSync(content(slug), "utf8"), slug).not.toContain("Not in the app yet");
     // Routines are in the app but run only on Pro, which this download can't have.
     expect(readFileSync(content("routines"), "utf8")).toContain("**Part of Pro.**");
+  });
+
+  it("F-WB-02 every docs page has the legal links and contact (D-1812)", () => {
+    const h = html(<DocsFooter />);
+    for (const href of ["/privacy/", "/terms/", "/security/", "/about/"]) expect(h, href).toContain(`href="${href}"`);
+    expect(h).toContain("hello@vibezeo.com");
+    expect(h).not.toMatch(/\b(19|20)\d{2}\b/);
+    const page = readFileSync(join(import.meta.dirname, "[[...slug]]/page.site.tsx"), "utf8");
+    expect(page).toContain("<DocsFooter />");
   });
 });

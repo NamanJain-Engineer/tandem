@@ -79,5 +79,8 @@ describe("early-access builds (D-105)", () => {
     );
     expect(screen.getByTestId("upgrade-early-access")).toBeTruthy();
     expect((screen.getByTestId("upgrade-pro") as HTMLButtonElement).disabled).toBe(true);
+    // No sign-in exists here, so neither plan says to sign in (D-833).
+    expect(screen.getAllByText("Comes with Vibezeo accounts")).toHaveLength(2);
+    expect(screen.queryByText("Sign in to upgrade")).toBeNull();
   });
 });

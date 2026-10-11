@@ -189,7 +189,7 @@ describe("Changes view (F-CD-20)", () => {
     remoteHost = null;
   });
 
-  it("F-RM-01 a remote folder's branch chip says push and pull run on the host", async () => {
+  it("F-RM-01 a remote folder's branch menu pushes, pulls and switches like a local one (D-1601)", async () => {
     remoteHost = "Build box";
     const repo: Repo = {
       branch: "main",
@@ -204,12 +204,11 @@ describe("Changes view (F-CD-20)", () => {
     await showChanges();
     await waitFor(() => expect(chip().dataset.branch).toBe("main"));
     fireEvent.keyDown(chip(), { key: "Enter" });
-    const item = await screen.findByRole("menuitem", {
-      name: "Push, pull and branches: run git in a terminal on Build box",
-    });
-    expect(item.getAttribute("aria-disabled")).toBe("true");
-    expect(screen.queryByRole("menuitem", { name: /^Push$/ })).toBeNull();
-    expect(count(calls, "git_branches")).toBe(0);
+    expect(await screen.findByRole("menuitem", { name: "Pull" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Push" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /run git in a terminal/ })).toBeNull();
+    // The host's branches are asked for, as for a local folder.
+    await waitFor(() => expect(count(calls, "git_branches")).toBe(1));
   });
 
   it("F-CD-20.2 stage, commit and push: the branch chip comes back to 0/0", async () => {

@@ -1,0 +1,110 @@
+// The public site's layer (site.css, D-1801): its OS light theme must be the
+// app's light theme exactly, and every colour pair the site draws must pass
+// WCAG 2.2 AA in both themes (§5.4, extended to the site's own surfaces).
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const tokens = readFileSync(join(import.meta.dirname, "tokens.css"), "utf8");
+const site = readFileSync(join(import.meta.dirname, "site.css"), "utf8");
+
+type Rgba = [number, number, number, number];
+
+function vars(css: string, selector: string, from = 0): Map<string, string> {
+  const start = css.indexOf(selector, from);
+  if (start < 0) throw new Error(`no ${selector} block`);
+  const body = css.slice(css.indexOf("{", start) + 1, css.indexOf("}", start));
+  const out = new Map<string, string>();
+  for (const m of body.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/(--[\w-]+):\s*([^;]+);/g))
+    out.set(m[1] as string, (m[2] as string).trim());
+  return out;
+}
+
+const palette = vars(tokens, ":root {");
+const appDark = vars(tokens, ':root, [data-theme="dark"]');
+const appLight = vars(tokens, '[data-theme="light"]');
+const LIGHT_SELECTOR = ':root:not([data-theme="dark"]) {';
+const siteLightTn = vars(site, LIGHT_SELECTOR);
+const siteRoot = vars(site, "/* ---------- 2.");
+const siteLightSemantic = vars(site, LIGHT_SELECTOR, site.indexOf("/* ---------- 2."));
+
+const themes = {
+  dark: new Map([...appDark, ...siteRoot]),
+  light: new Map([...appLight, ...siteRoot, ...siteLightSemantic]),
+};
+
+function parse(value: string, theme: Map<string, string>): Rgba {
+  const v = value.trim();
+  const ref = /^var\((--[\w-]+)\)$/.exec(v);
+  if (ref) {
+    const next = theme.get(ref[1] as string) ?? palette.get(ref[1] as string);
+    if (!next) throw new Error(`unresolved ${v}`);
+    return parse(next, theme);
+  }
+  const hex = /^#([0-9a-f]{6})$/i.exec(v);
+  if (hex) {
+    const n = parseInt(hex[1] as string, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255, 1];
+  }
+  const rgb = /^rgb\((\d+) (\d+) (\d+)(?: \/ ([\d.]+))?\)$/.exec(v);
+  if (rgb) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3]), rgb[4] ? Number(rgb[4]) : 1];
+  throw new Error(`can't parse ${v}`);
+}
+
+const over = (top: Rgba, under: Rgba): Rgba =>
+  [0, 1, 2].map((i) => (top[i] as number) * top[3] + (under[i] as number) * (1 - top[3])).concat(1) as Rgba;
+
+const luminance = ([r, g, b]: Rgba) =>
+  [r, g, b]
+    .map((c) => c / 255)
+    .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+    .reduce((sum, c, i) => sum + c * ([0.2126, 0.7152, 0.0722][i] as number), 0);
+
+function ratio(theme: Map<string, string>, fg: string, bg: string, base = "--site-page"): number {
+  const ground = over(parse(theme.get(bg) ?? bg, theme), parse(theme.get(base) ?? base, theme));
+  const ink = over(parse(theme.get(fg) ?? fg, theme), ground);
+  const [hi, lo] = [luminance(ink), luminance(ground)].sort((a, b) => b - a) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+const SURFACES = ["--site-page", "--site-raised", "--site-card"];
+const TEXT = [
+  "--tn-text",
+  "--tn-text-muted",
+  "--tn-text-subtle",
+  "--tn-accent",
+  "--site-ink-a",
+  "--site-ink-b",
+  "--tn-status-working-text",
+  "--tn-status-waiting-text",
+  "--tn-status-done-text",
+];
+
+describe("F-WB-01 site.css (D-1801)", () => {
+  it("F-WB-01 site light theme mirrors the app's light tokens", () => {
+    expect(siteLightTn.size).toBeGreaterThan(40);
+    expect(Object.fromEntries(siteLightTn)).toEqual(
+      Object.fromEntries([...appLight].map(([k, v]) => [k, v.replace(/\/\*[\s\S]*?\*\//g, "").trim()])),
+    );
+  });
+
+  for (const [name, theme] of Object.entries(themes)) {
+    it(`F-WB-01 site colour pairs meet WCAG AA in ${name}: text on every site surface`, () => {
+      const low = TEXT.flatMap((fg) =>
+        SURFACES.map((bg) => [fg, bg, ratio(theme, fg, bg)] as const).filter(([, , r]) => r < 4.5),
+      );
+      expect(low.map(([fg, bg, r]) => `${fg} on ${bg}: ${r.toFixed(2)}`)).toEqual([]);
+    });
+
+    it(`F-WB-01 site colour pairs meet WCAG AA in ${name}: buttons, the stage and the focus ring`, () => {
+      // The primary button, and captions on the always-dark product stage.
+      expect(ratio(theme, "--tn-accent-fg", "--tn-accent")).toBeGreaterThanOrEqual(4.5);
+      expect(ratio(theme, "--tn-accent-fg", "--tn-accent-hover")).toBeGreaterThanOrEqual(4.5);
+      for (const fg of ["--site-stage-fg", "--site-stage-muted", "--site-stage-accent"])
+        expect(ratio(theme, fg, "--site-stage"), fg).toBeGreaterThanOrEqual(4.5);
+      // "Tap to explore": the accent chip on the stage.
+      expect(ratio(themes.dark, "--tn-accent-fg", "--tn-accent")).toBeGreaterThanOrEqual(4.5);
+      for (const bg of SURFACES) expect(ratio(theme, "--tn-accent-ring", bg), bg).toBeGreaterThanOrEqual(3);
+    });
+  }
+});

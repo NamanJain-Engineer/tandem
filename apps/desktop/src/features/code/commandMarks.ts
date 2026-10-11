@@ -58,6 +58,15 @@ export class CommandMarks<M> {
     }
   }
 
+  /** The open prompt (no command ran from it yet) and the running command's
+   * prompt, for parking the view (§5.1): its ✓/✗ marks are the host's. */
+  state(): { prompt: M | undefined; running: M | undefined } {
+    return {
+      prompt: this.promptUsed ? undefined : this.prompt,
+      running: this.running ? this.command : undefined,
+    };
+  }
+
   /** Output arrived (idle is measured from the last of it). */
   output(): void {
     this.lastOutput = this.host.now();

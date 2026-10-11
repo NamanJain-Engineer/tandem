@@ -30,7 +30,9 @@ type Found = { query: string; result: FindWorkResult } | { query: string; error:
 function useFindWork(active: boolean) {
   const [query, setQuery] = useState("");
   const [found, setFound] = useState<Found | null>(null);
-  const hosted = useSettings((s) => s.values.find_work_hosted === true);
+  // A build without Vibezeo accounts always ranks on this computer (D-833).
+  const accounts = useSession((s) => !!s.auth?.hosted);
+  const hosted = useSettings((s) => s.values.find_work_hosted === true) && accounts;
   const q = query.trim();
   useEffect(() => {
     if (!active || !q) {
@@ -38,11 +40,14 @@ function useFindWork(active: boolean) {
       return;
     }
     let current = true;
-    const timer = setTimeout(() => {
-      invoke<FindWorkResult>("find_work", { query: q })
-        .then((result) => current && setFound({ query: q, result }))
-        .catch((e: IpcError) => current && setFound({ query: q, error: e.message }));
-    }, hosted ? FIND_HOSTED_DEBOUNCE_MS : FIND_DEBOUNCE_MS);
+    const timer = setTimeout(
+      () => {
+        invoke<FindWorkResult>("find_work", { query: q })
+          .then((result) => current && setFound({ query: q, result }))
+          .catch((e: IpcError) => current && setFound({ query: q, error: e.message }));
+      },
+      hosted ? FIND_HOSTED_DEBOUNCE_MS : FIND_DEBOUNCE_MS,
+    );
     return () => {
       current = false;
       clearTimeout(timer);
@@ -92,6 +97,7 @@ export function Palette() {
   const platform = useBoot((s) => s.boot?.platform ?? "linux");
   const mac = platform === "macos";
   const routines = useSession((s) => !!s.entitlement?.limits.routines);
+  const accounts = useSession((s) => !!s.auth?.hosted);
   // Rebound shortcuts show as soon as they change.
   useSettings((s) => s.values.shortcut_overrides);
   const item = (id: string): PaletteItem | null => {
@@ -132,7 +138,7 @@ export function Palette() {
       heading: t("palette.settings"),
       items: [
         ...listed(["settings.open"]),
-        ...settingsPages(platform, routines).map((p) => ({
+        ...settingsPages(platform, routines, accounts).map((p) => ({
           id: `settings.${p.id}`,
           label: p.label,
           icon: <Settings size={16} />,

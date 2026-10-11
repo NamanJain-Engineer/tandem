@@ -75,7 +75,7 @@ fn f_cd_03_write_reaches_the_process_and_ring_replays() {
         .attach("p2", Arc::new(VecSink::default()))
         .expect("attach");
     assert!(
-        String::from_utf8_lossy(&replay).contains("got:ping"),
+        String::from_utf8_lossy(&replay.replay).contains("got:ping"),
         "ring keeps output for reattach"
     );
 }
@@ -524,6 +524,102 @@ fn f_sh_07_quit_ends_cooperative_shells_without_waiting_for_the_deadline() {
 }
 
 #[test]
+fn f_ex_02_1_shells_report_each_command_line_with_its_exit_and_folder() {
+    let home = tempfile::tempdir().expect("home");
+    let data = tempfile::tempdir().expect("data");
+    let scripts = tandem_pty::integration::install(data.path()).expect("install");
+    let marks: Arc<std::sync::Mutex<Vec<(String, tandem_pty::Mark)>>> = Arc::default();
+    let seen = marks.clone();
+    let mgr = PtyManager::new().with_mark_sink(Arc::new(move |pane, m| {
+        seen.lock()
+            .expect("marks")
+            .push((pane.to_string(), m.clone()));
+    }));
+    let mut ran_shells = 0;
+    for shell in ["/bin/bash", "/usr/bin/zsh", "/usr/bin/fish"] {
+        let pane = format!("recall-{}", shell.rsplit('/').next().unwrap_or("x"));
+        let Some(mut s) = integrated(shell, &pane, home.path(), &scripts) else {
+            continue;
+        };
+        ran_shells += 1;
+        // No HISTCONTROL: bash keeps the space-prefixed line in its own
+        // history, and the integration still leaves it out.
+        s.env.remove("HISTCONTROL");
+        s.env.insert(
+            "HISTFILE".into(),
+            home.path().join(".hist").to_string_lossy().into_owned(),
+        );
+        let sink = Arc::new(VecSink::default());
+        mgr.spawn(s, Some(sink.clone() as Arc<dyn OutputSink>))
+            .expect("spawn");
+        let ran = |marks: &Arc<std::sync::Mutex<Vec<(String, tandem_pty::Mark)>>>,
+                   pane: &str|
+         -> Vec<tandem_pty::Ran> {
+            marks
+                .lock()
+                .map(|m| {
+                    m.iter()
+                        .filter(|(p, _)| p == pane)
+                        .filter_map(|(_, k)| {
+                            if let tandem_pty::Mark::Ran(r) = k {
+                                Some(r.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let prompt_count = |marks: &Arc<std::sync::Mutex<Vec<(String, tandem_pty::Mark)>>>,
+                            pane: &str| {
+            marks
+                .lock()
+                .map(|m| {
+                    m.iter()
+                        .filter(|(p, k)| p == pane && *k == tandem_pty::Mark::PromptStart)
+                        .count()
+                })
+                .unwrap_or(0)
+        };
+        assert!(
+            wait_until(Duration::from_secs(10), || prompt_count(&marks, &pane) >= 1),
+            "{shell}: first prompt"
+        );
+        for (i, line) in ["echo one", "false", " echo hidden"].iter().enumerate() {
+            mgr.write(&pane, format!("{line}\r").as_bytes())
+                .expect("write");
+            assert!(
+                wait_until(Duration::from_secs(5), || prompt_count(&marks, &pane)
+                    >= i + 2),
+                "{shell}: prompt after {line}"
+            );
+        }
+        let got = ran(&marks, &pane);
+        assert_eq!(
+            got.iter()
+                .map(|r| (r.command.as_str(), r.exit))
+                .collect::<Vec<_>>(),
+            [("echo one", Some(0)), ("false", Some(1))],
+            "{shell}"
+        );
+        let home_canon = std::fs::canonicalize(home.path()).expect("canon");
+        for r in &got {
+            assert_eq!(
+                r.cwd.as_deref().map(std::path::Path::new),
+                Some(home_canon.as_path()),
+                "{shell}"
+            );
+            assert!(r.duration_ms.is_some() && r.started_at > 0, "{shell}");
+        }
+        // The command line never reaches the view.
+        assert!(!text(&sink).contains("cmdline_url"), "{shell}");
+        mgr.kill(&pane).expect("kill");
+    }
+    assert!(ran_shells >= 1);
+}
+
+#[test]
 fn nfr_5_7_diagnostics_lists_each_terminal_with_its_spawn_time_and_queue() {
     let mgr = PtyManager::new();
     let sink = Arc::new(VecSink::default());
@@ -537,4 +633,116 @@ fn nfr_5_7_diagnostics_lists_each_terminal_with_its_spawn_time_and_queue() {
     assert!(me.spawn_ms < 5_000);
     assert!(!me.exited);
     let _ = mgr.kill("dg1");
+}
+
+#[test]
+fn nfr_5_1_an_attach_replay_and_the_frames_after_it_neither_repeat_nor_skip_a_byte() {
+    let mgr = PtyManager::new();
+    let first = Arc::new(VecSink::default());
+    // Steady output (within the ring) while the view re-attaches part-way through.
+    mgr.spawn(
+        spec(
+            "p51a",
+            "i=0; while [ $i -lt 1000 ]; do echo n$i; i=$((i+1)); done; echo END",
+        ),
+        Some(first.clone() as Arc<dyn OutputSink>),
+    )
+    .expect("spawn");
+    assert!(wait_until(Duration::from_secs(5), || text(&first).contains("n200")));
+    let second = Arc::new(VecSink::default());
+    let attached = mgr
+        .attach("p51a", second.clone() as Arc<dyn OutputSink>)
+        .expect("attach");
+    assert!(wait_until(Duration::from_secs(10), || text(&second)
+        .contains("END")
+        || String::from_utf8_lossy(&attached.replay).contains("END")));
+    let mut all = attached.replay.clone();
+    all.extend(second.data());
+    let all = String::from_utf8_lossy(&all).replace('\r', "");
+    let expected: String = (0..1000).map(|i| format!("n{i}\n")).collect::<String>() + "END\n";
+    assert_eq!(all, expected);
+    assert_eq!(
+        attached.end as usize,
+        attached.replay.len(),
+        "nothing trimmed yet: the replay starts at 0"
+    );
+}
+
+#[test]
+fn nfr_5_1_a_parked_pane_runs_on_without_its_view_and_replays_base_then_what_followed() {
+    let mgr = PtyManager::new();
+    let view = Arc::new(VecSink::default());
+    mgr.spawn(
+        spec("p51b", "echo before; read go; i=0; while [ $i -lt 800 ]; do echo after$i; i=$((i+1)); done; echo DONE; read wait"),
+        Some(view.clone() as Arc<dyn OutputSink>),
+    )
+    .expect("spawn");
+    assert!(wait_until(Duration::from_secs(5), || text(&view).contains("before")));
+    // The view parsed everything it was sent; it parks with that position.
+    let at = view.data().len() as u64;
+    let parked = mgr
+        .park(
+            "p51b",
+            at,
+            vec![b"BASE LINE\r\n".to_vec(), b"\x1b[1;1H".to_vec()],
+        )
+        .expect("park");
+    assert!(parked);
+    let sent = view.frames.lock().map(|f| f.len()).unwrap_or(0);
+    mgr.write("p51b", b"go\r").expect("write");
+    let ring_has = |needle: &str| {
+        String::from_utf8_lossy(&mgr.tail("p51b", 5).unwrap_or_default()).contains(needle)
+    };
+    assert!(
+        wait_until(Duration::from_secs(10), || ring_has("DONE")),
+        "the program ran on"
+    );
+    assert_eq!(
+        view.frames.lock().map(|f| f.len()).unwrap_or(0),
+        sent,
+        "nothing more went to the parked view"
+    );
+    let shown = Arc::new(VecSink::default());
+    let attached = mgr
+        .attach("p51b", shown.clone() as Arc<dyn OutputSink>)
+        .expect("attach");
+    let replay = String::from_utf8_lossy(&attached.replay).replace('\r', "");
+    assert!(
+        replay.starts_with("BASE LINE\n\x1b[1;1Hgo\nafter0\n"),
+        "{}",
+        &replay[..80.min(replay.len())]
+    );
+    assert!(replay.ends_with("after799\nDONE\n"));
+    assert!(
+        !replay.contains("before"),
+        "the base stands in for what the view had"
+    );
+    let _ = mgr.kill("p51b");
+}
+
+#[test]
+fn nfr_5_1_a_parked_pane_is_never_held_back_by_its_missing_acks() {
+    let mgr = PtyManager::new();
+    let view = Arc::new(VecSink::default());
+    // 6 MB: more than the 4 MB a view may leave unacknowledged (§5.5).
+    mgr.spawn(
+        spec(
+            "p51c",
+            "read go; head -c 6000000 /dev/zero | tr '\\0' x; echo; echo DONE; read wait",
+        ),
+        Some(view.clone() as Arc<dyn OutputSink>),
+    )
+    .expect("spawn");
+    std::thread::sleep(Duration::from_millis(200));
+    let at = view.data().len() as u64;
+    assert!(mgr.park("p51c", at, vec![]).expect("park"));
+    mgr.write("p51c", b"go\r").expect("write");
+    assert!(
+        wait_until(Duration::from_secs(20), || String::from_utf8_lossy(
+            &mgr.tail("p51c", 3).unwrap_or_default()
+        )
+        .contains("DONE")),
+        "the program finished with nobody acking"
+    );
+    let _ = mgr.kill("p51c");
 }

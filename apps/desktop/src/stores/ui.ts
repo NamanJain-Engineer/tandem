@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 export type Mode = "agent" | "code" | "thread";
 export type UpgradeGate = {
-  kind: "workspaces" | "panes" | "thread_grid" | "chat_engines" | "teammates";
+  kind: "workspaces" | "panes" | "thread_grid" | "chat_engines" | "teammates" | "conductor";
   limit: number;
 };
 

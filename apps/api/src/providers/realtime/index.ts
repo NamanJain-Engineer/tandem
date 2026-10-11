@@ -17,5 +17,5 @@ export function selectRealtime(env: Env): RealtimeProvider {
       model: env.REALTIME_MODEL,
     });
   }
-  return new MockRealtime(env.API_PUBLIC_URL);
+  return new MockRealtime(env.API_PUBLIC_URL, env.REALTIME_MOCK_URL);
 }

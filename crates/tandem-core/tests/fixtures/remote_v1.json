@@ -1,0 +1,32 @@
+{
+  "inputs": {
+    "pid": "pr_01JTESTVECTOR0000000000000",
+    "desktopSecret": "qKurq6urq6urq6urq6urq6urq6urq6urq6urq6urq2s",
+    "phoneSecret": "yM3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3NzU0",
+    "s": "WlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlo",
+    "desktopEph": "EBEREREREREREREREREREREREREREREREREREREREdE",
+    "phoneEph": "ICIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIuI",
+    "random16": "fn5-fn5-fn5-fn5-fn5-fg",
+    "plaintextD2p": "{\"t\":\"welcome\",\"desktop\":\"Test desktop\"}",
+    "plaintextP2d": "{\"t\":\"cmd\",\"id\":1,\"cmd\":\"view.snapshot\",\"args\":{}}"
+  },
+  "desktopPublic": "43EthRoOXXm4McXjSrIrQaGYFx3iCbi4-sojoRxiSFk",
+  "phonePublic": "tb6oI9nJ_1dgkcVLfFlsCuKWiE8OFQKQ6IRV1_umEm8",
+  "desktopEphPublic": "e06Qm75__kTEZaIgA31gjuNYl9Me-XLwf3SJLLD3PxM",
+  "phoneEphPublic": "D6poTtKIZ7l_Smot7l34zpdOdrcBjj8iocTPJnhXDyA",
+  "helloTag": "_XdyVTUqS41nlzlSISn6qjnUfjUxlkP1RcY5YGuYEPU",
+  "hello": "AQG1vqgj2cn_V2CRxUt8WWwK4paITw4VApDohFXX-6YSb_13clU1KkuNZ5c5UiEp-qo51H41MZZD9UXGOWBrmBD1",
+  "root": "YV_909jODuDI91M_0btezJnCZGH7Ie8cMN9Kh_S0Y4U",
+  "epoch0": {
+    "d2p": "-GHfqAXpM6LKsKRLh0yBtDTOXKiSOzeEgC7pu3ARC2g",
+    "p2d": "9yiIUC1uhOzyQ52-aexnA96i97K99IE0uxcH4oUKOe0"
+  },
+  "sealedD2pCtr1": "AgEAAAAAAAAAAAAAAAABAQAAAAAAAAB-fn5-fn5-fn5-fn5-fn5-ClAMezY7TJz7QCUkcyX5CQ29bfArhyPy4YV3UuwR06rgjqmvv0VQpkapuFBBUNTV2S2U4KhfbeI",
+  "sealedP2dCtr1": "AgEAAAAAAQAAAAAAAAABAQAAAAAAAAB-fn5-fn5-fn5-fn5-fn5-Z0xCKMqvHtiHHaCwqMwBDXoNIJXGe0-h8c_cyVQAkORL6mx0fwrjXFoWkHanbuysNj22_Zv-76gPoGK0p--I8_ac",
+  "epoch1": {
+    "secret": "274Ic5YqWmCSulcmue09HyF5w5kB8a2s6frVj7MxuKI",
+    "d2p": "xNrMKDK32gWIDm52mTxm3vMPCpYmwzCPjB5ihDsAano",
+    "p2d": "WlcOxWfQHGC6q9UkhOtR9VqbNSiZjEHEIxhCxJcY6tU"
+  },
+  "sealedD2pEpoch1Ctr7": "AgEAAAABAAAAAAAAAAAHBwAAAAAAAAB-fn5-fn5-fn5-fn5-fn5-7LE3cDwRRtxhqS69lUAutZMDyG3hKDScwPzivW-QumzruQ8oF3h4ygyfz9U7qcy8ZslrApqnx0Q"
+}

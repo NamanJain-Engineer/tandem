@@ -37,13 +37,51 @@ pub enum Mark {
     PromptEnd,
     /// `133;C`: a command starts; its output follows. `skip_newline`: the
     /// shell wrote the mark before echoing the line break (PowerShell).
-    CommandStart { skip_newline: bool },
-    /// `133;D;<exit>`: the command ended.
-    CommandEnd { exit: Option<i32> },
+    /// `command`: the line the shell runs (`cmdline_url=`, F-EX-02).
+    CommandStart {
+        skip_newline: bool,
+        command: Option<String>,
+    },
+    /// `133;D;<exit>`: the command ended. PowerShell sends the command line
+    /// here instead of on `C`.
+    CommandEnd {
+        exit: Option<i32>,
+        command: Option<String>,
+    },
+    /// A command finished (from `C` and `D`, with the shell's cwd): what
+    /// command recall records (F-EX-02). Never in the stream.
+    Ran(Ran),
     /// `OSC 7`: the shell's working directory.
     Cwd(String),
     /// `OSC 7770;handback`: an agent exited and its shell took the pane back.
     Handback(i32),
+}
+
+/// One finished command, as command recall stores it (F-EX-02).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ran {
+    pub command: String,
+    pub cwd: Option<String>,
+    pub exit: Option<i32>,
+    /// Unix ms.
+    pub started_at: i64,
+    pub duration_ms: Option<i64>,
+}
+
+/// The longest command line kept (percent-encoded it's at most three times
+/// longer, inside [`MAX_MARK`]).
+pub const MAX_COMMAND: usize = 4096;
+
+/// `cmdline_url=<percent-encoded>` from a mark's parameters: one line or
+/// several, never starting with a space (the shells' "keep out of history").
+fn command_of(params: &[&str]) -> Option<String> {
+    let raw = params.iter().find_map(|p| p.strip_prefix("cmdline_url="))?;
+    let text = String::from_utf8(percent_decode(raw)?).ok()?;
+    let text = text.trim_end_matches(['\n', '\r']).to_string();
+    if text.is_empty() || text.starts_with(' ') || text.len() > MAX_COMMAND {
+        return None;
+    }
+    Some(text)
 }
 
 /// `term_last_output`: the last finished command's output (F-CD-10 AC3).
@@ -62,8 +100,8 @@ impl Mark {
             Mark::PromptStart => ("A", None),
             Mark::PromptEnd => ("B", None),
             Mark::CommandStart { .. } => ("C", None),
-            Mark::CommandEnd { exit } => ("D", *exit),
-            Mark::Cwd(_) | Mark::Handback(_) => return None,
+            Mark::CommandEnd { exit, .. } => ("D", *exit),
+            Mark::Cwd(_) | Mark::Handback(_) | Mark::Ran(_) => return None,
         };
         Some(PtyMark {
             pane_id: pane_id.to_string(),
@@ -224,19 +262,24 @@ impl MarkFilter {
                     "B" => Mark::PromptEnd,
                     "C" => Mark::CommandStart {
                         skip_newline: rest.contains(&"nl=1"),
+                        command: command_of(&rest),
                     },
                     "D" => Mark::CommandEnd {
                         exit: rest
                             .get(1)
                             .filter(|p| !p.contains('='))
                             .and_then(|p| p.parse().ok()),
+                        command: command_of(&rest),
                     },
                     _ => return,
                 };
                 // Back into the stream without the token, for the view.
                 out.extend_from_slice(b"\x1b]133;");
                 out.extend_from_slice(kind.as_bytes());
-                if let Mark::CommandEnd { exit: Some(code) } = &mark {
+                if let Mark::CommandEnd {
+                    exit: Some(code), ..
+                } = &mark
+                {
                     out.extend_from_slice(format!(";{code}").as_bytes());
                 }
                 out.push(0x07);
@@ -478,9 +521,13 @@ mod tests {
                 Mark::PromptStart,
                 Mark::PromptEnd,
                 Mark::CommandStart {
-                    skip_newline: false
+                    skip_newline: false,
+                    command: None
                 },
-                Mark::CommandEnd { exit: Some(2) },
+                Mark::CommandEnd {
+                    exit: Some(2),
+                    command: None
+                },
             ]
         );
         assert_eq!(
@@ -488,6 +535,43 @@ mod tests {
             b"\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07x\r\n\x1b]133;D;2\x07".to_vec()
         );
         assert!(!String::from_utf8_lossy(&out).contains("t0k"));
+    }
+
+    #[test]
+    fn f_ex_02_3_command_lines_come_only_with_the_token_and_never_reach_the_view() {
+        let mut f = MarkFilter::new(Some("t0k".into()));
+        let (out, marks) = run(
+            &mut f,
+            &[
+                b"\x1b]133;C;cmdline_url=echo%20%22a%22%3Bls;tandem=t0k\x07x\r\n",
+                b"\x1b]133;D;0;cmdline_url=pwsh%20line;tandem=t0k\x07",
+                // A program's own mark with a command: dropped.
+                b"\x1b]133;C;cmdline_url=rm%20-rf;tandem=nope\x07",
+                // A leading space is never recorded.
+                b"\x1b]133;C;cmdline_url=%20secret;tandem=t0k\x07",
+            ],
+        );
+        assert_eq!(
+            marks,
+            vec![
+                Mark::CommandStart {
+                    skip_newline: false,
+                    command: Some("echo \"a\";ls".into())
+                },
+                Mark::CommandEnd {
+                    exit: Some(0),
+                    command: Some("pwsh line".into())
+                },
+                Mark::CommandStart {
+                    skip_newline: false,
+                    command: None
+                },
+            ]
+        );
+        let shown = String::from_utf8_lossy(&out);
+        assert!(!shown.contains("cmdline"), "{shown}");
+        assert!(!shown.contains("echo"), "{shown}");
+        assert!(!shown.contains("t0k"), "{shown}");
     }
 
     #[test]
@@ -499,7 +583,10 @@ mod tests {
             let (out, marks) = run(&mut f2, &[&whole[..cut], &whole[cut..]]);
             assert_eq!(
                 marks,
-                vec![Mark::CommandEnd { exit: Some(0) }],
+                vec![Mark::CommandEnd {
+                    exit: Some(0),
+                    command: None
+                }],
                 "cut at {cut}"
             );
             assert_eq!(out, b"x\x1b]133;D;0\x07y".to_vec(), "cut at {cut}");

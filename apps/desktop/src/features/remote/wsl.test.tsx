@@ -45,9 +45,9 @@ describe("Settings › Remote › WSL (F-RM-02)", () => {
   it("F-RM-02 Settings › Remote names WSL and asks for distros on Windows only", async () => {
     calls = fakeBackend({ wsl_distros: () => DISTROS, ssh_hosts_list: () => [] as HostView[] });
     const page = (p: string) => settingsPages(p).find((x) => x.id === "remote");
-    expect(page("linux")?.subtitle).toBe("SSH hosts");
-    expect(page("macos")?.subtitle).toBe("SSH hosts");
-    expect(page("windows")?.subtitle).toBe("SSH hosts and WSL distributions");
+    expect(page("linux")?.subtitle).toBe("SSH hosts and your phone");
+    expect(page("macos")?.subtitle).toBe("SSH hosts and your phone");
+    expect(page("windows")?.subtitle).toBe("SSH hosts, WSL distributions and your phone");
     expect(page("linux")?.keywords).not.toContain("wsl");
     const linux = render(<UiProvider>{page("linux")?.extra}</UiProvider>);
     await waitFor(() => expect(named("ssh_hosts_list").length).toBeGreaterThan(0));

@@ -111,6 +111,10 @@ pub struct AppState {
     pub approvals: Arc<crate::services::approvals::ApprovalService>,
     pub notifications: Arc<crate::services::notifications::NotificationService>,
     pub auto: Arc<crate::services::auto::AutoService>,
+    /// The phone companion (F-RM-03).
+    pub phone: Arc<crate::services::phone::PhoneService>,
+    /// Conductor calls (F-CN-01…04).
+    pub conductor: Arc<crate::services::conductor::ConductorService>,
     /// Paused agents and their relaunch queue (F-SH-07).
     pub restore: Arc<crate::services::restore::RestoreService>,
     /// Auto-update and the minimum-version notice (F-SH-06).
@@ -154,6 +158,14 @@ pub struct AppState {
     pub files: Arc<crate::services::files::FilesService>,
     /// The Changes view and the status bar's branch (F-CD-20).
     pub git_panel: Arc<crate::services::git_panel::GitPanelService>,
+    /// Checkpoints before agent turns (F-EX-01).
+    pub checkpoints: Arc<crate::services::checkpoints::CheckpointService>,
+    /// Command recall (F-EX-02).
+    pub recall: Arc<crate::services::recall::RecallService>,
+    /// Best of N's running checks (F-EX-04).
+    pub bestof_checks: crate::services::bestof::Checks,
+    /// The Ports panel (F-EX-03).
+    pub ports: Arc<crate::services::ports::PortsService>,
     /// SSH hosts and their connections (F-RM-01).
     pub remote: Arc<crate::services::remote::RemoteService>,
     /// WSL distributions (F-RM-02; Windows only).
@@ -304,6 +316,9 @@ impl AppState {
         }));
         let pty_bus = bus.clone();
         let mark_bus = bus.clone();
+        // Finished commands go to command recall (F-EX-02).
+        let recall = crate::services::recall::RecallService::new(store.clone(), clock.clone());
+        let mark_recall = recall.clone();
         let reader_bus = bus.clone();
         let cwd_store = store.clone();
         // An agent exited and its pane went back to the shell: save the
@@ -377,6 +392,11 @@ impl AppState {
                 }
             }))
             .with_mark_sink(Arc::new(move |pane, mark| {
+                if let tandem_pty::Mark::Ran(ran) = mark {
+                    let (recall, pane, ran) = (mark_recall.clone(), pane.to_string(), ran.clone());
+                    tauri::async_runtime::spawn(async move { recall.record(&pane, ran).await });
+                    return;
+                }
                 if let Some(event) = mark.event(pane) {
                     mark_bus.publish(BusEvent::new(Topic::Pty, "pty:mark", event));
                 }
@@ -666,8 +686,44 @@ impl AppState {
                 },
             );
         }));
+        let checkpoints = crate::services::checkpoints::CheckpointService::new(
+            data.clone(),
+            store.clone(),
+            bus.clone(),
+            clock.clone(),
+            terminals.clone(),
+        );
+        threads.set_checkpoints(checkpoints.clone());
+        let (hook_cps, hook_store) = (checkpoints.clone(), store.clone());
+        terminals.set_prompt_hook(Arc::new(move |pane, late| {
+            let (cps, store) = (hook_cps.clone(), hook_store.clone());
+            Box::pin(async move {
+                use tandem_store::repo::{panes, workspaces};
+                let Ok(record) = panes::get(&store, &pane).await else {
+                    return;
+                };
+                let Ok(ws) = workspaces::get(&store, &record.workspace_id).await else {
+                    return;
+                };
+                cps.before_turn(
+                    crate::services::checkpoints::Request {
+                        folder: std::path::PathBuf::from(&ws.root),
+                        workspace_id: Some(ws.id.as_str().to_string()),
+                        pane_id: Some(pane.as_str().to_string()),
+                        label: record.human_name.unwrap_or_default(),
+                        late,
+                        ..Default::default()
+                    },
+                    tandem_store::repo::checkpoints::CheckpointReason::Prompt,
+                )
+                .await;
+            })
+        }));
+        let ports = crate::services::ports::PortsService::new(store.clone());
         let e2e = cfg!(debug_assertions) && std::env::var("TANDEM_E2E").as_deref() == Ok("1");
         let files = crate::services::files::FilesService::new(store.clone());
+        // The profile's prompts open editable in the Files editor (F-EX-05).
+        files.allow_editing(data.prompts());
         files.set_remote(remote.clone());
         let git_panel = crate::services::git_panel::GitPanelService::new(files.clone());
         let auto = Arc::new(crate::services::auto::AutoService::new(
@@ -676,6 +732,14 @@ impl AppState {
         ));
         let dictate =
             crate::services::dictate::DictateService::new(store.clone(), data.clone(), e2e);
+        let phone = crate::services::phone::PhoneService::new(
+            store.clone(),
+            bus.clone(),
+            keychain.clone(),
+            clock.clone(),
+            endpoints.web.clone(),
+            crate::services::phone::RekeyPolicy::default(),
+        );
         Self {
             data,
             store,
@@ -695,6 +759,8 @@ impl AppState {
             approvals,
             notifications,
             auto,
+            phone,
+            conductor: crate::services::conductor::ConductorService::new(),
             restore,
             updates,
             config,
@@ -717,6 +783,10 @@ impl AppState {
             mail,
             files,
             git_panel,
+            checkpoints,
+            recall,
+            ports,
+            bestof_checks: Default::default(),
             remote,
             wsl,
             browser: std::sync::OnceLock::new(),
