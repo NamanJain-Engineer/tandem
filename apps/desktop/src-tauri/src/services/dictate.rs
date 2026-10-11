@@ -2175,9 +2175,15 @@ pub fn dither(n: usize) -> Vec<f32> {
         .collect()
 }
 
+/// The microphone; on a Mac behind its permission (D-2108), since CoreAudio
+/// records silence rather than fail when it isn't allowed.
 #[cfg(feature = "os-audio")]
 fn native_backend() -> Arc<dyn AudioBackend> {
-    Arc::new(tandem_voice::capture_cpal::CpalBackend)
+    let cpal: Arc<dyn AudioBackend> = Arc::new(tandem_voice::capture_cpal::CpalBackend);
+    match tandem_voice::permissions::system() {
+        Some(probe) => Arc::new(tandem_voice::permissions::MicGate { inner: cpal, probe }),
+        None => cpal,
+    }
 }
 
 #[cfg(feature = "os-audio")]

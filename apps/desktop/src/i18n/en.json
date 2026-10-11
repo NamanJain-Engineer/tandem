@@ -2327,6 +2327,8 @@
   "dictate.setup.download": "Download local model ({name} · {size} MB)",
   "dictate.setup.output": "Where text goes",
   "dictate.permissions.title": "Permissions",
+  "dictate.permissions.microphone": "Microphone",
+  "dictate.permissions.microphoneWhy": "Hears you while you dictate.",
   "dictate.permissions.inputMonitoring": "Input Monitoring",
   "dictate.permissions.inputMonitoringWhy": "Hears your key in other apps.",
   "dictate.permissions.accessibility": "Accessibility",

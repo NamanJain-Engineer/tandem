@@ -134,9 +134,9 @@ Control-click › Open).
 
 | Feature | Code | Platform trait and fakes | What only a Mac shows |
 |---|---|---|---|
-| Background routines (F-RT-03) | `crates/tandem-routines/src/launcher.rs` `LaunchdLauncher` | `OsLauncher` with `RecordingRunner` (commands) and a temp home (files) | `launchctl bootstrap gui/<uid>` loads it; System Settings › Login Items › Allow in the Background names Vibezeo. |
-| Overlay title bar | `tauri.macos.conf.json`, `features/shell/WindowControls.tsx` | The window config is pinned by a test | The traffic lights at (14, 20) clear the left cluster. |
-| GUI PATH (F-EN-01) | `crates/tandem-pty/src/env.rs`, `crates/tandem-engines/src/detect.rs` | Fake shells under a temp home | A Dock-launched app finds engines on the zsh login PATH. |
-| Dictate permissions (F-DI-02, F-DI-03, F-DI-06) | `crates/tandem-voice/src/hotkey/macos.rs`, `insert/macos.rs`, `apps/desktop/src-tauri/src/commands/dictate.rs` | `HotkeyBackend` and `Platform` with fakes | The prompts, System Settings' lists, Quit & Reopen. |
+| Background routines (F-RT-03) | `crates/tandem-routines/src/launcher.rs` `LaunchdLauncher`: the plist names the app (`AssociatedBundleIdentifiers`), `bootstrap` retried, a translocated or dmg-mounted app refused (D-2109) | `OsLauncher` with `RecordingRunner` (commands) and a temp home (files); `tests/launchd_macos.rs` | `launchctl bootstrap gui/<uid>` loads it; System Settings › Login Items › Allow in the Background names Vibezeo. |
+| Overlay title bar | `tauri.macos.conf.json` (overlay, hidden title, lights at 14, 20), `features/shell/TitleBar.tsx` (a 72 px spacer instead of `WindowControls` on macOS) | The window config is pinned by a test | The lights centred in the 40 px bar, clear of the left cluster. |
+| GUI PATH (F-EN-01) | `crates/tandem-pty/src/env.rs` (the login shell's env, or Homebrew's and `path_helper`'s folders when it's too slow, D-2110), `crates/tandem-engines/src/detect.rs` (`$SHELL -lic` plus known folders) | Fake shells under a temp home; `path_helper_dirs` on a temp `/etc` | A Dock-launched app finds engines on the zsh login PATH. |
+| Dictate permissions (F-DI-02, F-DI-03, F-DI-06) | `crates/tandem-voice/src/permissions.rs` and `permissions/macos.rs` (microphone, Input Monitoring, Accessibility; ask first, then System Settings; `MicGate`, D-2108), `hotkey/macos.rs`, `insert/macos.rs`, `apps/desktop/src-tauri/src/commands/dictate.rs` | `PrivacyProbe` with `FakePrivacy`; `HotkeyBackend` and `Platform` with fakes | The prompts, System Settings' lists, Quit & Reopen. |
 
 HUMAN_TODO's "macOS first run" has the manual steps for each.

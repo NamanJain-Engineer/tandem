@@ -233,7 +233,9 @@ fn rc_file(shell: &Path) -> &'static str {
 
 fn path_fix(dir: &str) -> String {
     if cfg!(target_os = "macos") {
-        format!("{dir} isn't on PATH for apps. Add the folder to PATH in ~/.zprofile (GUI apps don't read ~/.zshrc).")
+        // The probe runs `$SHELL -lic`, so ~/.zprofile and ~/.zshrc both
+        // count; ~/.zprofile also reaches non-interactive login shells.
+        format!("{dir} isn't on your shell's PATH. Add the folder to PATH in ~/.zprofile.")
     } else if cfg!(windows) {
         format!("{dir} isn't on PATH. Add it to your user PATH in System Settings → Environment Variables.")
     } else {

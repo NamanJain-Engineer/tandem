@@ -95,8 +95,11 @@ function TestField() {
   );
 }
 
-function Permissions() {
+/** macOS privacy grants (F-DI-03, D-2108). "Grant" asks first (the system prompt lists the app in System Settings),
+ * then opens System Settings once the user has said no. */
+export function Permissions() {
   const [p, setP] = useState<PermissionStatus | null>(null);
+  const hotkey = useDictate((s) => s.status?.hotkey.kind);
   const load = () => void invoke<PermissionStatus>("dictate_permissions").then(setP, () => undefined);
   useEffect(() => {
     load();
@@ -104,7 +107,7 @@ function Permissions() {
     return () => clearInterval(id);
   }, []);
   if (!p || p.inputMonitoring === "not_needed") return null;
-  const row = (kind: "input_monitoring" | "accessibility", label: string, why: string, state: string) => (
+  const row = (kind: "microphone" | "input_monitoring" | "accessibility", label: string, why: string, state: string) => (
     <li className="flex items-center gap-3">
       <span className="flex flex-1 flex-col">
         <span className="text-base text-fg">{label}</span>
@@ -113,7 +116,12 @@ function Permissions() {
       {state === "granted" ? (
         <Badge variant="done">{t("dictate.permissions.granted")}</Badge>
       ) : (
-        <Button size="sm" variant="secondary" onClick={() => void invoke("dictate_open_permission_settings", { kind })}>
+        <Button
+          size="sm"
+          variant="secondary"
+          data-testid={`dictate-grant-${kind}`}
+          onClick={() => void invoke("dictate_open_permission_settings", { kind }).then(load, () => undefined)}
+        >
           {t("dictate.permissions.grant")}
         </Button>
       )}
@@ -123,10 +131,12 @@ function Permissions() {
     <section className="flex flex-col gap-2" aria-label={t("dictate.permissions.title")}>
       <h3 className="text-sm font-semibold text-fg">{t("dictate.permissions.title")}</h3>
       <ul className="flex flex-col gap-2">
+        {row("microphone", t("dictate.permissions.microphone"), t("dictate.permissions.microphoneWhy"), p.mic)}
         {row("input_monitoring", t("dictate.permissions.inputMonitoring"), t("dictate.permissions.inputMonitoringWhy"), p.inputMonitoring)}
         {row("accessibility", t("dictate.permissions.accessibility"), t("dictate.permissions.accessibilityWhy"), p.accessibility)}
       </ul>
-      {p.inputMonitoring === "granted" && (
+      {/* The event tap only starts after a relaunch once Input Monitoring is granted. */}
+      {p.inputMonitoring === "granted" && hotkey === "needs_permission" && (
         <Callout tone="info">
           <span className="flex items-center gap-2">
             {t("dictate.permissions.relaunch")}

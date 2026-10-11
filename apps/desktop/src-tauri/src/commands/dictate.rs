@@ -11,6 +11,7 @@ use tandem_core::{ErrorCode, IpcError};
 use tandem_voice::devices::DeviceInfo;
 use tandem_voice::dictionary::Rule;
 use tandem_voice::hotkey::HotkeyStatus;
+use tandem_voice::permissions::{grant_step, Access, GrantStep, Privacy, PrivacyProbe};
 use tandem_voice::take::Origin;
 
 use crate::services::dictate::{
@@ -463,30 +464,31 @@ pub async fn dictate_permissions() -> Result<PermissionStatus, IpcError> {
 }
 
 fn permissions() -> PermissionStatus {
-    #[cfg(target_os = "macos")]
-    {
-        let p = |granted: bool| {
-            if granted {
-                Permission::Granted
-            } else {
-                Permission::Denied
-            }
-        };
-        PermissionStatus {
-            // The mic prompt comes with the first take; cpal reports a
-            // refusal as a permission error (UI "Allow access").
-            mic: Permission::Unknown,
-            input_monitoring: p(tandem_voice::hotkey::macos::input_monitoring_granted()),
-            accessibility: p(tandem_voice::insert::macos::accessibility_granted()),
-        }
+    permission_status(tandem_voice::permissions::system().as_deref())
+}
+
+fn to_permission(access: Access) -> Permission {
+    match access {
+        Access::Granted => Permission::Granted,
+        Access::Denied => Permission::Denied,
+        Access::NotAsked => Permission::Unknown,
     }
-    #[cfg(not(target_os = "macos"))]
-    {
-        PermissionStatus {
+}
+
+/// What the OS says about each grant; all "not needed" where the OS has no
+/// such permissions (`probe` is `None` off macOS).
+pub fn permission_status(probe: Option<&dyn PrivacyProbe>) -> PermissionStatus {
+    match probe {
+        None => PermissionStatus {
             mic: Permission::NotNeeded,
             input_monitoring: Permission::NotNeeded,
             accessibility: Permission::NotNeeded,
-        }
+        },
+        Some(p) => PermissionStatus {
+            mic: to_permission(p.access(Privacy::Microphone)),
+            input_monitoring: to_permission(p.access(Privacy::InputMonitoring)),
+            accessibility: to_permission(p.access(Privacy::Accessibility)),
+        },
     }
 }
 
@@ -499,20 +501,33 @@ pub enum PermissionKind {
     Accessibility,
 }
 
+fn privacy(kind: PermissionKind) -> Privacy {
+    match kind {
+        PermissionKind::Microphone => Privacy::Microphone,
+        PermissionKind::InputMonitoring => Privacy::InputMonitoring,
+        PermissionKind::Accessibility => Privacy::Accessibility,
+    }
+}
+
+/// System Settings › Privacy & Security, at the permission's list.
+pub fn mac_permission_url(kind: PermissionKind) -> &'static str {
+    match kind {
+        PermissionKind::Microphone => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+        }
+        PermissionKind::InputMonitoring => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+        }
+        PermissionKind::Accessibility => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        }
+    }
+}
+
 /// The OS settings page for a permission.
 pub fn permission_url(kind: PermissionKind) -> Option<&'static str> {
     if cfg!(target_os = "macos") {
-        Some(match kind {
-            PermissionKind::Microphone => {
-                "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
-            }
-            PermissionKind::InputMonitoring => {
-                "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
-            }
-            PermissionKind::Accessibility => {
-                "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-            }
-        })
+        Some(mac_permission_url(kind))
     } else if cfg!(windows) && kind == PermissionKind::Microphone {
         Some("ms-settings:privacy-microphone")
     } else {
@@ -525,12 +540,38 @@ pub fn dictate_open_permission_settings(
     state: State<'_, AppState>,
     kind: PermissionKind,
 ) -> Result<(), IpcError> {
-    let url = permission_url(kind)
-        .ok_or_else(|| IpcError::new(ErrorCode::Unavailable, "Nothing to grant on this system"))?;
-    state
-        .opener
-        .open(url)
-        .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))
+    let probe = tandem_voice::permissions::system();
+    grant_permission(probe.as_deref(), kind, &|url| state.opener.open(url)).map(|_| ())
+}
+
+/// "Grant" (F-DI-03, D-2108). On a Mac: ask first, which shows the system
+/// prompt and lists Vibezeo in System Settings, and open System Settings
+/// only once the user has said no. Elsewhere: the OS page, if there is one.
+pub fn grant_permission(
+    probe: Option<&dyn PrivacyProbe>,
+    kind: PermissionKind,
+    open: &dyn Fn(&str) -> Result<(), String>,
+) -> Result<GrantStep, IpcError> {
+    let open_url = |url: &str| open(url).map_err(|e| IpcError::new(ErrorCode::Io, e));
+    let Some(probe) = probe else {
+        let url = permission_url(kind).ok_or_else(|| {
+            IpcError::new(ErrorCode::Unavailable, "Nothing to grant on this system")
+        })?;
+        open_url(url)?;
+        return Ok(GrantStep::OpenSettings);
+    };
+    let what = privacy(kind);
+    let step = grant_step(what, probe.access(what));
+    match step {
+        GrantStep::Nothing => {}
+        GrantStep::Prompt => probe.request(what),
+        GrantStep::OpenSettings => open_url(mac_permission_url(kind))?,
+        GrantStep::PromptAndOpenSettings => {
+            probe.request(what);
+            open_url(mac_permission_url(kind))?;
+        }
+    }
+    Ok(step)
 }
 
 /// macOS: Input Monitoring takes effect on relaunch ("Quit & Reopen").
@@ -576,6 +617,65 @@ mod tests {
         }
         if cfg!(windows) {
             assert_eq!(mic, Some("ms-settings:privacy-microphone"));
+        }
+    }
+
+    #[test]
+    fn f_di_03_grant_asks_before_it_opens_system_settings() {
+        use tandem_voice::permissions::FakePrivacy;
+        let opened = std::sync::Mutex::new(Vec::<String>::new());
+        let open = |url: &str| -> Result<(), String> {
+            opened
+                .lock()
+                .map_err(|e| e.to_string())?
+                .push(url.to_string());
+            Ok(())
+        };
+        let probe = FakePrivacy::with(&[
+            (Privacy::Microphone, Access::NotAsked),
+            (Privacy::InputMonitoring, Access::Denied),
+            (Privacy::Accessibility, Access::Granted),
+        ]);
+        // Never asked: the system prompt, and System Settings stays shut.
+        let step = grant_permission(Some(&probe), PermissionKind::Microphone, &open).expect("mic");
+        assert_eq!(step, GrantStep::Prompt);
+        assert_eq!(*probe.requests.lock(), vec![Privacy::Microphone]);
+        assert!(opened.lock().expect("lock").is_empty());
+        // Refused before: only System Settings can change it.
+        let step = grant_permission(Some(&probe), PermissionKind::InputMonitoring, &open)
+            .expect("input monitoring");
+        assert_eq!(step, GrantStep::OpenSettings);
+        assert_eq!(
+            opened.lock().expect("lock").as_slice(),
+            ["x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"]
+        );
+        // Accessibility can't tell the two apart: both.
+        probe.set(Privacy::Accessibility, Access::NotAsked);
+        let step =
+            grant_permission(Some(&probe), PermissionKind::Accessibility, &open).expect("ax");
+        assert_eq!(step, GrantStep::PromptAndOpenSettings);
+        assert_eq!(probe.requests.lock().last(), Some(&Privacy::Accessibility));
+        assert!(opened
+            .lock()
+            .expect("lock")
+            .last()
+            .is_some_and(|u| u.ends_with("Privacy_Accessibility")));
+        // The status the UI shows.
+        let status = permission_status(Some(&probe));
+        assert_eq!(status.mic, Permission::Unknown);
+        assert_eq!(status.input_monitoring, Permission::Denied);
+        assert_eq!(status.accessibility, Permission::Unknown);
+        assert_eq!(permission_status(None).mic, Permission::NotNeeded);
+    }
+
+    #[test]
+    fn f_di_03_without_these_permissions_grant_opens_the_os_page_or_refuses() {
+        let open = |_: &str| -> Result<(), String> { Ok(()) };
+        let r = grant_permission(None, PermissionKind::Accessibility, &open);
+        if cfg!(target_os = "macos") {
+            assert!(r.is_ok());
+        } else {
+            assert!(r.is_err(), "nothing to grant here");
         }
     }
 

@@ -15,6 +15,7 @@ pub mod hotkey;
 pub mod insert;
 pub mod media;
 pub mod models;
+pub mod permissions;
 pub mod postproc;
 pub mod stt;
 pub mod take;

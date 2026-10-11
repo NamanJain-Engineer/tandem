@@ -14,7 +14,7 @@ import { AutoEnhanceControl, FormattingControl } from "./EnhanceControls";
 import { useSettings } from "../../stores/settings";
 import { useSession } from "../../stores/session";
 import { useUi } from "../../stores/ui";
-import { TryIt } from "./DictateSetup";
+import { Permissions, TryIt } from "./DictateSetup";
 import { DictionarySheet } from "./DictionarySheet";
 import { HistorySheet } from "./HistorySheet";
 import { ModelManager } from "./ModelManager";
@@ -447,5 +447,36 @@ describe("Setup without a global hotkey (F-DI-11, D-515)", () => {
     act(() => emitLocal("dictate:verified", null));
     await waitFor(() => expect(screen.getByTestId("dictate-key-detected")).toBeTruthy());
     expect(screen.queryByTestId("dictate-try-link")).toBeNull();
+  });
+});
+
+describe("macOS permissions (F-DI-03, D-2108)", () => {
+  it("F-DI-03 the microphone has a row, Grant goes to the core, and Quit & Reopen waits for the hotkey", async () => {
+    const calls = fakeBackend({
+      dictate_permissions: () => ({ mic: "unknown", inputMonitoring: "granted", accessibility: "denied" }),
+    });
+    useDictate.setState({ status: STATUS });
+    wrap(<Permissions />);
+    await waitFor(() => expect(screen.getByTestId("dictate-grant-microphone")).toBeTruthy());
+    expect(screen.getByTestId("dictate-grant-accessibility")).toBeTruthy();
+    expect(screen.queryByTestId("dictate-grant-input_monitoring")).toBeNull();
+    // The hotkey already runs: nothing to reopen for.
+    expect(screen.queryByText("Quit & Reopen")).toBeNull();
+    fireEvent.click(screen.getByTestId("dictate-grant-microphone"));
+    await waitFor(() =>
+      expect(calls.some((c) => c.cmd === "dictate_open_permission_settings" && c.args?.kind === "microphone")).toBe(true),
+    );
+    act(() => useDictate.setState({ status: { ...STATUS, hotkey: { kind: "needs_permission" } } }));
+    await waitFor(() => expect(screen.getByText("Quit & Reopen")).toBeTruthy());
+  });
+
+  it("F-DI-03 shows nothing where the OS has no such permissions", async () => {
+    const calls = fakeBackend({
+      dictate_permissions: () => ({ mic: "not_needed", inputMonitoring: "not_needed", accessibility: "not_needed" }),
+    });
+    useDictate.setState({ status: STATUS });
+    const { container } = wrap(<Permissions />);
+    await waitFor(() => expect(calls.some((c) => c.cmd === "dictate_permissions")).toBe(true));
+    expect(container.textContent).toBe("");
   });
 });
