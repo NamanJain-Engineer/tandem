@@ -25,7 +25,7 @@ use tandem_voice::conductor::call::{
     ActRequest, ActResponse, CallController, CallHost, CallOrigin, CallRecord, CallTiming,
     HostedError, LogKind, MicEvent, SessionGrant, Settlement, Speaker,
 };
-use tandem_voice::conductor::exec::{PaneFacts, PaneKind, ToolCall, ToolHost};
+use tandem_voice::conductor::exec::{PaneFacts, PaneKind, ToolHost};
 use tandem_voice::conductor::persona::PersonaBrief;
 use tandem_voice::conductor::view::{CallView, UiAction};
 use tandem_voice::realtime::RealtimeProvider;
@@ -736,7 +736,7 @@ pub fn test_conductor_inject(
             "The test harness is off",
         ));
     }
-    let calls: Vec<ToolCall> = calls
+    let calls: Vec<tandem_voice::conductor::exec::ToolCall> = calls
         .into_iter()
         .filter_map(|c| serde_json::from_value(c).ok())
         .collect();
