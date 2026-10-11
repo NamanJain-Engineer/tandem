@@ -8,6 +8,7 @@ import en from "../../../desktop/src/i18n/en.json";
 import settings from "@tandem/protocol/settings.json";
 import shortcuts from "@tandem/protocol/shortcuts.json";
 import { LIMITS, type Plan } from "@tandem/protocol/plans";
+import { PLAN_ROWS } from "../pricing";
 import { DOWNLOADS } from "../release";
 
 const labels = en as Record<string, string>;
@@ -113,26 +114,14 @@ export function platformTable(): Table {
   };
 }
 
-const count = (n: number | null) => (n === null ? "No limit" : String(n));
-const engineNames = (ids: readonly string[] | null) =>
-  ids === null ? "All" : ids.map((id) => registry.find((e) => e.id === id)?.label ?? id).join(", ");
-
-/** The limits of the features in this build, per plan, from `LIMITS`. */
-const LIMIT_ROWS = [
-  { key: "panes", label: "Live terminal panes", value: (p: Plan) => count(LIMITS[p].panes) },
-  { key: "workspaces", label: "Workspaces", value: (p: Plan) => count(LIMITS[p].workspaces) },
-  { key: "threadGrid", label: "Threads side by side", value: (p: Plan) => count(LIMITS[p].threadGrid) },
-  {
-    key: "accountsPerEngine",
-    label: "Accounts per engine",
-    value: (p: Plan) => count(LIMITS[p].accountsPerEngine),
-  },
-  {
-    key: "chatEngines",
-    label: "Thread mode engines",
-    value: (p: Plan) => engineNames(LIMITS[p].chatEngines),
-  },
-] as const;
+/** The docs' limits table: the plan comparison's workspace and account rows
+ * that the docs have always listed, from the same list as /pricing. */
+const LIMIT_KEYS = ["panes", "workspaces", "threadGrid", "accountsPerEngine", "chatEngines"] as const;
+const LIMIT_ROWS = LIMIT_KEYS.map((k) => {
+  const row = PLAN_ROWS.find((r) => r.key === k);
+  if (!row) throw new Error(`no plan row ${k}`);
+  return row;
+});
 
 export function planLimitsTable(): Table {
   const plans: Plan[] = ["free", "pro", "team"];
@@ -141,7 +130,7 @@ export function planLimitsTable(): Table {
     head: ["Limit", "Free", "Pro", "Team"],
     rows: LIMIT_ROWS.map((r) => ({
       key: r.key,
-      cells: [text(r.label), ...plans.map((p) => text(r.value(p)))],
+      cells: [text(r.label), ...plans.map((p) => text(String(r.value(p))))],
     })),
   };
 }

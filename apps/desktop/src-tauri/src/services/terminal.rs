@@ -1162,6 +1162,17 @@ impl TerminalService {
 
     /// `type_prompt` (§6.5, F-EN-06 AC1–2).
     pub async fn type_prompt(&self, pane: &PaneId, text: &str) -> Result<(), IpcError> {
+        self.type_prompt_with(pane, text, true).await
+    }
+
+    /// `type_prompt`, with Enter only when `send` (Conductor's `prompt_pane
+    /// send:false` leaves the text in the agent's prompt).
+    pub async fn type_prompt_with(
+        &self,
+        pane: &PaneId,
+        text: &str,
+        send: bool,
+    ) -> Result<(), IpcError> {
         let record = panes::get_open(&self.store, pane).await?;
         let engine = record
             .engine_id
@@ -1208,8 +1219,10 @@ impl TerminalService {
         self.before_prompt(pane).await;
         self.status.quiet_window(pane.as_str());
         self.pty.write(pane.as_str(), &body)?;
-        tokio::time::sleep(typing::ENTER_DELAY).await;
-        self.pty.write(pane.as_str(), &enter)?;
+        if send {
+            tokio::time::sleep(typing::ENTER_DELAY).await;
+            self.pty.write(pane.as_str(), &enter)?;
+        }
         Ok(())
     }
 

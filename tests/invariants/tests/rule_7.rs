@@ -9,6 +9,9 @@
 //! (hosted-features.json). Cloud STT, Conductor and Enhance in the app add
 //! their cases as M8 builds them.
 
+#[path = "support/phone.rs"]
+mod phone;
+
 use serde_json::{json, Value};
 use tandem_app::services::telemetry::{capture, TelemetryService};
 use tandem_core::net::Net;
@@ -50,4 +53,29 @@ async fn invariant_rule_7_telemetry_off_sends_nothing() {
         "",
         "requests while off"
     );
+}
+
+/// Pairing is the phone companion's opt-in: with no pairing nothing dials
+/// the relay, and after a revoke the phone's frames reach nothing (F-RM-03).
+#[tokio::test]
+async fn invariant_rule_7_the_phone_relay_is_used_only_while_paired() {
+    let rig = phone::rig();
+    rig.svc.start().await;
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert_eq!(
+        *rig.net.dials.lock().expect("lock"),
+        0,
+        "no pairing, no relay"
+    );
+    let mut p = phone::pair(&rig).await;
+    rig.svc.revoke(&p.pid, "revoked").await.expect("revoke");
+    let frame_count = rig.svc.list().await.expect("list").len();
+    assert_eq!(frame_count, 0);
+    let reply = p
+        .send(
+            &rig.svc,
+            json!({"t": "cmd", "id": 1, "cmd": "view.snapshot", "args": {}}),
+        )
+        .await;
+    assert!(reply.is_empty(), "a revoked pairing gets no answer");
 }

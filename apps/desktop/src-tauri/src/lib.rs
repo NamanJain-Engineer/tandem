@@ -236,6 +236,7 @@ macro_rules! app_commands {
             commands::terminal::pane_move,
             commands::terminal::pty_spawn,
             commands::terminal::pty_attach,
+            commands::terminal::pty_park,
             commands::terminal::pty_write,
             commands::terminal::pty_ack,
             commands::terminal::pty_resize,
@@ -279,12 +280,29 @@ macro_rules! app_commands {
             commands::limits::limits_list,
             commands::limits::limit_resume_at_reset,
             commands::limits::limit_resume_now,
+            commands::conductor::conductor_start_call,
+            commands::conductor::conductor_end_call,
+            commands::conductor::conductor_mute,
+            commands::conductor::conductor_confirm,
+            commands::conductor::conductor_state,
+            commands::conductor::conductor_call_log,
+            commands::conductor::conductor_call_delete,
             commands::auto::auto_start,
             commands::auto::auto_list,
             commands::auto::auto_pause,
             commands::auto::auto_resume,
             commands::auto::auto_stop,
             commands::auto::auto_dismiss,
+            commands::phone::phone_pair_begin,
+            commands::phone::phone_pair_cancel,
+            commands::phone::phone_pairings_list,
+            commands::phone::phone_pairing_set_grants,
+            commands::phone::phone_pairing_revoke,
+            commands::phone::phone_reset,
+            commands::phone::phone_arm_approvals,
+            commands::phone::phone_arm_state,
+            commands::phone::phone_queue_list,
+            commands::phone::phone_queue_decide,
             commands::limits::limit_cancel_resume,
             commands::limits::limit_dismiss,
             commands::limits::limit_continue,
@@ -620,6 +638,8 @@ fn spawn_background(state: &AppState) {
 /// Dictate (F-DI-*): events to the main window and the widget, the widget
 /// window itself, the tray, then the voice service (mic, hotkeys, model).
 fn setup_dictate(app: &tauri::App, state: &AppState) {
+    // Conductor shares the Dictate microphone (F-CN-08).
+    commands::conductor::install(app.handle());
     use services::dictate::To;
     let emit_app = app.handle().clone();
     state
@@ -775,6 +795,8 @@ pub fn run() {
         commands::test::test_plugin_allowlist,
         commands::test::test_unattended_run,
         commands::test::test_find_work_server,
+        commands::conductor::test_conductor_inject,
+        commands::conductor::test_conductor_clock,
     ]);
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(app_commands![]);
@@ -896,6 +918,7 @@ pub fn run() {
             }
             // Mail queued before the app last quit goes out (F-AG-12).
             state.mail.pump_soon();
+            commands::phone::start(&handle);
             // Updates (F-SH-06): the signed feed, if this build has a key.
             if let Some(key) = services::updates::pubkey(state::BUNDLED_KEYS) {
                 let record = state

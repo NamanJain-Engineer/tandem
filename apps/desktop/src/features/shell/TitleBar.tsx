@@ -22,6 +22,7 @@ import { useSidebar } from "../../stores/sidebar";
 import { NotificationsBell } from "../notifications/NotificationsPopover";
 import { UpdatePill } from "../updates/UpdatePill";
 import { UsageChip } from "./UsageChip";
+import { ConductorButton } from "../conductor/ConductorButton";
 import { UsageDialog } from "../usage/UsagePage";
 import { useWorkspaces } from "../../stores/workspaces";
 import { copyDiagnostics, switchMode } from "./actions";
@@ -280,6 +281,7 @@ export function TitleBar() {
         data-testid="sidebar-toggle"
         onClick={() => useSidebar.getState().toggle()}
       />
+      <ConductorButton />
       <Menu
         align="end"
         entries={[{ id: "plan", type: "label", label: planBadge }, ...accountMenu]}

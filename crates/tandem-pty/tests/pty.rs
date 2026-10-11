@@ -75,7 +75,7 @@ fn f_cd_03_write_reaches_the_process_and_ring_replays() {
         .attach("p2", Arc::new(VecSink::default()))
         .expect("attach");
     assert!(
-        String::from_utf8_lossy(&replay).contains("got:ping"),
+        String::from_utf8_lossy(&replay.replay).contains("got:ping"),
         "ring keeps output for reattach"
     );
 }
@@ -633,4 +633,116 @@ fn nfr_5_7_diagnostics_lists_each_terminal_with_its_spawn_time_and_queue() {
     assert!(me.spawn_ms < 5_000);
     assert!(!me.exited);
     let _ = mgr.kill("dg1");
+}
+
+#[test]
+fn nfr_5_1_an_attach_replay_and_the_frames_after_it_neither_repeat_nor_skip_a_byte() {
+    let mgr = PtyManager::new();
+    let first = Arc::new(VecSink::default());
+    // Steady output (within the ring) while the view re-attaches part-way through.
+    mgr.spawn(
+        spec(
+            "p51a",
+            "i=0; while [ $i -lt 1000 ]; do echo n$i; i=$((i+1)); done; echo END",
+        ),
+        Some(first.clone() as Arc<dyn OutputSink>),
+    )
+    .expect("spawn");
+    assert!(wait_until(Duration::from_secs(5), || text(&first).contains("n200")));
+    let second = Arc::new(VecSink::default());
+    let attached = mgr
+        .attach("p51a", second.clone() as Arc<dyn OutputSink>)
+        .expect("attach");
+    assert!(wait_until(Duration::from_secs(10), || text(&second)
+        .contains("END")
+        || String::from_utf8_lossy(&attached.replay).contains("END")));
+    let mut all = attached.replay.clone();
+    all.extend(second.data());
+    let all = String::from_utf8_lossy(&all).replace('\r', "");
+    let expected: String = (0..1000).map(|i| format!("n{i}\n")).collect::<String>() + "END\n";
+    assert_eq!(all, expected);
+    assert_eq!(
+        attached.end as usize,
+        attached.replay.len(),
+        "nothing trimmed yet: the replay starts at 0"
+    );
+}
+
+#[test]
+fn nfr_5_1_a_parked_pane_runs_on_without_its_view_and_replays_base_then_what_followed() {
+    let mgr = PtyManager::new();
+    let view = Arc::new(VecSink::default());
+    mgr.spawn(
+        spec("p51b", "echo before; read go; i=0; while [ $i -lt 800 ]; do echo after$i; i=$((i+1)); done; echo DONE; read wait"),
+        Some(view.clone() as Arc<dyn OutputSink>),
+    )
+    .expect("spawn");
+    assert!(wait_until(Duration::from_secs(5), || text(&view).contains("before")));
+    // The view parsed everything it was sent; it parks with that position.
+    let at = view.data().len() as u64;
+    let parked = mgr
+        .park(
+            "p51b",
+            at,
+            vec![b"BASE LINE\r\n".to_vec(), b"\x1b[1;1H".to_vec()],
+        )
+        .expect("park");
+    assert!(parked);
+    let sent = view.frames.lock().map(|f| f.len()).unwrap_or(0);
+    mgr.write("p51b", b"go\r").expect("write");
+    let ring_has = |needle: &str| {
+        String::from_utf8_lossy(&mgr.tail("p51b", 5).unwrap_or_default()).contains(needle)
+    };
+    assert!(
+        wait_until(Duration::from_secs(10), || ring_has("DONE")),
+        "the program ran on"
+    );
+    assert_eq!(
+        view.frames.lock().map(|f| f.len()).unwrap_or(0),
+        sent,
+        "nothing more went to the parked view"
+    );
+    let shown = Arc::new(VecSink::default());
+    let attached = mgr
+        .attach("p51b", shown.clone() as Arc<dyn OutputSink>)
+        .expect("attach");
+    let replay = String::from_utf8_lossy(&attached.replay).replace('\r', "");
+    assert!(
+        replay.starts_with("BASE LINE\n\x1b[1;1Hgo\nafter0\n"),
+        "{}",
+        &replay[..80.min(replay.len())]
+    );
+    assert!(replay.ends_with("after799\nDONE\n"));
+    assert!(
+        !replay.contains("before"),
+        "the base stands in for what the view had"
+    );
+    let _ = mgr.kill("p51b");
+}
+
+#[test]
+fn nfr_5_1_a_parked_pane_is_never_held_back_by_its_missing_acks() {
+    let mgr = PtyManager::new();
+    let view = Arc::new(VecSink::default());
+    // 6 MB: more than the 4 MB a view may leave unacknowledged (§5.5).
+    mgr.spawn(
+        spec(
+            "p51c",
+            "read go; head -c 6000000 /dev/zero | tr '\\0' x; echo; echo DONE; read wait",
+        ),
+        Some(view.clone() as Arc<dyn OutputSink>),
+    )
+    .expect("spawn");
+    std::thread::sleep(Duration::from_millis(200));
+    let at = view.data().len() as u64;
+    assert!(mgr.park("p51c", at, vec![]).expect("park"));
+    mgr.write("p51c", b"go\r").expect("write");
+    assert!(
+        wait_until(Duration::from_secs(20), || String::from_utf8_lossy(
+            &mgr.tail("p51c", 3).unwrap_or_default()
+        )
+        .contains("DONE")),
+        "the program finished with nobody acking"
+    );
+    let _ = mgr.kill("p51c");
 }

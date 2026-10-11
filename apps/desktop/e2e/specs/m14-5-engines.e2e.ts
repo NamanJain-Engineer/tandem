@@ -1,6 +1,6 @@
 import { browser } from "@wdio/globals";
 import { writeFileSync } from "node:fs";
-import { freshOffline, invoke, settled, waitForPaneText } from "../support/app";
+import { freshOffline, invoke, pickTile, waitForPaneText } from "../support/app";
 import { sendMessage, threadMode, waitForAssistant } from "../support/thread";
 import {
   PROJECT,
@@ -74,8 +74,7 @@ describe("E2E-M14-5 remote engines", () => {
     );
     expect(shown).toContain("On tandem@127.0.0.1:2222");
     // An agent pane on the host runs the host's claude.
-    await settled();
-    await tile.click();
+    await pickTile("claude");
     await browser.waitUntil(
       async () => {
         const log = await invoke<Array<{ argv: string[]; providerHome: string | null }>>("test_spawn_log");

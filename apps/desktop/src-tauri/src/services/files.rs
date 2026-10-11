@@ -513,10 +513,9 @@ impl FilesService {
             self.next_sub
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         );
-        // A host's files aren't watched (D-411): the subscription is real
-        // and simply gets no batches.
-        if self.remote_of(ctx).await?.is_some() {
-            drop(sink);
+        // A host's folder is watched by its helper (D-1600).
+        if let Some((remote, r)) = self.remote_of(ctx).await? {
+            remote.files.watch(&remote, &r, id.clone(), sink).await?;
             return Ok(id);
         }
         let root = self.root(ctx).await?;
@@ -562,6 +561,11 @@ impl FilesService {
 
     /// `fs_unwatch`. The folder's watcher stops with its last subscriber.
     pub fn unwatch(&self, sub: &str) {
+        if let Some(remote) = self.remote.get() {
+            if remote.files.unwatch(remote, sub) {
+                return;
+            }
+        }
         let mut idle = Vec::new();
         if let Ok(mut subs) = self.subs.lock() {
             for (root, list) in subs.iter_mut() {

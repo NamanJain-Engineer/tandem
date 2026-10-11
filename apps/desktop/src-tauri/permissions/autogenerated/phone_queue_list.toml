@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-phone-queue-list"
+description = "Enables the phone_queue_list command without any pre-configured scope."
+commands.allow = ["phone_queue_list"]
+
+[[permission]]
+identifier = "deny-phone-queue-list"
+description = "Denies the phone_queue_list command without any pre-configured scope."
+commands.deny = ["phone_queue_list"]

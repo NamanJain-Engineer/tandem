@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "next dev --port 3000",
     "build": "next build",
-    "build:site": "pnpm --filter desktop build:demo && SITE_EXPORT=1 next build",
+    "build:site": "pnpm --filter desktop build:demo && SITE_EXPORT=1 next build && node scripts/strip-runtime.mjs",
     "start": "next start --port 3000",
     "test": "vitest run",
     "lint": "fumadocs-mdx && tsc --noEmit && eslint .",
@@ -19,11 +19,17 @@
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.2.6",
+    "@fontsource-variable/jetbrains-mono": "^5.2.6",
+    "@noble/ciphers": "^2.4.0",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
     "@tandem/protocol": "workspace:*",
     "@tandem/ui": "workspace:*",
     "fumadocs-core": "15.8.5",
     "fumadocs-mdx": "12.0.3",
     "fumadocs-ui": "15.8.5",
+    "lucide-react": "^0.525.0",
     "next": "^15.4.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -37,8 +43,11 @@
     "@types/node": "^22.15.30",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
+    "@types/ws": "^8.5.12",
+    "axe-core": "^4.10.3",
     "tailwindcss": "^4.1.11",
     "typescript": "~5.8.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "ws": "^8.18.0"
   }
 }

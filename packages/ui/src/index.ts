@@ -16,7 +16,7 @@ export {
   type AvatarProps,
 } from "./components/Avatar";
 export { Badge, Chip, type BadgeVariant, type ChipProps } from "./components/Badge";
-export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from "./components/Button";
+export { Button, buttonClass, type ButtonProps, type ButtonSize, type ButtonVariant } from "./components/Button";
 export {
   Checkbox,
   RadioGroup,
@@ -89,6 +89,7 @@ export { EngineBadge, EngineGlyph } from "./components/EngineGlyph";
 export { Heatmap, heatLevel, type HeatmapDay } from "./components/Heatmap";
 export { CodeEditor, languageFor, type CodeEditorProps } from "./components/CodeEditor";
 export { NoteEditor, type NoteEditorHandle, type NoteEditorProps } from "./components/NoteEditor";
+export { QRCode, type QRCodeProps } from "./components/QRCode";
 export { HotkeyRecorder, type HotkeyRecorderProps, type RecordedKeys } from "./components/HotkeyRecorder";
 export { NOTE_FORMATS, continueList, taskBoxes, tickAt, toggleBold, toggleBullet, toggleItalic, toggleTask, toggleUnderline, toggleWrap, type NoteFormat } from "./components/noteCommands";
 export {
@@ -157,7 +158,7 @@ export {
   resetAnnouncer,
 } from "./components/LiveAnnouncer";
 export { Tooltip, TooltipProvider, type TooltipProps } from "./components/Tooltip";
-export { WaveformRing, type WaveformRingProps, type WaveformState } from "./components/WaveformRing";
+export { WaveformRing, ringStats, type WaveformRingProps, type WaveformState } from "./components/WaveformRing";
 export { cx } from "./cx";
 export { isMac, shortcutCaps, shortcutLabel } from "./platform";
 export {

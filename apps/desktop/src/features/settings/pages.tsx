@@ -6,6 +6,7 @@ import { ShortcutsPage } from "./ShortcutsPage";
 import { AccountsPage } from "./AccountsPage";
 import { RemoteHosts } from "../remote/RemoteHosts";
 import { WslDistros } from "../remote/WslDistros";
+import { RemotePage } from "./RemotePage";
 import { PluginsPage } from "../plugins/PluginsPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
@@ -58,8 +59,10 @@ const segs = (keys: string[], prefix: string) =>
   keys.map((k) => ({ id: k, label: t(`${prefix}.${k}` as Parameters<typeof t>[0]) }));
 
 /** The pages shipped so far (UI-101, 102, 104, 105, 112, 113, 114, 115, 116), in UI-100 order.
- * `routines`: the plan has routines; without them "Pause routines" is absent. */
-export function settingsPages(platform: string, routines = false): PageDef[] {
+ * `routines`: the plan has routines; without them "Pause routines" is absent.
+ * `accounts`: the build talks to Vibezeo (not TANDEM_HOSTED=0); without it,
+ * rows for hosted services are absent (D-833). */
+export function settingsPages(platform: string, routines = false, accounts = false): PageDef[] {
   const mac = platform === "macos";
   return [
     {
@@ -415,7 +418,14 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
           label: t("settings.commandHistoryDays"),
           keywords: ["command recall", "history", "retention"],
           control: (ids) => (
-            <NumberControl k="command_history_days" ids={ids} min={1} max={3650} fallback={90} label={t("settings.commandHistoryDays")} />
+            <NumberControl
+              k="command_history_days"
+              ids={ids}
+              min={1}
+              max={3650}
+              fallback={90}
+              label={t("settings.commandHistoryDays")}
+            />
           ),
         },
       ],
@@ -440,15 +450,28 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
     {
       id: "remote",
       label: t("settings.remote"),
-      // WSL exists on Windows only (F-RM-02): elsewhere the page is SSH alone,
+      // WSL exists on Windows only (F-RM-02): elsewhere the page is SSH and the phone,
       // with no WSL heading or skeleton to flash and hide.
       subtitle: platform === "windows" ? t("settings.remote.subtitle") : t("settings.remote.subtitleSsh"),
-      keywords: ["ssh", "remote", "host", "server", ...(platform === "windows" ? ["wsl", "linux"] : [])],
+      keywords: [
+        "ssh",
+        "remote",
+        "host",
+        "server",
+        ...(platform === "windows" ? ["wsl", "linux"] : []),
+        "phone",
+        "pair",
+        "mobile",
+        "qr",
+        "relay",
+        "approvals",
+      ],
       rows: [],
       extra: (
         <div className="flex flex-col gap-6">
           <RemoteHosts />
           {platform === "windows" && <WslDistros />}
+          <RemotePage />
         </div>
       ),
     },
@@ -747,15 +770,19 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
             />
           ),
         },
-        {
-          id: "find_work_hosted",
-          label: t("settings.findWorkHosted"),
-          description: t("settings.findWorkHosted.desc"),
-          keywords: ["find work", "search", "ranking", "ai"],
-          control: (ids) => (
-            <BoolControl k="find_work_hosted" ids={ids} label={t("settings.findWorkHosted")} />
-          ),
-        },
+        ...(accounts
+          ? [
+              {
+                id: "find_work_hosted",
+                label: t("settings.findWorkHosted"),
+                description: t("settings.findWorkHosted.desc"),
+                keywords: ["find work", "search", "ranking", "ai"],
+                control: (ids: Ids) => (
+                  <BoolControl k="find_work_hosted" ids={ids} label={t("settings.findWorkHosted")} />
+                ),
+              },
+            ]
+          : []),
         {
           id: "dictate_share_hints",
           label: t("settings.dictionaryHints"),
@@ -778,28 +805,51 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
           label: t("settings.checkpointsEnabled"),
           description: t("settings.checkpointsEnabled.description"),
           keywords: ["checkpoints", "rewind"],
-          control: (ids) => <BoolControl k="checkpoints_enabled" ids={ids} label={t("settings.checkpointsEnabled")} />,
+          control: (ids) => (
+            <BoolControl k="checkpoints_enabled" ids={ids} label={t("settings.checkpointsEnabled")} />
+          ),
         },
         {
           id: "checkpoints_keep",
           label: t("settings.checkpointsKeep"),
           description: t("settings.checkpointsKeep.description"),
           control: (ids) => (
-            <NumberControl k="checkpoints_keep" ids={ids} min={10} max={1000} fallback={100} label={t("settings.checkpointsKeep")} />
+            <NumberControl
+              k="checkpoints_keep"
+              ids={ids}
+              min={10}
+              max={1000}
+              fallback={100}
+              label={t("settings.checkpointsKeep")}
+            />
           ),
         },
         {
           id: "checkpoints_days",
           label: t("settings.checkpointsDays"),
           control: (ids) => (
-            <NumberControl k="checkpoints_days" ids={ids} min={1} max={90} fallback={14} label={t("settings.checkpointsDays")} />
+            <NumberControl
+              k="checkpoints_days"
+              ids={ids}
+              min={1}
+              max={90}
+              fallback={14}
+              label={t("settings.checkpointsDays")}
+            />
           ),
         },
         {
           id: "checkpoints_max_file_mb",
           label: t("settings.checkpointsMaxFileMb"),
           control: (ids) => (
-            <NumberControl k="checkpoints_max_file_mb" ids={ids} min={1} max={100} fallback={5} label={t("settings.checkpointsMaxFileMb")} />
+            <NumberControl
+              k="checkpoints_max_file_mb"
+              ids={ids}
+              min={1}
+              max={100}
+              fallback={5}
+              label={t("settings.checkpointsMaxFileMb")}
+            />
           ),
         },
       ],

@@ -18,6 +18,7 @@ import { SmtpEmail } from "./providers/email/smtp";
 import type { EmailProvider } from "./providers/email/types";
 import { ConfigSigner } from "./services/configSigner";
 import { EventHub } from "./services/events";
+import { RelayControl } from "./services/relayControl";
 
 export type Built = { deps: Deps; close: () => Promise<void> };
 
@@ -65,6 +66,7 @@ export function buildDeps(
     auth: createAuth({ env, db, email, breach, deps: () => deps }),
     ai: overrides.ai ?? selectAi(env),
     stt: overrides.stt ?? selectStt(env),
+    relay: new RelayControl(),
     realtime: overrides.realtime ?? selectRealtime(env),
     ssoNet: overrides.ssoNet ?? { fetch: (input, init) => fetch(input, init), resolveTxt },
   };

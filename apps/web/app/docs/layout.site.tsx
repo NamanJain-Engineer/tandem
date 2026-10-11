@@ -2,6 +2,7 @@ import { DocsLayout } from "fumadocs-ui/layouts/docs";
 import { RootProvider } from "fumadocs-ui/provider";
 import type { ReactNode } from "react";
 import { source } from "../../lib/docs/source";
+import { Mark } from "../../components/site/Mark";
 import { SITE } from "../../lib/site";
 import "./docs.css";
 
@@ -12,7 +13,16 @@ export default function Layout({ children }: { children: ReactNode }) {
     <RootProvider search={{ enabled: false }} theme={{ enabled: false }}>
       <DocsLayout
         tree={source.pageTree}
-        nav={{ title: `${SITE.product} docs`, url: "/docs/" }}
+        nav={{
+          title: (
+            <span className="inline-flex items-center gap-2 font-semibold">
+              <Mark />
+              {SITE.product}
+              <span className="font-normal text-fg-muted">Docs</span>
+            </span>
+          ),
+          url: "/docs/",
+        }}
         themeSwitch={{ enabled: false }}
         links={[
           { text: SITE.product, url: "/" },

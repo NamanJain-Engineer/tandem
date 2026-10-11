@@ -562,7 +562,8 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `pane_create` | `{tabId, kind:"terminal"\|"agent"\|"browser"\|"simulator", engineId?, accountId?, cwd?, humanName?, url?}` (`url`: a browser pane's first page, read like the address bar; a browser pane runs no process and doesn't count against the live-pane limit) | `PaneRecord` (assigns unique human name for agents; `browserUrl`: the page a browser pane last committed, kept by the core) | NotFound, LimitReached, Invalid (a blocked `url`) | F-CD-02, F-CD-12, F-CD-17 |
 | `pane_list` | `{tabId}` | `[PaneRecord]` (open panes, oldest first) | — | F-CD-02 |
 | `pty_spawn` | `{paneId, cols, rows, shell?, engine?: EngineLaunch {engineId, accountId?, oneOffHome?, extraArgs?, firstPrompt?, resumeSessionId?}, channel: Channel<PtyFrame>}` | `PtyInfo {pid, startedAt, launchConfigId?}` | LimitReached (plan), EngineMissing, NotFound (cwd → falls back to root with notice, not an error), Unavailable (config gone), Conflict (an agent paused after a restart starts only from its card: `restore_resume` / `restore_start_fresh`) | F-CD-03, F-EN-04, F-AC-01, F-SH-07 |
-| `pty_attach` | `{paneId, channel}` | `AttachSnapshot {replay: base64, state: PtyState}` (after webview reload) | NotFound | F-CD-03 |
+| `pty_attach` | `{paneId, channel}` | `AttachSnapshot {replay: base64, end: u64, state: PtyState}` (after webview reload, or showing a parked pane; `end` is the ring position the replay ends at, so the view can count where it stands) | NotFound | F-CD-03, §5.1 |
+| `pty_park` | `{paneId, at: u64, base: [string]}` | `bool` (a hidden view gave up its terminal, §5.1/D-139: `base`, one chunk per line then the screen, replaces the ring up to `at`, the position the view had parsed; the sink is dropped so the program runs on unthrottled; false = the ring no longer held the output after `at` and replays as it is) | NotFound | §5.1 |
 | `pty_write` | `{paneId, data: string}` | — | NotFound | F-CD-03, F-CD-07 |
 | `pty_ack` | `{paneId, bytes: u64}` | — | — | F-CD-04 |
 | `pty_resize` | `{paneId, cols, rows}` | — | NotFound | F-CD-02 |
@@ -847,10 +848,14 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 #### Conductor [F-CN-*]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
-| `conductor_start_call` | `{wake: bool}` | `CallView` | ForbiddenPlan, CreditsExhausted, Unavailable |
-| `conductor_end_call` / `conductor_mute` | — / `{muted}` | — | — |
-| `conductor_confirm` | `{requestId, yes}` (on-screen click only) | — | NotFound |
-| `conductor_call_log` | `{cursor?}` | `Page<CallLogEntry>` | — |
+| `conductor_start_call` | `{wake: bool, pushToTalk?: bool}` (the one entry point: ring, palette, shortcut, wake phrase; a running call is returned as it is) | `CallView` | ForbiddenPlan, PermissionDenied (org policy), Unavailable (no hosted service); mint and connect failures arrive as the view's `error` |
+| `conductor_end_call` / `conductor_mute` | — / `{muted}` | — (`end_call` with no call clears an ended call's receipt or error) | — |
+| `conductor_confirm` | `{requestId, yes}` (on-screen click only: `yes` needs the calling window to be `main`, which makes the `LocalReview`) | — | NotFound, PermissionDenied |
+| `conductor_state` | — | `CallView` (the HUD after a reload) | — |
+| `conductor_call_log` | `{callId?}` | `[CallLogEntry {call: CallRow, events: [CallEventRow]}]`, newest first; events for `callId` (default the newest) | — |
+| `conductor_call_delete` | `{callId}` | — | — |
+| `test_conductor_clock` (debug, `TANDEM_E2E=1`) | `{advanceMs}` | the call clock's offset (ms) | PermissionDenied |
+| `test_conductor_inject` (debug, `TANDEM_E2E=1`) | `{calls: [{id, name, args}]}` | `bool` (false without a call): doer tool calls run through the executor | PermissionDenied |
 | `conductor_memory_get` / `conductor_memory_resolve` | — / `{proposalIds, keep}` | `ConductorMemory` / — | Invalid (credential) |
 | `find_work` | `{query}` | `[FindMatch {source, label, score, lastActivity}]` | — |
 
@@ -863,10 +868,12 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `ssh_disconnect` / `ssh_list_dir` | `{hostId}` (ends the host's panes) / `{hostId, path}` (absolute, or empty / `~` for home) | — / `RemoteDir {path, parent?, dirs}` (folders only, for the remote folder picker) | NotFound |
 | `ssh_host_reset_key` | `{hostId}` ("Trust new key…" after a danger confirm: forgets the pinned key; the next connect shows the new fingerprint) | — | — |
 | `wsl_distros` | — | `[Distro]` (`{name, isDefault, version}`, from `wsl.exe -l -v`) | Unavailable, stage `wsl` (non-Windows) |
-| `phone_pair_begin` | — | `PairingQr {pairingId, qrSvg, expiresAt}` | ForbiddenPlan |
-| `phone_pairings_list` / `phone_pairing_set_grants` / `phone_pairing_revoke` | — / `{pairingId, grants}` / `{pairingId}` | `[Pairing]` / — / — | — |
-| `phone_arm_approvals` | `{hours: 8 \| 0}` | `{armedUntil?}` | — |
-| `phone_queue_list` / `phone_queue_decide` | — / `{itemId, apply}` | `[QueuedPhoneAction]` / — | — |
+| `phone_pair_begin` | — (main window) | `PairingQr {pairingId, link, qr: QrMatrix {size, rows}, expiresAt}` (`rows`: one `0`/`1` string per module row; `link` is the URL the code encodes) | ForbiddenPlan, PermissionDenied (org policy, other window), Unauthenticated, Unavailable |
+| `phone_pair_cancel` | `{pairingId}` | — (a code nobody scanned: the relay pairing is deleted) | — |
+| `phone_pairings_list` / `phone_pairing_set_grants` / `phone_pairing_revoke` | — / `{pairingId, grants: PhoneGrants {chat, terminal, approvals, routines}}` (main window) / `{pairingId}` | `[Pairing {id, deviceName, grants, createdAt, lastSeen?, online}]` / — / — | NotFound, PermissionDenied |
+| `phone_reset` | — | — ("Reset remote access…": every pairing revoked, identity key replaced) | — |
+| `phone_arm_approvals` / `phone_arm_state` | `{hours: 8 \| 0}` (main window) / — | `PhoneArmState {armedUntil?}` (in memory: a restart disarms, D-1907) | Invalid, PermissionDenied |
+| `phone_queue_list` / `phone_queue_decide` | — / `{itemId, apply}` (main window) | `[QueuedPhoneAction {id, pairingId, deviceName, approvalId, summary, createdAt}]` / — | NotFound, Conflict, PermissionDenied |
 
 #### Auth, entitlements, billing, updates, privacy [F-BE-02, F-BE-04, F-BL-*, F-SH-06, F-TL-*]
 | Command | Args | Returns | Errors |
@@ -963,12 +970,13 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `dictate:status` | `DictateStatus` (after a binding, model, permission or hotkey-status change) | voice service | F-DI-02, F-DI-04 |
 | `dictate:models` | `ModelsView` (download progress at most 4 a second, stages, failures) | voice service | F-DI-04 |
 | `dictate:history` | — (a take was stored or the history changed) | voice service | F-DI-08 |
-| `conductor:state` | `{state:"connecting"\|"listening"\|"thinking"\|"speaking"\|"ended", utterance?, chips:[Chip], question?}` (to `main`, `conductor-ring`) | CallController | F-CN-04 |
-| `conductor:ui-action` | `{action, args}` (navigation-only actions) | ActionRegistry | F-CN-02 |
-| `conductor:confirm-request` | `{requestId, summary, kind}` | ActionRegistry | F-CN-03 |
+| `conductor:state` | `CallView {callId?, phase:"idle"\|"connecting"\|"listening"\|"thinking"\|"acting"\|"speaking"\|"ended"\|"error", muted, utterance?, caption?, chips:[ChipView], question?: QuestionView, elapsedMs, maxSeconds, error?: {code, message}, notice?, receipt?: {callId, seconds, credits, actions}}` (to `main`) | CallController | F-CN-04 |
+| `conductor:level` | `number` 0–1, ≤10 Hz, only during a call | CallController | F-CN-04 |
+| `conductor:ui-action` | `{action, args}` (navigation-only tools: `switch_mode`, `open_settings`, `toggle_sidebar`, `open_sidebar_tab`, `open_launch_wizard`, `open_routines`, `dismiss`, `tidy`, `flip`, and a confirmed `close_pane`) | ActionRegistry | F-CN-02 |
+| `conductor:confirm-request` | `QuestionView {requestId, tool, summary, verb, review:"voice_or_screen"\|"screen_only"}` | ActionRegistry | F-CN-03 |
 | `remote:ssh` | `SshProgress {opId, hostId, stage: "resolving"\|"hostkey"\|"password"\|"connecting"\|"installing"\|"starting"\|"connected"\|"failed", prompt?: {kind:"hostkey", host, fingerprint, keyType} \| {kind:"password", label}, error?}` | ssh service | F-RM-01 |
 | `remote:host` | `{hostId, state:"connected"\|"connecting"\|"reconnecting"\|"down"}` | ssh service | F-RM-01 |
-| `remote:phone` | `{pairingId, event:"connected"\|"command"\|"queued"\|"revoked"}` | phone service | F-RM-03 |
+| `remote:phone` | `{pairingId, event:"paired"\|"connected"\|"disconnected"\|"command"\|"queued"\|"changed"\|"revoked"\|"armed"}` (`pairingId` null for `armed`) | phone service | F-RM-03 |
 | `updates:state` | `UpdateState` (see `updates_state`; during a download at most one event per 5 %) | updater service | F-SH-06 |
 | `browser:state` / `browser:picker` | `BrowserState {browserId, url, title, canBack, canForward, loading, device, rotated, frame: Rect (the page inside the bounds), zoom, blocked?, picking, seq}` (`seq` grows with every change: a view drops a reply or event older than what it holds) / `{browserId, elements:[PickedElement {tag, selector (unique in the page), component?: {name, framework: "React"\|"Vue"}, rect: Rect (page coordinates), styles: {display, position, font, color, background, margin, padding}, html (outerHTML, cut at 4 KB), truncated}]}` | browser service | F-CD-17, F-CD-18 |
 | `checkpoint:created` | `{folder, checkpoint: Checkpoint}` | checkpoint service | F-EX-01 |
@@ -1493,7 +1501,7 @@ Namespace `NS` = `app.tandem` (release) or `app.tandem.dev` (dev builds). Tests 
 |---|---|---|---|
 | `NS.plugins` (spec: `app.tandem.plugins`) | `<plugin>:<connection-id>` | JSON `{access_token, refresh_token?, expires_at?, token_type, client_secret?}` or `{api_key}`; ≤16 KB (else rejected) | gateway |
 | `NS.auth` | `credentials-key` | 32-byte AES-256-GCM key for `auth/credentials.enc` | auth service |
-| `NS.remote` | `pairing:<pairing-id>` | JSON `{desktop_static_sk, phone_pk, root_key, epoch}` | phone service |
+| `NS.remote` | `pairing:<pairing-id>` | JSON `{phone_pk, relay_url, session}`: the session's epoch keys (current and next) and counters as of the last handshake or rekey; `pairings` holds the live counters (D-1906) | phone service |
 | `NS.remote` | `identity` | desktop X25519 static secret (created on first pairing) | phone service |
 | `NS.ssh` | `password:<host-id>` | only if the user ticks "Remember password" in the askpass dialog (default off) | ssh service |
 
@@ -2170,6 +2178,8 @@ Plugin count limit: Free = 1 connection (§3.2), enforced at connect.
   - **Daemon (D-402):** `serve` is a pipe: it connects to `~/.tandem-host/run/daemon-<version>.sock` (starting `tandem-host daemon` under `setsid` when absent) and copies stdio both ways; the daemon answers every method. PTY output is numbered by byte offset; `pty.attach{from_seq}` replays from there (1 MB kept) and an exit that happened while no client watched is delivered on attach. PTY calls answer in order; file, git and detection calls run beside them. `TANDEM_HOST_LINGER_SECS` shortens the 10 min linger for tests.
   - **Methods added:** `fs.create`, `fs.rename`, `fs.delete` (the tree's menu), `fs.dirs{path}` (the folder picker: folders under an absolute path or `~`, not confined; it's the local user choosing a root), `git.op{root, op: stage|unstage|discard|commit, paths, message?}`. `fs.write` takes `text` (keeps line endings, conflicts by hash) or `data_b64` (new files only: attachments). `git.status` returns `{top, status}` (paths relative to `top`) or `null` outside a repository; `git.status`/`git.diff` shapes are `tandem_git::types`'s. `proc.*` is replaced by `run` (D-403); `status.secret` isn't needed (the desktop makes pane secrets).
   - **Remote workspaces (M14 task 3):** `git.op` returns a commit's sha; a raw `fs.write` under `.tandem/` adds `.tandem/` to the host repository's `info/exclude`. The installed helper is matched by SHA-256 and the daemon's sockets are `daemon-<version>-<sha12>.sock` / `status-<version>-<sha12>.sock` (D-412). Thread engines on a host: `ChatStart.relocate` turns the adapter's local `ProcessSpec` into `ssh … tandem-host run …` (D-403).
+  - **Push, pull and branches (D-1601):** `git.op` also takes `push`, `publish` (`push -u` to `origin` or the only remote), `pull` (`--no-edit`), `switch{branch}` (a remote branch by `switch --track`) and `create_branch{branch}` (`check-ref-format --branch`, `symbolic-ref` on an unborn HEAD); `git.branches{root}` → the switcher's rows (`HostBranch`, `tandem_git::types::Branch`'s shape) from `for-each-ref`. They run as the host user's own writes (config, hooks, credential helpers; `core.fsmonitor` emptied; `GIT_TERMINAL_PROMPT=0`; no tty), network ones stopped after 120 s with the local wording for sign-in, rejected and divergent failures; the desktop waits 135 s for them.
+  - **Watching (D-1600):** `fs.watch{root}` → `{id}` and `fs.unwatch{id}`; the daemon runs `tandem_core::files::watch` (inotify per kept folder, 500 ms batches, the repository's git dirs from `git rev-parse --git-dir --git-common-dir`) and sends `fs.changed{id, change: FsChange}` to the watching connection only. Watches end with their connection (at most 32 each); after a reconnect the desktop watches again and tells subscribers to read everything once.
   - **Status relay (D-406):** the daemon serves `POST /v1/status` on `~/.tandem-host/run/status-<version>.sock` and relays body and signature as `status.event` to the client attached to the pane the body names; the desktop checks the signature with that pane's secret.
   - **Isolation:** `tandem_host::env::allowed` keeps only `TERM`, `COLORTERM`, `TERM_PROGRAM(_VERSION)`, `LANG`, `LC_ALL`, `LC_CTYPE`, `TANDEM_PANE_ID`, `TANDEM_STATUS_SECRET`, and drops any value naming `.tandem/`; the host applies it again and adds only `HOME`, `USER`, `LOGNAME`, `PATH`, `SHELL`, `TMPDIR`, `LANG`, `LC_ALL`, `MAIL` from its own session, plus `TANDEM_STATUS_URL`.
 - Integration test: the `sshd` service in `infra/docker-compose.yml` (compose profile `remote`, port 2222, key from `scripts/gen-ssh-fixture.sh`; MILESTONES M14), enabled with `TANDEM_SSH_TEST=1` or the `tandem-host` feature `e2e-ssh`, covering connect, upload, terminal `echo hi`, host-key change, escape refusal, reattach (AC1–5).
@@ -2182,7 +2192,13 @@ Plugin count limit: Free = 1 connection (§3.2), enforced at connect.
 - **Pairing:** `phone_pair_begin` → desktop ensures its static X25519 key `D` (keychain `NS.remote/identity`), generates `pairing_id` (`pr_…`) and a 32-byte one-time `S`, calls `POST /v1/pairings {pairing_id, device_label?}` → `{pairing_token, relay_url, expires_at}`. QR = `https://app.vibezeo.com/remote#p=<base64url(JSON{v:1, pid, dpk: D.pub, s: S, relay, ptok})>` (fragment never reaches servers). Valid 10 min.
 - **Handshake** (over the relay): phone generates static `P`, sends `hello{P.pub, tag = HMAC-SHA256(S, "tandem-pair-v1"‖pid‖P.pub)}`; desktop verifies the tag with `S` (proves QR possession; defeats a relay MITM). Both compute `ss = X25519(D, P)`, `root = HKDF-SHA256(salt=S, ikm=ss, info="tandem-root-v1"‖pid‖D.pub‖P.pub)`, `k_d2p, k_p2d = HKDF(root, info="d2p"/"p2d")`. `S` is then discarded.
 - **Frames:** `{v, epoch, dir, ctr: u64, nonce: 24B, ct}` with XChaCha20-Poly1305, `AAD = pid‖epoch‖dir‖ctr`, nonce = `ctr (8 B LE) ‖ 16 random bytes`. Receiver requires `ctr > last_ctr[dir]` (persisted in `pairings.rx_counter`, survives rekey), else reject (AC2). Plaintext ≤ 60 KB so frames stay ≤ 64 KB; long histories paged.
-- **Rekey:** every 1 h or 2^20 frames: sender includes a fresh ephemeral X25519 pub; new keys = HKDF(root ‖ X25519(eph_a, eph_b)); `epoch += 1`; counters keep increasing.
+- **Rekey:** every 1 h or 2^20 frames, started by the desktop: it sends a fresh ephemeral X25519 pub and the phone answers with its own; new keys = HKDF(secret ‖ X25519(eph_a, eph_b)); `epoch += 1`; counters keep increasing.
+- **Wire format v1 (D-1905)**, shared by `tandem_core::remote` and `apps/web/lib/remote` and pinned by `crates/tandem-core/tests/fixtures/remote_v1.json`. Integers are big-endian unless noted; text is UTF-8; `‖` concatenates.
+  - `HELLO` (phone → desktop, plaintext): `0x01 ‖ 0x01 ‖ P.pub (32) ‖ tag (32)`, `tag = HMAC-SHA256(S, "tandem-pair-v1" ‖ pid ‖ P.pub)`.
+  - `SEALED`: `0x02 ‖ 0x01 ‖ epoch u32 ‖ dir u8 (0 = desktop→phone, 1 = phone→desktop) ‖ ctr u64 ‖ nonce (24) ‖ ct`; `AAD = pid ‖ epoch u32 ‖ dir u8 ‖ ctr u64`; nonce = `ctr` as u64 little-endian ‖ 16 random bytes. Header 39 bytes, so plaintext ≤ 61,440 bytes keeps a frame under 64 KB.
+  - Keys: an all-zero `X25519(D, P)` is refused. `secret₀ = root = HKDF-SHA256(salt = S, ikm = ss, info = "tandem-root-v1" ‖ pid ‖ D.pub ‖ P.pub)`. Per epoch `e`: `k_d2p = HKDF-SHA256(salt = ∅, ikm = secretₑ, info = "tandem-d2p-v1")`, `k_p2d` likewise with `"tandem-p2d-v1"`. Rekey: `secretₑ₊₁ = HKDF-SHA256(salt = secretₑ, ikm = X25519(eph_d, eph_p), info = "tandem-rekey-v1" ‖ (e+1) u32)`.
+  - Rekey steps: the desktop sends `{t:"rekey", eph}`. The phone answers `{t:"rekey_ack", eph}` under the old keys and holds the new keys as *next*. The desktop then sends under the next epoch, and keeps accepting the old epoch until the phone's first next-epoch frame. The phone switches when the desktop's first next-epoch frame arrives. Each side accepts only its current or next epoch. Both persist the next keys, so a dropped connection mid-rekey resumes.
+  - Messages (JSON, inside `SEALED`): phone → desktop `{t:"hi", device}`, `{t:"cmd", id, cmd, args}`, `{t:"rekey_ack", eph}`; desktop → phone `{t:"welcome", desktop, grants, armedUntil?}`, `{t:"res", id, ok, data?|error?}`, `{t:"rekey", eph}`, `{t:"changed"}`, `{t:"reject", reason}` (a frame refused as `replay`, `epoch` or `bad_frame`), `{t:"bye", reason}` (revoked).
 - **Commands** (phone → desktop): `view.snapshot`, `thread.read`, `thread.send` (needs Chat control grant), `pane.type` (Terminal control; agent panes only, via `type_prompt`), `approval.decide` (Approvals grant; `allow` applies only if the desktop armed "Allow approvals from phone for the next 8 hours", else stored in `phone_queue` and confirmed locally; `deny` always applies, AC3), `routine.run_now` (Routines grant). Local-review actions have no phone command.
 - **Revocation:** `phone_pairing_revoke`, sign-out or account change → mark revoked, delete keychain entry, `DELETE /v1/pairings/{id}` (relay drops both sockets); later frames → rejected (AC4).
 - **PWA** (`apps/web/app/remote`): Next.js route, service worker for install, `@noble/curves` (X25519), `@noble/hashes` (HKDF, HMAC), `@noble/ciphers` (XChaCha20-Poly1305); keys in IndexedDB (non-extractable where WebCrypto allows; otherwise encrypted with a device passphrase-less wrapping key — documented residual risk).

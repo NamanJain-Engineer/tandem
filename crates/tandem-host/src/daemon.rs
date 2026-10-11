@@ -23,12 +23,13 @@ use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 
 use crate::protocol::{
-    method, DirListing, EnginesDetect, ErrorKind, FsCreate, FsDirs, FsList, FsPath, FsRename,
-    FsWrite, GitDiff, GitOp, GitRoot, Hello, HelloReply, Message, PtyAttach, PtyAttached, PtyEntry,
-    PtyExit, PtyId, PtyOutput, PtyResize, PtySpawn, PtySpawned, PtyWrite, RpcError, StatusEvent,
-    MAX_LINE, PROTOCOL, VERSION,
+    method, DirListing, EnginesDetect, ErrorKind, FsChanged, FsCreate, FsDirs, FsList, FsPath,
+    FsRename, FsWatch, FsWatching, FsWrite, GitDiff, GitOp, GitRoot, Hello, HelloReply, Message,
+    PtyAttach, PtyAttached, PtyEntry, PtyExit, PtyId, PtyOutput, PtyResize, PtySpawn, PtySpawned,
+    PtyWrite, RpcError, StatusEvent, MAX_LINE, PROTOCOL, VERSION,
 };
 use crate::{detect, env, fsops, gitops};
+use tandem_core::files::watch::{self, DirWatcher};
 
 /// Output kept per PTY for re-attach.
 pub const BUFFER: usize = 1024 * 1024;
@@ -100,11 +101,18 @@ impl Pty {
     }
 }
 
+/// Folders one connection may watch at once (inotify watches are a
+/// per-user budget on the host).
+const MAX_WATCHES: usize = 32;
+
 struct State {
     ptys: HashMap<String, Pty>,
     clients: HashMap<u64, SyncSender<Vec<u8>>>,
     next_client: u64,
     idle_since: Option<Instant>,
+    /// `fs.watch` subscriptions: id → (its connection, the watcher).
+    watches: HashMap<String, (u64, DirWatcher)>,
+    next_watch: u64,
 }
 
 impl State {
@@ -123,6 +131,19 @@ impl State {
     }
 
     fn drop_client(&mut self, client: u64) {
+        // A connection's watches end with it; the desktop watches again
+        // when it reconnects.
+        let gone: Vec<String> = self
+            .watches
+            .iter()
+            .filter(|(_, (c, _))| *c == client)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let stopped: Vec<DirWatcher> = gone
+            .iter()
+            .filter_map(|id| self.watches.remove(id).map(|(_, w)| w))
+            .collect();
+        drop_later(stopped);
         if self.clients.remove(&client).is_some() {
             for pty in self.ptys.values_mut() {
                 if pty.attached == Some(client) {
@@ -134,6 +155,17 @@ impl State {
             }
         }
     }
+}
+
+/// Stops watchers off the state lock: a watcher's batch thread may be
+/// waiting for that lock to send its notification.
+fn drop_later(watchers: Vec<DirWatcher>) {
+    if watchers.is_empty() {
+        return;
+    }
+    let _ = std::thread::Builder::new()
+        .name("unwatch".into())
+        .spawn(move || drop(watchers));
 }
 
 #[derive(Clone)]
@@ -162,6 +194,8 @@ impl Daemon {
                 clients: HashMap::new(),
                 next_client: 1,
                 idle_since: Some(Instant::now()),
+                watches: HashMap::new(),
+                next_watch: 1,
             })),
             home,
             status_url,
@@ -373,6 +407,23 @@ impl Daemon {
                 to_value(gitops::diff(Path::new(&g.root), &g.path, g.staged)?)
             }
             method::GIT_OP => to_value(gitops::op(&params::<GitOp>(p)?)?),
+            method::GIT_BRANCHES => {
+                let r: GitRoot = params(p)?;
+                to_value(gitops::branches(Path::new(&r.root))?)
+            }
+            method::FS_WATCH => to_value(self.watch(client, params::<FsWatch>(p)?)?),
+            method::FS_UNWATCH => {
+                let w: FsWatching = params(p)?;
+                let stopped = {
+                    let mut s = self.state.lock();
+                    match s.watches.get(&w.id) {
+                        Some((c, _)) if *c == client => s.watches.remove(&w.id).map(|(_, w)| w),
+                        _ => None,
+                    }
+                };
+                drop_later(stopped.into_iter().collect());
+                Ok(Value::Null)
+            }
             other => Err(RpcError::new(
                 ErrorKind::Protocol,
                 format!("Unknown method {other}"),
@@ -543,6 +594,58 @@ impl Daemon {
             }
         }
         Ok(reply)
+    }
+
+    /// `fs.watch` (D-1600): the same watcher as the desktop's own
+    /// (`tandem_core::files::watch`, inotify per kept folder), its batches
+    /// sent to this connection as `fs.changed`.
+    fn watch(&self, client: u64, req: FsWatch) -> Result<FsWatching, RpcError> {
+        let root = Path::new(&req.root)
+            .canonicalize()
+            .ok()
+            .filter(|r| r.is_dir())
+            .ok_or_else(|| RpcError::new(ErrorKind::NotFound, "The remote folder doesn't exist"))?;
+        let id = {
+            let mut s = self.state.lock();
+            if s.watches.values().filter(|(c, _)| *c == client).count() >= MAX_WATCHES {
+                return Err(RpcError::new(
+                    ErrorKind::Unsupported,
+                    "Too many folders are being watched on this host",
+                ));
+            }
+            let id = format!("w{}", s.next_watch);
+            s.next_watch += 1;
+            id
+        };
+        let git = gitops::dirs(&root);
+        let state = Arc::downgrade(&self.state);
+        let note_id = id.clone();
+        let watcher = watch::watch(
+            &root,
+            git,
+            watch::WatchOptions::default(),
+            Box::new(move |change| {
+                let Some(state) = state.upgrade() else { return };
+                let note = Message::notification(
+                    method::FS_CHANGED,
+                    json!(FsChanged {
+                        id: note_id.clone(),
+                        change,
+                    }),
+                );
+                state.lock().send(client, &note);
+            }),
+        )
+        .map_err(fsops::map_files)?;
+        let mut s = self.state.lock();
+        if !s.clients.contains_key(&client) {
+            // The connection closed while the watcher started.
+            drop(s);
+            drop_later(vec![watcher]);
+            return Err(RpcError::new(ErrorKind::NotFound, "The connection closed"));
+        }
+        s.watches.insert(id.clone(), (client, watcher));
+        Ok(FsWatching { id })
     }
 
     /// Relays one hook report to the client attached to the pane it names.
@@ -882,5 +985,58 @@ mod tests {
             )
             .expect_err("refused");
         assert_eq!(err.kind, ErrorKind::PathEscape);
+    }
+
+    #[test]
+    fn f_rm_01_a_watched_folder_reports_changes_to_its_connection() {
+        let (dir, d) = daemon();
+        let root = dir.path().join("project");
+        std::fs::create_dir_all(root.join("src")).expect("mkdir");
+        let mut c = Client::connect(&d);
+        let w: FsWatching = serde_json::from_value(
+            c.call(method::FS_WATCH, json!({"root": root}))
+                .expect("watch"),
+        )
+        .expect("id");
+        std::fs::write(root.join("src/new.rs"), "fn main() {}").expect("write");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let changed = loop {
+            assert!(Instant::now() < deadline, "no fs.changed");
+            let m = c.read();
+            if m.method.as_deref() == Some(method::FS_CHANGED) {
+                let ch: FsChanged = serde_json::from_value(m.params.expect("p")).expect("ch");
+                if ch.change.paths.iter().any(|p| p == "src/new.rs") {
+                    break ch;
+                }
+            }
+        };
+        assert_eq!(changed.id, w.id);
+        // Another connection can't stop it; its own can.
+        let mut other = Client::connect(&d);
+        other
+            .call(method::FS_UNWATCH, json!({"id": w.id}))
+            .expect("no-op");
+        assert_eq!(d.state.lock().watches.len(), 1);
+        c.call(method::FS_UNWATCH, json!({"id": w.id}))
+            .expect("unwatch");
+        assert!(d.state.lock().watches.is_empty());
+        // A connection's watches end when it closes.
+        c.call(method::FS_WATCH, json!({"root": root}))
+            .expect("again");
+        assert_eq!(d.state.lock().watches.len(), 1);
+        drop(c);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !d.state.lock().watches.is_empty() {
+            assert!(
+                Instant::now() < deadline,
+                "the closed connection's watch stayed"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        // A folder that isn't there is refused.
+        let err = other
+            .call(method::FS_WATCH, json!({"root": dir.path().join("nope")}))
+            .expect_err("missing");
+        assert_eq!(err.kind, ErrorKind::NotFound);
     }
 }

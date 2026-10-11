@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-conductor-call-log"
+description = "Enables the conductor_call_log command without any pre-configured scope."
+commands.allow = ["conductor_call_log"]
+
+[[permission]]
+identifier = "deny-conductor-call-log"
+description = "Denies the conductor_call_log command without any pre-configured scope."
+commands.deny = ["conductor_call_log"]

@@ -3,6 +3,7 @@
 // `@tandem/protocol/shortcuts.json`; the palette, the shortcut dispatcher and
 // menus all run commands through `runCommand`, so they share one handler.
 import { useAgentPage } from "../../stores/agentPage";
+import { inCall, setMuted, toggleCall, useConductor } from "../../stores/conductor";
 import { useLaunch } from "../../stores/launch";
 import { useNotifications } from "../../stores/notifications";
 import { useCloseConfirm } from "../../stores/closeConfirm";
@@ -81,6 +82,8 @@ export function isEnabled(spec: CommandSpec): boolean {
   if (spec.enabledWhen === "always") return true;
   // Pausing routines means nothing on a plan without them (F-RT-04).
   if (spec.enabledWhen === "routines") return !!useSession.getState().entitlement?.limits.routines;
+  // Nor muting or a call log on a plan without Conductor (F-CN-01, D-833).
+  if (spec.enabledWhen === "conductor") return !!useSession.getState().entitlement?.limits.conductor;
   const ui = useUi.getState();
   if (spec.enabledWhen === "thread_open")
     return ui.mode === "thread" && !ui.settingsOpen && useThreads.getState().selectedId !== null;
@@ -210,6 +213,13 @@ export const handlers: Record<string, () => void> = {
   "terminal.copy_last_output": onPane((_, paneId) => void copyLastOutput(paneId, toast)),
   "work.find": () => useUi.getState().openFindWork(),
   "billing.plans": () => useUi.getState().openUpgrade(),
+  // Free plan: the call command opens the plans (UI-61).
+  "conductor.call": () => toggleCall(),
+  "conductor.mute": () => {
+    const v = useConductor.getState().view;
+    if (inCall(v)) setMuted(!v.muted);
+  },
+  "conductor.log": () => useConductor.getState().openLog(true),
   "help.shortcuts": () => useUi.getState().setCheatsheet(!useUi.getState().cheatsheetOpen),
   "help.diagnostics": () => useUi.getState().setDiagnostics(true),
   "help.copy_diagnostics": () => void copyDiagnostics(toast),

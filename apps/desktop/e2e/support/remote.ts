@@ -36,8 +36,14 @@ export function inContainer(cmd: string): string {
 }
 
 /** The fixture's repository as the image made it (specs edit it). */
+/** The fixture's project as `infra/ssh/setup.sh` made it: its one commit
+ * on `main`, nothing else committed, no other branch or remote, no
+ * untracked file (a spec that commits or pushes, E2E-M14-7, leaves none
+ * of it for the next). */
 export function resetProject(): void {
-  inContainer(`su tandem -c 'cd ${PROJECT} && git checkout -q -- . && git clean -fdxq'`);
+  inContainer(
+    `su tandem -c 'cd ${PROJECT} && git checkout -q -f main && git reset -q --hard "$(git rev-list --max-parents=0 HEAD)" && git clean -fdxq && for b in $(git for-each-ref --format="%(refname:short)" refs/heads); do [ "$b" = main ] || git branch -q -D "$b"; done && for r in $(git remote); do git remote remove "$r"; done'`,
+  );
 }
 
 /** Copies a local file into the container. */
