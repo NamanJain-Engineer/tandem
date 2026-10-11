@@ -519,6 +519,18 @@ pub trait ApiClient: Send + Sync {
     async fn device_token(&self, _device_code: &str) -> Result<TokenPair, ApiError> {
         Err(no_hosted_service())
     }
+    /// `POST /v1/pairings/:id/push` (F-RM-06): forwards a sealed alert. 410
+    /// (`ApiError::Http`) means the phone's token is gone.
+    async fn pairing_push(
+        &self,
+        _access: &str,
+        _pairing_id: &str,
+        _platform: &str,
+        _token: &str,
+        _payload: &str,
+    ) -> Result<(), ApiError> {
+        Err(no_hosted_service())
+    }
 }
 
 /// `POST /v1/pairings`'s answer (F-RM-03).
@@ -526,6 +538,10 @@ pub trait ApiClient: Send + Sync {
 pub struct PairingTicket {
     pub pairing_token: String,
     pub relay_url: String,
+    /// Where the code's web app link points; the hosted portal when absent.
+    /// LAN pairings use the desktop's own address (F-RM-04).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web_base: Option<String>,
 }
 
 /// `POST /v1/auth/device/start` (F-BE-03).
@@ -959,6 +975,23 @@ impl ApiClient for HttpApi {
             .client()
             .delete(self.url(&format!("/v1/pairings/{pairing_id}")))
             .bearer_auth(access);
+        self.call_empty(req).await
+    }
+
+    async fn pairing_push(
+        &self,
+        access: &str,
+        pairing_id: &str,
+        platform: &str,
+        token: &str,
+        payload: &str,
+    ) -> Result<(), ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url(&format!("/v1/pairings/{pairing_id}/push")))
+            .bearer_auth(access)
+            .json(&json!({ "platform": platform, "token": token, "payload": payload }));
         self.call_empty(req).await
     }
 

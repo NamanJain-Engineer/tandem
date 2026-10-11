@@ -12,7 +12,7 @@
 - §1 Glossary
 - §2 Product overview
 - §3 Plans, entitlements and credits
-- §4 Features, grouped by area, each with a stable ID `F-<AREA>-<nn>` (§4.19 EX holds the extras added after the original spec, M17)
+- §4 Features, grouped by area, each with a stable ID `F-<AREA>-<nn>` (§4.19 EX holds the extras added after the original spec and §4.20 WT the worktree workflow from the competitive analysis, both M17)
 - §5 Non-functional requirements
 - §6 Out of scope
 - §7 Traceability and build order
@@ -2438,6 +2438,59 @@ Each ready module needs:
 3. A phone approval with no local arming is queued, not applied.
 4. After Revoke, the next phone command is rejected.
 
+#### F-RM-04 LAN pairing (P2, all plans)
+Added on `mobile-apps` (D-2001). The free download has no hosted relay, so the desktop can play the relay's part itself on the local network.
+**Behavior:**
+- Settings → Remote → **Pair over your local network**: off by default; a switch in the main window turns it on, and the choice is remembered.
+- While on, the desktop listens only on its private addresses (RFC 1918, and 100.64.0.0/10 for a VPN such as Tailscale), never on all interfaces or a public address, and closes connections from anything outside the local network unread.
+- The QR code and link work as in F-RM-03 (same handshake, frames, counters, rekeying, grants, approvals step-up and revocation), with the desktop's own address as the relay and the web app. No account, plan or hosted service is needed.
+- Away from home, a VPN address (for example Tailscale's free plan) is used the same way; nothing is exposed to the internet.
+
+**Acceptance:**
+1. LAN mode starts off; with it on, only private and VPN addresses are listened on, and a peer outside the LAN gets no answer.
+2. A phone pairs over the LAN relay and runs a command; a replayed frame is rejected.
+3. The LAN relay refuses a wrong token (1008), text frames (1003) and frames over 64 KB (1009), and a newer phone socket replaces the older (4000).
+4. After Revoke, the phone is told, its socket closes and its token is refused.
+5. The desktop serves the phone web app on the LAN with a strict CSP, nothing outside it, and refuses requests not addressed to its own IP (DNS rebinding).
+6. The phone apps follow `ws://` codes only to private and VPN addresses.
+
+#### F-RM-05 Vibezeo Remote app (P2, all plans)
+Added on `mobile-apps` (D-2000). The phone companion as a native Android and iOS app (Expo / React Native, `apps/mobile`), since phones can't run the coding CLIs.
+**Behavior:**
+- Pair by scanning the QR code in the app, or by opening a pairing link (`vibezeo-remote://pair#p=…`, or the desktop's `…/remote#p=…` link pasted in).
+- Agents and their status, approvals (Deny always applies; Allow applies only while the desktop is armed, else waits there), threads and teammate chats (read, and send with Chat control), typing into agent panes (Terminal control; never plain shells), routines (Run now), the phone's grants, and Unpair.
+- In-app and local notifications for new approvals and agents that finish or need you, on the phone only.
+- A demo mode that runs a made-up computer inside the app, labelled as a demo.
+- Keys live in the iOS Keychain or Android Keystore, never in plain storage.
+
+**Acceptance:**
+1. The app reads pairing codes from the desktop's web link, a LAN link and its own link.
+2. Demo mode runs every screen's commands over the real protocol and reaches nothing else.
+3. New approvals and finished or waiting agents become notifications, once each.
+4. Unpairing forgets the computer.
+5. The pairing is stored only through the platform keystore, and an interrupted save keeps the previous pairing.
+6. The runtime provides a CSPRNG and UTF-8 decoding, and the protocol matches the interop vectors (`remote_v1.json`).
+7. The app's colours match `packages/ui`'s tokens.
+
+#### F-RM-06 Encrypted push notifications (P2, opt-in)
+Added on `mobile-apps` (D-2020). Alerts for a paired phone that isn't open, at no cost (FCM on Android; APNs on iOS once the Apple account exists).
+**Behavior:**
+- Off by default; turned on per phone in Vibezeo Remote's settings. Needs a pairing through the hosted relay (LAN mode has no server to push from).
+- The phone tells the desktop its push token inside the encrypted channel; the API stores it against the pairing. The desktop seals each alert with a per-pairing push key; the API forwards only those opaque bytes to FCM or APNs and never sees the text.
+- Turning push off, unpairing or revoking deletes the token.
+
+**Acceptance:**
+1. Push starts off, and nothing is registered until the person turns it on.
+2. A push payload is sealed so only the phone can open it, and the API's push route stores and forwards bytes it can't read (no crypto imports; logs hold no payload).
+3. Revoking a pairing deletes its push token.
+
+#### F-RM-07 Linux store packages (P2)
+Added on `mobile-apps` (D-2030). Flathub and Snap Store packages for the desktop app, which are free to publish.
+**Behavior:** a Flatpak manifest (`app.vibezeo.Vibezeo`-style id from the bundle id) and a `snapcraft.yaml` that package the release build, with the permissions the app needs and nothing more.
+**Acceptance:**
+1. The manifest and snapcraft.yaml are valid and reference the release build and its checksum.
+2. The packaged app starts (where the container allows building the package).
+
 ### 4.15 BE: Backend (apps/api)
 
 All endpoints are under `https://api.tandem.dev/v1` (dev: `http://api.tandem.local:8787/v1`). Every endpoint follows these rules:
@@ -2904,7 +2957,7 @@ Features beyond the original spec that make working with coding agents faster, s
   - **Keep this one…** asks in the native confirm (the one confirmation, D-710): "Merge {branch} into {base}?" / "Commits {engine}'s uncommitted changes on {branch}, merges it into {base}, and deletes the other {n} worktrees and their uncommitted changes. Their branches stay." [Merge and clean up]. Agents in the lanes are stopped first. A conflict leaves the base checkout conflicted, as "Merge into {base}" does (F-CD-15), and keeps all lanes. A base checkout with uncommitted changes refuses: "Commit or stash your changes in {base} first."
   - **Discard all…** asks and removes every lane's worktree and pane; branches stay.
 - A run survives relaunch: its lanes, check results and state are kept until it's merged or discarded.
-- States: no git ("Best of N needs a git repository"), launching ("Starting 3 agents…"), comparing, a lane failed to start (its column shows the error; the others go on), done (merged, or discarded).
+- States: no git ("Best of N needs a git repository"), a folder on an SSH host or in WSL ("Best of N works in folders on this computer only"), launching ("Starting 3 agents…"), comparing, a lane failed to start (its column shows the error; the others go on), done (merged, or discarded).
 
 **Data:** SQLite `bestof_runs` (id, workspace_id, title, base_commit, check_command?, state, created_at) and `bestof_lanes` (run_id, lane_workspace_id, pane_id?, engine_id, account_id?, check_state, check_exit?, check_output_tail?).
 
@@ -2937,6 +2990,86 @@ Features beyond the original spec that make working with coding agents faster, s
 2. `{{branch}}`, `{{file}}`, `{{selection}}` and `{{clipboard}}` are filled in; an unknown variable asks for a value; `\{{x}}` stays literal.
 3. Inserting into a terminal pane writes a bracketed paste with no carriage return after it, and inserting into a composer leaves the text in the composer unsent.
 4. New prompt creates the file in the chosen place and opens it in the editor; "Share with the repository" replaces the `.tandem/` exclude line so the prompt shows in `git status`, and a new worktree lane doesn't hide it again.
+
+### 4.20 WT: Worktree workflow
+
+Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1–4 of §4); decisions D-2200–D-2299. All four extend F-CD-15. Remote folders have no worktrees (F-RM-01), so none of these apply there.
+
+#### F-WT-01 Worktree setup (P2)
+**Story:** A new worktree has none of my repository's ignored files (`.env`, local config) and no installed dependencies, so every agent's first minutes go to setup. I describe the setup once and every worktree gets it, without a repository being able to run commands I never approved.
+
+**Behavior:**
+- **The file:** `.vibezeo/worktree.json` at the root of the repository's main checkout, UTF-8 JSON of at most 64 KB:
+  ```json
+  { "copy": [".env*", "config/local.yml"], "setup": "pnpm install", "teardown": "docker compose down" }
+  ```
+  - `copy`: up to 100 patterns in gitignore syntax (relative to the repository root; `!` lines exclude). Optional.
+  - `setup`, `teardown`: one shell command line each, up to 4,000 characters. Optional.
+  - Unknown keys are ignored. Vibezeo never commits the file and never edits `.gitignore`; users commit it to share it.
+- **Editing:** "Worktree setup…" in the repository's and each worktree's menu opens UI-150: the patterns (one per line), the two commands, where the file lives, and Save. Saving writes the file atomically and trusts its commands on this computer.
+- **Copy, on every new worktree** (New worktree, the launch sheet, handoff, task runs):
+  - Walks the main checkout, skipping `.git` and `.tandem`. A git-ignored folder (such as `node_modules`) is entered only when a pattern's fixed leading path leads into it; a folder that itself matches is copied whole.
+  - Copies each match that doesn't exist in the worktree yet, keeping its permission bits. It never overwrites, so tracked files stay as the branch has them.
+  - Sources must resolve inside the main checkout and destinations inside the worktree (F-TL-03 containment). Symbolic links are skipped and listed.
+  - Stops at 2,000 files or 512 MB and says so.
+  - A missing or malformed file never blocks the worktree: it's created without the copy, and the error is shown.
+- **Trust:** commands from the file run only when this exact pair of `setup` and `teardown` has been trusted for this repository on this computer. Trust is a SHA-256 of the two commands, kept in `$DATA/worktree-trust.json` (never in the repository). Saving from UI-150 trusts. Any other change, such as a pull that edits the file, needs review again. The copy needs no trust: it only moves the repository's own files into its own worktree.
+- **Setup:** after a worktree is made from the New worktree dialog or the launch sheet, a trusted `setup` runs in a new terminal pane in the worktree's tab, typed into the user's shell once its prompt is up, so it's visible and can be stopped. An untrusted one opens UI-151 "Review worktree setup" with the commands verbatim: "Trust and run" or "Not now". Task runs and handoff copy only and never run commands (D-2203). Only the main window can trust (TL-06 rule 5: not voice, the phone or an unattended run).
+- **Teardown:** discarding a worktree runs a trusted `teardown` in its folder first, with the login environment and a 2-minute limit. Its result never blocks the removal; a failure or timeout is reported with its exit code. An untrusted teardown is skipped, and the report says so.
+
+**Acceptance:**
+1. With `copy: [".env*", "config/local.yml"]`, a new worktree has `.env`, `.env.local` and `config/local.yml`, byte for byte as in the main checkout, and a tracked `.env.example` keeps the branch's version; nothing under an ignored `node_modules` is read.
+2. Patterns that reach outside (`../secret`, a symlink to `/etc`) copy nothing outside the worktree, and symlinks are listed as skipped.
+3. A repository file whose `setup` isn't trusted runs nothing; "Trust and run" runs it in a terminal pane in the worktree; changing the command in the file asks again.
+4. Saving from UI-150 writes `.vibezeo/worktree.json`, and the next worktree runs its setup without asking.
+5. Discarding runs the trusted teardown in the worktree's folder before removal; a teardown that exits 3 still removes the worktree, and the result says "exit code 3".
+6. Malformed JSON shows its error in UI-150, and a new worktree is still created.
+
+#### F-WT-02 Review comments to the agent (P2)
+**Story:** I read a worktree's diff, leave comments on lines, and send them to the agent working there in one go, instead of retyping file names and line numbers.
+
+**Behavior:**
+- In a worktree's diff (UI-152), each changed or context line has "Comment on line": a short text box for a comment on that file and line (new side for added and context lines, old side for removed ones).
+- A review bar lists the comments in file order with the count; each can be edited or removed. Comments are kept per worktree until sent or the app quits (D-2205).
+- **Send to agent** builds one prompt and types it into the worktree's agent through `pty_type_prompt` (a paste, then Enter). Format:
+  ```
+  Review of your changes on tandem/fix-auth (2 comments):
+
+  1. src/auth.ts:42
+     > if (token == null) return;
+     Handle an expired token here too.
+
+  Address each comment, then say what you changed.
+  ```
+  Quoted lines are trimmed to 200 characters.
+- **Target:** the live agent panes in the worktree's tabs; with more than one, the user picks. With none, Send is disabled ("No agent is running in this worktree") and **Copy review** puts the same text on the clipboard. A waiting agent (an approval is open) refuses, as `pty_type_prompt` does.
+
+**Acceptance:**
+1. Comments on `b.ts:3` and `a.ts:10` produce a prompt listing `a.ts:10` first, each with its quoted line and comment, and the header's branch and count.
+2. Sending to a live agent pane types the prompt into it and clears the comments; the pane's input receives it as one paste.
+3. With no agent running, Send is disabled with the reason, and Copy review copies the prompt.
+
+#### F-WT-03 Overlap check (P2)
+**Story:** Before I merge one of several parallel worktrees, I see which other worktrees touch the same files and whether merging will conflict.
+
+**Behavior:**
+- **Overlap:** for a worktree, the files it changed (since its base commit, uncommitted work included) are compared with each sibling worktree's (same repository). Each sibling with shared files is listed with them.
+- **Forecast:** `git merge-tree --write-tree --name-only` of the repository's current HEAD and the worktree's branch, which merges without touching the working tree, the index or any ref (it only adds unreferenced objects, which git prunes). It covers committed work; uncommitted changes are counted ("3 uncommitted changes aren't in the forecast"). It needs git 2.38 or later and says so on older git.
+- "Check overlap…" in the worktree menu opens UI-153 with both. The merge confirm (F-CD-15) shows the forecast's verdict before the user confirms: "Merging will conflict in 2 files" (with the list) or "No conflicts expected".
+
+**Acceptance:**
+1. Two worktrees that both change `src/a.ts` each list the other with `src/a.ts`; a third that changes only `b.ts` lists none.
+2. A worktree whose commit conflicts with a newer commit on the base forecasts that file, and afterwards the parent checkout has no `MERGE_HEAD`, the same HEAD and a clean status.
+3. A worktree with no shared files and a clean forecast shows "No overlap" and "No conflicts expected".
+
+#### F-WT-04 GitLab merge requests (P2)
+**Behavior:**
+- "Create pull request" (F-CD-15) reads the worktree's `origin` remote. A host whose name contains `gitlab` makes it **Create merge request**, which types `glab mr create` into the shell pane instead of `gh pr create`. Without `glab` on the login PATH it says "GitLab CLI (glab) isn't installed".
+- Other hosts keep `gh pr create` and its message.
+
+**Acceptance:**
+1. With `origin` at `git@gitlab.com:team/app.git`, the menu reads "Create merge request" and the pane receives `glab mr create`.
+2. With `origin` at `https://github.com/team/app.git`, nothing changes from F-CD-15.
 
 ---
 

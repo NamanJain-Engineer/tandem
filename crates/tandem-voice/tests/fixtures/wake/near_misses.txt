@@ -1,0 +1,19 @@
+# start end text (samples at 16 kHz in near_misses.wav)
+0 31950 The orchestra conductor raised her baton
+33550 63643 Copper is a good conductor of heat
+65243 104438 Hey Connor, did you push the branch yesterday
+106038 144118 Let's conduct a quick review of the pull request
+145718 173953 The train conductor checked our tickets
+175553 218463 Semiconductors are used in every laptop
+220063 243097 The lightning rod is a conductor
+244697 270703 Hey, conduct yourself properly
+272303 296451 Who was the conductor of that concert
+298051 325914 He conducted the experiment twice
+327514 356678 Conduct, conductor, conducting
+358278 384098 I'll ask the conductor when we arrive
+385698 413933 Hey, can ducks swim in cold water
+415533 443954 Hey, construction starts tomorrow
+445554 480662 Hey, consider adding a test for that
+482262 512912 Hey Doctor, the results are in
+514512 532344 Hey, come back here
+533944 569424 Hey Siri, set a timer for ten minutes

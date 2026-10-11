@@ -58,9 +58,12 @@ export {
 export {
   DiffView,
   LARGE_DIFF_LINES,
+  diffLineKey,
   parsePatch,
+  type DiffComments,
   type DiffFile,
   type DiffLine,
+  type DiffLineTarget,
   type DiffViewLabels,
 } from "./components/DiffView";
 export {

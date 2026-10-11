@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements for the Developer ID build (D-2101). No App
+  Sandbox: the app spawns shells and agent CLIs in the user's folders
+  (D-2106). Each entitlement is here because a feature fails without it;
+  apps/desktop/src-tauri/src/lib.rs pins the exact set
+  (nfr_macos_bundle_config_is_pinned), so adding one is a reviewed change.
+
+  Deliberately absent:
+  - cs.allow-jit / cs.allow-unsigned-executable-memory: JavaScript runs in
+    WebKit's own WebContent process, which carries Apple's entitlements.
+  - cs.disable-library-validation: ONNX Runtime (Parakeet) and whisper.cpp
+    link statically; nothing loads a dylib signed by another team.
+  - cs.allow-dyld-environment-variables: children are separate processes
+    with their own signatures, so shells keep DYLD_* without it.
+  - automation.apple-events: "Pause other audio" (F-DI-03) runs
+    `osascript -e "set volume output muted …"`, a Standard Additions
+    command osascript handles itself; no Apple Event reaches another app.
+    HUMAN_TODO's macOS QA checks it in a notarized build.
+  - Input Monitoring and Accessibility (Dictate's hotkey and paste) are TCC
+    permissions the user grants in System Settings; they have no
+    entitlement.
+-->
+<plist version="1.0">
+<dict>
+  <!-- Dictate's microphone (F-DI-01). Without it TCC denies audio input
+       silently under the hardened runtime: no prompt, only silence. -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+</dict>
+</plist>

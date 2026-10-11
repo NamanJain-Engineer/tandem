@@ -79,6 +79,14 @@ fn path_starts_with(path: &Path, root: &Path) -> bool {
     p == r || p.starts_with(&format!("{r}{}", std::path::MAIN_SEPARATOR))
 }
 
+/// `fs::canonicalize`, but `C:\…` on Windows rather than `\\?\C:\…` (when
+/// that is the same file), so an absolute request for a file that doesn't
+/// exist yet still compares with the root. The same as std on Unix. Callers
+/// that compare their own canonical paths with [`contain`]'s use this too.
+pub fn canonical(path: &Path) -> std::io::Result<PathBuf> {
+    dunce::canonicalize(path)
+}
+
 /// Resolves `requested` (relative to `root`, or absolute) and returns the
 /// canonical path when it stays inside `root` and the policy allows it.
 pub fn contain(
@@ -98,12 +106,12 @@ pub fn contain(
         return Err(ContainError::Lookalike);
     }
 
-    let root = root.canonicalize().map_err(|_| ContainError::RootMissing)?;
+    let root = canonical(root).map_err(|_| ContainError::RootMissing)?;
     let relative: PathBuf = if requested.is_absolute() {
         if !path_starts_with(requested, &root) {
             // An absolute path may still point inside root through a symlinked
             // prefix; compare canonical forms when it exists.
-            match requested.canonicalize() {
+            match canonical(requested) {
                 Ok(canon) if path_starts_with(&canon, &root) => canon
                     .strip_prefix(&root)
                     .map(Path::to_path_buf)
@@ -136,9 +144,8 @@ pub fn contain(
                 let next = current.join(part);
                 match std::fs::symlink_metadata(&next) {
                     Ok(_) => {
-                        let canon = next
-                            .canonicalize()
-                            .map_err(|e| ContainError::Io(e.kind().to_string()))?;
+                        let canon =
+                            canonical(&next).map_err(|e| ContainError::Io(e.kind().to_string()))?;
                         if !path_starts_with(&canon, &root) {
                             return Err(ContainError::Escape);
                         }
@@ -216,6 +223,19 @@ mod tests {
             .expect("symlink");
             symlink(root.join("src/nested"), root.join("inner-link")).expect("symlink");
         }
+        // Windows: the same links (creating them needs Developer Mode or an
+        // elevated shell, as on CI runners).
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::{symlink_dir, symlink_file};
+            symlink_dir(dir.path().join("outside"), root.join("linkdir")).expect("symlink");
+            symlink_file(
+                dir.path().join("outside/secret.txt"),
+                root.join("src/linkfile"),
+            )
+            .expect("symlink");
+            symlink_dir(root.join("src/nested"), root.join("inner-link")).expect("symlink");
+        }
         (dir, root)
     }
 
@@ -234,7 +254,7 @@ mod tests {
                 "reject" => assert!(result.is_err(), "should reject {path:?}: {result:?}"),
                 "accept" => {
                     let resolved = result.unwrap_or_else(|e| panic!("should accept {path:?}: {e}"));
-                    assert!(resolved.starts_with(root.canonicalize().expect("canon")));
+                    assert!(resolved.starts_with(canonical(&root).expect("canon")));
                 }
                 other => panic!("bad corpus verb {other}"),
             }

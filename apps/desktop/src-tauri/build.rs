@@ -70,8 +70,15 @@ const COMMANDS: &[&str] = &[
     "lane_create",
     "lane_diff",
     "lane_merge",
+    "lane_overlap",
+    "lane_forge",
     "lane_create_pr",
     "lane_remove",
+    "worktree_setup_get",
+    "worktree_setup_save",
+    "worktree_setup_trust",
+    "lane_setup",
+    "lane_setup_run",
     "lanes_sweep",
     "fs_list",
     "fs_read",
@@ -175,6 +182,8 @@ const COMMANDS: &[&str] = &[
     "phone_arm_state",
     "phone_queue_list",
     "phone_queue_decide",
+    "phone_lan_state",
+    "phone_lan_set",
     "limit_cancel_resume",
     "limit_dismiss",
     "limit_continue",
@@ -241,6 +250,11 @@ const COMMANDS: &[&str] = &[
     "data_export",
     "data_delete_local",
     "find_work",
+    "conductor_memory_get",
+    "conductor_memory_save",
+    "conductor_memory_clear",
+    "conductor_memory_resolve",
+    "conductor_wake_status",
     "term_stage_clipboard_image",
     "term_last_output",
     "pty_type_prompt",
@@ -359,6 +373,21 @@ const COMMANDS: &[&str] = &[
     "mail_retry",
 ];
 
+/// The Simulator pane's commands (F-CD-21): macOS builds only (D-1400).
+const SIM_COMMANDS: &[&str] = &[
+    "sim_status",
+    "sim_boot",
+    "sim_shutdown",
+    "sim_install",
+    "sim_stream_start",
+    "sim_stream_stop",
+    "sim_screen",
+    "sim_tap",
+    "sim_text",
+    "sim_key",
+    "sim_home",
+];
+
 const TEST_COMMANDS: &[&str] = &[
     "test_conductor_inject",
     "test_conductor_clock",
@@ -410,6 +439,10 @@ fn main() {
     let mut all: Vec<&'static str> = COMMANDS.to_vec();
     if debug {
         all.extend_from_slice(TEST_COMMANDS);
+    }
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if target_os == "macos" {
+        all.extend_from_slice(SIM_COMMANDS);
     }
     // AppManifest wants a 'static list; a build script can leak it.
     let all: &'static [&'static str] = Box::leak(all.into_boxed_slice());

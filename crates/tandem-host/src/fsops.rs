@@ -8,7 +8,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use base64::Engine;
-use tandem_core::contain::{contain, ContainError, ContainPolicy};
+use tandem_core::contain::{canonical, contain, ContainError, ContainPolicy};
 use tandem_core::files::{self, FileKind, FilesError, FsKind};
 
 use crate::protocol::{
@@ -49,8 +49,7 @@ pub fn map_files(e: FilesError) -> RpcError {
 /// (the Files tab), so private files are readable as they are locally;
 /// git's own data is never written.
 fn resolve(root: &str, path: &str, write: bool) -> Result<(PathBuf, PathBuf), RpcError> {
-    let root = Path::new(root)
-        .canonicalize()
+    let root = canonical(Path::new(root))
         .map_err(|_| RpcError::new(ErrorKind::NotFound, "The remote folder doesn't exist"))?;
     if path.is_empty() {
         return Err(RpcError::new(ErrorKind::Invalid, "No path"));
@@ -79,8 +78,7 @@ fn resolve(root: &str, path: &str, write: bool) -> Result<(PathBuf, PathBuf), Rp
 }
 
 pub fn list(p: &FsList) -> Result<Vec<Entry>, RpcError> {
-    let root = Path::new(&p.root)
-        .canonicalize()
+    let root = canonical(Path::new(&p.root))
         .map_err(|_| RpcError::new(ErrorKind::NotFound, "The remote folder doesn't exist"))?;
     if !p.path.is_empty() {
         // `list_dir` refuses `..` itself; a symlinked folder must stay inside.
@@ -188,8 +186,7 @@ fn mtime(meta: &std::fs::Metadata) -> i64 {
 
 pub fn stat(p: &FsPath) -> Result<FsStat, RpcError> {
     let (_root, abs) = if p.path.is_empty() || p.path == "." {
-        let root = Path::new(&p.root)
-            .canonicalize()
+        let root = canonical(Path::new(&p.root))
             .map_err(|_| RpcError::new(ErrorKind::NotFound, "The remote folder doesn't exist"))?;
         (root.clone(), root)
     } else {
@@ -236,8 +233,7 @@ pub fn dirs(path: &str, home: &Path) -> Result<DirListing, RpcError> {
         p if Path::new(p).is_absolute() => PathBuf::from(p),
         _ => return Err(RpcError::new(ErrorKind::Invalid, "Use an absolute path")),
     };
-    let canon = wanted
-        .canonicalize()
+    let canon = canonical(&wanted)
         .map_err(|_| RpcError::new(ErrorKind::NotFound, "That folder doesn't exist on the host"))?;
     if !canon.is_dir() {
         return Err(RpcError::new(ErrorKind::Invalid, "That's not a folder"));

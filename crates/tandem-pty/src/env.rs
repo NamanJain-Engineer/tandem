@@ -88,8 +88,22 @@ pub fn capture(shell: &Path, timeout: Duration) -> LoginEnv {
         },
         None => {
             tracing::warn!("login shell env capture failed; using the app's own environment");
+            #[allow(unused_mut)]
+            let mut vars: BTreeMap<String, String> = std::env::vars().collect();
+            #[cfg(target_os = "macos")]
+            {
+                let current = vars.get("PATH").cloned().unwrap_or_default();
+                let homebrew: Vec<PathBuf> = ["/opt/homebrew/bin", "/opt/homebrew/sbin"]
+                    .iter()
+                    .map(PathBuf::from)
+                    .filter(|d| d.is_dir())
+                    .collect();
+                let path =
+                    gui_fallback_path(&current, &path_helper_dirs(Path::new("/etc")), &homebrew);
+                vars.insert("PATH".into(), path);
+            }
             LoginEnv {
-                vars: sanitize(std::env::vars().collect(), &[]),
+                vars: sanitize(vars, &[]),
                 shell: shell.to_path_buf(),
                 degraded: true,
             }
@@ -101,8 +115,25 @@ pub fn capture(shell: &Path, timeout: Duration) -> LoginEnv {
 fn run_capture(shell: &Path, timeout: Duration) -> Option<BTreeMap<String, String>> {
     use std::os::unix::process::CommandExt;
     let script = r#"printf '\000__TANDEM_ENV__\000'; env -0"#;
-    let mut child = Command::new(shell)
-        .args(["-l", "-i", "-c", script])
+    let args = ["-l", "-i", "-c", script];
+    let mut cmd = if tandem_core::sandbox::in_flatpak() {
+        // The host's login shell, not the sandbox's (D-2032).
+        let host: Vec<std::ffi::OsString> = args.iter().map(Into::into).collect();
+        let argv = tandem_core::sandbox::flatpak_host_argv::<&str, &str>(
+            shell.as_os_str(),
+            &host,
+            None,
+            None,
+        );
+        let mut cmd = Command::new(&argv[0]);
+        cmd.args(&argv[1..]);
+        cmd
+    } else {
+        let mut cmd = Command::new(shell);
+        cmd.args(args);
+        cmd
+    };
+    let mut child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -134,10 +165,57 @@ fn run_capture(shell: &Path, timeout: Duration) -> Option<BTreeMap<String, Strin
     parse_env_dump(&out)
 }
 
+/// The folders macOS's `path_helper` puts on a login shell's PATH:
+/// `<etc>/paths`, then each file in `<etc>/paths.d` in name order, one
+/// folder per line.
+pub fn path_helper_dirs(etc: &Path) -> Vec<String> {
+    let mut files = vec![etc.join("paths")];
+    if let Ok(rd) = std::fs::read_dir(etc.join("paths.d")) {
+        let mut more: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+        more.sort();
+        files.extend(more);
+    }
+    files
+        .iter()
+        .filter_map(|f| std::fs::read_to_string(f).ok())
+        .flat_map(|text| {
+            text.lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// macOS, when the login shell didn't answer (D-2110): an app started from
+/// the Dock or Finder has launchd's PATH (`/usr/bin:/bin:/usr/sbin:/sbin`),
+/// so panes would miss Homebrew and `/usr/local/bin`. This rebuilds what
+/// the login shell would most likely have had: Homebrew's folders first (as
+/// `brew shellenv` puts them), then `path_helper`'s, then the rest of the
+/// current PATH, each folder once.
+pub fn gui_fallback_path(current: &str, path_helper: &[String], homebrew: &[PathBuf]) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let homebrew = homebrew.iter().map(|p| p.to_string_lossy().into_owned());
+    for dir in homebrew
+        .chain(path_helper.iter().cloned())
+        .chain(current.split(':').map(str::to_string))
+    {
+        if !dir.is_empty() && !out.contains(&dir) {
+            out.push(dir);
+        }
+    }
+    out.join(":")
+}
+
 #[cfg(windows)]
 fn run_capture(_shell: &Path, _timeout: Duration) -> Option<BTreeMap<String, String>> {
-    // Windows reads the registry PATH (M3); the process env is the base.
-    Some(std::env::vars().collect())
+    // The process env, with the PATH Windows would build now from the
+    // registry: Explorer-started apps keep the one from sign-in (§5.2).
+    Some(crate::winpath::with_registry_path(
+        std::env::vars().collect(),
+        &crate::winpath::SystemRegistry,
+    ))
 }
 
 /// Removes what panes must not inherit (§5.2).
@@ -462,9 +540,10 @@ mod tests {
             Some(Path::new("/d/si")),
         )
         .expect("wrap");
-        assert!(args[1].ends_with(
-            "unset c; TANDEM_SHELL_TOKEN=\"$t\" TANDEM_REAL_ZDOTDIR=\"${ZDOTDIR-}\" ZDOTDIR='/d/si/zsh' exec '/bin/zsh' -l"
-        ));
+        let s = std::path::MAIN_SEPARATOR;
+        assert!(args[1].ends_with(&format!(
+            "unset c; TANDEM_SHELL_TOKEN=\"$t\" TANDEM_REAL_ZDOTDIR=\"${{ZDOTDIR-}}\" ZDOTDIR='/d/si{s}zsh' exec '/bin/zsh' -l"
+        )));
         let fish =
             agent_wrapper(Path::new("/usr/bin/fish"), &["codex".into()], None).expect("wrap");
         assert!(
@@ -543,6 +622,52 @@ mod tests {
             None,
             "relative paths are refused"
         );
+    }
+
+    #[test]
+    fn f_en_01_a_dock_launched_app_keeps_homebrew_when_the_shell_is_slow() {
+        let etc = tempfile::tempdir().expect("etc");
+        std::fs::write(
+            etc.path().join("paths"),
+            "/usr/local/bin\n/System/Cryptexes/App/usr/bin\n/usr/bin\n/bin\n/usr/sbin\n/sbin\n",
+        )
+        .expect("paths");
+        std::fs::create_dir(etc.path().join("paths.d")).expect("paths.d");
+        std::fs::write(etc.path().join("paths.d/20-tex"), "/Library/TeX/texbin\n").expect("tex");
+        std::fs::write(
+            etc.path().join("paths.d/10-go"),
+            "# Go\n/usr/local/go/bin\n\n",
+        )
+        .expect("go");
+        let dirs = path_helper_dirs(etc.path());
+        assert_eq!(
+            dirs,
+            [
+                "/usr/local/bin",
+                "/System/Cryptexes/App/usr/bin",
+                "/usr/bin",
+                "/bin",
+                "/usr/sbin",
+                "/sbin",
+                "/usr/local/go/bin",
+                "/Library/TeX/texbin"
+            ]
+        );
+        let launchd = "/usr/bin:/bin:/usr/sbin:/sbin";
+        let homebrew = [
+            PathBuf::from("/opt/homebrew/bin"),
+            PathBuf::from("/opt/homebrew/sbin"),
+        ];
+        assert_eq!(
+            gui_fallback_path(launchd, &dirs, &homebrew),
+            "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/go/bin:/Library/TeX/texbin"
+        );
+        // Anything else the app had stays, after them; nothing twice.
+        assert_eq!(
+            gui_fallback_path("/custom/bin:/usr/bin", &["/usr/bin".into()], &[]),
+            "/usr/bin:/custom/bin"
+        );
+        assert!(path_helper_dirs(Path::new("/nonexistent")).is_empty());
     }
 
     #[test]

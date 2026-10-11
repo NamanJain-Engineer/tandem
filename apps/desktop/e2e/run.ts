@@ -6,9 +6,15 @@
 //   dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m2-*.e2e.ts'
 // After the run it enforces the M2 checks: no secret patterns in the logs and
 // no analytics or crash hosts in the network log (telemetry is off).
+//
+// Windows (D-1714): the same runner drives the app through tauri-driver and
+// msedgedriver (TANDEM_NATIVE_DRIVER, or msedgedriver on PATH).
+// TANDEM_E2E_OFFLINE=1 skips the API, web app and mock servers, for the
+// specs that don't need them (e2e/windows-smoke.txt; the Windows CI job).
 import { execFileSync, spawnSync, spawn, type ChildProcess } from "node:child_process";
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -19,11 +25,17 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Launcher } from "@wdio/cli";
 import { E2E_KNOWN_SENTENCE } from "./support/phone";
 
-const desktop = new URL("..", import.meta.url).pathname;
+const WIN = process.platform === "win32";
+/** Executables' suffix on this platform. */
+const EXE = WIN ? ".exe" : "";
+/** No API, web app or mock servers (TANDEM_E2E_OFFLINE=1). */
+const OFFLINE = process.env.TANDEM_E2E_OFFLINE === "1";
+const desktop = fileURLToPath(new URL("..", import.meta.url));
 const root = join(desktop, "../..");
 
 const args = process.argv.slice(2).filter((a) => a !== "--");
@@ -33,6 +45,17 @@ const specIndex = args.indexOf("--spec");
 const suiteIndex = args.indexOf("--suite");
 const suite = suiteIndex >= 0 ? args[suiteIndex + 1] : undefined;
 const spec = suite ? `e2e/perf/${suite}.perf.ts` : specIndex >= 0 ? args[specIndex + 1] : undefined;
+// `--spec-list <file>`: one spec path per line (`#` comments), e.g.
+// e2e/windows-smoke.txt, the set the Windows CI job runs offline.
+const listIndex = args.indexOf("--spec-list");
+const listFile = listIndex >= 0 ? args[listIndex + 1] : undefined;
+const specList =
+  listFile !== undefined
+    ? readFileSync(listFile, "utf8")
+        .split("\n")
+        .map((l) => l.replace(/#.*/, "").trim())
+        .filter(Boolean)
+    : undefined;
 
 const API = "http://127.0.0.1:8787";
 const WEB = "http://localhost:3000";
@@ -64,15 +87,29 @@ async function waitUp(url: string, seconds: number): Promise<void> {
   if (!(await up(url))) throw new Error(`${url} didn't come up`);
 }
 
-function startDetached(cmd: string, cmdArgs: string[], env: NodeJS.ProcessEnv, logFile?: string): ChildProcess {
+function startDetached(
+  cmd: string,
+  cmdArgs: string[],
+  env: NodeJS.ProcessEnv,
+  logFile?: string,
+): ChildProcess {
   const out = logFile ? openSync(logFile, "a") : "ignore";
-  return spawn(cmd, cmdArgs, { cwd: root, stdio: ["ignore", out, out], detached: true, env: { ...process.env, ...env } });
+  // `pnpm` and `tsx` are .cmd scripts on Windows, which need a shell.
+  return spawn(cmd, cmdArgs, {
+    cwd: root,
+    stdio: ["ignore", out, out],
+    detached: true,
+    shell: WIN,
+    env: { ...process.env, ...env },
+  });
 }
 
 function stop(child?: ChildProcess) {
   if (!child?.pid) return;
   try {
-    process.kill(-child.pid, "SIGTERM");
+    // Windows has no process groups: end the tree with taskkill.
+    if (WIN) spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+    else process.kill(-child.pid, "SIGTERM");
   } catch {
     // already exited
   }
@@ -125,15 +162,18 @@ async function main() {
   // Remote workspaces (E2E-M14): the bundled tandem-host and the sshd
   // fixture (infra/docker-compose.yml, profile remote). Without Docker or
   // the musl target the m14 specs fail and say so; the others don't care.
-  const remote = !spec || spec.includes("m14");
+  // No sshd fixture on Windows or offline (D-1714).
+  const remote = !WIN && !OFFLINE && (!spec || spec.includes("m14"));
   const quiet = { cwd: root, stdio: "ignore" as const };
   if (!process.env.TANDEM_E2E_SKIP_BUILD) {
     // The helper first: the app's build copies resources/tandem-host into
     // target/, so a helper built after it isn't the one the app installs on
     // the host (the M14 specs then met the previous build's helper).
     if (remote && spawnSync("sh", ["scripts/build-tandem-host.sh"], quiet).status !== 0)
-      console.warn("E2E: couldn't build tandem-host (rustup target add x86_64-unknown-linux-musl; apt install musl-tools)");
-    execFileSync("pnpm", ["build"], { cwd: desktop, stdio: "inherit" });
+      console.warn(
+        "E2E: couldn't build tandem-host (rustup target add x86_64-unknown-linux-musl; apt install musl-tools)",
+      );
+    execFileSync("pnpm", ["build"], { cwd: desktop, stdio: "inherit", shell: WIN });
     // Perf suites measure an optimised build (the `perf` profile keeps the test harness).
     const cargoProfile = suite && process.env.TANDEM_PERF_BUILD !== "debug" ? ["--profile", "perf"] : [];
     execFileSync(
@@ -142,10 +182,14 @@ async function main() {
       { cwd: root, stdio: "inherit" },
     );
     // The mock authorization server and plugin upstreams (M12).
-    execFileSync("cargo", ["build", "-p", "tandem-gateway", "--features", "test-vendors", "--bin", "mock-plugins"], {
-      cwd: root,
-      stdio: "inherit",
-    });
+    execFileSync(
+      "cargo",
+      ["build", "-p", "tandem-gateway", "--features", "test-vendors", "--bin", "mock-plugins"],
+      {
+        cwd: root,
+        stdio: "inherit",
+      },
+    );
     // The status hook and the fake engines (ARCHITECTURE §6.12).
     execFileSync("cargo", ["build", "-p", "tandem-engines", "--features", "fixtures", "--bins"], {
       cwd: root,
@@ -156,10 +200,14 @@ async function main() {
   if (remote) {
     const up = spawnSync(
       "sh",
-      ["-c", "bash scripts/gen-ssh-fixture.sh >/dev/null && docker compose -f infra/docker-compose.yml --profile remote up -d --wait sshd"],
+      [
+        "-c",
+        "bash scripts/gen-ssh-fixture.sh >/dev/null && docker compose -f infra/docker-compose.yml --profile remote up -d --wait sshd",
+      ],
       quiet,
     );
-    if (up.status !== 0) console.warn("E2E: the sshd fixture didn't start (Docker?); the m14 specs will fail");
+    if (up.status !== 0)
+      console.warn("E2E: the sshd fixture didn't start (Docker?); the m14 specs will fail");
   }
   const home = mkdtempSync(join(tmpdir(), "tandem-e2e-"));
   const results = join(root, "test-results");
@@ -168,12 +216,18 @@ async function main() {
   console.log(`E2E_LAST_HOME=${home}`);
 
   // The app opens URLs through this script (TANDEM_OPEN_URL_CMD).
-  const opener = join(home, "open-url.sh");
-  writeFileSync(
-    opener,
-    `#!/bin/sh\nexec "${join(root, "node_modules/.bin/tsx")}" "${join(desktop, "e2e/helpers/browser-signin.ts")}" "$1" >>"${join(home, "open-url.log")}" 2>&1\n`,
-  );
-  chmodSync(opener, 0o755);
+  const opener = join(home, WIN ? "open-url.cmd" : "open-url.sh");
+  const signin = join(desktop, "e2e/helpers/browser-signin.ts");
+  const log = join(home, "open-url.log");
+  if (WIN) {
+    writeFileSync(opener, `@"${join(root, "node_modules/.bin/tsx.cmd")}" "${signin}" %1 >>"${log}" 2>&1\r\n`);
+  } else {
+    writeFileSync(
+      opener,
+      `#!/bin/sh\nexec "${join(root, "node_modules/.bin/tsx")}" "${signin}" "$1" >>"${log}" 2>&1\n`,
+    );
+    chmodSync(opener, 0o755);
+  }
 
   // Login shells read this HOME's profile, which puts the test engines first
   // on PATH, so an agent pane never starts a real engine installed on the
@@ -181,42 +235,44 @@ async function main() {
   // default: a link to `fake-engine`, which behaves by the name it runs as.
   const fakes = join(home, "fakebin");
   mkdirSync(fakes, { recursive: true });
-  const fakeEngine = join(root, "target/debug/fake-engine");
-  symlinkSync(fakeEngine, join(fakes, "claude"));
+  const fakeEngine = join(root, `target/debug/fake-engine${EXE}`);
+  // Windows: a copy (symlinks need Developer Mode).
+  if (WIN) copyFileSync(fakeEngine, join(fakes, "claude.exe"));
+  else symlinkSync(fakeEngine, join(fakes, "claude"));
   const zsh = ["/usr/bin/zsh", "/bin/zsh"].find((p) => existsSync(p));
   if (!zsh) console.warn("zsh not found: the shell specs need it (apt-get install zsh)");
   const userHome = join(home, "home");
   mkdirSync(userHome, { recursive: true });
   // The app's PATH: system folders and node (the scripted browser opener
   // needs it), but none of the engines installed on this machine.
-  const nodeBin = join(home, "nodebin");
-  mkdirSync(nodeBin, { recursive: true });
-  symlinkSync(process.execPath, join(nodeBin, "node"));
+  const nodeBin = WIN ? dirname(process.execPath) : join(home, "nodebin");
+  if (!WIN) {
+    mkdirSync(nodeBin, { recursive: true });
+    symlinkSync(process.execPath, join(nodeBin, "node"));
+  }
   // Recording `systemctl` and `crontab` for the background runner (F-RT-03,
   // E2E-M11-5): its unit files go under TANDEM_LAUNCHER_ROOT and nothing
   // touches this machine's real timers or crontab.
   const shims = join(home, "shims");
-  mkdirSync(shims, { recursive: true });
-  writeFileSync(
-    join(shims, "systemctl"),
-    `#!/bin/sh\necho "$*" >>"${join(home, "systemctl.log")}"\nexit 0\n`,
-  );
-  writeFileSync(
-    join(shims, "crontab"),
-    `#!/bin/sh\nf="${join(home, "crontab.txt")}"\nif [ "$1" = "-l" ]; then [ -f "$f" ] && exec cat "$f"; exit 1; fi\ncat >"$f"\n`,
-  );
-  chmodSync(join(shims, "systemctl"), 0o755);
-  chmodSync(join(shims, "crontab"), 0o755);
-  const appPath = [
-    shims,
-    nodeBin,
-    "/usr/local/sbin",
-    "/usr/local/bin",
-    "/usr/sbin",
-    "/usr/bin",
-    "/sbin",
-    "/bin",
-  ].join(":");
+  // Windows routines go through schtasks, which no spec in the smoke set turns on.
+  if (!WIN) {
+    mkdirSync(shims, { recursive: true });
+    writeFileSync(
+      join(shims, "systemctl"),
+      `#!/bin/sh\necho "$*" >>"${join(home, "systemctl.log")}"\nexit 0\n`,
+    );
+    writeFileSync(
+      join(shims, "crontab"),
+      `#!/bin/sh\nf="${join(home, "crontab.txt")}"\nif [ "$1" = "-l" ]; then [ -f "$f" ] && exec cat "$f"; exit 1; fi\ncat >"$f"\n`,
+    );
+    chmodSync(join(shims, "systemctl"), 0o755);
+    chmodSync(join(shims, "crontab"), 0o755);
+  }
+  // Windows has no login profile to put the fakes first, so PATH does.
+  const sysRoot = process.env.SystemRoot ?? "C:\\Windows";
+  const appPath = WIN
+    ? [fakes, nodeBin, join(sysRoot, "System32"), sysRoot, join(sysRoot, "System32", "WindowsPowerShell", "v1.0")].join(";")
+    : [shims, nodeBin, "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"].join(":");
   // TANDEM_* variables never reach panes from the app; the profile sets the
   // test-only ones for the shells and engines started in them.
   const profile = [
@@ -233,6 +289,7 @@ async function main() {
   ].join("\n");
   for (const f of [".bash_profile", ".profile", ".zprofile"]) writeFileSync(join(userHome, f), profile);
 
+  writeFileSync(join(home, "ssh_config"), "");
   Object.assign(process.env, {
     HOME: userHome,
     TANDEM_HOME: home,
@@ -242,13 +299,16 @@ async function main() {
     // iterations; results record the build).
     TANDEM_APP_BINARY: join(
       root,
-      suite && process.env.TANDEM_PERF_BUILD !== "debug" ? "target/perf/tandem" : "target/debug/tandem",
+      (suite && process.env.TANDEM_PERF_BUILD !== "debug" ? "target/perf/tandem" : "target/debug/tandem") + EXE,
     ),
     TANDEM_API_URL: API,
     TANDEM_WEB_URL: WEB,
     TANDEM_OPEN_URL_CMD: opener,
     TANDEM_NET_LOG: join(home, "net.log"),
     TANDEM_FAKE_PICK_FOLDER: join(home, "pick-folder.txt"),
+    // ssh reads this config instead of the user's own (debug builds); E2E-M14-9
+    // writes its jump hosts there.
+    TANDEM_SSH_CONFIG: join(home, "ssh_config"),
     // The native "Discard worktree?" confirm answers from this file (debug builds).
     TANDEM_FAKE_CONFIRM: join(home, "confirm.txt"),
     // Fails the nth worktree of a launch (debug builds; E2E-M6-3).
@@ -263,8 +323,8 @@ async function main() {
     TANDEM_FAKE_USAGE: join(home, "usage.txt"),
     // Where the usage share card "saves" (debug builds; F-AC-07).
     TANDEM_FAKE_SAVE_PATH: join(home, "save-path.txt"),
-    TANDEM_HOOK_BIN: join(root, "target/debug/tandem-hook"),
-    TANDEM_TASKS_BIN: join(root, "target/debug/tandem-tasks"),
+    TANDEM_HOOK_BIN: join(root, `target/debug/tandem-hook${EXE}`),
+    TANDEM_TASKS_BIN: join(root, `target/debug/tandem-tasks${EXE}`),
     TANDEM_LAUNCHER_ROOT: join(home, "launcher"),
     TANDEM_SPAWN_LOG: join(home, "spawn.log"),
     // "Create with AI" answers from this file (debug builds; E2E-M10-7, D-8).
@@ -316,7 +376,7 @@ async function main() {
   // The API's log is kept for the relay check (E2E_RELAY_LOG): the phone's
   // frames cross the relay in it, and their plaintext must never appear.
   const relayLog = join(home, "api.log");
-  if (!(await up(`${API}/v1/health`))) {
+  if (!OFFLINE && !(await up(`${API}/v1/health`))) {
     api = startDetached(
       "pnpm",
       ["--filter", "api", "start"],
@@ -333,12 +393,14 @@ async function main() {
     await waitUp(`${API}/v1/health`, 60);
     process.env.E2E_RELAY_LOG = relayLog;
   }
-  if (!(await up(`${WEB}/api/health`))) {
+  if (!OFFLINE && !(await up(`${WEB}/api/health`))) {
     web = startDetached("pnpm", ["--filter", "web", "dev"], { API_INTERNAL_URL: API });
     await waitUp(`${WEB}/api/health`, 120);
   }
   let feed: ChildProcess | undefined;
-  if (!(await up(`${FEED}/health`))) {
+  if (OFFLINE) {
+    // No update feed: the app reports it can't check, which no offline spec asks about.
+  } else if (!(await up(`${FEED}/health`))) {
     feed = startDetached(
       join(root, "node_modules/.bin/tsx"),
       ["scripts/mock-update-feed.ts", "--port", "8790", "--scenario", "none"],
@@ -351,15 +413,21 @@ async function main() {
 
   let realtime: ChildProcess | undefined;
   if (!(await up(`${REALTIME}/health`))) {
-    realtime = startDetached(join(root, "node_modules/.bin/tsx"), ["scripts/mock-realtime.ts", "--port", "8794"], {});
+    realtime = startDetached(
+      join(root, "node_modules/.bin/tsx"),
+      ["scripts/mock-realtime.ts", "--port", "8794"],
+      {},
+    );
     await waitUp(`${REALTIME}/health`, 30);
   } else {
     await fetch(`${REALTIME}/__reset`, { method: "POST" });
   }
 
   let plugins: ChildProcess | undefined;
-  if (!(await up(`${PLUGINS}/__state`))) {
-    plugins = startDetached(join(root, "target/debug/mock-plugins"), ["8791"], {});
+  if (OFFLINE) {
+    // No plugin upstreams.
+  } else if (!(await up(`${PLUGINS}/__state`))) {
+    plugins = startDetached(join(root, `target/debug/mock-plugins${EXE}`), ["8791"], {});
     await waitUp(`${PLUGINS}/__state`, 30);
   } else {
     await fetch(`${PLUGINS}/__reset`);
@@ -370,7 +438,7 @@ async function main() {
     (await fetch(`${FIXTURES}/health`)
       .then((r) => r.text())
       .catch(() => "")) === "ok";
-  if (!(await fixturesUp())) {
+  if (!OFFLINE && !(await fixturesUp())) {
     fixtures = startDetached(
       join(root, "node_modules/.bin/tsx"),
       ["scripts/serve-fixtures.ts", "--port", "5173"],
@@ -382,9 +450,16 @@ async function main() {
 
   // Specs steer it through models-control.txt (normal, slow or a byte to corrupt).
   let models: ChildProcess | undefined;
-  const modelsUp = async () => (await fetch(`${MODELS}/health`).then((r) => r.text()).catch(() => "")) === "ok";
-  if (!(await modelsUp())) {
-    models = startDetached(join(root, "node_modules/.bin/tsx"), ["scripts/serve-models.ts", "--port", "8792", "--control", MODELS_CONTROL], { HOME: REAL_HOME, TANDEM_MODEL_CACHE: MODEL_CACHE });
+  const modelsUp = async () =>
+    (await fetch(`${MODELS}/health`)
+      .then((r) => r.text())
+      .catch(() => "")) === "ok";
+  if (!OFFLINE && !(await modelsUp())) {
+    models = startDetached(
+      join(root, "node_modules/.bin/tsx"),
+      ["scripts/serve-models.ts", "--port", "8792", "--control", MODELS_CONTROL],
+      { HOME: REAL_HOME, TANDEM_MODEL_CACHE: MODEL_CACHE },
+    );
     for (let i = 0; i < 60 && !(await modelsUp()); i++) await new Promise((r) => setTimeout(r, 500));
     if (!(await modelsUp())) throw new Error(`${MODELS} didn't come up (is something else on :8792?)`);
   }
@@ -393,7 +468,7 @@ async function main() {
   try {
     const launcher = new Launcher(
       join(desktop, "e2e/wdio.conf.ts"),
-      spec ? { spec: [join(desktop, spec)] } : {},
+      specList ? { spec: specList.map((p) => join(desktop, p)) } : spec ? { spec: [join(desktop, spec)] } : {},
     );
     code = (await launcher.run()) ?? 1;
   } finally {

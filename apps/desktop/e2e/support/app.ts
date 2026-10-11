@@ -492,14 +492,84 @@ export async function settled(): Promise<void> {
   );
 }
 
+/** A pointer or key event the page received, as `recordInput()` saw it. */
+type InputRecord = {
+  type: string;
+  target: string;
+  inDialog: boolean;
+  x: number;
+  y: number;
+  /** The watched element's box when the event arrived: [x, y, width, height]. */
+  watched: number[] | null;
+  at: number;
+};
+
+/** Starts recording the page's pointer and key events (capture phase, before
+ * the app or a dialog sees them) with the box of `selector` at that moment,
+ * and returns the page's clock to read them from. */
+async function recordInput(selector: string): Promise<number> {
+  return (await browser.execute((sel: string) => {
+    type Rec = {
+      type: string;
+      target: string;
+      inDialog: boolean;
+      x: number;
+      y: number;
+      watched: number[] | null;
+      at: number;
+    };
+    const w = window as unknown as { __e2eInput?: Rec[]; __e2eWatch?: string };
+    w.__e2eWatch = sel;
+    if (!w.__e2eInput) {
+      const log: Rec[] = [];
+      w.__e2eInput = log;
+      const rec = (e: Event) => {
+        const el = e.target instanceof Element ? e.target : null;
+        const watched = document.querySelector(w.__e2eWatch ?? "")?.getBoundingClientRect();
+        const pointer = e as PointerEvent;
+        log.push({
+          type: e.type === "keydown" ? `keydown ${(e as KeyboardEvent).key}` : e.type,
+          target: el
+            ? `${el.tagName}${el.getAttribute("data-testid") ? `[${el.getAttribute("data-testid")}]` : ""}`
+            : String(e.target),
+          inDialog: !!el?.closest('[role="dialog"]'),
+          x: Math.round(pointer.clientX ?? -1),
+          y: Math.round(pointer.clientY ?? -1),
+          watched: watched ? [watched.x, watched.y, watched.width, watched.height].map(Math.round) : null,
+          at: Math.round(performance.now()),
+        });
+        if (log.length > 40) log.shift();
+      };
+      for (const type of ["pointerdown", "pointerup", "click", "keydown"])
+        window.addEventListener(type, rec, true);
+    }
+    return Math.round(performance.now());
+  }, selector)) as number;
+}
+
+async function inputSince(since: number): Promise<InputRecord[]> {
+  const all = (await browser.execute(
+    () => (window as unknown as { __e2eInput?: unknown[] }).__e2eInput ?? [],
+  )) as InputRecord[];
+  return all.filter((r) => r.at >= since);
+}
+
+/** The click on a picker tile reached the page outside that tile, so the
+ * picker took it as a click outside and closed without starting anything. */
+export class PickMissed extends Error {}
+
 /** Picks a tile in the open pane picker. Under load WebKitWebDriver has
  * dropped a click on a dialog that had just opened (D-52), in every spec that
  * clicked a picker tile directly (D-830). Tiles are disabled while a pick
- * runs, so one more click can only start a pick that never started. */
+ * runs, so one more click can only start a pick that never started. A click
+ * the page received outside the tile's box closes the picker as any click
+ * outside does; that throws `PickMissed`, with what the page received, so
+ * the caller can open the picker again (D-834). */
 export async function pickTile(tile: string): Promise<void> {
   const selector = `[data-testid="pane-picker"] [data-testid="tile-${tile}"]`;
   await $(selector).waitForClickable({ timeout: 10_000 });
   await settled();
+  const since = await recordInput(selector);
   await $(selector).click();
   const closed = await browser
     .waitUntil(async () => !(await $('[data-testid="pane-picker"]').isExisting()), { timeout: 2_000 })
@@ -512,34 +582,64 @@ export async function pickTile(tile: string): Promise<void> {
   ) {
     console.warn(`pickTile: the ${tile} tile click didn't register; clicking again`);
     await $(selector).click();
+    return;
   }
+  if (!closed) return;
+  const input = await inputSince(since);
+  const down = input.find((r) => r.type === "pointerdown");
+  const box = down?.watched;
+  const onTile =
+    !!down &&
+    !!box &&
+    down.x >= box[0]! &&
+    down.x <= box[0]! + box[2]! &&
+    down.y >= box[1]! &&
+    down.y <= box[1]! + box[3]!;
+  // Outside the tile's box: the click never reached it. On the box but not
+  // in the dialog would be the app's own hit testing, so that isn't retried.
+  if (down && !down.inDialog && !onTile)
+    throw new PickMissed(
+      `the ${tile} tile click reached the page outside the tile: ${JSON.stringify(input)}`,
+    );
 }
 
 /** Splits the focused pane (Mod+D or Mod+Shift+D) and picks a tile. */
 export async function split(direction: "right" | "down", tile = "shell"): Promise<string> {
   const before = await paneIds();
-  await browser.execute((dir: string) => {
-    const mac = navigator.platform.toLowerCase().includes("mac");
-    // Outside a terminal Ctrl+D splits right; Ctrl+Shift+D splits down everywhere.
-    (document.activeElement as HTMLElement | null)?.blur();
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        code: "KeyD",
-        key: "d",
-        ctrlKey: !mac,
-        metaKey: mac,
-        shiftKey: dir === "down",
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  }, direction);
-  // Where the picker opened, for the failure message below.
-  await $('[data-testid="pane-picker"]').waitForExist({ timeout: 10_000 });
-  const opened = (await browser.execute(
-    () => (window as unknown as { __tandemTest?: { debug: () => { picker?: unknown } } }).__tandemTest?.debug().picker,
-  )) as { tabId?: string } | null | undefined;
-  await pickTile(tile);
+  const open = async () => {
+    await browser.execute((dir: string) => {
+      const mac = navigator.platform.toLowerCase().includes("mac");
+      // Outside a terminal Ctrl+D splits right; Ctrl+Shift+D splits down everywhere.
+      (document.activeElement as HTMLElement | null)?.blur();
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          code: "KeyD",
+          key: "d",
+          ctrlKey: !mac,
+          metaKey: mac,
+          shiftKey: dir === "down",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    }, direction);
+    await $('[data-testid="pane-picker"]').waitForExist({ timeout: 10_000 });
+    // Where the picker opened, for the failure message below.
+    return (await browser.execute(
+      () =>
+        (window as unknown as { __tandemTest?: { debug: () => { picker?: unknown } } }).__tandemTest?.debug()
+          .picker,
+    )) as { tabId?: string } | null | undefined;
+  };
+  let opened = await open();
+  try {
+    await pickTile(tile);
+  } catch (e) {
+    if (!(e instanceof PickMissed)) throw e;
+    console.warn(`split: ${e.message}; opening the picker again`);
+    opened = await open();
+    await pickTile(tile);
+  }
   let added = "";
   // Toasts expire before the timeout; keep any seen while waiting.
   const seen = new Set<string>();
@@ -568,8 +668,10 @@ export async function split(direction: "right" | "down", tile = "shell"): Promis
             .then((panes) => panes.map((p) => p.id))
             .catch((e: unknown) => String(e))
         : null;
+      // What the page received while the picker was open (recordInput()).
+      const input = await inputSince(0).catch((e: unknown) => String(e));
       throw new Error(
-        `the split didn't add a pane: ${JSON.stringify({ toasts: [...seen], pickerOpened: opened ?? null, inCore, state })}`,
+        `the split didn't add a pane: ${JSON.stringify({ toasts: [...seen], pickerOpened: opened ?? null, inCore, state, input })}`,
       );
     });
   await waitForShell(added);

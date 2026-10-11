@@ -117,7 +117,13 @@ pub async fn workspace_add(
 
 #[tauri::command]
 pub async fn workspace_list(state: State<'_, AppState>) -> Result<Vec<WorkspaceSummary>, IpcError> {
-    workspaces::list(&state.store, &state.terminals.pty).await
+    let mut rows = workspaces::list(&state.store, &state.terminals.pty).await?;
+    // A host's folders: the branch its last status read named (D-1602).
+    for row in rows.iter_mut().filter(|r| r.workspace.kind == "ssh") {
+        let host = tandem_core::ids::HostId::from_db(row.workspace.host_id.clone());
+        row.branch = state.remote.files.cached_branch(&host, &row.workspace.root);
+    }
+    Ok(rows)
 }
 
 #[tauri::command]

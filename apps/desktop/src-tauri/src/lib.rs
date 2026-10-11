@@ -161,8 +161,15 @@ macro_rules! app_commands {
             commands::lanes::lane_create,
             commands::lanes::lane_diff,
             commands::lanes::lane_merge,
+            commands::lanes::lane_overlap,
+            commands::lanes::lane_forge,
             commands::lanes::lane_create_pr,
             commands::lanes::lane_remove,
+            commands::lanes::worktree_setup_get,
+            commands::lanes::worktree_setup_save,
+            commands::lanes::worktree_setup_trust,
+            commands::lanes::lane_setup,
+            commands::lanes::lane_setup_run,
             commands::lanes::lanes_sweep,
             commands::files::fs_list,
             commands::files::fs_read,
@@ -256,6 +263,11 @@ macro_rules! app_commands {
             commands::data_controls::data_export,
             commands::data_controls::data_delete_local,
             commands::find_work::find_work,
+            commands::conductor_persona::conductor_memory_get,
+            commands::conductor_persona::conductor_memory_save,
+            commands::conductor_persona::conductor_memory_clear,
+            commands::conductor_persona::conductor_memory_resolve,
+            commands::conductor_persona::conductor_wake_status,
             commands::terminal::term_last_output,
             commands::terminal::term_stage_clipboard_image,
             commands::terminal::pty_type_prompt,
@@ -305,6 +317,8 @@ macro_rules! app_commands {
             commands::phone::phone_arm_state,
             commands::phone::phone_queue_list,
             commands::phone::phone_queue_decide,
+            commands::phone::phone_lan_state,
+            commands::phone::phone_lan_set,
             commands::limits::limit_cancel_resume,
             commands::limits::limit_dismiss,
             commands::limits::limit_continue,
@@ -378,6 +392,34 @@ macro_rules! app_commands {
             commands::dictate::dictate_widget_set_position,
             $($extra),*
         ]
+    };
+}
+
+/// `app_commands!` plus the platform's own: the Simulator's on macOS only
+/// (F-CD-21; absent elsewhere, D-1400).
+#[cfg(target_os = "macos")]
+macro_rules! platform_commands {
+    ($($extra:path),* $(,)?) => {
+        app_commands![
+            commands::simulator::sim_status,
+            commands::simulator::sim_boot,
+            commands::simulator::sim_shutdown,
+            commands::simulator::sim_install,
+            commands::simulator::sim_stream_start,
+            commands::simulator::sim_stream_stop,
+            commands::simulator::sim_screen,
+            commands::simulator::sim_tap,
+            commands::simulator::sim_text,
+            commands::simulator::sim_key,
+            commands::simulator::sim_home,
+            $($extra),*
+        ]
+    };
+}
+#[cfg(not(target_os = "macos"))]
+macro_rules! platform_commands {
+    ($($extra:path),* $(,)?) => {
+        app_commands![$($extra),*]
     };
 }
 
@@ -716,8 +758,30 @@ fn setup_dictate(app: &tauri::App, state: &AppState) {
         ));
     }
     let dictate = state.dictate.clone();
+    // "Hey Conductor" (F-CN-07): the bundled model ships as a resource; dev
+    // builds read it from the source tree.
+    let model_dir = app
+        .path()
+        .resource_dir()
+        .map(|d| d.join("models/wake"))
+        .ok()
+        .filter(|d| d.is_dir())
+        .unwrap_or_else(tandem_voice::wake::source_model_dir);
+    let wake = services::wake::WakeService::new(
+        state.store.clone(),
+        state.mic.clone(),
+        model_dir,
+        tandem_voice::wake::process::sidecar(),
+    );
+    let wake_app = app.handle().clone();
+    wake.set_emitter(std::sync::Arc::new(move |s| {
+        let _ = wake_app.emit_to("main", "conductor:wake-state", s);
+    }));
+    let _ = state.wake.set(wake.clone());
     tauri::async_runtime::spawn(async move {
         dictate.start().await;
+        let prefs = dictate.mic_prefs().await;
+        wake.start(dictate, prefs).await;
     });
 }
 
@@ -769,7 +833,7 @@ pub fn run() {
         ))
         .manage(state);
     #[cfg(debug_assertions)]
-    let builder = builder.invoke_handler(app_commands![
+    let builder = builder.invoke_handler(platform_commands![
         commands::test::test_counters,
         commands::browser::test_browser_eval,
         commands::test::test_spawn_log,
@@ -801,7 +865,7 @@ pub fn run() {
         commands::conductor::test_conductor_clock,
     ]);
     #[cfg(not(debug_assertions))]
-    let builder = builder.invoke_handler(app_commands![]);
+    let builder = builder.invoke_handler(platform_commands![]);
 
     let mut context = tauri::generate_context!();
     // The local test feed is plain HTTP on loopback (debug builds only).
@@ -1077,6 +1141,9 @@ pub fn run() {
             if e2e {
                 app.add_capability(include_str!("../test-capability.json"))?;
             }
+            // The Simulator's permissions exist only in macOS builds (build.rs).
+            #[cfg(target_os = "macos")]
+            app.add_capability(include_str!("../sim-capability.json"))?;
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let links = handle.clone();
@@ -1229,6 +1296,133 @@ mod harness_tests {
         );
     }
 
+    /// F-TL-04: Linux releases come as a .deb, an .rpm and an AppImage from
+    /// both release paths, and each is checked for tandem-host (D-832).
+    #[test]
+    fn f_tl_04_linux_releases_build_deb_rpm_and_appimage() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("tauri.conf.json");
+        let targets: Vec<&str> = conf["bundle"]["targets"]
+            .as_array()
+            .expect("bundle.targets")
+            .iter()
+            .filter_map(|t| t.as_str())
+            .collect();
+        for t in ["appimage", "deb", "rpm"] {
+            assert!(targets.contains(&t), "{t} in {targets:?}");
+        }
+        let local = include_str!("../../../../scripts/release-local.sh");
+        assert!(local.contains("--bundles appimage,deb,rpm"));
+        assert!(local.contains(r#""$bundle"/rpm/*-"$version"-*.rpm"#));
+        let workflow = include_str!("../../../../.github/workflows/release.yml");
+        assert!(workflow.contains(r#"bundles: "appimage,deb,rpm""#));
+        assert!(workflow.contains("bundle/rpm/*.rpm"));
+        assert!(include_str!("../../../../scripts/check-host-bundle.sh").contains("*.rpm)"));
+    }
+
+    /// macOS bundle (D-2101, NFR macOS): macOS 14 or later as DECISIONS
+    /// says, the hardened runtime with only the microphone entitlement, no
+    /// App Sandbox (D-2106), and the microphone's usage string, without which
+    /// the first take would end the app. Tauri reads these files only when
+    /// building for macOS, so this test is what keeps them valid elsewhere.
+    #[test]
+    fn nfr_macos_bundle_config_is_pinned() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.macos.conf.json"))
+                .expect("tauri.macos.conf.json");
+        let mac = &conf["bundle"]["macOS"];
+        // Tauri's own schema accepts it (unknown keys are an error there).
+        let parsed: tauri::utils::config::MacConfig =
+            serde_json::from_value(mac.clone()).expect("a valid bundle.macOS");
+        assert_eq!(parsed.minimum_system_version.as_deref(), Some("14.0"));
+        assert!(parsed.hardened_runtime);
+        assert_eq!(parsed.entitlements.as_deref(), Some("./Entitlements.plist"));
+        assert!(
+            parsed.signing_identity.is_none(),
+            "the identity comes from CI (APPLE_SIGNING_IDENTITY), never the repo"
+        );
+        assert_eq!(conf["app"]["windows"][0]["title"], "Vibezeo");
+
+        let ent = plist::Value::from_file(root.join("Entitlements.plist")).expect("entitlements");
+        let ent = ent.as_dictionary().expect("dict");
+        let keys: Vec<&str> = ent.keys().map(String::as_str).collect();
+        assert_eq!(
+            keys,
+            ["com.apple.security.device.audio-input"],
+            "each entitlement is justified in Entitlements.plist; add it there and here"
+        );
+        assert_eq!(
+            ent["com.apple.security.device.audio-input"].as_boolean(),
+            Some(true)
+        );
+
+        let info = plist::Value::from_file(root.join("Info.plist")).expect("Info.plist");
+        let info = info.as_dictionary().expect("dict");
+        let mic = info
+            .get("NSMicrophoneUsageDescription")
+            .and_then(plist::Value::as_string)
+            .expect("NSMicrophoneUsageDescription");
+        assert!(mic.contains("Vibezeo") && mic.contains("Dictate"), "{mic}");
+        for owned_by_tauri in [
+            "CFBundleIdentifier",
+            "LSMinimumSystemVersion",
+            "CFBundleURLTypes",
+        ] {
+            assert!(
+                !info.contains_key(owned_by_tauri),
+                "{owned_by_tauri} comes from the config"
+            );
+        }
+    }
+
+    /// macOS release (D-2102): notarization rejects an unsigned Mach-O
+    /// anywhere in the bundle, and Tauri doesn't sign resources. Both macOS
+    /// release paths sign every sidecar in `externalBin` and the bundled
+    /// tandem-host before bundling, notarize the dmg and verify the app.
+    #[test]
+    fn nfr_macos_release_signs_every_bundled_executable() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let repo = root.join("../../..");
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.sidecars.conf.json")).expect("json");
+        let sidecars: Vec<String> = conf["bundle"]["externalBin"]
+            .as_array()
+            .expect("externalBin")
+            .iter()
+            .filter_map(|b| b.as_str())
+            .map(str::to_string)
+            .collect();
+        assert!(sidecars.len() >= 2, "{sidecars:?}");
+        let workflow = std::fs::read_to_string(repo.join(".github/workflows/release.yml"))
+            .expect("release.yml");
+        let local =
+            std::fs::read_to_string(repo.join("scripts/ci/macos-release.sh")).expect("script");
+        for (name, text) in [("release.yml", &workflow), ("macos-release.sh", &local)] {
+            for bin in &sidecars {
+                // `binaries/tandem-tasks` → signed as `binaries/tandem-tasks-<target>`.
+                assert!(text.contains(&format!("{bin}-")), "{name} signs {bin}");
+            }
+            assert!(
+                text.contains("tandem-host/macos-universal/tandem-host"),
+                "{name} signs the macOS tandem-host"
+            );
+            for step in [" identity)", " notarize ", "verify --notarized"] {
+                assert!(text.contains(step), "{name}: {step}");
+            }
+        }
+        // The helper is signed where it's built, before its SHA-256 manifest.
+        let host_job = workflow
+            .split("\n  build:\n")
+            .next()
+            .expect("jobs before build");
+        assert!(host_job.contains(
+            "sign \"$id\" apps/desktop/src-tauri/resources/tandem-host/macos-universal/tandem-host"
+        ));
+        // The release builds the UI it embeds (no beforeBuildCommand).
+        assert!(workflow.contains("pnpm --filter desktop build"));
+    }
+
     /// §5.3: the app webview's CSP is `'self'` only, runs no remote or inline
     /// script, and connects only to itself, the IPC bridge, loopback (the
     /// gateway and local review) and the API with its WebSocket.
@@ -1370,6 +1564,7 @@ mod harness_tests {
         let build = include_str!("../build.rs");
         let main = include_str!("../capabilities/main.json");
         let harness = include_str!("../test-capability.json");
+        let sim = include_str!("../sim-capability.json");
         let names: Vec<&str> = lib
             .lines()
             .filter_map(|l| l.trim().strip_prefix("commands::")?.strip_suffix(','))
@@ -1384,6 +1579,8 @@ mod harness_tests {
             let allow = format!("\"allow-{}\"", name.replace('_', "-"));
             let granted = if name.starts_with("test_") {
                 harness
+            } else if name.starts_with("sim_") {
+                sim
             } else {
                 main
             };
@@ -1391,6 +1588,47 @@ mod harness_tests {
                 granted.contains(&allow),
                 "{allow} is missing from the capability"
             );
+        }
+    }
+
+    /// F-CD-21 AC2 off macOS: the Simulator's commands are registered only in
+    /// the macOS macro, their permissions are generated only for macOS
+    /// targets, the shipped capability grants none, and the module isn't in
+    /// a non-macOS, non-test build (D-1400).
+    #[test]
+    fn f_cd_21_2_the_simulator_exists_only_on_macos() {
+        let lib = include_str!("lib.rs");
+        let mac_macro = lib
+            .split("#[cfg(target_os = \"macos\")]\nmacro_rules! platform_commands")
+            .nth(1)
+            .and_then(|rest| rest.split("#[cfg(not(target_os = \"macos\"))]").next())
+            .expect("the macOS command list");
+        let everywhere = lib
+            .split("macro_rules! platform_commands")
+            .next()
+            .unwrap_or("");
+        assert!(mac_macro.contains("commands::simulator::sim_status,"));
+        assert!(
+            !everywhere.contains("commands::simulator::"),
+            "a simulator command outside the macOS list"
+        );
+        let build = include_str!("../build.rs");
+        assert!(build
+            .contains("if target_os == \"macos\" {\n        all.extend_from_slice(SIM_COMMANDS);"));
+        let commands_list = build.split("const SIM_COMMANDS").next().unwrap_or("");
+        assert!(
+            !commands_list.contains("\"sim_"),
+            "a simulator command in COMMANDS"
+        );
+        let main = include_str!("../capabilities/main.json");
+        assert!(
+            !main.contains("allow-sim-"),
+            "the shipped capability grants a simulator command"
+        );
+        let modules = include_str!("commands/mod.rs");
+        assert!(modules.contains("#[cfg(any(target_os = \"macos\", test))]\npub mod simulator;"));
+        if !cfg!(target_os = "macos") {
+            assert!(crate::services::simulator::host().is_none());
         }
     }
 }

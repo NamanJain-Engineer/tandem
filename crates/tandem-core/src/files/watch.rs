@@ -370,7 +370,9 @@ mod tests {
 
     fn setup() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().expect("tmp");
-        let root = fs::canonicalize(dir.path()).expect("canon").join("ws");
+        let root = crate::contain::canonical(dir.path())
+            .expect("canon")
+            .join("ws");
         fs::create_dir_all(root.join("src")).expect("mkdir");
         fs::create_dir_all(root.join("node_modules/pkg")).expect("mkdir");
         fs::write(root.join(".gitignore"), "node_modules/\n").expect("write");
@@ -484,7 +486,9 @@ mod tests {
     #[test]
     fn f_cd_20_a_lanes_repository_data_outside_its_folder_is_watched_too() {
         let (d, root) = setup();
-        let common = fs::canonicalize(d.path()).expect("canon").join("main/.git");
+        let common = crate::contain::canonical(d.path())
+            .expect("canon")
+            .join("main/.git");
         let git_dir = common.join("worktrees/lane");
         fs::create_dir_all(&git_dir).expect("mkdir");
         fs::create_dir_all(common.join("refs/heads/tandem")).expect("mkdir");

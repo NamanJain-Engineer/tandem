@@ -138,6 +138,18 @@ impl HostClient {
             .map_err(|_| ClientError::Disconnected)
     }
 
+    /// Sends a notification (no reply): lines on an MCP channel (D-1604).
+    pub fn notify<P: Serialize>(&self, method: &str, params: P) -> Result<(), ClientError> {
+        if self.is_closed() {
+            return Err(ClientError::Disconnected);
+        }
+        let params =
+            serde_json::to_value(params).map_err(|e| ClientError::Decode(e.to_string()))?;
+        self.tx
+            .send(Message::notification(method, params).to_line())
+            .map_err(|_| ClientError::Disconnected)
+    }
+
     pub async fn call<P: Serialize, T: DeserializeOwned>(
         &self,
         method: &str,

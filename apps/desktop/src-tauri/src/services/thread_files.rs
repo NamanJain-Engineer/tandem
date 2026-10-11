@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use tandem_core::contain::canonical;
 use tandem_core::ids::{AttachmentId, ThreadId};
 use tandem_core::{ErrorCode, IpcError};
 use tandem_store::repo::attachments::{Attachment, AttachmentKind, MAX_FILE_BYTES};
@@ -287,7 +288,7 @@ pub fn mention_search(root: &Path, query: &str) -> Vec<PathEntry> {
         .components()
         .all(|c| matches!(c, std::path::Component::Normal(_)));
     let start: PathBuf = root.join(base);
-    let inside = match (start.canonicalize(), root.canonicalize()) {
+    let inside = match (canonical(&start), canonical(root)) {
         (Ok(s), Ok(r)) => s.starts_with(r),
         _ => false,
     };
@@ -430,7 +431,7 @@ mod tests {
     #[test]
     fn f_th_13_files_read_inside_the_folder_only_and_never_private_ones() {
         let dir = tempfile::tempdir().expect("tmp");
-        let root = dir.path().canonicalize().expect("canonical");
+        let root = tandem_core::contain::canonical(dir.path()).expect("canonical");
         std::fs::create_dir_all(root.join("src")).expect("mkdir");
         std::fs::write(root.join("src/a.rs"), "fn main() {}\n").expect("write");
         std::fs::write(root.join(".env"), "TOKEN=x\n").expect("write");

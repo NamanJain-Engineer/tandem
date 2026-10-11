@@ -89,6 +89,7 @@ impl PhoneNet for Net {
         Ok(PairingTicket {
             pairing_token: "tok".into(),
             relay_url: format!("ws://relay.test/v1/relay/{pid}"),
+            web_base: None,
         })
     }
     async fn delete_pairing(&self, _: &str) -> Result<(), String> {

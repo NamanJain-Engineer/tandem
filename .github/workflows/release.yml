@@ -114,7 +114,19 @@ jobs:
         run: pip install ziglang==0.13.0 && cargo install cargo-zigbuild --locked
       - shell: bash
         run: bash scripts/ci/build-tandem-host.sh "${{ matrix.platform }}"
-      # Codesigning the macOS binary waits on the Apple certificate (HUMAN_TODO).
+      # Notarization rejects an unsigned Mach-O anywhere in the app, and Tauri
+      # signs the app's own executables, not its resources (D-2102). Signed
+      # here, before the build job writes the helpers' SHA-256 manifest.
+      - if: matrix.platform == 'macos-universal'
+        name: Sign the macOS helper (Developer ID; ad-hoc without secrets)
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          id="$(bash scripts/ci/macos-sign.sh identity)"
+          bash scripts/ci/macos-sign.sh sign "$id" apps/desktop/src-tauri/resources/tandem-host/macos-universal/tandem-host
       - uses: actions/upload-artifact@v4
         with:
           name: tandem-host-${{ matrix.platform }}
@@ -130,7 +142,7 @@ jobs:
           - { name: windows, os: windows-2022, target: x86_64-pc-windows-msvc, bundles: "nsis,msi" }
           # Tauri 2 needs webkit2gtk-4.1: ubuntu-22.04 (glibc 2.35) is the
           # oldest image that ships it (Debian bullseye doesn't).
-          - { name: linux, os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, bundles: "appimage,deb" }
+          - { name: linux, os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, bundles: "appimage,deb,rpm" }
     runs-on: ${{ matrix.os }}
     env:
       # Early-access builds have no hosted service (D-105).
@@ -149,6 +161,9 @@ jobs:
         name: Linux build dependencies
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libxdo-dev libdbus-1-dev patchelf
       - run: pnpm install --frozen-lockfile
+      # The UI the app embeds (frontendDist ../dist); tauri.conf.json has no
+      # beforeBuildCommand, as in release-local.sh (D-2102).
+      - run: pnpm --filter desktop build
       - uses: actions/download-artifact@v4
         with: { name: notices, path: dist }
       - name: Embed the notices
@@ -167,6 +182,9 @@ jobs:
           TANDEM_HOST_PREBUILT=1 sh scripts/build-tandem-host.sh
           # All three helpers, or SSH workspaces can't connect (F-RM-01).
           cargo run -q -p tandem-host --example manifest -- --check apps/desktop/src-tauri/resources/tandem-host --require linux-x86_64,linux-aarch64,macos-universal
+      - name: Build the LAN phone web app (F-RM-04)
+        shell: bash
+        run: sh scripts/build-remote-web.sh
 
       - id: secrets
         name: Which signing secrets exist
@@ -188,6 +206,67 @@ jobs:
         shell: bash
         run: sh scripts/build-sidecars.sh ${{ matrix.target }}
 
+      # macOS (D-2102): a Developer ID from APPLE_CERTIFICATE in a throwaway
+      # keychain, or ad-hoc ("-") without it. Notarization takes an App Store
+      # Connect API key (APPLE_API_ISSUER, APPLE_API_KEY, APPLE_API_KEY_P8)
+      # or an Apple ID (APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID).
+      - if: matrix.name == 'macos'
+        id: apple
+        name: "macOS: signing identity and notarization credentials"
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          id="$(bash scripts/ci/macos-sign.sh identity)"
+          echo "identity=$id" >> "$GITHUB_OUTPUT"
+          signed=false; notarize=false
+          if [ "$id" != "-" ]; then
+            signed=true
+            if [ -n "$APPLE_API_KEY_P8" ] && [ -n "$APPLE_API_KEY" ] && [ -n "$APPLE_API_ISSUER" ]; then
+              key="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY.p8"
+              printf '%s\n' "$APPLE_API_KEY_P8" > "$key"
+              echo "APPLE_API_KEY_PATH=$key" >> "$GITHUB_ENV"
+              notarize=true
+            elif [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+              notarize=true
+            fi
+          fi
+          echo "signed=$signed" >> "$GITHUB_OUTPUT"
+          echo "notarize=$notarize" >> "$GITHUB_OUTPUT"
+
+      - if: matrix.name == 'macos'
+        name: "macOS: sign the sidecars before bundling"
+        shell: bash
+        run: |
+          bash scripts/ci/macos-sign.sh sign "${{ steps.apple.outputs.identity }}" \
+            apps/desktop/src-tauri/binaries/tandem-tasks-${{ matrix.target }} \
+            apps/desktop/src-tauri/binaries/tandem-hook-${{ matrix.target }} \
+            apps/desktop/src-tauri/binaries/tandem-wake-${{ matrix.target }}
+
+      - if: matrix.name == 'windows'
+        name: Stage DirectML.dll beside the app
+        # ONNX Runtime (Parakeet) links DirectML.dll; ship ort's copy rather
+        # than rely on an older one in System32 (D-1704). It exists once
+        # ort-sys has built, before the app's build script copies resources.
+        shell: bash
+        run: |
+          cargo build --release -p tandem-voice --features whisper,parakeet --target ${{ matrix.target }}
+          cp "target/${{ matrix.target }}/release/DirectML.dll" apps/desktop/src-tauri/binaries/DirectML.dll
+
+      - if: matrix.name == 'windows' && steps.secrets.outputs.azure == 'true'
+        name: Install the Trusted Signing client
+        # The signCommand below calls it for the app, both sidecars and the
+        # installers (D-1715).
+        run: cargo install trusted-signing-cli --locked
+
       - name: Build
         uses: tauri-apps/tauri-action@v0
         env:
@@ -195,12 +274,16 @@ jobs:
           TAURI_SIGNING_PUBLIC_KEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ steps.secrets.outputs.apple == 'true' && secrets.APPLE_CERTIFICATE || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ steps.secrets.outputs.apple == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
-          APPLE_SIGNING_IDENTITY: ${{ steps.secrets.outputs.apple == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
-          APPLE_ID: ${{ steps.secrets.outputs.apple == 'true' && secrets.APPLE_ID || '' }}
-          APPLE_PASSWORD: ${{ steps.secrets.outputs.apple == 'true' && secrets.APPLE_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ steps.secrets.outputs.apple == 'true' && secrets.APPLE_TEAM_ID || '' }}
+          # macOS: the identity is already in the "apple" step's keychain.
+          # Tauri signs the app with Entitlements.plist and the hardened
+          # runtime, then notarizes and staples it (APPLE_API_KEY_PATH comes
+          # from that step too).
+          APPLE_SIGNING_IDENTITY: ${{ steps.apple.outputs.signed == 'true' && steps.apple.outputs.identity || '' }}
+          APPLE_API_ISSUER: ${{ steps.apple.outputs.notarize == 'true' && secrets.APPLE_API_ISSUER || '' }}
+          APPLE_API_KEY: ${{ steps.apple.outputs.notarize == 'true' && secrets.APPLE_API_KEY || '' }}
+          APPLE_ID: ${{ steps.apple.outputs.notarize == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ steps.apple.outputs.notarize == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ steps.apple.outputs.notarize == 'true' && secrets.APPLE_TEAM_ID || '' }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -212,20 +295,48 @@ jobs:
           args: >-
             --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
             --config src-tauri/tauri.sidecars.conf.json
+            ${{ matrix.name == 'windows' && '--config src-tauri/tauri.directml.conf.json' || '' }}
             ${{ steps.secrets.outputs.updater == 'true' && '--config {"bundle":{"createUpdaterArtifacts":true}}' || '' }}
-            ${{ matrix.name == 'macos' && steps.secrets.outputs.apple != 'true' && '--config {"bundle":{"macOS":{"signingIdentity":"-"}}}' || '' }}
+            ${{ matrix.name == 'macos' && steps.apple.outputs.signed != 'true' && '--config {"bundle":{"macOS":{"signingIdentity":"-"}}}' || '' }}
             ${{ matrix.name == 'windows' && steps.secrets.outputs.azure == 'true' && format('--config {{"bundle":{{"windows":{{"signCommand":"trusted-signing-cli -e {0} -a {1} -c {2} %1"}}}}}}', secrets.AZURE_SIGNING_ENDPOINT, secrets.AZURE_SIGNING_ACCOUNT, secrets.AZURE_CERT_PROFILE) || '' }}
+
+      # The .app inside the dmg is already notarized and stapled; the dmg
+      # gets its own ticket so it opens offline. Then every Mach-O in the app
+      # is checked: universal, signed, hardened, timestamped, one team.
+      - if: matrix.name == 'macos'
+        name: "macOS: notarize the dmg and verify the app"
+        shell: bash
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          bundle="target/${{ matrix.target }}/release/bundle"
+          app="$(ls -d "$bundle"/macos/*.app | head -1)"
+          dmg="$(ls "$bundle"/dmg/*.dmg | head -1)"
+          evidence="$bundle/macos-signature.txt"
+          if [ "${{ steps.apple.outputs.notarize }}" = "true" ]; then
+            codesign --force --timestamp --sign "${{ steps.apple.outputs.identity }}" "$dmg"
+            bash scripts/ci/macos-sign.sh notarize "$dmg"
+            bash scripts/ci/macos-sign.sh verify --notarized "$app" "$dmg" | tee "$evidence"
+          else
+            bash scripts/ci/macos-sign.sh verify "$app" | tee "$evidence"
+          fi
+          sh scripts/check-host-bundle.sh "$app" linux-x86_64,linux-aarch64,macos-universal
 
       - if: matrix.name == 'linux'
         name: The Linux bundles carry tandem-host
         shell: bash
         run: |
-          for f in target/${{ matrix.target }}/release/bundle/deb/*.deb target/${{ matrix.target }}/release/bundle/appimage/*.AppImage; do
+          sudo apt-get install -y rpm2cpio cpio
+          for f in target/${{ matrix.target }}/release/bundle/deb/*.deb target/${{ matrix.target }}/release/bundle/rpm/*.rpm target/${{ matrix.target }}/release/bundle/appimage/*.AppImage; do
             sh scripts/check-host-bundle.sh "$f" linux-x86_64,linux-aarch64,macos-universal
           done
 
       - if: matrix.name == 'linux' && steps.secrets.outputs.gpg == 'true'
-        name: Sign the AppImage (detached) and the deb
+        name: Sign the AppImage and the rpm (detached) and the deb
         shell: bash
         env:
           LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
@@ -233,7 +344,7 @@ jobs:
         run: |
           echo "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
           sudo apt-get install -y dpkg-sig
-          for f in target/${{ matrix.target }}/release/bundle/appimage/*.AppImage; do
+          for f in target/${{ matrix.target }}/release/bundle/appimage/*.AppImage target/${{ matrix.target }}/release/bundle/rpm/*.rpm; do
             gpg --batch --pinentry-mode loopback --passphrase "$LINUX_GPG_PASSPHRASE" --armor --detach-sign "$f"
           done
           dpkg-sig --sign builder -g "--batch --pinentry-mode loopback --passphrase $LINUX_GPG_PASSPHRASE" target/${{ matrix.target }}/release/bundle/deb/*.deb
@@ -244,9 +355,9 @@ jobs:
           mkdir -p out
           bundle="target/${{ matrix.target }}/release/bundle"
           case "${{ matrix.name }}" in
-            macos) signed="${{ steps.secrets.outputs.apple }}"; what="code signing and notarization (APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID)"; files="$bundle/dmg/*.dmg $bundle/macos/*.app.tar.gz*" ;;
+            macos) signed="${{ steps.apple.outputs.notarize }}"; what="Developer ID signing and notarization (APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, and APPLE_API_ISSUER, APPLE_API_KEY, APPLE_API_KEY_P8 or APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID)"; files="$bundle/dmg/*.dmg $bundle/macos/*.app.tar.gz* $bundle/macos-signature.txt" ;;
             windows) signed="${{ steps.secrets.outputs.azure }}"; what="Authenticode via Azure Trusted Signing (AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT, AZURE_CERT_PROFILE)"; files="$bundle/nsis/*.exe* $bundle/msi/*.msi*" ;;
-            linux) signed="${{ steps.secrets.outputs.gpg }}"; what="GPG (LINUX_GPG_PRIVATE_KEY, LINUX_GPG_PASSPHRASE)"; files="$bundle/appimage/*.AppImage* $bundle/deb/*.deb" ;;
+            linux) signed="${{ steps.secrets.outputs.gpg }}"; what="GPG (LINUX_GPG_PRIVATE_KEY, LINUX_GPG_PASSPHRASE)"; files="$bundle/appimage/*.AppImage* $bundle/deb/*.deb $bundle/rpm/*.rpm*" ;;
           esac
           suffix=""
           if [ "$signed" != "true" ]; then
@@ -272,8 +383,36 @@ jobs:
           name: bundle-${{ matrix.name }}
           path: out/*
 
-  publish:
+  msix:
+    # The Microsoft Store package, made from the Windows installer's files
+    # (D-1713). The Store signs it; it never goes into the public release.
     needs: [verify, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: bundle-windows, path: windows }
+      - name: Build makemsix and the package
+        shell: bash
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          sudo apt-get install -y p7zip-full clang
+          pip install cmake
+          installer="$(ls windows/*-setup*.exe | head -1)"
+          bash scripts/build-msix.sh --from-installer "$installer" --out "store/Vibezeo_${{ needs.verify.outputs.version }}_x64.msix"
+          if [ -z "$MSIX_IDENTITY_NAME" ]; then
+            echo "- msix: dev identity (set the MSIX_* repo variables from Partner Center before submitting)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-msix
+          path: store/*.msix
+
+  publish:
+    needs: [verify, build, msix]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -286,7 +425,8 @@ jobs:
           RELEASE_API_TOKEN: ${{ secrets.RELEASE_API_TOKEN }}
         run: |
           mkdir -p release
-          find artifacts -type f -exec cp {} release/ \;
+          # The Store package isn't for direct download (unsigned until the Store signs it).
+          find artifacts -type f ! -name '*.msix' -exec cp {} release/ \;
           # F-WB-03: each OS's notes for the update feed, from CHANGELOG.md.
           for os in mac win lin; do
             npx --yes tsx@4.23.15 scripts/check-changelog.ts --version "${{ needs.verify.outputs.version }}" --notes "$os" > "release/notes-$os.txt"
@@ -325,6 +465,27 @@ jobs:
           name: Tandem ${{ needs.verify.outputs.version }} (early access)
           body_path: release-notes.md
           files: release/*
+      - if: env.CHANNEL == 'early-access'
+        name: winget manifests (signed Windows installer only)
+        # winget-pkgs is a pull request the owner opens (HUMAN_TODO, D-1715);
+        # an unsigned installer isn't offered there.
+        shell: bash
+        run: |
+          installer="$(ls release/*_x64-setup.exe 2>/dev/null | grep -v -- -unsigned | head -1 || true)"
+          if [ -z "$installer" ]; then
+            echo "- winget: skipped (the Windows installer isn't signed)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          pip install pyyaml jsonschema
+          name="$(basename "$installer")"
+          bash scripts/gen-winget.sh "$installer" "https://github.com/${{ env.RELEASES_REPO }}/releases/download/v${{ needs.verify.outputs.version }}-early-access/$name"
+          echo "- winget: manifests in the winget-manifests artifact" >> "$GITHUB_STEP_SUMMARY"
+      - if: env.CHANNEL == 'early-access'
+        uses: actions/upload-artifact@v4
+        with:
+          name: winget-manifests
+          path: dist/winget/
+          if-no-files-found: ignore
       - if: env.CHANNEL != 'early-access'
         name: Draft GitHub release
         uses: softprops/action-gh-release@v2

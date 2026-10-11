@@ -233,7 +233,9 @@ fn rc_file(shell: &Path) -> &'static str {
 
 fn path_fix(dir: &str) -> String {
     if cfg!(target_os = "macos") {
-        format!("{dir} isn't on PATH for apps. Add the folder to PATH in ~/.zprofile (GUI apps don't read ~/.zshrc).")
+        // The probe runs `$SHELL -lic`, so ~/.zprofile and ~/.zshrc both
+        // count; ~/.zprofile also reaches non-interactive login shells.
+        format!("{dir} isn't on your shell's PATH. Add the folder to PATH in ~/.zprofile.")
     } else if cfg!(windows) {
         format!("{dir} isn't on PATH. Add it to your user PATH in System Settings → Environment Variables.")
     } else {
@@ -316,16 +318,32 @@ fn probe_command(shell: &Path, commands: &[&str]) -> Probe {
 
 /// Runs the probe; returns command → absolute path for each one found.
 async fn run_probe(probe: Probe, vars: &BTreeMap<String, String>) -> BTreeMap<String, PathBuf> {
-    let mut cmd = Command::new(&probe.program);
-    cmd.args(&probe.args)
-        .stdin(Stdio::null())
+    let mut cmd = if tandem_core::sandbox::in_flatpak() {
+        // Engines are installed on the host (D-2032).
+        let args: Vec<std::ffi::OsString> = probe.args.iter().map(Into::into).collect();
+        let env: Vec<(&String, &String)> = vars.iter().collect();
+        let argv = tandem_core::sandbox::flatpak_host_argv(
+            std::ffi::OsStr::new(&probe.program),
+            &args,
+            None,
+            (!env.is_empty()).then_some(env.as_slice()),
+        );
+        let mut cmd = Command::new(&argv[0]);
+        cmd.args(&argv[1..]);
+        cmd
+    } else {
+        let mut cmd = Command::new(&probe.program);
+        cmd.args(&probe.args);
+        // The login env, not the app's: what a terminal would see.
+        if !vars.is_empty() {
+            cmd.env_clear().envs(vars);
+        }
+        cmd
+    };
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
-    // The login env, not the app's: what a terminal would see.
-    if !vars.is_empty() {
-        cmd.env_clear().envs(vars);
-    }
     #[cfg(unix)]
     cmd.process_group(0);
     let Ok(mut child) = cmd.spawn() else {
@@ -342,7 +360,9 @@ async fn run_probe(probe: Probe, vars: &BTreeMap<String, String>) -> BTreeMap<St
 }
 
 /// Kills the probe's whole process group when the deadline drops the probe
-/// (an rc file's `sleep` would otherwise outlive it).
+/// (an rc file's `sleep` would otherwise outlive it). Unix only: on Windows
+/// the probe is a single PowerShell process and `kill_on_drop` ends it.
+#[cfg_attr(not(unix), allow(dead_code))]
 struct GroupGuard(Option<u32>);
 
 impl Drop for GroupGuard {
@@ -443,9 +463,27 @@ fn node_version(bin: &Path) -> (u32, u32, u32) {
 /// `npm prefix -g`, with 2 s to answer.
 async fn npm_prefix(vars: &BTreeMap<String, String>) -> Option<PathBuf> {
     let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
-    let mut cmd = Command::new(npm);
-    cmd.args(["prefix", "-g"])
-        .stdin(Stdio::null())
+    let mut cmd = if tandem_core::sandbox::in_flatpak() {
+        let path: Vec<(&str, &str)> = vars
+            .get("PATH")
+            .map(|p| ("PATH", p.as_str()))
+            .into_iter()
+            .collect();
+        let argv = tandem_core::sandbox::flatpak_host_argv(
+            std::ffi::OsStr::new(npm),
+            &["prefix".into(), "-g".into()],
+            None,
+            (!path.is_empty()).then_some(path.as_slice()),
+        );
+        let mut cmd = Command::new(&argv[0]);
+        cmd.args(&argv[1..]);
+        cmd
+    } else {
+        let mut cmd = Command::new(npm);
+        cmd.args(["prefix", "-g"]);
+        cmd
+    };
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
@@ -491,9 +529,23 @@ fn is_executable(p: &Path) -> bool {
 /// `<path> --version` (the registry's `version_cmd`), parsed with
 /// `version_regex`; `None` when it fails, times out or doesn't match.
 pub async fn version_of(engine: &EngineSpec, path: &Path, timeout: Duration) -> Option<String> {
-    let mut cmd = Command::new(path);
-    cmd.args(&engine.version_cmd)
-        .stdin(Stdio::null())
+    let mut cmd = if tandem_core::sandbox::in_flatpak() {
+        let args: Vec<std::ffi::OsString> = engine.version_cmd.iter().map(Into::into).collect();
+        let argv = tandem_core::sandbox::flatpak_host_argv::<&str, &str>(
+            path.as_os_str(),
+            &args,
+            None,
+            None,
+        );
+        let mut cmd = Command::new(&argv[0]);
+        cmd.args(&argv[1..]);
+        cmd
+    } else {
+        let mut cmd = Command::new(path);
+        cmd.args(&engine.version_cmd);
+        cmd
+    };
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
