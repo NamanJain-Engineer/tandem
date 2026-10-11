@@ -367,6 +367,40 @@ fn f_rm_01_a_thread_on_a_host_asks_permission_in_band() {
 }
 
 #[test]
+fn f_rm_01_a_thread_on_a_host_names_its_relayed_servers_inline() {
+    // D-1604: the relays to this machine's gateway and tasks server, given
+    // inline (no file on the host), still asking permission in band.
+    let mut req = start(Access::Edits, ThreadMode::Act, true);
+    req.relocate = Some(crate::chat::Relocate(Arc::new(|spec| spec)));
+    req.stdio_servers = ["tandem", "tandem_tasks"]
+        .iter()
+        .enumerate()
+        .map(|(i, name)| crate::chat::StdioServer {
+            name: (*name).into(),
+            command: "/home/me/.tandem-host/1/tandem-host".into(),
+            args: vec!["mcp".into(), "--channel".into(), format!("{i:032x}")],
+            env_vars: Vec::new(),
+        })
+        .collect();
+    let a = args(&req);
+    let cfg: Value =
+        serde_json::from_str(flag(&a, "--mcp-config").expect("inline config")).expect("json");
+    assert_eq!(
+        cfg["mcpServers"]["tandem"]["command"],
+        "/home/me/.tandem-host/1/tandem-host"
+    );
+    assert_eq!(
+        cfg["mcpServers"]["tandem_tasks"]["args"],
+        json!(["mcp", "--channel", format!("{:032x}", 1)])
+    );
+    assert_eq!(cfg["mcpServers"].as_object().map(|m| m.len()), Some(2));
+    // No URL, header or token: only the relays.
+    assert!(!cfg.to_string().contains("http"), "{cfg}");
+    assert_eq!(flag(&a, "--permission-prompt-tool"), Some("stdio"));
+    assert!(a.iter().any(|x| x == "--strict-mcp-config"));
+}
+
+#[test]
 fn f_rm_01_an_in_band_request_describes_the_card_like_the_gateway_does() {
     let mut p = ClaudeParser::new("/repo".into(), &[], false);
     let line = r#"{"type":"control_request","request_id":"r-1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"npm test"},"tool_use_id":"toolu_1"}}"#;

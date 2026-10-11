@@ -22,8 +22,8 @@ use tandem_core::ids::HostId;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_host::client::{ClientError, HostClient};
 use tandem_host::protocol::{
-    method, DirListing, ErrorKind, Found, FsChanged, Hello, HelloReply, Message, PtyAttached,
-    PtyExit, PtyOutput, PtySpawned, RpcError, StatusEvent, PROTOCOL, VERSION,
+    method, DirListing, ErrorKind, Found, FsChanged, Hello, HelloReply, McpChannel, McpLine,
+    Message, PtyAttached, PtyExit, PtyOutput, PtySpawned, RpcError, StatusEvent, PROTOCOL, VERSION,
 };
 use tandem_host::ssh::{Askpass, Category, Ssh, SshError, SshTarget};
 use tandem_pty::{OutputSink, PtyInfo, PtyManager, RemoteFeed, RemotePty, SpawnSpec};
@@ -285,6 +285,19 @@ pub struct RemoteService {
     detections: Mutex<HashMap<String, tandem_engines::detect::DetectionReport>>,
     /// The engine registry, for detection after each connection.
     engines: std::sync::OnceLock<Arc<crate::services::engines::EngineService>>,
+    /// MCP channels this desktop opened (D-1604): their host, and where
+    /// the lines the host sends go.
+    mcp: Mutex<HashMap<String, (HostId, mpsc::UnboundedSender<McpEvent>)>>,
+}
+
+/// What arrives on an MCP channel (D-1604).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpEvent {
+    /// A JSON-RPC line from the engine's `tandem-host mcp`.
+    Line(String),
+    /// The engine's server went (it stopped or restarted it), or the
+    /// connection to the host did.
+    Closed,
 }
 
 impl RemoteService {
@@ -317,6 +330,7 @@ impl RemoteService {
             askpass: std::sync::OnceLock::new(),
             detections: Mutex::default(),
             engines: std::sync::OnceLock::new(),
+            mcp: Mutex::default(),
         })
     }
 
@@ -676,6 +690,16 @@ impl RemoteService {
                             me.files.changed(&conn.host_id, &c.id, &c.change);
                         }
                     }
+                    Some(method::MCP_OUT) => {
+                        if let Ok(l) = serde_json::from_value::<McpLine>(params) {
+                            me.mcp_event(&l.channel, McpEvent::Line(l.line));
+                        }
+                    }
+                    Some(method::MCP_CLOSED) => {
+                        if let Ok(c) = serde_json::from_value::<McpChannel>(params) {
+                            me.mcp_event(&c.channel, McpEvent::Closed);
+                        }
+                    }
                     Some(method::STATUS_EVENT) => {
                         if let Ok(ev) = serde_json::from_value::<StatusEvent>(params) {
                             if let Ok(body) =
@@ -688,6 +712,8 @@ impl RemoteService {
                     _ => {}
                 }
             }
+            // The connection went: so did the daemon's channels.
+            me.mcp_dropped(&conn.host_id);
         });
     }
 
@@ -831,6 +857,118 @@ impl RemoteService {
         }
         self.set_state(&conn, HostState::Down);
         Ok(())
+    }
+
+    // ── MCP channels (D-1604) ───────────────────────────────────────
+
+    /// Opens a channel on `host` for an engine session's MCP server; the
+    /// engine there starts `tandem-host mcp --channel <id>` to reach it.
+    pub async fn mcp_open(
+        self: &Arc<Self>,
+        host: &HostId,
+    ) -> Result<(String, mpsc::UnboundedReceiver<McpEvent>), IpcError> {
+        let client = self.client(host).await?;
+        let mut bytes = [0u8; 16];
+        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut bytes);
+        let channel = hex::encode(bytes);
+        let (tx, rx) = mpsc::unbounded_channel();
+        if let Ok(mut m) = self.mcp.lock() {
+            m.insert(channel.clone(), (host.clone(), tx));
+        }
+        let opened: Result<Value, _> = client
+            .call(
+                method::MCP_OPEN,
+                McpChannel {
+                    channel: channel.clone(),
+                },
+            )
+            .await;
+        if let Err(e) = opened {
+            self.mcp_forget(&channel);
+            return Err(rpc_error(e));
+        }
+        Ok((channel, rx))
+    }
+
+    /// Sends a line to the engine's server on `channel`; `false` when the
+    /// host isn't connected.
+    pub fn mcp_send(&self, channel: &str, line: String) -> bool {
+        let Some(host) = self.mcp_host(channel) else {
+            return false;
+        };
+        self.connected_client(&host).is_some_and(|c| {
+            c.notify(
+                method::MCP_IN,
+                McpLine {
+                    channel: channel.to_string(),
+                    line,
+                },
+            )
+            .is_ok()
+        })
+    }
+
+    /// Closes a channel: the engine's server on the host ends.
+    pub fn mcp_close(&self, channel: &str) {
+        let Some(host) = self.mcp_forget(channel) else {
+            return;
+        };
+        if let Some(c) = self.connected_client(&host) {
+            let _ = c.send(
+                method::MCP_CLOSE,
+                McpChannel {
+                    channel: channel.to_string(),
+                },
+            );
+        }
+    }
+
+    /// Where the helper is on `host`, as an engine there starts it (its
+    /// home from the connection's hello).
+    pub fn host_bin(&self, host: &HostId) -> Option<String> {
+        let conns = self.conns.lock().ok()?;
+        let conn = conns.get(host.as_str())?;
+        let home = conn.hello.lock().ok()?.as_ref()?.home.clone();
+        Some(format!(
+            "{}/{}/tandem-host",
+            home.trim_end_matches('/'),
+            tandem_host::ssh::remote_dir()
+        ))
+    }
+
+    fn mcp_host(&self, channel: &str) -> Option<HostId> {
+        self.mcp.lock().ok()?.get(channel).map(|(h, _)| h.clone())
+    }
+
+    fn mcp_forget(&self, channel: &str) -> Option<HostId> {
+        self.mcp.lock().ok()?.remove(channel).map(|(h, _)| h)
+    }
+
+    fn mcp_event(&self, channel: &str, ev: McpEvent) {
+        if let Ok(m) = self.mcp.lock() {
+            if let Some((_, tx)) = m.get(channel) {
+                let _ = tx.send(ev);
+            }
+        }
+    }
+
+    /// The connection to `host` dropped: the daemon ended its channels, so
+    /// each one's server is gone (the engine's own run ends with it too).
+    fn mcp_dropped(&self, host: &HostId) {
+        if let Ok(mut m) = self.mcp.lock() {
+            m.retain(|_, (h, tx)| {
+                if h == host {
+                    let _ = tx.send(McpEvent::Closed);
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+    }
+
+    fn connected_client(&self, host: &HostId) -> Option<Arc<HostClient>> {
+        self.conns.lock().ok()?.get(host.as_str())?.client()
     }
 
     /// The connected client for a host, connecting first when needed

@@ -509,6 +509,21 @@ pub struct StatusEvent {
     pub signature: Option<String>,
 }
 
+/// A stdio MCP channel (D-1604): `mcp.open`/`mcp.close` from the desktop,
+/// `mcp.attach` from `tandem-host mcp --channel <id>` on the host.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpChannel {
+    pub channel: String,
+}
+
+/// One JSON-RPC line on a channel, without its newline: `mcp.in` (desktop →
+/// daemon), `mcp.out` (daemon → desktop) and `mcp.line` (daemon ↔ relay).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpLine {
+    pub channel: String,
+    pub line: String,
+}
+
 pub mod method {
     pub const HELLO: &str = "host.hello";
     pub const ENGINES_DETECT: &str = "engines.detect";
@@ -544,11 +559,25 @@ pub mod method {
     /// `fs.unwatch` or the connection closes (D-1600).
     pub const FS_WATCH: &str = "fs.watch";
     pub const FS_UNWATCH: &str = "fs.unwatch";
+    /// Stdio MCP channels (D-1604). The desktop opens a channel
+    /// (`McpChannel`) for one engine session; the engine's
+    /// `tandem-host mcp --channel <id>` attaches to it, and lines pass as
+    /// notifications: `mcp.in` from the desktop, `mcp.out` to it, `mcp.line`
+    /// between the daemon and the relay. `mcp.closed` tells the desktop the
+    /// relay went (the engine stopped its server). A channel belongs to the
+    /// connection that opened it and ends with it.
+    pub const MCP_OPEN: &str = "mcp.open";
+    pub const MCP_CLOSE: &str = "mcp.close";
+    pub const MCP_ATTACH: &str = "mcp.attach";
+    pub const MCP_IN: &str = "mcp.in";
+    pub const MCP_LINE: &str = "mcp.line";
     // Host → client notifications.
     pub const PTY_OUTPUT: &str = "pty.output";
     pub const PTY_EXIT: &str = "pty.exit";
     pub const STATUS_EVENT: &str = "status.event";
     pub const FS_CHANGED: &str = "fs.changed";
+    pub const MCP_OUT: &str = "mcp.out";
+    pub const MCP_CLOSED: &str = "mcp.closed";
 }
 
 #[cfg(test)]

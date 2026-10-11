@@ -38,6 +38,7 @@ pub mod opener;
 pub mod plugins;
 pub mod remote;
 pub mod remote_files;
+pub mod remote_mcp;
 pub mod restore;
 pub mod routine_host;
 pub mod routines;

@@ -1,6 +1,7 @@
 //! `tandem-host`: the helper Vibezeo uploads to SSH hosts (ARCHITECTURE
 //! §2.11, §13.1). `serve` pipes one connection to the session daemon,
-//! `daemon` keeps the PTYs, `run` starts a thread's engine, `version`
+//! `daemon` keeps the PTYs, `run` starts a thread's engine, `mcp` relays an
+//! engine's MCP server to the desktop (D-1604), `version`
 //! prints this build's version.
 
 use std::path::PathBuf;
@@ -34,6 +35,21 @@ fn main() {
                 1
             }
         },
+        Some("mcp") => match args.get(2..4) {
+            Some([flag, channel]) if flag == "--channel" => {
+                match tandem_host::serve::mcp(&home(), channel) {
+                    Ok(()) => 0,
+                    Err(e) => {
+                        eprintln!("tandem-host mcp: {e}");
+                        1
+                    }
+                }
+            }
+            _ => {
+                eprintln!("usage: tandem-host mcp --channel <id>");
+                2
+            }
+        },
         Some("run") => match tandem_host::serve::parse_run(&args[2..]) {
             Ok(run) => tandem_host::serve::run(run, &home()).unwrap_or_else(|e| {
                 eprintln!("tandem-host: {e}");
@@ -45,7 +61,7 @@ fn main() {
             }
         },
         _ => {
-            eprintln!("usage: tandem-host <serve|daemon|run|version>");
+            eprintln!("usage: tandem-host <serve|daemon|run|mcp|version>");
             2
         }
     };

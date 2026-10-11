@@ -113,6 +113,22 @@ function startKeyring(): void {
 }
 
 async function main() {
+  // Remote workspaces (E2E-M14): the bundled tandem-host and the sshd
+  // fixture (infra/docker-compose.yml, profile remote). Without Docker or
+  // the musl target the m14 specs fail and say so; the others don't care.
+  const remoteSpecs = !spec || spec.includes("m14");
+  const quiet = { cwd: root, stdio: "ignore" as const };
+  // The helper first: the app's build copies resources/tandem-host into
+  // target/<profile>/host-binaries, which a debug app uploads from, so a
+  // helper built after it would reach hosts one run late.
+  if (
+    remoteSpecs &&
+    !process.env.TANDEM_E2E_SKIP_BUILD &&
+    spawnSync("sh", ["scripts/build-tandem-host.sh"], quiet).status !== 0
+  )
+    console.warn(
+      "E2E: couldn't build tandem-host (rustup target add x86_64-unknown-linux-musl; apt install musl-tools)",
+    );
   if (!process.env.TANDEM_E2E_SKIP_BUILD) {
     execFileSync("pnpm", ["build"], { cwd: desktop, stdio: "inherit" });
     // Perf suites measure an optimised build (the `perf` profile keeps the test harness).
@@ -138,18 +154,7 @@ async function main() {
     });
     execFileSync("cargo", ["build", "-p", "tandem-tasks", "--bins"], { cwd: root, stdio: "inherit" });
   }
-  // Remote workspaces (E2E-M14): the bundled tandem-host and the sshd
-  // fixture (infra/docker-compose.yml, profile remote). Without Docker or
-  // the musl target the m14 specs fail and say so; the others don't care.
-  if (!spec || spec.includes("m14")) {
-    const quiet = { cwd: root, stdio: "ignore" as const };
-    if (
-      !process.env.TANDEM_E2E_SKIP_BUILD &&
-      spawnSync("sh", ["scripts/build-tandem-host.sh"], quiet).status !== 0
-    )
-      console.warn(
-        "E2E: couldn't build tandem-host (rustup target add x86_64-unknown-linux-musl; apt install musl-tools)",
-      );
+  if (remoteSpecs) {
     const up = spawnSync(
       "sh",
       [
