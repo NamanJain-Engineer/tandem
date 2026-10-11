@@ -1,9 +1,10 @@
 //! Best of N (F-EX-04): one prompt to two or three agents, each in its own
 //! worktree lane from the same commit; compare their diffs, run the same
-//! check in each, merge the winner and discard the others.
+//! check in each, merge the winner and discard the others. In a folder on
+//! an SSH host every step runs there, with the host's git (D-1605).
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -11,23 +12,29 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use tandem_core::bus::{BusEvent, Topic};
-use tandem_core::ids::{new_id, AccountId, WorkspaceId};
+use tandem_core::ids::{new_id, AccountId, HostId, WorkspaceId};
 use tandem_core::origin::{LocalReview, Origin};
 use tandem_core::redact::Redactor;
 use tandem_core::{ErrorCode, IpcError};
-use tandem_git::{FileDiff, ForceConfirm, MergeReport, Repo};
+use tandem_git::{FileDiff, ForceConfirm, GitStatus, MergeReport, Repo};
 use tandem_store::repo::bestof::{self as runs, BestOfLane, BestOfRun, CheckState, RunState};
 use tandem_store::repo::presets::{Isolation, Seat, SeatKind};
-use tandem_store::repo::workspaces;
+use tandem_store::repo::workspaces::{self, Workspace};
 
+use crate::services::remote_files::RemoteRoot;
 use crate::services::terminal::LaunchMode;
 use crate::services::{lanes, launch};
 use crate::state::AppState;
 
 pub const NOT_A_REPO: &str = "Best of N needs a git repository";
-pub const LOCAL_ONLY: &str = "Best of N works in folders on this computer only";
+pub const WSL_UNAVAILABLE: &str = "Best of N isn't available in WSL folders yet";
 pub const SEATS: &str = "Choose 2 or 3 agents";
 pub const NO_CHECK: &str = "Add a check command first";
+pub const FIRST_COMMIT: &str = "Make a first commit, then start Best of N";
+const LANE_MISSING: &str = "The worktree folder is missing";
+/// A host's check runs in the host user's login shell, as its terminals
+/// and engine detection do; `$1` is the check (D-1605).
+pub const HOST_CHECK_SHELL: &str = "exec \"${SHELL:-/bin/sh}\" -lc \"$1\"";
 /// A check stops after this long.
 pub const CHECK_LIMIT: Duration = Duration::from_secs(600);
 /// Lines of output a check keeps.
@@ -93,6 +100,46 @@ async fn run_of(state: &AppState, id: &str) -> Result<BestOfRun, IpcError> {
         })
 }
 
+/// The host and folder when `ws` is in a folder on an SSH host (D-1605):
+/// its git runs there, through the helper.
+fn on_host(ws: &Workspace) -> Option<RemoteRoot> {
+    (ws.kind == "ssh").then(|| RemoteRoot {
+        host: HostId::from_db(ws.host_id.clone()),
+        root: ws.root.clone(),
+    })
+}
+
+/// A folder's git status, read here or on its host; `missing` when it
+/// isn't a repository (or is gone).
+async fn status_of(state: &AppState, ws: &Workspace, missing: &str) -> Result<GitStatus, IpcError> {
+    if let Some(r) = on_host(ws) {
+        return state
+            .remote
+            .files
+            .git_status(&state.remote, &r)
+            .await?
+            .map(|(_, _, status)| status)
+            .ok_or_else(|| invalid(missing));
+    }
+    let repo = Repo::discover(Path::new(&ws.root))
+        .ok()
+        .flatten()
+        .ok_or_else(|| invalid(missing))?;
+    Ok(repo.status().await?)
+}
+
+/// What `tandem-host run` starts for a check on a host: the login shell
+/// with the check as one argument (`run` quotes each one for the host).
+pub fn host_check_argv(command: &str) -> Vec<String> {
+    vec![
+        "/bin/sh".into(),
+        "-c".into(),
+        HOST_CHECK_SHELL.into(),
+        "check".into(),
+        format!("exec 2>&1\n{command}"),
+    ]
+}
+
 /// `bestof_start`: every seat or none (the plan's pane limit), each in a
 /// worktree from the current HEAD with the same prompt.
 pub async fn start(
@@ -109,17 +156,23 @@ pub async fn start(
         return Err(invalid(SEATS));
     }
     let ws = workspaces::get(&state.store, workspace).await?;
-    if ws.kind != "local" {
-        return Err(IpcError::new(ErrorCode::Unavailable, LOCAL_ONLY).with_stage("bestof"));
+    if ws.kind == "wsl" {
+        return Err(IpcError::new(ErrorCode::Unavailable, WSL_UNAVAILABLE).with_stage("bestof"));
     }
-    let repo = Repo::discover(Path::new(&ws.root))
-        .ok()
-        .flatten()
-        .ok_or_else(|| invalid(NOT_A_REPO))?;
-    let base = repo
-        .head()
-        .await?
-        .ok_or_else(|| invalid("Make a first commit, then start Best of N"))?;
+    // A host's lanes are made by its git (D-1602), from its HEAD; each
+    // lane records that commit, which is the run's base.
+    let base = if on_host(&ws).is_some() {
+        if status_of(state, &ws, NOT_A_REPO).await?.no_commits {
+            return Err(invalid(FIRST_COMMIT));
+        }
+        None
+    } else {
+        let repo = Repo::discover(Path::new(&ws.root))
+            .ok()
+            .flatten()
+            .ok_or_else(|| invalid(NOT_A_REPO))?;
+        Some(repo.head().await?.ok_or_else(|| invalid(FIRST_COMMIT))?)
+    };
     let lineup: Vec<Seat> = seats
         .iter()
         .map(|s| Seat {
@@ -182,6 +235,21 @@ pub async fn start(
             row.error = Some(f.error.message.clone());
         }
     }
+    let base = match base {
+        Some(b) => b,
+        None => {
+            let mut found = String::new();
+            for l in &report.launched {
+                if let Ok(lane) = workspaces::get(&state.store, &l.workspace_id).await {
+                    if let Some(b) = lane.lane_base {
+                        found = b;
+                        break;
+                    }
+                }
+            }
+            found
+        }
+    };
     let run = runs::insert(
         &state.store,
         BestOfRun {
@@ -245,7 +313,12 @@ pub async fn run_check(
     limit: Duration,
     group_slot: Option<GroupSlot>,
 ) -> (Option<i32>, String) {
-    let mut cmd = if cfg!(windows) {
+    run_prepared(local_check(command, cwd), env, limit, group_slot).await
+}
+
+/// A check here: `/bin/sh` (`cmd` on Windows) in `cwd`.
+fn local_check(command: &str, cwd: &Path) -> tokio::process::Command {
+    let mut c = if cfg!(windows) {
         let mut c = tokio::process::Command::new("cmd");
         c.args(["/C", &format!("{command} 2>&1")]);
         c
@@ -254,8 +327,21 @@ pub async fn run_check(
         c.args(["-c", &format!("exec 2>&1\n{command}")]);
         c
     };
-    cmd.current_dir(cwd)
-        .env_clear()
+    c.current_dir(cwd);
+    c
+}
+
+/// Runs a check's process (here, or the ssh that runs it on a host) in its
+/// own process group, stdout and stderr together; `None` exit when it timed
+/// out or was killed. Killing a host check's ssh ends it there too:
+/// `tandem-host run` ends the check's group once its input closes.
+pub async fn run_prepared(
+    mut cmd: tokio::process::Command,
+    env: &std::collections::BTreeMap<String, String>,
+    limit: Duration,
+    group_slot: Option<GroupSlot>,
+) -> (Option<i32>, String) {
+    cmd.env_clear()
         .envs(env)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -324,6 +410,25 @@ pub async fn check(state: &AppState, id: &str) -> Result<(), IpcError> {
         else {
             continue;
         };
+        // On a host, the check runs there through `tandem-host run`, in the
+        // worktree the host's git made (D-1605).
+        let cmd = match on_host(&ws) {
+            Some(r) => {
+                let (program, args) = state
+                    .remote
+                    .run_command(
+                        &r.host,
+                        &r.root,
+                        &std::collections::BTreeMap::new(),
+                        &host_check_argv(&command),
+                    )
+                    .await?;
+                let mut c = tokio::process::Command::new(program);
+                c.args(args);
+                c
+            }
+            None => local_check(&command, Path::new(&ws.root)),
+        };
         runs::set_check(
             &state.store,
             id.to_string(),
@@ -333,19 +438,17 @@ pub async fn check(state: &AppState, id: &str) -> Result<(), IpcError> {
             None,
         )
         .await?;
-        let (store, bus, run_id, seat, command, env) = (
+        let (store, bus, run_id, seat, env) = (
             state.store.clone(),
             state.bus.clone(),
             id.to_string(),
             lane.seat,
-            command.clone(),
             env.clone(),
         );
-        let cwd = PathBuf::from(ws.root);
         let slot: GroupSlot = Arc::default();
         let task_slot = slot.clone();
         let task = tokio::spawn(async move {
-            let (exit, out) = run_check(&command, &cwd, &env, CHECK_LIMIT, Some(task_slot)).await;
+            let (exit, out) = run_prepared(cmd, &env, CHECK_LIMIT, Some(task_slot)).await;
             let out = Redactor::global()
                 .redact(&tail(&out, TAIL_LINES))
                 .into_owned();
@@ -440,11 +543,10 @@ pub async fn keep_question(
         &WorkspaceId::from_db(run.workspace_id.clone()),
     )
     .await?;
-    let base_repo = Repo::discover(Path::new(&base_ws.root))
-        .ok()
-        .flatten()
-        .ok_or_else(|| invalid(NOT_A_REPO))?;
-    if base_repo.status().await?.has_tracked_changes() {
+    if status_of(state, &base_ws, NOT_A_REPO)
+        .await?
+        .has_tracked_changes()
+    {
         return Err(IpcError::new(
             ErrorCode::Conflict,
             format!("Commit or stash your changes in {} first.", base_ws.name),
@@ -513,11 +615,10 @@ pub async fn keep(
         &WorkspaceId::from_db(run.workspace_id.clone()),
     )
     .await?;
-    let base_repo = Repo::discover(Path::new(&base_ws.root))
-        .ok()
-        .flatten()
-        .ok_or_else(|| invalid(NOT_A_REPO))?;
-    if base_repo.status().await?.has_tracked_changes() {
+    if status_of(state, &base_ws, NOT_A_REPO)
+        .await?
+        .has_tracked_changes()
+    {
         return Err(IpcError::new(
             ErrorCode::Conflict,
             format!("Commit or stash your changes in {} first.", base_ws.name),
@@ -549,12 +650,7 @@ pub async fn keep(
         "keeping a lane"
     );
     let lane_ws = workspaces::get(&state.store, &WorkspaceId::from_db(winner.1.clone())).await?;
-    let lane_repo = Repo::discover(Path::new(&lane_ws.root))
-        .ok()
-        .flatten()
-        .ok_or_else(|| invalid("The worktree folder is missing"))?;
-    if !lane_repo.status().await?.is_clean() {
-        tandem_git::ops::stage_all(&git, &lane_repo).await?;
+    if !status_of(state, &lane_ws, LANE_MISSING).await?.is_clean() {
         let engine = state
             .terminals
             .engines
@@ -562,9 +658,36 @@ pub async fn keep(
             .map(|e| e.label.clone())
             .unwrap_or_else(|| winner.0.engine_id.clone());
         let message = format!("Best of N: {} ({engine})", run.title);
-        tracing::info!(code = "bestof.keep", step = "staged", "keeping a lane");
         // A missing git identity comes back saying how to set one.
-        tandem_git::ops::commit(&git, &lane_repo, &message).await?;
+        if let Some(r) = on_host(&lane_ws) {
+            // The host's git, with the host's identity (D-1605).
+            use tandem_host::protocol::method;
+            state
+                .remote
+                .call::<serde_json::Value>(
+                    &r.host,
+                    method::GIT_OP,
+                    serde_json::json!({"root": r.root, "op": "stage"}),
+                )
+                .await?;
+            tracing::info!(code = "bestof.keep", step = "staged", "keeping a lane");
+            state
+                .remote
+                .call::<serde_json::Value>(
+                    &r.host,
+                    method::GIT_OP,
+                    serde_json::json!({"root": r.root, "op": "commit", "message": message}),
+                )
+                .await?;
+        } else {
+            let lane_repo = Repo::discover(Path::new(&lane_ws.root))
+                .ok()
+                .flatten()
+                .ok_or_else(|| invalid(LANE_MISSING))?;
+            tandem_git::ops::stage_all(&git, &lane_repo).await?;
+            tracing::info!(code = "bestof.keep", step = "staged", "keeping a lane");
+            tandem_git::ops::commit(&git, &lane_repo, &message).await?;
+        }
     }
     tracing::info!(code = "bestof.keep", step = "committed", "keeping a lane");
     let report = lanes::merge(&state.store, &git, &WorkspaceId::from_db(winner.1.clone())).await?;
@@ -628,6 +751,7 @@ pub async fn discard(state: &AppState, origin: &Origin, id: &str) -> Result<(), 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
     use std::process::Command;
     use tandem_core::DataDir;
     use tandem_store::repo::workspaces::NewWorkspace;
@@ -889,8 +1013,10 @@ mod tests {
             .await
             .expect_err("no git");
         assert_eq!(err.message, NOT_A_REPO);
-        // A folder on an SSH host or in WSL is refused before anything
-        // starts, even when the same path is a repository here.
+        // A WSL folder has no worktrees yet (D-1605): refused before
+        // anything starts, even when the same path is a repository here.
+        // An SSH folder goes to its host instead (E2E-M14-11), so it isn't
+        // refused for being remote.
         for kind in ["ssh", "wsl"] {
             let dir = tmp.path().join(kind);
             std::fs::create_dir_all(&dir).expect("mkdir");
@@ -911,10 +1037,15 @@ mod tests {
             let err = start(&state, &remote.id, "do it", &seats, None)
                 .await
                 .expect_err("remote");
-            assert_eq!(
-                (err.code, err.message.as_str()),
-                (ErrorCode::Unavailable, LOCAL_ONLY)
-            );
+            if kind == "wsl" {
+                assert_eq!(
+                    (err.code, err.message.as_str()),
+                    (ErrorCode::Unavailable, WSL_UNAVAILABLE)
+                );
+            } else {
+                assert_ne!(err.message, WSL_UNAVAILABLE);
+                assert!(!err.message.contains("this computer"), "{}", err.message);
+            }
         }
         let err = start(&state, &ws.id, "do it", &seats[..1], None)
             .await
@@ -982,6 +1113,16 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn f_rm_01_f_ex_04_3_a_hosts_check_runs_in_its_login_shell_with_output_joined() {
+        let argv = host_check_argv("pnpm test 'a b'");
+        assert_eq!(argv[..3], ["/bin/sh", "-c", HOST_CHECK_SHELL]);
+        // The command reaches the login shell as one argument, unquoted
+        // here: `run` quotes each argument for the host.
+        assert_eq!(argv[4], "exec 2>&1\npnpm test 'a b'");
+        assert_eq!(argv.len(), 5);
     }
 
     #[test]
