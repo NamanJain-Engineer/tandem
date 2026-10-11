@@ -31,6 +31,8 @@ type MockState = {
   voicedMs: number;
   outputs: Array<{ callId: string; output: string }>;
   speed: number;
+  voice: string | null;
+  instructions: string;
 };
 
 async function rt<T = unknown>(path: string, body?: unknown): Promise<T> {
@@ -352,5 +354,46 @@ describe("E2E-M16-1 Conductor call", function () {
     const lines = log[0]?.events.map((e) => e.text) ?? [];
     expect(lines.some((t) => t.startsWith("Execute task") && t.includes("Confirmed by voice"))).toBe(true);
     expect(lines.some((t) => t.startsWith("Create teammate") && t.includes("Confirmed"))).toBe(false);
+  });
+
+  it("F-CN-06 a call starts with the persona's voice, speed, name and memory", async () => {
+    const persona = { conductor_name: "Ada", conductor_voice: "sage", conductor_speed: 5, conductor_memory: true };
+    for (const [key, value] of Object.entries(persona)) await invoke("settings_set", { key, value });
+    await invoke("conductor_memory_save", { text: "- Works on the billing service\n" });
+    try {
+      await startCall();
+      const s = await rt<MockState>("/__state");
+      expect(s.voice).toBe("sage");
+      expect(s.instructions).toContain("Ada");
+      expect(s.instructions).toContain("- Works on the billing service");
+      // Speed 5 of 5: the talker starts at the fastest rate.
+      await browser.waitUntil(async () => (await rt<MockState>("/__state")).speed === 1.2, {
+        timeout: 5_000,
+        timeoutMsg: "the persona's speed never reached the talker",
+      });
+      await endCall();
+    } finally {
+      await invoke("conductor_memory_clear");
+      for (const key of Object.keys(persona)) await invoke("settings_reset", { key });
+    }
+  });
+
+  it("F-CN-07 the wake phrase starts a call that holds the mic until it ends", async () => {
+    expect(await invoke<string | null>("test_mic_owner")).toBe(null);
+    await browser.waitUntil(async () => invoke<boolean>("test_conductor_wake"), {
+      timeout: 10_000,
+      timeoutMsg: "the wake service never came up",
+    });
+    await until((v) => v.phase === "listening", "the wake call connects", 30_000);
+    expect(await invoke<string | null>("test_mic_owner")).toBe("call");
+    // Heard again mid-call: the running call stays the only one.
+    const id = (await view()).callId;
+    expect(await invoke<boolean>("test_conductor_wake")).toBe(true);
+    expect((await view()).callId).toBe(id);
+    await endCall();
+    await browser.waitUntil(async () => (await invoke<string | null>("test_mic_owner")) === null, {
+      timeout: 5_000,
+      timeoutMsg: "the call kept the mic after it ended",
+    });
   });
 });

@@ -30,13 +30,14 @@ use tandem_voice::conductor::persona::PersonaBrief;
 use tandem_voice::conductor::view::{CallView, UiAction};
 use tandem_voice::realtime::RealtimeProvider;
 
-use crate::services::conductor::{hosted_error, SnapPane, Snapshot};
+use crate::services::conductor::{hosted_error, CallMic, SnapPane, Snapshot};
 use crate::state::AppState;
 
 /// The running app as a call's host.
 pub struct AppHost {
     app: AppHandle,
     speaker: OnceLock<Arc<dyn Speaker>>,
+    mic: OnceLock<CallMic>,
 }
 
 impl AppHost {
@@ -44,11 +45,17 @@ impl AppHost {
         Self {
             app,
             speaker: OnceLock::new(),
+            mic: OnceLock::new(),
         }
     }
 
     fn state(&self) -> State<'_, AppState> {
         self.app.state::<AppState>()
+    }
+
+    fn mic(&self) -> &CallMic {
+        self.mic
+            .get_or_init(|| CallMic::new(self.state().mic.clone()))
     }
 
     pub(crate) fn app(&self) -> AppHandle {
@@ -350,7 +357,7 @@ impl CallHost for AppHost {
     }
 
     async fn persona(&self) -> PersonaBrief {
-        PersonaBrief::default()
+        self.state().persona.call_brief().await
     }
 
     fn provider(&self, name: &str) -> Option<Arc<dyn RealtimeProvider>> {
@@ -359,20 +366,24 @@ impl CallHost for AppHost {
 
     fn mic_start(&self, tx: mpsc::UnboundedSender<MicEvent>) -> Result<(), String> {
         let events = tx.clone();
-        self.state().dictate.call_mic_start(StreamTap {
-            samples: Box::new(move |s: &[f32], rate| {
-                let _ = tx.send(MicEvent::Samples(s.to_vec(), rate));
-            }),
-            events: Box::new(move |e| {
-                if e == CaptureEvent::NotDelivering {
-                    let _ = events.send(MicEvent::NotDelivering);
-                }
-            }),
+        let state = self.state();
+        self.mic().take(|| {
+            state.dictate.call_mic_start(StreamTap {
+                samples: Box::new(move |s: &[f32], rate| {
+                    let _ = tx.send(MicEvent::Samples(s.to_vec(), rate));
+                }),
+                events: Box::new(move |e| {
+                    if e == CaptureEvent::NotDelivering {
+                        let _ = events.send(MicEvent::NotDelivering);
+                    }
+                }),
+            })
         })
     }
 
     fn mic_stop(&self) {
-        self.state().dictate.call_mic_stop();
+        let state = self.state();
+        self.mic().give_back(|| state.dictate.call_mic_stop());
     }
 
     fn speaker(&self) -> Arc<dyn Speaker> {
@@ -606,10 +617,6 @@ pub fn conductor_start_call(
     wake: bool,
     push_to_talk: Option<bool>,
 ) -> Result<CallView, IpcError> {
-    if state.conductor.is_live() {
-        return Ok(state.conductor.view());
-    }
-    gate(&state)?;
     let origin = if wake {
         CallOrigin::Wake
     } else if push_to_talk.unwrap_or(false) {
@@ -617,7 +624,28 @@ pub fn conductor_start_call(
     } else {
         CallOrigin::Button
     };
+    start_call(&state, origin)
+}
+
+/// The plan gate, then the one entry point; a running call is returned.
+fn start_call(state: &AppState, origin: CallOrigin) -> Result<CallView, IpcError> {
+    if state.conductor.is_live() {
+        return Ok(state.conductor.view());
+    }
+    gate(state)?;
     state.conductor.start(origin)
+}
+
+/// "Hey Conductor" starts calls here (F-CN-07): the same gate and entry
+/// point as the ring, as [`CallOrigin::Wake`].
+pub struct WakeStart(pub AppHandle);
+
+impl crate::services::wake::CallStarter for WakeStart {
+    fn start_call_from_wake(&self) -> Result<(), String> {
+        start_call(&self.0.state::<AppState>(), CallOrigin::Wake)
+            .map(|_| ())
+            .map_err(|e| e.message)
+    }
 }
 
 /// Hangs up; with no call, clears an ended call's receipt or error.
@@ -744,4 +772,33 @@ pub fn test_conductor_inject(
         .conductor
         .controller()
         .is_some_and(|c| c.inject(calls)))
+}
+
+/// The E2E harness: the wake phrase was heard (F-CN-07). `false` before the
+/// wake service is up.
+#[cfg(debug_assertions)]
+#[tauri::command]
+pub fn test_conductor_wake(state: State<'_, AppState>) -> Result<bool, IpcError> {
+    if !state.e2e {
+        return Err(IpcError::new(
+            ErrorCode::PermissionDenied,
+            "The test harness is off",
+        ));
+    }
+    Ok(state.wake.get().map(|w| w.heard()).is_some())
+}
+
+/// The E2E harness: who holds the microphone (F-CN-07).
+#[cfg(debug_assertions)]
+#[tauri::command]
+pub fn test_mic_owner(
+    state: State<'_, AppState>,
+) -> Result<Option<tandem_voice::mic_owner::MicOwner>, IpcError> {
+    if !state.e2e {
+        return Err(IpcError::new(
+            ErrorCode::PermissionDenied,
+            "The test harness is off",
+        ));
+    }
+    Ok(state.mic.current())
 }
