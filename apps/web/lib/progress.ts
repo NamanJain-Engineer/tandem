@@ -1,12 +1,12 @@
-/** What's in the 0.5.0 release, for the home page's progress strip and the
+/** What's in the 0.6.0 release, for the home page's progress strip and the
  * changelog. Figures are counted in the code the release was built from
- * (product branch): `scripts/gate.sh` output (1384 Rust and 1130 TypeScript
+ * (product branch): `scripts/gate.sh` output (RUST_TESTS Rust and TS_TESTS TypeScript
  * tests) and the files in `apps/desktop/e2e/specs`. Update them with each
  * release. */
 export const PROGRESS = {
-  milestones: 14,
+  milestones: 15,
   automatedTests: 2514,
-  endToEndSuites: 109,
+  endToEndSuites: 120,
   engines: 11,
 } as const;
 
@@ -18,6 +18,17 @@ export type Milestone = {
 
 /** Newest first. Each entry is a closed milestone of the build plan. */
 export const MILESTONES: readonly Milestone[] = [
+  {
+    id: "M17",
+    title: "Extras",
+    items: [
+      "Checkpoints: a folder's files are saved before each agent turn, and you put them back, all or some, with Undo.",
+      "Command recall searches the commands you ran in Vibezeo terminals and puts one back at the prompt.",
+      "The Ports tab lists the servers your panes started, with Open, Copy URL and Stop.",
+      "Best of N gives one prompt to two or three agents in their own worktrees, compares their diffs and keeps the best.",
+      "A prompt library of Markdown files, with variables, inserted into any message box or pane.",
+    ],
+  },
   {
     id: "M14",
     title: "SSH workspaces",

@@ -1,11 +1,11 @@
 /** The public builds, served from this site (`public/downloads/`). The
- * Linux .deb is built by the product repo's release script with
+ * Linux .deb and .rpm are built by the product repo's release script with
  * TANDEM_HOSTED=0: no hosted service, the Free plan runs locally and
  * nothing is sent to our servers. Update with each release. */
 export const DOWNLOADS_PATH = "/downloads";
 
 export const RELEASE = {
-  version: "0.5.0",
+  version: "0.6.0",
 } as const;
 
 export type Os = "macos" | "windows" | "linux";
@@ -26,7 +26,7 @@ export const DOWNLOADS: Download[] = [
     os: "macos",
     name: "macOS",
     requirement: "macOS 14 or later, Apple Silicon or Intel",
-    assets: [{ file: "Vibezeo_0.5.0_universal-unsigned.dmg", label: "Download for macOS (.dmg)" }],
+    assets: [{ file: "Vibezeo_0.6.0_universal-unsigned.dmg", label: "Download for macOS (.dmg)" }],
     steps: [
       "Open the .dmg and drag Vibezeo into Applications.",
       "The first time, right-click Vibezeo in Applications, choose Open, then Open again. The build isn't notarized by Apple yet, so a plain double-click is blocked.",
@@ -38,8 +38,8 @@ export const DOWNLOADS: Download[] = [
     name: "Windows",
     requirement: "Windows 10 or 11, 64-bit",
     assets: [
-      { file: "Vibezeo_0.5.0_x64-setup-unsigned.exe", label: "Download for Windows (.exe)" },
-      { file: "Vibezeo_0.5.0_x64_en-US-unsigned.msi", label: ".msi installer" },
+      { file: "Vibezeo_0.6.0_x64-setup-unsigned.exe", label: "Download for Windows (.exe)" },
+      { file: "Vibezeo_0.6.0_x64_en-US-unsigned.msi", label: ".msi installer" },
     ],
     steps: [
       "Run the installer.",
@@ -50,10 +50,14 @@ export const DOWNLOADS: Download[] = [
   {
     os: "linux",
     name: "Linux",
-    requirement: "x86-64 with WebKitGTK 4.1: Ubuntu 22.04+ or Debian 12+",
-    assets: [{ file: "Vibezeo_0.5.0_amd64.deb", label: "Download for Linux (.deb)" }],
+    requirement: "x86-64 with WebKitGTK 4.1: Ubuntu 22.04+, Debian 12+ or FEDORA_VERSIONS",
+    assets: [
+      { file: "Vibezeo_0.6.0_amd64.deb", label: "Download for Linux (.deb)" },
+      { file: "Vibezeo-0.6.0-1.x86_64.rpm", label: "Fedora (.rpm)" },
+    ],
     steps: [
-      "Debian or Ubuntu: sudo apt install ./Vibezeo_0.5.0_amd64.deb",
+      "Debian or Ubuntu: sudo apt install ./Vibezeo_0.6.0_amd64.deb",
+      "Fedora: sudo dnf install ./Vibezeo-0.6.0-1.x86_64.rpm",
       "Open it from your applications menu.",
     ],
     available: true,

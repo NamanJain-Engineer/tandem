@@ -128,11 +128,14 @@ export default function DownloadPage() {
                     ))}
                   </dl>
                   <div className="flex flex-col gap-3">
-                    <p className="text-copy-sm font-semibold text-fg">Install on Debian or Ubuntu</p>
+                    <p className="text-copy-sm font-semibold text-fg">Install</p>
                     {d.steps.map((s) => {
-                      const cmd = /:\s*(sudo .+)$/.exec(s)?.[1];
-                      return cmd ? (
-                        <CommandLine key={s} command={cmd} />
+                      const step = /^(.*?):\s*(sudo .+)$/.exec(s);
+                      return step ? (
+                        <div key={s} className="flex flex-col gap-1.5">
+                          <p className="text-copy-sm text-fg-muted">{step[1]}</p>
+                          <CommandLine command={step[2] ?? ""} />
+                        </div>
                       ) : (
                         <p key={s} className="text-copy-sm text-fg-muted">
                           {s}
@@ -144,8 +147,9 @@ export default function DownloadPage() {
                     <p className="flex items-start gap-2.5 text-copy-sm text-fg-muted">
                       <Icon icon={ShieldCheck} size={18} className="mt-0.5 shrink-0 text-accent" />
                       <span>
-                        The .deb isn&apos;t code-signed, so the checksum is how you confirm it&apos;s ours: compare the
-                        output of <code className="font-mono text-fg">sha256sum</code> with the value above, or with{" "}
+                        The packages aren&apos;t code-signed, so the checksum is how you confirm they&apos;re ours:
+                        compare the output of <code className="font-mono text-fg">sha256sum</code> with the value above,
+                        or with{" "}
                         <a href={CHECKSUMS_URL} className="text-accent">
                           SHA256SUMS
                         </a>
