@@ -3,27 +3,25 @@ title: Remote (SSH, WSL, phone)
 description: Workspaces on SSH hosts and WSL distros, and a phone companion.
 ---
 
-> **Not in the app yet.** SSH and WSL workspaces arrive with the next release (0.5.0); this page describes them as they ship. The phone companion comes later (M16).
-
 ## SSH hosts
 
 Open a folder on another machine and work there as if it were local: terminals, agents, threads, files and git all run on the host.
 
 - **Adding a host.** Settings › Remote › Add host takes an alias from your `~/.ssh/config`, a host name or `user@host:port`. Vibezeo uses your system `ssh`, your SSH agent and your config.
 - **Host keys.** The first time, Vibezeo shows the host's key fingerprint for you to check, then pins it in its own `known_hosts`. If the key changes, it refuses to connect until you choose to trust the new key.
-- **The helper.** Vibezeo copies a small helper, `tandem-host`, to `~/.tandem-host/` on the host and checks its SHA-256 there. Terminals keep running if the connection drops, and reattach when it comes back.
+- **The helper.** Vibezeo copies a small helper, `tandem-host`, to `~/.tandem-host/` on the host and checks its SHA-256 there before using it. Terminals keep running for up to 10 minutes if the connection drops, and reattach when it comes back.
 - **Files and git.** The Files tab and the Changes panel follow the host's folder as it changes, whatever changed it: an agent, a terminal or another program on the host. Push, pull, switching branches and new branches run the host's own git with the host's own credentials (its SSH keys or credential helper); nothing from this computer is used.
 - **Worktrees.** On an SSH host, *New worktree* and a Fleet run's worktree isolation make the worktree on the host, under `<repo>/.tandem/worktrees/<name>` on a `tandem/<name>` branch, the same as locally; merge, diff and cleanup run there too. A worktree's pull request needs the GitHub CLI (`gh`) installed on the host.
 - **Engines.** The `+` menu lists the coding engines installed on the host, signed in on the host. Your sign-ins, accounts, plugin credentials and the local gateway never leave this computer.
-- **Approvals.** Claude Code threads on a host ask before running commands or editing files, with the same approval card as local threads.
+- **Approvals.** Threads on a host ask for approval just as local ones do, with the same approval card, whichever engine runs them.
 
-**Which hosts.** The Linux download includes the helper for **Linux x86_64 and Linux arm64 (aarch64)** hosts. macOS hosts need the macOS helper, which is built on a Mac and isn't in this download yet. Hosts reached through `ProxyJump` or `ProxyCommand` aren't supported yet.
+**Which hosts.** The Linux download includes the helper for **Linux x86_64 and Linux arm64 (aarch64)** hosts; the arm64 helper hasn't been tried on a real arm64 machine yet. macOS hosts need the macOS helper, which is built on a Mac and isn't in this download yet. Hosts reached through `ProxyJump` or `ProxyCommand` aren't supported yet.
 
 **Not in remote folders yet:** git worktrees in WSL folders (agents there share the checkout), plugins and task tools in threads, and Reveal in file manager. The Browser pane browses from this computer, so it can't open the host's own dev servers.
 
 ## WSL (Windows)
 
-On Windows, Settings › Remote lists your WSL distributions. Open a folder inside one, and its terminals, agents and threads run in that distro with its own engines and sign-ins. You can also choose a distro for plain terminals in local folders.
+WSL workspaces are written for the Windows download, which isn't out yet, and haven't been tried on Windows. There, Settings › Remote lists your WSL distributions. Open a folder inside one, and its terminals, agents and threads run in that distro with its own engines and sign-ins. You can also choose a distro for plain terminals in local folders.
 
 ## Phone
 

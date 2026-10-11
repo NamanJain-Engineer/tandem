@@ -23,6 +23,10 @@ pub enum SourceRef {
         teammate_id: String,
         thread_id: String,
     },
+    /// A teammate's page in Agent mode (Find work, F-CN-05).
+    Teammate {
+        teammate_id: String,
+    },
     Routine {
         routine_id: String,
         run_id: Option<String>,

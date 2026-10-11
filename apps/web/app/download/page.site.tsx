@@ -11,7 +11,7 @@ const START = [
   "Have at least one coding agent CLI installed and signed in, the way you use it today: Claude Code, Codex, Gemini CLI or another. Vibezeo finds it and never touches its sign-in.",
   "Open the app and choose Start on the welcome screen. The Free plan runs on your computer, no account needed.",
   "Add a project folder. The launch grid lists the agents it found: pick one to start it in a real terminal, or Terminal for a shell.",
-  "Split with Mod+D (right) and Mod+Shift+D (down), where Mod is ⌘ on a Mac and Ctrl elsewhere. Mod+K opens the command palette. The Dashboard shows which agents are working and which are waiting for you.",
+  "Split right with Mod+D (on Linux, Ctrl+Shift+E while a terminal has focus) and down with Mod+Shift+D, where Mod is ⌘ on a Mac and Ctrl elsewhere. Mod+K opens the command palette. The Dashboard shows which agents are working and which are waiting for you.",
 ];
 
 const LIMITS = [
