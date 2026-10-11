@@ -37,6 +37,8 @@ pub enum EnabledWhen {
     PaneOrCell,
     /// The plan has routines (F-RT-04); otherwise the command is absent.
     Routines,
+    /// The plan has Conductor (F-CN-01); otherwise the command is absent.
+    Conductor,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -302,10 +304,11 @@ static REGISTRY: &[CommandSpec] = &[
     },
     same("billing.plans", C::App, None, E::Always),
     // F-CN-01, F-CN-04: Conductor (UI_SPEC §5). On the Free plan the call
-    // command opens the plans instead.
+    // command opens the plans instead; mute and the call log are absent,
+    // as there's no call to mute or log (D-833).
     same("conductor.call", C::App, Some("Mod+Shift+Space"), E::Always),
-    same("conductor.mute", C::App, Some("Mod+Shift+M"), E::Always),
-    same("conductor.log", C::App, Some("Mod+Shift+."), E::Always),
+    same("conductor.mute", C::App, Some("Mod+Shift+M"), E::Conductor),
+    same("conductor.log", C::App, Some("Mod+Shift+."), E::Conductor),
     // The cheatsheet (UI_SPEC §5, UI-113).
     aliased(
         "help.shortcuts",

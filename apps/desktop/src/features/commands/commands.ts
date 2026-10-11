@@ -82,6 +82,8 @@ export function isEnabled(spec: CommandSpec): boolean {
   if (spec.enabledWhen === "always") return true;
   // Pausing routines means nothing on a plan without them (F-RT-04).
   if (spec.enabledWhen === "routines") return !!useSession.getState().entitlement?.limits.routines;
+  // Nor muting or a call log on a plan without Conductor (F-CN-01, D-833).
+  if (spec.enabledWhen === "conductor") return !!useSession.getState().entitlement?.limits.conductor;
   const ui = useUi.getState();
   if (spec.enabledWhen === "thread_open")
     return ui.mode === "thread" && !ui.settingsOpen && useThreads.getState().selectedId !== null;

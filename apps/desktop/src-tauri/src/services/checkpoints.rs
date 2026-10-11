@@ -12,13 +12,13 @@ use ts_rs::TS;
 
 use tandem_core::bus::{BusEvent, EventBus, Topic};
 use tandem_core::clock::Clock;
-use tandem_core::ids::new_id;
+use tandem_core::ids::{new_id, WorkspaceId};
 use tandem_core::settings::SettingKey;
 use tandem_core::{DataDir, ErrorCode, IpcError};
 use tandem_git::checkpoint::{self, RestoreFailure, Side, Snapshot, Store as CpStore, StoreKind};
 use tandem_git::FileDiff;
 use tandem_store::repo::checkpoints::{self as rows, Checkpoint, CheckpointReason};
-use tandem_store::repo::settings;
+use tandem_store::repo::{settings, workspaces};
 use tandem_store::Store;
 
 use crate::services::lanes::git_for;
@@ -29,6 +29,9 @@ const PROTECT_RESTORE_MS: i64 = 3_600_000;
 const DAY_MS: i64 = 86_400_000;
 
 pub const GIT_MISSING: &str = "Checkpoints need git. Install git to turn them on.";
+/// Checkpoints save and restore folders on this computer. A folder on an SSH
+/// host isn't one, even when a folder here has the same path (D-833).
+pub const ON_HOST: &str = "Checkpoints aren't available in folders on SSH hosts yet.";
 
 /// `checkpoints_list`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -149,11 +152,24 @@ impl CheckpointService {
         u64::try_from(mb.max(1)).unwrap_or(5) * 1024 * 1024
     }
 
-    /// Takes a checkpoint unless checkpoints are off or nothing changed
-    /// since the folder's last one. Errors are logged by code, never with
-    /// paths or contents, and never stop the turn.
+    /// Whether `workspace_id` names a folder on an SSH host.
+    async fn on_host(&self, workspace_id: Option<&str>) -> bool {
+        let Some(id) = workspace_id else {
+            return false;
+        };
+        workspaces::get(&self.store, &WorkspaceId::from_db(id.to_string()))
+            .await
+            .is_ok_and(|ws| ws.kind == "ssh")
+    }
+
+    /// Takes a checkpoint unless checkpoints are off, the folder is on an SSH
+    /// host, or nothing changed since the folder's last one. Errors are
+    /// logged by code, never with paths or contents, and never stop the turn.
     pub async fn before_turn(&self, req: Request, reason: CheckpointReason) -> Option<Checkpoint> {
-        if !self.enabled().await || !req.folder.is_dir() {
+        if !self.enabled().await
+            || self.on_host(req.workspace_id.as_deref()).await
+            || !req.folder.is_dir()
+        {
             return None;
         }
         match self.take(req, reason).await {
@@ -172,6 +188,9 @@ impl CheckpointService {
         req: Request,
         reason: CheckpointReason,
     ) -> Result<Option<Checkpoint>, IpcError> {
+        if self.on_host(req.workspace_id.as_deref()).await {
+            return Err(IpcError::new(ErrorCode::Unavailable, ON_HOST).with_stage("checkpoints"));
+        }
         let folder = std::fs::canonicalize(&req.folder).map_err(|_| {
             IpcError::new(ErrorCode::NotFound, "The folder is missing").with_stage("checkpoints")
         })?;
@@ -565,6 +584,58 @@ mod tests {
         let tl = svc.timeline(&folder, None).await.expect("timeline");
         assert!(!tl.enabled);
         assert!(tl.items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn f_ex_01_a_folder_on_an_ssh_host_never_gets_a_checkpoint() {
+        let (_t, svc, folder, _clock) = service().await;
+        std::fs::write(folder.join("a.txt"), "a").expect("write");
+        // The host's folder has the same path as a folder on this computer:
+        // that local folder must not be what's saved (D-833).
+        let host = tandem_store::repo::hosts::add_ssh(
+            &svc.store,
+            tandem_store::repo::hosts::NewSshHost {
+                label: "box".into(),
+                target: "dev@box".into(),
+                port: None,
+                identity_file: None,
+            },
+        )
+        .await
+        .expect("host");
+        let (ws, _) = workspaces::add(
+            &svc.store,
+            workspaces::NewWorkspace {
+                kind: "ssh".into(),
+                host_id: host.id.as_str().to_string(),
+                root: folder.to_string_lossy().into_owned(),
+                name: "work".into(),
+                wsl_distro: None,
+            },
+            None,
+        )
+        .await
+        .expect("workspace");
+        let on_host = Request {
+            workspace_id: Some(ws.id.as_str().to_string()),
+            ..req(&folder)
+        };
+        assert!(svc
+            .before_turn(on_host.clone(), CheckpointReason::Turn)
+            .await
+            .is_none());
+        let err = svc
+            .take(on_host, CheckpointReason::Manual)
+            .await
+            .expect_err("refused");
+        assert_eq!(err.code, ErrorCode::Unavailable);
+        assert_eq!(err.message, ON_HOST);
+        assert!(svc
+            .timeline(&folder, None)
+            .await
+            .expect("timeline")
+            .items
+            .is_empty());
     }
 
     #[tokio::test]

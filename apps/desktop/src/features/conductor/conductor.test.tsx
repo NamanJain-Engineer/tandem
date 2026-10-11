@@ -130,6 +130,8 @@ describe("Conductor ring and commands (F-CN-01, F-CN-04)", () => {
     expect(screen.queryByTestId("conductor-button")).toBeNull();
     runCommand("conductor.call");
     expect(useUi.getState().upgrade.open).toBe(true);
+    // The plans say why they opened (D-833).
+    expect(useUi.getState().upgrade.gate?.kind).toBe("conductor");
     expect(named("conductor_start_call")).toHaveLength(0);
   });
 

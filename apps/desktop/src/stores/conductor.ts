@@ -122,7 +122,8 @@ export function followConductor(): () => void {
  * Free. Startup refusals show in the HUD, never silently. */
 export async function startCall(pushToTalk = false): Promise<void> {
   if (!hasConductor()) {
-    useUi.getState().openUpgrade();
+    // Says why the plans opened (D-833).
+    useUi.getState().openUpgrade({ kind: "conductor", limit: 0 });
     return;
   }
   try {

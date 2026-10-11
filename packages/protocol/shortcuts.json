@@ -429,7 +429,7 @@
     "pc": "Mod+Shift+M",
     "pcTerminal": "Mod+Shift+M",
     "inText": false,
-    "enabledWhen": "always"
+    "enabledWhen": "conductor"
   },
   {
     "id": "conductor.log",
@@ -438,7 +438,7 @@
     "pc": "Mod+Shift+.",
     "pcTerminal": "Mod+Shift+.",
     "inText": false,
-    "enabledWhen": "always"
+    "enabledWhen": "conductor"
   },
   {
     "id": "help.shortcuts",
