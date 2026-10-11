@@ -1599,4 +1599,153 @@ mod tests {
         pty.kill(&pane).expect("kill");
         svc.disconnect(&host.id).await.expect("disconnect");
     }
+
+    /// Two host entries that reach the same `user@host:port` (two aliases,
+    /// or two hosts behind one jump) share a pinned key but not a master:
+    /// both connect, and disconnecting one leaves the other as it was.
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "needs the sshd compose service (profile remote)"]
+    async fn f_rm_01_app_two_hosts_for_one_target_both_connect() {
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let dir = tempfile::tempdir().expect("tmp");
+        let data = tandem_core::DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = Store::open(&data).expect("store");
+        let bus = EventBus::new();
+        // Two aliases in the user's config for one `tandem@127.0.0.1:2222`.
+        let config = dir.path().join("ssh_config");
+        std::fs::write(
+            &config,
+            format!(
+                "Host same-a same-b\n  HostName 127.0.0.1\n  Port 2222\n  User tandem\n  IdentityFile {}\n  IdentitiesOnly yes\n",
+                repo.join("infra/ssh/id_ed25519").display()
+            ),
+        )
+        .expect("config");
+        std::env::set_var("TANDEM_SSH_CONFIG", &config);
+        let status = StatusService::new(bus.clone(), Arc::new(tandem_core::clock::SystemClock));
+        let svc = RemoteService::new(
+            store.clone(),
+            bus.clone(),
+            &data,
+            repo.join("apps/desktop/src-tauri/resources/tandem-host"),
+            PtyManager::new(),
+            status,
+        );
+        std::env::remove_var("TANDEM_SSH_CONFIG");
+        let add = |alias: &str| {
+            hosts::add_ssh(
+                &store,
+                hosts::NewSshHost {
+                    label: alias.into(),
+                    target: alias.into(),
+                    port: None,
+                    identity_file: None,
+                },
+            )
+        };
+        let a = add("same-a").await.expect("a");
+        let b = add("same-b").await.expect("b");
+        assert_ne!(a.id, b.id);
+        let mut events = bus.subscribe(Topic::Remote);
+        let approver = svc.clone();
+        let saw = Arc::new(Mutex::new(Vec::<(String, String, Option<String>)>::new()));
+        let seen = saw.clone();
+        tokio::spawn(async move {
+            while let Ok(ev) = events.recv().await {
+                if ev.name == "remote:ssh" {
+                    if let Ok(p) = serde_json::from_value::<SshProgress>(ev.payload) {
+                        seen.lock().expect("seen").push((
+                            p.host_id.as_str().to_string(),
+                            p.stage.clone(),
+                            p.error.as_ref().map(|e| e.message.clone()),
+                        ));
+                        if matches!(p.prompt, Some(SshPrompt::Hostkey { .. })) {
+                            approver.decide_host_key(&p.op_id, true);
+                        }
+                    }
+                }
+            }
+        });
+        let ended = |h: &HostId| {
+            let h = h.as_str().to_string();
+            let saw = saw.clone();
+            move || {
+                saw.lock()
+                    .expect("saw")
+                    .iter()
+                    .any(|(id, st, _)| *id == h && (st == "connected" || st == "failed"))
+            }
+        };
+        svc.connect(a.id.clone());
+        assert!(
+            tandem_pty::wait_until(Duration::from_secs(60), ended(&a.id)),
+            "{:?}",
+            saw.lock().expect("saw")
+        );
+        svc.connect(b.id.clone());
+        assert!(
+            tandem_pty::wait_until(Duration::from_secs(60), ended(&b.id)),
+            "{:?}",
+            saw.lock().expect("saw")
+        );
+        assert_eq!(
+            svc.state(&a.id),
+            HostState::Connected,
+            "{:?}",
+            saw.lock().expect("saw")
+        );
+        assert_eq!(
+            svc.state(&b.id),
+            HostState::Connected,
+            "{:?}",
+            saw.lock().expect("saw")
+        );
+        svc.call::<serde_json::Value>(
+            &b.id,
+            method::HELLO,
+            serde_json::to_value(Hello {
+                protocol: PROTOCOL,
+                client_version: VERSION.into(),
+            })
+            .expect("hello"),
+        )
+        .await
+        .expect("b answers");
+        let mut host_events = bus.subscribe(Topic::Remote);
+        let states = Arc::new(Mutex::new(Vec::<String>::new()));
+        let st = states.clone();
+        let a_id = a.id.clone();
+        tokio::spawn(async move {
+            while let Ok(ev) = host_events.recv().await {
+                if ev.name == "remote:host" {
+                    if let Ok(h) = serde_json::from_value::<HostEvent>(ev.payload) {
+                        if h.host_id == a_id {
+                            st.lock().expect("st").push(format!("{:?}", h.state));
+                        }
+                    }
+                }
+            }
+        });
+        svc.disconnect(&b.id).await.expect("disconnect b");
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        // Not even a "Reconnecting…": b's master was its own.
+        assert!(
+            states.lock().expect("st").is_empty(),
+            "dropping b touched a: {:?}",
+            states.lock().expect("st")
+        );
+        assert_eq!(svc.state(&a.id), HostState::Connected);
+        svc.call::<serde_json::Value>(
+            &a.id,
+            method::HELLO,
+            serde_json::to_value(Hello {
+                protocol: PROTOCOL,
+                client_version: VERSION.into(),
+            })
+            .expect("hello"),
+        )
+        .await
+        .expect("a still answers");
+        svc.disconnect(&a.id).await.expect("disconnect a");
+    }
 }
