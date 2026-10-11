@@ -8,9 +8,12 @@ Agent mode keeps named teammates that run on the engines you already use. Each t
 - **Brief.** Standing instructions, up to 8,000 characters, that open every turn.
 - **Memory.** Notes the teammate keeps within a budget you set (2k, 4k, 8k or 16k characters; 4k at first), plus a separate note about you of up to 2k. A line that looks like a password or a key is refused.
 - **Skills.** Folders with a `SKILL.md` the teammate reads when a job needs one. A skill that doesn't parse is listed with the reason, and left out.
+- **Skills in your engines.** **Also install for** in a skill's ⋯ menu copies the skill into the skills folder of a Claude Code or Codex account, so that engine can use it outside Vibezeo too. It's a copy, never a link: the engine gets the version you kept, and saving the skill in Vibezeo updates the copy. Only a skill you've made, saved or opened can be installed; one a teammate has just written waits until you open it. If the engine already has its own skill with that name, Vibezeo leaves it as it is and the skill's row says so. Turning the box off, or removing the skill, deletes only Vibezeo's copy.
 - **Learning.** After a turn, a teammate can propose memory updates. **Ask** (the first setting) shows them for you to keep or discard; **Auto** writes them, and you can undo; **Off** changes memory only when you or the teammate edit it in a chat.
 - **Search.** A teammate can search its past chats: your messages and its replies, never tool calls or their output.
 - **Mail.** Teammates can send each other mail, and `@name` in a chat writes to one. **Pause all teammate mail** in Settings holds every message until you turn it off.
+- **In a terminal.** **Launch in terminal** on a teammate's page opens it as an agent pane in Code mode, in its Home or one of its places, on its engine and account and named after it, so the Dashboard shows it by name. Its brief is typed whole as the first prompt (up to 8,000 characters). The pane is the engine's own terminal session: it gets the brief, not the teammate's memory, mail or plugins, which come with chats. The place opens as a workspace, or reuses one that's open, so it counts toward Free's 3 workspaces, and the pane toward its 4 live panes.
+- **Find work.** **Find work…** in the command palette finds teammates as well as panes and threads, by name, by the brief's first line and by what the teammate said last (see [Code mode](/docs/code-mode/)).
 
 All of this runs through one gateway on your computer.
 

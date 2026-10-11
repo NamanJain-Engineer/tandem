@@ -23,12 +23,14 @@ use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 
 use crate::protocol::{
-    method, DirListing, EnginesDetect, ErrorKind, FsCreate, FsDirs, FsList, FsPath, FsRename,
-    FsWrite, GitDiff, GitOp, GitRoot, Hello, HelloReply, Message, PtyAttach, PtyAttached, PtyEntry,
-    PtyExit, PtyId, PtyOutput, PtyResize, PtySpawn, PtySpawned, PtyWrite, RpcError, StatusEvent,
-    MAX_LINE, PROTOCOL, VERSION,
+    method, DirListing, EnginesDetect, ErrorKind, FsChanged, FsCreate, FsDirs, FsList, FsPath,
+    FsRename, FsWatch, FsWatching, FsWrite, GitDiff, GitOp, GitRoot, Hello, HelloReply, LaneCreate,
+    LaneDiff, LaneMerge, LaneRemove, McpChannel, McpLine, Message, PtyAttach, PtyAttached,
+    PtyEntry, PtyExit, PtyId, PtyOutput, PtyResize, PtySpawn, PtySpawned, PtyWrite, RpcError,
+    StatusEvent, MAX_LINE, PROTOCOL, VERSION,
 };
-use crate::{detect, env, fsops, gitops};
+use crate::{detect, env, fsops, gitops, lanes};
+use tandem_core::files::watch::{self, DirWatcher};
 
 /// Output kept per PTY for re-attach.
 pub const BUFFER: usize = 1024 * 1024;
@@ -100,11 +102,36 @@ impl Pty {
     }
 }
 
+/// Folders one connection may watch at once (inotify watches are a
+/// per-user budget on the host).
+const MAX_WATCHES: usize = 32;
+
+/// MCP channels one connection may hold open (D-1604): a few per engine
+/// session, a few sessions at once.
+const MAX_CHANNELS: usize = 64;
+
+/// A stdio MCP channel: the connection that opened it, and the relay
+/// (`tandem-host mcp`) attached to it, if any.
+struct Channel {
+    owner: u64,
+    relay: Option<u64>,
+}
+
+/// A channel id is 32 to 64 lowercase hex characters (128 bits or more,
+/// from the desktop's random source).
+fn channel_id_ok(id: &str) -> bool {
+    (32..=64).contains(&id.len()) && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
 struct State {
     ptys: HashMap<String, Pty>,
     clients: HashMap<u64, SyncSender<Vec<u8>>>,
     next_client: u64,
     idle_since: Option<Instant>,
+    /// `fs.watch` subscriptions: id → (its connection, the watcher).
+    watches: HashMap<String, (u64, DirWatcher)>,
+    next_watch: u64,
+    channels: HashMap<String, Channel>,
 }
 
 impl State {
@@ -122,7 +149,57 @@ impl State {
         }
     }
 
+    /// Closes a relay's connection (its socket shuts once its queue ends);
+    /// its reader then finds nothing left to drop.
+    fn kick(&mut self, client: u64) {
+        if self.clients.remove(&client).is_some() && self.clients.is_empty() {
+            self.idle_since = Some(Instant::now());
+        }
+    }
+
     fn drop_client(&mut self, client: u64) {
+        // A connection's watches end with it; the desktop watches again
+        // when it reconnects.
+        let gone: Vec<String> = self
+            .watches
+            .iter()
+            .filter(|(_, (c, _))| *c == client)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let stopped: Vec<DirWatcher> = gone
+            .iter()
+            .filter_map(|id| self.watches.remove(id).map(|(_, w)| w))
+            .collect();
+        drop_later(stopped);
+        // Its channels end, and their relays are closed (their engines see
+        // the server go); a relay that goes leaves its channel open for the
+        // engine to start another.
+        let owned: Vec<String> = self
+            .channels
+            .iter()
+            .filter(|(_, c)| c.owner == client)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in owned {
+            if let Some(relay) = self.channels.remove(&id).and_then(|c| c.relay) {
+                self.kick(relay);
+            }
+        }
+        let detached: Vec<(String, u64)> = self
+            .channels
+            .iter_mut()
+            .filter(|(_, c)| c.relay == Some(client))
+            .map(|(id, c)| {
+                c.relay = None;
+                (id.clone(), c.owner)
+            })
+            .collect();
+        for (id, owner) in detached {
+            if let Some(tx) = self.clients.get(&owner) {
+                let note = Message::notification(method::MCP_CLOSED, json!({ "channel": id }));
+                let _ = tx.try_send(note.to_line());
+            }
+        }
         if self.clients.remove(&client).is_some() {
             for pty in self.ptys.values_mut() {
                 if pty.attached == Some(client) {
@@ -134,6 +211,17 @@ impl State {
             }
         }
     }
+}
+
+/// Stops watchers off the state lock: a watcher's batch thread may be
+/// waiting for that lock to send its notification.
+fn drop_later(watchers: Vec<DirWatcher>) {
+    if watchers.is_empty() {
+        return;
+    }
+    let _ = std::thread::Builder::new()
+        .name("unwatch".into())
+        .spawn(move || drop(watchers));
 }
 
 #[derive(Clone)]
@@ -162,6 +250,9 @@ impl Daemon {
                 clients: HashMap::new(),
                 next_client: 1,
                 idle_since: Some(Instant::now()),
+                watches: HashMap::new(),
+                next_watch: 1,
+                channels: HashMap::new(),
             })),
             home,
             status_url,
@@ -220,10 +311,12 @@ impl Daemon {
             .spawn(move || {
                 for line in rx {
                     if out.write_all(&line).is_err() {
-                        let _ = out.shutdown(std::net::Shutdown::Both);
-                        return;
+                        break;
                     }
                 }
+                // Dropped by the daemon (a closed channel's relay, a client
+                // that stopped reading): the other end sees the socket close.
+                let _ = out.shutdown(std::net::Shutdown::Both);
             });
         let me = self.clone();
         let _ = std::thread::Builder::new()
@@ -252,6 +345,11 @@ impl Daemon {
             Err(_) => return,
         };
         let (Some(id), Some(name)) = (msg.id, msg.method.clone()) else {
+            if msg.id.is_none() {
+                if let Some(name) = msg.method.as_deref() {
+                    self.notified(client, name, msg.params);
+                }
+            }
             return;
         };
         let p = msg.params;
@@ -269,6 +367,70 @@ impl Daemon {
                     me.state.lock().send(client, &Message::reply(id, out));
                 });
         }
+    }
+
+    /// Notifications from a connection: lines on an MCP channel, passed on
+    /// in order (the reader thread handles them inline).
+    fn notified(&self, client: u64, name: &str, p: Option<Value>) {
+        let Ok(l) = params::<McpLine>(p) else {
+            return;
+        };
+        let mut s = self.state.lock();
+        let Some(c) = s.channels.get(&l.channel) else {
+            return;
+        };
+        let (to, method) = match name {
+            method::MCP_IN if c.owner == client => match c.relay {
+                Some(relay) => (relay, method::MCP_LINE),
+                // No server yet: the engine speaks first, so nothing is lost.
+                None => return,
+            },
+            method::MCP_LINE if c.relay == Some(client) => (c.owner, method::MCP_OUT),
+            _ => return,
+        };
+        let out = Message::notification(method, json!({ "channel": l.channel, "line": l.line }));
+        s.send(to, &out);
+    }
+
+    fn mcp(&self, client: u64, name: &str, ch: McpChannel) -> Result<Value, RpcError> {
+        let refused = |m: &str| Err(RpcError::new(ErrorKind::Invalid, m));
+        if !channel_id_ok(&ch.channel) {
+            return refused("That isn't a channel id");
+        }
+        let mut s = self.state.lock();
+        match name {
+            method::MCP_OPEN => {
+                if s.channels.contains_key(&ch.channel) {
+                    return refused("That channel is already open");
+                }
+                if s.channels.values().filter(|c| c.owner == client).count() >= MAX_CHANNELS {
+                    return refused("Too many MCP channels are open on this connection");
+                }
+                s.channels.insert(
+                    ch.channel,
+                    Channel {
+                        owner: client,
+                        relay: None,
+                    },
+                );
+            }
+            method::MCP_CLOSE => {
+                if s.channels
+                    .get(&ch.channel)
+                    .is_some_and(|c| c.owner == client)
+                {
+                    if let Some(relay) = s.channels.remove(&ch.channel).and_then(|c| c.relay) {
+                        s.kick(relay);
+                    }
+                }
+            }
+            _ => match s.channels.get_mut(&ch.channel) {
+                Some(c) if c.relay.is_none() && c.owner != client => c.relay = Some(client),
+                Some(_) => return refused("That channel already has its server"),
+                None => return refused("No such channel: Vibezeo didn't open it, or it closed"),
+            },
+        }
+        Ok(Value::Null)
     }
 
     fn dispatch(&self, client: u64, name: &str, p: Option<Value>) -> Result<Value, RpcError> {
@@ -373,6 +535,31 @@ impl Daemon {
                 to_value(gitops::diff(Path::new(&g.root), &g.path, g.staged)?)
             }
             method::GIT_OP => to_value(gitops::op(&params::<GitOp>(p)?)?),
+            method::LANE_CREATE => to_value(lanes::create(&params::<LaneCreate>(p)?)?),
+            method::LANE_REMOVE => to_value(lanes::remove(&params::<LaneRemove>(p)?)?),
+            method::LANE_MERGE => to_value(lanes::merge(&params::<LaneMerge>(p)?)?),
+            method::LANE_DIFF => to_value(lanes::diff(&params::<LaneDiff>(p)?)?),
+            method::LANE_SWEEP => to_value(lanes::sweep(&params::<GitRoot>(p)?.root)?),
+            method::GIT_BRANCHES => {
+                let r: GitRoot = params(p)?;
+                to_value(gitops::branches(Path::new(&r.root))?)
+            }
+            method::FS_WATCH => to_value(self.watch(client, params::<FsWatch>(p)?)?),
+            method::MCP_OPEN | method::MCP_CLOSE | method::MCP_ATTACH => {
+                self.mcp(client, name, params::<McpChannel>(p)?)
+            }
+            method::FS_UNWATCH => {
+                let w: FsWatching = params(p)?;
+                let stopped = {
+                    let mut s = self.state.lock();
+                    match s.watches.get(&w.id) {
+                        Some((c, _)) if *c == client => s.watches.remove(&w.id).map(|(_, w)| w),
+                        _ => None,
+                    }
+                };
+                drop_later(stopped.into_iter().collect());
+                Ok(Value::Null)
+            }
             other => Err(RpcError::new(
                 ErrorKind::Protocol,
                 format!("Unknown method {other}"),
@@ -543,6 +730,58 @@ impl Daemon {
             }
         }
         Ok(reply)
+    }
+
+    /// `fs.watch` (D-1600): the same watcher as the desktop's own
+    /// (`tandem_core::files::watch`, inotify per kept folder), its batches
+    /// sent to this connection as `fs.changed`.
+    fn watch(&self, client: u64, req: FsWatch) -> Result<FsWatching, RpcError> {
+        let root = Path::new(&req.root)
+            .canonicalize()
+            .ok()
+            .filter(|r| r.is_dir())
+            .ok_or_else(|| RpcError::new(ErrorKind::NotFound, "The remote folder doesn't exist"))?;
+        let id = {
+            let mut s = self.state.lock();
+            if s.watches.values().filter(|(c, _)| *c == client).count() >= MAX_WATCHES {
+                return Err(RpcError::new(
+                    ErrorKind::Unsupported,
+                    "Too many folders are being watched on this host",
+                ));
+            }
+            let id = format!("w{}", s.next_watch);
+            s.next_watch += 1;
+            id
+        };
+        let git = gitops::dirs(&root);
+        let state = Arc::downgrade(&self.state);
+        let note_id = id.clone();
+        let watcher = watch::watch(
+            &root,
+            git,
+            watch::WatchOptions::default(),
+            Box::new(move |change| {
+                let Some(state) = state.upgrade() else { return };
+                let note = Message::notification(
+                    method::FS_CHANGED,
+                    json!(FsChanged {
+                        id: note_id.clone(),
+                        change,
+                    }),
+                );
+                state.lock().send(client, &note);
+            }),
+        )
+        .map_err(fsops::map_files)?;
+        let mut s = self.state.lock();
+        if !s.clients.contains_key(&client) {
+            // The connection closed while the watcher started.
+            drop(s);
+            drop_later(vec![watcher]);
+            return Err(RpcError::new(ErrorKind::NotFound, "The connection closed"));
+        }
+        s.watches.insert(id.clone(), (client, watcher));
+        Ok(FsWatching { id })
     }
 
     /// Relays one hook report to the client attached to the pane it names.
@@ -882,5 +1121,178 @@ mod tests {
             )
             .expect_err("refused");
         assert_eq!(err.kind, ErrorKind::PathEscape);
+    }
+
+    #[test]
+    fn f_rm_01_a_watched_folder_reports_changes_to_its_connection() {
+        let (dir, d) = daemon();
+        let root = dir.path().join("project");
+        std::fs::create_dir_all(root.join("src")).expect("mkdir");
+        let mut c = Client::connect(&d);
+        let w: FsWatching = serde_json::from_value(
+            c.call(method::FS_WATCH, json!({"root": root}))
+                .expect("watch"),
+        )
+        .expect("id");
+        std::fs::write(root.join("src/new.rs"), "fn main() {}").expect("write");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let changed = loop {
+            assert!(Instant::now() < deadline, "no fs.changed");
+            let m = c.read();
+            if m.method.as_deref() == Some(method::FS_CHANGED) {
+                let ch: FsChanged = serde_json::from_value(m.params.expect("p")).expect("ch");
+                if ch.change.paths.iter().any(|p| p == "src/new.rs") {
+                    break ch;
+                }
+            }
+        };
+        assert_eq!(changed.id, w.id);
+        // Another connection can't stop it; its own can.
+        let mut other = Client::connect(&d);
+        other
+            .call(method::FS_UNWATCH, json!({"id": w.id}))
+            .expect("no-op");
+        assert_eq!(d.state.lock().watches.len(), 1);
+        c.call(method::FS_UNWATCH, json!({"id": w.id}))
+            .expect("unwatch");
+        assert!(d.state.lock().watches.is_empty());
+        // A connection's watches end when it closes.
+        c.call(method::FS_WATCH, json!({"root": root}))
+            .expect("again");
+        assert_eq!(d.state.lock().watches.len(), 1);
+        drop(c);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !d.state.lock().watches.is_empty() {
+            assert!(
+                Instant::now() < deadline,
+                "the closed connection's watch stayed"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        // A folder that isn't there is refused.
+        let err = other
+            .call(method::FS_WATCH, json!({"root": dir.path().join("nope")}))
+            .expect_err("missing");
+        assert_eq!(err.kind, ErrorKind::NotFound);
+    }
+
+    /// One relay (`tandem-host mcp`) for `channel`: what the engine writes
+    /// goes in `engine`, what the relay writes comes out of `seen`.
+    struct Relay {
+        engine: UnixStream,
+        seen: BufReader<UnixStream>,
+        done: std::thread::JoinHandle<std::io::Result<()>>,
+    }
+
+    fn relay(d: &Daemon, channel: &str) -> Relay {
+        let (sock, theirs) = UnixStream::pair().expect("pair");
+        d.client(theirs);
+        let (engine, stdin) = UnixStream::pair().expect("stdin");
+        let (stdout, seen) = UnixStream::pair().expect("stdout");
+        seen.set_read_timeout(Some(Duration::from_secs(10)))
+            .expect("timeout");
+        let channel = channel.to_string();
+        let done = std::thread::spawn(move || {
+            crate::serve::relay(&channel, sock, BufReader::new(stdin), stdout)
+        });
+        Relay {
+            engine,
+            seen: BufReader::new(seen),
+            done,
+        }
+    }
+
+    fn mcp_note(c: &mut Client, m: &str, channel: &str, line: &str) {
+        c.out
+            .write_all(
+                &Message::notification(m, json!({"channel": channel, "line": line})).to_line(),
+            )
+            .expect("send");
+    }
+
+    /// The next notification of `m` on `c`.
+    fn next_note(c: &mut Client, m: &str) -> Value {
+        loop {
+            let msg = c.read();
+            if msg.method.as_deref() == Some(m) {
+                return msg.params.expect("params");
+            }
+        }
+    }
+
+    #[test]
+    fn f_rm_01_mcp_lines_pass_between_the_desktop_and_the_engines_relay() {
+        let (_dir, d) = daemon();
+        let mut desk = Client::connect(&d);
+        let ch = "0123456789abcdef0123456789abcdef";
+        // Ids are long random hex; a channel opens once.
+        for bad in [
+            "short",
+            "0123456789ABCDEF0123456789ABCDEF",
+            "../../etc/passwd",
+        ] {
+            let e = desk
+                .call(method::MCP_OPEN, json!({"channel": bad}))
+                .expect_err("bad id");
+            assert_eq!(e.kind, ErrorKind::Invalid, "{bad}");
+        }
+        desk.call(method::MCP_OPEN, json!({"channel": ch}))
+            .expect("open");
+        assert!(desk.call(method::MCP_OPEN, json!({"channel": ch})).is_err());
+        // A relay for a channel nobody opened is refused, and says why.
+        let stray = relay(&d, "ffffffffffffffffffffffffffffffff");
+        let e = stray.done.join().expect("join").expect_err("unknown");
+        assert!(e.to_string().contains("No such channel"), "{e}");
+
+        let mut r = relay(&d, ch);
+        // The engine speaks first; its line reaches the desktop as is.
+        let init = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#;
+        writeln!(r.engine, "{init}").expect("engine writes");
+        let out = next_note(&mut desk, method::MCP_OUT);
+        assert_eq!(out, json!({"channel": ch, "line": init}));
+        // Another connection can't speak on it; the desktop's lines arrive in order.
+        let mut other = Client::connect(&d);
+        mcp_note(&mut other, method::MCP_IN, ch, "spoofed");
+        other.call(method::PTY_LIST, json!({})).expect("flushed");
+        let reply = r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}"#;
+        mcp_note(&mut desk, method::MCP_IN, ch, reply);
+        let mut got = String::new();
+        r.seen.read_line(&mut got).expect("relay writes");
+        assert_eq!(got, format!("{reply}\n"));
+        // One server per channel at a time.
+        let second = relay(&d, ch);
+        let e = second.done.join().expect("join").expect_err("taken");
+        assert!(e.to_string().contains("already has its server"), "{e}");
+
+        // The engine stops its server: the desktop hears, and a new one may attach.
+        drop(r.engine);
+        assert_eq!(
+            next_note(&mut desk, method::MCP_CLOSED),
+            json!({"channel": ch})
+        );
+        r.done.join().expect("join").expect("relay ends cleanly");
+        let again = relay(&d, ch);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while d
+            .state
+            .lock()
+            .channels
+            .get(ch)
+            .and_then(|c| c.relay)
+            .is_none()
+        {
+            assert!(Instant::now() < deadline, "no second relay");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        // The desktop's connection goes: its channel ends and the relay's
+        // engine sees its server close.
+        drop(desk);
+        again
+            .done
+            .join()
+            .expect("join")
+            .expect("closed by the daemon");
+        assert!(d.state.lock().channels.is_empty());
+        drop(again.engine);
     }
 }

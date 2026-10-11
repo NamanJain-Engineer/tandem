@@ -78,6 +78,7 @@ export function paneTitles(
   return Object.fromEntries(
     sorted.map((p) => {
       if (p.kind === "browser") return [p.id, browserTitle(p, sources[p.id]?.page)];
+      if (p.kind === "simulator") return [p.id, p.title ?? t("pane.simulator")];
       const key = p.kind === "agent" ? (p.engineId ?? "agent") : "shell";
       const n = (counts.get(key) ?? 0) + 1;
       counts.set(key, n);

@@ -139,12 +139,26 @@ impl ChatProcess {
     /// which closes when stdout does.
     pub fn spawn(spec: ProcessSpec) -> Result<(Self, mpsc::Receiver<ProcessLine>), AdapterError> {
         log_spawn(&spec);
-        let mut cmd = Command::new(&spec.program);
-        cmd.args(&spec.args)
-            .env_clear()
-            .envs(spec.env.iter().map(|(k, v)| (k, v)))
-            .current_dir(&spec.cwd)
-            .stdin(Stdio::piped())
+        let mut cmd = if tandem_core::sandbox::in_flatpak() {
+            // On the host, with exactly the engine's environment (D-2032).
+            let argv = tandem_core::sandbox::flatpak_host_argv(
+                spec.program.as_os_str(),
+                &spec.args,
+                Some(spec.cwd.as_path()),
+                Some(&spec.env),
+            );
+            let mut cmd = Command::new(&argv[0]);
+            cmd.args(&argv[1..]);
+            cmd
+        } else {
+            let mut cmd = Command::new(&spec.program);
+            cmd.args(&spec.args)
+                .env_clear()
+                .envs(spec.env.iter().map(|(k, v)| (k, v)))
+                .current_dir(&spec.cwd);
+            cmd
+        };
+        cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);

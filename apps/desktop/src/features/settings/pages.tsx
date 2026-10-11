@@ -6,13 +6,18 @@ import { ShortcutsPage } from "./ShortcutsPage";
 import { AccountsPage } from "./AccountsPage";
 import { RemoteHosts } from "../remote/RemoteHosts";
 import { WslDistros } from "../remote/WslDistros";
+import { RemotePage } from "./RemotePage";
 import { PluginsPage } from "../plugins/PluginsPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
 import { UpdatesPanel } from "../updates/UpdatesPanel";
 import { RunSetupAgain } from "../onboarding/RunSetupAgain";
+import { CheckpointsSettingsExtra } from "../checkpoints/CheckpointsSettings";
+import { RecallSettingsExtra } from "../recall/RecallSettings";
 import { DictateExtras, MicSelect, ShortcutField } from "../dictate/DictatePage";
 import { LanguageSelect } from "../dictate/LanguageSelect";
+import { AboutYou, MemoryPanel, NameControl, SpeedControl, WakeControl } from "../conductor/ConductorSettings";
+import { ConductorCallSettings } from "../conductor/CallSettingsSlot";
 import { EngineControl } from "../dictate/EngineControl";
 import { AutoEnhanceControl, FormattingControl, QuickActionsControl } from "../dictate/EnhanceControls";
 import {
@@ -56,8 +61,10 @@ const segs = (keys: string[], prefix: string) =>
   keys.map((k) => ({ id: k, label: t(`${prefix}.${k}` as Parameters<typeof t>[0]) }));
 
 /** The pages shipped so far (UI-101, 102, 104, 105, 112, 113, 114, 115, 116), in UI-100 order.
- * `routines`: the plan has routines; without them "Pause routines" is absent. */
-export function settingsPages(platform: string, routines = false): PageDef[] {
+ * `routines`: the plan has routines; without them "Pause routines" is absent.
+ * `accounts`: the build talks to Vibezeo (not TANDEM_HOSTED=0); without it,
+ * rows for hosted services are absent (D-833). */
+export function settingsPages(platform: string, routines = false, accounts = false): PageDef[] {
   const mac = platform === "macos";
   return [
     {
@@ -399,7 +406,32 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
             />
           ),
         },
+        {
+          id: "command_history_enabled",
+          label: t("settings.commandHistoryEnabled"),
+          description: t("settings.commandHistoryEnabled.description"),
+          keywords: ["command recall", "history", "commands"],
+          control: (ids) => (
+            <BoolControl k="command_history_enabled" ids={ids} label={t("settings.commandHistoryEnabled")} />
+          ),
+        },
+        {
+          id: "command_history_days",
+          label: t("settings.commandHistoryDays"),
+          keywords: ["command recall", "history", "retention"],
+          control: (ids) => (
+            <NumberControl
+              k="command_history_days"
+              ids={ids}
+              min={1}
+              max={3650}
+              fallback={90}
+              label={t("settings.commandHistoryDays")}
+            />
+          ),
+        },
       ],
+      extra: <RecallSettingsExtra />,
     },
     {
       id: "engines",
@@ -420,15 +452,28 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
     {
       id: "remote",
       label: t("settings.remote"),
-      // WSL exists on Windows only (F-RM-02): elsewhere the page is SSH alone,
+      // WSL exists on Windows only (F-RM-02): elsewhere the page is SSH and the phone,
       // with no WSL heading or skeleton to flash and hide.
       subtitle: platform === "windows" ? t("settings.remote.subtitle") : t("settings.remote.subtitleSsh"),
-      keywords: ["ssh", "remote", "host", "server", ...(platform === "windows" ? ["wsl", "linux"] : [])],
+      keywords: [
+        "ssh",
+        "remote",
+        "host",
+        "server",
+        ...(platform === "windows" ? ["wsl", "linux"] : []),
+        "phone",
+        "pair",
+        "mobile",
+        "qr",
+        "relay",
+        "approvals",
+      ],
       rows: [],
       extra: (
         <div className="flex flex-col gap-6">
           <RemoteHosts />
           {platform === "windows" && <WslDistros />}
+          <RemotePage />
         </div>
       ),
     },
@@ -616,6 +661,126 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
       ],
     },
     {
+      id: "conductor",
+      label: t("settings.conductor"),
+      subtitle: t("settings.conductor.subtitle"),
+      keywords: ["conductor", "voice", "persona", "memory", "wake", "hey conductor"],
+      callout: t("conductor.privacy"),
+      rows: [
+        {
+          id: "conductor_name",
+          label: t("conductor.persona.name"),
+          description: t("conductor.persona.name.desc"),
+          keywords: ["name", "persona"],
+          control: (ids) => <NameControl ids={ids} />,
+        },
+        {
+          id: "conductor_voice",
+          label: t("conductor.voice"),
+          description: t("conductor.voice.desc"),
+          keywords: ["voice"],
+          control: (ids) => (
+            <SelectControl
+              k="conductor_voice"
+              ids={ids}
+              fallback="default"
+              options={[{ value: "default", label: t("conductor.voice.default") }]}
+            />
+          ),
+        },
+        {
+          id: "conductor_tone",
+          label: t("conductor.tone"),
+          keywords: ["tone", "warm", "brief", "neutral"],
+          control: () => (
+            <SegmentControl
+              k="conductor_tone"
+              label={t("conductor.tone")}
+              fallback="neutral"
+              options={segs(["neutral", "warm", "brief"], "conductor.tone")}
+            />
+          ),
+        },
+        {
+          id: "conductor_verbosity",
+          label: t("conductor.verbosity"),
+          keywords: ["verbosity", "short", "detailed"],
+          control: () => (
+            <SegmentControl
+              k="conductor_verbosity"
+              label={t("conductor.verbosity")}
+              fallback="normal"
+              options={segs(["short", "normal", "detailed"], "conductor.verbosity")}
+            />
+          ),
+        },
+        {
+          id: "conductor_speed",
+          label: t("conductor.speed"),
+          description: t("conductor.speed.desc"),
+          keywords: ["speed", "faster", "slower"],
+          control: () => <SpeedControl />,
+        },
+        {
+          id: "conductor_memory",
+          label: t("conductor.memoryToggle"),
+          description: t("conductor.memoryToggle.desc"),
+          keywords: ["memory", "remember", "forget"],
+          control: (ids) => <BoolControl k="conductor_memory" ids={ids} label={t("conductor.memoryToggle")} />,
+        },
+        {
+          id: "conductor_reflection",
+          label: t("conductor.reflection"),
+          keywords: ["reflection", "after each call", "memories"],
+          control: () => (
+            <SegmentControl
+              k="conductor_reflection"
+              label={t("conductor.reflection")}
+              fallback="ask"
+              options={segs(["ask", "auto", "off"], "conductor.reflection")}
+            />
+          ),
+        },
+        {
+          id: "conductor_wake",
+          label: t("conductor.wake"),
+          description: t("conductor.wake.desc"),
+          keywords: ["wake", "hey conductor", "listening"],
+          control: (ids) => <WakeControl ids={ids} />,
+        },
+        {
+          id: "conductor_wake_sensitivity",
+          label: t("conductor.wake.sensitivity"),
+          keywords: ["wake", "sensitivity"],
+          control: () => (
+            <SegmentControl
+              k="conductor_wake_sensitivity"
+              label={t("conductor.wake.sensitivity")}
+              fallback="medium"
+              options={segs(["low", "medium", "high"], "conductor.wake.sensitivity")}
+            />
+          ),
+        },
+        {
+          id: "conductor_wake_pause_videos",
+          label: t("conductor.wake.pauseVideos"),
+          description: t("conductor.wake.pauseVideos.desc"),
+          keywords: ["videos", "media", "pause"],
+          control: (ids) => (
+            <BoolControl k="conductor_wake_pause_videos" ids={ids} label={t("conductor.wake.pauseVideos")} />
+          ),
+        },
+      ],
+      extra: (
+        <>
+          <ConductorCallSettings />
+          <AboutYou />
+          <MemoryPanel />
+          <p className="text-sm text-fg-muted">{t("conductor.safety")}</p>
+        </>
+      ),
+    },
+    {
       id: "teammates",
       label: t("settings.teammates"),
       subtitle: t("settings.teammates.subtitle"),
@@ -727,15 +892,19 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
             />
           ),
         },
-        {
-          id: "find_work_hosted",
-          label: t("settings.findWorkHosted"),
-          description: t("settings.findWorkHosted.desc"),
-          keywords: ["find work", "search", "ranking", "ai"],
-          control: (ids) => (
-            <BoolControl k="find_work_hosted" ids={ids} label={t("settings.findWorkHosted")} />
-          ),
-        },
+        ...(accounts
+          ? [
+              {
+                id: "find_work_hosted",
+                label: t("settings.findWorkHosted"),
+                description: t("settings.findWorkHosted.desc"),
+                keywords: ["find work", "search", "ranking", "ai"],
+                control: (ids: Ids) => (
+                  <BoolControl k="find_work_hosted" ids={ids} label={t("settings.findWorkHosted")} />
+                ),
+              },
+            ]
+          : []),
         {
           id: "dictate_share_hints",
           label: t("settings.dictionaryHints"),
@@ -746,6 +915,67 @@ export function settingsPages(platform: string, routines = false): PageDef[] {
         },
       ],
       extra: <PrivacyFlows />,
+    },
+    {
+      id: "checkpoints",
+      label: t("settings.checkpoints"),
+      subtitle: t("settings.checkpoints.subtitle"),
+      keywords: ["checkpoints", "rewind", "undo", "restore", "snapshots"],
+      rows: [
+        {
+          id: "checkpoints_enabled",
+          label: t("settings.checkpointsEnabled"),
+          description: t("settings.checkpointsEnabled.description"),
+          keywords: ["checkpoints", "rewind"],
+          control: (ids) => (
+            <BoolControl k="checkpoints_enabled" ids={ids} label={t("settings.checkpointsEnabled")} />
+          ),
+        },
+        {
+          id: "checkpoints_keep",
+          label: t("settings.checkpointsKeep"),
+          description: t("settings.checkpointsKeep.description"),
+          control: (ids) => (
+            <NumberControl
+              k="checkpoints_keep"
+              ids={ids}
+              min={10}
+              max={1000}
+              fallback={100}
+              label={t("settings.checkpointsKeep")}
+            />
+          ),
+        },
+        {
+          id: "checkpoints_days",
+          label: t("settings.checkpointsDays"),
+          control: (ids) => (
+            <NumberControl
+              k="checkpoints_days"
+              ids={ids}
+              min={1}
+              max={90}
+              fallback={14}
+              label={t("settings.checkpointsDays")}
+            />
+          ),
+        },
+        {
+          id: "checkpoints_max_file_mb",
+          label: t("settings.checkpointsMaxFileMb"),
+          control: (ids) => (
+            <NumberControl
+              k="checkpoints_max_file_mb"
+              ids={ids}
+              min={1}
+              max={100}
+              fallback={5}
+              label={t("settings.checkpointsMaxFileMb")}
+            />
+          ),
+        },
+      ],
+      extra: <CheckpointsSettingsExtra />,
     },
     {
       id: "shortcuts",

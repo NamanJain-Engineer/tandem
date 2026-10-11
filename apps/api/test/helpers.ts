@@ -29,7 +29,7 @@ export type TestEnv = Awaited<ReturnType<typeof makeTestApp>>;
 
 export async function makeTestApp(
   envOverrides: Record<string, string> = {},
-  overrides: Partial<Pick<Deps, "ssoNet">> = {},
+  overrides: Partial<Pick<Deps, "ssoNet" | "push">> = {},
 ) {
   const env = loadEnv({
     NODE_ENV: "test",
@@ -53,7 +53,7 @@ export async function makeTestApp(
     sql`TRUNCATE "user", session, account, verification, refresh_tokens, desktop_login_codes, subscriptions,
         billing_customers, webhook_events, credit_ledger, credit_reservations, credit_buckets, orgs, org_members,
         org_invites, org_policies, member_usage, daily_usage, ai_requests, audit_events, admin_actions, device_codes,
-        voice_sessions RESTART IDENTITY CASCADE`,
+        voice_sessions, pairings RESTART IDENTITY CASCADE`,
   );
   const app = createApp(deps);
   return { app, deps, email, clock, billing, close: built.close };

@@ -237,6 +237,7 @@ describe("command registry (F-SH-09)", () => {
 
   it("F-SH-09.4 every registry command is in the palette and runs the shortcut's handler", () => {
     setup();
+    const elsewhere = screen.getByText("elsewhere");
     for (const spec of COMMANDS) {
       if (spec.id === "palette.open") continue;
       // Each command where it's enabled: Thread mode with a thread open for
@@ -245,9 +246,10 @@ describe("command registry (F-SH-09)", () => {
       // Plan-gated commands where the plan has them (absent otherwise:
       // features/tasks/hosted.test.tsx).
       const routines = spec.enabledWhen === "routines";
+      const conductor = spec.enabledWhen === "conductor";
       act(() => {
         useSession.setState({
-          entitlement: { ...FREE_VIEW, limits: { ...FREE_VIEW.limits, routines } },
+          entitlement: { ...FREE_VIEW, limits: { ...FREE_VIEW.limits, routines, conductor } },
         });
         useThreads.setState({ selectedId: inThread ? "thr_open" : null });
         useUi.setState({
@@ -258,9 +260,11 @@ describe("command registry (F-SH-09)", () => {
         });
       });
       const spy = vi.spyOn(handlers, spec.id).mockImplementation(() => undefined);
-      const option = screen
-        .getAllByRole("option")
-        .find((o) => o.textContent?.includes(commandTitle(spec.id)));
+      // A plain selector: getAllByRole walks the accessibility tree, too slow
+      // to repeat once per command.
+      const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find((o) =>
+        o.textContent?.includes(commandTitle(spec.id)),
+      );
       expect(option, spec.id).toBeTruthy();
       fireEvent.click(option as HTMLElement);
       expect(spy, spec.id).toHaveBeenCalledTimes(1);
@@ -268,7 +272,7 @@ describe("command registry (F-SH-09)", () => {
       const keys = bindingFor(spec, { mac: false, terminalFirst: false });
       if (keys) {
         const b = parseBinding(keys);
-        press(screen.getByText("elsewhere"), {
+        press(elsewhere, {
           code: b.code,
           key: b.code,
           ctrlKey: b.mod || b.ctrl,

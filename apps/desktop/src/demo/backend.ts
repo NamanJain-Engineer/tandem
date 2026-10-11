@@ -33,7 +33,16 @@ import type {
 import { emitLocal } from "../ipc/events";
 import { setInvokeBackend } from "../ipc/invoke";
 import { FrameKind, encodeFrame, type FrameChannel } from "../ipc/pty";
-import { DEMO_CHANGES, afterAllow, afterDeny, chatTurn, fixTurn, planText, planTurn, type Step } from "./agent";
+import {
+  DEMO_CHANGES,
+  afterAllow,
+  afterDeny,
+  chatTurn,
+  fixTurn,
+  planText,
+  planTurn,
+  type Step,
+} from "./agent";
 import { DemoFiles, NO_GIT } from "./files";
 import { DemoNotes } from "./notes";
 import { DemoTasks } from "./tasks";
@@ -111,7 +120,13 @@ const ENTITLEMENT: EntitlementView = {
   monthlyGrant: 10_000,
 };
 
-function spec(id: string, label: string, vendor: string, logo: string, chatAdapter: string | null): EngineSpec {
+function spec(
+  id: string,
+  label: string,
+  vendor: string,
+  logo: string,
+  chatAdapter: string | null,
+): EngineSpec {
   return {
     id,
     label,
@@ -164,12 +179,44 @@ const ENGINES: EngineView[] = [
 
 const MODELS: Record<string, ModelEntry[]> = {
   claude: [
-    { id: "default", label: "Default", description: "The engine's own choice", isDefault: true, effortLevels: [], contextWindow: 200_000, source: "bundled" },
-    { id: "sonnet", label: "Sonnet", description: "Fast and capable", isDefault: false, effortLevels: [], contextWindow: 200_000, source: "bundled" },
-    { id: "opus", label: "Opus", description: "The most capable", isDefault: false, effortLevels: [], contextWindow: 200_000, source: "bundled" },
+    {
+      id: "default",
+      label: "Default",
+      description: "The engine's own choice",
+      isDefault: true,
+      effortLevels: [],
+      contextWindow: 200_000,
+      source: "bundled",
+    },
+    {
+      id: "sonnet",
+      label: "Sonnet",
+      description: "Fast and capable",
+      isDefault: false,
+      effortLevels: [],
+      contextWindow: 200_000,
+      source: "bundled",
+    },
+    {
+      id: "opus",
+      label: "Opus",
+      description: "The most capable",
+      isDefault: false,
+      effortLevels: [],
+      contextWindow: 200_000,
+      source: "bundled",
+    },
   ],
   codex: [
-    { id: "default", label: "Default", description: "The engine's own choice", isDefault: true, effortLevels: ["low", "medium", "high"], contextWindow: 272_000, source: "bundled" },
+    {
+      id: "default",
+      label: "Default",
+      description: "The engine's own choice",
+      isDefault: true,
+      effortLevels: ["low", "medium", "high"],
+      contextWindow: 272_000,
+      source: "bundled",
+    },
   ],
 };
 
@@ -180,7 +227,13 @@ const TABS: Tab[] = [
   { id: "tb_docs", workspaceId: WS_DOCS, name: "main", sortKey: "a0", createdAt: START },
 ];
 
-function workspace(id: string, name: string, branch: string, liveCount: number, sortKey: string): WorkspaceSummary {
+function workspace(
+  id: string,
+  name: string,
+  branch: string,
+  liveCount: number,
+  sortKey: string,
+): WorkspaceSummary {
   return {
     id,
     kind: "local",
@@ -204,9 +257,19 @@ function workspace(id: string, name: string, branch: string, liveCount: number, 
 }
 
 const WORKSPACE = workspace(WS, "shop", "main", 3, "a0");
-const WORKSPACES: WorkspaceSummary[] = [WORKSPACE, workspace(WS_API, "api", "main", 1, "a1"), workspace(WS_DOCS, "docs-site", "main", 0, "a2")];
+const WORKSPACES: WorkspaceSummary[] = [
+  WORKSPACE,
+  workspace(WS_API, "api", "main", 1, "a1"),
+  workspace(WS_DOCS, "docs-site", "main", 0, "a2"),
+];
 
-function pane(id: string, kind: string, engineId: string | null, humanName: string | null, ws = WORKSPACE): PaneRecord {
+function pane(
+  id: string,
+  kind: string,
+  engineId: string | null,
+  humanName: string | null,
+  ws = WORKSPACE,
+): PaneRecord {
   return {
     id,
     tabId: ws.tabs[0]?.id ?? TAB,
@@ -251,7 +314,10 @@ function layoutOf(workspaceId: unknown): TabLayout[] {
   const tab = TABS.find((t) => t.workspaceId === workspaceId);
   if (!tab) return [];
   if (tab.id === TAB) return [{ tab, tree: TREE, activePaneId: "pn_claude", maximizedPaneId: null }];
-  if (tab.id === "tb_api") return [{ tab, tree: { type: "leaf", paneId: "pn_gemini" }, activePaneId: "pn_gemini", maximizedPaneId: null }];
+  if (tab.id === "tb_api")
+    return [
+      { tab, tree: { type: "leaf", paneId: "pn_gemini" }, activePaneId: "pn_gemini", maximizedPaneId: null },
+    ];
   return [{ tab, tree: null, activePaneId: null, maximizedPaneId: null }];
 }
 
@@ -272,16 +338,24 @@ const AGENT_SCREENS: Record<string, string> = {
   ]),
   pn_gemini: agentScreen("Gemini CLI", "Update the API docs for the new rate limit", [
     "✦ Read docs/orders.md",
-    "✦ Drafted the \"Rate limits\" section (20 requests a minute per user)",
+    '✦ Drafted the "Rate limits" section (20 requests a minute per user)',
     "",
     "Allow running npm run docs:build? (y/n)",
   ]),
 };
 
 const STATUS: Record<string, { status: StatusRecord["status"]; title: string; preview: string }> = {
-  pn_claude: { status: "done", title: "Fix the redirect loop after login", preview: "Fixed, with a test. 13 tests pass." },
+  pn_claude: {
+    status: "done",
+    title: "Fix the redirect loop after login",
+    preview: "Fixed, with a test. 13 tests pass.",
+  },
   pn_codex: { status: "working", title: "Review the open diff", preview: "Checking callers of nextStep()" },
-  pn_gemini: { status: "waiting", title: "Update the API docs", preview: "Allow running npm run docs:build?" },
+  pn_gemini: {
+    status: "waiting",
+    title: "Update the API docs",
+    preview: "Allow running npm run docs:build?",
+  },
 };
 
 type Pty = { channel: FrameChannel; seq: number; screen: string; shell: DemoShell | null };
@@ -375,7 +449,18 @@ export class DemoCore {
       teammateId: null,
       conversationRef: null,
     };
-    const t: DemoThread = { thread, turns: [], events: [], channels: new Set(), running: null, awaiting: null, fixed: false, divider: null, draft: "{}", plans: [] };
+    const t: DemoThread = {
+      thread,
+      turns: [],
+      events: [],
+      channels: new Set(),
+      running: null,
+      awaiting: null,
+      fixed: false,
+      divider: null,
+      draft: "{}",
+      plans: [],
+    };
     this.threads.set(thread.id, t);
     return t;
   }
@@ -383,19 +468,78 @@ export class DemoCore {
   /** A finished thread to look at, and an empty one to try. */
   private seed(): void {
     const done = this.newThread("Add rate limiting to the API", "codex", WS, START);
-    const turn = this.startTurn(done, "Add rate limiting to POST /api/orders: 20 requests a minute per user.");
+    const turn = this.startTurn(
+      done,
+      "Add rate limiting to POST /api/orders: 20 requests a minute per user.",
+    );
     const steps: ThreadEvent[] = [
-      { type: "reasoning", text: "There's already a token bucket in src/api/limits.ts; reuse it rather than adding a dependency.", durationMs: 2400 },
-      { type: "tool", id: "s1", verb: "read", argSummary: "src/api/limits.ts", status: "ok", output: "(48 lines)", outputTruncated: false, outputFile: null, diff: null, detail: null },
-      { type: "tool", id: "s2", verb: "edit", argSummary: "src/api/orders.ts", status: "ok", output: null, outputTruncated: false, outputFile: null, diff: null, detail: null },
-      { type: "tool", id: "s3", verb: "write", argSummary: "src/api/rate-limit.test.ts", status: "ok", output: null, outputTruncated: false, outputFile: null, diff: null, detail: null },
-      { type: "tool", id: "s4", verb: "bash", argSummary: "npm test -- src/api", status: "ok", output: "Tests  6 passed (6)", outputTruncated: false, outputFile: null, diff: null, detail: null },
+      {
+        type: "reasoning",
+        text: "There's already a token bucket in src/api/limits.ts; reuse it rather than adding a dependency.",
+        durationMs: 2400,
+      },
+      {
+        type: "tool",
+        id: "s1",
+        verb: "read",
+        argSummary: "src/api/limits.ts",
+        status: "ok",
+        output: "(48 lines)",
+        outputTruncated: false,
+        outputFile: null,
+        diff: null,
+        detail: null,
+      },
+      {
+        type: "tool",
+        id: "s2",
+        verb: "edit",
+        argSummary: "src/api/orders.ts",
+        status: "ok",
+        output: null,
+        outputTruncated: false,
+        outputFile: null,
+        diff: null,
+        detail: null,
+      },
+      {
+        type: "tool",
+        id: "s3",
+        verb: "write",
+        argSummary: "src/api/rate-limit.test.ts",
+        status: "ok",
+        output: null,
+        outputTruncated: false,
+        outputFile: null,
+        diff: null,
+        detail: null,
+      },
+      {
+        type: "tool",
+        id: "s4",
+        verb: "bash",
+        argSummary: "npm test -- src/api",
+        status: "ok",
+        output: "Tests  6 passed (6)",
+        outputTruncated: false,
+        outputFile: null,
+        diff: null,
+        detail: null,
+      },
       {
         type: "assistant",
         markdown:
           "Added a per-user limit of **20 requests a minute** to `POST /api/orders`, reusing the token bucket in `src/api/limits.ts`. Over the limit, the API answers `429` with a `Retry-After` header.\n\nSix new tests cover the limit, the reset and the header.",
       },
-      { type: "usage", input: 22_310, output: 1_840, cacheRead: 0, cacheWrite: 0, contextFillPct: 11.4, costUsd: null },
+      {
+        type: "usage",
+        input: 22_310,
+        output: 1_840,
+        cacheRead: 0,
+        cacheWrite: 0,
+        contextFillPct: 11.4,
+        costUsd: null,
+      },
     ];
     for (const e of steps) this.push(done, turn, e);
     this.endTurn(done, turn, "completed");
@@ -405,19 +549,43 @@ export class DemoCore {
     // A thread moved from Claude Code to Codex (F-TH-16).
     const moved = this.newThread("Speed up the product search", "claude", WS, START + 30_000);
     const first = this.startTurn(moved, "Product search takes two seconds. Find the slow part.");
-    this.push(moved, first, { type: "tool", id: "m1", verb: "read", argSummary: "src/search/query.ts", status: "ok", output: "(61 lines)", outputTruncated: false, outputFile: null, diff: null, detail: null });
+    this.push(moved, first, {
+      type: "tool",
+      id: "m1",
+      verb: "read",
+      argSummary: "src/search/query.ts",
+      status: "ok",
+      output: "(61 lines)",
+      outputTruncated: false,
+      outputFile: null,
+      diff: null,
+      detail: null,
+    });
     this.push(moved, first, {
       type: "assistant",
-      markdown: "The search loads every product and filters in memory (`src/search/query.ts`, line 18). A `LIKE` query with an index on `name` would let the database do it.",
+      markdown:
+        "The search loads every product and filters in memory (`src/search/query.ts`, line 18). A `LIKE` query with an index on `name` would let the database do it.",
     });
     this.endTurn(moved, first, "completed");
     moved.thread.engineId = "codex";
     moved.divider = "Continued on Codex (Default) with a summary";
     const second = this.startTurn(moved, "Make that change and measure it.");
-    this.push(moved, second, { type: "tool", id: "m2", verb: "edit", argSummary: "src/search/query.ts", status: "ok", output: null, outputTruncated: false, outputFile: null, diff: null, detail: null });
+    this.push(moved, second, {
+      type: "tool",
+      id: "m2",
+      verb: "edit",
+      argSummary: "src/search/query.ts",
+      status: "ok",
+      output: null,
+      outputTruncated: false,
+      outputFile: null,
+      diff: null,
+      detail: null,
+    });
     this.push(moved, second, {
       type: "assistant",
-      markdown: "Search now filters in the database with an index on `name`. The same query takes **40 ms** instead of two seconds on the sample data.",
+      markdown:
+        "Search now filters in the database with an index on `name`. The same query takes **40 ms** instead of two seconds on the sample data.",
     });
     this.endTurn(moved, second, "completed");
     moved.thread.updatedAt = START + 35 * 60_000;
@@ -537,7 +705,8 @@ export class DemoCore {
 
   private send(t: DemoThread, text: string): SendResult {
     if (t.running) throw { code: "conflict", message: "Working — send when it's done, or stop it" };
-    if (text.length > DEMO_MESSAGE_MAX) throw { code: "invalid", message: `Demo messages are up to ${DEMO_MESSAGE_MAX} characters` };
+    if (text.length > DEMO_MESSAGE_MAX)
+      throw { code: "invalid", message: `Demo messages are up to ${DEMO_MESSAGE_MAX} characters` };
     if (this.sent >= DEMO_MESSAGE_LIMIT) {
       this.notify();
       throw { code: "limit_reached", message: LIMIT_REACHED };
@@ -546,7 +715,8 @@ export class DemoCore {
     this.notify();
     const turnId = this.startTurn(t, text);
     this.changed(t);
-    const first = !t.fixed && t.thread.workspaceId !== null && t.turns.length === 1 && t.thread.mode === "act";
+    const first =
+      !t.fixed && t.thread.workspaceId !== null && t.turns.length === 1 && t.thread.mode === "act";
     if (t.thread.mode === "plan") {
       const plan = planText(text);
       this.play(t, turnId, planTurn(plan), () => {
@@ -612,7 +782,14 @@ export class DemoCore {
     });
     const threads = [...this.threads.values()].map((t): DashboardItem => {
       const engine = ENGINES.find((e) => e.spec.id === t.thread.engineId);
-      const status = t.thread.state === "working" ? "working" : t.thread.state === "waiting" ? "waiting" : t.thread.state === "done" ? "done" : "idle";
+      const status =
+        t.thread.state === "working"
+          ? "working"
+          : t.thread.state === "waiting"
+            ? "waiting"
+            : t.thread.state === "done"
+              ? "done"
+              : "idle";
       return {
         key: `thread:${t.thread.id}`,
         source: { type: "thread", threadId: t.thread.id },
@@ -655,7 +832,19 @@ export class DemoCore {
       case "restore_get_snapshot":
         return { panes: [], interruptedThreads: 0, autoResume: false };
       case "updates_state":
-        return { stage: "idle", current: BOOT.version, channel: "stable", version: null, notes: null, percent: null, errorStage: null, error: null, lastCheck: null, upToDate: true, minVersion: null };
+        return {
+          stage: "idle",
+          current: BOOT.version,
+          channel: "stable",
+          version: null,
+          notes: null,
+          percent: null,
+          errorStage: null,
+          error: null,
+          lastCheck: null,
+          upToDate: true,
+          minVersion: null,
+        };
       case "usage_report":
         // The demo reads no engine logs: an honest empty page (F-AC-07).
         return demoUsage();
@@ -694,7 +883,12 @@ export class DemoCore {
         const pty = this.ptys.get(String(args?.paneId));
         if (!pty) throw { code: "not_found", message: "Not running" };
         pty.channel = args?.channel as FrameChannel;
-        const snap: AttachSnapshot = { replay: base64(pty.screen), live: true, state: null };
+        const snap: AttachSnapshot = {
+          replay: base64(pty.screen),
+          end: encoder.encode(pty.screen).length,
+          live: true,
+          state: null,
+        };
         return snap;
       }
       case "pty_spawn": {
@@ -710,7 +904,10 @@ export class DemoCore {
         const data = String(args?.data ?? "");
         if (pty?.shell) this.frame(pty, pty.shell.write(data));
         else if (pty && data.includes("\r"))
-          this.frame(pty, "\r\n\x1b[2m(This agent is simulated. In Vibezeo you'd be talking to it here.)\x1b[0m\r\n");
+          this.frame(
+            pty,
+            "\r\n\x1b[2m(This agent is simulated. In Vibezeo you'd be talking to it here.)\x1b[0m\r\n",
+          );
         return null;
       }
       case "thread_list":
@@ -760,7 +957,9 @@ export class DemoCore {
         this.push(t, turnId, {
           type: "approval_resolved",
           id: approvalId,
-          decision: allowed ? { type: "allow", scope: decision.scope === "thread" ? "thread" : "once" } : { type: "deny", reason: null },
+          decision: allowed
+            ? { type: "allow", scope: decision.scope === "thread" ? "thread" : "once" }
+            : { type: "deny", reason: null },
         });
         t.thread.state = "working";
         t.fixed = true;
@@ -800,21 +999,35 @@ export class DemoCore {
       }
       case "thread_changes": {
         const t = this.thread(args);
-        const changes: ThreadChanges = { source: t.turns.length ? "git" : "not_started", files: t.fixed ? DEMO_CHANGES : [] };
+        const changes: ThreadChanges = {
+          source: t.turns.length ? "git" : "not_started",
+          files: t.fixed ? DEMO_CHANGES : [],
+        };
         return changes;
       }
       case "thread_file_read": {
         const file = DEMO_CHANGES.find((f) => f.path === args?.path);
         const text: FileText = {
           path: String(args?.path ?? ""),
-          content: file ? file.patch.split("\n").filter((l) => !l.startsWith("-") && !l.startsWith("@@") && !l.startsWith("diff")).map((l) => l.replace(/^[+ ]/, "")).join("\n") : "",
+          content: file
+            ? file.patch
+                .split("\n")
+                .filter((l) => !l.startsWith("-") && !l.startsWith("@@") && !l.startsWith("diff"))
+                .map((l) => l.replace(/^[+ ]/, ""))
+                .join("\n")
+            : "",
           binary: false,
           truncated: false,
         };
         return text;
       }
       case "thread_mention_search":
-        return ["src/checkout/redirect.ts", "src/checkout/redirect.test.ts", "src/api/orders.ts", "package.json"].map((path) => ({ path, kind: "file" }));
+        return [
+          "src/checkout/redirect.ts",
+          "src/checkout/redirect.test.ts",
+          "src/api/orders.ts",
+          "package.json",
+        ].map((path) => ({ path, kind: "file" }));
       case "thread_implement_plan": {
         const t = this.thread(args);
         const plan = t.plans.find((p) => p.version === Number(args?.version));
@@ -828,14 +1041,19 @@ export class DemoCore {
         return this.send(t, last?.event.type === "user" ? last.event.text : "");
       }
       case "app_open_external":
-        if (typeof args?.url === "string" && args.url.startsWith("https://")) window.open(args.url, "_blank", "noopener");
+        if (typeof args?.url === "string" && args.url.startsWith("https://"))
+          window.open(args.url, "_blank", "noopener");
         return null;
       case "fs_list":
         return this.files.list(String(args?.dir ?? ""));
       case "fs_read":
         return this.files.read(String(args?.path ?? ""));
       case "fs_write":
-        return this.files.write(String(args?.path ?? ""), String(args?.text ?? ""), (args?.expectedHash as string | null | undefined) ?? null);
+        return this.files.write(
+          String(args?.path ?? ""),
+          String(args?.text ?? ""),
+          (args?.expectedHash as string | null | undefined) ?? null,
+        );
       case "fs_compare":
         return this.files.compare(String(args?.path ?? ""), String(args?.text ?? ""));
       case "fs_create":
@@ -866,15 +1084,32 @@ export class DemoCore {
           code: "unavailable",
           message: "The demo keeps nothing: what you do here stays in this page and goes when you close it.",
         };
+      // Conductor's memory is a file on the user's computer (F-CN-06); the
+      // demo has none, and the wake phrase needs the app's microphone (F-CN-07).
+      case "conductor_memory_get":
+        return { enabled: false, text: "", facts: [], proposals: [], path: "~/.tandem/conductor/memory.md" };
+      case "conductor_memory_save":
+      case "conductor_memory_clear":
+      case "conductor_memory_resolve":
+        throw {
+          code: "unavailable",
+          message: "Conductor's memory lives in a file on your computer, so the demo can't keep one.",
+        };
+      case "conductor_wake_status":
+        return { state: { state: "unavailable", reason: "not_built" }, unavailable: "not_built" };
       // Find work reads real terminals and threads on this computer (F-CN-05).
       case "find_work":
         throw {
           code: "unavailable",
-          message: "Find work searches the terminals, threads and teammates running on your computer, so the demo has nothing to search.",
+          message:
+            "Find work searches the terminals, threads and teammates running on your computer, so the demo has nothing to search.",
         };
       // Teammates' engines run on your computer (F-AG-10, F-AG-13).
       case "teammate_launch_in_terminal":
-        throw { code: "unavailable", message: "The demo has no engines to launch. In the app, the teammate opens in a terminal pane." };
+        throw {
+          code: "unavailable",
+          message: "The demo has no engines to launch. In the app, the teammate opens in a terminal pane.",
+        };
       case "skill_sync":
         throw { code: "unavailable", message: "The demo has no engines to install skills for." };
       // A web page can't hold other pages the way the app's browser does.
@@ -882,13 +1117,19 @@ export class DemoCore {
       case "ssh_connect":
       case "ssh_list_dir":
         // The demo runs in a web page: there's no ssh to run.
-        throw { code: "unavailable", message: "The browser demo doesn't connect to SSH hosts. The app does, with your own ssh." };
+        throw {
+          code: "unavailable",
+          message: "The browser demo doesn't connect to SSH hosts. The app does, with your own ssh.",
+        };
       case "wsl_distros":
         // Same answer as the app on a system without WSL: the section hides.
         throw { code: "unavailable", message: "WSL folders open on Windows only", stage: "wsl" };
       case "browser_open":
       case "browser_navigate":
-        throw { code: "unavailable", message: "Web pages don't open inside this demo. In the app they open right here." };
+        throw {
+          code: "unavailable",
+          message: "Web pages don't open inside this demo. In the app they open right here.",
+        };
       case "editor_tabs_get":
         return this.files.savedTabs();
       case "editor_tabs_save":
@@ -899,13 +1140,19 @@ export class DemoCore {
       case "tasks_meta":
         return this.tasks.meta();
       case "tasks_list":
-        return this.tasks.list(Boolean((args?.filter as { include_archived?: boolean } | undefined)?.include_archived));
+        return this.tasks.list(
+          Boolean((args?.filter as { include_archived?: boolean } | undefined)?.include_archived),
+        );
       case "task_get":
         return this.tasks.get(String(args?.id ?? ""));
       case "task_save":
         return this.tasks.save((args?.input ?? {}) as SaveIssue);
       case "task_comment":
-        return this.tasks.comment(String(args?.id ?? ""), String(args?.body ?? ""), typeof args?.parentId === "string" ? args.parentId : null);
+        return this.tasks.comment(
+          String(args?.id ?? ""),
+          String(args?.body ?? ""),
+          typeof args?.parentId === "string" ? args.parentId : null,
+        );
       case "task_archive":
       case "task_restore":
         return this.tasks.setArchived(
@@ -916,9 +1163,56 @@ export class DemoCore {
       // Dictate and plugins reach past the browser: the microphone and other
       // apps, and the user's own accounts.
       case "dictate_status":
-        throw { code: "unavailable", message: "Dictate listens to your microphone and types into your other apps, so it works in the app, not in this demo." };
+        throw {
+          code: "unavailable",
+          message:
+            "Dictate listens to your microphone and types into your other apps, so it works in the app, not in this demo.",
+        };
       case "plugins_catalog":
-        throw { code: "unavailable", message: "Plugins sign in to your own accounts, so they don't connect inside this demo. In the app, this page lists them." };
+        throw {
+          code: "unavailable",
+          message:
+            "Plugins sign in to your own accounts, so they don't connect inside this demo. In the app, this page lists them.",
+        };
+      // Checkpoints, saved prompts and Best of N work on the folders on your
+      // computer; the phone pairs through a Pro account. Each says so here
+      // instead of answering with the wrong shape (D-833).
+      case "checkpoints_list":
+      case "checkpoint_create":
+      case "checkpoint_diff":
+      case "checkpoint_restore":
+        throw {
+          code: "unavailable",
+          message:
+            "Checkpoints save the folders on your computer, so they work in the app, not in this demo.",
+        };
+      case "checkpoints_usage":
+        return { bytes: 0, folders: 0 };
+      case "prompts_list":
+        return { items: [], skipped: [], excludeHidesRepo: false };
+      case "prompts_create":
+      case "prompts_render":
+        throw {
+          code: "unavailable",
+          message: "Saved prompts are files in your folders, so they work in the app, not in this demo.",
+        };
+      case "bestof_start":
+        throw {
+          code: "unavailable",
+          message:
+            "Best of N runs agents in git worktrees on your computer, so it works in the app, not in this demo.",
+        };
+      // Command recall lists what ran in real shells; these panes simulate them.
+      case "history_search":
+        return [];
+      case "phone_arm_state":
+      case "phone_arm_approvals":
+        return { armedUntil: null };
+      case "phone_pair_begin":
+        throw {
+          code: "unavailable",
+          message: "Pairing a phone is part of Pro, so it works in the app, not in this demo.",
+        };
       case "scratchpad_list":
         return this.notes.list();
       case "scratchpad_read":

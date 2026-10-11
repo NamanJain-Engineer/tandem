@@ -224,6 +224,8 @@ pub struct ThreadService {
     data: std::sync::OnceLock<tandem_core::DataDir>,
     /// Tells the status bus each thread's state (Dashboard, D-6).
     status_sink: std::sync::OnceLock<ThreadStatusSink>,
+    /// Saves the folder before each turn (F-EX-01); unset in tests.
+    checkpoints: std::sync::OnceLock<Arc<crate::services::checkpoints::CheckpointService>>,
     /// Tells the teammates service that chats changed.
     chats_sink: std::sync::OnceLock<Arc<dyn Fn() + Send + Sync>>,
     /// Hears every teammate chat turn that ended (learning, F-AG-08).
@@ -352,11 +354,16 @@ impl ThreadService {
             titler: std::sync::OnceLock::new(),
             data: std::sync::OnceLock::new(),
             status_sink: std::sync::OnceLock::new(),
+            checkpoints: std::sync::OnceLock::new(),
             chats_sink: std::sync::OnceLock::new(),
             turn_sink: std::sync::OnceLock::new(),
             plan_limits: std::sync::OnceLock::new(),
             remote: std::sync::OnceLock::new(),
         })
+    }
+
+    pub fn set_checkpoints(&self, c: Arc<crate::services::checkpoints::CheckpointService>) {
+        let _ = self.checkpoints.set(c);
     }
 
     /// The app's titler and data folder (tests may leave them unset).
@@ -1605,6 +1612,26 @@ impl ThreadService {
 
         // Outside the lock: a slow stdin never holds up the event stream.
         self.ensure_start(&thread).await;
+        // F-EX-01: the folder as it was before the engine hears the message.
+        if let (Some(cps), Some(ws)) = (self.checkpoints.get(), thread.workspace_id.as_ref()) {
+            cps.before_turn(
+                crate::services::checkpoints::Request {
+                    folder: std::path::PathBuf::from(&thread.cwd),
+                    workspace_id: Some(ws.as_str().to_string()),
+                    thread_id: Some(id.as_str().to_string()),
+                    turn_id: Some(turn_id.as_str().to_string()),
+                    label: repo::get(&self.store, id)
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|t| t.title)
+                        .unwrap_or_default(),
+                    ..Default::default()
+                },
+                tandem_store::repo::checkpoints::CheckpointReason::Turn,
+            )
+            .await;
+        }
         let seeded = seed.is_some();
         let text = match seed {
             Some(summary) => thread_summary::seeded(&summary, &text),
@@ -2245,6 +2272,8 @@ pub struct AppLauncher {
     store: Store,
     /// The live lease per thread; a new session revokes the last one.
     leases: StdMutex<HashMap<String, tandem_core::ids::LeaseId>>,
+    /// Each remote thread session's MCP channels (D-1604), by thread.
+    remote_mcp: StdMutex<HashMap<String, crate::services::remote_mcp::RemoteMcp>>,
     teammates: std::sync::OnceLock<std::sync::Weak<crate::services::teammates::TeammatesService>>,
     /// The tasks server sessions get (F-TK-02).
     tasks: std::sync::OnceLock<Arc<crate::services::tasks::TasksService>>,
@@ -2288,7 +2317,8 @@ impl AppLauncher {
     /// A thread on an SSH host (F-RM-01): the host's own engine, run
     /// through `tandem-host run` over the host's connection (D-403), with
     /// the host's own sign-in. Nothing local crosses: no provider home, no
-    /// account, and no gateway (plugins are local-only, D-408).
+    /// account, no gateway lease or port (D-408); plugins and task tools
+    /// reach it as stdio servers relayed over the connection (D-1604).
     async fn prepare_remote(
         &self,
         thread: &ThreadRecord,
@@ -2333,6 +2363,7 @@ impl AppLauncher {
             Some(local) => Some(copy_briefing_to_host(&ssh, &target, &thread.id, local).await?),
             None => None,
         };
+        let stdio_servers = self.remote_tools(thread, &remote, &host).await;
         let cwd = thread.cwd.clone();
         let local_env: Vec<(String, String)> = std::env::vars()
             .filter(|(k, _)| {
@@ -2386,9 +2417,8 @@ impl AppLauncher {
                 resume_session: thread.engine_session_id.clone(),
                 mcp_config: None,
                 mcp: None,
-                // No local stdio servers on a remote or WSL engine: the tasks
-                // server runs on this machine (F-TK-02).
-                stdio_servers: Vec::new(),
+                // Relayed to this machine's gateway and tasks server (D-1604).
+                stdio_servers,
                 engine_version: found.version,
                 relocate: Some(relocate),
                 briefing,
@@ -2537,6 +2567,7 @@ impl AppLauncher {
             gateway,
             store,
             leases: StdMutex::default(),
+            remote_mcp: StdMutex::default(),
             teammates: std::sync::OnceLock::new(),
             tasks: std::sync::OnceLock::new(),
             guard: std::sync::OnceLock::new(),
@@ -2716,6 +2747,39 @@ impl AppLauncher {
         thread: &ThreadRecord,
         stdio: &[tandem_engines::chat::StdioServer],
     ) -> Result<(std::path::PathBuf, tandem_engines::chat::McpEndpoint), IpcError> {
+        let (gateway, lease) = self.lease(thread).await?;
+        let mut config = serde_json::json!({"mcpServers": {"tandem": {
+            "type": "http",
+            "url": gateway.url,
+            "headers": {"Authorization": format!("Bearer {}", lease.token)}
+        }}});
+        for s in stdio {
+            config["mcpServers"][&s.name] = serde_json::json!({
+                "type": "stdio",
+                "command": s.command,
+                "args": s.args,
+            });
+        }
+        std::fs::create_dir_all(&self.mcp_dir)
+            .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
+        let path = self.mcp_dir.join(format!("{}.json", thread.id.as_str()));
+        tandem_core::atomic::atomic_write(&path, config.to_string().as_bytes(), Some(0o600))
+            .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
+        Ok((
+            path,
+            tandem_engines::chat::McpEndpoint {
+                url: gateway.url.clone(),
+                token: lease.token,
+            },
+        ))
+    }
+
+    /// A gateway lease for the thread's new session (its previous one is
+    /// revoked): its caller, access, built-ins and plugin grants.
+    async fn lease(
+        &self,
+        thread: &ThreadRecord,
+    ) -> Result<(tandem_gateway::GatewayHandle, tandem_gateway::Lease), IpcError> {
         let gateway = self.gateway.handle().await?;
         let teammate = self.teammate_of(thread).await;
         let caller = match &teammate {
@@ -2781,30 +2845,63 @@ impl AppLauncher {
         if let Some(old) = previous {
             gateway.revoke(&old);
         }
-        let mut config = serde_json::json!({"mcpServers": {"tandem": {
-            "type": "http",
-            "url": gateway.url,
-            "headers": {"Authorization": format!("Bearer {}", lease.token)}
-        }}});
-        for s in stdio {
-            config["mcpServers"][&s.name] = serde_json::json!({
-                "type": "stdio",
-                "command": s.command,
-                "args": s.args,
-            });
+        Ok((gateway.clone(), lease))
+    }
+
+    /// Plugins and task tools for a session on a host (D-1604): a channel
+    /// for the gateway, bound here to the session's lease, and one for the
+    /// tasks server, which runs here. The engine there gets two stdio
+    /// servers, `tandem-host mcp --channel <id>`; nothing else crosses. A
+    /// channel that can't open leaves the thread without those tools.
+    async fn remote_tools(
+        &self,
+        thread: &ThreadRecord,
+        remote: &Arc<crate::services::remote::RemoteService>,
+        host: &tandem_core::ids::HostId,
+    ) -> Vec<tandem_engines::chat::StdioServer> {
+        use crate::services::remote_mcp::{GatewayBackend, ProcessBackend, RemoteMcp};
+        let mut mcp = RemoteMcp::new(remote.clone());
+        let mut servers = Vec::new();
+        match self.lease(thread).await {
+            Ok((gateway, lease)) => {
+                match mcp
+                    .add(host, "tandem", Arc::new(GatewayBackend { gateway, lease }))
+                    .await
+                {
+                    Ok(s) => servers.push(s),
+                    Err(e) => {
+                        tracing::warn!(code = "remote.mcp_unavailable", error = %e.message, "no plugin tools for a remote thread")
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::info!(code = "remote.gateway_unavailable", error = %e.message, "no gateway for a remote thread")
+            }
         }
-        std::fs::create_dir_all(&self.mcp_dir)
-            .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
-        let path = self.mcp_dir.join(format!("{}.json", thread.id.as_str()));
-        tandem_core::atomic::atomic_write(&path, config.to_string().as_bytes(), Some(0o600))
-            .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
-        Ok((
-            path,
-            tandem_engines::chat::McpEndpoint {
-                url: gateway.url.clone(),
-                token: lease.token,
-            },
-        ))
+        if let Some(server) = self.tasks_server(thread).await {
+            let name = server.name.clone();
+            match mcp
+                .add(
+                    host,
+                    &name,
+                    Arc::new(ProcessBackend {
+                        server,
+                        env: Vec::new(),
+                    }),
+                )
+                .await
+            {
+                Ok(s) => servers.push(s),
+                Err(e) => {
+                    tracing::warn!(code = "remote.mcp_unavailable", error = %e.message, "no task tools for a remote thread")
+                }
+            }
+        }
+        // The thread's previous session's channels close here.
+        if let Ok(mut m) = self.remote_mcp.lock() {
+            m.insert(thread.id.as_str().to_string(), mcp);
+        }
+        servers
     }
 }
 
@@ -2830,6 +2927,13 @@ impl ChatLauncher for AppLauncher {
         if let Some(tasks) = self.tasks.get() {
             tasks.end_session(&session_key(thread_id));
         }
+        // A remote session's channels close: its servers on the host end.
+        let ended = self
+            .remote_mcp
+            .lock()
+            .ok()
+            .and_then(|mut m| m.remove(thread_id.as_str()));
+        drop(ended);
     }
 
     fn models_reported(&self, engine_id: &str, models: &[ModelOffer]) {
@@ -3326,6 +3430,103 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn f_ex_01_9_a_turns_checkpoint_has_the_files_from_before_the_engine_saw_the_message() {
+        use tandem_store::repo::workspaces::{self, NewWorkspace};
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let folder = dir.path().join("work");
+        std::fs::create_dir_all(&folder).expect("mkdir");
+        std::fs::write(folder.join("a.txt"), "before").expect("write");
+        let folder = std::fs::canonicalize(&folder).expect("canon");
+        // The "engine" edits the file the moment it gets the turn.
+        let edit = folder.join("a.txt");
+        let script: Script = Arc::new(move |turn, tx| {
+            std::fs::write(&edit, "after").expect("edit");
+            play(tx, vec![ev(&turn, end(TurnEndReason::Completed))]);
+        });
+        let adapter = Arc::new(ScriptedAdapter {
+            script,
+            on_stop: OnStop::Ack,
+            starts: AtomicUsize::new(0),
+            resumed: StdMutex::default(),
+            answers: Arc::default(),
+            inputs: Arc::default(),
+        });
+        let svc = ThreadService::new(
+            store.clone(),
+            EventBus::new(),
+            Arc::new(SystemClock),
+            ApprovalBroker::new(Arc::new(SystemClock)),
+            Arc::new(ScriptedLauncher(adapter)),
+        );
+        let terminals = crate::services::terminal::TerminalService::new(
+            tandem_pty::PtyManager::new(),
+            store.clone(),
+        );
+        terminals.set_login_env(tandem_pty::env::LoginEnv {
+            vars: std::env::vars().collect(),
+            shell: "/bin/sh".into(),
+            degraded: false,
+        });
+        let cps = crate::services::checkpoints::CheckpointService::new(
+            data,
+            store.clone(),
+            EventBus::new(),
+            Arc::new(SystemClock),
+            terminals,
+        );
+        svc.set_checkpoints(cps.clone());
+        let (ws, _) = workspaces::add(
+            &store,
+            NewWorkspace {
+                kind: "local".into(),
+                host_id: "local".into(),
+                root: folder.display().to_string(),
+                name: "work".into(),
+                wsl_distro: None,
+            },
+            None,
+        )
+        .await
+        .expect("workspace");
+        let thread = svc
+            .create(NewThread {
+                id: ThreadId::new(),
+                kind: ThreadKind::Thread,
+                workspace_id: Some(ws.id),
+                cwd: folder.display().to_string(),
+                engine_id: "claude".into(),
+                account_id: None,
+                model: None,
+                effort: None,
+                access: Access::Edits,
+                mode: ThreadMode::Act,
+                attended: true,
+            })
+            .await
+            .expect("thread");
+        svc.send(&thread.id, "change a".into(), vec![], false)
+            .await
+            .expect("send");
+        assert_eq!(
+            std::fs::read_to_string(folder.join("a.txt")).expect("read"),
+            "after"
+        );
+        let tl = cps
+            .timeline(&folder, Some(thread.id.as_str().to_string()))
+            .await
+            .expect("timeline");
+        assert_eq!(tl.items.len(), 1);
+        assert_eq!(tl.items[0].differs, 1);
+        cps.restore(&tl.items[0].id, None).await.expect("restore");
+        assert_eq!(
+            std::fs::read_to_string(folder.join("a.txt")).expect("read"),
+            "before"
+        );
+    }
+
     fn ev(turn: &TurnId, event: ThreadEvent) -> AdapterEvent {
         AdapterEvent::Event {
             turn_id: turn.clone(),
@@ -3457,7 +3658,17 @@ mod tests {
                 (5, "turn_end"),
             ]
         );
-        let detail = f.svc.get(&f.thread.id).await.expect("detail");
+        // As in f_th_03_4 below: the state is written just after the turn's end
+        // is stored, so wait for it rather than read it once (it raced under
+        // the full gate's load in chain5).
+        let mut detail = f.svc.get(&f.thread.id).await.expect("detail");
+        for _ in 0..100 {
+            if detail.thread.state != ThreadState::Working {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            detail = f.svc.get(&f.thread.id).await.expect("detail");
+        }
         assert_eq!(detail.thread.state, ThreadState::Done);
         assert_eq!(detail.running, None);
     }

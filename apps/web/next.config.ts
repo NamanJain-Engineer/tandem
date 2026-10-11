@@ -11,7 +11,7 @@ const siteExport = process.env.SITE_EXPORT === "1";
 const nextConfig: NextConfig = siteExport
   ? {
       reactStrictMode: true,
-      transpilePackages: ["@tandem/ui", "@tandem/protocol"],
+      transpilePackages: ["@tandem/ui", "@tandem/protocol", "@tandem/remote"],
       poweredByHeader: false,
       output: "export",
       pageExtensions: ["site.tsx", "site.ts"],
@@ -20,7 +20,7 @@ const nextConfig: NextConfig = siteExport
     }
   : {
       reactStrictMode: true,
-      transpilePackages: ["@tandem/ui", "@tandem/protocol"],
+      transpilePackages: ["@tandem/ui", "@tandem/protocol", "@tandem/remote"],
       poweredByHeader: false,
       pageExtensions: ["site.tsx", "site.ts", "tsx", "ts"],
       // The API is served first-party under /v1 so auth cookies belong to this origin.

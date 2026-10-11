@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Every F-XX-nn in PRODUCT_SPEC is owned by exactly one milestone, and P2 IDs
-# only by M16 (MILESTONES §20.1).
+# only by M16 or M17, the extras (MILESTONES §20.1, D-700).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 tmp="$(mktemp -d)"
@@ -15,5 +15,5 @@ if [ -n "$dups" ]; then echo "owned by more than one milestone: $dups"; exit 1; 
 if ! diff <(cut -d' ' -f1 "$tmp/spec_ids.txt") <(cut -d' ' -f1 "$tmp/owned.txt") > "$tmp/diff.txt"; then
   echo "spec IDs vs owned IDs differ:"; cat "$tmp/diff.txt"; exit 1
 fi
-join "$tmp/spec_ids.txt" "$tmp/owned.txt" | awk '($2=="P2")!=($3=="M16"){print "misplaced:",$0; bad=1} END{exit bad}'
+join "$tmp/spec_ids.txt" "$tmp/owned.txt" | awk '($2=="P2")!=($3=="M16"||$3=="M17"){print "misplaced:",$0; bad=1} END{exit bad}'
 echo "coverage: $(wc -l < "$tmp/spec_ids.txt") spec IDs, all owned exactly once"

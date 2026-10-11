@@ -1,5 +1,6 @@
 import { browser } from "@wdio/globals";
 import { execFileSync, spawnSync } from "node:child_process";
+import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { home, invoke, paneIds, settled, workspaceRoots } from "./app";
 
@@ -36,8 +37,14 @@ export function inContainer(cmd: string): string {
 }
 
 /** The fixture's repository as the image made it (specs edit it). */
+/** The fixture's project as `infra/ssh/setup.sh` made it: its one commit
+ * on `main`, nothing else committed, no other branch or remote, no
+ * untracked file (a spec that commits or pushes, E2E-M14-7, leaves none
+ * of it for the next). */
 export function resetProject(): void {
-  inContainer(`su tandem -c 'cd ${PROJECT} && git checkout -q -- . && git clean -fdxq'`);
+  inContainer(
+    `su tandem -c 'cd ${PROJECT} && git checkout -q -f main && git reset -q --hard "$(git rev-list --max-parents=0 HEAD)" && git clean -fdxq && rm -rf .tandem && git worktree prune && for b in $(git for-each-ref --format="%(refname:short)" refs/heads); do [ "$b" = main ] || git branch -q -D "$b"; done && for r in $(git remote); do git remote remove "$r"; done'`,
+  );
 }
 
 /** Copies a local file into the container. */
@@ -62,20 +69,14 @@ export function regenerateHostKeys(): void {
   inContainer("rm -f /etc/ssh/ssh_host_* && ssh-keygen -A >/dev/null && pkill -HUP -x sshd || true");
 }
 
-/** `ssh -O exit` on the app's master connection for the fixture: the
- * connection and every session on it drop (E2E-M14-4). */
+/** `ssh -O exit` on the app's master connections (one per host entry,
+ * `run/ssh-<entry>-%C`): the connection and every session on it drop
+ * (E2E-M14-4). */
 export function dropConnection(): void {
-  spawnSync("ssh", [
-    "-o",
-    `ControlPath=${join(home(), "run", "ssh-%C")}`,
-    "-p",
-    "2222",
-    "-l",
-    "tandem",
-    "-O",
-    "exit",
-    "127.0.0.1",
-  ]);
+  const run = join(home(), "run");
+  for (const name of readdirSync(run).filter((n) => /^ssh-[0-9a-f]{8}-[0-9a-f]+$/.test(n))) {
+    spawnSync("ssh", ["-o", `ControlPath=${join(run, name)}`, "-O", "exit", "fixture"]);
+  }
 }
 
 /** Hosts as the Remote page lists them. */

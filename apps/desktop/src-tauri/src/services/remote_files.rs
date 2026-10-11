@@ -1,21 +1,27 @@
 //! Files and the Changes view for contexts on SSH hosts (F-RM-01 "Files
 //! (read and write), and git"): the same commands as local contexts, served
 //! by `tandem-host` (every path held to the root there by `contain()`).
-//! The host's file system isn't watched (D-411): the view lists again after
-//! each action, on Refresh and when the window gets focus.
+//! The host's folders are watched by the helper (`fs.watch`, D-1600): its
+//! batches come back as `fs.changed` and reach the same subscribers as a
+//! local folder's, and a reconnect watches again.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
 use serde_json::json;
+use tandem_core::files::watch::FsChange;
 use tandem_core::files::{FileKind, FsKind, ReadOnlyReason};
 use tandem_core::ids::HostId;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_git::types::{FileDiff, GitStatus};
-use tandem_host::protocol::{method, Entry, EntryKind, FileData, FsWritten, ReadKind};
+use tandem_host::protocol::{method, Entry, EntryKind, FileData, FsWatching, FsWritten, ReadKind};
 
-use crate::services::files::{badges_for, FileContent, FsEntry, Saved, STATUS_TTL};
+use crate::services::files::{badges_for, ChangeSink, FileContent, FsEntry, Saved, STATUS_TTL};
+
+fn lock_err<T>(_: T) -> IpcError {
+    IpcError::new(ErrorCode::Internal, "The remote files state is unavailable")
+}
 use crate::services::remote::RemoteService;
 
 /// A context on a host: the host and the folder there.
@@ -44,9 +50,18 @@ impl RemoteRepo {
 
 type Statuses = HashMap<RemoteRoot, (Instant, Option<Arc<RemoteRepo>>)>;
 
+/// One watched folder on a host: its subscribers, and the helper's watch
+/// id while the connection holds one.
+#[derive(Default)]
+struct Watched {
+    sinks: HashMap<String, ChangeSink>,
+    host_watch: Option<String>,
+}
+
 #[derive(Default)]
 pub struct RemoteFiles {
     statuses: std::sync::Mutex<Statuses>,
+    watches: std::sync::Mutex<HashMap<RemoteRoot, Watched>>,
 }
 
 fn kind_in(k: EntryKind) -> FsKind {
@@ -86,6 +101,167 @@ impl RemoteFiles {
             cache.insert(r.clone(), (Instant::now(), fresh.clone()));
         }
         fresh
+    }
+
+    /// `fs_watch` for a folder on a host (D-1600): the first subscriber
+    /// asks the helper to watch it; the rest share that watch.
+    pub async fn watch(
+        &self,
+        remote: &Arc<RemoteService>,
+        r: &RemoteRoot,
+        sub: String,
+        sink: ChangeSink,
+    ) -> Result<(), IpcError> {
+        let first = {
+            let mut w = self.watches.lock().map_err(lock_err)?;
+            let entry = w.entry(r.clone()).or_default();
+            entry.sinks.insert(sub.clone(), sink);
+            entry.host_watch.is_none() && entry.sinks.len() == 1
+        };
+        if !first {
+            return Ok(());
+        }
+        match remote
+            .call::<FsWatching>(&r.host, method::FS_WATCH, json!({"root": r.root}))
+            .await
+        {
+            Ok(w) => {
+                if let Ok(mut all) = self.watches.lock() {
+                    if let Some(entry) = all.get_mut(r) {
+                        entry.host_watch = Some(w.id);
+                    }
+                }
+                Ok(())
+            }
+            Err(e) => {
+                if let Ok(mut all) = self.watches.lock() {
+                    if let Some(entry) = all.get_mut(r) {
+                        entry.sinks.remove(&sub);
+                        if entry.sinks.is_empty() {
+                            all.remove(r);
+                        }
+                    }
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// `fs_unwatch`: the helper stops watching with the folder's last
+    /// subscriber. False when `sub` isn't a remote subscription.
+    pub fn unwatch(&self, remote: &Arc<RemoteService>, sub: &str) -> bool {
+        let stop = {
+            let Ok(mut all) = self.watches.lock() else {
+                return false;
+            };
+            let Some(r) = all
+                .iter()
+                .find(|(_, w)| w.sinks.contains_key(sub))
+                .map(|(r, _)| r.clone())
+            else {
+                return false;
+            };
+            let empty = all.get_mut(&r).is_some_and(|w| {
+                w.sinks.remove(sub);
+                w.sinks.is_empty()
+            });
+            if !empty {
+                return true;
+            }
+            all.remove(&r)
+                .and_then(|w| w.host_watch.map(|id| (r.host, id)))
+        };
+        if let Some((host, id)) = stop {
+            let remote = remote.clone();
+            // `fs_unwatch` is a sync command on the main thread, outside any
+            // Tokio context: Tauri's runtime takes the call from there.
+            tauri::async_runtime::spawn(async move {
+                let _ = remote
+                    .call::<serde_json::Value>(&host, method::FS_UNWATCH, json!({"id": id}))
+                    .await;
+            });
+        }
+        true
+    }
+
+    /// An `fs.changed` from a host: the folder's status is read again and
+    /// its subscribers get the batch (a git change touches every folder in
+    /// the repository, so the host's statuses all go).
+    pub fn changed(&self, host: &HostId, id: &str, change: &FsChange) {
+        let mut all = match self.watches.lock() {
+            Ok(a) => a,
+            Err(_) => return,
+        };
+        let Some((r, w)) = all
+            .iter_mut()
+            .find(|(r, w)| &r.host == host && w.host_watch.as_deref() == Some(id))
+        else {
+            return;
+        };
+        if change.git || change.overflow {
+            self.invalidate(host);
+        } else if let Ok(mut cache) = self.statuses.lock() {
+            cache.remove(r);
+        }
+        w.sinks.retain(|_, sink| sink(change));
+    }
+
+    /// After a reconnect (the helper's watches ended with the old
+    /// connection): watch each folder again, and tell its subscribers to
+    /// read everything, since what changed meanwhile isn't known.
+    pub async fn rewatch(&self, host: &HostId, client: &Arc<tandem_host::client::HostClient>) {
+        let roots: Vec<RemoteRoot> = match self.watches.lock() {
+            Ok(mut all) => all
+                .iter_mut()
+                .filter(|(r, _)| &r.host == host)
+                .map(|(r, w)| {
+                    w.host_watch = None;
+                    r.clone()
+                })
+                .collect(),
+            Err(_) => return,
+        };
+        self.invalidate(host);
+        for r in roots {
+            let id = client
+                .call::<_, FsWatching>(method::FS_WATCH, json!({"root": r.root}))
+                .await
+                .ok()
+                .map(|w| w.id);
+            if let Ok(mut all) = self.watches.lock() {
+                if let Some(w) = all.get_mut(&r) {
+                    w.host_watch = id;
+                    let all_again = FsChange {
+                        overflow: true,
+                        ..FsChange::default()
+                    };
+                    w.sinks.retain(|_, sink| sink(&all_again));
+                }
+            }
+        }
+    }
+
+    /// Remote folders being watched (tests).
+    pub fn watched(&self) -> Vec<(RemoteRoot, usize, bool)> {
+        self.watches
+            .lock()
+            .map(|all| {
+                all.iter()
+                    .map(|(r, w)| (r.clone(), w.sinks.len(), w.host_watch.is_some()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The branch a host folder's last read status named, without asking
+    /// the host (`workspace_list` reads it; D-1602).
+    pub fn cached_branch(&self, host: &HostId, root: &str) -> Option<String> {
+        let cache = self.statuses.lock().ok()?;
+        let (_, repo) = cache.get(&RemoteRoot {
+            host: host.clone(),
+            root: root.to_string(),
+        })?;
+        repo.as_ref()?.status.branch.clone()
     }
 
     /// Every cached status on this host (a git action changes them all).
@@ -350,14 +526,89 @@ impl RemoteFiles {
     }
 }
 
-/// What a remote Changes view can't do here (D-411): the host's own
-/// network sign-in decides pushes and pulls, so they run in its terminal.
-pub fn not_remote(action: &str) -> IpcError {
-    IpcError::new(
-        ErrorCode::Unavailable,
-        format!(
-            "{action} isn't available for remote folders yet. Run it in a terminal on the host."
-        ),
-    )
-    .with_stage("remote")
+impl RemoteFiles {
+    /// Push, publish, pull, switch and new branch on the host (D-1601), by
+    /// the host's own git with its own credentials: nothing of this
+    /// computer's reaches it. The network ones wait out the host's 120 s.
+    pub async fn git_sync(
+        &self,
+        remote: &Arc<RemoteService>,
+        r: &RemoteRoot,
+        op: &str,
+        branch: Option<&str>,
+    ) -> Result<(), IpcError> {
+        let client = remote.client(&r.host).await?;
+        let wait = tandem_host::gitops::NETWORK_TIMEOUT + std::time::Duration::from_secs(15);
+        let out = client
+            .call_within::<_, Option<String>>(
+                method::GIT_OP,
+                json!({"root": r.root, "op": op, "paths": [], "branch": branch}),
+                wait,
+            )
+            .await
+            .map(|_| ())
+            .map_err(crate::services::remote::rpc_error);
+        self.invalidate(&r.host);
+        out
+    }
+
+    /// The branch switcher's rows from the host (`git.branches`).
+    pub async fn git_branches(
+        &self,
+        remote: &Arc<RemoteService>,
+        r: &RemoteRoot,
+    ) -> Result<Vec<tandem_git::types::Branch>, IpcError> {
+        remote
+            .call(&r.host, method::GIT_BRANCHES, json!({"root": r.root}))
+            .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `fs_unwatch` runs on the main thread with no Tokio runtime: the
+    /// last subscriber leaving a host folder mustn't panic there (it did,
+    /// and took the app down when a remote Files tab closed).
+    #[test]
+    fn f_rm_01_unwatching_a_host_folder_works_outside_tokio() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let data = tandem_core::DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = tandem_store::Store::open(&data).expect("store");
+        let bus = tandem_core::bus::EventBus::new();
+        let status = crate::services::status::StatusService::new(
+            bus.clone(),
+            Arc::new(tandem_core::clock::SystemClock),
+        );
+        let svc = RemoteService::new(
+            store,
+            bus,
+            &data,
+            dir.path().join("bin"),
+            tandem_pty::PtyManager::new(),
+            status,
+        );
+        let r = RemoteRoot {
+            host: HostId::from_db("hst_x".into()),
+            root: "/home/me/project".into(),
+        };
+        if let Ok(mut all) = svc.files.watches.lock() {
+            let mut w = Watched {
+                host_watch: Some("w1".into()),
+                ..Watched::default()
+            };
+            w.sinks
+                .insert("fsw_1".into(), Arc::new(|_: &FsChange| true));
+            all.insert(r, w);
+        }
+        let svc2 = svc.clone();
+        std::thread::spawn(move || {
+            assert!(svc2.files.unwatch(&svc2, "fsw_1"));
+            assert!(!svc2.files.unwatch(&svc2, "fsw_1"));
+        })
+        .join()
+        .expect("no panic outside Tokio");
+        assert!(svc.files.watched().is_empty());
+    }
 }

@@ -1,0 +1,48 @@
+{
+  "name": "mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vibezeo Remote: the phone companion for Android and iOS (F-RM-05)",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "prebuild": "expo prebuild --clean",
+    "lint": "tsc --noEmit && eslint .",
+    "test": "vitest run",
+    "preview:web": "expo export --platform web --output-dir dist/web"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^2.4.0",
+    "@tandem/protocol": "workspace:*",
+    "@tandem/remote": "workspace:*",
+    "expo": "~57.0.27",
+    "expo-build-properties": "~57.0.22",
+    "expo-camera": "~57.0.6",
+    "expo-constants": "~57.0.21",
+    "expo-crypto": "~57.0.3",
+    "expo-device": "~57.0.2",
+    "expo-linking": "~57.0.12",
+    "expo-notifications": "~57.0.22",
+    "expo-secure-store": "~57.0.4",
+    "expo-splash-screen": "~57.0.9",
+    "expo-status-bar": "~57.0.1",
+    "expo-system-ui": "~57.0.4",
+    "expo-task-manager": "~57.0.21",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@expo/metro-runtime": "~57.0.16",
+    "@types/react": "~19.2.0",
+    "babel-preset-expo": "~57.0.14",
+    "react-dom": "19.2.3",
+    "react-native-web": "~0.21.0",
+    "typescript": "~5.8.3",
+    "vitest": "^4.1.11",
+    "xcode": "^3.0.1"
+  }
+}

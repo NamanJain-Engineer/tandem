@@ -3,10 +3,14 @@
 // `@tandem/protocol/shortcuts.json`; the palette, the shortcut dispatcher and
 // menus all run commands through `runCommand`, so they share one handler.
 import { useAgentPage } from "../../stores/agentPage";
+import { inCall, setMuted, toggleCall, useConductor } from "../../stores/conductor";
 import { useLaunch } from "../../stores/launch";
 import { useNotifications } from "../../stores/notifications";
 import { useCloseConfirm } from "../../stores/closeConfirm";
 import { useSidebar } from "../../stores/sidebar";
+import { useRecall } from "../recall/RecallPicker";
+import { usePrompts } from "../prompts/PromptPicker";
+import { latestRun, useBestOf } from "../bestof/BestOf";
 import { useSession } from "../../stores/session";
 import { useSettings } from "../../stores/settings";
 import type { CommandSpec } from "@tandem/protocol";
@@ -78,6 +82,8 @@ export function isEnabled(spec: CommandSpec): boolean {
   if (spec.enabledWhen === "always") return true;
   // Pausing routines means nothing on a plan without them (F-RT-04).
   if (spec.enabledWhen === "routines") return !!useSession.getState().entitlement?.limits.routines;
+  // Nor muting or a call log on a plan without Conductor (F-CN-01, D-833).
+  if (spec.enabledWhen === "conductor") return !!useSession.getState().entitlement?.limits.conductor;
   const ui = useUi.getState();
   if (spec.enabledWhen === "thread_open")
     return ui.mode === "thread" && !ui.settingsOpen && useThreads.getState().selectedId !== null;
@@ -143,6 +149,18 @@ export const handlers: Record<string, () => void> = {
   "rail.toggle": () => useUi.getState().toggleRail(),
   "sidebar.toggle": () => useSidebar.getState().toggle(),
   "sidebar.files": () => useSidebar.getState().openTab("files"),
+  "sidebar.checkpoints": () => useSidebar.getState().openTab("checkpoints"),
+  "sidebar.ports": () => useSidebar.getState().openTab("ports"),
+  "recall.open": () => useRecall.getState().show(),
+  "prompts.open": () => usePrompts.getState().show(),
+  "bestof.open": () => {
+    const id = useWorkspaces.getState().activeId;
+    if (id) useBestOf.getState().openSheet(id);
+  },
+  "bestof.compare": () =>
+    void latestRun(useWorkspaces.getState().activeId).then((run) =>
+      run ? useBestOf.getState().openCompare(run.id) : toast({ tone: "info", title: t("bestof.none") }),
+    ),
   "notifications.open": () => useNotifications.getState().setOpen(true),
   "dashboard.full_view": () => {
     const sb = useSidebar.getState();
@@ -195,6 +213,13 @@ export const handlers: Record<string, () => void> = {
   "terminal.copy_last_output": onPane((_, paneId) => void copyLastOutput(paneId, toast)),
   "work.find": () => useUi.getState().openFindWork(),
   "billing.plans": () => useUi.getState().openUpgrade(),
+  // Free plan: the call command opens the plans (UI-61).
+  "conductor.call": () => toggleCall(),
+  "conductor.mute": () => {
+    const v = useConductor.getState().view;
+    if (inCall(v)) setMuted(!v.muted);
+  },
+  "conductor.log": () => useConductor.getState().openLog(true),
   "help.shortcuts": () => useUi.getState().setCheatsheet(!useUi.getState().cheatsheetOpen),
   "help.diagnostics": () => useUi.getState().setDiagnostics(true),
   "help.copy_diagnostics": () => void copyDiagnostics(toast),

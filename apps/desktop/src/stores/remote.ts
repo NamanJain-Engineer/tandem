@@ -11,6 +11,7 @@ import type {
 } from "@tandem/protocol";
 import { listen } from "../ipc/events";
 import { invoke } from "../ipc/invoke";
+import { useWorkspaces } from "./workspaces";
 
 /** A host's connection attempt, as `remote:ssh` reports it. */
 export type Attempt = {
@@ -144,12 +145,20 @@ export function followRemote(): void {
         ...s.attempts,
         [p.hostId]: { opId: p.opId, hostId: p.hostId, stage: p.stage, error: p.error },
       },
-      ask: p.prompt ? { opId: p.opId, hostId: p.hostId, prompt: p.prompt } : s.ask?.opId === p.opId ? null : s.ask,
+      ask: p.prompt
+        ? { opId: p.opId, hostId: p.hostId, prompt: p.prompt }
+        : s.ask?.opId === p.opId
+          ? null
+          : s.ask,
     }));
     if (p.stage === "connected" || p.stage === "failed") void useRemote.getState().refresh();
   });
   void listen<HostEvent>("remote:host", ({ hostId, state }) => {
     useRemote.setState((s) => ({ hosts: s.hosts.map((h) => (h.id === hostId ? { ...h, state } : h)) }));
+  });
+  // The host's folders now have branches (and so worktrees) in the rail.
+  void listen<{ hostId: string }>("remote:git", () => {
+    void useWorkspaces.getState().refresh();
   });
   void listen<{ hostId: string }>("engines:detected", ({ hostId }) => {
     if (hostId !== "local") void useRemote.getState().loadEngines(hostId);

@@ -42,6 +42,7 @@ import { useDropTarget } from "./drops";
 import { GUTTER, leaves, minExtent, type LayoutNode } from "./layout/tree";
 import { PaneChrome } from "./PaneChrome";
 import { BrowserPane } from "./BrowserPane";
+import { SimulatorPane } from "../simulator/SimulatorPane";
 import { pageTitle, useBrowser } from "../../stores/browser";
 import { attachPaneHost, paneHost } from "./paneHosts";
 import { LaunchGrid } from "./LaunchGrid";
@@ -697,6 +698,17 @@ export function PaneGrid({
         return createPortal(
           pane.kind === "browser" ? (
             <BrowserPane
+              tabId={tabId}
+              pane={pane}
+              title={names[id] ?? ""}
+              visible={visible && (!tab.maximized || tab.maximized === id)}
+              focused={tab.active === id}
+              solo={solo}
+              maximized={tab.maximized === id}
+              cover={cover}
+            />
+          ) : pane.kind === "simulator" ? (
+            <SimulatorPane
               tabId={tabId}
               pane={pane}
               title={names[id] ?? ""}

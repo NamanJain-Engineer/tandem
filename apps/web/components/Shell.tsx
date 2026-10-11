@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 
+// Card and Notice have no Next.js imports, so the LAN web app can use them.
+export { Card, Notice } from "./Panel";
+
 /** Page frame for the account portal. */
 export function Shell({
   title,
@@ -51,10 +54,6 @@ export function Shell({
   );
 }
 
-export function Card({ children }: { children: ReactNode }) {
-  return <section className="rounded-md border border-border bg-surface-2 p-6">{children}</section>;
-}
-
 export function Field({
   label,
   name,
@@ -82,20 +81,5 @@ export function Field({
         className="h-8 rounded-sm border border-border bg-surface-4 px-2.5 text-base text-fg outline-none focus:border-accent focus:shadow-focus"
       />
     </label>
-  );
-}
-
-export function Notice({
-  tone = "info",
-  children,
-}: {
-  tone?: "info" | "error" | "success";
-  children: ReactNode;
-}) {
-  const color = tone === "error" ? "text-danger" : tone === "success" ? "text-done-text" : "text-fg-muted";
-  return (
-    <p role={tone === "error" ? "alert" : "status"} className={`text-sm ${color}`}>
-      {children}
-    </p>
   );
 }

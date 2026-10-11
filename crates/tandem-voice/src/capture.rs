@@ -21,7 +21,7 @@ use crate::devices::{self, DeviceInfo, MicPrefs};
 pub enum CaptureError {
     #[error("No microphone found")]
     NoDevice,
-    #[error("Tandem can't use the microphone")]
+    #[error("Vibezeo can't use the microphone")]
     PermissionDenied,
     #[error("Your microphone isn't delivering audio")]
     NotDelivering,
@@ -68,6 +68,17 @@ pub enum CaptureEvent {
 
 pub type EventSink = Arc<dyn Fn(CaptureEvent) + Send + Sync>;
 
+/// A live stream's receiver (a Conductor call, F-CN-08): each block as it
+/// arrives, mono at the stream's rate, after gain; and the stream's own
+/// recovery events, which then don't reach Dictate.
+/// Mono samples at the stream's rate.
+pub type RateSink = Box<dyn FnMut(&[f32], u32) + Send>;
+
+pub struct StreamTap {
+    pub samples: RateSink,
+    pub events: Box<dyn Fn(CaptureEvent) + Send>,
+}
+
 /// A finished take's audio.
 #[derive(Debug, Clone, Default)]
 pub struct Recording {
@@ -99,6 +110,7 @@ impl Default for CaptureConfig {
 enum Cmd {
     Warm,
     Begin(mpsc::Sender<Result<(), CaptureError>>),
+    BeginStream(StreamTap, mpsc::Sender<Result<(), CaptureError>>),
     End(mpsc::Sender<Recording>),
     Cancel,
     Config(CaptureConfig),
@@ -176,6 +188,19 @@ impl AudioService {
             .map_err(|_| CaptureError::Stopped)?
     }
 
+    /// Resumes the stream and hands every block to `tap` until
+    /// [`AudioService::end_take`] or [`AudioService::cancel_take`]. The same
+    /// device policy, gain and silent-stream recovery as a take apply
+    /// (F-CN-08); nothing is kept.
+    pub fn begin_stream(&self, tap: StreamTap) -> Result<(), CaptureError> {
+        let (reply, rx) = mpsc::channel();
+        self.tx
+            .send(Cmd::BeginStream(tap, reply))
+            .map_err(|_| CaptureError::Stopped)?;
+        rx.recv_timeout(Duration::from_secs(5))
+            .map_err(|_| CaptureError::Stopped)?
+    }
+
     /// Pauses the stream and returns the take's audio at 16 kHz.
     pub fn end_take(&self) -> Recording {
         let (reply, rx) = mpsc::channel();
@@ -234,6 +259,7 @@ struct Take {
     since: Instant,
     heard: bool,
     recovery: Recovery,
+    tap: Option<StreamTap>,
 }
 
 struct Worker {
@@ -273,6 +299,13 @@ impl Worker {
             }
             Cmd::Begin(reply) => {
                 let _ = reply.send(self.begin());
+            }
+            Cmd::BeginStream(tap, reply) => {
+                let r = self.begin();
+                if let Some(take) = &mut self.take {
+                    take.tap = Some(tap);
+                }
+                let _ = reply.send(r);
             }
             Cmd::End(reply) => {
                 let _ = reply.send(self.end());
@@ -361,6 +394,7 @@ impl Worker {
             since: now,
             heard: false,
             recovery: Recovery::None,
+            tap: None,
         });
         self.recording.store(true, Ordering::Release);
         Ok(())
@@ -416,6 +450,18 @@ impl Worker {
         }
         self.level
             .store(audio::level(block).to_bits(), Ordering::Relaxed);
+        if let Some(tap) = &mut take.tap {
+            (tap.samples)(block, open.rate);
+            take.buf.truncate(start);
+        }
+    }
+
+    /// Recovery events go to a stream's tap, or to Dictate.
+    fn emit(&self, e: CaptureEvent) {
+        match self.take.as_ref().and_then(|t| t.tap.as_ref()) {
+            Some(tap) => (tap.events)(e),
+            None => (self.events)(e),
+        }
     }
 
     /// Silent-stream recovery: rebuild on the same device, then the backup,
@@ -438,7 +484,7 @@ impl Worker {
                 let ok = self.open_device(&device).is_ok() && self.play();
                 self.step(Recovery::Rebuilt);
                 if ok {
-                    (self.events)(CaptureEvent::Rebuilt);
+                    self.emit(CaptureEvent::Rebuilt);
                 } else {
                     self.watch_now();
                 }
@@ -446,7 +492,7 @@ impl Worker {
             Recovery::Rebuilt => self.try_backup(current.as_deref()),
             Recovery::Backup | Recovery::Failed => {
                 self.step(Recovery::Failed);
-                (self.events)(CaptureEvent::NotDelivering);
+                self.emit(CaptureEvent::NotDelivering);
             }
         }
     }
@@ -464,11 +510,11 @@ impl Worker {
         match devices::backup(&devices, &self.config.prefs, &failed) {
             Some(id) if self.open_device(&id).is_ok() && self.play() => {
                 self.step(Recovery::Backup);
-                (self.events)(CaptureEvent::SwitchedToBackup { device: id });
+                self.emit(CaptureEvent::SwitchedToBackup { device: id });
             }
             _ => {
                 self.step(Recovery::Failed);
-                (self.events)(CaptureEvent::NotDelivering);
+                self.emit(CaptureEvent::NotDelivering);
             }
         }
     }
@@ -814,6 +860,87 @@ mod tests {
                 device: "usb".into()
             })
         );
+        svc.cancel_take();
+    }
+
+    type Seen = (
+        StreamTap,
+        Arc<Mutex<(usize, u32)>>,
+        Arc<Mutex<Vec<CaptureEvent>>>,
+    );
+
+    fn tap() -> Seen {
+        let got = Arc::new(Mutex::new((0usize, 0u32)));
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let (g, e) = (got.clone(), events.clone());
+        (
+            StreamTap {
+                samples: Box::new(move |s: &[f32], rate| {
+                    let mut g = g.lock();
+                    g.0 += s.len();
+                    g.1 = rate;
+                }),
+                events: Box::new(move |ev| e.lock().push(ev)),
+            },
+            got,
+            events,
+        )
+    }
+
+    #[test]
+    fn f_cn_08_1_a_call_never_opens_a_bluetooth_mic_on_its_own() {
+        let tone = Arc::new(vec![0.25f32; 16_000]);
+        let backend = Arc::new(FakeAudioBackend::new(vec![
+            (
+                DeviceInfo::new("bt", "AirPods Pro (Hands-Free)", true),
+                FakeSource::Samples {
+                    samples: tone.clone(),
+                    rate: 16_000,
+                    speed: 1,
+                },
+            ),
+            (
+                DeviceInfo::new("desk", "USB Desk Microphone", false),
+                FakeSource::Samples {
+                    samples: tone,
+                    rate: 16_000,
+                    speed: 1,
+                },
+            ),
+        ]));
+        let (dictate, dictate_events) = collect();
+        let svc = AudioService::start(backend.clone(), quick(MicPrefs::default()), dictate);
+        let (tap, got, _) = tap();
+        svc.begin_stream(tap).expect("stream");
+        let t = Instant::now();
+        while got.lock().0 < 3_200 && t.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(backend.opens(), vec!["desk".to_string()]);
+        assert!(got.lock().0 >= 3_200, "blocks reach the call");
+        assert_eq!(got.lock().1, 16_000);
+        // Streamed audio isn't kept as a take.
+        assert!(svc.end_take().samples.len() < 1_600);
+        assert!(dictate_events.lock().is_empty());
+    }
+
+    #[test]
+    fn f_cn_08_a_silent_mic_ends_the_take_on_the_call_not_in_dictate() {
+        let backend = Arc::new(FakeAudioBackend::new(vec![(
+            DeviceInfo::new("dead", "Dead Mic", true),
+            FakeSource::Zeros,
+        )]));
+        let (dictate, dictate_events) = collect();
+        let svc = AudioService::start(backend, quick(MicPrefs::default()), dictate);
+        let (tap, _, events) = tap();
+        svc.begin_stream(tap).expect("stream");
+        wait_for(&events, 2);
+        assert!(
+            events.lock().contains(&CaptureEvent::NotDelivering),
+            "{:?}",
+            events.lock()
+        );
+        assert!(dictate_events.lock().is_empty());
         svc.cancel_take();
     }
 

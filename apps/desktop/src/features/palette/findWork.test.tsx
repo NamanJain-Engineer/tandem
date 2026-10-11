@@ -4,12 +4,13 @@ import type { FindWorkResult, WorkspaceSummary } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { useFlash } from "../../stores/focus";
 import { useLayout } from "../../stores/layout";
+import { useSession } from "../../stores/session";
 import { useSettings } from "../../stores/settings";
 import { useTeammates } from "../../stores/teammates";
 import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
-import { BOOT, fakeBackend, resetStores } from "../../test/fakeBackend";
+import { BOOT, SIGNED_IN, fakeBackend, resetStores } from "../../test/fakeBackend";
 import { commandTitle, runCommand } from "../commands/commands";
 import { useBoot } from "../shell/useBoot";
 import { Palette } from "./Palette";
@@ -172,6 +173,21 @@ describe("Find work in the palette (F-CN-05)", () => {
     expect(screen.getByText("Couldn't search: The store is busy.")).toBeTruthy();
   });
 
+  it("F-CN-05 a build without Vibezeo accounts searches on this computer even with hosted ranking on (D-833)", async () => {
+    setup(() => AUTH);
+    useSession.setState({ auth: { ...SIGNED_IN, signedIn: false, email: null, hosted: false } });
+    useSettings.setState((st) => ({ values: { ...st.values, find_work_hosted: true } }));
+    act(() => runCommand("work.find"));
+    expect(screen.getByText(/Open panes, threads and teammates are searched on this computer/)).toBeTruthy();
+    expect(screen.queryByText(/1 credit a search/)).toBeNull();
+    type("login testing");
+    // The local search's short pause, not the hosted one's.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(await screen.findByRole("option", { name: /auth tests/ })).toBeTruthy();
+  });
+
   it("F-CN-05 a teammate match opens its page, and a hosted ranking says so", async () => {
     setup(() => ({
       matches: [
@@ -190,7 +206,9 @@ describe("Find work in the palette (F-CN-05)", () => {
     }));
     useSettings.setState((st) => ({ values: { ...st.values, find_work_hosted: true } }));
     act(() => runCommand("work.find"));
-    expect(screen.getByText(/Vibezeo's AI ranks open panes, threads and teammates \(1 credit a search\)/)).toBeTruthy();
+    expect(
+      screen.getByText(/Vibezeo's AI ranks open panes, threads and teammates \(1 credit a search\)/),
+    ).toBeTruthy();
     type("changelog");
     // A credit a search: it waits for a longer pause.
     await act(async () => {

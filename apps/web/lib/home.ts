@@ -51,7 +51,7 @@ export const FEATURES = [
   },
   {
     title: "Find work by what it's about",
-    body: "Type \u201cthe login tests\u201d into Find work in the command palette and it takes you to the pane or thread doing them, even if nothing is named that. The search runs on your computer.",
+    body: "Type \u201cthe login tests\u201d into Find work in the command palette and it takes you to the pane, thread or teammate doing them, even if nothing is named that. The search runs on your computer.",
   },
   {
     title: "Dictate",
@@ -152,7 +152,7 @@ export const FAQ = [
   },
   {
     q: "Which platforms does it support?",
-    a: "Linux x86-64, as a .deb for Debian and Ubuntu.",
+    a: "Linux x86-64, as a .deb for Debian and Ubuntu and an .rpm for Fedora.",
   },
   {
     q: "Does Vibezeo see my API keys or subscription tokens?",
@@ -229,7 +229,7 @@ export const MODE_ROWS = [
 export const CAPABILITIES = [
   { title: "Worktree lanes and handoff", icon: "branch", docs: docsPath("code-mode") },
   { title: "Files, git and a browser", icon: "files", docs: docsPath("code-mode") },
-  { title: "Find work by what it's about", icon: "search", docs: docsPath("keyboard-shortcuts") },
+  { title: "Find work by what it's about", icon: "search", docs: docsPath("code-mode") },
   { title: "Several accounts per engine", icon: "users", docs: docsPath("accounts-and-limits") },
   { title: "Your accounts, untouched", icon: "key", docs: docsPath("privacy") },
   { title: "Notifications that matter", icon: "bell", docs: docsPath("settings") },
@@ -248,6 +248,16 @@ export const RELEASE_TILE_MAP: Record<string, { icon: string; docs: string; feat
   "SSH workspaces": { icon: "server", docs: docsPath("remote"), feature: "SSH workspaces" },
   Diagnostics: { icon: "activity", docs: docsPath("troubleshooting") },
   "Tray icon": { icon: "tray", docs: docsPath("dictate") },
+  Checkpoints: { icon: "restore", docs: docsPath("workflow-tools") },
+  "Command recall": { icon: "history", docs: docsPath("workflow-tools") },
+  Ports: { icon: "network", docs: docsPath("workflow-tools") },
+  "Best of N": { icon: "layers", docs: docsPath("workflow-tools") },
+  "Prompt library": { icon: "book", docs: docsPath("workflow-tools") },
+  "Skills in your engines": { icon: "sparkles", docs: docsPath("agent-mode") },
+  "A teammate in a terminal": { icon: "terminal", docs: docsPath("agent-mode") },
+  "Find work finds teammates": { icon: "search", docs: docsPath("code-mode") },
+  "Files and git on SSH hosts": { icon: "server", docs: docsPath("remote") },
+  Fedora: { icon: "package", docs: docsPath("index") },
 };
 
 export type ReleaseTile = { title: string; body: string; text: string; platforms: string[]; icon: string; docs: string };

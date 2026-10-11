@@ -1127,6 +1127,22 @@ impl DictateService {
         self.controller().is_some_and(|c| c.use_local())
     }
 
+    /// The microphone backend, shared with the wake listener (F-CN-07).
+    pub fn audio_backend(&self) -> Arc<dyn AudioBackend> {
+        self.backend.clone()
+    }
+
+    /// True while a take records (the wake listener steps aside).
+    pub fn is_recording(&self) -> bool {
+        self.audio.get().is_some_and(|a| a.is_recording())
+    }
+
+    /// The Dictate microphone setting; calls and the wake listener use it
+    /// too (F-CN-08, F-CN-07).
+    pub async fn mic_prefs(&self) -> MicPrefs {
+        self.capture_config().await.prefs
+    }
+
     async fn capture_config(&self) -> CaptureConfig {
         CaptureConfig {
             prefs: MicPrefs {
@@ -2147,6 +2163,35 @@ impl DictateService {
     }
 
     /// The harness's fake mic source for the next take.
+    /// A Conductor call claims the mic (F-CN-08): the same device, gain and
+    /// recovery as Dictate, streamed to `tap`; every Dictate take is refused
+    /// ("Conductor is listening") until [`DictateService::call_mic_stop`].
+    pub fn call_mic_start(&self, tap: tandem_voice::capture::StreamTap) -> Result<(), String> {
+        let audio = self.audio.get().ok_or("The microphone isn't ready yet.")?;
+        if let Some(c) = self.controller() {
+            if c.current_take().is_some() {
+                return Err("Finish dictating first.".into());
+            }
+            c.set_mic_owner(Some("conductor".into()));
+        }
+        audio.begin_stream(tap).map_err(|e| {
+            if let Some(c) = self.controller() {
+                c.set_mic_owner(None);
+            }
+            e.to_string()
+        })
+    }
+
+    /// The call is over: the mic goes back to Dictate.
+    pub fn call_mic_stop(&self) {
+        if let Some(a) = self.audio.get() {
+            a.cancel_take();
+        }
+        if let Some(c) = self.controller() {
+            c.set_mic_owner(None);
+        }
+    }
+
     pub fn test_mic(&self, source: FakeSource) -> Result<(), IpcError> {
         let fakes = self
             .fakes
@@ -2175,12 +2220,46 @@ pub fn dither(n: usize) -> Vec<f32> {
         .collect()
 }
 
+/// The microphone; on a Mac behind its permission (D-2108), since CoreAudio
+/// records silence rather than fail when it isn't allowed.
+#[cfg(feature = "os-audio")]
 fn native_backend() -> Arc<dyn AudioBackend> {
-    Arc::new(tandem_voice::capture_cpal::CpalBackend)
+    let cpal: Arc<dyn AudioBackend> = Arc::new(tandem_voice::capture_cpal::CpalBackend);
+    match tandem_voice::permissions::system() {
+        Some(probe) => Arc::new(tandem_voice::permissions::MicGate { inner: cpal, probe }),
+        None => cpal,
+    }
 }
 
+#[cfg(feature = "os-audio")]
 fn native_chimes() -> Arc<dyn ChimePlayer> {
     Arc::new(tandem_voice::chimes::CpalPlayer)
+}
+
+/// Type-check builds without `os-audio` (D-2105): no microphone, no chimes.
+#[cfg(not(feature = "os-audio"))]
+fn native_backend() -> Arc<dyn AudioBackend> {
+    struct NoMicrophone;
+    impl AudioBackend for NoMicrophone {
+        fn devices(&self) -> Vec<DeviceInfo> {
+            Vec::new()
+        }
+        fn open(
+            &self,
+            _device: &str,
+            _sink: tandem_voice::capture::SampleSink,
+            _on_error: tandem_voice::capture::ErrorSink,
+        ) -> Result<Box<dyn tandem_voice::capture::InputStream>, tandem_voice::capture::CaptureError>
+        {
+            Err(tandem_voice::capture::CaptureError::NoDevice)
+        }
+    }
+    Arc::new(NoMicrophone)
+}
+
+#[cfg(not(feature = "os-audio"))]
+fn native_chimes() -> Arc<dyn ChimePlayer> {
+    Arc::new(SilentPlayer::default())
 }
 
 #[cfg(test)]

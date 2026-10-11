@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-worktree-setup-save"
+description = "Enables the worktree_setup_save command without any pre-configured scope."
+commands.allow = ["worktree_setup_save"]
+
+[[permission]]
+identifier = "deny-worktree-setup-save"
+description = "Denies the worktree_setup_save command without any pre-configured scope."
+commands.deny = ["worktree_setup_save"]

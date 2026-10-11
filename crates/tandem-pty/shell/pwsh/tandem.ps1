@@ -47,7 +47,14 @@ if ($env:TANDEM_SHELL_TOKEN -and -not $Global:__TandemToken) {
             [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref] $line, [ref] $cursor)
             if ($line.Trim()) {
                 $Global:__TandemRunning = $true
-                [Console]::Write((__TandemMark "C;nl=1"))
+                # The command line for command recall (F-EX-02); a leading
+                # space keeps it out.
+                $body = "C;nl=1"
+                if (-not $line.StartsWith(" ")) {
+                    $enc = [Uri]::EscapeDataString($line)
+                    if ($enc.Length -le 12000) { $body += ";cmdline_url=$enc" }
+                }
+                [Console]::Write((__TandemMark $body))
             }
             [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
         }

@@ -70,6 +70,14 @@ for (const m of catalog.models) {
     "",
   );
 }
+
+// ── Models bundled with the app (the "Hey Conductor" keyword spotter) ─────
+const bundledModels = rows("model").filter((r) => r.bundled === true);
+if (bundledModels.length) {
+  push("## Models bundled with the app", "");
+  for (const r of bundledModels)
+    push(`### ${String(r.name)}`, "", `Licence: ${String(r.license)} · ${String(r.url)}`, "", String(r.copyright), "");
+}
 const cc = "/usr/share/common-licenses/CC-BY-4.0";
 push(
   "Creative Commons Attribution 4.0 International: https://creativecommons.org/licenses/by/4.0/legalcode",

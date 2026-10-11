@@ -25,6 +25,15 @@ id = "distil-whisper-large-v3.5"
 name = "Distil-Whisper large-v3.5 (GGML)"
 license = "MIT"
 
+# Bundled under crates/tandem-voice/models/wake/ (F-CN-07), not in the catalog.
+[[model]]
+id = "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+name = "sherpa-onnx keyword spotter, zipformer GigaSpeech 3.3M (ONNX int8)"
+license = "Apache-2.0"
+url = "https://github.com/k2-fsa/sherpa-onnx/releases/tag/kws-models"
+copyright = "Trained by the k2-fsa project (icefall) on GigaSpeech; used for the \"Hey Conductor\" wake phrase."
+bundled = true
+
 [[font]]
 name = "Inter"
 license = "OFL-1.1"

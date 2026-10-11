@@ -5,7 +5,7 @@ members = ["crates/*", "apps/desktop/src-tauri", "tests/invariants"]
 [workspace.package]
 edition = "2021"
 license = "MIT"
-version = "0.5.0"
+version = "0.6.0"
 publish = false
 
 [workspace.dependencies]
@@ -17,7 +17,8 @@ tandem-git = { path = "crates/tandem-git" }
 tandem-gateway = { path = "crates/tandem-gateway" }
 tandem-tasks = { path = "crates/tandem-tasks" }
 tandem-routines = { path = "crates/tandem-routines" }
-tandem-voice = { path = "crates/tandem-voice" }
+# Members ask for the OS microphone (`cpal`) themselves (D-2105).
+tandem-voice = { path = "crates/tandem-voice", default-features = false }
 tandem-host = { path = "crates/tandem-host" }
 
 aes-gcm = "0.10"
@@ -29,11 +30,15 @@ base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 chrono-tz = "0.10"
 dashmap = "6"
+chacha20poly1305 = "0.10"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 futures = "0.3"
+httparse = "1"
+if-addrs = "0.15"
 # No network transports: reads only; the git CLI does fetch/push (ARCHITECTURE §7).
 git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
 hex = "0.4"
+hkdf = "0.12"
 hmac = "0.12"
 http-body-util = "0.1"
 iana-time-zone = "0.1"
@@ -44,7 +49,9 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 notify = "8"
 parking_lot = "0.12"
 portable-pty = "0.9"
+qrcode = { version = "0.14", default-features = false }
 rand = "0.8"
+rand_core = { version = "0.6", features = ["getrandom"] }
 rmcp = { version = "3.5", default-features = false, features = ["server", "transport-streamable-http-server"] }
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
@@ -55,6 +62,9 @@ sha2 = "0.10"
 tempfile = "3"
 thiserror = "2"
 tokio-util = "0.7"
+# The phone relay client and the Conductor realtime client (ARCHITECTURE §12.6);
+# TLS through rustls, as reqwest.
+tokio-tungstenite = { version = "0.27", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
 tokio = { version = "1", features = ["sync", "rt", "rt-multi-thread", "macros", "time", "process", "io-util", "fs", "net"] }
 toml_edit = "0.25"
 tracing = "0.1"
@@ -64,6 +74,7 @@ ulid = "1"
 url = "2"
 vte = "0.15"
 wiremock = "0.6"
+x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }
 unicode-normalization = "0.1"
 zeroize = "1"
 zip = { version = "4.6", default-features = false, features = ["deflate-flate2"] }

@@ -23,6 +23,8 @@ pub enum SettingsPage {
     Plugins,
     Remote,
     Privacy,
+    /// Checkpoints (F-EX-01, UI-117).
+    Checkpoints,
     Shortcuts,
     Account,
     Updates,
@@ -131,7 +133,11 @@ setting_keys! {
     ConductorMemory,
     ConductorReflection,
     ConductorWake,
+    ConductorWakeSensitivity,
+    ConductorWakePauseVideos,
     ConductorFloatingRing,
+    ConductorCallLogs,
+    ConductorRingPosition,
     TelemetryUsage,
     TelemetryCrash,
     AiThreadTitles,
@@ -151,6 +157,12 @@ setting_keys! {
     RailWidth,
     ThreadDefaults,
     ThreadGrid,
+    CheckpointsEnabled,
+    CheckpointsKeep,
+    CheckpointsDays,
+    CheckpointsMaxFileMb,
+    CommandHistoryEnabled,
+    CommandHistoryDays,
     SkillsSeen,
 }
 
@@ -715,29 +727,29 @@ pub static SCHEMA: &[SettingSpec] = &[
     ),
     spec!(
         ConductorTone,
-        json!("friendly"),
-        V::OneOf(&["friendly", "direct", "playful"]),
+        json!("neutral"),
+        V::OneOf(&["neutral", "warm", "brief"]),
         Conductor,
         ["tone"]
     ),
     spec!(
         ConductorVerbosity,
-        json!("brief"),
-        V::OneOf(&["brief", "normal", "detailed"]),
+        json!("normal"),
+        V::OneOf(&["short", "normal", "detailed"]),
         Conductor,
         ["verbosity"]
     ),
     spec!(
         ConductorSpeed,
-        json!(100),
-        V::IntRange(75, 150),
+        json!(3),
+        V::IntRange(1, 5),
         Conductor,
         ["speed"]
     ),
     spec!(
         ConductorAboutYou,
         json!(null),
-        V::OptionalText { max: 2_000 },
+        V::OptionalText { max: 1_000 },
         Conductor,
         ["about you"]
     ),
@@ -750,8 +762,8 @@ pub static SCHEMA: &[SettingSpec] = &[
     ),
     spec!(
         ConductorReflection,
-        json!(false),
-        V::Bool,
+        json!("ask"),
+        V::OneOf(&["ask", "auto", "off"]),
         Conductor,
         ["reflection", "journal"]
     ),
@@ -763,11 +775,39 @@ pub static SCHEMA: &[SettingSpec] = &[
         ["wake", "hey conductor"]
     ),
     spec!(
+        ConductorWakeSensitivity,
+        json!("medium"),
+        V::OneOf(&["low", "medium", "high"]),
+        Conductor,
+        ["wake", "sensitivity"]
+    ),
+    spec!(
+        ConductorWakePauseVideos,
+        json!(true),
+        V::Bool,
+        Conductor,
+        ["wake", "videos", "pause"]
+    ),
+    spec!(
         ConductorFloatingRing,
         json!(false),
         V::Bool,
         Conductor,
         ["floating", "ring"]
+    ),
+    spec!(
+        ConductorCallLogs,
+        json!("7"),
+        V::OneOf(&["off", "7", "30"]),
+        Conductor,
+        ["call log", "history", "keep"]
+    ),
+    spec!(
+        ConductorRingPosition,
+        json!(null),
+        V::OptionalText { max: 32 },
+        Hidden,
+        []
     ),
     spec!(
         TelemetryUsage,
@@ -881,6 +921,50 @@ pub static SCHEMA: &[SettingSpec] = &[
     // per engine `<engine>.model`, `<engine>.effort`, `<engine>.access`.
     spec!(ThreadDefaults, json!({}), V::Map, Hidden, []),
     spec!(ThreadGrid, json!({"ids": []}), V::Map, Hidden, []),
+    // F-EX-01: checkpoints before agent turns, kept per folder.
+    spec!(
+        CheckpointsEnabled,
+        json!(true),
+        V::Bool,
+        Checkpoints,
+        ["checkpoints", "rewind", "undo", "restore"]
+    ),
+    spec!(
+        CheckpointsKeep,
+        json!(100),
+        V::IntRange(10, 1000),
+        Checkpoints,
+        ["checkpoints", "keep"]
+    ),
+    spec!(
+        CheckpointsDays,
+        json!(14),
+        V::IntRange(1, 90),
+        Checkpoints,
+        ["checkpoints", "days"]
+    ),
+    spec!(
+        CheckpointsMaxFileMb,
+        json!(5),
+        V::IntRange(1, 100),
+        Checkpoints,
+        ["checkpoints", "large files"]
+    ),
+    // F-EX-02: command recall, local only.
+    spec!(
+        CommandHistoryEnabled,
+        json!(true),
+        V::Bool,
+        Terminal,
+        ["command recall", "history"]
+    ),
+    spec!(
+        CommandHistoryDays,
+        json!(90),
+        V::IntRange(1, 3650),
+        Terminal,
+        ["command recall", "history", "retention"]
+    ),
     // Per teammate, the skills the user made or opened; any other is the
     // teammate's own and "New" (F-AG-09).
     spec!(SkillsSeen, json!({}), V::Map, Hidden, []),

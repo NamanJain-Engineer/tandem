@@ -134,6 +134,7 @@ git tag m<n>
 | M14 | Remote: SSH and WSL | RM-01, RM-02 (2) | L | Terminals, threads and files on SSH hosts and WSL |
 | M15 | Website, docs, data controls, launch hardening | WB-01…04, TL-05, TL-06 (6) + all NFRs | L | A launchable P0/P1 product: every screen passes axe, perf and invariants |
 | M16 | P2 differentiators and release candidate | all P2 (20) + BL-06 SSO extension | XL | Conductor, Auto, phone companion, extras; RC tagged |
+| M17 | Extras | EX-01…05 (5) | L | Checkpoints and rewind, command recall, ports, Best of N, prompt library |
 
 The quality-bar walk-through (BUILD_PROMPT §4) becomes possible in stages: sign-up, open a folder and the Free gate in **M2**; 16 panes in **M3**; an engine thread in **M7**; dictation in **M8**; a routine in **M11**. The full walk-through is automated as E2E-M15-5.
 
@@ -1781,7 +1782,7 @@ bash scripts/check-no-interim.sh && pnpm tsx scripts/trace-tests.ts --all --fail
 
 **Goal.** Ship the P2 set in independent sub-phases, each ending green and tagged (`m16a` … `m16d`). Then cut the release candidate. If the budget runs out, stop after any sub-phase and list what remains as next steps in `BUILD_LOG.md`.
 
-**Owns (P2):** F-CN-01, F-CN-02, F-CN-03, F-CN-04, F-CN-05, F-CN-06, F-CN-07, F-CN-08, F-BE-08, F-AU-01, F-RM-03, F-BE-11, F-SH-12, F-CD-21, F-AC-07, F-AG-10, F-AG-13, F-RT-05, F-BE-03, F-BE-12
+**Owns (P2):** F-CN-01, F-CN-02, F-CN-03, F-CN-04, F-CN-05, F-CN-06, F-CN-07, F-CN-08, F-BE-08, F-AU-01, F-RM-03, F-BE-11, F-SH-12, F-CD-21, F-AC-07, F-AG-10, F-AG-13, F-RT-05, F-BE-03, F-BE-12, F-RM-04, F-RM-05, F-RM-06, F-RM-07
 **Extends:** the P2 app-shortcut rebinding portion of F-SH-09 (Settings › Shortcuts, UI-113: edit, conflict detection, reset to defaults; persisted in `settings`); the SSO portion of F-BL-06 (P2; the P1 core is owned by M13); the remaining F-BE-06 routes (`/auto/next`, `/voice/act`, `/voice/resolve`); F-TL-06 rule 5 (live voice and phone paths).
 
 **16A: Conductor (CN-01…08, BE-08).**
@@ -1864,9 +1865,92 @@ cargo test -p tandem-invariants && bash scripts/release-local.sh --dry-run
 - *Manual QA:* Simulator on a Mac with Xcode; wake-phrase false-accept benchmark (≤ 1 per 10 h); phone pairing on iOS Safari and Android Chrome.
 
 ---
+## M17 · Extras (L)
+
+**Goal.** Local features beyond the original spec that make working with agents faster, safer and more pleasant: checkpoints before every turn, command recall, a ports panel, Best of N, and a prompt library. Built in parallel with M8 and M10–M15 on branch `m17-extras` (decisions D-700–D-799); each feature lands on its own and can ship in any release after it's green.
+
+**Owns:** F-EX-01, F-EX-02, F-EX-03, F-EX-04, F-EX-05 (all P2)
+**Prerequisites.** M9 (Files editor, browser, git panel). Nothing in M17 needs M8 or M10–M16.
+
+**Ordered tasks**
+1. **Checkpoints (F-EX-01).**
+   - `tandem_git::checkpoint`: a bare object store per folder at `$DATA/checkpoints/<key>/` with its own index (stat cache), so a checkpoint rehashes only changed files. The file list comes from the folder's repository (`ls-files --cached --others --exclude-standard`, read-only) or, outside a repository, an `ignore` walk capped at 20,000 files. Hashing runs with `--attr-source` at the empty tree and `core.autocrlf=false`, so bytes are stored as they are. A tree equal to the last one makes no checkpoint.
+   - Restore in Rust: blobs written atomically with their mode, symlinks as links, deletions only of files the "now" snapshot lists, all through `contain()`.
+   - Migration `0002_extras.sql` (`checkpoints`, `command_history`, `bestof_runs`, `bestof_lanes`); `CheckpointService` with one queue per folder; hooks in `ThreadService::send` (before `send_turn`), `pty_type_prompt` and `pty_write` (an agent pane's Enter waits up to 2 s); pruning; settings.
+   - The Checkpoints sidebar tab (UI-140).
+2. **Command recall (F-EX-02).**
+   - The shell scripts add the command line to `133;C` as `cmdline_url=<percent-encoded>` (bash from its history, zsh and fish from preexec, PowerShell from its last history entry, sent with the `D` mark). `MarkFilter` parses it only with the token and never puts it back into the stream.
+   - The side channel times C → D; `HistoryService` redacts and stores; retention at startup and hourly.
+   - The recall palette (UI-141): a `QuickPicker` with the command palette's shell (D-706), Insert / Run / Delete.
+3. **Ports panel (F-EX-03).**
+   - `tandem_pty::ports`: a `PortProbe` trait with Linux (`/proc/net/tcp{,6}` + `/proc/<pid>/fd`), macOS (`lsof`) and Windows (`netstat -ano`) implementations, each unit-tested on recorded output; a pane's process tree from the PTY's pid.
+   - `ports_list`, `ports_stop` (rechecks pane ownership and start time); the Ports sidebar tab (UI-142).
+4. **Best of N (F-EX-04).**
+   - `BestOfService` over the launch service (worktree isolation, a lane per agent) and lanes; `bestof_*` commands; checks run with the login environment, a 10-minute limit and a 200-line tail.
+   - The Best of N sheet (UI-143) and the Compare dialog (UI-144) (D-710).
+5. **Prompt library (F-EX-05).**
+   - `tandem_core::prompts`: list (front matter, 64 KB limit, `contain()`), variables, render; `prompts_*` commands; the exclude-line narrowing.
+   - The prompt picker (UI-145) as a `QuickPicker`, its variables form, and insertion into composers and panes without submitting.
+
+**Verification**
+```bash
+cargo test -p tandem-git checkpoint && cargo test -p tandem-pty f_ex_0 && cargo test -p tandem-core prompts
+cargo test -p tandem-desktop --lib f_ex_0
+pnpm --filter desktop test -- -t "F-EX-"
+dbus-run-session -- xvfb-run -a pnpm --filter desktop e2e -- --spec 'e2e/specs/m17-*.e2e.ts'
+pnpm tsx scripts/trace-tests.ts --milestone M17 --fail-on-missing
+```
+**E2E** (`m17-*.e2e.ts`)
+- **E2E-M17-1 Checkpoints.**
+  - A thread turn in a repository whose fake engine edits, deletes and creates files. Expected: one checkpoint before the turn; the repository's HEAD, index and refs unchanged; Restore all brings the files back, deletes the new one and adds "Before restore".
+  - Restore one chosen file. Expected: only that file changes.
+  - Enter typed into an agent pane. Expected: a checkpoint before the engine sees the line.
+  - A folder that isn't a repository. Expected: the honest note; restore works.
+- **E2E-M17-2 Command recall.**
+  - `echo one`, `false` and ` echo hidden` in a bash pane. Expected: two entries with ✓ and ✗ 1.
+  - Insert. Expected: the text at the prompt, nothing run. Run. Expected: it runs once.
+  - A command with a token. Expected: `[REDACTED]`, no Run.
+- **E2E-M17-3 Ports.** A pane runs a small HTTP server on a free port. Expected: listed with the pane's name; Open loads it in a sidebar browser tab; Stop asks, Cancel keeps it, confirming ends it and the pane stays.
+- **E2E-M17-4 Best of N.** Three fake-engine seats with a check command. Expected: three worktrees and panes with the same prompt; Compare shows three diffs; Run check shows each exit code; Keep this one merges the winner and removes the other worktrees; branches stay.
+- **E2E-M17-5 Prompts.** A repository prompt with `{{branch}}` and `{{ticket}}`, and a profile prompt. Expected: both listed with their source; `{{ticket}}` asks; the text lands in the composer unsent and in a pane with no newline.
+
+**Exit checklist:** G green · `trace-tests --milestone M17 --fail-on-missing` · the full E2E regression on a tree with `product-m0-m5` merged in.
+**HUMAN_TODO:** *Manual QA:* the ports probe on macOS and Windows; checkpoints on a large repository (100k files) on the reference machines.
+
+---
+
+## M17 · Worktree workflow (M)
+
+**Goal.** The worktree gaps `docs/COMPETITIVE_ANALYSIS.md` found against the category: setup for new worktrees with explicit trust, review comments sent to the agent, an overlap check and conflict forecast across parallel worktrees, and GitLab merge requests. Built on branch `competitive-gaps` (decisions D-2200–D-2299); each feature lands on its own and can ship in any release after it's green.
+
+**Owns:** F-WT-01, F-WT-02, F-WT-03, F-WT-04 (all P2)
+**Prerequisites.** M6 (worktree lanes, F-CD-15).
+
+**Ordered tasks**
+1. **Worktree setup (F-WT-01).** `tandem_git::setup`: parse `.vibezeo/worktree.json`, the contained copy walk, the commands' digest. `services::worktree_setup`: the trust file, the copy after every `lanes::create`, the setup pane (typed when ready, like `lane_create_pr`), the teardown before `lane_remove`. Commands `worktree_setup_get`, `worktree_setup_save`, `worktree_setup_trust`, `lane_setup`, `lane_setup_run`. UI-150 and UI-151; the New worktree dialog and the launch sheet call `lane_setup` and run or review.
+2. **Review comments (F-WT-02).** The prompt builder (TypeScript, pure), comment affordances on the diff (UI-152), the agent picker, `pty_type_prompt`.
+3. **Overlap check (F-WT-03).** `tandem_git::overlap` (changed-file sets, `merge-tree --write-tree --name-only`), `lane_overlap`, UI-153 and the merge confirm's verdict.
+4. **GitLab (F-WT-04).** Remote host detection; `glab mr create`; the menu label.
+
+**Verification**
+```bash
+cargo test -p tandem-git f_wt_0 && cargo test -p tandem-desktop --lib f_wt_0
+pnpm --filter desktop exec vitest run -t "F-WT-"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m17-wt-*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M17-WT-1 Setup.** A repository with `.env`, an ignored `node_modules/` and a `.vibezeo/worktree.json` whose setup writes a marker file. Expected: a new worktree has `.env`; the review dialog shows the command; Trust and run starts a pane in the worktree that writes the marker; saving from the dialog and making another worktree runs setup without asking; discarding runs the teardown.
+- **E2E-M17-WT-2 Review.** A worktree with a fake-engine agent pane and a changed file. Expected: two comments, Send to agent, the agent echoes the prompt's header.
+- **E2E-M17-WT-3 Overlap.** Two worktrees changing the same file and a conflicting base commit. Expected: Check overlap lists the sibling and the file; the merge confirm says it will conflict.
+
+**Exit checklist:** G green · `trace-tests --milestone M17 --fail-on-missing` · the full E2E regression on a tree with `product-m0-m5` merged in.
+
+---
+
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **152 features** (65 P0, 67 P1, 20 P2). All 132 P0 and P1 features are owned by M0–M15; the 20 P2 features are owned by M16. F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **165 features** (65 P0, 67 P1, 33 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 9: the 5 extras (F-EX, §4.19) and the 4 worktree-workflow features (F-WT, §4.20). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -1908,11 +1992,17 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **152 features** (6
 | F-WB-02 | P1 | M15 | F-WB-03 | P1 | M15 | F-WB-04 | P1 | M15 | F-WB-05 | P0 | M2 |
 | F-TL-01 | P0 | M2 | F-TL-02 | P0 | M0 | F-TL-03 | P0 | M0 | F-TL-04 | P0 | M5 |
 | F-TL-05 | P1 | M15 | F-TL-06 | P0 | M15 | F-TL-07 | P1 | M13 | F-TL-10 | P1 | M13 |
+| F-RM-04 | P2 | M16 | F-RM-05 | P2 | M16 | F-RM-06 | P2 | M16 | F-RM-07 | P2 | M16 |
 
-**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 20 = 152.
+**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 9 = 165 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`).
+
+| ID | P | M | ID | P | M | ID | P | M | ID | P | M |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| F-EX-01 | P2 | M17 | F-EX-02 | P2 | M17 | F-EX-03 | P2 | M17 | F-EX-04 | P2 | M17 |
+| F-EX-05 | P2 | M17 | | | | | | | | | |
 
 ### 20.1 Completeness check (run in M0, and at every milestone close)
-`scripts/check-coverage.sh` implements the check below. It passed when this plan was written: 152 spec IDs, 152 owned, 0 missing, 0 duplicates, 0 unknown, and no P2 outside M16 and no P0/P1 inside it.
+`scripts/check-coverage.sh` implements the check below. It passed when this plan was written: 152 spec IDs, 152 owned, 0 missing, 0 duplicates, 0 unknown, and no P2 outside M16 and no P0/P1 inside it. Since M17 (D-700) the extras' milestone M17 also owns P2 features only, and the script accepts P2 in M16 or M17.
 ```bash
 # 1) every feature heading in the spec, with its priority
 grep -E '^#### F-[A-Z]{2}-[0-9]{2} ' build-kit/PRODUCT_SPEC.md \
@@ -1924,6 +2014,6 @@ awk '/^## M[0-9]+ ·/{m=$2} /^\*\*Owns/{o=1} o&&/^\*\*(Early|Completes|Extends|P
 # 3) assertions
 test "$(cut -d' ' -f1 /tmp/owned.txt | uniq -d | wc -l)" -eq 0                                 # no duplicates
 diff <(cut -d' ' -f1 /tmp/spec_ids.txt) <(cut -d' ' -f1 /tmp/owned.txt)                        # none missing / unknown
-join /tmp/spec_ids.txt /tmp/owned.txt | awk '($2=="P2")!=($3=="M16"){print "misplaced:",$0; bad=1} END{exit bad}'
+join /tmp/spec_ids.txt /tmp/owned.txt | awk '($2=="P2")!=($3=="M16"||$3=="M17"){print "misplaced:",$0; bad=1} END{exit bad}'
 ```
 The same script also checks that this §20 table and the `**Owns:**` lines agree.

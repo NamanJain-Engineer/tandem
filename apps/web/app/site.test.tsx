@@ -194,7 +194,8 @@ describe("public site", () => {
   });
 
   it("F-WB-01 every build is named Vibezeo, and same-day platforms are a goal, not a claim", () => {
-    for (const d of DOWNLOADS) for (const a of d.assets) expect(a.file, a.file).toMatch(/^Vibezeo_/);
+    // Each package keeps its format's naming: Name_version_arch.deb, Name-version-release.arch.rpm (D-832).
+    for (const d of DOWNLOADS) for (const a of d.assets) expect(a.file, a.file).toMatch(/^Vibezeo[_-]\d/);
     const h = html(<HomePage />);
     expect(h).toContain("The goal is that Linux, macOS and Windows get the same features on the same day");
     expect(h).toContain(`milestones in the ${RELEASE.version} release`);
@@ -244,7 +245,7 @@ describe("public site", () => {
   it("F-WB-01 the changelog lists every closed milestone", () => {
     const h = html(<ChangelogPage />);
     for (const m of MILESTONES) expect(h).toContain(`id="${m.id.toLowerCase()}"`);
-    expect(MILESTONES.map((m) => m.id)).toEqual(["M14", "M12", "M11", "M10", "M9", "M8", "M7", "M6", "M5", "M4", "M3", "M2", "M1", "M0"]);
+    expect(MILESTONES.map((m) => m.id)).toEqual(["M17", "M14", "M12", "M11", "M10", "M9", "M8", "M7", "M6", "M5", "M4", "M3", "M2", "M1", "M0"]);
   });
 
   it("F-WB-01 every page has one h1, the legal links and the contact address", () => {
@@ -336,7 +337,7 @@ describe("public site", () => {
     expect(header("Permissions-Policy")).toContain("microphone=()");
   });
 
-  it("F-WB-01 Vercel's ignore step builds main, product-m0-m5 and release-* only, and builds when the last deployed commit isn't in its shallow clone (D-809)", () => {
+  it("F-WB-01 Vercel's ignore step builds main only (D-829), and builds when the last deployed commit isn't in its shallow clone (D-809)", () => {
     const web = join(import.meta.dirname, "..");
     const config = JSON.parse(readFileSync(join(web, "vercel.json"), "utf8")) as Record<string, unknown>;
     // Vercel rejects a vercel.json whose commands are over 256 characters.
@@ -351,8 +352,9 @@ describe("public site", () => {
         env: { ...process.env, VERCEL_GIT_COMMIT_REF: ref, VERCEL_GIT_PREVIOUS_SHA: previous },
       }).status;
     expect(step("m10-teammates-gateway")).toBe(0);
-    expect(step("product-m0-m5")).toBe(1);
-    expect(step("release-0.3.0")).toBe(1);
+    // No previews since D-829: the integration and release branches are skipped too.
+    expect(step("product-m0-m5")).toBe(0);
+    expect(step("release-0.3.0")).toBe(0);
     // A commit Vercel's clone doesn't have builds instead of failing on "bad object".
     expect(step("main", "0123456789abcdef0123456789abcdef01234567")).toBe(1);
     const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: web, encoding: "utf8" }).stdout.trim();

@@ -16,12 +16,17 @@
     "test:e2e": "playwright test",
     "test:site": "playwright test -c playwright.site.config.ts",
     "lhci": "lhci autorun",
-    "postinstall": "fumadocs-mdx"
+    "postinstall": "fumadocs-mdx",
+    "build:remote-lan": "vite build --config remote-lan/vite.config.ts"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.6",
     "@fontsource-variable/jetbrains-mono": "^5.2.6",
+    "@noble/ciphers": "^2.4.0",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
     "@tandem/protocol": "workspace:*",
+    "@tandem/remote": "workspace:*",
     "@tandem/ui": "workspace:*",
     "fumadocs-core": "15.8.5",
     "fumadocs-mdx": "12.0.3",
@@ -40,9 +45,13 @@
     "@types/node": "^22.15.30",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
+    "@types/ws": "^8.5.12",
+    "@vitejs/plugin-react": "^4.7.0",
     "axe-core": "^4.10.3",
     "tailwindcss": "^4.1.11",
     "typescript": "~5.8.3",
-    "vitest": "^4.1.11"
+    "vite": "^7.0.0",
+    "vitest": "^4.1.11",
+    "ws": "^8.18.0"
   }
 }

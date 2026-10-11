@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-conductor-end-call"
+description = "Enables the conductor_end_call command without any pre-configured scope."
+commands.allow = ["conductor_end_call"]
+
+[[permission]]
+identifier = "deny-conductor-end-call"
+description = "Denies the conductor_end_call command without any pre-configured scope."
+commands.deny = ["conductor_end_call"]

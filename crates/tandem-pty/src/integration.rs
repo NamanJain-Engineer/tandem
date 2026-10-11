@@ -105,8 +105,13 @@ pub struct Launch {
     pub env: Vec<(String, String)>,
 }
 
+/// `rel` is `/`-separated; joining it part by part keeps one separator style
+/// on Windows (`C:\…\bash\tandem.bash`, not `C:\…\bash/tandem.bash`).
 fn script(dir: &Path, rel: &str) -> String {
-    dir.join(rel).to_string_lossy().into_owned()
+    rel.split('/')
+        .fold(dir.to_path_buf(), |path, part| path.join(part))
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// Arguments and environment for `kind` with the scripts in `dir`.
@@ -201,6 +206,7 @@ pub fn handback_tail(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::MAIN_SEPARATOR as S;
 
     #[test]
     fn install_writes_every_script_once_and_versions_the_folder() {
@@ -240,13 +246,17 @@ mod tests {
         let bash = launch(IntegratedShell::Bash, dir, None).expect("bash");
         assert_eq!(
             bash.args,
-            vec!["--rcfile", "/data/si/v1/bash/tandem.bash", "-i"]
+            vec![
+                "--rcfile".to_string(),
+                format!("/data/si/v1{S}bash{S}tandem.bash"),
+                "-i".to_string()
+            ]
         );
         let zsh = launch(IntegratedShell::Zsh, dir, Some("/home/a/.config/zsh")).expect("zsh");
         assert_eq!(
             zsh.env,
             vec![
-                ("ZDOTDIR".to_string(), "/data/si/v1/zsh".to_string()),
+                ("ZDOTDIR".to_string(), format!("/data/si/v1{S}zsh")),
                 (
                     REAL_ZDOTDIR_VAR.to_string(),
                     "/home/a/.config/zsh".to_string()
@@ -254,7 +264,10 @@ mod tests {
             ]
         );
         let fish = launch(IntegratedShell::Fish, dir, None).expect("fish");
-        assert_eq!(fish.args[2], "source '/data/si/v1/fish/tandem.fish'");
+        assert_eq!(
+            fish.args[2],
+            format!("source '/data/si/v1{S}fish{S}tandem.fish'")
+        );
     }
 
     #[test]
@@ -263,11 +276,11 @@ mod tests {
         let bash = handback_tail(IntegratedShell::Bash, Path::new("/bin/bash"), dir).expect("bash");
         assert_eq!(
             bash,
-            "TANDEM_SHELL_TOKEN=\"$t\" TANDEM_SHELL_LOGIN=1 exec '/bin/bash' --rcfile '/d/si/bash/tandem.bash' -i"
+            format!("TANDEM_SHELL_TOKEN=\"$t\" TANDEM_SHELL_LOGIN=1 exec '/bin/bash' --rcfile '/d/si{S}bash{S}tandem.bash' -i")
         );
         let zsh = handback_tail(IntegratedShell::Zsh, Path::new("/bin/zsh"), dir).expect("zsh");
-        assert!(zsh.contains(
-            "TANDEM_REAL_ZDOTDIR=\"${ZDOTDIR-}\" ZDOTDIR='/d/si/zsh' exec '/bin/zsh' -l"
-        ));
+        assert!(zsh.contains(&format!(
+            "TANDEM_REAL_ZDOTDIR=\"${{ZDOTDIR-}}\" ZDOTDIR='/d/si{S}zsh' exec '/bin/zsh' -l"
+        )));
     }
 }

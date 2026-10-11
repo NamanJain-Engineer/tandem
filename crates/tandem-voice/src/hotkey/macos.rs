@@ -60,11 +60,6 @@ extern "C" {
     fn IsSecureEventInputEnabled() -> u8;
 }
 
-#[link(name = "IOKit", kind = "framework")]
-extern "C" {
-    fn IOHIDCheckAccess(request: u32) -> u32;
-}
-
 const SESSION_TAP: u32 = 1;
 const HEAD_INSERT: u32 = 0;
 const LISTEN_ONLY: u32 = 1;
@@ -78,12 +73,10 @@ const TAP_DISABLED_BY_USER_INPUT: u32 = 0xFFFF_FFFF;
 const FIELD_KEYCODE: u32 = 9;
 const FIELD_BUTTON: u32 = 3;
 const FIELD_SOURCE_PID: u32 = 41;
-const LISTEN_EVENT: u32 = 1;
 
-/// Input Monitoring: granted (0), denied (1), not asked yet (2).
+/// Input Monitoring (`crate::permissions`, D-2108).
 pub fn input_monitoring_granted() -> bool {
-    // SAFETY: a plain IOKit query.
-    unsafe { IOHIDCheckAccess(LISTEN_EVENT) == 0 }
+    crate::permissions::macos::input_monitoring() == crate::permissions::Access::Granted
 }
 
 pub fn secure_input_on() -> bool {

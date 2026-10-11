@@ -42,6 +42,8 @@ pub fn launch_token() -> String {
 
 /// Quiet after the first output that counts as ready (§6.5).
 pub const READY_QUIET_MS: i64 = 1_500;
+/// An agent's prompt waits at most this long for its checkpoint (F-EX-01).
+pub const PROMPT_WAIT: Duration = Duration::from_secs(2);
 /// How long `type_prompt` waits for a TUI to become ready.
 pub const READY_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -102,6 +104,14 @@ pub struct TerminalService {
     integration_root: Option<PathBuf>,
     /// The installed scripts' folder, written on first use.
     integration_dir: std::sync::OnceLock<Option<PathBuf>>,
+    /// F-EX-01: saves the pane's folder before an agent gets a prompt.
+    prompt_hook: std::sync::OnceLock<PromptHook>,
+    /// Agent panes whose input goes through an ordered queue, so Enter can
+    /// wait for its checkpoint without anything typed after it overtaking.
+    agent_inputs: std::sync::Mutex<
+        std::collections::HashMap<String, tokio::sync::mpsc::UnboundedSender<Vec<u8>>>,
+    >,
+    agent_panes: std::sync::Mutex<std::collections::HashSet<String>>,
     /// SSH hosts: panes of remote workspaces run there (F-RM-01).
     remote: std::sync::OnceLock<Arc<crate::services::remote::RemoteService>>,
     /// WSL distributions: panes of WSL workspaces run there (F-RM-02).
@@ -111,6 +121,14 @@ pub struct TerminalService {
     /// The tasks server terminal agents get (F-TK-02).
     tasks: std::sync::OnceLock<Arc<crate::services::tasks::TasksService>>,
 }
+
+/// Takes a checkpoint of an agent pane's folder (F-EX-01). The flag turns
+/// true when the prompt went ahead without waiting for it.
+pub type PromptHook = Arc<
+    dyn Fn(PaneId, Arc<std::sync::atomic::AtomicBool>) -> futures::future::BoxFuture<'static, ()>
+        + Send
+        + Sync,
+>;
 
 /// One line of `TANDEM_SPAWN_LOG` (debug builds): what was started, with
 /// env keys only.
@@ -188,11 +206,74 @@ impl TerminalService {
             spawn_log,
             integration_root,
             integration_dir: std::sync::OnceLock::new(),
+            prompt_hook: std::sync::OnceLock::new(),
+            agent_inputs: Default::default(),
+            agent_panes: Default::default(),
             remote: std::sync::OnceLock::new(),
             wsl: std::sync::OnceLock::new(),
             wsl_panes: Default::default(),
             tasks: std::sync::OnceLock::new(),
         })
+    }
+
+    pub fn set_prompt_hook(&self, hook: PromptHook) {
+        let _ = self.prompt_hook.set(hook);
+    }
+
+    /// Runs the prompt hook, waiting at most [`PROMPT_WAIT`]; the
+    /// checkpoint carries on (marked late) if it takes longer.
+    pub async fn before_prompt(&self, pane: &PaneId) {
+        let Some(hook) = self.prompt_hook.get() else {
+            return;
+        };
+        let late = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let task = tokio::spawn(hook(pane.clone(), late.clone()));
+        if tokio::time::timeout(PROMPT_WAIT, task).await.is_err() {
+            late.store(true, std::sync::atomic::Ordering::SeqCst);
+            tracing::info!(
+                code = "checkpoint.late",
+                "a prompt went ahead before its checkpoint"
+            );
+        }
+    }
+
+    /// `pty_write`. Agent panes with a prompt hook get their input in order
+    /// through a queue, and Enter waits for the checkpoint (F-EX-01 AC9).
+    pub fn write_input(self: &Arc<Self>, pane: &PaneId, data: &[u8]) -> Result<(), IpcError> {
+        let gated = self.prompt_hook.get().is_some()
+            && self
+                .agent_panes
+                .lock()
+                .is_ok_and(|a| a.contains(pane.as_str()));
+        if !gated {
+            return Ok(self.pty.write(pane.as_str(), data)?);
+        }
+        let mut inputs = self.agent_inputs.lock().unwrap_or_else(|e| e.into_inner());
+        let tx = inputs
+            .entry(pane.as_str().to_string())
+            .or_insert_with(|| {
+                let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+                let this = self.clone();
+                let pane = pane.clone();
+                tauri::async_runtime::spawn(async move {
+                    while let Some(data) = rx.recv().await {
+                        if data.contains(&b'\r') {
+                            this.before_prompt(&pane).await;
+                        }
+                        if this.pty.write(pane.as_str(), &data).is_err() {
+                            break;
+                        }
+                    }
+                    if let Ok(mut inputs) = this.agent_inputs.lock() {
+                        inputs.remove(pane.as_str());
+                    }
+                });
+                tx
+            })
+            .clone();
+        drop(inputs);
+        tx.send(data.to_vec())
+            .map_err(|_| IpcError::new(ErrorCode::NotFound, "This pane isn't running"))
     }
 
     pub fn set_wsl(&self, wsl: Arc<crate::services::wsl::WslService>) {
@@ -477,6 +558,11 @@ impl TerminalService {
     ) -> Result<PtyInfo, IpcError> {
         self.check_live_limit(max_live)?;
         let record = panes::get_open(&self.store, pane).await?;
+        if record.kind == "agent" {
+            if let Ok(mut agents) = self.agent_panes.lock() {
+                agents.insert(pane.as_str().to_string());
+            }
+        }
         let waiting_on_card = record.kind == "agent"
             && matches!(record.restore_state.as_str(), "paused" | "cancelled");
         if mode == LaunchMode::Normal && waiting_on_card {
@@ -1056,12 +1142,20 @@ impl TerminalService {
     ) -> bool {
         let id = pane.as_str();
         let until = std::time::Instant::now() + timeout;
+        // A plain shell isn't watched by the status store, so its output
+        // time is never recorded: a screen that has stopped changing says
+        // the prompt is up just as well (D-2208).
+        let mut quiet = QuietScreen::default();
         loop {
             if self.pty.is_live(id) {
+                let now = chrono::Utc::now().timestamp_millis();
                 if let Some(last) = self.status.last_output(id) {
-                    if chrono::Utc::now().timestamp_millis() - last >= READY_QUIET_MS {
+                    if now - last >= READY_QUIET_MS {
                         break;
                     }
+                }
+                if quiet.settled(now, self.pty.screen_text(id).as_deref()) {
+                    break;
                 }
             }
             if std::time::Instant::now() >= until {
@@ -1076,6 +1170,17 @@ impl TerminalService {
 
     /// `type_prompt` (§6.5, F-EN-06 AC1–2).
     pub async fn type_prompt(&self, pane: &PaneId, text: &str) -> Result<(), IpcError> {
+        self.type_prompt_with(pane, text, true).await
+    }
+
+    /// `type_prompt`, with Enter only when `send` (Conductor's `prompt_pane
+    /// send:false` leaves the text in the agent's prompt).
+    pub async fn type_prompt_with(
+        &self,
+        pane: &PaneId,
+        text: &str,
+        send: bool,
+    ) -> Result<(), IpcError> {
         let record = panes::get_open(&self.store, pane).await?;
         let engine = record
             .engine_id
@@ -1119,10 +1224,13 @@ impl TerminalService {
             .state(pane.as_str())
             .is_some_and(|s| s.bracketed_paste);
         let (body, enter) = typing::prompt_writes(text, bracketed, &newline);
+        self.before_prompt(pane).await;
         self.status.quiet_window(pane.as_str());
         self.pty.write(pane.as_str(), &body)?;
-        tokio::time::sleep(typing::ENTER_DELAY).await;
-        self.pty.write(pane.as_str(), &enter)?;
+        if send {
+            tokio::time::sleep(typing::ENTER_DELAY).await;
+            self.pty.write(pane.as_str(), &enter)?;
+        }
         Ok(())
     }
 
@@ -1242,6 +1350,30 @@ fn plain_distro(value: &serde_json::Value) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Readiness from the screen alone: it has some text and hasn't changed for
+/// [`READY_QUIET_MS`].
+#[derive(Debug, Default)]
+pub(crate) struct QuietScreen {
+    last: Option<(String, i64)>,
+}
+
+impl QuietScreen {
+    pub(crate) fn settled(&mut self, now: i64, screen: Option<&str>) -> bool {
+        let text = screen.map(str::trim_end).unwrap_or("");
+        if text.trim().is_empty() {
+            self.last = None;
+            return false;
+        }
+        match &self.last {
+            Some((seen, since)) if seen == text => now - since >= READY_QUIET_MS,
+            _ => {
+                self.last = Some((text.to_string(), now));
+                false
+            }
+        }
+    }
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
@@ -1316,7 +1448,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let data = DataDir::at(dir.path().join("data")).expect("data");
         let store = Store::open(&data).expect("store");
-        let root = std::fs::canonicalize(dir.path())
+        let root = tandem_core::contain::canonical(dir.path())
             .expect("canonical")
             .join("ws1");
         std::fs::create_dir_all(root.join("sub")).expect("mkdir");
@@ -1544,5 +1676,19 @@ mod tests {
             .quote_paths(&pane, &[r"\\server\share\x".to_string()])
             .expect_err("no WSL path");
         assert_eq!(err.code, ErrorCode::Invalid);
+    }
+
+    #[test]
+    fn f_wt_01_3_a_shell_is_ready_once_its_screen_stops_changing() {
+        let mut q = QuietScreen::default();
+        assert!(!q.settled(0, None));
+        assert!(!q.settled(0, Some("   \n  ")));
+        assert!(!q.settled(100, Some("user@host %")));
+        assert!(!q.settled(1_000, Some("user@host %")));
+        // Trailing blanks aren't a change; new text restarts the wait.
+        assert!(!q.settled(1_200, Some("user@host % ")));
+        assert!(!q.settled(1_400, Some("user@host %\nmotd")));
+        assert!(!q.settled(2_800, Some("user@host %\nmotd")));
+        assert!(q.settled(2_900, Some("user@host %\nmotd")));
     }
 }

@@ -26,6 +26,7 @@ export const DOCS_SETTINGS_PAGES = [
   "appearance",
   "notifications",
   "terminal",
+  "checkpoints",
   "engines",
   "accounts",
   "teammates",

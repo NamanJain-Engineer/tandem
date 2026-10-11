@@ -45,6 +45,17 @@ const schema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_API_BASE: z.string().optional(),
   REALTIME_MODEL: z.string().optional(),
+  /** Phone push (F-RM-06): `live` sends through FCM and APNs where their credentials are set; `mock` records. */
+  PUSH_PROVIDER: z.enum(["mock", "live"]).default("mock"),
+  FCM_PROJECT_ID: z.string().optional(),
+  FCM_CLIENT_EMAIL: z.string().optional(),
+  FCM_PRIVATE_KEY: z.string().optional(),
+  APNS_KEY_ID: z.string().optional(),
+  APNS_TEAM_ID: z.string().optional(),
+  APNS_PRIVATE_KEY: z.string().optional(),
+  APNS_TOPIC: z.string().default("com.vibezeo.remote"),
+  /** Dev and E2E: where MockRealtime points calls (`scripts/mock-realtime.ts`, D-1102). */
+  REALTIME_MOCK_URL: z.string().optional(),
   /** Team SSO over SAML through WorkOS (F-BL-06 P2, D-625); unset means OIDC only. */
   WORKOS_CLIENT_ID: z.string().optional(),
   WORKOS_API_KEY: z.string().optional(),

@@ -9,6 +9,9 @@
 //! (hosted-features.json). Cloud STT, Conductor and Enhance in the app add
 //! their cases as M8 builds them.
 
+#[path = "support/phone.rs"]
+mod phone;
+
 use serde_json::{json, Value};
 use tandem_app::services::telemetry::{capture, TelemetryService};
 use tandem_core::net::Net;
@@ -50,4 +53,68 @@ async fn invariant_rule_7_telemetry_off_sends_nothing() {
         "",
         "requests while off"
     );
+}
+
+/// Pairing is the phone companion's opt-in: with no pairing nothing dials
+/// the relay, and after a revoke the phone's frames reach nothing (F-RM-03).
+#[tokio::test]
+async fn invariant_rule_7_the_phone_relay_is_used_only_while_paired() {
+    let rig = phone::rig();
+    rig.svc.start().await;
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert_eq!(
+        *rig.net.dials.lock().expect("lock"),
+        0,
+        "no pairing, no relay"
+    );
+    let mut p = phone::pair(&rig).await;
+    rig.svc.revoke(&p.pid, "revoked").await.expect("revoke");
+    let frame_count = rig.svc.list().await.expect("list").len();
+    assert_eq!(frame_count, 0);
+    let reply = p
+        .send(
+            &rig.svc,
+            json!({"t": "cmd", "id": 1, "cmd": "view.snapshot", "args": {}}),
+        )
+        .await;
+    assert!(reply.is_empty(), "a revoked pairing gets no answer");
+}
+
+/// LAN mode (F-RM-04) listens on the network only after a person turns it
+/// on, and then only on private and VPN addresses: never `0.0.0.0`, never a
+/// public address, and a peer from outside the LAN is closed unread.
+#[tokio::test]
+async fn invariant_rule_7_lan_mode_is_off_by_default_and_never_public() {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+    use tandem_app::services::phone_lan::{
+        listen_kind, peer_allowed, Interfaces, LanConfig, LanHub, LanServer, WebFiles,
+    };
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    assert!(!LanConfig::load(dir.path()).enabled, "off until turned on");
+
+    struct Public;
+    impl Interfaces for Public {
+        fn addresses(&self) -> Vec<IpAddr> {
+            vec![
+                IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)),
+                IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+                IpAddr::V6("2001:db8::7".parse().expect("v6")),
+            ]
+        }
+    }
+    let server = LanServer::new(
+        LanHub::new(),
+        WebFiles::default(),
+        std::sync::Arc::new(Public),
+    );
+    let state = server.start(0).await;
+    assert!(!state.running && state.addresses.is_empty(), "{state:?}");
+    for ip in Public.addresses() {
+        assert_eq!(listen_kind(ip), None, "{ip}");
+    }
+    assert!(!peer_allowed(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 9))));
+    server.stop();
 }

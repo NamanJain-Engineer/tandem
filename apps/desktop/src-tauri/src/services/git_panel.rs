@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use crate::services::remote_files::not_remote;
 use serde::{Deserialize, Serialize};
 use tandem_core::error::IpcError;
 use tandem_git::cli::Git;
@@ -156,8 +155,8 @@ impl GitPanelService {
     }
 
     pub async fn branches(&self, ctx: &FileContext) -> Result<Vec<Branch>, IpcError> {
-        if self.files.remote_of(ctx).await?.is_some() {
-            return Err(not_remote("Switching branches"));
+        if let Some((remote, r)) = self.files.remote_of(ctx).await? {
+            return remote.files.git_branches(&remote, &r).await;
         }
         Ok(self.repo(ctx).await?.branches().await?)
     }
@@ -236,24 +235,28 @@ impl GitPanelService {
     }
 
     pub async fn push(&self, git: &Git, ctx: &FileContext, publish: bool) -> Result<(), IpcError> {
-        if self.files.remote_of(ctx).await?.is_some() {
-            return Err(not_remote("Push"));
+        if let Some((remote, r)) = self.files.remote_of(ctx).await? {
+            let op = if publish { "publish" } else { "push" };
+            return remote.files.git_sync(&remote, &r, op, None).await;
         }
         self.act(ctx, |r| async move { ops::push(git, &r, publish).await })
             .await
     }
 
     pub async fn pull(&self, git: &Git, ctx: &FileContext) -> Result<(), IpcError> {
-        if self.files.remote_of(ctx).await?.is_some() {
-            return Err(not_remote("Pull"));
+        if let Some((remote, r)) = self.files.remote_of(ctx).await? {
+            return remote.files.git_sync(&remote, &r, "pull", None).await;
         }
         self.act(ctx, |r| async move { ops::pull(git, &r).await })
             .await
     }
 
     pub async fn switch(&self, git: &Git, ctx: &FileContext, branch: &str) -> Result<(), IpcError> {
-        if self.files.remote_of(ctx).await?.is_some() {
-            return Err(not_remote("Switching branches"));
+        if let Some((remote, r)) = self.files.remote_of(ctx).await? {
+            return remote
+                .files
+                .git_sync(&remote, &r, "switch", Some(branch))
+                .await;
         }
         self.act(ctx, |r| async move { ops::switch(git, &r, branch).await })
             .await
@@ -265,8 +268,11 @@ impl GitPanelService {
         ctx: &FileContext,
         name: &str,
     ) -> Result<(), IpcError> {
-        if self.files.remote_of(ctx).await?.is_some() {
-            return Err(not_remote("New branch"));
+        if let Some((remote, r)) = self.files.remote_of(ctx).await? {
+            return remote
+                .files
+                .git_sync(&remote, &r, "create_branch", Some(name))
+                .await;
         }
         self.act(
             ctx,
@@ -337,7 +343,7 @@ mod tests {
 
     impl Fx {
         fn path(&self, rel: &str) -> PathBuf {
-            std::fs::canonicalize(self.dir.path())
+            tandem_core::contain::canonical(self.dir.path())
                 .expect("canon")
                 .join(rel)
         }
