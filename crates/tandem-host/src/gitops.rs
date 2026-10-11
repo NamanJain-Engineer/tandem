@@ -11,7 +11,11 @@ use std::process::{Command, Stdio};
 
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::{ErrorKind, GitOp, GitOpKind, RpcError};
+use crate::protocol::{ErrorKind, GitOp, GitOpKind, HostBranch, RpcError};
+
+/// Push, pull and publish stop waiting for the network after this (as
+/// locally, `tandem_git::ops::NETWORK_TIMEOUT`).
+pub const NETWORK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
 pub const MAX_PATCH_BYTES: usize = 512 * 1024;
 
@@ -165,6 +169,32 @@ pub fn toplevel(root: &Path) -> Result<Option<PathBuf>, RpcError> {
         None
     } else {
         Some(PathBuf::from(top))
+    })
+}
+
+/// Where the repository at `root` keeps its data, for the watcher (the
+/// index, HEAD and refs): `None` outside a repository.
+pub fn dirs(root: &Path) -> Option<tandem_core::files::watch::GitDirs> {
+    let out = read(
+        root,
+        &[
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-dir",
+            "--git-common-dir",
+        ],
+    )
+    .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut lines = text.lines().map(str::trim).filter(|l| !l.is_empty());
+    let git_dir = PathBuf::from(lines.next()?);
+    let common_dir = PathBuf::from(lines.next()?);
+    Some(tandem_core::files::watch::GitDirs {
+        git_dir,
+        common_dir,
     })
 }
 
@@ -468,6 +498,11 @@ pub fn op(p: &GitOp) -> Result<Option<String>, RpcError> {
     let top = toplevel(Path::new(&p.root))?
         .ok_or_else(|| RpcError::new(ErrorKind::Invalid, "Not a git repository"))?;
     match p.op {
+        GitOpKind::Push
+        | GitOpKind::Publish
+        | GitOpKind::Pull
+        | GitOpKind::Switch
+        | GitOpKind::CreateBranch => sync_ops(&top, p),
         GitOpKind::Stage => write(&top, &["add", "-A"], &p.paths, None).map(|_| None),
         GitOpKind::Unstage => {
             let st = status(&top)?.map(|s| s.status).unwrap_or_default();
@@ -545,6 +580,274 @@ pub fn op(p: &GitOp) -> Result<Option<String>, RpcError> {
     }
 }
 
+/// `git.branches` (D-1601): local branches, then remote ones with no local
+/// branch of the same name, as the switcher offers them locally.
+pub fn branches(root: &Path) -> Result<Vec<HostBranch>, RpcError> {
+    let top =
+        toplevel(root)?.ok_or_else(|| RpcError::new(ErrorKind::Invalid, "Not a git repository"))?;
+    let out = read(
+        &top,
+        &[
+            "for-each-ref",
+            "--format=%(refname)%00%(HEAD)%00%(upstream:short)%00%(upstream:track,nobracket)",
+            "refs/heads",
+            "refs/remotes",
+        ],
+    )?;
+    if !out.status.success() {
+        return Err(git_err(stderr_tail(&out.stderr)));
+    }
+    Ok(parse_branches(&String::from_utf8_lossy(&out.stdout)))
+}
+
+/// `for-each-ref` lines (`refname NUL HEAD NUL upstream NUL track`) as the
+/// switcher's rows.
+pub fn parse_branches(text: &str) -> Vec<HostBranch> {
+    let mut local = Vec::new();
+    let mut remote = Vec::new();
+    for line in text.lines() {
+        let f: Vec<&str> = line.split('\0').collect();
+        let (Some(name), Some(head)) = (f.first(), f.get(1)) else {
+            continue;
+        };
+        let upstream = f.get(2).filter(|u| !u.is_empty()).map(|u| u.to_string());
+        let track = f.get(3).copied().unwrap_or("");
+        let count = |word: &str| -> u32 {
+            track
+                .split(',')
+                .map(str::trim)
+                .find_map(|p| p.strip_prefix(word))
+                .and_then(|n| n.trim().parse().ok())
+                .unwrap_or(0)
+        };
+        if let Some(n) = name.strip_prefix("refs/heads/") {
+            local.push(HostBranch {
+                name: n.to_string(),
+                current: *head == "*",
+                remote: false,
+                upstream,
+                ahead: count("ahead "),
+                behind: count("behind "),
+            });
+        } else if let Some(n) = name.strip_prefix("refs/remotes/") {
+            if !n.ends_with("/HEAD") {
+                remote.push(n.to_string());
+            }
+        }
+    }
+    let tracked: Vec<String> = local.iter().filter_map(|b| b.upstream.clone()).collect();
+    for n in remote {
+        let short = n.split_once('/').map(|(_, b)| b).unwrap_or(&n);
+        if tracked.contains(&n) || local.iter().any(|b| b.name == short) {
+            continue;
+        }
+        local.push(HostBranch {
+            name: n,
+            current: false,
+            remote: true,
+            upstream: None,
+            ahead: 0,
+            behind: 0,
+        });
+    }
+    local
+}
+
+/// What a failed network command means, in the local wording
+/// (`tandem_git::ops`), from all of its stderr.
+pub fn network_error(op: &str, stderr: &str) -> RpcError {
+    let s = stderr.to_ascii_lowercase();
+    let (kind, msg) = if s.contains("authentication failed")
+        || s.contains("permission denied")
+        || s.contains("could not read username")
+        || s.contains("terminal prompts disabled")
+        || s.contains("host key verification failed")
+    {
+        (
+            ErrorKind::Invalid,
+            format!("Git on the host couldn't sign in to the remote. {op} once from a terminal on the host so its credentials are saved, then try again."),
+        )
+    } else if s.contains("non-fast-forward")
+        || s.contains("fetch first")
+        || s.contains("[rejected]")
+    {
+        (
+            ErrorKind::Invalid,
+            "The remote has commits you don't have. Pull first.".to_string(),
+        )
+    } else if s.contains("divergent branches") || s.contains("need to specify how to reconcile") {
+        (
+            ErrorKind::Invalid,
+            "Your branch and the remote both have new commits. Pull from a terminal on the host to choose merge or rebase.".to_string(),
+        )
+    } else if s.contains("conflict") {
+        (
+            ErrorKind::Invalid,
+            "Pulling hit conflicts. Resolve them in the changed files, then commit.".to_string(),
+        )
+    } else {
+        return git_err(stderr_tail(stderr.as_bytes()));
+    };
+    RpcError::new(kind, msg)
+}
+
+/// A network command (`push`, `pull`) with the host user's own config,
+/// hooks and credential helpers, no prompt, and [`NETWORK_TIMEOUT`].
+fn network(top: &Path, op: &str, args: &[&str]) -> Result<(), RpcError> {
+    let mut cmd = base(top);
+    cmd.args(["-c", "core.fsmonitor="])
+        .env("GIT_MERGE_AUTOEDIT", "no")
+        .args(args);
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| git_err(format!("Couldn't run git on the host: {e}")))?;
+    let started = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if started.elapsed() >= NETWORK_TIMEOUT => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(git_err(format!(
+                    "{op} took over {} s and was stopped. Check the host can reach the remote.",
+                    NETWORK_TIMEOUT.as_secs()
+                )));
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(100)),
+            Err(e) => return Err(git_err(e.to_string())),
+        }
+    }
+    let out = child
+        .wait_with_output()
+        .map_err(|e| git_err(e.to_string()))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(network_error(op, &String::from_utf8_lossy(&out.stderr)))
+    }
+}
+
+/// Where a first push goes: `origin`, else the only remote.
+fn publish_remote(top: &Path) -> Result<String, RpcError> {
+    let out = read(top, &["remote"])?;
+    let names: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect();
+    if names.iter().any(|n| n == "origin") {
+        return Ok("origin".into());
+    }
+    match names.as_slice() {
+        [only] => Ok(only.clone()),
+        [] => Err(RpcError::new(
+            ErrorKind::Invalid,
+            "This repository has no remote to publish to",
+        )),
+        _ => Err(RpcError::new(
+            ErrorKind::Invalid,
+            "This repository has several remotes; publish from a terminal on the host to choose one",
+        )),
+    }
+}
+
+/// A branch name git accepts that can't be read as an option.
+fn branch_name(top: &Path, name: &str) -> Result<String, RpcError> {
+    let name = name.trim();
+    let bad = || RpcError::new(ErrorKind::Invalid, "That isn't a valid branch name");
+    if name.is_empty() || name.starts_with('-') || name.contains('\0') {
+        return Err(bad());
+    }
+    let ok = read(top, &["check-ref-format", "--branch", name])?;
+    if !ok.status.success() {
+        return Err(bad());
+    }
+    Ok(name.to_string())
+}
+
+fn sync_ops(top: &Path, p: &GitOp) -> Result<Option<String>, RpcError> {
+    let state = status(top)?.map(|s| s.status).unwrap_or_default();
+    match p.op {
+        GitOpKind::Push | GitOpKind::Publish => {
+            if state.no_commits {
+                return Err(RpcError::new(
+                    ErrorKind::Invalid,
+                    "Commit something before pushing",
+                ));
+            }
+            let Some(branch) = state.branch.clone() else {
+                return Err(RpcError::new(
+                    ErrorKind::Invalid,
+                    "Switch to a branch before pushing",
+                ));
+            };
+            if state.upstream.is_some() {
+                return network(top, "Push", &["push"]).map(|_| None);
+            }
+            if p.op == GitOpKind::Push {
+                return Err(RpcError::new(
+                    ErrorKind::Invalid,
+                    "This branch isn't published yet",
+                ));
+            }
+            let remote = publish_remote(top)?;
+            let dest = format!("HEAD:refs/heads/{branch}");
+            network(top, "Publish", &["push", "-u", &remote, &dest]).map(|_| None)
+        }
+        GitOpKind::Pull => {
+            if state.upstream.is_none() {
+                return Err(RpcError::new(
+                    ErrorKind::Invalid,
+                    "This branch has no upstream to pull from",
+                ));
+            }
+            network(top, "Pull", &["pull", "--no-edit"]).map(|_| None)
+        }
+        GitOpKind::Switch => {
+            let name = p.branch.as_deref().unwrap_or_default();
+            let all = branches(top)?;
+            let Some(b) = all.iter().find(|b| b.name == name) else {
+                return Err(RpcError::new(
+                    ErrorKind::Invalid,
+                    format!("There's no branch named {name}"),
+                ));
+            };
+            let args: Vec<&str> = if b.remote {
+                vec!["switch", "--track", name]
+            } else {
+                vec!["switch", name]
+            };
+            write(top, &args, &[], None).map(|_| None).map_err(|e| {
+                if e.message.contains("would be overwritten") {
+                    RpcError::new(
+                        ErrorKind::Invalid,
+                        "Your changes would be overwritten by switching. Commit or stash them first.",
+                    )
+                } else {
+                    e
+                }
+            })
+        }
+        GitOpKind::CreateBranch => {
+            let name = branch_name(top, p.branch.as_deref().unwrap_or_default())?;
+            if branches(top)?.iter().any(|b| !b.remote && b.name == name) {
+                return Err(RpcError::new(
+                    ErrorKind::Invalid,
+                    format!("A branch named {name} already exists"),
+                ));
+            }
+            if state.no_commits {
+                let target = format!("refs/heads/{name}");
+                write(top, &["symbolic-ref", "HEAD", &target], &[], None).map(|_| None)
+            } else {
+                write(top, &["switch", "-c", &name], &[], None).map(|_| None)
+            }
+        }
+        _ => Ok(None),
+    }
+}
+
 fn stderr_tail(raw: &[u8]) -> String {
     let text = String::from_utf8_lossy(raw);
     let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
@@ -616,6 +919,7 @@ u UU N... 100644 100644 100644 100644 a b c conflict.txt\0\
             op: GitOpKind::Stage,
             paths: paths.clone(),
             message: None,
+            branch: None,
         })
         .expect("stage");
         let st = status(&repo).expect("s").expect("r").status;
@@ -625,6 +929,7 @@ u UU N... 100644 100644 100644 100644 a b c conflict.txt\0\
             op: GitOpKind::Stage,
             paths: vec!["../x".into()],
             message: None,
+            branch: None,
         })
         .expect_err("refused");
         assert_eq!(escape.kind, ErrorKind::PathEscape);
@@ -635,6 +940,7 @@ u UU N... 100644 100644 100644 100644 a b c conflict.txt\0\
             op: GitOpKind::Commit,
             paths: vec![],
             message: Some("second".into()),
+            branch: None,
         })
         .expect("commit")
         .expect("sha");
@@ -644,6 +950,7 @@ u UU N... 100644 100644 100644 100644 a b c conflict.txt\0\
             op: GitOpKind::Discard,
             paths: vec!["sub/new.txt".into()],
             message: None,
+            branch: None,
         })
         .expect("discard");
         assert!(!repo.join("sub/new.txt").exists());
@@ -689,5 +996,150 @@ u UU N... 100644 100644 100644 100644 a b c conflict.txt\0\
         let _ = status(repo).expect("status");
         let _ = diff(repo, "a.txt", false);
         assert!(!marker.exists(), "a repository helper ran during a read");
+    }
+
+    fn sync(
+        root: &Path,
+        op_kind: GitOpKind,
+        branch: Option<&str>,
+    ) -> Result<Option<String>, RpcError> {
+        op(&GitOp {
+            root: root.to_string_lossy().into(),
+            op: op_kind,
+            paths: vec![],
+            message: None,
+            branch: branch.map(str::to_string),
+        })
+    }
+
+    #[test]
+    fn f_rm_01_branch_rows_parse_like_the_local_switcher() {
+        let text = "refs/heads/main\0*\0origin/main\0ahead 2, behind 1\n\
+refs/heads/topic\0 \0\0\n\
+refs/remotes/origin/HEAD\0 \0\0\n\
+refs/remotes/origin/main\0 \0\0\n\
+refs/remotes/origin/feature\0 \0\0\n";
+        let b = parse_branches(text);
+        let names: Vec<(&str, bool, bool)> = b
+            .iter()
+            .map(|b| (b.name.as_str(), b.current, b.remote))
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                ("main", true, false),
+                ("topic", false, false),
+                ("origin/feature", false, true)
+            ]
+        );
+        assert_eq!((b[0].ahead, b[0].behind), (2, 1));
+        assert_eq!(b[0].upstream.as_deref(), Some("origin/main"));
+    }
+
+    #[test]
+    fn f_rm_01_push_pull_and_switch_run_the_hosts_own_git() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let origin = dir.path().join("origin.git");
+        let work = dir.path().join("work");
+        let other = dir.path().join("other");
+        std::fs::create_dir_all(&work).expect("mkdir");
+        git(
+            dir.path(),
+            &["init", "-q", "--bare", "-b", "main", "origin.git"],
+        );
+        git(&work, &["init", "-q", "-b", "main"]);
+        git(&work, &["config", "user.name", "T"]);
+        git(&work, &["config", "user.email", "t@example.com"]);
+        std::fs::write(work.join("a.txt"), "one\n").expect("w");
+        git(&work, &["add", "a.txt"]);
+        git(&work, &["commit", "-qm", "one"]);
+        git(
+            &work,
+            &["remote", "add", "origin", &origin.to_string_lossy()],
+        );
+        // Not published: Push says so; Publish sets the upstream.
+        let e = sync(&work, GitOpKind::Push, None).expect_err("unpublished");
+        assert!(e.message.contains("isn't published"), "{}", e.message);
+        sync(&work, GitOpKind::Publish, None).expect("publish");
+        assert_eq!(
+            status(&work)
+                .expect("s")
+                .expect("r")
+                .status
+                .upstream
+                .as_deref(),
+            Some("origin/main")
+        );
+        // Another clone pushes; Pull brings it here.
+        git(
+            dir.path(),
+            &["clone", "-q", &origin.to_string_lossy(), "other"],
+        );
+        std::fs::write(other.join("b.txt"), "two\n").expect("w");
+        git(&other, &["add", "b.txt"]);
+        git(&other, &["commit", "-qm", "two"]);
+        git(
+            &other,
+            &[
+                "push",
+                "-q",
+                "origin",
+                "HEAD:refs/heads/main",
+                "HEAD:refs/heads/feature",
+            ],
+        );
+        sync(&work, GitOpKind::Pull, None).expect("pull");
+        assert!(work.join("b.txt").exists());
+        // A commit here, pushed to the upstream.
+        std::fs::write(work.join("a.txt"), "one\nmore\n").expect("w");
+        git(&work, &["commit", "-qam", "more"]);
+        sync(&work, GitOpKind::Push, None).expect("push");
+        // The remote's feature branch is offered, and switching tracks it.
+        git(&work, &["fetch", "-q"]);
+        let rows = branches(&work).expect("branches");
+        assert!(
+            rows.iter().any(|b| b.name == "origin/feature" && b.remote),
+            "{rows:?}"
+        );
+        sync(&work, GitOpKind::Switch, Some("origin/feature")).expect("switch remote");
+        assert_eq!(
+            status(&work)
+                .expect("s")
+                .expect("r")
+                .status
+                .branch
+                .as_deref(),
+            Some("feature")
+        );
+        sync(&work, GitOpKind::Switch, Some("main")).expect("switch back");
+        // A new branch from HEAD; names git refuses, and duplicates, aren't made.
+        sync(&work, GitOpKind::CreateBranch, Some("topic/x")).expect("create");
+        assert_eq!(
+            status(&work)
+                .expect("s")
+                .expect("r")
+                .status
+                .branch
+                .as_deref(),
+            Some("topic/x")
+        );
+        for bad in ["-x", "a..b", "", "main"] {
+            assert!(
+                sync(&work, GitOpKind::CreateBranch, Some(bad)).is_err(),
+                "{bad}"
+            );
+        }
+        assert!(sync(&work, GitOpKind::Switch, Some("nope")).is_err());
+        // A remote that refuses the push: the local wording.
+        assert!(
+            network_error("Push", "! [rejected] main -> main (fetch first)")
+                .message
+                .contains("Pull first")
+        );
+        assert!(
+            network_error("Push", "git@x: Permission denied (publickey).")
+                .message
+                .contains("couldn't sign in")
+        );
     }
 }

@@ -216,6 +216,32 @@ pub struct AutoNextResponse {
     pub reason: Option<String>,
 }
 
+/// One thing Find work's hosted ranking may choose (`POST /v1/voice/resolve`,
+/// F-CN-05): its id, kind and text, without file contents.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ResolveCandidate {
+    pub id: String,
+    pub kind: String,
+    pub text: String,
+}
+
+/// A ranked id (score 0..1, best first).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ResolveMatch {
+    pub id: String,
+    pub score: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ResolveBody {
+    matches: Vec<ResolveMatch>,
+}
+
+/// Debug builds only: where Find work's hosted ranking is sent instead of
+/// the API (`test_find_work_server`), so E2E can take the server down.
+#[cfg(debug_assertions)]
+pub static TEST_RESOLVE_BASE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
 /// `POST /v1/stt/transcribe` (F-BE-07). `duration` is in seconds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -426,6 +452,31 @@ pub trait ApiClient: Send + Sync {
     ) -> Result<AutoNextResponse, ApiError> {
         Err(no_hosted_service())
     }
+    /// `POST /v1/voice/session` (F-CN-01): mints a Conductor call.
+    async fn voice_session(
+        &self,
+        _access: &str,
+        _voice: Option<&str>,
+    ) -> Result<tandem_voice::conductor::call::SessionGrant, ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `POST /v1/voice/act` (F-CN-02): one doer round.
+    async fn voice_act(
+        &self,
+        _access: &str,
+        _req: &tandem_voice::conductor::call::ActRequest,
+    ) -> Result<tandem_voice::conductor::call::ActResponse, ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `POST /v1/voice/session/{id}/settle` (F-CN-01): idempotent.
+    async fn voice_settle(
+        &self,
+        _access: &str,
+        _session_id: &str,
+        _seconds: u32,
+    ) -> Result<tandem_voice::conductor::call::Settlement, ApiError> {
+        Err(no_hosted_service())
+    }
     /// `POST /v1/stt/transcribe` (F-BE-07, for F-DI-05).
     async fn stt_transcribe(
         &self,
@@ -438,14 +489,43 @@ pub trait ApiClient: Send + Sync {
     async fn audit_events(&self, _access: &str, _events: &[AuditEvent]) -> Result<(), ApiError> {
         Err(no_hosted_service())
     }
+    /// `POST /v1/voice/resolve` (F-CN-05): Find work's hosted ranking, 1 credit.
+    async fn voice_resolve(
+        &self,
+        _access: &str,
+        _query: &str,
+        _candidates: &[ResolveCandidate],
+    ) -> Result<Vec<ResolveMatch>, ApiError> {
+        Err(no_hosted_service())
+    }
     /// `POST /v1/auth/device/start` (F-BE-03): a code for the user to approve on the web.
     async fn device_start(&self, _client: &str, _version: &str) -> Result<DeviceStart, ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `POST /v1/pairings` (F-RM-03): registers a phone pairing with the relay.
+    async fn pairing_create(
+        &self,
+        _access: &str,
+        _pairing_id: &str,
+        _device_label: Option<&str>,
+    ) -> Result<PairingTicket, ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `DELETE /v1/pairings/:id`: the relay drops the pairing's sockets.
+    async fn pairing_delete(&self, _access: &str, _pairing_id: &str) -> Result<(), ApiError> {
         Err(no_hosted_service())
     }
     /// `POST /v1/auth/device/token`: tokens once approved; the OAuth error code otherwise.
     async fn device_token(&self, _device_code: &str) -> Result<TokenPair, ApiError> {
         Err(no_hosted_service())
     }
+}
+
+/// `POST /v1/pairings`'s answer (F-RM-03).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PairingTicket {
+    pub pairing_token: String,
+    pub relay_url: String,
 }
 
 /// `POST /v1/auth/device/start` (F-BE-03).
@@ -740,6 +820,28 @@ impl ApiClient for HttpApi {
         self.call(req).await
     }
 
+    async fn voice_resolve(
+        &self,
+        access: &str,
+        query: &str,
+        candidates: &[ResolveCandidate],
+    ) -> Result<Vec<ResolveMatch>, ApiError> {
+        #[cfg(debug_assertions)]
+        let url = match TEST_RESOLVE_BASE.lock().ok().and_then(|b| b.clone()) {
+            Some(base) => format!("{base}/v1/voice/resolve"),
+            None => self.url("/v1/voice/resolve"),
+        };
+        #[cfg(not(debug_assertions))]
+        let url = self.url("/v1/voice/resolve");
+        let req = self
+            .net
+            .client()
+            .post(url)
+            .bearer_auth(access)
+            .json(&json!({ "query": query, "candidates": candidates }));
+        self.call::<ResolveBody>(req).await.map(|b| b.matches)
+    }
+
     async fn auto_next(
         &self,
         access: &str,
@@ -751,6 +853,54 @@ impl ApiClient for HttpApi {
             .post(self.url("/v1/auto/next"))
             .bearer_auth(access)
             .json(req);
+        self.call(req).await
+    }
+
+    async fn voice_session(
+        &self,
+        access: &str,
+        voice: Option<&str>,
+    ) -> Result<tandem_voice::conductor::call::SessionGrant, ApiError> {
+        let body = match voice {
+            Some(v) => serde_json::json!({ "voice": v }),
+            None => serde_json::json!({}),
+        };
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/voice/session"))
+            .bearer_auth(access)
+            .json(&body);
+        self.call(req).await
+    }
+
+    async fn voice_act(
+        &self,
+        access: &str,
+        req: &tandem_voice::conductor::call::ActRequest,
+    ) -> Result<tandem_voice::conductor::call::ActResponse, ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/voice/act"))
+            .bearer_auth(access)
+            .json(req);
+        self.call(req).await
+    }
+
+    async fn voice_settle(
+        &self,
+        access: &str,
+        session_id: &str,
+        seconds: u32,
+    ) -> Result<tandem_voice::conductor::call::Settlement, ApiError> {
+        let id: String = url::form_urlencoded::byte_serialize(session_id.as_bytes()).collect();
+        let req = self
+            .net
+            .client()
+            .post(self.url(&format!("/v1/voice/session/{id}/settle")))
+            .bearer_auth(access)
+            .json(&serde_json::json!({ "seconds": seconds }));
         self.call(req).await
     }
 
@@ -782,6 +932,33 @@ impl ApiClient for HttpApi {
             .post(self.url("/v1/audit/events"))
             .bearer_auth(access)
             .json(&json!({ "events": events }));
+        self.call_empty(req).await
+    }
+
+    async fn pairing_create(
+        &self,
+        access: &str,
+        pairing_id: &str,
+        device_label: Option<&str>,
+    ) -> Result<PairingTicket, ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/pairings"))
+            .bearer_auth(access)
+            .json(&match device_label {
+                Some(label) => json!({ "pairing_id": pairing_id, "device_label": label }),
+                None => json!({ "pairing_id": pairing_id }),
+            });
+        self.call(req).await
+    }
+
+    async fn pairing_delete(&self, access: &str, pairing_id: &str) -> Result<(), ApiError> {
+        let req = self
+            .net
+            .client()
+            .delete(self.url(&format!("/v1/pairings/{pairing_id}")))
+            .bearer_auth(access);
         self.call_empty(req).await
     }
 

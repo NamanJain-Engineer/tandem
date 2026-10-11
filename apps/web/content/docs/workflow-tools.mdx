@@ -1,0 +1,50 @@
+---
+title: Checkpoints and workflow tools
+description: Rewind an agent's changes, recall commands, see ports, run Best of N and keep a prompt library.
+---
+
+Five tools that work on your computer only. None of them sends anything off the machine.
+
+## Checkpoints
+
+Vibezeo saves a copy of a folder's files just before an agent works on it, so you can put files back the way they were.
+
+- **When.** Before each thread turn, and before a prompt you send to an agent pane (pressing Enter waits up to 2 seconds for the copy; a copy that takes longer is marked **Late**). **Checkpoint now** saves one by hand.
+- **Where.** In the app's data folder, `~/.tandem/checkpoints/`, never in your repository: no commits, branches, refs or stashes are added, and your git index isn't touched. Identical files are stored once.
+- **What's in one.** In a git repository, the files git would list (tracked, plus untracked files `.gitignore` doesn't exclude). Outside a repository, every file except what `.gitignore` files exclude, hidden files included, up to 20,000 files; past that the checkpoint is marked **Partial**. `.git` and `.tandem/worktrees` are never included. Files over 5 MB are skipped and listed.
+- **Restore.** Open the sidebar's **Checkpoints** tab (from the **+** menu). Each checkpoint shows how many files differ from now and their diffs. **Restore all files…** or restore the files you tick; files created since are deleted. Vibezeo saves a **Before restore** checkpoint first, and the toast has **Undo**.
+- **Limits.** On by default. 100 checkpoints per folder, kept 14 days; change both, the size limit or turn them off in **Settings › Checkpoints**, which also shows the space used and has **Delete all checkpoints…**. Checkpoints need git installed. They aren't available in folders on SSH hosts yet.
+
+## Command recall
+
+Every command you run in a Vibezeo terminal with shell integration (bash, zsh, fish and PowerShell) is recorded with its folder, exit code and duration. <kbd>Mod+Alt+J</kbd> (**Recall a command…**) searches them.
+
+- **Enter** puts the command at the focused pane's prompt or in the thread's message box without running it, or copies it when neither has focus. **Run** types it and Enter, only into a terminal sitting at its prompt.
+- A command typed with a leading space isn't recorded. Text that looks like a secret is stored as `[REDACTED]`, and such a command can be inserted for you to fill in but never run.
+- Commands are kept 90 days (at most 50,000). **Settings › Terminal** turns recall off, changes the days and has **Clear command history…**.
+
+## Ports
+
+The sidebar's **Ports** tab (from the **+** menu) lists TCP ports that processes started in Vibezeo panes are listening on, with the process and the pane. Servers started outside Vibezeo aren't listed. It refreshes every 2 seconds while the tab is showing.
+
+- **Open** loads `http://localhost:<port>` in a sidebar browser tab; **Copy URL** copies the address.
+- **Stop** asks first, checks the process is still the one that pane started, and waits up to 3 seconds for it to exit; if it's still running, **Force stop…** ends it. The pane stays open.
+- A port open to **All networks** (not only this computer) is marked.
+
+## Best of N
+
+Give the same prompt to two or three agents at once, each in its own worktree, then keep the best result.
+
+- **Start** with **Best of N…** in the command palette, in a local folder that's a git repository with at least one commit. Choose 2 or 3 agents (the same engine can appear twice) and, optionally, a check command such as `pnpm test`.
+- Each agent gets a worktree on its own `tandem/<name>` branch from the current commit and starts right away with the prompt; the worktrees appear under the folder in the rail. Uncommitted changes in your folder aren't in the worktrees. The agents count against your live panes (4 on Free); if they don't all fit, none is started.
+- **Compare** (opens after Start, and from **Compare Best of N** in the palette) shows each agent's state, files changed and diff against the starting commit. **Run check** runs the check command in every worktree at once, for up to 10 minutes each, and shows passed or the exit code with the last 200 lines of output.
+- **Keep this one…** stops the agents, commits that agent's changes on its branch, merges it into your folder, and deletes the other worktrees and their uncommitted changes. Their branches stay. It refuses while your folder has uncommitted changes, and a merge conflict keeps every worktree. **Discard all…** deletes every worktree; branches stay.
+
+## Prompt library
+
+Save prompts you reuse as Markdown files and drop them into any message box or pane.
+
+- **Where.** `.tandem/prompts/*.md` in a repository (shared with your team through git) and `~/.tandem/prompts/*.md` (yours, in every workspace). Front matter can set `title:` and `description:`. Files over 64 KB, and links that lead outside their folder, are skipped.
+- **Variables.** `{{branch}}`, `{{file}}` (the editor's active file), `{{selection}}` (the selected text in the terminal pane you're inserting into) and `{{clipboard}}` are filled in for you; any other `{{name}}` is asked for before inserting. `\{{` keeps a literal `{{`. Selection and clipboard text go in marked as untrusted input.
+- **Insert** with <kbd>Mod+Alt+P</kbd> (**Insert prompt…**): the text lands in the focused message box or pane and is never sent. **New prompt…** creates a file and opens it in the editor; <kbd>Mod+Enter</kbd> on a prompt edits it.
+- Older worktree setups hid `.tandem/` in `.git/info/exclude`; the list says so and **Share with the repository** narrows that line so `.tandem/prompts/` can be committed.

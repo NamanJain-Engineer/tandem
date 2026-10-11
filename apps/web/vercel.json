@@ -4,6 +4,12 @@
   "installCommand": "pnpm install --frozen-lockfile --filter web... --filter desktop...",
   "buildCommand": "pnpm build:site",
   "ignoreCommand": "sh ./scripts/vercel-ignore.sh",
+  "git": {
+    "deploymentEnabled": {
+      "**": false,
+      "main": true
+    }
+  },
   "rewrites": [
     {
       "source": "/api/v1/site-info/",
@@ -68,6 +74,24 @@
         {
           "key": "Access-Control-Allow-Origin",
           "value": "*"
+        }
+      ]
+    },
+    {
+      "source": "/screens/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, stale-while-revalidate=604800"
+        }
+      ]
+    },
+    {
+      "source": "/demo/still(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, stale-while-revalidate=604800"
         }
       ]
     }

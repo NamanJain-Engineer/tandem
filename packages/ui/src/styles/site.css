@@ -1,0 +1,233 @@
+/* @tandem/ui/site.css: the public site's layer over tokens.css, which stays
+   UI_SPEC §1.2 verbatim. Import it after tokens.css and base.css. The desktop
+   app never imports it. */
+
+/* ---------- 1. Light theme by OS preference ----------
+   The site follows the visitor's OS with CSS only: no script, no storage, so
+   no toggle (D-1801). This block is a copy of [data-theme="light"] in
+   tokens.css; site.test.ts fails if the two ever differ. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --tn-bg: var(--slate-50);
+    --tn-surface-1: var(--slate-25);
+    --tn-surface-2: var(--slate-0);
+    --tn-surface-3: var(--slate-0);
+    --tn-surface-4: var(--slate-50);
+    --tn-overlay: rgb(15 23 42 / 0.36);
+    --tn-border: rgb(15 23 42 / 0.10);
+    --tn-border-strong: rgb(15 23 42 / 0.20);
+    --tn-divider: rgb(15 23 42 / 0.06);
+    --tn-text: #0f172a;
+    --tn-text-muted: #475569;
+    --tn-text-subtle: #5f6f84;
+    --tn-text-disabled: #94a3b8;
+    --tn-text-inverse: #ffffff;
+    --tn-accent: var(--teal-700);
+    --tn-accent-hover: var(--teal-800);
+    --tn-accent-press: var(--teal-900);
+    --tn-accent-fg: #ffffff;
+    --tn-accent-soft: rgb(15 118 110 / 0.10);
+    --tn-accent-ring: rgb(15 118 110 / 0.85);
+    --tn-status-working: var(--sky-600);
+    --tn-status-working-soft: rgb(2 132 199 / 0.10);
+    --tn-status-working-text: var(--sky-700);
+    --tn-status-waiting-text: var(--amber-700);
+    --tn-status-done-text: var(--green-700);
+    --tn-status-waiting: var(--amber-700);
+    --tn-status-waiting-soft: rgb(217 119 6 / 0.12);
+    --tn-status-done: var(--green-600);
+    --tn-status-done-soft: rgb(22 163 74 / 0.10);
+    --tn-status-idle: var(--slate-400);
+    --tn-status-idle-soft: rgb(100 116 139 / 0.12);
+    --tn-status-error: var(--rose-600);
+    --tn-status-error-soft: rgb(225 29 72 / 0.10);
+    --tn-success: var(--green-600);
+    --tn-warning: var(--amber-600);
+    --tn-danger: var(--rose-700);
+    --tn-danger-hover: var(--rose-800);
+    --tn-danger-fg: #ffffff;
+    --tn-info: var(--sky-600);
+    --tn-diff-add-bg: rgb(22 163 74 / 0.10);
+    --tn-diff-add-fg: var(--green-800);
+    --tn-diff-del-bg: rgb(225 29 72 / 0.08);
+    --tn-diff-del-fg: var(--rose-700);
+    --tn-diff-hunk-bg: rgb(2 132 199 / 0.06);
+    --tn-scrollbar: rgb(15 23 42 / 0.20);
+    --tn-selection: rgb(15 118 110 / 0.20);
+    --tn-kbd-bg: var(--slate-50);
+    --tn-shadow-color: 15 23 42;
+  }
+}
+
+/* ---------- 2. Site semantics (built only on the palette and --tn-*) ---------- */
+:root {
+  --site-page:        var(--tn-bg);                 /* #060A12 */
+  --site-raised:      var(--tn-surface-1);          /* alternate bands */
+  --site-card:        var(--tn-surface-2);          /* cards and tiles */
+  --site-stage:       var(--slate-900);             /* product media backdrop: dark in both themes */
+  --site-stage-line:  rgb(148 163 184 / 0.18);
+  --site-stage-fg:    #e6edf5;                      /* text on the stage: the dark theme's, in both themes */
+  --site-stage-muted: #9aa8bb;
+  --site-stage-accent: var(--teal-400);
+  --site-grid:        rgb(148 163 184 / 0.06);      /* the faint grid of og.png and the video poster */
+  --site-glow:        rgb(45 212 191 / 0.13);       /* the poster's soft teal glow */
+  --site-ink-a:       var(--teal-400);              /* highlight gradient start */
+  --site-ink-b:       var(--sky-400);               /* highlight gradient end */
+  --site-header:      color-mix(in oklab, var(--site-page) 82%, transparent);
+  --site-gutter:      clamp(1rem, 0.6rem + 1.8vw, 2rem);    /* 16 → 32 px */
+  --site-section-y:   clamp(4.5rem, 3rem + 5vw, 8rem);      /* 72 → 128 px */
+  --site-header-h:    4rem;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --site-page:   var(--slate-25);   /* #F8FAFC, a touch whiter than the app's slate-50 */
+    --site-raised: var(--slate-50);   /* #F1F5F9: the app's bg, so bands read as bands */
+    --site-card:   var(--slate-0);
+    --site-grid:   rgb(15 23 42 / 0.05);
+    --site-glow:   rgb(15 118 110 / 0.09);
+    --site-ink-a:  var(--teal-700);
+    --site-ink-b:  var(--sky-700);
+  }
+}
+
+@theme inline {
+  --color-page: var(--site-page);
+  --color-raised: var(--site-raised);
+  --color-card: var(--site-card);
+  --color-stage: var(--site-stage);
+  --color-stage-line: var(--site-stage-line);
+  --color-stage-fg: var(--site-stage-fg);
+  --color-stage-muted: var(--site-stage-muted);
+  --color-stage-accent: var(--site-stage-accent);
+}
+
+@theme {
+  /* Display and marketing type. The names don't collide with the app's text-xs…3xl. */
+  --text-display-2xl: clamp(2.5rem, 1.5rem + 4vw, 4rem);          /* 40 → 64 px: the home h1 */
+  --text-display-2xl--line-height: 1.04;
+  --text-display-2xl--letter-spacing: -0.03em;
+  --text-display-2xl--font-weight: 600;
+  --text-display-xl: clamp(2.125rem, 1.45rem + 2.6vw, 3.25rem);   /* 34 → 52 px: page h1s, closing CTA */
+  --text-display-xl--line-height: 1.06;
+  --text-display-xl--letter-spacing: -0.028em;
+  --text-display-xl--font-weight: 600;
+  --text-display-lg: clamp(1.75rem, 1.35rem + 1.6vw, 2.5rem);     /* 28 → 40 px: section h2 */
+  --text-display-lg--line-height: 1.1;
+  --text-display-lg--letter-spacing: -0.024em;
+  --text-display-lg--font-weight: 600;
+  --text-display-md: clamp(1.375rem, 1.2rem + 0.7vw, 1.75rem);    /* 22 → 28 px: row titles */
+  --text-display-md--line-height: 1.2;
+  --text-display-md--letter-spacing: -0.018em;
+  --text-display-md--font-weight: 600;
+  --text-title: 1.125rem;    --text-title--line-height: 1.45;    --text-title--font-weight: 600;
+  --text-lead: clamp(1.0625rem, 1rem + 0.3vw, 1.25rem);            /* 17 → 20 px */
+  --text-lead--line-height: 1.6;
+  --text-copy: 1rem;         --text-copy--line-height: 1.65;      /* 16 px body */
+  --text-copy-sm: 0.9375rem; --text-copy-sm--line-height: 1.6;    /* 15 px card body */
+  --text-caption: 0.8125rem; --text-caption--line-height: 1.5;    /* 13 px captions, footer */
+  --text-eyebrow: 0.75rem;   --text-eyebrow--line-height: 1rem;   /* 12 px mono caps */
+  --text-eyebrow--letter-spacing: 0.08em;
+  --text-stat: clamp(2rem, 1.6rem + 1.6vw, 3rem);                  /* 32 → 48 px */
+  --text-stat--line-height: 1;
+  --text-stat--letter-spacing: -0.02em;
+
+  /* Layout */
+  --container-site: 75rem;     /* 1200 px: header, sections, footer */
+  --container-stage: 80rem;    /* 1280 px: the demo drawn 1:1 */
+  --container-narrow: 56rem;   /* 896 px: centred bands */
+  --container-prose: 44rem;    /* 704 px: legal and changelog text */
+  --container-measure: 38rem;  /* 608 px: leads */
+
+  /* Depth: media only; cards stay flat. */
+  --shadow-stage: 0 0 0 1px var(--site-stage-line), 0 28px 80px -28px rgb(var(--tn-shadow-color) / 0.7);
+  --shadow-card-hover: 0 8px 24px -12px rgb(var(--tn-shadow-color) / 0.45);
+}
+
+/* ---------- 3. Utilities ---------- */
+@utility text-ink {             /* the hero highlight: teal → sky, as in og.png */
+  background-image: linear-gradient(90deg, var(--site-ink-a), var(--site-ink-b));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@utility eyebrow {              /* "— CODE MODE": the video's label style */
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-eyebrow);
+  line-height: var(--text-eyebrow--line-height);
+  letter-spacing: var(--text-eyebrow--letter-spacing);
+  font-weight: 500;
+  text-transform: uppercase;
+  color: var(--tn-accent);
+  &::before { content: ""; width: 1rem; height: 1px; background: currentColor; }
+}
+@utility bg-site-grid {          /* hero and CTA backdrop: grid plus glow, fading out */
+  background-image:
+    radial-gradient(60% 55% at 28% 0%, var(--site-glow), transparent 70%),
+    linear-gradient(var(--site-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--site-grid) 1px, transparent 1px);
+  background-size: auto, 96px 96px, 96px 96px;
+  background-position: center top, center top, center top;
+}
+@utility container-site {        /* one width for header, sections and footer */
+  margin-inline: auto;
+  width: 100%;
+  max-width: var(--container-site);
+  padding-inline: var(--site-gutter);
+}
+@utility link-arrow {            /* the arrow after a text link nudges on hover */
+  & > svg { transition: translate var(--dur-fast) var(--ease-standard); }
+  &:hover > svg, &:focus-visible > svg { translate: 2px 0; }
+}
+
+/* ---------- 4. Page base ---------- */
+html { scroll-padding-top: calc(var(--site-header-h) + 1rem); }
+body.site {
+  background: var(--site-page);
+  font-size: var(--text-copy);
+  line-height: var(--text-copy--line-height);
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
+}
+.site :focus-visible { box-shadow: 0 0 0 2px var(--site-page), 0 0 0 4px var(--tn-accent-ring); }
+.site [data-stage] :focus-visible { box-shadow: 0 0 0 2px var(--site-stage), 0 0 0 4px var(--tn-accent-ring); }
+.site a, .site button, .site summary { -webkit-tap-highlight-color: transparent; }
+/* Links in running text are underlined, never told apart by colour alone
+   (WCAG 1.4.1). Standalone links and buttons style themselves. */
+.site :where(p, dd, figcaption, td, blockquote) a {
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+  text-decoration-color: color-mix(in oklab, currentColor 45%, transparent);
+}
+.site :where(p, dd, figcaption, td, blockquote) a:hover { text-decoration-color: currentColor; }
+
+@media (forced-colors: active) {
+  .text-ink { background: none; color: CanvasText; }
+}
+
+/* ---------- 5. Motion: CSS only, progressive, off under reduced motion ---------- */
+@keyframes site-reveal { from { opacity: 0.001; translate: 0 1rem; } to { opacity: 1; translate: 0 0; } }
+@keyframes site-header-line { from { border-bottom-color: transparent; } to { border-bottom-color: var(--tn-border); } }
+
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .reveal { animation: site-reveal linear both; animation-timeline: view(); animation-range: entry 0% entry 35%; }
+    .reveal-late { animation-range: entry 10% entry 45%; }
+  }
+  @supports (animation-timeline: scroll()) {
+    .site-header { border-bottom-color: transparent; animation: site-header-line linear both; animation-timeline: scroll(root); animation-range: 0 4rem; }
+  }
+  .enter {
+    transition: opacity var(--dur-deliberate) var(--ease-enter), translate var(--dur-deliberate) var(--ease-enter);
+    @starting-style { opacity: 0; translate: 0 0.5rem; }
+  }
+  .enter-2 { transition-delay: 60ms; }
+  .enter-3 { transition-delay: 120ms; }
+  @view-transition { navigation: auto; }
+  ::view-transition-group(root) { animation-duration: var(--dur-base); animation-timing-function: var(--ease-standard); }
+}
+.site-header { view-transition-name: site-header; }

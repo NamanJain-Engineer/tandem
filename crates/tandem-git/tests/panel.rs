@@ -415,3 +415,22 @@ async fn f_cd_20_unstaged_and_staged_diffs_of_one_file() {
     assert_eq!(untracked.change, FileChange::Added);
     assert!(untracked.patch.contains("+hello"));
 }
+
+/// F-EX-04 AC4: keeping a Best of N lane stages everything in it, new files
+/// included, and nothing ignored.
+#[tokio::test]
+async fn f_ex_04_4_stage_all_takes_changes_and_new_files_but_not_ignored_ones() {
+    let f = Fixture::new();
+    let cli = f.git();
+    let r = repo(&f.repo);
+    std::fs::write(f.repo.join(".gitignore"), "*.log\n").expect("write");
+    std::fs::write(f.repo.join("a.txt"), "changed\n").expect("write");
+    std::fs::write(f.repo.join("new.txt"), "new\n").expect("write");
+    std::fs::write(f.repo.join("debug.log"), "noise\n").expect("write");
+    ops::stage_all(&cli, &r).await.expect("stage all");
+    let s = r.status().await.expect("status");
+    let mut staged: Vec<String> = s.staged.iter().map(|c| c.path.clone()).collect();
+    staged.sort();
+    assert_eq!(staged, vec![".gitignore", "a.txt", "new.txt"]);
+    assert!(s.unstaged.is_empty());
+}

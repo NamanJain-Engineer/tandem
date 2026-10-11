@@ -159,7 +159,7 @@ function Row({ thread, selected, now }: { thread: Thread; selected: boolean; now
               className="size-1.5 shrink-0 rounded-full bg-accent"
             />
           )}
-          <span className="shrink-0 text-sm text-fg-subtle">{rightLabel(thread, now)}</span>
+          <span className={"shrink-0 text-sm " + (selected ? "text-fg-muted" : "text-fg-subtle")}>{rightLabel(thread, now)}</span>
           <EngineGlyph letters={glyph} size={14} label={engine ?? undefined} />
         </button>
       </ContextMenu>

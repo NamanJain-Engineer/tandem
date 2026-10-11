@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-bestof-keep"
+description = "Enables the bestof_keep command without any pre-configured scope."
+commands.allow = ["bestof_keep"]
+
+[[permission]]
+identifier = "deny-bestof-keep"
+description = "Denies the bestof_keep command without any pre-configured scope."
+commands.deny = ["bestof_keep"]

@@ -3,8 +3,8 @@ import { cx } from "../cx";
 import { Kbd } from "./Kbd";
 import { Spinner } from "./Spinner";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "link";
-export type ButtonSize = "sm" | "md" | "lg";
+export type ButtonVariant = "primary" | "secondary" | "outline" | "ghost" | "danger" | "link";
+export type ButtonSize = "sm" | "md" | "lg" | "xl";
 
 export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & {
   variant?: ButtonVariant;
@@ -23,6 +23,8 @@ export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "childre
 const VARIANTS: Record<ButtonVariant, string> = {
   primary: "bg-accent text-accent-fg hover:bg-accent-hover active:bg-accent-press",
   secondary: "bg-surface-4 text-fg border border-border hover:border-border-strong",
+  /** Transparent with a strong border: secondary actions on the public site. */
+  outline: "bg-transparent text-fg border border-border-strong hover:bg-surface-2",
   ghost: "bg-transparent text-fg hover:bg-surface-4",
   danger: "bg-danger text-danger-fg hover:bg-danger-hover",
   link: "bg-transparent text-accent hover:underline px-0",
@@ -32,7 +34,20 @@ const SIZES: Record<ButtonSize, string> = {
   sm: "h-7 px-2.5 text-sm gap-1.5",
   md: "h-8 px-3 text-base gap-1.5",
   lg: "h-10 px-4 text-md gap-2",
+  /** 44 px: calls to action on the public site. */
+  xl: "h-11 px-5 text-lg gap-2",
 };
+
+/** The button's classes, for links that look like buttons (the public site's
+ * calls to action are plain <a> elements). */
+export function buttonClass(variant: ButtonVariant = "secondary", size: ButtonSize = "md"): string {
+  return cx(
+    "inline-flex select-none items-center justify-center whitespace-nowrap rounded-sm font-medium",
+    "transition-colors duration-[var(--dur-instant)] focus-visible:shadow-focus focus-visible:outline-none",
+    VARIANTS[variant],
+    SIZES[size],
+  );
+}
 
 /** UI_SPEC §2.1. Loading keeps the label, swaps the left icon for a spinner,
  * sets aria-busy and blocks clicks. Disabled is 40% opacity with no hover. */
@@ -62,10 +77,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       type={type}
       data-variant={variant}
       className={cx(
-        "inline-flex select-none items-center justify-center whitespace-nowrap rounded-sm font-medium",
-        "transition-colors duration-[var(--dur-instant)] focus-visible:shadow-focus focus-visible:outline-none",
-        VARIANTS[variant],
-        SIZES[size],
+        buttonClass(variant, size),
         fullWidth && "w-full",
         disabled && "pointer-events-auto cursor-not-allowed opacity-40 hover:bg-[inherit]",
         loading && "cursor-progress",

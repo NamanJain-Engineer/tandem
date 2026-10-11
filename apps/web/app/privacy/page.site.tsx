@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import hosted from "@tandem/protocol/hosted-features.json";
 import subprocessors from "@tandem/protocol/subprocessors.json";
+import { ArrowRight } from "lucide-react";
+import { Icon } from "../../components/site/Icon";
 import { ProsePage } from "../../components/site/SiteFrame";
 import { RELEASE } from "../../lib/release";
 import { OPERATOR, SITE } from "../../lib/site";
@@ -111,7 +113,19 @@ export default function PrivacyPage() {
             <tr key={f.id} data-hosted-feature={f.id} className="border-t border-divider align-top">
               <td className="py-1.5 pr-4 font-medium">{f.label}</td>
               <td className="py-1.5 pr-4">{f.sends}</td>
-              <td className="py-1.5 pr-4">{f.destination}</td>
+              <td className="py-1.5 pr-4">
+                {f.destination.split(" → ").flatMap((part, i) =>
+                  i === 0
+                    ? [part]
+                    : [
+                        <Icon key={i} icon={ArrowRight} size={14} className="mx-1 inline align-[-2px]" />,
+                        <span key={`t${i}`} className="sr-only">
+                          {" to "}
+                        </span>,
+                        part,
+                      ],
+                )}
+              </td>
               <td className="py-1.5">{when(f)}</td>
             </tr>
           ))}

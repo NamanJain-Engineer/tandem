@@ -222,12 +222,17 @@ pub async fn pty_spawn(
 pub struct AttachSnapshot {
     /// Ring contents, base64.
     pub replay: String,
+    /// The ring position the replay ends at: the view adds each frame's
+    /// length to know exactly what it has parsed (§5.1, D-139).
+    #[ts(type = "number")]
+    pub end: u64,
     pub live: bool,
     /// Modes and title as of the attach (later changes arrive as `pty:state`).
     pub state: Option<PtyState>,
 }
 
-/// Re-attaches after a webview reload: returns the scrollback to replay.
+/// Re-attaches after a webview reload, or when a parked pane is shown again:
+/// returns the scrollback to replay.
 #[tauri::command]
 pub fn pty_attach(
     state: State<'_, AppState>,
@@ -235,12 +240,27 @@ pub fn pty_attach(
     channel: Channel<InvokeResponseBody>,
 ) -> Result<AttachSnapshot, IpcError> {
     let pty = &state.terminals.pty;
-    let replay = pty.attach(pane_id.as_str(), Arc::new(ChannelSink(channel)))?;
+    let attached = pty.attach(pane_id.as_str(), Arc::new(ChannelSink(channel)))?;
     Ok(AttachSnapshot {
-        replay: STANDARD.encode(replay),
+        replay: STANDARD.encode(attached.replay),
+        end: attached.end,
         live: pty.is_live(pane_id.as_str()),
         state: pty.state(pane_id.as_str()),
     })
+}
+
+/// A hidden view gave up its terminal (§5.1, D-139): `base` stands for the
+/// ring up to `at`, the position the view had parsed, and the program runs
+/// on with no view until the next `pty_attach`.
+#[tauri::command]
+pub fn pty_park(
+    state: State<'_, AppState>,
+    pane_id: PaneId,
+    at: u64,
+    base: Vec<String>,
+) -> Result<bool, IpcError> {
+    let base = base.into_iter().map(String::into_bytes).collect();
+    Ok(state.terminals.pty.park(pane_id.as_str(), at, base)?)
 }
 
 #[tauri::command]
@@ -251,10 +271,7 @@ pub fn pty_write(
 ) -> Result<(), IpcError> {
     // The echo of typing is never the agent working (F-EN-05 AC3).
     state.terminals.status.quiet_window(pane_id.as_str());
-    Ok(state
-        .terminals
-        .pty
-        .write(pane_id.as_str(), data.as_bytes())?)
+    state.terminals.write_input(&pane_id, data.as_bytes())
 }
 
 /// Types a prompt into an agent's TUI once it's ready (F-EN-06): one paste,

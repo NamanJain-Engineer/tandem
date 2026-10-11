@@ -4,10 +4,13 @@ import type { FindWorkResult, WorkspaceSummary } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { useFlash } from "../../stores/focus";
 import { useLayout } from "../../stores/layout";
+import { useSession } from "../../stores/session";
+import { useSettings } from "../../stores/settings";
+import { useTeammates } from "../../stores/teammates";
 import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
-import { BOOT, fakeBackend, resetStores } from "../../test/fakeBackend";
+import { BOOT, SIGNED_IN, fakeBackend, resetStores } from "../../test/fakeBackend";
 import { commandTitle, runCommand } from "../commands/commands";
 import { useBoot } from "../shell/useBoot";
 import { Palette } from "./Palette";
@@ -46,6 +49,7 @@ const AUTH: FindWorkResult = {
     },
   ],
   clear: true,
+  ranking: "local",
 };
 
 function setup(findWork: (args?: Record<string, unknown>) => unknown) {
@@ -134,6 +138,7 @@ describe("Find work in the palette (F-CN-05)", () => {
         },
       ],
       clear: true,
+      ranking: "local",
     }));
     act(() => runCommand("work.find"));
     for (const partial of ["s", "st", "str", "stripe"]) type(partial);
@@ -153,7 +158,7 @@ describe("Find work in the palette (F-CN-05)", () => {
       return answer;
     });
     act(() => runCommand("work.find"));
-    expect(screen.getByText(/Open panes and threads are searched on this computer/)).toBeTruthy();
+    expect(screen.getByText(/Open panes, threads and teammates are searched on this computer/)).toBeTruthy();
     type("kubernetes");
     expect(screen.getByText("Looking…")).toBeTruthy();
     await act(async () => {
@@ -166,5 +171,56 @@ describe("Find work in the palette (F-CN-05)", () => {
       await vi.advanceTimersByTimeAsync(200);
     });
     expect(screen.getByText("Couldn't search: The store is busy.")).toBeTruthy();
+  });
+
+  it("F-CN-05 a build without Vibezeo accounts searches on this computer even with hosted ranking on (D-833)", async () => {
+    setup(() => AUTH);
+    useSession.setState({ auth: { ...SIGNED_IN, signedIn: false, email: null, hosted: false } });
+    useSettings.setState((st) => ({ values: { ...st.values, find_work_hosted: true } }));
+    act(() => runCommand("work.find"));
+    expect(screen.getByText(/Open panes, threads and teammates are searched on this computer/)).toBeTruthy();
+    expect(screen.queryByText(/1 credit a search/)).toBeNull();
+    type("login testing");
+    // The local search's short pause, not the hosted one's.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(await screen.findByRole("option", { name: /auth tests/ })).toBeTruthy();
+  });
+
+  it("F-CN-05 a teammate match opens its page, and a hosted ranking says so", async () => {
+    setup(() => ({
+      matches: [
+        {
+          source: { type: "teammate", teammateId: "tm_rel" },
+          kind: "teammate",
+          label: "Release scribe",
+          detail: "Drafted the 0.5.0 notes",
+          workspaceId: null,
+          tabId: null,
+          score: 2.4,
+        },
+      ],
+      clear: true,
+      ranking: "hosted",
+    }));
+    useSettings.setState((st) => ({ values: { ...st.values, find_work_hosted: true } }));
+    act(() => runCommand("work.find"));
+    expect(
+      screen.getByText(/Vibezeo's AI ranks open panes, threads and teammates \(1 credit a search\)/),
+    ).toBeTruthy();
+    type("changelog");
+    // A credit a search: it waits for a longer pause.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(screen.queryByRole("option", { name: /Release scribe/ })).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+    expect(screen.getByText("Find work · ranked by Vibezeo's AI")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("option", { name: /Release scribe/ }));
+    expect(useUi.getState().mode).toBe("agent");
+    expect(useTeammates.getState().selectedId).toBe("tm_rel");
   });
 });

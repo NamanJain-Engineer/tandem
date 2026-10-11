@@ -23,6 +23,8 @@ pub enum SettingsPage {
     Plugins,
     Remote,
     Privacy,
+    /// Checkpoints (F-EX-01, UI-117).
+    Checkpoints,
     Shortcuts,
     Account,
     Updates,
@@ -137,6 +139,7 @@ setting_keys! {
     AiThreadTitles,
     AutoConsent,
     AutoDontAsk,
+    FindWorkHosted,
     SendKey,
     ReduceMotion,
     LogLevel,
@@ -150,6 +153,12 @@ setting_keys! {
     RailWidth,
     ThreadDefaults,
     ThreadGrid,
+    CheckpointsEnabled,
+    CheckpointsKeep,
+    CheckpointsDays,
+    CheckpointsMaxFileMb,
+    CommandHistoryEnabled,
+    CommandHistoryDays,
     SkillsSeen,
 }
 
@@ -799,6 +808,15 @@ pub static SCHEMA: &[SettingSpec] = &[
         ["auto", "terminal output"]
     ),
     spec!(AutoDontAsk, json!(false), V::Bool, Hidden, []),
+    // D-1302: Find work's hosted ranking sends the search and the candidates'
+    // redacted names and last lines off the machine, so it's opt-in.
+    spec!(
+        FindWorkHosted,
+        json!(false),
+        V::Bool,
+        Privacy,
+        ["find work", "search", "ranking", "ai"]
+    ),
     spec!(
         SendKey,
         json!("enter"),
@@ -871,6 +889,50 @@ pub static SCHEMA: &[SettingSpec] = &[
     // per engine `<engine>.model`, `<engine>.effort`, `<engine>.access`.
     spec!(ThreadDefaults, json!({}), V::Map, Hidden, []),
     spec!(ThreadGrid, json!({"ids": []}), V::Map, Hidden, []),
+    // F-EX-01: checkpoints before agent turns, kept per folder.
+    spec!(
+        CheckpointsEnabled,
+        json!(true),
+        V::Bool,
+        Checkpoints,
+        ["checkpoints", "rewind", "undo", "restore"]
+    ),
+    spec!(
+        CheckpointsKeep,
+        json!(100),
+        V::IntRange(10, 1000),
+        Checkpoints,
+        ["checkpoints", "keep"]
+    ),
+    spec!(
+        CheckpointsDays,
+        json!(14),
+        V::IntRange(1, 90),
+        Checkpoints,
+        ["checkpoints", "days"]
+    ),
+    spec!(
+        CheckpointsMaxFileMb,
+        json!(5),
+        V::IntRange(1, 100),
+        Checkpoints,
+        ["checkpoints", "large files"]
+    ),
+    // F-EX-02: command recall, local only.
+    spec!(
+        CommandHistoryEnabled,
+        json!(true),
+        V::Bool,
+        Terminal,
+        ["command recall", "history"]
+    ),
+    spec!(
+        CommandHistoryDays,
+        json!(90),
+        V::IntRange(1, 3650),
+        Terminal,
+        ["command recall", "history", "retention"]
+    ),
     // Per teammate, the skills the user made or opened; any other is the
     // teammate's own and "New" (F-AG-09).
     spec!(SkillsSeen, json!({}), V::Map, Hidden, []),
@@ -1074,6 +1136,7 @@ mod tests {
             SettingKey::AiThreadTitles,
             SettingKey::AutoConsent,
             SettingKey::DictateShareHints,
+            SettingKey::FindWorkHosted,
         ] {
             assert_eq!(default_value(key), json!(false), "{key:?}");
         }
