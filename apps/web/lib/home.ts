@@ -253,10 +253,10 @@ export const RELEASE_TILE_MAP: Record<string, { icon: string; docs: string; feat
   Ports: { icon: "network", docs: docsPath("workflow-tools") },
   "Best of N": { icon: "layers", docs: docsPath("workflow-tools") },
   "Prompt library": { icon: "book", docs: docsPath("workflow-tools") },
-  "Skills in your engines": { icon: "sparkles", docs: docsPath("agent-mode"), feature: "Teammates" },
-  "A teammate in a terminal": { icon: "terminal", docs: docsPath("agent-mode"), feature: "Teammates" },
-  "Find work finds teammates": { icon: "search", docs: docsPath("code-mode"), feature: "Find work by what it's about" },
-  "Files and git on SSH hosts": { icon: "server", docs: docsPath("remote"), feature: "SSH workspaces" },
+  "Skills in your engines": { icon: "sparkles", docs: docsPath("agent-mode") },
+  "A teammate in a terminal": { icon: "terminal", docs: docsPath("agent-mode") },
+  "Find work finds teammates": { icon: "search", docs: docsPath("code-mode") },
+  "Files and git on SSH hosts": { icon: "server", docs: docsPath("remote") },
   Fedora: { icon: "package", docs: docsPath("index") },
 };
 

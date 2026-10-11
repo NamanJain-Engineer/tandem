@@ -147,9 +147,9 @@ export default function DownloadPage() {
                     <p className="flex items-start gap-2.5 text-copy-sm text-fg-muted">
                       <Icon icon={ShieldCheck} size={18} className="mt-0.5 shrink-0 text-accent" />
                       <span>
-                        The packages aren&apos;t code-signed, so the checksum is how you confirm they&apos;re ours:
-                        compare the output of <code className="font-mono text-fg">sha256sum</code> with the value above,
-                        or with{" "}
+                        This release isn&apos;t code-signed, so the checksum is how you confirm it&apos;s ours: compare
+                        the output of <code className="font-mono text-fg">sha256sum</code> with the package&apos;s value
+                        above, or with{" "}
                         <a href={CHECKSUMS_URL} className="text-accent">
                           SHA256SUMS
                         </a>
