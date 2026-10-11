@@ -60,7 +60,10 @@ modules:
       - install -Dm755 usr/bin/tandem /app/lib/vibezeo/tandem
       - install -Dm755 usr/bin/tandem-tasks /app/lib/vibezeo/tandem-tasks
       - install -Dm755 usr/bin/tandem-hook /app/lib/vibezeo/tandem-hook
+      - install -Dm755 usr/bin/tandem-wake /app/lib/vibezeo/tandem-wake
       - cp -r usr/lib/Vibezeo/host-binaries /app/lib/vibezeo/host-binaries
+      - cp -r usr/lib/Vibezeo/models /app/lib/vibezeo/models
+      - cp -r usr/lib/Vibezeo/remote-web /app/lib/vibezeo/remote-web
       - install -Dm755 vibezeo.sh /app/bin/vibezeo
       - install -Dm644 usr/share/icons/hicolor/128x128/apps/tandem.png /app/share/icons/hicolor/128x128/apps/com.vibezeo.Vibezeo.png
       - install -Dm644 usr/share/icons/hicolor/32x32/apps/tandem.png /app/share/icons/hicolor/32x32/apps/com.vibezeo.Vibezeo.png

@@ -35,7 +35,7 @@ docker run "$@" "fedora:$VER" sh -c '
   fi
   echo "dnf: installed $(rpm -qp --qf "%{NAME} %{VERSION}-%{RELEASE}" /pkg/vibezeo.rpm)"
   missing=0
-  for b in /usr/bin/tandem /usr/bin/tandem-hook /usr/bin/tandem-tasks; do
+  for b in /usr/bin/tandem /usr/bin/tandem-hook /usr/bin/tandem-tasks /usr/bin/tandem-wake; do
     if ldd "$b" | grep "not found"; then missing=1; fi
   done
   if [ "$missing" = 1 ]; then echo "libraries: missing (above)"; exit 1; fi

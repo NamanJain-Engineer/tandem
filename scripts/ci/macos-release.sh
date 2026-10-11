@@ -50,7 +50,7 @@ cargo run -q -p tandem-host --example manifest -- --check "$tauri_dir/resources/
 
 echo "== sidecars"
 sh scripts/build-sidecars.sh "$target"
-bash "$sign" sign "$identity" "$tauri_dir/binaries/tandem-tasks-$target" "$tauri_dir/binaries/tandem-hook-$target"
+bash "$sign" sign "$identity" "$tauri_dir/binaries/tandem-tasks-$target" "$tauri_dir/binaries/tandem-hook-$target" "$tauri_dir/binaries/tandem-wake-$target"
 
 echo "== app"
 configs=(--config src-tauri/tauri.sidecars.conf.json)

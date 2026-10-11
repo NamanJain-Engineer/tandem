@@ -4,7 +4,7 @@
 # The Store signs what it publishes; this package is unsigned.
 #
 #   bash scripts/build-msix.sh --from-installer target/x86_64-pc-windows-msvc/release/bundle/nsis/Vibezeo_<v>_x64-setup.exe
-#   bash scripts/build-msix.sh --from <folder with tandem.exe, tandem-tasks.exe, tandem-hook.exe, DirectML.dll, host-binaries/>
+#   bash scripts/build-msix.sh --from <folder with tandem.exe, tandem-tasks.exe, tandem-hook.exe, tandem-wake.exe, DirectML.dll, host-binaries/>
 #   [--out dist/Vibezeo_<v>_x64.msix]
 #
 # The binaries come from scripts/build-windows-installer.sh (needs the MSVC
@@ -48,7 +48,7 @@ if [ -n "$installer" ]; then
 else
   cp -r "$from"/. "$stage"/
 fi
-for want in tandem.exe tandem-tasks.exe tandem-hook.exe DirectML.dll host-binaries/manifest.json; do
+for want in tandem.exe tandem-tasks.exe tandem-hook.exe tandem-wake.exe DirectML.dll host-binaries/manifest.json; do
   [ -e "$stage/$want" ] || { echo "build-msix: $want is missing from the app's files" >&2; exit 1; }
 done
 

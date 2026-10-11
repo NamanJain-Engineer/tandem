@@ -18,7 +18,7 @@ trap 'rm -rf "$dir"' EXIT
 fail=0
 bad() { echo "check-msix: $*" >&2; fail=1; }
 
-for want in tandem.exe tandem-tasks.exe tandem-hook.exe DirectML.dll host-binaries/manifest.json \
+for want in tandem.exe tandem-tasks.exe tandem-hook.exe tandem-wake.exe DirectML.dll host-binaries/manifest.json \
   Assets/StoreLogo.png Assets/Square44x44Logo.png Assets/Square150x150Logo.png AppxManifest.xml AppxBlockMap.xml; do
   [ -e "$dir/$want" ] || bad "no $want"
 done

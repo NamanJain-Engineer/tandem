@@ -15,6 +15,11 @@ target="${1:?usage: build-sidecars.sh <target-triple>}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 out="$root/apps/desktop/src-tauri/binaries"
 mkdir -p "$out"
+# tandem-wake links sherpa-onnx (F-CN-07); use a pre-fetched archive when there
+# is one, for machines whose proxy re-signs TLS (scripts/fetch-sherpa.sh, D-1208).
+if [ -z "${SHERPA_ONNX_ARCHIVE_DIR:-}" ] && ls "$HOME"/.cache/sherpa-onnx/sherpa-onnx-v*.tar.bz2 >/dev/null 2>&1; then
+  export SHERPA_ONNX_ARCHIVE_DIR="$HOME/.cache/sherpa-onnx"
+fi
 
 build() {
   case "$1-$(uname -s)" in

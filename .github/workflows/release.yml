@@ -248,7 +248,8 @@ jobs:
         run: |
           bash scripts/ci/macos-sign.sh sign "${{ steps.apple.outputs.identity }}" \
             apps/desktop/src-tauri/binaries/tandem-tasks-${{ matrix.target }} \
-            apps/desktop/src-tauri/binaries/tandem-hook-${{ matrix.target }}
+            apps/desktop/src-tauri/binaries/tandem-hook-${{ matrix.target }} \
+            apps/desktop/src-tauri/binaries/tandem-wake-${{ matrix.target }}
 
       - if: matrix.name == 'windows'
         name: Stage DirectML.dll beside the app
