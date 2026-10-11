@@ -12,6 +12,7 @@ import type {
 import { invoke } from "../ipc/invoke";
 import { useLayout } from "./layout";
 import { useWorkspaces } from "./workspaces";
+import { prepareWorktree } from "./worktrees";
 
 /** Role suggestions in the lineup (UI_SPEC UI-12); any text works. */
 export const ROLES = ["Builder", "Reviewer", "Tester", "Planner", "Explorer", "Lead"] as const;
@@ -162,6 +163,8 @@ export async function launchLineup(
       { timeoutMs: 120_000 },
     );
     await place(report.launched, report.sharedTabId);
+    // F-WT-01: each new worktree's copy report, and its setup or a review.
+    for (const seat of report.launched) if (seat.laneBranch) void prepareWorktree(seat.workspaceId);
     return { ok: true, value: report };
   } catch (e) {
     return { ok: false, error: e as IpcError };
@@ -184,6 +187,7 @@ export async function retrySeat(
       tabId,
     });
     await place([launched], tabId);
+    if (launched.laneBranch) void prepareWorktree(launched.workspaceId);
     return { ok: true, value: launched };
   } catch (e) {
     return { ok: false, error: e as IpcError };

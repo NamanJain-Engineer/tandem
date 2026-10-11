@@ -692,6 +692,30 @@ Built on branch `m16-voice-api` (from `product-m0-m5`), in `apps/api` only, whil
 - The existing guard that every hosted route is plan-gated (`test/hosted.test.ts`) then failed for the new routes, as it should. It now lists session, act and resolve under `conductor`, and settle as the one route that reaches only the caller's own call (with a test that it can't reach anyone else's).
 - The whole API suite passes: 24 files, 180 tests. Gate, after merging the latest `product-m0-m5`: green (Rust 818, desktop 362, UI 358, API 180, web 53, protocol 9; clippy, fmt and the protocol drift check).
 
+## M17 · Worktree workflow (competitive-gaps)
+Built on branch `competitive-gaps` (from `product-m0-m5`) out of the competitive analysis (`docs/COMPETITIVE_ANALYSIS.md`, `docs/GO_TO_MARKET.md`). Owns F-WT-01…04 (PRODUCT_SPEC §4.19, MILESTONES "M17 · Worktree workflow"); decisions D-2200–D-2299.
+- [x] Competitive analysis (October 2026), go-to-market plan, owner steps in HUMAN_TODO "Go to market".
+- [x] F-WT-01 Worktree setup.
+  - `tandem_git::setup`: `.vibezeo/worktree.json` (copy patterns, setup, teardown; limits), `copy_into` (the contained walk), `digest`.
+  - `services::worktree_setup`: trust in `$DATA/worktree-trust.json`; the copy after every `lanes::create` (New worktree, launch, handoff, task runs); `lane_setup`, `lane_setup_run` (a shell pane, typed when ready), `worktree_setup_get|save|trust`; the trusted teardown inside `lane_remove`, which now returns `RemoveReport`.
+  - UI-150 Worktree setup (repository and worktree menus), UI-151 Review worktree setup, toasts for the copy and the teardown; the New worktree dialog and the launch sheet call `prepareWorktree`.
+  - Tests: 8 in `tandem-git` (`f_wt_01_*`), 5 in `tandem-desktop`, 9 in `worktreeSetup.test.tsx`; E2E-M17-WT-1 (`e2e/specs/m17-wt-1-setup.e2e.ts`).
+- [ ] F-WT-02 Review comments to the agent.
+- [ ] F-WT-03 Overlap check.
+- [ ] F-WT-04 GitLab merge requests.
+
+### M17 · Worktree workflow decisions
+- D-2200: The four features are a new area, WT (F-WT-01…04), P2, owned by a second `## M17 ·` section in MILESTONES, as M17's extras are. `check-coverage.sh` allows P2 in M17 (the same line as `m17-extras`, D-700), and `trace-tests.ts` reads every section of a milestone.
+- D-2201: The setup file is `.vibezeo/worktree.json` at the main checkout's root, named for the product users see. `.tandem/` can't hold it: it's in `.git/info/exclude`, so it could never be committed and shared. Vibezeo never commits it and never edits `.gitignore`.
+- D-2202: Trust is a SHA-256 over the setup and teardown commands, per repository (its canonical main-checkout path), kept in `$DATA/worktree-trust.json` (0600), never in the repository. Copy patterns aren't part of it: the copy only moves the repository's own files into its own worktree, inside both (F-TL-03). Saving from UI-150 trusts; any other change needs review. Only the main window can trust or save (`LocalReview`, TL-06 rule 5).
+- D-2203: Commands run only after a person makes a worktree (the New worktree dialog, the launch sheet, a retried seat). Task runs and handoff copy files and never run repository commands, so unattended work can't start a command nobody looked at.
+- D-2204: Setup is typed into a visible shell pane in the worktree's tab (like Create pull request), so its output is visible and it can be stopped; the agent isn't held until it finishes. Teardown runs headless with `/bin/sh -c` (`cmd /C` on Windows), the login environment, a 2-minute limit and its output discarded, never logged.
+- D-2206: The copy uses gitignore syntax (`!` excludes) against paths from the repository root. It skips `.git` and `.tandem`, enters a git-ignored folder only when an anchored pattern's fixed path leads into it, copies a matching folder whole, never follows or copies symlinks, never overwrites, refuses a destination under a symlinked folder, and stops at 2,000 files or 512 MB (200,000 walked entries as a guard).
+
+### M17 · Worktree workflow log
+- Competitive analysis: three research passes (orchestrators, AI terminals and IDEs, vendor apps and open-source agents); ranked list sent to the coordinator. Findings that need the owner (Thread mode and Anthropic's terms, Free plan caps, a public feedback repository, Antigravity CLI) are in HUMAN_TODO.
+- F-WT-01: destinations are checked component by component, so a tracked symlinked folder in the worktree can't carry a copy out of it (`f_wt_01_2` covers it, with a symlink in the main checkout and `../` patterns).
+
 ## Decisions
 - D-1: F-CD-09 owned by M9. It needs the Files editor and the Tandem browser.
 - D-2: F-SH-08 framework slice in M5, Accounts step in M6, owned by M8.

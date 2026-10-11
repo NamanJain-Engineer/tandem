@@ -315,6 +315,13 @@ export function CodeRail() {
       disabled: ws.kind !== "local" || !ws.branch || ws.missing,
       onSelect: () => useWorktrees.getState().open({ kind: "new", workspaceId: ws.id }),
     },
+    {
+      // F-WT-01: what every new worktree of this repository gets.
+      id: "worktree-setup",
+      label: t("worktree.setup.menu"),
+      disabled: ws.kind !== "local" || !ws.branch || ws.missing,
+      onSelect: () => useWorktrees.getState().open({ kind: "setup", workspaceId: ws.id }),
+    },
     { id: "up", label: t("rail.moveUp"), onSelect: a.moveUp },
     { id: "down", label: t("rail.moveDown"), onSelect: a.moveDown },
     { id: "sep", type: "separator" },

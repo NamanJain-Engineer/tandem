@@ -62,6 +62,7 @@ pub mod usage;
 pub mod usage_report;
 pub mod widget;
 pub mod workspaces;
+pub mod worktree_setup;
 pub mod wsl;
 
 /// Debug builds: the E2E fake engines' switches (`TANDEM_FAKE_*`), for

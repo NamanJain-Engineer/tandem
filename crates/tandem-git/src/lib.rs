@@ -5,7 +5,9 @@ mod error;
 pub mod exclude;
 pub mod lanes;
 pub mod ops;
+pub mod overlap;
 pub mod repo;
+pub mod setup;
 pub mod slug;
 pub mod types;
 
@@ -13,5 +15,6 @@ pub use cli::{Git, Mode};
 pub use error::GitError;
 pub use lanes::{briefing, ForceConfirm, Lane, LaneManager};
 pub use repo::{diff_texts, Repo};
+pub use setup::{CopyReport, SetupError, SkipReason, SkippedFile, WorktreeSetup};
 pub use slug::slugify;
 pub use types::{Branch, FileChange, FileDiff, FileStatus, GitStatus, MergeReport, StaleLane};

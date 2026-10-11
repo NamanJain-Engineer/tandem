@@ -62,6 +62,13 @@ pub fn briefing(path: &Path, branch: &str, siblings: &[String]) -> String {
     )
 }
 
+/// The `origin` remote's URL of the checkout at `root`, if it has one.
+pub fn origin_url(root: &Path) -> Option<String> {
+    let repo = git2::Repository::discover(root).ok()?;
+    let remote = repo.find_remote("origin").ok()?;
+    remote.url().map(str::to_string)
+}
+
 pub struct LaneManager;
 
 impl LaneManager {

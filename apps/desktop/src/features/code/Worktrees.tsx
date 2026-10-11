@@ -6,7 +6,6 @@ import {
   Button,
   ConfirmDialog,
   Dialog,
-  DiffView,
   IconButton,
   Input,
   Menu,
@@ -23,12 +22,18 @@ import {
   baseBranch,
   createPullRequest,
   createWorktree,
+  loadForge,
   mergeWorktree,
+  prepareWorktree,
   removeWorktree,
+  teardownText,
   useWorktrees,
   worktreeDiff,
 } from "../../stores/worktrees";
 import { switchMode } from "../shell/actions";
+import { MergeForecast, OverlapDialog } from "./WorktreeOverlap";
+import { ReviewDiff } from "./WorktreeReview";
+import { ReviewSetupDialog, WorktreeSetupDialog, useWorktreeNotices } from "./WorktreeSetup";
 
 type Show = ReturnType<typeof useToast>["show"];
 
@@ -60,13 +65,27 @@ export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): Me
     },
     {
       id: "wt-pr",
-      label: t("worktree.createPr"),
+      label: useWorktrees.getState().forges[wt.id] === "gitlab" ? t("worktree.createMr") : t("worktree.createPr"),
       disabled: wt.missing,
       onSelect: () =>
         void createPullRequest(wt).then((out) => {
           if (out.ok) switchMode("code");
           else show({ tone: "error", title: out.error.message });
         }),
+    },
+    {
+      // F-WT-03: sibling worktrees on the same files, and the merge forecast.
+      id: "wt-overlap",
+      label: t("worktree.overlap.menu"),
+      disabled: wt.missing,
+      onSelect: () => open({ kind: "overlap", worktreeId: wt.id }),
+    },
+    {
+      // F-WT-01: the repository's setup, from any of its worktrees.
+      id: "wt-setup",
+      label: t("worktree.setup.menu"),
+      disabled: wt.missing,
+      onSelect: () => open({ kind: "setup", workspaceId: wt.id }),
     },
     { id: "wt-sep", type: "separator" },
     {
@@ -91,6 +110,11 @@ export function WorktreeRow({
   const activeId = useWorkspaces((s) => s.activeId);
   const { show } = useToast();
   const branch = wt.laneBranch ?? wt.name;
+  // F-WT-04: the menu says pull or merge request by `origin`'s host.
+  useWorktrees((s) => s.forges[wt.id]);
+  useEffect(() => {
+    if (!wt.missing) void loadForge(wt.id);
+  }, [wt.id, wt.missing]);
   const openIt = () => {
     useWorkspaces.getState().select(wt.id);
     switchMode("code");
@@ -180,6 +204,8 @@ function NewWorktreeDialog({ ws, onClose }: { ws: WorkspaceSummary; onClose: () 
     if (out.ok) {
       show({ tone: "success", title: t("worktree.created", { branch: out.value.laneBranch ?? "" }) });
       onClose();
+      // F-WT-01: report the copy, run a trusted setup or ask for a review.
+      void prepareWorktree(out.value.id);
     } else setError(out.error.message);
   };
   return (
@@ -262,7 +288,8 @@ function DiffDialog({ wt, onClose }: { wt: WorkspaceSummary; onClose: () => void
             <Skeleton height={96} />
           </div>
         ) : (
-          <DiffView
+          <ReviewDiff
+            wt={wt}
             files={files}
             labels={{
               empty: t("worktree.diffEmpty"),
@@ -328,6 +355,7 @@ function MergeDialogs({
       title={t("worktree.mergeTitle", { branch, base })}
       body={t("worktree.mergeBody", { base, folder })}
       confirmLabel={t("worktree.mergeConfirm")}
+      // F-WT-03: what the merge will do, before it's confirmed.
       onConfirm={() => {
         merging.current = true;
         void mergeWorktree(wt.id).then((out) => {
@@ -347,7 +375,9 @@ function MergeDialogs({
           } else setReport(out.value);
         });
       }}
-    />
+    >
+      <MergeForecast laneId={wt.id} />
+    </ConfirmDialog>
   );
 }
 
@@ -370,7 +400,12 @@ function DiscardDialog({ wt, onClose }: { wt: WorkspaceSummary; onClose: () => v
           // force, which the core confirms natively once more.
           let out = await removeWorktree(wt.id, false);
           if (!out.ok && out.error.code === "conflict") out = await removeWorktree(wt.id, true);
-          if (out.ok) show({ title: t("worktree.discarded", { branch }) });
+          if (out.ok)
+            show({
+              tone: out.value?.teardown && out.value.teardown.kind !== "ran" ? "warning" : undefined,
+              title: t("worktree.discarded", { branch }),
+              body: teardownText(out.value?.teardown),
+            });
           else if (out.error.code !== "cancelled") show({ tone: "error", title: out.error.message });
           onClose();
         })();
@@ -385,7 +420,14 @@ export function WorktreeDialogs() {
   const ask = useWorktrees((s) => s.ask);
   const list = useWorkspaces((s) => s.list);
   const close = () => useWorktrees.getState().open(null);
+  useWorktreeNotices();
   if (!ask) return null;
+  if (ask.kind === "review")
+    return <ReviewSetupDialog worktreeIds={ask.worktreeIds} state={ask.state} onClose={close} />;
+  if (ask.kind === "setup") {
+    const ws = list.find((w) => w.id === ask.workspaceId);
+    return ws ? <WorktreeSetupDialog ws={ws} onClose={close} /> : null;
+  }
   if (ask.kind === "new") {
     const ws = list.find((w) => w.id === ask.workspaceId);
     return ws ? <NewWorktreeDialog ws={ws} onClose={close} /> : null;
@@ -393,6 +435,7 @@ export function WorktreeDialogs() {
   const wt = list.find((w) => w.id === ask.worktreeId);
   if (!wt) return null;
   if (ask.kind === "diff") return <DiffDialog wt={wt} onClose={close} />;
+  if (ask.kind === "overlap") return <OverlapDialog wt={wt} base={baseBranch(list, wt)} onClose={close} />;
   if (ask.kind === "merge")
     return (
       <MergeDialogs

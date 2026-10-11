@@ -3,7 +3,7 @@
 //! `<repo>/.tandem/worktrees/<slug>`. Copy the user sees says "worktree";
 //! "lane" is the internal word (UI_SPEC §6.2).
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ffi::OsStr;
 use std::path::Path;
 use std::sync::Mutex;
@@ -22,6 +22,8 @@ use tandem_store::repo::panes::{self, PaneRecord};
 use tandem_store::repo::tabs;
 use tandem_store::repo::workspaces::{self, NewLane, Workspace};
 use tandem_store::Store;
+
+use crate::services::worktree_setup::{self, RemoveReport};
 
 pub const NOT_A_REPO: &str = "Worktrees need a git repository";
 pub const GIT_MISSING: &str = "Git isn't installed";
@@ -121,6 +123,8 @@ pub async fn create(
     };
     tabs::create(store, &row.id, None).await?;
     tracing::info!(code = "lane.created", "worktree created");
+    // F-WT-01: the repository's ignored files, for every new worktree.
+    crate::services::worktree_setup::copy_for_new_lane(&row).await;
     Ok(row)
 }
 
@@ -163,27 +167,98 @@ pub async fn merge(store: &Store, git: &Git, id: &WorkspaceId) -> Result<MergeRe
 
 /// Whether `gh` is on the login PATH ("Create pull request" needs it).
 pub fn gh_available(login: &LoginEnv) -> bool {
-    let path = login.vars.get("PATH").map(String::as_str).unwrap_or("");
-    let pathext = login.vars.get("PATHEXT").map(String::as_str);
-    resolve_on_path("gh", path, pathext).is_some()
+    on_login_path(login, "gh")
 }
 
-/// `lane_create_pr`: a shell pane in the worktree, in `tab`. The caller
-/// types [`PR_COMMAND`] once the view has started it.
+fn on_login_path(login: &LoginEnv, program: &str) -> bool {
+    let path = login.vars.get("PATH").map(String::as_str).unwrap_or("");
+    let pathext = login.vars.get("PATHEXT").map(String::as_str);
+    resolve_on_path(program, path, pathext).is_some()
+}
+
+pub const GLAB_MISSING: &str = "GitLab CLI (glab) isn't installed";
+/// "Create merge request" types this for a GitLab remote (F-WT-04).
+pub const MR_COMMAND: &str = "glab mr create";
+
+/// Where a worktree's `origin` is hosted, for Create pull/merge request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum Forge {
+    Github,
+    Gitlab,
+}
+
+/// The host in a remote URL: `git@host:path`, `ssh://user@host:port/path`,
+/// `https://host/path`.
+pub fn remote_host(url: &str) -> Option<String> {
+    let rest = match url.split_once("://") {
+        Some((_, rest)) => rest,
+        // scp-like `user@host:path`; a plain local path has no host.
+        None if url.contains(':') && !url.starts_with('/') => url,
+        None => return None,
+    };
+    let rest = rest.rsplit_once('@').map_or(rest, |(_, h)| h);
+    let host = rest.split(['/', ':']).next().unwrap_or("");
+    (!host.is_empty()).then(|| host.to_ascii_lowercase())
+}
+
+/// GitLab when `origin`'s host name contains "gitlab", else GitHub (D-2207).
+pub fn forge_for(url: Option<&str>) -> Forge {
+    match url.and_then(remote_host) {
+        Some(host) if host.contains("gitlab") => Forge::Gitlab,
+        _ => Forge::Github,
+    }
+}
+
+/// The worktree folder's `origin` URL.
+fn origin_url(root: &str) -> Option<String> {
+    tandem_git::lanes::origin_url(Path::new(root))
+}
+
+/// `lane_forge` (F-WT-04).
+pub async fn forge(store: &Store, id: &WorkspaceId) -> Result<Forge, IpcError> {
+    let (lane, _) = lane_row(store, id).await?;
+    let root = lane.root.clone();
+    let url = tokio::task::spawn_blocking(move || origin_url(&root))
+        .await
+        .ok()
+        .flatten();
+    Ok(forge_for(url.as_deref()))
+}
+
+/// `lane_create_pr`: a shell pane in the worktree, in `tab`, and the command
+/// to type once the view has started it: [`PR_COMMAND`], or [`MR_COMMAND`]
+/// for a GitLab remote (F-WT-04).
 pub async fn create_pr_pane(
     store: &Store,
     login: &LoginEnv,
     id: &WorkspaceId,
     tab: &TabId,
-) -> Result<PaneRecord, IpcError> {
+) -> Result<(PaneRecord, &'static str), IpcError> {
     let (lane, _) = lane_row(store, id).await?;
     if !Path::new(&lane.root).is_dir() {
         return Err(IpcError::new(ErrorCode::NotFound, FOLDER_MISSING));
     }
-    if !gh_available(login) {
-        return Err(IpcError::new(ErrorCode::EngineMissing, GH_MISSING).with_stage("gh"));
-    }
-    Ok(panes::create_with(store, tab, "terminal", Some(lane.root.clone()), None).await?)
+    // F-WT-04: a GitLab remote gets a merge request through glab.
+    let command = match forge_for(origin_url(&lane.root).as_deref()) {
+        Forge::Gitlab => {
+            if !on_login_path(login, "glab") {
+                return Err(
+                    IpcError::new(ErrorCode::EngineMissing, GLAB_MISSING).with_stage("glab")
+                );
+            }
+            MR_COMMAND
+        }
+        Forge::Github => {
+            if !gh_available(login) {
+                return Err(IpcError::new(ErrorCode::EngineMissing, GH_MISSING).with_stage("gh"));
+            }
+            PR_COMMAND
+        }
+    };
+    let pane = panes::create_with(store, tab, "terminal", Some(lane.root.clone()), None).await?;
+    Ok((pane, command))
 }
 
 /// Stops every open pane in a workspace's tabs.
@@ -208,6 +283,22 @@ pub async fn remove(
     id: &WorkspaceId,
     force: Option<ForceConfirm>,
 ) -> Result<(), IpcError> {
+    remove_with_teardown(store, pty, git, id, force, None)
+        .await
+        .map(|_| ())
+}
+
+/// [`remove`], running the repository's trusted teardown (F-WT-01) in the
+/// worktree after its panes stop and before the folder goes. The teardown's
+/// result never blocks the removal.
+pub async fn remove_with_teardown(
+    store: &Store,
+    pty: &PtyManager,
+    git: &Git,
+    id: &WorkspaceId,
+    force: Option<ForceConfirm>,
+    teardown: Option<(&DataDir, &LoginEnv)>,
+) -> Result<RemoveReport, IpcError> {
     let (lane, parent) = lane_row(store, id).await?;
     let lane_path = Path::new(&lane.root);
     if force.is_none() && lane_path.is_dir() {
@@ -220,11 +311,17 @@ pub async fn remove(
         }
     }
     stop_panes(store, pty, &lane.id).await?;
+    let mut report = RemoveReport::default();
+    if let Some((data, login)) = teardown {
+        report.teardown =
+            worktree_setup::teardown(data, login, &lane.root, worktree_setup::TEARDOWN_LIMIT)
+                .await;
+    }
     let repo = discover(&parent.root, "Folder not found")?;
     LaneManager::remove(git, &repo, lane_path, force).await?;
     workspaces::remove(store, &lane.id).await?;
     tracing::info!(code = "lane.removed", "worktree removed");
-    Ok(())
+    Ok(report)
 }
 
 /// Top-level workspaces whose repository has a `.tandem/worktrees` folder.
@@ -577,5 +674,113 @@ mod tests {
         );
         assert_eq!(cleanup_title(1), "1 finished worktree can be cleaned up");
         assert_eq!(cleanup_title(3), "3 finished worktrees can be cleaned up");
+    }
+}
+
+/// One sibling worktree that changed some of the same files (F-WT-03).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SiblingOverlap {
+    pub lane_id: WorkspaceId,
+    pub branch: String,
+    pub files: Vec<String>,
+}
+
+/// `lane_overlap`: shared files with sibling worktrees, and the forecast of
+/// merging this worktree's branch into its repository's HEAD.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct OverlapReport {
+    /// Files this worktree changed since its base, uncommitted included.
+    pub files: u32,
+    pub siblings: Vec<SiblingOverlap>,
+    pub forecast: tandem_git::overlap::Forecast,
+    /// Uncommitted changes in this worktree, which the forecast can't see.
+    pub uncommitted: u32,
+}
+
+/// `lane_overlap` (F-WT-03). Reads only: the forecast merges in memory.
+pub async fn overlap(store: &Store, git: &Git, id: &WorkspaceId) -> Result<OverlapReport, IpcError> {
+    use tandem_git::overlap::{changed_files, forecast, shared};
+    let (lane, parent) = lane_row(store, id).await?;
+    let lane_repo = discover(&lane.root, FOLDER_MISSING)?;
+    let base = lane.lane_base.clone().unwrap_or_default();
+    let mine = changed_files(git, lane_repo.root(), &base).await?;
+    let mut siblings = Vec::new();
+    for other in workspaces::lanes(store, &parent.id).await? {
+        if other.id == lane.id || !Path::new(&other.root).is_dir() {
+            continue;
+        }
+        let (Some(branch), Some(other_base)) = (other.lane_branch.clone(), other.lane_base.clone())
+        else {
+            continue;
+        };
+        let Ok(Some(other_repo)) = Repo::discover(Path::new(&other.root)) else {
+            continue;
+        };
+        let theirs = changed_files(git, other_repo.root(), &other_base).await?;
+        let files = shared(&mine, &theirs);
+        if !files.is_empty() {
+            siblings.push(SiblingOverlap {
+                lane_id: other.id.clone(),
+                branch,
+                files,
+            });
+        }
+    }
+    let parent_repo = discover(&parent.root, "Folder not found")?;
+    let branch = lane.lane_branch.clone().unwrap_or_default();
+    let forecast = forecast(git, &parent_repo.main_root(), "HEAD", &branch).await?;
+    let status = lane_repo.status().await?;
+    let uncommitted: BTreeSet<String> = status
+        .staged
+        .iter()
+        .chain(status.unstaged.iter())
+        .map(|f| f.path.clone())
+        .collect();
+    tracing::info!(
+        code = "lane.overlap",
+        siblings = siblings.len(),
+        "worktree overlap checked"
+    );
+    Ok(OverlapReport {
+        files: u32::try_from(mine.len()).unwrap_or(u32::MAX),
+        siblings,
+        forecast,
+        uncommitted: u32::try_from(uncommitted.len()).unwrap_or(u32::MAX),
+    })
+}
+
+#[cfg(test)]
+mod forge_tests {
+    use super::*;
+
+    #[test]
+    fn f_wt_04_1_gitlab_remotes_get_merge_requests() {
+        for url in [
+            "git@gitlab.com:team/app.git",
+            "https://gitlab.com/team/app.git",
+            "ssh://git@gitlab.example.org:2222/team/app.git",
+            "https://user@GitLab.internal/team/app",
+        ] {
+            assert_eq!(forge_for(Some(url)), Forge::Gitlab, "{url}");
+        }
+        assert_eq!(MR_COMMAND, "glab mr create");
+    }
+
+    #[test]
+    fn f_wt_04_2_other_remotes_keep_pull_requests() {
+        for url in [
+            "https://github.com/team/app.git",
+            "git@github.com:team/app.git",
+            "/srv/git/app.git",
+            "git@example.com:gitlab-mirror/app.git",
+        ] {
+            assert_eq!(forge_for(Some(url)), Forge::Github, "{url}");
+        }
+        assert_eq!(forge_for(None), Forge::Github);
+        assert_eq!(remote_host("ssh://git@host.example:22/x").as_deref(), Some("host.example"));
     }
 }

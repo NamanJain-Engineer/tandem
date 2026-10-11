@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-worktree-setup-trust"
+description = "Enables the worktree_setup_trust command without any pre-configured scope."
+commands.allow = ["worktree_setup_trust"]
+
+[[permission]]
+identifier = "deny-worktree-setup-trust"
+description = "Denies the worktree_setup_trust command without any pre-configured scope."
+commands.deny = ["worktree_setup_trust"]

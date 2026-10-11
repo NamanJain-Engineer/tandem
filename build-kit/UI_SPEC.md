@@ -1021,6 +1021,14 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
 
 
 
+#### Worktree workflow (UI-150–153, F-WT-01…04)
+
+- **UI-150 Worktree setup** (dialog; "Worktree setup…" in a repository's rail menu and every worktree's ⋯ menu). Description: "What every new worktree of {folder} gets. Saved in .vibezeo/worktree.json in the repository; commit it to share it with your team." Fields: "Copy into each new worktree" (monospace `Textarea`, one gitignore pattern per line), "Setup command" and "Teardown command" (`Input`, with the hints in the catalog), then the note "Saving trusts these commands on this computer. …". Footer: Cancel / **Save**.
+  - Loading: three skeletons. Error: an error `Banner` "Couldn't read the worktree setup: {reason}" with Retry. Empty (no file): "No setup yet. New worktrees start with only the files git tracks." above empty fields. A malformed file: a warning `Banner` "The current file can't be used ({reason}). Saving replaces it." with empty fields. Populated: the file's values.
+- **UI-151 Review worktree setup** (dialog, opened after a worktree is made when the file's commands aren't trusted here). Body: "This repository's .vibezeo/worktree.json wants to run these commands in {the new worktree | # new worktrees}. Run them only if you trust this repository. Nothing has run yet." Then "Setup" and "Teardown, when a worktree is discarded", each in a `CodeBlock`, verbatim. Footer: **Not now** (secondary) / **Trust and run** (primary). Several worktrees made together with the same commands share one review. A failure shows an error `Banner` in the dialog.
+- Toasts: "Copied {n} files into the worktree" (success; "Stopped at the copy limit (2,000 files or 512 MB)." as the body when partial), "Couldn't copy files into the worktree: {reason}", "The worktree setup can't be used: {reason}", "Couldn't start the setup: {reason}". Discarding adds the teardown's line as the toast body ("Teardown finished", "Teardown exited with code {code}", "Teardown was stopped after 2 minutes", "Teardown skipped: its command isn't trusted on this computer"), with the warning tone when it didn't run cleanly.
+- UI-152 (review comments on a worktree's diff, F-WT-02) and UI-153 (overlap check, F-WT-03) are reserved for their features.
+
 **ID allocation for this part.** Thread UI-20–25, Engines & accounts UI-33–37, Routines UI-50–53 (UI-50 is already referenced by `CronInput`), Agent mode UI-70–76, Tasks UI-80–84, Plugins UI-90–94. UI-40–49 (Dashboard, Notifications) and UI-60–69 (Dictate, Conductor) are reserved for later parts.
 
 **Shared vocabulary (applies to every screen below).**
@@ -2488,7 +2496,7 @@ With OS or in-app Reduce motion: no transforms or pulses (§1.8). In this part s
 
 ## 8. Screen index
 
-ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 Thread, engines and accounts · UI-40–49 Dashboard and notifications · UI-50–53 Routines · UI-60–69 Dictate and Conductor · UI-70–94 Teammates, Tasks and Plugins (ui_part3) · UI-100–116 Settings · UI-120–124 Plans · UI-130–135 System dialogs. Unused numbers inside a range are reserved for that range.
+ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 Thread, engines and accounts · UI-40–49 Dashboard and notifications · UI-50–53 Routines · UI-60–69 Dictate and Conductor · UI-70–94 Teammates, Tasks and Plugins (ui_part3) · UI-100–116 Settings · UI-120–124 Plans · UI-130–135 System dialogs · UI-150–159 Worktree workflow. Unused numbers inside a range are reserved for that range.
 
 | ID | Screen | Section | Areas |
 |---|---|---|---|
@@ -2575,6 +2583,8 @@ ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 T
 | UI-133 | Connectivity and entitlement banners | §4.15 | SH, BE, BL |
 | UI-134 | Permission prompts | §4.15 | DI, CN, SH |
 | UI-135 | Destructive confirmations | §4.15 | all |
+| UI-150 | Worktree setup | §4.2 | WT |
+| UI-151 | Review worktree setup | §4.2 | WT |
 
 ### 8.1 Cross-document conflicts found while writing this part
 All items below were fixed at the source during the consistency pass (see CONSISTENCY_REPORT.md); they are kept as a record.

@@ -2815,6 +2815,86 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
 **Acceptance:**
 1. A Team member with audit on generates an audit event for a Full-access session start, while a Pro user generates nothing.
 
+### 4.19 WT: Worktree workflow
+
+Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1–4 of §4); decisions D-2200–D-2299. All four extend F-CD-15. Remote folders have no worktrees (F-RM-01), so none of these apply there.
+
+#### F-WT-01 Worktree setup (P2)
+**Story:** A new worktree has none of my repository's ignored files (`.env`, local config) and no installed dependencies, so every agent's first minutes go to setup. I describe the setup once and every worktree gets it, without a repository being able to run commands I never approved.
+
+**Behavior:**
+- **The file:** `.vibezeo/worktree.json` at the root of the repository's main checkout, UTF-8 JSON of at most 64 KB:
+  ```json
+  { "copy": [".env*", "config/local.yml"], "setup": "pnpm install", "teardown": "docker compose down" }
+  ```
+  - `copy`: up to 100 patterns in gitignore syntax (relative to the repository root; `!` lines exclude). Optional.
+  - `setup`, `teardown`: one shell command line each, up to 4,000 characters. Optional.
+  - Unknown keys are ignored. Vibezeo never commits the file and never edits `.gitignore`; users commit it to share it.
+- **Editing:** "Worktree setup…" in the repository's and each worktree's menu opens UI-150: the patterns (one per line), the two commands, where the file lives, and Save. Saving writes the file atomically and trusts its commands on this computer.
+- **Copy, on every new worktree** (New worktree, the launch sheet, handoff, task runs):
+  - Walks the main checkout, skipping `.git` and `.tandem`. A git-ignored folder (such as `node_modules`) is entered only when a pattern's fixed leading path leads into it; a folder that itself matches is copied whole.
+  - Copies each match that doesn't exist in the worktree yet, keeping its permission bits. It never overwrites, so tracked files stay as the branch has them.
+  - Sources must resolve inside the main checkout and destinations inside the worktree (F-TL-03 containment). Symbolic links are skipped and listed.
+  - Stops at 2,000 files or 512 MB and says so.
+  - A missing or malformed file never blocks the worktree: it's created without the copy, and the error is shown.
+- **Trust:** commands from the file run only when this exact pair of `setup` and `teardown` has been trusted for this repository on this computer. Trust is a SHA-256 of the two commands, kept in `$DATA/worktree-trust.json` (never in the repository). Saving from UI-150 trusts. Any other change, such as a pull that edits the file, needs review again. The copy needs no trust: it only moves the repository's own files into its own worktree.
+- **Setup:** after a worktree is made from the New worktree dialog or the launch sheet, a trusted `setup` runs in a new terminal pane in the worktree's tab, typed into the user's shell once its prompt is up, so it's visible and can be stopped. An untrusted one opens UI-151 "Review worktree setup" with the commands verbatim: "Trust and run" or "Not now". Task runs and handoff copy only and never run commands (D-2203). Only the main window can trust (TL-06 rule 5: not voice, the phone or an unattended run).
+- **Teardown:** discarding a worktree runs a trusted `teardown` in its folder first, with the login environment and a 2-minute limit. Its result never blocks the removal; a failure or timeout is reported with its exit code. An untrusted teardown is skipped, and the report says so.
+
+**Acceptance:**
+1. With `copy: [".env*", "config/local.yml"]`, a new worktree has `.env`, `.env.local` and `config/local.yml`, byte for byte as in the main checkout, and a tracked `.env.example` keeps the branch's version; nothing under an ignored `node_modules` is read.
+2. Patterns that reach outside (`../secret`, a symlink to `/etc`) copy nothing outside the worktree, and symlinks are listed as skipped.
+3. A repository file whose `setup` isn't trusted runs nothing; "Trust and run" runs it in a terminal pane in the worktree; changing the command in the file asks again.
+4. Saving from UI-150 writes `.vibezeo/worktree.json`, and the next worktree runs its setup without asking.
+5. Discarding runs the trusted teardown in the worktree's folder before removal; a teardown that exits 3 still removes the worktree, and the result says "exit code 3".
+6. Malformed JSON shows its error in UI-150, and a new worktree is still created.
+
+#### F-WT-02 Review comments to the agent (P2)
+**Story:** I read a worktree's diff, leave comments on lines, and send them to the agent working there in one go, instead of retyping file names and line numbers.
+
+**Behavior:**
+- In a worktree's diff (UI-152), each changed or context line has "Comment on line": a short text box for a comment on that file and line (new side for added and context lines, old side for removed ones).
+- A review bar lists the comments in file order with the count; each can be edited or removed. Comments are kept per worktree until sent or the app quits (D-2205).
+- **Send to agent** builds one prompt and types it into the worktree's agent through `pty_type_prompt` (a paste, then Enter). Format:
+  ```
+  Review of your changes on tandem/fix-auth (2 comments):
+
+  1. src/auth.ts:42
+     > if (token == null) return;
+     Handle an expired token here too.
+
+  Address each comment, then say what you changed.
+  ```
+  Quoted lines are trimmed to 200 characters.
+- **Target:** the live agent panes in the worktree's tabs; with more than one, the user picks. With none, Send is disabled ("No agent is running in this worktree") and **Copy review** puts the same text on the clipboard. A waiting agent (an approval is open) refuses, as `pty_type_prompt` does.
+
+**Acceptance:**
+1. Comments on `b.ts:3` and `a.ts:10` produce a prompt listing `a.ts:10` first, each with its quoted line and comment, and the header's branch and count.
+2. Sending to a live agent pane types the prompt into it and clears the comments; the pane's input receives it as one paste.
+3. With no agent running, Send is disabled with the reason, and Copy review copies the prompt.
+
+#### F-WT-03 Overlap check (P2)
+**Story:** Before I merge one of several parallel worktrees, I see which other worktrees touch the same files and whether merging will conflict.
+
+**Behavior:**
+- **Overlap:** for a worktree, the files it changed (since its base commit, uncommitted work included) are compared with each sibling worktree's (same repository). Each sibling with shared files is listed with them.
+- **Forecast:** `git merge-tree --write-tree --name-only` of the repository's current HEAD and the worktree's branch, which merges in memory and writes no files, index or refs. It covers committed work; uncommitted changes are counted and named ("3 uncommitted changes aren't in the forecast"). It needs git 2.38 or later and says so on older git.
+- "Check overlap…" in the worktree menu opens UI-153 with both. The merge confirm (F-CD-15) shows the forecast's verdict before the user confirms: "Merging will conflict in 2 files" (with the list) or "No conflicts expected".
+
+**Acceptance:**
+1. Two worktrees that both change `src/a.ts` each list the other with `src/a.ts`; a third that changes only `b.ts` lists none.
+2. A worktree whose commit conflicts with a newer commit on the base forecasts that file, and afterwards the parent checkout has no `MERGE_HEAD`, the same HEAD and a clean status.
+3. A worktree with no shared files and a clean forecast shows "No overlap" and "No conflicts expected".
+
+#### F-WT-04 GitLab merge requests (P2)
+**Behavior:**
+- "Create pull request" (F-CD-15) reads the worktree's `origin` remote. A host whose name contains `gitlab` makes it **Create merge request**, which types `glab mr create` into the shell pane instead of `gh pr create`. Without `glab` on the login PATH it says "GitLab CLI (glab) isn't installed".
+- Other hosts keep `gh pr create` and its message.
+
+**Acceptance:**
+1. With `origin` at `git@gitlab.com:team/app.git`, the menu reads "Create merge request" and the pane receives `glab mr create`.
+2. With `origin` at `https://github.com/team/app.git`, nothing changes from F-CD-15.
+
 ---
 
 ## 5. Non-functional requirements
