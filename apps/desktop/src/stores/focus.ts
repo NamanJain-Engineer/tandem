@@ -4,6 +4,7 @@ import { listen } from "../ipc/events";
 import { invoke } from "../ipc/invoke";
 import { switchMode } from "../features/shell/actions";
 import { useLayout } from "./layout";
+import { useTeammates } from "./teammates";
 import { useThreads } from "./threads";
 import { useUi } from "./ui";
 import { useWorkspaces } from "./workspaces";
@@ -45,6 +46,12 @@ export async function showSource(source: SourceRef, location?: FocusLocation | n
     // A thread card or notification opens the thread in Thread mode.
     switchMode("thread");
     useThreads.getState().select(source.threadId);
+    return;
+  }
+  if (source.type === "teammate") {
+    // A teammate from Find work opens its page in Agent mode (F-CN-05).
+    switchMode("agent");
+    useTeammates.getState().select(source.teammateId);
     return;
   }
   if (source.type === "account") {

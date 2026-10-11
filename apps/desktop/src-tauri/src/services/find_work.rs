@@ -1,9 +1,13 @@
-//! Find work by meaning (F-CN-05, ARCHITECTURE §12.6): open panes and
-//! threads as candidates, ranked on this machine by
+//! Find work by meaning (F-CN-05, ARCHITECTURE §12.6): open panes, threads
+//! and teammates as candidates, ranked on this machine by
 //! `tandem_core::find_work`. A pane is known by its name, title, engine,
 //! folder or page, and its last 20 lines of output; a thread by its title
-//! and last message. Output and messages go through the secret redactor
-//! before they're read, and nothing leaves the machine.
+//! and last message; a teammate by its name, its brief's first line and its
+//! latest chat's last line. Output and messages go through the secret
+//! redactor before they're read. Nothing leaves the machine unless the user
+//! turned on the hosted ranking (Settings › Privacy, D-1302): then the same
+//! redacted text, never file contents, goes to `/v1/voice/resolve`, and the
+//! local ranking answers whenever that fails.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -28,6 +32,14 @@ const DETAIL_CHARS: usize = 120;
 const MAX_MATCHES: usize = 20;
 /// The longest search (ARCHITECTURE §3).
 pub const MAX_QUERY_CHARS: usize = 500;
+/// The most candidates the hosted ranking takes, and the most text of each
+/// (ARCHITECTURE §14 `/v1/voice/resolve`).
+pub const HOSTED_CANDIDATES: usize = 200;
+pub const HOSTED_TEXT_CHARS: usize = 2_000;
+/// The hosted ranking scores 0..1; times this, its scores read like the
+/// local ranking's (a name that matches every word scores 3), so one clear
+/// match is decided the same way.
+const HOSTED_SCALE: f32 = 3.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -35,6 +47,18 @@ pub const MAX_QUERY_CHARS: usize = 500;
 pub enum FindKind {
     Pane,
     Thread,
+    Teammate,
+}
+
+/// Which ranking ordered a result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum FindRanking {
+    /// `tandem_core::find_work`, on this machine.
+    Local,
+    /// Vibezeo's hosted ranking (`/v1/voice/resolve`), with the opt-in on.
+    Hosted,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -61,7 +85,21 @@ pub struct FindWorkResult {
     /// The first match is one clear match to go to. Otherwise the close
     /// matches lead the list for the user to choose from.
     pub clear: bool,
+    pub ranking: FindRanking,
 }
+
+/// A teammate as Find work sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TeammateFacts {
+    pub id: String,
+    pub name: String,
+    pub brief: String,
+    /// The last message of its most recent chat, not yet redacted.
+    pub last_message: Option<String>,
+}
+
+/// The hosted ranking's answer: ranked ids, or why there isn't one.
+pub type HostedAnswer = Result<Vec<(String, f32)>, String>;
 
 /// The app around a search; faked in tests.
 #[async_trait]
@@ -83,6 +121,18 @@ pub trait FindHost: Send + Sync {
     async fn threads(&self) -> Vec<ThreadRecord>;
     /// A thread's last message, the user's or the agent's.
     async fn last_message(&self, thread: &ThreadRecord) -> Option<String>;
+    /// Teammates that aren't deleted.
+    async fn teammates(&self) -> Vec<TeammateFacts> {
+        Vec::new()
+    }
+    /// The hosted ranking: `None` while the user hasn't turned it on.
+    async fn hosted_rank(
+        &self,
+        _query: &str,
+        _candidates: &[crate::services::api::ResolveCandidate],
+    ) -> Option<HostedAnswer> {
+        None
+    }
 }
 
 /// The first `n` characters, on a character boundary.
@@ -187,7 +237,90 @@ async fn thread_candidate(host: &dyn FindHost, thread: ThreadRecord) -> (Candida
     (Candidate { id, label, text }, found)
 }
 
-/// Ranks the open panes and threads for `query`, best first.
+fn teammate_candidate(t: TeammateFacts) -> (Candidate, FindMatch) {
+    let brief = t
+        .brief
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .map(|l| clip(l, MESSAGE_CHARS));
+    let last = t
+        .last_message
+        .as_deref()
+        .map(|m| redact(&clip(m, MESSAGE_CHARS)))
+        .as_deref()
+        .and_then(last_line);
+    let text = [brief.clone(), last.clone()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join("\n");
+    let found = FindMatch {
+        source: SourceRef::Teammate {
+            teammate_id: t.id.clone(),
+        },
+        kind: FindKind::Teammate,
+        label: t.name.clone(),
+        detail: last.or_else(|| brief.map(|b| clip(&b, DETAIL_CHARS))),
+        workspace_id: None,
+        tab_id: None,
+        score: 0.0,
+    };
+    (
+        Candidate {
+            id: t.id,
+            label: t.name,
+            text,
+        },
+        found,
+    )
+}
+
+fn kind_name(kind: FindKind) -> &'static str {
+    match kind {
+        FindKind::Pane => "pane",
+        FindKind::Thread => "thread",
+        FindKind::Teammate => "teammate",
+    }
+}
+
+/// What the hosted ranking is sent: each candidate's name and text, clipped,
+/// the locally likelier ones first when there are too many.
+fn hosted_candidates(
+    candidates: &[Candidate],
+    by_id: &HashMap<String, FindMatch>,
+    local: &[find_work::Ranked],
+) -> Vec<crate::services::api::ResolveCandidate> {
+    let mut order: Vec<&Candidate> = local
+        .iter()
+        .filter_map(|r| candidates.iter().find(|c| c.id == r.id))
+        .collect();
+    for c in candidates {
+        if !order.iter().any(|o| o.id == c.id) {
+            order.push(c);
+        }
+    }
+    order
+        .into_iter()
+        .take(HOSTED_CANDIDATES)
+        .filter_map(|c| {
+            let kind = by_id.get(&c.id)?.kind;
+            let text = format!("{}\n{}", c.label, c.text);
+            let text = match text.char_indices().nth(HOSTED_TEXT_CHARS) {
+                Some((cut, _)) => text[..cut].to_string(),
+                None => text,
+            };
+            Some(crate::services::api::ResolveCandidate {
+                id: c.id.clone(),
+                kind: kind_name(kind).into(),
+                text,
+            })
+        })
+        .collect()
+}
+
+/// Ranks the open panes, threads and teammates for `query`, best first:
+/// with the hosted ranking when it's on and answers, else on this machine.
 pub async fn find(host: &dyn FindHost, query: &str) -> FindWorkResult {
     let mut candidates = Vec::new();
     let mut by_id = HashMap::new();
@@ -201,7 +334,49 @@ pub async fn find(host: &dyn FindHost, query: &str) -> FindWorkResult {
         by_id.insert(candidate.id.clone(), found);
         candidates.push(candidate);
     }
-    let ranked = find_work::rank(query, &candidates);
+    for teammate in host.teammates().await {
+        let (candidate, found) = teammate_candidate(teammate);
+        by_id.insert(candidate.id.clone(), found);
+        candidates.push(candidate);
+    }
+    let local = find_work::rank(query, &candidates);
+    let mut ranking = FindRanking::Local;
+    let mut ranked = local.clone();
+    if !candidates.is_empty() && !query.trim().is_empty() {
+        let sent = hosted_candidates(&candidates, &by_id, &local);
+        match host.hosted_rank(query, &sent).await {
+            None => {}
+            Some(Ok(matches)) => {
+                // Only ids it was offered, each once.
+                let mut hosted: Vec<find_work::Ranked> = Vec::new();
+                for (id, score) in matches {
+                    if by_id.contains_key(&id)
+                        && score.is_finite()
+                        && score > 0.0
+                        && !hosted.iter().any(|r| r.id == id)
+                    {
+                        hosted.push(find_work::Ranked {
+                            id,
+                            score: score.min(1.0) * HOSTED_SCALE,
+                        });
+                    }
+                }
+                hosted.sort_by(|a, b| b.score.total_cmp(&a.score));
+                if hosted.is_empty() {
+                    tracing::info!(
+                        code = "find_work.hosted_empty",
+                        "hosted ranking found nothing; ranked locally"
+                    );
+                } else {
+                    ranked = hosted;
+                    ranking = FindRanking::Hosted;
+                }
+            }
+            Some(Err(reason)) => {
+                tracing::info!(code = "find_work.hosted_failed", reason = %reason, "hosted ranking unavailable; ranked locally");
+            }
+        }
+    }
     let clear = matches!(find_work::decide(&ranked), Decision::One(_));
     let matches = ranked
         .into_iter()
@@ -213,7 +388,11 @@ pub async fn find(host: &dyn FindHost, query: &str) -> FindWorkResult {
             })
         })
         .collect();
-    FindWorkResult { matches, clear }
+    FindWorkResult {
+        matches,
+        clear,
+        ranking,
+    }
 }
 
 /// A thread's last message text from its stored events (newest last): the
@@ -243,6 +422,10 @@ mod tests {
         last_output: HashMap<String, String>,
         threads: Vec<ThreadRecord>,
         messages: HashMap<String, String>,
+        teammates: Vec<TeammateFacts>,
+        /// None: the hosted ranking is off.
+        hosted: Option<HostedAnswer>,
+        sent: std::sync::Mutex<Vec<crate::services::api::ResolveCandidate>>,
     }
 
     #[async_trait]
@@ -270,6 +453,22 @@ mod tests {
         }
         async fn last_message(&self, thread: &ThreadRecord) -> Option<String> {
             self.messages.get(thread.id.as_str()).cloned()
+        }
+        async fn teammates(&self) -> Vec<TeammateFacts> {
+            self.teammates.clone()
+        }
+        async fn hosted_rank(
+            &self,
+            _query: &str,
+            candidates: &[crate::services::api::ResolveCandidate],
+        ) -> Option<HostedAnswer> {
+            // Off: nothing is sent.
+            if self.hosted.is_some() {
+                if let Ok(mut sent) = self.sent.lock() {
+                    *sent = candidates.to_vec();
+                }
+            }
+            self.hosted.clone()
         }
     }
 
@@ -445,5 +644,125 @@ mod tests {
         );
         assert_eq!(message_text("tool", r#"{"type":"tool"}"#), None);
         assert_eq!(message_text("user", "not json"), None);
+    }
+
+    #[tokio::test]
+    async fn f_cn_05_1_the_hosted_ranking_resolves_login_testing_and_the_local_one_answers_when_its_down(
+    ) {
+        // The mocked server's answer.
+        let mut on = host();
+        on.hosted = Some(Ok(vec![
+            ("pan_auth".into(), 0.9),
+            ("pan_docs".into(), 0.1),
+            ("not_offered".into(), 1.0),
+        ]));
+        let hosted = find(&on, "login testing").await;
+        assert_eq!(hosted.ranking, FindRanking::Hosted);
+        assert!(hosted.clear);
+        assert_eq!(hosted.matches[0].label, "auth tests");
+        assert_eq!(hosted.matches.len(), 2, "only offered ids");
+        // What was sent: names and redacted text, each with its kind.
+        let sent = on.sent.lock().expect("sent").clone();
+        assert_eq!(sent.len(), 3);
+        assert_eq!(sent[0].id, "pan_auth", "the likelier ones first");
+        assert!(sent.iter().all(|c| c.kind == "pane"));
+        assert!(sent[0].text.starts_with("auth tests\n"));
+        // The server is down: the same answer, ranked here.
+        let mut down = host();
+        down.hosted = Some(Err("couldn't reach Vibezeo".into()));
+        let local = find(&down, "login testing").await;
+        assert_eq!(local.ranking, FindRanking::Local);
+        assert!(local.clear);
+        assert_eq!(local.matches[0].label, "auth tests");
+        // Off: nothing is asked.
+        let off = host();
+        assert_eq!(
+            find(&off, "login testing").await.ranking,
+            FindRanking::Local
+        );
+        assert!(off.sent.lock().expect("sent").is_empty());
+        // An empty answer falls back too.
+        let mut empty = host();
+        empty.hosted = Some(Ok(Vec::new()));
+        let r = find(&empty, "login testing").await;
+        assert_eq!(
+            (r.ranking, r.matches[0].label.as_str()),
+            (FindRanking::Local, "auth tests")
+        );
+    }
+
+    #[tokio::test]
+    async fn f_cn_05_close_hosted_scores_ask_which() {
+        let mut h = host();
+        h.hosted = Some(Ok(vec![("pan_auth".into(), 0.8), ("pan_docs".into(), 0.7)]));
+        let r = find(&h, "tests").await;
+        assert_eq!(r.ranking, FindRanking::Hosted);
+        assert!(!r.clear);
+        // Weak alone is not clear either.
+        h.hosted = Some(Ok(vec![("pan_auth".into(), 0.3)]));
+        assert!(!find(&h, "tests").await.clear);
+    }
+
+    #[tokio::test]
+    async fn f_cn_05_teammates_are_found_by_name_brief_and_last_line() {
+        let mut h = host();
+        let key = "sk-ant-api03-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+        h.teammates = vec![TeammateFacts {
+            id: "tm_rel".into(),
+            name: "Release scribe".into(),
+            brief: "You draft the changelog from merged pull requests.\nKeep a strict tone.".into(),
+            last_message: Some(format!("Drafted 0.5.0 notes with {key}")),
+        }];
+        // ("changelog" also means docs, so the docs pane is found too.)
+        let r = find(&h, "merged pull requests").await;
+        let first = &r.matches[0];
+        assert_eq!(first.kind, FindKind::Teammate);
+        assert_eq!(
+            first.source,
+            SourceRef::Teammate {
+                teammate_id: "tm_rel".into()
+            }
+        );
+        assert_eq!(first.label, "Release scribe");
+        let detail = first.detail.clone().expect("detail");
+        assert!(detail.starts_with("Drafted 0.5.0 notes"), "{detail}");
+        assert!(!detail.contains(key), "{detail}");
+        // By name, and by what it said last.
+        assert_eq!(find(&h, "scribe").await.matches[0].label, "Release scribe");
+        assert_eq!(
+            find(&h, "drafted notes").await.matches[0].label,
+            "Release scribe"
+        );
+        // Only the brief's first line counts.
+        assert!(find(&h, "strict tone").await.matches.is_empty());
+        // Sent to the hosted ranking as a teammate, redacted.
+        h.hosted = Some(Err("down".into()));
+        let _ = find(&h, "pull requests").await;
+        let sent = h.sent.lock().expect("sent").clone();
+        let tm = sent.iter().find(|c| c.id == "tm_rel").expect("teammate");
+        assert_eq!(tm.kind, "teammate");
+        assert!(!tm.text.contains(key));
+    }
+
+    #[tokio::test]
+    async fn f_cn_05_at_most_200_candidates_of_2000_characters_are_sent() {
+        let h = FakeHost {
+            panes: (0..250)
+                .map(|i| pane(&format!("pan_{i}"), Some(&format!("pane {i}"))))
+                .collect(),
+            output: HashMap::from([("pan_249".to_string(), "x".repeat(5_000))]),
+            hosted: Some(Err("down".into())),
+            ..FakeHost::default()
+        };
+        let _ = find(&h, "pane 249").await;
+        let sent = h.sent.lock().expect("sent").clone();
+        assert_eq!(sent.len(), HOSTED_CANDIDATES);
+        assert!(sent
+            .iter()
+            .all(|c| c.text.chars().count() <= HOSTED_TEXT_CHARS));
+        assert!(
+            sent.iter().any(|c| c.id == "pan_249"),
+            "the local best is kept"
+        );
     }
 }
