@@ -709,7 +709,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tmp");
         let data = DataDir::at(dir.path().join("data")).expect("data");
         let store = Store::open(&data).expect("store");
-        let root = std::fs::canonicalize(dir.path())
+        let root = tandem_core::contain::canonical(dir.path())
             .expect("canon")
             .join("repo");
         std::fs::create_dir_all(root.join("src")).expect("mkdir");
@@ -803,7 +803,7 @@ mod tests {
     #[tokio::test]
     async fn f_cd_09_2_a_file_outside_every_workspace_opens_read_only() {
         let f = fx().await;
-        let outside = std::fs::canonicalize(f.dir.path())
+        let outside = tandem_core::contain::canonical(f.dir.path())
             .expect("canon")
             .join("hosts");
         std::fs::write(&outside, "127.0.0.1 localhost\n").expect("write");
@@ -846,7 +846,7 @@ mod tests {
     #[tokio::test]
     async fn f_cd_19_files_in_another_workspace_are_editable_too() {
         let f = fx().await;
-        let other = std::fs::canonicalize(f.dir.path())
+        let other = tandem_core::contain::canonical(f.dir.path())
             .expect("canon")
             .join("other");
         std::fs::create_dir_all(&other).expect("mkdir");

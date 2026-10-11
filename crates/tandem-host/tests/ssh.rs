@@ -59,9 +59,16 @@ struct Fixture {
 /// A fresh data folder, the host's key approved (as the user would after
 /// seeing its fingerprint), and the master connection up.
 async fn connected() -> Fixture {
+    connected_sharing(true).await
+}
+
+/// [`connected`], with or without one shared connection per host (Windows'
+/// OpenSSH has none).
+async fn connected_sharing(multiplex: bool) -> Fixture {
     let dir = tempfile::tempdir().expect("tmp");
     // Control sockets need a short path.
-    let ssh = Ssh::new(dir.path().join("run"), dir.path().join("ssh/known_hosts"));
+    let mut ssh = Ssh::new(dir.path().join("run"), dir.path().join("ssh/known_hosts"));
+    ssh.multiplex = multiplex;
     let t = target();
     let r = ssh.resolve(&t).await.expect("ssh -G");
     assert_eq!(
@@ -192,6 +199,47 @@ async fn f_rm_01_1_connect_upload_host_open_terminal_echo_hi() {
         .call(method::PTY_KILL, json!({"id": "pn_echo"}))
         .await
         .expect("kill");
+}
+
+/// The Windows path (no ControlMaster): the host key is still checked,
+/// "connecting" only proves the host answers, and every command, the
+/// helper's session included, opens its own connection.
+#[tokio::test]
+#[ignore = "needs the sshd compose service (profile remote)"]
+async fn f_rm_01_without_connection_sharing_as_on_windows() {
+    let _g = SERIAL.lock().await;
+    let f = connected_sharing(false).await;
+    assert!(!f.ssh.master_running(&f.t).await);
+    let sockets = std::fs::read_dir(f.ssh.run_dir.as_path())
+        .map(|d| d.flatten().count())
+        .unwrap_or(0);
+    assert_eq!(sockets, 0, "no control socket");
+    let who = f.ssh.exec(&f.t, "whoami", None).await.expect("exec");
+    assert_eq!(who.trim(), "tandem");
+    f.ssh.install(&f.t, &bin_dir()).await.expect("install");
+    let (c, mut notes, _child) = open(&f).await;
+    let _: PtySpawned = c
+        .call(
+            method::PTY_SPAWN,
+            json!({"id": "pn_win", "cwd": "/home/tandem/project", "cols": 80, "rows": 24,
+                   "env": {"TERM": "xterm-256color", "TANDEM_PANE_ID": "pn_win"}}),
+        )
+        .await
+        .expect("spawn");
+    let _: Value = c
+        .call(
+            method::PTY_WRITE,
+            json!({"id": "pn_win", "data_b64": b64("echo win-ok\n")}),
+        )
+        .await
+        .expect("write");
+    output_until(&mut notes, "pn_win", "win-ok").await;
+    let _: Value = c
+        .call(method::PTY_KILL, json!({"id": "pn_win"}))
+        .await
+        .expect("kill");
+    // Nothing to end.
+    f.ssh.master_exit(&f.t).await;
 }
 
 #[tokio::test]

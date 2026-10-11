@@ -247,6 +247,22 @@ jobs:
             apps/desktop/src-tauri/binaries/tandem-tasks-${{ matrix.target }} \
             apps/desktop/src-tauri/binaries/tandem-hook-${{ matrix.target }}
 
+      - if: matrix.name == 'windows'
+        name: Stage DirectML.dll beside the app
+        # ONNX Runtime (Parakeet) links DirectML.dll; ship ort's copy rather
+        # than rely on an older one in System32 (D-1704). It exists once
+        # ort-sys has built, before the app's build script copies resources.
+        shell: bash
+        run: |
+          cargo build --release -p tandem-voice --features whisper,parakeet --target ${{ matrix.target }}
+          cp "target/${{ matrix.target }}/release/DirectML.dll" apps/desktop/src-tauri/binaries/DirectML.dll
+
+      - if: matrix.name == 'windows' && steps.secrets.outputs.azure == 'true'
+        name: Install the Trusted Signing client
+        # The signCommand below calls it for the app, both sidecars and the
+        # installers (D-1715).
+        run: cargo install trusted-signing-cli --locked
+
       - name: Build
         uses: tauri-apps/tauri-action@v0
         env:
@@ -275,6 +291,7 @@ jobs:
           args: >-
             --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
             --config src-tauri/tauri.sidecars.conf.json
+            ${{ matrix.name == 'windows' && '--config src-tauri/tauri.directml.conf.json' || '' }}
             ${{ steps.secrets.outputs.updater == 'true' && '--config {"bundle":{"createUpdaterArtifacts":true}}' || '' }}
             ${{ matrix.name == 'macos' && steps.apple.outputs.signed != 'true' && '--config {"bundle":{"macOS":{"signingIdentity":"-"}}}' || '' }}
             ${{ matrix.name == 'windows' && steps.secrets.outputs.azure == 'true' && format('--config {{"bundle":{{"windows":{{"signCommand":"trusted-signing-cli -e {0} -a {1} -c {2} %1"}}}}}}', secrets.AZURE_SIGNING_ENDPOINT, secrets.AZURE_SIGNING_ACCOUNT, secrets.AZURE_CERT_PROFILE) || '' }}
@@ -362,8 +379,36 @@ jobs:
           name: bundle-${{ matrix.name }}
           path: out/*
 
-  publish:
+  msix:
+    # The Microsoft Store package, made from the Windows installer's files
+    # (D-1713). The Store signs it; it never goes into the public release.
     needs: [verify, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: bundle-windows, path: windows }
+      - name: Build makemsix and the package
+        shell: bash
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          sudo apt-get install -y p7zip-full clang
+          pip install cmake
+          installer="$(ls windows/*-setup*.exe | head -1)"
+          bash scripts/build-msix.sh --from-installer "$installer" --out "store/Vibezeo_${{ needs.verify.outputs.version }}_x64.msix"
+          if [ -z "$MSIX_IDENTITY_NAME" ]; then
+            echo "- msix: dev identity (set the MSIX_* repo variables from Partner Center before submitting)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-msix
+          path: store/*.msix
+
+  publish:
+    needs: [verify, build, msix]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -376,7 +421,8 @@ jobs:
           RELEASE_API_TOKEN: ${{ secrets.RELEASE_API_TOKEN }}
         run: |
           mkdir -p release
-          find artifacts -type f -exec cp {} release/ \;
+          # The Store package isn't for direct download (unsigned until the Store signs it).
+          find artifacts -type f ! -name '*.msix' -exec cp {} release/ \;
           # F-WB-03: each OS's notes for the update feed, from CHANGELOG.md.
           for os in mac win lin; do
             npx --yes tsx@4.23.15 scripts/check-changelog.ts --version "${{ needs.verify.outputs.version }}" --notes "$os" > "release/notes-$os.txt"
@@ -415,6 +461,27 @@ jobs:
           name: Tandem ${{ needs.verify.outputs.version }} (early access)
           body_path: release-notes.md
           files: release/*
+      - if: env.CHANNEL == 'early-access'
+        name: winget manifests (signed Windows installer only)
+        # winget-pkgs is a pull request the owner opens (HUMAN_TODO, D-1715);
+        # an unsigned installer isn't offered there.
+        shell: bash
+        run: |
+          installer="$(ls release/*_x64-setup.exe 2>/dev/null | grep -v -- -unsigned | head -1 || true)"
+          if [ -z "$installer" ]; then
+            echo "- winget: skipped (the Windows installer isn't signed)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          pip install pyyaml jsonschema
+          name="$(basename "$installer")"
+          bash scripts/gen-winget.sh "$installer" "https://github.com/${{ env.RELEASES_REPO }}/releases/download/v${{ needs.verify.outputs.version }}-early-access/$name"
+          echo "- winget: manifests in the winget-manifests artifact" >> "$GITHUB_STEP_SUMMARY"
+      - if: env.CHANNEL == 'early-access'
+        uses: actions/upload-artifact@v4
+        with:
+          name: winget-manifests
+          path: dist/winget/
+          if-no-files-found: ignore
       - if: env.CHANNEL != 'early-access'
         name: Draft GitHub release
         uses: softprops/action-gh-release@v2

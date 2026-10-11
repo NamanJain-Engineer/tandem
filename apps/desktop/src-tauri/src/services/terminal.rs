@@ -1448,7 +1448,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let data = DataDir::at(dir.path().join("data")).expect("data");
         let store = Store::open(&data).expect("store");
-        let root = std::fs::canonicalize(dir.path())
+        let root = tandem_core::contain::canonical(dir.path())
             .expect("canonical")
             .join("ws1");
         std::fs::create_dir_all(root.join("sub")).expect("mkdir");

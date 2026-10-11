@@ -18,6 +18,7 @@ pub mod ring;
 pub mod side;
 pub mod text;
 pub mod typing;
+pub mod winpath;
 
 use std::collections::BTreeMap;
 use std::io::{Read, Write};

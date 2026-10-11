@@ -49,7 +49,7 @@ pub fn canonical_root(root: &str) -> Result<PathBuf, IpcError> {
             "Choose a folder with a full path",
         ));
     }
-    let canonical = std::fs::canonicalize(path).map_err(|_| {
+    let canonical = tandem_core::contain::canonical(path).map_err(|_| {
         IpcError::new(
             ErrorCode::NotFound,
             format!("Folder not found: {}", Redactor::global().redact_home(root)),

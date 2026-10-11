@@ -1,9 +1,7 @@
 mod support;
 
-use std::ffi::OsStr;
-
 use support::{git, Fixture};
-use tandem_git::{FileChange, Git, GitError, Mode, Repo};
+use tandem_git::{FileChange, Git, GitError, Repo};
 
 #[tokio::test]
 async fn f_cd_20_status_lists_staged_unstaged_and_untracked() {
@@ -162,6 +160,8 @@ async fn missing_git_is_reported_as_not_installed() {
 #[cfg(unix)]
 #[tokio::test]
 async fn writes_run_hooks_but_never_fsmonitor() {
+    use std::ffi::OsStr;
+    use tandem_git::Mode;
     let trap = support::trap::trapped_repo();
     let cli = trap.f.git();
     let argv: Vec<&OsStr> = ["commit", "-qam", "user commit"]

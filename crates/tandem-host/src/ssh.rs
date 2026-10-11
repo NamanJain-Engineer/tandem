@@ -9,6 +9,10 @@
 //! a master that `ControlMaster=auto` forks keeps the caller's stderr pipe
 //! open and the caller would wait forever. Every other command joins it
 //! (`ControlMaster=no`).
+//!
+//! Windows' own OpenSSH has no connection sharing (no ControlMaster), so
+//! there every command opens its own connection and "starting the master"
+//! only checks that the host answers ([`Ssh::multiplex`]).
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -315,6 +319,9 @@ pub struct Ssh {
     pub askpass: Option<Askpass>,
     /// `ssh -F`: a config file instead of the user's own (tests).
     pub config: Option<PathBuf>,
+    /// One shared connection per host (ControlMaster). On by default except
+    /// on Windows, whose OpenSSH doesn't support it.
+    pub multiplex: bool,
 }
 
 /// Names each host key probe's throwaway `known_hosts`.
@@ -337,6 +344,7 @@ impl Ssh {
             known_hosts,
             askpass: None,
             config: None,
+            multiplex: !cfg!(windows),
         }
     }
 
@@ -355,12 +363,14 @@ impl Ssh {
             o.push("-o".into());
             o.push(kv);
         };
-        opt(format!(
-            "ControlMaster={}",
-            if master { "yes" } else { "no" }
-        ));
-        opt(format!("ControlPath={}", self.control_path().display()));
-        opt("ControlPersist=10m".into());
+        if self.multiplex {
+            opt(format!(
+                "ControlMaster={}",
+                if master { "yes" } else { "no" }
+            ));
+            opt(format!("ControlPath={}", self.control_path().display()));
+            opt("ControlPersist=10m".into());
+        }
         opt("StrictHostKeyChecking=yes".into());
         opt(format!("UserKnownHostsFile={}", self.known_hosts.display()));
         opt("GlobalKnownHostsFile=/dev/null".into());
@@ -607,6 +617,9 @@ impl Ssh {
     }
 
     pub async fn master_running(&self, t: &SshTarget) -> bool {
+        if !self.multiplex {
+            return false;
+        }
         let mut cmd = self.base(&self.ssh);
         cmd.args(self.options(t, false))
             .args(["-O", "check", "--", &t.target])
@@ -630,9 +643,16 @@ impl Ssh {
         let err_file = std::fs::File::create(&log)
             .map_err(|e| SshError::new(Category::Unreachable, e.to_string()))?;
         let mut cmd = self.base(&self.ssh);
-        cmd.args(self.options(t, true))
-            .args(["-N", "-f", "--", &t.target])
-            .stdin(Stdio::null())
+        if self.multiplex {
+            cmd.args(self.options(t, true))
+                .args(["-N", "-f", "--", &t.target]);
+        } else {
+            // No master to start: one connection proves the host answers
+            // and the key (or password) works.
+            cmd.args(self.options(t, false))
+                .args(["-T", "--", &t.target, "true"]);
+        }
+        cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(err_file)
             // The master outlives this call by design.
@@ -652,6 +672,9 @@ impl Ssh {
 
     /// `ssh -O exit`: ends the master (E2E-M14-4 drops the connection so).
     pub async fn master_exit(&self, t: &SshTarget) {
+        if !self.multiplex {
+            return;
+        }
         let mut cmd = self.base(&self.ssh);
         cmd.args(self.options(t, false))
             .args(["-O", "exit", "--", &t.target])
@@ -862,7 +885,8 @@ Host key verification failed.";
 
     #[test]
     fn f_rm_01_options_are_strict_and_multiplexed() {
-        let s = Ssh::new(PathBuf::from("/d/run"), PathBuf::from("/d/ssh/known_hosts"));
+        let mut s = Ssh::new(PathBuf::from("/d/run"), PathBuf::from("/d/ssh/known_hosts"));
+        s.multiplex = true;
         let t = SshTarget {
             target: "h".into(),
             port: Some(2222),
@@ -870,9 +894,10 @@ Host key verification failed.";
             identity_file: Some("/k".into()),
         };
         let o = s.options(&t, false).join(" ");
+        let control = format!("ControlPath={}", s.control_path().display());
         for want in [
             "ControlMaster=no",
-            "ControlPath=/d/run/ssh-%C",
+            &control,
             "ControlPersist=10m",
             "StrictHostKeyChecking=yes",
             "UserKnownHostsFile=/d/ssh/known_hosts",
@@ -886,6 +911,18 @@ Host key verification failed.";
             assert!(o.contains(want), "{want} missing from {o}");
         }
         assert!(s.options(&t, true).join(" ").contains("ControlMaster=yes"));
+        // Windows' OpenSSH can't share a connection: no Control* options,
+        // the rest unchanged.
+        s.multiplex = false;
+        let o = s.options(&t, true).join(" ");
+        assert!(!o.contains("Control"), "{o}");
+        assert!(o.contains("StrictHostKeyChecking=yes") && o.contains("BatchMode=yes"));
+    }
+
+    #[test]
+    fn f_rm_01_multiplexing_is_off_only_on_windows() {
+        let s = Ssh::new(PathBuf::from("/d/run"), PathBuf::from("/d/kh"));
+        assert_eq!(s.multiplex, !cfg!(windows));
     }
 
     #[test]

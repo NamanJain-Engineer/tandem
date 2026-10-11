@@ -169,6 +169,40 @@ jobs:
       - run: bash scripts/smoke-dev.sh
       - run: dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e
 
+  # The desktop E2E on Windows (D-1714): tauri-driver drives WebView2
+  # through msedgedriver, which must match the runner's WebView2. Offline
+  # (no API or mock servers, which need Docker): the specs in
+  # apps/desktop/e2e/windows-smoke.txt. Merges to main and by hand only.
+  e2e-windows:
+    if: github.event_name != 'pull_request'
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install tauri-driver --locked
+      - name: msedgedriver for this WebView2
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $v = (Get-ItemProperty $key).pv
+          Write-Output "WebView2 $v"
+          Invoke-WebRequest "https://msedgedriver.microsoft.com/$v/edgedriver_win64.zip" -OutFile edgedriver.zip
+          Expand-Archive edgedriver.zip -DestinationPath "$env:RUNNER_TEMP\edgedriver"
+          "TANDEM_NATIVE_DRIVER=$env:RUNNER_TEMP\edgedriver\msedgedriver.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter desktop e2e -- --spec-list e2e/windows-smoke.txt
+        env:
+          TANDEM_E2E_OFFLINE: "1"
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-windows-results
+          path: test-results/
+
   audit:
     runs-on: ubuntu-24.04
     steps:

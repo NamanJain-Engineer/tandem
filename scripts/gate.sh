@@ -15,6 +15,9 @@ pnpm -r test
 cargo test --workspace
 pnpm --filter desktop build
 cargo clippy --workspace --all-targets -- -D warnings
+# The Windows code paths, for every crate but the app (D-1700; about 40 s
+# warm). The app's MSVC check and the Wine tests are in ci:local.
+bash scripts/windows-check.sh --clippy
 cargo fmt --all --check
 pnpm gen:protocol
 git diff --exit-code packages/protocol

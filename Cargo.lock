@@ -6073,6 +6073,7 @@ dependencies = [
  "chacha20poly1305",
  "chrono",
  "dashmap",
+ "dunce",
  "ed25519-dalek",
  "futures",
  "hex",
@@ -6097,6 +6098,7 @@ dependencies = [
  "ulid",
  "unicode-normalization",
  "uuid",
+ "windows-sys 0.59.0",
  "x25519-dalek",
  "zeroize",
 ]

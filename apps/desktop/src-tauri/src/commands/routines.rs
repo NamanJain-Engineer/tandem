@@ -88,10 +88,15 @@ fn launcher() -> Box<dyn OsLauncher> {
 /// What the launcher runs: the AppImage when there is one (its mount path
 /// changes every run), else this executable.
 fn launcher_exe() -> Result<std::path::PathBuf, IpcError> {
-    if let Some(appimage) = std::env::var_os("APPIMAGE") {
-        return Ok(appimage.into());
-    }
-    std::env::current_exe().map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))
+    let exe = std::env::current_exe().map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
+    Ok(tandem_routines::launcher::launcher_program(
+        exe,
+        std::env::var_os("APPIMAGE").map(Into::into),
+        tandem_core::install::managed_by_store(
+            tandem_core::install::windows_package_full_name().as_deref(),
+        ),
+        std::env::var_os("LOCALAPPDATA").map(Into::into),
+    ))
 }
 
 fn set_background(state: &AppState, enabled: bool) -> Result<LauncherStatus, IpcError> {

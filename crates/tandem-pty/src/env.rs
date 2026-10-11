@@ -193,8 +193,12 @@ pub fn gui_fallback_path(current: &str, path_helper: &[String], homebrew: &[Path
 
 #[cfg(windows)]
 fn run_capture(_shell: &Path, _timeout: Duration) -> Option<BTreeMap<String, String>> {
-    // Windows reads the registry PATH (M3); the process env is the base.
-    Some(std::env::vars().collect())
+    // The process env, with the PATH Windows would build now from the
+    // registry: Explorer-started apps keep the one from sign-in (§5.2).
+    Some(crate::winpath::with_registry_path(
+        std::env::vars().collect(),
+        &crate::winpath::SystemRegistry,
+    ))
 }
 
 /// Removes what panes must not inherit (§5.2).
@@ -519,9 +523,10 @@ mod tests {
             Some(Path::new("/d/si")),
         )
         .expect("wrap");
-        assert!(args[1].ends_with(
-            "unset c; TANDEM_SHELL_TOKEN=\"$t\" TANDEM_REAL_ZDOTDIR=\"${ZDOTDIR-}\" ZDOTDIR='/d/si/zsh' exec '/bin/zsh' -l"
-        ));
+        let s = std::path::MAIN_SEPARATOR;
+        assert!(args[1].ends_with(&format!(
+            "unset c; TANDEM_SHELL_TOKEN=\"$t\" TANDEM_REAL_ZDOTDIR=\"${{ZDOTDIR-}}\" ZDOTDIR='/d/si{s}zsh' exec '/bin/zsh' -l"
+        )));
         let fish =
             agent_wrapper(Path::new("/usr/bin/fish"), &["codex".into()], None).expect("wrap");
         assert!(

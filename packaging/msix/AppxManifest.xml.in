@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Vibezeo as a Microsoft Store (MSIX) package (D-1713). scripts/build-msix.sh
+  fills the @…@ values: the identity and publisher come from Partner Center
+  (Product management › Product identity) once the name is reserved; local
+  builds use the dev values in that script. The Store signs the package.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 desktop rescap">
+
+  <Identity
+    Name="@IDENTITY_NAME@"
+    Publisher="@PUBLISHER@"
+    Version="@VERSION@"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Vibezeo</DisplayName>
+    <PublisherDisplayName>@PUBLISHER_DISPLAY_NAME@</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>A desktop workspace for coding agents</Description>
+  </Properties>
+
+  <Dependencies>
+    <!-- Windows 10 1809: WebView2 and ConPTY. -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="Vibezeo" Executable="tandem.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Vibezeo"
+        Description="A desktop workspace for coding agents"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <!-- tandem:// links (F-SH-13). In a package the registry entries the
+             app writes at runtime stay private to it, so the scheme is declared here. -->
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="@SCHEME@">
+            <uap:DisplayName>Vibezeo</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+        <!-- `vibezeo.exe` on PATH: Task Scheduler runs background routines
+             through it, since a packaged app can't be started by its path
+             (tandem_routines::launcher::STORE_ALIAS). -->
+        <uap3:Extension Category="windows.appExecutionAlias" Executable="tandem.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="vibezeo.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+        <!-- Launch at login: the packaged equivalent of the Run key, off
+             until the user turns it on (HUMAN_TODO: the app must switch it
+             through the StartupTask API in a Store build). -->
+        <desktop:Extension Category="windows.startupTask" Executable="tandem.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="VibezeoStartup" Enabled="false" DisplayName="Vibezeo" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- A full-trust desktop app: terminals, engines and git run as the user. -->
+    <rescap:Capability Name="runFullTrust" />
+    <!-- Dictate (F-DI): Windows' microphone privacy setting lists the app. -->
+    <DeviceCapability Name="microphone" />
+  </Capabilities>
+</Package>
