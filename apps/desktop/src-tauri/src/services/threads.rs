@@ -3658,7 +3658,17 @@ mod tests {
                 (5, "turn_end"),
             ]
         );
-        let detail = f.svc.get(&f.thread.id).await.expect("detail");
+        // As in f_th_03_4 below: the state is written just after the turn's end
+        // is stored, so wait for it rather than read it once (it raced under
+        // the full gate's load in chain5).
+        let mut detail = f.svc.get(&f.thread.id).await.expect("detail");
+        for _ in 0..100 {
+            if detail.thread.state != ThreadState::Working {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            detail = f.svc.get(&f.thread.id).await.expect("detail");
+        }
         assert_eq!(detail.thread.state, ThreadState::Done);
         assert_eq!(detail.running, None);
     }
