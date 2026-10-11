@@ -3,6 +3,7 @@
   "pages": [
     "index",
     "code-mode",
+    "workflow-tools",
     "thread-mode",
     "agent-mode",
     "dictate",

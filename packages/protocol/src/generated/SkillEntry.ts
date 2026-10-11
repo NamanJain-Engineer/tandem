@@ -10,6 +10,7 @@ slug: string, name: string, description: string, valid: boolean, error: string |
  */
 isNew: boolean, 
 /**
- * Engines the skill is synced to (F-AG-10, P2): none yet.
+ * The engine accounts (ids) whose own skills folder has Vibezeo's copy
+ * of it (F-AG-10).
  */
 syncedTo: Array<string>, };

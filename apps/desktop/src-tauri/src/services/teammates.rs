@@ -25,6 +25,9 @@ pub trait EngineFacts: Send + Sync {
     fn known(&self, engine_id: &str) -> bool;
     /// The engine a new teammate starts with.
     fn default_engine(&self) -> String;
+    /// The engine's own skills folder under a provider home (registry
+    /// `skills_dir`), for skill sync (F-AG-10).
+    fn skills_dir(&self, engine_id: &str) -> Option<String>;
 }
 
 /// `teammate_create`.
@@ -136,6 +139,28 @@ pub struct TeammateSummary {
 #[ts(export)]
 pub struct TeammatesChanged {
     pub teammates: Vec<TeammateSummary>,
+}
+
+/// The pane name a teammate launched in a terminal goes by (F-AG-13): its
+/// name, cut to a pane name's 32 characters.
+pub fn pane_name(name: &str) -> String {
+    let name = name.trim();
+    match name.char_indices().nth(32) {
+        Some((cut, _)) => name[..cut].trim_end().to_string(),
+        None => name.to_string(),
+    }
+}
+
+/// A skill store error as the IPC's.
+pub fn skill_error(e: tandem_store::skills::SkillError) -> IpcError {
+    use tandem_store::skills::SkillError;
+    let code = match &e {
+        SkillError::Invalid(_) => ErrorCode::Invalid,
+        SkillError::NotFound(_) => ErrorCode::NotFound,
+        SkillError::Exists(_) => ErrorCode::Conflict,
+        SkillError::Io(_) => ErrorCode::Io,
+    };
+    IpcError::new(code, e.to_string())
 }
 
 fn invalid(msg: impl Into<String>) -> IpcError {
@@ -291,6 +316,14 @@ impl EngineFacts for AppEngineFacts {
             .or_else(|| chat.first())
             .cloned()
             .unwrap_or_else(|| "claude".into())
+    }
+
+    fn skills_dir(&self, engine_id: &str) -> Option<String> {
+        self.0
+            .engines
+            .get(engine_id)
+            .filter(|_| self.installed(engine_id))
+            .and_then(|s| s.skills_dir.clone())
     }
 }
 
@@ -742,14 +775,122 @@ impl TeammatesService {
             .unwrap_or(true)
     }
 
-    /// A teammate's skills, with their validation and "New" state.
+    /// A teammate's skills, with their validation, "New" state and the
+    /// engine accounts they're synced to.
     pub async fn skills(&self, teammate: &Teammate) -> Vec<tandem_store::skills::SkillEntry> {
         let seen = self.seen_skills(&teammate.id).await;
         let allow = self.teammates_write_skills().await;
+        let targets = self.sync_targets().await;
         let home = PathBuf::from(&teammate.home);
-        tokio::task::spawn_blocking(move || tandem_store::skills::list(&home, &seen, allow))
+        tokio::task::spawn_blocking(move || {
+            tandem_store::skills::list_synced(&home, &seen, allow, &targets)
+        })
+        .await
+        .unwrap_or_default()
+    }
+
+    /// Every engine account a skill can be synced to (F-AG-10): an
+    /// installed engine with a skills folder, under the account's provider
+    /// home.
+    pub async fn sync_targets(&self) -> Vec<tandem_store::skills::SyncTarget> {
+        tandem_store::repo::accounts::list(&self.store)
             .await
             .unwrap_or_default()
+            .into_iter()
+            .filter_map(|a| self.sync_target_of(&a))
+            .collect()
+    }
+
+    fn sync_target_of(
+        &self,
+        account: &tandem_store::repo::accounts::Account,
+    ) -> Option<tandem_store::skills::SyncTarget> {
+        let dir = self.engines.skills_dir(&account.engine_id)?;
+        let rel = Path::new(&dir);
+        // The registry's folder stays inside the provider home.
+        if rel.is_absolute()
+            || rel
+                .components()
+                .any(|c| !matches!(c, std::path::Component::Normal(_)))
+        {
+            return None;
+        }
+        Some(tandem_store::skills::SyncTarget {
+            account_id: account.id.as_str().to_string(),
+            dir: Path::new(&account.home_path).join(rel),
+        })
+    }
+
+    /// `skill_sync` (F-AG-10): puts the skill in (or takes it out of) one
+    /// engine account's own skills folder. A same-named skill there that
+    /// isn't Vibezeo's is left as it is: `conflict`. Only a skill the user
+    /// has kept (made, saved or opened) is synced, never one a teammate
+    /// just wrote: the engine reads a synced skill as its own instructions.
+    pub async fn sync_skill(
+        &self,
+        teammate: &Teammate,
+        slug: &str,
+        engine_id: &str,
+        account_id: &tandem_core::ids::AccountId,
+        on: bool,
+    ) -> Result<tandem_store::skills::SyncState, IpcError> {
+        let account = tandem_store::repo::accounts::get(&self.store, account_id).await?;
+        if account.engine_id != engine_id {
+            return Err(invalid("That account is for another engine"));
+        }
+        let target = self.sync_target_of(&account).ok_or_else(|| {
+            invalid("This engine doesn't read skills from a folder Vibezeo can sync to")
+        })?;
+        if on
+            && !self
+                .seen_skills(&teammate.id)
+                .await
+                .iter()
+                .any(|s| s == slug)
+        {
+            return Err(invalid(
+                "Open the skill and keep it before installing it for an engine",
+            ));
+        }
+        let home = PathBuf::from(&teammate.home);
+        let slug = slug.to_string();
+        let state = tokio::task::spawn_blocking(move || {
+            if on {
+                tandem_store::skills::sync_on(&home, &slug, &target)
+            } else {
+                tandem_store::skills::sync_off(&home, &slug, &target)
+            }
+        })
+        .await
+        .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?
+        .map_err(skill_error)?;
+        tracing::info!(code = "skills.sync", on, state = ?state, "skill sync");
+        Ok(state)
+    }
+
+    /// Refreshes (`on`) or removes every synced copy of a skill: after the
+    /// user saves it, and before it's removed (F-AG-10 "Removal cleans up
+    /// the synced copies").
+    pub async fn resync_skill(&self, teammate: &Teammate, slug: &str, on: bool) {
+        let targets = self.sync_targets().await;
+        let home = PathBuf::from(&teammate.home);
+        let slug = slug.to_string();
+        let _ = tokio::task::spawn_blocking(move || {
+            for t in tandem_store::skills::synced_to(&home, &slug, &targets) {
+                let Some(target) = targets.iter().find(|x| x.account_id == t) else {
+                    continue;
+                };
+                let done = if on {
+                    tandem_store::skills::sync_on(&home, &slug, target)
+                } else {
+                    tandem_store::skills::sync_off(&home, &slug, target)
+                };
+                if let Err(e) = done {
+                    tracing::warn!(code = "skills.resync_failed", error = %e, "synced copy not updated");
+                }
+            }
+        })
+        .await;
     }
 
     /// The briefing a teammate chat's session starts with (F-AG-06).
@@ -971,6 +1112,9 @@ pub(crate) mod tests_support {
         }
         fn default_engine(&self) -> String {
             "claude".into()
+        }
+        fn skills_dir(&self, id: &str) -> Option<String> {
+            (id == "claude").then(|| "skills".into())
         }
     }
 
@@ -1338,5 +1482,76 @@ mod tests {
         let c = copy_name(&long, std::slice::from_ref(&long));
         assert_eq!(c.chars().count(), 40);
         assert!(c.ends_with(" copy"));
+    }
+
+    fn account(id: &str, engine: &str, home: &Path) -> tandem_store::repo::accounts::Account {
+        tandem_store::repo::accounts::Account {
+            id: tandem_core::ids::AccountId::from_db(id.into()),
+            engine_id: engine.into(),
+            label: "Personal".into(),
+            home_path: home.to_string_lossy().into_owned(),
+            is_default: true,
+            plan_label: None,
+            created_at: 1,
+        }
+    }
+
+    #[tokio::test]
+    async fn f_ag_10_sync_goes_to_the_accounts_skills_folder_and_only_for_a_kept_skill() {
+        let (dir, svc) = service(None).await;
+        let t = svc.create(input("Scribe", "claude")).await.expect("create");
+        let home = Path::new(&t.home);
+        let md = "---\nname: weekly-deps\ndescription: Checks packages.\n---\nbody\n";
+        tandem_store::skills::write(home, "weekly-deps", md).expect("write");
+        let claude_home = dir.path().join("providers/claude/acc_c");
+        let a = account("acc_c", "claude", &claude_home);
+        tandem_store::repo::accounts::insert(svc.store(), &a)
+            .await
+            .expect("insert");
+        // An engine without a skills folder isn't a target.
+        tandem_store::repo::accounts::insert(
+            svc.store(),
+            &account("acc_a", "aider", &dir.path().join("providers/aider/acc_a")),
+        )
+        .await
+        .expect("insert");
+        assert_eq!(svc.sync_targets().await.len(), 1);
+        // Not kept yet: a teammate's own skill isn't installed for an engine.
+        let refused = svc
+            .sync_skill(&t, "weekly-deps", "claude", &a.id, true)
+            .await
+            .expect_err("unseen");
+        assert_eq!(refused.code, ErrorCode::Invalid);
+        svc.mark_skills_seen(&t.id, &["weekly-deps".into()]).await;
+        // The account must be the engine's.
+        assert!(svc
+            .sync_skill(&t, "weekly-deps", "codex", &a.id, true)
+            .await
+            .is_err());
+        assert_eq!(
+            svc.sync_skill(&t, "weekly-deps", "claude", &a.id, true)
+                .await
+                .expect("sync"),
+            tandem_store::skills::SyncState::Synced
+        );
+        let copy = claude_home.join("skills/weekly-deps/SKILL.md");
+        assert!(copy.is_file());
+        let listed = svc.skills(&t).await;
+        assert_eq!(listed[0].synced_to, vec!["acc_c".to_string()]);
+        // A save reaches the copy; removal cleans it up.
+        let edited = md.replace("Checks packages.", "Checks packages weekly.");
+        tandem_store::skills::write(home, "weekly-deps", &edited).expect("edit");
+        svc.resync_skill(&t, "weekly-deps", true).await;
+        assert_eq!(std::fs::read_to_string(&copy).expect("copy"), edited);
+        svc.resync_skill(&t, "weekly-deps", false).await;
+        assert!(!claude_home.join("skills/weekly-deps").exists());
+    }
+
+    #[test]
+    fn f_ag_13_a_terminal_pane_is_named_after_the_teammate() {
+        assert_eq!(pane_name("  Release scribe "), "Release scribe");
+        let long = "A teammate with a name of forty chars!!";
+        assert!(pane_name(long).chars().count() <= 32);
+        assert!(long.starts_with(&pane_name(long)));
     }
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Library, MoreHorizontal, Plus, Sparkles, X } from "lucide-react";
-import type { IpcError, Skill, SkillEntry, Teammate } from "@tandem/protocol";
+import type { IpcError, Skill, SkillEntry, SyncOutcome, Teammate } from "@tandem/protocol";
 import {
   Badge,
   Banner,
@@ -11,6 +11,7 @@ import {
   IconButton,
   Input,
   Menu,
+  type MenuEntry,
   Sheet,
   Skeleton,
   Textarea,
@@ -18,6 +19,8 @@ import {
 } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
+import { useAccounts } from "../../stores/accounts";
+import { useEngines } from "../../stores/engines";
 import { useTeammates } from "../../stores/teammates";
 import {
   DESCRIPTION_MAX,
@@ -32,6 +35,36 @@ import {
 
 type Editing = { slug: string | null; fields: SkillFields | null; raw: string };
 
+/** An engine account a skill can be installed for (F-AG-10). */
+export type SyncTarget = { engineId: string; accountId: string; label: string };
+
+/** Installed engines with their own skills folder, one per account; the
+ * account's label joins the engine's when it has more than one. */
+export function useSyncTargets(): SyncTarget[] {
+  const engines = useEngines((s) => s.list);
+  const accounts = useAccounts((s) => s.list);
+  const loadedEngines = useEngines((s) => s.loaded);
+  const loadedAccounts = useAccounts((s) => s.loaded);
+  useEffect(() => {
+    if (!loadedEngines) void useEngines.getState().refresh();
+    if (!loadedAccounts) void useAccounts.getState().load();
+  }, [loadedEngines, loadedAccounts]);
+  return useMemo(
+    () =>
+      engines
+        .filter((e) => e.install && e.spec.skillsDir)
+        .flatMap((e) => {
+          const own = accounts.filter((a) => a.engineId === e.spec.id);
+          return own.map((a) => ({
+            engineId: e.spec.id,
+            accountId: a.id,
+            label: own.length > 1 ? t("agent.skills.syncTarget", { engine: e.spec.label, account: a.label }) : e.spec.label,
+          }));
+        }),
+    [engines, accounts],
+  );
+}
+
 /** UI-74: a teammate's skills, the editor and the starter library. */
 export function SkillsTab({ teammate }: { teammate: Teammate }) {
   const version = useTeammates((s) => s.version);
@@ -41,6 +74,9 @@ export function SkillsTab({ teammate }: { teammate: Teammate }) {
   const [editing, setEditing] = useState<Editing | null>(null);
   const [library, setLibrary] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
+  // Same-named skills an engine already had, by slug (F-AG-10 AC2).
+  const [conflicts, setConflicts] = useState<Record<string, string[]>>({});
+  const targets = useSyncTargets();
 
   const load = useCallback(async () => {
     try {
@@ -60,6 +96,30 @@ export function SkillsTab({ teammate }: { teammate: Teammate }) {
     try {
       const skill = await invoke<Skill>("skill_get", { teammateId: teammate.id, slug });
       setEditing({ slug, fields: splitSkill(skill.markdown), raw: skill.markdown });
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const sync = async (slug: string, target: SyncTarget, on: boolean) => {
+    try {
+      const out = await invoke<SyncOutcome>("skill_sync", {
+        teammateId: teammate.id,
+        slug,
+        engineId: target.engineId,
+        accountId: target.accountId,
+        on,
+      });
+      setConflicts((c) => {
+        const rest = (c[slug] ?? []).filter((l) => l !== target.label);
+        return { ...c, [slug]: out.state === "conflict" ? [...rest, target.label] : rest };
+      });
+      if (out.state !== "conflict")
+        show({
+          tone: "success",
+          title: t(on ? "agent.skills.synced" : "agent.skills.unsynced", { name: slug, engine: target.label }),
+        });
+      await load();
     } catch (e) {
       fail(e);
     }
@@ -132,8 +192,20 @@ export function SkillsTab({ teammate }: { teammate: Teammate }) {
                   <span className="font-mono text-base text-fg">{s.slug}</span>
                   {s.isNew && <Badge variant="accent">{t("agent.skills.newBadge")}</Badge>}
                   {!s.valid && <Badge variant="error">{t("agent.skills.invalid")}</Badge>}
+                  {targets
+                    .filter((tg) => s.syncedTo.includes(tg.accountId))
+                    .map((tg) => (
+                      <span key={tg.accountId} data-testid="skill-synced" data-account-id={tg.accountId}>
+                        <Badge variant="neutral">{t("agent.skills.installedFor", { engine: tg.label })}</Badge>
+                      </span>
+                    ))}
                 </span>
                 <span className="text-sm text-fg-muted">{s.valid ? s.description : s.error}</span>
+                {(conflicts[s.slug] ?? []).map((label) => (
+                  <span key={label} className="text-sm text-warning" role="status" data-testid="skill-conflict">
+                    {t("agent.skills.conflict", { engine: label, name: s.slug })}
+                  </span>
+                ))}
               </button>
               <Menu
                 align="end"
@@ -146,6 +218,21 @@ export function SkillsTab({ teammate }: { teammate: Teammate }) {
                 }
                 entries={[
                   { id: "edit", label: t("agent.skills.edit"), onSelect: () => void open(s.slug) },
+                  ...(targets.length
+                    ? ([
+                        { type: "separator", id: "sync-sep" },
+                        { type: "label", id: "sync-label", label: t("agent.skills.alsoInstall") },
+                        ...targets.map((tg) => ({
+                          type: "checkbox" as const,
+                          id: `sync-${tg.accountId}`,
+                          label: tg.label,
+                          checked: s.syncedTo.includes(tg.accountId),
+                          // A teammate's new skill is opened and kept first.
+                          disabled: !s.valid || s.isNew,
+                          onCheckedChange: (on: boolean) => void sync(s.slug, tg, on),
+                        })),
+                      ] satisfies MenuEntry[])
+                    : []),
                   {
                     id: "remove",
                     label: t("agent.skills.remove"),
