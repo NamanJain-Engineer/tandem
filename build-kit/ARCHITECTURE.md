@@ -498,7 +498,7 @@ src-tauri/
 - **Serde:** `#[serde(rename_all = "camelCase")]` on structs, `#[serde(tag = "type", rename_all = "snake_case")]` on enums. Timestamps are `i64` Unix milliseconds. Paths are strings (UTF-8; non-UTF-8 paths are rejected with `Invalid` and logged by code only).
 - **Errors:** every command returns `Result<T, IpcError>` (§2.2). The TS wrapper rejects with a typed `IpcError`. The column "Errors" below lists the `ErrorCode`s a caller must handle beyond `Internal`/`Timeout`.
 - **Timeouts and cancellation [§5.2]:** the TS wrapper applies 10 s by default. Commands that can exceed it return an `OpHandle { opId }` immediately and report through `op:progress`; `op_cancel(opId)` cancels. Such commands are marked "op" in the table.
-- **Capabilities [§5.3]:** `capabilities/main.json` allows all commands for window `main`; `widget.json` (window `dictate-widget`) allows only `dictate_status`, `dictate_cancel_take`, `dictate_widget_set_position`, `app_log` and listening to events; `ring.json` allows `conductor_start_call`, `conductor_end_call`, `conductor_mute`, `app_log`. Browser webviews get no capability (they aren't Tauri webviews, D-206). Implement with `tauri_build::Attributes::app_manifest(AppManifest::new().commands(ALL_COMMANDS))` so each command has an `allow-<name>` permission.
+- **Capabilities [§5.3]:** `capabilities/main.json` allows all commands for window `main`; `widget.json` (window `dictate-widget`) allows only `dictate_status`, `dictate_cancel_take`, `dictate_widget_set_position`, `app_log` and listening to events; `ring.json` (window `conductor-ring`) allows `conductor_start_call`, `conductor_end_call`, `conductor_mute`, `conductor_ring_state`, `conductor_ring_set_position`, `app_log`, listening to events, emitting to `main` and dragging itself. Browser webviews get no capability (they aren't Tauri webviews, D-206). Implement with `tauri_build::Attributes::app_manifest(AppManifest::new().commands(ALL_COMMANDS))` so each command has an `allow-<name>` permission.
 - **Origin:** commands that must not be reachable from voice or phone (forced lane removal, enabling Full, shell commands) are never exposed through the Conductor action registry or the phone command set (§12.6, §13.3). Local-review actions additionally check the calling window label is `main`.
 
 ### 3.2 Commands
@@ -830,6 +830,8 @@ The git panel's actions (`git_stage` … `git_create_branch`) run the user's `gi
 | `conductor_state` | — | `CallView` (the HUD after a reload) | — |
 | `conductor_call_log` | `{callId?}` | `[CallLogEntry {call: CallRow, events: [CallEventRow]}]`, newest first; events for `callId` (default the newest) | — |
 | `conductor_call_delete` | `{callId}` | — | — |
+| `conductor_ring_state` | — | `RingState {view: CallView, theme}` (the floating ring window's start) | — |
+| `conductor_ring_set_position` | `{x, y}` (physical pixels; saved as `conductor_ring_position`) | — | — |
 | `test_conductor_clock` (debug, `TANDEM_E2E=1`) | `{advanceMs}` | the call clock's offset (ms) | PermissionDenied |
 | `test_conductor_inject` (debug, `TANDEM_E2E=1`) | `{calls: [{id, name, args}]}` | `bool` (false without a call): doer tool calls run through the executor | PermissionDenied |
 | `conductor_memory_get` / `conductor_memory_resolve` | — / `{proposalIds, keep}` | `ConductorMemory` / — | Invalid (credential) |
@@ -945,6 +947,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `dictate:models` | `ModelsView` (download progress at most 4 a second, stages, failures) | voice service | F-DI-04 |
 | `dictate:history` | — (a take was stored or the history changed) | voice service | F-DI-08 |
 | `conductor:state` | `CallView {callId?, phase:"idle"\|"connecting"\|"listening"\|"thinking"\|"acting"\|"speaking"\|"ended"\|"error", muted, utterance?, caption?, chips:[ChipView], question?: QuestionView, elapsedMs, maxSeconds, error?: {code, message}, notice?, receipt?: {callId, seconds, credits, actions}}` (to `main`) | CallController | F-CN-04 |
+| `conductor:open-log` | `null` (floating ring → `main`: open the call log) | `conductor-ring` window | F-CN-04 |
 | `conductor:level` | `number` 0–1, ≤10 Hz, only during a call | CallController | F-CN-04 |
 | `conductor:ui-action` | `{action, args}` (navigation-only tools: `switch_mode`, `open_settings`, `toggle_sidebar`, `open_sidebar_tab`, `open_launch_wizard`, `open_routines`, `dismiss`, `tidy`, `flip`, and a confirmed `close_pane`) | ActionRegistry | F-CN-02 |
 | `conductor:confirm-request` | `QuestionView {requestId, tool, summary, verb, review:"voice_or_screen"\|"screen_only"}` | ActionRegistry | F-CN-03 |

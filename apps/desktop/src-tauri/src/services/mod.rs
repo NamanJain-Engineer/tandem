@@ -10,6 +10,7 @@ pub mod auth;
 pub mod auto;
 pub mod boot;
 pub mod conductor;
+pub mod conductor_ring;
 pub mod config;
 pub mod dashboard;
 pub mod data_controls;

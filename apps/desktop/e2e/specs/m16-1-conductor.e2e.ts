@@ -30,6 +30,7 @@ type MockState = {
   audioMs: number;
   voicedMs: number;
   outputs: Array<{ callId: string; output: string }>;
+  speed: number;
 };
 
 async function rt<T = unknown>(path: string, body?: unknown): Promise<T> {
@@ -299,6 +300,33 @@ describe("E2E-M16-1 Conductor call", function () {
     const [wait] = await inject([{ name: "wait_for_pane", args: { pane: launched, timeout: 5 } }]);
     await until((x) => x.chips.some((c) => c.id === wait && c.state === "done"), "waited");
     await endCall();
+  });
+
+  it("F-CN-01 \"talk faster\" moves the talker's speech rate a step", async () => {
+    await startCall();
+    expect(await say("talk faster")).toBe("Okay, I'll talk faster.");
+    await browser.waitUntil(async () => (await rt<MockState>("/__state")).speed === 1.1, {
+      timeout: 5_000,
+      timeoutMsg: "the speed never changed",
+    });
+    expect(await say("slow down")).toBe("Okay, I'll talk slower.");
+    await browser.waitUntil(async () => (await rt<MockState>("/__state")).speed === 1, { timeout: 5_000 });
+    await endCall();
+  });
+
+  it("F-CN-04 the floating ring opens as its own window when turned on", async () => {
+    const main = await browser.getWindowHandle();
+    const before = (await browser.getWindowHandles()).length;
+    await invoke("settings_set", { key: "conductor_floating_ring", value: true });
+    await browser.waitUntil(async () => (await browser.getWindowHandles()).length > before, {
+      timeout: 15_000,
+      timeoutMsg: "no ring window",
+    });
+    const ring = (await browser.getWindowHandles()).find((h) => h !== main) as string;
+    await browser.switchToWindow(ring);
+    await $('[data-testid="floating-ring"]').waitForExist({ timeout: 10_000 });
+    await browser.switchToWindow(main);
+    await invoke("settings_set", { key: "conductor_floating_ring", value: false });
   });
 
   it("F-CN-03.2 a voice allow for approval A can't resolve approval B", async () => {

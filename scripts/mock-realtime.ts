@@ -47,6 +47,7 @@ type Conn = {
   tools: string[];
   samples: number;
   voiced: number;
+  speed: number;
   buffer: Buffer;
 };
 
@@ -117,7 +118,11 @@ function onMessage(c: Conn, text: string): void {
   }
   switch (m.type) {
     case "session.update": {
-      const session = (m.session ?? {}) as { tools?: Array<{ name?: string }> };
+      const session = (m.session ?? {}) as { tools?: Array<{ name?: string }>; speed?: number };
+      if (typeof session.speed === "number") {
+        c.speed = session.speed;
+        break;
+      }
       c.configured = true;
       c.tools = (session.tools ?? []).map((t) => String(t.name ?? ""));
       send(c, { type: "session.ready" });
@@ -174,6 +179,7 @@ function upgrade(req: IncomingMessage, socket: Duplex): void {
     tools: [],
     samples: 0,
     voiced: 0,
+    speed: 1,
     buffer: Buffer.alloc(0),
   };
   setTimeout(() => {
@@ -241,6 +247,7 @@ const server = createServer(async (req, res) => {
       tools: c?.tools ?? [],
       audioMs: ms(c?.samples ?? 0),
       voicedMs: ms(c?.voiced ?? 0),
+      speed: c?.speed ?? 1,
       outputs,
     });
   }

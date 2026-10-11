@@ -5,11 +5,14 @@ import type { CallLogEntry, CallView, ChipView } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { IDLE, performUiAction, useConductor } from "../../stores/conductor";
 import { useSession } from "../../stores/session";
+import { useSettings } from "../../stores/settings";
 import { useSidebar } from "../../stores/sidebar";
 import { useUi } from "../../stores/ui";
 import { FREE, FREE_VIEW, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { runCommand } from "../commands/commands";
 import { CallLog } from "./CallLog";
+import { ConductorCallSettings } from "./CallSettingsSlot";
+import { FloatingRing } from "./FloatingRing";
 import { ConductorButton } from "./ConductorButton";
 import { Hud } from "./Hud";
 import { foldChips } from "./ring";
@@ -101,8 +104,15 @@ describe("Conductor HUD (F-CN-04, UI-61)", () => {
   });
 
   it("F-CN-01 startup errors show with what to do; dismissing clears them", async () => {
-    hud(live({ phase: "error", error: { code: "time_cap", message: "This call reached its 30-minute limit." } }));
-    expect(screen.getByTestId("conductor-error-message").textContent).toBe("This call reached its 30-minute limit.");
+    hud(
+      live({
+        phase: "error",
+        error: { code: "time_cap", message: "This call reached its 30-minute limit." },
+      }),
+    );
+    expect(screen.getByTestId("conductor-error-message").textContent).toBe(
+      "This call reached its 30-minute limit.",
+    );
     expect(screen.getByTestId("conductor-error-action").textContent).toBe("Start a new call");
     fireEvent.click(screen.getByTestId("conductor-dismiss"));
     await waitFor(() => expect(useConductor.getState().view.phase).toBe("idle"));
@@ -111,7 +121,9 @@ describe("Conductor HUD (F-CN-04, UI-61)", () => {
 
   it("F-CN-01.1 the receipt shows time, credits and actions", () => {
     hud(live({ phase: "ended", receipt: { callId: "vs_1", seconds: 65, credits: 140, actions: 5 } }));
-    expect(screen.getByTestId("conductor-receipt").textContent).toContain("Call ended · 1:05 · 140 credits · 5 actions");
+    expect(screen.getByTestId("conductor-receipt").textContent).toContain(
+      "Call ended · 1:05 · 140 credits · 5 actions",
+    );
   });
 
   it("F-CN-04 the HUD is hidden with no call", () => {
@@ -180,7 +192,15 @@ describe("Conductor ring and commands (F-CN-01, F-CN-04)", () => {
 
 describe("Call log (F-CN-04, UI-66)", () => {
   const entry: CallLogEntry = {
-    call: { id: "vs_1", startedAt: 1_760_000_000_000, endedAt: 1_760_000_065_000, connectedSeconds: 65, credits: 140, endReason: "hung_up", actions: 1 },
+    call: {
+      id: "vs_1",
+      startedAt: 1_760_000_000_000,
+      endedAt: 1_760_000_065_000,
+      connectedSeconds: 65,
+      credits: 140,
+      endReason: "hung_up",
+      actions: 1,
+    },
     events: [
       { ts: 1_760_000_001_000, kind: "user", text: "open code mode", ok: null },
       { ts: 1_760_000_002_000, kind: "action", text: "Code mode: Done.", ok: true },
@@ -212,7 +232,11 @@ describe("Call log (F-CN-04, UI-66)", () => {
     log([entry]);
     await screen.findByTestId("call-log-events");
     const items = screen.getByTestId("call-log-events").querySelectorAll("li");
-    expect(Array.from(items).map((li) => li.getAttribute("data-kind"))).toEqual(["user", "action", "assistant"]);
+    expect(Array.from(items).map((li) => li.getAttribute("data-kind"))).toEqual([
+      "user",
+      "action",
+      "assistant",
+    ]);
     expect(items[0]?.textContent).toContain("You: open code mode");
     expect(screen.getByText(/1:05 · 140 credits/)).toBeTruthy();
     fireEvent.click(screen.getByTestId("call-log-delete"));
@@ -222,5 +246,67 @@ describe("Call log (F-CN-04, UI-66)", () => {
   it("F-CN-04 a failed load says so and offers a retry", async () => {
     log(new Error("The database is busy."));
     expect(await screen.findByText("The database is busy.")).toBeTruthy();
+  });
+});
+
+describe("Conductor settings (F-CN-04, UI-67)", () => {
+  it("F-CN-04 keep call logs: absent on Free; on Pro it stores days or off", async () => {
+    const { unmount } = render(
+      <UiProvider>
+        <ConductorCallSettings />
+      </UiProvider>,
+    );
+    expect(screen.queryByText("Keep call logs")).toBeNull();
+    unmount();
+    pro();
+    render(
+      <UiProvider>
+        <ConductorCallSettings />
+      </UiProvider>,
+    );
+    expect(screen.getByText("Keep call logs")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Keep call logs" }).textContent).toContain("7 days");
+    await act(async () => {
+      await useSettings.getState().set("conductor_call_logs", "off");
+    });
+    expect(named("settings_set").at(-1)?.args).toEqual({ key: "conductor_call_logs", value: "off" });
+    expect(screen.getByRole("combobox", { name: "Keep call logs" }).textContent).toContain("Don't keep");
+  });
+});
+
+describe("Floating ring (F-CN-04, UI-61)", () => {
+  it("F-CN-04 a click toggles the call; hovering shows Mute, Call log and End", async () => {
+    const { rerender } = render(
+      <UiProvider>
+        <FloatingRing view={IDLE} level={0} />
+      </UiProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Talk to Conductor" }));
+    await waitFor(() => expect(named("conductor_start_call")[0]?.args).toEqual({ wake: false }));
+    rerender(
+      <UiProvider>
+        <FloatingRing view={live()} level={0.4} />
+      </UiProvider>,
+    );
+    expect(screen.queryByRole("button", { name: "Mute" })).toBeNull();
+    fireEvent.mouseEnter(screen.getByTestId("floating-ring"));
+    fireEvent.click(screen.getByRole("button", { name: "Mute" }));
+    await waitFor(() => expect(named("conductor_mute")[0]?.args).toEqual({ muted: true }));
+    expect(screen.getByRole("button", { name: "Call log" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "End" }));
+    await waitFor(() => expect(named("conductor_end_call")).toHaveLength(1));
+  });
+
+  it("F-CN-04 the floating ring switch is a Pro setting", async () => {
+    pro();
+    render(
+      <UiProvider>
+        <ConductorCallSettings />
+      </UiProvider>,
+    );
+    fireEvent.click(screen.getByRole("switch", { name: "Floating ring" }));
+    await waitFor(() =>
+      expect(named("settings_set").at(-1)?.args).toEqual({ key: "conductor_floating_ring", value: true }),
+    );
   });
 });

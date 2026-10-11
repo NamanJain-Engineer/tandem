@@ -132,6 +132,8 @@ setting_keys! {
     ConductorReflection,
     ConductorWake,
     ConductorFloatingRing,
+    ConductorCallLogs,
+    ConductorRingPosition,
     TelemetryUsage,
     TelemetryCrash,
     AiThreadTitles,
@@ -768,6 +770,20 @@ pub static SCHEMA: &[SettingSpec] = &[
         V::Bool,
         Conductor,
         ["floating", "ring"]
+    ),
+    spec!(
+        ConductorCallLogs,
+        json!("7"),
+        V::OneOf(&["off", "7", "30"]),
+        Conductor,
+        ["call log", "history", "keep"]
+    ),
+    spec!(
+        ConductorRingPosition,
+        json!(null),
+        V::OptionalText { max: 32 },
+        Hidden,
+        []
     ),
     spec!(
         TelemetryUsage,

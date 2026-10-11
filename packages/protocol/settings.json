@@ -410,6 +410,11 @@
     "page": "conductor"
   },
   {
+    "default": "7",
+    "key": "conductor_call_logs",
+    "page": "conductor"
+  },
+  {
     "default": false,
     "key": "telemetry_usage",
     "page": "privacy"

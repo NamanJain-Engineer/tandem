@@ -10,12 +10,28 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PersonaBrief {
     /// The provider's voice; `None` lets the provider choose.
     pub voice: Option<String>,
     /// Name, tone, verbosity, speed, "about you" and memory, for the talker.
     pub instructions: String,
+    /// The speech rate the call starts at (one of [`SPEEDS`]).
+    pub speed: f32,
+}
+
+/// The five speech speeds (UI-67's slider; "talk faster / slower" moves a
+/// step during a call).
+pub const SPEEDS: [f32; 5] = [0.8, 0.9, 1.0, 1.1, 1.2];
+
+/// The step nearest `speed`.
+pub fn speed_step(speed: f32) -> usize {
+    SPEEDS
+        .iter()
+        .enumerate()
+        .min_by(|a, b| (a.1 - speed).abs().total_cmp(&(b.1 - speed).abs()))
+        .map(|(i, _)| i)
+        .unwrap_or(2)
 }
 
 impl Default for PersonaBrief {
@@ -25,6 +41,7 @@ impl Default for PersonaBrief {
             instructions: "You are Conductor, the voice assistant of the Vibezeo desktop app. \
                            Be friendly and brief, and speak at a normal speed."
                 .into(),
+            speed: 1.0,
         }
     }
 }

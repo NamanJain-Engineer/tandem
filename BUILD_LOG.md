@@ -740,8 +740,19 @@ Built on branch `m16a-conductor` (from `product-m0-m5`), in parallel with F-CN-0
     - API: mock provider 2.
     - Invariants: rule 5's live voice path, 2 new.
     - E2E-M16-1 (`m16-1-conductor.e2e.ts`): all 8 cases.
-  - **Not in this slice.**
-    - 23 tools answer honestly that they "aren't available by voice in this version yet" (D-1107): launch_agents, wait_for_pane, handoff, the thread tools besides listing, the teammate tools besides listing, the task tools, run_routine, list_routines, get_usage and check_updates. Wiring them to their services is the next slice.
+  - **Second slice: the rest of the tools** (`commands/conductor_tools.rs`).
+    - launch_agents launches through the launch service; the window then places the panes in their own tab (`conductor:ui-action` `place_launched`).
+    - Also wired: wait_for_pane, handoff, the thread tools (open, new, send, read, stop, mode, rename, archive), the teammate tools (open, message in its chat, pin, read memory), list_routines and run_routine, create_task, execute_task (a new lane, Edits access, review on), list_tasks, get_usage and check_updates.
+    - create_teammate opens the New teammate sheet with the description filled in (D-1114).
+    - E2E-M16-1 gains a case that launches an agent, waits for it, and reads usage, updates and routines.
+  - **Third slice: settings, speed and the floating ring.**
+    - "Keep call logs" (`conductor_call_logs`: Don't keep / 7 days / 30 days, default 7). With "Don't keep", a call's turns are never written and its row goes once settled.
+    - "Talk faster / slower" moves the talker a step through five speeds (0.8 to 1.2), handled in the app without a doer round (`ClientEvent::SetSpeed`).
+    - The floating ring: its own window, `conductor-ring`, with the `ring.json` capability. It drags anywhere and keeps its place (`conductor_ring_position`); hovering shows Mute, Call log and End; it shows only while "Floating ring" is on and the plan has Conductor.
+    - The "Floating ring" and "Keep call logs" rows are `ConductorCallSettings` in `features/conductor/CallSettingsSlot.tsx`, the slot F-CN-06's Settings › Conductor page renders.
+    - E2E-M16-1: 11 of 11 pass.
+  - **Not in the first slice** (the second and third slices built it, except the vendor client).
+    - 23 tools answered honestly that they "aren't available by voice in this version yet" (D-1107): launch_agents, wait_for_pane, handoff, the thread tools besides listing, the teammate tools besides listing, the task tools, run_routine, list_routines, get_usage and check_updates. Wiring them to their services is the next slice.
     - Also not built yet: the floating ring window, the "Keep call logs" setting, "talk faster/slower", and the vendor realtime client (D-1113).
 
 ### M16 · 16A Conductor core decisions
@@ -752,7 +763,7 @@ Built on branch `m16a-conductor` (from `product-m0-m5`), in parallel with F-CN-0
 - D-1104: `prompt_pane` refuses a pane waiting on an approval or a question at once ("waiting for approval", nothing typed) and refuses shell panes; a busy agent gets the prompt once it is back at its prompt, waiting up to 60 s, and checks the call's cancellation right before typing, so a hang-up while it waits delivers nothing (AC2).
 - D-1105: A spoken answer is `act("answer <request id> yes|no")`, or a bare yes/no for the question the HUD shows; the app handles it without a doer round and resolves exactly that id. A spoken yes for a shell command is refused; only `conductor_confirm` from the `main` window makes the `LocalReview` that `run_in_shell` takes. The HUD shows one question at a time, oldest first; the talker is told each question's id as it comes up.
 - D-1106: A call's id is the API's session id. The call log uses the existing `conductor_calls` and `conductor_call_events` tables, so there is no migration to collide with parallel branches. Connected seconds are saved every 10 s, so a call interrupted by a crash settles at the next start. Settled calls older than 7 days are purged at startup.
-- D-1107: Tools not yet wired to an app service return a plain failure ("… isn't available by voice in this version yet; it's in the app.") rather than pretending; the doer tells the user so.
+- D-1107: (first slice) Tools not yet wired to an app service return a plain failure ("… isn't available by voice in this version yet; it's in the app.") rather than pretending; the doer tells the user so.
 - D-1108: Two debug-only harness commands: `test_conductor_inject` runs doer tool calls the mock doer doesn't plan through the same executor, chips and log; `test_conductor_clock` moves only the call's clock, because `TANDEM_FAKE_CLOCK` would freeze the whole app. The 65 s case runs in real time, so the API's settle clamp (D-1002) holds and the credits are the real ones.
 - D-1109: Sign-out ends a call and waits up to 3 s for its settle before the tokens go.
 - D-1110: While a call holds the mic, Dictate refuses every take: from the global key and from composers. The owner is set through Dictate's `set_mic_owner` until `m16a-persona-wake`'s `MicOwners` registry lands. The composer mic shows "Conductor is listening".
@@ -760,7 +771,16 @@ Built on branch `m16a-conductor` (from `product-m0-m5`), in parallel with F-CN-0
 - D-1112: The desktop's balance doesn't show the 10-minute hold while a call runs (the API sends no credits event on reserve); the HUD's minutes-left reads the balance as shown and the settle corrects it.
 - D-1113: Only the mock provider is built on the desktop. A session minted for another provider ends with "Couldn't connect to Conductor" and settles at 0 s; the vendor client waits for the key (HUMAN_TODO).
 
+- D-1114: The second slice wires the remaining tools to the app's own commands.
+  - create_teammate opens the New teammate sheet with the spoken description filled in; the user saves it there, so nothing is created without their review.
+  - send_to_thread refuses a thread with a pending approval, as prompt_pane does for panes.
+  - execute_task uses a new lane, Edits access and review: never Full (F-CN-03).
+  - launch_agents opens its agents in their own tab, as the launch sheet does.
+  - Tools that name a workspace, thread, teammate or routine take its id or its name; "current" or nothing picks the only workspace.
 - D-1115: `panes::list_all_open` sorted panes created in the same millisecond by id, whose ULID suffix is random, so F-CN-05's store test failed now and then in the gate. It now sorts by `created_at`, then insertion order (`rowid`), which is what "oldest first" means.
+
+- D-1116: The speech rate is call-scoped: it starts at the persona's speed (F-CN-06 owns the setting) and "talk faster / slower" moves it for the rest of the call without saving it. Speeds go on the wire rounded to two decimals.
+- D-1117: The floating ring is a second Tauri window with its own least-privilege capability (`ring.json`), so a click in it can't confirm anything: `conductor_confirm` isn't in its capability and needs the `main` window anyway. Its Call log button sends `conductor:open-log` to `main`. It reads the theme once when it opens.
 
 ### M16 · 16A Conductor core log
 - Tests first from the eight E2E-M16-1 cases, the four F-CN-02 and two F-CN-03 acceptance criteria. The first E2E run crashed the app: `conductor_start_call` is a sync command and spawned on a thread outside the runtime (D-1100's runtime handle fixes it). Then the test-only commands lacked their capability (added to `test-capability.json`), `getText()` read "" while the HUD faded in (read `innerText`), and a key off the closed list was refused by the schema check with a generic reason; the executor now says "Conductor can't change that setting." first. One unit test raced the call's tick, and was fixed in the test rather than slowed.

@@ -134,6 +134,8 @@ const COMMANDS: &[&str] = &[
     "conductor_state",
     "conductor_call_log",
     "conductor_call_delete",
+    "conductor_ring_set_position",
+    "conductor_ring_state",
     "auto_start",
     "auto_list",
     "auto_pause",

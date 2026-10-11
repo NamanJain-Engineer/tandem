@@ -9,7 +9,12 @@ import { useShortcutKeys } from "../commands/useShortcutKeys";
 import { clock } from "./ring";
 
 function when(ms: number): string {
-  return new Date(ms).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return new Date(ms).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function time(ms: number): string {
@@ -20,7 +25,12 @@ function time(ms: number): string {
 export function logText(entry: CallLogEntry, name: string): string {
   return entry.events
     .map((e) => {
-      const who = e.kind === "user" ? t("conductor.log.you") : e.kind === "assistant" ? name : t("conductor.log.action");
+      const who =
+        e.kind === "user"
+          ? t("conductor.log.you")
+          : e.kind === "assistant"
+            ? name
+            : t("conductor.log.action");
       return `[${time(e.ts)}] ${who}: ${e.text}`;
     })
     .join("\n");
@@ -92,7 +102,14 @@ export function CallLog() {
   ) : undefined;
 
   return (
-    <Sheet open={open} onOpenChange={openLog} title={t("conductor.callLog")} subtitle={subtitle} footer={footer} closeLabel={t("common.close")}>
+    <Sheet
+      open={open}
+      onOpenChange={openLog}
+      title={t("conductor.callLog")}
+      subtitle={subtitle}
+      footer={footer}
+      closeLabel={t("common.close")}
+    >
       <div data-testid="call-log" className="flex flex-col gap-3">
         {error && (
           <Banner tone="error" action={{ label: t("conductor.log.retry"), onClick: () => void load() }}>
@@ -138,15 +155,26 @@ export function CallLog() {
                     {e.kind === "action" ? (
                       <span className="flex min-w-0 items-start gap-1 text-fg-muted">
                         {e.ok ? (
-                          <Check size={14} aria-label={t("conductor.chip.done")} className="mt-0.5 shrink-0 text-success" />
+                          <Check
+                            size={14}
+                            aria-label={t("conductor.chip.done")}
+                            className="mt-0.5 shrink-0 text-success"
+                          />
                         ) : (
-                          <X size={14} aria-label={t("conductor.chip.failed")} className="mt-0.5 shrink-0 text-danger" />
+                          <X
+                            size={14}
+                            aria-label={t("conductor.chip.failed")}
+                            className="mt-0.5 shrink-0 text-danger"
+                          />
                         )}
                         <span className="break-words">{e.text}</span>
                       </span>
                     ) : (
                       <span className="min-w-0 break-words text-md text-fg">
-                        {t("conductor.log.turn", { who: e.kind === "user" ? t("conductor.log.you") : name, text: e.text })}
+                        {t("conductor.log.turn", {
+                          who: e.kind === "user" ? t("conductor.log.you") : name,
+                          text: e.text,
+                        })}
                       </span>
                     )}
                   </li>

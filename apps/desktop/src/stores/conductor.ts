@@ -130,6 +130,8 @@ export function followConductor(): () => void {
     listen<CallView>("conductor:state", (v) => useConductor.getState().setView(v)),
     listen<number>("conductor:level", (l) => useConductor.getState().setLevel(l)),
     listen<UiAction>("conductor:ui-action", performUiAction),
+    // The floating ring's Call log button.
+    listen<null>("conductor:open-log", () => useConductor.getState().openLog(true)),
   ];
   return () => stops.forEach((p) => void p.then((stop) => stop()));
 }
