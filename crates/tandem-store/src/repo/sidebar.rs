@@ -24,6 +24,10 @@ pub enum SidebarTabKind {
     Files,
     Tasks,
     Scratchpad,
+    /// F-EX-01 (UI-140).
+    Checkpoints,
+    /// F-EX-03 (UI-142).
+    Ports,
 }
 
 impl SidebarTabKind {

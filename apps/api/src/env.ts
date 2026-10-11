@@ -54,6 +54,8 @@ const schema = z.object({
   APNS_TEAM_ID: z.string().optional(),
   APNS_PRIVATE_KEY: z.string().optional(),
   APNS_TOPIC: z.string().default("com.vibezeo.remote"),
+  /** Dev and E2E: where MockRealtime points calls (`scripts/mock-realtime.ts`, D-1102). */
+  REALTIME_MOCK_URL: z.string().optional(),
   /** Team SSO over SAML through WorkOS (F-BL-06 P2, D-625); unset means OIDC only. */
   WORKOS_CLIENT_ID: z.string().optional(),
   WORKOS_API_KEY: z.string().optional(),

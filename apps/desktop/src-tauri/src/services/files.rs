@@ -117,6 +117,9 @@ pub struct FilesService {
     statuses: Arc<Mutex<StatusCache>>,
     watch_opts: WatchOptions,
     next_sub: std::sync::atomic::AtomicU64,
+    /// Folders outside every workspace that are still editable: the
+    /// profile's prompt library (F-EX-05).
+    extra_editable: Mutex<Vec<PathBuf>>,
 }
 
 fn io_err(e: impl std::fmt::Display) -> IpcError {
@@ -164,7 +167,15 @@ impl FilesService {
             statuses: Arc::default(),
             watch_opts,
             next_sub: std::sync::atomic::AtomicU64::new(1),
+            extra_editable: Mutex::default(),
         })
+    }
+
+    /// Files under `dir` open editable although no workspace holds them.
+    pub fn allow_editing(&self, dir: PathBuf) {
+        if let Ok(mut extra) = self.extra_editable.lock() {
+            extra.push(dir);
+        }
     }
 
     pub fn set_remote(&self, remote: Arc<crate::services::remote::RemoteService>) {
@@ -257,6 +268,9 @@ impl FilesService {
     async fn editable_roots(&self, root: &Path) -> Result<Vec<PathBuf>, IpcError> {
         let mut roots = self.workspace_roots().await?;
         roots.push(root.to_path_buf());
+        if let Ok(extra) = self.extra_editable.lock() {
+            roots.extend(extra.iter().cloned());
+        }
         Ok(roots)
     }
 
@@ -499,10 +513,9 @@ impl FilesService {
             self.next_sub
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         );
-        // A host's files aren't watched (D-411): the subscription is real
-        // and simply gets no batches.
-        if self.remote_of(ctx).await?.is_some() {
-            drop(sink);
+        // A host's folder is watched by its helper (D-1600).
+        if let Some((remote, r)) = self.remote_of(ctx).await? {
+            remote.files.watch(&remote, &r, id.clone(), sink).await?;
             return Ok(id);
         }
         let root = self.root(ctx).await?;
@@ -548,6 +561,11 @@ impl FilesService {
 
     /// `fs_unwatch`. The folder's watcher stops with its last subscriber.
     pub fn unwatch(&self, sub: &str) {
+        if let Some(remote) = self.remote.get() {
+            if remote.files.unwatch(remote, sub) {
+                return;
+            }
+        }
         let mut idle = Vec::new();
         if let Ok(mut subs) = self.subs.lock() {
             for (root, list) in subs.iter_mut() {

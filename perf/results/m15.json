@@ -1,6 +1,6 @@
 {
   "memory": {
-    "date": "2026-10-10T11:57:54.224Z",
+    "date": "2026-10-10T21:31:52.527Z",
     "machine": {
       "os": "linux 6.18.44-fc-v114 (xvfb)",
       "cpus": 4,
@@ -10,25 +10,32 @@
     },
     "metrics": {
       "baseAppMb": {
-        "value": 484.3,
+        "value": 616.8,
         "target": 350,
         "op": "<=",
         "unit": "MB",
         "pass": false
       },
       "perBackgroundPaneMb": {
-        "value": 65.2,
+        "value": 64.8,
         "target": 3.9,
         "op": "<=",
         "unit": "MB",
         "pass": false
       },
       "perBackgroundPaneNoGpuMb": {
-        "value": 33.9,
+        "value": 60.3,
         "target": 3.9,
         "op": "<=",
         "unit": "MB",
         "pass": false
+      },
+      "perBackgroundPaneHiddenFillMb": {
+        "value": 3,
+        "target": 3.9,
+        "op": "<=",
+        "unit": "MB",
+        "pass": true
       }
     }
   },

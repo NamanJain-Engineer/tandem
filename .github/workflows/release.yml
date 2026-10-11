@@ -130,7 +130,7 @@ jobs:
           - { name: windows, os: windows-2022, target: x86_64-pc-windows-msvc, bundles: "nsis,msi" }
           # Tauri 2 needs webkit2gtk-4.1: ubuntu-22.04 (glibc 2.35) is the
           # oldest image that ships it (Debian bullseye doesn't).
-          - { name: linux, os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, bundles: "appimage,deb" }
+          - { name: linux, os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, bundles: "appimage,deb,rpm" }
     runs-on: ${{ matrix.os }}
     env:
       # Early-access builds have no hosted service (D-105).
@@ -223,12 +223,13 @@ jobs:
         name: The Linux bundles carry tandem-host
         shell: bash
         run: |
-          for f in target/${{ matrix.target }}/release/bundle/deb/*.deb target/${{ matrix.target }}/release/bundle/appimage/*.AppImage; do
+          sudo apt-get install -y rpm2cpio cpio
+          for f in target/${{ matrix.target }}/release/bundle/deb/*.deb target/${{ matrix.target }}/release/bundle/rpm/*.rpm target/${{ matrix.target }}/release/bundle/appimage/*.AppImage; do
             sh scripts/check-host-bundle.sh "$f" linux-x86_64,linux-aarch64,macos-universal
           done
 
       - if: matrix.name == 'linux' && steps.secrets.outputs.gpg == 'true'
-        name: Sign the AppImage (detached) and the deb
+        name: Sign the AppImage and the rpm (detached) and the deb
         shell: bash
         env:
           LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
@@ -236,7 +237,7 @@ jobs:
         run: |
           echo "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
           sudo apt-get install -y dpkg-sig
-          for f in target/${{ matrix.target }}/release/bundle/appimage/*.AppImage; do
+          for f in target/${{ matrix.target }}/release/bundle/appimage/*.AppImage target/${{ matrix.target }}/release/bundle/rpm/*.rpm; do
             gpg --batch --pinentry-mode loopback --passphrase "$LINUX_GPG_PASSPHRASE" --armor --detach-sign "$f"
           done
           dpkg-sig --sign builder -g "--batch --pinentry-mode loopback --passphrase $LINUX_GPG_PASSPHRASE" target/${{ matrix.target }}/release/bundle/deb/*.deb
@@ -249,7 +250,7 @@ jobs:
           case "${{ matrix.name }}" in
             macos) signed="${{ steps.secrets.outputs.apple }}"; what="code signing and notarization (APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID)"; files="$bundle/dmg/*.dmg $bundle/macos/*.app.tar.gz*" ;;
             windows) signed="${{ steps.secrets.outputs.azure }}"; what="Authenticode via Azure Trusted Signing (AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT, AZURE_CERT_PROFILE)"; files="$bundle/nsis/*.exe* $bundle/msi/*.msi*" ;;
-            linux) signed="${{ steps.secrets.outputs.gpg }}"; what="GPG (LINUX_GPG_PRIVATE_KEY, LINUX_GPG_PASSPHRASE)"; files="$bundle/appimage/*.AppImage* $bundle/deb/*.deb" ;;
+            linux) signed="${{ steps.secrets.outputs.gpg }}"; what="GPG (LINUX_GPG_PRIVATE_KEY, LINUX_GPG_PASSPHRASE)"; files="$bundle/appimage/*.AppImage* $bundle/deb/*.deb $bundle/rpm/*.rpm*" ;;
           esac
           suffix=""
           if [ "$signed" != "true" ]; then

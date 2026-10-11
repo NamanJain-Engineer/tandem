@@ -229,7 +229,9 @@ async fn f_rm_01_3_reading_outside_the_root_is_refused() {
     f.ssh
         .exec(
             &f.t,
-            "git -C ~/project checkout -q -- . && git -C ~/project clean -fdxq",
+            // The fixture's project as made (one commit on main): E2E specs
+            // commit and push in it (E2E-M14-7, `resetProject`).
+            "cd ~/project && git checkout -q -f main && git reset -q --hard \"$(git rev-list --max-parents=0 HEAD)\" && git clean -fdxq",
             None,
         )
         .await

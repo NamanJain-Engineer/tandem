@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-bestof-list"
+description = "Enables the bestof_list command without any pre-configured scope."
+commands.allow = ["bestof_list"]
+
+[[permission]]
+identifier = "deny-bestof-list"
+description = "Denies the bestof_list command without any pre-configured scope."
+commands.deny = ["bestof_list"]

@@ -48,6 +48,8 @@ const MODEL_CACHE = process.env.TANDEM_MODEL_CACHE ?? join(REAL_HOME, ".cache", 
 const FIXTURES = "http://127.0.0.1:5173";
 /** The mock OAuth server and plugin upstreams (`mock-plugins`, D-954). */
 const PLUGINS = "http://127.0.0.1:8791";
+// Conductor's realtime voice provider stand-in (F-CN-01, D-1102).
+const REALTIME = "http://127.0.0.1:8794";
 
 async function up(url: string): Promise<boolean> {
   try {
@@ -120,7 +122,17 @@ function startKeyring(): void {
 }
 
 async function main() {
+  // Remote workspaces (E2E-M14): the bundled tandem-host and the sshd
+  // fixture (infra/docker-compose.yml, profile remote). Without Docker or
+  // the musl target the m14 specs fail and say so; the others don't care.
+  const remote = !spec || spec.includes("m14");
+  const quiet = { cwd: root, stdio: "ignore" as const };
   if (!process.env.TANDEM_E2E_SKIP_BUILD) {
+    // The helper first: the app's build copies resources/tandem-host into
+    // target/, so a helper built after it isn't the one the app installs on
+    // the host (the M14 specs then met the previous build's helper).
+    if (remote && spawnSync("sh", ["scripts/build-tandem-host.sh"], quiet).status !== 0)
+      console.warn("E2E: couldn't build tandem-host (rustup target add x86_64-unknown-linux-musl; apt install musl-tools)");
     execFileSync("pnpm", ["build"], { cwd: desktop, stdio: "inherit" });
     // Perf suites measure an optimised build (the `perf` profile keeps the test harness).
     const cargoProfile = suite && process.env.TANDEM_PERF_BUILD !== "debug" ? ["--profile", "perf"] : [];
@@ -141,13 +153,7 @@ async function main() {
     });
     execFileSync("cargo", ["build", "-p", "tandem-tasks", "--bins"], { cwd: root, stdio: "inherit" });
   }
-  // Remote workspaces (E2E-M14): the bundled tandem-host and the sshd
-  // fixture (infra/docker-compose.yml, profile remote). Without Docker or
-  // the musl target the m14 specs fail and say so; the others don't care.
-  if (!spec || spec.includes("m14")) {
-    const quiet = { cwd: root, stdio: "ignore" as const };
-    if (!process.env.TANDEM_E2E_SKIP_BUILD && spawnSync("sh", ["scripts/build-tandem-host.sh"], quiet).status !== 0)
-      console.warn("E2E: couldn't build tandem-host (rustup target add x86_64-unknown-linux-musl; apt install musl-tools)");
+  if (remote) {
     const up = spawnSync(
       "sh",
       ["-c", "bash scripts/gen-ssh-fixture.sh >/dev/null && docker compose -f infra/docker-compose.yml --profile remote up -d --wait sshd"],
@@ -314,7 +320,14 @@ async function main() {
     api = startDetached(
       "pnpm",
       ["--filter", "api", "start"],
-      { TANDEM_API_TEST_ROUTES: "1", BILLING_PROVIDER: "mock", WEB_PUBLIC_URL: WEB, API_PUBLIC_URL: API, LOG_LEVEL: "info" },
+      {
+        TANDEM_API_TEST_ROUTES: "1",
+        BILLING_PROVIDER: "mock",
+        WEB_PUBLIC_URL: WEB,
+        API_PUBLIC_URL: API,
+        LOG_LEVEL: "info",
+        REALTIME_MOCK_URL: "ws://127.0.0.1:8794/realtime",
+      },
       relayLog,
     );
     await waitUp(`${API}/v1/health`, 60);
@@ -334,6 +347,14 @@ async function main() {
     await waitUp(`${FEED}/health`, 30);
   } else {
     await fetch(`${FEED}/__scenario`, { method: "POST", body: JSON.stringify({ scenario: "none" }) });
+  }
+
+  let realtime: ChildProcess | undefined;
+  if (!(await up(`${REALTIME}/health`))) {
+    realtime = startDetached(join(root, "node_modules/.bin/tsx"), ["scripts/mock-realtime.ts", "--port", "8794"], {});
+    await waitUp(`${REALTIME}/health`, 30);
+  } else {
+    await fetch(`${REALTIME}/__reset`, { method: "POST" });
   }
 
   let plugins: ChildProcess | undefined;
@@ -380,6 +401,7 @@ async function main() {
     stop(web);
     stop(feed);
     stop(plugins);
+    stop(realtime);
     stop(fixtures);
     stop(models);
     stop(wm);

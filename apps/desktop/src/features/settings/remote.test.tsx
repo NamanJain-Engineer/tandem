@@ -5,7 +5,7 @@ import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useSession } from "../../stores/session";
-import { FREE, FREE_VIEW, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
+import { FREE, FREE_VIEW, SIGNED_IN, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { RemotePage } from "./RemotePage";
 
 const PRO_VIEW = { ...FREE_VIEW, plan: "pro" as const, limits: { ...FREE, phone: true } };
@@ -78,6 +78,25 @@ describe("F-RM-03 Settings › Remote", () => {
       }),
     );
     expect(await screen.findByText("Set by your organization")).toBeTruthy();
+  });
+
+  it("F-RM-03 a build without Vibezeo accounts says pairing needs them, never to sign in (D-833)", async () => {
+    setup();
+    act(() =>
+      useSession.setState({ auth: { ...SIGNED_IN, signedIn: false, email: null, hosted: false }, entitlement: FREE_VIEW }),
+    );
+    expect(
+      await screen.findByText(
+        "Pairing through the Vibezeo relay is part of Pro. Pro and Team start with Vibezeo accounts. This build runs the Free plan: pair over your local network below.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Sign in to pair a phone.")).toBeNull();
+    expect((screen.getByTestId("remote-pair") as HTMLButtonElement).disabled).toBe(true);
+    // Nothing is paired, so there's nothing to allow approvals from.
+    expect(screen.queryByRole("switch", { name: "Allow approvals from phone for the next 8 hours" })).toBeNull();
+    // LAN pairing needs no account or plan (F-RM-04, D-2040).
+    const lan = screen.getByRole("switch", { name: "Pair over your local network" });
+    await waitFor(() => expect(lan.hasAttribute("disabled")).toBe(false));
   });
 
   it("F-RM-03 error: a failed load says so and retries", async () => {

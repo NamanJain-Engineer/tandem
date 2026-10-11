@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-checkpoints-usage"
+description = "Enables the checkpoints_usage command without any pre-configured scope."
+commands.allow = ["checkpoints_usage"]
+
+[[permission]]
+identifier = "deny-checkpoints-usage"
+description = "Denies the checkpoints_usage command without any pre-configured scope."
+commands.deny = ["checkpoints_usage"]

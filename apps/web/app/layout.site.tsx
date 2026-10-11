@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { SITE } from "../lib/site";
+import { inter, mono } from "./fonts";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -27,10 +28,19 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image", title: SITE.product, description: SITE.tagline, images: ["/og.png"] },
 };
 
+/** The site follows the visitor's OS theme with CSS only (D-1801). */
+export const viewport: Viewport = {
+  colorScheme: "dark light",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#060a12" },
+    { media: "(prefers-color-scheme: light)", color: "#f8fafc" },
+  ],
+};
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" data-theme="dark">
-      <body>{children}</body>
+    <html lang="en" className={`${inter.variable} ${mono.variable}`}>
+      <body className="site">{children}</body>
     </html>
   );
 }

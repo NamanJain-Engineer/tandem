@@ -11,15 +11,20 @@ has every feature below with its full behaviour and acceptance tests.
 **Where it stands (10 October 2026, `product-m0-m5`):** M0–M14 are done,
 and so are M15's six features and its non-functional checks (pull request #38;
 the performance budgets still need the reference machines, `HUMAN_TODO.md`). M16
-has F-SH-12, F-AC-07, F-AU-01, F-BE-03, F-BE-12, F-RT-05, F-AG-10, F-AG-13 and
-F-CN-05. That's 142 of 152 features: all 65 P0s and every P1. Left: M16's 10 P2
-extras, each now being built on its own branch: Conductor (F-CN-01 to F-CN-04
-and F-CN-06 to F-CN-08), the phone companion and relay (F-RM-03, F-BE-11) and
-the macOS Simulator pane (F-CD-21). vibezeo.com serves 0.5.0:
-Dictate (M8), tasks (M11), plugins (M12), SSH workspaces (M14) and Diagnostics
-(M15), on top of 0.4.0's teammates, Find work, your data, shortcut rebinding and
-usage page. Routines and running tasks are built and switch on with Pro; WSL
-workspaces wait for the Windows download.
+has F-SH-12, F-AC-07, F-AU-01, F-BE-03, F-BE-12, F-RT-05, F-AG-10, F-AG-13,
+F-CN-05 and the phone companion and relay (F-RM-03, F-BE-11). That's 144 of 152
+features: all 65 P0s and every P1. Left: 8 of M16's P2 extras, each being built
+on its own branch. Conductor's core (F-CN-01 to F-CN-04, F-CN-08) has its first
+slice merged: calls run end to end against the dev mock, while 23 tools, the
+floating ring window, the call-log setting and the vendor realtime client are
+still to come. Then Conductor's persona, memory and wake phrase (F-CN-06,
+F-CN-07) and the macOS Simulator pane (F-CD-21). M17 adds five extras beyond
+the spec (F-EX-01 to F-EX-05).
+vibezeo.com still serves 0.4.0: 0.5.0 (Dictate, tasks, plugins, SSH workspaces
+and Diagnostics) is merged into `main`, but Vercel refused its deploy at the
+daily deployment limit (D-829), so it goes out with the next release. Routines
+and running tasks are built and switch on with Pro; WSL workspaces wait for the
+Windows download.
 
 ## 0. First, before new features
 
@@ -191,7 +196,7 @@ Azure Trusted Signing, GPG for Linux, updater keys, release hosting; see
 ### M16 · P2 differentiators and release candidate (XL) · 20 features (P2)
 In independent sub-phases, each green and tagged (`m16a` … `m16d`), then the
 release candidate. Stop after any sub-phase if the budget runs out.
-- 16A Conductor (voice): [ ] F-CN-01 Call lifecycle · [ ] F-CN-02 Talker/doer
+- 16A Conductor (voice), first slice merged for F-CN-01 to F-CN-04 and F-CN-08 (calls against the dev mock; 23 tools, the ring window, the call-log setting and the vendor realtime client to come): [ ] F-CN-01 Call lifecycle · [ ] F-CN-02 Talker/doer
   architecture and tool catalog · [ ] F-CN-03 Delivery rules and safety ·
   [ ] F-CN-04 Conductor UI · [x] F-CN-05 Find work by meaning (local search and the palette, D-814; the API's ranking, #30; teammates and the app's opt-in to the hosted ranking, D-1302; the Conductor's spoken answer comes with F-CN-02) · [ ] F-CN-06
   Persona and memory · [ ] F-CN-07 Wake phrase · [ ] F-CN-08 Audio routing for

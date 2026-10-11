@@ -22,8 +22,8 @@ use tandem_core::ids::HostId;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_host::client::{ClientError, HostClient};
 use tandem_host::protocol::{
-    method, DirListing, ErrorKind, Found, Hello, HelloReply, Message, PtyAttached, PtyExit,
-    PtyOutput, PtySpawned, RpcError, StatusEvent, PROTOCOL, VERSION,
+    method, DirListing, ErrorKind, Found, FsChanged, Hello, HelloReply, Message, PtyAttached,
+    PtyExit, PtyOutput, PtySpawned, RpcError, StatusEvent, PROTOCOL, VERSION,
 };
 use tandem_host::ssh::{Askpass, Category, Ssh, SshError, SshTarget};
 use tandem_pty::{OutputSink, PtyInfo, PtyManager, RemoteFeed, RemotePty, SpawnSpec};
@@ -612,6 +612,7 @@ impl RemoteService {
         }
         self.pump(conn.clone(), notes);
         self.reattach(conn, &client).await;
+        self.files.rewatch(&conn.host_id, &client).await;
         self.set_state(conn, HostState::Connected);
         self.watch(conn.clone(), client);
         Ok(())
@@ -636,6 +637,11 @@ impl RemoteService {
                     Some(method::PTY_EXIT) => {
                         if let Ok(e) = serde_json::from_value::<PtyExit>(params) {
                             finish(&conn, &e.id, e.code);
+                        }
+                    }
+                    Some(method::FS_CHANGED) => {
+                        if let Ok(c) = serde_json::from_value::<FsChanged>(params) {
+                            me.files.changed(&conn.host_id, &c.id, &c.change);
                         }
                     }
                     Some(method::STATUS_EVENT) => {
@@ -1159,6 +1165,7 @@ fn finish(conn: &HostConn, id: &str, code: Option<i32>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tandem_core::files::watch::FsChange;
 
     fn link_conn() -> HostConn {
         HostConn {
@@ -1345,6 +1352,41 @@ mod tests {
             text()
         );
 
+        // The host's folder is watched by the helper (D-1600): a file
+        // made on the host reaches the subscriber without any action here.
+        let batches = Arc::new(Mutex::new(Vec::<FsChange>::new()));
+        let got = batches.clone();
+        let root = crate::services::remote_files::RemoteRoot {
+            host: host.id.clone(),
+            root: "/home/tandem/project".into(),
+        };
+        svc.files
+            .watch(
+                &svc,
+                &root,
+                "fsw_test".into(),
+                Arc::new(move |c: &FsChange| {
+                    got.lock().expect("got").push(c.clone());
+                    true
+                }),
+            )
+            .await
+            .expect("watch");
+        let saw_path = |name: &str| {
+            batches
+                .lock()
+                .expect("b")
+                .iter()
+                .any(|b| b.paths.iter().any(|p| p == name))
+        };
+        pty.write(&pane, b"echo w > watched-1.txt\n")
+            .expect("write");
+        assert!(
+            tandem_pty::wait_until(Duration::from_secs(20), || saw_path("watched-1.txt")),
+            "{:?}",
+            batches.lock().expect("b")
+        );
+
         // The connection drops (ssh -O exit): "Reconnecting…", then the
         // same remote PTY is back.
         let t = target_of(&hosts::get(&store, &host.id).await.expect("h")).expect("t");
@@ -1366,6 +1408,24 @@ mod tests {
             text()
         );
         assert_eq!(pty.pid(&pane), Some(info.pid));
+        // The watch came back with the connection: "read everything" once,
+        // then batches again.
+        assert!(
+            batches.lock().expect("b").iter().any(|b| b.overflow),
+            "no read-everything batch after the reconnect"
+        );
+        pty.write(
+            &pane,
+            b"echo w > watched-2.txt; rm -f watched-1.txt watched-2.txt\n",
+        )
+        .expect("write");
+        assert!(
+            tandem_pty::wait_until(Duration::from_secs(20), || saw_path("watched-2.txt")),
+            "{:?}",
+            batches.lock().expect("b")
+        );
+        assert!(svc.files.unwatch(&svc, "fsw_test"));
+        assert!(svc.files.watched().is_empty());
         pty.kill(&pane).expect("kill");
         svc.disconnect(&host.id).await.expect("disconnect");
     }

@@ -46,5 +46,41 @@ await page.screenshot({ path: `${out}/6-shell.png` });
 await page.keyboard.press("Control+1");
 await page.waitForTimeout(1500);
 await page.screenshot({ path: `${out}/7-agent.png` });
+// The screens a release adds (D-833): each must render, never blank the page.
+const alive = async (step) => {
+  const ok = await page.locator('[data-testid="demo-bar"]').isVisible().catch(() => false);
+  console.log(`${step}: ${ok ? "page alive" : "PAGE BLANK"}`);
+};
+const command = async (title) => {
+  await page.keyboard.press("Control+k");
+  await page.waitForTimeout(400);
+  await page.keyboard.type(title);
+  await page.waitForTimeout(400);
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(1200);
+};
+await page.keyboard.press("Control+,");
+await page.waitForTimeout(1000);
+await page.getByRole("button", { name: "Remote", exact: true }).first().click().catch((e) => console.log("remote", e.message));
+await page.waitForTimeout(1200);
+await page.screenshot({ path: `${out}/8-remote.png` });
+await alive("8 Settings › Remote");
+await page.keyboard.press("Escape");
+await page.waitForTimeout(600);
+await page.keyboard.press("Control+2");
+await page.waitForTimeout(1200);
+for (const [n, title] of [
+  [9, "Show checkpoints"],
+  [10, "Show ports"],
+  [11, "Insert prompt"],
+  [12, "Recall a command"],
+  [13, "Best of N"],
+]) {
+  await command(title);
+  await page.screenshot({ path: `${out}/${n}-${title.toLowerCase().replace(/[^a-z]+/g, "-")}.png` });
+  await alive(`${n} ${title}`);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(500);
+}
 console.log("errors:\n" + errors.slice(0, 30).join("\n"));
 await browser.close();

@@ -90,7 +90,18 @@ export function RemotePage() {
   const policyOff = entitlement?.policy?.disablePhone ?? false;
   const proOff = !(entitlement?.limits as { phone?: boolean } | undefined)?.phone;
   const signedOut = !auth?.signedIn;
-  const blocked = policyOff ? t("policy.setByOrg") : signedOut ? t("remote.needsSignIn") : proOff ? t("remote.needsPro") : null;
+  // A build without Vibezeo accounts (TANDEM_HOSTED=0) has no sign-in, so it
+  // never asks for one (D-833).
+  const noAccounts = !!auth && !auth.hosted;
+  const blocked = policyOff
+    ? t("policy.setByOrg")
+    : noAccounts
+      ? t("remote.earlyAccess")
+      : signedOut
+        ? t("remote.needsSignIn")
+        : proOff
+          ? t("remote.needsPro")
+          : null;
 
   async function setLanOn(on: boolean) {
     try {
@@ -136,7 +147,12 @@ export function RemotePage() {
       </div>
       {blocked && <Callout>{blocked}</Callout>}
       <div>
-        <Button variant="primary" disabled={!!blocked} onClick={() => setPairing({ kind: "relay" })} data-testid="remote-pair">
+        <Button
+          variant="primary"
+          disabled={!!blocked}
+          onClick={() => setPairing({ kind: "relay" })}
+          data-testid="remote-pair"
+        >
           {t("remote.pair")}
         </Button>
       </div>
@@ -213,26 +229,33 @@ export function RemotePage() {
         ))}
       </SettingsGroup>
 
-      <SettingsGroup>
-        <SettingsRow
-          settingKey="phone_arm_approvals"
-          label={t("remote.arm")}
-          description={
-            arm.armedUntil
-              ? t("remote.arm.until", { time: new Date(arm.armedUntil).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) })
-              : t("remote.arm.desc")
-          }
-          control={(ids) => (
-            <Switch
-              id={ids.id}
-              aria-describedby={ids.describedBy}
-              aria-label={t("remote.arm")}
-              checked={!!arm.armedUntil}
-              onCheckedChange={(on) => void setArmed(on)}
-            />
-          )}
-        />
-      </SettingsGroup>
+      {!!pairings?.length && (
+        <SettingsGroup>
+          <SettingsRow
+            settingKey="phone_arm_approvals"
+            label={t("remote.arm")}
+            description={
+              arm.armedUntil
+                ? t("remote.arm.until", {
+                    time: new Date(arm.armedUntil).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    }),
+                  })
+                : t("remote.arm.desc")
+            }
+            control={(ids) => (
+              <Switch
+                id={ids.id}
+                aria-describedby={ids.describedBy}
+                aria-label={t("remote.arm")}
+                checked={!!arm.armedUntil}
+                onCheckedChange={(on) => void setArmed(on)}
+              />
+            )}
+          />
+        </SettingsGroup>
+      )}
 
       <div>
         <Button variant="danger" onClick={() => setResetting(true)} disabled={!pairings?.length}>
@@ -250,7 +273,10 @@ export function RemotePage() {
         danger
         onConfirm={() => {
           const p = revoking;
-          if (p) void invoke("phone_pairing_revoke", { pairingId: p.id }).catch((err) => show({ title: message(err), tone: "error" })).finally(() => void load());
+          if (p)
+            void invoke("phone_pairing_revoke", { pairingId: p.id })
+              .catch((err) => show({ title: message(err), tone: "error" }))
+              .finally(() => void load());
         }}
       />
       <ConfirmDialog
@@ -260,7 +286,11 @@ export function RemotePage() {
         body={t("remote.reset.body")}
         confirmLabel={t("remote.reset.confirm")}
         danger
-        onConfirm={() => void invoke("phone_reset").catch((err) => show({ title: message(err), tone: "error" })).finally(() => void load())}
+        onConfirm={() =>
+          void invoke("phone_reset")
+            .catch((err) => show({ title: message(err), tone: "error" }))
+            .finally(() => void load())
+        }
       />
     </section>
   );
@@ -410,13 +440,18 @@ function PairDialog({ via, onClose }: { via: PairVia; onClose: () => void }) {
             <div className="flex w-full flex-col gap-1">
               <span className="text-sm text-fg-muted">{t("remote.dialog.link")}</span>
               <div className="flex items-center gap-2">
-                <code className="min-w-0 flex-1 truncate rounded-sm bg-surface-3 px-2 py-1 font-mono text-sm text-fg" data-testid="remote-pair-link">
+                <code
+                  className="min-w-0 flex-1 truncate rounded-sm bg-surface-3 px-2 py-1 font-mono text-sm text-fg"
+                  data-testid="remote-pair-link"
+                >
                   {qr.link}
                 </code>
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => void copyText(qr.link).then((ok) => ok && show({ title: t("remote.dialog.copied") }))}
+                  onClick={() =>
+                    void copyText(qr.link).then((ok) => ok && show({ title: t("remote.dialog.copied") }))
+                  }
                 >
                   {t("remote.dialog.copy")}
                 </Button>

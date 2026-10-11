@@ -69,9 +69,21 @@ pub async fn lane_create_pr(
     Ok(pane)
 }
 
-/// The native "Discard {branch}?" confirm (UI_SPEC confirmations). Debug
-/// builds take `TANDEM_FAKE_CONFIRM=yes|no` (or a file holding it) instead.
+/// The native "Discard {branch}?" confirm (UI_SPEC confirmations).
 async fn confirm_discard(app: &AppHandle, branch: &str) -> bool {
+    confirm_native(
+        app,
+        &format!("Discard {branch}?"),
+        "Deletes the worktree folder and its uncommitted changes. Commits on the branch stay.",
+        "Discard worktree",
+    )
+    .await
+}
+
+/// A native warning confirm with `action` and Cancel: what only a person at
+/// this computer can answer (TL-06 rule 5). Debug builds take
+/// `TANDEM_FAKE_CONFIRM=yes|no` (or a file holding it) instead.
+pub(crate) async fn confirm_native(app: &AppHandle, title: &str, body: &str, action: &str) -> bool {
     if cfg!(debug_assertions) {
         if let Ok(fake) = std::env::var("TANDEM_FAKE_CONFIRM") {
             let answer = match std::fs::read_to_string(&fake) {
@@ -83,13 +95,11 @@ async fn confirm_discard(app: &AppHandle, branch: &str) -> bool {
     }
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog()
-        .message(
-            "Deletes the worktree folder and its uncommitted changes. Commits on the branch stay.",
-        )
-        .title(format!("Discard {branch}?"))
+        .message(body)
+        .title(title)
         .kind(MessageDialogKind::Warning)
         .buttons(MessageDialogButtons::OkCancelCustom(
-            "Discard worktree".into(),
+            action.into(),
             "Cancel".into(),
         ))
         .show(move |ok| {
