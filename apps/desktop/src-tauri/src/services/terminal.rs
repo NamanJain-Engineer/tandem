@@ -1142,12 +1142,20 @@ impl TerminalService {
     ) -> bool {
         let id = pane.as_str();
         let until = std::time::Instant::now() + timeout;
+        // A plain shell isn't watched by the status store, so its output
+        // time is never recorded: a screen that has stopped changing says
+        // the prompt is up just as well (D-2208).
+        let mut quiet = QuietScreen::default();
         loop {
             if self.pty.is_live(id) {
+                let now = chrono::Utc::now().timestamp_millis();
                 if let Some(last) = self.status.last_output(id) {
-                    if chrono::Utc::now().timestamp_millis() - last >= READY_QUIET_MS {
+                    if now - last >= READY_QUIET_MS {
                         break;
                     }
+                }
+                if quiet.settled(now, self.pty.screen_text(id).as_deref()) {
+                    break;
                 }
             }
             if std::time::Instant::now() >= until {
@@ -1340,6 +1348,30 @@ fn plain_distro(value: &serde_json::Value) -> Option<String> {
         .map(str::trim)
         .filter(|d| tandem_core::wslpath::valid_distro(d))
         .map(str::to_string)
+}
+
+/// Readiness from the screen alone: it has some text and hasn't changed for
+/// [`READY_QUIET_MS`].
+#[derive(Debug, Default)]
+pub(crate) struct QuietScreen {
+    last: Option<(String, i64)>,
+}
+
+impl QuietScreen {
+    pub(crate) fn settled(&mut self, now: i64, screen: Option<&str>) -> bool {
+        let text = screen.map(str::trim_end).unwrap_or("");
+        if text.trim().is_empty() {
+            self.last = None;
+            return false;
+        }
+        match &self.last {
+            Some((seen, since)) if seen == text => now - since >= READY_QUIET_MS,
+            _ => {
+                self.last = Some((text.to_string(), now));
+                false
+            }
+        }
+    }
 }
 
 #[cfg(all(test, unix))]
@@ -1644,5 +1676,19 @@ mod tests {
             .quote_paths(&pane, &[r"\\server\share\x".to_string()])
             .expect_err("no WSL path");
         assert_eq!(err.code, ErrorCode::Invalid);
+    }
+
+    #[test]
+    fn f_wt_01_3_a_shell_is_ready_once_its_screen_stops_changing() {
+        let mut q = QuietScreen::default();
+        assert!(!q.settled(0, None));
+        assert!(!q.settled(0, Some("   \n  ")));
+        assert!(!q.settled(100, Some("user@host %")));
+        assert!(!q.settled(1_000, Some("user@host %")));
+        // Trailing blanks aren't a change; new text restarts the wait.
+        assert!(!q.settled(1_200, Some("user@host % ")));
+        assert!(!q.settled(1_400, Some("user@host %\nmotd")));
+        assert!(!q.settled(2_800, Some("user@host %\nmotd")));
+        assert!(q.settled(2_900, Some("user@host %\nmotd")));
     }
 }

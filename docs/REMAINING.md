@@ -212,6 +212,15 @@ release candidate. Stop after any sub-phase if the budget runs out.
   `/voice/act`, `/voice/resolve`; pull request #30).
 E2E-M16-1…5: Conductor call, find work, Auto, phone, extras.
 
+### M17 · Worktree workflow (M) · 4 features (P2)
+From the competitive analysis (`docs/COMPETITIVE_ANALYSIS.md`): the worktree
+gaps against the category. Built on branch `competitive-gaps`.
+- [x] F-WT-01 Worktree setup (copy ignored files, setup and teardown, explicit trust)
+- [x] F-WT-02 Review comments to the agent
+- [x] F-WT-03 Overlap check and merge forecast
+- [x] F-WT-04 GitLab merge requests
+E2E-M17-WT-1…3: setup, review, overlap.
+
 ## 2. What only a person can do
 
 Code is never blocked on these (stub, list in `HUMAN_TODO.md`, continue), but

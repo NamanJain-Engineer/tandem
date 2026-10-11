@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lane-forge"
+description = "Enables the lane_forge command without any pre-configured scope."
+commands.allow = ["lane_forge"]
+
+[[permission]]
+identifier = "deny-lane-forge"
+description = "Denies the lane_forge command without any pre-configured scope."
+commands.deny = ["lane_forge"]

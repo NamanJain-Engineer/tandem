@@ -1919,9 +1919,38 @@ pnpm tsx scripts/trace-tests.ts --milestone M17 --fail-on-missing
 
 ---
 
+## M17 · Worktree workflow (M)
+
+**Goal.** The worktree gaps `docs/COMPETITIVE_ANALYSIS.md` found against the category: setup for new worktrees with explicit trust, review comments sent to the agent, an overlap check and conflict forecast across parallel worktrees, and GitLab merge requests. Built on branch `competitive-gaps` (decisions D-2200–D-2299); each feature lands on its own and can ship in any release after it's green.
+
+**Owns:** F-WT-01, F-WT-02, F-WT-03, F-WT-04 (all P2)
+**Prerequisites.** M6 (worktree lanes, F-CD-15).
+
+**Ordered tasks**
+1. **Worktree setup (F-WT-01).** `tandem_git::setup`: parse `.vibezeo/worktree.json`, the contained copy walk, the commands' digest. `services::worktree_setup`: the trust file, the copy after every `lanes::create`, the setup pane (typed when ready, like `lane_create_pr`), the teardown before `lane_remove`. Commands `worktree_setup_get`, `worktree_setup_save`, `worktree_setup_trust`, `lane_setup`, `lane_setup_run`. UI-150 and UI-151; the New worktree dialog and the launch sheet call `lane_setup` and run or review.
+2. **Review comments (F-WT-02).** The prompt builder (TypeScript, pure), comment affordances on the diff (UI-152), the agent picker, `pty_type_prompt`.
+3. **Overlap check (F-WT-03).** `tandem_git::overlap` (changed-file sets, `merge-tree --write-tree --name-only`), `lane_overlap`, UI-153 and the merge confirm's verdict.
+4. **GitLab (F-WT-04).** Remote host detection; `glab mr create`; the menu label.
+
+**Verification**
+```bash
+cargo test -p tandem-git f_wt_0 && cargo test -p tandem-desktop --lib f_wt_0
+pnpm --filter desktop exec vitest run -t "F-WT-"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m17-wt-*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M17-WT-1 Setup.** A repository with `.env`, an ignored `node_modules/` and a `.vibezeo/worktree.json` whose setup writes a marker file. Expected: a new worktree has `.env`; the review dialog shows the command; Trust and run starts a pane in the worktree that writes the marker; saving from the dialog and making another worktree runs setup without asking; discarding runs the teardown.
+- **E2E-M17-WT-2 Review.** A worktree with a fake-engine agent pane and a changed file. Expected: two comments, Send to agent, the agent echoes the prompt's header.
+- **E2E-M17-WT-3 Overlap.** Two worktrees changing the same file and a conflicting base commit. Expected: Check overlap lists the sibling and the file; the merge confirm says it will conflict.
+
+**Exit checklist:** G green · `trace-tests --milestone M17 --fail-on-missing` · the full E2E regression on a tree with `product-m0-m5` merged in.
+
+---
+
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **157 features** (65 P0, 67 P1, 25 P2). All 132 P0 and P1 features are owned by M0–M15; the 20 original P2 features are owned by M16 and the 5 extras (F-EX, §4.19) by M17. F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **161 features** (65 P0, 67 P1, 29 P2). All 132 P0 and P1 features are owned by M0–M15; the 20 original P2 features are owned by M16, and M17 owns the 9 added since: the 5 extras (F-EX, §4.19) and the 4 worktree-workflow features (F-WT, §4.20). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|

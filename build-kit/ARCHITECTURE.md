@@ -688,8 +688,15 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `lane_create` | `{workspaceId, slugSource}` | `Workspace` (child) | Conflict, Io | F-CD-15 |
 | `lane_diff` | `{laneId}` | `[FileDiff]` | — | F-CD-15 |
 | `lane_merge` | `{laneId}` | `MergeReport {merged, conflicts:[path], commit?}` | — | F-CD-15 |
-| `lane_create_pr` | `{laneId, tabId}` | `PaneRecord` | EngineMissing ("gh not found") | F-CD-15 |
-| `lane_remove` | `{laneId, force}` (force only from window `main`; shows a native confirm in Rust) | — | Conflict ("Uncommitted changes"), PermissionDenied | F-CD-15 |
+| `lane_overlap` | `{laneId}` | `OverlapReport {files, siblings: [{laneId, branch, files[]}], forecast: {kind: clean\|conflicts(files[])\|unavailable(reason)}, uncommitted}` (reads only; `git merge-tree --write-tree` merges in memory) | NotFound | F-WT-03 |
+| `lane_create_pr` | `{laneId, tabId}` | `PaneRecord` (types `gh pr create`, or `glab mr create` when `origin`'s host contains "gitlab") | EngineMissing ("gh not found", "GitLab CLI (glab) isn't installed") | F-CD-15, F-WT-04 |
+| `lane_forge` | `{laneId}` | `"github" \| "gitlab"` (from `origin`'s host; the menu says pull or merge request) | — | F-WT-04 |
+| `lane_remove` | `{laneId, force}` (force only from window `main`; shows a native confirm in Rust) | `RemoveReport {teardown?: {kind: ran(code?)\|timed_out\|untrusted\|failed(message)}}` (the trusted teardown runs in the worktree after its panes stop, before removal, F-WT-01) | Conflict ("Uncommitted changes"), PermissionDenied | F-CD-15, F-WT-01 |
+| `worktree_setup_get` | `{workspaceId}` (a repository or a worktree) | `SetupState {file, exists, config?: WorktreeSetup {copy[], setup?, teardown?}, error?, digest?, trusted}` | Invalid ("Worktrees need a git repository"), Unavailable (remote) | F-WT-01 |
+| `worktree_setup_save` | `{workspaceId, config: WorktreeSetup}` (window `main` only) | `SetupState` (writes `.vibezeo/worktree.json` atomically and trusts its commands) | Invalid (limits), PermissionDenied, Io | F-WT-01 |
+| `worktree_setup_trust` | `{workspaceId, digest}` (window `main` only; the digest the person reviewed) | `SetupState` | Conflict ("The worktree setup changed. Review it again."), PermissionDenied | F-WT-01 |
+| `lane_setup` | `{laneId}` | `LaneSetup {state: SetupState, copy?: CopyReport {copied[], skipped[{path, reason}], bytes, partial}, copyError?}` (the copy ran in `lane_create`'s service for every new worktree) | Invalid | F-WT-01 |
+| `lane_setup_run` | `{laneId, tabId}` | `PaneRecord` (a shell pane in the worktree; the trusted setup command is typed once its prompt is up; the caller places the pane) | PermissionDenied ("Review this repository's worktree setup first"), NotFound, LimitReached | F-WT-01 |
 | `lanes_sweep` | — | `[StaleLane]` | — | F-CD-15 |
 | `git_status` | `{context: FileContext}` (the Files tab's context; the status bar passes the focused workspace) | `GitPanel {root, folder, status: GitStatus {branch?, upstream?, ahead, behind, staged:[FileStatus], unstaged:[FileStatus], noCommits}}` (paths relative to the repository `root`; `folder` is the context's folder inside it, `""` at the top), or `null` outside a repository. Read with libgit2, so no repository helper runs (TL-06 rule 6) | NotFound (folder missing) | F-CD-20 |
 | `git_diff` | `{context, path, staged}` (`path` relative to the repository) | `FileDiff` (index → working tree, or HEAD → index when `staged`) | — | F-CD-20 |
