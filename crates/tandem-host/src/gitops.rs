@@ -85,7 +85,7 @@ const READ_OVERRIDES: &[&str] = &[
     "uploadpack.packObjectsHook=",
 ];
 
-fn git_err(msg: impl Into<String>) -> RpcError {
+pub(crate) fn git_err(msg: impl Into<String>) -> RpcError {
     RpcError::new(ErrorKind::Io, msg)
 }
 
@@ -134,7 +134,7 @@ fn driver_overrides(cwd: &Path) -> Vec<String> {
     args
 }
 
-fn read(cwd: &Path, args: &[&str]) -> Result<std::process::Output, RpcError> {
+pub(crate) fn read(cwd: &Path, args: &[&str]) -> Result<std::process::Output, RpcError> {
     let mut cmd = base(cwd);
     for kv in READ_OVERRIDES {
         cmd.args(["-c", kv]);
@@ -351,7 +351,7 @@ pub fn parse_porcelain_v2(raw: &[u8]) -> GitStatus {
 
 /// A repository-relative path: no absolute paths, no `..`, nothing git
 /// could take for an option.
-fn checked(path: &str) -> Result<&str, RpcError> {
+pub(crate) fn checked(path: &str) -> Result<&str, RpcError> {
     let p = Path::new(path);
     let ok = !path.is_empty()
         && !path.starts_with('-')
@@ -452,7 +452,24 @@ pub fn parse_patch(
     }
 }
 
-fn write(cwd: &Path, args: &[&str], paths: &[String], stdin: Option<&str>) -> Result<(), RpcError> {
+/// A write (the user's config, hooks and credential helpers; no fsmonitor)
+/// whose output the caller reads whatever its exit code: a merge that
+/// stops on conflicts exits non-zero and isn't an error.
+pub(crate) fn write_output(cwd: &Path, args: &[&str]) -> Result<std::process::Output, RpcError> {
+    base(cwd)
+        .args(["-c", "core.fsmonitor="])
+        .env("GIT_MERGE_AUTOEDIT", "no")
+        .args(args)
+        .output()
+        .map_err(|e| git_err(format!("Couldn't run git on the host: {e}")))
+}
+
+pub(crate) fn write(
+    cwd: &Path,
+    args: &[&str],
+    paths: &[String],
+    stdin: Option<&str>,
+) -> Result<(), RpcError> {
     let mut cmd = base(cwd);
     cmd.args(["-c", "core.fsmonitor="]).args(args);
     if !paths.is_empty() {
@@ -848,7 +865,7 @@ fn sync_ops(top: &Path, p: &GitOp) -> Result<Option<String>, RpcError> {
     }
 }
 
-fn stderr_tail(raw: &[u8]) -> String {
+pub(crate) fn stderr_tail(raw: &[u8]) -> String {
     let text = String::from_utf8_lossy(raw);
     let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
     let start = lines.len().saturating_sub(4);

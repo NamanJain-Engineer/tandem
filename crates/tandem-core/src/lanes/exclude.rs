@@ -53,7 +53,7 @@ pub fn share_prompts(common_dir: &Path) -> std::io::Result<bool> {
         }
     }
     let path = common_dir.join("info").join("exclude");
-    crate::exclude::write_atomic(&path, (out.join("\n") + "\n").as_bytes())?;
+    write_atomic(&path, (out.join("\n") + "\n").as_bytes())?;
     Ok(true)
 }
 

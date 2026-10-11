@@ -42,7 +42,7 @@ export function inContainer(cmd: string): string {
  * of it for the next). */
 export function resetProject(): void {
   inContainer(
-    `su tandem -c 'cd ${PROJECT} && git checkout -q -f main && git reset -q --hard "$(git rev-list --max-parents=0 HEAD)" && git clean -fdxq && for b in $(git for-each-ref --format="%(refname:short)" refs/heads); do [ "$b" = main ] || git branch -q -D "$b"; done && for r in $(git remote); do git remote remove "$r"; done'`,
+    `su tandem -c 'cd ${PROJECT} && git checkout -q -f main && git reset -q --hard "$(git rev-list --max-parents=0 HEAD)" && git clean -fdxq && rm -rf .tandem && git worktree prune && for b in $(git for-each-ref --format="%(refname:short)" refs/heads); do [ "$b" = main ] || git branch -q -D "$b"; done && for r in $(git remote); do git remote remove "$r"; done'`,
   );
 }
 

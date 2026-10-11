@@ -195,7 +195,7 @@ describe("launch sheet (F-CD-14, UI-12)", () => {
     expect(screen.getByTestId("launch-summary").textContent).toBe("This opens 2 panes.");
   });
 
-  it("F-RM-01 a folder on a host lists the host's engines and launches shared", async () => {
+  it("F-RM-01 a folder on a host lists the host's engines, and Fleet gives each a worktree there", async () => {
     const remote = { ...ws("project", "main"), kind: "ssh", hostId: "hst_1", root: "/home/tandem/project" };
     open(remote, {
       engines_list: (a) =>
@@ -207,11 +207,19 @@ describe("launch sheet (F-CD-14, UI-12)", () => {
     // The host's Aider, not this computer's Claude Code.
     const seats = await screen.findAllByRole("combobox", { name: /Engine/ });
     expect(seats[0]?.textContent).toContain("Aider");
+    // Worktrees are made by the host's git (D-1602).
+    const box = screen.getByRole("checkbox", { name: /Give each agent its own worktree/ });
+    expect(box.getAttribute("aria-checked")).toBe("true");
+    expect(box.getAttribute("data-disabled")).toBeNull();
+    expect(named("engines_list").some((c) => (c.args as { hostId?: string }).hostId === "hst_1")).toBe(true);
+  });
+
+  it("F-RM-02 a WSL folder launches shared and says why", async () => {
+    open({ ...ws("shop", "main"), kind: "wsl", hostId: "hst_2", wslDistro: "Ubuntu" });
+    await preset("Fleet");
     const box = screen.getByRole("checkbox", { name: /Give each agent its own worktree/ });
     expect(box.getAttribute("aria-checked")).toBe("false");
-    expect(box.getAttribute("data-disabled")).not.toBeNull();
-    expect(screen.getByText("Worktrees aren't available in remote folders yet")).toBeTruthy();
-    expect(named("engines_list").some((c) => (c.args as { hostId?: string }).hostId === "hst_1")).toBe(true);
+    expect(screen.getByText("Worktrees aren't available in WSL folders yet")).toBeTruthy();
   });
 
   it("UI-12 outside a git repository the worktree box is off and says why", async () => {

@@ -733,6 +733,7 @@ impl AppState {
         // The profile's prompts open editable in the Files editor (F-EX-05).
         files.allow_editing(data.prompts());
         files.set_remote(remote.clone());
+        crate::services::lanes::set_remote(&remote);
         let git_panel = crate::services::git_panel::GitPanelService::new(files.clone());
         let auto = Arc::new(crate::services::auto::AutoService::new(
             bus.clone(),

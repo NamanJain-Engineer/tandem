@@ -33,6 +33,42 @@ pub const SWEEP_EVERY: Duration = Duration::from_secs(6 * 3600);
 pub const PR_COMMAND: &str = "gh pr create";
 pub const PR_READY_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Lanes in a folder on an SSH host are made there, by its helper with the
+/// host's own git (D-1602). Set once at startup.
+static REMOTE: std::sync::OnceLock<std::sync::Weak<crate::services::remote::RemoteService>> =
+    std::sync::OnceLock::new();
+
+pub fn set_remote(remote: &std::sync::Arc<crate::services::remote::RemoteService>) {
+    let _ = REMOTE.set(std::sync::Arc::downgrade(remote));
+}
+
+type Remote = (
+    std::sync::Arc<crate::services::remote::RemoteService>,
+    tandem_core::ids::HostId,
+);
+
+/// The host a workspace's lanes are made on: `None` for a local folder.
+/// A WSL folder has none yet (its git runs inside the distro).
+fn remote_for(ws: &Workspace) -> Result<Option<Remote>, IpcError> {
+    match ws.kind.as_str() {
+        "ssh" => REMOTE
+            .get()
+            .and_then(std::sync::Weak::upgrade)
+            .map(|r| Some((r, tandem_core::ids::HostId::from_db(ws.host_id.clone()))))
+            .ok_or_else(|| {
+                IpcError::new(
+                    ErrorCode::Unavailable,
+                    "Remote hosts aren't available in this build",
+                )
+            }),
+        "wsl" => Err(IpcError::new(
+            ErrorCode::Unavailable,
+            "Worktrees aren't available in WSL folders yet",
+        )),
+        _ => Ok(None),
+    }
+}
+
 /// `lanes:stale`: a repository's merged worktrees idle for over 7 days.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -88,6 +124,9 @@ pub async fn create(
         Some(parent) => workspaces::get(store, parent).await?,
         None => ws.clone(),
     };
+    if let Some((remote, host)) = remote_for(&ws)? {
+        return create_on_host(store, &remote, &host, &ws, &top, slug_source).await;
+    }
     let repo = discover(&ws.root, "Folder not found")?;
     let lane = LaneManager::create(git, &repo, slug_source, &HashSet::new()).await?;
     let root = lane.path.to_str().map(str::to_string).ok_or_else(|| {
@@ -124,10 +163,67 @@ pub async fn create(
     Ok(row)
 }
 
+/// [`create`] on an SSH host (D-1602): the helper makes the worktree with
+/// the host's git; the row and its tab are as locally.
+async fn create_on_host(
+    store: &Store,
+    remote: &std::sync::Arc<crate::services::remote::RemoteService>,
+    host: &tandem_core::ids::HostId,
+    ws: &Workspace,
+    top: &Workspace,
+    slug_source: &str,
+) -> Result<Workspace, IpcError> {
+    use tandem_host::protocol::{method, LaneCreated};
+    let lane: LaneCreated = remote
+        .call(
+            host,
+            method::LANE_CREATE,
+            serde_json::json!({"root": ws.root, "slug_source": slug_source, "also_taken": []}),
+        )
+        .await?;
+    let row = workspaces::add_lane(
+        store,
+        NewLane {
+            parent_id: top.id.clone(),
+            root: lane.path.clone(),
+            name: lane.slug.clone(),
+            branch: lane.branch.clone(),
+            base: lane.base.clone(),
+        },
+    )
+    .await;
+    let row = match row {
+        Ok(row) => row,
+        Err(err) => {
+            // Nothing half-made stays behind: the new worktree is clean.
+            let _ = remote
+                .call::<serde_json::Value>(
+                    host,
+                    method::LANE_REMOVE,
+                    serde_json::json!({"root": top.root, "path": lane.path, "force": false}),
+                )
+                .await;
+            return Err(err.into());
+        }
+    };
+    tabs::create(store, &row.id, None).await?;
+    tracing::info!(code = "lane.created", remote = true, "worktree created");
+    Ok(row)
+}
+
 /// `lane_diff`: the worktree's changes against the commit it started from,
 /// including uncommitted work.
 pub async fn diff(store: &Store, id: &WorkspaceId) -> Result<Vec<tandem_git::FileDiff>, IpcError> {
     let (lane, _) = lane_row(store, id).await?;
+    if let Some((remote, host)) = remote_for(&lane)? {
+        return remote
+            .call(
+                &host,
+                tandem_host::protocol::method::LANE_DIFF,
+                serde_json::json!({"root": lane.root, "base": lane.lane_base.unwrap_or_default()}),
+            )
+            .await;
+    }
     let repo = discover(&lane.root, FOLDER_MISSING)?;
     let base = lane.lane_base.unwrap_or_default();
     Ok(repo.diff_since(&base).await?)
@@ -137,6 +233,29 @@ pub async fn diff(store: &Store, id: &WorkspaceId) -> Result<Vec<tandem_git::Fil
 /// it and is reported; nothing is committed and nothing is resolved.
 pub async fn merge(store: &Store, git: &Git, id: &WorkspaceId) -> Result<MergeReport, IpcError> {
     let (lane, parent) = lane_row(store, id).await?;
+    let dirty = || {
+        IpcError::new(
+            ErrorCode::Conflict,
+            format!(
+                "{} has uncommitted changes. Commit or stash them, then merge.",
+                parent.name
+            ),
+        )
+        .with_stage("git")
+    };
+    if let Some((remote, host)) = remote_for(&parent)? {
+        let report: Result<MergeReport, IpcError> = remote
+            .call(
+                &host,
+                tandem_host::protocol::method::LANE_MERGE,
+                serde_json::json!({"root": parent.root, "branch": lane.lane_branch.unwrap_or_default()}),
+            )
+            .await;
+        return match report {
+            Err(e) if e.code == ErrorCode::Conflict => Err(dirty()),
+            other => other,
+        };
+    }
     let repo = discover(&parent.root, "Folder not found")?;
     let branch = lane.lane_branch.unwrap_or_default();
     match LaneManager::merge_into_base(git, &repo, &branch).await {
@@ -177,6 +296,24 @@ pub async fn create_pr_pane(
     tab: &TabId,
 ) -> Result<PaneRecord, IpcError> {
     let (lane, _) = lane_row(store, id).await?;
+    if let Some((remote, host)) = remote_for(&lane)? {
+        // The host's own gh, signed in there; its pane runs on the host.
+        let (ssh, target) = remote.transport(&host).await?;
+        let found = ssh
+            .exec(
+                &target,
+                "\"${SHELL:-sh}\" -lc 'command -v gh' >/dev/null",
+                None,
+            )
+            .await
+            .is_ok();
+        if !found {
+            return Err(IpcError::new(ErrorCode::EngineMissing, GH_MISSING).with_stage("gh"));
+        }
+        return Ok(
+            panes::create_with(store, tab, "terminal", Some(lane.root.clone()), None).await?,
+        );
+    }
     if !Path::new(&lane.root).is_dir() {
         return Err(IpcError::new(ErrorCode::NotFound, FOLDER_MISSING));
     }
@@ -209,6 +346,46 @@ pub async fn remove(
     force: Option<ForceConfirm>,
 ) -> Result<(), IpcError> {
     let (lane, parent) = lane_row(store, id).await?;
+    if let Some((remote, host)) = remote_for(&parent)? {
+        use tandem_host::protocol::method;
+        // Dirty refuses before anything stops, as locally.
+        if force.is_none() {
+            let dirty = remote
+                .files
+                .git_status(
+                    &remote,
+                    &crate::services::remote_files::RemoteRoot {
+                        host: host.clone(),
+                        root: lane.root.clone(),
+                    },
+                )
+                .await?
+                .is_some_and(|(_, _, s)| !s.staged.is_empty() || !s.unstaged.is_empty());
+            if dirty {
+                return Err(
+                    IpcError::new(ErrorCode::Conflict, "Uncommitted changes").with_stage("git")
+                );
+            }
+        }
+        stop_panes(store, pty, &lane.id).await?;
+        remote
+            .call::<serde_json::Value>(
+                &host,
+                method::LANE_REMOVE,
+                serde_json::json!({"root": parent.root, "path": lane.root, "force": force.is_some()}),
+            )
+            .await
+            .map_err(|e| {
+                if e.code == ErrorCode::Conflict {
+                    IpcError::new(ErrorCode::Conflict, "Uncommitted changes").with_stage("git")
+                } else {
+                    e
+                }
+            })?;
+        workspaces::remove(store, &lane.id).await?;
+        tracing::info!(code = "lane.removed", remote = true, "worktree removed");
+        return Ok(());
+    }
     let lane_path = Path::new(&lane.root);
     if force.is_none() && lane_path.is_dir() {
         if let Some(repo) = Repo::discover(lane_path)? {
@@ -260,6 +437,38 @@ pub async fn sweep(
             }),
             Ok(_) => {}
             Err(err) => tracing::warn!(error = %err, "worktree sweep failed for one workspace"),
+        }
+    }
+    // Repositories on SSH hosts, by their helper (D-1602): only hosts
+    // connected now, so the sweep never opens a connection (or a password
+    // prompt) by itself.
+    let remote = REMOTE.get().and_then(std::sync::Weak::upgrade);
+    if let Some(remote) = remote {
+        for ws in workspaces::list(store)
+            .await?
+            .into_iter()
+            .filter(|w| w.parent_id.is_none() && w.kind == "ssh")
+        {
+            let host = tandem_core::ids::HostId::from_db(ws.host_id.clone());
+            if remote.state(&host) != crate::services::remote::HostState::Connected {
+                continue;
+            }
+            let found: Result<Vec<StaleLane>, IpcError> = remote
+                .call(
+                    &host,
+                    tandem_host::protocol::method::LANE_SWEEP,
+                    serde_json::json!({"root": ws.root}),
+                )
+                .await;
+            match found {
+                Ok(lanes) if !lanes.is_empty() => out.push(StaleLanes {
+                    workspace_id: ws.id.clone(),
+                    lanes,
+                }),
+                Ok(_) => {}
+                // Not a repository, or no lanes there: nothing to say.
+                Err(err) => tracing::debug!(error = %err, "remote worktree sweep skipped"),
+            }
         }
     }
     Ok(out)

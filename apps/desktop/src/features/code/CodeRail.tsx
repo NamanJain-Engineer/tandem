@@ -311,8 +311,8 @@ export function CodeRail() {
       // Only a repository can have worktrees; the label says why it's off.
       id: "new-worktree",
       label:
-        ws.kind !== "local" ? t("worktree.remote") : ws.branch ? t("worktree.new") : t("worktree.needsRepo"),
-      disabled: ws.kind !== "local" || !ws.branch || ws.missing,
+        ws.kind === "wsl" ? t("worktree.remote") : ws.branch ? t("worktree.new") : t("worktree.needsRepo"),
+      disabled: ws.kind === "wsl" || !ws.branch || ws.missing,
       onSelect: () => useWorktrees.getState().open({ kind: "new", workspaceId: ws.id }),
     },
     { id: "up", label: t("rail.moveUp"), onSelect: a.moveUp },

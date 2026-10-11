@@ -1,5 +1,6 @@
-//! `tandem-host serve` (one per SSH connection) and `tandem-host run` (one
-//! per remote chat engine).
+//! `tandem-host serve` (one per SSH connection), `tandem-host run` (one
+//! per remote chat engine) and `tandem-host mcp` (one per MCP server an
+//! engine on the host starts, D-1604).
 //!
 //! `serve` connects to the session daemon of this version, starting it
 //! when none runs, and pipes stdin and stdout to it: the daemon does the
@@ -12,15 +13,18 @@
 //! closed, and the group is ended if it hasn't exited 3 s later.
 
 use std::collections::BTreeMap;
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use serde_json::json;
+
 use crate::daemon::{ensure_run_dir, run_dir, socket_path};
 use crate::env;
+use crate::protocol::{method, McpLine, Message};
 
 fn connect_or_start(exe: &Path, home: &Path) -> std::io::Result<UnixStream> {
     let run = run_dir(home);
@@ -75,6 +79,114 @@ pub fn serve(exe: &Path, home: &Path) -> std::io::Result<()> {
         }
         stdout.write_all(&buf[..n])?;
         stdout.flush()?;
+    }
+}
+
+/// `mcp --channel <id>`: the stdio MCP server an engine on the host starts.
+/// It serves nothing itself: it attaches to the channel the desktop opened
+/// for this engine session and passes each JSON-RPC line between the
+/// engine and the desktop, where the server runs (D-1604). Without a daemon
+/// (the desktop isn't connected) it says so and exits.
+pub fn mcp(home: &Path, channel: &str) -> std::io::Result<()> {
+    let sock = UnixStream::connect(socket_path(&run_dir(home))).map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!("Vibezeo isn't connected to this host ({e})"),
+        )
+    })?;
+    relay(
+        channel,
+        sock,
+        BufReader::new(std::io::stdin()),
+        std::io::stdout().lock(),
+    )
+}
+
+/// Attaches to `channel` over `sock`, then passes lines from `input` to
+/// the daemon and the daemon's lines to `output`, until either side ends.
+pub fn relay<R, W>(
+    channel: &str,
+    sock: UnixStream,
+    mut input: R,
+    mut output: W,
+) -> std::io::Result<()>
+where
+    R: BufRead + Send + 'static,
+    W: Write,
+{
+    let mut to = sock.try_clone()?;
+    to.write_all(
+        &Message::request(1, method::MCP_ATTACH, json!({ "channel": channel })).to_line(),
+    )?;
+    let mut from = BufReader::new(sock.try_clone()?);
+    let mut line = Vec::new();
+    // Nothing reaches a relay before its attach is answered.
+    loop {
+        line.clear();
+        if from.read_until(b'\n', &mut line)? == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::ConnectionAborted,
+                "the helper closed the channel",
+            ));
+        }
+        let Ok(m) = serde_json::from_slice::<Message>(&line) else {
+            continue;
+        };
+        if m.id == Some(1) {
+            if let Some(e) = m.error {
+                return Err(std::io::Error::other(e.message));
+            }
+            break;
+        }
+    }
+    let closer = sock.try_clone()?;
+    let chan = channel.to_string();
+    std::thread::Builder::new()
+        .name("mcp-in".into())
+        .spawn(move || {
+            let mut buf = Vec::new();
+            loop {
+                buf.clear();
+                match input.read_until(b'\n', &mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+                let text = String::from_utf8_lossy(&buf);
+                let text = text.trim_end_matches(['\r', '\n']);
+                if text.is_empty() {
+                    continue;
+                }
+                let note = Message::notification(
+                    method::MCP_LINE,
+                    json!({ "channel": chan, "line": text }),
+                );
+                if to.write_all(&note.to_line()).is_err() {
+                    break;
+                }
+            }
+            // The engine stopped its server: the daemon tells the desktop.
+            let _ = closer.shutdown(std::net::Shutdown::Both);
+        })?;
+    loop {
+        line.clear();
+        if from.read_until(b'\n', &mut line)? == 0 {
+            return Ok(());
+        }
+        let Ok(m) = serde_json::from_slice::<Message>(&line) else {
+            continue;
+        };
+        if m.method.as_deref() != Some(method::MCP_LINE) {
+            continue;
+        }
+        let Some(l) = m
+            .params
+            .and_then(|p| serde_json::from_value::<McpLine>(p).ok())
+        else {
+            continue;
+        };
+        output.write_all(l.line.as_bytes())?;
+        output.write_all(b"\n")?;
+        output.flush()?;
     }
 }
 

@@ -64,9 +64,19 @@ async function waitUp(url: string, seconds: number): Promise<void> {
   if (!(await up(url))) throw new Error(`${url} didn't come up`);
 }
 
-function startDetached(cmd: string, cmdArgs: string[], env: NodeJS.ProcessEnv, logFile?: string): ChildProcess {
+function startDetached(
+  cmd: string,
+  cmdArgs: string[],
+  env: NodeJS.ProcessEnv,
+  logFile?: string,
+): ChildProcess {
   const out = logFile ? openSync(logFile, "a") : "ignore";
-  return spawn(cmd, cmdArgs, { cwd: root, stdio: ["ignore", out, out], detached: true, env: { ...process.env, ...env } });
+  return spawn(cmd, cmdArgs, {
+    cwd: root,
+    stdio: ["ignore", out, out],
+    detached: true,
+    env: { ...process.env, ...env },
+  });
 }
 
 function stop(child?: ChildProcess) {
@@ -132,7 +142,9 @@ async function main() {
     // target/, so a helper built after it isn't the one the app installs on
     // the host (the M14 specs then met the previous build's helper).
     if (remote && spawnSync("sh", ["scripts/build-tandem-host.sh"], quiet).status !== 0)
-      console.warn("E2E: couldn't build tandem-host (rustup target add x86_64-unknown-linux-musl; apt install musl-tools)");
+      console.warn(
+        "E2E: couldn't build tandem-host (rustup target add x86_64-unknown-linux-musl; apt install musl-tools)",
+      );
     execFileSync("pnpm", ["build"], { cwd: desktop, stdio: "inherit" });
     // Perf suites measure an optimised build (the `perf` profile keeps the test harness).
     const cargoProfile = suite && process.env.TANDEM_PERF_BUILD !== "debug" ? ["--profile", "perf"] : [];
@@ -142,10 +154,14 @@ async function main() {
       { cwd: root, stdio: "inherit" },
     );
     // The mock authorization server and plugin upstreams (M12).
-    execFileSync("cargo", ["build", "-p", "tandem-gateway", "--features", "test-vendors", "--bin", "mock-plugins"], {
-      cwd: root,
-      stdio: "inherit",
-    });
+    execFileSync(
+      "cargo",
+      ["build", "-p", "tandem-gateway", "--features", "test-vendors", "--bin", "mock-plugins"],
+      {
+        cwd: root,
+        stdio: "inherit",
+      },
+    );
     // The status hook and the fake engines (ARCHITECTURE §6.12).
     execFileSync("cargo", ["build", "-p", "tandem-engines", "--features", "fixtures", "--bins"], {
       cwd: root,
@@ -156,10 +172,14 @@ async function main() {
   if (remote) {
     const up = spawnSync(
       "sh",
-      ["-c", "bash scripts/gen-ssh-fixture.sh >/dev/null && docker compose -f infra/docker-compose.yml --profile remote up -d --wait sshd"],
+      [
+        "-c",
+        "bash scripts/gen-ssh-fixture.sh >/dev/null && docker compose -f infra/docker-compose.yml --profile remote up -d --wait sshd",
+      ],
       quiet,
     );
-    if (up.status !== 0) console.warn("E2E: the sshd fixture didn't start (Docker?); the m14 specs will fail");
+    if (up.status !== 0)
+      console.warn("E2E: the sshd fixture didn't start (Docker?); the m14 specs will fail");
   }
   const home = mkdtempSync(join(tmpdir(), "tandem-e2e-"));
   const results = join(root, "test-results");
@@ -233,6 +253,7 @@ async function main() {
   ].join("\n");
   for (const f of [".bash_profile", ".profile", ".zprofile"]) writeFileSync(join(userHome, f), profile);
 
+  writeFileSync(join(home, "ssh_config"), "");
   Object.assign(process.env, {
     HOME: userHome,
     TANDEM_HOME: home,
@@ -249,6 +270,9 @@ async function main() {
     TANDEM_OPEN_URL_CMD: opener,
     TANDEM_NET_LOG: join(home, "net.log"),
     TANDEM_FAKE_PICK_FOLDER: join(home, "pick-folder.txt"),
+    // ssh reads this config instead of the user's own (debug builds); E2E-M14-9
+    // writes its jump hosts there.
+    TANDEM_SSH_CONFIG: join(home, "ssh_config"),
     // The native "Discard worktree?" confirm answers from this file (debug builds).
     TANDEM_FAKE_CONFIRM: join(home, "confirm.txt"),
     // Fails the nth worktree of a launch (debug builds; E2E-M6-3).
@@ -351,7 +375,11 @@ async function main() {
 
   let realtime: ChildProcess | undefined;
   if (!(await up(`${REALTIME}/health`))) {
-    realtime = startDetached(join(root, "node_modules/.bin/tsx"), ["scripts/mock-realtime.ts", "--port", "8794"], {});
+    realtime = startDetached(
+      join(root, "node_modules/.bin/tsx"),
+      ["scripts/mock-realtime.ts", "--port", "8794"],
+      {},
+    );
     await waitUp(`${REALTIME}/health`, 30);
   } else {
     await fetch(`${REALTIME}/__reset`, { method: "POST" });
@@ -382,9 +410,16 @@ async function main() {
 
   // Specs steer it through models-control.txt (normal, slow or a byte to corrupt).
   let models: ChildProcess | undefined;
-  const modelsUp = async () => (await fetch(`${MODELS}/health`).then((r) => r.text()).catch(() => "")) === "ok";
+  const modelsUp = async () =>
+    (await fetch(`${MODELS}/health`)
+      .then((r) => r.text())
+      .catch(() => "")) === "ok";
   if (!(await modelsUp())) {
-    models = startDetached(join(root, "node_modules/.bin/tsx"), ["scripts/serve-models.ts", "--port", "8792", "--control", MODELS_CONTROL], { HOME: REAL_HOME, TANDEM_MODEL_CACHE: MODEL_CACHE });
+    models = startDetached(
+      join(root, "node_modules/.bin/tsx"),
+      ["scripts/serve-models.ts", "--port", "8792", "--control", MODELS_CONTROL],
+      { HOME: REAL_HOME, TANDEM_MODEL_CACHE: MODEL_CACHE },
+    );
     for (let i = 0; i < 60 && !(await modelsUp()); i++) await new Promise((r) => setTimeout(r, 500));
     if (!(await modelsUp())) throw new Error(`${MODELS} didn't come up (is something else on :8792?)`);
   }
