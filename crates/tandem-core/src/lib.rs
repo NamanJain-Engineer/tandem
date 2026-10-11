@@ -17,6 +17,7 @@ pub mod error;
 pub mod files;
 pub mod find_work;
 pub mod ids;
+pub mod install;
 pub mod keychain;
 pub mod limits;
 pub mod logging;

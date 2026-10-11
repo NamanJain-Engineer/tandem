@@ -136,8 +136,12 @@ fn run_capture(shell: &Path, timeout: Duration) -> Option<BTreeMap<String, Strin
 
 #[cfg(windows)]
 fn run_capture(_shell: &Path, _timeout: Duration) -> Option<BTreeMap<String, String>> {
-    // Windows reads the registry PATH (M3); the process env is the base.
-    Some(std::env::vars().collect())
+    // The process env, with the PATH Windows would build now from the
+    // registry: Explorer-started apps keep the one from sign-in (§5.2).
+    Some(crate::winpath::with_registry_path(
+        std::env::vars().collect(),
+        &crate::winpath::SystemRegistry,
+    ))
 }
 
 /// Removes what panes must not inherit (§5.2).

@@ -5934,6 +5934,7 @@ dependencies = [
  "ulid",
  "unicode-normalization",
  "uuid",
+ "windows-sys 0.59.0",
  "zeroize",
 ]
 

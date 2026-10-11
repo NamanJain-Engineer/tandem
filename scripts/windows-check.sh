@@ -3,19 +3,20 @@
 # "Windows from Linux"). No Windows CI runs until Actions minutes return, so
 # this is what keeps `cfg(windows)` code compiling and its tests passing.
 #
-#   bash scripts/windows-check.sh            # all three
+#   bash scripts/windows-check.sh            # all three (--msvc only once the licence is accepted)
 #   bash scripts/windows-check.sh --clippy   # GNU target, every crate but the app (the gate runs this)
 #   bash scripts/windows-check.sh --msvc     # MSVC target through cargo-xwin, the whole workspace
 #   bash scripts/windows-check.sh --wine     # the platform crates' tests under Wine
 #
 # --clippy needs mingw-w64 (bootstrap-linux.sh). The app (whisper.cpp, ONNX
 # Runtime) doesn't build for the GNU target, so --msvc checks it: cargo-xwin
-# and clang 19 or later. --wine needs wine (WineHQ 11 or Ubuntu's 9).
+# and clang 19 or later, and TANDEM_MSVC_LICENSE_ACCEPTED=1 once the owner has
+# accepted the licence of the Microsoft CRT and SDK it downloads (D-1711). --wine needs wine (WineHQ 11 or Ubuntu's 9).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 clippy=0 msvc=0 wine=0
-[ $# -eq 0 ] && clippy=1 msvc=1 wine=1
+[ $# -eq 0 ] && clippy=1 wine=1 && [ "${TANDEM_MSVC_LICENSE_ACCEPTED:-0}" = 1 ] && msvc=1
 for arg in "$@"; do
   case "$arg" in
     --clippy) clippy=1 ;;
@@ -47,6 +48,12 @@ if [ "$msvc" = 1 ]; then
       break
     fi
   done
+  # cargo-xwin downloads Microsoft's CRT and SDK, which accepts Microsoft's
+  # licence: only the owner may do that (HUMAN_TODO, D-1711).
+  if [ "${TANDEM_MSVC_LICENSE_ACCEPTED:-0}" != 1 ]; then
+    echo "--msvc needs the owner's acceptance of the MSVC licence: set TANDEM_MSVC_LICENSE_ACCEPTED=1 (HUMAN_TODO)" >&2
+    exit 1
+  fi
   command -v cargo-xwin >/dev/null || { echo "missing cargo-xwin: cargo install cargo-xwin --locked" >&2; exit 1; }
   need_target x86_64-pc-windows-msvc
   cargo xwin clippy --target x86_64-pc-windows-msvc --workspace --all-targets -- -D warnings

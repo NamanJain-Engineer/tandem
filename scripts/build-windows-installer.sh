@@ -14,7 +14,9 @@
 #
 # Needs (docs/OPERATING.md §3): rustup target x86_64-pc-windows-msvc,
 # cargo-xwin, nsis (makensis), clang/lld/llvm 19 or later (the MSVC STL
-# headers refuse older clang), p7zip-full for the check. TANDEM_HOSTED passes
+# headers refuse older clang), p7zip-full for the check, and
+# TANDEM_MSVC_LICENSE_ACCEPTED=1 once the owner has accepted the licence of
+# the Microsoft CRT and SDK that cargo-xwin downloads (D-1711). TANDEM_HOSTED passes
 # through as in release-local.sh (0 for an early-access build).
 set -euo pipefail
 
@@ -31,6 +33,12 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# cargo-xwin downloads Microsoft's CRT and SDK, which accepts Microsoft's
+# licence: only the owner may do that (HUMAN_TODO, D-1711).
+if [ "${TANDEM_MSVC_LICENSE_ACCEPTED:-0}" != 1 ]; then
+  echo "the MSVC cross-build needs the owner's acceptance of the MSVC licence: set TANDEM_MSVC_LICENSE_ACCEPTED=1 (HUMAN_TODO)" >&2
+  exit 1
+fi
 # whisper.cpp builds with clang-cl against the MSVC headers: clang 19+.
 for v in 21 20 19; do
   if [ -x "/usr/lib/llvm-$v/bin/clang" ]; then

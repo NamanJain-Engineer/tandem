@@ -49,6 +49,32 @@ pub struct LauncherStatus {
     pub path: Option<String>,
 }
 
+/// The App Execution Alias a Microsoft Store (MSIX) install declares
+/// (`packaging/msix/AppxManifest.xml.in`).
+pub const STORE_ALIAS: &str = "vibezeo.exe";
+
+/// The program the OS launcher runs: the AppImage when the app runs from
+/// one; for a Microsoft Store install the execution alias in
+/// `%LOCALAPPDATA%\Microsoft\WindowsApps`, since a packaged app can't be
+/// started by its path inside `WindowsApps` (D-1713); else this executable.
+pub fn launcher_program(
+    current_exe: PathBuf,
+    appimage: Option<PathBuf>,
+    store_package: bool,
+    local_app_data: Option<PathBuf>,
+) -> PathBuf {
+    if let Some(appimage) = appimage.filter(|p| !p.as_os_str().is_empty()) {
+        return appimage;
+    }
+    match local_app_data {
+        Some(local) if store_package => local
+            .join("Microsoft")
+            .join("WindowsApps")
+            .join(STORE_ALIAS),
+        _ => current_exe,
+    }
+}
+
 /// What the entry runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LauncherSpec {

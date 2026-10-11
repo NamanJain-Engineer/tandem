@@ -439,9 +439,12 @@ impl AppState {
         // Before the UI lists anything: agents pause, crashed threads settle.
         let restore = crate::services::restore::RestoreService::new(store.clone(), bus.clone());
         restore.settle_at_launch();
+        // A deb, or a Microsoft Store package: someone else updates the app.
         let managed = crate::services::updates::managed_by_package_manager(
             std::path::Path::new("/usr/share/doc/tandem"),
             std::env::var("APPIMAGE").ok().as_deref(),
+        ) || tandem_core::install::managed_by_store(
+            tandem_core::install::windows_package_full_name().as_deref(),
         );
         let updates = crate::services::updates::UpdateService::new(
             managed,
