@@ -48,25 +48,28 @@ besides Lead, and one plugin connection.
   64 KB) in a repository's `.tandem/prompts/`, shared through git, or in your
   own `~/.tandem/prompts/`; `{{branch}}`, `{{file}}`, `{{selection}}` and
   `{{clipboard}}` are filled in, and any other `{{name}}` is asked for.
-- [lin] **Skills for your engines.** A teammate's skill row has "Also
-  install for" Claude Code or Codex: Vibezeo copies the skill into that
-  engine's own skills folder, never as a link, so the engine can use it, and
-  takes its copy out when you untick it. A skill of the engine's own with the
-  same name is left alone, and the row says so.
+- [lin] **Skills in your engines.** "Also install for" in a skill's ⋯ menu
+  copies a teammate's skill into the skills folder of a Claude Code or Codex
+  account, so that engine can use it outside Vibezeo too, and saving the
+  skill in Vibezeo updates the copy. It's a copy, never a link. If the engine
+  already has its own skill with that name, Vibezeo leaves it as it is and
+  the row says so.
 - [lin] **A teammate in a terminal.** "Launch in terminal" on a teammate's
-  page opens its Home or one of its places as a workspace (counted against
-  Free's 3) and starts its engine in a Code-mode pane named after it, with its
-  brief typed as the first prompt.
-- [lin] **Find work finds teammates.** "Find work…" in the palette also
-  matches teammates, by name, brief and their newest chat, and opens the
-  teammate's page.
+  page opens it as an agent pane in Code mode, in its Home or one of its
+  places and named after it, with its brief typed whole as the first prompt.
+  The place opens as a workspace, so it counts toward Free's 3 workspaces,
+  and the pane toward its 4 live panes.
+- [lin] **Find work finds teammates.** "Find work…" in the command palette
+  finds teammates as well as panes and threads, by name, the first line of
+  the brief and what the teammate said last.
 - [lin] **Files and git on SSH hosts.** The Files tab and the Changes panel
   follow a host's folder as it changes, whatever changed it: an agent, a
   terminal or another program on the host. Push, pull, publishing a branch,
   switching branches and new branches run the host's own git with the host's
   own credentials (its SSH keys or credential helper); nothing from this
   computer is used.
-- [lin] **An .rpm for Fedora**, beside the .deb for Debian and Ubuntu.
+- [lin] **Fedora.** An .rpm package, beside the .deb for Debian and Ubuntu:
+  `sudo dnf install ./Vibezeo-0.6.0-1.x86_64.rpm`.
 
 ### Changed
 
