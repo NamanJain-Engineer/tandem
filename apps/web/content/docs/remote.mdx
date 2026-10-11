@@ -18,7 +18,7 @@ Open a folder on another machine and work there as if it were local: terminals, 
 
 **Which hosts.** The Linux download includes the helper for **Linux x86_64 and Linux arm64 (aarch64)** hosts; the arm64 helper hasn't been tried on a real arm64 machine yet. macOS hosts need the macOS helper, which is built on a Mac and isn't in this download yet. Hosts behind a jump host (`ProxyJump` or `ProxyCommand` in your SSH config) work too: Vibezeo reads the host's key through the jump for you to check, and the jump host itself is reached and checked as your own config and `known_hosts` say.
 
-**Not in remote folders yet:** git worktrees in WSL folders (agents there share the checkout); Best of N; checkpoints; plugins and task tools in WSL threads and in agent terminals on a host; and Reveal in file manager. The Browser pane browses from this computer, so it can't open the host's own dev servers.
+**Not in remote folders yet:** git worktrees and Best of N in WSL folders (agents there share the checkout); checkpoints; plugins and task tools in WSL threads and in agent terminals on a host; and Reveal in file manager. The Browser pane browses from this computer, so it can't open the host's own dev servers.
 
 ## WSL (Windows)
 
