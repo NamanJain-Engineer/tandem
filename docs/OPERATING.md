@@ -156,6 +156,9 @@ TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run     # Linux .deb, .rpm +
                                                             # for Linux x86_64 and aarch64 first; needs cargo-zigbuild)
 sh scripts/check-host-bundle.sh dist/<name>.deb             # the bundle carries tandem-host (.deb, .rpm or AppImage;
                                                             # release-local runs it)
+sh scripts/agent/test-rpm-fedora.sh dist/<name>.rpm 43      # the .rpm installs, finds its libraries and starts in a
+                                                            # clean Fedora container (D-832); the site names only the
+                                                            # Fedora releases it passes on
 ```
 
 E2E lessons (each cost a debugging round):
