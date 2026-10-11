@@ -261,6 +261,8 @@
     "allow-phone-arm-state",
     "allow-phone-queue-list",
     "allow-phone-queue-decide",
+    "allow-phone-lan-state",
+    "allow-phone-lan-set",
     "allow-limit-cancel-resume",
     "allow-limit-dismiss",
     "allow-limit-continue",

@@ -8,6 +8,7 @@ import type { AiProvider } from "./providers/ai/types";
 import type { BillingProvider } from "./providers/billing/types";
 import type { RealtimeProvider } from "./providers/realtime/types";
 import type { SttProvider } from "./providers/stt/types";
+import type { PushProvider } from "./providers/push/types";
 import type { BreachChecker } from "./providers/breach";
 import type { CaptchaVerifier } from "./providers/captcha";
 import type { EmailProvider } from "./providers/email/types";
@@ -31,6 +32,8 @@ export type Deps = {
   auth: Auth;
   ai: AiProvider;
   stt: SttProvider;
+  /** Forwards sealed phone alerts to FCM / APNs (F-RM-06). */
+  push: PushProvider;
   /** Tells the phone relay to drop a revoked pairing's sockets (F-BE-11). */
   relay: RelayControl;
   /** Conductor's realtime voice: mints a session for the app to connect to (F-BE-08). */

@@ -1782,7 +1782,7 @@ bash scripts/check-no-interim.sh && pnpm tsx scripts/trace-tests.ts --all --fail
 
 **Goal.** Ship the P2 set in independent sub-phases, each ending green and tagged (`m16a` … `m16d`). Then cut the release candidate. If the budget runs out, stop after any sub-phase and list what remains as next steps in `BUILD_LOG.md`.
 
-**Owns (P2):** F-CN-01, F-CN-02, F-CN-03, F-CN-04, F-CN-05, F-CN-06, F-CN-07, F-CN-08, F-BE-08, F-AU-01, F-RM-03, F-BE-11, F-SH-12, F-CD-21, F-AC-07, F-AG-10, F-AG-13, F-RT-05, F-BE-03, F-BE-12
+**Owns (P2):** F-CN-01, F-CN-02, F-CN-03, F-CN-04, F-CN-05, F-CN-06, F-CN-07, F-CN-08, F-BE-08, F-AU-01, F-RM-03, F-BE-11, F-SH-12, F-CD-21, F-AC-07, F-AG-10, F-AG-13, F-RT-05, F-BE-03, F-BE-12, F-RM-04, F-RM-05, F-RM-06, F-RM-07
 **Extends:** the P2 app-shortcut rebinding portion of F-SH-09 (Settings › Shortcuts, UI-113: edit, conflict detection, reset to defaults; persisted in `settings`); the SSO portion of F-BL-06 (P2; the P1 core is owned by M13); the remaining F-BE-06 routes (`/auto/next`, `/voice/act`, `/voice/resolve`); F-TL-06 rule 5 (live voice and phone paths).
 
 **16A: Conductor (CN-01…08, BE-08).**
@@ -1950,7 +1950,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **161 features** (65 P0, 67 P1, 29 P2). All 132 P0 and P1 features are owned by M0–M15; the 20 original P2 features are owned by M16, and M17 owns the 9 added since: the 5 extras (F-EX, §4.19) and the 4 worktree-workflow features (F-WT, §4.20). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **165 features** (65 P0, 67 P1, 33 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 9: the 5 extras (F-EX, §4.19) and the 4 worktree-workflow features (F-WT, §4.20). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -1992,8 +1992,9 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **161 features** (6
 | F-WB-02 | P1 | M15 | F-WB-03 | P1 | M15 | F-WB-04 | P1 | M15 | F-WB-05 | P0 | M2 |
 | F-TL-01 | P0 | M2 | F-TL-02 | P0 | M0 | F-TL-03 | P0 | M0 | F-TL-04 | P0 | M5 |
 | F-TL-05 | P1 | M15 | F-TL-06 | P0 | M15 | F-TL-07 | P1 | M13 | F-TL-10 | P1 | M13 |
+| F-RM-04 | P2 | M16 | F-RM-05 | P2 | M16 | F-RM-06 | P2 | M16 | F-RM-07 | P2 | M16 |
 
-**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 20 · M17 5 = 157.
+**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 9 = 165 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`).
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|

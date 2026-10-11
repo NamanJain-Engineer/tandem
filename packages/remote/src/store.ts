@@ -1,8 +1,7 @@
-// Where the phone keeps its pairing (F-RM-03, ARCHITECTURE §13.3). In the
-// browser it's IndexedDB, with the pairing sealed by a non-extractable
-// AES-GCM key that also lives in IndexedDB: script on this origin can use
-// it but can't read it out. X25519 and XChaCha20 keys aren't WebCrypto key
-// types everywhere, so they can't be non-extractable themselves (D-1909).
+// What the phone remembers about its pairing (F-RM-03, ARCHITECTURE §13.3)
+// and where it keeps it. The browser's store is in `browser.ts` (IndexedDB,
+// D-1909); the Vibezeo Remote app keeps it in the iOS Keychain or the
+// Android Keystore (`apps/mobile`, D-2010).
 import { b64url, fromB64url, type EpochKeys, type PairingLink, type SessionState } from "./protocol";
 import type { PhoneGrants } from "./messages";
 
@@ -102,68 +101,5 @@ export class MemoryPairingStore implements PairingStore {
 
   async clear(): Promise<void> {
     this.value = null;
-  }
-}
-
-const DB = "vibezeo-remote";
-const STORE = "kv";
-
-function request<T>(req: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error("IndexedDB request failed"));
-  });
-}
-
-function openDb(): Promise<IDBDatabase> {
-  const req = indexedDB.open(DB, 1);
-  req.onupgradeneeded = () => req.result.createObjectStore(STORE);
-  return request(req);
-}
-
-async function kv<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  const db = await openDb();
-  try {
-    return await request(fn(db.transaction(STORE, mode).objectStore(STORE)));
-  } finally {
-    db.close();
-  }
-}
-
-/** The browser's store: the pairing sealed with a non-extractable AES-GCM key. */
-export class IndexedDbPairingStore implements PairingStore {
-  private async wrapKey(): Promise<CryptoKey> {
-    const existing = await kv<CryptoKey | undefined>("readonly", (s) => s.get("wrap"));
-    if (existing) return existing;
-    const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
-    await kv("readwrite", (s) => s.put(key, "wrap"));
-    return key;
-  }
-
-  async load(): Promise<StoredPairing | null> {
-    const sealed = await kv<{ iv: Uint8Array; ct: ArrayBuffer } | undefined>("readonly", (s) => s.get("pairing"));
-    if (!sealed) return null;
-    try {
-      const key = await this.wrapKey();
-      const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: sealed.iv }, key, sealed.ct);
-      return deserializePairing(new TextDecoder().decode(plain));
-    } catch {
-      return null;
-    }
-  }
-
-  async save(pairing: StoredPairing): Promise<void> {
-    const key = await this.wrapKey();
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const ct = await crypto.subtle.encrypt(
-      { name: "AES-GCM", iv },
-      key,
-      new TextEncoder().encode(serializePairing(pairing)),
-    );
-    await kv("readwrite", (s) => s.put({ iv, ct }, "pairing"));
-  }
-
-  async clear(): Promise<void> {
-    await kv("readwrite", (s) => s.delete("pairing"));
   }
 }

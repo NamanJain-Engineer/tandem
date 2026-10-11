@@ -17,7 +17,7 @@ import {
   rootSecret,
   sealNext,
   type SessionState,
-} from "../lib/remote/protocol";
+} from "@tandem/remote/protocol";
 import { API } from "./helpers";
 
 type Cmd = { t: string; id?: number; cmd?: string; args?: Record<string, unknown>; device?: string };
@@ -115,7 +115,7 @@ export class FakeDesktop {
               },
             ],
             approvals: this.approvals,
-            threads: [{ id: "th_web1", title: "Fix the login bug", state: "idle", updatedAt: 1 }],
+            threads: [{ id: "th_web1", title: "Fix the login bug", state: "idle", updatedAt: 1, teammate: false }],
             routines: [{ id: "rt_web1", name: "Nightly triage", paused: false, running: false }],
           },
         };

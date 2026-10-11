@@ -56,7 +56,9 @@ fn invariant_rule_5_the_phone_has_no_local_review_command() {
             "thread.send",
             "pane.type",
             "approval.decide",
-            "routine.run_now"
+            "routine.run_now",
+            "push.register",
+            "push.unregister"
         ]
     );
     for cmd in [

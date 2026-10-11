@@ -37,6 +37,7 @@ impl PhoneHost for FakeHost {
             title: "Fix login".into(),
             state: ThreadState::Idle,
             updated_at: 1,
+            teammate: false,
         }]
     }
     async fn routines(&self) -> Vec<PhoneRoutine> {
@@ -108,6 +109,8 @@ impl PhoneHost for FakeHost {
 
 #[derive(Default)]
 struct FakeNet {
+    pushes: StdMutex<Vec<(String, PushPlatform, String, String)>>,
+    dead_tokens: StdMutex<Vec<String>>,
     created: StdMutex<Vec<String>>,
     deleted: StdMutex<Vec<String>>,
     /// Keeps the fake sockets' senders alive so links stay open.
@@ -124,12 +127,37 @@ impl PhoneNet for FakeNet {
         self.created.lock().expect("lock").push(pid.into());
         Ok(PairingTicket {
             pairing_token: "tok_test".into(),
-            relay_url: format!("ws://relay.test/v1/relay/{pid}"),
+            relay_url: format!("wss://relay.test/v1/relay/{pid}"),
+            web_base: None,
         })
     }
     async fn delete_pairing(&self, pid: &str) -> Result<(), String> {
         self.deleted.lock().expect("lock").push(pid.into());
         Ok(())
+    }
+    async fn push(
+        &self,
+        pid: &str,
+        platform: PushPlatform,
+        token: &str,
+        payload: &str,
+    ) -> Result<PushOutcome, String> {
+        if self
+            .dead_tokens
+            .lock()
+            .expect("lock")
+            .iter()
+            .any(|t| t == token)
+        {
+            return Ok(PushOutcome::Unregistered);
+        }
+        self.pushes.lock().expect("lock").push((
+            pid.into(),
+            platform,
+            token.into(),
+            payload.into(),
+        ));
+        Ok(PushOutcome::Sent)
     }
     async fn dial(&self, _url: &str) -> Result<RelayLink, String> {
         let (tx, _out) = mpsc::unbounded_channel();
@@ -285,7 +313,7 @@ async fn f_rm_03_the_qr_carries_the_desktop_key_relay_and_token_and_the_secret_s
     assert_eq!(v["pid"], qr.pairing_id.as_str());
     assert_eq!(
         v["relay"],
-        format!("ws://relay.test/v1/relay/{}", qr.pairing_id)
+        format!("wss://relay.test/v1/relay/{}", qr.pairing_id)
     );
     assert_eq!(v["ptok"], "tok_test");
     assert!(qr.qr.size >= 21 && qr.qr.rows.len() == qr.qr.size as usize);
@@ -835,4 +863,142 @@ async fn f_rm_03_snapshots_and_transcript_pages_fit_in_one_frame() {
     assert_eq!(items.len(), MAX_TRANSCRIPT_ITEMS as usize);
     assert!(items[0]["text"].as_str().expect("text").chars().count() <= 1000);
     assert_eq!(page["data"]["before"], 7);
+}
+
+// ── F-RM-06 push ─────────────────────────────────────────────────────────
+
+fn waiting_agent(status: AgentStatus) -> PhoneAgent {
+    PhoneAgent {
+        key: "pane:pn_1".into(),
+        title: "auth tests".into(),
+        status,
+        engine: None,
+        workspace: None,
+        pane_id: Some("pn_1".into()),
+        thread_id: None,
+        preview: Some("Running tests".into()),
+        since: 1,
+    }
+}
+
+#[tokio::test]
+async fn f_rm_06_1_nothing_is_pushed_until_the_phone_turns_push_on() {
+    let r = rig();
+    let phone = paired(&r).await;
+    r.svc.set_online(&phone.pid, false);
+    r.svc.push_alerts().await;
+    r.host
+        .approvals
+        .lock()
+        .expect("lock")
+        .push(approval("ap_1"));
+    r.svc.push_alerts().await;
+    assert!(r.net.pushes.lock().expect("lock").is_empty());
+}
+
+#[tokio::test]
+async fn f_rm_06_2_alerts_are_sealed_for_the_phone_and_only_it_opens_them() {
+    use tandem_core::remote::push::{open_push, PushAlert};
+    let r = rig();
+    let mut phone = paired(&r).await;
+    let key = [7u8; 32];
+    let res = cmd(
+        &r,
+        &mut phone,
+        1,
+        "push.register",
+        json!({"platform": "fcm", "token": "fcm-token-abcdef", "key": URL_SAFE_NO_PAD.encode(key)}),
+    )
+    .await;
+    assert_eq!(res["ok"], true, "{res}");
+    assert!(r.svc.push_enabled(&phone.pid));
+    // The phone app is closed: its socket went away.
+    r.svc.set_online(&phone.pid, false);
+    *r.host.agents.lock().expect("lock") = vec![waiting_agent(AgentStatus::Working)];
+    r.svc.push_alerts().await; // the first look is the baseline
+    r.host
+        .approvals
+        .lock()
+        .expect("lock")
+        .push(approval("ap_1"));
+    *r.host.agents.lock().expect("lock") = vec![waiting_agent(AgentStatus::Done)];
+    r.svc.push_alerts().await;
+    let pushes = r.net.pushes.lock().expect("lock").clone();
+    assert_eq!(pushes.len(), 2, "{pushes:?}");
+    let mut seqs = Vec::new();
+    for (pid, platform, token, payload) in &pushes {
+        assert_eq!(
+            (pid.as_str(), *platform, token.as_str()),
+            (phone.pid.as_str(), PushPlatform::Fcm, "fcm-token-abcdef")
+        );
+        assert!(!payload.contains("auth tests"), "sealed");
+        let frame = URL_SAFE_NO_PAD.decode(payload).expect("b64");
+        assert!(open_push(&phone.pid, &Secret32([8; 32]), &frame).is_err());
+        let (seq, plain) = open_push(&phone.pid, &Secret32(key), &frame).expect("opens");
+        seqs.push(seq);
+        let alert: PushAlert = serde_json::from_slice(&plain).expect("alert");
+        assert!(
+            alert.title == "Approval needed" || alert.title == "auth tests finished",
+            "{alert:?}"
+        );
+    }
+    assert_eq!(seqs, vec![1, 2]);
+}
+
+#[tokio::test]
+async fn f_rm_06_3_unregister_revoke_and_a_dead_token_stop_push() {
+    let r = rig();
+    let mut phone = paired(&r).await;
+    let reg = json!({"platform": "fcm", "token": "dead-token-0001", "key": URL_SAFE_NO_PAD.encode([1u8; 32])});
+    assert_eq!(
+        cmd(&r, &mut phone, 1, "push.register", reg.clone()).await["ok"],
+        true
+    );
+    assert_eq!(
+        cmd(&r, &mut phone, 2, "push.unregister", json!({})).await["ok"],
+        true
+    );
+    assert!(!r.svc.push_enabled(&phone.pid));
+    // A token the push service no longer knows is forgotten.
+    r.net
+        .dead_tokens
+        .lock()
+        .expect("lock")
+        .push("dead-token-0001".into());
+    assert_eq!(
+        cmd(&r, &mut phone, 3, "push.register", reg).await["ok"],
+        true
+    );
+    r.svc.set_online(&phone.pid, false);
+    r.svc.push_alerts().await;
+    r.host
+        .approvals
+        .lock()
+        .expect("lock")
+        .push(approval("ap_2"));
+    r.svc.push_alerts().await;
+    assert!(!r.svc.push_enabled(&phone.pid));
+    // Revoking deletes the registration.
+    let reg = json!({"platform": "apns", "token": "apns-token-0001", "key": URL_SAFE_NO_PAD.encode([2u8; 32])});
+    assert_eq!(
+        cmd(&r, &mut phone, 4, "push.register", reg).await["ok"],
+        true
+    );
+    r.svc.revoke(&phone.pid, "revoked").await.expect("revoke");
+    assert!(!r.svc.push_enabled(&phone.pid));
+}
+
+#[tokio::test]
+async fn f_rm_06_1_a_bad_push_registration_is_refused() {
+    let r = rig();
+    let mut phone = paired(&r).await;
+    for args in [
+        json!({"platform": "fcm", "token": "short", "key": URL_SAFE_NO_PAD.encode([1u8; 32])}),
+        json!({"platform": "fcm", "token": "fcm-token-abcdef", "key": "dG9vc2hvcnQ"}),
+        json!({"platform": "web", "token": "fcm-token-abcdef", "key": URL_SAFE_NO_PAD.encode([1u8; 32])}),
+    ] {
+        let res = cmd(&r, &mut phone, 1, "push.register", args).await;
+        assert_eq!(res["ok"], false);
+    }
+    assert!(!r.svc.push_enabled(&phone.pid));
 }

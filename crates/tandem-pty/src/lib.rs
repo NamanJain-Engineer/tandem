@@ -287,13 +287,30 @@ impl PtyManager {
                 pixel_height: 0,
             })
             .map_err(|e| PtyError::Spawn(e.to_string()))?;
-        let mut cmd = CommandBuilder::new(&spec.program);
-        cmd.args(&spec.args);
-        cmd.cwd(&spec.cwd);
-        cmd.env_clear();
-        for (k, v) in &spec.env {
-            cmd.env(k, v);
-        }
+        let cmd = if tandem_core::sandbox::in_flatpak() {
+            // On the host, with exactly the pane's environment (D-2032).
+            let args: Vec<std::ffi::OsString> = spec.args.iter().map(Into::into).collect();
+            let argv = tandem_core::sandbox::flatpak_host_argv(
+                spec.program.as_os_str(),
+                &args,
+                Some(spec.cwd.as_path()),
+                Some(&spec.env.iter().collect::<Vec<_>>()),
+            );
+            let mut cmd = CommandBuilder::from_argv(argv);
+            if let Some(home) = std::env::var_os("HOME") {
+                cmd.cwd(home);
+            }
+            cmd
+        } else {
+            let mut cmd = CommandBuilder::new(&spec.program);
+            cmd.args(&spec.args);
+            cmd.cwd(&spec.cwd);
+            cmd.env_clear();
+            for (k, v) in &spec.env {
+                cmd.env(k, v);
+            }
+            cmd
+        };
         let child = pty
             .slave
             .spawn_command(cmd)

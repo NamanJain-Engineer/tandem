@@ -15,7 +15,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tandem_core::approvals::{ApprovalDecision, ApprovalScope, ApprovalVia, ApprovalView};
 use tandem_core::ids::{ApprovalId, PaneId, RoutineId, ThreadId};
 use tandem_core::origin::{LocalReview, Origin};
-use tandem_core::remote::messages::{PhoneDecision, PhoneGrants};
+use tandem_core::remote::messages::{PhoneDecision, PhoneGrants, PushPlatform};
 use tandem_core::source::SourceRef;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_engines::events::ThreadEvent;
@@ -26,10 +26,11 @@ use tandem_store::repo::threads::ThreadKind;
 use crate::services::api::ApiError;
 use crate::services::dashboard;
 use crate::services::phone::{
-    Pairing, PairingQr, PairingTicket, PhoneAgent, PhoneArmState, PhoneHost, PhoneNet,
-    PhoneRoutine, PhoneThread, PhoneTranscript, PhoneTranscriptItem, QueuedPhoneAction, RelayIn,
-    RelayLink,
+    PairVia, Pairing, PairingQr, PairingTicket, PhoneAgent, PhoneArmState, PhoneHost, PhoneNet,
+    PhoneRoutine, PhoneThread, PhoneTranscript, PhoneTranscriptItem, PushOutcome,
+    QueuedPhoneAction, RelayIn, RelayLink,
 };
+use crate::services::phone_lan::{pid_of_relay_url, LanConfig, LanState, WebFiles};
 use crate::state::AppState;
 
 /// The running app, as seen from the phone. Every call here comes from the
@@ -106,21 +107,23 @@ impl PhoneHost for AppPhoneHost {
 
     async fn threads(&self) -> Vec<PhoneThread> {
         let state = self.state();
-        let mut threads = state
-            .threads
-            .list(ThreadKind::Thread, false)
-            .await
-            .unwrap_or_default();
+        let mut threads = Vec::new();
+        for (kind, teammate) in [
+            (ThreadKind::Thread, false),
+            (ThreadKind::TeammateChat, true),
+        ] {
+            for t in state.threads.list(kind, false).await.unwrap_or_default() {
+                threads.push(PhoneThread {
+                    id: t.id.to_string(),
+                    title: t.title,
+                    state: t.state,
+                    updated_at: t.updated_at,
+                    teammate,
+                });
+            }
+        }
         threads.sort_by_key(|t| std::cmp::Reverse(t.updated_at));
         threads
-            .into_iter()
-            .map(|t| PhoneThread {
-                id: t.id.to_string(),
-                title: t.title,
-                state: t.state,
-                updated_at: t.updated_at,
-            })
-            .collect()
     }
 
     async fn thread_read(
@@ -248,7 +251,8 @@ impl PhoneHost for AppPhoneHost {
     }
 }
 
-/// The API's pairing routes and the relay socket.
+/// The API's pairing routes and the relay socket, and the desktop's own
+/// LAN relay for LAN pairings (F-RM-04).
 pub struct AppPhoneNet {
     pub app: AppHandle,
 }
@@ -301,6 +305,10 @@ impl PhoneNet for AppPhoneNet {
 
     async fn delete_pairing(&self, pairing_id: &str) -> Result<(), String> {
         let state = self.app.state::<AppState>();
+        if state.phone_lan.owns(pairing_id) {
+            state.phone_lan.delete_pairing(pairing_id);
+            return Ok(());
+        }
         let api = state.api.clone();
         state
             .auth
@@ -312,8 +320,53 @@ impl PhoneNet for AppPhoneNet {
             .map_err(|e| e.to_string())
     }
 
+    async fn create_lan_pairing(
+        &self,
+        pairing_id: &str,
+        address: Option<&str>,
+    ) -> Result<PairingTicket, IpcError> {
+        let state = self.app.state::<AppState>();
+        state.phone_lan.create_pairing(pairing_id, address)
+    }
+
+    fn forget_local(&self, pairing_id: &str) {
+        let state = self.app.state::<AppState>();
+        if state.phone_lan.owns(pairing_id) {
+            state.phone_lan.delete_pairing(pairing_id);
+        }
+    }
+
+    async fn push(
+        &self,
+        pairing_id: &str,
+        platform: PushPlatform,
+        token: &str,
+        payload: &str,
+    ) -> Result<PushOutcome, String> {
+        let state = self.app.state::<AppState>();
+        let api = state.api.clone();
+        let result = state
+            .auth
+            .with_token(|access| {
+                let api = api.clone();
+                async move {
+                    api.pairing_push(&access, pairing_id, platform.as_str(), token, payload)
+                        .await
+                }
+            })
+            .await;
+        match result {
+            Ok(()) => Ok(PushOutcome::Sent),
+            Err(ApiError::Http { status: 410, .. }) => Ok(PushOutcome::Unregistered),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
     async fn dial(&self, relay_url: &str) -> Result<RelayLink, String> {
         let state = self.app.state::<AppState>();
+        if let Some(pid) = pid_of_relay_url(relay_url).filter(|p| state.phone_lan.owns(p)) {
+            return state.phone_lan.dial(pid);
+        }
         let token = state.auth.access_token().await.map_err(|e| e.to_string())?;
         let mut req = relay_url.into_client_request().map_err(|e| e.to_string())?;
         req.headers_mut().insert(
@@ -380,20 +433,43 @@ fn review(window: &WebviewWindow, what: &str) -> Result<LocalReview, IpcError> {
     })
 }
 
-/// Settings › Remote › Pair a phone (Pro).
+fn org_forbids_phone(state: &AppState) -> bool {
+    state.entitlements.policy().is_some_and(|p| p.disable_phone)
+}
+
+/// Settings › Remote › Pair a phone: through the hosted relay (Pro), or
+/// with `via: "lan"` over the local network (F-RM-04; any plan, no account,
+/// LAN mode on).
 #[tauri::command]
 pub async fn phone_pair_begin(
     window: WebviewWindow,
     state: State<'_, AppState>,
+    via: Option<String>,
+    address: Option<String>,
 ) -> Result<PairingQr, IpcError> {
     review(&window, "Pairing a phone")?;
+    if via.as_deref() == Some("lan") {
+        if org_forbids_phone(&state) {
+            return Err(IpcError::new(
+                ErrorCode::PermissionDenied,
+                "Your organization turned the phone companion off.",
+            ));
+        }
+        if !LanConfig::load(state.data.root()).enabled {
+            return Err(IpcError::new(
+                ErrorCode::Unavailable,
+                "Turn on pairing over your local network first.",
+            ));
+        }
+        return state.phone.pair_begin_via(PairVia::Lan { address }).await;
+    }
     if !state.auth.is_signed_in() {
         return Err(IpcError::new(
             ErrorCode::Unauthenticated,
             "Sign in to pair a phone.",
         ));
     }
-    if state.entitlements.policy().is_some_and(|p| p.disable_phone) {
+    if org_forbids_phone(&state) {
         return Err(IpcError::new(
             ErrorCode::PermissionDenied,
             "Your organization turned the phone companion off.",
@@ -482,7 +558,76 @@ pub async fn phone_queue_decide(
     state.phone.queue_decide(&review, &item_id, apply).await
 }
 
-/// Binds the phone service to the app and reopens live pairings.
+/// Settings › Remote › Local network.
+#[tauri::command]
+pub fn phone_lan_state(state: State<'_, AppState>) -> LanState {
+    let config = LanConfig::load(state.data.root());
+    let mut lan = state.phone_lan.server().state(config.enabled);
+    if !config.enabled {
+        lan.port = config.port;
+    }
+    lan
+}
+
+/// Turns LAN mode on or off (and picks its port). Listening on the network
+/// is the person's choice at the desktop, so it needs the main window.
+#[tauri::command]
+pub async fn phone_lan_set(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    enabled: bool,
+    port: Option<u16>,
+) -> Result<LanState, IpcError> {
+    review(&window, "Pairing over the local network")?;
+    let mut config = LanConfig::load(state.data.root());
+    if let Some(port) = port {
+        if port < 1024 {
+            return Err(IpcError::new(
+                ErrorCode::Invalid,
+                "Pick a port from 1024 to 65535.",
+            ));
+        }
+        config.port = port;
+    }
+    if enabled && org_forbids_phone(&state) {
+        return Err(IpcError::new(
+            ErrorCode::PermissionDenied,
+            "Your organization turned the phone companion off.",
+        ));
+    }
+    config.enabled = enabled;
+    config
+        .save(state.data.root())
+        .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?;
+    let server = state.phone_lan.server().clone();
+    let lan = if enabled {
+        server.start(config.port).await
+    } else {
+        server.stop();
+        let mut lan = server.state(false);
+        lan.port = config.port;
+        lan
+    };
+    tracing::info!(code = "phone.lan_set", enabled, "LAN mode changed");
+    Ok(lan)
+}
+
+/// The phone web app the LAN server serves: the bundled resources, or the
+/// source tree's build in a dev run.
+fn web_files(app: &AppHandle) -> WebFiles {
+    let bundled = app.path().resource_dir().ok().map(|d| d.join("remote-web"));
+    let dev = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/remote-web");
+    for dir in bundled.into_iter().chain(std::iter::once(dev)) {
+        let files = WebFiles::load(&dir);
+        if files.has_app() {
+            return files;
+        }
+    }
+    WebFiles::default()
+}
+
+/// Binds the phone service to the app, reopens live pairings and, if the
+/// person turned it on, starts LAN mode.
 pub fn start(app: &AppHandle) {
     let state = app.state::<AppState>();
     let phone = state.phone.clone();
@@ -490,8 +635,13 @@ pub fn start(app: &AppHandle) {
         Arc::new(AppPhoneHost { app: app.clone() }),
         Arc::new(AppPhoneNet { app: app.clone() }),
     );
-    if !state.endpoints.hosted {
-        return;
-    }
-    tauri::async_runtime::spawn(async move { phone.start().await });
+    let lan = state.phone_lan.server().clone();
+    lan.set_web(web_files(app));
+    let config = LanConfig::load(state.data.root());
+    tauri::async_runtime::spawn(async move {
+        if config.enabled {
+            lan.start(config.port).await;
+        }
+        phone.start().await
+    });
 }

@@ -60,7 +60,8 @@
     "homepage": "https://vibezeo.com",
     "resources": {
       "resources/tandem-host/": "host-binaries/",
-      "../../../crates/tandem-voice/models/wake/": "models/wake/"
+      "../../../crates/tandem-voice/models/wake/": "models/wake/",
+      "resources/remote-web/": "remote-web/"
     },
     "windows": {
       "webviewInstallMode": {

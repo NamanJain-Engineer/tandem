@@ -193,7 +193,7 @@ E2E-M15-1…5: web, what's new, data controls, axe sweep, quality-bar run.
 Azure Trusted Signing, GPG for Linux, updater keys, release hosting; see
 `HUMAN_TODO.md`) and GitHub Actions minutes for the macOS/Windows runners.
 
-### M16 · P2 differentiators and release candidate (XL) · 20 features (P2)
+### M16 · P2 differentiators and release candidate (XL) · 24 features (P2)
 In independent sub-phases, each green and tagged (`m16a` … `m16d`), then the
 release candidate. Stop after any sub-phase if the budget runs out.
 - 16A Conductor (voice), first slice merged for F-CN-01 to F-CN-04 and F-CN-08 (calls against the dev mock; 23 tools, the ring window, the call-log setting and the vendor realtime client to come): [ ] F-CN-01 Call lifecycle · [ ] F-CN-02 Talker/doer
@@ -203,6 +203,9 @@ release candidate. Stop after any sub-phase if the budget runs out.
   calls · [x] F-BE-08 Voice session minting (pull request #30, D-1000–D-1008)
 - 16B Auto: [x] F-AU-01 Auto (Pro, credits)
 - 16C Phone companion: [x] F-RM-03 Phone companion · [x] F-BE-11 Remote relay
+- Phone apps and Linux stores (added on `mobile-apps`, D-2000 to D-2040): [x] F-RM-04 LAN pairing ·
+  [x] F-RM-05 Vibezeo Remote app · [x] F-RM-06 Encrypted push notifications · [x] F-RM-07 Linux store
+  packages (the owner's signing keys, store submissions, the iOS build and real-device checks: `HUMAN_TODO.md`)
 - 16D Extras: [x] F-SH-12 Scratchpad · [x] F-CD-21 Simulator pane (macOS; manual QA on a Mac pending) ·
   [x] F-AC-07 Usage dashboard · [x] F-AG-10 Skill sync to engines ·
   [x] F-AG-13 Teammate in a terminal · [x] F-RT-05 Schedule tool for teammates ·

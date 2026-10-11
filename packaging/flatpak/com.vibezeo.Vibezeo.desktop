@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Vibezeo
+Comment=A desktop workspace for coding-agent CLIs
+Exec=vibezeo %u
+Icon=com.vibezeo.Vibezeo
+Terminal=false
+Categories=Development;IDE;
+MimeType=x-scheme-handler/tandem;
+StartupWMClass=tandem
+Keywords=agents;terminal;claude;codex;git;

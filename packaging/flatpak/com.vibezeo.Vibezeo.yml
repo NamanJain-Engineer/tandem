@@ -1,0 +1,69 @@
+# Flathub manifest for Vibezeo (F-RM-07, D-2030). It repackages the released
+# Linux .deb (built by scripts/release-local.sh) into the GNOME runtime.
+# Coding-agent CLIs and shells live on the host, so terminals and agents start
+# through `flatpak-spawn --host` (the app does this itself when FLATPAK_ID is
+# set; D-2032). Submission steps: HUMAN_TODO "Linux stores".
+id: com.vibezeo.Vibezeo
+runtime: org.gnome.Platform
+runtime-version: "51"
+sdk: org.gnome.Sdk
+command: vibezeo
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Dictate records from the microphone (local speech-to-text).
+  - --socket=pulseaudio
+  # Workspaces are the person's own folders anywhere in their home.
+  - --filesystem=home
+  # Terminals, agents and git run on the host (flatpak-spawn --host).
+  - --talk-name=org.freedesktop.Flatpak
+  # Secrets go in the OS keychain (DECISIONS rule 2).
+  - --talk-name=org.freedesktop.secrets
+  # Tray icon and notifications.
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.freedesktop.Notifications
+modules:
+  # From flathub/shared-modules (a git submodule in the Flathub repository).
+  - shared-modules/libappindicator/libappindicator-gtk3-12.10.json
+  # Git runs inside the sandbox on the person's folders (tandem-git).
+  - name: git
+    buildsystem: simple
+    build-commands:
+      - make -j$FLATPAK_BUILDER_N_JOBS prefix=/app NO_TCLTK=1 NO_PERL=1 NO_PYTHON=1 NO_GETTEXT=1 INSTALL_SYMLINKS=1 install
+    sources:
+      - type: archive
+        url: https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.51.0.tar.xz
+        sha256: 60a7c2251cc2e588d5cd87bae567260617c6de0c22dca9cdbfc4c7d2b8990b62
+    cleanup:
+      - /share/man
+      - /share/gitweb
+  - name: vibezeo
+    buildsystem: simple
+    sources:
+      - type: file
+        dest-filename: vibezeo.deb
+        url: https://vibezeo.com/downloads/Vibezeo_0.5.0_amd64.deb
+        sha256: bca51bddf4f8dc90673d85b8875f385de43655fc9d25fe71485991a719de067d
+        only-arches: [x86_64]
+      - type: file
+        path: com.vibezeo.Vibezeo.metainfo.xml
+      - type: file
+        path: com.vibezeo.Vibezeo.desktop
+      - type: file
+        path: vibezeo.sh
+    build-commands:
+      - ar x vibezeo.deb
+      - tar -xf data.tar.*
+      - install -Dm755 usr/bin/tandem /app/lib/vibezeo/tandem
+      - install -Dm755 usr/bin/tandem-tasks /app/lib/vibezeo/tandem-tasks
+      - install -Dm755 usr/bin/tandem-hook /app/lib/vibezeo/tandem-hook
+      - cp -r usr/lib/Vibezeo/host-binaries /app/lib/vibezeo/host-binaries
+      - install -Dm755 vibezeo.sh /app/bin/vibezeo
+      - install -Dm644 usr/share/icons/hicolor/128x128/apps/tandem.png /app/share/icons/hicolor/128x128/apps/com.vibezeo.Vibezeo.png
+      - install -Dm644 usr/share/icons/hicolor/32x32/apps/tandem.png /app/share/icons/hicolor/32x32/apps/com.vibezeo.Vibezeo.png
+      - install -Dm644 "usr/share/icons/hicolor/256x256@2/apps/tandem.png" /app/share/icons/hicolor/512x512/apps/com.vibezeo.Vibezeo.png
+      - install -Dm644 com.vibezeo.Vibezeo.desktop /app/share/applications/com.vibezeo.Vibezeo.desktop
+      - install -Dm644 com.vibezeo.Vibezeo.metainfo.xml /app/share/metainfo/com.vibezeo.Vibezeo.metainfo.xml

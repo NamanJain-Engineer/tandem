@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, SegmentedControl, StatusDot, type Status } from "@tandem/ui";
-import { Card, Notice } from "../../components/Shell";
-import { PairingError, PhoneClient, type CommandResult, type ConnectionState } from "../../lib/remote/client";
+import { Card, Notice } from "../../components/Panel";
+import { PairingError, PhoneClient, type CommandResult, type ConnectionState } from "@tandem/remote/client";
 import type {
   PhoneAgent,
   PhoneApproval,
@@ -12,9 +12,9 @@ import type {
   PhoneSnapshot,
   PhoneThread,
   PhoneTranscript,
-} from "../../lib/remote/messages";
-import { parsePairingFragment } from "../../lib/remote/protocol";
-import { IndexedDbPairingStore } from "../../lib/remote/store";
+} from "@tandem/remote/messages";
+import { parsePairingFragment } from "@tandem/remote/protocol";
+import { IndexedDbPairingStore } from "@tandem/remote/browser";
 
 type Phase =
   | { kind: "loading" }
@@ -404,6 +404,7 @@ function Threads({ threads, grants, client }: { threads: PhoneThread[]; grants: 
         <li key={t.id}>
           <button type="button" className="flex w-full items-center gap-2 px-4 py-3 text-left" onClick={() => setOpen(t)}>
             <span className="min-w-0 flex-1 truncate">{t.title}</span>
+            {t.teammate && <Badge>Teammate</Badge>}
             <span className="text-sm text-fg-muted">{t.state}</span>
           </button>
         </li>
