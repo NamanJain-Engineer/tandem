@@ -66,6 +66,13 @@
       "state": { "kind": "setting", "key": "auto_consent", "equals": true }
     },
     {
+      "id": "find_work",
+      "label": "Find work ranking",
+      "sends": "Your search, and the names, titles and last lines of open panes, threads and teammates, redacted; never file contents",
+      "destination": "Vibezeo API → Anthropic (Claude API)",
+      "state": { "kind": "setting", "key": "find_work_hosted", "equals": true }
+    },
+    {
       "id": "usage_stats",
       "label": "Usage statistics",
       "sends": "Feature counts and timings, from an allowlist",

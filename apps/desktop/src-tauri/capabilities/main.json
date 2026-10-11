@@ -71,6 +71,8 @@
     "allow-skill-remove",
     "allow-skills-library",
     "allow-skill-add-from-library",
+    "allow-skill-sync",
+    "allow-teammate-launch-in-terminal",
     "allow-teammate-suggestions",
     "allow-thread-reorder",
     "allow-teammate-draft-with-ai",
