@@ -145,8 +145,8 @@ pub fn write(main_root: &Path, setup: &WorktreeSetup) -> Result<(), SetupError> 
     Ok(())
 }
 
-/// Exported to TypeScript as `CopySkipReason`: the prompt library's
-/// `tandem_core::prompts::SkipReason` already owns that name there (D-835).
+// Exported to TypeScript as `CopySkipReason`: the prompt library's
+// `tandem_core::prompts::SkipReason` already owns that name there (D-835).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export, rename = "CopySkipReason")]
