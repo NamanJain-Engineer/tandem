@@ -16,6 +16,12 @@ const nextConfig: NextConfig = siteExport
       output: "export",
       pageExtensions: ["site.tsx", "site.ts"],
       trailingSlash: true,
+      // Next's own trailing-slash redirects treat a last segment like
+      // "0.6.0" as a file and strip its slash, so /changelog/0.6.0/ answered
+      // 308 on Vercel (which copies them from routes-manifest.json). The
+      // "add a slash" half lives in vercel.json instead (D-1815), and
+      // scripts/check-routes.mjs fails the build if any page's URL redirects.
+      skipTrailingSlashRedirect: true,
       images: { unoptimized: true },
     }
   : {

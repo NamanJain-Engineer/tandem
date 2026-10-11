@@ -1,4 +1,5 @@
 import { ArrowRight } from "lucide-react";
+import { linuxFacts } from "../../../lib/home";
 import { PROGRESS } from "../../../lib/progress";
 import { RELEASE } from "../../../lib/release";
 import { Icon } from "../Icon";
@@ -22,6 +23,10 @@ export function StatsBand() {
             </div>
           ))}
         </dl>
+        <p className="text-copy-sm text-fg">
+          <span className="font-semibold">Linux first.</span>{" "}
+          <span className="text-fg-muted">{linuxFacts().join(" · ")}.</span>
+        </p>
         <p className="text-caption text-fg-muted">
           Built so far.{" "}
           <a href="/changelog/" className="inline-flex items-center gap-1 font-medium text-accent">
