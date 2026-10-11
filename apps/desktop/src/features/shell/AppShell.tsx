@@ -35,6 +35,9 @@ import { followThreads } from "../../stores/threads";
 import { followRemote } from "../../stores/remote";
 import { RemotePrompts } from "../remote/RemotePrompts";
 import { Palette } from "../palette/Palette";
+import { RecallPicker } from "../recall/RecallPicker";
+import { BestOf } from "../bestof/BestOf";
+import { PromptPicker } from "../prompts/PromptPicker";
 import { Cheatsheet } from "../commands/Cheatsheet";
 import { DiagnosticsPanel } from "../diagnostics/DiagnosticsPanel";
 import { OrphansDialog } from "../restore/OrphansDialog";
@@ -57,7 +60,7 @@ import { UnsupportedOverlay } from "../updates/UnsupportedOverlay";
 import { useVisibilityReport } from "../notifications/visibility";
 import { InstallHost } from "../code/InstallSheet";
 import { followPtyState } from "../../stores/terminals";
-import { terminalHandles } from "../code/TerminalView";
+import { parkedPanes, setParkAfter, terminalHandles } from "../code/TerminalView";
 import { enablePerfMarks, perfSpans, perfTimes, reflowCounts, writeCounts } from "../code/perfMarks";
 import { webglPool } from "../code/webglPool";
 import { useBoot } from "./useBoot";
@@ -112,6 +115,9 @@ export function AppShell() {
       paneMetrics: (paneId: string) => terminalHandles.get(paneId)?.metrics() ?? null,
       panePoint: (paneId: string, needle: string) => terminalHandles.get(paneId)?.pointAt(needle) ?? null,
       webglHolds: (paneId: string) => webglPool.holds(paneId),
+      // §5.1: which panes are parked, and how soon a hidden one parks.
+      parkedPanes: () => [...parkedPanes],
+      parkAfter: (ms: number | null) => setParkAfter(ms),
       perf: { enable: enablePerfMarks, times: perfTimes, writes: writeCounts, spans: perfSpans },
       paneSize: (paneId: string) => terminalHandles.get(paneId)?.size() ?? null,
       reflows: (reset?: boolean) => reflowCounts(reset ?? false),
@@ -222,6 +228,9 @@ export function AppShell() {
       <Hud />
       <CallLog />
       <Palette />
+      <RecallPicker />
+      <PromptPicker />
+      <BestOf />
       <Cheatsheet />
       <DiagnosticsPanel />
       <OrphansDialog />

@@ -253,6 +253,25 @@ pub struct FsPath {
     pub path: String,
 }
 
+/// `fs.watch`: a workspace folder on the host.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FsWatch {
+    pub root: String,
+}
+
+/// `fs.watch`'s answer, and what `fs.unwatch` takes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FsWatching {
+    pub id: String,
+}
+
+/// `fs.changed`: one batch from a watch (`tandem_core::files::watch`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FsChanged {
+    pub id: String,
+    pub change: tandem_core::files::watch::FsChange,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReadKind {
@@ -358,6 +377,15 @@ pub enum GitOpKind {
     Unstage,
     Discard,
     Commit,
+    /// The branch's upstream (D-1601), with the host's own credentials.
+    Push,
+    /// The first push of a branch: `push -u <origin or the only remote>`.
+    Publish,
+    Pull,
+    /// To `branch`: a local one, or a remote one by its tracking branch.
+    Switch,
+    /// A new branch `branch` from HEAD, switched to.
+    CreateBranch,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -368,6 +396,21 @@ pub struct GitOp {
     pub paths: Vec<String>,
     #[serde(default)]
     pub message: Option<String>,
+    /// `switch` and `create_branch`.
+    #[serde(default)]
+    pub branch: Option<String>,
+}
+
+/// `git.branches`'s rows: the shape of `tandem_git::types::Branch`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostBranch {
+    pub name: String,
+    pub current: bool,
+    pub remote: bool,
+    pub upstream: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
 }
 
 // ── engines ────────────────────────────────────────────────────────────
@@ -427,10 +470,18 @@ pub mod method {
     pub const GIT_STATUS: &str = "git.status";
     pub const GIT_DIFF: &str = "git.diff";
     pub const GIT_OP: &str = "git.op";
+    /// `GitRoot` → `Vec<HostBranch>` (D-1601).
+    pub const GIT_BRANCHES: &str = "git.branches";
+    /// Watch a folder (`FsWatch`), answered with `FsWatching`; batches come
+    /// as `fs.changed` notifications to this connection only, until
+    /// `fs.unwatch` or the connection closes (D-1600).
+    pub const FS_WATCH: &str = "fs.watch";
+    pub const FS_UNWATCH: &str = "fs.unwatch";
     // Host → client notifications.
     pub const PTY_OUTPUT: &str = "pty.output";
     pub const PTY_EXIT: &str = "pty.exit";
     pub const STATUS_EVENT: &str = "status.event";
+    pub const FS_CHANGED: &str = "fs.changed";
 }
 
 #[cfg(test)]

@@ -44,6 +44,10 @@ pub async fn auth_sign_out(state: State<'_, AppState>) -> Result<(), IpcError> {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
     }
+    // Paired phones go next, while the session can still tell the relay (F-RM-03).
+    if let Err(err) = state.phone.revoke_all("signed_out", false).await {
+        tracing::warn!(error = %err.message, "couldn't revoke phone pairings at sign-out");
+    }
     state.auth.sign_out().await;
     // "Allow for this conversation" ends with the session (F-PL-06).
     state.gateway.forget_approvals(None);

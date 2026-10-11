@@ -221,7 +221,12 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    trailing-slash redirect), and
    update `apps/web/lib/release.ts` (version, file names), `apps/web/lib/progress.ts`
    (milestone entries and counts taken from the gate output and the spec files) and
-   the home page's feature and roadmap lists. The site tests check the file exists.
+   the home page's feature and roadmap lists (`apps/web/lib/home.ts`; the "New in"
+   tiles come from the CHANGELOG, and a new Added title needs an entry in
+   `RELEASE_TILE_MAP`). The site tests check the file exists. After re-capturing the
+   demo still or a screenshot, run `python3 apps/web/scripts/optimize-screens.py` for
+   its AVIF and WebP, and if the video is re-recorded, set `VIDEO.recordedWith` in
+   `apps/web/lib/media.ts`.
    Then the demo (D-128): every surface the demo at `/demo/app/` shows must be in
    the download being released (Thread mode with the scripted fix, Plan mode,
    the engine-switch divider, Code mode with agent panes and a shell, the
@@ -242,13 +247,19 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
   `pnpm --filter web build:site`, the home page's demo in a real browser
   (`PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium pnpm --filter web test:site`,
   against `apps/web/out`), Lighthouse CI on `/` and `/pricing/`
-  (`CHROME_PATH=/opt/pw-browsers/chromium pnpm --filter web lhci`: 90 or more for
-  performance and accessibility, three runs each, served compressed), then walk the demo:
+  (`CHROME_PATH=/opt/pw-browsers/chromium pnpm --filter web lhci`: `/`, `/pricing/`,
+  `/download/`, `/changelog/` and `/docs/`, three runs each, 95 or more in all four
+  categories and CLS under 0.02; delete `apps/web/.lighthouseci` first, it keeps old
+  runs), then walk the demo:
   `(cd apps/web/public && python3 -m http.server 4321 &)` and
   `node scripts/agent/demo-walkthrough.mjs /tmp/demo-shots` (screenshots plus any
   console errors). A clean-clone build with Vercel's exact install command is the
   strongest check before touching `main`.
 - **Deployment limit (D-829):** Vercel's plan caps deployments per day, and every push to a branch Vercel deploys counts. Only `main` deploys (`git.deploymentEnabled`). Batch: merge features into `product-m0-m5` as they're ready, and move `main` only for a release that bundles them all. One release is one deployment. Never merge into `main` for a single small change unless it's a hotfix the live site needs. If Vercel answers "Deployment rate limited", wait it out (the limit is a rolling day) or use **Redeploy** on the latest `main` deployment once it clears.
+- `build:site` ends with `scripts/strip-runtime.mjs` (D-1813): it removes Next's
+  unused client runtime from the marketing pages (not the docs or the demo app)
+  and fails the build if any page then has a script beyond `/demo/embed.js` on `/`
+  and `/download/detect.js` on `/download/`. Site components stay server-only.
 - **Deploy** = merge the product branch into `main` and push, only with the
   owner's go-ahead (some agent environments block pushes to `main` outright; then
   the owner merges on GitHub). Vercel builds in a few minutes.

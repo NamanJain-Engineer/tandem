@@ -14,7 +14,8 @@ import { matchPage, matchRow, settingsPages } from "./pages";
 export function SettingsView() {
   const platform = useBoot((s) => s.boot?.platform ?? "linux");
   const routines = useSession((s) => !!s.entitlement?.limits.routines);
-  const pages = useMemo(() => settingsPages(platform, routines), [platform, routines]);
+  const accounts = useSession((s) => !!s.auth?.hosted);
+  const pages = useMemo(() => settingsPages(platform, routines, accounts), [platform, routines, accounts]);
   const closeSettings = useUi((s) => s.closeSettings);
   const requested = useUi((s) => s.settingsPage);
   const lastPage = useSettings((s) => s.values.settings_last_page as string | undefined);

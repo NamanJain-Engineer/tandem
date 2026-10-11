@@ -13,6 +13,7 @@ import type { CaptchaVerifier } from "./providers/captcha";
 import type { EmailProvider } from "./providers/email/types";
 import type { ConfigSigner } from "./services/configSigner";
 import type { EventHub } from "./services/events";
+import type { RelayControl } from "./services/relayControl";
 
 /** Everything the API needs, injected so tests can pass fakes (ARCHITECTURE §14.1). */
 export type Deps = {
@@ -30,6 +31,8 @@ export type Deps = {
   auth: Auth;
   ai: AiProvider;
   stt: SttProvider;
+  /** Tells the phone relay to drop a revoked pairing's sockets (F-BE-11). */
+  relay: RelayControl;
   /** Conductor's realtime voice: mints a session for the app to connect to (F-BE-08). */
   realtime: RealtimeProvider;
   /** What Team SSO reaches out with: the identity provider and DNS (faked in tests). */

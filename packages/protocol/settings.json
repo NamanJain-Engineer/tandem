@@ -463,5 +463,35 @@
     "default": "ask",
     "key": "orphan_policy",
     "page": "advanced"
+  },
+  {
+    "default": true,
+    "key": "checkpoints_enabled",
+    "page": "checkpoints"
+  },
+  {
+    "default": 100,
+    "key": "checkpoints_keep",
+    "page": "checkpoints"
+  },
+  {
+    "default": 14,
+    "key": "checkpoints_days",
+    "page": "checkpoints"
+  },
+  {
+    "default": 5,
+    "key": "checkpoints_max_file_mb",
+    "page": "checkpoints"
+  },
+  {
+    "default": true,
+    "key": "command_history_enabled",
+    "page": "terminal"
+  },
+  {
+    "default": 90,
+    "key": "command_history_days",
+    "page": "terminal"
   }
 ]

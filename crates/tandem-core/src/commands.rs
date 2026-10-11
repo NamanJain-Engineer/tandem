@@ -37,6 +37,8 @@ pub enum EnabledWhen {
     PaneOrCell,
     /// The plan has routines (F-RT-04); otherwise the command is absent.
     Routines,
+    /// The plan has Conductor (F-CN-01); otherwise the command is absent.
+    Conductor,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -140,6 +142,24 @@ static REGISTRY: &[CommandSpec] = &[
     ),
     // F-CD-19: the sidebar's Files tab (UI_SPEC §5).
     same("sidebar.files", C::Navigation, Some("Mod+Alt+F"), E::Always),
+    // F-EX-01: the sidebar's Checkpoints tab (UI-140).
+    same("sidebar.checkpoints", C::Navigation, None, E::Always),
+    // F-EX-05: the prompt picker (UI-145).
+    in_text(same(
+        "prompts.open",
+        C::Terminal,
+        Some("Mod+Alt+P"),
+        E::Always,
+    )),
+    // F-EX-03: the sidebar's Ports tab (UI-142).
+    same("sidebar.ports", C::Navigation, None, E::Always),
+    // F-EX-02: the recall palette (UI-141).
+    in_text(same(
+        "recall.open",
+        C::Terminal,
+        Some("Mod+Alt+J"),
+        E::Always,
+    )),
     same(
         "notifications.open",
         C::Navigation,
@@ -153,6 +173,9 @@ static REGISTRY: &[CommandSpec] = &[
         E::Always,
     ),
     same("workspace.open_folder", C::Workspace, None, E::Always),
+    // F-EX-04: Best of N's sheet (UI-143) and its compare view (UI-144).
+    same("bestof.open", C::Workspace, None, E::WorkspaceOpen),
+    same("bestof.compare", C::Workspace, None, E::WorkspaceOpen),
     // The launch sheet (F-CD-14, UI-12).
     same(
         "workspace.launch",
@@ -281,10 +304,11 @@ static REGISTRY: &[CommandSpec] = &[
     },
     same("billing.plans", C::App, None, E::Always),
     // F-CN-01, F-CN-04: Conductor (UI_SPEC §5). On the Free plan the call
-    // command opens the plans instead.
+    // command opens the plans instead; mute and the call log are absent,
+    // as there's no call to mute or log (D-833).
     same("conductor.call", C::App, Some("Mod+Shift+Space"), E::Always),
-    same("conductor.mute", C::App, Some("Mod+Shift+M"), E::Always),
-    same("conductor.log", C::App, Some("Mod+Shift+."), E::Always),
+    same("conductor.mute", C::App, Some("Mod+Shift+M"), E::Conductor),
+    same("conductor.log", C::App, Some("Mod+Shift+."), E::Conductor),
     // The cheatsheet (UI_SPEC §5, UI-113).
     aliased(
         "help.shortcuts",

@@ -173,6 +173,29 @@ macro_rules! app_commands {
             commands::files::fs_delete,
             commands::files::fs_watch,
             commands::files::fs_unwatch,
+            commands::checkpoints::checkpoints_list,
+            commands::checkpoints::checkpoint_create,
+            commands::checkpoints::checkpoint_diff,
+            commands::checkpoints::checkpoint_restore,
+            commands::checkpoints::checkpoints_usage,
+            commands::checkpoints::checkpoints_delete_all,
+            commands::recall::history_search,
+            commands::recall::history_run,
+            commands::recall::history_delete,
+            commands::recall::history_clear,
+            commands::ports::ports_list,
+            commands::ports::ports_stop,
+            commands::prompts::prompts_list,
+            commands::prompts::prompts_render,
+            commands::prompts::prompts_create,
+            commands::prompts::prompts_share_repo,
+            commands::bestof::bestof_start,
+            commands::bestof::bestof_list,
+            commands::bestof::bestof_get,
+            commands::bestof::bestof_check,
+            commands::bestof::bestof_check_stop,
+            commands::bestof::bestof_keep,
+            commands::bestof::bestof_discard,
             commands::files::editor_tabs_get,
             commands::files::editor_tabs_save,
             commands::files::app_reveal_path,
@@ -213,6 +236,7 @@ macro_rules! app_commands {
             commands::terminal::pane_move,
             commands::terminal::pty_spawn,
             commands::terminal::pty_attach,
+            commands::terminal::pty_park,
             commands::terminal::pty_write,
             commands::terminal::pty_ack,
             commands::terminal::pty_resize,
@@ -271,6 +295,16 @@ macro_rules! app_commands {
             commands::auto::auto_resume,
             commands::auto::auto_stop,
             commands::auto::auto_dismiss,
+            commands::phone::phone_pair_begin,
+            commands::phone::phone_pair_cancel,
+            commands::phone::phone_pairings_list,
+            commands::phone::phone_pairing_set_grants,
+            commands::phone::phone_pairing_revoke,
+            commands::phone::phone_reset,
+            commands::phone::phone_arm_approvals,
+            commands::phone::phone_arm_state,
+            commands::phone::phone_queue_list,
+            commands::phone::phone_queue_decide,
             commands::limits::limit_cancel_resume,
             commands::limits::limit_dismiss,
             commands::limits::limit_continue,
@@ -553,6 +587,25 @@ fn spawn_background(state: &AppState) {
     tauri::async_runtime::spawn(async move {
         terminals.login_env().await;
     });
+    // Checkpoints past the settings' limits go at startup (F-EX-01).
+    let checkpoints = state.checkpoints.clone();
+    tauri::async_runtime::spawn(async move {
+        checkpoints.prune_all().await;
+    });
+    // A Best of N check can't outlive the app that ran it (F-EX-04).
+    let store = state.store.clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = tandem_store::repo::bestof::settle_checks(&store).await;
+    });
+    // Command recall keeps its retention at startup and hourly (F-EX-02).
+    let recall = state.recall.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            tick.tick().await;
+            recall.prune().await;
+        }
+    });
     let staging = state.data.staging();
     tauri::async_runtime::spawn_blocking(move || {
         services::staging::sweep(&staging, services::staging::KEEP_FOR)
@@ -743,9 +796,9 @@ pub fn run() {
         commands::test::test_plugin_price,
         commands::test::test_plugin_allowlist,
         commands::test::test_unattended_run,
+        commands::test::test_find_work_server,
         commands::conductor::test_conductor_inject,
         commands::conductor::test_conductor_clock,
-        commands::test::test_find_work_server,
     ]);
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(app_commands![]);
@@ -870,6 +923,7 @@ pub fn run() {
             }
             // Mail queued before the app last quit goes out (F-AG-12).
             state.mail.pump_soon();
+            commands::phone::start(&handle);
             // Updates (F-SH-06): the signed feed, if this build has a key.
             if let Some(key) = services::updates::pubkey(state::BUNDLED_KEYS) {
                 let record = state

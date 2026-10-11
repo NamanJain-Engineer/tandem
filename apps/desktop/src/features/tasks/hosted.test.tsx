@@ -102,3 +102,26 @@ describe("Pause routines without routines (F-RT-04)", () => {
     expect(rows(true)).toContain("pause_all_routines");
   });
 });
+
+describe("Conductor's mute and call log without Conductor (F-CN-01)", () => {
+  it("F-CN-01 mute and the call log are absent on a plan without Conductor; the call command stays to offer the plans (D-833)", () => {
+    const cmd = (id: string) => COMMANDS.find((c) => c.id === id)!;
+    expect(isEnabled(cmd("conductor.mute"))).toBe(false);
+    expect(isEnabled(cmd("conductor.log"))).toBe(false);
+    expect(isEnabled(cmd("conductor.call"))).toBe(true);
+    useSession.setState({ entitlement: { ...FREE_VIEW, plan: "pro", limits: { ...FREE, conductor: true } } });
+    expect(isEnabled(cmd("conductor.mute"))).toBe(true);
+    expect(isEnabled(cmd("conductor.log"))).toBe(true);
+  });
+});
+
+describe("Find work's hosted ranking without Vibezeo accounts (F-CN-05)", () => {
+  it("F-CN-05 the Settings › Privacy row is absent without accounts (D-833)", () => {
+    const rows = (accounts: boolean) =>
+      settingsPages("linux", false, accounts)
+        .flatMap((p) => p.rows)
+        .map((r) => r.id);
+    expect(rows(false)).not.toContain("find_work_hosted");
+    expect(rows(true)).toContain("find_work_hosted");
+  });
+});

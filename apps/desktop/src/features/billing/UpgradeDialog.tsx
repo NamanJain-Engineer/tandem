@@ -147,7 +147,11 @@ export function UpgradeDialog() {
                 disabled={plan === "pro" || !hosted}
                 onClick={() => void checkout({ plan: "pro", interval })}
               >
-                {signedOut ? t("upgrade.signInToUpgrade") : t("upgrade.proTrial")}
+                {!hosted
+                  ? t("upgrade.withAccounts")
+                  : signedOut
+                    ? t("upgrade.signInToUpgrade")
+                    : t("upgrade.proTrial")}
               </Button>
               <p className="text-2xs text-fg-subtle">{t("upgrade.finePrint")}</p>
             </section>
@@ -170,7 +174,11 @@ export function UpgradeDialog() {
                 disabled={plan === "team" || !hosted}
                 onClick={() => void checkout({ plan: "team", interval })}
               >
-                {signedOut ? t("upgrade.signInToUpgrade") : t("upgrade.teamTrial")}
+                {!hosted
+                  ? t("upgrade.withAccounts")
+                  : signedOut
+                    ? t("upgrade.signInToUpgrade")
+                    : t("upgrade.teamTrial")}
               </Button>
             </section>
           </div>

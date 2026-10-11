@@ -10,6 +10,7 @@ pub mod integration;
 mod job;
 pub mod marks;
 pub mod orphans;
+pub mod ports;
 pub mod quote;
 pub mod remote;
 pub mod responder;
@@ -33,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub use frame::{FrameKind, PtyFrame};
-pub use marks::Mark;
+pub use marks::{Mark, Ran};
 pub use remote::{RemoteFeed, RemotePty};
 pub use responder::{QueryResponder, TermColors};
 pub use ring::ScrollbackRing;
@@ -44,6 +45,9 @@ use orphans::ChildRegistry;
 /// Flush a batch after this long since its first byte (§5.5).
 pub const BATCH_WINDOW: Duration = Duration::from_millis(16);
 pub const BATCH_MAX: usize = 256 * 1024;
+/// The ring holds the scrollback plus a screen's rows, as xterm does, so a
+/// parked view's base fits (§5.1, D-139).
+pub const SCREEN_ROWS: usize = 256;
 /// Stop reading when this many sent bytes are unacknowledged; resume below LOW.
 pub const ACK_HIGH: u64 = 4 * 1024 * 1024;
 pub const ACK_LOW: u64 = 1024 * 1024;
@@ -310,7 +314,9 @@ impl PtyManager {
             remote: None,
             writer: Mutex::new(writer),
             sink: Arc::new(RwLock::new(sink)),
-            ring: Arc::new(Mutex::new(ScrollbackRing::new(spec.scrollback_lines))),
+            ring: Arc::new(Mutex::new(ScrollbackRing::new(
+                spec.scrollback_lines + SCREEN_ROWS,
+            ))),
             flow: Arc::new(FlowControl {
                 sent: AtomicU64::new(0),
                 acked: AtomicU64::new(0),
@@ -380,7 +386,9 @@ impl PtyManager {
             remote: Some(backend.clone()),
             writer: Mutex::new(Box::new(remote::RemoteWriter(backend))),
             sink: Arc::new(RwLock::new(sink)),
-            ring: Arc::new(Mutex::new(ScrollbackRing::new(spec.scrollback_lines))),
+            ring: Arc::new(Mutex::new(ScrollbackRing::new(
+                spec.scrollback_lines + SCREEN_ROWS,
+            ))),
             flow: Arc::new(FlowControl {
                 sent: AtomicU64::new(0),
                 acked: AtomicU64::new(0),
@@ -532,9 +540,7 @@ impl PtyManager {
                         if chunk.is_empty() {
                             continue;
                         }
-                        if let Ok(mut ring) = session.ring.lock() {
-                            ring.push(&chunk);
-                        }
+                        // The batcher puts it in the ring as it sends it (§5.1).
                         if let Some(sink) = &on_activity {
                             sink(&pane_id, chunk.len());
                         }
@@ -654,8 +660,15 @@ impl PtyManager {
                             Err(RecvTimeoutError::Timeout) => break,
                         }
                     }
-                    let seq = session.seq.fetch_add(1, Ordering::AcqRel);
-                    send(PtyFrame::data(seq, batch));
+                    // The ring takes the batch as the sink gets it, under one
+                    // lock, so an attach's replay and the frames after it
+                    // neither repeat nor skip a byte (§5.1, D-139).
+                    {
+                        let mut ring = session.ring.lock().unwrap_or_else(|e| e.into_inner());
+                        ring.push(&batch);
+                        let seq = session.seq.fetch_add(1, Ordering::AcqRel);
+                        send(PtyFrame::data(seq, batch));
+                    }
                     if last_state.elapsed() >= STATE_DEBOUNCE {
                         flush_state(&mut last_state);
                     }
@@ -688,20 +701,34 @@ impl PtyManager {
             .ok_or(PtyError::NotFound)
     }
 
-    /// Replaces the sink (webview reload) and returns the ring contents to replay.
-    pub fn attach(&self, pane: &str, sink: Arc<dyn OutputSink>) -> Result<Vec<u8>, PtyError> {
+    /// Replaces the sink (webview reload, a parked view shown again) and
+    /// returns the ring contents to replay with the position they end at.
+    pub fn attach(&self, pane: &str, sink: Arc<dyn OutputSink>) -> Result<Attached, PtyError> {
         let session = self.get(pane)?;
-        let replay = session
-            .ring
-            .lock()
-            .map(|r| r.contents())
-            .unwrap_or_default();
+        let ring = session.ring.lock().unwrap_or_else(|e| e.into_inner());
         session
             .flow
             .acked
             .store(session.flow.sent.load(Ordering::Acquire), Ordering::Release);
         *session.sink.write() = Some(sink);
-        Ok(replay)
+        Ok(Attached {
+            replay: ring.contents(),
+            end: ring.end(),
+        })
+    }
+
+    /// A hidden view gave up its terminal (§5.1, D-139): `base` (one chunk
+    /// per line, then the screen) stands for everything up to position `at`,
+    /// which is what the view had parsed. The sink is dropped, so the program
+    /// runs on without backpressure and its output waits in the ring for the
+    /// next attach. False when the ring no longer holds the output after
+    /// `at`; it then replays as it is.
+    pub fn park(&self, pane: &str, at: u64, base: Vec<Vec<u8>>) -> Result<bool, PtyError> {
+        let session = self.get(pane)?;
+        let mut ring = session.ring.lock().unwrap_or_else(|e| e.into_inner());
+        *session.sink.write() = None;
+        session.flow.resume.notify_all();
+        Ok(ring.rebase(at, base))
     }
 
     pub fn write(&self, pane: &str, bytes: &[u8]) -> Result<(), PtyError> {
@@ -784,6 +811,15 @@ impl PtyManager {
         let session = self.sessions.get(pane)?.clone();
         let out = session.side.lock().ok().and_then(|s| s.last_output());
         out
+    }
+
+    /// The pane's shell is at its prompt (shell integration said so).
+    pub fn at_prompt(&self, pane: &str) -> bool {
+        let Some(session) = self.sessions.get(pane) else {
+            return false;
+        };
+        let at = session.side.lock().map(|s| s.at_prompt()).unwrap_or(false);
+        at
     }
 
     pub fn screen_text(&self, pane: &str) -> Option<String> {
@@ -1110,6 +1146,13 @@ pub fn wait_until(timeout: Duration, mut cond: impl FnMut() -> bool) -> bool {
         std::thread::sleep(Duration::from_millis(10));
     }
     cond()
+}
+
+/// What `attach` hands back: the ring to replay and the position it ends at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Attached {
+    pub replay: Vec<u8>,
+    pub end: u64,
 }
 
 /// A sink that keeps frames in memory (tests, headless use).
