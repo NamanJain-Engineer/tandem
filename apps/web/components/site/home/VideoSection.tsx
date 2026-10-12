@@ -2,14 +2,17 @@ import { VIDEO } from "../../../lib/media";
 import { Section } from "../Section";
 
 /** #demo (§6.14): the product video. It has sound, so it never autoplays and
- * is never muted; it loads nothing until it's played. */
+ * is never muted; it loads nothing until it's played. Its poster comes from
+ * /demo/embed.js as the video nears the screen: a `poster` attribute
+ * downloads with the page, and on a slow connection that held up the h1, the
+ * largest paint (D-1816). */
 export function VideoSection() {
   return (
     <Section id="demo" tone="raised" eyebrow="See it run" title="Vibezeo in 1 minute">
       <figure className="reveal flex flex-col gap-4">
         <div data-stage="" className="overflow-hidden rounded-lg bg-stage shadow-stage">
           <video
-            poster={VIDEO.poster}
+            data-poster={VIDEO.poster}
             width={1600}
             height={900}
             controls
