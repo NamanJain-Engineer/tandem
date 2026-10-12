@@ -11,6 +11,7 @@ import {
   setSetting,
   waitPasted,
   widget,
+  words,
 } from "../support/dictate";
 
 // E2E-M8-4 Widget (F-DI-07) and E2E-M8-5 Composer (F-DI-12).
@@ -21,6 +22,22 @@ describe("E2E-M8-4 Widget", function () {
     await freshOffline();
     await setSetting("dictate_enabled", true);
     await ensureModel();
+  });
+
+  it("F-DI-07 the widget window is made on the first recording, which still captures from its start (D-519)", async function () {
+    await setSetting("dictate_widget_visibility", "while_recording");
+    await resetPlatform();
+    await mic({ source: "wav", path: fixture("hello_world_16k.wav") });
+    expect((await widget()).exists).toBe(false);
+    await key("hold", "down");
+    await browser.waitUntil(async () => (await widget()).visible, {
+      timeout: 5_000,
+      timeoutMsg: "the first recording didn't make and show the widget",
+    });
+    await browser.pause(2_500);
+    await key("hold", "up");
+    const view = await waitPasted();
+    expect(words(view.pasted[0] ?? "")).toContain("hello world");
   });
 
   it("E2E-M8-4 'While recording' shows it when recording starts and hides it 1 s after insertion", async function () {

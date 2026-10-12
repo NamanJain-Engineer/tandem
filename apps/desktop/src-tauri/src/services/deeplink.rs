@@ -111,6 +111,26 @@ pub fn from_args<I: IntoIterator<Item = String>>(args: I) -> Vec<String> {
         .collect()
 }
 
+/// The schemes in tauri.conf.json's `plugins.deep-link.desktop.schemes`.
+pub const CONFIGURED_SCHEMES: &[&str] = &["tandem"];
+
+/// Links a second instance's arguments carry that the single-instance
+/// callback must route itself (D-518). With its `deep-link` feature the
+/// single-instance plugin already hands `bin <link>` to the deep-link plugin
+/// when the link's scheme is configured, and that arrives through
+/// `on_open_url`; routing it here too handled every such link twice (a
+/// `tandem://dictate/toggle` started a take and stopped it at once).
+pub fn second_instance_links(args: &[String]) -> Vec<String> {
+    let forwarded = args.len() == 2
+        && args[1]
+            .parse::<url::Url>()
+            .is_ok_and(|u| CONFIGURED_SCHEMES.contains(&u.scheme()));
+    if forwarded {
+        return Vec::new();
+    }
+    from_args(args.iter().skip(1).cloned())
+}
+
 /// Links received before the UI asked for them.
 #[derive(Default)]
 pub struct DeepLinkQueue {
@@ -145,6 +165,48 @@ impl DeepLinkQueue {
 
 #[cfg(test)]
 mod tests {
+
+    fn args(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn d_518_a_link_the_deep_link_plugin_forwards_is_routed_once() {
+        // `tandem tandem://dictate/toggle`: on_open_url gets it, not the callback.
+        assert!(
+            second_instance_links(&args(&["/usr/bin/tandem", "tandem://dictate/toggle"]))
+                .is_empty()
+        );
+        assert!(
+            second_instance_links(&args(&["tandem", "tandem://auth/callback?code=x"])).is_empty()
+        );
+        // Anything the plugin skips still reaches the router from the callback.
+        assert_eq!(
+            second_instance_links(&args(&["tandem", "--flag", "tandem://dictate/toggle"])),
+            args(&["tandem://dictate/toggle"])
+        );
+        assert!(second_instance_links(&args(&["tandem"])).is_empty());
+        assert!(second_instance_links(&args(&["tandem", "https://example.com"])).is_empty());
+        if cfg!(debug_assertions) {
+            // Debug builds register tandem-dev at runtime, outside the config.
+            assert_eq!(
+                second_instance_links(&args(&["tandem", "tandem-dev://auth/callback"])),
+                args(&["tandem-dev://auth/callback"])
+            );
+        }
+    }
+
+    #[test]
+    fn d_518_configured_schemes_match_tauri_conf() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../../tauri.conf.json")).expect("tauri.conf.json");
+        let schemes: Vec<&str> = conf["plugins"]["deep-link"]["desktop"]["schemes"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+            .unwrap_or_default();
+        assert_eq!(schemes, CONFIGURED_SCHEMES);
+    }
+
     use super::*;
 
     #[test]

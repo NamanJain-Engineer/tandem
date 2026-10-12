@@ -92,6 +92,10 @@ export function MicMeter() {
   );
 }
 
+/** The "no choice" option: Radix shows an empty-string value as no selection,
+ * leaving the trigger blank (D-518). */
+const NO_MIC = "__default__";
+
 export function MicSelect({ k, label, none }: { k: "dictate_mic" | "dictate_backup_mic"; label: string; none: string }) {
   const value = useSetting<string | null>(k, null);
   const [view, setView] = useState<DevicesView | null>(null);
@@ -101,7 +105,7 @@ export function MicSelect({ k, label, none }: { k: "dictate_mic" | "dictate_back
   const def = view?.devices.find((d) => d.isDefault);
   const options = [
     {
-      value: "",
+      value: NO_MIC,
       label:
         k === "dictate_mic"
           ? def
@@ -121,8 +125,8 @@ export function MicSelect({ k, label, none }: { k: "dictate_mic" | "dictate_back
         ariaLabel={label}
         size="sm"
         options={options}
-        value={value ?? ""}
-        onValueChange={(v) => void useSettings.getState().set(k, v === "" ? null : v)}
+        value={value ?? NO_MIC}
+        onValueChange={(v) => void useSettings.getState().set(k, v === NO_MIC ? null : v)}
         className="w-64"
       />
       {k === "dictate_mic" && <MicMeter />}

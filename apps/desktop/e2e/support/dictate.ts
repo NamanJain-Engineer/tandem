@@ -105,8 +105,8 @@ export async function setSetting(key: string, value: unknown): Promise<void> {
   await invoke("settings_set", { key, value });
 }
 
-export async function widget(): Promise<{ visible: boolean }> {
-  return invoke<{ visible: boolean }>("test_dictate_widget");
+export async function widget(): Promise<{ exists: boolean; visible: boolean }> {
+  return invoke<{ exists: boolean; visible: boolean }>("test_dictate_widget");
 }
 
 export function words(s: string): string {

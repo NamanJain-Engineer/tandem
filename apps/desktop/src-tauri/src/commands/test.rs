@@ -614,6 +614,8 @@ pub fn test_dictate_platform(
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct TestWidget {
+    /// The window is made on first use and closed when idle (D-519).
+    pub exists: bool,
     pub visible: bool,
     pub x: i32,
     pub y: i32,
@@ -627,11 +629,17 @@ pub fn test_dictate_widget(
 ) -> Result<TestWidget, IpcError> {
     use tauri::Manager;
     guard(&state)?;
-    let w = app
-        .get_webview_window(crate::services::widget::LABEL)
-        .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "no widget window"))?;
+    let Some(w) = app.get_webview_window(crate::services::widget::LABEL) else {
+        return Ok(TestWidget {
+            exists: false,
+            visible: false,
+            x: 0,
+            y: 0,
+        });
+    };
     let pos = w.outer_position().unwrap_or_default();
     Ok(TestWidget {
+        exists: true,
         visible: w.is_visible().unwrap_or(false),
         x: pos.x,
         y: pos.y,

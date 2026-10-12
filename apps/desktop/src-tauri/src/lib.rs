@@ -694,16 +694,18 @@ fn setup_dictate(app: &tauri::App, state: &AppState) {
                 let _ = emit_app.emit_to(services::widget::LABEL, name, payload);
             }
         }));
-    match services::widget::create(app.handle()) {
-        Ok(()) => {
-            state
-                .dictate
-                .set_widget(std::sync::Arc::new(services::widget::TauriWidget::new(
-                    app.handle().clone(),
-                    state.store.clone(),
-                )))
-        }
-        Err(err) => tracing::warn!(error = %err, "dictate: widget window not created"),
+    // Made on the first recording, closed when idle (D-519).
+    {
+        let widget = std::sync::Arc::new(services::widget::LazyWidget::new(
+            std::sync::Arc::new(services::widget::TauriWidget::new(
+                app.handle().clone(),
+                state.store.clone(),
+            )),
+            state.clock.clone(),
+            services::widget::IDLE_CLOSE,
+        ));
+        widget.tick_every_30s();
+        state.dictate.set_widget(widget);
     }
     tray::install(app.handle());
     // Cloud takes (F-DI-05): the plan check and the STT relay, with a token.
@@ -814,7 +816,7 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             focus_main(app);
-            for raw in deeplink::from_args(args.into_iter().skip(1)) {
+            for raw in deeplink::second_instance_links(&args) {
                 route_link(app, &raw);
             }
         }))
