@@ -288,6 +288,10 @@ export function TerminalView({
    * the teardown. */
   function openView(el: HTMLDivElement): () => void {
     markPhase(paneId, "open");
+    // The focused view holds the mount queue until it has connected, so its
+    // attach and spawn replies don't wait behind other views' opens (F-SH-07.7).
+    let release: () => void = () => undefined;
+    if (focusedRef.current) mountQueue.hold(new Promise<void>((r) => (release = r)));
     const o = optionsRef.current;
     const xterm = new Terminal({
       theme: o.theme,
@@ -618,10 +622,13 @@ export function TerminalView({
         const err = e as IpcError;
         log("warn", "pty.spawn_failed", { code: err.code ?? "internal" });
         setPhase({ kind: "failed", message: err.message ?? t("terminal.failed") });
+      } finally {
+        release();
       }
     })();
     return () => {
       disposed = true;
+      release();
       parkNow.current = async () => false;
       clearTimeout(ackTimer);
       writeScheduler.unregister(paneId, write);
