@@ -1670,7 +1670,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
   - `save_issue`, `save_comment`, `save_project`, `save_issue_label`
   - `archive_issue`, `restore_issue`
 - **Connections:** one per engine session. Revoking a connection (on session end or by the user) makes further calls fail with `CONNECTION_REVOKED`.
-- The server is injected into chat sessions via MCP config (F-TH-04/05) and into terminal engines through their native MCP config in the provider home when "Expose tasks to terminal agents" is on (default on).
+- The server is injected into chat sessions via MCP config (F-TH-04/05) and into terminal engines through their native MCP config in the provider home when "Expose tasks to terminal agents" is on (default on). A terminal engine on an SSH host gets it for that run on its command line instead (Claude Code's `--mcp-config`, Codex's `-c mcp_servers.*`), relayed to this machine's tasks server; nothing is written into the host's own config (D-1606).
 
 **Acceptance:**
 1. An MCP conformance test: initialize with each supported version, list tools (17), and call each tool against a temp dir.
