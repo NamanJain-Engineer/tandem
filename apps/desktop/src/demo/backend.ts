@@ -1208,10 +1208,16 @@ export class DemoCore {
       case "phone_arm_state":
       case "phone_arm_approvals":
         return { armedUntil: null };
+      // Local-network pairing is off here: the shape the section reads, so it
+      // doesn't sit loading, and an honest refusal to turn it on (F-RM-04).
+      case "phone_lan_state":
+        return { enabled: false, running: false, port: 47800, addresses: [], error: null };
+      case "phone_lan_set":
       case "phone_pair_begin":
         throw {
           code: "unavailable",
-          message: "Pairing a phone is part of Pro, so it works in the app, not in this demo.",
+          message:
+            "A phone pairs with the app, over your own network or with a Pro account, so it works in the app, not in this demo.",
         };
       case "scratchpad_list":
         return this.notes.list();
