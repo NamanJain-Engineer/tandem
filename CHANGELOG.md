@@ -99,6 +99,14 @@ besides Lead, and one plugin connection.
   and refuses it. Turning the switch off disconnects phones without unpairing
   them.
 
+### Changed
+
+- [lin] **Dictate starts lighter.** Its widget window is created on your
+  first take and closed after 10 minutes without one, so Vibezeo starts with
+  about 120 MB less memory, unless Show widget is set to Always. The first
+  take after launch can show the pill a moment later; recording starts at
+  once either way.
+
 ### Fixed
 
 - [lin] "Create pull request" now types `gh pr create` into its terminal, and
@@ -108,6 +116,11 @@ besides Lead, and one plugin connection.
   aliases for one `user@host:port`, or two hosts behind one jump) no longer
   drop each other: disconnecting or removing one used to cut the other's
   connection too.
+- [lin] A `tandem://` link opened while Vibezeo was already running was
+  handled twice, so on Wayland the Dictate toggle link started a take and
+  stopped it at once.
+- [lin] Settings › Dictate's Microphone showed nothing when the system
+  default was in use; it now says "System default".
 
 ## 0.6.0
 
