@@ -8,7 +8,7 @@ every milestone has its tasks, exit checks and E2E list in MILESTONES. Tick
 items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md`
 has every feature below with its full behaviour and acceptance tests.
 
-**Where it stands (11 October 2026, `product-m0-m5`):** M0–M14 are done, and
+**Where it stands (12 October 2026, `product-m0-m5`):** M0–M14 are done, and
 so are M15's six features and its non-functional checks (pull request #38; the
 performance budgets still need the reference machines, `HUMAN_TODO.md`). 147
 of the original 152 features are done: all 65 P0s, every P1 and 15 of M16's 20
@@ -19,8 +19,7 @@ and Linux store packages (F-RM-04 to F-RM-07). The 5 left are Conductor's:
 F-CN-01 to F-CN-04 and F-CN-08 run end to end against the dev mock and lack
 only the vendor realtime client, which waits on a key. F-CN-06 and F-CN-07
 (persona, memory and wake phrase) are done: calls read the persona at start,
-the wake phrase starts calls and a call holds the mic (D-1119, on
-`m16a-conductor`). vibezeo.com serves 0.6.0 (pull request #49). Routines and running
+the wake phrase starts calls and a call holds the mic (D-1119). vibezeo.com serves 0.6.0 (pull request #49). Routines and running
 tasks are built and switch on with Pro; WSL workspaces wait for the Windows
 download.
 
@@ -82,6 +81,7 @@ Agent mode: persistent teammates with a brief, memory, skills, learning,
 session search and teammate-to-teammate mail, all over the single local gateway
 with leases. **Done in pull request #5** (branch `m10-teammates-gateway`); F-DI-12's mic in "Create with AI" followed once M8 merged.
 - [x] F-PL-01 Gateway process
+  - Not built: the behaviour's "terminal TUI opted into plugins". No acceptance criterion covers it, and terminal agents, local and on SSH hosts, get the tasks server only (D-1606).
 - [x] F-AG-01 Teammate record
 - [x] F-AG-02 Agent rail
 - [x] F-AG-03 Teammate page and chats
