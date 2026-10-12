@@ -279,18 +279,22 @@ pub async fn copy_for_new_lane(lane: &Workspace) {
     copies.insert(lane.id.as_str().to_string(), entry);
 }
 
-/// `lane_setup`: the copy made at creation, and the setup's state.
+/// `lane_setup`: the copy made at creation, and the setup's state. `None`
+/// for a worktree on an SSH host, where setup isn't available (D-2209).
 pub async fn lane_setup(
     store: &Store,
     data: &DataDir,
     lane: &WorkspaceId,
-) -> Result<LaneSetup, IpcError> {
+) -> Result<Option<LaneSetup>, IpcError> {
     let row = workspaces::get(store, lane).await?;
     if row.lane_branch.is_none() {
         return Err(IpcError::new(
             ErrorCode::Invalid,
             "That workspace isn't a worktree",
         ));
+    }
+    if row.kind != "local" {
+        return Ok(None);
     }
     let copied = COPIES
         .lock()
@@ -301,11 +305,11 @@ pub async fn lane_setup(
         Some(Err(e)) => (None, Some(e)),
         None => (None, None),
     };
-    Ok(LaneSetup {
+    Ok(Some(LaneSetup {
         state: state_at(data, &main_root(&row.root)?),
         copy,
         copy_error,
-    })
+    }))
 }
 
 // ---- setup pane ----------------------------------------------------------
@@ -548,6 +552,52 @@ mod tests {
     async fn f_wt_01_5_no_teardown_means_nothing_to_report() {
         let (_tmp, _main, wt, data) = repo_with_worktree(r#"{"copy":[".env"]}"#);
         let out = teardown(&data, &login(), wt.to_str().expect("utf8"), TEARDOWN_LIMIT).await;
+        assert_eq!(out, None);
+    }
+
+    #[tokio::test]
+    async fn f_wt_01_a_worktree_on_an_ssh_host_has_no_setup_and_no_error() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let data = DataDir::at(tmp.path().join("data")).expect("data dir");
+        let store = Store::open(&data).expect("store");
+        let host = tandem_store::repo::hosts::add_ssh(
+            &store,
+            tandem_store::repo::hosts::NewSshHost {
+                label: "box".into(),
+                target: "me@box".into(),
+                port: None,
+                identity_file: None,
+            },
+        )
+        .await
+        .expect("host");
+        let (parent, _) = workspaces::add(
+            &store,
+            workspaces::NewWorkspace {
+                kind: "ssh".into(),
+                host_id: host.id.as_str().to_string(),
+                root: "/home/me/app".into(),
+                name: "app".into(),
+                wsl_distro: None,
+            },
+            None,
+        )
+        .await
+        .expect("parent");
+        let lane = workspaces::add_lane(
+            &store,
+            workspaces::NewLane {
+                parent_id: parent.id.clone(),
+                root: "/home/me/app/.tandem/worktrees/fix".into(),
+                name: "fix".into(),
+                branch: "tandem/fix".into(),
+                base: "abc".into(),
+            },
+        )
+        .await
+        .expect("lane");
+        assert_eq!(lane.kind, "ssh");
+        let out = lane_setup(&store, &data, &lane.id).await.expect("no error");
         assert_eq!(out, None);
     }
 }
