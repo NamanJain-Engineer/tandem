@@ -5,15 +5,19 @@
 //! [`RealtimeProvider`] turns its wire protocol into the normalized
 //! [`ClientEvent`] and [`ServerEvent`]s, so the call never sees a vendor's
 //! event names. [`mock::MockRealtime`] speaks the dev mock's protocol
-//! (`scripts/mock-realtime.ts`); the vendor's provider needs a real key
-//! (`HUMAN_TODO.md`, REALTIME_API_KEY).
+//! (`scripts/mock-realtime.ts`); [`openai::OpenAiRealtime`] speaks the
+//! vendor's, pinned against a fixture built from its reference (checking it
+//! against a recorded session waits on a key, `HUMAN_TODO.md`). Both share
+//! [`socket`]'s connection.
 //!
 //! While the socket is being set up, the mic fills a [`buffer::PreConnect`]
 //! buffer of up to 3 s, sent once connected (F-CN-01 AC4).
 
 pub mod buffer;
 pub mod mock;
+pub mod openai;
 pub mod pcm;
+mod socket;
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -92,11 +96,12 @@ pub trait RealtimeProvider: Send + Sync {
     async fn connect(&self, ws_url: &str, token: &str) -> Result<Connection, RealtimeError>;
 }
 
-/// The provider for a session's `provider` name. Only the mock speaks a
-/// protocol this build can check without a vendor key.
+/// The provider for a session's `provider` name (the API's
+/// `RealtimeProvider.name`).
 pub fn for_provider(name: &str) -> Option<Box<dyn RealtimeProvider>> {
     match name {
         "mock" => Some(Box::new(mock::MockRealtime)),
+        "openai" => Some(Box::new(openai::OpenAiRealtime)),
         _ => None,
     }
 }

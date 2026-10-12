@@ -61,6 +61,8 @@ struct Host {
     mint: Mutex<Option<HostedError>>,
     mint_delay: Duration,
     provider: Arc<FakeProvider>,
+    /// A vendor-protocol socket to mint instead of the fake one.
+    vendor_url: Mutex<Option<String>>,
     acts: Mutex<VecDeque<Result<ActResponse, HostedError>>>,
     act_requests: Mutex<Vec<ActRequest>>,
     settles: Mutex<Vec<(String, u32)>>,
@@ -84,6 +86,7 @@ impl Host {
                     delay: connect_delay,
                     wires,
                 }),
+                vendor_url: Mutex::new(None),
                 acts: Mutex::new(VecDeque::new()),
                 act_requests: Mutex::new(Vec::new()),
                 settles: Mutex::new(Vec::new()),
@@ -153,11 +156,12 @@ impl CallHost for Host {
         if let Some(e) = self.mint.lock().clone() {
             return Err(e);
         }
+        let vendor = self.vendor_url.lock().clone();
         Ok(SessionGrant {
             session_id: "vs_1".into(),
-            provider: "fake".into(),
+            provider: if vendor.is_some() { "openai" } else { "fake" }.into(),
             ephemeral_token: "rt_mock_token".into(),
-            ws_url: "ws://mock/realtime".into(),
+            ws_url: vendor.unwrap_or_else(|| "ws://mock/realtime".into()),
             expires_at: "2026-10-10T00:30:00Z".into(),
             max_seconds: 1800,
         })
@@ -183,7 +187,11 @@ impl CallHost for Host {
         PersonaBrief::default()
     }
     fn provider(&self, name: &str) -> Option<Arc<dyn RealtimeProvider>> {
-        (name == "fake").then(|| self.provider.clone() as Arc<dyn RealtimeProvider>)
+        match name {
+            "fake" => Some(self.provider.clone() as Arc<dyn RealtimeProvider>),
+            "openai" => Some(Arc::new(crate::realtime::openai::OpenAiRealtime)),
+            _ => None,
+        }
     }
     fn mic_start(&self, tx: mpsc::UnboundedSender<MicEvent>) -> Result<(), String> {
         *self.mic.lock() = Some(tx);
@@ -765,4 +773,178 @@ fn f_cn_01_speed_requests_parse_and_others_do_not() {
     );
     assert_eq!(persona::speed_step(1.0), 2);
     assert_eq!(persona::speed_step(0.82), 0);
+}
+
+/// A whole call over the vendor's protocol, against a local socket that
+/// replays its events: the session, mic audio, an `act` round trip through
+/// the doer, speech, barge-in stopping playback, an error, and the vendor
+/// hanging up.
+#[tokio::test]
+#[allow(clippy::result_large_err)] // tungstenite's handshake callback signature
+async fn f_cn_01_a_call_over_the_vendor_protocol() {
+    use futures::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let (go_on, mut wait) = mpsc::unbounded_channel::<&str>();
+    let server = tokio::spawn(async move {
+        let (tcp, _) = listener.accept().await.expect("accept");
+        let mut ws = tokio_tungstenite::accept_async(tcp)
+            .await
+            .expect("handshake");
+        let mut types = Vec::new();
+        let mut output = None;
+        let send = |v: Value| Message::text(v.to_string());
+        ws.send(send(
+            json!({"type": "session.created", "event_id": "e1", "session": {"type": "realtime"}}),
+        ))
+        .await
+        .expect("send");
+        // Wait for the session and some mic audio.
+        while !types.contains(&"input_audio_buffer.append".to_string()) {
+            let Some(Ok(Message::Text(t))) = ws.next().await else {
+                panic!("closed early")
+            };
+            let v: Value = serde_json::from_str(t.as_str()).expect("json");
+            types.push(v["type"].as_str().unwrap_or("").to_string());
+        }
+        ws.send(send(json!({
+            "type": "response.output_item.done", "event_id": "e2", "response_id": "r1", "output_index": 0,
+            "item": {"id": "i1", "type": "function_call", "status": "completed", "name": "act",
+                     "call_id": "call_1", "arguments": "{\"request\":\"open code mode\"}"}
+        })))
+        .await
+        .expect("send");
+        while output.is_none() {
+            let Some(Ok(Message::Text(t))) = ws.next().await else {
+                panic!("closed early")
+            };
+            let v: Value = serde_json::from_str(t.as_str()).expect("json");
+            if v["type"] == "conversation.item.create"
+                && v["item"]["type"] == "function_call_output"
+            {
+                output = Some(v["item"].clone());
+                let Some(Ok(Message::Text(t))) = ws.next().await else {
+                    panic!("closed early")
+                };
+                let next: Value = serde_json::from_str(t.as_str()).expect("json");
+                types.push(next["type"].as_str().unwrap_or("").to_string());
+            }
+        }
+        ws.send(send(json!({
+            "type": "response.output_audio.delta", "event_id": "e3", "response_id": "r2", "item_id": "i2",
+            "output_index": 0, "content_index": 0, "delta": crate::realtime::pcm::encode(&[100; 2400])
+        })))
+        .await
+        .expect("send");
+        ws.send(send(json!({
+            "type": "response.output_audio_transcript.done", "event_id": "e4", "response_id": "r2",
+            "item_id": "i2", "output_index": 0, "content_index": 0, "transcript": "Done."
+        })))
+        .await
+        .expect("send");
+        let _ = wait.recv().await; // the test saw it speaking
+        ws.send(send(json!({"type": "input_audio_buffer.speech_started", "event_id": "e5", "audio_start_ms": 900, "item_id": "i3"})))
+            .await
+            .expect("send");
+        ws.send(send(json!({"type": "error", "event_id": "e6", "error": {"type": "invalid_request_error", "message": "bad"}})))
+            .await
+            .expect("send");
+        let _ = wait.recv().await; // the test saw the barge-in
+        ws.close(None).await.expect("close");
+        (types, output)
+    });
+
+    let (host, _wires) = Host::new(Duration::ZERO);
+    *host.vendor_url.lock() = Some(format!("ws://{addr}/v1/realtime?model=gpt-realtime"));
+    let c = CallController::new(host.clone(), timing());
+    c.start(CallOrigin::Button);
+    until("listening", || host.last().phase == CallPhase::Listening).await;
+    host.speak(200);
+    until("the act's answer spoken", || {
+        *host.speaker.played.lock() == 2400
+    })
+    .await;
+    until("caption", || {
+        host.last().caption.as_deref() == Some("Done.")
+    })
+    .await;
+    let _ = go_on.send("spoke");
+    until("playback stopped", || *host.speaker.stops.lock() >= 1).await;
+    until("listening again", || {
+        host.last().phase == CallPhase::Listening
+    })
+    .await;
+    let _ = go_on.send("barged");
+    until("the vendor hung up", || {
+        host.last().phase == CallPhase::Error
+    })
+    .await;
+    assert_eq!(
+        host.last().error.map(|e| e.code),
+        Some(CallErrorCode::ConnectFailed)
+    );
+    assert_eq!(host.settles.lock().len(), 1);
+    assert_eq!(host.act_requests.lock()[0].request, "open code mode");
+
+    let (types, output) = server.await.expect("server");
+    assert_eq!(types[0], "session.update");
+    assert!(types.contains(&"input_audio_buffer.append".to_string()));
+    assert_eq!(types.last().map(String::as_str), Some("response.create"));
+    let output = output.expect("an act output");
+    assert_eq!(output["call_id"], "call_1");
+    assert_eq!(output["output"], "Done.");
+    let _ = c;
+}
+
+#[tokio::test]
+async fn f_cn_01_push_to_talk_sends_only_while_held_and_ends_after_quiet_minutes() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    let (c, mut wire) = connected(&host, &mut wires, CallOrigin::PushToTalk).await;
+    // A push-to-talk call starts muted.
+    assert!(host.last().muted);
+    host.speak(300);
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(drain(&mut wire).1, 0);
+    c.mute(false);
+    until("unmuted", || !host.last().muted).await;
+    host.speak(300);
+    until("audio while held", || {
+        let (_, audio) = drain(&mut wire);
+        audio > 0
+    })
+    .await;
+    c.mute(true);
+    // Letting go restarts the quiet clock: wait for it before moving time.
+    until("muted again", || host.last().muted).await;
+    host.advance(60_000);
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(host.last().phase, CallPhase::Listening);
+    host.advance(61_000);
+    until("ended quietly", || host.last().phase == CallPhase::Ended).await;
+    assert_eq!(
+        host.last().notice.as_deref(),
+        Some("Call ended after 2 quiet minutes")
+    );
+    assert!(host.last().error.is_none());
+    assert_eq!(host.settles.lock().len(), 1);
+}
+
+#[tokio::test]
+async fn f_cn_08_a_mic_that_stops_delivering_ends_the_call() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    let (_c, _wire) = connected(&host, &mut wires, CallOrigin::Button).await;
+    let mic = host.mic.lock().clone().expect("the mic is on");
+    let _ = mic.send(MicEvent::NotDelivering);
+    until("ended", || host.last().phase == CallPhase::Error).await;
+    assert_eq!(
+        host.last().error.map(|e| e.code),
+        Some(CallErrorCode::MicNotDelivering)
+    );
+    assert_eq!(host.settles.lock().len(), 1);
+    // The call let go of the mic.
+    assert!(!*host.mic_owned.lock());
 }

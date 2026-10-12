@@ -14,14 +14,11 @@
 //! never logged.
 
 use async_trait::async_trait;
-use futures::{SinkExt, StreamExt};
 use serde_json::{json, Value};
-use tokio::sync::mpsc;
-use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-use tokio_tungstenite::tungstenite::http::HeaderValue;
-use tokio_tungstenite::tungstenite::Message;
 
-use super::{pcm, ClientEvent, Connection, RealtimeError, RealtimeProvider, ServerEvent, ACT_TOOL};
+use super::{
+    pcm, socket, ClientEvent, Connection, RealtimeError, RealtimeProvider, ServerEvent, ACT_TOOL,
+};
 
 pub struct MockRealtime;
 
@@ -90,83 +87,26 @@ pub fn decode(frame: &str) -> Option<ServerEvent> {
 #[async_trait]
 impl RealtimeProvider for MockRealtime {
     async fn connect(&self, ws_url: &str, token: &str) -> Result<Connection, RealtimeError> {
-        let mut req = ws_url
-            .into_client_request()
-            .map_err(|e| RealtimeError::Connect(e.to_string()))?;
-        let bearer = HeaderValue::from_str(&format!("Bearer {token}"))
-            .map_err(|_| RealtimeError::Connect("the token isn't a header value".into()))?;
-        req.headers_mut().insert("Authorization", bearer);
-        let (socket, _) = match tokio_tungstenite::connect_async(req).await {
-            Ok(ok) => ok,
-            Err(tokio_tungstenite::tungstenite::Error::Http(r)) if r.status().as_u16() == 401 => {
-                return Err(RealtimeError::Refused)
-            }
-            // The URL carries the token: say what failed, not where.
-            Err(e) => return Err(RealtimeError::Connect(kind_of(&e))),
-        };
-        let (mut sink, mut stream) = socket.split();
-        let (to_server, mut outbox) = mpsc::channel::<ClientEvent>(256);
-        let (inbox, from_server) = mpsc::channel::<ServerEvent>(256);
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    out = outbox.recv() => {
-                        let Some(event) = out else {
-                            let _ = sink.close().await;
-                            break;
-                        };
-                        if sink.send(Message::text(encode(&event).to_string())).await.is_err() {
-                            let _ = inbox.send(ServerEvent::Closed).await;
-                            break;
-                        }
-                    }
-                    frame = stream.next() => {
-                        match frame {
-                            Some(Ok(Message::Text(text))) => {
-                                if let Some(event) = decode(text.as_str()) {
-                                    if inbox.send(event).await.is_err() {
-                                        break;
-                                    }
-                                }
-                            }
-                            Some(Ok(Message::Close(_))) | None | Some(Err(_)) => {
-                                let _ = inbox.send(ServerEvent::Closed).await;
-                                break;
-                            }
-                            Some(Ok(_)) => {}
-                        }
-                    }
-                }
-            }
-        });
-        Ok(Connection {
-            tx: to_server,
-            rx: from_server,
-        })
-    }
-}
-
-fn kind_of(e: &tokio_tungstenite::tungstenite::Error) -> String {
-    use tokio_tungstenite::tungstenite::Error as E;
-    match e {
-        E::Io(io) => format!("{:?}", io.kind()),
-        E::Http(r) => format!("HTTP {}", r.status().as_u16()),
-        E::Url(_) => "a bad address".into(),
-        E::Tls(_) => "TLS".into(),
-        other => format!("{other}")
-            .split(':')
-            .next()
-            .unwrap_or("error")
-            .to_string(),
+        socket::open(
+            ws_url,
+            token,
+            socket::Codec {
+                encode: |e| vec![encode(e)],
+                decode,
+            },
+        )
+        .await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::{SinkExt, StreamExt};
     use std::time::Duration;
     use tokio::net::TcpListener;
     use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+    use tokio_tungstenite::tungstenite::Message;
 
     #[test]
     fn f_cn_01_frames_round_trip_and_unknown_ones_are_skipped() {

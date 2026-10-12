@@ -1,14 +1,11 @@
-import { useRef } from "react";
 import { Tooltip, WaveformRing, cx } from "@tandem/ui";
 import { t, type MessageKey } from "../../i18n";
 import { inCall, setMuted, startCall, toggleCall, useConductor } from "../../stores/conductor";
 import { useSession } from "../../stores/session";
 import { useShortcutKeys } from "../commands/useShortcutKeys";
+import { usePressOrHold } from "./hold";
 import { ringState } from "./ring";
 import { useAppActive } from "./useAppActive";
-
-/** A press this long on the ring is push-to-talk (UI-61). */
-export const HOLD_MS = 300;
 
 /** The title bar's Conductor button (UI-01 item 8): a 28px ring. A click
  * starts or ends a call; holding it talks while held. Hidden on plans
@@ -19,30 +16,18 @@ export function ConductorButton() {
   const level = useConductor((s) => s.level);
   const active = useAppActive();
   const keys = useShortcutKeys();
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const holding = useRef(false);
+  const press = usePressOrHold({
+    onClick: toggleCall,
+    // Held: talk while held. A call starts muted for push-to-talk.
+    onHoldStart: () => {
+      if (!inCall(useConductor.getState().view)) void startCall(true).then(() => setMuted(false));
+      else setMuted(false);
+    },
+    onHoldEnd: () => setMuted(true),
+  });
   if (!enabled) return null;
   const live = inCall(view);
   const label = live ? t("conductor.ring.end") : t("conductor.ring.start");
-
-  const down = () => {
-    holding.current = false;
-    timer.current = setTimeout(() => {
-      holding.current = true;
-      // Held: talk while held. A call starts muted for push-to-talk.
-      if (!inCall(useConductor.getState().view)) void startCall(true).then(() => setMuted(false));
-      else setMuted(false);
-    }, HOLD_MS);
-  };
-  const up = () => {
-    clearTimeout(timer.current);
-    if (holding.current) {
-      holding.current = false;
-      setMuted(true);
-      return;
-    }
-    toggleCall();
-  };
 
   return (
     <Tooltip label={label} kbd={keys("conductor.call")}>
@@ -52,9 +37,7 @@ export function ConductorButton() {
         aria-pressed={live}
         data-testid="conductor-button"
         data-phase={view.phase}
-        onPointerDown={down}
-        onPointerUp={up}
-        onPointerLeave={() => clearTimeout(timer.current)}
+        {...press}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
