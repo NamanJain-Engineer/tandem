@@ -514,6 +514,11 @@ pub struct StatusEvent {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpChannel {
     pub channel: String,
+    /// `mcp.open`: the channel outlives this connection (a terminal agent's
+    /// server, which re-attaches with its PTY): the daemon holds its
+    /// server's lines until the desktop opens it again by the same id.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub keep: bool,
 }
 
 /// One JSON-RPC line on a channel, without its newline: `mcp.in` (desktop →
