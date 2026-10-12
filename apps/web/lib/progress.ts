@@ -19,6 +19,17 @@ export type Milestone = {
 /** Newest first. Each entry is a closed milestone of the build plan. */
 export const MILESTONES: readonly Milestone[] = [
   {
+    id: "M16",
+    title: "Phone, Conductor and teammate extras",
+    items: [
+      "Your phone pairs with Vibezeo over your own network, with no account, through a phone web app that's end-to-end encrypted.",
+      "Find work goes to the pane, thread or teammate doing a task, found by what it's about, on your computer.",
+      "A teammate's skills install into Claude Code or Codex, and a teammate opens as an agent pane in Code mode.",
+      "Conductor, a coordinator you talk to that starts agents, prompts them and finds work, is built for Pro and Team and switches on with accounts.",
+      "The Vibezeo Remote phone app, encrypted push and a relay that reaches your agents away from home are built, and wait for the app stores and accounts.",
+    ],
+  },
+  {
     id: "M17",
     title: "Extras",
     items: [

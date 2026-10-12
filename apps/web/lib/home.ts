@@ -106,19 +106,19 @@ export const CLAUDE = [
   },
 ] as const;
 
-/** Later milestones, in build order. */
+/** What comes next, in order. Each item says what's built and what it waits for. */
 export const ROADMAP = [
   {
-    title: "Your phone, and WSL",
-    body: "Check on your agents and answer them from your phone, and run them in WSL when the Windows download arrives.",
+    title: "Your phone, from anywhere",
+    body: "Your phone already pairs with Vibezeo over your own network. The Vibezeo Remote app for iOS and Android, with encrypted push and a relay that reaches your agents away from home, is built and comes with the app stores and accounts.",
   },
   {
-    title: "Conductor",
-    body: "Talk to Vibezeo and it works the app for you: starts agents, prompts them and finds work.",
+    title: "macOS, Windows and WSL",
+    body: "The same app on macOS and Windows, with WSL folders in the Windows download. The code is ready; the downloads wait for signed builds tested on real machines.",
   },
   {
-    title: "Pro, when accounts open",
-    body: "Routines that run teammates on a schedule and tasks run in their own lanes are built into the app, along with the hosted features. They switch on with Vibezeo accounts.",
+    title: "Conductor and Pro, when accounts open",
+    body: "Talk to Vibezeo and it works the app for you: Conductor starts agents, prompts them and finds work. It's built, along with routines that run teammates on a schedule, tasks run in their own lanes and the hosted features, and they switch on with Vibezeo accounts.",
   },
 ] as const;
 
