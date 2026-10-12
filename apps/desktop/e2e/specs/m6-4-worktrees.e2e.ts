@@ -64,8 +64,28 @@ async function newWorktree(root: string, task: string): Promise<void> {
   await repoMenu(root);
   await pick("New worktree…");
   await $('[data-testid="worktree-name"]').setValue(task);
+  const clicked = Date.now();
   await $('[data-testid="worktree-create"]').click();
-  await $('[data-testid="worktree-name"]').waitForExist({ reverse: true, timeout: 20_000 });
+  try {
+    await $('[data-testid="worktree-name"]').waitForExist({ reverse: true, timeout: 20_000 });
+  } catch (e) {
+    // Once in a full run the second create took 20 s with nothing in the
+    // app's log meanwhile (D-839). What the dialog shows tells a create still
+    // running (Create busy), a failed one (its error) and a click that never
+    // ran apart; the log's tail shows what the core did.
+    const dialog = await browser.execute(() => ({
+      text: document.querySelector<HTMLElement>('[role="dialog"]')?.innerText ?? null,
+      busy: document.querySelector('[data-testid="worktree-create"]')?.getAttribute("aria-busy") ?? null,
+    }));
+    const log = readFileSync(join(home(), "logs", "tandem.log"), "utf8")
+      .trimEnd()
+      .split("\n")
+      .slice(-12);
+    throw new Error(
+      `the New worktree dialog was still open ${Date.now() - clicked} ms after Create: ${JSON.stringify(dialog)}\n${log.join("\n")}`,
+      { cause: e },
+    );
+  }
 }
 
 /** Opens a worktree row's ⋯ menu from the keyboard (it shows on focus). */
