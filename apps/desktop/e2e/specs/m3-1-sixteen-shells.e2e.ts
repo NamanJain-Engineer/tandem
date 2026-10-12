@@ -9,6 +9,7 @@ import {
   setPlan,
   waitForApp,
   waitForPaneText,
+  waitForShell,
 } from "../support/app";
 
 type Node =
@@ -68,6 +69,9 @@ describe("E2E-M3-1 sixteen shells", () => {
       timeoutMsg: `panes: ${(await paneIds()).length}`,
     });
 
+    // Panes open one after another (the mount queue, F-SH-07.7), so a pane
+    // can be on screen before its shell has started: wait for each prompt.
+    for (const id of ids) await waitForShell(id, 30_000);
     // Every shell sees its own pane id.
     for (const id of ids) await sendToPane(id, "echo pane=$TANDEM_PANE_ID\n");
     for (const id of ids) await waitForPaneText(id, `pane=${id}`, 30_000);
