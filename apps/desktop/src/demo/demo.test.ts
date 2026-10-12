@@ -344,7 +344,7 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
       ["checkpoint_create", "folders on your computer"],
       ["prompts_create", "files in your folders"],
       ["bestof_start", "git worktrees"],
-      ["phone_pair_begin", "part of Pro"],
+      ["phone_pair_begin", "Pro account"],
     ] as const) {
       let error: { code?: string; message?: string } = {};
       try {
@@ -361,6 +361,28 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     expect(core.handle("prompts_list", {})).toEqual({ items: [], skipped: [], excludeHidesRepo: false });
     expect(core.handle("checkpoints_usage", {})).toEqual({ bytes: 0, folders: 0 });
     expect(core.handle("history_search", {})).toEqual([]);
+  });
+
+  it("F-RM-04 the demo's Settings › Remote shows local-network pairing off, and pairing says it needs the app (D-833)", () => {
+    core = new DemoCore(0);
+    // The shape the Local network section reads; null left it loading for good.
+    expect(core.handle("phone_lan_state", {})).toEqual({
+      enabled: false,
+      running: false,
+      port: 47800,
+      addresses: [],
+      error: null,
+    });
+    for (const cmd of ["phone_lan_set", "phone_pair_begin"] as const) {
+      let error: { code?: string; message?: string } = {};
+      try {
+        core.handle(cmd, { enabled: true });
+      } catch (e) {
+        error = e as typeof error;
+      }
+      expect(error.code, cmd).toBe("unavailable");
+      expect(error.message, cmd).toContain("your own network");
+    }
   });
 
   it("demo the sample world: three workspaces, Claude Code, Codex and Gemini CLI panes, and the Dashboard's states", () => {

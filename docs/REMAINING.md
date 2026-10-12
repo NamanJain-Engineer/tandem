@@ -8,23 +8,20 @@ every milestone has its tasks, exit checks and E2E list in MILESTONES. Tick
 items off here and in `BUILD_LOG.md` as they're done. `docs/FEATURES_TO_BUILD.md`
 has every feature below with its full behaviour and acceptance tests.
 
-**Where it stands (10 October 2026, `product-m0-m5`):** M0–M14 are done,
-and so are M15's six features and its non-functional checks (pull request #38;
-the performance budgets still need the reference machines, `HUMAN_TODO.md`). M16
-has F-SH-12, F-AC-07, F-AU-01, F-BE-03, F-BE-12, F-RT-05, F-AG-10, F-AG-13,
-F-CN-05 and the phone companion and relay (F-RM-03, F-BE-11). That's 144 of 152
-features: all 65 P0s and every P1. Left: 8 of M16's P2 extras, each being built
-on its own branch. Conductor's core (F-CN-01 to F-CN-04, F-CN-08) has its first
-slice merged: calls run end to end against the dev mock, while 23 tools, the
-floating ring window, the call-log setting and the vendor realtime client are
-still to come. Then Conductor's persona, memory and wake phrase (F-CN-06,
-F-CN-07) and the macOS Simulator pane (F-CD-21). M17 adds five extras beyond
-the spec (F-EX-01 to F-EX-05).
-vibezeo.com still serves 0.4.0: 0.5.0 (Dictate, tasks, plugins, SSH workspaces
-and Diagnostics) is merged into `main`, but Vercel refused its deploy at the
-daily deployment limit (D-829), so it goes out with the next release. Routines
-and running tasks are built and switch on with Pro; WSL workspaces wait for the
-Windows download.
+**Where it stands (12 October 2026, `product-m0-m5`):** M0–M14 are done, and
+so are M15's six features and its non-functional checks (pull request #38; the
+performance budgets still need the reference machines, `HUMAN_TODO.md`). 147
+of the original 152 features are done: all 65 P0s, every P1 and 15 of M16's 20
+P2s; the macOS Simulator pane (F-CD-21) came with the `chain5` batch. The spec
+has 165 IDs now, and the 13 added since are done: M17's five extras (F-EX-01
+to F-EX-05) and worktree workflow (F-WT-01 to F-WT-04), and M16's phone apps
+and Linux store packages (F-RM-04 to F-RM-07). The 5 left are Conductor's:
+F-CN-01 to F-CN-04 and F-CN-08 run end to end against the dev mock and lack
+only the vendor realtime client, which waits on a key. F-CN-06 and F-CN-07
+(persona, memory and wake phrase) are done: calls read the persona at start,
+the wake phrase starts calls and a call holds the mic (D-1119). vibezeo.com serves 0.7.0 from this release. Routines and running
+tasks are built and switch on with Pro; WSL workspaces wait for the Windows
+download.
 
 ## 0. First, before new features
 
@@ -84,6 +81,7 @@ Agent mode: persistent teammates with a brief, memory, skills, learning,
 session search and teammate-to-teammate mail, all over the single local gateway
 with leases. **Done in pull request #5** (branch `m10-teammates-gateway`); F-DI-12's mic in "Create with AI" followed once M8 merged.
 - [x] F-PL-01 Gateway process
+  - Not built: the behaviour's "terminal TUI opted into plugins". No acceptance criterion covers it, and terminal agents, local and on SSH hosts, get the tasks server only (D-1606).
 - [x] F-AG-01 Teammate record
 - [x] F-AG-02 Agent rail
 - [x] F-AG-03 Teammate page and chats
@@ -193,17 +191,20 @@ E2E-M15-1…5: web, what's new, data controls, axe sweep, quality-bar run.
 Azure Trusted Signing, GPG for Linux, updater keys, release hosting; see
 `HUMAN_TODO.md`) and GitHub Actions minutes for the macOS/Windows runners.
 
-### M16 · P2 differentiators and release candidate (XL) · 20 features (P2)
+### M16 · P2 differentiators and release candidate (XL) · 24 features (P2)
 In independent sub-phases, each green and tagged (`m16a` … `m16d`), then the
 release candidate. Stop after any sub-phase if the budget runs out.
 - 16A Conductor (voice), first slice merged for F-CN-01 to F-CN-04 and F-CN-08 (calls against the dev mock; 23 tools, the ring window, the call-log setting and the vendor realtime client to come): [ ] F-CN-01 Call lifecycle · [ ] F-CN-02 Talker/doer
   architecture and tool catalog · [ ] F-CN-03 Delivery rules and safety ·
-  [ ] F-CN-04 Conductor UI · [x] F-CN-05 Find work by meaning (local search and the palette, D-814; the API's ranking, #30; teammates and the app's opt-in to the hosted ranking, D-1302; the Conductor's spoken answer comes with F-CN-02) · [ ] F-CN-06
-  Persona and memory · [ ] F-CN-07 Wake phrase · [ ] F-CN-08 Audio routing for
+  [ ] F-CN-04 Conductor UI · [x] F-CN-05 Find work by meaning (local search and the palette, D-814; the API's ranking, #30; teammates and the app's opt-in to the hosted ranking, D-1302; the Conductor's spoken answer comes with F-CN-02) · [x] F-CN-06
+  Persona and memory (D-1119 wires it into calls) · [x] F-CN-07 Wake phrase (D-1119) · [ ] F-CN-08 Audio routing for
   calls · [x] F-BE-08 Voice session minting (pull request #30, D-1000–D-1008)
 - 16B Auto: [x] F-AU-01 Auto (Pro, credits)
 - 16C Phone companion: [x] F-RM-03 Phone companion · [x] F-BE-11 Remote relay
-- 16D Extras: [x] F-SH-12 Scratchpad · [ ] F-CD-21 Simulator pane (macOS) ·
+- Phone apps and Linux stores (added on `mobile-apps`, D-2000 to D-2040): [x] F-RM-04 LAN pairing ·
+  [x] F-RM-05 Vibezeo Remote app · [x] F-RM-06 Encrypted push notifications · [x] F-RM-07 Linux store
+  packages (the owner's signing keys, store submissions, the iOS build and real-device checks: `HUMAN_TODO.md`)
+- 16D Extras: [x] F-SH-12 Scratchpad · [x] F-CD-21 Simulator pane (macOS; manual QA on a Mac pending) ·
   [x] F-AC-07 Usage dashboard · [x] F-AG-10 Skill sync to engines ·
   [x] F-AG-13 Teammate in a terminal · [x] F-RT-05 Schedule tool for teammates ·
   [x] F-BE-03 CLI device-code sign-in · [x] F-BE-12 Admin
@@ -211,6 +212,15 @@ release candidate. Stop after any sub-phase if the budget runs out.
   [x] Team SSO (F-BL-06 P2 part), [x] the remaining AI routes (`/auto/next`,
   `/voice/act`, `/voice/resolve`; pull request #30).
 E2E-M16-1…5: Conductor call, find work, Auto, phone, extras.
+
+### M17 · Worktree workflow (M) · 4 features (P2)
+From the competitive analysis (`docs/COMPETITIVE_ANALYSIS.md`): the worktree
+gaps against the category. Built on branch `competitive-gaps`.
+- [x] F-WT-01 Worktree setup (copy ignored files, setup and teardown, explicit trust)
+- [x] F-WT-02 Review comments to the agent
+- [x] F-WT-03 Overlap check and merge forecast
+- [x] F-WT-04 GitLab merge requests
+E2E-M17-WT-1…3: setup, review, overlap.
 
 ## 2. What only a person can do
 

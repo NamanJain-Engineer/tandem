@@ -248,8 +248,13 @@ enum Note {
     Chip(ChipView),
     Log(LogKind, String, Option<bool>),
     Question(Option<QuestionView>),
-    Output { call_id: String, output: String },
+    Output {
+        call_id: String,
+        output: String,
+    },
     End(EndReason, Option<CallError>),
+    /// "Talk faster" (+1) or "talk slower" (-1).
+    Speed(i8),
 }
 
 struct Live {
@@ -501,6 +506,13 @@ impl CallController {
                 voice: persona.voice.clone(),
             })
             .await;
+        if (persona.speed - 1.0).abs() > 0.01 {
+            let _ = tx
+                .send(ClientEvent::SetSpeed(
+                    persona::SPEEDS[persona::speed_step(persona.speed)],
+                ))
+                .await;
+        }
         // F-CN-01 AC4: early speech, after connect.
         if !buffer.is_empty() {
             let _ = tx.send(ClientEvent::Audio(buffer.take())).await;
@@ -534,6 +546,7 @@ impl CallController {
         let mut last_talk = connected_at;
         let mut actions = 0u32;
         let mut pending_doers = 0u32;
+        let mut speed = persona::speed_step(persona.speed);
         let (reason, error) = loop {
             tokio::select! {
                 c = cmds.recv() => match c {
@@ -671,6 +684,10 @@ impl CallController {
                         }
                     }
                     Some(Note::End(r, e)) => break (r, e),
+                    Some(Note::Speed(delta)) => {
+                        speed = (speed as i64 + i64::from(delta)).clamp(0, persona::SPEEDS.len() as i64 - 1) as usize;
+                        let _ = tx.send(ClientEvent::SetSpeed(persona::SPEEDS[speed])).await;
+                    }
                     None => {}
                 },
                 _ = ticker.tick() => {
@@ -889,6 +906,26 @@ fn settle_later(
     });
 }
 
+/// "Talk faster" / "speak slower" / "slow down" / "speed up": +1 or -1.
+pub fn parse_speed(request: &str) -> Option<i8> {
+    let r = request.to_lowercase();
+    let r = r.trim().trim_end_matches(['.', '!', '?']);
+    let talk = ["talk", "speak", "go"];
+    for verb in talk {
+        if r == format!("{verb} faster") || r == format!("{verb} a bit faster") {
+            return Some(1);
+        }
+        if r == format!("{verb} slower") || r == format!("{verb} a bit slower") {
+            return Some(-1);
+        }
+    }
+    match r {
+        "speed up" | "faster please" => Some(1),
+        "slow down" | "slower please" => Some(-1),
+        _ => None,
+    }
+}
+
 /// "answer q-1-2 yes", or a bare yes or no for the question shown now.
 pub fn parse_answer(request: &str, head: Option<&QuestionView>) -> Option<(String, bool)> {
     let words: Vec<String> = request
@@ -937,6 +974,14 @@ async fn doer_rounds(
     cancel: &CancellationToken,
     notes: &mpsc::UnboundedSender<Note>,
 ) -> String {
+    if let Some(delta) = parse_speed(request) {
+        let _ = notes.send(Note::Speed(delta));
+        return if delta > 0 {
+            "Okay, I'll talk faster.".into()
+        } else {
+            "Okay, I'll talk slower.".into()
+        };
+    }
     if let Some((id, yes)) = parse_answer(request, exec.confirms().head().as_ref()) {
         return match exec.confirms().answer_by_voice(&id, yes) {
             Ok(()) => "Got it.".into(),

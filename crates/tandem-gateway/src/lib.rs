@@ -120,6 +120,8 @@ pub struct GatewayHandle {
     counters: Arc<Counters>,
     serving: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     shutdown: CancellationToken,
+    /// The listener's server, for sessions served over a stream.
+    server: GatewayServer,
 }
 
 impl GatewayHandle {
@@ -127,6 +129,32 @@ impl GatewayHandle {
     /// config and nowhere else.
     pub fn prepare(&self, session: SessionDescriptor) -> Lease {
         self.leases.issue(session)
+    }
+
+    /// Serves one MCP session over a byte stream instead of the listener
+    /// (D-1604: an engine on an SSH host, whose `tandem-host mcp` relays
+    /// the lines here). The session is bound to `lease` on this machine, so
+    /// its token never travels; each call checks the lease is still live,
+    /// exactly as the listener's guard does. Returns when the stream ends.
+    pub async fn serve_io<R, W>(&self, lease: &Lease, read: R, write: W) -> Result<(), String>
+    where
+        R: tokio::io::AsyncRead + Send + Unpin + 'static,
+        W: tokio::io::AsyncWrite + Send + Unpin + 'static,
+    {
+        use rmcp::ServiceExt;
+        let server = GatewayServer {
+            bound: Some(Bound {
+                leases: self.leases.clone(),
+                token: Arc::from(lease.token.as_str()),
+            }),
+            ..self.server.clone()
+        };
+        let running = server
+            .serve((read, write))
+            .await
+            .map_err(|e| e.to_string())?;
+        running.waiting().await.map_err(|e| e.to_string())?;
+        Ok(())
     }
 
     /// Ends a lease (session over, quit, sign-out): its token gets 401.
@@ -339,10 +367,12 @@ impl Gateway {
                 approvals: deps.approvals,
                 builtins: deps.builtins,
                 plugins: plugins.clone(),
+                bound: None,
             },
             counters: counters.clone(),
             shutdown: shutdown.clone(),
         };
+        let server = service.server.clone();
         let serving = Arc::new(Mutex::new(Some(service.serve(listener))));
         if let Some(dir) = &deps.run_dir {
             write_run_file(dir, addr.port());
@@ -366,6 +396,7 @@ impl Gateway {
             counters,
             serving,
             shutdown,
+            server,
         })
     }
 }
@@ -515,6 +546,28 @@ struct GatewayServer {
     approvals: Arc<dyn ApprovalAsker>,
     builtins: Arc<dyn BuiltinHandler>,
     plugins: Arc<plugins::Plugins>,
+    /// A session served over a stream (`serve_io`): its lease, held here.
+    bound: Option<Bound>,
+}
+
+#[derive(Clone)]
+struct Bound {
+    leases: Arc<lease::Leases>,
+    token: Arc<str>,
+}
+
+impl GatewayServer {
+    /// The caller's lease: the bound one, while it lives, or the one the
+    /// guard attached to the HTTP request.
+    fn lease(&self, ctx: &RequestContext<RoleServer>) -> Result<LeaseContext, ErrorData> {
+        match &self.bound {
+            Some(b) => b
+                .leases
+                .find(&b.token)
+                .ok_or_else(|| ErrorData::invalid_request("the lease ended", None)),
+            None => lease_of(ctx),
+        }
+    }
 }
 
 fn reply(out: ToolOutput) -> CallToolResponse {
@@ -536,7 +589,7 @@ impl ServerHandler for GatewayServer {
         _request: Option<PaginatedRequestParams>,
         ctx: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        let lease = lease_of(&ctx)?;
+        let lease = self.lease(&ctx)?;
         let set = lease.session.builtins;
         let mut tools: Vec<Tool> = Vec::new();
         if set.approvals {
@@ -557,7 +610,7 @@ impl ServerHandler for GatewayServer {
         request: CallToolRequestParams,
         ctx: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        let lease = lease_of(&ctx)?;
+        let lease = self.lease(&ctx)?;
         let args = serde_json::Value::Object(request.arguments.unwrap_or_default());
         let name = request.name.as_ref();
         if name == APPROVALS_TOOL && lease.session.builtins.approvals {

@@ -9,6 +9,8 @@ pub mod bestof;
 pub mod browser;
 pub mod checkpoints;
 pub mod conductor;
+pub mod conductor_persona;
+pub mod conductor_tools;
 pub mod data_controls;
 pub mod dictate;
 pub mod engines;
@@ -31,6 +33,8 @@ pub mod routines;
 pub mod scratchpad;
 pub mod settings;
 pub mod shell;
+#[cfg(any(target_os = "macos", test))]
+pub mod simulator;
 pub mod task_exec;
 pub mod tasks;
 pub mod teammates;

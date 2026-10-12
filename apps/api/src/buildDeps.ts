@@ -10,6 +10,7 @@ import { Clock } from "./lib/clock";
 import { selectAi } from "./providers/ai";
 import { selectRealtime } from "./providers/realtime";
 import { selectStt } from "./providers/stt";
+import { selectPush } from "./providers/push";
 import { MockBilling } from "./providers/billing/mock";
 import { StripeBilling } from "./providers/billing/stripe";
 import { HibpBreachChecker, OfflineBreachList, type BreachChecker } from "./providers/breach";
@@ -28,7 +29,7 @@ const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 export function buildDeps(
   env: Env,
   overrides: Partial<
-    Pick<Deps, "email" | "clock" | "keys" | "billing" | "breach" | "ai" | "stt" | "realtime" | "ssoNet">
+    Pick<Deps, "email" | "clock" | "keys" | "billing" | "breach" | "ai" | "stt" | "push" | "realtime" | "ssoNet">
   > = {},
 ): Built {
   const { db, pool } = createDb(env.DATABASE_URL);
@@ -66,6 +67,7 @@ export function buildDeps(
     auth: createAuth({ env, db, email, breach, deps: () => deps }),
     ai: overrides.ai ?? selectAi(env),
     stt: overrides.stt ?? selectStt(env),
+    push: overrides.push ?? selectPush(env),
     relay: new RelayControl(),
     realtime: overrides.realtime ?? selectRealtime(env),
     ssoNet: overrides.ssoNet ?? { fetch: (input, init) => fetch(input, init), resolveTxt },

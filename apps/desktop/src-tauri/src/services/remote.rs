@@ -22,8 +22,8 @@ use tandem_core::ids::HostId;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_host::client::{ClientError, HostClient};
 use tandem_host::protocol::{
-    method, DirListing, ErrorKind, Found, FsChanged, Hello, HelloReply, Message, PtyAttached,
-    PtyExit, PtyOutput, PtySpawned, RpcError, StatusEvent, PROTOCOL, VERSION,
+    method, DirListing, ErrorKind, Found, FsChanged, Hello, HelloReply, McpChannel, McpLine,
+    Message, PtyAttached, PtyExit, PtyOutput, PtySpawned, RpcError, StatusEvent, PROTOCOL, VERSION,
 };
 use tandem_host::ssh::{Askpass, Category, Ssh, SshError, SshTarget};
 use tandem_pty::{OutputSink, PtyInfo, PtyManager, RemoteFeed, RemotePty, SpawnSpec};
@@ -285,6 +285,23 @@ pub struct RemoteService {
     detections: Mutex<HashMap<String, tandem_engines::detect::DetectionReport>>,
     /// The engine registry, for detection after each connection.
     engines: std::sync::OnceLock<Arc<crate::services::engines::EngineService>>,
+    /// MCP channels this desktop opened (D-1604): their host, and where
+    /// the lines the host sends go.
+    mcp: Mutex<HashMap<String, McpRoute>>,
+}
+
+/// An MCP channel: its host, its bridge, and whether it outlives a dropped
+/// connection (a terminal agent's, taken over again on reconnect).
+type McpRoute = (HostId, mpsc::UnboundedSender<McpEvent>, bool);
+
+/// What arrives on an MCP channel (D-1604).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpEvent {
+    /// A JSON-RPC line from the engine's `tandem-host mcp`.
+    Line(String),
+    /// The engine's server went (it stopped or restarted it), or the
+    /// connection to the host did.
+    Closed,
 }
 
 impl RemoteService {
@@ -300,6 +317,10 @@ impl RemoteService {
         if let Some(p) = std::env::var_os("TANDEM_SSH_BIN").filter(|_| cfg!(debug_assertions)) {
             ssh.ssh = PathBuf::from(p);
         }
+        // An ssh config used instead of the user's own (debug builds; E2E-M14-9).
+        if let Some(p) = std::env::var_os("TANDEM_SSH_CONFIG").filter(|_| cfg!(debug_assertions)) {
+            ssh.config = Some(PathBuf::from(p));
+        }
         Arc::new(Self {
             files: Default::default(),
             store,
@@ -313,6 +334,7 @@ impl RemoteService {
             askpass: std::sync::OnceLock::new(),
             detections: Mutex::default(),
             engines: std::sync::OnceLock::new(),
+            mcp: Mutex::default(),
         })
     }
 
@@ -548,7 +570,7 @@ impl RemoteService {
                     ),
                 )));
             }
-            let keys = ssh.scan(&resolved).await.map_err(ssh_error)?;
+            let keys = ssh.host_keys(&target, &resolved).await.map_err(ssh_error)?;
             let key = keys[0].clone();
             let prompt = SshPrompt::Hostkey {
                 host: target.label(),
@@ -611,11 +633,41 @@ impl RemoteService {
             *c = Some(client.clone());
         }
         self.pump(conn.clone(), notes);
+        // Terminal agents' servers first: their engines are about to resume.
+        self.mcp_reclaim(&conn.host_id, &client).await;
         self.reattach(conn, &client).await;
         self.files.rewatch(&conn.host_id, &client).await;
+        self.warm_git(conn.host_id.clone());
         self.set_state(conn, HostState::Connected);
         self.watch(conn.clone(), client);
         Ok(())
+    }
+
+    /// Reads the git status of this host's folders once it's connected, so
+    /// the rail names their branches and offers worktrees (D-1602); then
+    /// says so (`remote:git`).
+    fn warm_git(self: &Arc<Self>, host: HostId) {
+        let me = self.clone();
+        tokio::spawn(async move {
+            let Ok(rows) = tandem_store::repo::workspaces::list(&me.store).await else {
+                return;
+            };
+            for ws in rows
+                .iter()
+                .filter(|w| w.kind == "ssh" && w.host_id == host.as_str())
+            {
+                let r = crate::services::remote_files::RemoteRoot {
+                    host: host.clone(),
+                    root: ws.root.clone(),
+                };
+                let _ = me.files.status(&me, &r).await;
+            }
+            me.bus.publish(BusEvent::new(
+                Topic::Remote,
+                "remote:git",
+                serde_json::json!({"hostId": host}),
+            ));
+        });
     }
 
     /// Routes the host's notifications to panes and the status service.
@@ -644,6 +696,16 @@ impl RemoteService {
                             me.files.changed(&conn.host_id, &c.id, &c.change);
                         }
                     }
+                    Some(method::MCP_OUT) => {
+                        if let Ok(l) = serde_json::from_value::<McpLine>(params) {
+                            me.mcp_event(&l.channel, McpEvent::Line(l.line));
+                        }
+                    }
+                    Some(method::MCP_CLOSED) => {
+                        if let Ok(c) = serde_json::from_value::<McpChannel>(params) {
+                            me.mcp_event(&c.channel, McpEvent::Closed);
+                        }
+                    }
                     Some(method::STATUS_EVENT) => {
                         if let Ok(ev) = serde_json::from_value::<StatusEvent>(params) {
                             if let Ok(body) =
@@ -656,6 +718,8 @@ impl RemoteService {
                     _ => {}
                 }
             }
+            // The connection went: so did the daemon's channels.
+            me.mcp_dropped(&conn.host_id);
         });
     }
 
@@ -799,6 +863,167 @@ impl RemoteService {
         }
         self.set_state(&conn, HostState::Down);
         Ok(())
+    }
+
+    // ── MCP channels (D-1604) ───────────────────────────────────────
+
+    /// Opens a channel on `host` for an engine session's MCP server; the
+    /// engine there starts `tandem-host mcp --channel <id>` to reach it.
+    pub async fn mcp_open(
+        self: &Arc<Self>,
+        host: &HostId,
+    ) -> Result<(String, mpsc::UnboundedReceiver<McpEvent>), IpcError> {
+        self.mcp_open_with(host, false).await
+    }
+
+    /// [`Self::mcp_open`]; a `keep` channel outlives a dropped connection
+    /// and is taken over again when it's back (a terminal agent's server,
+    /// which re-attaches with its PTY).
+    pub async fn mcp_open_with(
+        self: &Arc<Self>,
+        host: &HostId,
+        keep: bool,
+    ) -> Result<(String, mpsc::UnboundedReceiver<McpEvent>), IpcError> {
+        let client = self.client(host).await?;
+        let mut bytes = [0u8; 16];
+        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut bytes);
+        let channel = hex::encode(bytes);
+        let (tx, rx) = mpsc::unbounded_channel();
+        if let Ok(mut m) = self.mcp.lock() {
+            m.insert(channel.clone(), (host.clone(), tx, keep));
+        }
+        let opened: Result<Value, _> = client
+            .call(
+                method::MCP_OPEN,
+                McpChannel {
+                    channel: channel.clone(),
+                    keep,
+                },
+            )
+            .await;
+        if let Err(e) = opened {
+            self.mcp_forget(&channel);
+            return Err(rpc_error(e));
+        }
+        Ok((channel, rx))
+    }
+
+    /// Sends a line to the engine's server on `channel`; `false` when the
+    /// host isn't connected.
+    pub fn mcp_send(&self, channel: &str, line: String) -> bool {
+        let Some(host) = self.mcp_host(channel) else {
+            return false;
+        };
+        self.connected_client(&host).is_some_and(|c| {
+            c.notify(
+                method::MCP_IN,
+                McpLine {
+                    channel: channel.to_string(),
+                    line,
+                },
+            )
+            .is_ok()
+        })
+    }
+
+    /// Closes a channel: the engine's server on the host ends.
+    pub fn mcp_close(&self, channel: &str) {
+        let Some(host) = self.mcp_forget(channel) else {
+            return;
+        };
+        if let Some(c) = self.connected_client(&host) {
+            let _ = c.send(
+                method::MCP_CLOSE,
+                McpChannel {
+                    channel: channel.to_string(),
+                    keep: false,
+                },
+            );
+        }
+    }
+
+    /// Where the helper is on `host`, as an engine there starts it (its
+    /// home from the connection's hello).
+    pub fn host_bin(&self, host: &HostId) -> Option<String> {
+        let conns = self.conns.lock().ok()?;
+        let conn = conns.get(host.as_str())?;
+        let home = conn.hello.lock().ok()?.as_ref()?.home.clone();
+        Some(format!(
+            "{}/{}/tandem-host",
+            home.trim_end_matches('/'),
+            tandem_host::ssh::remote_dir()
+        ))
+    }
+
+    fn mcp_host(&self, channel: &str) -> Option<HostId> {
+        self.mcp
+            .lock()
+            .ok()?
+            .get(channel)
+            .map(|(h, _, _)| h.clone())
+    }
+
+    fn mcp_forget(&self, channel: &str) -> Option<HostId> {
+        self.mcp.lock().ok()?.remove(channel).map(|(h, _, _)| h)
+    }
+
+    fn mcp_event(&self, channel: &str, ev: McpEvent) {
+        if let Ok(m) = self.mcp.lock() {
+            if let Some((_, tx, _)) = m.get(channel) {
+                let _ = tx.send(ev);
+            }
+        }
+    }
+
+    /// The connection to `host` dropped: the daemon ended its channels, so
+    /// each one's server is gone (the engine's own run ends with it too).
+    /// Kept ones stay: the daemon holds them for the next connection.
+    fn mcp_dropped(&self, host: &HostId) {
+        if let Ok(mut m) = self.mcp.lock() {
+            m.retain(|_, (h, tx, keep)| {
+                if h == host && !*keep {
+                    let _ = tx.send(McpEvent::Closed);
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+    }
+
+    /// Back on `host`: its kept channels are taken over again, with what
+    /// their servers said meanwhile. One the daemon no longer has (it was
+    /// restarted, or its server went) is closed here.
+    async fn mcp_reclaim(&self, host: &HostId, client: &Arc<HostClient>) {
+        let kept: Vec<String> = self
+            .mcp
+            .lock()
+            .map(|m| {
+                m.iter()
+                    .filter(|(_, (h, _, keep))| h == host && *keep)
+                    .map(|(id, _)| id.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        for channel in kept {
+            let taken: Result<Value, _> = client
+                .call(
+                    method::MCP_OPEN,
+                    McpChannel {
+                        channel: channel.clone(),
+                        keep: true,
+                    },
+                )
+                .await;
+            if taken.is_err() {
+                self.mcp_event(&channel, McpEvent::Closed);
+                self.mcp_forget(&channel);
+            }
+        }
+    }
+
+    fn connected_client(&self, host: &HostId) -> Option<Arc<HostClient>> {
+        self.conns.lock().ok()?.get(host.as_str())?.client()
     }
 
     /// The connected client for a host, connecting first when needed
@@ -1428,5 +1653,154 @@ mod tests {
         assert!(svc.files.watched().is_empty());
         pty.kill(&pane).expect("kill");
         svc.disconnect(&host.id).await.expect("disconnect");
+    }
+
+    /// Two host entries that reach the same `user@host:port` (two aliases,
+    /// or two hosts behind one jump) share a pinned key but not a master:
+    /// both connect, and disconnecting one leaves the other as it was.
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "needs the sshd compose service (profile remote)"]
+    async fn f_rm_01_app_two_hosts_for_one_target_both_connect() {
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let dir = tempfile::tempdir().expect("tmp");
+        let data = tandem_core::DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = Store::open(&data).expect("store");
+        let bus = EventBus::new();
+        // Two aliases in the user's config for one `tandem@127.0.0.1:2222`.
+        let config = dir.path().join("ssh_config");
+        std::fs::write(
+            &config,
+            format!(
+                "Host same-a same-b\n  HostName 127.0.0.1\n  Port 2222\n  User tandem\n  IdentityFile {}\n  IdentitiesOnly yes\n",
+                repo.join("infra/ssh/id_ed25519").display()
+            ),
+        )
+        .expect("config");
+        std::env::set_var("TANDEM_SSH_CONFIG", &config);
+        let status = StatusService::new(bus.clone(), Arc::new(tandem_core::clock::SystemClock));
+        let svc = RemoteService::new(
+            store.clone(),
+            bus.clone(),
+            &data,
+            repo.join("apps/desktop/src-tauri/resources/tandem-host"),
+            PtyManager::new(),
+            status,
+        );
+        std::env::remove_var("TANDEM_SSH_CONFIG");
+        let add = |alias: &str| {
+            hosts::add_ssh(
+                &store,
+                hosts::NewSshHost {
+                    label: alias.into(),
+                    target: alias.into(),
+                    port: None,
+                    identity_file: None,
+                },
+            )
+        };
+        let a = add("same-a").await.expect("a");
+        let b = add("same-b").await.expect("b");
+        assert_ne!(a.id, b.id);
+        let mut events = bus.subscribe(Topic::Remote);
+        let approver = svc.clone();
+        let saw = Arc::new(Mutex::new(Vec::<(String, String, Option<String>)>::new()));
+        let seen = saw.clone();
+        tokio::spawn(async move {
+            while let Ok(ev) = events.recv().await {
+                if ev.name == "remote:ssh" {
+                    if let Ok(p) = serde_json::from_value::<SshProgress>(ev.payload) {
+                        seen.lock().expect("seen").push((
+                            p.host_id.as_str().to_string(),
+                            p.stage.clone(),
+                            p.error.as_ref().map(|e| e.message.clone()),
+                        ));
+                        if matches!(p.prompt, Some(SshPrompt::Hostkey { .. })) {
+                            approver.decide_host_key(&p.op_id, true);
+                        }
+                    }
+                }
+            }
+        });
+        let ended = |h: &HostId| {
+            let h = h.as_str().to_string();
+            let saw = saw.clone();
+            move || {
+                saw.lock()
+                    .expect("saw")
+                    .iter()
+                    .any(|(id, st, _)| *id == h && (st == "connected" || st == "failed"))
+            }
+        };
+        svc.connect(a.id.clone());
+        assert!(
+            tandem_pty::wait_until(Duration::from_secs(60), ended(&a.id)),
+            "{:?}",
+            saw.lock().expect("saw")
+        );
+        svc.connect(b.id.clone());
+        assert!(
+            tandem_pty::wait_until(Duration::from_secs(60), ended(&b.id)),
+            "{:?}",
+            saw.lock().expect("saw")
+        );
+        assert_eq!(
+            svc.state(&a.id),
+            HostState::Connected,
+            "{:?}",
+            saw.lock().expect("saw")
+        );
+        assert_eq!(
+            svc.state(&b.id),
+            HostState::Connected,
+            "{:?}",
+            saw.lock().expect("saw")
+        );
+        svc.call::<serde_json::Value>(
+            &b.id,
+            method::HELLO,
+            serde_json::to_value(Hello {
+                protocol: PROTOCOL,
+                client_version: VERSION.into(),
+            })
+            .expect("hello"),
+        )
+        .await
+        .expect("b answers");
+        let mut host_events = bus.subscribe(Topic::Remote);
+        let states = Arc::new(Mutex::new(Vec::<String>::new()));
+        let st = states.clone();
+        let a_id = a.id.clone();
+        tokio::spawn(async move {
+            while let Ok(ev) = host_events.recv().await {
+                if ev.name == "remote:host" {
+                    if let Ok(h) = serde_json::from_value::<HostEvent>(ev.payload) {
+                        if h.host_id == a_id {
+                            st.lock().expect("st").push(format!("{:?}", h.state));
+                        }
+                    }
+                }
+            }
+        });
+        svc.disconnect(&b.id).await.expect("disconnect b");
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        // Not even a "Reconnecting…": b's master was its own.
+        assert!(
+            states.lock().expect("st").is_empty(),
+            "dropping b touched a: {:?}",
+            states.lock().expect("st")
+        );
+        assert_eq!(svc.state(&a.id), HostState::Connected);
+        svc.call::<serde_json::Value>(
+            &a.id,
+            method::HELLO,
+            serde_json::to_value(Hello {
+                protocol: PROTOCOL,
+                client_version: VERSION.into(),
+            })
+            .expect("hello"),
+        )
+        .await
+        .expect("a still answers");
+        svc.disconnect(&a.id).await.expect("disconnect a");
     }
 }

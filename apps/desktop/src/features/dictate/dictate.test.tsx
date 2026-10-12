@@ -8,13 +8,13 @@ import { setInvokeBackend } from "../../ipc/invoke";
 import { useDictate, watchDictate } from "../../stores/dictate";
 import { fakeBackend, resetStores } from "../../test/fakeBackend";
 import { bindingFrom, keyName, presets } from "./binding";
-import { DictateExtras, ShortcutField } from "./DictatePage";
+import { DictateExtras, MicSelect, ShortcutField } from "./DictatePage";
 import { EngineControl } from "./EngineControl";
 import { AutoEnhanceControl, FormattingControl } from "./EnhanceControls";
 import { useSettings } from "../../stores/settings";
 import { useSession } from "../../stores/session";
 import { useUi } from "../../stores/ui";
-import { TryIt } from "./DictateSetup";
+import { Permissions, TryIt } from "./DictateSetup";
 import { DictionarySheet } from "./DictionarySheet";
 import { HistorySheet } from "./HistorySheet";
 import { ModelManager } from "./ModelManager";
@@ -94,6 +94,13 @@ describe("Dictate widget (F-DI-07, UI-60)", () => {
     act(() => emitLocal("dictate:state", { state: "inserted", takeId: "take_1", handsFree: false, composer: null, words: 42 }));
     await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Inserted · 42 words"));
     expect(clock(65_000)).toBe("1:05");
+  });
+
+  it("F-DI-07 a widget opened mid-take shows the take (D-519)", async () => {
+    fakeBackend({ dictate_status: () => ({ ...STATUS, state: "recording" }) });
+    wrap(<DictateWidget />);
+    await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Listening"));
+    expect(screen.getByTestId("widget-timer").textContent).toBe("0:00");
   });
 
   it("F-DI-07.2 an error toast renders with its full diagnostic in the tooltip", async () => {
@@ -191,6 +198,22 @@ describe("Dictate setup (F-DI-11)", () => {
     expect(screen.queryByTestId("dictate-key-detected")).toBeNull();
     act(() => emitLocal("dictate:verified", null));
     await waitFor(() => expect(screen.getByTestId("dictate-key-detected")).toBeTruthy());
+  });
+});
+
+describe("Microphone choice (F-DI-03)", () => {
+  it("D-518 an unset microphone shows its label in the trigger, not a blank", async () => {
+    fakeBackend({
+      dictate_devices: () => ({ devices: [{ id: "mic1", name: "Desk Mic", isDefault: true, bluetooth: false, loopback: false }], chosen: null }),
+    });
+    wrap(
+      <>
+        <MicSelect k="dictate_mic" label="Microphone" none="None" />
+        <MicSelect k="dictate_backup_mic" label="Backup microphone" none="None" />
+      </>,
+    );
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Microphone" }).textContent).toContain("System default (Desk Mic)"));
+    expect(screen.getByRole("combobox", { name: "Backup microphone" }).textContent).toContain("None");
   });
 });
 
@@ -447,5 +470,36 @@ describe("Setup without a global hotkey (F-DI-11, D-515)", () => {
     act(() => emitLocal("dictate:verified", null));
     await waitFor(() => expect(screen.getByTestId("dictate-key-detected")).toBeTruthy());
     expect(screen.queryByTestId("dictate-try-link")).toBeNull();
+  });
+});
+
+describe("macOS permissions (F-DI-03, D-2108)", () => {
+  it("F-DI-03 the microphone has a row, Grant goes to the core, and Quit & Reopen waits for the hotkey", async () => {
+    const calls = fakeBackend({
+      dictate_permissions: () => ({ mic: "unknown", inputMonitoring: "granted", accessibility: "denied" }),
+    });
+    useDictate.setState({ status: STATUS });
+    wrap(<Permissions />);
+    await waitFor(() => expect(screen.getByTestId("dictate-grant-microphone")).toBeTruthy());
+    expect(screen.getByTestId("dictate-grant-accessibility")).toBeTruthy();
+    expect(screen.queryByTestId("dictate-grant-input_monitoring")).toBeNull();
+    // The hotkey already runs: nothing to reopen for.
+    expect(screen.queryByText("Quit & Reopen")).toBeNull();
+    fireEvent.click(screen.getByTestId("dictate-grant-microphone"));
+    await waitFor(() =>
+      expect(calls.some((c) => c.cmd === "dictate_open_permission_settings" && c.args?.kind === "microphone")).toBe(true),
+    );
+    act(() => useDictate.setState({ status: { ...STATUS, hotkey: { kind: "needs_permission" } } }));
+    await waitFor(() => expect(screen.getByText("Quit & Reopen")).toBeTruthy());
+  });
+
+  it("F-DI-03 shows nothing where the OS has no such permissions", async () => {
+    const calls = fakeBackend({
+      dictate_permissions: () => ({ mic: "not_needed", inputMonitoring: "not_needed", accessibility: "not_needed" }),
+    });
+    useDictate.setState({ status: STATUS });
+    const { container } = wrap(<Permissions />);
+    await waitFor(() => expect(calls.some((c) => c.cmd === "dictate_permissions")).toBe(true));
+    expect(container.textContent).toBe("");
   });
 });

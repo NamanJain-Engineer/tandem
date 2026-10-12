@@ -91,21 +91,27 @@ describe("downloads and discovery (F-WB-04)", () => {
     expect(Object.keys(schema.properties)).toEqual(Object.keys(siteInfo()));
   });
 
-  it("F-WB-04 each download shows the SHA-256 from the release manifest, which is the file's own", () => {
-    const sums = releaseChecksums();
-    const page = renderToStaticMarkup(<DownloadPage />);
-    for (const [, assets] of releaseAssets()) {
-      for (const a of assets) {
-        const file = readFileSync(join(process.cwd(), "public/downloads", a.file));
-        expect(createHash("sha256").update(file).digest("hex"), a.file).toBe(sums.get(a.file));
-        expect(page).toContain(`data-sha256="${a.file}"`);
-        expect(page).toContain(a.sha256);
+  // It hashes every served package (a .deb and an .rpm, about 70 MB), which
+  // under the gate's parallel load can outlast vitest's 5 s default.
+  it(
+    "F-WB-04 each download shows the SHA-256 from the release manifest, which is the file's own",
+    { timeout: 60_000 },
+    () => {
+      const sums = releaseChecksums();
+      const page = renderToStaticMarkup(<DownloadPage />);
+      for (const [, assets] of releaseAssets()) {
+        for (const a of assets) {
+          const file = readFileSync(join(process.cwd(), "public/downloads", a.file));
+          expect(createHash("sha256").update(file).digest("hex"), a.file).toBe(sums.get(a.file));
+          expect(page).toContain(`data-sha256="${a.file}"`);
+          expect(page).toContain(a.sha256);
+        }
       }
-    }
-    expect(siteInfo().platforms.find((p) => p.os === "linux")?.downloads[0]?.sha256).toBe(
-      sums.get(DOWNLOADS.find((d) => d.os === "linux")?.assets[0]?.file ?? ""),
-    );
-  });
+      expect(siteInfo().platforms.find((p) => p.os === "linux")?.downloads[0]?.sha256).toBe(
+        sums.get(DOWNLOADS.find((d) => d.os === "linux")?.assets[0]?.file ?? ""),
+      );
+    },
+  );
 
   it("F-WB-04 a build missing from the manifest fails the build instead of showing no checksum", () => {
     expect(() => releaseAssets(new Map())).toThrow(/not in public\/downloads\/SHA256SUMS.txt/);

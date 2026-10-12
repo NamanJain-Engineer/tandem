@@ -49,6 +49,7 @@ export const FEATURE_LIMITS = {
   voice_session: { capacity: 10, windowMs: 3_600_000 },
   voice_act: { capacity: 60, windowMs: 60_000 },
   voice_resolve: { capacity: 30, windowMs: 60_000 },
+  push: { capacity: 60, windowMs: 60_000 },
 } as const;
 
 export async function takeForUser(

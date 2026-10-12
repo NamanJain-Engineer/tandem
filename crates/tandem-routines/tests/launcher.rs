@@ -28,10 +28,13 @@ fn f_rt_03_1_launchd_writes_the_plist_and_bootstraps_it_then_removes_it() {
     assert_eq!(status.kind, LauncherKind::Launchd);
     let plist = dir
         .path()
-        .join("Library/LaunchAgents/app.tandem.routines.plist");
+        .join("Library")
+        .join("LaunchAgents")
+        .join("app.tandem.routines.plist");
+    // Compared as paths: the tests also run on Windows, where `/` and `\` mix.
     assert_eq!(
-        status.path.as_deref(),
-        Some(plist.to_string_lossy().as_ref())
+        status.path.as_deref().map(std::path::Path::new),
+        Some(plist.as_path())
     );
     let body = std::fs::read_to_string(&plist).expect("plist");
     for needle in [
@@ -41,7 +44,13 @@ fn f_rt_03_1_launchd_writes_the_plist_and_bootstraps_it_then_removes_it() {
         "<integer>300</integer>",
         "<key>RunAtLoad</key>\n  <false/>",
         "<string>Background</string>",
-        "<string>/data/logs/routines-launchd.log</string>",
+        &format!(
+            "<string>{}</string>",
+            spec(None)
+                .logs
+                .join("routines-launchd.log")
+                .to_string_lossy()
+        ),
         "<key>TANDEM_HOME</key>\n    <string>/tmp/h</string>",
     ] {
         assert!(body.contains(needle), "plist has {needle}:\n{body}");
@@ -274,4 +283,32 @@ fn f_rt_03_1_platform_launcher_picks_this_os() {
         LauncherKind::Systemd
     };
     assert_eq!(l.kind(), want);
+}
+
+/// F-RT-03 with a Microsoft Store install: the task runs the execution alias.
+#[test]
+fn f_rt_03_a_store_install_runs_through_its_execution_alias() {
+    let exe = PathBuf::from("C:/Program Files/WindowsApps/Vibezeo_1/tandem.exe");
+    let local = PathBuf::from("C:/Users/ana/AppData/Local");
+    assert_eq!(
+        launcher_program(exe.clone(), None, true, Some(local.clone())),
+        local
+            .join("Microsoft")
+            .join("WindowsApps")
+            .join(STORE_ALIAS)
+    );
+    // Unpackaged (NSIS, MSI): the executable itself.
+    assert_eq!(launcher_program(exe.clone(), None, false, Some(local)), exe);
+    // No LOCALAPPDATA: nothing better than the executable.
+    assert_eq!(launcher_program(exe.clone(), None, true, None), exe);
+    // An AppImage wins; an empty APPIMAGE doesn't count.
+    let image = PathBuf::from("/opt/Vibezeo.AppImage");
+    assert_eq!(
+        launcher_program(exe.clone(), Some(image.clone()), false, None),
+        image
+    );
+    assert_eq!(
+        launcher_program(exe.clone(), Some(PathBuf::new()), false, None),
+        exe
+    );
 }

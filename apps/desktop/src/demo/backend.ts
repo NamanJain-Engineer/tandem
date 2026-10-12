@@ -1084,6 +1084,19 @@ export class DemoCore {
           code: "unavailable",
           message: "The demo keeps nothing: what you do here stays in this page and goes when you close it.",
         };
+      // Conductor's memory is a file on the user's computer (F-CN-06); the
+      // demo has none, and the wake phrase needs the app's microphone (F-CN-07).
+      case "conductor_memory_get":
+        return { enabled: false, text: "", facts: [], proposals: [], path: "~/.tandem/conductor/memory.md" };
+      case "conductor_memory_save":
+      case "conductor_memory_clear":
+      case "conductor_memory_resolve":
+        throw {
+          code: "unavailable",
+          message: "Conductor's memory lives in a file on your computer, so the demo can't keep one.",
+        };
+      case "conductor_wake_status":
+        return { state: { state: "unavailable", reason: "not_built" }, unavailable: "not_built" };
       // Find work reads real terminals and threads on this computer (F-CN-05).
       case "find_work":
         throw {
@@ -1195,10 +1208,16 @@ export class DemoCore {
       case "phone_arm_state":
       case "phone_arm_approvals":
         return { armedUntil: null };
+      // Local-network pairing is off here: the shape the section reads, so it
+      // doesn't sit loading, and an honest refusal to turn it on (F-RM-04).
+      case "phone_lan_state":
+        return { enabled: false, running: false, port: 47800, addresses: [], error: null };
+      case "phone_lan_set":
       case "phone_pair_begin":
         throw {
           code: "unavailable",
-          message: "Pairing a phone is part of Pro, so it works in the app, not in this demo.",
+          message:
+            "A phone pairs with the app, over your own network or with a Pro account, so it works in the app, not in this demo.",
         };
       case "scratchpad_list":
         return this.notes.list();

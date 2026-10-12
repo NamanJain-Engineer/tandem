@@ -1,0 +1,12 @@
+{
+  "phrase": "Hey Conductor",
+  "sensitivity": "medium",
+  "trueClips": 10,
+  "trueTriggers": 9,
+  "noiseMinutes": 30,
+  "falseTriggers": 0,
+  "nearMissClips": 18,
+  "nearMissTriggers": 0,
+  "passed": true,
+  "method": "Synthetic clips (scripts/gen-wake-fixtures.py, Piper LibriTTS-R voices) from speakers held out of tuning; 30 minutes built by wake::bench::speech_noise (seed 0x0C0D0C70). An earlier synthetic sample of 10 held-out speakers triggered 7 of 10 (D-1202), so the margin is thin; the benchmark on real hardware is in HUMAN_TODO."
+}

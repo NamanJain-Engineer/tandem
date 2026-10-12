@@ -1,8 +1,10 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const desktop = new URL("..", import.meta.url).pathname;
+const WIN = process.platform === "win32";
+const desktop = fileURLToPath(new URL("..", import.meta.url));
 /** The app inherits the driver's environment. Give it what a desktop
  * session has, not the test runner's (CI and agent variables would reach
  * every pane), and the run's minimal PATH (no engines installed on this
@@ -10,7 +12,9 @@ const desktop = new URL("..", import.meta.url).pathname;
 function appEnv(): NodeJS.ProcessEnv {
   const keep = /^(HOME|USER|LOGNAME|SHELL|LANG|LC_[A-Z]+|TZ|TMPDIR|DISPLAY|XAUTHORITY|WAYLAND_DISPLAY|DBUS_SESSION_BUS_ADDRESS|XDG_[A-Z_]+|TANDEM_[A-Z0-9_]+|RUST_BACKTRACE|RUST_LOG|WEBKIT_[A-Z_]+|GDK_[A-Z_]+|LIBGL_[A-Z_]+|NO_AT_BRIDGE|PLAYWRIGHT_[A-Z_]+)$/;
   const env: NodeJS.ProcessEnv = {};
-  for (const [k, v] of Object.entries(process.env)) if (keep.test(k)) env[k] = v;
+  // What a Windows session needs (WebView2 doesn't start without SystemRoot).
+  const keepWindows = /^(SYSTEMROOT|WINDIR|COMSPEC|PATHEXT|TEMP|TMP|USERPROFILE|USERNAME|USERDOMAIN|APPDATA|LOCALAPPDATA|PROGRAMDATA|PROGRAMFILES|PROGRAMFILES\(X86\)|COMMONPROGRAMFILES|HOMEDRIVE|HOMEPATH|SYSTEMDRIVE|COMPUTERNAME|OS|PROCESSOR_ARCHITECTURE|NUMBER_OF_PROCESSORS|WEBVIEW2_[A-Z_]+)$/i;
+  for (const [k, v] of Object.entries(process.env)) if (keep.test(k) || (WIN && keepWindows.test(k))) env[k] = v;
   env.PATH = process.env.TANDEM_APP_PATH ?? process.env.PATH;
   return env;
 }
@@ -39,8 +43,13 @@ export const config: WebdriverIO.Config = {
   onPrepare: () =>
     new Promise<void>((resolve) => {
       // Found on the test runner's PATH; the app then gets the minimal one.
-      const bin = execFileSync("sh", ["-c", "command -v tauri-driver"], { encoding: "utf8" }).trim();
-      driver = spawn(bin, [], { stdio: [null, process.stdout, process.stderr], env: appEnv() });
+      const bin = WIN
+        ? (execFileSync("where", ["tauri-driver"], { encoding: "utf8" }).split(/\r?\n/)[0] ?? "").trim()
+        : execFileSync("sh", ["-c", "command -v tauri-driver"], { encoding: "utf8" }).trim();
+      // Windows: tauri-driver drives WebView2 through msedgedriver, which
+      // must match the installed WebView2 (D-1714).
+      const native = WIN && process.env.TANDEM_NATIVE_DRIVER ? ["--native-driver", process.env.TANDEM_NATIVE_DRIVER] : [];
+      driver = spawn(bin, native, { stdio: [null, process.stdout, process.stderr], env: appEnv() });
       setTimeout(resolve, 1500);
     }),
   onComplete: () => {

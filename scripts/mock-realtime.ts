@@ -21,7 +21,8 @@
  * - `POST /__close`: the provider hangs up the newest socket.
  * - `GET /__state`: connections, open sockets, the audio received (ms, and
  *   ms above a speech threshold), whether a session was configured with the
- *   one `act` tool, and every function output so far.
+ *   one `act` tool (and the voice and instructions it was given), and every
+ *   function output so far.
  * - `POST /__reset`
  *
  * No dependencies: a small RFC 6455 server on node:http.
@@ -47,6 +48,9 @@ type Conn = {
   tools: string[];
   samples: number;
   voiced: number;
+  speed: number;
+  voice: string | null;
+  instructions: string;
   buffer: Buffer;
 };
 
@@ -117,8 +121,19 @@ function onMessage(c: Conn, text: string): void {
   }
   switch (m.type) {
     case "session.update": {
-      const session = (m.session ?? {}) as { tools?: Array<{ name?: string }> };
+      const session = (m.session ?? {}) as {
+        tools?: Array<{ name?: string }>;
+        speed?: number;
+        voice?: string | null;
+        instructions?: string;
+      };
+      if (typeof session.speed === "number") {
+        c.speed = session.speed;
+        break;
+      }
       c.configured = true;
+      c.voice = session.voice ?? null;
+      c.instructions = String(session.instructions ?? "");
       c.tools = (session.tools ?? []).map((t) => String(t.name ?? ""));
       send(c, { type: "session.ready" });
       break;
@@ -174,6 +189,9 @@ function upgrade(req: IncomingMessage, socket: Duplex): void {
     tools: [],
     samples: 0,
     voiced: 0,
+    speed: 1,
+    voice: null,
+    instructions: "",
     buffer: Buffer.alloc(0),
   };
   setTimeout(() => {
@@ -241,6 +259,9 @@ const server = createServer(async (req, res) => {
       tools: c?.tools ?? [],
       audioMs: ms(c?.samples ?? 0),
       voicedMs: ms(c?.voiced ?? 0),
+      speed: c?.speed ?? 1,
+      voice: c?.voice ?? null,
+      instructions: c?.instructions ?? "",
       outputs,
     });
   }

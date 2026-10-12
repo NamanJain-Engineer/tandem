@@ -37,6 +37,8 @@ chrono.workspace = true
 rusqlite.workspace = true
 regex.workspace = true
 futures.workspace = true
+httparse.workspace = true
+if-addrs.workspace = true
 hex.workspace = true
 rand.workspace = true
 reqwest.workspace = true
@@ -82,10 +84,19 @@ webkit2gtk = { version = "=2.0", features = ["v2_40"] }
 
 [dev-dependencies]
 ed25519-dalek.workspace = true
+# Parses Info.plist and Entitlements.plist in the macOS bundle test (D-2101);
+# already in the tree through tauri.
+plist = "1"
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
 [features]
+default = ["os-audio"]
+# The OS microphone and chimes (cpal; CoreAudio on macOS). Off only in
+# scripts/agent/check-cross.sh: cpal's macOS bindings need Apple's SDK, so
+# without it the rest of the app still type-checks for macOS from Linux
+# (D-2105). Release builds always have it.
+os-audio = ["tandem-voice/cpal"]
 # Tauri uses this to switch between dev server and bundled assets.
 custom-protocol = ["tauri/custom-protocol"]
 # The gateway's test vendor modules (`test_echo` …), for E2E builds only.

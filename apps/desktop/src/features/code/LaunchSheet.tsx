@@ -290,8 +290,8 @@ function LaunchSheetBody({ workspaceId }: { workspaceId: string }) {
   const { show } = useToast();
 
   const engine = defaultEngine(engines);
-  // Worktrees use this computer's git, so a remote folder launches shared.
-  const repo = isRepo(ws) && !remote;
+  // A host's worktrees are made by its git (D-1602); a WSL folder has none yet.
+  const repo = isRepo(ws) && ws?.kind !== "wsl";
   const [presetId, setPresetId] = useState(SOLO);
   const [seats, setSeats] = useState<Seat[]>(() => [agentSeat(engine)]);
   const [isolation, setIsolation] = useState<Isolation>("shared");
@@ -433,7 +433,7 @@ function LaunchSheetBody({ workspaceId }: { workspaceId: string }) {
               : c.shells > 0
                 ? t("launch.worktreesShellNote")
                 : undefined
-            : remote
+            : ws?.kind === "wsl"
               ? t("worktree.remote")
               : t("launch.needsRepo")
         }

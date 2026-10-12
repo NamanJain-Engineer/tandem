@@ -5,7 +5,8 @@
 //!   before it's offered as "Restart to update". Never a lower version.
 //! - Stages are reported as `updates:state`; a failure names its stage
 //!   (download, verify, install). Updates never ask for a plan.
-//! - deb installs are managed by the package manager: no checks.
+//! - deb installs and Microsoft Store (MSIX) installs are managed by the
+//!   package manager or the Store: no checks (D-1713).
 //! - `x-tandem-min-version` above this version starts a 72 h grace, after
 //!   which the unsupported-version overlay is modal (UI-131).
 //!

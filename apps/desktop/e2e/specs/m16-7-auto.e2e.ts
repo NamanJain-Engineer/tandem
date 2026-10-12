@@ -6,6 +6,7 @@ import {
   freshUser,
   invoke,
   paneIds,
+  paneStatus,
   sendToPane,
   split,
   waitForPaneText,
@@ -26,13 +27,18 @@ async function runOn(pane: string): Promise<AutoRunView | undefined> {
 
 async function until(pane: string, ok: (r: AutoRunView) => boolean, what: string, timeout = 30_000): Promise<AutoRunView> {
   let last: AutoRunView | undefined;
-  await browser.waitUntil(
-    async () => {
-      last = await runOn(pane);
-      return last !== undefined && ok(last);
-    },
-    { timeout, interval: 200, timeoutMsg: `${what}: ${JSON.stringify(last)}` },
-  );
+  try {
+    await browser.waitUntil(
+      async () => {
+        last = await runOn(pane);
+        return last !== undefined && ok(last);
+      },
+      { timeout, interval: 200 },
+    );
+  } catch {
+    // The run as last seen and the pane's status, not the state before polling.
+    throw new Error(`${what}: ${JSON.stringify(last)}; pane status "${await paneStatus(pane)}"`);
+  }
   return last as AutoRunView;
 }
 
@@ -145,7 +151,9 @@ describe("E2E-M16-7 Auto", () => {
     this.timeout(90_000);
     agent = await split("right", "claude");
     await waitForPaneText(agent, "Fake Claude Code");
-    await waitForStatus(agent, "idle").catch(() => undefined);
+    // Auto only asks the supervisor once the agent is at its prompt; under a
+    // loaded full run the new pane's first status can take a while.
+    await waitForStatus(agent, "idle", 45_000);
     await testRoute("credits", { email, monthly: 0, purchased: 0 });
     await waitForEntitlement((e) => e.credits?.monthly === 0, "0 credits");
     const mark = fakeLog().length;

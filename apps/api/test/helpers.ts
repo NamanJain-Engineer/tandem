@@ -29,7 +29,7 @@ export type TestEnv = Awaited<ReturnType<typeof makeTestApp>>;
 
 export async function makeTestApp(
   envOverrides: Record<string, string> = {},
-  overrides: Partial<Pick<Deps, "ssoNet">> = {},
+  overrides: Partial<Pick<Deps, "ssoNet" | "push">> = {},
 ) {
   const env = loadEnv({
     NODE_ENV: "test",

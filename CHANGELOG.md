@@ -7,6 +7,127 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## 0.7.0
+
+Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora. macOS
+and Windows are next. Like 0.6.0, this build runs the Free plan on your
+computer, with no account and nothing sent to our servers.
+
+Plan limits in this build (Free): 4 live panes, 3 workspaces, one thread at a
+time, one account per engine, threads with Claude Code and Codex, one teammate
+besides Lead, and one plugin connection.
+
+### Added
+
+- [lin] **Worktree setup.** "Worktree setup…" in a repository's menu (or
+  any of its worktrees') says what each new worktree gets, saved as
+  `.vibezeo/worktree.json` in the repository so you can commit and share it.
+  Files matching its patterns, written as in `.gitignore` (such as `.env*`),
+  are copied from your main checkout into every new worktree; files the
+  worktree already has are never overwritten, and the copy stops at 2,000
+  files or 512 MB. A setup command, such as `pnpm install`, runs in a new
+  terminal in worktrees you make with New worktree or the launch sheet (it
+  counts toward Free's 4 live panes), and a teardown command runs before
+  Discard worktree deletes the folder, for up to 2 minutes. Commands run only
+  once you've trusted them on this computer: saving them in Worktree setup
+  trusts them, and a file that arrives or changes some other way, such as in
+  a pull, is shown for review first, with nothing run until you choose
+  "Trust and run".
+- [lin] **Review comments to the agent.** In a worktree's diff, comment on
+  any line, then "Send to agent" types all the comments into the agent
+  running in that worktree's pane as one message, with each file, line and
+  the line's text. With no agent running there, "Copy review" copies the
+  same text.
+- [lin] **Overlap check.** "Check overlap…" in a worktree's menu lists the
+  other worktrees of the repository that changed the same files, and
+  forecasts whether merging into the repository's current branch would
+  conflict. The merge confirmation shows the same forecast. The forecast
+  uses your git (2.38 or later), leaves your checkout untouched, and covers
+  committed work only.
+- [lin] **Merge requests on GitLab.** For a worktree whose `origin` is on a
+  GitLab host, "Create pull request" becomes "Create merge request" and runs
+  `glab mr create` (needs the GitLab CLI). Worktrees aren't available in WSL
+  folders yet; on SSH hosts they don't have setup, the overlap check or
+  merge requests.
+- [lin] **Worktrees on SSH hosts.** In a git repository on a host, New
+  worktree and the launch sheet's Fleet preset make each worktree on the
+  host, under `<repo>/.tandem/worktrees/<name>` on a `tandem/<name>` branch,
+  as they do locally. Diff, merge and cleanup run there with the host's own
+  git; a worktree's pull request needs the GitHub CLI (`gh`) on the host.
+- [lin] **Best of N on SSH hosts.** "Best of N…" works in a repository on a
+  host: each agent gets its own worktree there, Compare shows their
+  changes, your check command runs in each worktree in your login shell on
+  the host, and "Keep this one…" commits the winner with the host's git and
+  identity, merges it and removes the other worktrees (their branches
+  stay). The agents count against Free's 4 live panes.
+- [lin] **Plugins and tasks for agents on SSH hosts.** A thread on a host
+  can use the plugins you grant it and your tasks, as a local thread does.
+  Its tool calls come back to this computer over the same connection:
+  plugin approvals show here, plugin sign-ins and your task list stay here,
+  and no port is opened on either machine. An agent terminal on a host
+  (Claude Code or Codex) gets the task tools too, for that run only,
+  without anything written into the host's own config, and they keep
+  working when the connection drops and comes back. As on this computer,
+  agent terminals don't get plugins. On Free you can connect one plugin;
+  the task tools are included, and running a task with "Execute…" needs
+  Pro.
+- [lin] **Hosts behind a jump host.** Hosts reached through `ProxyJump` or
+  `ProxyCommand` in your SSH config now connect. Vibezeo reads the host's
+  key through the jump for you to check before connecting, and the jump
+  host itself is reached and checked as your own config and `known_hosts`
+  say.
+- [lin] **Your phone, over your own network.** Settings › Remote › Local
+  network › "Pair over your local network" (off until you turn it on) lets a
+  phone pair with no account, on the Free plan. "Pair a phone on this network"
+  shows a QR code (valid 10 minutes); scanning it with the phone's camera
+  opens Vibezeo's phone web app, which your computer serves at
+  `http://<its address>:47800/remote`. Everything between them is end-to-end
+  encrypted. Vibezeo listens only on your computer's home or office network
+  and VPN addresses (such as Tailscale's), never on a public address. The
+  phone and computer must be on the same network or VPN, and a firewall must
+  allow port 47800. The Android and iOS apps aren't out yet.
+- [lin] A paired phone can see each agent's status and latest activity; deny
+  approvals, or allow them (an allow waits for you to confirm in Settings ›
+  Remote unless "Allow approvals from phone for the next 8 hours" is on); read
+  threads and teammate chats and send to them; type into agent panes, never
+  plain shells; and, with Pro's routines, run a routine now. Viewing comes
+  with pairing; sending, typing, approvals and routines are each off per phone
+  until you turn them on in Settings › Remote. The page refreshes while it's
+  open; there are no notifications when it's closed.
+- [lin] To unpair, use "Unpair this phone" on the phone, or Revoke (or "Reset
+  remote access…") in Settings › Remote; the computer forgets the phone's keys
+  and refuses it. Turning the switch off disconnects phones without unpairing
+  them.
+
+### Changed
+
+- [lin] **Dictate starts lighter.** Its widget window is created on your
+  first take and closed after 10 minutes without one, so Vibezeo starts with
+  about 120 MB less memory, unless Show widget is set to Always. The first
+  take after launch can show the pill a moment later; recording starts at
+  once either way.
+
+### Fixed
+
+- [lin] "Create pull request" now types `gh pr create` into its terminal, and
+  a launch-sheet shell with a command now runs it. In 0.6.0 those terminals
+  could open at the prompt without the command being typed.
+- [lin] Two hosts in Settings › Remote that reach the same machine (two
+  aliases for one `user@host:port`, or two hosts behind one jump) no longer
+  drop each other: disconnecting or removing one used to cut the other's
+  connection too.
+- [lin] A `tandem://` link opened while Vibezeo was already running was
+  handled twice, so on Wayland the Dictate toggle link started a take and
+  stopped it at once.
+- [lin] Settings › Dictate's Microphone showed nothing when the system
+  default was in use; it now says "System default".
+- [lin] Dialogs, the command palette and command recall opened shifted up
+  and to the left by half their size, then jumped to their place as they
+  finished opening. They now open in place.
+- [lin] Typing a confirmation, such as a worktree's branch name to discard
+  it, could lose what you'd typed when a terminal started behind the
+  dialog. Terminals now leave the keyboard alone while a confirm is open.
+
 ## 0.6.0
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora. macOS

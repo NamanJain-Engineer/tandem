@@ -48,14 +48,33 @@ impl PhoneGrants {
 /// Every command the phone can send. Nothing here forces a lane removal,
 /// enables Full access, runs a shell command or answers a local-review
 /// prompt (F-TL-06 rule 5; `tests/invariants/tests/rule_5.rs`).
-pub const PHONE_COMMANDS: [&str; 6] = [
+pub const PHONE_COMMANDS: [&str; 8] = [
     "view.snapshot",
     "thread.read",
     "thread.send",
     "pane.type",
     "approval.decide",
     "routine.run_now",
+    "push.register",
+    "push.unregister",
 ];
+
+/// Where the phone's push token comes from (F-RM-06).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PushPlatform {
+    Fcm,
+    Apns,
+}
+
+impl PushPlatform {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PushPlatform::Fcm => "fcm",
+            PushPlatform::Apns => "apns",
+        }
+    }
+}
 
 /// The most a phone may type or send in one command.
 pub const MAX_PHONE_TEXT: usize = 16 * 1024;
@@ -91,6 +110,14 @@ pub enum PhoneCommand {
     RoutineRunNow {
         routine_id: String,
     },
+    /// Turns push on for this phone: its token and a fresh 32-byte key that
+    /// seals every alert (F-RM-06, D-2021).
+    PushRegister {
+        platform: PushPlatform,
+        token: String,
+        key: [u8; 32],
+    },
+    PushUnregister,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -136,6 +163,14 @@ struct ApprovalArgs {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RoutineArgs {
     routine_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PushArgs {
+    platform: PushPlatform,
+    token: String,
+    key: String,
 }
 
 fn args<T: serde::de::DeserializeOwned>(v: Value) -> Result<T, CommandError> {
@@ -225,6 +260,27 @@ impl PhoneCommand {
                     routine_id: a.routine_id,
                 }
             }
+            "push.register" => {
+                let a: PushArgs = args(raw)?;
+                let token_ok = a.token.len() >= 8
+                    && a.token.len() <= 4096
+                    && a.token.chars().all(|c| c.is_ascii_graphic());
+                if !token_ok {
+                    return Err(CommandError::Invalid("That push token isn't valid."));
+                }
+                use base64::Engine;
+                let key: [u8; 32] = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(&a.key)
+                    .ok()
+                    .and_then(|k| k.try_into().ok())
+                    .ok_or(CommandError::Invalid("That push key isn't valid."))?;
+                PhoneCommand::PushRegister {
+                    platform: a.platform,
+                    token: a.token,
+                    key,
+                }
+            }
+            "push.unregister" => PhoneCommand::PushUnregister,
             _ => return Err(CommandError::Unknown),
         })
     }
@@ -237,6 +293,8 @@ impl PhoneCommand {
             PhoneCommand::PaneType { .. } => "pane.type",
             PhoneCommand::ApprovalDecide { .. } => "approval.decide",
             PhoneCommand::RoutineRunNow { .. } => "routine.run_now",
+            PhoneCommand::PushRegister { .. } => "push.register",
+            PhoneCommand::PushUnregister => "push.unregister",
         }
     }
 
@@ -247,6 +305,8 @@ impl PhoneCommand {
             PhoneCommand::PaneType { .. } => PhoneGrant::Terminal,
             PhoneCommand::ApprovalDecide { .. } => PhoneGrant::Approvals,
             PhoneCommand::RoutineRunNow { .. } => PhoneGrant::Routines,
+            // Push only tells this phone what View already shows it.
+            PhoneCommand::PushRegister { .. } | PhoneCommand::PushUnregister => PhoneGrant::View,
         }
     }
 }

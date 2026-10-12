@@ -38,8 +38,10 @@ const GROUP_ICON: Record<VoiceToolGroup, typeof Check> = {
 
 function ChipMark({ chip }: { chip: ChipView }) {
   if (chip.state === "running") return <Spinner size={12} label={t("conductor.chip.running")} />;
-  if (chip.state === "waiting") return <Diamond size={12} aria-label={t("conductor.chip.waiting")} className="text-warning" />;
-  if (chip.state === "done") return <Check size={12} aria-label={t("conductor.chip.done")} className="text-success" />;
+  if (chip.state === "waiting")
+    return <Diamond size={12} aria-label={t("conductor.chip.waiting")} className="text-warning" />;
+  if (chip.state === "done")
+    return <Check size={12} aria-label={t("conductor.chip.done")} className="text-success" />;
   return <X size={12} aria-label={t("conductor.chip.failed")} className="text-danger" />;
 }
 
@@ -97,10 +99,16 @@ function Meter({ view }: { view: CallView }) {
       <span
         tabIndex={0}
         data-testid="conductor-meter"
-        className={cx("text-xs tabular-nums focus-visible:shadow-focus focus-visible:outline-none", low ? "text-warning" : "text-fg-muted")}
+        className={cx(
+          "text-xs tabular-nums focus-visible:shadow-focus focus-visible:outline-none",
+          low ? "text-warning" : "text-fg-muted",
+        )}
       >
         {t("conductor.meter.elapsed", { time: clock(view.elapsedMs) })}
-        {minutes !== null && (low ? ` · ${t("conductor.meter.low", { n: minutes })}` : ` · ${t("conductor.meter.left", { n: minutes })}`)}
+        {minutes !== null &&
+          (low
+            ? ` · ${t("conductor.meter.low", { n: minutes })}`
+            : ` · ${t("conductor.meter.left", { n: minutes })}`)}
       </span>
     </Tooltip>
   );
@@ -126,7 +134,11 @@ export function Hud() {
   if (view.phase === "ended" && view.receipt) {
     const r = view.receipt;
     return (
-      <div role="status" data-testid="conductor-receipt" className={cx(card, "flex items-center gap-3 px-4 py-3 text-sm text-fg")}>
+      <div
+        role="status"
+        data-testid="conductor-receipt"
+        className={cx(card, "flex items-center gap-3 px-4 py-3 text-sm text-fg")}
+      >
         <span className="flex-1">
           {t("conductor.receipt", {
             time: clock(r.seconds * 1000),
@@ -143,16 +155,29 @@ export function Hud() {
 
   if (view.phase === "error") {
     return (
-      <div role="alert" data-testid="conductor-error" data-code={view.error?.code} className={cx(card, "flex items-center gap-3 px-4 py-3")}>
+      <div
+        role="alert"
+        data-testid="conductor-error"
+        data-code={view.error?.code}
+        className={cx(card, "flex items-center gap-3 px-4 py-3")}
+      >
         <WaveformRing state="error" size={28} label={t("conductor.phase.error")} paused />
         <div className="flex min-w-0 flex-1 flex-col">
-          <span className="text-2xs font-semibold uppercase tracking-caps text-danger">{t("conductor.phase.error")}</span>
+          <span className="text-2xs font-semibold uppercase tracking-caps text-danger">
+            {t("conductor.phase.error")}
+          </span>
           <span className="text-sm text-fg" data-testid="conductor-error-message">
             {view.error?.message}
           </span>
         </div>
         <ErrorAction view={view} />
-        <IconButton size="sm" icon={<X size={14} />} label={t("conductor.dismiss")} onClick={() => void endCall()} data-testid="conductor-dismiss" />
+        <IconButton
+          size="sm"
+          icon={<X size={14} />}
+          label={t("conductor.dismiss")}
+          onClick={() => void endCall()}
+          data-testid="conductor-dismiss"
+        />
       </div>
     );
   }
@@ -163,12 +188,29 @@ export function Hud() {
   if (collapsed) {
     const newest = visible[visible.length - 1];
     return (
-      <div data-testid="conductor-hud" data-phase={view.phase} className={cx(card, "flex h-9 items-center gap-2 px-2")}>
-        <WaveformRing state={ringState(view)} level={level} size={28} label={phaseLabel(view)} paused={!active} />
-        <span className="text-2xs font-semibold uppercase tracking-caps text-fg-muted">{phaseLabel(view)}</span>
+      <div
+        data-testid="conductor-hud"
+        data-phase={view.phase}
+        className={cx(card, "flex h-9 items-center gap-2 px-2")}
+      >
+        <WaveformRing
+          state={ringState(view)}
+          level={level}
+          size={28}
+          label={phaseLabel(view)}
+          paused={!active}
+        />
+        <span className="text-2xs font-semibold uppercase tracking-caps text-fg-muted">
+          {phaseLabel(view)}
+        </span>
         {newest && <ActionChip chip={newest} />}
         <span className="flex-1" />
-        <IconButton size="sm" icon={<PanelsTopLeft size={14} />} label={t("conductor.expand")} onClick={() => setCollapsed(false)} />
+        <IconButton
+          size="sm"
+          icon={<PanelsTopLeft size={14} />}
+          label={t("conductor.expand")}
+          onClick={() => setCollapsed(false)}
+        />
       </div>
     );
   }
@@ -176,9 +218,18 @@ export function Hud() {
   return (
     <div data-testid="conductor-hud" data-phase={view.phase} className={cx(card, "flex flex-col gap-2 p-3")}>
       <div className="flex items-center gap-3">
-        <WaveformRing state={ringState(view)} level={level} size={56} label={phaseLabel(view)} paused={!active} />
+        <WaveformRing
+          state={ringState(view)}
+          level={level}
+          size={56}
+          label={phaseLabel(view)}
+          paused={!active}
+        />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span data-testid="conductor-phase" className="text-2xs font-semibold uppercase tracking-caps text-fg-muted">
+          <span
+            data-testid="conductor-phase"
+            className="text-2xs font-semibold uppercase tracking-caps text-fg-muted"
+          >
             {phaseLabel(view)}
           </span>
           {view.utterance ? (
@@ -187,14 +238,25 @@ export function Hud() {
             </span>
           ) : (
             <span className="text-sm text-fg-muted">
-              {view.phase === "connecting" ? t("conductor.connectingHint") : view.muted ? t("conductor.mutedHint") : t("conductor.listeningHint")}
+              {view.phase === "connecting"
+                ? t("conductor.connectingHint")
+                : view.muted
+                  ? t("conductor.mutedHint")
+                  : t("conductor.listeningHint")}
             </span>
           )}
-          {view.caption && view.phase === "speaking" && <span className="line-clamp-2 text-sm text-fg-muted">{view.caption}</span>}
+          {view.caption && view.phase === "speaking" && (
+            <span className="line-clamp-2 text-sm text-fg-muted">{view.caption}</span>
+          )}
         </div>
         <div className="flex flex-col items-end gap-1 self-start">
           <Meter view={view} />
-          <IconButton size="sm" icon={<Minus size={14} />} label={t("conductor.collapse")} onClick={() => setCollapsed(true)} />
+          <IconButton
+            size="sm"
+            icon={<Minus size={14} />}
+            label={t("conductor.collapse")}
+            onClick={() => setCollapsed(true)}
+          />
         </div>
       </div>
 
@@ -247,7 +309,9 @@ export function Hud() {
           <Diamond size={14} aria-hidden className="shrink-0 text-warning" />
           <div className="flex min-w-0 flex-1 flex-col">
             <span className="text-sm text-fg">{q.summary}</span>
-            {q.review === "screen_only" && <span className="text-xs text-fg-muted">{t("conductor.confirmOnScreen")}</span>}
+            {q.review === "screen_only" && (
+              <span className="text-xs text-fg-muted">{t("conductor.confirmOnScreen")}</span>
+            )}
             {refused && <span className="text-xs text-danger">{refused}</span>}
           </div>
           <Button
@@ -284,7 +348,13 @@ export function Hud() {
           {t("conductor.callLog")}
         </Button>
         <span className="flex-1" />
-        <Button size="sm" variant="danger" iconLeft={<X size={14} />} data-testid="conductor-end" onClick={() => void endCall()}>
+        <Button
+          size="sm"
+          variant="danger"
+          iconLeft={<X size={14} />}
+          data-testid="conductor-end"
+          onClick={() => void endCall()}
+        >
           {t("conductor.end")}
         </Button>
       </div>

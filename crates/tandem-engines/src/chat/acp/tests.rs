@@ -1,3 +1,7 @@
+// The session tests drive `/bin/sh` fake engines, so they and their helpers
+// are Unix only; the parsing and mapping tests run everywhere.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use super::*;
 use std::collections::HashMap;
 use std::path::PathBuf;

@@ -124,11 +124,22 @@ fn text_of(v: &Value) -> String {
     }
 }
 
-/// The gateway from `--mcp-config <file>`: its URL and Authorization header.
-fn gateway(args: &[String]) -> Option<(String, String)> {
+/// `--mcp-config`'s value: a file, or the JSON itself (an engine on a
+/// host gets its relayed servers inline, D-1604).
+fn mcp_config(args: &[String]) -> Option<Value> {
     let at = args.iter().position(|a| a == "--mcp-config")?;
-    let file = std::fs::read_to_string(args.get(at + 1)?).ok()?;
-    let v: Value = serde_json::from_str(&file).ok()?;
+    let value = args.get(at + 1)?;
+    let text = if value.trim_start().starts_with('{') {
+        value.clone()
+    } else {
+        std::fs::read_to_string(value).ok()?
+    };
+    serde_json::from_str(&text).ok()
+}
+
+/// The gateway from `--mcp-config`: its URL and Authorization header.
+fn gateway(args: &[String]) -> Option<(String, String)> {
+    let v = mcp_config(args)?;
     let server = v.pointer("/mcpServers/tandem")?;
     Some((
         server.get("url")?.as_str()?.to_string(),
@@ -141,10 +152,13 @@ fn gateway(args: &[String]) -> Option<(String, String)> {
 
 /// The `tandem_tasks` stdio server from `--mcp-config`: command and args.
 fn tasks_server(args: &[String]) -> Option<(String, Vec<String>)> {
-    let at = args.iter().position(|a| a == "--mcp-config")?;
-    let file = std::fs::read_to_string(args.get(at + 1)?).ok()?;
-    let v: Value = serde_json::from_str(&file).ok()?;
-    let server = v.pointer("/mcpServers/tandem_tasks")?;
+    stdio_server(args, "tandem_tasks")
+}
+
+/// A stdio server named `name` in `--mcp-config`: command and args.
+pub(crate) fn stdio_server(args: &[String], name: &str) -> Option<(String, Vec<String>)> {
+    let v = mcp_config(args)?;
+    let server = v.pointer(&format!("/mcpServers/{name}"))?;
     let argv = server
         .get("args")?
         .as_array()?
@@ -550,14 +564,17 @@ pub fn run(args: &[String], session: String) {
         } else if let Some(rest) = first.strip_prefix("mcp ") {
             // `mcp <tool> <json args>`: one gateway tool call, shown as a
             // tool row (teammate built-ins and plugins, E2E-M10-*).
+            let relay = stdio_server(args, "tandem");
             let (tool, args) = rest.split_once(' ').unwrap_or((rest, "{}"));
             let args: Value = serde_json::from_str(args).unwrap_or_else(|_| json!({}));
             let id = format!("toolu_{n}");
             turn.assistant(json!([{"type": "tool_use", "id": id,
                 "name": format!("mcp__tandem__{tool}"), "input": args}]));
-            let (is_error, text) = match gw.as_ref() {
-                Some(g) => call_tool(g, tool, args),
-                None => (true, "no gateway".into()),
+            let (is_error, text) = match (gw.as_ref(), relay) {
+                (Some(g), _) => call_tool(g, tool, args),
+                // On a host: the gateway through its relay (D-1604).
+                (None, Some(s)) => call_stdio(&s, tool, args),
+                (None, None) => (true, "no gateway".into()),
             };
             emit(
                 json!({"type": "user", "session_id": turn.session, "parent_tool_use_id": null,

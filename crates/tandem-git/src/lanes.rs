@@ -15,11 +15,7 @@ use crate::slug::{dedupe, slugify};
 use crate::types::{MergeReport, StaleLane};
 use crate::GitError;
 
-/// Under the main checkout's root.
-pub const WORKTREES_DIR: &str = ".tandem/worktrees";
-pub const BRANCH_PREFIX: &str = "tandem/";
-/// A merged lane is listed for clean-up after this many idle days.
-pub const STALE_AFTER_DAYS: i64 = 7;
+pub use tandem_core::lanes::{BRANCH_PREFIX, STALE_AFTER_DAYS, WORKTREES_DIR};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lane {
@@ -60,6 +56,13 @@ pub fn briefing(path: &Path, branch: &str, siblings: &[String]) -> String {
         "You are working in the git worktree `{}` on branch `{branch}`. Sibling branches: {others}. Don't modify other worktrees.",
         path_string(path)
     )
+}
+
+/// The `origin` remote's URL of the checkout at `root`, if it has one.
+pub fn origin_url(root: &Path) -> Option<String> {
+    let repo = git2::Repository::discover(root).ok()?;
+    let remote = repo.find_remote("origin").ok()?;
+    remote.url().map(str::to_string)
 }
 
 pub struct LaneManager;

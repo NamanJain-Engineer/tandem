@@ -95,5 +95,17 @@
         }
       ]
     }
+  ],
+  "redirects": [
+    {
+      "source": "/:notfile((?!\\.well-known(?:/.*)?)(?:[^/]+/)*[^/\\.]+)",
+      "destination": "/:notfile/",
+      "permanent": true
+    },
+    {
+      "source": "/changelog/:version(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.]+)?)",
+      "destination": "/changelog/:version/",
+      "permanent": true
+    }
   ]
 }

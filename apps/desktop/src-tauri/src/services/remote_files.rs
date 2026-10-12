@@ -253,6 +253,17 @@ impl RemoteFiles {
             .unwrap_or_default()
     }
 
+    /// The branch a host folder's last read status named, without asking
+    /// the host (`workspace_list` reads it; D-1602).
+    pub fn cached_branch(&self, host: &HostId, root: &str) -> Option<String> {
+        let cache = self.statuses.lock().ok()?;
+        let (_, repo) = cache.get(&RemoteRoot {
+            host: host.clone(),
+            root: root.to_string(),
+        })?;
+        repo.as_ref()?.status.branch.clone()
+    }
+
     /// Every cached status on this host (a git action changes them all).
     pub fn invalidate(&self, host: &HostId) {
         if let Ok(mut cache) = self.statuses.lock() {

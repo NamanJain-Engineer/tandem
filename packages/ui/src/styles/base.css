@@ -53,7 +53,10 @@
 /* Motion (§1.8). */
 @keyframes tn-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes tn-pop-in { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
-@keyframes tn-dialog-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.97); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+/* Dialogs centre with the `translate` property (Tailwind's -translate-*
+   utilities); a translate here would add to it, and the dialog would open
+   half its size up and to the left, then jump (D-842). */
+@keyframes tn-dialog-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
 @keyframes tn-sheet-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes tn-toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes tn-dot-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }

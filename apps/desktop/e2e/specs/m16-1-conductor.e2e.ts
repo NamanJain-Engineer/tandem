@@ -30,6 +30,9 @@ type MockState = {
   audioMs: number;
   voicedMs: number;
   outputs: Array<{ callId: string; output: string }>;
+  speed: number;
+  voice: string | null;
+  instructions: string;
 };
 
 async function rt<T = unknown>(path: string, body?: unknown): Promise<T> {
@@ -270,6 +273,64 @@ describe("E2E-M16-1 Conductor call", function () {
     expect(log[0]?.events.some((e) => e.text.includes("Confirmed on screen"))).toBe(true);
   });
 
+  it("F-CN-02 the app's own tools answer by voice: launch, wait, usage, updates", async function () {
+    this.timeout(120_000);
+    await startCall();
+    const before = await paneIds();
+    const ids = await inject([
+      { name: "launch_agents", args: { engine: "claude", count: 1, workspace: "current" } },
+      { name: "get_usage", args: {} },
+      { name: "check_updates", args: {} },
+      { name: "list_routines", args: {} },
+    ]);
+    const v = await until(
+      (x) => ids.every((id) => x.chips.some((c) => c.id === id && c.state !== "running")),
+      "the four tools ran",
+      60_000,
+    );
+    for (const id of ids) expect(v.chips.find((c) => c.id === id)?.state).toBe("done");
+    // The launched agent is placed in the window, in its own tab (as the launch sheet does).
+    let launched = "";
+    await browser.waitUntil(
+      async () => {
+        launched = (await paneIds()).find((p) => !before.includes(p)) ?? "";
+        return launched !== "";
+      },
+      { timeout: 30_000, timeoutMsg: "the launched pane" },
+    );
+    await waitForPaneText(launched, "Fake Claude Code");
+    const [wait] = await inject([{ name: "wait_for_pane", args: { pane: launched, timeout: 5 } }]);
+    await until((x) => x.chips.some((c) => c.id === wait && c.state === "done"), "waited");
+    await endCall();
+  });
+
+  it("F-CN-01 \"talk faster\" moves the talker's speech rate a step", async () => {
+    await startCall();
+    expect(await say("talk faster")).toBe("Okay, I'll talk faster.");
+    await browser.waitUntil(async () => (await rt<MockState>("/__state")).speed === 1.1, {
+      timeout: 5_000,
+      timeoutMsg: "the speed never changed",
+    });
+    expect(await say("slow down")).toBe("Okay, I'll talk slower.");
+    await browser.waitUntil(async () => (await rt<MockState>("/__state")).speed === 1, { timeout: 5_000 });
+    await endCall();
+  });
+
+  it("F-CN-04 the floating ring opens as its own window when turned on", async () => {
+    const main = await browser.getWindowHandle();
+    const before = (await browser.getWindowHandles()).length;
+    await invoke("settings_set", { key: "conductor_floating_ring", value: true });
+    await browser.waitUntil(async () => (await browser.getWindowHandles()).length > before, {
+      timeout: 15_000,
+      timeoutMsg: "no ring window",
+    });
+    const ring = (await browser.getWindowHandles()).find((h) => h !== main) as string;
+    await browser.switchToWindow(ring);
+    await $('[data-testid="floating-ring"]').waitForExist({ timeout: 10_000 });
+    await browser.switchToWindow(main);
+    await invoke("settings_set", { key: "conductor_floating_ring", value: false });
+  });
+
   it("F-CN-03.2 a voice allow for approval A can't resolve approval B", async () => {
     await startCall();
     await inject([{ name: "execute_task", args: { task: "TAN-1" } }]);
@@ -293,5 +354,67 @@ describe("E2E-M16-1 Conductor call", function () {
     const lines = log[0]?.events.map((e) => e.text) ?? [];
     expect(lines.some((t) => t.startsWith("Execute task") && t.includes("Confirmed by voice"))).toBe(true);
     expect(lines.some((t) => t.startsWith("Create teammate") && t.includes("Confirmed"))).toBe(false);
+  });
+});
+
+// The persona, wake and mic-owner seams (F-CN-06, F-CN-07), with their own
+// Pro user: the API mints at most 10 voice sessions an hour per user, and
+// the calls above use them.
+describe("E2E-M16-1 Conductor call: persona, wake and microphone", function () {
+  this.timeout(300_000);
+
+  before(async function () {
+    await rt("/__reset", {});
+    const { email } = await freshUser("conductor-seams");
+    await testRoute("plan", { email, plan: "pro", paid: true });
+    await testRoute("credits", { email, monthly: 10_000, purchased: 0 });
+    await waitForEntitlement((e) => e.plan === "pro" && e.credits?.monthly === 10_000, "Pro with 10,000 credits");
+    await addFolder(`/tmp/tandem-e2e-conductor-seams-${Date.now()}`);
+    await $('[data-testid="conductor-button"]').waitForExist({ timeout: 10_000 });
+  });
+
+  afterEach(async () => {
+    if (!["idle"].includes((await view()).phase)) await endCall().catch(() => undefined);
+  });
+
+  it("F-CN-06 a call starts with the persona's voice, speed, name and memory", async () => {
+    const persona = { conductor_name: "Ada", conductor_voice: "sage", conductor_speed: 5, conductor_memory: true };
+    for (const [key, value] of Object.entries(persona)) await invoke("settings_set", { key, value });
+    await invoke("conductor_memory_save", { text: "- Works on the billing service\n" });
+    try {
+      await startCall();
+      const s = await rt<MockState>("/__state");
+      expect(s.voice).toBe("sage");
+      expect(s.instructions).toContain("Ada");
+      expect(s.instructions).toContain("- Works on the billing service");
+      // Speed 5 of 5: the talker starts at the fastest rate.
+      await browser.waitUntil(async () => (await rt<MockState>("/__state")).speed === 1.2, {
+        timeout: 5_000,
+        timeoutMsg: "the persona's speed never reached the talker",
+      });
+      await endCall();
+    } finally {
+      await invoke("conductor_memory_clear");
+      for (const key of Object.keys(persona)) await invoke("settings_reset", { key });
+    }
+  });
+
+  it("F-CN-07 the wake phrase starts a call that holds the mic until it ends", async () => {
+    expect(await invoke<string | null>("test_mic_owner")).toBe(null);
+    await browser.waitUntil(async () => invoke<boolean>("test_conductor_wake"), {
+      timeout: 10_000,
+      timeoutMsg: "the wake service never came up",
+    });
+    await until((v) => v.phase === "listening", "the wake call connects", 30_000);
+    expect(await invoke<string | null>("test_mic_owner")).toBe("call");
+    // Heard again mid-call: the running call stays the only one.
+    const id = (await view()).callId;
+    expect(await invoke<boolean>("test_conductor_wake")).toBe(true);
+    expect((await view()).callId).toBe(id);
+    await endCall();
+    await browser.waitUntil(async () => (await invoke<string | null>("test_mic_owner")) === null, {
+      timeout: 5_000,
+      timeoutMsg: "the call kept the mic after it ended",
+    });
   });
 });

@@ -84,12 +84,12 @@ function HandoffBody({ source }: { source: HandoffSource }) {
     {
       value: "new_worktree",
       label:
-        ws && ws.kind !== "local"
+        ws?.kind === "wsl"
           ? t("handoff.newWorktreeRemote")
           : isRepo(ws)
             ? t("handoff.newWorktree")
             : t("handoff.newWorktreeNeedsRepo"),
-      disabled: !isRepo(ws) || (ws?.kind ?? "local") !== "local",
+      disabled: !isRepo(ws) || ws?.kind === "wsl",
     },
     {
       value: "thread",

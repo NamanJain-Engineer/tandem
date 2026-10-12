@@ -120,6 +120,10 @@ pub struct TerminalService {
     wsl_panes: std::sync::Mutex<std::collections::HashSet<String>>,
     /// The tasks server terminal agents get (F-TK-02).
     tasks: std::sync::OnceLock<Arc<crate::services::tasks::TasksService>>,
+    /// Agent panes on SSH hosts: their tasks server's channel, kept across
+    /// drops as their PTY is, closed with the pane (D-1606).
+    host_tasks:
+        std::sync::Mutex<std::collections::HashMap<String, crate::services::remote_mcp::RemoteMcp>>,
 }
 
 /// Takes a checkpoint of an agent pane's folder (F-EX-01). The flag turns
@@ -213,6 +217,7 @@ impl TerminalService {
             wsl: std::sync::OnceLock::new(),
             wsl_panes: Default::default(),
             tasks: std::sync::OnceLock::new(),
+            host_tasks: Default::default(),
         })
     }
 
@@ -306,6 +311,60 @@ impl TerminalService {
     pub fn end_tasks_session(&self, pane: &str) {
         if let Some(tasks) = self.tasks.get() {
             tasks.end_session(&format!("pn:{pane}"));
+        }
+        // A host agent's channel closes: its server there ends.
+        let channel = self.host_tasks.lock().ok().and_then(|mut m| m.remove(pane));
+        drop(channel);
+    }
+
+    /// "Expose tasks to terminal agents" on an SSH host (F-TK-02, D-1606):
+    /// the engine there can't be given a config in a home Vibezeo owns, so
+    /// it gets the tasks server for this run on its command line, as
+    /// `tandem-host mcp --channel <id>`. The channel is answered here by
+    /// the tasks server with this pane's connection, and outlives a dropped
+    /// connection as the pane does.
+    async fn host_tasks_args(
+        &self,
+        remote: &Arc<crate::services::remote::RemoteService>,
+        host: &tandem_core::ids::HostId,
+        engine: &tandem_engines::registry::EngineSpec,
+        pane: &str,
+    ) -> Vec<String> {
+        use crate::services::remote_mcp::{ProcessBackend, RemoteMcp};
+        use crate::services::tasks::{CONNECTION_ENV, SERVER_NAME};
+        // A relaunch's previous channel goes first.
+        self.end_tasks_session(pane);
+        let Some(tasks) = self.tasks.get() else {
+            return Vec::new();
+        };
+        if engine.hooks_support == tandem_engines::registry::HooksSupport::None
+            || !tasks.expose_to_terminals().await
+        {
+            return Vec::new();
+        }
+        let Some(server) = tasks.terminal_server() else {
+            return Vec::new();
+        };
+        let Some(conn) = tasks.begin_session(&format!("pn:{pane}"), &engine.label, "me") else {
+            return Vec::new();
+        };
+        let mut mcp = RemoteMcp::kept(remote.clone());
+        let backend = ProcessBackend {
+            server,
+            env: vec![(CONNECTION_ENV.to_string(), conn)],
+        };
+        match mcp.add(host, SERVER_NAME, Arc::new(backend)).await {
+            Ok(relayed) => {
+                if let Ok(mut m) = self.host_tasks.lock() {
+                    m.insert(pane.to_string(), mcp);
+                }
+                tandem_engines::homes::inline_stdio_server(engine, &relayed)
+            }
+            Err(e) => {
+                tasks.end_session(&format!("pn:{pane}"));
+                tracing::warn!(code = "remote.mcp_unavailable", error = %e.message, "no task tools for a host's terminal agent");
+                Vec::new()
+            }
         }
     }
 
@@ -1004,10 +1063,15 @@ impl TerminalService {
                         format!("{} isn't installed on this host.", engine.label),
                     )
                 })?;
+            let mut extra_args = self.engines.extra_args(&engine.id).await;
+            extra_args.extend(
+                self.host_tasks_args(&remote, &host, &engine, pane.as_str())
+                    .await,
+            );
             let req = tandem_engines::launch::TerminalLaunchRequest {
                 engine: &engine,
                 program: found,
-                extra_args: self.engines.extra_args(&engine.id).await,
+                extra_args,
                 resume: None,
                 host: tandem_engines::launch::HostKind::Ssh,
                 home: None,
@@ -1142,12 +1206,20 @@ impl TerminalService {
     ) -> bool {
         let id = pane.as_str();
         let until = std::time::Instant::now() + timeout;
+        // A plain shell isn't watched by the status store, so its output
+        // time is never recorded: a screen that has stopped changing says
+        // the prompt is up just as well (D-2208).
+        let mut quiet = QuietScreen::default();
         loop {
             if self.pty.is_live(id) {
+                let now = chrono::Utc::now().timestamp_millis();
                 if let Some(last) = self.status.last_output(id) {
-                    if chrono::Utc::now().timestamp_millis() - last >= READY_QUIET_MS {
+                    if now - last >= READY_QUIET_MS {
                         break;
                     }
+                }
+                if quiet.settled(now, self.pty.screen_text(id).as_deref()) {
+                    break;
                 }
             }
             if std::time::Instant::now() >= until {
@@ -1342,6 +1414,30 @@ fn plain_distro(value: &serde_json::Value) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Readiness from the screen alone: it has some text and hasn't changed for
+/// [`READY_QUIET_MS`].
+#[derive(Debug, Default)]
+pub(crate) struct QuietScreen {
+    last: Option<(String, i64)>,
+}
+
+impl QuietScreen {
+    pub(crate) fn settled(&mut self, now: i64, screen: Option<&str>) -> bool {
+        let text = screen.map(str::trim_end).unwrap_or("");
+        if text.trim().is_empty() {
+            self.last = None;
+            return false;
+        }
+        match &self.last {
+            Some((seen, since)) if seen == text => now - since >= READY_QUIET_MS,
+            _ => {
+                self.last = Some((text.to_string(), now));
+                false
+            }
+        }
+    }
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
@@ -1416,7 +1512,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let data = DataDir::at(dir.path().join("data")).expect("data");
         let store = Store::open(&data).expect("store");
-        let root = std::fs::canonicalize(dir.path())
+        let root = tandem_core::contain::canonical(dir.path())
             .expect("canonical")
             .join("ws1");
         std::fs::create_dir_all(root.join("sub")).expect("mkdir");
@@ -1644,5 +1740,19 @@ mod tests {
             .quote_paths(&pane, &[r"\\server\share\x".to_string()])
             .expect_err("no WSL path");
         assert_eq!(err.code, ErrorCode::Invalid);
+    }
+
+    #[test]
+    fn f_wt_01_3_a_shell_is_ready_once_its_screen_stops_changing() {
+        let mut q = QuietScreen::default();
+        assert!(!q.settled(0, None));
+        assert!(!q.settled(0, Some("   \n  ")));
+        assert!(!q.settled(100, Some("user@host %")));
+        assert!(!q.settled(1_000, Some("user@host %")));
+        // Trailing blanks aren't a change; new text restarts the wait.
+        assert!(!q.settled(1_200, Some("user@host % ")));
+        assert!(!q.settled(1_400, Some("user@host %\nmotd")));
+        assert!(!q.settled(2_800, Some("user@host %\nmotd")));
+        assert!(q.settled(2_900, Some("user@host %\nmotd")));
     }
 }

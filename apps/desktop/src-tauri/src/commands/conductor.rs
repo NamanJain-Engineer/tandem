@@ -7,7 +7,7 @@ use std::sync::{Arc, OnceLock};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager, State, Window};
+use tauri::{AppHandle, Emitter, Manager, State, Window};
 use tokio::sync::mpsc;
 use ts_rs::TS;
 
@@ -25,18 +25,19 @@ use tandem_voice::conductor::call::{
     ActRequest, ActResponse, CallController, CallHost, CallOrigin, CallRecord, CallTiming,
     HostedError, LogKind, MicEvent, SessionGrant, Settlement, Speaker,
 };
-use tandem_voice::conductor::exec::{PaneFacts, PaneKind, ToolCall, ToolHost};
+use tandem_voice::conductor::exec::{PaneFacts, PaneKind, ToolHost};
 use tandem_voice::conductor::persona::PersonaBrief;
 use tandem_voice::conductor::view::{CallView, UiAction};
 use tandem_voice::realtime::RealtimeProvider;
 
-use crate::services::conductor::{hosted_error, SnapPane, Snapshot};
+use crate::services::conductor::{hosted_error, CallMic, SnapPane, Snapshot};
 use crate::state::AppState;
 
 /// The running app as a call's host.
 pub struct AppHost {
     app: AppHandle,
     speaker: OnceLock<Arc<dyn Speaker>>,
+    mic: OnceLock<CallMic>,
 }
 
 impl AppHost {
@@ -44,11 +45,21 @@ impl AppHost {
         Self {
             app,
             speaker: OnceLock::new(),
+            mic: OnceLock::new(),
         }
     }
 
     fn state(&self) -> State<'_, AppState> {
         self.app.state::<AppState>()
+    }
+
+    fn mic(&self) -> &CallMic {
+        self.mic
+            .get_or_init(|| CallMic::new(self.state().mic.clone()))
+    }
+
+    pub(crate) fn app(&self) -> AppHandle {
+        self.app.clone()
     }
 
     fn publish(&self, name: &str, payload: Value) {
@@ -146,13 +157,6 @@ fn status_word(s: AgentStatus) -> &'static str {
         AgentStatus::Idle => "idle",
         AgentStatus::Failed => "failed",
     }
-}
-
-fn not_yet(tool: &str) -> String {
-    format!(
-        "{} isn't available by voice in this version yet; it's in the app.",
-        tool.replace('_', " ")
-    )
 }
 
 #[async_trait]
@@ -302,7 +306,7 @@ impl ToolHost for AppHost {
                     None => "Credits aren't known right now.".into(),
                 })
             }
-            other => Err(not_yet(other)),
+            other => crate::commands::conductor_tools::run(self, other, args).await,
         }
     }
 
@@ -353,7 +357,7 @@ impl CallHost for AppHost {
     }
 
     async fn persona(&self) -> PersonaBrief {
-        PersonaBrief::default()
+        self.state().persona.call_brief().await
     }
 
     fn provider(&self, name: &str) -> Option<Arc<dyn RealtimeProvider>> {
@@ -362,20 +366,24 @@ impl CallHost for AppHost {
 
     fn mic_start(&self, tx: mpsc::UnboundedSender<MicEvent>) -> Result<(), String> {
         let events = tx.clone();
-        self.state().dictate.call_mic_start(StreamTap {
-            samples: Box::new(move |s: &[f32], rate| {
-                let _ = tx.send(MicEvent::Samples(s.to_vec(), rate));
-            }),
-            events: Box::new(move |e| {
-                if e == CaptureEvent::NotDelivering {
-                    let _ = events.send(MicEvent::NotDelivering);
-                }
-            }),
+        let state = self.state();
+        self.mic().take(|| {
+            state.dictate.call_mic_start(StreamTap {
+                samples: Box::new(move |s: &[f32], rate| {
+                    let _ = tx.send(MicEvent::Samples(s.to_vec(), rate));
+                }),
+                events: Box::new(move |e| {
+                    if e == CaptureEvent::NotDelivering {
+                        let _ = events.send(MicEvent::NotDelivering);
+                    }
+                }),
+            })
         })
     }
 
     fn mic_stop(&self) {
-        self.state().dictate.call_mic_stop();
+        let state = self.state();
+        self.mic().give_back(|| state.dictate.call_mic_stop());
     }
 
     fn speaker(&self) -> Arc<dyn Speaker> {
@@ -400,10 +408,14 @@ impl CallHost for AppHost {
     }
 
     fn emit(&self, view: &CallView) {
-        self.publish(
+        let payload = serde_json::to_value(view).unwrap_or(Value::Null);
+        // The floating ring follows the call too.
+        let _ = self.app.emit_to(
+            crate::services::conductor_ring::LABEL,
             "conductor:state",
-            serde_json::to_value(view).unwrap_or(Value::Null),
+            payload.clone(),
         );
+        self.publish("conductor:state", payload);
         if let Some(q) = &view.question {
             self.publish(
                 "conductor:confirm-request",
@@ -413,11 +425,37 @@ impl CallHost for AppHost {
     }
 
     fn emit_level(&self, level: f32) {
+        let _ = self.app.emit_to(
+            crate::services::conductor_ring::LABEL,
+            "conductor:level",
+            json!(level),
+        );
         self.publish("conductor:level", json!(level));
     }
 
     async fn record(&self, record: CallRecord) {
         let store = &self.state().store;
+        // "Keep call logs: Don't keep" (UI-67): no turns are written, and the
+        // call's row goes once it has settled (it's kept until then).
+        let keep = crate::services::conductor::keep_days(
+            &settings::get(store, SettingKey::ConductorCallLogs)
+                .await
+                .unwrap_or(Value::Null),
+        );
+        if keep.is_none() {
+            match &record {
+                CallRecord::Event { .. } => return,
+                CallRecord::Ended {
+                    call_id,
+                    credits: Some(_),
+                    ..
+                } => {
+                    let _ = log::delete(store, call_id).await;
+                    return;
+                }
+                _ => {}
+            }
+        }
         let r = match record {
             CallRecord::Started {
                 call_id,
@@ -476,12 +514,73 @@ pub fn install(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         let state = app.state::<AppState>();
         let now = state.clock.now_ms();
-        crate::services::conductor::tidy_log(&state.store, now, |id, seconds| {
+        let keep = crate::services::conductor::keep_days(
+            &settings::get(&state.store, SettingKey::ConductorCallLogs)
+                .await
+                .unwrap_or(Value::Null),
+        );
+        crate::services::conductor::tidy_log(&state.store, now, keep, |id, seconds| {
             let host = host.clone();
             async move { host.settle(&id, seconds).await.ok().map(|s| s.charged) }
         })
         .await;
+        sync_ring(&app).await;
     });
+}
+
+/// Shows the floating ring while "Floating ring" is on and the plan has
+/// Conductor; hides it otherwise (F-CN-04).
+pub async fn sync_ring(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let on = settings::get(&state.store, SettingKey::ConductorFloatingRing)
+        .await
+        .ok()
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let show = on && state.entitlements.limits().conductor;
+    let saved = settings::get(&state.store, SettingKey::ConductorRingPosition)
+        .await
+        .ok()
+        .and_then(|v| v.as_str().and_then(crate::services::widget::parse_position));
+    crate::services::conductor_ring::sync(app, show, saved);
+}
+
+/// Where the floating ring was dragged to (physical pixels).
+#[tauri::command]
+pub async fn conductor_ring_set_position(
+    state: State<'_, AppState>,
+    x: i32,
+    y: i32,
+) -> Result<(), IpcError> {
+    settings::set(
+        &state.store,
+        SettingKey::ConductorRingPosition,
+        json!(format!("{x},{y}")),
+    )
+    .await?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct RingState {
+    pub view: CallView,
+    pub theme: String,
+}
+
+/// The floating ring's start: the call and the theme.
+#[tauri::command]
+pub async fn conductor_ring_state(state: State<'_, AppState>) -> Result<RingState, IpcError> {
+    let theme = settings::get(&state.store, SettingKey::Theme)
+        .await
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_else(|| "dark".into());
+    Ok(RingState {
+        view: state.conductor.view(),
+        theme,
+    })
 }
 
 fn gate(state: &AppState) -> Result<(), IpcError> {
@@ -518,10 +617,6 @@ pub fn conductor_start_call(
     wake: bool,
     push_to_talk: Option<bool>,
 ) -> Result<CallView, IpcError> {
-    if state.conductor.is_live() {
-        return Ok(state.conductor.view());
-    }
-    gate(&state)?;
     let origin = if wake {
         CallOrigin::Wake
     } else if push_to_talk.unwrap_or(false) {
@@ -529,7 +624,28 @@ pub fn conductor_start_call(
     } else {
         CallOrigin::Button
     };
+    start_call(&state, origin)
+}
+
+/// The plan gate, then the one entry point; a running call is returned.
+fn start_call(state: &AppState, origin: CallOrigin) -> Result<CallView, IpcError> {
+    if state.conductor.is_live() {
+        return Ok(state.conductor.view());
+    }
+    gate(state)?;
     state.conductor.start(origin)
+}
+
+/// "Hey Conductor" starts calls here (F-CN-07): the same gate and entry
+/// point as the ring, as [`CallOrigin::Wake`].
+pub struct WakeStart(pub AppHandle);
+
+impl crate::services::wake::CallStarter for WakeStart {
+    fn start_call_from_wake(&self) -> Result<(), String> {
+        start_call(&self.0.state::<AppState>(), CallOrigin::Wake)
+            .map(|_| ())
+            .map_err(|e| e.message)
+    }
 }
 
 /// Hangs up; with no call, clears an ended call's receipt or error.
@@ -648,7 +764,7 @@ pub fn test_conductor_inject(
             "The test harness is off",
         ));
     }
-    let calls: Vec<ToolCall> = calls
+    let calls: Vec<tandem_voice::conductor::exec::ToolCall> = calls
         .into_iter()
         .filter_map(|c| serde_json::from_value(c).ok())
         .collect();
@@ -656,4 +772,33 @@ pub fn test_conductor_inject(
         .conductor
         .controller()
         .is_some_and(|c| c.inject(calls)))
+}
+
+/// The E2E harness: the wake phrase was heard (F-CN-07). `false` before the
+/// wake service is up.
+#[cfg(debug_assertions)]
+#[tauri::command]
+pub fn test_conductor_wake(state: State<'_, AppState>) -> Result<bool, IpcError> {
+    if !state.e2e {
+        return Err(IpcError::new(
+            ErrorCode::PermissionDenied,
+            "The test harness is off",
+        ));
+    }
+    Ok(state.wake.get().map(|w| w.heard()).is_some())
+}
+
+/// The E2E harness: who holds the microphone (F-CN-07).
+#[cfg(debug_assertions)]
+#[tauri::command]
+pub fn test_mic_owner(
+    state: State<'_, AppState>,
+) -> Result<Option<tandem_voice::mic_owner::MicOwner>, IpcError> {
+    if !state.e2e {
+        return Err(IpcError::new(
+            ErrorCode::PermissionDenied,
+            "The test harness is off",
+        ));
+    }
+    Ok(state.mic.current())
 }

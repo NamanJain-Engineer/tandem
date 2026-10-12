@@ -15,6 +15,7 @@ export default tseslint.config(
       "apps/web/.source/**",
       "**/.vercel/**",
       "apps/web/public/demo/app/**",
+      "**/src-tauri/resources/remote-web/**",
       "**/node_modules/**",
       "**/target/**",
       "**/src-tauri/gen/**",
@@ -35,6 +36,12 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
+  },
+  {
+    // Expo config plugins run in Node as CommonJS (apps/mobile/plugins).
+    files: ["apps/mobile/plugins/**/*.js", "plugins/**/*.js"],
+    languageOptions: { ecmaVersion: 2022, sourceType: "commonjs", globals: globals.node },
+    rules: { "@typescript-eslint/no-require-imports": "off" },
   },
   {
     // Scripts that run in web pages: the element picker (F-CD-18) and the

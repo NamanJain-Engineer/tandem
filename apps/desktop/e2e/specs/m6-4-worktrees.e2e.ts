@@ -2,7 +2,8 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshOffline, home, invoke, userHome } from "../support/app";
+import { addFolder, freshOffline, home, invoke, settled, userHome } from "../support/app";
+import { newWorktree, pick } from "../support/worktrees";
 
 const GIT_ENV = {
   ...process.env,
@@ -27,46 +28,6 @@ const answerConfirm = (answer: "yes" | "no") => writeFileSync(join(home(), "conf
 
 type Ws = { id: string; root: string; parentId: string | null; laneBranch: string | null };
 const workspaces = () => invoke<Ws[]>("workspace_list");
-
-/** Clicks a menu item by its text once the menu is open. */
-async function pick(label: string): Promise<void> {
-  await browser.waitUntil(
-    async () =>
-      browser.execute((l: string) => {
-        const item = Array.from(document.querySelectorAll<HTMLElement>("[role=menuitem]")).find(
-          (el) => el.textContent?.trim() === l,
-        );
-        item?.click();
-        return item !== undefined;
-      }, label),
-    { timeout: 5_000, timeoutMsg: `no menu item ${label}` },
-  );
-}
-
-/** Right-clicks the repository's rail row (its context menu). */
-async function repoMenu(root: string): Promise<void> {
-  await browser.execute((r: string) => {
-    const row = document.querySelector<HTMLElement>(`[data-testid="workspace-row"][data-root="${r}"]`);
-    const box = row?.getBoundingClientRect();
-    row?.dispatchEvent(
-      new MouseEvent("contextmenu", {
-        bubbles: true,
-        cancelable: true,
-        button: 2,
-        clientX: (box?.left ?? 0) + 24,
-        clientY: (box?.top ?? 0) + 8,
-      }),
-    );
-  }, root);
-}
-
-async function newWorktree(root: string, task: string): Promise<void> {
-  await repoMenu(root);
-  await pick("New worktree…");
-  await $('[data-testid="worktree-name"]').setValue(task);
-  await $('[data-testid="worktree-create"]').click();
-  await $('[data-testid="worktree-name"]').waitForExist({ reverse: true, timeout: 20_000 });
-}
 
 /** Opens a worktree row's ⋯ menu from the keyboard (it shows on focus). */
 async function worktreeAction(branch: string, label: string): Promise<void> {
@@ -168,6 +129,9 @@ describe("E2E-M6-4 worktrees", () => {
       await $('//label[normalize-space()="Type tandem/fix-auth to confirm"]/following::input[1]').setValue(
         "tandem/fix-auth",
       );
+      // A click while the confirm opens could come up off its button (D-840,
+      // D-842).
+      await settled();
       await $("button=Discard worktree").click();
     };
     // The plain removal refuses (uncommitted work); the force asks natively: No.

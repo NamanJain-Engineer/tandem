@@ -4,7 +4,7 @@
 import type { Release } from "@tandem/protocol/changelog";
 import { RELEASES } from "./changelog";
 import { PLANS } from "./pricing";
-import { RELEASE } from "./release";
+import { DOWNLOADS, RELEASE } from "./release";
 import { docsPath } from "./docs/pages";
 
 /** What the released desktop app does (the milestones `lib/progress.ts` lists). */
@@ -258,6 +258,15 @@ export const RELEASE_TILE_MAP: Record<string, { icon: string; docs: string; feat
   "Find work finds teammates": { icon: "search", docs: docsPath("code-mode") },
   "Files and git on SSH hosts": { icon: "server", docs: docsPath("remote") },
   Fedora: { icon: "package", docs: docsPath("index") },
+  "Worktree setup": { icon: "branch", docs: docsPath("code-mode") },
+  "Review comments to the agent": { icon: "message", docs: docsPath("code-mode") },
+  "Overlap check": { icon: "compare", docs: docsPath("code-mode") },
+  "Merge requests on GitLab": { icon: "merge", docs: docsPath("code-mode") },
+  "Worktrees on SSH hosts": { icon: "server", docs: docsPath("remote") },
+  "Best of N on SSH hosts": { icon: "layers", docs: docsPath("remote") },
+  "Plugins and tasks for agents on SSH hosts": { icon: "plug", docs: docsPath("remote") },
+  "Hosts behind a jump host": { icon: "route", docs: docsPath("remote") },
+  "Your phone, over your own network": { icon: "phone", docs: docsPath("remote") },
 };
 
 export type ReleaseTile = { title: string; body: string; text: string; platforms: string[]; icon: string; docs: string };
@@ -277,4 +286,19 @@ export function releaseTiles(release: Release | undefined = RELEASES.find((r) =>
       if (!meta) throw new Error(`"${title}" (CHANGELOG ${release.version}) has no entry in RELEASE_TILE_MAP`);
       return [{ title, body: firstSentence(rest), text: rest, platforms: e.platforms, icon: meta.icon, docs: meta.docs }];
     });
+}
+
+/** What "Linux first" means in this build, each fact checkable in the
+ * download or its CHANGELOG section (a test checks the CHANGELOG ones). */
+export function linuxFacts(): string[] {
+  const linux = DOWNLOADS.find((d) => d.os === "linux" && d.available);
+  const distros = linux?.requirement.split(": ")[1] ?? "";
+  const kinds = [...new Set((linux?.assets ?? []).map((a) => a.file.slice(a.file.lastIndexOf("."))))];
+  const named = kinds.map((k) => `${/^\.[aeiou]|^\.r/i.test(k) ? "an" : "a"} ${k}`);
+  const packages = named.length > 1 ? `${named.slice(0, -1).join(", ")} and ${named.at(-1)}` : (named[0] ?? "");
+  return [
+    `${packages.charAt(0).toUpperCase()}${packages.slice(1)} for ${distros}`,
+    "Dictate on X11 and Wayland",
+    "SSH hosts on x86-64 and arm64",
+  ];
 }

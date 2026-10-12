@@ -38,13 +38,16 @@ export function parseCriteria(spec: string): Map<string, Criterion[]> {
   return out;
 }
 
-/** IDs on the milestone's **Owns:** line(s). */
+/** IDs on the milestone's **Owns:** line(s). A milestone may have more than
+ * one section (M17's extras and its worktree workflow, D-2200). */
 export function ownedBy(milestones: string, m: string): string[] {
-  const block = milestones.split(/^## /m).find((b) => b.startsWith(`${m} ·`));
-  if (!block) return [];
-  const owns =
-    block.split(/^\*\*Owns:?\*\*/m)[1]?.split(/^\*\*(Early|Completes|Extends|Prerequisites)/m)[0] ?? "";
-  return [...new Set(owns.match(/F-[A-Z]{2}-\d{2}/g) ?? [])];
+  const blocks = milestones.split(/^## /m).filter((b) => b.startsWith(`${m} ·`));
+  const ids = blocks.flatMap((block) => {
+    const owns =
+      block.split(/^\*\*Owns:?\*\*/m)[1]?.split(/^\*\*(Early|Completes|Extends|Prerequisites)/m)[0] ?? "";
+    return owns.match(/F-[A-Z]{2}-\d{2}/g) ?? [];
+  });
+  return [...new Set(ids)];
 }
 
 function walk(dir: string, acc: string[] = []): string[] {

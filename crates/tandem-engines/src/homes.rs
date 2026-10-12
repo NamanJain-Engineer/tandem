@@ -326,6 +326,47 @@ fn fill(v: &Value, theme: &str) -> Value {
 
 /// Deep-merges `over` into `base`: objects merge key by key, everything
 /// else is replaced. Keys only `base` has are kept.
+/// The launch arguments that give a terminal engine one stdio MCP server
+/// for this run only, where its config can't be written (a host's own
+/// home, D-1606): `--mcp-config <json>` for Claude Code, `-c
+/// mcp_servers.<name>.…` for Codex. Other engines get none, as locally.
+pub fn inline_stdio_server(engine: &EngineSpec, server: &crate::chat::StdioServer) -> Vec<String> {
+    let command = server.command.to_string_lossy().into_owned();
+    match engine.hooks_support {
+        HooksSupport::ClaudeHooks => vec![
+            "--mcp-config".into(),
+            json!({ "mcpServers": { server.name.as_str(): {
+                "type": "stdio",
+                "command": command,
+                "args": server.args,
+                "env": {},
+            }}})
+            .to_string(),
+        ],
+        HooksSupport::CodexNotify => {
+            let mut args = toml_edit::Array::new();
+            for a in &server.args {
+                args.push(a.as_str());
+            }
+            vec![
+                "-c".into(),
+                format!(
+                    "mcp_servers.{}.command={}",
+                    server.name,
+                    toml_edit::Value::from(command)
+                ),
+                "-c".into(),
+                format!(
+                    "mcp_servers.{}.args={}",
+                    server.name,
+                    toml_edit::Value::Array(args)
+                ),
+            ]
+        }
+        HooksSupport::None => Vec::new(),
+    }
+}
+
 pub fn merge(base: &mut Value, over: &Value) {
     match (base, over) {
         (Value::Object(b), Value::Object(o)) => {
@@ -500,6 +541,50 @@ mod tests {
         homes.remove(&home).expect("already gone is fine");
     }
     use super::*;
+
+    #[test]
+    fn f_rm_01_f_tk_02_a_hosts_terminal_engine_gets_its_server_inline() {
+        let reg = crate::registry::EngineRegistry::bundled();
+        let server = crate::chat::StdioServer {
+            name: "tandem_tasks".into(),
+            command: PathBuf::from("/home/u/.tandem-host/1/tandem-host"),
+            args: vec![
+                "mcp".into(),
+                "--channel".into(),
+                "0123456789abcdef0123456789abcdef".into(),
+            ],
+            env_vars: Vec::new(),
+        };
+        let claude = inline_stdio_server(reg.get("claude").expect("claude"), &server);
+        assert_eq!(claude[0], "--mcp-config");
+        let v: Value = serde_json::from_str(&claude[1]).expect("json");
+        assert_eq!(
+            v["mcpServers"]["tandem_tasks"],
+            json!({"type": "stdio", "command": "/home/u/.tandem-host/1/tandem-host",
+                   "args": ["mcp", "--channel", "0123456789abcdef0123456789abcdef"], "env": {}})
+        );
+        let codex = inline_stdio_server(reg.get("codex").expect("codex"), &server);
+        assert_eq!(
+            codex,
+            [
+                "-c",
+                "mcp_servers.tandem_tasks.command=\"/home/u/.tandem-host/1/tandem-host\"",
+                "-c",
+                "mcp_servers.tandem_tasks.args=[\"mcp\", \"--channel\", \"0123456789abcdef0123456789abcdef\"]",
+            ]
+        );
+        // The channel id isn't taken for a secret, so the launch goes ahead.
+        for a in claude.iter().chain(&codex) {
+            assert!(!crate::launch::looks_secret(a), "{a}");
+        }
+        // Engines with no MCP config of their own get nothing, as locally.
+        let other = reg
+            .all()
+            .iter()
+            .find(|e| e.hooks_support == HooksSupport::None)
+            .expect("one more engine");
+        assert!(inline_stdio_server(other, &server).is_empty());
+    }
     use crate::EngineRegistry;
 
     fn setup() -> (tempfile::TempDir, ProviderHomes, EngineRegistry) {

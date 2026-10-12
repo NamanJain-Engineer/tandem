@@ -35,6 +35,8 @@
     "allow-test-dictate-platform",
     "allow-test-dictate-widget",
     "allow-test-conductor-inject",
-    "allow-test-conductor-clock"
+    "allow-test-conductor-clock",
+    "allow-test-conductor-wake",
+    "allow-test-mic-owner"
   ]
 }
