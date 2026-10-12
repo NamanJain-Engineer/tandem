@@ -19,7 +19,7 @@ and Linux store packages (F-RM-04 to F-RM-07). The 5 left are Conductor's:
 F-CN-01 to F-CN-04 and F-CN-08 run end to end against the dev mock and lack
 only the vendor realtime client, which waits on a key. F-CN-06 and F-CN-07
 (persona, memory and wake phrase) are done: calls read the persona at start,
-the wake phrase starts calls and a call holds the mic (D-1119). vibezeo.com serves 0.6.0 (pull request #49). Routines and running
+the wake phrase starts calls and a call holds the mic (D-1119). vibezeo.com serves 0.7.0 from this release. Routines and running
 tasks are built and switch on with Pro; WSL workspaces wait for the Windows
 download.
 
