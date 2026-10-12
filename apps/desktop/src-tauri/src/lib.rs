@@ -777,6 +777,9 @@ fn setup_dictate(app: &tauri::App, state: &AppState) {
     wake.set_emitter(std::sync::Arc::new(move |s| {
         let _ = wake_app.emit_to("main", "conductor:wake-state", s);
     }));
+    wake.set_starter(std::sync::Arc::new(commands::conductor::WakeStart(
+        app.handle().clone(),
+    )));
     let _ = state.wake.set(wake.clone());
     tauri::async_runtime::spawn(async move {
         dictate.start().await;
@@ -863,6 +866,8 @@ pub fn run() {
         commands::test::test_find_work_server,
         commands::conductor::test_conductor_inject,
         commands::conductor::test_conductor_clock,
+        commands::conductor::test_conductor_wake,
+        commands::conductor::test_mic_owner,
     ]);
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(platform_commands![]);

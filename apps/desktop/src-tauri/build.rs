@@ -391,6 +391,8 @@ const SIM_COMMANDS: &[&str] = &[
 const TEST_COMMANDS: &[&str] = &[
     "test_conductor_inject",
     "test_conductor_clock",
+    "test_conductor_wake",
+    "test_mic_owner",
     "test_counters",
     "test_browser_eval",
     "test_spawn_log",
