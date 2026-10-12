@@ -2201,6 +2201,7 @@
   "tasks.exec.upgrade": "Upgrade",
   "tasks.exec.workspace": "Workspace",
   "tasks.exec.noWorkspace": "Add a workspace first",
+  "tasks.exec.localOnly": "Runs start in folders on this computer, so workspaces on SSH hosts and in WSL aren't listed.",
   "tasks.exec.runner": "Runner",
   "tasks.exec.noRunner": "No chat engine is installed",
   "tasks.exec.teammates": "Teammates",

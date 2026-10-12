@@ -108,6 +108,8 @@ pub trait ExecHost: Send + Sync {
     fn signed_in(&self) -> bool;
     /// The workspace's folder.
     async fn workspace_root(&self, ws: &WorkspaceId) -> Result<PathBuf, IpcError>;
+    /// Where the workspace's folder is: `local`, `ssh` or `wsl`.
+    async fn workspace_kind(&self, ws: &WorkspaceId) -> Result<String, IpcError>;
     /// A new lane off the workspace: its workspace id and folder.
     async fn create_lane(
         &self,
@@ -355,6 +357,15 @@ impl TaskExecService {
             return Err(IpcError::new(
                 ErrorCode::Invalid,
                 "Full access must be chosen for this task.",
+            ));
+        }
+        // A run's worktree, sessions and review are made on this computer, so
+        // a folder on an SSH host or in WSL is refused before anything starts
+        // (D-843). Agents in threads on a host still read and update tasks.
+        if host.workspace_kind(&input.workspace_id).await? != "local" {
+            return Err(IpcError::new(
+                ErrorCode::Unavailable,
+                "Tasks run in folders on this computer for now. Pick a workspace that isn't on an SSH host or in WSL.",
             ));
         }
         let issue = self.tracker()?.get(&input.issue_id).map_err(task_err)?;
@@ -904,6 +915,8 @@ mod tests {
         stopped: StdMutex<Vec<ThreadId>>,
         tracker: OnceLock<TaskStore>,
         spawns: AtomicUsize,
+        /// The workspace's kind (`local` when unset).
+        kind: Option<&'static str>,
     }
 
     #[async_trait]
@@ -919,6 +932,9 @@ mod tests {
         }
         async fn workspace_root(&self, _ws: &WorkspaceId) -> Result<PathBuf, IpcError> {
             Ok("/repo".into())
+        }
+        async fn workspace_kind(&self, _ws: &WorkspaceId) -> Result<String, IpcError> {
+            Ok(self.kind.unwrap_or("local").into())
         }
         async fn create_lane(
             &self,
@@ -1119,6 +1135,33 @@ mod tests {
             ErrorCode::Invalid
         );
         assert_eq!(pro.host.spawns.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn f_tk_04_a_workspace_on_an_ssh_host_or_in_wsl_is_refused_and_nothing_starts() {
+        for kind in ["ssh", "wsl"] {
+            let f = fixture(
+                FakeHost {
+                    pro: true,
+                    instant: true,
+                    kind: Some(kind),
+                    ..Default::default()
+                },
+                1,
+            )
+            .await;
+            let e = f.svc.execute(input("TAN-1")).await.expect_err(kind);
+            assert_eq!(e.code, ErrorCode::Unavailable, "{kind}");
+            assert_eq!(
+                e.message,
+                "Tasks run in folders on this computer for now. Pick a workspace that isn't on an SSH host or in WSL.",
+                "{kind}"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            assert!(f.svc.list().await.expect("list").is_empty(), "{kind}");
+            assert!(f.host.lanes.lock().expect("lock").is_empty(), "{kind}");
+            assert_eq!(f.host.spawns.load(Ordering::SeqCst), 0, "{kind}");
+        }
     }
 
     #[tokio::test]
