@@ -83,7 +83,22 @@ describe("home page", () => {
   it("F-WB-01 the phone menu, the demo stage and the FAQ need no script beyond the demo loader", () => {
     expect(home.match(/<script/g)?.length).toBe(1);
     expect(home).toMatch(/<details[^>]*name="faq"/);
-    expect(home).toMatch(/<img[^>]*src="\/demo\/still\.jpg"[^>]*fetchpriority="high"/);
+    expect(home).toMatch(/<img[^>]*data-demo-still[^>]*src="\/demo\/still\.jpg"/);
+  });
+
+  it("F-WB-01 AC1 no image downloads with the page: each waits until it's near the screen (D-1816)", () => {
+    // The h1 is the largest paint. On a slow connection anything fetched with
+    // the page shares it with the stylesheet the h1 waits on, and a video's
+    // `poster` is always fetched with the page.
+    const imgs = home.match(/<img[^>]*>/g) ?? [];
+    expect(imgs.length).toBeGreaterThan(2);
+    for (const img of imgs) {
+      expect(img).toContain('loading="lazy"');
+      expect(img).not.toContain("fetchpriority");
+    }
+    // The video's poster waits for /demo/embed.js to see it near.
+    expect(home).not.toMatch(/<video[^>]*\sposter=/);
+    expect(home).toMatch(/<video[^>]*data-poster="\/screens\/product-poster\.jpg"/);
   });
 
   it("F-WB-01 \"Linux first\" says only what this build ships", () => {
