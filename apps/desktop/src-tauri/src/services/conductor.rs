@@ -14,6 +14,7 @@ use tandem_store::repo::conductor as log;
 use tandem_store::Store;
 use tandem_voice::conductor::call::{CallController, CallOrigin, HostedError};
 use tandem_voice::conductor::view::CallView;
+use tandem_voice::mic_owner::{MicClaim, MicOwner, MicOwners};
 
 use crate::services::api::ApiError;
 
@@ -68,6 +69,41 @@ impl ConductorService {
 
     pub fn view(&self) -> CallView {
         self.controller.get().map(|c| c.view()).unwrap_or_default()
+    }
+}
+
+/// The call's hold on the microphone (F-CN-07): claimed as
+/// [`MicOwner::Call`] before capture opens and held until the call lets go,
+/// so the wake listener steps aside and Dictate waits for the whole call.
+pub struct CallMic {
+    owners: MicOwners,
+    claim: parking_lot::Mutex<Option<MicClaim>>,
+}
+
+impl CallMic {
+    pub fn new(owners: MicOwners) -> Self {
+        Self {
+            owners,
+            claim: parking_lot::Mutex::new(None),
+        }
+    }
+
+    /// Claims the mic, then runs `open`; a failed open gives it back.
+    pub fn take(&self, open: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+        let mut held = self.claim.lock();
+        if held.is_none() {
+            *held = Some(self.owners.claim(MicOwner::Call).map_err(|o| match o {
+                MicOwner::Dictate => "Finish dictating first.".to_string(),
+                MicOwner::Call => "Another call has the microphone.".to_string(),
+            })?);
+        }
+        open().inspect_err(|_| *held = None)
+    }
+
+    /// Runs `close`, then lets go of the mic.
+    pub fn give_back(&self, close: impl FnOnce()) {
+        close();
+        *self.claim.lock() = None;
     }
 }
 
@@ -278,5 +314,51 @@ mod tests {
         assert_eq!(keep_days(&serde_json::json!("30")), Some(30));
         assert_eq!(keep_days(&serde_json::json!("off")), None);
         assert_eq!(keep_days(&serde_json::Value::Null), Some(KEEP_DAYS));
+    }
+
+    #[test]
+    fn f_cn_07_a_call_holds_the_mic_until_it_gives_it_back() {
+        let owners = MicOwners::new();
+        let mic = CallMic::new(owners.clone());
+        let opened = std::cell::Cell::new(false);
+        mic.take(|| {
+            // The claim is in place before capture opens.
+            opened.set(owners.current() == Some(MicOwner::Call));
+            Ok(())
+        })
+        .expect("test");
+        assert!(opened.get());
+        assert_eq!(owners.current(), Some(MicOwner::Call));
+        let closed_while_held = std::cell::Cell::new(false);
+        mic.give_back(|| closed_while_held.set(owners.current() == Some(MicOwner::Call)));
+        assert!(closed_while_held.get());
+        assert_eq!(owners.current(), None);
+    }
+
+    #[test]
+    fn f_cn_07_a_failed_open_gives_the_mic_back() {
+        let owners = MicOwners::new();
+        let mic = CallMic::new(owners.clone());
+        let err = mic.take(|| Err("Finish dictating first.".into()));
+        assert_eq!(err, Err("Finish dictating first.".to_string()));
+        assert_eq!(owners.current(), None);
+        // And the next call can take it.
+        mic.take(|| Ok(())).expect("test");
+        assert_eq!(owners.current(), Some(MicOwner::Call));
+    }
+
+    #[test]
+    fn f_cn_07_dictate_holding_the_mic_refuses_the_call() {
+        let owners = MicOwners::new();
+        let _dictate = owners.claim(MicOwner::Dictate).expect("test");
+        let mic = CallMic::new(owners.clone());
+        let mut opened = false;
+        let err = mic.take(|| {
+            opened = true;
+            Ok(())
+        });
+        assert_eq!(err, Err("Finish dictating first.".to_string()));
+        assert!(!opened);
+        assert_eq!(owners.current(), Some(MicOwner::Dictate));
     }
 }

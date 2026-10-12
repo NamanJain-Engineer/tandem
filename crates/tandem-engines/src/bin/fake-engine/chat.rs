@@ -156,7 +156,7 @@ fn tasks_server(args: &[String]) -> Option<(String, Vec<String>)> {
 }
 
 /// A stdio server named `name` in `--mcp-config`: command and args.
-fn stdio_server(args: &[String], name: &str) -> Option<(String, Vec<String>)> {
+pub(crate) fn stdio_server(args: &[String], name: &str) -> Option<(String, Vec<String>)> {
     let v = mcp_config(args)?;
     let server = v.pointer(&format!("/mcpServers/{name}"))?;
     let argv = server

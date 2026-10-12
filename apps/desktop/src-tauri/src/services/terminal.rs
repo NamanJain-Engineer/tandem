@@ -120,6 +120,10 @@ pub struct TerminalService {
     wsl_panes: std::sync::Mutex<std::collections::HashSet<String>>,
     /// The tasks server terminal agents get (F-TK-02).
     tasks: std::sync::OnceLock<Arc<crate::services::tasks::TasksService>>,
+    /// Agent panes on SSH hosts: their tasks server's channel, kept across
+    /// drops as their PTY is, closed with the pane (D-1606).
+    host_tasks:
+        std::sync::Mutex<std::collections::HashMap<String, crate::services::remote_mcp::RemoteMcp>>,
 }
 
 /// Takes a checkpoint of an agent pane's folder (F-EX-01). The flag turns
@@ -213,6 +217,7 @@ impl TerminalService {
             wsl: std::sync::OnceLock::new(),
             wsl_panes: Default::default(),
             tasks: std::sync::OnceLock::new(),
+            host_tasks: Default::default(),
         })
     }
 
@@ -306,6 +311,60 @@ impl TerminalService {
     pub fn end_tasks_session(&self, pane: &str) {
         if let Some(tasks) = self.tasks.get() {
             tasks.end_session(&format!("pn:{pane}"));
+        }
+        // A host agent's channel closes: its server there ends.
+        let channel = self.host_tasks.lock().ok().and_then(|mut m| m.remove(pane));
+        drop(channel);
+    }
+
+    /// "Expose tasks to terminal agents" on an SSH host (F-TK-02, D-1606):
+    /// the engine there can't be given a config in a home Vibezeo owns, so
+    /// it gets the tasks server for this run on its command line, as
+    /// `tandem-host mcp --channel <id>`. The channel is answered here by
+    /// the tasks server with this pane's connection, and outlives a dropped
+    /// connection as the pane does.
+    async fn host_tasks_args(
+        &self,
+        remote: &Arc<crate::services::remote::RemoteService>,
+        host: &tandem_core::ids::HostId,
+        engine: &tandem_engines::registry::EngineSpec,
+        pane: &str,
+    ) -> Vec<String> {
+        use crate::services::remote_mcp::{ProcessBackend, RemoteMcp};
+        use crate::services::tasks::{CONNECTION_ENV, SERVER_NAME};
+        // A relaunch's previous channel goes first.
+        self.end_tasks_session(pane);
+        let Some(tasks) = self.tasks.get() else {
+            return Vec::new();
+        };
+        if engine.hooks_support == tandem_engines::registry::HooksSupport::None
+            || !tasks.expose_to_terminals().await
+        {
+            return Vec::new();
+        }
+        let Some(server) = tasks.terminal_server() else {
+            return Vec::new();
+        };
+        let Some(conn) = tasks.begin_session(&format!("pn:{pane}"), &engine.label, "me") else {
+            return Vec::new();
+        };
+        let mut mcp = RemoteMcp::kept(remote.clone());
+        let backend = ProcessBackend {
+            server,
+            env: vec![(CONNECTION_ENV.to_string(), conn)],
+        };
+        match mcp.add(host, SERVER_NAME, Arc::new(backend)).await {
+            Ok(relayed) => {
+                if let Ok(mut m) = self.host_tasks.lock() {
+                    m.insert(pane.to_string(), mcp);
+                }
+                tandem_engines::homes::inline_stdio_server(engine, &relayed)
+            }
+            Err(e) => {
+                tasks.end_session(&format!("pn:{pane}"));
+                tracing::warn!(code = "remote.mcp_unavailable", error = %e.message, "no task tools for a host's terminal agent");
+                Vec::new()
+            }
         }
     }
 
@@ -1004,10 +1063,15 @@ impl TerminalService {
                         format!("{} isn't installed on this host.", engine.label),
                     )
                 })?;
+            let mut extra_args = self.engines.extra_args(&engine.id).await;
+            extra_args.extend(
+                self.host_tasks_args(&remote, &host, &engine, pane.as_str())
+                    .await,
+            );
             let req = tandem_engines::launch::TerminalLaunchRequest {
                 engine: &engine,
                 program: found,
-                extra_args: self.engines.extra_args(&engine.id).await,
+                extra_args,
                 resume: None,
                 host: tandem_engines::launch::HostKind::Ssh,
                 home: None,

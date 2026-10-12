@@ -16,6 +16,7 @@ use tandem_core::settings::SettingKey;
 use tandem_core::{DataDir, ErrorCode, IpcError};
 use tandem_store::repo::settings;
 use tandem_store::Store;
+use tandem_voice::conductor::persona::{PersonaBrief, SPEEDS};
 
 pub struct ConductorPersona {
     store: Store,
@@ -35,6 +36,19 @@ fn ipc(e: MemoryError) -> IpcError {
             tracing::warn!(error = %m, "conductor memory");
             IpcError::new(ErrorCode::Internal, "Couldn't update Conductor's memory.")
         }
+    }
+}
+
+/// A call's [`PersonaBrief`] from the persona and memory (the F-CN-06 seam
+/// the call reads once at start): the voice ("default" lets the provider
+/// choose), the speed step (1–5 onto [`SPEEDS`]) and the instructions.
+pub fn brief(ctx: &CallContext) -> PersonaBrief {
+    let p = &ctx.persona;
+    let step = usize::from(p.speed.clamp(1, SPEEDS.len() as u8)) - 1;
+    PersonaBrief {
+        voice: (p.voice != "default").then(|| p.voice.clone()),
+        instructions: ctx.instructions(),
+        speed: SPEEDS[step],
     }
 }
 
@@ -63,6 +77,11 @@ impl ConductorPersona {
     pub async fn call_context(&self) -> CallContext {
         let values = self.values().await;
         CallContext::from_settings(|k| values.get(&k).cloned(), &self.memory)
+    }
+
+    /// What a starting call gets: [`brief`] of [`Self::call_context`].
+    pub async fn call_brief(&self) -> PersonaBrief {
+        brief(&self.call_context().await)
     }
 
     pub async fn view(&self) -> Result<ConductorMemory, IpcError> {
@@ -192,5 +211,41 @@ mod tests {
             .contains("- Works on the billing service"));
         let view = p.clear().await.expect("test");
         assert!(view.facts.is_empty() && view.text.is_empty());
+    }
+
+    #[tokio::test]
+    async fn f_cn_06_a_call_reads_voice_speed_and_instructions_from_the_persona() {
+        let (_dir, p, store) = rig().await;
+        // Defaults: the provider's voice, normal speed, the default name.
+        let b = p.call_brief().await;
+        assert_eq!((b.voice.clone(), b.speed), (None, 1.0));
+        assert!(b.instructions.contains("Conductor"), "{}", b.instructions);
+
+        for (k, v) in [
+            (SettingKey::ConductorName, json!("Ada")),
+            (SettingKey::ConductorVoice, json!("sage")),
+            (SettingKey::ConductorSpeed, json!(5)),
+            (SettingKey::ConductorMemory, json!(true)),
+        ] {
+            settings::set(&store, k, v).await.expect("test");
+        }
+        p.remember("Works on the billing service")
+            .await
+            .expect("test");
+        let b = p.call_brief().await;
+        assert_eq!(b.voice.as_deref(), Some("sage"));
+        assert_eq!(b.speed, 1.2);
+        assert!(b.instructions.contains("Ada"), "{}", b.instructions);
+        assert!(b.instructions.contains("- Works on the billing service"));
+
+        // Memory off again: nothing remembered reaches the call.
+        settings::set(&store, SettingKey::ConductorMemory, json!(false))
+            .await
+            .expect("test");
+        assert!(!p
+            .call_brief()
+            .await
+            .instructions
+            .contains("billing service"));
     }
 }

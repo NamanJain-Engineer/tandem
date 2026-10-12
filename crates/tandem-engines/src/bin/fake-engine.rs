@@ -33,6 +33,10 @@
 //! `/limit <delay>` prints a usage-limit message that resets after the delay
 //! ("5s", "2h"), as engines do (F-AC-05).
 //!
+//! `/tasks <tool> <json>` calls a tool of the `tandem_tasks` stdio server
+//! named in `--mcp-config`, which it starts once and keeps, as engines keep
+//! their MCP servers; it prints `tasks[<server pid>]: <answer>` (D-1606).
+//!
 //! Sign-in (F-AC-02): `/login` asks for a code like a device flow and, once a
 //! line is typed, writes `$CLAUDE_CONFIG_DIR/.credentials.json`; `/logout`
 //! deletes it. As `codex`, `login` does the same with `$CODEX_HOME/auth.json`,
@@ -551,6 +555,109 @@ fn main() {
 }
 
 /// Answers one line; false to quit.
+/// The `tandem_tasks` server, once started: kept for the run.
+struct TasksServer {
+    child: std::process::Child,
+    stdin: std::process::ChildStdin,
+    lines: std::io::Lines<std::io::BufReader<std::process::ChildStdout>>,
+    next: u64,
+}
+
+static TASKS: std::sync::Mutex<Option<TasksServer>> = std::sync::Mutex::new(None);
+
+impl TasksServer {
+    fn start() -> Result<Self, String> {
+        let argv: Vec<String> = std::env::args().skip(1).collect();
+        let (command, args) = chat::stdio_server(&argv, "tandem_tasks").ok_or("no tasks server")?;
+        let mut child = Command::new(command)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("the tasks server didn't start: {e}"))?;
+        let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
+            return Err("no pipes".into());
+        };
+        use std::io::BufRead;
+        let mut server = Self {
+            child,
+            stdin,
+            lines: std::io::BufReader::new(stdout).lines(),
+            next: 1,
+        };
+        server.request(
+            "initialize",
+            serde_json::json!({"protocolVersion": "2025-06-18", "capabilities": {},
+                "clientInfo": {"name": "fake-tui", "version": "1"}}),
+        )?;
+        server
+            .send(&serde_json::json!({"jsonrpc": "2.0", "method": "notifications/initialized"}))?;
+        Ok(server)
+    }
+
+    fn send(&mut self, m: &serde_json::Value) -> Result<(), String> {
+        writeln!(self.stdin, "{m}")
+            .and_then(|_| self.stdin.flush())
+            .map_err(|_| "the tasks server went".to_string())
+    }
+
+    fn request(
+        &mut self,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let id = self.next;
+        self.next += 1;
+        self.send(
+            &serde_json::json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}),
+        )?;
+        for line in self.lines.by_ref() {
+            let Ok(line) = line else { break };
+            let Ok(m) = serde_json::from_str::<serde_json::Value>(&line) else {
+                continue;
+            };
+            if m.get("id") == Some(&serde_json::json!(id)) {
+                return match m.get("error") {
+                    Some(e) => Err(e.to_string()),
+                    None => Ok(m.get("result").cloned().unwrap_or_default()),
+                };
+            }
+        }
+        Err("the tasks server went".into())
+    }
+}
+
+/// `/tasks <tool> <json>`: one call on the kept server.
+fn tasks_call(tool: &str, args: serde_json::Value) -> String {
+    let mut slot = TASKS.lock().unwrap_or_else(|e| e.into_inner());
+    if slot.is_none() {
+        match TasksServer::start() {
+            Ok(s) => *slot = Some(s),
+            Err(e) => return format!("tasks error: {e}"),
+        }
+    }
+    let Some(server) = slot.as_mut() else {
+        return "tasks error: no tasks server".into();
+    };
+    let pid = server.child.id();
+    match server.request(
+        "tools/call",
+        serde_json::json!({"name": tool, "arguments": args}),
+    ) {
+        Ok(r) => format!(
+            "tasks[{pid}]: {}",
+            r.pointer("/content/0/text")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+        ),
+        Err(e) => {
+            *slot = None;
+            format!("tasks error: {e}")
+        }
+    }
+}
+
 fn answer(name: &str, text: &str) -> bool {
     let claude = name == "claude";
     let t = text.trim();
@@ -643,6 +750,12 @@ fn answer(name: &str, text: &str) -> bool {
             let _ = std::fs::write(path.trim(), text);
             out(&format!("wrote {}\r\n", path.trim()));
         }
+        return true;
+    }
+    if let Some(rest) = t.strip_prefix("/tasks ") {
+        let (tool, args) = rest.split_once(' ').unwrap_or((rest, "{}"));
+        let args = serde_json::from_str(args).unwrap_or_else(|_| serde_json::json!({}));
+        out(&format!("{}\r\n", tasks_call(tool.trim(), args)));
         return true;
     }
     if let Some(title) = t.strip_prefix("/title ") {

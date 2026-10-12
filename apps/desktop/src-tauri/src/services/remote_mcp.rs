@@ -173,11 +173,13 @@ impl Backend for ProcessBackend {
     }
 }
 
-/// A thread session's channels on a host; dropping it closes them (the
-/// engine's servers there end) and stops their bridges.
+/// A session's channels on a host (a thread's, or a terminal agent's);
+/// dropping it closes them (the engine's servers there end) and stops their
+/// bridges.
 pub struct RemoteMcp {
     remote: Arc<RemoteService>,
     channels: Vec<(String, tokio::task::JoinHandle<()>)>,
+    keep: bool,
 }
 
 impl RemoteMcp {
@@ -185,6 +187,17 @@ impl RemoteMcp {
         Self {
             remote,
             channels: Vec::new(),
+            keep: false,
+        }
+    }
+
+    /// For a terminal agent: its channels outlive a dropped connection, as
+    /// its PTY does, so its servers keep their sessions.
+    pub fn kept(remote: Arc<RemoteService>) -> Self {
+        Self {
+            remote,
+            channels: Vec::new(),
+            keep: true,
         }
     }
 
@@ -202,7 +215,7 @@ impl RemoteMcp {
                 "The host isn't connected",
             )
         })?;
-        let (channel, events) = self.remote.mcp_open(host).await?;
+        let (channel, events) = self.remote.mcp_open_with(host, self.keep).await?;
         let sink = (self.remote.clone(), channel.clone());
         let task = tokio::spawn(bridge(events, sink, backend));
         self.channels.push((channel.clone(), task));

@@ -287,8 +287,12 @@ pub struct RemoteService {
     engines: std::sync::OnceLock<Arc<crate::services::engines::EngineService>>,
     /// MCP channels this desktop opened (D-1604): their host, and where
     /// the lines the host sends go.
-    mcp: Mutex<HashMap<String, (HostId, mpsc::UnboundedSender<McpEvent>)>>,
+    mcp: Mutex<HashMap<String, McpRoute>>,
 }
+
+/// An MCP channel: its host, its bridge, and whether it outlives a dropped
+/// connection (a terminal agent's, taken over again on reconnect).
+type McpRoute = (HostId, mpsc::UnboundedSender<McpEvent>, bool);
 
 /// What arrives on an MCP channel (D-1604).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -629,6 +633,8 @@ impl RemoteService {
             *c = Some(client.clone());
         }
         self.pump(conn.clone(), notes);
+        // Terminal agents' servers first: their engines are about to resume.
+        self.mcp_reclaim(&conn.host_id, &client).await;
         self.reattach(conn, &client).await;
         self.files.rewatch(&conn.host_id, &client).await;
         self.warm_git(conn.host_id.clone());
@@ -867,19 +873,31 @@ impl RemoteService {
         self: &Arc<Self>,
         host: &HostId,
     ) -> Result<(String, mpsc::UnboundedReceiver<McpEvent>), IpcError> {
+        self.mcp_open_with(host, false).await
+    }
+
+    /// [`Self::mcp_open`]; a `keep` channel outlives a dropped connection
+    /// and is taken over again when it's back (a terminal agent's server,
+    /// which re-attaches with its PTY).
+    pub async fn mcp_open_with(
+        self: &Arc<Self>,
+        host: &HostId,
+        keep: bool,
+    ) -> Result<(String, mpsc::UnboundedReceiver<McpEvent>), IpcError> {
         let client = self.client(host).await?;
         let mut bytes = [0u8; 16];
         rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut bytes);
         let channel = hex::encode(bytes);
         let (tx, rx) = mpsc::unbounded_channel();
         if let Ok(mut m) = self.mcp.lock() {
-            m.insert(channel.clone(), (host.clone(), tx));
+            m.insert(channel.clone(), (host.clone(), tx, keep));
         }
         let opened: Result<Value, _> = client
             .call(
                 method::MCP_OPEN,
                 McpChannel {
                     channel: channel.clone(),
+                    keep,
                 },
             )
             .await;
@@ -918,6 +936,7 @@ impl RemoteService {
                 method::MCP_CLOSE,
                 McpChannel {
                     channel: channel.to_string(),
+                    keep: false,
                 },
             );
         }
@@ -937,16 +956,20 @@ impl RemoteService {
     }
 
     fn mcp_host(&self, channel: &str) -> Option<HostId> {
-        self.mcp.lock().ok()?.get(channel).map(|(h, _)| h.clone())
+        self.mcp
+            .lock()
+            .ok()?
+            .get(channel)
+            .map(|(h, _, _)| h.clone())
     }
 
     fn mcp_forget(&self, channel: &str) -> Option<HostId> {
-        self.mcp.lock().ok()?.remove(channel).map(|(h, _)| h)
+        self.mcp.lock().ok()?.remove(channel).map(|(h, _, _)| h)
     }
 
     fn mcp_event(&self, channel: &str, ev: McpEvent) {
         if let Ok(m) = self.mcp.lock() {
-            if let Some((_, tx)) = m.get(channel) {
+            if let Some((_, tx, _)) = m.get(channel) {
                 let _ = tx.send(ev);
             }
         }
@@ -954,16 +977,48 @@ impl RemoteService {
 
     /// The connection to `host` dropped: the daemon ended its channels, so
     /// each one's server is gone (the engine's own run ends with it too).
+    /// Kept ones stay: the daemon holds them for the next connection.
     fn mcp_dropped(&self, host: &HostId) {
         if let Ok(mut m) = self.mcp.lock() {
-            m.retain(|_, (h, tx)| {
-                if h == host {
+            m.retain(|_, (h, tx, keep)| {
+                if h == host && !*keep {
                     let _ = tx.send(McpEvent::Closed);
                     false
                 } else {
                     true
                 }
             });
+        }
+    }
+
+    /// Back on `host`: its kept channels are taken over again, with what
+    /// their servers said meanwhile. One the daemon no longer has (it was
+    /// restarted, or its server went) is closed here.
+    async fn mcp_reclaim(&self, host: &HostId, client: &Arc<HostClient>) {
+        let kept: Vec<String> = self
+            .mcp
+            .lock()
+            .map(|m| {
+                m.iter()
+                    .filter(|(_, (h, _, keep))| h == host && *keep)
+                    .map(|(id, _)| id.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        for channel in kept {
+            let taken: Result<Value, _> = client
+                .call(
+                    method::MCP_OPEN,
+                    McpChannel {
+                        channel: channel.clone(),
+                        keep: true,
+                    },
+                )
+                .await;
+            if taken.is_err() {
+                self.mcp_event(&channel, McpEvent::Closed);
+                self.mcp_forget(&channel);
+            }
         }
     }
 

@@ -7,7 +7,7 @@
 //! With no client connected the daemon waits 10 minutes, then ends every
 //! PTY and exits.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -110,11 +110,19 @@ const MAX_WATCHES: usize = 32;
 /// session, a few sessions at once.
 const MAX_CHANNELS: usize = 64;
 
+/// Lines a kept channel holds for its connection while that's gone; the
+/// oldest go first.
+const HELD_LINES: usize = 256;
+
 /// A stdio MCP channel: the connection that opened it, and the relay
-/// (`tandem-host mcp`) attached to it, if any.
+/// (`tandem-host mcp`) attached to it, if any. A kept one outlives its
+/// connection: `held` gathers its server's lines until the desktop opens
+/// it again.
 struct Channel {
     owner: u64,
     relay: Option<u64>,
+    keep: bool,
+    held: Option<VecDeque<String>>,
 }
 
 /// A channel id is 32 to 64 lowercase hex characters (128 bits or more,
@@ -172,8 +180,10 @@ impl State {
             .collect();
         drop_later(stopped);
         // Its channels end, and their relays are closed (their engines see
-        // the server go); a relay that goes leaves its channel open for the
-        // engine to start another.
+        // the server go), except kept ones, which hold their server's lines
+        // until the desktop is back. A relay that goes leaves its channel
+        // open for the engine to start another; a held channel whose relay
+        // goes has no one left, so it ends.
         let owned: Vec<String> = self
             .channels
             .iter()
@@ -181,10 +191,17 @@ impl State {
             .map(|(id, _)| id.clone())
             .collect();
         for id in owned {
-            if let Some(relay) = self.channels.remove(&id).and_then(|c| c.relay) {
-                self.kick(relay);
+            match self.channels.get_mut(&id) {
+                Some(c) if c.keep => c.held = Some(VecDeque::new()),
+                _ => {
+                    if let Some(relay) = self.channels.remove(&id).and_then(|c| c.relay) {
+                        self.kick(relay);
+                    }
+                }
             }
         }
+        self.channels
+            .retain(|_, c| !(c.relay == Some(client) && c.held.is_some()));
         let detached: Vec<(String, u64)> = self
             .channels
             .iter_mut()
@@ -376,9 +393,18 @@ impl Daemon {
             return;
         };
         let mut s = self.state.lock();
-        let Some(c) = s.channels.get(&l.channel) else {
+        let Some(c) = s.channels.get_mut(&l.channel) else {
             return;
         };
+        if name == method::MCP_LINE && c.relay == Some(client) {
+            if let Some(held) = c.held.as_mut() {
+                if held.len() >= HELD_LINES {
+                    held.pop_front();
+                }
+                held.push_back(l.line);
+                return;
+            }
+        }
         let (to, method) = match name {
             method::MCP_IN if c.owner == client => match c.relay {
                 Some(relay) => (relay, method::MCP_LINE),
@@ -400,8 +426,22 @@ impl Daemon {
         let mut s = self.state.lock();
         match name {
             method::MCP_OPEN => {
-                if s.channels.contains_key(&ch.channel) {
-                    return refused("That channel is already open");
+                // A kept channel whose connection went: this one takes it
+                // over, with what its server said meanwhile.
+                if let Some(c) = s.channels.get_mut(&ch.channel) {
+                    if !(ch.keep && c.keep && c.held.is_some()) {
+                        return refused("That channel is already open");
+                    }
+                    c.owner = client;
+                    let held = c.held.take().unwrap_or_default();
+                    for line in held {
+                        let out = Message::notification(
+                            method::MCP_OUT,
+                            json!({ "channel": ch.channel, "line": line }),
+                        );
+                        s.send(client, &out);
+                    }
+                    return Ok(Value::Null);
                 }
                 if s.channels.values().filter(|c| c.owner == client).count() >= MAX_CHANNELS {
                     return refused("Too many MCP channels are open on this connection");
@@ -411,6 +451,8 @@ impl Daemon {
                     Channel {
                         owner: client,
                         relay: None,
+                        keep: ch.keep,
+                        held: None,
                     },
                 );
             }
@@ -1210,14 +1252,81 @@ mod tests {
             .expect("send");
     }
 
-    /// The next notification of `m` on `c`.
+    /// The next notification of `m` on `c` (one that came in before a
+    /// call's reply first).
     fn next_note(c: &mut Client, m: &str) -> Value {
+        if let Some(i) = c.notes.iter().position(|n| n.method.as_deref() == Some(m)) {
+            return c.notes.remove(i).params.expect("params");
+        }
         loop {
             let msg = c.read();
             if msg.method.as_deref() == Some(m) {
                 return msg.params.expect("params");
             }
         }
+    }
+
+    /// Waits up to 5 s for `f` on the daemon's state.
+    fn until(d: &Daemon, f: impl Fn(&State) -> bool) {
+        let start = std::time::Instant::now();
+        while !f(&d.state.lock()) {
+            assert!(start.elapsed() < Duration::from_secs(5), "timed out");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn f_rm_01_f_tk_02_a_kept_channel_outlives_its_connection_and_is_taken_over() {
+        let (_dir, d) = daemon();
+        let ch = "abcdef0123456789abcdef0123456789";
+        let mut desk = Client::connect(&d);
+        desk.call(method::MCP_OPEN, json!({"channel": ch, "keep": true}))
+            .expect("open");
+        let mut r = relay(&d, ch);
+        writeln!(r.engine, "first").expect("engine writes");
+        assert_eq!(
+            next_note(&mut desk, method::MCP_OUT),
+            json!({"channel": ch, "line": "first"})
+        );
+        // The connection drops: the engine's server stays, and what it says
+        // meanwhile is held.
+        drop(desk);
+        until(&d, |s| s.channels.get(ch).is_some_and(|c| c.held.is_some()));
+        writeln!(r.engine, "while away").expect("engine writes");
+        until(&d, |s| {
+            s.channels
+                .get(ch)
+                .and_then(|c| c.held.as_ref())
+                .is_some_and(|h| h.len() == 1)
+        });
+        // Only an open that asks to keep it takes it over, with the held line.
+        let mut back = Client::connect(&d);
+        assert!(back.call(method::MCP_OPEN, json!({"channel": ch})).is_err());
+        back.call(method::MCP_OPEN, json!({"channel": ch, "keep": true}))
+            .expect("taken over");
+        assert_eq!(
+            next_note(&mut back, method::MCP_OUT),
+            json!({"channel": ch, "line": "while away"})
+        );
+        assert!(back
+            .call(method::MCP_OPEN, json!({"channel": ch, "keep": true}))
+            .is_err());
+        // The desktop's lines reach the same server.
+        mcp_note(&mut back, method::MCP_IN, ch, "hello again");
+        let mut got = String::new();
+        r.seen.read_line(&mut got).expect("relay writes");
+        assert_eq!(got, "hello again\n");
+        // Held again, then its server goes: nobody's left, so it ends.
+        drop(back);
+        until(&d, |s| s.channels.get(ch).is_some_and(|c| c.held.is_some()));
+        drop(r.engine);
+        until(&d, |s| s.channels.is_empty());
+        // A channel that isn't kept still ends with its connection.
+        let mut desk = Client::connect(&d);
+        desk.call(method::MCP_OPEN, json!({"channel": ch}))
+            .expect("open");
+        drop(desk);
+        until(&d, |s| s.channels.is_empty());
     }
 
     #[test]

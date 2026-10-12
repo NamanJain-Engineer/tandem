@@ -1670,7 +1670,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
   - `save_issue`, `save_comment`, `save_project`, `save_issue_label`
   - `archive_issue`, `restore_issue`
 - **Connections:** one per engine session. Revoking a connection (on session end or by the user) makes further calls fail with `CONNECTION_REVOKED`.
-- The server is injected into chat sessions via MCP config (F-TH-04/05) and into terminal engines through their native MCP config in the provider home when "Expose tasks to terminal agents" is on (default on).
+- The server is injected into chat sessions via MCP config (F-TH-04/05) and into terminal engines through their native MCP config in the provider home when "Expose tasks to terminal agents" is on (default on). A terminal engine on an SSH host gets it for that run on its command line instead (Claude Code's `--mcp-config`, Codex's `-c mcp_servers.*`), relayed to this machine's tasks server; nothing is written into the host's own config (D-1606).
 
 **Acceptance:**
 1. An MCP conformance test: initialize with each supported version, list tools (17), and call each tool against a temp dir.
@@ -2957,7 +2957,7 @@ Features beyond the original spec that make working with coding agents faster, s
   - **Keep this one…** asks in the native confirm (the one confirmation, D-710): "Merge {branch} into {base}?" / "Commits {engine}'s uncommitted changes on {branch}, merges it into {base}, and deletes the other {n} worktrees and their uncommitted changes. Their branches stay." [Merge and clean up]. Agents in the lanes are stopped first. A conflict leaves the base checkout conflicted, as "Merge into {base}" does (F-CD-15), and keeps all lanes. A base checkout with uncommitted changes refuses: "Commit or stash your changes in {base} first."
   - **Discard all…** asks and removes every lane's worktree and pane; branches stay.
 - A run survives relaunch: its lanes, check results and state are kept until it's merged or discarded.
-- States: no git ("Best of N needs a git repository"), a folder on an SSH host or in WSL ("Best of N works in folders on this computer only"), launching ("Starting 3 agents…"), comparing, a lane failed to start (its column shows the error; the others go on), done (merged, or discarded).
+- States: no git ("Best of N needs a git repository"), a folder in WSL ("Best of N isn't available in WSL folders yet"; in a folder on an SSH host every step runs there, D-1605), launching ("Starting 3 agents…"), comparing, a lane failed to start (its column shows the error; the others go on), done (merged, or discarded).
 
 **Data:** SQLite `bestof_runs` (id, workspace_id, title, base_commit, check_command?, state, created_at) and `bestof_lanes` (run_id, lane_workspace_id, pane_id?, engine_id, account_id?, check_state, check_exit?, check_output_tail?).
 
