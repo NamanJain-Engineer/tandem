@@ -1,11 +1,11 @@
 /** What's in the 0.7.0 release, for the home page's progress strip and the
  * changelog. Figures are counted in the code the release was built from
- * (product branch): `scripts/gate.sh` output (1773 Rust and 1365 TypeScript
+ * (product branch): `scripts/gate.sh` output (1781 Rust and 1370 TypeScript
  * tests) and the files in `apps/desktop/e2e/specs`. Update them with each
  * release. */
 export const PROGRESS = {
   milestones: 15,
-  automatedTests: 3138,
+  automatedTests: 3151,
   endToEndSuites: 129,
   engines: 11,
 } as const;
