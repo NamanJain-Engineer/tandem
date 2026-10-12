@@ -355,6 +355,27 @@ describe("E2E-M16-1 Conductor call", function () {
     expect(lines.some((t) => t.startsWith("Execute task") && t.includes("Confirmed by voice"))).toBe(true);
     expect(lines.some((t) => t.startsWith("Create teammate") && t.includes("Confirmed"))).toBe(false);
   });
+});
+
+// The persona, wake and mic-owner seams (F-CN-06, F-CN-07), with their own
+// Pro user: the API mints at most 10 voice sessions an hour per user, and
+// the calls above use them.
+describe("E2E-M16-1 Conductor call: persona, wake and microphone", function () {
+  this.timeout(300_000);
+
+  before(async function () {
+    await rt("/__reset", {});
+    const { email } = await freshUser("conductor-seams");
+    await testRoute("plan", { email, plan: "pro", paid: true });
+    await testRoute("credits", { email, monthly: 10_000, purchased: 0 });
+    await waitForEntitlement((e) => e.plan === "pro" && e.credits?.monthly === 10_000, "Pro with 10,000 credits");
+    await addFolder(`/tmp/tandem-e2e-conductor-seams-${Date.now()}`);
+    await $('[data-testid="conductor-button"]').waitForExist({ timeout: 10_000 });
+  });
+
+  afterEach(async () => {
+    if (!["idle"].includes((await view()).phase)) await endCall().catch(() => undefined);
+  });
 
   it("F-CN-06 a call starts with the persona's voice, speed, name and memory", async () => {
     const persona = { conductor_name: "Ada", conductor_voice: "sage", conductor_speed: 5, conductor_memory: true };
