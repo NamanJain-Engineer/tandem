@@ -8,7 +8,7 @@ import { setInvokeBackend } from "../../ipc/invoke";
 import { useDictate, watchDictate } from "../../stores/dictate";
 import { fakeBackend, resetStores } from "../../test/fakeBackend";
 import { bindingFrom, keyName, presets } from "./binding";
-import { DictateExtras, ShortcutField } from "./DictatePage";
+import { DictateExtras, MicSelect, ShortcutField } from "./DictatePage";
 import { EngineControl } from "./EngineControl";
 import { AutoEnhanceControl, FormattingControl } from "./EnhanceControls";
 import { useSettings } from "../../stores/settings";
@@ -94,6 +94,13 @@ describe("Dictate widget (F-DI-07, UI-60)", () => {
     act(() => emitLocal("dictate:state", { state: "inserted", takeId: "take_1", handsFree: false, composer: null, words: 42 }));
     await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Inserted · 42 words"));
     expect(clock(65_000)).toBe("1:05");
+  });
+
+  it("F-DI-07 a widget opened mid-take shows the take (D-519)", async () => {
+    fakeBackend({ dictate_status: () => ({ ...STATUS, state: "recording" }) });
+    wrap(<DictateWidget />);
+    await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Listening"));
+    expect(screen.getByTestId("widget-timer").textContent).toBe("0:00");
   });
 
   it("F-DI-07.2 an error toast renders with its full diagnostic in the tooltip", async () => {
@@ -191,6 +198,22 @@ describe("Dictate setup (F-DI-11)", () => {
     expect(screen.queryByTestId("dictate-key-detected")).toBeNull();
     act(() => emitLocal("dictate:verified", null));
     await waitFor(() => expect(screen.getByTestId("dictate-key-detected")).toBeTruthy());
+  });
+});
+
+describe("Microphone choice (F-DI-03)", () => {
+  it("D-518 an unset microphone shows its label in the trigger, not a blank", async () => {
+    fakeBackend({
+      dictate_devices: () => ({ devices: [{ id: "mic1", name: "Desk Mic", isDefault: true, bluetooth: false, loopback: false }], chosen: null }),
+    });
+    wrap(
+      <>
+        <MicSelect k="dictate_mic" label="Microphone" none="None" />
+        <MicSelect k="dictate_backup_mic" label="Backup microphone" none="None" />
+      </>,
+    );
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Microphone" }).textContent).toContain("System default (Desk Mic)"));
+    expect(screen.getByRole("combobox", { name: "Backup microphone" }).textContent).toContain("None");
   });
 });
 
