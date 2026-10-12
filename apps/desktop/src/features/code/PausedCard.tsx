@@ -4,6 +4,7 @@ import { Button, EngineGlyph, Spinner, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useEngines } from "../../stores/engines";
 import { useRestore } from "../../stores/restore";
+import { modalOpen } from "../shell/modal";
 import { RestoredScrollback } from "./RestoredScrollback";
 import type { TerminalOptions } from "./TerminalView";
 
@@ -28,7 +29,7 @@ export function PausedCard({
   const state = card?.state ?? (pane.restoreState === "cancelled" ? "cancelled" : "paused");
   const canResume = card?.canResume ?? false;
   useEffect(() => {
-    if (focused && !document.querySelector("[role=dialog]")) root.current?.focus({ preventScroll: true });
+    if (focused && !modalOpen()) root.current?.focus({ preventScroll: true });
   }, [focused]);
 
   const start = async (fresh: boolean) => {
