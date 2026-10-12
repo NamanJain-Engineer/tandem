@@ -2,7 +2,8 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshOffline, home, invoke, userHome } from "../support/app";
+import { addFolder, freshOffline, home, invoke, settled, userHome } from "../support/app";
+import { newWorktree, pick, repoMenu } from "../support/worktrees";
 
 const GIT_ENV = {
   ...process.env,
@@ -15,44 +16,6 @@ const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: GIT_ENV }).trim();
 
 const answerConfirm = (answer: "yes" | "no") => writeFileSync(join(home(), "confirm.txt"), answer);
-
-async function pick(label: string): Promise<void> {
-  await browser.waitUntil(
-    async () =>
-      browser.execute((l: string) => {
-        const item = Array.from(document.querySelectorAll<HTMLElement>("[role=menuitem]")).find(
-          (el) => el.textContent?.trim() === l,
-        );
-        item?.click();
-        return item !== undefined;
-      }, label),
-    { timeout: 5_000, timeoutMsg: `no menu item ${label}` },
-  );
-}
-
-async function repoMenu(root: string): Promise<void> {
-  await browser.execute((r: string) => {
-    const row = document.querySelector<HTMLElement>(`[data-testid="workspace-row"][data-root="${r}"]`);
-    const box = row?.getBoundingClientRect();
-    row?.dispatchEvent(
-      new MouseEvent("contextmenu", {
-        bubbles: true,
-        cancelable: true,
-        button: 2,
-        clientX: (box?.left ?? 0) + 24,
-        clientY: (box?.top ?? 0) + 8,
-      }),
-    );
-  }, root);
-}
-
-async function newWorktree(root: string, task: string): Promise<void> {
-  await repoMenu(root);
-  await pick("New worktree…");
-  await $('[data-testid="worktree-name"]').setValue(task);
-  await $('[data-testid="worktree-create"]').click();
-  await $('[data-testid="worktree-name"]').waitForExist({ reverse: true, timeout: 20_000 });
-}
 
 async function worktreeAction(branch: string, label: string): Promise<void> {
   // The row's ⋯ button shows on focus; under load the first Enter can land
@@ -132,7 +95,11 @@ describe("E2E-M17-WT-1 worktree setup", function () {
   it("F-WT-01.3 a command changed outside the app asks again, and Not now runs nothing", async () => {
     writeFileSync(
       join(repo, ".vibezeo/worktree.json"),
-      JSON.stringify({ copy: [".env"], setup: "echo changed > setup-marker.txt", teardown: `pwd > ${teardownMarker}` }),
+      JSON.stringify({
+        copy: [".env"],
+        setup: "echo changed > setup-marker.txt",
+        teardown: `pwd > ${teardownMarker}`,
+      }),
     );
     await newWorktree(repo, "setup two");
     await $('[data-testid="worktree-review"]').waitForExist({ timeout: 10_000 });
@@ -172,6 +139,9 @@ describe("E2E-M17-WT-1 worktree setup", function () {
     await $('//label[normalize-space()="Type tandem/setup-three to confirm"]/following::input[1]').setValue(
       "tandem/setup-three",
     );
+    // The confirm slides in; a click while it moves can come up off the
+    // button (D-840).
+    await settled();
     await $("button=Discard worktree").click();
     expect((await waitForFile(teardownMarker, 20_000)).trim()).toBe(wt("setup-three"));
     await browser.waitUntil(() => !existsSync(wt("setup-three")), { timeout: 15_000 });
