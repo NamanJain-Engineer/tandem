@@ -10,16 +10,17 @@ has every feature below with its full behaviour and acceptance tests.
 
 **Where it stands (12 October 2026, `product-m0-m5`):** M0–M14 are done, and
 so are M15's six features and its non-functional checks (pull request #38; the
-performance budgets still need the reference machines, `HUMAN_TODO.md`). 147
-of the original 152 features are done: all 65 P0s, every P1 and 15 of M16's 20
+performance budgets still need the reference machines, `HUMAN_TODO.md`). All
+152 of the original features are done: all 65 P0s, every P1 and all 20 of M16's
 P2s; the macOS Simulator pane (F-CD-21) came with the `chain5` batch. The spec
 has 165 IDs now, and the 13 added since are done: M17's five extras (F-EX-01
 to F-EX-05) and worktree workflow (F-WT-01 to F-WT-04), and M16's phone apps
-and Linux store packages (F-RM-04 to F-RM-07). The 5 left are Conductor's:
-F-CN-01 to F-CN-04 and F-CN-08 run end to end against the dev mock and lack
-only the vendor realtime client, which waits on a key. F-CN-06 and F-CN-07
-(persona, memory and wake phrase) are done: calls read the persona at start,
-the wake phrase starts calls and a call holds the mic (D-1119). vibezeo.com serves 0.7.0 from this release. Routines and running
+and Linux store packages (F-RM-04 to F-RM-07), so all 165 are. Conductor's
+last five (F-CN-01 to F-CN-04 and F-CN-08) pass every acceptance criterion
+against the dev mock, and the vendor's realtime client is built against its
+published events (D-1120, on `m16a-conductor`); checking it against a recorded
+session waits on the key (`HUMAN_TODO.md`). F-CN-06 and F-CN-07 (persona,
+memory and wake phrase) are done too (D-1119). vibezeo.com serves 0.7.0 from this release. Routines and running
 tasks are built and switch on with Pro; WSL workspaces wait for the Windows
 download.
 
@@ -194,10 +195,10 @@ Azure Trusted Signing, GPG for Linux, updater keys, release hosting; see
 ### M16 · P2 differentiators and release candidate (XL) · 24 features (P2)
 In independent sub-phases, each green and tagged (`m16a` … `m16d`), then the
 release candidate. Stop after any sub-phase if the budget runs out.
-- 16A Conductor (voice), first slice merged for F-CN-01 to F-CN-04 and F-CN-08 (calls against the dev mock; 23 tools, the ring window, the call-log setting and the vendor realtime client to come): [ ] F-CN-01 Call lifecycle · [ ] F-CN-02 Talker/doer
-  architecture and tool catalog · [ ] F-CN-03 Delivery rules and safety ·
-  [ ] F-CN-04 Conductor UI · [x] F-CN-05 Find work by meaning (local search and the palette, D-814; the API's ranking, #30; teammates and the app's opt-in to the hosted ranking, D-1302; the Conductor's spoken answer comes with F-CN-02) · [x] F-CN-06
-  Persona and memory (D-1119 wires it into calls) · [x] F-CN-07 Wake phrase (D-1119) · [ ] F-CN-08 Audio routing for
+- 16A Conductor (voice), all 47 tools, the floating ring, the call-log setting, talk faster/slower and the vendor realtime client built (D-1114 to D-1120; the vendor client waits on a recorded session with the key, `HUMAN_TODO.md`): [x] F-CN-01 Call lifecycle · [x] F-CN-02 Talker/doer
+  architecture and tool catalog · [x] F-CN-03 Delivery rules and safety ·
+  [x] F-CN-04 Conductor UI · [x] F-CN-05 Find work by meaning (local search and the palette, D-814; the API's ranking, #30; teammates and the app's opt-in to the hosted ranking, D-1302; the Conductor's spoken answer comes with F-CN-02) · [x] F-CN-06
+  Persona and memory (D-1119 wires it into calls) · [x] F-CN-07 Wake phrase (D-1119) · [x] F-CN-08 Audio routing for
   calls · [x] F-BE-08 Voice session minting (pull request #30, D-1000–D-1008)
 - 16B Auto: [x] F-AU-01 Auto (Pro, credits)
 - 16C Phone companion: [x] F-RM-03 Phone companion · [x] F-BE-11 Remote relay

@@ -1,0 +1,192 @@
+{
+  "_source": "Hand-built from the vendor's published Realtime server-event reference (GA names, `openai-node` src/resources/realtime/realtime.ts), not recorded: HUMAN_TODO.md has recording a real session and comparing it with this file. Every name and field realtime::openai reads is here; `expect` is the normalized event (null: skipped).",
+  "events": [
+    {
+      "frame": {
+        "type": "session.created",
+        "event_id": "event_1",
+        "session": { "type": "realtime", "id": "sess_1", "model": "gpt-realtime", "instructions": "" }
+      },
+      "expect": "Ready"
+    },
+    {
+      "frame": {
+        "type": "session.updated",
+        "event_id": "event_2",
+        "session": { "type": "realtime", "id": "sess_1", "model": "gpt-realtime" }
+      },
+      "expect": null
+    },
+    {
+      "frame": { "type": "input_audio_buffer.speech_started", "event_id": "event_3", "audio_start_ms": 1000, "item_id": "item_u1" },
+      "expect": "SpeechStarted"
+    },
+    {
+      "frame": { "type": "input_audio_buffer.speech_stopped", "event_id": "event_4", "audio_end_ms": 2400, "item_id": "item_u1" },
+      "expect": null
+    },
+    {
+      "frame": { "type": "input_audio_buffer.committed", "event_id": "event_5", "item_id": "item_u1", "previous_item_id": null },
+      "expect": null
+    },
+    {
+      "frame": {
+        "type": "conversation.item.input_audio_transcription.completed",
+        "event_id": "event_6",
+        "item_id": "item_u1",
+        "content_index": 0,
+        "transcript": "Open code mode."
+      },
+      "expect": { "TranscriptUser": "Open code mode." }
+    },
+    {
+      "frame": {
+        "type": "response.created",
+        "event_id": "event_7",
+        "response": { "id": "resp_1", "object": "realtime.response", "status": "in_progress", "output": [] }
+      },
+      "expect": null
+    },
+    {
+      "frame": {
+        "type": "response.output_item.added",
+        "event_id": "event_8",
+        "response_id": "resp_1",
+        "output_index": 0,
+        "item": { "id": "item_f1", "type": "function_call", "status": "in_progress", "name": "act", "call_id": "call_1", "arguments": "" }
+      },
+      "expect": null
+    },
+    {
+      "frame": {
+        "type": "response.function_call_arguments.delta",
+        "event_id": "event_9",
+        "response_id": "resp_1",
+        "item_id": "item_f1",
+        "output_index": 0,
+        "call_id": "call_1",
+        "delta": "{\"request\":"
+      },
+      "expect": null
+    },
+    {
+      "frame": {
+        "type": "response.function_call_arguments.done",
+        "event_id": "event_10",
+        "response_id": "resp_1",
+        "item_id": "item_f1",
+        "output_index": 0,
+        "call_id": "call_1",
+        "name": "act",
+        "arguments": "{\"request\":\"open code mode\"}"
+      },
+      "expect": null
+    },
+    {
+      "frame": {
+        "type": "response.output_item.done",
+        "event_id": "event_11",
+        "response_id": "resp_1",
+        "output_index": 0,
+        "item": {
+          "id": "item_f1",
+          "object": "realtime.item",
+          "type": "function_call",
+          "status": "completed",
+          "name": "act",
+          "call_id": "call_1",
+          "arguments": "{\"request\":\"open code mode\"}"
+        }
+      },
+      "expect": { "FunctionCall": { "call_id": "call_1", "name": "act", "args": { "request": "open code mode" } } }
+    },
+    {
+      "frame": {
+        "type": "response.done",
+        "event_id": "event_12",
+        "response": { "id": "resp_1", "object": "realtime.response", "status": "completed", "output": [] }
+      },
+      "expect": "ResponseDone"
+    },
+    {
+      "frame": {
+        "type": "response.output_audio.delta",
+        "event_id": "event_13",
+        "response_id": "resp_2",
+        "item_id": "item_a1",
+        "output_index": 0,
+        "content_index": 0,
+        "delta": "ZABkAJz/nP8="
+      },
+      "expect": { "AudioDelta": [100, 100, -100, -100] }
+    },
+    {
+      "frame": {
+        "type": "response.output_audio_transcript.delta",
+        "event_id": "event_14",
+        "response_id": "resp_2",
+        "item_id": "item_a1",
+        "output_index": 0,
+        "content_index": 0,
+        "delta": "Code mode"
+      },
+      "expect": null
+    },
+    {
+      "frame": { "type": "response.output_audio.done", "event_id": "event_15", "response_id": "resp_2", "item_id": "item_a1", "output_index": 0, "content_index": 0 },
+      "expect": null
+    },
+    {
+      "frame": {
+        "type": "response.output_audio_transcript.done",
+        "event_id": "event_16",
+        "response_id": "resp_2",
+        "item_id": "item_a1",
+        "output_index": 0,
+        "content_index": 0,
+        "transcript": "Code mode is open."
+      },
+      "expect": { "TranscriptAssistant": "Code mode is open." }
+    },
+    {
+      "frame": {
+        "type": "response.output_item.done",
+        "event_id": "event_17",
+        "response_id": "resp_3",
+        "output_index": 0,
+        "item": {
+          "id": "item_f2",
+          "object": "realtime.item",
+          "type": "function_call",
+          "status": "incomplete",
+          "name": "act",
+          "call_id": "call_2",
+          "arguments": "{\"request\":\"close the"
+        }
+      },
+      "expect": null
+    },
+    {
+      "frame": {
+        "type": "response.output_item.done",
+        "event_id": "event_18",
+        "response_id": "resp_2",
+        "output_index": 0,
+        "item": { "id": "item_a1", "object": "realtime.item", "type": "message", "role": "assistant", "status": "completed", "content": [] }
+      },
+      "expect": null
+    },
+    {
+      "frame": { "type": "rate_limits.updated", "event_id": "event_19", "rate_limits": [] },
+      "expect": null
+    },
+    {
+      "frame": {
+        "type": "error",
+        "event_id": "event_20",
+        "error": { "type": "invalid_request_error", "code": "invalid_value", "message": "Invalid value for 'audio.output.speed'.", "param": "session.audio.output.speed", "event_id": null }
+      },
+      "expect": { "Error": "Invalid value for 'audio.output.speed'." }
+    }
+  ]
+}

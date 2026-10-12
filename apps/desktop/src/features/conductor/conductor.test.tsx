@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import type { CallLogEntry, CallView, ChipView } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
@@ -15,6 +15,7 @@ import { ConductorCallSettings } from "./CallSettingsSlot";
 import { FloatingRing } from "./FloatingRing";
 import { ConductorButton } from "./ConductorButton";
 import { Hud } from "./Hud";
+import { HOLD_MS } from "./hold";
 import { foldChips } from "./ring";
 
 let calls: Call[] = [];
@@ -283,8 +284,12 @@ describe("Floating ring (F-CN-04, UI-61)", () => {
         <FloatingRing view={IDLE} level={0} />
       </UiProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Talk to Conductor" }));
-    await waitFor(() => expect(named("conductor_start_call")[0]?.args).toEqual({ wake: false }));
+    const ring = screen.getByRole("button", { name: "Talk to Conductor" });
+    fireEvent.pointerDown(ring);
+    fireEvent.pointerUp(ring);
+    await waitFor(() =>
+      expect(named("conductor_start_call")[0]?.args).toEqual({ wake: false, pushToTalk: false }),
+    );
     rerender(
       <UiProvider>
         <FloatingRing view={live()} level={0.4} />
@@ -310,5 +315,73 @@ describe("Floating ring (F-CN-04, UI-61)", () => {
     await waitFor(() =>
       expect(named("settings_set").at(-1)?.args).toEqual({ key: "conductor_floating_ring", value: true }),
     );
+  });
+});
+
+describe("Push-to-talk (F-CN-01: hold the ring)", () => {
+  beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
+  afterEach(() => vi.useRealTimers());
+
+  const hold = async (button: HTMLElement) => {
+    fireEvent.pointerDown(button);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HOLD_MS + 10);
+    });
+  };
+
+  it("F-CN-01 holding the title bar's ring starts a push-to-talk call that talks only while held", async () => {
+    pro();
+    render(
+      <UiProvider>
+        <ConductorButton />
+      </UiProvider>,
+    );
+    const b = screen.getByTestId("conductor-button");
+    await hold(b);
+    await waitFor(() =>
+      expect(named("conductor_start_call")[0]?.args).toEqual({ wake: false, pushToTalk: true }),
+    );
+    await waitFor(() => expect(named("conductor_mute").at(-1)?.args).toEqual({ muted: false }));
+    fireEvent.pointerUp(b);
+    await waitFor(() => expect(named("conductor_mute").at(-1)?.args).toEqual({ muted: true }));
+    // A hold isn't a click: the call goes on.
+    expect(named("conductor_end_call")).toHaveLength(0);
+    expect(named("conductor_start_call")).toHaveLength(1);
+  });
+
+  it("F-CN-01 holding the floating ring does the same, and during a call only unmutes", async () => {
+    const { rerender } = render(
+      <UiProvider>
+        <FloatingRing view={IDLE} level={0} />
+      </UiProvider>,
+    );
+    const ring = screen.getByRole("button", { name: "Talk to Conductor" });
+    await hold(ring);
+    await waitFor(() =>
+      expect(named("conductor_start_call")[0]?.args).toEqual({ wake: false, pushToTalk: true }),
+    );
+    await waitFor(() => expect(named("conductor_mute").at(-1)?.args).toEqual({ muted: false }));
+    fireEvent.pointerUp(ring);
+    await waitFor(() => expect(named("conductor_mute").at(-1)?.args).toEqual({ muted: true }));
+    rerender(
+      <UiProvider>
+        <FloatingRing view={live({ muted: true })} level={0} />
+      </UiProvider>,
+    );
+    const inCall = screen.getByRole("button", { name: "End the call" });
+    await hold(inCall);
+    await waitFor(() => expect(named("conductor_mute").at(-1)?.args).toEqual({ muted: false }));
+    fireEvent.pointerUp(inCall);
+    await waitFor(() => expect(named("conductor_mute").at(-1)?.args).toEqual({ muted: true }));
+    expect(named("conductor_start_call")).toHaveLength(1);
+    expect(named("conductor_end_call")).toHaveLength(0);
+    // Leaving before the hold starts cancels it, and nothing happens.
+    fireEvent.pointerDown(inCall);
+    fireEvent.pointerLeave(inCall);
+    const mutes = named("conductor_mute").length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HOLD_MS * 2);
+    });
+    expect(named("conductor_mute")).toHaveLength(mutes);
   });
 });
