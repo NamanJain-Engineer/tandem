@@ -258,6 +258,15 @@ export const RELEASE_TILE_MAP: Record<string, { icon: string; docs: string; feat
   "Find work finds teammates": { icon: "search", docs: docsPath("code-mode") },
   "Files and git on SSH hosts": { icon: "server", docs: docsPath("remote") },
   Fedora: { icon: "package", docs: docsPath("index") },
+  "Worktree setup": { icon: "branch", docs: docsPath("code-mode") },
+  "Review comments to the agent": { icon: "message", docs: docsPath("code-mode") },
+  "Overlap check": { icon: "compare", docs: docsPath("code-mode") },
+  "Merge requests on GitLab": { icon: "merge", docs: docsPath("code-mode") },
+  "Worktrees on SSH hosts": { icon: "server", docs: docsPath("remote") },
+  "Best of N on SSH hosts": { icon: "layers", docs: docsPath("remote") },
+  "Plugins and tasks for agents on SSH hosts": { icon: "plug", docs: docsPath("remote") },
+  "Hosts behind a jump host": { icon: "route", docs: docsPath("remote") },
+  "Your phone, over your own network": { icon: "phone", docs: docsPath("remote") },
 };
 
 export type ReleaseTile = { title: string; body: string; text: string; platforms: string[]; icon: string; docs: string };

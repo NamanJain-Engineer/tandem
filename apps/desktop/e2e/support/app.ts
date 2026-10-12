@@ -493,7 +493,7 @@ export async function settled(): Promise<void> {
 }
 
 /** A pointer or key event the page received, as `recordInput()` saw it. */
-type InputRecord = {
+export type InputRecord = {
   type: string;
   target: string;
   inDialog: boolean;
@@ -507,7 +507,7 @@ type InputRecord = {
 /** Starts recording the page's pointer and key events (capture phase, before
  * the app or a dialog sees them) with the box of `selector` at that moment,
  * and returns the page's clock to read them from. */
-async function recordInput(selector: string): Promise<number> {
+export async function recordInput(selector: string): Promise<number> {
   return (await browser.execute((sel: string) => {
     type Rec = {
       type: string;
@@ -532,7 +532,7 @@ async function recordInput(selector: string): Promise<number> {
           target: el
             ? `${el.tagName}${el.getAttribute("data-testid") ? `[${el.getAttribute("data-testid")}]` : ""}`
             : String(e.target),
-          inDialog: !!el?.closest('[role="dialog"]'),
+          inDialog: !!el?.closest('[role="dialog"],[role="alertdialog"]'),
           x: Math.round(pointer.clientX ?? -1),
           y: Math.round(pointer.clientY ?? -1),
           watched: watched ? [watched.x, watched.y, watched.width, watched.height].map(Math.round) : null,
@@ -547,7 +547,7 @@ async function recordInput(selector: string): Promise<number> {
   }, selector)) as number;
 }
 
-async function inputSince(since: number): Promise<InputRecord[]> {
+export async function inputSince(since: number): Promise<InputRecord[]> {
   const all = (await browser.execute(
     () => (window as unknown as { __e2eInput?: unknown[] }).__e2eInput ?? [],
   )) as InputRecord[];

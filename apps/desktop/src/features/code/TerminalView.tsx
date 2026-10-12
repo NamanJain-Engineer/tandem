@@ -16,6 +16,7 @@ import { log } from "../../ipc/log";
 import { createFrameChannel, FrameKind, type Frame, type FrameChannel } from "../../ipc/pty";
 import { useLayout } from "../../stores/layout";
 import { useTerminals } from "../../stores/terminals";
+import { modalOpen } from "../shell/modal";
 import { copyText, readText } from "../../ipc/clipboard";
 import { CommandMarks, type Activity } from "./commandMarks";
 import { markFirstOutput, markMounted, markPhase, markReflow, markWrite, timed } from "./perfMarks";
@@ -593,8 +594,7 @@ export function TerminalView({
         refit.current();
         // Focus a new shell once; later visibility changes leave focus alone
         // so closing Settings can return it to its opener (F-SH-04 AC1).
-        if (focusedRef.current && el.offsetParent !== null && !document.querySelector("[role=dialog]"))
-          xterm.focus();
+        if (focusedRef.current && el.offsetParent !== null && !modalOpen()) xterm.focus();
       } catch (e) {
         if (disposed) return;
         const err = e as IpcError;
@@ -857,7 +857,7 @@ export function TerminalView({
       focusChanged.current = true;
       return;
     }
-    if (!focused || !visibleRef.current || document.querySelector("[role=dialog]")) return;
+    if (!focused || !visibleRef.current || modalOpen()) return;
     const el = host.current;
     if (el && !el.contains(document.activeElement)) term.current?.focus();
   }, [focused]);

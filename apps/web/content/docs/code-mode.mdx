@@ -8,7 +8,7 @@ Code mode is a grid of real PTY terminals. Each pane runs an agent CLI or a shel
 - **Panes.** Split right with <kbd>Mod+D</kbd> (on Linux, <kbd>Ctrl+Shift+E</kbd> while a terminal has focus) and down with <kbd>Mod+Shift+D</kbd>. Drag a pane to move it, swap two panes, or maximize one.
 - **Launching.** The launch grid lists the engines Vibezeo found. The launch sheet keeps saved presets and lineups of several agents.
 - **Status.** Each pane shows whether its agent is working, waiting for you, finished or failed. The Dashboard lists every live agent across workspaces.
-- **Lanes.** Run a task in its own git worktree, under `<repo>/.tandem/worktrees/<name>` on a `tandem/<name>` branch, then merge it back or clean it up.
+- **Worktrees.** Run a task in its own git worktree, under `<repo>/.tandem/worktrees/<name>` on a `tandem/<name>` branch, then merge it back or clean it up. See [Worktrees](#worktrees) below.
 - **Handoff.** Hand a session to another engine with a written summary, in a pane beside it or as a thread.
 - **Find work.** **Find work…** in the command palette (<kbd>Mod+K</kbd>) finds work by what it's about. Describe it, such as "the login tests", and it lists open panes, threads and teammates, best first; choose one to go to it, and a pane flashes. It reads each pane's name, title, engine, folder and last 20 lines of output, each thread's title and last message, and each teammate's name, the first line of its brief and its last message, with anything that looks like a key or password removed first. It ranks them on your computer. Ranking them with Vibezeo's AI is a Pro feature that comes with Vibezeo accounts.
 - **Around the terminals.** A Files tab with a code editor, a git panel, a browser and a Scratchpad sit in the sidebar. Paths and URLs a program prints open with <kbd>Mod</kbd>+Click.
@@ -16,3 +16,32 @@ Code mode is a grid of real PTY terminals. Each pane runs an agent CLI or a shel
 - **Restore.** After a crash or relaunch, layouts come back and agents return paused, ready to resume their session.
 
 On the Free plan you can have 4 live panes and 3 workspaces; see [Accounts and limits](/docs/accounts-and-limits/).
+
+## Worktrees
+
+**New worktree…** in a repository's menu in the rail (right-click it) makes a worktree from the repository's current commit; the launch sheet makes one per agent when you run several. Each worktree is listed under its repository, and its ⋯ menu has **Open diff**, **Open in Files**, **Merge into…**, **Create pull request**, **Check overlap…**, **Worktree setup…** and **Discard worktree…**. Worktrees need a local git repository with at least one commit.
+
+### Setup for new worktrees
+
+A new worktree has only the files git tracks: no `.env`, no local config, no installed dependencies. **Worktree setup…** describes what each new worktree of the repository gets, and saves it as `.vibezeo/worktree.json` in the repository, so you can commit it and share it. Vibezeo never commits it for you.
+
+- **Copy into each new worktree.** One pattern per line, written as in `.gitignore`, such as `.env*` or `config/local.yml` (a `!` line excludes). Matching files are copied from your main checkout into every new worktree, however it was made. A file the worktree already has is never overwritten, symbolic links are skipped, and folders git ignores, such as `node_modules`, are only searched when a pattern names a path inside them. The copy stops at 2,000 files or 512 MB.
+- **Setup command.** Runs in a new terminal in the worktree, such as `pnpm install`, so you can watch it and stop it. It counts toward your live panes (4 on Free). It runs for worktrees you make with **New worktree…** or the launch sheet; worktrees made for Best of N, task runs and handoff get the copy only.
+- **Teardown command.** Runs in the worktree when you choose **Discard worktree…**, before its folder is deleted, such as `docker compose down`; the worktrees Best of N removes don't run it. It gets 2 minutes. If it fails or times out the worktree is still discarded, and the message says what happened.
+- **Trust.** Commands from the file run only once you've trusted them on this computer. Saving in **Worktree setup…** trusts them. If the file arrives or changes some other way, for example in a pull, the next new worktree shows **Review worktree setup** with the commands as written, and nothing runs until you choose **Trust and run**. **Not now** still gives you the worktree, with the copied files.
+
+### Review comments to the agent
+
+In **Open diff**, hover a line and choose the comment button to leave a comment on it; removed lines can be commented on too. The comments collect at the bottom of the diff, where you can edit or remove them. **Send to agent** types them into the agent running in that worktree's pane as one message, with each file, line and the line's text, then clears them; with several agents there, choose which one. If no agent is running there, **Copy review** puts the same text on the clipboard. Comments stay until you send them or quit Vibezeo.
+
+### Overlap check and merge forecast
+
+**Check overlap…** lists the other worktrees of the same repository that changed any of the same files, uncommitted changes included, and forecasts what merging into the repository's current branch would do: **No conflicts expected**, or the files that would conflict. The forecast merges in memory with your own git (version 2.38 or later), so your checkout, its branch and its files aren't touched. It covers committed work only, and says how many uncommitted changes it left out. **Merge into…** shows the same forecast before you confirm.
+
+### Merge requests on GitLab
+
+When a worktree's `origin` remote is on a host whose name contains `gitlab`, **Create pull request** becomes **Create merge request** and runs `glab mr create` in a terminal in the worktree; it needs the GitLab CLI (`glab`) installed and signed in. Other remotes use `gh pr create`, which needs the GitHub CLI (`gh`).
+
+### Not available everywhere
+
+Worktrees aren't available in WSL folders yet. In folders on SSH hosts, worktrees don't have setup, the overlap check or merge forecast, or merge requests: **Create pull request** runs the host's own `gh`.

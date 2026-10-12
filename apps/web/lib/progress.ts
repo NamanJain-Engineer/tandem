@@ -1,12 +1,12 @@
-/** What's in the 0.6.0 release, for the home page's progress strip and the
+/** What's in the 0.7.0 release, for the home page's progress strip and the
  * changelog. Figures are counted in the code the release was built from
- * (product branch): `scripts/gate.sh` output (1616 Rust and 1275 TypeScript
+ * (product branch): `scripts/gate.sh` output (1781 Rust and 1374 TypeScript
  * tests) and the files in `apps/desktop/e2e/specs`. Update them with each
  * release. */
 export const PROGRESS = {
   milestones: 15,
-  automatedTests: 2891,
-  endToEndSuites: 120,
+  automatedTests: 3155,
+  endToEndSuites: 129,
   engines: 11,
 } as const;
 
@@ -27,6 +27,7 @@ export const MILESTONES: readonly Milestone[] = [
       "The Ports tab lists the servers your panes started, with Open, Copy URL and Stop.",
       "Best of N gives one prompt to two or three agents in their own worktrees, compares their diffs and keeps the best.",
       "A prompt library of Markdown files, with variables, inserted into any message box or pane.",
+      "The worktree workflow: setup with your trust, review comments sent to the agent, an overlap check before a merge, and GitLab merge requests.",
     ],
   },
   {
@@ -37,6 +38,7 @@ export const MILESTONES: readonly Milestone[] = [
       "The host's key is pinned the first time; if it changes, Vibezeo stops until you trust the new one.",
       "A small helper on the host, checked against its SHA-256, keeps terminals running through a dropped connection (up to 10 minutes) and reattaches them.",
       "Engines run signed in on the host, and your sign-ins, plugin credentials and the local gateway stay on your computer.",
+      "Worktrees, Best of N, and plugins and task tools in threads run on the host too, and hosts behind a jump host connect.",
       "WSL folders, written for the Windows download (not yet tried on Windows).",
     ],
   },

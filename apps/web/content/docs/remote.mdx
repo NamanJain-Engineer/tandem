@@ -13,7 +13,8 @@ Open a folder on another machine and work there as if it were local: terminals, 
 - **Files and git.** The Files tab and the Changes panel follow the host's folder as it changes, whatever changed it: an agent, a terminal or another program on the host. Push, pull, switching branches and new branches run the host's own git with the host's own credentials (its SSH keys or credential helper); nothing from this computer is used.
 - **Worktrees.** On an SSH host, *New worktree* and a Fleet run's worktree isolation make the worktree on the host, under `<repo>/.tandem/worktrees/<name>` on a `tandem/<name>` branch, the same as locally; merge, diff and cleanup run there too. A worktree's pull request needs the GitHub CLI (`gh`) installed on the host.
 - **Engines.** The `+` menu lists the coding engines installed on the host, signed in on the host. Your sign-ins, accounts, plugin credentials and the local gateway never leave this computer.
-- **Plugins and tasks.** A thread on an SSH host can use the plugins you grant it and your tasks, as a local thread does. Its tool calls come back to this computer over the same connection: plugin approvals show here, plugin sign-ins and your task list stay here, and no port is opened on either machine.
+- **Plugins and tasks.** A thread on an SSH host can use the plugins you grant it and your tasks, as a local thread does. Its tool calls come back to this computer over the same connection: plugin approvals show here, plugin sign-ins and your task list stay here, and no port is opened on either machine. An agent terminal on the host (Claude Code or Codex) gets the task tools too, as a local one does. They're added to that run's command line, so nothing is written into the host's own engine config, and they keep working when the connection drops and comes back. Agent terminals get no plugins, here or on this computer. On the Free plan you can connect one plugin; the task tools are included.
+- **Best of N.** In a git repository on an SSH host, "Best of N…" works as it does locally: each agent gets its own worktree on the host, Compare shows their changes, your check command runs on the host in each worktree (in your login shell there), and "Keep this one…" commits the winner with the host's git and identity, merges it and removes the other worktrees.
 - **Approvals.** Threads on a host ask for approval just as local ones do, with the same approval card, whichever engine runs them.
 
 **Which hosts.** The Linux download includes the helper for **Linux x86_64 and Linux arm64 (aarch64)** hosts; the arm64 helper hasn't been tried on a real arm64 machine yet. macOS hosts need the macOS helper, which is built on a Mac and isn't in this download yet. Hosts behind a jump host (`ProxyJump` or `ProxyCommand` in your SSH config) work too: Vibezeo reads the host's key through the jump for you to check, and the jump host itself is reached and checked as your own config and `known_hosts` say.
@@ -26,4 +27,37 @@ WSL workspaces are written for the Windows download, which isn't out yet, and ha
 
 ## Phone
 
-A companion web app to see your agents and answer them from your phone, end-to-end encrypted, planned for Pro (M16).
+See your agents and answer them from your phone's browser while Vibezeo runs on your computer. Everything between the phone and the computer is end-to-end encrypted. Phones can't run the coding tools themselves, so the phone is a remote for the agents on your computer.
+
+### Pair over your local network
+
+This needs no account and works on the Free plan. Your phone and computer must be on the same network (the same Wi-Fi, for example), or on the same VPN.
+
+1. On the computer, open **Settings › Remote** and turn on **Pair over your local network** under *Local network*. It's off until you turn it on. Vibezeo then listens on port 47800 on your computer's home or office network addresses (10.x, 172.16–31.x, 192.168.x) and VPN addresses (100.64–127.x, which Tailscale uses). It never listens on all interfaces or on a public address, and it closes connections from outside those networks without answering.
+2. Choose **Pair a phone on this network**. A QR code and its link appear; they expire in 10 minutes. If the computer has more than one address, **Address in the code** picks which one the code uses.
+3. Scan the code with your phone's camera. It opens Vibezeo's phone web app, served by your computer at `http://<your computer's address>:47800/remote`, and pairs. The dialog on the computer says **Paired with …**.
+
+To keep it one tap away, add the page to your home screen (Share › **Add to Home Screen** in Safari, or the browser menu's *Add to Home screen* on Android). The page is plain HTTP on your own network, so it doesn't work offline, but every message inside it is sealed end to end (X25519, XChaCha20-Poly1305).
+
+If the phone can't connect, check that both are on the same network and that a firewall on the computer allows incoming connections on port 47800. If your computer's address changes (a new network, for example), make a new code.
+
+**Away from home.** Put the computer and the phone on the same VPN, such as Tailscale's free plan, and pair with the computer's VPN address (marked *VPN* under *Address in the code*). Vibezeo doesn't run a VPN itself.
+
+### What the phone can do
+
+- **Agents:** each agent's status (working, needs you, done or error) and its latest activity line.
+- **Approvals:** **Deny** always applies at once. **Allow** applies at once only while **Allow approvals from phone for the next 8 hours** is on in Settings › Remote. Otherwise it waits on the computer: Settings › Remote lists it under **Waiting for you** with Allow and Don't allow, and you decide there. Turning the 8 hours on is only possible at the computer, and a restart turns it off.
+- **Threads** and teammate chats: read them and, with Chat control, send to them.
+- **Type to this agent:** with Terminal control, type into an agent pane. Never into a plain shell.
+- **Routines:** with the Routines permission, run one now.
+
+Viewing comes with pairing. **Chat control**, **Terminal control**, **Approvals** and **Routines** are off for each new phone; turn them on per phone in Settings › Remote. The page refreshes about every 10 seconds while it's open. There are no notifications when it's closed.
+
+### Unpairing
+
+- On the phone: **Unpair this phone**.
+- On the computer: **Revoke** next to the phone in Settings › Remote, or **Reset remote access…** to unpair every phone and make a new key.
+
+Either way the computer forgets the phone's keys, and the phone's next connection is refused. Turning *Pair over your local network* off disconnects phones without unpairing them; turning it back on lets them reconnect.
+
+Pairing through Vibezeo's hosted relay, for use away from your network without a VPN, needs Pro and a Vibezeo account. The Vibezeo Remote apps for Android and iOS aren't published yet.

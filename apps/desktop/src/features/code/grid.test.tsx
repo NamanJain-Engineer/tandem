@@ -838,6 +838,24 @@ describe("restore (F-SH-07)", () => {
     expect(within(card()).getByRole("status").textContent).toContain("Restore cancelled");
     expect(screen.queryByTestId("terminal")).toBeNull();
   });
+
+  it("F-SH-07 a card that shows focused leaves keyboard focus in an open confirm (UI_SPEC §2.10, D-841)", async () => {
+    // A danger ConfirmDialog is an alertdialog: taking focus from it would
+    // make it take focus back and select its typed confirmation.
+    const confirm = document.createElement("div");
+    confirm.setAttribute("role", "alertdialog");
+    const typed = document.createElement("input");
+    confirm.append(typed);
+    document.body.append(confirm);
+    typed.focus();
+    try {
+      await restored({ pn_a: null });
+      expect(card()).toBeTruthy();
+      expect(document.activeElement).toBe(typed);
+    } finally {
+      confirm.remove();
+    }
+  });
 });
 
 describe("browser panes (F-CD-17)", () => {

@@ -50,6 +50,22 @@ export function viewFor(e: DictateStateEvent, now: number): View {
   }
 }
 
+/** The pill for a take already running when the window opens: it's made
+ * on the first recording (D-519), after that take's first event. */
+export function viewFromStatus(state: DictateStatus["state"], now: number): View | null {
+  switch (state) {
+    case "arming":
+    case "recording":
+      return { kind: "listening", since: now, handsFree: false };
+    case "transcribing":
+    case "post_processing":
+    case "inserting":
+      return { kind: "transcribing" };
+    default:
+      return null;
+  }
+}
+
 /** UI-60: the Dictate widget, alone in its transparent window. */
 export function DictateWidget() {
   const [status, setStatus] = useState<DictateStatus | null>(null);
@@ -63,7 +79,12 @@ export function DictateWidget() {
   useEffect(() => {
     document.documentElement.style.background = "transparent";
     document.body.style.background = "transparent";
-    void invoke<DictateStatus>("dictate_status").then(setStatus, () => undefined);
+    void invoke<DictateStatus>("dictate_status").then((s) => {
+      setStatus(s);
+      // Only when no event has arrived yet: an event is newer than this.
+      const seed = viewFromStatus(s.state, Date.now());
+      if (seed) setView((v) => (v.kind === "idle" ? seed : v));
+    }, () => undefined);
     const offs = [
       listen<DictateStatus>("dictate:status", setStatus),
       listen<DictateStateEvent>("dictate:state", (e) => {
