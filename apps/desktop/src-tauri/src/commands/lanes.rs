@@ -218,7 +218,7 @@ pub async fn worktree_setup_trust(
 pub async fn lane_setup(
     state: State<'_, AppState>,
     lane_id: WorkspaceId,
-) -> Result<LaneSetup, IpcError> {
+) -> Result<Option<LaneSetup>, IpcError> {
     worktree_setup::lane_setup(&state.store, &state.data, &lane_id).await
 }
 

@@ -303,3 +303,29 @@ describe("GitLab merge requests (F-WT-04)", () => {
     expect(labels).not.toContain("Create merge request");
   });
 });
+
+describe("worktrees on SSH hosts (D-2209)", () => {
+  const HOSTED = ws("wt_h", { ...WT, id: "wt_h", kind: "ssh", hostId: "hst_1" });
+
+  it("F-WT-01 a host's worktree gets no setup prompt or error after it's made", async () => {
+    backend({ lane_setup: () => null });
+    useWorkspaces.setState({ list: [REPO, HOSTED] });
+    await prepareWorktree("wt_h");
+    expect(useWorktrees.getState().notices).toEqual([]);
+    expect(useWorktrees.getState().ask).toBeNull();
+  });
+
+  it("F-WT-03 Check overlap and Worktree setup are off for a host's worktree, and its merge has no forecast", async () => {
+    backend({});
+    const entries = worktreeMenu(HOSTED, "main", () => 0);
+    const off = (id: string) => entries.find((e) => "id" in e && e.id === id && "disabled" in e && e.disabled);
+    expect(off("wt-overlap")).toBeTruthy();
+    expect(off("wt-setup")).toBeTruthy();
+    useWorkspaces.setState({ list: [REPO, HOSTED] });
+    useWorktrees.getState().open({ kind: "merge", worktreeId: "wt_h" });
+    dialogs();
+    await screen.findByText("Merge");
+    expect(screen.queryByTestId("merge-forecast")).toBeNull();
+    expect(named("lane_overlap")).toHaveLength(0);
+  });
+});

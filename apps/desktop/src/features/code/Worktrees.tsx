@@ -77,14 +77,16 @@ export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): Me
       // F-WT-03: sibling worktrees on the same files, and the merge forecast.
       id: "wt-overlap",
       label: t("worktree.overlap.menu"),
-      disabled: wt.missing,
+      // On an SSH host these need its git and files locally (D-2209).
+      disabled: wt.missing || wt.kind !== "local",
       onSelect: () => open({ kind: "overlap", worktreeId: wt.id }),
     },
     {
       // F-WT-01: the repository's setup, from any of its worktrees.
       id: "wt-setup",
       label: t("worktree.setup.menu"),
-      disabled: wt.missing,
+      // On an SSH host these need its git and files locally (D-2209).
+      disabled: wt.missing || wt.kind !== "local",
       onSelect: () => open({ kind: "setup", workspaceId: wt.id }),
     },
     { id: "wt-sep", type: "separator" },
@@ -376,7 +378,7 @@ function MergeDialogs({
         });
       }}
     >
-      <MergeForecast laneId={wt.id} />
+      {wt.kind === "local" ? <MergeForecast laneId={wt.id} /> : null}
     </ConfirmDialog>
   );
 }
