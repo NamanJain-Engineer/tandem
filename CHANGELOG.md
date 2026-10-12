@@ -121,6 +121,12 @@ besides Lead, and one plugin connection.
   stopped it at once.
 - [lin] Settings › Dictate's Microphone showed nothing when the system
   default was in use; it now says "System default".
+- [lin] Dialogs, the command palette and command recall opened shifted up
+  and to the left by half their size, then jumped to their place as they
+  finished opening. They now open in place.
+- [lin] Typing a confirmation, such as a worktree's branch name to discard
+  it, could lose what you'd typed when a terminal started behind the
+  dialog. Terminals now leave the keyboard alone while a confirm is open.
 
 ## 0.6.0
 
