@@ -129,8 +129,8 @@ describe("E2E-M6-4 worktrees", () => {
       await $('//label[normalize-space()="Type tandem/fix-auth to confirm"]/following::input[1]').setValue(
         "tandem/fix-auth",
       );
-      // The confirm slides in; a click while it moves can come up off the
-      // button (D-840).
+      // A click while the confirm opens could come up off its button (D-840,
+      // D-842).
       await settled();
       await $("button=Discard worktree").click();
     };

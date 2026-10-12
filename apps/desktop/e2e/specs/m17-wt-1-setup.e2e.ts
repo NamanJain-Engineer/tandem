@@ -76,6 +76,8 @@ describe("E2E-M17-WT-1 worktree setup", function () {
     await addFolder(repo);
   });
 
+  // A click in a dialog waits for its opening animation to end (D-840): a
+  // click while one moved could come up off its button (D-842).
   it("F-WT-01.1 a new worktree gets the ignored .env, and nothing from node_modules", async () => {
     await newWorktree(repo, "setup one");
     expect(await waitForFile(join(wt("setup-one"), ".env"), 10_000)).toBe("API_KEY=dev\n");
@@ -88,6 +90,7 @@ describe("E2E-M17-WT-1 worktree setup", function () {
     // Nothing ran while the review was open.
     await browser.pause(1_000);
     expect(existsSync(join(wt("setup-one"), "setup-marker.txt"))).toBe(false);
+    await settled();
     await $('[data-testid="worktree-review-trust"]').click();
     expect((await waitForFile(join(wt("setup-one"), "setup-marker.txt"))).trim()).toBe("from-repo");
   });
@@ -104,6 +107,7 @@ describe("E2E-M17-WT-1 worktree setup", function () {
     await newWorktree(repo, "setup two");
     await $('[data-testid="worktree-review"]').waitForExist({ timeout: 10_000 });
     expect(await text('[data-testid="worktree-review"]')).toContain("echo changed > setup-marker.txt");
+    await settled();
     await $('[data-testid="worktree-review-later"]').click();
     await $('[data-testid="worktree-review"]').waitForExist({ reverse: true, timeout: 5_000 });
     await browser.pause(2_000);
@@ -124,6 +128,7 @@ describe("E2E-M17-WT-1 worktree setup", function () {
     });
     await command.clearValue();
     await command.addValue("echo saved > setup-marker.txt");
+    await settled();
     await $('[data-testid="worktree-setup-save"]').click();
     await $('[data-testid="worktree-setup"]').waitForExist({ reverse: true, timeout: 5_000 });
     const saved = JSON.parse(readFileSync(join(repo, ".vibezeo/worktree.json"), "utf8")) as { setup: string };
@@ -139,8 +144,6 @@ describe("E2E-M17-WT-1 worktree setup", function () {
     await $('//label[normalize-space()="Type tandem/setup-three to confirm"]/following::input[1]').setValue(
       "tandem/setup-three",
     );
-    // The confirm slides in; a click while it moves can come up off the
-    // button (D-840).
     await settled();
     await $("button=Discard worktree").click();
     expect((await waitForFile(teardownMarker, 20_000)).trim()).toBe(wt("setup-three"));

@@ -47,17 +47,17 @@ const laneBranches = async () =>
  *
  * Twice in full runs the dialog was still open 20 s after Create (D-839,
  * D-840): once the worktree came only as the wait ran out, once never, with
- * nothing in the app's log meanwhile. Dialogs slide in, and under Xvfb the
- * slide can wait at its first frame until input comes: the pointer goes down
- * on the button where it starts and comes up where the dialog has moved, so
- * the click lands on neither (D-52, D-830). Create waits for the dialog to
- * settle. Create blocks clicks while a create runs, so one more click can
- * only start a create that never started: it's clicked again only when, 5 s
- * on, no click reached Create, Create isn't busy, the field shows no error
- * and no new worktree exists. A click that reached Create and did nothing
- * would be the app's, so that isn't retried. Anything else, and a dialog that
- * closed with no new worktree, fails with what the dialog showed, the input
- * the page received and the tail of the app's log. */
+ * nothing in the app's log meanwhile. Until D-842 a dialog opened half its
+ * size up and to the left and jumped to the centre as its animation ended:
+ * a pointer that went down on Create mid-animation came up off it, and the
+ * click reached neither. Create waits for the dialog to settle. Create blocks
+ * clicks while a create runs, so one more click can only start a create that
+ * never started: it's clicked again only when, 5 s on, no click reached
+ * Create, Create isn't busy, the field shows no error and no new worktree
+ * exists. A click that reached Create and did nothing would be the app's, so
+ * that isn't retried. Anything else, and a dialog that closed with no new
+ * worktree, fails with what the dialog showed, the input the page received
+ * and the tail of the app's log. */
 export async function newWorktree(root: string, task: string): Promise<void> {
   await repoMenu(root);
   await pick("New worktree…");
