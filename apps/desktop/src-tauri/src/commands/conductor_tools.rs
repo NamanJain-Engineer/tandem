@@ -6,19 +6,26 @@
 
 use std::time::Duration;
 
+use async_trait::async_trait;
 use serde_json::{json, Value};
-use tauri::Manager;
+use tauri::State;
 
 use tandem_core::ids::{PaneId, RoutineId, TeammateId, ThreadId, WorkspaceId};
 use tandem_core::source::SourceRef;
 use tandem_core::status::{AgentStatus, SessionKey};
 use tandem_store::repo::presets::{Isolation, Seat, SeatKind};
 use tandem_store::repo::{threads, workspaces};
-use tandem_voice::conductor::exec::ToolHost;
 use tandem_voice::conductor::view::UiAction;
 
-use super::conductor::AppHost;
 use crate::state::AppState;
+
+/// What these tools change in the window: a `conductor:ui-action`, or
+/// focusing a thread. The running app's `AppHost`; tests record them.
+#[async_trait]
+pub trait ToolWindow: Send + Sync {
+    fn ui_action(&self, action: UiAction);
+    async fn focus(&self, source: SourceRef) -> Result<(), tandem_core::IpcError>;
+}
 
 type Out = Result<String, String>;
 
@@ -86,9 +93,7 @@ async fn last_messages(state: &AppState, id: &ThreadId, n: usize) -> Vec<String>
 }
 
 /// Tools beyond the executor's own and `AppHost::run_tool`'s basics.
-pub async fn run(host: &AppHost, name: &str, a: &Value) -> Out {
-    let app = host.app();
-    let state = app.state::<AppState>();
+pub async fn run(state: State<'_, AppState>, host: &dyn ToolWindow, name: &str, a: &Value) -> Out {
     match name {
         "launch_agents" => {
             let ws = workspace(&state, &s(a, "workspace")).await?;
@@ -179,13 +184,9 @@ pub async fn run(host: &AppHost, name: &str, a: &Value) -> Out {
         }
         "open_thread" => {
             let t = thread(&state, &s(a, "thread")).await?;
-            crate::commands::shell::focus(
-                &app,
-                &state,
-                SourceRef::Thread {
-                    thread_id: t.id.as_str().to_string(),
-                },
-            )
+            host.focus(SourceRef::Thread {
+                thread_id: t.id.as_str().to_string(),
+            })
             .await
             .map_err(ipc)?;
             Ok(format!("Opened {}.", t.title))
@@ -219,14 +220,11 @@ pub async fn run(host: &AppHost, name: &str, a: &Value) -> Out {
                 .await
                 .map_err(ipc)?;
             }
-            let _ = crate::commands::shell::focus(
-                &app,
-                &state,
-                SourceRef::Thread {
+            let _ = host
+                .focus(SourceRef::Thread {
                     thread_id: t.id.as_str().to_string(),
-                },
-            )
-            .await;
+                })
+                .await;
             Ok("Started a new thread.".into())
         }
         "send_to_thread" => {
@@ -476,3 +474,6 @@ pub async fn run(host: &AppHost, name: &str, a: &Value) -> Out {
         )),
     }
 }
+
+#[cfg(test)]
+mod tests;

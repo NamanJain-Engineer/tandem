@@ -18,12 +18,12 @@ use tandem_core::settings::SettingKey;
 use tandem_core::source::SourceRef;
 use tandem_core::status::{AgentStatus, SessionKey, WaitingReason};
 use tandem_core::{ErrorCode, IpcError};
-use tandem_store::repo::conductor::{self as log, CallEventKind, CallEventRow, CallRow};
+use tandem_store::repo::conductor::{self as log, CallEventRow, CallRow};
 use tandem_store::repo::{panes, settings, teammates, threads, workspaces};
 use tandem_voice::capture::{CaptureEvent, StreamTap};
 use tandem_voice::conductor::call::{
     ActRequest, ActResponse, CallController, CallHost, CallOrigin, CallRecord, CallTiming,
-    HostedError, LogKind, MicEvent, SessionGrant, Settlement, Speaker,
+    HostedError, MicEvent, SessionGrant, Settlement, Speaker,
 };
 use tandem_voice::conductor::exec::{PaneFacts, PaneKind, ToolHost};
 use tandem_voice::conductor::persona::PersonaBrief;
@@ -56,10 +56,6 @@ impl AppHost {
     fn mic(&self) -> &CallMic {
         self.mic
             .get_or_init(|| CallMic::new(self.state().mic.clone()))
-    }
-
-    pub(crate) fn app(&self) -> AppHandle {
-        self.app.clone()
     }
 
     fn publish(&self, name: &str, payload: Value) {
@@ -306,7 +302,9 @@ impl ToolHost for AppHost {
                     None => "Credits aren't known right now.".into(),
                 })
             }
-            other => crate::commands::conductor_tools::run(self, other, args).await,
+            other => {
+                crate::commands::conductor_tools::run(self.app.state(), self, other, args).await
+            }
         }
     }
 
@@ -315,6 +313,17 @@ impl ToolHost for AppHost {
             "conductor:ui-action",
             serde_json::to_value(action).unwrap_or(Value::Null),
         );
+    }
+}
+
+#[async_trait]
+impl crate::commands::conductor_tools::ToolWindow for AppHost {
+    fn ui_action(&self, action: UiAction) {
+        ToolHost::ui_action(self, action)
+    }
+
+    async fn focus(&self, source: SourceRef) -> Result<(), IpcError> {
+        crate::commands::shell::focus(&self.app, &self.state(), source).await
     }
 }
 
@@ -434,71 +443,7 @@ impl CallHost for AppHost {
     }
 
     async fn record(&self, record: CallRecord) {
-        let store = &self.state().store;
-        // "Keep call logs: Don't keep" (UI-67): no turns are written, and the
-        // call's row goes once it has settled (it's kept until then).
-        let keep = crate::services::conductor::keep_days(
-            &settings::get(store, SettingKey::ConductorCallLogs)
-                .await
-                .unwrap_or(Value::Null),
-        );
-        if keep.is_none() {
-            match &record {
-                CallRecord::Event { .. } => return,
-                CallRecord::Ended {
-                    call_id,
-                    credits: Some(_),
-                    ..
-                } => {
-                    let _ = log::delete(store, call_id).await;
-                    return;
-                }
-                _ => {}
-            }
-        }
-        let r = match record {
-            CallRecord::Started {
-                call_id,
-                started_at,
-            } => log::started(store, &call_id, started_at).await,
-            CallRecord::Progress { call_id, seconds } => {
-                log::progress(store, &call_id, i64::from(seconds)).await
-            }
-            CallRecord::Event {
-                call_id,
-                ts,
-                kind,
-                text,
-                ok,
-            } => {
-                let kind = match kind {
-                    LogKind::User => CallEventKind::User,
-                    LogKind::Assistant => CallEventKind::Assistant,
-                    LogKind::Action => CallEventKind::Action,
-                };
-                log::event(store, &call_id, ts, kind, &text, ok).await
-            }
-            CallRecord::Ended {
-                call_id,
-                ended_at,
-                seconds,
-                credits,
-                reason,
-            } => {
-                log::ended(
-                    store,
-                    &call_id,
-                    ended_at,
-                    i64::from(seconds),
-                    credits.map(i64::from),
-                    reason.as_str(),
-                )
-                .await
-            }
-        };
-        if let Err(e) = r {
-            tracing::warn!(error = %e, "conductor: call log not written");
-        }
+        crate::services::conductor::record(&self.state().store, record).await;
     }
 }
 
@@ -538,10 +483,7 @@ pub async fn sync_ring(app: &AppHandle) {
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     let show = on && state.entitlements.limits().conductor;
-    let saved = settings::get(&state.store, SettingKey::ConductorRingPosition)
-        .await
-        .ok()
-        .and_then(|v| v.as_str().and_then(crate::services::widget::parse_position));
+    let saved = crate::services::conductor_ring::saved_position(&state.store).await;
     crate::services::conductor_ring::sync(app, show, saved);
 }
 
@@ -552,12 +494,7 @@ pub async fn conductor_ring_set_position(
     x: i32,
     y: i32,
 ) -> Result<(), IpcError> {
-    settings::set(
-        &state.store,
-        SettingKey::ConductorRingPosition,
-        json!(format!("{x},{y}")),
-    )
-    .await?;
+    crate::services::conductor_ring::save_position(&state.store, x, y).await?;
     Ok(())
 }
 

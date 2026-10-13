@@ -10,6 +10,7 @@ import { useSidebar } from "../../stores/sidebar";
 import { useUi } from "../../stores/ui";
 import { FREE, FREE_VIEW, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { runCommand } from "../commands/commands";
+import { useShortcuts } from "../shell/useShortcuts";
 import { CallLog } from "./CallLog";
 import { ConductorCallSettings } from "./CallSettingsSlot";
 import { FloatingRing } from "./FloatingRing";
@@ -104,6 +105,50 @@ describe("Conductor HUD (F-CN-04, UI-61)", () => {
     expect(screen.getByTestId("conductor-yes").textContent).toBe("Yes, run it");
   });
 
+  it("F-CN-04 the HUD's No answers no to the request it shows", async () => {
+    hud(
+      live({
+        question: {
+          requestId: "q-2-1",
+          tool: "create_teammate",
+          summary: "Create a teammate that reviews pull requests?",
+          verb: "create it",
+          review: "voice_or_screen",
+        },
+      }),
+    );
+    expect(screen.getByTestId("conductor-no").textContent).toBe("No");
+    fireEvent.click(screen.getByTestId("conductor-no"));
+    await waitFor(() => expect(named("conductor_confirm")).toHaveLength(1));
+    expect(named("conductor_confirm")[0]?.args).toEqual({ requestId: "q-2-1", yes: false });
+  });
+
+  it("F-CN-04 a refused answer says why in the question", async () => {
+    calls = fakeBackend({
+      conductor_confirm: () => {
+        throw { code: "not_found", message: "That question was already answered." };
+      },
+    });
+    hud(
+      live({
+        question: {
+          requestId: "q-3-1",
+          tool: "close_pane",
+          summary: "Close the claude pane while it works?",
+          verb: "close it",
+          review: "voice_or_screen",
+        },
+      }),
+    );
+    fireEvent.click(screen.getByTestId("conductor-no"));
+    await waitFor(() =>
+      expect(screen.getByTestId("conductor-question").textContent).toContain(
+        "That question was already answered.",
+      ),
+    );
+    expect(named("conductor_confirm")[0]?.args).toEqual({ requestId: "q-3-1", yes: false });
+  });
+
   it("F-CN-01 startup errors show with what to do; dismissing clears them", async () => {
     hud(
       live({
@@ -161,6 +206,36 @@ describe("Conductor ring and commands (F-CN-01, F-CN-04)", () => {
     await waitFor(() => expect(named("conductor_start_call")).toHaveLength(1));
     expect(named("conductor_start_call")[0]?.args).toEqual({ wake: false, pushToTalk: false });
     expect(useConductor.getState().view.phase).toBe("connecting");
+  });
+
+  it("F-CN-01 Mod+Shift+Space as a key press starts a call, and again ends it", async () => {
+    pro();
+    function Keys() {
+      useShortcuts();
+      return null;
+    }
+    render(
+      <UiProvider>
+        <Keys />
+      </UiProvider>,
+    );
+    // Linux and Windows: Mod is Ctrl. The physical key, as the dispatcher matches.
+    const press = () =>
+      act(() => {
+        fireEvent.keyDown(document.body, { key: " ", code: "Space", ctrlKey: true, shiftKey: true });
+      });
+    press();
+    await waitFor(() => expect(named("conductor_start_call")).toHaveLength(1));
+    expect(named("conductor_start_call")[0]?.args).toEqual({ wake: false, pushToTalk: false });
+    await waitFor(() => expect(useConductor.getState().view.phase).toBe("connecting"));
+    press();
+    await waitFor(() => expect(named("conductor_end_call")).toHaveLength(1));
+    expect(named("conductor_start_call")).toHaveLength(1);
+    // Without Shift it's not the call shortcut.
+    act(() => {
+      fireEvent.keyDown(document.body, { key: " ", code: "Space", ctrlKey: true });
+    });
+    expect(named("conductor_start_call")).toHaveLength(1);
   });
 
   it("F-CN-04.2 the ring stops drawing while the window is hidden", () => {

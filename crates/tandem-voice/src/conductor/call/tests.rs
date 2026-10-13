@@ -940,10 +940,10 @@ async fn f_cn_08_a_mic_that_stops_delivering_ends_the_call() {
     let mic = host.mic.lock().clone().expect("the mic is on");
     let _ = mic.send(MicEvent::NotDelivering);
     until("ended", || host.last().phase == CallPhase::Error).await;
-    assert_eq!(
-        host.last().error.map(|e| e.code),
-        Some(CallErrorCode::MicNotDelivering)
-    );
+    let error = host.last().error.expect("an error");
+    assert_eq!(error.code, CallErrorCode::MicNotDelivering);
+    // F-CN-08's words exactly.
+    assert_eq!(error.message, "The microphone isn't delivering audio.");
     assert_eq!(host.settles.lock().len(), 1);
     // The call let go of the mic.
     assert!(!*host.mic_owned.lock());

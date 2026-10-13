@@ -93,7 +93,7 @@ pub enum HostedError {
 pub enum MicEvent {
     /// Mono samples at `rate`.
     Samples(Vec<f32>, u32),
-    /// "Your microphone isn't delivering audio" (F-CN-08).
+    /// "The microphone isn't delivering audio." (F-CN-08's wording; Dictate says "Your microphone…").
     NotDelivering,
 }
 
@@ -428,7 +428,7 @@ impl CallController {
                 None,
                 CallError {
                     code: CallErrorCode::MicNotDelivering,
-                    message: "Your microphone isn't delivering audio.".into(),
+                    message: "The microphone isn't delivering audio.".into(),
                 },
             );
             return;
@@ -807,7 +807,7 @@ impl CallController {
 fn mic_error() -> CallError {
     CallError {
         code: CallErrorCode::MicNotDelivering,
-        message: "Your microphone isn't delivering audio.".into(),
+        message: "The microphone isn't delivering audio.".into(),
     }
 }
 
