@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { VIDEO } from "../lib/media";
 import { PLANS } from "../lib/pricing";
 import { MILESTONES, PROGRESS } from "../lib/progress";
 import { fileURLToPath } from "node:url";
@@ -122,8 +123,11 @@ describe("public site", () => {
     const h = html(<HomePage />);
     expect(h).toMatch(/<video[^>]*controls/);
     expect(h).toContain("Watch it run (1 min)");
-    expect(h).toContain(`poster="/screens/product-poster.jpg"`);
-    expect(existsSync(join(import.meta.dirname, "../public/screens/product-poster.jpg"))).toBe(true);
+    // Its poster is set by the demo loader as it nears the screen: a `poster`
+    // attribute would download with the page (D-1816).
+    expect(h).not.toMatch(/<video[^>]*\sposter=/);
+    expect(h).toContain(`data-poster="${VIDEO.poster}"`);
+    expect(existsSync(join(import.meta.dirname, `../public${VIDEO.poster}`))).toBe(true);
     // It has sound, so it doesn't start muted, and it says what's sped up or illustrated.
     expect(h).not.toMatch(/<video[^>]*muted/);
     expect(h).toContain("2.3× speed");

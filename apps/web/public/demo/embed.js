@@ -3,10 +3,33 @@
 // viewport, scales the laptop-sized app to the column, and opens it full
 // screen. Phones keep the still image until "Tap to explore". It changes only
 // what's inside [data-demo-stage], which React's hydration doesn't touch
-// (inner HTML). No other origin,
-// no storage, no network beyond the demo's own files.
+// (inner HTML). It also gives the product video its poster as the video
+// nears (D-1816). No other origin, no storage, no network beyond the demo's
+// own files and the poster.
 (() => {
   "use strict";
+  // A `poster` attribute downloads with the page, and on a slow connection
+  // that held up the h1, the largest paint.
+  for (const video of document.querySelectorAll("video[data-poster]")) {
+    const show = () => {
+      video.poster = video.getAttribute("data-poster");
+    };
+    if (!("IntersectionObserver" in window)) {
+      show();
+      continue;
+    }
+    const near = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((x) => x.isIntersecting)) {
+          near.disconnect();
+          show();
+        }
+      },
+      { rootMargin: "600px" },
+    );
+    near.observe(video);
+  }
+
   const slot = document.querySelector("[data-demo-embed]");
   const stage = slot && slot.querySelector("[data-demo-stage]");
   if (!slot || !stage) return;
