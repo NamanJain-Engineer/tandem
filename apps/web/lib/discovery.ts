@@ -133,6 +133,10 @@ export function docSource(slug: string): DocSource {
 /** A page for a feature the release doesn't have opens with this label. */
 export const notInApp = (d: DocSource) => d.body.startsWith("> **Not in the app yet.**");
 
+/** A page for a feature that's in the app but runs only on Pro, which the
+ * download can't have, opens with this one. */
+export const partOfPro = (d: DocSource) => d.body.startsWith("> **Part of Pro.**");
+
 /** MDX to plain Markdown: generated components become their tables, site
  * links become absolute, and `<kbd>` keys become code. */
 function toMarkdown(body: string): string {
@@ -167,7 +171,7 @@ export function llmsTxt(): string {
 
 ${DOCS_PAGES.map((p) => {
   const d = docSource(p.slug);
-  return `- [${p.title}](${abs(docsPath(p.slug))}): ${d.description}${notInApp(d) ? " (Not in the app yet.)" : ""}`;
+  return `- [${p.title}](${abs(docsPath(p.slug))}): ${d.description}${notInApp(d) ? " (Not in the app yet.)" : partOfPro(d) ? " (Part of Pro, which starts when accounts open.)" : ""}`;
 }).join("\n")}
 
 ## Download

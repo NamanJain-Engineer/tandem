@@ -162,12 +162,15 @@ export function quietQueries(xterm: Pick<Terminal, "parser">): void {
 }
 
 /** Attaches to a running PTY or spawns one. Each call gets its own channel:
- * when Rust drops a channel (a failed attach) the JS side closes it for good. */
+ * when Rust drops a channel (a failed attach) the JS side closes it for good.
+ * `onSpawn` runs before a spawn: a new PTY has nothing to replay, so the view
+ * can write its frames as they come rather than after the spawn returns. */
 async function connect(
   paneId: string,
   cols: number,
   rows: number,
   channel: () => Promise<FrameChannel>,
+  onSpawn: () => void = () => undefined,
 ): Promise<{ replay?: Uint8Array; end?: number; live: boolean; state?: PtyState | null }> {
   const pending = spawning.get(paneId);
   if (pending) await pending.catch(() => undefined);
@@ -178,6 +181,7 @@ async function connect(
     if ((e as IpcError).code !== "not_found") throw e;
   }
   markPhase(paneId, "spawn");
+  onSpawn();
   const spawn = invoke<PtyInfo>(
     "pty_spawn",
     { paneId, cols, rows, channel: await channel() },
@@ -284,6 +288,10 @@ export function TerminalView({
    * the teardown. */
   function openView(el: HTMLDivElement): () => void {
     markPhase(paneId, "open");
+    // The focused view holds the mount queue until it has connected, so its
+    // attach and spawn replies don't wait behind other views' opens (F-SH-07.7).
+    let release: () => void = () => undefined;
+    if (focusedRef.current) mountQueue.hold(new Promise<void>((r) => (release = r)));
     const o = optionsRef.current;
     const xterm = new Terminal({
       theme: o.theme,
@@ -570,16 +578,30 @@ export function TerminalView({
         const rows = Math.max(xterm.rows, 2);
         size.current = { cols, rows };
         markPhase(paneId, "connect");
-        const { replay, end, live, state } = await connect(paneId, cols, rows, () =>
-          createFrameChannel(onFrame),
+        // A new PTY's ring starts at 0 with no replay: its frames go straight
+        // to xterm (holding them until the spawn returned cost six agents
+        // ~800 ms to first output, D-139).
+        const startFresh = () => {
+          ringBase = 0;
+          ready = true;
+          for (const f of early.splice(0)) onFrame(f);
+        };
+        const { replay, end, live, state } = await connect(
+          paneId,
+          cols,
+          rows,
+          () => createFrameChannel(onFrame),
+          startFresh,
         );
         markPhase(paneId, "connected");
         if (state) useTerminals.getState().put(state);
         if (disposed) return;
-        ringBase = end ?? 0;
-        if (replay?.byteLength) xterm.write(replay);
-        ready = true;
-        for (const f of early.splice(0)) onFrame(f);
+        if (!ready) {
+          ringBase = end ?? 0;
+          if (replay?.byteLength) xterm.write(replay);
+          ready = true;
+          for (const f of early.splice(0)) onFrame(f);
+        }
         if (back) {
           parkedAt.current = null;
           // Scrolled up when it parked: the same lines are on screen again.
@@ -600,10 +622,13 @@ export function TerminalView({
         const err = e as IpcError;
         log("warn", "pty.spawn_failed", { code: err.code ?? "internal" });
         setPhase({ kind: "failed", message: err.message ?? t("terminal.failed") });
+      } finally {
+        release();
       }
     })();
     return () => {
       disposed = true;
+      release();
       parkNow.current = async () => false;
       clearTimeout(ackTimer);
       writeScheduler.unregister(paneId, write);

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { DOCS_PAGES, docsPath } from "../lib/docs/pages";
+import { VIDEO } from "../lib/media";
 import { SITE_PAGES } from "../lib/site";
 
 // F-WB-01 (M15): no analytics, ads or cookies on any page, so no consent is
@@ -26,6 +27,19 @@ test("F-WB-01 AC2 F-WB-02 no page (docs included) requests another origin, sets 
     new URL(page.url()).origin,
   ]);
   expect(await context.cookies()).toEqual([]);
+});
+
+test("F-WB-01 AC1 the video's poster loads only as the video nears the screen (D-1816)", async ({ page }) => {
+  const asked: string[] = [];
+  page.on("request", (r) => asked.push(new URL(r.url()).pathname));
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+  const video = page.locator("#demo video");
+  expect(await video.getAttribute("poster")).toBeNull();
+  expect(asked).not.toContain(VIDEO.poster);
+  await video.scrollIntoViewIfNeeded();
+  await expect(video).toHaveAttribute("poster", VIDEO.poster);
+  await expect.poll(() => asked.includes(VIDEO.poster)).toBe(true);
 });
 
 for (const [os, ua, says] of [

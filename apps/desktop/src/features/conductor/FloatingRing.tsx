@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Mic, MicOff, ScrollText, X } from "lucide-react";
 import type { CallView, RingState } from "@tandem/protocol";
 import { IconButton, UiProvider, WaveformRing, type ThemeSetting } from "@tandem/ui";
@@ -6,22 +6,38 @@ import { t, type MessageKey } from "../../i18n";
 import { emitTo, listen } from "../../ipc/events";
 import { invoke } from "../../ipc/invoke";
 import { IDLE, inCall } from "../../stores/conductor";
+import { usePressOrHold } from "./hold";
 import { ringState } from "./ring";
 import { useAppActive } from "./useAppActive";
 
 /** The floating ring (F-CN-04, UI-61): a 56 px ring that floats over
  * everything and drags anywhere; a click starts or ends a call, and hovering
- * shows Mute, Call log and End. Its own window, with only the commands it
+ * shows Mute, Call log and End; holding it talks while held, as the title
+ * bar's ring does. Its own window, with only the commands it
  * needs (`capabilities/ring.json`). */
 export function FloatingRing({ view, level }: { view: CallView; level: number }) {
   const [hover, setHover] = useState(false);
   const active = useAppActive();
   const live = inCall(view);
   const label = live ? t("conductor.ring.end") : t("conductor.ring.start");
-  const toggle = () =>
-    void (live ? invoke("conductor_end_call", {}) : invoke("conductor_start_call", { wake: false })).catch(
-      () => undefined,
-    );
+  // The hold's timer fires after a render may have passed: read the latest.
+  const latest = useRef(view);
+  latest.current = view;
+  const mute = (muted: boolean) => invoke("conductor_mute", { muted }).catch(() => undefined);
+  const start = (pushToTalk: boolean) => invoke("conductor_start_call", { wake: false, pushToTalk });
+  const press = usePressOrHold({
+    onClick: () => void (live ? invoke("conductor_end_call", {}) : start(false)).catch(() => undefined),
+    // A push-to-talk call starts muted; holding unmutes it.
+    onHoldStart: () => {
+      if (inCall(latest.current)) void mute(false);
+      else
+        void start(true).then(
+          () => mute(false),
+          () => undefined,
+        );
+    },
+    onHoldEnd: () => void mute(true),
+  });
   return (
     <div
       data-tauri-drag-region
@@ -50,7 +66,7 @@ export function FloatingRing({ view, level }: { view: CallView; level: number })
         type="button"
         aria-label={label}
         data-phase={view.phase}
-        onClick={toggle}
+        {...press}
         className="rounded-full bg-surface-3 shadow-3 focus-visible:shadow-focus focus-visible:outline-none"
       >
         <WaveformRing

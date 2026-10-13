@@ -82,6 +82,12 @@ async function up(url: string): Promise<boolean> {
   }
 }
 
+/** Requests each page once, whatever it answers, so the dev server has
+ * compiled it. */
+async function warm(origin: string, paths: string[]): Promise<void> {
+  for (const path of paths) await fetch(`${origin}${path}`, { redirect: "manual" }).catch(() => undefined);
+}
+
 async function waitUp(url: string, seconds: number): Promise<void> {
   for (let i = 0; i < seconds * 2 && !(await up(url)); i++) await new Promise((r) => setTimeout(r, 500));
   if (!(await up(url))) throw new Error(`${url} didn't come up`);
@@ -397,6 +403,11 @@ async function main() {
     web = startDetached("pnpm", ["--filter", "web", "dev"], { API_INTERNAL_URL: API });
     await waitUp(`${WEB}/api/health`, 120);
   }
+  // The dev server compiles a page on its first request, and the scripted
+  // browser (helpers/browser-signin.ts) gives a page 30 s: a run's first
+  // sign-in once timed out compiling /signin and /desktop-login. Compile the
+  // pages it opens before any spec runs.
+  if (!OFFLINE) await warm(WEB, ["/signin", "/desktop-login", "/billing/mock", "/billing/success"]);
   let feed: ChildProcess | undefined;
   if (OFFLINE) {
     // No update feed: the app reports it can't check, which no offline spec asks about.

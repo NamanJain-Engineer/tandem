@@ -5,14 +5,15 @@ import { Icon } from "../Icon";
 
 /** The stage's markup (D-128): a still image until /demo/embed.js frames the
  * live demo here. Inner HTML, so hydration never replaces what the loader
- * puts in it. The still is the current release's demo (OPERATING §6), and
- * sits high on the page, so it loads eagerly. */
+ * puts in it. The still is the current release's demo (OPERATING §6). It
+ * loads lazily: on a phone it's below the fold, and fetched with the page it
+ * held up the h1, the largest paint, on a slow connection (D-1816). */
 const DEMO_STAGE = `<div data-demo-stage="" data-stage="" class="absolute inset-0 overflow-hidden rounded-lg bg-stage shadow-stage">
 <div data-demo-bar="" hidden class="absolute inset-x-0 top-0 flex h-10 items-center gap-3 border-b border-stage-line bg-stage px-4 text-sm text-stage-muted">
 <span>Interactive demo · simulated agents, sample data</span>
 <button type="button" data-demo-close="" class="ml-auto rounded-sm px-3 py-1 font-medium text-stage-fg hover:bg-white/10">Close (Esc)</button>
 </div>
-<picture><source type="image/avif" srcset="/demo/still.avif"><source type="image/webp" srcset="/demo/still.webp"><img data-demo-still="" src="/demo/still.jpg" width="1280" height="800" loading="eager" fetchpriority="high" decoding="async" alt="Vibezeo's Thread mode in the demo: a thread about a redirect loop after login with its first message ready to send, the thread list, and a card that lists what to try." class="block h-full w-full"></picture>
+<picture><source type="image/avif" srcset="/demo/still.avif"><source type="image/webp" srcset="/demo/still.webp"><img data-demo-still="" src="/demo/still.jpg" width="1280" height="800" loading="lazy" decoding="async" alt="Vibezeo's Thread mode in the demo: a thread about a redirect loop after login with its first message ready to send, the thread list, and a card that lists what to try." class="block h-full w-full"></picture>
 <a href="/demo/app/" data-demo-open="" class="absolute inset-0 flex items-center justify-center bg-black/40 text-md font-semibold lg:hidden"><span class="rounded-sm bg-accent px-4 py-2 text-accent-fg shadow-3">Tap to explore</span></a>
 </div>`;
 

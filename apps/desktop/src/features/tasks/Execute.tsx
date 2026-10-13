@@ -30,6 +30,9 @@ export const MAX_ACTIVE = 4;
 
 const ACTIVE = new Set(["setup", "running", "reviewing"]);
 
+/** A run's worktree and sessions are made on this computer (D-843). */
+const REMOTE = new Set(["ssh", "wsl"]);
+
 /** Why Execute can't run here, if it can't. */
 export function useExecuteBlock(): { reason: string; upgrade: boolean } | null {
   const auth = useSession((s) => s.auth);
@@ -50,7 +53,9 @@ export function ExecuteDialog({
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
-  const workspaces = useWorkspaces((s) => s.list).filter((w) => !w.parentId && !w.missing);
+  const folders = useWorkspaces((s) => s.list).filter((w) => !w.parentId && !w.missing);
+  const workspaces = folders.filter((w) => !REMOTE.has(w.kind));
+  const remoteOnly = folders.length > workspaces.length;
   const engines = useEngines((s) => s.list).filter((e) => e.chatCapable && e.install);
   const teammates = useTeammates((s) => s.list).filter((s) => s.chatCapable);
   const attempts = useTasks((s) => s.attempts);
@@ -152,6 +157,11 @@ export function ExecuteDialog({
           placeholder={t("tasks.exec.noWorkspace")}
           onValueChange={setWorkspace}
         />
+        {remoteOnly && (
+          <p className="text-sm text-fg-muted" data-testid="task-execute-local-only">
+            {t("tasks.exec.localOnly")}
+          </p>
+        )}
         <Select
           label={t("tasks.exec.runner")}
           value={who}

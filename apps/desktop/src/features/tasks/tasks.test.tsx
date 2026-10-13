@@ -306,6 +306,24 @@ describe("F-TK-04 Execute and runs", () => {
     return t;
   }
 
+  it("F-TK-04 Execute offers only folders on this computer, and says why SSH and WSL ones aren't listed (D-843)", async () => {
+    await openTask(tracker([issue(1)]), "pro");
+    act(() =>
+      useWorkspaces.setState({
+        list: [
+          { id: "ws_1", name: "shop", kind: "local", parentId: null, missing: false },
+          { id: "ws_2", name: "box", kind: "ssh", parentId: null, missing: false },
+          { id: "ws_3", name: "ubuntu", kind: "wsl", parentId: null, missing: false },
+        ] as never,
+      }),
+    );
+    expect(screen.getByTestId("task-execute-local-only").textContent).toBe(
+      "Runs start in folders on this computer, so workspaces on SSH hosts and in WSL aren't listed.",
+    );
+    fireEvent.click(screen.getByRole("combobox", { name: "Workspace" }));
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual(["shop"]);
+  });
+
   it("F-TK-04 Free: Execute shows the plan copy and can't start", async () => {
     const t = await openTask(tracker([issue(1)]), "free");
     const blocked = await screen.findByTestId("task-execute-blocked");

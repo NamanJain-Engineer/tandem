@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { MountQueue } from "./mountQueue";
+import { HOLD_MS, MountQueue } from "./mountQueue";
 
 function setup() {
   const frames: Array<() => void> = [];
-  const q = new MountQueue((fn) => frames.push(fn));
+  const timers: Array<{ ms: number; fn: () => void }> = [];
+  const q = new MountQueue(
+    (fn) => frames.push(fn),
+    (ms, fn) => timers.push({ ms, fn }),
+  );
   const opened: string[] = [];
   const closed: string[] = [];
   const job = (id: string) => () => {
@@ -11,7 +15,7 @@ function setup() {
     return () => closed.push(id);
   };
   const frame = () => frames.shift()?.();
-  return { q, opened, closed, job, frame };
+  return { q, opened, closed, job, frame, timers };
 }
 
 describe("mount queue (F-CD-04)", () => {
@@ -42,5 +46,41 @@ describe("mount queue (F-CD-04)", () => {
     frame();
     q.add(job("c"));
     expect(opened).toEqual(["a", "c"]);
+  });
+
+  it("F-SH-07.7 the focused view holds the queue until it has connected", async () => {
+    const { q, opened, job, frame } = setup();
+    let connected!: () => void;
+    q.add(() => {
+      opened.push("focused");
+      q.hold(new Promise<void>((r) => (connected = r)));
+      return () => undefined;
+    }, true);
+    for (const id of ["b", "c"]) q.add(job(id));
+    frame();
+    await Promise.resolve();
+    // Its attach and spawn replies don't wait behind the next view's open.
+    expect(opened).toEqual(["focused"]);
+    connected();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(opened).toEqual(["focused", "b"]);
+    frame();
+    expect(opened).toEqual(["focused", "b", "c"]);
+  });
+
+  it("F-SH-07.7 a hold lasts at most HOLD_MS", () => {
+    const { q, opened, job, frame, timers } = setup();
+    q.add(() => {
+      opened.push("focused");
+      q.hold(new Promise<void>(() => undefined));
+      return () => undefined;
+    }, true);
+    q.add(job("b"));
+    frame();
+    expect(opened).toEqual(["focused"]);
+    expect(timers.map((t) => t.ms)).toEqual([HOLD_MS]);
+    timers[0]?.fn();
+    expect(opened).toEqual(["focused", "b"]);
   });
 });

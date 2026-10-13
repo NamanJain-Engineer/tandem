@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { VIDEO } from "../lib/media";
 import { PLANS } from "../lib/pricing";
 import { MILESTONES, PROGRESS } from "../lib/progress";
 import { fileURLToPath } from "node:url";
@@ -122,8 +123,11 @@ describe("public site", () => {
     const h = html(<HomePage />);
     expect(h).toMatch(/<video[^>]*controls/);
     expect(h).toContain("Watch it run (1 min)");
-    expect(h).toContain(`poster="/screens/product-poster.jpg"`);
-    expect(existsSync(join(import.meta.dirname, "../public/screens/product-poster.jpg"))).toBe(true);
+    // Its poster is set by the demo loader as it nears the screen: a `poster`
+    // attribute would download with the page (D-1816).
+    expect(h).not.toMatch(/<video[^>]*\sposter=/);
+    expect(h).toContain(`data-poster="${VIDEO.poster}"`);
+    expect(existsSync(join(import.meta.dirname, `../public${VIDEO.poster}`))).toBe(true);
     // It has sound, so it doesn't start muted, and it says what's sped up or illustrated.
     expect(h).not.toMatch(/<video[^>]*muted/);
     expect(h).toContain("2.3× speed");
@@ -245,7 +249,7 @@ describe("public site", () => {
   it("F-WB-01 the changelog lists every closed milestone", () => {
     const h = html(<ChangelogPage />);
     for (const m of MILESTONES) expect(h).toContain(`id="${m.id.toLowerCase()}"`);
-    expect(MILESTONES.map((m) => m.id)).toEqual(["M17", "M14", "M12", "M11", "M10", "M9", "M8", "M7", "M6", "M5", "M4", "M3", "M2", "M1", "M0"]);
+    expect(MILESTONES.map((m) => m.id)).toEqual(["M16", "M17", "M14", "M12", "M11", "M10", "M9", "M8", "M7", "M6", "M5", "M4", "M3", "M2", "M1", "M0"]);
   });
 
   it("F-WB-01 every page has one h1, the legal links and the contact address", () => {

@@ -1,11 +1,11 @@
-/** What's in the 0.7.0 release, for the home page's progress strip and the
+/** What's in the 0.7.1 release, for the home page's progress strip and the
  * changelog. Figures are counted in the code the release was built from
- * (product branch): `scripts/gate.sh` output (1781 Rust and 1374 TypeScript
+ * (product branch): `scripts/gate.sh` output (1792 Rust and 1382 TypeScript
  * tests) and the files in `apps/desktop/e2e/specs`. Update them with each
  * release. */
 export const PROGRESS = {
-  milestones: 15,
-  automatedTests: 3155,
+  milestones: 16,
+  automatedTests: 3174,
   endToEndSuites: 129,
   engines: 11,
 } as const;
@@ -18,6 +18,17 @@ export type Milestone = {
 
 /** Newest first. Each entry is a closed milestone of the build plan. */
 export const MILESTONES: readonly Milestone[] = [
+  {
+    id: "M16",
+    title: "Phone, Conductor and teammate extras",
+    items: [
+      "Your phone pairs with Vibezeo over your own network, with no account, through a phone web app that's end-to-end encrypted.",
+      "Find work goes to the pane, thread or teammate doing a task, found by what it's about, on your computer.",
+      "A teammate's skills install into Claude Code or Codex, and a teammate opens as an agent pane in Code mode.",
+      "Conductor, a coordinator you talk to that starts agents, prompts them and finds work, is built for Pro and Team and switches on with accounts.",
+      "The Vibezeo Remote phone app, encrypted push and a relay that reaches your agents away from home are built, and wait for the app stores and accounts.",
+    ],
+  },
   {
     id: "M17",
     title: "Extras",

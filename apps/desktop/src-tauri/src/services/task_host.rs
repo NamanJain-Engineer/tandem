@@ -58,6 +58,12 @@ impl ExecHost for AppExecHost {
         Ok(PathBuf::from(w.root))
     }
 
+    async fn workspace_kind(&self, ws: &WorkspaceId) -> Result<String, IpcError> {
+        Ok(tandem_store::repo::workspaces::get(&self.store, ws)
+            .await?
+            .kind)
+    }
+
     async fn create_lane(
         &self,
         ws: &WorkspaceId,
