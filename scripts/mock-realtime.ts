@@ -14,6 +14,8 @@
  * Control (plain HTTP on the same port):
  * - `GET /health` → `ok`
  * - `POST /__control {"connectDelayMs": n}`: hold each handshake this long.
+ *   `{"hold": true}` holds handshakes until `{"release": true}`, so a test
+ *   decides when a call connects (F-CN-01 AC4).
  * - `POST /__say {"text": "..."}`: the user "says" text on the newest open
  *   socket: `speech.started`, `transcript.user`, then `function_call` act.
  *   Answers `{"callId"}`.
@@ -55,6 +57,8 @@ type Conn = {
 };
 
 let connectDelayMs = 0;
+/** Handshakes waiting for `release` while `hold` is on. */
+let held: Array<() => void> | null = null;
 let nextConn = 0;
 let nextCall = 0;
 let conns: Conn[] = [];
@@ -194,7 +198,7 @@ function upgrade(req: IncomingMessage, socket: Duplex): void {
     instructions: "",
     buffer: Buffer.alloc(0),
   };
-  setTimeout(() => {
+  const open = () => {
     socket.write(
       `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
     );
@@ -209,7 +213,9 @@ function upgrade(req: IncomingMessage, socket: Duplex): void {
     });
     socket.on("close", () => (c.open = false));
     socket.on("error", () => (c.open = false));
-  }, connectDelayMs);
+  };
+  if (held) held.push(open);
+  else setTimeout(open, connectDelayMs);
 }
 
 function newest(): Conn | undefined {
@@ -241,13 +247,20 @@ const server = createServer(async (req, res) => {
   const b = req.method === "POST" ? await body(req) : {};
   if (path === "/__control") {
     if (typeof b.connectDelayMs === "number") connectDelayMs = b.connectDelayMs;
-    return json(200, { connectDelayMs });
+    if (b.hold === true) held ??= [];
+    if (b.release === true) {
+      const waiting = held ?? [];
+      held = null;
+      for (const open of waiting) open();
+    }
+    return json(200, { connectDelayMs, held: held?.length ?? null });
   }
   if (path === "/__reset") {
     for (const c of conns) close(c);
     conns = [];
     outputs = [];
     connectDelayMs = 0;
+    held = null;
     return json(200, {});
   }
   if (path === "/__state") {

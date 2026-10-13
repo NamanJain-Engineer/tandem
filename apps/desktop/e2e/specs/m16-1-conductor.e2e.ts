@@ -145,7 +145,9 @@ describe("E2E-M16-1 Conductor call", function () {
   });
 
   afterEach(async () => {
-    await rt("/__control", { connectDelayMs: 0 });
+    // A case that failed while handshakes were held mustn't leave the next
+    // case's call waiting to connect.
+    await rt("/__control", { connectDelayMs: 0, release: true });
     if (!["idle"].includes((await view()).phase)) await endCall().catch(() => undefined);
   });
 
@@ -153,10 +155,18 @@ describe("E2E-M16-1 Conductor call", function () {
     const wav = join(process.env.TANDEM_HOME ?? "/tmp", "conductor-speech.wav");
     toneWav(wav, 2_000, 8_000);
     await invoke("test_dictate_mic", { source: { source: "wav", path: wav } });
-    await rt("/__control", { connectDelayMs: 2_500 });
+    // The test, not the mint's latency, decides when the call connects: the
+    // call keeps the latest 3 s before connect, so connecting 2.2 s after the
+    // click keeps all of the 2 s tone however long minting takes under load
+    // (a fixed delay after the mint once connected 3.6 s in and lost 0.6 s).
+    await rt("/__control", { hold: true });
+    const clicked = Date.now();
     await $('[data-testid="conductor-button"]').click();
     await $('[data-testid="conductor-hud"]').waitForExist({ timeout: 5_000 });
     expect((await view()).phase).toBe("connecting");
+    await browser.pause(Math.max(0, 2_200 - (Date.now() - clicked)));
+    expect((await view()).phase).toBe("connecting");
+    await rt("/__control", { release: true });
     await until((v) => v.phase === "listening", "connected", 30_000);
     await browser.waitUntil(async () => (await rt<MockState>("/__state")).voicedMs >= 1_800, {
       timeout: 10_000,
