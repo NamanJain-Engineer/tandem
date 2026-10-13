@@ -273,7 +273,15 @@ export type ReleaseTile = { title: string; body: string; text: string; platforms
 
 /** The "New in" tiles: a release's Added entries whose text starts with a
  * bold lead phrase ("**Dictate.** Hold Ctrl+Alt…"), in CHANGELOG order. */
-export function releaseTiles(release: Release | undefined = RELEASES.find((r) => r.version === RELEASE.version)): ReleaseTile[] {
+/** The release whose Added entries the "New in" tiles show: this one, or,
+ * for a release that only changes and fixes things (0.7.1), the last one
+ * that added something. RELEASES is newest first. */
+export function tilesRelease(): Release | undefined {
+  const at = RELEASES.findIndex((r) => r.version === RELEASE.version);
+  return RELEASES.slice(Math.max(at, 0)).find((r) => r.entries.some((e) => e.category === "Added"));
+}
+
+export function releaseTiles(release: Release | undefined = tilesRelease()): ReleaseTile[] {
   if (!release) return [];
   return release.entries
     .filter((e) => e.category === "Added")

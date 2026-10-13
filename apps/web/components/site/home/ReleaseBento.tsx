@@ -1,5 +1,5 @@
 import { versionPath, PLATFORM_LABEL } from "../../../lib/changelog";
-import { releaseTiles } from "../../../lib/home";
+import { releaseTiles, tilesRelease } from "../../../lib/home";
 import { cx } from "../../../lib/cx";
 import { DOWNLOADS, RELEASE } from "../../../lib/release";
 import { CommandLine } from "../CommandLine";
@@ -14,10 +14,13 @@ const REST: Record<number, string> = { 2: "lg:col-span-2", 4: "lg:col-span-4", 6
 
 /** #new (§6.8): the release's Added entries as tiles, generated from
  * CHANGELOG.md (title = the bold lead phrase, body = its first sentence),
- * plus the real install command. */
+ * plus the real install command. A release that only changes and fixes
+ * things shows the last feature release's tiles, under its version. */
 export function ReleaseBento() {
-  const tiles = releaseTiles();
-  if (tiles.length === 0) return null;
+  const release = tilesRelease();
+  const tiles = releaseTiles(release);
+  if (!release || tiles.length === 0) return null;
+  const current = release.version === RELEASE.version;
   const install = DOWNLOADS.find((d) => d.os === "linux" && d.available)?.steps.find((s) => s.includes("apt install"));
   const command = install?.replace(/^[^:]*:\s*/, "");
   const used = tiles.reduce((n, _, i) => n + (i === 0 ? 4 : 2), 0) % 6;
@@ -26,9 +29,9 @@ export function ReleaseBento() {
     <Section
       id="new"
       tone="raised"
-      eyebrow={`New in ${RELEASE.version}`}
-      title="What's new in this release"
-      aside={<TextLink href={versionPath(RELEASE.version)}>Release notes</TextLink>}
+      eyebrow={`New in ${release.version}`}
+      title={current ? "What's new in this release" : `What ${release.version} added`}
+      aside={<TextLink href={versionPath(release.version)}>Release notes</TextLink>}
     >
       <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
         {tiles.map((t, i) => (
