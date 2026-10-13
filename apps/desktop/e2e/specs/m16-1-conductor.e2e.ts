@@ -145,7 +145,9 @@ describe("E2E-M16-1 Conductor call", function () {
   });
 
   afterEach(async () => {
-    await rt("/__control", { connectDelayMs: 0 });
+    // A case that failed while handshakes were held mustn't leave the next
+    // case's call waiting to connect.
+    await rt("/__control", { connectDelayMs: 0, release: true });
     if (!["idle"].includes((await view()).phase)) await endCall().catch(() => undefined);
   });
 
