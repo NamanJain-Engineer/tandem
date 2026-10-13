@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { engineLetters } from "../components/site/home/Engines";
 import { RELEASES } from "../lib/changelog";
-import { CAPABILITIES, FEATURES, MODE_ROWS, RELEASE_TILE_MAP, linuxFacts, releaseTiles } from "../lib/home";
+import { CAPABILITIES, FEATURES, MODE_ROWS, RELEASE_TILE_MAP, linuxFacts, releaseTiles, tilesRelease } from "../lib/home";
 import { formatSize, releaseAssets } from "../lib/manifest";
 import { VIDEO } from "../lib/media";
 import { DOWNLOADS, RELEASE } from "../lib/release";
@@ -24,11 +24,17 @@ describe("home page", () => {
     expect(text(h1)).toBe(SITE.tagline);
   });
 
-  it('F-WB-01 "New in" tiles come from CHANGELOG', () => {
-    const release = RELEASES.find((r) => r.version === RELEASE.version);
+  it('F-WB-01 "New in" tiles come from CHANGELOG: this release\'s Added entries, or the last release that added any', () => {
+    // A release that only changes and fixes things (0.7.1) keeps the last
+    // feature release's tiles, under that release's version.
+    const shipped = RELEASES.slice(RELEASES.findIndex((r) => r.version === RELEASE.version));
+    const release = shipped.find((r) => r.entries.some((e) => e.category === "Added"));
+    expect(tilesRelease()?.version).toBe(release?.version);
     const added = release?.entries.filter((e) => e.category === "Added") ?? [];
     const tiles = releaseTiles();
     expect(tiles.length).toBeGreaterThan(0);
+    expect(home).toContain(`New in ${release?.version}`);
+    expect(home).toContain(`href="/changelog/${release?.version}/"`);
     expect(tiles.map((t) => t.title)).toEqual(
       added.map((e) => /^\*\*(.+?)\.?\*\*/.exec(e.text)?.[1]).filter((t) => t !== undefined),
     );

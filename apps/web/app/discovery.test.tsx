@@ -39,10 +39,13 @@ describe("downloads and discovery (F-WB-04)", () => {
     }
     for (const p of DOCS_PAGES)
       expect(txt).toContain(`[${p.title}](https://vibezeo.com/docs/${p.slug ? `${p.slug}/` : ""})`);
-    for (const slug of ["conductor"])
-      expect(txt).toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*\\(Not in the app yet\\.\\)`));
-    for (const slug of ["thread-mode", "agent-mode", "dictate", "tasks", "plugins", "routines", "remote"])
+    // In the app but run only on Pro (Conductor on Team too), which this download can't have.
+    for (const slug of ["routines", "conductor"])
+      expect(txt).toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*\\(Part of Pro, which starts when accounts open\\.\\)`));
+    for (const slug of ["thread-mode", "agent-mode", "dictate", "tasks", "plugins", "routines", "remote", "conductor"])
       expect(txt).not.toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*Not in the app yet`));
+    for (const slug of ["thread-mode", "agent-mode", "dictate", "tasks", "plugins", "remote"])
+      expect(txt).not.toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*Part of Pro`));
     // F-DI-10 shipped, so Enhance and Polish is priced here as on /pricing.
     expect(txt.split("## Docs")[0]).toContain("Dictate Enhance and Polish: 3 credits per use");
   });

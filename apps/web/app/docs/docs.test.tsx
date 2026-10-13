@@ -98,13 +98,13 @@ describe("docs (F-WB-02)", () => {
   });
 
   it("F-WB-02 pages for features not in the release say so", () => {
-    for (const slug of ["conductor"])
-      expect(readFileSync(content(slug), "utf8"), slug).toContain("**Not in the app yet.**");
     // Shipped: Agent mode since 0.4.0; Dictate, Tasks, Plugins and SSH workspaces since 0.5.0.
-    for (const slug of ["agent-mode", "dictate", "tasks", "plugins", "routines", "remote"])
+    for (const slug of ["agent-mode", "dictate", "tasks", "plugins", "routines", "remote", "conductor"])
       expect(readFileSync(content(slug), "utf8"), slug).not.toContain("Not in the app yet");
-    // Routines are in the app but run only on Pro, which this download can't have.
-    expect(readFileSync(content("routines"), "utf8")).toContain("**Part of Pro.**");
+    // Routines and Conductor are in the app but run only on Pro (Conductor on
+    // Team too), which this download can't have.
+    for (const slug of ["routines", "conductor"])
+      expect(readFileSync(content(slug), "utf8"), slug).toContain("**Part of Pro.**");
   });
 
   it("F-WB-02 every docs page has the legal links and contact (D-1812)", () => {
