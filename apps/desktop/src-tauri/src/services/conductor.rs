@@ -9,10 +9,12 @@
 use std::sync::{Arc, OnceLock};
 
 use serde_json::{json, Value};
+use tandem_core::settings::SettingKey;
 use tandem_core::{ErrorCode, IpcError};
-use tandem_store::repo::conductor as log;
+use tandem_store::repo::conductor::{self as log, CallEventKind};
+use tandem_store::repo::settings;
 use tandem_store::Store;
-use tandem_voice::conductor::call::{CallController, CallOrigin, HostedError};
+use tandem_voice::conductor::call::{CallController, CallOrigin, CallRecord, HostedError, LogKind};
 use tandem_voice::conductor::view::CallView;
 use tandem_voice::mic_owner::{MicClaim, MicOwner, MicOwners};
 
@@ -186,6 +188,74 @@ impl Snapshot {
     }
 }
 
+/// Writes a call's record to the call log, as "Keep call logs" allows
+/// (UI-67): with "Don't keep", no turns are written and the call's row goes
+/// once it has settled (it's kept until then, so a crash still settles it).
+pub async fn record(store: &Store, record: CallRecord) {
+    let keep = keep_days(
+        &settings::get(store, SettingKey::ConductorCallLogs)
+            .await
+            .unwrap_or(Value::Null),
+    );
+    if keep.is_none() {
+        match &record {
+            CallRecord::Event { .. } => return,
+            CallRecord::Ended {
+                call_id,
+                credits: Some(_),
+                ..
+            } => {
+                let _ = log::delete(store, call_id).await;
+                return;
+            }
+            _ => {}
+        }
+    }
+    let r = match record {
+        CallRecord::Started {
+            call_id,
+            started_at,
+        } => log::started(store, &call_id, started_at).await,
+        CallRecord::Progress { call_id, seconds } => {
+            log::progress(store, &call_id, i64::from(seconds)).await
+        }
+        CallRecord::Event {
+            call_id,
+            ts,
+            kind,
+            text,
+            ok,
+        } => {
+            let kind = match kind {
+                LogKind::User => CallEventKind::User,
+                LogKind::Assistant => CallEventKind::Assistant,
+                LogKind::Action => CallEventKind::Action,
+            };
+            log::event(store, &call_id, ts, kind, &text, ok).await
+        }
+        CallRecord::Ended {
+            call_id,
+            ended_at,
+            seconds,
+            credits,
+            reason,
+        } => {
+            log::ended(
+                store,
+                &call_id,
+                ended_at,
+                i64::from(seconds),
+                credits.map(i64::from),
+                reason.as_str(),
+            )
+            .await
+        }
+    };
+    if let Err(e) = r {
+        tracing::warn!(error = %e, "conductor: call log not written");
+    }
+}
+
 /// Startup: calls that never settled (the app stopped mid-call) settle now
 /// with their last known seconds, and logs past their week go.
 pub async fn tidy_log<F, Fut>(store: &Store, now: i64, keep: Option<i64>, settle: F)
@@ -306,6 +376,87 @@ mod tests {
         // "Don't keep": every settled call goes.
         tidy_log(&store, now, None, |_, _| async { None }).await;
         assert!(log::list(&store, 10).await.expect("list").is_empty());
+    }
+
+    #[tokio::test]
+    async fn f_cn_04_dont_keep_writes_no_turns_and_drops_the_call_once_settled() {
+        use tandem_voice::conductor::call::EndReason;
+        let dir = tempfile::tempdir().expect("dir");
+        let store = Store::open_at(&dir.path().join("t.db"), &dir.path().join("b")).expect("store");
+        let turn = |id: &str, text: &str| CallRecord::Event {
+            call_id: id.into(),
+            ts: 2,
+            kind: LogKind::User,
+            text: text.into(),
+            ok: None,
+        };
+        let ended = |id: &str, credits: Option<u32>| CallRecord::Ended {
+            call_id: id.into(),
+            ended_at: 9,
+            seconds: 65,
+            credits,
+            reason: EndReason::HungUp,
+        };
+
+        // Kept (the default 7 days): turns are written.
+        record(
+            &store,
+            CallRecord::Started {
+                call_id: "vs_kept".into(),
+                started_at: 1,
+            },
+        )
+        .await;
+        record(&store, turn("vs_kept", "open code mode")).await;
+        record(&store, ended("vs_kept", Some(140))).await;
+        assert_eq!(
+            log::events(&store, "vs_kept").await.expect("events").len(),
+            1
+        );
+
+        // "Don't keep": the call's row exists until it settles, with no turns.
+        settings::set(&store, SettingKey::ConductorCallLogs, json!("off"))
+            .await
+            .expect("set");
+        record(
+            &store,
+            CallRecord::Started {
+                call_id: "vs_off".into(),
+                started_at: 1,
+            },
+        )
+        .await;
+        record(&store, turn("vs_off", "read my secrets")).await;
+        record(
+            &store,
+            CallRecord::Progress {
+                call_id: "vs_off".into(),
+                seconds: 30,
+            },
+        )
+        .await;
+        let open = log::get(&store, "vs_off")
+            .await
+            .expect("get")
+            .expect("row until settled");
+        assert_eq!(open.connected_seconds, Some(30));
+        assert!(log::events(&store, "vs_off")
+            .await
+            .expect("events")
+            .is_empty());
+        // Ended but not settled (the settle failed): still kept, so startup settles it.
+        record(&store, ended("vs_off", None)).await;
+        assert!(log::get(&store, "vs_off").await.expect("get").is_some());
+        assert_eq!(log::unsettled(&store).await.expect("unsettled").len(), 1);
+        // Settled: gone.
+        record(&store, ended("vs_off", Some(140))).await;
+        assert!(log::get(&store, "vs_off").await.expect("get").is_none());
+        assert!(log::events(&store, "vs_off")
+            .await
+            .expect("events")
+            .is_empty());
+        // The kept call is untouched.
+        assert!(log::get(&store, "vs_kept").await.expect("get").is_some());
     }
 
     #[test]

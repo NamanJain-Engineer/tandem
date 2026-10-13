@@ -925,6 +925,55 @@ mod tests {
     }
 
     #[test]
+    fn f_cn_08_mic_gain_carries_across_calls() {
+        let backend = Arc::new(FakeAudioBackend::new(vec![(
+            DeviceInfo::new("desk", "USB Desk Microphone", false),
+            FakeSource::Samples {
+                samples: Arc::new(vec![0.25f32; 16_000]),
+                rate: 16_000,
+                speed: 1,
+            },
+        )]));
+        let (dictate, _) = collect();
+        let config = CaptureConfig {
+            gain: Gain::X2,
+            ..quick(MicPrefs::default())
+        };
+        let svc = AudioService::start(backend, config, dictate);
+        // Each call streams, then lets go of the mic (`call_mic_stop`).
+        let call = || {
+            let peak = Arc::new(Mutex::new(0f32));
+            let p = peak.clone();
+            svc.begin_stream(StreamTap {
+                samples: Box::new(move |s: &[f32], _| {
+                    let mut p = p.lock();
+                    *p = s.iter().fold(*p, |m, x| m.max(x.abs()));
+                }),
+                events: Box::new(|_| {}),
+            })
+            .expect("stream");
+            let t = Instant::now();
+            while *peak.lock() == 0.0 && t.elapsed() < Duration::from_secs(5) {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            svc.cancel_take();
+            let peak = *peak.lock();
+            peak
+        };
+        // 2× through the soft clip.
+        let mut want = [0.25f32];
+        Gain::X2.apply(&mut want);
+        assert!(want[0] > 0.4, "2× is louder");
+        for n in 1..=3 {
+            let peak = call();
+            assert!(
+                (peak - want[0]).abs() < 1e-6,
+                "call {n} heard {peak}, not 2× 0.25"
+            );
+        }
+    }
+
+    #[test]
     fn f_cn_08_a_silent_mic_ends_the_take_on_the_call_not_in_dictate() {
         let backend = Arc::new(FakeAudioBackend::new(vec![(
             DeviceInfo::new("dead", "Dead Mic", true),
