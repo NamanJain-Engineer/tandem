@@ -7,6 +7,30 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## 0.7.1
+
+Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora. Like
+0.7.0, this build runs the Free plan on your computer, with no account and
+nothing sent to our servers.
+
+Plan limits in this build (Free): 4 live panes, 3 workspaces, one thread at a
+time, one account per engine, threads with Claude Code and Codex, one teammate
+besides Lead, and one plugin connection.
+
+### Changed
+
+- [lin] **The pane you're in comes first at launch.** When Vibezeo opens a
+  workspace with many panes, the focused pane connects to its shell before
+  the next panes open, so it's ready to type in sooner: about a second
+  sooner with 16 terminals on our test machine.
+
+### Fixed
+
+- [lin] Agents started together, such as six from the launch sheet, took
+  about twice as long to show their first output in 0.6.0 and 0.7.0, because
+  each new terminal held its output until the call that started its process
+  had returned. It now shows output as it arrives.
+
 ## 0.7.0
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora. macOS
