@@ -43,6 +43,9 @@ pub enum ClientEvent {
     Say(String),
     /// The talker's speech rate (1.0 normal): "talk faster / slower".
     SetSpeed(f32),
+    /// Barge-in: the user heard only the first `audio_end_ms` of this
+    /// assistant item, so the talker's history keeps only that much.
+    Truncate { item_id: String, audio_end_ms: u32 },
 }
 
 /// What the talker sends the app, normalized across providers.
@@ -50,8 +53,12 @@ pub enum ClientEvent {
 pub enum ServerEvent {
     /// The session is configured and listening.
     Ready,
-    /// Speech, PCM16 at [`SAMPLE_RATE`].
-    AudioDelta(Vec<i16>),
+    /// Speech, PCM16 at [`SAMPLE_RATE`], and the assistant item it belongs
+    /// to (for [`ClientEvent::Truncate`]), when the provider names one.
+    AudioDelta {
+        item: Option<String>,
+        pcm: Vec<i16>,
+    },
     /// What the user said (the provider's transcript).
     TranscriptUser(String),
     /// What the talker is saying.

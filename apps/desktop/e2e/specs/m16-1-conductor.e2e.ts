@@ -33,6 +33,7 @@ type MockState = {
   speed: number;
   voice: string | null;
   instructions: string;
+  truncates: Array<{ itemId: string; audioEndMs: number }>;
 };
 
 async function rt<T = unknown>(path: string, body?: unknown): Promise<T> {
@@ -441,6 +442,28 @@ describe("E2E-M16-1 Conductor call: persona, wake and microphone", function () {
       await invoke("conductor_memory_clear");
       await invoke("settings_reset", { key: "conductor_memory" });
     }
+  });
+
+  it("F-CN-01 a barge-in mid-answer tells the talker how much of it was heard", async () => {
+    await startCall();
+    const { itemId } = await rt<{ itemId: string }>("/__speak", { ms: 3_000, text: "Here's a long answer." });
+    const spoke = Date.now();
+    await until((v) => v.phase === "speaking", "speaking");
+    await browser.pause(Math.max(0, 1_000 - (Date.now() - spoke)));
+    await rt("/__say", { text: "stop" });
+    await browser.waitUntil(async () => (await rt<MockState>("/__state")).truncates.length > 0, {
+      timeout: 10_000,
+      timeoutMsg: "no truncate after the barge-in",
+    });
+    const heard = Date.now() - spoke;
+    const { truncates } = await rt<MockState>("/__state");
+    expect(truncates).toHaveLength(1);
+    expect(truncates[0]?.itemId).toBe(itemId);
+    // What had played by the barge-in: at least the pause, never more
+    // than the time since the audio arrived or the 3 s it lasts.
+    expect(truncates[0]?.audioEndMs).toBeGreaterThanOrEqual(800);
+    expect(truncates[0]?.audioEndMs).toBeLessThanOrEqual(Math.min(3_000, heard));
+    await endCall();
   });
 
   it("F-CN-07 the wake phrase starts a call that holds the mic until it ends", async () => {
