@@ -6,6 +6,7 @@
 pub mod call;
 pub mod confirm;
 pub mod exec;
+pub mod memory;
 pub mod persona;
 pub mod schema;
 pub mod speaker;
