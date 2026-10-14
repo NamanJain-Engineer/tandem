@@ -94,7 +94,9 @@ function DictateSegment() {
       )}
     >
       <Mic size={11} aria-hidden="true" />
-      {status.model ? t("status.dictate", { key: status.hold.label }) : t("status.dictateNoModel")}
+      {status.model || status.engine === "cloud"
+        ? t("status.dictate", { key: status.hold.label })
+        : t("status.dictateNoModel")}
     </button>
   );
 }

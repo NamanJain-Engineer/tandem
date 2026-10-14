@@ -4,7 +4,7 @@
 //! late or for a replaced take is dropped, and it talks to the app only
 //! through `DictateSink`, so all of it runs in tests with fakes.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
@@ -122,6 +122,8 @@ pub enum ToastCode {
     TooLongToEnhance,
     /// "Enhance didn't work, so your exact words were used."
     EnhanceFailed,
+    /// A Polish (or a formatting run, which is one) failed.
+    PolishFailed,
 }
 
 /// A finished take for the history (F-DI-08).
@@ -268,6 +270,8 @@ pub struct Dictate {
     inner: Arc<Mutex<Inner>>,
     deps: Arc<DictateDeps>,
     stop: Arc<AtomicBool>,
+    /// Bumped by each `start_hotkeys`; an older clock thread stops.
+    generation: Arc<AtomicU64>,
 }
 
 /// How long the widget waits before "No speech detected" for an empty take
@@ -291,6 +295,7 @@ impl Dictate {
             })),
             deps: Arc::new(deps),
             stop: Arc::new(AtomicBool::new(false)),
+            generation: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -304,17 +309,27 @@ impl Dictate {
                 self.deps.hotkeys.status()
             }
         };
+        // One clock per start: a restart retires the previous thread.
+        let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
         let me = self.clone();
         let _ = std::thread::Builder::new()
             .name("dictate-keys".into())
             .spawn(move || loop {
-                if me.stop.load(Ordering::Acquire) {
+                if me.stop.load(Ordering::Acquire)
+                    || me.generation.load(Ordering::Acquire) != generation
+                {
                     break;
                 }
                 match rx.recv_timeout(Duration::from_millis(10)) {
                     Ok(e) => me.on_key(e),
                     Err(mpsc::RecvTimeoutError::Timeout) => me.tick(),
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    // The backend never started or went away: no keys come,
+                    // but takes from the mic button and the deep link still
+                    // need the clock (the 10-minute cap and its warning).
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        std::thread::sleep(Duration::from_millis(10));
+                        me.tick();
+                    }
                 }
             });
         status
@@ -342,6 +357,14 @@ impl Dictate {
 
     pub fn current_take(&self) -> Option<TakeId> {
         self.inner.lock().machine.current().cloned()
+    }
+
+    /// Tests: makes the running take `by` older, for the 10-minute cap.
+    #[cfg(test)]
+    fn age_take(&self, by: Duration) {
+        if let Some(c) = self.inner.lock().current.as_mut() {
+            c.started -= by;
+        }
     }
 
     /// Conductor (M16) claims the mic: composer dictation is refused.
@@ -445,7 +468,9 @@ impl Dictate {
         }
         self.act(Action::Arm, Some(origin));
         self.act(Action::Start { hands_free: true }, None);
-        self.current_take().ok_or(DictateError::NotStarted)
+        let id = self.current_take().ok_or(DictateError::NotStarted)?;
+        self.inner.lock().gesture.hands_free();
+        Ok(id)
     }
 
     /// "Use local for this take" (F-DI-05): transcribes the last failed cloud
@@ -541,7 +566,10 @@ impl Dictate {
             }
             Err(f) => {
                 self.deps.sink.toast(DictateToast {
-                    code: ToastCode::EnhanceFailed,
+                    code: match mode {
+                        RewriteMode::Enhance => ToastCode::EnhanceFailed,
+                        RewriteMode::Polish => ToastCode::PolishFailed,
+                    },
                     error: false,
                     app: None,
                     model: None,
@@ -1585,6 +1613,19 @@ mod tests {
     }
 
     #[test]
+    fn f_di_10_2_a_failed_formatting_polish_says_polish_not_enhance() {
+        let rw = FakeRewriter::new(|_| Err(failure()));
+        let r = rig_full(speech(), "hello world", None, Some(rw));
+        r.d.set_config(enhance(false, Some("Bullet points."), &[]));
+        hold_and_release(&r);
+        wait(|| !r.platform.pasted().is_empty());
+        assert_eq!(r.platform.pasted(), vec!["hello world".to_string()]);
+        let codes: Vec<ToastCode> = r.sink.toasts.lock().iter().map(|t| t.code).collect();
+        assert!(codes.contains(&ToastCode::PolishFailed), "{codes:?}");
+        assert!(!codes.contains(&ToastCode::EnhanceFailed), "{codes:?}");
+    }
+
+    #[test]
     fn f_di_09_a_rewrite_that_changes_a_protected_spelling_is_not_used() {
         // The rewrite "corrects" Tauri to Tory: the un-rewritten text wins.
         let rw = FakeRewriter::new(|t| Ok(t.replace("⟦Tauri⟧", "⟦Tory⟧").replace("ship", "Ship")));
@@ -1836,6 +1877,47 @@ mod tests {
     }
 
     #[test]
+    fn f_di_01_3_esc_cancels_a_take_from_the_mic_button_or_the_link_too() {
+        for origin in [
+            Origin::Global,
+            Origin::Composer {
+                target_id: "thread:t1".into(),
+            },
+        ] {
+            let r = rig(speech(), "hello");
+            r.d.start_take(origin.clone()).expect("a take");
+            std::thread::sleep(Duration::from_millis(300));
+            assert!(r.keys.esc_listening());
+            r.keys.send(Which::Esc, Phase::Down);
+            wait(|| r.d.current_take().is_none());
+            std::thread::sleep(Duration::from_millis(300));
+            assert!(r.d.current_take().is_none(), "{origin:?}: Esc cancels");
+            assert_eq!(r.stt.calls(), 0, "{origin:?}: nothing transcribed");
+            assert!(r.platform.pasted().is_empty());
+            assert!(r.sink.inserted.lock().is_empty());
+        }
+    }
+
+    #[test]
+    fn f_di_12_the_hold_key_during_a_mic_button_take_ends_it_without_losing_it() {
+        let r = rig(speech(), "hello world");
+        *r.sink.focus.lock() = Some("thread:t1".into());
+        r.d.start_take(Origin::Composer {
+            target_id: "thread:t1".into(),
+        })
+        .expect("a take");
+        std::thread::sleep(Duration::from_millis(400));
+        // A quick tap of the Dictate key stops the hands-free take, as it
+        // does one started by double-tap; it doesn't start over.
+        r.keys.send(Which::Hold, Phase::Down);
+        std::thread::sleep(Duration::from_millis(60));
+        r.keys.send(Which::Hold, Phase::Up);
+        wait(|| !r.sink.inserted.lock().is_empty());
+        assert_eq!(r.stt.calls(), 1);
+        assert!(!r.sink.inserted.lock().is_empty(), "the words were kept");
+    }
+
+    #[test]
     fn f_di_04_3_silence_shows_no_speech_and_inserts_nothing() {
         let r = rig(vec![0.0; 32_000], "Thank you.");
         r.keys.send(Which::Hold, Phase::Down);
@@ -1845,6 +1927,35 @@ mod tests {
         assert_eq!(r.sink.toasts.lock()[0].code, ToastCode::NoSpeech);
         assert_eq!(r.stt.calls(), 0);
         assert!(r.platform.pasted().is_empty());
+    }
+
+    #[test]
+    fn f_di_04_the_ten_minute_cap_holds_when_the_shortcut_never_started() {
+        use crate::hotkey::HotkeyBackend;
+        let r = rig(speech(), "a long dictation");
+        // The backend failed and dropped its sender (a Wayland portal
+        // error, no display): only the deep link and the mic button remain.
+        r.keys.stop();
+        std::thread::sleep(Duration::from_millis(50));
+        r.d.start_take(Origin::Global).expect("a take");
+        wait(|| r.d.current_take().is_some());
+        r.d.age_take(guards::WARN_AT + Duration::from_secs(1));
+        wait(|| {
+            r.sink
+                .toasts
+                .lock()
+                .iter()
+                .any(|t| t.code == ToastCode::TimeAlmostUp)
+        });
+        assert!(r
+            .sink
+            .toasts
+            .lock()
+            .iter()
+            .any(|t| t.code == ToastCode::TimeAlmostUp));
+        r.d.age_take(guards::MAX_TAKE - guards::WARN_AT);
+        wait(|| r.d.current_take().is_none());
+        assert!(r.d.current_take().is_none(), "the cap stops the take");
     }
 
     #[test]
