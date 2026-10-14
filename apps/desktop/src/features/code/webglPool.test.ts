@@ -66,6 +66,30 @@ describe("WebGL context pool (F-CD-04)", () => {
     expect(panes.reduce((n, p) => n + p.r.attaches, 0)).toBe(8);
   });
 
+  it("F-SH-07.7 F-CD-04.2 16 panes opening one per frame keep the first 8 contexts: none is detached", () => {
+    // The mount queue opens one view per frame, so each registers in its own
+    // batch; they were all shown together, so none is newer than the rest.
+    const pool = new WebglPool();
+    let detaches = 0;
+    const panes = Array.from({ length: 16 }, (_, i) => {
+      const r = fake();
+      const detach = r.detach;
+      r.detach = () => {
+        detaches++;
+        detach();
+      };
+      return { id: `p${i}`, r };
+    });
+    for (const p of panes) {
+      pool.register(p.id, p.r, { visible: true, focused: p.id === "p0" });
+      settle();
+    }
+    expect(pool.liveContexts()).toBe(8);
+    expect(panes.slice(0, 8).every((p) => p.r.attached)).toBe(true);
+    expect(detaches).toBe(0);
+    expect(panes.reduce((n, p) => n + p.r.attaches, 0)).toBe(8);
+  });
+
   it("F-CD-04.2 contexts are attached one per frame, the focused pane first, after the switch", () => {
     const pool = new WebglPool();
     const panes = Array.from({ length: 4 }, (_, i) => ({ id: `p${i}`, r: fake() }));
