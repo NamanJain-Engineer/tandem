@@ -52,23 +52,67 @@ pub fn parse_memory(request: &str) -> Option<MemoryAsk> {
         prefixes.iter().find_map(|p| {
             lower
                 .starts_with(p)
-                .then(|| {
-                    r[p.len()..]
-                        .trim()
-                        .trim_end_matches(['.', '!'])
+                .then(|| r.get(p.len()..))
+                .flatten()
+                .map(|s| {
+                    s.trim()
+                        .trim_end_matches(['.', '!', '?'])
                         .trim()
                         .to_string()
                 })
                 .filter(|s| !s.is_empty())
         })
     };
-    if let Some(fact) = rest(&["remember that ", "please remember that ", "remember "]) {
+    if let Some(fact) = rest(&[
+        "remember that ",
+        "please remember that ",
+        "please remember ",
+        "remember ",
+    ]) {
         return Some(MemoryAsk::Remember(fact));
     }
-    if let Some(query) = rest(&["forget that ", "forget about ", "please forget ", "forget "]) {
-        return Some(MemoryAsk::Forget(query));
+    if let Some(query) = rest(&[
+        "forget that ",
+        "forget about ",
+        "please forget that ",
+        "please forget about ",
+        "please forget ",
+        "forget ",
+    ]) {
+        // "Forget it" means "never mind": like any request, it goes to the
+        // planner, and memory is left alone.
+        return names_something(&query).then_some(MemoryAsk::Forget(query));
     }
     None
+}
+
+/// What "forget …" says when it names nothing to forget.
+const NEVER_MIND: [&str; 17] = [
+    "it",
+    "that",
+    "this",
+    "them",
+    "those",
+    "these",
+    "it all",
+    "all of it",
+    "all that",
+    "all of that",
+    "all this",
+    "that one",
+    "this one",
+    "everything",
+    "i said that",
+    "what i said",
+    "what i just said",
+];
+
+/// Whether a "forget …" names something, rather than meaning "never mind"
+/// ("forget it", "forget that, open code mode instead").
+fn names_something(query: &str) -> bool {
+    let lower = query.to_lowercase();
+    let head = lower.split([',', ';']).next().unwrap_or_default().trim();
+    !NEVER_MIND.contains(&head)
 }
 
 /// What Conductor says back for a remember request.
@@ -167,10 +211,10 @@ pub fn proposals(said: &[String]) -> Vec<String> {
     out
 }
 
-/// The call journal's line: when, how long and which tools ran, never what
-/// was said (so "Don't keep" call logs has nothing of the call's content
-/// to keep out of it).
-pub fn journal_line(time_utc: &str, seconds: u32, tools: &[String]) -> String {
+/// The call journal's line: when (local time), how long and which tools
+/// ran, never what was said (so "Don't keep" call logs has nothing of the
+/// call's content to keep out of it).
+pub fn journal_line(time: &str, seconds: u32, tools: &[String]) -> String {
     let mins = seconds.div_ceil(60).max(1);
     let mut used: Vec<&str> = Vec::new();
     for t in tools {
@@ -188,7 +232,7 @@ pub fn journal_line(time_utc: &str, seconds: u32, tools: &[String]) -> String {
             used.join(", ")
         )
     };
-    format!("{time_utc} call, {mins} min, {what}")
+    format!("{time} call, {mins} min, {what}")
 }
 
 #[cfg(test)]
@@ -230,6 +274,32 @@ mod tests {
         ] {
             assert_eq!(parse_memory(other), None, "{other}");
         }
+    }
+
+    #[test]
+    fn f_cn_06_forget_it_means_never_mind_and_leaves_memory_alone() {
+        // "Forget …" removes every fact that names what follows, so a "forget
+        // that" meaning "never mind" would take every fact with "that" in it.
+        for never_mind in [
+            "forget it",
+            "Forget that.",
+            "forget about it",
+            "forget this",
+            "Forget all that!",
+            "forget that, open code mode instead",
+            "forget I said that",
+            "forget everything",
+        ] {
+            assert_eq!(parse_memory(never_mind), None, "{never_mind}");
+        }
+        assert_eq!(
+            parse_memory("forget that I use yarn"),
+            Some(MemoryAsk::Forget("I use yarn".into()))
+        );
+        assert_eq!(
+            parse_memory("Forget about the billing service."),
+            Some(MemoryAsk::Forget("the billing service".into()))
+        );
     }
 
     #[test]

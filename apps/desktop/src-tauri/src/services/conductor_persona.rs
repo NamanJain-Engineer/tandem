@@ -113,8 +113,8 @@ impl ConductorPersona {
 
     /// After a connected call (F-CN-06): reflection per "After each call"
     /// on what the user said about themselves, and one journal line (when,
-    /// how long, which tools; nothing that was said). Both only while
-    /// memory is on.
+    /// how long, which tools; nothing that was said) unless "Keep call logs"
+    /// is "Don't keep". Both only while memory is on.
     pub async fn after_call(
         &self,
         proposals: &[String],
@@ -127,6 +127,14 @@ impl ConductorPersona {
         }
         if !proposals.is_empty() {
             self.reflect(proposals).await;
+        }
+        // "Don't keep" call logs promises the call goes once it's settled, so
+        // no journal line outlives it (D-846).
+        let logs = settings::get(&self.store, SettingKey::ConductorCallLogs)
+            .await
+            .unwrap_or(Value::Null);
+        if crate::services::conductor::keep_days(&logs).is_none() {
+            return;
         }
         let at = chrono::DateTime::from_timestamp_millis(ended_at)
             .unwrap_or_default()
@@ -293,6 +301,44 @@ mod tests {
             .recall()
             .await
             .contains(&"I deploy on Fridays".to_string()));
+    }
+
+    #[tokio::test]
+    async fn f_cn_06_dont_keep_call_logs_leaves_no_journal_line_and_reflection_follows_its_own_setting(
+    ) {
+        let (dir, p, store) = rig().await;
+        let journal = dir.path().join("data/conductor/journal");
+        settings::set(&store, SettingKey::ConductorMemory, json!(true))
+            .await
+            .expect("test");
+        settings::set(&store, SettingKey::ConductorCallLogs, json!("off"))
+            .await
+            .expect("test");
+        let proposals = vec!["I usually review in the morning".to_string()];
+        p.after_call(
+            &proposals,
+            1_791_000_000_000,
+            65,
+            &["read_pane".to_string()],
+        )
+        .await;
+        // "Don't keep" promises the call goes once settled: no line outlives it.
+        assert!(!journal.exists());
+        // "After each call" decides reflection on its own ("Ask me", the default).
+        let view = p.view().await.expect("view");
+        assert_eq!(
+            view.proposals
+                .iter()
+                .map(|c| c.text.clone())
+                .collect::<Vec<_>>(),
+            proposals
+        );
+        // Keeping logs again brings the journal back.
+        settings::set(&store, SettingKey::ConductorCallLogs, json!("7"))
+            .await
+            .expect("test");
+        p.after_call(&[], 1_791_000_100_000, 30, &[]).await;
+        assert_eq!(std::fs::read_dir(&journal).expect("journal").count(), 1);
     }
 
     #[tokio::test]

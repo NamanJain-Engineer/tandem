@@ -41,12 +41,15 @@ download.
      site's plan copy matches.
    - Perf items marked [manual] (threads scroll fps, the 2 MB fence, the
      16-pane and startup suites) need the reference machines (`HUMAN_TODO.md`).
-   - Six agents' first frames regressed from 670 ms (M3) to ~1.2 s on the
-     same build VM and perf build (`perf/results/m15.json`): bisect from M3.
-   - Memory (§5.1, D-138): the base app is ~500 MB PSS on the build VM
-     (budget 350) and each background pane 34–75 MB (budget 3.9 MB). Hidden
-     panes should drop their xterm instance after a while and replay from
-     the core's ring when shown; measure again with `--suite memory`.
+   - Six agents' first frames: the bisect blamed D-139's frame holding, fixed
+     in 0.7.1 (~745 ms, as before 0.6.0). The ≤ 300 ms target is still
+     missed: the spawn takes ~38 ms, and the rest is the webview opening six
+     terminals at once (the performance session's open-path work, F-SH-07.7).
+   - Memory (§5.1, D-138): hidden panes now hand their xterm to the core
+     after 30 s and replay when shown (D-139; filled while hidden, 3.0 MB a
+     pane, met). Still missed: panes filled on screen and then moved to a
+     background tab (~60 MB each, budget 3.9 MB) and the base app (~617 MB
+     PSS on 039dec5, budget 350). Measure again with `--suite memory`.
 
 ## 1. Features to build, by milestone
 
@@ -70,6 +73,17 @@ merged 10 October 2026). F-DI-05 and F-DI-10, listed under M13, are done too.
 - [x] F-SH-08 First-run onboarding (P0; M5 built the framework, M6 the Accounts step)
 - [x] F-DI-08 History and stats (P1)
 - [x] F-DI-09 Dictionary (P1)
+
+The 14 October audit (D-1121's session) found spec behaviours under these ticks not built yet. Each acceptance criterion has its test; these are the spec's other behaviours, being built from D-520:
+- F-DI-08: the Dictate home card's last 5 takes.
+- F-DI-03 and F-DI-07: the widget's Reconnecting state and toast.
+- F-DI-09: dictionary sync on Pro. The API's table exists, but there's no desktop client.
+- On macOS: the automatic Fn → Ctrl+Option fallback (F-DI-02), and F-DI-11's "Press 🌐 to Do Nothing" with consent.
+
+Bugs found with them, also being fixed:
+- Takes have no 10-minute cap when the global shortcut fails to start (F-DI-04).
+- Esc doesn't cancel a take started from the mic button or a link.
+- The hotkey status is a cache that never learns of a pause or a failure (F-DI-02, F-DI-07).
 
 Tasks: capture; local models; dictionary engine; takes and insertion; hotkeys;
 widget (UI-60); composer dictation (UI-68); setup and onboarding; history and

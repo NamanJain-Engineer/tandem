@@ -306,17 +306,18 @@ impl MemoryStore {
         self.write_facts(&facts)
     }
 
-    /// "Forget …": removes every fact containing `query` (case-insensitive)
-    /// and returns how many went.
+    /// "Forget …": removes every fact that names `query` as whole words
+    /// (case-insensitive, so a spoken "Go" leaves "Uses Google Docs") and
+    /// returns how many went.
     pub fn forget(&self, query: &str) -> Result<usize, MemoryError> {
-        let q = query.trim().to_lowercase();
+        let q = words(query);
         if q.is_empty() {
             return Ok(0);
         }
         let facts = self.facts()?;
         let kept: Vec<String> = facts
             .iter()
-            .filter(|f| !f.to_lowercase().contains(&q))
+            .filter(|f| !words(f).windows(q.len()).any(|w| w == q.as_slice()))
             .cloned()
             .collect();
         let gone = facts.len() - kept.len();
@@ -509,6 +510,14 @@ fn parse_facts(text: &str) -> Vec<String> {
     text.lines().filter_map(fact_of).map(String::from).collect()
 }
 
+/// Lowercase words, split at anything that isn't a letter or a digit.
+fn words(s: &str) -> Vec<String> {
+    s.split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_lowercase)
+        .collect()
+}
+
 /// Trims a spoken fact ("remember that …") to one line within the cap, and
 /// refuses credentials.
 fn clean_fact(fact: &str) -> Result<String, MemoryError> {
@@ -639,6 +648,29 @@ mod tests {
         assert!(!store.path().exists());
         assert!(!store.journal_dir().exists());
         assert!(store.facts().expect("test").is_empty());
+    }
+
+    #[test]
+    fn f_cn_06_forget_takes_only_facts_that_name_it_as_words() {
+        let dir = tempfile::tempdir().expect("test");
+        let store = MemoryStore::new(dir.path().join("conductor"));
+        for f in [
+            "I trust the tests",
+            "Uses Rust",
+            "Uses Google Docs",
+            "Deploys on Fridays",
+            "Fridays' deploys need two reviews",
+        ] {
+            store.remember(true, f).expect("test");
+        }
+        // A spoken "Go" or "rust" isn't a match inside "Google" or "trust".
+        assert_eq!(store.forget("go").expect("test"), 0);
+        assert_eq!(store.forget("RUST").expect("test"), 1);
+        assert_eq!(store.forget("google docs").expect("test"), 1);
+        assert_eq!(store.forget("docs google").expect("test"), 0);
+        assert_eq!(store.forget("fridays").expect("test"), 2);
+        assert_eq!(store.forget("  !? ").expect("test"), 0);
+        assert_eq!(store.facts().expect("test"), vec!["I trust the tests"]);
     }
 
     #[test]
