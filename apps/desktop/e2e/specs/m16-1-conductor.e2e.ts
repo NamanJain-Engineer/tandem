@@ -409,6 +409,40 @@ describe("E2E-M16-1 Conductor call: persona, wake and microphone", function () {
     }
   });
 
+  it("F-CN-06 in a call, remember, recall and forget work, a secret is refused, and the end proposes a memory", async () => {
+    type Memory = { facts: string[]; proposals: Array<{ id: string; text: string }>; text: string };
+    // A fake key, assembled so secret scanners don't flag the spec.
+    const key = ["sk", "proj", "Qdxidq7OyFjVisrM1h8vbvTXfQNNTGnNZlhyg74g"].join("-");
+    try {
+      await startCall();
+      // Memory off (the default): nothing is written, and it says so.
+      expect(await say("remember that I deploy on Fridays")).toMatch(/^Memory is off/);
+      expect((await invoke<Memory>("conductor_memory_get")).facts).toEqual([]);
+      // Turned on mid-call: the next request is kept.
+      await invoke("settings_set", { key: "conductor_memory", value: true });
+      expect(await say("remember that I deploy on Fridays")).toBe("Okay, I'll remember that.");
+      expect((await invoke<Memory>("conductor_memory_get")).facts).toEqual(["I deploy on Fridays"]);
+      expect(await say("what do you know about me")).toBe("Here's what I remember: I deploy on Fridays.");
+      const refused = await say(`remember my token is ${key}`);
+      expect(refused).toContain("won't remember");
+      expect((await invoke<Memory>("conductor_memory_get")).text).not.toContain(key);
+      expect(await say("forget about Fridays")).toBe("Okay, I've forgotten that.");
+      expect((await invoke<Memory>("conductor_memory_get")).facts).toEqual([]);
+      // Said about themselves: proposed after the call ("Ask me", the default).
+      await say("I prefer pnpm over npm");
+      await endCall();
+      await browser.waitUntil(
+        async () =>
+          (await invoke<Memory>("conductor_memory_get")).proposals.some((p) => p.text === "I prefer pnpm over npm"),
+        { timeout: 10_000, timeoutMsg: "no proposal card after the call" },
+      );
+      expect((await invoke<Memory>("conductor_memory_get")).facts).toEqual([]);
+    } finally {
+      await invoke("conductor_memory_clear");
+      await invoke("settings_reset", { key: "conductor_memory" });
+    }
+  });
+
   it("F-CN-07 the wake phrase starts a call that holds the mic until it ends", async () => {
     expect(await invoke<string | null>("test_mic_owner")).toBe(null);
     await browser.waitUntil(async () => invoke<boolean>("test_conductor_wake"), {

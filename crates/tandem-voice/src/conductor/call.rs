@@ -27,6 +27,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::confirm::{ConfirmError, Confirms};
 use super::exec::{ExecTiming, Executor, ToolCall, ToolHost, ToolResult};
+use super::memory::{self, MemoryAsk, RememberRefusal};
 use super::persona::{self, PersonaBrief};
 use super::view::{
     credits_for, CallError, CallErrorCode, CallPhase, CallView, ChipState, ChipView, QuestionView,
@@ -208,6 +209,29 @@ pub trait CallHost: ToolHost {
     fn emit(&self, view: &CallView);
     fn emit_level(&self, level: f32);
     async fn record(&self, record: CallRecord);
+    /// "Remember that …" (F-CN-06). Refused while memory is off.
+    async fn remember(&self, _fact: &str) -> Result<(), RememberRefusal> {
+        Err(RememberRefusal::Off)
+    }
+    /// "What do you know about me": whether memory is on, and its facts.
+    async fn recall(&self) -> (bool, Vec<String>) {
+        (false, Vec::new())
+    }
+    /// "Forget …": how many facts went.
+    async fn forget(&self, _query: &str) -> usize {
+        0
+    }
+    /// After a connected call: the proposed memories for "After each call",
+    /// and the journal's line (when, how long, which tools), both only while
+    /// memory is on.
+    async fn after_call(
+        &self,
+        _proposals: Vec<String>,
+        _ended_at: i64,
+        _seconds: u32,
+        _tools: Vec<String>,
+    ) {
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -544,6 +568,8 @@ impl CallController {
         let mut last_progress = 0u32;
         let mut last_level = 0i64;
         let mut last_talk = connected_at;
+        // What the user said (redacted), for post-call reflection.
+        let mut said: Vec<String> = Vec::new();
         let mut actions = 0u32;
         let mut pending_doers = 0u32;
         let mut speed = persona::speed_step(persona.speed);
@@ -610,6 +636,7 @@ impl CallController {
                     }
                     Some(ServerEvent::TranscriptUser(text)) => {
                         let text = tandem_core::redact::redact(&text);
+                        said.push(text.clone());
                         host.record(CallRecord::Event { call_id: call_id.clone(), ts: host.now_ms(), kind: LogKind::User, text: text.clone(), ok: None }).await;
                         self.set(|v| v.utterance = Some(text));
                     }
@@ -746,6 +773,9 @@ impl CallController {
             reason,
         })
         .await;
+        let tools: Vec<String> = self.view().chips.iter().map(|c| c.tool.clone()).collect();
+        host.after_call(memory::proposals(&said), ended_at, seconds, tools)
+            .await;
         let receipt = Receipt {
             call_id: call_id.clone(),
             seconds,
@@ -989,6 +1019,22 @@ async fn doer_rounds(
                 "That one needs a click on screen; a spoken yes can't confirm it.".into()
             }
             Err(ConfirmError::NotFound) => "There's no question waiting with that id.".into(),
+        };
+    }
+    if let Some(ask) = memory::parse_memory(request) {
+        return match ask {
+            MemoryAsk::Remember(fact) => {
+                let result = match memory::check_fact(&fact) {
+                    Ok(()) => host.remember(&fact).await,
+                    Err(refused) => Err(refused),
+                };
+                memory::remembered_reply(result)
+            }
+            MemoryAsk::Recall => {
+                let (on, facts) = host.recall().await;
+                memory::recall_reply(on, &facts)
+            }
+            MemoryAsk::Forget(query) => memory::forgot_reply(&query, host.forget(&query).await),
         };
     }
     let mut results: Vec<ToolResult> = Vec::new();

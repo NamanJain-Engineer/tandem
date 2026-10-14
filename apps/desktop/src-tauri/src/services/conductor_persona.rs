@@ -64,7 +64,7 @@ impl ConductorPersona {
         settings::get_all(&self.store).await.unwrap_or_default()
     }
 
-    async fn enabled(&self) -> bool {
+    pub async fn enabled(&self) -> bool {
         settings::get(&self.store, SettingKey::ConductorMemory)
             .await
             .ok()
@@ -93,6 +93,51 @@ impl ConductorPersona {
         self.memory
             .remember(self.enabled().await, fact)
             .map_err(ipc)
+    }
+
+    /// "Remember that …" said during a call: why it wasn't kept, if it
+    /// wasn't. Neither the fact nor the error text is logged.
+    pub async fn remember_in_call(
+        &self,
+        fact: &str,
+    ) -> Result<(), tandem_voice::conductor::memory::RememberRefusal> {
+        use tandem_voice::conductor::memory::RememberRefusal as R;
+        self.memory
+            .remember(self.enabled().await, fact)
+            .map_err(|e| match e {
+                MemoryError::Off => R::Off,
+                MemoryError::Credential => R::Credential,
+                MemoryError::Empty | MemoryError::Io(_) => R::Failed,
+            })
+    }
+
+    /// After a connected call (F-CN-06): reflection per "After each call"
+    /// on what the user said about themselves, and one journal line (when,
+    /// how long, which tools; nothing that was said). Both only while
+    /// memory is on.
+    pub async fn after_call(
+        &self,
+        proposals: &[String],
+        ended_at: i64,
+        seconds: u32,
+        tools: &[String],
+    ) {
+        if !self.enabled().await {
+            return;
+        }
+        if !proposals.is_empty() {
+            self.reflect(proposals).await;
+        }
+        let at = chrono::DateTime::from_timestamp_millis(ended_at)
+            .unwrap_or_default()
+            .with_timezone(&chrono::Local);
+        let line = tandem_voice::conductor::memory::journal_line(
+            &at.format("%H:%M").to_string(),
+            seconds,
+            tools,
+        );
+        self.journal(&at.format("%Y-%m-%d").to_string(), &line)
+            .await;
     }
 
     /// "What do you know about me": the remembered facts (none while off).
@@ -165,6 +210,89 @@ mod tests {
         let data = DataDir::at(dir.path().join("data")).expect("test");
         let store = Store::open(&data).expect("test");
         (dir, ConductorPersona::new(store.clone(), &data), store)
+    }
+
+    #[tokio::test]
+    async fn f_cn_06_after_a_call_reflection_follows_the_setting_and_the_journal_keeps_no_words() {
+        use tandem_voice::conductor::memory::RememberRefusal;
+        let (dir, p, store) = rig().await;
+        let conductor = dir.path().join("data/conductor");
+        let proposals = vec!["I prefer pnpm over npm".to_string()];
+        let tools = vec!["launch_agents".to_string(), "read_pane".to_string()];
+        // Memory off: nothing at all, not even the journal.
+        p.after_call(&proposals, 1_791_000_000_000, 65, &tools)
+            .await;
+        assert!(!conductor.exists());
+        assert_eq!(
+            p.remember_in_call("I deploy on Fridays").await,
+            Err(RememberRefusal::Off)
+        );
+
+        settings::set(&store, SettingKey::ConductorMemory, json!(true))
+            .await
+            .expect("test");
+        // "Ask me about new memories" (the default): Keep / Discard cards.
+        p.after_call(&proposals, 1_791_000_000_000, 65, &tools)
+            .await;
+        let view = p.view().await.expect("view");
+        assert_eq!(
+            view.proposals
+                .iter()
+                .map(|c| c.text.clone())
+                .collect::<Vec<_>>(),
+            proposals
+        );
+        assert!(view.facts.is_empty());
+        // The journal: when, how long, which tools; no words from the call.
+        let journal: Vec<_> = std::fs::read_dir(conductor.join("journal"))
+            .expect("journal")
+            .collect();
+        assert_eq!(journal.len(), 1);
+        let text =
+            std::fs::read_to_string(journal[0].as_ref().expect("entry").path()).expect("read");
+        assert!(
+            text.contains("call, 2 min, 2 actions: launch_agents, read_pane"),
+            "{text}"
+        );
+        assert!(!text.contains("pnpm"));
+
+        // "Save automatically".
+        settings::set(&store, SettingKey::ConductorReflection, json!("auto"))
+            .await
+            .expect("test");
+        p.after_call(
+            &["I usually review in the morning".to_string()],
+            1_791_000_100_000,
+            30,
+            &[],
+        )
+        .await;
+        assert!(p
+            .recall()
+            .await
+            .contains(&"I usually review in the morning".to_string()));
+        // "Don't reflect": nothing proposed or saved.
+        settings::set(&store, SettingKey::ConductorReflection, json!("off"))
+            .await
+            .expect("test");
+        p.after_call(
+            &["I never use yarn".to_string()],
+            1_791_000_200_000,
+            30,
+            &[],
+        )
+        .await;
+        assert!(!p.recall().await.contains(&"I never use yarn".to_string()));
+        // In a call, "remember that…" saves; a secret is refused.
+        assert_eq!(p.remember_in_call("I deploy on Fridays").await, Ok(()));
+        assert_eq!(
+            p.remember_in_call("my password is hunter22").await,
+            Err(RememberRefusal::Credential)
+        );
+        assert!(p
+            .recall()
+            .await
+            .contains(&"I deploy on Fridays".to_string()));
     }
 
     #[tokio::test]

@@ -6,10 +6,14 @@ use serde_json::json;
 use super::*;
 use crate::conductor::exec::tests::{quick, FakeHost};
 use crate::conductor::exec::PaneFacts;
+use crate::conductor::memory::RememberRefusal;
 use crate::conductor::view::UiAction;
 use crate::realtime::{RealtimeError, SAMPLE_RATE};
 use tandem_core::origin::Origin;
 use tandem_core::settings::SettingKey;
+
+/// What `after_call` got: the proposals, the call's seconds and its tools.
+type AfterCall = (Vec<String>, u32, Vec<String>);
 
 /// The provider's side of a fake socket.
 struct Wire {
@@ -63,6 +67,12 @@ struct Host {
     provider: Arc<FakeProvider>,
     /// A vendor-protocol socket to mint instead of the fake one.
     vendor_url: Mutex<Option<String>>,
+    /// Conductor's memory (F-CN-06): on or off, the facts, how often the
+    /// host was asked to remember, and what came after the call.
+    memory_on: Mutex<bool>,
+    facts: Mutex<Vec<String>>,
+    remember_calls: Mutex<usize>,
+    after: Mutex<Option<AfterCall>>,
     acts: Mutex<VecDeque<Result<ActResponse, HostedError>>>,
     act_requests: Mutex<Vec<ActRequest>>,
     settles: Mutex<Vec<(String, u32)>>,
@@ -87,6 +97,10 @@ impl Host {
                     wires,
                 }),
                 vendor_url: Mutex::new(None),
+                memory_on: Mutex::new(false),
+                facts: Mutex::new(Vec::new()),
+                remember_calls: Mutex::new(0),
+                after: Mutex::new(None),
                 acts: Mutex::new(VecDeque::new()),
                 act_requests: Mutex::new(Vec::new()),
                 settles: Mutex::new(Vec::new()),
@@ -214,6 +228,32 @@ impl CallHost for Host {
     fn emit_level(&self, _level: f32) {}
     async fn record(&self, record: CallRecord) {
         self.records.lock().push(record);
+    }
+    async fn remember(&self, fact: &str) -> Result<(), RememberRefusal> {
+        *self.remember_calls.lock() += 1;
+        if !*self.memory_on.lock() {
+            return Err(RememberRefusal::Off);
+        }
+        self.facts.lock().push(fact.to_string());
+        Ok(())
+    }
+    async fn recall(&self) -> (bool, Vec<String>) {
+        (*self.memory_on.lock(), self.facts.lock().clone())
+    }
+    async fn forget(&self, query: &str) -> usize {
+        let mut facts = self.facts.lock();
+        let before = facts.len();
+        facts.retain(|f| !f.to_lowercase().contains(&query.to_lowercase()));
+        before - facts.len()
+    }
+    async fn after_call(
+        &self,
+        proposals: Vec<String>,
+        _ended_at: i64,
+        seconds: u32,
+        tools: Vec<String>,
+    ) {
+        *self.after.lock() = Some((proposals, seconds, tools));
     }
 }
 
@@ -947,4 +987,103 @@ async fn f_cn_08_a_mic_that_stops_delivering_ends_the_call() {
     assert_eq!(host.settles.lock().len(), 1);
     // The call let go of the mic.
     assert!(!*host.mic_owned.lock());
+}
+
+#[tokio::test]
+async fn f_cn_06_remember_recall_and_forget_are_answered_in_the_call() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    *host.memory_on.lock() = true;
+    let (_c, mut wire) = connected(&host, &mut wires, CallOrigin::Button).await;
+    let say = |id: &str, text: &str| act(id, text);
+    wire.to_app
+        .send(say("fc1", "Remember that I deploy on Fridays."))
+        .await
+        .expect("send");
+    assert_eq!(output(&mut wire, "fc1").await, "Okay, I'll remember that.");
+    assert_eq!(
+        host.facts.lock().clone(),
+        vec!["I deploy on Fridays".to_string()]
+    );
+    wire.to_app
+        .send(say("fc2", "What do you know about me?"))
+        .await
+        .expect("send");
+    assert_eq!(
+        output(&mut wire, "fc2").await,
+        "Here's what I remember: I deploy on Fridays."
+    );
+    wire.to_app
+        .send(say("fc3", "forget about Fridays"))
+        .await
+        .expect("send");
+    assert_eq!(output(&mut wire, "fc3").await, "Okay, I've forgotten that.");
+    assert!(host.facts.lock().is_empty());
+    // All three in the app: the planner was never asked.
+    assert!(host.act_requests.lock().is_empty());
+}
+
+#[tokio::test]
+async fn f_cn_06_1_with_memory_off_remember_writes_nothing_and_says_so() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    let (_c, mut wire) = connected(&host, &mut wires, CallOrigin::Button).await;
+    wire.to_app
+        .send(act("fc1", "remember that I deploy on Fridays"))
+        .await
+        .expect("send");
+    let out = output(&mut wire, "fc1").await;
+    assert!(out.starts_with("Memory is off"), "{out}");
+    assert!(host.facts.lock().is_empty());
+    wire.to_app
+        .send(act("fc2", "what do you remember"))
+        .await
+        .expect("send");
+    assert!(output(&mut wire, "fc2").await.starts_with("Memory is off"));
+}
+
+#[tokio::test]
+async fn f_cn_06_2_a_spoken_token_is_refused_in_the_call_path() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    *host.memory_on.lock() = true;
+    let (_c, mut wire) = connected(&host, &mut wires, CallOrigin::Button).await;
+    wire.to_app
+        .send(act(
+            "fc1",
+            "Remember my token is sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789",
+        ))
+        .await
+        .expect("send");
+    let out = output(&mut wire, "fc1").await;
+    assert!(out.contains("won't remember"), "{out}");
+    // Refused before the host: nothing written, the host never asked.
+    assert!(host.facts.lock().is_empty());
+    assert_eq!(*host.remember_calls.lock(), 0);
+    assert!(!out.contains("sk-ant"));
+}
+
+#[tokio::test]
+async fn f_cn_06_after_the_call_reflection_gets_what_the_user_said_about_themselves() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    *host.memory_on.lock() = true;
+    let (c, mut wire) = connected(&host, &mut wires, CallOrigin::Button).await;
+    for text in [
+        "I prefer pnpm over npm",
+        "Open code mode",
+        "my password is hunter22",
+    ] {
+        wire.to_app
+            .send(ServerEvent::TranscriptUser(text.into()))
+            .await
+            .expect("send");
+    }
+    wire.to_app
+        .send(act("fc1", "open code mode"))
+        .await
+        .expect("send");
+    let _ = output(&mut wire, "fc1").await;
+    host.advance(65_000);
+    c.end();
+    until("ended", || host.after.lock().is_some()).await;
+    let (proposals, seconds, _tools) = host.after.lock().clone().expect("after");
+    assert_eq!(proposals, vec!["I prefer pnpm over npm".to_string()]);
+    assert!(seconds >= 65, "{seconds}");
 }

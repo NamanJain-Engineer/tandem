@@ -55,7 +55,15 @@ The call log (<kbd>Mod+Shift+.</kbd>) lists each call's turns and actions, and t
 
 Settings › Conductor sets what Conductor calls itself (the wake phrase stays "Hey Conductor"), its voice, its tone (Neutral, Warm or Brief), how much it says (Short, Normal or Detailed), its speech speed (5 steps), and a note telling it about you. A call reads them once, when it starts.
 
-**Remember things between calls** is off by default. Turned on, Conductor's memory is a file on your computer, `memory.md`, which Settings › Conductor shows and lets you edit, and every call reads it when it starts. It refuses anything that looks like a password, token or key. **Forget everything…** deletes it.
+**Remember things between calls** is off by default. Turned on, Conductor's memory is a file on your computer, `memory.md`, which Settings › Conductor shows and lets you edit, and every call reads it when it starts. During a call:
+
+- **"Remember that…"** adds a fact. With memory off, nothing is written and Conductor says so.
+- **"What do you know about me"** reads back what it remembers.
+- **"Forget…"** removes every fact that mentions what you name.
+
+It refuses anything that looks like a password, token or key, said or typed. These are handled on your computer, without the planner.
+
+When a call ends, **After each call** decides what happens to what you said about yourself during it ("I prefer…", "I usually…", "I work on…"): **Ask me about new memories** (the default) shows each as a card in Settings › Conductor to **Keep** or **Discard**, **Save automatically** adds them, and **Don't reflect** does neither. While memory is on, each call also adds a line to a journal on your computer with the time, how long the call lasted and which tools it used, never what was said. **Forget everything…** deletes the memory file, the cards and the journal.
 
 ## The wake phrase
 

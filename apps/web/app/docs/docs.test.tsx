@@ -128,6 +128,13 @@ describe("docs (F-WB-02)", () => {
       "conductor.wake",
       "conductor.wake.pauseVideos",
       "conductor.speed",
+      "conductor.reflection",
+      "conductor.reflection.ask",
+      "conductor.reflection.auto",
+      "conductor.reflection.off",
+      "conductor.memory.keep",
+      "conductor.memory.discard",
+      "conductor.memory.forgetAll",
     ])
       expect(mdx, k).toContain(labels[k]);
   });

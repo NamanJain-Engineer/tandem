@@ -26,6 +26,7 @@ use tandem_voice::conductor::call::{
     HostedError, MicEvent, SessionGrant, Settlement, Speaker,
 };
 use tandem_voice::conductor::exec::{PaneFacts, PaneKind, ToolHost};
+use tandem_voice::conductor::memory::RememberRefusal;
 use tandem_voice::conductor::persona::PersonaBrief;
 use tandem_voice::conductor::view::{CallView, UiAction};
 use tandem_voice::realtime::RealtimeProvider;
@@ -444,6 +445,32 @@ impl CallHost for AppHost {
 
     async fn record(&self, record: CallRecord) {
         crate::services::conductor::record(&self.state().store, record).await;
+    }
+
+    async fn remember(&self, fact: &str) -> Result<(), RememberRefusal> {
+        self.state().persona.remember_in_call(fact).await
+    }
+
+    async fn recall(&self) -> (bool, Vec<String>) {
+        let persona = &self.state().persona;
+        (persona.enabled().await, persona.recall().await)
+    }
+
+    async fn forget(&self, query: &str) -> usize {
+        self.state().persona.forget(query).await.unwrap_or(0)
+    }
+
+    async fn after_call(
+        &self,
+        proposals: Vec<String>,
+        ended_at: i64,
+        seconds: u32,
+        tools: Vec<String>,
+    ) {
+        self.state()
+            .persona
+            .after_call(&proposals, ended_at, seconds, &tools)
+            .await;
     }
 }
 

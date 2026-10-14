@@ -198,7 +198,7 @@ release candidate. Stop after any sub-phase if the budget runs out.
 - 16A Conductor (voice), all 47 tools, the floating ring, the call-log setting, talk faster/slower and the vendor realtime client built (D-1114 to D-1120; the vendor client waits on a recorded session with the key, `HUMAN_TODO.md`): [x] F-CN-01 Call lifecycle · [x] F-CN-02 Talker/doer
   architecture and tool catalog · [x] F-CN-03 Delivery rules and safety ·
   [x] F-CN-04 Conductor UI · [x] F-CN-05 Find work by meaning (local search and the palette, D-814; the API's ranking, #30; teammates and the app's opt-in to the hosted ranking, D-1302; the Conductor's spoken answer comes with F-CN-02) · [x] F-CN-06
-  Persona and memory (D-1119 wires it into calls) · [x] F-CN-07 Wake phrase (D-1119) · [x] F-CN-08 Audio routing for
+  Persona and memory (D-1119 wires it into calls; D-1121 the voice memory commands, reflection and journal) · [x] F-CN-07 Wake phrase (D-1119) · [x] F-CN-08 Audio routing for
   calls · [x] F-BE-08 Voice session minting (pull request #30, D-1000–D-1008)
 - 16B Auto: [x] F-AU-01 Auto (Pro, credits)
 - 16C Phone companion: [x] F-RM-03 Phone companion · [x] F-BE-11 Remote relay
