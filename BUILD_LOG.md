@@ -253,6 +253,9 @@ Built on branch `m8-dictate-onboarding` (from `product-m0-m5`), in parallel with
   - A restart from the app (a new binding) goes through `Dictate::stop_hotkeys`, which retires the clock thread before stopping the backend, so the gap isn't reported.
   - The toggle link and its command are now the fallback only while the shortcut is down on Linux (Unavailable or NotRunning: no portal, a failed or dead portal session, no display), not on every Wayland session; the setup's link hint follows `deepLinkCommand`. dictate.mdx says so again.
   - "Starting…" stays mostly unseen: the portal's start blocks inside `restart_hotkeys`, before the clock thread exists.
+- D-522: Dictate slice C, part 1 (Linux-visible): the widget's Reconnecting state and the home card's last 5 takes.
+  - `CaptureEvent::Rebuilt` (the silent stream reopened on the same device) now shows the recording take as Reconnecting with its toast; a new `CaptureEvent::Resumed` (sound after that rebuild) and `SwitchedToBackup` put it back to Listening. Only a shown, recording take changes phase; with none, recovery events show nothing.
+  - The Dictate home card lists the last 5 takes (`dictate_history` with `limit: 5`, reloaded as the take count changes); each opens History.
 
 ### M8 log
 - 0.5.0 release-build check (d1060d3, `release-local.sh --dry-run`, after `cargo install cargo-about --features cli`, `cargo-cyclonedx`, `cargo-zigbuild`, `pip install ziglang` and the musl targets in a fresh container): the release binary downloaded Whisper Base, verified it against the pinned SHA-256 and loaded it; Settings › Dictate and onboarding's Try Dictate render; the `dictate-widget` window exists; `tandem://dictate/toggle` is refused on X11 (`dictate.deep_link_refused`). Found: each link from a second instance was handled twice, and the Microphone select's trigger was blank (D-518).

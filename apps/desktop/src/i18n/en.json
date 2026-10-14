@@ -2558,6 +2558,7 @@
   "dictate.home.try": "Try it",
   "dictate.home.setUp": "Set up",
   "dictate.home.history": "History & stats…",
+  "dictate.home.recent": "Recent takes",
   "dictate.stats.words": "{n, plural, one {# word} other {# words}}",
   "dictate.stats.takes": "{n, plural, one {# take} other {# takes}}",
   "dictate.stats.wpm": "{n} wpm",

@@ -395,16 +395,54 @@ impl Dictate {
         self.inner.lock().verifier = None;
     }
 
+    /// The running take's phase while it records: Reconnecting during the
+    /// silent-stream recovery (F-DI-03, F-DI-07), Listening once sound is
+    /// back. False when no shown take is recording.
+    fn recording_phase(&self, phase: DictatePhase) -> bool {
+        let event = {
+            let i = self.inner.lock();
+            let Some(c) = i.current.as_ref().filter(|c| c.shown) else {
+                return false;
+            };
+            if i.machine.current() != Some(&c.id) || i.machine.state() != TakeState::Recording {
+                return false;
+            }
+            let mut e = DictateStateEvent::new(phase, Some(c.id.clone()));
+            e.hands_free = c.hands_free;
+            e.composer = match i.machine.origin(&c.id) {
+                Some(Origin::Composer { target_id }) => Some(target_id.clone()),
+                _ => None,
+            };
+            e
+        };
+        self.emit(event);
+        true
+    }
+
     pub fn on_capture_event(&self, event: CaptureEvent) {
         match event {
-            CaptureEvent::Rebuilt => {}
-            CaptureEvent::SwitchedToBackup { device } => self.toast(
-                ToastCode::SwitchedToBackup,
-                false,
-                format!(
-                    "The primary microphone stopped delivering audio; now recording from {device}."
-                ),
-            ),
+            CaptureEvent::Rebuilt => {
+                if self.recording_phase(DictatePhase::Reconnecting) {
+                    self.toast(
+                        ToastCode::Reconnecting,
+                        false,
+                        "The microphone was silent; reopening it.".into(),
+                    );
+                }
+            }
+            CaptureEvent::Resumed => {
+                self.recording_phase(DictatePhase::Listening);
+            }
+            CaptureEvent::SwitchedToBackup { device } => {
+                self.recording_phase(DictatePhase::Listening);
+                self.toast(
+                    ToastCode::SwitchedToBackup,
+                    false,
+                    format!(
+                        "The primary microphone stopped delivering audio; now recording from {device}."
+                    ),
+                )
+            }
             CaptureEvent::NotDelivering => {
                 self.toast(
                     ToastCode::MicSilent,
@@ -1983,6 +2021,44 @@ mod tests {
         assert_eq!(r.sink.toasts.lock()[0].code, ToastCode::NoSpeech);
         assert_eq!(r.stt.calls(), 0);
         assert!(r.platform.pasted().is_empty());
+    }
+
+    #[test]
+    fn f_di_07_a_silent_mic_shows_reconnecting_then_listening_when_sound_is_back() {
+        let r = rig(speech(), "hello");
+        // No take: recovery events show nothing.
+        r.d.on_capture_event(CaptureEvent::Rebuilt);
+        assert!(r.sink.states.lock().is_empty());
+        assert!(r.sink.toasts.lock().is_empty());
+        r.d.start_take(Origin::Global).expect("a take");
+        wait(|| {
+            r.sink
+                .states
+                .lock()
+                .last()
+                .is_some_and(|e| e.state == DictatePhase::Listening)
+        });
+        let last = |r: &Rig| r.sink.states.lock().last().map(|e| (e.state, e.hands_free));
+        r.d.on_capture_event(CaptureEvent::Rebuilt);
+        assert_eq!(last(&r), Some((DictatePhase::Reconnecting, true)));
+        assert_eq!(
+            r.sink
+                .toasts
+                .lock()
+                .iter()
+                .map(|t| t.code)
+                .collect::<Vec<_>>(),
+            vec![ToastCode::Reconnecting]
+        );
+        r.d.on_capture_event(CaptureEvent::Resumed);
+        assert_eq!(last(&r), Some((DictatePhase::Listening, true)));
+        // The backup taking over also goes back to Listening.
+        r.d.on_capture_event(CaptureEvent::Rebuilt);
+        r.d.on_capture_event(CaptureEvent::SwitchedToBackup {
+            device: "USB Mic".into(),
+        });
+        assert_eq!(last(&r), Some((DictatePhase::Listening, true)));
+        r.d.cancel();
     }
 
     #[test]

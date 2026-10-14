@@ -75,12 +75,10 @@ merged 10 October 2026). F-DI-05 and F-DI-10, listed under M13, are done too.
 - [x] F-DI-09 Dictionary (P1)
 
 The 14 October audit (D-1121's session) found spec behaviours under these ticks not built yet. Each acceptance criterion has its test; these are the spec's other behaviours, being built from D-520:
-- F-DI-08: the Dictate home card's last 5 takes.
-- F-DI-03 and F-DI-07: the widget's Reconnecting state and toast.
 - F-DI-09: dictionary sync on Pro. The API's table exists, but there's no desktop client.
 - On macOS: the automatic Fn → Ctrl+Option fallback (F-DI-02), and F-DI-11's "Press 🌐 to Do Nothing" with consent.
 
-Bugs found with them, also being fixed:
+The bugs found with them are fixed (D-520, D-521).
 
 Tasks: capture; local models; dictionary engine; takes and insertion; hotkeys;
 widget (UI-60); composer dictation (UI-68); setup and onboarding; history and
