@@ -41,12 +41,15 @@ download.
      site's plan copy matches.
    - Perf items marked [manual] (threads scroll fps, the 2 MB fence, the
      16-pane and startup suites) need the reference machines (`HUMAN_TODO.md`).
-   - Six agents' first frames regressed from 670 ms (M3) to ~1.2 s on the
-     same build VM and perf build (`perf/results/m15.json`): bisect from M3.
-   - Memory (§5.1, D-138): the base app is ~500 MB PSS on the build VM
-     (budget 350) and each background pane 34–75 MB (budget 3.9 MB). Hidden
-     panes should drop their xterm instance after a while and replay from
-     the core's ring when shown; measure again with `--suite memory`.
+   - Six agents' first frames: the bisect blamed D-139's frame holding, fixed
+     in 0.7.1 (~745 ms, as before 0.6.0). The ≤ 300 ms target is still
+     missed: the spawn takes ~38 ms, and the rest is the webview opening six
+     terminals at once (the performance session's open-path work, F-SH-07.7).
+   - Memory (§5.1, D-138): hidden panes now hand their xterm to the core
+     after 30 s and replay when shown (D-139; filled while hidden, 3.0 MB a
+     pane, met). Still missed: panes filled on screen and then moved to a
+     background tab (~60 MB each, budget 3.9 MB) and the base app (~617 MB
+     PSS on 039dec5, budget 350). Measure again with `--suite memory`.
 
 ## 1. Features to build, by milestone
 
