@@ -106,6 +106,13 @@ impl Gesture {
         )
     }
 
+    /// A hands-free take started outside the keys (the mic button, the
+    /// toggle deep link): the keys treat it like a double-tap's, so Esc
+    /// cancels it and the hold key or the toggle stops it.
+    pub fn hands_free(&mut self) {
+        self.state = State::Toggled;
+    }
+
     /// The service ended the take itself (the 10-minute cap, an error).
     pub fn reset(&mut self) {
         self.state = match self.state {

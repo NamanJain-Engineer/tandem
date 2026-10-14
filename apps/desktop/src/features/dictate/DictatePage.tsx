@@ -1,20 +1,12 @@
 import { useEffect, useState } from "react";
 import type { DevicesView, HotkeyStatus, IpcError } from "@tandem/protocol";
-import {
-  Badge,
-  Button,
-  Callout,
-  HotkeyRecorder,
-  Kbd,
-  Select,
-  useToast,
-  type BadgeVariant,
-} from "@tandem/ui";
+import { Badge, Button, Callout, HotkeyRecorder, Kbd, Select, useToast, type BadgeVariant } from "@tandem/ui";
 import { t, type MessageKey } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { copyText } from "../../ipc/clipboard";
 import { useDictate } from "../../stores/dictate";
 import { useSetting, useSettings } from "../../stores/settings";
+import { languageName } from "./LanguageSelect";
 import { bindingFrom } from "./binding";
 import { DictateSetup } from "./DictateSetup";
 import { DictionarySheet } from "./DictionarySheet";
@@ -56,7 +48,11 @@ export function ShortcutField({ mode, label }: { mode: "hold" | "toggle"; label:
   return (
     <div className="flex flex-col items-end gap-1" data-testid={`dictate-shortcut-${mode}`}>
       <div className="flex items-center gap-2">
-        {current ? <Kbd keys={current.label.split("+")} /> : <span className="text-sm text-fg-muted">{t("dictate.shortcut.notSet")}</span>}
+        {current ? (
+          <Kbd keys={current.label.split("+")} />
+        ) : (
+          <span className="text-sm text-fg-muted">{t("dictate.shortcut.notSet")}</span>
+        )}
         <HotkeyRecorder
           label={label}
           idleText={current ? t("dictate.shortcut.change") : t("dictate.shortcut.set")}
@@ -72,7 +68,11 @@ export function ShortcutField({ mode, label }: { mode: "hold" | "toggle"; label:
         />
       </div>
       {error && (
-        <span role="alert" className="text-sm text-[var(--tn-status-error-text,var(--tn-danger))]" data-testid={`dictate-shortcut-error-${mode}`}>
+        <span
+          role="alert"
+          className="text-sm text-[var(--tn-status-error-text,var(--tn-danger))]"
+          data-testid={`dictate-shortcut-error-${mode}`}
+        >
           {error}
         </span>
       )}
@@ -86,7 +86,10 @@ export function MicMeter() {
   return (
     <span className="inline-flex h-3 w-16 items-end gap-0.5" aria-hidden="true">
       {[0.15, 0.35, 0.55, 0.75].map((th) => (
-        <span key={th} className={level > th ? "h-full w-1/4 rounded-xs bg-accent" : "h-1/3 w-1/4 rounded-xs bg-border"} />
+        <span
+          key={th}
+          className={level > th ? "h-full w-1/4 rounded-xs bg-accent" : "h-1/3 w-1/4 rounded-xs bg-border"}
+        />
       ))}
     </span>
   );
@@ -96,7 +99,15 @@ export function MicMeter() {
  * leaving the trigger blank (D-518). */
 const NO_MIC = "__default__";
 
-export function MicSelect({ k, label, none }: { k: "dictate_mic" | "dictate_backup_mic"; label: string; none: string }) {
+export function MicSelect({
+  k,
+  label,
+  none,
+}: {
+  k: "dictate_mic" | "dictate_backup_mic";
+  label: string;
+  none: string;
+}) {
   const value = useSetting<string | null>(k, null);
   const [view, setView] = useState<DevicesView | null>(null);
   useEffect(() => {
@@ -116,7 +127,11 @@ export function MicSelect({ k, label, none }: { k: "dictate_mic" | "dictate_back
     ...(view?.devices ?? []).map((d) => ({
       value: d.id,
       label: d.name,
-      description: d.bluetooth ? t("dictate.mic.bluetooth") : d.loopback ? t("dictate.mic.loopback") : undefined,
+      description: d.bluetooth
+        ? t("dictate.mic.bluetooth")
+        : d.loopback
+          ? t("dictate.mic.loopback")
+          : undefined,
     })),
   ];
   return (
@@ -139,6 +154,7 @@ export function MicSelect({ k, label, none }: { k: "dictate_mic" | "dictate_back
 export function DictateHomeCard({ onTry, onHistory }: { onTry: () => void; onHistory: () => void }) {
   const status = useDictate((s) => s.status);
   const stats = useDictate((s) => s.stats);
+  const language = useSetting<string>("dictate_language", "auto");
   useEffect(() => {
     void useDictate.getState().loadStats();
   }, []);
@@ -152,11 +168,15 @@ export function DictateHomeCard({ onTry, onHistory }: { onTry: () => void; onHis
       data-ready={ready ? "true" : "false"}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-lg font-semibold text-fg">{ready ? t("dictate.home.ready") : t("dictate.home.finish")}</h2>
+        <h2 className="text-lg font-semibold text-fg">
+          {ready ? t("dictate.home.ready") : t("dictate.home.finish")}
+        </h2>
         <span className="text-sm text-fg-muted">{t("dictate.home.hold", { key: status.hold.label })}</span>
         <Badge variant="idle">
           {status.engine === "cloud"
-            ? t("dictate.home.cloudChip")
+            ? t("dictate.home.cloudChip", {
+                language: language === "auto" ? t("dictate.language.auto") : languageName(language),
+              })
             : status.model
               ? t("dictate.home.engineChip", { model: status.model.name })
               : t("dictate.home.noModel")}
@@ -166,7 +186,10 @@ export function DictateHomeCard({ onTry, onHistory }: { onTry: () => void; onHis
           {ready ? t("dictate.home.try") : t("dictate.home.setUp")}
         </Button>
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-fg-muted" data-testid="dictate-stats">
+      <div
+        className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-fg-muted"
+        data-testid="dictate-stats"
+      >
         <span>{t("dictate.stats.words", { n: stats?.words ?? 0 })}</span>
         <span>{formatDuration(stats?.speakingMs ?? 0)}</span>
         <span>{t("dictate.stats.takes", { n: stats?.takes ?? 0 })}</span>
@@ -213,7 +236,10 @@ export function DictateExtras() {
     <div className="flex flex-col gap-4" data-testid="dictate-extras">
       <DictateHomeCard onTry={() => setSheet("setup")} onHistory={() => setSheet("history")} />
       {status.missingTools && (
-        <Callout tone="warning" title={t("dictate.tools.title", { tools: status.missingTools.tools.join(", ") })}>
+        <Callout
+          tone="warning"
+          title={t("dictate.tools.title", { tools: status.missingTools.tools.join(", ") })}
+        >
           <div className="flex flex-col gap-1 font-mono text-sm" data-testid="dictate-missing-tools">
             <span>{status.missingTools.apt}</span>
             <span>{status.missingTools.dnf}</span>
@@ -231,7 +257,9 @@ export function DictateExtras() {
               size="sm"
               variant="ghost"
               onClick={() =>
-                void copyText(status.deepLinkCommand ?? "").then(() => show({ tone: "success", title: t("dictate.wayland.copied") }))
+                void copyText(status.deepLinkCommand ?? "").then(() =>
+                  show({ tone: "success", title: t("dictate.wayland.copied") }),
+                )
               }
             >
               {t("dictate.wayland.copy")}
@@ -242,8 +270,15 @@ export function DictateExtras() {
       <dl className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-3 rounded-lg border border-border p-4">
         <dt className="text-base text-fg">{t("dictate.model.label")}</dt>
         <dd className="flex items-center gap-2 text-sm text-fg-muted" data-testid="dictate-model-row">
-          {active ? t("dictate.model.active", { name: active.name, size: formatBytes(Number(active.bytes)) }) : t("dictate.model.none")}
-          <Button size="sm" variant="secondary" onClick={() => setSheet("models")} data-testid="dictate-manage-models">
+          {active
+            ? t("dictate.model.active", { name: active.name, size: formatBytes(Number(active.bytes)) })
+            : t("dictate.model.none")}
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setSheet("models")}
+            data-testid="dictate-manage-models"
+          >
             {t("dictate.model.manage")}
           </Button>
         </dd>
@@ -253,7 +288,12 @@ export function DictateExtras() {
         </dd>
         <dt className="text-base text-fg">{t("dictate.dictionary.row", { n: rules })}</dt>
         <dd>
-          <Button size="sm" variant="secondary" onClick={() => setSheet("dictionary")} data-testid="dictate-open-dictionary">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setSheet("dictionary")}
+            data-testid="dictate-open-dictionary"
+          >
             {t("dictate.open")}
           </Button>
         </dd>
@@ -269,7 +309,10 @@ export function DictateExtras() {
 function useRuleCount(rev: unknown): number {
   const [n, setN] = useState(0);
   useEffect(() => {
-    void invoke<unknown[] | null>("dictionary_list").then((r) => setN(r?.length ?? 0), () => undefined);
+    void invoke<unknown[] | null>("dictionary_list").then(
+      (r) => setN(r?.length ?? 0),
+      () => undefined,
+    );
   }, [rev]);
   return n;
 }
