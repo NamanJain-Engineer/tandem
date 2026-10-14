@@ -19,12 +19,14 @@
  * - `POST /__say {"text": "..."}`: the user "says" text on the newest open
  *   socket: `speech.started`, `transcript.user`, then `function_call` act.
  *   Answers `{"callId"}`.
- * - `POST /__speak {"ms": n}`: the talker speaks for n ms (audio deltas).
+ * - `POST /__speak {"ms": n}`: the talker speaks for n ms (audio deltas of
+ *   one item, `item_<n>`). Answers `{"itemId"}`.
  * - `POST /__close`: the provider hangs up the newest socket.
  * - `GET /__state`: connections, open sockets, the audio received (ms, and
  *   ms above a speech threshold), whether a session was configured with the
  *   one `act` tool (and the voice and instructions it was given), and every
- *   function output so far.
+ *   function output so far, and each barge-in truncate the app sent
+ *   (`{itemId, audioEndMs}`, D-1122).
  * - `POST /__reset`
  *
  * No dependencies: a small RFC 6455 server on node:http.
@@ -53,10 +55,12 @@ type Conn = {
   speed: number;
   voice: string | null;
   instructions: string;
+  truncates: Array<{ itemId: string; audioEndMs: number }>;
   buffer: Buffer;
 };
 
 let connectDelayMs = 0;
+let nextItem = 0;
 /** Handshakes waiting for `release` while `hold` is on. */
 let held: Array<() => void> | null = null;
 let nextConn = 0;
@@ -160,6 +164,9 @@ function onMessage(c: Conn, text: string): void {
     case "response.create":
       send(c, { type: "response.done" });
       break;
+    case "conversation.item.truncate":
+      c.truncates.push({ itemId: String(m.item_id ?? ""), audioEndMs: Number(m.audio_end_ms ?? -1) });
+      break;
   }
 }
 
@@ -196,6 +203,7 @@ function upgrade(req: IncomingMessage, socket: Duplex): void {
     speed: 1,
     voice: null,
     instructions: "",
+    truncates: [],
     buffer: Buffer.alloc(0),
   };
   const open = () => {
@@ -275,6 +283,7 @@ const server = createServer(async (req, res) => {
       speed: c?.speed ?? 1,
       voice: c?.voice ?? null,
       instructions: c?.instructions ?? "",
+      truncates: c?.truncates ?? [],
       outputs,
     });
   }
@@ -293,9 +302,10 @@ const server = createServer(async (req, res) => {
     const pcm = Buffer.alloc(n * 2);
     for (let i = 0; i < n; i++) pcm.writeInt16LE(Math.round(Math.sin(i / 8) * 6000), i * 2);
     send(c, { type: "transcript.assistant", text: String(b.text ?? "Okay.") });
-    send(c, { type: "audio.delta", audio: pcm.toString("base64") });
+    const itemId = `item_${++nextItem}`;
+    send(c, { type: "audio.delta", item_id: itemId, audio: pcm.toString("base64") });
     send(c, { type: "response.done" });
-    return json(200, {});
+    return json(200, { itemId });
   }
   if (path === "/__close") {
     close(c);
