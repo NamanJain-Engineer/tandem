@@ -108,6 +108,7 @@ const ENTITLEMENT: EntitlementView = {
     admin: false,
     chatEngines: ["claude", "codex"],
     creditPacks: false,
+    dictionarySync: false,
   },
   source: "free",
   credits: null,

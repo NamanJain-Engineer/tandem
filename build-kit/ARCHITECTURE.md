@@ -2437,7 +2437,7 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 | `POST /v1/voice/session/:id/settle` | B | `{seconds: int(0..1800)}` | `{charged, refunded}` (`ceil(s/10)×20`) | 404 | F-BE-08 |
 | `POST /v1/voice/act` | B | `{session_id, request: str(≤2000), snapshot: WorkspaceSnapshot(≤64 KB), results?: [{id, ok, output(≤8 KB)}]}` | `{tool_calls:[{id, name, args}], say?}` | 409 (session ended) | F-CN-02 |
 | `POST /v1/voice/resolve` | B | `{query: str(≤500), candidates: [{id, kind, text: str(≤2000)}] (≤200)}` | `{matches:[{id, score}]}` · 1 cr | — | F-CN-05 |
-| `POST /v1/dictionary/sync` | B | `{since_rev: int, changes: [{rule_id, payload, deleted, updated_at}] (≤500)}` | `{rev, changes, conflicts}` | `FORBIDDEN_PLAN` | F-DI-09 |
+| `POST /v1/dictionary/sync` | B | `{since_rev: int, changes: [{rule_id, payload, deleted, updated_at}] (≤500)}` | `{rev, changes: [… + rev] (rows past `since_rev` this call did not write), conflicts: [{rule_id, local, remote}]}`; last writer wins per rule by `updated_at`, an older change against a row the device had not seen is a conflict; `payload.evidence` is dropped | `FORBIDDEN_PLAN`, 422 | F-DI-09 |
 | `GET /v1/config` | — | `If-None-Match` | `{payload, sig, kid}` + `ETag`, `Cache-Control: max-age=600` / 304 | — | F-BE-09 |
 | `GET /v1/updates/:channel/:target/:arch/:current_version` | — | — | 200 `{version, notes, pub_date, url, signature}` or 204 | — | F-SH-06 |
 | `POST /v1/pairings` / `DELETE /v1/pairings/:id` | B | `{pairing_id, device_label?}` / — | `{pairing_token, relay_url, expires_at}` / 204 | `FORBIDDEN_PLAN` | F-RM-03 |
