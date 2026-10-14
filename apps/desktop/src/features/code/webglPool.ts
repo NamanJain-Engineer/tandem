@@ -52,22 +52,29 @@ export class WebglPool {
     private hiddenReleaseMs = HIDDEN_RELEASE_MS,
   ) {}
 
-  /** A pane joins (mounted). */
-  register(paneId: string, renderer: Renderer): void {
+  /** A pane joins (mounted), visible or focused as `state` says. Views open
+   * one per frame (mountQueue), so the panes of one show register over many
+   * batches: one that opens already visible takes the latest show's stamp
+   * rather than a newer one, or each would evict the one before it and every
+   * detach re-renders a whole terminal (F-SH-07.7). Focus still wins. */
+  register(paneId: string, renderer: Renderer, state?: { visible: boolean; focused: boolean }): void {
     const prev = this.entries.get(paneId);
     if (prev) {
       clearTimeout(prev.hideTimer);
       if (prev.holds) prev.renderer.detach();
     }
+    const visible = state?.visible ?? false;
+    const focused = (state?.focused ?? false) && visible;
     this.entries.set(paneId, {
       renderer,
-      focused: false,
-      visible: false,
-      touched: this.touch(),
+      focused,
+      visible,
+      touched: visible && !focused ? this.clock : this.touch(),
       order: ++this.registered,
       holds: false,
       failed: false,
     });
+    if (visible) this.request();
   }
 
   /** A pane leaves (unmounted): its context goes back. With `renderer`, only

@@ -387,8 +387,7 @@ export function TerminalView({
         webgl = undefined;
       },
     };
-    webglPool.register(paneId, renderer);
-    webglPool.update(paneId, { visible: visibleRef.current, focused: focusedRef.current });
+    webglPool.register(paneId, renderer, { visible: visibleRef.current, focused: focusedRef.current });
     // Cell size is measured from the font. When the web font was still
     // loading as the view opened, measure again once it has (and resize the
     // PTY to match) so the grid, the glyphs and the program agree on rows and
