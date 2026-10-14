@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import type { HistoryCursor, IpcError, TakePage, TakeView } from "@tandem/protocol";
 import { MoreHorizontal } from "lucide-react";
-import { Button, Checkbox, ConfirmDialog, Dialog, EmptyState, IconButton, Input, Menu, Sheet, Spinner, Textarea, useToast } from "@tandem/ui";
+import {
+  Button,
+  Checkbox,
+  ConfirmDialog,
+  Dialog,
+  EmptyState,
+  IconButton,
+  Input,
+  Menu,
+  Sheet,
+  Spinner,
+  Textarea,
+  useToast,
+} from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { copyText } from "../../ipc/clipboard";
@@ -9,7 +22,10 @@ import { useDictate } from "../../stores/dictate";
 import { formatDuration } from "./format";
 
 /** The share card (1080×810, totals only: no transcript text). */
-export function drawShareCard(canvas: HTMLCanvasElement, s: { words: number; speakingMs: number; takes: number; wpm: number; savedMs: number }): void {
+export function drawShareCard(
+  canvas: HTMLCanvasElement,
+  s: { words: number; speakingMs: number; takes: number; wpm: number; savedMs: number },
+): void {
   canvas.width = 1080;
   canvas.height = 810;
   const g = canvas.getContext("2d");
@@ -60,7 +76,11 @@ function ShareCard({ onClose }: { onClose: () => void }) {
   }, [stats]);
   const png = () => canvas.current?.toDataURL("image/png") ?? "";
   const save = async () => {
-    const path = await invoke<string | null>("dictate_save_file", { suggestedName: "vibezeo-dictate.png", kind: "png" }, { timeoutMs: 24 * 3_600_000 });
+    const path = await invoke<string | null>(
+      "dictate_save_file",
+      { suggestedName: "vibezeo-dictate.png", kind: "png" },
+      { timeoutMs: 24 * 3_600_000 },
+    );
     if (!path) return;
     await invoke("dictate_share_card_save", { path, pngBase64: png() }).then(
       () => show({ tone: "success", title: t("dictate.share.saved.toast") }),
@@ -93,7 +113,12 @@ function ShareCard({ onClose }: { onClose: () => void }) {
         </>
       }
     >
-      <canvas ref={canvas} className="w-full rounded-md border border-border" aria-label={t("dictate.share.dialog")} data-testid="share-card" />
+      <canvas
+        ref={canvas}
+        className="w-full rounded-md border border-border"
+        aria-label={t("dictate.share.dialog")}
+        data-testid="share-card"
+      />
     </Dialog>
   );
 }
@@ -116,8 +141,9 @@ function CorrectDialog({ take, onClose }: { take: TakeView; onClose: () => void 
             variant="primary"
             data-testid="correct-save"
             onClick={() =>
-              void invoke("dictate_take_correct", { takeId: take.id, corrected: text, remember }).then(onClose, (e: IpcError) =>
-                show({ tone: "error", title: e.message }),
+              void invoke("dictate_take_correct", { takeId: take.id, corrected: text, remember }).then(
+                onClose,
+                (e: IpcError) => show({ tone: "error", title: e.message }),
               )
             }
           >
@@ -127,7 +153,12 @@ function CorrectDialog({ take, onClose }: { take: TakeView; onClose: () => void 
       }
     >
       <div className="flex flex-col gap-3">
-        <Textarea label={t("dictate.history.myCorrection")} value={text} rows={4} onChange={(e) => setText(e.target.value)} />
+        <Textarea
+          label={t("dictate.history.myCorrection")}
+          value={text}
+          rows={4}
+          onChange={(e) => setText(e.target.value)}
+        />
         <Checkbox label={t("dictate.history.remember")} checked={remember} onCheckedChange={setRemember} />
       </div>
     </Dialog>
@@ -167,7 +198,11 @@ export function HistorySheet({ open, onClose }: { open: boolean; onClose: () => 
   }, [open, query, rev]);
 
   const exportCsv = async () => {
-    const path = await invoke<string | null>("dictate_save_file", { suggestedName: "vibezeo-dictate-history.csv", kind: "csv" }, { timeoutMs: 24 * 3_600_000 });
+    const path = await invoke<string | null>(
+      "dictate_save_file",
+      { suggestedName: "vibezeo-dictate-history.csv", kind: "csv" },
+      { timeoutMs: 24 * 3_600_000 },
+    );
     if (!path) return;
     await invoke("dictate_history_export", { path }).then(
       () => show({ tone: "success", title: t("dictate.history.exported") }),
@@ -176,21 +211,44 @@ export function HistorySheet({ open, onClose }: { open: boolean; onClose: () => 
   };
 
   return (
-    <Sheet open={open} onOpenChange={(o) => !o && onClose()} title={t("dictate.history.title")} subtitle={t("dictate.history.local")} size="lg">
+    <Sheet
+      open={open}
+      onOpenChange={(o) => !o && onClose()}
+      title={t("dictate.history.title")}
+      subtitle={t("dictate.history.local")}
+      size="lg"
+    >
       <div className="flex flex-col gap-4" data-testid="history-sheet">
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-fg-muted" data-testid="history-stats">
-          <span data-testid="history-words">{t("dictate.stats.words", { n: Number(stats?.words ?? 0) })}</span>
-          <span>{t("dictate.history.speaking", { time: formatDuration(Number(stats?.speakingMs ?? 0)) })}</span>
+        <div
+          className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-fg-muted"
+          data-testid="history-stats"
+        >
+          <span data-testid="history-words">
+            {t("dictate.stats.words", { n: Number(stats?.words ?? 0) })}
+          </span>
+          <span>
+            {t("dictate.history.speaking", { time: formatDuration(Number(stats?.speakingMs ?? 0)) })}
+          </span>
           <span>{t("dictate.stats.takes", { n: Number(stats?.takes ?? 0) })}</span>
           <span>{t("dictate.stats.wpm", { n: stats?.wpm ?? 0 })}</span>
-          <span title={t("dictate.history.savedTooltip")}>{t("dictate.history.saved", { time: formatDuration(Number(stats?.savedMs ?? 0)) })}</span>
+          <span title={t("dictate.history.savedTooltip")}>
+            {t("dictate.history.saved", { time: formatDuration(Number(stats?.savedMs ?? 0)) })}
+          </span>
           <span className="flex-1" />
           <Button size="sm" variant="ghost" onClick={() => setSharing(true)}>
             {t("dictate.history.share")}
           </Button>
         </div>
         <div className="flex items-center gap-2">
-          <Input label={t("dictate.history.search")} hideLabel placeholder={t("dictate.history.search")} value={query} onChange={(e) => setQuery(e.target.value)} className="flex-1" data-testid="history-search" />
+          <Input
+            label={t("dictate.history.search")}
+            hideLabel
+            placeholder={t("dictate.history.search")}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="flex-1"
+            data-testid="history-search"
+          />
           <Button size="sm" variant="secondary" onClick={() => void exportCsv()} data-testid="history-export">
             {t("dictate.history.export")}
           </Button>
@@ -210,13 +268,19 @@ export function HistorySheet({ open, onClose }: { open: boolean; onClose: () => 
             body={query ? undefined : t("dictate.history.emptyBody", { key: status?.hold.label ?? "" })}
           />
         ) : (
-          <ul className="flex flex-col divide-y divide-divider rounded-md border border-border" data-testid="history-list">
+          <ul
+            className="flex flex-col divide-y divide-divider rounded-md border border-border"
+            data-testid="history-list"
+          >
             {takes.map((take) => (
               <li key={take.id} className="flex flex-col gap-1 px-3 py-2" data-take={take.id}>
                 <span className="text-xs text-fg-muted">
                   {t("dictate.history.meta", {
                     when: new Date(Number(take.createdAt)).toLocaleString(),
-                    model: take.model,
+                    source:
+                      take.engine === "cloud"
+                        ? t("dictate.history.source.cloud")
+                        : t("dictate.history.source.local", { model: take.model }),
                     words: take.wordCount,
                     time: formatDuration(Number(take.durationMs)),
                   })}
@@ -225,28 +289,59 @@ export function HistorySheet({ open, onClose }: { open: boolean; onClose: () => 
                   <p className="flex-1 text-base text-fg" data-testid="take-text">
                     {take.text}
                   </p>
-                  <Button size="sm" variant="ghost" onClick={() => void copyText(take.text).then(() => show({ tone: "success", title: t("dictate.history.copied") }))}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      void copyText(take.text).then(() =>
+                        show({ tone: "success", title: t("dictate.history.copied") }),
+                      )
+                    }
+                  >
                     {t("dictate.history.copy")}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => setCorrecting(take)}>
                     {t("dictate.history.correctAction")}
                   </Button>
                   <Menu
-                    trigger={<IconButton size="sm" icon={<MoreHorizontal size={14} />} label={t("dictate.history.more")} />}
+                    trigger={
+                      <IconButton
+                        size="sm"
+                        icon={<MoreHorizontal size={14} />}
+                        label={t("dictate.history.more")}
+                      />
+                    }
                     entries={[
                       {
                         id: "dict",
                         label: t("dictate.history.addToDictionary"),
                         onSelect: () =>
                           void invoke("dictionary_save", {
-                            rule: { id: "", kind: "word", replacement: take.text.trim().slice(0, 200), phrases: [], matchCase: false, protect: true, spacing: "exact", enabled: true, lang: "*", appProfiles: [], updatedAt: 0, deletedAt: null },
-                          }).then(() => show({ tone: "success", title: t("dictate.history.added") }), (e: IpcError) => show({ tone: "error", title: e.message })),
+                            rule: {
+                              id: "",
+                              kind: "word",
+                              replacement: take.text.trim().slice(0, 200),
+                              phrases: [],
+                              matchCase: false,
+                              protect: true,
+                              spacing: "exact",
+                              enabled: true,
+                              lang: "*",
+                              appProfiles: [],
+                              updatedAt: 0,
+                              deletedAt: null,
+                            },
+                          }).then(
+                            () => show({ tone: "success", title: t("dictate.history.added") }),
+                            (e: IpcError) => show({ tone: "error", title: e.message }),
+                          ),
                       },
                       {
                         id: "delete",
                         label: t("dictate.history.delete"),
                         danger: true,
-                        onSelect: () => void invoke("dictate_take_delete", { takeId: take.id }).then(() => void load(null)),
+                        onSelect: () =>
+                          void invoke("dictate_take_delete", { takeId: take.id }).then(() => void load(null)),
                       },
                     ]}
                   />

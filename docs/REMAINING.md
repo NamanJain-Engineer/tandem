@@ -81,8 +81,6 @@ The 14 October audit (D-1121's session) found spec behaviours under these ticks 
 - On macOS: the automatic Fn → Ctrl+Option fallback (F-DI-02), and F-DI-11's "Press 🌐 to Do Nothing" with consent.
 
 Bugs found with them, also being fixed:
-- Takes have no 10-minute cap when the global shortcut fails to start (F-DI-04).
-- Esc doesn't cancel a take started from the mic button or a link.
 - The hotkey status is a cache that never learns of a pause or a failure (F-DI-02, F-DI-07).
 
 Tasks: capture; local models; dictionary engine; takes and insertion; hotkeys;
