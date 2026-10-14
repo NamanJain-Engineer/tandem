@@ -105,7 +105,6 @@ pub fn encode(event: &ClientEvent) -> Vec<Value> {
             }),
             json!({"type": "response.create"}),
         ],
-        // f32 → two decimals, so 1.1 goes out as 1.1, not 1.100000023841858.
         ClientEvent::Truncate {
             item_id,
             audio_end_ms,
@@ -115,6 +114,7 @@ pub fn encode(event: &ClientEvent) -> Vec<Value> {
             "content_index": 0,
             "audio_end_ms": audio_end_ms
         })],
+        // f32 → two decimals, so 1.1 goes out as 1.1, not 1.100000023841858.
         ClientEvent::SetSpeed(speed) => vec![json!({
             "type": "session.update",
             "session": {
