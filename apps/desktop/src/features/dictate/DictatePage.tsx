@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { DevicesView, HotkeyStatus, IpcError } from "@tandem/protocol";
+import type { DevicesView, HotkeyStatus, IpcError, TakePage, TakeView } from "@tandem/protocol";
 import { Badge, Button, Callout, HotkeyRecorder, Kbd, Select, useToast, type BadgeVariant } from "@tandem/ui";
 import { t, type MessageKey } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
@@ -155,6 +155,7 @@ export function DictateHomeCard({ onTry, onHistory }: { onTry: () => void; onHis
   const status = useDictate((s) => s.status);
   const stats = useDictate((s) => s.stats);
   const language = useSetting<string>("dictate_language", "auto");
+  const recent = useRecentTakes(stats?.takes);
   useEffect(() => {
     void useDictate.getState().loadStats();
   }, []);
@@ -199,8 +200,50 @@ export function DictateHomeCard({ onTry, onHistory }: { onTry: () => void; onHis
           {t("dictate.home.history")}
         </Button>
       </div>
+      {recent.length > 0 && (
+        <ul
+          aria-label={t("dictate.home.recent")}
+          className="flex flex-col gap-1"
+          data-testid="dictate-recent"
+        >
+          {recent.map((take) => (
+            <li key={take.id}>
+              <button
+                type="button"
+                onClick={onHistory}
+                data-testid="dictate-recent-take"
+                className="flex w-full items-baseline gap-2 rounded-sm px-1 text-left text-sm hover:bg-surface-3 focus-visible:shadow-focus focus-visible:outline-none"
+              >
+                <span className="min-w-0 flex-1 truncate text-fg">{take.text}</span>
+                <span className="shrink-0 text-xs text-fg-muted">
+                  {new Date(Number(take.createdAt)).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
+}
+
+/** F-DI-08's home card: the last 5 takes, reloaded as takes are added. */
+function useRecentTakes(count: number | undefined): TakeView[] {
+  const [takes, setTakes] = useState<TakeView[]>([]);
+  useEffect(() => {
+    let live = true;
+    invoke<TakePage | null>("dictate_history", { query: null, before: null, limit: 5 }).then(
+      (page) => live && setTakes(page?.takes.slice(0, 5) ?? []),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [count]);
+  return takes;
 }
 
 /** Settings › Dictate (UI-62/108): the parts that aren't plain setting rows. */

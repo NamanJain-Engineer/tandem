@@ -327,6 +327,43 @@ describe("History and stats (F-DI-08, UI-65)", () => {
     await waitFor(() => expect(calls.some((c) => c.cmd === "dictate_history_clear")).toBe(true));
   });
 
+  it("F-DI-08 the home card lists the last 5 takes, and one opens History", async () => {
+    const takes = Array.from({ length: 5 }, (_, i) => ({
+      id: `take_${i}`,
+      createdAt: 0,
+      text: `take number ${i}`,
+      engine: "local",
+      model: "whisper-base.en",
+      wordCount: 3,
+      durationMs: 1000,
+      appId: null,
+    }));
+    const calls = fakeBackend({
+      dictate_history: () => page(takes),
+      dictate_stats: () => ({ words: 15, speakingMs: 5000, takes: 5, wpm: 90, savedMs: 4000 }),
+    });
+    useDictate.setState({ status: { ...STATUS, verified: true } });
+    let opened = 0;
+    wrap(<DictateHomeCard onTry={() => undefined} onHistory={() => (opened += 1)} />);
+    await waitFor(() => expect(screen.getAllByTestId("dictate-recent-take")).toHaveLength(5));
+    expect(calls.find((c) => c.cmd === "dictate_history")?.args).toEqual({
+      query: null,
+      before: null,
+      limit: 5,
+    });
+    expect(screen.getAllByTestId("dictate-recent-take")[0]?.textContent).toContain("take number 0");
+    fireEvent.click(screen.getAllByTestId("dictate-recent-take")[2] as HTMLElement);
+    expect(opened).toBe(1);
+  });
+
+  it("F-DI-08 with no takes yet, the home card lists none", async () => {
+    fakeBackend({ dictate_history: () => page([]) });
+    useDictate.setState({ status: STATUS });
+    wrap(<DictateHomeCard onTry={() => undefined} onHistory={() => undefined} />);
+    await waitFor(() => expect(screen.getByTestId("dictate-home")).toBeTruthy());
+    expect(screen.queryByTestId("dictate-recent")).toBeNull();
+  });
+
   it("F-DI-08 history says which engine heard each take", async () => {
     const local = {
       id: "take_1",

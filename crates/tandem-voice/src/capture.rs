@@ -64,6 +64,8 @@ pub enum CaptureEvent {
     SwitchedToBackup { device: String },
     /// Recovery failed: "Your microphone isn't delivering audio".
     NotDelivering,
+    /// After `Rebuilt`, the same microphone delivers sound again.
+    Resumed,
 }
 
 pub type EventSink = Arc<dyn Fn(CaptureEvent) + Send + Sync>;
@@ -445,14 +447,20 @@ impl Worker {
         }
         let block = &mut take.buf[start..];
         self.config.gain.apply(block);
+        let mut resumed = false;
         if !take.heard && block.iter().any(|s| *s != 0.0) {
             take.heard = true;
+            // Sound after a rebuild on the same device: recovered.
+            resumed = take.recovery == Recovery::Rebuilt;
         }
         self.level
             .store(audio::level(block).to_bits(), Ordering::Relaxed);
         if let Some(tap) = &mut take.tap {
             (tap.samples)(block, open.rate);
             take.buf.truncate(start);
+        }
+        if resumed {
+            self.emit(CaptureEvent::Resumed);
         }
     }
 
@@ -562,6 +570,9 @@ pub enum FakeSource {
     Fails,
     /// Delivers like `Samples` until this many ms, then reports the device lost.
     DisconnectAfter { ms: u64 },
+    /// Zeros on the device's first open, these samples once it's reopened
+    /// (a stream the silent-stream recovery brings back).
+    SilentFirstOpen { samples: Arc<Vec<f32>>, rate: u32 },
 }
 
 /// Fake devices for tests and the E2E harness (MILESTONES M8 "FakeDevice").
@@ -615,13 +626,26 @@ impl AudioBackend for FakeAudioBackend {
         sink: SampleSink,
         on_error: ErrorSink,
     ) -> Result<Box<dyn InputStream>, CaptureError> {
-        self.opens.lock().push(device.to_string());
-        let source = self
+        let first = {
+            let mut opens = self.opens.lock();
+            opens.push(device.to_string());
+            opens.iter().filter(|d| *d == device).count() == 1
+        };
+        let source = match self
             .sources
             .lock()
             .get(device)
             .cloned()
-            .ok_or(CaptureError::NoDevice)?;
+            .ok_or(CaptureError::NoDevice)?
+        {
+            FakeSource::SilentFirstOpen { .. } if first => FakeSource::Zeros,
+            FakeSource::SilentFirstOpen { samples, rate } => FakeSource::Samples {
+                samples,
+                rate,
+                speed: 1,
+            },
+            other => other,
+        };
         if matches!(source, FakeSource::Fails) {
             return Err(CaptureError::Open("fake failure".into()));
         }
@@ -654,9 +678,10 @@ impl FakeStream {
                 while a.load(Ordering::Acquire) {
                     let (speed, out): (u32, Option<&[f32]>) = match &source {
                         FakeSource::Nothing | FakeSource::Fails => (1, None),
-                        FakeSource::Zeros | FakeSource::DisconnectAfter { .. } => {
-                            (1, Some(&buf[..]))
-                        }
+                        // `open` maps SilentFirstOpen to Zeros or Samples.
+                        FakeSource::Zeros
+                        | FakeSource::DisconnectAfter { .. }
+                        | FakeSource::SilentFirstOpen { .. } => (1, Some(&buf[..])),
                         FakeSource::Samples { samples, speed, .. } => {
                             buf.iter_mut().for_each(|s| *s = 0.0);
                             if pos < samples.len() {
@@ -810,6 +835,27 @@ mod tests {
         );
         assert_eq!(backend.opens(), vec!["main", "main", "usb"]);
         assert!(rec.samples.iter().any(|s| *s != 0.0));
+    }
+
+    #[test]
+    fn f_di_03_a_rebuilt_stream_that_comes_back_says_resumed() {
+        let backend = Arc::new(FakeAudioBackend::new(vec![(
+            DeviceInfo::new("main", "Built-in Microphone", true),
+            FakeSource::SilentFirstOpen {
+                samples: Arc::new(vec![0.25; 16_000]),
+                rate: 16_000,
+            },
+        )]));
+        let (events, seen) = collect();
+        let svc = AudioService::start(backend.clone(), quick(MicPrefs::default()), events);
+        svc.begin_take().expect("begin");
+        wait_for(&seen, 2);
+        assert_eq!(
+            *seen.lock(),
+            vec![CaptureEvent::Rebuilt, CaptureEvent::Resumed]
+        );
+        assert_eq!(backend.opens(), vec!["main", "main"]);
+        svc.cancel_take();
     }
 
     #[test]
