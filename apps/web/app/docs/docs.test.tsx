@@ -8,7 +8,8 @@ import settings from "@tandem/protocol/settings.json";
 import en from "../../../desktop/src/i18n/en.json";
 import { DocsFooter } from "../../components/docs/DocsFooter";
 import { DOCS_COMPONENTS, DOCS_SETTINGS_PAGES, NO_SHORTCUT } from "../../components/docs/Generated";
-import { LIMITS } from "@tandem/protocol/plans";
+import { CREDIT_PRICES, LIMITS } from "@tandem/protocol/plans";
+import voiceTools from "../../../api/voice-tools.json";
 import { DOCS_PAGES } from "../../lib/docs/pages";
 import { sitemapXml } from "../../lib/site";
 
@@ -85,6 +86,50 @@ describe("docs (F-WB-02)", () => {
     expect(row("threadGrid")).toContain(`<td>${LIMITS.pro.threadGrid}</td>`);
     expect(row("chatEngines")).toContain("<td>Claude Code, Codex</td>");
     expect(readFileSync(content("accounts-and-limits"), "utf8")).toContain("<PlanLimitsTable />");
+  });
+
+  it("F-WB-02 Conductor's tools and settings come from the catalog the app and the API check calls against", () => {
+    const tools = html(<DOCS_COMPONENTS.ConductorToolsTable />);
+    const rows = [...tools.matchAll(/<tr data-tool="([^"]+)">(.*?)<\/tr>/g)];
+    expect(rows.map((r) => r[1]).sort()).toEqual(voiceTools.tools.map((t) => t.name).sort());
+    for (const t of voiceTools.tools) {
+      const row = rows.find((r) => r[1] === t.name)?.[2] ?? "";
+      expect(row, t.name).toContain(`<code>${t.name}</code>`);
+      expect(row, t.name).toContain(`<td>${t.confirm ? "Yes" : "No"}</td>`);
+    }
+    // Every tool the F-CN-02 table names, in its groups.
+    expect(rows).toHaveLength(47);
+    expect(tools).toMatch(/<tr data-tool="run_command_in_shell"><td>Panes and agents<\/td>/);
+    const settable = html(<DOCS_COMPONENTS.ConductorSettingsTable />);
+    expect([...settable.matchAll(/data-setting="([^"]+)"/g)].map((m) => m[1])).toEqual(voiceTools.settable_settings);
+    const mdx = readFileSync(content("conductor"), "utf8");
+    expect(mdx).toContain("<ConductorToolsTable />");
+    expect(mdx).toContain("<ConductorSettingsTable />");
+  });
+
+  it("F-WB-02 the Conductor page's numbers are the app's", () => {
+    const mdx = readFileSync(content("conductor"), "utf8");
+    const api = readFileSync(join(import.meta.dirname, "../../../api/src/services/voice.ts"), "utf8");
+    const capSeconds = Number(api.match(/MAX_CALL_SECONDS = (\d+)/)?.[1]);
+    expect(mdx).toContain(`${capSeconds / 60}-minute limit`);
+    expect(mdx).toContain(`${CREDIT_PRICES.voice_10s} credits for every started 10 seconds`);
+    expect(mdx).toContain(`about ${CREDIT_PRICES.voice_10s * 6} credits a minute`);
+    // The shortcuts it names are the registry's.
+    for (const id of ["conductor.call", "conductor.mute", "conductor.log"]) {
+      const key = shortcuts.find((s) => s.id === id)?.pc;
+      expect(mdx, id).toContain(`<kbd>${key}</kbd>`);
+    }
+    // The settings it names are the app's labels.
+    for (const k of [
+      "conductor.settings.floatingRing",
+      "conductor.settings.keepLogs",
+      "conductor.settings.keep.off",
+      "conductor.memoryToggle",
+      "conductor.wake",
+      "conductor.wake.pauseVideos",
+      "conductor.speed",
+    ])
+      expect(mdx, k).toContain(labels[k]);
   });
 
   it("F-WB-02 the sidebar lists the pages in DOCS_PAGES order", () => {

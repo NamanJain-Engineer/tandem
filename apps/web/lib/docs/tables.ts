@@ -4,6 +4,7 @@
 // tables as HTML (components/docs/Generated.tsx) and /llms-full.txt as
 // Markdown (F-WB-04), from the same rows.
 import registry from "../../../../crates/tandem-engines/registry.json";
+import voiceTools from "../../../api/voice-tools.json";
 import en from "../../../desktop/src/i18n/en.json";
 import settings from "@tandem/protocol/settings.json";
 import shortcuts from "@tandem/protocol/shortcuts.json";
@@ -140,6 +141,53 @@ const mdCell = (c: Cell) => {
   return c.as ? `\`${t}\`` : t;
 };
 
+/** Conductor's tool groups, as PRODUCT_SPEC F-CN-02's table names them. */
+export const CONDUCTOR_GROUPS: Record<string, string> = {
+  navigation: "Navigation",
+  awareness: "Awareness",
+  panes: "Panes and agents",
+  threads: "Threads",
+  teammates: "Teammates",
+  tasks: "Tasks",
+  find: "Find",
+  app: "App",
+};
+
+/** Conductor's closed tool catalog (`apps/api/voice-tools.json`, the file the
+ * API's doer and the app's executor both check calls against), by group. */
+export function conductorToolsTable(): Table {
+  const order = Object.keys(CONDUCTOR_GROUPS);
+  const tools = [...voiceTools.tools].sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
+  return {
+    attr: "tool",
+    head: ["Group", "Tool", "What it does", "Asks first"],
+    rows: tools.map((t) => ({
+      key: t.name,
+      cells: [
+        text(CONDUCTOR_GROUPS[t.group] ?? t.group),
+        { text: t.name, as: "code" },
+        text(t.description),
+        text(t.confirm ? "Yes" : "No"),
+      ],
+    })),
+  };
+}
+
+/** The only settings Conductor's `set_setting` may change (F-CN-02 AC2). */
+export function conductorSettingsTable(): Table {
+  return {
+    attr: "setting",
+    head: ["Key", "Settings page"],
+    rows: voiceTools.settable_settings.map((key) => {
+      const page = settings.find((s) => s.key === key)?.page ?? "";
+      return {
+        key,
+        cells: [{ text: key, as: "code" }, text(labels[`settings.${page}`] ?? page)],
+      };
+    }),
+  };
+}
+
 export function tableMarkdown(t: Table): string {
   const line = (cells: string[]) => `| ${cells.join(" | ")} |`;
   return [line(t.head), line(t.head.map(() => "---")), ...t.rows.map((r) => line(r.cells.map(mdCell)))].join(
@@ -162,4 +210,6 @@ export const DOCS_MARKDOWN: Record<string, () => string> = {
   EnginesTable: () => tableMarkdown(enginesTable()),
   PlatformMatrix: () => tableMarkdown(platformTable()),
   PlanLimitsTable: () => tableMarkdown(planLimitsTable()),
+  ConductorToolsTable: () => tableMarkdown(conductorToolsTable()),
+  ConductorSettingsTable: () => tableMarkdown(conductorSettingsTable()),
 };
