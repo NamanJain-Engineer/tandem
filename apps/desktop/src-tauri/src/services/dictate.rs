@@ -685,6 +685,8 @@ struct Shared {
     /// enough to click them (D-517).
     quick_actions: AtomicBool,
     switch: OnceLock<Arc<dyn Fn(String) + Send + Sync>>,
+    /// The global shortcut's status changed on its own (F-DI-02).
+    hotkey: OnceLock<Arc<dyn Fn(HotkeyStatus) + Send + Sync>>,
 }
 
 impl Shared {
@@ -851,6 +853,12 @@ impl DictateSink for Sink {
             f(model_id);
         }
     }
+
+    fn hotkey_status(&self, status: HotkeyStatus) {
+        if let Some(f) = self.0.hotkey.get() {
+            f(status);
+        }
+    }
 }
 
 /// Refreshes the Review tab's suggestions from recent history.
@@ -916,8 +924,19 @@ pub type PlanFn = Arc<dyn Fn() -> tandem_core::entitlement::Plan + Send + Sync>;
 /// whose global shortcut is unavailable. Browsers open `tandem://` links (after
 /// a prompt the user can tick away), so anywhere else a web page could start a
 /// take and have the transcript pasted into its own focused field.
-pub fn deep_link_toggle_allowed(session: &str, hotkey_unavailable: bool, linux: bool) -> bool {
-    linux && (session == "wayland" || hotkey_unavailable)
+/// The toggle link, and the command to bind it, are the fallback for when
+/// the global shortcut is down on Linux: no portal, a portal that failed or
+/// whose session died, no display (D-521).
+pub fn deep_link_toggle_allowed(hotkey_down: bool, linux: bool) -> bool {
+    linux && hotkey_down
+}
+
+/// The shortcut isn't working: it couldn't start, or stopped.
+pub fn hotkey_down(status: &HotkeyStatus) -> bool {
+    matches!(
+        status,
+        HotkeyStatus::Unavailable { .. } | HotkeyStatus::NotRunning
+    )
 }
 
 fn session() -> String {
@@ -997,6 +1016,7 @@ impl DictateService {
                 link_take: AtomicBool::new(false),
                 quick_actions: AtomicBool::new(false),
                 switch: OnceLock::new(),
+                hotkey: OnceLock::new(),
             }),
             catalog,
             platform_name: tandem_voice::models::current_platform(),
@@ -1180,15 +1200,14 @@ impl DictateService {
     /// it's the documented fallback (D-515); elsewhere it's logged and ignored.
     /// True when it reached the controller.
     pub fn toggle_from_link(&self) -> bool {
-        let unavailable = matches!(*self.hotkey_status.lock(), HotkeyStatus::Unavailable { .. });
-        self.toggle_from_link_in(&session(), unavailable, cfg!(target_os = "linux"))
+        let down = hotkey_down(&self.hotkey_status.lock());
+        self.toggle_from_link_in(down, cfg!(target_os = "linux"))
     }
 
-    fn toggle_from_link_in(&self, session: &str, unavailable: bool, linux: bool) -> bool {
-        if !deep_link_toggle_allowed(session, unavailable, linux) {
+    fn toggle_from_link_in(&self, hotkey_down: bool, linux: bool) -> bool {
+        if !deep_link_toggle_allowed(hotkey_down, linux) {
             tracing::warn!(
                 code = "dictate.deep_link_refused",
-                session,
                 "ignored tandem://dictate/toggle: the global shortcut works here"
             );
             return false;
@@ -1290,6 +1309,17 @@ impl DictateService {
                 });
             }
         }));
+        // A pause or a failure the shortcut reports on its own reaches the
+        // chip, the tray and the link's availability (F-DI-02).
+        let weak = Arc::downgrade(self);
+        let _ = self.shared.hotkey.set(Arc::new(move |status| {
+            if let Some(me) = weak.upgrade() {
+                *me.hotkey_status.lock() = status;
+                tauri::async_runtime::spawn(async move {
+                    me.emit_status().await;
+                });
+            }
+        }));
         *self.shared.visibility.lock() = self
             .setting(
                 SettingKey::DictateWidgetVisibility,
@@ -1383,7 +1413,7 @@ impl DictateService {
         let Some(c) = self.controller.get() else {
             return;
         };
-        self.hotkeys.stop();
+        c.stop_hotkeys();
         let status = c.start_hotkeys(&self.bindings().await);
         if status != HotkeyStatus::Active {
             tracing::info!(code = "dictate.hotkey_status", status = ?status, "global shortcut isn't active");
@@ -1429,7 +1459,7 @@ impl DictateService {
         let active = self.engine.current_id();
         let session = session();
         let hotkey = self.hotkey_status.lock().clone();
-        let unavailable = matches!(hotkey, HotkeyStatus::Unavailable { .. });
+        let down = hotkey_down(&hotkey);
         let (stage, fallback) = {
             let m = self.models.lock();
             (m.stage, m.fallback.clone())
@@ -1447,12 +1477,8 @@ impl DictateService {
                 label: t.label(os),
             }),
             latch,
-            deep_link_command: deep_link_toggle_allowed(
-                &session,
-                unavailable,
-                cfg!(target_os = "linux"),
-            )
-            .then(|| "xdg-open tandem://dictate/toggle".to_string()),
+            deep_link_command: deep_link_toggle_allowed(down, cfg!(target_os = "linux"))
+                .then(|| "xdg-open tandem://dictate/toggle".to_string()),
             session,
             mic: mic_id.and_then(|id| devices.into_iter().find(|d| d.id == id)),
             engine: self
@@ -2392,17 +2418,21 @@ mod tests {
     }
 
     #[test]
-    fn d_515_the_toggle_link_is_honoured_only_where_it_is_the_fallback() {
-        // Wayland: the portal can't bind every key, so the link is documented.
-        assert!(deep_link_toggle_allowed("wayland", false, true));
-        // X11 or no session with the shortcut unavailable: the fallback too.
-        assert!(deep_link_toggle_allowed("x11", true, true));
-        assert!(deep_link_toggle_allowed("none", true, true));
-        // A working global shortcut, or any other OS: a web page's link.
-        assert!(!deep_link_toggle_allowed("x11", false, true));
-        assert!(!deep_link_toggle_allowed("mac", false, false));
-        assert!(!deep_link_toggle_allowed("mac", true, false));
-        assert!(!deep_link_toggle_allowed("windows", true, false));
+    fn d_521_the_toggle_link_is_honoured_only_while_the_shortcut_is_down() {
+        // Linux with the shortcut down (no portal, a failed or dead portal
+        // session, no display): the link is the fallback.
+        assert!(deep_link_toggle_allowed(true, true));
+        assert!(hotkey_down(&HotkeyStatus::NotRunning));
+        assert!(hotkey_down(&HotkeyStatus::Unavailable {
+            reason: "no portal".into()
+        }));
+        // A working shortcut, Wayland's portal included, or any other OS:
+        // a web page's link does nothing.
+        assert!(!deep_link_toggle_allowed(false, true));
+        assert!(!deep_link_toggle_allowed(true, false));
+        assert!(!hotkey_down(&HotkeyStatus::Active));
+        assert!(!hotkey_down(&HotkeyStatus::Paused));
+        assert!(!hotkey_down(&HotkeyStatus::Starting));
     }
 
     #[tokio::test]
@@ -2420,9 +2450,8 @@ mod tests {
             }
         }));
         svc.start().await;
-        assert!(!svc.toggle_from_link_in("x11", false, true));
-        assert!(!svc.toggle_from_link_in("mac", false, false));
-        assert!(!svc.toggle_from_link_in("windows", true, false));
+        assert!(!svc.toggle_from_link_in(false, true));
+        assert!(!svc.toggle_from_link_in(true, false));
         tokio::time::sleep(Duration::from_millis(200)).await;
         assert!(
             seen.lock().is_empty(),
@@ -2436,7 +2465,7 @@ mod tests {
         );
         // Allowed: the controller acts (with no model here it answers with
         // "Download a model", which is still the take being asked for).
-        assert!(svc.toggle_from_link_in("wayland", false, true));
+        assert!(svc.toggle_from_link_in(true, true));
         let mut acted = false;
         for _ in 0..50 {
             if !seen.lock().is_empty() {

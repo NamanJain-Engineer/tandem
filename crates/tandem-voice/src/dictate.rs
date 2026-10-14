@@ -154,6 +154,9 @@ pub trait DictateSink: Send + Sync {
     fn verified(&self);
     /// A model switch held back by a take can run now.
     fn switch_due(&self, model_id: String);
+    /// The global shortcut's status changed on its own: secure input
+    /// paused it, or its session died (F-DI-02).
+    fn hotkey_status(&self, _status: HotkeyStatus) {}
 }
 
 #[derive(Debug, Clone)]
@@ -262,6 +265,8 @@ struct Inner {
     mic_owner: Option<String>,
     retry: Option<Retry>,
     last: Option<LastTake>,
+    /// The backend's status as last seen, and when it was checked (ms).
+    hotkey: (HotkeyStatus, u64),
 }
 
 /// Cheap to clone; every clone drives the same controller.
@@ -292,6 +297,7 @@ impl Dictate {
                 mic_owner: None,
                 retry: None,
                 last: None,
+                hotkey: (HotkeyStatus::NotRunning, 0),
             })),
             deps: Arc::new(deps),
             stop: Arc::new(AtomicBool::new(false)),
@@ -309,6 +315,7 @@ impl Dictate {
                 self.deps.hotkeys.status()
             }
         };
+        self.inner.lock().hotkey = (status.clone(), crate::hotkey::now_ms());
         // One clock per start: a restart retires the previous thread.
         let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
         let me = self.clone();
@@ -333,6 +340,13 @@ impl Dictate {
                 }
             });
         status
+    }
+
+    /// Stops the shortcut to start it again (a new binding): the clock
+    /// thread retires first, so the gap isn't reported as a failure.
+    pub fn stop_hotkeys(&self) {
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        self.deps.hotkeys.stop();
     }
 
     pub fn shutdown(&self) {
@@ -430,6 +444,7 @@ impl Dictate {
         for a in actions {
             self.act(a, None);
         }
+        self.watch_hotkeys(now);
         // The 10-minute cap, and the warning 30 s before it.
         let (stop, warn) = {
             let mut i = self.inner.lock();
@@ -455,6 +470,39 @@ impl Dictate {
         if stop {
             self.inner.lock().gesture.reset();
             self.act(Action::Stop, None);
+        }
+    }
+
+    /// Every 250 ms: has the backend's status changed on its own? Secure
+    /// input pausing it says so; a working shortcut that stops says so.
+    fn watch_hotkeys(&self, now: u64) {
+        let old = {
+            let mut i = self.inner.lock();
+            if now.saturating_sub(i.hotkey.1) < 250 {
+                return;
+            }
+            i.hotkey.1 = now;
+            i.hotkey.0.clone()
+        };
+        let new = self.deps.hotkeys.status();
+        if new == old {
+            return;
+        }
+        self.inner.lock().hotkey.0 = new.clone();
+        self.deps.sink.hotkey_status(new.clone());
+        let working = matches!(old, HotkeyStatus::Active | HotkeyStatus::Paused);
+        match new {
+            HotkeyStatus::Paused => self.toast(
+                ToastCode::SecureInput,
+                false,
+                "Secure input is on; the shortcut is paused.".into(),
+            ),
+            HotkeyStatus::Unavailable { .. } | HotkeyStatus::NotRunning if working => self.toast(
+                ToastCode::HotkeyFailed,
+                true,
+                "The global shortcut stopped working.".into(),
+            ),
+            _ => {}
         }
     }
 
@@ -1367,9 +1415,13 @@ mod tests {
         focus: Mutex<Option<String>>,
         keys: Mutex<Vec<Phase>>,
         verified: Mutex<bool>,
+        hotkey: Mutex<Vec<HotkeyStatus>>,
     }
 
     impl DictateSink for Sink {
+        fn hotkey_status(&self, status: HotkeyStatus) {
+            self.hotkey.lock().push(status);
+        }
         fn state(&self, e: DictateStateEvent) {
             self.states.lock().push(e);
         }
@@ -1927,6 +1979,44 @@ mod tests {
         assert_eq!(r.sink.toasts.lock()[0].code, ToastCode::NoSpeech);
         assert_eq!(r.stt.calls(), 0);
         assert!(r.platform.pasted().is_empty());
+    }
+
+    #[test]
+    fn f_di_02_secure_input_pauses_dictate_and_says_so_then_it_comes_back() {
+        let r = rig(speech(), "hello");
+        r.keys.set_status(HotkeyStatus::Paused);
+        wait(|| r.sink.hotkey.lock().contains(&HotkeyStatus::Paused));
+        assert_eq!(r.sink.hotkey.lock().clone(), vec![HotkeyStatus::Paused]);
+        let codes: Vec<ToastCode> = r.sink.toasts.lock().iter().map(|t| t.code).collect();
+        assert_eq!(codes, vec![ToastCode::SecureInput]);
+        r.keys.set_status(HotkeyStatus::Active);
+        wait(|| r.sink.hotkey.lock().len() == 2);
+        assert_eq!(r.sink.hotkey.lock()[1], HotkeyStatus::Active);
+        // Coming back says nothing more.
+        assert_eq!(r.sink.toasts.lock().len(), 1);
+    }
+
+    #[test]
+    fn f_di_07_a_shortcut_that_stops_working_says_so_but_a_restart_does_not() {
+        let r = rig(speech(), "hello");
+        // The app restarting the shortcut (a new binding): no failure.
+        r.d.stop_hotkeys();
+        std::thread::sleep(Duration::from_millis(600));
+        assert!(
+            r.sink.toasts.lock().is_empty(),
+            "{:?}",
+            r.sink.toasts.lock()
+        );
+        r.d.start_hotkeys(&Bindings {
+            hold: Some("Ctrl+Alt".parse().expect("b")),
+            toggle: None,
+        });
+        // The backend's session dies on its own (a Wayland portal closing).
+        r.keys.set_status(HotkeyStatus::NotRunning);
+        wait(|| !r.sink.toasts.lock().is_empty());
+        let codes: Vec<ToastCode> = r.sink.toasts.lock().iter().map(|t| t.code).collect();
+        assert_eq!(codes, vec![ToastCode::HotkeyFailed]);
+        assert_eq!(r.sink.hotkey.lock().last(), Some(&HotkeyStatus::NotRunning));
     }
 
     #[test]
