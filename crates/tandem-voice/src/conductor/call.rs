@@ -105,6 +105,37 @@ pub trait Speaker: Send + Sync {
     fn stop(&self);
     fn speaking(&self) -> bool;
     fn level(&self) -> f32;
+    /// Samples handed to [`Speaker::play`] so far, less any [`Speaker::stop`]
+    /// dropped before they played (24 kHz; counts across calls).
+    fn queued(&self) -> u64;
+    /// Samples that reached the output so far. With `queued`, where the
+    /// listener is in what was sent: barge-in truncates to it (D-1122).
+    fn played(&self) -> u64;
+}
+
+/// The assistant item whose audio is going out: where it starts in the
+/// speaker's queue, and how much of it arrived.
+struct Playing {
+    item_id: String,
+    start: u64,
+    len: u64,
+}
+
+impl Playing {
+    /// While it's still playing: the item and the milliseconds of it the
+    /// speaker really played (never more than arrived). `None` when
+    /// nothing of it is playing: it finished, or hasn't started.
+    fn heard(&self, speaker: &dyn Speaker) -> Option<(String, u32)> {
+        if !speaker.speaking() {
+            return None;
+        }
+        let played = speaker.played().saturating_sub(self.start).min(self.len);
+        if played == 0 {
+            return None;
+        }
+        let ms = played * 1000 / u64::from(crate::realtime::SAMPLE_RATE);
+        Some((self.item_id.clone(), ms as u32))
+    }
 }
 
 /// How a call was started (the entry points share [`CallController::start`]).
@@ -570,6 +601,8 @@ impl CallController {
         let mut last_talk = connected_at;
         // What the user said (redacted), for post-call reflection.
         let mut said: Vec<String> = Vec::new();
+        // The talker's audio item being played, for barge-in.
+        let mut playing: Option<Playing> = None;
         let mut actions = 0u32;
         let mut pending_doers = 0u32;
         let mut speed = persona::speed_step(persona.speed);
@@ -618,7 +651,15 @@ impl CallController {
                         code: CallErrorCode::ConnectFailed,
                         message: "The voice service hung up.".into(),
                     })),
-                    Some(ServerEvent::AudioDelta(pcm)) => {
+                    Some(ServerEvent::AudioDelta { item, pcm }) => {
+                        if let Some(id) = item {
+                            if playing.as_ref().map(|p| &p.item_id) != Some(&id) {
+                                playing = Some(Playing { item_id: id, start: speaker.queued(), len: 0 });
+                            }
+                        }
+                        if let Some(p) = playing.as_mut() {
+                            p.len += pcm.len() as u64;
+                        }
                         speaker.play(&pcm);
                         let now = host.now_ms();
                         if now - last_level >= 100 {
@@ -630,8 +671,13 @@ impl CallController {
                         }
                     }
                     Some(ServerEvent::SpeechStarted) => {
-                        // Barge-in: stop talking at once.
+                        // Barge-in: stop talking at once, and tell the talker
+                        // how much of its answer was heard (D-1122).
+                        let heard = playing.take().and_then(|p| p.heard(speaker.as_ref()));
                         speaker.stop();
+                        if let Some((item_id, audio_end_ms)) = heard {
+                            let _ = tx.send(ClientEvent::Truncate { item_id, audio_end_ms }).await;
+                        }
                         self.set(|v| { v.phase = CallPhase::Listening; v.caption = None; });
                     }
                     Some(ServerEvent::TranscriptUser(text)) => {
