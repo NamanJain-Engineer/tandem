@@ -81,7 +81,6 @@ The 14 October audit (D-1121's session) found spec behaviours under these ticks 
 - On macOS: the automatic Fn → Ctrl+Option fallback (F-DI-02), and F-DI-11's "Press 🌐 to Do Nothing" with consent.
 
 Bugs found with them, also being fixed:
-- The hotkey status is a cache that never learns of a pause or a failure (F-DI-02, F-DI-07).
 
 Tasks: capture; local models; dictionary engine; takes and insertion; hotkeys;
 widget (UI-60); composer dictation (UI-68); setup and onboarding; history and

@@ -86,6 +86,9 @@ pub struct FakeHotkeys {
     tx: Mutex<Option<mpsc::Sender<KeyEvent>>>,
     bindings: Mutex<Option<Bindings>>,
     esc: Mutex<bool>,
+    /// What the backend reports, when a test sets it (secure input, a
+    /// session that died).
+    status: Mutex<Option<HotkeyStatus>>,
 }
 
 impl FakeHotkeys {
@@ -111,6 +114,11 @@ impl FakeHotkeys {
     pub fn esc_listening(&self) -> bool {
         *self.esc.lock()
     }
+
+    /// Makes the backend report `status` from now on.
+    pub fn set_status(&self, status: HotkeyStatus) {
+        *self.status.lock() = Some(status);
+    }
 }
 
 impl HotkeyBackend for FakeHotkeys {
@@ -133,6 +141,9 @@ impl HotkeyBackend for FakeHotkeys {
     }
 
     fn status(&self) -> HotkeyStatus {
+        if let Some(s) = self.status.lock().clone() {
+            return s;
+        }
         if self.tx.lock().is_some() {
             HotkeyStatus::Active
         } else {
