@@ -54,7 +54,12 @@ pub fn parse_memory(request: &str) -> Option<MemoryAsk> {
                 .starts_with(p)
                 .then(|| r.get(p.len()..))
                 .flatten()
-                .map(|s| s.trim().trim_end_matches(['.', '!', '?']).trim().to_string())
+                .map(|s| {
+                    s.trim()
+                        .trim_end_matches(['.', '!', '?'])
+                        .trim()
+                        .to_string()
+                })
                 .filter(|s| !s.is_empty())
         })
     };
