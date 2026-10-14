@@ -89,6 +89,9 @@ pub struct FakeHotkeys {
     /// What the backend reports, when a test sets it (secure input, a
     /// session that died).
     status: Mutex<Option<HotkeyStatus>>,
+    /// Runs inside the next `status` call, before it answers (a test making
+    /// something happen while the status is being read).
+    next_status: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 impl FakeHotkeys {
@@ -119,6 +122,11 @@ impl FakeHotkeys {
     pub fn set_status(&self, status: HotkeyStatus) {
         *self.status.lock() = Some(status);
     }
+
+    /// Runs `f` inside the next `status` call, before it answers.
+    pub fn on_next_status(&self, f: impl FnOnce() + Send + 'static) {
+        *self.next_status.lock() = Some(Box::new(f));
+    }
 }
 
 impl HotkeyBackend for FakeHotkeys {
@@ -141,6 +149,10 @@ impl HotkeyBackend for FakeHotkeys {
     }
 
     fn status(&self) -> HotkeyStatus {
+        let hook = self.next_status.lock().take();
+        if let Some(f) = hook {
+            f();
+        }
         if let Some(s) = self.status.lock().clone() {
             return s;
         }

@@ -329,13 +329,13 @@ impl Dictate {
                 }
                 match rx.recv_timeout(Duration::from_millis(10)) {
                     Ok(e) => me.on_key(e),
-                    Err(mpsc::RecvTimeoutError::Timeout) => me.tick(),
+                    Err(mpsc::RecvTimeoutError::Timeout) => me.tick(generation),
                     // The backend never started or went away: no keys come,
                     // but takes from the mic button and the deep link still
                     // need the clock (the 10-minute cap and its warning).
                     Err(mpsc::RecvTimeoutError::Disconnected) => {
                         std::thread::sleep(Duration::from_millis(10));
-                        me.tick();
+                        me.tick(generation);
                     }
                 }
             });
@@ -438,13 +438,14 @@ impl Dictate {
         }
     }
 
-    fn tick(&self) {
+    /// One beat of the clock thread started as `generation`.
+    fn tick(&self, generation: u64) {
         let now = crate::hotkey::now_ms();
         let actions = self.inner.lock().gesture.tick(now);
         for a in actions {
             self.act(a, None);
         }
-        self.watch_hotkeys(now);
+        self.watch_hotkeys(now, generation);
         // The 10-minute cap, and the warning 30 s before it.
         let (stop, warn) = {
             let mut i = self.inner.lock();
@@ -475,7 +476,7 @@ impl Dictate {
 
     /// Every 250 ms: has the backend's status changed on its own? Secure
     /// input pausing it says so; a working shortcut that stops says so.
-    fn watch_hotkeys(&self, now: u64) {
+    fn watch_hotkeys(&self, now: u64, generation: u64) {
         let old = {
             let mut i = self.inner.lock();
             if now.saturating_sub(i.hotkey.1) < 250 {
@@ -485,7 +486,10 @@ impl Dictate {
             i.hotkey.0.clone()
         };
         let new = self.deps.hotkeys.status();
-        if new == old {
+        // The app restarted the shortcut (a new binding) while this thread
+        // read it: what it read is the gap between stop and start, not a
+        // failure, and the restart reports the new status itself.
+        if new == old || self.generation.load(Ordering::Acquire) != generation {
             return;
         }
         self.inner.lock().hotkey.0 = new.clone();
@@ -2017,6 +2021,27 @@ mod tests {
         let codes: Vec<ToastCode> = r.sink.toasts.lock().iter().map(|t| t.code).collect();
         assert_eq!(codes, vec![ToastCode::HotkeyFailed]);
         assert_eq!(r.sink.hotkey.lock().last(), Some(&HotkeyStatus::NotRunning));
+    }
+
+    #[test]
+    fn f_di_07_a_restart_racing_the_status_poll_says_nothing() {
+        let r = rig(speech(), "hello");
+        // The app restarts the shortcut (a new binding) just as the clock
+        // thread reads the backend's status, so what it reads is the gap
+        // between stop and start: that's not the shortcut failing.
+        let d = r.d.clone();
+        r.keys.on_next_status(move || d.stop_hotkeys());
+        std::thread::sleep(Duration::from_millis(600));
+        assert!(
+            r.sink.toasts.lock().is_empty(),
+            "{:?}",
+            r.sink.toasts.lock()
+        );
+        assert!(
+            r.sink.hotkey.lock().is_empty(),
+            "{:?}",
+            r.sink.hotkey.lock()
+        );
     }
 
     #[test]
