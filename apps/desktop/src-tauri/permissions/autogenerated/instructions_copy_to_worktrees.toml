@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-instructions-copy-to-worktrees"
+description = "Enables the instructions_copy_to_worktrees command without any pre-configured scope."
+commands.allow = ["instructions_copy_to_worktrees"]
+
+[[permission]]
+identifier = "deny-instructions-copy-to-worktrees"
+description = "Denies the instructions_copy_to_worktrees command without any pre-configured scope."
+commands.deny = ["instructions_copy_to_worktrees"]

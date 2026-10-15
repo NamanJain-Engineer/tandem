@@ -58,6 +58,8 @@ pub struct LaneSetup {
     pub copy: Option<CopyReport>,
     /// Why the copy failed.
     pub copy_error: Option<String>,
+    /// F-WT-06: the index and port block the worktree got.
+    pub runtime: Option<crate::services::worktree_runtime::RuntimeInfo>,
 }
 
 /// What discarding a worktree did with its teardown.
@@ -309,6 +311,7 @@ pub async fn lane_setup(
         state: state_at(data, &main_root(&row.root)?),
         copy,
         copy_error,
+        runtime: crate::services::worktree_runtime::take_note(lane.as_str()),
     }))
 }
 
@@ -346,16 +349,66 @@ pub async fn setup_pane(
     if !state.trusted {
         return Err(IpcError::new(ErrorCode::PermissionDenied, NOT_TRUSTED).with_stage("setup"));
     }
+    // F-WT-09: a trusted preview starts once the setup has finished.
+    let command = match crate::services::worktree_runtime::preview_of(data, &row) {
+        Some(p) if p.trusted => format!("{command} && {}", p.command),
+        _ => command,
+    };
     let pane = panes::create_with(store, tab, "terminal", Some(row.root.clone()), None).await?;
     tracing::info!(code = "worktree_setup.run", "worktree setup started");
     Ok((pane, command))
+}
+
+/// `lane_preview_start` (F-WT-09): a terminal pane named "Preview" in the
+/// worktree, in `tab`, for the trusted preview command, which the caller
+/// types once it's ready.
+pub async fn preview_pane(
+    store: &Store,
+    data: &DataDir,
+    lane: &WorkspaceId,
+    tab: &TabId,
+) -> Result<(PaneRecord, String), IpcError> {
+    let row = workspaces::get(store, lane).await?;
+    if row.lane_branch.is_none() || row.kind != "local" {
+        return Err(IpcError::new(
+            ErrorCode::Invalid,
+            "Previews need a worktree on this computer",
+        ));
+    }
+    if !Path::new(&row.root).is_dir() {
+        return Err(IpcError::new(
+            ErrorCode::NotFound,
+            "The worktree folder is missing",
+        ));
+    }
+    let Some(preview) = crate::services::worktree_runtime::preview_of(data, &row) else {
+        return Err(IpcError::new(
+            ErrorCode::NotFound,
+            "This repository's worktree setup has no preview",
+        ));
+    };
+    if !preview.trusted {
+        return Err(IpcError::new(ErrorCode::PermissionDenied, NOT_TRUSTED).with_stage("setup"));
+    }
+    let pane = panes::create_with(store, tab, "terminal", Some(row.root.clone()), None).await?;
+    let pane = match panes::rename(store, &pane.id, "Preview").await {
+        Ok(_) => panes::get(store, &pane.id).await?,
+        Err(_) => pane,
+    };
+    tracing::info!(code = "worktree_runtime.preview", "preview started");
+    Ok((pane, preview.command))
 }
 
 // ---- teardown ------------------------------------------------------------
 
 /// The shell that runs a teardown: `sh -c` (`cmd /C` on Windows) with the
 /// login environment.
-fn teardown_command(login: &LoginEnv, command: &str, cwd: &Path) -> tokio::process::Command {
+fn teardown_command(
+    login: &LoginEnv,
+    extra: &BTreeMap<String, String>,
+    command: &str,
+    cwd: &Path,
+) -> tokio::process::Command {
     let mut cmd = if cfg!(windows) {
         let mut c = tokio::process::Command::new("cmd");
         c.arg("/C").arg(command);
@@ -368,6 +421,7 @@ fn teardown_command(login: &LoginEnv, command: &str, cwd: &Path) -> tokio::proce
     cmd.current_dir(cwd)
         .env_clear()
         .envs(&login.vars)
+        .envs(extra)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -375,11 +429,13 @@ fn teardown_command(login: &LoginEnv, command: &str, cwd: &Path) -> tokio::proce
     cmd
 }
 
-/// Runs a trusted teardown in the worktree's folder. `None` when there's no
-/// teardown (or no folder to run it in).
+/// Runs a trusted teardown in the worktree's folder, with the worktree's
+/// runtime variables (`extra`, F-WT-06). `None` when there's no teardown
+/// (or no folder to run it in).
 pub async fn teardown(
     data: &DataDir,
     login: &LoginEnv,
+    extra: &BTreeMap<String, String>,
     lane_root: &str,
     limit: Duration,
 ) -> Option<TeardownOutcome> {
@@ -397,7 +453,7 @@ pub async fn teardown(
         );
         return Some(TeardownOutcome::Untrusted);
     }
-    let outcome = match teardown_command(login, &command, cwd).spawn() {
+    let outcome = match teardown_command(login, extra, &command, cwd).spawn() {
         Err(e) => TeardownOutcome::Failed {
             message: e.to_string(),
         },
@@ -517,12 +573,12 @@ mod tests {
             repo_with_worktree(r#"{"teardown":"pwd > ../teardown-ran; exit 3"}"#);
         let wt_s = wt.to_str().expect("utf8");
         // Untrusted: skipped.
-        let out = teardown(&data, &login(), wt_s, TEARDOWN_LIMIT).await;
+        let out = teardown(&data, &login(), &BTreeMap::new(), wt_s, TEARDOWN_LIMIT).await;
         assert_eq!(out, Some(TeardownOutcome::Untrusted));
         assert!(!wt.parent().expect("parent").join("teardown-ran").exists());
         let digest = state_at(&data, &main).digest.expect("digest");
         trust(&data, &main, &digest).expect("trust");
-        let out = teardown(&data, &login(), wt_s, TEARDOWN_LIMIT).await;
+        let out = teardown(&data, &login(), &BTreeMap::new(), wt_s, TEARDOWN_LIMIT).await;
         assert_eq!(out, Some(TeardownOutcome::Ran { code: Some(3) }));
         let ran_in = std::fs::read_to_string(wt.parent().expect("parent").join("teardown-ran"))
             .expect("marker");
@@ -541,6 +597,7 @@ mod tests {
         let out = teardown(
             &data,
             &login(),
+            &BTreeMap::new(),
             wt.to_str().expect("utf8"),
             Duration::from_millis(200),
         )
@@ -551,7 +608,14 @@ mod tests {
     #[tokio::test]
     async fn f_wt_01_5_no_teardown_means_nothing_to_report() {
         let (_tmp, _main, wt, data) = repo_with_worktree(r#"{"copy":[".env"]}"#);
-        let out = teardown(&data, &login(), wt.to_str().expect("utf8"), TEARDOWN_LIMIT).await;
+        let out = teardown(
+            &data,
+            &login(),
+            &BTreeMap::new(),
+            wt.to_str().expect("utf8"),
+            TEARDOWN_LIMIT,
+        )
+        .await;
         assert_eq!(out, None);
     }
 
@@ -599,5 +663,84 @@ mod tests {
         assert_eq!(lane.kind, "ssh");
         let out = lane_setup(&store, &data, &lane.id).await.expect("no error");
         assert_eq!(out, None);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn f_wt_06_5_the_teardown_gets_the_worktrees_variables() {
+        let (_tmp, main, wt, data) =
+            repo_with_worktree(r#"{"teardown":"echo $COMPOSE_PROJECT_NAME > ../compose-name"}"#);
+        let digest = state_at(&data, &main).digest.expect("digest");
+        trust(&data, &main, &digest).expect("trust");
+        let extra: BTreeMap<String, String> =
+            [("COMPOSE_PROJECT_NAME".to_string(), "app-wt".to_string())]
+                .into_iter()
+                .collect();
+        let out = teardown(
+            &data,
+            &login(),
+            &extra,
+            wt.to_str().expect("utf8"),
+            TEARDOWN_LIMIT,
+        )
+        .await;
+        assert_eq!(out, Some(TeardownOutcome::Ran { code: Some(0) }));
+        let written = std::fs::read_to_string(wt.parent().expect("parent").join("compose-name"))
+            .expect("written");
+        assert_eq!(written.trim(), "app-wt");
+    }
+
+    #[tokio::test]
+    async fn f_wt_09_2_3_an_untrusted_preview_never_runs_and_a_trusted_one_follows_setup() {
+        let (_tmp, main, wt, data) = repo_with_worktree(
+            r#"{"ports":2,"setup":"pnpm install","preview":{"command":"pnpm dev --port {{port}}"}}"#,
+        );
+        let store = Store::open(&data).expect("store");
+        let (parent, _) = workspaces::add(
+            &store,
+            workspaces::NewWorkspace {
+                kind: "local".into(),
+                host_id: "local".into(),
+                root: main.to_string_lossy().into_owned(),
+                name: "app".into(),
+                wsl_distro: None,
+            },
+            None,
+        )
+        .await
+        .expect("parent");
+        let lane = workspaces::add_lane(
+            &store,
+            workspaces::NewLane {
+                parent_id: parent.id.clone(),
+                root: wt.to_string_lossy().into_owned(),
+                name: "wt".into(),
+                branch: "tandem/wt".into(),
+                base: "abc".into(),
+            },
+        )
+        .await
+        .expect("lane");
+        let tab = tandem_store::repo::tabs::create(&store, &lane.id, None)
+            .await
+            .expect("tab");
+        let err = preview_pane(&store, &data, &lane.id, &tab.id)
+            .await
+            .expect_err("untrusted");
+        assert_eq!(err.code, ErrorCode::PermissionDenied);
+        let digest = state_at(&data, &main).digest.expect("digest");
+        trust(&data, &main, &digest).expect("trust");
+        let (_, setup_cmd) = setup_pane(&store, &data, &lane.id, &tab.id)
+            .await
+            .expect("setup");
+        let (pane, preview_cmd) = preview_pane(&store, &data, &lane.id, &tab.id)
+            .await
+            .expect("preview");
+        assert!(
+            preview_cmd.starts_with("pnpm dev --port 4"),
+            "{preview_cmd}"
+        );
+        assert_eq!(setup_cmd, format!("pnpm install && {preview_cmd}"));
+        assert_eq!(pane.human_name.as_deref(), Some("Preview"));
     }
 }

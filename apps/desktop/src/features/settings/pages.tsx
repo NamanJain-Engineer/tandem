@@ -17,7 +17,13 @@ import { RecallSettingsExtra } from "../recall/RecallSettings";
 import { DictateExtras, MicSelect, ShortcutField } from "../dictate/DictatePage";
 import { GlobeKey } from "../dictate/GlobeKey";
 import { LanguageSelect } from "../dictate/LanguageSelect";
-import { AboutYou, MemoryPanel, NameControl, SpeedControl, WakeControl } from "../conductor/ConductorSettings";
+import {
+  AboutYou,
+  MemoryPanel,
+  NameControl,
+  SpeedControl,
+  WakeControl,
+} from "../conductor/ConductorSettings";
 import { ConductorCallSettings } from "../conductor/CallSettingsSlot";
 import { EngineControl } from "../dictate/EngineControl";
 import { AutoEnhanceControl, FormattingControl, QuickActionsControl } from "../dictate/EnhanceControls";
@@ -257,6 +263,15 @@ export function settingsPages(platform: string, routines = false, accounts = fal
           keywords: ["background", "focused", "visible"],
           control: (ids) => (
             <BoolControl k="notify_only_unseen" ids={ids} label={t("settings.notify.onlyUnseen")} />
+          ),
+        },
+        {
+          id: "usage_forecast_notify",
+          label: t("settings.notify.usageForecast"),
+          description: t("settings.notify.usageForecast.desc"),
+          keywords: ["usage", "limit", "forecast", "runs out"],
+          control: (ids) => (
+            <BoolControl k="usage_forecast_notify" ids={ids} label={t("settings.notify.usageForecast")} />
           ),
         },
         {
@@ -737,7 +752,9 @@ export function settingsPages(platform: string, routines = false, accounts = fal
           label: t("conductor.memoryToggle"),
           description: t("conductor.memoryToggle.desc"),
           keywords: ["memory", "remember", "forget"],
-          control: (ids) => <BoolControl k="conductor_memory" ids={ids} label={t("conductor.memoryToggle")} />,
+          control: (ids) => (
+            <BoolControl k="conductor_memory" ids={ids} label={t("conductor.memoryToggle")} />
+          ),
         },
         {
           id: "conductor_reflection",

@@ -90,6 +90,11 @@
     "page": "notifications"
   },
   {
+    "default": false,
+    "key": "usage_forecast_notify",
+    "page": "notifications"
+  },
+  {
     "default": null,
     "key": "default_shell",
     "page": "terminal"
