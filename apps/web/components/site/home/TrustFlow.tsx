@@ -25,11 +25,13 @@ const FLOWS: Array<{ icon: LucideIcon; to: string; via: string; line: "solid" | 
  * diagram is HTML, so it reflows on a phone; its text is the description. */
 export function TrustFlow() {
   return (
-    <section id="principles" aria-labelledby="principles-title" className="scroll-mt-(--site-header-h) bg-raised py-(--site-section-y)">
+    <section id="principles" aria-labelledby="principles-title" className="relative isolate scroll-mt-(--site-header-h) overflow-hidden bg-raised py-(--site-section-y)">
+      <div aria-hidden="true" className="horizon absolute inset-x-0 top-0" />
+      <div aria-hidden="true" className="bg-lens absolute inset-x-0 top-0 -z-10 h-[30rem] opacity-70" />
       <div className="container-site flex flex-col gap-14">
         <header className="reveal flex flex-col gap-4">
           <p className="eyebrow">Principles</p>
-          <h2 id="principles-title" className="max-w-[30em] text-display-md text-balance text-fg">
+          <h2 id="principles-title" className="max-w-[28em] text-display-md text-fg [text-wrap:pretty]">
             Nothing leaves your machine unless you opt in.{" "}
             <span className="text-fg-muted">
               Engines sign in by themselves, in their own folders, and Vibezeo never reads, copies or proxies their
@@ -40,11 +42,11 @@ export function TrustFlow() {
 
         <figure className="reveal flex flex-col gap-4">
           <div className="grid gap-4 lg:grid-cols-12 lg:items-stretch lg:gap-0">
-            <div className="flex flex-col gap-3 rounded-lg border border-border-strong bg-card p-5 lg:col-span-5">
-              <p className="font-mono text-eyebrow uppercase tracking-[0.08em] text-fg-muted">Your computer</p>
+            <div className="surface flex flex-col gap-3 p-5 lg:col-span-5">
+              <p className="font-mono text-eyebrow uppercase tracking-[0.12em] text-fg-muted">Your computer</p>
               <ul className="flex flex-col gap-3">
                 {ON_COMPUTER.map((n) => (
-                  <li key={n.title} className="flex gap-3 rounded-md border border-border bg-page p-4">
+                  <li key={n.title} className="flex gap-3 rounded-[10px] bg-page p-4 shadow-[inset_0_0_0_1px_var(--site-line)]">
                     <Icon icon={n.icon} size={20} className="mt-0.5 shrink-0 text-accent" />
                     <span className="flex flex-col gap-0.5">
                       <span className="text-copy font-semibold text-fg">{n.title}</span>
@@ -76,7 +78,7 @@ export function TrustFlow() {
                   <div
                     className={cx(
                       "flex items-center gap-3 rounded-md border px-4 py-3 lg:w-60",
-                      f.line === "none" ? "border-dashed border-border text-fg-muted" : "border-border bg-card text-fg",
+                      f.line === "none" ? "border-dashed border-line-strong text-fg-muted" : "surface text-fg",
                     )}
                   >
                     <Icon icon={f.line === "none" ? Server : f.icon} size={18} className={f.line === "none" ? "text-fg-subtle" : "text-accent"} />
@@ -97,7 +99,7 @@ export function TrustFlow() {
 
         <ul className="grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
           {PRINCIPLES.map((p) => (
-            <li key={p.title} className="reveal flex flex-col gap-2 border-l-2 border-accent pl-4">
+            <li key={p.title} className="reveal flex flex-col gap-2 border-l border-line-strong pl-5 [border-image:linear-gradient(180deg,var(--tn-accent),transparent)_1]">
               <h3 className="text-title text-fg">{p.title}</h3>
               <p className="text-copy-sm text-fg-muted">{p.body}</p>
             </li>
