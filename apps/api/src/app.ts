@@ -24,6 +24,7 @@ import { deviceAuthRoutes } from "./routes/deviceAuth";
 import { health } from "./routes/health";
 import { meRoutes } from "./routes/me";
 import { orgRoutes } from "./routes/orgs";
+import { dictionaryRoutes } from "./routes/dictionary";
 import { pairingRoutes } from "./routes/pairings";
 import { ssoRoutes } from "./routes/sso";
 import { sttRoutes } from "./routes/stt";
@@ -69,6 +70,7 @@ export function createApp(deps: Deps) {
   app.route("/v1/stt", sttRoutes(deps));
   app.route("/v1/voice", voiceRoutes(deps));
   app.route("/v1/orgs", orgRoutes(deps));
+  app.route("/v1/dictionary", dictionaryRoutes(deps));
   app.route("/v1/pairings", pairingRoutes(deps));
   app.route("/v1/sso", ssoRoutes(deps));
   app.route("/v1/audit", auditRoutes(deps));

@@ -122,6 +122,8 @@ setting_keys! {
     DictateFormatting,
     DictateFormattingApps,
     DictateShareHints,
+    DictateDictionarySync,
+    DictateDictionarySyncState,
     DictateKeepHistory,
     DictateWidgetPosition,
     ConductorName,
@@ -698,6 +700,14 @@ pub static SCHEMA: &[SettingSpec] = &[
         ["dictionary hints", "cloud"]
     ),
     spec!(
+        DictateDictionarySync,
+        json!(false),
+        V::Bool,
+        Privacy,
+        ["dictionary", "sync", "devices"]
+    ),
+    spec!(DictateDictionarySyncState, json!({}), V::Map, Hidden, []),
+    spec!(
         DictateKeepHistory,
         json!("forever"),
         V::OneOf(&["forever", "90d", "30d", "7d"]),
@@ -1168,6 +1178,7 @@ mod tests {
             SettingKey::AiThreadTitles,
             SettingKey::AutoConsent,
             SettingKey::DictateShareHints,
+            SettingKey::DictateDictionarySync,
             SettingKey::FindWorkHosted,
         ] {
             assert_eq!(default_value(key), json!(false), "{key:?}");

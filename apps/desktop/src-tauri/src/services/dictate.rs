@@ -32,6 +32,8 @@ use tandem_voice::dictate::{
     DictateToast, FinishedTake, ToastCode,
 };
 use tandem_voice::dictionary::{Dictionary, Rule, RuleKind, Spacing};
+
+use crate::services::dictionary_sync as sync;
 use tandem_voice::hotkey::{
     Binding, Bindings, FakeHotkeys, HotkeyBackend, HotkeyStatus, Os, Phase,
 };
@@ -911,6 +913,13 @@ pub struct DictateService {
     /// The plan check and the relay call for cloud takes (F-DI-05).
     cloud: OnceLock<(PlanFn, crate::services::dictate_cloud::SttCall)>,
     rewriter: OnceLock<crate::services::dictate_cloud::RewriteCall>,
+    /// Dictionary sync (F-DI-09): who may sync and the relay calls.
+    sync: OnceLock<sync::SyncDeps>,
+    /// Conflicts from the last sync, until the user picks.
+    sync_pending: Mutex<HashMap<String, sync::Pending>>,
+    sync_running: tokio::sync::Mutex<()>,
+    /// A local rule changed: the sync loop wakes.
+    sync_kick: tokio::sync::Notify,
 }
 
 fn clamp_chars(s: &str, max: usize) -> String {
@@ -1033,6 +1042,10 @@ impl DictateService {
             started: AtomicBool::new(false),
             cloud: OnceLock::new(),
             rewriter: OnceLock::new(),
+            sync: OnceLock::new(),
+            sync_pending: Mutex::new(HashMap::new()),
+            sync_running: tokio::sync::Mutex::new(()),
+            sync_kick: tokio::sync::Notify::new(),
         })
     }
 
@@ -2039,18 +2052,17 @@ impl DictateService {
         let mut rule = clean_rule(rule)?;
         rule.updated_at = tandem_store::now_ms();
         rule.deleted_at = None;
-        let rev = repo::get_rule(&self.store, rule.id.clone())
-            .await?
-            .map(|r| r.sync_rev)
-            .unwrap_or(0);
-        repo::put_rules(&self.store, vec![row_from_rule(&rule, rev)]).await?;
+        // `sync_rev` 0: changed here, waiting to sync (F-DI-09).
+        repo::put_rules(&self.store, vec![row_from_rule(&rule, 0)]).await?;
         self.reload_rules().await;
+        self.sync_kick.notify_one();
         Ok(rule)
     }
 
     pub async fn delete_rules(&self, ids: Vec<String>) -> Result<(), IpcError> {
         repo::delete_rules(&self.store, ids).await?;
         self.reload_rules().await;
+        self.sync_kick.notify_one();
         Ok(())
     }
 
@@ -2062,6 +2074,7 @@ impl DictateService {
             ));
         }
         self.reload_rules().await;
+        self.sync_kick.notify_one();
         let row = repo::get_rule(&self.store, id.to_string())
             .await?
             .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "That rule is gone"))?;
@@ -2138,6 +2151,7 @@ impl DictateService {
             .collect();
         repo::put_rules(&self.store, rows).await?;
         self.reload_rules().await;
+        self.sync_kick.notify_one();
         Ok(n)
     }
 
@@ -2186,6 +2200,186 @@ impl DictateService {
 
     pub fn store(&self) -> &Store {
         &self.store
+    }
+
+    // ── Dictionary sync (F-DI-09, D-523) ────────────────────────────────
+
+    /// Gives dictionary sync its access check and relay calls (hosted builds).
+    pub fn set_dictionary_sync(&self, deps: sync::SyncDeps) {
+        let _ = self.sync.set(deps);
+    }
+
+    async fn sync_cursor(&self) -> sync::SyncCursor {
+        let m: serde_json::Map<String, Value> = self
+            .setting(
+                SettingKey::DictateDictionarySyncState,
+                serde_json::Map::new(),
+            )
+            .await;
+        sync::SyncCursor {
+            account: m
+                .get("account")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            rev: m
+                .get("rev")
+                .and_then(Value::as_str)
+                .and_then(|r| r.parse().ok())
+                .unwrap_or(0),
+        }
+    }
+
+    fn sync_deps(&self) -> Result<&sync::SyncDeps, IpcError> {
+        self.sync.get().ok_or_else(|| {
+            IpcError::new(
+                ErrorCode::Unavailable,
+                "Dictionary sync needs a Vibezeo account.",
+            )
+        })
+    }
+
+    /// One sync now. Nothing leaves unless the user turned sync on, is signed
+    /// in, and the plan includes it; then only the rules do.
+    pub async fn dictionary_sync(&self) -> Result<sync::SyncResult, IpcError> {
+        let deps = self.sync_deps()?;
+        let account = sync::check(&(deps.access)())?;
+        if !self.setting(SettingKey::DictateDictionarySync, false).await {
+            return Err(IpcError::new(
+                ErrorCode::PermissionDenied,
+                "Turn on Sync dictionary first.",
+            ));
+        }
+        let _one = self.sync_running.lock().await;
+        let (cursor, out) = sync::run(
+            &self.store,
+            self.sync_cursor().await,
+            &account,
+            &deps.call,
+            tandem_store::now_ms(),
+        )
+        .await;
+        settings::set(
+            &self.store,
+            SettingKey::DictateDictionarySyncState,
+            json!({ "account": cursor.account, "rev": cursor.rev.to_string() }),
+        )
+        .await?;
+        self.reload_rules().await;
+        let (result, pending) = out.map_err(|e| match e {
+            sync::SyncError::Api(e) => sync::api_error(&e),
+            sync::SyncError::Store(e) => e.into(),
+        })?;
+        *self.sync_pending.lock() = pending;
+        tracing::info!(
+            code = "dictionary.synced",
+            pushed = result.pushed,
+            pulled = result.pulled,
+            conflicts = result.conflicts.len(),
+            "dictionary synced"
+        );
+        Ok(result)
+    }
+
+    /// Settles a conflict: "mine" writes the local rule again as the newest
+    /// (it wins next sync); "theirs" takes the server's.
+    pub async fn dictionary_sync_resolve(
+        &self,
+        id: &str,
+        keep_mine: bool,
+    ) -> Result<Option<Rule>, IpcError> {
+        let pending = self.sync_pending.lock().remove(id).ok_or_else(|| {
+            IpcError::new(ErrorCode::NotFound, "That conflict is already settled")
+        })?;
+        let row = if keep_mine {
+            let mut row = repo::get_rule(&self.store, id.to_string())
+                .await?
+                .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "That rule is gone"))?;
+            row.updated_at = tandem_store::now_ms().max(pending.remote.updated_at + 1);
+            if row.deleted_at.is_some() {
+                row.deleted_at = Some(row.updated_at);
+            }
+            row.sync_rev = 0;
+            row
+        } else {
+            row_from_rule(&pending.remote, pending.rev.max(1))
+        };
+        let kept = (row.deleted_at.is_none()).then(|| rule_from_row(row.clone()));
+        repo::put_rules(&self.store, vec![row]).await?;
+        self.reload_rules().await;
+        if keep_mine {
+            self.sync_kick.notify_one();
+        }
+        Ok(kept)
+    }
+
+    /// Deletes the synced copy on the server; the rules here stay, and go
+    /// up again whenever sync is next on.
+    pub async fn dictionary_sync_forget(&self) -> Result<(), IpcError> {
+        let deps = self.sync_deps()?;
+        let access = (deps.access)();
+        if !access.hosted {
+            return Err(IpcError::new(
+                ErrorCode::Unavailable,
+                "Dictionary sync needs a Vibezeo account.",
+            ));
+        }
+        if access.account.is_none() {
+            return Err(IpcError::new(
+                ErrorCode::Unauthenticated,
+                "Sign in to delete the synced copy.",
+            ));
+        }
+        (deps.forget)().await.map_err(|e| sync::api_error(&e))?;
+        let _one = self.sync_running.lock().await;
+        repo::mark_rules_unsynced(&self.store).await?;
+        settings::set(
+            &self.store,
+            SettingKey::DictateDictionarySyncState,
+            json!({}),
+        )
+        .await?;
+        self.sync_pending.lock().clear();
+        Ok(())
+    }
+
+    /// Syncs in the background while sync is on: a few seconds after a local
+    /// change, and every 15 minutes. A sync that pulled rules or found a
+    /// conflict tells the UI (`dictionary:synced`).
+    pub fn run_sync_loop(self: &Arc<Self>) {
+        // The service lives as long as the app.
+        let svc = self.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                let _ =
+                    tokio::time::timeout(Duration::from_secs(15 * 60), svc.sync_kick.notified())
+                        .await;
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                let on = svc.setting(SettingKey::DictateDictionarySync, false).await;
+                let allowed = svc
+                    .sync
+                    .get()
+                    .is_some_and(|d| sync::check(&(d.access)()).is_ok());
+                if !on || !allowed {
+                    continue;
+                }
+                match svc.dictionary_sync().await {
+                    Ok(r) if r.pulled > 0 || !r.conflicts.is_empty() => {
+                        svc.emit(
+                            "dictionary:synced",
+                            serde_json::to_value(&r).unwrap_or(Value::Null),
+                            To::Main,
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!(
+                        code = "dictionary.sync_failed",
+                        error = ?e.code,
+                        "background dictionary sync failed"
+                    ),
+                }
+            }
+        });
     }
 
     /// The harness's fake mic source for the next take.
@@ -2394,6 +2588,194 @@ mod tests {
         );
         let known = mine_suggestions(&takes, &["Kubernetes".into()]);
         assert!(!known.iter().any(|(t, _, _)| t == "Kubernetes"));
+    }
+
+    /// The temp dir, the service, the requests sent, whether forget ran.
+    type SyncRig = (
+        tempfile::TempDir,
+        Arc<DictateService>,
+        Arc<Mutex<Vec<sync::SyncRequest>>>,
+        Arc<AtomicBool>,
+    );
+
+    /// A voice service with dictionary sync wired to a fake relay that
+    /// records each request and answers with `reply`.
+    fn sync_rig(access: sync::SyncAccess, reply: sync::SyncResponse) -> SyncRig {
+        let dir = tempfile::tempdir().expect("dir");
+        let data = DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = Store::open(&data).expect("store");
+        let svc = DictateService::new(store, data, true);
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let forgot = Arc::new(AtomicBool::new(false));
+        let (log, gone) = (sent.clone(), forgot.clone());
+        svc.set_dictionary_sync(sync::SyncDeps {
+            access: Arc::new(move || access.clone()),
+            call: Arc::new(move |req| {
+                log.lock().push(req);
+                let reply = reply.clone();
+                Box::pin(async move { Ok(reply) })
+            }),
+            forget: Arc::new(move || {
+                gone.store(true, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }),
+        });
+        (dir, svc, sent, forgot)
+    }
+
+    fn pro() -> sync::SyncAccess {
+        sync::SyncAccess {
+            hosted: true,
+            allowed: true,
+            account: Some("me@tandem.test".into()),
+        }
+    }
+
+    fn empty_reply() -> sync::SyncResponse {
+        sync::SyncResponse {
+            rev: 0,
+            changes: vec![],
+            conflicts: vec![],
+        }
+    }
+
+    async fn turn_sync_on(svc: &DictateService) {
+        settings::set(&svc.store, SettingKey::DictateDictionarySync, json!(true))
+            .await
+            .expect("on");
+    }
+
+    #[tokio::test]
+    async fn f_di_09_nothing_leaves_until_sync_is_turned_on() {
+        let (_d, svc, sent, _) = sync_rig(pro(), empty_reply());
+        svc.save_rule(Rule::correction("", "tory", "Tauri"))
+            .await
+            .expect("save");
+        let err = svc.dictionary_sync().await.expect_err("off");
+        assert_eq!(err.code, ErrorCode::PermissionDenied);
+        assert!(sent.lock().is_empty());
+        turn_sync_on(&svc).await;
+        let got = svc.dictionary_sync().await.expect("sync");
+        assert_eq!(got.pushed, 1);
+        assert_eq!(sent.lock().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn f_di_09_free_or_signed_out_is_refused_before_any_request() {
+        for (access, code) in [
+            (
+                sync::SyncAccess {
+                    allowed: false,
+                    ..pro()
+                },
+                ErrorCode::ForbiddenPlan,
+            ),
+            (
+                sync::SyncAccess {
+                    account: None,
+                    ..pro()
+                },
+                ErrorCode::Unauthenticated,
+            ),
+            (
+                sync::SyncAccess {
+                    hosted: false,
+                    ..pro()
+                },
+                ErrorCode::Unavailable,
+            ),
+        ] {
+            let (_d, svc, sent, _) = sync_rig(access, empty_reply());
+            turn_sync_on(&svc).await;
+            assert_eq!(svc.dictionary_sync().await.expect_err("refused").code, code);
+            assert!(sent.lock().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn f_di_09_a_conflict_keeps_mine_or_takes_theirs() {
+        let remote = |to: &str| sync::WirePulled {
+            rule_id: "tauri".into(),
+            payload: serde_json::to_value(sync::payload_of(&row_from_rule(
+                &Rule::correction("tauri", "tory", to),
+                0,
+            )))
+            .expect("json"),
+            deleted: false,
+            updated_at: sync::iso(4_102_444_800_000), // 2100
+            rev: 9,
+        };
+        let reply = sync::SyncResponse {
+            rev: 9,
+            changes: vec![remote("TAURI")],
+            conflicts: vec![sync::WireConflict {
+                rule_id: "tauri".into(),
+                remote: remote("TAURI"),
+            }],
+        };
+        for keep_mine in [true, false] {
+            let (_d, svc, _, _) = sync_rig(pro(), reply.clone());
+            turn_sync_on(&svc).await;
+            svc.save_rule(Rule::correction("tauri", "tory", "Tauri."))
+                .await
+                .expect("save");
+            let got = svc.dictionary_sync().await.expect("sync");
+            assert_eq!(got.conflicts.len(), 1);
+            assert_eq!(got.conflicts[0].remote.replacement, "TAURI");
+            // Until the user picks, the local rule stands.
+            assert_eq!(svc.rules()[0].replacement, "Tauri.");
+            let kept = svc
+                .dictionary_sync_resolve("tauri", keep_mine)
+                .await
+                .expect("resolve")
+                .expect("rule");
+            let row = repo::get_rule(&svc.store, "tauri".into())
+                .await
+                .expect("get")
+                .expect("row");
+            if keep_mine {
+                assert_eq!(kept.replacement, "Tauri.");
+                // Written again as the newest, waiting to go up.
+                assert_eq!(row.sync_rev, 0);
+                assert!(row.updated_at > 4_102_444_800_000);
+            } else {
+                assert_eq!(kept.replacement, "TAURI");
+                assert_eq!(row.sync_rev, 9);
+            }
+            assert_eq!(
+                svc.dictionary_sync_resolve("tauri", true)
+                    .await
+                    .expect_err("settled")
+                    .code,
+                ErrorCode::NotFound
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn f_di_09_deleting_the_synced_copy_keeps_the_rules_here() {
+        let (_d, svc, _, forgot) = sync_rig(
+            pro(),
+            sync::SyncResponse {
+                rev: 3,
+                ..empty_reply()
+            },
+        );
+        turn_sync_on(&svc).await;
+        svc.save_rule(Rule::correction("", "tory", "Tauri"))
+            .await
+            .expect("save");
+        svc.dictionary_sync().await.expect("sync");
+        assert!(repo::unsynced_rules(&svc.store)
+            .await
+            .expect("q")
+            .is_empty());
+        svc.dictionary_sync_forget().await.expect("forget");
+        assert!(forgot.load(Ordering::SeqCst));
+        assert_eq!(svc.rules().len(), 1);
+        // Next time sync is on, everything goes up again from rev 0.
+        assert_eq!(repo::unsynced_rules(&svc.store).await.expect("q").len(), 1);
+        assert_eq!(svc.sync_cursor().await, sync::SyncCursor::default());
     }
 
     #[test]

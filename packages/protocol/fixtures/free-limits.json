@@ -15,5 +15,6 @@
   "phone": false,
   "admin": false,
   "chatEngines": ["claude", "codex"],
-  "creditPacks": false
+  "creditPacks": false,
+  "dictionarySync": false
 }
