@@ -2783,7 +2783,7 @@ All endpoints are under `https://api.tandem.dev/v1` (dev: `http://api.tandem.loc
   - `/blog/tags/<tag>/`: the posts with that tag, newest first.
   - `/blog/feed.xml`: an Atom feed of every published post.
 - Drafts are built by `next dev` only, never exported, listed or fed.
-- Static like the other marketing pages: server components, no client JavaScript after the runtime strip (F-WB-01 AC2), no cookies or storage, no third-party resources or embeds. The only script allowed is a post's JSON-LD (`<script type="application/ld+json">`, data, not code).
+- Static like the other marketing pages: server components, no client JavaScript after the runtime strip (F-WB-01 AC2), no cookies or storage, no third-party resources or embeds. A post page may carry two scripts and no others: its JSON-LD (`<script type="application/ld+json">`, data, not code) and the first-party `/blog/blog.js` (about 1 KB, deferred), which shows the code blocks' Copy buttons (D-1860). Without it the page reads the same and the buttons stay hidden.
 - Subscribing is the Atom feed or an email to the contact address. No newsletter form.
 - Dates appear on blog pages only inside `<time datetime>` elements and as JSON-LD date fields; the site's no-year rule holds for everything else.
 - Linked from the header, the footer, the sitemap and `/llms.txt`.
@@ -2794,7 +2794,7 @@ All endpoints are under `https://api.tandem.dev/v1` (dev: `http://api.tandem.loc
 3. Each post page has one `h1`, the author, a `<time datetime>` for its date, a reading time, its tags linking to their tag pages, and links to its neighbours; a post without a cover renders without an image.
 4. Each tag page lists exactly the posts with that tag.
 5. `/blog/feed.xml` is valid Atom with one entry per published post, and every blog page links it with `<link rel="alternate" type="application/atom+xml">`.
-6. After `build:site`, blog pages carry no script other than one JSON-LD block on a post page, and no year outside `<time datetime>` and JSON-LD dates.
+6. After `build:site`, the blog's index and tag pages carry no script, a post page carries only its JSON-LD block and `/blog/blog.js`, and no blog page has a year outside `<time datetime>` and JSON-LD dates.
 7. The sitemap, `/llms.txt`, the header and the footer link the blog, and every blog URL answers at its trailing-slash form with no redirect.
 8. Lighthouse CI on `/blog/` and one post meets the site's budgets (each category ≥ 0.95, CLS ≤ 0.02).
 

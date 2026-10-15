@@ -12,7 +12,7 @@ const withoutDates = (h: string) =>
     .replace(/<time datetime="\d{4}-\d{2}-\d{2}"[^>]*>[^<]*<\/time>/gi, "")
     .replace(/"date(Published|Modified)":"\d{4}-\d{2}-\d{2}"/g, "");
 
-test("F-WB-06 AC6 blog pages carry no script but a post's JSON-LD, and no year outside their dates", async ({ request }) => {
+test("F-WB-06 AC6 index and tag pages carry no script, a post only its JSON-LD and the Copy script (D-1860), and no year outside their dates", async ({ request }) => {
   for (const path of blogPages()) {
     const html = (await (await request.get(path)).text()).replace(/<!-- -->/g, "");
     const scripts = [...html.matchAll(/<script[^>]*>/g)].map((m) => m[0]);

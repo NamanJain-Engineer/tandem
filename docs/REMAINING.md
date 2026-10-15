@@ -20,7 +20,7 @@ last five (F-CN-01 to F-CN-04 and F-CN-08) pass every acceptance criterion
 against the dev mock, and the vendor's realtime client is built against its
 published events (D-1120, on `m16a-conductor`); checking it against a recorded
 session waits on the key (`HUMAN_TODO.md`). F-CN-06 and F-CN-07 (persona,
-memory and wake phrase) are done too (D-1119). vibezeo.com serves 0.7.2 (15 October). Next is M18 (below): the top picks of the 15 October research, `docs/NEXT_FEATURES.md`, built by four sessions, plus the website's elite pass and its new blog (F-WB-06). Routines and running
+memory and wake phrase) are done too (D-1119). vibezeo.com serves 0.7.2 (15 October). Next is M18 (below): the top picks of the 15 October research, `docs/NEXT_FEATURES.md`, built by four sessions. The website's elite pass (D-1819, D-1830 to D-1844) and its blog (F-WB-06) are live on vibezeo.com (`chain22`). Routines and running
 tasks are built and switch on with Pro; WSL workspaces wait for the Windows
 download.
 
@@ -187,9 +187,7 @@ this milestone the P0/P1 product is launchable.
 - [x] F-WB-02 Docs (Fumadocs at /docs, tables generated from code; D-134)
 - [x] F-WB-03 Changelog (in-app "What's new" too; D-133)
 - [x] F-WB-04 Downloads and machine-readable discovery (D-135)
-- [x] F-WB-06 Blog (P2; `/blog/`, posts as files in `apps/web/content/blog`, tag pages and an Atom feed; D-1850 to D-1864, `docs/BLOG.md`)
 - [x] F-TL-05 Local data controls (export and delete: the desktop's export and delete, D-812; the web's Delete account and the server's 30-day purge, D-813)
-- [ ] F-WB-06 Blog (P2, added 15 October; being built on `site-blog`, D-1850 on). The site's elite pass is on `site-elite` (D-1830 on, D-1819 for the docs' LCP).
 
 Tasks: marketing site; docs; changelog; downloads and discovery; data
 controls; invariants; performance (§5.1); reliability (§5.2); security (§5.3);
@@ -229,6 +227,10 @@ gaps against the category. Built on branch `competitive-gaps`.
 - [x] F-WT-03 Overlap check and merge forecast
 - [x] F-WT-04 GitLab merge requests
 E2E-M17-WT-1…3: setup, review, overlap.
+
+### M17 · Blog (S) · 1 feature (P2)
+The owner's request of 15 October, built on `site-blog` with the elite pass's design (D-853 gives it this milestone).
+- [x] F-WB-06 Blog (`/blog/`, posts as files in `apps/web/content/blog`, tag pages and an Atom feed; D-1850 to D-1864, `docs/BLOG.md`)
 
 ### M18 · Next features (in progress) · from `docs/NEXT_FEATURES.md`
 The 15 October research ranked 21 features and six bold bets beyond the 165 (evidence in `docs/COMPETITIVE_ANALYSIS.md`). Its top picks are being built, each with its PRODUCT_SPEC entry first, tests from the criteria, an E2E spec (`m18-*.e2e.ts`) and its docs page:
