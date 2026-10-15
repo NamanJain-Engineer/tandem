@@ -1,10 +1,25 @@
-import defaultMdxComponents from "fumadocs-ui/mdx";
-import { DocsBody, DocsDescription, DocsPage, DocsTitle } from "fumadocs-ui/page";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { ComponentProps } from "react";
 import { DocsFooter } from "../../../components/docs/DocsFooter";
+import { DocsShell } from "../../../components/docs/DocsShell";
 import { DOCS_COMPONENTS } from "../../../components/docs/Generated";
 import { source } from "../../../lib/docs/source";
+import { withSlashes } from "../../../lib/docs/tree";
+
+/** Links inside the docs open in the page (D-1817); others are plain. */
+function A({ href = "", children, className, id }: ComponentProps<"a">) {
+  return href.startsWith("/docs/") ? (
+    <Link href={href} className={className} id={id}>
+      {children}
+    </Link>
+  ) : (
+    <a href={href} className={className} id={id}>
+      {children}
+    </a>
+  );
+}
 
 type Props = { params: Promise<{ slug?: string[] }> };
 
@@ -29,13 +44,11 @@ export default async function DocPage({ params }: Props) {
   if (!page) notFound();
   const Body = page.data.body;
   return (
-    <DocsPage toc={page.data.toc}>
-      <DocsTitle>{page.data.title}</DocsTitle>
-      <DocsDescription>{page.data.description}</DocsDescription>
-      <DocsBody>
-        <Body components={{ ...defaultMdxComponents, ...DOCS_COMPONENTS }} />
-      </DocsBody>
+    <DocsShell tree={withSlashes(source.pageTree)} url={page.url.endsWith("/") ? page.url : `${page.url}/`} toc={page.data.toc}>
+      <h1 className="docs-title">{page.data.title}</h1>
+      {page.data.description && <p className="docs-lead">{page.data.description}</p>}
+      <Body components={{ a: A, ...DOCS_COMPONENTS }} />
       <DocsFooter />
-    </DocsPage>
+    </DocsShell>
   );
 }
