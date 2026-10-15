@@ -25,7 +25,8 @@ export function SiteFrame({ children, current }: { children: ReactNode; current?
   );
 }
 
-/** A plain prose page (Privacy, Terms, Security). */
+/** A prose page (Privacy, Terms, Security): a lit header, then a 44 rem
+ * measure with the site's prose styles (D-1837). */
 export function ProsePage({
   title,
   eyebrow,
@@ -39,14 +40,17 @@ export function ProsePage({
 }) {
   return (
     <SiteFrame>
-      <article className="container-site py-(--site-section-y)">
-        <div className="mx-auto flex max-w-prose flex-col gap-5 text-copy text-fg-muted [&_a]:text-accent [&_a]:underline-offset-4 hover:[&_a]:underline [&_h2]:mt-8 [&_h2]:text-display-md [&_h2]:text-fg [&_h3]:mt-4 [&_h3]:text-title [&_h3]:text-fg [&_li]:ml-5 [&_li]:list-disc [&_li]:pl-1 [&_strong]:text-fg [&_ul]:flex [&_ul]:flex-col [&_ul]:gap-2">
-          <header className="flex flex-col gap-4 border-b border-border pb-8">
-            {eyebrow && <p className="eyebrow">{eyebrow}</p>}
-            <h1 className="text-display-xl text-balance text-fg">{title}</h1>
-            {updated && <p className="text-caption text-fg-muted">Last updated {updated}</p>}
-          </header>
-          {children}
+      <article className="relative isolate">
+        <div aria-hidden="true" className="bg-lens absolute inset-x-0 top-0 -z-10 h-[28rem]" />
+        <div className="container-site pb-(--site-section-y) pt-20 lg:pt-28">
+          <div className="mx-auto flex max-w-prose flex-col gap-5 text-copy text-fg-muted [&_a]:text-accent [&_a]:underline-offset-4 hover:[&_a]:underline [&_h2]:mt-10 [&_h2]:border-t [&_h2]:border-line [&_h2]:pt-10 [&_h2]:text-display-md [&_h2]:text-fg [&_h3]:mt-4 [&_h3]:text-title [&_h3]:text-fg [&_li]:ml-5 [&_li]:list-disc [&_li]:pl-1 [&_li]:marker:text-fg-subtle [&_strong]:font-semibold [&_strong]:text-fg [&_table]:surface [&_table]:overflow-hidden [&_td]:px-3 [&_th]:px-3 [&_ul]:flex [&_ul]:flex-col [&_ul]:gap-2">
+            <header className="flex flex-col gap-5 pb-4">
+              {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+              <h1 className="text-sheen text-display-xl text-fg">{title}</h1>
+              {updated && <p className="font-mono text-[0.75rem] uppercase tracking-[0.12em] text-fg-subtle">Last updated {updated}</p>}
+            </header>
+            {children}
+          </div>
         </div>
       </article>
     </SiteFrame>

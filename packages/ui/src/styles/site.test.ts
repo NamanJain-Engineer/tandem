@@ -107,4 +107,46 @@ describe("F-WB-01 site.css (D-1801)", () => {
       for (const bg of SURFACES) expect(ratio(theme, "--tn-accent-ring", bg), bg).toBeGreaterThanOrEqual(3);
     });
   }
+
+  it("F-WB-01 the primary button's label passes AA on both stops of its gradient, in both themes (D-1830)", () => {
+    for (const [name, theme] of Object.entries(themes))
+      for (const stop of ["--site-btn-top", "--site-btn-bottom", "--site-btn-hover"])
+        expect(ratio(theme, "--tn-accent-fg", stop), `${name} ${stop}`).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("F-WB-01 every light, depth and edge token the dark theme sets has a light value (D-1830)", () => {
+    const themed = [...siteRoot.keys()].filter((k) => /^--site-(edge|fill|glow|ring|elev|bezel|line|btn|spot)/.test(k));
+    expect(themed.length).toBeGreaterThan(12);
+    expect(themed.filter((k) => !siteLightSemantic.has(k))).toEqual([]);
+  });
+
+  it("F-WB-01 eyebrows, card text and the accent pass AA on the bezel and card fills (D-1830)", () => {
+    for (const [name, theme] of Object.entries(themes))
+      for (const fg of ["--tn-text", "--tn-text-muted", "--tn-accent"])
+        expect(ratio(theme, fg, "--site-card"), `${name} ${fg}`).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("F-WB-01 motion runs only when the visitor hasn't asked for less (D-1831)", () => {
+    // Cut every `@media (prefers-reduced-motion: no-preference) { … }` block
+    // out, braces balanced: nothing that moves may remain.
+    let rest = site.replace(/\/\*[\s\S]*?\*\//g, "");
+    for (;;) {
+      const at = rest.indexOf("@media (prefers-reduced-motion: no-preference)");
+      if (at < 0) break;
+      let depth = 0;
+      let end = rest.length;
+      for (let i = rest.indexOf("{", at); i < rest.length; i++) {
+        if (rest[i] === "{") depth++;
+        else if (rest[i] === "}" && --depth === 0) {
+          end = i + 1;
+          break;
+        }
+      }
+      rest = rest.slice(0, at) + rest.slice(end);
+    }
+    expect(rest).not.toMatch(/animation(-name)?\s*:\s*(?!none)/);
+    expect(rest).not.toMatch(/animation-timeline/);
+    expect(rest).not.toMatch(/@view-transition/);
+  });
 });
+

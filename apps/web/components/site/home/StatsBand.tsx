@@ -13,27 +13,34 @@ export function StatsBand() {
     { value: PROGRESS.engines.toLocaleString("en-US"), label: "coding agents supported" },
   ];
   return (
-    <section aria-label="Progress" className="border-y border-border bg-raised">
-      <div className="container-site flex flex-col gap-6 py-12">
-        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-md bg-border lg:grid-cols-4">
-          {stats.map((s) => (
-            <div key={s.label} className="flex flex-col gap-2 bg-raised p-5 lg:p-6">
-              <dt className="order-2 text-caption text-fg-muted">{s.label}</dt>
-              <dd className="order-1 font-mono text-stat tabular-nums text-fg">{s.value}</dd>
+    <section aria-label="Progress" className="relative bg-page">
+      <div aria-hidden="true" className="horizon absolute inset-x-0 top-0" />
+      <div aria-hidden="true" className="horizon absolute inset-x-0 bottom-0" />
+      <div className="container-site flex flex-col gap-8 py-14 lg:py-16">
+        <dl className="grid grid-cols-2 gap-y-10 lg:grid-cols-4">
+          {stats.map((s, i) => (
+            <div
+              key={s.label}
+              className={`reveal flex flex-col gap-3 px-1 lg:px-8 ${i % 2 === 1 ? "border-l border-line pl-6" : ""} ${i > 0 ? "lg:border-l lg:border-line" : "lg:pl-0"}`}
+            >
+              <dt className="order-2 max-w-[14rem] text-caption text-fg-muted">{s.label}</dt>
+              <dd className="text-sheen order-1 font-mono text-stat font-medium tabular-nums text-fg">{s.value}</dd>
             </div>
           ))}
         </dl>
-        <p className="text-copy-sm text-fg">
-          <span className="font-semibold">Linux first.</span>{" "}
-          <span className="text-fg-muted">{linuxFacts().join(" · ")}.</span>
-        </p>
-        <p className="text-caption text-fg-muted">
-          Built so far.{" "}
-          <a href="/changelog/" className="inline-flex items-center gap-1 font-medium text-accent">
-            See the changelog
-            <Icon icon={ArrowRight} size={14} />
-          </a>
-        </p>
+        <div className="flex flex-col gap-2 border-t border-line pt-6 text-caption sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-fg">
+            <span className="font-semibold">Linux first.</span>{" "}
+            <span className="text-fg-muted">{linuxFacts().join(" · ")}.</span>
+          </p>
+          <p className="text-fg-muted">
+            Built so far.{" "}
+            <a href="/changelog/" className="link-arrow inline-flex items-center gap-1 font-medium text-accent no-underline">
+              See the changelog
+              <Icon icon={ArrowRight} size={14} />
+            </a>
+          </p>
+        </div>
       </div>
     </section>
   );

@@ -10,7 +10,8 @@ export function VideoSection() {
   return (
     <Section id="demo" tone="raised" eyebrow="See it run" title="Vibezeo in 1 minute">
       <figure className="reveal flex flex-col gap-4">
-        <div data-stage="" className="overflow-hidden rounded-lg bg-stage shadow-stage">
+        <div className="frame">
+        <div data-stage="" className="frame-screen">
           <video
             data-poster={VIDEO.poster}
             width={1600}
@@ -25,6 +26,7 @@ export function VideoSection() {
               <source key={s.src} src={s.src} type={s.type} />
             ))}
           </video>
+        </div>
         </div>
         <figcaption className="max-w-[52rem] text-caption text-pretty text-fg-muted">
           Every shot of the app is a screen recording of the first Linux release, {VIDEO.recordedWith}; the
