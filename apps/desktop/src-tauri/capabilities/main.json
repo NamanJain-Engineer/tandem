@@ -273,6 +273,7 @@
     "allow-contexts-list",
     "allow-usage-get",
     "allow-usage-refresh",
+    "allow-usage-sessions",
     "allow-thread-create",
     "allow-thread-list",
     "allow-thread-get",

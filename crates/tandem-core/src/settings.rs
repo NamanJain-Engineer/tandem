@@ -67,6 +67,7 @@ setting_keys! {
     NotifyAttention,
     NotifyTypes,
     NotifyOnlyUnseen,
+    UsageForecastNotify,
     DefaultShell,
     WslDefaultDistro,
     TermFontFamily,
@@ -329,6 +330,13 @@ pub static SCHEMA: &[SettingSpec] = &[
         V::Bool,
         Notifications,
         ["background", "unfocused", "visible"]
+    ),
+    spec!(
+        UsageForecastNotify,
+        json!(false),
+        V::Bool,
+        Notifications,
+        ["usage", "limit", "forecast", "runs out"]
     ),
     spec!(
         DefaultShell,
