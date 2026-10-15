@@ -1375,6 +1375,39 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 2. A malformed line is skipped, and the count shows in "N lines skipped".
 3. Non-ASCII dates and locales don't crash parsing.
 
+#### F-AC-08 Usage forecast (P2)
+**Story:** The chip tells me how full a window is. I want to know whether I'll run out before it resets, and which of my agents is spending it, so I can pace the work or move a task to another account myself.
+
+**Behavior:**
+- **Samples:** each usage reading with windows (F-AC-04) is kept in memory per account and window, for the last 2 hours and at most 120 readings. A reading whose reset time moved later, or whose percentage fell by 5 points or more, starts a new window: the earlier samples are dropped.
+- **Forecast** per window, from the readings of the last 60 minutes:
+  - **Not enough data yet:** fewer than two readings, or under 10 minutes between the first and the last.
+  - **On track:** the percentage didn't rise, or the projection reaches 100% at or after the window's reset.
+  - **Runs out at {time}:** the projection reaches 100% before the reset, or the window has no reset time. The projection uses the burn rate from the first to the last reading, in points an hour, carried on from the last reading. The line adds how long before the reset ("1 h 30 min before it resets").
+  - Each forecast names its basis: "Based on the last {n} min".
+- **Where it shows:**
+  - Each window row in the usage popover (UI-35) has a forecast line. A window that runs out before its reset shows the line in `warning`.
+  - The chip's tooltip adds the forecast of the window it shows.
+- **Who's using it:** per account, the popover lists the sessions that spent the account's tokens in the last hour, with each one's share ("fix-auth · 61%").
+  - The data comes from the engines' local logs (F-AC-07's parser and `usage_log_globs`, inside the provider home). Only token counts, times and session ids are read, never content.
+  - A session is named after the pane running it (its engine session id, F-SH-07), or else "Outside Vibezeo".
+  - An account whose engine has no log globs says "{engine} keeps no session logs Vibezeo can read."
+- **Notification:** Settings › Notifications › "Warn me before usage runs out", off by default.
+  - When on, a window whose forecast first changes to running out before its reset raises one notification: "{engine} ({account}) runs out at {time}" / "At this pace the {window} runs out {duration} before it resets."
+  - It isn't raised again for the same account and window until the window resets.
+- **Launch hint:** in the launch sheet (F-CD-14), an agent seat whose account (the workspace's override, else the engine's default, F-AC-03) has a window at 80% or more, or one forecast to run out before its reset, shows "{account} is at {pct}%". When another account of that engine is below 50% in every window, the hint adds "{other} has more room". The hint is text only: the seat still launches on the account it had. Nothing ever switches accounts (F-AC-05).
+- **Nothing new leaves the machine:** a forecast is arithmetic over readings the app already takes, and the session shares come from files on this computer.
+
+**Data:** in memory only (samples, and the notified windows per account, window kind and reset time).
+
+**Acceptance:**
+1. Readings of 40% and then 60% 30 minutes later, with the reset 2 hours after the first, forecast "Runs out" one hour after the second reading, 30 minutes before the reset.
+2. One reading, or readings under 10 minutes apart, give "Not enough data yet". Readings that don't rise give "On track", and so does a projection that reaches 100% at or after the reset.
+3. A reading whose reset time moved later drops the earlier samples, and its forecast is "Not enough data yet".
+4. Two sessions on one account that logged 3,000 and 1,000 tokens in the last hour show 75% and 25%. A session matching a pane's engine session id is named after the pane, and log lines older than an hour don't count.
+5. The notification is off by default. When it's on, a window that becomes forecast to run out before its reset raises one notification, and the next reading for the same window raises none.
+6. A seat whose account is at 85%, with another account of the same engine at 20%, shows both hints, and the launch uses the seat's own account.
+
 ### 4.6 DB: Dashboard and notifications
 
 #### F-DB-01 Dashboard (P0)
