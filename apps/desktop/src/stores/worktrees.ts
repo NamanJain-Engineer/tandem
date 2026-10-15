@@ -252,7 +252,14 @@ export async function prepareWorktree(laneId: string): Promise<void> {
     notify({
       tone: "success",
       title: t("worktree.setup.copied", { n: copy.copied.length }),
-      body: copy.partial ? t("worktree.setup.partial") : undefined,
+      body:
+        [
+          // F-WT-09: files the filesystem cloned rather than copied.
+          copy.cloned > 0 ? t("worktree.setup.cloned", { n: copy.cloned }) : null,
+          copy.partial ? t("worktree.setup.partial") : null,
+        ]
+          .filter((x): x is string => x !== null)
+          .join(" ") || undefined,
     });
   if (state.error) {
     notify({ tone: "error", title: t("worktree.setup.invalid", { reason: state.error }) });

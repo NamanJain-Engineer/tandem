@@ -393,6 +393,7 @@
   "worktree.setup.notNow": "Not now",
   "worktree.setup.copied": "Copied {n, plural, one {# file} other {# files}} into the worktree",
   "worktree.setup.partial": "Stopped at the copy limit (2,000 files or 512 MB).",
+  "worktree.setup.cloned": "{n, plural, one {# file was cloned, sharing its data with your checkout until either changes.} other {# files were cloned, sharing their data with your checkout until either changes.}}",
   "worktree.setup.copyFailed": "Couldn't copy files into the worktree: {reason}",
   "worktree.setup.runFailed": "Couldn't start the setup: {reason}",
   "worktree.setup.teardownRan": "Teardown finished",
