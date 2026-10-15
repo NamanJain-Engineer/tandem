@@ -9,4 +9,9 @@ copied: Array<string>, skipped: Array<SkippedFile>, bytes: number,
 /**
  * A limit stopped the copy.
  */
-partial: boolean, };
+partial: boolean, 
+/**
+ * F-WT-09: how many of the copied files share their data with the
+ * main checkout's (copy-on-write clones).
+ */
+cloned: number, };

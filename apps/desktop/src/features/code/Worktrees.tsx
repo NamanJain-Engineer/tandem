@@ -36,12 +36,24 @@ import {
   worktreeDiff,
 } from "../../stores/worktrees";
 import { switchMode } from "../shell/actions";
+import { ComparePreviewsDialog } from "./ComparePreviews";
 import { MergeForecast, OverlapDialog } from "./WorktreeOverlap";
 import { ReviewDiff } from "./WorktreeReview";
 import { InstructionsDialog } from "./Instructions";
 import { ReviewSetupDialog, WorktreeSetupDialog, useWorktreeNotices } from "./WorktreeSetup";
 
 type Show = ReturnType<typeof useToast>["show"];
+
+/** The local worktrees of `wt`'s repository, `wt` first (F-WT-09 side by side). */
+function previewSiblings(wt: WorkspaceSummary): string[] {
+  const others = useWorkspaces
+    .getState()
+    .list.filter(
+      (w) => w.id !== wt.id && w.parentId === wt.parentId && w.laneBranch && w.kind === "local" && !w.missing,
+    )
+    .map((w) => w.id);
+  return [wt.id, ...others];
+}
 
 /** The worktree menu (rail row ⋯ and the pane ⋯ menu, UI_SPEC §4.3). */
 export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): MenuEntry[] {
@@ -89,6 +101,13 @@ export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): Me
         void startPreview(wt.id).then((out) => {
           if (out.ok) switchMode("code");
         }),
+    },
+    {
+      // F-WT-09: this worktree's preview beside another one's.
+      id: "wt-compare-previews",
+      label: t("worktree.compare.menu"),
+      disabled: wt.missing || wt.kind !== "local" || previewSiblings(wt).length < 2,
+      onSelect: () => open({ kind: "comparePreviews", candidates: previewSiblings(wt), chosen: [wt.id] }),
     },
     {
       // F-WT-03: sibling worktrees on the same files, and the merge forecast.
@@ -478,6 +497,15 @@ export function WorktreeDialogs() {
     const ws = list.find((w) => w.id === ask.workspaceId);
     return ws ? <WorktreeSetupDialog ws={ws} onClose={close} /> : null;
   }
+  if (ask.kind === "comparePreviews")
+    return (
+      <ComparePreviewsDialog
+        candidates={ask.candidates}
+        chosen={ask.chosen}
+        onDone={ask.onDone}
+        onClose={close}
+      />
+    );
   if (ask.kind === "instructions") {
     const ws = list.find((w) => w.id === ask.workspaceId);
     return ws ? <InstructionsDialog ws={ws} onClose={close} /> : null;

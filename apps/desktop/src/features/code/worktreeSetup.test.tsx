@@ -179,7 +179,7 @@ describe("worktree setup (F-WT-01)", () => {
     backend({
       lane_setup: (): LaneSetup => ({
         state: state({ config: { copy: [".env*"], setup: null, teardown: null }, digest: null }),
-        copy: { copied: [".env", ".env.local", "config/local.yml"], skipped: [], bytes: 30, partial: false },
+        copy: { copied: [".env", ".env.local", "config/local.yml"], skipped: [], bytes: 30, partial: false, cloned: 0 },
         copyError: null,
         runtime: null,
       }),
@@ -496,5 +496,22 @@ describe("previews (F-WT-09)", () => {
     await prepareWorktree("wt_1");
     expect(named("lane_preview_start")).toHaveLength(1);
     expect(named("lane_setup_run")).toHaveLength(0);
+  });
+});
+
+describe("copy-on-write copies (F-WT-09)", () => {
+  it("F-WT-09.6 the copy toast says how many files were cloned", async () => {
+    backend({
+      lane_setup: (): LaneSetup => ({
+        state: state({ config: { copy: ["node_modules/"], setup: null, teardown: null }, digest: null }),
+        copy: { copied: ["node_modules/a.js", "node_modules/b.js"], skipped: [], bytes: 20, partial: false, cloned: 2 },
+        copyError: null,
+        runtime: null,
+      }),
+    });
+    dialogs();
+    await prepareWorktree("wt_1");
+    expect(await screen.findByText("Copied 2 files into the worktree")).toBeTruthy();
+    expect(screen.getByText("2 files were cloned, sharing their data with your checkout until either changes.")).toBeTruthy();
   });
 });
