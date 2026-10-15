@@ -236,10 +236,15 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    (milestone entries and counts taken from the gate output and the spec files) and
    the home page's feature and roadmap lists (`apps/web/lib/home.ts`; the "New in"
    tiles come from the CHANGELOG, and a new Added title needs an entry in
-   `RELEASE_TILE_MAP`). The site tests check the file exists. After re-capturing the
-   demo still or a screenshot, run `python3 apps/web/scripts/optimize-screens.py` for
-   its AVIF and WebP, and if the video is re-recorded, set `VIDEO.recordedWith` in
-   `apps/web/lib/media.ts`.
+   `RELEASE_TILE_MAP`). The site tests check the file exists. Captures are taken
+   at 2× and kept as masters in `apps/web/media/<name>@2x.png` (D-1838): the demo
+   still from `/demo/app/?embed=1` in Chromium at 1280×800 with device scale 2, and
+   the app's screens from the real build under the E2E harness with `GDK_SCALE=2`
+   (hide the debug build's DEV badge; no agents, or the fake engine labelled). Then
+   run `python3 apps/web/scripts/optimize-screens.py`, which writes the 1× original
+   and AVIF and WebP at 1× and 2×, and set each screen's `build` in `SCREENS`
+   (`apps/web/lib/media.ts`). If the video is re-recorded, set
+   `VIDEO.recordedWith` there too.
    Then the demo (D-128): every surface the demo at `/demo/app/` shows must be in
    the download being released (Thread mode with the scripted fix, Plan mode,
    the engine-switch divider, Code mode with agent panes and a shell, the
