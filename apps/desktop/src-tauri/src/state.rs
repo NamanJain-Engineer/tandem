@@ -212,6 +212,7 @@ impl AppState {
             )
         })?;
         let data = DataDir::at(root)?;
+        crate::services::worktree_runtime::init(&data);
         let first_run = !data.db_path().exists();
         let level = std::env::var("TANDEM_LOG").unwrap_or_else(|_| "info".to_string());
         // A second init (tests) keeps the first subscriber.

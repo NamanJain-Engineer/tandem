@@ -1,11 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { IpcError, LaneSetup, OverlapReport, SetupState, Tab, WorkspaceSummary } from "@tandem/protocol";
+import type { IpcError, LaneSetup, OverlapReport, PreviewState, SetupState, Tab, WorkspaceSummary } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
 import { useWorkspaces } from "../../stores/workspaces";
-import { patternLines, prepareWorktree, teardownText, useWorktrees } from "../../stores/worktrees";
+import { patternLines, pollPreviews, prepareWorktree, startPreview, teardownText, useWorktrees } from "../../stores/worktrees";
+import { useSidebar } from "../../stores/sidebar";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { WorktreeDialogs, WorktreeRow, worktreeMenu } from "./Worktrees";
 
@@ -97,7 +98,7 @@ describe("worktree setup (F-WT-01)", () => {
     await waitFor(() => expect(useWorktrees.getState().ask).toBeNull());
     expect(named("worktree_setup_save")[0]?.args).toEqual({
       workspaceId: "shop",
-      config: { copy: [".env*", "config/local.yml"], setup: "pnpm install", teardown: null },
+      config: { copy: [".env*", "config/local.yml"], setup: "pnpm install", teardown: null, ports: null, env: {} },
     });
     expect(screen.getByText("Saved the worktree setup")).toBeTruthy();
   });
@@ -136,7 +137,7 @@ describe("worktree setup (F-WT-01)", () => {
 
   it("F-WT-01.3 an untrusted setup asks first; Trust and run trusts the reviewed digest, then runs it", async () => {
     backend({
-      lane_setup: (): LaneSetup => ({ state: state(), copy: null, copyError: null }),
+      lane_setup: (): LaneSetup => ({ state: state(), copy: null, copyError: null, runtime: null }),
       worktree_setup_trust: () => state({ trusted: true }),
     });
     dialogs();
@@ -154,7 +155,7 @@ describe("worktree setup (F-WT-01)", () => {
   it("F-WT-01.3 Not now runs nothing, and several new worktrees share one review", async () => {
     const WT2 = ws("wt_2", { ...WT, id: "wt_2", laneBranch: "tandem/fix-auth-2" });
     useWorkspaces.setState({ list: [REPO, WT, WT2] });
-    backend({ lane_setup: (): LaneSetup => ({ state: state(), copy: null, copyError: null }) });
+    backend({ lane_setup: (): LaneSetup => ({ state: state(), copy: null, copyError: null, runtime: null }) });
     dialogs();
     await prepareWorktree("wt_1");
     await prepareWorktree("wt_2");
@@ -168,7 +169,7 @@ describe("worktree setup (F-WT-01)", () => {
   });
 
   it("F-WT-01.4 a trusted setup runs without asking", async () => {
-    backend({ lane_setup: (): LaneSetup => ({ state: state({ trusted: true }), copy: null, copyError: null }) });
+    backend({ lane_setup: (): LaneSetup => ({ state: state({ trusted: true }), copy: null, copyError: null, runtime: null }) });
     await prepareWorktree("wt_1");
     expect(useWorktrees.getState().ask).toBeNull();
     expect(named("lane_setup_run")).toHaveLength(1);
@@ -180,6 +181,7 @@ describe("worktree setup (F-WT-01)", () => {
         state: state({ config: { copy: [".env*"], setup: null, teardown: null }, digest: null }),
         copy: { copied: [".env", ".env.local", "config/local.yml"], skipped: [], bytes: 30, partial: false },
         copyError: null,
+        runtime: null,
       }),
     });
     dialogs();
@@ -195,6 +197,7 @@ describe("worktree setup (F-WT-01)", () => {
         state: state({ config: null, digest: null, error: "bad json" }),
         copy: null,
         copyError: null,
+        runtime: null,
       }),
     });
     dialogs();
@@ -327,5 +330,171 @@ describe("worktrees on SSH hosts (D-2209)", () => {
     await screen.findByText("Merge");
     expect(screen.queryByTestId("merge-forecast")).toBeNull();
     expect(named("lane_overlap")).toHaveLength(0);
+  });
+});
+
+describe("worktree runtime (F-WT-06)", () => {
+  it("F-WT-06.1 the dialog saves ports and environment with the rest", async () => {
+    backend({
+      worktree_setup_get: () => state({ config: { copy: [], setup: null, teardown: null, ports: 10, env: { A: "1" } } }),
+      worktree_env_check: () => [],
+    });
+    useWorktrees.getState().open({ kind: "setup", workspaceId: "shop" });
+    dialogs();
+    const portsInput = (await screen.findByTestId("worktree-setup-ports")) as HTMLInputElement;
+    expect(portsInput.value).toBe("10");
+    expect((screen.getByTestId("worktree-setup-env") as HTMLTextAreaElement).value).toBe("A=1");
+    fireEvent.change(screen.getByTestId("worktree-setup-env"), {
+      target: { value: "DATABASE_URL=postgres://localhost/app_{{slug}}\n\nPORT = {{port}}" },
+    });
+    fireEvent.click(screen.getByTestId("worktree-setup-save"));
+    await waitFor(() => expect(named("worktree_setup_save")).toHaveLength(1));
+    expect(named("worktree_setup_save")[0]?.args).toEqual({
+      workspaceId: "shop",
+      config: {
+        copy: [],
+        setup: null,
+        teardown: null,
+        ports: 10,
+        env: { DATABASE_URL: "postgres://localhost/app_{{slug}}", PORT: "{{port}}" },
+      },
+    });
+  });
+
+  it("F-WT-06.6 a secret-looking value is flagged as it's typed; a bad line or port count blocks Save", async () => {
+    backend({
+      worktree_setup_get: () => state({ exists: false, config: null, digest: null }),
+      worktree_env_check: (a) =>
+        Object.keys((a?.env as Record<string, string>) ?? {}).filter((k) => k.endsWith("_KEY")),
+    });
+    useWorktrees.getState().open({ kind: "setup", workspaceId: "shop" });
+    dialogs();
+    await screen.findByTestId("worktree-setup-env");
+    fireEvent.change(screen.getByTestId("worktree-setup-env"), { target: { value: "STRIPE_KEY=sk_live_x\nDB=app" } });
+    expect((await screen.findByTestId("worktree-setup-secret", {}, { timeout: 2000 })).textContent).toBe(
+      "This looks like a secret. Don't commit it in worktree.json: STRIPE_KEY",
+    );
+    fireEvent.change(screen.getByTestId("worktree-setup-env"), { target: { value: "no equals sign" } });
+    expect(await screen.findByText("Line 1 needs the form NAME=value.")).toBeTruthy();
+    expect((screen.getByTestId("worktree-setup-save") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByTestId("worktree-setup-env"), { target: { value: "" } });
+    fireEvent.change(screen.getByTestId("worktree-setup-ports"), { target: { value: "500" } });
+    expect(screen.getByText("Use a number from 1 to 100, or leave it empty.")).toBeTruthy();
+    expect((screen.getByTestId("worktree-setup-save") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("F-WT-06.3 a block moved past busy ports says so after the worktree is made", async () => {
+    backend({
+      lane_setup: (): LaneSetup => ({
+        state: state({ config: { copy: [], setup: null, teardown: null, ports: 10 }, digest: null }),
+        copy: null,
+        copyError: null,
+        runtime: { index: 1, ports: { start: 41020, end: 41029 }, movedFrom: { start: 41010, end: 41019 } },
+      }),
+    });
+    dialogs();
+    await prepareWorktree("wt_1");
+    expect(await screen.findByText("Ports 41010–41019 were busy; tandem/fix-auth uses 41020–41029.")).toBeTruthy();
+  });
+
+  it("F-WT-06.2 an untrusted env-only file asks for review, and trusting it runs nothing", async () => {
+    const envOnly = state({ config: { copy: [], setup: null, teardown: null, env: { DB: "app_{{slug}}" } } });
+    backend({
+      lane_setup: (): LaneSetup => ({ state: envOnly, copy: null, copyError: null, runtime: null }),
+      worktree_setup_trust: () => ({ ...envOnly, trusted: true }),
+    });
+    dialogs();
+    await prepareWorktree("wt_1");
+    const review = await screen.findByTestId("worktree-review");
+    expect(review.textContent).toContain("DB=app_{{slug}}");
+    fireEvent.click(screen.getByTestId("worktree-review-trust"));
+    await waitFor(() => expect(useWorktrees.getState().ask).toBeNull());
+    expect(named("worktree_setup_trust")).toHaveLength(1);
+    expect(named("lane_setup_run")).toHaveLength(0);
+  });
+
+  it("F-WT-06.1 the worktree's row tooltip names its port block", async () => {
+    backend({ lane_runtime: () => ({ start: 41010, end: 41019 }), lane_forge: () => "github" });
+    useWorktrees.setState({ runtimes: {}, forges: {} });
+    render(
+      <UiProvider>
+        <WorktreeRow wt={WT} base="main" />
+      </UiProvider>,
+    );
+    await waitFor(() => expect(useWorktrees.getState().runtimes.wt_1).toEqual({ start: 41010, end: 41019 }));
+    expect(named("lane_runtime")[0]?.args).toEqual({ laneId: "wt_1" });
+  });
+});
+
+describe("previews (F-WT-09)", () => {
+  it("F-WT-09.1 a worktree whose preview answers shows Preview, which opens it in a browser tab", async () => {
+    backend({
+      lane_previews: (): PreviewState[] => [
+        { laneId: "wt_1", status: "ready", url: "http://fix-auth.localhost:41000/", port: 41000, trusted: true },
+      ],
+    });
+    useWorktrees.setState({ previews: {} });
+    await pollPreviews(["wt_1"]);
+    render(
+      <UiProvider>
+        <WorktreeRow wt={WT} base="main" />
+      </UiProvider>,
+    );
+    fireEvent.click(await screen.findByTestId("worktree-preview"));
+    expect(useSidebar.getState().tabs.find((x) => x.kind === "browser")?.url).toBe("http://fix-auth.localhost:41000/");
+    // It goes when the port stops answering.
+    useWorktrees.setState({ previews: { wt_1: { laneId: "wt_1", status: "down", url: "u", port: 41000, trusted: true } } });
+    await waitFor(() => expect(screen.queryByTestId("worktree-preview")).toBeNull());
+  });
+
+  it("F-WT-09.1 Start preview opens a Preview pane in the worktree", async () => {
+    backend({ lane_preview_start: () => ({ ...pane, id: "pn_prev" }) });
+    const out = await startPreview("wt_1");
+    expect(out.ok).toBe(true);
+    expect(named("lane_preview_start")[0]?.args).toEqual({ laneId: "wt_1", tabId: "tb_wt_1" });
+    expect(useLayout.getState().tabs.tb_wt_1?.panes.pn_prev).toBeTruthy();
+  });
+
+  it("F-WT-09.2 an untrusted preview opens the review, and trusting it starts the preview, not the setup", async () => {
+    const withPreview = state({
+      config: { copy: [], setup: "pnpm install", teardown: null, ports: 2, preview: { command: "serve {{port}}", port: 0, path: "/" } },
+    });
+    let trusted = false;
+    backend({
+      lane_preview_start: () => {
+        if (!trusted) {
+          const err: IpcError = { code: "permission_denied", message: "Review this repository's worktree setup first", stage: "setup", hint: null, retryable: false };
+          throw err;
+        }
+        return { ...pane, id: "pn_prev" };
+      },
+      worktree_setup_get: () => withPreview,
+      worktree_setup_trust: () => {
+        trusted = true;
+        return { ...withPreview, trusted: true };
+      },
+    });
+    dialogs();
+    await startPreview("wt_1");
+    const review = await screen.findByTestId("worktree-review");
+    expect(review.textContent).toContain("serve {{port}}");
+    fireEvent.click(screen.getByTestId("worktree-review-trust"));
+    await waitFor(() => expect(named("lane_preview_start")).toHaveLength(2));
+    expect(named("lane_setup_run")).toHaveLength(0);
+  });
+
+  it("F-WT-09.1 a new worktree with a trusted preview and no setup starts the preview", async () => {
+    backend({
+      lane_setup: (): LaneSetup => ({
+        state: state({ trusted: true, config: { copy: [], setup: null, teardown: null, ports: 2, preview: { command: "serve", port: 0, path: "/" } } }),
+        copy: null,
+        copyError: null,
+        runtime: null,
+      }),
+      lane_preview_start: () => ({ ...pane, id: "pn_prev" }),
+    });
+    await prepareWorktree("wt_1");
+    expect(named("lane_preview_start")).toHaveLength(1);
+    expect(named("lane_setup_run")).toHaveLength(0);
   });
 });

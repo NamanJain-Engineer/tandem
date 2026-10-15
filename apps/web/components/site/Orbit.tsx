@@ -4,7 +4,18 @@ import { cx } from "../../lib/cx";
  * hairlines, with light where the rings overlap and along their upper arcs.
  * Decorative, and drawn by the browser, so it costs no request. `id` keeps
  * the gradient ids unique when a page draws it twice. */
-export function Orbit({ id, className, turn = false }: { id: string; className?: string; turn?: boolean }) {
+export function Orbit({
+  id,
+  className,
+  turn = false,
+  draw = false,
+}: {
+  id: string;
+  className?: string;
+  turn?: boolean;
+  /** The two rings draw themselves in as the page opens (D-1842). */
+  draw?: boolean;
+}) {
   const r = 340;
   const cy = 380;
   const left = 600 - r / 2;
@@ -38,9 +49,10 @@ export function Orbit({ id, className, turn = false }: { id: string; className?:
       </g>
       {/* the light in the lens where the rings overlap */}
       <ellipse cx="600" cy={cy - 40} rx={r * 0.55} ry={r * 0.9} fill={`url(#${fade})`} />
-      <g className={turn ? "ring-turn" : undefined} stroke={`url(#${lit})`} strokeWidth="1.25">
-        <circle cx={left} cy={cy} r={r} vectorEffect="non-scaling-stroke" />
-        <circle cx={right} cy={cy} r={r} vectorEffect="non-scaling-stroke" />
+      <g className={turn ? "ring-turn" : undefined} stroke={`url(#${lit})`} strokeWidth="1.1">
+        {/* pathLength: the draw-in's dash is a share of the ring, at any size */}
+        <circle cx={left} cy={cy} r={r} pathLength={100} className={draw ? "ring-draw" : undefined} />
+        <circle cx={right} cy={cy} r={r} pathLength={100} className={draw ? "ring-draw ring-draw-2" : undefined} />
       </g>
     </svg>
   );

@@ -46,6 +46,7 @@ const view = (
   estimated: false,
   reason,
   fetchedAt: 0,
+  forecasts: [],
 });
 
 const pane = (id: string, accountId: string | null, kind = "agent"): PaneRecord =>

@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AlertTriangle, Cloud, Folder, GitBranch, Globe, Plus, Smartphone, SquareTerminal } from "lucide-react";
+import {
+  AlertTriangle,
+  Cloud,
+  Folder,
+  GitBranch,
+  Globe,
+  Plus,
+  Smartphone,
+  SquareTerminal,
+} from "lucide-react";
 import type { SavedSession, WorkspaceSummary } from "@tandem/protocol";
 import {
   Badge,
@@ -25,7 +34,7 @@ import { useWorkspaces } from "../../stores/workspaces";
 import { useRemote } from "../../stores/remote";
 import { RailList } from "../rail/RailList";
 import { topLevel, useWorktrees, worktreesOf } from "../../stores/worktrees";
-import { WorktreeRow } from "./Worktrees";
+import { WorktreeRow, usePreviewPolling } from "./Worktrees";
 import { browserSources, paneTitles } from "./titles";
 import { useBrowser } from "../../stores/browser";
 import { pickAndAddWorkspace, switchMode } from "../shell/actions";
@@ -291,6 +300,13 @@ export function CodeRail() {
   const [width, setWidth] = useState<number | null>(null);
   const { show } = useToast();
   const shown = Math.min(RAIL_MAX, Math.max(RAIL_MIN, width ?? saved));
+  // F-WT-09: whether each local worktree's preview answers, while the rail shows.
+  usePreviewPolling(
+    list
+      .filter((w) => w.parentId !== null && w.laneBranch !== null && w.kind === "local" && !w.missing)
+      .map((w) => w.id),
+    !collapsed,
+  );
 
   const onWidth = (w: number, done: boolean) => {
     if (done && w < COLLAPSE_BELOW) {

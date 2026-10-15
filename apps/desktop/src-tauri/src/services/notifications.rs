@@ -32,9 +32,10 @@ use crate::state::AppState;
 fn default_channels(kind: NotificationKind) -> (bool, bool) {
     match kind {
         NotificationKind::Approval | NotificationKind::Question => (true, true),
-        NotificationKind::Done | NotificationKind::Failed | NotificationKind::RoutineReady => {
-            (true, false)
-        }
+        NotificationKind::Done
+        | NotificationKind::Failed
+        | NotificationKind::RoutineReady
+        | NotificationKind::UsageForecast => (true, false),
         _ => (false, false),
     }
 }
@@ -47,6 +48,7 @@ fn type_key(kind: NotificationKind) -> &'static str {
         NotificationKind::Failed => "failed",
         NotificationKind::RoutineReady | NotificationKind::RoutineChanged => "routines",
         NotificationKind::TaskReview => "tasks",
+        NotificationKind::UsageForecast => "usage",
         _ => "other",
     }
 }
@@ -315,6 +317,24 @@ impl NotificationService {
             .session_key()
             .unwrap_or_else(|| SessionKey(format!("routine:{title}")));
         self.raise(kind, title, body, source, &key, None).await;
+    }
+
+    /// "{engine} ({account}) runs out at {time}" (F-AC-08), through the usual
+    /// channels.
+    pub async fn raise_usage(&self, title: String, body: String, account_id: &str) {
+        let source = SourceRef::Usage {
+            account_id: account_id.to_string(),
+        };
+        let key = SessionKey(format!("usage:{account_id}"));
+        self.raise(
+            NotificationKind::UsageForecast,
+            title,
+            body,
+            source,
+            &key,
+            None,
+        )
+        .await;
     }
 
     /// Sets the OS notifier when there's no window (headless routines).

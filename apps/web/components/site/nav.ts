@@ -8,6 +8,7 @@ export const NAV = [
   { href: "/pricing/", label: "Pricing" },
   { href: "/docs/", label: "Docs" },
   { href: "/changelog/", label: "Changelog" },
+  { href: "/blog/", label: "Blog" },
   { href: "/about/", label: "About" },
 ] as const;
 
@@ -22,6 +23,7 @@ export const FOOTER: ReadonlyArray<{ title: string; links: readonly FooterLink[]
       { href: "/demo/", label: "Live demo" },
       { href: "/pricing/", label: "Pricing" },
       { href: "/changelog/", label: "Changelog" },
+      { href: "/blog/", label: "Blog" },
       { href: "/#claude", label: "Built with Claude" },
     ],
   },
