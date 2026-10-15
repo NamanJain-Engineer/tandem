@@ -99,21 +99,21 @@ export default function PrivacyPage() {
         them belong to features that aren&apos;t in the app yet; this is what they will send. The app shows
         the same list, with what&apos;s on, in Settings › Privacy.
       </p>
-      <table className="w-full text-left text-caption [overflow-wrap:anywhere] sm:text-sm">
+      <table className="stack-table w-full text-left text-copy-sm">
         <thead>
           <tr>
-            <th className="py-1.5 pr-4">Feature</th>
-            <th className="py-1.5 pr-4">What it sends</th>
-            <th className="py-1.5 pr-4">To</th>
-            <th className="py-1.5">When</th>
+            <th className="py-2.5 pr-4">Feature</th>
+            <th className="py-2.5 pr-4">What it sends</th>
+            <th className="py-2.5 pr-4">To</th>
+            <th className="py-2.5">When</th>
           </tr>
         </thead>
         <tbody>
           {(hosted.features as HostedFeature[]).map((f) => (
-            <tr key={f.id} data-hosted-feature={f.id} className="border-t border-divider align-top">
-              <td className="py-1.5 pr-4 font-medium">{f.label}</td>
-              <td className="py-1.5 pr-4">{f.sends}</td>
-              <td className="py-1.5 pr-4">
+            <tr key={f.id} data-hosted-feature={f.id} className="border-t border-line align-top">
+              <td data-label="Feature" className="py-2.5 pr-4 font-medium text-fg">{f.label}</td>
+              <td data-label="What it sends" className="py-2.5 pr-4">{f.sends}</td>
+              <td data-label="To" className="py-2.5 pr-4">
                 {f.destination.split(" → ").flatMap((part, i) =>
                   i === 0
                     ? [part]
@@ -126,7 +126,7 @@ export default function PrivacyPage() {
                       ],
                 )}
               </td>
-              <td className="py-1.5">{when(f)}</td>
+              <td data-label="When" className="py-2.5">{when(f)}</td>
             </tr>
           ))}
         </tbody>
