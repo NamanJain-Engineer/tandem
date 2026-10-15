@@ -30,6 +30,31 @@ A new worktree has only the files git tracks: no `.env`, no local config, no ins
 - **Teardown command.** Runs in the worktree when you choose **Discard worktree…**, before its folder is deleted, such as `docker compose down`; the worktrees Best of N removes don't run it. It gets 2 minutes. If it fails or times out the worktree is still discarded, and the message says what happened.
 - **Trust.** Commands from the file run only once you've trusted them on this computer. Saving in **Worktree setup…** trusts them. If the file arrives or changes some other way, for example in a pull, the next new worktree shows **Review worktree setup** with the commands as written, and nothing runs until you choose **Trust and run**. **Not now** still gives you the worktree, with the copied files.
 
+### Ports and environment per worktree
+
+Five worktrees running the same app would all want port 3000 and the same database. Two more fields in **Worktree setup…** give each worktree its own, saved in the same `.vibezeo/worktree.json`:
+
+- **Ports per worktree.** Each worktree gets a block of that many ports (1 to 100) from 41000–48999, which no other worktree on this computer has, and keeps it until you discard the worktree, across restarts too. Its terminals and agents see the first one as `VIBEZEO_PORT` and the block as `VIBEZEO_PORTS`, such as `41010-41019`. If a port in the next free block is already in use when the worktree is made, it gets the following block and Vibezeo says so.
+- **Environment.** One `NAME=value` per line, for every terminal and agent opened in the worktree. `{{slug}}` (the worktree's name), `{{index}}` (1, 2, 3… in the repository), `{{repo}}`, `{{port}}` and `{{port+1}}`, `{{port+2}}`… are filled in, so `DATABASE_URL=postgres://localhost/app_{{slug}}` gives each worktree its own database. Variables that would change how shells start (such as `PATH` or `LD_PRELOAD`) or where agents sign in or send their requests (their config folders such as `CLAUDE_CONFIG_DIR` and `XDG_CONFIG_HOME`, `*_BASE_URL`, proxies and certificate settings) aren't allowed, and nothing here can replace what Vibezeo sets for an agent. A value that looks like a password or key gets a warning, because this file is meant to be committed.
+- **Compose.** With either field set, each worktree also gets `COMPOSE_PROJECT_NAME=<repo>-<worktree>`, so `docker compose up` in two worktrees starts two separate stacks, and the teardown's `docker compose down` stops the right one.
+- **Trust.** The environment is trusted together with the setup and teardown commands: until you trust them on this computer, terminals get only Vibezeo's own variables (`VIBEZEO_PORT`, `VIBEZEO_PORTS`, `VIBEZEO_WORKTREE`, `VIBEZEO_SLUG`, `VIBEZEO_INDEX` and `COMPOSE_PROJECT_NAME`). Terminals opened after you trust get the rest.
+- The setup command, the teardown and Best of N's check command see the same variables. A worktree's tooltip in the rail shows its ports.
+- **The Ports tab** lists a worktree's servers under its branch. **Open** loads them at `http://<worktree>.localhost:<port>` when your computer resolves names under `.localhost` (most current Linux systems do), so each worktree's cookies and logins stay separate; otherwise at `http://localhost:<port>`.
+
+### Previews per worktree
+
+A preview runs your app's dev server in each worktree, on the worktree's own port, so you can try each agent's version without stopping one server to start another. Add a preview to `.vibezeo/worktree.json` (it needs **Ports per worktree**):
+
+```json
+{ "ports": 10, "preview": { "command": "pnpm dev --port {{port}}", "port": 0, "path": "/" } }
+```
+
+- `command` is filled in like the environment, so `{{port}}` is the worktree's first port. `port` says which port of the block the server answers on (0 is the first) and `path` what to open.
+- The preview command is trusted with the setup and teardown commands and the environment: until you trust them on this computer, it never runs, and **Start preview** shows the review first.
+- **Start preview** in a worktree's ⋯ menu runs it in a terminal named Preview in the worktree, where you can watch it and stop it. A new worktree with a trusted setup runs the setup and then the preview in the same terminal; with no setup, the preview starts on its own. It counts toward your live panes (4 on Free).
+- Once something answers on the preview's port, the worktree's row in the rail shows **Preview**, which opens it in a browser tab in the sidebar, at `<worktree>.localhost` where your computer resolves it. Vibezeo checks every 2 seconds by connecting to the port on your own computer; it sends nothing.
+- In Best of N's **Compare**, **Previews** starts every lane's preview and opens a browser tab for each one as it comes up.
+
 ### Review comments to the agent
 
 In **Open diff**, hover a line and choose the comment button to leave a comment on it; removed lines can be commented on too. The comments collect at the bottom of the diff, where you can edit or remove them. **Send to agent** types them into the agent running in that worktree's pane as one message, with each file, line and the line's text, then clears them; with several agents there, choose which one. If no agent is running there, **Copy review** puts the same text on the clipboard. Comments stay until you send them or quit Vibezeo.
@@ -52,4 +77,4 @@ When a worktree's `origin` remote is on a host whose name contains `gitlab`, **C
 
 ### Not available everywhere
 
-Worktrees aren't available in WSL folders yet. In folders on SSH hosts, worktrees don't have setup, the overlap check or merge forecast, or merge requests: **Create pull request** runs the host's own `gh`.
+Worktrees aren't available in WSL folders yet. In folders on SSH hosts, worktrees don't have setup, ports and environment, previews, the overlap check or merge forecast, or merge requests: **Create pull request** runs the host's own `gh`.

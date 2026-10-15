@@ -32,6 +32,8 @@ pub enum NotificationKind {
     MailRefused,
     /// A teammate made or changed a routine (F-RT-05).
     RoutineChanged,
+    /// A usage window will run out before it resets (F-AC-08).
+    UsageForecast,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

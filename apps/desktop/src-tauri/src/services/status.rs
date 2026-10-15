@@ -249,6 +249,15 @@ impl StatusService {
             .unwrap_or(false)
     }
 
+    /// Every pane's engine session id that its hooks reported, as
+    /// `(pane_id, engine_session_id)` (F-AC-08).
+    pub fn engine_sessions(&self) -> Vec<(String, String)> {
+        self.sessions
+            .lock()
+            .map(|s| s.iter().map(|(p, e)| (p.clone(), e.clone())).collect())
+            .unwrap_or_default()
+    }
+
     /// The engine's session id from its hooks, if it reported one.
     pub fn engine_session(&self, pane_id: &str) -> Option<String> {
         self.sessions.lock().ok()?.get(pane_id).cloned()

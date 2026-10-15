@@ -429,6 +429,12 @@ pub async fn check(state: &AppState, id: &str) -> Result<(), IpcError> {
             }
             None => local_check(&command, Path::new(&ws.root)),
         };
+        // F-WT-06: a local check sees the worktree's variables.
+        let mut lane_env = env.clone();
+        lane_env.extend(crate::services::worktree_runtime::vars_for(
+            &state.data,
+            &ws,
+        ));
         runs::set_check(
             &state.store,
             id.to_string(),
@@ -443,7 +449,7 @@ pub async fn check(state: &AppState, id: &str) -> Result<(), IpcError> {
             state.bus.clone(),
             id.to_string(),
             lane.seat,
-            env.clone(),
+            lane_env,
         );
         let slot: GroupSlot = Arc::default();
         let task_slot = slot.clone();

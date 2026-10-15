@@ -1289,6 +1289,39 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 1. Typing "hello\x03world" via the typing API sends "helloworld" then CR as two writes.
 2. A pane in the waiting state refuses a typed prompt with the message.
 
+#### F-EN-07 One instructions file for every engine (P2)
+**Story:** Each engine reads its own instructions file, so a repository's rules drift apart or reach only one engine. I keep one file, `AGENTS.md`, and every engine I use reads it.
+
+**Behavior:**
+- **The instructions table** is per engine in the registry (`instructions`), not in code, because engines change it. Each entry gives the files the engine reads at the repository root, whether it reads `AGENTS.md` itself, and the one-line pointer it accepts. Checked against each vendor's own documentation on 15 October 2026 (D-2400):
+  - Claude Code: `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`. It reads `AGENTS.md` only when none of those exist. Pointer: a `CLAUDE.md` holding the import `@AGENTS.md`.
+  - Codex: `AGENTS.override.md`, else `AGENTS.md`. It reads `AGENTS.md` itself.
+  - Gemini CLI: `GEMINI.md`. Pointer: a `GEMINI.md` holding the import `@AGENTS.md`.
+  - Copilot CLI: `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`, combined. It reads `AGENTS.md` itself.
+  - Cursor Agent: `.cursor/rules/`, `AGENTS.md` and `CLAUDE.md`. It reads `AGENTS.md` itself.
+  - An engine without an entry is **Unknown**: listed, never written for.
+- **The panel (UI-160)**, "Instructions…" in a local folder's menu in the rail, for its repository's main checkout (or the folder, when it isn't a repository):
+  - One row per installed engine: the files it reads that exist, and what it reads in the end ("Reads AGENTS.md", "Reads CLAUDE.md, not AGENTS.md", "Nothing yet", "Unknown").
+  - One row per instructions file that exists: its size, and whether git tracks it, ignores it, or neither ("Not committed").
+  - Each file that differs from `AGENTS.md` shows its diff against it.
+  - Files over 1 MB, or that are symbolic links or point outside the checkout, are listed and never read or written.
+  - Empty (no instructions file and no engine installed), loading and error states. Remote (SSH, WSL) workspaces say "Instructions are checked for folders on this computer".
+- **Use one file for all** makes `AGENTS.md` the source:
+  - When there's no `AGENTS.md`, the user picks the file whose text becomes it (`CLAUDE.md` first, if it exists).
+  - Each installed engine with a pointer gets its pointer file, replacing that file's text. An engine that reads `AGENTS.md` itself gets nothing, and neither does an Unknown one.
+  - The plan lists every file it would create or replace, with its diff, and writes nothing until the user confirms. A file whose text isn't already in `AGENTS.md` is marked "Its text will be replaced".
+  - On confirm, each file is written atomically. Each replaced file is first copied to `$DATA/instructions-backup/<change>/`, and **Undo** puts every file of that change back byte for byte. Vibezeo never commits, and never edits `.gitignore`.
+  - Only the main window can write (F-TL-06 rule 5).
+- **Personal files:** an instructions file git ignores (such as `CLAUDE.local.md`) is listed as "Not in new worktrees" unless a `copy` pattern in `.vibezeo/worktree.json` (F-WT-01) matches it. **Copy into worktrees** adds its path to `copy`. That changes only `copy`: the file's commands keep the trust they had.
+
+**Acceptance:**
+1. In a repository with `CLAUDE.md` and `AGENTS.md` that differ, the panel lists both, says Claude Code reads `CLAUDE.md` (not `AGENTS.md`) and Codex reads `AGENTS.md`, and shows the diff.
+2. With Claude Code and Gemini CLI installed, "Use one file for all" proposes a `CLAUDE.md` of `@AGENTS.md` and a new `GEMINI.md` of `@AGENTS.md`, and nothing is written until the user confirms. After confirming, both files hold the pointer; Undo restores the old `CLAUDE.md` byte for byte and removes the new `GEMINI.md`.
+3. With `CLAUDE.md` and no `AGENTS.md`, the plan creates `AGENTS.md` with `CLAUDE.md`'s text, then makes `CLAUDE.md` the pointer.
+4. A git-ignored `CLAUDE.local.md` is listed as "Not in new worktrees". "Copy into worktrees" adds `CLAUDE.local.md` to `.vibezeo/worktree.json`'s `copy`, keeps its `setup`, and leaves its trust as it was.
+5. An engine missing from the registry's instructions table is shown as "Unknown", and nothing is written for it.
+6. A `CLAUDE.md` that's a symbolic link is listed, never written; the plan skips it and says why.
+
 ### 4.5 AC: Accounts and usage
 
 #### F-AC-01 Provider homes (P0)
@@ -1374,6 +1407,39 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 1. Fixture logs with 3 days of usage render correct daily totals.
 2. A malformed line is skipped, and the count shows in "N lines skipped".
 3. Non-ASCII dates and locales don't crash parsing.
+
+#### F-AC-08 Usage forecast (P2)
+**Story:** The chip tells me how full a window is. I want to know whether I'll run out before it resets, and which of my agents is spending it, so I can pace the work or move a task to another account myself.
+
+**Behavior:**
+- **Samples:** each usage reading with windows (F-AC-04) is kept in memory per account and window, for the last 2 hours and at most 120 readings. A reading whose reset time moved later, or whose percentage fell by 5 points or more, starts a new window: the earlier samples are dropped.
+- **Forecast** per window, from the readings of the last 60 minutes:
+  - **Not enough data yet:** fewer than two readings, or under 10 minutes between the first and the last.
+  - **On track:** the percentage didn't rise, or the projection reaches 100% at or after the window's reset.
+  - **Runs out at {time}:** the projection reaches 100% before the reset, or the window has no reset time. The projection uses the burn rate from the first to the last reading, in points an hour, carried on from the last reading. The line adds how long before the reset ("1 h 30 min before it resets").
+  - Each forecast names its basis: "Based on the last {n} min".
+- **Where it shows:**
+  - Each window row in the usage popover (UI-35) has a forecast line. A window that runs out before its reset shows the line in `warning`.
+  - The chip's tooltip adds the forecast of the window it shows.
+- **Who's using it:** per account, the popover lists the sessions that spent the account's tokens in the last hour, with each one's share ("fix-auth · 61%").
+  - The data comes from the engines' local logs (F-AC-07's parser and `usage_log_globs`, inside the provider home). Only token counts, times and session ids are read, never content.
+  - A session is named after the pane running it (its engine session id, F-SH-07), or else "Another session".
+  - An account whose engine has no log globs says "{engine} keeps no session logs Vibezeo can read."
+- **Notification:** Settings › Notifications › "Warn me before usage runs out", off by default.
+  - When on, a window whose forecast first changes to running out before its reset raises one notification: "{engine} ({account}) runs out at {time}" / "At this pace the {window} runs out {duration} before it resets."
+  - It isn't raised again for the same account and window until the window resets.
+- **Launch hint:** in the launch sheet (F-CD-14), an agent seat whose account (the workspace's override, else the engine's default, F-AC-03) has a window at 80% or more, or one forecast to run out before its reset, shows "{account} is at {pct}%". When another account of that engine is below 50% in every window, the hint adds "{other} has more room". The hint is text only: the seat still launches on the account it had. Nothing ever switches accounts (F-AC-05).
+- **Nothing new leaves the machine:** a forecast is arithmetic over readings the app already takes, and the session shares come from files on this computer.
+
+**Data:** in memory only (samples, and the notified windows per account, window kind and reset time).
+
+**Acceptance:**
+1. Readings of 40% and then 60% 30 minutes later, with the reset 2 hours after the first, forecast "Runs out" one hour after the second reading, 30 minutes before the reset.
+2. One reading, or readings under 10 minutes apart, give "Not enough data yet". Readings that don't rise give "On track", and so does a projection that reaches 100% at or after the reset.
+3. A reading whose reset time moved later drops the earlier samples, and its forecast is "Not enough data yet".
+4. Two sessions on one account that logged 3,000 and 1,000 tokens in the last hour show 75% and 25%. A session matching a pane's engine session id is named after the pane, and log lines older than an hour don't count.
+5. The notification is off by default. When it's on, a window that becomes forecast to run out before its reset raises one notification, and the next reading for the same window raises none.
+6. A seat whose account is at 85%, with another account of the same engine at 20%, shows both hints, and the launch uses the seat's own account.
 
 ### 4.6 DB: Dashboard and notifications
 
@@ -3156,6 +3222,60 @@ Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1�
 4. A terminal-only engine is listed disabled with "Can't run read-only"; with no thread engine installed the sheet shows its empty state.
 5. The reviewer can't write: an attempted edit is denied (F-TH-09) and the worktree's files don't change.
 6. A worktree with no changes has the action disabled with "No changes to review".
+
+#### F-WT-06 Worktree runtime (P2)
+**Story:** Five agents in five worktrees all start the app's dev server on port 3000 and the same database. I want each worktree to get its own ports, its own environment and its own Compose project, set up once for the repository.
+
+**Behavior:**
+- **The file.** `.vibezeo/worktree.json` (F-WT-01) gains two optional keys:
+  ```json
+  { "ports": 10, "env": { "DATABASE_URL": "postgres://localhost/app_{{slug}}", "PORT": "{{port}}", "API_PORT": "{{port+1}}" } }
+  ```
+  - `ports`: how many ports each worktree gets, 1 to 100.
+  - `env`: up to 50 variables. Names are `[A-Za-z_][A-Za-z0-9_]*` and at most 64 characters; values at most 2,000 characters. Placeholders: `{{slug}}`, `{{index}}`, `{{repo}}`, `{{port}}` and `{{port+N}}` (N smaller than `ports`). An unknown placeholder, `{{port}}` without `ports`, or a name Vibezeo reserves makes the file invalid and says which. Reserved, whatever their case, with the reason in the message: names that change how terminals start (`PATH`, `HOME`, `SHELL`, `USER`, `ZDOTDIR`, `ENV`, `BASH_ENV`, `PROMPT_COMMAND`, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `TERM`, `COLORTERM`, `TERM_PROGRAM`, `TERM_PROGRAM_VERSION`, `DYLD_*`); names that change where agents sign in or send their requests (every provider-home variable, such as `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`, the `XDG_*_HOME` folders, any `*_BASE_URL`, the proxies `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, and the certificate overrides `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`); and Vibezeo's own (`TANDEM_*`, `VIBEZEO_*`, `COMPOSE_PROJECT_NAME`). API keys are allowed: they're the user's, and the review shows them.
+  - A file with either key has the **runtime on**; without both, worktrees behave as in F-WT-01.
+- **Port blocks.** With `ports`, each worktree gets a block of that many consecutive ports in 41000–48999 and an index (1, 2, 3… per repository, the lowest free). Blocks never overlap across all repositories on this computer, are checked free (nothing listening on 127.0.0.1) when the worktree is made, and are kept in `$DATA/worktree-ports.json`, so they survive relaunch. A block with a port in use moves to the next free block and says so: "Ports 41010–41019 were busy; tandem/fix-auth uses 41020–41029." Discarding the worktree frees its block.
+- **Variables.** With the runtime on, every terminal and agent pane opened in the worktree's tabs gets: the `env` variables, filled in; `VIBEZEO_WORKTREE` (its folder), `VIBEZEO_SLUG`, `VIBEZEO_INDEX`, and with `ports` also `VIBEZEO_PORT` (the block's first port) and `VIBEZEO_PORTS` (`41010-41019`); and `COMPOSE_PROJECT_NAME=<repo>-<slug>` (lowercase, characters other than letters, digits, `-` and `_` replaced by `-`). The setup pane, the trusted teardown (F-WT-01) and Best of N's check command get the same. The worktree's variables may replace the login environment's, but never what the launch sets for a pane (its provider home, hook token and engine variables, F-EN-04): those are applied last.
+- **Trust.** `env` values are part of what's trusted (F-WT-01): until the file's commands and `env` are trusted on this computer, panes get only Vibezeo's own variables above, never the file's. A file without `env` keeps the digest it had before F-WT-06, so trust given before stays valid.
+- **Secrets.** A value that the secret redactor (F-TL-02) would redact shows a warning under the field in UI-150: "This looks like a secret. Don't commit it in worktree.json."
+- **Ports panel** (F-EX-03): a server whose pane is in a worktree is grouped under the worktree's branch, with its block. **Open** loads `http://<slug>.localhost:<port>` when this computer resolves `<slug>.localhost` to loopback (checked once per run), and `http://localhost:<port>` otherwise, so worktrees' cookies and browser tabs stay apart.
+- **UI-150** gains "Ports per worktree" (a number, empty for none) and "Environment" (one `NAME=value` per line). A worktree's row tooltip shows its block: "Ports 41010–41019".
+- Local folders only, as F-WT-01: no runtime in worktrees on SSH hosts or in WSL folders.
+
+**Acceptance:**
+1. With `"ports": 10`, two new worktrees get disjoint blocks of 10, and shells in each see different `VIBEZEO_PORT` values; after a relaunch the same worktrees keep the same blocks.
+2. With `"env": {"DB": "app_{{slug}}"}` trusted, a shell in the `fix-auth` worktree has `DB=app_fix-auth` and `COMPOSE_PROJECT_NAME=<repo>-fix-auth`; before trust it has `COMPOSE_PROJECT_NAME` but no `DB`.
+3. A port in the next block already listening when a worktree is made moves the worktree to the following block, and the toast says so.
+4. The ports panel groups a server started in a worktree's pane under that worktree, and Open loads `http://fix-auth.localhost:<port>` (or `http://localhost:<port>` where `*.localhost` doesn't resolve).
+5. The trusted teardown runs with the same variables: a teardown writing `$COMPOSE_PROJECT_NAME` writes the worktree's project name.
+6. An env value that looks like a secret shows "This looks like a secret. Don't commit it in worktree.json."; a reserved name such as `PATH`, `LD_PRELOAD`, `CLAUDE_CONFIG_DIR` or `HTTPS_PROXY` makes the file invalid, naming it and why; and an engine pane in the worktree keeps the provider home the launch sets whatever the worktree's variables say.
+
+#### F-WT-09 Previews per worktree (P2)
+**Story:** Five agents changed my app five ways. I want to try each version, side by side, without stopping servers, switching branches or reinstalling anything.
+
+**Behavior:**
+- **The file.** `.vibezeo/worktree.json` gains `preview`, which needs `ports` (F-WT-06):
+  ```json
+  { "ports": 10, "preview": { "command": "pnpm dev --port {{port}}", "port": 0, "path": "/" } }
+  ```
+  - `command`: one command line, up to 4,000 characters, with F-WT-06's placeholders. It's trusted with the setup and teardown commands and `env` (F-WT-01): an untrusted preview never runs.
+  - `port`: which port of the block the preview answers on, as an offset (0 is `VIBEZEO_PORT`; default 0, smaller than `ports`).
+  - `path`: what to open, starting with `/` (default `/`).
+- **Running it.** "Start preview" in a worktree's ⋯ menu runs the command in a terminal pane named "Preview" in the worktree's tab, with the worktree's variables, so its output is visible and it can be stopped. A worktree made from New worktree or the launch sheet with a trusted setup and preview runs both in the setup pane, setup first (`<setup> && <preview>`); with a trusted preview and no setup, it starts the preview pane. It counts toward the live panes (4 on Free).
+- **Ready.** While a worktree has a preview configured, Vibezeo checks every 2 s whether something accepts connections on its preview port on 127.0.0.1. Once it does, the worktree's rail row shows a **Preview** button that opens `http://<slug>.localhost:<port><path>` (F-WT-06's address rule) in a sidebar browser tab. It goes away when the port stops answering. Checking only connects; it sends nothing.
+- **Best of N.** Compare (F-EX-04) gets **Previews**: it starts each lane's preview where it isn't running, then opens a sidebar browser tab per lane as each becomes ready, titled with the lane's branch. Each column shows its preview's state: "Starting…", **Open preview**, or "No preview" (the repository has none). Lanes on SSH hosts or in WSL show "No preview".
+- **Side by side.** Choosing two lanes' previews (in Compare, or "Compare previews…" in a worktree's menu, then the other worktree) opens a tab in the repository with two browser panes side by side, each loading one preview, labelled with its branch.
+- **Fast copies.** The copy of F-WT-01 clones files with the filesystem's copy-on-write (`FICLONE`, as `cp --reflink=auto` does) where the filesystem supports it (btrfs, XFS and others on Linux), so a copied `node_modules` or dev database file takes no extra space or time; elsewhere it copies as before. The copy report says how many files were cloned.
+- Local folders only, as F-WT-06.
+
+**Acceptance:**
+1. With `"preview": {"command": "python3 -m http.server {{port}}"}` trusted, "Start preview" opens a "Preview" pane in the worktree running the command with the worktree's port; once it answers, the row's Preview button opens `http://<slug>.localhost:<port>/` (or `localhost`) in a sidebar browser tab; stopping the server removes the button.
+2. An untrusted preview never runs: "Start preview" opens the review (UI-151), and a new worktree's setup pane runs only the setup.
+3. A new worktree with a trusted setup and preview types `<setup> && <preview>` into its setup pane.
+4. Compare's Previews starts each lane's preview and opens one browser tab per lane once it answers; a lane without a preview says "No preview".
+5. Side by side opens one tab with two browser panes loading the two lanes' preview addresses.
+6. On a filesystem with copy-on-write, copied files share their data with the main checkout's (the clone count equals the copied count); on one without, the copy falls back to an ordinary copy and the files are byte for byte the same.
+7. `preview` without `ports`, a `port` offset outside the block, or a `path` not starting with `/` makes the file invalid, naming the problem.
 
 ---
 

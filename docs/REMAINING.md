@@ -231,10 +231,10 @@ E2E-M17-WT-1…3: setup, review, overlap.
 
 ### M18 · Next features (in progress) · from `docs/NEXT_FEATURES.md`
 The 15 October research ranked 21 features and six bold bets beyond the 165 (evidence in `docs/COMPETITIVE_ANALYSIS.md`). Its top picks are being built, each with its PRODUCT_SPEC entry first, tests from the criteria, an E2E spec (`m18-*.e2e.ts`) and its docs page:
-- Engines (`m16d-teammate-extras`, D-2400 on): [ ] F-EN-07 One instructions file for every engine · [ ] F-EN-09 Engine catalog refresh · [ ] F-EN-08 Engine versions and updates under your control · [ ] F-TH-17 Session library across engines
+- Engines (`m16d-teammate-extras`, D-2400 on): [x] F-EN-07 One instructions file for every engine (chain21, D-2400–D-2403) · [ ] F-EN-09 Engine catalog refresh · [ ] F-EN-08 Engine versions and updates under your control · [ ] F-TH-17 Session library across engines
 - Review loop (`m16a-conductor`, D-2420 on): [x] F-WT-05 Second opinion from another engine · [ ] F-DB-04 Review queue · [ ] F-CN-09 Walk-and-review (bold bet B4)
-- Worktrees (`competitive-gaps`, D-2440 on): [ ] F-WT-06 Worktree runtime (ports, env, Compose, `<slug>.localhost`) · [ ] F-WT-09 Previews per worktree (bold bet B2)
-- Usage (`product-research`, D-2460 on): [ ] F-AC-08 Usage forecast · [ ] F-AC-09 Runaway guard · [ ] F-RT-06 The Night Shift (bold bet B1)
+- Worktrees (`competitive-gaps`, D-2440 on): [x] F-WT-06 Worktree runtime (ports, env, Compose, `<slug>.localhost`; chain21, D-2440–D-2445, D-2448) · [ ] F-WT-09 Previews per worktree (bold bet B2; slice 1 of 3 in chain21, D-2446–D-2447: the preview command, Preview and Compare's Previews)
+- Usage (`product-research`, D-2460 on): [x] F-AC-08 Usage forecast (chain21, D-2460–D-2462) · [ ] F-AC-09 Runaway guard · [ ] F-RT-06 The Night Shift (bold bet B1)
 - Reliability (`perf-open`, D-2480 on, after §0.3's memory and first-frame work): [ ] F-SH-14 Keep agents running when the window closes
 
 Later, in the research's order: F-TL-11 agent sandbox, F-WT-07 local merge queue, F-WT-08 CI results back to the agent, F-EN-10 any ACP agent as a thread engine, F-EN-11 local models, F-TK-05 claims, F-EX-06 resource governor, F-CD-22 multi-repo workspaces, F-CD-23 code intelligence, F-EX-07 activity ledger, F-CD-24 jj workspaces, and the bold bets B3 (the Foreman), B5 (agent-proof secrets) and B6 (intent radar). Its owner-only items (§4: terms, pricing, Linux-first exceptions, ARM64, launch) are the owner's.

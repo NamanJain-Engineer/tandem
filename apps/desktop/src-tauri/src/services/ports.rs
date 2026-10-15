@@ -35,6 +35,13 @@ pub struct ListeningPort {
     pub pane_name: Option<String>,
     pub workspace_id: Option<String>,
     pub workspace_name: Option<String>,
+    /// F-WT-06: the worktree's branch when the pane is in one.
+    pub lane_branch: Option<String>,
+    /// F-WT-06: the worktree's port block.
+    pub lane_ports: Option<crate::services::worktree_runtime::PortRange>,
+    /// What Open loads: `http://<slug>.localhost:<port>` for a local
+    /// worktree where that resolves, else `http://localhost:<port>`.
+    pub url: String,
 }
 
 /// `ports_stop`.
@@ -117,6 +124,19 @@ impl PortsService {
                 pane_id: pane.clone(),
                 pane_name: record.and_then(|r| r.human_name),
                 workspace_id: ws.as_ref().map(|w| w.id.as_str().to_string()),
+                lane_branch: ws.as_ref().and_then(|w| w.lane_branch.clone()),
+                lane_ports: ws.as_ref().and_then(|w| {
+                    crate::services::worktree_runtime::ports_of_global(w.id.as_str())
+                }),
+                url: format!(
+                    "http://{}:{}",
+                    crate::services::worktree_runtime::host_for(
+                        ws.as_ref()
+                            .filter(|w| w.kind == "local" && w.lane_branch.is_some())
+                            .map(|w| w.name.as_str())
+                    ),
+                    l.port
+                ),
                 workspace_name: ws.map(|w| w.name),
             });
         }

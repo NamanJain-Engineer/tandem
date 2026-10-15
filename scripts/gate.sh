@@ -10,6 +10,9 @@ export TANDEM_FAKE_KEYCHAIN=1
 if [ -z "${SHERPA_ONNX_ARCHIVE_DIR:-}" ] && ls "$HOME"/.cache/sherpa-onnx/sherpa-onnx-v*.tar.bz2 >/dev/null 2>&1; then
   export SHERPA_ONNX_ARCHIVE_DIR="$HOME/.cache/sherpa-onnx"
 fi
+# Every spec ID owned by exactly one milestone (D-850): CI runs it too, but
+# CI has no Actions minutes until about November 1.
+bash scripts/check-coverage.sh
 pnpm -r lint
 pnpm -r test
 cargo test --workspace

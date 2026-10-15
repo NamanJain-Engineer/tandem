@@ -1,6 +1,6 @@
 ---
 title: Engines and platforms
-description: The coding agent CLIs Vibezeo runs, and the platforms it runs on.
+description: The coding agent CLIs Vibezeo runs, their instructions files, and the platforms it runs on.
 ---
 
 ## Engines
@@ -8,6 +8,29 @@ description: The coding agent CLIs Vibezeo runs, and the platforms it runs on.
 Vibezeo detects these coding agent CLIs on your login shell's `PATH` and shows how to install the missing ones. Each runs on your own subscription and signs in by itself. This table is generated from the app's engine registry.
 
 <EnginesTable />
+
+## One instructions file for every engine
+
+Each engine reads its own instructions file, so a repository's rules can drift apart or reach only one engine. **Instructions…** in a local folder's menu in the rail shows which file each installed engine reads, whether git tracks or ignores each file, and how each one differs from `AGENTS.md`.
+
+| Engine | Reads | Reads `AGENTS.md` |
+|---|---|---|
+| Claude Code | `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md` | Only when none of those exist, or through an `@AGENTS.md` import |
+| Codex | `AGENTS.override.md`, else `AGENTS.md` | Yes |
+| Gemini CLI | `GEMINI.md` | Through an `@AGENTS.md` import |
+| Copilot CLI | `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` | Yes |
+| Cursor Agent | `.cursor/rules/`, `AGENTS.md`, `CLAUDE.md` | Yes |
+
+Checked against each vendor's documentation on 15 October 2026. Any other engine shows as **Unknown**, and Vibezeo writes nothing for it.
+
+**Use one file for all** makes `AGENTS.md` the source. If there's no `AGENTS.md`, you pick the file it starts from. Each engine that needs one then gets a one-line file holding `@AGENTS.md`: `CLAUDE.md` for Claude Code, and `GEMINI.md` for Gemini CLI. Engines that read `AGENTS.md` themselves get nothing.
+
+- You see every file it would create or replace before anything is written. A file whose text isn't already in `AGENTS.md` is marked.
+- A copy of each replaced file is kept on this computer, and **Undo** puts every file back as it was.
+- Vibezeo never commits these files and never edits `.gitignore`.
+- Symbolic links, files over 1 MB and anything outside the folder are listed, and never read or written.
+
+A personal file that git ignores, such as `CLAUDE.local.md`, doesn't reach new worktrees on its own. The panel marks it **Not in new worktrees**, and **Copy into worktrees** adds it to the folder's worktree setup (`.vibezeo/worktree.json`). That changes only the list of copied files; any setup commands keep the trust they had.
 
 ## Platforms
 

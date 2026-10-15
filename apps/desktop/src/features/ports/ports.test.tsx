@@ -18,6 +18,9 @@ function port(p: number, over: Partial<ListeningPort> = {}): ListeningPort {
     paneName: "dev server",
     workspaceId: "ws_1",
     workspaceName: "shop",
+    laneBranch: null,
+    lanePorts: null,
+    url: `http://localhost:${p}`,
     ...over,
   };
 }
@@ -95,5 +98,29 @@ describe("Ports tab (UI-142)", () => {
     await waitFor(() => expect(count(calls, "ports_list")).toBe(1));
     expect(await screen.findByText("Servers started from your panes show up here.")).toBeTruthy();
     expect(REFRESH_MS).toBe(2_000);
+  });
+
+  it("F-WT-06.4 a worktree's servers are grouped under it, and Open loads its .localhost address", async () => {
+    setup([
+      port(3000),
+      port(41000, {
+        paneId: "pn_2",
+        workspaceId: "wt_1",
+        workspaceName: "fix-auth",
+        laneBranch: "tandem/fix-auth",
+        lanePorts: { start: 41000, end: 41009 },
+        url: "http://fix-auth.localhost:41000",
+      }),
+    ]);
+    const group = await screen.findByTestId("port-group");
+    expect(group.dataset.branch).toBe("tandem/fix-auth");
+    expect(group.textContent).toBe("tandem/fix-auth · ports 41000–41009");
+    const rows = screen.getAllByTestId("port-row");
+    // The plain port first, then the worktree's after its header.
+    expect(rows.map((r) => r.dataset.port)).toEqual(["3000", "41000"]);
+    expect(rows[1]?.dataset.branch).toBe("tandem/fix-auth");
+    fireEvent.click(within(rows[1]!).getByTestId("port-open"));
+    const tab = useSidebar.getState().tabs.find((x) => x.kind === "browser");
+    expect(tab?.url).toBe("http://fix-auth.localhost:41000");
   });
 });

@@ -1028,6 +1028,12 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
 - **UI-151 Review worktree setup** (dialog, opened after a worktree is made when the file's commands aren't trusted here). Body: "This repository's .vibezeo/worktree.json wants to run these commands in {the new worktree | # new worktrees}. Run them only if you trust this repository. Nothing has run yet." Then "Setup" and "Teardown, when a worktree is discarded", each in a `CodeBlock`, verbatim. Footer: **Not now** (secondary) / **Trust and run** (primary). Several worktrees made together with the same commands share one review. A failure shows an error `Banner` in the dialog.
 - Toasts: "Copied {n} files into the worktree" (success; "Stopped at the copy limit (2,000 files or 512 MB)." as the body when partial), "Couldn't copy files into the worktree: {reason}", "The worktree setup can't be used: {reason}", "Couldn't start the setup: {reason}". Discarding adds the teardown's line as the toast body ("Teardown finished", "Teardown exited with code {code}", "Teardown was stopped after 2 minutes", "Teardown skipped: its command isn't trusted on this computer"), with the warning tone when it didn't run cleanly.
 - UI-152 (review comments on a worktree's diff, F-WT-02) and UI-153 (overlap check, F-WT-03) are reserved for their features.
+- **UI-160 Instructions** (dialog, `lg`; "Instructions…" in a local folder's rail menu; F-EN-07). Title "Instructions"; description "Which instructions file each engine reads in {folder}, and how they differ from AGENTS.md."
+  - **Engines:** one row per installed engine: its label and what it reads ("Reads AGENTS.md", "Reads AGENTS.md and {files}", "Reads {files}, not AGENTS.md", "Nothing yet", "Unknown").
+  - **Files:** one row per file that exists: the path in mono, a `Badge` for git ("Committed", "Not committed", "Ignored by git"), "Points to AGENTS.md", or why it's never read or written. An ignored file that new worktrees don't get says "Not in new worktrees" with **Copy into worktrees**. A file that differs from AGENTS.md has **Show the difference**, which opens a `DiffView`.
+  - With no AGENTS.md, a `Select` "Start AGENTS.md from" lists the files that can become it.
+  - Footer: **Close** / **Use one file for all** (primary). The plan view lists each file it would create ("New") or replace ("Replaced"), the new text in a `CodeBlock`, the old text under "What it holds now", "Its text isn't in AGENTS.md and will be replaced. A copy is kept for Undo." when that's so, and the files left as they are and why. Footer: **Back** / **Write # files** (primary). A success toast has **Undo**.
+  - States: loading (`Skeleton`s), error (`Banner` with Try again), empty ("No instructions files yet"), populated, and the plan.
 
 **ID allocation for this part.** Thread UI-20–25, Engines & accounts UI-33–37, Routines UI-50–53 (UI-50 is already referenced by `CronInput`), Agent mode UI-70–76, Tasks UI-80–84, Plugins UI-90–94. UI-40–49 (Dashboard, Notifications) and UI-60–69 (Dictate, Conductor) are reserved for later parts.
 
@@ -2572,7 +2578,7 @@ With OS or in-app Reduce motion: no transforms or pulses (§1.8). In this part s
 
 ## 8. Screen index
 
-ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 Thread, engines and accounts · UI-40–49 Dashboard and notifications · UI-50–53 Routines · UI-60–69 Dictate and Conductor · UI-70–94 Teammates, Tasks and Plugins (ui_part3) · UI-100–116 Settings · UI-120–124 Plans · UI-130–135 System dialogs · UI-140–149 Extras (M17) · UI-150–159 Worktree workflow. Unused numbers inside a range are reserved for that range.
+ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 Thread, engines and accounts · UI-40–49 Dashboard and notifications · UI-50–53 Routines · UI-60–69 Dictate and Conductor · UI-70–94 Teammates, Tasks and Plugins (ui_part3) · UI-100–116 Settings · UI-120–124 Plans · UI-130–135 System dialogs · UI-140–149 Extras (M17) · UI-150–159 Worktree workflow · UI-160–169 Engines (M18). Unused numbers inside a range are reserved for that range.
 
 | ID | Screen | Section | Areas |
 |---|---|---|---|
@@ -2667,6 +2673,7 @@ ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 T
 | UI-145 | Prompt picker | §4.16 | EX |
 | UI-150 | Worktree setup | §4.2 | WT |
 | UI-151 | Review worktree setup | §4.2 | WT |
+| UI-160 | Instructions | §4.2 | EN |
 
 ### 8.1 Cross-document conflicts found while writing this part
 All items below were fixed at the source during the consistency pass (see CONSISTENCY_REPORT.md); they are kept as a record.
