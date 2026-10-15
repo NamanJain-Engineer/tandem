@@ -25,7 +25,7 @@ const FLOWS: Array<{ icon: LucideIcon; to: string; via: string; line: "solid" | 
  * diagram is HTML, so it reflows on a phone; its text is the description. */
 export function TrustFlow() {
   return (
-    <section id="principles" aria-labelledby="principles-title" className="grain relative isolate scroll-mt-(--site-header-h) overflow-hidden bg-raised py-(--site-section-y)">
+    <section id="principles" aria-labelledby="principles-title" className="relative isolate scroll-mt-(--site-header-h) overflow-hidden bg-raised py-(--site-section-y)">
       <div aria-hidden="true" className="horizon absolute inset-x-0 top-0" />
       <div aria-hidden="true" className="bg-lens absolute inset-x-0 top-0 -z-10 h-[30rem] opacity-70" />
       <div className="container-site flex flex-col gap-14">

@@ -21,7 +21,7 @@ export function PageHero({
   center?: boolean;
 }) {
   return (
-    <section aria-label="Introduction" className={cx("grain relative isolate overflow-hidden bg-page", className)}>
+    <section aria-label="Introduction" className={cx("relative isolate overflow-hidden bg-page", className)}>
       <div aria-hidden="true" className="bg-lens absolute inset-0 -z-10" />
       <Orbit
         id="page"

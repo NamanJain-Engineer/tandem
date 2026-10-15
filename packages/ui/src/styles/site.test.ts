@@ -115,7 +115,7 @@ describe("F-WB-01 site.css (D-1801)", () => {
   });
 
   it("F-WB-01 every light, depth and edge token the dark theme sets has a light value (D-1830)", () => {
-    const themed = [...siteRoot.keys()].filter((k) => /^--site-(edge|fill|glow|ring|elev|bezel|line|btn|grain|spot)/.test(k));
+    const themed = [...siteRoot.keys()].filter((k) => /^--site-(edge|fill|glow|ring|elev|bezel|line|btn|spot)/.test(k));
     expect(themed.length).toBeGreaterThan(12);
     expect(themed.filter((k) => !siteLightSemantic.has(k))).toEqual([]);
   });

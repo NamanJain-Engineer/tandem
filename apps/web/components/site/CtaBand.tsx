@@ -17,7 +17,7 @@ export function CtaBand({
   children: ReactNode;
 }) {
   return (
-    <section aria-labelledby={`${id}-title`} className="grain relative isolate overflow-hidden bg-page">
+    <section aria-labelledby={`${id}-title`} className="relative isolate overflow-hidden bg-page">
       <div aria-hidden="true" className="horizon absolute inset-x-0 top-0" />
       <div aria-hidden="true" className="absolute inset-0 -z-10 bg-[radial-gradient(50%_60%_at_50%_100%,var(--site-glow-a),transparent_75%)]" />
       <Orbit

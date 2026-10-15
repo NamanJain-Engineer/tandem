@@ -70,10 +70,10 @@ The mark is two overlapping rings. At page scale they become our backdrop: two h
 - It is drawn as inline SVG plus two radial gradients, so it costs no request.
 - It sits behind the hero, the page heroes and the closing call to action, and slowly turns (120 s a revolution) in the closing band.
 - The light is on the page, never on a frame: product frames stay neutral. That keeps clear of the glowing-frame and light-beam looks.
-- A film grain (one 6 KB tile, soft-light blend) stops the glows from banding.
+- No film grain. A soft-light grain layer over the lit bands cost the home page about 80 ms of simulated largest paint (2.05 s against the 2.0 s budget), so it was dropped (D-1840). The blooms are wide and low-contrast enough not to band.
 
 ### 2.2 Tokens (`packages/ui/src/styles/site.css`)
-- **Light (D-1830):** `--site-glow-a/b` (teal and sky blooms), `--site-ring` and `--site-ring-lit`, and `--site-grain`.
+- **Light (D-1830):** `--site-glow-a/b` (teal and sky blooms), `--site-ring` and `--site-ring-lit`.
 - **Edges and fills (D-1830):** `--site-edge-top/bottom` for a gradient border, `--site-edge-hi` for a 1 px inner highlight, and `--site-fill-top/bottom` for light at the top of a card.
 - **Elevation (D-1830):** `--site-elev-1` for cards, `-2` for a lifted card and `-3` for product frames. Each is layered, and each has a light-theme value.
 - **Lines:** `--site-line` and `--site-line-strong`; the `horizon` hairline fades at both ends.
@@ -124,7 +124,7 @@ The docs keep Fumadocs for their content (MDX, the page tree and the table of co
 - **Script:** the only script left is Next's router, so links still open in the page (D-1817), and its chunks start after the first paint.
 
 ## 4. Budgets kept
-- No new requests above the fold beyond the 6 KB grain tile.
+- No new requests above the fold.
 - No new scripts.
 - The CSP is unchanged.
 - Lighthouse CI on its five URLs, CLS ≤ 0.02 (numbers in BUILD_LOG).

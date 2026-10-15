@@ -17,7 +17,7 @@ export function Hero() {
   const deb = releaseAssets().get("linux")?.[0];
   const [before, after] = SITE.tagline.split(HIGHLIGHT);
   return (
-    <section aria-label="Introduction" className="grain relative isolate overflow-hidden bg-page">
+    <section aria-label="Introduction" className="relative isolate overflow-hidden bg-page">
       <div aria-hidden="true" className="bg-lens absolute inset-0 -z-10" />
       <Orbit
         id="hero"
@@ -36,7 +36,9 @@ export function Hero() {
             <Icon icon={ArrowRight} size={14} />
           </span>
         </a>
-        <h1 className="text-sheen max-w-[15em] text-display-3xl text-fg [text-wrap:pretty]">
+        {/* Solid ink, not text-sheen: a transparent fill takes the h1 out of the
+            largest-paint candidates (D-1840). */}
+        <h1 className="max-w-[15em] text-display-3xl text-fg [text-wrap:pretty]">
           {after === undefined ? (
             SITE.tagline
           ) : (

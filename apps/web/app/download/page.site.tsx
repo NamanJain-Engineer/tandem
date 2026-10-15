@@ -63,7 +63,7 @@ export default function DownloadPage() {
   const older = RELEASES.filter((r) => r.version !== RELEASE.version);
   return (
     <SiteFrame current="/download/">
-      <section aria-label="Introduction" className="grain relative isolate overflow-hidden bg-page">
+      <section aria-label="Introduction" className="relative isolate overflow-hidden bg-page">
         <div aria-hidden="true" className="bg-lens absolute inset-0 -z-10" />
         <Orbit
           id="download"

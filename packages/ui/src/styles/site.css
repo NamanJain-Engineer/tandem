@@ -96,7 +96,6 @@
   --site-glow-b:      rgb(56 189 248 / 0.11);
   --site-ring:        rgb(148 163 184 / 0.11);      /* the rings' line art */
   --site-ring-lit:    rgb(94 234 212 / 0.42);       /* where the light catches them */
-  --site-grain:       0.5;                          /* film grain over lit bands (soft light) */
   --site-spot:        rgb(45 212 191 / 0.07);       /* a card's top light on hover */
   /* The bezel product captures sit in */
   --site-bezel:       var(--slate-900);
@@ -135,7 +134,6 @@
     --site-glow-b:      rgb(14 165 233 / 0.10);
     --site-ring:        rgb(15 23 42 / 0.08);
     --site-ring-lit:    rgb(13 148 136 / 0.45);
-    --site-grain:       0.35;
     --site-spot:        rgb(15 118 110 / 0.05);
     --site-bezel:       rgb(255 255 255 / 0.75);
     --site-bezel-edge:  rgb(15 23 42 / 0.10);
@@ -270,19 +268,6 @@
   background-image:
     radial-gradient(42% 60% at 42% 0%, var(--site-glow-a), transparent 72%),
     radial-gradient(42% 60% at 58% 0%, var(--site-glow-b), transparent 72%);
-}
-@utility grain {                 /* film grain, so the light never bands */
-  &::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background-image: url("/grain.webp");
-    background-size: 128px 128px;
-    opacity: var(--site-grain);
-    mix-blend-mode: soft-light;
-    z-index: -1;
-  }
 }
 @utility container-site {        /* one width for header, sections and footer */
   margin-inline: auto;
