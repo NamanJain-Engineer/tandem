@@ -4,8 +4,7 @@
 // anyway (its runtime chunks, their preloads and the inline RSC payload,
 // about half of each page's HTML) runs for nothing and delays the page.
 //
-// Kept: the docs (Next's router opens their links in the page, D-1817; their
-// chunks start after the first paint, scripts/defer-docs.mjs) and the demo app. Afterwards
+// The docs are static pages too (D-1843). Kept: the demo app. Afterwards
 // the only scripts left must be F-WB-01 AC2's two: /demo/embed.js on the
 // home page and /download/detect.js on /download/. Anything else fails the
 // build, so a client component added to a marketing page can't silently
@@ -15,7 +14,7 @@ import { join, relative, sep } from "node:path";
 import process from "node:process";
 
 const OUT = join(import.meta.dirname, "..", "out");
-const SKIP = ["docs", join("demo", "app")];
+const SKIP = [join("demo", "app")];
 const ALLOWED = {
   "index.html": ['<script src="/demo/embed.js" defer="">'],
   [join("download", "index.html")]: ['<script src="/download/detect.js" defer="">'],
