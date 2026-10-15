@@ -589,7 +589,9 @@ fn after_grace(working: bool, workspace_kind: Option<&str>, group: Option<i32>) 
 /// it can't be read, which never pauses by signal.
 async fn workspace_kind(state: &AppState, pane: &str) -> Option<String> {
     let id = tandem_core::ids::PaneId::from_db(pane.to_string());
-    let rec = tandem_store::repo::panes::get(&state.store, &id).await.ok()?;
+    let rec = tandem_store::repo::panes::get(&state.store, &id)
+        .await
+        .ok()?;
     tandem_store::repo::workspaces::get(&state.store, &rec.workspace_id)
         .await
         .ok()
@@ -704,18 +706,34 @@ mod tests {
     #[test]
     fn f_ac_09_7_only_a_local_agent_is_stopped_after_the_grace() {
         // Stopped its turn by itself: nothing else happens, wherever it runs.
-        assert_eq!(after_grace(false, Some("ssh"), None), AfterGrace::Interrupted);
-        assert_eq!(after_grace(false, Some("local"), Some(42)), AfterGrace::Interrupted);
+        assert_eq!(
+            after_grace(false, Some("ssh"), None),
+            AfterGrace::Interrupted
+        );
+        assert_eq!(
+            after_grace(false, Some("local"), Some(42)),
+            AfterGrace::Interrupted
+        );
         // Still working: a local agent's group is stopped.
-        assert_eq!(after_grace(true, Some("local"), Some(42)), AfterGrace::Stop(42));
+        assert_eq!(
+            after_grace(true, Some("local"), Some(42)),
+            AfterGrace::Stop(42)
+        );
         // On an SSH host the local process is the connection: never signalled.
         assert_eq!(
             after_grace(true, Some("ssh"), Some(42)),
             AfterGrace::CantPause(CANT_PAUSE_SSH)
         );
         // WSL, a pane with no foreground group, or an unreadable workspace.
-        for (kind, group) in [(Some("wsl"), Some(42)), (Some("local"), None), (None, Some(42))] {
-            assert_eq!(after_grace(true, kind, group), AfterGrace::CantPause(CANT_PAUSE));
+        for (kind, group) in [
+            (Some("wsl"), Some(42)),
+            (Some("local"), None),
+            (None, Some(42)),
+        ] {
+            assert_eq!(
+                after_grace(true, kind, group),
+                AfterGrace::CantPause(CANT_PAUSE)
+            );
         }
     }
 
