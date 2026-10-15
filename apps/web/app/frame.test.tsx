@@ -1,5 +1,5 @@
 import shortcuts from "@tandem/protocol/shortcuts.json";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -66,5 +66,25 @@ describe("site frame", () => {
     const files = readdirSync(dir, { recursive: true, encoding: "utf8" }).filter((f) => /\.tsx?$/.test(f));
     expect(files.length).toBeGreaterThan(10);
     for (const f of files) expect(readFileSync(join(dir, f), "utf8"), f).not.toMatch(/^\s*["']use client["']/m);
+  });
+
+  it("F-WB-01 the site's fonts are trimmed to the weights it draws, and it draws no other (D-1844)", () => {
+    const fonts = readFileSync(join(import.meta.dirname, "fonts.ts"), "utf8");
+    expect(fonts).toContain('src: "./fonts/inter-site.woff2"');
+    expect(fonts).toContain('weight: "400 650"');
+    expect(fonts).toContain('src: "./fonts/mono-site.woff2"');
+    expect(fonts).toContain('weight: "400 500"');
+    for (const f of ["inter-site.woff2", "mono-site.woff2", "LICENSE-Inter.txt", "LICENSE-JetBrainsMono.txt"])
+      expect(existsSync(join(import.meta.dirname, "fonts", f)), f).toBe(true);
+    // Every weight the site's CSS and markup ask for is inside Inter's range.
+    const css = readFileSync(join(import.meta.dirname, "../../../packages/ui/src/styles/site.css"), "utf8");
+    for (const m of css.matchAll(/font-weight:\s*(\d+)/g)) {
+      expect(Number(m[1])).toBeGreaterThanOrEqual(400);
+      expect(Number(m[1])).toBeLessThanOrEqual(650);
+    }
+    const sources = [join(import.meta.dirname, "../components/site"), join(import.meta.dirname, "../components/docs"), import.meta.dirname];
+    for (const dir of sources)
+      for (const f of readdirSync(dir, { recursive: true, encoding: "utf8" }).filter((n) => /\.site\.tsx$|^[^/]*\/?[A-Z][\w/]*\.tsx$/.test(n) && !n.includes("test")))
+        expect(readFileSync(join(dir, f), "utf8"), f).not.toMatch(/\bfont-(thin|extralight|light|bold|extrabold|black)\b/);
   });
 });

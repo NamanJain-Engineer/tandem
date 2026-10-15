@@ -529,3 +529,8 @@ body.site {
   .flow-packet { animation: site-flow 3.2s var(--ease-standard) infinite; }
   .flow-back { animation-name: site-flow-back; animation-delay: 1.6s; }
 }
+
+/* A section reached by its anchor lands with its eyebrow 2 rem under the
+   header (D-1844): html's scroll-padding clears the header, and this margin
+   takes back the section's own top padding. */
+@utility scroll-mt-section { scroll-margin-top: calc(1rem - var(--site-section-y)); }
