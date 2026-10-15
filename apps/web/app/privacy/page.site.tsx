@@ -99,21 +99,21 @@ export default function PrivacyPage() {
         them belong to features that aren&apos;t in the app yet; this is what they will send. The app shows
         the same list, with what&apos;s on, in Settings › Privacy.
       </p>
-      <table className="text-left text-sm">
+      <table className="text-left text-sm [&_td]:[overflow-wrap:anywhere] [&_th]:[overflow-wrap:anywhere]">
         <thead>
           <tr>
-            <th className="py-1.5 pr-4">Feature</th>
-            <th className="py-1.5 pr-4">What it sends</th>
-            <th className="py-1.5 pr-4">To</th>
+            <th className="py-1.5 pr-2 sm:pr-4">Feature</th>
+            <th className="py-1.5 pr-2 sm:pr-4">What it sends</th>
+            <th className="py-1.5 pr-2 sm:pr-4">To</th>
             <th className="py-1.5">When</th>
           </tr>
         </thead>
         <tbody>
           {(hosted.features as HostedFeature[]).map((f) => (
             <tr key={f.id} data-hosted-feature={f.id} className="border-t border-divider align-top">
-              <td className="py-1.5 pr-4 font-medium">{f.label}</td>
-              <td className="py-1.5 pr-4">{f.sends}</td>
-              <td className="py-1.5 pr-4">
+              <td className="py-1.5 pr-2 sm:pr-4 font-medium">{f.label}</td>
+              <td className="py-1.5 pr-2 sm:pr-4">{f.sends}</td>
+              <td className="py-1.5 pr-2 sm:pr-4">
                 {f.destination.split(" → ").flatMap((part, i) =>
                   i === 0
                     ? [part]
