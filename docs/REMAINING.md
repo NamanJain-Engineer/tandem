@@ -20,7 +20,7 @@ last five (F-CN-01 to F-CN-04 and F-CN-08) pass every acceptance criterion
 against the dev mock, and the vendor's realtime client is built against its
 published events (D-1120, on `m16a-conductor`); checking it against a recorded
 session waits on the key (`HUMAN_TODO.md`). F-CN-06 and F-CN-07 (persona,
-memory and wake phrase) are done too (D-1119). vibezeo.com serves 0.7.1 from this release. Routines and running
+memory and wake phrase) are done too (D-1119). vibezeo.com serves 0.7.2 (15 October). Routines and running
 tasks are built and switch on with Pro; WSL workspaces wait for the Windows
 download.
 
