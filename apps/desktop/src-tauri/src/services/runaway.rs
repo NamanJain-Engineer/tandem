@@ -372,33 +372,29 @@ impl RunawayService {
             .snapshot()
             .iter()
             .any(|r| r.key.0 == format!("pane:{pane}") && r.status == AgentStatus::Working);
-        if !working {
-            self.update(pane, GuardCardState::Interrupted, None);
-            return Ok(());
-        }
-        let Some(pgid) = state.terminals.pty.foreground_group(pane) else {
-            self.update(
-                pane,
-                GuardCardState::CantPause,
-                Some("Couldn't pause: send it a message or stop it.".into()),
-            );
-            return Ok(());
+        let kind = workspace_kind(state, pane).await;
+        let group = if working && kind.as_deref() == Some("local") {
+            state.terminals.pty.foreground_group(pane)
+        } else {
+            None
         };
-        match self.control.stop(pgid) {
-            Ok(()) => {
-                if let Ok(mut s) = self.stopped.lock() {
-                    s.insert(pane.to_string(), pgid);
+        match after_grace(working, kind.as_deref(), group) {
+            AfterGrace::Interrupted => self.update(pane, GuardCardState::Interrupted, None),
+            AfterGrace::CantPause(reason) => {
+                self.update(pane, GuardCardState::CantPause, Some(reason.into()))
+            }
+            AfterGrace::Stop(pgid) => match self.control.stop(pgid) {
+                Ok(()) => {
+                    if let Ok(mut s) = self.stopped.lock() {
+                        s.insert(pane.to_string(), pgid);
+                    }
+                    self.update(pane, GuardCardState::Paused, None);
                 }
-                self.update(pane, GuardCardState::Paused, None);
-            }
-            Err(e) => {
-                tracing::warn!(code = "runaway.pause_failed", error = %e, "couldn't pause an agent");
-                self.update(
-                    pane,
-                    GuardCardState::CantPause,
-                    Some("Couldn't pause: send it a message or stop it.".into()),
-                );
-            }
+                Err(e) => {
+                    tracing::warn!(code = "runaway.pause_failed", error = %e, "couldn't pause an agent");
+                    self.update(pane, GuardCardState::CantPause, Some(CANT_PAUSE.into()));
+                }
+            },
         }
         Ok(())
     }
@@ -558,6 +554,48 @@ impl RunawayService {
     }
 }
 
+const CANT_PAUSE: &str = "Couldn't pause: send it a message or stop it.";
+const CANT_PAUSE_SSH: &str =
+    "Couldn't pause an agent on an SSH host: send it a message or stop it.";
+
+/// What Pause does once the interrupt key's grace is over.
+#[derive(Debug, PartialEq, Eq)]
+enum AfterGrace {
+    /// The agent stopped its turn by itself.
+    Interrupted,
+    /// Stop this process group (Linux and macOS).
+    Stop(i32),
+    /// Nothing on this computer can pause it.
+    CantPause(&'static str),
+}
+
+/// Only a local pane's foreground group is the agent itself. An SSH pane's
+/// local process is `ssh`: stopping it would pause the connection, not the
+/// agent on the host, which keeps working (and spending) while the card
+/// says Paused, and a long stop can lose the session (D-855). WSL panes
+/// run through `wsl.exe` on Windows, where there's no stop either.
+fn after_grace(working: bool, workspace_kind: Option<&str>, group: Option<i32>) -> AfterGrace {
+    if !working {
+        return AfterGrace::Interrupted;
+    }
+    match (workspace_kind, group) {
+        (Some("local"), Some(pgid)) => AfterGrace::Stop(pgid),
+        (Some("ssh"), _) => AfterGrace::CantPause(CANT_PAUSE_SSH),
+        _ => AfterGrace::CantPause(CANT_PAUSE),
+    }
+}
+
+/// The kind of the pane's workspace (`local`, `ssh` or `wsl`); `None` when
+/// it can't be read, which never pauses by signal.
+async fn workspace_kind(state: &AppState, pane: &str) -> Option<String> {
+    let id = tandem_core::ids::PaneId::from_db(pane.to_string());
+    let rec = tandem_store::repo::panes::get(&state.store, &id).await.ok()?;
+    tandem_store::repo::workspaces::get(&state.store, &rec.workspace_id)
+        .await
+        .ok()
+        .map(|ws| ws.kind)
+}
+
 async fn settings(state: &AppState) -> (GuardLimits, GuardAction) {
     use tandem_store::repo::settings;
     let limits = settings::get(&state.store, SettingKey::RunawayGuard)
@@ -661,6 +699,24 @@ mod tests {
 
     fn no_screen(_: &str) -> Option<String> {
         None
+    }
+
+    #[test]
+    fn f_ac_09_7_only_a_local_agent_is_stopped_after_the_grace() {
+        // Stopped its turn by itself: nothing else happens, wherever it runs.
+        assert_eq!(after_grace(false, Some("ssh"), None), AfterGrace::Interrupted);
+        assert_eq!(after_grace(false, Some("local"), Some(42)), AfterGrace::Interrupted);
+        // Still working: a local agent's group is stopped.
+        assert_eq!(after_grace(true, Some("local"), Some(42)), AfterGrace::Stop(42));
+        // On an SSH host the local process is the connection: never signalled.
+        assert_eq!(
+            after_grace(true, Some("ssh"), Some(42)),
+            AfterGrace::CantPause(CANT_PAUSE_SSH)
+        );
+        // WSL, a pane with no foreground group, or an unreadable workspace.
+        for (kind, group) in [(Some("wsl"), Some(42)), (Some("local"), None), (None, Some(42))] {
+            assert_eq!(after_grace(true, kind, group), AfterGrace::CantPause(CANT_PAUSE));
+        }
     }
 
     #[test]

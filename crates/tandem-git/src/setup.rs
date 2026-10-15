@@ -102,10 +102,11 @@ pub fn reserved_reason(name: &str) -> Option<&'static str> {
     ];
     // Every provider home Vibezeo sets (the registry's `providerHomeEnv`,
     // F-AC-01); a test checks the registry against this list.
-    const AGENTS: [&str; 14] = [
+    const AGENTS: [&str; 15] = [
         "CLAUDE_CONFIG_DIR",
         "CODEX_HOME",
         "GEMINI_CLI_HOME",
+        "KIRO_HOME",
         "XDG_CONFIG_HOME",
         "XDG_DATA_HOME",
         "XDG_STATE_HOME",
