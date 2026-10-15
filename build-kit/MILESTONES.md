@@ -1997,6 +1997,28 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ---
 
+## M18 · Next features: usage (M)
+
+**Goal.** The usage work `docs/NEXT_FEATURES.md` ranks (§1 #4, #8 and §3 B1): a forecast of when each account runs out before its window resets, a guard against runaway agents, and the Night Shift, work that waits for a reset. Built on branch `product-research`; decisions D-2460–D-2479.
+
+**Owns:** F-AC-08 (P2)
+**Prerequisites.** M6 and M16 usage polling and the usage dashboard (F-AC-04, F-AC-07).
+
+**Ordered tasks**
+1. **Usage forecast (F-AC-08).** Per-window run-out at the current pace in the usage chip, "Who's using it" from the engines' own local logs (numbers only, F-AC-07's parser), the opt-in `usage_forecast` notification, and the launch sheet's near-limit note naming an account with more room; never switches accounts.
+
+**Verification**
+```bash
+cargo test -p tandem-engines f_ac_08 && cargo test -p tandem-desktop --lib f_ac_08
+pnpm --filter desktop exec vitest run -t "F-AC-08"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-ac08-*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-AC08 Forecast** (`m18-ac08-forecast.e2e.ts`). A usage window that will run out before it resets: the chip's popover says when; the notification fires once per window when turned on.
+
+---
+
 ## 20. Coverage table (feature ID → owning milestone)
 
 Every feature in PRODUCT_SPEC §4 appears here exactly once: **165 features** (65 P0, 67 P1, 33 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 9: the 5 extras (F-EX, §4.19) and the 4 worktree-workflow features (F-WT, §4.20). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
