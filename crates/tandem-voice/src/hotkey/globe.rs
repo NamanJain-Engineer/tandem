@@ -98,11 +98,18 @@ impl GlobeKey for DefaultsGlobe {
                 Err(GlobeError::Failed(err.trim().to_string()))
             };
         }
-        Ok(out
-            .trim()
-            .parse::<i64>()
+        // A value this build doesn't know is left alone: read as "never
+        // set", putting it back would delete it.
+        let raw = out.trim();
+        raw.parse::<i64>()
             .ok()
-            .and_then(GlobeUsage::from_defaults))
+            .and_then(GlobeUsage::from_defaults)
+            .map(Some)
+            .ok_or_else(|| {
+                GlobeError::Failed(format!(
+                    "macOS reports a value Vibezeo doesn't know ({raw})"
+                ))
+            })
     }
 
     fn write(&self, usage: Option<GlobeUsage>) -> Result<(), GlobeError> {
@@ -253,6 +260,20 @@ mod tests {
         ));
         assert!(!NoGlobe.available());
         assert_eq!(NoGlobe.read(), Err(GlobeError::Unsupported));
+    }
+
+    #[test]
+    fn f_di_11_a_value_this_build_does_not_know_is_left_alone_so_undo_never_loses_it() {
+        // Read as "never set", "Put it back" would delete the user's value.
+        for out in ["9\n", "yes\n"] {
+            let g = DefaultsGlobe::new(Arc::new(move |_: &str, args: &[&str]| {
+                Ok(match args.first().copied() {
+                    Some("read") => (true, out.to_string(), String::new()),
+                    _ => (true, String::new(), String::new()),
+                })
+            }));
+            assert!(matches!(g.read(), Err(GlobeError::Failed(_))), "{out:?}");
+        }
     }
 
     #[test]
