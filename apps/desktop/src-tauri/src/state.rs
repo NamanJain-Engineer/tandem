@@ -151,6 +151,8 @@ pub struct AppState {
     pub logins: Arc<crate::services::accounts::LoginOps>,
     /// The latest usage per engine account (F-AC-04).
     pub usage: Arc<crate::services::usage::UsageBoard>,
+    /// The runaway guard (F-AC-09).
+    pub runaway: Arc<crate::services::runaway::RunawayService>,
     /// Thread mode: turns, their events and the chat adapters (F-TH-03).
     pub threads: Arc<crate::services::threads::ThreadService>,
     /// Models engines reported at runtime (F-TH-08).
@@ -279,6 +281,10 @@ impl AppState {
         };
         let keychain = keychain::open_keychain();
         let bus = EventBus::new();
+        let runaway = crate::services::runaway::RunawayService::new(
+            bus.clone(),
+            Arc::new(tandem_pty::suspend::SignalControl),
+        );
         let offline_started_at = store_blocking_int(&store, SettingKey::OfflineStartedAt);
         let auth = AuthService::new(
             data.clone(),
@@ -805,6 +811,7 @@ impl AppState {
             orphans,
             logins: Arc::default(),
             usage: Arc::default(),
+            runaway,
             threads,
             models,
             gateway,

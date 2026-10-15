@@ -30,6 +30,9 @@
 //! `/context <tokens>` (as `claude`) ends a turn whose transcript, under
 //! `$CLAUDE_CONFIG_DIR/projects/`, reports that many context tokens (F-AC-06).
 //!
+//! `/subagents <n>` reports n subagent starts and keeps working for a
+//! minute without reading its input (F-AC-09).
+//!
 //! `/limit <delay>` prints a usage-limit message that resets after the delay
 //! ("5s", "2h"), as engines do (F-AC-05).
 //!
@@ -756,6 +759,19 @@ fn answer(name: &str, text: &str) -> bool {
         let (tool, args) = rest.split_once(' ').unwrap_or((rest, "{}"));
         let args = serde_json::from_str(args).unwrap_or_else(|_| serde_json::json!({}));
         out(&format!("{}\r\n", tasks_call(tool.trim(), args)));
+        return true;
+    }
+    // `/subagents <n>` (F-AC-09): reports n subagent starts (PreToolUse of
+    // the `Task` tool), then keeps working for a minute without reading.
+    if let Some(n) = t.strip_prefix("/subagents ") {
+        let n: u32 = n.trim().parse().unwrap_or(1);
+        out("spawning subagents…\r\n");
+        if claude {
+            for _ in 0..n {
+                hook("PreToolUse", serde_json::json!({ "tool_name": "Task" }));
+            }
+        }
+        std::thread::sleep(Duration::from_secs(60));
         return true;
     }
     if let Some(title) = t.strip_prefix("/title ") {

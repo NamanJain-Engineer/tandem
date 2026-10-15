@@ -3,7 +3,7 @@
 //! the engine where it reports them, and their forecasts and the sessions
 //! spending them (F-AC-08).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -135,8 +135,10 @@ pub struct UsageView {
 pub struct UsageBoard {
     views: Mutex<HashMap<String, UsageView>>,
     history: Mutex<UsageHistory>,
-    /// `(account, window kind, resets_at)` already notified.
-    warned: Mutex<HashSet<(String, String, Option<i64>)>>,
+    /// `(account, window kind)` → the reset time of the window already
+    /// notified. Engines report reset times that drift by seconds between
+    /// readings, so a reset within a minute of it is the same window.
+    warned: Mutex<HashMap<(String, String), i64>>,
 }
 
 impl UsageBoard {
@@ -170,9 +172,26 @@ impl UsageBoard {
             .filter(|(w, f)| {
                 f.runs_out_early() && f.before_reset_ms.is_some() && w.resets_at.is_some()
             })
-            .filter(|(w, _)| warned.insert((account.to_string(), w.kind.clone(), w.resets_at)))
+            .filter(|(w, _)| {
+                let Some(reset) = w.resets_at else {
+                    return false;
+                };
+                let key = (account.to_string(), w.kind.clone());
+                match warned.get(&key) {
+                    Some(old) if reset <= old + 60_000 => false,
+                    _ => {
+                        warned.insert(key, reset);
+                        true
+                    }
+                }
+            })
             .map(|(w, f)| (w.clone(), f.clone()))
             .collect()
+    }
+
+    /// The rise of the account's fullest window over the last hour (F-AC-09).
+    pub fn hour_rise(&self, account: &str, now: i64) -> Option<f64> {
+        self.history.lock().ok()?.hour_rise(account, now)
     }
 
     /// The test harness: earlier readings move `ms` into the past.
@@ -191,7 +210,7 @@ impl UsageBoard {
             h.forget(account);
         }
         if let Ok(mut w) = self.warned.lock() {
-            w.retain(|(a, _, _)| a != account);
+            w.retain(|(a, _), _| a != account);
         }
     }
 }
@@ -460,6 +479,12 @@ mod forecast_tests {
         assert_eq!(board.newly_short(&second).len(), 1);
         let third = view(&board, 65.0, T0 + 35 * MIN, reset);
         assert!(board.newly_short(&third).is_empty(), "same window: once");
+        // Engines' reset times drift by seconds between readings.
+        let drift = view(&board, 70.0, T0 + 40 * MIN, reset + 30_000);
+        assert!(
+            board.newly_short(&drift).is_empty(),
+            "a drifted reset is the same window"
+        );
         // A new window (a later reset) can warn again.
         board.forget("acc_1");
         let later = T0 + 400 * MIN;
