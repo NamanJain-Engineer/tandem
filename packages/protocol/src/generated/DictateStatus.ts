@@ -37,4 +37,9 @@ quickActions: boolean,
 /**
  * F-DI-10's one-time disclosure was shown.
  */
-enhanceDisclosed: boolean, };
+enhanceDisclosed: boolean, 
+/**
+ * Fn went unheard in the verify test, so the hold key became
+ * Control+Option (F-DI-02, D-524).
+ */
+fnFallback: boolean, };

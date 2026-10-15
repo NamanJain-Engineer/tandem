@@ -217,6 +217,20 @@ impl Binding {
         self.trigger.is_none()
     }
 
+    /// Fn (🌐) alone: macOS's default hold key, which some keyboards and
+    /// system settings never deliver (F-DI-02).
+    pub fn is_fn_alone(&self) -> bool {
+        self.trigger.is_none() && self.modifiers == [Modifier::Fn]
+    }
+
+    /// What Dictate switches to when Fn isn't heard: Control+Option.
+    pub fn fn_fallback() -> Self {
+        Self {
+            modifiers: vec![Modifier::Ctrl, Modifier::Alt],
+            trigger: None,
+        }
+    }
+
     /// The default hold key: Fn on macOS, Ctrl+Win on Windows, Ctrl+Alt on Linux.
     pub fn default_hold(os: Os) -> Self {
         let s = match os {
@@ -285,6 +299,15 @@ impl Binding {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn f_di_02_fn_alone_and_its_fallback() {
+        let fn_key: Binding = "Fn".parse().expect("fn");
+        assert!(fn_key.is_fn_alone());
+        assert!(!"Fn+Ctrl".parse::<Binding>().expect("b").is_fn_alone());
+        assert_eq!(Binding::fn_fallback().to_string(), "Ctrl+Alt");
+        assert!(Binding::fn_fallback().validate(false, Os::Mac).is_ok());
+    }
 
     #[test]
     fn f_di_01_parses_and_prints_canonically() {

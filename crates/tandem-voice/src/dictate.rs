@@ -21,7 +21,8 @@ use crate::cloud::{
 use crate::dictionary::{Dictionary, Rule};
 use crate::guards::{self, Verdict};
 use crate::hotkey::{
-    Action, Bindings, Gesture, HotkeyBackend, HotkeyStatus, KeyEvent, Phase, Verifier, Which,
+    Action, Binding, Bindings, Gesture, HotkeyBackend, HotkeyStatus, KeyEvent, Phase, Verifier,
+    Which,
 };
 use crate::insert::{self, CopyReason, Outcome, Output, PendingRestore, Platform, Target};
 use crate::media::PauseMedia;
@@ -157,7 +158,14 @@ pub trait DictateSink: Send + Sync {
     /// The global shortcut's status changed on its own: secure input
     /// paused it, or its session died (F-DI-02).
     fn hotkey_status(&self, _status: HotkeyStatus) {}
+    /// The verify test ran [`FN_GRACE`] with Fn alone as the hold key and
+    /// heard nothing from it: some keyboards and macOS settings never
+    /// deliver Fn (F-DI-02). Once per verify test.
+    fn fn_unheard(&self) {}
 }
+
+/// How long the verify test waits for Fn before Dictate offers its fallback.
+pub const FN_GRACE: Duration = Duration::from_secs(8);
 
 #[derive(Debug, Clone)]
 pub struct DictateConfig {
@@ -267,6 +275,11 @@ struct Inner {
     last: Option<LastTake>,
     /// The backend's status as last seen, and when it was checked (ms).
     hotkey: (HotkeyStatus, u64),
+    /// The hold key is Fn alone (macOS's default).
+    hold_is_fn: bool,
+    /// When the verify test started, while nothing from the hold key has
+    /// been heard in it; cleared once Fn is reported unheard.
+    verify_since: Option<Instant>,
 }
 
 /// Cheap to clone; every clone drives the same controller.
@@ -298,6 +311,8 @@ impl Dictate {
                 retry: None,
                 last: None,
                 hotkey: (HotkeyStatus::NotRunning, 0),
+                hold_is_fn: false,
+                verify_since: None,
             })),
             deps: Arc::new(deps),
             stop: Arc::new(AtomicBool::new(false)),
@@ -315,7 +330,11 @@ impl Dictate {
                 self.deps.hotkeys.status()
             }
         };
-        self.inner.lock().hotkey = (status.clone(), crate::hotkey::now_ms());
+        {
+            let mut i = self.inner.lock();
+            i.hotkey = (status.clone(), crate::hotkey::now_ms());
+            i.hold_is_fn = bindings.hold.as_ref().is_some_and(Binding::is_fn_alone);
+        }
         // One clock per start: a restart retires the previous thread.
         let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
         let me = self.clone();
@@ -388,11 +407,41 @@ impl Dictate {
 
     /// "Press your shortcut now": raw events go to the verifier, not to takes.
     pub fn verify_start(&self) {
-        self.inner.lock().verifier = Some(Verifier::default());
+        let mut i = self.inner.lock();
+        i.verifier = Some(Verifier::default());
+        i.verify_since = Some(Instant::now());
     }
 
     pub fn verify_stop(&self) {
-        self.inner.lock().verifier = None;
+        let mut i = self.inner.lock();
+        i.verifier = None;
+        i.verify_since = None;
+    }
+
+    /// Tests: makes the running verify test `by` older, for [`FN_GRACE`].
+    #[cfg(test)]
+    fn age_verify(&self, by: Duration) {
+        if let Some(t) = self.inner.lock().verify_since.as_mut() {
+            *t -= by;
+        }
+    }
+
+    /// Fn alone is the hold key and the verify test has heard nothing from
+    /// it for [`FN_GRACE`]: tell the app, once.
+    fn watch_fn(&self) {
+        let due = {
+            let mut i = self.inner.lock();
+            let due = i.hold_is_fn
+                && i.verifier.is_some()
+                && i.verify_since.is_some_and(|t| t.elapsed() >= FN_GRACE);
+            if due {
+                i.verify_since = None;
+            }
+            due
+        };
+        if due {
+            self.deps.sink.fn_unheard();
+        }
     }
 
     /// The running take's phase while it records: Reconnecting during the
@@ -460,6 +509,9 @@ impl Dictate {
             if let Some(v) = i.verifier.as_mut() {
                 if e.which != Which::Esc {
                     let passed = v.on(&e);
+                    if e.which == Which::Hold && e.native {
+                        i.verify_since = None;
+                    }
                     drop(i);
                     self.deps.sink.key(e.phase, e.native);
                     if passed {
@@ -484,6 +536,7 @@ impl Dictate {
             self.act(a, None);
         }
         self.watch_hotkeys(now, generation);
+        self.watch_fn();
         // The 10-minute cap, and the warning 30 s before it.
         let (stop, warn) = {
             let mut i = self.inner.lock();
@@ -1458,6 +1511,7 @@ mod tests {
         keys: Mutex<Vec<Phase>>,
         verified: Mutex<bool>,
         hotkey: Mutex<Vec<HotkeyStatus>>,
+        fn_unheard: Mutex<u32>,
     }
 
     impl DictateSink for Sink {
@@ -1489,6 +1543,9 @@ mod tests {
             *self.verified.lock() = true;
         }
         fn switch_due(&self, _id: String) {}
+        fn fn_unheard(&self) {
+            *self.fn_unheard.lock() += 1;
+        }
     }
 
     struct Rig {
@@ -2221,6 +2278,54 @@ mod tests {
             r.platform.pasted(),
             vec!["use Tandem, https://tandem.dev".to_string()]
         );
+    }
+
+    fn hold_fn(r: &Rig) {
+        r.d.stop_hotkeys();
+        r.d.start_hotkeys(&Bindings {
+            hold: Some("Fn".parse().expect("fn")),
+            toggle: None,
+        });
+    }
+
+    #[test]
+    fn f_di_02_fn_unheard_through_the_verify_test_is_reported_once() {
+        let r = rig(speech(), "x");
+        hold_fn(&r);
+        r.d.verify_start();
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(*r.sink.fn_unheard.lock(), 0, "not before the grace period");
+        r.d.age_verify(FN_GRACE);
+        wait(|| *r.sink.fn_unheard.lock() == 1);
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(*r.sink.fn_unheard.lock(), 1);
+    }
+
+    #[test]
+    fn f_di_02_a_heard_fn_another_hold_key_or_no_test_reports_nothing() {
+        // Fn arrived: nothing to fall back from.
+        let r = rig(speech(), "x");
+        hold_fn(&r);
+        r.d.verify_start();
+        r.keys.send(Which::Hold, Phase::Down);
+        std::thread::sleep(Duration::from_millis(50));
+        r.d.age_verify(FN_GRACE);
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(*r.sink.fn_unheard.lock(), 0);
+        // Control+Option is the hold key: Fn doesn't matter.
+        let r = rig(speech(), "x");
+        r.d.verify_start();
+        r.d.age_verify(FN_GRACE);
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(*r.sink.fn_unheard.lock(), 0);
+        // No verify test: an idle Fn key is just idle.
+        let r = rig(speech(), "x");
+        hold_fn(&r);
+        r.d.verify_start();
+        r.d.verify_stop();
+        r.d.age_verify(FN_GRACE);
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(*r.sink.fn_unheard.lock(), 0);
     }
 
     #[test]
