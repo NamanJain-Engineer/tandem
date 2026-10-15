@@ -1433,6 +1433,60 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 1. With the app unfocused, an agent reaching done produces one OS notification (a mocked notifier asserts one call), and clicking the mock activates focus on the source.
 2. With the "done" toggle off, none is sent.
 
+#### F-DB-04 Review queue (P2)
+**Story:** With several agents finishing work, I get one list of what's ready to review across every engine, ordered by what's riskiest, and I approve, send back or merge from it instead of remembering who did what.
+
+**Behavior:**
+- **What's in it:** a terminal agent or a thread whose status becomes **done** while its folder or worktree has changes joins the queue within 1 s. Changes are:
+  - a worktree's diff since its base, uncommitted work included;
+  - a plain git folder's diff against `HEAD`.
+
+  A done agent with no changes, or in a folder that isn't a git repository, doesn't join. An item leaves when:
+  - its agent starts working again (it returns when that turn ends);
+  - its pane or thread closes;
+  - a refresh finds its changes gone.
+
+  The queue lives in memory and is rebuilt from status after a restart. Teammate chats join when they work in a workspace (they have none today).
+- **Each item shows:**
+  - the agent's name, engine, folder and branch, and when it finished;
+  - its closing message: a thread's last reply, or a terminal's last three non-empty screen lines;
+  - the diffstat (files, + and −);
+  - the risk labels;
+  - the check's result.
+
+  **Open diff** shows the whole change. **Last turn** shows the diff since the agent's last checkpoint (F-EX-01), when it has one.
+- **Risk labels** come from local rules, with no AI involved. Each label names its rule and lists up to 5 of the files it matched. Labels are worded as what changed ("Touches migrations"), never "safe". The rules:
+  - 20 or more files;
+  - migrations (a `migrations` or `migrate` folder);
+  - CI (`.github/workflows/`, `.gitlab-ci.yml`, `.circleci/`, `Jenkinsfile`, `azure-pipelines.yml`, `.buildkite/`);
+  - lockfiles;
+  - `.env` files;
+  - auth paths (a path segment containing `auth`, `oauth`, `login`, `password`, `secret`, `crypto` or `permission`);
+  - the repository's public API paths;
+  - deleted tests (a deleted file in a `test`/`tests`/`__tests__` folder, or named `*.test.*`, `*.spec.*`, `*_test.*` or `test_*`).
+- **Per repository, set from the queue on this computer:**
+  - a **check command**, which runs in the item's folder when it joins, with the login environment, for up to 10 minutes. It shows Running, Passed, or Failed with the exit code and the last 200 lines. **Run check** runs it again.
+  - **public API paths**, one prefix per line.
+
+  Both are stored in the app's settings, never in the repository, so nothing from a pull runs.
+- **Sort** by risk (more rules first, then finish time) or by finish time (oldest first).
+- **Approve** records a SHA-256 of the item's diff and moves the item to Approved. A refresh that finds a different diff puts it back in the queue, labelled **Changed since you approved**. A refresh happens when the agent finishes again, when the queue opens, and on **Refresh**.
+- **On a worktree item:**
+  - **Send back** opens the worktree's diff with the review bar (F-WT-02);
+  - **Second opinion** opens F-WT-05's sheet;
+  - **Merge** opens F-CD-15's confirm with the overlap forecast (F-WT-03).
+- **Snooze** hides an item for an hour, or until its agent finishes again.
+- **Jump to agent** opens the pane or thread.
+- The queue is the **Review** view in the Dashboard panel, with its count, and the palette's "Open review queue". It has empty ("Nothing to review"), loading, error and populated states.
+
+**Acceptance:**
+1. A terminal agent and a thread that finish with uncommitted changes in their worktrees both appear in the queue within 1 s of done. One that finishes with no changes doesn't.
+2. A change that touches `db/migrations/0042.sql` and deletes `tests/auth.test.ts` is labelled with both rules, each listing its file. A change to `README.md` alone has no risk label.
+3. Approve, then the agent edits a file and finishes: the item is back in the queue as "Changed since you approved".
+4. On a worktree item, Send back opens that worktree's diff with its review bar, and Merge opens F-CD-15's confirm with the forecast.
+5. With a check command set, an item shows Passed for `true` and "Failed (exit 1)" with its output for `false`.
+6. The queue shows empty, loading, error and populated states. Sorting by risk puts the item with more rules first.
+
 ### 4.7 AG: Teammates (Agent mode)
 
 #### F-AG-01 Teammate record (P1)
