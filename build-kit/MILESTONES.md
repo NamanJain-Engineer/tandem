@@ -2003,21 +2003,23 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 **Goal.** The engine work `docs/NEXT_FEATURES.md` ranks first (§1 #1, #3, #5, #9): one instructions file for every engine, an engine catalog that keeps up with the vendors, engine versions under the user's control, and one library of every engine's local sessions. Built on its own branch (decisions D-2400–D-2419); each feature lands on its own and can ship in any release after it's green.
 
-**Owns:** F-EN-07 (P2)
+**Owns:** F-EN-07, F-EN-09 (P2)
 **Prerequisites.** M4 (engine registry and detection), M17's F-WT-01 (worktree copy patterns).
 
 **Ordered tasks**
 1. **One instructions file (F-EN-07).** The registry's `instructions` table (D-2400); `tandem_git::instructions` (inspect, plan, apply with backups, undo, copy into worktrees); commands `instructions_get`, `instructions_plan`, `instructions_apply`, `instructions_undo`, `instructions_copy_to_worktrees`; UI-160 from a local folder's rail menu.
+2. **Engine catalog (F-EN-09).** Registry rows for Antigravity CLI and Kiro CLI from the vendors' docs (D-2404), the `note` field (Gemini CLI's), shown in the launch grid's not-installed list and Settings › Engines.
 
 **Verification**
 ```bash
-cargo test -p tandem-engines f_en_07 && cargo test -p tandem-git f_en_07 && cargo test -p tandem-desktop --lib f_en_07
-pnpm --filter desktop exec vitest run -t "F-EN-07"
+cargo test -p tandem-engines f_en_0 && cargo test -p tandem-git f_en_07 && cargo test -p tandem-desktop --lib f_en_0
+pnpm --filter desktop exec vitest run -t "F-EN-0"
 dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-*.e2e.ts'
 ```
 
 **E2E**
 - **E2E-M18-EN07 Instructions.** A repository with a `CLAUDE.md` and an `AGENTS.md` that differ, and an ignored `CLAUDE.local.md`. Expected: the panel says Claude Code reads `CLAUDE.md`, not `AGENTS.md`, and shows the difference; "Use one file for all" writes nothing until confirmed, then `CLAUDE.md` is `@AGENTS.md`; Undo restores it byte for byte; "Copy into worktrees" adds `CLAUDE.local.md` to `.vibezeo/worktree.json`.
+- **E2E-M18-EN09 Engine catalog.** Fake `agy` and `kiro-cli` on the login PATH. Expected: both detected and launched in panes, Kiro with `KIRO_HOME`; Gemini CLI keeps its note; neither new engine is chat-capable.
 
 ---
 
@@ -2047,7 +2049,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **170 features** (65 P0, 67 P1, 38 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 4 so far (F-EN-07, F-WT-06, F-WT-09 and F-AC-08). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **172 features** (65 P0, 67 P1, 40 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 6 so far (F-AC-08, F-AC-09, F-EN-07, F-EN-09, F-WT-06 and F-WT-09). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -2065,7 +2067,8 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **170 features** (6
 | F-TH-11 | P0 | M7 | F-TH-12 | P0 | M7 | F-TH-13 | P1 | M7 | F-TH-14 | P1 | M7 |
 | F-TH-15 | P0 | M7 | F-TH-16 | P1 | M7 | F-EN-01 | P0 | M4 | F-EN-02 | P0 | M4 |
 | F-EN-03 | P1 | M4 | F-EN-04 | P0 | M4 | F-EN-05 | P0 | M4 | F-EN-06 | P1 | M4 |
-| F-EN-07 | P2 | M18 | F-WT-06 | P2 | M18 | F-WT-09 | P2 | M18 | F-AC-08 | P2 | M18 |
+| F-AC-08 | P2 | M18 | F-AC-09 | P2 | M18 | F-EN-07 | P2 | M18 | F-EN-09 | P2 | M18 |
+| F-WT-06 | P2 | M18 | F-WT-09 | P2 | M18 | | | | | | |
 | F-AC-01 | P0 | M4 | F-AC-02 | P0 | M6 | F-AC-03 | P0 | M6 | F-AC-04 | P1 | M6 |
 | F-AC-05 | P0 | M6 | F-AC-06 | P1 | M6 | F-AC-07 | P2 | M16 | F-DB-01 | P0 | M5 |
 | F-DB-02 | P0 | M5 | F-DB-03 | P0 | M5 | F-AG-01 | P1 | M10 | F-AG-02 | P1 | M10 |
@@ -2092,7 +2095,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **170 features** (6
 | F-TL-05 | P1 | M15 | F-TL-06 | P0 | M15 | F-TL-07 | P1 | M13 | F-TL-10 | P1 | M13 |
 | F-RM-04 | P2 | M16 | F-RM-05 | P2 | M16 | F-RM-06 | P2 | M16 | F-RM-07 | P2 | M16 |
 
-**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 4 = 170 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
+**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 6 = 172 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|

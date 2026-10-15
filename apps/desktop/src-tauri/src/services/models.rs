@@ -231,6 +231,39 @@ mod tests {
     }
 
     #[test]
+    fn f_en_09_4_codexs_reported_models_lead_the_picker_and_the_catalog_fills_it_when_none_are() {
+        let catalog = json!({"models": {"codex": [
+            {"id": "default", "label": "Default"},
+            {"id": "gpt-5-codex", "label": "GPT-5 Codex"}
+        ]}});
+        let reported = |id: &str| ModelEntry {
+            id: id.into(),
+            label: id.into(),
+            description: String::new(),
+            is_default: false,
+            effort_levels: vec![],
+            context_window: None,
+            source: ModelSource::Runtime,
+        };
+        let runtime = vec![reported("gpt-6-codex"), reported("gpt-6-codex-mini")];
+        let list = merge("codex", &runtime, &catalog, ConfigSource::Remote, &catalog);
+        let ids: Vec<_> = list.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["default", "gpt-6-codex", "gpt-6-codex-mini", "gpt-5-codex"]
+        );
+        assert_eq!(list[1].source, ModelSource::Runtime);
+        // Nothing reported: the catalog alone.
+        let list = merge("codex", &[], &catalog, ConfigSource::Remote, &catalog);
+        let ids: Vec<_> = list.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["default", "gpt-5-codex"]);
+        // A terminal engine has no catalog rows and no picker.
+        assert!(merge("kiro", &[], &catalog, ConfigSource::Remote, &catalog)
+            .iter()
+            .all(|m| m.id == "default"));
+    }
+
+    #[test]
     fn f_th_08_1_a_model_added_remotely_appears() {
         let before = merge("claude", &[], &bundled(), ConfigSource::Bundled, &bundled());
         assert!(!before.iter().any(|m| m.id == "haiku"));
