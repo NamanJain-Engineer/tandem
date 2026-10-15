@@ -1906,7 +1906,11 @@ The server enforces every row. The client enforces them as a UX courtesy only.
   - If its fullest window is still at 95% or more with a later reset, the run waits for that reset ("Waiting for {account} to reset at {time}").
   - Otherwise it starts task execution (F-TK-04) with that account and engine and the saved choices.
   - It never uses another account or engine (F-AC-05, out of scope §6.7). A start that fails (signed out, plan, engine missing, the queue's limit) is marked "Couldn't start" with the reason, and isn't retried.
-- **With the app closed:** the background runner (F-RT-03, `--run-routines`) starts a due run and waits for it within its pass's cap, as it does for routines.
+- **With the app closed:** the background runner (F-RT-03, `--run-routines`) starts a due run.
+  - It keeps its process, and the app lock, while the run goes on, for at most 8 hours (routines' passes stop at 50 minutes). At 8 hours it stops the run, which needs the user: "Stopped after 8 hours: the most a run gets while Vibezeo is closed."
+  - UI-171 says so up front when background routines are on: "If Vibezeo is closed then, the run gets up to 8 hours."
+  - While a background pass holds the lock, an app that opens doesn't tick Night Shift runs and doesn't settle task attempts; it does both once it holds the lock.
+- **A run whose process died** (the background runner killed, the computer off) ends as needing the user, with its attempt's reason ("Vibezeo closed during the run."), the next time Vibezeo or the background runner starts. The summary counts it.
 - **Morning summary** (Settings › Notifications › "Night Shift summary at", 8:00 AM by default):
   - At that time, if any Night Shift runs ended since the last summary, one notification: "Night Shift: {n} done, {m} need you" / the tasks' titles. "Need you" means failed, stopped or couldn't start. Its source opens Tasks.
   - A paired phone with push turned on (F-RM-06) gets the same summary as a push alert.
@@ -1920,7 +1924,8 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 4. Cancel before the reset removes the run, and nothing starts.
 5. An account with no known reset can't be picked, and Free shows Execute's Pro block.
 6. At the summary time after two runs ended (one done, one failed), one notification reads "Night Shift: 1 done, 1 needs you". The next day, with nothing new, there's none. A paired phone with push on is queued the same alert.
-7. With the app closed and background routines on, `--run-routines` starts a due run.
+7. With the app closed and background routines on, `--run-routines` starts a due run and keeps waiting while it runs, past routines' 50 minutes, up to 8 hours; at 8 hours the run is stopped and needs the user.
+8. A run whose attempt was left running by a process that died ends as "needs you" with the attempt's reason the next time the app or the background runner starts, and the next summary counts it.
 
 ### 4.10 PL: Plugins and tandem-gateway
 

@@ -283,6 +283,7 @@
   "night.plan.shared": "In the workspace itself",
   "night.plan": "Starts {task} on {account} ({engine}) at {time}, when its {window} resets. {where}, with {access}. It waits for that account's reset and never uses another account.",
   "night.mustBeOpen": "Vibezeo must be open then, or turn on Run even when Vibezeo is closed in Routines.",
+  "night.closedCap": "If Vibezeo is closed then, the run gets up to 8 hours.",
   "night.runsAt": "Runs at {time} on {account}",
   "night.waiting": "Waiting for {account} to reset at {time}",
   "night.cancel": "Cancel",

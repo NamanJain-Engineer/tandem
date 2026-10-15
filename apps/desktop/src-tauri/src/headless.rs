@@ -111,17 +111,23 @@ pub async fn run_locked(
     Pass::Ran(started.len())
 }
 
-/// Starts due Night Shift runs and waits for them, at most `cap`.
+/// Starts due Night Shift runs and keeps this process (and the app lock)
+/// while one runs, at most `cap`; then it stops them and reports them
+/// (F-RT-06). With the lock held no GUI is running, so attempts still marked
+/// active were left by a process that died: they're settled first, and the
+/// runs they belong to end as needing the user.
 pub async fn night_pass(state: &crate::state::AppState, cap: Duration) {
+    use crate::services::night_shift::keep_waiting;
+    state.task_exec.settle().await;
     let until = state.clock.now_ms() + i64::try_from(cap.as_millis()).unwrap_or(i64::MAX);
     loop {
         state.night_shift.tick(state).await;
-        let running = state
-            .night_shift
-            .list()
-            .iter()
-            .any(|r| r.state == crate::services::night_shift::NightState::Started);
-        if !running || state.clock.now_ms() >= until {
+        let now = state.clock.now_ms();
+        let runs = state.night_shift.list();
+        if !keep_waiting(&runs, now, until) {
+            if now >= until {
+                state.night_shift.stop_started(state).await;
+            }
             break;
         }
         state.clock.sleep(Duration::from_secs(5)).await;
@@ -192,7 +198,7 @@ pub fn main() -> i32 {
         // The Night Shift's due runs start here too, and the pass waits for
         // them within the same cap (F-RT-06).
         if allowed {
-            night_pass(&state, crate::services::routines::HEADLESS_CAP).await;
+            night_pass(&state, crate::services::night_shift::NIGHT_CAP).await;
         }
         pass
     });

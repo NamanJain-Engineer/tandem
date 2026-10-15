@@ -224,11 +224,9 @@ export function RunAtResetDialog({
                 access,
               })}
             </span>
-            {!background && (
-              <span className="mt-1 block text-fg-muted" data-testid="night-open-note">
-                {t("night.mustBeOpen")}
-              </span>
-            )}
+            <span className="mt-1 block text-fg-muted" data-testid="night-open-note">
+              {background ? t("night.closedCap") : t("night.mustBeOpen")}
+            </span>
           </Callout>
         )}
       </div>

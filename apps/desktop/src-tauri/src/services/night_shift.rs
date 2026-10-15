@@ -25,6 +25,10 @@ use crate::state::AppState;
 
 /// A window at least this full when the run is due hasn't reset yet.
 pub const STILL_FULL: f64 = 95.0;
+/// How long the background runner keeps a Night Shift run going with the
+/// app closed; then it stops the run and reports it.
+pub const NIGHT_CAP: std::time::Duration = std::time::Duration::from_secs(8 * 60 * 60);
+
 /// How often the app checks for due runs and the summary.
 pub const TICK: std::time::Duration = std::time::Duration::from_secs(30);
 
@@ -151,6 +155,29 @@ pub fn due(run: &NightRun, windows: &[UsageWindow], now: i64) -> Due {
         Some(r) => Due::Wait(r),
         None => Due::Start,
     }
+}
+
+/// Where a started run goes when its attempt is in `state` (with its
+/// error): done, needs you (with the reason), or still going.
+pub fn follow(state: AttemptState, error: Option<&str>) -> Option<(NightState, Option<String>)> {
+    match state {
+        AttemptState::Done | AttemptState::InReview => Some((NightState::Done, None)),
+        AttemptState::Failed | AttemptState::Stopped => Some((
+            NightState::NeedsYou,
+            Some(
+                error
+                    .unwrap_or("The run stopped before it finished.")
+                    .to_string(),
+            ),
+        )),
+        _ => None,
+    }
+}
+
+/// Whether the background runner keeps waiting: a run is still started
+/// and the cap hasn't passed.
+pub fn keep_waiting(runs: &[NightRun], now: i64, until: i64) -> bool {
+    now < until && runs.iter().any(|r| r.state == NightState::Started)
 }
 
 /// The morning summary over runs that ended after `since`: `(done, needs
@@ -300,6 +327,34 @@ impl NightShiftService {
         });
     }
 
+    /// The background runner's cap passed: each started run's attempt is
+    /// stopped, and the run needs the user, with the reason.
+    pub async fn stop_started(&self, state: &AppState) {
+        let started: Vec<NightRun> = self
+            .list()
+            .into_iter()
+            .filter(|r| r.state == NightState::Started)
+            .collect();
+        for run in started {
+            if let Some(id) = &run.attempt_id {
+                if let Err(e) = state.task_exec.stop(id).await {
+                    tracing::warn!(code = "night.stop_failed", error = %e, "couldn't stop a Night Shift run");
+                }
+            }
+            let at = state.clock.now_ms();
+            self.update(|f| {
+                if let Some(r) = f.runs.iter_mut().find(|r| r.id == run.id) {
+                    r.state = NightState::NeedsYou;
+                    r.reason = Some(
+                        "Stopped after 8 hours: the most a run gets while Vibezeo is closed."
+                            .into(),
+                    );
+                    r.ended_at = Some(at);
+                }
+            });
+        }
+    }
+
     /// Runs waiting to start or running.
     pub fn has_pending(&self) -> bool {
         self.list().iter().any(|r| {
@@ -375,15 +430,15 @@ impl NightShiftService {
                 else {
                     continue;
                 };
-                let next = match a.attempt.state {
-                    AttemptState::Done | AttemptState::InReview => NightState::Done,
-                    AttemptState::Failed | AttemptState::Stopped => NightState::NeedsYou,
-                    _ => continue,
+                let Some((next, reason)) = follow(a.attempt.state, a.attempt.error.as_deref())
+                else {
+                    continue;
                 };
                 let at = state.clock.now_ms();
                 self.update(|f| {
                     if let Some(r) = f.runs.iter_mut().find(|r| r.id == run.id) {
                         r.state = next;
+                        r.reason = reason;
                         r.ended_at = Some(at);
                     }
                 });
@@ -618,6 +673,49 @@ mod tests {
             "nonsense",
             None
         ));
+    }
+
+    #[test]
+    fn f_rt_06_8_a_dead_run_ends_as_needs_you_with_its_reason() {
+        // The GUI settles attempts a closed process left (`settle_interrupted`):
+        // they read Stopped with "Vibezeo closed during the run."
+        assert_eq!(
+            follow(
+                AttemptState::Stopped,
+                Some("Vibezeo closed during the run.")
+            ),
+            Some((
+                NightState::NeedsYou,
+                Some("Vibezeo closed during the run.".to_string())
+            ))
+        );
+        assert_eq!(
+            follow(AttemptState::Failed, None).map(|(s, _)| s),
+            Some(NightState::NeedsYou)
+        );
+        assert_eq!(
+            follow(AttemptState::InReview, None),
+            Some((NightState::Done, None))
+        );
+        assert_eq!(follow(AttemptState::Running, None), None);
+        // Ended that way, the summary counts it.
+        let mut r = run(NightState::NeedsYou, T0);
+        r.ended_at = Some(T0 + MIN);
+        assert_eq!(summary(&[r], T0).map(|(d, n, _)| (d, n)), Some((0, 1)));
+    }
+
+    #[test]
+    fn f_rt_06_7_the_background_runner_waits_for_a_started_run_until_its_cap() {
+        let cap = i64::try_from(NIGHT_CAP.as_millis()).expect("cap");
+        let started = [run(NightState::Started, T0)];
+        // Well past routines' 50-minute cap, still waiting.
+        assert!(keep_waiting(&started, T0 + 3 * 60 * MIN, T0 + cap));
+        assert!(
+            !keep_waiting(&started, T0 + cap, T0 + cap),
+            "the cap ends it"
+        );
+        assert!(!keep_waiting(&[run(NightState::Done, T0)], T0, T0 + cap));
+        assert_eq!(cap, 8 * 60 * MIN);
     }
 
     #[test]

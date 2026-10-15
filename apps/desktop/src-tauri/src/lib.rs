@@ -1009,7 +1009,11 @@ pub fn run() {
                 let (auth, ent) = (state.auth.clone(), state.entitlements.clone());
                 let mut app_events = state.bus.subscribe(tandem_core::bus::Topic::App);
                 let mut plan_events = state.bus.subscribe(tandem_core::bus::Topic::Entitlement);
+                let routines = state.routines.clone();
                 tauri::async_runtime::spawn(async move {
+                    // Attempts a headless pass is still running aren't
+                    // stale: settle only once this app holds the lock (F-RT-06).
+                    routines.wait_lock().await;
                     exec.settle().await;
                     loop {
                         use tokio::sync::broadcast::error::RecvError;
@@ -1114,7 +1118,10 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     loop {
                         let state = night.state::<AppState>();
-                        state.night_shift.tick(&state).await;
+                        // A headless pass owns the runs until it ends (F-RT-06).
+                        if state.routines.holds_lock() {
+                            state.night_shift.tick(&state).await;
+                        }
                         state.clock.sleep(crate::services::night_shift::TICK).await;
                     }
                 });
