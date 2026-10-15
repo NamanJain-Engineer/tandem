@@ -43,6 +43,7 @@ export default function DemoPage() {
   return (
     <SiteFrame current="/demo/">
       <PageHero
+        center
         eyebrow="Runs in your browser"
         title={`Try ${SITE.product} without installing it`}
         lead={
@@ -54,7 +55,7 @@ export default function DemoPage() {
           </>
         }
       >
-        <div className="flex flex-wrap items-center gap-3 pt-2">
+        <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
           <a href={DEMO_APP} data-testid="launch-demo" className={siteButton("primary", "lg")}>
             <Icon icon={Play} size={18} />
             Launch the demo
@@ -67,12 +68,13 @@ export default function DemoPage() {
         <p className="text-caption text-fg-muted">Best on a laptop or desktop screen.</p>
       </PageHero>
 
-      <section aria-label="The demo" className="bg-page pb-16">
+      <section aria-label="The demo" className="relative bg-page pb-(--site-section-y)">
         <div className="mx-auto w-full max-w-stage px-(--site-gutter)">
-          <a href={DEMO_APP} data-stage="" className="group block overflow-hidden rounded-lg bg-stage shadow-stage">
+          <div className="frame">
+          <a href={DEMO_APP} data-stage="" className="frame-screen group block">
             <picture>
-              <source type="image/avif" srcSet="/demo/still.avif" />
-              <source type="image/webp" srcSet="/demo/still.webp" />
+              <source type="image/avif" srcSet="/demo/still.avif 1280w, /demo/still@2x.avif 2560w" sizes="(min-width: 1312px) 1268px, 100vw" />
+              <source type="image/webp" srcSet="/demo/still.webp 1280w, /demo/still@2x.webp 2560w" sizes="(min-width: 1312px) 1268px, 100vw" />
               <img
                 src="/demo/still.jpg"
                 width={1280}
@@ -84,21 +86,23 @@ export default function DemoPage() {
               />
             </picture>
           </a>
+          </div>
         </div>
       </section>
 
-      <section aria-labelledby="try" className="bg-raised py-(--site-section-y)">
+      <section aria-labelledby="try" className="relative bg-raised py-(--site-section-y)">
+        <div aria-hidden="true" className="horizon absolute inset-x-0 top-0" />
         <div className="container-site flex flex-col gap-10">
           <div className="flex flex-col gap-4">
             <p className="eyebrow">In five steps</p>
-            <h2 id="try" className="text-display-lg text-fg">
+            <h2 id="try" className="text-sheen text-display-lg text-fg">
               What to try
             </h2>
           </div>
           <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {TRY.map((t, i) => (
-              <li key={t.body} className="flex flex-col gap-3 rounded-md border border-border bg-card p-6">
-                <span className="font-mono text-caption text-fg-subtle">{String(i + 1).padStart(2, "0")}</span>
+              <li key={t.body} className="reveal surface-raised flex flex-col gap-3 p-6">
+                <span className="keycap !h-8 !min-w-8 self-start !px-0 !text-[0.75rem] text-fg-muted">{String(i + 1).padStart(2, "0")}</span>
                 <span className="text-copy font-semibold text-fg">{t.title}</span>
                 <span className="text-copy-sm text-fg-muted">{t.body}</span>
               </li>

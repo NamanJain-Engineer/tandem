@@ -1,12 +1,13 @@
 import { siteButton } from "@tandem/ui/components/SiteButton";
 import { LIMITS } from "@tandem/protocol/plans";
-import { Download, Info, ShieldCheck } from "lucide-react";
+import { Download, Info, ShieldCheck, Terminal } from "lucide-react";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import registry from "../../../../crates/tandem-engines/registry.json";
 import { CommandLine } from "../../components/site/CommandLine";
 import { Icon } from "../../components/site/Icon";
 import { Keys } from "../../components/site/Keys";
+import { Orbit } from "../../components/site/Orbit";
 import { Section } from "../../components/site/Section";
 import { SiteFrame } from "../../components/site/SiteFrame";
 import { TextLink } from "../../components/site/TextLink";
@@ -62,14 +63,20 @@ export default function DownloadPage() {
   const older = RELEASES.filter((r) => r.version !== RELEASE.version);
   return (
     <SiteFrame current="/download/">
-      <section aria-label="Introduction" className="relative isolate overflow-hidden bg-page">
-        <div aria-hidden="true" className="bg-site-grid absolute inset-0 -z-10 [mask-image:linear-gradient(to_bottom,black_30%,transparent)]" />
-        <div className="container-site flex flex-col items-center gap-5 pb-10 pt-16 text-center lg:pt-20">
-          <img src="/icon.png" width={96} height={96} alt="" className="size-20 drop-shadow-[0_0_32px_var(--site-glow)] lg:size-24" />
-          <h1 className="text-display-xl text-fg">Download {SITE.product}</h1>
-          <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono text-copy-sm text-fg-muted">
+      <section aria-label="Introduction" className="grain relative isolate overflow-hidden bg-page">
+        <div aria-hidden="true" className="bg-lens absolute inset-0 -z-10" />
+        <Orbit
+          id="download"
+          className="absolute left-1/2 top-0 -z-10 h-[46rem] w-[90rem] max-w-none -translate-x-1/2 -translate-y-[12rem] [mask-image:linear-gradient(to_bottom,black_30%,transparent_85%)]"
+        />
+        <div className="container-site flex flex-col items-center gap-6 pb-12 pt-20 text-center lg:pt-24">
+          <span className="surface inline-flex size-24 items-center justify-center !rounded-[22px] shadow-e3 lg:size-28">
+            <img src="/icon.png" width={96} height={96} alt="" className="size-16 lg:size-20" />
+          </span>
+          <h1 className="text-sheen text-display-xl text-fg">Download {SITE.product}</h1>
+          <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono text-[0.8125rem] text-fg-muted">
             <span>Released · {RELEASE.version}</span>
-            <span aria-hidden="true">·</span>
+            <span aria-hidden="true" className="text-fg-subtle">·</span>
             <a href={versionPath(RELEASE.version)} className="text-accent">
               Release notes
             </a>
@@ -82,81 +89,89 @@ export default function DownloadPage() {
       </section>
 
       <section aria-label="Downloads" className="bg-page pb-(--site-section-y)">
-        <div className="container-site flex flex-col items-center gap-4">
+        <div className="container-site flex flex-col items-center gap-5">
           <div className="flex min-h-7 items-center justify-center gap-2">
             <script src="/download/detect.js" defer />
             <div dangerouslySetInnerHTML={{ __html: OS_NOTE }} />
           </div>
-          <ul className="w-full max-w-narrow">
+          <ul className="w-full max-w-[60rem]">
             {DOWNLOADS.filter((d) => d.available).map((d) => {
               const [primary, ...others] = d.assets;
               const files = assets.get(d.os) ?? [];
               const main = files[0];
               return (
-                <li key={d.os} id={d.os} className="flex flex-col gap-8 rounded-lg border border-border bg-card p-6 sm:p-8">
-                  <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex flex-col gap-1">
-                      <h2 className="text-display-md text-fg">{d.name}</h2>
-                      <p className="text-copy-sm text-fg-muted">{d.requirement}</p>
-                    </div>
-                    {primary && (
-                      <a href={assetUrl(primary.file)} className={`${siteButton("primary", "lg")} self-start sm:self-auto`}>
-                        <Icon icon={Download} size={18} />
-                        {primary.label}
-                      </a>
-                    )}
-                  </div>
-                  {others.map((a) => (
-                    <a key={a.file} href={assetUrl(a.file)} className="text-copy-sm text-accent">
-                      {a.label}
-                    </a>
-                  ))}
-                  <dl className="grid gap-x-8 gap-y-4 border-t border-divider pt-6 text-copy-sm sm:grid-cols-[auto_1fr]">
-                    {main && (
-                      <>
-                        <dt className="text-fg-muted">File</dt>
-                        <dd className="font-mono text-fg">{main.file}</dd>
-                        <dt className="text-fg-muted">Size</dt>
-                        <dd className="font-mono text-fg">{formatSize(main.bytes)}</dd>
-                      </>
-                    )}
-                    {files.map((a) => (
-                      <div key={a.file} data-sha256={a.file} className="contents">
-                        <dt className="text-fg-muted">SHA-256 of {a.file}</dt>
-                        <dd className="select-all break-all font-mono text-fg">{a.sha256}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                  <div className="flex flex-col gap-3">
-                    <p className="text-copy-sm font-semibold text-fg">Install</p>
-                    {d.steps.map((s) => {
-                      const step = /^(.*?):\s*(sudo .+)$/.exec(s);
-                      return step ? (
-                        <div key={s} className="flex flex-col gap-1.5">
-                          <p className="text-copy-sm text-fg-muted">{step[1]}</p>
-                          <CommandLine command={step[2] ?? ""} />
-                        </div>
-                      ) : (
-                        <p key={s} className="text-copy-sm text-fg-muted">
-                          {s}
-                        </p>
-                      );
-                    })}
-                  </div>
-                  <div className="flex flex-col gap-3 rounded-md border border-border bg-page p-4">
-                    <p className="flex items-start gap-2.5 text-copy-sm text-fg-muted">
-                      <Icon icon={ShieldCheck} size={18} className="mt-0.5 shrink-0 text-accent" />
-                      <span>
-                        This release isn&apos;t code-signed, so the checksum is how you confirm it&apos;s ours: compare
-                        the output of <code className="font-mono text-fg">sha256sum</code> with the package&apos;s value
-                        above, or with{" "}
-                        <a href={CHECKSUMS_URL} className="text-accent">
-                          SHA256SUMS
-                        </a>
-                        .
+                <li key={d.os} id={d.os} className="surface relative isolate overflow-hidden p-0 shadow-e2">
+                  <div aria-hidden="true" className="bg-lens absolute inset-x-0 top-0 -z-10 h-48 opacity-70" />
+                  <div className="flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex items-center gap-4">
+                      <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-[12px] text-accent shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong)]">
+                        <Icon icon={Terminal} size={22} />
                       </span>
-                    </p>
-                    {main && <CommandLine command={`sha256sum ${main.file}`} />}
+                      <div className="flex flex-col gap-1">
+                        <h2 className="text-display-md text-fg">{d.name}</h2>
+                        <p className="text-copy-sm text-fg-muted">{d.requirement}</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      {primary && (
+                        <a href={assetUrl(primary.file)} className={siteButton("primary", "lg")}>
+                          <Icon icon={Download} size={18} />
+                          {primary.label}
+                        </a>
+                      )}
+                      {others.map((a) => (
+                        <a key={a.file} href={assetUrl(a.file)} className={siteButton("secondary", "lg")}>
+                          <Icon icon={Download} size={18} />
+                          {a.label}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid border-t border-line lg:grid-cols-2">
+                    <div className="flex flex-col gap-4 p-6 sm:p-8">
+                      <p className="eyebrow">Install</p>
+                      {d.steps.map((s) => {
+                        const step = /^(.*?):\s*(sudo .+)$/.exec(s);
+                        return step ? (
+                          <div key={s} className="flex flex-col gap-2">
+                            <p className="text-copy-sm text-fg-muted">{step[1]}</p>
+                            <CommandLine command={step[2] ?? ""} />
+                          </div>
+                        ) : (
+                          <p key={s} className="text-copy-sm text-fg-muted">
+                            {s}
+                          </p>
+                        );
+                      })}
+                    </div>
+                    <div className="flex flex-col gap-4 border-line p-6 max-lg:border-t sm:p-8 lg:border-l">
+                      <p className="eyebrow">Verify</p>
+                      <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-copy-sm [&>div>dt]:col-span-2 [&>div>dd]:col-span-2">
+                        {main && (
+                          <>
+                            <dt className="text-fg-muted">File</dt>
+                            <dd className="min-w-0 break-all font-mono text-[0.8125rem] text-fg">{main.file}</dd>
+                            <dt className="text-fg-muted">Size</dt>
+                            <dd className="font-mono text-[0.8125rem] text-fg">{formatSize(main.bytes)}</dd>
+                          </>
+                        )}
+                        {files.map((a) => (
+                          <div key={a.file} data-sha256={a.file} className="col-span-2 flex flex-col gap-1.5">
+                            <dt className="pt-1 text-caption text-fg-muted">SHA-256 of {a.file}</dt>
+                            <dd className="select-all break-all rounded-md bg-(--site-glass) px-3 py-2 font-mono text-[0.75rem] leading-5 text-fg shadow-[inset_0_0_0_1px_var(--site-line)]">{a.sha256}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                      <p className="flex items-start gap-2.5 text-copy-sm text-fg-muted">
+                        <Icon icon={ShieldCheck} size={18} className="mt-0.5 shrink-0 text-accent" />
+                        <span>
+                          This release isn&apos;t code-signed, so the checksum is how you confirm it&apos;s ours:
+                          compare the output of <code className="font-mono text-fg">sha256sum</code> with the
+                          package&apos;s value above, or with <a href={CHECKSUMS_URL}>SHA256SUMS</a>.
+                        </span>
+                      </p>
+                      {main && <CommandLine command={`sha256sum ${main.file}`} />}
+                    </div>
                   </div>
                 </li>
               );
@@ -168,8 +183,8 @@ export default function DownloadPage() {
       <Section id="getting-started" tone="raised" eyebrow="Getting started" title="Running in four steps">
         <ol className="grid gap-4 md:grid-cols-2">
           {START.map((s, i) => (
-            <li key={s.title} className="flex gap-5 rounded-md border border-border bg-card p-6">
-              <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-sm border border-border-strong font-mono text-copy-sm text-fg-muted">
+            <li key={s.title} className="reveal surface-raised flex gap-5 p-6 lg:p-7">
+              <span className="keycap !h-9 !min-w-9 shrink-0 !px-0 !text-[0.8125rem] text-fg-muted">
                 {String(i + 1).padStart(2, "0")}
               </span>
               <div className="flex flex-col gap-2">
@@ -181,10 +196,10 @@ export default function DownloadPage() {
         </ol>
       </Section>
 
-      <section aria-labelledby="includes-title" className="bg-page py-(--site-section-y)">
+      <section aria-labelledby="includes-title" className="relative bg-page py-(--site-section-y)">
         <div className="container-site grid gap-10 lg:grid-cols-12 lg:gap-6">
           <div className="flex flex-col gap-4 lg:col-span-6">
-            <h2 id="includes-title" className="text-display-md text-fg">
+            <h2 id="includes-title" className="text-sheen text-display-md text-fg">
               What this release includes
             </h2>
             <ul className="flex flex-col gap-3">
@@ -201,7 +216,7 @@ export default function DownloadPage() {
           </div>
           {older.length > 0 && (
             <div className="flex flex-col gap-4 lg:col-span-5 lg:col-start-8">
-              <h2 className="text-display-md text-fg">Previous versions</h2>
+              <h2 className="text-sheen text-display-md text-fg">Previous versions</h2>
               <p className="text-copy-sm text-fg-muted">
                 Only the current build is served. Earlier releases&apos; notes are in the changelog.
               </p>

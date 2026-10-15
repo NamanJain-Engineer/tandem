@@ -30,39 +30,115 @@
   --color-fd-ring: var(--tn-accent);
 }
 
-/* The site's look in the docs (M15 redesign, §6.19): one page background in
-   both themes, marketing-scale body text, hairline h2s and real key caps. */
+/* The site's look in the docs (M15 redesign §6.19; the elite pass, D-1839):
+   one page background in both themes with the rings' light at the top, a
+   glass sidebar with mono group labels and a lit active item, display-scale
+   titles, hairline h2s, lit link cards and real key caps. */
 @source "../../components/site";
 :root,
 .dark {
   --color-fd-background: var(--site-page);
+  --color-fd-card: var(--site-page);
+  --color-fd-border: var(--site-line);
+  --color-fd-accent: var(--site-glass-hover);
+}
+#nd-docs-layout {
+  position: relative;
+  isolation: isolate;
+}
+#nd-docs-layout::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 26rem;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(36% 70% at 46% 0%, var(--site-glow-a), transparent 72%),
+    radial-gradient(36% 70% at 62% 0%, var(--site-glow-b), transparent 72%);
+}
+#nd-sidebar {
+  background: color-mix(in oklab, var(--site-page) 86%, transparent);
+  backdrop-filter: blur(16px) saturate(1.4);
+  border-color: var(--site-line);
+}
+#nd-sidebar p {
+  font-family: var(--font-jbm), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tn-text-subtle);
+}
+#nd-sidebar a[data-active="true"] {
+  background: linear-gradient(90deg, var(--tn-accent-soft), transparent);
+  box-shadow: inset 2px 0 0 var(--tn-accent);
+  color: var(--tn-text);
+  font-weight: 500;
 }
 #nd-page article {
   font-size: var(--text-copy);
   line-height: 1.7;
 }
-#nd-page h1 {
-  font-size: var(--text-display-md);
-  letter-spacing: -0.018em;
+#nd-page article > h1 {
+  font-size: var(--text-display-lg);
+  line-height: var(--text-display-lg--line-height);
+  letter-spacing: var(--text-display-lg--letter-spacing);
+  font-weight: 620;
+  text-wrap: balance;
+  background-image: linear-gradient(180deg, var(--tn-text) 35%, color-mix(in oklab, var(--tn-text) 74%, var(--site-page)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  padding-bottom: 0.06em;
+}
+#nd-page article > h1 + p {
+  font-size: var(--text-lead);
+  line-height: var(--text-lead--line-height);
 }
 #nd-page .prose h2 {
-  border-top: 1px solid var(--tn-border);
-  padding-top: 1.5rem;
+  border-top: 1px solid var(--site-line);
+  padding-top: 2rem;
+  letter-spacing: -0.024em;
+}
+#nd-page .prose h3 {
+  letter-spacing: -0.012em;
+}
+#nd-page .prose :where(a):not([data-card]) {
+  color: var(--tn-accent);
+  text-decoration-color: color-mix(in oklab, var(--tn-accent) 45%, transparent);
+  text-underline-offset: 0.2em;
 }
 #nd-page .prose kbd {
   display: inline-flex;
   align-items: center;
-  min-height: 1.375rem;
-  padding: 0 0.375rem;
-  border: 1px solid var(--tn-border-strong);
-  border-bottom-width: 2px;
-  border-radius: var(--radius-xs);
-  background: var(--tn-kbd-bg);
+  min-height: 1.5rem;
+  padding: 0 0.4375rem;
+  border: 0;
+  border-radius: 6px;
+  background: linear-gradient(180deg, var(--site-fill-top), var(--site-fill-bottom)), var(--tn-kbd-bg);
+  box-shadow: inset 0 1px 0 var(--site-edge-hi), inset 0 0 0 1px var(--site-line-strong), inset 0 -2px 0 var(--site-line);
   font-family: var(--font-jbm), ui-monospace, monospace;
   font-size: 0.75rem;
   color: var(--tn-text);
-  box-shadow: none;
+}
+#nd-page .prose :not(pre) > code {
+  border: 0;
+  border-radius: 5px;
+  background: var(--site-glass);
+  box-shadow: inset 0 0 0 1px var(--site-line);
+  padding: 0.1em 0.375em;
 }
 #nd-page .prose table {
   font-size: var(--text-copy-sm);
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  box-shadow: var(--site-elev-1), inset 0 0 0 1px var(--site-line-strong);
+}
+#nd-page .prose thead th {
+  background: var(--site-glass);
+}
+#nd-toc a[data-active="true"] {
+  color: var(--tn-accent);
 }

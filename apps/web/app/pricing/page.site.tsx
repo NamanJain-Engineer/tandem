@@ -2,6 +2,8 @@ import { siteButton } from "@tandem/ui/components/SiteButton";
 import { PRICES } from "@tandem/protocol/plans";
 import { Check, Download } from "lucide-react";
 import type { Metadata } from "next";
+import { Tag } from "../../components/site/Card";
+import { CtaBand } from "../../components/site/CtaBand";
 import { Icon } from "../../components/site/Icon";
 import { PageHero } from "../../components/site/PageHero";
 import { PlanComparison } from "../../components/site/PlanComparison";
@@ -41,6 +43,7 @@ export default function PricingPage() {
   return (
     <SiteFrame current="/pricing/">
       <PageHero
+        center
         eyebrow="Plans"
         title={
           <>
@@ -56,57 +59,60 @@ export default function PricingPage() {
         }
       />
 
-      <section aria-label="Plans" className="bg-page pb-(--site-section-y)">
-        <ul className="container-site grid gap-4 md:grid-cols-3 md:gap-0">
-          {PLANS.map((plan, i) => (
-            <li
-              key={plan.id}
-              id={plan.id}
-              className={cx(
-                "flex scroll-mt-(--site-header-h) flex-col gap-6 border border-border bg-card p-6 lg:p-8",
-                "max-md:rounded-lg",
-                i === 0 && "md:rounded-l-lg",
-                i === PLANS.length - 1 && "md:rounded-r-lg",
-                i > 0 && "md:border-l-0",
-                plan.id === "pro" && "relative md:z-10 md:outline md:outline-1 md:outline-accent",
-              )}
-            >
-              <div className="flex flex-col gap-2">
-                <h2 className="text-title text-fg">{plan.name}</h2>
+      <section aria-label="Plans" className="relative bg-page pb-(--site-section-y)">
+        <ul className="container-site grid gap-5 md:grid-cols-3">
+          {PLANS.map((plan) => {
+            const now = plan.id === "free";
+            return (
+              <li
+                key={plan.id}
+                id={plan.id}
+                className={cx(
+                  "reveal relative isolate flex scroll-mt-(--site-header-h) flex-col gap-7 overflow-hidden p-7 lg:p-8",
+                  now ? "surface shadow-e2" : "surface-raised",
+                )}
+              >
+                {now && <div aria-hidden="true" className="bg-lens absolute inset-x-0 top-0 -z-10 h-56" />}
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-title text-fg">{plan.name}</h2>
+                  <Tag className={now ? "text-accent shadow-[inset_0_0_0_1px_var(--tn-accent)]" : undefined}>
+                    {now ? "Available now" : "With accounts"}
+                  </Tag>
+                </div>
+                <p className="flex flex-col gap-2">
+                  <span className="text-sheen font-mono text-stat font-medium tabular-nums text-fg">{plan.price}</span>
+                  <span className="text-caption text-fg-muted">{plan.cadence}</span>
+                </p>
                 <p className="text-copy-sm text-fg-muted">{plan.summary}</p>
-              </div>
-              <p className="flex flex-col gap-1">
-                <span className="font-mono text-stat tabular-nums text-fg">{plan.price}</span>
-                <span className="text-caption text-fg-muted">{plan.cadence}</span>
-              </p>
-              {plan.id === "free" ? (
-                <div className="flex flex-col gap-2">
-                  <a href="/download/" className={`${siteButton("primary", "md")} self-start`}>
-                    <Icon icon={Download} size={16} />
-                    Download {RELEASE.version}
-                  </a>
-                  <p className="text-caption text-fg-muted">Available now, for Linux.</p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <a href={notify(plan.name)} className={`${siteButton("secondary", "md")} self-start`}>
-                    Tell me when
-                  </a>
-                  <p className="text-caption text-fg-muted">
-                    Starts with {SITE.product} accounts.{plan.trial ? ` ${plan.trial}.` : ""}
-                  </p>
-                </div>
-              )}
-              <ul className="flex flex-col gap-3 border-t border-divider pt-6 text-copy-sm">
-                {plan.features.map((f) => (
-                  <li key={f.text} className="flex items-start gap-2.5">
-                    <Icon icon={Check} size={16} className="mt-1 shrink-0 text-accent" />
-                    <span className={f.planned ? "text-fg-muted" : "text-fg"}>{f.text}</span>
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
+                {now ? (
+                  <div className="flex flex-col gap-2">
+                    <a href="/download/" className={siteButton("primary", "md", "w-full")}>
+                      <Icon icon={Download} size={16} />
+                      Download {RELEASE.version}
+                    </a>
+                    <p className="text-center text-caption text-fg-muted">Available now, for Linux.</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <a href={notify(plan.name)} className={siteButton("secondary", "md", "w-full")}>
+                      Tell me when
+                    </a>
+                    <p className="text-center text-caption text-fg-muted">
+                      Starts with {SITE.product} accounts.{plan.trial ? ` ${plan.trial}.` : ""}
+                    </p>
+                  </div>
+                )}
+                <ul className="flex flex-col gap-3 border-t border-line pt-6 text-copy-sm">
+                  {plan.features.map((f) => (
+                    <li key={f.text} className="flex items-start gap-2.5">
+                      <Icon icon={Check} size={16} className="mt-1 shrink-0 text-accent" />
+                      <span className={f.planned ? "text-fg-muted" : "text-fg"}>{f.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            );
+          })}
         </ul>
       </section>
 
@@ -134,15 +140,15 @@ export default function PricingPage() {
         }
       >
         <div className="grid gap-10 lg:grid-cols-12 lg:gap-6">
-          <table className="w-full text-left text-copy-sm lg:col-span-6">
+          <table className="surface w-full overflow-hidden text-left text-copy-sm lg:col-span-6">
             <caption className="sr-only">Credits per hosted feature</caption>
             <tbody>
               {CREDIT_ROWS.map((row) => (
-                <tr key={row.key} data-credit-price={row.key} className="border-b border-border">
-                  <th scope="row" className="py-4 pr-6 font-medium text-fg">
+                <tr key={row.key} data-credit-price={row.key} className="border-b border-line last:border-0">
+                  <th scope="row" className="px-5 py-4 pr-6 font-medium text-fg">
                     {row.label}
                   </th>
-                  <td className="py-4 text-right font-mono tabular-nums text-fg-muted">
+                  <td className="px-5 py-4 text-right font-mono tabular-nums text-fg-muted">
                     {row.credits === 0 ? "Free" : `${row.credits} credits ${row.unit}`}
                   </td>
                 </tr>
@@ -160,22 +166,19 @@ export default function PricingPage() {
         </div>
       </Section>
 
-      <section aria-labelledby="try-free-title" className="border-t border-border bg-raised">
-        <div className="container-site flex flex-col items-start gap-5 py-16 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-col gap-2">
-            <h2 id="try-free-title" className="text-display-md text-fg">
-              Try the Free plan now
-            </h2>
-            <p className="text-copy text-fg-muted">
-              {SITE.product} {RELEASE.version} runs the Free plan on your computer, with no account, on Linux.
-            </p>
-          </div>
-          <a href="/download/" className={siteButton("primary", "lg")}>
-            <Icon icon={Download} size={18} />
-            Download for Linux
-          </a>
-        </div>
-      </section>
+      <CtaBand
+        id="try-free"
+        title="Try the Free plan now"
+        lead={`${SITE.product} ${RELEASE.version} runs the Free plan on your computer, with no account, on Linux.`}
+      >
+        <a href="/download/" className={siteButton("primary", "lg")}>
+          <Icon icon={Download} size={18} />
+          Download for Linux
+        </a>
+        <a href="/docs/" className={siteButton("secondary", "lg")}>
+          Read the docs
+        </a>
+      </CtaBand>
     </SiteFrame>
   );
 }
