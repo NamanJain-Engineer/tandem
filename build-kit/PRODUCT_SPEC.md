@@ -1195,6 +1195,31 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 **Acceptance:**
 1. Switching Claude → Codex after 3 turns starts a Codex session whose first input contains the summary block, and the divider is shown.
 
+#### F-TH-17 Session library across engines (P2)
+**Behavior:**
+- **The library (UI-162)**, "Session library…" in the command palette, lists the Claude Code and Codex sessions on this computer, including ones started in a terminal outside Vibezeo.
+- **Where it reads.** Read-only, the engines' own session files: Claude Code's `projects/*/*.jsonl` and Codex's `sessions/**/*.jsonl`. It reads them in every account's provider home and in each engine's own home (`$CLAUDE_CONFIG_DIR` or `~/.claude`, `$CODEX_HOME` or `~/.codex`), shown as "Outside Vibezeo".
+  - Only files matching those patterns are opened. Symbolic links aren't followed, and nothing else in a home is read, so no credential file (`.credentials.json`, `auth.json`) is ever opened.
+  - Files over 64 MB and lines over 4 MB are skipped.
+- **Listing.** Sessions are grouped by repository: the git root of the session's folder, else the folder. Each shows its engine, account, last activity, title (the first prompt, cut to 80 characters) and size.
+  - A file that fails to parse is skipped and counted: "# files couldn't be read".
+  - States: loading, empty ("No sessions found"), error, populated.
+- **Open** shows the session as a read-only transcript: the prompts and replies as text, and tool calls by name only.
+- **Resume** opens an agent pane in the session's folder, in a tab of that folder's workspace (added when it isn't open yet). It runs the engine's own resume (`claude --resume <id>`, `codex resume <id>`) with the session's home: the account's provider home, or the engine's own home.
+  - It's offered only when the folder still exists and the engine is installed.
+- **Continue with another engine…** opens F-CD-16's handoff sheet with the session's transcript as the source. The brief is written from the transcript's last messages, redacted, and the target opens beside the folder's other panes.
+- **Search (Pro).** "Search session text" in Settings › Privacy, off by default. When on, Vibezeo keeps a local full-text index of the prompts and replies at `$DATA/session-index.db`.
+  - The index is never logged or sent anywhere.
+  - Turning the setting off deletes the file, and Delete all deletes it with the rest.
+  - On Free the setting shows Pro.
+
+**Acceptance:**
+1. Fixture stores for Claude Code in two provider homes and Codex in its own home list four sessions under their repositories, with engine, account and date. A file that fails to parse is counted as skipped.
+2. Resume on a Claude Code session opens an agent pane in the session's folder, running `claude --resume <id>` with that account's `CLAUDE_CONFIG_DIR`.
+3. "Continue with another engine…" opens F-CD-16's sheet with a brief from the transcript, and Start opens the target in the session's folder with the brief as its first prompt.
+4. With search on, a word from a fixture prompt finds its session. Turning search off deletes the index file, and on Free `library_search` is refused.
+5. The library never opens a file named `.credentials.json` or `auth.json`. An invariant test over a recording file-system fake checks this.
+
 ### 4.4 EN: Engines
 
 #### F-EN-01 Engine detection (P0)

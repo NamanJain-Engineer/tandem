@@ -66,6 +66,13 @@
       "state": { "kind": "on_use" }
     },
     {
+      "id": "engine_update_check",
+      "label": "Engine update checks",
+      "sends": "An engine's npm package name, when you press Check for updates in Settings › Engines",
+      "destination": "Your npm's registry (npm view)",
+      "state": { "kind": "on_use" }
+    },
+    {
       "id": "auto",
       "label": "Auto",
       "sends": "Last 200 terminal lines, redacted",
