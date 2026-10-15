@@ -1416,11 +1416,54 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - Protocol drift: `OpinionComment`, `OpinionOutcome`, `SecondOpinion` and `SecondOpinionStarted` added.
     - The new E2E spec passed 1 of 1, and `check-coverage.sh` covers 166 IDs.
 
+- [x] F-DB-04 Review queue (D-2421, D-2422).
+  - **Core.** `services::review_queue` (`ReviewQueue` behind `QueueHost`):
+    - It follows `status:changed`. A key that becomes done is considered: the session (a pane, or a thread in a local workspace), its changes (a worktree's `lanes::diff`, a git folder's `diff_since("HEAD")`), the closing message (a thread's last reply; a pane's last 3 screen lines, redacted), the latest checkpoint for that pane or thread, and the repository's review settings.
+    - No changes, not git, or not local: no item.
+    - Working or waiting removes the item; a removed key forgets it; idle keeps it.
+    - `diff_hash` is SHA-256 over path, change and patch.
+    - Approval holds the hash. A different hash on the next finish or refresh moves the item to Changed, which stays until approved again.
+    - Snooze lasts 60 minutes, or until the agent finishes again.
+    - The check runs through `bestof::run_check` with the login environment, 10 minutes, and the last 200 lines redacted. It runs when an item joins, or on Run check. A refresh with the same diff keeps the result.
+    - `review:queue` carries the whole list.
+  - **Risk rules** (`risks`, local, no AI): 20+ files, migrations folders, CI, lockfiles, `.env` files, auth words in a path segment (not `author*`), the repository's public API prefixes, and deleted tests. Up to 5 files per rule.
+  - **Repository settings.** The Hidden `ReviewChecks` / `ReviewApiPaths` maps, keyed by the main checkout's root. `review_repo_set` is main window only, with a command up to 2,000 characters and up to 50 paths.
+  - **Commands:** `review_queue`, `review_approve`, `review_unapprove`, `review_snooze`, `review_item_diff`, `review_run_check`, `review_repo_get` and `review_repo_set`. The palette gets `dashboard.review_queue`.
+  - **UI.** The Dashboard panel's Agents · n / Review · n switch (`DashboardPanel`), and `ReviewQueue`:
+    - sort by risk or finish time; Refresh;
+    - To review, Snoozed and Approved sections;
+    - cards with closing, diffstat, risk badges (files in the title), the check (`<details>` with output) and the actions;
+    - the item-diff dialog and the Repository checks dialog;
+    - empty, loading, error and populated states.
+  - **Tests.**
+    - Rust: 8 `f_db_04_*` (the rules, the hash and limits, join/leave, a coalesced new done, stale approval, snooze, the check).
+    - UI: 7 in `reviewQueue.test.tsx`.
+    - E2E: `m18-db04-review-queue.e2e.ts` (a worktree pane joins within 1.5 s with migrations and deleted tests, a no-change pane doesn't, a thread joins, approve then changed, Send back and Merge's forecast, the check passes and fails).
+  - **Docs.** code-mode.mdx, "Review queue".
+  - **Gate:** passed on the tree with `product-m0-m5` 52f07fe1 merged in.
+    - 1,940 Rust tests (7 ignored) and 1,458 TypeScript (desktop 681).
+    - The desktop build, clippy on Linux, Windows and both Mac architectures, and fmt.
+    - Coverage: 171 IDs.
+    - Protocol drift: `RepoReview`, `ReviewCheck`, `ReviewCheckState`, `ReviewItem`, `ReviewQueueView`, `ReviewRisk`, `ReviewRiskRule` and `ReviewState` added. The names avoid Best of N's `CheckState`, which a first build overwrote.
+    - E2E: m18-db04 5 of 5, m18-wt05 2 of 2.
+
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
   - Only engines with a chat adapter can review. They are the ones whose read-only access is enforced by the adapter (Claude's disallowed tools, Codex's read-only sandbox, ACP's refused writes). The registry has no read-only flag for terminal engines, so they're listed and disabled.
   - The reviewer is an attended thread, so an edit it tries is denied and shows like any other.
   - The result arrives as a bus event, and comments stay in memory like the user's own (D-2205): a review that ends while the app is closed adds nothing, and its thread keeps the reply.
+- D-2421: The review queue is built from the status bus in memory, not a table.
+  - **Membership.** An item is a pane or thread key whose status became done while its local folder has changes.
+    - A restart rebuilds it: threads that finished come back, and panes return when they finish again.
+    - Teammate chats are left out: they aren't on the status bus and have no workspace.
+    - SSH and WSL folders are left out until their diffs are cheap enough to compute on every done.
+  - **Changed.** Approval is per key and hash. "Changed" is sticky so a refresh can't quietly drop it.
+  - **The 1 s target.** Changes are read once per done, in the status listener, so an item appears within the second.
+  - **A new done.** A done counts when its `(status, since)` is new. The status bus coalesces 50 ms, so a fast working → done can arrive as done → done with a later `since`. E2E-M18-DB-04 found this with the fake agent.
+  - **Shared folders.** Two agents in one plain folder show the same diff, each under its own name.
+- D-2422: The check command and public API paths are app settings keyed by the repository's root, typed in the queue on this computer.
+  - They are not in `.vibezeo/worktree.json`, so a pulled file can't add a command that runs on every finish. That would need F-WT-01's trust step; this is simpler and enough for one person's machine.
+  - The risk rules are fixed and labelled as what changed, never "safe", and each shows the files it matched.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07 so far (PRODUCT_SPEC §4.4, MILESTONES "M18 · Next features: engines"), then F-EN-09, F-EN-08 and F-TH-17 in that order; decisions D-2400–D-2419.

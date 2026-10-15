@@ -420,16 +420,22 @@ impl OpinionHost for AppHost {
     }
 
     async fn last_reply(&self, thread: &ThreadId) -> Option<String> {
-        let rows = tandem_store::repo::threads::all_messages(&self.store, thread)
-            .await
-            .ok()?;
-        rows.iter().rev().find_map(|r| {
-            match serde_json::from_str::<ThreadEvent>(&r.payload_json).ok()? {
-                ThreadEvent::Assistant { markdown } => Some(markdown),
-                _ => None,
-            }
-        })
+        last_reply(&self.store, thread).await
     }
+}
+
+/// A thread's last assistant message (also the review queue's closing
+/// message, F-DB-04).
+pub async fn last_reply(store: &Store, thread: &ThreadId) -> Option<String> {
+    let rows = tandem_store::repo::threads::all_messages(store, thread)
+        .await
+        .ok()?;
+    rows.iter().rev().find_map(|r| {
+        match serde_json::from_str::<ThreadEvent>(&r.payload_json).ok()? {
+            ThreadEvent::Assistant { markdown } => Some(markdown),
+            _ => None,
+        }
+    })
 }
 
 #[cfg(test)]

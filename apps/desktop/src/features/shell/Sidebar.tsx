@@ -35,7 +35,7 @@ import { BrowserView } from "../browser/BrowserView";
 import { moveToPane } from "../code/BrowserPane";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
-import { Dashboard } from "../dashboard/Dashboard";
+import { DashboardPanel } from "../dashboard/ReviewQueue";
 import { CheckpointsPanel } from "../checkpoints/CheckpointsPanel";
 import { FilesPanel } from "../files/FilesPanel";
 import { PortsPanel } from "../ports/PortsPanel";
@@ -222,7 +222,7 @@ function BrowserTab({ tab }: { tab: SidebarTab }) {
 }
 
 function Panel({ tab, shown }: { tab: SidebarTab; shown: boolean }) {
-  if (tab.kind === "dashboard") return <Dashboard />;
+  if (tab.kind === "dashboard") return <DashboardPanel />;
   if (tab.kind === "files") return <FilesPanel />;
   if (tab.kind === "browser") return <BrowserTab tab={tab} />;
   if (tab.kind === "checkpoints") return <CheckpointsPanel />;
@@ -299,7 +299,11 @@ export function Sidebar() {
       onSelect: () => useSidebar.getState().openTab("dashboard"),
     },
     { id: "files", label: t("sidebar.files"), onSelect: () => useSidebar.getState().openTab("files") },
-    { id: "checkpoints", label: t("sidebar.checkpoints"), onSelect: () => useSidebar.getState().openTab("checkpoints") },
+    {
+      id: "checkpoints",
+      label: t("sidebar.checkpoints"),
+      onSelect: () => useSidebar.getState().openTab("checkpoints"),
+    },
     { id: "ports", label: t("sidebar.ports"), onSelect: () => useSidebar.getState().openTab("ports") },
     { id: "tasks", label: t("sidebar.tasks"), onSelect: () => useSidebar.getState().openTab("tasks") },
     {

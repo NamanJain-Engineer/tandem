@@ -640,6 +640,12 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `status_mark_seen` | `{key}` | — (a done agent becomes idle) | — | F-DB-01 |
 | `status_list` | — | `[StatusRecord]` (every live agent status; rail and pane headers load it after a webview reload, then follow `status:changed`) | — | F-EN-05, F-SH-03 |
 | `dashboard_close_idle` | `{keys:[SessionKey]}` (the visible filtered set) | `{closed:[SessionKey]}` (server re-checks each is idle) | — | F-DB-01 |
+| `review_queue` | `{refresh?: bool}` (refresh: recompute every item's diff, D-2421) | `ReviewQueueView {items: [ReviewItem {key, source: SourceRef, title, engineId?, workspaceId, workspace, branch?, laneId? (a worktree), finishedAt, closing?, files, additions, deletions, risks: [{rule: "many_files"\|"migrations"\|"ci"\|"lockfile"\|"env"\|"auth"\|"public_api"\|"deleted_tests", files[]}], check?: {state: "running"\|"passed"\|"failed", exit?, output}, diffHash, state: "review"\|"changed"\|"approved"\|"snoozed", snoozedUntil?, turnCheckpointId?}]}` | — | F-DB-04 |
+| `review_approve` | `{key, diffHash}` (the hash the user looked at) | `ReviewItem` (approved) | NotFound, Conflict ("Changed since you looked": the diff moved on) | F-DB-04 |
+| `review_unapprove` / `review_snooze` | `{key}` / `{key, minutes?}` (default 60; 0 un-snoozes) | `ReviewItem` | NotFound | F-DB-04 |
+| `review_item_diff` | `{key, scope: "all"\|"turn"}` (`turn`: since the agent's latest checkpoint, F-EX-01) | `[FileDiff]` | NotFound, Invalid (no checkpoint) | F-DB-04 |
+| `review_run_check` | `{key}` | — (the item's `check` goes `running`, then `passed`/`failed` with `review:queue`; 10 minutes, the login environment, the last 200 lines) | NotFound, Invalid (no check command) | F-DB-04 |
+| `review_repo_get` / `review_repo_set` | `{workspaceId}` / `{workspaceId, check?, apiPaths:[string]}` (window `main` only; stored in the app's settings by repository root, never in the repository) | `RepoReview {root, check?, apiPaths}` | NotFound, Invalid (not a git repository; a command over 2,000 characters; over 50 paths), PermissionDenied | F-DB-04 |
 | `ui_visibility` | `{visible:[SessionKey]}` (agents on screen: visible pane grid of the active tab, Code mode, Settings closed) | — | — | F-DB-03 |
 | `focus_source` | `{source: SourceRef}` | — (emits `ui:focus`) | NotFound | F-DB-01, F-DB-02, F-CD-12 |
 | `notifications_list` | `{cursor?: string}` | `NotificationPage {items:[Notification {id, kind, title, body, source, state:"unread"\|"read"\|"resolved", dedupeKey?, createdAt, readAt?}], nextCursor?, unread}` (7-day window, newest first; the cursor is `"<createdAt>:<seq>"`) | — | F-DB-02 |
@@ -978,6 +984,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `ui:focus` | `{source: SourceRef, flash: true, location?: {workspaceId, tabId}}` (`location` for panes) | focus service (notifications, Conductor, phone) | F-CD-12, F-DB-02 |
 | `settings:changed` | `{key, value}` | settings service | F-SH-04 |
 | `status:changed` | `{records:[StatusRecord], removed:[SessionKey]}` (coalesced 50 ms; `removed` when an agent left its pane) | StatusStore forwarder | F-EN-05, F-DB-01 |
+| `review:queue` | `ReviewQueueView` (after an item joins, leaves, changes state or its check moves on) | review queue | F-DB-04 |
 | `pty:state` | `{paneId, cwd?, title?, altScreen, bracketedPaste, mouse, readiness}` (debounced 100 ms) | tandem-pty | F-CD-10, F-EN-06 |
 | `pty:mark` | `{paneId, kind:"A"\|"B"\|"C"\|"D", exitCode?}` (the view places ✓/✗ from the same marks, which reach xterm without the token) | tandem-pty | F-CD-10 |
 | `sessions:saved` | `{workspaceId, session: SavedSession}` (an agent handed its pane back to the shell) | terminal service | F-CD-03 |

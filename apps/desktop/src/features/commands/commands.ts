@@ -7,6 +7,7 @@ import { inCall, setMuted, toggleCall, useConductor } from "../../stores/conduct
 import { useLaunch } from "../../stores/launch";
 import { useNotifications } from "../../stores/notifications";
 import { useCloseConfirm } from "../../stores/closeConfirm";
+import { useReview } from "../../stores/review";
 import { useSidebar } from "../../stores/sidebar";
 import { useRecall } from "../recall/RecallPicker";
 import { usePrompts } from "../prompts/PromptPicker";
@@ -166,6 +167,10 @@ export const handlers: Record<string, () => void> = {
     const sb = useSidebar.getState();
     sb.openTab("dashboard");
     sb.setFullscreen(!sb.fullscreen);
+  },
+  "dashboard.review_queue": () => {
+    useSidebar.getState().openTab("dashboard");
+    useReview.getState().setView("review");
   },
   "workspace.open_folder": () => void pickAndAddWorkspace(toast),
   "workspace.new_tab": () => {
