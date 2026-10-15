@@ -13,7 +13,7 @@ description: |
   with approvals, git and files in one window. It works offline on the Free
   plan; nothing leaves your computer unless you turn on a hosted feature.
 website: https://vibezeo.com/
-contact: hello@vibezeo.com
+contact: contact@vibezeo.com
 license: Proprietary
 icon: snap/gui/vibezeo.png
 base: core24
