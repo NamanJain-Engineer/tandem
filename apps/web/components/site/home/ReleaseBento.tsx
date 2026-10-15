@@ -38,16 +38,17 @@ export function ReleaseBento() {
           <li
             key={t.title}
             className={cx(
-              "reveal group flex min-w-0 flex-col gap-4 rounded-md border border-border bg-card p-6 transition-[border-color,box-shadow] duration-(--dur-fast) hover:border-border-strong hover:shadow-card-hover",
-              i === 0 ? "sm:col-span-2 lg:p-8" : "",
+              "reveal surface-raised relative isolate flex min-w-0 flex-col gap-4 overflow-hidden p-6",
+              i === 0 ? "sm:col-span-2 lg:p-9" : "",
               SPAN[i === 0 ? 0 : 1],
             )}
           >
+            {i === 0 && <div aria-hidden="true" className="bg-lens absolute inset-0 -z-10" />}
             <div className="flex items-center justify-between gap-3">
-              <span className="inline-flex size-10 items-center justify-center rounded-md bg-accent-soft text-accent">
+              <span className="inline-flex size-10 items-center justify-center rounded-[10px] text-accent shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong)] [background:linear-gradient(180deg,var(--tn-accent-soft),transparent)]">
                 <Icon icon={iconFor(t.icon)} size={20} />
               </span>
-              <span className="font-mono text-eyebrow uppercase tracking-[0.08em] text-fg-subtle">
+              <span className="font-mono text-[0.6875rem] uppercase tracking-[0.12em] text-fg-subtle">
                 {t.platforms.map((p) => PLATFORM_LABEL[p as keyof typeof PLATFORM_LABEL] ?? p).join(" · ")}
               </span>
             </div>
@@ -61,7 +62,7 @@ export function ReleaseBento() {
           </li>
         ))}
         {command && (
-          <li className={cx("reveal flex min-w-0 flex-col justify-center gap-4 rounded-md border border-border bg-card p-6 sm:col-span-2", REST[rest])}>
+          <li className={cx("reveal surface-raised flex min-w-0 flex-col justify-center gap-4 p-6 sm:col-span-2", REST[rest])}>
             <p className="text-title text-fg">Install {RELEASE.version} on Debian or Ubuntu</p>
             <CommandLine command={command} />
           </li>
