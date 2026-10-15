@@ -1,5 +1,5 @@
-import { buttonClass } from "@tandem/ui/components/Button";
-import { Download, Menu, X } from "lucide-react";
+import { siteButton } from "@tandem/ui/components/SiteButton";
+import { ArrowRight, Download, Menu, X } from "lucide-react";
 import { Icon } from "./Icon";
 import { SITE } from "../../lib/site";
 import { Mark } from "./Mark";
@@ -7,55 +7,56 @@ import { NAV } from "./nav";
 
 const MENU_ID = "site-menu";
 
-/** The sticky header. Below 1024 px the links move into a menu built on the
- * Popover API: no script, light dismiss and Esc for free. Browsers without it
- * still reach every link from the footer. */
+/** The sticky header (D-1836): glass over the page, a hairline that appears
+ * once the page scrolls, the links centred. Below 1024 px they move into a
+ * sheet built on the Popover API: no script, light dismiss and Esc for free.
+ * Browsers without it still reach every link from the footer. */
 export function SiteHeader({ current }: { current?: string }) {
   const link = (href: string) =>
     current === href ? ({ "aria-current": "page" } as const) : ({} as Record<string, never>);
   return (
-    <header className="site-header sticky top-0 z-50 border-b border-border bg-(--site-header) backdrop-blur-md backdrop-saturate-150">
-      <nav aria-label="Site" className="container-site flex h-(--site-header-h) items-center gap-2">
+    <header className="site-header sticky top-0 z-50 border-b border-line bg-(--site-header) backdrop-blur-xl backdrop-saturate-150">
+      <nav aria-label="Site" className="container-site relative flex h-(--site-header-h) items-center gap-2">
         <a
           href="/"
-          className="-ml-2 flex h-10 items-center gap-2 rounded-sm px-2 text-lg font-semibold tracking-tight text-fg"
+          className="-ml-2 flex h-10 items-center gap-2.5 rounded-md px-2 text-[1.0625rem] font-semibold tracking-[-0.02em] text-fg"
         >
           <Mark />
           {SITE.product}
         </a>
-        <ul className="ml-6 hidden items-center gap-1 lg:flex">
+        <ul className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-0.5 lg:flex">
           {NAV.map((n) => (
             <li key={n.href}>
               <a
                 href={n.href}
                 {...link(n.href)}
-                className="flex h-10 items-center rounded-sm px-3 text-copy-sm text-fg-muted transition-colors duration-(--dur-instant) hover:text-fg aria-[current=page]:text-fg"
+                className="flex h-9 items-center rounded-md px-3.5 text-[0.875rem] font-medium text-fg-muted transition-colors duration-(--dur-base) hover:bg-(--site-glass) hover:text-fg aria-[current=page]:text-fg"
               >
                 {n.label}
               </a>
             </li>
           ))}
         </ul>
-        <a href="/download/" className={`${buttonClass("primary", "lg")} ml-auto`}>
-          <Icon icon={Download} size={16} />
+        <a href="/download/" className={siteButton("primary", "sm", "ml-auto")}>
+          <Icon icon={Download} size={15} />
           Download
         </a>
         <button
           type="button"
           popoverTarget={MENU_ID}
           aria-label="Menu"
-          className="-mr-2 inline-flex size-10 items-center justify-center rounded-sm text-fg hover:bg-surface-3 lg:hidden"
+          className="-mr-2 inline-flex size-10 items-center justify-center rounded-md text-fg hover:bg-(--site-glass) lg:hidden"
         >
           <Icon icon={Menu} size={20} />
         </button>
         <div
           id={MENU_ID}
           popover="auto"
-          className="m-0 ml-auto h-dvh max-h-none w-[min(20rem,85vw)] border-0 border-l border-border bg-card p-0 text-fg shadow-3 backdrop:bg-overlay"
+          className="site-sheet fixed inset-x-0 top-0 m-0 h-auto max-h-dvh w-full max-w-none overflow-y-auto border-0 border-b border-line bg-page p-0 text-fg shadow-e3 backdrop:bg-overlay backdrop:backdrop-blur-sm"
         >
-          <div className="flex h-full flex-col gap-2 p-4">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 px-2 text-lg font-semibold">
+          <div className="container-site flex flex-col gap-3 pb-6">
+            <div className="flex h-(--site-header-h) items-center justify-between">
+              <span className="-ml-2 flex items-center gap-2.5 px-2 text-[1.0625rem] font-semibold tracking-[-0.02em]">
                 <Mark />
                 {SITE.product}
               </span>
@@ -64,24 +65,29 @@ export function SiteHeader({ current }: { current?: string }) {
                 popoverTarget={MENU_ID}
                 popoverTargetAction="hide"
                 aria-label="Close menu"
-                className="inline-flex size-10 items-center justify-center rounded-sm hover:bg-surface-3"
+                className="-mr-2 inline-flex size-10 items-center justify-center rounded-md hover:bg-(--site-glass)"
               >
                 <Icon icon={X} size={20} />
               </button>
             </div>
             <ul aria-label="Site menu" className="flex flex-col">
-              {[{ href: "/", label: "Home" }, ...NAV, { href: "/download/", label: "Download" }].map((n) => (
-                <li key={n.href}>
+              {[{ href: "/", label: "Home" }, ...NAV].map((n) => (
+                <li key={n.href} className="border-b border-line last:border-0">
                   <a
                     href={n.href}
                     {...link(n.href)}
-                    className="flex h-12 items-center rounded-sm px-2 text-copy text-fg-muted hover:bg-surface-3 hover:text-fg aria-[current=page]:text-fg"
+                    className="group flex h-14 items-center justify-between text-[1.125rem] font-medium tracking-[-0.01em] text-fg-muted hover:text-fg aria-[current=page]:text-fg"
                   >
                     {n.label}
+                    <Icon icon={ArrowRight} size={18} className="text-fg-subtle transition-transform duration-(--dur-base) group-hover:translate-x-0.5" />
                   </a>
                 </li>
               ))}
             </ul>
+            <a href="/download/" {...link("/download/")} className={siteButton("primary", "lg", "w-full")}>
+              <Icon icon={Download} size={18} />
+              Download for Linux
+            </a>
           </div>
         </div>
       </nav>

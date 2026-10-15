@@ -46,6 +46,20 @@ test("demo AC1 the frame shows its label and line, and nothing of the demo loads
   await expect(page.locator(`${slot} img[data-demo-still]`)).toBeHidden();
 });
 
+test("demo the page stays where the visitor is when the demo loads, and keeps the keyboard (D-1821)", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  // Just above the frame's load margin, so it loads off screen; at 0 when
+  // the frame already loads from the top of the page.
+  const top = await page.locator(slot).evaluate((el) => el.getBoundingClientRect().top + window.scrollY);
+  const at = Math.max(0, Math.round(top - 900 - 100));
+  await page.evaluate((y) => window.scrollTo({ top: y, behavior: "instant" }), at);
+  await demoFrame(page);
+  await page.waitForTimeout(1500);
+  expect(await page.evaluate(() => Math.round(window.scrollY))).toBe(at);
+  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("IFRAME");
+});
+
 test("demo AC2 AC3 the ready message runs the scripted turn; full screen opens over the page and Esc returns with the same state", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
