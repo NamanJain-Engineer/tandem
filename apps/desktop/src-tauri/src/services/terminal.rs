@@ -125,6 +125,10 @@ pub struct TerminalService {
     /// drops as their PTY is, closed with the pane (D-1606).
     host_tasks:
         std::sync::Mutex<std::collections::HashMap<String, crate::services::remote_mcp::RemoteMcp>>,
+    /// The agent sandbox (F-TL-11), found with the login PATH on first use.
+    sandbox: tokio::sync::OnceCell<Arc<dyn tandem_engines::sandbox::Sandboxer>>,
+    /// Whether each agent pane runs sandboxed, and why not.
+    sandboxed: std::sync::Mutex<std::collections::HashMap<String, PaneSandbox>>,
 }
 
 /// Takes a checkpoint of an agent pane's folder (F-EX-01). The flag turns
@@ -134,6 +138,57 @@ pub type PromptHook = Arc<
         + Send
         + Sync,
 >;
+
+/// Whether an agent pane runs sandboxed (F-TL-11): `sandbox_panes` and
+/// `sandbox:pane`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PaneSandbox {
+    pub pane_id: String,
+    pub sandboxed: bool,
+    /// Why not, when the setting is on.
+    pub reason: Option<String>,
+}
+
+/// What a sandboxed agent in `root` may reach (F-TL-11): its folder, its
+/// repository's git data when it's a worktree, the account's provider home,
+/// Vibezeo's tasks folder; the other worktrees hidden.
+pub fn sandbox_policy(
+    root: &Path,
+    provider_home: Option<&Path>,
+    data: &Path,
+    home: &Path,
+) -> tandem_engines::sandbox::SandboxPolicy {
+    let git_common = tandem_engines::sandbox::git_common_dir(root);
+    // The repository's worktrees folder: the main checkout's own, or the
+    // one the worktree lives in.
+    let repo = git_common
+        .as_ref()
+        .and_then(|g| g.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| root.to_path_buf());
+    let hide = std::fs::read_dir(repo.join(".tandem").join("worktrees"))
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .filter(|p| {
+                    p.canonicalize().ok() != root.canonicalize().ok() && p.as_path() != root
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    tandem_engines::sandbox::SandboxPolicy {
+        root: root.to_path_buf(),
+        git_common,
+        provider_home: provider_home.map(Path::to_path_buf),
+        providers: data.join("providers"),
+        tasks: data.join("tasks"),
+        run: data.join("run"),
+        home: home.to_path_buf(),
+        hide,
+    }
+}
 
 /// One line of `TANDEM_SPAWN_LOG` (debug builds): what was started, with
 /// env keys only.
@@ -219,7 +274,104 @@ impl TerminalService {
             wsl_panes: Default::default(),
             tasks: std::sync::OnceLock::new(),
             host_tasks: Default::default(),
+            sandbox: tokio::sync::OnceCell::new(),
+            sandboxed: Default::default(),
         })
+    }
+
+    /// The platform's agent sandbox (F-TL-11), detected once.
+    pub async fn sandboxer(&self) -> Arc<dyn tandem_engines::sandbox::Sandboxer> {
+        self.sandbox
+            .get_or_init(|| async {
+                let login = self.login_env().await;
+                let path = login.vars.get("PATH").cloned().unwrap_or_default();
+                let found = tokio::task::spawn_blocking(move || {
+                    Arc::<dyn tandem_engines::sandbox::Sandboxer>::from(
+                        tandem_engines::sandbox::platform(&path),
+                    )
+                })
+                .await;
+                found.unwrap_or_else(|_| Arc::new(tandem_engines::sandbox::NotYet))
+            })
+            .await
+            .clone()
+    }
+
+    /// Every agent pane's sandbox note (the pane chip).
+    pub fn sandbox_panes(&self) -> Vec<PaneSandbox> {
+        self.sandboxed
+            .lock()
+            .map(|m| m.values().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    fn note_sandbox(&self, note: PaneSandbox) {
+        if let Ok(mut m) = self.sandboxed.lock() {
+            m.insert(note.pane_id.clone(), note.clone());
+        }
+        self.status.bus().publish(tandem_core::bus::BusEvent::new(
+            tandem_core::bus::Topic::Status,
+            "sandbox:pane",
+            note,
+        ));
+    }
+
+    /// The engine's argv, inside the sandbox when the setting is on and it
+    /// can run here (F-TL-11). Only narrows what the process reaches: the
+    /// engine signs in by itself, and no provider-home file is read here.
+    async fn sandbox_argv(
+        &self,
+        pane: &PaneId,
+        root: &Path,
+        provider_home: Option<&Path>,
+        argv: Vec<String>,
+    ) -> Vec<String> {
+        let on = tandem_store::repo::settings::get(
+            &self.store,
+            tandem_core::settings::SettingKey::AgentSandbox,
+        )
+        .await
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .is_some_and(|v| v == "workspace");
+        if !on {
+            if let Ok(mut m) = self.sandboxed.lock() {
+                m.remove(pane.as_str());
+            }
+            return argv;
+        }
+        let sandbox = self.sandboxer().await;
+        let data = self
+            .store
+            .path()
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
+        let login = self.login_env().await;
+        let home = login
+            .vars
+            .get("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        let policy = sandbox_policy(root, provider_home, &data, &home);
+        match sandbox.wrap(&policy, &argv) {
+            Ok(wrapped) => {
+                self.note_sandbox(PaneSandbox {
+                    pane_id: pane.to_string(),
+                    sandboxed: true,
+                    reason: None,
+                });
+                wrapped
+            }
+            Err(status) => {
+                self.note_sandbox(PaneSandbox {
+                    pane_id: pane.to_string(),
+                    sandboxed: false,
+                    reason: status.reason,
+                });
+                argv
+            }
+        }
     }
 
     pub fn set_prompt_hook(&self, hook: PromptHook) {
@@ -759,9 +911,12 @@ impl TerminalService {
                 .agent_launch_with(&engine, path, &root, status, account, relaunch)
                 .await
                 .inspect_err(|_| self.status.unwatch(pane.as_str()))?;
+            let argv = self
+                .sandbox_argv(pane, &root, launch.home.as_deref(), launch.spec.argv())
+                .await;
             let args = env::agent_wrapper(
                 &shell,
-                &launch.spec.argv(),
+                &argv,
                 integration.as_ref().map(|(_, dir)| dir.as_path()),
             )
             .map_err(|_| {
@@ -1762,5 +1917,37 @@ mod tests {
         assert!(!q.settled(1_400, Some("user@host %\nmotd")));
         assert!(!q.settled(2_800, Some("user@host %\nmotd")));
         assert!(q.settled(2_900, Some("user@host %\nmotd")));
+    }
+}
+
+#[cfg(test)]
+mod sandbox_tests {
+    use super::*;
+
+    #[test]
+    fn f_tl_11_2_a_worktrees_sandbox_hides_the_other_worktrees_and_opens_its_git_data() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let repo = dir.path().canonicalize().expect("canon").join("repo");
+        let (a, b) = (
+            repo.join(".tandem/worktrees/a"),
+            repo.join(".tandem/worktrees/b"),
+        );
+        let admin = repo.join(".git/worktrees/a");
+        for d in [&a, &b, &admin] {
+            std::fs::create_dir_all(d).expect("mkdir");
+        }
+        std::fs::write(a.join(".git"), format!("gitdir: {}\n", admin.display())).expect(".git");
+        std::fs::write(admin.join("commondir"), "../..\n").expect("commondir");
+        let data = dir.path().join("data");
+        let home = dir.path().join("home");
+        let p = sandbox_policy(&a, Some(&data.join("providers/claude/acc")), &data, &home);
+        assert_eq!(p.git_common.as_deref(), Some(repo.join(".git").as_path()));
+        assert_eq!(p.hide, vec![b.clone()]);
+        assert_eq!(p.tasks, data.join("tasks"));
+        // The main checkout hides every worktree under it.
+        let mut main = sandbox_policy(&repo, None, &data, &home);
+        main.hide.sort();
+        assert_eq!(main.hide, vec![a, b]);
+        assert_eq!(main.git_common, None);
     }
 }

@@ -45,6 +45,7 @@ import { followEngines } from "../../stores/engines";
 import { followLimits } from "../../stores/limits";
 import { followRunaway } from "../../stores/runaway";
 import { followNightShift } from "../../stores/nightShift";
+import { followSandbox } from "../../stores/sandbox";
 import { followContexts } from "../../stores/contexts";
 import { followUsage } from "../../stores/usage";
 import { followStatus } from "../../stores/status";
@@ -87,6 +88,7 @@ export function AppShell() {
   useEffect(followLimits, []);
   useEffect(followRunaway, []);
   useEffect(followNightShift, []);
+  useEffect(followSandbox, []);
   useEffect(followAuto, []);
   useEffect(followConductor, []);
   useEffect(followContexts, []);

@@ -273,6 +273,8 @@ macro_rules! app_commands {
             commands::night_shift::night_list,
             commands::night_shift::night_schedule,
             commands::night_shift::night_cancel,
+            commands::sandbox::sandbox_status,
+            commands::sandbox::sandbox_panes,
             commands::data_controls::data_export,
             commands::data_controls::data_delete_local,
             commands::find_work::find_work,

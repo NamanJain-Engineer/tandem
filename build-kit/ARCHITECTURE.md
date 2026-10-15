@@ -625,6 +625,8 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `limit_continue` | `{paneId, engineId, accountId?}` | `HandoffResult` (a new pane split right with the brief fallback: the last 200 redacted lines under the brief headings; only ever from the user's click) | NotFound, EngineMissing, LimitReached | F-AC-05 |
 | `usage_get` | `{accountId?}` | `[UsageView {accountId, engineId, windows:[UsageWindow {kind, usedPct, resetsAt?}], source: "codex_app_server"\|"unavailable", estimated, reason?, fetchedAt, forecasts:[WindowForecast {kind, state: "not_enough_data"\|"on_track"\|"runs_out", runsOutAt?, beforeResetMs?, ratePerHour?, basisMinutes}] (F-AC-08: one per window, from the readings of the last hour)}]` (the latest reading; probes when there's none) | — | F-AC-04 |
 | `usage_refresh` | `{accountId?}` | `[UsageView]` (probes again; the webview calls it every 5 min and after a turn) | — | F-AC-04 |
+| `sandbox_status` | — | `SandboxStatus {available, tool?, reason?}` (bubblewrap found on the login PATH and able to run; "Not available on this system yet." on macOS and Windows) | — | F-TL-11 |
+| `sandbox_panes` | — | `[PaneSandbox {paneId, sandboxed, reason?}]` (agent panes started with `agent_sandbox = "workspace"`) | — | F-TL-11 |
 | `night_accounts` | — | `[NightAccount {accountId, engineId, resetsAt?, window?}]` (each account's next reset: its fullest usage window's, else the last limit a pane hit on it; UI-171) | — | F-RT-06 |
 | `night_list` | — | `[NightRun {id, issueId, title, workspaceId, accountId, engineId, isolation, access, fullConfirmed, review, runAt, window, state: "scheduled"\|"waiting"\|"started"\|"done"\|"needs_you"\|"cancelled", attemptId?, reason?, createdAt, endedAt?}]` (cancelled ones left out) | — | F-RT-06 |
 | `night_schedule` | `{input: NightInput {issueId, workspaceId, accountId, isolation, access, fullConfirmed, review}}` | `NightRun` (starts at the account's next reset, on that account only) | Unauthenticated, ForbiddenPlan, Invalid (no reset known; Full unconfirmed), NotFound | F-RT-06 |
@@ -994,6 +996,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `accounts:changed` | `{accounts:[Account]}` | accounts service | F-AC-02 |
 | `accounts:login-finished` | `{opId, accountId, state: "signed_in"\|"signed_out"\|"failed"\|"cancelled", message?}` (`message`: the engine's last line, redacted) | accounts service | F-AC-02 |
 | `usage:changed` | `UsageView` | UsageProbe | F-AC-04 |
+| `sandbox:pane` | `PaneSandbox` | TerminalService | F-TL-11 |
 | `night:changed` | `[NightRun]` | NightShiftService | F-RT-06 |
 | `runaway:changed` | `GuardCardChange {paneId, card: GuardCard?}` | RunawayService | F-AC-09 |
 | `context:changed` | `PaneContext {paneId, used, window}` | status service (Stop hook → transcript tail) | F-AC-06 |
@@ -1738,6 +1741,9 @@ Per host (`local`, each SSH host via tandem-host `engines.detect`, each WSL dist
   - others: `[path] + extra_args`.
 - **Launch env additions:** `provider_home_env=<home>` (or XDG vars for `xdg` strategy), status vars, and for terminal Claude/Codex, the tasks MCP is installed natively in the provider home when "Expose tasks to terminal agents" is on (F-TK-02).
 - **Hardening assertions** (tests over `LaunchSpec`): argv contains no string matching the redactor's secret patterns (F-EN-04 AC2); env contains no plugin tokens and, for SSH launches, no `$PROVIDERS` path (F-AC-01 AC3); briefs > 8 KB are files/stdin.
+
+### 6.3a Agent sandbox [F-TL-11]
+With `agent_sandbox = "workspace"`, a local agent pane's engine argv is prefixed by `tandem_engines::sandbox::Sandboxer::wrap` before `env::agent_wrapper` quotes it into the login shell's command, so the shell (and handback) stay outside. Linux: `Bubblewrap` (`bwrap` on the login PATH, probed once with `--ro-bind / / --dev /dev true`); other OSes: `NotYet`. `bwrap_args` builds, in order: `--ro-bind / /`, `--dev`, `--proc`; writable `/tmp`, the pane's folder, a worktree's common git dir, `$DATA/tasks`; `--tmpfs ~/.cache`; hidden (`--tmpfs`, or `/dev/null` over a file) `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.docker`, `~/.kube`, `~/.netrc`, `~/.local/share/keyrings`, `~/.git-credentials`, `$DATA/providers` and the repository's other worktrees; then the account's provider home writable and `$DATA/run` read-only on top; last, `.git/hooks` and `.git/config` read-only. No pid, network or session namespace (the TUI keeps its terminal and job control). Nothing under a provider home is read to build it.
 
 ### 6.4 Provider homes [F-AC-01, F-AC-02, F-EN-04]
 - Created at `$PROVIDERS/<engine>/<account-id>/`, mode 0700 (Unix; Windows ACL inherits the user profile).

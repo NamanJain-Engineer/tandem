@@ -203,6 +203,8 @@ const COMMANDS: &[&str] = &[
     "night_list",
     "night_schedule",
     "night_cancel",
+    "sandbox_status",
+    "sandbox_panes",
     "thread_create",
     "thread_list",
     "thread_get",

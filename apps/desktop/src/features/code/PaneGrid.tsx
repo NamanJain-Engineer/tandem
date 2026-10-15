@@ -63,6 +63,7 @@ import { useHandoff } from "../../stores/handoff";
 import { AccountChip } from "./AccountChip";
 import { LimitBanner } from "./LimitCard";
 import { GuardBanner } from "./GuardCard";
+import { SandboxChip } from "./SandboxChip";
 import { useContexts } from "../../stores/contexts";
 import { baseBranch, isWorktree } from "../../stores/worktrees";
 import { useShortcutKeys } from "../commands/useShortcutKeys";
@@ -382,6 +383,7 @@ const PaneView = memo(function PaneView({
           <>
             {wt && <WorktreeChip wt={wt} />}
             <AccountChip pane={pane} />
+            {pane.kind === "agent" && <SandboxChip paneId={pane.id} />}
           </>
         }
         onRename={rename}

@@ -195,6 +195,11 @@
     "page": "engines"
   },
   {
+    "default": "off",
+    "key": "agent_sandbox",
+    "page": "engines"
+  },
+  {
     "default": {
       "circles": true,
       "subagents": 20,

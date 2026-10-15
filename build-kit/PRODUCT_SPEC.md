@@ -3013,7 +3013,7 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
 **Story:** I let agents work in auto mode, and I don't want one of them reading my SSH keys, writing outside its folder, or planting a git hook that runs later outside its reach. I want agent panes to see only what their work needs, whichever engine they run.
 
 **Behavior:**
-- **Setting:** Settings › Engines › "Sandbox agent panes": **Off** (default) or **Workspace**. It applies to agent panes started after the change, in folders on this computer. SSH and WSL panes are never sandboxed, and their pane chip says "Not sandboxed here".
+- **Setting:** Settings › Engines › "Sandbox agent panes": **Off** (default) or **Workspace**. It applies to agent panes started after the change, in folders on this computer. SSH and WSL panes are never sandboxed.
 - **How:** on Linux, the engine's own command runs under bubblewrap (`bwrap`), found on the login PATH. The pane's shell stays outside the sandbox: when the engine exits, the shell is back.
   - Vibezeo never installs it. Without `bwrap`, or when it can't make a sandbox here (user namespaces off), the setting shows the reason ("Install bubblewrap (the bwrap command) to sandbox agents.") and agent panes start unsandboxed, with their chip saying why.
   - On macOS and Windows the setting reads "Not available on this system yet", through the same interface.
@@ -3023,7 +3023,7 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
     - for a worktree, the repository's git folder, so commits work;
     - the account's provider home;
     - Vibezeo's tasks folder (the `tandem-tasks` server the engine starts);
-    - a private `/tmp`;
+    - `/tmp`, shared with the rest of the computer (engines and their tools write there);
     - an empty `~/.cache`.
   - **Hidden** (they read as empty): `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.docker`, `~/.kube`, `~/.netrc`, `~/.local/share/keyrings`, the other accounts' provider homes, and the other worktrees of the repository.
   - **Git internals stay read-only** inside the writable folders: `.git/hooks` and `.git/config` (and the repository's for a worktree). An agent can't plant a hook that later runs outside the sandbox.

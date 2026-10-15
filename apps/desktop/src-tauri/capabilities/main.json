@@ -282,6 +282,8 @@
     "allow-night-list",
     "allow-night-schedule",
     "allow-night-cancel",
+    "allow-sandbox-status",
+    "allow-sandbox-panes",
     "allow-thread-create",
     "allow-thread-list",
     "allow-thread-get",

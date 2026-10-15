@@ -2023,6 +2023,30 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ---
 
+## M18 · Next features: sandbox (M)
+
+**Goal.** The agent sandbox `docs/NEXT_FEATURES.md` ranks (§1 F-TL-11), Linux first: with "Workspace" on, an agent pane's engine runs under bubblewrap and can write only to its folder, its git data, its provider home and Vibezeo's tasks folder, and can't read the user's keys. Built on branch `product-research`; decisions D-2474 on.
+
+**Owns:** F-TL-11 (P2)
+**Prerequisites.** M4 agent panes and provider homes (F-EN-01, F-AC-01), M17's worktrees (F-WT-01).
+
+**Ordered tasks**
+1. **Policy and detection.** `tandem_engines::sandbox`: `SandboxPolicy`, `bwrap_args` (read-only root, the writable binds, the hidden secrets, provider homes and other worktrees, then `.git/hooks` and `.git/config` read-only again), the `Sandboxer` trait with `Bubblewrap::detect` (found on the login PATH and probed with a real one-command sandbox) on Linux and `NotYet` elsewhere, behind `cfg(target_os)`. Never installs anything.
+2. **Agent panes.** `TerminalService` wraps the engine's own argv (the shell stays outside) when `agent_sandbox = "workspace"`, for local folders only; it records each pane's `PaneSandbox` and publishes `sandbox:pane`; commands `sandbox_status`, `sandbox_panes`.
+3. **UI and docs.** The "Sandboxed" chip on agent panes (or why not), Settings › Engines › Sandbox agent panes with the reason when unavailable, and Engines › Sandbox agent panes (Linux) in the docs. The fake engine's `/sh <cmd>` reports what the sandbox lets it do.
+
+**Verification**
+```bash
+cargo test -p tandem-engines f_tl_11 && cargo test -p tandem-desktop --lib f_tl_11
+pnpm --filter desktop exec vitest run -t "F-TL-11"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-tl11-*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-TL11 Agent sandbox** (`m18-tl11-sandbox.e2e.ts`, needs `bwrap` on the test machine). With the setting off, an agent pane has no chip. With Workspace, the next agent pane shows "Sandboxed"; its engine writes in its folder but not in `$HOME` or `/var/tmp`, can't read `~/.ssh/id_ed25519`, can't write `.git/hooks/pre-commit`, and can commit.
+
+---
+
 ## 20. Coverage table (feature ID → owning milestone)
 
 Every feature in PRODUCT_SPEC §4 appears here exactly once: **165 features** (65 P0, 67 P1, 33 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 9: the 5 extras (F-EX, §4.19) and the 4 worktree-workflow features (F-WT, §4.20). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
