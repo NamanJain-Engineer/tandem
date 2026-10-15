@@ -1,19 +1,18 @@
 import { VIDEO } from "../../../lib/media";
 import { Section } from "../Section";
 
-/** #demo (§6.14): the product video. It has sound, so it never autoplays and
- * is never muted; it loads nothing until it's played. Its poster comes from
- * /demo/embed.js as the video nears the screen: a `poster` attribute
- * downloads with the page, and on a slow connection that held up the h1, the
- * largest paint (D-1816). */
+/** #video on /demo/ (§6.14, D-1841): the product video. It has sound, so it
+ * never autoplays and is never muted; it loads nothing until it's played.
+ * On /demo/ it sits below the still and the steps, so its poster (which a
+ * browser fetches with the page) doesn't compete with the page's h1. */
 export function VideoSection() {
   return (
-    <Section id="demo" tone="raised" eyebrow="See it run" title="Vibezeo in 1 minute">
+    <Section id="video" tone="raised" divider eyebrow="See it run" title="Watch it run (1 min)">
       <figure className="reveal flex flex-col gap-4">
         <div className="frame">
         <div data-stage="" className="frame-screen">
           <video
-            data-poster={VIDEO.poster}
+            poster={VIDEO.poster}
             width={1600}
             height={900}
             controls

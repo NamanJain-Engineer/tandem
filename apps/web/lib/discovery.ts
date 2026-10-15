@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { PRICES } from "@tandem/protocol/plans";
+import { BLOG_PATH, FEED_PATH, POSTS } from "./blog/posts";
 import { DOCS_MARKDOWN } from "./docs/tables";
 import { DOCS_PAGES, docsPath } from "./docs/pages";
 import { releaseAssets } from "./manifest";
@@ -173,6 +174,11 @@ ${DOCS_PAGES.map((p) => {
   const d = docSource(p.slug);
   return `- [${p.title}](${abs(docsPath(p.slug))}): ${d.description}${notInApp(d) ? " (Not in the app yet.)" : partOfPro(d) ? " (Part of Pro, which starts when accounts open.)" : ""}`;
 }).join("\n")}
+
+## Blog
+
+${POSTS.map((p) => `- [${p.title}](${abs(p.path)}): ${p.description}`).join("\n")}
+- [All posts](${abs(BLOG_PATH)}) and the [Atom feed](${abs(FEED_PATH)})
 
 ## Download
 

@@ -2,7 +2,10 @@
 @import "@tandem/ui/base.css";
 @import "@tandem/ui/site.css";
 
-@source "../../../packages/ui/src";
+/* Only the packages/ui components the site and the portal render (D-1844):
+   scanning the whole package added the desktop app's utilities to every
+   page's stylesheet. frame.test fails if a page imports one not listed. */
+@source "../../../packages/ui/src/components/{Avatar,Badge,Button,Choice,EngineGlyph,Field,Kbd,SegmentedControl,Select,SiteButton,Spinner,StatusDot,Tooltip}.tsx";
 @source "../components";
 @source "../lib";
 
