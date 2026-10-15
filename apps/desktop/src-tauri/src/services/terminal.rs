@@ -800,6 +800,8 @@ impl TerminalService {
             child_env.insert(env::TOKEN_VAR.to_string(), token.clone());
         }
         child_env.extend(extra_env);
+        // F-WT-06: a worktree's ports, variables and Compose project.
+        child_env.extend(crate::services::worktree_runtime::vars_for_workspace(&ws));
         let spec = SpawnSpec {
             pane_id: pane.to_string(),
             args,

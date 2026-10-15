@@ -151,6 +151,8 @@
     "allow-lane-merge",
     "allow-lane-overlap",
     "allow-lane-forge",
+    "allow-lane-runtime",
+    "allow-worktree-env-check",
     "allow-lane-create-pr",
     "allow-lane-remove",
     "allow-worktree-setup-get",

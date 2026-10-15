@@ -163,6 +163,8 @@ macro_rules! app_commands {
             commands::lanes::lane_merge,
             commands::lanes::lane_overlap,
             commands::lanes::lane_forge,
+            commands::lanes::lane_runtime,
+            commands::lanes::worktree_env_check,
             commands::lanes::lane_create_pr,
             commands::lanes::lane_remove,
             commands::lanes::worktree_setup_get,

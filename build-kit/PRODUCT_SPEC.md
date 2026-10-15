@@ -3098,6 +3098,33 @@ Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1�
 5. The trusted teardown runs with the same variables: a teardown writing `$COMPOSE_PROJECT_NAME` writes the worktree's project name.
 6. An env value that looks like a secret shows "This looks like a secret. Don't commit it in worktree.json."; a reserved name such as `PATH` or `LD_PRELOAD` makes the file invalid, naming it.
 
+#### F-WT-09 Previews per worktree (P2)
+**Story:** Five agents changed my app five ways. I want to try each version, side by side, without stopping servers, switching branches or reinstalling anything.
+
+**Behavior:**
+- **The file.** `.vibezeo/worktree.json` gains `preview`, which needs `ports` (F-WT-06):
+  ```json
+  { "ports": 10, "preview": { "command": "pnpm dev --port {{port}}", "port": 0, "path": "/" } }
+  ```
+  - `command`: one command line, up to 4,000 characters, with F-WT-06's placeholders. It's trusted with the setup and teardown commands and `env` (F-WT-01): an untrusted preview never runs.
+  - `port`: which port of the block the preview answers on, as an offset (0 is `VIBEZEO_PORT`; default 0, smaller than `ports`).
+  - `path`: what to open, starting with `/` (default `/`).
+- **Running it.** "Start preview" in a worktree's ⋯ menu runs the command in a terminal pane named "Preview" in the worktree's tab, with the worktree's variables, so its output is visible and it can be stopped. A worktree made from New worktree or the launch sheet with a trusted setup and preview runs both in the setup pane, setup first (`<setup> && <preview>`); with a trusted preview and no setup, it starts the preview pane. It counts toward the live panes (4 on Free).
+- **Ready.** While a worktree has a preview configured, Vibezeo checks every 2 s whether something accepts connections on its preview port on 127.0.0.1. Once it does, the worktree's rail row shows a **Preview** button that opens `http://<slug>.localhost:<port><path>` (F-WT-06's address rule) in a sidebar browser tab. It goes away when the port stops answering. Checking only connects; it sends nothing.
+- **Best of N.** Compare (F-EX-04) gets **Previews**: it starts each lane's preview where it isn't running, then opens a sidebar browser tab per lane as each becomes ready, titled with the lane's branch. Each column shows its preview's state: "Starting…", **Open preview**, or "No preview" (the repository has none). Lanes on SSH hosts or in WSL show "No preview".
+- **Side by side.** Choosing two lanes' previews (in Compare, or "Compare previews…" in a worktree's menu, then the other worktree) opens a tab in the repository with two browser panes side by side, each loading one preview, labelled with its branch.
+- **Fast copies.** The copy of F-WT-01 clones files with the filesystem's copy-on-write (`FICLONE`, as `cp --reflink=auto` does) where the filesystem supports it (btrfs, XFS and others on Linux), so a copied `node_modules` or dev database file takes no extra space or time; elsewhere it copies as before. The copy report says how many files were cloned.
+- Local folders only, as F-WT-06.
+
+**Acceptance:**
+1. With `"preview": {"command": "python3 -m http.server {{port}}"}` trusted, "Start preview" opens a "Preview" pane in the worktree running the command with the worktree's port; once it answers, the row's Preview button opens `http://<slug>.localhost:<port>/` (or `localhost`) in a sidebar browser tab; stopping the server removes the button.
+2. An untrusted preview never runs: "Start preview" opens the review (UI-151), and a new worktree's setup pane runs only the setup.
+3. A new worktree with a trusted setup and preview types `<setup> && <preview>` into its setup pane.
+4. Compare's Previews starts each lane's preview and opens one browser tab per lane once it answers; a lane without a preview says "No preview".
+5. Side by side opens one tab with two browser panes loading the two lanes' preview addresses.
+6. On a filesystem with copy-on-write, copied files share their data with the main checkout's (the clone count equals the copied count); on one without, the copy falls back to an ordinary copy and the files are byte for byte the same.
+7. `preview` without `ports`, a `port` offset outside the block, or a `path` not starting with `/` makes the file invalid, naming the problem.
+
 ---
 
 ## 5. Non-functional requirements

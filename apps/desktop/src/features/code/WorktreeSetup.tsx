@@ -3,12 +3,23 @@ import type { SetupState, WorkspaceSummary } from "@tandem/protocol";
 import { Banner, Button, CodeBlock, Dialog, Input, Skeleton, Textarea, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
 import {
+  formatEnv,
   getWorktreeSetup,
+  parseEnv,
   patternLines,
   saveWorktreeSetup,
+  secretLooking,
   trustAndRun,
   useWorktrees,
 } from "../../stores/worktrees";
+
+/** "" or 1–100 (F-WT-06). */
+function parsePorts(text: string): { ports: number | null; ok: boolean } {
+  const v = text.trim();
+  if (!v) return { ports: null, ok: true };
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 1 && n <= 100 ? { ports: n, ok: true } : { ports: null, ok: false };
+}
 
 type Load = { at: "loading" } | { at: "error"; message: string } | { at: "ready"; state: SetupState };
 
@@ -19,6 +30,9 @@ export function WorktreeSetupDialog({ ws, onClose }: { ws: WorkspaceSummary; onC
   const [copy, setCopy] = useState("");
   const [setup, setSetup] = useState("");
   const [teardown, setTeardown] = useState("");
+  const [ports, setPorts] = useState("");
+  const [envText, setEnvText] = useState("");
+  const [secrets, setSecrets] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { show } = useToast();
@@ -34,18 +48,41 @@ export function WorktreeSetupDialog({ ws, onClose }: { ws: WorkspaceSummary; onC
       setCopy(config?.copy.join("\n") ?? "");
       setSetup(config?.setup ?? "");
       setTeardown(config?.teardown ?? "");
+      setPorts(config?.ports ? String(config.ports) : "");
+      setEnvText(formatEnv(config?.env));
       setLoad({ at: "ready", state: out.value });
     });
   }, [ws.id]);
   useEffect(() => fetch(), [fetch]);
 
+  const parsedEnv = parseEnv(envText);
+  const parsedPorts = parsePorts(ports);
+  // F-WT-06 AC6: values that look like secrets, checked by the core's
+  // redactor as they're typed.
+  const envKey = JSON.stringify(parsedEnv.env);
+  useEffect(() => {
+    let live = true;
+    const timer = setTimeout(() => {
+      void secretLooking(JSON.parse(envKey) as Record<string, string>).then((names) => {
+        if (live) setSecrets(names);
+      });
+    }, 300);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [envKey]);
+
   const save = async () => {
+    if (parsedEnv.badLine !== null || !parsedPorts.ok) return;
     setBusy(true);
     setError(null);
     const out = await saveWorktreeSetup(ws.id, {
       copy: patternLines(copy),
       setup: setup.trim() || null,
       teardown: teardown.trim() || null,
+      ports: parsedPorts.ports,
+      env: parsedEnv.env,
     });
     setBusy(false);
     if (!out.ok) {
@@ -72,7 +109,7 @@ export function WorktreeSetupDialog({ ws, onClose }: { ws: WorkspaceSummary; onC
           <Button
             variant="primary"
             loading={busy}
-            disabled={load.at !== "ready"}
+            disabled={load.at !== "ready" || parsedEnv.badLine !== null || !parsedPorts.ok}
             onClick={() => void save()}
             data-testid="worktree-setup-save"
           >
@@ -124,9 +161,36 @@ export function WorktreeSetupDialog({ ws, onClose }: { ws: WorkspaceSummary; onC
               value={teardown}
               maxLength={4000}
               onChange={(e) => setTeardown(e.target.value)}
-              error={error ?? undefined}
               data-testid="worktree-setup-teardown"
             />
+            <Input
+              label={t("worktree.runtime.portsLabel")}
+              hint={t("worktree.runtime.portsHint")}
+              inputMode="numeric"
+              value={ports}
+              onChange={(e) => setPorts(e.target.value)}
+              error={parsedPorts.ok ? undefined : t("worktree.runtime.portsBad")}
+              data-testid="worktree-setup-ports"
+            />
+            <Textarea
+              label={t("worktree.runtime.envLabel")}
+              hint={secrets.length > 0 ? undefined : t("worktree.runtime.envHint")}
+              monospace
+              minRows={2}
+              value={envText}
+              onChange={(e) => setEnvText(e.target.value)}
+              error={
+                parsedEnv.badLine !== null
+                  ? t("worktree.runtime.envBadLine", { line: parsedEnv.badLine })
+                  : (error ?? undefined)
+              }
+              data-testid="worktree-setup-env"
+            />
+            {secrets.length > 0 && parsedEnv.badLine === null ? (
+              <p data-testid="worktree-setup-secret" className="text-sm text-warning">
+                {t("worktree.runtime.secret", { names: secrets.join(", ") })}
+              </p>
+            ) : null}
             <p className="text-xs text-fg-subtle">{t("worktree.setup.trustNote")}</p>
           </>
         )}
@@ -193,6 +257,12 @@ export function ReviewSetupDialog({
           <section className="flex flex-col gap-1">
             <h3 className="text-sm font-medium text-fg">{t("worktree.setup.reviewTeardown")}</h3>
             <CodeBlock code={config.teardown} language="bash" />
+          </section>
+        ) : null}
+        {config && Object.keys(config.env ?? {}).length > 0 ? (
+          <section className="flex flex-col gap-1">
+            <h3 className="text-sm font-medium text-fg">{t("worktree.setup.reviewEnv")}</h3>
+            <CodeBlock code={formatEnv(config.env)} language="bash" />
           </section>
         ) : null}
         {error ? <Banner tone="error">{error}</Banner> : null}

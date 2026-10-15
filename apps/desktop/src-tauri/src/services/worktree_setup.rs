@@ -58,6 +58,8 @@ pub struct LaneSetup {
     pub copy: Option<CopyReport>,
     /// Why the copy failed.
     pub copy_error: Option<String>,
+    /// F-WT-06: the index and port block the worktree got.
+    pub runtime: Option<crate::services::worktree_runtime::RuntimeInfo>,
 }
 
 /// What discarding a worktree did with its teardown.
@@ -309,6 +311,7 @@ pub async fn lane_setup(
         state: state_at(data, &main_root(&row.root)?),
         copy,
         copy_error,
+        runtime: crate::services::worktree_runtime::take_note(lane.as_str()),
     }))
 }
 
@@ -355,7 +358,12 @@ pub async fn setup_pane(
 
 /// The shell that runs a teardown: `sh -c` (`cmd /C` on Windows) with the
 /// login environment.
-fn teardown_command(login: &LoginEnv, command: &str, cwd: &Path) -> tokio::process::Command {
+fn teardown_command(
+    login: &LoginEnv,
+    extra: &BTreeMap<String, String>,
+    command: &str,
+    cwd: &Path,
+) -> tokio::process::Command {
     let mut cmd = if cfg!(windows) {
         let mut c = tokio::process::Command::new("cmd");
         c.arg("/C").arg(command);
@@ -368,6 +376,7 @@ fn teardown_command(login: &LoginEnv, command: &str, cwd: &Path) -> tokio::proce
     cmd.current_dir(cwd)
         .env_clear()
         .envs(&login.vars)
+        .envs(extra)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -375,11 +384,13 @@ fn teardown_command(login: &LoginEnv, command: &str, cwd: &Path) -> tokio::proce
     cmd
 }
 
-/// Runs a trusted teardown in the worktree's folder. `None` when there's no
-/// teardown (or no folder to run it in).
+/// Runs a trusted teardown in the worktree's folder, with the worktree's
+/// runtime variables (`extra`, F-WT-06). `None` when there's no teardown
+/// (or no folder to run it in).
 pub async fn teardown(
     data: &DataDir,
     login: &LoginEnv,
+    extra: &BTreeMap<String, String>,
     lane_root: &str,
     limit: Duration,
 ) -> Option<TeardownOutcome> {
@@ -397,7 +408,7 @@ pub async fn teardown(
         );
         return Some(TeardownOutcome::Untrusted);
     }
-    let outcome = match teardown_command(login, &command, cwd).spawn() {
+    let outcome = match teardown_command(login, extra, &command, cwd).spawn() {
         Err(e) => TeardownOutcome::Failed {
             message: e.to_string(),
         },
@@ -517,12 +528,12 @@ mod tests {
             repo_with_worktree(r#"{"teardown":"pwd > ../teardown-ran; exit 3"}"#);
         let wt_s = wt.to_str().expect("utf8");
         // Untrusted: skipped.
-        let out = teardown(&data, &login(), wt_s, TEARDOWN_LIMIT).await;
+        let out = teardown(&data, &login(), &BTreeMap::new(), wt_s, TEARDOWN_LIMIT).await;
         assert_eq!(out, Some(TeardownOutcome::Untrusted));
         assert!(!wt.parent().expect("parent").join("teardown-ran").exists());
         let digest = state_at(&data, &main).digest.expect("digest");
         trust(&data, &main, &digest).expect("trust");
-        let out = teardown(&data, &login(), wt_s, TEARDOWN_LIMIT).await;
+        let out = teardown(&data, &login(), &BTreeMap::new(), wt_s, TEARDOWN_LIMIT).await;
         assert_eq!(out, Some(TeardownOutcome::Ran { code: Some(3) }));
         let ran_in = std::fs::read_to_string(wt.parent().expect("parent").join("teardown-ran"))
             .expect("marker");
@@ -541,6 +552,7 @@ mod tests {
         let out = teardown(
             &data,
             &login(),
+            &BTreeMap::new(),
             wt.to_str().expect("utf8"),
             Duration::from_millis(200),
         )
@@ -551,7 +563,14 @@ mod tests {
     #[tokio::test]
     async fn f_wt_01_5_no_teardown_means_nothing_to_report() {
         let (_tmp, _main, wt, data) = repo_with_worktree(r#"{"copy":[".env"]}"#);
-        let out = teardown(&data, &login(), wt.to_str().expect("utf8"), TEARDOWN_LIMIT).await;
+        let out = teardown(
+            &data,
+            &login(),
+            &BTreeMap::new(),
+            wt.to_str().expect("utf8"),
+            TEARDOWN_LIMIT,
+        )
+        .await;
         assert_eq!(out, None);
     }
 
@@ -599,5 +618,30 @@ mod tests {
         assert_eq!(lane.kind, "ssh");
         let out = lane_setup(&store, &data, &lane.id).await.expect("no error");
         assert_eq!(out, None);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn f_wt_06_5_the_teardown_gets_the_worktrees_variables() {
+        let (_tmp, main, wt, data) =
+            repo_with_worktree(r#"{"teardown":"echo $COMPOSE_PROJECT_NAME > ../compose-name"}"#);
+        let digest = state_at(&data, &main).digest.expect("digest");
+        trust(&data, &main, &digest).expect("trust");
+        let extra: BTreeMap<String, String> =
+            [("COMPOSE_PROJECT_NAME".to_string(), "app-wt".to_string())]
+                .into_iter()
+                .collect();
+        let out = teardown(
+            &data,
+            &login(),
+            &extra,
+            wt.to_str().expect("utf8"),
+            TEARDOWN_LIMIT,
+        )
+        .await;
+        assert_eq!(out, Some(TeardownOutcome::Ran { code: Some(0) }));
+        let written = std::fs::read_to_string(wt.parent().expect("parent").join("compose-name"))
+            .expect("written");
+        assert_eq!(written.trim(), "app-wt");
     }
 }

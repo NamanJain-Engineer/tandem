@@ -259,3 +259,18 @@ fn local_review(window: &WebviewWindow) -> Result<LocalReview, IpcError> {
         )
     })
 }
+
+/// F-WT-06: the worktree's port block, if it has one.
+#[tauri::command]
+pub fn lane_runtime(
+    state: State<'_, AppState>,
+    lane_id: WorkspaceId,
+) -> Option<crate::services::worktree_runtime::PortRange> {
+    crate::services::worktree_runtime::ports_of(&state.data, lane_id.as_str())
+}
+
+/// F-WT-06 AC6: the variables whose values look like secrets.
+#[tauri::command]
+pub fn worktree_env_check(env: std::collections::BTreeMap<String, String>) -> Vec<String> {
+    crate::services::worktree_runtime::secret_looking(&env)
+}

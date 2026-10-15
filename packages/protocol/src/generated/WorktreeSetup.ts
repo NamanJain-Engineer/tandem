@@ -7,4 +7,12 @@ export type WorktreeSetup = {
 /**
  * gitignore-syntax patterns, relative to the repository root.
  */
-copy: Array<string>, setup?: string | null, teardown?: string | null, };
+copy: Array<string>, setup?: string | null, teardown?: string | null, 
+/**
+ * F-WT-06: ports per worktree, 1 to [`MAX_PORTS`].
+ */
+ports?: number | null, 
+/**
+ * F-WT-06: variables for the worktree's panes, with placeholders.
+ */
+env?: { [key in string]: string }, };

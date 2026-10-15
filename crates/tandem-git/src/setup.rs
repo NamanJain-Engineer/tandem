@@ -2,6 +2,7 @@
 //! copy of ignored files into a new worktree, and the digest that trust is
 //! keyed on. Running the commands and keeping trust is the app's job.
 
+use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
@@ -43,6 +44,121 @@ pub struct WorktreeSetup {
     pub setup: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub teardown: Option<String>,
+    /// F-WT-06: ports per worktree, 1 to [`MAX_PORTS`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ports: Option<u16>,
+    /// F-WT-06: variables for the worktree's panes, with placeholders.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
+}
+
+pub const MAX_PORTS: u16 = 100;
+pub const MAX_ENV: usize = 50;
+pub const MAX_ENV_NAME: usize = 64;
+pub const MAX_ENV_VALUE: usize = 2_000;
+
+/// Names a repository's file may not set (F-WT-06): they would change how
+/// shells start or what they run, or they're Vibezeo's own.
+pub fn reserved_name(name: &str) -> bool {
+    const EXACT: [&str; 11] = [
+        "PATH",
+        "HOME",
+        "SHELL",
+        "USER",
+        "ZDOTDIR",
+        "ENV",
+        "BASH_ENV",
+        "PROMPT_COMMAND",
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "COMPOSE_PROJECT_NAME",
+    ];
+    EXACT.contains(&name)
+        || ["DYLD_", "TANDEM_", "VIBEZEO_"]
+            .iter()
+            .any(|p| name.starts_with(p))
+}
+
+fn valid_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && name.len() <= MAX_ENV_NAME
+}
+
+/// What a worktree's placeholders are filled in with (F-WT-06).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeCtx {
+    pub slug: String,
+    pub index: u32,
+    pub repo: String,
+    pub worktree: String,
+    /// The first port and how many.
+    pub ports: Option<(u16, u16)>,
+}
+
+/// One placeholder in a template.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Placeholder {
+    Slug,
+    Index,
+    Repo,
+    Port(u16),
+}
+
+fn placeholder(inner: &str) -> Option<Placeholder> {
+    match inner.trim() {
+        "slug" => Some(Placeholder::Slug),
+        "index" => Some(Placeholder::Index),
+        "repo" => Some(Placeholder::Repo),
+        "port" => Some(Placeholder::Port(0)),
+        other => other
+            .strip_prefix("port+")
+            .and_then(|n| n.trim().parse::<u16>().ok())
+            .map(Placeholder::Port),
+    }
+}
+
+/// Splits a template into text and placeholders; `Err` names the first
+/// unknown one.
+fn tokens(template: &str) -> Result<Vec<Result<&str, Placeholder>>, String> {
+    let mut out = Vec::new();
+    let mut rest = template;
+    while let Some(open) = rest.find("{{") {
+        let Some(close) = rest[open..].find("}}") else {
+            break;
+        };
+        out.push(Ok(&rest[..open]));
+        let inner = &rest[open + 2..open + close];
+        out.push(Err(
+            placeholder(inner).ok_or_else(|| format!("{{{{{inner}}}}}"))?
+        ));
+        rest = &rest[open + close + 2..];
+    }
+    out.push(Ok(rest));
+    Ok(out)
+}
+
+/// `<repo>-<slug>`, lowercase, anything but letters, digits, `-` and `_`
+/// replaced by `-` (Compose's rule for project names).
+pub fn compose_project(repo: &str, slug: &str) -> String {
+    let raw = format!("{repo}-{slug}").to_lowercase();
+    let mut name: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    if !name.starts_with(|c: char| c.is_ascii_alphanumeric()) {
+        name.insert(0, 'w');
+    }
+    name
 }
 
 impl WorktreeSetup {
@@ -86,10 +202,66 @@ impl WorktreeSetup {
             }
             Ok(c)
         };
+        if let Some(n) = self.ports {
+            if n == 0 || n > MAX_PORTS {
+                return Err(SetupError::Invalid(format!(
+                    "\"ports\" must be between 1 and {MAX_PORTS}"
+                )));
+            }
+        }
+        if self.env.len() > MAX_ENV {
+            return Err(SetupError::Invalid(format!(
+                "Use at most {MAX_ENV} variables in \"env\""
+            )));
+        }
+        let mut env = BTreeMap::new();
+        for (name, value) in self.env {
+            let name = name.trim().to_string();
+            if !valid_name(&name) {
+                return Err(SetupError::Invalid(format!(
+                    "\"{name}\" isn't a valid variable name"
+                )));
+            }
+            if reserved_name(&name) {
+                return Err(SetupError::Invalid(format!(
+                    "worktree.json can't set {name}"
+                )));
+            }
+            if value.chars().count() > MAX_ENV_VALUE {
+                return Err(SetupError::Invalid(format!(
+                    "{name} is longer than {MAX_ENV_VALUE} characters"
+                )));
+            }
+            if value.contains(['\n', '\r', '\0']) {
+                return Err(SetupError::Invalid(format!("{name} must be one line")));
+            }
+            for t in tokens(&value).map_err(|p| {
+                SetupError::Invalid(format!("{name} uses an unknown placeholder {p}"))
+            })? {
+                if let Err(Placeholder::Port(n)) = t {
+                    match self.ports {
+                        None => {
+                            return Err(SetupError::Invalid(format!(
+                                "{name} uses a port, but \"ports\" isn't set"
+                            )))
+                        }
+                        Some(size) if n >= size => {
+                            return Err(SetupError::Invalid(format!(
+                                "{name} uses port+{n}, but each worktree has {size} ports"
+                            )))
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            env.insert(name, value);
+        }
         Ok(Self {
             copy,
             setup: command(self.setup, "setup")?,
             teardown: command(self.teardown, "teardown")?,
+            ports: self.ports,
+            env,
         })
     }
 
@@ -97,10 +269,17 @@ impl WorktreeSetup {
         self.setup.is_some() || self.teardown.is_some()
     }
 
-    /// What trust is keyed on: SHA-256 over both commands. `None` when there
-    /// are no commands (copying needs no trust).
+    /// F-WT-06: the file asks for per-worktree ports or variables.
+    pub fn runtime_on(&self) -> bool {
+        self.ports.is_some() || !self.env.is_empty()
+    }
+
+    /// What trust is keyed on: SHA-256 over both commands and, when there is
+    /// any, `env` (F-WT-06). `None` when there's nothing to trust (copying
+    /// and ports need none). Without `env` the digest is the one F-WT-01
+    /// computed, so earlier trust stays valid.
     pub fn digest(&self) -> Option<String> {
-        if !self.has_commands() {
+        if !self.has_commands() && self.env.is_empty() {
             return None;
         }
         let mut h = Sha256::new();
@@ -108,7 +287,60 @@ impl WorktreeSetup {
         h.update(self.setup.as_deref().unwrap_or("").as_bytes());
         h.update(b"\0teardown\0");
         h.update(self.teardown.as_deref().unwrap_or("").as_bytes());
+        if !self.env.is_empty() {
+            h.update(b"\0env\0");
+            for (k, v) in &self.env {
+                h.update(k.as_bytes());
+                h.update(b"=");
+                h.update(v.as_bytes());
+                h.update(b"\0");
+            }
+        }
         Some(hex::encode(h.finalize()))
+    }
+
+    /// The variables for a worktree's panes (F-WT-06): Vibezeo's own, and
+    /// with `trusted` the file's `env`, filled in.
+    pub fn runtime_vars(&self, ctx: &RuntimeCtx, trusted: bool) -> BTreeMap<String, String> {
+        let mut out = BTreeMap::new();
+        if !self.runtime_on() {
+            return out;
+        }
+        out.insert("VIBEZEO_WORKTREE".into(), ctx.worktree.clone());
+        out.insert("VIBEZEO_SLUG".into(), ctx.slug.clone());
+        out.insert("VIBEZEO_INDEX".into(), ctx.index.to_string());
+        out.insert(
+            "COMPOSE_PROJECT_NAME".into(),
+            compose_project(&ctx.repo, &ctx.slug),
+        );
+        if let Some((start, size)) = ctx.ports {
+            out.insert("VIBEZEO_PORT".into(), start.to_string());
+            out.insert(
+                "VIBEZEO_PORTS".into(),
+                format!("{start}-{}", start.saturating_add(size.saturating_sub(1))),
+            );
+        }
+        if trusted {
+            for (name, template) in &self.env {
+                if let Ok(parts) = tokens(template) {
+                    let value: String = parts
+                        .into_iter()
+                        .map(|t| match t {
+                            Ok(text) => text.to_string(),
+                            Err(Placeholder::Slug) => ctx.slug.clone(),
+                            Err(Placeholder::Index) => ctx.index.to_string(),
+                            Err(Placeholder::Repo) => ctx.repo.clone(),
+                            Err(Placeholder::Port(n)) => ctx
+                                .ports
+                                .map(|(start, _)| start.saturating_add(n).to_string())
+                                .unwrap_or_default(),
+                        })
+                        .collect();
+                    out.insert(name.clone(), value);
+                }
+            }
+        }
+        out
     }
 
     pub fn to_json(&self) -> String {
@@ -567,6 +799,7 @@ mod tests {
             copy: pats(&[".env"]),
             setup: Some("pnpm install".into()),
             teardown: None,
+            ..Default::default()
         };
         let b = WorktreeSetup {
             copy: pats(&[".env", "x"]),
@@ -583,6 +816,7 @@ mod tests {
             copy: vec![],
             setup: None,
             teardown: Some("pnpm install".into()),
+            ..Default::default()
         };
         assert_ne!(a.digest(), d.digest());
         assert_eq!(WorktreeSetup::default().digest(), None);
@@ -595,6 +829,7 @@ mod tests {
             copy: pats(&[".env*"]),
             setup: Some("  pnpm install ".into()),
             teardown: Some(String::new()),
+            ..Default::default()
         }
         .normalized()
         .expect("valid");
@@ -634,5 +869,100 @@ mod tests {
         assert_eq!(fixed_prefix("**/.env"), None);
         assert_eq!(fixed_prefix("!config/x"), None);
         assert_eq!(fixed_prefix("/top").as_deref(), Some("top"));
+    }
+
+    fn ctx(ports: Option<(u16, u16)>) -> RuntimeCtx {
+        RuntimeCtx {
+            slug: "fix-auth".into(),
+            index: 2,
+            repo: "Shop App".into(),
+            worktree: "/r/.tandem/worktrees/fix-auth".into(),
+            ports,
+        }
+    }
+
+    #[test]
+    fn f_wt_06_2_env_placeholders_fill_in_and_wait_for_trust() {
+        let setup = WorktreeSetup::parse(
+            br#"{"ports":10,"env":{"DB":"app_{{slug}}","PORT":"{{port}}","API":"http://localhost:{{port+1}}/{{index}}/{{repo}}"}}"#,
+        )
+        .expect("valid");
+        let vars = setup.runtime_vars(&ctx(Some((41010, 10))), true);
+        assert_eq!(vars["DB"], "app_fix-auth");
+        assert_eq!(vars["PORT"], "41010");
+        assert_eq!(vars["API"], "http://localhost:41011/2/Shop App");
+        assert_eq!(vars["VIBEZEO_PORT"], "41010");
+        assert_eq!(vars["VIBEZEO_PORTS"], "41010-41019");
+        assert_eq!(vars["VIBEZEO_SLUG"], "fix-auth");
+        assert_eq!(vars["VIBEZEO_INDEX"], "2");
+        assert_eq!(vars["VIBEZEO_WORKTREE"], "/r/.tandem/worktrees/fix-auth");
+        assert_eq!(vars["COMPOSE_PROJECT_NAME"], "shop-app-fix-auth");
+        // Untrusted: Vibezeo's own variables only.
+        let untrusted = setup.runtime_vars(&ctx(Some((41010, 10))), false);
+        assert!(!untrusted.contains_key("DB"));
+        assert_eq!(untrusted["COMPOSE_PROJECT_NAME"], "shop-app-fix-auth");
+        // No runtime keys: nothing at all.
+        let plain = WorktreeSetup::parse(br#"{"copy":[".env"]}"#).expect("valid");
+        assert!(plain.runtime_vars(&ctx(None), true).is_empty());
+    }
+
+    #[test]
+    fn f_wt_06_6_reserved_names_and_bad_placeholders_make_the_file_invalid() {
+        for (json, says) in [
+            (r#"{"env":{"PATH":"/x"}}"#, "can't set PATH"),
+            (r#"{"env":{"LD_PRELOAD":"/x.so"}}"#, "can't set LD_PRELOAD"),
+            (
+                r#"{"env":{"DYLD_INSERT_LIBRARIES":"x"}}"#,
+                "can't set DYLD_INSERT_LIBRARIES",
+            ),
+            (r#"{"env":{"VIBEZEO_PORT":"1"}}"#, "can't set VIBEZEO_PORT"),
+            (
+                r#"{"env":{"COMPOSE_PROJECT_NAME":"x"}}"#,
+                "can't set COMPOSE_PROJECT_NAME",
+            ),
+            (r#"{"env":{"1BAD":"x"}}"#, "isn't a valid variable name"),
+            (
+                r#"{"env":{"A":"{{nope}}"}}"#,
+                "unknown placeholder {{nope}}",
+            ),
+            (r#"{"env":{"A":"{{port}}"}}"#, "\"ports\" isn't set"),
+            (
+                r#"{"ports":2,"env":{"A":"{{port+2}}"}}"#,
+                "each worktree has 2 ports",
+            ),
+            (r#"{"ports":0}"#, "between 1 and 100"),
+            (r#"{"ports":101}"#, "between 1 and 100"),
+        ] {
+            let err = WorktreeSetup::parse(json.as_bytes()).expect_err(json);
+            assert!(err.to_string().contains(says), "{json}: {err}");
+        }
+    }
+
+    #[test]
+    fn f_wt_06_2_env_is_trusted_with_the_commands_and_old_trust_stays_valid() {
+        let commands = WorktreeSetup::parse(br#"{"setup":"pnpm install"}"#).expect("valid");
+        // The F-WT-01 digest of the same commands, computed as F-WT-01 did.
+        let mut h = Sha256::new();
+        h.update(b"setup\0pnpm install\0teardown\0");
+        assert_eq!(commands.digest(), Some(hex::encode(h.finalize())));
+        // Ports alone need no trust; env does, and changes the digest.
+        let ports_only =
+            WorktreeSetup::parse(br#"{"setup":"pnpm install","ports":5}"#).expect("ok");
+        assert_eq!(ports_only.digest(), commands.digest());
+        let with_env =
+            WorktreeSetup::parse(br#"{"setup":"pnpm install","env":{"A":"1"}}"#).expect("ok");
+        assert_ne!(with_env.digest(), commands.digest());
+        let other_env =
+            WorktreeSetup::parse(br#"{"setup":"pnpm install","env":{"A":"2"}}"#).expect("ok");
+        assert_ne!(with_env.digest(), other_env.digest());
+        let env_only = WorktreeSetup::parse(br#"{"env":{"A":"1"}}"#).expect("ok");
+        assert!(env_only.digest().is_some());
+    }
+
+    #[test]
+    fn f_wt_06_2_compose_project_names_follow_composes_rules() {
+        assert_eq!(compose_project("app", "fix-auth"), "app-fix-auth");
+        assert_eq!(compose_project("My.App", "Fix Auth"), "my-app-fix-auth");
+        assert_eq!(compose_project("_x", "y"), "w_x-y");
     }
 }

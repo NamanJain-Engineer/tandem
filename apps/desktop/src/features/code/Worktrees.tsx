@@ -23,6 +23,7 @@ import {
   createPullRequest,
   createWorktree,
   loadForge,
+  loadRuntime,
   mergeWorktree,
   prepareWorktree,
   removeWorktree,
@@ -65,7 +66,8 @@ export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): Me
     },
     {
       id: "wt-pr",
-      label: useWorktrees.getState().forges[wt.id] === "gitlab" ? t("worktree.createMr") : t("worktree.createPr"),
+      label:
+        useWorktrees.getState().forges[wt.id] === "gitlab" ? t("worktree.createMr") : t("worktree.createPr"),
       disabled: wt.missing,
       onSelect: () =>
         void createPullRequest(wt).then((out) => {
@@ -116,7 +118,10 @@ export function WorktreeRow({
   useWorktrees((s) => s.forges[wt.id]);
   useEffect(() => {
     if (!wt.missing) void loadForge(wt.id);
-  }, [wt.id, wt.missing]);
+    // F-WT-06: the row's tooltip names its port block.
+    if (!wt.missing && wt.kind === "local") void loadRuntime(wt.id);
+  }, [wt.id, wt.missing, wt.kind]);
+  const block = useWorktrees((s) => s.runtimes[wt.id]);
   const openIt = () => {
     useWorkspaces.getState().select(wt.id);
     switchMode("code");
@@ -146,7 +151,19 @@ export function WorktreeRow({
       ) : (
         <GitBranch size={12} aria-hidden="true" className="shrink-0" />
       )}
-      <Tooltip label={wt.missing ? t("rail.missing") : wt.root}>
+      <Tooltip
+        label={
+          wt.missing
+            ? t("rail.missing")
+            : block
+              ? t("worktree.runtime.tooltip", {
+                  root: wt.root,
+                  start: String(block.start),
+                  end: String(block.end),
+                })
+              : wt.root
+        }
+      >
         <span className="min-w-0 flex-1 truncate">{branch}</span>
       </Tooltip>
       {slot}

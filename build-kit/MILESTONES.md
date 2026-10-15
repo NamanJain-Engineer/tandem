@@ -1952,21 +1952,24 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 **Goal.** Make parallel worktrees runnable side by side: a port block, environment and Compose project per worktree (F-WT-06), then a preview per worktree (F-WT-09, next). From `docs/NEXT_FEATURES.md` (§1 #7, §3 B2). Built on branch `competitive-gaps`; decisions D-2440–D-2459.
 
-**Owns:** F-WT-06 (P2)
+**Owns:** F-WT-06, F-WT-09 (P2)
 **Prerequisites.** M17 · Worktree workflow (F-WT-01), M17's ports panel (F-EX-03) and Best of N (F-EX-04).
 
 **Ordered tasks**
 1. **Worktree runtime (F-WT-06).** `tandem_git::setup` gains `ports` and `env` (validation, placeholders, reserved names, the digest including `env`). `services::worktree_runtime`: port blocks in `$DATA/worktree-ports.json` (allocation, the busy check, freeing on removal), the variables for a worktree, `*.localhost` resolution. The launch environment adds them to every pane in a worktree's tabs; the setup pane, teardown and Best of N's check get them. The ports panel groups by worktree. UI-150's two new fields and the secret warning.
 
+2. **Previews per worktree (F-WT-09), three slices.** (a) `preview` in the file (trusted with the commands), `lane_preview_start`, `lane_previews` (a connect check on 127.0.0.1), the rail's Preview button, setup and preview in one pane, Compare's Previews. (b) Copy-on-write clones in F-WT-01's copy behind a `Cloner` trait (`FICLONE` on Linux, an ordinary copy everywhere else and as the fallback). (c) Side by side: a tab with two browser panes.
+
 **Verification**
 ```bash
-cargo test -p tandem-git f_wt_06 && cargo test -p tandem-desktop --lib f_wt_06
-pnpm --filter desktop exec vitest run -t "F-WT-06"
-dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-wt06-*.e2e.ts'
+cargo test -p tandem-git f_wt_0 && cargo test -p tandem-desktop --lib f_wt_0
+pnpm --filter desktop exec vitest run -t "F-WT-0"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-wt*.e2e.ts'
 ```
 
 **E2E**
 - **E2E-M18-WT06-1 Runtime.** A repository whose `.vibezeo/worktree.json` has `ports` and `env`, trusted. Expected: two worktrees' shells print different `VIBEZEO_PORT` values and the filled-in variables; a server in one is grouped under its worktree in the ports panel; a relaunch keeps the blocks; the teardown sees `COMPOSE_PROJECT_NAME`.
+- **E2E-M18-WT09-1 Previews.** A repository whose trusted file has `ports` and a `preview` running a small HTTP server. Expected: Start preview opens a Preview pane; the row's Preview button appears and opens the address in a browser tab; two lanes side by side open two browser panes.
 
 **Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
 

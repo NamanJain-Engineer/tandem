@@ -1246,6 +1246,23 @@ No Mac here and no Actions minutes until about November 1, and nothing had compi
 - 10 October 2026: bundle config with its test, the signing script and release.yml's macOS path (plus the missing UI build), `macos.yml`, `codemagic.yaml`, the smoke and one-Mac release scripts, `scripts/macos-check.sh` in the gate (clippy clean on aarch64 and x86_64), the cask, `docs/MACOS.md`.
 - 10 October 2026: the Mac-only features reviewed: Dictate's permissions behind `PrivacyProbe` with the microphone gate and row, the LaunchAgent's attribution, retry and install-location check, the GUI PATH fallback; HUMAN_TODO's "macOS first run" with nine steps for a real Mac.
 
+## M18 · Worktree runtime and previews (competitive-gaps)
+Built on branch `competitive-gaps` (from `chain19`, 0.7.2 plus the macOS Dictate slice) from `docs/NEXT_FEATURES.md` (§1 #7, §3 B2). Owns F-WT-06 (and F-WT-09 next); decisions D-2440–D-2459.
+- [x] F-WT-06 Worktree runtime.
+  - `tandem_git::setup`: `ports` and `env` in `.vibezeo/worktree.json`, with validation (names, reserved names, placeholders, `{{port+N}}` within the block), `runtime_vars` and `compose_project`; the digest covers `env`.
+  - `services::worktree_runtime`: blocks and indexes in `$DATA/worktree-ports.json` (`assign`, `free`, a `PortCheck` trait with the loopback probe and fakes), `vars_for`, `<slug>.localhost` resolution, the secret check.
+  - Hooks: `lanes::create` notes the assignment (`lane_setup` reports it), `TerminalService::spawn_with` adds the variables to every local worktree pane, the teardown and Best of N's check get them, removal frees the block, and the ports panel groups by worktree and opens `<slug>.localhost`.
+  - Commands `lane_runtime`, `worktree_env_check`; UI-150's Ports and Environment fields, the secret warning, the moved-block toast, the review showing `env`, the rail tooltip.
+  - Tests: 4 in `tandem-git`, 8 in `tandem-desktop`, 6 in `worktreeSetup.test.tsx`, 1 in `ports.test.tsx`; E2E-M18-WT06-1 (`e2e/specs/m18-wt06-runtime.e2e.ts`).
+
+### M18 · Worktree runtime decisions
+- D-2440: M18 is a new milestone section owning F-WT-06 (and F-WT-09), P2 like M17's; `check-coverage.sh` allows P2 in M18. The work lands on `competitive-gaps`, the branch this session is pinned to, fast-forwarded to `chain19`.
+- D-2441: The runtime is on only when the file has `ports` or `env`; without them nothing changes for existing worktrees (no surprise `COMPOSE_PROJECT_NAME`).
+- D-2442: `env` is trusted with the commands (a repository could otherwise set variables that run code in every shell). The digest adds `env` only when there is some, so trust given under F-WT-01 stays valid; ports need no trust. Names that change how shells start (`PATH`, `LD_PRELOAD`, `BASH_ENV`, `PROMPT_COMMAND`, `ZDOTDIR`…), and Vibezeo's own, are refused outright, trusted or not.
+- D-2443: Blocks come from 41000–48999, first fit, never overlapping any worktree on the computer, checked by binding 127.0.0.1 at creation; kept in a JSON file in the data folder rather than a migration (no schema change other branches would meet). A file that gains or changes `ports` after a worktree was made reassigns it on its next pane.
+- D-2444: `<slug>.localhost` is used only where this computer resolves it to loopback (checked once per run), because the built-in browser on Linux uses the system resolver; otherwise `localhost`.
+- D-2445: The secret warning uses the core's redactor on `NAME=value` through `worktree_env_check`, so there is one detector (F-TL-02).
+
 ## M17 · Worktree workflow (competitive-gaps)
 Built on branch `competitive-gaps` (from `product-m0-m5`) out of the competitive analysis (`docs/COMPETITIVE_ANALYSIS.md`, `docs/GO_TO_MARKET.md`). Owns F-WT-01…04 (PRODUCT_SPEC §4.20, MILESTONES "M17 · Worktree workflow"); decisions D-2200–D-2299.
 - [x] Competitive analysis (October 2026), go-to-market plan, owner steps in HUMAN_TODO "Go to market".
