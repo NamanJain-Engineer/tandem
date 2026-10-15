@@ -1,6 +1,5 @@
 import type { PageTree } from "fumadocs-core/server";
 import { BookOpen, ChevronLeft, ChevronRight, X } from "lucide-react";
-import Link from "next/link";
 import type { ReactNode } from "react";
 import { navGroups, type NavGroup } from "../../lib/docs/nav";
 import { Icon } from "../site/Icon";
@@ -10,10 +9,11 @@ export type TocItem = { title: ReactNode; url: string; depth: number };
 
 const MENU_ID = "docs-menu";
 
-/** The docs' frame (D-1839, D-1819): the site's header and footer, a sticky
- * sidebar of grouped pages, the page, and "On this page". Server-rendered:
- * the only script the docs run is Next's router, for links that open in the
- * page (D-1817). Phones get the sidebar from a popover. */
+/** The docs' frame (D-1839, D-1843): the site's header and footer, a sticky
+ * sidebar of grouped pages, the page, and "On this page". Static HTML with no
+ * script: links are plain, every one at its slash URL (D-1817), and moving
+ * between pages is the site's cross-document view transition. Phones get the
+ * sidebar from a popover. */
 export function DocsShell({
   tree,
   url,
@@ -81,24 +81,24 @@ export function DocsShell({
             {(prev || next) && (
               <nav aria-label="Previous and next" className="grid gap-4 sm:grid-cols-2">
                 {prev ? (
-                  <Link href={prev.url} className="surface surface-hover flex flex-col gap-1 p-5">
+                  <a href={prev.url} className="surface surface-hover flex flex-col gap-1 p-5">
                     <span className="flex items-center gap-1 text-caption text-fg-muted">
                       <Icon icon={ChevronLeft} size={14} />
                       Previous
                     </span>
                     <span className="text-copy font-medium text-fg">{prev.title}</span>
-                  </Link>
+                  </a>
                 ) : (
                   <span />
                 )}
                 {next && (
-                  <Link href={next.url} className="surface surface-hover flex flex-col items-end gap-1 p-5 text-right">
+                  <a href={next.url} className="surface surface-hover flex flex-col items-end gap-1 p-5 text-right">
                     <span className="flex items-center gap-1 text-caption text-fg-muted">
                       Next
                       <Icon icon={ChevronRight} size={14} />
                     </span>
                     <span className="text-copy font-medium text-fg">{next.title}</span>
-                  </Link>
+                  </a>
                 )}
               </nav>
             )}
@@ -144,14 +144,14 @@ function Tree({ groups, url }: { groups: NavGroup[]; url: string }) {
               const active = p.url === url;
               return (
                 <li key={p.url}>
-                  <Link
+                  <a
                     href={p.url}
                     data-active={active ? "true" : "false"}
                     aria-current={active ? "page" : undefined}
                     className="flex min-h-9 items-center rounded-md px-3 py-1.5 text-copy-sm text-fg-muted transition-colors duration-(--dur-base) hover:bg-(--site-glass) hover:text-fg data-[active=true]:bg-[linear-gradient(90deg,var(--tn-accent-soft),transparent)] data-[active=true]:font-medium data-[active=true]:text-fg data-[active=true]:shadow-[inset_2px_0_0_var(--tn-accent)]"
                   >
                     {p.title}
-                  </Link>
+                  </a>
                 </li>
               );
             })}

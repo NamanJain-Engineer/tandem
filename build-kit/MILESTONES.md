@@ -1948,6 +1948,30 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ---
 
+## M17 · Blog (S)
+
+**Goal.** A blog at vibezeo.com/blog/ that the owner writes in as files, with no code change (the owner's request, 15 October; D-1820). Built on branch `site-blog` (decisions D-1850–D-1864) with the elite pass's design (`site-elite`, D-1830–D-1844); `docs/BLOG.md` records the research and the writing guide.
+
+**Owns:** F-WB-06 (P2)
+**Prerequisites.** M15 (the site, F-WB-01's runtime strip and Lighthouse budgets).
+
+**Ordered tasks**
+1. **Posts as files.** The `blog` collection in `source.config.ts`, frontmatter validated at build (`lib/blog/schema.ts`), drafts only in `next dev`.
+2. **Pages.** `/blog/`, `/blog/<slug>/`, `/blog/tags/<tag>/`, each post's share image, and the Atom feed; the header, footer, sitemap and `/llms.txt` link the blog.
+3. **The runtime strip.** Post pages keep their JSON-LD and `/blog/blog.js` (`scripts/script-allowlist.mjs`); every other blog page ships no script.
+4. **The first posts.** "Introducing Vibezeo" and "What's new in 0.7.2", each claim checked against the 0.7.2 build.
+
+**Verification**
+```bash
+pnpm --filter web exec vitest run app/blog
+pnpm --filter web build:site && PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium pnpm --filter web test:site
+CHROME_PATH=/opt/pw-browsers/chromium pnpm --filter web lhci
+```
+
+**Exit checklist:** G green · the site's Playwright suite (`e2e-site/blog.spec.ts`, and the blog pages in `wb01` and `site-quality`) · Lighthouse CI on `/blog/` and a post within the site's budgets.
+
+---
+
 ## M18 · Next features: worktree runtime and previews (M)
 
 **Goal.** Make parallel worktrees runnable side by side: a port block, environment and Compose project per worktree (F-WT-06), then a preview per worktree (F-WT-09, next). From `docs/NEXT_FEATURES.md` (§1 #7, §3 B2). Built on branch `competitive-gaps`; decisions D-2440–D-2459.
@@ -2021,7 +2045,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **165 features** (65 P0, 67 P1, 33 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 9: the 5 extras (F-EX, §4.19) and the 4 worktree-workflow features (F-WT, §4.20). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **170 features** (65 P0, 67 P1, 38 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 4 so far (F-EN-07, F-WT-06, F-WT-09 and F-AC-08). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -2039,7 +2063,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **165 features** (6
 | F-TH-11 | P0 | M7 | F-TH-12 | P0 | M7 | F-TH-13 | P1 | M7 | F-TH-14 | P1 | M7 |
 | F-TH-15 | P0 | M7 | F-TH-16 | P1 | M7 | F-EN-01 | P0 | M4 | F-EN-02 | P0 | M4 |
 | F-EN-03 | P1 | M4 | F-EN-04 | P0 | M4 | F-EN-05 | P0 | M4 | F-EN-06 | P1 | M4 |
-| F-EN-07 | P2 | M18 | | | | | | | | | |
+| F-EN-07 | P2 | M18 | F-WT-06 | P2 | M18 | F-WT-09 | P2 | M18 | F-AC-08 | P2 | M18 |
 | F-AC-01 | P0 | M4 | F-AC-02 | P0 | M6 | F-AC-03 | P0 | M6 | F-AC-04 | P1 | M6 |
 | F-AC-05 | P0 | M6 | F-AC-06 | P1 | M6 | F-AC-07 | P2 | M16 | F-DB-01 | P0 | M5 |
 | F-DB-02 | P0 | M5 | F-DB-03 | P0 | M5 | F-AG-01 | P1 | M10 | F-AG-02 | P1 | M10 |
@@ -2066,12 +2090,13 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **165 features** (6
 | F-TL-05 | P1 | M15 | F-TL-06 | P0 | M15 | F-TL-07 | P1 | M13 | F-TL-10 | P1 | M13 |
 | F-RM-04 | P2 | M16 | F-RM-05 | P2 | M16 | F-RM-06 | P2 | M16 | F-RM-07 | P2 | M16 |
 
-**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 9 · M18 1 = 166 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-EN-07 on the M18 engines branch).
+**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 4 = 170 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | F-EX-01 | P2 | M17 | F-EX-02 | P2 | M17 | F-EX-03 | P2 | M17 | F-EX-04 | P2 | M17 |
-| F-EX-05 | P2 | M17 | | | | | | | | | |
+| F-EX-05 | P2 | M17 | F-WT-01 | P2 | M17 | F-WT-02 | P2 | M17 | F-WT-03 | P2 | M17 |
+| F-WT-04 | P2 | M17 | F-WB-06 | P2 | M17 | | | | | | |
 
 ### 20.1 Completeness check (run in M0, and at every milestone close)
 `scripts/check-coverage.sh` implements the check below. It passed when this plan was written: 152 spec IDs, 152 owned, 0 missing, 0 duplicates, 0 unknown, and no P2 outside M16 and no P0/P1 inside it. Since M17 (D-700) the extras' milestone M17 also owns P2 features only, and the script accepts P2 in M16 or M17.

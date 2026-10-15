@@ -1,0 +1,59 @@
+---
+title: Introducing Vibezeo
+description: A desktop workspace for the coding agents you already use. Run Claude Code, Codex and other agent CLIs side by side, on your own accounts, and see at a glance which one needs you.
+date: 2026-10-15
+author: Naman Jain
+tags: [product, linux]
+cover:
+  src: /blog/introducing-vibezeo/code-mode.png
+  alt: The Vibezeo desktop app in Code mode with four terminal panes over its own repository, showing the git history, htop, vim open on the Claude Code hook handler, and a test run.
+  width: 1440
+  height: 900
+  build: 0.7.2
+  caption: Code mode with four real terminals over Vibezeo's own repository.
+---
+
+Coding agents moved into the terminal. Claude Code, Codex, Gemini CLI and the rest are command-line tools, and running two or three at once quickly turns into a wall of terminal windows: which one finished, which one is waiting for an answer, which one is still thinking?
+
+Vibezeo is a desktop app built for that. It runs the agent CLIs you already have side by side, in real terminals or as conversations, and keeps every one of them in view. This post covers what it does today, in the Linux release you can download now.
+
+## Real terminals, side by side
+
+Each agent runs in a real terminal pane over your own folders. Split to the right with <kbd>Ctrl+Shift+E</kbd> while a terminal has focus, maximize a pane, and rearrange them into layouts. Full-screen terminal apps, colours and mouse input behave as they do in your usual terminal, because each pane is a real PTY.
+
+Vibezeo finds the agents on your login shell's `PATH`. Open a project folder and the launch grid lists them: pick one to start it, or open a plain shell. <kbd>Ctrl+K</kbd> opens the command palette.
+
+## Your accounts stay yours
+
+You don't need a new AI subscription. Each engine signs in by itself, the way you use it today, inside its own folder on your disk. Vibezeo starts the CLI and shows its terminal. It never reads, copies or forwards an engine's credentials.
+
+## Know which agent needs you
+
+Vibezeo knows when an agent is working, waiting for you, done or has failed. For Claude Code it uses Claude Code's own hooks; for the other engines, their output. The status shows on every pane and in the sidebar.
+
+The Dashboard puts every live agent in one place, across your workspaces, and one click takes you to the pane that needs you. You get a desktop notification when an agent needs you or finishes, but never for the pane you're already looking at.
+
+## Conversations, when you want them
+
+Thread mode runs an agent as a conversation instead of a terminal: replies stream in, tool calls are shown, and you answer approvals inline, once or for the whole thread. Plan mode writes a numbered plan you can then implement, and the Changes panel lists every file a thread touched. On the Free plan, threads run Claude Code and Codex, one thread at a time.
+
+## Everything else beside your agents
+
+- **Files, git and a browser.** A file tree and editor, a git panel that uses your own git to stage, commit, push and switch branches, and a browser in the sidebar or a pane.
+- **Dictate.** Speak, and the words are typed where your cursor was. Speech is recognized on your computer by a model you choose to download, and audio is never saved.
+- **Tasks.** A task tracker on your computer that your agents can read and update too.
+- **Restore after a crash.** Layouts, tabs and panes come back after a quit or a crash. Agents return paused, ready to resume, and nothing re-runs by itself.
+
+## What the download is
+
+The current release is for Linux on x86-64, as a `.deb` for Debian and Ubuntu and an `.rpm` for Fedora. It runs the Free plan on your computer, with no account, and doesn't contact our servers. Usage statistics and crash reports stay off unless you turn them on.
+
+The Free plan allows 4 live panes, 3 workspaces, one thread at a time, one account per engine, one teammate besides Lead and one plugin connection. The [pricing page](/pricing/) has the full comparison. Pro and Team start when Vibezeo accounts open.
+
+The builds aren't code-signed, so every download has a SHA-256 checksum on the [download page](/download/) for you to check it against. The [docs](/docs/) start with installing and opening your first workspace.
+
+## What's next
+
+The goal is one app with the same features on Linux, macOS and Windows. The macOS and Windows downloads wait for signed builds that have been tested on real machines. Each release's notes are in the [changelog](/changelog/), and we'll write about the bigger ones here.
+
+Vibezeo itself is built with Claude Code. If you try it, we'd like to hear what works and what doesn't: write to [contact@vibezeo.com](mailto:contact@vibezeo.com).
