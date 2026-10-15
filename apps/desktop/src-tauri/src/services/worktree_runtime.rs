@@ -323,6 +323,21 @@ pub fn vars_for(data: &DataDir, lane: &Workspace) -> BTreeMap<String, String> {
     config.runtime_vars(&ctx, trusted)
 }
 
+/// A pane's environment in layers (D-2448): the login environment and
+/// Vibezeo's terminal variables, then the worktree's (which may replace the
+/// login environment's), then what the launch sets (provider home, hooks
+/// token, engine variables), which nothing in worktree.json can replace.
+pub fn layer_pane_env(
+    base: BTreeMap<String, String>,
+    worktree: BTreeMap<String, String>,
+    launch: BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    let mut env = base;
+    env.extend(worktree);
+    env.extend(launch);
+    env
+}
+
 /// [`vars_for`] with the data folder set by [`init`] (the terminal service).
 pub fn vars_for_workspace(lane: &Workspace) -> BTreeMap<String, String> {
     match DATA.get() {
@@ -589,5 +604,71 @@ mod tests {
         assert_eq!(after["PORT"], "41001");
         // The parent checkout itself is no worktree: nothing.
         assert!(vars_for(&data, &parent).is_empty());
+    }
+
+    #[test]
+    fn f_wt_06_6_the_launch_environment_wins_over_the_worktrees() {
+        let base: BTreeMap<String, String> = [
+            ("DATABASE_URL", "postgres://login"),
+            ("TANDEM_PANE_ID", "pn_1"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        // Even if a provider-home name got past validation…
+        let worktree: BTreeMap<String, String> = [
+            ("DATABASE_URL", "postgres://worktree"),
+            ("CLAUDE_CONFIG_DIR", "/repo/chosen"),
+            ("XDG_CONFIG_HOME", "/repo/xdg"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        let launch: BTreeMap<String, String> = [
+            ("CLAUDE_CONFIG_DIR", "/home/me/.tandem/providers/claude/acc"),
+            (
+                "XDG_CONFIG_HOME",
+                "/home/me/.tandem/providers/claude/acc/config",
+            ),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        let env = layer_pane_env(base, worktree, launch);
+        // …the engine pane keeps its own provider home.
+        assert_eq!(
+            env["CLAUDE_CONFIG_DIR"],
+            "/home/me/.tandem/providers/claude/acc"
+        );
+        assert_eq!(
+            env["XDG_CONFIG_HOME"],
+            "/home/me/.tandem/providers/claude/acc/config"
+        );
+        // The worktree's own variables replace the login environment's.
+        assert_eq!(env["DATABASE_URL"], "postgres://worktree");
+        assert_eq!(env["TANDEM_PANE_ID"], "pn_1");
+    }
+
+    #[test]
+    fn f_wt_06_6_every_provider_home_the_registry_uses_is_reserved() {
+        let registry: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../crates/tandem-engines/registry.json"
+        ))
+        .expect("registry");
+        let homes: Vec<String> = registry
+            .as_array()
+            .expect("list")
+            .iter()
+            .filter_map(|e| e["providerHomeEnv"].as_str().map(str::to_string))
+            .chain(
+                tandem_pty::env::PROVIDER_HOME_VARS
+                    .iter()
+                    .map(|s| s.to_string()),
+            )
+            .collect();
+        assert!(homes.contains(&"CLAUDE_CONFIG_DIR".to_string()));
+        for home in homes {
+            assert!(setup::reserved_name(&home), "{home} isn't reserved");
+        }
     }
 }

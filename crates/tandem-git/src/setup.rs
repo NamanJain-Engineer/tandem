@@ -57,10 +57,12 @@ pub const MAX_ENV: usize = 50;
 pub const MAX_ENV_NAME: usize = 64;
 pub const MAX_ENV_VALUE: usize = 2_000;
 
-/// Names a repository's file may not set (F-WT-06): they would change how
-/// shells start or what they run, or they're Vibezeo's own.
-pub fn reserved_name(name: &str) -> bool {
-    const EXACT: [&str; 11] = [
+/// Names a repository's file may not set (F-WT-06), with why: they would
+/// change how shells start or what they run, where agents sign in or send
+/// their requests (provider homes, endpoints, proxies, certificates,
+/// D-2448), or they're Vibezeo's own. Case-insensitive.
+pub fn reserved_reason(name: &str) -> Option<&'static str> {
+    const SHELL: [&str; 14] = [
         "PATH",
         "HOME",
         "SHELL",
@@ -71,12 +73,49 @@ pub fn reserved_name(name: &str) -> bool {
         "PROMPT_COMMAND",
         "LD_PRELOAD",
         "LD_LIBRARY_PATH",
-        "COMPOSE_PROJECT_NAME",
+        "TERM",
+        "COLORTERM",
+        "TERM_PROGRAM",
+        "TERM_PROGRAM_VERSION",
     ];
-    EXACT.contains(&name)
-        || ["DYLD_", "TANDEM_", "VIBEZEO_"]
-            .iter()
-            .any(|p| name.starts_with(p))
+    // Every provider home Vibezeo sets (the registry's `providerHomeEnv`,
+    // F-AC-01); a test checks the registry against this list.
+    const AGENTS: [&str; 14] = [
+        "CLAUDE_CONFIG_DIR",
+        "CODEX_HOME",
+        "GEMINI_CLI_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME",
+        "XDG_CACHE_HOME",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "NODE_EXTRA_CA_CERTS",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+    ];
+    const MORE_AGENTS: [&str; 2] = ["REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"];
+    let upper = name.to_ascii_uppercase();
+    let upper = upper.as_str();
+    if SHELL.contains(&upper) || upper.starts_with("DYLD_") {
+        return Some("it would change how terminals start or what they run");
+    }
+    if AGENTS.contains(&upper) || MORE_AGENTS.contains(&upper) || upper.ends_with("_BASE_URL") {
+        return Some("it would change where agents sign in or send their requests");
+    }
+    if upper == "COMPOSE_PROJECT_NAME"
+        || upper.starts_with("TANDEM_")
+        || upper.starts_with("VIBEZEO_")
+    {
+        return Some("Vibezeo sets it");
+    }
+    None
+}
+
+pub fn reserved_name(name: &str) -> bool {
+    reserved_reason(name).is_some()
 }
 
 fn valid_name(name: &str) -> bool {
@@ -222,9 +261,9 @@ impl WorktreeSetup {
                     "\"{name}\" isn't a valid variable name"
                 )));
             }
-            if reserved_name(&name) {
+            if let Some(why) = reserved_reason(&name) {
                 return Err(SetupError::Invalid(format!(
-                    "worktree.json can't set {name}"
+                    "worktree.json can't set {name}: {why}"
                 )));
             }
             if value.chars().count() > MAX_ENV_VALUE {
@@ -964,5 +1003,38 @@ mod tests {
         assert_eq!(compose_project("app", "fix-auth"), "app-fix-auth");
         assert_eq!(compose_project("My.App", "Fix Auth"), "my-app-fix-auth");
         assert_eq!(compose_project("_x", "y"), "w_x-y");
+    }
+
+    #[test]
+    fn f_wt_06_6_names_that_steer_agents_are_refused_and_say_why() {
+        for name in [
+            "CLAUDE_CONFIG_DIR",
+            "CODEX_HOME",
+            "XDG_CONFIG_HOME",
+            "XDG_DATA_HOME",
+            "ANTHROPIC_BASE_URL",
+            "OPENAI_BASE_URL",
+            "HTTPS_PROXY",
+            "https_proxy",
+            "all_proxy",
+            "NO_PROXY",
+            "NODE_EXTRA_CA_CERTS",
+            "SSL_CERT_FILE",
+            "SSL_CERT_DIR",
+            "REQUESTS_CA_BUNDLE",
+        ] {
+            let json = format!(r#"{{"env":{{"{name}":"x"}}}}"#);
+            let err = WorktreeSetup::parse(json.as_bytes()).expect_err(name);
+            assert!(
+                err.to_string().contains(&format!(
+                    "can't set {name}: it would change where agents sign in or send their requests"
+                )),
+                "{name}: {err}"
+            );
+        }
+        // The user's own keys stay allowed: they're shown in the review.
+        let ok = WorktreeSetup::parse(br#"{"env":{"ANTHROPIC_API_KEY":"x","DATABASE_URL":"y"}}"#);
+        assert!(ok.is_ok());
+        assert!(reserved_reason("PATH").is_some_and(|w| w.contains("terminals start")));
     }
 }
