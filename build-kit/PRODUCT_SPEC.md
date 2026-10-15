@@ -3071,6 +3071,33 @@ Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1�
 1. With `origin` at `git@gitlab.com:team/app.git`, the menu reads "Create merge request" and the pane receives `glab mr create`.
 2. With `origin` at `https://github.com/team/app.git`, nothing changes from F-CD-15.
 
+#### F-WT-06 Worktree runtime (P2)
+**Story:** Five agents in five worktrees all start the app's dev server on port 3000 and the same database. I want each worktree to get its own ports, its own environment and its own Compose project, set up once for the repository.
+
+**Behavior:**
+- **The file.** `.vibezeo/worktree.json` (F-WT-01) gains two optional keys:
+  ```json
+  { "ports": 10, "env": { "DATABASE_URL": "postgres://localhost/app_{{slug}}", "PORT": "{{port}}", "API_PORT": "{{port+1}}" } }
+  ```
+  - `ports`: how many ports each worktree gets, 1 to 100.
+  - `env`: up to 50 variables. Names are `[A-Za-z_][A-Za-z0-9_]*` and at most 64 characters; values at most 2,000 characters. Placeholders: `{{slug}}`, `{{index}}`, `{{repo}}`, `{{port}}` and `{{port+N}}` (N smaller than `ports`). An unknown placeholder, `{{port}}` without `ports`, or a name Vibezeo reserves makes the file invalid and says which. Reserved: `PATH`, `HOME`, `SHELL`, `USER`, `ZDOTDIR`, `ENV`, `BASH_ENV`, `PROMPT_COMMAND`, `LD_PRELOAD`, `LD_LIBRARY_PATH`, names starting `DYLD_`, `TANDEM_` or `VIBEZEO_`, and `COMPOSE_PROJECT_NAME`.
+  - A file with either key has the **runtime on**; without both, worktrees behave as in F-WT-01.
+- **Port blocks.** With `ports`, each worktree gets a block of that many consecutive ports in 41000–48999 and an index (1, 2, 3… per repository, the lowest free). Blocks never overlap across all repositories on this computer, are checked free (nothing listening on 127.0.0.1) when the worktree is made, and are kept in `$DATA/worktree-ports.json`, so they survive relaunch. A block with a port in use moves to the next free block and says so: "Ports 41010–41019 were busy; tandem/fix-auth uses 41020–41029." Discarding the worktree frees its block.
+- **Variables.** With the runtime on, every terminal and agent pane opened in the worktree's tabs gets: the `env` variables, filled in; `VIBEZEO_WORKTREE` (its folder), `VIBEZEO_SLUG`, `VIBEZEO_INDEX`, and with `ports` also `VIBEZEO_PORT` (the block's first port) and `VIBEZEO_PORTS` (`41010-41019`); and `COMPOSE_PROJECT_NAME=<repo>-<slug>` (lowercase, characters other than letters, digits, `-` and `_` replaced by `-`). The setup pane, the trusted teardown (F-WT-01) and Best of N's check command get the same.
+- **Trust.** `env` values are part of what's trusted (F-WT-01): until the file's commands and `env` are trusted on this computer, panes get only Vibezeo's own variables above, never the file's. A file without `env` keeps the digest it had before F-WT-06, so trust given before stays valid.
+- **Secrets.** A value that the secret redactor (F-TL-02) would redact shows a warning under the field in UI-150: "This looks like a secret. Don't commit it in worktree.json."
+- **Ports panel** (F-EX-03): a server whose pane is in a worktree is grouped under the worktree's branch, with its block. **Open** loads `http://<slug>.localhost:<port>` when this computer resolves `<slug>.localhost` to loopback (checked once per run), and `http://localhost:<port>` otherwise, so worktrees' cookies and browser tabs stay apart.
+- **UI-150** gains "Ports per worktree" (a number, empty for none) and "Environment" (one `NAME=value` per line). A worktree's row tooltip shows its block: "Ports 41010–41019".
+- Local folders only, as F-WT-01: no runtime in worktrees on SSH hosts or in WSL folders.
+
+**Acceptance:**
+1. With `"ports": 10`, two new worktrees get disjoint blocks of 10, and shells in each see different `VIBEZEO_PORT` values; after a relaunch the same worktrees keep the same blocks.
+2. With `"env": {"DB": "app_{{slug}}"}` trusted, a shell in the `fix-auth` worktree has `DB=app_fix-auth` and `COMPOSE_PROJECT_NAME=<repo>-fix-auth`; before trust it has `COMPOSE_PROJECT_NAME` but no `DB`.
+3. A port in the next block already listening when a worktree is made moves the worktree to the following block, and the toast says so.
+4. The ports panel groups a server started in a worktree's pane under that worktree, and Open loads `http://fix-auth.localhost:<port>` (or `http://localhost:<port>` where `*.localhost` doesn't resolve).
+5. The trusted teardown runs with the same variables: a teardown writing `$COMPOSE_PROJECT_NAME` writes the worktree's project name.
+6. An env value that looks like a secret shows "This looks like a secret. Don't commit it in worktree.json."; a reserved name such as `PATH` or `LD_PRELOAD` makes the file invalid, naming it.
+
 ---
 
 ## 5. Non-functional requirements
