@@ -7,6 +7,51 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## 0.7.2
+
+Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora. Like
+0.7.1, this build runs the Free plan on your computer, with no account and
+nothing sent to our servers.
+
+Plan limits in this build (Free): 4 live panes, 3 workspaces, one thread at a
+time, one account per engine, threads with Claude Code and Codex, one teammate
+besides Lead, and one plugin connection.
+
+### Changed
+
+- [lin] **The Dictate toggle link works only while the global shortcut is
+  down.** `tandem://dictate/toggle` is the fallback when Dictate's global
+  shortcut can't work: there's no global-shortcuts portal, or the portal
+  failed. While the shortcut works, Wayland included, the link now does
+  nothing. Browsers can open `tandem://` links, so this stops a web page from
+  starting a take. Settings › Dictate shows the link's command only when you
+  need it. If you bound the link while your shortcut worked, use the shortcut.
+- [lin] **Dictate says when its shortcut stops working.** If the global
+  shortcut stops working while the app runs, for example when a Wayland
+  portal session ends, Dictate says so, and the toggle link takes over.
+- [lin] **Your last 5 takes on the Dictate card.** The Dictate card lists
+  your five most recent takes with their times; click one to open History.
+- [lin] **Reconnecting, then Listening.** When your microphone goes silent
+  during a take and Dictate reopens it, the widget says Reconnecting, then
+  goes back to Listening once sound returns or your backup microphone takes
+  over.
+
+### Fixed
+
+- [lin] **Dictate stops at 10 minutes however a take started.** When the
+  global shortcut couldn't start, takes started from a message box's mic
+  button or the toggle link had no time limit: the widget counted down to 0
+  and recording went on. This happens on Wayland without a global-shortcuts
+  portal, as in Ubuntu 24.04's default session. Those takes now stop at
+  10 minutes, after the same 30-second countdown.
+- [lin] Esc now cancels a take started from the mic button or the toggle
+  link, as it does one started with the shortcut. On Wayland, where Esc
+  can't be heard outside the app, the widget's × cancels it.
+- [lin] A quick tap of the Dictate shortcut during a take started from the
+  mic button or the toggle link stops it and types what you said, as a tap
+  does for a hands-free take started with a double-tap. Before, it started
+  over and the words were lost.
+
 ## 0.7.1
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora. Like
