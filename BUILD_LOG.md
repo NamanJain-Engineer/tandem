@@ -1276,6 +1276,24 @@ Built on branch `competitive-gaps` (from `product-m0-m5`) out of the competitive
 - E2E-M17-WT-1 found D-2208 (shell panes never got their typed command, which also affected Create pull request) and that a third worktree's setup pane can hit Free's 4-pane limit (the spec frees panes first; the limit toast is the product's answer). E2E-M17-WT-2 found two "Comment on a.ts line 2" buttons on a changed line; removed lines now say "removed line".
 - F-WT-01: destinations are checked component by component, so a tracked symlinked folder in the worktree can't carry a copy out of it (`f_wt_01_2` covers it, with a symlink in the main checkout and `../` patterns).
 
+## M18 · Next features: engines
+Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07 so far (PRODUCT_SPEC §4.4, MILESTONES "M18 · Next features: engines"), then F-EN-09, F-EN-08 and F-TH-17 in that order; decisions D-2400–D-2419.
+- [x] F-EN-07 One instructions file for every engine.
+  - Registry: `instructions` per engine (`files`, `mode`, `fallback`, `pointer`) for Claude Code, Codex, Gemini CLI, Copilot CLI and Cursor Agent; `validate` refuses paths outside the repository and multi-line pointers.
+  - `tandem_git::instructions`: `inspect` (what each installed engine reads, git state, the diff against `AGENTS.md`, whether new worktrees get an ignored file), `plan`, `apply` (re-plans, checks the digest, backs up, writes atomically), `undo`, `copy_to_worktrees`.
+  - Commands `instructions_get`, `instructions_plan`, `instructions_apply`, `instructions_undo`, `instructions_copy_to_worktrees` (writes from the main window only). UI-160 from a local folder's rail menu. The browser demo says it has no repository files.
+  - Docs: Engines and platforms, "One instructions file for every engine".
+  - Tests: registry 1, `tandem-git` 8 (`f_en_07_*`), app 2, UI 7, E2E-M18-EN07 (`e2e/specs/m18-en07-instructions.e2e.ts`, 3).
+
+### M18 · Next features: engines decisions
+- D-2400: Each engine's instructions files and pointer are data in `registry.json`, checked against the vendors' own pages on 15 October 2026: Claude Code's memory page (`CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`; `AGENTS.md` only when none exist; `@path` imports), Codex's AGENTS.md page (`AGENTS.override.md`, else `AGENTS.md`, one per folder), Gemini CLI's GEMINI.md page (`@file.md` imports; `context.fileName`), Copilot CLI's custom instructions page (`.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, combined) and Cursor's CLI page (`.cursor/rules`, `AGENTS.md`, `CLAUDE.md`). Every pointer is an `@AGENTS.md` import in the engine's own file: Gemini CLI takes one in `GEMINI.md`, so its settings file is never edited, and no engine needs a symbolic link. Engines without an entry (Grok, OpenCode, Droid, Amp, Aider, Kimi) are Unknown until their docs are checked.
+- D-2401: F-EN-07 is P2, in a new milestone section, M18, which `check-coverage.sh` accepts for P2 next to M16 and M17. The panel opens from a local folder's rail menu only: a palette command would need a folder context in E2E-M3-9, and the menu is where Worktree setup already is.
+- D-2402: "Use one file for all" replaces a file's text only after a confirmed plan whose digest (each path, its text before and after) still matches. Each replaced file is copied to `$DATA/instructions-backup/<change>/` with a manifest first, and Undo puts every file back byte for byte, or removes the files the change created, only while each still holds what the change wrote. Without `AGENTS.md`, the user picks the file it starts from (`CLAUDE.md` first). A file whose text isn't in `AGENTS.md` is marked "Its text will be replaced".
+- D-2403: "Copy into worktrees" writes only `.vibezeo/worktree.json`'s `copy`, through `tandem_git::setup`, never `worktree_setup_save`: that one trusts the file's commands, and adding a copy pattern mustn't trust commands nobody reviewed. Trust is a digest of the commands alone (D-2202), so it stays as it was.
+
+### M18 · Next features: engines log
+- F-EN-07: the vendor pages changed the draft: Gemini CLI's `GEMINI.md` takes an `@AGENTS.md` import, so no settings file is edited and no symbolic link is needed (D-2400). The UI's Undo toast sits under the open dialog's modal layer, so the test finds it with `hidden: true`. Building `chain19` filled this container's disk twice (test binaries are kept per build); removing all but the newest of each in `target/debug/deps` freed 8.5 GB and 6.7 GB.
+
 ## M16 mobile-apps checklist (LAN pairing, Vibezeo Remote, push, Linux stores)
 Built on branch `mobile-apps` (from `m16c-phone-companion`, with `product-m0-m5` merged). Owns F-RM-04 LAN pairing, F-RM-05 Vibezeo Remote app, F-RM-06 Encrypted push and F-RM-07 Linux store packages (new spec entries, PRODUCT_SPEC §4.14; MILESTONES M16 owns them). Decisions are D-2000–D-2099.
 - [x] F-RM-04 LAN pairing.

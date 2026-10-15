@@ -333,6 +333,8 @@ pub mod typing  { pub fn sanitize_prompt(s:&str)->String; pub async fn type_prom
 ```
 
 ### 2.5 `tandem-engines` [F-EN-*, F-AC-*, F-TH-03..06, F-TH-16, F-CD-16, F-AG-06, F-AG-08, F-AG-10]
+
+Each `EngineSpec` may carry `instructions: InstructionsSpec {files, mode: "all"|"first", fallback?, pointer?: {file, import}}`: the instructions files it reads at a repository's root, whether it reads every one that exists or only the first, the file it falls back to when none exist, and the pointer that imports `AGENTS.md` (F-EN-07, D-2400). `tandem_git::instructions` reads and writes the files; the table is data.
 ```rust
 pub struct EngineRegistry { entries: Vec<EngineSpec> }                       // bundled JSON + remote overrides
 impl EngineRegistry { pub fn bundled() -> Self; pub fn with_overrides(&self, o: &[EngineSpec]) -> Self; pub fn get(&self, id:&str)->Option<&EngineSpec>; pub fn chat_engines(&self)->impl Iterator<Item=&EngineSpec>; }
@@ -602,6 +604,11 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `engines_report` | `{hostId?}` | `DetectionReport?` (the last report, cached across launches; the launch grid loads it after a webview reload) | — | F-EN-01, F-CD-13 |
 | `engines_install_command` | `{engineId}` | `InstallCommand {display, shell}` (`display` is the registry string verbatim; the UI types it into a visible terminal pane) | NotFound | F-EN-03 |
 | `engines_set_extra_args` | `{engineId, args:[String]}` | — | Invalid (secret-shaped) | F-SH-04 |
+| `instructions_get` | `{workspaceId}` (a local repository or one of its worktrees; read for its main checkout) | `InstructionsReport {root, engines: [EngineReads {engineId, label, known, reads: [path], readsAgents}], files: [InstructionsFile {path, exists, bytes, git: "tracked"\|"untracked"\|"ignored"\|"none", unsafe?: "symlink"\|"outside"\|"too_large"\|"not_a_file", inWorktrees?, diff?: FileDiff}]}` (installed engines only; `diff` is against `AGENTS.md`; nothing over 1 MB is read) | Invalid ("Instructions are checked for folders on this computer"), NotFound | F-EN-07 |
+| `instructions_plan` | `{workspaceId, source?}` (`source`: the file whose text becomes `AGENTS.md` when there's none) | `InstructionsPlan {changes: [PlannedChange {path, action: "create"\|"replace", before?, after, textLost}], skipped: [{path, reason}], digest}` (writes nothing) | Invalid (no source, an unsafe source) | F-EN-07 |
+| `instructions_apply` | `{workspaceId, source?, digest}` (window `main` only; the plan's `source` and the digest of the plan the person confirmed) | `InstructionsChange {changeId, written: [path]}` (each replaced file is backed up first to `$DATA/instructions-backup/<changeId>/`) | Conflict ("The files changed. Review the plan again."), PermissionDenied, Io | F-EN-07 |
+| `instructions_undo` | `{changeId}` (window `main` only) | — (every file of the change back byte for byte; a file created by it is removed) | Conflict (a file changed since), NotFound, PermissionDenied | F-EN-07 |
+| `instructions_copy_to_worktrees` | `{workspaceId, path}` (window `main` only; an ignored instructions file) | `SetupState` (adds `path` to `.vibezeo/worktree.json`'s `copy`; the commands' trust is unchanged) | Invalid (not an ignored instructions file), PermissionDenied | F-EN-07 |
 | `models_list` | `{engineId, accountId?}` | `[ModelEntry {id, label, description, isDefault, effortLevels, contextWindow, source}]` (Automatic first) | — | F-TH-08 |
 | `accounts_list` | — | `[Account]` | — | F-AC-02 |
 | `accounts_begin_add` | `{engineId, label}` | `LoginSession {opId, paneId, accountId, action, reports}` (mini PTY in a fresh home; the sheet `pty_attach`es `paneId`; `reports` false = the engine can't say when it's signed in, so the user clicks Done); the end arrives as `accounts:login-finished` | LimitReached (Free: 1/engine), Unavailable (mac Keychain single-account), Conflict (name taken), EngineMissing | F-AC-01, F-AC-02 |

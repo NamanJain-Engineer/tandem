@@ -18,6 +18,7 @@ pub mod files;
 pub mod find_work;
 pub mod git;
 pub mod handoff;
+pub mod instructions;
 pub mod lanes;
 pub mod launch;
 pub mod limits;
