@@ -1323,6 +1323,26 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 5. An engine missing from the registry's instructions table is shown as "Unknown", and nothing is written for it.
 6. A `CLAUDE.md` that's a symbolic link is listed, never written; the plan skips it and says why.
 
+#### F-EN-08 Engine versions and updates under your control (P2)
+**Story:** An engine update can break how Vibezeo hosts it, and some engines update themselves or leave processes running. I see what's installed and how, choose when an engine changes, and can go back to the version that worked.
+
+**Behavior:**
+- **The table** (Settings › Engines, UI-161): each installed engine's version, how it was installed, and whether it updates itself.
+  - How it was installed is read from where its command resolves (D-2406): under `node_modules` → **npm**; under a Homebrew `Cellar` or `Caskroom` → **Homebrew**; under the engine's own versions folder from the registry (Claude Code: `~/.local/share/claude/versions/`) → **Its own installer**; anything else → **Other**.
+  - "Updates itself" comes from the registry (`updates.selfUpdates`, per install method), checked against the vendor's docs: Claude Code's own installer and npm install update in the background.
+- **Check for updates** (per engine, only when clicked): for an npm install, `npm view <package> version` through the login shell, which asks the npm registry; the newest version is shown beside the installed one. Nothing is asked before the click, and no daily check runs. Other install methods say which command updates them (`brew upgrade …`, `claude update`).
+- **Pin** (per engine, off by default): that engine's new terminal panes start with the registry's documented switch that stops it updating itself, in the launch environment or arguments and never in the user's own files (Claude Code: `DISABLE_AUTOUPDATER=1`; Codex: `-c check_for_update_on_startup=false`). Panes already running are unchanged. Engines without a documented switch have no Pin.
+- **Versions Vibezeo has seen** (`$DATA/engine-versions.json`): each engine's current and previous version, and its **last good** version: the one that last finished a Thread turn without an adapter error.
+- **After an update breaks threads:** when an engine's version differs from its last good one and its threads have failed with an adapter error since, Thread mode and Settings › Engines show "{Engine} updated from {last good} to {current}, and threads have failed since." with **Roll back to {last good}…**.
+- **Roll back** reinstalls a version through the same install method: `npm install -g <package>@<version>`, or the engine's own installer with a version (Claude Code: `curl -fsSL https://claude.ai/install.sh | bash -s <version>`). A confirm shows the exact command; it then runs in a visible terminal pane, like Install (F-EN-03). Homebrew and Other say how to do it themselves.
+- **Running in the background** (Linux and macOS): processes of an installed engine's command with no terminal, outside Vibezeo's own panes and threads, each with its command line and **Stop** (asks first, then asks the process to end). Engines started in a terminal, Vibezeo's or the user's, are never listed. Windows says it isn't available yet.
+
+**Acceptance:**
+1. With a fake engine at 1.2.0 installed through npm, the table shows "1.2.0 · npm", and nothing is run against the npm registry until Check for updates is clicked; then the newest version shows.
+2. Pin on Claude Code starts its new panes with `DISABLE_AUTOUPDATER=1` and Codex's with `-c check_for_update_on_startup=false`; a pane opened before Pin has neither.
+3. After Codex moves from 1.2.0 (last good) to 1.3.0 and a thread then fails with an adapter error, the banner reads "Codex updated from 1.2.0 to 1.3.0, and threads have failed since." and "Roll back to 1.2.0…" shows `npm install -g @openai/codex@1.2.0` before running it.
+4. An engine process with no terminal, outside any pane, is listed under "Running in the background" with Stop; Stop asks first, and a process in a terminal is never listed.
+
 #### F-EN-09 Engine catalog refresh (P2)
 **Story:** New coding-agent CLIs ship every month, and vendors change who can use the old ones. The engines I use show up in Vibezeo, with what each needs, as soon as their vendors document them.
 
