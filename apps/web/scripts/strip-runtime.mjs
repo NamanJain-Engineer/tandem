@@ -4,20 +4,19 @@
 // anyway (its runtime chunks, their preloads and the inline RSC payload,
 // about half of each page's HTML) runs for nothing and delays the page.
 //
-// Kept: the docs (Next's router opens their links in the page, D-1817; their
-// chunks start after the first paint, scripts/defer-docs.mjs) and the demo app. Afterwards
+// The docs are static pages too (D-1843). Kept: the demo app. Afterwards
 // the only scripts left must be F-WB-01 AC2's two: /demo/embed.js on the
 // home page and /download/detect.js on /download/. Anything else fails the
 // build, so a client component added to a marketing page can't silently
-// stop working. A blog post page also keeps its JSON-LD (D-1852); the list
-// is scripts/script-allowlist.mjs.
+// stop working. A blog post page also keeps its JSON-LD (D-1852) and
+// /blog/blog.js (D-1860); the list is scripts/script-allowlist.mjs.
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import process from "node:process";
 import { allowedScripts } from "./script-allowlist.mjs";
 
 const OUT = join(import.meta.dirname, "..", "out");
-const SKIP = ["docs", join("demo", "app")];
+const SKIP = [join("demo", "app")];
 
 function* pages(dir) {
   for (const name of readdirSync(dir)) {

@@ -21,6 +21,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent / "public"
 MEDIA = ROOT.parent / "media"
 # 2x masters and where their 1x original goes. The demo still is a JPEG.
 MASTERS = {"still": ROOT / "demo" / "still.jpg"}
+# Smaller widths a phone picks instead (D-1842): the home page's still sits
+# just under the fold, so its bytes count toward the largest paint.
+NARROW = {"still": 800}
 # The demo still, every PNG capture in public/screens, and the blog's images
 # (public/blog/<slug>/*.png or *.jpg, F-WB-06).
 SOURCES = [
@@ -29,6 +32,7 @@ SOURCES = [
     *sorted(p for p in (ROOT / "blog").glob("*/*") if p.suffix in (".png", ".jpg", ".jpeg")),
 ]
 QUALITY = {"avif": 60, "webp": 80}
+BLOG_NARROW = 800
 
 
 def fresh(out: pathlib.Path, src: pathlib.Path) -> bool:
@@ -58,6 +62,11 @@ def masters() -> None:
             out = one.with_name(f"{one.stem}@2x.{fmt}")
             if not fresh(out, master):
                 save(image, out, fmt)
+            if name in NARROW:
+                w = NARROW[name]
+                out = one.with_name(f"{one.stem}-{w}.{fmt}")
+                if not fresh(out, master):
+                    save(image.resize((w, image.height * w // image.width), Image.LANCZOS), out, fmt)
 
 
 def main() -> int:
@@ -70,9 +79,14 @@ def main() -> int:
         image = Image.open(src).convert("RGB")
         for fmt in QUALITY:
             out = src.with_suffix(f".{fmt}")
-            if fresh(out, src):
-                continue
-            save(image, out, fmt)
+            if not fresh(out, src):
+                save(image, out, fmt)
+            # A blog image wider than a phone also gets an 800 px copy for
+            # phones (F-WB-06, D-1864), as the demo still does (D-1842).
+            if "blog" in src.relative_to(ROOT).parts and image.width > BLOG_NARROW:
+                out = src.with_name(f"{src.stem}-{BLOG_NARROW}.{fmt}")
+                if not fresh(out, src):
+                    save(image.resize((BLOG_NARROW, image.height * BLOG_NARROW // image.width), Image.LANCZOS), out, fmt)
     return 0
 
 

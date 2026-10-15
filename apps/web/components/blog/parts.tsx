@@ -2,7 +2,7 @@ import { Avatar } from "@tandem/ui/components/Avatar";
 import { siteButton } from "@tandem/ui/components/SiteButton";
 import { Mail, Rss } from "lucide-react";
 import { cx } from "../../lib/cx";
-import { BLOG_PATH, FEED_PATH, formatDate, tagPath, titleTransition, type Cover, type Post } from "../../lib/blog/posts";
+import { BLOG_PATH, COVER_NARROW, FEED_PATH, formatDate, tagPath, titleTransition, type Cover, type Post } from "../../lib/blog/posts";
 import { SITE } from "../../lib/site";
 import { Icon } from "../site/Icon";
 import { Orbit } from "../site/Orbit";
@@ -155,14 +155,21 @@ export function CoverFigure({
 }) {
   const base = cover.src.replace(/\.(png|jpe?g)$/, "");
   const modern = base !== cover.src;
-  const set = (f: string) => (cover.retina ? `${base}.${f} ${cover.width}w, ${base}@2x.${f} ${cover.width * 2}w` : `${base}.${f}`);
+  // Phones take the 800 px copy (D-1864), sharp screens the 2x one (D-1838).
+  const widths = [
+    ...(cover.narrow ? [`${base}-${COVER_NARROW}.{f} ${COVER_NARROW}w`] : []),
+    `${base}.{f} ${cover.width}w`,
+    ...(cover.retina ? [`${base}@2x.{f} ${cover.width * 2}w`] : []),
+  ];
+  const multi = widths.length > 1;
+  const set = (f: string) => (multi ? widths.map((w) => w.replace("{f}", f)).join(", ") : `${base}.${f}`);
   return (
     <figure data-build={cover.build} className={cx("flex flex-col gap-4", className)}>
       <div className="frame">
         <div data-stage="" className="frame-screen">
           <picture>
-            {modern && <source type="image/avif" srcSet={set("avif")} sizes={cover.retina ? sizes : undefined} />}
-            {modern && <source type="image/webp" srcSet={set("webp")} sizes={cover.retina ? sizes : undefined} />}
+            {modern && <source type="image/avif" srcSet={set("avif")} sizes={multi ? sizes : undefined} />}
+            {modern && <source type="image/webp" srcSet={set("webp")} sizes={multi ? sizes : undefined} />}
             <img
               src={cover.src}
               width={cover.width}

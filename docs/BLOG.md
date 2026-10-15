@@ -201,7 +201,8 @@ You need no code to publish a post: you add one file and merge it.
 4. **Add images** under `apps/web/public/blog/<slug>/`, as a PNG or JPEG
    1440 px wide, then make the AVIF and WebP copies. For a cover, AVIF and WebP
    at twice the size named `<name>@2x.avif` and `<name>@2x.webp` beside it are
-   used on sharp screens.
+   used on sharp screens. The script also writes an 800 px copy
+   (`<name>-800.*`) for phones, which keeps the post's first paint fast.
    ```bash
    python3 apps/web/scripts/optimize-screens.py
    ```

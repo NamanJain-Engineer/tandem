@@ -11,7 +11,12 @@ import { SLUG_RE, blogFrontmatter, type BlogFrontmatter } from "./schema";
 export type Cover = NonNullable<BlogFrontmatter["cover"]> & {
   /** `<name>@2x.avif` and `.webp` sit beside it (D-1838), for sharp screens. */
   retina?: boolean;
+  /** `<name>-800.avif` and `.webp` sit beside it, for phones (D-1864). */
+  narrow?: boolean;
 };
+
+/** The width of a cover's copy for phones. */
+export const COVER_NARROW = 800;
 
 export type Post = {
   slug: string;
@@ -83,17 +88,26 @@ export function parsePost(file: string, raw: string, publicDir: string): Post {
     date: f.date,
     author: f.author,
     tags: f.tags,
-    ...(f.cover ? { cover: { ...f.cover, retina: hasRetina(f.cover.src, publicDir) } } : {}),
+    ...(f.cover
+      ? {
+          cover: {
+            ...f.cover,
+            retina: hasCopies(f.cover.src, publicDir, "@2x"),
+            narrow: f.cover.width > COVER_NARROW && hasCopies(f.cover.src, publicDir, `-${COVER_NARROW}`),
+          },
+        }
+      : {}),
     draft: f.draft ?? false,
     readingMinutes: Math.max(1, Math.ceil(words / WORDS_PER_MINUTE)),
   };
 }
 
-/** Whether AVIF and WebP twice the size sit beside a PNG or JPEG cover. */
-function hasRetina(src: string, publicDir: string): boolean {
+/** Whether AVIF and WebP copies named `<name><suffix>` sit beside a PNG or
+ * JPEG cover: `@2x` at twice its size, `-800` for phones. */
+function hasCopies(src: string, publicDir: string, suffix: string): boolean {
   const base = src.replace(/\.(png|jpe?g)$/, "");
   if (base === src) return false;
-  return ["avif", "webp"].every((f) => existsSync(join(publicDir, `${base}@2x.${f}`)));
+  return ["avif", "webp"].every((f) => existsSync(join(publicDir, `${base}${suffix}.${f}`)));
 }
 
 /** Every post in `dir`, newest first (same day: by title). Drafts only when

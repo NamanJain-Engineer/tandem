@@ -23,15 +23,20 @@
   - the AppImage smoke test offline;
   - the site from a fresh clone: `build:site` with `strip-runtime` and `check-routes` (36 pages, no redirects), web vitest 87/87, site Playwright 16/16, Lighthouse CI on its five URLs (every assertion passed; performance 99 on `/` with LCP 1.96 s, 97 on `/docs/` with its LCP warning at 2.42 s, 100 elsewhere), and the demo walkthrough.
   Deploying is merging `product-m0-m5` into `main` (OPERATING §7).
-- Blog (M15, F-WB-06, D-1850 to D-1863): `/blog/` with posts as files in `apps/web/content/blog`, tag pages and an Atom feed, on `site-blog`, waiting to be batched into `product-m0-m5`. Publishing a post is `docs/BLOG.md` §3. See "M15 · F-WB-06 Blog".
+- Blog (M15, F-WB-06, D-1850 to D-1864): `/blog/` with posts as files in `apps/web/content/blog`, tag pages and an Atom feed, on `site-blog`, waiting to be batched into `product-m0-m5`. Publishing a post is `docs/BLOG.md` §3. See "M15 · F-WB-06 Blog".
 - Website redesign (M15, D-1800 to D-1815): phases 1–4 and 6 of `docs/WEBSITE_BRIEF.md` (`docs-briefs`) are merged with the `chain4` batch: OS light and dark themes, marketing type, the new home page, Pricing, Download, Changelog, the inner pages and the docs, and the performance phase (marketing pages ship no framework JavaScript, D-1813; Lighthouse at 0.95 on five URLs). They reach vibezeo.com with the next release. The signed-in captures of phase 5 wait on the owner (`HUMAN_TODO.md`). See "M15 · Website redesign".
-- Website elite pass (M15, `site-elite`, D-1819 and D-1830 to D-1840; `docs/WEBSITE_ELITE.md`). The site and docs are rebuilt on a lit visual system. It has:
+- Website elite pass (M15, `site-elite`, D-1819 and D-1830 to D-1843; `docs/WEBSITE_ELITE.md`). The site and docs are rebuilt on a lit visual system:
   - tokens for light, edges, depth, type, radii and motion;
   - the two-ring backdrop, the product bezel and site buttons;
-  - a new header and footer;
-  - the docs rendered on the server in the site's frame.
+  - a new header and footer.
 
-  The real-app captures were retaken from 0.7.2 at 2×. The docs' largest paint is inside its budget (1.81 s), and Lighthouse CI passes on its five URLs with no warnings (`/` 1.96 s). Waiting for the coordinating session to batch it into `product-m0-m5`.
+  Phase 2 is in too:
+  - **Hero:** it leads with ownership ("Your agents. Your machine. Your plan.").
+  - **Home:** a tighter story. The release tiles and the roadmap moved to /changelog/, the video to /demo/.
+  - **Motion:** the rings draw in, the engines orbit and data packets move, all in CSS.
+  - **Docs:** they run no script.
+
+  The real-app captures were retaken from 0.7.2 at 2×. Lighthouse CI passes on its five URLs with no warnings: blocking time 0 ms everywhere, largest paint 1.65–1.90 s. Waiting for the coordinating session to batch it into `product-m0-m5`.
 - M16 Conductor voice API (F-BE-08, and the API halves of F-CN-02 and F-CN-05) is on `product-m0-m5` (pull request #30, built on `m16-voice-api`); see "M16 · F-BE-08 Conductor voice API". The desktop's Conductor client (F-CN-01…04, F-CN-08: calls, the local tool executor, the HUD, the call log) is on `m16a-conductor`; see "M16 · 16A Conductor core".
 - Windows from Linux (M15, branch `windows-ready`, D-1700…D-1710): the gate runs Windows clippy (GNU target, every crate but the app); `bash scripts/windows-check.sh --msvc --wine` (in `ci:local`) checks the app for MSVC through cargo-xwin and runs the platform crates' tests under Wine; `bash scripts/build-windows-installer.sh` cross-builds an unsigned NSIS installer and checks it. Nothing has run on real Windows: Windows stays "Coming soon" until HUMAN_TODO's "M15 Windows first run" passes. Setup in OPERATING §6a.
 - Layout matches DECISIONS: 10 crates under `crates/`, Tauri crate `apps/desktop/src-tauri` (lib `tandem_app`, bin `tandem`), `apps/{api,web}`, `packages/{ui,protocol}`.
@@ -1204,6 +1209,17 @@ The owner (15 October): the site looks basic for a product we sell; make it feel
 - D-1838: product captures are the real 0.7.2 app at 2× (`code-mode` 2880×1800, `launch-grid` 1088×1220), taken through the desktop E2E harness under Xvfb with `GDK_SCALE=2`. `code-mode` shows four real terminals over a clone of the repository; `launch-grid` shows Claude Code detected (never started). The debug build's DEV badge, which release builds don't show, was hidden before each shot. They ship as AVIF and WebP at 1× and 2× with a PNG fallback, and each names its build (`SCREENS` in `lib/media.ts`; a test checks the build is in CHANGELOG.md and every file ships). Dashboard and Thread captures were possible only with the fake engine, so they aren't used.
 - D-1839: the inner pages and the docs take the system. Pricing: plan cards side by side, Free lit and marked "Available now" (the only plan on sale), Pro and Team "With accounts", full-width actions, the generated comparison in a lit card with accent group labels, and the closing band. Download: the app icon on a lit tile, one Linux card with both packages as buttons, Install and Verify side by side (checksums in wells). Changelog: a glowing current-release node on the rail, each release in a card. Version pages, About, Demo (the still in the bezel, at 2×), the prose pages and the 404 use the same hero, surfaces and hairlines. The docs (`docs.css`) map Fumadocs' card and border colours to the site's, light the top of the page, give the sidebar glass with mono group labels and a lit active item, set titles at display size with the sheen, and make key caps and inline code match the site; every docs page ends with a lit download card above the legal footer.
 - D-1840: no film grain. Lighthouse CI warned on `/`: largest paint 2.05 s against its 2.0 s budget, up from 1.96 s. The soft-light grain layers over the lit bands made the first paint slow enough that the lazy demo still and the mono font finished before it. Lantern counts every request that finishes before the observed paint, so both joined the largest paint. Measured on copies of the built page: without the grain layers the largest paint is 1.96 s. Removing the scroll reveals or the h1's sheen changed nothing measurable. The grain tile, its utility and its token are gone. The home h1 is drawn in solid ink rather than `text-sheen`: a transparent fill took it out of the largest-paint candidates, so a container div was measured instead. With both changes `/` measures 1.97 s (5 runs), with the h1 as its largest paint as D-1816 intends.
+- D-1841: phase 2, after the owner widened the brief (via the coordinating session): restructure freely, add motion, and lead with neutrality and ownership.
+  - **Hero:** the h1 is `HERO.title` ("Your agents. Your machine. Your plan."). The lead counts the engines from `ENGINES`. Four `OWNERSHIP` facts follow, each true of 0.7.2, and no other product is named. `SITE.tagline` stays for titles, the share image and the footer.
+  - **Home order:** hero, demo, how data moves, engines, modes, capabilities, Built with Claude, figures, founder, pricing, FAQ, CTA.
+  - **Moved off the home page:** the "New in" tiles and the roadmap to /changelog/ (`#new`, `#roadmap`), the video to /demo/ (`#video`, with its poster as an attribute below the fold). Dictate, Plugins, Tasks and SSH workspaces join the capability index.
+  - **Tests rewritten to the new intent:** the h1 and ownership facts, the section ids, the video and its honest caption on /demo/, the tiles on /changelog/, every feature placed once, no video or poster on the home page (`wb01.spec.ts`), and the changelog's version order read from its Releases list.
+- D-1842: motion that tells the story, in CSS with transforms and a stroke dash only, all off under reduced motion.
+  - **Rings:** the hero's two rings draw in on load (`pathLength` 100).
+  - **Engine orbit:** the engines' monograms orbit them once every 180 s (`EngineOrbit`: one composited layer; each monogram counter-turns to stay upright; hidden on phones). Axe flagged their letters at 70 % opacity, so they're drawn at full opacity under the mask.
+  - **Data flow:** packets move on the data-flow lines that carry data, and the line to Vibezeo's servers stays still.
+  - **Largest paint:** the hero's lead became the page's largest paint and lost its fade-in. A phone gets an 800 px demo still (`still-800`, written by `optimize-screens.py`), because the still loads before the largest paint. Without it `/` measured a 1.96 s median with runs up to 2.04 s; with it the median is 1.89 s.
+- D-1843: the docs run no script. A full Lighthouse CI run gave `/docs/` a blocking-time warning (119 ms; earlier runs gave 67–104 ms). Its only script was Next's router, kept so docs links opened in the page (D-1817), and evaluating it is the blocking task. The docs are now stripped like the marketing pages (`strip-runtime` no longer skips them), and `DocsShell` uses plain links, each at its slash URL. Pages change through the site's cross-document view transition. D-1819's loader (`defer-docs.mjs`, `/docs-boot.js`) is removed, since there's nothing left to defer. `/docs/` now has blocking time 0 and largest paint 1.81 s. `docs-nav.spec.ts` now pins the new intent: slash links, no redirect or failed request, no script on the docs, and the active link after navigating.
 
 ### Website elite pass log
 - Study: three parallel agents read 14 sites (BridgeMind, Linear, Vercel; Raycast, Warp, Zed, Cursor; Resend, Supabase, Ghostty, Tailwind CSS, Factory). Findings, the signature looks to avoid and the direction are in `docs/WEBSITE_ELITE.md`.
@@ -1227,9 +1243,24 @@ The owner (15 October): the site looks basic for a product we sell; make it feel
 
     Accessibility, best practices and SEO are 1.00 everywhere.
   - **Screens:** Playwright screenshots of every page at 1440×900 and 390×844 in both themes, before and after.
+- Phase 2 verified on the merged tree (`product-m0-m5` e67f8bb8 merged in as e48d141):
+  - **The gate:** passed in one run. TypeScript 1,418 tests (web 93, ui 411, desktop 642, api 211, remote 32, mobile 19, protocol 10), Rust 1,854, clippy on all three platforms, fmt, no protocol drift.
+  - **The site:** `build:site` (36 pages, no scripts on the docs), site Playwright 16/16, and the demo walkthrough with no errors.
+  - **Lighthouse CI:** every assertion passes, with no warnings. Medians:
+
+    | URL | Performance | LCP | TBT |
+    |---|---|---|---|
+    | `/` | 0.99 | 1.90 s | 0 ms |
+    | `/pricing/` | 1.00 | 1.65 s | 0 ms |
+    | `/download/` | 1.00 | 1.74 s | 0 ms |
+    | `/changelog/` | 1.00 | 1.66 s | 0 ms |
+    | `/docs/` | 0.99 | 1.81 s | 0 ms |
+
+  - **Unexplained once:** `docs-nav.spec.ts` failed one time, in the run right after a rebuild, before I could read why. It passed in 11 reruns and in the final suite. If it recurs, its assertion names the failing request.
+
 
 ## M15 · F-WB-06 Blog (`site-blog`)
-Built on branch `site-blog` from `chain19` (the owner's request of 15 October: a premium blog on vibezeo.com). Decisions D-1850 to D-1869 (D-1850 to D-1863 used). Research, plan and the owner's how-to: `docs/BLOG.md`.
+Built on branch `site-blog` from `chain19` (the owner's request of 15 October: a premium blog on vibezeo.com). Decisions D-1850 to D-1869 (D-1850 to D-1864 used). Research, plan and the owner's how-to: `docs/BLOG.md`.
 - [x] F-WB-06 Blog (P2): `/blog/` (newest post featured, then the rest), `/blog/<slug>/`, `/blog/tags/<tag>/` and `/blog/feed.xml` (Atom). Posts are files: `apps/web/content/blog/<slug>.mdx` or `.md`, frontmatter validated at build time; `pnpm --filter web new-post "<title>"` writes a draft. Two seed posts, checked against 0.7.2 on Linux on the Free plan: "Introducing Vibezeo" (from the site's copy and the docs) and "What's new in 0.7.2" (from CHANGELOG.md).
 
 ### F-WB-06 decisions
@@ -1250,6 +1281,8 @@ Built on branch `site-blog` from `chain19` (the owner's request of 15 October: a
 
 - D-1863: the blog moved onto the elite pass's system after merging `site-elite` (531c8f2; foundation e82c457, D-1830 to D-1840). Shared files are unchanged but for the Blog links (`nav.ts`), the sitemap and the routes. Covers and in-body figures sit in the bezel (`frame`, `frame-screen`). Related, newer and older cards, code blocks and the empty state are `surface` cards that lift with `surface-hover`. The subscribe card is a lit surface with `bg-lens`, its own `Orbit` and `siteButton` primary and secondary. Headings use `text-sheen`. The post's title block sits under the rings' light: `bg-lens` and an `Orbit`, clipped with `overflow-x: clip`, because `hidden` would break the sticky contents list. Hairlines are `border-line` and `horizon`, and tags are the mono `Tag` look, as links. Inline code, keys and tables follow the docs' prose. A cover may name the build it shows (`cover.build`, for example 0.7.2): it then carries the bezel's `Vibezeo 0.7.2 · Linux` label, as every capture does (D-1834). `@2x` AVIF and WebP beside it are offered through `srcset` (D-1838). The intro post's cover is now the real 0.7.2 Code mode capture (D-1838), replacing the 0.1.0 one. Small mono labels use `text-fg-muted`, not `-subtle`, which failed AA at 11 px. The featured post's text doesn't use `reveal`: it sits at the fold, and Lighthouse sampled it mid-fade (accessibility 0.96).
 
+- D-1864: a blog cover wider than 800 px gets an 800 px AVIF and WebP for phones (`<name>-800.*`, written by `optimize-screens.py` for `public/blog/*/`, found by `lib/blog/posts.ts` like the `@2x` copies), as the demo still does (D-1842). After phase 2 of the elite pass, every page's largest paint rose about 150 ms, and the blog's crossed its budget (2.11 s). It's the cover: 46 KB of AVIF at 1x on a phone, plus the mono font before it. With the 31 KB phone copy it measures 1.96 s.
+
 ### F-WB-06 log
 - Spec first: F-WB-06 (P2) in PRODUCT_SPEC §4.17 with eight acceptance criteria, and the routes in ARCHITECTURE. Tests from them: `app/blog/blog.test.tsx` (14 tests), `e2e-site/blog.spec.ts` (4), plus the blog URLs in `routes.test.ts`, `wb01.spec.ts` and `site-quality.spec.ts`.
 - Research: two subagents read the blogs of Linear, Vercel, Raycast, Warp, Zed, Cursor, Supabase, Resend, Tailwind CSS and Anthropic's engineering posts. BridgeMind's site blocks automated visitors, and no blog of theirs turned up. The findings are recorded as patterns only, in `docs/BLOG.md`.
@@ -1257,6 +1290,12 @@ Built on branch `site-blog` from `chain19` (the owner's request of 15 October: a
 - Reading extras and motion (D-1859 to D-1862), after the owner's go-ahead: web vitest 106/106, the gate, site Playwright 22 of 23 (only `/privacy/`'s 320 px overflow, as before), and Lighthouse CI with every assertion passing.
 - Merged `site-elite` (531c8f2) and moved the blog onto its system (D-1863). Two conflicts, both additive: BUILD_LOG, where both sections are kept, and `optimize-screens.py`, where the elite pass's 2× masters and the blog's sources are kept. Web vitest 113/113, `build:site` (strip-runtime, defer-docs, check-routes: 43 pages), site Playwright 23/23 (the elite pass fixed `/privacy/` at 320 px). Lighthouse CI passed every assertion, median of 3: `/blog/` and the intro post 0.99/1/1/1, CLS 0, LCP 1.96 s. Screenshots at 1440×900 and 390×844, in light and dark. One bug was found and fixed this way: the post's Orbit widened the page to 915 px on a phone, before `overflow-x: clip`.
 - Merged `product-m0-m5` (c6f2772, the chain20 batch, which carries `site-elite` 6bf8d49). One conflict, in BUILD_LOG's section order: the elite log's final checks come first, then this section. On the merged tree: web lint, web vitest 113/113, `build:site` (43 pages), site Playwright 24/24 (the 320 px check passes on every blog page), and Lighthouse CI with every assertion passing and no warnings. Medians: `/blog/` and the intro post 0.99/1/1/1, LCP 1.96 s, TBT 0 ms, CLS 0. Then the gate.
+- Merged `site-elite` 366184f (phase 2: `EngineOrbit`, `Orbit`'s `draw`, docs with no script, D-1841 to D-1843). Three conflicts, all additive: BUILD_LOG's order; `strip-runtime.mjs`, where the docs are no longer skipped and the allowlist hook stays; and `optimize-screens.py`, where phase 2's phone widths and the blog's sources both stay. The blog already uses the site's cross-document view transition, and names each post's title on top of it. On the merged tree:
+  - web lint, and web vitest 112/112 (phase 2 removed one of its own);
+  - `build:site` (43 pages);
+  - site Playwright 24/24;
+  - Lighthouse CI, every assertion passing. `/blog/` and the intro post are 0.99/1/1/1, LCP 1.96 s, after D-1864 (2.11 s before). `/` is 1.97 s, varying between runs from 1.96 to 2.05 s.
+  - Then the gate.
 
 ## M16 · F-CN-06 persona and memory, F-CN-07 wake phrase
 Built on branch `m16a-persona-wake` (from `product-m0-m5`), alongside the Conductor-core session (`m16a-conductor`: F-CN-01…04, F-CN-08). Decisions are numbered from D-1200.

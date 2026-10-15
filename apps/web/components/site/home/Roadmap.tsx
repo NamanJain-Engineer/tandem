@@ -6,6 +6,7 @@ export function Roadmap() {
   return (
     <Section
       id="roadmap"
+      divider
       eyebrow="Roadmap"
       title="What we're building next"
       lead="None of this is in the download yet. It's the order we're working in."

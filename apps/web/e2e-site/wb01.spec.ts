@@ -30,17 +30,21 @@ test("F-WB-01 AC2 F-WB-02 F-WB-06 no page (docs included) requests another origi
   expect(await context.cookies()).toEqual([]);
 });
 
-test("F-WB-01 AC1 the video's poster loads only as the video nears the screen (D-1816)", async ({ page }) => {
+test("F-WB-01 AC1 the home page loads no video or poster, and /demo/ loads none of the video until it's played (D-1816, D-1841)", async ({
+  page,
+}) => {
   const asked: string[] = [];
   page.on("request", (r) => asked.push(new URL(r.url()).pathname));
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-  const video = page.locator("#demo video");
-  expect(await video.getAttribute("poster")).toBeNull();
+  expect(await page.locator("video").count()).toBe(0);
   expect(asked).not.toContain(VIDEO.poster);
-  await video.scrollIntoViewIfNeeded();
+  await page.goto("/demo/");
+  await page.waitForLoadState("networkidle");
+  const video = page.locator("#video video");
+  await expect(video).toHaveAttribute("preload", "none");
   await expect(video).toHaveAttribute("poster", VIDEO.poster);
-  await expect.poll(() => asked.includes(VIDEO.poster)).toBe(true);
+  expect(asked.filter((p) => /\.(webm|mp4)$/.test(p))).toEqual([]);
 });
 
 for (const [os, ua, says] of [

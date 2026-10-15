@@ -1,5 +1,7 @@
 import { Badge } from "@tandem/ui/components/Badge";
 import type { Metadata } from "next";
+import { ReleaseBento } from "../../components/site/home/ReleaseBento";
+import { Roadmap } from "../../components/site/home/Roadmap";
 import { PageHero } from "../../components/site/PageHero";
 import { Section } from "../../components/site/Section";
 import { SiteFrame } from "../../components/site/SiteFrame";
@@ -43,6 +45,8 @@ export default function ChangelogPage() {
           </>
         }
       />
+
+      <ReleaseBento />
 
       <section aria-labelledby="releases-title" className="bg-page pb-(--site-section-y)">
         <div className="container-site flex flex-col gap-10">
@@ -101,6 +105,8 @@ export default function ChangelogPage() {
           </ol>
         </div>
       </section>
+
+      <Roadmap />
 
       <Section id="milestones" tone="raised" eyebrow="Milestones" title="How it was built">
         <ol className="grid gap-4 md:grid-cols-2">

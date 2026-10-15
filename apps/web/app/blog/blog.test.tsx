@@ -219,19 +219,26 @@ describe("blog (F-WB-06)", () => {
     const s = html(<PostLayout post={shot} toc={[]}>x</PostLayout>);
     expect(s).toContain("Vibezeo 0.7.2 · Linux");
     expect(s).toContain('srcSet="/blog/shot/app.avif 1440w, /blog/shot/app@2x.avif 2880w"');
+    // Phones take an 800 px copy when there is one (D-1864).
+    const phone = post("shot", "2026-10-02", ["release"], {
+      cover: { src: "/blog/shot/app.png", alt: "The app", width: 1440, height: 900, retina: true, narrow: true },
+    });
+    expect(html(<PostLayout post={phone} toc={[]}>x</PostLayout>)).toContain(
+      'srcSet="/blog/shot/app-800.avif 800w, /blog/shot/app.avif 1440w, /blog/shot/app@2x.avif 2880w"',
+    );
     expect(s).toContain('data-build="0.7.2"');
   });
 
   it("F-WB-06 a cover's build is a version, and its 2x files are found beside it", () => {
     const pub = mkdtempSync(join(tmpdir(), "blog-pub-"));
     mkdirSync(join(pub, "blog", "my-post"), { recursive: true });
-    for (const f of ["cover.png", "cover@2x.avif", "cover@2x.webp"]) writeFileSync(join(pub, "blog", "my-post", f), "");
+    for (const f of ["cover.png", "cover@2x.avif", "cover@2x.webp", "cover-800.avif", "cover-800.webp"]) writeFileSync(join(pub, "blog", "my-post", f), "");
     const cover = (build: string) => `{ src: /blog/my-post/cover.png, alt: The app, width: 1440, height: 900, build: ${build} }`;
-    expect(parsePost("my-post.mdx", front({ cover: cover("0.7.2") }), pub).cover).toMatchObject({ build: "0.7.2", retina: true });
+    expect(parsePost("my-post.mdx", front({ cover: cover("0.7.2") }), pub).cover).toMatchObject({ build: "0.7.2", retina: true, narrow: true });
     expect(() => parsePost("my-post.mdx", front({ cover: cover("latest") }), pub)).toThrow(/cover\.build/);
     // The intro's cover is the real capture the home page shows, labelled with its build.
     const intro = POSTS.find((p) => p.slug === "introducing-vibezeo");
-    expect(intro?.cover).toMatchObject({ build: SCREENS.codeMode.build, retina: true });
+    expect(intro?.cover).toMatchObject({ build: SCREENS.codeMode.build, retina: true, narrow: true });
   });
 
   it("F-WB-06 AC4 a tag page lists exactly the posts with that tag", async () => {

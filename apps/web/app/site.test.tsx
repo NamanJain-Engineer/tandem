@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { HERO, OWNERSHIP } from "../lib/home";
 import { VIDEO } from "../lib/media";
 import { PLANS } from "../lib/pricing";
 import { MILESTONES, PROGRESS } from "../lib/progress";
@@ -56,14 +57,20 @@ const PAGES = {
 };
 
 describe("public site", () => {
-  it("F-WB-01 home shows the tagline, the dev status, every engine and a way to get in touch", () => {
+  it("F-WB-01 home leads with ownership, shows the dev status, every engine and a way to get in touch (D-1841)", () => {
     const h = html(<HomePage />);
-    expect(h).toContain(SITE.tagline);
+    for (const line of HERO.title) expect(h).toContain(line);
+    for (const o of OWNERSHIP) expect(h).toContain(o.text);
     expect(h).toContain(`Released · ${RELEASE.version} for Linux`);
     for (const e of ENGINES) expect(h).toContain(`>${e}<`);
     expect(h).toContain(`mailto:${SITE.contactEmail}`);
-    for (const id of ["demo", "claude", "features", "engines", "roadmap", "pricing", "team", "faq"])
+    for (const id of ["try", "principles", "engines", "features", "capabilities", "claude", "team", "pricing", "faq"])
       expect(h).toContain(`id="${id}"`);
+    // The roadmap and the release tiles live on /changelog/, the video on /demo/.
+    for (const id of ["roadmap", "new", "demo"]) expect(h).not.toContain(`id="${id}"`);
+    const log = html(<ChangelogPage />);
+    for (const id of ["roadmap", "new"]) expect(log).toContain(`id="${id}"`);
+    expect(log).toContain("None of this is in the download yet");
   });
 
   it("F-WB-01 the founder is named on the home and About pages, and Terms and Privacy name who runs the site", () => {
@@ -120,14 +127,15 @@ describe("public site", () => {
     expect(h).toContain(`href="/changelog/"`);
   });
 
-  it("F-WB-01 the demo video is a recording of the real app that ships with the site", () => {
-    const h = html(<HomePage />);
+  it("F-WB-01 the demo video is a recording of the real app that ships with the site, on /demo/ (D-1841)", () => {
+    const h = html(<DemoPage />);
     expect(h).toMatch(/<video[^>]*controls/);
     expect(h).toContain("Watch it run (1 min)");
-    // Its poster is set by the demo loader as it nears the screen: a `poster`
-    // attribute would download with the page (D-1816).
-    expect(h).not.toMatch(/<video[^>]*\sposter=/);
-    expect(h).toContain(`data-poster="${VIDEO.poster}"`);
+    expect(html(<HomePage />)).toContain('href="/demo/#video"');
+    // It loads nothing until it's played and below the fold; its poster
+    // waits for the browser's lazy loading of the still above it.
+    expect(h).toMatch(/<video[^>]*preload="none"/);
+    expect(h).toContain(`poster="${VIDEO.poster}"`);
     expect(existsSync(join(import.meta.dirname, `../public${VIDEO.poster}`))).toBe(true);
     // It has sound, so it doesn't start muted, and it says what's sped up or illustrated.
     expect(h).not.toMatch(/<video[^>]*muted/);
@@ -138,7 +146,6 @@ describe("public site", () => {
       expect(existsSync(join(import.meta.dirname, `../public/screens/${file}`)), file).toBe(true);
     }
   });
-
   it("F-WB-01 download offers only the builds that exist, with checksums and install steps", () => {
     const h = html(<DownloadPage />);
     expect(DOWNLOADS.map((d) => d.os)).toEqual(["macos", "windows", "linux"]);
