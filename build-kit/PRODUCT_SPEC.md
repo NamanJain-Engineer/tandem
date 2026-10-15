@@ -1481,7 +1481,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 - **Action** (Settings › Teammates › Runaway guard › When a limit is reached): **Notify me** (default), or **Pause the agent**, which pauses it as if Pause were clicked on the card.
 - **Pause:**
   1. Vibezeo sends the engine's interrupt key from the registry (`interrupt`, `\u001b` for Claude Code and Codex). The engine stops its turn by itself, and the agent waits for input.
-  2. If the agent still reports Working 5 s later, Vibezeo stops its process group (SIGSTOP on Linux and macOS, behind the `ProcessControl` trait). The card then reads "Paused" with **Resume**, which continues it (SIGCONT). On Windows there's no stop step: the card says "Couldn't pause: send it a message or stop it."
+  2. If the agent still reports Working 5 s later, Vibezeo stops its process group (SIGSTOP on Linux and macOS, behind the `ProcessControl` trait). When the agent runs as a job of the pane's shell, the shell stops first and continues last, so it never sees its job stop and never takes the terminal back (D-857). The card then reads "Paused" with **Resume**, which continues it (SIGCONT). On Windows there's no stop step: the card says "Couldn't pause: send it a message or stop it."
      Only an agent on this computer is stopped. An SSH pane's local process is `ssh`, and stopping it would pause the connection while the agent on the host carried on, so there the card says "Couldn't pause an agent on an SSH host: send it a message or stop it." (D-855).
   - Closing a paused pane or quitting Vibezeo continues and then ends the process, as usual (F-CD-03). It's never left stopped.
   - Pause never switches accounts or engines, and never sends a prompt.
@@ -1491,7 +1491,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 
 **Acceptance:**
 1. With the defaults, an agent pane working for 91 minutes raises one notification "{name} has been working for 90 min" and shows the guard card. Nothing is paused or typed into the pane.
-2. With "Pause the agent" and a subagent limit of 20, the 20th subagent report pauses the session: the interrupt key reaches the pane, and an agent still Working 5 s later is stopped. Resume continues it.
+2. With "Pause the agent" and a subagent limit of 20, the 20th subagent report pauses the session: the interrupt key reaches the pane, and an agent still Working 5 s later is stopped. Resume continues it, and the agent keeps its pane: it's still Working there, not handed back to a shell.
 3. Three turns in a row that end with the same screen raise "may be going in circles". Two in a row, or three that differ, raise nothing.
 4. A session whose share of its account's tokens in the last hour, times its window's rise, reaches 30 points trips the window limit. An account without windows never trips it.
 5. Dismiss keeps a limit quiet until the agent's next prompt, and each limit trips at most once per turn.

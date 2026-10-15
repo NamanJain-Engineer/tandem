@@ -19,7 +19,7 @@ use tandem_core::source::SourceRef;
 use tandem_core::status::{AgentStatus, StatusRecord};
 use tandem_core::{ErrorCode, IpcError};
 use tandem_engines::guard::{GuardLimits, PaneGuard, Trip};
-use tandem_pty::suspend::ProcessControl;
+use tandem_pty::suspend::{PausedJob, ProcessControl};
 use tauri::{AppHandle, Manager};
 use ts_rs::TS;
 
@@ -260,7 +260,7 @@ pub struct RunawayService {
     guardian: Mutex<Guardian>,
     cards: Mutex<HashMap<String, GuardCard>>,
     /// Stopped panes' process groups, for Resume.
-    stopped: Mutex<HashMap<String, i32>>,
+    stopped: Mutex<HashMap<String, PausedJob>>,
     control: Arc<dyn ProcessControl>,
 }
 
@@ -328,8 +328,8 @@ impl RunawayService {
     }
 
     fn resume_group(&self, pane: &str) -> Option<Result<(), tandem_pty::suspend::SuspendError>> {
-        let pgid = self.stopped.lock().ok()?.remove(pane)?;
-        Some(self.control.cont(pgid))
+        let job = self.stopped.lock().ok()?.remove(pane)?;
+        Some(tandem_pty::suspend::resume(self.control.as_ref(), &job))
     }
 
     /// Resume: continues a stopped agent; the card goes.
@@ -383,18 +383,24 @@ impl RunawayService {
             AfterGrace::CantPause(reason) => {
                 self.update(pane, GuardCardState::CantPause, Some(reason.into()))
             }
-            AfterGrace::Stop(pgid) => match self.control.stop(pgid) {
-                Ok(()) => {
-                    if let Ok(mut s) = self.stopped.lock() {
-                        s.insert(pane.to_string(), pgid);
+            AfterGrace::Stop(pgid) => {
+                match state
+                    .terminals
+                    .pty
+                    .pause_job(pane, pgid, self.control.as_ref())
+                {
+                    Ok(job) => {
+                        if let Ok(mut s) = self.stopped.lock() {
+                            s.insert(pane.to_string(), job);
+                        }
+                        self.update(pane, GuardCardState::Paused, None);
                     }
-                    self.update(pane, GuardCardState::Paused, None);
+                    Err(e) => {
+                        tracing::warn!(code = "runaway.pause_failed", error = %e, "couldn't pause an agent");
+                        self.update(pane, GuardCardState::CantPause, Some(CANT_PAUSE.into()));
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!(code = "runaway.pause_failed", error = %e, "couldn't pause an agent");
-                    self.update(pane, GuardCardState::CantPause, Some(CANT_PAUSE.into()));
-                }
-            },
+            }
         }
         Ok(())
     }
@@ -958,14 +964,18 @@ mod tests {
             reason: None,
         };
         svc.set_card("pn_1", Some(card.clone()));
-        svc.stopped
-            .lock()
-            .expect("lock")
-            .insert("pn_1".into(), 4242);
+        svc.stopped.lock().expect("lock").insert(
+            "pn_1".into(),
+            PausedJob {
+                agent: 4242,
+                shell: Some(4240),
+            },
+        );
         svc.dismiss("pn_1");
+        // The agent first, then its shell (D-857).
         assert_eq!(
             control.calls.lock().expect("lock").as_slice(),
-            &[("cont", 4242)]
+            &[("cont", 4242), ("cont", 4240)]
         );
         assert!(svc.list().is_empty());
         assert_eq!(rx.try_recv().expect("event").name, "runaway:changed");
@@ -975,7 +985,7 @@ mod tests {
         assert!(svc.list().is_empty());
         assert_eq!(
             control.calls.lock().expect("lock").len(),
-            1,
+            2,
             "no stray signal"
         );
     }

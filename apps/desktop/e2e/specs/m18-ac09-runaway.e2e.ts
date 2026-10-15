@@ -1,5 +1,14 @@
 import { $, browser } from "@wdio/globals";
-import { addFolder, freshOffline, invoke, paneIds, sendToPane, split, waitForPaneText } from "../support/app";
+import {
+  addFolder,
+  freshOffline,
+  invoke,
+  paneIds,
+  paneStatus,
+  sendToPane,
+  split,
+  waitForPaneText,
+} from "../support/app";
 
 type Item = { kind: string; title: string; source: { type: string; paneId?: string } };
 type Page = { items: Item[] };
@@ -73,6 +82,23 @@ describe("E2E-M18-AC09 runaway guard", function () {
     await browser.waitUntil(async () => (await bannerState(pane)) === "paused", { timeout: 20_000 });
     await $(`${banner(pane)} [data-testid="guard-resume"]`).click();
     await $(banner(pane)).waitForExist({ reverse: true, timeout: 5_000 });
+    // The agent still has its pane (D-857). Stopping only its job let the
+    // pane's shell take the terminal back and hand the pane to a new shell,
+    // with the agent left running in the background.
+    await browser.pause(1_500);
+    expect(await paneStatus(pane)).toBe("working");
+    await invoke("settings_set", { key: "runaway_action", value: "notify" });
+  });
+
+  // Nothing of this spec's outlives it: the fake agent keeps working for a
+  // minute after /subagents, and the limits go back to their defaults.
+  after(async () => {
+    for (const w of await invoke<Array<{ id: string; parentId: string | null }>>("workspace_list"))
+      if (!w.parentId) await invoke("workspace_remove", { id: w.id });
+    await invoke("settings_set", {
+      key: "runaway_guard",
+      value: { workingMinutes: 90, windowPoints: 30, subagents: 20, circles: true },
+    });
     await invoke("settings_set", { key: "runaway_action", value: "notify" });
   });
 });
