@@ -1289,6 +1289,39 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 1. Typing "hello\x03world" via the typing API sends "helloworld" then CR as two writes.
 2. A pane in the waiting state refuses a typed prompt with the message.
 
+#### F-EN-07 One instructions file for every engine (P2)
+**Story:** Each engine reads its own instructions file, so a repository's rules drift apart or reach only one engine. I keep one file, `AGENTS.md`, and every engine I use reads it.
+
+**Behavior:**
+- **The instructions table** is per engine in the registry (`instructions`), not in code, because engines change it. Each entry gives the files the engine reads at the repository root, whether it reads `AGENTS.md` itself, and the one-line pointer it accepts. Checked against each vendor's own documentation on 15 October 2026 (D-2400):
+  - Claude Code: `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`. It reads `AGENTS.md` only when none of those exist. Pointer: a `CLAUDE.md` holding the import `@AGENTS.md`.
+  - Codex: `AGENTS.override.md`, else `AGENTS.md`. It reads `AGENTS.md` itself.
+  - Gemini CLI: `GEMINI.md`. Pointer: a `GEMINI.md` holding the import `@AGENTS.md`.
+  - Copilot CLI: `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`, combined. It reads `AGENTS.md` itself.
+  - Cursor Agent: `.cursor/rules/`, `AGENTS.md` and `CLAUDE.md`. It reads `AGENTS.md` itself.
+  - An engine without an entry is **Unknown**: listed, never written for.
+- **The panel (UI-160)**, "Instructions…" in a local folder's menu in the rail, for its repository's main checkout (or the folder, when it isn't a repository):
+  - One row per installed engine: the files it reads that exist, and what it reads in the end ("Reads AGENTS.md", "Reads CLAUDE.md, not AGENTS.md", "Nothing yet", "Unknown").
+  - One row per instructions file that exists: its size, and whether git tracks it, ignores it, or neither ("Not committed").
+  - Each file that differs from `AGENTS.md` shows its diff against it.
+  - Files over 1 MB, or that are symbolic links or point outside the checkout, are listed and never read or written.
+  - Empty (no instructions file and no engine installed), loading and error states. Remote (SSH, WSL) workspaces say "Instructions are checked for folders on this computer".
+- **Use one file for all** makes `AGENTS.md` the source:
+  - When there's no `AGENTS.md`, the user picks the file whose text becomes it (`CLAUDE.md` first, if it exists).
+  - Each installed engine with a pointer gets its pointer file, replacing that file's text. An engine that reads `AGENTS.md` itself gets nothing, and neither does an Unknown one.
+  - The plan lists every file it would create or replace, with its diff, and writes nothing until the user confirms. A file whose text isn't already in `AGENTS.md` is marked "Its text will be replaced".
+  - On confirm, each file is written atomically. Each replaced file is first copied to `$DATA/instructions-backup/<change>/`, and **Undo** puts every file of that change back byte for byte. Vibezeo never commits, and never edits `.gitignore`.
+  - Only the main window can write (F-TL-06 rule 5).
+- **Personal files:** an instructions file git ignores (such as `CLAUDE.local.md`) is listed as "Not in new worktrees" unless a `copy` pattern in `.vibezeo/worktree.json` (F-WT-01) matches it. **Copy into worktrees** adds its path to `copy`. That changes only `copy`: the file's commands keep the trust they had.
+
+**Acceptance:**
+1. In a repository with `CLAUDE.md` and `AGENTS.md` that differ, the panel lists both, says Claude Code reads `CLAUDE.md` (not `AGENTS.md`) and Codex reads `AGENTS.md`, and shows the diff.
+2. With Claude Code and Gemini CLI installed, "Use one file for all" proposes a `CLAUDE.md` of `@AGENTS.md` and a new `GEMINI.md` of `@AGENTS.md`, and nothing is written until the user confirms. After confirming, both files hold the pointer; Undo restores the old `CLAUDE.md` byte for byte and removes the new `GEMINI.md`.
+3. With `CLAUDE.md` and no `AGENTS.md`, the plan creates `AGENTS.md` with `CLAUDE.md`'s text, then makes `CLAUDE.md` the pointer.
+4. A git-ignored `CLAUDE.local.md` is listed as "Not in new worktrees". "Copy into worktrees" adds `CLAUDE.local.md` to `.vibezeo/worktree.json`'s `copy`, keeps its `setup`, and leaves its trust as it was.
+5. An engine missing from the registry's instructions table is shown as "Unknown", and nothing is written for it.
+6. A `CLAUDE.md` that's a symbolic link is listed, never written; the plan skips it and says why.
+
 ### 4.5 AC: Accounts and usage
 
 #### F-AC-01 Provider homes (P0)

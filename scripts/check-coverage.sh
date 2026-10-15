@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Every F-XX-nn in PRODUCT_SPEC is owned by exactly one milestone, and P2 IDs
-# only by M16, M17 or M18, the extras (MILESTONES §20.1, D-700, D-2440).
+# only by M16, M17 or M18, the extras (MILESTONES §20.1, D-700, D-2401, D-2440).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 tmp="$(mktemp -d)"

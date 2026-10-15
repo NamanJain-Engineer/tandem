@@ -48,6 +48,8 @@ export type WorktreeAsk =
   | { kind: "diff" | "merge" | "discard"; worktreeId: string }
   /** UI-150: the repository's worktree setup (F-WT-01). */
   | { kind: "setup"; workspaceId: string }
+  /** UI-160: which instructions file each engine reads (F-EN-07). */
+  | { kind: "instructions"; workspaceId: string }
   /** UI-153: shared files with sibling worktrees and the merge forecast (F-WT-03). */
   | { kind: "overlap"; worktreeId: string }
   /** UI-151: untrusted setup commands for new worktrees, reviewed once. */
