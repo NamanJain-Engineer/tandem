@@ -19,7 +19,7 @@ On the Free plan you can have 4 live panes and 3 workspaces; see [Accounts and l
 
 ## Worktrees
 
-**New worktree…** in a repository's menu in the rail (right-click it) makes a worktree from the repository's current commit; the launch sheet makes one per agent when you run several. Each worktree is listed under its repository, and its ⋯ menu has **Open diff**, **Open in Files**, **Merge into…**, **Create pull request**, **Check overlap…**, **Worktree setup…** and **Discard worktree…**. Worktrees need a local git repository with at least one commit.
+**New worktree…** in a repository's menu in the rail (right-click it) makes a worktree from the repository's current commit; the launch sheet makes one per agent when you run several. Each worktree is listed under its repository, and its ⋯ menu has **Open diff**, **Open in Files**, **Merge into…**, **Create pull request**, **Check overlap…**, **Ask for a second opinion…**, **Worktree setup…** and **Discard worktree…**. Worktrees need a local git repository with at least one commit.
 
 ### Setup for new worktrees
 
@@ -33,6 +33,14 @@ A new worktree has only the files git tracks: no `.env`, no local config, no ins
 ### Review comments to the agent
 
 In **Open diff**, hover a line and choose the comment button to leave a comment on it; removed lines can be commented on too. The comments collect at the bottom of the diff, where you can edit or remove them. **Send to agent** types them into the agent running in that worktree's pane as one message, with each file, line and the line's text, then clears them; with several agents there, choose which one. If no agent is running there, **Copy review** puts the same text on the clipboard. Comments stay until you send them or quit Vibezeo.
+
+### Second opinion
+
+**Ask for a second opinion…**, in a worktree's ⋯ menu and at the top of **Open diff**, has another engine read the worktree's changes and leave line comments. Pick the reviewer and, if it has several, the account. The sheet says whose plan the review uses. You can also say what the task was. Only Thread engines (Claude Code, Codex and ACP engines) can review, because they can run read-only; terminal-only engines are listed but can't be picked. The default is an engine that no agent in the worktree is running.
+
+The reviewer runs as a **Read only** thread in the worktree, named after its branch (`Second opinion: tandem/fix-auth`). You can open it from the review bar while it works. Any edit it tries is denied. It gets the branch, your task and the diff, up to 150,000 characters. It runs on your own engine and account, the same as any thread, and nothing else is sent anywhere.
+
+When it finishes, each finding on a line the diff shows becomes a comment on that line. Everything else it said, including findings on lines the diff doesn't show, goes into one **General** comment at the top. Nothing is dropped. Edit or remove them like your own comments, then **Send to agent**. One review runs per worktree at a time.
 
 ### Overlap check and merge forecast
 

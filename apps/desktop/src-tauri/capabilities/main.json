@@ -148,6 +148,7 @@
     "allow-workspace-remove",
     "allow-lane-create",
     "allow-lane-diff",
+    "allow-lane-second-opinion",
     "allow-lane-merge",
     "allow-lane-overlap",
     "allow-lane-forge",

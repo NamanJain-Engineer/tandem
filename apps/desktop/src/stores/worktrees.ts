@@ -47,6 +47,8 @@ export type WorktreeAsk =
   | { kind: "setup"; workspaceId: string }
   /** UI-153: shared files with sibling worktrees and the merge forecast (F-WT-03). */
   | { kind: "overlap"; worktreeId: string }
+  /** F-WT-05: another engine's read-only review of the diff. */
+  | { kind: "opinion"; worktreeId: string }
   /** UI-151: untrusted setup commands for new worktrees, reviewed once. */
   | { kind: "review"; worktreeIds: string[]; state: SetupState }
   | null;
@@ -239,7 +241,8 @@ export async function prepareWorktree(laneId: string): Promise<void> {
   if (!state.config?.setup) return;
   if (state.trusted) {
     const ran = await runWorktreeSetup(laneId);
-    if (!ran.ok) notify({ tone: "error", title: t("worktree.setup.runFailed", { reason: ran.error.message }) });
+    if (!ran.ok)
+      notify({ tone: "error", title: t("worktree.setup.runFailed", { reason: ran.error.message }) });
     return;
   }
   const ask = useWorktrees.getState().ask;

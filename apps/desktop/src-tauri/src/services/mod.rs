@@ -53,6 +53,7 @@ pub mod remote_mcp;
 pub mod restore;
 pub mod routine_host;
 pub mod routines;
+pub mod second_opinion;
 pub mod simulator;
 pub mod staging;
 pub mod status;

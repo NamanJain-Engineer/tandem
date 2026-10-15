@@ -232,7 +232,7 @@ E2E-M17-WT-1…3: setup, review, overlap.
 ### M18 · Next features (in progress) · from `docs/NEXT_FEATURES.md`
 The 15 October research ranked 21 features and six bold bets beyond the 165 (evidence in `docs/COMPETITIVE_ANALYSIS.md`). Its top picks are being built, each with its PRODUCT_SPEC entry first, tests from the criteria, an E2E spec (`m18-*.e2e.ts`) and its docs page:
 - Engines (`m16d-teammate-extras`, D-2400 on): [ ] F-EN-07 One instructions file for every engine · [ ] F-EN-09 Engine catalog refresh · [ ] F-EN-08 Engine versions and updates under your control · [ ] F-TH-17 Session library across engines
-- Review loop (`m16a-conductor`, D-2420 on): [ ] F-WT-05 Second opinion from another engine · [ ] F-DB-04 Review queue · [ ] F-CN-09 Walk-and-review (bold bet B4)
+- Review loop (`m16a-conductor`, D-2420 on): [x] F-WT-05 Second opinion from another engine · [ ] F-DB-04 Review queue · [ ] F-CN-09 Walk-and-review (bold bet B4)
 - Worktrees (`competitive-gaps`, D-2440 on): [ ] F-WT-06 Worktree runtime (ports, env, Compose, `<slug>.localhost`) · [ ] F-WT-09 Previews per worktree (bold bet B2)
 - Usage (`product-research`, D-2460 on): [ ] F-AC-08 Usage forecast · [ ] F-AC-09 Runaway guard · [ ] F-RT-06 The Night Shift (bold bet B1)
 - Reliability (`perf-open`, D-2480 on, after §0.3's memory and first-frame work): [ ] F-SH-14 Keep agents running when the window closes

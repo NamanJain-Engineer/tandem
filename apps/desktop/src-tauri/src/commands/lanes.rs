@@ -259,3 +259,32 @@ fn local_review(window: &WebviewWindow) -> Result<LocalReview, IpcError> {
         )
     })
 }
+
+/// F-WT-05: a read-only review of the worktree's diff by another engine.
+#[tauri::command]
+pub async fn lane_second_opinion(
+    state: State<'_, AppState>,
+    lane_id: WorkspaceId,
+    engine_id: String,
+    account_id: Option<tandem_core::ids::AccountId>,
+    task: Option<String>,
+) -> Result<crate::services::second_opinion::SecondOpinionStarted, IpcError> {
+    use crate::services::second_opinion::{self as so, AppHost, StartArgs};
+    let host = std::sync::Arc::new(AppHost {
+        store: state.store.clone(),
+        threads: state.threads.clone(),
+        engines: state.terminals.engines.clone(),
+    });
+    so::start(
+        host,
+        state.bus.clone(),
+        state.second_opinions.clone(),
+        StartArgs {
+            lane: lane_id,
+            engine: engine_id,
+            account: account_id,
+            task,
+        },
+    )
+    .await
+}

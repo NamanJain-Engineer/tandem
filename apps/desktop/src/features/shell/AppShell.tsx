@@ -43,6 +43,7 @@ import { DiagnosticsPanel } from "../diagnostics/DiagnosticsPanel";
 import { OrphansDialog } from "../restore/OrphansDialog";
 import { followEngines } from "../../stores/engines";
 import { followLimits } from "../../stores/limits";
+import { followSecondOpinions } from "../code/SecondOpinion";
 import { followContexts } from "../../stores/contexts";
 import { followUsage } from "../../stores/usage";
 import { followStatus } from "../../stores/status";
@@ -83,6 +84,7 @@ export function AppShell() {
   useEffect(followHealth, []);
   useEffect(followEngines, []);
   useEffect(followLimits, []);
+  useEffect(followSecondOpinions, []);
   useEffect(followAuto, []);
   useEffect(followConductor, []);
   useEffect(followContexts, []);

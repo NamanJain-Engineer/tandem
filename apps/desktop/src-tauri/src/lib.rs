@@ -160,6 +160,7 @@ macro_rules! app_commands {
             commands::handoff::handoff_to_thread,
             commands::lanes::lane_create,
             commands::lanes::lane_diff,
+            commands::lanes::lane_second_opinion,
             commands::lanes::lane_merge,
             commands::lanes::lane_overlap,
             commands::lanes::lane_forge,
