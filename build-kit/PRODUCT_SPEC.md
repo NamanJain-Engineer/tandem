@@ -3071,6 +3071,38 @@ Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1�
 1. With `origin` at `git@gitlab.com:team/app.git`, the menu reads "Create merge request" and the pane receives `glab mr create`.
 2. With `origin` at `https://github.com/team/app.git`, nothing changes from F-CD-15.
 
+#### F-WT-05 Second opinion from another engine (P2)
+**Story:** Before I send a worktree's changes back or merge them, another engine on my other account reads the diff and leaves line comments I can edit and pass on, so the models check each other.
+
+**Behavior:**
+- **Ask for a second opinion…** is in the worktree menu and in its diff's toolbar (UI-152). With no changes it's disabled ("No changes to review").
+- The sheet picks the reviewer: one engine and account. It lists every installed engine:
+  - Thread engines (a chat adapter: Claude Code, Codex, ACP engines) can be picked. The default is one that no agent in the worktree runs.
+  - Engines the plan doesn't run in Thread mode show the Pro badge.
+  - Terminal-only engines are shown disabled with "Can't run read-only".
+  - With no pickable engine it says "Install Claude Code, Codex or an ACP engine to get a second opinion" (empty state).
+- The sheet names the account whose plan the review uses. It has an optional "What was the task?" box, and **Ask**.
+- **Ask** creates a Read only thread (F-TH-09, `access: read`) in the worktree with that engine and account. Its title is "Second opinion: <branch>". Its first message is a fixed review prompt in English, like F-WT-02's, containing:
+  - the branch;
+  - the task, if given;
+  - the diff (the worktree's changes since its base, uncommitted work included), fenced as untrusted content and cut at 150,000 characters with a note;
+  - a reply format: a `## Findings` heading with one `path:line: comment` line per finding, then `## Overall`.
+- Nothing else leaves the machine. The reviewer is the user's own engine on their own account, and Vibezeo never touches its credentials.
+- While it runs, the review bar shows "<Engine> is reviewing…" with **Open thread**. It's one reviewer per worktree at a time.
+- **When its turn ends,** the last reply is read:
+  - A line `path:line: comment` becomes a line comment in the worktree's review bar (F-WT-02). Leading list markers and backticks are ignored. The path is matched exactly, or by a unique path suffix (`b.ts` matches `src/b.ts`), and the line must be a new-side line shown in the diff. The comment quotes that line.
+  - Every other non-empty line that isn't a heading, findings that name a file or line not in the diff included (verbatim), goes into one **General** comment. Nothing is dropped.
+  - Comments list in file order with General last, and can be edited or removed like the user's own. **Send to agent** includes them, with General as its own item.
+- A reply with no comments says "<Engine> had no comments". A turn that fails or is stopped adds nothing and says "The second opinion didn't finish" with **Open thread**.
+
+**Acceptance:**
+1. On a worktree with changes, choosing Codex opens a Read only Codex thread in that worktree whose first message contains the branch, the diff and the `## Findings` and `## Overall` headings.
+2. A reply with `src/a.ts:42: handle expired tokens` and `b.ts:3: typo` (the diff shows both lines) adds two line comments to the worktree's review bar, `src/a.ts` before `src/b.ts`.
+3. Lines that don't match the format, and a finding on a line the diff doesn't show, are kept in one General comment, not dropped.
+4. A terminal-only engine is listed disabled with "Can't run read-only"; with no thread engine installed the sheet shows its empty state.
+5. The reviewer can't write: an attempted edit is denied (F-TH-09) and the worktree's files don't change.
+6. A worktree with no changes has the action disabled with "No changes to review".
+
 ---
 
 ## 5. Non-functional requirements
