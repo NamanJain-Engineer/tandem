@@ -24,7 +24,7 @@
   - the site from a fresh clone: `build:site` with `strip-runtime` and `check-routes` (36 pages, no redirects), web vitest 87/87, site Playwright 16/16, Lighthouse CI on its five URLs (every assertion passed; performance 99 on `/` with LCP 1.96 s, 97 on `/docs/` with its LCP warning at 2.42 s, 100 elsewhere), and the demo walkthrough.
   Deploying is merging `product-m0-m5` into `main` (OPERATING §7).
 - Website redesign (M15, D-1800 to D-1815): phases 1–4 and 6 of `docs/WEBSITE_BRIEF.md` (`docs-briefs`) are merged with the `chain4` batch: OS light and dark themes, marketing type, the new home page, Pricing, Download, Changelog, the inner pages and the docs, and the performance phase (marketing pages ship no framework JavaScript, D-1813; Lighthouse at 0.95 on five URLs). They reach vibezeo.com with the next release. The signed-in captures of phase 5 wait on the owner (`HUMAN_TODO.md`). See "M15 · Website redesign".
-- Website elite pass (M15, `site-elite`, D-1819 and D-1830 to D-1843; `docs/WEBSITE_ELITE.md`). The site and docs are rebuilt on a lit visual system:
+- Website elite pass (M15, `site-elite`, D-1819 and D-1830 to D-1844; `docs/WEBSITE_ELITE.md`). The site and docs are rebuilt on a lit visual system:
   - tokens for light, edges, depth, type, radii and motion;
   - the two-ring backdrop, the product bezel and site buttons;
   - a new header and footer.
@@ -35,7 +35,7 @@
   - **Motion:** the rings draw in, the engines orbit and data packets move, all in CSS.
   - **Docs:** they run no script.
 
-  The real-app captures were retaken from 0.7.2 at 2×. Lighthouse CI passes on its five URLs with no warnings: blocking time 0 ms everywhere, largest paint 1.65–1.90 s. Waiting for the coordinating session to batch it into `product-m0-m5`.
+  The real-app captures were retaken from 0.7.2 at 2×. Lighthouse CI scores 1.00 on its five URLs with no warnings: blocking time 0 ms everywhere, largest paint 1.51–1.74 s (fonts trimmed, D-1844). Waiting for the coordinating session to batch it into `product-m0-m5`.
 - M16 Conductor voice API (F-BE-08, and the API halves of F-CN-02 and F-CN-05) is on `product-m0-m5` (pull request #30, built on `m16-voice-api`); see "M16 · F-BE-08 Conductor voice API". The desktop's Conductor client (F-CN-01…04, F-CN-08: calls, the local tool executor, the HUD, the call log) is on `m16a-conductor`; see "M16 · 16A Conductor core".
 - Windows from Linux (M15, branch `windows-ready`, D-1700…D-1710): the gate runs Windows clippy (GNU target, every crate but the app); `bash scripts/windows-check.sh --msvc --wine` (in `ci:local`) checks the app for MSVC through cargo-xwin and runs the platform crates' tests under Wine; `bash scripts/build-windows-installer.sh` cross-builds an unsigned NSIS installer and checks it. Nothing has run on real Windows: Windows stays "Coming soon" until HUMAN_TODO's "M15 Windows first run" passes. Setup in OPERATING §6a.
 - Layout matches DECISIONS: 10 crates under `crates/`, Tauri crate `apps/desktop/src-tauri` (lib `tandem_app`, bin `tandem`), `apps/{api,web}`, `packages/{ui,protocol}`.
@@ -1263,6 +1263,19 @@ The owner (15 October): the site looks basic for a product we sell; make it feel
     | `/docs/` | 0.99 | 1.81 s | 0 ms |
 
   - **Unexplained once:** `docs-nav.spec.ts` failed one time, in the run right after a rebuild, before I could read why. It passed in 11 reruns and in the final suite. If it recurs, its assertion names the failing request.
+- Headroom and merges, verified on the final tree:
+  - **Merged:** `product-m0-m5` c6f27726 (D-1821's demo focus fix and its spec), then `origin/main` 0b8e7589 (D-851: website branches base on `main`; same tree, empty merge).
+  - **The gate:** passed. TypeScript 1,421 tests (web 95, ui 411, desktop 644, api 211, remote 32, mobile 19, protocol 10), Rust 1,854, clippy on all three platforms, fmt, no protocol drift.
+  - **The site:** `build:site`, site Playwright 18/18 (with D-1821's "the page stays where the visitor is" and the new anchor spec), and the demo walkthrough with no errors.
+  - **Lighthouse CI:** every URL scores 1.00 in all four categories, with no warnings. Medians:
+
+    | URL | LCP | TBT |
+    |---|---|---|
+    | `/` | 1.74 s | 0 ms |
+    | `/pricing/` | 1.51 s | 0 ms |
+    | `/changelog/` | 1.51 s | 0 ms |
+    | `/docs/` | 1.51 s | 0 ms |
+    | `/download/` | 1.59 s | 0 ms |
 ## M16 · F-CN-06 persona and memory, F-CN-07 wake phrase
 Built on branch `m16a-persona-wake` (from `product-m0-m5`), alongside the Conductor-core session (`m16a-conductor`: F-CN-01…04, F-CN-08). Decisions are numbered from D-1200.
 - [x] F-CN-06 Persona and memory (P2).
