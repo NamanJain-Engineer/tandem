@@ -163,6 +163,7 @@ function spec(
     limitPatterns: [],
     onboardingSeed: null,
     mcpNative: null,
+    instructions: null,
   };
 }
 
@@ -1111,6 +1112,13 @@ export class DemoCore {
           code: "unavailable",
           message: "The demo has no engines to launch. In the app, the teammate opens in a terminal pane.",
         };
+      // The demo's folders aren't on a disk (F-EN-07).
+      case "instructions_get":
+      case "instructions_plan":
+      case "instructions_apply":
+      case "instructions_undo":
+      case "instructions_copy_to_worktrees":
+        throw { code: "unavailable", message: "The demo has no repository files to read. In the app, this lists each engine's instructions file." };
       case "skill_sync":
         throw { code: "unavailable", message: "The demo has no engines to install skills for." };
       // A web page can't hold other pages the way the app's browser does.

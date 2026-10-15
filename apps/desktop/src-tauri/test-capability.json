@@ -9,6 +9,7 @@
     "allow-test-browser-eval",
     "allow-test-spawn-log",
     "allow-test-clock-advance",
+    "allow-test-usage-backdate",
     "allow-test-fixture-agent",
     "allow-test-notifier-calls",
     "allow-test-notifier-click",

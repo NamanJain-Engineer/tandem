@@ -1289,6 +1289,39 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 1. Typing "hello\x03world" via the typing API sends "helloworld" then CR as two writes.
 2. A pane in the waiting state refuses a typed prompt with the message.
 
+#### F-EN-07 One instructions file for every engine (P2)
+**Story:** Each engine reads its own instructions file, so a repository's rules drift apart or reach only one engine. I keep one file, `AGENTS.md`, and every engine I use reads it.
+
+**Behavior:**
+- **The instructions table** is per engine in the registry (`instructions`), not in code, because engines change it. Each entry gives the files the engine reads at the repository root, whether it reads `AGENTS.md` itself, and the one-line pointer it accepts. Checked against each vendor's own documentation on 15 October 2026 (D-2400):
+  - Claude Code: `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`. It reads `AGENTS.md` only when none of those exist. Pointer: a `CLAUDE.md` holding the import `@AGENTS.md`.
+  - Codex: `AGENTS.override.md`, else `AGENTS.md`. It reads `AGENTS.md` itself.
+  - Gemini CLI: `GEMINI.md`. Pointer: a `GEMINI.md` holding the import `@AGENTS.md`.
+  - Copilot CLI: `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`, combined. It reads `AGENTS.md` itself.
+  - Cursor Agent: `.cursor/rules/`, `AGENTS.md` and `CLAUDE.md`. It reads `AGENTS.md` itself.
+  - An engine without an entry is **Unknown**: listed, never written for.
+- **The panel (UI-160)**, "Instructions…" in a local folder's menu in the rail, for its repository's main checkout (or the folder, when it isn't a repository):
+  - One row per installed engine: the files it reads that exist, and what it reads in the end ("Reads AGENTS.md", "Reads CLAUDE.md, not AGENTS.md", "Nothing yet", "Unknown").
+  - One row per instructions file that exists: its size, and whether git tracks it, ignores it, or neither ("Not committed").
+  - Each file that differs from `AGENTS.md` shows its diff against it.
+  - Files over 1 MB, or that are symbolic links or point outside the checkout, are listed and never read or written.
+  - Empty (no instructions file and no engine installed), loading and error states. Remote (SSH, WSL) workspaces say "Instructions are checked for folders on this computer".
+- **Use one file for all** makes `AGENTS.md` the source:
+  - When there's no `AGENTS.md`, the user picks the file whose text becomes it (`CLAUDE.md` first, if it exists).
+  - Each installed engine with a pointer gets its pointer file, replacing that file's text. An engine that reads `AGENTS.md` itself gets nothing, and neither does an Unknown one.
+  - The plan lists every file it would create or replace, with its diff, and writes nothing until the user confirms. A file whose text isn't already in `AGENTS.md` is marked "Its text will be replaced".
+  - On confirm, each file is written atomically. Each replaced file is first copied to `$DATA/instructions-backup/<change>/`, and **Undo** puts every file of that change back byte for byte. Vibezeo never commits, and never edits `.gitignore`.
+  - Only the main window can write (F-TL-06 rule 5).
+- **Personal files:** an instructions file git ignores (such as `CLAUDE.local.md`) is listed as "Not in new worktrees" unless a `copy` pattern in `.vibezeo/worktree.json` (F-WT-01) matches it. **Copy into worktrees** adds its path to `copy`. That changes only `copy`: the file's commands keep the trust they had.
+
+**Acceptance:**
+1. In a repository with `CLAUDE.md` and `AGENTS.md` that differ, the panel lists both, says Claude Code reads `CLAUDE.md` (not `AGENTS.md`) and Codex reads `AGENTS.md`, and shows the diff.
+2. With Claude Code and Gemini CLI installed, "Use one file for all" proposes a `CLAUDE.md` of `@AGENTS.md` and a new `GEMINI.md` of `@AGENTS.md`, and nothing is written until the user confirms. After confirming, both files hold the pointer; Undo restores the old `CLAUDE.md` byte for byte and removes the new `GEMINI.md`.
+3. With `CLAUDE.md` and no `AGENTS.md`, the plan creates `AGENTS.md` with `CLAUDE.md`'s text, then makes `CLAUDE.md` the pointer.
+4. A git-ignored `CLAUDE.local.md` is listed as "Not in new worktrees". "Copy into worktrees" adds `CLAUDE.local.md` to `.vibezeo/worktree.json`'s `copy`, keeps its `setup`, and leaves its trust as it was.
+5. An engine missing from the registry's instructions table is shown as "Unknown", and nothing is written for it.
+6. A `CLAUDE.md` that's a symbolic link is listed, never written; the plan skips it and says why.
+
 ### 4.5 AC: Accounts and usage
 
 #### F-AC-01 Provider homes (P0)
@@ -1374,6 +1407,39 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 1. Fixture logs with 3 days of usage render correct daily totals.
 2. A malformed line is skipped, and the count shows in "N lines skipped".
 3. Non-ASCII dates and locales don't crash parsing.
+
+#### F-AC-08 Usage forecast (P2)
+**Story:** The chip tells me how full a window is. I want to know whether I'll run out before it resets, and which of my agents is spending it, so I can pace the work or move a task to another account myself.
+
+**Behavior:**
+- **Samples:** each usage reading with windows (F-AC-04) is kept in memory per account and window, for the last 2 hours and at most 120 readings. A reading whose reset time moved later, or whose percentage fell by 5 points or more, starts a new window: the earlier samples are dropped.
+- **Forecast** per window, from the readings of the last 60 minutes:
+  - **Not enough data yet:** fewer than two readings, or under 10 minutes between the first and the last.
+  - **On track:** the percentage didn't rise, or the projection reaches 100% at or after the window's reset.
+  - **Runs out at {time}:** the projection reaches 100% before the reset, or the window has no reset time. The projection uses the burn rate from the first to the last reading, in points an hour, carried on from the last reading. The line adds how long before the reset ("1 h 30 min before it resets").
+  - Each forecast names its basis: "Based on the last {n} min".
+- **Where it shows:**
+  - Each window row in the usage popover (UI-35) has a forecast line. A window that runs out before its reset shows the line in `warning`.
+  - The chip's tooltip adds the forecast of the window it shows.
+- **Who's using it:** per account, the popover lists the sessions that spent the account's tokens in the last hour, with each one's share ("fix-auth · 61%").
+  - The data comes from the engines' local logs (F-AC-07's parser and `usage_log_globs`, inside the provider home). Only token counts, times and session ids are read, never content.
+  - A session is named after the pane running it (its engine session id, F-SH-07), or else "Another session".
+  - An account whose engine has no log globs says "{engine} keeps no session logs Vibezeo can read."
+- **Notification:** Settings › Notifications › "Warn me before usage runs out", off by default.
+  - When on, a window whose forecast first changes to running out before its reset raises one notification: "{engine} ({account}) runs out at {time}" / "At this pace the {window} runs out {duration} before it resets."
+  - It isn't raised again for the same account and window until the window resets.
+- **Launch hint:** in the launch sheet (F-CD-14), an agent seat whose account (the workspace's override, else the engine's default, F-AC-03) has a window at 80% or more, or one forecast to run out before its reset, shows "{account} is at {pct}%". When another account of that engine is below 50% in every window, the hint adds "{other} has more room". The hint is text only: the seat still launches on the account it had. Nothing ever switches accounts (F-AC-05).
+- **Nothing new leaves the machine:** a forecast is arithmetic over readings the app already takes, and the session shares come from files on this computer.
+
+**Data:** in memory only (samples, and the notified windows per account, window kind and reset time).
+
+**Acceptance:**
+1. Readings of 40% and then 60% 30 minutes later, with the reset 2 hours after the first, forecast "Runs out" one hour after the second reading, 30 minutes before the reset.
+2. One reading, or readings under 10 minutes apart, give "Not enough data yet". Readings that don't rise give "On track", and so does a projection that reaches 100% at or after the reset.
+3. A reading whose reset time moved later drops the earlier samples, and its forecast is "Not enough data yet".
+4. Two sessions on one account that logged 3,000 and 1,000 tokens in the last hour show 75% and 25%. A session matching a pane's engine session id is named after the pane, and log lines older than an hour don't count.
+5. The notification is off by default. When it's on, a window that becomes forecast to run out before its reset raises one notification, and the next reading for the same window raises none.
+6. A seat whose account is at 85%, with another account of the same engine at 20%, shows both hints, and the launch uses the seat's own account.
 
 ### 4.6 DB: Dashboard and notifications
 

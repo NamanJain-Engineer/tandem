@@ -2,6 +2,7 @@
 import type { AccountId } from "./AccountId";
 import type { UsageSource } from "./UsageSource";
 import type { UsageWindow } from "./UsageWindow";
+import type { WindowForecast } from "./WindowForecast";
 
 /**
  * `usage_get` row and `usage:changed` payload (F-AC-04).
@@ -14,4 +15,8 @@ estimated: boolean,
 /**
  * Why there's no data ("Usage unavailable" tooltip).
  */
-reason: string | null, fetchedAt: number, };
+reason: string | null, fetchedAt: number, 
+/**
+ * One per window, in the same order (F-AC-08).
+ */
+forecasts: Array<WindowForecast>, };

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-test-usage-backdate"
+description = "Enables the test_usage_backdate command without any pre-configured scope."
+commands.allow = ["test_usage_backdate"]
+
+[[permission]]
+identifier = "deny-test-usage-backdate"
+description = "Denies the test_usage_backdate command without any pre-configured scope."
+commands.deny = ["test_usage_backdate"]

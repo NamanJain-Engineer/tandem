@@ -39,6 +39,7 @@ import { switchMode } from "../shell/actions";
 import { ComparePreviewsDialog } from "./ComparePreviews";
 import { MergeForecast, OverlapDialog } from "./WorktreeOverlap";
 import { ReviewDiff } from "./WorktreeReview";
+import { InstructionsDialog } from "./Instructions";
 import { ReviewSetupDialog, WorktreeSetupDialog, useWorktreeNotices } from "./WorktreeSetup";
 
 type Show = ReturnType<typeof useToast>["show"];
@@ -505,6 +506,10 @@ export function WorktreeDialogs() {
         onClose={close}
       />
     );
+  if (ask.kind === "instructions") {
+    const ws = list.find((w) => w.id === ask.workspaceId);
+    return ws ? <InstructionsDialog ws={ws} onClose={close} /> : null;
+  }
   if (ask.kind === "new") {
     const ws = list.find((w) => w.id === ask.workspaceId);
     return ws ? <NewWorktreeDialog ws={ws} onClose={close} /> : null;

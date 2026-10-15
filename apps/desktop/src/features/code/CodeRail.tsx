@@ -340,6 +340,13 @@ export function CodeRail() {
       disabled: ws.kind !== "local" || !ws.branch || ws.missing,
       onSelect: () => useWorktrees.getState().open({ kind: "setup", workspaceId: ws.id }),
     },
+    {
+      // F-EN-07: which instructions file each engine reads here.
+      id: "instructions",
+      label: t("instructions.menu"),
+      disabled: ws.kind !== "local" || ws.missing,
+      onSelect: () => useWorktrees.getState().open({ kind: "instructions", workspaceId: ws.id }),
+    },
     { id: "up", label: t("rail.moveUp"), onSelect: a.moveUp },
     { id: "down", label: t("rail.moveDown"), onSelect: a.moveDown },
     { id: "sep", type: "separator" },
