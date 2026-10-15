@@ -122,6 +122,10 @@ setting_keys! {
     DictateFormatting,
     DictateFormattingApps,
     DictateShareHints,
+    DictateDictionarySync,
+    DictateDictionarySyncState,
+    DictateFnFallback,
+    DictateGlobePrevious,
     DictateKeepHistory,
     DictateWidgetPosition,
     ConductorName,
@@ -698,6 +702,26 @@ pub static SCHEMA: &[SettingSpec] = &[
         ["dictionary hints", "cloud"]
     ),
     spec!(
+        DictateDictionarySync,
+        json!(false),
+        V::Bool,
+        Privacy,
+        ["dictionary", "sync", "devices"]
+    ),
+    spec!(DictateDictionarySyncState, json!({}), V::Map, Hidden, []),
+    // F-DI-02: null, "switched" (Fn went unheard; the hold key became
+    // Ctrl+Option) or "kept_fn" (the user chose Fn again).
+    spec!(
+        DictateFnFallback,
+        json!(null),
+        V::OptionalText { max: 16 },
+        Hidden,
+        []
+    ),
+    // F-DI-11: {"usage": <the 🌐 preference before the app changed it, or
+    // "unset">}; empty when the app hasn't changed it.
+    spec!(DictateGlobePrevious, json!({}), V::Map, Hidden, []),
+    spec!(
         DictateKeepHistory,
         json!("forever"),
         V::OneOf(&["forever", "90d", "30d", "7d"]),
@@ -1168,6 +1192,7 @@ mod tests {
             SettingKey::AiThreadTitles,
             SettingKey::AutoConsent,
             SettingKey::DictateShareHints,
+            SettingKey::DictateDictionarySync,
             SettingKey::FindWorkHosted,
         ] {
             assert_eq!(default_value(key), json!(false), "{key:?}");

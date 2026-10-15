@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -371,6 +371,14 @@ describe("public site", () => {
     };
     // Minimatch rules; a branch deploys when any rule that matches it is true.
     expect(config.git?.deploymentEnabled).toEqual({ "**": false, main: true });
+  });
+
+  it("F-WB-01 the contact address is contact@vibezeo.com, and no docs page names the old one (D-1818)", () => {
+    expect(SITE.contactEmail).toBe("contact@vibezeo.com");
+    const content = join(import.meta.dirname, "..", "content");
+    const files = readdirSync(content, { recursive: true, encoding: "utf8" }).filter((f) => /\.mdx?$/.test(f));
+    expect(files.length).toBeGreaterThan(0);
+    for (const f of files) expect(readFileSync(join(content, f), "utf8"), f).not.toContain("hello@vibezeo.com");
   });
 
   it("F-WB-01 robots, sitemap and security.txt point at the site", () => {

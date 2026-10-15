@@ -9,16 +9,16 @@ export function Founder() {
     .map((w) => w[0])
     .join("");
   return (
-    <Section id="team" eyebrow="Team" title="Who's building Vibezeo">
-      <figure className="reveal flex max-w-narrow flex-col gap-6 rounded-lg border border-border bg-card p-8 sm:flex-row sm:gap-8">
+    <Section id="team" eyebrow="Team" title="Who's building Vibezeo" divider>
+      <figure className="reveal surface relative isolate flex max-w-narrow flex-col gap-6 overflow-hidden p-8 sm:flex-row sm:gap-8 lg:p-10">
         <span
           aria-hidden="true"
-          className="inline-flex size-14 shrink-0 items-center justify-center rounded-full border border-accent/40 bg-accent-soft font-mono text-copy font-semibold text-accent"
+          className="inline-flex size-14 shrink-0 items-center justify-center rounded-full font-mono text-copy font-semibold text-accent shadow-[inset_0_0_0_1px_var(--site-line-strong),0_0_24px_var(--site-glow-a)] [background:radial-gradient(circle_at_50%_0%,var(--tn-accent-soft),transparent_70%)]"
         >
           {initials}
         </span>
         <div className="flex flex-col gap-4">
-          <blockquote className="text-lead text-pretty text-fg">
+          <blockquote className="text-[1.3125rem] font-medium leading-[1.5] tracking-[-0.012em] text-pretty text-fg">
             {SITE.founder.bio} {SITE.founder.name} started {SITE.company} because, as coding agents multiply,
             developers need a better way to run, coordinate and keep an eye on them.
           </blockquote>

@@ -422,7 +422,7 @@ pub async fn delete_rules(store: &Store, ids: Vec<String>) -> Result<usize, Stor
             let mut n = 0;
             for id in &ids {
                 n += tx.execute(
-                    "UPDATE dictionary_rules SET deleted_at = ?2, updated_at = ?2 WHERE id = ?1 AND deleted_at IS NULL",
+                    "UPDATE dictionary_rules SET deleted_at = ?2, updated_at = ?2, sync_rev = 0 WHERE id = ?1 AND deleted_at IS NULL",
                     params![id, now],
                 )?;
             }
@@ -436,9 +436,45 @@ pub async fn restore_rule(store: &Store, id: String) -> Result<bool, StoreError>
     store
         .write(move |tx| {
             Ok(tx.execute(
-                "UPDATE dictionary_rules SET deleted_at = NULL, updated_at = ?2 WHERE id = ?1 AND deleted_at IS NOT NULL",
+                "UPDATE dictionary_rules SET deleted_at = NULL, updated_at = ?2, sync_rev = 0 WHERE id = ?1 AND deleted_at IS NOT NULL",
                 params![id, now],
             )? > 0)
+        })
+        .await
+}
+
+/// Rules changed here since they last synced (`sync_rev` 0), deletions
+/// included, oldest change first (F-DI-09).
+pub async fn unsynced_rules(store: &Store) -> Result<Vec<RuleRow>, StoreError> {
+    rules_where(store, "sync_rev = 0 ORDER BY updated_at, id").await
+}
+
+/// Marks rules synced at `rev`, each only if it hasn't changed since it was
+/// sent (`(id, updated_at)` as sent).
+pub async fn mark_rules_synced(
+    store: &Store,
+    sent: Vec<(String, i64)>,
+    rev: i64,
+) -> Result<(), StoreError> {
+    store
+        .write(move |tx| {
+            for (id, at) in &sent {
+                tx.execute(
+                    "UPDATE dictionary_rules SET sync_rev = ?3 WHERE id = ?1 AND updated_at = ?2 AND sync_rev = 0",
+                    params![id, at, rev],
+                )?;
+            }
+            Ok(())
+        })
+        .await
+}
+
+/// Every rule waits to go up again (another account, or a fresh start).
+pub async fn mark_rules_unsynced(store: &Store) -> Result<(), StoreError> {
+    store
+        .write(move |tx| {
+            tx.execute("UPDATE dictionary_rules SET sync_rev = 0", [])?;
+            Ok(())
         })
         .await
 }
@@ -731,6 +767,42 @@ mod tests {
             .await
             .expect("purge");
         assert!(get_rule(&s, "c".into()).await.expect("get").is_none());
+    }
+
+    #[tokio::test]
+    async fn f_di_09_local_changes_wait_to_sync_until_marked() {
+        let (_d, s) = store();
+        let mut synced = rule("s", "word");
+        synced.sync_rev = 4;
+        put_rules(&s, vec![rule("w", "word"), synced])
+            .await
+            .expect("put");
+        let ids = |rows: Vec<RuleRow>| rows.into_iter().map(|r| r.id).collect::<Vec<_>>();
+        assert_eq!(ids(unsynced_rules(&s).await.expect("q")), ["w"]);
+        // A deletion and a restore are changes too.
+        delete_rules(&s, vec!["s".into()]).await.expect("del");
+        assert_eq!(unsynced_rules(&s).await.expect("q").len(), 2);
+        let sent: Vec<(String, i64)> = unsynced_rules(&s)
+            .await
+            .expect("q")
+            .into_iter()
+            .map(|r| (r.id, r.updated_at))
+            .collect();
+        // "w" changed again after it was sent: it stays unsynced.
+        let mut again = rule("w", "word");
+        again.updated_at = 99;
+        put_rules(&s, vec![again]).await.expect("put");
+        mark_rules_synced(&s, sent, 7).await.expect("mark");
+        assert_eq!(ids(unsynced_rules(&s).await.expect("q")), ["w"]);
+        assert_eq!(
+            get_rule(&s, "s".into())
+                .await
+                .expect("g")
+                .map(|r| r.sync_rev),
+            Some(7)
+        );
+        mark_rules_unsynced(&s).await.expect("reset");
+        assert_eq!(unsynced_rules(&s).await.expect("q").len(), 2);
     }
 
     #[tokio::test]

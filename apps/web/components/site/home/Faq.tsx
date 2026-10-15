@@ -6,21 +6,21 @@ import { Icon } from "../Icon";
 /** #faq (§6.20): native <details> in one exclusive group; no script. */
 export function Faq() {
   return (
-    <section id="faq" aria-labelledby="faq-title" className="scroll-mt-(--site-header-h) bg-page py-(--site-section-y)">
+    <section id="faq" aria-labelledby="faq-title" className="relative scroll-mt-(--site-header-h) bg-page py-(--site-section-y)">
       <div className="container-site grid gap-10 lg:grid-cols-12 lg:gap-6">
         <header className="reveal flex flex-col gap-4 lg:col-span-4">
           <p className="eyebrow">FAQ</p>
-          <h2 id="faq-title" className="text-display-lg text-fg">
+          <h2 id="faq-title" className="text-sheen text-display-lg text-fg">
             Questions
           </h2>
           <p className="text-copy text-fg-muted">
             Not answered here? Write to <a href={`mailto:${SITE.contactEmail}`} className="text-accent">{SITE.contactEmail}</a>.
           </p>
         </header>
-        <div className="flex flex-col border-t border-border lg:col-span-8">
+        <div className="flex flex-col border-t border-line lg:col-span-8">
           {FAQ.map((f, i) => (
-            <details key={f.q} name="faq" open={i === 0} className="group border-b border-border">
-              <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-6 py-4 text-title text-fg [&::-webkit-details-marker]:hidden">
+            <details key={f.q} name="faq" open={i === 0} className="group border-b border-line">
+              <summary className="flex min-h-18 cursor-pointer list-none items-center justify-between gap-6 py-5 text-title text-fg transition-colors duration-(--dur-base) hover:text-accent [&::-webkit-details-marker]:hidden">
                 {f.q}
                 <Icon
                   icon={Plus}

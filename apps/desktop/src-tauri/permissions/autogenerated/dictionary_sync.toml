@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dictionary-sync"
+description = "Enables the dictionary_sync command without any pre-configured scope."
+commands.allow = ["dictionary_sync"]
+
+[[permission]]
+identifier = "deny-dictionary-sync"
+description = "Denies the dictionary_sync command without any pre-configured scope."
+commands.deny = ["dictionary_sync"]

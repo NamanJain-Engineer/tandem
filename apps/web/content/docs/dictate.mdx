@@ -39,6 +39,7 @@ In Vibezeo's own message boxes, the mic button records while you hold it or togg
 - **History** keeps the text of each take on this computer, never the audio: forever by default, or 90, 30 or 7 days. Search, copy, correct, delete, export to CSV, or clear it; clearing keeps your totals.
 - **Stats** count words, speaking time, takes and words per minute, and estimate time saved against typing at 40 words a minute.
 - **Dictionary** holds words Dictate should spell your way and corrections ("tandem" → "Tandem"), optionally only in some apps or languages, and a rule can leave links, email addresses and code alone. Its Review tab suggests names and terms that keep coming back; only **Remember** adds them. Deleted rules can be restored for 30 days, and the dictionary imports and exports JSON or CSV.
+- **Sync dictionary** (Pro, off until you turn it on) keeps the same rules on each computer you sign in to. When the same rule changed on two computers, the newer change wins, and an older one you made offline asks which to keep. Turning it off keeps your rules here; the synced copy stays in your account until you choose **Stop and delete synced copy**.
 
 ## Linux
 
@@ -48,6 +49,8 @@ In Vibezeo's own message boxes, the mic button records while you hold it or togg
 ## Privacy
 
 With local models, audio never leaves your computer and is never saved; the only network request Dictate makes is the model download you start. **Transcribe with › Cloud** sends a take to Vibezeo's speech-to-text service instead. It's built for Pro, uses credits, and shows what it sends the first time you switch to it. **Share dictionary hints with cloud** (off by default) also sends your preferred spellings, up to 40, with each take.
+
+**Sync dictionary** (off by default) sends your dictionary rules (the words, replacements and their options, and which rules you deleted) to your Vibezeo account. Transcripts, history, audio and the Review tab's examples never sync.
 
 **Enhance** and **Polish** send the transcript's text, never audio, to Vibezeo's AI service, even when speech is recognized locally: 3 credits each. They're refused over 5,000 characters, and on any failure your exact words are used. Formatting instructions (up to 2,000 characters, and per app) apply to every take as a Polish.
 

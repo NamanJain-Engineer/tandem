@@ -41,7 +41,7 @@ export function Keys({
       {keys.map((k, i) => (
         <span key={`${k}-${i}`} className="inline-flex items-center gap-1.5" aria-hidden="true">
           {i > 0 && <Icon icon={Plus} size={14} className="text-fg-subtle" />}
-          <kbd className="inline-flex h-11 min-w-11 items-center justify-center rounded-sm border border-border-strong border-b-2 bg-(--tn-kbd-bg) px-3 font-mono text-copy-sm font-medium text-fg">
+          <kbd className="keycap">
             {SHOWN[k] ?? k}
           </kbd>
         </span>

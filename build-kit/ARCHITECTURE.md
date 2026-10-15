@@ -837,7 +837,7 @@ Registered, permitted (build.rs `SIM_COMMANDS` for macOS targets, `sim-capabilit
 #### Dictate [F-DI-*]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
-| `dictate_status` | — | `DictateStatus {enabled, hotkey: HotkeyStatus, verified, hold: {binding, label}, toggle?: {binding, label}, latch, session: "x11"\|"wayland"\|"mac"\|"windows"\|"none", deepLinkCommand?, mic?: DeviceInfo, engine: "local", model?: {id, name}, modelStage: "none"\|"verifying"\|"loading"\|"ready"\|"failed", fallback?: {using, missing}, state: TakeState, missingTools?: MissingTools}` (also the widget's; D-505) | — |
+| `dictate_status` | — | `DictateStatus {enabled, hotkey: HotkeyStatus, verified, fnFallback (Fn alone went unheard for 8 s in the verify test, so the hold key became Ctrl+Option; cleared when the user picks a hold key, and choosing Fn again keeps it for good, F-DI-02, D-524), hold: {binding, label}, toggle?: {binding, label}, latch, session: "x11"\|"wayland"\|"mac"\|"windows"\|"none", deepLinkCommand?, mic?: DeviceInfo, engine: "local", model?: {id, name}, modelStage: "none"\|"verifying"\|"loading"\|"ready"\|"failed", fallback?: {using, missing}, state: TakeState, missingTools?: MissingTools}` (also the widget's; D-505) | — |
 | `dictate_set_binding` | `{binding: String\|null, mode:"hold"\|"toggle"}` (`null` = the OS default for hold, none for toggle) | `HotkeyStatus` (and `verified` resets for hold) | Invalid (modifier-only toggle, unknown key, Esc, Alt+Space off macOS, Fn off macOS) |
 | `dictate_verify_start` / `dictate_verify_stop` | — | — (events `dictate:key`, then `dictate:verified`) | — |
 | `dictate_start_take` / `dictate_stop_take` / `dictate_cancel_take` | `{origin: {type:"global"} \| {type:"composer", targetId}}` / — / — | `{takeId}` / — / — | Unavailable (Conductor owns the mic; no model) |
@@ -859,9 +859,12 @@ Registered, permitted (build.rs `SIM_COMMANDS` for macOS targets, `sim-capabilit
 | `dictionary_test` | `{sample, appId?, lang?}` | `String` | — |
 | `dictionary_import_preview` / `dictionary_import_commit` / `dictionary_export` | `{path, format:"json"\|"csv"}` / `{previewId}` / `{path, format}` | `ImportPreview {previewId, added:[Rule], updated:[Rule], skipped:[{line, reason}]}` / `{added, updated}` / — | Invalid, Io |
 | `dictionary_suggestions` / `dictionary_suggestion_resolve` | — / `{id, remember}` | `[Suggestion {id, term, kind:"spelling"\|"unknown"\|"acronym"\|"proper_noun", evidence:[String], count, lastSeen}]` / `Rule?` | NotFound |
-| `dictionary_sync` | — | `SyncResult {pushed, pulled, conflicts:[{id, local: Rule, remote: Rule}], syncedAt}` (Pro, hosted builds; `POST /v1/dictionary/sync`) | ForbiddenPlan, Unavailable (no hosted service), Unauthenticated |
+| `dictionary_sync` | — | `SyncResult {pushed, pulled, conflicts:[{id, local: Rule, remote: Rule}], syncedAt}` (Pro, hosted builds, only with `dictate_dictionary_sync` on; `POST /v1/dictionary/sync`; the request carries rules only: `rule_id`, `updated_at`, `deleted` and the rule's words and options, D-523) | ForbiddenPlan, PermissionDenied (sync is off), Unavailable (no hosted service), Unauthenticated |
+| `dictionary_sync_resolve` | `{id, keep:"mine"\|"theirs"}` | `Rule?` (`mine`: the local rule is written again as the newest and goes up next sync; `theirs`: the server's replaces it; null when it was a deletion) | NotFound (no open conflict for `id`) |
+| `dictionary_sync_forget` | — | — (`DELETE /v1/dictionary`: removes the synced copy; any plan) | Unavailable, Unauthenticated |
 | `dictate_permissions` / `dictate_open_permission_settings` | — / `{kind:"microphone"\|"input_monitoring"\|"accessibility"}` | `PermissionStatus {mic, inputMonitoring, accessibility}` (each `"granted"\|"denied"\|"unknown"\|"not_needed"`) / — | — |
 | `dictate_relaunch` | — | — (macOS "Quit & Reopen" after granting Input Monitoring) | — |
+| `dictate_globe_key` / `dictate_globe_key_set` | — / `{doNothing: bool}` | `GlobeKeyView {available, usage?: "do_nothing"\|"change_input_source"\|"show_emoji"\|"start_dictation", changedByApp}` (macOS "Press 🌐 key to", F-DI-11: `doNothing: true` only from the consent dialog, remembering the old value; `false` puts that value back, or removes the key if it was never set; `com.apple.HIToolbox AppleFnUsageType` through `defaults`, D-524) | Unavailable (not macOS), Invalid (`false` with nothing the app changed), Io |
 | `dictate_widget_set_position` | `{x, y, locked}` | — | — |
 
 #### Conductor [F-CN-*]
@@ -996,6 +999,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `dictate:status` | `DictateStatus` (after a binding, model, permission or hotkey-status change) | voice service | F-DI-02, F-DI-04 |
 | `dictate:models` | `ModelsView` (download progress at most 4 a second, stages, failures) | voice service | F-DI-04 |
 | `dictate:history` | — (a take was stored or the history changed) | voice service | F-DI-08 |
+| `dictionary:synced` | `SyncResult` (after a background sync that pulled rules or found conflicts) | voice service | F-DI-09 |
 | `conductor:state` | `CallView {callId?, phase:"idle"\|"connecting"\|"listening"\|"thinking"\|"acting"\|"speaking"\|"ended"\|"error", muted, utterance?, caption?, chips:[ChipView], question?: QuestionView, elapsedMs, maxSeconds, error?: {code, message}, notice?, receipt?: {callId, seconds, credits, actions}}` (to `main`) | CallController | F-CN-04 |
 | `conductor:open-log` | `null` (floating ring → `main`: open the call log) | `conductor-ring` window | F-CN-04 |
 | `conductor:level` | `number` 0–1, ≤10 Hz, only during a call | CallController | F-CN-04 |
@@ -2437,7 +2441,8 @@ Auth column: `—` none · `C` better-auth cookie (+CSRF on writes) · `B` deskt
 | `POST /v1/voice/session/:id/settle` | B | `{seconds: int(0..1800)}` | `{charged, refunded}` (`ceil(s/10)×20`) | 404 | F-BE-08 |
 | `POST /v1/voice/act` | B | `{session_id, request: str(≤2000), snapshot: WorkspaceSnapshot(≤64 KB), results?: [{id, ok, output(≤8 KB)}]}` | `{tool_calls:[{id, name, args}], say?}` | 409 (session ended) | F-CN-02 |
 | `POST /v1/voice/resolve` | B | `{query: str(≤500), candidates: [{id, kind, text: str(≤2000)}] (≤200)}` | `{matches:[{id, score}]}` · 1 cr | — | F-CN-05 |
-| `POST /v1/dictionary/sync` | B | `{since_rev: int, changes: [{rule_id, payload, deleted, updated_at}] (≤500)}` | `{rev, changes, conflicts}` | `FORBIDDEN_PLAN` | F-DI-09 |
+| `POST /v1/dictionary/sync` | B | `{since_rev: int, changes: [{rule_id, payload, deleted, updated_at}] (≤500)}` | `{rev, changes: [… + rev] (rows past `since_rev` this call did not write), conflicts: [{rule_id, local, remote}]}`; last writer wins per rule by `updated_at`, an older change that differs from the stored row is not written and comes back as a conflict on every sync until the device sends a newer one; `payload.evidence` is dropped | `FORBIDDEN_PLAN`, 422 | F-DI-09 |
+| `DELETE /v1/dictionary` | B | — | 204 (the synced copy is gone; any plan, so a lapsed Pro can still delete it) | — | F-DI-09 |
 | `GET /v1/config` | — | `If-None-Match` | `{payload, sig, kid}` + `ETag`, `Cache-Control: max-age=600` / 304 | — | F-BE-09 |
 | `GET /v1/updates/:channel/:target/:arch/:current_version` | — | — | 200 `{version, notes, pub_date, url, signature}` or 204 | — | F-SH-06 |
 | `POST /v1/pairings` / `DELETE /v1/pairings/:id` | B | `{pairing_id, device_label?}` / — | `{pairing_token, relay_url, expires_at}` / 204 | `FORBIDDEN_PLAN` | F-RM-03 |

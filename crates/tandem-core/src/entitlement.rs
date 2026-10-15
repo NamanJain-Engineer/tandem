@@ -50,6 +50,10 @@ pub struct Limits {
     pub admin: bool,
     pub chat_engines: Option<Vec<String>>,
     pub credit_packs: bool,
+    /// The dictionary syncs across devices (F-DI-09). Defaults to false so
+    /// an older API's entitlement still parses.
+    #[serde(default)]
+    pub dictionary_sync: bool,
 }
 
 impl Limits {
@@ -74,6 +78,7 @@ impl Limits {
             admin: false,
             chat_engines: Some(vec!["claude".to_string(), "codex".to_string()]),
             credit_packs: false,
+            dictionary_sync: false,
         }
     }
 

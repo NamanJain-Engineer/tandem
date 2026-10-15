@@ -427,6 +427,55 @@ pub async fn dictionary_suggestions(
     state.dictate.suggestions().await
 }
 
+/// F-DI-11: macOS's "Press 🌐 key to" preference.
+#[tauri::command]
+pub async fn dictate_globe_key(
+    state: State<'_, AppState>,
+) -> Result<crate::services::dictate::GlobeKeyView, IpcError> {
+    Ok(state.dictate.globe_key().await)
+}
+
+/// `do_nothing: true` only after the consent dialog; `false` undoes it.
+#[tauri::command]
+pub async fn dictate_globe_key_set(
+    state: State<'_, AppState>,
+    do_nothing: bool,
+) -> Result<crate::services::dictate::GlobeKeyView, IpcError> {
+    state.dictate.globe_key_set(do_nothing).await
+}
+
+/// F-DI-09: one sync now (Pro, opted in, signed in).
+#[tauri::command]
+pub async fn dictionary_sync(
+    state: State<'_, AppState>,
+) -> Result<crate::services::dictionary_sync::SyncResult, IpcError> {
+    state.dictate.dictionary_sync().await
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Keep {
+    Mine,
+    Theirs,
+}
+
+#[tauri::command]
+pub async fn dictionary_sync_resolve(
+    state: State<'_, AppState>,
+    id: String,
+    keep: Keep,
+) -> Result<Option<Rule>, IpcError> {
+    state
+        .dictate
+        .dictionary_sync_resolve(&id, keep == Keep::Mine)
+        .await
+}
+
+#[tauri::command]
+pub async fn dictionary_sync_forget(state: State<'_, AppState>) -> Result<(), IpcError> {
+    state.dictate.dictionary_sync_forget().await
+}
+
 #[tauri::command]
 pub async fn dictionary_suggestion_resolve(
     state: State<'_, AppState>,

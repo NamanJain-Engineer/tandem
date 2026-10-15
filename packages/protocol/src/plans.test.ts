@@ -31,4 +31,10 @@ describe("free limits fixture", () => {
   it("is the same object the Rust client falls back to", () => {
     expect(LIMITS.free).toEqual(freeLimits);
   });
+
+  it("F-DI-09 dictionary sync is Pro and Team", () => {
+    expect(LIMITS.free.dictionarySync).toBe(false);
+    expect(LIMITS.pro.dictionarySync).toBe(true);
+    expect(LIMITS.team.dictionarySync).toBe(true);
+  });
 });

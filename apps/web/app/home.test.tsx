@@ -1,5 +1,5 @@
 import registry from "../../../crates/tandem-engines/registry.json";
-import { statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -7,7 +7,7 @@ import { engineLetters } from "../components/site/home/Engines";
 import { RELEASES } from "../lib/changelog";
 import { CAPABILITIES, FEATURES, MODE_ROWS, RELEASE_TILE_MAP, linuxFacts, releaseTiles, tilesRelease } from "../lib/home";
 import { formatSize, releaseAssets } from "../lib/manifest";
-import { VIDEO } from "../lib/media";
+import { SCREENS, VIDEO } from "../lib/media";
 import { DOWNLOADS, RELEASE } from "../lib/release";
 import { ENGINES, SITE } from "../lib/site";
 import HomePage from "./page.site";
@@ -118,4 +118,20 @@ describe("home page", () => {
     for (const word of ["X11", "Wayland", "arm64", "x86-64"]) expect(notes, word).toContain(word);
     for (const f of facts) expect(text(home)).toContain(f);
   });
+
+  it("F-WB-01 every capture of the app names a released build, and its 1x and 2x files ship (D-1838)", () => {
+    const versions = RELEASES.map((r) => r.version);
+    const figures = home.match(/<figure[^>]*data-capture=""[^>]*>/g) ?? [];
+    expect(figures.length).toBe(Object.keys(SCREENS).length);
+    for (const shot of Object.values(SCREENS)) {
+      expect(versions, shot.src).toContain(shot.build);
+      expect(home).toContain(`data-build="${shot.build}"`);
+      expect(home).toContain(`Vibezeo ${shot.build} · Linux`);
+      const base = join(process.cwd(), "public", shot.src.replace(/\.png$/, ""));
+      for (const f of [".png", ...shot.formats.flatMap((e) => [`.${e}`, `@2x.${e}`])])
+        expect(existsSync(base + f), base + f).toBe(true);
+      expect(home).toContain(`${shot.src.replace(/\.png$/, "")}@2x.avif ${shot.width * 2}w`);
+    }
+  });
 });
+
