@@ -6,10 +6,14 @@ use serde_json::json;
 use super::*;
 use crate::conductor::exec::tests::{quick, FakeHost};
 use crate::conductor::exec::PaneFacts;
+use crate::conductor::memory::RememberRefusal;
 use crate::conductor::view::UiAction;
 use crate::realtime::{RealtimeError, SAMPLE_RATE};
 use tandem_core::origin::Origin;
 use tandem_core::settings::SettingKey;
+
+/// What `after_call` got: the proposals, the call's seconds and its tools.
+type AfterCall = (Vec<String>, u32, Vec<String>);
 
 /// The provider's side of a fake socket.
 struct Wire {
@@ -38,20 +42,36 @@ impl RealtimeProvider for FakeProvider {
 struct FakeSpeaker {
     played: Mutex<usize>,
     stops: Mutex<usize>,
+    /// The output's position: with `hold` off (the default) whatever is
+    /// queued plays at once; with it on, the test sets `out` itself.
+    hold: Mutex<bool>,
+    queued_n: Mutex<u64>,
+    out: Mutex<u64>,
 }
 
 impl Speaker for FakeSpeaker {
     fn play(&self, pcm: &[i16]) {
         *self.played.lock() += pcm.len();
+        *self.queued_n.lock() += pcm.len() as u64;
+        if !*self.hold.lock() {
+            *self.out.lock() = *self.queued_n.lock();
+        }
     }
     fn stop(&self) {
         *self.stops.lock() += 1;
+        *self.queued_n.lock() = *self.out.lock();
     }
     fn speaking(&self) -> bool {
-        false
+        *self.out.lock() < *self.queued_n.lock()
     }
     fn level(&self) -> f32 {
         0.5
+    }
+    fn queued(&self) -> u64 {
+        *self.queued_n.lock()
+    }
+    fn played(&self) -> u64 {
+        *self.out.lock()
     }
 }
 
@@ -63,6 +83,12 @@ struct Host {
     provider: Arc<FakeProvider>,
     /// A vendor-protocol socket to mint instead of the fake one.
     vendor_url: Mutex<Option<String>>,
+    /// Conductor's memory (F-CN-06): on or off, the facts, how often the
+    /// host was asked to remember, and what came after the call.
+    memory_on: Mutex<bool>,
+    facts: Mutex<Vec<String>>,
+    remember_calls: Mutex<usize>,
+    after: Mutex<Option<AfterCall>>,
     acts: Mutex<VecDeque<Result<ActResponse, HostedError>>>,
     act_requests: Mutex<Vec<ActRequest>>,
     settles: Mutex<Vec<(String, u32)>>,
@@ -87,6 +113,10 @@ impl Host {
                     wires,
                 }),
                 vendor_url: Mutex::new(None),
+                memory_on: Mutex::new(false),
+                facts: Mutex::new(Vec::new()),
+                remember_calls: Mutex::new(0),
+                after: Mutex::new(None),
                 acts: Mutex::new(VecDeque::new()),
                 act_requests: Mutex::new(Vec::new()),
                 settles: Mutex::new(Vec::new()),
@@ -214,6 +244,32 @@ impl CallHost for Host {
     fn emit_level(&self, _level: f32) {}
     async fn record(&self, record: CallRecord) {
         self.records.lock().push(record);
+    }
+    async fn remember(&self, fact: &str) -> Result<(), RememberRefusal> {
+        *self.remember_calls.lock() += 1;
+        if !*self.memory_on.lock() {
+            return Err(RememberRefusal::Off);
+        }
+        self.facts.lock().push(fact.to_string());
+        Ok(())
+    }
+    async fn recall(&self) -> (bool, Vec<String>) {
+        (*self.memory_on.lock(), self.facts.lock().clone())
+    }
+    async fn forget(&self, query: &str) -> usize {
+        let mut facts = self.facts.lock();
+        let before = facts.len();
+        facts.retain(|f| !f.to_lowercase().contains(&query.to_lowercase()));
+        before - facts.len()
+    }
+    async fn after_call(
+        &self,
+        proposals: Vec<String>,
+        _ended_at: i64,
+        seconds: u32,
+        tools: Vec<String>,
+    ) {
+        *self.after.lock() = Some((proposals, seconds, tools));
     }
 }
 
@@ -623,7 +679,10 @@ async fn f_cn_01_barge_in_stops_playback_and_the_provider_hanging_up_ends_the_ca
     let (host, mut wires) = Host::new(Duration::ZERO);
     let (_c, wire) = connected(&host, &mut wires, CallOrigin::Button).await;
     wire.to_app
-        .send(ServerEvent::AudioDelta(vec![100; 2400]))
+        .send(ServerEvent::AudioDelta {
+            item: None,
+            pcm: vec![100; 2400],
+        })
         .await
         .expect("send");
     until("speaking", || {
@@ -940,11 +999,201 @@ async fn f_cn_08_a_mic_that_stops_delivering_ends_the_call() {
     let mic = host.mic.lock().clone().expect("the mic is on");
     let _ = mic.send(MicEvent::NotDelivering);
     until("ended", || host.last().phase == CallPhase::Error).await;
-    assert_eq!(
-        host.last().error.map(|e| e.code),
-        Some(CallErrorCode::MicNotDelivering)
-    );
+    let error = host.last().error.expect("an error");
+    assert_eq!(error.code, CallErrorCode::MicNotDelivering);
+    // F-CN-08's words exactly.
+    assert_eq!(error.message, "The microphone isn't delivering audio.");
     assert_eq!(host.settles.lock().len(), 1);
     // The call let go of the mic.
     assert!(!*host.mic_owned.lock());
+}
+
+#[tokio::test]
+async fn f_cn_06_remember_recall_and_forget_are_answered_in_the_call() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    *host.memory_on.lock() = true;
+    let (_c, mut wire) = connected(&host, &mut wires, CallOrigin::Button).await;
+    let say = |id: &str, text: &str| act(id, text);
+    wire.to_app
+        .send(say("fc1", "Remember that I deploy on Fridays."))
+        .await
+        .expect("send");
+    assert_eq!(output(&mut wire, "fc1").await, "Okay, I'll remember that.");
+    assert_eq!(
+        host.facts.lock().clone(),
+        vec!["I deploy on Fridays".to_string()]
+    );
+    wire.to_app
+        .send(say("fc2", "What do you know about me?"))
+        .await
+        .expect("send");
+    assert_eq!(
+        output(&mut wire, "fc2").await,
+        "Here's what I remember: I deploy on Fridays."
+    );
+    wire.to_app
+        .send(say("fc3", "forget about Fridays"))
+        .await
+        .expect("send");
+    assert_eq!(output(&mut wire, "fc3").await, "Okay, I've forgotten that.");
+    assert!(host.facts.lock().is_empty());
+    // All three in the app: the planner was never asked.
+    assert!(host.act_requests.lock().is_empty());
+}
+
+#[tokio::test]
+async fn f_cn_06_1_with_memory_off_remember_writes_nothing_and_says_so() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    let (_c, mut wire) = connected(&host, &mut wires, CallOrigin::Button).await;
+    wire.to_app
+        .send(act("fc1", "remember that I deploy on Fridays"))
+        .await
+        .expect("send");
+    let out = output(&mut wire, "fc1").await;
+    assert!(out.starts_with("Memory is off"), "{out}");
+    assert!(host.facts.lock().is_empty());
+    wire.to_app
+        .send(act("fc2", "what do you remember"))
+        .await
+        .expect("send");
+    assert!(output(&mut wire, "fc2").await.starts_with("Memory is off"));
+}
+
+#[tokio::test]
+async fn f_cn_06_2_a_spoken_token_is_refused_in_the_call_path() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    *host.memory_on.lock() = true;
+    let (_c, mut wire) = connected(&host, &mut wires, CallOrigin::Button).await;
+    wire.to_app
+        .send(act(
+            "fc1",
+            "Remember my token is sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789",
+        ))
+        .await
+        .expect("send");
+    let out = output(&mut wire, "fc1").await;
+    assert!(out.contains("won't remember"), "{out}");
+    // Refused before the host: nothing written, the host never asked.
+    assert!(host.facts.lock().is_empty());
+    assert_eq!(*host.remember_calls.lock(), 0);
+    assert!(!out.contains("sk-ant"));
+}
+
+#[tokio::test]
+async fn f_cn_06_after_the_call_reflection_gets_what_the_user_said_about_themselves() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    *host.memory_on.lock() = true;
+    let (c, mut wire) = connected(&host, &mut wires, CallOrigin::Button).await;
+    for text in [
+        "I prefer pnpm over npm",
+        "Open code mode",
+        "my password is hunter22",
+    ] {
+        wire.to_app
+            .send(ServerEvent::TranscriptUser(text.into()))
+            .await
+            .expect("send");
+    }
+    wire.to_app
+        .send(act("fc1", "open code mode"))
+        .await
+        .expect("send");
+    let _ = output(&mut wire, "fc1").await;
+    host.advance(65_000);
+    c.end();
+    until("ended", || host.after.lock().is_some()).await;
+    let (proposals, seconds, _tools) = host.after.lock().clone().expect("after");
+    assert_eq!(proposals, vec!["I prefer pnpm over npm".to_string()]);
+    assert!(seconds >= 65, "{seconds}");
+}
+
+fn truncates(events: &[ClientEvent]) -> Vec<(String, u32)> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            ClientEvent::Truncate {
+                item_id,
+                audio_end_ms,
+            } => Some((item_id.clone(), *audio_end_ms)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn f_cn_01_barge_in_mid_answer_truncates_the_item_to_what_was_played() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    *host.speaker.hold.lock() = true;
+    let (_c, mut wire) = connected(&host, &mut wires, CallOrigin::Button).await;
+    // A 2 s answer in two deltas of one item; 750 ms of it has played.
+    for _ in 0..2 {
+        wire.to_app
+            .send(ServerEvent::AudioDelta {
+                item: Some("item_a1".into()),
+                pcm: vec![100; SAMPLE_RATE as usize],
+            })
+            .await
+            .expect("send");
+    }
+    until("speaking", || host.last().phase == CallPhase::Speaking).await;
+    until("queued", || {
+        *host.speaker.queued_n.lock() == 2 * u64::from(SAMPLE_RATE)
+    })
+    .await;
+    *host.speaker.out.lock() = u64::from(SAMPLE_RATE) * 3 / 4;
+    drain(&mut wire);
+    wire.to_app
+        .send(ServerEvent::SpeechStarted)
+        .await
+        .expect("send");
+    until("playback stopped", || *host.speaker.stops.lock() >= 1).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let (sent, _) = drain(&mut wire);
+    assert_eq!(truncates(&sent), vec![("item_a1".to_string(), 750)]);
+    // What wasn't played no longer counts as queued.
+    assert!(!host.speaker.speaking());
+}
+
+#[tokio::test]
+async fn f_cn_01_no_truncate_when_nothing_of_the_answer_is_playing() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    *host.speaker.hold.lock() = true;
+    let (_c, mut wire) = connected(&host, &mut wires, CallOrigin::Button).await;
+    // Barge-in before any audio: nothing to truncate.
+    wire.to_app
+        .send(ServerEvent::SpeechStarted)
+        .await
+        .expect("send");
+    // An answer that finished playing, then a barge-in.
+    wire.to_app
+        .send(ServerEvent::AudioDelta {
+            item: Some("item_b1".into()),
+            pcm: vec![100; 4_800],
+        })
+        .await
+        .expect("send");
+    until("queued", || *host.speaker.queued_n.lock() == 4_800).await;
+    *host.speaker.out.lock() = 4_800;
+    wire.to_app
+        .send(ServerEvent::SpeechStarted)
+        .await
+        .expect("send");
+    // A provider that names no item: nothing to name in a truncate.
+    wire.to_app
+        .send(ServerEvent::AudioDelta {
+            item: None,
+            pcm: vec![100; 4_800],
+        })
+        .await
+        .expect("send");
+    until("queued", || *host.speaker.queued_n.lock() == 9_600).await;
+    *host.speaker.out.lock() = 7_000;
+    wire.to_app
+        .send(ServerEvent::SpeechStarted)
+        .await
+        .expect("send");
+    until("three barge-ins", || *host.speaker.stops.lock() >= 3).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let (sent, _) = drain(&mut wire);
+    assert!(truncates(&sent).is_empty(), "{sent:?}");
 }

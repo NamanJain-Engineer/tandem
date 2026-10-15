@@ -9,11 +9,12 @@
 //! audio: {input: {format, transcription, turn_detection}, output: {format,
 //! voice?, speed?}}, tools: [act], tool_choice}}`, `input_audio_buffer.append
 //! {audio}`, `conversation.item.create {item: function_call_output {call_id,
-//! output}}` then `response.create`, and a system message then
-//! `response.create` for something to say.
+//! output}}` then `response.create`, a system message then
+//! `response.create` for something to say, and `conversation.item.truncate
+//! {item_id, content_index: 0, audio_end_ms}` on barge-in (D-1122).
 //!
 //! Vendor → app: `session.created` → Ready; `response.output_audio.delta
-//! {delta}` → AudioDelta; `conversation.item.input_audio_transcription.completed
+//! {item_id, delta}` → AudioDelta; `conversation.item.input_audio_transcription.completed
 //! {transcript}` → TranscriptUser; `response.output_audio_transcript.done
 //! {transcript}` → TranscriptAssistant; `response.output_item.done` with a
 //! completed `function_call` item → FunctionCall (an interrupted call's item is
@@ -104,6 +105,15 @@ pub fn encode(event: &ClientEvent) -> Vec<Value> {
             }),
             json!({"type": "response.create"}),
         ],
+        ClientEvent::Truncate {
+            item_id,
+            audio_end_ms,
+        } => vec![json!({
+            "type": "conversation.item.truncate",
+            "item_id": item_id,
+            "content_index": 0,
+            "audio_end_ms": audio_end_ms
+        })],
         // f32 → two decimals, so 1.1 goes out as 1.1, not 1.100000023841858.
         ClientEvent::SetSpeed(speed) => vec![json!({
             "type": "session.update",
@@ -128,9 +138,10 @@ pub fn decode(frame: &str) -> Option<ServerEvent> {
         "response.output_audio_transcript.done" => {
             ServerEvent::TranscriptAssistant(text("transcript"))
         }
-        "response.output_audio.delta" => {
-            ServerEvent::AudioDelta(pcm::decode(v["delta"].as_str()?)?)
-        }
+        "response.output_audio.delta" => ServerEvent::AudioDelta {
+            item: v["item_id"].as_str().map(String::from),
+            pcm: pcm::decode(v["delta"].as_str()?)?,
+        },
         "response.output_item.done" => {
             let item = &v["item"];
             if item["type"] != "function_call" || item["status"] != "completed" {
@@ -204,13 +215,15 @@ mod tests {
             "TranscriptUser" => ServerEvent::TranscriptUser(s()),
             "TranscriptAssistant" => ServerEvent::TranscriptAssistant(s()),
             "Error" => ServerEvent::Error(s()),
-            "AudioDelta" => ServerEvent::AudioDelta(
-                x.as_array()
+            "AudioDelta" => ServerEvent::AudioDelta {
+                item: x["item"].as_str().map(String::from),
+                pcm: x["pcm"]
+                    .as_array()
                     .expect("samples")
                     .iter()
                     .map(|n| n.as_i64().expect("sample") as i16)
                     .collect(),
-            ),
+            },
             "FunctionCall" => ServerEvent::FunctionCall {
                 call_id: x["call_id"].as_str().expect("call_id").into(),
                 name: x["name"].as_str().expect("name").into(),
@@ -243,7 +256,10 @@ mod tests {
             .collect();
         for e in [
             ServerEvent::Ready,
-            ServerEvent::AudioDelta(vec![]),
+            ServerEvent::AudioDelta {
+                item: None,
+                pcm: vec![],
+            },
             ServerEvent::TranscriptUser(String::new()),
             ServerEvent::TranscriptAssistant(String::new()),
             ServerEvent::FunctionCall {
@@ -353,6 +369,25 @@ mod tests {
             speed["session"]["audio"]["output"]["speed"].to_string(),
             "1.1"
         );
+    }
+
+    #[test]
+    fn f_cn_01_barge_in_truncates_the_item_to_what_was_heard() {
+        let v: Value = serde_json::from_str(FIXTURE).expect("fixture json");
+        let pinned = v["client_events"]
+            .as_array()
+            .expect("client events")
+            .iter()
+            .find(|e| e["type"] == "conversation.item.truncate")
+            .cloned()
+            .expect("a pinned truncate");
+        let sent = encode(&ClientEvent::Truncate {
+            item_id: "item_a1".into(),
+            audio_end_ms: 1_480,
+        });
+        assert_eq!(sent, vec![pinned]);
+        // The vendor's acknowledgement changes nothing for the call.
+        assert_eq!(decode(&frame("conversation.item.truncated")), None);
     }
 
     #[test]
@@ -477,7 +512,10 @@ mod tests {
             .expect("send");
         assert_eq!(
             next(&mut conn.rx).await,
-            Some(ServerEvent::AudioDelta(vec![100, 100, -100, -100]))
+            Some(ServerEvent::AudioDelta {
+                item: Some("item_a1".into()),
+                pcm: vec![100, 100, -100, -100]
+            })
         );
         assert_eq!(
             next(&mut conn.rx).await,

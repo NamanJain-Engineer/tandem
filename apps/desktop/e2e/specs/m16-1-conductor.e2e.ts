@@ -33,6 +33,7 @@ type MockState = {
   speed: number;
   voice: string | null;
   instructions: string;
+  truncates: Array<{ itemId: string; audioEndMs: number }>;
 };
 
 async function rt<T = unknown>(path: string, body?: unknown): Promise<T> {
@@ -145,7 +146,9 @@ describe("E2E-M16-1 Conductor call", function () {
   });
 
   afterEach(async () => {
-    await rt("/__control", { connectDelayMs: 0 });
+    // A case that failed while handshakes were held mustn't leave the next
+    // case's call waiting to connect.
+    await rt("/__control", { connectDelayMs: 0, release: true });
     if (!["idle"].includes((await view()).phase)) await endCall().catch(() => undefined);
   });
 
@@ -153,10 +156,18 @@ describe("E2E-M16-1 Conductor call", function () {
     const wav = join(process.env.TANDEM_HOME ?? "/tmp", "conductor-speech.wav");
     toneWav(wav, 2_000, 8_000);
     await invoke("test_dictate_mic", { source: { source: "wav", path: wav } });
-    await rt("/__control", { connectDelayMs: 2_500 });
+    // The test, not the mint's latency, decides when the call connects: the
+    // call keeps the latest 3 s before connect, so connecting 2.2 s after the
+    // click keeps all of the 2 s tone however long minting takes under load
+    // (a fixed delay after the mint once connected 3.6 s in and lost 0.6 s).
+    await rt("/__control", { hold: true });
+    const clicked = Date.now();
     await $('[data-testid="conductor-button"]').click();
     await $('[data-testid="conductor-hud"]').waitForExist({ timeout: 5_000 });
     expect((await view()).phase).toBe("connecting");
+    await browser.pause(Math.max(0, 2_200 - (Date.now() - clicked)));
+    expect((await view()).phase).toBe("connecting");
+    await rt("/__control", { release: true });
     await until((v) => v.phase === "listening", "connected", 30_000);
     await browser.waitUntil(async () => (await rt<MockState>("/__state")).voicedMs >= 1_800, {
       timeout: 10_000,
@@ -397,6 +408,62 @@ describe("E2E-M16-1 Conductor call: persona, wake and microphone", function () {
       await invoke("conductor_memory_clear");
       for (const key of Object.keys(persona)) await invoke("settings_reset", { key });
     }
+  });
+
+  it("F-CN-06 in a call, remember, recall and forget work, a secret is refused, and the end proposes a memory", async () => {
+    type Memory = { facts: string[]; proposals: Array<{ id: string; text: string }>; text: string };
+    // A fake key, assembled so secret scanners don't flag the spec.
+    const key = ["sk", "proj", "Qdxidq7OyFjVisrM1h8vbvTXfQNNTGnNZlhyg74g"].join("-");
+    try {
+      await startCall();
+      // Memory off (the default): nothing is written, and it says so.
+      expect(await say("remember that I deploy on Fridays")).toMatch(/^Memory is off/);
+      expect((await invoke<Memory>("conductor_memory_get")).facts).toEqual([]);
+      // Turned on mid-call: the next request is kept.
+      await invoke("settings_set", { key: "conductor_memory", value: true });
+      expect(await say("remember that I deploy on Fridays")).toBe("Okay, I'll remember that.");
+      expect((await invoke<Memory>("conductor_memory_get")).facts).toEqual(["I deploy on Fridays"]);
+      expect(await say("what do you know about me")).toBe("Here's what I remember: I deploy on Fridays.");
+      const refused = await say(`remember my token is ${key}`);
+      expect(refused).toContain("won't remember");
+      expect((await invoke<Memory>("conductor_memory_get")).text).not.toContain(key);
+      expect(await say("forget about Fridays")).toBe("Okay, I've forgotten that.");
+      expect((await invoke<Memory>("conductor_memory_get")).facts).toEqual([]);
+      // Said about themselves: proposed after the call ("Ask me", the default).
+      await say("I prefer pnpm over npm");
+      await endCall();
+      await browser.waitUntil(
+        async () =>
+          (await invoke<Memory>("conductor_memory_get")).proposals.some((p) => p.text === "I prefer pnpm over npm"),
+        { timeout: 10_000, timeoutMsg: "no proposal card after the call" },
+      );
+      expect((await invoke<Memory>("conductor_memory_get")).facts).toEqual([]);
+    } finally {
+      await invoke("conductor_memory_clear");
+      await invoke("settings_reset", { key: "conductor_memory" });
+    }
+  });
+
+  it("F-CN-01 a barge-in mid-answer tells the talker how much of it was heard", async () => {
+    await startCall();
+    const { itemId } = await rt<{ itemId: string }>("/__speak", { ms: 3_000, text: "Here's a long answer." });
+    const spoke = Date.now();
+    await until((v) => v.phase === "speaking", "speaking");
+    await browser.pause(Math.max(0, 1_000 - (Date.now() - spoke)));
+    await rt("/__say", { text: "stop" });
+    await browser.waitUntil(async () => (await rt<MockState>("/__state")).truncates.length > 0, {
+      timeout: 10_000,
+      timeoutMsg: "no truncate after the barge-in",
+    });
+    const heard = Date.now() - spoke;
+    const { truncates } = await rt<MockState>("/__state");
+    expect(truncates).toHaveLength(1);
+    expect(truncates[0]?.itemId).toBe(itemId);
+    // What had played by the barge-in: at least the pause, never more
+    // than the time since the audio arrived or the 3 s it lasts.
+    expect(truncates[0]?.audioEndMs).toBeGreaterThanOrEqual(800);
+    expect(truncates[0]?.audioEndMs).toBeLessThanOrEqual(Math.min(3_000, heard));
+    await endCall();
   });
 
   it("F-CN-07 the wake phrase starts a call that holds the mic until it ends", async () => {

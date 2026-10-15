@@ -5,4 +5,72 @@ description: A voice-driven coordinator for your agents.
 
 > **Part of Pro.** Conductor is in the app, and it runs on Pro and Team, which come with Vibezeo accounts: its calls use Vibezeo's hosted voice service and are paid for in credits. The current download runs the Free plan, so it can't make calls. [The changelog](/changelog/) says what each release contains.
 
-Conductor is a coordinator you talk to: it can start agents, prompt them, find work and report back. Click the Conductor button in the title bar or the floating ring to start or end a call, hold it to talk only while it's held, or press <kbd>Mod+Shift+Space</kbd>. A call lasts up to 30 minutes. Conductor never types into a terminal on its own say: a shell command waits for your click on screen, and a spoken yes only answers the question it was asked.
+Conductor is a coordinator you talk to. It starts agents, prompts them, reads what they wrote, finds work, changes a few settings and reports back, while you keep your hands on the keyboard or away from it. A call has two parts: a realtime voice model you talk with, and a planner behind it that turns what you asked for into the app's own actions, which run on your computer.
+
+## Start and end a call
+
+- **The Conductor button** in the title bar starts a call, and clicking it again ends it. **Hold it** to talk only while it's held: the call starts muted, holding it unmutes, and letting go mutes again. A push-to-talk call that stays muted for 2 minutes ends on its own.
+- <kbd>Mod+Shift+Space</kbd> starts or ends a call from anywhere in the app.
+- **The wake phrase** "Hey Conductor" starts a call hands-free when you turn it on (below), and Conductor says it's listening.
+- **Mute** (<kbd>Mod+Shift+M</kbd>, or the HUD's mic button) stops sending your voice. Conductor can still talk and keep working.
+- **"Talk faster"** and **"talk slower"** move its speech rate a step for the rest of the call. Settings › Conductor › **Speech speed** sets where calls start.
+
+The microphone opens as soon as you start a call, so you can talk while it connects: up to 3 seconds of early speech is kept and sent once the call is connected. A call uses the Dictate microphone setting and never opens a Bluetooth headset's mic on its own. While a call has the microphone, Dictate waits. A microphone that stops delivering sound ends the call with "The microphone isn't delivering audio." and a button to switch microphones.
+
+A call ends when you hang up, sign out, or run out of credits, or when it reaches its 30-minute limit (with a spoken and on-screen notice 2 minutes before). When it ends, its audio stops at once and anything it was about to type is cancelled.
+
+## What it can do
+
+Conductor's planner can only call the tools below, and the app checks every call against the same list before it runs. Tools marked **Asks first** wait for a yes, and a shell command waits for a click on screen. Tool outputs pass through Vibezeo's secret redactor before Conductor sees them.
+
+<ConductorToolsTable />
+
+- **Launching agents** opens them in a tab of their own, as the launch sheet does.
+- **Executing a task** always starts it in a new worktree lane, with Edits access and review on, never Full access.
+- **Creating a teammate** opens the New teammate sheet with what you described filled in; nothing is saved until you save it there.
+- **Settings.** `set_setting` changes only these, and refuses any other key:
+
+<ConductorSettingsTable />
+
+Some things are never available by voice: forcing a lane's removal, turning on Full access, and approving a plugin action that spends money or deletes something. Those always need you in the app.
+
+## Safety rules
+
+- **It types into agents, not shells.** Conductor types prompts into agent panes and threads. The only way it runs a shell command is `run_command_in_shell`, and that waits for you to click **Yes** on screen: a spoken yes can't run it. Typed text has control characters stripped, and Enter is sent separately.
+- **It never types into something that's waiting on you.** A pane or thread waiting for an approval gets nothing; Conductor tells you it's waiting instead. A busy agent gets the prompt once it's back at its prompt, and a call that ends first delivers nothing.
+- **A yes answers only the question asked.** When Conductor asks you something, the answer you give, by voice or with the HUD's buttons, resolves that one request and nothing else.
+- **No file contents.** The planner gets names and states (panes, threads, teammates and what they're doing), never file contents, and what it reads back from a pane or thread is redacted first.
+
+## The HUD and the floating ring
+
+During a call a card at the top of the window shows Conductor's ring and its state (**Connecting**, **Listening**, **Thinking**, **Working on it** or **Speaking**), the last thing you said, and a chip for each action, with a ✓ or ✗ when it finishes. The newest 3 chips show and older ones fold into **+N**, which opens the call log. When Conductor asks something, **Yes** and **No** appear. The card also shows how long the call has run and about how many minutes your credits cover, with **Mute** and **End**.
+
+Settings › Conductor › **Floating ring** adds a ring that floats over every app. Drag it anywhere and it stays there; click it to start or end a call, hold it to talk, and hover for **Mute**, **Call log** and **End**. If the display it was on is gone, it comes back to the top-right corner of the main one.
+
+## Call logs
+
+The call log (<kbd>Mod+Shift+.</kbd>) lists each call's turns and actions, and they're kept only on your computer. Settings › Conductor › **Keep call logs** keeps them for **7 days** (the default) or **30 days**, or **Don't keep**: then a call's turns are never written, and the call itself is removed once it's settled.
+
+## Persona and memory
+
+Settings › Conductor sets what Conductor calls itself (the wake phrase stays "Hey Conductor"), its voice, its tone (Neutral, Warm or Brief), how much it says (Short, Normal or Detailed), its speech speed (5 steps), and a note telling it about you. A call reads them once, when it starts.
+
+**Remember things between calls** is off by default. Turned on, Conductor's memory is a file on your computer, `memory.md`, which Settings › Conductor shows and lets you edit, and every call reads it when it starts. During a call:
+
+- **"Remember that…"** adds a fact. With memory off, nothing is written and Conductor says so.
+- **"What do you know about me"** reads back what it remembers.
+- **"Forget…"** removes every fact that mentions what you name, as whole words. "Forget it" or "forget that" on its own leaves memory as it is.
+
+It refuses anything that looks like a password, token or key, said or typed. These are handled on your computer, without the planner.
+
+When a call ends, **After each call** decides what happens to what you said about yourself during it ("I prefer…", "I usually…", "I work on…"): **Ask me about new memories** (the default) shows each as a card in Settings › Conductor to **Keep** or **Discard**, **Save automatically** adds them, and **Don't reflect** does neither. While memory is on, each call also adds a line to a journal on your computer with the time, how long the call lasted and which tools it used, never what was said; with **Keep call logs** set to **Don't keep**, it adds none. **Forget everything…** deletes the memory file, the cards and the journal.
+
+## The wake phrase
+
+Settings › Conductor › **Wake phrase "Hey Conductor"** listens for the phrase on your computer, with a small speech model that comes with the app; no audio leaves your computer until a call starts. It uses the Dictate microphone, with a choice of sensitivity (Low, Medium or High), and it pauses while Dictate or a call is using the microphone, while media plays on Bluetooth headphones, and, with **Pause while watching videos** on (the default), while anything is playing. If the model didn't pass its false-trigger test, the setting stays off and says so.
+
+## Credits
+
+A call costs 20 credits for every started 10 seconds it's connected, about 120 credits a minute. Starting a call holds 10 minutes of credits, topped up as the call goes on, and whatever the call didn't use comes back when it ends. A call that's still connecting when you hang up costs nothing. The HUD shows about how many minutes your credits cover, and a call ends when they run out.
+
+Your voice goes to the hosted voice service only while a call is connected, and the planner's requests (what you asked, and the names and states above) go to Vibezeo's servers.

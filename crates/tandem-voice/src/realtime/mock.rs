@@ -3,10 +3,11 @@
 //!
 //! App → mock: `session.update {session: {instructions, voice, tools}}`,
 //! `input_audio.append {audio}`, `function_call.output {call_id, output}`,
-//! `response.create {instructions}`.
+//! `response.create {instructions}`, `conversation.item.truncate {item_id,
+//! audio_end_ms}` (barge-in).
 //!
 //! Mock → app: `session.ready`, `speech.started`, `transcript.user {text}`,
-//! `transcript.assistant {text}`, `audio.delta {audio}`,
+//! `transcript.assistant {text}`, `audio.delta {audio, item_id?}`,
 //! `function_call {call_id, name, arguments}` (`arguments` a JSON string),
 //! `response.done`, `error {message}`.
 //!
@@ -59,6 +60,14 @@ pub fn encode(event: &ClientEvent) -> Value {
             "type": "session.update",
             "session": {"speed": (f64::from(*speed) * 100.0).round() / 100.0}
         }),
+        ClientEvent::Truncate {
+            item_id,
+            audio_end_ms,
+        } => json!({
+            "type": "conversation.item.truncate",
+            "item_id": item_id,
+            "audio_end_ms": audio_end_ms
+        }),
     }
 }
 
@@ -71,7 +80,10 @@ pub fn decode(frame: &str) -> Option<ServerEvent> {
         "speech.started" => ServerEvent::SpeechStarted,
         "transcript.user" => ServerEvent::TranscriptUser(text("text")),
         "transcript.assistant" => ServerEvent::TranscriptAssistant(text("text")),
-        "audio.delta" => ServerEvent::AudioDelta(pcm::decode(v["audio"].as_str()?)?),
+        "audio.delta" => ServerEvent::AudioDelta {
+            item: v["item_id"].as_str().map(String::from),
+            pcm: pcm::decode(v["audio"].as_str()?)?,
+        },
         "function_call" => ServerEvent::FunctionCall {
             call_id: text("call_id"),
             name: text("name"),
@@ -125,7 +137,10 @@ mod tests {
         assert_eq!(audio["type"], "input_audio.append");
         assert_eq!(
             decode(&json!({"type":"audio.delta","audio":audio["audio"]}).to_string()),
-            Some(ServerEvent::AudioDelta(vec![1, -1]))
+            Some(ServerEvent::AudioDelta {
+                item: None,
+                pcm: vec![1, -1]
+            })
         );
         let session = encode(&ClientEvent::Configure {
             instructions: "be brief".into(),

@@ -8,7 +8,8 @@ import { setInvokeBackend } from "../../ipc/invoke";
 import { useDictate, watchDictate } from "../../stores/dictate";
 import { fakeBackend, resetStores } from "../../test/fakeBackend";
 import { bindingFrom, keyName, presets } from "./binding";
-import { DictateExtras, MicSelect, ShortcutField } from "./DictatePage";
+import { DictateExtras, DictateHomeCard, MicSelect, ShortcutField } from "./DictatePage";
+import { StatusBar } from "../shell/StatusBar";
 import { EngineControl } from "./EngineControl";
 import { AutoEnhanceControl, FormattingControl } from "./EnhanceControls";
 import { useSettings } from "../../stores/settings";
@@ -54,9 +55,15 @@ const wrap = (ui: React.ReactNode) => render(<UiProvider>{ui}</UiProvider>);
 
 describe("Dictate bindings (F-DI-01)", () => {
   it("F-DI-01 recorded keys become binding strings, modifier-only included", () => {
-    expect(bindingFrom({ code: "", ctrlKey: true, altKey: true, shiftKey: false, metaKey: false })).toBe("Ctrl+Alt");
-    expect(bindingFrom({ code: "KeyD", ctrlKey: true, altKey: false, shiftKey: true, metaKey: false })).toBe("Ctrl+Shift+D");
-    expect(bindingFrom({ code: "Mouse4", ctrlKey: false, altKey: false, shiftKey: false, metaKey: false })).toBe("Mouse4");
+    expect(bindingFrom({ code: "", ctrlKey: true, altKey: true, shiftKey: false, metaKey: false })).toBe(
+      "Ctrl+Alt",
+    );
+    expect(bindingFrom({ code: "KeyD", ctrlKey: true, altKey: false, shiftKey: true, metaKey: false })).toBe(
+      "Ctrl+Shift+D",
+    );
+    expect(
+      bindingFrom({ code: "Mouse4", ctrlKey: false, altKey: false, shiftKey: false, metaKey: false }),
+    ).toBe("Mouse4");
     expect(keyName("IntlBackslash")).toBeNull();
     expect(presets("macos").recommended).toBe("Fn");
     expect(presets("windows").recommended).toBe("Ctrl+Meta");
@@ -77,7 +84,9 @@ describe("Dictate bindings (F-DI-01)", () => {
     fireEvent.keyDown(rec, { code: "AltLeft", key: "Alt", ctrlKey: true, altKey: true });
     fireEvent.keyUp(rec, { code: "AltLeft", key: "Alt" });
     await waitFor(() =>
-      expect(screen.getByTestId("dictate-shortcut-error-toggle").textContent).toBe("Toggle needs a key that isn't only modifiers."),
+      expect(screen.getByTestId("dictate-shortcut-error-toggle").textContent).toBe(
+        "Toggle needs a key that isn't only modifiers.",
+      ),
     );
   });
 });
@@ -87,11 +96,29 @@ describe("Dictate widget (F-DI-07, UI-60)", () => {
     fakeBackend({ dictate_status: () => STATUS });
     wrap(<DictateWidget />);
     await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Vibezeo"));
-    act(() => emitLocal("dictate:state", { state: "listening", takeId: "take_1", handsFree: true, composer: null, words: null }));
-    await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Hands-free · press Ctrl+Alt to stop"));
+    act(() =>
+      emitLocal("dictate:state", {
+        state: "listening",
+        takeId: "take_1",
+        handsFree: true,
+        composer: null,
+        words: null,
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("widget-text").textContent).toBe("Hands-free · press Ctrl+Alt to stop"),
+    );
     expect(screen.getByTestId("widget-timer").textContent).toBe("0:00");
     expect(screen.getByRole("button", { name: "Discard this take" })).toBeTruthy();
-    act(() => emitLocal("dictate:state", { state: "inserted", takeId: "take_1", handsFree: false, composer: null, words: 42 }));
+    act(() =>
+      emitLocal("dictate:state", {
+        state: "inserted",
+        takeId: "take_1",
+        handsFree: false,
+        composer: null,
+        words: 42,
+      }),
+    );
     await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Inserted · 42 words"));
     expect(clock(65_000)).toBe("1:05");
   });
@@ -113,20 +140,36 @@ describe("Dictate widget (F-DI-07, UI-60)", () => {
         app: null,
         model: null,
         previous: null,
-        detail: "No samples arrived within 1 s, after rebuilding the stream and trying the backup microphone.",
+        detail:
+          "No samples arrived within 1 s, after rebuilding the stream and trying the backup microphone.",
         message: null,
         actions: [],
       }),
     );
-    await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Your microphone isn't delivering audio"));
+    await waitFor(() =>
+      expect(screen.getByTestId("widget-text").textContent).toBe("Your microphone isn't delivering audio"),
+    );
     const pill = screen.getByTestId("dictate-widget");
-    expect(pill.getAttribute("title")).toBe("No samples arrived within 1 s, after rebuilding the stream and trying the backup microphone.");
+    expect(pill.getAttribute("title")).toBe(
+      "No samples arrived within 1 s, after rebuilding the stream and trying the backup microphone.",
+    );
     expect(pill.getAttribute("data-state")).toBe("error");
   });
 
   it("F-DI-07 toasts read from the catalog; composer takes toast in the main window", () => {
-    const t = { code: "elevated" as const, error: false, app: "Registry Editor", model: null, previous: null, detail: "", message: null, actions: [] };
-    expect(toastText(t)).toBe("Registry Editor is running as administrator, so Vibezeo can't type into it. Copied instead.");
+    const t = {
+      code: "elevated" as const,
+      error: false,
+      app: "Registry Editor",
+      model: null,
+      previous: null,
+      detail: "",
+      message: null,
+      actions: [],
+    };
+    expect(toastText(t)).toBe(
+      "Registry Editor is running as administrator, so Vibezeo can't type into it. Copied instead.",
+    );
     expect(mainWindowShows({ ...t, code: "no_speech" }, true, false)).toBe(true);
     expect(mainWindowShows({ ...t, code: "no_speech" }, false, false)).toBe(false);
     expect(mainWindowShows({ ...t, code: "model_fallback" }, false, false)).toBe(true);
@@ -137,7 +180,15 @@ function DictatedComposer({ handle }: { handle: React.RefObject<ComposerHandle |
   const [value, setValue] = useStateValue("fix the  test");
   const { dictation, onFocusChange } = useComposerDictation("thread:t1", handle);
   return (
-    <Composer ref={handle} value={value} onChange={setValue} onSend={() => undefined} placeholder="Message" dictation={dictation} onFocusChange={onFocusChange} />
+    <Composer
+      ref={handle}
+      value={value}
+      onChange={setValue}
+      onSend={() => undefined}
+      placeholder="Message"
+      dictation={dictation}
+      onFocusChange={onFocusChange}
+    />
   );
 }
 
@@ -155,7 +206,11 @@ describe("Composer dictation (F-DI-12, UI-68)", () => {
     const area = screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
     area.focus();
     area.setSelectionRange(8, 8);
-    await waitFor(() => expect(calls.some((c) => c.cmd === "dictate_composer_focus" && c.args?.targetId === "thread:t1")).toBe(true));
+    await waitFor(() =>
+      expect(calls.some((c) => c.cmd === "dictate_composer_focus" && c.args?.targetId === "thread:t1")).toBe(
+        true,
+      ),
+    );
     act(() => emitLocal("dictate:insert", { targetId: "thread:other", text: "nope" }));
     act(() => emitLocal("dictate:insert", { targetId: "thread:t1", text: "failing" }));
     await waitFor(() => expect(area.value).toBe("fix the failing test"));
@@ -172,12 +227,26 @@ describe("Composer dictation (F-DI-12, UI-68)", () => {
     fireEvent.pointerDown(mic, { button: 0 });
     fireEvent.pointerUp(mic, { button: 0 });
     await waitFor(() =>
-      expect(calls.filter((c) => c.cmd === "dictate_start_take")[0]?.args).toEqual({ origin: { type: "composer", targetId: "thread:t1" } }),
+      expect(calls.filter((c) => c.cmd === "dictate_start_take")[0]?.args).toEqual({
+        origin: { type: "composer", targetId: "thread:t1" },
+      }),
     );
     expect(calls.some((c) => c.cmd === "dictate_stop_take")).toBe(false);
-    act(() => emitLocal("dictate:state", { state: "listening", takeId: "take_1", handsFree: true, composer: "thread:t1", words: null }));
-    await waitFor(() => expect(screen.getByTestId("composer-mic").getAttribute("data-state")).toBe("listening"));
-    expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).placeholder).toBe("Listening…");
+    act(() =>
+      emitLocal("dictate:state", {
+        state: "listening",
+        takeId: "take_1",
+        handsFree: true,
+        composer: "thread:t1",
+        words: null,
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("composer-mic").getAttribute("data-state")).toBe("listening"),
+    );
+    expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).placeholder).toBe(
+      "Listening…",
+    );
     fireEvent.pointerDown(screen.getByTestId("composer-mic"), { button: 0 });
     await waitFor(() => expect(calls.some((c) => c.cmd === "dictate_stop_take")).toBe(true));
     off();
@@ -204,7 +273,10 @@ describe("Dictate setup (F-DI-11)", () => {
 describe("Microphone choice (F-DI-03)", () => {
   it("D-518 an unset microphone shows its label in the trigger, not a blank", async () => {
     fakeBackend({
-      dictate_devices: () => ({ devices: [{ id: "mic1", name: "Desk Mic", isDefault: true, bluetooth: false, loopback: false }], chosen: null }),
+      dictate_devices: () => ({
+        devices: [{ id: "mic1", name: "Desk Mic", isDefault: true, bluetooth: false, loopback: false }],
+        chosen: null,
+      }),
     });
     wrap(
       <>
@@ -212,7 +284,11 @@ describe("Microphone choice (F-DI-03)", () => {
         <MicSelect k="dictate_backup_mic" label="Backup microphone" none="None" />
       </>,
     );
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "Microphone" }).textContent).toContain("System default (Desk Mic)"));
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Microphone" }).textContent).toContain(
+        "System default (Desk Mic)",
+      ),
+    );
     expect(screen.getByRole("combobox", { name: "Backup microphone" }).textContent).toContain("None");
   });
 });
@@ -221,7 +297,16 @@ const page = (takes: TakePage["takes"]): TakePage => ({ takes, next: null });
 
 describe("History and stats (F-DI-08, UI-65)", () => {
   it("F-DI-08.1 search asks the core, export writes the CSV, clear confirms", async () => {
-    const take = { id: "take_1", createdAt: 0, text: "refactor the auth guard", engine: "local", model: "whisper-base.en", wordCount: 4, durationMs: 3000, appId: null };
+    const take = {
+      id: "take_1",
+      createdAt: 0,
+      text: "refactor the auth guard",
+      engine: "local",
+      model: "whisper-base.en",
+      wordCount: 4,
+      durationMs: 3000,
+      appId: null,
+    };
     const calls = fakeBackend({
       dictate_history: (a) => page(a?.query === "zzz" ? [] : [take]),
       dictate_stats: () => ({ words: 4, speakingMs: 3000, takes: 1, wpm: 80, savedMs: 3000 }),
@@ -232,10 +317,72 @@ describe("History and stats (F-DI-08, UI-65)", () => {
     fireEvent.change(screen.getByTestId("history-search"), { target: { value: "zzz" } });
     await waitFor(() => expect(screen.getByText("No takes match")).toBeTruthy());
     fireEvent.click(screen.getByTestId("history-export"));
-    await waitFor(() => expect(calls.find((c) => c.cmd === "dictate_history_export")?.args).toEqual({ path: "/tmp/history.csv" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "dictate_history_export")?.args).toEqual({
+        path: "/tmp/history.csv",
+      }),
+    );
     fireEvent.click(screen.getByTestId("history-clear"));
     fireEvent.click(await screen.findByRole("button", { name: "Clear history" }));
     await waitFor(() => expect(calls.some((c) => c.cmd === "dictate_history_clear")).toBe(true));
+  });
+
+  it("F-DI-08 the home card lists the last 5 takes, and one opens History", async () => {
+    const takes = Array.from({ length: 5 }, (_, i) => ({
+      id: `take_${i}`,
+      createdAt: 0,
+      text: `take number ${i}`,
+      engine: "local",
+      model: "whisper-base.en",
+      wordCount: 3,
+      durationMs: 1000,
+      appId: null,
+    }));
+    const calls = fakeBackend({
+      dictate_history: () => page(takes),
+      dictate_stats: () => ({ words: 15, speakingMs: 5000, takes: 5, wpm: 90, savedMs: 4000 }),
+    });
+    useDictate.setState({ status: { ...STATUS, verified: true } });
+    let opened = 0;
+    wrap(<DictateHomeCard onTry={() => undefined} onHistory={() => (opened += 1)} />);
+    await waitFor(() => expect(screen.getAllByTestId("dictate-recent-take")).toHaveLength(5));
+    expect(calls.find((c) => c.cmd === "dictate_history")?.args).toEqual({
+      query: null,
+      before: null,
+      limit: 5,
+    });
+    expect(screen.getAllByTestId("dictate-recent-take")[0]?.textContent).toContain("take number 0");
+    fireEvent.click(screen.getAllByTestId("dictate-recent-take")[2] as HTMLElement);
+    expect(opened).toBe(1);
+  });
+
+  it("F-DI-08 with no takes yet, the home card lists none", async () => {
+    fakeBackend({ dictate_history: () => page([]) });
+    useDictate.setState({ status: STATUS });
+    wrap(<DictateHomeCard onTry={() => undefined} onHistory={() => undefined} />);
+    await waitFor(() => expect(screen.getByTestId("dictate-home")).toBeTruthy());
+    expect(screen.queryByTestId("dictate-recent")).toBeNull();
+  });
+
+  it("F-DI-08 history says which engine heard each take", async () => {
+    const local = {
+      id: "take_1",
+      createdAt: 0,
+      text: "local words",
+      engine: "local",
+      model: "whisper-base.en",
+      wordCount: 2,
+      durationMs: 1000,
+      appId: null,
+    };
+    const cloud = { ...local, id: "take_2", text: "cloud words", engine: "cloud", model: "cloud" };
+    fakeBackend({ dictate_history: () => page([local, cloud]) });
+    wrap(<HistorySheet open onClose={() => undefined} />);
+    await waitFor(() => expect(screen.getAllByTestId("take-text")).toHaveLength(2));
+    const meta = (id: string) => document.querySelector(`[data-take="${id}"] span`)?.textContent ?? "";
+    expect(meta("take_1")).toContain("Local · whisper-base.en");
+    expect(meta("take_2")).toContain("Cloud");
+    expect(meta("take_2")).not.toContain("Local");
   });
 
   it("F-DI-08 an empty history says how to start", async () => {
@@ -259,18 +406,29 @@ describe("Dictionary (F-DI-09, UI-64)", () => {
     await waitFor(() => expect(screen.getByText("No words yet")).toBeTruthy());
     fireEvent.mouseDown(screen.getByRole("tab", { name: /Corrections/ }), { button: 0 });
     fireEvent.click(await screen.findByTestId("rules-add-correction"));
-    fireEvent.change(screen.getByTestId("rule-phrases").querySelector("textarea") ?? screen.getByTestId("rule-phrases"), { target: { value: "tandem" } });
-    fireEvent.change(screen.getByTestId("rule-replacement").querySelector("input") ?? screen.getByTestId("rule-replacement"), { target: { value: "Tandem" } });
+    fireEvent.change(
+      screen.getByTestId("rule-phrases").querySelector("textarea") ?? screen.getByTestId("rule-phrases"),
+      { target: { value: "tandem" } },
+    );
+    fireEvent.change(
+      screen.getByTestId("rule-replacement").querySelector("input") ?? screen.getByTestId("rule-replacement"),
+      { target: { value: "Tandem" } },
+    );
     fireEvent.click(screen.getByTestId("rule-save"));
     await waitFor(() => {
-      const saved = calls.find((c) => c.cmd === "dictionary_save")?.args?.rule as { kind: string; phrases: string[]; replacement: string } | undefined;
+      const saved = calls.find((c) => c.cmd === "dictionary_save")?.args?.rule as
+        { kind: string; phrases: string[]; replacement: string } | undefined;
       expect(saved?.kind).toBe("correction");
       expect(saved?.phrases).toEqual(["tandem"]);
       expect(saved?.replacement).toBe("Tandem");
     });
     const box = screen.getByTestId("dictionary-test-input");
-    fireEvent.change(box.querySelector("input") ?? box, { target: { value: "use tandem, https://tandem.dev" } });
-    await waitFor(() => expect(screen.getByTestId("dictionary-test-output").textContent).toBe("use Tandem, https://tandem.dev"));
+    fireEvent.change(box.querySelector("input") ?? box, {
+      target: { value: "use tandem, https://tandem.dev" },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("dictionary-test-output").textContent).toBe("use Tandem, https://tandem.dev"),
+    );
   });
 });
 
@@ -279,8 +437,36 @@ const MODELS: ModelsView = {
   active: null,
   pending: null,
   models: [
-    { id: "whisper-base.en", name: "Whisper Base (English)", bytes: 147964211, langsLabel: "English", languages: ["en"], recommended: false, available: true, cpuWarning: false, runnable: true, state: "failed", progress: null, error: "Download failed: the file didn't match.", license: "MIT" },
-    { id: "distil-whisper-large-v3.5", name: "Distil-Whisper (English)", bytes: 1519521155, langsLabel: "English", languages: ["en"], recommended: false, available: true, cpuWarning: true, runnable: true, state: "downloading", progress: { stage: "downloading", done: 759760577, total: 1519521155, speed: 9000000 }, error: null, license: "MIT" },
+    {
+      id: "whisper-base.en",
+      name: "Whisper Base (English)",
+      bytes: 147964211,
+      langsLabel: "English",
+      languages: ["en"],
+      recommended: false,
+      available: true,
+      cpuWarning: false,
+      runnable: true,
+      state: "failed",
+      progress: null,
+      error: "Download failed: the file didn't match.",
+      license: "MIT",
+    },
+    {
+      id: "distil-whisper-large-v3.5",
+      name: "Distil-Whisper (English)",
+      bytes: 1519521155,
+      langsLabel: "English",
+      languages: ["en"],
+      recommended: false,
+      available: true,
+      cpuWarning: true,
+      runnable: true,
+      state: "downloading",
+      progress: { stage: "downloading", done: 759760577, total: 1519521155, speed: 9000000 },
+      error: null,
+      license: "MIT",
+    },
   ],
 };
 
@@ -288,11 +474,19 @@ describe("Model manager (F-DI-04, UI-63)", () => {
   it("F-DI-04.1 a failed download says the file didn't match and offers Retry", async () => {
     const calls = fakeBackend({ dictate_models: () => MODELS });
     wrap(<ModelManager open onClose={() => undefined} />);
-    await waitFor(() => expect(screen.getByTestId("model-failed-whisper-base.en").textContent).toContain("Download failed: the file didn't match."));
+    await waitFor(() =>
+      expect(screen.getByTestId("model-failed-whisper-base.en").textContent).toContain(
+        "Download failed: the file didn't match.",
+      ),
+    );
     expect(screen.getByText("CPU transcription")).toBeTruthy();
     expect(screen.getByTestId("model-progress-distil-whisper-large-v3.5").textContent).toContain("50%");
     fireEvent.click(screen.getByTestId("model-retry-whisper-base.en"));
-    await waitFor(() => expect(calls.find((c) => c.cmd === "dictate_model_download")?.args).toEqual({ modelId: "whisper-base.en" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "dictate_model_download")?.args).toEqual({
+        modelId: "whisper-base.en",
+      }),
+    );
   });
 });
 
@@ -354,7 +548,9 @@ describe("Cloud transcription (F-DI-05)", () => {
         actions: ["use_local"],
       }),
     );
-    await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Out of credits for cloud transcription"));
+    await waitFor(() =>
+      expect(screen.getByTestId("widget-text").textContent).toBe("Out of credits for cloud transcription"),
+    );
     expect(calls.some((c) => c.cmd === "dictate_use_local")).toBe(false);
     fireEvent.click(screen.getByTestId("toast-action-use_local"));
     await waitFor(() => expect(calls.some((c) => c.cmd === "dictate_use_local")).toBe(true));
@@ -385,10 +581,19 @@ describe("Cloud transcription (F-DI-05)", () => {
 });
 
 describe("Enhance and Polish (F-DI-10)", () => {
-  const inserted = { state: "inserted" as const, takeId: "take_1", handsFree: false, composer: null, words: 2 };
+  const inserted = {
+    state: "inserted" as const,
+    takeId: "take_1",
+    handsFree: false,
+    composer: null,
+    words: 2,
+  };
 
   it("F-DI-10 the first quick action shows the disclosure, then sends with it acknowledged", async () => {
-    const calls = fakeBackend({ dictate_status: () => ({ ...STATUS, quickActions: true }), dictate_quick_action: () => true });
+    const calls = fakeBackend({
+      dictate_status: () => ({ ...STATUS, quickActions: true }),
+      dictate_quick_action: () => true,
+    });
     wrap(<DictateWidget />);
     await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Vibezeo"));
     act(() => emitLocal("dictate:state", inserted));
@@ -397,7 +602,10 @@ describe("Enhance and Polish (F-DI-10)", () => {
     expect(calls.some((c) => c.cmd === "dictate_quick_action")).toBe(false);
     fireEvent.click(screen.getByTestId("widget-disclosure-continue"));
     await waitFor(() =>
-      expect(calls.find((c) => c.cmd === "dictate_quick_action")?.args).toEqual({ mode: "enhance", disclosed: true }),
+      expect(calls.find((c) => c.cmd === "dictate_quick_action")?.args).toEqual({
+        mode: "enhance",
+        disclosed: true,
+      }),
     );
   });
 
@@ -410,7 +618,9 @@ describe("Enhance and Polish (F-DI-10)", () => {
     await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Vibezeo"));
     act(() => emitLocal("dictate:state", inserted));
     fireEvent.click(await screen.findByTestId("widget-polish"));
-    await waitFor(() => expect(calls.find((c) => c.cmd === "dictate_quick_action")?.args).toEqual({ mode: "polish" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "dictate_quick_action")?.args).toEqual({ mode: "polish" }),
+    );
     act(() => emitLocal("dictate:state", { ...inserted, state: "polishing", words: null }));
     await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Polishing…"));
     expect(screen.getByText("◈ 3")).toBeTruthy();
@@ -426,16 +636,31 @@ describe("Enhance and Polish (F-DI-10)", () => {
   });
 
   it("F-DI-10.1 F-DI-10.2 the toasts say what happened to the text", () => {
-    const base = { error: false, app: null, model: null, previous: null, detail: "", message: null, actions: [] };
-    expect(toastText({ ...base, code: "too_long_to_enhance" })).toBe("That's too long to enhance (5,000 characters max).");
-    expect(toastText({ ...base, code: "enhance_failed" })).toBe("Enhance didn't work, so your exact words were used.");
+    const base = {
+      error: false,
+      app: null,
+      model: null,
+      previous: null,
+      detail: "",
+      message: null,
+      actions: [],
+    };
+    expect(toastText({ ...base, code: "too_long_to_enhance" })).toBe(
+      "That's too long to enhance (5,000 characters max).",
+    );
+    expect(toastText({ ...base, code: "enhance_failed" })).toBe(
+      "Enhance didn't work, so your exact words were used.",
+    );
   });
 
   it("F-DI-10 Auto-Enhance asks once before any text is sent; Free can't turn it on", async () => {
     const calls = fakeBackend();
     useSession.setState({ entitlement: { ...useSession.getState().entitlement!, plan: "free" } });
     const { unmount } = wrap(<AutoEnhanceControl label="Enhance every take automatically" />);
-    expect((screen.getByRole("switch", { name: "Enhance every take automatically" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (screen.getByRole("switch", { name: "Enhance every take automatically" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
     unmount();
     useSession.setState({ entitlement: { ...useSession.getState().entitlement!, plan: "pro" } });
     wrap(<AutoEnhanceControl label="Enhance every take automatically" />);
@@ -463,7 +688,9 @@ describe("Enhance and Polish (F-DI-10)", () => {
 describe("Setup without a global hotkey (F-DI-11, D-515)", () => {
   it("F-DI-11 on Wayland without the portal, Try it names the command and the link verifies", async () => {
     fakeBackend({ dictate_status: () => ({ ...STATUS, verified: true }) });
-    useDictate.setState({ status: { ...STATUS, session: "wayland", deepLinkCommand: "xdg-open tandem://dictate/toggle" } });
+    useDictate.setState({
+      status: { ...STATUS, session: "wayland", deepLinkCommand: "xdg-open tandem://dictate/toggle" },
+    });
     wrap(<TryIt />);
     fireEvent.click(screen.getByTestId("dictate-verify"));
     expect(screen.getByTestId("dictate-try-link").textContent).toContain("xdg-open tandem://dictate/toggle");
@@ -487,7 +714,9 @@ describe("macOS permissions (F-DI-03, D-2108)", () => {
     expect(screen.queryByText("Quit & Reopen")).toBeNull();
     fireEvent.click(screen.getByTestId("dictate-grant-microphone"));
     await waitFor(() =>
-      expect(calls.some((c) => c.cmd === "dictate_open_permission_settings" && c.args?.kind === "microphone")).toBe(true),
+      expect(
+        calls.some((c) => c.cmd === "dictate_open_permission_settings" && c.args?.kind === "microphone"),
+      ).toBe(true),
     );
     act(() => useDictate.setState({ status: { ...STATUS, hotkey: { kind: "needs_permission" } } }));
     await waitFor(() => expect(screen.getByText("Quit & Reopen")).toBeTruthy());
@@ -495,11 +724,44 @@ describe("macOS permissions (F-DI-03, D-2108)", () => {
 
   it("F-DI-03 shows nothing where the OS has no such permissions", async () => {
     const calls = fakeBackend({
-      dictate_permissions: () => ({ mic: "not_needed", inputMonitoring: "not_needed", accessibility: "not_needed" }),
+      dictate_permissions: () => ({
+        mic: "not_needed",
+        inputMonitoring: "not_needed",
+        accessibility: "not_needed",
+      }),
     });
     useDictate.setState({ status: STATUS });
     const { container } = wrap(<Permissions />);
     await waitFor(() => expect(calls.some((c) => c.cmd === "dictate_permissions")).toBe(true));
     expect(container.textContent).toBe("");
+  });
+});
+
+describe("Dictate's status lines say what's true (D-520)", () => {
+  it("F-DI-05 with Cloud chosen, no local model is needed: the status bar shows the key", async () => {
+    fakeBackend({});
+    useDictate.setState({ status: { ...STATUS, model: null, engine: "cloud" } });
+    wrap(<StatusBar />);
+    expect(screen.getByTestId("status-dictate").textContent).toBe("Dictate: Ctrl+Alt");
+    useDictate.setState({ status: { ...STATUS, model: null, engine: "local" } });
+    await waitFor(() =>
+      expect(screen.getByTestId("status-dictate").textContent).toBe("Dictate: download a model"),
+    );
+  });
+
+  it("F-DI-05 the home card's Cloud chip names the language chosen", async () => {
+    fakeBackend({ dictate_stats: () => ({ words: 0, speakingMs: 0, takes: 0, wpm: 0, savedMs: 0 }) });
+    useDictate.setState({ status: { ...STATUS, engine: "cloud" } });
+    useSettings.setState({ values: { dictate_language: "de" } });
+    const { rerender } = wrap(<DictateHomeCard onTry={() => undefined} onHistory={() => undefined} />);
+    await waitFor(() => expect(screen.getByText(/^Cloud · /)).toBeTruthy());
+    expect(screen.getByText(/^Cloud · /).textContent).toBe("Cloud · German");
+    act(() => useSettings.setState({ values: { dictate_language: "auto" } }));
+    rerender(
+      <UiProvider>
+        <DictateHomeCard onTry={() => undefined} onHistory={() => undefined} />
+      </UiProvider>,
+    );
+    await waitFor(() => expect(screen.getByText(/^Cloud · /).textContent).toBe("Cloud · Auto-detect"));
   });
 });

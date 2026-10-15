@@ -89,6 +89,9 @@ ed25519-dalek.workspace = true
 plist = "1"
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+# The mock runtime, so Conductor's tools run against a real `State` in
+# unit tests (F-CN-02).
+tauri = { version = "2", features = ["test"] }
 
 [features]
 default = ["os-audio"]

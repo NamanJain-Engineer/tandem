@@ -3579,6 +3579,18 @@ mod tests {
         panic!("turn {n} never ended: {:?}", turn_states(f).await);
     }
 
+    /// The user messages stored so far.
+    async fn stored_users(f: &Fixture) -> Vec<String> {
+        stored(f)
+            .await
+            .into_iter()
+            .filter_map(|e| match e {
+                ThreadEvent::User { text, .. } => Some(text),
+                _ => None,
+            })
+            .collect()
+    }
+
     async fn stored(f: &Fixture) -> Vec<ThreadEvent> {
         f.svc
             .events(&f.thread.id, None, 500)
@@ -3768,8 +3780,10 @@ mod tests {
                 ),
             )
             .await;
+        // The follow-up's turn row and its stored message land a moment
+        // apart: wait for both, then check both.
         for _ in 0..300 {
-            if turn_states(&f).await.len() == 2 {
+            if turn_states(&f).await.len() == 2 && stored_users(&f).await.len() == 2 {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -3778,15 +3792,10 @@ mod tests {
             turn_states(&f).await,
             vec![TurnState::Completed, TurnState::Running]
         );
-        let users: Vec<String> = stored(&f)
-            .await
-            .into_iter()
-            .filter_map(|e| match e {
-                ThreadEvent::User { text, .. } => Some(text),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(users, vec!["first".to_string(), "next".to_string()]);
+        assert_eq!(
+            stored_users(&f).await,
+            vec!["first".to_string(), "next".to_string()]
+        );
         // The same session carried both turns.
         assert_eq!(f.adapter.starts.load(Ordering::SeqCst), 1);
     }

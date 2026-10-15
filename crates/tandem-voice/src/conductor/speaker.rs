@@ -4,7 +4,7 @@
 
 #[cfg(any(feature = "cpal", test))]
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -22,6 +22,8 @@ use crate::realtime::SAMPLE_RATE;
 pub struct Queue {
     buf: Mutex<VecDeque<i16>>,
     level: AtomicU32,
+    queued: AtomicU64,
+    played: AtomicU64,
 }
 
 #[cfg(any(feature = "cpal", test))]
@@ -29,11 +31,17 @@ impl Queue {
     fn push(&self, samples: &[i16]) {
         self.level
             .store(pcm::level(samples).to_bits(), Ordering::Relaxed);
-        self.buf.lock().extend(samples);
+        let mut buf = self.buf.lock();
+        buf.extend(samples);
+        self.queued
+            .fetch_add(samples.len() as u64, Ordering::Relaxed);
     }
 
+    /// Drops what hasn't played; it no longer counts as queued.
     fn clear(&self) {
-        self.buf.lock().clear();
+        let mut buf = self.buf.lock();
+        self.queued.fetch_sub(buf.len() as u64, Ordering::Relaxed);
+        buf.clear();
         self.level.store(0, Ordering::Relaxed);
     }
 
@@ -51,7 +59,13 @@ impl Queue {
 
     /// The next sample, or silence.
     fn pop(&self) -> i16 {
-        self.buf.lock().pop_front().unwrap_or(0)
+        match self.buf.lock().pop_front() {
+            Some(s) => {
+                self.played.fetch_add(1, Ordering::Relaxed);
+                s
+            }
+            None => 0,
+        }
     }
 }
 
@@ -61,6 +75,17 @@ impl Queue {
 pub struct SilentSpeaker {
     until: Mutex<Option<Instant>>,
     level: AtomicU32,
+    queued: AtomicU64,
+}
+
+impl SilentSpeaker {
+    /// Samples still "playing" by the clock.
+    fn remaining(&self, until: Option<Instant>) -> u64 {
+        until
+            .and_then(|u| u.checked_duration_since(Instant::now()))
+            .map(|d| d.as_micros() as u64 * u64::from(crate::realtime::SAMPLE_RATE) / 1_000_000)
+            .unwrap_or(0)
+    }
 }
 
 impl Speaker for SilentSpeaker {
@@ -71,12 +96,17 @@ impl Speaker for SilentSpeaker {
             .filter(|u| *u > Instant::now())
             .unwrap_or_else(Instant::now);
         *until = Some(from + len);
+        self.queued
+            .fetch_add(samples.len() as u64, Ordering::Relaxed);
         self.level
             .store(pcm::level(samples).to_bits(), Ordering::Relaxed);
     }
 
     fn stop(&self) {
-        *self.until.lock() = None;
+        let mut until = self.until.lock();
+        let left = self.remaining(*until);
+        self.queued.fetch_sub(left, Ordering::Relaxed);
+        *until = None;
     }
 
     fn speaking(&self) -> bool {
@@ -89,6 +119,15 @@ impl Speaker for SilentSpeaker {
         } else {
             0.0
         }
+    }
+
+    fn queued(&self) -> u64 {
+        self.queued.load(Ordering::Relaxed)
+    }
+
+    fn played(&self) -> u64 {
+        let until = *self.until.lock();
+        self.queued().saturating_sub(self.remaining(until))
     }
 }
 
@@ -181,6 +220,14 @@ impl Speaker for CpalSpeaker {
     fn level(&self) -> f32 {
         self.queue.level()
     }
+
+    fn queued(&self) -> u64 {
+        self.queue.queued.load(Ordering::Relaxed)
+    }
+
+    fn played(&self) -> u64 {
+        self.queue.played.load(Ordering::Relaxed)
+    }
 }
 
 /// The speaker for this build: cpal when compiled in.
@@ -218,5 +265,40 @@ mod tests {
         assert_eq!((q.pop(), q.pending()), (1, 2));
         q.clear();
         assert_eq!((q.pop(), q.pending(), q.level()), (0, 0, 0.0));
+    }
+
+    #[test]
+    fn f_cn_01_the_queue_counts_what_played_and_drops_the_rest_on_barge_in() {
+        let q = Queue::default();
+        q.push(&[1, 2, 3, 4, 5]);
+        q.pop();
+        q.pop();
+        let count = |q: &Queue| {
+            (
+                q.queued.load(Ordering::Relaxed),
+                q.played.load(Ordering::Relaxed),
+            )
+        };
+        assert_eq!(count(&q), (5, 2));
+        q.clear();
+        // The three that never played aren't queued any more.
+        assert_eq!(count(&q), (2, 2));
+        // Silence doesn't count as played.
+        q.pop();
+        assert_eq!(count(&q), (2, 2));
+    }
+
+    #[test]
+    fn f_cn_01_the_silent_speaker_plays_by_the_clock_and_stop_keeps_only_what_played() {
+        let s = SilentSpeaker::default();
+        s.play(&vec![1000; SAMPLE_RATE as usize]); // one second
+        assert_eq!(s.queued(), u64::from(SAMPLE_RATE));
+        std::thread::sleep(Duration::from_millis(200));
+        let played = s.played();
+        let ms = played * 1000 / u64::from(SAMPLE_RATE);
+        assert!((150..600).contains(&ms), "{ms} ms");
+        s.stop();
+        assert_eq!(s.queued(), s.played());
+        assert!(s.played() >= played);
     }
 }

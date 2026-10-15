@@ -4,7 +4,7 @@
 //! late or for a replaced take is dropped, and it talks to the app only
 //! through `DictateSink`, so all of it runs in tests with fakes.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
@@ -122,6 +122,8 @@ pub enum ToastCode {
     TooLongToEnhance,
     /// "Enhance didn't work, so your exact words were used."
     EnhanceFailed,
+    /// A Polish (or a formatting run, which is one) failed.
+    PolishFailed,
 }
 
 /// A finished take for the history (F-DI-08).
@@ -152,6 +154,9 @@ pub trait DictateSink: Send + Sync {
     fn verified(&self);
     /// A model switch held back by a take can run now.
     fn switch_due(&self, model_id: String);
+    /// The global shortcut's status changed on its own: secure input
+    /// paused it, or its session died (F-DI-02).
+    fn hotkey_status(&self, _status: HotkeyStatus) {}
 }
 
 #[derive(Debug, Clone)]
@@ -260,6 +265,8 @@ struct Inner {
     mic_owner: Option<String>,
     retry: Option<Retry>,
     last: Option<LastTake>,
+    /// The backend's status as last seen, and when it was checked (ms).
+    hotkey: (HotkeyStatus, u64),
 }
 
 /// Cheap to clone; every clone drives the same controller.
@@ -268,6 +275,8 @@ pub struct Dictate {
     inner: Arc<Mutex<Inner>>,
     deps: Arc<DictateDeps>,
     stop: Arc<AtomicBool>,
+    /// Bumped by each `start_hotkeys`; an older clock thread stops.
+    generation: Arc<AtomicU64>,
 }
 
 /// How long the widget waits before "No speech detected" for an empty take
@@ -288,9 +297,11 @@ impl Dictate {
                 mic_owner: None,
                 retry: None,
                 last: None,
+                hotkey: (HotkeyStatus::NotRunning, 0),
             })),
             deps: Arc::new(deps),
             stop: Arc::new(AtomicBool::new(false)),
+            generation: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -304,20 +315,38 @@ impl Dictate {
                 self.deps.hotkeys.status()
             }
         };
+        self.inner.lock().hotkey = (status.clone(), crate::hotkey::now_ms());
+        // One clock per start: a restart retires the previous thread.
+        let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
         let me = self.clone();
         let _ = std::thread::Builder::new()
             .name("dictate-keys".into())
             .spawn(move || loop {
-                if me.stop.load(Ordering::Acquire) {
+                if me.stop.load(Ordering::Acquire)
+                    || me.generation.load(Ordering::Acquire) != generation
+                {
                     break;
                 }
                 match rx.recv_timeout(Duration::from_millis(10)) {
                     Ok(e) => me.on_key(e),
-                    Err(mpsc::RecvTimeoutError::Timeout) => me.tick(),
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(mpsc::RecvTimeoutError::Timeout) => me.tick(generation),
+                    // The backend never started or went away: no keys come,
+                    // but takes from the mic button and the deep link still
+                    // need the clock (the 10-minute cap and its warning).
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        std::thread::sleep(Duration::from_millis(10));
+                        me.tick(generation);
+                    }
                 }
             });
         status
+    }
+
+    /// Stops the shortcut to start it again (a new binding): the clock
+    /// thread retires first, so the gap isn't reported as a failure.
+    pub fn stop_hotkeys(&self) {
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        self.deps.hotkeys.stop();
     }
 
     pub fn shutdown(&self) {
@@ -344,6 +373,14 @@ impl Dictate {
         self.inner.lock().machine.current().cloned()
     }
 
+    /// Tests: makes the running take `by` older, for the 10-minute cap.
+    #[cfg(test)]
+    fn age_take(&self, by: Duration) {
+        if let Some(c) = self.inner.lock().current.as_mut() {
+            c.started -= by;
+        }
+    }
+
     /// Conductor (M16) claims the mic: composer dictation is refused.
     pub fn set_mic_owner(&self, owner: Option<String>) {
         self.inner.lock().mic_owner = owner;
@@ -358,16 +395,54 @@ impl Dictate {
         self.inner.lock().verifier = None;
     }
 
+    /// The running take's phase while it records: Reconnecting during the
+    /// silent-stream recovery (F-DI-03, F-DI-07), Listening once sound is
+    /// back. False when no shown take is recording.
+    fn recording_phase(&self, phase: DictatePhase) -> bool {
+        let event = {
+            let i = self.inner.lock();
+            let Some(c) = i.current.as_ref().filter(|c| c.shown) else {
+                return false;
+            };
+            if i.machine.current() != Some(&c.id) || i.machine.state() != TakeState::Recording {
+                return false;
+            }
+            let mut e = DictateStateEvent::new(phase, Some(c.id.clone()));
+            e.hands_free = c.hands_free;
+            e.composer = match i.machine.origin(&c.id) {
+                Some(Origin::Composer { target_id }) => Some(target_id.clone()),
+                _ => None,
+            };
+            e
+        };
+        self.emit(event);
+        true
+    }
+
     pub fn on_capture_event(&self, event: CaptureEvent) {
         match event {
-            CaptureEvent::Rebuilt => {}
-            CaptureEvent::SwitchedToBackup { device } => self.toast(
-                ToastCode::SwitchedToBackup,
-                false,
-                format!(
-                    "The primary microphone stopped delivering audio; now recording from {device}."
-                ),
-            ),
+            CaptureEvent::Rebuilt => {
+                if self.recording_phase(DictatePhase::Reconnecting) {
+                    self.toast(
+                        ToastCode::Reconnecting,
+                        false,
+                        "The microphone was silent; reopening it.".into(),
+                    );
+                }
+            }
+            CaptureEvent::Resumed => {
+                self.recording_phase(DictatePhase::Listening);
+            }
+            CaptureEvent::SwitchedToBackup { device } => {
+                self.recording_phase(DictatePhase::Listening);
+                self.toast(
+                    ToastCode::SwitchedToBackup,
+                    false,
+                    format!(
+                        "The primary microphone stopped delivering audio; now recording from {device}."
+                    ),
+                )
+            }
             CaptureEvent::NotDelivering => {
                 self.toast(
                     ToastCode::MicSilent,
@@ -401,12 +476,14 @@ impl Dictate {
         }
     }
 
-    fn tick(&self) {
+    /// One beat of the clock thread started as `generation`.
+    fn tick(&self, generation: u64) {
         let now = crate::hotkey::now_ms();
         let actions = self.inner.lock().gesture.tick(now);
         for a in actions {
             self.act(a, None);
         }
+        self.watch_hotkeys(now, generation);
         // The 10-minute cap, and the warning 30 s before it.
         let (stop, warn) = {
             let mut i = self.inner.lock();
@@ -435,6 +512,42 @@ impl Dictate {
         }
     }
 
+    /// Every 250 ms: has the backend's status changed on its own? Secure
+    /// input pausing it says so; a working shortcut that stops says so.
+    fn watch_hotkeys(&self, now: u64, generation: u64) {
+        let old = {
+            let mut i = self.inner.lock();
+            if now.saturating_sub(i.hotkey.1) < 250 {
+                return;
+            }
+            i.hotkey.1 = now;
+            i.hotkey.0.clone()
+        };
+        let new = self.deps.hotkeys.status();
+        // The app restarted the shortcut (a new binding) while this thread
+        // read it: what it read is the gap between stop and start, not a
+        // failure, and the restart reports the new status itself.
+        if new == old || self.generation.load(Ordering::Acquire) != generation {
+            return;
+        }
+        self.inner.lock().hotkey.0 = new.clone();
+        self.deps.sink.hotkey_status(new.clone());
+        let working = matches!(old, HotkeyStatus::Active | HotkeyStatus::Paused);
+        match new {
+            HotkeyStatus::Paused => self.toast(
+                ToastCode::SecureInput,
+                false,
+                "Secure input is on; the shortcut is paused.".into(),
+            ),
+            HotkeyStatus::Unavailable { .. } | HotkeyStatus::NotRunning if working => self.toast(
+                ToastCode::HotkeyFailed,
+                true,
+                "The global shortcut stopped working.".into(),
+            ),
+            _ => {}
+        }
+    }
+
     /// The mic button, the toggle deep link, `dictate_start_take`: a
     /// hands-free take for `origin`.
     pub fn start_take(&self, origin: Origin) -> Result<TakeId, DictateError> {
@@ -445,7 +558,9 @@ impl Dictate {
         }
         self.act(Action::Arm, Some(origin));
         self.act(Action::Start { hands_free: true }, None);
-        self.current_take().ok_or(DictateError::NotStarted)
+        let id = self.current_take().ok_or(DictateError::NotStarted)?;
+        self.inner.lock().gesture.hands_free();
+        Ok(id)
     }
 
     /// "Use local for this take" (F-DI-05): transcribes the last failed cloud
@@ -541,7 +656,10 @@ impl Dictate {
             }
             Err(f) => {
                 self.deps.sink.toast(DictateToast {
-                    code: ToastCode::EnhanceFailed,
+                    code: match mode {
+                        RewriteMode::Enhance => ToastCode::EnhanceFailed,
+                        RewriteMode::Polish => ToastCode::PolishFailed,
+                    },
                     error: false,
                     app: None,
                     model: None,
@@ -1339,9 +1457,13 @@ mod tests {
         focus: Mutex<Option<String>>,
         keys: Mutex<Vec<Phase>>,
         verified: Mutex<bool>,
+        hotkey: Mutex<Vec<HotkeyStatus>>,
     }
 
     impl DictateSink for Sink {
+        fn hotkey_status(&self, status: HotkeyStatus) {
+            self.hotkey.lock().push(status);
+        }
         fn state(&self, e: DictateStateEvent) {
             self.states.lock().push(e);
         }
@@ -1582,6 +1704,19 @@ mod tests {
             .find(|t| t.code == ToastCode::EnhanceFailed)
             .cloned();
         assert_eq!(t.map(|t| t.detail), Some("HTTP 503 UNAVAILABLE".into()));
+    }
+
+    #[test]
+    fn f_di_10_2_a_failed_formatting_polish_says_polish_not_enhance() {
+        let rw = FakeRewriter::new(|_| Err(failure()));
+        let r = rig_full(speech(), "hello world", None, Some(rw));
+        r.d.set_config(enhance(false, Some("Bullet points."), &[]));
+        hold_and_release(&r);
+        wait(|| !r.platform.pasted().is_empty());
+        assert_eq!(r.platform.pasted(), vec!["hello world".to_string()]);
+        let codes: Vec<ToastCode> = r.sink.toasts.lock().iter().map(|t| t.code).collect();
+        assert!(codes.contains(&ToastCode::PolishFailed), "{codes:?}");
+        assert!(!codes.contains(&ToastCode::EnhanceFailed), "{codes:?}");
     }
 
     #[test]
@@ -1836,6 +1971,47 @@ mod tests {
     }
 
     #[test]
+    fn f_di_01_3_esc_cancels_a_take_from_the_mic_button_or_the_link_too() {
+        for origin in [
+            Origin::Global,
+            Origin::Composer {
+                target_id: "thread:t1".into(),
+            },
+        ] {
+            let r = rig(speech(), "hello");
+            r.d.start_take(origin.clone()).expect("a take");
+            std::thread::sleep(Duration::from_millis(300));
+            assert!(r.keys.esc_listening());
+            r.keys.send(Which::Esc, Phase::Down);
+            wait(|| r.d.current_take().is_none());
+            std::thread::sleep(Duration::from_millis(300));
+            assert!(r.d.current_take().is_none(), "{origin:?}: Esc cancels");
+            assert_eq!(r.stt.calls(), 0, "{origin:?}: nothing transcribed");
+            assert!(r.platform.pasted().is_empty());
+            assert!(r.sink.inserted.lock().is_empty());
+        }
+    }
+
+    #[test]
+    fn f_di_12_the_hold_key_during_a_mic_button_take_ends_it_without_losing_it() {
+        let r = rig(speech(), "hello world");
+        *r.sink.focus.lock() = Some("thread:t1".into());
+        r.d.start_take(Origin::Composer {
+            target_id: "thread:t1".into(),
+        })
+        .expect("a take");
+        std::thread::sleep(Duration::from_millis(400));
+        // A quick tap of the Dictate key stops the hands-free take, as it
+        // does one started by double-tap; it doesn't start over.
+        r.keys.send(Which::Hold, Phase::Down);
+        std::thread::sleep(Duration::from_millis(60));
+        r.keys.send(Which::Hold, Phase::Up);
+        wait(|| !r.sink.inserted.lock().is_empty());
+        assert_eq!(r.stt.calls(), 1);
+        assert!(!r.sink.inserted.lock().is_empty(), "the words were kept");
+    }
+
+    #[test]
     fn f_di_04_3_silence_shows_no_speech_and_inserts_nothing() {
         let r = rig(vec![0.0; 32_000], "Thank you.");
         r.keys.send(Which::Hold, Phase::Down);
@@ -1845,6 +2021,132 @@ mod tests {
         assert_eq!(r.sink.toasts.lock()[0].code, ToastCode::NoSpeech);
         assert_eq!(r.stt.calls(), 0);
         assert!(r.platform.pasted().is_empty());
+    }
+
+    #[test]
+    fn f_di_07_a_silent_mic_shows_reconnecting_then_listening_when_sound_is_back() {
+        let r = rig(speech(), "hello");
+        // No take: recovery events show nothing.
+        r.d.on_capture_event(CaptureEvent::Rebuilt);
+        assert!(r.sink.states.lock().is_empty());
+        assert!(r.sink.toasts.lock().is_empty());
+        r.d.start_take(Origin::Global).expect("a take");
+        wait(|| {
+            r.sink
+                .states
+                .lock()
+                .last()
+                .is_some_and(|e| e.state == DictatePhase::Listening)
+        });
+        let last = |r: &Rig| r.sink.states.lock().last().map(|e| (e.state, e.hands_free));
+        r.d.on_capture_event(CaptureEvent::Rebuilt);
+        assert_eq!(last(&r), Some((DictatePhase::Reconnecting, true)));
+        assert_eq!(
+            r.sink
+                .toasts
+                .lock()
+                .iter()
+                .map(|t| t.code)
+                .collect::<Vec<_>>(),
+            vec![ToastCode::Reconnecting]
+        );
+        r.d.on_capture_event(CaptureEvent::Resumed);
+        assert_eq!(last(&r), Some((DictatePhase::Listening, true)));
+        // The backup taking over also goes back to Listening.
+        r.d.on_capture_event(CaptureEvent::Rebuilt);
+        r.d.on_capture_event(CaptureEvent::SwitchedToBackup {
+            device: "USB Mic".into(),
+        });
+        assert_eq!(last(&r), Some((DictatePhase::Listening, true)));
+        r.d.cancel();
+    }
+
+    #[test]
+    fn f_di_02_secure_input_pauses_dictate_and_says_so_then_it_comes_back() {
+        let r = rig(speech(), "hello");
+        r.keys.set_status(HotkeyStatus::Paused);
+        wait(|| r.sink.hotkey.lock().contains(&HotkeyStatus::Paused));
+        assert_eq!(r.sink.hotkey.lock().clone(), vec![HotkeyStatus::Paused]);
+        let codes: Vec<ToastCode> = r.sink.toasts.lock().iter().map(|t| t.code).collect();
+        assert_eq!(codes, vec![ToastCode::SecureInput]);
+        r.keys.set_status(HotkeyStatus::Active);
+        wait(|| r.sink.hotkey.lock().len() == 2);
+        assert_eq!(r.sink.hotkey.lock()[1], HotkeyStatus::Active);
+        // Coming back says nothing more.
+        assert_eq!(r.sink.toasts.lock().len(), 1);
+    }
+
+    #[test]
+    fn f_di_07_a_shortcut_that_stops_working_says_so_but_a_restart_does_not() {
+        let r = rig(speech(), "hello");
+        // The app restarting the shortcut (a new binding): no failure.
+        r.d.stop_hotkeys();
+        std::thread::sleep(Duration::from_millis(600));
+        assert!(
+            r.sink.toasts.lock().is_empty(),
+            "{:?}",
+            r.sink.toasts.lock()
+        );
+        r.d.start_hotkeys(&Bindings {
+            hold: Some("Ctrl+Alt".parse().expect("b")),
+            toggle: None,
+        });
+        // The backend's session dies on its own (a Wayland portal closing).
+        r.keys.set_status(HotkeyStatus::NotRunning);
+        wait(|| !r.sink.toasts.lock().is_empty());
+        let codes: Vec<ToastCode> = r.sink.toasts.lock().iter().map(|t| t.code).collect();
+        assert_eq!(codes, vec![ToastCode::HotkeyFailed]);
+        assert_eq!(r.sink.hotkey.lock().last(), Some(&HotkeyStatus::NotRunning));
+    }
+
+    #[test]
+    fn f_di_07_a_restart_racing_the_status_poll_says_nothing() {
+        let r = rig(speech(), "hello");
+        // The app restarts the shortcut (a new binding) just as the clock
+        // thread reads the backend's status, so what it reads is the gap
+        // between stop and start: that's not the shortcut failing.
+        let d = r.d.clone();
+        r.keys.on_next_status(move || d.stop_hotkeys());
+        std::thread::sleep(Duration::from_millis(600));
+        assert!(
+            r.sink.toasts.lock().is_empty(),
+            "{:?}",
+            r.sink.toasts.lock()
+        );
+        assert!(
+            r.sink.hotkey.lock().is_empty(),
+            "{:?}",
+            r.sink.hotkey.lock()
+        );
+    }
+
+    #[test]
+    fn f_di_04_the_ten_minute_cap_holds_when_the_shortcut_never_started() {
+        use crate::hotkey::HotkeyBackend;
+        let r = rig(speech(), "a long dictation");
+        // The backend failed and dropped its sender (a Wayland portal
+        // error, no display): only the deep link and the mic button remain.
+        r.keys.stop();
+        std::thread::sleep(Duration::from_millis(50));
+        r.d.start_take(Origin::Global).expect("a take");
+        wait(|| r.d.current_take().is_some());
+        r.d.age_take(guards::WARN_AT + Duration::from_secs(1));
+        wait(|| {
+            r.sink
+                .toasts
+                .lock()
+                .iter()
+                .any(|t| t.code == ToastCode::TimeAlmostUp)
+        });
+        assert!(r
+            .sink
+            .toasts
+            .lock()
+            .iter()
+            .any(|t| t.code == ToastCode::TimeAlmostUp));
+        r.d.age_take(guards::MAX_TAKE - guards::WARN_AT);
+        wait(|| r.d.current_take().is_none());
+        assert!(r.d.current_take().is_none(), "the cap stops the take");
     }
 
     #[test]

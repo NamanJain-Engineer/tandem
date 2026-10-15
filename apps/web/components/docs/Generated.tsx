@@ -1,6 +1,8 @@
 // The docs pages' generated tables (F-WB-02) as HTML; the rows come from
 // lib/docs/tables.ts, which /llms-full.txt renders as Markdown.
 import {
+  conductorSettingsTable,
+  conductorToolsTable,
   enginesTable,
   planLimitsTable,
   platformTable,
@@ -63,4 +65,6 @@ export const DOCS_COMPONENTS = {
   EnginesTable: () => <TableView table={enginesTable()} />,
   PlatformMatrix: () => <TableView table={platformTable()} />,
   PlanLimitsTable: () => <TableView table={planLimitsTable()} />,
+  ConductorToolsTable: () => <TableView table={conductorToolsTable()} />,
+  ConductorSettingsTable: () => <TableView table={conductorSettingsTable()} />,
 };

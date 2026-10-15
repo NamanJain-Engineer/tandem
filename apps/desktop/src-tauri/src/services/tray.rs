@@ -7,7 +7,7 @@ pub fn status_line(status: &crate::services::dictate::DictateStatus) -> String {
     if !status.enabled {
         return "Dictate: off".into();
     }
-    if status.model.is_none() {
+    if status.model.is_none() && status.engine != "cloud" {
         return "Dictate: download a model to start".into();
     }
     match &status.hotkey {
@@ -72,6 +72,9 @@ mod tests {
         let mut s = status();
         s.model = None;
         assert_eq!(status_line(&s), "Dictate: download a model to start");
+        // Cloud dictation needs no local model.
+        s.engine = "cloud".into();
+        assert_eq!(status_line(&s), "Dictate: ready · hold Ctrl+Alt");
         let mut s = status();
         s.enabled = false;
         assert_eq!(status_line(&s), "Dictate: off");

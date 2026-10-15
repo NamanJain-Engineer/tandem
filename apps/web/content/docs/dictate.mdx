@@ -7,11 +7,11 @@ Dictate types what you say into the app you're working in. Hold the shortcut, sp
 
 ## Set it up
 
-The setup's **Dictate** step and **Settings › Dictate › Set up** walk through the same choices:
+The setup's **Dictate** step and **Settings › Dictate › Set up** walk through the same choices (the toggle shortcut and the backup microphone are rows on **Settings › Dictate** itself):
 
-- **Shortcut.** Ctrl+Alt on Linux. Hold it in any app to dictate; double-tap it to keep listening hands-free, and press it again to stop. A quick tap does nothing, and holding Ctrl+Alt while you press another key (Ctrl+Alt+T) is left to that shortcut. An optional toggle shortcut starts and stops a take with single presses. Esc cancels a take.
+- **Shortcut.** Ctrl+Alt on Linux. Hold it in any app to dictate; double-tap it to keep listening hands-free, and press it again to stop. A quick tap does nothing, and holding Ctrl+Alt while you press another key (Ctrl+Alt+T) is left to that shortcut. An optional toggle shortcut (Settings › Dictate) starts and stops a take with single presses. Esc cancels a take, however it started.
 - **Try it.** Press and release your shortcut once, so Vibezeo knows the key reaches it.
-- **Microphone.** Pick one, or follow the system default, with a backup that takes over if the first stops delivering sound. A Bluetooth headset's mic is never picked on its own while another mic exists, which keeps headphones out of low-quality call mode, and neither are loopback or virtual inputs.
+- **Microphone.** Pick one, or follow the system default. Settings › Dictate adds an optional backup, used when the first one is unplugged, or delivers no sound in the first second of a take even after Vibezeo reopens it; there's no backup unless you pick one. A Bluetooth headset's mic is never picked on its own while another mic exists, which keeps headphones out of low-quality call mode, and neither are loopback or virtual inputs.
 - **Model.** Download a speech model (below).
 - **Where text goes.** Into the focused app (the default) or onto the clipboard. After a paste, the clipboard gets back what it held before.
 
@@ -30,9 +30,9 @@ Models are downloaded only when you ask, from Hugging Face at pinned versions. E
 
 ## While you talk
 
-The widget shows Listening with a timer, then Transcribing, then how many words went in. It appears while recording (or always, or never: **Show widget**), and its × discards the take. A take stops at 10 minutes; the widget counts down the last 30 seconds. Takes too short or silent to transcribe insert nothing and say why.
+The widget shows Listening with a timer, then Transcribing, then how many words went in. It appears while recording (or always, or never: **Show widget**; a take started from the `tandem://dictate/toggle` link shows it anyway, so you can see one is running), and its × discards the take. A take stops at 10 minutes; the widget counts down the last 30 seconds. Takes too short or silent to transcribe insert nothing and say why.
 
-In Vibezeo's own message boxes, the mic button records while you hold it or toggles with a click, and so does holding your Dictate key while the box has focus; the text goes in at the caret without touching the clipboard. The status bar shows your Dictate key, and the tray icon shows Dictate's status.
+In Vibezeo's own message boxes, the mic button records while you hold it or toggles with a click, and so does holding your Dictate key while the box has focus; the text goes in at the caret without touching the clipboard. The status bar shows your Dictate key, and the tray menu shows Dictate's status.
 
 ## History, stats and the dictionary
 
@@ -43,7 +43,7 @@ In Vibezeo's own message boxes, the mic button records while you hold it or togg
 ## Linux
 
 - **X11:** nothing else to install.
-- **Wayland:** the shortcut uses your desktop's global-shortcuts portal. Without one, Settings shows a command (`xdg-open tandem://dictate/toggle`) to bind to a shortcut in your system settings. The link works only then, or when the shortcut can't be registered; press it once to finish setup. Typing into other apps needs `wtype` and `wl-clipboard`, and Settings shows the install command if they're missing. Esc can't cancel a take there; the widget's × does.
+- **Wayland:** the shortcut uses your desktop's global-shortcuts portal. When there's no portal, or the shortcut can't be registered or stops working, Settings shows a command (`xdg-open tandem://dictate/toggle`) to bind to a shortcut in your system settings; the link works only while that's the case. Press it once to finish setup. Typing into other apps needs `wtype` and `wl-clipboard`, and Settings shows the install command if they're missing. Esc can't cancel a take there; the widget's × does.
 
 ## Privacy
 

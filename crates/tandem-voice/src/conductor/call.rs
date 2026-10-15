@@ -27,6 +27,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::confirm::{ConfirmError, Confirms};
 use super::exec::{ExecTiming, Executor, ToolCall, ToolHost, ToolResult};
+use super::memory::{self, MemoryAsk, RememberRefusal};
 use super::persona::{self, PersonaBrief};
 use super::view::{
     credits_for, CallError, CallErrorCode, CallPhase, CallView, ChipState, ChipView, QuestionView,
@@ -93,7 +94,7 @@ pub enum HostedError {
 pub enum MicEvent {
     /// Mono samples at `rate`.
     Samples(Vec<f32>, u32),
-    /// "Your microphone isn't delivering audio" (F-CN-08).
+    /// "The microphone isn't delivering audio." (F-CN-08's wording; Dictate says "Your microphone…").
     NotDelivering,
 }
 
@@ -104,6 +105,37 @@ pub trait Speaker: Send + Sync {
     fn stop(&self);
     fn speaking(&self) -> bool;
     fn level(&self) -> f32;
+    /// Samples handed to [`Speaker::play`] so far, less any [`Speaker::stop`]
+    /// dropped before they played (24 kHz; counts across calls).
+    fn queued(&self) -> u64;
+    /// Samples that reached the output so far. With `queued`, where the
+    /// listener is in what was sent: barge-in truncates to it (D-1122).
+    fn played(&self) -> u64;
+}
+
+/// The assistant item whose audio is going out: where it starts in the
+/// speaker's queue, and how much of it arrived.
+struct Playing {
+    item_id: String,
+    start: u64,
+    len: u64,
+}
+
+impl Playing {
+    /// While it's still playing: the item and the milliseconds of it the
+    /// speaker really played (never more than arrived). `None` when
+    /// nothing of it is playing: it finished, or hasn't started.
+    fn heard(&self, speaker: &dyn Speaker) -> Option<(String, u32)> {
+        if !speaker.speaking() {
+            return None;
+        }
+        let played = speaker.played().saturating_sub(self.start).min(self.len);
+        if played == 0 {
+            return None;
+        }
+        let ms = played * 1000 / u64::from(crate::realtime::SAMPLE_RATE);
+        Some((self.item_id.clone(), ms as u32))
+    }
 }
 
 /// How a call was started (the entry points share [`CallController::start`]).
@@ -208,6 +240,29 @@ pub trait CallHost: ToolHost {
     fn emit(&self, view: &CallView);
     fn emit_level(&self, level: f32);
     async fn record(&self, record: CallRecord);
+    /// "Remember that …" (F-CN-06). Refused while memory is off.
+    async fn remember(&self, _fact: &str) -> Result<(), RememberRefusal> {
+        Err(RememberRefusal::Off)
+    }
+    /// "What do you know about me": whether memory is on, and its facts.
+    async fn recall(&self) -> (bool, Vec<String>) {
+        (false, Vec::new())
+    }
+    /// "Forget …": how many facts went.
+    async fn forget(&self, _query: &str) -> usize {
+        0
+    }
+    /// After a connected call: the proposed memories for "After each call",
+    /// and the journal's line (when, how long, which tools), both only while
+    /// memory is on.
+    async fn after_call(
+        &self,
+        _proposals: Vec<String>,
+        _ended_at: i64,
+        _seconds: u32,
+        _tools: Vec<String>,
+    ) {
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -428,7 +483,7 @@ impl CallController {
                 None,
                 CallError {
                     code: CallErrorCode::MicNotDelivering,
-                    message: "Your microphone isn't delivering audio.".into(),
+                    message: "The microphone isn't delivering audio.".into(),
                 },
             );
             return;
@@ -544,6 +599,10 @@ impl CallController {
         let mut last_progress = 0u32;
         let mut last_level = 0i64;
         let mut last_talk = connected_at;
+        // What the user said (redacted), for post-call reflection.
+        let mut said: Vec<String> = Vec::new();
+        // The talker's audio item being played, for barge-in.
+        let mut playing: Option<Playing> = None;
         let mut actions = 0u32;
         let mut pending_doers = 0u32;
         let mut speed = persona::speed_step(persona.speed);
@@ -592,7 +651,15 @@ impl CallController {
                         code: CallErrorCode::ConnectFailed,
                         message: "The voice service hung up.".into(),
                     })),
-                    Some(ServerEvent::AudioDelta(pcm)) => {
+                    Some(ServerEvent::AudioDelta { item, pcm }) => {
+                        if let Some(id) = item {
+                            if playing.as_ref().map(|p| &p.item_id) != Some(&id) {
+                                playing = Some(Playing { item_id: id, start: speaker.queued(), len: 0 });
+                            }
+                        }
+                        if let Some(p) = playing.as_mut() {
+                            p.len += pcm.len() as u64;
+                        }
                         speaker.play(&pcm);
                         let now = host.now_ms();
                         if now - last_level >= 100 {
@@ -604,12 +671,18 @@ impl CallController {
                         }
                     }
                     Some(ServerEvent::SpeechStarted) => {
-                        // Barge-in: stop talking at once.
+                        // Barge-in: stop talking at once, and tell the talker
+                        // how much of its answer was heard (D-1122).
+                        let heard = playing.take().and_then(|p| p.heard(speaker.as_ref()));
                         speaker.stop();
+                        if let Some((item_id, audio_end_ms)) = heard {
+                            let _ = tx.send(ClientEvent::Truncate { item_id, audio_end_ms }).await;
+                        }
                         self.set(|v| { v.phase = CallPhase::Listening; v.caption = None; });
                     }
                     Some(ServerEvent::TranscriptUser(text)) => {
                         let text = tandem_core::redact::redact(&text);
+                        said.push(text.clone());
                         host.record(CallRecord::Event { call_id: call_id.clone(), ts: host.now_ms(), kind: LogKind::User, text: text.clone(), ok: None }).await;
                         self.set(|v| v.utterance = Some(text));
                     }
@@ -746,6 +819,9 @@ impl CallController {
             reason,
         })
         .await;
+        let tools: Vec<String> = self.view().chips.iter().map(|c| c.tool.clone()).collect();
+        host.after_call(memory::proposals(&said), ended_at, seconds, tools)
+            .await;
         let receipt = Receipt {
             call_id: call_id.clone(),
             seconds,
@@ -807,7 +883,7 @@ impl CallController {
 fn mic_error() -> CallError {
     CallError {
         code: CallErrorCode::MicNotDelivering,
-        message: "Your microphone isn't delivering audio.".into(),
+        message: "The microphone isn't delivering audio.".into(),
     }
 }
 
@@ -989,6 +1065,22 @@ async fn doer_rounds(
                 "That one needs a click on screen; a spoken yes can't confirm it.".into()
             }
             Err(ConfirmError::NotFound) => "There's no question waiting with that id.".into(),
+        };
+    }
+    if let Some(ask) = memory::parse_memory(request) {
+        return match ask {
+            MemoryAsk::Remember(fact) => {
+                let result = match memory::check_fact(&fact) {
+                    Ok(()) => host.remember(&fact).await,
+                    Err(refused) => Err(refused),
+                };
+                memory::remembered_reply(result)
+            }
+            MemoryAsk::Recall => {
+                let (on, facts) = host.recall().await;
+                memory::recall_reply(on, &facts)
+            }
+            MemoryAsk::Forget(query) => memory::forgot_reply(&query, host.forget(&query).await),
         };
     }
     let mut results: Vec<ToolResult> = Vec::new();
