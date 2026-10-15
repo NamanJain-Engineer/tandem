@@ -43,6 +43,10 @@ pub enum SourceRef {
     Plugin {
         connection_id: String,
     },
+    /// An engine account's usage (F-AC-08): opens Settings › Accounts.
+    Usage {
+        account_id: String,
+    },
     /// Test harness only: a scripted agent (E2E fixture source).
     Fixture {
         fixture_id: String,

@@ -1390,7 +1390,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
   - The chip's tooltip adds the forecast of the window it shows.
 - **Who's using it:** per account, the popover lists the sessions that spent the account's tokens in the last hour, with each one's share ("fix-auth · 61%").
   - The data comes from the engines' local logs (F-AC-07's parser and `usage_log_globs`, inside the provider home). Only token counts, times and session ids are read, never content.
-  - A session is named after the pane running it (its engine session id, F-SH-07), or else "Outside Vibezeo".
+  - A session is named after the pane running it (its engine session id, F-SH-07), or else "Another session".
   - An account whose engine has no log globs says "{engine} keeps no session logs Vibezeo can read."
 - **Notification:** Settings › Notifications › "Warn me before usage runs out", off by default.
   - When on, a window whose forecast first changes to running out before its reset raises one notification: "{engine} ({account}) runs out at {time}" / "At this pace the {window} runs out {duration} before it resets."

@@ -23,6 +23,35 @@ pub async fn usage_report(state: State<'_, AppState>) -> Result<UsageReport, Ipc
     .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))
 }
 
+/// Each account's sessions that spent its tokens in the last hour, from
+/// the engines' local logs (F-AC-08); only token counts are read.
+#[tauri::command]
+pub async fn usage_sessions(
+    state: State<'_, AppState>,
+    account_id: Option<tandem_core::ids::AccountId>,
+) -> Result<Vec<crate::services::usage::AccountSessions>, IpcError> {
+    let all = accounts::list(&state.store).await?;
+    let accounts: Vec<_> = all
+        .into_iter()
+        .filter(|a| account_id.as_ref().is_none_or(|id| *id == a.id))
+        .collect();
+    let registry = state.terminals.engines.registry();
+    let since = state.clock.now_ms() - crate::services::usage::SESSIONS_SPAN_MS;
+    let panes = state.terminals.status.engine_sessions();
+    tokio::task::spawn_blocking(move || {
+        let sources = usage_report::sources(&accounts, &registry);
+        let tokens = tandem_engines::usage_log::recent_sessions(&sources, since);
+        let readable = |engine: &str| {
+            registry
+                .get(engine)
+                .is_some_and(|e| !e.usage_log_globs.is_empty())
+        };
+        crate::services::usage::shares(&accounts, &readable, &tokens, &panes)
+    })
+    .await
+    .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))
+}
+
 /// Saves the share card (a PNG the page drew) where the user picks.
 /// Returns the path, or `None` when they cancel.
 #[tauri::command]

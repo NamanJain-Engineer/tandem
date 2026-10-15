@@ -7,6 +7,18 @@ description: Engine accounts, Vibezeo plans and what each plan allows.
 
 Each engine signs in by itself, with its own login, inside a provider home Vibezeo keeps for that account (`~/.tandem/providers/<engine>/<account>/`). Vibezeo never reads, copies or forwards an engine's credentials. Settings › Accounts shows each account's usage, limits and context meters where the engine reports them. The Free plan has one account per engine; Pro has as many as you like.
 
+## Usage and forecasts
+
+The usage chip in the title bar shows the account of the agent you're focused on, and how full its fullest window is, for engines that report their usage windows (Codex does). Click it for every account. Each window then shows a forecast from the last hour's readings:
+
+- **Not enough data yet** until there are readings at least 10 minutes apart.
+- **On track** when, at the current pace, the window won't fill before it resets.
+- **Runs out at 3:40 PM, 30 min before it resets** when it will.
+
+Under each account, **Who's using it** lists the sessions that spent its tokens in the last hour, with each one's share, named after the pane running it. Vibezeo reads these from the engines' own session logs on your computer, token counts only.
+
+Turn on **Settings › Notifications › Warn me before usage runs out** to get one notification per window when it's forecast to run out before it resets (it's off by default). When you launch agents, a seat whose account is near its limit says so, and names another account of the same engine that has more room. Vibezeo never switches accounts for you.
+
 ## Vibezeo plans
 
 The download runs the Free plan on your computer, with no Vibezeo account. Pro and Team start when Vibezeo accounts open; prices are on the [pricing page](/pricing/).

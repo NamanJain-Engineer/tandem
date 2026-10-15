@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Gauge, RefreshCw } from "lucide-react";
-import type { UsageView } from "@tandem/protocol";
-import { Button, Popover, UsageMeter, cx, meterTone } from "@tandem/ui";
+import type { UsageView, UsageWindow } from "@tandem/protocol";
+import { Button, Popover, Skeleton, UsageMeter, cx, meterTone } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useAccounts } from "../../stores/accounts";
 import { useEngines } from "../../stores/engines";
@@ -11,6 +11,7 @@ import { resetClock } from "../../stores/limits";
 import { fullest, useUsage } from "../../stores/usage";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
+import { forecastFor, forecastLine, whoRows } from "./forecast";
 
 const TONE = { muted: "text-fg-muted", warning: "text-warning-text", danger: "text-danger" };
 
@@ -31,7 +32,9 @@ export function usageChip(view: UsageView | undefined, engine: string) {
         ? t("usage.chip", { engine, pct, time: resetClock(top.resetsAt) })
         : t("usage.chipNoReset", { engine, pct }),
     tone: meterTone(top.usedPct / 100, "plan"),
-    tooltip: t("usage.tooltip", { window: windowName(top.kind) }),
+    tooltip: [t("usage.tooltip", { window: windowName(top.kind) }), forecastLine(forecastFor(view, top))]
+      .filter(Boolean)
+      .join("\n"),
   };
 }
 
@@ -59,6 +62,75 @@ function windowName(kind: string): string {
   return kind;
 }
 
+/** A window's forecast (F-AC-08), in warning when it runs out before its reset. */
+function ForecastText({ view, window }: { view: UsageView | undefined; window: UsageWindow }) {
+  const f = forecastFor(view, window);
+  const line = forecastLine(f);
+  if (!line) return null;
+  return (
+    <span
+      data-testid="usage-forecast"
+      data-state={f?.state}
+      className={cx("text-xs", f?.state === "runs_out" ? "text-warning-text" : "text-fg-subtle")}
+    >
+      {line}
+    </span>
+  );
+}
+
+/** "Who's using it": an account's sessions in the last hour (F-AC-08). */
+function WhoIsUsing({
+  engine,
+  state,
+  rows,
+  readable,
+}: {
+  engine: string;
+  state: "idle" | "loading" | "ready" | "error";
+  rows: { key: string; label: string }[];
+  readable: boolean;
+}) {
+  let body;
+  if (state === "loading" || state === "idle") body = <Skeleton width={160} />;
+  else if (state === "error") body = <span className="text-xs text-danger">{t("usage.who.error")}</span>;
+  else if (!readable)
+    body = <span className="text-xs text-fg-subtle">{t("usage.who.unreadable", { engine })}</span>;
+  else if (rows.length === 0) body = <span className="text-xs text-fg-subtle">{t("usage.who.none")}</span>;
+  else
+    body = (
+      <ul className="flex flex-col gap-0.5">
+        {rows.map((r) => (
+          <li key={r.key} className="text-xs tabular-nums text-fg-muted" data-testid="usage-who-row">
+            {r.label}
+          </li>
+        ))}
+      </ul>
+    );
+  return (
+    <div className="flex flex-col gap-0.5" data-testid="usage-who" data-state={state}>
+      <span className="text-2xs font-semibold uppercase tracking-caps text-fg-subtle">{t("usage.who")}</span>
+      {state === "loading" || state === "idle" ? (
+        <span aria-label={t("usage.who.loading")}>{body}</span>
+      ) : (
+        body
+      )}
+    </div>
+  );
+}
+
+/** A pane's name by id: its human name, else its engine's label. */
+function usePaneName(): (paneId: string) => string | null {
+  const tabs = useLayout((l) => l.tabs);
+  const label = useEngines((s) => s.label);
+  return (paneId) => {
+    const pane = Object.values(tabs)
+      .map((tab) => tab?.panes[paneId])
+      .find(Boolean);
+    if (!pane) return null;
+    return pane.humanName ?? (pane.engineId ? (label(pane.engineId) ?? pane.engineId) : null);
+  };
+}
+
 /** UI_SPEC title bar: usage for the focused session's account; the popover
  * lists every account's windows. */
 export function UsageChip() {
@@ -68,6 +140,9 @@ export function UsageChip() {
   const label = useEngines((s) => s.label);
   const account = accounts.find((a) => a.id === accountId);
   const [refreshing, setRefreshing] = useState(false);
+  const sessions = useUsage((s) => s.sessions);
+  const sessionsState = useUsage((s) => s.sessionsState);
+  const paneName = usePaneName();
   useEffect(() => {
     if (accountId) useUsage.getState().ensure(accountId);
   }, [accountId]);
@@ -78,6 +153,9 @@ export function UsageChip() {
   return (
     <Popover
       label={t("usage.popover")}
+      onOpenChange={(open) => {
+        if (open) void useUsage.getState().loadSessions();
+      }}
       trigger={
         <button
           type="button"
@@ -101,7 +179,7 @@ export function UsageChip() {
         </button>
       }
     >
-      <div className="flex w-72 flex-col gap-3 p-3" data-testid="usage-popover">
+      <div className="flex w-80 flex-col gap-3 overflow-y-auto p-3" data-testid="usage-popover">
         {accounts.map((a) => {
           const row = usage[a.id];
           return (
@@ -124,11 +202,18 @@ export function UsageChip() {
                       </span>
                     </span>
                     <UsageMeter label={windowName(w.kind)} value={w.usedPct / 100} showLabel={false} />
+                    <ForecastText view={row} window={w} />
                   </div>
                 ))
               ) : (
                 <span className="text-xs text-fg-subtle">{row?.reason ?? t("usage.checking")}</span>
               )}
+              <WhoIsUsing
+                engine={label(a.engineId) ?? a.engineId}
+                state={sessionsState}
+                rows={whoRows(sessions[a.id], paneName)}
+                readable={sessions[a.id]?.readable ?? true}
+              />
             </div>
           );
         })}

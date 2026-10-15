@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Plus, X } from "lucide-react";
-import type { IpcError, Isolation, LaunchReport, Seat } from "@tandem/protocol";
+import type {
+  Account,
+  AccountOverride,
+  IpcError,
+  Isolation,
+  LaunchReport,
+  Seat,
+  UsageView,
+} from "@tandem/protocol";
 import {
   Button,
   Callout,
@@ -40,6 +48,9 @@ import {
   useLaunch,
 } from "../../stores/launch";
 import { useWorkspaces } from "../../stores/workspaces";
+import { accountForNext, accountsFor, useAccounts } from "../../stores/accounts";
+import { useUsage } from "../../stores/usage";
+import { hasRoom, isTight } from "../shell/forecast";
 
 const CUSTOM = "custom";
 const SOLO = "pst_builtin_solo";
@@ -166,14 +177,61 @@ function Failures({
   );
 }
 
+/** F-AC-08: an agent seat whose account is near its limit says so, and
+ * names an account of the same engine with more room. Text only: the seat
+ * keeps its account (F-AC-05). */
+export function seatUsageHint(
+  engineId: string,
+  accountId: string | null,
+  workspaceId: string,
+  accounts: Account[],
+  overrides: AccountOverride[],
+  usage: Record<string, UsageView>,
+): { tight: string; room: string | null } | null {
+  const mine =
+    accounts.find((a) => a.id === accountId && a.engineId === engineId) ??
+    accountForNext(accounts, overrides, engineId, workspaceId);
+  if (!mine) return null;
+  const tight = isTight(usage[mine.id]);
+  if (!tight) return null;
+  const other = accountsFor(accounts, engineId).find((a) => a.id !== mine.id && hasRoom(usage[a.id]));
+  return {
+    tight: t("launch.usageHigh", { account: mine.label, pct: tight.pct }),
+    room: other ? t("launch.moreRoom", { other: other.label }) : null,
+  };
+}
+
+function SeatUsageHint({
+  engineId,
+  accountId,
+  workspaceId,
+}: {
+  engineId: string;
+  accountId: string | null;
+  workspaceId: string;
+}) {
+  const accounts = useAccounts((s) => s.list);
+  const overrides = useAccounts((s) => s.overrides);
+  const usage = useUsage((s) => s.byAccount);
+  const hint = seatUsageHint(engineId, accountId, workspaceId, accounts, overrides, usage);
+  if (!hint) return null;
+  return (
+    <span data-testid="launch-usage-hint" className="pl-6 text-xs text-warning-text">
+      {hint.room ? `${hint.tight} · ${hint.room}` : hint.tight}
+    </span>
+  );
+}
+
 function Lineup({
   seats,
   onChange,
   engineOptions,
+  workspaceId,
 }: {
   seats: Seat[];
   onChange: (seats: Seat[]) => void;
   engineOptions: SelectOption[];
+  workspaceId: string;
 }) {
   const set = (i: number, patch: Partial<Seat>) =>
     onChange(seats.map((s, k) => (k === i ? { ...s, ...patch } : s)));
@@ -188,87 +246,92 @@ function Lineup({
       {seats.map((s, i) => {
         const n = i + 1;
         return (
-          <li key={i} data-testid="launch-seat" data-kind={s.kind} className="flex items-center gap-2">
-            <span className="w-4 shrink-0 text-right text-sm tabular-nums text-fg-subtle">{n}</span>
-            <Select
-              size="sm"
-              className="w-40 shrink-0"
-              ariaLabel={t("launch.seatEngine", { n })}
-              value={s.kind === "agent" ? (s.engineId ?? "") : s.kind}
-              options={kindOptions}
-              onValueChange={(v) =>
-                set(
-                  i,
-                  v === "shell"
-                    ? { ...shellSeat(), count: 1 }
-                    : v === "browser"
-                      ? browserSeat()
-                      : {
-                          kind: "agent",
-                          engineId: v,
-                          role: s.kind === "agent" ? s.role : "Builder",
-                          command: null,
-                          url: null,
-                        },
-                )
-              }
-            />
-            {s.kind === "agent" ? (
-              <>
-                <Combobox
-                  className="min-w-0 flex-1"
-                  ariaLabel={t("launch.role", { n })}
-                  options={
-                    s.role && !ROLES.includes(s.role as (typeof ROLES)[number])
-                      ? [...roleOptions, { value: s.role, label: s.role }]
-                      : roleOptions
-                  }
-                  value={s.role ?? ""}
-                  onValueChange={(v) => set(i, { role: v })}
-                  onCreate={(q) => set(i, { role: q.trim() })}
-                  createLabel={(q) => t("launch.roleCreate", { role: q })}
-                />
+          <li key={i} data-testid="launch-seat" data-kind={s.kind} className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <span className="w-4 shrink-0 text-right text-sm tabular-nums text-fg-subtle">{n}</span>
+              <Select
+                size="sm"
+                className="w-40 shrink-0"
+                ariaLabel={t("launch.seatEngine", { n })}
+                value={s.kind === "agent" ? (s.engineId ?? "") : s.kind}
+                options={kindOptions}
+                onValueChange={(v) =>
+                  set(
+                    i,
+                    v === "shell"
+                      ? { ...shellSeat(), count: 1 }
+                      : v === "browser"
+                        ? browserSeat()
+                        : {
+                            kind: "agent",
+                            engineId: v,
+                            role: s.kind === "agent" ? s.role : "Builder",
+                            command: null,
+                            url: null,
+                          },
+                  )
+                }
+              />
+              {s.kind === "agent" ? (
+                <>
+                  <Combobox
+                    className="min-w-0 flex-1"
+                    ariaLabel={t("launch.role", { n })}
+                    options={
+                      s.role && !ROLES.includes(s.role as (typeof ROLES)[number])
+                        ? [...roleOptions, { value: s.role, label: s.role }]
+                        : roleOptions
+                    }
+                    value={s.role ?? ""}
+                    onValueChange={(v) => set(i, { role: v })}
+                    onCreate={(q) => set(i, { role: q.trim() })}
+                    createLabel={(q) => t("launch.roleCreate", { role: q })}
+                  />
+                  <Input
+                    type="number"
+                    min={1}
+                    max={MAX_COUNT}
+                    hideLabel
+                    label={t("launch.count", { n })}
+                    className="w-16 shrink-0"
+                    value={s.count}
+                    onChange={(e) =>
+                      set(i, { count: Math.max(1, Math.min(MAX_COUNT, Number(e.target.value) || 1)) })
+                    }
+                  />
+                </>
+              ) : s.kind === "browser" ? (
                 <Input
-                  type="number"
-                  min={1}
-                  max={MAX_COUNT}
                   hideLabel
-                  label={t("launch.count", { n })}
-                  className="w-16 shrink-0"
-                  value={s.count}
-                  onChange={(e) =>
-                    set(i, { count: Math.max(1, Math.min(MAX_COUNT, Number(e.target.value) || 1)) })
-                  }
+                  monospace
+                  label={t("launch.browserUrlField", { n })}
+                  placeholder={t("launch.browserUrlPlaceholder")}
+                  className="min-w-0 flex-1"
+                  value={s.url ?? ""}
+                  onChange={(e) => set(i, { url: e.target.value || null })}
                 />
-              </>
-            ) : s.kind === "browser" ? (
-              <Input
-                hideLabel
-                monospace
-                label={t("launch.browserUrlField", { n })}
-                placeholder={t("launch.browserUrlPlaceholder")}
-                className="min-w-0 flex-1"
-                value={s.url ?? ""}
-                onChange={(e) => set(i, { url: e.target.value || null })}
+              ) : (
+                <Input
+                  hideLabel
+                  monospace
+                  label={t("launch.shellCommandField", { n })}
+                  placeholder={t("launch.shellCommandPlaceholder")}
+                  className="min-w-0 flex-1"
+                  value={s.command ?? ""}
+                  onChange={(e) => set(i, { command: e.target.value || null })}
+                />
+              )}
+              <IconButton
+                size="sm"
+                icon={<X size={14} />}
+                label={t("launch.removeSeat", { n })}
+                disabled={seats.length === 1}
+                onClick={() => onChange(seats.filter((_, k) => k !== i))}
               />
-            ) : (
-              <Input
-                hideLabel
-                monospace
-                label={t("launch.shellCommandField", { n })}
-                placeholder={t("launch.shellCommandPlaceholder")}
-                className="min-w-0 flex-1"
-                value={s.command ?? ""}
-                onChange={(e) => set(i, { command: e.target.value || null })}
-              />
+            </div>
+            {s.kind === "agent" && s.engineId && (
+              <SeatUsageHint engineId={s.engineId} accountId={s.accountId} workspaceId={workspaceId} />
             )}
-            <IconButton
-              size="sm"
-              icon={<X size={14} />}
-              label={t("launch.removeSeat", { n })}
-              disabled={seats.length === 1}
-              onClick={() => onChange(seats.filter((_, k) => k !== i))}
-            />
           </li>
         );
       })}
@@ -389,7 +452,7 @@ function LaunchSheetBody({ workspaceId }: { workspaceId: string }) {
       <section className="flex flex-col gap-2" aria-label={t("launch.lineup")}>
         <h3 className="text-sm font-semibold text-fg">{t("launch.lineup")}</h3>
         {engine === null && <Callout tone="warning">{t("launch.noEngines")}</Callout>}
-        <Lineup seats={seats} onChange={edit} engineOptions={engineOptions} />
+        <Lineup seats={seats} onChange={edit} engineOptions={engineOptions} workspaceId={workspaceId} />
         <Menu
           trigger={
             <Button

@@ -81,6 +81,15 @@ pub fn test_clock_advance(state: State<'_, AppState>, ms: u64) -> Result<ClockNo
     })
 }
 
+/// Moves the usage readings taken so far `ms` into the past, so the next
+/// reading forecasts as if that much time had passed (E2E-M18-AC08).
+#[tauri::command]
+pub fn test_usage_backdate(state: State<'_, AppState>, ms: i64) -> Result<(), IpcError> {
+    guard(&state)?;
+    state.usage.backdate(ms);
+    Ok(())
+}
+
 /// Forces the refresh path, e.g. to observe a revoked device (E2E-M2-6).
 #[tauri::command]
 pub async fn test_auth_refresh(state: State<'_, AppState>) -> Result<AuthState, IpcError> {

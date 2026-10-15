@@ -54,6 +54,11 @@ export async function showSource(source: SourceRef, location?: FocusLocation | n
     useTeammates.getState().select(source.teammateId);
     return;
   }
+  if (source.type === "usage") {
+    // A usage forecast notification opens Settings › Accounts (F-AC-08).
+    useUi.getState().openSettings("accounts");
+    return;
+  }
   if (source.type === "account") {
     // The credit-low item opens Settings › Account & Plan (F-DB-02).
     useUi.getState().openSettings("account");
