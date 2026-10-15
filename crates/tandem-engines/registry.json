@@ -43,6 +43,7 @@
     "usageLogGlobs": [
       "projects/**/*.jsonl"
     ],
+    "instructions": {"files": ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"], "mode": "all", "fallback": "AGENTS.md", "pointer": {"file": "CLAUDE.md", "import": "@AGENTS.md"}},
     "skillsDir": "skills",
     "cheapModel": "haiku",
     "headlessCmd": ["-p", "--strict-mcp-config", "--model", "{model}"],
@@ -120,6 +121,7 @@
     "usageLogGlobs": [
       "sessions/**/*.jsonl"
     ],
+    "instructions": {"files": ["AGENTS.override.md", "AGENTS.md"], "mode": "first"},
     "skillsDir": "skills",
     "cheapModel": "gpt-5-mini",
     "headlessCmd": ["exec", "--skip-git-repo-check", "-c", "mcp_servers={}", "--model", "{model}", "-"],
@@ -192,6 +194,7 @@
     "newlineSequence": "\u001b\r",
     "hooksSupport": "none",
     "usageLogGlobs": [],
+    "instructions": {"files": [".cursor/rules/", "AGENTS.md", "CLAUDE.md"], "mode": "all"},
     "skillsDir": null,
     "cheapModel": null,
     "titlePatterns": [],
@@ -241,6 +244,7 @@
     "newlineSequence": "\u001b\r",
     "hooksSupport": "none",
     "usageLogGlobs": [],
+    "instructions": {"files": ["GEMINI.md"], "mode": "all", "pointer": {"file": "GEMINI.md", "import": "@AGENTS.md"}},
     "skillsDir": null,
     "cheapModel": null,
     "titlePatterns": [],
@@ -297,6 +301,7 @@
     "newlineSequence": "\u001b\r",
     "hooksSupport": "none",
     "usageLogGlobs": [],
+    "instructions": {"files": [".github/copilot-instructions.md", "AGENTS.md", "CLAUDE.md", "GEMINI.md"], "mode": "all"},
     "skillsDir": null,
     "cheapModel": null,
     "titlePatterns": [],

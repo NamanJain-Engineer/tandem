@@ -31,6 +31,7 @@ pub mod gateway;
 pub mod git_panel;
 pub mod handoff;
 pub mod hosted;
+pub mod instructions;
 pub mod lanes;
 pub mod launch;
 pub mod learn;
@@ -77,6 +78,7 @@ pub mod usage_report;
 pub mod wake;
 pub mod widget;
 pub mod workspaces;
+pub mod worktree_runtime;
 pub mod worktree_setup;
 pub mod wsl;
 

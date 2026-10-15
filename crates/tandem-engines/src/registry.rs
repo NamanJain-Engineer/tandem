@@ -87,6 +87,43 @@ pub struct McpNative {
     pub key: String,
 }
 
+/// Whether an engine reads every instructions file that exists, or only the
+/// first (F-EN-07).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum InstructionsMode {
+    #[default]
+    All,
+    First,
+}
+
+/// A one-line file that makes the engine read `AGENTS.md`: its `file` holds
+/// the `import` line (F-EN-07).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct InstructionsPointer {
+    pub file: String,
+    pub import: String,
+}
+
+/// The instructions files an engine reads at a repository's root (F-EN-07,
+/// D-2400), checked against the vendor's own documentation. Paths are
+/// relative and `/`-separated; one ending in `/` is a folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct InstructionsSpec {
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub mode: InstructionsMode,
+    /// Read only when none of `files` exist.
+    #[serde(default)]
+    pub fallback: Option<String>,
+    #[serde(default)]
+    pub pointer: Option<InstructionsPointer>,
+}
+
 fn default_version_cmd() -> Vec<String> {
     vec!["--version".into()]
 }
@@ -198,6 +235,9 @@ pub struct EngineSpec {
     pub onboarding_seed: Option<OnboardingSeed>,
     #[serde(default)]
     pub mcp_native: Option<McpNative>,
+    /// Its instructions files (F-EN-07); none = Unknown.
+    #[serde(default)]
+    pub instructions: Option<InstructionsSpec>,
 }
 
 /// Why a registry entry was refused.
@@ -317,8 +357,45 @@ impl EngineSpec {
         if self.newline_sequence.is_empty() || self.newline_sequence.len() > 8 {
             return fail("newline_sequence is 1–8 bytes");
         }
+        if let Some(ins) = &self.instructions {
+            let pointer = ins.pointer.as_ref().map(|p| p.file.as_str());
+            if ins.files.is_empty()
+                || ins.files.len() > 16
+                || !ins
+                    .files
+                    .iter()
+                    .map(String::as_str)
+                    .chain(ins.fallback.as_deref())
+                    .chain(pointer)
+                    .all(instructions_path)
+            {
+                return fail("instructions files are 1–16 relative paths inside the repository");
+            }
+            if let Some(p) = &ins.pointer {
+                if p.import.trim().is_empty()
+                    || p.import.len() > 200
+                    || p.import.contains(['\n', '\r'])
+                    || p.file.ends_with('/')
+                {
+                    return fail("an instructions pointer is one line in a file");
+                }
+            }
+        }
         Ok(())
     }
+}
+
+/// A relative, `/`-separated path with no `.` or `..` parts (F-EN-07).
+fn instructions_path(p: &str) -> bool {
+    let body = p.strip_suffix('/').unwrap_or(p);
+    !body.is_empty()
+        && p.len() <= 200
+        && !p.starts_with('/')
+        && !p.contains('\\')
+        && !p.contains(':')
+        && body
+            .split('/')
+            .all(|c| !c.is_empty() && c != "." && c != "..")
 }
 
 #[derive(Debug, Clone)]
@@ -527,5 +604,64 @@ mod tests {
         assert!(bad(|e| e.chat_adapter = Some("magic".into())));
         assert!(bad(|e| e.install.mac = Some("a\nb".into())));
         base.validate().expect("the original is fine");
+    }
+
+    #[test]
+    fn f_en_07_the_instructions_table_names_five_engines_and_rejects_paths_outside_the_repository()
+    {
+        let reg = EngineRegistry::bundled();
+        let with: Vec<&str> = reg
+            .all()
+            .iter()
+            .filter(|e| e.instructions.is_some())
+            .map(|e| e.id.as_str())
+            .collect();
+        assert_eq!(
+            with,
+            vec!["claude", "codex", "cursor-agent", "gemini", "copilot"]
+        );
+        let claude = reg
+            .get("claude")
+            .and_then(|e| e.instructions.clone())
+            .expect("claude");
+        assert_eq!(claude.fallback.as_deref(), Some("AGENTS.md"));
+        assert_eq!(
+            claude.pointer.map(|p| (p.file, p.import)),
+            Some(("CLAUDE.md".into(), "@AGENTS.md".into()))
+        );
+        let codex = reg
+            .get("codex")
+            .and_then(|e| e.instructions.clone())
+            .expect("codex");
+        assert_eq!(codex.mode, InstructionsMode::First);
+        assert!(reg
+            .get("aider")
+            .and_then(|e| e.instructions.clone())
+            .is_none());
+        for bad in [
+            "../AGENTS.md",
+            "/etc/passwd",
+            "a/../b",
+            "C:\\x",
+            "./AGENTS.md",
+            "",
+        ] {
+            let mut spec = reg.get("gemini").cloned().expect("gemini");
+            spec.instructions = Some(InstructionsSpec {
+                files: vec![bad.into()],
+                mode: InstructionsMode::All,
+                fallback: None,
+                pointer: None,
+            });
+            assert!(spec.validate().is_err(), "{bad:?}");
+        }
+        let mut spec = reg.get("gemini").cloned().expect("gemini");
+        if let Some(ins) = spec.instructions.as_mut() {
+            ins.pointer = Some(InstructionsPointer {
+                file: "GEMINI.md".into(),
+                import: "@AGENTS.md\nrm -rf ~".into(),
+            });
+        }
+        assert!(spec.validate().is_err());
     }
 }
