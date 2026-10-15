@@ -803,7 +803,7 @@ Built by the session that coordinates the parallel milestone sessions, while the
   - The coordinating session's review: a value this build doesn't know is left alone, so "Put it back" can't delete it (D-848). Checking both flows on a real Mac is HUMAN_TODO's "M16 Dictate on a Mac (D-524)".
   - D-1818 (contact@vibezeo.com everywhere) and D-1820 (the owner's direction: pointers, not limits; the site may be restructured, and small first-party scripts are allowed within the budgets).
   - The research: `docs/NEXT_FEATURES.md` (21 ranked features with draft acceptance criteria, six bold bets, owner-only items) and the refreshed `docs/COMPETITIVE_ANALYSIS.md`. M18 builds its top picks.
-  - The gate passed: 1,854 Rust tests (7 ignored) and 1,407 TypeScript (desktop 642, UI 405, API 211, web 88, remote 32, mobile 19, protocol 10), the desktop build, clippy on Linux, Windows and both Mac architectures, fmt and protocol drift (`GlobeKeyView` and `GlobeUsage` added). The full E2E: running at this commit; the result follows in the next commit.
+  - The gate passed: 1,854 Rust tests (7 ignored) and 1,407 TypeScript (desktop 642, UI 405, API 211, web 88, remote 32, mobile 19, protocol 10), the desktop build, clippy on Linux, Windows and both Mac architectures, fmt and protocol drift (`GlobeKeyView` and `GlobeUsage` added). The full E2E passed 129 of 129 spec files in one run (34 minutes).
 
 ## M16 · F-AC-07 Usage dashboard
 Built on branch `m16-usage-dashboard` (from `product-m0-m5`) by the M13 session as part of its follow-on chain. Decisions come from the M13 range (D-600–D-699).
