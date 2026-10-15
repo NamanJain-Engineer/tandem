@@ -1,4 +1,4 @@
-import { buttonClass } from "@tandem/ui/components/Button";
+import { siteButton } from "@tandem/ui/components/SiteButton";
 import { LIMITS } from "@tandem/protocol/plans";
 import { Download, Info, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
@@ -100,7 +100,7 @@ export default function DownloadPage() {
                       <p className="text-copy-sm text-fg-muted">{d.requirement}</p>
                     </div>
                     {primary && (
-                      <a href={assetUrl(primary.file)} className={`${buttonClass("primary", "xl")} self-start sm:self-auto`}>
+                      <a href={assetUrl(primary.file)} className={`${siteButton("primary", "lg")} self-start sm:self-auto`}>
                         <Icon icon={Download} size={18} />
                         {primary.label}
                       </a>

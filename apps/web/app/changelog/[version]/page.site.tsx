@@ -1,4 +1,4 @@
-import { buttonClass } from "@tandem/ui/components/Button";
+import { siteButton } from "@tandem/ui/components/SiteButton";
 import { Badge } from "@tandem/ui/components/Badge";
 import { CATEGORIES } from "@tandem/protocol/changelog";
 import { ArrowLeft, ArrowRight, Download } from "lucide-react";
@@ -54,7 +54,7 @@ export default async function VersionPage({ params }: Params) {
             ))}
           </div>
           {latest && (
-            <a href="/download/" className={buttonClass("primary", "lg")}>
+            <a href="/download/" className={siteButton("primary", "md")}>
               <Icon icon={Download} size={16} />
               Download {release.version}
             </a>

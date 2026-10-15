@@ -1,4 +1,4 @@
-import { buttonClass } from "@tandem/ui/components/Button";
+import { siteButton } from "@tandem/ui/components/SiteButton";
 import { PageHero } from "../components/site/PageHero";
 import { SiteFrame } from "../components/site/SiteFrame";
 import { TextLink } from "../components/site/TextLink";
@@ -8,7 +8,7 @@ export default function NotFound() {
     <SiteFrame>
       <PageHero eyebrow="404" title="This page doesn't exist" lead="The link may be old, or the address mistyped.">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3 pt-2">
-          <a href="/" className={buttonClass("primary", "xl")}>
+          <a href="/" className={siteButton("primary", "lg")}>
             Go to the home page
           </a>
           <TextLink href="/docs/">Read the docs</TextLink>

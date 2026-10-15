@@ -99,7 +99,7 @@ export default function PrivacyPage() {
         them belong to features that aren&apos;t in the app yet; this is what they will send. The app shows
         the same list, with what&apos;s on, in Settings › Privacy.
       </p>
-      <table className="text-left text-sm">
+      <table className="w-full text-left text-caption [overflow-wrap:anywhere] sm:text-sm">
         <thead>
           <tr>
             <th className="py-1.5 pr-4">Feature</th>

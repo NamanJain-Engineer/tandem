@@ -1,4 +1,4 @@
-import { buttonClass } from "@tandem/ui/components/Button";
+import { siteButton } from "@tandem/ui/components/SiteButton";
 import { Download, Play } from "lucide-react";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
@@ -55,11 +55,11 @@ export default function DemoPage() {
         }
       >
         <div className="flex flex-wrap items-center gap-3 pt-2">
-          <a href={DEMO_APP} data-testid="launch-demo" className={buttonClass("primary", "xl")}>
+          <a href={DEMO_APP} data-testid="launch-demo" className={siteButton("primary", "lg")}>
             <Icon icon={Play} size={18} />
             Launch the demo
           </a>
-          <a href="/download/" className={buttonClass("outline", "xl")}>
+          <a href="/download/" className={siteButton("secondary", "lg")}>
             <Icon icon={Download} size={18} />
             Download for Linux
           </a>

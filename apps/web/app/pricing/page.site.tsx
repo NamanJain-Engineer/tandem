@@ -1,4 +1,4 @@
-import { buttonClass } from "@tandem/ui/components/Button";
+import { siteButton } from "@tandem/ui/components/SiteButton";
 import { PRICES } from "@tandem/protocol/plans";
 import { Check, Download } from "lucide-react";
 import type { Metadata } from "next";
@@ -81,7 +81,7 @@ export default function PricingPage() {
               </p>
               {plan.id === "free" ? (
                 <div className="flex flex-col gap-2">
-                  <a href="/download/" className={`${buttonClass("primary", "lg")} self-start`}>
+                  <a href="/download/" className={`${siteButton("primary", "md")} self-start`}>
                     <Icon icon={Download} size={16} />
                     Download {RELEASE.version}
                   </a>
@@ -89,7 +89,7 @@ export default function PricingPage() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-2">
-                  <a href={notify(plan.name)} className={`${buttonClass("outline", "lg")} self-start`}>
+                  <a href={notify(plan.name)} className={`${siteButton("secondary", "md")} self-start`}>
                     Tell me when
                   </a>
                   <p className="text-caption text-fg-muted">
@@ -170,7 +170,7 @@ export default function PricingPage() {
               {SITE.product} {RELEASE.version} runs the Free plan on your computer, with no account, on Linux.
             </p>
           </div>
-          <a href="/download/" className={buttonClass("primary", "xl")}>
+          <a href="/download/" className={siteButton("primary", "lg")}>
             <Icon icon={Download} size={18} />
             Download for Linux
           </a>

@@ -60,7 +60,9 @@
   }
 }
 
-/* ---------- 2. Site semantics (built only on the palette and --tn-*) ---------- */
+/* ---------- 2. Site semantics (built only on the palette and --tn-*) ----------
+   Light, depth and edges are tokens too (D-1830): every one the dark theme
+   sets has a light value below, and site.test.ts checks both lists match. */
 :root {
   --site-page:        var(--tn-bg);                 /* #060A12 */
   --site-raised:      var(--tn-surface-1);          /* alternate bands */
@@ -74,10 +76,44 @@
   --site-glow:        rgb(45 212 191 / 0.13);       /* the poster's soft teal glow */
   --site-ink-a:       var(--teal-400);              /* highlight gradient start */
   --site-ink-b:       var(--sky-400);               /* highlight gradient end */
-  --site-header:      color-mix(in oklab, var(--site-page) 82%, transparent);
+  --site-header:      color-mix(in oklab, var(--site-page) 78%, transparent);
   --site-gutter:      clamp(1rem, 0.6rem + 1.8vw, 2rem);    /* 16 → 32 px */
-  --site-section-y:   clamp(4.5rem, 3rem + 5vw, 8rem);      /* 72 → 128 px */
+  --site-section-y:   clamp(5rem, 3rem + 6vw, 9rem);        /* 80 → 144 px */
   --site-header-h:    4rem;
+
+  /* Hairlines */
+  --site-line:        rgb(148 163 184 / 0.12);
+  --site-line-strong: rgb(148 163 184 / 0.22);
+  /* Edges: a lit top and a quiet bottom, drawn as a gradient border */
+  --site-edge-top:    rgb(255 255 255 / 0.13);
+  --site-edge-bottom: rgb(255 255 255 / 0.04);
+  --site-edge-hi:     rgb(255 255 255 / 0.06);      /* 1 px inner highlight under the top edge */
+  /* Fills laid over a surface: a touch of light at the top */
+  --site-fill-top:    rgb(255 255 255 / 0.035);
+  --site-fill-bottom: rgb(255 255 255 / 0.008);
+  /* Light: the two rings' teal and sky */
+  --site-glow-a:      rgb(45 212 191 / 0.16);
+  --site-glow-b:      rgb(56 189 248 / 0.11);
+  --site-ring:        rgb(148 163 184 / 0.11);      /* the rings' line art */
+  --site-ring-lit:    rgb(94 234 212 / 0.42);       /* where the light catches them */
+  --site-grain:       0.5;                          /* film grain over lit bands (soft light) */
+  --site-spot:        rgb(45 212 191 / 0.07);       /* a card's top light on hover */
+  /* The bezel product captures sit in */
+  --site-bezel:       var(--slate-900);
+  --site-bezel-edge:  rgb(255 255 255 / 0.10);
+  /* Elevation: e1 cards, e2 raised cards, e3 product frames */
+  --site-elev-1: inset 0 1px 0 var(--site-edge-hi), 0 1px 2px rgb(0 0 0 / 0.30);
+  --site-elev-2: inset 0 1px 0 var(--site-edge-hi), 0 1px 2px rgb(0 0 0 / 0.30), 0 12px 32px -12px rgb(0 0 0 / 0.60);
+  --site-elev-3: 0 0 0 1px rgb(0 0 0 / 0.50), 0 2px 4px rgb(0 0 0 / 0.20), 0 16px 32px -8px rgb(0 0 0 / 0.40), 0 48px 96px -24px rgb(0 0 0 / 0.65);
+  /* The primary button's gradient, top to bottom, and its hover */
+  --site-btn-top:     var(--teal-300);
+  --site-btn-bottom:  var(--teal-400);
+  --site-btn-hover:   var(--teal-200);
+  --site-btn-glow:    rgb(45 212 191 / 0.28);
+  --site-btn-hi:      rgb(255 255 255 / 0.45);
+  /* Glass: the secondary button and the header */
+  --site-glass:       rgb(148 163 184 / 0.06);
+  --site-glass-hover: rgb(148 163 184 / 0.11);
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
@@ -88,6 +124,31 @@
     --site-glow:   rgb(15 118 110 / 0.09);
     --site-ink-a:  var(--teal-700);
     --site-ink-b:  var(--sky-700);
+    --site-line:        rgb(15 23 42 / 0.08);
+    --site-line-strong: rgb(15 23 42 / 0.16);
+    --site-edge-top:    rgb(15 23 42 / 0.08);
+    --site-edge-bottom: rgb(15 23 42 / 0.14);
+    --site-edge-hi:     rgb(255 255 255 / 0.90);
+    --site-fill-top:    rgb(255 255 255 / 0.70);
+    --site-fill-bottom: rgb(241 245 249 / 0.50);
+    --site-glow-a:      rgb(20 184 166 / 0.16);
+    --site-glow-b:      rgb(14 165 233 / 0.10);
+    --site-ring:        rgb(15 23 42 / 0.08);
+    --site-ring-lit:    rgb(13 148 136 / 0.45);
+    --site-grain:       0.35;
+    --site-spot:        rgb(15 118 110 / 0.05);
+    --site-bezel:       rgb(255 255 255 / 0.75);
+    --site-bezel-edge:  rgb(15 23 42 / 0.10);
+    --site-elev-1: inset 0 1px 0 var(--site-edge-hi), 0 1px 2px rgb(15 23 42 / 0.05), 0 2px 6px -2px rgb(15 23 42 / 0.05);
+    --site-elev-2: inset 0 1px 0 var(--site-edge-hi), 0 1px 2px rgb(15 23 42 / 0.06), 0 16px 32px -14px rgb(15 23 42 / 0.16);
+    --site-elev-3: 0 0 0 1px rgb(15 23 42 / 0.06), 0 2px 4px rgb(15 23 42 / 0.04), 0 16px 32px -8px rgb(15 23 42 / 0.10), 0 48px 96px -24px rgb(15 23 42 / 0.22);
+    --site-btn-top:     var(--teal-700);
+    --site-btn-bottom:  var(--teal-800);
+    --site-btn-hover:   var(--teal-800);
+    --site-btn-glow:    rgb(15 118 110 / 0.22);
+    --site-btn-hi:      rgb(255 255 255 / 0.22);
+    --site-glass:       rgb(255 255 255 / 0.70);
+    --site-glass-hover: rgb(255 255 255 / 1);
   }
 }
 
@@ -100,37 +161,50 @@
   --color-stage-fg: var(--site-stage-fg);
   --color-stage-muted: var(--site-stage-muted);
   --color-stage-accent: var(--site-stage-accent);
+  --color-line: var(--site-line);
+  --color-line-strong: var(--site-line-strong);
+  --shadow-e1: var(--site-elev-1);
+  --shadow-e2: var(--site-elev-2);
+  --shadow-e3: var(--site-elev-3);
 }
 
 @theme {
-  /* Display and marketing type. The names don't collide with the app's text-xs…3xl. */
-  --text-display-2xl: clamp(2.5rem, 1.5rem + 4vw, 4rem);          /* 40 → 64 px: the home h1 */
-  --text-display-2xl--line-height: 1.04;
-  --text-display-2xl--letter-spacing: -0.03em;
-  --text-display-2xl--font-weight: 600;
-  --text-display-xl: clamp(2.125rem, 1.45rem + 2.6vw, 3.25rem);   /* 34 → 52 px: page h1s, closing CTA */
-  --text-display-xl--line-height: 1.06;
-  --text-display-xl--letter-spacing: -0.028em;
-  --text-display-xl--font-weight: 600;
-  --text-display-lg: clamp(1.75rem, 1.35rem + 1.6vw, 2.5rem);     /* 28 → 40 px: section h2 */
-  --text-display-lg--line-height: 1.1;
-  --text-display-lg--letter-spacing: -0.024em;
-  --text-display-lg--font-weight: 600;
-  --text-display-md: clamp(1.375rem, 1.2rem + 0.7vw, 1.75rem);    /* 22 → 28 px: row titles */
-  --text-display-md--line-height: 1.2;
-  --text-display-md--letter-spacing: -0.018em;
+  /* Display and marketing type (D-1832). Inter's optical sizes draw these in
+     its display cut; tracking tightens as the size grows. The names don't
+     collide with the app's text-xs…3xl. */
+  --text-display-3xl: clamp(2.75rem, 1.6rem + 4.6vw, 4.75rem);    /* 44 → 76 px: the home h1 */
+  --text-display-3xl--line-height: 1;
+  --text-display-3xl--letter-spacing: -0.042em;
+  --text-display-3xl--font-weight: 620;
+  --text-display-2xl: clamp(2.5rem, 1.5rem + 4vw, 4rem);          /* 40 → 64 px: closing CTA */
+  --text-display-2xl--line-height: 1.02;
+  --text-display-2xl--letter-spacing: -0.038em;
+  --text-display-2xl--font-weight: 620;
+  --text-display-xl: clamp(2.25rem, 1.5rem + 3vw, 3.5rem);        /* 36 → 56 px: page h1s */
+  --text-display-xl--line-height: 1.04;
+  --text-display-xl--letter-spacing: -0.036em;
+  --text-display-xl--font-weight: 620;
+  --text-display-lg: clamp(1.875rem, 1.3rem + 2.3vw, 3rem);       /* 30 → 48 px: section h2 */
+  --text-display-lg--line-height: 1.06;
+  --text-display-lg--letter-spacing: -0.032em;
+  --text-display-lg--font-weight: 620;
+  --text-display-md: clamp(1.375rem, 1.15rem + 0.9vw, 1.875rem);  /* 22 → 30 px: row titles */
+  --text-display-md--line-height: 1.16;
+  --text-display-md--letter-spacing: -0.024em;
   --text-display-md--font-weight: 600;
-  --text-title: 1.125rem;    --text-title--line-height: 1.45;    --text-title--font-weight: 600;
-  --text-lead: clamp(1.0625rem, 1rem + 0.3vw, 1.25rem);            /* 17 → 20 px */
-  --text-lead--line-height: 1.6;
+  --text-title: 1.125rem;    --text-title--line-height: 1.4;    --text-title--font-weight: 600;
+  --text-title--letter-spacing: -0.012em;
+  --text-lead: clamp(1.0625rem, 0.98rem + 0.4vw, 1.3125rem);       /* 17 → 21 px */
+  --text-lead--line-height: 1.55;
+  --text-lead--letter-spacing: -0.006em;
   --text-copy: 1rem;         --text-copy--line-height: 1.65;      /* 16 px body */
   --text-copy-sm: 0.9375rem; --text-copy-sm--line-height: 1.6;    /* 15 px card body */
   --text-caption: 0.8125rem; --text-caption--line-height: 1.5;    /* 13 px captions, footer */
   --text-eyebrow: 0.75rem;   --text-eyebrow--line-height: 1rem;   /* 12 px mono caps */
-  --text-eyebrow--letter-spacing: 0.08em;
-  --text-stat: clamp(2rem, 1.6rem + 1.6vw, 3rem);                  /* 32 → 48 px */
+  --text-eyebrow--letter-spacing: 0.12em;
+  --text-stat: clamp(2.5rem, 1.8rem + 2.6vw, 4rem);                /* 40 → 64 px */
   --text-stat--line-height: 1;
-  --text-stat--letter-spacing: -0.02em;
+  --text-stat--letter-spacing: -0.04em;
 
   /* Layout */
   --container-site: 75rem;     /* 1200 px: header, sections, footer */
@@ -139,9 +213,16 @@
   --container-prose: 44rem;    /* 704 px: legal and changelog text */
   --container-measure: 38rem;  /* 608 px: leads */
 
-  /* Depth: media only; cards stay flat. */
-  --shadow-stage: 0 0 0 1px var(--site-stage-line), 0 28px 80px -28px rgb(var(--tn-shadow-color) / 0.7);
-  --shadow-card-hover: 0 8px 24px -12px rgb(var(--tn-shadow-color) / 0.45);
+  /* Radii (D-1833): the app's 6 px controls; cards and frames grow with size. */
+  --radius-card: 12px;
+  --radius-frame: 16px;
+
+  /* Depth */
+  --shadow-stage: var(--site-elev-3);
+  --shadow-card-hover: var(--site-elev-2);
+
+  /* Motion (D-1831) */
+  --ease-out-site: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* ---------- 3. Utilities ---------- */
@@ -151,10 +232,18 @@
   background-clip: text;
   color: transparent;
 }
-@utility eyebrow {              /* "— CODE MODE": the video's label style */
+@utility text-sheen {           /* headings: full ink at the cap height, a breath lighter at the baseline */
+  background-image: linear-gradient(180deg, var(--tn-text) 35%, color-mix(in oklab, var(--tn-text) 74%, var(--site-page)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  /* descenders stay inside the painted box */
+  padding-bottom: 0.06em;
+}
+@utility eyebrow {              /* "CODE MODE": mono caps after a short lit rule */
   display: inline-flex;
   align-items: center;
-  gap: 0.625rem;
+  gap: 0.75rem;
   font-family: var(--font-mono);
   font-size: var(--text-eyebrow);
   line-height: var(--text-eyebrow--line-height);
@@ -162,7 +251,12 @@
   font-weight: 500;
   text-transform: uppercase;
   color: var(--tn-accent);
-  &::before { content: ""; width: 1rem; height: 1px; background: currentColor; }
+  &::before {
+    content: "";
+    width: 1.25rem;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, currentColor);
+  }
 }
 @utility bg-site-grid {          /* hero and CTA backdrop: grid plus glow, fading out */
   background-image:
@@ -172,6 +266,24 @@
   background-size: auto, 96px 96px, 96px 96px;
   background-position: center top, center top, center top;
 }
+@utility bg-lens {               /* Vibezeo's light: where the two rings overlap, teal meets sky */
+  background-image:
+    radial-gradient(42% 60% at 42% 0%, var(--site-glow-a), transparent 72%),
+    radial-gradient(42% 60% at 58% 0%, var(--site-glow-b), transparent 72%);
+}
+@utility grain {                 /* film grain, so the light never bands */
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: url("/grain.webp");
+    background-size: 128px 128px;
+    opacity: var(--site-grain);
+    mix-blend-mode: soft-light;
+    z-index: -1;
+  }
+}
 @utility container-site {        /* one width for header, sections and footer */
   margin-inline: auto;
   width: 100%;
@@ -179,8 +291,138 @@
   padding-inline: var(--site-gutter);
 }
 @utility link-arrow {            /* the arrow after a text link nudges on hover */
-  & > svg { transition: translate var(--dur-fast) var(--ease-standard); }
-  &:hover > svg, &:focus-visible > svg { translate: 2px 0; }
+  & > svg { transition: translate var(--dur-base) var(--ease-out-site); }
+  &:hover > svg, &:focus-visible > svg { translate: 3px 0; }
+}
+@utility horizon {               /* a hairline that's brightest in the middle */
+  height: 1px;
+  border: 0;
+  background: linear-gradient(90deg, transparent, var(--site-line-strong) 22%, var(--site-line-strong) 78%, transparent);
+}
+
+/* Surfaces (D-1830). A card is a fill with light at the top, a gradient
+   edge (lit top, quiet bottom) and a 1 px inner highlight. */
+@utility surface {
+  border: 1px solid transparent;
+  border-radius: var(--radius-card);
+  background:
+    linear-gradient(180deg, var(--site-fill-top), var(--site-fill-bottom)) padding-box,
+    linear-gradient(var(--site-card), var(--site-card)) padding-box,
+    linear-gradient(180deg, var(--site-edge-top), var(--site-edge-bottom)) border-box;
+  box-shadow: var(--site-elev-1);
+}
+@utility surface-raised {        /* the same on the raised band */
+  border: 1px solid transparent;
+  border-radius: var(--radius-card);
+  background:
+    linear-gradient(180deg, var(--site-fill-top), var(--site-fill-bottom)) padding-box,
+    linear-gradient(var(--site-page), var(--site-page)) padding-box,
+    linear-gradient(180deg, var(--site-edge-top), var(--site-edge-bottom)) border-box;
+  box-shadow: var(--site-elev-1);
+}
+@utility surface-hover {         /* a card that is a link: lifts, and light gathers at its top */
+  transition: box-shadow var(--dur-slow) var(--ease-out-site), translate var(--dur-slow) var(--ease-out-site), background-color var(--dur-slow);
+  &:hover, &:focus-visible {
+    box-shadow: var(--site-elev-2);
+    background-image:
+      radial-gradient(70% 50% at 50% 0%, var(--site-spot), transparent 70%),
+      linear-gradient(180deg, var(--site-fill-top), var(--site-fill-bottom)),
+      linear-gradient(var(--site-card), var(--site-card)),
+      linear-gradient(180deg, color-mix(in oklab, var(--site-edge-top), var(--tn-accent) 30%), var(--site-edge-bottom));
+    background-origin: padding-box, padding-box, padding-box, border-box;
+    background-clip: padding-box, padding-box, padding-box, border-box;
+  }
+}
+
+/* The bezel product captures sit in (D-1834): a lit edge, a 6 px rim and a
+   deep, soft shadow. Neutral: the light comes from the page behind it, never
+   from the frame. The screen inside keeps the stage's dark. */
+@utility frame {
+  position: relative;
+  border-radius: var(--radius-frame);
+  padding: 6px;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--site-bezel), var(--site-bezel)) padding-box,
+    linear-gradient(180deg, var(--site-bezel-edge), transparent 60%) border-box;
+  box-shadow: var(--site-elev-3);
+  /* No transform, filter or backdrop-filter here: the demo's full-screen
+     mode is position: fixed, and any of them would trap it in the frame. */
+}
+@utility frame-screen {
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--site-stage);
+  box-shadow: 0 0 0 1px var(--site-stage-line);
+}
+
+/* Buttons (D-1835): the app's 6 px corners, with depth. */
+@utility btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  user-select: none;
+  border-radius: 6px;
+  font-weight: 560;
+  letter-spacing: -0.008em;
+  transition:
+    background-color var(--dur-base) var(--ease-out-site),
+    box-shadow var(--dur-base) var(--ease-out-site),
+    translate var(--dur-base) var(--ease-out-site),
+    color var(--dur-base);
+  &:active { translate: 0 1px; }
+}
+@utility btn-primary {
+  color: var(--tn-accent-fg);
+  background: linear-gradient(180deg, var(--site-btn-top), var(--site-btn-bottom));
+  box-shadow:
+    inset 0 1px 0 var(--site-btn-hi),
+    inset 0 -1px 0 rgb(0 0 0 / 0.12),
+    0 0 0 1px color-mix(in oklab, var(--site-btn-bottom), black 18%),
+    0 1px 2px rgb(0 0 0 / 0.20),
+    0 8px 24px -8px var(--site-btn-glow);
+  &:hover {
+    background: linear-gradient(180deg, var(--site-btn-hover), var(--site-btn-bottom));
+    box-shadow:
+      inset 0 1px 0 var(--site-btn-hi),
+      inset 0 -1px 0 rgb(0 0 0 / 0.12),
+      0 0 0 1px color-mix(in oklab, var(--site-btn-bottom), black 18%),
+      0 2px 4px rgb(0 0 0 / 0.20),
+      0 12px 32px -8px var(--site-btn-glow);
+  }
+}
+@utility btn-secondary {
+  color: var(--tn-text);
+  background: var(--site-glass);
+  box-shadow: inset 0 1px 0 var(--site-edge-hi), inset 0 0 0 1px var(--site-line-strong), 0 1px 2px rgb(0 0 0 / 0.10);
+  backdrop-filter: blur(8px);
+  &:hover { background: var(--site-glass-hover); box-shadow: inset 0 1px 0 var(--site-edge-hi), inset 0 0 0 1px color-mix(in oklab, var(--site-line-strong), var(--tn-text) 18%), 0 2px 6px rgb(0 0 0 / 0.12); }
+}
+@utility btn-ghost {
+  color: var(--tn-text-muted);
+  &:hover { color: var(--tn-text); background: var(--site-glass); }
+}
+@utility btn-sm { height: 2.125rem; padding-inline: 0.875rem; font-size: 0.875rem; }
+@utility btn-md { height: 2.5rem; padding-inline: 1rem; font-size: 0.9375rem; }
+@utility btn-lg { height: 3rem; padding-inline: 1.375rem; font-size: 1rem; }
+
+/* Keycaps on marketing pages: a little travel under each cap. */
+@utility keycap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.75rem;
+  min-width: 2.75rem;
+  padding-inline: 0.75rem;
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--tn-text);
+  background: linear-gradient(180deg, var(--site-fill-top), var(--site-fill-bottom)), var(--tn-kbd-bg);
+  box-shadow: inset 0 1px 0 var(--site-edge-hi), inset 0 0 0 1px var(--site-line-strong), inset 0 -3px 0 var(--site-line), 0 1px 2px rgb(0 0 0 / 0.18);
 }
 
 /* ---------- 4. Page base ---------- */
@@ -190,8 +432,15 @@ body.site {
   font-size: var(--text-copy);
   line-height: var(--text-copy--line-height);
   font-optical-sizing: auto;
+  /* Inter's alternates: the open digits and the straight-legged l (D-1832) */
+  font-feature-settings: "cv01", "cv09", "cv11", "ss03";
   text-rendering: optimizeLegibility;
 }
+@layer base {
+  .site :is(h1, h2, h3) { text-wrap: balance; }
+  .site :is(code, kbd, pre, .font-mono) { font-feature-settings: normal; }
+}
+.site ::selection { background: color-mix(in oklab, var(--tn-accent) 32%, transparent); }
 .site :focus-visible { box-shadow: 0 0 0 2px var(--site-page), 0 0 0 4px var(--tn-accent-ring); }
 .site [data-stage] :focus-visible { box-shadow: 0 0 0 2px var(--site-stage), 0 0 0 4px var(--tn-accent-ring); }
 .site a, .site button, .site summary { -webkit-tap-highlight-color: transparent; }
@@ -206,28 +455,51 @@ body.site {
 .site :where(p, dd, figcaption, td, blockquote) a:hover { text-decoration-color: currentColor; }
 
 @media (forced-colors: active) {
-  .text-ink { background: none; color: CanvasText; }
+  .text-ink, .text-sheen { background: none; color: CanvasText; }
+  .btn { border: 1px solid ButtonText; }
 }
 
-/* ---------- 5. Motion: CSS only, progressive, off under reduced motion ---------- */
-@keyframes site-reveal { from { opacity: 0.001; translate: 0 1rem; } to { opacity: 1; translate: 0 0; } }
-@keyframes site-header-line { from { border-bottom-color: transparent; } to { border-bottom-color: var(--tn-border); } }
+/* ---------- 5. Motion: CSS only, progressive, off under reduced motion (D-1831) ---------- */
+@keyframes site-reveal {
+  from { opacity: 0.001; translate: 0 1.5rem; filter: blur(6px); }
+  to   { opacity: 1; translate: 0 0; filter: blur(0); }
+}
+@keyframes site-rise {
+  from { opacity: 0.001; translate: 0 2.5rem; scale: 0.985; }
+  to   { opacity: 1; translate: 0 0; scale: 1; }
+}
+@keyframes site-header-line { from { border-bottom-color: transparent; } to { border-bottom-color: var(--site-line); } }
+@keyframes site-ring-turn { to { rotate: 360deg; } }
 
 @media (prefers-reduced-motion: no-preference) {
   @supports (animation-timeline: view()) {
-    .reveal { animation: site-reveal linear both; animation-timeline: view(); animation-range: entry 0% entry 35%; }
-    .reveal-late { animation-range: entry 10% entry 45%; }
+    .reveal { animation: site-reveal linear both; animation-timeline: view(); animation-range: entry 0% entry 40%; }
+    .reveal-late { animation-range: entry 12% entry 52%; }
+    .rise { animation: site-rise linear both; animation-timeline: view(); animation-range: entry 0% cover 30%; }
   }
   @supports (animation-timeline: scroll()) {
     .site-header { border-bottom-color: transparent; animation: site-header-line linear both; animation-timeline: scroll(root); animation-range: 0 4rem; }
   }
   .enter {
-    transition: opacity var(--dur-deliberate) var(--ease-enter), translate var(--dur-deliberate) var(--ease-enter);
-    @starting-style { opacity: 0; translate: 0 0.5rem; }
+    transition: opacity 700ms var(--ease-out-site), translate 700ms var(--ease-out-site), filter 700ms var(--ease-out-site);
+    @starting-style { opacity: 0; translate: 0 0.75rem; filter: blur(4px); }
   }
-  .enter-2 { transition-delay: 60ms; }
-  .enter-3 { transition-delay: 120ms; }
+  .enter-2 { transition-delay: 80ms; }
+  .enter-3 { transition-delay: 160ms; }
+  .enter-4 { transition-delay: 240ms; }
+  .ring-turn { animation: site-ring-turn 120s linear infinite; transform-origin: center; transform-box: fill-box; }
   @view-transition { navigation: auto; }
-  ::view-transition-group(root) { animation-duration: var(--dur-base); animation-timing-function: var(--ease-standard); }
+  ::view-transition-group(root) { animation-duration: var(--dur-slow); animation-timing-function: var(--ease-out-site); }
 }
 .site-header { view-transition-name: site-header; }
+
+/* The phone menu's sheet slides down from under the header (Popover API). */
+@media (prefers-reduced-motion: no-preference) {
+  .site-sheet {
+    transition: translate var(--dur-slow) var(--ease-out-site), opacity var(--dur-slow) var(--ease-out-site), overlay var(--dur-slow) allow-discrete, display var(--dur-slow) allow-discrete;
+    translate: 0 -0.75rem;
+    opacity: 0;
+    &:popover-open { translate: 0 0; opacity: 1; }
+    @starting-style { &:popover-open { translate: 0 -0.75rem; opacity: 0; } }
+  }
+}
