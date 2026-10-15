@@ -23,6 +23,13 @@
   - the site from a fresh clone: `build:site` with `strip-runtime` and `check-routes` (36 pages, no redirects), web vitest 87/87, site Playwright 16/16, Lighthouse CI on its five URLs (every assertion passed; performance 99 on `/` with LCP 1.96 s, 97 on `/docs/` with its LCP warning at 2.42 s, 100 elsewhere), and the demo walkthrough.
   Deploying is merging `product-m0-m5` into `main` (OPERATING §7).
 - Website redesign (M15, D-1800 to D-1815): phases 1–4 and 6 of `docs/WEBSITE_BRIEF.md` (`docs-briefs`) are merged with the `chain4` batch: OS light and dark themes, marketing type, the new home page, Pricing, Download, Changelog, the inner pages and the docs, and the performance phase (marketing pages ship no framework JavaScript, D-1813; Lighthouse at 0.95 on five URLs). They reach vibezeo.com with the next release. The signed-in captures of phase 5 wait on the owner (`HUMAN_TODO.md`). See "M15 · Website redesign".
+- Website elite pass (M15, `site-elite`, D-1819 and D-1830 to D-1840; `docs/WEBSITE_ELITE.md`). The site and docs are rebuilt on a lit visual system. It has:
+  - tokens for light, edges, depth, type, radii and motion;
+  - the two-ring backdrop, the product bezel and site buttons;
+  - a new header and footer;
+  - the docs rendered on the server in the site's frame.
+
+  The real-app captures were retaken from 0.7.2 at 2×. The docs' largest paint is inside its budget (1.81 s), and Lighthouse CI passes on its five URLs with no warnings (`/` 1.96 s). Waiting for the coordinating session to batch it into `product-m0-m5`.
 - M16 Conductor voice API (F-BE-08, and the API halves of F-CN-02 and F-CN-05) is on `product-m0-m5` (pull request #30, built on `m16-voice-api`); see "M16 · F-BE-08 Conductor voice API". The desktop's Conductor client (F-CN-01…04, F-CN-08: calls, the local tool executor, the HUD, the call log) is on `m16a-conductor`; see "M16 · 16A Conductor core".
 - Windows from Linux (M15, branch `windows-ready`, D-1700…D-1710): the gate runs Windows clippy (GNU target, every crate but the app); `bash scripts/windows-check.sh --msvc --wine` (in `ci:local`) checks the app for MSVC through cargo-xwin and runs the platform crates' tests under Wine; `bash scripts/build-windows-installer.sh` cross-builds an unsigned NSIS installer and checks it. Nothing has run on real Windows: Windows stays "Coming soon" until HUMAN_TODO's "M15 Windows first run" passes. Setup in OPERATING §6a.
 - Layout matches DECISIONS: 10 crates under `crates/`, Tauri crate `apps/desktop/src-tauri` (lib `tandem_app`, bin `tandem`), `apps/{api,web}`, `packages/{ui,protocol}`.
@@ -1181,6 +1188,22 @@ The owner (15 October): the site looks basic for a product we sell; make it feel
 - D-1819: the docs' chunks start after the first paint; the docs render on the server in the site's frame. `/docs/` median largest paint 1.82 s (was 2.72), blocking time 80 ms, performance 0.99.
 - Pages: pricing, download, changelog and its version pages, about, demo, privacy, terms, security, 404 and the docs on the system (D-1839). Web vitest 89/89.
 
+- Verified on the final tree:
+  - **The gate:** lint; TypeScript 1,416 tests (web 94, ui 411, desktop 639, api 211, remote 32, mobile 19, protocol 10); Rust 1,843 tests; desktop build; clippy; Windows and macOS clippy; fmt; no protocol drift.
+  - **Container fixes before the gate could run:** Docker Hub answered 429, so the images came through `mirror.gcr.io` (OPERATING §3), and the MinGW cross compiler had to be installed.
+  - **The site:** `build:site` (strip-runtime, defer-docs and check-routes: 36 pages), site Playwright 16/16, and the demo walkthrough (no console errors).
+  - **Lighthouse CI:** every assertion passes, with no warnings. Medians:
+
+    | URL | Performance | LCP | TBT |
+    |---|---|---|---|
+    | `/` | 0.99 | 1.96 s | 0 ms |
+    | `/pricing/` | 1.00 | 1.65 s | 0 ms |
+    | `/download/` | 1.00 | 1.74 s | 0 ms |
+    | `/changelog/` | 1.00 | 1.66 s | 0 ms |
+    | `/docs/` | 0.99 | 1.81 s | 67 ms |
+
+    Accessibility, best practices and SEO are 1.00 everywhere.
+  - **Screens:** Playwright screenshots of every page at 1440×900 and 390×844 in both themes, before and after.
 ## M16 · F-CN-06 persona and memory, F-CN-07 wake phrase
 Built on branch `m16a-persona-wake` (from `product-m0-m5`), alongside the Conductor-core session (`m16a-conductor`: F-CN-01…04, F-CN-08). Decisions are numbered from D-1200.
 - [x] F-CN-06 Persona and memory (P2).
