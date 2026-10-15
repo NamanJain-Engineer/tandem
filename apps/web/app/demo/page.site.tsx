@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Icon } from "../../components/site/Icon";
 import { Keys } from "../../components/site/Keys";
+import { VideoSection } from "../../components/site/home/VideoSection";
 import { PageHero } from "../../components/site/PageHero";
 import { SiteFrame } from "../../components/site/SiteFrame";
 import { SITE } from "../../lib/site";
@@ -73,8 +74,8 @@ export default function DemoPage() {
           <div className="frame">
           <a href={DEMO_APP} data-stage="" className="frame-screen group block">
             <picture>
-              <source type="image/avif" srcSet="/demo/still.avif 1280w, /demo/still@2x.avif 2560w" sizes="(min-width: 1312px) 1268px, 100vw" />
-              <source type="image/webp" srcSet="/demo/still.webp 1280w, /demo/still@2x.webp 2560w" sizes="(min-width: 1312px) 1268px, 100vw" />
+              <source type="image/avif" srcSet="/demo/still-800.avif 800w, /demo/still.avif 1280w, /demo/still@2x.avif 2560w" sizes="(min-width: 1312px) 1268px, 100vw" />
+              <source type="image/webp" srcSet="/demo/still-800.webp 800w, /demo/still.webp 1280w, /demo/still@2x.webp 2560w" sizes="(min-width: 1312px) 1268px, 100vw" />
               <img
                 src="/demo/still.jpg"
                 width={1280}
@@ -110,6 +111,7 @@ export default function DemoPage() {
           </ol>
         </div>
       </section>
+      <VideoSection />
     </SiteFrame>
   );
 }
