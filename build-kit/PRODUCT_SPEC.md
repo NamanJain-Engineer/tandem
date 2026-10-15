@@ -1888,6 +1888,40 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 1. A teammate without the permission gets no schedule tools.
 2. `tandem__schedule_create` with access Full is rejected.
 
+#### F-RT-06 Night Shift: run at reset (P2, Pro)
+**Story:** My plan's usage windows refill while I'm away, and that capacity goes to waste. I want to queue a task to start on an account I choose when that account's window resets, overnight if need be, and find a summary in the morning, on my phone too.
+
+**Behavior:**
+- **Entry:** "Run at reset…" beside Execute… on a task (F-TK-04), with the same block as Execute (sign-in, Pro's task execution). It opens UI-171 with:
+  - **Account:** every account whose engine can run tasks (a chat engine, as Execute). Each shows its next reset:
+    - the reset time of its fullest usage window (F-AC-04);
+    - or, when the engine reports no windows, the reset time of the last usage limit a pane hit on that account (F-AC-05);
+    - or else "No reset time known yet". Such an account can't be picked.
+  - **Workspace, isolation, access and review,** as Execute (a new worktree and Edits by default; Full only with its explicit choice).
+- **The plan:** UI-171 states the plan in words before anything is saved: "Starts {task} on {account} ({engine}) at {time}, when its {window} resets. In a new worktree, with Edits access. It waits for that account's reset and never uses another account."
+  - When background routines are off (F-RT-03), it adds: "Vibezeo must be open then, or turn on Run even when Vibezeo is closed in Routines."
+  - **Schedule run** saves it. That click is the user's approval of the plan.
+- **On the task:** each scheduled run shows "Runs at {time} on {account}" with **Cancel**. A run that has started shows its attempt in Runs, as Execute does.
+- **At the reset:** Vibezeo reads the account's usage again (F-AC-04).
+  - If its fullest window is still at 95% or more with a later reset, the run waits for that reset ("Waiting for {account} to reset at {time}").
+  - Otherwise it starts task execution (F-TK-04) with that account and engine and the saved choices.
+  - It never uses another account or engine (F-AC-05, out of scope §6.7). A start that fails (signed out, plan, engine missing, the queue's limit) is marked "Couldn't start" with the reason, and isn't retried.
+- **With the app closed:** the background runner (F-RT-03, `--run-routines`) starts a due run and waits for it within its pass's cap, as it does for routines.
+- **Morning summary** (Settings › Routines › "Night Shift summary at", 8:00 AM by default):
+  - At that time, if any Night Shift runs ended since the last summary, one notification: "Night Shift: {n} done, {m} need you" / the tasks' titles. "Need you" means failed, stopped or couldn't start. Its source opens Tasks.
+  - A paired phone with push turned on (F-RM-06) gets the same summary as a push alert.
+  - Nothing ran: no summary.
+- **Storage:** `$DATA/night-shift.json` (atomic writes): each run's task, workspace, account, engine, choices, start time, state (`scheduled`, `waiting`, `started`, `done`, `needs_you`, `cancelled`), attempt and reason. Nothing leaves the machine beyond what task execution and the phone's push already send.
+
+**Acceptance:**
+1. With an account whose 5-hour window resets at 3:10 AM, "Run at reset" shows that time in the plan; Schedule run saves it, the task lists "Runs at 3:10 AM on {account}", and nothing starts before then.
+2. At 3:10 (a mocked clock), the run starts task execution with that account and engine, even when another account has more room.
+3. When the account is still at 95% or more with a later reset, the run waits for that reset and starts then. It never uses another account.
+4. Cancel before the reset removes the run, and nothing starts.
+5. An account with no known reset can't be picked, and Free shows Execute's Pro block.
+6. At the summary time after two runs ended (one done, one failed), one notification reads "Night Shift: 1 done, 1 needs you". The next day, with nothing new, there's none. A paired phone with push on is queued the same alert.
+7. With the app closed and background routines on, `--run-routines` starts a due run.
+
 ### 4.10 PL: Plugins and tandem-gateway
 
 #### F-PL-01 Gateway process (P1)
