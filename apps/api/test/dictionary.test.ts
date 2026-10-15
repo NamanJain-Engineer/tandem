@@ -88,6 +88,32 @@ describe("F-DI-09 dictionary sync (POST /v1/dictionary/sync)", () => {
     expect(after.body.changes.find((c) => c.rule_id === "tauri")?.payload).toMatchObject({ to: "Tauri." });
   });
 
+  it("F-DI-09 an unresolved older edit stays a conflict on later syncs; an identical one is not", async () => {
+    const bearer = await proUser("later@tandem.test");
+    await sync(bearer, 0, [rule("tauri", "TAURI", 10)]);
+    const seen = await sync(bearer, 0, []);
+    // The device already pulled the newer row, but still holds its own older edit.
+    const again = await sync(bearer, seen.body.rev, [rule("tauri", "Tauri.", 5)]);
+    expect(again.body.conflicts.map((c) => c.rule_id)).toEqual(["tauri"]);
+    const same = await sync(bearer, seen.body.rev, [rule("tauri", "TAURI", 5)]);
+    expect(same.body.conflicts).toEqual([]);
+    expect(same.body.rev).toBe(seen.body.rev);
+  });
+
+  it("F-DI-09 DELETE /v1/dictionary removes the synced copy, on any plan", async () => {
+    const { userId } = await signUpVerified(t, "gone@tandem.test");
+    await setSubscription(t.deps, userId);
+    const bearer = await bearerFor(t.deps, userId);
+    await sync(bearer, 0, [rule("tauri", "Tauri", 1)]);
+    const res = await json(t, "DELETE", "/v1/dictionary", { bearer });
+    expect(res.status).toBe(204);
+    const after = await sync(bearer, 0, []);
+    expect(after.body).toEqual({ rev: 0, changes: [], conflicts: [] });
+    // After a downgrade the copy can still be deleted.
+    const free = await signUpVerified(t, "lapsed@tandem.test");
+    expect((await json(t, "DELETE", "/v1/dictionary", { bearer: await bearerFor(t.deps, free.userId) })).status).toBe(204);
+  });
+
   it("F-DI-09 transcript evidence never syncs, users are separate, and batches are bounded", async () => {
     const bearer = await proUser("one@tandem.test");
     const other = await proUser("two@tandem.test");

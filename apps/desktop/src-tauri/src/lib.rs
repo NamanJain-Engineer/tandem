@@ -386,6 +386,9 @@ macro_rules! app_commands {
             commands::dictate::dictionary_export,
             commands::dictate::dictionary_suggestions,
             commands::dictate::dictionary_suggestion_resolve,
+            commands::dictate::dictionary_sync,
+            commands::dictate::dictionary_sync_resolve,
+            commands::dictate::dictionary_sync_forget,
             commands::dictate::dictate_permissions,
             commands::dictate::dictate_open_permission_settings,
             commands::dictate::dictate_relaunch,
@@ -758,6 +761,48 @@ fn setup_dictate(app: &tauri::App, state: &AppState) {
                 })
             },
         ));
+    }
+    // Dictionary sync (F-DI-09): hosted builds, signed in, a plan with it.
+    {
+        let (api, auth, ents) = (
+            state.api.clone(),
+            state.auth.clone(),
+            state.entitlements.clone(),
+        );
+        let (api2, auth2, auth3) = (api.clone(), auth.clone(), auth.clone());
+        state
+            .dictate
+            .set_dictionary_sync(services::dictionary_sync::SyncDeps {
+                access: std::sync::Arc::new(move || {
+                    let a = auth3.state();
+                    services::dictionary_sync::SyncAccess {
+                        hosted: a.hosted,
+                        allowed: ents.view().limits.dictionary_sync,
+                        account: a.signed_in.then_some(a.email).flatten(),
+                    }
+                }),
+                call: std::sync::Arc::new(move |req| {
+                    let (api, auth) = (api.clone(), auth.clone());
+                    Box::pin(async move {
+                        auth.with_token(|token| {
+                            let (api, req) = (api.clone(), req.clone());
+                            async move { api.dictionary_sync(&token, &req).await }
+                        })
+                        .await
+                    })
+                }),
+                forget: std::sync::Arc::new(move || {
+                    let (api, auth) = (api2.clone(), auth2.clone());
+                    Box::pin(async move {
+                        auth.with_token(|token| {
+                            let api = api.clone();
+                            async move { api.dictionary_forget(&token).await }
+                        })
+                        .await
+                    })
+                }),
+            });
+        state.dictate.run_sync_loop();
     }
     let dictate = state.dictate.clone();
     // "Hey Conductor" (F-CN-07): the bundled model ships as a resource; dev
