@@ -87,4 +87,28 @@ describe("site frame", () => {
       for (const f of readdirSync(dir, { recursive: true, encoding: "utf8" }).filter((n) => /\.site\.tsx$|^[^/]*\/?[A-Z][\w/]*\.tsx$/.test(n) && !n.includes("test")))
         expect(readFileSync(join(dir, f), "utf8"), f).not.toMatch(/\bfont-(thin|extralight|light|bold|extrabold|black)\b/);
   });
+
+  it("F-WB-01 the stylesheet scans every packages/ui component the site and portal import, and no other (D-1844)", () => {
+    const css = readFileSync(join(import.meta.dirname, "globals.css"), "utf8");
+    const listed = (/packages\/ui\/src\/components\/\{([^}]+)\}\.tsx/.exec(css)?.[1] ?? "").split(",");
+    const ui = join(import.meta.dirname, "../../../packages/ui/src/components");
+    const fileOf = (name: string) =>
+      readdirSync(ui).find((f) => f.endsWith(".tsx") && new RegExp(`export (const|function) ${name}\\b`).test(readFileSync(join(ui, f), "utf8")));
+    const used = new Set<string>();
+    const web = join(import.meta.dirname, "..");
+    for (const dir of ["app", "components", "lib"])
+      for (const f of readdirSync(join(web, dir), { recursive: true, encoding: "utf8" }).filter((n) => /\.tsx?$/.test(n) && !n.includes("test"))) {
+        const src = readFileSync(join(web, dir, f), "utf8");
+        for (const m of src.matchAll(/@tandem\/ui\/components\/(\w+)"/g)) used.add(`${m[1]}.tsx`);
+        for (const m of src.matchAll(/import \{([^}]*)\} from "@tandem\/ui"/g))
+          for (const name of (m[1] ?? "").split(",").map((n) => n.trim()).filter((n) => /^[A-Z]/.test(n))) {
+            const file = fileOf(name);
+            if (file) used.add(file);
+          }
+      }
+    // What those components import from each other.
+    for (const f of [...used])
+      for (const m of readFileSync(join(ui, f), "utf8").matchAll(/from "\.\/(\w+)"/g)) used.add(`${m[1]}.tsx`);
+    expect([...used].filter((f) => !listed.includes(f.replace(/\.tsx$/, "")))).toEqual([]);
+  });
 });
