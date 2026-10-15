@@ -21,6 +21,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent / "public"
 MEDIA = ROOT.parent / "media"
 # 2x masters and where their 1x original goes. The demo still is a JPEG.
 MASTERS = {"still": ROOT / "demo" / "still.jpg"}
+# Smaller widths a phone picks instead (D-1842): the home page's still sits
+# just under the fold, so its bytes count toward the largest paint.
+NARROW = {"still": 800}
 # The demo still and every PNG capture in public/screens.
 SOURCES = [ROOT / "demo" / "still.jpg", *sorted((ROOT / "screens").glob("*.png"))]
 QUALITY = {"avif": 60, "webp": 80}
@@ -53,6 +56,11 @@ def masters() -> None:
             out = one.with_name(f"{one.stem}@2x.{fmt}")
             if not fresh(out, master):
                 save(image, out, fmt)
+            if name in NARROW:
+                w = NARROW[name]
+                out = one.with_name(f"{one.stem}-{w}.{fmt}")
+                if not fresh(out, master):
+                    save(image.resize((w, image.height * w // image.width), Image.LANCZOS), out, fmt)
 
 
 def main() -> int:

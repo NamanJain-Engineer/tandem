@@ -11,7 +11,10 @@ const html = (el: ReactElement) => renderToStaticMarkup(el);
 
 describe("the website changelog from CHANGELOG.md (F-WB-03)", () => {
   it("F-WB-03 the index lists every version newest first, linking its page", () => {
-    const h = html(<ChangelogPage />);
+    // From the Releases heading on: the "New in" tiles above it link their
+    // own release's notes first (D-1841).
+    const page = html(<ChangelogPage />);
+    const h = page.slice(page.indexOf('id="releases-title"'));
     expect(RELEASES[0]?.version).toBe(RELEASE.version);
     let at = -1;
     for (const r of RELEASES) {
