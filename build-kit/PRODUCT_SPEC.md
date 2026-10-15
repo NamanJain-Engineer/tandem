@@ -1299,6 +1299,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
   - Gemini CLI: `GEMINI.md`. Pointer: a `GEMINI.md` holding the import `@AGENTS.md`.
   - Copilot CLI: `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`, combined. It reads `AGENTS.md` itself.
   - Cursor Agent: `.cursor/rules/`, `AGENTS.md` and `CLAUDE.md`. It reads `AGENTS.md` itself.
+  - Antigravity CLI (F-EN-09): `GEMINI.md` and `AGENTS.md`. It reads `AGENTS.md` itself.
   - An engine without an entry is **Unknown**: listed, never written for.
 - **The panel (UI-160)**, "Instructions…" in a local folder's menu in the rail, for its repository's main checkout (or the folder, when it isn't a repository):
   - One row per installed engine: the files it reads that exist, and what it reads in the end ("Reads AGENTS.md", "Reads CLAUDE.md, not AGENTS.md", "Nothing yet", "Unknown").
@@ -1321,6 +1322,24 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 4. A git-ignored `CLAUDE.local.md` is listed as "Not in new worktrees". "Copy into worktrees" adds `CLAUDE.local.md` to `.vibezeo/worktree.json`'s `copy`, keeps its `setup`, and leaves its trust as it was.
 5. An engine missing from the registry's instructions table is shown as "Unknown", and nothing is written for it.
 6. A `CLAUDE.md` that's a symbolic link is listed, never written; the plan skips it and says why.
+
+#### F-EN-09 Engine catalog refresh (P2)
+**Story:** New coding-agent CLIs ship every month, and vendors change who can use the old ones. The engines I use show up in Vibezeo, with what each needs, as soon as their vendors document them.
+
+**Behavior:**
+- **Two new terminal engines**, added from each vendor's own documentation (checked 15 October 2026, D-2404):
+  - **Antigravity CLI** (Google): command `agy`, `agy --version`, installed with Google's script (`curl -fsSL https://antigravity.google/cli/install.sh | bash` on macOS and Linux, `irm https://antigravity.google/cli/install.ps1 | iex` on Windows). It signs in through the browser and keeps its token in the system keyring, and its docs name no way to move its home, so it has one account per computer (`homeStrategy: none`). It reads `GEMINI.md` and `AGENTS.md` (F-EN-07).
+  - **Kiro CLI** (AWS): command `kiro-cli`, `kiro-cli --version`, installed with `curl -fsSL https://cli.kiro.dev/install | bash`. `KIRO_HOME` points it at a provider home, so each account has its own (F-AC-01). Sign in and out with `kiro-cli login` and `kiro-cli logout`, run in the account's home.
+  - Both run in terminal panes only, unmodified and signed in by themselves. Neither is a Thread engine, and Vibezeo never runs them headless: Antigravity's terms for third-party automation wait on the owner (HUMAN_TODO).
+  - Screen patterns that need a signed-in run to record (ready, waiting, limit) start empty, so status falls back to output and quiet (F-EN-06); usage limits use the common patterns.
+- **Engine notes:** a registry entry may carry a `note`, shown on its tile in the launch grid's "Not installed" list and in Settings › Engines. Gemini CLI's says: "Google serves Gemini CLI to paid API keys and Gemini Code Assist Standard or Enterprise. Personal Google accounts use Antigravity CLI."
+- **Models from the engines:** a Thread engine's model picker leads with what the engine reports at run time (Codex's `model/list`, ACP's `session/new`), then the remote and bundled catalog (F-TH-08); with nothing reported, the catalog fills it. Terminal engines have no picker: Antigravity and Kiro choose their model inside their own UI (D-2405).
+
+**Acceptance:**
+1. With `agy` and `kiro-cli` on the login PATH, both are detected and launch in terminal panes. Two Kiro accounts get two provider homes, each passed as `KIRO_HOME`; Antigravity offers one account.
+2. Gemini CLI stays listed, with its note about API keys and enterprise access.
+3. Neither new engine appears as a Thread engine, in the teammate engine picker, or in any headless run.
+4. When Codex reports its models, they lead the picker, before the catalog's; when it reports none, the picker lists the catalog.
 
 ### 4.5 AC: Accounts and usage
 
