@@ -107,13 +107,35 @@ lives in `components/blog/**`, on top of the shared site components and tokens.
 | `/blog/tags/<tag>/` | Every post with that tag, as the index's rows. |
 | `/blog/feed.xml` | An Atom feed of every published post, with the full description and a link. |
 
+### Reading extras and motion (the owner's go-ahead, 15 October)
+- **Copy buttons on code blocks.** `/blog/blog.js` is a first-party script of
+  about 1 KB, on post pages only (D-1860). The buttons are already in the page,
+  hidden, and the script shows them when the clipboard is available. Without it
+  the code is still there to select.
+- **Reading progress.** A hairline under the header fills as you read. It's CSS
+  scroll-driven animation with no script, hidden where the browser can't do it
+  and under reduced motion (D-1861).
+- **Related posts.** Up to three posts that share a tag, never repeating the
+  newer and older links.
+- **Share art.** Each post's `og:image` is drawn at build time (`/blog/<slug>/og.png`,
+  1200×630) from its title, description, author and date. It uses the site's
+  dark stage, grid and teal glow, and Inter (D-1859).
+- **Motion**, all on `transform` and `opacity`, and none under reduced motion
+  (D-1862):
+  - rows and cards reveal as they scroll in (the site's `reveal`);
+  - cards lift on hover, and the featured cover scales a little;
+  - a post's title carries from the index or a tag page into the post through
+    a cross-document view transition.
+- **Footnotes** (`[^1]` in Markdown) render as small superscript links, with the
+  notes at the end.
+
 ### Rules
-- **No client JavaScript.** Pages are server components, and `strip-runtime`
-  removes Next's runtime as on the other marketing pages. The one script allowed
-  is a post's JSON-LD (`BlogPosting`): data, not code, allowed on post pages only
-  (D-1852).
+- **Almost no client JavaScript.** Pages are server components, and
+  `strip-runtime` removes Next's runtime as on the other marketing pages. A post
+  page keeps two scripts: its JSON-LD (`BlogPosting`), which is data rather than
+  code (D-1852), and `/blog/blog.js` (D-1860). The index and tag pages have none.
 - **Code** is highlighted at build time by fumadocs-mdx's Shiki, with light and
-  dark themes. There's no copy button, since that needs a script.
+  dark themes.
 - **Dates and the no-year rule (D-1851).** Dates appear only inside `<time datetime>`
   and in the JSON-LD's `datePublished`. The year-free check runs on every blog
   page with those two removed.
@@ -124,7 +146,8 @@ lives in `components/blog/**`, on top of the shared site components and tokens.
 - **Images** live under `public/blog/<slug>/`, at fixed sizes, with AVIF and WebP,
   and lazy unless they're the cover. A cover from a real capture names the build
   it shows.
-- **Share images:** a post's `og:image` is its cover, or `/og.png`.
+- **Share images:** a post's `og:image` is drawn at build time (above). The
+  index and tag pages use `/og.png`.
 - **Search engines:** a canonical URL on every page, the feed in `<head>`, every
   blog URL in the sitemap, and the posts in `/llms.txt`.
 
@@ -167,6 +190,8 @@ You need no code to publish a post: you add one file and merge it.
    - `> ` quotes;
    - images (next step).
 
+   Footnotes work too: `[^1]` in the text and `[^1]: The note.` below it.
+
    Don't write a year in the text: the site's tests reject years outside the post's
    date. Write "15 October" or "version 0.7.2" instead. Link to videos rather than
    embedding them.
@@ -189,6 +214,8 @@ You need no code to publish a post: you add one file and merge it.
    http://localhost:3000/blog/. Drafts show there. Before you publish, delete the
    `draft: true` line, then run `pnpm --filter web build:site` to check it the way
    the live site builds it.
+   The post's share image is drawn for you from its title and description: no
+   file to make.
 6. **Publish it.** Commit the post and its images on a branch and merge it into
    `product-m0-m5`. The site deploys when that is merged into `main` (OPERATING
    §7). The post then appears on the index, its tags, the feed, the sitemap and

@@ -3,9 +3,9 @@ import type { ReactNode } from "react";
 import { Icon } from "../site/Icon";
 import { SiteFrame } from "../site/SiteFrame";
 import { TextLink } from "../site/TextLink";
-import { BLOG_PATH, type Post } from "../../lib/blog/posts";
+import { BLOG_PATH, titleTransition, type Post } from "../../lib/blog/posts";
 import { cx } from "../../lib/cx";
-import { CoverFigure, PostDate, PostMeta, Subscribe, TagList } from "./parts";
+import { CoverFigure, PostCard, PostDate, PostMeta, Subscribe, TagList } from "./parts";
 
 export type TocItem = { title: ReactNode; url: string; depth: number };
 
@@ -33,12 +33,37 @@ function Contents({ toc }: { toc: readonly TocItem[] }) {
   );
 }
 
+/** How far through the post you are: a hairline under the header, driven
+ * by the page's own scroll in CSS (scroll-driven animations; D-1861). No
+ * script; hidden where the browser can't do it and under reduced motion. */
+const PROGRESS_CSS = `
+@keyframes blog-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+[data-reading-progress] { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: scroll()) {
+    [data-reading-progress] { display: block; transform-origin: 0 50%; animation: blog-progress linear both; animation-timeline: scroll(root); }
+  }
+}`;
+
+function ReadingProgress() {
+  return (
+    <>
+      <style dangerouslySetInnerHTML={{ __html: PROGRESS_CSS }} />
+      <div
+        data-reading-progress=""
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-x-0 top-(--site-header-h) z-50 h-0.5 bg-linear-to-r from-(--site-ink-a) to-(--site-ink-b)"
+      />
+    </>
+  );
+}
+
 function Neighbour({ post, rel }: { post: Post; rel: "newer" | "older" }) {
   return (
     <a
       href={post.path}
       className={cx(
-        "group flex flex-col gap-2 rounded-lg border border-border bg-card p-6 transition-colors duration-(--dur-instant) hover:border-border-strong",
+        "group flex flex-col gap-2 rounded-lg border border-border bg-card p-6 transition-[border-color,translate,box-shadow] duration-(--dur-base) hover:border-border-strong motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-2",
         rel === "older" && "sm:items-end sm:text-right",
       )}
     >
@@ -47,7 +72,9 @@ function Neighbour({ post, rel }: { post: Post; rel: "newer" | "older" }) {
         {rel === "newer" ? "Newer post" : "Older post"}
         {rel === "older" && <Icon icon={ArrowRight} size={14} />}
       </span>
-      <span className="text-title text-balance text-fg group-hover:text-accent">{post.title}</span>
+      <span className="text-title text-balance text-fg group-hover:text-accent" style={{ viewTransitionName: titleTransition(post.slug) }}>
+        {post.title}
+      </span>
       <PostDate date={post.date} className="text-caption text-fg-muted" />
     </a>
   );
@@ -60,17 +87,21 @@ export function PostLayout({
   post,
   newer,
   older,
+  related = [],
   toc,
   children,
 }: {
   post: Post;
   newer?: Post;
   older?: Post;
+  /** Other posts on the same subjects (`related()` in lib/blog/posts). */
+  related?: readonly Post[];
   toc: readonly TocItem[];
   children: ReactNode;
 }) {
   return (
     <SiteFrame current={BLOG_PATH}>
+      <ReadingProgress />
       <article className="relative isolate">
         <div aria-hidden="true" className="bg-site-grid absolute inset-x-0 top-0 -z-10 h-[28rem] [mask-image:linear-gradient(to_bottom,black_20%,transparent)]" />
         <header className={cx("container-site pb-10 pt-12 lg:pb-14 lg:pt-16", COLUMNS)}>
@@ -80,7 +111,9 @@ export function PostLayout({
               Blog
             </a>
             <TagList tags={post.tags} />
-            <h1 className="text-display-xl text-balance text-fg">{post.title}</h1>
+            <h1 className="text-display-xl text-balance text-fg" style={{ viewTransitionName: titleTransition(post.slug) }}>
+              {post.title}
+            </h1>
             <p className="text-lead text-pretty text-fg-muted">{post.description}</p>
             <PostMeta post={post} className="border-t border-border pt-6 w-full" />
           </div>
@@ -114,9 +147,23 @@ export function PostLayout({
           </div>
         </footer>
       </article>
-      <div className="container-site pb-(--site-section-y)">
-        <Subscribe />
+      <div className="container-site flex flex-col gap-16 pb-(--site-section-y)">
+        {related.length > 0 && (
+          <section aria-labelledby="related-title" className="flex flex-col gap-6">
+            <h2 id="related-title" className="text-display-md text-fg">
+              On the same subjects
+            </h2>
+            <ul className="grid gap-4 md:grid-cols-3">
+              {related.map((p) => (
+                <PostCard key={p.slug} post={p} />
+              ))}
+            </ul>
+          </section>
+        )}
+        <Subscribe className="reveal" />
       </div>
+      {/* Copy buttons for code blocks (D-1860); the page works without it. */}
+      <script src="/blog/blog.js" defer />
     </SiteFrame>
   );
 }

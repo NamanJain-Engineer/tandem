@@ -2,7 +2,7 @@ import { Avatar } from "@tandem/ui/components/Avatar";
 import { buttonClass } from "@tandem/ui/components/Button";
 import { Mail, Rss } from "lucide-react";
 import { cx } from "../../lib/cx";
-import { BLOG_PATH, FEED_PATH, formatDate, tagPath, type Cover, type Post } from "../../lib/blog/posts";
+import { BLOG_PATH, FEED_PATH, formatDate, tagPath, titleTransition, type Cover, type Post } from "../../lib/blog/posts";
 import { SITE } from "../../lib/site";
 import { Icon } from "../site/Icon";
 
@@ -90,13 +90,17 @@ export function TagFilter({ tags, current }: { tags: ReadonlyArray<{ tag: string
 export function PostRow({ post, headingLevel = 3 }: { post: Post; headingLevel?: 2 | 3 }) {
   const H = headingLevel === 2 ? "h2" : "h3";
   return (
-    <li className="group relative grid gap-3 border-t border-border py-8 md:grid-cols-12 md:gap-6">
+    <li className="reveal group relative grid gap-3 border-t border-border py-8 md:grid-cols-12 md:gap-6">
       <div className="font-mono text-caption text-fg-muted md:col-span-3 md:pt-1.5">
         <PostDate date={post.date} />
       </div>
       <div className="flex flex-col gap-3 md:col-span-9">
         <H className="text-display-md text-balance text-fg transition-colors duration-(--dur-instant) group-hover:text-accent">
-          <a href={post.path} className="after:absolute after:inset-0 focus-visible:outline-none">
+          <a
+            href={post.path}
+            className="after:absolute after:inset-0 focus-visible:outline-none"
+            style={{ viewTransitionName: titleTransition(post.slug) }}
+          >
             {post.title}
           </a>
         </H>
@@ -106,6 +110,30 @@ export function PostRow({ post, headingLevel = 3 }: { post: Post; headingLevel?:
           <span className="text-caption text-fg-muted">{post.readingMinutes} min read</span>
         </div>
       </div>
+    </li>
+  );
+}
+
+/** A smaller card (related posts): title, description, date and reading
+ * time; the whole card is the link, and it lifts a little on hover. */
+export function PostCard({ post }: { post: Post }) {
+  return (
+    <li className="reveal">
+      <a
+        href={post.path}
+        className="group flex h-full flex-col gap-3 rounded-lg border border-border bg-card p-6 transition-[border-color,translate,box-shadow] duration-(--dur-base) hover:border-border-strong motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-2"
+      >
+        <span className="font-mono text-eyebrow uppercase tracking-[0.06em] text-fg-muted">{post.tags.join(" · ")}</span>
+        <span className="text-title text-balance text-fg group-hover:text-accent" style={{ viewTransitionName: titleTransition(post.slug) }}>
+          {post.title}
+        </span>
+        <span className="line-clamp-3 text-copy-sm text-pretty text-fg-muted">{post.description}</span>
+        <span className="mt-auto flex gap-2 pt-2 text-caption text-fg-muted">
+          <PostDate date={post.date} />
+          <span aria-hidden="true">·</span>
+          {post.readingMinutes} min read
+        </span>
+      </a>
     </li>
   );
 }

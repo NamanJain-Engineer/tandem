@@ -1,3 +1,4 @@
+import { Copy } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { cx } from "../../lib/cx";
 
@@ -11,6 +12,9 @@ export const PROSE = cx(
   "text-copy text-fg-muted [font-size:1.0625rem] [line-height:1.75]",
   "[&>*+*]:mt-6",
   "[&_strong]:font-semibold [&_strong]:text-fg",
+  // GFM footnotes: small superscript links, and the notes in a quiet block at the end
+  "[&_sup>a]:ml-0.5 [&_sup>a]:font-mono [&_sup>a]:text-[0.75em] [&_sup>a]:text-accent [&_sup>a]:no-underline",
+  "[&_[data-footnotes]]:!mt-14 [&_[data-footnotes]]:border-t [&_[data-footnotes]]:border-border [&_[data-footnotes]]:pt-6 [&_[data-footnotes]]:text-copy-sm [&_[data-footnotes]_h2]:sr-only",
   "[&_kbd]:rounded-sm [&_kbd]:border [&_kbd]:border-border-strong [&_kbd]:bg-surface-2 [&_kbd]:px-1.5 [&_kbd]:py-px [&_kbd]:font-mono [&_kbd]:text-[0.8125em] [&_kbd]:text-fg [&_kbd]:shadow-[inset_0_-1px_0_var(--tn-border-strong)]",
   // inline code, not code blocks
   "[&_:not(pre)>code]:rounded-sm [&_:not(pre)>code]:border [&_:not(pre)>code]:border-border [&_:not(pre)>code]:bg-surface-2 [&_:not(pre)>code]:px-1.5 [&_:not(pre)>code]:py-px [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:text-[0.875em] [&_:not(pre)>code]:text-fg",
@@ -84,17 +88,31 @@ function CodeBlock({
       {...p}
       className={cx(
         className,
-        "overflow-x-auto p-5 font-mono text-[0.8125rem] leading-6 text-fg",
+        "overflow-x-auto p-5 pr-24 font-mono text-[0.8125rem] leading-6 text-fg",
         "[&_span]:text-(--shiki-dark) [@media(prefers-color-scheme:light)]:[&_span]:text-(--shiki-light)",
       )}
     />
   );
+  // The Copy button is in the markup but hidden: /blog/blog.js shows it
+  // when the clipboard is there (D-1860). It sits over the block's corner,
+  // so showing it moves nothing.
   return (
-    <div className="!my-8 overflow-hidden rounded-md border border-border bg-surface-1">
+    <div data-code="" className="group/code relative !my-8 overflow-hidden rounded-md border border-border bg-surface-1">
       {title && (
-        <div className="border-b border-border bg-surface-2 px-5 py-2 font-mono text-caption text-fg-muted">{title}</div>
+        <div className="border-b border-border bg-surface-2 px-5 py-2 pr-24 font-mono text-caption text-fg-muted">{title}</div>
       )}
       {pre}
+      <button
+        type="button"
+        data-copy=""
+        hidden
+        className="absolute right-2 top-2 inline-flex h-8 items-center gap-1.5 rounded-sm border border-border bg-surface-2 px-2.5 text-caption font-medium text-fg-muted opacity-0 transition-opacity duration-(--dur-instant) hover:text-fg focus-visible:opacity-100 group-hover/code:opacity-100 [@media(hover:none)]:opacity-100"
+      >
+        <Copy size={14} strokeWidth={1.75} aria-hidden="true" focusable="false" xmlns={undefined} />
+        <span data-copy-label="">Copy</span>
+        <span className="sr-only"> code</span>
+      </button>
+      <span data-copy-status="" aria-live="polite" className="sr-only" />
     </div>
   );
 }

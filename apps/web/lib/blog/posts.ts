@@ -29,6 +29,9 @@ export type Post = {
 export const BLOG_PATH = "/blog/";
 export const FEED_PATH = "/blog/feed.xml";
 export const postPath = (slug: string) => `/blog/${slug}/`;
+/** A post's share image, drawn at build time (D-1859). */
+export const ogImagePath = (slug: string) => `/blog/${slug}/og.png`;
+export const OG_SIZE = { width: 1200, height: 630 } as const;
 export const tagPath = (tag: string) => `/blog/tags/${tag}/`;
 
 /** Reading speed for "N min read". */
@@ -124,6 +127,26 @@ export function neighbours(posts: readonly Post[], slug: string): { newer?: Post
   return { newer: posts[i - 1], older: posts[i + 1] };
 }
 
+/** Up to `n` other posts that share a tag with `slug`, most shared tags
+ * first, then newest; never the post itself or the ones in `skip` (its
+ * neighbours, which the page links already). */
+export function related(posts: readonly Post[], slug: string, skip: readonly Post[] = [], n = 3): Post[] {
+  const post = posts.find((p) => p.slug === slug);
+  if (!post) return [];
+  const skipped = new Set([slug, ...skip.map((p) => p.slug)]);
+  return posts
+    .filter((p) => !skipped.has(p.slug))
+    .map((p) => ({ p, shared: p.tags.filter((t) => post.tags.includes(t)).length }))
+    .filter((x) => x.shared > 0)
+    .sort((a, b) => b.shared - a.shared || b.p.date.localeCompare(a.p.date))
+    .slice(0, n)
+    .map((x) => x.p);
+}
+
+/** The view-transition name shared by a post's title on the index, the tag
+ * pages and its own page, so the title carries across the navigation. */
+export const titleTransition = (slug: string) => `post-title-${slug}`;
+
 const MONTHS = [
   "January",
   "February",
@@ -198,7 +221,7 @@ export function postJsonLd(p: Post): Record<string, unknown> {
     datePublished: p.date,
     url: `${SITE.url}${p.path}`,
     mainEntityOfPage: `${SITE.url}${p.path}`,
-    image: `${SITE.url}${p.cover?.src ?? "/og.png"}`,
+    image: `${SITE.url}${ogImagePath(p.slug)}`,
     keywords: p.tags.join(", "),
     author: {
       "@type": "Person",

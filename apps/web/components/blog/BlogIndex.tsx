@@ -2,7 +2,7 @@ import { Mark } from "../site/Mark";
 import { PageHero } from "../site/PageHero";
 import { SiteFrame } from "../site/SiteFrame";
 import { TextLink } from "../site/TextLink";
-import { BLOG_PATH, FEED_PATH, tagsOf, type Post } from "../../lib/blog/posts";
+import { BLOG_PATH, FEED_PATH, tagsOf, titleTransition, type Post } from "../../lib/blog/posts";
 import { CoverFigure, PostMeta, PostRow, Subscribe, TagFilter, TagList } from "./parts";
 
 /** The lead story: the newest post, large. Its cover if it has one, else a
@@ -10,7 +10,7 @@ import { CoverFigure, PostMeta, PostRow, Subscribe, TagFilter, TagList } from ".
 function Featured({ post }: { post: Post }) {
   return (
     <article data-featured="" className="group relative grid gap-8 lg:grid-cols-12 lg:items-center lg:gap-12">
-      <div className="lg:col-span-7">
+      <div className="transition-transform duration-(--dur-deliberate) ease-(--ease-standard) motion-safe:group-hover:scale-[1.01] lg:col-span-7">
         {post.cover ? (
           <CoverFigure cover={{ ...post.cover, caption: undefined }} />
         ) : (
@@ -31,7 +31,11 @@ function Featured({ post }: { post: Post }) {
       <div className="flex flex-col items-start gap-5 lg:col-span-5">
         <p className="eyebrow">Latest</p>
         <h2 className="text-display-lg text-balance text-fg transition-colors duration-(--dur-instant) group-hover:text-accent">
-          <a href={post.path} className="after:absolute after:inset-0 focus-visible:outline-none">
+          <a
+            href={post.path}
+            className="after:absolute after:inset-0 focus-visible:outline-none"
+            style={{ viewTransitionName: titleTransition(post.slug) }}
+          >
             {post.title}
           </a>
         </h2>
@@ -91,7 +95,7 @@ export function BlogIndex({ posts }: { posts: readonly Post[] }) {
             )}
           </section>
         )}
-        <Subscribe />
+        <Subscribe className="reveal" />
       </div>
     </SiteFrame>
   );

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { sourceRegex } from "../scripts/check-routes.mjs";
-import { FEED_PATH, blogPages } from "../lib/blog/posts";
+import { FEED_PATH, POSTS, blogPages, ogImagePath } from "../lib/blog/posts";
 import { RELEASES, versionPath } from "../lib/changelog";
 import { DOCS_PAGES, docsPath } from "../lib/docs/pages";
 import { SITE_PAGES } from "../lib/site";
@@ -56,6 +56,7 @@ describe("routes (D-1815)", () => {
       expect(target(url.slice(0, -1)), url).toBe(url);
     }
     expect(target(FEED_PATH)).toBeNull();
+    for (const p of POSTS) expect(target(ogImagePath(p.slug)), p.slug).toBeNull();
   });
 
   it("F-WB-01 Next's own trailing-slash redirects are off for the export, so they can't strip a slash", () => {

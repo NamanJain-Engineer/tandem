@@ -5,6 +5,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { BlogIndex } from "../../components/blog/BlogIndex";
+import { BLOG_MDX } from "../../components/blog/mdx";
 import { PostLayout } from "../../components/blog/PostLayout";
 import { TagIndex } from "../../components/blog/TagIndex";
 import { FOOTER, NAV } from "../../components/site/nav";
@@ -18,8 +19,11 @@ import {
   loadPosts,
   neighbours,
   parsePost,
+  ogImagePath,
   postJsonLd,
   postPath,
+  related,
+  titleTransition,
   tagPath,
   tagsOf,
   type Post,
@@ -273,7 +277,7 @@ describe("blog (F-WB-06)", () => {
     const ld = '<script type="application/ld+json">';
     expect(allowedScripts("index.html")).toEqual(['<script src="/demo/embed.js" defer="">']);
     expect(allowedScripts("download/index.html")).toEqual(['<script src="/download/detect.js" defer="">']);
-    expect(allowedScripts("blog/introducing-vibezeo/index.html")).toEqual([ld]);
+    expect(allowedScripts("blog/introducing-vibezeo/index.html")).toEqual([ld, '<script src="/blog/blog.js" defer="">']);
     for (const page of ["blog/index.html", "blog/tags/release/index.html", "pricing/index.html", "changelog/0.7.2/index.html"])
       expect(allowedScripts(page), page).toEqual([]);
     // JSON-LD is data: a BlogPosting whose dates are the post's.
@@ -336,6 +340,52 @@ describe("blog (F-WB-06)", () => {
     const p = parsePost(s.file, s.text, pub);
     expect(p).toMatchObject({ title: 'A "quoted" title: with a colon', date: "2026-10-20", draft: true });
     expect(() => scaffold("!!!", "2026-10-20")).toThrow();
+  });
+
+  it("F-WB-06 related posts share a tag, most shared first, and never repeat the page or its neighbours", () => {
+    const posts = [
+      post("e", "2026-10-05", ["linux"]),
+      post("d", "2026-10-04", ["release", "linux"]),
+      post("c", "2026-10-03", ["release", "linux", "dictate"]),
+      post("b", "2026-10-02", ["product"]),
+      post("a", "2026-10-01", ["release"]),
+    ];
+    expect(related(posts, "c").map((p) => p.slug)).toEqual(["d", "e", "a"]);
+    expect(related(posts, "c", [posts[1] as Post]).map((p) => p.slug)).toEqual(["e", "a"]);
+    expect(related(posts, "b")).toEqual([]);
+    expect(related(posts, "c", [], 1).map((p) => p.slug)).toEqual(["d"]);
+    expect(related(posts, "nope")).toEqual([]);
+  });
+
+  it("F-WB-06 a post page reads well: progress, related posts, a share image, and titles that carry across pages", () => {
+    const p = post("this-one", "2026-10-02", ["release"]);
+    const other = post("other", "2026-09-01", ["release"]);
+    const h = html(
+      <PostLayout post={p} related={[other]} toc={[]}>
+        x
+      </PostLayout>,
+    );
+    expect(h).toContain("data-reading-progress");
+    expect(h).toContain('aria-labelledby="related-title"');
+    expect(h).toContain(`href="${other.path}"`);
+    expect(h).toContain('<script src="/blog/blog.js" defer="">');
+    expect(h).toContain(`view-transition-name:${titleTransition(p.slug)}`);
+    // The index names the same title, so the browser can morph one into the other.
+    const index = html(<BlogIndex posts={[p, other]} />);
+    expect(index).toContain(`view-transition-name:${titleTransition(p.slug)}`);
+    expect(index).toContain(`view-transition-name:${titleTransition(other.slug)}`);
+    expect(ogImagePath(p.slug)).toBe("/blog/this-one/og.png");
+    expect(postJsonLd(p).image).toBe(`${SITE.url}/blog/this-one/og.png`);
+  });
+
+  it("F-WB-06 code blocks get a copy button only when the script runs, and the script is first-party and stores nothing", () => {
+    const Pre = BLOG_MDX.pre;
+    const h = html(<Pre>{"echo hi"}</Pre>);
+    expect(h).toMatch(/<button[^>]*data-copy=""[^>]*hidden=""/);
+    expect(h).toContain('aria-live="polite"');
+    const js = readFileSync(join(import.meta.dirname, "../../public/blog/blog.js"), "utf8");
+    expect(js).toContain("navigator.clipboard");
+    expect(js).not.toMatch(/https?:\/\/|document\.cookie|localStorage|sessionStorage|indexedDB|sendBeacon|fetch\(|XMLHttpRequest|import\(/);
   });
 
   it("F-WB-06 dates read in full, like the rest of the site", () => {

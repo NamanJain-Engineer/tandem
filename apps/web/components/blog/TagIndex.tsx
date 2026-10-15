@@ -28,7 +28,7 @@ export function TagIndex({ tag, posts }: { tag: string; posts: readonly Post[] }
             <PostRow key={p.slug} post={p} headingLevel={2} />
           ))}
         </ol>
-        <Subscribe />
+        <Subscribe className="reveal" />
       </div>
     </SiteFrame>
   );

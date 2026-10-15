@@ -8,6 +8,7 @@ import { VIDEO } from "../lib/media";
 import { PLANS } from "../lib/pricing";
 import { MILESTONES, PROGRESS } from "../lib/progress";
 import { fileURLToPath } from "node:url";
+import { allowedScripts } from "../scripts/script-allowlist.mjs";
 import { CHECKSUMS_URL, DOWNLOADS, DOWNLOADS_PATH, RELEASE, assetUrl } from "../lib/release";
 import {
   EARLY_ACCESS_HREF,
@@ -271,7 +272,7 @@ describe("public site", () => {
     expect(DEMO_APP).toBe("/demo/app/");
   });
 
-  it("F-WB-01 AC2 (D-128, D-132) only the home page's demo loader and the download page's OS note load scripts, both first-party; no page has a frame or a third-party resource", () => {
+  it("F-WB-01 AC2 (D-128, D-132) only the home page's demo loader, the download page's OS note and a blog post's JSON-LD and reading script (F-WB-06) load scripts, all first-party; no page has a frame or a third-party resource", () => {
     for (const [name, Page] of Object.entries(PAGES)) {
       const h = html(<Page />);
       const scripts = [...h.matchAll(/<script[^>]*>/g)].map((m) => m[0]);
@@ -284,6 +285,14 @@ describe("public site", () => {
       const external = [...h.matchAll(/src="((?:https?:)?\/\/[^"]+)"/g)].map((m) => m[1]);
       expect(external, name).toEqual([]);
     }
+    // A blog post page (F-WB-06, D-1852, D-1860) keeps its JSON-LD and its
+    // reading script; strip-runtime fails the build on anything else.
+    expect(allowedScripts("blog/a-post/index.html")).toEqual([
+      '<script type="application/ld+json">',
+      '<script src="/blog/blog.js" defer="">',
+    ]);
+    for (const page of ["blog/index.html", "blog/tags/release/index.html", "about/index.html"])
+      expect(allowedScripts(page), page).toEqual([]);
     // The loader names no other origin and frames only /demo/app/.
     const loader = readFileSync(join(import.meta.dirname, "../public/demo/embed.js"), "utf8");
     expect(loader).not.toMatch(/https?:\/\//);
