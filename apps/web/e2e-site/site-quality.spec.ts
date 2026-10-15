@@ -102,3 +102,23 @@ test("F-WB-01 AC2 F-WB-06 marketing and blog pages load no framework JavaScript 
   await expect(second).toHaveAttribute("open", "");
   await expect(page.locator("details[name=faq]").first()).not.toHaveAttribute("open", "");
 });
+
+test("F-WB-01 a section anchor lands with its heading just under the sticky header (D-1844)", async ({ page }) => {
+  for (const id of ["features", "engines", "principles", "pricing", "faq"]) {
+    await page.goto(`/#${id}`);
+    await expect
+      .poll(async () =>
+        page.evaluate((id) => {
+          const head = document.querySelector(`#${id} h2`)?.getBoundingClientRect().top ?? -1;
+          const bar = document.querySelector(".site-header")?.getBoundingClientRect().bottom ?? 0;
+          return head - bar;
+        }, id),
+      )
+      .toBeGreaterThanOrEqual(8);
+    const gap = await page.evaluate((id) => {
+      const head = document.querySelector(`#${id} h2`)?.getBoundingClientRect().top ?? -1;
+      return head - (document.querySelector(".site-header")?.getBoundingClientRect().bottom ?? 0);
+    }, id);
+    expect(gap, id).toBeLessThanOrEqual(120);
+  }
+});

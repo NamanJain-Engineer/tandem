@@ -25,7 +25,7 @@
   Deploying is merging `product-m0-m5` into `main` (OPERATING §7).
 - Blog (M15, F-WB-06, D-1850 to D-1864): `/blog/` with posts as files in `apps/web/content/blog`, tag pages and an Atom feed, on `site-blog`, waiting to be batched into `product-m0-m5`. Publishing a post is `docs/BLOG.md` §3. See "M15 · F-WB-06 Blog".
 - Website redesign (M15, D-1800 to D-1815): phases 1–4 and 6 of `docs/WEBSITE_BRIEF.md` (`docs-briefs`) are merged with the `chain4` batch: OS light and dark themes, marketing type, the new home page, Pricing, Download, Changelog, the inner pages and the docs, and the performance phase (marketing pages ship no framework JavaScript, D-1813; Lighthouse at 0.95 on five URLs). They reach vibezeo.com with the next release. The signed-in captures of phase 5 wait on the owner (`HUMAN_TODO.md`). See "M15 · Website redesign".
-- Website elite pass (M15, `site-elite`, D-1819 and D-1830 to D-1843; `docs/WEBSITE_ELITE.md`). The site and docs are rebuilt on a lit visual system:
+- Website elite pass (M15, `site-elite`, D-1819 and D-1830 to D-1844; `docs/WEBSITE_ELITE.md`). The site and docs are rebuilt on a lit visual system:
   - tokens for light, edges, depth, type, radii and motion;
   - the two-ring backdrop, the product bezel and site buttons;
   - a new header and footer.
@@ -36,7 +36,7 @@
   - **Motion:** the rings draw in, the engines orbit and data packets move, all in CSS.
   - **Docs:** they run no script.
 
-  The real-app captures were retaken from 0.7.2 at 2×. Lighthouse CI passes on its five URLs with no warnings: blocking time 0 ms everywhere, largest paint 1.65–1.90 s. Waiting for the coordinating session to batch it into `product-m0-m5`.
+  The real-app captures were retaken from 0.7.2 at 2×. Lighthouse CI scores 1.00 on its five URLs with no warnings: blocking time 0 ms everywhere, largest paint 1.51–1.74 s (fonts trimmed, D-1844). Waiting for the coordinating session to batch it into `product-m0-m5`.
 - M16 Conductor voice API (F-BE-08, and the API halves of F-CN-02 and F-CN-05) is on `product-m0-m5` (pull request #30, built on `m16-voice-api`); see "M16 · F-BE-08 Conductor voice API". The desktop's Conductor client (F-CN-01…04, F-CN-08: calls, the local tool executor, the HUD, the call log) is on `m16a-conductor`; see "M16 · 16A Conductor core".
 - Windows from Linux (M15, branch `windows-ready`, D-1700…D-1710): the gate runs Windows clippy (GNU target, every crate but the app); `bash scripts/windows-check.sh --msvc --wine` (in `ci:local`) checks the app for MSVC through cargo-xwin and runs the platform crates' tests under Wine; `bash scripts/build-windows-installer.sh` cross-builds an unsigned NSIS installer and checks it. Nothing has run on real Windows: Windows stays "Coming soon" until HUMAN_TODO's "M15 Windows first run" passes. Setup in OPERATING §6a.
 - Layout matches DECISIONS: 10 crates under `crates/`, Tauri crate `apps/desktop/src-tauri` (lib `tandem_app`, bin `tandem`), `apps/{api,web}`, `packages/{ui,protocol}`.
@@ -1221,6 +1221,13 @@ The owner (15 October): the site looks basic for a product we sell; make it feel
   - **Data flow:** packets move on the data-flow lines that carry data, and the line to Vibezeo's servers stays still.
   - **Largest paint:** the hero's lead became the page's largest paint and lost its fade-in. A phone gets an 800 px demo still (`still-800`, written by `optimize-screens.py`), because the still loads before the largest paint. Without it `/` measured a 1.96 s median with runs up to 2.04 s; with it the median is 1.89 s.
 - D-1843: the docs run no script. A full Lighthouse CI run gave `/docs/` a blocking-time warning (119 ms; earlier runs gave 67–104 ms). Its only script was Next's router, kept so docs links opened in the page (D-1817), and evaluating it is the blocking task. The docs are now stripped like the marketing pages (`strip-runtime` no longer skips them), and `DocsShell` uses plain links, each at its slash URL. Pages change through the site's cross-document view transition. D-1819's loader (`defer-docs.mjs`, `/docs-boot.js`) is removed, since there's nothing left to defer. `/docs/` now has blocking time 0 and largest paint 1.81 s. `docs-nav.spec.ts` now pins the new intent: slash links, no redirect or failed request, no script on the docs, and the active link after navigating.
+- D-1844: headroom, after the coordinating session's Lighthouse runs on chain20 (`/` 1.96–2.01 s against the 2.0 s budget; it asked for under 1.8 s here).
+  - **Fonts:** trimmed to the weights the site draws. `scripts/trim-fonts.py` (fonttools) instances Inter to weights 400–650, keeping its optical-size axis, and JetBrains Mono to 400–500. Inter goes from 73 KB to 52 KB and the mono from 40 KB to 29 KB; both load before the home page's largest paint. They live in `app/fonts/` beside their OFL licences, and `fonts.ts` points at them.
+  - **Result:** `/` measures a 1.75 s median over 5 runs (worst 1.82 s), down from 1.89 s.
+  - **The stylesheet:** it scans only the 12 packages/ui component files the site and the portal render, not the whole package. The desktop app's utilities went into every page's CSS: 87 KB raw down to 78 KB, which matters because lhci's static server sends it uncompressed. A `frame.test` check fails if a page imports a component the list misses. With both changes `/` measures 1.73–1.75 s over 6 runs.
+  - **Ruled out on copies of the built page:** an inlined favicon and `content-visibility` on the sections below the fold moved nothing. The spread in first paint (1.21 s or 1.36 s) comes from elsewhere.
+  - **Tests:** `frame.test` checks the trimmed files, their licences and ranges, and that the site's CSS and markup ask for no weight outside them.
+  - **Anchors:** the coordinating session saw them land under the sticky header. They now land with the section's eyebrow 2 rem below it (`scroll-mt-section`: html's scroll padding clears the header, and the section's top padding is taken back). A new `site-quality` spec checks five anchors.
 
 ### Website elite pass log
 - Study: three parallel agents read 14 sites (BridgeMind, Linear, Vercel; Raycast, Warp, Zed, Cursor; Resend, Supabase, Ghostty, Tailwind CSS, Factory). Findings, the signature looks to avoid and the direction are in `docs/WEBSITE_ELITE.md`.
@@ -1258,6 +1265,19 @@ The owner (15 October): the site looks basic for a product we sell; make it feel
     | `/docs/` | 0.99 | 1.81 s | 0 ms |
 
   - **Unexplained once:** `docs-nav.spec.ts` failed one time, in the run right after a rebuild, before I could read why. It passed in 11 reruns and in the final suite. If it recurs, its assertion names the failing request.
+- Headroom and merges, verified on the final tree:
+  - **Merged:** `product-m0-m5` c6f27726 (D-1821's demo focus fix and its spec), then `origin/main` 0b8e7589 (D-851: website branches base on `main`; same tree, empty merge).
+  - **The gate:** passed. TypeScript 1,421 tests (web 95, ui 411, desktop 644, api 211, remote 32, mobile 19, protocol 10), Rust 1,854, clippy on all three platforms, fmt, no protocol drift.
+  - **The site:** `build:site`, site Playwright 18/18 (with D-1821's "the page stays where the visitor is" and the new anchor spec), and the demo walkthrough with no errors.
+  - **Lighthouse CI:** every URL scores 1.00 in all four categories, with no warnings. Medians:
+
+    | URL | LCP | TBT |
+    |---|---|---|
+    | `/` | 1.74 s | 0 ms |
+    | `/pricing/` | 1.51 s | 0 ms |
+    | `/changelog/` | 1.51 s | 0 ms |
+    | `/docs/` | 1.51 s | 0 ms |
+    | `/download/` | 1.59 s | 0 ms |
 
 
 ## M15 · F-WB-06 Blog (`site-blog`)

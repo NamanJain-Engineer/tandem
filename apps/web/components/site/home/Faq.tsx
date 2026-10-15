@@ -6,7 +6,7 @@ import { Icon } from "../Icon";
 /** #faq (§6.20): native <details> in one exclusive group; no script. */
 export function Faq() {
   return (
-    <section id="faq" aria-labelledby="faq-title" className="relative scroll-mt-(--site-header-h) bg-page py-(--site-section-y)">
+    <section id="faq" aria-labelledby="faq-title" className="relative scroll-mt-section bg-page py-(--site-section-y)">
       <div className="container-site grid gap-10 lg:grid-cols-12 lg:gap-6">
         <header className="reveal flex flex-col gap-4 lg:col-span-4">
           <p className="eyebrow">FAQ</p>
