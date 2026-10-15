@@ -13,7 +13,7 @@ const DEMO_STAGE = `<div data-demo-stage="" data-stage="" class="absolute inset-
 <span>Interactive demo · simulated agents, sample data</span>
 <button type="button" data-demo-close="" class="ml-auto rounded-sm px-3 py-1 font-medium text-stage-fg hover:bg-white/10">Close (Esc)</button>
 </div>
-<picture><source type="image/avif" srcset="/demo/still.avif 1280w, /demo/still@2x.avif 2560w" sizes="(min-width: 1312px) 1268px, 100vw"><source type="image/webp" srcset="/demo/still.webp 1280w, /demo/still@2x.webp 2560w" sizes="(min-width: 1312px) 1268px, 100vw"><img data-demo-still="" src="/demo/still.jpg" width="1280" height="800" loading="lazy" decoding="async" alt="Vibezeo's Thread mode in the demo: a thread about a redirect loop after login with its first message ready to send, the thread list, and a card that lists what to try." class="block h-full w-full"></picture>
+<picture><source type="image/avif" srcset="/demo/still-800.avif 800w, /demo/still.avif 1280w, /demo/still@2x.avif 2560w" sizes="(min-width: 1312px) 1268px, 100vw"><source type="image/webp" srcset="/demo/still-800.webp 800w, /demo/still.webp 1280w, /demo/still@2x.webp 2560w" sizes="(min-width: 1312px) 1268px, 100vw"><img data-demo-still="" src="/demo/still.jpg" width="1280" height="800" loading="lazy" decoding="async" alt="Vibezeo's Thread mode in the demo: a thread about a redirect loop after login with its first message ready to send, the thread list, and a card that lists what to try." class="block h-full w-full"></picture>
 <a href="/demo/app/" data-demo-open="" class="absolute inset-0 flex items-center justify-center bg-black/40 text-md font-semibold lg:hidden"><span class="btn btn-primary btn-md">Tap to explore</span></a>
 </div>`;
 

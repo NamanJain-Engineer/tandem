@@ -506,3 +506,26 @@ body.site {
     color: var(--tn-text-subtle);
   }
 }
+
+/* The hero's motion (D-1842): the rings draw in once, the engines' orbit
+   turns once every three minutes. Transforms and a stroke dash only. */
+@keyframes site-ring-draw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes site-orbit { to { rotate: 360deg; } }
+@keyframes site-orbit-back { to { rotate: -360deg; } }
+@media (prefers-reduced-motion: no-preference) {
+  .ring-draw { stroke-dasharray: 100; animation: site-ring-draw 2.2s var(--ease-out-site) both; }
+  .ring-draw-2 { animation-delay: 0.25s; }
+  .orbit-spin { animation: site-orbit 180s linear infinite; will-change: rotate; }
+  .orbit-upright { animation: site-orbit-back 180s linear infinite; }
+}
+
+/* The data-flow diagram's packets (D-1842): out along each line that carries
+   data, and back from the engine vendors. Hidden when still, so a frozen dot
+   never sits on a line. */
+@keyframes site-flow { 0% { translate: -100% 0; opacity: 0; } 15%, 85% { opacity: 1; } 100% { translate: 0 0; opacity: 0; } }
+@keyframes site-flow-back { 0% { translate: 0 0; opacity: 0; } 15%, 85% { opacity: 1; } 100% { translate: -100% 0; opacity: 0; } }
+.flow-packet { opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .flow-packet { animation: site-flow 3.2s var(--ease-standard) infinite; }
+  .flow-back { animation-name: site-flow-back; animation-delay: 1.6s; }
+}

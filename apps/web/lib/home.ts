@@ -122,6 +122,24 @@ export const ROADMAP = [
   },
 ] as const;
 
+/** The hero (D-1841): ownership first. Every phrase is true of the shipped
+ * build: the engines run unmodified on their own sign-ins, the app runs on
+ * the computer, the Free plan needs no account, and this build sends nothing
+ * to Vibezeo's servers (privacy page, FAQ). No other product is named. */
+export const HERO = {
+  title: ["Your agents.", "Your machine.", "Your plan."],
+  /** The phrase drawn in the teal → sky highlight. */
+  highlight: "Your machine.",
+} as const;
+
+/** The four ownership facts under the hero, each a claim about this build. */
+export const OWNERSHIP = [
+  { icon: "terminal", text: "Agent CLIs run unmodified" },
+  { icon: "key", text: "On your own subscriptions" },
+  { icon: "files", text: "Runs on your computer" },
+  { icon: "lock", text: "No account, nothing sent to us" },
+] as const;
+
 export const PRINCIPLES = [
   {
     title: "Your machine, your accounts",
@@ -227,6 +245,10 @@ export const MODE_ROWS = [
 
 /** The capability index (#capabilities): one line each, the full copy is in the docs. */
 export const CAPABILITIES = [
+  { title: "Dictate", icon: "mic", docs: docsPath("dictate") },
+  { title: "Plugins with approvals", icon: "plug", docs: docsPath("plugins") },
+  { title: "Tasks", icon: "tasks", docs: docsPath("tasks") },
+  { title: "SSH workspaces", icon: "server", docs: docsPath("remote") },
   { title: "Worktree lanes and handoff", icon: "branch", docs: docsPath("code-mode") },
   { title: "Files, git and a browser", icon: "files", docs: docsPath("code-mode") },
   { title: "Find work by what it's about", icon: "search", docs: docsPath("code-mode") },
@@ -241,11 +263,11 @@ export const CAPABILITIES = [
 /** Release-note tiles: icon and docs page for each lead phrase in a
  * release's Added section. A release whose Added title isn't listed here
  * fails the site test, so a tile never renders without a link. */
-export const RELEASE_TILE_MAP: Record<string, { icon: string; docs: string; feature?: FeatureTitle }> = {
-  Dictate: { icon: "mic", docs: docsPath("dictate"), feature: "Dictate" },
-  Plugins: { icon: "plug", docs: docsPath("plugins"), feature: "Plugins with approvals" },
-  Tasks: { icon: "tasks", docs: docsPath("tasks"), feature: "Tasks" },
-  "SSH workspaces": { icon: "server", docs: docsPath("remote"), feature: "SSH workspaces" },
+export const RELEASE_TILE_MAP: Record<string, { icon: string; docs: string }> = {
+  Dictate: { icon: "mic", docs: docsPath("dictate") },
+  Plugins: { icon: "plug", docs: docsPath("plugins") },
+  Tasks: { icon: "tasks", docs: docsPath("tasks") },
+  "SSH workspaces": { icon: "server", docs: docsPath("remote") },
   Diagnostics: { icon: "activity", docs: docsPath("troubleshooting") },
   "Tray icon": { icon: "tray", docs: docsPath("dictate") },
   Checkpoints: { icon: "restore", docs: docsPath("workflow-tools") },

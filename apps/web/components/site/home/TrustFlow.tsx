@@ -30,7 +30,7 @@ export function TrustFlow() {
       <div aria-hidden="true" className="bg-lens absolute inset-x-0 top-0 -z-10 h-[30rem] opacity-70" />
       <div className="container-site flex flex-col gap-14">
         <header className="reveal flex flex-col gap-4">
-          <p className="eyebrow">Principles</p>
+          <p className="eyebrow">Ownership</p>
           <h2 id="principles-title" className="max-w-[28em] text-display-md text-fg [text-wrap:pretty]">
             Nothing leaves your machine unless you opt in.{" "}
             <span className="text-fg-muted">
@@ -63,12 +63,24 @@ export function TrustFlow() {
                     <span
                       aria-hidden="true"
                       className={cx(
-                        "hidden h-0 flex-1 border-t-2 lg:block",
+                        "relative hidden h-0 flex-1 border-t-2 lg:block",
                         f.line === "solid" && "border-accent",
                         f.line === "dashed" && "border-dashed border-fg-subtle",
                         f.line === "none" && "border-dotted border-border-strong",
                       )}
-                    />
+                    >
+                      {/* D-1842: data moving where it really moves; nothing on the line to us. */}
+                      {f.line !== "none" && (
+                        <span className="flow-packet absolute -top-[5px] left-0 w-full">
+                          <span className="absolute right-0 top-0 size-2 rounded-full bg-accent shadow-[0_0_10px_var(--tn-accent)]" />
+                        </span>
+                      )}
+                      {f.line === "solid" && (
+                        <span className="flow-packet flow-back absolute -top-[5px] left-0 w-full">
+                          <span className="absolute left-0 top-0 size-2 rounded-full bg-(--site-ink-b) shadow-[0_0_10px_var(--site-ink-b)]" />
+                        </span>
+                      )}
+                    </span>
                     <span className="text-caption text-fg-muted">
                       <span className="lg:hidden">{f.from}: </span>
                       {f.via}

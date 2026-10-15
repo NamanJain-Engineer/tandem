@@ -5,11 +5,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { engineLetters } from "../components/site/home/Engines";
 import { RELEASES } from "../lib/changelog";
-import { CAPABILITIES, FEATURES, MODE_ROWS, RELEASE_TILE_MAP, linuxFacts, releaseTiles, tilesRelease } from "../lib/home";
+import { CAPABILITIES, FEATURES, HERO, MODE_ROWS, RELEASE_TILE_MAP, linuxFacts, releaseTiles, tilesRelease } from "../lib/home";
 import { formatSize, releaseAssets } from "../lib/manifest";
 import { SCREENS, VIDEO } from "../lib/media";
 import { DOWNLOADS, RELEASE } from "../lib/release";
-import { ENGINES, SITE } from "../lib/site";
+import { ENGINES } from "../lib/site";
+import ChangelogPage from "./changelog/page.site";
+import DemoPage from "./demo/page.site";
 import HomePage from "./page.site";
 
 // The redesigned home page (M15, §4.3): everything on it is generated from
@@ -19,12 +21,15 @@ const home = renderToStaticMarkup(<HomePage />);
 const text = (html: string) => html.replace(/<[^>]+>/g, "");
 
 describe("home page", () => {
-  it("F-WB-01 the h1 is the tagline, word for word", () => {
+  it("F-WB-01 the h1 leads with ownership, and the lead counts the engines from code (D-1841)", () => {
     const h1 = /<h1[^>]*>([\s\S]*?)<\/h1>/.exec(home)?.[1] ?? "";
-    expect(text(h1)).toBe(SITE.tagline);
+    expect(text(h1)).toBe(HERO.title.join(" "));
+    expect(HERO.title).toContain(HERO.highlight);
+    expect(home).toContain(`and ${ENGINES.length - 3} more coding agents`);
   });
 
-  it('F-WB-01 "New in" tiles come from CHANGELOG: this release\'s Added entries, or the last release that added any', () => {
+  it('F-WB-01 "New in" tiles on /changelog/ come from CHANGELOG: this release\'s Added entries, or the last release that added any', () => {
+    const log = renderToStaticMarkup(<ChangelogPage />);
     // A release that only changes and fixes things (0.7.1) keeps the last
     // feature release's tiles, under that release's version.
     const shipped = RELEASES.slice(RELEASES.findIndex((r) => r.version === RELEASE.version));
@@ -33,26 +38,22 @@ describe("home page", () => {
     const added = release?.entries.filter((e) => e.category === "Added") ?? [];
     const tiles = releaseTiles();
     expect(tiles.length).toBeGreaterThan(0);
-    expect(home).toContain(`New in ${release?.version}`);
-    expect(home).toContain(`href="/changelog/${release?.version}/"`);
+    expect(log).toContain(`New in ${release?.version}`);
+    expect(log).toContain(`href="/changelog/${release?.version}/"`);
     expect(tiles.map((t) => t.title)).toEqual(
       added.map((e) => /^\*\*(.+?)\.?\*\*/.exec(e.text)?.[1]).filter((t) => t !== undefined),
     );
     for (const t of tiles) {
       expect(t.text.startsWith(t.body), t.title).toBe(true);
       expect(RELEASE_TILE_MAP[t.title]?.docs, t.title).toMatch(/^\/docs\//);
-      expect(home).toContain(`href="${t.docs}"`);
-      expect(home).toContain(`>${t.title}<`);
+      expect(log).toContain(`href="${t.docs}"`);
+      expect(log).toContain(`>${t.title}<`);
     }
-    expect(home).toContain(`id="new"`);
+    expect(log).toContain(`id="new"`);
   });
 
-  it("F-WB-01 every feature appears once: a mode row, a release tile or the capability index", () => {
-    const placed = [
-      ...MODE_ROWS.flatMap((r) => [...r.features]),
-      ...CAPABILITIES.map((c) => c.title),
-      ...Object.values(RELEASE_TILE_MAP).flatMap((m) => (m.feature ? [m.feature] : [])),
-    ];
+  it("F-WB-01 every feature appears once: a mode row or the capability index", () => {
+    const placed = [...MODE_ROWS.flatMap((r) => [...r.features]), ...CAPABILITIES.map((c) => c.title)];
     expect([...placed].sort()).toEqual(FEATURES.map((f) => f.title).sort());
   });
 
@@ -66,12 +67,13 @@ describe("home page", () => {
   });
 
   it("F-WB-01 the video and screenshots name the build they show (H1)", () => {
-    const caption = /<figcaption[^>]*>(Every shot of the app[^<]*)<\/figcaption>/.exec(home)?.[1] ?? "";
+    const demo = renderToStaticMarkup(<DemoPage />);
+    const caption = /<figcaption[^>]*>(Every shot of the app[^<]*)<\/figcaption>/.exec(demo)?.[1] ?? "";
     expect(caption).not.toBe("");
     expect(caption).toContain(VIDEO.recordedWith);
     if ((VIDEO.recordedWith as string) !== RELEASE.version) expect(caption).not.toContain(RELEASE.version);
-    expect(home).toMatch(/<video[^>]*preload="none"/);
-    expect(home).not.toMatch(/<video[^>]*autoplay/i);
+    expect(demo).toMatch(/<video[^>]*preload="none"/);
+    expect(demo).not.toMatch(/<video[^>]*autoplay/i);
   });
 
   it("F-WB-01 the download size shown is the served file's", () => {
@@ -102,9 +104,8 @@ describe("home page", () => {
       expect(img).toContain('loading="lazy"');
       expect(img).not.toContain("fetchpriority");
     }
-    // The video's poster waits for /demo/embed.js to see it near.
-    expect(home).not.toMatch(/<video[^>]*\sposter=/);
-    expect(home).toMatch(/<video[^>]*data-poster="\/screens\/product-poster\.jpg"/);
+    // The video, whose poster always downloads, lives on /demo/ (D-1841).
+    expect(home).not.toContain("<video");
   });
 
   it("F-WB-01 \"Linux first\" says only what this build ships", () => {
@@ -133,5 +134,11 @@ describe("home page", () => {
       expect(home).toContain(`${shot.src.replace(/\.png$/, "")}@2x.avif ${shot.width * 2}w`);
     }
   });
-});
 
+  it("F-WB-01 a phone gets the demo still at 800 px, so it weighs less before the largest paint (D-1842)", () => {
+    for (const f of ["avif", "webp"]) {
+      expect(home).toContain(`/demo/still-800.${f} 800w, /demo/still.${f} 1280w, /demo/still@2x.${f} 2560w`);
+      expect(existsSync(join(process.cwd(), `public/demo/still-800.${f}`)), f).toBe(true);
+    }
+  });
+});

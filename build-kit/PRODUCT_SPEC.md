@@ -2773,6 +2773,31 @@ All endpoints are under `https://api.tandem.dev/v1` (dev: `http://api.tandem.loc
 **Acceptance:**
 1. `/llms.txt` exists, and its prices equal the config prices.
 
+#### F-WB-06 Blog (P2)
+**Behavior:**
+- `/blog/` on the public site: articles about the product, written by the owner as files, with no code change.
+- **Posts are files:** `apps/web/content/blog/<slug>.mdx` (or `.md`). Frontmatter: `title`, `description`, `date` (YYYY-MM-DD), `author`, `tags` (lowercase words or hyphenated phrases), and optional `cover` (`{ src, alt, width, height }`, an image under `public/blog/<slug>/`) and `draft`. The slug is the file name. Frontmatter is validated at build time.
+- **Pages:**
+  - `/blog/`: every published post, newest first, the newest featured above the rest; with no posts it says so.
+  - `/blog/<slug>/`: the post (title, description, author, date, reading time, tags, optional cover, body, previous and next posts, and how to subscribe).
+  - `/blog/tags/<tag>/`: the posts with that tag, newest first.
+  - `/blog/feed.xml`: an Atom feed of every published post.
+- Drafts are built by `next dev` only, never exported, listed or fed.
+- Static like the other marketing pages: server components, no client JavaScript after the runtime strip (F-WB-01 AC2), no cookies or storage, no third-party resources or embeds. The only script allowed is a post's JSON-LD (`<script type="application/ld+json">`, data, not code).
+- Subscribing is the Atom feed or an email to the contact address. No newsletter form.
+- Dates appear on blog pages only inside `<time datetime>` elements and as JSON-LD date fields; the site's no-year rule holds for everything else.
+- Linked from the header, the footer, the sitemap and `/llms.txt`.
+
+**Acceptance:**
+1. A post with missing or invalid frontmatter fails the build, and the message names the file and the field.
+2. The index lists every non-draft post newest first and features the newest; with no posts it shows an empty state; drafts appear on no exported page, tag page or feed.
+3. Each post page has one `h1`, the author, a `<time datetime>` for its date, a reading time, its tags linking to their tag pages, and links to its neighbours; a post without a cover renders without an image.
+4. Each tag page lists exactly the posts with that tag.
+5. `/blog/feed.xml` is valid Atom with one entry per published post, and every blog page links it with `<link rel="alternate" type="application/atom+xml">`.
+6. After `build:site`, blog pages carry no script other than one JSON-LD block on a post page, and no year outside `<time datetime>` and JSON-LD dates.
+7. The sitemap, `/llms.txt`, the header and the footer link the blog, and every blog URL answers at its trailing-slash form with no redirect.
+8. Lighthouse CI on `/blog/` and one post meets the site's budgets (each category ≥ 0.95, CLS ≤ 0.02).
+
 #### F-WB-05 Account portal (P0)
 **Behavior:** `app.tandem.dev` pages:
 - Sign in and sign up

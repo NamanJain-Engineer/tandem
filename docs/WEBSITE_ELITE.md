@@ -119,9 +119,22 @@ Captures are the real app, taken at 2× and served as AVIF and WebP with a 1× f
 
 ## 3. Docs
 The docs keep Fumadocs for their content (MDX, the page tree and the table of contents) but no longer use its client layout (D-1819, D-1839).
-- **Frame:** `DocsShell` renders them on the server inside the site's own header and footer. A sticky sidebar groups pages under mono labels and lights the active one. "On this page" sits on wide screens, and lit previous/next cards close each page. Phones get the sidebar from a popover.
+- **Frame:** `DocsShell` renders them as static pages inside the site's own header and footer. A sticky sidebar groups pages under mono labels and lights the active one. "On this page" sits on wide screens, and lit previous/next cards close each page. Phones get the sidebar from a popover.
 - **Prose:** Fumadocs' typography plugin, mapped to the site's tokens, with display-size titles, hairline h2s, key caps and lit tables.
-- **Script:** the only script left is Next's router, so links still open in the page (D-1817), and its chunks start after the first paint.
+- **Script:** none (D-1843). Links are plain, each at its slash URL, and moving between pages uses the site's cross-document view transition.
+
+## 3a. Phase 2: ownership first, and motion with a purpose (D-1841, D-1842)
+After the first pass, the owner widened the brief: restructure freely, animate where it helps, and lead with neutrality and ownership.
+- **Hero:** "Your agents. Your machine. Your plan."
+  - The lead counts the engines from code.
+  - Four facts follow, each true of 0.7.2: agent CLIs run unmodified; on your own subscriptions; runs on your computer; no account, nothing sent to us.
+  - No other product is named.
+- **Home order:** hero, live demo, how data moves (moved up), engines, modes, everything else, Built with Claude, proof figures, founder, pricing, FAQ, the ask. The release tiles and the roadmap moved to /changelog/, and the video to /demo/. Their four headline features joined the capability index.
+- **Motion (CSS only, transforms and a stroke dash, all off under reduced motion):**
+  - **Hero rings:** the two rings draw themselves in as the page opens.
+  - **Engine orbit:** the 11 engines' monograms orbit them once every three minutes, as one composited layer.
+  - **Data flow:** packets travel the lines that really carry data: to and from the engine vendors, and to services you connect. The line to Vibezeo's servers stays still.
+- **Performance:** a phone gets an 800 px demo still (18 KB instead of 36 KB), since it loads before the largest paint. The hero's lead paints at once rather than fading in, because it is the largest paint now that the h1 is three short lines.
 
 ## 4. Budgets kept
 - No new requests above the fold.
