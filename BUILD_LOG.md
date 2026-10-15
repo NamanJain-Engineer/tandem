@@ -1255,12 +1255,22 @@ Built on branch `competitive-gaps` (from `chain19`, 0.7.2 plus the macOS Dictate
   - Commands `lane_runtime`, `worktree_env_check`; UI-150's Ports and Environment fields, the secret warning, the moved-block toast, the review showing `env`, the rail tooltip.
   - Tests: 4 in `tandem-git`, 8 in `tandem-desktop`, 6 in `worktreeSetup.test.tsx`, 1 in `ports.test.tsx`; E2E-M18-WT06-1 (`e2e/specs/m18-wt06-runtime.e2e.ts`).
 
+- [x] F-WT-09 Previews per worktree, slice 1 (preview command, Preview button, Compare's Previews).
+  - `tandem_git::setup`: `preview {command, port, path}` (needs `ports`; the port inside the block; the path from `/`), in the digest only when present; `preview_for` and the shared `fill`.
+  - `worktree_runtime`: `preview_of`, `preview_state` (a 250 ms connect to 127.0.0.1, nothing sent), `PreviewState`/`PreviewStatus`; `worktree_setup::preview_pane` ("Preview" pane, trusted only) and `setup_pane` typing `<setup> && <preview>`.
+  - Commands `lane_previews`, `lane_preview_start`; the rail polls every 2 s while open (`usePreviewPolling`), the row's **Preview** button, **Start preview** in the ⋯ menu, the review showing the preview and starting it after trust, Compare's **Previews** with per-lane state.
+  - Tests: 2 in `tandem-git`, 2 in `tandem-desktop`, 4 in `worktreeSetup.test.tsx`, 1 in `bestof/previews.test.tsx`; E2E-M18-WT09-1 (`e2e/specs/m18-wt09-previews.e2e.ts`).
+- [ ] F-WT-09 slice 2: copy-on-write clones in the copy.
+- [ ] F-WT-09 slice 3: side by side.
+
 ### M18 · Worktree runtime decisions
 - D-2440: M18 is a new milestone section owning F-WT-06 (and F-WT-09), P2 like M17's; `check-coverage.sh` allows P2 in M18. The work lands on `competitive-gaps`, the branch this session is pinned to, fast-forwarded to `chain19`.
 - D-2441: The runtime is on only when the file has `ports` or `env`; without them nothing changes for existing worktrees (no surprise `COMPOSE_PROJECT_NAME`).
 - D-2442: `env` is trusted with the commands (a repository could otherwise set variables that run code in every shell). The digest adds `env` only when there is some, so trust given under F-WT-01 stays valid; ports need no trust. Names that change how shells start (`PATH`, `LD_PRELOAD`, `BASH_ENV`, `PROMPT_COMMAND`, `ZDOTDIR`…), and Vibezeo's own, are refused outright, trusted or not.
 - D-2443: Blocks come from 41000–48999, first fit, never overlapping any worktree on the computer, checked by binding 127.0.0.1 at creation; kept in a JSON file in the data folder rather than a migration (no schema change other branches would meet). A file that gains or changes `ports` after a worktree was made reassigns it on its next pane.
 - D-2444: `<slug>.localhost` is used only where this computer resolves it to loopback (checked once per run), because the built-in browser on Linux uses the system resolver; otherwise `localhost`.
+- D-2446: A preview is "ready" when a TCP connect to 127.0.0.1 on its port succeeds within 250 ms; no request is sent, so a server that needs a path or auth still counts as up. The rail polls only while it's open and the window visible, at most 64 worktrees a call.
+- D-2447: A new worktree runs setup and preview in one pane (`<setup> && <preview>`) so the preview never starts before dependencies are installed; with no setup the preview gets its own "Preview" pane. Best of N lanes (made by the core) start previews only from Compare's Previews.
 - D-2448 (review of F-WT-06): a worktree's variables went into a pane after the launch environment, so a trusted file could replace an engine pane's provider home (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `XDG_*_HOME`) or point its requests elsewhere. Now `layer_pane_env` applies them under the launch's (provider home, hook token and engine variables win), and `reserved_reason` refuses provider homes, `*_BASE_URL`, proxies and certificate overrides in any case, saying why; a test checks every registry `providerHomeEnv` is reserved. API keys stay allowed.
 - D-2445: The secret warning uses the core's redactor on `NAME=value` through `worktree_env_check`, so there is one detector (F-TL-02).
 

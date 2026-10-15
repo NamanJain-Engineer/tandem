@@ -41,6 +41,20 @@ Five worktrees running the same app would all want port 3000 and the same databa
 - The setup command, the teardown and Best of N's check command see the same variables. A worktree's tooltip in the rail shows its ports.
 - **The Ports tab** lists a worktree's servers under its branch. **Open** loads them at `http://<worktree>.localhost:<port>` when your computer resolves names under `.localhost` (most current Linux systems do), so each worktree's cookies and logins stay separate; otherwise at `http://localhost:<port>`.
 
+### Previews per worktree
+
+A preview runs your app's dev server in each worktree, on the worktree's own port, so you can try each agent's version without stopping one server to start another. Add a preview to `.vibezeo/worktree.json` (it needs **Ports per worktree**):
+
+```json
+{ "ports": 10, "preview": { "command": "pnpm dev --port {{port}}", "port": 0, "path": "/" } }
+```
+
+- `command` is filled in like the environment, so `{{port}}` is the worktree's first port. `port` says which port of the block the server answers on (0 is the first) and `path` what to open.
+- The preview command is trusted with the setup and teardown commands and the environment: until you trust them on this computer, it never runs, and **Start preview** shows the review first.
+- **Start preview** in a worktree's ⋯ menu runs it in a terminal named Preview in the worktree, where you can watch it and stop it. A new worktree with a trusted setup runs the setup and then the preview in the same terminal; with no setup, the preview starts on its own. It counts toward your live panes (4 on Free).
+- Once something answers on the preview's port, the worktree's row in the rail shows **Preview**, which opens it in a browser tab in the sidebar, at `<worktree>.localhost` where your computer resolves it. Vibezeo checks every 2 seconds by connecting to the port on your own computer; it sends nothing.
+- In Best of N's **Compare**, **Previews** starts every lane's preview and opens a browser tab for each one as it comes up.
+
 ### Review comments to the agent
 
 In **Open diff**, hover a line and choose the comment button to leave a comment on it; removed lines can be commented on too. The comments collect at the bottom of the diff, where you can edit or remove them. **Send to agent** types them into the agent running in that worktree's pane as one message, with each file, line and the line's text, then clears them; with several agents there, choose which one. If no agent is running there, **Copy review** puts the same text on the clipboard. Comments stay until you send them or quit Vibezeo.
@@ -55,4 +69,4 @@ When a worktree's `origin` remote is on a host whose name contains `gitlab`, **C
 
 ### Not available everywhere
 
-Worktrees aren't available in WSL folders yet. In folders on SSH hosts, worktrees don't have setup, ports and environment, the overlap check or merge forecast, or merge requests: **Create pull request** runs the host's own `gh`.
+Worktrees aren't available in WSL folders yet. In folders on SSH hosts, worktrees don't have setup, ports and environment, previews, the overlap check or merge forecast, or merge requests: **Create pull request** runs the host's own `gh`.

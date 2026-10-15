@@ -1,11 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { IpcError, LaneSetup, OverlapReport, SetupState, Tab, WorkspaceSummary } from "@tandem/protocol";
+import type { IpcError, LaneSetup, OverlapReport, PreviewState, SetupState, Tab, WorkspaceSummary } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
 import { useWorkspaces } from "../../stores/workspaces";
-import { patternLines, prepareWorktree, teardownText, useWorktrees } from "../../stores/worktrees";
+import { patternLines, pollPreviews, prepareWorktree, startPreview, teardownText, useWorktrees } from "../../stores/worktrees";
+import { useSidebar } from "../../stores/sidebar";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { WorktreeDialogs, WorktreeRow, worktreeMenu } from "./Worktrees";
 
@@ -422,5 +423,78 @@ describe("worktree runtime (F-WT-06)", () => {
     );
     await waitFor(() => expect(useWorktrees.getState().runtimes.wt_1).toEqual({ start: 41010, end: 41019 }));
     expect(named("lane_runtime")[0]?.args).toEqual({ laneId: "wt_1" });
+  });
+});
+
+describe("previews (F-WT-09)", () => {
+  it("F-WT-09.1 a worktree whose preview answers shows Preview, which opens it in a browser tab", async () => {
+    backend({
+      lane_previews: (): PreviewState[] => [
+        { laneId: "wt_1", status: "ready", url: "http://fix-auth.localhost:41000/", port: 41000, trusted: true },
+      ],
+    });
+    useWorktrees.setState({ previews: {} });
+    await pollPreviews(["wt_1"]);
+    render(
+      <UiProvider>
+        <WorktreeRow wt={WT} base="main" />
+      </UiProvider>,
+    );
+    fireEvent.click(await screen.findByTestId("worktree-preview"));
+    expect(useSidebar.getState().tabs.find((x) => x.kind === "browser")?.url).toBe("http://fix-auth.localhost:41000/");
+    // It goes when the port stops answering.
+    useWorktrees.setState({ previews: { wt_1: { laneId: "wt_1", status: "down", url: "u", port: 41000, trusted: true } } });
+    await waitFor(() => expect(screen.queryByTestId("worktree-preview")).toBeNull());
+  });
+
+  it("F-WT-09.1 Start preview opens a Preview pane in the worktree", async () => {
+    backend({ lane_preview_start: () => ({ ...pane, id: "pn_prev" }) });
+    const out = await startPreview("wt_1");
+    expect(out.ok).toBe(true);
+    expect(named("lane_preview_start")[0]?.args).toEqual({ laneId: "wt_1", tabId: "tb_wt_1" });
+    expect(useLayout.getState().tabs.tb_wt_1?.panes.pn_prev).toBeTruthy();
+  });
+
+  it("F-WT-09.2 an untrusted preview opens the review, and trusting it starts the preview, not the setup", async () => {
+    const withPreview = state({
+      config: { copy: [], setup: "pnpm install", teardown: null, ports: 2, preview: { command: "serve {{port}}", port: 0, path: "/" } },
+    });
+    let trusted = false;
+    backend({
+      lane_preview_start: () => {
+        if (!trusted) {
+          const err: IpcError = { code: "permission_denied", message: "Review this repository's worktree setup first", stage: "setup", hint: null, retryable: false };
+          throw err;
+        }
+        return { ...pane, id: "pn_prev" };
+      },
+      worktree_setup_get: () => withPreview,
+      worktree_setup_trust: () => {
+        trusted = true;
+        return { ...withPreview, trusted: true };
+      },
+    });
+    dialogs();
+    await startPreview("wt_1");
+    const review = await screen.findByTestId("worktree-review");
+    expect(review.textContent).toContain("serve {{port}}");
+    fireEvent.click(screen.getByTestId("worktree-review-trust"));
+    await waitFor(() => expect(named("lane_preview_start")).toHaveLength(2));
+    expect(named("lane_setup_run")).toHaveLength(0);
+  });
+
+  it("F-WT-09.1 a new worktree with a trusted preview and no setup starts the preview", async () => {
+    backend({
+      lane_setup: (): LaneSetup => ({
+        state: state({ trusted: true, config: { copy: [], setup: null, teardown: null, ports: 2, preview: { command: "serve", port: 0, path: "/" } } }),
+        copy: null,
+        copyError: null,
+        runtime: null,
+      }),
+      lane_preview_start: () => ({ ...pane, id: "pn_prev" }),
+    });
+    await prepareWorktree("wt_1");
+    expect(named("lane_preview_start")).toHaveLength(1);
+    expect(named("lane_setup_run")).toHaveLength(0);
   });
 });

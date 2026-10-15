@@ -50,6 +50,28 @@ pub struct WorktreeSetup {
     /// F-WT-06: variables for the worktree's panes, with placeholders.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+    /// F-WT-09: the worktree's preview server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<Preview>,
+}
+
+/// F-WT-09: how a worktree's preview runs and where it answers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Preview {
+    /// One command line, with F-WT-06's placeholders.
+    pub command: String,
+    /// The port of the block it answers on, as an offset (0: `VIBEZEO_PORT`).
+    #[serde(default)]
+    pub port: u16,
+    /// What to open, starting with `/`.
+    #[serde(default = "root_path")]
+    pub path: String,
+}
+
+fn root_path() -> String {
+    "/".into()
 }
 
 pub const MAX_PORTS: u16 = 100;
@@ -180,6 +202,27 @@ fn tokens(template: &str) -> Result<Vec<Result<&str, Placeholder>>, String> {
     Ok(out)
 }
 
+/// A template with its placeholders filled in (unknown ones are left as
+/// written; validation refuses them first).
+pub fn fill(template: &str, ctx: &RuntimeCtx) -> String {
+    let Ok(parts) = tokens(template) else {
+        return template.to_string();
+    };
+    parts
+        .into_iter()
+        .map(|t| match t {
+            Ok(text) => text.to_string(),
+            Err(Placeholder::Slug) => ctx.slug.clone(),
+            Err(Placeholder::Index) => ctx.index.to_string(),
+            Err(Placeholder::Repo) => ctx.repo.clone(),
+            Err(Placeholder::Port(n)) => ctx
+                .ports
+                .map(|(start, _)| start.saturating_add(n).to_string())
+                .unwrap_or_default(),
+        })
+        .collect()
+}
+
 /// `<repo>-<slug>`, lowercase, anything but letters, digits, `-` and `_`
 /// replaced by `-` (Compose's rule for project names).
 pub fn compose_project(repo: &str, slug: &str) -> String {
@@ -295,12 +338,51 @@ impl WorktreeSetup {
             }
             env.insert(name, value);
         }
+        let preview = match self.preview {
+            None => None,
+            Some(p) => {
+                let Some(size) = self.ports else {
+                    return Err(SetupError::Invalid("\"preview\" needs \"ports\"".into()));
+                };
+                if p.port >= size {
+                    return Err(SetupError::Invalid(format!(
+                        "The preview's port {} is outside the {size} ports each worktree has",
+                        p.port
+                    )));
+                }
+                if !p.path.starts_with('/') || p.path.contains(['\n', '\r', ' ']) {
+                    return Err(SetupError::Invalid(
+                        "The preview's path must start with /".into(),
+                    ));
+                }
+                let Some(cmd) = command(Some(p.command), "preview")? else {
+                    return Err(SetupError::Invalid("The preview needs a command".into()));
+                };
+                for t in tokens(&cmd).map_err(|ph| {
+                    SetupError::Invalid(format!("The preview uses an unknown placeholder {ph}"))
+                })? {
+                    if let Err(Placeholder::Port(n)) = t {
+                        if n >= size {
+                            return Err(SetupError::Invalid(format!(
+                                "The preview uses port+{n}, but each worktree has {size} ports"
+                            )));
+                        }
+                    }
+                }
+                Some(Preview {
+                    command: cmd,
+                    port: p.port,
+                    path: p.path,
+                })
+            }
+        };
         Ok(Self {
             copy,
             setup: command(self.setup, "setup")?,
             teardown: command(self.teardown, "teardown")?,
             ports: self.ports,
             env,
+            preview,
         })
     }
 
@@ -318,7 +400,7 @@ impl WorktreeSetup {
     /// and ports need none). Without `env` the digest is the one F-WT-01
     /// computed, so earlier trust stays valid.
     pub fn digest(&self) -> Option<String> {
-        if !self.has_commands() && self.env.is_empty() {
+        if !self.has_commands() && self.env.is_empty() && self.preview.is_none() {
             return None;
         }
         let mut h = Sha256::new();
@@ -335,7 +417,19 @@ impl WorktreeSetup {
                 h.update(b"\0");
             }
         }
+        // F-WT-09: added only when there is one, like `env`.
+        if let Some(p) = &self.preview {
+            h.update(b"\0preview\0");
+            h.update(p.command.as_bytes());
+        }
         Some(hex::encode(h.finalize()))
+    }
+
+    /// F-WT-09: the preview's command, filled in, and the port it answers on.
+    pub fn preview_for(&self, ctx: &RuntimeCtx) -> Option<(String, u16)> {
+        let p = self.preview.as_ref()?;
+        let (start, _) = ctx.ports?;
+        Some((fill(&p.command, ctx), start.saturating_add(p.port)))
     }
 
     /// The variables for a worktree's panes (F-WT-06): Vibezeo's own, and
@@ -361,22 +455,7 @@ impl WorktreeSetup {
         }
         if trusted {
             for (name, template) in &self.env {
-                if let Ok(parts) = tokens(template) {
-                    let value: String = parts
-                        .into_iter()
-                        .map(|t| match t {
-                            Ok(text) => text.to_string(),
-                            Err(Placeholder::Slug) => ctx.slug.clone(),
-                            Err(Placeholder::Index) => ctx.index.to_string(),
-                            Err(Placeholder::Repo) => ctx.repo.clone(),
-                            Err(Placeholder::Port(n)) => ctx
-                                .ports
-                                .map(|(start, _)| start.saturating_add(n).to_string())
-                                .unwrap_or_default(),
-                        })
-                        .collect();
-                    out.insert(name.clone(), value);
-                }
+                out.insert(name.clone(), fill(template, ctx));
             }
         }
         out
@@ -1003,6 +1082,62 @@ mod tests {
         assert_eq!(compose_project("app", "fix-auth"), "app-fix-auth");
         assert_eq!(compose_project("My.App", "Fix Auth"), "my-app-fix-auth");
         assert_eq!(compose_project("_x", "y"), "w_x-y");
+    }
+
+    #[test]
+    fn f_wt_09_7_preview_needs_ports_a_port_inside_and_a_path() {
+        for (json, says) in [
+            (r#"{"preview":{"command":"x"}}"#, "needs \"ports\""),
+            (
+                r#"{"ports":2,"preview":{"command":"x","port":2}}"#,
+                "outside the 2 ports",
+            ),
+            (
+                r#"{"ports":2,"preview":{"command":"x","path":"nope"}}"#,
+                "must start with /",
+            ),
+            (
+                r#"{"ports":2,"preview":{"command":"serve {{port+3}}"}}"#,
+                "port+3",
+            ),
+            (
+                r#"{"ports":2,"preview":{"command":"serve {{wat}}"}}"#,
+                "unknown placeholder",
+            ),
+            (
+                r#"{"ports":2,"preview":{"command":"  "}}"#,
+                "needs a command",
+            ),
+        ] {
+            let err = WorktreeSetup::parse(json.as_bytes()).expect_err(json);
+            assert!(err.to_string().contains(says), "{json}: {err}");
+        }
+        let ok = WorktreeSetup::parse(
+            br#"{"ports":4,"preview":{"command":"serve {{port+1}}","port":1}}"#,
+        )
+        .expect("ok");
+        assert_eq!(ok.preview.as_ref().map(|p| p.path.as_str()), Some("/"));
+    }
+
+    #[test]
+    fn f_wt_09_1_the_preview_fills_in_its_port_and_is_trusted_with_the_commands() {
+        let with = WorktreeSetup::parse(
+            br#"{"ports":10,"setup":"pnpm i","preview":{"command":"pnpm dev --port {{port+2}} --name {{slug}}","port":2}}"#,
+        )
+        .expect("ok");
+        let (cmd, port) = with.preview_for(&ctx(Some((41010, 10)))).expect("preview");
+        assert_eq!(cmd, "pnpm dev --port 41012 --name fix-auth");
+        assert_eq!(port, 41012);
+        let without = WorktreeSetup::parse(br#"{"ports":10,"setup":"pnpm i"}"#).expect("ok");
+        assert!(without.preview_for(&ctx(Some((41010, 10)))).is_none());
+        // The preview is in the digest; without one the digest is unchanged.
+        assert_ne!(with.digest(), without.digest());
+        let mut h = Sha256::new();
+        h.update(b"setup\0pnpm i\0teardown\0");
+        assert_eq!(without.digest(), Some(hex::encode(h.finalize())));
+        let preview_only =
+            WorktreeSetup::parse(br#"{"ports":1,"preview":{"command":"serve"}}"#).expect("ok");
+        assert!(preview_only.digest().is_some());
     }
 
     #[test]

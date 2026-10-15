@@ -349,9 +349,54 @@ pub async fn setup_pane(
     if !state.trusted {
         return Err(IpcError::new(ErrorCode::PermissionDenied, NOT_TRUSTED).with_stage("setup"));
     }
+    // F-WT-09: a trusted preview starts once the setup has finished.
+    let command = match crate::services::worktree_runtime::preview_of(data, &row) {
+        Some(p) if p.trusted => format!("{command} && {}", p.command),
+        _ => command,
+    };
     let pane = panes::create_with(store, tab, "terminal", Some(row.root.clone()), None).await?;
     tracing::info!(code = "worktree_setup.run", "worktree setup started");
     Ok((pane, command))
+}
+
+/// `lane_preview_start` (F-WT-09): a terminal pane named "Preview" in the
+/// worktree, in `tab`, for the trusted preview command, which the caller
+/// types once it's ready.
+pub async fn preview_pane(
+    store: &Store,
+    data: &DataDir,
+    lane: &WorkspaceId,
+    tab: &TabId,
+) -> Result<(PaneRecord, String), IpcError> {
+    let row = workspaces::get(store, lane).await?;
+    if row.lane_branch.is_none() || row.kind != "local" {
+        return Err(IpcError::new(
+            ErrorCode::Invalid,
+            "Previews need a worktree on this computer",
+        ));
+    }
+    if !Path::new(&row.root).is_dir() {
+        return Err(IpcError::new(
+            ErrorCode::NotFound,
+            "The worktree folder is missing",
+        ));
+    }
+    let Some(preview) = crate::services::worktree_runtime::preview_of(data, &row) else {
+        return Err(IpcError::new(
+            ErrorCode::NotFound,
+            "This repository's worktree setup has no preview",
+        ));
+    };
+    if !preview.trusted {
+        return Err(IpcError::new(ErrorCode::PermissionDenied, NOT_TRUSTED).with_stage("setup"));
+    }
+    let pane = panes::create_with(store, tab, "terminal", Some(row.root.clone()), None).await?;
+    let pane = match panes::rename(store, &pane.id, "Preview").await {
+        Ok(_) => panes::get(store, &pane.id).await?,
+        Err(_) => pane,
+    };
+    tracing::info!(code = "worktree_runtime.preview", "preview started");
+    Ok((pane, preview.command))
 }
 
 // ---- teardown ------------------------------------------------------------
@@ -643,5 +688,59 @@ mod tests {
         let written = std::fs::read_to_string(wt.parent().expect("parent").join("compose-name"))
             .expect("written");
         assert_eq!(written.trim(), "app-wt");
+    }
+
+    #[tokio::test]
+    async fn f_wt_09_2_3_an_untrusted_preview_never_runs_and_a_trusted_one_follows_setup() {
+        let (_tmp, main, wt, data) = repo_with_worktree(
+            r#"{"ports":2,"setup":"pnpm install","preview":{"command":"pnpm dev --port {{port}}"}}"#,
+        );
+        let store = Store::open(&data).expect("store");
+        let (parent, _) = workspaces::add(
+            &store,
+            workspaces::NewWorkspace {
+                kind: "local".into(),
+                host_id: "local".into(),
+                root: main.to_string_lossy().into_owned(),
+                name: "app".into(),
+                wsl_distro: None,
+            },
+            None,
+        )
+        .await
+        .expect("parent");
+        let lane = workspaces::add_lane(
+            &store,
+            workspaces::NewLane {
+                parent_id: parent.id.clone(),
+                root: wt.to_string_lossy().into_owned(),
+                name: "wt".into(),
+                branch: "tandem/wt".into(),
+                base: "abc".into(),
+            },
+        )
+        .await
+        .expect("lane");
+        let tab = tandem_store::repo::tabs::create(&store, &lane.id, None)
+            .await
+            .expect("tab");
+        let err = preview_pane(&store, &data, &lane.id, &tab.id)
+            .await
+            .expect_err("untrusted");
+        assert_eq!(err.code, ErrorCode::PermissionDenied);
+        let digest = state_at(&data, &main).digest.expect("digest");
+        trust(&data, &main, &digest).expect("trust");
+        let (_, setup_cmd) = setup_pane(&store, &data, &lane.id, &tab.id)
+            .await
+            .expect("setup");
+        let (pane, preview_cmd) = preview_pane(&store, &data, &lane.id, &tab.id)
+            .await
+            .expect("preview");
+        assert!(
+            preview_cmd.starts_with("pnpm dev --port 4"),
+            "{preview_cmd}"
+        );
+        assert_eq!(setup_cmd, format!("pnpm install && {preview_cmd}"));
+        assert_eq!(pane.human_name.as_deref(), Some("Preview"));
     }
 }

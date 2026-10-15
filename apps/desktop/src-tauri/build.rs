@@ -73,6 +73,8 @@ const COMMANDS: &[&str] = &[
     "lane_overlap",
     "lane_forge",
     "lane_runtime",
+    "lane_previews",
+    "lane_preview_start",
     "worktree_env_check",
     "lane_create_pr",
     "lane_remove",

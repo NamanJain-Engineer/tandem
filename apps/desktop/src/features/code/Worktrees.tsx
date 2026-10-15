@@ -22,8 +22,12 @@ import {
   baseBranch,
   createPullRequest,
   createWorktree,
+  PREVIEW_POLL_MS,
   loadForge,
   loadRuntime,
+  openPreview,
+  pollPreviews,
+  startPreview,
   mergeWorktree,
   prepareWorktree,
   removeWorktree,
@@ -76,6 +80,16 @@ export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): Me
         }),
     },
     {
+      // F-WT-09: the repository's preview, in a Preview pane in the worktree.
+      id: "wt-preview",
+      label: t("worktree.preview.start"),
+      disabled: wt.missing || wt.kind !== "local",
+      onSelect: () =>
+        void startPreview(wt.id).then((out) => {
+          if (out.ok) switchMode("code");
+        }),
+    },
+    {
       // F-WT-03: sibling worktrees on the same files, and the merge forecast.
       id: "wt-overlap",
       label: t("worktree.overlap.menu"),
@@ -122,6 +136,7 @@ export function WorktreeRow({
     if (!wt.missing && wt.kind === "local") void loadRuntime(wt.id);
   }, [wt.id, wt.missing, wt.kind]);
   const block = useWorktrees((s) => s.runtimes[wt.id]);
+  const preview = useWorktrees((s) => s.previews[wt.id]);
   const openIt = () => {
     useWorkspaces.getState().select(wt.id);
     switchMode("code");
@@ -167,6 +182,19 @@ export function WorktreeRow({
         <span className="min-w-0 flex-1 truncate">{branch}</span>
       </Tooltip>
       {slot}
+      {preview?.status === "ready" && preview.url ? (
+        <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="worktree-preview"
+            aria-label={t("worktree.preview.openLabel", { branch })}
+            onClick={() => openPreview(preview.url ?? "")}
+          >
+            {t("worktree.preview.open")}
+          </Button>
+        </span>
+      ) : null}
       {wt.liveCount > 0 && (
         <span aria-label={t("rail.live", { n: wt.liveCount })}>
           <Badge>{wt.liveCount}</Badge>
@@ -442,7 +470,9 @@ export function WorktreeDialogs() {
   useWorktreeNotices();
   if (!ask) return null;
   if (ask.kind === "review")
-    return <ReviewSetupDialog worktreeIds={ask.worktreeIds} state={ask.state} onClose={close} />;
+    return (
+      <ReviewSetupDialog worktreeIds={ask.worktreeIds} state={ask.state} after={ask.after} onClose={close} />
+    );
   if (ask.kind === "setup") {
     const ws = list.find((w) => w.id === ask.workspaceId);
     return ws ? <WorktreeSetupDialog ws={ws} onClose={close} /> : null;
@@ -465,4 +495,20 @@ export function WorktreeDialogs() {
       />
     );
   return <DiscardDialog wt={wt} onClose={close} />;
+}
+
+/** F-WT-09: asks every 2 s whether the given worktrees' previews answer,
+ * while `active` (the rail is open and the window visible). */
+export function usePreviewPolling(laneIds: string[], active: boolean): void {
+  const key = laneIds.join(",");
+  useEffect(() => {
+    if (!active || !key) return;
+    const ids = key.split(",");
+    const tick = () => {
+      if (document.visibilityState !== "hidden") void pollPreviews(ids);
+    };
+    tick();
+    const timer = setInterval(tick, PREVIEW_POLL_MS);
+    return () => clearInterval(timer);
+  }, [key, active]);
 }

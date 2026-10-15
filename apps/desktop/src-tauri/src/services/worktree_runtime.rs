@@ -284,31 +284,43 @@ pub fn free_global(lane_id: &str) {
 /// for anything that isn't a local worktree of a repository whose file turns
 /// the runtime on. The file's `env` only once it's trusted here.
 pub fn vars_for(data: &DataDir, lane: &Workspace) -> BTreeMap<String, String> {
-    if !is_local_lane(lane) {
-        return BTreeMap::new();
+    match context(data, lane) {
+        Some(c) => c.config.runtime_vars(&c.ctx, c.trusted),
+        None => BTreeMap::new(),
     }
-    let Ok(main) = worktree_setup::main_root(&lane.root) else {
-        return BTreeMap::new();
-    };
-    let Ok(Some(config)) = setup::read(&main) else {
-        return BTreeMap::new();
-    };
+}
+
+/// A local worktree's runtime: its file, placeholders and trust. `None`
+/// when the file doesn't turn the runtime on.
+struct Context {
+    config: tandem_git::WorktreeSetup,
+    ctx: RuntimeCtx,
+    trusted: bool,
+}
+
+fn context(data: &DataDir, lane: &Workspace) -> Option<Context> {
+    if !is_local_lane(lane) {
+        return None;
+    }
+    let main = worktree_setup::main_root(&lane.root).ok()?;
+    let config = setup::read(&main).ok()??;
     if !config.runtime_on() {
-        return BTreeMap::new();
+        return None;
     }
     let assigned = match assignment(data, lane.id.as_str()) {
         Some(a) if a.ports.map(|(_, n)| n) == config.ports => a,
         // A file that gained ports after the worktree was made.
-        _ => match assign(
-            data,
-            lane.id.as_str(),
-            &repo_key(&main),
-            config.ports,
-            &LoopbackCheck,
-        ) {
-            Ok((a, _)) => a,
-            Err(_) => return BTreeMap::new(),
-        },
+        _ => {
+            assign(
+                data,
+                lane.id.as_str(),
+                &repo_key(&main),
+                config.ports,
+                &LoopbackCheck,
+            )
+            .ok()?
+            .0
+        }
     };
     let trusted = config
         .digest()
@@ -320,7 +332,97 @@ pub fn vars_for(data: &DataDir, lane: &Workspace) -> BTreeMap<String, String> {
         worktree: lane.root.clone(),
         ports: assigned.ports,
     };
-    config.runtime_vars(&ctx, trusted)
+    Some(Context {
+        config,
+        ctx,
+        trusted,
+    })
+}
+
+/// F-WT-09: a worktree's preview, from its file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LanePreview {
+    /// Filled in.
+    pub command: String,
+    pub port: u16,
+    pub url: String,
+    pub trusted: bool,
+}
+
+pub fn preview_of(data: &DataDir, lane: &Workspace) -> Option<LanePreview> {
+    let c = context(data, lane)?;
+    let (command, port) = c.config.preview_for(&c.ctx)?;
+    let path = c
+        .config
+        .preview
+        .as_ref()
+        .map(|p| p.path.clone())
+        .unwrap_or_else(|| "/".into());
+    Some(LanePreview {
+        command,
+        port,
+        url: format!("http://{}:{port}{path}", host_for(Some(&lane.name))),
+        trusted: c.trusted,
+    })
+}
+
+/// F-WT-09: whether a worktree's preview answers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum PreviewStatus {
+    /// The repository's file has no preview (or this isn't a local worktree).
+    None,
+    /// Configured, nothing answering yet.
+    Down,
+    /// Something accepts connections on its port.
+    Ready,
+}
+
+/// `lane_previews`: one per asked worktree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PreviewState {
+    pub lane_id: String,
+    pub status: PreviewStatus,
+    pub url: Option<String>,
+    pub port: Option<u16>,
+    /// The preview command is trusted here (an untrusted one never runs).
+    pub trusted: bool,
+}
+
+/// Something accepts a TCP connection on 127.0.0.1:`port`. Connects only;
+/// sends nothing.
+pub fn answers(port: u16) -> bool {
+    std::net::TcpStream::connect_timeout(
+        &SocketAddr::from(([127, 0, 0, 1], port)),
+        std::time::Duration::from_millis(250),
+    )
+    .is_ok()
+}
+
+pub fn preview_state(data: &DataDir, lane: &Workspace) -> PreviewState {
+    match preview_of(data, lane) {
+        None => PreviewState {
+            lane_id: lane.id.as_str().to_string(),
+            status: PreviewStatus::None,
+            url: None,
+            port: None,
+            trusted: false,
+        },
+        Some(p) => PreviewState {
+            lane_id: lane.id.as_str().to_string(),
+            status: if answers(p.port) {
+                PreviewStatus::Ready
+            } else {
+                PreviewStatus::Down
+            },
+            url: Some(p.url),
+            port: Some(p.port),
+            trusted: p.trusted,
+        },
+    }
 }
 
 /// A pane's environment in layers (D-2448): the login environment and
@@ -604,6 +706,88 @@ mod tests {
         assert_eq!(after["PORT"], "41001");
         // The parent checkout itself is no worktree: nothing.
         assert!(vars_for(&data, &parent).is_empty());
+    }
+
+    #[tokio::test]
+    async fn f_wt_09_1_a_preview_is_down_until_its_port_answers() {
+        use tandem_store::repo::workspaces;
+        let (tmp, data) = data();
+        let main = tmp.path().join("shop");
+        std::fs::create_dir_all(main.join(".vibezeo")).expect("mkdir");
+        git(&main, &["init", "-q", "-b", "main"]);
+        std::fs::write(main.join("README.md"), "x\n").expect("write");
+        git(&main, &["add", "."]);
+        git(&main, &["commit", "-q", "-m", "init"]);
+        std::fs::write(
+            main.join(setup::SETUP_FILE),
+            r#"{"ports":3,"preview":{"command":"serve --port {{port+1}}","port":1,"path":"/app"}}"#,
+        )
+        .expect("write");
+        let wt = main.join(".tandem/worktrees/fix-auth");
+        git(
+            &main,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                wt.to_str().expect("utf8"),
+                "-b",
+                "tandem/fix-auth",
+            ],
+        );
+        let store = tandem_store::Store::open(&data).expect("store");
+        let (parent, _) = workspaces::add(
+            &store,
+            workspaces::NewWorkspace {
+                kind: "local".into(),
+                host_id: "local".into(),
+                root: main.to_string_lossy().into_owned(),
+                name: "shop".into(),
+                wsl_distro: None,
+            },
+            None,
+        )
+        .await
+        .expect("parent");
+        let lane = workspaces::add_lane(
+            &store,
+            workspaces::NewLane {
+                parent_id: parent.id.clone(),
+                root: wt.to_string_lossy().into_owned(),
+                name: "fix-auth".into(),
+                branch: "tandem/fix-auth".into(),
+                base: "abc".into(),
+            },
+        )
+        .await
+        .expect("lane");
+        // Pick a block whose second port we can listen on.
+        let probe = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let free = probe.local_addr().expect("addr").port();
+        drop(probe);
+        let start = free - 1;
+        let mut all = BTreeMap::new();
+        all.insert(
+            lane.id.as_str().to_string(),
+            Assignment {
+                repo: repo_key(&main),
+                index: 1,
+                ports: Some((start, 3)),
+            },
+        );
+        write_all(&data, &all).expect("write blocks");
+        let p = preview_of(&data, &lane).expect("preview");
+        assert_eq!(p.command, format!("serve --port {free}"));
+        assert_eq!(p.port, free);
+        assert!(p.url.ends_with(&format!(":{free}/app")), "{}", p.url);
+        assert!(!p.trusted);
+        assert_eq!(preview_state(&data, &lane).status, PreviewStatus::Down);
+        let server = TcpListener::bind(("127.0.0.1", free)).expect("listen");
+        let ready = preview_state(&data, &lane);
+        assert_eq!(ready.status, PreviewStatus::Ready);
+        assert_eq!(ready.port, Some(free));
+        drop(server);
+        assert_eq!(preview_state(&data, &parent).status, PreviewStatus::None);
     }
 
     #[test]

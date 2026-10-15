@@ -204,10 +204,13 @@ export function WorktreeSetupDialog({ ws, onClose }: { ws: WorkspaceSummary; onC
 export function ReviewSetupDialog({
   worktreeIds,
   state,
+  after,
   onClose,
 }: {
   worktreeIds: string[];
   state: SetupState;
+  /** F-WT-09: the review came from Start preview. */
+  after?: "preview";
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -217,7 +220,7 @@ export function ReviewSetupDialog({
     if (!state.digest) return;
     setBusy(true);
     setError(null);
-    const out = await trustAndRun(worktreeIds, state.digest);
+    const out = await trustAndRun(worktreeIds, state.digest, after);
     setBusy(false);
     if (out.ok) onClose();
     else setError(out.error.message);
@@ -257,6 +260,12 @@ export function ReviewSetupDialog({
           <section className="flex flex-col gap-1">
             <h3 className="text-sm font-medium text-fg">{t("worktree.setup.reviewTeardown")}</h3>
             <CodeBlock code={config.teardown} language="bash" />
+          </section>
+        ) : null}
+        {config?.preview ? (
+          <section className="flex flex-col gap-1">
+            <h3 className="text-sm font-medium text-fg">{t("worktree.setup.reviewPreview")}</h3>
+            <CodeBlock code={config.preview.command} language="bash" />
           </section>
         ) : null}
         {config && Object.keys(config.env ?? {}).length > 0 ? (

@@ -152,6 +152,8 @@
     "allow-lane-overlap",
     "allow-lane-forge",
     "allow-lane-runtime",
+    "allow-lane-previews",
+    "allow-lane-preview-start",
     "allow-worktree-env-check",
     "allow-lane-create-pr",
     "allow-lane-remove",
