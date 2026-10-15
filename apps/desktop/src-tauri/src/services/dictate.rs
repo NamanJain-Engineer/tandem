@@ -34,6 +34,7 @@ use tandem_voice::dictate::{
 use tandem_voice::dictionary::{Dictionary, Rule, RuleKind, Spacing};
 
 use crate::services::dictionary_sync as sync;
+use tandem_voice::hotkey::globe::{FakeGlobe, GlobeKey, GlobeUsage};
 use tandem_voice::hotkey::{
     Binding, Bindings, FakeHotkeys, HotkeyBackend, HotkeyStatus, Os, Phase,
 };
@@ -132,6 +133,21 @@ pub struct DictateStatus {
     pub quick_actions: bool,
     /// F-DI-10's one-time disclosure was shown.
     pub enhance_disclosed: bool,
+    /// Fn went unheard in the verify test, so the hold key became
+    /// Control+Option (F-DI-02, D-524).
+    pub fn_fallback: bool,
+}
+
+/// macOS's "Press 🌐 key to" (F-DI-11, D-524).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct GlobeKeyView {
+    pub available: bool,
+    /// `None`: never set, or unreadable.
+    pub usage: Option<GlobeUsage>,
+    /// The app changed it and can put the old value back.
+    pub changed_by_app: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -655,6 +671,7 @@ pub struct Fakes {
     pub audio: Arc<FakeAudioBackend>,
     pub hotkeys: Arc<FakeHotkeys>,
     pub platform: Arc<FakePlatform>,
+    pub globe: Arc<FakeGlobe>,
 }
 
 struct Download {
@@ -689,6 +706,8 @@ struct Shared {
     switch: OnceLock<Arc<dyn Fn(String) + Send + Sync>>,
     /// The global shortcut's status changed on its own (F-DI-02).
     hotkey: OnceLock<Arc<dyn Fn(HotkeyStatus) + Send + Sync>>,
+    /// Fn alone went unheard through the verify test (F-DI-02).
+    fn_unheard: OnceLock<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl Shared {
@@ -861,6 +880,12 @@ impl DictateSink for Sink {
             f(status);
         }
     }
+
+    fn fn_unheard(&self) {
+        if let Some(f) = self.0.fn_unheard.get() {
+            f();
+        }
+    }
 }
 
 /// Refreshes the Review tab's suggestions from recent history.
@@ -903,6 +928,7 @@ pub struct DictateService {
     backend: Arc<dyn AudioBackend>,
     hotkeys: Arc<dyn HotkeyBackend>,
     platform: Arc<dyn Platform>,
+    globe: Arc<dyn GlobeKey>,
     pub fakes: Option<Fakes>,
     audio: OnceLock<Arc<AudioService>>,
     controller: OnceLock<Dictate>,
@@ -927,6 +953,15 @@ fn clamp_chars(s: &str, max: usize) -> String {
 }
 
 pub type PlanFn = Arc<dyn Fn() -> tandem_core::entitlement::Plan + Send + Sync>;
+
+/// `dictate_fn_fallback` after the user picks a hold key: Fn again after
+/// the fallback is Fn for good ("kept_fn"); anything else ends it (F-DI-02).
+pub fn fn_fallback_after_pick(was: Option<&str>, fn_alone: bool) -> Value {
+    match (was, fn_alone) {
+        (Some("switched" | "kept_fn"), true) => json!("kept_fn"),
+        _ => Value::Null,
+    }
+}
 
 /// Whether `tandem://dictate/toggle` may start or stop a take (D-515): only
 /// where it's the documented fallback, a Wayland session or a Linux desktop
@@ -979,7 +1014,7 @@ impl DictateService {
                 catalog = catalog.with_base(&base);
             }
         }
-        let (backend, hotkeys, platform, fakes): Backends = if e2e {
+        let (backend, hotkeys, platform, globe, fakes): Backends = if e2e {
             let audio = Arc::new(FakeAudioBackend::new(vec![(
                 DeviceInfo::new("fake-mic", "Test Microphone", true),
                 FakeSource::Samples {
@@ -990,14 +1025,17 @@ impl DictateService {
             )]));
             let hk = Arc::new(FakeHotkeys::default());
             let pf = Arc::new(FakePlatform::default());
+            let globe = Arc::new(FakeGlobe::default());
             (
                 audio.clone(),
                 hk.clone(),
                 pf.clone(),
+                globe.clone(),
                 Some(Fakes {
                     audio,
                     hotkeys: hk,
                     platform: pf,
+                    globe,
                 }),
             )
         } else {
@@ -1005,6 +1043,7 @@ impl DictateService {
                 native_backend(),
                 tandem_voice::hotkey::native(),
                 tandem_voice::insert::native(),
+                tandem_voice::hotkey::globe::native(),
                 None,
             )
         };
@@ -1026,6 +1065,7 @@ impl DictateService {
                 quick_actions: AtomicBool::new(false),
                 switch: OnceLock::new(),
                 hotkey: OnceLock::new(),
+                fn_unheard: OnceLock::new(),
             }),
             catalog,
             platform_name: tandem_voice::models::current_platform(),
@@ -1033,6 +1073,7 @@ impl DictateService {
             backend,
             hotkeys,
             platform,
+            globe,
             fakes,
             audio: OnceLock::new(),
             controller: OnceLock::new(),
@@ -1324,6 +1365,15 @@ impl DictateService {
         }));
         // A pause or a failure the shortcut reports on its own reaches the
         // chip, the tray and the link's availability (F-DI-02).
+        // Fn went unheard in the verify test: Control+Option instead (F-DI-02).
+        let weak = Arc::downgrade(self);
+        let _ = self.shared.fn_unheard.set(Arc::new(move || {
+            if let Some(me) = weak.upgrade() {
+                tauri::async_runtime::spawn(async move {
+                    me.fn_fallback().await;
+                });
+            }
+        }));
         let weak = Arc::downgrade(self);
         let _ = self.shared.hotkey.set(Arc::new(move |status| {
             if let Some(me) = weak.upgrade() {
@@ -1525,6 +1575,7 @@ impl DictateService {
             enhance_disclosed: self
                 .setting(SettingKey::DictateEnhanceDisclosed, false)
                 .await,
+            fn_fallback: self.fn_fallback_shown(&hold).await,
         }
     }
 
@@ -1567,6 +1618,18 @@ impl DictateService {
         } else {
             SettingKey::DictateHotkey
         };
+        if !toggle {
+            // The user picked the hold key: Fn again after the fallback means
+            // Fn for good; anything else ends the fallback (F-DI-02).
+            let was: Option<String> = self.setting(SettingKey::DictateFnFallback, None).await;
+            let fn_alone = parsed.as_ref().is_some_and(Binding::is_fn_alone);
+            settings::set(
+                &self.store,
+                SettingKey::DictateFnFallback,
+                fn_fallback_after_pick(was.as_deref(), fn_alone),
+            )
+            .await?;
+        }
         let value = parsed.map(|b| json!(b.to_string())).unwrap_or(Value::Null);
         settings::set(&self.store, key, value.clone()).await?;
         self.emit(
@@ -1585,6 +1648,121 @@ impl DictateService {
         self.restart_hotkeys().await;
         self.emit_status().await;
         Ok(self.hotkey_status.lock().clone())
+    }
+
+    /// Fn alone went unheard through the verify test: the hold key becomes
+    /// Control+Option, unless the user already chose Fn again after this.
+    pub async fn fn_fallback(&self) {
+        let was: Option<String> = self.setting(SettingKey::DictateFnFallback, None).await;
+        if was.as_deref() == Some("kept_fn")
+            || !self
+                .bindings()
+                .await
+                .hold
+                .as_ref()
+                .is_some_and(Binding::is_fn_alone)
+        {
+            return;
+        }
+        let to = Binding::fn_fallback().to_string();
+        if self.set_binding(Some(to), false).await.is_err() {
+            return;
+        }
+        let _ = settings::set(
+            &self.store,
+            SettingKey::DictateFnFallback,
+            json!("switched"),
+        )
+        .await;
+        tracing::info!(
+            code = "dictate.fn_fallback",
+            "Fn went unheard; the hold key is now Control+Option"
+        );
+        self.emit_status().await;
+    }
+
+    async fn fn_fallback_shown(&self, hold: &Binding) -> bool {
+        let was: Option<String> = self.setting(SettingKey::DictateFnFallback, None).await;
+        was.as_deref() == Some("switched") && *hold == Binding::fn_fallback()
+    }
+
+    // ── The 🌐 key (F-DI-11) ────────────────────────────────────────────
+
+    async fn globe_previous(&self) -> Option<Option<GlobeUsage>> {
+        let m: serde_json::Map<String, Value> = self
+            .setting(SettingKey::DictateGlobePrevious, serde_json::Map::new())
+            .await;
+        match m.get("usage")?.as_str()? {
+            "unset" => Some(None),
+            u => serde_json::from_value(json!(u)).ok().map(Some),
+        }
+    }
+
+    pub async fn globe_key(&self) -> GlobeKeyView {
+        if !self.globe.available() {
+            return GlobeKeyView {
+                available: false,
+                usage: None,
+                changed_by_app: false,
+            };
+        }
+        GlobeKeyView {
+            available: true,
+            usage: self.globe.read().ok().flatten(),
+            changed_by_app: self.globe_previous().await.is_some(),
+        }
+    }
+
+    /// `do_nothing`: only from the consent dialog; the old value is kept so
+    /// it can be put back. `false` puts it back.
+    pub async fn globe_key_set(&self, do_nothing: bool) -> Result<GlobeKeyView, IpcError> {
+        let fail = |e: tandem_voice::hotkey::globe::GlobeError| match e {
+            tandem_voice::hotkey::globe::GlobeError::Unsupported => {
+                IpcError::new(ErrorCode::Unavailable, e.to_string())
+            }
+            tandem_voice::hotkey::globe::GlobeError::Failed(_) => {
+                IpcError::new(ErrorCode::Io, e.to_string())
+            }
+        };
+        if !self.globe.available() {
+            return Err(fail(tandem_voice::hotkey::globe::GlobeError::Unsupported));
+        }
+        let previous = self.globe_previous().await;
+        if do_nothing {
+            let now = self.globe.read().map_err(fail)?;
+            if now != Some(GlobeUsage::DoNothing) {
+                if previous.is_none() {
+                    let usage = match now {
+                        Some(u) => json!(u),
+                        None => json!("unset"),
+                    };
+                    settings::set(
+                        &self.store,
+                        SettingKey::DictateGlobePrevious,
+                        json!({ "usage": usage }),
+                    )
+                    .await?;
+                }
+                self.globe
+                    .write(Some(GlobeUsage::DoNothing))
+                    .map_err(fail)?;
+                tracing::info!(
+                    code = "dictate.globe_changed",
+                    "set Press 🌐 key to Do Nothing, with consent"
+                );
+            }
+        } else {
+            let Some(old) = previous else {
+                return Err(IpcError::new(
+                    ErrorCode::Invalid,
+                    "Vibezeo didn't change this setting",
+                ));
+            };
+            self.globe.write(old).map_err(fail)?;
+            settings::set(&self.store, SettingKey::DictateGlobePrevious, json!({})).await?;
+            tracing::info!(code = "dictate.globe_restored", "put Press 🌐 key back");
+        }
+        Ok(self.globe_key().await)
     }
 
     pub fn start_take(&self, origin: Origin) -> Result<TakeId, IpcError> {
@@ -2429,6 +2607,7 @@ type Backends = (
     Arc<dyn AudioBackend>,
     Arc<dyn HotkeyBackend>,
     Arc<dyn Platform>,
+    Arc<dyn GlobeKey>,
     Option<Fakes>,
 );
 
@@ -2588,6 +2767,95 @@ mod tests {
         );
         let known = mine_suggestions(&takes, &["Kubernetes".into()]);
         assert!(!known.iter().any(|(t, _, _)| t == "Kubernetes"));
+    }
+
+    fn voice_service() -> (tempfile::TempDir, Arc<DictateService>) {
+        let dir = tempfile::tempdir().expect("dir");
+        let data = DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = Store::open(&data).expect("store");
+        (dir, DictateService::new(store, data, true))
+    }
+
+    #[tokio::test]
+    async fn f_di_02_unheard_fn_becomes_control_option_unless_fn_was_chosen_again() {
+        let (_d, svc) = voice_service();
+        // Another hold key: nothing to fall back from.
+        svc.fn_fallback().await;
+        assert!(!svc.status().await.fn_fallback);
+        settings::set(&svc.store, SettingKey::DictateHotkey, json!("Fn"))
+            .await
+            .expect("fn");
+        svc.fn_fallback().await;
+        let st = svc.status().await;
+        assert_eq!(
+            svc.bindings().await.hold,
+            Some(Binding::fn_fallback()),
+            "the hold key is Control+Option"
+        );
+        assert!(st.fn_fallback);
+        assert!(!st.verified, "the new key is verified on its own");
+        // The user chose Fn again: it stays Fn from then on.
+        assert_eq!(
+            fn_fallback_after_pick(Some("switched"), true),
+            json!("kept_fn")
+        );
+        assert_eq!(
+            fn_fallback_after_pick(Some("kept_fn"), true),
+            json!("kept_fn")
+        );
+        assert_eq!(fn_fallback_after_pick(Some("switched"), false), Value::Null);
+        assert_eq!(fn_fallback_after_pick(None, true), Value::Null);
+        settings::set(&svc.store, SettingKey::DictateHotkey, json!("Fn"))
+            .await
+            .expect("fn");
+        settings::set(&svc.store, SettingKey::DictateFnFallback, json!("kept_fn"))
+            .await
+            .expect("kept");
+        svc.fn_fallback().await;
+        assert!(svc
+            .bindings()
+            .await
+            .hold
+            .as_ref()
+            .is_some_and(Binding::is_fn_alone));
+        assert!(!svc.status().await.fn_fallback);
+    }
+
+    #[tokio::test]
+    async fn f_di_11_the_globe_key_changes_only_when_asked_and_goes_back() {
+        let (_d, svc) = voice_service();
+        let globe = svc.fakes.as_ref().expect("fakes").globe.clone();
+        *globe.value.lock() = Some(GlobeUsage::ShowEmoji);
+        let view = svc.globe_key().await;
+        assert_eq!(
+            (view.usage, view.changed_by_app),
+            (Some(GlobeUsage::ShowEmoji), false)
+        );
+        assert!(globe.writes.lock().is_empty(), "reading changes nothing");
+        assert_eq!(
+            svc.globe_key_set(false)
+                .await
+                .expect_err("nothing to undo")
+                .code,
+            ErrorCode::Invalid
+        );
+        let view = svc.globe_key_set(true).await.expect("do nothing");
+        assert_eq!(
+            (view.usage, view.changed_by_app),
+            (Some(GlobeUsage::DoNothing), true)
+        );
+        // Asking again keeps the first old value.
+        svc.globe_key_set(true).await.expect("again");
+        let view = svc.globe_key_set(false).await.expect("undo");
+        assert_eq!(
+            (view.usage, view.changed_by_app),
+            (Some(GlobeUsage::ShowEmoji), false)
+        );
+        // Never set before: undo removes it again.
+        *globe.value.lock() = None;
+        svc.globe_key_set(true).await.expect("do nothing");
+        svc.globe_key_set(false).await.expect("undo");
+        assert_eq!(globe.writes.lock().last(), Some(&None));
     }
 
     /// The temp dir, the service, the requests sent, whether forget ran.

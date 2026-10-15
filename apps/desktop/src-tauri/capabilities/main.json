@@ -388,6 +388,8 @@
     "allow-dictate-permissions",
     "allow-dictate-open-permission-settings",
     "allow-dictate-relaunch",
+    "allow-dictate-globe-key",
+    "allow-dictate-globe-key-set",
     "allow-dictate-widget-set-position"
   ]
 }

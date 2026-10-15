@@ -12,6 +12,7 @@ import { useBoot } from "../shell/useBoot";
 import { presets } from "./binding";
 import { MicSelect, ShortcutField } from "./DictatePage";
 import { EngineControl } from "./EngineControl";
+import { GlobeKey } from "./GlobeKey";
 import { useComposerDictation } from "./useComposerDictation";
 
 /** "Try it" (F-DI-11 AC2): passes only once a native press and release of
@@ -53,13 +54,37 @@ export function TryIt() {
           {phase === "down" ? t("dictate.setup.release") : t("dictate.setup.waiting", { key: status?.hold.label ?? "" })}
         </span>
       )}
-      {status?.session === "mac" && phase === "waiting" && <span className="text-sm text-fg-muted">{t("dictate.setup.fnHint")}</span>}
+      {status?.session === "mac" && phase === "waiting" && !status.fnFallback && (
+        <span className="text-sm text-fg-muted">{t("dictate.setup.fnHint")}</span>
+      )}
+      {status?.fnFallback && phase !== "done" && <FnFallback />}
       {status?.deepLinkCommand && phase !== "done" && (
         <span className="text-sm text-fg-muted" data-testid="dictate-try-link">
           {t("dictate.setup.linkHint", { command: status.deepLinkCommand })}
         </span>
       )}
     </div>
+  );
+}
+
+/** Fn went unheard in the verify test, so the hold key became
+ * Control+Option (F-DI-02, D-524); the user can go back to Fn. */
+function FnFallback() {
+  const { show } = useToast();
+  const back = () =>
+    void invoke("dictate_set_binding", { binding: "Fn", mode: "hold" }).then(
+      () => void useDictate.getState().loadStatus(),
+      (e: IpcError) => show({ tone: "error", title: e.message }),
+    );
+  return (
+    <Callout tone="info">
+      <span className="flex flex-col items-start gap-2" data-testid="dictate-fn-fallback">
+        {t("dictate.setup.fnFallback")}
+        <Button size="sm" variant="secondary" onClick={back} data-testid="dictate-fn-again">
+          {t("dictate.setup.fnAgain")}
+        </Button>
+      </span>
+    </Callout>
   );
 }
 
@@ -265,6 +290,7 @@ export function DictateSetupBody() {
       <section className="flex flex-col gap-2" aria-label={t("dictate.setup.try")}>
         <h3 className="text-sm font-semibold text-fg">{t("dictate.setup.try")}</h3>
         <TryIt />
+        {status?.session === "mac" && status.hold.binding === "Fn" && <GlobeKey />}
         <TestField />
       </section>
       <section className="flex flex-col gap-2" aria-label={t("dictate.mic.label")}>

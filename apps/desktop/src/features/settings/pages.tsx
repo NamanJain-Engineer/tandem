@@ -15,6 +15,7 @@ import { RunSetupAgain } from "../onboarding/RunSetupAgain";
 import { CheckpointsSettingsExtra } from "../checkpoints/CheckpointsSettings";
 import { RecallSettingsExtra } from "../recall/RecallSettings";
 import { DictateExtras, MicSelect, ShortcutField } from "../dictate/DictatePage";
+import { GlobeKey } from "../dictate/GlobeKey";
 import { LanguageSelect } from "../dictate/LanguageSelect";
 import { AboutYou, MemoryPanel, NameControl, SpeedControl, WakeControl } from "../conductor/ConductorSettings";
 import { ConductorCallSettings } from "../conductor/CallSettingsSlot";
@@ -539,6 +540,16 @@ export function settingsPages(platform: string, routines = false, accounts = fal
           keywords: ["shortcut", "hotkey", "key", "hold"],
           control: () => <ShortcutField mode="hold" label={t("dictate.shortcut.hold")} />,
         },
+        ...(mac
+          ? [
+              {
+                id: "dictate_globe_key",
+                label: t("dictate.globe.label"),
+                keywords: ["globe", "fn", "emoji", "input source"],
+                control: () => <GlobeKey />,
+              },
+            ]
+          : []),
         {
           id: "dictate_toggle_hotkey",
           label: t("dictate.shortcut.toggle"),
