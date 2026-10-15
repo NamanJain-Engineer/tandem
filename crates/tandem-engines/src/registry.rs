@@ -229,6 +229,9 @@ pub struct EngineSpec {
     /// Its instructions files (F-EN-07); none = Unknown.
     #[serde(default)]
     pub instructions: Option<InstructionsSpec>,
+    /// One line about who can use it, shown with its tile (F-EN-09).
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 /// Why a registry entry was refused.
@@ -347,6 +350,13 @@ impl EngineSpec {
         }
         if self.newline_sequence.is_empty() || self.newline_sequence.len() > 8 {
             return fail("newline_sequence is 1–8 bytes");
+        }
+        if self
+            .note
+            .as_deref()
+            .is_some_and(|n| n.trim().is_empty() || n.chars().count() > 300 || n.contains('\n'))
+        {
+            return fail("a note is one line of at most 300 characters");
         }
         if let Some(ins) = &self.instructions {
             let pointer = ins.pointer.as_ref().map(|p| p.file.as_str());
@@ -497,9 +507,9 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn f_en_02_the_bundled_registry_has_eleven_valid_engines() {
+    fn f_en_02_the_bundled_registry_has_thirteen_valid_engines() {
         let reg = EngineRegistry::bundled();
-        assert_eq!(reg.all().len(), 11);
+        assert_eq!(reg.all().len(), 13);
         reg.validate().expect("valid");
         let claude = reg.get("claude").expect("claude");
         assert_eq!(claude.commands, vec!["claude"]);
@@ -536,7 +546,7 @@ mod tests {
         let zed = reg.get("zed-agent").expect("added");
         assert_eq!(zed.version_cmd, vec!["--version"]);
         assert_eq!(zed.newline_sequence, "\u{1b}\r");
-        assert_eq!(reg.all().len(), 12);
+        assert_eq!(reg.all().len(), 14);
     }
 
     #[test]
@@ -570,7 +580,7 @@ mod tests {
             Some(vec!["claude".to_string()])
         );
         assert!(reg.get("x").is_none() && reg.get("y").is_none());
-        assert_eq!(reg.all().len(), 11);
+        assert_eq!(reg.all().len(), 13);
     }
 
     #[test]
@@ -598,8 +608,7 @@ mod tests {
     }
 
     #[test]
-    fn f_en_07_the_instructions_table_names_five_engines_and_rejects_paths_outside_the_repository()
-    {
+    fn f_en_07_the_instructions_table_names_six_engines_and_rejects_paths_outside_the_repository() {
         let reg = EngineRegistry::bundled();
         let with: Vec<&str> = reg
             .all()
@@ -609,7 +618,14 @@ mod tests {
             .collect();
         assert_eq!(
             with,
-            vec!["claude", "codex", "cursor-agent", "gemini", "copilot"]
+            vec![
+                "claude",
+                "codex",
+                "cursor-agent",
+                "gemini",
+                "copilot",
+                "antigravity"
+            ]
         );
         let claude = reg
             .get("claude")
@@ -654,5 +670,43 @@ mod tests {
             });
         }
         assert!(spec.validate().is_err());
+    }
+
+    #[test]
+    fn f_en_09_antigravity_and_kiro_are_terminal_engines_from_their_vendors_docs() {
+        let reg = EngineRegistry::bundled();
+        let agy = reg.get("antigravity").expect("antigravity");
+        assert_eq!(agy.commands, vec!["agy"]);
+        assert_eq!(agy.vendor, "Google");
+        assert_eq!(
+            agy.home_strategy,
+            HomeStrategy::None,
+            "one account per computer"
+        );
+        assert!(agy
+            .install
+            .win
+            .as_deref()
+            .is_some_and(|w| w.contains("install.ps1")));
+        let kiro = reg.get("kiro").expect("kiro");
+        assert_eq!(kiro.commands, vec!["kiro-cli"]);
+        assert_eq!(kiro.provider_home_env.as_deref(), Some("KIRO_HOME"));
+        assert_eq!(kiro.home_strategy, HomeStrategy::Env);
+        assert_eq!(kiro.login_cmd, Some(vec!["login".to_string()]));
+        assert_eq!(kiro.login_mode, LoginMode::Argv);
+        // F-EN-09.3: terminal only, and never headless.
+        for e in [agy, kiro] {
+            assert!(e.chat_adapter.is_none() && e.acp_cmd.is_none(), "{}", e.id);
+            assert!(e.headless_cmd.is_none(), "{}", e.id);
+        }
+        // F-EN-09.2: Gemini CLI stays, with its note.
+        let gemini = reg.get("gemini").expect("gemini");
+        assert!(gemini
+            .note
+            .as_deref()
+            .is_some_and(|n| n.contains("API keys") && n.contains("Antigravity CLI")));
+        let mut bad = gemini.clone();
+        bad.note = Some("two\nlines".into());
+        assert!(bad.validate().is_err());
     }
 }

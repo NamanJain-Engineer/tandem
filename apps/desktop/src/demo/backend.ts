@@ -164,6 +164,7 @@ function spec(
     onboardingSeed: null,
     mcpNative: null,
     instructions: null,
+    note: null,
   };
 }
 

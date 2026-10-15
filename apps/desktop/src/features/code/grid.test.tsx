@@ -205,6 +205,7 @@ function core(
           providerHomeEnv: null,
           supportsResume: false,
           newlineSequence: "\u001b\r",
+          note: "Needs a Moonshot API key.",
         },
         install: null,
         chatCapable: false,
@@ -620,6 +621,18 @@ describe("pane grid (F-CD-02)", () => {
     expect(within(grid).getByTestId("missing-kimi")).toBeTruthy();
     expect(within(grid).getByTestId("install-kimi")).toBeTruthy();
     expect(within(grid).queryByTestId("engines-diagnostics")).toBeNull();
+  });
+
+  it("F-EN-09.2 a not-installed engine shows its registry note", async () => {
+    core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Close Shell · 1" }));
+    const grid = await screen.findByTestId("launch-grid");
+    await waitFor(() => expect(within(grid).getByTestId("more-engines")).toBeTruthy());
+    fireEvent.click(within(grid).getByTestId("more-engines"));
+    expect(within(grid).getByTestId("engine-note-kimi").textContent).toBe("Needs a Moonshot API key.");
+    expect(within(grid).queryByTestId("engine-note-claude")).toBeNull();
   });
 
   it("F-CD-13.2 with none installed the diagnostics list the shells probed and Check again re-detects", async () => {
