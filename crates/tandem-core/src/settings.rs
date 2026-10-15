@@ -124,6 +124,8 @@ setting_keys! {
     DictateShareHints,
     DictateDictionarySync,
     DictateDictionarySyncState,
+    DictateFnFallback,
+    DictateGlobePrevious,
     DictateKeepHistory,
     DictateWidgetPosition,
     ConductorName,
@@ -707,6 +709,18 @@ pub static SCHEMA: &[SettingSpec] = &[
         ["dictionary", "sync", "devices"]
     ),
     spec!(DictateDictionarySyncState, json!({}), V::Map, Hidden, []),
+    // F-DI-02: null, "switched" (Fn went unheard; the hold key became
+    // Ctrl+Option) or "kept_fn" (the user chose Fn again).
+    spec!(
+        DictateFnFallback,
+        json!(null),
+        V::OptionalText { max: 16 },
+        Hidden,
+        []
+    ),
+    // F-DI-11: {"usage": <the 🌐 preference before the app changed it, or
+    // "unset">}; empty when the app hasn't changed it.
+    spec!(DictateGlobePrevious, json!({}), V::Map, Hidden, []),
     spec!(
         DictateKeepHistory,
         json!("forever"),

@@ -141,6 +141,8 @@ export type * from "./FsKind";
 export type * from "./GatewayMetrics";
 export type * from "./GitPanel";
 export type * from "./GitStatus";
+export type * from "./GlobeKeyView";
+export type * from "./GlobeUsage";
 export type * from "./GrantSubject";
 export type * from "./HandoffBrief";
 export type * from "./HandoffPlace";
