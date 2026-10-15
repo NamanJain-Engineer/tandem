@@ -1408,6 +1408,42 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 5. The notification is off by default. When it's on, a window that becomes forecast to run out before its reset raises one notification, and the next reading for the same window raises none.
 6. A seat whose account is at 85%, with another account of the same engine at 20%, shows both hints, and the launch uses the seat's own account.
 
+#### F-AC-09 Runaway guard (P2)
+**Story:** I leave agents working while I do something else. When one has been at it far longer than it should, is burning through my account, keeps spawning subagents or is going round in circles, I want to hear about it, and pause it if I choose, before it costs me the rest of my window.
+
+**Behavior:**
+- **Watched:** every agent pane (terminal engines in Code mode, local and on SSH hosts). Threads and teammate chats are watched for time only.
+- **Limits** (Settings › Agents › Runaway guard; each can be turned off):
+
+| Limit | Default | Range | Tripped when |
+|---|---|---|---|
+| Working without stopping | 90 min | 10–1,440 min | the agent has been Working (F-EN-05) for that long without its turn ending |
+| Share of the window | 30 points | 5–100 | in the last hour, this session's share of its account's tokens (F-AC-08) times the rise of the account's fullest window comes to that many points. Needs an engine that reports usage windows and keeps session logs |
+| Subagents | 20 | 1–500 | the session started that many subagents since its last prompt (counted from the engine's own tool reports: the registry's `subagent_tools`, such as Claude Code's `Task` and `Agent`) |
+| Going in circles | on | on/off | three turns in a row end with the same screen: the last 12 non-empty lines when the turn ends, compared as a hash. The text itself is never kept |
+
+- **When a limit trips:**
+  - The pane shows a guard card (UI-170) above its terminal, naming the limit: "fix-auth has been working for 90 min", "fix-auth used 34 points of Codex (Work)'s 5-hour window in the last hour", "fix-auth started 20 subagents since your last prompt", or "fix-auth may be going in circles: its last 3 turns ended the same way". The card has **Pause** and **Dismiss**.
+  - A notification goes through the usual channels: kind `runaway`, source the pane, title as on the card. The Notifications type table lists it as "Runaway guard".
+  - Each limit trips once per turn. A dismissed limit stays quiet until the agent's next prompt.
+- **Action** (Settings › Agents › Runaway guard › When a limit is reached): **Notify me** (default), or **Pause the agent**, which pauses it as if Pause were clicked on the card.
+- **Pause:**
+  1. Vibezeo sends the engine's interrupt key from the registry (`interrupt`, `\u001b` for Claude Code and Codex). The engine stops its turn by itself, and the agent waits for input.
+  2. If the agent still reports Working 5 s later, Vibezeo stops its process group (SIGSTOP on Linux and macOS, behind the `ProcessControl` trait). The card then reads "Paused" with **Resume**, which continues it (SIGCONT). On Windows there's no stop step: the card says "Couldn't pause: send it a message or stop it."
+  - Closing a paused pane or quitting Vibezeo continues and then ends the process, as usual (F-CD-03). It's never left stopped.
+  - Pause never switches accounts or engines, and never sends a prompt.
+- **States:** UI-170 shows the tripped limit (Pause, Dismiss), pausing ("Pausing…"), paused (Resume), and couldn't pause (the reason).
+
+**Data:** in memory per pane (working since, subagent count, the last three turn-end hashes, tripped limits). Settings: `runaway_guard` (`{workingMinutes, windowPoints, subagents, circles}`, each `null` when off) and `runaway_action` (`"notify"`/`"pause"`).
+
+**Acceptance:**
+1. With the defaults, an agent pane working for 91 minutes raises one notification "{name} has been working for 90 min" and shows the guard card. Nothing is paused or typed into the pane.
+2. With "Pause the agent" and a subagent limit of 20, the 20th subagent report pauses the session: the interrupt key reaches the pane, and an agent still Working 5 s later is stopped. Resume continues it.
+3. Three turns in a row that end with the same screen raise "may be going in circles". Two in a row, or three that differ, raise nothing.
+4. A session whose share of its account's tokens in the last hour, times its window's rise, reaches 30 points trips the window limit. An account without windows never trips it.
+5. Dismiss keeps a limit quiet until the agent's next prompt, and each limit trips at most once per turn.
+6. A limit set to off never trips. Pause never changes the pane's account or engine.
+
 ### 4.6 DB: Dashboard and notifications
 
 #### F-DB-01 Dashboard (P0)
