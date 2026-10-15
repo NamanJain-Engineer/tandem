@@ -11,6 +11,7 @@ import type {
   PreviewState,
   RemoveReport,
   SetupState,
+  Tab,
   TeardownOutcome,
   Workspace,
   WorkspaceSummary,
@@ -52,6 +53,8 @@ export type WorktreeAsk =
   | { kind: "overlap"; worktreeId: string }
   /** UI-151: untrusted setup commands for new worktrees, reviewed once. */
   | { kind: "review"; worktreeIds: string[]; state: SetupState; after?: "preview" }
+  /** UI-154: two worktrees' previews side by side (F-WT-09). */
+  | { kind: "comparePreviews"; candidates: string[]; chosen: string[]; onDone?: () => void }
   | null;
 
 type WorktreesState = {
@@ -384,4 +387,81 @@ export async function startPreview(laneId: string): Promise<Outcome<PaneRecord>>
       .notify({ tone: "error", title: t("worktree.preview.startFailed", { reason: out.error.message }) });
   }
   return out;
+}
+
+/** How long side by side waits for both previews to answer. */
+export const COMPARE_WAIT_MS = 60_000;
+
+const failed = (message: string): Outcome<never> => ({
+  ok: false,
+  error: { code: "not_found", message, stage: null, hint: null, retryable: false },
+});
+
+/** A pane name (1–32 characters) for `branch`, `n` > 1 when it's taken. */
+export function paneLabel(branch: string, n = 1): string {
+  const suffix = n > 1 ? ` ${n}` : "";
+  const room = 32 - suffix.length;
+  const base = branch.length > room ? `${branch.slice(0, room - 1)}…` : branch;
+  return base + suffix;
+}
+
+async function namePane(paneId: string, branch: string): Promise<string | null> {
+  for (let n = 1; n <= 5; n += 1) {
+    const out = await run<string>("pane_rename", { paneId, humanName: paneLabel(branch, n) });
+    if (out.ok) return out.value;
+    if (out.error.code !== "conflict") return null;
+  }
+  return null;
+}
+
+/** F-WT-09 side by side: starts whichever of the two previews isn't
+ * running, waits for both to answer, then opens a tab in the repository
+ * with a browser pane per preview, each named after its branch. */
+export async function comparePreviews(
+  laneIds: [string, string],
+  wait = COMPARE_WAIT_MS,
+): Promise<Outcome<Tab>> {
+  const list = useWorkspaces.getState().list;
+  const lanes = laneIds.map((id) => list.find((w) => w.id === id));
+  const [a, b] = lanes;
+  if (!a || !b) return failed(t("worktree.compare.gone"));
+  const branch = (w: WorkspaceSummary) => w.laneBranch ?? w.name;
+  await pollPreviews(laneIds);
+  for (const w of [a, b]) {
+    const p = useWorktrees.getState().previews[w.id];
+    if (!p || p.status === "none") return failed(t("worktree.compare.none", { branch: branch(w) }));
+    if (p.status === "down") {
+      const out = await startPreview(w.id);
+      if (!out.ok) return out;
+    }
+  }
+  const ready = () => laneIds.every((id) => useWorktrees.getState().previews[id]?.status === "ready");
+  const deadline = Date.now() + wait;
+  while (!ready()) {
+    if (Date.now() >= deadline) return failed(t("worktree.compare.timeout"));
+    await new Promise((r) => setTimeout(r, PREVIEW_POLL_MS));
+    await pollPreviews(laneIds);
+  }
+  const parentId = a.parentId ?? a.id;
+  const tab = await run<Tab>("tab_create", { workspaceId: parentId });
+  if (!tab.ok) return tab;
+  // The panes go into the tab before the UI shows it, so it never starts
+  // a shell of its own.
+  let left: string | null = null;
+  for (const w of [a, b]) {
+    const url = useWorktrees.getState().previews[w.id]?.url ?? null;
+    const pane = await run<PaneRecord>("pane_create", { tabId: tab.value.id, kind: "browser", url });
+    if (!pane.ok) return pane;
+    const name = await namePane(pane.value.id, branch(w));
+    useLayout
+      .getState()
+      .insert(tab.value.id, { ...pane.value, humanName: name ?? pane.value.humanName }, left, "right");
+    left = pane.value.id;
+  }
+  const workspaces = useWorkspaces.getState();
+  const title = `${branch(a)} | ${branch(b)}`;
+  await workspaces.renameTab(parentId, tab.value.id, title.length > 80 ? `${title.slice(0, 79)}…` : title);
+  workspaces.select(parentId);
+  workspaces.selectTab(parentId, tab.value.id);
+  return tab;
 }

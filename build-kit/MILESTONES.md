@@ -1950,7 +1950,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## M18 · Worktree runtime and previews (M)
 
-**Goal.** Make parallel worktrees runnable side by side: a port block, environment and Compose project per worktree (F-WT-06), then a preview per worktree (F-WT-09, next). From `docs/NEXT_FEATURES.md` (§1 #7, §3 B2). Built on branch `competitive-gaps`; decisions D-2440–D-2459.
+**Goal.** Make parallel worktrees runnable side by side: a port block, environment and Compose project per worktree (F-WT-06), then a preview per worktree (F-WT-09). From `docs/NEXT_FEATURES.md` (§1 #7, §3 B2). Built on branch `competitive-gaps`; decisions D-2440–D-2459.
 
 **Owns:** F-WT-06, F-WT-09 (P2)
 **Prerequisites.** M17 · Worktree workflow (F-WT-01), M17's ports panel (F-EX-03) and Best of N (F-EX-04).

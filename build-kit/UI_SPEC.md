@@ -1029,6 +1029,8 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
 - Toasts: "Copied {n} files into the worktree" (success; "Stopped at the copy limit (2,000 files or 512 MB)." as the body when partial), "Couldn't copy files into the worktree: {reason}", "The worktree setup can't be used: {reason}", "Couldn't start the setup: {reason}". Discarding adds the teardown's line as the toast body ("Teardown finished", "Teardown exited with code {code}", "Teardown was stopped after 2 minutes", "Teardown skipped: its command isn't trusted on this computer"), with the warning tone when it didn't run cleanly.
 - UI-152 (review comments on a worktree's diff, F-WT-02) and UI-153 (overlap check, F-WT-03) are reserved for their features.
 
+- **UI-154 Compare previews** (dialog; "Compare previews…" in every local worktree's ⋯ menu, with the worktree ticked, and "Side by side…" in Best of N's Compare, with both lanes ticked when there are two; F-WT-09). Description: "Choose two worktrees. Their previews open side by side in a new tab." Body: a `Checkbox` per worktree of the repository whose preview exists, labelled with its branch, described "Preview running" or "Its preview starts when you open them"; ticking a third unticks the oldest. Loading: two `Skeleton` rows while the previews are read. Empty: "Side by side needs two worktrees whose repository has a preview." Footer: Cancel / **Open side by side** (enabled with two ticked; "Waiting for the previews…" while it waits). A failure shows an error `Banner`; an untrusted preview opens UI-151 instead. The result is a new tab in the repository, named "<branch> | <branch>", with two browser panes side by side, each named after its branch.
+
 **ID allocation for this part.** Thread UI-20–25, Engines & accounts UI-33–37, Routines UI-50–53 (UI-50 is already referenced by `CronInput`), Agent mode UI-70–76, Tasks UI-80–84, Plugins UI-90–94. UI-40–49 (Dashboard, Notifications) and UI-60–69 (Dictate, Conductor) are reserved for later parts.
 
 **Shared vocabulary (applies to every screen below).**
@@ -2667,6 +2669,7 @@ ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 T
 | UI-145 | Prompt picker | §4.16 | EX |
 | UI-150 | Worktree setup | §4.2 | WT |
 | UI-151 | Review worktree setup | §4.2 | WT |
+| UI-154 | Compare previews | §4.2 | WT |
 
 ### 8.1 Cross-document conflicts found while writing this part
 All items below were fixed at the source during the consistency pass (see CONSISTENCY_REPORT.md); they are kept as a record.

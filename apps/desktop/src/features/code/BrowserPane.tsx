@@ -147,6 +147,8 @@ export const BrowserPane = memo(function BrowserPane({
         onMaximize={() => layout().toggleMaximize(tabId, pane.id)}
         onClose={() => useCloseConfirm.getState().request(tabId, pane.id)}
         glyph={<Globe size={13} />}
+        // F-WT-09 side by side names each preview's pane after its branch.
+        name={pane.humanName}
         dragRef={setNodeRef}
         dragProps={{ ...attributes, ...listeners, tabIndex: -1, role: "toolbar" }}
       />
