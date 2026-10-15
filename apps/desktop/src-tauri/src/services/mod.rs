@@ -76,6 +76,7 @@ pub mod usage_report;
 pub mod wake;
 pub mod widget;
 pub mod workspaces;
+pub mod worktree_runtime;
 pub mod worktree_setup;
 pub mod wsl;
 
