@@ -38,6 +38,8 @@
     "supportsResume": true,
     "newlineSequence": "\u001b\r",
     "hooksSupport": "claude-hooks",
+    "interrupt": "\u001b",
+    "subagentTools": ["Task", "Agent"],
     "usageLogGlobs": [
       "projects/**/*.jsonl"
     ],
@@ -114,6 +116,7 @@
     "supportsResume": true,
     "newlineSequence": "\u001b\r",
     "hooksSupport": "codex-notify",
+    "interrupt": "\u001b",
     "usageLogGlobs": [
       "sessions/**/*.jsonl"
     ],

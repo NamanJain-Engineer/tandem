@@ -35,7 +35,8 @@ fn default_channels(kind: NotificationKind) -> (bool, bool) {
         NotificationKind::Done
         | NotificationKind::Failed
         | NotificationKind::RoutineReady
-        | NotificationKind::UsageForecast => (true, false),
+        | NotificationKind::UsageForecast
+        | NotificationKind::Runaway => (true, false),
         _ => (false, false),
     }
 }
@@ -49,6 +50,7 @@ fn type_key(kind: NotificationKind) -> &'static str {
         NotificationKind::RoutineReady | NotificationKind::RoutineChanged => "routines",
         NotificationKind::TaskReview => "tasks",
         NotificationKind::UsageForecast => "usage",
+        NotificationKind::Runaway => "runaway",
         _ => "other",
     }
 }
@@ -337,6 +339,15 @@ impl NotificationService {
         .await;
     }
 
+    /// A runaway guard limit tripped (F-AC-09), through the usual channels.
+    pub async fn raise_runaway(&self, title: String, body: String, source: SourceRef) {
+        let key = source
+            .session_key()
+            .unwrap_or_else(|| SessionKey(format!("runaway:{title}")));
+        self.raise(NotificationKind::Runaway, title, body, source, &key, None)
+            .await;
+    }
+
     /// Sets the OS notifier when there's no window (headless routines).
     pub fn set_notifier(&self, notifier: Arc<dyn Notifier>) {
         let _ = self.notifier.set(notifier);
@@ -481,7 +492,7 @@ fn decide(kind: NotificationKind, p: &Prefs, focused: bool, seen: bool) -> Chann
 }
 
 /// The agent's first name, else its work title, else the engine.
-fn display_name(item: &DashboardItem) -> String {
+pub(crate) fn display_name(item: &DashboardItem) -> String {
     item.human_name
         .clone()
         .or_else(|| {

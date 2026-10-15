@@ -16,6 +16,7 @@ pub mod remote;
 pub mod responder;
 pub mod ring;
 pub mod side;
+pub mod suspend;
 pub mod text;
 pub mod typing;
 pub mod winpath;
@@ -793,6 +794,22 @@ impl PtyManager {
             .map_err(|e| PtyError::Io(e.to_string()))
     }
 
+    /// The pane's foreground process group (the job the terminal is
+    /// running, such as an engine started from its shell), on Unix.
+    pub fn foreground_group(&self, pane: &str) -> Option<i32> {
+        #[cfg(unix)]
+        {
+            let session = self.sessions.get(pane)?.clone();
+            let master = session.master.lock().ok()?;
+            master.as_ref()?.process_group_leader()
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = pane;
+            None
+        }
+    }
+
     pub fn pid(&self, pane: &str) -> Option<u32> {
         self.sessions.get(pane).map(|s| s.pid)
     }
@@ -1069,6 +1086,13 @@ fn kill_tree(pid: u32, state: &Mutex<Option<ExitInfo>>, step: Duration) {
     }
     // Collected first: once the leader dies its children are reparented.
     let escaped = descendants(pid);
+    // A paused job (F-AC-09) continues first, so nothing is left stopped.
+    for child in &escaped {
+        // SAFETY: kill(2) on our own descendant.
+        unsafe {
+            libc::kill(*child as i32, libc::SIGCONT);
+        }
+    }
     let group = -(pid as i32);
     for sig in [libc::SIGHUP, libc::SIGTERM, libc::SIGKILL] {
         if exited(state) {

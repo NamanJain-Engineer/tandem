@@ -1413,7 +1413,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 
 **Behavior:**
 - **Watched:** every agent pane (terminal engines in Code mode, local and on SSH hosts). Threads and teammate chats are watched for time only.
-- **Limits** (Settings › Agents › Runaway guard; each can be turned off):
+- **Limits** (Settings › Teammates › Runaway guard; each can be turned off):
 
 | Limit | Default | Range | Tripped when |
 |---|---|---|---|
@@ -1426,7 +1426,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
   - The pane shows a guard card (UI-170) above its terminal, naming the limit: "fix-auth has been working for 90 min", "fix-auth used 34 points of Codex (Work)'s 5-hour window in the last hour", "fix-auth started 20 subagents since your last prompt", or "fix-auth may be going in circles: its last 3 turns ended the same way". The card has **Pause** and **Dismiss**.
   - A notification goes through the usual channels: kind `runaway`, source the pane, title as on the card. The Notifications type table lists it as "Runaway guard".
   - Each limit trips once per turn. A dismissed limit stays quiet until the agent's next prompt.
-- **Action** (Settings › Agents › Runaway guard › When a limit is reached): **Notify me** (default), or **Pause the agent**, which pauses it as if Pause were clicked on the card.
+- **Action** (Settings › Teammates › Runaway guard › When a limit is reached): **Notify me** (default), or **Pause the agent**, which pauses it as if Pause were clicked on the card.
 - **Pause:**
   1. Vibezeo sends the engine's interrupt key from the registry (`interrupt`, `\u001b` for Claude Code and Codex). The engine stops its turn by itself, and the agent waits for input.
   2. If the agent still reports Working 5 s later, Vibezeo stops its process group (SIGSTOP on Linux and macOS, behind the `ProcessControl` trait). The card then reads "Paused" with **Resume**, which continues it (SIGCONT). On Windows there's no stop step: the card says "Couldn't pause: send it a message or stop it."
