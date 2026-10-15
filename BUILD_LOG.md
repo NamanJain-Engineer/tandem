@@ -782,6 +782,13 @@ Built by the session that coordinates the parallel milestone sessions, while the
   - The full E2E: 129 of 129 spec files in one run (31 minutes).
   - The .rpm installed, found every library and started on clean Fedora 42, 43 and 44. Docker Hub answered 429 for `fedora:42`, so its image came from `registry.fedoraproject.org` and was tagged locally. The AppImage passed the offline smoke test.
   - The site, from a fresh clone with Vercel's install command, passed: `build:site` (36 pages, no redirects), web vitest 87/87, site Playwright 16/16, Lighthouse CI (`/` 99 with LCP 1.96 s; `/docs/` 97 with LCP 2.42 s and TBT 121 ms, warnings only; 100 on `/pricing/`, `/download/` and `/changelog/`), and the demo walkthrough.
+- Batch `chain18` (after 0.7.2, #67 to #69): F-DI-09's dictionary sync on Pro (D-523; the Conductor session, `m16a-conductor` 3d0390fe and 2c8ef691).
+  - The API's `POST /v1/dictionary/sync` and `DELETE /v1/dictionary`, and `Limits.dictionarySync` (Free false, Pro and Team true).
+  - The desktop's opt-in sync: `dictate_dictionary_sync` defaults to off. Before any request, a sync is refused without hosted services, while signed out, on Free, and with the setting off.
+  - Only the rules travel, and a test pins the payload's keys. Logs carry counts and error codes only.
+  - Conflicts are resolved with Keep mine or Keep theirs. Turning sync off offers to delete the synced copy. The UI is hidden in builds without accounts, so the Free download is unchanged.
+  - The coordinating session's review checked each of these points, and that `sync_rev` is already in `0001_init.sql`.
+  - The gate passed: 1,843 Rust tests (7 ignored) and 1,403 TypeScript (desktop 639, API 211), the desktop build, clippy on Linux, Windows and both Mac architectures, fmt and protocol drift (`SyncConflict` and `SyncResult` added). The full E2E passed 129 of 129 spec files, in 32 minutes.
 
 ## M16 · F-AC-07 Usage dashboard
 Built on branch `m16-usage-dashboard` (from `product-m0-m5`) by the M13 session as part of its follow-on chain. Decisions come from the M13 range (D-600–D-699).
