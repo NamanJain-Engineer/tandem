@@ -36,7 +36,8 @@ fn default_channels(kind: NotificationKind) -> (bool, bool) {
         | NotificationKind::Failed
         | NotificationKind::RoutineReady
         | NotificationKind::UsageForecast
-        | NotificationKind::Runaway => (true, false),
+        | NotificationKind::Runaway
+        | NotificationKind::NightShift => (true, false),
         _ => (false, false),
     }
 }
@@ -47,7 +48,9 @@ fn type_key(kind: NotificationKind) -> &'static str {
         NotificationKind::Approval | NotificationKind::Question => "approval",
         NotificationKind::Done => "done",
         NotificationKind::Failed => "failed",
-        NotificationKind::RoutineReady | NotificationKind::RoutineChanged => "routines",
+        NotificationKind::RoutineReady
+        | NotificationKind::RoutineChanged
+        | NotificationKind::NightShift => "routines",
         NotificationKind::TaskReview => "tasks",
         NotificationKind::UsageForecast => "usage",
         NotificationKind::Runaway => "runaway",
@@ -330,6 +333,21 @@ impl NotificationService {
         let key = SessionKey(format!("usage:{account_id}"));
         self.raise(
             NotificationKind::UsageForecast,
+            title,
+            body,
+            source,
+            &key,
+            None,
+        )
+        .await;
+    }
+
+    /// The Night Shift's morning summary (F-RT-06); it opens the task.
+    pub async fn raise_night_shift(&self, title: String, body: String, issue_id: String) {
+        let key = SessionKey(format!("night:{title}"));
+        let source = SourceRef::Task { issue_id };
+        self.raise(
+            NotificationKind::NightShift,
             title,
             body,
             source,

@@ -269,6 +269,10 @@ macro_rules! app_commands {
             commands::runaway::runaway_dismiss,
             commands::runaway::runaway_pause,
             commands::runaway::runaway_resume,
+            commands::night_shift::night_accounts,
+            commands::night_shift::night_list,
+            commands::night_shift::night_schedule,
+            commands::night_shift::night_cancel,
             commands::data_controls::data_export,
             commands::data_controls::data_delete_local,
             commands::find_work::find_work,
@@ -905,6 +909,7 @@ pub fn run() {
         commands::test::test_spawn_log,
         commands::test::test_clock_advance,
         commands::test::test_usage_backdate,
+        commands::test::test_night_tick,
         commands::test::test_fixture_agent,
         commands::test::test_notifier_calls,
         commands::test::test_notifier_click,
@@ -1104,6 +1109,15 @@ pub fn run() {
                     .start(handle.clone(), notifier, recording);
                 // The runaway guard watches agents from here on (F-AC-09).
                 state.runaway.start(handle.clone());
+                // The Night Shift starts due runs and sends its summary (F-RT-06).
+                let night = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        let state = night.state::<AppState>();
+                        state.night_shift.tick(&state).await;
+                        state.clock.sleep(crate::services::night_shift::TICK).await;
+                    }
+                });
             }
             // The status server, then engines: the cached report at once, the
             // remote registry and a fresh detection in the background (F-EN-01).

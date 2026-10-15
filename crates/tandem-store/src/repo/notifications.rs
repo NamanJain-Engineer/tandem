@@ -36,6 +36,8 @@ pub enum NotificationKind {
     UsageForecast,
     /// An agent tripped a runaway guard limit (F-AC-09).
     Runaway,
+    /// The Night Shift's morning summary (F-RT-06).
+    NightShift,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

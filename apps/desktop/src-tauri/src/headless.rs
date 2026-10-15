@@ -111,6 +111,23 @@ pub async fn run_locked(
     Pass::Ran(started.len())
 }
 
+/// Starts due Night Shift runs and waits for them, at most `cap`.
+pub async fn night_pass(state: &crate::state::AppState, cap: Duration) {
+    let until = state.clock.now_ms() + i64::try_from(cap.as_millis()).unwrap_or(i64::MAX);
+    loop {
+        state.night_shift.tick(state).await;
+        let running = state
+            .night_shift
+            .list()
+            .iter()
+            .any(|r| r.state == crate::services::night_shift::NightState::Started);
+        if !running || state.clock.now_ms() >= until {
+            break;
+        }
+        state.clock.sleep(Duration::from_secs(5)).await;
+    }
+}
+
 /// OS notifications without a window.
 struct DesktopNotifier;
 
@@ -171,7 +188,13 @@ pub fn main() -> i32 {
         state.terminals.engines.detect(&login).await;
         let allowed = state.entitlements.limits().background_routines;
         let routines = state.routines.clone();
-        run_locked(allowed, &routines, crate::services::routines::HEADLESS_CAP).await
+        let pass = run_locked(allowed, &routines, crate::services::routines::HEADLESS_CAP).await;
+        // The Night Shift's due runs start here too, and the pass waits for
+        // them within the same cap (F-RT-06).
+        if allowed {
+            night_pass(&state, crate::services::routines::HEADLESS_CAP).await;
+        }
+        pass
     });
     tracing::info!(code = "routines.headless_done", pass = ?pass, "background routine pass finished");
     drop(lock);

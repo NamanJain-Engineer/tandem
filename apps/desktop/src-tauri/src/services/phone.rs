@@ -377,6 +377,8 @@ struct Inner {
     armed_until: Option<i64>,
     /// What the last push check saw, so only changes become alerts.
     seen: Option<Seen>,
+    /// Alerts other services queued (the Night Shift summary, F-RT-06).
+    queued: Vec<PushAlert>,
 }
 
 #[derive(Default)]
@@ -970,7 +972,14 @@ impl PhoneService {
                 at: now,
             });
         }
+        out.append(&mut self.lock().queued);
         out
+    }
+
+    /// Queues an alert for the next push check (the Night Shift summary,
+    /// F-RT-06). Phones get it only where push is on.
+    pub fn queue_alert(&self, alert: PushAlert) {
+        self.lock().queued.push(alert);
     }
 
     /// Seals each new alert for every phone that turned push on and isn't

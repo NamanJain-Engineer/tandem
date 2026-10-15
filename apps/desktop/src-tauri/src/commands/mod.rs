@@ -22,6 +22,7 @@ pub mod instructions;
 pub mod lanes;
 pub mod launch;
 pub mod limits;
+pub mod night_shift;
 pub mod onboarding;
 pub mod phone;
 pub mod plugins;

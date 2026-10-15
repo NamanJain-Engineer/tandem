@@ -70,6 +70,7 @@ setting_keys! {
     UsageForecastNotify,
     RunawayGuard,
     RunawayAction,
+    NightShiftSummaryAt,
     DefaultShell,
     WslDefaultDistro,
     TermFontFamily,
@@ -335,6 +336,13 @@ pub static SCHEMA: &[SettingSpec] = &[
         V::Bool,
         Notifications,
         ["background", "unfocused", "visible"]
+    ),
+    spec!(
+        NightShiftSummaryAt,
+        json!("08:00"),
+        V::Text { max: 8 },
+        Notifications,
+        ["night shift", "summary", "morning", "routines"]
     ),
     spec!(
         UsageForecastNotify,

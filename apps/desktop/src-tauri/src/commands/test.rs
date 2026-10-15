@@ -81,6 +81,22 @@ pub fn test_clock_advance(state: State<'_, AppState>, ms: u64) -> Result<ClockNo
     })
 }
 
+/// Makes every scheduled Night Shift run due now (and, with
+/// `resetSummary`, lets today's summary go again), then runs one pass
+/// (E2E-M18-RT06).
+#[tauri::command]
+pub async fn test_night_tick(
+    state: State<'_, AppState>,
+    due_now: bool,
+    reset_summary: bool,
+) -> Result<(), IpcError> {
+    guard(&state)?;
+    let now = due_now.then(|| state.clock.now_ms());
+    state.night_shift.make_due(now, reset_summary);
+    state.night_shift.tick(&state).await;
+    Ok(())
+}
+
 /// Moves the usage readings taken so far `ms` into the past, so the next
 /// reading forecasts as if that much time had passed (E2E-M18-AC08).
 #[tauri::command]

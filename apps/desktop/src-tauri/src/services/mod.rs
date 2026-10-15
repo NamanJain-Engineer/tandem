@@ -39,6 +39,7 @@ pub mod limits;
 pub mod mail;
 pub mod models;
 pub mod names;
+pub mod night_shift;
 pub mod notifications;
 pub mod notifier;
 pub mod opener;

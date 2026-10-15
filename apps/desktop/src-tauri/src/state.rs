@@ -153,6 +153,8 @@ pub struct AppState {
     pub usage: Arc<crate::services::usage::UsageBoard>,
     /// The runaway guard (F-AC-09).
     pub runaway: Arc<crate::services::runaway::RunawayService>,
+    /// The Night Shift (F-RT-06).
+    pub night_shift: Arc<crate::services::night_shift::NightShiftService>,
     /// Thread mode: turns, their events and the chat adapters (F-TH-03).
     pub threads: Arc<crate::services::threads::ThreadService>,
     /// Models engines reported at runtime (F-TH-08).
@@ -281,6 +283,10 @@ impl AppState {
         };
         let keychain = keychain::open_keychain();
         let bus = EventBus::new();
+        let night_shift = Arc::new(crate::services::night_shift::NightShiftService::new(
+            data.root().join("night-shift.json"),
+            bus.clone(),
+        ));
         let runaway = crate::services::runaway::RunawayService::new(
             bus.clone(),
             Arc::new(tandem_pty::suspend::SignalControl),
@@ -812,6 +818,7 @@ impl AppState {
             logins: Arc::default(),
             usage: Arc::default(),
             runaway,
+            night_shift,
             threads,
             models,
             gateway,

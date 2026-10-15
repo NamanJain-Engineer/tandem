@@ -625,6 +625,10 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `limit_continue` | `{paneId, engineId, accountId?}` | `HandoffResult` (a new pane split right with the brief fallback: the last 200 redacted lines under the brief headings; only ever from the user's click) | NotFound, EngineMissing, LimitReached | F-AC-05 |
 | `usage_get` | `{accountId?}` | `[UsageView {accountId, engineId, windows:[UsageWindow {kind, usedPct, resetsAt?}], source: "codex_app_server"\|"unavailable", estimated, reason?, fetchedAt, forecasts:[WindowForecast {kind, state: "not_enough_data"\|"on_track"\|"runs_out", runsOutAt?, beforeResetMs?, ratePerHour?, basisMinutes}] (F-AC-08: one per window, from the readings of the last hour)}]` (the latest reading; probes when there's none) | — | F-AC-04 |
 | `usage_refresh` | `{accountId?}` | `[UsageView]` (probes again; the webview calls it every 5 min and after a turn) | — | F-AC-04 |
+| `night_accounts` | — | `[NightAccount {accountId, engineId, resetsAt?, window?}]` (each account's next reset: its fullest usage window's, else the last limit a pane hit on it; UI-171) | — | F-RT-06 |
+| `night_list` | — | `[NightRun {id, issueId, title, workspaceId, accountId, engineId, isolation, access, fullConfirmed, review, runAt, window, state: "scheduled"\|"waiting"\|"started"\|"done"\|"needs_you"\|"cancelled", attemptId?, reason?, createdAt, endedAt?}]` (cancelled ones left out) | — | F-RT-06 |
+| `night_schedule` | `{input: NightInput {issueId, workspaceId, accountId, isolation, access, fullConfirmed, review}}` | `NightRun` (starts at the account's next reset, on that account only) | Unauthenticated, ForbiddenPlan, Invalid (no reset known; Full unconfirmed), NotFound | F-RT-06 |
+| `night_cancel` | `{id}` | — (a scheduled or waiting run only) | NotFound | F-RT-06 |
 | `runaway_list` | — | `[GuardCard {paneId, trip: Trip {kind: "working"\|"window"\|"subagents"\|"circles", minutes?\|points?\|count?\|turns?}, state: "tripped"\|"pausing"\|"interrupted"\|"paused"\|"cant_pause", title, reason?}]` (UI-170, one per pane with a tripped limit) | — | F-AC-09 |
 | `runaway_dismiss` | `{paneId}` | — (the card goes; its limit stays quiet until the next prompt; a stopped agent is continued) | — | F-AC-09 |
 | `runaway_pause` | `{paneId}` | — (types the engine's `interrupt` key; still Working 5 s later → SIGSTOP of the pane's foreground process group through `ProcessControl`; the card follows) | NotFound | F-AC-09 |
@@ -941,6 +945,7 @@ Registered, permitted (build.rs `SIM_COMMANDS` for macOS targets, `sim-capabilit
 | `test_counters` | `{reset?: bool}` | `TestCounters {ptyResizes, ptyResizesByPane, webglContexts, domRenderers, reflows, restoreMaxSpawning}` (`restoreMaxSpawning`: most agents ever starting at once during restore, F-SH-07 AC3) | — |
 | `test_spawn_log` | — | `[SpawnRecord {argv, envKeys, providerHome?, cwd}]` (same content as `TANDEM_SPAWN_LOG`; chat-engine spawns are recorded too, from M10) | — |
 | `test_clock_advance` | `{ms}` | `{now}` | — |
+| `test_night_tick` | `{dueNow, resetSummary}` | — (makes scheduled Night Shift runs due now and/or lets today's summary go again, then runs one pass; F-RT-06) | — |
 | `test_usage_backdate` | `{ms}` | — (moves the usage readings taken so far `ms` into the past, so the next reading forecasts as if that much time had passed; F-AC-08) | — |
 | `test_auth_refresh` | — | `AuthState` (forces the refresh path, e.g. to observe a revoked device) | — |
 | `test_account_create` | `{engineId, label}` | `Account` (a second account with its own provider home, without the sign-in flow; E2E-M4-4) | — |
@@ -989,6 +994,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `accounts:changed` | `{accounts:[Account]}` | accounts service | F-AC-02 |
 | `accounts:login-finished` | `{opId, accountId, state: "signed_in"\|"signed_out"\|"failed"\|"cancelled", message?}` (`message`: the engine's last line, redacted) | accounts service | F-AC-02 |
 | `usage:changed` | `UsageView` | UsageProbe | F-AC-04 |
+| `night:changed` | `[NightRun]` | NightShiftService | F-RT-06 |
 | `runaway:changed` | `GuardCardChange {paneId, card: GuardCard?}` | RunawayService | F-AC-09 |
 | `context:changed` | `PaneContext {paneId, used, window}` | status service (Stop hook → transcript tail) | F-AC-06 |
 | `limit:hit` | `LimitView {paneId, accountId?, message, resetsAt?, resumeAt?}` (terminals: a new screen line matching the engine's `limit_patterns`; threads add `kind` in M7) | status service (pattern matcher) | F-AC-05 |
@@ -2055,6 +2061,9 @@ Notation → JSON Schema draft 2020-12, `additionalProperties:false`; `?` option
 - **Overlap:** a running run for the routine → insert `status='skipped', error='previous run still in progress'`.
 - **Plan lapse:** entitlement without routines sets `paused_by_plan=1` on all (not deleted); restored on upgrade.
 - **Agent schedule tools (F-RT-05):** `tandem__schedule_list/create/update/delete` exist in the lease only when the teammate's `may_schedule` is on; scoped to `created_by_teammate_id = <teammate>`; `access:"full"` rejected; each create/update notifies the user.
+
+### 10.2a Night Shift [F-RT-06]
+`services::night_shift` keeps runs in `$DATA/night-shift.json` (atomic writes). The GUI ticks every 30 s and `--run-routines` calls `headless::night_pass` after its routine pass (same cap): a due run re-probes its account's usage (`usage::probe`), waits for a later reset while a window is still ≥95%, else calls `TaskExecService::execute` with that account and engine (never another); started runs follow their attempt's state. At `night_shift_summary_at` (local, 08:00) once a day, runs that ended since the last summary raise one `night_shift` notification (`SourceRef::Task`), and `PhoneService::queue_alert` queues the same push alert for phones with push on (F-RM-06).
 
 ### 10.3 OS launchers (background runs) [F-RT-03]
 Executable path: macOS `…/Tandem.app/Contents/MacOS/tandem`; Windows the installed exe; Linux `$APPIMAGE` if set, else `/usr/bin/tandem` (deb). All entries pass `--run-routines` and, if `TANDEM_HOME` is set, that env var.

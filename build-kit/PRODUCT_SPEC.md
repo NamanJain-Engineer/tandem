@@ -1907,7 +1907,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
   - Otherwise it starts task execution (F-TK-04) with that account and engine and the saved choices.
   - It never uses another account or engine (F-AC-05, out of scope §6.7). A start that fails (signed out, plan, engine missing, the queue's limit) is marked "Couldn't start" with the reason, and isn't retried.
 - **With the app closed:** the background runner (F-RT-03, `--run-routines`) starts a due run and waits for it within its pass's cap, as it does for routines.
-- **Morning summary** (Settings › Routines › "Night Shift summary at", 8:00 AM by default):
+- **Morning summary** (Settings › Notifications › "Night Shift summary at", 8:00 AM by default):
   - At that time, if any Night Shift runs ended since the last summary, one notification: "Night Shift: {n} done, {m} need you" / the tasks' titles. "Need you" means failed, stopped or couldn't start. Its source opens Tasks.
   - A paired phone with push turned on (F-RM-06) gets the same summary as a push alert.
   - Nothing ran: no summary.

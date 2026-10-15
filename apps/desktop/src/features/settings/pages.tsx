@@ -276,6 +276,20 @@ export function settingsPages(platform: string, routines = false, accounts = fal
           ),
         },
         {
+          id: "night_shift_summary_at",
+          label: t("settings.nightSummary"),
+          description: t("settings.nightSummary.desc"),
+          keywords: ["night shift", "summary", "morning"],
+          control: (ids) => (
+            <TextControl
+              k="night_shift_summary_at"
+              ids={ids}
+              placeholder="08:00"
+              label={t("settings.nightSummary")}
+            />
+          ),
+        },
+        {
           id: "notify_attention",
           label: mac ? t("settings.notify.bounce") : t("settings.notify.flash"),
           keywords: ["dock", "bounce", "taskbar", "flash"],
