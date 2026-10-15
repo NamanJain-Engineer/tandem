@@ -202,7 +202,7 @@ Built on branch `product-research` (from `chain19`), the coordinator's M18 share
 - D-2462: The E2E spec moves earlier readings back with `test_usage_backdate` instead of a mock clock: the app's clock can only be mocked from launch (`TANDEM_FAKE_CLOCK`), and the fake app-server's reset times follow the real clock.
 
 ### M18 log
-- F-AC-08: spec, forecast core and history (4 tests), per-session tokens (1), the board's warnings, text and shares (3), the popover, the launch hint and the store (6 vitest cases), docs (Accounts and limits › Usage and forecasts) and E2E-M18-AC08. The first gate run ran out of disk (26 GB of debug info in `target/`); gates now run with `CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0`.
+- F-AC-08: E2E-M18-AC08 passes (2 cases), and so do E2E-M6-8, E2E-M6-1 and E2E-M5-5 next to it. Spec, forecast core and history (4 tests), per-session tokens (1), the board's warnings, text and shares (3), the popover, the launch hint and the store (6 vitest cases), docs (Accounts and limits › Usage and forecasts) and E2E-M18-AC08. The first gate run ran out of disk (26 GB of debug info in `target/`); gates now run with `CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0`.
 
 ## M17 checklist (Extras)
 Built on branch `m17-extras` (from `product-m0-m5`) in parallel with the M8, M10–M15 and release sessions, at the owner's request for creative features beyond the spec. Owns F-EX-01…05 (PRODUCT_SPEC §4.19, MILESTONES M17, UI_SPEC §4.16 UI-140–145, ARCHITECTURE §3.2 "Extras"). Decisions D-700–D-799; this section holds M17's state, decisions and log so other sessions' sections stay untouched.

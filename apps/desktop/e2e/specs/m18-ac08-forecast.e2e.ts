@@ -9,6 +9,7 @@ import {
   home,
   invoke,
   mod,
+  paneIds,
   split,
   waitForPaneText,
 } from "../support/app";
@@ -53,6 +54,7 @@ describe("E2E-M18-AC08 usage forecast", function () {
   it("F-AC-08.2 F-AC-08.1 F-AC-08.5 one reading isn't enough; a steep second one runs out early and warns once", async () => {
     await freshOffline();
     await addFolder(`/tmp/tandem-e2e-m18-ac08-${Date.now()}`);
+    await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
     const codex = await split("right", "codex");
     await waitForPaneText(codex, "Fake Codex");
     await $(`[data-testid="pane"][data-pane-id="${codex}"] [data-testid="pane-name"]`).click();
@@ -93,7 +95,9 @@ describe("E2E-M18-AC08 usage forecast", function () {
     await closePopover();
 
     const usageCalls = async () =>
-      (await invoke<OsCall[]>("test_notifier_calls", { clear: false })).filter((c) => c.kind === "usage_forecast");
+      (await invoke<OsCall[]>("test_notifier_calls", { clear: false })).filter(
+        (c) => c.kind === "usage_forecast",
+      );
     await browser.waitUntil(async () => (await usageCalls()).length === 1, { timeout: 10_000 });
     const call = (await usageCalls())[0];
     if (!call) throw new Error("no usage notification");
