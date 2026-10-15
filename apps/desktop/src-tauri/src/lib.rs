@@ -387,6 +387,8 @@ macro_rules! app_commands {
             commands::dictate::dictionary_suggestions,
             commands::dictate::dictionary_suggestion_resolve,
             commands::dictate::dictionary_sync,
+            commands::dictate::dictate_globe_key,
+            commands::dictate::dictate_globe_key_set,
             commands::dictate::dictionary_sync_resolve,
             commands::dictate::dictionary_sync_forget,
             commands::dictate::dictate_permissions,

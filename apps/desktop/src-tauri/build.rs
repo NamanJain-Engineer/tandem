@@ -309,6 +309,8 @@ const COMMANDS: &[&str] = &[
     "dictate_permissions",
     "dictate_open_permission_settings",
     "dictate_relaunch",
+    "dictate_globe_key",
+    "dictate_globe_key_set",
     "dictate_widget_set_position",
     "plugins_catalog",
     "grants_list",

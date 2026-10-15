@@ -63,6 +63,7 @@ mod tests {
             lock_position: false,
             quick_actions: false,
             enhance_disclosed: false,
+            fn_fallback: false,
         }
     }
 

@@ -427,6 +427,23 @@ pub async fn dictionary_suggestions(
     state.dictate.suggestions().await
 }
 
+/// F-DI-11: macOS's "Press 🌐 key to" preference.
+#[tauri::command]
+pub async fn dictate_globe_key(
+    state: State<'_, AppState>,
+) -> Result<crate::services::dictate::GlobeKeyView, IpcError> {
+    Ok(state.dictate.globe_key().await)
+}
+
+/// `do_nothing: true` only after the consent dialog; `false` undoes it.
+#[tauri::command]
+pub async fn dictate_globe_key_set(
+    state: State<'_, AppState>,
+    do_nothing: bool,
+) -> Result<crate::services::dictate::GlobeKeyView, IpcError> {
+    state.dictate.globe_key_set(do_nothing).await
+}
+
 /// F-DI-09: one sync now (Pro, opted in, signed in).
 #[tauri::command]
 pub async fn dictionary_sync(
