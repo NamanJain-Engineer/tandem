@@ -17,6 +17,7 @@ import { useEngines } from "../../stores/engines";
 import { useSession } from "../../stores/session";
 import {
   defaultTarget,
+  continueLibrarySession,
   generateBrief,
   startHandoff,
   startThreadHandoff,
@@ -43,6 +44,7 @@ function HandoffBody({ source }: { source: HandoffSource }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<IpcError | null>(null);
   const close = () => useHandoff.getState().close();
+  const library = Boolean(source.libraryKey);
 
   // The summary is written once, on open, for the first target (UI-13).
   const [first] = useState(engineId);
@@ -52,7 +54,7 @@ function HandoffBody({ source }: { source: HandoffSource }) {
       return;
     }
     let live = true;
-    void generateBrief(source.paneId, first).then((out) => {
+    void generateBrief(source, first).then((out) => {
       if (!live) return;
       if (out.ok) {
         setText(out.value.text);
@@ -62,7 +64,7 @@ function HandoffBody({ source }: { source: HandoffSource }) {
     return () => {
       live = false;
     };
-  }, [source.paneId, first]);
+  }, [source, first]);
 
   const targets: SelectOption[] = useMemo(
     () =>
@@ -78,29 +80,31 @@ function HandoffBody({ source }: { source: HandoffSource }) {
   // Free threads run Claude Code and Codex only (PRODUCT_SPEC §3.2).
   const onPlan = chatEngines === null || (engineId !== null && chatEngines.includes(engineId));
   const chatCapable = engines.some((e) => e.spec.id === engineId && e.chatCapable) && onPlan;
-  const place = where === "thread" && !chatCapable ? "same" : where;
-  const places: SelectOption[] = [
-    { value: "same", label: inWorktree ? t("handoff.sameWorktree") : t("handoff.sameFolder") },
-    {
-      value: "new_worktree",
-      label:
-        ws?.kind === "wsl"
-          ? t("handoff.newWorktreeRemote")
-          : isRepo(ws)
-            ? t("handoff.newWorktree")
-            : t("handoff.newWorktreeNeedsRepo"),
-      disabled: !isRepo(ws) || ws?.kind === "wsl",
-    },
-    {
-      value: "thread",
-      label: chatCapable
-        ? t("handoff.thread")
-        : onPlan
-          ? t("handoff.threadUnsupported", { target })
-          : t("handoff.threadPro", { target }),
-      disabled: !chatCapable,
-    },
-  ];
+  const place = library || (where === "thread" && !chatCapable) ? "same" : where;
+  const places: SelectOption[] = library
+    ? [{ value: "same", label: t("handoff.sessionFolder") }]
+    : [
+        { value: "same", label: inWorktree ? t("handoff.sameWorktree") : t("handoff.sameFolder") },
+        {
+          value: "new_worktree",
+          label:
+            ws?.kind === "wsl"
+              ? t("handoff.newWorktreeRemote")
+              : isRepo(ws)
+                ? t("handoff.newWorktree")
+                : t("handoff.newWorktreeNeedsRepo"),
+          disabled: !isRepo(ws) || ws?.kind === "wsl",
+        },
+        {
+          value: "thread",
+          label: chatCapable
+            ? t("handoff.thread")
+            : onPlan
+              ? t("handoff.threadUnsupported", { target })
+              : t("handoff.threadPro", { target }),
+          disabled: !chatCapable,
+        },
+      ];
   const loading = summary.state === "loading";
   const ready = Boolean(engineId) && text.trim().length > 0 && !loading && !busy;
 
@@ -108,6 +112,13 @@ function HandoffBody({ source }: { source: HandoffSource }) {
     if (!engineId || !ready) return;
     setBusy(true);
     setError(null);
+    if (source.libraryKey) {
+      const out = await continueLibrarySession(source.libraryKey, engineId, text);
+      setBusy(false);
+      if (!out.ok) return setError(out.error);
+      show({ tone: "success", title: t("handoff.started", { name: out.value.pane.humanName ?? target }) });
+      return close();
+    }
     if (place === "thread") {
       const out = await startThreadHandoff(source, engineId, text, closeSource);
       setBusy(false);
@@ -153,7 +164,11 @@ function HandoffBody({ source }: { source: HandoffSource }) {
     >
       <div className="flex flex-col gap-4" data-testid="handoff-dialog">
         <p className="text-base text-fg-muted">
-          {current ? t("handoff.body", { current, target }) : t("handoff.bodyTerminal", { target })}
+          {library
+            ? t("handoff.bodyLibrary", { current: current ?? "", target })
+            : current
+              ? t("handoff.body", { current, target })
+              : t("handoff.bodyTerminal", { target })}
         </p>
         {targets.length === 0 && <Callout tone="warning">{t("launch.noEngines")}</Callout>}
         <div className="grid grid-cols-2 gap-3">
@@ -197,7 +212,9 @@ function HandoffBody({ source }: { source: HandoffSource }) {
             </p>
           )}
         </SkeletonGate>
-        <Checkbox label={t("handoff.closeSource")} checked={closeSource} onCheckedChange={setCloseSource} />
+        {!library && (
+          <Checkbox label={t("handoff.closeSource")} checked={closeSource} onCheckedChange={setCloseSource} />
+        )}
         {error && <Callout tone="error">{error.message}</Callout>}
       </div>
     </Dialog>
@@ -214,5 +231,5 @@ export function HandoffDialog() {
   useEffect(() => {
     if (source && !loaded) void useEngines.getState().refresh();
   }, [source, loaded]);
-  return source && loaded ? <HandoffBody key={source.paneId} source={source} /> : null;
+  return source && loaded ? <HandoffBody key={source.libraryKey ?? source.paneId} source={source} /> : null;
 }

@@ -22,6 +22,7 @@ pub mod handoff;
 pub mod instructions;
 pub mod lanes;
 pub mod launch;
+pub mod library;
 pub mod limits;
 pub mod onboarding;
 pub mod phone;

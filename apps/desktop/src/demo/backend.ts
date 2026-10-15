@@ -109,6 +109,7 @@ const ENTITLEMENT: EntitlementView = {
     chatEngines: ["claude", "codex"],
     creditPacks: false,
     dictionarySync: false,
+    sessionSearch: false,
   },
   source: "free",
   credits: null,
@@ -1132,6 +1133,16 @@ export class DemoCore {
         throw { code: "unavailable", message: "The demo has no installed engines to check, pin or roll back." };
       case "skill_sync":
         throw { code: "unavailable", message: "The demo has no engines to install skills for." };
+      // Engines' session files are on your computer (F-TH-17).
+      case "library_list":
+        return { sessions: [], skipped: 0 };
+      case "library_transcript":
+      case "library_resume":
+      case "library_brief":
+      case "library_continue":
+      case "library_search":
+      case "library_search_set":
+        throw { code: "unavailable", message: "The demo has no engine sessions to read. In the app, this lists your Claude Code and Codex sessions." };
       // A web page can't hold other pages the way the app's browser does.
       case "ssh_host_add":
       case "ssh_connect":

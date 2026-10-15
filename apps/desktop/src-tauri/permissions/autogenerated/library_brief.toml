@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-library-brief"
+description = "Enables the library_brief command without any pre-configured scope."
+commands.allow = ["library_brief"]
+
+[[permission]]
+identifier = "deny-library-brief"
+description = "Denies the library_brief command without any pre-configured scope."
+commands.deny = ["library_brief"]

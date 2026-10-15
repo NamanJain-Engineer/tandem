@@ -11,6 +11,7 @@ import { useSidebar } from "../../stores/sidebar";
 import { useRecall } from "../recall/RecallPicker";
 import { usePrompts } from "../prompts/PromptPicker";
 import { latestRun, useBestOf } from "../bestof/BestOf";
+import { useLibrary } from "../../stores/library";
 import { useSession } from "../../stores/session";
 import { useSettings } from "../../stores/settings";
 import type { CommandSpec } from "@tandem/protocol";
@@ -161,6 +162,7 @@ export const handlers: Record<string, () => void> = {
     void latestRun(useWorkspaces.getState().activeId).then((run) =>
       run ? useBestOf.getState().openCompare(run.id) : toast({ tone: "info", title: t("bestof.none") }),
     ),
+  "library.open": () => useLibrary.getState().show(),
   "notifications.open": () => useNotifications.getState().setOpen(true),
   "dashboard.full_view": () => {
     const sb = useSidebar.getState();

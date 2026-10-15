@@ -681,6 +681,18 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `thread_file_read` | `{threadId, path}` (relative to the thread's folder) | `FileText {path, content, truncated, binary}`: at most 256 KB; never outside the folder or a private file (`contain`, Read policy) | PathEscape, NotFound | F-TH-13 |
 | `thread_summarize_continue` | `{threadId}` | `Thread` (new thread seeded with summary) | — | F-TH-04 |
 
+
+#### Session library [F-TH-17] (M18)
+| Command | Args | Returns | Errors | Feature |
+|---|---|---|---|---|
+| `library_list` | — | `LibraryListing {sessions: [LibrarySession {key, engineId, accountId?, accountLabel?, sessionId, folder?, repository?, title?, size, modifiedAt, folderExists}], skipped}` (newest first; reads only `projects/*/*.jsonl` and `sessions/**/*.jsonl` in every Claude Code and Codex account's home and each engine's own home, never through a link; `skipped` counts files that don't parse) | — | F-TH-17 |
+| `library_transcript` | `{key}` (a key from `library_list`) | `[TranscriptItem {role: "user"\|"assistant"\|"tool", text}]` (tool calls by name only) | NotFound | F-TH-17 |
+| `library_resume` | `{key}` | `LibraryOpened {pane, workspaceId, tabId}`: an agent pane in the session's folder (its workspace added when it isn't open) whose first start runs the engine's resume with the session's home | NotFound, EngineMissing, LimitReached | F-TH-17 |
+| `library_brief` | `{key}` | `HandoffBrief {text, source: "fallback"}` (the transcript's last messages, redacted, §6.11 fallback) | NotFound | F-TH-17 |
+| `library_continue` | `{key, engineId, accountId?, brief}` | `LibraryOpened` (the target in the session's folder, the brief as its first prompt, as `handoff_start` delivers it) | NotFound, EngineMissing, LimitReached, Invalid | F-TH-17 |
+| `library_search` | `{query}` | `[string]` (keys whose prompts or replies match, best first; indexes new or changed files first) | ForbiddenPlan (Free), Unavailable (search is off) | F-TH-17 |
+| `library_search_set` | `{on}` (window `main` only) | — (sets `session_search`; off deletes `$DATA/session-index.db`) | ForbiddenPlan (turning on, Free) | F-TH-17 |
+
 #### Approvals and held drafts [F-TH-11, F-PL-06..08, F-DB-01]
 | Command | Args | Returns | Errors |
 |---|---|---|---|

@@ -54,6 +54,9 @@ pub struct Limits {
     /// an older API's entitlement still parses.
     #[serde(default)]
     pub dictionary_sync: bool,
+    /// Full-text search across engine sessions (F-TH-17).
+    #[serde(default)]
+    pub session_search: bool,
 }
 
 impl Limits {
@@ -79,6 +82,7 @@ impl Limits {
             chat_engines: Some(vec!["claude".to_string(), "codex".to_string()]),
             credit_packs: false,
             dictionary_sync: false,
+            session_search: false,
         }
     }
 

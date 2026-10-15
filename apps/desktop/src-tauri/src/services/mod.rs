@@ -37,6 +37,7 @@ pub mod instructions;
 pub mod lanes;
 pub mod launch;
 pub mod learn;
+pub mod library;
 pub mod limits;
 pub mod mail;
 pub mod models;

@@ -176,6 +176,8 @@ static REGISTRY: &[CommandSpec] = &[
     // F-EX-04: Best of N's sheet (UI-143) and its compare view (UI-144).
     same("bestof.open", C::Workspace, None, E::WorkspaceOpen),
     same("bestof.compare", C::Workspace, None, E::WorkspaceOpen),
+    // F-TH-17: the session library (UI-162).
+    same("library.open", C::Navigation, None, E::Always),
     // The launch sheet (F-CD-14, UI-12).
     same(
         "workspace.launch",
