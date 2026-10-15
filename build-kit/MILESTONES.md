@@ -2023,22 +2023,24 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 **Goal.** The review loop from `docs/NEXT_FEATURES.md` (§1 #6 and #2, §3 B4): another engine's read-only second opinion, one review queue across engines, and walking that queue by voice and on the phone. Built on `m16a-conductor`; decisions D-2420 to D-2439.
 
-**Owns:** F-WT-05, F-DB-04 (P2)
+**Owns:** F-WT-05, F-DB-04, F-CN-09 (P2)
 **Prerequisites.** M17 · Worktree workflow (F-WT-02's review bar), F-TH-09 (Read only threads), F-EX-01 (checkpoints).
 
 **Ordered tasks**
 1. **Second opinion (F-WT-05).** `services::second_opinion` (the prompt, the reply parser, the runner and its bus event), `lane_second_opinion`, the reviewer sheet and the review bar's General comment and reviewing state.
 2. **Review queue (F-DB-04).** `services::review_queue` (the status listener, the risk rules, diff-hash approvals, snooze, the repository's check), `review_*` commands, the Dashboard panel's Review view.
+3. **Walk-and-review, first slice (F-CN-09).** The Review group of Conductor tools over the queue's walk, the phone's `review.current` and Review tab (web and app). Later: local voice and voice second opinions.
 
 **Verification**
 ```bash
-cargo test -p tandem-desktop --lib f_wt_05 && cargo test -p tandem-desktop --lib f_db_04
+cargo test -p tandem-desktop --lib f_wt_05 && cargo test -p tandem-desktop --lib f_db_04 && cargo test -p tandem-desktop --lib f_cn_09
 pnpm --filter desktop exec vitest run src/features/code/secondOpinion.test.tsx src/features/dashboard/reviewQueue.test.tsx
-dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-{wt05,db04}-*.e2e.ts'
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-{wt05,db04,cn09}-*.e2e.ts'
 ```
 
 **E2E**
 - **E2E-M18-WT-05 Second opinion.** A worktree with a Claude Code agent and two changed files; Codex reviews it. Expected: a Read only Codex thread in the worktree whose first message has the task, the diff and the headings; two placed comments and a General one; Send to agent carries all three; a worktree with no changes has nothing to review.
+- **E2E-M18-CN-09 Walk-and-review.** A Pro call with a done agent in a git folder. Expected: `review_next`, `review_send_back` (the review prompt reaches the agent's pane), the agent finishes again, `review_next` and `review_approve` approve it; a paired phone's `review.current` returns the item and its migration diff, and `review.approve` is refused.
 - **E2E-M18-DB-04 Review queue.** Two worktree agents and a thread. Expected: the agent that changed a migration and deleted a test joins within 1.5 s with both rules; the one without changes doesn't; the thread joins; approve, then a new change shows Changed since you approved; Send back opens the diff, Merge the forecast; the check passes for `true` and fails with exit 1.
 
 **Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
@@ -2047,7 +2049,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **171 features** (65 P0, 67 P1, 39 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 9: the 5 extras (F-EX, §4.19) and the 4 worktree-workflow features (F-WT, §4.20); M18 owns 6 from the 15 October research (F-EN-07, F-WT-05, F-WT-06, F-WT-09, F-AC-08, F-DB-04). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **172 features** (65 P0, 67 P1, 40 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 9: the 5 extras (F-EX, §4.19) and the 4 worktree-workflow features (F-WT, §4.20); M18 owns 7 from the 15 October research (F-EN-07, F-WT-05, F-WT-06, F-WT-09, F-AC-08, F-DB-04, F-CN-09). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -2092,7 +2094,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **171 features** (6
 | F-TL-05 | P1 | M15 | F-TL-06 | P0 | M15 | F-TL-07 | P1 | M13 | F-TL-10 | P1 | M13 |
 | F-RM-04 | P2 | M16 | F-RM-05 | P2 | M16 | F-RM-06 | P2 | M16 | F-RM-07 | P2 | M16 |
 
-**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 9 · M18 6 = 171 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, M18's F-EN-07, F-WT-06, F-WT-09, F-AC-08, and F-WT-05 and F-DB-04 on `m16a-conductor`).
+**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 9 · M18 7 = 172 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, M18's F-EN-07, F-WT-06, F-WT-09, F-AC-08, and F-WT-05, F-DB-04 and F-CN-09 on `m16a-conductor`).
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|

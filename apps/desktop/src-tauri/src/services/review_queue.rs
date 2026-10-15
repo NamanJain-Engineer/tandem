@@ -315,6 +315,10 @@ struct Inner {
     /// Each key's status and when it began: a done whose start moved is a
     /// new finish even when the status bus coalesced working away (50 ms).
     last: HashMap<String, (AgentStatus, i64)>,
+    /// F-CN-09: the item Conductor is on, and the diff it described.
+    walk: Option<(String, String)>,
+    /// The items this walk has described; cleared when it ends.
+    visited: HashSet<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -428,6 +432,10 @@ impl ReviewQueue {
         let now = self.host.now();
         let run_check = {
             let mut inner = self.lock();
+            // Finishing again is new work: the walk reads it again (F-CN-09).
+            if why == Why::Finished {
+                inner.visited.remove(key);
+            }
             let old = inner.items.get(key).cloned();
             let state = match inner.approvals.get(key) {
                 Some(h) if *h == hash => ReviewState::Approved,
@@ -649,6 +657,210 @@ impl ReviewQueue {
         self.spawn_check(key.to_string(), hash, command, session.root);
         Ok(())
     }
+
+    // ── Walk-and-review (F-CN-09) ──────────────────────────────────────
+
+    /// Waiting to be looked at, in risk order (F-DB-04's sort).
+    fn to_review(inner: &Inner) -> Vec<ReviewItem> {
+        let mut items: Vec<ReviewItem> = inner
+            .items
+            .values()
+            .filter(|i| matches!(i.state, ReviewState::Review | ReviewState::Changed))
+            .cloned()
+            .collect();
+        items.sort_by(|a, b| {
+            b.risks
+                .len()
+                .cmp(&a.risks.len())
+                .then(a.finished_at.cmp(&b.finished_at))
+                .then(a.key.cmp(&b.key))
+        });
+        items
+    }
+
+    fn approved_count(inner: &Inner) -> usize {
+        inner
+            .items
+            .values()
+            .filter(|i| i.state == ReviewState::Approved)
+            .count()
+    }
+
+    /// The queue's clock (ms), for what Conductor says about an item.
+    pub fn now(&self) -> i64 {
+        self.host.now()
+    }
+
+    /// The next item after the one Conductor is on; `None` when none is left.
+    pub fn walk_next(&self) -> WalkStep {
+        let _ = self.view();
+        let mut inner = self.lock();
+        let order: Vec<ReviewItem> = Self::to_review(&inner)
+            .into_iter()
+            .filter(|i| !inner.visited.contains(&i.key))
+            .collect();
+        let item = order.first().cloned();
+        match &item {
+            Some(i) => {
+                inner.visited.insert(i.key.clone());
+                inner.walk = Some((i.key.clone(), i.diff_hash.clone()));
+            }
+            // The end: asking again starts over.
+            None => {
+                inner.walk = None;
+                inner.visited.clear();
+            }
+        }
+        WalkStep {
+            remaining: order.len().saturating_sub(1),
+            approved: Self::approved_count(&inner),
+            item,
+        }
+    }
+
+    /// The item Conductor is on, if it's still in the queue.
+    pub fn walk_current(&self) -> Option<ReviewItem> {
+        let inner = self.lock();
+        let (key, _) = inner.walk.as_ref()?;
+        inner.items.get(key).cloned()
+    }
+
+    /// What the phone shows: Conductor's item, else the first to review,
+    /// with its place in the queue (1-based) and the queue's length.
+    pub fn phone_current(&self) -> (Option<ReviewItem>, usize, usize) {
+        let _ = self.view();
+        let inner = self.lock();
+        let order = Self::to_review(&inner);
+        let current = inner
+            .walk
+            .as_ref()
+            .and_then(|(k, _)| inner.items.get(k).cloned())
+            .or_else(|| order.first().cloned());
+        let position = current
+            .as_ref()
+            .and_then(|c| order.iter().position(|i| i.key == c.key))
+            .map(|p| p + 1)
+            .unwrap_or(0);
+        (current, position, order.len())
+    }
+
+    /// Approves the current item with the diff `walk_next` described.
+    pub fn walk_approve(&self) -> Result<(ReviewItem, usize), IpcError> {
+        let (key, heard) = self.lock().walk.clone().ok_or_else(|| {
+            IpcError::new(
+                ErrorCode::Invalid,
+                "No review item is open: ask what's ready first",
+            )
+        })?;
+        let item = self.approve(&key, &heard).map_err(|e| match e.code {
+            ErrorCode::Conflict => {
+                // The next step reads it again.
+                self.lock().visited.remove(&key);
+                IpcError::new(
+                    ErrorCode::Conflict,
+                    "It changed since I read it; I'll read it again",
+                )
+            }
+            _ => e,
+        })?;
+        let approved = Self::approved_count(&self.lock());
+        Ok((item, approved))
+    }
+}
+
+/// One step of the walk: the item, how many are left after it, and how
+/// many are approved and wait for the desk.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WalkStep {
+    pub item: Option<ReviewItem>,
+    pub remaining: usize,
+    pub approved: usize,
+}
+
+fn rule_words(rule: ReviewRiskRule) -> &'static str {
+    match rule {
+        ReviewRiskRule::ManyFiles => "20 or more files",
+        ReviewRiskRule::Migrations => "migrations",
+        ReviewRiskRule::Ci => "CI",
+        ReviewRiskRule::Lockfile => "a lockfile",
+        ReviewRiskRule::Env => ".env files",
+        ReviewRiskRule::Auth => "auth paths",
+        ReviewRiskRule::PublicApi => "the public API",
+        ReviewRiskRule::DeletedTests => "deleted tests",
+    }
+}
+
+pub fn ready_to_merge(approved: usize) -> String {
+    match approved {
+        0 => String::new(),
+        1 => " 1 approved, ready to merge when you're back at the desk.".into(),
+        n => format!(" {n} approved, ready to merge when you're back at the desk."),
+    }
+}
+
+/// What Conductor says for a step of the walk (English, like its tools).
+pub fn spoken(step: &WalkStep, now: i64) -> String {
+    let Some(item) = &step.item else {
+        return format!("Nothing left to review.{}", ready_to_merge(step.approved));
+    };
+    let mins = ((now - item.finished_at).max(0) / 60_000).max(0);
+    let when = match mins {
+        0 => "just now".to_string(),
+        1 => "a minute ago".to_string(),
+        m if m < 60 => format!("{m} minutes ago"),
+        m => format!("{} h {} min ago", m / 60, m % 60),
+    };
+    let mut out = format!(
+        "{} on {}, finished {when}.",
+        item.title,
+        item.branch.as_deref().unwrap_or(&item.workspace)
+    );
+    if item.state == ReviewState::Changed {
+        out.push_str(" It changed since you approved it.");
+    }
+    if let Some(c) = &item.closing {
+        let c: String = c.split_whitespace().collect::<Vec<_>>().join(" ");
+        let c: String = c.chars().take(300).collect();
+        out.push_str(&format!(" It said: {c}"));
+        if !c.ends_with(['.', '!', '?']) {
+            out.push('.');
+        }
+    }
+    out.push_str(&format!(
+        " {} {}, {} added, {} removed.",
+        item.files,
+        if item.files == 1 { "file" } else { "files" },
+        item.additions,
+        item.deletions
+    ));
+    if !item.risks.is_empty() {
+        let words: Vec<&str> = item.risks.iter().map(|r| rule_words(r.rule)).collect();
+        out.push_str(&format!(" It touches {}.", words.join(", ")));
+    }
+    match &item.check {
+        Some(c) if c.state == ReviewCheckState::Passed => out.push_str(" The check passed."),
+        Some(c) if c.state == ReviewCheckState::Failed => out.push_str(&format!(
+            " The check failed with exit {}.",
+            c.exit
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "unknown".into())
+        )),
+        Some(_) => out.push_str(" The check is still running."),
+        None => {}
+    }
+    if step.remaining > 0 {
+        out.push_str(&format!(" {} more after this.", step.remaining));
+    }
+    out
+}
+
+/// The prompt a spoken review sends back to the agent (F-CN-09). English,
+/// like F-WT-02's.
+pub fn send_back_prompt(branch: &str, comment: &str) -> String {
+    format!(
+        "Review of your changes on {branch}:\n\n{}\n\nAddress it, then say what you changed.",
+        comment.trim()
+    )
 }
 
 /// The app's host: panes, threads, workspaces, git, checkpoints, settings.
@@ -1301,6 +1513,79 @@ mod tests {
         assert_eq!(
             q.snooze("nope", None).expect_err("missing").code,
             ErrorCode::NotFound
+        );
+    }
+
+    #[tokio::test]
+    async fn f_cn_09_1_the_walk_goes_by_risk_and_ends_with_what_is_approved() {
+        let (fake, q, _bus) = rig();
+        add(&fake, "pane:a", "wa", Some(vec![m("a.ts")]));
+        add(&fake, "pane:b", "wb", Some(vec![m("db/migrations/1.sql")]));
+        q.on_status(vec![rec("pane:a", AgentStatus::Done)], Vec::new())
+            .await;
+        q.on_status(vec![rec("pane:b", AgentStatus::Done)], Vec::new())
+            .await;
+        let first = q.walk_next();
+        assert_eq!(first.item.as_ref().map(|i| i.key.as_str()), Some("pane:b"));
+        assert_eq!(first.remaining, 1);
+        let said = spoken(&first, 1_000 + 120_000);
+        assert!(
+            said.starts_with("agent wb on tandem/wb, finished 2 minutes ago."),
+            "{said}"
+        );
+        assert!(said.contains("It said: closing of pane:b."), "{said}");
+        assert!(said.contains("1 file, 1 added, 0 removed."), "{said}");
+        assert!(said.contains("It touches migrations."), "{said}");
+        assert!(said.ends_with("1 more after this."), "{said}");
+        assert_eq!(q.phone_current().0.map(|i| i.key), Some("pane:b".into()));
+        let second = q.walk_next();
+        assert_eq!(second.item.as_ref().map(|i| i.key.as_str()), Some("pane:a"));
+        q.walk_approve().expect("approve a");
+        // b finishes again: it's new work, so the walk reads it again.
+        q.on_status(vec![rec("pane:b", AgentStatus::Working)], Vec::new())
+            .await;
+        let mut again = rec("pane:b", AgentStatus::Done);
+        again.since = 9;
+        q.on_status(vec![again], Vec::new()).await;
+        assert_eq!(q.walk_next().item.map(|i| i.key), Some("pane:b".into()));
+        q.on_status(vec![rec("pane:b", AgentStatus::Working)], Vec::new())
+            .await;
+        let end = q.walk_next();
+        assert!(end.item.is_none());
+        assert_eq!(
+            spoken(&end, 0),
+            "Nothing left to review. 1 approved, ready to merge when you're back at the desk."
+        );
+        // b is working again, so nothing waits: the phone shows nothing.
+        assert_eq!(q.phone_current(), (None, 0, 0));
+    }
+
+    #[tokio::test]
+    async fn f_cn_09_3_approve_uses_the_diff_it_described() {
+        let (fake, q, _bus) = rig();
+        assert_eq!(q.walk_approve().expect_err("none").code, ErrorCode::Invalid);
+        add(&fake, "pane:a", "wa", Some(vec![m("a.ts")]));
+        q.on_status(vec![rec("pane:a", AgentStatus::Done)], Vec::new())
+            .await;
+        q.walk_next();
+        // The agent changed it after Conductor read it out.
+        fake.diffs.lock().expect("l").insert(
+            "wa".into(),
+            vec![file("a.ts", FileChange::Modified, "+other\n")],
+        );
+        q.list(true).await;
+        let err = q.walk_approve().expect_err("stale");
+        assert_eq!(
+            err.message,
+            "It changed since I read it; I'll read it again"
+        );
+        assert_ne!(q.list(false).await.items[0].state, ReviewState::Approved);
+        q.walk_next();
+        let (item, approved) = q.walk_approve().expect("fresh");
+        assert_eq!((item.state, approved), (ReviewState::Approved, 1));
+        assert_eq!(
+            send_back_prompt("tandem/x", " handle expired tokens too "),
+            "Review of your changes on tandem/x:\n\nhandle expired tokens too\n\nAddress it, then say what you changed."
         );
     }
 

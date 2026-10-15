@@ -39,6 +39,8 @@ const F_CN_02_TABLE = [
   ...["create_task", "execute_task", "list_tasks"],
   "find_work",
   ...["get_setting", "set_setting", "get_usage", "get_credits", "check_updates"],
+  // F-CN-09: the Review group.
+  ...["review_next", "review_send_back", "review_approve"],
 ];
 
 describe("F-CN-02 the doer's closed tool catalog", () => {
@@ -53,7 +55,11 @@ describe("F-CN-02 the doer's closed tool catalog", () => {
   });
 
   it("F-CN-03 local-review actions are absent: forced lane removal, Full access, plugin spend", () => {
-    const names = VOICE_TOOLS.map((t) => t.name).join(" ");
+    // review_approve approves finished work in the review queue (F-CN-09),
+    // never an approval prompt.
+    const names = VOICE_TOOLS.map((t) => t.name)
+      .filter((n) => n !== "review_approve")
+      .join(" ");
     expect(names).not.toMatch(/lane|full|access|approv|spend|plugin|destructive|delete/);
     expect(SETTABLE_SETTINGS).not.toContain("default_access");
     expect(VOICE_TOOLS.filter((t) => t.confirm).map((t) => t.name)).toEqual([
@@ -62,6 +68,16 @@ describe("F-CN-02 the doer's closed tool catalog", () => {
       "create_teammate",
       "execute_task",
     ]);
+  });
+
+  it("F-CN-09.4 the Review group walks, sends back and approves; nothing merges", () => {
+    const review = VOICE_TOOLS.filter((t) => t.group === "review");
+    expect(review.map((t) => t.name)).toEqual(["review_next", "review_send_back", "review_approve"]);
+    expect(review.every((t) => !t.confirm)).toBe(true);
+    expect(VOICE_TOOLS.map((t) => t.name).join(" ")).not.toMatch(/merge|discard/);
+    expect(review.find((t) => t.name === "review_send_back")?.freeText).toEqual(["text"]);
+    expect(checkCall("review_send_back", { text: "handle expired tokens too" }).ok).toBe(true);
+    expect(checkCall("review_approve", { key: "pane:x" }).ok).toBe(false);
   });
 
   it("F-CN-02.2 set_setting takes only the closed list", () => {

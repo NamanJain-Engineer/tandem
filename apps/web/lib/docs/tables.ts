@@ -151,6 +151,7 @@ export const CONDUCTOR_GROUPS: Record<string, string> = {
   tasks: "Tasks",
   find: "Find",
   app: "App",
+  review: "Review",
 };
 
 /** Conductor's closed tool catalog (`apps/api/voice-tools.json`, the file the

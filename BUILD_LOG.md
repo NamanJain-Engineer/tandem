@@ -1447,6 +1447,27 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - Protocol drift: `RepoReview`, `ReviewCheck`, `ReviewCheckState`, `ReviewItem`, `ReviewQueueView`, `ReviewRisk`, `ReviewRiskRule` and `ReviewState` added. The names avoid Best of N's `CheckState`, which a first build overwrote.
     - E2E: m18-db04 5 of 5, m18-wt05 2 of 2.
 
+- [x] F-CN-09 Walk-and-review, first slice (D-2423, D-2424).
+  - **Conductor's Review group.** `review_next`, `review_send_back(text)` and `review_approve`:
+    - in `tandem_core::voice_tools`, the API's `voiceTools.ts` and `voice-tools.json`, `conductor_tools::run`, and the HUD's group icon and chip labels;
+    - the doer's catalog test and a new F-CN-09.4 test keep merge and discard out.
+  - **Walk state** in `ReviewQueue`:
+    - `walk_next` takes the first unvisited item in risk order and remembers its diff hash. A finish clears its visit, and the end of the walk clears all of them.
+    - `walk_approve` approves with the remembered hash. A stale hash is refused ("It changed since I read it; I'll read it again") and unvisits the item.
+    - `spoken` is what Conductor says; `send_back_prompt` is the review text typed to a pane agent (`type_prompt_with`) or sent to a thread. A source waiting on an approval gets nothing.
+  - **Phone.**
+    - `review.current` (View grant; the ninth `PHONE_COMMANDS` entry, and rule 5's test also checks that `review.approve`, `review.merge` and `lane.merge` don't parse);
+    - `PhoneHost::review_current` (a default refusal, so other hosts are unchanged) and `review_for_phone` (redacted, 20,000 characters per file, 200,000 in total);
+    - `PhoneReview`, `PhoneReviewItem` and `PhoneDiffFile`;
+    - `RemoteSession::reviewCurrent`, the demo desktop's item, and the Review tab in the web remote and the app (read only, refreshed on each snapshot).
+  - **Tests.**
+    - Rust: 2 in `review_queue` (the walk, stale approve), 1 tool test (walk, a waiting agent refused, approve), 2 phone (dispatch under View with caps and redaction, the total cap), `remote::messages` and rule 5.
+    - TS: API F-CN-09.4, `session.test.ts` F-CN-09.5.
+    - E2E: `m18-cn09-walk-and-review.e2e.ts` (a call's injected tools walk, send back into the pane and approve; a paired phone reads the diff and can't approve).
+  - **Docs.** conductor.mdx, "Walk the review queue"; remote.mdx, the Review item; the F-CN-02 table gains the Review row.
+  - **Not in this slice:** local voice (Dictate's Whisper and a local voice), and a second opinion by voice.
+  - **Gate:** passed: 1,948 Rust tests (7 ignored) and 1,462 TypeScript; the desktop build, clippy on Linux, Windows and both Mac architectures, fmt, coverage 172, protocol drift (`PhoneReview`, `PhoneReviewItem`, `PhoneDiffFile`, the `review` voice group). E2E m18-cn09 2 of 2.
+
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
   - Only engines with a chat adapter can review. They are the ones whose read-only access is enforced by the adapter (Claude's disallowed tools, Codex's read-only sandbox, ACP's refused writes). The registry has no read-only flag for terminal engines, so they're listed and disabled.
@@ -1464,6 +1485,11 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
 - D-2422: The check command and public API paths are app settings keyed by the repository's root, typed in the queue on this computer.
   - They are not in `.vibezeo/worktree.json`, so a pulled file can't add a command that runs on every finish. That would need F-WT-01's trust step; this is simpler and enough for one person's machine.
   - The risk rules are fixed and labelled as what changed, never "safe", and each shows the files it matched.
+- D-2423: Walk-and-review lives in the review queue, so the Conductor tools and the phone see one current item. `review_approve` takes no arguments and approves the diff Conductor described, never whatever is there now. A voice approval can't approve something nobody heard. No Review tool merges: merging is a local action (F-TL-06 rule 5), and the walk ends by counting what waits at the desk.
+- D-2424: The phone's review is one read-only command under View.
+  - It's view, not control: its contents are the same code the agents and threads already show there.
+  - Patches go through the same redactor as other phone text and are cut at 20,000 characters per file and 200,000 in total, so a big change can't stall the relay.
+  - Approving or sending back from the phone waits for a later slice with its own grant.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07 so far (PRODUCT_SPEC §4.4, MILESTONES "M18 · Next features: engines"), then F-EN-09, F-EN-08 and F-TH-17 in that order; decisions D-2400–D-2419.

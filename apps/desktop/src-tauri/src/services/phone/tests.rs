@@ -99,6 +99,42 @@ impl PhoneHost for FakeHost {
         self.ran.lock().expect("lock").push(routine_id.into());
         Ok(())
     }
+    async fn review_current(&self) -> Result<PhoneReview, String> {
+        use crate::services::review_queue::{ReviewRisk, ReviewRiskRule};
+        Ok(PhoneReview {
+            item: Some(PhoneReviewItem {
+                key: "pane:pn_1".into(),
+                title: "Ada".into(),
+                engine: Some("Claude Code".into()),
+                workspace: "shop".into(),
+                branch: Some("tandem/fix-auth".into()),
+                finished_at: 1,
+                closing: Some(
+                    "token sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789 rotated".into(),
+                ),
+                files: 1,
+                additions: 30_000,
+                deletions: 0,
+                risks: vec![ReviewRisk {
+                    rule: ReviewRiskRule::Migrations,
+                    files: vec!["db/migrations/1.sql".into()],
+                }],
+                check: None,
+                changed: false,
+            }),
+            files: vec![PhoneDiffFile {
+                path: "db/migrations/1.sql".into(),
+                change: "added".into(),
+                additions: 30_000,
+                deletions: 0,
+                patch: "+x\n".repeat(15_000),
+                truncated: false,
+            }],
+            position: 1,
+            total: 1,
+        })
+    }
+
     async fn queued_notice(&self, approval: &ApprovalView, device: &str) {
         self.notices
             .lock()
@@ -493,6 +529,49 @@ async fn f_rm_03_each_command_needs_its_grant_and_grants_change_only_from_the_ma
     .await;
     assert_eq!(routine["error"]["code"], "forbidden");
     assert!(r.host.ran.lock().expect("lock").is_empty());
+}
+
+#[tokio::test]
+async fn f_cn_09_5_the_review_item_and_its_diff_reach_the_phone_with_view_only_cut_and_redacted() {
+    let r = rig();
+    let mut phone = paired(&r).await;
+    // View comes with pairing: no other grant is needed to read it.
+    let res = cmd(&r, &mut phone, 1, "review.current", json!({})).await;
+    assert_eq!(res["ok"], true, "{res}");
+    let data = &res["data"];
+    assert_eq!(data["item"]["title"], "Ada");
+    assert_eq!(data["item"]["risks"][0]["rule"], "migrations");
+    assert_eq!(
+        (data["position"].as_u64(), data["total"].as_u64()),
+        (Some(1), Some(1))
+    );
+    let patch = data["files"][0]["patch"].as_str().expect("patch");
+    assert_eq!(patch.chars().count(), MAX_DIFF_FILE_CHARS);
+    assert_eq!(data["files"][0]["truncated"], true);
+    let closing = data["item"]["closing"].as_str().expect("closing");
+    assert!(!closing.contains("sk-ant-api03"), "{closing}");
+}
+
+#[test]
+fn f_cn_09_5_the_whole_diff_is_cut_at_its_total() {
+    let file = |n: usize| PhoneDiffFile {
+        path: format!("f{n}"),
+        change: "modified".into(),
+        additions: 1,
+        deletions: 0,
+        patch: "y".repeat(MAX_DIFF_FILE_CHARS),
+        truncated: false,
+    };
+    let r = review_for_phone(PhoneReview {
+        item: None,
+        files: (0..12).map(file).collect(),
+        position: 0,
+        total: 0,
+    });
+    let total: usize = r.files.iter().map(|f| f.patch.chars().count()).sum();
+    assert_eq!(total, MAX_DIFF_CHARS);
+    assert!(r.files[11].patch.is_empty() && r.files[11].truncated);
+    assert!(!r.files[0].truncated);
 }
 
 #[tokio::test]

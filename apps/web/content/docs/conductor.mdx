@@ -34,6 +34,22 @@ Conductor's planner can only call the tools below, and the app checks every call
 
 Some things are never available by voice: forcing a lane's removal, turning on Full access, and approving a plugin action that spends money or deletes something. Those always need you in the app.
 
+### Walk the review queue
+
+Ask "what's ready?" and Conductor goes through the [review queue](/docs/code-mode/#review-queue), riskiest first. For each item it says:
+- who did the work and on which branch;
+- what the agent said when it finished;
+- how many files changed;
+- what the change touches;
+- whether the check passed.
+
+From there:
+- Say **"next"** to move on.
+- Say **"send it back: …"** to have your comment typed to that agent as a review, or sent to its thread. An agent waiting on an approval gets nothing.
+- Say **"approve"** to approve exactly what Conductor described. If the agent changed anything since, Conductor says so and reads it again instead.
+
+Conductor can't merge, discard or stop anything from the queue. When nothing is left, it tells you how many items are approved and ready to merge at your desk. While you listen, the phone's **Review** tab shows the same item with its diff.
+
 ## Safety rules
 
 - **It types into agents, not shells.** Conductor types prompts into agent panes and threads. The only way it runs a shell command is `run_command_in_shell`, and that waits for you to click **Yes** on screen: a spoken yes can't run it. Typed text has control characters stripped, and Enter is sent separately.

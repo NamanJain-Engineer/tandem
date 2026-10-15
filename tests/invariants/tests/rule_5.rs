@@ -58,7 +58,8 @@ fn invariant_rule_5_the_phone_has_no_local_review_command() {
             "approval.decide",
             "routine.run_now",
             "push.register",
-            "push.unregister"
+            "push.unregister",
+            "review.current"
         ]
     );
     for cmd in [
@@ -71,6 +72,9 @@ fn invariant_rule_5_the_phone_has_no_local_review_command() {
         "phone.arm",
         "phone.grants",
         "queue.decide",
+        "review.approve",
+        "review.merge",
+        "lane.merge",
     ] {
         assert_eq!(
             PhoneCommand::parse(cmd, json!({})),

@@ -188,6 +188,80 @@ pub struct PhoneTranscriptItem {
     pub at: i64,
 }
 
+/// F-CN-09: the review item the phone shows, read only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PhoneReviewItem {
+    pub key: String,
+    pub title: String,
+    pub engine: Option<String>,
+    pub workspace: String,
+    pub branch: Option<String>,
+    pub finished_at: i64,
+    pub closing: Option<String>,
+    pub files: u32,
+    pub additions: u32,
+    pub deletions: u32,
+    pub risks: Vec<crate::services::review_queue::ReviewRisk>,
+    pub check: Option<crate::services::review_queue::ReviewCheck>,
+    /// Approved once and changed since.
+    pub changed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PhoneDiffFile {
+    pub path: String,
+    /// `added`, `modified`, `deleted`, `renamed`…
+    pub change: String,
+    pub additions: u32,
+    pub deletions: u32,
+    pub patch: String,
+    /// Cut here (or by git) before it reached the phone.
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PhoneReview {
+    pub item: Option<PhoneReviewItem>,
+    pub files: Vec<PhoneDiffFile>,
+    /// The item's place among those to review (1-based; 0: not among them).
+    pub position: u32,
+    pub total: u32,
+}
+
+/// Each file's patch on the phone, and all of them together (F-CN-09).
+pub const MAX_DIFF_FILE_CHARS: usize = 20_000;
+pub const MAX_DIFF_CHARS: usize = 200_000;
+
+/// Redacts and cuts a review's diff for the phone.
+pub fn review_for_phone(mut r: PhoneReview) -> PhoneReview {
+    use tandem_core::redact::Redactor;
+    let mut left = MAX_DIFF_CHARS;
+    for f in &mut r.files {
+        let text = Redactor::global().redact(&f.patch).into_owned();
+        let cap = MAX_DIFF_FILE_CHARS.min(left);
+        if text.chars().count() > cap {
+            f.patch = text.chars().take(cap).collect();
+            f.truncated = true;
+        } else {
+            f.patch = text;
+        }
+        left = left.saturating_sub(f.patch.chars().count());
+    }
+    if let Some(item) = &mut r.item {
+        item.closing = item
+            .closing
+            .take()
+            .map(|c| clip(&Redactor::global().redact(&c), MAX_ITEM_CHARS));
+    }
+    r
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -235,6 +309,11 @@ pub trait PhoneHost: Send + Sync {
     async fn routine_run_now(&self, routine_id: &str) -> Result<(), String>;
     /// Tells the person at the desktop that the phone's allow waits for them.
     async fn queued_notice(&self, approval: &ApprovalView, device: &str);
+    /// The review item Conductor is on, else the first to review, and its
+    /// diff (F-CN-09). Read only.
+    async fn review_current(&self) -> Result<PhoneReview, String> {
+        Err("The review queue isn't available here.".into())
+    }
 }
 
 pub use crate::services::api::PairingTicket;
@@ -1576,6 +1655,13 @@ impl PhoneService {
                     Err(m) => res_err(id, "unavailable", &m),
                 }
             }
+            PhoneCommand::ReviewCurrent => match host.review_current().await {
+                Ok(r) => res_ok(
+                    id,
+                    serde_json::to_value(review_for_phone(r)).unwrap_or(Value::Null),
+                ),
+                Err(m) => res_err(id, "unavailable", &m),
+            },
             PhoneCommand::PushRegister {
                 platform,
                 token,

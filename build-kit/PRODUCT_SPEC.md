@@ -2394,6 +2394,7 @@ Each ready module needs:
 | Teammates | `open_teammate`, `message_teammate`, `create_teammate(description)` (confirm before saving), `pin_teammate`, `read_teammate_memory`, `list_routines`, `run_routine` |
 | Tasks | `create_task`, `execute_task(id, …)` (confirm), `list_tasks` |
 | Find | `find_work(query)` (F-CN-05) |
+| Review (F-CN-09) | `review_next`, `review_send_back(text)`, `review_approve` (the review queue, F-DB-04; nothing merges) |
 | App | `get_setting(key)`, `set_setting(key, value)` (**closed list**: theme, notifications, sounds, dictate engine, microphone, teammate mail pause, Conductor voice/tone/verbosity), `get_usage`, `get_credits`, `check_updates` |
 
 - **Prompt refinement:** before `prompt_pane` or `send_to_thread` delivers text, the doer rewrites the spoken prompt into a clear instruction. The user hears a one-line paraphrase, and can say "send it as I said" to skip this.

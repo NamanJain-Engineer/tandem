@@ -233,6 +233,64 @@ impl PhoneHost for AppPhoneHost {
             .map_err(|e| e.message)
     }
 
+    async fn review_current(&self) -> Result<crate::services::phone::PhoneReview, String> {
+        use crate::services::phone::{PhoneDiffFile, PhoneReview, PhoneReviewItem};
+        let state = self.state();
+        let q = state
+            .review
+            .get()
+            .cloned()
+            .ok_or_else(|| "The review queue is starting.".to_string())?;
+        let (item, position, total) = q.phone_current();
+        let Some(item) = item else {
+            return Ok(PhoneReview {
+                item: None,
+                files: Vec::new(),
+                position: 0,
+                total: total as u32,
+            });
+        };
+        let files = q.item_diff(&item.key, false).await.unwrap_or_default();
+        let engine = item
+            .engine_id
+            .as_deref()
+            .and_then(|e| state.terminals.engines.get(e))
+            .map(|s| s.label);
+        Ok(PhoneReview {
+            files: files
+                .into_iter()
+                .map(|f| PhoneDiffFile {
+                    path: f.path,
+                    change: serde_json::to_value(f.change)
+                        .ok()
+                        .and_then(|v| v.as_str().map(str::to_string))
+                        .unwrap_or_default(),
+                    additions: f.additions,
+                    deletions: f.deletions,
+                    patch: f.patch,
+                    truncated: f.truncated,
+                })
+                .collect(),
+            item: Some(PhoneReviewItem {
+                changed: item.state == crate::services::review_queue::ReviewState::Changed,
+                key: item.key,
+                title: item.title,
+                engine,
+                workspace: item.workspace,
+                branch: item.branch,
+                finished_at: item.finished_at,
+                closing: item.closing,
+                files: item.files,
+                additions: item.additions,
+                deletions: item.deletions,
+                risks: item.risks,
+                check: item.check,
+            }),
+            position: position as u32,
+            total: total as u32,
+        })
+    }
+
     async fn queued_notice(&self, approval: &ApprovalView, device: &str) {
         let state = self.state();
         state
