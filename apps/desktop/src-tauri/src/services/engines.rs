@@ -36,6 +36,8 @@ pub struct EngineService {
     bus: EventBus,
     /// The Team org's policy, read at each launch (F-BL-06).
     policy: std::sync::OnceLock<PolicySource>,
+    /// Versions seen and the last good ones (F-EN-08), beside the homes.
+    pub versions: crate::services::engine_versions::EngineVersions,
 }
 
 /// Reads the org policy in force (the entitlement service's).
@@ -68,6 +70,9 @@ impl EngineService {
             report: RwLock::new(None),
             detecting: tokio::sync::Mutex::new(()),
             last_detect: Mutex::new(None),
+            versions: crate::services::engine_versions::EngineVersions::new(
+                providers.parent().unwrap_or(&providers),
+            ),
             homes: ProviderHomes::new(providers),
             hook_bin: hook_bin(),
             store,
@@ -317,6 +322,7 @@ impl EngineService {
             home: home.clone(),
             providers_root: self.homes.root().to_path_buf(),
             status,
+            pinned: self.pinned(&engine.id).await,
         };
         let spec = launch::terminal_launch(&req).map_err(launch_error)?;
         Ok(AgentLaunch {
@@ -325,6 +331,15 @@ impl EngineService {
             home,
             config,
         })
+    }
+
+    /// Whether the user pinned this engine (F-EN-08, `engine_pins`).
+    pub async fn pinned(&self, engine_id: &str) -> bool {
+        settings::get(&self.store, SettingKey::EnginePins)
+            .await
+            .ok()
+            .and_then(|v| v.get(engine_id).and_then(serde_json::Value::as_bool))
+            .unwrap_or(false)
     }
 
     async fn relaunch(
@@ -370,6 +385,7 @@ impl EngineService {
             home: home.clone(),
             providers_root: self.homes.root().to_path_buf(),
             status,
+            pinned: self.pinned(&engine.id).await,
         };
         let spec = launch::terminal_launch(&req).map_err(launch_error)?;
         Ok(AgentLaunch {

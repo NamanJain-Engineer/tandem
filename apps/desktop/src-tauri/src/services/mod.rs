@@ -22,6 +22,8 @@ pub mod device_login;
 pub mod dictate;
 pub mod dictate_cloud;
 pub mod dictionary_sync;
+pub mod engine_processes;
+pub mod engine_versions;
 pub mod engines;
 pub mod entitlement;
 pub mod events;

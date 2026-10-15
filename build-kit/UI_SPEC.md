@@ -1034,6 +1034,9 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
   - With no AGENTS.md, a `Select` "Start AGENTS.md from" lists the files that can become it.
   - Footer: **Close** / **Use one file for all** (primary). The plan view lists each file it would create ("New") or replace ("Replaced"), the new text in a `CodeBlock`, the old text under "What it holds now", "Its text isn't in AGENTS.md and will be replaced. A copy is kept for Undo." when that's so, and the files left as they are and why. Footer: **Back** / **Write # files** (primary). A success toast has **Undo**.
   - States: loading (`Skeleton`s), error (`Banner` with Try again), empty ("No instructions files yet"), populated, and the plan.
+- **UI-161 Engine versions** (in Settings › Engines; F-EN-08). Each installed engine's row reads "{version} · {npm | Homebrew | its own installer | installed another way}", with an outline `Badge` "Updates itself" when it does and isn't pinned. Its details add a `Switch` "Pin this version" (or "This engine has no documented way to stop it updating itself."), **Check for updates** (secondary, loading while npm answers), then "{version} is the newest", "{version} is available" or "Update it with" and the command in mono; **Roll back to {version}…** (ghost) when an earlier version is known. Errors show inline under the buttons.
+  - A version that threads have failed on since an update shows a warning `Banner` at the top of the page and in the thread: "{engine} updated from {from} to {to}, and threads have failed since." with **Roll back to {from}…**, which opens the Install sheet titled "Roll back {engine} to {version}" with the command shown before anything runs.
+  - **Running in the background:** one row per process (engine, its command in mono, **Stop**), "No engine is running outside a terminal." when empty, a `Spinner` while loading, and the reason when the platform can't list them. Stop opens a danger `ConfirmDialog` "Stop this {engine} process?" / "Process {pid} has no terminal and runs outside Vibezeo. Stopping asks it to end."
 
 **ID allocation for this part.** Thread UI-20–25, Engines & accounts UI-33–37, Routines UI-50–53 (UI-50 is already referenced by `CronInput`), Agent mode UI-70–76, Tasks UI-80–84, Plugins UI-90–94. UI-40–49 (Dashboard, Notifications) and UI-60–69 (Dictate, Conductor) are reserved for later parts.
 
@@ -2674,6 +2677,7 @@ ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 T
 | UI-150 | Worktree setup | §4.2 | WT |
 | UI-151 | Review worktree setup | §4.2 | WT |
 | UI-160 | Instructions | §4.2 | EN |
+| UI-161 | Engine versions | §4.4 | EN |
 
 ### 8.1 Cross-document conflicts found while writing this part
 All items below were fixed at the source during the consistency pass (see CONSISTENCY_REPORT.md); they are kept as a record.

@@ -13,6 +13,7 @@ pub mod conductor_persona;
 pub mod conductor_tools;
 pub mod data_controls;
 pub mod dictate;
+pub mod engine_versions;
 pub mod engines;
 pub mod files;
 pub mod find_work;

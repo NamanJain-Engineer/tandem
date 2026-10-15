@@ -148,6 +148,7 @@ setting_keys! {
     AutoConsent,
     AutoDontAsk,
     FindWorkHosted,
+    EnginePins,
     SendKey,
     ReduceMotion,
     LogLevel,
@@ -864,6 +865,8 @@ pub static SCHEMA: &[SettingSpec] = &[
         ["auto", "terminal output"]
     ),
     spec!(AutoDontAsk, json!(false), V::Bool, Hidden, []),
+    // F-EN-08: engine id → true; Settings › Engines sets it per engine.
+    spec!(EnginePins, json!({}), V::Map, Hidden, []),
     // D-1302: Find work's hosted ranking sends the search and the candidates'
     // redacted names and last lines off the machine, so it's opt-in.
     spec!(

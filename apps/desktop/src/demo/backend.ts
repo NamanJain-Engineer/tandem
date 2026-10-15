@@ -165,6 +165,7 @@ function spec(
     mcpNative: null,
     instructions: null,
     note: null,
+    updates: null,
   };
 }
 
@@ -1120,6 +1121,15 @@ export class DemoCore {
       case "instructions_undo":
       case "instructions_copy_to_worktrees":
         throw { code: "unavailable", message: "The demo has no repository files to read. In the app, this lists each engine's instructions file." };
+      // Engines' versions and processes are on your computer (F-EN-08).
+      case "engine_versions":
+      case "engine_background":
+        return [];
+      case "engine_check_update":
+      case "engine_pin":
+      case "engine_rollback_command":
+      case "engine_background_stop":
+        throw { code: "unavailable", message: "The demo has no installed engines to check, pin or roll back." };
       case "skill_sync":
         throw { code: "unavailable", message: "The demo has no engines to install skills for." };
       // A web page can't hold other pages the way the app's browser does.

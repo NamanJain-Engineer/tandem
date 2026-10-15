@@ -124,6 +124,51 @@ pub struct InstructionsSpec {
     pub pointer: Option<InstructionsPointer>,
 }
 
+/// How an engine was installed, read from where its command resolves
+/// (F-EN-08, D-2406).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum InstallMethod {
+    Npm,
+    Homebrew,
+    /// The engine's own installer (its versions folder).
+    Native,
+    Other,
+}
+
+/// The documented switch that stops an engine updating itself, set only in
+/// its launch environment or arguments (F-EN-08).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct UpdatePin {
+    #[serde(default)]
+    pub env: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+}
+
+/// How an engine is installed and updated (F-EN-08), from its vendor's docs.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct UpdatesSpec {
+    /// Its npm package, for Check for updates and Roll back.
+    #[serde(default)]
+    pub npm: Option<String>,
+    /// Its own installer's versions folder, relative to the user's home.
+    #[serde(default)]
+    pub native_dir: Option<String>,
+    /// Its own installer for one version (`{version}` is replaced).
+    #[serde(default)]
+    pub native_install: Option<String>,
+    #[serde(default)]
+    pub pin: Option<UpdatePin>,
+    /// The install methods with which it updates itself.
+    #[serde(default)]
+    pub self_updates: Vec<InstallMethod>,
+}
+
 fn default_version_cmd() -> Vec<String> {
     vec!["--version".into()]
 }
@@ -232,6 +277,9 @@ pub struct EngineSpec {
     /// One line about who can use it, shown with its tile (F-EN-09).
     #[serde(default)]
     pub note: Option<String>,
+    /// How it's installed and updated (F-EN-08).
+    #[serde(default)]
+    pub updates: Option<UpdatesSpec>,
 }
 
 /// Why a registry entry was refused.
@@ -357,6 +405,30 @@ impl EngineSpec {
             .is_some_and(|n| n.trim().is_empty() || n.chars().count() > 300 || n.contains('\n'))
         {
             return fail("a note is one line of at most 300 characters");
+        }
+        if let Some(u) = &self.updates {
+            let npm_ok = u.npm.as_deref().is_none_or(|n| {
+                !n.is_empty()
+                    && n.len() <= 100
+                    && n.chars().all(|c| {
+                        c.is_ascii_alphanumeric() || matches!(c, '@' | '/' | '-' | '_' | '.')
+                    })
+            });
+            let dir_ok = u.native_dir.as_deref().is_none_or(instructions_path);
+            let install_ok = u
+                .native_install
+                .as_deref()
+                .is_none_or(|i| i.contains("{version}") && !i.contains('\n'));
+            let pin_ok = u.pin.as_ref().is_none_or(|p| {
+                p.env.keys().all(|k| env_name(k))
+                    && p.env
+                        .values()
+                        .chain(&p.args)
+                        .all(|v| !crate::launch::looks_secret(v) && !v.contains('\n'))
+            });
+            if !(npm_ok && dir_ok && install_ok && pin_ok) {
+                return fail("updates: an npm package name, a folder in the home, an install command with {version}, and plain pin values");
+            }
         }
         if let Some(ins) = &self.instructions {
             let pointer = ins.pointer.as_ref().map(|p| p.file.as_str());

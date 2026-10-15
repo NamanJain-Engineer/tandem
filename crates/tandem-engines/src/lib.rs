@@ -20,6 +20,7 @@ pub mod status_server;
 pub mod transcript;
 pub mod usage;
 pub mod usage_log;
+pub mod versions;
 
 pub use detect::{detect, DetectEnv, DetectionReport, FoundEngine, FoundSource};
 pub use registry::{EngineRegistry, EngineSpec};

@@ -234,7 +234,12 @@ pub struct ThreadService {
     plan_limits: std::sync::OnceLock<PlanLimits>,
     /// Threads in SSH workspaces (F-RM-01).
     remote: std::sync::OnceLock<Arc<crate::services::remote::RemoteService>>,
+    /// Hears how every turn ended, by engine (last good version, F-EN-08).
+    health_sink: std::sync::OnceLock<HealthSink>,
 }
+
+/// A thread turn of an engine ended, and why (F-EN-08).
+pub type HealthSink = Arc<dyn Fn(&str, TurnEndReason) + Send + Sync>;
 
 /// A teammate chat's turn ended: the chat, the turn and why.
 pub type TurnSink = Arc<dyn Fn(ThreadRecord, TurnId, TurnEndReason) + Send + Sync>;
@@ -357,6 +362,7 @@ impl ThreadService {
             checkpoints: std::sync::OnceLock::new(),
             chats_sink: std::sync::OnceLock::new(),
             turn_sink: std::sync::OnceLock::new(),
+            health_sink: std::sync::OnceLock::new(),
             plan_limits: std::sync::OnceLock::new(),
             remote: std::sync::OnceLock::new(),
         })
@@ -569,6 +575,10 @@ impl ThreadService {
     }
 
     /// Hears teammate chats' finished turns.
+    pub fn set_health_sink(&self, sink: HealthSink) {
+        let _ = self.health_sink.set(sink);
+    }
+
     pub fn set_turn_sink(&self, sink: TurnSink) {
         let _ = self.turn_sink.set(sink);
     }
@@ -1331,6 +1341,9 @@ impl ThreadService {
         }
         // A teammate chat's prose becomes searchable (F-AG-11).
         if let Ok(Some(record)) = repo::get(&self.store, thread).await {
+            if let Some(sink) = self.health_sink.get() {
+                sink(&record.engine_id, reason);
+            }
             if let Some(teammate) = &record.teammate_id {
                 if let Err(e) =
                     tandem_store::repo::search::index_turn(&self.store, thread, &run.id, teammate)

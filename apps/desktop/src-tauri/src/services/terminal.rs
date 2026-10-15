@@ -923,6 +923,7 @@ impl TerminalService {
                 home: None,
                 providers_root: PathBuf::new(),
                 status: None,
+                pinned: false,
             };
             let launch = tandem_engines::launch::terminal_launch(&req).map_err(|e| {
                 IpcError::new(ErrorCode::Invalid, e.to_string()).with_stage("launch")
@@ -1077,6 +1078,7 @@ impl TerminalService {
                 home: None,
                 providers_root: PathBuf::new(),
                 status: None,
+                pinned: false,
             };
             let launch = tandem_engines::launch::terminal_launch(&req).map_err(|e| {
                 IpcError::new(ErrorCode::Invalid, e.to_string()).with_stage("launch")
