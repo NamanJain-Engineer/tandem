@@ -47,6 +47,7 @@ pub mod phone;
 pub mod phone_lan;
 pub mod plugins;
 pub mod ports;
+pub mod pr_checks;
 pub mod prompts;
 pub mod recall;
 pub mod remote;

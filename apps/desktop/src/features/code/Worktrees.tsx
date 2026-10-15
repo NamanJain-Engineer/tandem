@@ -19,12 +19,14 @@ import { t } from "../../i18n";
 import { useSidebar } from "../../stores/sidebar";
 import { useWorkspaces } from "../../stores/workspaces";
 import {
+  allowChecks,
   baseBranch,
   createPullRequest,
   createWorktree,
   PREVIEW_POLL_MS,
   loadForge,
   loadRuntime,
+  openChecks,
   openPreview,
   pollPreviews,
   startPreview,
@@ -38,6 +40,7 @@ import {
 import { switchMode } from "../shell/actions";
 import { ComparePreviewsDialog } from "./ComparePreviews";
 import { LandWorktreesDialog } from "./LandWorktrees";
+import { AllowChecksDialog, ChecksBadge, ChecksDialog } from "./PullRequestChecks";
 import { MergeForecast, OverlapDialog } from "./WorktreeOverlap";
 import { ReviewDiff } from "./WorktreeReview";
 import { InstructionsDialog } from "./Instructions";
@@ -54,6 +57,16 @@ function previewSiblings(wt: WorkspaceSummary): string[] {
     )
     .map((w) => w.id);
   return [wt.id, ...others];
+}
+
+/** Whether the worktree's repository is allowed to run gh (F-WT-08). */
+function checksAllowed(id: string): boolean {
+  const state = useWorktrees.getState().checks[id]?.state;
+  return state !== undefined && state !== "not_allowed";
+}
+
+function parentName(wt: WorkspaceSummary): string {
+  return useWorkspaces.getState().list.find((w) => w.id === wt.parentId)?.name ?? wt.name;
 }
 
 /** The worktree menu (rail row ⋯ and the pane ⋯ menu, UI_SPEC §4.3). */
@@ -110,6 +123,25 @@ export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): Me
       disabled: wt.missing || wt.kind !== "local" || previewSiblings(wt).length < 2,
       onSelect: () => open({ kind: "comparePreviews", candidates: previewSiblings(wt), chosen: [wt.id] }),
     },
+    {
+      // F-WT-08: the pull request's checks, after asking once per repository.
+      id: "wt-checks",
+      label: t("checks.menu"),
+      disabled: wt.missing || wt.kind !== "local",
+      onSelect: () => void openChecks(wt.id),
+    },
+    ...(checksAllowed(wt.id)
+      ? [
+          {
+            id: "wt-checks-forget",
+            label: t("checks.forget"),
+            onSelect: () =>
+              void allowChecks(wt.id, false).then((out) => {
+                if (out.ok) show({ title: t("checks.forgotten", { folder: parentName(wt) }) });
+              }),
+          },
+        ]
+      : []),
     {
       // F-WT-07: this repository's worktrees, landed one after another.
       id: "wt-land",
@@ -223,6 +255,7 @@ export function WorktreeRow({
           </Button>
         </span>
       ) : null}
+      <ChecksBadge wt={wt} />
       {wt.liveCount > 0 && (
         <span aria-label={t("rail.live", { n: wt.liveCount })}>
           <Badge>{wt.liveCount}</Badge>
@@ -504,6 +537,15 @@ export function WorktreeDialogs() {
   if (ask.kind === "setup") {
     const ws = list.find((w) => w.id === ask.workspaceId);
     return ws ? <WorktreeSetupDialog ws={ws} onClose={close} /> : null;
+  }
+  if (ask.kind === "allowChecks" || ask.kind === "checks") {
+    const wt = list.find((w) => w.id === ask.worktreeId);
+    if (!wt) return null;
+    return ask.kind === "checks" ? (
+      <ChecksDialog wt={wt} onClose={close} />
+    ) : (
+      <AllowChecksDialog wt={wt} folder={parentName(wt)} onClose={close} />
+    );
   }
   if (ask.kind === "land") {
     const ws = list.find((w) => w.id === ask.workspaceId);

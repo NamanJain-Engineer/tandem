@@ -34,6 +34,7 @@ import { useWorkspaces } from "../../stores/workspaces";
 import { useRemote } from "../../stores/remote";
 import { RailList } from "../rail/RailList";
 import { topLevel, useWorktrees, worktreesOf } from "../../stores/worktrees";
+import { useChecksPolling } from "./PullRequestChecks";
 import { WorktreeRow, usePreviewPolling } from "./Worktrees";
 import { browserSources, paneTitles } from "./titles";
 import { useBrowser } from "../../stores/browser";
@@ -300,13 +301,13 @@ export function CodeRail() {
   const [width, setWidth] = useState<number | null>(null);
   const { show } = useToast();
   const shown = Math.min(RAIL_MAX, Math.max(RAIL_MIN, width ?? saved));
+  const localWorktrees = list
+    .filter((w) => w.parentId !== null && w.laneBranch !== null && w.kind === "local" && !w.missing)
+    .map((w) => w.id);
   // F-WT-09: whether each local worktree's preview answers, while the rail shows.
-  usePreviewPolling(
-    list
-      .filter((w) => w.parentId !== null && w.laneBranch !== null && w.kind === "local" && !w.missing)
-      .map((w) => w.id),
-    !collapsed,
-  );
+  usePreviewPolling(localWorktrees, !collapsed);
+  // F-WT-08: their pull requests' checks (no gh for a repository not allowed).
+  useChecksPolling(localWorktrees, !collapsed);
 
   const onWidth = (w: number, done: boolean) => {
     if (done && w < COLLAPSE_BELOW) {

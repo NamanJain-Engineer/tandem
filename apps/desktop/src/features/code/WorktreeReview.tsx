@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { create } from "zustand";
-import type { DashboardItem, FileDiff, IpcError, WorkspaceSummary } from "@tandem/protocol";
+import type { DashboardItem, FileDiff, ImportedComment, IpcError, WorkspaceSummary } from "@tandem/protocol";
 import {
   Button,
   DiffView,
@@ -14,9 +14,16 @@ import {
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useDashboard } from "../../stores/dashboard";
+import { useWorktrees } from "../../stores/worktrees";
 
-/** One review comment on a worktree's diff (F-WT-02). */
-export type ReviewComment = DiffLineTarget & { id: number; comment: string };
+/** One review comment on a worktree's diff (F-WT-02); `imported` when it
+ * came from the pull request (F-WT-08): someone else's text, so the prompt
+ * carries the core's fenced copy, not the words themselves. */
+export type ReviewComment = DiffLineTarget & {
+  id: number;
+  comment: string;
+  imported?: { id: string; author: string; fenced: string };
+};
 
 const QUOTE_MAX = 200;
 
@@ -41,8 +48,7 @@ export function buildReviewPrompt(branch: string, comments: ReviewComment[]): st
   const head = `Review of your changes on ${branch} (${n} ${n === 1 ? "comment" : "comments"}):`;
   const items = sorted.map((c, i) => {
     const where = c.side === "new" ? `${c.path}:${c.line}` : `${c.path} (removed line ${c.line})`;
-    const body = c.comment
-      .trim()
+    const body = (c.imported ? c.imported.fenced : c.comment.trim())
       .split("\n")
       .map((l) => `   ${l}`)
       .join("\n");
@@ -60,6 +66,8 @@ type ReviewsState = {
   edit: (laneId: string, id: number, comment: string) => void;
   remove: (laneId: string, id: number) => void;
   clear: (laneId: string) => void;
+  /** F-WT-08: the pull request's comments not imported yet; how many. */
+  addImported: (laneId: string, list: ImportedComment[]) => number;
 };
 
 export const useReviews = create<ReviewsState>((set, get) => ({
@@ -84,7 +92,34 @@ export const useReviews = create<ReviewsState>((set, get) => ({
     delete byLane[laneId];
     set({ byLane });
   },
+  addImported: (laneId, list) => {
+    const have = new Set((get().byLane[laneId] ?? []).flatMap((c) => (c.imported ? [c.imported.id] : [])));
+    const fresh = list.filter((c) => !have.has(c.id));
+    let next = get().next;
+    const added: ReviewComment[] = fresh.map((c) => ({
+      id: next++,
+      path: c.path,
+      line: c.line,
+      side: c.side === "old" ? "old" : "new",
+      text: "",
+      comment: c.body,
+      imported: { id: c.id, author: c.author, fenced: c.fenced },
+    }));
+    set({ next, byLane: { ...get().byLane, [laneId]: [...(get().byLane[laneId] ?? []), ...added] } });
+    return added.length;
+  },
 }));
+
+/** "Import review comments" (F-WT-08): the pull request's line comments
+ * into the review bar, through the user's gh. */
+export async function importReviewComments(laneId: string): Promise<{ added: number } | { error: IpcError }> {
+  try {
+    const list = await invoke<ImportedComment[]>("lane_review_comments", { laneId });
+    return { added: useReviews.getState().addImported(laneId, list) };
+  } catch (e) {
+    return { error: e as IpcError };
+  }
+}
 
 /** The agents running in a worktree's panes: where a review can go. */
 export function worktreeAgents(items: Record<string, DashboardItem>, laneId: string): DashboardItem[] {
@@ -170,6 +205,18 @@ export function ReviewDiff({
   const { show } = useToast();
   const branch = wt.laneBranch ?? wt.name;
   const chosen = agents.find((a) => a.key === target) ?? agents[0] ?? null;
+  // F-WT-08: once its repository is allowed and it has a pull request.
+  const pr = useWorktrees((s) => (s.checks[wt.id]?.state === "ready" ? s.checks[wt.id]?.pr : null));
+  const [importing, setImporting] = useState(false);
+  const doImport = async () => {
+    setImporting(true);
+    const out = await importReviewComments(wt.id);
+    setImporting(false);
+    if ("error" in out)
+      show({ tone: "error", title: t("worktree.review.importFailed", { reason: out.error.message }) });
+    else if (out.added === 0) show({ title: t("worktree.review.importedNone") });
+    else show({ tone: "success", title: t("worktree.review.imported", { n: out.added }) });
+  };
 
   const save = () => {
     if (!editing || editing.text.trim().length === 0) return;
@@ -178,21 +225,44 @@ export function ReviewDiff({
     setEditing(null);
   };
 
-  const annotations: Record<string, React.ReactNode> = {};
+  // Several comments can share a line (an imported thread).
+  const byLine: Record<string, React.ReactNode[]> = {};
   for (const c of comments) {
     if (editing?.id === c.id) continue;
-    annotations[diffLineKey(c)] = (
-      <div data-testid="review-comment" data-line={diffLineKey(c)} className="flex items-start gap-2 text-sm">
-        <p className="min-w-0 flex-1 whitespace-pre-wrap text-fg">{c.comment}</p>
-        <Button size="sm" variant="ghost" onClick={() => setEditing({ target: c, id: c.id, text: c.comment })}>
-          {t("worktree.review.edit")}
-        </Button>
+    (byLine[diffLineKey(c)] ??= []).push(
+      <div
+        key={c.id}
+        data-testid="review-comment"
+        data-line={diffLineKey(c)}
+        data-imported={c.imported ? "true" : undefined}
+        className="flex items-start gap-2 text-sm"
+      >
+        <p className="min-w-0 flex-1 whitespace-pre-wrap text-fg">
+          {c.imported ? (
+            <span className="mr-1 font-medium text-fg-muted">
+              {t("worktree.review.importedBy", { author: c.imported.author })}
+            </span>
+          ) : null}
+          {c.comment}
+        </p>
+        {!c.imported && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setEditing({ target: c, id: c.id, text: c.comment })}
+          >
+            {t("worktree.review.edit")}
+          </Button>
+        )}
         <Button size="sm" variant="ghost" onClick={() => remove(wt.id, c.id)}>
           {t("worktree.review.remove")}
         </Button>
-      </div>
+      </div>,
     );
   }
+  const annotations: Record<string, React.ReactNode> = {};
+  for (const [key, nodes] of Object.entries(byLine))
+    annotations[key] = nodes.length === 1 ? nodes[0] : <div className="flex flex-col gap-1">{nodes}</div>;
   if (editing)
     annotations[diffLineKey(editing.target)] = (
       <CommentEditor
@@ -224,6 +294,19 @@ export function ReviewDiff({
 
   return (
     <div className="flex min-h-0 flex-col gap-3">
+      {pr ? (
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={importing}
+            onClick={() => void doImport()}
+            data-testid="review-import"
+          >
+            {t("worktree.review.import", { n: pr.number })}
+          </Button>
+        </div>
+      ) : null}
       <DiffView
         files={files}
         labels={labels}
@@ -236,7 +319,9 @@ export function ReviewDiff({
           onComment: (tg) => {
             const existing = comments.find((c) => diffLineKey(c) === diffLineKey(tg));
             setEditing(
-              existing ? { target: existing, id: existing.id, text: existing.comment } : { target: tg, id: null, text: "" },
+              existing
+                ? { target: existing, id: existing.id, text: existing.comment }
+                : { target: tg, id: null, text: "" },
             );
           },
           annotations,

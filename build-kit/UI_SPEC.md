@@ -1039,6 +1039,12 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
 
   While landing, the rows become steps: waiting, "Merging {base} in…", "Checking…", "Landing…", Landed (with the commit), Failed (exit code), Conflict (the files). A failed step shows its output's tail in a `CodeBlock` with **Send failure to agent** (an agent `Select` when several run there) or **Copy** when none does. Footer: **Stop** while running; Close after. **Undo landing** (secondary, danger) shows whenever the last run landed something; it asks with the native confirm "Undo landing? Moves {base} back to where it was before the landing. The worktrees keep their commits."
 
+- **UI-156 Check pull requests?** (dialog; "Check pull request" in a local worktree's ⋯ menu while its repository isn't allowed; F-WT-08). Title "Check pull requests for this repository?". Body: "Vibezeo will run your GitHub CLI (gh) in {folder}'s worktrees to read their pull requests, checks and review comments. gh signs itself in; Vibezeo never sees its token." Footer: **Not now** / **Allow** (primary).
+
+- **UI-157 Pull request checks** (dialog; the checks badge on a worktree's rail row; F-WT-08). Title "Checks for {branch}", description the pull request's number as a link. One row per check: its name, workflow and state ("Passed", "Failed", "Running", "Skipped", "Cancelled"). A failed one has **Send failure to agent** (an agent `Select` when several run in the worktree) or **Copy failure** when none does. Loading: `Skeleton` rows. Empty: "No checks have reported yet." Error: an error `Banner` with Retry. Footer: **Refresh** / Close.
+
+  The rail badge: a `Spinner` with "Checks running", "{n} checks failed: {names}" in the error tone, or a check mark "Checks passed". Nothing shows without a pull request, before the repository is allowed, or on GitLab.
+
 - **UI-154 Compare previews** (dialog; "Compare previews…" in every local worktree's ⋯ menu, with the worktree ticked, and "Side by side…" in Best of N's Compare, with both lanes ticked when there are two; F-WT-09). Description: "Choose two worktrees. Their previews open side by side in a new tab." Body: a `Checkbox` per worktree of the repository whose preview exists, labelled with its branch, described "Preview running" or "Its preview starts when you open them"; ticking a third unticks the oldest. Loading: two `Skeleton` rows while the previews are read. Empty: "Side by side needs two worktrees whose repository has a preview." Footer: Cancel / **Open side by side** (enabled with two ticked; "Waiting for the previews…" while it waits). A failure shows an error `Banner`; an untrusted preview opens UI-151 instead. The result is a new tab in the repository, named "<branch> | <branch>", with two browser panes side by side, each named after its branch.
 
 **ID allocation for this part.** Thread UI-20–25, Engines & accounts UI-33–37, Routines UI-50–53 (UI-50 is already referenced by `CronInput`), Agent mode UI-70–76, Tasks UI-80–84, Plugins UI-90–94. UI-40–49 (Dashboard, Notifications) and UI-60–69 (Dictate, Conductor) are reserved for later parts.
@@ -2681,6 +2687,8 @@ ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 T
 | UI-151 | Review worktree setup | §4.2 | WT |
 | UI-154 | Compare previews | §4.2 | WT |
 | UI-155 | Land worktrees | §4.2 | WT |
+| UI-156 | Check pull requests? | §4.2 | WT |
+| UI-157 | Pull request checks | §4.2 | WT |
 | UI-160 | Instructions | §4.2 | EN |
 
 ### 8.1 Cross-document conflicts found while writing this part

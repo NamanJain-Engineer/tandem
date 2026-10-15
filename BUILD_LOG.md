@@ -1356,6 +1356,11 @@ Built on branch `competitive-gaps` (from `chain19`, 0.7.2 plus the macOS Dictate
   - Commands `merge_queue_plan|start|get|stop|undo` (start and undo from the main window only; undo behind the native confirm). UI-155 Land worktrees from the repository and worktree menus, with Send failure to agent or Copy.
   - Tests: 4 in `tandem-git` (`tests/queue.rs`), 6 in `tandem-desktop` (real repositories and store rows), 9 in `landWorktrees.test.tsx`; E2E-M18-WT07-1 (`e2e/specs/m18-wt07-landing.e2e.ts`).
 
+- [x] F-WT-08 CI results and review comments back to the agent.
+  - `services::pr_checks`: the per-repository allow list in `$DATA/pr-checks.json`; a `Gh` trait (`LoginGh` runs the user's `gh` from the login PATH, no prompt or pager; a fake in tests); `gh pr view`, `gh pr checks --json`, `gh run view --job <id> --log-failed` and `gh api …/pulls/<n>/comments`; the failure prompt and imported comments behind `tandem_core::untrusted`.
+  - Commands `pr_checks_allow` (main window), `lane_checks`, `lane_check_failure`, `lane_review_comments`. UI-156 Check pull requests?, UI-157 Pull request checks, the rail badge (polled every 2 minutes while focused), Import review comments in F-WT-02's diff, a shared Send failure to agent (also used by UI-155).
+  - Tests: 7 in `tandem-desktop` (with the bindings), 5 in `prChecks.test.tsx`; E2E-M18-WT08-1 (`e2e/specs/m18-wt08-ci.e2e.ts`, a fake `gh` on the login PATH).
+
 ### M18 · Worktree runtime decisions
 - D-2440: M18 is a new milestone section owning F-WT-06 (and F-WT-09), P2 like M17's; `check-coverage.sh` allows P2 in M18. The work lands on `competitive-gaps`, the branch this session is pinned to, fast-forwarded to `chain19`.
 - D-2441: The runtime is on only when the file has `ports` or `env`; without them nothing changes for existing worktrees (no surprise `COMPOSE_PROJECT_NAME`).
@@ -1372,6 +1377,9 @@ Built on branch `competitive-gaps` (from `chain19`, 0.7.2 plus the macOS Dictate
 - D-2453: The check command is typed in UI-155 and remembered per repository in `$DATA/landing.json`, not read from `.vibezeo/worktree.json`: it runs only when a person starts the landing from the main window, so it needs no trust digest. Its limit is 30 minutes (a full test suite), against Best of N's 10.
 - D-2454: Undo landing is `git reset --keep` to the recorded commit, allowed only while the base's HEAD is the last landed merge and no landed merge is in `origin/<base>`; like Discard it needs the main window and the native confirm. The record survives relaunch; a new landing replaces it.
 - D-2455: A running landing lives in memory and UI-155 reads it every second (no event), as the rail reads previews.
+- D-2456: F-WT-08 reads GitHub only through the user's `gh` (no API client, no token in Vibezeo), so it works wherever the user has signed `gh` in. The allow is per repository (any of its worktrees asks for it) and kept on this computer; reading checks never sends anything to an agent.
+- D-2457: GitLab's checks aren't read in this slice: `glab`'s JSON output for pipelines couldn't be checked here, and true claims come first. GitLab worktrees say so.
+- D-2458: An imported review comment keeps the reviewer's words for display, but the review prompt carries the core's fenced copy (`fenced`), built with `tandem_core::untrusted`, so the TypeScript side never assembles untrusted text into a prompt itself.
 - D-2445: The secret warning uses the core's redactor on `NAME=value` through `worktree_env_check`, so there is one detector (F-TL-02).
 
 ## M17 · Worktree workflow (competitive-gaps)

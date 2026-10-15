@@ -13,6 +13,7 @@ use tandem_store::repo::workspaces::{self as repo, Workspace};
 
 use crate::services::lanes::{self, OverlapReport, StaleLanes};
 use crate::services::merge_queue::{self, LandingPlan, LandingRun};
+use crate::services::pr_checks::{self, Gh, ImportedComment, LaneChecks, LoginGh};
 use crate::services::worktree_setup::{self, LaneSetup, RemoveReport, SetupState};
 use crate::state::AppState;
 
@@ -422,4 +423,52 @@ fn landing_review(window: &WebviewWindow) -> Result<LocalReview, IpcError> {
             "Landing worktrees needs the main window",
         )
     })
+}
+
+// ---- CI results and review comments (F-WT-08) ------------------------------
+
+fn as_gh(gh: &Option<LoginGh>) -> Option<&dyn Gh> {
+    gh.as_ref().map(|g| g as &dyn Gh)
+}
+
+/// Allows or forgets running the user's `gh` for a repository. Only the
+/// main window can.
+#[tauri::command]
+pub async fn pr_checks_allow(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    workspace_id: WorkspaceId,
+    allow: bool,
+) -> Result<(), IpcError> {
+    local_review(&window)?;
+    let repo = pr_checks::repo_of(&state.store, &workspace_id).await?;
+    pr_checks::set_allowed(&state.data, repo.id.as_str(), allow)
+}
+
+#[tauri::command]
+pub async fn lane_checks(
+    state: State<'_, AppState>,
+    lane_id: WorkspaceId,
+) -> Result<LaneChecks, IpcError> {
+    let gh = LoginGh::find(&*state.terminals.login_env().await);
+    pr_checks::checks(&state.store, &state.data, as_gh(&gh), &lane_id).await
+}
+
+#[tauri::command]
+pub async fn lane_check_failure(
+    state: State<'_, AppState>,
+    lane_id: WorkspaceId,
+    name: String,
+) -> Result<String, IpcError> {
+    let gh = LoginGh::find(&*state.terminals.login_env().await);
+    pr_checks::failure(&state.store, &state.data, as_gh(&gh), &lane_id, &name).await
+}
+
+#[tauri::command]
+pub async fn lane_review_comments(
+    state: State<'_, AppState>,
+    lane_id: WorkspaceId,
+) -> Result<Vec<ImportedComment>, IpcError> {
+    let gh = LoginGh::find(&*state.terminals.login_env().await);
+    pr_checks::review_comments(&state.store, &state.data, as_gh(&gh), &lane_id).await
 }

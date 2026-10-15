@@ -70,6 +70,16 @@ The first conflict or failed check stops the queue, and the worktrees after it a
 
 Landing never pushes or fetches. Until you push, **Undo landing** moves the branch back to where it was before the landing, after you confirm. It refuses once the landing has been pushed to `origin`, or when the branch has new commits since.
 
+### CI results and review comments
+
+Vibezeo can show a worktree's pull request checks and bring CI failures and review comments to its agent. It reads them through your own GitHub CLI (`gh`), which signs itself in: Vibezeo never sees or stores a token. It asks first: choose **Check pull request** in a worktree's ⋯ menu and allow it for the repository. Until you do, Vibezeo doesn't run `gh` for that repository; **Stop checking pull requests** in the same menu forgets it again.
+
+- Once allowed, a worktree with an open pull request shows its checks on its rail row: running, passed, or "1 check failed: test". Vibezeo reads them every 2 minutes while the window is focused, and when you choose **Refresh**.
+- Click the checks to see each one. On a failed check, **Send failure to agent** types the check's name, link and the end of the failing job's log (for GitHub Actions jobs) into the agent running in that worktree. With no agent there, **Copy failure** copies it instead.
+- In **Open diff**, **Import review comments** adds the pull request's line comments to the review bar, on their files and lines with their authors, next to your own. Send them to the agent as one review.
+- CI logs and review comments are other people's text, so they reach the agent marked as data, not instructions, and only when you click.
+- GitLab merge requests aren't read yet.
+
 ### Review comments to the agent
 
 In **Open diff**, hover a line and choose the comment button to leave a comment on it; removed lines can be commented on too. The comments collect at the bottom of the diff, where you can edit or remove them. **Send to agent** types them into the agent running in that worktree's pane as one message, with each file, line and the line's text, then clears them; with several agents there, choose which one. If no agent is running there, **Copy review** puts the same text on the clipboard. Comments stay until you send them or quit Vibezeo.
@@ -84,4 +94,4 @@ When a worktree's `origin` remote is on a host whose name contains `gitlab`, **C
 
 ### Not available everywhere
 
-Worktrees aren't available in WSL folders yet. In folders on SSH hosts, worktrees don't have setup, ports and environment, previews, the overlap check or merge forecast, landing, or merge requests: **Create pull request** runs the host's own `gh`.
+Worktrees aren't available in WSL folders yet. In folders on SSH hosts, worktrees don't have setup, ports and environment, previews, the overlap check or merge forecast, landing, pull request checks, or merge requests: **Create pull request** runs the host's own `gh`.

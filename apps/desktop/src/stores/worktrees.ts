@@ -3,6 +3,7 @@ import type {
   FileDiff,
   Forge,
   IpcError,
+  LaneChecks,
   LandingPlan,
   LandingRun,
   LaneSetup,
@@ -57,6 +58,10 @@ export type WorktreeAsk =
   | { kind: "overlap"; worktreeId: string }
   /** UI-151: untrusted setup commands for new worktrees, reviewed once. */
   | { kind: "review"; worktreeIds: string[]; state: SetupState; after?: "preview" }
+  /** UI-156: allow reading pull requests with gh (F-WT-08). */
+  | { kind: "allowChecks"; worktreeId: string }
+  /** UI-157: a worktree's pull request checks (F-WT-08). */
+  | { kind: "checks"; worktreeId: string }
   /** UI-155: land the repository's worktrees (F-WT-07). */
   | { kind: "land"; workspaceId: string }
   /** UI-154: two worktrees' previews side by side (F-WT-09). */
@@ -76,6 +81,8 @@ type WorktreesState = {
   runtimes: Record<string, PortRange | null>;
   /** F-WT-09: each local worktree's preview, polled while the rail shows. */
   previews: Record<string, PreviewState>;
+  /** F-WT-08: each local worktree's pull request checks, once read. */
+  checks: Record<string, LaneChecks>;
 };
 
 /** Which worktree dialog is open (rail rows and pane menus open them). */
@@ -86,6 +93,7 @@ export const useWorktrees = create<WorktreesState>((set, get) => ({
   forges: {},
   runtimes: {},
   previews: {},
+  checks: {},
   notify: (n) => set({ notices: [...get().notices, n] }),
   takeNotices: () => {
     const out = get().notices;
@@ -500,4 +508,46 @@ export function stopLanding(workspaceId: string): Promise<Outcome<null>> {
 /** Undo landing: the core asks with a native confirm first. */
 export function undoLanding(workspaceId: string): Promise<Outcome<null>> {
   return run<null>("merge_queue_undo", { workspaceId });
+}
+
+// ---- CI results (F-WT-08) ---------------------------------------------------
+
+/** How often the rail reads pull request checks (only while focused). */
+export const CHECKS_POLL_MS = 120_000;
+
+/** Reads each worktree's checks; the core runs no gh for a repository
+ * that isn't allowed. */
+export async function loadChecks(laneIds: string[]): Promise<void> {
+  for (const laneId of laneIds.slice(0, 64)) {
+    const out = await run<LaneChecks>("lane_checks", { laneId });
+    if (out.ok) useWorktrees.setState((s) => ({ checks: { ...s.checks, [laneId]: out.value } }));
+  }
+}
+
+/** Allows or forgets gh for the worktree's repository, then re-reads it. */
+export async function allowChecks(worktreeId: string, allow: boolean): Promise<Outcome<null>> {
+  const out = await run<null>("pr_checks_allow", { workspaceId: worktreeId, allow });
+  if (out.ok) {
+    const wt = useWorkspaces.getState().list.find((w) => w.id === worktreeId);
+    const siblings = useWorkspaces
+      .getState()
+      .list.filter((w) => wt && w.parentId === wt.parentId && w.laneBranch && w.kind === "local")
+      .map((w) => w.id);
+    await loadChecks(siblings.length > 0 ? siblings : [worktreeId]);
+  }
+  return out;
+}
+
+/** "Check pull request" in a worktree's menu: the checks, or the ask first. */
+export async function openChecks(worktreeId: string): Promise<void> {
+  await loadChecks([worktreeId]);
+  const state = useWorktrees.getState().checks[worktreeId]?.state;
+  useWorktrees
+    .getState()
+    .open(state === "not_allowed" ? { kind: "allowChecks", worktreeId } : { kind: "checks", worktreeId });
+}
+
+/** The prompt for a failed check: CI's text behind the core's fence. */
+export function checkFailurePrompt(laneId: string, name: string): Promise<Outcome<string>> {
+  return run<string>("lane_check_failure", { laneId, name });
 }

@@ -1,27 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type {
-  IpcError,
   LandingCandidate,
   LandingPlan,
   LandingRun,
   LandingStep,
   WorkspaceSummary,
 } from "@tandem/protocol";
-import {
-  Banner,
-  Button,
-  Checkbox,
-  CodeBlock,
-  Dialog,
-  Input,
-  Select,
-  Skeleton,
-  Spinner,
-  useToast,
-} from "@tandem/ui";
+import { Banner, Button, Checkbox, CodeBlock, Dialog, Input, Skeleton, Spinner, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
-import { invoke } from "../../ipc/invoke";
-import { useDashboard } from "../../stores/dashboard";
 import {
   LANDING_POLL_MS,
   landingPlan,
@@ -30,7 +16,7 @@ import {
   stopLanding,
   undoLanding,
 } from "../../stores/worktrees";
-import { agentName, worktreeAgents } from "./WorktreeReview";
+import { SendToAgent } from "./SendToAgent";
 
 type Load = { at: "loading" } | { at: "error"; message: string } | { at: "ready"; plan: LandingPlan };
 
@@ -71,65 +57,6 @@ function stepText(s: LandingStep, base: string): string {
   }
 }
 
-/** "Send failure to agent" for a failed step, or Copy when no agent runs
- * in the worktree (as F-WT-02's review bar). Only ever on a click. */
-function SendFailure({ laneId, prompt }: { laneId: string; prompt: string }) {
-  const items = useDashboard((s) => s.items);
-  const agents = useMemo(() => worktreeAgents(items, laneId), [items, laneId]);
-  const [target, setTarget] = useState<string>("");
-  const [sending, setSending] = useState(false);
-  const { show } = useToast();
-  const chosen = agents.find((a) => a.key === target) ?? agents[0];
-  if (!chosen)
-    return (
-      <Button
-        size="sm"
-        variant="secondary"
-        data-testid="landing-copy"
-        onClick={() => {
-          void navigator.clipboard?.writeText(prompt);
-          show({ title: t("landing.copied") });
-        }}
-      >
-        {t("landing.copy")}
-      </Button>
-    );
-  const send = async () => {
-    if (chosen.source.type !== "pane") return;
-    setSending(true);
-    try {
-      await invoke("pty_type_prompt", { paneId: chosen.source.paneId, text: prompt });
-      show({ tone: "success", title: t("landing.sent", { name: agentName(chosen) }) });
-    } catch (e) {
-      show({ tone: "error", title: t("landing.sendFailed", { reason: (e as IpcError).message }) });
-    } finally {
-      setSending(false);
-    }
-  };
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      {agents.length > 1 && (
-        <Select
-          size="sm"
-          ariaLabel={t("worktree.review.agent")}
-          value={chosen.key}
-          onValueChange={setTarget}
-          options={agents.map((a) => ({ value: a.key, label: agentName(a) }))}
-        />
-      )}
-      <Button
-        size="sm"
-        variant="secondary"
-        loading={sending}
-        onClick={() => void send()}
-        data-testid="landing-send"
-      >
-        {t("landing.send")}
-      </Button>
-    </div>
-  );
-}
-
 function Steps({ run }: { run: LandingRun }) {
   return (
     <ol className="flex flex-col gap-2" data-testid="landing-steps" data-state={run.state}>
@@ -149,7 +76,9 @@ function Steps({ run }: { run: LandingRun }) {
           {s.output && (s.state === "failed" || s.state === "stopped") ? (
             <CodeBlock code={s.output} language="text" />
           ) : null}
-          {s.state === "failed" && s.prompt ? <SendFailure laneId={s.laneId} prompt={s.prompt} /> : null}
+          {s.state === "failed" && s.prompt ? (
+            <SendToAgent laneId={s.laneId} prompt={s.prompt} testId="landing" />
+          ) : null}
         </li>
       ))}
     </ol>
