@@ -56,6 +56,20 @@ A preview runs your app's dev server in each worktree, on the worktree's own por
 - In Best of N's **Compare**, **Previews** starts every lane's preview and opens a browser tab for each one as it comes up.
 - To see two versions side by side, choose **Compare previews…** in a worktree's ⋯ menu (or **Side by side…** in Best of N's **Compare**) and tick the other worktree. Vibezeo starts any preview that isn't running, waits up to a minute for both to answer, then opens a new tab in the repository with two browser panes, each named after its worktree's branch.
 
+### Land worktrees
+
+**Land worktrees…** in a repository's menu (or any of its worktrees' menus) merges finished worktrees into the repository's current branch, one after another, without a pull request for each. It lists the worktrees with commits the branch doesn't have, safest first: those the overlap forecast expects to merge cleanly, then those with the fewest conflicting files. Tick the ones to land, and give a **Check command** (your tests, for example); Vibezeo remembers the last one for the repository.
+
+For each worktree in turn, Vibezeo:
+
+1. merges the current branch into the worktree, so the check runs against everything landed before it;
+2. runs the check in the worktree, with the worktree's ports and environment;
+3. merges the worktree into the branch with a merge commit (`--no-ff`).
+
+The first conflict or failed check stops the queue, and the worktrees after it are left alone. A conflict is aborted, so nothing is left half-merged. A failed check shows the end of its output with **Send failure to agent**, which types it into the agent running in that worktree; nothing is sent until you click. **Stop** ends the queue and the check that's running.
+
+Landing never pushes or fetches. Until you push, **Undo landing** moves the branch back to where it was before the landing, after you confirm. It refuses once the landing has been pushed to `origin`, or when the branch has new commits since.
+
 ### Review comments to the agent
 
 In **Open diff**, hover a line and choose the comment button to leave a comment on it; removed lines can be commented on too. The comments collect at the bottom of the diff, where you can edit or remove them. **Send to agent** types them into the agent running in that worktree's pane as one message, with each file, line and the line's text, then clears them; with several agents there, choose which one. If no agent is running there, **Copy review** puts the same text on the clipboard. Comments stay until you send them or quit Vibezeo.
@@ -70,4 +84,4 @@ When a worktree's `origin` remote is on a host whose name contains `gitlab`, **C
 
 ### Not available everywhere
 
-Worktrees aren't available in WSL folders yet. In folders on SSH hosts, worktrees don't have setup, ports and environment, previews, the overlap check or merge forecast, or merge requests: **Create pull request** runs the host's own `gh`.
+Worktrees aren't available in WSL folders yet. In folders on SSH hosts, worktrees don't have setup, ports and environment, previews, the overlap check or merge forecast, landing, or merge requests: **Create pull request** runs the host's own `gh`.

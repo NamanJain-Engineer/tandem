@@ -93,7 +93,7 @@ export function worktreeAgents(items: Record<string, DashboardItem>, laneId: str
     .sort((a, b) => a.key.localeCompare(b.key));
 }
 
-function agentName(i: DashboardItem): string {
+export function agentName(i: DashboardItem): string {
   return i.humanName ?? i.engineLabel ?? i.title ?? i.key;
 }
 

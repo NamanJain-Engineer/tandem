@@ -37,6 +37,7 @@ import {
 } from "../../stores/worktrees";
 import { switchMode } from "../shell/actions";
 import { ComparePreviewsDialog } from "./ComparePreviews";
+import { LandWorktreesDialog } from "./LandWorktrees";
 import { MergeForecast, OverlapDialog } from "./WorktreeOverlap";
 import { ReviewDiff } from "./WorktreeReview";
 import { InstructionsDialog } from "./Instructions";
@@ -108,6 +109,13 @@ export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): Me
       label: t("worktree.compare.menu"),
       disabled: wt.missing || wt.kind !== "local" || previewSiblings(wt).length < 2,
       onSelect: () => open({ kind: "comparePreviews", candidates: previewSiblings(wt), chosen: [wt.id] }),
+    },
+    {
+      // F-WT-07: this repository's worktrees, landed one after another.
+      id: "wt-land",
+      label: t("landing.menu"),
+      disabled: wt.missing || wt.kind !== "local",
+      onSelect: () => open({ kind: "land", workspaceId: wt.id }),
     },
     {
       // F-WT-03: sibling worktrees on the same files, and the merge forecast.
@@ -496,6 +504,10 @@ export function WorktreeDialogs() {
   if (ask.kind === "setup") {
     const ws = list.find((w) => w.id === ask.workspaceId);
     return ws ? <WorktreeSetupDialog ws={ws} onClose={close} /> : null;
+  }
+  if (ask.kind === "land") {
+    const ws = list.find((w) => w.id === ask.workspaceId);
+    return ws ? <LandWorktreesDialog ws={ws} onClose={close} /> : null;
   }
   if (ask.kind === "comparePreviews")
     return (

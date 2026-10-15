@@ -1035,6 +1035,10 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
   - Footer: **Close** / **Use one file for all** (primary). The plan view lists each file it would create ("New") or replace ("Replaced"), the new text in a `CodeBlock`, the old text under "What it holds now", "Its text isn't in AGENTS.md and will be replaced. A copy is kept for Undo." when that's so, and the files left as they are and why. Footer: **Back** / **Write # files** (primary). A success toast has **Undo**.
   - States: loading (`Skeleton`s), error (`Banner` with Try again), empty ("No instructions files yet"), populated, and the plan.
 
+- **UI-155 Land worktrees** (dialog; "Land worktrees…" in a repository's rail menu and every local worktree's ⋯ menu; F-WT-07). Description: "Merges each ticked worktree into {base}, one at a time, after merging {base} into it and running the check. Nothing is pushed." Body: a `Checkbox` per candidate (its branch, "{n} commits", and the forecast: "No conflicts expected", "Conflicts in {n} files" or "No forecast"), in landing order; one with uncommitted changes is disabled with "Commit or stash its changes first". Then **Check command** (`Input`, monospace, the last one used here), with "Without a check, worktrees land untested." when empty. Loading: `Skeleton` rows. Empty: "No worktrees have commits that {base} doesn't." Errors: an error `Banner` (a dirty or detached base says so and disables Land). Footer: Cancel / **Land** (primary, "Land {n}").
+
+  While landing, the rows become steps: waiting, "Merging {base} in…", "Checking…", "Landing…", Landed (with the commit), Failed (exit code), Conflict (the files). A failed step shows its output's tail in a `CodeBlock` with **Send failure to agent** (an agent `Select` when several run there) or **Copy** when none does. Footer: **Stop** while running; Close after. **Undo landing** (secondary, danger) shows whenever the last run landed something; it asks with the native confirm "Undo landing? Moves {base} back to where it was before the landing. The worktrees keep their commits."
+
 - **UI-154 Compare previews** (dialog; "Compare previews…" in every local worktree's ⋯ menu, with the worktree ticked, and "Side by side…" in Best of N's Compare, with both lanes ticked when there are two; F-WT-09). Description: "Choose two worktrees. Their previews open side by side in a new tab." Body: a `Checkbox` per worktree of the repository whose preview exists, labelled with its branch, described "Preview running" or "Its preview starts when you open them"; ticking a third unticks the oldest. Loading: two `Skeleton` rows while the previews are read. Empty: "Side by side needs two worktrees whose repository has a preview." Footer: Cancel / **Open side by side** (enabled with two ticked; "Waiting for the previews…" while it waits). A failure shows an error `Banner`; an untrusted preview opens UI-151 instead. The result is a new tab in the repository, named "<branch> | <branch>", with two browser panes side by side, each named after its branch.
 
 **ID allocation for this part.** Thread UI-20–25, Engines & accounts UI-33–37, Routines UI-50–53 (UI-50 is already referenced by `CronInput`), Agent mode UI-70–76, Tasks UI-80–84, Plugins UI-90–94. UI-40–49 (Dashboard, Notifications) and UI-60–69 (Dictate, Conductor) are reserved for later parts.
@@ -2676,6 +2680,7 @@ ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 T
 | UI-150 | Worktree setup | §4.2 | WT |
 | UI-151 | Review worktree setup | §4.2 | WT |
 | UI-154 | Compare previews | §4.2 | WT |
+| UI-155 | Land worktrees | §4.2 | WT |
 | UI-160 | Instructions | §4.2 | EN |
 
 ### 8.1 Cross-document conflicts found while writing this part

@@ -341,6 +341,13 @@ export function CodeRail() {
       onSelect: () => useWorktrees.getState().open({ kind: "setup", workspaceId: ws.id }),
     },
     {
+      // F-WT-07: land this repository's worktrees one after another.
+      id: "land-worktrees",
+      label: t("landing.menu"),
+      disabled: ws.kind !== "local" || !ws.branch || ws.missing,
+      onSelect: () => useWorktrees.getState().open({ kind: "land", workspaceId: ws.id }),
+    },
+    {
       // F-EN-07: which instructions file each engine reads here.
       id: "instructions",
       label: t("instructions.menu"),

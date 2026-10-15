@@ -3,6 +3,8 @@ import type {
   FileDiff,
   Forge,
   IpcError,
+  LandingPlan,
+  LandingRun,
   LaneSetup,
   MergeReport,
   OverlapReport,
@@ -55,6 +57,8 @@ export type WorktreeAsk =
   | { kind: "overlap"; worktreeId: string }
   /** UI-151: untrusted setup commands for new worktrees, reviewed once. */
   | { kind: "review"; worktreeIds: string[]; state: SetupState; after?: "preview" }
+  /** UI-155: land the repository's worktrees (F-WT-07). */
+  | { kind: "land"; workspaceId: string }
   /** UI-154: two worktrees' previews side by side (F-WT-09). */
   | { kind: "comparePreviews"; candidates: string[]; chosen: string[]; onDone?: () => void }
   | null;
@@ -466,4 +470,34 @@ export async function comparePreviews(
   workspaces.select(parentId);
   workspaces.selectTab(parentId, tab.value.id);
   return tab;
+}
+
+// ---- Local merge queue (F-WT-07) --------------------------------------------
+
+/** How often UI-155 reads a running landing. */
+export const LANDING_POLL_MS = 1_000;
+
+export function landingPlan(workspaceId: string): Promise<Outcome<LandingPlan>> {
+  return run<LandingPlan>("merge_queue_plan", { workspaceId });
+}
+
+export function startLanding(
+  workspaceId: string,
+  laneIds: string[],
+  check: string | null,
+): Promise<Outcome<LandingRun>> {
+  return run<LandingRun>("merge_queue_start", { workspaceId, laneIds, check });
+}
+
+export function landingRun(workspaceId: string): Promise<Outcome<LandingRun | null>> {
+  return run<LandingRun | null>("merge_queue_get", { workspaceId });
+}
+
+export function stopLanding(workspaceId: string): Promise<Outcome<null>> {
+  return run<null>("merge_queue_stop", { workspaceId });
+}
+
+/** Undo landing: the core asks with a native confirm first. */
+export function undoLanding(workspaceId: string): Promise<Outcome<null>> {
+  return run<null>("merge_queue_undo", { workspaceId });
 }

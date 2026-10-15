@@ -1975,6 +1975,32 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ---
 
+## M18 · Next features: merge and CI (M)
+
+**Goal.** Land agent branches without a pull request each, and bring CI and review results back to the agents: a local merge queue with undo (F-WT-07) and CI results and review comments from `gh` (F-WT-08). From `docs/NEXT_FEATURES.md` (§1 #12, #13). Built on branch `competitive-gaps`; decisions D-2451–D-2459.
+
+**Owns:** F-WT-07, F-WT-08 (P2)
+**Prerequisites.** M17 · Worktree workflow (F-WT-02, F-WT-03, F-WT-04), F-CD-15 (merge), F-EX-04's check runner, F-WT-06 (the worktree's variables).
+
+**Ordered tasks**
+1. **Local merge queue (F-WT-07).** `tandem_git` gains the queue's git steps (merge the base in, abort, `--no-ff` into the base, reset back). `services::merge_queue`: the plan (candidates in forecast order), the run (one worktree at a time, the check through Best of N's runner, stop), the undo record in `$DATA/landing.json` and its refusals, the failure prompt through `tandem_core::untrusted`. Commands `merge_queue_plan|start|get|stop|undo`; UI-155 Land worktrees.
+2. **CI results and review comments (F-WT-08).** The per-repository allow list; `gh pr view`, `gh pr checks`, `gh run view --log-failed` and `gh api` through the login shell, behind a trait with a fake; the rail row's checks; Send failure to agent; Import review comments into F-WT-02's bar; the prompt with imported text fenced.
+
+**Verification**
+```bash
+cargo test -p tandem-git f_wt_07 && cargo test -p tandem-desktop --lib f_wt_0
+pnpm --filter desktop exec vitest run -t "F-WT-0"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-wt0[78]*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-WT07-1 Merge queue.** A repository with three worktrees with a commit each and a check that passes. Expected: Land worktrees lands all three, the base has three merge commits; a fourth whose check fails stops the queue with Send failure to agent; Undo landing restores the base.
+- **E2E-M18-WT08-1 CI back to the agent.** A repository whose worktree branch has a pull request on a fake `gh`. Expected: nothing is called before the allow; the row shows the failed check; Send failure to agent types the fenced log tail into the worktree's agent; Import review comments fills the review bar.
+
+**Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
+
+---
+
 ## M18 · Next features: engines (M)
 
 **Goal.** The engine work `docs/NEXT_FEATURES.md` ranks first (§1 #1, #3, #5, #9): one instructions file for every engine, an engine catalog that keeps up with the vendors, engine versions under the user's control, and one library of every engine's local sessions. Built on its own branch (decisions D-2400–D-2419); each feature lands on its own and can ship in any release after it's green.

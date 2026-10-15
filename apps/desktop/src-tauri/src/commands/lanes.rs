@@ -12,6 +12,7 @@ use tandem_store::repo::panes::PaneRecord;
 use tandem_store::repo::workspaces::{self as repo, Workspace};
 
 use crate::services::lanes::{self, OverlapReport, StaleLanes};
+use crate::services::merge_queue::{self, LandingPlan, LandingRun};
 use crate::services::worktree_setup::{self, LaneSetup, RemoveReport, SetupState};
 use crate::state::AppState;
 
@@ -321,4 +322,104 @@ pub async fn lane_preview_start(
         }
     });
     Ok(pane)
+}
+
+// ---- Local merge queue (F-WT-07) --------------------------------------------
+
+/// F-WT-07: the worktrees that can land, in landing order.
+#[tauri::command]
+pub async fn merge_queue_plan(
+    state: State<'_, AppState>,
+    workspace_id: WorkspaceId,
+) -> Result<LandingPlan, IpcError> {
+    let login = state.terminals.login_env().await;
+    let git = lanes::git_for(&state.data, &login)?;
+    merge_queue::plan(&state.store, &state.data, &git, &workspace_id).await
+}
+
+/// Lands `lane_ids` in turn. It runs the check command, so only the main
+/// window can start it.
+#[tauri::command]
+pub async fn merge_queue_start(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    workspace_id: WorkspaceId,
+    lane_ids: Vec<WorkspaceId>,
+    check: Option<String>,
+) -> Result<LandingRun, IpcError> {
+    landing_review(&window)?;
+    let login = state.terminals.login_env().await;
+    let git = lanes::git_for(&state.data, &login)?;
+    merge_queue::start(
+        &state.store,
+        &state.data,
+        &git,
+        &login.vars,
+        &workspace_id,
+        &lane_ids,
+        check,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn merge_queue_get(
+    state: State<'_, AppState>,
+    workspace_id: WorkspaceId,
+) -> Result<Option<LandingRun>, IpcError> {
+    merge_queue::get(&state.store, &workspace_id).await
+}
+
+#[tauri::command]
+pub async fn merge_queue_stop(
+    state: State<'_, AppState>,
+    workspace_id: WorkspaceId,
+) -> Result<(), IpcError> {
+    merge_queue::stop(&state.store, &workspace_id).await
+}
+
+/// Moves the base branch back, so only the main window can ask, and a
+/// person confirms it natively (TL-06 rule 5).
+#[tauri::command]
+pub async fn merge_queue_undo(
+    app: AppHandle,
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    workspace_id: WorkspaceId,
+) -> Result<(), IpcError> {
+    landing_review(&window)?;
+    let login = state.terminals.login_env().await;
+    let git = lanes::git_for(&state.data, &login)?;
+    let (repo, _) = merge_queue::undo_check(&state.store, &state.data, &git, &workspace_id).await?;
+    let base = merge_queue::plan(&state.store, &state.data, &git, &workspace_id)
+        .await?
+        .undo
+        .map(|u| u.base)
+        .unwrap_or_default();
+    if !confirm_native(
+        &app,
+        "Undo landing?",
+        &format!(
+            "Moves {base} in {} back to where it was before the landing. The worktrees keep their commits.",
+            repo.name
+        ),
+        "Undo landing",
+    )
+    .await
+    {
+        return Err(IpcError::new(ErrorCode::Cancelled, "Kept the landing"));
+    }
+    merge_queue::undo(&state.store, &state.data, &git, &workspace_id).await
+}
+
+fn landing_review(window: &WebviewWindow) -> Result<LocalReview, IpcError> {
+    let origin = Origin::Local {
+        window: window.label().to_string(),
+    };
+    LocalReview::check(&origin).ok_or_else(|| {
+        IpcError::new(
+            ErrorCode::PermissionDenied,
+            "Landing worktrees needs the main window",
+        )
+    })
 }
