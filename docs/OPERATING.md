@@ -370,6 +370,8 @@ MSIX_IDENTITY_NAME=… MSIX_PUBLISHER='CN=…' MSIX_PUBLISHER_DISPLAY_NAME=… \
   unused client runtime from the marketing pages (not the docs or the demo app)
   and fails the build if any page then has a script beyond `/demo/embed.js` on `/`
   and `/download/detect.js` on `/download/`. Site components stay server-only.
+  `scripts/defer-docs.mjs` (D-1819) then moves each docs page's Next chunks behind
+  `/docs-boot.js`, which starts them after the first paint.
   Then `scripts/check-routes.mjs` (D-1815) checks every page answers at its
   trailing-slash URL with no redirect: Next's own trailing-slash redirects are
   off for the export, and the "add a slash" rule is in `vercel.json`.

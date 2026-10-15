@@ -118,13 +118,10 @@ Every marketing page uses the frame, the hero and the sections above: home, pric
 Captures are the real app, taken at 2× and served as AVIF and WebP with a 1× fallback. Each is labelled with the build it shows. Stale captures (`code-mode` and `launch-grid` showed 0.1.0; the demo still showed 0.5.0) are retaken from 0.7.2.
 
 ## 3. Docs
-The docs' light and dark tokens are mapped to the site's (`app/docs/docs.css`):
-- the same lit cards for links;
-- code blocks in the product bezel;
-- mono group labels in the sidebar;
-- the site's footer.
-
-The docs' largest-paint warning is D-1819 (BUILD_LOG).
+The docs keep Fumadocs for their content (MDX, the page tree and the table of contents) but no longer use its client layout (D-1819, D-1839).
+- **Frame:** `DocsShell` renders them on the server inside the site's own header and footer. A sticky sidebar groups pages under mono labels and lights the active one. "On this page" sits on wide screens, and lit previous/next cards close each page. Phones get the sidebar from a popover.
+- **Prose:** Fumadocs' typography plugin, mapped to the site's tokens, with display-size titles, hairline h2s, key caps and lit tables.
+- **Script:** the only script left is Next's router, so links still open in the page (D-1817), and its chunks start after the first paint.
 
 ## 4. Budgets kept
 - No new requests above the fold beyond the 6 KB grain tile.
