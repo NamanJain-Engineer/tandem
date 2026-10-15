@@ -3009,6 +3009,38 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
 **Acceptance:**
 1. A Team member with audit on generates an audit event for a Full-access session start, while a Pro user generates nothing.
 
+#### F-TL-11 Agent sandbox, Linux first (P2)
+**Story:** I let agents work in auto mode, and I don't want one of them reading my SSH keys, writing outside its folder, or planting a git hook that runs later outside its reach. I want agent panes to see only what their work needs, whichever engine they run.
+
+**Behavior:**
+- **Setting:** Settings › Engines › "Sandbox agent panes": **Off** (default) or **Workspace**. It applies to agent panes started after the change, in folders on this computer. SSH and WSL panes are never sandboxed, and their pane chip says "Not sandboxed here".
+- **How:** on Linux, the engine's own command runs under bubblewrap (`bwrap`), found on the login PATH. The pane's shell stays outside the sandbox: when the engine exits, the shell is back.
+  - Vibezeo never installs it. Without `bwrap`, or when it can't make a sandbox here (user namespaces off), the setting shows the reason ("Install bubblewrap (the bwrap command) to sandbox agents.") and agent panes start unsandboxed, with their chip saying why.
+  - On macOS and Windows the setting reads "Not available on this system yet", through the same interface.
+- **Workspace policy:**
+  - **The whole filesystem is read-only,** apart from these writable areas:
+    - the pane's folder (the workspace or its worktree);
+    - for a worktree, the repository's git folder, so commits work;
+    - the account's provider home;
+    - Vibezeo's tasks folder (the `tandem-tasks` server the engine starts);
+    - a private `/tmp`;
+    - an empty `~/.cache`.
+  - **Hidden** (they read as empty): `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.docker`, `~/.kube`, `~/.netrc`, `~/.local/share/keyrings`, the other accounts' provider homes, and the other worktrees of the repository.
+  - **Git internals stay read-only** inside the writable folders: `.git/hooks` and `.git/config` (and the repository's for a worktree). An agent can't plant a hook that later runs outside the sandbox.
+  - **The network is shared** (engines need it for inference).
+- **The engine signs in by itself, as always.** The sandbox only narrows what the agent's process can reach. Vibezeo never reads, copies or proxies the engine's credentials. The account's provider home stays writable, so the engine's own sign-in refresh works.
+- **Where it shows:** a "Sandboxed" chip in the agent pane's header (tooltip: "Writes only to this folder, its git data and the engine's own home; can't read your keys"). A write the sandbox refuses reaches the engine as its own "Read-only file system" error.
+
+**Data:** setting `agent_sandbox` (`"off"` | `"workspace"`). Nothing else is stored.
+
+**Acceptance:**
+1. With Workspace on Linux, an agent pane can create a file in its folder and can't create one in `$HOME`.
+2. Reading `~/.ssh/id_ed25519` from a sandboxed pane fails, and so does reading another account's provider home.
+3. Writing `.git/hooks/pre-commit` from a sandboxed pane fails, while a commit in a worktree succeeds.
+4. Without `bwrap` (or where it can't run), the setting says why and agent panes start unsandboxed, with the chip saying why. On macOS and Windows the setting says it isn't available yet.
+5. The engine's command line inside the sandbox is the same as without it, its environment is the same, and its provider home is writable. No file under a provider home is read by Vibezeo to build the sandbox.
+6. With the setting Off, agent panes start exactly as before.
+
 ### 4.19 EX: Extras
 
 Features beyond the original spec that make working with coding agents faster, safer or more pleasant. They're all local: nothing here sends anything off the machine. Built in M17.
