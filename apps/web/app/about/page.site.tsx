@@ -75,7 +75,8 @@ export default function AboutPage() {
       />
 
       <Block id="founder" title="Founder">
-        <div className="flex max-w-narrow flex-col gap-2 rounded-lg border border-border bg-card p-8">
+        <div className="reveal surface relative isolate flex max-w-narrow flex-col gap-2 overflow-hidden p-8 lg:p-10">
+          <div aria-hidden="true" className="bg-lens absolute inset-x-0 top-0 -z-10 h-40 opacity-70" />
           <p className="text-title text-fg">
             {SITE.founder.link ? (
               <a href={SITE.founder.link} className="underline-offset-4 hover:underline">
@@ -104,7 +105,7 @@ export default function AboutPage() {
       <Block id="how-we-work" title="How we work">
         <ul className="grid gap-4 sm:grid-cols-3">
           {WAYS.map((w) => (
-            <li key={w.title} className="flex flex-col gap-1.5 border-l-2 border-accent pl-4">
+            <li key={w.title} className="reveal surface flex flex-col gap-2 p-6">
               <h3 className="text-title text-fg">{w.title}</h3>
               <p className="text-copy-sm text-fg-muted">{w.body}</p>
             </li>
@@ -113,7 +114,7 @@ export default function AboutPage() {
       </Block>
 
       <Block id="company" title="Company details">
-        <dl className="grid max-w-narrow grid-cols-[minmax(6rem,auto)_minmax(0,1fr)] gap-x-8 gap-y-4 text-copy">
+        <dl className="surface grid max-w-narrow grid-cols-[minmax(6rem,auto)_minmax(0,1fr)] gap-x-8 gap-y-4 p-6 text-copy lg:p-8">
           {details().map(([k, v]) => (
             <div key={k} className="contents">
               <dt className="text-fg-muted">{k}</dt>
@@ -154,9 +155,10 @@ export default function AboutPage() {
 
 function Block({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
-    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-(--site-header-h) border-t border-border bg-page">
-      <div className="container-site flex flex-col gap-6 py-16">
-        <h2 id={`${id}-title`} className="text-display-md text-fg">
+    <section id={id} aria-labelledby={`${id}-title`} className="relative scroll-mt-(--site-header-h) bg-page">
+      <div aria-hidden="true" className="horizon absolute inset-x-0 top-0" />
+      <div className="container-site flex flex-col gap-8 py-20 lg:py-24">
+        <h2 id={`${id}-title`} className="text-sheen text-display-lg text-fg">
           {title}
         </h2>
         {children}

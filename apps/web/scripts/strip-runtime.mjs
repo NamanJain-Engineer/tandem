@@ -4,7 +4,8 @@
 // anyway (its runtime chunks, their preloads and the inline RSC payload,
 // about half of each page's HTML) runs for nothing and delays the page.
 //
-// Kept: the docs (Fumadocs is a client app) and the demo app. Afterwards
+// Kept: the docs (Next's router opens their links in the page, D-1817; their
+// chunks start after the first paint, scripts/defer-docs.mjs) and the demo app. Afterwards
 // the only scripts left must be F-WB-01 AC2's two: /demo/embed.js on the
 // home page and /download/detect.js on /download/. Anything else fails the
 // build, so a client component added to a marketing page can't silently

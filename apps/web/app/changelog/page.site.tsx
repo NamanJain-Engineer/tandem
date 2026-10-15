@@ -46,7 +46,7 @@ export default function ChangelogPage() {
 
       <section aria-labelledby="releases-title" className="bg-page pb-(--site-section-y)">
         <div className="container-site flex flex-col gap-10">
-          <h2 id="releases-title" className="text-display-md text-fg">
+          <h2 id="releases-title" className="text-sheen text-display-lg text-fg">
             Releases
           </h2>
           <ol className="flex flex-col">
@@ -55,16 +55,16 @@ export default function ChangelogPage() {
               const added = highlights(r.version);
               return (
                 <li key={r.version} className="relative grid gap-4 pb-12 pl-8 lg:grid-cols-12 lg:gap-6 lg:pl-0">
-                  <span aria-hidden="true" className="absolute bottom-0 left-[5px] top-2 w-px bg-border lg:left-[calc(25%-1.25rem)]" />
+                  <span aria-hidden="true" className="absolute bottom-0 left-[5px] top-2 w-px bg-[linear-gradient(180deg,var(--site-line-strong),var(--site-line))] lg:left-[calc(25%-1.25rem)]" />
                   <span
                     aria-hidden="true"
                     className={cx(
                       "absolute left-0 top-2 size-[11px] rounded-full border-2 border-page lg:left-[calc(25%-1.25rem-5px)]",
-                      i === 0 ? "bg-accent" : "bg-border-strong",
+                      i === 0 ? "bg-accent shadow-[0_0_0_4px_var(--tn-accent-soft),0_0_16px_var(--tn-accent)]" : "bg-line-strong",
                     )}
                   />
                   <div className="flex flex-col items-start gap-2 lg:col-span-3 lg:sticky lg:top-24 lg:self-start">
-                    <a href={versionPath(r.version)} className="font-mono text-display-md text-fg hover:text-accent">
+                    <a href={versionPath(r.version)} className="font-mono text-display-md tracking-[-0.04em] text-fg transition-colors duration-(--dur-base) hover:text-accent">
                       {SITE.product} {r.version}
                     </a>
                     <div className="flex flex-wrap gap-1.5">
@@ -80,12 +80,12 @@ export default function ChangelogPage() {
                       ))}
                     </div>
                   </div>
-                  <div className="flex flex-col gap-4 lg:col-span-8 lg:col-start-5">
+                  <div className="reveal surface flex flex-col gap-4 p-6 lg:col-span-8 lg:col-start-5 lg:p-7">
                     {r.summary && <p className="text-copy text-pretty text-fg-muted">{r.summary.split("\n\n")[0]}</p>}
                     {added.length > 0 && (
                       <ul aria-label="Added" className="flex flex-wrap gap-2">
                         {added.map((a) => (
-                          <li key={a} className="rounded-full border border-border bg-card px-3 py-1 text-caption text-fg">
+                          <li key={a} className="rounded-full bg-(--site-glass) px-3 py-1 text-caption text-fg shadow-[inset_0_0_0_1px_var(--site-line-strong)]">
                             {a}
                           </li>
                         ))}
@@ -108,10 +108,10 @@ export default function ChangelogPage() {
             <li
               key={m.id}
               id={m.id.toLowerCase()}
-              className="flex scroll-mt-(--site-header-h) flex-col gap-4 rounded-md border border-border bg-card p-6"
+              className="reveal surface-raised flex scroll-mt-(--site-header-h) flex-col gap-4 p-6 lg:p-7"
             >
               <div className="flex flex-col gap-1">
-                <span className="font-mono text-caption text-accent">{m.id}</span>
+                <span className="font-mono text-[0.75rem] uppercase tracking-[0.12em] text-accent">{m.id}</span>
                 <h3 className="text-title text-fg">{m.title}</h3>
               </div>
               <ul className="flex flex-col gap-2 text-copy-sm text-fg-muted">
