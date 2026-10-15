@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { sourceRegex } from "../scripts/check-routes.mjs";
+import { FEED_PATH, blogPages } from "../lib/blog/posts";
 import { RELEASES, versionPath } from "../lib/changelog";
 import { DOCS_PAGES, docsPath } from "../lib/docs/pages";
 import { SITE_PAGES } from "../lib/site";
@@ -24,7 +25,7 @@ const target = (url: string) => {
 };
 
 describe("routes (D-1815)", () => {
-  const pages = [...SITE_PAGES, ...DOCS_PAGES.map((p) => docsPath(p.slug)), ...RELEASES.map((r) => versionPath(r.version))];
+  const pages = [...SITE_PAGES, ...DOCS_PAGES.map((p) => docsPath(p.slug)), ...RELEASES.map((r) => versionPath(r.version)), ...blogPages()];
 
   it("F-WB-03 version pages serve at their trailing-slash URL, with no redirect", () => {
     expect(RELEASES.length).toBeGreaterThan(0);
@@ -42,10 +43,19 @@ describe("routes (D-1815)", () => {
       if (url !== "/") expect(target(url.slice(0, -1)), url).toBe(url);
     }
     // Files are left alone, and site-info keeps answering at its slash form (D-135).
-    for (const file of ["/llms.txt", "/openapi.json", "/.well-known/security.txt", "/downloads/SHA256SUMS.txt"])
+    for (const file of ["/llms.txt", "/openapi.json", "/.well-known/security.txt", "/downloads/SHA256SUMS.txt", FEED_PATH])
       expect(target(file), file).toBeNull();
     expect(target("/api/v1/site-info")).toBe("/api/v1/site-info/");
     expect(rules.every((r) => r.permanent)).toBe(true);
+  });
+
+  it("F-WB-06 AC7 every blog page serves at its trailing-slash URL, and the feed as a file", () => {
+    expect(blogPages().length).toBeGreaterThan(2);
+    for (const url of blogPages()) {
+      expect(target(url), url).toBeNull();
+      expect(target(url.slice(0, -1)), url).toBe(url);
+    }
+    expect(target(FEED_PATH)).toBeNull();
   });
 
   it("F-WB-01 Next's own trailing-slash redirects are off for the export, so they can't strip a slash", () => {

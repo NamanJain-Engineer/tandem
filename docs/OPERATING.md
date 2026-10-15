@@ -353,7 +353,7 @@ MSIX_IDENTITY_NAME=… MSIX_PUBLISHER='CN=…' MSIX_PUBLISHER_DISPLAY_NAME=… \
   (`PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium pnpm --filter web test:site`,
   against `apps/web/out`), Lighthouse CI on `/` and `/pricing/`
   (`CHROME_PATH=/opt/pw-browsers/chromium pnpm --filter web lhci`: `/`, `/pricing/`,
-  `/download/`, `/changelog/` and `/docs/`, three runs each, 95 or more in all four
+  `/download/`, `/changelog/`, `/docs/`, `/blog/` and one post, three runs each, 95 or more in all four
   categories and CLS under 0.02; delete `apps/web/.lighthouseci` first, it keeps old
   runs), then walk the demo:
   `(cd apps/web/public && python3 -m http.server 4321 &)` and
@@ -368,6 +368,7 @@ MSIX_IDENTITY_NAME=… MSIX_PUBLISHER='CN=…' MSIX_PUBLISHER_DISPLAY_NAME=… \
   Then `scripts/check-routes.mjs` (D-1815) checks every page answers at its
   trailing-slash URL with no redirect: Next's own trailing-slash redirects are
   off for the export, and the "add a slash" rule is in `vercel.json`.
+- **Blog posts** (F-WB-06) are files in `apps/web/content/blog`; `docs/BLOG.md` §3 is the owner's how-to. They deploy like any other site change.
 - **Deploy** = merge the product branch into `main` and push, only with the
   owner's go-ahead (some agent environments block pushes to `main` outright; then
   the owner merges on GitHub). Vercel builds in a few minutes.

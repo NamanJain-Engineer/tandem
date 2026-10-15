@@ -1,0 +1,55 @@
+---
+title: What's new in 0.7.2
+description: A Dictate release for Linux. Takes stop at 10 minutes however they started, Esc cancels them, the toggle link steps aside while your shortcut works, and the Dictate card lists your last five takes.
+date: 2026-10-15
+author: Naman Jain
+tags: [release, dictate, linux]
+---
+
+Vibezeo 0.7.2 is out for Linux, as a `.deb` for Debian and Ubuntu and an `.rpm` for Fedora. Like 0.7.1, it runs the Free plan on your computer, with no account and nothing sent to our servers.
+
+This is a patch release for Dictate. It fixes how takes end when Dictate's global shortcut isn't available, and makes the shortcut's state easier to see.
+
+## Takes stop at 10 minutes, however they started
+
+A take is capped at 10 minutes, with a 30-second countdown before the end. Takes started with the shortcut already stopped there. Takes started from a message box's mic button or from Dictate's toggle link didn't, if the global shortcut couldn't start: the widget counted down to zero and kept recording.
+
+That happens on Wayland without a global-shortcuts portal, as in Ubuntu 24.04's default session. In 0.7.2 those takes stop at 10 minutes too, after the same countdown.
+
+## Cancel or finish a take the usual way
+
+- **Esc cancels** a take started from the mic button or the toggle link, as it already did for one started with the shortcut. On Wayland, where Esc can't be heard outside the app, the widget's close button cancels it.
+- **A quick tap of the shortcut finishes it.** During a take started from the mic button or the toggle link, a tap now stops the take and types what you said, as it does for a hands-free take started with a double-tap. Before, the tap started a new take and the words were lost.
+
+## The toggle link only when you need it
+
+The toggle link is Dictate's fallback for when the global shortcut can't work: there's no global-shortcuts portal, or the portal failed. Browsers can open these links, so a web page could have started a take.
+
+- **While your shortcut works, Wayland included, the link now does nothing.** If you bound the link while your shortcut worked, use the shortcut instead.
+- Settings › Dictate shows the link's command only when you need it.
+- **Dictate tells you if its shortcut stops working** while the app runs, for example when a Wayland portal session ends. The toggle link then takes over.
+
+## Your last 5 takes, and Reconnecting
+
+- The Dictate card lists your five most recent takes with their times. Click one to open History.
+- If your microphone goes silent during a take and Dictate reopens it, the widget says **Reconnecting**, then goes back to **Listening** once sound returns or your backup microphone takes over.
+
+## Update or install
+
+On Debian or Ubuntu, check the download against its checksum, then install it:
+
+```bash
+sha256sum Vibezeo_0.7.2_amd64.deb
+sudo apt install ./Vibezeo_0.7.2_amd64.deb
+```
+
+On Fedora:
+
+```bash
+sha256sum Vibezeo-0.7.2-1.x86_64.rpm
+sudo dnf install ./Vibezeo-0.7.2-1.x86_64.rpm
+```
+
+Compare each checksum with the one on the [download page](/download/). The free download keeps its limits: 4 live panes, 3 workspaces, one thread at a time, threads with Claude Code and Codex, one account per engine, one teammate besides Lead and one plugin connection.
+
+The full notes are in the [0.7.2 release notes](/changelog/0.7.2/).

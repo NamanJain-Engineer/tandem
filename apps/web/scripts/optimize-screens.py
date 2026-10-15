@@ -15,8 +15,13 @@ import sys
 from PIL import Image, features
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent / "public"
-# The demo still and every PNG capture in public/screens.
-SOURCES = [ROOT / "demo" / "still.jpg", *sorted((ROOT / "screens").glob("*.png"))]
+# The demo still, every PNG capture in public/screens, and the blog's images
+# (public/blog/<slug>/*.png or *.jpg, F-WB-06).
+SOURCES = [
+    ROOT / "demo" / "still.jpg",
+    *sorted((ROOT / "screens").glob("*.png")),
+    *sorted(p for p in (ROOT / "blog").glob("*/*") if p.suffix in (".png", ".jpg", ".jpeg")),
+]
 QUALITY = {"avif": 60, "webp": 80}
 
 

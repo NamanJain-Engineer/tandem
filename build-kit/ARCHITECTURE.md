@@ -2493,6 +2493,7 @@ M13 builds the server side and these desktop pieces; the sessions that own the U
 | `/pricing` | §3 tables | generated at build from `apps/api/config/remote-config.json` (`scripts/check-pricing.ts` asserts equality with `GET /v1/config` in CI) | F-WB-01 |
 | `/download` | OS-detected button + all builds with SHA-256 | `releases` via `/api/v1/site-info` | F-WB-04 |
 | `/changelog`, `/changelog/[version]` | from `CHANGELOG.md` | build-time parse | F-WB-03 |
+| `/blog`, `/blog/[slug]`, `/blog/tags/[tag]`, `/blog/feed.xml` | the blog | `content/blog/*.mdx` (fumadocs-mdx collection, frontmatter validated at build) | F-WB-06 |
 | `/docs/[[...slug]]` | Fumadocs (`content/docs/*.mdx`) | generated pages: `shortcuts.mdx` (registry export), `settings.mdx` (SettingsSchema with anchors), `engines.mdx` (registry.json), `plugins.mdx` (vendor manifest export), `platforms.mdx` | F-WB-02 |
 | `/privacy`, `/terms`, `/security` | legal, data-flow table (same source as `privacy_data_flows`), subprocessors | MDX + generated table | F-TL-07 |
 | `/llms.txt`, `/llms-full.txt`, `/openapi.json` | machine-readable discovery | route handlers from config + API OpenAPI (generated with `@hono/zod-openapi` for public routes) | F-WB-04 |
