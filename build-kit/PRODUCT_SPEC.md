@@ -3026,10 +3026,11 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
     - `/tmp`, shared with the rest of the computer (engines and their tools write there);
     - an empty `~/.cache`.
   - **Hidden** (they read as empty): `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.docker`, `~/.kube`, `~/.netrc`, `~/.local/share/keyrings`, the other accounts' provider homes, and the other worktrees of the repository.
-  - **Git internals stay read-only** inside the writable folders: `.git/hooks` and `.git/config` (and the repository's for a worktree). An agent can't plant a hook that later runs outside the sandbox.
+  - **Git internals stay read-only** inside the writable folders: `.git/hooks` and `.git/config` (and the repository's for a worktree), the hooks folder even when it doesn't exist yet, and the folder `core.hooksPath` names. An agent can't plant a hook that later runs outside the sandbox.
+  - **Not covered:** agents already running for the user behind a socket (`ssh-agent`, `gpg-agent`, an unlocked desktop keyring) stay reachable, as for any program the user runs; scripts a hook calls from elsewhere in the folder are ordinary files there (the change shows in the diff).
   - **The network is shared** (engines need it for inference).
 - **The engine signs in by itself, as always.** The sandbox only narrows what the agent's process can reach. Vibezeo never reads, copies or proxies the engine's credentials. The account's provider home stays writable, so the engine's own sign-in refresh works.
-- **Where it shows:** a "Sandboxed" chip in the agent pane's header (tooltip: "Writes only to this folder, its git data and the engine's own home; can't read your keys"). A write the sandbox refuses reaches the engine as its own "Read-only file system" error.
+- **Where it shows:** a "Sandboxed" chip in the agent pane's header (tooltip: "Writes only to this folder, its git data and the engine's own home; can't read your key files"). A write the sandbox refuses reaches the engine as its own "Read-only file system" error.
 
 **Data:** setting `agent_sandbox` (`"off"` | `"workspace"`). Nothing else is stored.
 

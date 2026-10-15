@@ -1,5 +1,14 @@
 import { $, browser } from "@wdio/globals";
-import { addFolder, freshOffline, invoke, paneIds, sendToPane, split, waitForPaneText } from "../support/app";
+import {
+  addFolder,
+  closeAllPanes,
+  freshOffline,
+  invoke,
+  paneIds,
+  sendToPane,
+  split,
+  waitForPaneText,
+} from "../support/app";
 
 type Item = { kind: string; title: string; source: { type: string; paneId?: string } };
 type Page = { items: Item[] };
@@ -30,6 +39,11 @@ async function claudePane(): Promise<string> {
 // the subagent limit, shows the card, notifies, and pauses on request.
 describe("E2E-M18-AC09 runaway guard", function () {
   this.timeout(240_000);
+  // Nothing of this spec outlives it (a later spec's launch would ask
+  // about its panes as leftovers).
+  after(async () => {
+    await closeAllPanes();
+  });
 
   it("F-AC-09.1 F-AC-09.5 a tripped limit shows the card and notifies; Dismiss clears it", async () => {
     const pane = await claudePane();

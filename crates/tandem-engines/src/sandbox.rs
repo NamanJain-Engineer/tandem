@@ -34,6 +34,9 @@ pub struct SandboxPolicy {
     pub home: PathBuf,
     /// Other worktrees of the repository: hidden.
     pub hide: Vec<PathBuf>,
+    /// The folder git runs hooks from (`core.hooksPath`, else the common
+    /// dir's `hooks`), from [`hooks_dir`]: read-only, even when missing.
+    pub hooks_path: Option<PathBuf>,
 }
 
 /// Secrets under the home that read as empty.
@@ -134,24 +137,76 @@ pub fn bwrap_args(
     if kind(&policy.run) == Kind::Dir {
         bind(&mut a, "--ro-bind", &policy.run);
     }
-    // Git internals read-only, in the folder's repository and the common dir.
+    // Git internals read-only, in the folder's repository and the common
+    // dir, and wherever `core.hooksPath` points.
     let mut git_dirs = vec![policy.root.join(".git")];
     if let Some(g) = &policy.git_common {
         git_dirs.push(g.clone());
     }
+    let mut hooks = Vec::new();
     for g in git_dirs {
         if kind(&g) != Kind::Dir {
             continue;
         }
-        for inner in ["hooks", "config"] {
-            let p = g.join(inner);
-            if kind(&p) != Kind::Missing {
-                bind(&mut a, "--ro-bind", &p);
-            }
+        hooks.push(g.join("hooks"));
+        let config = g.join("config");
+        if kind(&config) != Kind::Missing {
+            bind(&mut a, "--ro-bind", &config);
         }
+    }
+    hooks.extend(policy.hooks_path.iter().cloned());
+    let writable: Vec<&Path> = std::iter::once(policy.root.as_path())
+        .chain(policy.git_common.as_deref())
+        .collect();
+    let mut seen = Vec::new();
+    for h in hooks {
+        if seen.contains(&h) {
+            continue;
+        }
+        match kind(&h) {
+            Kind::Missing => {
+                // A hooks folder that doesn't exist yet would be created
+                // by the agent: an empty read-only tmpfs takes its place
+                // (bubblewrap leaves the empty folder behind, as `git
+                // init` would). Outside the writable areas it can't be
+                // created anyway.
+                let parent_is_dir = h.parent().is_some_and(|p| kind(p) == Kind::Dir);
+                let inside = !h.components().any(|c| c == std::path::Component::ParentDir)
+                    && writable.iter().any(|w| h.starts_with(w));
+                if parent_is_dir && inside {
+                    a.extend(["--tmpfs".into(), s(&h), "--remount-ro".into(), s(&h)]);
+                }
+            }
+            _ => bind(&mut a, "--ro-bind", &h),
+        }
+        seen.push(h);
     }
     a.push("--".into());
     a
+}
+
+/// The folder git runs `root`'s hooks from, as git itself resolves it
+/// (`git rev-parse --git-path hooks`: `core.hooksPath`, else the common
+/// dir's `hooks`). `None` outside a repository or without git.
+pub fn hooks_dir(root: &Path) -> Option<PathBuf> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--git-path", "hooks"])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+    let p = root.join(text);
+    // `..` in a relative core.hooksPath: normalize what exists.
+    Some(p.canonicalize().unwrap_or(p))
 }
 
 /// The repository's common git folder for a worktree at `root` (its `.git`
@@ -322,6 +377,7 @@ mod tests {
             run: "/d/run".into(),
             home: "/h".into(),
             hide: vec!["/w/repo/.tandem/worktrees/other".into()],
+            hooks_path: None,
         }
     }
 
@@ -428,6 +484,48 @@ mod tests {
     }
 
     #[test]
+    fn f_tl_11_3_a_missing_hooks_folder_and_core_hooks_path_are_read_only_too() {
+        // A worktree whose common dir has no hooks folder yet, and a
+        // core.hooksPath inside the worktree.
+        let mut p = policy();
+        p.hooks_path = Some("/w/repo/.tandem/worktrees/fix/.githooks".into());
+        let kinds = fs(&[
+            ("/w/repo/.tandem/worktrees/fix", Kind::Dir),
+            ("/w/repo/.tandem/worktrees/fix/.githooks", Kind::Dir),
+            ("/w/repo/.git", Kind::Dir),
+        ]);
+        let a = bwrap_args(Path::new("bwrap"), &p, &kinds);
+        let root = pos(&a, &["--bind", "/w/repo/.tandem/worktrees/fix"]).expect("root");
+        let empty = pos(
+            &a,
+            &[
+                "--tmpfs",
+                "/w/repo/.git/hooks",
+                "--remount-ro",
+                "/w/repo/.git/hooks",
+            ],
+        )
+        .expect("an empty read-only hooks folder");
+        let custom = pos(
+            &a,
+            &[
+                "--ro-bind",
+                "/w/repo/.tandem/worktrees/fix/.githooks",
+                "/w/repo/.tandem/worktrees/fix/.githooks",
+            ],
+        )
+        .expect("core.hooksPath read-only");
+        assert!(empty > root && custom > root);
+        // A missing hooks path outside the writable areas, or climbing out
+        // of them, needs nothing (and bubblewrap couldn't create it).
+        for outside in ["/elsewhere/hooks", "/w/repo/.tandem/worktrees/fix/../../x"] {
+            p.hooks_path = Some(outside.into());
+            let a = bwrap_args(Path::new("bwrap"), &p, &kinds);
+            assert!(!a.iter().any(|x| x == outside), "{outside}");
+        }
+    }
+
+    #[test]
     fn f_tl_11_4_without_bwrap_or_where_it_cant_run_it_says_why() {
         let none = Bubblewrap::detect("", &|_, _| Ok(String::new()));
         assert_eq!(none.status().reason.as_deref(), Some(MISSING_BWRAP));
@@ -512,6 +610,7 @@ mod tests {
             run: data.join("run"),
             home: home.clone(),
             hide: Vec::new(),
+            hooks_path: None,
         };
         let sh = |script: &str| {
             let argv = bw
@@ -559,6 +658,123 @@ mod tests {
         assert!(
             !ok(&format!("echo x >> {}/.git/config", root.display())),
             "config is read-only"
+        );
+    }
+
+    /// A real worktree: commits work, and no hook can be planted, whether
+    /// the hooks folder exists, is missing or is set by core.hooksPath.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn f_tl_11_3_a_real_worktree_commits_but_cant_plant_a_hook() {
+        let path = std::env::var("PATH").unwrap_or_default();
+        let bw = Bubblewrap::detect(&path, &Bubblewrap::run);
+        if !bw.status().available {
+            eprintln!("skipped: {:?}", bw.status().reason);
+            return;
+        }
+        let Ok(dir) = tempfile::tempdir_in("/var/tmp") else {
+            eprintln!("skipped: no /var/tmp");
+            return;
+        };
+        let base = dir.path().canonicalize().expect("canon");
+        let (repo, home, data) = (base.join("repo"), base.join("home"), base.join("data"));
+        for d in [&repo, &home, &data.join("providers"), &data.join("tasks")] {
+            std::fs::create_dir_all(d).expect("mkdir");
+        }
+        let git = |cwd: &Path, args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(cwd)
+                .args(["-c", "user.name=T", "-c", "user.email=t@x"])
+                .args(args)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        };
+        if !git(&repo, &["init", "-q"]) {
+            eprintln!("skipped: no git");
+            return;
+        }
+        std::fs::write(repo.join("a.txt"), "a").expect("a");
+        assert!(git(&repo, &["add", "a.txt"]) && git(&repo, &["commit", "-qm", "a"]));
+        let wt = repo.join(".tandem/worktrees/fix");
+        assert!(git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "tandem/fix",
+                &wt.to_string_lossy()
+            ]
+        ));
+        // No hooks folder at all: the agent mustn't be the one to make it.
+        std::fs::remove_dir_all(repo.join(".git/hooks")).ok();
+        let policy = |root: &Path| SandboxPolicy {
+            root: root.to_path_buf(),
+            git_common: git_common_dir(root),
+            provider_home: None,
+            providers: data.join("providers"),
+            tasks: data.join("tasks"),
+            run: data.join("run"),
+            home: home.clone(),
+            hide: Vec::new(),
+            hooks_path: hooks_dir(root),
+        };
+        let ok = |p: &SandboxPolicy, script: &str| {
+            let argv = bw
+                .wrap(p, &["/bin/sh".into(), "-c".into(), script.into()])
+                .expect("wrap");
+            std::process::Command::new(&argv[0])
+                .args(&argv[1..])
+                .env("HOME", &home)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        };
+        let p = policy(&wt);
+        assert_eq!(p.git_common.as_deref(), Some(repo.join(".git").as_path()));
+        let hooks = repo.join(".git/hooks");
+        assert!(
+            !ok(
+                &p,
+                &format!("mkdir -p {0} && echo x > {0}/pre-commit", hooks.display())
+            ),
+            "the worktree's hooks live in the main .git and stay read-only"
+        );
+        assert!(!hooks.join("pre-commit").exists());
+        assert!(
+            ok(
+                &p,
+                &format!(
+                    "cd {} && echo b > b.txt && git -c user.name=T -c user.email=t@x add b.txt && git -c user.name=T -c user.email=t@x commit -qm b",
+                    wt.display()
+                )
+            ),
+            "a commit in the worktree works"
+        );
+        // core.hooksPath into the folder (as hook managers set it).
+        std::fs::create_dir_all(wt.join(".githooks")).expect("githooks");
+        assert!(git(&repo, &["config", "core.hooksPath", ".githooks"]));
+        let p = policy(&wt);
+        assert_eq!(
+            p.hooks_path.as_deref(),
+            Some(wt.join(".githooks").as_path())
+        );
+        assert!(
+            !ok(
+                &p,
+                &format!("echo x > {}/.githooks/pre-commit", wt.display())
+            ),
+            "core.hooksPath stays read-only"
+        );
+        assert!(
+            !ok(
+                &p,
+                &format!("git -C {} config core.hooksPath /tmp", wt.display())
+            ),
+            "and can't be pointed elsewhere"
         );
     }
 

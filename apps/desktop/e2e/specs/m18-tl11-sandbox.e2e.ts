@@ -1,9 +1,10 @@
 import { $, browser } from "@wdio/globals";
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   addFolder,
+  closeAllPanes,
   freshOffline,
   home,
   invoke,
@@ -11,6 +12,7 @@ import {
   paneText,
   sendToPane,
   split,
+  stopLeftovers,
   waitForPaneText,
 } from "../support/app";
 
@@ -49,21 +51,36 @@ async function sh(pane: string, cmd: string, mark: string): Promise<number> {
 // machine's, never installed by Vibezeo).
 describe("E2E-M18-TL11 agent sandbox", function () {
   this.timeout(180_000);
+  // A test-machine requirement (OPERATING §1), checked before anything else.
+  before(async () => {
+    if (spawnSync("bwrap", ["--version"]).status !== 0) {
+      throw new Error("E2E-M18-TL11 needs bubblewrap: apt install bubblewrap");
+    }
+    await stopLeftovers();
+  });
+  after(async () => {
+    await closeAllPanes();
+    await invoke("settings_set", { key: "agent_sandbox", value: "off" });
+  });
   // The panes' HOME (run.ts points it inside TANDEM_HOME, at home/).
   const userHome = process.env.HOME ?? join(home(), "home");
-  const repo = join(userHome, "m18-tl11-repo");
+  const repo = join(userHome, `m18-tl11-repo-${Date.now()}`);
 
   it("F-TL-11.1 F-TL-11.2 F-TL-11.3 F-TL-11.6 a sandboxed agent writes in its folder only and can't read keys or hooks", async () => {
     await freshOffline();
     const status = await invoke<Status>("sandbox_status");
     if (!status.available) throw new Error(`the test machine needs bubblewrap: ${status.reason}`);
     mkdirSync(join(userHome, ".ssh"), { recursive: true });
-    writeFileSync(join(userHome, ".ssh", "id_ed25519"), "SECRET KEY\n");
+    for (const f of ["id_ed25519", "id_rsa", "config", "known_hosts"]) {
+      writeFileSync(join(userHome, ".ssh", f), "SECRET KEY\n");
+    }
     mkdirSync(repo, { recursive: true });
     git(repo, "init", "-q", "-b", "main");
     writeFileSync(join(repo, "README.md"), "hello\n");
     git(repo, "add", "README.md");
     git(repo, "commit", "-q", "-m", "first");
+    // No hooks folder yet: the agent mustn't be able to make one.
+    rmSync(join(repo, ".git", "hooks"), { recursive: true, force: true });
     await addFolder(repo);
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
 
@@ -86,11 +103,16 @@ describe("E2E-M18-TL11 agent sandbox", function () {
     const outside = `/var/tmp/tandem-e2e-tl11-${Date.now()}`;
     expect(await sh(pane, `echo x > ${outside}`, "M2")).not.toBe(0);
     expect(existsSync(outside)).toBe(false);
-    expect(await sh(pane, `echo x > ${userHome}/outside.txt`, "M6")).not.toBe(0);
-    expect(existsSync(join(userHome, "outside.txt"))).toBe(false);
+    // Not $HOME here: the runner's HOME lives under /tmp, which the sandbox
+    // shares (D-2475). The real-bwrap Rust test checks $HOME (F-TL-11.1).
     expect(await sh(pane, `cat ${userHome}/.ssh/id_ed25519`, "M3")).not.toBe(0);
+    expect(await sh(pane, `cat ${userHome}/.ssh/config`, "M7")).not.toBe(0);
+    // The whole folder reads as empty, not just the key.
+    expect(await sh(pane, `test -z "$(ls -A ${userHome}/.ssh)"`, "M8")).toBe(0);
     expect(await paneText(pane)).not.toContain("SECRET KEY");
-    expect(await sh(pane, `echo x > ${repo}/.git/hooks/pre-commit`, "M4")).not.toBe(0);
+    expect(
+      await sh(pane, `mkdir -p ${repo}/.git/hooks; echo x > ${repo}/.git/hooks/pre-commit`, "M4"),
+    ).not.toBe(0);
     expect(existsSync(join(repo, ".git", "hooks", "pre-commit"))).toBe(false);
     // A commit inside the folder still works.
     expect(
@@ -101,6 +123,5 @@ describe("E2E-M18-TL11 agent sandbox", function () {
       ),
     ).toBe(0);
     expect(git(repo, "log", "-1", "--format=%s")).toBe("sandboxed");
-    await invoke("settings_set", { key: "agent_sandbox", value: "off" });
   });
 });

@@ -54,8 +54,9 @@ hand-edited).
 
 ```bash
 bash scripts/bootstrap-linux.sh                  # WebKitGTK, webkit2gtk-driver, xvfb, dbus, openbox, xclip, tauri-driver,
-                                                 # openssh-client (ssh, ssh-keygen, ssh-keyscan) and musl-tools, …
+                                                 # openssh-client (ssh, ssh-keygen, ssh-keyscan), musl-tools, bubblewrap, …
 apt-get install -y zsh fish                      # the shell-integration E2E specs need them
+apt-get install -y bubblewrap                    # E2E-M18-TL11 and the real-sandbox Rust tests need bwrap (F-TL-11)
 rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl  # tandem-host (M14)
 pip install ziglang==0.13.0 && cargo install cargo-zigbuild --locked     # release-local.sh: the aarch64 helper
 cargo install cargo-audit --locked
@@ -143,6 +144,12 @@ TANDEM_E2E_SKIP_BUILD=1 ...                                 # reuse the last bui
 pnpm db:migrate && pnpm db:seed                             # inside with-infra, then E2E again
 # Plain xvfb-run (no session bus, small screen) fails F-SH-01.1, the TUI goldens
 # and ls's column order: always use the dbus-run-session line above.
+# E2E prerequisites beyond bootstrap-linux.sh: zsh and fish (shell specs) and
+# bubblewrap (E2E-M18-TL11 fails at once with "needs bubblewrap" without it; the
+# sandbox also needs unprivileged user namespaces, so where bwrap can't run, the
+# spec fails on sandbox_status's reason). Specs share one TANDEM_HOME in file
+# order: a spec that leaves panes open closes them in an `after` hook, or the next
+# launch shows the "still running" dialog (closeAllPanes, stopLeftovers).
 
 # Remote (M14): the sshd fixture, the bundled tandem-host, the SSH integration test
 bash scripts/gen-ssh-fixture.sh && docker compose -f infra/docker-compose.yml --profile remote up -d --wait sshd

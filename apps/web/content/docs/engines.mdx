@@ -43,9 +43,14 @@ Generated from the release on the [download page](/download/).
 **Settings › Engines › Sandbox agent panes › Workspace** runs each new agent pane's engine in a sandbox, whichever engine it is:
 
 - It writes only to the pane's folder, its repository's git data (so commits work), the engine's own home in Vibezeo and `/tmp`. Everything else on the computer is read-only.
-- It can't read `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.docker`, `~/.kube`, `~/.netrc`, your keyrings, your other engine accounts or the repository's other worktrees.
-- `.git/hooks` and `.git/config` stay read-only, so an agent can't plant a hook that runs later outside the sandbox.
+- It can't read the files in `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.docker`, `~/.kube`, `~/.netrc` or `~/.local/share/keyrings`, your other engine accounts or the repository's other worktrees: those folders read as empty.
+- Git's hooks folder and `.git/config` stay read-only, so an agent can't plant a hook that runs later outside the sandbox. That's the repository's `.git/hooks` (for a worktree too, whose hooks live in the main checkout's `.git`), even when it doesn't exist yet, and the folder `core.hooksPath` names.
 - It keeps the network, which engines need to reach their models.
+
+What it doesn't cover:
+
+- Programs already running for you that answer over a socket: a running `ssh-agent` or `gpg-agent`, and your desktop keyring while it's unlocked. An agent can't read your key files, but it can ask these to use them, as any program you run can.
+- Scripts a hook calls from elsewhere in the folder, as some hook managers do: they're ordinary files in the folder, so an agent can change them, and the change shows in your diff.
 
 The engine signs in by itself as always; the sandbox only narrows what it can reach, and Vibezeo never reads the engine's credentials. A pane that runs sandboxed shows **Sandboxed** in its header. A write the sandbox refuses reaches the engine as a "Read-only file system" error.
 

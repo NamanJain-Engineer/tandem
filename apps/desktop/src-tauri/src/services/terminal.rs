@@ -187,6 +187,7 @@ pub fn sandbox_policy(
         run: data.join("run"),
         home: home.to_path_buf(),
         hide,
+        hooks_path: tandem_engines::sandbox::hooks_dir(root),
     }
 }
 
