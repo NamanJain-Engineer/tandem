@@ -3,6 +3,7 @@
 
 pub mod binding;
 pub mod gesture;
+pub mod globe;
 pub mod keymaps;
 
 #[cfg(target_os = "linux")]

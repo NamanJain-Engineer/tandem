@@ -837,7 +837,7 @@ Registered, permitted (build.rs `SIM_COMMANDS` for macOS targets, `sim-capabilit
 #### Dictate [F-DI-*]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
-| `dictate_status` | — | `DictateStatus {enabled, hotkey: HotkeyStatus, verified, hold: {binding, label}, toggle?: {binding, label}, latch, session: "x11"\|"wayland"\|"mac"\|"windows"\|"none", deepLinkCommand?, mic?: DeviceInfo, engine: "local", model?: {id, name}, modelStage: "none"\|"verifying"\|"loading"\|"ready"\|"failed", fallback?: {using, missing}, state: TakeState, missingTools?: MissingTools}` (also the widget's; D-505) | — |
+| `dictate_status` | — | `DictateStatus {enabled, hotkey: HotkeyStatus, verified, fnFallback (Fn alone went unheard for 8 s in the verify test, so the hold key became Ctrl+Option; cleared when the user picks a hold key, and choosing Fn again keeps it for good, F-DI-02, D-524), hold: {binding, label}, toggle?: {binding, label}, latch, session: "x11"\|"wayland"\|"mac"\|"windows"\|"none", deepLinkCommand?, mic?: DeviceInfo, engine: "local", model?: {id, name}, modelStage: "none"\|"verifying"\|"loading"\|"ready"\|"failed", fallback?: {using, missing}, state: TakeState, missingTools?: MissingTools}` (also the widget's; D-505) | — |
 | `dictate_set_binding` | `{binding: String\|null, mode:"hold"\|"toggle"}` (`null` = the OS default for hold, none for toggle) | `HotkeyStatus` (and `verified` resets for hold) | Invalid (modifier-only toggle, unknown key, Esc, Alt+Space off macOS, Fn off macOS) |
 | `dictate_verify_start` / `dictate_verify_stop` | — | — (events `dictate:key`, then `dictate:verified`) | — |
 | `dictate_start_take` / `dictate_stop_take` / `dictate_cancel_take` | `{origin: {type:"global"} \| {type:"composer", targetId}}` / — / — | `{takeId}` / — / — | Unavailable (Conductor owns the mic; no model) |
@@ -864,6 +864,7 @@ Registered, permitted (build.rs `SIM_COMMANDS` for macOS targets, `sim-capabilit
 | `dictionary_sync_forget` | — | — (`DELETE /v1/dictionary`: removes the synced copy; any plan) | Unavailable, Unauthenticated |
 | `dictate_permissions` / `dictate_open_permission_settings` | — / `{kind:"microphone"\|"input_monitoring"\|"accessibility"}` | `PermissionStatus {mic, inputMonitoring, accessibility}` (each `"granted"\|"denied"\|"unknown"\|"not_needed"`) / — | — |
 | `dictate_relaunch` | — | — (macOS "Quit & Reopen" after granting Input Monitoring) | — |
+| `dictate_globe_key` / `dictate_globe_key_set` | — / `{doNothing: bool}` | `GlobeKeyView {available, usage?: "do_nothing"\|"change_input_source"\|"show_emoji"\|"start_dictation", changedByApp}` (macOS "Press 🌐 key to", F-DI-11: `doNothing: true` only from the consent dialog, remembering the old value; `false` puts that value back, or removes the key if it was never set; `com.apple.HIToolbox AppleFnUsageType` through `defaults`, D-524) | Unavailable (not macOS), Invalid (`false` with nothing the app changed), Io |
 | `dictate_widget_set_position` | `{x, y, locked}` | — | — |
 
 #### Conductor [F-CN-*]

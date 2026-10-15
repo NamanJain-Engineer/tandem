@@ -20,7 +20,7 @@ last five (F-CN-01 to F-CN-04 and F-CN-08) pass every acceptance criterion
 against the dev mock, and the vendor's realtime client is built against its
 published events (D-1120, on `m16a-conductor`); checking it against a recorded
 session waits on the key (`HUMAN_TODO.md`). F-CN-06 and F-CN-07 (persona,
-memory and wake phrase) are done too (D-1119). vibezeo.com serves 0.7.2 (15 October). Routines and running
+memory and wake phrase) are done too (D-1119). vibezeo.com serves 0.7.2 (15 October). Next is M18 (below): the top picks of the 15 October research, `docs/NEXT_FEATURES.md`, built by four sessions, plus the website's elite pass and its new blog (F-WB-06). Routines and running
 tasks are built and switch on with Pro; WSL workspaces wait for the Windows
 download.
 
@@ -74,10 +74,7 @@ merged 10 October 2026). F-DI-05 and F-DI-10, listed under M13, are done too.
 - [x] F-DI-08 History and stats (P1)
 - [x] F-DI-09 Dictionary (P1)
 
-The 14 October audit (D-1121's session) found spec behaviours under these ticks not built yet. Each acceptance criterion has its test; these are the spec's other behaviours, being built from D-520:
-- On macOS: the automatic Fn → Ctrl+Option fallback (F-DI-02), and F-DI-11's "Press 🌐 to Do Nothing" with consent.
-
-The bugs found with them are fixed (D-520, D-521); F-DI-09's dictionary sync is built (D-523).
+The 14 October audit (D-1121's session) found spec behaviours under these ticks not built yet, and they are all built now: the bug fixes (D-520, D-521), F-DI-09's dictionary sync (D-523), and on macOS the automatic Fn → Control+Option fallback (F-DI-02) and F-DI-11's "Press 🌐 key to" Do Nothing with consent and undo (D-524, D-848). Checking the macOS pair on a real Mac is in `HUMAN_TODO.md`.
 
 Tasks: capture; local models; dictionary engine; takes and insertion; hotkeys;
 widget (UI-60); composer dictation (UI-68); setup and onboarding; history and
@@ -192,6 +189,7 @@ this milestone the P0/P1 product is launchable.
 - [x] F-WB-04 Downloads and machine-readable discovery (D-135)
 - [x] F-WB-06 Blog (P2; `/blog/`, posts as files in `apps/web/content/blog`, tag pages and an Atom feed; D-1850 to D-1863, `docs/BLOG.md`)
 - [x] F-TL-05 Local data controls (export and delete: the desktop's export and delete, D-812; the web's Delete account and the server's 30-day purge, D-813)
+- [ ] F-WB-06 Blog (P2, added 15 October; being built on `site-blog`, D-1850 on). The site's elite pass is on `site-elite` (D-1830 on, D-1819 for the docs' LCP).
 
 Tasks: marketing site; docs; changelog; downloads and discovery; data
 controls; invariants; performance (§5.1); reliability (§5.2); security (§5.3);
@@ -231,6 +229,16 @@ gaps against the category. Built on branch `competitive-gaps`.
 - [x] F-WT-03 Overlap check and merge forecast
 - [x] F-WT-04 GitLab merge requests
 E2E-M17-WT-1…3: setup, review, overlap.
+
+### M18 · Next features (in progress) · from `docs/NEXT_FEATURES.md`
+The 15 October research ranked 21 features and six bold bets beyond the 165 (evidence in `docs/COMPETITIVE_ANALYSIS.md`). Its top picks are being built, each with its PRODUCT_SPEC entry first, tests from the criteria, an E2E spec (`m18-*.e2e.ts`) and its docs page:
+- Engines (`m16d-teammate-extras`, D-2400 on): [ ] F-EN-07 One instructions file for every engine · [ ] F-EN-09 Engine catalog refresh · [ ] F-EN-08 Engine versions and updates under your control · [ ] F-TH-17 Session library across engines
+- Review loop (`m16a-conductor`, D-2420 on): [ ] F-WT-05 Second opinion from another engine · [ ] F-DB-04 Review queue · [ ] F-CN-09 Walk-and-review (bold bet B4)
+- Worktrees (`competitive-gaps`, D-2440 on): [ ] F-WT-06 Worktree runtime (ports, env, Compose, `<slug>.localhost`) · [ ] F-WT-09 Previews per worktree (bold bet B2)
+- Usage (`product-research`, D-2460 on): [ ] F-AC-08 Usage forecast · [ ] F-AC-09 Runaway guard · [ ] F-RT-06 The Night Shift (bold bet B1)
+- Reliability (`perf-open`, D-2480 on, after §0.3's memory and first-frame work): [ ] F-SH-14 Keep agents running when the window closes
+
+Later, in the research's order: F-TL-11 agent sandbox, F-WT-07 local merge queue, F-WT-08 CI results back to the agent, F-EN-10 any ACP agent as a thread engine, F-EN-11 local models, F-TK-05 claims, F-EX-06 resource governor, F-CD-22 multi-repo workspaces, F-CD-23 code intelligence, F-EX-07 activity ledger, F-CD-24 jj workspaces, and the bold bets B3 (the Foreman), B5 (agent-proof secrets) and B6 (intent radar). Its owner-only items (§4: terms, pricing, Linux-first exceptions, ARM64, launch) are the owner's.
 
 ## 2. What only a person can do
 
