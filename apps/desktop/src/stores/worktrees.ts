@@ -53,6 +53,8 @@ export type WorktreeAsk =
   | { kind: "instructions"; workspaceId: string }
   /** UI-153: shared files with sibling worktrees and the merge forecast (F-WT-03). */
   | { kind: "overlap"; worktreeId: string }
+  /** F-WT-05: another engine's read-only review of the diff. */
+  | { kind: "opinion"; worktreeId: string }
   /** UI-151: untrusted setup commands for new worktrees, reviewed once. */
   | { kind: "review"; worktreeIds: string[]; state: SetupState; after?: "preview" }
   /** UI-154: two worktrees' previews side by side (F-WT-09). */

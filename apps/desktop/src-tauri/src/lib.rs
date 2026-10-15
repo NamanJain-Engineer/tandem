@@ -160,6 +160,15 @@ macro_rules! app_commands {
             commands::handoff::handoff_to_thread,
             commands::lanes::lane_create,
             commands::lanes::lane_diff,
+            commands::lanes::lane_second_opinion,
+            commands::review::review_queue,
+            commands::review::review_approve,
+            commands::review::review_unapprove,
+            commands::review::review_snooze,
+            commands::review::review_item_diff,
+            commands::review::review_run_check,
+            commands::review::review_repo_get,
+            commands::review::review_repo_set,
             commands::lanes::lane_merge,
             commands::lanes::lane_overlap,
             commands::lanes::lane_forge,
@@ -1104,6 +1113,10 @@ pub fn run() {
                     .start(handle.clone(), notifier, recording);
                 // The runaway guard watches agents from here on (F-AC-09).
                 state.runaway.start(handle.clone());
+                // F-DB-04: the review queue follows the status bus.
+                let _ = state
+                    .review
+                    .set(services::review_queue::start(handle.clone()));
             }
             // The status server, then engines: the cached report at once, the
             // remote registry and a fresh detection in the background (F-EN-01).

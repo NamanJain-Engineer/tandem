@@ -1519,6 +1519,80 @@ Built on branch `competitive-gaps` (from `product-m0-m5`) out of the competitive
 - E2E-M17-WT-1 found D-2208 (shell panes never got their typed command, which also affected Create pull request) and that a third worktree's setup pane can hit Free's 4-pane limit (the spec frees panes first; the limit toast is the product's answer). E2E-M17-WT-2 found two "Comment on a.ts line 2" buttons on a changed line; removed lines now say "removed line".
 - F-WT-01: destinations are checked component by component, so a tracked symlinked folder in the worktree can't carry a copy out of it (`f_wt_01_2` covers it, with a symlink in the main checkout and `../` patterns).
 
+## M18 · The review loop (m16a-conductor)
+Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEATURES.md` §1 #6 and #2 and §3 B4. Owns F-WT-05, F-DB-04 and F-CN-09's first slice, and decisions D-2420 to D-2439.
+- [x] F-WT-05 Second opinion from another engine (D-2420).
+  - **Core.** `services::second_opinion`:
+    - `lane_second_opinion {laneId, engineId, accountId?, task?}` creates a Read only thread (F-TH-09) in the worktree, titled "Second opinion: <branch>", and sends the review prompt. The prompt carries the branch, the task and the diff (fenced as untrusted, cut at 150,000 characters), with `## Findings` / `## Overall`.
+    - A background wait polls the thread's state. When the turn ends, it parses the last reply and publishes `review:second_opinion`.
+    - It refuses terminal-only engines ("Can't run read-only"), an empty diff ("No changes to review"), and a second run on the same worktree. Free's plan check is the thread service's own.
+  - **Parsing.** `path:line: comment`, ignoring list markers and backticks. The path is matched exactly or by a unique suffix, and the line must be a new-side line the patch shows (`shown_lines` reads the hunks); that line is quoted. Everything else that isn't a heading, unplaced findings included, becomes one General text.
+  - **UI.**
+    - "Ask for a second opinion…" is in the worktree menu and the diff's toolbar.
+    - `SecondOpinionDialog` shows the reviewer (Thread engines; terminal-only ones disabled with the reason; Pro on Free), the account and whose plan it uses, and an optional task. It has loading, error, empty and no-changes states.
+    - While the reviewer works, the review bar shows "<Engine> is reviewing…" with Open thread.
+    - `followSecondOpinions` adds the comments to F-WT-02's store, with General as its own comment (shown above the diff, last in the prompt), and toasts the count, "had no comments" or "didn't finish".
+  - **Fake engine.** The second-opinion prompt gets findings on the diff's first added lines, one on a line the diff doesn't show, and a free line (Claude Code stream-json and the Codex app-server).
+  - **Tests.**
+    - Rust: 7 `f_wt_05_*` (the prompt, cutting, placement, General, start/publish/release with a fake host, a failed turn, refusals).
+    - UI: 6 in `secondOpinion.test.tsx`.
+    - E2E: `m18-wt05-second-opinion.e2e.ts` (Codex reviews a Claude Code worktree; the Read only thread and its first message; two placed comments and General; Send to agent carries all three; no changes).
+  - **Docs.** code-mode.mdx, "Second opinion".
+  - **Gate:** passed.
+    - 1,865 Rust tests (7 ignored) and 1,413 TypeScript (desktop 648).
+    - The desktop build, clippy on Linux, Windows and both Mac architectures, and fmt.
+    - Protocol drift: `OpinionComment`, `OpinionOutcome`, `SecondOpinion` and `SecondOpinionStarted` added.
+    - The new E2E spec passed 1 of 1, and `check-coverage.sh` covers 166 IDs.
+
+- [x] F-DB-04 Review queue (D-2421, D-2422).
+  - **Core.** `services::review_queue` (`ReviewQueue` behind `QueueHost`):
+    - It follows `status:changed`. A key that becomes done is considered: the session (a pane, or a thread in a local workspace), its changes (a worktree's `lanes::diff`, a git folder's `diff_since("HEAD")`), the closing message (a thread's last reply; a pane's last 3 screen lines, redacted), the latest checkpoint for that pane or thread, and the repository's review settings.
+    - No changes, not git, or not local: no item.
+    - Working or waiting removes the item; a removed key forgets it; idle keeps it.
+    - `diff_hash` is SHA-256 over path, change and patch.
+    - Approval holds the hash. A different hash on the next finish or refresh moves the item to Changed, which stays until approved again.
+    - Snooze lasts 60 minutes, or until the agent finishes again.
+    - The check runs through `bestof::run_check` with the login environment, 10 minutes, and the last 200 lines redacted. It runs when an item joins, or on Run check. A refresh with the same diff keeps the result.
+    - `review:queue` carries the whole list.
+  - **Risk rules** (`risks`, local, no AI): 20+ files, migrations folders, CI, lockfiles, `.env` files, auth words in a path segment (not `author*`), the repository's public API prefixes, and deleted tests. Up to 5 files per rule.
+  - **Repository settings.** The Hidden `ReviewChecks` / `ReviewApiPaths` maps, keyed by the main checkout's root. `review_repo_set` is main window only, with a command up to 2,000 characters and up to 50 paths.
+  - **Commands:** `review_queue`, `review_approve`, `review_unapprove`, `review_snooze`, `review_item_diff`, `review_run_check`, `review_repo_get` and `review_repo_set`. The palette gets `dashboard.review_queue`.
+  - **UI.** The Dashboard panel's Agents · n / Review · n switch (`DashboardPanel`), and `ReviewQueue`:
+    - sort by risk or finish time; Refresh;
+    - To review, Snoozed and Approved sections;
+    - cards with closing, diffstat, risk badges (files in the title), the check (`<details>` with output) and the actions;
+    - the item-diff dialog and the Repository checks dialog;
+    - empty, loading, error and populated states.
+  - **Tests.**
+    - Rust: 8 `f_db_04_*` (the rules, the hash and limits, join/leave, a coalesced new done, stale approval, snooze, the check).
+    - UI: 7 in `reviewQueue.test.tsx`.
+    - E2E: `m18-db04-review-queue.e2e.ts` (a worktree pane joins within 1.5 s with migrations and deleted tests, a no-change pane doesn't, a thread joins, approve then changed, Send back and Merge's forecast, the check passes and fails).
+  - **Docs.** code-mode.mdx, "Review queue".
+  - **Gate:** passed on the tree with `product-m0-m5` 52f07fe1 merged in.
+    - 1,940 Rust tests (7 ignored) and 1,458 TypeScript (desktop 681).
+    - The desktop build, clippy on Linux, Windows and both Mac architectures, and fmt.
+    - Coverage: 171 IDs.
+    - Protocol drift: `RepoReview`, `ReviewCheck`, `ReviewCheckState`, `ReviewItem`, `ReviewQueueView`, `ReviewRisk`, `ReviewRiskRule` and `ReviewState` added. The names avoid Best of N's `CheckState`, which a first build overwrote.
+    - E2E: m18-db04 5 of 5, m18-wt05 2 of 2.
+
+### M18 · Review loop decisions
+- D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
+  - Only engines with a chat adapter can review. They are the ones whose read-only access is enforced by the adapter (Claude's disallowed tools, Codex's read-only sandbox, ACP's refused writes). The registry has no read-only flag for terminal engines, so they're listed and disabled.
+  - The reviewer is an attended thread, so an edit it tries is denied and shows like any other.
+  - The result arrives as a bus event, and comments stay in memory like the user's own (D-2205): a review that ends while the app is closed adds nothing, and its thread keeps the reply.
+- D-2421: The review queue is built from the status bus in memory, not a table.
+  - **Membership.** An item is a pane or thread key whose status became done while its local folder has changes.
+    - A restart rebuilds it: threads that finished come back, and panes return when they finish again.
+    - Teammate chats are left out: they aren't on the status bus and have no workspace.
+    - SSH and WSL folders are left out until their diffs are cheap enough to compute on every done.
+  - **Changed.** Approval is per key and hash. "Changed" is sticky so a refresh can't quietly drop it.
+  - **The 1 s target.** Changes are read once per done, in the status listener, so an item appears within the second.
+  - **A new done.** A done counts when its `(status, since)` is new. The status bus coalesces 50 ms, so a fast working → done can arrive as done → done with a later `since`. E2E-M18-DB-04 found this with the fake agent.
+  - **Shared folders.** Two agents in one plain folder show the same diff, each under its own name.
+- D-2422: The check command and public API paths are app settings keyed by the repository's root, typed in the queue on this computer.
+  - They are not in `.vibezeo/worktree.json`, so a pulled file can't add a command that runs on every finish. That would need F-WT-01's trust step; this is simpler and enough for one person's machine.
+  - The risk rules are fixed and labelled as what changed, never "safe", and each shows the files it matched.
+
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07 and F-EN-09 so far (PRODUCT_SPEC §4.4, MILESTONES "M18 · Next features: engines"), then F-EN-08 and F-TH-17; decisions D-2400–D-2419.
 - [x] F-EN-07 One instructions file for every engine.

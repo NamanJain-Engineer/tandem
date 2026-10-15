@@ -38,6 +38,7 @@ import {
 import { switchMode } from "../shell/actions";
 import { ComparePreviewsDialog } from "./ComparePreviews";
 import { MergeForecast, OverlapDialog } from "./WorktreeOverlap";
+import { SecondOpinionDialog } from "./SecondOpinion";
 import { ReviewDiff } from "./WorktreeReview";
 import { InstructionsDialog } from "./Instructions";
 import { ReviewSetupDialog, WorktreeSetupDialog, useWorktreeNotices } from "./WorktreeSetup";
@@ -116,6 +117,13 @@ export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): Me
       // On an SSH host these need its git and files locally (D-2209).
       disabled: wt.missing || wt.kind !== "local",
       onSelect: () => open({ kind: "overlap", worktreeId: wt.id }),
+    },
+    {
+      // F-WT-05: another engine reads the diff and leaves line comments.
+      id: "wt-second-opinion",
+      label: t("worktree.opinion.menu"),
+      disabled: wt.missing,
+      onSelect: () => open({ kind: "opinion", worktreeId: wt.id }),
     },
     {
       // F-WT-01: the repository's setup, from any of its worktrees.
@@ -358,6 +366,7 @@ function DiffDialog({ wt, onClose }: { wt: WorkspaceSummary; onClose: () => void
           <ReviewDiff
             wt={wt}
             files={files}
+            onSecondOpinion={() => useWorktrees.getState().open({ kind: "opinion", worktreeId: wt.id })}
             labels={{
               empty: t("worktree.diffEmpty"),
               binary: t("diff.binary"),
@@ -517,6 +526,7 @@ export function WorktreeDialogs() {
   const wt = list.find((w) => w.id === ask.worktreeId);
   if (!wt) return null;
   if (ask.kind === "diff") return <DiffDialog wt={wt} onClose={close} />;
+  if (ask.kind === "opinion") return <SecondOpinionDialog wt={wt} onClose={close} />;
   if (ask.kind === "overlap") return <OverlapDialog wt={wt} base={baseBranch(list, wt)} onClose={close} />;
   if (ask.kind === "merge")
     return (

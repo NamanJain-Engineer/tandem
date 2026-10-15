@@ -168,6 +168,10 @@ pub struct AppState {
     pub recall: Arc<crate::services::recall::RecallService>,
     /// Best of N's running checks (F-EX-04).
     pub bestof_checks: crate::services::bestof::Checks,
+    /// Worktrees with a second opinion running (F-WT-05).
+    pub second_opinions: crate::services::second_opinion::Running,
+    /// F-DB-04: set once the app has a handle.
+    pub review: std::sync::OnceLock<Arc<crate::services::review_queue::ReviewQueue>>,
     /// The Ports panel (F-EX-03).
     pub ports: Arc<crate::services::ports::PortsService>,
     /// SSH hosts and their connections (F-RM-01).
@@ -829,6 +833,8 @@ impl AppState {
             recall,
             ports,
             bestof_checks: Default::default(),
+            second_opinions: Default::default(),
+            review: std::sync::OnceLock::new(),
             remote,
             wsl,
             simulator: crate::services::simulator::host()

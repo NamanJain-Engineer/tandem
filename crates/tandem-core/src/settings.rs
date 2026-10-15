@@ -171,6 +171,8 @@ setting_keys! {
     CommandHistoryEnabled,
     CommandHistoryDays,
     SkillsSeen,
+    ReviewChecks,
+    ReviewApiPaths,
 }
 
 /// How a value is checked before it is stored.
@@ -1019,6 +1021,10 @@ pub static SCHEMA: &[SettingSpec] = &[
     // Per teammate, the skills the user made or opened; any other is the
     // teammate's own and "New" (F-AG-09).
     spec!(SkillsSeen, json!({}), V::Map, Hidden, []),
+    // F-DB-04: per repository root, the check command and the public API
+    // paths, set from the review queue on this computer (never the repo).
+    spec!(ReviewChecks, json!({}), V::Map, Hidden, []),
+    spec!(ReviewApiPaths, json!({}), V::Map, Hidden, []),
 ];
 
 pub fn spec(key: SettingKey) -> &'static SettingSpec {

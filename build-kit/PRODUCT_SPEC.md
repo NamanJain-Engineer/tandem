@@ -1556,6 +1556,60 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 1. With the app unfocused, an agent reaching done produces one OS notification (a mocked notifier asserts one call), and clicking the mock activates focus on the source.
 2. With the "done" toggle off, none is sent.
 
+#### F-DB-04 Review queue (P2)
+**Story:** With several agents finishing work, I get one list of what's ready to review across every engine, ordered by what's riskiest, and I approve, send back or merge from it instead of remembering who did what.
+
+**Behavior:**
+- **What's in it:** a terminal agent or a thread whose status becomes **done** while its folder or worktree has changes joins the queue within 1 s. Changes are:
+  - a worktree's diff since its base, uncommitted work included;
+  - a plain git folder's diff against `HEAD`.
+
+  A done agent with no changes, or in a folder that isn't a git repository, doesn't join. An item leaves when:
+  - its agent starts working again (it returns when that turn ends);
+  - its pane or thread closes;
+  - a refresh finds its changes gone.
+
+  The queue lives in memory and is rebuilt from status after a restart. Teammate chats join when they work in a workspace (they have none today).
+- **Each item shows:**
+  - the agent's name, engine, folder and branch, and when it finished;
+  - its closing message: a thread's last reply, or a terminal's last three non-empty screen lines;
+  - the diffstat (files, + and −);
+  - the risk labels;
+  - the check's result.
+
+  **Open diff** shows the whole change. **Last turn** shows the diff since the agent's last checkpoint (F-EX-01), when it has one.
+- **Risk labels** come from local rules, with no AI involved. Each label names its rule and lists up to 5 of the files it matched. Labels are worded as what changed ("Touches migrations"), never "safe". The rules:
+  - 20 or more files;
+  - migrations (a `migrations` or `migrate` folder);
+  - CI (`.github/workflows/`, `.gitlab-ci.yml`, `.circleci/`, `Jenkinsfile`, `azure-pipelines.yml`, `.buildkite/`);
+  - lockfiles;
+  - `.env` files;
+  - auth paths (a path segment containing `auth`, `oauth`, `login`, `password`, `secret`, `crypto` or `permission`);
+  - the repository's public API paths;
+  - deleted tests (a deleted file in a `test`/`tests`/`__tests__` folder, or named `*.test.*`, `*.spec.*`, `*_test.*` or `test_*`).
+- **Per repository, set from the queue on this computer:**
+  - a **check command**, which runs in the item's folder when it joins, with the login environment, for up to 10 minutes. It shows Running, Passed, or Failed with the exit code and the last 200 lines. **Run check** runs it again.
+  - **public API paths**, one prefix per line.
+
+  Both are stored in the app's settings, never in the repository, so nothing from a pull runs.
+- **Sort** by risk (more rules first, then finish time) or by finish time (oldest first).
+- **Approve** records a SHA-256 of the item's diff and moves the item to Approved. A refresh that finds a different diff puts it back in the queue, labelled **Changed since you approved**. A refresh happens when the agent finishes again, when the queue opens, and on **Refresh**.
+- **On a worktree item:**
+  - **Send back** opens the worktree's diff with the review bar (F-WT-02);
+  - **Second opinion** opens F-WT-05's sheet;
+  - **Merge** opens F-CD-15's confirm with the overlap forecast (F-WT-03).
+- **Snooze** hides an item for an hour, or until its agent finishes again.
+- **Jump to agent** opens the pane or thread.
+- The queue is the **Review** view in the Dashboard panel, with its count, and the palette's "Open review queue". It has empty ("Nothing to review"), loading, error and populated states.
+
+**Acceptance:**
+1. A terminal agent and a thread that finish with uncommitted changes in their worktrees both appear in the queue within 1 s of done. One that finishes with no changes doesn't.
+2. A change that touches `db/migrations/0042.sql` and deletes `tests/auth.test.ts` is labelled with both rules, each listing its file. A change to `README.md` alone has no risk label.
+3. Approve, then the agent edits a file and finishes: the item is back in the queue as "Changed since you approved".
+4. On a worktree item, Send back opens that worktree's diff with its review bar, and Merge opens F-CD-15's confirm with the forecast.
+5. With a check command set, an item shows Passed for `true` and "Failed (exit 1)" with its output for `false`.
+6. The queue shows empty, loading, error and populated states. Sorting by risk puts the item with more rules first.
+
 ### 4.7 AG: Teammates (Agent mode)
 
 #### F-AG-01 Teammate record (P1)
@@ -3218,6 +3272,38 @@ Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1�
 **Acceptance:**
 1. With `origin` at `git@gitlab.com:team/app.git`, the menu reads "Create merge request" and the pane receives `glab mr create`.
 2. With `origin` at `https://github.com/team/app.git`, nothing changes from F-CD-15.
+
+#### F-WT-05 Second opinion from another engine (P2)
+**Story:** Before I send a worktree's changes back or merge them, another engine on my other account reads the diff and leaves line comments I can edit and pass on, so the models check each other.
+
+**Behavior:**
+- **Ask for a second opinion…** is in the worktree menu and in its diff's toolbar (UI-152). With no changes it's disabled ("No changes to review").
+- The sheet picks the reviewer: one engine and account. It lists every installed engine:
+  - Thread engines (a chat adapter: Claude Code, Codex, ACP engines) can be picked. The default is one that no agent in the worktree runs.
+  - Engines the plan doesn't run in Thread mode show the Pro badge.
+  - Terminal-only engines are shown disabled with "Can't run read-only".
+  - With no pickable engine it says "Install Claude Code, Codex or an ACP engine to get a second opinion" (empty state).
+- The sheet names the account whose plan the review uses. It has an optional "What was the task?" box, and **Ask**.
+- **Ask** creates a Read only thread (F-TH-09, `access: read`) in the worktree with that engine and account. Its title is "Second opinion: <branch>". Its first message is a fixed review prompt in English, like F-WT-02's, containing:
+  - the branch;
+  - the task, if given;
+  - the diff (the worktree's changes since its base, uncommitted work included), fenced as untrusted content and cut at 150,000 characters with a note;
+  - a reply format: a `## Findings` heading with one `path:line: comment` line per finding, then `## Overall`.
+- Nothing else leaves the machine. The reviewer is the user's own engine on their own account, and Vibezeo never touches its credentials.
+- While it runs, the review bar shows "<Engine> is reviewing…" with **Open thread**. It's one reviewer per worktree at a time.
+- **When its turn ends,** the last reply is read:
+  - A line `path:line: comment` becomes a line comment in the worktree's review bar (F-WT-02). Leading list markers and backticks are ignored. The path is matched exactly, or by a unique path suffix (`b.ts` matches `src/b.ts`), and the line must be a new-side line shown in the diff. The comment quotes that line.
+  - Every other non-empty line that isn't a heading, findings that name a file or line not in the diff included (verbatim), goes into one **General** comment. Nothing is dropped.
+  - Comments list in file order with General last, and can be edited or removed like the user's own. **Send to agent** includes them, with General as its own item.
+- A reply with no comments says "<Engine> had no comments". A turn that fails or is stopped adds nothing and says "The second opinion didn't finish" with **Open thread**.
+
+**Acceptance:**
+1. On a worktree with changes, choosing Codex opens a Read only Codex thread in that worktree whose first message contains the branch, the diff and the `## Findings` and `## Overall` headings.
+2. A reply with `src/a.ts:42: handle expired tokens` and `b.ts:3: typo` (the diff shows both lines) adds two line comments to the worktree's review bar, `src/a.ts` before `src/b.ts`.
+3. Lines that don't match the format, and a finding on a line the diff doesn't show, are kept in one General comment, not dropped.
+4. A terminal-only engine is listed disabled with "Can't run read-only"; with no thread engine installed the sheet shows its empty state.
+5. The reviewer can't write: an attempted edit is denied (F-TH-09) and the worktree's files don't change.
+6. A worktree with no changes has the action disabled with "No changes to review".
 
 #### F-WT-06 Worktree runtime (P2)
 **Story:** Five agents in five worktrees all start the app's dev server on port 3000 and the same database. I want each worktree to get its own ports, its own environment and its own Compose project, set up once for the repository.
