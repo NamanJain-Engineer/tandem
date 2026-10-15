@@ -16,6 +16,7 @@ import { useSettings } from "../../stores/settings";
 import { useSession } from "../../stores/session";
 import { useUi } from "../../stores/ui";
 import { Permissions, TryIt } from "./DictateSetup";
+import { GlobeKey } from "./GlobeKey";
 import { DictionarySheet, emptyRule } from "./DictionarySheet";
 import { HistorySheet } from "./HistorySheet";
 import { ModelManager } from "./ModelManager";
@@ -49,6 +50,7 @@ const STATUS: DictateStatus = {
   lockPosition: false,
   quickActions: false,
   enhanceDisclosed: false,
+  fnFallback: false,
 };
 
 const wrap = (ui: React.ReactNode) => render(<UiProvider>{ui}</UiProvider>);
@@ -758,6 +760,57 @@ describe("Setup without a global hotkey (F-DI-11, D-515)", () => {
     act(() => emitLocal("dictate:verified", null));
     await waitFor(() => expect(screen.getByTestId("dictate-key-detected")).toBeTruthy());
     expect(screen.queryByTestId("dictate-try-link")).toBeNull();
+  });
+});
+
+describe("macOS Fn key (F-DI-02, F-DI-11, D-524)", () => {
+  const MAC = { ...STATUS, session: "mac" as const, hold: { binding: "Fn", label: "Fn" } };
+
+  it("F-DI-02 an unheard Fn says the key became Control+Option, and Use Fn again goes back", async () => {
+    const calls = fakeBackend({ dictate_set_binding: () => ({ kind: "active" }), dictate_status: () => MAC });
+    useDictate.setState({
+      status: { ...MAC, fnFallback: true, hold: { binding: "Ctrl+Alt", label: "⌃⌥" } },
+    });
+    wrap(<TryIt />);
+    expect(screen.getByTestId("dictate-fn-fallback").textContent).toContain("Control+Option");
+    expect(screen.queryByText(/Some keyboards don't send Fn/)).toBeNull();
+    fireEvent.click(screen.getByTestId("dictate-fn-again"));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "dictate_set_binding")?.args).toEqual({ binding: "Fn", mode: "hold" }),
+    );
+  });
+
+  it("F-DI-11 the 🌐 key changes only after consent, and can be put back", async () => {
+    let usage: string | null = "show_emoji";
+    let changed = false;
+    const calls = fakeBackend({
+      dictate_globe_key: () => ({ available: true, usage, changedByApp: changed }),
+      dictate_globe_key_set: (a) => {
+        const doNothing = (a as { doNothing: boolean }).doNothing;
+        usage = doNothing ? "do_nothing" : "show_emoji";
+        changed = doNothing;
+        return { available: true, usage, changedByApp: changed };
+      },
+    });
+    wrap(<GlobeKey />);
+    await waitFor(() => expect(screen.getByTestId("dictate-globe").getAttribute("data-usage")).toBe("show_emoji"));
+    fireEvent.click(screen.getByTestId("dictate-globe-change"));
+    // Opening the dialog changes nothing; it names the current value.
+    expect(calls.some((c) => c.cmd === "dictate_globe_key_set")).toBe(false);
+    expect(screen.getByText(/It's set to Show Emoji & Symbols now/)).toBeTruthy();
+    fireEvent.click(screen.getByText("Set to Do Nothing"));
+    await waitFor(() => expect(screen.getByTestId("dictate-globe").getAttribute("data-usage")).toBe("do_nothing"));
+    expect(calls.find((c) => c.cmd === "dictate_globe_key_set")?.args).toEqual({ doNothing: true });
+    fireEvent.click(screen.getByTestId("dictate-globe-undo"));
+    await waitFor(() => expect(screen.getByTestId("dictate-globe").getAttribute("data-usage")).toBe("show_emoji"));
+    expect(screen.getByTestId("dictate-globe-change")).toBeTruthy();
+  });
+
+  it("F-DI-11 off macOS the 🌐 row isn't there", async () => {
+    const calls = fakeBackend({ dictate_globe_key: () => ({ available: false, usage: null, changedByApp: false }) });
+    wrap(<GlobeKey />);
+    await waitFor(() => expect(calls.some((c) => c.cmd === "dictate_globe_key")).toBe(true));
+    expect(screen.queryByTestId("dictate-globe")).toBeNull();
   });
 });
 

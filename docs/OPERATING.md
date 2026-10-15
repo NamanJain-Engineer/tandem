@@ -394,7 +394,7 @@ Today there's no production backend: the API isn't deployed and the desktop
 release runs offline. What to watch:
 - **The site:** the curl checks above; Vercel deployment status after each push to
   `main`; Google Search Console (Pages and Sitemaps) and Bing Webmaster Tools.
-- **Mail:** `hello@vibezeo.com` (contact address on every page and in `security.txt`).
+- **Mail:** `contact@vibezeo.com` (contact address on every page and in `security.txt`).
 - **CI:** GitHub Actions when minutes are available (CI runs Linux on pull requests;
   macOS and Windows on `main`).
 - **Later** (when the API ships, see `HUMAN_TODO.md`): `GET /v1/health`, the API's

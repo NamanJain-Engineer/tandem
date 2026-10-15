@@ -46,14 +46,14 @@ Go to **Settings → Domains → Add**, enter `vibezeo.com`, and accept the sugg
 
 Add them at your domain registrar's DNS settings. Alternatively, switch the domain's nameservers to Vercel's and it creates the records itself. The domain shows **Valid Configuration** once DNS has propagated, which takes minutes and sometimes a few hours. Vercel then issues the HTTPS certificate automatically.
 
-## 3. Receive mail at hello@vibezeo.com
+## 3. Receive mail at contact@vibezeo.com
 
 Vercel hosts websites, not mail. To receive mail at the site's contact address, use one of these:
 
-- **Registrar forwarding:** most registrars forward `hello@vibezeo.com` to your inbox for free.
+- **Registrar forwarding:** most registrars forward `contact@vibezeo.com` to your inbox for free.
 - **A forwarding service such as ImprovMX** (free tier): add the MX and TXT records it gives you, in the same place as the step 2 records.
 
-Then send a test message to `hello@vibezeo.com` from another account and check that it arrives.
+Then send a test message to `contact@vibezeo.com` from another account and check that it arrives.
 
 ## The `vibezeo` repository
 

@@ -162,7 +162,7 @@ describe("docs (F-WB-02)", () => {
   it("F-WB-02 every docs page has the legal links and contact (D-1812)", () => {
     const h = html(<DocsFooter />);
     for (const href of ["/privacy/", "/terms/", "/security/", "/about/"]) expect(h, href).toContain(`href="${href}"`);
-    expect(h).toContain("hello@vibezeo.com");
+    expect(h).toContain("contact@vibezeo.com");
     expect(h).not.toMatch(/\b(19|20)\d{2}\b/);
     const page = readFileSync(join(import.meta.dirname, "[[...slug]]/page.site.tsx"), "utf8");
     expect(page).toContain("<DocsFooter />");

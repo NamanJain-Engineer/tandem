@@ -14,7 +14,7 @@ export const SITE = {
   tagline: "A desktop workspace for the coding agents you already use.",
   /** The name the site and the product are published under. */
   company: "Vibezeo",
-  contactEmail: "hello@vibezeo.com",
+  contactEmail: "contact@vibezeo.com",
   /** No analytics, ads or cookies (D-132). Anything non-essential added
    * here needs a consent banner that loads it only after the visitor agrees
    * (F-WB-01 AC2); the site tests fail until then. */
