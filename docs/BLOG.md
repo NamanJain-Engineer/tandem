@@ -95,9 +95,11 @@ BridgeMind's site blocks automated visitors, and a search found no blog for it.
 
 ## 2. The plan for Vibezeo's blog
 
-Built from the patterns above, in Vibezeo's own identity: Inter and JetBrains
-Mono, the teal accent, slate neutrals, 8 px panels and 1 px borders. The styling
-lives in `components/blog/**`, on top of the shared site components and tokens.
+Built from the patterns above, in Vibezeo's own identity and on the site's
+elite system (`docs/WEBSITE_ELITE.md`): lit surfaces, hairlines, the rings'
+light behind the title block, and captures in the bezel with their build label.
+The styling lives in `components/blog/**`, on top of the shared site components
+and tokens (D-1863).
 
 ### Pages
 | URL | What it shows |
@@ -176,7 +178,8 @@ You need no code to publish a post: you add one file and merge it.
      alt: What the image shows, for screen readers
      width: 1440
      height: 900
-     caption: Optional caption. A capture of the app names the build it shows.
+     caption: Optional caption.
+     build: 0.7.2          # optional: the build a capture of the app shows, labelled under it
    draft: true             # optional; drafts show only in `pnpm --filter web dev`
    ---
    ```
@@ -196,7 +199,9 @@ You need no code to publish a post: you add one file and merge it.
    date. Write "15 October" or "version 0.7.2" instead. Link to videos rather than
    embedding them.
 4. **Add images** under `apps/web/public/blog/<slug>/`, as a PNG or JPEG
-   1440 px wide (or 2880 for sharp text), then make the AVIF and WebP copies:
+   1440 px wide, then make the AVIF and WebP copies. For a cover, AVIF and WebP
+   at twice the size named `<name>@2x.avif` and `<name>@2x.webp` beside it are
+   used on sharp screens.
    ```bash
    python3 apps/web/scripts/optimize-screens.py
    ```

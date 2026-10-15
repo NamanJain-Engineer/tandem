@@ -190,7 +190,7 @@ this milestone the P0/P1 product is launchable.
 - [x] F-WB-02 Docs (Fumadocs at /docs, tables generated from code; D-134)
 - [x] F-WB-03 Changelog (in-app "What's new" too; D-133)
 - [x] F-WB-04 Downloads and machine-readable discovery (D-135)
-- [x] F-WB-06 Blog (P2; `/blog/`, posts as files in `apps/web/content/blog`, tag pages and an Atom feed; D-1850 to D-1862, `docs/BLOG.md`)
+- [x] F-WB-06 Blog (P2; `/blog/`, posts as files in `apps/web/content/blog`, tag pages and an Atom feed; D-1850 to D-1863, `docs/BLOG.md`)
 - [x] F-TL-05 Local data controls (export and delete: the desktop's export and delete, D-812; the web's Delete account and the server's 30-day purge, D-813)
 
 Tasks: marketing site; docs; changelog; downloads and discovery; data

@@ -39,6 +39,8 @@ export const blogFrontmatter = z
         width: z.number().int().positive(),
         height: z.number().int().positive(),
         caption: z.string().trim().min(1).optional(),
+        /** A capture of the app names the build it shows (D-1834), e.g. 0.7.2. */
+        build: z.string().regex(/^\d+\.\d+\.\d+$/, "expected a version like 0.7.2").optional(),
       })
       .strict()
       .optional(),

@@ -8,7 +8,10 @@ import { CORE_SCHEMA, load } from "js-yaml";
 import { SITE } from "../site";
 import { SLUG_RE, blogFrontmatter, type BlogFrontmatter } from "./schema";
 
-export type Cover = NonNullable<BlogFrontmatter["cover"]>;
+export type Cover = NonNullable<BlogFrontmatter["cover"]> & {
+  /** `<name>@2x.avif` and `.webp` sit beside it (D-1838), for sharp screens. */
+  retina?: boolean;
+};
 
 export type Post = {
   slug: string;
@@ -80,10 +83,17 @@ export function parsePost(file: string, raw: string, publicDir: string): Post {
     date: f.date,
     author: f.author,
     tags: f.tags,
-    ...(f.cover ? { cover: f.cover } : {}),
+    ...(f.cover ? { cover: { ...f.cover, retina: hasRetina(f.cover.src, publicDir) } } : {}),
     draft: f.draft ?? false,
     readingMinutes: Math.max(1, Math.ceil(words / WORDS_PER_MINUTE)),
   };
+}
+
+/** Whether AVIF and WebP twice the size sit beside a PNG or JPEG cover. */
+function hasRetina(src: string, publicDir: string): boolean {
+  const base = src.replace(/\.(png|jpe?g)$/, "");
+  if (base === src) return false;
+  return ["avif", "webp"].every((f) => existsSync(join(publicDir, `${base}@2x.${f}`)));
 }
 
 /** Every post in `dir`, newest first (same day: by title). Drafts only when

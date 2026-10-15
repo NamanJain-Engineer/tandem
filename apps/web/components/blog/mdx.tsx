@@ -14,10 +14,11 @@ export const PROSE = cx(
   "[&_strong]:font-semibold [&_strong]:text-fg",
   // GFM footnotes: small superscript links, and the notes in a quiet block at the end
   "[&_sup>a]:ml-0.5 [&_sup>a]:font-mono [&_sup>a]:text-[0.75em] [&_sup>a]:text-accent [&_sup>a]:no-underline",
-  "[&_[data-footnotes]]:!mt-14 [&_[data-footnotes]]:border-t [&_[data-footnotes]]:border-border [&_[data-footnotes]]:pt-6 [&_[data-footnotes]]:text-copy-sm [&_[data-footnotes]_h2]:sr-only",
-  "[&_kbd]:rounded-sm [&_kbd]:border [&_kbd]:border-border-strong [&_kbd]:bg-surface-2 [&_kbd]:px-1.5 [&_kbd]:py-px [&_kbd]:font-mono [&_kbd]:text-[0.8125em] [&_kbd]:text-fg [&_kbd]:shadow-[inset_0_-1px_0_var(--tn-border-strong)]",
-  // inline code, not code blocks
-  "[&_:not(pre)>code]:rounded-sm [&_:not(pre)>code]:border [&_:not(pre)>code]:border-border [&_:not(pre)>code]:bg-surface-2 [&_:not(pre)>code]:px-1.5 [&_:not(pre)>code]:py-px [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:text-[0.875em] [&_:not(pre)>code]:text-fg",
+  "[&_[data-footnotes]]:!mt-14 [&_[data-footnotes]]:border-t [&_[data-footnotes]]:border-line [&_[data-footnotes]]:pt-6 [&_[data-footnotes]]:text-copy-sm [&_[data-footnotes]_h2]:sr-only",
+  // keys: a lit cap, as in the docs
+  "[&_kbd]:inline-flex [&_kbd]:min-h-6 [&_kbd]:items-center [&_kbd]:rounded-[6px] [&_kbd]:bg-(--tn-kbd-bg) [&_kbd]:px-1.5 [&_kbd]:font-mono [&_kbd]:text-[0.75rem] [&_kbd]:leading-none [&_kbd]:text-fg [&_kbd]:shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong),inset_0_-2px_0_var(--site-line)]",
+  // inline code, not code blocks: glass with a hairline, as in the docs
+  "[&_:not(pre)>code]:rounded-[5px] [&_:not(pre)>code]:bg-(--site-glass) [&_:not(pre)>code]:px-1.5 [&_:not(pre)>code]:py-px [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:text-[0.875em] [&_:not(pre)>code]:text-fg [&_:not(pre)>code]:shadow-[inset_0_0_0_1px_var(--site-line)]",
 );
 
 type Props<T extends keyof React.JSX.IntrinsicElements> = ComponentProps<T>;
@@ -26,7 +27,7 @@ type Props<T extends keyof React.JSX.IntrinsicElements> = ComponentProps<T>;
 function heading(Tag: "h2" | "h3" | "h4", className: string) {
   return function Heading({ id, children, className: _c, ...rest }: Props<typeof Tag>) {
     return (
-      <Tag id={id} {...rest} className={cx("group scroll-mt-24 text-balance text-fg", className)}>
+      <Tag id={id} {...rest} className={cx("group scroll-mt-[calc(var(--site-header-h)+1.5rem)] text-balance text-fg", className)}>
         {id ? (
           <a href={`#${id}`} className="no-underline">
             {children}
@@ -60,13 +61,15 @@ export function Figure({
   const base = src.replace(/\.(png|jpe?g)$/, "");
   const modern = base !== src;
   return (
-    <figure className="!mt-10 flex flex-col gap-3 [&+*]:!mt-10">
-      <div className="overflow-hidden rounded-lg border border-border bg-stage">
+    <figure className="!my-10 flex flex-col gap-3 lg:-mx-12">
+      <div className="frame">
+        <div data-stage="" className="frame-screen">
         <picture>
           {modern && <source type="image/avif" srcSet={`${base}.avif`} />}
           {modern && <source type="image/webp" srcSet={`${base}.webp`} />}
           <img src={src} alt={alt} width={width} height={height} loading="lazy" decoding="async" className="block h-auto w-full" />
         </picture>
+        </div>
       </div>
       {caption && <figcaption className="text-caption text-pretty text-fg-muted">{caption}</figcaption>}
     </figure>
@@ -97,16 +100,16 @@ function CodeBlock({
   // when the clipboard is there (D-1860). It sits over the block's corner,
   // so showing it moves nothing.
   return (
-    <div data-code="" className="group/code relative !my-8 overflow-hidden rounded-md border border-border bg-surface-1">
+    <div data-code="" className="surface group/code relative !my-8 overflow-hidden">
       {title && (
-        <div className="border-b border-border bg-surface-2 px-5 py-2 pr-24 font-mono text-caption text-fg-muted">{title}</div>
+        <div className="border-b border-line bg-(--site-glass) px-5 py-2 pr-24 font-mono text-caption text-fg-muted">{title}</div>
       )}
       {pre}
       <button
         type="button"
         data-copy=""
         hidden
-        className="absolute right-2 top-2 inline-flex h-8 items-center gap-1.5 rounded-sm border border-border bg-surface-2 px-2.5 text-caption font-medium text-fg-muted opacity-0 transition-opacity duration-(--dur-instant) hover:text-fg focus-visible:opacity-100 group-hover/code:opacity-100 [@media(hover:none)]:opacity-100"
+        className="absolute right-2 top-2 inline-flex h-8 items-center gap-1.5 rounded-[6px] bg-(--site-glass) px-2.5 text-caption font-medium text-fg-muted opacity-0 shadow-[inset_0_0_0_1px_var(--site-line-strong)] backdrop-blur-sm transition-[opacity,color,background-color] duration-(--dur-base) hover:bg-(--site-glass-hover) hover:text-fg focus-visible:opacity-100 group-hover/code:opacity-100 [@media(hover:none)]:opacity-100"
       >
         <Copy size={14} strokeWidth={1.75} aria-hidden="true" focusable="false" xmlns={undefined} />
         <span data-copy-label="">Copy</span>
@@ -123,12 +126,12 @@ type StaticImage = { src: string; width: number; height: number };
  * file (with its size) or the path. */
 function MarkdownImage({ src, alt, width, height }: { src?: string | StaticImage; alt?: string; width?: number | string; height?: number | string }) {
   const s = typeof src === "object" && src ? src : { src: src ?? "", width: Number(width) || 0, height: Number(height) || 0 };
-  if (!s.width || !s.height) return <img src={s.src} alt={alt ?? ""} loading="lazy" decoding="async" className="h-auto max-w-full rounded-lg border border-border" />;
+  if (!s.width || !s.height) return <img src={s.src} alt={alt ?? ""} loading="lazy" decoding="async" className="h-auto max-w-full rounded-[10px] shadow-[0_0_0_1px_var(--site-line-strong)]" />;
   return <Figure src={s.src} alt={alt ?? ""} width={s.width} height={s.height} />;
 }
 
 export const BLOG_MDX = {
-  h2: heading("h2", "!mt-14 text-display-md"),
+  h2: heading("h2", "!mt-14 text-display-md [&+*]:!mt-5"),
   h3: heading("h3", "!mt-10 text-title"),
   h4: heading("h4", "!mt-8 text-copy font-semibold"),
   p: (p: Props<"p">) => <p {...p} className="text-pretty" />,
@@ -146,14 +149,14 @@ export const BLOG_MDX = {
   blockquote: (p: Props<"blockquote">) => (
     <blockquote {...p} className="border-l-2 border-accent pl-5 text-fg [&>p]:text-pretty" />
   ),
-  hr: () => <hr className="!my-12 border-border" />,
+  hr: () => <hr className="horizon !my-12" />,
   table: (p: Props<"table">) => (
-    <div className="overflow-x-auto rounded-md border border-border">
+    <div className="overflow-x-auto rounded-(--radius-card) shadow-[var(--site-elev-1),inset_0_0_0_1px_var(--site-line-strong)]">
       <table {...p} className="w-full border-collapse text-left text-copy-sm" />
     </div>
   ),
-  th: (p: Props<"th">) => <th {...p} className="border-b border-border bg-surface-2 px-4 py-2.5 font-semibold text-fg" />,
-  td: (p: Props<"td">) => <td {...p} className="border-b border-border px-4 py-2.5 align-top [tr:last-child>&]:border-b-0" />,
+  th: (p: Props<"th">) => <th {...p} className="border-b border-line bg-(--site-glass) px-4 py-2.5 font-semibold text-fg" />,
+  td: (p: Props<"td">) => <td {...p} className="border-b border-line px-4 py-2.5 align-top [tr:last-child>&]:border-b-0" />,
   pre: CodeBlock,
   img: MarkdownImage,
   Figure,
