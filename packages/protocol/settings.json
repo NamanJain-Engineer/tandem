@@ -355,6 +355,11 @@
     "page": "privacy"
   },
   {
+    "default": false,
+    "key": "dictate_dictionary_sync",
+    "page": "privacy"
+  },
+  {
     "default": "forever",
     "key": "dictate_keep_history",
     "page": "dictate"

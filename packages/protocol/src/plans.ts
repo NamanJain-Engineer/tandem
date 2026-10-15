@@ -29,6 +29,8 @@ export type Limits = {
   /** Chat engines allowed in Thread mode; `null` means all. */
   chatEngines: string[] | null;
   creditPacks: boolean;
+  /** The dictionary syncs across devices (F-DI-09). */
+  dictionarySync: boolean;
 };
 
 export const LIMITS: Record<Plan, Limits> = {
@@ -50,6 +52,7 @@ export const LIMITS: Record<Plan, Limits> = {
     admin: false,
     chatEngines: ["claude", "codex"],
     creditPacks: false,
+    dictionarySync: false,
   },
   pro: {
     panes: 64,
@@ -69,6 +72,7 @@ export const LIMITS: Record<Plan, Limits> = {
     admin: false,
     chatEngines: null,
     creditPacks: true,
+    dictionarySync: true,
   },
   team: {
     panes: null,
@@ -88,6 +92,7 @@ export const LIMITS: Record<Plan, Limits> = {
     admin: true,
     chatEngines: null,
     creditPacks: true,
+    dictionarySync: true,
   },
 };
 

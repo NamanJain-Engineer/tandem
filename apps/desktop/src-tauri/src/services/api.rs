@@ -18,6 +18,8 @@ use tandem_core::entitlement::{Limits, Plan};
 use tandem_core::net::Net;
 use tandem_core::remote_config::SignedConfig;
 
+use crate::services::dictionary_sync::{SyncRequest, SyncResponse};
+
 /// Where the API and the web app live.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Endpoints {
@@ -531,6 +533,18 @@ pub trait ApiClient: Send + Sync {
     ) -> Result<(), ApiError> {
         Err(no_hosted_service())
     }
+    /// `POST /v1/dictionary/sync` (F-DI-09): rules only.
+    async fn dictionary_sync(
+        &self,
+        _access: &str,
+        _req: &SyncRequest,
+    ) -> Result<SyncResponse, ApiError> {
+        Err(no_hosted_service())
+    }
+    /// `DELETE /v1/dictionary` (F-DI-09): forgets the synced copy.
+    async fn dictionary_forget(&self, _access: &str) -> Result<(), ApiError> {
+        Err(no_hosted_service())
+    }
 }
 
 /// `POST /v1/pairings`'s answer (F-RM-03).
@@ -974,6 +988,29 @@ impl ApiClient for HttpApi {
             .net
             .client()
             .delete(self.url(&format!("/v1/pairings/{pairing_id}")))
+            .bearer_auth(access);
+        self.call_empty(req).await
+    }
+
+    async fn dictionary_sync(
+        &self,
+        access: &str,
+        req: &SyncRequest,
+    ) -> Result<SyncResponse, ApiError> {
+        let req = self
+            .net
+            .client()
+            .post(self.url("/v1/dictionary/sync"))
+            .bearer_auth(access)
+            .json(req);
+        self.call(req).await
+    }
+
+    async fn dictionary_forget(&self, access: &str) -> Result<(), ApiError> {
+        let req = self
+            .net
+            .client()
+            .delete(self.url("/v1/dictionary"))
             .bearer_auth(access);
         self.call_empty(req).await
     }

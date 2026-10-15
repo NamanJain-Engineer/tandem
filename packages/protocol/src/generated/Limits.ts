@@ -3,4 +3,9 @@
 /**
  * Mirrors `Limits` in `packages/protocol/src/plans.ts`. `None` = unlimited.
  */
-export type Limits = { panes: number | null, workspaces: number | null, threadGrid: number, teammates: number | null, routines: boolean, backgroundRoutines: boolean, taskExecution: boolean, pluginConnections: number | null, accountsPerEngine: number | null, cloudStt: boolean, enhance: boolean, conductor: boolean, auto: boolean, phone: boolean, admin: boolean, chatEngines: Array<string> | null, creditPacks: boolean, };
+export type Limits = { panes: number | null, workspaces: number | null, threadGrid: number, teammates: number | null, routines: boolean, backgroundRoutines: boolean, taskExecution: boolean, pluginConnections: number | null, accountsPerEngine: number | null, cloudStt: boolean, enhance: boolean, conductor: boolean, auto: boolean, phone: boolean, admin: boolean, chatEngines: Array<string> | null, creditPacks: boolean, 
+/**
+ * The dictionary syncs across devices (F-DI-09). Defaults to false so
+ * an older API's entitlement still parses.
+ */
+dictionarySync: boolean, };

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { DictateStatus, ModelsView, TakePage } from "@tandem/protocol";
+import type { DictateStatus, ModelsView, Rule, TakePage } from "@tandem/protocol";
 import { Composer, UiProvider, type ComposerHandle } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { setInvokeBackend } from "../../ipc/invoke";
@@ -16,7 +16,7 @@ import { useSettings } from "../../stores/settings";
 import { useSession } from "../../stores/session";
 import { useUi } from "../../stores/ui";
 import { Permissions, TryIt } from "./DictateSetup";
-import { DictionarySheet } from "./DictionarySheet";
+import { DictionarySheet, emptyRule } from "./DictionarySheet";
 import { HistorySheet } from "./HistorySheet";
 import { ModelManager } from "./ModelManager";
 import { mainWindowShows, toastText } from "./toasts";
@@ -429,6 +429,67 @@ describe("Dictionary (F-DI-09, UI-64)", () => {
     await waitFor(() =>
       expect(screen.getByTestId("dictionary-test-output").textContent).toBe("use Tandem, https://tandem.dev"),
     );
+  });
+
+  const proSync = () =>
+    act(() => {
+      const e = useSession.getState().entitlement!;
+      useSession.setState({ entitlement: { ...e, plan: "pro", limits: { ...e.limits, dictionarySync: true } } });
+    });
+  const word = (id: string, to: string): Rule => ({ ...emptyRule("correction"), id, phrases: [id], replacement: to });
+
+  it("F-DI-09 sync is Pro: Free sees the plans and nothing is sent", async () => {
+    const calls = fakeBackend({ dictionary_list: () => [], dictionary_suggestions: () => [] });
+    wrap(<DictionarySheet open onClose={() => undefined} />);
+    fireEvent.click(await screen.findByTestId("dictionary-sync-pro"));
+    expect(useUi.getState().upgrade.open).toBe(true);
+    expect(calls.some((c) => c.cmd.startsWith("dictionary_sync"))).toBe(false);
+  });
+
+  it("F-DI-09 sync stays off until turned on, then a conflict keeps the user's pick", async () => {
+    const conflict = { id: "tauri", local: word("tauri", "Tauri."), remote: word("tauri", "TAURI") };
+    const calls = fakeBackend({
+      dictionary_list: () => [],
+      dictionary_suggestions: () => [],
+      dictionary_sync: () => ({ pushed: 1, pulled: 0, conflicts: [conflict], syncedAt: 1_700_000_000_000 }),
+      dictionary_sync_resolve: () => conflict.local,
+    });
+    proSync();
+    wrap(<DictionarySheet open onClose={() => undefined} />);
+    const toggle = await screen.findByRole("switch", { name: "Sync dictionary" });
+    expect(calls.some((c) => c.cmd === "dictionary_sync")).toBe(false);
+    fireEvent.click(toggle);
+    await waitFor(() => expect(calls.some((c) => c.cmd === "dictionary_sync")).toBe(true));
+    expect(calls.find((c) => c.cmd === "settings_set")?.args).toMatchObject({
+      key: "dictate_dictionary_sync",
+      value: true,
+    });
+    expect(await screen.findByText("tauri → Tauri.")).toBeTruthy();
+    expect(screen.getByText("tauri → TAURI")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("dictionary-sync-keep-mine"));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "dictionary_sync_resolve")?.args).toEqual({ id: "tauri", keep: "mine" }),
+    );
+    await waitFor(() => expect(screen.queryByTestId("dictionary-sync-conflict")).toBeNull());
+  });
+
+  it("F-DI-09 turning sync off says what stays on the server and can delete it", async () => {
+    const calls = fakeBackend({
+      dictionary_list: () => [],
+      dictionary_suggestions: () => [],
+      dictionary_sync: () => ({ pushed: 0, pulled: 0, conflicts: [], syncedAt: 1_700_000_000_000 }),
+      dictionary_sync_forget: () => null,
+    });
+    proSync();
+    act(() => useSettings.setState({ values: { ...useSettings.getState().values, dictate_dictionary_sync: true } }));
+    wrap(<DictionarySheet open onClose={() => undefined} />);
+    fireEvent.click(await screen.findByRole("switch", { name: "Sync dictionary" }));
+    expect(await screen.findByText(/The synced copy stays in your Vibezeo account until you delete it/)).toBeTruthy();
+    fireEvent.click(screen.getByTestId("dictionary-sync-off-delete"));
+    await waitFor(() => expect(calls.some((c) => c.cmd === "dictionary_sync_forget")).toBe(true));
+    expect(
+      calls.some((c) => c.cmd === "settings_set" && c.args?.key === "dictate_dictionary_sync" && c.args?.value === false),
+    ).toBe(true);
   });
 });
 

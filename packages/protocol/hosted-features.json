@@ -38,6 +38,13 @@
       "state": { "kind": "setting", "key": "dictate_share_hints", "equals": true }
     },
     {
+      "id": "dictionary_sync",
+      "label": "Dictionary sync",
+      "sends": "Your dictionary rules (words, replacements and their options), never transcripts or audio",
+      "destination": "Vibezeo API",
+      "state": { "kind": "setting", "key": "dictate_dictionary_sync", "equals": true }
+    },
+    {
       "id": "auto_enhance",
       "label": "Auto-Enhance",
       "sends": "Transcript text of every take",

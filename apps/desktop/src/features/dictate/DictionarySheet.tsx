@@ -17,6 +17,7 @@ import {
 } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
+import { DictionarySync } from "./DictionarySync";
 
 type Tab = "words" | "corrections" | "review" | "deleted";
 
@@ -395,8 +396,8 @@ function ImportExport({ onChanged }: { onChanged: () => void }) {
   );
 }
 
-/** UI-64: Words, Corrections, Review and Deleted, with the test box and
- * import/export. Everything stays on this device. */
+/** UI-64: Words, Corrections, Review and Deleted, with the test box,
+ * import/export and, on Pro, the opt-in sync (F-DI-09). */
 export function DictionarySheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [rules, setRules] = useState<Rule[] | null>(null);
   const [tab, setTab] = useState<Tab>("words");
@@ -436,6 +437,7 @@ export function DictionarySheet({ open, onClose }: { open: boolean; onClose: () 
           />
           <TestBox />
           <ImportExport onChanged={load} />
+          <DictionarySync onChanged={load} />
         </div>
       )}
     </Sheet>

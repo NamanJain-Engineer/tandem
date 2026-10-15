@@ -905,6 +905,19 @@ export function settingsPages(platform: string, routines = false, accounts = fal
               },
             ]
           : []),
+        ...(accounts
+          ? [
+              {
+                id: "dictate_dictionary_sync",
+                label: t("settings.dictionarySync"),
+                description: t("settings.dictionarySync.desc"),
+                keywords: ["dictionary", "sync", "devices"],
+                control: (ids: Ids) => (
+                  <BoolControl k="dictate_dictionary_sync" ids={ids} label={t("settings.dictionarySync")} />
+                ),
+              },
+            ]
+          : []),
         {
           id: "dictate_share_hints",
           label: t("settings.dictionaryHints"),
