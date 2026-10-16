@@ -1257,6 +1257,11 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
   - usage (`product-research`): D-2540 to D-2559;
   - reliability (`perf-open`): D-2560 to D-2579.
   The review loop (`m16a-conductor`) still has D-2425 to D-2439. REMAINING's M18 section names each session's next features.
+- D-859: A read-only thread never joins the review queue (F-DB-04), found by chain24's review of F-CN-09.
+  - **The bug:** the queue accepted any thread in a workspace. A second opinion's reviewer (F-WT-05) is a Read only thread in the worktree it reviews, so when it finished, the worktree's diff made it an item: the review showed another agent's work under the reviewer's name, and Send back (or walk-and-review's) typed "Address it…" into the reviewer while the agent that made the changes got nothing.
+  - **The fix:** `reviews_thread` keeps threads that can change their folder (Edits or Full access); Read only threads and teammate chats stay out.
+  - **Tests:** `f_db_04_1_a_read_only_thread_never_joins_the_queue` (it didn't compile before the rule existed), and E2E-M18-DB04 gains a Read only thread finishing in the worktree the previous case changed, which never joins.
+  - It ships in 0.8.0; the Conductor session leaves `session()` alone so its F-CN-09 fixes don't conflict.
 
 ### Website redesign log
 - Merged product-m0-m5 (#46, D-829's `git.deploymentEnabled`) into website-redesign; vercel.json keeps both that block and D-1814's cache headers. The home page's proof band adds "Linux first", only facts the build ships: the .deb's distributions (from `lib/release.ts`), Dictate on X11 and Wayland, SSH hosts on x86-64 and arm64 (a test checks the 0.5.0 CHANGELOG says them). No claim about price or markup.
