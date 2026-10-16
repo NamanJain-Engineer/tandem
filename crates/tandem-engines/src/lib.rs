@@ -11,6 +11,7 @@ pub mod chat;
 pub mod detect;
 pub mod events;
 pub mod forecast;
+pub mod guard;
 pub mod handoff;
 pub mod homes;
 pub mod hook;

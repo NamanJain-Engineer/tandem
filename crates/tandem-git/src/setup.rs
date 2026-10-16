@@ -102,10 +102,11 @@ pub fn reserved_reason(name: &str) -> Option<&'static str> {
     ];
     // Every provider home Vibezeo sets (the registry's `providerHomeEnv`,
     // F-AC-01); a test checks the registry against this list.
-    const AGENTS: [&str; 14] = [
+    const AGENTS: [&str; 15] = [
         "CLAUDE_CONFIG_DIR",
         "CODEX_HOME",
         "GEMINI_CLI_HOME",
+        "KIRO_HOME",
         "XDG_CONFIG_HOME",
         "XDG_DATA_HOME",
         "XDG_STATE_HOME",
@@ -529,6 +530,69 @@ pub struct CopyReport {
     pub bytes: u64,
     /// A limit stopped the copy.
     pub partial: bool,
+    /// F-WT-09: how many of the copied files share their data with the
+    /// main checkout's (copy-on-write clones).
+    #[serde(default)]
+    pub cloned: u32,
+}
+
+/// How one file is copied (F-WT-09): a copy-on-write clone where the
+/// filesystem supports it, else an ordinary copy. A trait so tests can fake
+/// the filesystem.
+pub trait Cloner {
+    /// Copies `src` to the new file `dest` (which must not exist); `true`
+    /// when it was cloned rather than copied.
+    fn copy(&self, src: &Path, dest: &Path) -> std::io::Result<bool>;
+}
+
+/// Clones with `FICLONE` on Linux (as `cp --reflink=auto` does), falling
+/// back to an ordinary copy there and everywhere else.
+pub struct SystemCloner;
+
+impl Cloner for SystemCloner {
+    fn copy(&self, src: &Path, dest: &Path) -> std::io::Result<bool> {
+        #[cfg(target_os = "linux")]
+        if reflink::clone_file(src, dest)? {
+            return Ok(true);
+        }
+        std::fs::copy(src, dest)?;
+        Ok(false)
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod reflink {
+    use std::fs::{File, OpenOptions};
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    use std::os::unix::io::AsRawFd;
+    use std::path::Path;
+
+    /// `_IOW(0x94, 9, int)`.
+    const FICLONE: libc::c_ulong = 0x4004_9409;
+
+    /// `Ok(true)` when `dest` was made as a clone of `src`; `Ok(false)` when
+    /// the filesystem can't (nothing is left behind); `Err` only when `src`
+    /// can't be read or `dest` can't be created.
+    pub fn clone_file(src: &Path, dest: &Path) -> std::io::Result<bool> {
+        let from = File::open(src)?;
+        let mode = from.metadata()?.permissions().mode();
+        let to = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(mode & 0o7777)
+            .open(dest)?;
+        // SAFETY: both descriptors are open for the call's duration; FICLONE
+        // reads the source descriptor and writes nothing but the target.
+        let rc = unsafe { libc::ioctl(to.as_raw_fd(), FICLONE as _, from.as_raw_fd()) };
+        drop(to);
+        if rc == 0 {
+            std::fs::set_permissions(dest, std::fs::Permissions::from_mode(mode & 0o7777))?;
+            return Ok(true);
+        }
+        // Not supported here (another filesystem, tmpfs, overlayfs…): undo.
+        std::fs::remove_file(dest)?;
+        Ok(false)
+    }
 }
 
 /// The fixed leading path of an anchored pattern (`config/local.yml` →
@@ -566,6 +630,7 @@ struct Walk<'a> {
     repo: Option<git2::Repository>,
     report: &'a mut CopyReport,
     seen: usize,
+    cloner: &'a dyn Cloner,
 }
 
 impl Walk<'_> {
@@ -688,7 +753,9 @@ impl Walk<'_> {
             self.skip(rel, SkipReason::Outside);
             return Ok(());
         }
-        std::fs::copy(&src, &dest)?;
+        if self.cloner.copy(&src, &dest)? {
+            self.report.cloned += 1;
+        }
         self.report.bytes += size;
         self.report.copied.push(rel_string(rel));
         Ok(())
@@ -725,6 +792,16 @@ pub fn copy_into(
     worktree: &Path,
     patterns: &[String],
 ) -> Result<CopyReport, SetupError> {
+    copy_into_with(main_root, worktree, patterns, &SystemCloner)
+}
+
+/// [`copy_into`] with the way files are copied given (tests fake it).
+pub fn copy_into_with(
+    main_root: &Path,
+    worktree: &Path,
+    patterns: &[String],
+    cloner: &dyn Cloner,
+) -> Result<CopyReport, SetupError> {
     let mut report = CopyReport::default();
     if patterns.is_empty() {
         return Ok(report);
@@ -748,6 +825,7 @@ pub fn copy_into(
         matcher,
         report: &mut report,
         seen: 0,
+        cloner,
     };
     walk.dir(Path::new(""))?;
     Ok(report)
@@ -1171,5 +1249,98 @@ mod tests {
         let ok = WorktreeSetup::parse(br#"{"env":{"ANTHROPIC_API_KEY":"x","DATABASE_URL":"y"}}"#);
         assert!(ok.is_ok());
         assert!(reserved_reason("PATH").is_some_and(|w| w.contains("terminals start")));
+    }
+
+    /// Clones every file it's given (a filesystem with copy-on-write).
+    struct AlwaysClones;
+    impl Cloner for AlwaysClones {
+        fn copy(&self, src: &Path, dest: &Path) -> std::io::Result<bool> {
+            std::fs::copy(src, dest)?;
+            Ok(true)
+        }
+    }
+
+    #[test]
+    fn f_wt_09_6_clones_are_counted_where_the_filesystem_clones() {
+        let (_tmp, main, wt) = fixture();
+        let report = copy_into_with(
+            &main,
+            &wt,
+            &pats(&[".env*", "config/local.yml"]),
+            &AlwaysClones,
+        )
+        .expect("copy");
+        assert_eq!(report.copied.len(), 3);
+        assert_eq!(report.cloned, 3);
+    }
+
+    #[test]
+    fn f_wt_09_6_the_system_copy_falls_back_and_keeps_bytes_and_modes() {
+        let (_tmp, main, wt) = fixture();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(main.join(".env"), std::fs::Permissions::from_mode(0o600))
+                .expect("chmod");
+        }
+        let report = copy_into(&main, &wt, &pats(&[".env*"])).expect("copy");
+        assert_eq!(report.copied, vec![".env", ".env.local"]);
+        // Cloned or copied, the bytes are the same.
+        assert!(report.cloned <= 2);
+        for f in [".env", ".env.local"] {
+            assert_eq!(
+                std::fs::read(main.join(f)).expect("src"),
+                std::fs::read(wt.join(f)).expect("dest")
+            );
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(wt.join(".env"))
+                .expect("meta")
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn f_wt_09_6_a_failed_clone_leaves_nothing_behind() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let src = tmp.path().join("src.bin");
+        std::fs::write(&src, b"data").expect("write");
+        let dest = tmp.path().join("dest.bin");
+        match reflink::clone_file(&src, &dest) {
+            // A filesystem with copy-on-write: a real clone.
+            Ok(true) => assert_eq!(std::fs::read(&dest).expect("read"), b"data"),
+            // Without it: no half-made file.
+            Ok(false) => assert!(!dest.exists()),
+            Err(e) => panic!("{e}"),
+        }
+        // An existing destination is never overwritten.
+        std::fs::write(&dest, b"keep").expect("write");
+        assert!(reflink::clone_file(&src, &dest).is_err());
+        assert_eq!(std::fs::read(&dest).expect("read"), b"keep");
+    }
+
+    /// On a copy-on-write filesystem (set `TANDEM_COW_DIR` to a folder on
+    /// btrfs or XFS with reflinks) every copied file is a clone. Elsewhere
+    /// there's nothing to check, so it returns early.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn f_wt_09_6_on_a_cow_filesystem_every_copied_file_is_a_clone() {
+        let Some(dir) = std::env::var_os("TANDEM_COW_DIR") else {
+            return;
+        };
+        let tmp = tempfile::tempdir_in(dir).expect("tmp on the cow filesystem");
+        let src = tmp.path().join("big.bin");
+        std::fs::write(&src, vec![7u8; 4 << 20]).expect("write");
+        let dest = tmp.path().join("clone.bin");
+        assert!(
+            reflink::clone_file(&src, &dest).expect("clone"),
+            "not cloned"
+        );
+        assert_eq!(std::fs::read(&dest).expect("read").len(), 4 << 20);
     }
 }

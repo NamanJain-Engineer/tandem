@@ -36,12 +36,25 @@ import {
   worktreeDiff,
 } from "../../stores/worktrees";
 import { switchMode } from "../shell/actions";
+import { ComparePreviewsDialog } from "./ComparePreviews";
 import { MergeForecast, OverlapDialog } from "./WorktreeOverlap";
+import { SecondOpinionDialog } from "./SecondOpinion";
 import { ReviewDiff } from "./WorktreeReview";
 import { InstructionsDialog } from "./Instructions";
 import { ReviewSetupDialog, WorktreeSetupDialog, useWorktreeNotices } from "./WorktreeSetup";
 
 type Show = ReturnType<typeof useToast>["show"];
+
+/** The local worktrees of `wt`'s repository, `wt` first (F-WT-09 side by side). */
+function previewSiblings(wt: WorkspaceSummary): string[] {
+  const others = useWorkspaces
+    .getState()
+    .list.filter(
+      (w) => w.id !== wt.id && w.parentId === wt.parentId && w.laneBranch && w.kind === "local" && !w.missing,
+    )
+    .map((w) => w.id);
+  return [wt.id, ...others];
+}
 
 /** The worktree menu (rail row ⋯ and the pane ⋯ menu, UI_SPEC §4.3). */
 export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): MenuEntry[] {
@@ -91,12 +104,26 @@ export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): Me
         }),
     },
     {
+      // F-WT-09: this worktree's preview beside another one's.
+      id: "wt-compare-previews",
+      label: t("worktree.compare.menu"),
+      disabled: wt.missing || wt.kind !== "local" || previewSiblings(wt).length < 2,
+      onSelect: () => open({ kind: "comparePreviews", candidates: previewSiblings(wt), chosen: [wt.id] }),
+    },
+    {
       // F-WT-03: sibling worktrees on the same files, and the merge forecast.
       id: "wt-overlap",
       label: t("worktree.overlap.menu"),
       // On an SSH host these need its git and files locally (D-2209).
       disabled: wt.missing || wt.kind !== "local",
       onSelect: () => open({ kind: "overlap", worktreeId: wt.id }),
+    },
+    {
+      // F-WT-05: another engine reads the diff and leaves line comments.
+      id: "wt-second-opinion",
+      label: t("worktree.opinion.menu"),
+      disabled: wt.missing,
+      onSelect: () => open({ kind: "opinion", worktreeId: wt.id }),
     },
     {
       // F-WT-01: the repository's setup, from any of its worktrees.
@@ -339,6 +366,7 @@ function DiffDialog({ wt, onClose }: { wt: WorkspaceSummary; onClose: () => void
           <ReviewDiff
             wt={wt}
             files={files}
+            onSecondOpinion={() => useWorktrees.getState().open({ kind: "opinion", worktreeId: wt.id })}
             labels={{
               empty: t("worktree.diffEmpty"),
               binary: t("diff.binary"),
@@ -478,6 +506,15 @@ export function WorktreeDialogs() {
     const ws = list.find((w) => w.id === ask.workspaceId);
     return ws ? <WorktreeSetupDialog ws={ws} onClose={close} /> : null;
   }
+  if (ask.kind === "comparePreviews")
+    return (
+      <ComparePreviewsDialog
+        candidates={ask.candidates}
+        chosen={ask.chosen}
+        onDone={ask.onDone}
+        onClose={close}
+      />
+    );
   if (ask.kind === "instructions") {
     const ws = list.find((w) => w.id === ask.workspaceId);
     return ws ? <InstructionsDialog ws={ws} onClose={close} /> : null;
@@ -489,6 +526,7 @@ export function WorktreeDialogs() {
   const wt = list.find((w) => w.id === ask.worktreeId);
   if (!wt) return null;
   if (ask.kind === "diff") return <DiffDialog wt={wt} onClose={close} />;
+  if (ask.kind === "opinion") return <SecondOpinionDialog wt={wt} onClose={close} />;
   if (ask.kind === "overlap") return <OverlapDialog wt={wt} base={baseBranch(list, wt)} onClose={close} />;
   if (ask.kind === "merge")
     return (

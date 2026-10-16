@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lane-second-opinion"
+description = "Enables the lane_second_opinion command without any pre-configured scope."
+commands.allow = ["lane_second_opinion"]
+
+[[permission]]
+identifier = "deny-lane-second-opinion"
+description = "Denies the lane_second_opinion command without any pre-configured scope."
+commands.deny = ["lane_second_opinion"]

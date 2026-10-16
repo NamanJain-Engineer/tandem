@@ -431,6 +431,23 @@ function Compare({ runId }: { runId: string }) {
                 {t("bestof.previews")}
               </Button>
             )}
+            {laneIds.filter((id) => previews[id] && previews[id]?.status !== "none").length >= 2 && (
+              <Button
+                size="sm"
+                variant="secondary"
+                data-testid="bestof-side-by-side"
+                onClick={() =>
+                  useWorktrees.getState().open({
+                    kind: "comparePreviews",
+                    candidates: laneIds,
+                    chosen: laneIds.length === 2 ? laneIds : [],
+                    onDone: () => useBestOf.getState().close(),
+                  })
+                }
+              >
+                {t("bestof.sideBySide")}
+              </Button>
+            )}
             <Button size="sm" variant="ghost" data-testid="bestof-discard" disabled={busy} onClick={() => void act("bestof_discard", { runId })}>
               {t("bestof.discardAll")}
             </Button>
