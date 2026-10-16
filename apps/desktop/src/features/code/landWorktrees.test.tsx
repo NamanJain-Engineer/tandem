@@ -64,6 +64,7 @@ const PLAN: LandingPlan = {
     candidate("dirty", { uncommitted: 2 }),
   ],
   undo: null,
+  interrupted: null,
 };
 
 const step = (branch: string, state: LandingStep["state"], over: Partial<LandingStep> = {}): LandingStep => ({
@@ -199,6 +200,14 @@ describe("Land worktrees (F-WT-07, UI-155)", () => {
       await screen.findByText("shop has uncommitted changes. Commit or stash them, then land."),
     ).toBeTruthy();
     expect(screen.getByTestId("landing-land")).toHaveProperty("disabled", true);
+  });
+
+  it("F-WT-07 a landing the app quit during says its merge was aborted", async () => {
+    plan = { ...PLAN, interrupted: "shop" };
+    setup();
+    expect((await screen.findByTestId("landing-interrupted")).textContent).toBe(
+      "The last landing was interrupted. Vibezeo aborted its unfinished merge in shop.",
+    );
   });
 
   it("F-WT-07 empty: no worktree has commits the base doesn't", async () => {

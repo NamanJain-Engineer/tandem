@@ -13,4 +13,9 @@ base: string | null, baseDirty: boolean,
 /**
  * The last check command used for this repository here.
  */
-check: string | null, candidates: Array<LandingCandidate>, undo: LandingUndo | null, };
+check: string | null, candidates: Array<LandingCandidate>, undo: LandingUndo | null, 
+/**
+ * The folder where a landing the app quit during left a merge, which
+ * was aborted just now.
+ */
+interrupted: string | null, };

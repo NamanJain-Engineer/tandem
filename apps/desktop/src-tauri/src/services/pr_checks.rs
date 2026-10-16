@@ -28,8 +28,13 @@ use crate::services::bestof::tail;
 use crate::services::lanes::{forge_for, Forge};
 
 pub const CONSENT_FILE: &str = "pr-checks.json";
-/// How much of a failed job's log goes to the agent.
+/// How much of a failed job's log goes to the agent: its last 200 lines,
+/// at most 16 KiB.
 pub const LOG_LINES: usize = 200;
+pub const LOG_BYTES: usize = 16 * 1024;
+/// How many review comments one import brings, and how much of each.
+pub const MAX_COMMENTS: usize = 40;
+pub const COMMENT_CHARS: usize = 2_000;
 /// How long one `gh` call may take.
 const GH_LIMIT: Duration = Duration::from_secs(60);
 
@@ -153,6 +158,18 @@ pub struct LaneChecks {
     pub pr: Option<PrRef>,
     pub checks: Vec<PrCheck>,
     pub error: Option<String>,
+}
+
+/// `lane_review_comments`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ImportedComments {
+    pub comments: Vec<ImportedComment>,
+    /// Comments on lines that no longer exist (outdated), left out.
+    pub outdated: u32,
+    /// Comments past [`MAX_COMMENTS`], left out.
+    pub cut: u32,
 }
 
 /// A pull request line comment for F-WT-02's review bar.
@@ -279,8 +296,6 @@ struct RawComment {
     #[serde(default)]
     line: Option<u32>,
     #[serde(default)]
-    original_line: Option<u32>,
-    #[serde(default)]
     side: Option<String>,
     #[serde(default)]
     body: String,
@@ -289,43 +304,145 @@ struct RawComment {
 }
 
 /// One JSON object per line, as `gh api --jq '.[] | {…}'` prints them.
-pub fn parse_comments(stdout: &str) -> Vec<ImportedComment> {
-    stdout
+/// A comment whose line no longer exists (`line` is null: outdated) is
+/// left out rather than pinned to where the line was; past
+/// [`MAX_COMMENTS`] they're counted, not kept.
+pub fn parse_comments(stdout: &str) -> ImportedComments {
+    let mut out = ImportedComments {
+        comments: Vec::new(),
+        outdated: 0,
+        cut: 0,
+    };
+    for c in stdout
         .lines()
         .filter_map(|l| serde_json::from_str::<RawComment>(l.trim()).ok())
-        .filter_map(|c| {
-            let line = c.line.or(c.original_line)?;
-            let author = c.user.unwrap_or_else(|| "someone".into());
-            let side = if c.side.as_deref() == Some("LEFT") {
-                "old"
-            } else {
-                "new"
-            };
-            Some(ImportedComment {
-                id: c.id.to_string().trim_matches('"').to_string(),
-                fenced: comment_fenced(&author, &c.body),
-                path: c.path,
-                line,
-                side: side.into(),
-                author,
-                body: c.body,
-            })
-        })
-        .collect()
+    {
+        let Some(line) = c.line else {
+            out.outdated += 1;
+            continue;
+        };
+        if out.comments.len() >= MAX_COMMENTS {
+            out.cut += 1;
+            continue;
+        }
+        let author = c.user.unwrap_or_else(|| "someone".into());
+        let side = if c.side.as_deref() == Some("LEFT") {
+            "old"
+        } else {
+            "new"
+        };
+        let body = cut_chars(&strip_ansi(&c.body), COMMENT_CHARS);
+        out.comments.push(ImportedComment {
+            id: c.id.to_string().trim_matches('"').to_string(),
+            fenced: comment_fenced(&author, &c.path, line, side, &body),
+            path: c.path,
+            line,
+            side: side.into(),
+            author,
+            body,
+        });
+    }
+    out
 }
 
-/// A review comment as data in the review prompt.
-pub fn comment_fenced(author: &str, body: &str) -> String {
+/// The first `max` characters, saying when the rest was cut.
+fn cut_chars(text: &str, max: usize) -> String {
+    match text.char_indices().nth(max) {
+        Some((at, _)) => format!("{}\n[… cut]", &text[..at]),
+        None => text.to_string(),
+    }
+}
+
+/// A review comment as data in the review prompt: its place, author and
+/// words all come from GitHub, so all of them are inside the fence.
+pub fn comment_fenced(author: &str, path: &str, line: u32, side: &str, body: &str) -> String {
+    let place = if side == "old" {
+        format!("{path} (removed line {line})")
+    } else {
+        format!("{path}:{line}")
+    };
     format!(
         "{}\n{}",
         untrusted::label("a pull request review comment"),
-        untrusted::fence("text", &format!("@{author}:\n{}", body.trim()))
+        untrusted::fence("text", &format!("@{author} on {place}:\n{}", body.trim()))
     )
+}
+
+/// Terminal escapes and other control characters out of CI text, so the
+/// agent and the clipboard get plain text (`\r` progress lines become
+/// lines).
+pub fn strip_ansi(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\u{1b}' => match chars.next() {
+                // CSI: parameters, then one final byte.
+                Some('[') => {
+                    for n in chars.by_ref() {
+                        if ('\u{40}'..='\u{7e}').contains(&n) {
+                            break;
+                        }
+                    }
+                }
+                // OSC and friends: up to BEL or ESC \.
+                Some(']' | 'P' | '_' | '^') => {
+                    while let Some(n) = chars.next() {
+                        if n == '\u{7}' {
+                            break;
+                        }
+                        if n == '\u{1b}' && chars.peek() == Some(&'\\') {
+                            chars.next();
+                            break;
+                        }
+                    }
+                }
+                _ => {}
+            },
+            '\r' if chars.peek() == Some(&'\n') => {}
+            '\r' => out.push('\n'),
+            '\n' | '\t' => out.push(c),
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// The last `max` bytes of `text` on a character boundary, saying when
+/// the start was cut.
+fn last_bytes(text: &str, max: usize) -> String {
+    if text.len() <= max {
+        return text.to_string();
+    }
+    let mut at = text.len() - max;
+    while !text.is_char_boundary(at) {
+        at += 1;
+    }
+    format!("[… earlier log cut]\n{}", &text[at..])
+}
+
+/// A failed job's log as it goes to the agent: plain, redacted, capped.
+pub fn log_tail(stdout: &str) -> String {
+    let plain = strip_ansi(stdout);
+    let tail = tail(&plain, LOG_LINES);
+    Redactor::global()
+        .redact(&last_bytes(&tail, LOG_BYTES))
+        .into_owned()
+}
+
+/// What the prompt says about the log.
+pub enum Log {
+    Tail(String),
+    /// Not a GitHub Actions job: there's no log to read.
+    NotActions,
+    /// `gh run view` failed (logs expired, the run still going): why.
+    Unreadable(String),
 }
 
 /// "Send failure to agent": the instruction is ours; the check's name,
 /// link and log are CI's, so they're data.
-pub fn failure_prompt(pr: u32, check: &PrCheck, log: Option<&str>) -> String {
+pub fn failure_prompt(pr: u32, check: &PrCheck, log: &Log) -> String {
     let mut ci = format!("Check: {}", check.name);
     if let Some(w) = &check.workflow {
         ci.push_str(&format!("\nWorkflow: {w}"));
@@ -334,10 +451,12 @@ pub fn failure_prompt(pr: u32, check: &PrCheck, log: Option<&str>) -> String {
         ci.push_str(&format!("\nLink: {l}"));
     }
     match log {
-        Some(log) if !log.trim().is_empty() => {
+        Log::Tail(log) if !log.trim().is_empty() => {
             ci.push_str(&format!("\n\nFailed steps' log (last lines):\n{log}"))
         }
-        _ => ci.push_str("\n\n(No log: this check isn't a GitHub Actions job.)"),
+        Log::Tail(_) => ci.push_str("\n\n(The failed steps printed nothing.)"),
+        Log::NotActions => ci.push_str("\n\n(No log: this check isn't a GitHub Actions job.)"),
+        Log::Unreadable(why) => ci.push_str(&format!("\n\n(The log couldn't be read: {why})")),
     }
     format!(
         "A CI check failed on this worktree's pull request #{pr}. Find the cause, fix it, \
@@ -525,15 +644,15 @@ pub async fn failure(
                     &args(&["run", "view", "--job", id, "--log-failed"]),
                 )
                 .await;
-            Some(
-                Redactor::global()
-                    .redact(&tail(&out.stdout, LOG_LINES))
-                    .into_owned(),
-            )
+            if out.code == Some(0) {
+                Log::Tail(log_tail(&out.stdout))
+            } else {
+                Log::Unreadable(strip_ansi(&first_line(&out.stderr)))
+            }
         }
-        None => None,
+        None => Log::NotActions,
     };
-    Ok(failure_prompt(pr.number, &check, log.as_deref()))
+    Ok(failure_prompt(pr.number, &check, &log))
 }
 
 /// `lane_review_comments`: the pull request's line comments.
@@ -542,7 +661,7 @@ pub async fn review_comments(
     data: &DataDir,
     gh: Option<&dyn Gh>,
     lane_id: &WorkspaceId,
-) -> Result<Vec<ImportedComment>, IpcError> {
+) -> Result<ImportedComments, IpcError> {
     let c = ctx(store, data, lane_id).await?;
     if !c.allowed {
         return Err(not_allowed());
@@ -569,7 +688,7 @@ pub async fn review_comments(
                 &endpoint,
                 "--paginate",
                 "--jq",
-                ".[] | {id, path, line, original_line, side, body, user: .user.login}",
+                ".[] | {id, path, line, side, body, user: .user.login}",
             ]),
         )
         .await;
@@ -774,10 +893,11 @@ mod tests {
         let (_t, data, store, repo, lane) = fixture().await;
         set_allowed(&data, repo.id.as_str(), true).expect("allow");
         let gh = fake();
-        let list = review_comments(&store, &data, Some(&gh), &lane.id)
+        let got = review_comments(&store, &data, Some(&gh), &lane.id)
             .await
             .expect("comments");
-        assert_eq!(list.len(), 2);
+        let list = &got.comments;
+        assert_eq!(list.len(), 1);
         assert_eq!(
             (
                 list[0].path.as_str(),
@@ -788,15 +908,49 @@ mod tests {
             ("src/a.ts", 12, "new", "ana")
         );
         assert_eq!(
-            (list[1].line, list[1].side.as_str()),
-            (4, "old"),
-            "an outdated comment keeps its original line"
+            got.outdated, 1,
+            "an outdated comment is left out, not pinned"
         );
         assert_eq!(list[0].id, "101");
         assert!(list[0]
             .fenced
             .contains(&untrusted::label("a pull request review comment")));
-        assert!(list[0].fenced.contains("@ana:\nRename this"));
+        // Its place is GitHub's text too: inside the fence.
+        let fence = list[0].fenced.find("```text\n").expect("fence");
+        assert!(list[0].fenced[fence..].contains("@ana on src/a.ts:12:\nRename this"));
+    }
+
+    #[test]
+    fn f_wt_08_ci_text_is_plain_and_capped() {
+        assert_eq!(
+            strip_ansi("\u{1b}[31mFAIL\u{1b}[0m a\r\nb\rc\u{1b}]0;title\u{7}d\u{7}"),
+            "FAIL a\nb\ncd"
+        );
+        let long: String = (0..300)
+            .map(|i| format!("{i} {}\n", "x".repeat(200)))
+            .collect();
+        let t = log_tail(&long);
+        assert!(t.len() <= LOG_BYTES + 32, "{}", t.len());
+        assert!(t.starts_with("[… earlier log cut]"));
+        assert!(t.contains("299 "));
+        let many: String = (0..MAX_COMMENTS + 5)
+            .map(|i| format!("{{\"id\":{i},\"path\":\"a\",\"line\":1,\"side\":\"RIGHT\",\"body\":\"{}\",\"user\":\"u\"}}\n", "y".repeat(COMMENT_CHARS + 10)))
+            .collect();
+        let got = parse_comments(&many);
+        assert_eq!((got.comments.len(), got.cut), (MAX_COMMENTS, 5));
+        assert!(got.comments[0].body.ends_with("[… cut]"));
+        let unreadable = failure_prompt(
+            7,
+            &PrCheck {
+                name: "test".into(),
+                bucket: CheckBucket::Fail,
+                link: None,
+                workflow: None,
+                job_id: Some("1".into()),
+            },
+            &Log::Unreadable("log not found".into()),
+        );
+        assert!(unreadable.contains("(The log couldn't be read: log not found)"));
     }
 
     #[tokio::test]

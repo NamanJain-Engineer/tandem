@@ -1245,6 +1245,8 @@ pub fn run() {
                 let state = handle.state::<AppState>();
                 state.terminals.shutdown(&state.data.scrollback());
                 state.remote.shutdown();
+                // F-WT-07: a landing's check doesn't outlive the app.
+                services::merge_queue::shutdown();
             }
         }),
         Err(err) => {

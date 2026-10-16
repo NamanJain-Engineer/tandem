@@ -8,21 +8,22 @@ import {
   allowChecks,
   checkFailurePrompt,
   loadChecks,
+  pollChecks,
   useWorktrees,
 } from "../../stores/worktrees";
 import { SendToAgent } from "./SendToAgent";
 
-/** F-WT-08: reads the worktrees' checks every 2 minutes while `active` and
- * the window is focused, and once on start. */
+/** F-WT-08: polls the worktrees' checks every 2 minutes while `active` and
+ * the window is focused (see `pollChecks` for which), and once on start. */
 export function useChecksPolling(laneIds: string[], active: boolean) {
   const key = laneIds.join(",");
   useEffect(() => {
     if (!active || !key) return;
     const ids = key.split(",");
     const tick = () => {
-      if (typeof document === "undefined" || document.hasFocus()) void loadChecks(ids);
+      if (typeof document === "undefined" || document.hasFocus()) void pollChecks(ids);
     };
-    void loadChecks(ids);
+    void pollChecks(ids);
     const timer = setInterval(tick, CHECKS_POLL_MS);
     return () => clearInterval(timer);
   }, [key, active]);
@@ -40,15 +41,16 @@ export function ChecksBadge({ wt }: { wt: WorkspaceSummary }) {
   const open = () => useWorktrees.getState().open({ kind: "checks", worktreeId: wt.id });
   const state = failed.length > 0 ? "failed" : running ? "running" : "passed";
   return (
-    <button
-      type="button"
+    <Button
+      size="sm"
+      variant="ghost"
       data-testid="worktree-checks"
       data-state={state}
       onClick={(e) => {
         e.stopPropagation();
         open();
       }}
-      className="inline-flex max-w-[180px] shrink-0 items-center gap-1 truncate rounded-xs text-xs focus-visible:shadow-focus focus-visible:outline-none"
+      className="max-w-[180px] shrink-0 truncate"
     >
       {state === "failed" ? (
         <span className="truncate text-danger">
@@ -63,7 +65,7 @@ export function ChecksBadge({ wt }: { wt: WorkspaceSummary }) {
           <Check size={12} aria-hidden="true" /> {t("checks.passed")}
         </span>
       )}
-    </button>
+    </Button>
   );
 }
 

@@ -514,12 +514,39 @@ export function undoLanding(workspaceId: string): Promise<Outcome<null>> {
 
 /** How often the rail reads pull request checks (only while focused). */
 export const CHECKS_POLL_MS = 120_000;
+/** Worktrees with no pull request, or whose checks all finished, are read
+ * this rarely between Refreshes: each read is two gh calls. */
+export const CHECKS_IDLE_MS = 15 * 60_000;
+
+const checkedAt = new Map<string, number>();
+let polling = false;
+
+/** Whether a poll should read this worktree now (S6). */
+export function checksDue(c: LaneChecks | undefined, at: number | undefined, now: number): boolean {
+  if (!c || at === undefined || c.state === "error") return true;
+  const live = c.state === "ready" && (c.checks.length === 0 || c.checks.some((x) => x.bucket === "pending"));
+  return live || now - at >= CHECKS_IDLE_MS;
+}
+
+/** One poll: skipped while the last one still runs; reads only the
+ * worktrees that are due. */
+export async function pollChecks(laneIds: string[], now = Date.now()): Promise<void> {
+  if (polling) return;
+  polling = true;
+  try {
+    const { checks } = useWorktrees.getState();
+    await loadChecks(laneIds.filter((id) => checksDue(checks[id], checkedAt.get(id), now)));
+  } finally {
+    polling = false;
+  }
+}
 
 /** Reads each worktree's checks; the core runs no gh for a repository
  * that isn't allowed. */
 export async function loadChecks(laneIds: string[]): Promise<void> {
   for (const laneId of laneIds.slice(0, 64)) {
     const out = await run<LaneChecks>("lane_checks", { laneId });
+    checkedAt.set(laneId, Date.now());
     if (out.ok) useWorktrees.setState((s) => ({ checks: { ...s.checks, [laneId]: out.value } }));
   }
 }

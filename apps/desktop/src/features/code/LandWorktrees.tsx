@@ -231,6 +231,13 @@ export function LandWorktreesDialog({ ws, onClose }: { ws: WorkspaceSummary; onC
           </>
         ) : plan ? (
           <>
+            {plan.interrupted ? (
+              <Banner tone="warning">
+                <span data-testid="landing-interrupted">
+                  {t("landing.interrupted", { folder: plan.interrupted })}
+                </span>
+              </Banner>
+            ) : null}
             {plan.base === null ? (
               <Banner tone="error">{t("landing.detached", { folder: ws.name })}</Banner>
             ) : plan.baseDirty ? (

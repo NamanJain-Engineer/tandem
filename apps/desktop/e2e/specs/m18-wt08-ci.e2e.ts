@@ -173,5 +173,22 @@ describe("E2E-M18-WT08-1 CI back to the agent", function () {
     expect(await comment.getAttribute("data-line")).toBe("a.ts:new:2");
     expect(await comment.getText()).toContain("@ana:");
     expect(String(await $('[data-testid="review-bar"]').getProperty("textContent"))).toContain("1 comment");
+    // Sent, the comment reaches the agent inside the untrusted fence, with
+    // its place inside too.
+    const mark = fakeLog().length;
+    const send = $('[data-testid="review-send"]');
+    await send.waitForEnabled({ timeout: 20_000 });
+    await send.click();
+    await browser.waitUntil(
+      async () => pastes(mark).some((p) => p.startsWith("Review of your changes on tandem/tidy")),
+      {
+        timeout: 30_000,
+        timeoutMsg: `pastes: ${JSON.stringify(pastes(mark))}`,
+      },
+    );
+    const prompt = pastes(mark).find((p) => p.startsWith("Review of your changes")) ?? "";
+    expect(prompt).toContain("1. Imported review comment:");
+    expect(prompt).toContain("   > Untrusted content from a pull request review comment");
+    expect(prompt).toContain("   ```text\n   @ana on a.ts:2:\n   Keep two as 2.\n   ```");
   });
 });

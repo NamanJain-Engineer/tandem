@@ -26,6 +26,7 @@ import {
   PREVIEW_POLL_MS,
   loadForge,
   loadRuntime,
+  loadChecks,
   openChecks,
   openPreview,
   pollPreviews,
@@ -132,6 +133,11 @@ export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): Me
     },
     ...(checksAllowed(wt.id)
       ? [
+          {
+            id: "wt-checks-refresh",
+            label: t("checks.refreshMenu"),
+            onSelect: () => void loadChecks([wt.id]),
+          },
           {
             id: "wt-checks-forget",
             label: t("checks.forget"),

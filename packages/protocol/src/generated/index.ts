@@ -172,6 +172,7 @@ export type * from "./HotkeyStatus";
 export type * from "./ImportPreview";
 export type * from "./ImportSkip";
 export type * from "./ImportedComment";
+export type * from "./ImportedComments";
 export type * from "./InsertTarget";
 export type * from "./InstallCommand";
 export type * from "./InstallCommands";

@@ -12,7 +12,7 @@ import { UiProvider } from "@tandem/ui";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useDashboard } from "../../stores/dashboard";
 import { useWorkspaces } from "../../stores/workspaces";
-import { loadChecks, useWorktrees } from "../../stores/worktrees";
+import { CHECKS_IDLE_MS, checksDue, loadChecks, pollChecks, useWorktrees } from "../../stores/worktrees";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { ReviewDiff, buildReviewPrompt, useReviews } from "./WorktreeReview";
 import { WorktreeDialogs, WorktreeRow, worktreeMenu } from "./Worktrees";
@@ -72,7 +72,8 @@ const COMMENTS: ImportedComment[] = [
     side: "new",
     author: "ana",
     body: "Rename this",
-    fenced: "> Untrusted content from a pull request review comment\n```text\n@ana:\nRename this\n```",
+    fenced:
+      "> Untrusted content from a pull request review comment\n```text\n@ana on a.ts:2:\nRename this\n```",
   },
 ];
 
@@ -104,7 +105,7 @@ beforeEach(() => {
   checks = READY;
   useWorktrees.setState({ checks: {}, ask: null });
   useDashboard.setState({ items: {} });
-  useReviews.setState({ byLane: {}, next: 1 });
+  useReviews.setState({ byLane: {}, next: 1, importedIds: {} });
   calls = fakeBackend({
     workspace_list: () => [REPO, WT],
     lane_checks: () => checks,
@@ -113,7 +114,7 @@ beforeEach(() => {
       checks = a?.allow ? READY : { ...READY, state: "not_allowed", pr: null, checks: [] };
       return null;
     },
-    lane_review_comments: () => COMMENTS,
+    lane_review_comments: () => ({ comments: COMMENTS, outdated: 1, cut: 0 }),
     pty_type_prompt: () => null,
     lane_forge: () => "github",
     lane_runtime: () => null,
@@ -179,7 +180,8 @@ describe("CI results and review comments (F-WT-08)", () => {
       expect(named("pr_checks_allow")[0]?.args).toEqual({ workspaceId: "wt_1", allow: true }),
     );
     expect((await screen.findByTestId("checks")).dataset.state).toBe("ready");
-    // Allowed: the menu can forget it again.
+    // Allowed: the menu can refresh the checks, or forget the repository.
+    expect(menu().some((x) => "id" in x && x.id === "wt-checks-refresh")).toBe(true);
     expect(menu().some((x) => "id" in x && x.id === "wt-checks-forget")).toBe(true);
     act(() => select("wt-checks-forget"));
     await waitFor(() =>
@@ -212,14 +214,35 @@ describe("CI results and review comments (F-WT-08)", () => {
     expect(comment.textContent).toContain("@ana:");
     const list = useReviews.getState().byLane["wt_1"] ?? [];
     expect(list).toHaveLength(1);
+    expect(await screen.findByText("1 comment on a line that no longer exists was left out.")).toBeTruthy();
     const prompt = buildReviewPrompt("tandem/fix", list);
-    expect(prompt).toContain("1. a.ts:2");
-    expect(prompt).toContain("   > Untrusted content from a pull request review comment");
-    expect(prompt).toContain("   ```text\n   @ana:\n   Rename this\n   ```");
-    // Importing again adds nothing new.
+    // The comment's place is GitHub's text too: only inside the fence.
+    expect(prompt).toContain(
+      "1. Imported review comment:\n   > Untrusted content from a pull request review comment",
+    );
+    expect(prompt).toContain("   ```text\n   @ana on a.ts:2:\n   Rename this\n   ```");
+    expect(prompt).not.toContain("1. a.ts:2");
+    // Importing again adds nothing new, even once it was removed (or sent).
+    act(() => useReviews.getState().remove("wt_1", list[0]!.id));
     fireEvent.click(screen.getByTestId("review-import"));
     await waitFor(() => expect(named("lane_review_comments")).toHaveLength(2));
-    expect(useReviews.getState().byLane["wt_1"]).toHaveLength(1);
+    expect(useReviews.getState().byLane["wt_1"] ?? []).toHaveLength(0);
+  });
+
+  it("F-WT-08 polling reads only worktrees with running checks, rarely the rest, and never twice at once", async () => {
+    const now = 10_000_000;
+    expect(checksDue(undefined, undefined, now)).toBe(true);
+    const running: LaneChecks = { ...READY, checks: [{ ...READY.checks[0]!, bucket: "pending" }] };
+    expect(checksDue(running, now - 1_000, now)).toBe(true);
+    expect(checksDue(READY, now - 1_000, now)).toBe(false);
+    expect(checksDue({ ...READY, state: "no_pr", pr: null, checks: [] }, now - 1_000, now)).toBe(false);
+    expect(checksDue(READY, now - CHECKS_IDLE_MS, now)).toBe(true);
+    // Two polls at once make one round of calls.
+    await Promise.all([pollChecks(["wt_1"]), pollChecks(["wt_1"])]);
+    expect(named("lane_checks")).toHaveLength(1);
+    // Finished: the next poll skips it.
+    await pollChecks(["wt_1"]);
+    expect(named("lane_checks")).toHaveLength(1);
   });
 
   it("F-WT-08 the dialog says when there's no pull request, no gh, or GitLab", async () => {

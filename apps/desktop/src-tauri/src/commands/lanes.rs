@@ -13,7 +13,7 @@ use tandem_store::repo::workspaces::{self as repo, Workspace};
 
 use crate::services::lanes::{self, OverlapReport, StaleLanes};
 use crate::services::merge_queue::{self, LandingPlan, LandingRun};
-use crate::services::pr_checks::{self, Gh, ImportedComment, LaneChecks, LoginGh};
+use crate::services::pr_checks::{self, Gh, ImportedComments, LaneChecks, LoginGh};
 use crate::services::worktree_setup::{self, LaneSetup, RemoveReport, SetupState};
 use crate::state::AppState;
 
@@ -401,7 +401,8 @@ pub async fn merge_queue_undo(
         &app,
         "Undo landing?",
         &format!(
-            "Moves {base} in {} back to where it was before the landing. The worktrees keep their commits.",
+            "Moves {base} in {} back to where it was before the landing. The worktrees keep their \
+             commits, and each keeps what landed before it, since {base} was merged into it.",
             repo.name
         ),
         "Undo landing",
@@ -468,7 +469,7 @@ pub async fn lane_check_failure(
 pub async fn lane_review_comments(
     state: State<'_, AppState>,
     lane_id: WorkspaceId,
-) -> Result<Vec<ImportedComment>, IpcError> {
+) -> Result<ImportedComments, IpcError> {
     let gh = LoginGh::find(&*state.terminals.login_env().await);
     pr_checks::review_comments(&state.store, &state.data, as_gh(&gh), &lane_id).await
 }

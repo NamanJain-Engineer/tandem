@@ -1,6 +1,13 @@
 import { useMemo, useState } from "react";
 import { create } from "zustand";
-import type { DashboardItem, FileDiff, ImportedComment, IpcError, WorkspaceSummary } from "@tandem/protocol";
+import type {
+  DashboardItem,
+  FileDiff,
+  ImportedComment,
+  ImportedComments,
+  IpcError,
+  WorkspaceSummary,
+} from "@tandem/protocol";
 import {
   Button,
   DiffView,
@@ -46,14 +53,18 @@ export function buildReviewPrompt(branch: string, comments: ReviewComment[]): st
   const sorted = [...comments].sort(byPlace);
   const n = sorted.length;
   const head = `Review of your changes on ${branch} (${n} ${n === 1 ? "comment" : "comments"}):`;
-  const items = sorted.map((c, i) => {
-    const where = c.side === "new" ? `${c.path}:${c.line}` : `${c.path} (removed line ${c.line})`;
-    const body = (c.imported ? c.imported.fenced : c.comment.trim())
+  const indent = (text: string) =>
+    text
       .split("\n")
       .map((l) => `   ${l}`)
       .join("\n");
+  const items = sorted.map((c, i) => {
+    // An imported comment's place and words are GitHub's: the core's
+    // fenced copy carries both, and nothing of it goes outside the fence.
+    if (c.imported) return `${i + 1}. Imported review comment:\n${indent(c.imported.fenced)}`;
+    const where = c.side === "new" ? `${c.path}:${c.line}` : `${c.path} (removed line ${c.line})`;
     const q = quote(c.text);
-    return `${i + 1}. ${where}\n${q ? `   > ${q}\n` : ""}${body}`;
+    return `${i + 1}. ${where}\n${q ? `   > ${q}\n` : ""}${indent(c.comment.trim())}`;
   });
   return `${head}\n\n${items.join("\n\n")}\n\nAddress each comment, then say what you changed.`;
 }
@@ -66,6 +77,9 @@ type ReviewsState = {
   edit: (laneId: string, id: number, comment: string) => void;
   remove: (laneId: string, id: number) => void;
   clear: (laneId: string) => void;
+  /** F-WT-08: pull request comment ids each worktree has imported, sent
+   * or removed since: importing again never brings them back. */
+  importedIds: Record<string, string[]>;
   /** F-WT-08: the pull request's comments not imported yet; how many. */
   addImported: (laneId: string, list: ImportedComment[]) => number;
 };
@@ -73,6 +87,7 @@ type ReviewsState = {
 export const useReviews = create<ReviewsState>((set, get) => ({
   byLane: {},
   next: 1,
+  importedIds: {},
   add: (laneId, target, comment) => {
     const id = get().next;
     const list = get().byLane[laneId] ?? [];
@@ -93,7 +108,8 @@ export const useReviews = create<ReviewsState>((set, get) => ({
     set({ byLane });
   },
   addImported: (laneId, list) => {
-    const have = new Set((get().byLane[laneId] ?? []).flatMap((c) => (c.imported ? [c.imported.id] : [])));
+    const seen = get().importedIds[laneId] ?? [];
+    const have = new Set(seen);
     const fresh = list.filter((c) => !have.has(c.id));
     let next = get().next;
     const added: ReviewComment[] = fresh.map((c) => ({
@@ -105,17 +121,27 @@ export const useReviews = create<ReviewsState>((set, get) => ({
       comment: c.body,
       imported: { id: c.id, author: c.author, fenced: c.fenced },
     }));
-    set({ next, byLane: { ...get().byLane, [laneId]: [...(get().byLane[laneId] ?? []), ...added] } });
+    set({
+      next,
+      byLane: { ...get().byLane, [laneId]: [...(get().byLane[laneId] ?? []), ...added] },
+      importedIds: { ...get().importedIds, [laneId]: [...seen, ...fresh.map((c) => c.id)] },
+    });
     return added.length;
   },
 }));
 
 /** "Import review comments" (F-WT-08): the pull request's line comments
  * into the review bar, through the user's gh. */
-export async function importReviewComments(laneId: string): Promise<{ added: number } | { error: IpcError }> {
+export async function importReviewComments(
+  laneId: string,
+): Promise<{ added: number; outdated: number; cut: number } | { error: IpcError }> {
   try {
-    const list = await invoke<ImportedComment[]>("lane_review_comments", { laneId });
-    return { added: useReviews.getState().addImported(laneId, list) };
+    const got = await invoke<ImportedComments>("lane_review_comments", { laneId });
+    return {
+      added: useReviews.getState().addImported(laneId, got.comments),
+      outdated: got.outdated,
+      cut: got.cut,
+    };
   } catch (e) {
     return { error: e as IpcError };
   }
@@ -214,8 +240,15 @@ export function ReviewDiff({
     setImporting(false);
     if ("error" in out)
       show({ tone: "error", title: t("worktree.review.importFailed", { reason: out.error.message }) });
-    else if (out.added === 0) show({ title: t("worktree.review.importedNone") });
-    else show({ tone: "success", title: t("worktree.review.imported", { n: out.added }) });
+    else {
+      const left = [
+        out.outdated > 0 ? t("worktree.review.importOutdated", { n: out.outdated }) : null,
+        out.cut > 0 ? t("worktree.review.importCut", { n: out.cut }) : null,
+      ].filter((x): x is string => x !== null);
+      const body = left.length > 0 ? left.join(" ") : undefined;
+      if (out.added === 0) show({ title: t("worktree.review.importedNone"), body });
+      else show({ tone: "success", title: t("worktree.review.imported", { n: out.added }), body });
+    }
   };
 
   const save = () => {
@@ -317,7 +350,9 @@ export function ReviewDiff({
               line: tg.line,
             }),
           onComment: (tg) => {
-            const existing = comments.find((c) => diffLineKey(c) === diffLineKey(tg));
+            // Imported comments aren't edited (the prompt sends GitHub's
+            // fenced copy); a click on their line starts the user's own.
+            const existing = comments.find((c) => !c.imported && diffLineKey(c) === diffLineKey(tg));
             setEditing(
               existing
                 ? { target: existing, id: existing.id, text: existing.comment }

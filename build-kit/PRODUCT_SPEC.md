@@ -3200,37 +3200,46 @@ Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1�
 - **The candidates.** The repository's worktrees whose branch has commits its current branch (the **base**) doesn't, each with its commit count and the overlap forecast against the base (F-WT-03): "No conflicts expected", "Conflicts in N files" or "No forecast". They're listed, and land, in forecast order: no conflicts first, then fewest conflicting files, then no forecast; ties go to the oldest worktree. All are ticked; a worktree with uncommitted changes can't be ticked ("Commit or stash its changes first"), nor can a missing one.
 - **The check.** A **Check command** field, filled with the last one used for this repository on this computer (empty the first time). It runs in each worktree with the login environment and the worktree's variables (F-WT-06), up to 30 minutes; its output is redacted (F-TL-02). Empty lands without a check, after a warning in the dialog.
 - **Landing.** **Land** starts when the base's checkout has no uncommitted tracked changes and is on a branch. For each ticked worktree in turn:
-  1. merges the base into the worktree (`git merge --no-edit <base>`);
+  1. merges the base's commit into the worktree (`git merge --ff --no-edit`), and notes the worktree's resulting commit;
   2. runs the check in the worktree;
-  3. merges the worktree's branch into the base with `--no-ff` (F-CD-15).
+  3. merges that noted commit into the base with `--no-ff` (F-CD-15), as "Merge branch '<branch>'".
 
-  The first conflict or failed check stops the queue. A conflict aborts that merge (`git merge --abort`), so the worktree or base is as it was. A failed check shows its last 200 lines with **Send failure to agent**. The worktrees after it are untouched. **Stop** kills a running check and stops the queue; what landed stays landed.
+  What lands is exactly what was checked, into exactly the base the run started on. The queue stops, saying why, when:
+  - the base's checkout moved during the landing: another branch or a detached HEAD, or a commit that isn't the queue's ("{base} moved during the landing");
+  - the worktree isn't on its own branch, or its branch got new commits or its tracked files changed during the check (a formatter, a snapshot update): "{branch} changed during its check" (nothing of it lands);
+  - a merge would write a file that exists on disk but isn't committed in that checkout (an ignored `.env`, say): it's refused before merging, naming the file, so nothing uncommitted is ever overwritten;
+  - a merge conflicts; the merge is aborted (`git merge --abort`), so the worktree or base is as it was; if the abort itself fails, the queue says so instead of reporting a conflict;
+  - a check fails; it shows its last 200 lines (at most 64 KiB) with **Send failure to agent**.
+
+  The worktrees after a stop are untouched. **Stop** kills a running check (its whole process tree, on Windows too) and stops the queue before its next step; what landed stays landed. Quitting the app stops the queue the same way, and a merge the quit interrupted is aborted the next time the repository's landing is opened, which says so.
 - **Never pushes.** Landing never pushes or fetches.
 - **Send failure to agent.** Types into the worktree's agent (chosen as in F-WT-02, or **Copy** when none runs there) a prompt naming the branch, the check command and its exit code, with the output behind the untrusted label and fence (`tandem_core::untrusted`, rule 8). Only on a click.
-- **Undo landing.** The run records the base's branch and commit before it started, kept on this computer. **Undo landing** (in UI-155 while a landing can be undone), after a confirm, moves the base branch back to that commit (`git reset --keep`). It's refused, saying why, when:
+- **Undo landing.** Once a run lands its first worktree, it records the base's branch, its commit before the run and each landed merge, kept on this computer (a run that lands nothing leaves the previous record alone). **Undo landing** (in UI-155 while a landing can be undone), after a confirm, moves the base branch back to that commit (`git reset --keep`). It's refused, saying why, when:
   - the base checkout is on another branch or has uncommitted tracked changes;
-  - the base has commits after the last landed merge;
-  - `origin/<base>` contains a landed merge (it was pushed).
+  - the base's first-parent history since the recorded commit isn't exactly the landed merges (a commit was added during or after the landing);
+  - a remote-tracking branch contains a landed merge (it was pushed).
 
-  The worktrees keep the base merged into them.
+  The worktrees keep the base merged into them, so a later worktree keeps the changes of the ones landed before it; the confirm says so.
 
 **Acceptance:**
 1. Three worktrees whose checks pass land in forecast order: the base gains three `--no-ff` merge commits, in that order, and no push or fetch runs.
 2. A worktree whose check fails stops the queue at it: the base doesn't get its merge, the worktrees after it are untouched, and its output's tail is shown. Send failure to agent types a prompt with the branch, the command, the exit code and the output between untrusted fences.
 3. A conflict stops the queue with the base unchanged for that worktree and the merge aborted (no merge in progress, the worktree at its previous commit).
-4. Undo landing restores the base branch to the recorded commit after a confirm. It's refused when `origin/<base>` contains a landed merge, or the base has new commits since.
-5. Land refuses to start while the base checkout has uncommitted tracked changes; a worktree with uncommitted changes can't be ticked.
-6. Stop during a check kills it and ends the queue: worktrees landed before it stay landed, later ones are untouched.
+4. Undo landing restores the base branch to the recorded commit after a confirm. It's refused when a remote-tracking branch contains a landed merge, or the base has a commit that isn't a landed merge, made during the landing or after it.
+5. Land refuses to start while the base checkout has uncommitted tracked changes, or a worktree isn't on its branch; a worktree with uncommitted changes can't be ticked.
+6. Stop kills a running check and ends the queue, and Stop before the check starts means it never runs: worktrees landed before it stay landed, later ones are untouched.
+7. A commit on the base during a check, a commit in the worktree during its check, or a check that edits tracked files stops the queue before that worktree lands, and nothing unchecked lands.
+8. A worktree that would replace a file present but not committed in the base (an ignored `.env`) isn't merged, and the file is unchanged.
 
 #### F-WT-08 CI results and review comments back to the agent (P2)
 **Story:** CI failed on my agent's pull request, and a reviewer left five comments. I want the agent to see the failure and the comments without me copying logs out of a browser.
 
 **Behavior:**
 - **Asking first.** Vibezeo reads pull requests only through the user's own `gh` (GitHub CLI), which signs itself in; Vibezeo never reads, stores or passes a token. Before its first `gh` call for a repository it asks once: "Check pull requests for this repository? Vibezeo will run your GitHub CLI (gh) to read this repository's pull requests and their checks." It's asked from "Check pull request" in a worktree's ⋯ menu (UI-156). Allowed repositories are remembered on this computer, and "Stop checking pull requests" in the same menu forgets one. Until then no `gh` call is made for it.
-- **The worktree's pull request.** For a worktree whose branch has an open pull request (`gh pr view <branch>`), its rail row shows the checks: a spinner while any run, "1 check failed: test" when some failed, a check mark when all passed. Read every 2 minutes while the rail is open and the window focused, and on **Refresh checks** in the worktree's menu. Local folders only.
-- **Send failure to agent.** The row's checks open UI-157 with each check; on a failed one, **Send failure to agent** types into the worktree's agent (as F-WT-02) a prompt with the check's name, its link, and the failing job's log tail (the last 200 lines of `gh run view --job <id> --log-failed`, for GitHub Actions jobs), all CI text behind the untrusted label and fence (rule 8). Only on a click; nothing is ever sent by itself.
-- **Import review comments.** **Import review comments** in the worktree's diff (F-WT-02) adds the pull request's line comments (`gh api …/pulls/<n>/comments`) to the review bar, each on its file and line with its author, marked as imported. Imported comments go into the review prompt behind the untrusted label and fence; the user's own comments don't. Importing again adds only new ones.
-- **GitLab.** Merge requests on GitLab (F-WT-04) aren't read yet: their rows say so.
+- **The worktree's pull request.** For a worktree whose branch has an open pull request (`gh pr view <branch>`), its rail row shows the checks: a spinner while any run, "1 check failed: test" when some failed, a check mark when all passed. Read every 2 minutes while the rail is open and the window focused, but only for worktrees whose checks are still running (or not read yet); a worktree with no pull request, or whose checks all finished, is read every 15 minutes, and any worktree on **Refresh checks** in its menu or **Refresh** in UI-157. A poll never starts while the last one still runs. Local folders only.
+- **Send failure to agent.** The row's checks open UI-157 with each check; on a failed one, **Send failure to agent** types into the worktree's agent (as F-WT-02) a prompt with the check's name, its link, and the failing job's log tail (the last 200 lines of `gh run view --job <id> --log-failed`, at most 16 KiB, for GitHub Actions jobs; when `gh` can't read it, the prompt says why), all CI text without terminal escapes and behind the untrusted label and fence (rule 8). Only on a click; nothing is ever sent by itself.
+- **Import review comments.** **Import review comments** in the worktree's diff (F-WT-02) adds the pull request's line comments (`gh api …/pulls/<n>/comments`) to the review bar, each on its file and line with its author, marked as imported. Imported comments go into the review prompt behind the untrusted label and fence, their file and line inside the fence too; the user's own comments don't. Imported comments can be removed but not edited. A comment on a line that no longer exists (outdated) is left out; one import brings at most 40 comments of up to 2,000 characters each, and says what it left out. Importing again adds only comments this worktree hasn't imported before, even after they were sent or removed. Resolved threads are imported like open ones: GitHub's REST API doesn't say which are resolved.
+- **GitLab.** Merge requests on GitLab (F-WT-04) aren't read yet: their rows show no checks, and "Check pull request" says so.
 
 **Acceptance:**
 1. With a fake `gh` returning one failed check named `test`, the row shows "1 check failed: test". Send failure to agent types a prompt containing the job name and the log tail between untrusted fences.
