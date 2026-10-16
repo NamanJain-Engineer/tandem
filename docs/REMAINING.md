@@ -42,9 +42,10 @@ download.
    - Perf items marked [manual] (threads scroll fps, the 2 MB fence, the
      16-pane and startup suites) need the reference machines (`HUMAN_TODO.md`).
    - Six agents' first frames: the bisect blamed D-139's frame holding, fixed
-     in 0.7.1 (~745 ms, as before 0.6.0). The ≤ 300 ms target is still
-     missed: the spawn takes ~38 ms, and the rest is the webview opening six
-     terminals at once (the performance session's open-path work, F-SH-07.7).
+     in 0.7.1. Views on screen now open before a hidden tab's queued views,
+     and the suite counts from the click that shows the tab (D-141): ~2.2 s
+     to the last agent's first output. The ≤ 300 ms target is still missed;
+     next is starting agents' PTYs before their views open (F-SH-07.7).
    - Memory (§5.1, D-138): hidden panes now hand their xterm to the core
      after 30 s and replay when shown (D-139; filled while hidden, 3.0 MB a
      pane, met). Still missed: panes filled on screen and then moved to a
