@@ -218,6 +218,26 @@ mod tests {
     }
 
     #[test]
+    fn f_en_09_1_each_kiro_account_gets_its_own_kiro_home_and_antigravity_none() {
+        let reg = EngineRegistry::bundled();
+        let root = Path::new("/data/providers");
+        let kiro = reg.get("kiro").expect("kiro");
+        let mut second = req(kiro, root);
+        second.home = Some(root.join("kiro").join("acc_2"));
+        let one = terminal_launch(&req(kiro, root)).expect("spec");
+        let two = terminal_launch(&second).expect("spec");
+        assert_eq!(one.env["KIRO_HOME"], "/data/providers/kiro/acc_1");
+        assert_eq!(two.env["KIRO_HOME"], "/data/providers/kiro/acc_2");
+        let agy = reg.get("antigravity").expect("antigravity");
+        let spec = terminal_launch(&req(agy, root)).expect("spec");
+        assert!(
+            !spec.env.keys().any(|k| k.contains("HOME")),
+            "Antigravity's docs name no home variable: {:?}",
+            spec.env.keys()
+        );
+    }
+
+    #[test]
     fn f_en_04_2_a_secret_in_the_args_refuses_the_spawn() {
         let reg = EngineRegistry::bundled();
         let claude = reg.get("claude").expect("claude");

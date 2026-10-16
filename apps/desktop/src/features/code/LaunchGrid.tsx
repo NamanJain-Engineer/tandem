@@ -299,10 +299,18 @@ function LocalLaunchGrid({
                 <li
                   key={e.spec.id}
                   data-testid={`missing-${e.spec.id}`}
-                  className="flex h-9 items-center gap-2 border-b border-divider px-1 last:border-b-0"
+                  className="flex min-h-9 items-center gap-2 border-b border-divider px-1 py-1 last:border-b-0"
                 >
                   <EngineGlyph letters={e.spec.logo} size={16} />
-                  <span className="flex-1 truncate text-sm text-fg">{e.spec.label}</span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-sm text-fg">{e.spec.label}</span>
+                    {/* Who can use it (F-EN-09), from the registry. */}
+                    {e.spec.note && (
+                      <span className="text-xs text-fg-muted" data-testid={`engine-note-${e.spec.id}`}>
+                        {e.spec.note}
+                      </span>
+                    )}
+                  </span>
                   <Button
                     size="sm"
                     variant="ghost"

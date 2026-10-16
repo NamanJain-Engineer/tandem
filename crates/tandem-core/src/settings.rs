@@ -68,6 +68,8 @@ setting_keys! {
     NotifyTypes,
     NotifyOnlyUnseen,
     UsageForecastNotify,
+    RunawayGuard,
+    RunawayAction,
     DefaultShell,
     WslDefaultDistro,
     TermFontFamily,
@@ -191,6 +193,9 @@ pub enum Validator {
     /// (F-SH-09 rebinding).
     Shortcuts,
     OptionalInt,
+    /// Named limits: each value a non-negative number, `null` (off) or a
+    /// boolean (F-AC-09's runaway guard).
+    Limits,
 }
 
 pub struct SettingSpec {
@@ -467,6 +472,20 @@ pub static SCHEMA: &[SettingSpec] = &[
         V::Map,
         Engines,
         ["arguments", "flags"]
+    ),
+    spec!(
+        RunawayGuard,
+        json!({"workingMinutes": 90, "windowPoints": 30, "subagents": 20, "circles": true}),
+        V::Limits,
+        Teammates,
+        ["runaway", "guard", "limit", "subagents", "loop"]
+    ),
+    spec!(
+        RunawayAction,
+        json!("notify"),
+        V::OneOf(&["notify", "pause"]),
+        Teammates,
+        ["runaway", "pause", "guard"]
     ),
     spec!(
         DefaultAccess,
@@ -1086,6 +1105,16 @@ pub fn validate(key: SettingKey, v: &Value) -> Result<(), CoreError> {
             }
             _ => Err(invalid(key, "must be a map")),
         },
+        Validator::Limits => match v.as_object() {
+            Some(map)
+                if map.values().all(|x| {
+                    x.is_null() || x.is_boolean() || x.as_f64().is_some_and(|n| n >= 0.0)
+                }) =>
+            {
+                Ok(())
+            }
+            _ => Err(invalid(key, "must name limits as numbers, off or on")),
+        },
         Validator::OptionalInt => match v {
             Value::Null => Ok(()),
             v if v.is_i64() => Ok(()),
@@ -1128,6 +1157,7 @@ pub fn sample_non_default(key: SettingKey) -> Value {
         Validator::OptionalText { .. } => json!("sample"),
         Validator::Map => json!({"sample": true}),
         Validator::OptionalInt => json!(1_700_000_000_000_i64),
+        Validator::Limits => json!({"sample": 5, "other": null, "flag": false}),
         Validator::Shortcuts => json!({"pane.split_right": "Mod+Alt+R"}),
     }
 }
@@ -1163,6 +1193,18 @@ mod tests {
         assert!(validate(SettingKey::Theme, &json!("pink")).is_err());
         assert!(validate(SettingKey::DefaultAccess, &json!("full")).is_ok());
         assert!(validate(SettingKey::RoutineAccess, &json!("full")).is_err());
+    }
+
+    #[test]
+    fn f_ac_09_6_runaway_limits_take_numbers_off_and_on() {
+        let ok =
+            json!({"workingMinutes": 30, "windowPoints": null, "subagents": 5, "circles": false});
+        assert!(validate(SettingKey::RunawayGuard, &ok).is_ok());
+        assert!(validate(SettingKey::RunawayGuard, &json!({"workingMinutes": -1})).is_err());
+        assert!(validate(SettingKey::RunawayGuard, &json!({"workingMinutes": "90"})).is_err());
+        assert!(validate(SettingKey::RunawayGuard, &json!(90)).is_err());
+        assert!(validate(SettingKey::RunawayAction, &json!("pause")).is_ok());
+        assert!(validate(SettingKey::RunawayAction, &json!("kill")).is_err());
     }
 
     #[test]

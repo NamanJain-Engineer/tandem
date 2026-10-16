@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-runaway-resume"
+description = "Enables the runaway_resume command without any pre-configured scope."
+commands.allow = ["runaway_resume"]
+
+[[permission]]
+identifier = "deny-runaway-resume"
+description = "Denies the runaway_resume command without any pre-configured scope."
+commands.deny = ["runaway_resume"]

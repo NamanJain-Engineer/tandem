@@ -1299,6 +1299,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
   - Gemini CLI: `GEMINI.md`. Pointer: a `GEMINI.md` holding the import `@AGENTS.md`.
   - Copilot CLI: `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`, combined. It reads `AGENTS.md` itself.
   - Cursor Agent: `.cursor/rules/`, `AGENTS.md` and `CLAUDE.md`. It reads `AGENTS.md` itself.
+  - Antigravity CLI (F-EN-09): `GEMINI.md` and `AGENTS.md`. It reads `AGENTS.md` itself.
   - An engine without an entry is **Unknown**: listed, never written for.
 - **The panel (UI-160)**, "Instructions…" in a local folder's menu in the rail, for its repository's main checkout (or the folder, when it isn't a repository):
   - One row per installed engine: the files it reads that exist, and what it reads in the end ("Reads AGENTS.md", "Reads CLAUDE.md, not AGENTS.md", "Nothing yet", "Unknown").
@@ -1321,6 +1322,24 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 4. A git-ignored `CLAUDE.local.md` is listed as "Not in new worktrees". "Copy into worktrees" adds `CLAUDE.local.md` to `.vibezeo/worktree.json`'s `copy`, keeps its `setup`, and leaves its trust as it was.
 5. An engine missing from the registry's instructions table is shown as "Unknown", and nothing is written for it.
 6. A `CLAUDE.md` that's a symbolic link is listed, never written; the plan skips it and says why.
+
+#### F-EN-09 Engine catalog refresh (P2)
+**Story:** New coding-agent CLIs ship every month, and vendors change who can use the old ones. The engines I use show up in Vibezeo, with what each needs, as soon as their vendors document them.
+
+**Behavior:**
+- **Two new terminal engines**, added from each vendor's own documentation (checked 15 October 2026, D-2404):
+  - **Antigravity CLI** (Google): command `agy`, `agy --version`, installed with Google's script (`curl -fsSL https://antigravity.google/cli/install.sh | bash` on macOS and Linux, `irm https://antigravity.google/cli/install.ps1 | iex` on Windows). It signs in through the browser and keeps its token in the system keyring, and its docs name no way to move its home, so it has one account per computer (`homeStrategy: none`). It reads `GEMINI.md` and `AGENTS.md` (F-EN-07).
+  - **Kiro CLI** (AWS): command `kiro-cli`, `kiro-cli --version`, installed with `curl -fsSL https://cli.kiro.dev/install | bash`. `KIRO_HOME` points it at a provider home, so each account has its own (F-AC-01). Sign in and out with `kiro-cli login` and `kiro-cli logout`, run in the account's home.
+  - Both run in terminal panes only, unmodified and signed in by themselves. Neither is a Thread engine, and Vibezeo never runs them headless: Antigravity's terms for third-party automation wait on the owner (HUMAN_TODO).
+  - Screen patterns that need a signed-in run to record (ready, waiting, limit) start empty, so status falls back to output and quiet (F-EN-06); usage limits use the common patterns.
+- **Engine notes:** a registry entry may carry a `note`, shown on its tile in the launch grid's "Not installed" list and in Settings › Engines. Gemini CLI's says: "Google serves Gemini CLI to paid API keys and Gemini Code Assist Standard or Enterprise. Personal Google accounts use Antigravity CLI."
+- **Models from the engines:** a Thread engine's model picker leads with what the engine reports at run time (Codex's `model/list`, ACP's `session/new`), then the remote and bundled catalog (F-TH-08); with nothing reported, the catalog fills it. Terminal engines have no picker: Antigravity and Kiro choose their model inside their own UI (D-2405).
+
+**Acceptance:**
+1. With `agy` and `kiro-cli` on the login PATH, both are detected and launch in terminal panes. Two Kiro accounts get two provider homes, each passed as `KIRO_HOME`; Antigravity offers one account.
+2. Gemini CLI stays listed, with its note about API keys and enterprise access.
+3. Neither new engine appears as a Thread engine, in the teammate engine picker, or in any headless run.
+4. When Codex reports its models, they lead the picker, before the catalog's; when it reports none, the picker lists the catalog.
 
 ### 4.5 AC: Accounts and usage
 
@@ -1440,6 +1459,44 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 4. Two sessions on one account that logged 3,000 and 1,000 tokens in the last hour show 75% and 25%. A session matching a pane's engine session id is named after the pane, and log lines older than an hour don't count.
 5. The notification is off by default. When it's on, a window that becomes forecast to run out before its reset raises one notification, and the next reading for the same window raises none.
 6. A seat whose account is at 85%, with another account of the same engine at 20%, shows both hints, and the launch uses the seat's own account.
+
+#### F-AC-09 Runaway guard (P2)
+**Story:** I leave agents working while I do something else. When one has been at it far longer than it should, is burning through my account, keeps spawning subagents or is going round in circles, I want to hear about it, and pause it if I choose, before it costs me the rest of my window.
+
+**Behavior:**
+- **Watched:** every agent pane (terminal engines in Code mode, local and on SSH hosts). Threads and teammate chats are watched for time only.
+- **Limits** (Settings › Teammates › Runaway guard; each can be turned off):
+
+| Limit | Default | Range | Tripped when |
+|---|---|---|---|
+| Working without stopping | 90 min | 10–1,440 min | the agent has been Working (F-EN-05) for that long without its turn ending |
+| Share of the window | 30 points | 5–100 | in the last hour, this session's share of its account's tokens (F-AC-08) times the rise of the account's fullest window comes to that many points. Needs an engine that reports usage windows and keeps session logs |
+| Subagents | 20 | 1–500 | the session started that many subagents since its last prompt (counted from the engine's own tool reports: the registry's `subagent_tools`, such as Claude Code's `Task` and `Agent`) |
+| Going in circles | on | on/off | three turns in a row end with the same screen: the last 12 non-empty lines when the turn ends, compared as a hash. The text itself is never kept |
+
+- **When a limit trips:**
+  - The pane shows a guard card (UI-170) above its terminal, naming the limit: "fix-auth has been working for 90 min", "fix-auth used 34 points of Codex (Work)'s 5-hour window in the last hour", "fix-auth started 20 subagents since your last prompt", or "fix-auth may be going in circles: its last 3 turns ended the same way". The card has **Pause** and **Dismiss**.
+  - A notification goes through the usual channels: kind `runaway`, source the pane, title as on the card. The Notifications type table lists it as "Runaway guard".
+  - Each limit trips once per turn. A dismissed limit stays quiet until the agent's next prompt.
+- **Action** (Settings › Teammates › Runaway guard › When a limit is reached): **Notify me** (default), or **Pause the agent**, which pauses it as if Pause were clicked on the card.
+- **Pause:**
+  1. Vibezeo sends the engine's interrupt key from the registry (`interrupt`, `\u001b` for Claude Code and Codex). The engine stops its turn by itself, and the agent waits for input.
+  2. If the agent still reports Working 5 s later, Vibezeo stops its process group (SIGSTOP on Linux and macOS, behind the `ProcessControl` trait). When the agent runs as a job of the pane's shell, the shell stops first and continues last, so it never sees its job stop and never takes the terminal back (D-857). The card then reads "Paused" with **Resume**, which continues it (SIGCONT). On Windows there's no stop step: the card says "Couldn't pause: send it a message or stop it."
+     Only an agent on this computer is stopped. An SSH pane's local process is `ssh`, and stopping it would pause the connection while the agent on the host carried on, so there the card says "Couldn't pause an agent on an SSH host: send it a message or stop it." (D-855).
+  - Closing a paused pane or quitting Vibezeo continues and then ends the process, as usual (F-CD-03). It's never left stopped.
+  - Pause never switches accounts or engines, and never sends a prompt.
+- **States:** UI-170 shows the tripped limit (Pause, Dismiss), pausing ("Pausing…"), paused (Resume), and couldn't pause (the reason).
+
+**Data:** in memory per pane (working since, subagent count, the last three turn-end hashes, tripped limits). Settings: `runaway_guard` (`{workingMinutes, windowPoints, subagents, circles}`, each `null` when off) and `runaway_action` (`"notify"`/`"pause"`).
+
+**Acceptance:**
+1. With the defaults, an agent pane working for 91 minutes raises one notification "{name} has been working for 90 min" and shows the guard card. Nothing is paused or typed into the pane.
+2. With "Pause the agent" and a subagent limit of 20, the 20th subagent report pauses the session: the interrupt key reaches the pane, and an agent still Working 5 s later is stopped. Resume continues it, and the agent keeps its pane: it's still Working there, not handed back to a shell.
+3. Three turns in a row that end with the same screen raise "may be going in circles". Two in a row, or three that differ, raise nothing.
+4. A session whose share of its account's tokens in the last hour, times its window's rise, reaches 30 points trips the window limit. An account without windows never trips it.
+5. Dismiss keeps a limit quiet until the agent's next prompt, and each limit trips at most once per turn.
+6. A limit set to off never trips. Pause never changes the pane's account or engine.
+7. On an SSH host, an agent still Working after the interrupt key is never stopped: no signal reaches the pane's local `ssh`, and the card says it couldn't pause.
 
 ### 4.6 DB: Dashboard and notifications
 
@@ -3290,7 +3347,7 @@ Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1�
   { "ports": 10, "env": { "DATABASE_URL": "postgres://localhost/app_{{slug}}", "PORT": "{{port}}", "API_PORT": "{{port+1}}" } }
   ```
   - `ports`: how many ports each worktree gets, 1 to 100.
-  - `env`: up to 50 variables. Names are `[A-Za-z_][A-Za-z0-9_]*` and at most 64 characters; values at most 2,000 characters. Placeholders: `{{slug}}`, `{{index}}`, `{{repo}}`, `{{port}}` and `{{port+N}}` (N smaller than `ports`). An unknown placeholder, `{{port}}` without `ports`, or a name Vibezeo reserves makes the file invalid and says which. Reserved, whatever their case, with the reason in the message: names that change how terminals start (`PATH`, `HOME`, `SHELL`, `USER`, `ZDOTDIR`, `ENV`, `BASH_ENV`, `PROMPT_COMMAND`, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `TERM`, `COLORTERM`, `TERM_PROGRAM`, `TERM_PROGRAM_VERSION`, `DYLD_*`); names that change where agents sign in or send their requests (every provider-home variable, such as `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`, the `XDG_*_HOME` folders, any `*_BASE_URL`, the proxies `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, and the certificate overrides `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`); and Vibezeo's own (`TANDEM_*`, `VIBEZEO_*`, `COMPOSE_PROJECT_NAME`). API keys are allowed: they're the user's, and the review shows them.
+  - `env`: up to 50 variables. Names are `[A-Za-z_][A-Za-z0-9_]*` and at most 64 characters; values at most 2,000 characters. Placeholders: `{{slug}}`, `{{index}}`, `{{repo}}`, `{{port}}` and `{{port+N}}` (N smaller than `ports`). An unknown placeholder, `{{port}}` without `ports`, or a name Vibezeo reserves makes the file invalid and says which. Reserved, whatever their case, with the reason in the message: names that change how terminals start (`PATH`, `HOME`, `SHELL`, `USER`, `ZDOTDIR`, `ENV`, `BASH_ENV`, `PROMPT_COMMAND`, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `TERM`, `COLORTERM`, `TERM_PROGRAM`, `TERM_PROGRAM_VERSION`, `DYLD_*`); names that change where agents sign in or send their requests (every provider-home variable, such as `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`, `KIRO_HOME`, the `XDG_*_HOME` folders, any `*_BASE_URL`, the proxies `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, and the certificate overrides `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`); and Vibezeo's own (`TANDEM_*`, `VIBEZEO_*`, `COMPOSE_PROJECT_NAME`). API keys are allowed: they're the user's, and the review shows them.
   - A file with either key has the **runtime on**; without both, worktrees behave as in F-WT-01.
 - **Port blocks.** With `ports`, each worktree gets a block of that many consecutive ports in 41000–48999 and an index (1, 2, 3… per repository, the lowest free). Blocks never overlap across all repositories on this computer, are checked free (nothing listening on 127.0.0.1) when the worktree is made, and are kept in `$DATA/worktree-ports.json`, so they survive relaunch. A block with a port in use moves to the next free block and says so: "Ports 41010–41019 were busy; tandem/fix-auth uses 41020–41029." Discarding the worktree frees its block.
 - **Variables.** With the runtime on, every terminal and agent pane opened in the worktree's tabs gets: the `env` variables, filled in; `VIBEZEO_WORKTREE` (its folder), `VIBEZEO_SLUG`, `VIBEZEO_INDEX`, and with `ports` also `VIBEZEO_PORT` (the block's first port) and `VIBEZEO_PORTS` (`41010-41019`); and `COMPOSE_PROJECT_NAME=<repo>-<slug>` (lowercase, characters other than letters, digits, `-` and `_` replaced by `-`). The setup pane, the trusted teardown (F-WT-01) and Best of N's check command get the same. The worktree's variables may replace the login environment's, but never what the launch sets for a pane (its provider home, hook token and engine variables, F-EN-04): those are applied last.

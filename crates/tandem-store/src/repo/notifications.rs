@@ -34,6 +34,8 @@ pub enum NotificationKind {
     RoutineChanged,
     /// A usage window will run out before it resets (F-AC-08).
     UsageForecast,
+    /// An agent tripped a runaway guard limit (F-AC-09).
+    Runaway,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

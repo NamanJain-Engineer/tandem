@@ -55,6 +55,7 @@ pub mod restore;
 pub mod review_queue;
 pub mod routine_host;
 pub mod routines;
+pub mod runaway;
 pub mod second_opinion;
 pub mod simulator;
 pub mod staging;

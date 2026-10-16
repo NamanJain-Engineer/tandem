@@ -16,6 +16,7 @@ pub mod remote;
 pub mod responder;
 pub mod ring;
 pub mod side;
+pub mod suspend;
 pub mod text;
 pub mod typing;
 pub mod winpath;
@@ -793,8 +794,37 @@ impl PtyManager {
             .map_err(|e| PtyError::Io(e.to_string()))
     }
 
+    /// The pane's foreground process group (the job the terminal is
+    /// running, such as an engine started from its shell), on Unix.
+    pub fn foreground_group(&self, pane: &str) -> Option<i32> {
+        #[cfg(unix)]
+        {
+            let session = self.sessions.get(pane)?.clone();
+            let master = session.master.lock().ok()?;
+            master.as_ref()?.process_group_leader()
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = pane;
+            None
+        }
+    }
+
     pub fn pid(&self, pane: &str) -> Option<u32> {
         self.sessions.get(pane).map(|s| s.pid)
+    }
+
+    /// Pauses the pane's job in group `agent` for the runaway guard
+    /// (F-AC-09), stopping the pane's own shell first (D-857).
+    pub fn pause_job(
+        &self,
+        pane: &str,
+        agent: i32,
+        control: &dyn suspend::ProcessControl,
+    ) -> Result<suspend::PausedJob, suspend::SuspendError> {
+        // The pane's process leads its own session and group.
+        let shell = self.pid(pane).and_then(|p| i32::try_from(p).ok());
+        suspend::pause(control, agent, shell)
     }
 
     /// True while the pane's process is running.
@@ -1069,6 +1099,18 @@ fn kill_tree(pid: u32, state: &Mutex<Option<ExitInfo>>, step: Duration) {
     }
     // Collected first: once the leader dies its children are reparented.
     let escaped = descendants(pid);
+    // A paused job (F-AC-09) continues first, so nothing is left stopped:
+    // the pane's shell (D-857) and every descendant.
+    // SAFETY: kill(2) on our own child.
+    unsafe {
+        libc::kill(pid as i32, libc::SIGCONT);
+    }
+    for child in &escaped {
+        // SAFETY: kill(2) on our own descendant.
+        unsafe {
+            libc::kill(*child as i32, libc::SIGCONT);
+        }
+    }
     let group = -(pid as i32);
     for sig in [libc::SIGHUP, libc::SIGTERM, libc::SIGKILL] {
         if exited(state) {
@@ -1289,5 +1331,69 @@ mod watchdog_tests {
         assert_eq!(count(), 4);
         PANIC_NEXT_FEEDS.store(0, Ordering::SeqCst);
         let _ = mgr.kill("wd1");
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod pause_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    /// The agent wrapper's shape (`env::agent_wrapper`): an interactive shell
+    /// runs the agent as a job, then hands the pane back when it ends.
+    fn wrapped(pane: &str, job: &str) -> SpawnSpec {
+        let mut env = BTreeMap::new();
+        env.insert(
+            "PATH".into(),
+            std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".into()),
+        );
+        SpawnSpec {
+            pane_id: pane.into(),
+            program: PathBuf::from("/bin/sh"),
+            args: vec!["-ic".into(), format!("{job}; echo HANDBACK-$?")],
+            cwd: std::env::temp_dir(),
+            env,
+            cols: 80,
+            rows: 24,
+            scrollback_lines: 1000,
+            mark_token: None,
+        }
+    }
+
+    #[test]
+    fn f_ac_09_8_a_paused_agent_keeps_its_pane_and_its_shell_never_hands_it_back() {
+        let mgr = PtyManager::new();
+        let sink = Arc::new(VecSink::default());
+        mgr.spawn(
+            wrapped("pj", "sleep 3"),
+            Some(sink.clone() as Arc<dyn OutputSink>),
+        )
+        .expect("spawn");
+        let text = || String::from_utf8_lossy(&sink.data()).into_owned();
+        let shell = mgr.pid("pj").expect("pid") as i32;
+        // The job holds the terminal, in a group of its own.
+        assert!(wait_until(Duration::from_secs(5), || mgr
+            .foreground_group("pj")
+            .is_some_and(|g| g != shell)));
+        let agent = mgr.foreground_group("pj").expect("group");
+        let job = mgr
+            .pause_job("pj", agent, &suspend::SignalControl)
+            .expect("pause");
+        assert_eq!(job.shell, Some(shell));
+        std::thread::sleep(Duration::from_millis(800));
+        // Stopping only the job, the shell took the terminal back and went on
+        // (HANDBACK-147): the pane went to a new shell, the agent astray.
+        assert!(!text().contains("HANDBACK"), "{}", text());
+        assert_eq!(mgr.foreground_group("pj"), Some(agent));
+        suspend::resume(&suspend::SignalControl, &job).expect("resume");
+        assert_eq!(mgr.foreground_group("pj"), Some(agent));
+        // The job ends as usual, and so does the shell after it.
+        assert!(
+            wait_until(Duration::from_secs(10), || text().contains("HANDBACK-0")),
+            "{}",
+            text()
+        );
+        let _ = mgr.kill("pj");
     }
 }

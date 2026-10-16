@@ -143,6 +143,12 @@ const LAYOUT_SETTLE_MS = 80;
 /** One spawn per pane even when React mounts twice (StrictMode, reloads). */
 const spawning = new Map<string, Promise<unknown>>();
 
+// What a torn-down view leaves in its refs and channels. They're made out
+// here: a function made inside the view's scope keeps that scope, and so its
+// xterm and every line of scrollback, alive after it's disposed (§5.1).
+const neverPark = async () => false;
+const nothing = () => undefined;
+
 export function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
@@ -444,6 +450,15 @@ export function TerminalView({
         /* hidden: fit later */
       }
     let disposed = false;
+    // The pane's channels: the core keeps the last one while the view is
+    // parked, so each lets go of this view when it's torn down (§5.1).
+    const channels: FrameChannel[] = [];
+    const openChannel = async () => {
+      const ch = await createFrameChannel(onFrame);
+      if (disposed) ch.onmessage = nothing;
+      else channels.push(ch);
+      return ch;
+    };
     // Where the view stands in the core's ring: the position the replay ends
     // at plus every frame byte xterm has parsed since (§5.1, D-139).
     let ringBase = 0;
@@ -589,7 +604,7 @@ export function TerminalView({
           paneId,
           cols,
           rows,
-          () => createFrameChannel(onFrame),
+          openChannel,
           startFresh,
         );
         markPhase(paneId, "connected");
@@ -628,7 +643,8 @@ export function TerminalView({
     return () => {
       disposed = true;
       release();
-      parkNow.current = async () => false;
+      parkNow.current = neverPark;
+      for (const ch of channels.splice(0)) ch.onmessage = nothing;
       clearTimeout(ackTimer);
       writeScheduler.unregister(paneId, write);
       flushAck();
@@ -642,10 +658,11 @@ export function TerminalView({
       search.current = null;
       fonts?.removeEventListener("loadingdone", fontsLoaded);
       serializer.current = null;
+      fit.current = null;
       commandMarks.dispose();
       commands.dispose();
       webglPool.unregister(paneId, renderer);
-      flushNow.current = () => undefined;
+      flushNow.current = nothing;
       xterm.dispose();
       term.current = null;
     };
