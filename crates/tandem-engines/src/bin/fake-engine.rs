@@ -30,6 +30,9 @@
 //! `/context <tokens>` (as `claude`) ends a turn whose transcript, under
 //! `$CLAUDE_CONFIG_DIR/projects/`, reports that many context tokens (F-AC-06).
 //!
+//! `/subagents <n>` reports n subagent starts and keeps working for a
+//! minute without reading its input (F-AC-09).
+//!
 //! `/limit <delay>` prints a usage-limit message that resets after the delay
 //! ("5s", "2h"), as engines do (F-AC-05).
 //!
@@ -171,6 +174,50 @@ fn send_line(v: serde_json::Value) {
     let _ = std::io::stdout().flush();
 }
 
+/// A second opinion (F-WT-05): findings on the first added line of the
+/// first two files in the prompt's diff (the second by its file name only),
+/// one on a line the diff doesn't show, and a free line.
+fn second_opinion_reply(text: &str) -> Option<String> {
+    if !text.contains("second opinion") || !text.contains("## Findings") {
+        return None;
+    }
+    let (mut path, mut next) = (String::new(), None::<u32>);
+    let mut firsts: Vec<(String, u32)> = Vec::new();
+    for l in text.lines() {
+        if let Some(p) = l.strip_prefix("+++ b/") {
+            path = p.to_string();
+            next = None;
+        } else if let Some(rest) = l.strip_prefix("@@ ") {
+            next = rest
+                .split_whitespace()
+                .find_map(|p| p.strip_prefix('+'))
+                .and_then(|p| p.split(',').next())
+                .and_then(|n| n.parse().ok());
+        } else if let Some(n) = next {
+            if l.starts_with('+') {
+                if !firsts.iter().any(|(p, _)| *p == path) {
+                    firsts.push((path.clone(), n));
+                }
+                next = Some(n + 1);
+            } else if l.starts_with(' ') {
+                next = Some(n + 1);
+            }
+        }
+    }
+    let mut out = vec!["## Findings".to_string()];
+    if let Some((p, n)) = firsts.first() {
+        out.push(format!("- `{p}:{n}`: handle expired tokens"));
+        out.push(format!("{p}:99999: check the caller too"));
+    }
+    if let Some((p, n)) = firsts.get(1) {
+        let name = p.rsplit('/').next().unwrap_or(p);
+        out.push(format!("{name}:{n}: typo"));
+    }
+    out.push("## Overall".into());
+    out.push("Small and readable.".into());
+    Some(out.join("\n"))
+}
+
 /// A turn of the stand-in app-server: "You said: <text>" as an agent message,
 /// token usage, then `turn/completed` (Thread mode, E2E-M7-5).
 fn app_turn(thread: &str, turn: &str, text: &str) {
@@ -184,12 +231,14 @@ fn app_turn(thread: &str, turn: &str, text: &str) {
     let item = format!("msg_{turn}");
     // A task review (F-TK-04): a verdict instead of the echo.
     let verdict = "Verdict: Approve\nThe change does what the task asks.";
-    let (first, rest) =
-        if text.contains("Post one comment on TAN-") && text.contains("Verdict: Approve") {
-            ("", verdict)
-        } else {
-            ("You said: ", text)
-        };
+    let opinion = second_opinion_reply(text);
+    let (first, rest) = if let Some(o) = opinion.as_deref() {
+        ("", o)
+    } else if text.contains("Post one comment on TAN-") && text.contains("Verdict: Approve") {
+        ("", verdict)
+    } else {
+        ("You said: ", text)
+    };
     note(
         "item/started",
         serde_json::json!({"threadId": thread, "turnId": turn, "item": {"type": "agentMessage", "id": item, "text": ""}}),
@@ -756,6 +805,19 @@ fn answer(name: &str, text: &str) -> bool {
         let (tool, args) = rest.split_once(' ').unwrap_or((rest, "{}"));
         let args = serde_json::from_str(args).unwrap_or_else(|_| serde_json::json!({}));
         out(&format!("{}\r\n", tasks_call(tool.trim(), args)));
+        return true;
+    }
+    // `/subagents <n>` (F-AC-09): reports n subagent starts (PreToolUse of
+    // the `Task` tool), then keeps working for a minute without reading.
+    if let Some(n) = t.strip_prefix("/subagents ") {
+        let n: u32 = n.trim().parse().unwrap_or(1);
+        out("spawning subagents…\r\n");
+        if claude {
+            for _ in 0..n {
+                hook("PreToolUse", serde_json::json!({ "tool_name": "Task" }));
+            }
+        }
+        std::thread::sleep(Duration::from_secs(60));
         return true;
     }
     if let Some(title) = t.strip_prefix("/title ") {

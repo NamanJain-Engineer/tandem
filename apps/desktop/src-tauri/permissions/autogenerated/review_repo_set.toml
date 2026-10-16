@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-review-repo-set"
+description = "Enables the review_repo_set command without any pre-configured scope."
+commands.allow = ["review_repo_set"]
+
+[[permission]]
+identifier = "deny-review-repo-set"
+description = "Denies the review_repo_set command without any pre-configured scope."
+commands.deny = ["review_repo_set"]

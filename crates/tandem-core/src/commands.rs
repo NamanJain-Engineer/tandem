@@ -172,6 +172,8 @@ static REGISTRY: &[CommandSpec] = &[
         Some("Mod+Alt+Shift+D"),
         E::Always,
     ),
+    // F-DB-04: the Dashboard's Review view.
+    same("dashboard.review_queue", C::Navigation, None, E::Always),
     same("workspace.open_folder", C::Workspace, None, E::Always),
     // F-EX-04: Best of N's sheet (UI-143) and its compare view (UI-144).
     same("bestof.open", C::Workspace, None, E::WorkspaceOpen),

@@ -139,6 +139,12 @@ function EngineRow({ engine, onInstall }: { engine: EngineView; onInstall: () =>
           </Button>
         )}
       </div>
+      {/* Who can use it (F-EN-09), from the registry. */}
+      {engine.spec.note && (
+        <p className="px-10 pb-2 text-sm text-fg-muted" data-testid={`engine-note-${engine.spec.id}`}>
+          {engine.spec.note}
+        </p>
+      )}
       {open && (
         <div className="flex flex-col gap-3 px-10 pb-3">
           <KeyValue

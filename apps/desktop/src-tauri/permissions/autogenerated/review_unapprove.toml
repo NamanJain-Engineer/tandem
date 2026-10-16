@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-review-unapprove"
+description = "Enables the review_unapprove command without any pre-configured scope."
+commands.allow = ["review_unapprove"]
+
+[[permission]]
+identifier = "deny-review-unapprove"
+description = "Denies the review_unapprove command without any pre-configured scope."
+commands.deny = ["review_unapprove"]

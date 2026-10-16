@@ -26,6 +26,8 @@
 //!   the task says `[hold N]`, then a one-line summary (F-TK-04, E2E-M11-2).
 //! - a task review ("Post one comment on TAN-<n>… Verdict"): "Verdict:
 //!   Approve" and a reason.
+//! - a second opinion ("…second opinion… ## Findings", F-WT-05): findings
+//!   on the diff's first added lines, as `second_opinion_reply` writes them.
 //! - anything else: "You said: <text>" in two pieces.
 //!
 //! An interrupt (`control_request`) is acknowledged and ends the turn.
@@ -661,6 +663,9 @@ pub fn run(args: &[String], session: String) {
                 .unwrap_or(0);
             std::thread::sleep(Duration::from_secs(hold.min(120)));
             let said = format!("Fixed {issue}: the change is in the worktree.");
+            turn.say(&[&said]);
+            turn.done(&said);
+        } else if let Some(said) = crate::second_opinion_reply(&text) {
             turn.say(&[&said]);
             turn.done(&said);
         } else if text.contains("Post one comment on TAN-") && text.contains("Verdict: Approve") {

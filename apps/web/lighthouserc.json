@@ -7,7 +7,9 @@
         "http://localhost/pricing/",
         "http://localhost/download/",
         "http://localhost/changelog/",
-        "http://localhost/docs/"
+        "http://localhost/docs/",
+        "http://localhost/blog/",
+        "http://localhost/blog/introducing-vibezeo/"
       ],
       "numberOfRuns": 3,
       "settings": { "chromeFlags": "--headless=new --no-sandbox" }
