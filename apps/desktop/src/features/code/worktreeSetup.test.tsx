@@ -1,26 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type {
-  IpcError,
-  LaneSetup,
-  OverlapReport,
-  PreviewState,
-  SetupState,
-  Tab,
-  WorkspaceSummary,
-} from "@tandem/protocol";
+import type { IpcError, LaneSetup, OverlapReport, PreviewState, SetupState, Tab, WorkspaceSummary } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
 import { useWorkspaces } from "../../stores/workspaces";
-import {
-  patternLines,
-  pollPreviews,
-  prepareWorktree,
-  startPreview,
-  teardownText,
-  useWorktrees,
-} from "../../stores/worktrees";
+import { patternLines, pollPreviews, prepareWorktree, startPreview, teardownText, useWorktrees } from "../../stores/worktrees";
 import { useSidebar } from "../../stores/sidebar";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { WorktreeDialogs, WorktreeRow, worktreeMenu } from "./Worktrees";
@@ -113,13 +98,7 @@ describe("worktree setup (F-WT-01)", () => {
     await waitFor(() => expect(useWorktrees.getState().ask).toBeNull());
     expect(named("worktree_setup_save")[0]?.args).toEqual({
       workspaceId: "shop",
-      config: {
-        copy: [".env*", "config/local.yml"],
-        setup: "pnpm install",
-        teardown: null,
-        ports: null,
-        env: {},
-      },
+      config: { copy: [".env*", "config/local.yml"], setup: "pnpm install", teardown: null, ports: null, env: {} },
     });
     expect(screen.getByText("Saved the worktree setup")).toBeTruthy();
   });
@@ -176,9 +155,7 @@ describe("worktree setup (F-WT-01)", () => {
   it("F-WT-01.3 Not now runs nothing, and several new worktrees share one review", async () => {
     const WT2 = ws("wt_2", { ...WT, id: "wt_2", laneBranch: "tandem/fix-auth-2" });
     useWorkspaces.setState({ list: [REPO, WT, WT2] });
-    backend({
-      lane_setup: (): LaneSetup => ({ state: state(), copy: null, copyError: null, runtime: null }),
-    });
+    backend({ lane_setup: (): LaneSetup => ({ state: state(), copy: null, copyError: null, runtime: null }) });
     dialogs();
     await prepareWorktree("wt_1");
     await prepareWorktree("wt_2");
@@ -192,14 +169,7 @@ describe("worktree setup (F-WT-01)", () => {
   });
 
   it("F-WT-01.4 a trusted setup runs without asking", async () => {
-    backend({
-      lane_setup: (): LaneSetup => ({
-        state: state({ trusted: true }),
-        copy: null,
-        copyError: null,
-        runtime: null,
-      }),
-    });
+    backend({ lane_setup: (): LaneSetup => ({ state: state({ trusted: true }), copy: null, copyError: null, runtime: null }) });
     await prepareWorktree("wt_1");
     expect(useWorktrees.getState().ask).toBeNull();
     expect(named("lane_setup_run")).toHaveLength(1);
@@ -209,13 +179,7 @@ describe("worktree setup (F-WT-01)", () => {
     backend({
       lane_setup: (): LaneSetup => ({
         state: state({ config: { copy: [".env*"], setup: null, teardown: null }, digest: null }),
-        copy: {
-          copied: [".env", ".env.local", "config/local.yml"],
-          skipped: [],
-          bytes: 30,
-          partial: false,
-          cloned: 0,
-        },
+        copy: { copied: [".env", ".env.local", "config/local.yml"], skipped: [], bytes: 30, partial: false, cloned: 0 },
         copyError: null,
         runtime: null,
       }),
@@ -357,8 +321,7 @@ describe("worktrees on SSH hosts (D-2209)", () => {
   it("F-WT-03 Check overlap and Worktree setup are off for a host's worktree, and its merge has no forecast", async () => {
     backend({});
     const entries = worktreeMenu(HOSTED, "main", () => 0);
-    const off = (id: string) =>
-      entries.find((e) => "id" in e && e.id === id && "disabled" in e && e.disabled);
+    const off = (id: string) => entries.find((e) => "id" in e && e.id === id && "disabled" in e && e.disabled);
     expect(off("wt-overlap")).toBeTruthy();
     expect(off("wt-setup")).toBeTruthy();
     useWorkspaces.setState({ list: [REPO, HOSTED] });
@@ -373,8 +336,7 @@ describe("worktrees on SSH hosts (D-2209)", () => {
 describe("worktree runtime (F-WT-06)", () => {
   it("F-WT-06.1 the dialog saves ports and environment with the rest", async () => {
     backend({
-      worktree_setup_get: () =>
-        state({ config: { copy: [], setup: null, teardown: null, ports: 10, env: { A: "1" } } }),
+      worktree_setup_get: () => state({ config: { copy: [], setup: null, teardown: null, ports: 10, env: { A: "1" } } }),
       worktree_env_check: () => [],
     });
     useWorktrees.getState().open({ kind: "setup", workspaceId: "shop" });
@@ -427,9 +389,7 @@ describe("worktree runtime (F-WT-06)", () => {
     useWorktrees.getState().open({ kind: "setup", workspaceId: "shop" });
     dialogs();
     await screen.findByTestId("worktree-setup-env");
-    fireEvent.change(screen.getByTestId("worktree-setup-env"), {
-      target: { value: "STRIPE_KEY=sk_live_x\nDB=app" },
-    });
+    fireEvent.change(screen.getByTestId("worktree-setup-env"), { target: { value: "STRIPE_KEY=sk_live_x\nDB=app" } });
     expect((await screen.findByTestId("worktree-setup-secret", {}, { timeout: 2000 })).textContent).toBe(
       "This looks like a secret. Don't commit it in worktree.json: STRIPE_KEY",
     );
@@ -453,9 +413,7 @@ describe("worktree runtime (F-WT-06)", () => {
     });
     dialogs();
     await prepareWorktree("wt_1");
-    expect(
-      await screen.findByText("Ports 41010–41019 were busy; tandem/fix-auth uses 41020–41029."),
-    ).toBeTruthy();
+    expect(await screen.findByText("Ports 41010–41019 were busy; tandem/fix-auth uses 41020–41029.")).toBeTruthy();
   });
 
   it("F-WT-06.2 an untrusted env-only file asks for review, and trusting it runs nothing", async () => {
@@ -491,13 +449,7 @@ describe("previews (F-WT-09)", () => {
   it("F-WT-09.1 a worktree whose preview answers shows Preview, which opens it in a browser tab", async () => {
     backend({
       lane_previews: (): PreviewState[] => [
-        {
-          laneId: "wt_1",
-          status: "ready",
-          url: "http://fix-auth.localhost:41000/",
-          port: 41000,
-          trusted: true,
-        },
+        { laneId: "wt_1", status: "ready", url: "http://fix-auth.localhost:41000/", port: 41000, trusted: true },
       ],
     });
     useWorktrees.setState({ previews: {} });
@@ -508,13 +460,9 @@ describe("previews (F-WT-09)", () => {
       </UiProvider>,
     );
     fireEvent.click(await screen.findByTestId("worktree-preview"));
-    expect(useSidebar.getState().tabs.find((x) => x.kind === "browser")?.url).toBe(
-      "http://fix-auth.localhost:41000/",
-    );
+    expect(useSidebar.getState().tabs.find((x) => x.kind === "browser")?.url).toBe("http://fix-auth.localhost:41000/");
     // It goes when the port stops answering.
-    useWorktrees.setState({
-      previews: { wt_1: { laneId: "wt_1", status: "down", url: "u", port: 41000, trusted: true } },
-    });
+    useWorktrees.setState({ previews: { wt_1: { laneId: "wt_1", status: "down", url: "u", port: 41000, trusted: true } } });
     await waitFor(() => expect(screen.queryByTestId("worktree-preview")).toBeNull());
   });
 
@@ -528,25 +476,13 @@ describe("previews (F-WT-09)", () => {
 
   it("F-WT-09.2 an untrusted preview opens the review, and trusting it starts the preview, not the setup", async () => {
     const withPreview = state({
-      config: {
-        copy: [],
-        setup: "pnpm install",
-        teardown: null,
-        ports: 2,
-        preview: { command: "serve {{port}}", port: 0, path: "/" },
-      },
+      config: { copy: [], setup: "pnpm install", teardown: null, ports: 2, preview: { command: "serve {{port}}", port: 0, path: "/" } },
     });
     let trusted = false;
     backend({
       lane_preview_start: () => {
         if (!trusted) {
-          const err: IpcError = {
-            code: "permission_denied",
-            message: "Review this repository's worktree setup first",
-            stage: "setup",
-            hint: null,
-            retryable: false,
-          };
+          const err: IpcError = { code: "permission_denied", message: "Review this repository's worktree setup first", stage: "setup", hint: null, retryable: false };
           throw err;
         }
         return { ...pane, id: "pn_prev" };
@@ -569,16 +505,7 @@ describe("previews (F-WT-09)", () => {
   it("F-WT-09.1 a new worktree with a trusted preview and no setup starts the preview", async () => {
     backend({
       lane_setup: (): LaneSetup => ({
-        state: state({
-          trusted: true,
-          config: {
-            copy: [],
-            setup: null,
-            teardown: null,
-            ports: 2,
-            preview: { command: "serve", port: 0, path: "/" },
-          },
-        }),
+        state: state({ trusted: true, config: { copy: [], setup: null, teardown: null, ports: 2, preview: { command: "serve", port: 0, path: "/" } } }),
         copy: null,
         copyError: null,
         runtime: null,
@@ -596,13 +523,7 @@ describe("copy-on-write copies (F-WT-09)", () => {
     backend({
       lane_setup: (): LaneSetup => ({
         state: state({ config: { copy: ["node_modules/"], setup: null, teardown: null }, digest: null }),
-        copy: {
-          copied: ["node_modules/a.js", "node_modules/b.js"],
-          skipped: [],
-          bytes: 20,
-          partial: false,
-          cloned: 2,
-        },
+        copy: { copied: ["node_modules/a.js", "node_modules/b.js"], skipped: [], bytes: 20, partial: false, cloned: 2 },
         copyError: null,
         runtime: null,
       }),
@@ -610,8 +531,6 @@ describe("copy-on-write copies (F-WT-09)", () => {
     dialogs();
     await prepareWorktree("wt_1");
     expect(await screen.findByText("Copied 2 files into the worktree")).toBeTruthy();
-    expect(
-      screen.getByText("2 files were cloned, sharing their data with your checkout until either changes."),
-    ).toBeTruthy();
+    expect(screen.getByText("2 files were cloned, sharing their data with your checkout until either changes.")).toBeTruthy();
   });
 });
