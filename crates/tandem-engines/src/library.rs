@@ -17,6 +17,8 @@ use ts_rs::TS;
 pub const MAX_FILE: u64 = 64 * 1024 * 1024;
 /// Lines past this are skipped.
 pub const MAX_LINE: usize = 4 * 1024 * 1024;
+/// A transcript keeps its last this many turns.
+pub const MAX_ITEMS: usize = 2000;
 /// Titles are cut to this many characters.
 pub const TITLE_CHARS: usize = 80;
 /// Codex's dated folders: `sessions/YYYY/MM/DD/`, and a little room.
@@ -45,6 +47,8 @@ pub struct FsEntry {
 pub trait SessionFs: Send + Sync {
     fn entries(&self, dir: &Path) -> Vec<FsEntry>;
     fn open(&self, path: &Path) -> std::io::Result<Box<dyn Read + Send>>;
+    /// A folder, not a link to one.
+    fn is_real_dir(&self, path: &Path) -> bool;
 }
 
 /// The real file system.
@@ -91,9 +95,22 @@ impl SessionFs for RealFs {
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
-            opts.custom_flags(libc::O_NOFOLLOW);
+            // Not through a link, and a FIFO swapped in can't block.
+            opts.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
         }
-        Ok(Box::new(opts.open(path)?))
+        let file = opts.open(path)?;
+        let meta = file.metadata()?;
+        if !meta.is_file() {
+            return Err(std::io::Error::other("not a regular file"));
+        }
+        if meta.len() > MAX_FILE {
+            return Err(std::io::Error::other("too large"));
+        }
+        Ok(Box::new(file.take(MAX_FILE)))
+    }
+
+    fn is_real_dir(&self, path: &Path) -> bool {
+        std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir())
     }
 }
 
@@ -179,8 +196,14 @@ pub fn session_files(fs: &dyn SessionFs, source: &LibrarySource) -> Vec<FsEntry>
                 .is_some_and(|n| n.ends_with(".jsonl"))
     };
     match source.engine {
+        // The home itself may be a link (a dotfiles manager's); the folders
+        // in it never are followed.
         LibraryEngine::Claude => {
-            for dir in fs.entries(&source.home.join("projects")) {
+            let projects = source.home.join("projects");
+            if !fs.is_real_dir(&projects) {
+                return out;
+            }
+            for dir in fs.entries(&projects) {
                 if dir.kind != EntryKind::Dir {
                     continue;
                 }
@@ -188,7 +211,11 @@ pub fn session_files(fs: &dyn SessionFs, source: &LibrarySource) -> Vec<FsEntry>
             }
         }
         LibraryEngine::Codex => {
-            let mut stack = vec![(source.home.join("sessions"), 0usize)];
+            let sessions = source.home.join("sessions");
+            if !fs.is_real_dir(&sessions) {
+                return out;
+            }
+            let mut stack = vec![(sessions, 0usize)];
             while let Some((dir, depth)) = stack.pop() {
                 for e in fs.entries(&dir) {
                     if e.kind == EntryKind::Dir && depth < CODEX_DEPTH {
@@ -206,17 +233,53 @@ pub fn session_files(fs: &dyn SessionFs, source: &LibrarySource) -> Vec<FsEntry>
 
 /// The JSON lines of a session file; `None` when it can't be opened.
 fn lines(fs: &dyn SessionFs, path: &Path) -> Option<impl Iterator<Item = Option<Value>>> {
-    let reader = BufReader::new(fs.open(path).ok()?);
-    Some(reader.split(b'\n').map_while(Result::ok).filter_map(|buf| {
-        let trimmed = buf.trim_ascii();
-        if trimmed.is_empty() {
-            return None;
+    let mut reader = BufReader::new(fs.open(path).ok()?);
+    Some(
+        std::iter::from_fn(move || bounded_line(&mut reader)).filter_map(|line| {
+            let buf = line?;
+            let trimmed = buf.trim_ascii();
+            if trimmed.is_empty() {
+                return None;
+            }
+            Some(serde_json::from_slice::<Value>(trimmed).ok())
+        }),
+    )
+}
+
+/// The next line, read at most [`MAX_LINE`] bytes at a time: a longer line
+/// is skipped to its newline without being held, as `Some(None)`. `None` at
+/// the end.
+fn bounded_line(reader: &mut impl BufRead) -> Option<Option<Vec<u8>>> {
+    let mut buf = Vec::new();
+    let n = reader
+        .by_ref()
+        .take(MAX_LINE as u64 + 1)
+        .read_until(b'\n', &mut buf)
+        .ok()?;
+    if n == 0 {
+        return None;
+    }
+    if buf.len() > MAX_LINE && buf.last() != Some(&b'\n') {
+        // Too long: drop the rest of it, a chunk at a time.
+        loop {
+            let chunk = reader.fill_buf().ok()?;
+            if chunk.is_empty() {
+                break;
+            }
+            match chunk.iter().position(|b| *b == b'\n') {
+                Some(at) => {
+                    reader.consume(at + 1);
+                    break;
+                }
+                None => {
+                    let len = chunk.len();
+                    reader.consume(len);
+                }
+            }
         }
-        if trimmed.len() > MAX_LINE {
-            return Some(None);
-        }
-        Some(serde_json::from_slice::<Value>(trimmed).ok())
-    }))
+        return Some(None);
+    }
+    Some(Some(buf))
 }
 
 fn str_at<'a>(v: &'a Value, path: &[&str]) -> Option<&'a str> {
@@ -261,11 +324,15 @@ pub enum TranscriptRole {
     Tool,
 }
 
-/// A line's turns, by the engine's format.
+/// A line's turns, by the engine's format. Secrets in the text are
+/// redacted here, so no title, transcript or index entry ever holds one
+/// (D-2416).
 fn items_of(engine: LibraryEngine, v: &Value) -> Vec<TranscriptItem> {
     let item = |role, text: &str| TranscriptItem {
         role,
-        text: text.to_string(),
+        text: tandem_core::redact::Redactor::global()
+            .redact(text)
+            .into_owned(),
     };
     match engine {
         LibraryEngine::Claude => {
@@ -435,11 +502,16 @@ pub fn transcript(
     engine: LibraryEngine,
     file: &Path,
 ) -> Option<Vec<TranscriptItem>> {
-    let mut out = Vec::new();
+    let mut out = std::collections::VecDeque::new();
     for v in lines(fs, file)?.flatten() {
-        out.extend(items_of(engine, &v));
+        for item in items_of(engine, &v) {
+            if out.len() == MAX_ITEMS {
+                out.pop_front();
+            }
+            out.push_back(item);
+        }
     }
-    Some(out)
+    Some(out.into())
 }
 
 /// A transcript as plain text, for a handoff brief or the search index.
@@ -515,6 +587,11 @@ mod tests {
                 });
             }
             seen.into_values().collect()
+        }
+
+        fn is_real_dir(&self, path: &Path) -> bool {
+            !self.links.contains(&path.to_path_buf())
+                && self.files.keys().any(|f| f.starts_with(path) && f != path)
         }
 
         fn open(&self, path: &Path) -> std::io::Result<Box<dyn Read + Send>> {
@@ -699,5 +776,86 @@ mod tests {
                 && valid_session_id("aaaa-1111")
         );
         assert_eq!(clip(&"word ".repeat(40), 10), "word word …");
+    }
+
+    #[test]
+    fn f_th_17_4_a_pasted_token_never_reaches_a_title_or_a_transcript() {
+        let token = "ghp_0123456789abcdefghijABCDEFGHIJ0123456789";
+        let mut fs = FakeFs::default();
+        fs.file(
+            "/h/projects/-src/eeee-5555.jsonl",
+            &claude_line(
+                "user",
+                "eeee-5555",
+                "/src",
+                &format!("Deploy with {token} please"),
+            ),
+        );
+        let source = LibrarySource {
+            engine: LibraryEngine::Claude,
+            account_id: None,
+            account_label: None,
+            home: PathBuf::from("/h"),
+        };
+        let scan = scan(&fs, &[source]);
+        let title = scan.sessions[0].title.clone().expect("title");
+        assert!(
+            !title.contains(token) && title.contains("Deploy with"),
+            "{title}"
+        );
+        let items = transcript(&fs, LibraryEngine::Claude, &scan.sessions[0].file).expect("items");
+        assert!(!as_text(&items).contains(token));
+    }
+
+    #[test]
+    fn f_th_17_5_a_long_line_is_skipped_without_being_held_and_the_rest_is_read() {
+        let mut reader =
+            std::io::Cursor::new([vec![b'x'; MAX_LINE + 10], b"\n{\"a\":1}\n".to_vec()].concat());
+        assert_eq!(bounded_line(&mut reader), Some(None));
+        assert_eq!(
+            bounded_line(&mut reader),
+            Some(Some(b"{\"a\":1}\n".to_vec()))
+        );
+        assert_eq!(bounded_line(&mut reader), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn f_th_17_5_real_files_only_never_a_link_a_fifo_or_a_linked_folder() {
+        let dir = tempfile::tempdir().expect("dir");
+        let home = dir.path().join("home");
+        let elsewhere = dir.path().join("elsewhere");
+        std::fs::create_dir_all(elsewhere.join("-src")).expect("mkdir");
+        std::fs::write(
+            elsewhere.join("-src/aaaa-1111.jsonl"),
+            claude_line("user", "aaaa-1111", "/src", "hi"),
+        )
+        .expect("write");
+        std::fs::create_dir_all(&home).expect("home");
+        // projects/ is a link to a folder elsewhere: not read.
+        std::os::unix::fs::symlink(&elsewhere, home.join("projects")).expect("link");
+        let source = LibrarySource {
+            engine: LibraryEngine::Claude,
+            account_id: None,
+            account_label: None,
+            home: home.clone(),
+        };
+        assert!(scan(&RealFs, std::slice::from_ref(&source))
+            .sessions
+            .is_empty());
+        // A link to a file and a FIFO aren't opened.
+        let file = elsewhere.join("-src/aaaa-1111.jsonl");
+        let link = dir.path().join("link.jsonl");
+        std::os::unix::fs::symlink(&file, &link).expect("link");
+        assert!(RealFs.open(&link).is_err());
+        let fifo = dir.path().join("fifo.jsonl");
+        let c = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).expect("cstr");
+        // SAFETY: a valid C string path; mkfifo has no other preconditions.
+        assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
+        assert!(
+            RealFs.open(&fifo).is_err(),
+            "a FIFO must not block or be read"
+        );
+        assert!(RealFs.open(&file).is_ok());
     }
 }

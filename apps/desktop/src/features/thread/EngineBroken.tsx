@@ -4,7 +4,7 @@ import { Banner } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useEngines } from "../../stores/engines";
-import { useWorkspaces } from "../../stores/workspaces";
+import { localTabId, useWorkspaces } from "../../stores/workspaces";
 import { useInstall } from "../code/InstallSheet";
 
 /** F-EN-08: a failed thread whose engine changed since its last good
@@ -13,7 +13,7 @@ import { useInstall } from "../code/InstallSheet";
 export function EngineBroken({ engineId, failed }: { engineId: string; failed: boolean }) {
   const [view, setView] = useState<EngineVersionView | null>(null);
   const label = useEngines((s) => s.label(engineId)) ?? engineId;
-  const tabId = useWorkspaces((s) => (s.activeId ? s.activeTab[s.activeId] : undefined));
+  const tabId = useWorkspaces(localTabId);
   useEffect(() => {
     if (!failed) {
       setView(null);

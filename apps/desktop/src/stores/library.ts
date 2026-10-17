@@ -9,9 +9,9 @@ import type {
 import { invoke } from "../ipc/invoke";
 import type { Outcome } from "./launch";
 
-async function run<T>(cmd: string, args: Record<string, unknown>): Promise<Outcome<T>> {
+async function run<T>(cmd: string, args: Record<string, unknown>, timeoutMs?: number): Promise<Outcome<T>> {
   try {
-    return { ok: true, value: await invoke<T>(cmd, args) };
+    return { ok: true, value: await invoke<T>(cmd, args, timeoutMs ? { timeoutMs } : undefined) };
   } catch (e) {
     return { ok: false, error: e as IpcError };
   }
@@ -30,10 +30,13 @@ export const useLibrary = create<LibraryState>((set) => ({
   hide: () => set({ open: false }),
 }));
 
-export const listLibrary = () => run<LibraryListing>("library_list", {});
+/** Reading every home, and the first search's index, can take a while. */
+const SLOW_MS = 120_000;
+
+export const listLibrary = () => run<LibraryListing>("library_list", {}, SLOW_MS);
 export const readTranscript = (key: string) => run<TranscriptItem[]>("library_transcript", { key });
 export const resumeSession = (key: string) => run<LibraryOpened>("library_resume", { key });
-export const searchLibrary = (query: string) => run<string[]>("library_search", { query });
+export const searchLibrary = (query: string) => run<string[]>("library_search", { query }, SLOW_MS);
 export const setLibrarySearch = (on: boolean) => run<null>("library_search_set", { on });
 
 /** Sessions grouped by repository, groups in order of their newest

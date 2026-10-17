@@ -226,6 +226,7 @@ mod tests {
         let config = sessions::LaunchConfig {
             extra_args: vec!["--model".into(), "x".into()],
             home: Some("/h/claude/acc_1".into()),
+            own_home: false,
         };
         sessions::start_with_config(&store, &agent.id, &ws, "claude", None, &config)
             .await

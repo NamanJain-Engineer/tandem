@@ -432,6 +432,7 @@ mod tests {
             let config = LaunchConfig {
                 extra_args: vec![],
                 home: Some(home.to_string_lossy().into_owned()),
+                own_home: false,
             };
             sessions::start_with_config(
                 &store,

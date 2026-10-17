@@ -601,6 +601,7 @@ impl TerminalService {
             None => LaunchConfig {
                 extra_args: Vec::new(),
                 home: session.provider_home.clone(),
+                own_home: false,
             },
         };
         if config

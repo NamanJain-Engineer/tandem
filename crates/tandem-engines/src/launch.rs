@@ -114,6 +114,19 @@ pub fn terminal_launch(req: &TerminalLaunchRequest<'_>) -> Result<LaunchSpec, La
     }
 
     let mut env = BTreeMap::new();
+    // Pin first: the provider home and the status hook below always win.
+    if let Some(pin) = req
+        .engine
+        .updates
+        .as_ref()
+        .and_then(|u| u.pin.as_ref())
+        .filter(|_| req.pinned)
+    {
+        for (k, v) in &pin.env {
+            env.insert(k.clone(), v.clone());
+        }
+        args.extend(pin.args.iter().cloned());
+    }
     if let Some(home) = &req.home {
         if req.host != HostKind::Local && home.starts_with(&req.providers_root) {
             return Err(LaunchError::LocalHomeOnRemote);
@@ -128,18 +141,6 @@ pub fn terminal_launch(req: &TerminalLaunchRequest<'_>) -> Result<LaunchSpec, La
             }
             _ => {}
         }
-    }
-    if let Some(pin) = req
-        .engine
-        .updates
-        .as_ref()
-        .and_then(|u| u.pin.as_ref())
-        .filter(|_| req.pinned)
-    {
-        for (k, v) in &pin.env {
-            env.insert(k.clone(), v.clone());
-        }
-        args.extend(pin.args.iter().cloned());
     }
     if let Some(status) = &req.status {
         env.insert(STATUS_URL_VAR.into(), status.url.clone());

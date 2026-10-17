@@ -2,6 +2,12 @@
 
 export type BackgroundProcess = { pid: number, engineId: string, 
 /**
- * Its command line, cut to 300 characters.
+ * The process's start time; Stop sends it back so a reused pid is
+ * never signalled.
+ */
+started: number, 
+/**
+ * The engine's command name and its subcommand, if any: never its
+ * other arguments, which can hold prompts or keys.
  */
 command: string, };

@@ -10,7 +10,7 @@
     "versionCmd": [
       "--version"
     ],
-    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.]+)?)",
     "install": {
       "mac": "curl -fsSL https://claude.ai/install.sh | bash",
       "lin": "curl -fsSL https://claude.ai/install.sh | bash",
@@ -86,7 +86,7 @@
     "versionCmd": [
       "--version"
     ],
-    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.]+)?)",
     "install": {
       "mac": "npm install -g @openai/codex",
       "lin": "npm install -g @openai/codex",
@@ -160,7 +160,7 @@
     "versionCmd": [
       "--version"
     ],
-    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.]+)?)",
     "install": {
       "mac": "curl https://cursor.com/install -fsS | bash",
       "lin": "curl https://cursor.com/install -fsS | bash",
@@ -222,7 +222,7 @@
     "versionCmd": [
       "--version"
     ],
-    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.]+)?)",
     "install": {
       "mac": "npm install -g @google/gemini-cli",
       "lin": "npm install -g @google/gemini-cli",
@@ -277,7 +277,7 @@
     "versionCmd": [
       "--version"
     ],
-    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.]+)?)",
     "install": {
       "mac": "npm install -g @github/copilot",
       "lin": "npm install -g @github/copilot",
@@ -332,7 +332,7 @@
     "versionCmd": [
       "--version"
     ],
-    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.]+)?)",
     "install": {
       "mac": "curl -fsSL https://x.ai/cli/install.sh | bash",
       "lin": "curl -fsSL https://x.ai/cli/install.sh | bash",
@@ -381,7 +381,7 @@
     "versionCmd": [
       "--version"
     ],
-    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.]+)?)",
     "install": {
       "mac": "curl -fsSL https://opencode.ai/install | bash",
       "lin": "curl -fsSL https://opencode.ai/install | bash",
@@ -436,7 +436,7 @@
     "versionCmd": [
       "--version"
     ],
-    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.]+)?)",
     "install": {
       "mac": "curl -fsSL https://app.factory.ai/cli | sh",
       "lin": "curl -fsSL https://app.factory.ai/cli | sh",
@@ -482,7 +482,7 @@
     "versionCmd": [
       "--version"
     ],
-    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.]+)?)",
     "install": {
       "mac": "npm install -g @sourcegraph/amp",
       "lin": "npm install -g @sourcegraph/amp",
@@ -533,7 +533,7 @@
     "versionCmd": [
       "--version"
     ],
-    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.]+)?)",
     "install": {
       "mac": "python -m pip install aider-install && aider-install",
       "lin": "python -m pip install aider-install && aider-install",
@@ -586,7 +586,7 @@
     "versionCmd": [
       "--version"
     ],
-    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.]+)?)",
     "install": {
       "mac": "curl -LsSf https://code.kimi.com/install.sh | bash",
       "lin": "curl -LsSf https://code.kimi.com/install.sh | bash",
@@ -628,7 +628,7 @@
     "logo": "Ag",
     "commands": ["agy"],
     "versionCmd": ["--version"],
-    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.]+)?)",
     "install": {
       "mac": "curl -fsSL https://antigravity.google/cli/install.sh | bash",
       "lin": "curl -fsSL https://antigravity.google/cli/install.sh | bash",
@@ -666,7 +666,7 @@
     "logo": "Ki",
     "commands": ["kiro-cli"],
     "versionCmd": ["--version"],
-    "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+    "versionRegex": "(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.]+)?)",
     "install": {
       "mac": "curl -fsSL https://cli.kiro.dev/install | bash",
       "lin": "curl -fsSL https://cli.kiro.dev/install | bash",

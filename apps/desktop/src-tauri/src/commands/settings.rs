@@ -36,6 +36,16 @@ pub async fn store_and_apply(
     key: SettingKey,
     value: Value,
 ) -> Result<(), IpcError> {
+    // Session search is Pro, whoever turns it on (F-TH-17, D-2414).
+    if key == SettingKey::SessionSearch
+        && value.as_bool() == Some(true)
+        && !state.entitlements.limits().session_search
+    {
+        return Err(IpcError::new(
+            ErrorCode::ForbiddenPlan,
+            "Searching session text needs Vibezeo Pro.",
+        ));
+    }
     settings::set(&state.store, key, value.clone()).await?;
     apply(app, state, key, &value).await?;
     state.bus.publish(BusEvent::new(
@@ -87,6 +97,10 @@ async fn apply(
             state
                 .gateway
                 .set_expose_all(value.as_bool().unwrap_or(false));
+        }
+        // Off deletes the session index, however it was turned off (F-TH-17).
+        SettingKey::SessionSearch if value.as_bool() != Some(true) => {
+            crate::services::library::delete_index(state.data.root());
         }
         // Paused: queued mail waits; resumed: it goes out, once (F-AG-12).
         SettingKey::PauseAllMail => state.mail.pump_soon(),

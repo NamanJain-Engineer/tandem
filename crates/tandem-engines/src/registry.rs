@@ -303,6 +303,34 @@ fn env_name(s: &str) -> bool {
         && chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
 }
 
+/// Variables a Pin may never set: any engine's provider home, and anything
+/// that changes what a process loads or where it looks (F-EN-08).
+fn pin_reserved(name: &str, own_home: Option<&str>) -> bool {
+    const RESERVED: &[&str] = &[
+        "CLAUDE_CONFIG_DIR",
+        "CODEX_HOME",
+        "GEMINI_CLI_HOME",
+        "KIRO_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME",
+        "XDG_CACHE_HOME",
+        "HOME",
+        "PATH",
+        "SHELL",
+        "NODE_OPTIONS",
+        "NODE_PATH",
+        "BASH_ENV",
+        "ENV",
+        "ZDOTDIR",
+    ];
+    RESERVED.contains(&name)
+        || own_home == Some(name)
+        || name.starts_with("LD_")
+        || name.starts_with("DYLD_")
+        || name.starts_with("TANDEM_")
+}
+
 impl EngineSpec {
     /// The schema's rules beyond its types (F-EN-02).
     pub fn validate(&self) -> Result<(), RegistryError> {
@@ -420,7 +448,9 @@ impl EngineSpec {
                 .as_deref()
                 .is_none_or(|i| i.contains("{version}") && !i.contains('\n'));
             let pin_ok = u.pin.as_ref().is_none_or(|p| {
-                p.env.keys().all(|k| env_name(k))
+                p.env
+                    .keys()
+                    .all(|k| env_name(k) && !pin_reserved(k, self.provider_home_env.as_deref()))
                     && p.env
                         .values()
                         .chain(&p.args)

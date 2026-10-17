@@ -1,6 +1,7 @@
 import { $, $$, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Key } from "webdriverio";
 import {
@@ -13,6 +14,7 @@ import {
   setPlan,
   split,
   typeKeys,
+  fakeLog,
   userHome,
   waitForPaneText,
 } from "../support/app";
@@ -46,6 +48,31 @@ function claudeSession(dir: string, id: string, cwd: string, prompt: string): vo
     },
   ];
   writeFileSync(join(folder, `${id}.jsonl`), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+}
+
+/** The run's own HOME, under the temp folder e2e/run.ts made: this spec
+ * writes and deletes `~/.claude` and `~/.codex`, so it refuses any other
+ * (a developer's real sign-ins). */
+function testUserHome(): string {
+  const user = userHome();
+  const run = home();
+  if (!run.startsWith(join(tmpdir(), "tandem-e2e-")) || !user.startsWith(join(run, "home"))) {
+    throw new Error(`refusing to touch ${user}: run this spec through e2e/run.ts`);
+  }
+  return user;
+}
+
+/** Everything the fake engines received as bracketed pastes since `mark`. */
+function pastes(mark: number): string[] {
+  const bytes = fakeLog()
+    .slice(mark)
+    .filter((l) => l.startsWith("raw: "))
+    .map((l) => Buffer.from(l.slice(5), "hex").toString("utf8"))
+    .join("");
+  return bytes
+    .split("\u001b[200~")
+    .slice(1)
+    .map((chunk) => chunk.split("\u001b[201~")[0] ?? "");
 }
 
 async function openLibrary(): Promise<void> {
@@ -111,8 +138,13 @@ describe("E2E-M18-TH17 session library", function () {
     expect(accountHome).not.toBe("");
     claudeSession(accountHome, CLAUDE_ID, repo, "Fix the checkout total rounding");
     writeFileSync(join(accountHome, "projects", repo.replace(/[\\/]/g, "-"), "broken.jsonl"), "not json\n");
-    claudeSession(join(userHome(), ".claude"), OWN_ID, "/tmp/gone-folder-th17", "Write the release notes");
-    const codexDir = join(userHome(), ".codex", "sessions", "2026", "10", "14");
+    claudeSession(
+      join(testUserHome(), ".claude"),
+      OWN_ID,
+      "/tmp/gone-folder-th17",
+      "Write the release notes",
+    );
+    const codexDir = join(testUserHome(), ".codex", "sessions", "2026", "10", "14");
     mkdirSync(codexDir, { recursive: true });
     writeFileSync(
       join(codexDir, `rollout-2026-10-14-${CODEX_ID}.jsonl`),
@@ -130,12 +162,13 @@ describe("E2E-M18-TH17 session library", function () {
         .map((l) => JSON.stringify(l))
         .join("\n"),
     );
-    writeFileSync(join(userHome(), ".codex", "auth.json"), "{}");
+    writeFileSync(join(testUserHome(), ".codex", "auth.json"), "{}");
   });
 
   after(() => {
-    rmSync(join(userHome(), ".claude"), { recursive: true, force: true });
-    rmSync(join(userHome(), ".codex"), { recursive: true, force: true });
+    const user = testUserHome();
+    rmSync(join(user, ".claude"), { recursive: true, force: true });
+    rmSync(join(user, ".codex"), { recursive: true, force: true });
   });
 
   it("F-TH-17.1 lists the sessions under their repositories with engine and account, and counts a skipped file", async () => {
@@ -175,6 +208,8 @@ describe("E2E-M18-TH17 session library", function () {
 
   it("F-TH-17.3 Continue with another engine opens the handoff sheet with the transcript's brief", async () => {
     const panes = (await paneIds()).length;
+    const spawned = (await invoke<Spawn[]>("test_spawn_log")).length;
+    const mark = fakeLog().length;
     await openLibrary();
     await rowClick(CODEX_ID, "library-continue");
     const summary = $('[data-testid="handoff-summary"]');
@@ -186,6 +221,13 @@ describe("E2E-M18-TH17 session library", function () {
     await browser.waitUntil(async () => (await paneIds()).length === panes + 1, { timeout: 20_000 });
     const target = (await paneIds()).at(-1)!;
     await waitForPaneText(target, "Fake Claude Code (test engine)");
+    // In the session's folder, with the brief typed as its first prompt.
+    const started = (await invoke<Spawn[]>("test_spawn_log")).slice(spawned);
+    expect(started.some((s) => s.cwd === repo && s.envKeys.includes("CLAUDE_CONFIG_DIR"))).toBe(true);
+    await browser.waitUntil(async () => pastes(mark).some((p) => p.includes("Speed up the product search")), {
+      timeout: 60_000,
+      timeoutMsg: `first inputs: ${JSON.stringify(pastes(mark))}`,
+    });
   });
 
   it("F-TH-17.4 search is Pro; on, a word from a prompt finds its session; off deletes the index", async () => {

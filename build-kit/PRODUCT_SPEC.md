@@ -1199,25 +1199,25 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 **Behavior:**
 - **The library (UI-162)**, "Session library…" in the command palette, lists the Claude Code and Codex sessions on this computer, including ones started in a terminal outside Vibezeo.
 - **Where it reads.** Read-only, the engines' own session files: Claude Code's `projects/*/*.jsonl` and Codex's `sessions/**/*.jsonl`. It reads them in every account's provider home and in each engine's own home (`$CLAUDE_CONFIG_DIR` or `~/.claude`, `$CODEX_HOME` or `~/.codex`), shown as "Outside Vibezeo".
-  - Only files matching those patterns are opened. Symbolic links aren't followed, and nothing else in a home is read, so no credential file (`.credentials.json`, `auth.json`) is ever opened.
-  - Files over 64 MB and lines over 4 MB are skipped.
+  - Only regular files matching those patterns are opened. The home itself may be a link (a dotfiles manager's), but `projects/`, `sessions/` and everything in them are never followed through a link, and nothing else in a home is read, so no credential file (`.credentials.json`, `auth.json`) is ever opened.
+  - Files over 64 MB and lines over 4 MB are skipped without being read whole; a transcript shows its last 2,000 turns.
 - **Listing.** Sessions are grouped by repository: the git root of the session's folder, else the folder. Each shows its engine, account, last activity, title (the first prompt, cut to 80 characters) and size.
   - A file that fails to parse is skipped and counted: "# files couldn't be read".
   - States: loading, empty ("No sessions found"), error, populated.
 - **Open** shows the session as a read-only transcript: the prompts and replies as text, and tool calls by name only.
-- **Resume** opens an agent pane in the session's folder, in a tab of that folder's workspace (added when it isn't open yet). It runs the engine's own resume (`claude --resume <id>`, `codex resume <id>`) with the session's home: the account's provider home, or the engine's own home.
+- **Resume** opens an agent pane in the session's folder, in a tab of that folder's workspace (added when it isn't open yet). It runs the engine's own resume (`claude --resume <id>`, `codex resume <id>`) in the account's provider home. A session from outside Vibezeo resumes as it runs in a terminal: no account, no provider home, and no status hooks written into the user's own home (D-2412).
   - It's offered only when the folder still exists and the engine is installed.
 - **Continue with another engine…** opens F-CD-16's handoff sheet with the session's transcript as the source. The brief is written from the transcript's last messages, redacted, and the target opens beside the folder's other panes.
 - **Search (Pro).** "Search session text" in Settings › Privacy, off by default. When on, Vibezeo keeps a local full-text index of the prompts and replies at `$DATA/session-index.db`.
-  - The index is never logged or sent anywhere.
-  - Turning the setting off deletes the file, and Delete all deletes it with the rest.
+  - The index is never logged or sent anywhere. Secrets in session text (the redactor's patterns, F-TL-03) are replaced before anything is shown or indexed, so neither the library nor the index keeps a second copy of a pasted token.
+  - Turning the setting off deletes the file, however it's turned off (the switch, a settings reset, Conductor), and Delete all deletes it with the rest. Deleted rows are overwritten, and an index of an older format is deleted and built again.
   - On Free the setting shows Pro.
 
 **Acceptance:**
 1. Fixture stores for Claude Code in two provider homes and Codex in its own home list four sessions under their repositories, with engine, account and date. A file that fails to parse is counted as skipped.
 2. Resume on a Claude Code session opens an agent pane in the session's folder, running `claude --resume <id>` with that account's `CLAUDE_CONFIG_DIR`.
 3. "Continue with another engine…" opens F-CD-16's sheet with a brief from the transcript, and Start opens the target in the session's folder with the brief as its first prompt.
-4. With search on, a word from a fixture prompt finds its session. Turning search off deletes the index file, and on Free `library_search` is refused.
+4. With search on, a word from a fixture prompt finds its session. Turning search off deletes the index file, and on Free `library_search` is refused. A session holding a token-shaped string is found by its other words, while the index file, its title and its transcript never contain the token.
 5. The library never opens a file named `.credentials.json` or `auth.json`. An invariant test over a recording file-system fake checks this.
 
 ### 4.4 EN: Engines
@@ -1353,20 +1353,20 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 
 **Behavior:**
 - **The table** (Settings › Engines, UI-161): each installed engine's version, how it was installed, and whether it updates itself.
-  - How it was installed is read from where its command resolves (D-2406): under `node_modules` → **npm**; under a Homebrew `Cellar` or `Caskroom` → **Homebrew**; under the engine's own versions folder from the registry (Claude Code: `~/.local/share/claude/versions/`) → **Its own installer**; anything else → **Other**.
+  - How it was installed is read from where its command resolves (D-2406): under `node_modules` → **npm** (but Bun's, Yarn's and pnpm's global folders → **Other**); under a Homebrew `Cellar` or `Caskroom` → **Homebrew**; under the engine's own versions folder from the registry (Claude Code: `~/.local/share/claude/versions/`) → **Its own installer**; anything else → **Other**.
   - "Updates itself" comes from the registry (`updates.selfUpdates`, per install method), checked against the vendor's docs: Claude Code's own installer and npm install update in the background.
 - **Check for updates** (per engine, only when clicked): for an npm install, `npm view <package> version` through the login shell, which asks the npm registry; the newest version is shown beside the installed one. Nothing is asked before the click, and no daily check runs. Other install methods say which command updates them (`brew upgrade …`, `claude update`).
 - **Pin** (per engine, off by default): that engine's new terminal panes start with the registry's documented switch that stops it updating itself, in the launch environment or arguments and never in the user's own files (Claude Code: `DISABLE_AUTOUPDATER=1`; Codex: `-c check_for_update_on_startup=false`). Panes already running are unchanged. Engines without a documented switch have no Pin.
-- **Versions Vibezeo has seen** (`$DATA/engine-versions.json`): each engine's current and previous version, and its **last good** version: the one that last finished a Thread turn without an adapter error.
+- **Versions Vibezeo has seen** (`$DATA/engine-versions.json`): each engine's current and previous version, and its **last good** version: the one that last finished a Thread turn without an adapter error. Only threads on this computer count; a thread on an SSH host or in WSL runs that host's engine. An adapter error is the engine failing to start or breaking its protocol; being offline, signed out, a model the account can't use or a tool's own failure isn't (D-2501).
 - **After an update breaks threads:** when an engine's version differs from its last good one and its threads have failed with an adapter error since, Thread mode and Settings › Engines show "{Engine} updated from {last good} to {current}, and threads have failed since." with **Roll back to {last good}…**.
-- **Roll back** reinstalls a version through the same install method: `npm install -g <package>@<version>`, or the engine's own installer with a version (Claude Code: `curl -fsSL https://claude.ai/install.sh | bash -s <version>`). A confirm shows the exact command; it then runs in a visible terminal pane, like Install (F-EN-03). Homebrew and Other say how to do it themselves.
-- **Running in the background** (Linux and macOS): processes of an installed engine's command with no terminal, outside Vibezeo's own panes and threads, each with its command line and **Stop** (asks first, then asks the process to end). Engines started in a terminal, Vibezeo's or the user's, are never listed. Windows says it isn't available yet.
+- **Roll back** reinstalls a version through the same install method: `npm install -g <package>@<version>`, or the engine's own installer with a version (Claude Code: `curl -fsSL https://claude.ai/install.sh | bash -s <version>`). A confirm shows the exact command; it then runs in a visible terminal pane on this computer, like Install (F-EN-03). From an SSH or WSL tab the pane opens in a local workspace's tab, and with none the sheet offers Copy only. Homebrew and Other say how to do it themselves.
+- **Running in the background** (Linux and macOS): the user's own processes of an installed engine with no terminal, outside Vibezeo's own panes and threads. A process is the engine when its executable is the engine's command, or a runtime (`node`, `bun`) runs the engine's script; a wrapper (`timeout … codex`) isn't. Each shows the engine's name and subcommand, never its other arguments, with **Stop**. Stop asks first, then asks the process to end, only if it's still the same process (pid, engine and start time; D-2500). Other users' processes and engines started in a terminal, Vibezeo's or the user's, are never listed. Windows says it isn't available yet.
 
 **Acceptance:**
 1. With a fake engine at 1.2.0 installed through npm, the table shows "1.2.0 · npm", and nothing is run against the npm registry until Check for updates is clicked; then the newest version shows.
 2. Pin on Claude Code starts its new panes with `DISABLE_AUTOUPDATER=1` and Codex's with `-c check_for_update_on_startup=false`; a pane opened before Pin has neither.
 3. After Codex moves from 1.2.0 (last good) to 1.3.0 and a thread then fails with an adapter error, the banner reads "Codex updated from 1.2.0 to 1.3.0, and threads have failed since." and "Roll back to 1.2.0…" shows `npm install -g @openai/codex@1.2.0` before running it.
-4. An engine process with no terminal, outside any pane, is listed under "Running in the background" with Stop; Stop asks first, and a process in a terminal is never listed.
+4. An engine process of the user's with no terminal, outside any pane, is listed under "Running in the background" with Stop; Stop asks first. A process in a terminal, another user's process, and a wrapper around the engine are never listed, and Stop refuses a pid that now belongs to a process started later.
 
 #### F-EN-09 Engine catalog refresh (P2)
 **Story:** New coding-agent CLIs ship every month, and vendors change who can use the old ones. The engines I use show up in Vibezeo, with what each needs, as soon as their vendors document them.

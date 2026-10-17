@@ -174,6 +174,9 @@ struct Running {
     /// When the engine last said anything (`clock.now_ms()`).
     last_output: i64,
     silence_noted: bool,
+    /// The stage of the last error this turn reported (F-EN-08: only the
+    /// engine's own failures count against its version).
+    error_stage: Option<ErrorStage>,
 }
 
 impl Running {
@@ -239,6 +242,24 @@ pub struct ThreadService {
 }
 
 /// A thread turn of an engine ended, and why (F-EN-08).
+/// What a turn's end says about the engine's version (F-EN-08 AC3): a
+/// completed turn, or a failure of the engine itself (it didn't start, or
+/// broke its protocol). Being offline, signed out, a model the account
+/// can't use, a tool's own failure, a stop or a usage limit say nothing
+/// about the version.
+pub fn version_health(reason: TurnEndReason, stage: Option<ErrorStage>) -> Option<TurnEndReason> {
+    match reason {
+        TurnEndReason::Completed => Some(TurnEndReason::Completed),
+        TurnEndReason::Error => match stage {
+            None | Some(ErrorStage::Spawn | ErrorStage::Unknown) => Some(TurnEndReason::Error),
+            Some(ErrorStage::Auth | ErrorStage::Network | ErrorStage::Model | ErrorStage::Tool) => {
+                None
+            }
+        },
+        TurnEndReason::Cancelled | TurnEndReason::Limit => None,
+    }
+}
+
 pub type HealthSink = Arc<dyn Fn(&str, TurnEndReason) + Send + Sync>;
 
 /// A teammate chat's turn ended: the chat, the turn and why.
@@ -438,6 +459,17 @@ impl ThreadService {
                 root: thread.cwd.clone(),
             },
         ))
+    }
+
+    /// The thread runs this computer's engine: no workspace, or a local one.
+    async fn runs_locally(&self, thread: &ThreadRecord) -> bool {
+        match &thread.workspace_id {
+            None => true,
+            Some(ws) => tandem_store::repo::workspaces::get(&self.store, ws)
+                .await
+                .map(|w| w.kind == "local")
+                .unwrap_or(false),
+        }
     }
 
     /// Where this machine reads a thread's folder: a WSL thread's Linux
@@ -1070,6 +1102,9 @@ impl ThreadService {
 
     /// Stores and streams one event of the running turn.
     async fn emit(&self, thread: &ThreadId, run: &mut Running, event: ThreadEvent) -> Option<i64> {
+        if let ThreadEvent::Error { stage, .. } = &event {
+            run.error_stage = Some(*stage);
+        }
         let seq = run.take_seq();
         let row = self.store_event(thread, &run.id, seq, &event, None).await;
         self.broadcast(self.envelope(thread, &run.id, seq, event));
@@ -1321,6 +1356,7 @@ impl ThreadService {
             r => r,
         };
         let blocked = run.blocked;
+        let error_stage = run.error_stage;
         if reason == TurnEndReason::Completed {
             if let Some(version) = self.save_plan(thread, &run.id).await {
                 self.emit(thread, &mut run, ThreadEvent::PlanRevision { version })
@@ -1342,7 +1378,13 @@ impl ThreadService {
         // A teammate chat's prose becomes searchable (F-AG-11).
         if let Ok(Some(record)) = repo::get(&self.store, thread).await {
             if let Some(sink) = self.health_sink.get() {
-                sink(&record.engine_id, reason);
+                if let Some(health) = version_health(reason, error_stage) {
+                    // A thread on an SSH host or in WSL runs that host's
+                    // engine, not this computer's (F-EN-08).
+                    if self.runs_locally(&record).await {
+                        sink(&record.engine_id, health);
+                    }
+                }
             }
             if let Some(teammate) = &record.teammate_id {
                 if let Err(e) =
@@ -1446,6 +1488,7 @@ impl ThreadService {
             title_from: None,
             last_output: self.clock.now_ms(),
             silence_noted: false,
+            error_stage: None,
         };
         self.emit(id, &mut run, row).await;
         self.emit(
@@ -1556,6 +1599,7 @@ impl ThreadService {
             title_from,
             last_output: self.clock.now_ms(),
             silence_noted: false,
+            error_stage: None,
         };
         let row = self
             .emit(

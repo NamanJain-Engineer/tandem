@@ -26,12 +26,23 @@ pub fn install_method(
         .map(|c| c.as_os_str().to_string_lossy().into_owned())
         .collect();
     if parts.iter().any(|p| p == "node_modules") {
-        return InstallMethod::Npm;
+        // Bun's, Yarn's and pnpm's global folders hold node_modules too,
+        // and `npm install -g` doesn't manage them.
+        let other_manager = parts
+            .iter()
+            .any(|p| matches!(p.as_str(), ".bun" | "yarn" | ".yarn" | "pnpm" | ".pnpm"));
+        return if other_manager {
+            InstallMethod::Other
+        } else {
+            InstallMethod::Npm
+        };
     }
     if parts.iter().any(|p| p == "Cellar" || p == "Caskroom") {
         return InstallMethod::Homebrew;
     }
     if let Some(dir) = updates.and_then(|u| u.native_dir.as_deref()) {
+        // `resolved` is canonical; so must the home be (a linked home).
+        let home = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
         if resolved.starts_with(home.join(dir)) {
             return InstallMethod::Native;
         }
@@ -198,6 +209,14 @@ mod tests {
             InstallMethod::Native
         );
         assert_eq!(m("/usr/bin/claude"), InstallMethod::Other);
+        // Bun, Yarn and pnpm global installs aren't npm's to roll back.
+        for path in [
+            "/home/ana/.bun/install/global/node_modules/@anthropic-ai/claude-code/cli.js",
+            "/home/ana/.config/yarn/global/node_modules/@anthropic-ai/claude-code/cli.js",
+            "/home/ana/.local/share/pnpm/global/5/node_modules/@anthropic-ai/claude-code/cli.js",
+        ] {
+            assert_eq!(m(path), InstallMethod::Other, "{path}");
+        }
         // Another user's versions folder isn't this one's.
         assert_eq!(
             m("/home/bo/.local/share/claude/versions/2.1.89"),
@@ -308,5 +327,44 @@ mod tests {
             u.npm = Some("@openai/codex; rm -rf ~".into());
         }
         assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn f_en_08_2_a_pin_may_not_set_a_provider_home_or_a_loader_variable() {
+        let reg = EngineRegistry::bundled();
+        for name in [
+            "CLAUDE_CONFIG_DIR",
+            "CODEX_HOME",
+            "KIRO_HOME",
+            "LD_PRELOAD",
+            "DYLD_INSERT_LIBRARIES",
+            "NODE_OPTIONS",
+            "PATH",
+        ] {
+            let mut bad = reg.get("claude").cloned().expect("claude");
+            if let Some(pin) = bad.updates.as_mut().and_then(|u| u.pin.as_mut()) {
+                pin.env.insert(name.into(), "/tmp/x".into());
+            }
+            assert!(bad.validate().is_err(), "{name}");
+        }
+    }
+
+    #[test]
+    fn f_en_08_1_a_pre_release_version_keeps_its_suffix() {
+        let reg = EngineRegistry::bundled();
+        for e in reg.all() {
+            let re = regex::Regex::new(&e.version_regex).expect("regex");
+            let got = re
+                .captures("codex-cli 0.47.0-alpha.3")
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str().to_string());
+            assert_eq!(got.as_deref(), Some("0.47.0-alpha.3"), "{}", e.id);
+            let plain = re
+                .captures("2.1.89 (Claude Code)")
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str().to_string());
+            assert_eq!(plain.as_deref(), Some("2.1.89"), "{}", e.id);
+            assert!(valid_version("0.47.0-alpha.3"));
+        }
     }
 }

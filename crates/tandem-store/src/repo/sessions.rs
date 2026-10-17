@@ -34,6 +34,11 @@ pub struct LaunchConfig {
     /// The exact provider home (one-off homes too); `None` = the engine's own.
     #[serde(default)]
     pub home: Option<String>,
+    /// A session from the engine's own home outside Vibezeo (the session
+    /// library, F-TH-17): it resumes with no provider home and no status
+    /// hooks installed, as the user runs it in a terminal.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub own_home: bool,
 }
 
 /// The newest session that ran in a pane (restore).
@@ -77,6 +82,7 @@ pub async fn start_in_pane(
     let config = LaunchConfig {
         extra_args: Vec::new(),
         home: home.clone(),
+        own_home: false,
     };
     start_with_config(store, pane, workspace, engine_id, account, &config).await
 }

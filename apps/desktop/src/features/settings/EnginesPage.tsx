@@ -24,7 +24,7 @@ import {
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useEngines } from "../../stores/engines";
-import { useWorkspaces } from "../../stores/workspaces";
+import { localTabId, useWorkspaces } from "../../stores/workspaces";
 import { useInstall } from "../code/InstallSheet";
 
 /** Splits a shell-word list: spaces separate, single and double quotes group.
@@ -313,7 +313,7 @@ export function EnginesPage() {
   const report = useEngines((s) => s.report);
   const detecting = useEngines((s) => s.detecting);
   const [details, setDetails] = useState(false);
-  const tabId = useWorkspaces((s) => (s.activeId ? s.activeTab[s.activeId] : undefined));
+  const tabId = useWorkspaces(localTabId);
   useEffect(() => {
     if (!loaded) void useEngines.getState().refresh();
   }, [loaded]);
@@ -440,7 +440,11 @@ export function EnginesPage() {
           const b = stopping;
           setStopping(null);
           if (b)
-            void invoke("engine_background_stop", { pid: b.pid }).then(
+            void invoke("engine_background_stop", {
+              pid: b.pid,
+              engineId: b.engineId,
+              started: b.started,
+            }).then(
               () => {
                 show({ tone: "success", title: t("engines.stopped", { name: label(b.engineId) }) });
                 loadVersions();

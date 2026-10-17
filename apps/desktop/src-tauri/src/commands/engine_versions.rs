@@ -101,7 +101,9 @@ pub async fn engine_check_update(
     };
     let login = state.terminals.login_env().await;
     let mut cmd = tokio::process::Command::new("npm");
+    // From the data folder, so no project's `.npmrc` steers it.
     cmd.args(["view", &package, "version"])
+        .current_dir(state.data.root())
         .env_clear()
         .envs(login.vars.iter())
         .kill_on_drop(true);
@@ -221,20 +223,11 @@ fn engine_paths(state: &AppState) -> Vec<EnginePaths> {
 async fn background_now(state: &AppState) -> Result<Vec<BackgroundProcess>, IpcError> {
     let engines = engine_paths(state);
     let table = engine_processes::system();
-    let procs = tokio::task::spawn_blocking(move || table.list())
-        .await
-        .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?
-        .ok_or_else(|| {
-            IpcError::new(
-                ErrorCode::Unavailable,
-                "Listing background processes isn't available on this system yet",
-            )
-        })?;
-    Ok(engine_processes::background(
-        &procs,
-        &engines,
-        std::process::id(),
-    ))
+    tokio::task::spawn_blocking(move || {
+        engine_processes::list(table.as_ref(), &engines, std::process::id())
+    })
+    .await
+    .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?
 }
 
 /// Engine processes with no terminal, outside the app's own.
@@ -245,12 +238,15 @@ pub async fn engine_background(
     background_now(&state).await
 }
 
-/// Stop, after the window asked: only a process still in that list.
+/// Stop, after the window asked: only a process still in that list with
+/// the same engine and start time, so a reused pid is never signalled.
 #[tauri::command]
 pub async fn engine_background_stop(
     window: WebviewWindow,
     state: State<'_, AppState>,
     pid: u32,
+    engine_id: String,
+    started: u64,
 ) -> Result<(), IpcError> {
     if window.label() != "main" {
         return Err(IpcError::new(
@@ -258,15 +254,20 @@ pub async fn engine_background_stop(
             "Stopping a process needs the main window",
         ));
     }
-    if !background_now(&state).await?.iter().any(|p| p.pid == pid) {
-        return Err(IpcError::new(
-            ErrorCode::NotFound,
-            "That process isn't running in the background any more",
-        ));
-    }
-    engine_processes::system()
-        .terminate(pid)
-        .map_err(|e| IpcError::new(ErrorCode::Io, format!("Couldn't stop it: {e}")))?;
+    let engines = engine_paths(&state);
+    let table = engine_processes::system();
+    tokio::task::spawn_blocking(move || {
+        engine_processes::stop(
+            table.as_ref(),
+            &engines,
+            std::process::id(),
+            pid,
+            &engine_id,
+            started,
+        )
+    })
+    .await
+    .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))??;
     tracing::info!(
         code = "engine_versions.stopped",
         "stopped a background engine process"

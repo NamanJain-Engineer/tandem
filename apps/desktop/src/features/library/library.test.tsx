@@ -220,6 +220,29 @@ describe("UI-162 session library (F-TH-17)", () => {
     await waitFor(() => expect(useSettings.getState().values.session_search).toBe(false));
   });
 
+  it("UI-162 loading, empty and error states", async () => {
+    let answer: (v: unknown) => void = () => undefined;
+    open({ library_list: () => new Promise((r) => (answer = r)) });
+    expect(await screen.findByLabelText("Reading sessions…")).toBeTruthy();
+    await act(async () => answer({ sessions: [], skipped: 2 }));
+    expect(await screen.findByText("No sessions found")).toBeTruthy();
+    expect(screen.getByTestId("library-skipped").textContent).toBe("2 files couldn't be read");
+  });
+
+  it("UI-162 an error offers Try again, which reads the homes again", async () => {
+    let fail = true;
+    open({
+      library_list: () => {
+        if (fail) throw { code: "io", message: "disk unreadable" };
+        return { sessions: SESSIONS, skipped: 0 };
+      },
+    });
+    expect((await screen.findByText(/Couldn't read the sessions: disk unreadable/)).textContent).toBeTruthy();
+    fail = false;
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Try again" })));
+    expect(await screen.findAllByTestId("library-row")).toHaveLength(4);
+  });
+
   it("groups put sessions without a folder last", () => {
     const out = groups([session({ key: "/x", repository: null, folder: null }), session({ key: "/y" })]);
     expect(out.map((g) => g.repository)).toEqual(["/src/shop", null]);

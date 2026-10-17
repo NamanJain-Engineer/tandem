@@ -3,11 +3,20 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { EngineVersionView } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
+import { localTabId } from "../../stores/workspaces";
 import { useInstall } from "../code/InstallSheet";
 import { EnginesPage } from "./EnginesPage";
 
 const codexView = {
-  spec: { id: "codex", label: "Codex", vendor: "OpenAI", logo: "X", commands: ["codex"], newlineSequence: "\u001b\r", note: null },
+  spec: {
+    id: "codex",
+    label: "Codex",
+    vendor: "OpenAI",
+    logo: "X",
+    commands: ["codex"],
+    newlineSequence: "\u001b\r",
+    note: null,
+  },
   install: { path: "/usr/local/bin/codex", version: "1.3.0", source: "shell" },
   chatCapable: true,
   unsupportedReason: null,
@@ -90,28 +99,55 @@ describe("UI-161 engine versions (F-EN-08)", () => {
     expect(calls.some((c) => c.cmd === "pty_write")).toBe(false);
   });
 
+  it("F-EN-08.3 Roll back runs on this computer: an SSH tab is never used", () => {
+    const ws = (id: string, kind: string) => ({
+      id,
+      kind,
+      missing: false,
+      tabs: [{ id: `${id}-tab` }],
+    });
+    const state = (activeId: string, list: ReturnType<typeof ws>[]) =>
+      ({ list, activeId, activeTab: {} }) as unknown as Parameters<typeof localTabId>[0];
+    expect(localTabId(state("host", [ws("host", "ssh"), ws("shop", "local")]))).toBe("shop-tab");
+    expect(localTabId(state("shop", [ws("host", "ssh"), ws("shop", "local")]))).toBe("shop-tab");
+    expect(localTabId(state("host", [ws("host", "ssh"), ws("ubuntu", "wsl")]))).toBeNull();
+  });
+
   it("F-EN-08.4 a background engine process is listed, and Stop asks first", async () => {
     open({
       engine_versions: () => [version()],
-      engine_background: () => [{ pid: 4242, engineId: "codex", command: "node codex.js daemon" }],
+      engine_background: () => [
+        { pid: 4242, engineId: "codex", started: 1700000000, command: "codex daemon" },
+      ],
       engine_background_stop: () => null,
     });
     const row = await screen.findByTestId("engine-background-row");
-    expect(row.textContent).toContain("node codex.js daemon");
+    expect(row.textContent).toContain("codex daemon");
     fireEvent.click(within(row).getByRole("button", { name: "Stop" }));
     expect(calls.some((c) => c.cmd === "engine_background_stop")).toBe(false);
     const dialog = await screen.findByRole("alertdialog");
     await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Stop" })));
-    await waitFor(() => expect(calls.find((c) => c.cmd === "engine_background_stop")?.args).toEqual({ pid: 4242 }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "engine_background_stop")?.args).toEqual({
+        pid: 4242,
+        engineId: "codex",
+        started: 1700000000,
+      }),
+    );
   });
 
   it("F-EN-08.4 the empty and unavailable states say so", async () => {
     open({
       engine_versions: () => [],
       engine_background: () => {
-        throw { code: "unavailable", message: "Listing background processes isn't available on this system yet" };
+        throw {
+          code: "unavailable",
+          message: "Listing background processes isn't available on this system yet",
+        };
       },
     });
-    expect(await screen.findByText("Listing background processes isn't available on this system yet")).toBeTruthy();
+    expect(
+      await screen.findByText("Listing background processes isn't available on this system yet"),
+    ).toBeTruthy();
   });
 });

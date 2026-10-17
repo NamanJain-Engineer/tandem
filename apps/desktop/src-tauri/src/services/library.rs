@@ -7,7 +7,8 @@
 //! logged; the index stays on this computer (D-2413).
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -23,7 +24,7 @@ use tandem_store::repo::panes::PaneRecord;
 use tandem_store::repo::sessions::{self, LaunchConfig};
 use tandem_store::repo::{accounts, settings, tabs, workspaces as repo};
 
-use crate::commands::terminal::create_pane;
+use crate::commands::terminal::create_pane_with;
 use crate::services::handoff;
 use crate::services::workspaces;
 use crate::state::AppState;
@@ -155,11 +156,34 @@ async fn current_sources(state: &AppState) -> Result<Vec<LibrarySource>, IpcErro
     }))
 }
 
-async fn scan_now(state: &AppState) -> Result<library::Scan, IpcError> {
+/// How long a listing serves the commands that follow it (Open, Resume,
+/// Continue, Search) before the homes are read again.
+const SCAN_FRESH: Duration = Duration::from_secs(30);
+
+type Cached = (Instant, Vec<LibrarySource>, Arc<library::Scan>);
+static LAST_SCAN: Mutex<Option<Cached>> = Mutex::new(None);
+
+async fn scan_fresh(state: &AppState, reuse: bool) -> Result<Arc<library::Scan>, IpcError> {
     let sources = current_sources(state).await?;
-    tokio::task::spawn_blocking(move || library::scan(&RealFs, &sources))
-        .await
-        .map_err(internal)
+    if reuse {
+        if let Ok(last) = LAST_SCAN.lock() {
+            if let Some((at, srcs, scan)) = last.as_ref() {
+                if *srcs == sources && at.elapsed() < SCAN_FRESH {
+                    return Ok(scan.clone());
+                }
+            }
+        }
+    }
+    let srcs = sources.clone();
+    let scan = Arc::new(
+        tokio::task::spawn_blocking(move || library::scan(&RealFs, &srcs))
+            .await
+            .map_err(internal)?,
+    );
+    if let Ok(mut last) = LAST_SCAN.lock() {
+        *last = Some((Instant::now(), sources, scan.clone()));
+    }
+    Ok(scan)
 }
 
 /// `library_list`. With search off, a leftover index is deleted.
@@ -167,7 +191,7 @@ pub async fn list(state: &AppState) -> Result<LibraryListing, IpcError> {
     if !search_on(state).await {
         delete_index(state.data.root());
     }
-    let scan = scan_now(state).await?;
+    let scan = scan_fresh(state, false).await?;
     tracing::info!(
         code = "library.listed",
         sessions = scan.sessions.len(),
@@ -182,11 +206,12 @@ pub async fn list(state: &AppState) -> Result<LibraryListing, IpcError> {
 
 /// The listed session with this key: nothing else is ever read.
 pub async fn find(state: &AppState, key: &str) -> Result<Found, IpcError> {
-    scan_now(state)
+    scan_fresh(state, true)
         .await?
         .sessions
-        .into_iter()
+        .iter()
         .find(|s| s.file.to_string_lossy() == key)
+        .cloned()
         .ok_or_else(not_found)
 }
 
@@ -252,18 +277,23 @@ pub async fn resume(state: &AppState, key: &str) -> Result<LibraryOpened, IpcErr
     handoff::check_target(state, engine_id)?;
     let (ws, tab, folder) = home_for(state, &found).await?;
     let account = account_of(&found);
-    let pane = create_pane(
+    // A session from the engine's own home resumes as the user runs it
+    // there: no account, no provider home, no hooks (D-2412).
+    let own_home = account.is_none();
+    let pane = create_pane_with(
         state,
         &tab,
         "agent",
         Some(folder),
         Some(engine_id.to_string()),
         account.clone(),
+        !own_home,
     )
     .await?;
     let config = LaunchConfig {
         extra_args: Vec::new(),
-        home: Some(found.home.to_string_lossy().into_owned()),
+        home: (!own_home).then(|| found.home.to_string_lossy().into_owned()),
+        own_home,
     };
     sessions::start_with_config(
         &state.store,
@@ -366,23 +396,49 @@ pub async fn search(state: &AppState, query: &str) -> Result<Vec<String>, IpcErr
             "Turn on Search session text in Settings › Privacy first.",
         ));
     }
-    let scan = scan_now(state).await?;
+    let scan = scan_fresh(state, true).await?;
     let db = state.data.root().join(INDEX_FILE);
-    let query = query.to_string();
     let fs: Arc<dyn SessionFs> = Arc::new(RealFs);
+    let build = db.clone();
     tokio::task::spawn_blocking(move || {
-        update_index(&db, fs.as_ref(), &scan.sessions)?;
+        // One writer at a time: a second search waits instead of failing
+        // on a locked database.
+        let _one = INDEX_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        update_index(&build, fs.as_ref(), &scan.sessions)
+    })
+    .await
+    .map_err(internal)?
+    .map_err(|e| index_error("built", e))?;
+    // Turned off while it was indexing: nothing stays behind.
+    if !search_on(state).await {
+        delete_index(state.data.root());
+        return Err(IpcError::new(
+            ErrorCode::Unavailable,
+            "Search session text was turned off.",
+        ));
+    }
+    let query = query.to_string();
+    tokio::task::spawn_blocking(move || {
+        let _one = INDEX_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         search_index(&db, &query)
     })
     .await
     .map_err(internal)?
-    .map_err(|e| {
-        IpcError::new(
-            ErrorCode::Io,
-            format!("The search index couldn't be read: {e}"),
-        )
-    })
+    .map_err(|e| index_error("read", e))
 }
+
+fn index_error(what: &str, e: rusqlite::Error) -> IpcError {
+    IpcError::new(
+        ErrorCode::Io,
+        format!("The search index couldn't be {what}: {e}"),
+    )
+}
+
+static INDEX_LOCK: Mutex<()> = Mutex::new(());
+
+/// The index's format: an index from before secrets were redacted (or of
+/// any other version) is deleted and built again.
+const INDEX_VERSION: i64 = 2;
 
 /// Removes the index and its journal files.
 pub fn delete_index(data_root: &Path) {
@@ -397,7 +453,21 @@ pub fn delete_index(data_root: &Path) {
 }
 
 fn open_index(db: &Path) -> rusqlite::Result<Connection> {
+    if db.exists() {
+        let version: i64 = Connection::open(db)?
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap_or(0);
+        if version != INDEX_VERSION {
+            if let Some(dir) = db.parent() {
+                delete_index(dir);
+            }
+        }
+    }
     let c = Connection::open(db)?;
+    c.busy_timeout(Duration::from_secs(5))?;
+    // Deleted rows are overwritten, not left in free pages.
+    c.pragma_update(None, "secure_delete", "ON")?;
+    c.pragma_update(None, "user_version", INDEX_VERSION)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -434,7 +504,8 @@ pub fn update_index(db: &Path, fs: &dyn SessionFs, sessions: &[Found]) -> rusqli
         t.execute("DELETE FROM docs WHERE key = ?1", [&key])?;
         t.execute(
             "INSERT INTO docs (key, body) VALUES (?1, ?2)",
-            params![key, library::as_text(&items)],
+            // Already redacted as parsed (D-2416); once more as stored.
+            params![key, tandem_core::redact::redact(&library::as_text(&items))],
         )?;
         t.execute(
             "INSERT OR REPLACE INTO files (key, modified, size) VALUES (?1, ?2, ?3)",
@@ -583,6 +654,43 @@ mod tests {
         assert!(!db.exists());
     }
 
+    #[test]
+    fn f_th_17_4_a_session_with_a_token_is_found_by_its_words_and_the_index_never_holds_the_token()
+    {
+        let token = "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";
+        let dir = tempfile::tempdir().expect("dir");
+        let work = claude_home(
+            dir.path(),
+            "work",
+            "aaaa-1111",
+            "/src/shop",
+            &format!("Rotate the deploy key {token} before Friday"),
+        );
+        let srcs = sources(
+            &[account("work", "claude", &work)],
+            &dir.path().join("u"),
+            |_| None,
+        );
+        let scan = library::scan(&RealFs, &srcs);
+        let db = dir.path().join(INDEX_FILE);
+        update_index(&db, &RealFs, &scan.sessions).expect("index");
+        assert_eq!(search_index(&db, "rotate deploy").expect("search").len(), 1);
+        assert!(search_index(&db, token).expect("search").is_empty());
+        // Nowhere in the database's files, journal included.
+        for entry in std::fs::read_dir(dir.path()).expect("dir").flatten() {
+            if entry.file_name().to_string_lossy().starts_with(INDEX_FILE) {
+                let bytes = std::fs::read(entry.path()).expect("read");
+                assert!(
+                    !String::from_utf8_lossy(&bytes).contains(token),
+                    "{:?}",
+                    entry.path()
+                );
+            }
+        }
+        let shown = view(&scan.sessions[0]);
+        assert!(!shown.title.unwrap_or_default().contains(token));
+    }
+
     /// The index reads through the same file system as the listing.
     #[test]
     fn f_th_17_5_indexing_opens_only_the_session_files() {
@@ -590,6 +698,9 @@ mod tests {
         impl SessionFs for Recording {
             fn entries(&self, dir: &Path) -> Vec<FsEntry> {
                 RealFs.entries(dir)
+            }
+            fn is_real_dir(&self, path: &Path) -> bool {
+                RealFs.is_real_dir(path)
             }
             fn open(&self, path: &Path) -> std::io::Result<Box<dyn std::io::Read + Send>> {
                 self.0.lock().expect("lock").push(path.to_path_buf());
@@ -615,5 +726,36 @@ mod tests {
                 .all(|p| p.extension().is_some_and(|e| e == "jsonl")),
             "{opened:?}"
         );
+    }
+
+    /// An index from before redaction (any other version) is deleted and
+    /// built again, so a token it held doesn't survive.
+    #[test]
+    fn f_th_17_4_an_old_index_is_rebuilt_without_what_it_held() {
+        let token = "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";
+        let dir = tempfile::tempdir().expect("dir");
+        let db = dir.path().join(INDEX_FILE);
+        {
+            let c = Connection::open(&db).expect("open");
+            c.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE docs USING fts5(key UNINDEXED, body);
+                 INSERT INTO docs (key, body) VALUES ('/k', 'User: use {token}');
+                 PRAGMA user_version = 1;"
+            ))
+            .expect("old index");
+        }
+        update_index(&db, &RealFs, &[]).expect("index");
+        let bytes = std::fs::read(&db).expect("read");
+        assert!(!String::from_utf8_lossy(&bytes).contains(token));
+        let c = Connection::open(&db).expect("open");
+        let v: i64 = c
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .expect("version");
+        assert_eq!(v, INDEX_VERSION);
+        let secure: i64 = open_index(&db)
+            .expect("open")
+            .query_row("PRAGMA secure_delete", [], |r| r.get(0))
+            .expect("secure_delete");
+        assert_eq!(secure, 1);
     }
 }
