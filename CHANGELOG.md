@@ -7,6 +7,170 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## 0.8.0
+
+Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora. Like
+0.7.2, this build runs the Free plan on your computer, with no account and
+nothing sent to our servers. This release is about running agents side by
+side and checking their work: ports, environments and previews for each
+worktree, one review queue across engines, second opinions from another
+engine, and warnings before an agent runs away or an account runs out.
+
+Plan limits in this build (Free): 4 live panes, 3 workspaces, one thread at a
+time, one account per engine, threads with Claude Code and Codex, one teammate
+besides Lead, and one plugin connection.
+
+### Added
+
+- [lin] **Review queue.** Agents that finish with changes wait in one list,
+  across every engine, with what each one touched. It's the Review view in
+  the Dashboard panel ("Open review queue" in the command palette). An agent
+  or thread joins within a second of finishing when its worktree or git
+  folder has changes. One with no changes, outside a git repository or on an
+  SSH host doesn't, and neither does a Read only thread, such as a second
+  opinion's reviewer. Each item shows who did the work, on which engine and
+  branch, its last reply or screen lines, how many files it changed, and
+  labels for what it touches: 20 or more files, migrations, CI, lockfiles,
+  `.env` files, auth paths, your public API paths and deleted tests. The
+  labels come from fixed rules on your computer, with no AI. Sort by risk or
+  by finish time.
+- [lin] In the review queue, Approve remembers exactly what you approved: if
+  the agent changes anything after that, the item comes back as "Changed
+  since you approved". Open diff shows the whole change, and Last turn what
+  changed since the agent's last checkpoint. Snooze hides an item for an
+  hour, or until its agent finishes again. On a worktree, Send back opens
+  its diff with review comments, Second opinion asks another engine, and
+  Merge opens the merge confirm with its forecast. "Repository checks…" on
+  an item sets the repository's public API paths and a check command, such
+  as `pnpm test`, that runs in the agent's folder each time an item joins,
+  for up to 10 minutes. Both are kept in Vibezeo's settings on this
+  computer, never in the repository. The queue starts empty each time
+  Vibezeo opens, apart from threads that had already finished.
+- [lin] **Second opinion.** "Ask for a second opinion…" on a worktree has
+  another engine read its changes and leave line comments you can edit and
+  send on. It's in the worktree's ⋯ menu and at the top of its diff. The
+  reviewer is a Read only thread in the worktree, on your own engine and
+  account; any edit it tries is denied. It gets the branch, the task if you
+  give one, and the diff, up to 150,000 characters. Each finding on a line
+  the diff shows becomes a comment on that line, and everything else it
+  says goes into one General comment, so nothing is dropped. Edit or remove
+  them like your own comments, then "Send to agent". Only engines that run
+  as threads can review: on Free, Claude Code or Codex. One review runs per
+  worktree at a time.
+- [lin] **Ports and environment per worktree.** "Worktree setup…" can give
+  each worktree its own ports and environment variables, so parallel
+  agents' dev servers and databases don't collide. With "Ports per
+  worktree" (1 to 100), each worktree gets a block of that many ports in
+  41000–48999 that no other worktree on this computer has, kept until you
+  discard it; its terminals and agents see the first as `VIBEZEO_PORT` and
+  the block as `VIBEZEO_PORTS`. If a port in the block is busy when the
+  worktree is made, it takes the next free block and says so.
+  "Environment" takes one `NAME=value` per line for every terminal and
+  agent in the worktree, with `{{slug}}`, `{{index}}`, `{{repo}}`,
+  `{{port}}` and `{{port+1}}`… filled in, such as
+  `DATABASE_URL=postgres://localhost/app_{{slug}}`. Each worktree also gets
+  `COMPOSE_PROJECT_NAME`, so `docker compose` runs a separate stack in each,
+  and the setup command, the teardown and Best of N's check command see the
+  same variables. The tooltip on a worktree's row shows its ports.
+- [lin] The environment is trusted with the setup and teardown commands:
+  until you trust them on this computer, terminals get only Vibezeo's own
+  variables. Names that change how shells start or where agents sign in or
+  send their requests (such as `PATH`, `LD_PRELOAD`, `CLAUDE_CONFIG_DIR`,
+  `*_BASE_URL` and proxies) aren't allowed, and nothing in the file can
+  replace what Vibezeo sets for an agent. A value that looks like a password
+  or key gets a warning, since the file is meant to be committed. Worktrees
+  on SSH hosts don't get ports, environments or previews.
+- [lin] **Previews per worktree.** Run your app in every worktree at once,
+  each on its own ports, and try each agent's version from the rail. Add a
+  `preview` command to `.vibezeo/worktree.json`, such as
+  `pnpm dev --port {{port}}` (it needs ports per worktree). "Start preview"
+  in a worktree's ⋯ menu runs it in a terminal named Preview, and a
+  worktree you make with New worktree or the launch sheet starts it by
+  itself, after its setup if it has one. Once the port answers, the
+  worktree's row shows Preview, which opens it in a sidebar browser tab.
+  Best of N's Compare gets Previews, which starts every agent's preview and
+  opens a tab for each. "Compare previews…" in a worktree's ⋯ menu (or
+  "Side by side…" in Compare) opens two worktrees' previews side by side in
+  a new tab, each pane named after its branch. A preview runs only once
+  you've trusted the file's commands, and each one counts toward Free's 4
+  live panes.
+- [lin] **Runaway guard.** When an agent may have run away, its pane shows a
+  card saying why, and a notification goes out. By default it trips when an
+  agent works for 90 minutes without its turn ending, uses 30 points of its
+  account's usage window in an hour (Codex, which reports its windows),
+  starts 20 subagents since your last prompt (Claude Code), or ends three
+  turns in a row with the same screen. Pause sends the agent Esc; if it's
+  still working 5 seconds later, Vibezeo stops its program until you click
+  Resume. An agent on an SSH host only gets the Esc, and when an agent
+  can't be paused, the card says so. Dismiss keeps that limit quiet until
+  your next prompt. Settings › Teammates › Runaway guard changes the limits,
+  turns any of them off, or has the guard pause the agent itself. Threads
+  and teammate chats are watched for working time only, with a
+  notification. The guard never sends a prompt and never switches accounts.
+- [lin] **Usage forecast.** For engines that report usage windows (Codex
+  does; Claude Code doesn't), the usage chip in the title bar forecasts
+  whether each window runs out before it resets. From the last hour's
+  readings, each window in its popover says "Not enough data yet", "On
+  track" or "Runs out at 3:40 PM, 30 min before it resets". "Who's using
+  it" lists the sessions that spent each Claude Code or Codex account's
+  tokens in the last hour, with their shares, named after the pane running
+  each one and read from the engines' own logs on your computer (token
+  counts only). "Warn me before usage runs out" in Settings › Notifications
+  (off by default) sends one notification when a window is forecast to run
+  out before it resets, and the launch sheet says when an agent's account
+  is at 80% or more or forecast to run out. Vibezeo never switches accounts
+  for you.
+- [lin] **One instructions file for every engine.** "Instructions…" in a
+  local folder's menu in the rail shows which instructions file each
+  installed engine reads, whether git tracks it, and how it differs from
+  `AGENTS.md`. "Use one file for all" makes `AGENTS.md` the source (with
+  none yet, you pick the file it starts from): each installed engine that
+  needs it gets a one-line file holding `@AGENTS.md` (`CLAUDE.md` for
+  Claude Code, `GEMINI.md` for Gemini CLI), while Codex, Copilot CLI,
+  Cursor Agent and Antigravity CLI read `AGENTS.md` themselves. Engines
+  whose files haven't been checked show as Unknown and get nothing. You see
+  every file it would create or replace before anything is written, and
+  Undo puts them back as they were. "Copy into worktrees" adds a personal
+  file git ignores, such as `CLAUDE.local.md`, to the worktree setup's copy
+  list. Vibezeo never commits these files.
+- [lin] **Antigravity CLI and Kiro CLI.** Two more coding agent CLIs join
+  the launch grid, so Vibezeo now detects 13. They run in terminal panes
+  only, as their vendors ship them, never as threads or in the background.
+  Each Kiro CLI account signs in inside its own home (Free has one account
+  per engine); Antigravity CLI keeps one account per computer, because it
+  stores its sign-in in the system keyring. Their panes show when they're
+  working or done, but not yet when they're waiting for you. Gemini CLI
+  stays listed, with a note in Settings › Engines and the launch grid's
+  not-installed list: Google serves it to paid API keys and Gemini Code
+  Assist Standard or Enterprise, and personal Google accounts use
+  Antigravity CLI.
+
+### Changed
+
+- [lin] **Terminals on screen open first.** When you switch tabs while
+  another tab's terminals are still opening, the ones in the tab you're
+  looking at now open before the hidden tab's, which follow in order, so
+  the agents you're watching show their first output sooner.
+- [lin] **Worktree setup clones files on btrfs and XFS.** On filesystems
+  with copy-on-write, the files Worktree setup copies into a new worktree
+  are cloned, so a large `node_modules` or dev database arrives almost at
+  once and takes no extra space until one side changes. The message after
+  the worktree is made says how many were cloned. Elsewhere they're copied
+  as before.
+- [lin] **The Ports tab groups servers by worktree.** A server started in a
+  worktree's terminal is listed under the worktree's branch, with its ports
+  when it has a block. Open loads it at `http://<worktree>.localhost:<port>`
+  where your computer resolves names under `.localhost`, so each worktree's
+  cookies and sign-ins stay apart; elsewhere at `localhost`, as before.
+
+### Fixed
+
+- [lin] Terminals hidden for 30 seconds now let go of their scrollback, as
+  they were meant to since 0.6.0: until now, Vibezeo's window kept each one
+  alive with every line it had shown. Vibezeo reuses the memory this frees
+  rather than returning it to the system, so a system monitor won't show it
+  drop.
+
 ## 0.7.2
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora. Like
