@@ -30,6 +30,7 @@ import {
 } from "../../lib/blog/posts";
 import { llmsTxt } from "../../lib/discovery";
 import { SCREENS } from "../../lib/media";
+import { RELEASES } from "../../lib/changelog";
 import { RELEASE } from "../../lib/release";
 import { SITE, sitemapXml } from "../../lib/site";
 import { scaffold, slugify } from "../../scripts/new-post.mjs";
@@ -342,7 +343,15 @@ describe("blog (F-WB-06)", () => {
   it("F-WB-06 the seed posts are Vibezeo's own, first-party and about the shipped build", () => {
     const dir = join(import.meta.dirname, "../../content/blog");
     const files = readdirSync(dir).filter((f) => /\.mdx?$/.test(f));
-    expect(files.sort()).toEqual(["introducing-vibezeo.mdx", `whats-new-in-${RELEASE.version.replace(/\./g, "-")}.mdx`]);
+    expect(files).toContain("introducing-vibezeo.mdx");
+    expect(files).toContain(`whats-new-in-${RELEASE.version.replace(/\./g, "-")}.mdx`);
+    // Earlier releases' posts stay, so their links keep working (D-862):
+    // every other post is a release post for a version the changelog has.
+    for (const f of files.filter((f) => f !== "introducing-vibezeo.mdx")) {
+      const v = /^whats-new-in-(\d+)-(\d+)-(\d+)\.mdx$/.exec(f);
+      expect(v, f).not.toBeNull();
+      expect(RELEASES.map((r) => r.version), f).toContain(v?.slice(1).join("."));
+    }
     for (const f of files) {
       const raw = readFileSync(join(dir, f), "utf8");
       expect(raw, f).not.toMatch(/\bTandem\b|Bridge|hello@vibezeo\.com/);
