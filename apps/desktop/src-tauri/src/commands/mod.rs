@@ -31,6 +31,7 @@ pub mod prompts;
 pub mod recall;
 pub mod remote;
 pub mod restore;
+pub mod review;
 pub mod routines;
 pub mod runaway;
 pub mod sandbox;

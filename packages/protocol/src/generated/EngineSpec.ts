@@ -86,4 +86,8 @@ limitPatterns: Array<string>, onboardingSeed: OnboardingSeed | null, mcpNative: 
 /**
  * Its instructions files (F-EN-07); none = Unknown.
  */
-instructions: InstructionsSpec | null, };
+instructions: InstructionsSpec | null, 
+/**
+ * One line about who can use it, shown with its tile (F-EN-09).
+ */
+note: string | null, };

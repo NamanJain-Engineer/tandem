@@ -39,7 +39,7 @@ export function Section({
       id={id}
       aria-labelledby={`${id}-title`}
       className={cx(
-        "relative scroll-mt-(--site-header-h) py-(--site-section-y)",
+        "relative scroll-mt-section py-(--site-section-y)",
         tone === "raised" ? "bg-raised" : "bg-page",
         className,
       )}

@@ -567,6 +567,9 @@ export class PickMissed extends Error {}
  * the caller can open the picker again (D-834). */
 export async function pickTile(tile: string): Promise<void> {
   const selector = `[data-testid="pane-picker"] [data-testid="tile-${tile}"]`;
+  // With every engine installed, a tile can sit below the picker's fold.
+  await $(selector).waitForExist({ timeout: 10_000 });
+  await $(selector).scrollIntoView({ block: "nearest" });
   await $(selector).waitForClickable({ timeout: 10_000 });
   await settled();
   const since = await recordInput(selector);

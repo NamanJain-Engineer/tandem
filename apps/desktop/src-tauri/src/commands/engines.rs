@@ -224,4 +224,16 @@ mod chat_tests {
             .filter(|v| v.spec.chat_adapter.is_none())
             .all(|v| !v.chat_capable));
     }
+
+    #[test]
+    fn f_en_09_3_antigravity_and_kiro_are_never_thread_or_teammate_engines() {
+        let registry = tandem_engines::registry::EngineRegistry::bundled();
+        let list = views(registry.all(), None, &serde_json::json!({}));
+        for id in ["antigravity", "kiro"] {
+            let v = list.iter().find(|v| v.spec.id == id).expect(id);
+            assert!(!v.chat_capable, "{id}");
+            assert!(!crate::services::threads::has_chat_adapter(&v.spec), "{id}");
+            assert!(v.spec.headless_cmd.is_none(), "{id} never runs headless");
+        }
+    }
 }

@@ -9,6 +9,8 @@ Vibezeo detects these coding agent CLIs on your login shell's `PATH` and shows h
 
 <EnginesTable />
 
+Antigravity CLI and Kiro CLI run in terminal panes only, as their vendors ship them. Kiro CLI can have several accounts, each in its own home; Antigravity CLI keeps one account per computer, because it stores its sign-in in the system keyring. Gemini CLI is still listed: Google serves it to paid API keys and Gemini Code Assist Standard or Enterprise, and personal Google accounts use Antigravity CLI.
+
 ## One instructions file for every engine
 
 Each engine reads its own instructions file, so a repository's rules can drift apart or reach only one engine. **Instructions…** in a local folder's menu in the rail shows which file each installed engine reads, whether git tracks or ignores each file, and how each one differs from `AGENTS.md`.
@@ -20,6 +22,7 @@ Each engine reads its own instructions file, so a repository's rules can drift a
 | Gemini CLI | `GEMINI.md` | Through an `@AGENTS.md` import |
 | Copilot CLI | `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` | Yes |
 | Cursor Agent | `.cursor/rules/`, `AGENTS.md`, `CLAUDE.md` | Yes |
+| Antigravity CLI | `GEMINI.md`, `AGENTS.md` | Yes |
 
 Checked against each vendor's documentation on 15 October 2026. Any other engine shows as **Unknown**, and Vibezeo writes nothing for it.
 
