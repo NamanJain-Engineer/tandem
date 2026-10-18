@@ -10,18 +10,20 @@
   - the headers, and no framework chunks on marketing pages;
   - D-1815's redirects (`/changelog/0.7.2/` answers 200, and without the slash it's a 308 to it), D-1816's lazy poster and still, and D-1817's slash links, whose payloads answer 200.
   Releases are built locally (`TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run`) and served from vibezeo.com/downloads with SHA256SUMS. The Release workflow (D-105 `early-access` channel, public `tandem-releases` repository, `RELEASES_TOKEN`) waits for Actions minutes, which reset about November 1; the owner chose not to pay for more. CI runs macOS and Windows jobs only on pushes to `main` and manual runs; pull requests run Linux only. Tags `m0`–`m7` are local only. The public site at vibezeo.com deploys from `main` (D-102, `docs/DEPLOY_SITE.md`).
-- Release: **0.7.2** (Linux, `TANDEM_HOSTED=0`, built with `bash scripts/release-local.sh --dry-run`; `Vibezeo_0.7.2_amd64.deb`, SHA-256 `fa57f686…dbfc9f`, and `Vibezeo-0.7.2-1.x86_64.rpm`, SHA-256 `ffeb3f0c…471f30d`, 52.8 MB each). A patch release of Dictate fixes from the 14 October audit:
-  - takes from the mic button or the toggle link stop at 10 minutes even when the global shortcut never started (Wayland without a portal, as in Ubuntu 24.04's default session);
-  - Esc cancels those takes, and a tap of the shortcut ends them without losing the words (D-520);
-  - the shortcut's status is live, and the toggle link works only while the shortcut is down (D-521, D-847);
-  - a silent mic shows Reconnecting, and the Dictate card lists the last 5 takes (D-522).
-  Built since 0.7.1 but not in the Free download: Conductor's memory in calls and barge-in truncation (D-1121, D-846, D-1122; Pro and Team), and the WebGL pool fix (chain14), which matters only with more than 8 panes on screen while Free has 4 live panes. The site gains Conductor's docs page, the corrected Dictate docs and new figures: 16 milestones, 3,223 automated tests, 129 E2E spec files, 11 engines.
+- Release: **0.8.0** (Linux, `TANDEM_HOSTED=0`, built with `bash scripts/release-local.sh --dry-run`; `Vibezeo_0.8.0_amd64.deb`, SHA-256 `8ada2dc7…cb94a0`, and `Vibezeo-0.8.0-1.x86_64.rpm`, SHA-256 `26195a75…c6d479`, 53.3 MB each). The first M18 release, about running agents side by side and checking their work:
+  - one review queue across engines, with Approve, Snooze and repository checks (F-DB-04, D-859);
+  - second opinions from another engine (F-WT-05);
+  - ports, environments and previews for every worktree, Compare previews side by side, and copy-on-write clones in Worktree setup (F-WT-06, F-WT-09, D-861, D-863);
+  - the runaway guard (F-AC-09, D-855, D-857, D-860) and the usage forecast (F-AC-08);
+  - one instructions file for every engine (F-EN-07), and Antigravity CLI and Kiro CLI (F-EN-09), 13 engines in all;
+  - terminals on screen open first, and parked terminals let go of their scrollback.
+  Built since 0.7.2 but not in the Free download: chain18's dictionary sync (Pro), chain19's macOS Dictate work (no Mac build ships), and D-865's fix to the hosted API's plan and credit updates. The site gains the post "What's new in 0.8.0", a review queue in the demo and new figures: 16 milestones, 3,476 automated tests, 137 E2E spec files, 13 engines.
   Verified:
-  - the gate on the final tree (1,830 Rust and 1,393 TypeScript tests);
-  - the full desktop E2E (129 of 129 spec files);
-  - the .rpm on clean Fedora 42, 43 and 44 (42's image pulled from Fedora's registry after Docker Hub answered 429);
+  - the gate on the release tree (1,975 Rust and 1,500 TypeScript tests), then the API's lint and 212 tests on D-865's change;
+  - the full desktop E2E (136 of 137 spec files; the failure found D-865, and with the fix E2E-M8-7 passed three runs and the seven specs that wait on plan or credit updates passed);
+  - the .rpm on clean Fedora 42, 43 and 44 (images from Fedora's registry, since Docker Hub answered 429);
   - the AppImage smoke test offline;
-  - the site from a fresh clone: `build:site` with `strip-runtime` and `check-routes` (36 pages, no redirects), web vitest 87/87, site Playwright 16/16, Lighthouse CI on its five URLs (every assertion passed; performance 99 on `/` with LCP 1.96 s, 97 on `/docs/` with its LCP warning at 2.42 s, 100 elsewhere), and the demo walkthrough.
+  - the site from a fresh clone: `build:site` with `strip-runtime` and `check-routes` (47 pages, no redirects), web vitest 114/114, site Playwright 25/25, Lighthouse CI on seven URLs (every assertion passed with no warnings; performance 99 on `/` with LCP 1.82 s, 100 elsewhere, `/docs/` included), and the demo walkthrough.
   Deploying is merging `product-m0-m5` into `main` (OPERATING §7).
 - Blog (F-WB-06, built under M15 and owned by "M17 · Blog", D-853; D-1850 to D-1864): `/blog/` with posts as files in `apps/web/content/blog`, tag pages and an Atom feed, batched in `chain22` and deployed to vibezeo.com from `main` (D-851). Publishing a post is `docs/BLOG.md` §3. See "M15 · F-WB-06 Blog".
 - Website redesign (M15, D-1800 to D-1815): phases 1–4 and 6 of `docs/WEBSITE_BRIEF.md` (`docs-briefs`) are merged with the `chain4` batch: OS light and dark themes, marketing type, the new home page, Pricing, Download, Changelog, the inner pages and the docs, and the performance phase (marketing pages ship no framework JavaScript, D-1813; Lighthouse at 0.95 on five URLs). They reach vibezeo.com with the next release. The signed-in captures of phase 5 wait on the owner (`HUMAN_TODO.md`). See "M15 · Website redesign".
@@ -889,6 +891,45 @@ Built by the session that coordinates the parallel milestone sessions, while the
     - F-RT-06 Night Shift (db394ac8) went back to its session: a run the background runner starts is cut off at 50 minutes, and its run would never end.
     - Merging: additive conflicts in `lib.rs`, `services/mod.rs` and `AppShell.tsx` (the guard beside the review queue and the second opinion), and MILESTONES §20 (regenerated: 174 features, 42 of them P2, M18 owning 8). `SettingKey.ts` was regenerated with `gen:protocol`.
   - The gate passed: 1,972 Rust tests (7 ignored) and 1,493 TypeScript (desktop 696, UI 411, API 211, web 114, remote 32, mobile 19, protocol 10), coverage (174 spec IDs), the desktop build, clippy on Linux, Windows and both Mac architectures, fmt and protocol drift. The full E2E passed 137 of 137 spec files in one run (41 minutes), the new M18 specs among them (E2E-M18-AC09.2 now expects the pane still Working after Resume).
+
+- Release 0.8.0 (`release-0.8.0`, after chain23): the first M18 release. It ships everything merged since 0.7.2: chain21's and chain23's M18 features, the performance session's D-140 and mount-queue commits, and seven fixes made for the release (D-859 to D-865). It also has the version, the CHANGELOG, the .deb and .rpm with SHA256SUMS, the Flatpak and Snap manifests at 0.8.0's .deb, the site's figures and tiles, a release post, and a review queue in the demo.
+  - The CHANGELOG's Added section, one tile each on the home page and the changelog:
+    - Review queue;
+    - Second opinion;
+    - Ports and environment per worktree;
+    - Previews per worktree;
+    - Runaway guard;
+    - Usage forecast;
+    - One instructions file for every engine;
+    - Antigravity CLI and Kiro CLI.
+
+    Changed: terminals on screen open first, copy-on-write clones in Worktree setup, and the Ports tab by worktree. Fixed: parked terminals let go of their scrollback, and a new worktree whose trusted setup or preview runs opens with just that terminal.
+  - Left out of the notes, each checked:
+    - chain18's dictionary sync (Pro, hidden without accounts);
+    - chain19's macOS Dictate work (no Mac build ships);
+    - the website-only batches;
+    - the perf profile (D-140).
+  - The fixes made for the release:
+    - D-859: a read-only thread (a second opinion's reviewer) no longer joins the review queue.
+    - D-860: Pause waits for the pane's shell to stop before the agent. The performance session found D-857's real-PTY test failing about 1 run in 3.
+    - D-861: saving Worktree setup keeps the file's hand-written preview. Found while writing the notes.
+    - D-862: the blog's seed-post test kept only the current release's post, which would have deleted 0.7.2's post and broken its link. It now keeps earlier release posts, each a version the changelog has, and its first-party checks are unchanged.
+    - D-863: the release's E2E run failed Compare previews once: a new worktree's empty tab started a shell while its trusted preview's pane was on the way, and on Free's 4 live panes the shell took the last one. The tab now waits for the pane the worktree's setup or preview opens.
+    - D-864: the site check found `/docs/code-mode/` 750 px wide on a 320 px phone: the docs gave code blocks no box, so the preview's `worktree.json` example pushed the page sideways at every width. Docs code blocks now scroll inside the blog's code box, and long inline code wraps.
+    - D-865: the second full E2E run failed E2E-M8-7's Polish: after a desktop reconnected, the old SSE stream's late second cleanup removed the new stream's listeners, so plan and credit updates stopped about 25 s later. The hosted API now removes a user's entry only while it is still that stream's own. The API isn't deployed yet.
+  - The site:
+    - `release.ts` names the 0.8.0 assets. `progress.ts` has 3,476 tests (the gate's 3,475 and D-865's), 137 E2E spec files and 13 engines.
+    - The engine grid shows 13 engines; the plain-terminal cell spans two columns so its last row fills.
+    - "A review queue across engines" is in the Dashboard row, "Previews per worktree" in the capability index, and the roadmap leads with what's in review (Night Shift, the sandbox, the merge queue, CI results back to the agent and the session library).
+    - "What's new in 0.8.0" is on the blog.
+  - The demo (D-128): the app's Review view is in the demo build, so the demo gets a queue: Claude Code's finished redirect fix in `shop`, with its two-file diff and the check passed. Approve, Snooze, Run check and Repository checks… work in the page. One demo test covers it, and a browser check showed the item, its diff and an approve, with no page errors.
+  - The gate passed on the final tree (2e55efcf): 1,975 Rust tests (7 ignored) and 1,500 TypeScript (desktop 703, UI 411, API 211, web 114, remote 32, mobile 19, protocol 10), coverage (174 spec IDs), the desktop build, clippy on Linux, Windows and both Mac architectures, fmt and protocol drift (513 types). Its first run filled the disk while linking the desktop crate's tests (the linker died with a bus error), so the steps after the TypeScript tests ran again in `gate.sh`'s order on the same tree, with the test binaries deleted once `cargo test` had passed. D-865's commit changes only the API: its lint, its 212 tests and the coverage check passed on it.
+  - The full E2E on 2e55efcf passed 136 of 137 spec files (42 minutes). E2E-M8-7's Polish waited for credits that never came, which found D-865; with the fix, E2E-M8-7 passed three runs and the seven specs that wait on plan or credit updates passed. The first full run, on eeef8f5f, passed 136 of 137 too: its failure found D-863, and with that fix E2E-M18-WT09-1 passed four runs, the 15 specs that make worktrees passed, and the second full run passed it.
+  - The packages:
+    - The .deb, .rpm and AppImage were rebuilt by `TANDEM_HOSTED=0 scripts/release-local.sh --dry-run` on 4baf961e, which has D-863; the first build, on 41ed4c17, predates it. The later commits change the downloads, the site, the docs' styles (D-864), the hosted API (D-865) and an agent script, none of which is in the app. `Vibezeo_0.8.0_amd64.deb` (SHA-256 `8ada2dc7…cb94a0`) and `Vibezeo-0.8.0-1.x86_64.rpm` (`26195a75…c6d479`) are 53.3 MB each.
+    - The .rpm installed, found every library and started on clean Fedora 42, 43 and 44, with images from `registry.fedoraproject.org`: Docker Hub had answered 429 for the first build's checks.
+    - The AppImage passed the offline smoke test, and its setup lists all 13 engines.
+  - The site, from a fresh clone of 2e55efcf: `build:site` with `strip-runtime` and `check-routes` (47 pages, no redirects), web vitest 114/114, site Playwright 25/25, Lighthouse CI on seven URLs with every assertion passing and no warnings (`/` 99 with LCP 1.82 s and TBT 64 ms; 100 on the rest, `/docs/` among them with LCP 1.53 s), and the demo walkthrough. The first site check, on 4414a35b, failed the 320 px check (D-864). The only site change since is the test count, 3,475 to 3,476 (D-865).
 
 ## M16 · F-AC-07 Usage dashboard
 Built on branch `m16-usage-dashboard` (from `product-m0-m5`) by the M13 session as part of its follow-on chain. Decisions come from the M13 range (D-600–D-699).
