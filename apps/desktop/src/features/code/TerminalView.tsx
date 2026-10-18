@@ -287,7 +287,11 @@ export function TerminalView({
     if (!el || parked) return;
     markPhase(paneId, "effect");
     // Opened one per frame when several views mount together (mountQueue).
-    return mountQueue.add(() => openViewRef.current(el), focusedRef.current);
+    return mountQueue.add(
+      () => openViewRef.current(el),
+      focusedRef.current,
+      () => visibleRef.current,
+    );
   }, [paneId, generation, parked]);
 
   /** Creates the xterm in `el` and connects it to the pane's PTY; returns

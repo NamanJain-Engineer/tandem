@@ -38,6 +38,14 @@ export const FEATURES = [
     body: "Run a task in its own git worktree and branch, then merge it back. Hand a session to another engine with a written summary, in a pane beside it or as a thread.",
   },
   {
+    title: "A review queue across engines",
+    body: "Agents that finish with changes wait in one queue, whichever engine ran them, labelled by what they touch: migrations, CI, lockfiles, .env files, auth paths and deleted tests. Approve exactly the diff you read, and the item comes back if it changes. Ask another engine for a second opinion, and its findings land as line comments you can send to the agent.",
+  },
+  {
+    title: "Previews per worktree",
+    body: "Give each worktree its own ports and environment, so parallel agents' dev servers and databases don't collide. Each worktree's app runs as a preview you open from the rail, and Compare previews puts two agents' versions side by side.",
+  },
+  {
     title: "Files, git and a browser",
     body: "A file tree and code editor beside your agents, a git panel to stage, commit, push and switch branches with your own git, and a browser in the sidebar or a pane. Pick elements on a page and send them to an agent; paths and URLs in terminals open with Ctrl+Click. A Scratchpad keeps Markdown notes beside it all, on your computer.",
   },
@@ -108,6 +116,10 @@ export const CLAUDE = [
 
 /** What comes next, in order. Each item says what's built and what it waits for. */
 export const ROADMAP = [
+  {
+    title: "Night Shift, a sandbox and a merge queue",
+    body: "Built and in review now: the Night Shift starts a task on an account the moment its usage window resets; a Linux sandbox keeps agents to their own folder; a local merge queue lands worktrees one at a time, with undo; CI results and review comments go back to the agent; and every engine's past sessions in one searchable library.",
+  },
   {
     title: "Your phone, from anywhere",
     body: "Your phone already pairs with Vibezeo over your own network. The Vibezeo Remote app for iOS and Android, with encrypted push and a relay that reaches your agents away from home, is built and comes with the app stores and accounts.",
@@ -237,8 +249,8 @@ export const MODE_ROWS = [
     id: "dashboard",
     eyebrow: "Dashboard",
     title: "Every agent, and which ones need you",
-    features: ["One Dashboard", "Live status for every agent"],
-    facts: ["Across all your workspaces", "From Claude Code's hooks and each engine's own output", "One click to the pane that needs you"],
+    features: ["One Dashboard", "Live status for every agent", "A review queue across engines"],
+    facts: ["Across all your workspaces", "One click to the pane that needs you", "A review queue for finished work, with a second opinion"],
     docs: docsPath("code-mode"),
   },
 ] as const satisfies ReadonlyArray<{ features: readonly FeatureTitle[]; [key: string]: unknown }>;
@@ -250,6 +262,7 @@ export const CAPABILITIES = [
   { title: "Tasks", icon: "tasks", docs: docsPath("tasks") },
   { title: "SSH workspaces", icon: "server", docs: docsPath("remote") },
   { title: "Worktree lanes and handoff", icon: "branch", docs: docsPath("code-mode") },
+  { title: "Previews per worktree", icon: "compare", docs: docsPath("code-mode") },
   { title: "Files, git and a browser", icon: "files", docs: docsPath("code-mode") },
   { title: "Find work by what it's about", icon: "search", docs: docsPath("code-mode") },
   { title: "Several accounts per engine", icon: "users", docs: docsPath("accounts-and-limits") },
@@ -289,6 +302,14 @@ export const RELEASE_TILE_MAP: Record<string, { icon: string; docs: string }> = 
   "Plugins and tasks for agents on SSH hosts": { icon: "plug", docs: docsPath("remote") },
   "Hosts behind a jump host": { icon: "route", docs: docsPath("remote") },
   "Your phone, over your own network": { icon: "phone", docs: docsPath("remote") },
+  "Review queue": { icon: "tasks", docs: docsPath("code-mode") },
+  "Second opinion": { icon: "users", docs: docsPath("code-mode") },
+  "Ports and environment per worktree": { icon: "network", docs: docsPath("code-mode") },
+  "Previews per worktree": { icon: "compare", docs: docsPath("code-mode") },
+  "Runaway guard": { icon: "shield", docs: docsPath("workflow-tools") },
+  "Usage forecast": { icon: "activity", docs: docsPath("accounts-and-limits") },
+  "One instructions file for every engine": { icon: "book", docs: docsPath("engines") },
+  "Antigravity CLI and Kiro CLI": { icon: "terminal", docs: docsPath("engines") },
 };
 
 export type ReleaseTile = { title: string; body: string; text: string; platforms: string[]; icon: string; docs: string };
