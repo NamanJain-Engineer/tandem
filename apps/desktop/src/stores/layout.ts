@@ -59,6 +59,10 @@ type LayoutState = {
   cards: Record<string, { flipped: Record<string, true> }>;
   load: (workspaceId: string) => Promise<void>;
   ensurePane: (tabId: string) => Promise<void>;
+  /** Another flow is placing a pane in `tabId` (a new worktree's setup or
+   * preview, F-WT-09): until `until` settles the tab starts no shell, and
+   * none after if that pane came (D-863). */
+  expect: (tabId: string, until: Promise<unknown>) => void;
   markEmpty: (tabId: string) => void;
   requestSplit: (tabId: string, target: string | null, side: Side) => RequestResult;
   closePicker: () => void;
@@ -92,6 +96,7 @@ const EMPTY: TabPanes = { tree: null, active: null, maximized: null, panes: {}, 
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const loading = new Map<string, Promise<void>>();
 const ensuring = new Map<string, Promise<void>>();
+const expected = new Map<string, Promise<void>>();
 
 function save(tabId: string, t: TabPanes): Promise<void> {
   if (!t.tree) return Promise.resolve();
@@ -208,6 +213,10 @@ export const useLayout = create<LayoutState>((set, get) => {
       const pending = ensuring.get(tabId);
       if (pending) return pending;
       const run = (async () => {
+        // A pane another flow is placing here comes first (D-863).
+        await expected.get(tabId);
+        const now = get().tabs[tabId];
+        if (now?.tree || now?.keepEmpty) return;
         const pane = await invoke<PaneRecord>("pane_create", { tabId, kind: "terminal" });
         const base = get().tabs[tabId] ?? EMPTY;
         put(tabId, {
@@ -225,6 +234,17 @@ export const useLayout = create<LayoutState>((set, get) => {
         .finally(() => ensuring.delete(tabId));
       ensuring.set(tabId, run);
       return run;
+    },
+
+    expect: (tabId, until) => {
+      const settled = until.then(
+        () => undefined,
+        () => undefined,
+      );
+      expected.set(tabId, settled);
+      void settled.then(() => {
+        if (expected.get(tabId) === settled) expected.delete(tabId);
+      });
     },
 
     markEmpty: (tabId) => {

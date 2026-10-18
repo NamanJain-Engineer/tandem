@@ -48,8 +48,9 @@ download.
    - Memory (§5.1, D-138): hidden panes now hand their xterm to the core
      after 30 s and replay when shown (D-139; filled while hidden, 3.0 MB a
      pane, met). Still missed: panes filled on screen and then moved to a
-     background tab (~60 MB each, budget 3.9 MB) and the base app (~617 MB
-     PSS on 039dec5, budget 350). Measure again with `--suite memory`.
+     background tab (~60 MB each, budget 3.9 MB) and the base app (548 MB
+     PSS on 52f07fe1, budget 350; WebKitGTK's web process alone is 353 MB,
+     an owner decision in HUMAN_TODO). Measure again with `--suite memory`.
 
 ## 1. Features to build, by milestone
 

@@ -5,12 +5,13 @@
 // no UI stall > 100 ms). When nothing else is opening, a view opens at once.
 // The focused view can hold the queue until it has connected, so its attach
 // and spawn replies don't wait behind other views' opens (F-SH-07.7: each
-// open blocks the page for hundreds of ms on software GL).
+// open blocks the page for hundreds of ms on software GL). Views on screen open
+// before the queued views of a tab that was hidden since they were added.
 
 /** Opens the view; returns its cleanup. */
 export type MountJob = () => () => void;
 
-type Entry = { run: MountJob; cleanup?: () => void; cancelled: boolean };
+type Entry = { run: MountJob; visible: () => boolean; cleanup?: () => void; cancelled: boolean };
 
 export type Frame = (fn: () => void) => void;
 export type Wait = (ms: number, fn: () => void) => void;
@@ -46,10 +47,11 @@ export class MountQueue {
     this.held = until;
   }
 
-  /** Opens now when idle, otherwise on a later frame (`urgent` ones first).
-   * The returned function cancels a pending open or cleans up an opened one. */
-  add(run: MountJob, urgent = false): () => void {
-    const entry: Entry = { run, cancelled: false };
+  /** Opens now when idle, otherwise on a later frame: `urgent` ones first,
+   * then those `visible` says are on screen when their turn comes. The
+   * returned function cancels a pending open or cleans up an opened one. */
+  add(run: MountJob, urgent = false, visible: () => boolean = () => true): () => void {
+    const entry: Entry = { run, visible, cancelled: false };
     if (!this.busy && this.queue.length === 0) {
       this.start(entry);
     } else if (urgent) {
@@ -79,7 +81,8 @@ export class MountQueue {
     this.held = null;
     const next = () => {
       this.busy = false;
-      const entry = this.queue.shift();
+      const shown = this.queue.findIndex((e) => e.visible());
+      const [entry] = this.queue.splice(Math.max(shown, 0), 1);
       if (entry) this.start(entry);
     };
     this.frame(() => {
