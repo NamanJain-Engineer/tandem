@@ -170,6 +170,10 @@ besides Lead, and one plugin connection.
   alive with every line it had shown. Vibezeo reuses the memory this frees
   rather than returning it to the system, so a system monitor won't show it
   drop.
+- [lin] A worktree you make with New worktree opens with just the terminal
+  running its trusted setup or preview. It could also get an idle shell
+  beside it, which on Free could take the last of the 4 live panes and leave
+  the setup or preview waiting for a free one.
 
 ## 0.7.2
 
