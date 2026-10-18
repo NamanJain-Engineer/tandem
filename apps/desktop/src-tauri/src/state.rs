@@ -281,6 +281,26 @@ impl AppState {
         opener: Arc<dyn UrlOpener>,
     ) -> Self {
         let mock_clock = MockClock::from_env().filter(|_| cfg!(debug_assertions));
+        Self::with_parts(
+            data, store, log, first_run, net, endpoints, api, opener, mock_clock, None,
+        )
+    }
+
+    /// [`Self::with`], with the clock and the task runs' host chosen by the
+    /// caller (tests: a mock clock and a fake engine host).
+    #[allow(clippy::too_many_arguments)]
+    fn with_parts(
+        data: DataDir,
+        store: Store,
+        log: Option<RedactingFile>,
+        first_run: bool,
+        net: Net,
+        endpoints: Endpoints,
+        api: Arc<dyn ApiClient>,
+        opener: Arc<dyn UrlOpener>,
+        mock_clock: Option<MockClock>,
+        exec_host: Option<Arc<dyn crate::services::tasks_exec::ExecHost>>,
+    ) -> Self {
         let clock: Arc<dyn Clock> = match &mock_clock {
             Some(mock) => Arc::new(mock.clone()),
             None => Arc::new(SystemClock),
@@ -485,7 +505,18 @@ impl AppState {
         );
         let notifications =
             crate::services::notifications::NotificationService::new(store.clone(), bus.clone());
-        // Before the UI lists anything: agents pause, crashed threads settle.
+        // The sandbox is on but a pane started without it: say so (F-TL-11).
+        {
+            let notifications = notifications.clone();
+            terminals.set_sandbox_alert(Arc::new(move |pane, reason| {
+                let notifications = notifications.clone();
+                tauri::async_runtime::spawn(async move {
+                    notifications.raise_sandbox(pane, reason).await;
+                });
+            }));
+        }
+        // Before the UI lists anything: agents pause. Crashed threads settle
+        // once this app holds the app lock (D-2540).
         let restore = crate::services::restore::RestoreService::new(store.clone(), bus.clone());
         restore.settle_at_launch();
         // A deb, or a Microsoft Store package: someone else updates the app.
@@ -630,16 +661,18 @@ impl AppState {
             clock.clone(),
             tasks.tracker.clone(),
         );
-        task_exec.set_host(Arc::new(crate::services::task_host::AppExecHost {
-            store: store.clone(),
-            data: data.clone(),
-            auth: auth.clone(),
-            entitlements: entitlements.clone(),
-            terminals: terminals.clone(),
-            teammates: teammates.clone(),
-            threads: threads.clone(),
-            notifications: notifications.clone(),
-            gateway: gateway.clone(),
+        task_exec.set_host(exec_host.unwrap_or_else(|| {
+            Arc::new(crate::services::task_host::AppExecHost {
+                store: store.clone(),
+                data: data.clone(),
+                auth: auth.clone(),
+                entitlements: entitlements.clone(),
+                terminals: terminals.clone(),
+                teammates: teammates.clone(),
+                threads: threads.clone(),
+                notifications: notifications.clone(),
+                gateway: gateway.clone(),
+            })
         }));
         // Teammate mail (F-AG-12) lands in teammate chats.
         let mail = crate::services::mail::MailService::new(
@@ -875,6 +908,33 @@ impl AppState {
             endpoints,
             api,
             opener,
+        )
+    }
+
+    /// [`Self::for_tests`] with a mock clock and a fake host for task runs
+    /// (the Night Shift's headless pass, F-RT-06).
+    #[cfg(test)]
+    pub fn for_tests_with(
+        data: DataDir,
+        store: Store,
+        clock: MockClock,
+        exec_host: Arc<dyn crate::services::tasks_exec::ExecHost>,
+    ) -> Self {
+        Self::with_parts(
+            data,
+            store,
+            None,
+            true,
+            Net::with_log(None),
+            Endpoints {
+                api: "http://api.test".into(),
+                web: "http://web.test".into(),
+                hosted: true,
+            },
+            Arc::new(crate::services::auth::tests::FakeApi::default()),
+            Arc::new(crate::services::opener::testing::RecordingOpener::default()),
+            Some(clock),
+            Some(exec_host),
         )
     }
 

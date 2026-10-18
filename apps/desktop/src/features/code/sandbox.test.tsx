@@ -38,6 +38,22 @@ describe("agent sandbox (F-TL-11)", () => {
     stop();
   });
 
+  it("F-TL-11.6 a closed pane's note goes, and its chip with it", async () => {
+    fakeBackend({ sandbox_panes: () => [] });
+    const stop = followSandbox();
+    emitLocal("sandbox:pane", { paneId: "pn_2", sandboxed: true, reason: null });
+    expect(useSandbox.getState().byPane.pn_2?.sandboxed).toBe(true);
+    emitLocal("sandbox:pane", { paneId: "pn_2", sandboxed: false, reason: null });
+    expect(useSandbox.getState().byPane.pn_2).toBeUndefined();
+    render(
+      <UiProvider>
+        <SandboxChip paneId="pn_2" />
+      </UiProvider>,
+    );
+    expect(screen.queryByTestId("sandbox-chip")).toBeNull();
+    stop();
+  });
+
   it("F-TL-11.6 a pane with no note (the setting off) shows no chip", () => {
     render(
       <UiProvider>

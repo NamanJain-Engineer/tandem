@@ -46,7 +46,7 @@ Generated from the release on the [download page](/download/).
 **Settings › Engines › Sandbox agent panes › Workspace** runs each new agent pane's engine in a sandbox, whichever engine it is:
 
 - It writes only to the pane's folder, its repository's git data (so commits work), the engine's own home in Vibezeo and `/tmp`. Everything else on the computer is read-only.
-- It can't read the files in `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.docker`, `~/.kube`, `~/.netrc` or `~/.local/share/keyrings`, your other engine accounts or the repository's other worktrees: those folders read as empty.
+- It can't read the files in `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.docker`, `~/.kube`, `~/.netrc` or `~/.local/share/keyrings`, Vibezeo's own data (its database of every project's threads, your other engine accounts, your teammates) or the repository's other worktrees: those folders read as empty.
 - Git's hooks folder and `.git/config` stay read-only, so an agent can't plant a hook that runs later outside the sandbox. That's the repository's `.git/hooks` (for a worktree too, whose hooks live in the main checkout's `.git`), even when it doesn't exist yet, and the folder `core.hooksPath` names.
 - It keeps the network, which engines need to reach their models.
 
@@ -57,4 +57,6 @@ What it doesn't cover:
 
 The engine signs in by itself as always; the sandbox only narrows what it can reach, and Vibezeo never reads the engine's credentials. A pane that runs sandboxed shows **Sandboxed** in its header. A write the sandbox refuses reaches the engine as a "Read-only file system" error.
 
-It uses bubblewrap (the `bwrap` command), which Vibezeo never installs: install it with your package manager (`sudo apt install bubblewrap`, `sudo dnf install bubblewrap`). Without it, or where it can't run, the setting says why and agent panes start as before. The pane's shell stays outside the sandbox. Panes on SSH hosts and in WSL aren't sandboxed, and macOS and Windows don't have it yet.
+It uses bubblewrap (the `bwrap` command), which Vibezeo never installs: install it with your package manager (`sudo apt install bubblewrap`, `sudo dnf install bubblewrap`). Without it, or where it can't run, the setting says why and Workspace can't be chosen. If it stops working after you turned it on, agent panes start without it: their header says **Not sandboxed** with the reason, and you get one notification.
+
+Claude Code, Codex and OpenCode run sandboxed. Engines that keep their sign-in in your own home folder (Cursor Agent, Gemini CLI, Copilot CLI and the rest) start outside the sandbox for now, with **Not sandboxed** saying why: inside it, your home is read-only, so their sign-in would fail. The pane's shell stays outside the sandbox. Panes on SSH hosts and in WSL aren't sandboxed, and macOS and Windows don't have it yet.

@@ -36,6 +36,11 @@ pub async fn store_and_apply(
     key: SettingKey,
     value: Value,
 ) -> Result<(), IpcError> {
+    // The sandbox turns on only where it can run, so nobody believes
+    // they're sandboxed when they aren't (F-TL-11).
+    if key == SettingKey::AgentSandbox {
+        crate::commands::sandbox::may_turn_on(state.terminals.sandboxer().await.as_ref(), &value)?;
+    }
     settings::set(&state.store, key, value.clone()).await?;
     apply(app, state, key, &value).await?;
     state.bus.publish(BusEvent::new(

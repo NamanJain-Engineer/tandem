@@ -185,6 +185,7 @@ pub async fn close_pane(state: &AppState, pane_id: &PaneId) -> Result<(), IpcErr
     let _ = state.terminals.pty.kill(pane_id.as_str());
     state.terminals.status.unwatch(pane_id.as_str());
     state.terminals.end_tasks_session(pane_id.as_str());
+    state.terminals.forget_sandbox(pane_id.as_str());
     // A browser pane's page goes with it (one moved to the sidebar has
     // another id by now).
     if let Some(browser) = state.browser.get() {

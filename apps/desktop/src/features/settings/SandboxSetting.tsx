@@ -21,7 +21,13 @@ export function SandboxSetting({ ids }: { ids: Ids }) {
         fallback="off"
         options={[
           { value: "off", label: t("sandbox.off") },
-          { value: "workspace", label: t("sandbox.workspace") },
+          {
+            value: "workspace",
+            label: t("sandbox.workspace"),
+            // Never on where it can't run: nobody thinks they're sandboxed.
+            disabled: state === "ready" && !status?.available,
+            disabledReason: status?.reason ?? t("sandbox.unavailable"),
+          },
         ]}
       />
       {state === "loading" || state === "idle" ? (

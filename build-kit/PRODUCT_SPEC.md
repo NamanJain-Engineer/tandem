@@ -1988,7 +1988,8 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 - **A run whose process died** (the background runner killed, the computer off) ends as needing the user, with its attempt's reason ("Vibezeo closed during the run."), the next time Vibezeo or the background runner starts. The summary counts it.
 - **Morning summary** (Settings › Notifications › "Night Shift summary at", 8:00 AM by default):
   - At that time, if any Night Shift runs ended since the last summary, one notification: "Night Shift: {n} done, {m} need you" / the tasks' titles. "Need you" means failed, stopped or couldn't start. Its source opens Tasks.
-  - A paired phone with push turned on (F-RM-06) gets the same summary as a push alert.
+  - A paired phone with push turned on (F-RM-06) gets the same summary as a push alert. When the background runner wrote the summary (Vibezeo closed), the alert waits in the Night Shift's file and goes out when Vibezeo next opens, if that's within a day.
+- **Opening Vibezeo while a run works** never stops it: until the background runner ends and lets go of the app lock, Vibezeo leaves that run's thread, attempt and schedule alone, and it reads the schedule again before starting anything, so a run is never started twice.
   - Nothing ran: no summary.
 - **Storage:** `$DATA/night-shift.json` (atomic writes): each run's task, workspace, account, engine, choices, start time, state (`scheduled`, `waiting`, `started`, `done`, `needs_you`, `cancelled`), attempt and reason. Nothing leaves the machine beyond what task execution and the phone's push already send.
 
@@ -2001,6 +2002,10 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 6. At the summary time after two runs ended (one done, one failed), one notification reads "Night Shift: 1 done, 1 needs you". The next day, with nothing new, there's none. A paired phone with push on is queued the same alert.
 7. With the app closed and background routines on, `--run-routines` starts a due run and keeps waiting while it runs, past routines' 50 minutes, up to 8 hours; at 8 hours the run is stopped and needs the user.
 8. A run whose attempt was left running by a process that died ends as "needs you" with the attempt's reason the next time the app or the background runner starts, and the next summary counts it.
+9. While the background runner holds the app lock, the app starts no Night Shift run and settles no task attempt.
+10. Opening the app while the background runner's run is working leaves that run's thread and turn working; only threads still working once the app holds the lock are settled to interrupted.
+11. A run the background runner started while the app waited for the lock isn't started again by the app, and the app's next change keeps the runner's record of it.
+12. A summary written by the background runner reaches a paired phone with push on when the app next opens (within a day), once.
 
 ### 4.10 PL: Plugins and tandem-gateway
 
@@ -3115,7 +3120,8 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
 **Behavior:**
 - **Setting:** Settings › Engines › "Sandbox agent panes": **Off** (default) or **Workspace**. It applies to agent panes started after the change, in folders on this computer. SSH and WSL panes are never sandboxed.
 - **How:** on Linux, the engine's own command runs under bubblewrap (`bwrap`), found on the login PATH. The pane's shell stays outside the sandbox: when the engine exits, the shell is back.
-  - Vibezeo never installs it. Without `bwrap`, or when it can't make a sandbox here (user namespaces off), the setting shows the reason ("Install bubblewrap (the bwrap command) to sandbox agents.") and agent panes start unsandboxed, with their chip saying why.
+  - Vibezeo never installs it. Without `bwrap`, or when it can't make a sandbox here (user namespaces off), the setting shows the reason ("Install bubblewrap (the bwrap command) to sandbox agents.") and Workspace can't be chosen. If it stops working after it was turned on, agent panes start unsandboxed, each chip says "Not sandboxed" with the reason, and the first such pane of a launch raises one notification ("An agent started without the sandbox").
+  - Engines that keep their sign-in in the user's home folder (no provider home: Cursor Agent, Gemini CLI, Copilot CLI and the others without one) start unsandboxed, their chip saying why, since their own home would be read-only.
   - On macOS and Windows the setting reads "Not available on this system yet", through the same interface.
 - **Workspace policy:**
   - **The whole filesystem is read-only,** apart from these writable areas:
@@ -3125,7 +3131,7 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
     - Vibezeo's tasks folder (the `tandem-tasks` server the engine starts);
     - `/tmp`, shared with the rest of the computer (engines and their tools write there);
     - an empty `~/.cache`.
-  - **Hidden** (they read as empty): `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.docker`, `~/.kube`, `~/.netrc`, `~/.local/share/keyrings`, the other accounts' provider homes, and the other worktrees of the repository.
+  - **Hidden** (they read as empty): `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.docker`, `~/.kube`, `~/.netrc`, `~/.local/share/keyrings`, Vibezeo's own data folder (its database of every project's threads, the other accounts' provider homes, teammates), and the other worktrees of the repository. From the data folder only the tasks folder (writable), the status socket's folder and the pane's staged clipboard images (read-only) and this account's provider home (writable) come back.
   - **Git internals stay read-only** inside the writable folders: `.git/hooks` and `.git/config` (and the repository's for a worktree), the hooks folder even when it doesn't exist yet, and the folder `core.hooksPath` names. An agent can't plant a hook that later runs outside the sandbox.
   - **Not covered:** agents already running for the user behind a socket (`ssh-agent`, `gpg-agent`, an unlocked desktop keyring) stay reachable, as for any program the user runs; scripts a hook calls from elsewhere in the folder are ordinary files there (the change shows in the diff).
   - **The network is shared** (engines need it for inference).
@@ -3136,9 +3142,9 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
 
 **Acceptance:**
 1. With Workspace on Linux, an agent pane can create a file in its folder and can't create one in `$HOME`.
-2. Reading `~/.ssh/id_ed25519` from a sandboxed pane fails, and so does reading another account's provider home.
+2. Reading `~/.ssh/id_ed25519` from a sandboxed pane fails, and so does reading another account's provider home or Vibezeo's database; the pane's staged clipboard images stay readable.
 3. Writing `.git/hooks/pre-commit` from a sandboxed pane fails, while a commit in a worktree succeeds.
-4. Without `bwrap` (or where it can't run), the setting says why and agent panes start unsandboxed, with the chip saying why. On macOS and Windows the setting says it isn't available yet.
+4. Without `bwrap` (or where it can't run), the setting says why and Workspace can't be turned on. If it stops running after it was on, agent panes start unsandboxed with the chip saying why, and one notification per launch says so. An engine with no provider home starts unsandboxed with the chip saying why. On macOS and Windows the setting says it isn't available yet.
 5. The engine's command line inside the sandbox is the same as without it, its environment is the same, and its provider home is writable. No file under a provider home is read by Vibezeo to build the sandbox.
 6. With the setting Off, agent panes start exactly as before.
 

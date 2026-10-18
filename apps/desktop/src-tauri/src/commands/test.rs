@@ -94,6 +94,9 @@ pub async fn test_night_tick(
     let now = due_now.then(|| state.clock.now_ms());
     state.night_shift.make_due(now, reset_summary);
     state.night_shift.tick(&state).await;
+    for alert in state.night_shift.take_alerts(state.clock.now_ms()) {
+        state.phone.queue_alert(alert);
+    }
     Ok(())
 }
 

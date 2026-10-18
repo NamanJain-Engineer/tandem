@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use tandem_core::access::Access;
 use tandem_core::bus::{BusEvent, EventBus, Topic};
 use tandem_core::ids::{AccountId, AttemptId, WorkspaceId};
+use tandem_core::remote::push::PushAlert;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_engines::usage::UsageWindow;
 use tandem_store::repo::task_attempts::AttemptState;
@@ -224,7 +225,14 @@ struct File {
     /// The day (`YYYY-MM-DD`) of the last summary, and when it was sent.
     last_summary_day: Option<String>,
     last_summary_at: i64,
+    /// The summary's phone alert, until a GUI's push loop takes it: a
+    /// headless pass has no push loop (D-2542).
+    #[serde(default)]
+    pending_alerts: Vec<PushAlert>,
 }
+
+/// A summary alert older than this isn't sent any more.
+const ALERT_TTL_MS: i64 = 24 * 60 * 60 * 1000;
 
 pub struct NightShiftService {
     path: PathBuf,
@@ -234,15 +242,41 @@ pub struct NightShiftService {
 
 impl NightShiftService {
     pub fn new(path: PathBuf, bus: EventBus) -> Self {
-        let file = std::fs::read(&path)
-            .ok()
-            .and_then(|b| serde_json::from_slice::<File>(&b).ok())
-            .unwrap_or_default();
+        let file = read_file(&path).unwrap_or_default();
         Self {
             path,
             bus,
             file: Mutex::new(file),
         }
+    }
+
+    /// Reads the file again: the GUI and a headless pass both write it, one
+    /// at a time under the app lock, so the copy in memory can be stale
+    /// (D-2541). Keeps the copy when the file can't be read.
+    fn reload_into(&self, file: &mut File) {
+        if let Some(on_disk) = read_file(&self.path) {
+            *file = on_disk;
+        }
+    }
+
+    /// Reads the file again (the app lock just became this app's, or a
+    /// tick starts).
+    pub fn reload(&self) {
+        if let Ok(mut file) = self.file.lock() {
+            self.reload_into(&mut file);
+        }
+    }
+
+    /// The runs due at `now`, from the file as it is now: a run another
+    /// process started while this one waited for the lock isn't due again.
+    pub fn due_runs(&self, now: i64) -> Vec<NightRun> {
+        self.reload();
+        self.list()
+            .into_iter()
+            .filter(|r| {
+                matches!(r.state, NightState::Scheduled | NightState::Waiting) && r.run_at <= now
+            })
+            .collect()
     }
 
     fn save(&self, file: &File) {
@@ -272,8 +306,10 @@ impl NightShiftService {
             .unwrap_or_default()
     }
 
+    /// Read, change, write: never over what another process wrote since.
     fn update(&self, f: impl FnOnce(&mut File)) {
         if let Ok(mut file) = self.file.lock() {
+            self.reload_into(&mut file);
             f(&mut file);
             self.save(&file);
         }
@@ -355,6 +391,24 @@ impl NightShiftService {
         }
     }
 
+    /// The summary alerts waiting for a push loop, taken out of the file
+    /// (those older than a day are dropped). Only a GUI calls this.
+    pub fn take_alerts(&self, now: i64) -> Vec<PushAlert> {
+        let Ok(mut file) = self.file.lock() else {
+            return Vec::new();
+        };
+        self.reload_into(&mut file);
+        if file.pending_alerts.is_empty() {
+            return Vec::new();
+        }
+        let alerts = std::mem::take(&mut file.pending_alerts);
+        self.save(&file);
+        alerts
+            .into_iter()
+            .filter(|a| now - a.at < ALERT_TTL_MS)
+            .collect()
+    }
+
     /// Runs waiting to start or running.
     pub fn has_pending(&self) -> bool {
         self.list().iter().any(|r| {
@@ -368,11 +422,8 @@ impl NightShiftService {
     /// One pass: start due runs, follow started ones, send the summary.
     pub async fn tick(&self, state: &AppState) {
         let now = state.clock.now_ms();
-        let runs = self.list();
         // Due runs: read the account's usage again first.
-        for run in runs.iter().filter(|r| {
-            matches!(r.state, NightState::Scheduled | NightState::Waiting) && r.run_at <= now
-        }) {
+        for run in self.due_runs(now).iter() {
             let windows = account_windows(state, &run.account_id).await;
             match due(run, &windows, now) {
                 Due::NotYet => {}
@@ -468,6 +519,7 @@ impl NightShiftService {
             return;
         }
         let runs = self.list();
+        let mut pending = None;
         let today = now.date_naive().format("%Y-%m-%d").to_string();
         let sent_at = now.timestamp_millis();
         if let Some((done, needs, titles)) = summary(&runs, since) {
@@ -482,22 +534,30 @@ impl NightShiftService {
                 .notifications
                 .raise_night_shift(title.clone(), body.clone(), issue)
                 .await;
-            state
-                .phone
-                .queue_alert(tandem_core::remote::push::PushAlert {
-                    kind: "night_shift".into(),
-                    id: format!("night:{today}"),
-                    title,
-                    body: body.chars().take(160).collect(),
-                    at: sent_at,
-                });
+            // Kept in the file with the day it marks sent, so a headless
+            // pass's summary still reaches the phones when the app opens.
+            pending = Some(PushAlert {
+                kind: "night_shift".into(),
+                id: format!("night:{today}"),
+                title,
+                body: body.chars().take(160).collect(),
+                at: sent_at,
+            });
         }
         if let Ok(mut f) = self.file.lock() {
+            self.reload_into(&mut f);
             f.last_summary_day = Some(today);
             f.last_summary_at = sent_at;
+            f.pending_alerts.extend(pending);
             self.save(&f);
         }
     }
+}
+
+fn read_file(path: &std::path::Path) -> Option<File> {
+    std::fs::read(path)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<File>(&b).ok())
 }
 
 /// The account's windows as the usage probe reads them now.
@@ -716,6 +776,74 @@ mod tests {
         );
         assert!(!keep_waiting(&[run(NightState::Done, T0)], T0, T0 + cap));
         assert_eq!(cap, 8 * 60 * MIN);
+    }
+
+    #[test]
+    fn f_rt_06_11_a_run_the_headless_pass_started_isnt_due_again_in_the_gui() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let path = dir.path().join("night-shift.json");
+        let headless = NightShiftService::new(path.clone(), EventBus::new());
+        headless.add(run(NightState::Scheduled, T0));
+        // The GUI launches just before the boundary and reads the run as
+        // scheduled; it loses the lock race to the pass.
+        let gui = NightShiftService::new(path.clone(), EventBus::new());
+        assert_eq!(gui.list()[0].state, NightState::Scheduled);
+        // The pass starts the run, finishes it and exits.
+        headless.update(|f| {
+            f.runs[0].state = NightState::Done;
+            f.runs[0].attempt_id = Some(AttemptId::from_db("att_1".into()));
+            f.runs[0].ended_at = Some(T0 + MIN);
+        });
+        // The GUI gets the lock: nothing is due, and its next change keeps
+        // the pass's record.
+        assert!(gui.due_runs(T0 + 2 * MIN).is_empty());
+        let mut other = run(NightState::Scheduled, T0 + 600 * MIN);
+        other.id = "nr_2".into();
+        gui.add(other);
+        let on_disk = NightShiftService::new(path, EventBus::new()).list();
+        assert_eq!(on_disk.len(), 2);
+        assert_eq!(on_disk[0].state, NightState::Done);
+        assert_eq!(
+            on_disk[0].attempt_id.as_ref().map(|a| a.as_str()),
+            Some("att_1")
+        );
+    }
+
+    #[test]
+    fn f_rt_06_12_a_headless_summarys_phone_alert_waits_in_the_file_for_the_app() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let path = dir.path().join("night-shift.json");
+        let alert = |id: &str, at: i64| PushAlert {
+            kind: "night_shift".into(),
+            id: id.into(),
+            title: "Night Shift: 1 done".into(),
+            body: "Write tests for billing".into(),
+            at,
+        };
+        // The headless pass summarizes and exits: no push loop ran.
+        let headless = NightShiftService::new(path.clone(), EventBus::new());
+        headless.update(|f| {
+            f.last_summary_day = Some("2026-10-16".into());
+            f.pending_alerts
+                .push(alert("night:2026-10-15", T0 - 25 * 60 * MIN));
+            f.pending_alerts.push(alert("night:2026-10-16", T0));
+        });
+        drop(headless);
+        // The app opens later that morning: it takes today's alert once
+        // (yesterday's is too old), and the day stays marked sent.
+        let gui = NightShiftService::new(path.clone(), EventBus::new());
+        let got = gui.take_alerts(T0 + 120 * MIN);
+        assert_eq!(
+            got.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(),
+            ["night:2026-10-16"]
+        );
+        assert!(gui.take_alerts(T0 + 121 * MIN).is_empty(), "sent once");
+        let again = NightShiftService::new(path, EventBus::new());
+        assert!(again.take_alerts(T0 + 122 * MIN).is_empty());
+        assert_eq!(
+            again.file.lock().expect("lock").last_summary_day.as_deref(),
+            Some("2026-10-16")
+        );
     }
 
     #[test]

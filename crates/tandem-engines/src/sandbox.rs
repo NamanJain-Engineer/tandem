@@ -30,6 +30,13 @@ pub struct SandboxPolicy {
     pub tasks: PathBuf,
     /// Vibezeo's run folder (the status socket): readable.
     pub run: PathBuf,
+    /// Vibezeo's data folder (its database, every project's threads):
+    /// hidden, apart from the tasks folder, the run folder, this account's
+    /// provider home and `readable` (D-2543).
+    pub data: Option<PathBuf>,
+    /// Read-only again inside the hidden areas: the pane's staged clipboard
+    /// images, and the engine's own program when it lives under `data`.
+    pub readable: Vec<PathBuf>,
     /// The user's home.
     pub home: PathBuf,
     /// Other worktrees of the repository: hidden.
@@ -93,6 +100,13 @@ pub fn bwrap_args(
     if kind(Path::new("/tmp")) == Kind::Dir {
         bind(&mut a, "--bind", Path::new("/tmp"));
     }
+    // The app's data reads as empty; what the agent needs comes back on top.
+    if let Some(d) = &policy.data {
+        if kind(d) == Kind::Dir {
+            a.push("--tmpfs".into());
+            a.push(s(d));
+        }
+    }
     bind(&mut a, "--bind", &policy.root);
     if let Some(g) = &policy.git_common {
         if kind(g) == Kind::Dir {
@@ -136,6 +150,11 @@ pub fn bwrap_args(
     }
     if kind(&policy.run) == Kind::Dir {
         bind(&mut a, "--ro-bind", &policy.run);
+    }
+    for r in &policy.readable {
+        if kind(r) != Kind::Missing {
+            bind(&mut a, "--ro-bind", r);
+        }
     }
     // Git internals read-only, in the folder's repository and the common
     // dir, and wherever `core.hooksPath` points.
@@ -256,6 +275,10 @@ pub trait Sandboxer: Send + Sync {
 
 pub const MISSING_BWRAP: &str = "Install bubblewrap (the bwrap command) to sandbox agents.";
 pub const NOT_YET: &str = "Not available on this system yet.";
+/// An engine with no provider home keeps its sign-in in the user's own
+/// home, which the sandbox keeps read-only (D-2544).
+pub const OWN_HOME: &str =
+    "This engine keeps its sign-in in your home folder, which the sandbox can't open for it yet.";
 
 /// Runs a probe command: `(program, args) -> Ok(stdout)` or the error text.
 pub type Probe = dyn Fn(&Path, &[&str]) -> Result<String, String> + Send + Sync;
@@ -274,14 +297,23 @@ pub struct Bubblewrap {
     status: SandboxStatus,
 }
 
+/// `program` as the shell would run it: itself when it has a `/`, else
+/// the first file of that name on `path_var`.
+pub fn find_program(program: &str, path_var: &str) -> Option<PathBuf> {
+    if program.contains('/') {
+        let p = PathBuf::from(program);
+        return p.is_file().then_some(p);
+    }
+    std::env::split_paths(path_var)
+        .map(|d| d.join(program))
+        .find(|p| p.is_file())
+}
+
 impl Bubblewrap {
     /// Looks for `bwrap` in `path_var` (the login PATH) and checks it can
     /// make a sandbox here with `probe`.
     pub fn detect(path_var: &str, probe: &Probe) -> Self {
-        let found = std::env::split_paths(path_var)
-            .map(|d| d.join("bwrap"))
-            .find(|p| p.is_file());
-        let Some(path) = found else {
+        let Some(path) = find_program("bwrap", path_var) else {
             return Self {
                 path: None,
                 status: SandboxStatus::unavailable(MISSING_BWRAP),
@@ -375,6 +407,8 @@ mod tests {
             providers: "/d/providers".into(),
             tasks: "/d/tasks".into(),
             run: "/d/run".into(),
+            data: Some("/d".into()),
+            readable: vec!["/d/staging/pane_1".into()],
             home: "/h".into(),
             hide: vec!["/w/repo/.tandem/worktrees/other".into()],
             hooks_path: None,
@@ -595,12 +629,15 @@ mod tests {
             data.join("providers/codex/acc_2"),
             data.join("tasks"),
             data.join("run"),
+            data.join("staging/pane_1"),
         ] {
             std::fs::create_dir_all(&d).expect("mkdir");
         }
         std::fs::write(home.join(".ssh/id_ed25519"), "KEY").expect("key");
         std::fs::write(data.join("providers/codex/acc_2/auth.json"), "OTHER").expect("other");
         std::fs::write(root.join(".git/config"), "[core]\n").expect("config");
+        std::fs::write(data.join("tandem.db"), "THREADS").expect("db");
+        std::fs::write(data.join("staging/pane_1/clip.png"), "PNG").expect("clip");
         let policy = SandboxPolicy {
             root: root.clone(),
             git_common: None,
@@ -608,6 +645,8 @@ mod tests {
             providers: data.join("providers"),
             tasks: data.join("tasks"),
             run: data.join("run"),
+            data: Some(data.clone()),
+            readable: vec![data.join("staging/pane_1")],
             home: home.clone(),
             hide: Vec::new(),
             hooks_path: None,
@@ -647,6 +686,18 @@ mod tests {
                 data.display()
             )),
             "this account's home is writable"
+        );
+        assert!(
+            !ok(&format!("cat {}/tandem.db", data.display())),
+            "the app's database is hidden"
+        );
+        assert!(
+            ok(&format!("cat {}/staging/pane_1/clip.png", data.display())),
+            "the pane's staged image is readable"
+        );
+        assert!(
+            ok(&format!("echo t > {}/tasks/t", data.display())),
+            "the tasks folder is writable"
         );
         assert!(
             !ok(&format!(
@@ -718,6 +769,8 @@ mod tests {
             providers: data.join("providers"),
             tasks: data.join("tasks"),
             run: data.join("run"),
+            data: Some(data.clone()),
+            readable: Vec::new(),
             home: home.clone(),
             hide: Vec::new(),
             hooks_path: hooks_dir(root),

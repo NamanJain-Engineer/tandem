@@ -38,6 +38,9 @@ pub enum NotificationKind {
     Runaway,
     /// The Night Shift's morning summary (F-RT-06).
     NightShift,
+    /// The agent sandbox is on but an agent pane started without it
+    /// (F-TL-11): once per launch.
+    Sandbox,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

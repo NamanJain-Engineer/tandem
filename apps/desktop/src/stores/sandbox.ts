@@ -33,8 +33,15 @@ export function followSandbox(): () => void {
       useSandbox.setState({ byPane: Object.fromEntries((list ?? []).map((n) => [n.paneId, n])) }),
     )
     .catch(() => undefined);
+  // A note with neither flag nor reason clears the pane's chip (closed, or
+  // started with the setting off).
   const stop = listen<PaneSandbox>("sandbox:pane", (n) =>
-    useSandbox.setState((s) => ({ byPane: { ...s.byPane, [n.paneId]: n } })),
+    useSandbox.setState((s) => {
+      const byPane = { ...s.byPane };
+      if (!n.sandboxed && n.reason == null) delete byPane[n.paneId];
+      else byPane[n.paneId] = n;
+      return { byPane };
+    }),
   );
   return () => void stop.then((s) => s());
 }
