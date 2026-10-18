@@ -176,7 +176,9 @@ export async function importReviewComments(
   laneId: string,
 ): Promise<{ added: number; outdated: number; cut: number } | { error: IpcError }> {
   try {
-    const got = await invoke<ImportedComments>("lane_review_comments", { laneId });
+    // The ids imported before go along, so the cap counts only new ones.
+    const seen = useReviews.getState().importedIds[laneId] ?? [];
+    const got = await invoke<ImportedComments>("lane_review_comments", { laneId, seen });
     return {
       added: useReviews.getState().addImported(laneId, got.comments),
       outdated: got.outdated,

@@ -498,7 +498,10 @@ pub async fn lane_check_failure(
 pub async fn lane_review_comments(
     state: State<'_, AppState>,
     lane_id: WorkspaceId,
+    seen: Option<Vec<String>>,
 ) -> Result<ImportedComments, IpcError> {
     let gh = LoginGh::find(&*state.terminals.login_env().await);
-    pr_checks::review_comments(&state.store, &state.data, as_gh(&gh), &lane_id).await
+    // F-WT-08: ids this worktree imported before don't count toward the cap.
+    let seen = seen.unwrap_or_default().into_iter().take(10_000).collect();
+    pr_checks::review_comments(&state.store, &state.data, as_gh(&gh), &lane_id, &seen).await
 }

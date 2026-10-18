@@ -226,6 +226,8 @@ describe("CI results and review comments (F-WT-08)", () => {
     act(() => useReviews.getState().remove("wt_1", list[0]!.id));
     fireEvent.click(screen.getByTestId("review-import"));
     await waitFor(() => expect(named("lane_review_comments")).toHaveLength(2));
+    expect(named("lane_review_comments")[0]?.args).toEqual({ laneId: "wt_1", seen: [] });
+    expect(named("lane_review_comments")[1]?.args).toEqual({ laneId: "wt_1", seen: ["101"] });
     expect(useReviews.getState().byLane["wt_1"] ?? []).toHaveLength(0);
   });
 

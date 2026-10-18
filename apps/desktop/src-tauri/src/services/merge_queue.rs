@@ -357,6 +357,12 @@ async fn recover(data: &DataDir, git: &Git, key: &str) -> Result<Option<String>,
     if running(key) {
         return Ok(None);
     }
+    recover_left(data, git, key).await
+}
+
+/// [`recover`] without its "no run here" check, for `start`, whose own
+/// reservation is that check.
+async fn recover_left(data: &DataDir, git: &Git, key: &str) -> Result<Option<String>, IpcError> {
     let Some(left) = read_saved(data).merging.get(key).cloned() else {
         return Ok(None);
     };
@@ -398,7 +404,7 @@ pub async fn start(
     let repo = repo_of(store, id).await?;
     let key = repo.id.as_str().to_string();
     let reserved = reserve(&key)?;
-    recover(data, git, &key).await?;
+    recover_left(data, git, &key).await?;
     if lane_ids.is_empty() {
         return Err(IpcError::new(
             ErrorCode::Invalid,
@@ -783,6 +789,11 @@ async fn drive(
         let merged = queue::land(git, &base.root, &lane.branch, &head).await;
         done_merging(data, key);
         match merged {
+            // "Already up to date": the base has it, and nothing was landed,
+            // so nothing goes into the undo record.
+            Ok(Merged::Done { head: merge }) if merge == expected => {
+                step(key, i, |s| s.state = LandingStepState::Landed);
+            }
             Ok(Merged::Done { head: merge }) => {
                 landed.push(merge.clone());
                 expected = merge.clone();
@@ -1640,5 +1651,70 @@ mod tests {
             Some(1),
             "alpha's landing can still be undone"
         );
+    }
+
+    #[tokio::test]
+    async fn f_wt_07_a_start_after_a_quit_mid_landing_aborts_the_left_merge() {
+        let fx = fixture(&["alpha", "clash"]).await;
+        let key = fx.repo.as_str().to_string();
+        // The quit left main mid-merge with the queue's commit.
+        let clash = fx.main.join(".tandem/worktrees/clash");
+        std::fs::write(clash.join("README.md"), "clash\n").expect("write");
+        commit_all(&clash, "readme");
+        std::fs::write(fx.main.join("README.md"), "main\n").expect("write");
+        commit_all(&fx.main, "readme");
+        let commit = git(&fx.main, &["rev-parse", "tandem/clash"]);
+        let left = std::process::Command::new("git")
+            .current_dir(&fx.main)
+            .args(["merge", "-q", "--no-edit", &commit])
+            .status()
+            .expect("merge");
+        assert!(!left.success() && merging(&fx.main));
+        let root = fx.main.to_string_lossy().into_owned();
+        update_saved(&fx.data, |s| {
+            s.merging.insert(
+                key.clone(),
+                InMerge {
+                    root,
+                    name: "shop".into(),
+                    commit,
+                },
+            );
+        })
+        .expect("record");
+        let alpha = fx.lanes[0].clone();
+        start(
+            &fx.store,
+            &fx.data,
+            &fx.git,
+            &env(),
+            &fx.repo,
+            &[alpha],
+            None,
+        )
+        .await
+        .expect("start recovers, then lands");
+        assert_eq!(states(&finished(&fx).await), [LandingStepState::Landed]);
+        assert!(!merging(&fx.main));
+        assert!(fx.main.join("alpha.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn f_wt_07_4_an_already_landed_worktree_isnt_recorded() {
+        let fx = fixture(&["alpha"]).await;
+        git(
+            &fx.main,
+            &["merge", "-q", "--no-ff", "--no-edit", "tandem/alpha"],
+        );
+        let head = git(&fx.main, &["rev-parse", "HEAD"]);
+        start_with(&fx, None).await.expect("start");
+        let run = finished(&fx).await;
+        assert_eq!(states(&run), [LandingStepState::Landed]);
+        assert_eq!(run.steps[0].commit, None, "nothing new landed");
+        assert_eq!(git(&fx.main, &["rev-parse", "HEAD"]), head);
+        let p = plan(&fx.store, &fx.data, &fx.git, &fx.repo)
+            .await
+            .expect("plan");
+        assert!(p.undo.is_none(), "an empty landing isn't undoable");
     }
 }

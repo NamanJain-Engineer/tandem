@@ -172,7 +172,7 @@ describe("Land worktrees (F-WT-07, UI-155)", () => {
     current = runOf("done", [
       step("a", "landed", { commit: "1111111aaaa" }),
       step("b", "landed", { commit: "2222222bbbb" }),
-      step("c", "landed", { commit: "3333333cccc" }),
+      step("c", "landed"),
     ]);
     plan = { ...PLAN, undo: { base: "main", landed: 3 } };
     await waitFor(() => expect(screen.getByTestId("landing-steps").dataset.state).toBe("done"), {
@@ -180,6 +180,8 @@ describe("Land worktrees (F-WT-07, UI-155)", () => {
     });
     expect(screen.getByText("Landed 3 worktrees in main")).toBeTruthy();
     expect(screen.getAllByTestId("landing-step")[0]?.textContent).toContain("Landed 1111111");
+    // A worktree the base already had landed nothing new.
+    expect(screen.getAllByTestId("landing-step")[2]?.textContent).toContain("Already in main");
     expect(await screen.findByTestId("landing-undo")).toBeTruthy();
   });
 

@@ -47,7 +47,9 @@ function stepText(s: LandingStep, base: string): string {
     case "landing":
       return t("landing.step.landing");
     case "landed":
-      return t("landing.step.landed", { commit: (s.commit ?? "").slice(0, 7) });
+      return s.commit
+        ? t("landing.step.landed", { commit: s.commit.slice(0, 7) })
+        : t("landing.step.already", { base });
     case "failed":
       return t("landing.step.failed", { code: s.exit ?? "—" });
     case "conflict":

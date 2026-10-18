@@ -518,6 +518,7 @@
   "landing.step.checking": "Checking…",
   "landing.step.landing": "Landing…",
   "landing.step.landed": "Landed {commit}",
+  "landing.step.already": "Already in {base}",
   "landing.step.failed": "Check failed (exit {code})",
   "landing.step.conflict": "Conflict: {files}",
   "landing.step.stopped": "Stopped",

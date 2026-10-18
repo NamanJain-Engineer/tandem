@@ -305,9 +305,11 @@ struct RawComment {
 
 /// One JSON object per line, as `gh api --jq '.[] | {…}'` prints them.
 /// A comment whose line no longer exists (`line` is null: outdated) is
-/// left out rather than pinned to where the line was; past
-/// [`MAX_COMMENTS`] they're counted, not kept.
-pub fn parse_comments(stdout: &str) -> ImportedComments {
+/// left out rather than pinned to where the line was. Comments whose ids
+/// are in `seen` (imported before) are dropped first, then past
+/// [`MAX_COMMENTS`] they're counted, not kept, so the next import brings
+/// the rest.
+pub fn parse_comments(stdout: &str, seen: &BTreeSet<String>) -> ImportedComments {
     let mut out = ImportedComments {
         comments: Vec::new(),
         outdated: 0,
@@ -317,6 +319,10 @@ pub fn parse_comments(stdout: &str) -> ImportedComments {
         .lines()
         .filter_map(|l| serde_json::from_str::<RawComment>(l.trim()).ok())
     {
+        let id = c.id.to_string().trim_matches('"').to_string();
+        if seen.contains(&id) {
+            continue;
+        }
         let Some(line) = c.line else {
             out.outdated += 1;
             continue;
@@ -333,7 +339,7 @@ pub fn parse_comments(stdout: &str) -> ImportedComments {
         };
         let body = cut_chars(&strip_ansi(&c.body), COMMENT_CHARS);
         out.comments.push(ImportedComment {
-            id: c.id.to_string().trim_matches('"').to_string(),
+            id,
             fenced: comment_fenced(&author, &c.path, line, side, &body),
             path: c.path,
             line,
@@ -426,9 +432,10 @@ fn last_bytes(text: &str, max: usize) -> String {
 pub fn log_tail(stdout: &str) -> String {
     let plain = strip_ansi(stdout);
     let tail = tail(&plain, LOG_LINES);
-    Redactor::global()
-        .redact(&last_bytes(&tail, LOG_BYTES))
-        .into_owned()
+    // Redacted whole, then cut: a secret across the cut can't lose the
+    // prefix its pattern needs.
+    let redacted = Redactor::global().redact(&tail).into_owned();
+    last_bytes(&redacted, LOG_BYTES)
 }
 
 /// What the prompt says about the log.
@@ -661,6 +668,7 @@ pub async fn review_comments(
     data: &DataDir,
     gh: Option<&dyn Gh>,
     lane_id: &WorkspaceId,
+    seen: &BTreeSet<String>,
 ) -> Result<ImportedComments, IpcError> {
     let c = ctx(store, data, lane_id).await?;
     if !c.allowed {
@@ -695,7 +703,7 @@ pub async fn review_comments(
     if out.code != Some(0) {
         return Err(IpcError::new(ErrorCode::Io, first_line(&out.stderr)).with_stage("pr_checks"));
     }
-    Ok(parse_comments(&out.stdout))
+    Ok(parse_comments(&out.stdout, seen))
 }
 
 #[cfg(test)]
@@ -816,7 +824,7 @@ mod tests {
             .await
             .expect_err("not allowed");
         assert_eq!(e.code, ErrorCode::PermissionDenied);
-        let e = review_comments(&store, &data, Some(&gh), &lane.id)
+        let e = review_comments(&store, &data, Some(&gh), &lane.id, &BTreeSet::new())
             .await
             .expect_err("not allowed");
         assert_eq!(e.code, ErrorCode::PermissionDenied);
@@ -893,7 +901,7 @@ mod tests {
         let (_t, data, store, repo, lane) = fixture().await;
         set_allowed(&data, repo.id.as_str(), true).expect("allow");
         let gh = fake();
-        let got = review_comments(&store, &data, Some(&gh), &lane.id)
+        let got = review_comments(&store, &data, Some(&gh), &lane.id, &BTreeSet::new())
             .await
             .expect("comments");
         let list = &got.comments;
@@ -921,6 +929,31 @@ mod tests {
     }
 
     #[test]
+    fn f_wt_08_2_a_second_import_brings_the_comments_past_the_cap() {
+        let all: String = (0..45)
+            .map(|i| {
+                format!("{{\"id\":{i},\"path\":\"a.ts\",\"line\":1,\"side\":\"RIGHT\",\"body\":\"c{i}\",\"user\":\"u\"}}\n")
+            })
+            .collect();
+        let first = parse_comments(&all, &BTreeSet::new());
+        assert_eq!((first.comments.len(), first.cut), (40, 5));
+        let seen: BTreeSet<String> = first.comments.iter().map(|c| c.id.clone()).collect();
+        let second = parse_comments(&all, &seen);
+        assert_eq!((second.comments.len(), second.cut), (5, 0));
+        let ids: Vec<&str> = second.comments.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(ids, ["40", "41", "42", "43", "44"]);
+    }
+
+    #[test]
+    fn f_wt_08_1_a_secret_at_the_cut_is_redacted_whole() {
+        // The 16 KiB cut falls inside the key: cutting first would keep
+        // its end, which the pattern no longer matches.
+        let log = format!("line1 AKIAABCDEFGHIJKLMNOP\n{}", "x".repeat(LOG_BYTES - 10));
+        let t = log_tail(&log);
+        assert!(!t.contains("HIJKLMNOP"), "{}", &t[..40]);
+    }
+
+    #[test]
     fn f_wt_08_ci_text_is_plain_and_capped() {
         assert_eq!(
             strip_ansi("\u{1b}[31mFAIL\u{1b}[0m a\r\nb\rc\u{1b}]0;title\u{7}d\u{7}"),
@@ -936,7 +969,7 @@ mod tests {
         let many: String = (0..MAX_COMMENTS + 5)
             .map(|i| format!("{{\"id\":{i},\"path\":\"a\",\"line\":1,\"side\":\"RIGHT\",\"body\":\"{}\",\"user\":\"u\"}}\n", "y".repeat(COMMENT_CHARS + 10)))
             .collect();
-        let got = parse_comments(&many);
+        let got = parse_comments(&many, &BTreeSet::new());
         assert_eq!((got.comments.len(), got.cut), (MAX_COMMENTS, 5));
         assert!(got.comments[0].body.ends_with("[… cut]"));
         let unreadable = failure_prompt(
