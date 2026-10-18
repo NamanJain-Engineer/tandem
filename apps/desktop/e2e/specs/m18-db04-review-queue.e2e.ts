@@ -157,6 +157,23 @@ describe("E2E-M18-DB-04 review queue", function () {
     await waitItem(`thread:${thread.id}`, 30_000);
   });
 
+  it("F-DB-04.1 a read-only thread never joins: its folder's changes are another agent's (D-859)", async () => {
+    // The worktree has the thread's notes.md above; a second opinion's
+    // reviewer is such a thread.
+    const reader = await invoke<{ id: string }>("thread_create", {
+      args: { kind: "thread", workspaceId: lane2.id, engineId: "claude", access: "read" },
+    });
+    await invoke("thread_send", { threadId: reader.id, text: "what changed here?" });
+    await browser.waitUntil(
+      async () =>
+        (await invoke<{ thread: { state: string } }>("thread_get", { threadId: reader.id })).thread.state ===
+        "done",
+      { timeout: 30_000, timeoutMsg: "the read-only thread never finished" },
+    );
+    await browser.pause(1_500);
+    expect((await queue()).some((i) => i.key === `thread:${reader.id}`)).toBe(false);
+  });
+
   it("F-DB-04.3 F-DB-04.6 the Review view: approve, then a new change brings it back as changed", async () => {
     await browser.keys([mod(), "Alt", "Shift", "d"]);
     const review = $('//*[@role="radio"][starts-with(normalize-space(), "Review")]');

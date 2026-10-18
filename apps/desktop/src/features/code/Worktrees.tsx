@@ -32,7 +32,6 @@ import {
   pollPreviews,
   startPreview,
   mergeWorktree,
-  prepareWorktree,
   removeWorktree,
   teardownText,
   useWorktrees,
@@ -326,8 +325,6 @@ function NewWorktreeDialog({ ws, onClose }: { ws: WorkspaceSummary; onClose: () 
     if (out.ok) {
       show({ tone: "success", title: t("worktree.created", { branch: out.value.laneBranch ?? "" }) });
       onClose();
-      // F-WT-01: report the copy, run a trusted setup or ask for a review.
-      void prepareWorktree(out.value.id);
     } else setError(out.error.message);
   };
   return (

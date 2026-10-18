@@ -114,12 +114,18 @@ async function run<T>(cmd: string, args: Record<string, unknown>): Promise<Outco
   }
 }
 
-/** `lane_create`, then the new worktree is selected in the rail. */
+/** `lane_create`, then the new worktree is selected in the rail while
+ * `prepareWorktree` runs. Its tab waits for the setup's or preview's pane
+ * rather than starting a shell beside it (D-863). */
 export async function createWorktree(workspaceId: string, slugSource: string): Promise<Outcome<Workspace>> {
   const out = await run<Workspace>("lane_create", { workspaceId, slugSource });
   if (out.ok) {
     const ws = useWorkspaces.getState();
     await ws.refresh();
+    const tabId = useWorkspaces.getState().list.find((w) => w.id === out.value.id)?.tabs[0]?.id;
+    // F-WT-01: report the copy, run a trusted setup or ask for a review.
+    const prepared = prepareWorktree(out.value.id);
+    if (tabId) useLayout.getState().expect(tabId, prepared);
     ws.setCollapsed(out.value.parentId ?? workspaceId, false);
     ws.select(out.value.id);
   }

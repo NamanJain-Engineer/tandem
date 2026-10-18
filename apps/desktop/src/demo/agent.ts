@@ -78,7 +78,7 @@ export const DEMO_CHANGES: FileDiff[] = [
   },
 ];
 
-const TEST_OUTPUT = [
+export const TEST_OUTPUT = [
   "> shop@1.4.0 test",
   "> vitest run src/checkout",
   "",

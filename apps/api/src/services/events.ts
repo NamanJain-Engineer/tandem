@@ -38,9 +38,12 @@ export class EventHub {
       this.listeners.set(userId, set);
     }
     set.add(listener);
+    const own = set;
     return () => {
-      set?.delete(listener);
-      if (set?.size === 0) this.listeners.delete(userId);
+      own.delete(listener);
+      // A stream can stop twice (its abort, then its heartbeat loop up to 25 s
+      // later): by then a new stream may own the user's entry (D-865).
+      if (own.size === 0 && this.listeners.get(userId) === own) this.listeners.delete(userId);
     };
   }
 
