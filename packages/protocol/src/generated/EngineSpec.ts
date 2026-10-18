@@ -2,6 +2,7 @@
 import type { HomeStrategy } from "./HomeStrategy";
 import type { HooksSupport } from "./HooksSupport";
 import type { InstallCommands } from "./InstallCommands";
+import type { InstructionsSpec } from "./InstructionsSpec";
 import type { KeychainIsolation } from "./KeychainIsolation";
 import type { LoginMode } from "./LoginMode";
 import type { McpNative } from "./McpNative";
@@ -81,4 +82,12 @@ waitingPatterns: Array<string>,
 /**
  * Output that means a usage or rate limit was hit.
  */
-limitPatterns: Array<string>, onboardingSeed: OnboardingSeed | null, mcpNative: McpNative | null, };
+limitPatterns: Array<string>, onboardingSeed: OnboardingSeed | null, mcpNative: McpNative | null, 
+/**
+ * Its instructions files (F-EN-07); none = Unknown.
+ */
+instructions: InstructionsSpec | null, 
+/**
+ * One line about who can use it, shown with its tile (F-EN-09).
+ */
+note: string | null, };

@@ -48,8 +48,9 @@ download.
    - Memory (§5.1, D-138): hidden panes now hand their xterm to the core
      after 30 s and replay when shown (D-139; filled while hidden, 3.0 MB a
      pane, met). Still missed: panes filled on screen and then moved to a
-     background tab (~60 MB each, budget 3.9 MB) and the base app (~617 MB
-     PSS on 039dec5, budget 350). Measure again with `--suite memory`.
+     background tab (~60 MB each, budget 3.9 MB) and the base app (548 MB
+     PSS on 52f07fe1, budget 350; WebKitGTK's web process alone is 353 MB,
+     an owner decision in HUMAN_TODO). Measure again with `--suite memory`.
 
 ## 1. Features to build, by milestone
 
@@ -234,13 +235,13 @@ The owner's request of 15 October, built on `site-blog` with the elite pass's de
 
 ### M18 · Next features (in progress) · from `docs/NEXT_FEATURES.md`
 The 15 October research ranked 21 features and six bold bets beyond the 165 (evidence in `docs/COMPETITIVE_ANALYSIS.md`). Its top picks are being built, each with its PRODUCT_SPEC entry first, tests from the criteria, an E2E spec (`m18-*.e2e.ts`) and its docs page:
-- Engines (`m16d-teammate-extras`, D-2400 on): [ ] F-EN-07 One instructions file for every engine · [ ] F-EN-09 Engine catalog refresh · [ ] F-EN-08 Engine versions and updates under your control · [ ] F-TH-17 Session library across engines
-- Review loop (`m16a-conductor`, D-2420 on): [ ] F-WT-05 Second opinion from another engine · [ ] F-DB-04 Review queue · [ ] F-CN-09 Walk-and-review (bold bet B4)
-- Worktrees (`competitive-gaps`, D-2440 on): [ ] F-WT-06 Worktree runtime (ports, env, Compose, `<slug>.localhost`) · [ ] F-WT-09 Previews per worktree (bold bet B2)
-- Usage (`product-research`, D-2460 on): [ ] F-AC-08 Usage forecast · [ ] F-AC-09 Runaway guard · [ ] F-RT-06 The Night Shift (bold bet B1)
-- Reliability (`perf-open`, D-2480 on, after §0.3's memory and first-frame work): [ ] F-SH-14 Keep agents running when the window closes
+- Engines (`m16d-teammate-extras`, D-2400 on): [x] F-EN-07 One instructions file for every engine (chain21, D-2400–D-2403) · [x] F-EN-09 Engine catalog refresh (chain23, D-2404–D-2405, D-856) · [ ] F-EN-08 Engine versions and updates under your control · [ ] F-TH-17 Session library across engines · next: F-EN-10, F-EN-11 (D-2500 on)
+- Review loop (`m16a-conductor`, D-2420 on): [x] F-WT-05 Second opinion from another engine (chain23, D-2420) · [x] F-DB-04 Review queue (chain23, D-2421–D-2422) · [ ] F-CN-09 Walk-and-review (bold bet B4) · next: F-TK-05 Claims, then B3 The Foreman's first slice
+- Worktrees (`competitive-gaps`, D-2440 on): [x] F-WT-06 Worktree runtime (ports, env, Compose, `<slug>.localhost`; chain21, D-2440–D-2445, D-2448) · [x] F-WT-09 Previews per worktree (bold bet B2; slice 1 in chain21, slices 2 and 3 in chain23, D-2446–D-2450) · [ ] F-WT-07 Local merge queue · [ ] F-WT-08 CI results and PR comments back to the agent · next: B6 Intent radar's first slice, then F-CD-22 Multi-repo workspaces (D-2520 on)
+- Usage (`product-research`, D-2460 on): [x] F-AC-08 Usage forecast (chain21, D-2460–D-2462) · [x] F-AC-09 Runaway guard (chain23, D-2463–D-2468, D-855, D-857) · [ ] F-RT-06 The Night Shift (bold bet B1) · [ ] F-TL-11 Agent sandbox (Linux first) · next: F-EX-06 Resource governor, then B5 Agent-proof secrets (D-2540 on)
+- Reliability (`perf-open`, D-2560 on, after §0.3's memory and first-frame work): [ ] F-SH-14 Keep agents running when the window closes
 
-Later, in the research's order: F-TL-11 agent sandbox, F-WT-07 local merge queue, F-WT-08 CI results back to the agent, F-EN-10 any ACP agent as a thread engine, F-EN-11 local models, F-TK-05 claims, F-EX-06 resource governor, F-CD-22 multi-repo workspaces, F-CD-23 code intelligence, F-EX-07 activity ledger, F-CD-24 jj workspaces, and the bold bets B3 (the Foreman), B5 (agent-proof secrets) and B6 (intent radar). Its owner-only items (§4: terms, pricing, Linux-first exceptions, ARM64, launch) are the owner's.
+Later, in the research's order: F-CD-23 code intelligence, F-EX-07 activity ledger and F-CD-24 jj workspaces. Its owner-only items (§4: terms, pricing, Linux-first exceptions, ARM64, launch) are the owner's.
 
 ## 2. What only a person can do
 

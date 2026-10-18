@@ -1,13 +1,17 @@
 import { create } from "zustand";
-import type { UsageView, UsageWindow } from "@tandem/protocol";
+import type { AccountSessions, UsageView, UsageWindow } from "@tandem/protocol";
 import { listen } from "../ipc/events";
 import { invoke } from "../ipc/invoke";
 import { useLayout } from "./layout";
 import { useStatus } from "./status";
 
-/** Usage per engine account (F-AC-04). */
+/** Usage per engine account (F-AC-04), and who spent it in the last hour (F-AC-08). */
 type UsageState = {
   byAccount: Record<string, UsageView>;
+  sessions: Record<string, AccountSessions>;
+  sessionsState: "idle" | "loading" | "ready" | "error";
+  /** Reads every account's sessions of the last hour from the engines' logs. */
+  loadSessions: () => Promise<void>;
   set: (views: UsageView[]) => void;
   refresh: (accountId?: string | null) => Promise<void>;
   /** The latest reading for an account not read yet (probes once). */
@@ -18,6 +22,24 @@ const asking = new Set<string>();
 
 export const useUsage = create<UsageState>((set) => ({
   byAccount: {},
+  sessions: {},
+  sessionsState: "idle",
+  loadSessions: async () => {
+    set({ sessionsState: "loading" });
+    try {
+      const rows = await invoke<AccountSessions[]>(
+        "usage_sessions",
+        { accountId: null },
+        { timeoutMs: 60_000 },
+      );
+      set({
+        sessions: Object.fromEntries((rows ?? []).map((r) => [r.accountId, r])),
+        sessionsState: "ready",
+      });
+    } catch {
+      set({ sessionsState: "error" });
+    }
+  },
   set: (views) =>
     set((s) => ({
       byAccount: { ...s.byAccount, ...Object.fromEntries(views.map((v) => [v.accountId, v])) },

@@ -72,6 +72,9 @@ pub type ScreenSource = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 /// `(pane_id, transcript_path)` when a hooked agent's turn ends (F-AC-06).
 pub type TurnSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
 
+/// `(pane_id, tool_name)` for every tool report (the runaway guard, F-AC-09).
+pub type ToolSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
+
 pub struct StatusService {
     pub store: Arc<StatusStore>,
     server: OnceCell<StatusServer>,
@@ -98,6 +101,7 @@ pub struct StatusService {
     pub contexts: Arc<ContextBoard>,
     screen: std::sync::OnceLock<ScreenSource>,
     on_turn: std::sync::OnceLock<TurnSink>,
+    on_tool: std::sync::OnceLock<ToolSink>,
 }
 
 /// `(pane_id, engine_session_id)`.
@@ -120,6 +124,7 @@ impl StatusService {
             contexts: Arc::new(ContextBoard::new(bus.clone())),
             screen: std::sync::OnceLock::new(),
             on_turn: std::sync::OnceLock::new(),
+            on_tool: std::sync::OnceLock::new(),
             bus,
             clock,
         })
@@ -249,6 +254,15 @@ impl StatusService {
             .unwrap_or(false)
     }
 
+    /// Every pane's engine session id that its hooks reported, as
+    /// `(pane_id, engine_session_id)` (F-AC-08).
+    pub fn engine_sessions(&self) -> Vec<(String, String)> {
+        self.sessions
+            .lock()
+            .map(|s| s.iter().map(|(p, e)| (p.clone(), e.clone())).collect())
+            .unwrap_or_default()
+    }
+
     /// The engine's session id from its hooks, if it reported one.
     pub fn engine_session(&self, pane_id: &str) -> Option<String> {
         self.sessions.lock().ok()?.get(pane_id).cloned()
@@ -370,6 +384,11 @@ impl StatusService {
         let _ = self.on_turn.set(sink);
     }
 
+    /// Told of every tool an agent reports (set once, at startup).
+    pub fn set_tool_sink(&self, sink: ToolSink) {
+        let _ = self.on_tool.set(sink);
+    }
+
     /// Where the tick reads screens from (set once, at startup).
     pub fn set_screen_source(&self, source: ScreenSource) {
         let _ = self.screen.set(source);
@@ -446,6 +465,11 @@ impl StatusService {
             }
             ReportEvent::Session => {}
             _ => {
+                if let (ReportEvent::Working, Some(tool), Some(sink)) =
+                    (report.event, &report.payload.tool, self.on_tool.get())
+                {
+                    sink(&pane, tool);
+                }
                 if let Some(u) = report.update() {
                     self.apply(&pane, u);
                 }

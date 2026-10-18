@@ -11,7 +11,10 @@ if ! docker info >/dev/null 2>&1; then
   STARTED=$!
   i=0
   while ! docker info >/dev/null 2>&1; do
-    i=$((i + 1)); [ $i -gt 60 ] && echo "docker didn't start (see $LOG)" && kill $STARTED && exit 1
+    i=$((i + 1))
+    # dockerd may already have exited (say, started while another was still
+    # shutting down): stop waiting either way.
+    if [ $i -gt 60 ]; then echo "docker didn't start (see $LOG)"; kill $STARTED 2>/dev/null; exit 1; fi
     sleep 1
   done
 fi

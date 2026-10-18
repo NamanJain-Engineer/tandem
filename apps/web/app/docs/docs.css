@@ -111,6 +111,30 @@
   padding: 0.1em 0.375em;
   font-size: 0.875em;
   color: var(--tn-text);
+  overflow-wrap: anywhere;
+}
+/* Code blocks get the blog's box, a `surface` in the mono type, and scroll
+   sideways inside it, so a long line never widens the page past a 320 px
+   phone (F-WB-01, D-864). Shiki's colours follow the OS theme. */
+.docs-prose :where(pre) {
+  margin: 2rem 0;
+  overflow-x: auto;
+  border: 1px solid transparent;
+  border-radius: var(--radius-card);
+  background:
+    linear-gradient(180deg, var(--site-fill-top), var(--site-fill-bottom)) padding-box,
+    linear-gradient(var(--site-card), var(--site-card)) padding-box,
+    linear-gradient(180deg, var(--site-edge-top), var(--site-edge-bottom)) border-box;
+  box-shadow: var(--site-elev-1);
+  padding: 1.25rem;
+  font-family: var(--font-jbm), ui-monospace, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5rem;
+  color: var(--tn-text);
+}
+.docs-prose :where(pre span) { color: var(--shiki-dark); }
+@media (prefers-color-scheme: light) {
+  .docs-prose :where(pre span) { color: var(--shiki-light); }
 }
 .docs-prose :where(code)::before,
 .docs-prose :where(code)::after { content: none; }

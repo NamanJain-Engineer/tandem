@@ -87,6 +87,43 @@ pub struct McpNative {
     pub key: String,
 }
 
+/// Whether an engine reads every instructions file that exists, or only the
+/// first (F-EN-07).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum InstructionsMode {
+    #[default]
+    All,
+    First,
+}
+
+/// A one-line file that makes the engine read `AGENTS.md`: its `file` holds
+/// the `import` line (F-EN-07).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct InstructionsPointer {
+    pub file: String,
+    pub import: String,
+}
+
+/// The instructions files an engine reads at a repository's root (F-EN-07,
+/// D-2400), checked against the vendor's own documentation. Paths are
+/// relative and `/`-separated; one ending in `/` is a folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct InstructionsSpec {
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub mode: InstructionsMode,
+    /// Read only when none of `files` exist.
+    #[serde(default)]
+    pub fallback: Option<String>,
+    #[serde(default)]
+    pub pointer: Option<InstructionsPointer>,
+}
+
 fn default_version_cmd() -> Vec<String> {
     vec!["--version".into()]
 }
@@ -155,6 +192,15 @@ pub struct EngineSpec {
     pub newline_sequence: String,
     #[serde(default)]
     pub hooks_support: HooksSupport,
+    /// Typed to stop the engine's current turn (F-AC-09); none = Esc.
+    #[serde(default)]
+    #[ts(skip)]
+    pub interrupt: Option<String>,
+    /// Tools whose use starts a subagent (F-AC-09), as the engine names them
+    /// in its tool reports.
+    #[serde(default)]
+    #[ts(skip)]
+    pub subagent_tools: Vec<String>,
     /// Usage logs under the provider home (globs).
     #[serde(default)]
     pub usage_log_globs: Vec<String>,
@@ -189,6 +235,12 @@ pub struct EngineSpec {
     pub onboarding_seed: Option<OnboardingSeed>,
     #[serde(default)]
     pub mcp_native: Option<McpNative>,
+    /// Its instructions files (F-EN-07); none = Unknown.
+    #[serde(default)]
+    pub instructions: Option<InstructionsSpec>,
+    /// One line about who can use it, shown with its tile (F-EN-09).
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 /// Why a registry entry was refused.
@@ -308,8 +360,52 @@ impl EngineSpec {
         if self.newline_sequence.is_empty() || self.newline_sequence.len() > 8 {
             return fail("newline_sequence is 1–8 bytes");
         }
+        if self
+            .note
+            .as_deref()
+            .is_some_and(|n| n.trim().is_empty() || n.chars().count() > 300 || n.contains('\n'))
+        {
+            return fail("a note is one line of at most 300 characters");
+        }
+        if let Some(ins) = &self.instructions {
+            let pointer = ins.pointer.as_ref().map(|p| p.file.as_str());
+            if ins.files.is_empty()
+                || ins.files.len() > 16
+                || !ins
+                    .files
+                    .iter()
+                    .map(String::as_str)
+                    .chain(ins.fallback.as_deref())
+                    .chain(pointer)
+                    .all(instructions_path)
+            {
+                return fail("instructions files are 1–16 relative paths inside the repository");
+            }
+            if let Some(p) = &ins.pointer {
+                if p.import.trim().is_empty()
+                    || p.import.len() > 200
+                    || p.import.contains(['\n', '\r'])
+                    || p.file.ends_with('/')
+                {
+                    return fail("an instructions pointer is one line in a file");
+                }
+            }
+        }
         Ok(())
     }
+}
+
+/// A relative, `/`-separated path with no `.` or `..` parts (F-EN-07).
+fn instructions_path(p: &str) -> bool {
+    let body = p.strip_suffix('/').unwrap_or(p);
+    !body.is_empty()
+        && p.len() <= 200
+        && !p.starts_with('/')
+        && !p.contains('\\')
+        && !p.contains(':')
+        && body
+            .split('/')
+            .all(|c| !c.is_empty() && c != "." && c != "..")
 }
 
 #[derive(Debug, Clone)]
@@ -420,9 +516,9 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn f_en_02_the_bundled_registry_has_eleven_valid_engines() {
+    fn f_en_02_the_bundled_registry_has_thirteen_valid_engines() {
         let reg = EngineRegistry::bundled();
-        assert_eq!(reg.all().len(), 11);
+        assert_eq!(reg.all().len(), 13);
         reg.validate().expect("valid");
         let claude = reg.get("claude").expect("claude");
         assert_eq!(claude.commands, vec!["claude"]);
@@ -459,7 +555,7 @@ mod tests {
         let zed = reg.get("zed-agent").expect("added");
         assert_eq!(zed.version_cmd, vec!["--version"]);
         assert_eq!(zed.newline_sequence, "\u{1b}\r");
-        assert_eq!(reg.all().len(), 12);
+        assert_eq!(reg.all().len(), 14);
     }
 
     #[test]
@@ -493,7 +589,7 @@ mod tests {
             Some(vec!["claude".to_string()])
         );
         assert!(reg.get("x").is_none() && reg.get("y").is_none());
-        assert_eq!(reg.all().len(), 11);
+        assert_eq!(reg.all().len(), 13);
     }
 
     #[test]
@@ -518,5 +614,108 @@ mod tests {
         assert!(bad(|e| e.chat_adapter = Some("magic".into())));
         assert!(bad(|e| e.install.mac = Some("a\nb".into())));
         base.validate().expect("the original is fine");
+    }
+
+    #[test]
+    fn f_en_07_the_instructions_table_names_six_engines_and_rejects_paths_outside_the_repository() {
+        let reg = EngineRegistry::bundled();
+        let with: Vec<&str> = reg
+            .all()
+            .iter()
+            .filter(|e| e.instructions.is_some())
+            .map(|e| e.id.as_str())
+            .collect();
+        assert_eq!(
+            with,
+            vec![
+                "claude",
+                "codex",
+                "cursor-agent",
+                "gemini",
+                "copilot",
+                "antigravity"
+            ]
+        );
+        let claude = reg
+            .get("claude")
+            .and_then(|e| e.instructions.clone())
+            .expect("claude");
+        assert_eq!(claude.fallback.as_deref(), Some("AGENTS.md"));
+        assert_eq!(
+            claude.pointer.map(|p| (p.file, p.import)),
+            Some(("CLAUDE.md".into(), "@AGENTS.md".into()))
+        );
+        let codex = reg
+            .get("codex")
+            .and_then(|e| e.instructions.clone())
+            .expect("codex");
+        assert_eq!(codex.mode, InstructionsMode::First);
+        assert!(reg
+            .get("aider")
+            .and_then(|e| e.instructions.clone())
+            .is_none());
+        for bad in [
+            "../AGENTS.md",
+            "/etc/passwd",
+            "a/../b",
+            "C:\\x",
+            "./AGENTS.md",
+            "",
+        ] {
+            let mut spec = reg.get("gemini").cloned().expect("gemini");
+            spec.instructions = Some(InstructionsSpec {
+                files: vec![bad.into()],
+                mode: InstructionsMode::All,
+                fallback: None,
+                pointer: None,
+            });
+            assert!(spec.validate().is_err(), "{bad:?}");
+        }
+        let mut spec = reg.get("gemini").cloned().expect("gemini");
+        if let Some(ins) = spec.instructions.as_mut() {
+            ins.pointer = Some(InstructionsPointer {
+                file: "GEMINI.md".into(),
+                import: "@AGENTS.md\nrm -rf ~".into(),
+            });
+        }
+        assert!(spec.validate().is_err());
+    }
+
+    #[test]
+    fn f_en_09_antigravity_and_kiro_are_terminal_engines_from_their_vendors_docs() {
+        let reg = EngineRegistry::bundled();
+        let agy = reg.get("antigravity").expect("antigravity");
+        assert_eq!(agy.commands, vec!["agy"]);
+        assert_eq!(agy.vendor, "Google");
+        assert_eq!(
+            agy.home_strategy,
+            HomeStrategy::None,
+            "one account per computer"
+        );
+        assert!(agy
+            .install
+            .win
+            .as_deref()
+            .is_some_and(|w| w.contains("install.ps1")));
+        let kiro = reg.get("kiro").expect("kiro");
+        assert_eq!(kiro.commands, vec!["kiro-cli"]);
+        assert_eq!(kiro.provider_home_env.as_deref(), Some("KIRO_HOME"));
+        assert_eq!(kiro.home_strategy, HomeStrategy::Env);
+        assert_eq!(kiro.login_cmd, Some(vec!["login".to_string()]));
+        assert_eq!(kiro.login_mode, LoginMode::Argv);
+        // F-EN-09.3: terminal only, and never headless.
+        for e in [agy, kiro] {
+            assert!(e.chat_adapter.is_none() && e.acp_cmd.is_none(), "{}", e.id);
+            assert!(e.headless_cmd.is_none(), "{}", e.id);
+        }
+        // F-EN-09.2: Gemini CLI stays, with its note.
+        let gemini = reg.get("gemini").expect("gemini");
+        assert!(gemini
+            .note
+            .as_deref()
+            .is_some_and(|n| n.contains("API keys") && n.contains("Antigravity CLI")));
+        let mut bad = gemini.clone();
+        bad.note = Some("two\nlines".into());
+        assert!(bad.validate().is_err());
     }
 }

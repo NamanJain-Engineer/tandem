@@ -29,6 +29,8 @@ import { useEngines } from "../../stores/engines";
 import { useLayout } from "../../stores/layout";
 import { paneKey, useStatus } from "../../stores/status";
 import { useWorkspaces } from "../../stores/workspaces";
+import { openPreview, startPreview, useWorktrees } from "../../stores/worktrees";
+import { usePreviewPolling } from "../code/Worktrees";
 import { diffLabels } from "../files/ChangesView";
 
 type BestOfStore = {
@@ -216,6 +218,7 @@ function Column({
   seat,
   file,
   busy,
+  starting,
   onKeep,
   onOutput,
 }: {
@@ -223,18 +226,22 @@ function Column({
   seat: number;
   file: string;
   busy: boolean;
+  /** F-WT-09: Previews asked for this lane's preview. */
+  starting: boolean;
   onKeep: () => void;
   onOutput: (text: string) => void;
 }) {
   const lane = detail.run.lanes.find((l) => l.seat === seat);
   const diff = detail.diffs.find((d) => d.seat === seat);
   const records = useStatus((s) => s.records);
+  const previews = useWorktrees((s) => s.previews);
   const label = useEngines((s) => s.list.find((e) => e.spec.id === lane?.engineId)?.spec.label ?? lane?.engineId ?? "");
   if (!lane) return null;
   const files = (diff?.files ?? []).filter((f) => !file || f.path === file);
   const add = (diff?.files ?? []).reduce((n, f) => n + f.additions, 0);
   const del = (diff?.files ?? []).reduce((n, f) => n + f.deletions, 0);
   const check = lane.check;
+  const preview = lane.laneId ? previews[lane.laneId] : undefined;
   return (
     <section
       className="flex min-w-0 flex-1 flex-col rounded-md border border-border bg-surface-2"
@@ -264,6 +271,24 @@ function Column({
             {check === "passed" && <Badge variant="done">{t("bestof.check.passed")}</Badge>}
             {check === "failed" && <Badge variant="error">{t("bestof.check.failed", { code: lane.checkExit ?? 0 })}</Badge>}
             {check === "stopped" && <Badge variant="outline">{t("bestof.check.stopped")}</Badge>}
+            {preview?.status === "ready" && preview.url ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                data-testid="bestof-preview-open"
+                onClick={() => openPreview(preview.url ?? "")}
+              >
+                {t("bestof.preview.open")}
+              </Button>
+            ) : preview?.status === "down" && starting ? (
+              <span className="inline-flex items-center gap-1" data-testid="bestof-preview-starting">
+                <Spinner size={12} /> {t("bestof.preview.starting")}
+              </span>
+            ) : preview?.status === "none" ? (
+              <span className="text-fg-subtle" data-testid="bestof-preview-none">
+                {t("bestof.preview.none")}
+              </span>
+            ) : null}
             {lane.checkOutput !== null && check !== "running" && (
               <Button size="sm" variant="ghost" onClick={() => onOutput(lane.checkOutput ?? "")}>
                 {t("bestof.output")}
@@ -300,6 +325,22 @@ function Compare({ runId }: { runId: string }) {
   const [busy, setBusy] = useState(false);
   const { show } = useToast();
   const base = useWorkspaces((s) => s.list.find((w) => w.id === detail?.run.workspaceId));
+  // F-WT-09: lanes whose preview tab opens once it answers.
+  const [wanted, setWanted] = useState<string[]>([]);
+  const previews = useWorktrees((s) => s.previews);
+  const laneIds = (detail?.run.lanes ?? []).map((l) => l.laneId).filter((x): x is string => x !== null);
+  usePreviewPolling(laneIds, detail?.run.state === "running");
+  useEffect(() => {
+    const ready = wanted.filter((id) => previews[id]?.status === "ready" && previews[id]?.url);
+    if (ready.length === 0) return;
+    for (const id of ready) openPreview(previews[id]?.url ?? "");
+    setWanted((w) => w.filter((id) => !ready.includes(id)));
+  }, [previews, wanted]);
+  const startPreviews = async () => {
+    const withPreview = laneIds.filter((id) => previews[id] && previews[id]?.status !== "none");
+    setWanted(withPreview);
+    for (const id of withPreview) if (previews[id]?.status === "down") await startPreview(id);
+  };
 
   const load = useCallback(async () => {
     try {
@@ -385,6 +426,28 @@ function Compare({ runId }: { runId: string }) {
                   {t("bestof.runCheck", { command: run.checkCommand })}
                 </Button>
               ))}
+            {laneIds.some((id) => previews[id] && previews[id]?.status !== "none") && (
+              <Button size="sm" variant="secondary" data-testid="bestof-previews" onClick={() => void startPreviews()}>
+                {t("bestof.previews")}
+              </Button>
+            )}
+            {laneIds.filter((id) => previews[id] && previews[id]?.status !== "none").length >= 2 && (
+              <Button
+                size="sm"
+                variant="secondary"
+                data-testid="bestof-side-by-side"
+                onClick={() =>
+                  useWorktrees.getState().open({
+                    kind: "comparePreviews",
+                    candidates: laneIds,
+                    chosen: laneIds.length === 2 ? laneIds : [],
+                    onDone: () => useBestOf.getState().close(),
+                  })
+                }
+              >
+                {t("bestof.sideBySide")}
+              </Button>
+            )}
             <Button size="sm" variant="ghost" data-testid="bestof-discard" disabled={busy} onClick={() => void act("bestof_discard", { runId })}>
               {t("bestof.discardAll")}
             </Button>
@@ -393,7 +456,7 @@ function Compare({ runId }: { runId: string }) {
       </div>
       <div className={cx("flex min-h-0 gap-2", "max-[960px]:flex-col")}>
         {run.lanes.map((l) => (
-          <Column key={l.seat} detail={detail} seat={l.seat} file={file} busy={busy} onKeep={() => void act("bestof_keep", { runId, seat: l.seat })} onOutput={setOutput} />
+          <Column key={l.seat} detail={detail} seat={l.seat} file={file} busy={busy} starting={l.laneId !== null && wanted.includes(l.laneId)} onKeep={() => void act("bestof_keep", { runId, seat: l.seat })} onOutput={setOutput} />
         ))}
       </div>
       <Dialog open={output !== null} onOpenChange={(o) => !o && setOutput(null)} title={t("bestof.output.title")} size="lg">

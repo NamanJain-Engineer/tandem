@@ -639,7 +639,7 @@ mod tests {
         assert!(claude
             .path
             .ends_with(".nvm/versions/node/v18.20.0/bin/claude"));
-        assert_eq!(report.missing.len(), 10);
+        assert_eq!(report.missing.len(), 12);
         // The newest Node is checked first.
         let nvm: Vec<&String> = report
             .folders_checked
@@ -652,6 +652,27 @@ mod tests {
             "{:?}",
             report.fixes
         );
+    }
+
+    #[tokio::test]
+    async fn f_en_09_1_agy_and_kiro_cli_on_the_login_path_are_detected_with_their_versions() {
+        let home = tempfile::tempdir().expect("home");
+        let bin = home.path().join("tools");
+        fake_bin(&bin, "agy", "1.4.2");
+        fake_bin(&bin, "kiro-cli", "2.31.0");
+        std::fs::write(
+            home.path().join(".profile"),
+            format!("export PATH=\"{}:$PATH\"\n", bin.display()),
+        )
+        .expect("profile");
+        let registry = EngineRegistry::bundled();
+        let report = detect(registry.all(), &env_for(home.path(), "sh")).await;
+        let agy = report.get("antigravity").expect("antigravity found");
+        assert_eq!(agy.version.as_deref(), Some("1.4.2"));
+        assert!(agy.path.ends_with("tools/agy"));
+        let kiro = report.get("kiro").expect("kiro found");
+        assert_eq!(kiro.version.as_deref(), Some("2.31.0"));
+        assert_eq!(report.missing.len(), 11);
     }
 
     #[tokio::test]
@@ -683,7 +704,7 @@ mod tests {
         let registry = EngineRegistry::bundled();
         let report = detect(registry.all(), &env_for(home.path(), "sh")).await;
         assert!(report.found.is_empty());
-        assert_eq!(report.missing.len(), 11);
+        assert_eq!(report.missing.len(), 13);
         assert!(report.folders_checked.iter().any(|f| f == "~/.local/bin"));
         assert!(!report.fixes.is_empty());
     }

@@ -1,0 +1,73 @@
+---
+title: What's new in 0.8.0
+description: Run agents side by side and check their work. A review queue across engines, second opinions from another engine, ports, environments and previews for every worktree, a runaway guard, a usage forecast, and two more engines.
+date: 2026-10-18
+author: Naman Jain
+tags: [release, worktrees, review, linux]
+---
+
+Vibezeo 0.8.0 is out for Linux, as a `.deb` for Debian and Ubuntu and an `.rpm` for Fedora. Like 0.7.2, it runs the Free plan on your computer, with no account and nothing sent to our servers.
+
+Running five agents at once is easy. Knowing what they did, trying each one's result and catching the one that went off the rails is the hard part. This release is about that: one place to review finished work, a second opinion from another engine, a preview of every agent's version of your app, and warnings before an agent runs away or an account runs out.
+
+## One review queue, whichever engine did the work
+
+Agents that finish with changes now wait in the **Review** view of the Dashboard ("Open review queue" in the command palette). An agent or thread joins within a second of finishing when its worktree or git folder has changes. Each item shows who did the work, on which engine and branch, its last reply, how many files it changed, and labels for what it touches: 20 or more files, migrations, CI, lockfiles, `.env` files, auth paths, your public API paths and deleted tests. The labels come from fixed rules on your computer, with no AI.
+
+- **Approve** remembers exactly the diff you read. If the agent changes anything afterwards, the item comes back as "Changed since you approved".
+- **Snooze** hides an item for an hour, or until its agent finishes again.
+- On a worktree, **Send back** opens its diff with review comments, and **Merge** opens the merge confirm with its forecast.
+- **Repository checks…** sets a check command, such as `pnpm test`, that runs in the agent's folder each time an item joins. It's kept in Vibezeo's settings on this computer, never in the repository.
+
+## A second opinion from another engine
+
+"Ask for a second opinion…" on a worktree has another engine read its changes. The reviewer is a read-only thread in the worktree, on your own engine and account, and any edit it tries is denied. Each finding on a line the diff shows becomes a comment on that line; everything else it says goes into one general comment, so nothing is dropped. Edit or remove them like your own comments, then send them to the agent that made the changes. On the Free plan, Claude Code or Codex can review.
+
+## Ports, environments and previews for every worktree
+
+Parallel agents tend to fight over port 3000 and the same database. "Worktree setup…" can now give each worktree its own **block of ports** and its own **environment variables**, with placeholders such as `DATABASE_URL=postgres://localhost/app_{{slug}}`. Each worktree also gets its own `COMPOSE_PROJECT_NAME`, so `docker compose` runs a separate stack in each. Environment values are trusted together with the setup commands, and names that change how shells start, or where agents sign in, aren't allowed.
+
+Add a `preview` command, such as `pnpm dev --port {{port}}`, and every worktree's app can run at once. Once its port answers, the worktree's row shows **Preview**, which opens it in a browser tab in the sidebar. **Compare previews…** puts two agents' versions side by side, so you judge the result rather than read the diff. On btrfs and XFS, the files Worktree setup copies into a new worktree are cloned, so a large `node_modules` arrives almost at once.
+
+## A guard for agents that run away
+
+When an agent may have run away, its pane shows a card saying why, and a notification goes out. By default the guard trips when an agent works for 90 minutes without its turn ending, uses 30 points of its account's usage window in an hour (Codex), starts 20 subagents since your last prompt (Claude Code), or ends three turns in a row with the same screen. **Pause** sends the agent Esc and, if it's still working 5 seconds later, stops it until you click **Resume**. An agent on an SSH host only gets the Esc. The guard never sends a prompt and never switches accounts; Settings › Teammates › Runaway guard changes the limits.
+
+## See your usage run out before it does
+
+For engines that report usage windows (Codex does; Claude Code doesn't), the usage chip in the title bar now forecasts whether each window runs out before it resets: "On track", or "Runs out at 3:40 PM, 30 min before it resets". "Who's using it" lists the sessions that spent each account's tokens in the last hour, read from the engines' own logs on your computer. An optional notification warns you before a window runs out.
+
+## One instructions file for every engine, and two more engines
+
+"Instructions…" in a folder's menu shows which instructions file each installed engine reads. "Use one file for all" makes `AGENTS.md` the source, and gives each engine that needs it a one-line file pointing there. You see every file before anything is written, and Undo puts them back.
+
+**Antigravity CLI** and **Kiro CLI** join the launch grid, so Vibezeo now detects 13 coding-agent CLIs. They run in terminal panes, as their vendors ship them.
+
+## Smaller things
+
+- When you switch tabs while another tab's terminals are still opening, the ones you're looking at open first.
+- The Ports tab groups servers by worktree, and opens a worktree's server at its own `.localhost` name where your computer supports it.
+- Terminals hidden for 30 seconds now let go of their scrollback, as they were meant to.
+- A new worktree whose setup or preview runs opens with just that terminal, so an extra idle shell can't take the Free plan's last live pane.
+
+## Update or install
+
+On Debian or Ubuntu, check the download against its checksum, then install it:
+
+```bash
+sha256sum Vibezeo_0.8.0_amd64.deb
+sudo apt install ./Vibezeo_0.8.0_amd64.deb
+```
+
+On Fedora:
+
+```bash
+sha256sum Vibezeo-0.8.0-1.x86_64.rpm
+sudo dnf install ./Vibezeo-0.8.0-1.x86_64.rpm
+```
+
+Compare each checksum with the one on the [download page](/download/). The free download keeps its limits: 4 live panes, 3 workspaces, one thread at a time, threads with Claude Code and Codex, one account per engine, one teammate besides Lead and one plugin connection.
+
+Next up, and already in review: the Night Shift, which starts a task the moment an account's usage window resets; a sandbox for agents on Linux; a local merge queue with undo; and CI results sent back to the agent.
+
+The full notes are in the [0.8.0 release notes](/changelog/0.8.0/).

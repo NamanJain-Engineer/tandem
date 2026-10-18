@@ -223,11 +223,50 @@ fn read_file(
     seen: &mut HashSet<String>,
     out: &mut UsageScan,
 ) {
-    let Ok(f) = std::fs::File::open(file) else {
-        return;
+    let read = visit_file(
+        file,
+        &src.engine_id,
+        seen,
+        |entry, cwd, session, skipped| {
+            out.skipped_lines += skipped;
+            let Some(entry) = entry else { return };
+            let day = entry.at.with_timezone(&tz).date_naive();
+            if day < since {
+                return;
+            }
+            out.sessions
+                .entry((src.engine_id.clone(), src.account_id.clone()))
+                .or_default()
+                .insert(session.to_string());
+            out.cells
+                .entry((
+                    day,
+                    src.engine_id.clone(),
+                    src.account_id.clone(),
+                    cwd.to_string(),
+                ))
+                .or_default()
+                .add(&entry.tally);
+        },
+    );
+    if read {
+        out.files_read += 1;
+    }
+}
+
+/// Streams one log file's usage lines to `f` as `(entry, folder, session,
+/// skipped)`: `entry` is `None` for a line that was skipped (`skipped` = 1).
+/// Returns whether the file could be opened.
+fn visit_file(
+    file: &Path,
+    engine_id: &str,
+    seen: &mut HashSet<String>,
+    mut f: impl FnMut(Option<&Entry>, &str, &str, u64),
+) -> bool {
+    let Ok(handle) = std::fs::File::open(file) else {
+        return false;
     };
-    out.files_read += 1;
-    let mut reader = BufReader::new(f);
+    let mut reader = BufReader::new(handle);
     let mut buf = Vec::new();
     // Codex names the folder once per session file; Claude on every line.
     let mut file_cwd: Option<String> = None;
@@ -246,14 +285,14 @@ fn read_file(
             continue;
         }
         if line.len() > MAX_LINE {
-            out.skipped_lines += 1;
+            f(None, "", "", 1);
             continue;
         }
         let Ok(v) = serde_json::from_slice::<Value>(line) else {
-            out.skipped_lines += 1;
+            f(None, "", "", 1);
             continue;
         };
-        let parsed = if src.engine_id == "codex" {
+        let parsed = if engine_id == "codex" {
             if let Some((cwd, session)) = codex_meta(&v) {
                 if cwd.is_some() {
                     file_cwd = cwd;
@@ -273,7 +312,7 @@ fn read_file(
             if v.get("message").and_then(|m| m.get("usage")).is_some()
                 || v.pointer("/payload/type").and_then(Value::as_str) == Some("token_count")
             {
-                out.skipped_lines += 1;
+                f(None, "", "", 1);
             }
             continue;
         };
@@ -285,21 +324,78 @@ fn read_file(
                 continue;
             }
         }
-        let day = entry.at.with_timezone(&tz).date_naive();
-        if day < since {
-            continue;
-        }
         let folder = cwd.or_else(|| file_cwd.clone()).unwrap_or_default();
         let session = session.unwrap_or_else(|| file_session.clone());
-        out.sessions
-            .entry((src.engine_id.clone(), src.account_id.clone()))
-            .or_default()
-            .insert(session);
-        out.cells
-            .entry((day, src.engine_id.clone(), src.account_id.clone(), folder))
-            .or_default()
-            .add(&entry.tally);
+        f(Some(&entry), &folder, &session, 0);
     }
+    true
+}
+
+/// Tokens one session of an account spent since a moment (F-AC-08).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionTokens {
+    pub engine_id: String,
+    pub account_id: String,
+    pub session_id: String,
+    pub tokens: u64,
+}
+
+/// Tokens per session from `since_ms` (Unix ms) on, across `sources`,
+/// largest first. Files untouched since then aren't opened.
+pub fn recent_sessions(sources: &[LogSource], since_ms: i64) -> Vec<SessionTokens> {
+    let Some(since) = DateTime::<chrono::Utc>::from_timestamp_millis(since_ms) else {
+        return Vec::new();
+    };
+    let mut totals: BTreeMap<(String, String, String), u64> = BTreeMap::new();
+    for src in sources {
+        let Ok(home) = src.home.canonicalize() else {
+            continue;
+        };
+        let mut seen: HashSet<String> = HashSet::new();
+        for glob in &src.globs {
+            for file in files_for(&home, glob) {
+                if !file.canonicalize().is_ok_and(|p| p.starts_with(&home)) {
+                    continue;
+                }
+                if let Ok(meta) = std::fs::metadata(&file) {
+                    let modified = meta.modified().ok().map(DateTime::<chrono::Utc>::from);
+                    if modified.is_some_and(|m| m < since) {
+                        continue;
+                    }
+                }
+                visit_file(&file, &src.engine_id, &mut seen, |entry, _, session, _| {
+                    let Some(entry) = entry else { return };
+                    if entry.at < since {
+                        return;
+                    }
+                    *totals
+                        .entry((
+                            src.engine_id.clone(),
+                            src.account_id.clone(),
+                            session.to_string(),
+                        ))
+                        .or_default() += entry.tally.total();
+                });
+            }
+        }
+    }
+    let mut out: Vec<SessionTokens> = totals
+        .into_iter()
+        .map(
+            |((engine_id, account_id, session_id), tokens)| SessionTokens {
+                engine_id,
+                account_id,
+                session_id,
+                tokens,
+            },
+        )
+        .collect();
+    out.sort_by(|a, b| {
+        b.tokens
+            .cmp(&a.tokens)
+            .then(a.session_id.cmp(&b.session_id))
+    });
+    out
 }
 
 fn trim_line(buf: &[u8]) -> &[u8] {
@@ -375,6 +471,43 @@ mod tests {
             home: home.to_path_buf(),
             globs: globs.iter().map(|g| g.to_string()).collect(),
         }
+    }
+
+    #[test]
+    fn f_ac_08_4_tokens_per_session_in_the_last_hour() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let p = dir.path().join("projects/-home-ana-shop");
+        std::fs::create_dir_all(&p).expect("mkdir");
+        let line = |ts: &str, id: &str, session: &str, input: u64| {
+            serde_json::json!({
+                "type": "assistant", "timestamp": ts, "cwd": "/home/ana/shop", "sessionId": session,
+                "requestId": "r", "message": {"id": id, "usage": {"input_tokens": input, "output_tokens": 0}}
+            })
+            .to_string()
+        };
+        let lines = [
+            // Older than the hour: not counted.
+            line("2026-10-15T08:00:00Z", "m0", "ses-a", 9_000),
+            line("2026-10-15T09:10:00Z", "m1", "ses-a", 2_000),
+            line("2026-10-15T09:40:00Z", "m2", "ses-a", 1_000),
+            line("2026-10-15T09:50:00Z", "m3", "ses-b", 1_000),
+            // The same message repeated (another content block): once.
+            line("2026-10-15T09:50:01Z", "m3", "ses-b", 1_000),
+        ];
+        std::fs::write(p.join("a.jsonl"), lines.join("\n")).expect("write");
+        let since = DateTime::parse_from_rfc3339("2026-10-15T09:00:00Z")
+            .expect("time")
+            .timestamp_millis();
+        let out = recent_sessions(
+            &[source(dir.path(), "claude", &["projects/**/*.jsonl"])],
+            since,
+        );
+        let got: Vec<(&str, u64)> = out
+            .iter()
+            .map(|s| (s.session_id.as_str(), s.tokens))
+            .collect();
+        assert_eq!(got, vec![("ses-a", 3_000), ("ses-b", 1_000)]);
+        assert!(out.iter().all(|s| s.account_id == "acc_claude"));
     }
 
     #[test]

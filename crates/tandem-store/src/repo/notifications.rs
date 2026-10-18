@@ -32,6 +32,10 @@ pub enum NotificationKind {
     MailRefused,
     /// A teammate made or changed a routine (F-RT-05).
     RoutineChanged,
+    /// A usage window will run out before it resets (F-AC-08).
+    UsageForecast,
+    /// An agent tripped a runaway guard limit (F-AC-09).
+    Runaway,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

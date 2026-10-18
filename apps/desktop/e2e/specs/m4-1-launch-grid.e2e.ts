@@ -49,7 +49,7 @@ describe("E2E-M4-1 launch grid", () => {
       ).map((el) => el.dataset.testid),
     );
     expect(tiles).toEqual(["tile-claude", "tile-shell"]);
-    expect(await $('[data-testid="more-engines"]').getText()).toContain("10 more not installed");
+    expect(await $('[data-testid="more-engines"]').getText()).toContain("12 more not installed");
     // Launching it runs the engine found in the nvm folder.
     await $('[data-testid="tile-claude"]').click();
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 15_000 });

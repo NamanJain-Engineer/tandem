@@ -4,6 +4,7 @@ pub mod checkpoint;
 pub mod cli;
 mod error;
 pub use tandem_core::lanes::exclude;
+pub mod instructions;
 pub mod lanes;
 pub mod ops;
 pub mod overlap;

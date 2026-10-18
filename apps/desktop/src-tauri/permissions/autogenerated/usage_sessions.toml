@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-usage-sessions"
+description = "Enables the usage_sessions command without any pre-configured scope."
+commands.allow = ["usage_sessions"]
+
+[[permission]]
+identifier = "deny-usage-sessions"
+description = "Denies the usage_sessions command without any pre-configured scope."
+commands.deny = ["usage_sessions"]

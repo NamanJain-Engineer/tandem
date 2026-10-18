@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { create } from "zustand";
-import type { DashboardItem, FileDiff, IpcError, WorkspaceSummary } from "@tandem/protocol";
+import type { DashboardItem, FileDiff, IpcError, SecondOpinion, WorkspaceSummary } from "@tandem/protocol";
 import {
   Button,
   DiffView,
   Select,
+  Spinner,
   Textarea,
   diffLineKey,
   useToast,
@@ -14,14 +15,20 @@ import {
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useDashboard } from "../../stores/dashboard";
+import { useEngines } from "../../stores/engines";
+import { switchMode } from "../shell/actions";
+import { useThreads } from "../../stores/threads";
 
-/** One review comment on a worktree's diff (F-WT-02). */
-export type ReviewComment = DiffLineTarget & { id: number; comment: string };
+/** One review comment on a worktree's diff (F-WT-02). A General one (a
+ * second opinion's lines that aren't on a shown line, F-WT-05) has no line. */
+export type ReviewComment = DiffLineTarget & { id: number; comment: string; general?: boolean };
 
 const QUOTE_MAX = 200;
 
 /** Path order, then the line, new side before old on the same number. */
 function byPlace(a: ReviewComment, b: ReviewComment): number {
+  if (!!a.general !== !!b.general) return a.general ? 1 : -1;
+  if (a.general) return a.id - b.id;
   if (a.path !== b.path) return a.path < b.path ? -1 : 1;
   if (a.line !== b.line) return a.line - b.line;
   return a.side === b.side ? a.id - b.id : a.side === "new" ? -1 : 1;
@@ -40,7 +47,11 @@ export function buildReviewPrompt(branch: string, comments: ReviewComment[]): st
   const n = sorted.length;
   const head = `Review of your changes on ${branch} (${n} ${n === 1 ? "comment" : "comments"}):`;
   const items = sorted.map((c, i) => {
-    const where = c.side === "new" ? `${c.path}:${c.line}` : `${c.path} (removed line ${c.line})`;
+    const where = c.general
+      ? "General"
+      : c.side === "new"
+        ? `${c.path}:${c.line}`
+        : `${c.path} (removed line ${c.line})`;
     const body = c.comment
       .trim()
       .split("\n")
@@ -60,6 +71,11 @@ type ReviewsState = {
   edit: (laneId: string, id: number, comment: string) => void;
   remove: (laneId: string, id: number) => void;
   clear: (laneId: string) => void;
+  /** F-WT-05: a second opinion's comments, after the user's own. */
+  addOpinion: (op: SecondOpinion) => void;
+  /** F-WT-05: the reviewer running per worktree. */
+  reviewing: Record<string, { threadId: string; engineId: string }>;
+  setReviewing: (laneId: string, r: { threadId: string; engineId: string } | null) => void;
 };
 
 export const useReviews = create<ReviewsState>((set, get) => ({
@@ -84,7 +100,35 @@ export const useReviews = create<ReviewsState>((set, get) => ({
     delete byLane[laneId];
     set({ byLane });
   },
+  addOpinion: (op) => {
+    let id = get().next;
+    const added: ReviewComment[] = op.comments.map((c) => ({
+      path: c.path,
+      side: "new",
+      line: c.line,
+      text: c.text,
+      comment: c.comment,
+      id: id++,
+    }));
+    if (op.general)
+      added.push({ path: "", side: "new", line: 0, text: "", comment: op.general, general: true, id: id++ });
+    const list = get().byLane[op.laneId] ?? [];
+    set({ next: id, byLane: { ...get().byLane, [op.laneId]: [...list, ...added] } });
+  },
+  reviewing: {},
+  setReviewing: (laneId, r) => {
+    const reviewing = { ...get().reviewing };
+    if (r) reviewing[laneId] = r;
+    else delete reviewing[laneId];
+    set({ reviewing });
+  },
 }));
+
+/** Opens a thread in Thread mode (the reviewer's, F-WT-05). */
+export function openThread(threadId: string): void {
+  switchMode("thread");
+  useThreads.getState().select(threadId);
+}
 
 /** The agents running in a worktree's panes: where a review can go. */
 export function worktreeAgents(items: Record<string, DashboardItem>, laneId: string): DashboardItem[] {
@@ -155,12 +199,17 @@ export function ReviewDiff({
   wt,
   files,
   labels,
+  onSecondOpinion,
 }: {
   wt: WorkspaceSummary;
   files: FileDiff[];
   labels: Partial<DiffViewLabels>;
+  /** F-WT-05: opens the reviewer sheet. */
+  onSecondOpinion?: () => void;
 }) {
   const comments = useReviews((s) => s.byLane[wt.id]) ?? [];
+  const reviewing = useReviews((s) => s.reviewing[wt.id]) ?? null;
+  const engineLabel = useEngines((s) => (reviewing ? s.label(reviewing.engineId) : null));
   const { add, edit, remove, clear } = useReviews.getState();
   const [editing, setEditing] = useState<Editing>(null);
   const items = useDashboard((s) => s.items);
@@ -179,12 +228,17 @@ export function ReviewDiff({
   };
 
   const annotations: Record<string, React.ReactNode> = {};
+  const general = comments.filter((c) => c.general);
   for (const c of comments) {
-    if (editing?.id === c.id) continue;
+    if (editing?.id === c.id || c.general) continue;
     annotations[diffLineKey(c)] = (
       <div data-testid="review-comment" data-line={diffLineKey(c)} className="flex items-start gap-2 text-sm">
         <p className="min-w-0 flex-1 whitespace-pre-wrap text-fg">{c.comment}</p>
-        <Button size="sm" variant="ghost" onClick={() => setEditing({ target: c, id: c.id, text: c.comment })}>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => setEditing({ target: c, id: c.id, text: c.comment })}
+        >
           {t("worktree.review.edit")}
         </Button>
         <Button size="sm" variant="ghost" onClick={() => remove(wt.id, c.id)}>
@@ -193,7 +247,15 @@ export function ReviewDiff({
       </div>
     );
   }
-  if (editing)
+  const editor = editing && (
+    <CommentEditor
+      value={editing.text}
+      onChange={(text) => setEditing({ ...editing, text })}
+      onSave={save}
+      onCancel={() => setEditing(null)}
+    />
+  );
+  if (editing && !general.some((c) => c.id === editing.id))
     annotations[diffLineKey(editing.target)] = (
       <CommentEditor
         value={editing.text}
@@ -224,6 +286,46 @@ export function ReviewDiff({
 
   return (
     <div className="flex min-h-0 flex-col gap-3">
+      {onSecondOpinion && (
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={files.length === 0 || reviewing !== null}
+            title={files.length === 0 ? t("worktree.opinion.noChanges") : undefined}
+            onClick={onSecondOpinion}
+            data-testid="review-second-opinion"
+          >
+            {t("worktree.opinion.menu")}
+          </Button>
+        </div>
+      )}
+      {general.map((c) => (
+        <div
+          key={c.id}
+          data-testid="review-general"
+          className="flex flex-col gap-1 rounded-md border border-border bg-surface-2 px-3 py-2 text-sm"
+        >
+          <span className="text-xs font-semibold text-fg-muted">{t("worktree.opinion.general")}</span>
+          {editing?.id === c.id ? (
+            editor
+          ) : (
+            <div className="flex items-start gap-2">
+              <p className="min-w-0 flex-1 whitespace-pre-wrap text-fg">{c.comment}</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setEditing({ target: c, id: c.id, text: c.comment })}
+              >
+                {t("worktree.review.edit")}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => remove(wt.id, c.id)}>
+                {t("worktree.review.remove")}
+              </Button>
+            </div>
+          )}
+        </div>
+      ))}
       <DiffView
         files={files}
         labels={labels}
@@ -236,18 +338,33 @@ export function ReviewDiff({
           onComment: (tg) => {
             const existing = comments.find((c) => diffLineKey(c) === diffLineKey(tg));
             setEditing(
-              existing ? { target: existing, id: existing.id, text: existing.comment } : { target: tg, id: null, text: "" },
+              existing
+                ? { target: existing, id: existing.id, text: existing.comment }
+                : { target: tg, id: null, text: "" },
             );
           },
           annotations,
         }}
       />
-      {comments.length > 0 && (
+      {(comments.length > 0 || reviewing) && (
         <div
           data-testid="review-bar"
           className="sticky bottom-0 flex flex-wrap items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-2"
         >
-          <span className="text-sm text-fg">{t("worktree.review.count", { n: comments.length })}</span>
+          {reviewing && (
+            <span className="flex items-center gap-2" data-testid="review-reviewing">
+              <Spinner size={12} />
+              <span className="text-sm text-fg-muted">
+                {t("worktree.opinion.reviewing", { engine: engineLabel ?? reviewing.engineId })}
+              </span>
+              <Button size="sm" variant="ghost" onClick={() => openThread(reviewing.threadId)}>
+                {t("worktree.opinion.openThread")}
+              </Button>
+            </span>
+          )}
+          {comments.length > 0 && (
+            <span className="text-sm text-fg">{t("worktree.review.count", { n: comments.length })}</span>
+          )}
           <span className="flex-1" />
           {agents.length > 1 && (
             <Select
@@ -258,26 +375,30 @@ export function ReviewDiff({
               options={agents.map((a) => ({ value: a.key, label: agentName(a) }))}
             />
           )}
-          <Button size="sm" variant="secondary" onClick={copy} data-testid="review-copy">
-            {t("worktree.review.copy")}
-          </Button>
-          <Button
-            size="sm"
-            variant="primary"
-            loading={sending}
-            disabled={!chosen}
-            title={chosen ? undefined : t("worktree.review.noAgent")}
-            onClick={() => void send()}
-            data-testid="review-send"
-          >
-            {chosen && agents.length === 1
-              ? t("worktree.review.sendTo", { name: agentName(chosen) })
-              : t("worktree.review.send")}
-          </Button>
-          {!chosen && (
-            <p data-testid="review-no-agent" className="w-full text-xs text-fg-subtle">
-              {t("worktree.review.noAgent")}
-            </p>
+          {comments.length > 0 && (
+            <>
+              <Button size="sm" variant="secondary" onClick={copy} data-testid="review-copy">
+                {t("worktree.review.copy")}
+              </Button>
+              <Button
+                size="sm"
+                variant="primary"
+                loading={sending}
+                disabled={!chosen}
+                title={chosen ? undefined : t("worktree.review.noAgent")}
+                onClick={() => void send()}
+                data-testid="review-send"
+              >
+                {chosen && agents.length === 1
+                  ? t("worktree.review.sendTo", { name: agentName(chosen) })
+                  : t("worktree.review.send")}
+              </Button>
+              {!chosen && (
+                <p data-testid="review-no-agent" className="w-full text-xs text-fg-subtle">
+                  {t("worktree.review.noAgent")}
+                </p>
+              )}
+            </>
           )}
         </div>
       )}

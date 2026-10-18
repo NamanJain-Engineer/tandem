@@ -259,3 +259,95 @@ fn local_review(window: &WebviewWindow) -> Result<LocalReview, IpcError> {
         )
     })
 }
+
+/// F-WT-05: a read-only review of the worktree's diff by another engine.
+#[tauri::command]
+pub async fn lane_second_opinion(
+    state: State<'_, AppState>,
+    lane_id: WorkspaceId,
+    engine_id: String,
+    account_id: Option<tandem_core::ids::AccountId>,
+    task: Option<String>,
+) -> Result<crate::services::second_opinion::SecondOpinionStarted, IpcError> {
+    use crate::services::second_opinion::{self as so, AppHost, StartArgs};
+    let host = std::sync::Arc::new(AppHost {
+        store: state.store.clone(),
+        threads: state.threads.clone(),
+        engines: state.terminals.engines.clone(),
+    });
+    so::start(
+        host,
+        state.bus.clone(),
+        state.second_opinions.clone(),
+        StartArgs {
+            lane: lane_id,
+            engine: engine_id,
+            account: account_id,
+            task,
+        },
+    )
+    .await
+}
+
+/// F-WT-06: the worktree's port block, if it has one.
+#[tauri::command]
+pub fn lane_runtime(
+    state: State<'_, AppState>,
+    lane_id: WorkspaceId,
+) -> Option<crate::services::worktree_runtime::PortRange> {
+    crate::services::worktree_runtime::ports_of(&state.data, lane_id.as_str())
+}
+
+/// F-WT-06 AC6: the variables whose values look like secrets.
+#[tauri::command]
+pub fn worktree_env_check(env: std::collections::BTreeMap<String, String>) -> Vec<String> {
+    crate::services::worktree_runtime::secret_looking(&env)
+}
+
+/// F-WT-09: whether each worktree's preview answers.
+#[tauri::command]
+pub async fn lane_previews(
+    state: State<'_, AppState>,
+    lane_ids: Vec<WorkspaceId>,
+) -> Result<Vec<crate::services::worktree_runtime::PreviewState>, IpcError> {
+    let mut rows = Vec::new();
+    for id in lane_ids.iter().take(64) {
+        if let Ok(row) = repo::get(&state.store, id).await {
+            rows.push(row);
+        }
+    }
+    let data = state.data.clone();
+    tokio::task::spawn_blocking(move || {
+        rows.iter()
+            .map(|r| crate::services::worktree_runtime::preview_state(&data, r))
+            .collect()
+    })
+    .await
+    .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))
+}
+
+/// F-WT-09: a "Preview" pane in the worktree that runs the trusted preview
+/// once its prompt is up. The caller places the pane in `tab_id`'s layout.
+#[tauri::command]
+pub async fn lane_preview_start(
+    state: State<'_, AppState>,
+    lane_id: WorkspaceId,
+    tab_id: TabId,
+) -> Result<PaneRecord, IpcError> {
+    state
+        .terminals
+        .check_live_limit(state.entitlements.limits().panes)?;
+    let (pane, command) =
+        worktree_setup::preview_pane(&state.store, &state.data, &lane_id, &tab_id).await?;
+    let terminals = state.terminals.clone();
+    let id = pane.id.clone();
+    tauri::async_runtime::spawn(async move {
+        if !terminals
+            .type_command_when_ready(&id, &command, worktree_setup::SETUP_READY_TIMEOUT)
+            .await
+        {
+            tracing::warn!("the preview shell didn't become ready");
+        }
+    });
+    Ok(pane)
+}

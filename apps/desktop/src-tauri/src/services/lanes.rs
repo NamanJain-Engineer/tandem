@@ -164,6 +164,8 @@ pub async fn create(
     tracing::info!(code = "lane.created", "worktree created");
     // F-WT-01: the repository's ignored files, for every new worktree.
     crate::services::worktree_setup::copy_for_new_lane(&row).await;
+    // F-WT-06: its index and port block, reported by `lane_setup`.
+    crate::services::worktree_runtime::note_new_lane(&row);
     Ok(row)
 }
 
@@ -494,12 +496,21 @@ pub async fn remove_with_teardown(
     stop_panes(store, pty, &lane.id).await?;
     let mut report = RemoveReport::default();
     if let Some((data, login)) = teardown {
-        report.teardown =
-            worktree_setup::teardown(data, login, &lane.root, worktree_setup::TEARDOWN_LIMIT).await;
+        // F-WT-06: the teardown sees the worktree's variables.
+        let vars = crate::services::worktree_runtime::vars_for(data, &lane);
+        report.teardown = worktree_setup::teardown(
+            data,
+            login,
+            &vars,
+            &lane.root,
+            worktree_setup::TEARDOWN_LIMIT,
+        )
+        .await;
     }
     let repo = discover(&parent.root, "Folder not found")?;
     LaneManager::remove(git, &repo, lane_path, force).await?;
     workspaces::remove(store, &lane.id).await?;
+    crate::services::worktree_runtime::free_global(lane.id.as_str());
     tracing::info!(code = "lane.removed", "worktree removed");
     Ok(report)
 }
