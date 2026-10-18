@@ -73,7 +73,7 @@ Until these exist, release builds can't update (`updates_state` reads `unavailab
 
 ## Linux stores (mobile-apps, F-RM-07)
 - [ ] **Flathub.** Needs a release built from a branch that has D-2032 (terminals, threads and engine detection go through `flatpak-spawn --host`); 0.5.0 doesn't, so its terminals can't reach host shells inside the sandbox. 0.7.2 does. Then:
-  1. Done for 0.7.2: its `.deb` is published at `https://vibezeo.com/downloads/`, and its URL, version and SHA-256 are in `packaging/flatpak/com.vibezeo.Vibezeo.yml`, the `<releases>` of `com.vibezeo.Vibezeo.metainfo.xml` and `packaging/snap/snapcraft.yaml`. Each release updates them.
+  1. Done for 0.8.0: its `.deb` is published at `https://vibezeo.com/downloads/`, and its URL, version and SHA-256 are in `packaging/flatpak/com.vibezeo.Vibezeo.yml`, the `<releases>` of `com.vibezeo.Vibezeo.metainfo.xml` and `packaging/snap/snapcraft.yaml`. Each release updates them.
   2. Check locally: `flatpak-builder --user --install --force-clean build packaging/flatpak/com.vibezeo.Vibezeo.yml` (clone `https://github.com/flathub/shared-modules` into `packaging/flatpak/` first), then `flatpak run com.vibezeo.Vibezeo`: open a terminal pane, start an agent, commit with git.
   3. Fork `github.com/flathub/flathub`, branch `new-pr`, add the manifest, metainfo, desktop file and `vibezeo.sh`, add `shared-modules` as a submodule, and open the pull request. Flathub reviewers ask about `--filesystem=home` and `--talk-name=org.freedesktop.Flatpak`; the answer is that Vibezeo runs the person's own shells and coding CLIs in their own folders, like an IDE.
   4. Verify the app id's domain: Flathub asks you to put a token at `https://vibezeo.com/.well-known/org.flathub.VerifiedApps.txt`.
