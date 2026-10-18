@@ -5,7 +5,7 @@ members = ["crates/*", "apps/desktop/src-tauri", "tests/invariants"]
 [workspace.package]
 edition = "2021"
 license = "MIT"
-version = "0.7.2"
+version = "0.8.0"
 publish = false
 
 [workspace.dependencies]
@@ -89,12 +89,12 @@ strip = "symbols"
 
 # `pnpm --filter desktop perf`: release optimisations with the debug-only
 # test harness (cfg!(debug_assertions)) still compiled in, so the suites can
-# read the app's counters. Never shipped.
+# read the app's counters. Never shipped. LTO and codegen units match release
+# so the budgets measure code shaped like the shipped binary (D-140); a clean
+# build takes about 25 minutes.
 [profile.perf]
 inherits = "release"
 debug-assertions = true
-lto = false
-codegen-units = 16
 strip = "none"
 
 # Dependencies keep line tables only in dev builds: full DWARF for whisper.cpp,

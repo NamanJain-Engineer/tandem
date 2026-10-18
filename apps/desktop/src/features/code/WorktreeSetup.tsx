@@ -77,12 +77,16 @@ export function WorktreeSetupDialog({ ws, onClose }: { ws: WorkspaceSummary; onC
     if (parsedEnv.badLine !== null || !parsedPorts.ok) return;
     setBusy(true);
     setError(null);
+    // The dialog doesn't edit the preview (F-WT-09): saving keeps the
+    // file's, which the core would otherwise write out (D-861).
+    const preview = load.at === "ready" ? load.state.config?.preview : null;
     const out = await saveWorktreeSetup(ws.id, {
       copy: patternLines(copy),
       setup: setup.trim() || null,
       teardown: teardown.trim() || null,
       ports: parsedPorts.ports,
       env: parsedEnv.env,
+      ...(preview ? { preview } : {}),
     });
     setBusy(false);
     if (!out.ok) {

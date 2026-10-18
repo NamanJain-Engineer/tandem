@@ -5,7 +5,7 @@
 export const DOWNLOADS_PATH = "/downloads";
 
 export const RELEASE = {
-  version: "0.7.2",
+  version: "0.8.0",
 } as const;
 
 export type Os = "macos" | "windows" | "linux";
@@ -26,7 +26,7 @@ export const DOWNLOADS: Download[] = [
     os: "macos",
     name: "macOS",
     requirement: "macOS 14 or later, Apple Silicon or Intel",
-    assets: [{ file: "Vibezeo_0.7.2_universal-unsigned.dmg", label: "Download for macOS (.dmg)" }],
+    assets: [{ file: "Vibezeo_0.8.0_universal-unsigned.dmg", label: "Download for macOS (.dmg)" }],
     steps: [
       "Open the .dmg and drag Vibezeo into Applications.",
       "The first time, right-click Vibezeo in Applications, choose Open, then Open again. The build isn't notarized by Apple yet, so a plain double-click is blocked.",
@@ -38,8 +38,8 @@ export const DOWNLOADS: Download[] = [
     name: "Windows",
     requirement: "Windows 10 or 11, 64-bit",
     assets: [
-      { file: "Vibezeo_0.7.2_x64-setup-unsigned.exe", label: "Download for Windows (.exe)" },
-      { file: "Vibezeo_0.7.2_x64_en-US-unsigned.msi", label: ".msi installer" },
+      { file: "Vibezeo_0.8.0_x64-setup-unsigned.exe", label: "Download for Windows (.exe)" },
+      { file: "Vibezeo_0.8.0_x64_en-US-unsigned.msi", label: ".msi installer" },
     ],
     steps: [
       "Run the installer.",
@@ -52,12 +52,12 @@ export const DOWNLOADS: Download[] = [
     name: "Linux",
     requirement: "x86-64 with WebKitGTK 4.1: Ubuntu 22.04+, Debian 12+ or Fedora 42+",
     assets: [
-      { file: "Vibezeo_0.7.2_amd64.deb", label: "Download for Linux (.deb)" },
-      { file: "Vibezeo-0.7.2-1.x86_64.rpm", label: "Fedora (.rpm)" },
+      { file: "Vibezeo_0.8.0_amd64.deb", label: "Download for Linux (.deb)" },
+      { file: "Vibezeo-0.8.0-1.x86_64.rpm", label: "Fedora (.rpm)" },
     ],
     steps: [
-      "Debian or Ubuntu: sudo apt install ./Vibezeo_0.7.2_amd64.deb",
-      "Fedora: sudo dnf install ./Vibezeo-0.7.2-1.x86_64.rpm",
+      "Debian or Ubuntu: sudo apt install ./Vibezeo_0.8.0_amd64.deb",
+      "Fedora: sudo dnf install ./Vibezeo-0.8.0-1.x86_64.rpm",
       "Open it from your applications menu.",
     ],
     available: true,

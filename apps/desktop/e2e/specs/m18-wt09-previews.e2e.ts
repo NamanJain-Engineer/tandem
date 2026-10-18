@@ -126,6 +126,13 @@ describe("E2E-M18-WT09-1 previews", function () {
       async () => (await invoke<Preview[]>("lane_previews", { laneIds: [beta] }))[0]?.status === "ready",
       { timeout: 45_000, timeoutMsg: "beta's preview never answered" },
     );
+    // The preview is the new worktree's only pane: no shell started beside it
+    // to take the last of Free's 4 live panes (D-863).
+    const betaTab = (await invoke<Array<{ id: string; tabs: Array<{ id: string }> }>>("workspace_list")).find(
+      (w) => w.id === beta,
+    )?.tabs[0]?.id;
+    const betaPanes = await invoke<Array<{ humanName: string | null }>>("pane_list", { tabId: betaTab });
+    expect(betaPanes.map((p) => p.humanName)).toEqual(["Preview"]);
     const [alphaState, betaState] = await invoke<Preview[]>("lane_previews", {
       laneIds: [await laneId("tandem/alpha"), beta],
     });
