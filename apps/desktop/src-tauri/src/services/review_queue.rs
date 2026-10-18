@@ -952,6 +952,18 @@ pub fn send_back_prompt(branch: &str, comment: &str) -> String {
     )
 }
 
+/// Whether a thread's finished work joins the queue. Teammate chats have no
+/// workspace (F-DB-04), and a read-only thread, such as a second opinion's
+/// reviewer (F-WT-05), can't have made the changes in its folder: they're
+/// another agent's, and Send back would reach the wrong one (D-859).
+fn reviews_thread(
+    kind: tandem_store::repo::threads::ThreadKind,
+    access: tandem_core::access::Access,
+) -> bool {
+    kind == tandem_store::repo::threads::ThreadKind::Thread
+        && access != tandem_core::access::Access::Read
+}
+
 /// The app's host: panes, threads, workspaces, git, checkpoints, settings.
 pub struct AppHost {
     pub app: tauri::AppHandle,
@@ -1122,8 +1134,7 @@ impl QueueHost for AppHost {
             let t = threads::get(&state.store, &ThreadId::from_db(id.to_string()))
                 .await
                 .ok()??;
-            // Teammate chats have no workspace (F-DB-04).
-            if t.kind != threads::ThreadKind::Thread {
+            if !reviews_thread(t.kind, t.access) {
                 return None;
             }
             (
@@ -1291,6 +1302,19 @@ mod tests {
 
     fn m(path: &str) -> FileDiff {
         file(path, FileChange::Modified, "+x\n")
+    }
+
+    #[test]
+    fn f_db_04_1_a_read_only_thread_never_joins_the_queue() {
+        use tandem_core::access::Access;
+        use tandem_store::repo::threads::ThreadKind;
+        // A second opinion's reviewer (F-WT-05) reads the worktree it
+        // reviews: the diff there is another agent's work (D-859).
+        assert!(!reviews_thread(ThreadKind::Thread, Access::Read));
+        assert!(reviews_thread(ThreadKind::Thread, Access::Edits));
+        assert!(reviews_thread(ThreadKind::Thread, Access::Full));
+        // Teammate chats have no workspace.
+        assert!(!reviews_thread(ThreadKind::TeammateChat, Access::Edits));
     }
 
     #[test]

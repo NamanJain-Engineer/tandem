@@ -3,11 +3,15 @@ import type {
   AppBoot,
   AuthState,
   DashboardItem,
+  FileDiff,
   EntitlementView,
   GitPanel,
   Issue,
   IssueSummary,
   PaneRecord,
+  RepoReview,
+  ReviewItem,
+  ReviewQueueView,
   ScratchNote,
   TabLayout,
   TaskDetail,
@@ -21,6 +25,7 @@ import type {
   WorkspaceSummary,
 } from "@tandem/protocol";
 import pkg from "../../package.json";
+import { listen } from "../ipc/events";
 import { setInvokeBackend } from "../ipc/invoke";
 import { FREE } from "../test/fakeBackend";
 import { DEMO_MESSAGE_LIMIT, DemoCore, FIRST_MESSAGE } from "./backend";
@@ -51,6 +56,40 @@ describe("browser demo (vibezeo.com/demo)", () => {
     expect(shell.write("pw")).toBe("pw");
     expect(shell.write("x\x7f")).toBe("x\b \b");
     expect(shell.write("d\r")).toBe(`d\r\n/home/you/shop\r\n${PROMPT}`);
+  });
+
+  it("F-DB-04 the demo's review queue: Claude Code's fix with its diff; approve, snooze and run the check", async () => {
+    core = new DemoCore(0);
+    const item = (core.handle("review_queue", {}) as ReviewQueueView).items[0];
+    expect(item).toMatchObject({
+      key: "pane:pn_claude",
+      title: "Claude Code",
+      engineId: "claude",
+      state: "review",
+      files: 2,
+    });
+    expect(item?.check?.state).toBe("passed");
+    const key = item?.key ?? "";
+    const files = core.handle("review_item_diff", { key, scope: "all" }) as FileDiff[];
+    expect(files.map((f) => f.path)).toEqual(["src/checkout/redirect.test.ts", "src/checkout/redirect.ts"]);
+    const seen: ReviewQueueView[] = [];
+    const stop = await listen<ReviewQueueView>("review:queue", (q) => void seen.push(q));
+    // Approve needs the diff that was read; the queue updates as in the app.
+    expect(() => core?.handle("review_approve", { key, diffHash: "stale" })).toThrow();
+    expect((core.handle("review_approve", { key, diffHash: item?.diffHash }) as ReviewItem).state).toBe(
+      "approved",
+    );
+    expect(seen.at(-1)?.items[0]?.state).toBe("approved");
+    expect((core.handle("review_unapprove", { key }) as ReviewItem).state).toBe("review");
+    expect((core.handle("review_snooze", { key }) as ReviewItem).state).toBe("snoozed");
+    expect((core.handle("review_snooze", { key, minutes: 0 }) as ReviewItem).state).toBe("review");
+    expect((core.handle("review_run_check", { key }) as ReviewItem).check?.state).toBe("running");
+    await until(() => seen.at(-1)?.items[0]?.check?.state === "passed");
+    expect((core.handle("review_repo_get", { workspaceId: item?.workspaceId }) as RepoReview).check).toBe(
+      "npm test",
+    );
+    expect(() => core?.handle("review_approve", { key: "pane:nope", diffHash: "x" })).toThrow();
+    stop();
   });
 
   it("F-WB-01 the first thread sends its draft, asks before the tests, and reports the fix with its changes", async () => {

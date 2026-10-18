@@ -33,6 +33,37 @@ describe("mount queue (F-CD-04)", () => {
     expect(q.pending()).toBe(0);
   });
 
+  it("F-CD-04 views on screen open before queued views of a tab that was hidden", () => {
+    const { q, opened, job, frame } = setup();
+    // A tab of shells is still opening when another tab is shown.
+    const shown = new Set(["s1", "s2", "s3", "s4"]);
+    const on = (id: string) => () => shown.has(id);
+    for (const id of ["s1", "s2", "s3", "s4"]) q.add(job(id), false, on(id));
+    expect(opened).toEqual(["s1"]);
+    for (const id of ["s1", "s2", "s3", "s4"]) shown.delete(id);
+    for (const id of ["a1", "a2", "a3"]) shown.add(id);
+    q.add(job("a1"), true, on("a1"));
+    q.add(job("a2"), false, on("a2"));
+    q.add(job("a3"), false, on("a3"));
+    for (let i = 0; i < 3; i++) frame();
+    expect(opened).toEqual(["s1", "a1", "a2", "a3"]);
+    // The hidden tab's views still open after, in order.
+    frame();
+    frame();
+    frame();
+    expect(opened).toEqual(["s1", "a1", "a2", "a3", "s2", "s3", "s4"]);
+  });
+
+  it("F-CD-04 a queued view shown before its turn opens with the views on screen", () => {
+    const { q, opened, job, frame } = setup();
+    const shown = new Set(["a"]);
+    const on = (id: string) => () => shown.has(id);
+    for (const id of ["a", "b", "c", "d"]) q.add(job(id), false, on(id));
+    shown.add("d");
+    frame();
+    expect(opened).toEqual(["a", "d"]);
+  });
+
   it("a view unmounted before it opened never opens; an opened one is cleaned up", () => {
     const { q, opened, closed, job, frame } = setup();
     const a = q.add(job("a"));

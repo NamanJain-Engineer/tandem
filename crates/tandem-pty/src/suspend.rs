@@ -3,12 +3,16 @@
 //! reports that pausing isn't available. Behind a trait so the runaway guard
 //! is tested with a fake.
 
+use std::time::Duration;
+
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum SuspendError {
     #[error("pausing a program isn't available on this system")]
     Unsupported,
     #[error("the program isn't running")]
     Gone,
+    #[error("the program didn't stop")]
+    NotStopped,
     #[error("couldn't signal the program: {0}")]
     Os(String),
 }
@@ -18,7 +22,16 @@ pub trait ProcessControl: Send + Sync {
     fn stop(&self, pgid: i32) -> Result<(), SuspendError>;
     /// Continues every process in group `pgid`.
     fn cont(&self, pgid: i32) -> Result<(), SuspendError>;
+    /// True once process `pid` has stopped, false if it hasn't within
+    /// `limit` or is gone. A stop signal is only queued when `stop` returns;
+    /// the process stops when it next runs.
+    fn wait_stopped(&self, _pid: i32, _limit: Duration) -> bool {
+        true
+    }
 }
+
+/// How long a pause waits for the pane's shell to stop (D-860).
+pub const SHELL_STOP_LIMIT: Duration = Duration::from_millis(500);
 
 /// A job paused for the runaway guard: the terminal's foreground group (the
 /// agent) and, when the agent runs as a job of the pane's own shell, that
@@ -33,8 +46,11 @@ pub struct PausedJob {
 /// its foreground job stop takes the terminal back and runs the rest of its
 /// command: in the agent wrapper that hands the pane back to a new shell
 /// (F-CD-03) and leaves the agent behind as a background job, which then
-/// outlives the pane. A stopped shell can't react. If the agent can't be
-/// stopped, the shell is continued again.
+/// outlives the pane. A stopped shell can't react, so the agent is stopped
+/// only once the shell really has (D-860): until then the shell's wait for
+/// its job can still return the job's stop, and it acts on that when it's
+/// continued. A shell that doesn't stop is continued and nothing is paused,
+/// as when the agent can't be stopped.
 pub fn pause(
     control: &dyn ProcessControl,
     agent: i32,
@@ -43,6 +59,10 @@ pub fn pause(
     let shell = shell.filter(|&s| s > 1 && s != agent);
     if let Some(s) = shell {
         control.stop(s)?;
+        if !control.wait_stopped(s, SHELL_STOP_LIMIT) {
+            let _ = control.cont(s);
+            return Err(SuspendError::NotStopped);
+        }
     }
     if let Err(e) = control.stop(agent) {
         if let Some(s) = shell {
@@ -84,6 +104,23 @@ fn signal(pgid: i32, sig: libc::c_int) -> Result<(), SuspendError> {
     }
 }
 
+/// Whether `pid` is stopped; `None` when it's gone or exiting.
+#[cfg(unix)]
+fn is_stopped(sys: &mut sysinfo::System, pid: i32) -> Option<bool> {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate};
+    let pid = Pid::from_u32(u32::try_from(pid).ok()?);
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing(),
+    );
+    match sys.process(pid)?.status() {
+        ProcessStatus::Stop | ProcessStatus::Tracing => Some(true),
+        ProcessStatus::Zombie | ProcessStatus::Dead => None,
+        _ => Some(false),
+    }
+}
+
 #[cfg(unix)]
 impl ProcessControl for SignalControl {
     fn stop(&self, pgid: i32) -> Result<(), SuspendError> {
@@ -91,6 +128,18 @@ impl ProcessControl for SignalControl {
     }
     fn cont(&self, pgid: i32) -> Result<(), SuspendError> {
         signal(pgid, libc::SIGCONT)
+    }
+    fn wait_stopped(&self, pid: i32, limit: Duration) -> bool {
+        let mut sys = sysinfo::System::new();
+        let start = std::time::Instant::now();
+        loop {
+            match is_stopped(&mut sys, pid) {
+                Some(true) => return true,
+                None => return false,
+                Some(false) if start.elapsed() >= limit => return false,
+                Some(false) => std::thread::sleep(Duration::from_millis(1)),
+            }
+        }
     }
 }
 
@@ -109,11 +158,13 @@ mod order_tests {
     use super::*;
     use std::sync::Mutex;
 
-    /// Records each signal; `fail` names a group whose stop fails.
+    /// Records each signal and wait; `fail` names a group whose stop fails,
+    /// `stuck` a process that never stops.
     #[derive(Default)]
     struct Log {
         calls: Mutex<Vec<(&'static str, i32)>>,
         fail: Option<i32>,
+        stuck: Option<i32>,
     }
 
     impl ProcessControl for Log {
@@ -127,6 +178,10 @@ mod order_tests {
         fn cont(&self, pgid: i32) -> Result<(), SuspendError> {
             self.calls.lock().expect("lock").push(("cont", pgid));
             Ok(())
+        }
+        fn wait_stopped(&self, pid: i32, _limit: Duration) -> bool {
+            self.calls.lock().expect("lock").push(("wait", pid));
+            self.stuck != Some(pid)
         }
     }
 
@@ -142,9 +197,30 @@ mod order_tests {
             }
         );
         resume(&log, &job).expect("resume");
+        // The job is stopped only once the shell has stopped (D-860).
         assert_eq!(
             log.calls.lock().expect("lock").as_slice(),
-            &[("stop", 100), ("stop", 200), ("cont", 200), ("cont", 100)]
+            &[
+                ("stop", 100),
+                ("wait", 100),
+                ("stop", 200),
+                ("cont", 200),
+                ("cont", 100)
+            ]
+        );
+    }
+
+    #[test]
+    fn f_ac_09_8_a_shell_that_doesnt_stop_leaves_its_job_running() {
+        // Stopping the job then could still reach the shell's wait (D-860).
+        let log = Log {
+            stuck: Some(100),
+            ..Log::default()
+        };
+        assert_eq!(pause(&log, 200, Some(100)), Err(SuspendError::NotStopped));
+        assert_eq!(
+            log.calls.lock().expect("lock").as_slice(),
+            &[("stop", 100), ("wait", 100), ("cont", 100)]
         );
     }
 
@@ -168,7 +244,7 @@ mod order_tests {
         assert_eq!(pause(&log, 200, Some(100)), Err(SuspendError::Gone));
         assert_eq!(
             log.calls.lock().expect("lock").as_slice(),
-            &[("stop", 100), ("stop", 200), ("cont", 100)]
+            &[("stop", 100), ("wait", 100), ("stop", 200), ("cont", 100)]
         );
     }
 }
@@ -214,5 +290,28 @@ mod tests {
         let _ = child.wait();
         assert_eq!(c.stop(pid as i32), Err(SuspendError::Gone));
         assert_eq!(c.stop(1), Err(SuspendError::Gone), "never init");
+    }
+
+    #[test]
+    fn f_ac_09_8_waits_until_a_stopped_process_has_really_stopped() {
+        use std::os::unix::process::CommandExt;
+        use std::time::Duration;
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .expect("sleep");
+        let pid = child.id() as i32;
+        let c = SignalControl;
+        // Running, it never stops by itself.
+        assert!(!c.wait_stopped(pid, Duration::from_millis(50)));
+        c.stop(pid).expect("stop");
+        assert!(c.wait_stopped(pid, Duration::from_secs(2)));
+        assert_eq!(state(pid as u32), "T");
+        c.cont(pid).expect("cont");
+        let _ = child.kill();
+        let _ = child.wait();
+        // Gone: nothing to wait for.
+        assert!(!c.wait_stopped(pid, Duration::from_millis(50)));
     }
 }

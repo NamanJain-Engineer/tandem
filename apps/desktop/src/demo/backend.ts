@@ -45,6 +45,7 @@ import {
 } from "./agent";
 import { DemoFiles, NO_GIT } from "./files";
 import { DemoNotes } from "./notes";
+import { DemoReview } from "./review";
 import { DemoTasks } from "./tasks";
 import { DemoShell, agentScreen } from "./shell";
 import { version } from "../../package.json";
@@ -401,6 +402,8 @@ export class DemoCore {
   readonly notes = new DemoNotes();
   /** The Tasks tab, kept in the page (F-TK-03). */
   readonly tasks = new DemoTasks();
+  /** The review queue (F-DB-04): Claude Code's finished fix in `shop`. */
+  private readonly review = new DemoReview(WORKSPACE, "pn_claude");
   private ids = 0;
   private timers = new Set<ReturnType<typeof setTimeout>>();
 
@@ -425,6 +428,7 @@ export class DemoCore {
   dispose(): void {
     for (const t of this.timers) clearTimeout(t);
     this.timers.clear();
+    this.review.dispose();
   }
 
   private newThread(title: string, engineId: string, workspaceId: string | null, at: number): DemoThread {
@@ -1107,6 +1111,26 @@ export class DemoCore {
           message:
             "Find work searches the terminals, threads and teammates running on your computer, so the demo has nothing to search.",
         };
+      // The review queue (F-DB-04): Claude Code's finished fix, kept in the page.
+      case "review_queue":
+        return this.review.view();
+      case "review_item_diff":
+        return this.review.diff(String(args?.key ?? ""));
+      case "review_approve":
+        return this.review.approve(String(args?.key ?? ""), String(args?.diffHash ?? ""));
+      case "review_unapprove":
+        return this.review.unapprove(String(args?.key ?? ""));
+      case "review_snooze":
+        return this.review.snooze(String(args?.key ?? ""), typeof args?.minutes === "number" ? args.minutes : null);
+      case "review_run_check":
+        return this.review.runCheck(String(args?.key ?? ""));
+      case "review_repo_get":
+        return this.review.repoGet();
+      case "review_repo_set":
+        return this.review.repoSet(
+          typeof args?.check === "string" ? args.check : null,
+          Array.isArray(args?.apiPaths) ? (args.apiPaths as string[]) : [],
+        );
       // Teammates' engines run on your computer (F-AG-10, F-AG-13).
       case "teammate_launch_in_terminal":
         throw {
