@@ -8,4 +8,8 @@ change: string, additions: number, deletions: number, patch: string,
 /**
  * Cut here (or by git) before it reached the phone.
  */
-truncated: boolean, };
+truncated: boolean, 
+/**
+ * Not sent at all: a `.env` file's values stay on the computer.
+ */
+withheld: boolean, };

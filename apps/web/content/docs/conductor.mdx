@@ -46,7 +46,9 @@ Ask "what's ready?" and Conductor goes through the [review queue](/docs/code-mod
 From there:
 - Say **"next"** to move on.
 - Say **"send it back: …"** to have your comment typed to that agent as a review, or sent to its thread. An agent waiting on an approval gets nothing.
-- Say **"approve"** to approve exactly what Conductor described. If the agent changed anything since, Conductor says so and reads it again instead.
+- Say **"approve"** to approve exactly what Conductor described. If the agent changed anything since, Conductor says so and reads it again first.
+
+Conductor approves or sends back only an item you've heard, and only when you ask: never in the same breath as describing it, and never because of what an agent wrote. Each call starts the walk over.
 
 Conductor can't merge, discard or stop anything from the queue. When nothing is left, it tells you how many items are approved and ready to merge at your desk. While you listen, the phone's **Review** tab shows the same item with its diff.
 

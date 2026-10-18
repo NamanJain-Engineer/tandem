@@ -23,6 +23,7 @@ import type {
 } from "@tandem/protocol";
 import type { RemoteSession, SessionView } from "@tandem/remote/session";
 import type { Prefs } from "../lib/prefs";
+import { checkText, lineKind, reviewLines, ruleText, statText } from "../lib/review";
 import { t, type StringKey } from "../lib/strings";
 import {
   Badge,
@@ -424,6 +425,8 @@ function RoutinesTab({ session, view }: { session: RemoteSession; view: SessionV
   );
 }
 
+const LINE_COLOR = { meta: color.textMuted, add: color.done, del: color.error, context: color.text } as const;
+
 /** F-CN-09: the review item Conductor is on (else the first to review) and
  * its diff, read only. Approving and merging stay on the computer. */
 function ReviewTab({ session, view }: { session: RemoteSession; view: SessionView }) {
@@ -441,19 +444,14 @@ function ReviewTab({ session, view }: { session: RemoteSession; view: SessionVie
     return () => {
       live = false;
     };
-    // A new snapshot means something changed on the computer.
-  }, [session, view.snapshot]);
+    // Asked again only when the queue changed on the computer.
+  }, [session, view.snapshot?.reviewRev]);
   if (error) return <Notice tone="error">{error}</Notice>;
   if (!review) return <Loading label={t("loading")} />;
   const item = review.item;
   if (!item) return <Empty label={t("review.empty")} />;
-  const check = item.check
-    ? item.check.state === "running"
-      ? t("review.checkRunning")
-      : item.check.state === "passed"
-        ? t("review.checkPassed")
-        : t("review.checkFailed", { code: item.check.exit ?? "—" })
-    : null;
+  const check = checkText(item);
+  const lines = reviewLines(review);
   return (
     <ScrollView contentContainerStyle={st.list}>
       <Card>
@@ -468,44 +466,34 @@ function ReviewTab({ session, view }: { session: RemoteSession; view: SessionVie
         <Small>{[item.engine, item.workspace, item.branch].filter(Boolean).join(" · ")}</Small>
         {item.changed && <Badge label={t("review.changed")} tone="waiting" />}
         {item.closing ? <Body>{item.closing}</Body> : null}
-        <Small>{t("review.stat", { n: item.files, adds: item.additions, dels: item.deletions })}</Small>
+        <Small>{statText(item)}</Small>
         {item.risks.map((r) => (
-          <Badge key={r.rule} label={t(`review.rule.${r.rule}` as StringKey)} tone="accent" />
+          <Badge key={r.rule} label={ruleText(r.rule)} tone="accent" />
         ))}
         {check && <Small>{check}</Small>}
         <Small>{t("review.onComputer")}</Small>
       </Card>
-      {review.files.map((f) => (
-        <Card key={f.path}>
-          <Text style={st.mono}>
-            {f.path} +{f.additions} −{f.deletions}
-          </Text>
-          <ScrollView horizontal>
-            <View>
-              {f.patch.split("\n").map((l, i) => (
-                <Text
-                  key={i}
-                  style={[
-                    st.mono,
-                    {
-                      color: l.startsWith("@@")
-                        ? color.textMuted
-                        : l.startsWith("+")
-                          ? color.done
-                          : l.startsWith("-")
-                            ? color.error
-                            : color.text,
-                    },
-                  ]}
-                >
-                  {l || " "}
-                </Text>
-              ))}
-            </View>
-          </ScrollView>
-          {f.truncated && <Small>{t("review.truncated")}</Small>}
-        </Card>
-      ))}
+      {review.files.map((f) =>
+        f.withheld ? null : (
+          <Card key={f.path}>
+            <Text style={st.mono}>
+              {f.path} +{f.additions} −{f.deletions}
+            </Text>
+            <ScrollView horizontal>
+              <View>
+                {f.patch.split("\n").map((l, i) => (
+                  <Text key={i} style={[st.mono, { color: LINE_COLOR[lineKind(l)] }]}>
+                    {l || " "}
+                  </Text>
+                ))}
+              </View>
+            </ScrollView>
+            {f.truncated && <Small>{t("review.truncated")}</Small>}
+          </Card>
+        ),
+      )}
+      {!lines.empty && lines.withheld.map((w) => <Notice key={w}>{w}</Notice>)}
+      {!lines.empty && lines.omitted && <Small>{lines.omitted}</Small>}
     </ScrollView>
   );
 }

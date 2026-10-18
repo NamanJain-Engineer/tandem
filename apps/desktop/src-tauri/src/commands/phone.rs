@@ -233,6 +233,10 @@ impl PhoneHost for AppPhoneHost {
             .map_err(|e| e.message)
     }
 
+    fn review_rev(&self) -> u64 {
+        self.state().review.get().map(|q| q.rev()).unwrap_or(0)
+    }
+
     async fn review_current(&self) -> Result<crate::services::phone::PhoneReview, String> {
         use crate::services::phone::{PhoneDiffFile, PhoneReview, PhoneReviewItem};
         let state = self.state();
@@ -248,6 +252,7 @@ impl PhoneHost for AppPhoneHost {
                 files: Vec::new(),
                 position: 0,
                 total: total as u32,
+                omitted: 0,
             });
         };
         let files = q.item_diff(&item.key, false).await.unwrap_or_default();
@@ -269,6 +274,7 @@ impl PhoneHost for AppPhoneHost {
                     deletions: f.deletions,
                     patch: f.patch,
                     truncated: f.truncated,
+                    withheld: false,
                 })
                 .collect(),
             item: Some(PhoneReviewItem {
@@ -288,6 +294,7 @@ impl PhoneHost for AppPhoneHost {
             }),
             position: position as u32,
             total: total as u32,
+            omitted: 0,
         })
     }
 

@@ -61,7 +61,8 @@ async function tool(name: string, args: Record<string, unknown> = {}): Promise<v
   const id = `e2e.${++injected}.${name}`;
   expect(await invoke<boolean>("test_conductor_inject", { calls: [{ id, name, args }] })).toBe(true);
   const v = await until((x) => x.chips.some((c) => c.id === id && c.state !== "running"), `${name} ran`);
-  expect(v.chips.find((c) => c.id === id)?.state).toBe("done");
+  const chip = v.chips.find((c) => c.id === id);
+  expect(`${chip?.state} ${chip?.reason ?? ""}`.trim()).toBe("done");
 }
 
 type Item = { key: string; state: string };
@@ -166,6 +167,14 @@ describe("E2E-M18-CN-09 walk-and-review", function () {
     await phone.pair(parsed!);
     await $('[data-testid="remote-paired"]').waitForDisplayed({ timeout: 15_000 });
     await browser.keys(Key.Escape);
+    // The approved item changes: it's back to review, and the phone shows it.
+    writeFileSync(join(repo, "db/migrations/0003.sql"), "alter table a add c int;\n");
+    await sendToPane(agent, "one more\r");
+    await waitForStatus(agent, "done", 15_000);
+    await browser.waitUntil(
+      async () => (await queue()).some((i) => i.key === `pane:${agent}` && i.state === "changed"),
+      { timeout: 10_000, timeoutMsg: "the item never came back as changed" },
+    );
 
     type Review = {
       item: { key: string; title: string; risks: Array<{ rule: string }> } | null;
@@ -180,5 +189,43 @@ describe("E2E-M18-CN-09 walk-and-review", function () {
     expect(file?.patch).toContain("+alter table a add b int;");
     const approve = await phone.command("review.approve", { key: `pane:${agent}` });
     expect(approve.ok).toBe(false);
+  });
+
+  it("F-CN-09.2 a thread's item gets the spoken review as a message", async function () {
+    this.timeout(180_000);
+    const ws = (await invoke<Array<{ id: string; root: string }>>("workspace_list", {})).find(
+      (w) => w.root === repo,
+    );
+    const thread = await invoke<{ id: string }>("thread_create", {
+      args: { kind: "thread", workspaceId: ws?.id, engineId: "claude", access: "edits" },
+    });
+    await invoke("thread_send", { threadId: thread.id, text: "write notes.md=hello" });
+    await browser.waitUntil(async () => (await queue()).some((i) => i.key === `thread:${thread.id}`), {
+      timeout: 30_000,
+      timeoutMsg: "the thread never joined the queue",
+    });
+    await $('[data-testid="conductor-button"]').click();
+    await until((v) => v.phase === "listening", "the call connects", 30_000);
+    // The pane's item changed too (same folder) and finished first: the thread is next.
+    await tool("review_next");
+    await tool("review_next");
+    await tool("review_send_back", { text: "Add a heading to the notes" });
+    type Page = { items: Array<{ event: { type: string; text?: string } }> };
+    await browser.waitUntil(
+      async () =>
+        (await invoke<Page>("thread_events", { threadId: thread.id, limit: 50 })).items.some(
+          (e) =>
+            e.event.type === "user" &&
+            (e.event.text ?? "").startsWith("Review of your changes on main:") &&
+            (e.event.text ?? "").includes("Add a heading to the notes"),
+        ),
+      { timeout: 20_000, timeoutMsg: "the review never reached the thread" },
+    );
+    await $('[data-testid="conductor-end"]').click();
+    await until(
+      (v) => !["connecting", "listening", "thinking", "acting", "speaking"].includes(v.phase),
+      "the call ends",
+    );
+    await invoke("conductor_end_call");
   });
 });

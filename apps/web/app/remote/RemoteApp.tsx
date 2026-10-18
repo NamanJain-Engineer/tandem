@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, SegmentedControl, StatusDot, type Status } from "@tandem/ui";
 import { Card, Notice } from "../../components/Panel";
+import { ReviewBody } from "./ReviewBody";
 import { PairingError, PhoneClient, type CommandResult, type ConnectionState } from "@tandem/remote/client";
 import type {
   PhoneAgent,
@@ -229,7 +230,7 @@ export function RemoteApp({ product }: { product: string }) {
                 {tab === "threads" && (
                   <Threads threads={snapshot.threads} grants={grants} client={client.current} />
                 )}
-                {tab === "review" && <Review client={client.current} snapshot={snapshot} />}
+                {tab === "review" && <Review client={client.current} rev={snapshot.reviewRev} />}
                 {tab === "routines" && (
                   <Routines
                     routines={snapshot.routines}
@@ -476,27 +477,9 @@ function Threads({
   );
 }
 
-const RULE: Record<string, string> = {
-  many_files: "20+ files",
-  migrations: "Touches migrations",
-  ci: "Touches CI",
-  lockfile: "Changes a lockfile",
-  env: "Touches .env files",
-  auth: "Touches auth paths",
-  public_api: "Touches the public API",
-  deleted_tests: "Deletes tests",
-};
-
-function lineClass(line: string): string {
-  if (line.startsWith("@@")) return "bg-diff-hunk-bg text-fg-muted";
-  if (line.startsWith("+")) return "text-diff-add-fg";
-  if (line.startsWith("-")) return "text-diff-del-fg";
-  return "text-fg";
-}
-
 /** F-CN-09: the review item Conductor is on (else the first to review) and
  * its diff, read only. Approving and merging stay on the computer. */
-function Review({ client, snapshot }: { client: PhoneClient; snapshot: PhoneSnapshot }) {
+function Review({ client, rev }: { client: PhoneClient; rev: number }) {
   const [review, setReview] = useState<PhoneReview | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -512,80 +495,12 @@ function Review({ client, snapshot }: { client: PhoneClient; snapshot: PhoneSnap
     return () => {
       live = false;
     };
-    // A new snapshot means something changed on the computer.
-  }, [client, snapshot]);
+    // Asked again only when the queue changed on the computer.
+  }, [client, rev]);
 
   if (error) return <Notice tone="error">{error}</Notice>;
   if (!review) return <Notice>Loading…</Notice>;
-  const item = review.item;
-  if (!item) return <Notice>Nothing to review</Notice>;
-  return (
-    <div className="flex flex-col gap-3" data-testid="remote-review">
-      <Card>
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <span className="flex-1 font-medium text-fg">{item.title}</span>
-            {review.total > 0 && review.position > 0 && (
-              <span className="text-xs text-fg-muted">
-                {review.position} of {review.total}
-              </span>
-            )}
-          </div>
-          <span className="text-xs text-fg-muted">
-            {[item.engine, item.workspace, item.branch].filter(Boolean).join(" · ")}
-          </span>
-          {item.changed && <Badge variant="waiting">Changed since you approved</Badge>}
-          {item.closing && <p className="whitespace-pre-wrap text-sm text-fg">{item.closing}</p>}
-          <span className="text-xs text-fg-muted">
-            {item.files} {item.files === 1 ? "file" : "files"} · +{item.additions} −{item.deletions}
-          </span>
-          {item.risks.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {item.risks.map((r) => (
-                <Badge key={r.rule} variant="outline">
-                  {RULE[r.rule] ?? r.rule}
-                </Badge>
-              ))}
-            </div>
-          )}
-          {item.check && (
-            <span className="text-xs text-fg-muted">
-              {item.check.state === "running"
-                ? "Check running…"
-                : item.check.state === "passed"
-                  ? "Check passed"
-                  : `Check failed (exit ${item.check.exit ?? "—"})`}
-            </span>
-          )}
-          <span className="text-xs text-fg-subtle">
-            Approve or merge it on your computer, or ask Conductor.
-          </span>
-        </div>
-      </Card>
-      {review.files.map((f) => (
-        <Card key={f.path}>
-          <div className="flex flex-col gap-1">
-            <span className="break-all font-mono text-xs text-fg">
-              {f.path} <span className="text-diff-add-fg">+{f.additions}</span>{" "}
-              <span className="text-diff-del-fg">−{f.deletions}</span>
-            </span>
-            <pre className="overflow-x-auto font-mono text-xs leading-5">
-              {f.patch.split("\n").map((l, i) => (
-                <div key={i} className={lineClass(l)}>
-                  {l || " "}
-                </div>
-              ))}
-            </pre>
-            {f.truncated && (
-              <span className="text-xs text-fg-subtle">
-                The rest of this file's changes are on your computer.
-              </span>
-            )}
-          </div>
-        </Card>
-      ))}
-    </div>
-  );
+  return <ReviewBody review={review} />;
 }
 
 function Transcript({

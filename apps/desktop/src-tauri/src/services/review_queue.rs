@@ -170,7 +170,7 @@ fn is_ci(path: &str) -> bool {
         || name_of(path) == "Jenkinsfile"
 }
 
-fn is_env(path: &str) -> bool {
+pub fn is_env(path: &str) -> bool {
     let n = name_of(path);
     (n == ".env" || n.starts_with(".env."))
         && ![".example", ".sample", ".template"]
@@ -315,10 +315,21 @@ struct Inner {
     /// Each key's status and when it began: a done whose start moved is a
     /// new finish even when the status bus coalesced working away (50 ms).
     last: HashMap<String, (AgentStatus, i64)>,
-    /// F-CN-09: the item Conductor is on, and the diff it described.
-    walk: Option<(String, String)>,
+    /// F-CN-09: the item Conductor is on, the diff it described, and
+    /// whether the user has heard it (D-2423).
+    walk: Option<Walk>,
     /// The items this walk has described; cleared when it ends.
     visited: HashSet<String>,
+    /// An item to read again first (its approve found it changed).
+    reread: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct Walk {
+    key: String,
+    hash: String,
+    /// The act that described it has answered, so the user heard it.
+    heard: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -331,6 +342,8 @@ pub struct ReviewQueue {
     host: Arc<dyn QueueHost>,
     bus: EventBus,
     inner: Mutex<Inner>,
+    /// Bumped on every publish: the phone asks again only when it moves.
+    rev: std::sync::atomic::AtomicU64,
 }
 
 fn not_found() -> IpcError {
@@ -343,6 +356,7 @@ impl ReviewQueue {
             host,
             bus,
             inner: Mutex::new(Inner::default()),
+            rev: std::sync::atomic::AtomicU64::new(0),
         })
     }
 
@@ -368,7 +382,13 @@ impl ReviewQueue {
         ReviewQueueView { items }
     }
 
+    /// The queue's revision (F-CN-09's phone).
+    pub fn rev(&self) -> u64 {
+        self.rev.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     fn publish(&self) {
+        self.rev.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.bus
             .publish(BusEvent::new(Topic::Status, EVENT, self.view()));
     }
@@ -678,11 +698,12 @@ impl ReviewQueue {
         items
     }
 
-    fn approved_count(inner: &Inner) -> usize {
+    /// Approved worktree items: what Merge waits for at the desk.
+    fn ready_count(inner: &Inner) -> usize {
         inner
             .items
             .values()
-            .filter(|i| i.state == ReviewState::Approved)
+            .filter(|i| i.state == ReviewState::Approved && i.lane_id.is_some())
             .count()
     }
 
@@ -691,42 +712,97 @@ impl ReviewQueue {
         self.host.now()
     }
 
-    /// The next item after the one Conductor is on; `None` when none is left.
-    pub fn walk_next(&self) -> WalkStep {
-        let _ = self.view();
+    /// A call starts or ends: nothing carries over to the next call.
+    pub fn walk_reset(&self) {
         let mut inner = self.lock();
-        let order: Vec<ReviewItem> = Self::to_review(&inner)
-            .into_iter()
-            .filter(|i| !inner.visited.contains(&i.key))
-            .collect();
-        let item = order.first().cloned();
-        match &item {
-            Some(i) => {
-                inner.visited.insert(i.key.clone());
-                inner.walk = Some((i.key.clone(), i.diff_hash.clone()));
-            }
-            // The end: asking again starts over.
-            None => {
-                inner.walk = None;
-                inner.visited.clear();
-            }
-        }
-        WalkStep {
-            remaining: order.len().saturating_sub(1),
-            approved: Self::approved_count(&inner),
-            item,
+        inner.walk = None;
+        inner.visited.clear();
+        inner.reread = None;
+    }
+
+    /// The act that described the current item has answered: the user
+    /// heard it, so approving or sending it back may follow (D-2423).
+    pub fn walk_heard(&self) {
+        if let Some(w) = self.lock().walk.as_mut() {
+            w.heard = true;
         }
     }
 
-    /// The item Conductor is on, if it's still in the queue.
-    pub fn walk_current(&self) -> Option<ReviewItem> {
+    /// The next item to describe: one to read again first, else the first
+    /// not yet described in risk order. Diffs are read fresh first.
+    pub async fn walk_next(self: &Arc<Self>) -> WalkStep {
+        // Every item, approved ones too: one whose diff moved is back as
+        // Changed (F-DB-04's stale rule).
+        let keys: Vec<String> = self.lock().items.keys().cloned().collect();
+        for key in keys {
+            self.consider(&key, Why::Refresh).await;
+        }
+        let _ = self.view();
+        let step = {
+            let mut inner = self.lock();
+            let all = Self::to_review(&inner);
+            let again = inner
+                .reread
+                .take()
+                .and_then(|k| all.iter().find(|i| i.key == k).cloned());
+            let item = again.or_else(|| {
+                all.iter()
+                    .find(|i| !inner.visited.contains(&i.key))
+                    .cloned()
+            });
+            match &item {
+                Some(i) => {
+                    inner.visited.insert(i.key.clone());
+                    inner.walk = Some(Walk {
+                        key: i.key.clone(),
+                        hash: i.diff_hash.clone(),
+                        heard: false,
+                    });
+                }
+                // The end: asking again starts over.
+                None => {
+                    inner.walk = None;
+                    inner.visited.clear();
+                }
+            }
+            let unvisited = all
+                .iter()
+                .filter(|i| !inner.visited.contains(&i.key))
+                .count();
+            WalkStep {
+                remaining: if item.is_some() { unvisited } else { 0 },
+                // Heard this call, still undecided.
+                waiting: if item.is_none() { all.len() } else { 0 },
+                ready: Self::ready_count(&inner),
+                item,
+            }
+        };
+        self.publish();
+        step
+    }
+
+    /// The item Conductor is on, once the user has heard it.
+    pub fn walk_heard_item(&self) -> Result<ReviewItem, IpcError> {
         let inner = self.lock();
-        let (key, _) = inner.walk.as_ref()?;
-        inner.items.get(key).cloned()
+        let w = inner.walk.as_ref().ok_or_else(|| {
+            IpcError::new(
+                ErrorCode::Invalid,
+                "No review item is open: ask what's ready first",
+            )
+        })?;
+        if !w.heard {
+            return Err(IpcError::new(
+                ErrorCode::Invalid,
+                "The user hasn't heard this item yet: describe it and wait for their answer",
+            ));
+        }
+        inner.items.get(&w.key).cloned().ok_or_else(|| {
+            IpcError::new(ErrorCode::NotFound, "That item has left the review queue")
+        })
     }
 
-    /// What the phone shows: Conductor's item, else the first to review,
-    /// with its place in the queue (1-based) and the queue's length.
+    /// What the phone shows: Conductor's item while it's still to review,
+    /// else the first to review, with its place (1-based) and the count.
     pub fn phone_current(&self) -> (Option<ReviewItem>, usize, usize) {
         let _ = self.view();
         let inner = self.lock();
@@ -734,7 +810,7 @@ impl ReviewQueue {
         let current = inner
             .walk
             .as_ref()
-            .and_then(|(k, _)| inner.items.get(k).cloned())
+            .and_then(|w| order.iter().find(|i| i.key == w.key).cloned())
             .or_else(|| order.first().cloned());
         let position = current
             .as_ref()
@@ -744,18 +820,20 @@ impl ReviewQueue {
         (current, position, order.len())
     }
 
-    /// Approves the current item with the diff `walk_next` described.
-    pub fn walk_approve(&self) -> Result<(ReviewItem, usize), IpcError> {
-        let (key, heard) = self.lock().walk.clone().ok_or_else(|| {
-            IpcError::new(
-                ErrorCode::Invalid,
-                "No review item is open: ask what's ready first",
-            )
-        })?;
-        let item = self.approve(&key, &heard).map_err(|e| match e.code {
-            ErrorCode::Conflict => {
-                // The next step reads it again.
-                self.lock().visited.remove(&key);
+    /// Approves the current item with the diff `walk_next` described, once
+    /// the user heard it, against the diff there now (D-2423).
+    pub async fn walk_approve(self: &Arc<Self>) -> Result<(ReviewItem, usize), IpcError> {
+        let item = self.walk_heard_item()?;
+        let Some(heard) = self.lock().walk.as_ref().map(|w| w.hash.clone()) else {
+            return Err(not_found());
+        };
+        self.consider(&item.key, Why::Refresh).await;
+        let approved = self.approve(&item.key, &heard).map_err(|e| match e.code {
+            ErrorCode::Conflict | ErrorCode::NotFound => {
+                // The next step reads it again, first.
+                let mut inner = self.lock();
+                inner.visited.remove(&item.key);
+                inner.reread = Some(item.key.clone());
                 IpcError::new(
                     ErrorCode::Conflict,
                     "It changed since I read it; I'll read it again",
@@ -763,8 +841,8 @@ impl ReviewQueue {
             }
             _ => e,
         })?;
-        let approved = Self::approved_count(&self.lock());
-        Ok((item, approved))
+        let ready = Self::ready_count(&self.lock());
+        Ok((approved, ready))
     }
 }
 
@@ -773,8 +851,12 @@ impl ReviewQueue {
 #[derive(Debug, Clone, PartialEq)]
 pub struct WalkStep {
     pub item: Option<ReviewItem>,
+    /// Not yet described in this walk, after this one.
     pub remaining: usize,
-    pub approved: usize,
+    /// At the end: described in this walk and still undecided.
+    pub waiting: usize,
+    /// Approved worktree items, ready to merge at the desk.
+    pub ready: usize,
 }
 
 fn rule_words(rule: ReviewRiskRule) -> &'static str {
@@ -799,9 +881,16 @@ pub fn ready_to_merge(approved: usize) -> String {
 }
 
 /// What Conductor says for a step of the walk (English, like its tools).
+/// Facts first: the closing message is the agent's own words, last, so a
+/// cut never drops the check.
 pub fn spoken(step: &WalkStep, now: i64) -> String {
     let Some(item) = &step.item else {
-        return format!("Nothing left to review.{}", ready_to_merge(step.approved));
+        let head = match step.waiting {
+            0 => "Nothing left to review.".to_string(),
+            1 => "That's all of them. 1 you heard is still waiting for a decision.".to_string(),
+            n => format!("That's all of them. {n} you heard are still waiting for a decision."),
+        };
+        return format!("{head}{}", ready_to_merge(step.ready));
     };
     let mins = ((now - item.finished_at).max(0) / 60_000).max(0);
     let when = match mins {
@@ -817,14 +906,6 @@ pub fn spoken(step: &WalkStep, now: i64) -> String {
     );
     if item.state == ReviewState::Changed {
         out.push_str(" It changed since you approved it.");
-    }
-    if let Some(c) = &item.closing {
-        let c: String = c.split_whitespace().collect::<Vec<_>>().join(" ");
-        let c: String = c.chars().take(300).collect();
-        out.push_str(&format!(" It said: {c}"));
-        if !c.ends_with(['.', '!', '?']) {
-            out.push('.');
-        }
     }
     out.push_str(&format!(
         " {} {}, {} added, {} removed.",
@@ -850,6 +931,14 @@ pub fn spoken(step: &WalkStep, now: i64) -> String {
     }
     if step.remaining > 0 {
         out.push_str(&format!(" {} more after this.", step.remaining));
+    }
+    if let Some(c) = &item.closing {
+        let c: String = c.split_whitespace().collect::<Vec<_>>().join(" ");
+        let c: String = c.chars().take(300).collect();
+        out.push_str(&format!(" It said: {c}"));
+        if !c.ends_with(['.', '!', '?']) {
+            out.push('.');
+        }
     }
     out
 }
@@ -1516,76 +1605,149 @@ mod tests {
         );
     }
 
+    async fn all_checked(q: &Arc<ReviewQueue>, n: usize) {
+        for _ in 0..200 {
+            let items = q.list(false).await.items;
+            if items.len() == n
+                && items.iter().all(|i| {
+                    i.check
+                        .as_ref()
+                        .is_some_and(|c| c.state != ReviewCheckState::Running)
+                })
+            {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("the checks never finished");
+    }
+
     #[tokio::test]
-    async fn f_cn_09_1_the_walk_goes_by_risk_and_ends_with_what_is_approved() {
+    async fn f_cn_09_1_the_walk_goes_by_risk_facts_first_and_ends_with_what_waits() {
         let (fake, q, _bus) = rig();
+        *fake.check.lock().expect("l") = Some("true".into());
         add(&fake, "pane:a", "wa", Some(vec![m("a.ts")]));
         add(&fake, "pane:b", "wb", Some(vec![m("db/migrations/1.sql")]));
         q.on_status(vec![rec("pane:a", AgentStatus::Done)], Vec::new())
             .await;
         q.on_status(vec![rec("pane:b", AgentStatus::Done)], Vec::new())
             .await;
-        let first = q.walk_next();
+        all_checked(&q, 2).await;
+        let first = q.walk_next().await;
         assert_eq!(first.item.as_ref().map(|i| i.key.as_str()), Some("pane:b"));
         assert_eq!(first.remaining, 1);
-        let said = spoken(&first, 1_000 + 120_000);
-        assert!(
-            said.starts_with("agent wb on tandem/wb, finished 2 minutes ago."),
-            "{said}"
+        assert_eq!(
+            spoken(&first, 1_000 + 120_000),
+            "agent wb on tandem/wb, finished 2 minutes ago. 1 file, 1 added, 0 removed. It touches migrations. The check passed. 1 more after this. It said: closing of pane:b."
         );
-        assert!(said.contains("It said: closing of pane:b."), "{said}");
-        assert!(said.contains("1 file, 1 added, 0 removed."), "{said}");
-        assert!(said.contains("It touches migrations."), "{said}");
-        assert!(said.ends_with("1 more after this."), "{said}");
+        // Not heard yet (D-2423): nothing can be approved or sent back.
+        let err = q.walk_approve().await.expect_err("unheard");
+        assert!(
+            err.message.starts_with("The user hasn't heard"),
+            "{}",
+            err.message
+        );
+        assert!(q.walk_heard_item().is_err());
+        q.walk_heard();
+        assert_eq!(q.walk_heard_item().expect("heard").key, "pane:b");
         assert_eq!(q.phone_current().0.map(|i| i.key), Some("pane:b".into()));
-        let second = q.walk_next();
+        let second = q.walk_next().await;
         assert_eq!(second.item.as_ref().map(|i| i.key.as_str()), Some("pane:a"));
-        q.walk_approve().expect("approve a");
+        q.walk_heard();
+        let (_, ready) = q.walk_approve().await.expect("approve a");
+        assert_eq!(ready, 1);
+        // The phone shows what's still to review, not the approved item.
+        assert_eq!(q.phone_current().0.map(|i| i.key), Some("pane:b".into()));
+        let end = q.walk_next().await;
+        assert!(end.item.is_none());
+        assert_eq!(
+            spoken(&end, 0),
+            "That's all of them. 1 you heard is still waiting for a decision. 1 approved, ready to merge when you're back at the desk."
+        );
         // b finishes again: it's new work, so the walk reads it again.
         q.on_status(vec![rec("pane:b", AgentStatus::Working)], Vec::new())
             .await;
         let mut again = rec("pane:b", AgentStatus::Done);
         again.since = 9;
         q.on_status(vec![again], Vec::new()).await;
-        assert_eq!(q.walk_next().item.map(|i| i.key), Some("pane:b".into()));
+        assert_eq!(
+            q.walk_next().await.item.map(|i| i.key),
+            Some("pane:b".into())
+        );
+        // A call that ends leaves nothing behind for the next one.
+        q.walk_heard();
+        q.walk_reset();
+        assert!(q.walk_heard_item().is_err());
         q.on_status(vec![rec("pane:b", AgentStatus::Working)], Vec::new())
             .await;
-        let end = q.walk_next();
-        assert!(end.item.is_none());
+        let none = q.walk_next().await;
         assert_eq!(
-            spoken(&end, 0),
+            spoken(&none, 0),
             "Nothing left to review. 1 approved, ready to merge when you're back at the desk."
         );
-        // b is working again, so nothing waits: the phone shows nothing.
-        assert_eq!(q.phone_current(), (None, 0, 0));
     }
 
     #[tokio::test]
-    async fn f_cn_09_3_approve_uses_the_diff_it_described() {
+    async fn f_cn_09_3_approve_reads_the_diff_now_and_a_stale_item_is_read_again_first() {
         let (fake, q, _bus) = rig();
-        assert_eq!(q.walk_approve().expect_err("none").code, ErrorCode::Invalid);
+        assert_eq!(
+            q.walk_approve().await.expect_err("none").code,
+            ErrorCode::Invalid
+        );
         add(&fake, "pane:a", "wa", Some(vec![m("a.ts")]));
         q.on_status(vec![rec("pane:a", AgentStatus::Done)], Vec::new())
             .await;
-        q.walk_next();
-        // The agent changed it after Conductor read it out.
+        q.walk_next().await;
+        q.walk_heard();
+        // Another agent changed the folder after Conductor read it out; no
+        // refresh from the desk happens in between.
         fake.diffs.lock().expect("l").insert(
             "wa".into(),
             vec![file("a.ts", FileChange::Modified, "+other\n")],
         );
-        q.list(true).await;
-        let err = q.walk_approve().expect_err("stale");
+        let err = q.walk_approve().await.expect_err("stale");
         assert_eq!(
             err.message,
             "It changed since I read it; I'll read it again"
         );
         assert_ne!(q.list(false).await.items[0].state, ReviewState::Approved);
-        q.walk_next();
-        let (item, approved) = q.walk_approve().expect("fresh");
-        assert_eq!((item.state, approved), (ReviewState::Approved, 1));
+        // A riskier item joins, but the stale one is read again first.
+        add(&fake, "pane:c", "wc", Some(vec![m("db/migrations/2.sql")]));
+        q.on_status(vec![rec("pane:c", AgentStatus::Done)], Vec::new())
+            .await;
+        assert_eq!(
+            q.walk_next().await.item.map(|i| i.key),
+            Some("pane:a".into())
+        );
+        q.walk_heard();
+        let (item, _) = q.walk_approve().await.expect("fresh");
+        assert_eq!(item.state, ReviewState::Approved);
         assert_eq!(
             send_back_prompt("tandem/x", " handle expired tokens too "),
             "Review of your changes on tandem/x:\n\nhandle expired tokens too\n\nAddress it, then say what you changed."
+        );
+    }
+
+    #[tokio::test]
+    async fn f_cn_09_3_an_approved_item_whose_diff_moved_comes_back_in_the_walk() {
+        let (fake, q, _bus) = rig();
+        add(&fake, "pane:a", "wa", Some(vec![m("a.ts")]));
+        q.on_status(vec![rec("pane:a", AgentStatus::Done)], Vec::new())
+            .await;
+        q.walk_next().await;
+        q.walk_heard();
+        q.walk_approve().await.expect("approve");
+        q.walk_reset();
+        // Something else changed the folder; no finish, no desk refresh.
+        fake.diffs
+            .lock()
+            .expect("l")
+            .insert("wa".into(), vec![m("a.ts"), m("b.ts")]);
+        let step = q.walk_next().await;
+        let item = step.item.expect("back");
+        assert_eq!(
+            (item.key.as_str(), item.state),
+            ("pane:a", ReviewState::Changed)
         );
     }
 

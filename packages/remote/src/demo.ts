@@ -258,6 +258,7 @@ export class DemoDesktop {
           patch:
             "@@ -40,6 +40,15 @@\n export async function refresh(token: Token) {\n-  if (expired(token)) return null;\n+  if (expired(token)) {\n+    const next = await renew(token);\n+    if (next) return next;\n+    signOut();\n+    return null;\n+  }\n   return token;\n }\n",
           truncated: false,
+          withheld: false,
         },
         {
           path: "src/auth/session.test.ts",
@@ -267,10 +268,12 @@ export class DemoDesktop {
           patch:
             '@@ -10,3 +10,5 @@\n it("refreshes", async () => {\n+  expect(await refresh(old)).not.toBeNull();\n+  expect(signOut).not.toHaveBeenCalled();\n });\n',
           truncated: false,
+          withheld: false,
         },
       ],
       position: 1,
       total: 1,
+      omitted: 0,
     };
   }
 
@@ -283,6 +286,7 @@ export class DemoDesktop {
       approvals: this.approvals,
       threads: this.threads,
       routines: this.routines,
+      reviewRev: 1,
     };
   }
 

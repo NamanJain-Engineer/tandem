@@ -6,4 +6,8 @@ export type PhoneReview = { item: PhoneReviewItem | null, files: Array<PhoneDiff
 /**
  * The item's place among those to review (1-based; 0: not among them).
  */
-position: number, total: number, };
+position: number, total: number, 
+/**
+ * Files left out so the reply fits (they're on the computer).
+ */
+omitted: number, };

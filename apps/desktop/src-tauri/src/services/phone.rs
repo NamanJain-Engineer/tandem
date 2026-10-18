@@ -221,6 +221,8 @@ pub struct PhoneDiffFile {
     pub patch: String,
     /// Cut here (or by git) before it reached the phone.
     pub truncated: bool,
+    /// Not sent at all: a `.env` file's values stay on the computer.
+    pub withheld: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -232,32 +234,75 @@ pub struct PhoneReview {
     /// The item's place among those to review (1-based; 0: not among them).
     pub position: u32,
     pub total: u32,
+    /// Files left out so the reply fits (they're on the computer).
+    pub omitted: u32,
 }
 
-/// Each file's patch on the phone, and all of them together (F-CN-09).
+/// Each file's patch on the phone (F-CN-09).
 pub const MAX_DIFF_FILE_CHARS: usize = 20_000;
-pub const MAX_DIFF_CHARS: usize = 200_000;
+/// What a review reply may serialize to: one sealed frame, with room for
+/// the `res` envelope around it (D-2424).
+pub const REVIEW_BUDGET: usize = MAX_PLAINTEXT - 1_024;
 
-/// Redacts and cuts a review's diff for the phone.
+fn review_bytes(r: &PhoneReview) -> usize {
+    serde_json::to_string(r)
+        .map(|s| s.len())
+        .unwrap_or(usize::MAX)
+}
+
+/// Redacts a review's diff for the phone, withholds `.env` files, and cuts
+/// patches (the longest first, then whole files from the end) until the
+/// reply fits in one sealed frame.
 pub fn review_for_phone(mut r: PhoneReview) -> PhoneReview {
     use tandem_core::redact::Redactor;
-    let mut left = MAX_DIFF_CHARS;
     for f in &mut r.files {
+        if crate::services::review_queue::is_env(&f.path) {
+            f.patch.clear();
+            f.withheld = true;
+            continue;
+        }
         let text = Redactor::global().redact(&f.patch).into_owned();
-        let cap = MAX_DIFF_FILE_CHARS.min(left);
-        if text.chars().count() > cap {
-            f.patch = text.chars().take(cap).collect();
+        if text.chars().count() > MAX_DIFF_FILE_CHARS {
+            f.patch = text.chars().take(MAX_DIFF_FILE_CHARS).collect();
             f.truncated = true;
         } else {
             f.patch = text;
         }
-        left = left.saturating_sub(f.patch.chars().count());
     }
     if let Some(item) = &mut r.item {
         item.closing = item
             .closing
             .take()
             .map(|c| clip(&Redactor::global().redact(&c), MAX_ITEM_CHARS));
+    }
+    loop {
+        let bytes = review_bytes(&r);
+        if bytes <= REVIEW_BUDGET {
+            break;
+        }
+        let longest = r
+            .files
+            .iter_mut()
+            .max_by_key(|f| f.patch.len())
+            .filter(|f| f.patch.len() > 512);
+        match longest {
+            Some(f) => {
+                let keep = f.patch.chars().count() / 2;
+                f.patch = f.patch.chars().take(keep).collect();
+                f.truncated = true;
+            }
+            // Patches are all small: whole files go, from the end, as many
+            // as the overshoot needs at their average size.
+            None => {
+                if r.files.is_empty() {
+                    break;
+                }
+                let each = (bytes / r.files.len()).max(1);
+                let drop = ((bytes - REVIEW_BUDGET) / each + 1).min(r.files.len());
+                r.files.truncate(r.files.len() - drop);
+                r.omitted += drop as u32;
+            }
+        }
     }
     r
 }
@@ -282,6 +327,10 @@ pub struct PhoneSnapshot {
     pub approvals: Vec<PhoneApproval>,
     pub threads: Vec<PhoneThread>,
     pub routines: Vec<PhoneRoutine>,
+    /// F-CN-09: changes whenever the review queue does, so the Review tab
+    /// asks again only then.
+    #[ts(type = "number")]
+    pub review_rev: u64,
 }
 
 // ── the seams ────────────────────────────────────────────────────────────
@@ -313,6 +362,10 @@ pub trait PhoneHost: Send + Sync {
     /// diff (F-CN-09). Read only.
     async fn review_current(&self) -> Result<PhoneReview, String> {
         Err("The review queue isn't available here.".into())
+    }
+    /// The review queue's revision (F-CN-09); 0 without one.
+    fn review_rev(&self) -> u64 {
+        0
     }
 }
 
@@ -1747,6 +1800,7 @@ impl PhoneService {
             approvals: std::mem::take(&mut approvals),
             threads,
             routines,
+            review_rev: host.review_rev(),
         };
         // Stay within one frame however much there is.
         loop {

@@ -482,14 +482,12 @@ pub async fn run(state: State<'_, AppState>, host: &dyn ToolWindow, name: &str, 
         // F-CN-09: the review queue by voice; merging waits for the desk.
         "review_next" => {
             let q = review_queue(&state)?;
-            let step = q.walk_next();
+            let step = q.walk_next().await;
             Ok(crate::services::review_queue::spoken(&step, q.now()))
         }
         "review_send_back" => {
             let q = review_queue(&state)?;
-            let item = q
-                .walk_current()
-                .ok_or("No review item is open: ask what's ready first.")?;
+            let item = q.walk_heard_item().map_err(ipc)?;
             let text = tandem_voice::conductor::exec::strip_controls(&s(a, "text"));
             if text.trim().is_empty() {
                 return Err("Say what to send back.".into());
@@ -527,7 +525,7 @@ pub async fn run(state: State<'_, AppState>, host: &dyn ToolWindow, name: &str, 
         }
         "review_approve" => {
             let q = review_queue(&state)?;
-            let (item, approved) = q.walk_approve().map_err(ipc)?;
+            let (item, approved) = q.walk_approve().await.map_err(ipc)?;
             Ok(format!(
                 "Approved {}.{}",
                 item.title,
