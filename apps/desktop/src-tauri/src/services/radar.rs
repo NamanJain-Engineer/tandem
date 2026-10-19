@@ -27,6 +27,8 @@ use crate::services::terminal::TerminalService;
 struct Entry {
     parent: String,
     index: SymbolIndex,
+    /// Parses by file: a refresh parses only what changed since.
+    cache: symbols::ParseCache,
 }
 
 static INDEXES: LazyLock<Mutex<HashMap<String, Entry>>> = LazyLock::new(Mutex::default);
@@ -64,15 +66,25 @@ pub async fn refresh(git: &Git, lane: &Workspace) -> Result<SymbolIndex, IpcErro
     if !covered(lane) {
         return Ok(SymbolIndex::default());
     }
-    let index = symbols::index(git, Path::new(&lane.root), base).await?;
+    let mut cache = lock(&INDEXES)
+        .get(lane.id.as_str())
+        .map(|e| e.cache.clone())
+        .unwrap_or_default();
+    let done = symbols::index_cached(git, Path::new(&lane.root), base, &mut cache).await?;
+    tracing::debug!(
+        code = "radar.refreshed",
+        parsed = done.parsed,
+        "radar index refreshed"
+    );
     lock(&INDEXES).insert(
         lane.id.as_str().to_string(),
         Entry {
             parent: parent.as_str().to_string(),
-            index: index.clone(),
+            index: done.index.clone(),
+            cache,
         },
     );
-    Ok(index)
+    Ok(done.index)
 }
 
 /// The last index, parsing it first when there's none.

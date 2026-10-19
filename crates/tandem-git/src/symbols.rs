@@ -407,44 +407,136 @@ async fn diff(git: &Git, root: &Path, base: &str, path: &str) -> Result<String, 
     Ok(out.text().to_string())
 }
 
+/// One changed file's parse, kept until its content changes.
+#[derive(Debug, Clone)]
+struct Parsed {
+    /// What the worktree's file held when parsed (`None`: missing).
+    content: Option<u64>,
+    symbols: Vec<ChangedSymbol>,
+    uses: BTreeSet<String>,
+    unparsed: bool,
+}
+
+/// A worktree's parses by path, for one base. A refresh parses only the
+/// files whose content changed since (in practice, those the last turn
+/// touched); the rest are reused.
+#[derive(Debug, Clone, Default)]
+pub struct ParseCache {
+    base: String,
+    files: BTreeMap<String, Parsed>,
+}
+
+/// What a refresh did.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Refreshed {
+    pub index: SymbolIndex,
+    /// Files parsed this time (the others came from the cache).
+    pub parsed: u32,
+}
+
+/// The worktree file's bytes, or `None` when it's missing or too big
+/// (`Err(())`: too big).
+fn read_file(path: &Path) -> Result<Option<String>, ()> {
+    match std::fs::metadata(path) {
+        Ok(m) if m.len() > MAX_FILE_BYTES as u64 => Err(()),
+        Ok(_) => Ok(std::fs::read_to_string(path).ok()),
+        Err(_) => Ok(None),
+    }
+}
+
 /// The worktree at `root`'s index against `base`: its changed files, as
-/// F-WT-03 counts them, parsed in both versions.
-pub async fn index(git: &Git, root: &Path, base: &str) -> Result<SymbolIndex, GitError> {
+/// F-WT-03 counts them. Files whose content is unchanged since `cache`'s
+/// last refresh aren't parsed again; tree-sitter runs on the blocking
+/// pool, never on the async runtime's threads.
+pub async fn index_cached(
+    git: &Git,
+    root: &Path,
+    base: &str,
+    cache: &mut ParseCache,
+) -> Result<Refreshed, GitError> {
+    if cache.base != base {
+        *cache = ParseCache {
+            base: base.to_string(),
+            files: BTreeMap::new(),
+        };
+    }
     let files = changed_files(git, root, base).await?;
-    let mut out = SymbolIndex::default();
+    let mut out = Refreshed::default();
+    let mut kept = BTreeMap::new();
     for (n, path) in files.iter().enumerate() {
         let Some(lang) = Lang::of(path) else {
-            out.unparsed += 1;
+            out.index.unparsed += 1;
             continue;
         };
         if n >= MAX_FILES {
-            out.unparsed += 1;
+            out.index.unparsed += 1;
             continue;
         }
-        let now = match std::fs::metadata(root.join(path)) {
-            Ok(m) if m.len() > MAX_FILE_BYTES as u64 => {
-                out.unparsed += 1;
-                continue;
-            }
-            Ok(_) => std::fs::read_to_string(root.join(path)).ok(),
-            Err(_) => None,
+        let full = root.join(path);
+        let read = tokio::task::spawn_blocking(move || read_file(&full))
+            .await
+            .unwrap_or(Ok(None));
+        let Ok(now) = read else {
+            out.index.unparsed += 1;
+            continue;
         };
-        let was = show(git, root, base, path).await?;
-        if was.as_ref().is_some_and(|w| w.len() > MAX_FILE_BYTES) {
-            out.unparsed += 1;
-            continue;
+        let content = now.as_ref().map(|t| hash(t.as_bytes()));
+        let parsed = match cache.files.get(path) {
+            Some(p) if p.content == content => p.clone(),
+            _ => {
+                out.parsed += 1;
+                let was = show(git, root, base, path).await?;
+                if was.as_ref().is_some_and(|w| w.len() > MAX_FILE_BYTES) {
+                    Parsed {
+                        content,
+                        symbols: Vec::new(),
+                        uses: BTreeSet::new(),
+                        unparsed: true,
+                    }
+                } else {
+                    let lines = match (&was, &now) {
+                        (Some(_), Some(_)) => {
+                            Some(added_lines(&diff(git, root, base, path).await?))
+                        }
+                        _ => None,
+                    };
+                    let path_owned = path.clone();
+                    let (symbols, used) = tokio::task::spawn_blocking(move || {
+                        let symbols = compare(lang, &path_owned, was.as_deref(), now.as_deref());
+                        let used = now
+                            .as_deref()
+                            .map(|n| uses(lang, n, lines.as_ref()))
+                            .unwrap_or_default();
+                        (symbols, used)
+                    })
+                    .await
+                    .unwrap_or_default();
+                    Parsed {
+                        content,
+                        symbols,
+                        uses: used,
+                        unparsed: false,
+                    }
+                }
+            }
+        };
+        if parsed.unparsed {
+            out.index.unparsed += 1;
         }
-        out.symbols
-            .extend(compare(lang, path, was.as_deref(), now.as_deref()));
-        if let Some(now) = &now {
-            let lines = match &was {
-                Some(_) => Some(added_lines(&diff(git, root, base, path).await?)),
-                None => None,
-            };
-            out.uses.extend(uses(lang, now, lines.as_ref()));
-        }
+        out.index.symbols.extend(parsed.symbols.iter().cloned());
+        out.index.uses.extend(parsed.uses.iter().cloned());
+        kept.insert(path.clone(), parsed);
     }
+    // Files no longer changed are dropped.
+    cache.files = kept;
     Ok(out)
+}
+
+/// [`index_cached`] from nothing.
+pub async fn index(git: &Git, root: &Path, base: &str) -> Result<SymbolIndex, GitError> {
+    Ok(index_cached(git, root, base, &mut ParseCache::default())
+        .await?
+        .index)
 }
 
 /// What `of` did to `name`, its strongest change, with the qualified name.
