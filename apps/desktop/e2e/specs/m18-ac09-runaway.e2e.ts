@@ -1,6 +1,7 @@
 import { $, browser } from "@wdio/globals";
 import {
   addFolder,
+  closeAllPanes,
   freshOffline,
   invoke,
   paneIds,
@@ -39,7 +40,8 @@ async function claudePane(): Promise<string> {
 // the subagent limit, shows the card, notifies, and pauses on request.
 describe("E2E-M18-AC09 runaway guard", function () {
   this.timeout(240_000);
-
+  // Nothing of this spec outlives it (a later spec's launch would ask
+  // about its panes as leftovers).
   it("F-AC-09.1 F-AC-09.5 a tripped limit shows the card and notifies; Dismiss clears it", async () => {
     const pane = await claudePane();
     await invoke("settings_set", {
@@ -91,8 +93,10 @@ describe("E2E-M18-AC09 runaway guard", function () {
   });
 
   // Nothing of this spec's outlives it: the fake agent keeps working for a
-  // minute after /subagents, and the limits go back to their defaults.
+  // minute after /subagents, so its panes close, and the limits go back to
+  // their defaults.
   after(async () => {
+    await closeAllPanes();
     for (const w of await invoke<Array<{ id: string; parentId: string | null }>>("workspace_list"))
       if (!w.parentId) await invoke("workspace_remove", { id: w.id });
     await invoke("settings_set", {

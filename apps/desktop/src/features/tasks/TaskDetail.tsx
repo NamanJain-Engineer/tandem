@@ -4,7 +4,7 @@
 // at once and a change to the same field raises the conflict banner
 // (F-TK-03 merge rule, ./merge.ts).
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, MessageSquareReply, Play, X } from "lucide-react";
+import { ArrowLeft, MessageSquareReply, Moon, Play, X } from "lucide-react";
 import type {
   Issue,
   IssueStatus,
@@ -31,6 +31,7 @@ import { t, type MessageKey } from "../../i18n";
 import { STATUS_ORDER, isIpcError, useTasks } from "../../stores/tasks";
 import { age } from "../thread/groups";
 import { ExecuteDialog, Runs } from "./Execute";
+import { NightRuns, RunAtResetDialog } from "./NightShift";
 import { discard, draftOf, edit, keepMine, rebase, shown, type Draft, type EditField } from "./merge";
 
 export const statusLabel = (s: IssueStatus) => t(`tasks.status.${s}` as MessageKey);
@@ -181,6 +182,7 @@ function Comments({ comments }: { comments: TaskComment[] }) {
 /** The open task, with local drafts merged against the saved copy. */
 function DetailBody({ detail, onClose }: { detail: Detail; onClose?: () => void }) {
   const [executing, setExecuting] = useState(false);
+  const [nightly, setNightly] = useState(false);
   const meta = useTasks((s) => s.meta);
   const save = useTasks((s) => s.save);
   const { show: toast } = useToast();
@@ -256,6 +258,16 @@ function DetailBody({ detail, onClose }: { detail: Detail; onClose?: () => void 
           {t("tasks.execute")}
         </Button>
         <ExecuteDialog issue={issue} open={executing} onOpenChange={setExecuting} />
+        <Button
+          size="sm"
+          variant="ghost"
+          iconLeft={<Moon size={13} />}
+          onClick={() => setNightly(true)}
+          data-testid="task-night"
+        >
+          {t("night.open")}
+        </Button>
+        <RunAtResetDialog issue={issue} open={nightly} onOpenChange={setNightly} />
       </div>
       {conflicts.map((field) => (
         <Banner
@@ -428,6 +440,7 @@ function DetailBody({ detail, onClose }: { detail: Detail; onClose?: () => void 
             <p className="text-sm text-fg-subtle">{t("tasks.description.empty")}</p>
           )}
         </div>
+        <NightRuns issueId={issue.id} />
         <Runs issueId={issue.id} />
         {issue.result && (
           <div className="flex flex-col gap-1.5" data-testid="task-result">

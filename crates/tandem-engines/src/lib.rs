@@ -19,6 +19,7 @@ pub mod launch;
 pub mod learn;
 pub mod library;
 pub mod registry;
+pub mod sandbox;
 pub mod status_server;
 pub mod transcript;
 pub mod usage;

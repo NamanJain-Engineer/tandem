@@ -19,11 +19,7 @@ pub struct Settled {
 }
 
 fn settle_in(t: &Transaction) -> Result<Settled, StoreError> {
-    let paused_panes = t.execute(
-        "UPDATE panes SET restore_state = 'paused'
-         WHERE kind = 'agent' AND closed_at IS NULL AND restore_state <> 'paused'",
-        [],
-    )?;
+    let paused_panes = settle_panes_in(t)?;
     let interrupted_threads = t.execute(
         "UPDATE threads SET state = 'interrupted' WHERE state IN ('working', 'waiting')",
         [],
@@ -37,6 +33,67 @@ fn settle_in(t: &Transaction) -> Result<Settled, StoreError> {
         paused_panes,
         interrupted_threads,
     })
+}
+
+/// Threads and turns the last run left working, waiting or running: what
+/// a launch settles once it knows no other process owns them (F-RT-06: a
+/// headless Night Shift pass may still be driving them).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Leftovers {
+    pub threads: Vec<String>,
+    pub turns: Vec<String>,
+}
+
+fn settle_panes_in(t: &Transaction) -> Result<usize, StoreError> {
+    Ok(t.execute(
+        "UPDATE panes SET restore_state = 'paused'
+         WHERE kind = 'agent' AND closed_at IS NULL AND restore_state <> 'paused'",
+        [],
+    )?)
+}
+
+/// At launch: agent panes pause (they're this machine's, whoever holds the
+/// app lock), and the threads and turns left working are listed, not
+/// settled.
+pub fn settle_panes_blocking(store: &Store) -> Result<(usize, Leftovers), StoreError> {
+    store.write_blocking(|t| {
+        let paused = settle_panes_in(t)?;
+        let ids = |sql: &str| -> Result<Vec<String>, StoreError> {
+            let mut st = t.prepare(sql)?;
+            let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        };
+        let threads = ids("SELECT id FROM threads WHERE state IN ('working', 'waiting')")?;
+        let turns = ids("SELECT id FROM thread_turns WHERE state = 'running'")?;
+        Ok((paused, Leftovers { threads, turns }))
+    })
+}
+
+/// Settles `left` to interrupted, those still working, waiting or running:
+/// a thread a headless pass finished meanwhile keeps its state, and one
+/// this app started since launch isn't in the list.
+pub async fn settle_leftovers(store: &Store, left: Leftovers) -> Result<usize, StoreError> {
+    store
+        .write(move |t| {
+            let mut n = 0;
+            for id in &left.threads {
+                n += t.execute(
+                    "UPDATE threads SET state = 'interrupted'
+                     WHERE id = ?1 AND state IN ('working', 'waiting')",
+                    params![id],
+                )?;
+            }
+            let now = crate::now_ms();
+            for id in &left.turns {
+                t.execute(
+                    "UPDATE thread_turns SET state = 'interrupted', ended_at = ?2
+                     WHERE id = ?1 AND state = 'running'",
+                    params![id, now],
+                )?;
+            }
+            Ok(n)
+        })
+        .await
 }
 
 /// Runs once at launch, before the UI lists panes.

@@ -2057,23 +2057,49 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 **Goal.** The usage work `docs/NEXT_FEATURES.md` ranks (§1 #4, #8 and §3 B1): a forecast of when each account runs out before its window resets, a guard against runaway agents, and the Night Shift, work that waits for a reset. Built on branch `product-research`; decisions D-2460–D-2479.
 
-**Owns:** F-AC-08, F-AC-09 (P2)
+**Owns:** F-AC-08, F-AC-09, F-RT-06 (P2)
 **Prerequisites.** M6 and M16 usage polling and the usage dashboard (F-AC-04, F-AC-07).
 
 **Ordered tasks**
 1. **Usage forecast (F-AC-08).** Per-window run-out at the current pace in the usage chip, "Who's using it" from the engines' own local logs (numbers only, F-AC-07's parser), the opt-in `usage_forecast` notification, and the launch sheet's near-limit note naming an account with more room; never switches accounts.
 2. **Runaway guard (F-AC-09).** `tandem_engines::guard` (limits and per-session state), `tandem_pty::suspend` (`ProcessControl`: SIGSTOP/SIGCONT on Unix, unavailable on Windows) and `PtyManager::foreground_group`; the registry's `interrupt` and `subagent_tools`; `services::runaway` over the status snapshot and the tool sink; UI-170 on the pane, the `runaway` notification, Settings › Teammates › Runaway guard (`runaway_guard`, `runaway_action`); commands `runaway_list`, `runaway_dismiss`, `runaway_pause`, `runaway_resume`.
+3. **Night Shift (F-RT-06), first slice.** `services::night_shift` (`$DATA/night-shift.json`): each account's next reset (its fullest usage window's, else a limit's), "Run at reset…" on a task with the plan in words (UI-171), a due run that waits while its account is still full and otherwise starts task execution on that account only, the GUI's 30 s tick and `headless::night_pass` in `--run-routines`, the morning summary (`night_shift_summary_at`, a `night_shift` notification and a queued phone push alert); commands `night_accounts`, `night_list`, `night_schedule`, `night_cancel`.
 
 **Verification**
 ```bash
-cargo test -p tandem-engines f_ac_0 && cargo test -p tandem-pty f_ac_09 && cargo test -p tandem-desktop --lib f_ac_0
-pnpm --filter desktop exec vitest run -t "F-AC-0"
-dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-ac*.e2e.ts'
+cargo test -p tandem-engines f_ac_0 && cargo test -p tandem-pty f_ac_09 && cargo test -p tandem-desktop --lib f_ac_0 && cargo test -p tandem-desktop --lib f_rt_06
+pnpm --filter desktop exec vitest run -t "F-AC-0|F-RT-06"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-{ac,rt}*.e2e.ts'
 ```
 
 **E2E**
 - **E2E-M18-AC08 Forecast** (`m18-ac08-forecast.e2e.ts`). A usage window that will run out before it resets: the chip's popover says when; the notification fires once per window when turned on.
 - **E2E-M18-AC09 Runaway guard** (`m18-ac09-runaway.e2e.ts`). The fake Claude Code starts subagents past the limit: the card and the notification; Dismiss keeps it quiet for the turn; with "Pause the agent", an agent that ignores the interrupt key is stopped, and Resume continues it.
+- **E2E-M18-RT06 Night Shift** (`m18-rt06-night-shift.e2e.ts`). Run at reset on a task shows the plan and saves it, Cancel removes it; a due run waits while the fake Codex account is at 97%, then starts task execution on that account after its reset; the summary says "Night Shift: 1 done" once.
+
+---
+
+## M18 · Next features: sandbox (M)
+
+**Goal.** The agent sandbox `docs/NEXT_FEATURES.md` ranks (§1 F-TL-11), Linux first: with "Workspace" on, an agent pane's engine runs under bubblewrap and can write only to its folder, its git data, its provider home and Vibezeo's tasks folder, and can't read the user's keys. Built on branch `product-research`; decisions D-2474 on.
+
+**Owns:** F-TL-11 (P2)
+**Prerequisites.** M4 agent panes and provider homes (F-EN-01, F-AC-01), M17's worktrees (F-WT-01).
+
+**Ordered tasks**
+1. **Policy and detection.** `tandem_engines::sandbox`: `SandboxPolicy`, `bwrap_args` (read-only root, the writable binds, the hidden secrets, provider homes and other worktrees, then `.git/hooks` and `.git/config` read-only again), the `Sandboxer` trait with `Bubblewrap::detect` (found on the login PATH and probed with a real one-command sandbox) on Linux and `NotYet` elsewhere, behind `cfg(target_os)`. Never installs anything.
+2. **Agent panes.** `TerminalService` wraps the engine's own argv (the shell stays outside) when `agent_sandbox = "workspace"`, for local folders only; it records each pane's `PaneSandbox` and publishes `sandbox:pane`; commands `sandbox_status`, `sandbox_panes`.
+3. **UI and docs.** The "Sandboxed" chip on agent panes (or why not), Settings › Engines › Sandbox agent panes with the reason when unavailable, and Engines › Sandbox agent panes (Linux) in the docs. The fake engine's `/sh <cmd>` reports what the sandbox lets it do.
+
+**Verification**
+```bash
+cargo test -p tandem-engines f_tl_11 && cargo test -p tandem-desktop --lib f_tl_11
+pnpm --filter desktop exec vitest run -t "F-TL-11"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-tl11-*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-TL11 Agent sandbox** (`m18-tl11-sandbox.e2e.ts`, needs `bwrap` on the test machine). With the setting off, an agent pane has no chip. With Workspace, the next agent pane shows "Sandboxed"; its engine writes in its folder but not in `$HOME` or `/var/tmp`, can't read `~/.ssh/id_ed25519`, can't write `.git/hooks/pre-commit`, and can commit.
 
 ---
 

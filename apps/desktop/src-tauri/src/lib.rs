@@ -287,6 +287,12 @@ macro_rules! app_commands {
             commands::runaway::runaway_dismiss,
             commands::runaway::runaway_pause,
             commands::runaway::runaway_resume,
+            commands::night_shift::night_accounts,
+            commands::night_shift::night_list,
+            commands::night_shift::night_schedule,
+            commands::night_shift::night_cancel,
+            commands::sandbox::sandbox_status,
+            commands::sandbox::sandbox_panes,
             commands::data_controls::data_export,
             commands::data_controls::data_delete_local,
             commands::find_work::find_work,
@@ -936,6 +942,7 @@ pub fn run() {
         commands::test::test_spawn_log,
         commands::test::test_clock_advance,
         commands::test::test_usage_backdate,
+        commands::test::test_night_tick,
         commands::test::test_fixture_agent,
         commands::test::test_notifier_calls,
         commands::test::test_notifier_click,
@@ -1035,7 +1042,16 @@ pub fn run() {
                 let (auth, ent) = (state.auth.clone(), state.entitlements.clone());
                 let mut app_events = state.bus.subscribe(tandem_core::bus::Topic::App);
                 let mut plan_events = state.bus.subscribe(tandem_core::bus::Topic::Entitlement);
+                let routines = state.routines.clone();
+                let (restore, threads) = (state.restore.clone(), state.threads.clone());
                 tauri::async_runtime::spawn(async move {
+                    // Threads and attempts a headless pass is still running
+                    // aren't stale: settle them only once this app holds the
+                    // lock (F-RT-06, D-2540). The panes paused at launch.
+                    routines.wait_lock().await;
+                    if restore.settle_threads().await > 0 {
+                        threads.republish().await;
+                    }
                     exec.settle().await;
                     loop {
                         use tokio::sync::broadcast::error::RecvError;
@@ -1135,6 +1151,22 @@ pub fn run() {
                     .start(handle.clone(), notifier, recording);
                 // The runaway guard watches agents from here on (F-AC-09).
                 state.runaway.start(handle.clone());
+                // The Night Shift starts due runs and sends its summary (F-RT-06).
+                let night = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        let state = night.state::<AppState>();
+                        // A headless pass owns the runs until it ends (F-RT-06).
+                        if state.routines.holds_lock() {
+                            state.night_shift.tick(&state).await;
+                            // Summaries a headless pass wrote, or this tick.
+                            for alert in state.night_shift.take_alerts(state.clock.now_ms()) {
+                                state.phone.queue_alert(alert);
+                            }
+                        }
+                        state.clock.sleep(crate::services::night_shift::TICK).await;
+                    }
+                });
                 // F-DB-04: the review queue follows the status bus.
                 let _ = state
                     .review

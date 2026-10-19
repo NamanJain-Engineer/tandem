@@ -111,7 +111,7 @@ export function SelectControl({
 }: {
   k: SettingKey;
   ids: Ids;
-  options: Array<{ value: string; label: string }>;
+  options: Array<{ value: string; label: string; disabled?: boolean; disabledReason?: string }>;
   fallback: string;
 }) {
   const value = useSetting(k, fallback);

@@ -8,6 +8,7 @@ $SUDO env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::=--force-conf
   libwebkit2gtk-4.1-dev webkit2gtk-driver xvfb librsvg2-dev libayatana-appindicator3-dev \
   libasound2-dev libxdo-dev libssl-dev libdbus-1-dev clang cmake pkg-config \
   espeak-ng sox vim htop less patchelf file \
-  dbus xclip openbox xdotool gcc-mingw-w64-x86-64 openssh-client musl-tools
+  dbus xclip openbox xdotool gcc-mingw-w64-x86-64 openssh-client musl-tools \
+  bubblewrap   # E2E-M18-TL11 runs the agent sandbox for real (the app never installs it)
 command -v tauri-driver >/dev/null || cargo install tauri-driver --locked
 rustup target add x86_64-pc-windows-gnu   # the gate's Windows clippy (scripts/windows-check.sh)

@@ -70,6 +70,9 @@ pub struct RestoreService {
     /// The most ever spawning at once (instrumented, F-SH-07 AC3).
     max_spawning: AtomicUsize,
     settled: Mutex<Settled>,
+    /// Threads and turns the last run left working, settled once this app
+    /// holds the lock ([`Self::settle_threads`]).
+    leftovers: Mutex<Option<restore::Leftovers>>,
     /// Auto-resume runs once per launch, however often the UI asks.
     auto_started: std::sync::atomic::AtomicBool,
     store: Store,
@@ -84,29 +87,65 @@ impl RestoreService {
             spawning: AtomicUsize::new(0),
             max_spawning: AtomicUsize::new(0),
             settled: Mutex::default(),
+            leftovers: Mutex::default(),
             auto_started: std::sync::atomic::AtomicBool::new(false),
             store,
             bus,
         })
     }
 
-    /// At launch, before the UI lists panes: agents pause, interrupted
-    /// threads settle.
+    /// At launch, before the UI lists panes: agents pause, and the threads
+    /// left working are noted. They settle in [`Self::settle_threads`],
+    /// once this app holds the app lock: until then a headless pass (a
+    /// Night Shift run) may still be driving them (F-RT-06).
     pub fn settle_at_launch(&self) {
-        match restore::settle_blocking(&self.store) {
-            Ok(s) => {
+        match restore::settle_panes_blocking(&self.store) {
+            Ok((paused, left)) => {
                 tracing::info!(
                     code = "restore.settled",
-                    paused = s.paused_panes,
-                    interrupted = s.interrupted_threads,
-                    "last run settled"
+                    paused,
+                    working = left.threads.len(),
+                    "last run's panes settled"
                 );
                 if let Ok(mut settled) = self.settled.lock() {
-                    *settled = s;
+                    *settled = restore::Settled {
+                        paused_panes: paused,
+                        // What will settle; corrected by settle_threads.
+                        interrupted_threads: left.threads.len(),
+                    };
+                }
+                if let Ok(mut l) = self.leftovers.lock() {
+                    *l = Some(left);
                 }
             }
             Err(err) => {
                 tracing::warn!(code = "restore.settle_failed", error = %err, "couldn't settle the last run")
+            }
+        }
+    }
+
+    /// Settles the threads and turns the last run left working: call once
+    /// this app holds the app lock. Returns how many threads it settled;
+    /// a second call does nothing.
+    pub async fn settle_threads(&self) -> usize {
+        let Some(left) = self.leftovers.lock().ok().and_then(|mut l| l.take()) else {
+            return 0;
+        };
+        match restore::settle_leftovers(&self.store, left).await {
+            Ok(n) => {
+                tracing::info!(
+                    code = "restore.threads_settled",
+                    interrupted = n,
+                    "last run's threads settled"
+                );
+                if let Ok(mut settled) = self.settled.lock() {
+                    settled.interrupted_threads = n;
+                }
+                n
+            }
+            Err(err) => {
+                tracing::warn!(code = "restore.settle_failed", error = %err, "couldn't settle the last run's threads");
+                0
             }
         }
     }

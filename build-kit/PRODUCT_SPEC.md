@@ -2008,6 +2008,50 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 1. A teammate without the permission gets no schedule tools.
 2. `tandem__schedule_create` with access Full is rejected.
 
+#### F-RT-06 Night Shift: run at reset (P2, Pro)
+**Story:** My plan's usage windows refill while I'm away, and that capacity goes to waste. I want to queue a task to start on an account I choose when that account's window resets, overnight if need be, and find a summary in the morning, on my phone too.
+
+**Behavior:**
+- **Entry:** "Run at reset…" beside Execute… on a task (F-TK-04), with the same block as Execute (sign-in, Pro's task execution). It opens UI-171 with:
+  - **Account:** every account whose engine can run tasks (a chat engine, as Execute). Each shows its next reset:
+    - the reset time of its fullest usage window (F-AC-04);
+    - or, when the engine reports no windows, the reset time of the last usage limit a pane hit on that account (F-AC-05);
+    - or else "No reset time known yet". Such an account can't be picked.
+  - **Workspace, isolation, access and review,** as Execute (a new worktree and Edits by default; Full only with its explicit choice).
+- **The plan:** UI-171 states the plan in words before anything is saved: "Starts {task} on {account} ({engine}) at {time}, when its {window} resets. In a new worktree, with Edits access. It waits for that account's reset and never uses another account."
+  - When background routines are off (F-RT-03), it adds: "Vibezeo must be open then, or turn on Run even when Vibezeo is closed in Routines."
+  - **Schedule run** saves it. That click is the user's approval of the plan.
+- **On the task:** each scheduled run shows "Runs at {time} on {account}" with **Cancel**. A run that has started shows its attempt in Runs, as Execute does.
+- **At the reset:** Vibezeo reads the account's usage again (F-AC-04).
+  - If its fullest window is still at 95% or more with a later reset, the run waits for that reset ("Waiting for {account} to reset at {time}").
+  - Otherwise it starts task execution (F-TK-04) with that account and engine and the saved choices.
+  - It never uses another account or engine (F-AC-05, out of scope §6.7). A start that fails (signed out, plan, engine missing, the queue's limit) is marked "Couldn't start" with the reason, and isn't retried.
+- **With the app closed:** the background runner (F-RT-03, `--run-routines`) starts a due run.
+  - It keeps its process, and the app lock, while the run goes on, for at most 8 hours (routines' passes stop at 50 minutes). At 8 hours it stops the run, which needs the user: "Stopped after 8 hours: the most a run gets while Vibezeo is closed."
+  - UI-171 says so up front when background routines are on: "If Vibezeo is closed then, the run gets up to 8 hours."
+  - While a background pass holds the lock, an app that opens doesn't tick Night Shift runs and doesn't settle task attempts; it does both once it holds the lock.
+- **A run whose process died** (the background runner killed, the computer off) ends as needing the user, with its attempt's reason ("Vibezeo closed during the run."), the next time Vibezeo or the background runner starts. The summary counts it.
+- **Morning summary** (Settings › Notifications › "Night Shift summary at", 8:00 AM by default):
+  - At that time, if any Night Shift runs ended since the last summary, one notification: "Night Shift: {n} done, {m} need you" / the tasks' titles. "Need you" means failed, stopped or couldn't start. Its source opens Tasks.
+  - A paired phone with push turned on (F-RM-06) gets the same summary as a push alert. When the background runner wrote the summary (Vibezeo closed), the alert waits in the Night Shift's file and goes out when Vibezeo next opens, if that's within a day.
+- **Opening Vibezeo while a run works** never stops it: until the background runner ends and lets go of the app lock, Vibezeo leaves that run's thread, attempt and schedule alone, and it reads the schedule again before starting anything, so a run is never started twice.
+  - Nothing ran: no summary.
+- **Storage:** `$DATA/night-shift.json` (atomic writes): each run's task, workspace, account, engine, choices, start time, state (`scheduled`, `waiting`, `started`, `done`, `needs_you`, `cancelled`), attempt and reason. Nothing leaves the machine beyond what task execution and the phone's push already send.
+
+**Acceptance:**
+1. With an account whose 5-hour window resets at 3:10 AM, "Run at reset" shows that time in the plan; Schedule run saves it, the task lists "Runs at 3:10 AM on {account}", and nothing starts before then.
+2. At 3:10 (a mocked clock), the run starts task execution with that account and engine, even when another account has more room.
+3. When the account is still at 95% or more with a later reset, the run waits for that reset and starts then. It never uses another account.
+4. Cancel before the reset removes the run, and nothing starts.
+5. An account with no known reset can't be picked, and Free shows Execute's Pro block.
+6. At the summary time after two runs ended (one done, one failed), one notification reads "Night Shift: 1 done, 1 needs you". The next day, with nothing new, there's none. A paired phone with push on is queued the same alert.
+7. With the app closed and background routines on, `--run-routines` starts a due run and keeps waiting while it runs, past routines' 50 minutes, up to 8 hours; at 8 hours the run is stopped and needs the user.
+8. A run whose attempt was left running by a process that died ends as "needs you" with the attempt's reason the next time the app or the background runner starts, and the next summary counts it.
+9. While the background runner holds the app lock, the app starts no Night Shift run and settles no task attempt.
+10. Opening the app while the background runner's run is working leaves that run's thread and turn working; only threads still working once the app holds the lock are settled to interrupted.
+11. A run the background runner started while the app waited for the lock isn't started again by the app, and the app's next change keeps the runner's record of it.
+12. A summary written by the background runner reaches a paired phone with push on when the app next opens (within a day), once.
+
 ### 4.10 PL: Plugins and tandem-gateway
 
 #### F-PL-01 Gateway process (P1)
@@ -3151,6 +3195,40 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
 
 **Acceptance:**
 1. A Team member with audit on generates an audit event for a Full-access session start, while a Pro user generates nothing.
+
+#### F-TL-11 Agent sandbox, Linux first (P2)
+**Story:** I let agents work in auto mode, and I don't want one of them reading my SSH keys, writing outside its folder, or planting a git hook that runs later outside its reach. I want agent panes to see only what their work needs, whichever engine they run.
+
+**Behavior:**
+- **Setting:** Settings › Engines › "Sandbox agent panes": **Off** (default) or **Workspace**. It applies to agent panes started after the change, in folders on this computer. SSH and WSL panes are never sandboxed.
+- **How:** on Linux, the engine's own command runs under bubblewrap (`bwrap`), found on the login PATH. The pane's shell stays outside the sandbox: when the engine exits, the shell is back.
+  - Vibezeo never installs it. Without `bwrap`, or when it can't make a sandbox here (user namespaces off), the setting shows the reason ("Install bubblewrap (the bwrap command) to sandbox agents.") and Workspace can't be chosen. If it stops working after it was turned on, agent panes start unsandboxed, each chip says "Not sandboxed" with the reason, and the first such pane of a launch raises one notification ("An agent started without the sandbox").
+  - Engines that keep their sign-in in the user's home folder (no provider home: Cursor Agent, Gemini CLI, Copilot CLI and the others without one) start unsandboxed, their chip saying why, since their own home would be read-only.
+  - On macOS and Windows the setting reads "Not available on this system yet", through the same interface.
+- **Workspace policy:**
+  - **The whole filesystem is read-only,** apart from these writable areas:
+    - the pane's folder (the workspace or its worktree);
+    - for a worktree, the repository's git folder, so commits work;
+    - the account's provider home;
+    - Vibezeo's tasks folder (the `tandem-tasks` server the engine starts);
+    - `/tmp`, shared with the rest of the computer (engines and their tools write there);
+    - an empty `~/.cache`.
+  - **Hidden** (they read as empty): `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.docker`, `~/.kube`, `~/.netrc`, `~/.local/share/keyrings`, Vibezeo's own data folder (its database of every project's threads, the other accounts' provider homes, teammates), and the other worktrees of the repository. From the data folder only the tasks folder (writable), the status socket's folder and the pane's staged clipboard images (read-only) and this account's provider home (writable) come back.
+  - **Git internals stay read-only** inside the writable folders: `.git/hooks` and `.git/config` (and the repository's for a worktree), the hooks folder even when it doesn't exist yet, and the folder `core.hooksPath` names. An agent can't plant a hook that later runs outside the sandbox.
+  - **Not covered:** agents already running for the user behind a socket (`ssh-agent`, `gpg-agent`, an unlocked desktop keyring) stay reachable, as for any program the user runs; scripts a hook calls from elsewhere in the folder are ordinary files there (the change shows in the diff).
+  - **The network is shared** (engines need it for inference).
+- **The engine signs in by itself, as always.** The sandbox only narrows what the agent's process can reach. Vibezeo never reads, copies or proxies the engine's credentials. The account's provider home stays writable, so the engine's own sign-in refresh works.
+- **Where it shows:** a "Sandboxed" chip in the agent pane's header (tooltip: "Writes only to this folder, its git data and the engine's own home; can't read your key files"). A write the sandbox refuses reaches the engine as its own "Read-only file system" error.
+
+**Data:** setting `agent_sandbox` (`"off"` | `"workspace"`). Nothing else is stored.
+
+**Acceptance:**
+1. With Workspace on Linux, an agent pane can create a file in its folder and can't create one in `$HOME`.
+2. Reading `~/.ssh/id_ed25519` from a sandboxed pane fails, and so does reading another account's provider home or Vibezeo's database; the pane's staged clipboard images stay readable.
+3. Writing `.git/hooks/pre-commit` from a sandboxed pane fails, while a commit in a worktree succeeds.
+4. Without `bwrap` (or where it can't run), the setting says why and Workspace can't be turned on. If it stops running after it was on, agent panes start unsandboxed with the chip saying why, and one notification per launch says so. An engine with no provider home starts unsandboxed with the chip saying why. On macOS and Windows the setting says it isn't available yet.
+5. The engine's command line inside the sandbox is the same as without it, its environment is the same, and its provider home is writable. No file under a provider home is read by Vibezeo to build the sandbox.
+6. With the setting Off, agent panes start exactly as before.
 
 ### 4.19 EX: Extras
 

@@ -553,6 +553,12 @@ impl ThreadService {
             .ok_or_else(not_found)
     }
 
+    /// Publishes `threads:changed` after a change made outside this
+    /// service (the launch settle, F-RT-06).
+    pub async fn republish(&self) {
+        self.publish_threads().await;
+    }
+
     async fn publish_threads(&self) {
         if let Some(sink) = self.chats_sink.get() {
             sink();

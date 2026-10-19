@@ -128,6 +128,14 @@ pub struct TerminalService {
     /// drops as their PTY is, closed with the pane (D-1606).
     host_tasks:
         std::sync::Mutex<std::collections::HashMap<String, crate::services::remote_mcp::RemoteMcp>>,
+    /// The agent sandbox (F-TL-11), found with the login PATH on first use.
+    sandbox: tokio::sync::OnceCell<Arc<dyn tandem_engines::sandbox::Sandboxer>>,
+    /// Whether each agent pane runs sandboxed, and why not.
+    sandboxed: std::sync::Mutex<std::collections::HashMap<String, PaneSandbox>>,
+    /// Told once per launch when the sandbox is on but a pane started
+    /// without it (a notification, F-TL-11).
+    sandbox_alert: std::sync::OnceLock<SandboxAlert>,
+    sandbox_alerted: std::sync::atomic::AtomicBool,
 }
 
 /// Takes a checkpoint of an agent pane's folder (F-EX-01). The flag turns
@@ -137,6 +145,63 @@ pub type PromptHook = Arc<
         + Send
         + Sync,
 >;
+
+/// Whether an agent pane runs sandboxed (F-TL-11): `sandbox_panes` and
+/// `sandbox:pane`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PaneSandbox {
+    pub pane_id: String,
+    pub sandboxed: bool,
+    /// Why not, when the setting is on.
+    pub reason: Option<String>,
+}
+
+/// Raises "a pane started without the sandbox": `(pane id, reason)`.
+pub type SandboxAlert = Arc<dyn Fn(String, String) + Send + Sync>;
+
+/// What a sandboxed agent in `root` may reach (F-TL-11): its folder, its
+/// repository's git data when it's a worktree, the account's provider home,
+/// Vibezeo's tasks folder; the app's data and the other worktrees hidden.
+pub fn sandbox_policy(
+    root: &Path,
+    provider_home: Option<&Path>,
+    data: &Path,
+    home: &Path,
+) -> tandem_engines::sandbox::SandboxPolicy {
+    let git_common = tandem_engines::sandbox::git_common_dir(root);
+    // The repository's worktrees folder: the main checkout's own, or the
+    // one the worktree lives in.
+    let repo = git_common
+        .as_ref()
+        .and_then(|g| g.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| root.to_path_buf());
+    let hide = std::fs::read_dir(repo.join(".tandem").join("worktrees"))
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .filter(|p| {
+                    p.canonicalize().ok() != root.canonicalize().ok() && p.as_path() != root
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    tandem_engines::sandbox::SandboxPolicy {
+        root: root.to_path_buf(),
+        git_common,
+        provider_home: provider_home.map(Path::to_path_buf),
+        providers: data.join("providers"),
+        tasks: data.join("tasks"),
+        run: data.join("run"),
+        data: Some(data.to_path_buf()),
+        readable: Vec::new(),
+        home: home.to_path_buf(),
+        hide,
+        hooks_path: tandem_engines::sandbox::hooks_dir(root),
+    }
+}
 
 /// One line of `TANDEM_SPAWN_LOG` (debug builds): what was started, with
 /// env keys only.
@@ -223,7 +288,177 @@ impl TerminalService {
             wsl_panes: Default::default(),
             tasks: std::sync::OnceLock::new(),
             host_tasks: Default::default(),
+            sandbox: tokio::sync::OnceCell::new(),
+            sandboxed: Default::default(),
+            sandbox_alert: std::sync::OnceLock::new(),
+            sandbox_alerted: std::sync::atomic::AtomicBool::new(false),
         })
+    }
+
+    /// The platform's agent sandbox (F-TL-11), detected once.
+    pub async fn sandboxer(&self) -> Arc<dyn tandem_engines::sandbox::Sandboxer> {
+        self.sandbox
+            .get_or_init(|| async {
+                let login = self.login_env().await;
+                let path = login.vars.get("PATH").cloned().unwrap_or_default();
+                let found = tokio::task::spawn_blocking(move || {
+                    Arc::<dyn tandem_engines::sandbox::Sandboxer>::from(
+                        tandem_engines::sandbox::platform(&path),
+                    )
+                })
+                .await;
+                found.unwrap_or_else(|_| Arc::new(tandem_engines::sandbox::NotYet))
+            })
+            .await
+            .clone()
+    }
+
+    /// Every agent pane's sandbox note (the pane chip).
+    pub fn sandbox_panes(&self) -> Vec<PaneSandbox> {
+        self.sandboxed
+            .lock()
+            .map(|m| m.values().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Where "a pane started without the sandbox" goes (the notifications).
+    pub fn set_sandbox_alert(&self, alert: SandboxAlert) {
+        let _ = self.sandbox_alert.set(alert);
+    }
+
+    /// The pane has no sandbox note any more (closed, or started with the
+    /// setting off): its chip goes (`sandbox:pane` with neither flag nor
+    /// reason).
+    pub fn forget_sandbox(&self, pane: &str) {
+        let had = self
+            .sandboxed
+            .lock()
+            .map(|mut m| m.remove(pane).is_some())
+            .unwrap_or(false);
+        if had {
+            self.status.bus().publish(tandem_core::bus::BusEvent::new(
+                tandem_core::bus::Topic::Status,
+                "sandbox:pane",
+                PaneSandbox {
+                    pane_id: pane.to_string(),
+                    sandboxed: false,
+                    reason: None,
+                },
+            ));
+        }
+    }
+
+    /// The setting is on and this pane starts without the sandbox: its chip
+    /// says why, and the first such pane of a launch raises a notification.
+    fn note_unsandboxed(&self, pane: &PaneId, reason: String) {
+        self.note_sandbox(PaneSandbox {
+            pane_id: pane.to_string(),
+            sandboxed: false,
+            reason: Some(reason.clone()),
+        });
+        let first = !self
+            .sandbox_alerted
+            .swap(true, std::sync::atomic::Ordering::SeqCst);
+        if first {
+            if let Some(alert) = self.sandbox_alert.get() {
+                alert(pane.to_string(), reason);
+            }
+        }
+    }
+
+    fn note_sandbox(&self, note: PaneSandbox) {
+        if let Ok(mut m) = self.sandboxed.lock() {
+            m.insert(note.pane_id.clone(), note.clone());
+        }
+        self.status.bus().publish(tandem_core::bus::BusEvent::new(
+            tandem_core::bus::Topic::Status,
+            "sandbox:pane",
+            note,
+        ));
+    }
+
+    /// The engine's argv, inside the sandbox when the setting is on and it
+    /// can run here (F-TL-11). Only narrows what the process reaches: the
+    /// engine signs in by itself, and no provider-home file is read here.
+    async fn sandbox_argv(
+        &self,
+        pane: &PaneId,
+        root: &Path,
+        provider_home: Option<&Path>,
+        argv: Vec<String>,
+    ) -> Vec<String> {
+        let on = tandem_store::repo::settings::get(
+            &self.store,
+            tandem_core::settings::SettingKey::AgentSandbox,
+        )
+        .await
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .is_some_and(|v| v == "workspace");
+        if !on {
+            self.forget_sandbox(pane.as_str());
+            return argv;
+        }
+        let sandbox = self.sandboxer().await;
+        let status = sandbox.status();
+        if !status.available {
+            let reason = status
+                .reason
+                .unwrap_or_else(|| tandem_engines::sandbox::NOT_YET.into());
+            self.note_unsandboxed(pane, reason);
+            return argv;
+        }
+        // Engines without a provider home sign in inside the user's own
+        // home, which stays read-only: they'd fail, so they start outside
+        // and say so (D-2544).
+        let Some(provider_home) = provider_home else {
+            self.note_unsandboxed(pane, tandem_engines::sandbox::OWN_HOME.into());
+            return argv;
+        };
+        let data = self
+            .store
+            .path()
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
+        let login = self.login_env().await;
+        let home = login
+            .vars
+            .get("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        let mut policy = sandbox_policy(root, Some(provider_home), &data, &home);
+        // The pane's staged clipboard images (F-CD-05), and the engine's
+        // program when it lives under the hidden data folder.
+        let staging = data.join("staging").join(pane.as_str());
+        let _ = std::fs::create_dir_all(&staging);
+        policy.readable.push(staging);
+        let path_var = login.vars.get("PATH").cloned().unwrap_or_default();
+        if let Some(dir) = argv
+            .first()
+            .and_then(|p| tandem_engines::sandbox::find_program(p, &path_var))
+            .and_then(|p| p.parent().map(Path::to_path_buf))
+            .filter(|d| d.starts_with(&data))
+        {
+            policy.readable.push(dir);
+        }
+        match sandbox.wrap(&policy, &argv) {
+            Ok(wrapped) => {
+                self.note_sandbox(PaneSandbox {
+                    pane_id: pane.to_string(),
+                    sandboxed: true,
+                    reason: None,
+                });
+                wrapped
+            }
+            Err(status) => {
+                let reason = status
+                    .reason
+                    .unwrap_or_else(|| tandem_engines::sandbox::NOT_YET.into());
+                self.note_unsandboxed(pane, reason);
+                argv
+            }
+        }
     }
 
     pub fn set_prompt_hook(&self, hook: PromptHook) {
@@ -782,9 +1017,12 @@ impl TerminalService {
                 .agent_launch_with(&engine, path, &root, status, account, relaunch)
                 .await
                 .inspect_err(|_| self.status.unwatch(pane.as_str()))?;
+            let argv = self
+                .sandbox_argv(pane, &root, launch.home.as_deref(), launch.spec.argv())
+                .await;
             let args = env::agent_wrapper(
                 &shell,
-                &launch.spec.argv(),
+                &argv,
                 integration.as_ref().map(|(_, dir)| dir.as_path()),
             )
             .map_err(|_| {
@@ -1787,5 +2025,122 @@ mod tests {
         assert!(!q.settled(1_400, Some("user@host %\nmotd")));
         assert!(!q.settled(2_800, Some("user@host %\nmotd")));
         assert!(q.settled(2_900, Some("user@host %\nmotd")));
+    }
+}
+
+#[cfg(test)]
+mod sandbox_tests {
+    use super::*;
+
+    /// A sandbox that can run and wraps with a marker.
+    struct FakeSandbox;
+    impl tandem_engines::sandbox::Sandboxer for FakeSandbox {
+        fn status(&self) -> tandem_engines::sandbox::SandboxStatus {
+            tandem_engines::sandbox::SandboxStatus {
+                available: true,
+                tool: Some("bwrap".into()),
+                reason: None,
+            }
+        }
+        fn wrap(
+            &self,
+            policy: &tandem_engines::sandbox::SandboxPolicy,
+            argv: &[String],
+        ) -> Result<Vec<String>, tandem_engines::sandbox::SandboxStatus> {
+            let mut out = vec!["SANDBOX".to_string(), policy.root.display().to_string()];
+            out.extend(policy.readable.iter().map(|p| p.display().to_string()));
+            out.push("--".into());
+            out.extend(argv.iter().cloned());
+            Ok(out)
+        }
+    }
+
+    #[tokio::test]
+    async fn f_tl_11_4_an_engine_that_signs_in_at_home_starts_outside_and_says_why_once() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = tandem_core::DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        settings::set(
+            &store,
+            SettingKey::AgentSandbox,
+            serde_json::json!("workspace"),
+        )
+        .await
+        .expect("on");
+        let svc = TerminalService::new(PtyManager::new(), store.clone());
+        let mut vars = std::collections::BTreeMap::new();
+        vars.insert("PATH".to_string(), "/usr/bin:/bin".to_string());
+        vars.insert("HOME".to_string(), dir.path().display().to_string());
+        svc.set_login_env(LoginEnv {
+            vars,
+            shell: "/bin/sh".into(),
+            degraded: false,
+        });
+        let _ = svc.sandbox.set(Arc::new(FakeSandbox));
+        let alerts = Arc::new(std::sync::Mutex::new(Vec::<(String, String)>::new()));
+        {
+            let alerts = alerts.clone();
+            svc.set_sandbox_alert(Arc::new(move |pane, reason| {
+                alerts.lock().expect("lock").push((pane, reason));
+            }));
+        }
+        let root = dir.path().join("ws");
+        let argv = vec!["cursor-agent".to_string()];
+        // No provider home (cursor-agent signs in at ~/.cursor): unwrapped.
+        let (a, b) = (PaneId::new(), PaneId::new());
+        for p in [&a, &b] {
+            assert_eq!(svc.sandbox_argv(p, &root, None, argv.clone()).await, argv);
+        }
+        let notes = svc.sandbox_panes();
+        assert_eq!(notes.len(), 2);
+        assert!(notes.iter().all(
+            |n| !n.sandboxed && n.reason.as_deref() == Some(tandem_engines::sandbox::OWN_HOME)
+        ));
+        assert_eq!(
+            alerts.lock().expect("lock").len(),
+            1,
+            "one notification per launch"
+        );
+        // An engine with a provider home is wrapped, with its pane's staged
+        // images readable.
+        let home = data.provider_home("claude", "acc_1");
+        let c = PaneId::new();
+        let wrapped = svc
+            .sandbox_argv(&c, &root, Some(&home), vec!["claude".into()])
+            .await;
+        assert_eq!(wrapped[0], "SANDBOX");
+        let staging = data.root().join("staging").join(c.as_str());
+        assert!(wrapped.contains(&staging.display().to_string()));
+        assert!(staging.is_dir());
+        // Closing a pane clears its note.
+        svc.forget_sandbox(a.as_str());
+        assert_eq!(svc.sandbox_panes().len(), 2);
+    }
+
+    #[test]
+    fn f_tl_11_2_a_worktrees_sandbox_hides_the_other_worktrees_and_opens_its_git_data() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let repo = dir.path().canonicalize().expect("canon").join("repo");
+        let (a, b) = (
+            repo.join(".tandem/worktrees/a"),
+            repo.join(".tandem/worktrees/b"),
+        );
+        let admin = repo.join(".git/worktrees/a");
+        for d in [&a, &b, &admin] {
+            std::fs::create_dir_all(d).expect("mkdir");
+        }
+        std::fs::write(a.join(".git"), format!("gitdir: {}\n", admin.display())).expect(".git");
+        std::fs::write(admin.join("commondir"), "../..\n").expect("commondir");
+        let data = dir.path().join("data");
+        let home = dir.path().join("home");
+        let p = sandbox_policy(&a, Some(&data.join("providers/claude/acc")), &data, &home);
+        assert_eq!(p.git_common.as_deref(), Some(repo.join(".git").as_path()));
+        assert_eq!(p.hide, vec![b.clone()]);
+        assert_eq!(p.tasks, data.join("tasks"));
+        // The main checkout hides every worktree under it.
+        let mut main = sandbox_policy(&repo, None, &data, &home);
+        main.hide.sort();
+        assert_eq!(main.hide, vec![a, b]);
+        assert_eq!(main.git_common, None);
     }
 }

@@ -863,6 +863,19 @@ export async function waitForSessionStarts(from: number, n: number): Promise<voi
   await browser.pause(800);
 }
 
+/** Stops what an earlier spec file left running (its app was closed with
+ * panes open), so this one starts without the "still running" dialog. */
+export async function stopLeftovers(): Promise<void> {
+  await waitForApp();
+  const left = await invoke<unknown[]>("orphans_list");
+  if (left.length > 0) await invoke("orphans_resolve", { action: "stop" });
+}
+
+/** Closes every pane of this window (an `after` hook's cleanup). */
+export async function closeAllPanes(): Promise<void> {
+  for (const id of await paneIds()) await invoke("pane_close", { paneId: id });
+}
+
 /** Leftover processes from the crash are stopped without the dialog. */
 export async function stopOrphansAutomatically(on: boolean): Promise<void> {
   await invoke("settings_set", { key: "orphan_policy", value: on ? "always" : "ask" });

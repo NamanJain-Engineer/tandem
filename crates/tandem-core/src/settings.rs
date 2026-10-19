@@ -70,6 +70,8 @@ setting_keys! {
     UsageForecastNotify,
     RunawayGuard,
     RunawayAction,
+    NightShiftSummaryAt,
+    AgentSandbox,
     DefaultShell,
     WslDefaultDistro,
     TermFontFamily,
@@ -341,6 +343,13 @@ pub static SCHEMA: &[SettingSpec] = &[
         ["background", "unfocused", "visible"]
     ),
     spec!(
+        NightShiftSummaryAt,
+        json!("08:00"),
+        V::Text { max: 8 },
+        Notifications,
+        ["night shift", "summary", "morning", "routines"]
+    ),
+    spec!(
         UsageForecastNotify,
         json!(false),
         V::Bool,
@@ -474,6 +483,13 @@ pub static SCHEMA: &[SettingSpec] = &[
         V::Map,
         Engines,
         ["arguments", "flags"]
+    ),
+    spec!(
+        AgentSandbox,
+        json!("off"),
+        V::OneOf(&["off", "workspace"]),
+        Engines,
+        ["sandbox", "bubblewrap", "bwrap", "isolate", "security"]
     ),
     spec!(
         RunawayGuard,
