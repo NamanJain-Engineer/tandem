@@ -4,6 +4,7 @@ import type {
   Forge,
   IpcError,
   LaneChecks,
+  RadarMark,
   LandingPlan,
   LandingRun,
   LaneSetup,
@@ -85,6 +86,8 @@ type WorktreesState = {
   previews: Record<string, PreviewState>;
   /** F-WT-08: each local worktree's pull request checks, once read. */
   checks: Record<string, LaneChecks>;
+  /** F-WT-10: the symbols each worktree shares with a sibling. */
+  radar: Record<string, string[]>;
 };
 
 /** Which worktree dialog is open (rail rows and pane menus open them). */
@@ -96,6 +99,7 @@ export const useWorktrees = create<WorktreesState>((set, get) => ({
   runtimes: {},
   previews: {},
   checks: {},
+  radar: {},
   notify: (n) => set({ notices: [...get().notices, n] }),
   takeNotices: () => {
     const out = get().notices;
@@ -585,4 +589,21 @@ export async function openChecks(worktreeId: string): Promise<void> {
 /** The prompt for a failed check: CI's text behind the core's fence. */
 export function checkFailurePrompt(laneId: string, name: string): Promise<Outcome<string>> {
   return run<string>("lane_check_failure", { laneId, name });
+}
+
+// ---- Intent radar (F-WT-10) -------------------------------------------------
+
+/** The rail's radar marks, from the core's last indexes (nothing parsed). */
+export async function loadRadar(laneIds: string[]): Promise<void> {
+  if (laneIds.length === 0) return;
+  const out = await run<RadarMark[]>("lane_radar", { laneIds });
+  if (!out.ok || !Array.isArray(out.value)) return;
+  const radar: Record<string, string[]> = {};
+  for (const m of out.value) radar[m.laneId] = m.symbols;
+  useWorktrees.setState({ radar });
+}
+
+/** The note Warn both agents types into `laneId`'s agent about `otherId`. */
+export function radarNote(laneId: string, otherId: string): Promise<Outcome<string>> {
+  return run<string>("lane_radar_note", { laneId, otherId });
 }

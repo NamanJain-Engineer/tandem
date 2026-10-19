@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Check } from "lucide-react";
-import type { OverlapReport, WorkspaceSummary } from "@tandem/protocol";
+import type { OverlapReport, SharedSymbol, SymbolChange, WorkspaceSummary } from "@tandem/protocol";
 import { Banner, Dialog, Skeleton } from "@tandem/ui";
 import { t } from "../../i18n";
-import { worktreeOverlap } from "../../stores/worktrees";
+import { useWorkspaces } from "../../stores/workspaces";
+import { loadRadar, worktreeOverlap } from "../../stores/worktrees";
 
 type Load = { at: "loading" } | { at: "error"; message: string } | { at: "ready"; report: OverlapReport };
 
@@ -16,6 +17,14 @@ export function useOverlap(laneId: string): { load: Load; retry: () => void } {
     void worktreeOverlap(laneId).then((out) => {
       if (!live) return;
       setLoad(out.ok ? { at: "ready", report: out.value } : { at: "error", message: out.error.message });
+      // F-WT-10: the check parsed this worktree and its siblings again.
+      if (out.ok) {
+        const ids = useWorkspaces
+          .getState()
+          .list.filter((w) => w.parentId !== null && w.laneBranch !== null && w.kind === "local")
+          .map((w) => w.id);
+        void loadRadar(ids);
+      }
     });
     return () => {
       live = false;
@@ -23,6 +32,12 @@ export function useOverlap(laneId: string): { load: Load; retry: () => void } {
   }, [laneId]);
   useEffect(() => fetch(), [fetch]);
   return { load, retry: fetch };
+}
+
+/** What each side did to a shared symbol (F-WT-10). */
+function symbolText(s: SharedSymbol): string {
+  const did = (c: SymbolChange) => t(`radar.change.${c}`);
+  return t("radar.symbol", { here: did(s.here), there: did(s.there) });
 }
 
 /** The forecast's verdict, with the conflicted files (UI-153 and the merge
@@ -54,7 +69,9 @@ export function ForecastVerdict({ report }: { report: OverlapReport }) {
         <p className="text-fg-muted">{t("worktree.overlap.unavailable", { reason: f.reason })}</p>
       )}
       {report.uncommitted > 0 ? (
-        <p className="text-xs text-fg-subtle">{t("worktree.overlap.uncommitted", { n: report.uncommitted })}</p>
+        <p className="text-xs text-fg-subtle">
+          {t("worktree.overlap.uncommitted", { n: report.uncommitted })}
+        </p>
       ) : null}
     </div>
   );
@@ -104,7 +121,9 @@ export function OverlapDialog({
                   {load.report.siblings.map((s) => (
                     <li key={s.laneId} data-testid="overlap-sibling" data-branch={s.branch}>
                       <p className="text-sm text-fg">
-                        {t("worktree.overlap.sibling", { branch: s.branch, n: s.files.length })}
+                        {s.files.length > 0
+                          ? t("worktree.overlap.sibling", { branch: s.branch, n: s.files.length })
+                          : t("radar.siblingSymbols", { branch: s.branch })}
                       </p>
                       <ul className="pl-4 font-mono text-xs text-fg-muted">
                         {s.files.map((f) => (
@@ -113,13 +132,38 @@ export function OverlapDialog({
                           </li>
                         ))}
                       </ul>
+                      {s.symbols.length > 0 ? (
+                        <div className="mt-1 flex flex-col gap-0.5 pl-4" data-testid="overlap-symbols">
+                          <p className="text-xs font-medium text-fg">{t("radar.sharedHeading")}</p>
+                          <ul className="flex flex-col gap-0.5 text-xs">
+                            {s.symbols.map((sym) => (
+                              <li
+                                key={sym.qualified}
+                                data-testid="overlap-symbol"
+                                data-symbol={sym.qualified}
+                                className="flex gap-2"
+                              >
+                                <span className="truncate font-mono text-fg">{sym.qualified}</span>
+                                <span className="text-fg-muted">{symbolText(sym)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
               )}
             </section>
+            {load.report.unparsed > 0 ? (
+              <p className="text-xs text-fg-subtle" data-testid="overlap-unparsed">
+                {t("radar.unparsed", { n: load.report.unparsed })}
+              </p>
+            ) : null}
             <section className="flex flex-col gap-2">
-              <h3 className="text-sm font-medium text-fg">{t("worktree.overlap.forecastHeading", { base })}</h3>
+              <h3 className="text-sm font-medium text-fg">
+                {t("worktree.overlap.forecastHeading", { base })}
+              </h3>
               <ForecastVerdict report={load.report} />
             </section>
           </>

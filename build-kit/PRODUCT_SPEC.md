@@ -3415,6 +3415,23 @@ Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1�
 3. No `gh` call is made for a repository before the user allows "Check pull requests for this repository".
 4. Nothing reaches an agent without a click: polling only updates the row.
 
+#### F-WT-10 Intent radar (P2)
+**Story:** Two agents work in parallel worktrees. One renames `Session`; the other adds a call to `Session.refresh`. Git won't say anything until the merge. I want to know while it's still cheap to change.
+
+**Behavior:**
+- **Changed symbols.** For each local worktree, Vibezeo parses the files it changed since its base (as F-WT-03 counts them, uncommitted work included) with tree-sitter, for TypeScript and TSX (`.ts`, `.tsx`, `.mts`, `.cts`), Rust (`.rs`) and Python (`.py`). Other files, files over 512 KiB and files past the first 300 changed ones are skipped and counted. In both the base version (`git show <base>:<path>`) and the worktree's, it lists definitions: functions, methods, classes, structs, enums, traits, interfaces, type aliases and modules, each with its qualified name (`Session.refresh`, `auth::Session::refresh`). A definition is **added**, **removed** or **changed** (its text differs) between the two; a rename shows as one removed and one added. It also notes the names the worktree's new or changed lines **use** (identifiers on lines the diff adds).
+- **When it updates.** After each checkpoint (F-EX-01) in a worktree's folder, which is taken before each agent turn, and when "Check overlap…" opens. Parsing reads only; nothing is written to the worktree.
+- **Shared symbols.** Two worktrees of the same repository share a symbol when both changed or removed a definition with the same name, or one removed or changed a definition whose name the other's new lines use. Names shorter than 3 characters aren't matched. Changes to the same definition in both, and a removal against a use, are what's reported; a use against a definition the other only added is not.
+- **Where it shows.** UI-153 (Check overlap…) lists each sibling's shared symbols next to its shared files, with what each side did ("renamed or removed here, used there"). A worktree sharing symbols with a sibling shows a radar mark on its rail row naming them.
+- **Warning.** When a checkpoint makes a pair of worktrees share a symbol they didn't share before, Vibezeo shows a notice naming both branches and the symbols, with **Warn both agents**, which types into each worktree's agent (as F-WT-02) a short note: which symbols the other worktree changed and how, with the symbol names and paths behind the untrusted label and fence (rule 8, they come from code an agent wrote). Only on a click. The same pair and symbols don't raise a second notice.
+- Local folders only: on SSH hosts and in WSL there's no radar.
+
+**Acceptance:**
+1. A TypeScript worktree that renames `class Session` to `UserSession`, and one that adds `session.refresh()` with `new Session()`, share `Session`: removed in the first, used in the second. UI-153 lists it for both.
+2. Changed symbols are found for TypeScript, Rust and Python: a changed method body is "changed" with its qualified name, a new function "added", a deleted one "removed"; a file in another language is skipped and counted.
+3. Two worktrees that only add unrelated functions share nothing; two that both change the body of `parse` share `parse`.
+4. After a checkpoint makes two worktrees share a symbol, one notice appears; Warn both agents types a note into each worktree's agent with the symbol between untrusted fences, and nothing is typed without the click. Another checkpoint with the same overlap shows no second notice.
+
 ---
 
 ## 5. Non-functional requirements

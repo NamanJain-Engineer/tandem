@@ -41,6 +41,7 @@ import { switchMode } from "../shell/actions";
 import { ComparePreviewsDialog } from "./ComparePreviews";
 import { LandWorktreesDialog } from "./LandWorktrees";
 import { AllowChecksDialog, ChecksBadge, ChecksDialog } from "./PullRequestChecks";
+import { RadarMark } from "./IntentRadar";
 import { MergeForecast, OverlapDialog } from "./WorktreeOverlap";
 import { SecondOpinionDialog } from "./SecondOpinion";
 import { ReviewDiff } from "./WorktreeReview";
@@ -269,6 +270,7 @@ export function WorktreeRow({
         </span>
       ) : null}
       <ChecksBadge wt={wt} />
+      <RadarMark wt={wt} />
       {wt.liveCount > 0 && (
         <span aria-label={t("rail.live", { n: wt.liveCount })}>
           <Badge>{wt.liveCount}</Badge>

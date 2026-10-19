@@ -2025,6 +2025,32 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ---
 
+## M18 · Next features: intent radar (S)
+
+**Goal.** Warn about conflicts that git can't see yet: which symbols each worktree changed, and when two parallel worktrees touch the same one (F-WT-10). From `docs/NEXT_FEATURES.md` (§3 B6, first slice). Built on branch `competitive-gaps`; decisions D-2520–D-2539.
+
+**Owns:** F-WT-10 (P2)
+**Prerequisites.** F-WT-03 (the overlap check), F-EX-01 (checkpoints), F-WT-02 (typing into a worktree's agent).
+
+**Ordered tasks**
+1. **Symbol index.** `tandem_git::symbols`: tree-sitter definitions for TypeScript/TSX, Rust and Python with qualified names, base against worktree (added, changed, removed), and the names new lines use; skip and count other files and big ones.
+2. **Radar.** `services::radar`: per-worktree indexes refreshed on `checkpoint:created` and by `lane_overlap`; shared symbols between siblings; `radar:overlap` for newly shared pairs; `lane_radar` and `lane_radar_note`.
+3. **UI.** Shared symbols in UI-153, the rail's radar mark, the notice with Warn both agents.
+
+**Verification**
+```bash
+cargo test -p tandem-git f_wt_10 && cargo test -p tandem-desktop --lib f_wt_10
+pnpm --filter desktop exec vitest run -t "F-WT-10"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-wt10*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-WT10-1 Intent radar.** A TypeScript repository with two worktrees: one renames `class Session`, the other adds a call to `Session.refresh`. Expected: Check overlap lists `Session` for both with what each did; the rail marks both worktrees.
+
+**Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
+
+---
+
 ## M18 · Next features: engines (M)
 
 **Goal.** The engine work `docs/NEXT_FEATURES.md` ranks first (§1 #1, #3, #5, #9): one instructions file for every engine, an engine catalog that keeps up with the vendors, engine versions under the user's control, and one library of every engine's local sessions. Built on its own branch (decisions D-2400–D-2419); each feature lands on its own and can ship in any release after it's green.
