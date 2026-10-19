@@ -76,6 +76,12 @@ sh scripts/agent/with-infra.sh true              # proves Docker + Postgres/Redi
   builds: `python3 scripts/agent/prune-target.py` (keep 3 builds per crate; pass `1`
   after a version bump), `rm -rf target/debug/examples target/perf`. Set
   `CARGO_INCREMENTAL=0`.
+  When the gate runs short, delete the test binaries
+  (`find target/debug/deps -maxdepth 1 -type f -executable -size +20M ! -name '*.so' -delete`)
+  once `cargo test` has passed, and again after `pnpm gen:protocol`, which builds
+  the crates' tests again to export the bindings. A cross target can go once its
+  check has passed. A container restart stops background runs, so give long ones
+  a marker per finished step and skip marked steps when they run again.
 - The shell may be zsh: an unquoted `$VAR` holding several paths is **one** word
   there. Use arrays or quote per item.
 - Docker Hub may answer image pulls with `429 Too Many Requests`, and
