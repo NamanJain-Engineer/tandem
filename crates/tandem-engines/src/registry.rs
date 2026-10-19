@@ -237,6 +237,15 @@ pub struct EngineSpec {
     pub newline_sequence: String,
     #[serde(default)]
     pub hooks_support: HooksSupport,
+    /// Typed to stop the engine's current turn (F-AC-09); none = Esc.
+    #[serde(default)]
+    #[ts(skip)]
+    pub interrupt: Option<String>,
+    /// Tools whose use starts a subagent (F-AC-09), as the engine names them
+    /// in its tool reports.
+    #[serde(default)]
+    #[ts(skip)]
+    pub subagent_tools: Vec<String>,
     /// Usage logs under the provider home (globs).
     #[serde(default)]
     pub usage_log_globs: Vec<String>,

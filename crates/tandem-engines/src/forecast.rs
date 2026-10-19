@@ -165,6 +165,26 @@ impl UsageHistory {
             .collect()
     }
 
+    /// How far the account's fullest window rose over the last hour (points),
+    /// when it has at least two readings in that hour (F-AC-09).
+    pub fn hour_rise(&self, account: &str, now: i64) -> Option<f64> {
+        self.tracks
+            .iter()
+            .filter(|((a, _), _)| a == account)
+            .filter_map(|(_, t)| {
+                let recent: Vec<&Sample> = t
+                    .samples
+                    .iter()
+                    .filter(|s| s.at >= now - BASIS_MS)
+                    .collect();
+                let (first, last) = (recent.first()?, recent.last()?);
+                (recent.len() >= 2).then(|| (last.used_pct - first.used_pct).max(0.0))
+            })
+            .fold(None, |top: Option<f64>, r| {
+                Some(top.map_or(r, |t| t.max(r)))
+            })
+    }
+
     /// Moves every sample `ms` into the past (the test harness, to stand in
     /// for time passing between two readings).
     pub fn backdate(&mut self, ms: i64) {

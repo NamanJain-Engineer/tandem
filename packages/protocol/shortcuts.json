@@ -180,6 +180,15 @@
     "enabledWhen": "always"
   },
   {
+    "id": "dashboard.review_queue",
+    "category": "navigation",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
     "id": "workspace.open_folder",
     "category": "workspace",
     "mac": null,

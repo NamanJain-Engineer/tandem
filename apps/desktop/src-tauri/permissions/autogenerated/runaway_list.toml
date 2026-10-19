@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-runaway-list"
+description = "Enables the runaway_list command without any pre-configured scope."
+commands.allow = ["runaway_list"]
+
+[[permission]]
+identifier = "deny-runaway-list"
+description = "Denies the runaway_list command without any pre-configured scope."
+commands.deny = ["runaway_list"]

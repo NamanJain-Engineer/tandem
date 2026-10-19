@@ -1974,7 +1974,7 @@ CHROME_PATH=/opt/pw-browsers/chromium pnpm --filter web lhci
 
 ## M18 · Next features: worktree runtime and previews (M)
 
-**Goal.** Make parallel worktrees runnable side by side: a port block, environment and Compose project per worktree (F-WT-06), then a preview per worktree (F-WT-09, next). From `docs/NEXT_FEATURES.md` (§1 #7, §3 B2). Built on branch `competitive-gaps`; decisions D-2440–D-2459.
+**Goal.** Make parallel worktrees runnable side by side: a port block, environment and Compose project per worktree (F-WT-06), then a preview per worktree (F-WT-09). From `docs/NEXT_FEATURES.md` (§1 #7, §3 B2). Built on branch `competitive-gaps`; decisions D-2440–D-2459.
 
 **Owns:** F-WT-06, F-WT-09 (P2)
 **Prerequisites.** M17 · Worktree workflow (F-WT-01), M17's ports panel (F-EX-03) and Best of N (F-EX-04).
@@ -2031,27 +2031,55 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 **Goal.** The usage work `docs/NEXT_FEATURES.md` ranks (§1 #4, #8 and §3 B1): a forecast of when each account runs out before its window resets, a guard against runaway agents, and the Night Shift, work that waits for a reset. Built on branch `product-research`; decisions D-2460–D-2479.
 
-**Owns:** F-AC-08 (P2)
+**Owns:** F-AC-08, F-AC-09 (P2)
 **Prerequisites.** M6 and M16 usage polling and the usage dashboard (F-AC-04, F-AC-07).
 
 **Ordered tasks**
 1. **Usage forecast (F-AC-08).** Per-window run-out at the current pace in the usage chip, "Who's using it" from the engines' own local logs (numbers only, F-AC-07's parser), the opt-in `usage_forecast` notification, and the launch sheet's near-limit note naming an account with more room; never switches accounts.
+2. **Runaway guard (F-AC-09).** `tandem_engines::guard` (limits and per-session state), `tandem_pty::suspend` (`ProcessControl`: SIGSTOP/SIGCONT on Unix, unavailable on Windows) and `PtyManager::foreground_group`; the registry's `interrupt` and `subagent_tools`; `services::runaway` over the status snapshot and the tool sink; UI-170 on the pane, the `runaway` notification, Settings › Teammates › Runaway guard (`runaway_guard`, `runaway_action`); commands `runaway_list`, `runaway_dismiss`, `runaway_pause`, `runaway_resume`.
 
 **Verification**
 ```bash
-cargo test -p tandem-engines f_ac_08 && cargo test -p tandem-desktop --lib f_ac_08
-pnpm --filter desktop exec vitest run -t "F-AC-08"
-dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-ac08-*.e2e.ts'
+cargo test -p tandem-engines f_ac_0 && cargo test -p tandem-pty f_ac_09 && cargo test -p tandem-desktop --lib f_ac_0
+pnpm --filter desktop exec vitest run -t "F-AC-0"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-ac*.e2e.ts'
 ```
 
 **E2E**
 - **E2E-M18-AC08 Forecast** (`m18-ac08-forecast.e2e.ts`). A usage window that will run out before it resets: the chip's popover says when; the notification fires once per window when turned on.
+- **E2E-M18-AC09 Runaway guard** (`m18-ac09-runaway.e2e.ts`). The fake Claude Code starts subagents past the limit: the card and the notification; Dismiss keeps it quiet for the turn; with "Pause the agent", an agent that ignores the interrupt key is stopped, and Resume continues it.
+
+---
+
+## M18 · Next features: review loop (M)
+
+**Goal.** The review loop from `docs/NEXT_FEATURES.md` (§1 #6 and #2, §3 B4): another engine's read-only second opinion, one review queue across engines, and walking that queue by voice and on the phone. Built on `m16a-conductor`; decisions D-2420 to D-2439.
+
+**Owns:** F-WT-05, F-DB-04 (P2)
+**Prerequisites.** M17 · Worktree workflow (F-WT-02's review bar), F-TH-09 (Read only threads), F-EX-01 (checkpoints).
+
+**Ordered tasks**
+1. **Second opinion (F-WT-05).** `services::second_opinion` (the prompt, the reply parser, the runner and its bus event), `lane_second_opinion`, the reviewer sheet and the review bar's General comment and reviewing state.
+2. **Review queue (F-DB-04).** `services::review_queue` (the status listener, the risk rules, diff-hash approvals, snooze, the repository's check), `review_*` commands, the Dashboard panel's Review view.
+
+**Verification**
+```bash
+cargo test -p tandem-desktop --lib f_wt_05 && cargo test -p tandem-desktop --lib f_db_04
+pnpm --filter desktop exec vitest run src/features/code/secondOpinion.test.tsx src/features/dashboard/reviewQueue.test.tsx
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-{wt05,db04}-*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-WT-05 Second opinion.** A worktree with a Claude Code agent and two changed files; Codex reviews it. Expected: a Read only Codex thread in the worktree whose first message has the task, the diff and the headings; two placed comments and a General one; Send to agent carries all three; a worktree with no changes has nothing to review.
+- **E2E-M18-DB-04 Review queue.** Two worktree agents and a thread. Expected: the agent that changed a migration and deleted a test joins within 1.5 s with both rules; the one without changes doesn't; the thread joins; approve, then a new change shows Changed since you approved; Send back opens the diff, Merge the forecast; the check passes for `true` and fails with exit 1.
+
+**Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
 
 ---
 
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **170 features** (65 P0, 67 P1, 38 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 4 so far (F-EN-07, F-WT-06, F-WT-09 and F-AC-08). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **174 features** (65 P0, 67 P1, 42 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 8 so far (F-AC-08, F-AC-09, F-DB-04, F-EN-07, F-EN-09, F-WT-05, F-WT-06 and F-WT-09). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -2069,8 +2097,9 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **170 features** (6
 | F-TH-11 | P0 | M7 | F-TH-12 | P0 | M7 | F-TH-13 | P1 | M7 | F-TH-14 | P1 | M7 |
 | F-TH-15 | P0 | M7 | F-TH-16 | P1 | M7 | F-EN-01 | P0 | M4 | F-EN-02 | P0 | M4 |
 | F-EN-03 | P1 | M4 | F-EN-04 | P0 | M4 | F-EN-05 | P0 | M4 | F-EN-06 | P1 | M4 |
-| F-EN-07 | P2 | M18 | F-WT-06 | P2 | M18 | F-WT-09 | P2 | M18 | F-AC-08 | P2 | M18 |
-| F-EN-08 | P2 | M18 | F-EN-09 | P2 | M18 | F-TH-17 | P2 | M18 | | | |
+| F-AC-08 | P2 | M18 | F-AC-09 | P2 | M18 | F-DB-04 | P2 | M18 | F-EN-07 | P2 | M18 |
+| F-EN-09 | P2 | M18 | F-WT-05 | P2 | M18 | F-WT-06 | P2 | M18 | F-WT-09 | P2 | M18 |
+| F-EN-08 | P2 | M18 | F-TH-17 | P2 | M18 | | | | | | |
 | F-AC-01 | P0 | M4 | F-AC-02 | P0 | M6 | F-AC-03 | P0 | M6 | F-AC-04 | P1 | M6 |
 | F-AC-05 | P0 | M6 | F-AC-06 | P1 | M6 | F-AC-07 | P2 | M16 | F-DB-01 | P0 | M5 |
 | F-DB-02 | P0 | M5 | F-DB-03 | P0 | M5 | F-AG-01 | P1 | M10 | F-AG-02 | P1 | M10 |
@@ -2097,7 +2126,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **170 features** (6
 | F-TL-05 | P1 | M15 | F-TL-06 | P0 | M15 | F-TL-07 | P1 | M13 | F-TL-10 | P1 | M13 |
 | F-RM-04 | P2 | M16 | F-RM-05 | P2 | M16 | F-RM-06 | P2 | M16 | F-RM-07 | P2 | M16 |
 
-**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 7 = 173 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
+**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 10 = 176 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|

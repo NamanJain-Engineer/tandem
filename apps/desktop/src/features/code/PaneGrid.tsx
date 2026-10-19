@@ -62,6 +62,7 @@ import { WorktreeChip, worktreeMenu } from "./Worktrees";
 import { useHandoff } from "../../stores/handoff";
 import { AccountChip } from "./AccountChip";
 import { LimitBanner } from "./LimitCard";
+import { GuardBanner } from "./GuardCard";
 import { useContexts } from "../../stores/contexts";
 import { baseBranch, isWorktree } from "../../stores/worktrees";
 import { useShortcutKeys } from "../commands/useShortcutKeys";
@@ -414,6 +415,7 @@ const PaneView = memo(function PaneView({
         dragProps={{ ...attributes, ...listeners, tabIndex: -1, role: "toolbar" }}
       />
       <LimitBanner pane={pane} />
+      <GuardBanner paneId={pane.id} />
       {note && (
         // F-CD-16: where the work went, until dismissed.
         <div

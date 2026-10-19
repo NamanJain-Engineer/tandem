@@ -15,6 +15,8 @@ const ROWS: Array<{ id: string; label: () => string; system: boolean; sound: boo
   { id: "failed", label: () => t("settings.notify.failed"), system: true, sound: false },
   { id: "routines", label: () => t("settings.notify.routines"), system: true, sound: false },
   { id: "tasks", label: () => t("settings.notify.tasks"), system: false, sound: false },
+  { id: "runaway", label: () => t("settings.notify.type.runaway"), system: true, sound: false },
+  { id: "usage", label: () => t("settings.notify.type.usage"), system: true, sound: false },
 ];
 
 /** "What to notify": in-app is always on; system and sound per type. */

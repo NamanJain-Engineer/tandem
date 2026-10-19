@@ -1357,10 +1357,10 @@ The server enforces every row. The client enforces them as a UX courtesy only.
   - "Updates itself" comes from the registry (`updates.selfUpdates`, per install method), checked against the vendor's docs: Claude Code's own installer and npm install update in the background.
 - **Check for updates** (per engine, only when clicked): for an npm install, `npm view <package> version` through the login shell, which asks the npm registry; the newest version is shown beside the installed one. Nothing is asked before the click, and no daily check runs. Other install methods say which command updates them (`brew upgrade …`, `claude update`).
 - **Pin** (per engine, off by default): that engine's new terminal panes start with the registry's documented switch that stops it updating itself, in the launch environment or arguments and never in the user's own files (Claude Code: `DISABLE_AUTOUPDATER=1`; Codex: `-c check_for_update_on_startup=false`). Panes already running are unchanged. Engines without a documented switch have no Pin.
-- **Versions Vibezeo has seen** (`$DATA/engine-versions.json`): each engine's current and previous version, and its **last good** version: the one that last finished a Thread turn without an adapter error. Only threads on this computer count; a thread on an SSH host or in WSL runs that host's engine. An adapter error is the engine failing to start or breaking its protocol; being offline, signed out, a model the account can't use or a tool's own failure isn't (D-2501).
+- **Versions Vibezeo has seen** (`$DATA/engine-versions.json`): each engine's current and previous version, and its **last good** version: the one that last finished a Thread turn without an adapter error. Only threads on this computer count; a thread on an SSH host or in WSL runs that host's engine. An adapter error is the engine failing to start or its process dying during a turn; an error the engine itself reports (an API overload, being offline, signed out, a model the account can't use, a tool's own failure) isn't (D-2501).
 - **After an update breaks threads:** when an engine's version differs from its last good one and its threads have failed with an adapter error since, Thread mode and Settings › Engines show "{Engine} updated from {last good} to {current}, and threads have failed since." with **Roll back to {last good}…**.
 - **Roll back** reinstalls a version through the same install method: `npm install -g <package>@<version>`, or the engine's own installer with a version (Claude Code: `curl -fsSL https://claude.ai/install.sh | bash -s <version>`). A confirm shows the exact command; it then runs in a visible terminal pane on this computer, like Install (F-EN-03). From an SSH or WSL tab the pane opens in a local workspace's tab, and with none the sheet offers Copy only. Homebrew and Other say how to do it themselves.
-- **Running in the background** (Linux and macOS): the user's own processes of an installed engine with no terminal, outside Vibezeo's own panes and threads. A process is the engine when its executable is the engine's command, or a runtime (`node`, `bun`) runs the engine's script; a wrapper (`timeout … codex`) isn't. Each shows the engine's name and subcommand, never its other arguments, with **Stop**. Stop asks first, then asks the process to end, only if it's still the same process (pid, engine and start time; D-2500). Other users' processes and engines started in a terminal, Vibezeo's or the user's, are never listed. Windows says it isn't available yet.
+- **Running in the background** (Linux and macOS): the user's own processes of an installed engine with no terminal, outside Vibezeo's own panes and threads. A process is the engine when its executable is the engine's command, or a runtime (`node`, `bun`) runs the engine's script; a wrapper (`timeout … codex`) isn't. Each shows the engine's name, and its subcommand when it's one the engine documents (`codex app-server`), never any other argument, with **Stop**. Stop asks first, then asks the process to end, only if it's still the same process (pid, engine and start time; D-2500). Other users' processes and engines started in a terminal, Vibezeo's or the user's, are never listed. Windows says it isn't available yet.
 
 **Acceptance:**
 1. With a fake engine at 1.2.0 installed through npm, the table shows "1.2.0 · npm", and nothing is run against the npm registry until Check for updates is clicked; then the newest version shows.
@@ -1505,6 +1505,44 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 5. The notification is off by default. When it's on, a window that becomes forecast to run out before its reset raises one notification, and the next reading for the same window raises none.
 6. A seat whose account is at 85%, with another account of the same engine at 20%, shows both hints, and the launch uses the seat's own account.
 
+#### F-AC-09 Runaway guard (P2)
+**Story:** I leave agents working while I do something else. When one has been at it far longer than it should, is burning through my account, keeps spawning subagents or is going round in circles, I want to hear about it, and pause it if I choose, before it costs me the rest of my window.
+
+**Behavior:**
+- **Watched:** every agent pane (terminal engines in Code mode, local and on SSH hosts). Threads and teammate chats are watched for time only.
+- **Limits** (Settings › Teammates › Runaway guard; each can be turned off):
+
+| Limit | Default | Range | Tripped when |
+|---|---|---|---|
+| Working without stopping | 90 min | 10–1,440 min | the agent has been Working (F-EN-05) for that long without its turn ending |
+| Share of the window | 30 points | 5–100 | in the last hour, this session's share of its account's tokens (F-AC-08) times the rise of the account's fullest window comes to that many points. Needs an engine that reports usage windows and keeps session logs |
+| Subagents | 20 | 1–500 | the session started that many subagents since its last prompt (counted from the engine's own tool reports: the registry's `subagent_tools`, such as Claude Code's `Task` and `Agent`) |
+| Going in circles | on | on/off | three turns in a row end with the same screen: the last 12 non-empty lines when the turn ends, compared as a hash. The text itself is never kept |
+
+- **When a limit trips:**
+  - The pane shows a guard card (UI-170) above its terminal, naming the limit: "fix-auth has been working for 90 min", "fix-auth used 34 points of Codex (Work)'s 5-hour window in the last hour", "fix-auth started 20 subagents since your last prompt", or "fix-auth may be going in circles: its last 3 turns ended the same way". The card has **Pause** and **Dismiss**.
+  - A notification goes through the usual channels: kind `runaway`, source the pane, title as on the card. The Notifications type table lists it as "Runaway guard".
+  - Each limit trips once per turn. A dismissed limit stays quiet until the agent's next prompt.
+- **Action** (Settings › Teammates › Runaway guard › When a limit is reached): **Notify me** (default), or **Pause the agent**, which pauses it as if Pause were clicked on the card.
+- **Pause:**
+  1. Vibezeo sends the engine's interrupt key from the registry (`interrupt`, `\u001b` for Claude Code and Codex). The engine stops its turn by itself, and the agent waits for input.
+  2. If the agent still reports Working 5 s later, Vibezeo stops its process group (SIGSTOP on Linux and macOS, behind the `ProcessControl` trait). When the agent runs as a job of the pane's shell, the shell stops first and continues last, so it never sees its job stop and never takes the terminal back (D-857). The agent is stopped only once the shell has really stopped; a shell that doesn't stop within 500 ms is continued and the card says it couldn't pause (D-860). The card then reads "Paused" with **Resume**, which continues it (SIGCONT). On Windows there's no stop step: the card says "Couldn't pause: send it a message or stop it."
+     Only an agent on this computer is stopped. An SSH pane's local process is `ssh`, and stopping it would pause the connection while the agent on the host carried on, so there the card says "Couldn't pause an agent on an SSH host: send it a message or stop it." (D-855).
+  - Closing a paused pane or quitting Vibezeo continues and then ends the process, as usual (F-CD-03). It's never left stopped.
+  - Pause never switches accounts or engines, and never sends a prompt.
+- **States:** UI-170 shows the tripped limit (Pause, Dismiss), pausing ("Pausing…"), paused (Resume), and couldn't pause (the reason).
+
+**Data:** in memory per pane (working since, subagent count, the last three turn-end hashes, tripped limits). Settings: `runaway_guard` (`{workingMinutes, windowPoints, subagents, circles}`, each `null` when off) and `runaway_action` (`"notify"`/`"pause"`).
+
+**Acceptance:**
+1. With the defaults, an agent pane working for 91 minutes raises one notification "{name} has been working for 90 min" and shows the guard card. Nothing is paused or typed into the pane.
+2. With "Pause the agent" and a subagent limit of 20, the 20th subagent report pauses the session: the interrupt key reaches the pane, and an agent still Working 5 s later is stopped. Resume continues it, and the agent keeps its pane: it's still Working there, not handed back to a shell.
+3. Three turns in a row that end with the same screen raise "may be going in circles". Two in a row, or three that differ, raise nothing.
+4. A session whose share of its account's tokens in the last hour, times its window's rise, reaches 30 points trips the window limit. An account without windows never trips it.
+5. Dismiss keeps a limit quiet until the agent's next prompt, and each limit trips at most once per turn.
+6. A limit set to off never trips. Pause never changes the pane's account or engine.
+7. On an SSH host, an agent still Working after the interrupt key is never stopped: no signal reaches the pane's local `ssh`, and the card says it couldn't pause.
+
 ### 4.6 DB: Dashboard and notifications
 
 #### F-DB-01 Dashboard (P0)
@@ -1562,6 +1600,60 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 **Acceptance:**
 1. With the app unfocused, an agent reaching done produces one OS notification (a mocked notifier asserts one call), and clicking the mock activates focus on the source.
 2. With the "done" toggle off, none is sent.
+
+#### F-DB-04 Review queue (P2)
+**Story:** With several agents finishing work, I get one list of what's ready to review across every engine, ordered by what's riskiest, and I approve, send back or merge from it instead of remembering who did what.
+
+**Behavior:**
+- **What's in it:** a terminal agent or a thread whose status becomes **done** while its folder or worktree has changes joins the queue within 1 s. Changes are:
+  - a worktree's diff since its base, uncommitted work included;
+  - a plain git folder's diff against `HEAD`.
+
+  A done agent with no changes, or in a folder that isn't a git repository, doesn't join. An item leaves when:
+  - its agent starts working again (it returns when that turn ends);
+  - its pane or thread closes;
+  - a refresh finds its changes gone.
+
+  The queue lives in memory and is rebuilt from status after a restart. Teammate chats join when they work in a workspace (they have none today).
+- **Each item shows:**
+  - the agent's name, engine, folder and branch, and when it finished;
+  - its closing message: a thread's last reply, or a terminal's last three non-empty screen lines;
+  - the diffstat (files, + and −);
+  - the risk labels;
+  - the check's result.
+
+  **Open diff** shows the whole change. **Last turn** shows the diff since the agent's last checkpoint (F-EX-01), when it has one.
+- **Risk labels** come from local rules, with no AI involved. Each label names its rule and lists up to 5 of the files it matched. Labels are worded as what changed ("Touches migrations"), never "safe". The rules:
+  - 20 or more files;
+  - migrations (a `migrations` or `migrate` folder);
+  - CI (`.github/workflows/`, `.gitlab-ci.yml`, `.circleci/`, `Jenkinsfile`, `azure-pipelines.yml`, `.buildkite/`);
+  - lockfiles;
+  - `.env` files;
+  - auth paths (a path segment containing `auth`, `oauth`, `login`, `password`, `secret`, `crypto` or `permission`);
+  - the repository's public API paths;
+  - deleted tests (a deleted file in a `test`/`tests`/`__tests__` folder, or named `*.test.*`, `*.spec.*`, `*_test.*` or `test_*`).
+- **Per repository, set from the queue on this computer:**
+  - a **check command**, which runs in the item's folder when it joins, with the login environment, for up to 10 minutes. It shows Running, Passed, or Failed with the exit code and the last 200 lines. **Run check** runs it again.
+  - **public API paths**, one prefix per line.
+
+  Both are stored in the app's settings, never in the repository, so nothing from a pull runs.
+- **Sort** by risk (more rules first, then finish time) or by finish time (oldest first).
+- **Approve** records a SHA-256 of the item's diff and moves the item to Approved. A refresh that finds a different diff puts it back in the queue, labelled **Changed since you approved**. A refresh happens when the agent finishes again, when the queue opens, and on **Refresh**.
+- **On a worktree item:**
+  - **Send back** opens the worktree's diff with the review bar (F-WT-02);
+  - **Second opinion** opens F-WT-05's sheet;
+  - **Merge** opens F-CD-15's confirm with the overlap forecast (F-WT-03).
+- **Snooze** hides an item for an hour, or until its agent finishes again.
+- **Jump to agent** opens the pane or thread.
+- The queue is the **Review** view in the Dashboard panel, with its count, and the palette's "Open review queue". It has empty ("Nothing to review"), loading, error and populated states.
+
+**Acceptance:**
+1. A terminal agent and a thread that finish with uncommitted changes in their worktrees both appear in the queue within 1 s of done. One that finishes with no changes doesn't.
+2. A change that touches `db/migrations/0042.sql` and deletes `tests/auth.test.ts` is labelled with both rules, each listing its file. A change to `README.md` alone has no risk label.
+3. Approve, then the agent edits a file and finishes: the item is back in the queue as "Changed since you approved".
+4. On a worktree item, Send back opens that worktree's diff with its review bar, and Merge opens F-CD-15's confirm with the forecast.
+5. With a check command set, an item shows Passed for `true` and "Failed (exit 1)" with its output for `false`.
+6. The queue shows empty, loading, error and populated states. Sorting by risk puts the item with more rules first.
 
 ### 4.7 AG: Teammates (Agent mode)
 
@@ -3226,6 +3318,38 @@ Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1�
 1. With `origin` at `git@gitlab.com:team/app.git`, the menu reads "Create merge request" and the pane receives `glab mr create`.
 2. With `origin` at `https://github.com/team/app.git`, nothing changes from F-CD-15.
 
+#### F-WT-05 Second opinion from another engine (P2)
+**Story:** Before I send a worktree's changes back or merge them, another engine on my other account reads the diff and leaves line comments I can edit and pass on, so the models check each other.
+
+**Behavior:**
+- **Ask for a second opinion…** is in the worktree menu and in its diff's toolbar (UI-152). With no changes it's disabled ("No changes to review").
+- The sheet picks the reviewer: one engine and account. It lists every installed engine:
+  - Thread engines (a chat adapter: Claude Code, Codex, ACP engines) can be picked. The default is one that no agent in the worktree runs.
+  - Engines the plan doesn't run in Thread mode show the Pro badge.
+  - Terminal-only engines are shown disabled with "Can't run read-only".
+  - With no pickable engine it says "Install Claude Code, Codex or an ACP engine to get a second opinion" (empty state).
+- The sheet names the account whose plan the review uses. It has an optional "What was the task?" box, and **Ask**.
+- **Ask** creates a Read only thread (F-TH-09, `access: read`) in the worktree with that engine and account. Its title is "Second opinion: <branch>". Its first message is a fixed review prompt in English, like F-WT-02's, containing:
+  - the branch;
+  - the task, if given;
+  - the diff (the worktree's changes since its base, uncommitted work included), fenced as untrusted content and cut at 150,000 characters with a note;
+  - a reply format: a `## Findings` heading with one `path:line: comment` line per finding, then `## Overall`.
+- Nothing else leaves the machine. The reviewer is the user's own engine on their own account, and Vibezeo never touches its credentials.
+- While it runs, the review bar shows "<Engine> is reviewing…" with **Open thread**. It's one reviewer per worktree at a time.
+- **When its turn ends,** the last reply is read:
+  - A line `path:line: comment` becomes a line comment in the worktree's review bar (F-WT-02). Leading list markers and backticks are ignored. The path is matched exactly, or by a unique path suffix (`b.ts` matches `src/b.ts`), and the line must be a new-side line shown in the diff. The comment quotes that line.
+  - Every other non-empty line that isn't a heading, findings that name a file or line not in the diff included (verbatim), goes into one **General** comment. Nothing is dropped.
+  - Comments list in file order with General last, and can be edited or removed like the user's own. **Send to agent** includes them, with General as its own item.
+- A reply with no comments says "<Engine> had no comments". A turn that fails or is stopped adds nothing and says "The second opinion didn't finish" with **Open thread**.
+
+**Acceptance:**
+1. On a worktree with changes, choosing Codex opens a Read only Codex thread in that worktree whose first message contains the branch, the diff and the `## Findings` and `## Overall` headings.
+2. A reply with `src/a.ts:42: handle expired tokens` and `b.ts:3: typo` (the diff shows both lines) adds two line comments to the worktree's review bar, `src/a.ts` before `src/b.ts`.
+3. Lines that don't match the format, and a finding on a line the diff doesn't show, are kept in one General comment, not dropped.
+4. A terminal-only engine is listed disabled with "Can't run read-only"; with no thread engine installed the sheet shows its empty state.
+5. The reviewer can't write: an attempted edit is denied (F-TH-09) and the worktree's files don't change.
+6. A worktree with no changes has the action disabled with "No changes to review".
+
 #### F-WT-06 Worktree runtime (P2)
 **Story:** Five agents in five worktrees all start the app's dev server on port 3000 and the same database. I want each worktree to get its own ports, its own environment and its own Compose project, set up once for the repository.
 
@@ -3235,7 +3359,7 @@ Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1�
   { "ports": 10, "env": { "DATABASE_URL": "postgres://localhost/app_{{slug}}", "PORT": "{{port}}", "API_PORT": "{{port+1}}" } }
   ```
   - `ports`: how many ports each worktree gets, 1 to 100.
-  - `env`: up to 50 variables. Names are `[A-Za-z_][A-Za-z0-9_]*` and at most 64 characters; values at most 2,000 characters. Placeholders: `{{slug}}`, `{{index}}`, `{{repo}}`, `{{port}}` and `{{port+N}}` (N smaller than `ports`). An unknown placeholder, `{{port}}` without `ports`, or a name Vibezeo reserves makes the file invalid and says which. Reserved, whatever their case, with the reason in the message: names that change how terminals start (`PATH`, `HOME`, `SHELL`, `USER`, `ZDOTDIR`, `ENV`, `BASH_ENV`, `PROMPT_COMMAND`, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `TERM`, `COLORTERM`, `TERM_PROGRAM`, `TERM_PROGRAM_VERSION`, `DYLD_*`); names that change where agents sign in or send their requests (every provider-home variable, such as `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`, the `XDG_*_HOME` folders, any `*_BASE_URL`, the proxies `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, and the certificate overrides `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`); and Vibezeo's own (`TANDEM_*`, `VIBEZEO_*`, `COMPOSE_PROJECT_NAME`). API keys are allowed: they're the user's, and the review shows them.
+  - `env`: up to 50 variables. Names are `[A-Za-z_][A-Za-z0-9_]*` and at most 64 characters; values at most 2,000 characters. Placeholders: `{{slug}}`, `{{index}}`, `{{repo}}`, `{{port}}` and `{{port+N}}` (N smaller than `ports`). An unknown placeholder, `{{port}}` without `ports`, or a name Vibezeo reserves makes the file invalid and says which. Reserved, whatever their case, with the reason in the message: names that change how terminals start (`PATH`, `HOME`, `SHELL`, `USER`, `ZDOTDIR`, `ENV`, `BASH_ENV`, `PROMPT_COMMAND`, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `TERM`, `COLORTERM`, `TERM_PROGRAM`, `TERM_PROGRAM_VERSION`, `DYLD_*`); names that change where agents sign in or send their requests (every provider-home variable, such as `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`, `KIRO_HOME`, the `XDG_*_HOME` folders, any `*_BASE_URL`, the proxies `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, and the certificate overrides `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`); and Vibezeo's own (`TANDEM_*`, `VIBEZEO_*`, `COMPOSE_PROJECT_NAME`). API keys are allowed: they're the user's, and the review shows them.
   - A file with either key has the **runtime on**; without both, worktrees behave as in F-WT-01.
 - **Port blocks.** With `ports`, each worktree gets a block of that many consecutive ports in 41000–48999 and an index (1, 2, 3… per repository, the lowest free). Blocks never overlap across all repositories on this computer, are checked free (nothing listening on 127.0.0.1) when the worktree is made, and are kept in `$DATA/worktree-ports.json`, so they survive relaunch. A block with a port in use moves to the next free block and says so: "Ports 41010–41019 were busy; tandem/fix-auth uses 41020–41029." Discarding the worktree frees its block.
 - **Variables.** With the runtime on, every terminal and agent pane opened in the worktree's tabs gets: the `env` variables, filled in; `VIBEZEO_WORKTREE` (its folder), `VIBEZEO_SLUG`, `VIBEZEO_INDEX`, and with `ports` also `VIBEZEO_PORT` (the block's first port) and `VIBEZEO_PORTS` (`41010-41019`); and `COMPOSE_PROJECT_NAME=<repo>-<slug>` (lowercase, characters other than letters, digits, `-` and `_` replaced by `-`). The setup pane, the trusted teardown (F-WT-01) and Best of N's check command get the same. The worktree's variables may replace the login environment's, but never what the launch sets for a pane (its provider home, hook token and engine variables, F-EN-04): those are applied last.

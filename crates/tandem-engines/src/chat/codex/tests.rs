@@ -461,3 +461,39 @@ fn f_tk_02_the_tasks_server_joins_codex_with_its_connection_env() {
         ]
     );
 }
+
+/// F-EN-08 AC3: a failed turn Codex doesn't classify (its catch-all), a
+/// network failure and a sign-in failure end the turn in error but aren't
+/// the engine's own failure.
+#[test]
+fn f_en_08_3_codexs_turn_failures_arent_the_engines_fault() {
+    for info in [
+        serde_json::json!(null),
+        serde_json::json!("internalServerError"),
+        serde_json::json!("httpConnectionFailed"),
+        serde_json::json!("unauthorized"),
+    ] {
+        let mut parser = CodexParser::new(PathBuf::from("/work/shop"), &patterns());
+        let msg = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "turn/completed",
+            "params": {"turn": {"id": "t1", "status": "failed", "error": {"message": "stream error", "codexErrorInfo": info}}}
+        });
+        let out = parser.message(&msg, now());
+        let mut ended = false;
+        let mut errors = Vec::new();
+        for c in &out {
+            match c {
+                Codex::Event(ThreadEvent::TurnEnd { reason, .. }) => {
+                    ended = *reason == TurnEndReason::Error
+                }
+                Codex::Event(ThreadEvent::Error { stage, code, .. }) => {
+                    errors.push(stage.engine_fault(code))
+                }
+                _ => {}
+            }
+        }
+        assert!(ended, "{info}");
+        assert_eq!(errors, vec![false], "{info}");
+    }
+}

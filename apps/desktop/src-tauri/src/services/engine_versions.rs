@@ -227,31 +227,33 @@ mod tests {
     fn f_en_08_3_only_the_engines_own_failures_count_against_its_version() {
         use crate::services::threads::version_health;
         use tandem_engines::events::ErrorStage;
-        let failed = |stage| version_health(TurnEndReason::Error, Some(stage));
-        assert_eq!(failed(ErrorStage::Spawn), Some(TurnEndReason::Error));
-        assert_eq!(failed(ErrorStage::Unknown), Some(TurnEndReason::Error));
-        // Offline, signed out, a model the account can't use, a tool's own
-        // failure: not the version's fault.
-        for stage in [
-            ErrorStage::Network,
-            ErrorStage::Auth,
-            ErrorStage::Model,
-            ErrorStage::Tool,
+        let fault = |stage: ErrorStage, code: &str| stage.engine_fault(code);
+        // It couldn't start, or its process died mid-turn.
+        assert!(fault(ErrorStage::Spawn, "spawn_failed"));
+        assert!(fault(ErrorStage::Unknown, "engine_exited"));
+        // The engine answered with an error: it works.
+        for (stage, code) in [
+            (ErrorStage::Unknown, "error_during_execution"),
+            (ErrorStage::Unknown, "turn_failed"),
+            (ErrorStage::Unknown, "prompt_failed"),
+            (ErrorStage::Unknown, "line_too_long"),
+            (ErrorStage::Network, "httpConnectionFailed"),
+            (ErrorStage::Auth, "auth_required"),
+            (ErrorStage::Model, "prompt_too_long"),
+            (ErrorStage::Tool, "tool_failed"),
         ] {
-            assert_eq!(failed(stage), None, "{stage:?}");
+            assert!(!fault(stage, code), "{stage:?} {code}");
         }
         assert_eq!(
-            version_health(TurnEndReason::Error, None),
+            version_health(TurnEndReason::Error, true),
             Some(TurnEndReason::Error)
         );
+        assert_eq!(version_health(TurnEndReason::Error, false), None);
         assert_eq!(
-            version_health(TurnEndReason::Completed, None),
+            version_health(TurnEndReason::Completed, false),
             Some(TurnEndReason::Completed)
         );
-        assert_eq!(version_health(TurnEndReason::Cancelled, None), None);
-        assert_eq!(
-            version_health(TurnEndReason::Limit, Some(ErrorStage::Unknown)),
-            None
-        );
+        assert_eq!(version_health(TurnEndReason::Cancelled, true), None);
+        assert_eq!(version_health(TurnEndReason::Limit, true), None);
     }
 }

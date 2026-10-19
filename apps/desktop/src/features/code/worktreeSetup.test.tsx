@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { IpcError, LaneSetup, OverlapReport, PreviewState, SetupState, Tab, WorkspaceSummary } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
@@ -179,7 +179,7 @@ describe("worktree setup (F-WT-01)", () => {
     backend({
       lane_setup: (): LaneSetup => ({
         state: state({ config: { copy: [".env*"], setup: null, teardown: null }, digest: null }),
-        copy: { copied: [".env", ".env.local", "config/local.yml"], skipped: [], bytes: 30, partial: false },
+        copy: { copied: [".env", ".env.local", "config/local.yml"], skipped: [], bytes: 30, partial: false, cloned: 0 },
         copyError: null,
         runtime: null,
       }),
@@ -361,6 +361,25 @@ describe("worktree runtime (F-WT-06)", () => {
     });
   });
 
+  it("F-WT-09.1 saving the dialog keeps the file's preview, which it doesn't edit (D-861)", async () => {
+    const preview = { command: "pnpm dev --port {{port}}", port: 0, path: "/" };
+    backend({
+      worktree_setup_get: () =>
+        state({ config: { copy: [], setup: "pnpm install", teardown: null, ports: 10, env: {}, preview } }),
+      worktree_env_check: () => [],
+    });
+    useWorktrees.getState().open({ kind: "setup", workspaceId: "shop" });
+    dialogs();
+    await screen.findByTestId("worktree-setup-ports");
+    fireEvent.change(screen.getByTestId("worktree-setup-command"), { target: { value: "pnpm i" } });
+    fireEvent.click(screen.getByTestId("worktree-setup-save"));
+    await waitFor(() => expect(named("worktree_setup_save")).toHaveLength(1));
+    expect(named("worktree_setup_save")[0]?.args).toEqual({
+      workspaceId: "shop",
+      config: { copy: [], setup: "pnpm i", teardown: null, ports: 10, env: {}, preview },
+    });
+  });
+
   it("F-WT-06.6 a secret-looking value is flagged as it's typed; a bad line or port count blocks Save", async () => {
     backend({
       worktree_setup_get: () => state({ exists: false, config: null, digest: null }),
@@ -496,5 +515,73 @@ describe("previews (F-WT-09)", () => {
     await prepareWorktree("wt_1");
     expect(named("lane_preview_start")).toHaveLength(1);
     expect(named("lane_setup_run")).toHaveLength(0);
+  });
+
+  /** New worktree… in the shop repository, then what the new tab's grid
+   * does once it shows: load the layout, and start a shell if it's empty. */
+  async function newWorktreeShown() {
+    dialogs();
+    act(() => useWorktrees.getState().open({ kind: "new", workspaceId: "shop" }));
+    fireEvent.change(await screen.findByTestId("worktree-name"), { target: { value: "fix-auth" } });
+    fireEvent.click(screen.getByTestId("worktree-create"));
+    await waitFor(() => expect(useWorkspaces.getState().activeId).toBe("wt_1"));
+    await useLayout.getState().load("wt_1");
+    await useLayout.getState().ensurePane("tb_wt_1");
+  }
+
+  it("F-WT-09.1 a new worktree's trusted preview is its tab's only pane, with no shell beside it (D-863)", async () => {
+    backend({
+      lane_create: () => WT,
+      lane_setup: (): LaneSetup => ({
+        state: state({ trusted: true, config: { copy: [], setup: null, teardown: null, ports: 2, preview: { command: "serve", port: 0, path: "/" } } }),
+        copy: null,
+        copyError: null,
+        runtime: null,
+      }),
+      // The Preview pane arrives after the tab has loaded empty, as in
+      // E2E-M18-WT09-1's failure: a shell there took the last of Free's 4
+      // live panes, and the preview never started.
+      lane_preview_start: () => new Promise((r) => setTimeout(() => r({ ...pane, id: "pn_prev" }), 30)),
+      pane_create: () => ({ ...pane, id: "pn_shell" }),
+    });
+    await newWorktreeShown();
+    await waitFor(() => expect(useLayout.getState().tabs.tb_wt_1?.panes.pn_prev).toBeTruthy());
+    expect(named("pane_create")).toHaveLength(0);
+    expect(Object.keys(useLayout.getState().tabs.tb_wt_1?.panes ?? {})).toEqual(["pn_prev"]);
+  });
+
+  it("F-WT-09.2 a new worktree waiting for its review gets a shell meanwhile (D-863)", async () => {
+    backend({
+      lane_create: () => WT,
+      lane_setup: (): LaneSetup => ({
+        state: state({ config: { copy: [], setup: null, teardown: null, ports: 2, preview: { command: "serve", port: 0, path: "/" } } }),
+        copy: null,
+        copyError: null,
+        runtime: null,
+      }),
+      pane_create: () => ({ ...pane, id: "pn_shell" }),
+    });
+    await newWorktreeShown();
+    expect(named("pane_create")).toHaveLength(1);
+    expect(Object.keys(useLayout.getState().tabs.tb_wt_1?.panes ?? {})).toEqual(["pn_shell"]);
+    await screen.findByTestId("worktree-review");
+    expect(named("lane_preview_start")).toHaveLength(0);
+  });
+});
+
+describe("copy-on-write copies (F-WT-09)", () => {
+  it("F-WT-09.6 the copy toast says how many files were cloned", async () => {
+    backend({
+      lane_setup: (): LaneSetup => ({
+        state: state({ config: { copy: ["node_modules/"], setup: null, teardown: null }, digest: null }),
+        copy: { copied: ["node_modules/a.js", "node_modules/b.js"], skipped: [], bytes: 20, partial: false, cloned: 2 },
+        copyError: null,
+        runtime: null,
+      }),
+    });
+    dialogs();
+    await prepareWorktree("wt_1");
+    expect(await screen.findByText("Copied 2 files into the worktree")).toBeTruthy();
+    expect(screen.getByText("2 files were cloned, sharing their data with your checkout until either changes.")).toBeTruthy();
   });
 });

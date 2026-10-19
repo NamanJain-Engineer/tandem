@@ -9,6 +9,7 @@ import { WslDistros } from "../remote/WslDistros";
 import { RemotePage } from "./RemotePage";
 import { PluginsPage } from "../plugins/PluginsPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
+import { RunawayGuardControl } from "./RunawayGuard";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
 import { UpdatesPanel } from "../updates/UpdatesPanel";
 import { RunSetupAgain } from "../onboarding/RunSetupAgain";
@@ -831,6 +832,26 @@ export function settingsPages(platform: string, routines = false, accounts = fal
           keywords: ["learn", "memory", "notes"],
           control: (ids) => (
             <BoolControl k="learn_after_turn" ids={ids} label={t("settings.learnAfterTurn")} />
+          ),
+        },
+        {
+          id: "runaway_guard",
+          label: t("settings.runaway"),
+          description: t("settings.runaway.desc"),
+          keywords: ["runaway", "guard", "limit", "subagents", "loop", "pause"],
+          control: () => <RunawayGuardControl />,
+        },
+        {
+          id: "runaway_action",
+          label: t("settings.runaway.action"),
+          keywords: ["runaway", "pause", "notify"],
+          control: (ids) => (
+            <SelectControl
+              k="runaway_action"
+              ids={ids}
+              fallback="notify"
+              options={opts(["notify", "pause"], "settings.runaway.action")}
+            />
           ),
         },
         {

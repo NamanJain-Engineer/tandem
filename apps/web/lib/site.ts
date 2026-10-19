@@ -55,6 +55,8 @@ export const ENGINES = [
   "Amp",
   "Aider",
   "Kimi",
+  "Antigravity CLI",
+  "Kiro CLI",
 ] as const;
 
 /** The public pages, for the sitemap. */

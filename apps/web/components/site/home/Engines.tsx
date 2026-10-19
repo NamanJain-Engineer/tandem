@@ -12,7 +12,8 @@ export function engineLetters(label: string): string {
   return entry.logo;
 }
 
-/** #engines (§6.5): the 11 engines as chips, and the real launch grid. */
+/** #engines (§6.5): the 13 engines as chips, and the real launch grid.
+ * With 13, the plain-terminal cell spans two columns so the last row fills. */
 export function Engines() {
   return (
     <Section
@@ -28,13 +29,15 @@ export function Engines() {
             {ENGINES.map((e) => (
               <li
                 key={e}
-                className="reveal flex min-h-20 items-center gap-3 border-b border-r border-line px-4 py-4 text-copy-sm font-medium text-fg [&:nth-child(2n)]:max-sm:border-r-0 sm:[&:nth-child(3n)]:border-r-0 max-sm:[&:nth-last-child(-n+2)]:border-b-0 sm:[&:nth-last-child(-n+3)]:border-b-0"
+                className="reveal flex min-h-20 items-center gap-3 border-b border-r border-line px-4 py-4 text-copy-sm font-medium text-fg [&:nth-child(2n)]:max-sm:border-r-0 sm:[&:nth-child(3n)]:border-r-0 max-sm:[&:nth-last-child(-n+2)]:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0"
               >
                 <EngineGlyph letters={engineLetters(e)} size={32} />
                 {e}
               </li>
             ))}
-            <li className="flex min-h-20 items-center px-4 py-4 text-caption text-fg-muted">And a plain terminal.</li>
+            <li className="flex min-h-20 items-center px-4 py-4 text-caption text-fg-muted sm:col-span-2">
+              And a plain terminal.
+            </li>
           </ul>
           <p className="text-caption text-fg-muted">
             Product names belong to their owners. Vibezeo isn&apos;t affiliated with or endorsed by any engine

@@ -190,6 +190,21 @@
     "page": "engines"
   },
   {
+    "default": {
+      "circles": true,
+      "subagents": 20,
+      "windowPoints": 30,
+      "workingMinutes": 90
+    },
+    "key": "runaway_guard",
+    "page": "teammates"
+  },
+  {
+    "default": "notify",
+    "key": "runaway_action",
+    "page": "teammates"
+  },
+  {
     "default": "edits",
     "key": "default_access",
     "page": "teammates"

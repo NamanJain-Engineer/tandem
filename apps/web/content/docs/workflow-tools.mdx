@@ -1,9 +1,9 @@
 ---
 title: Checkpoints and workflow tools
-description: Rewind an agent's changes, recall commands, see ports, run Best of N, keep a prompt library and find any engine session.
+description: Rewind an agent's changes, recall commands, see ports, run Best of N, keep a prompt library, find any engine session and catch a runaway agent.
 ---
 
-Six tools that work on your computer only. None of them sends anything off the machine.
+Seven tools that work on your computer only. None of them sends anything off the machine.
 
 ## Checkpoints
 
@@ -61,3 +61,14 @@ Save prompts you reuse as Markdown files and drop them into any message box or p
 - **Resume** opens an agent pane in the session's folder, adding the folder to the rail if it isn't there. It runs the engine's own resume (`claude --resume <id>`, `codex resume <id>`) with the session's account; a session from outside Vibezeo resumes as it does in your terminal. It's offered when the folder still exists and the engine is installed.
 - **Continue with another engine…** opens the handoff sheet with a summary written from the session's last messages, which you can edit before starting the other engine in the same folder.
 - **Search session text** is part of Pro and is off by default. Turn it on in **Settings › Privacy** to search what sessions say. Vibezeo then keeps an index of their prompts and replies on this computer, and sends nothing anywhere. Tokens and keys pasted into a session are blanked out before anything is shown or indexed. Turning it off deletes the index.
+
+## Runaway guard
+
+When you leave agents working, the runaway guard tells you when one may have run away:
+
+- **Working without stopping** for 90 minutes without its turn ending.
+- **Share of the window:** in the last hour, the agent used 30 points of its account's usage window (for engines that report usage windows and keep session logs).
+- **Subagents:** it started 20 subagents since your last prompt (counted from the engine's own tool reports).
+- **Going in circles:** its last three turns ended with the same screen.
+
+The agent's pane shows a card naming the limit, with **Pause** and **Dismiss**, and a notification goes out. Pause sends the engine its interrupt key; if the agent is still working 5 seconds later, Vibezeo pauses its program until you click **Resume** (on Linux and macOS, for agents on your computer). An agent on an SSH host only gets the interrupt key: if it keeps working, the card says it couldn't pause, so send it a message or stop it. Dismiss keeps that limit quiet until your next prompt. Change the limits, turn any of them off, or choose **Pause the agent** instead of a notification in **Settings › Teammates › Runaway guard**. Threads and teammate chats are watched for working time only. The guard never sends a prompt and never switches accounts or engines.

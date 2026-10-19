@@ -105,9 +105,27 @@ fn engine_of<'a>(p: &ProcInfo, engines: &'a [EnginePaths]) -> Option<(&'a str, u
     None
 }
 
-/// `codex app-server`: the command's name and a subcommand-like word after
-/// it (letters, digits and dashes, not an option), nothing else.
-fn summary(p: &ProcInfo, at: usize) -> String {
+/// Each engine's documented subcommands: the only word after the command a
+/// row shows. Anything else after it may be a prompt or a key.
+const SUBCOMMANDS: &[(&str, &[&str])] = &[
+    (
+        "codex",
+        &[
+            "app-server",
+            "exec",
+            "mcp",
+            "mcp-server",
+            "resume",
+            "login",
+            "proto",
+        ],
+    ),
+    ("claude", &["mcp", "update", "doctor", "config", "install"]),
+];
+
+/// `codex app-server`: the command's name, and its subcommand when it's one
+/// the engine documents; never any other argument.
+fn summary(p: &ProcInfo, at: usize, engine: &str) -> String {
     let name = p
         .args
         .get(at)
@@ -125,12 +143,12 @@ fn summary(p: &ProcInfo, at: usize) -> String {
                 .map(|n| n.to_string_lossy().into_owned())
         })
         .unwrap_or_default();
-    let sub = p.args.get(at + 1).filter(|a| {
-        !a.starts_with('-')
-            && a.len() <= 32
-            && a.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
-    });
-    match sub {
+    let known = SUBCOMMANDS
+        .iter()
+        .find(|(id, _)| *id == engine)
+        .map(|(_, subs)| *subs)
+        .unwrap_or(&[]);
+    match p.args.get(at + 1).filter(|a| known.contains(&a.as_str())) {
         Some(sub) => format!("{name} {sub}"),
         None => name,
     }
@@ -153,7 +171,7 @@ pub fn background(
                 pid: p.pid,
                 engine_id: id.to_string(),
                 started: p.started,
-                command: summary(p, at),
+                command: summary(p, at, id),
             })
         })
         .collect();
@@ -435,8 +453,8 @@ mod tests {
         assert_eq!(got[0].pid, 400);
         assert_eq!(got[0].engine_id, "codex");
         assert_eq!(got[0].started, 4000);
-        // The name and subcommand only: never the prompt.
-        assert_eq!(got[0].command, "codex daemon");
+        // An unknown word after the command isn't shown: it may be a prompt.
+        assert_eq!(got[0].command, "codex");
     }
 
     #[test]
@@ -518,6 +536,29 @@ mod tests {
         let got = background(&procs, &engines, 100, ME);
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].command, "claude mcp");
+    }
+
+    #[test]
+    fn f_en_08_4_only_a_documented_subcommand_is_shown() {
+        let row = |args: &[&str]| {
+            let all: Vec<&str> = std::iter::once("/usr/local/bin/codex")
+                .chain(args.iter().copied())
+                .collect();
+            background(
+                &[p(30, 1, false, "/usr/local/bin/codex", &all)],
+                &codex(),
+                100,
+                ME,
+            )[0]
+            .command
+            .clone()
+        };
+        assert_eq!(row(&["app-server"]), "codex app-server");
+        assert_eq!(row(&["exec", "fix the build"]), "codex exec");
+        // A one-word prompt, or a short key passed as an argument.
+        assert_eq!(row(&["deploy"]), "codex");
+        assert_eq!(row(&["sk-abc123"]), "codex");
+        assert_eq!(row(&[]), "codex");
     }
 
     #[test]
