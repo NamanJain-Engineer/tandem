@@ -8,12 +8,15 @@
 //! (`scripts/mock-realtime.ts`); [`openai::OpenAiRealtime`] speaks the
 //! vendor's, pinned against a fixture built from its reference (checking it
 //! against a recorded session waits on a key, `HUMAN_TODO.md`). Both share
-//! [`socket`]'s connection.
+//! [`socket`]'s connection. [`gemini::GeminiLive`] speaks Google's Live API
+//! with a relay of its own: a setup frame, transcripts in pieces, and a
+//! reconnect every ~10 minutes (D-1015).
 //!
 //! While the socket is being set up, the mic fills a [`buffer::PreConnect`]
 //! buffer of up to 3 s, sent once connected (F-CN-01 AC4).
 
 pub mod buffer;
+pub mod gemini;
 pub mod mock;
 pub mod openai;
 pub mod pcm;
@@ -103,12 +106,17 @@ pub trait RealtimeProvider: Send + Sync {
     async fn connect(&self, ws_url: &str, token: &str) -> Result<Connection, RealtimeError>;
 }
 
+/// The providers this build speaks: what `POST /v1/voice/session` is told,
+/// so the API never mints one the app can't (D-1013).
+pub const PROVIDERS: &[&str] = &["mock", "openai", "gemini"];
+
 /// The provider for a session's `provider` name (the API's
 /// `RealtimeProvider.name`).
 pub fn for_provider(name: &str) -> Option<Box<dyn RealtimeProvider>> {
     match name {
         "mock" => Some(Box::new(mock::MockRealtime)),
         "openai" => Some(Box::new(openai::OpenAiRealtime)),
+        "gemini" => Some(Box::new(gemini::GeminiLive)),
         _ => None,
     }
 }
