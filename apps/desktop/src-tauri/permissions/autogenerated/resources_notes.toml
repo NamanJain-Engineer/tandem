@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-resources-notes"
+description = "Enables the resources_notes command without any pre-configured scope."
+commands.allow = ["resources_notes"]
+
+[[permission]]
+identifier = "deny-resources-notes"
+description = "Denies the resources_notes command without any pre-configured scope."
+commands.deny = ["resources_notes"]

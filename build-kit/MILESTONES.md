@@ -2073,6 +2073,30 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ---
 
+## M18 · Next features: resource governor (M)
+
+**Goal.** The resource governor `docs/NEXT_FEATURES.md` ranks (§1 F-EX-06), Linux first: each local agent pane in its own systemd user scope, its CPU and memory in the Ports tab and on its Dashboard card, an optional memory cap per agent, Freeze/Thaw, and "One check at a time".
+
+**Owns:** F-EX-06 (P2)
+**Prerequisites.** M4 agent panes (F-EN-01), F-AC-09's pause (process groups), F-EX-03 Ports, F-EX-04 Best of N and F-DB-04's checks.
+
+**Ordered tasks**
+1. **Governor.** `tandem_pty::governor`: the `ResourceGroups` trait, `SystemdScopes` (transient user scopes through `busctl`, cgroup v2 counters, `systemctl --user freeze`) and `Unplaced` (process-tree usage and freeze by signals), each tested with fakes and recorded cgroup files.
+2. **Service and commands.** `services::resources` places agent panes, reads usage every 2 s while asked, watches capped scopes' `oom_kill`, and emits `resources:pane`; `resources_status`, `resources_list`, `resources_notes`, `resources_freeze`, `resources_thaw`; `services::check_queue` for "One check at a time".
+3. **UI and docs.** The Panes section of the Ports tab, usage on Dashboard cards, the pane chip and Freeze/Thaw in the pane menu, Settings › Engines › "Memory cap per agent" and "One check at a time", and Engines › Resource governor (Linux) in the docs.
+
+**Verification**
+```bash
+cargo test -p tandem-pty governor && cargo test -p tandem-desktop --lib f_ex_06 && cargo test -p tandem-store bestof
+pnpm --filter desktop exec vitest run -t "F-EX-06"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-ex06-*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-EX06 Resource governor** (`m18-ex06-resources.e2e.ts`). On a machine without a systemd user session: an agent pane's CPU and memory show in the Panes section within 3 s and on its Dashboard card; the memory cap is refused with the reason; Freeze stops a pane's job without the shell taking the terminal back and Thaw resumes it; with "One check at a time" three Best of N checks run one after another (one shows "Queued"), and at once with it off. Scopes, caps and the OOM notice are covered by the Rust tests (D-2547) and a check on a real desktop (HUMAN_TODO).
+
+---
+
 ## M18 · Next features: review loop (M)
 
 **Goal.** The review loop from `docs/NEXT_FEATURES.md` (§1 #6 and #2, §3 B4): another engine's read-only second opinion, one review queue across engines, and walking that queue by voice and on the phone. Built on `m16a-conductor`; decisions D-2420 to D-2439.

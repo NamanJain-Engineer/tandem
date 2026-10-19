@@ -30,6 +30,7 @@ pub mod ports;
 pub mod prompts;
 pub mod recall;
 pub mod remote;
+pub mod resources;
 pub mod restore;
 pub mod review;
 pub mod routines;

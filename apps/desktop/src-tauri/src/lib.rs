@@ -284,6 +284,11 @@ macro_rules! app_commands {
             commands::night_shift::night_cancel,
             commands::sandbox::sandbox_status,
             commands::sandbox::sandbox_panes,
+            commands::resources::resources_status,
+            commands::resources::resources_list,
+            commands::resources::resources_notes,
+            commands::resources::resources_freeze,
+            commands::resources::resources_thaw,
             commands::data_controls::data_export,
             commands::data_controls::data_delete_local,
             commands::find_work::find_work,
@@ -1143,6 +1148,25 @@ pub fn run() {
                             }
                         }
                         state.clock.sleep(crate::services::night_shift::TICK).await;
+                    }
+                });
+                // F-EX-06: checks take turns if the setting says so, and
+                // capped panes are watched for processes ended at the cap.
+                let governed = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let on = tandem_store::repo::settings::get(
+                        &governed.state::<AppState>().store,
+                        tandem_core::settings::SettingKey::ChecksOneAtATime,
+                    )
+                    .await
+                    .ok()
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                    crate::services::check_queue::set(on);
+                    loop {
+                        let state = governed.state::<AppState>();
+                        state.terminals.resources.watch(&state.terminals.pty).await;
+                        state.clock.sleep(std::time::Duration::from_secs(2)).await;
                     }
                 });
                 // F-DB-04: the review queue follows the status bus.

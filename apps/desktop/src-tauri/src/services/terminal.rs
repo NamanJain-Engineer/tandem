@@ -133,6 +133,8 @@ pub struct TerminalService {
     /// without it (a notification, F-TL-11).
     sandbox_alert: std::sync::OnceLock<SandboxAlert>,
     sandbox_alerted: std::sync::atomic::AtomicBool,
+    /// Agent panes' scopes, usage and Freeze (F-EX-06).
+    pub resources: Arc<crate::services::resources::ResourcesService>,
 }
 
 /// Takes a checkpoint of an agent pane's folder (F-EX-01). The flag turns
@@ -265,6 +267,8 @@ impl TerminalService {
         } else {
             None
         };
+        let resources =
+            crate::services::resources::ResourcesService::new(store.clone(), status.bus().clone());
         Arc::new(Self {
             pty,
             engines,
@@ -288,6 +292,7 @@ impl TerminalService {
             sandboxed: Default::default(),
             sandbox_alert: std::sync::OnceLock::new(),
             sandbox_alerted: std::sync::atomic::AtomicBool::new(false),
+            resources,
         })
     }
 
@@ -1109,6 +1114,12 @@ impl TerminalService {
         }
         if let Some(text) = notice {
             let _ = self.pty.notice(pane.as_str(), text);
+        }
+        // F-EX-06: a local agent pane gets its own scope, from its first
+        // process on; what it had before (a restart) is gone.
+        self.resources.forget(pane.as_str()).await;
+        if engine.is_some() {
+            self.resources.place(pane.as_str(), info.pid).await;
         }
         tracing::info!(code = "pty.spawned", pid = info.pid, "terminal started");
         Ok(info)

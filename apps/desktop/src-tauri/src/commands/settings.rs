@@ -41,6 +41,10 @@ pub async fn store_and_apply(
     if key == SettingKey::AgentSandbox {
         crate::commands::sandbox::may_turn_on(state.terminals.sandboxer().await.as_ref(), &value)?;
     }
+    // A memory cap is offered only where it applies (F-EX-06).
+    if key == SettingKey::AgentMemoryCap {
+        crate::commands::resources::may_cap(&state.terminals.resources.status().await, &value)?;
+    }
     settings::set(&state.store, key, value.clone()).await?;
     apply(app, state, key, &value).await?;
     state.bus.publish(BusEvent::new(
@@ -88,6 +92,10 @@ async fn apply(
     }
     match key {
         SettingKey::TelemetryUsage | SettingKey::TelemetryCrash => state.apply_settings().await,
+        // Checks started from now on take turns, or run at once (F-EX-06).
+        SettingKey::ChecksOneAtATime => {
+            crate::services::check_queue::set(value.as_bool().unwrap_or(false));
+        }
         SettingKey::ExposeAllPluginTools => {
             state
                 .gateway

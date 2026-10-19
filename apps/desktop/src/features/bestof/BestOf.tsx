@@ -268,6 +268,11 @@ function Column({
                 <Spinner size={12} /> {t("bestof.check.running")}
               </span>
             )}
+            {check === "queued" && (
+              <span data-testid="bestof-check-queued">
+                <Badge variant="outline">{t("bestof.check.queued")}</Badge>
+              </span>
+            )}
             {check === "passed" && <Badge variant="done">{t("bestof.check.passed")}</Badge>}
             {check === "failed" && <Badge variant="error">{t("bestof.check.failed", { code: lane.checkExit ?? 0 })}</Badge>}
             {check === "stopped" && <Badge variant="outline">{t("bestof.check.stopped")}</Badge>}
@@ -289,7 +294,7 @@ function Column({
                 {t("bestof.preview.none")}
               </span>
             ) : null}
-            {lane.checkOutput !== null && check !== "running" && (
+            {lane.checkOutput !== null && check !== "running" && check !== "queued" && (
               <Button size="sm" variant="ghost" onClick={() => onOutput(lane.checkOutput ?? "")}>
                 {t("bestof.output")}
               </Button>
@@ -385,7 +390,7 @@ function Compare({ runId }: { runId: string }) {
       </div>
     );
   const run = detail.run;
-  const anyRunning = run.lanes.some((l) => l.check === "running");
+  const anyRunning = run.lanes.some((l) => l.check === "running" || l.check === "queued");
   const act = async (cmd: string, args: Record<string, unknown>) => {
     setBusy(true);
     try {

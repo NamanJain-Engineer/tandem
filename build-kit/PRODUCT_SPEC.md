@@ -3271,6 +3271,31 @@ Features beyond the original spec that make working with coding agents faster, s
 3. Inserting into a terminal pane writes a bracketed paste with no carriage return after it, and inserting into a composer leaves the text in the composer unsent.
 4. New prompt creates the file in the chosen place and opens it in the editor; "Share with the repository" replaces the `.tandem/` exclude line so the prompt shows in `git status`, and a new worktree lane doesn't hide it again.
 
+#### F-EX-06 Resource governor, Linux first (P2)
+**Story:** I run four or five agents at once, and their builds and tests can bring my laptop to a halt. I want to see which pane is eating the CPU and memory, cap an agent before it takes the whole machine, put one on ice for a while, and keep checks from all running at once.
+
+**Behavior:**
+- **Resource groups:** on Linux with a systemd user session, each local agent pane's process tree (its shell, the engine and everything they start) runs in its own systemd user scope, `vibezeo-pane-<pane>-<n>.scope`, made as soon as the pane starts. Plain terminal panes, SSH and WSL panes aren't placed. Without a systemd user session (or on macOS and Windows), panes run as before and are only measured.
+  - A pane whose scope can't be made starts anyway, unplaced. With a memory cap set, its header says "Not capped" with the reason.
+- **Usage:** each live local pane's CPU (percent of one core, so 250% is two and a half cores busy) and memory: the scope's own counters when it has one, else the sum over the pane's process tree.
+  - The **Ports** tab gets a **Panes** section above its ports: one row per pane with its name and workspace, "CPU 12%", "840 MB" (or "840 MB of 1 GB" under a cap), its state and **Freeze**/**Thaw**, grouped by worktree as the ports are. States: loading, error ("Couldn't read pane usage." [Retry]), empty ("No panes running"), populated.
+  - Each agent's **Dashboard** card shows "CPU 12% · 840 MB" when its pane is live on this computer.
+  - Both refresh every 2 s while on screen and never while hidden. The first reading of a pane shows its memory and "CPU —" until a second one exists.
+- **Memory cap** (Settings › Engines › "Memory cap per agent"): **Off** (default), 512 MB, 1 GB, 2 GB, 4 GB, 8 GB or 16 GB. It applies to agent panes started after the change, and swap doesn't count as room (the scope gets no swap).
+  - It needs a systemd user session that can limit memory. Without one the setting says why ("Memory caps need a systemd user session." / "This system's user session can't limit memory.") and can't be changed from Off; on macOS and Windows it reads "Not available on this system yet".
+  - When a process in a capped pane goes over, the system ends that one process (usually the biggest); the pane and its other processes keep running. The pane shows a dim line "Stopped: memory cap 512 MB" and a chip with the same words until it's restarted or closed. Other panes aren't touched.
+- **Freeze** (pane menu, and the Panes row): stops every process in the pane at once, so it uses no CPU; **Thaw** resumes them where they were. A frozen pane's header shows a "Frozen" chip (tooltip: "Its processes are stopped until you thaw it"). In a scope it uses systemd's freezer; without one, Vibezeo stops the pane's shell first and then each of its process groups, as Pause does (F-AC-09), so the shell never takes the terminal back. Input typed into a frozen pane waits until it's thawed. On macOS and Windows, Freeze isn't offered yet. Restarting or closing a frozen pane thaws it first.
+- **One check at a time** (Settings › Engines, off by default): check commands run one after another, in the order they were started, instead of all at once: Best of N's **Run check** and the review queue's checks (F-DB-04), and the merge queue's when it's built (F-WT-07). A Best of N lane waiting its turn shows "Queued"; Stop removes it from the queue. Each check's 10-minute limit starts when its turn comes.
+- Nothing here leaves the machine; nothing new is stored on disk (scopes, readings and frozen states live only while the app runs).
+
+**Acceptance:**
+1. On Linux with a systemd user session, an agent pane's processes are in the scope `vibezeo-pane-<pane>-<n>.scope`, and its CPU and memory show in the Ports tab's Panes section and on its Dashboard card within 3 s.
+2. Without a systemd user session, the same numbers come from the pane's process tree, panes start as before, and "Memory cap per agent" says why it's unavailable and can't be turned on.
+3. With a 512 MB cap, a process in an agent pane that allocates 1 GB is ended, the pane shows "Stopped: memory cap 512 MB", and the pane's shell and the other panes keep running.
+4. Freeze stops every process in the pane (no CPU used, the pane's shell doesn't take the terminal back) and Thaw resumes them, with or without a scope.
+5. With "One check at a time" on, three Best of N lanes' checks run one after another (the waiting ones show "Queued"); with it off they run at once.
+6. An agent pane whose scope can't be made still starts, and with a cap set its header says "Not capped" with the reason.
+
 ### 4.20 WT: Worktree workflow
 
 Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1–4 of §4); decisions D-2200–D-2299. All four extend F-CD-15. Remote folders have no worktrees (F-RM-01), so none of these apply there.

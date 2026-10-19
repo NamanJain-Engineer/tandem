@@ -21,6 +21,8 @@ pub enum RunState {
 #[ts(export)]
 pub enum CheckState {
     None,
+    /// Waiting for its turn ("one check at a time", F-EX-06).
+    Queued,
     Running,
     Passed,
     Failed,
@@ -48,6 +50,7 @@ impl CheckState {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::None => "none",
+            Self::Queued => "queued",
             Self::Running => "running",
             Self::Passed => "passed",
             Self::Failed => "failed",
@@ -56,6 +59,7 @@ impl CheckState {
     }
     fn parse(s: &str) -> Self {
         match s {
+            "queued" => Self::Queued,
             "running" => Self::Running,
             "passed" => Self::Passed,
             "failed" => Self::Failed,

@@ -5,6 +5,7 @@
 
 pub mod env;
 pub mod frame;
+pub mod governor;
 pub mod integration;
 #[cfg(windows)]
 mod job;

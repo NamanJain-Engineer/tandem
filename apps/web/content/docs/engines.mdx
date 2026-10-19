@@ -60,3 +60,13 @@ The engine signs in by itself as always; the sandbox only narrows what it can re
 It uses bubblewrap (the `bwrap` command), which Vibezeo never installs: install it with your package manager (`sudo apt install bubblewrap`, `sudo dnf install bubblewrap`). Without it, or where it can't run, the setting says why and Workspace can't be chosen. If it stops working after you turned it on, agent panes start without it: their header says **Not sandboxed** with the reason, and you get one notification.
 
 Claude Code, Codex and OpenCode run sandboxed. Engines that keep their sign-in in your own home folder (Cursor Agent, Gemini CLI, Copilot CLI and the rest) start outside the sandbox for now, with **Not sandboxed** saying why: inside it, your home is read-only, so their sign-in would fail. The pane's shell stays outside the sandbox. Panes on SSH hosts and in WSL aren't sandboxed, and macOS and Windows don't have it yet.
+
+## Resource governor (Linux)
+
+The **Ports** tab's **Panes** section lists each pane running on this computer with its CPU ("CPU 120%" is 1.2 cores busy) and memory, grouped by worktree like the ports. Each agent's Dashboard card shows the same. They refresh every 2 seconds while you're looking, and never while hidden.
+
+- **Freeze** (in the pane's menu, or its row) stops every process in the pane, so it uses no CPU; **Thaw** picks up where it left off. A frozen pane shows **Frozen** in its header.
+- **Settings › Engines › Memory cap per agent** (Off, 512 MB up to 16 GB) caps each new agent pane. When a process in it goes over, the system ends that process; the pane and its shell keep running, and its header says **Stopped: memory cap 512 MB**. Caps need a systemd user session (most Linux desktops have one); without one the setting says why and stays Off. Each agent pane then runs in its own systemd user scope, `vibezeo-pane-…`.
+- **Settings › Engines › One check at a time** runs check commands (Best of N's **Run check**, the review queue's checks) one after another instead of all at once. A lane waiting its turn shows **Queued**.
+
+On macOS and Windows you get the usage; Freeze and the memory cap are Linux only for now. Nothing here leaves your computer or is saved to disk.

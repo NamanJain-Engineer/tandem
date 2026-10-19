@@ -200,6 +200,16 @@
     "page": "engines"
   },
   {
+    "default": "off",
+    "key": "agent_memory_cap",
+    "page": "engines"
+  },
+  {
+    "default": false,
+    "key": "checks_one_at_a_time",
+    "page": "engines"
+  },
+  {
     "default": {
       "circles": true,
       "subagents": 20,

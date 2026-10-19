@@ -64,6 +64,8 @@ import { AccountChip } from "./AccountChip";
 import { LimitBanner } from "./LimitCard";
 import { GuardBanner } from "./GuardCard";
 import { SandboxChip } from "./SandboxChip";
+import { ResourceChip } from "./ResourceChip";
+import { setFrozen, useResources } from "../../stores/resources";
 import { useContexts } from "../../stores/contexts";
 import { baseBranch, isWorktree } from "../../stores/worktrees";
 import { useShortcutKeys } from "../commands/useShortcutKeys";
@@ -280,6 +282,18 @@ const PaneView = memo(function PaneView({
   const meta = relativeCwd(cwd ?? pane.cwd, root);
   const note = useHandoff((st) => st.notes[pane.id]);
   const context = useContexts((st) => st.byPane[pane.id]);
+  // F-EX-06: Freeze/Thaw for a pane on this computer, where it's offered.
+  const freezing = useResources((st) => st.status?.freezing ?? false);
+  const frozen = useResources((st) => st.byPane[pane.id]?.frozen ?? false);
+  const freezable = freezing && home?.kind === "local";
+  const toggleFrozen = () =>
+    void setFrozen(pane.id, !frozen).catch((e: IpcError) =>
+      show({
+        tone: "error",
+        title: frozen ? t("resources.thawFailed") : t("resources.freezeFailed"),
+        body: e.message,
+      }),
+    );
   const rename = async (name: string): Promise<string | null> => {
     try {
       const stored = await invoke<string>("pane_rename", { paneId: pane.id, humanName: name });
@@ -308,6 +322,9 @@ const PaneView = memo(function PaneView({
     },
     { id: "new-tab", label: t("pane.moveToNewTab"), onSelect: () => void moveToNewTab(tabId, pane.id) },
     { id: "restart", label: t("pane.restart"), onSelect: () => terminalHandles.get(pane.id)?.restart() },
+    ...(freezable
+      ? [{ id: "freeze", label: frozen ? t("resources.thaw") : t("resources.freeze"), onSelect: toggleFrozen }]
+      : []),
     {
       id: "handoff",
       label: t("pane.handoff"),
@@ -384,6 +401,7 @@ const PaneView = memo(function PaneView({
             {wt && <WorktreeChip wt={wt} />}
             <AccountChip pane={pane} />
             {pane.kind === "agent" && <SandboxChip paneId={pane.id} />}
+            <ResourceChip paneId={pane.id} />
           </>
         }
         onRename={rename}

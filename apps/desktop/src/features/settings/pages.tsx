@@ -11,6 +11,7 @@ import { PluginsPage } from "../plugins/PluginsPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { RunawayGuardControl } from "./RunawayGuard";
 import { SandboxSetting } from "./SandboxSetting";
+import { MemoryCapSetting } from "./MemoryCapSetting";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
 import { UpdatesPanel } from "../updates/UpdatesPanel";
 import { RunSetupAgain } from "../onboarding/RunSetupAgain";
@@ -477,6 +478,22 @@ export function settingsPages(platform: string, routines = false, accounts = fal
           description: t("sandbox.setting.desc"),
           keywords: ["sandbox", "bubblewrap", "bwrap", "isolate", "security"],
           control: (ids) => <SandboxSetting ids={ids} />,
+        },
+        {
+          id: "agent_memory_cap",
+          label: t("resources.cap.setting"),
+          description: t("resources.cap.setting.desc"),
+          keywords: ["memory", "cap", "limit", "ram", "oom", "resources", "cgroup"],
+          control: (ids) => <MemoryCapSetting ids={ids} />,
+        },
+        {
+          id: "checks_one_at_a_time",
+          label: t("resources.checks.setting"),
+          description: t("resources.checks.setting.desc"),
+          keywords: ["checks", "queue", "one at a time", "sequential", "tests", "resources"],
+          control: (ids) => (
+            <BoolControl k="checks_one_at_a_time" ids={ids} label={t("resources.checks.setting")} />
+          ),
         },
       ],
       extra: <EnginesPage />,
