@@ -41,7 +41,7 @@
   - **Docs:** they run no script.
 
   The real-app captures were retaken from 0.7.2 at 2×. Lighthouse CI scores 1.00 on its five URLs with no warnings: blocking time 0 ms everywhere, largest paint 1.51–1.74 s (fonts trimmed, D-1844). Batched in `chain22` and deployed to vibezeo.com from `main` (D-851).
-- M16 Conductor voice API (F-BE-08, and the API halves of F-CN-02 and F-CN-05) is on `product-m0-m5` (pull request #30, built on `m16-voice-api`); see "M16 · F-BE-08 Conductor voice API". The desktop's Conductor client (F-CN-01…04, F-CN-08: calls, the local tool executor, the HUD, the call log) is on `m16a-conductor`; see "M16 · 16A Conductor core".
+- M16 Conductor voice API (F-BE-08, and the API halves of F-CN-02 and F-CN-05) is on `product-m0-m5` (pull request #30, built on `m16-voice-api`); see "M16 · F-BE-08 Conductor voice API". The desktop's Conductor client (F-CN-01…04, F-CN-08: calls, the local tool executor, the HUD, the call log) is on `m16a-conductor`; see "M16 · 16A Conductor core". The talker can come from a free primary with a backup, Gemini Live then OpenAI (D-1013 to D-1016, `m16-voice-api`). It's off until the owner turns it on (HUMAN_TODO), and the app's half of the wiring is left to the Conductor session; see "M16 · Conductor's voice: a free primary and a backup".
 - Windows from Linux (M15, branch `windows-ready`, D-1700…D-1710): the gate runs Windows clippy (GNU target, every crate but the app); `bash scripts/windows-check.sh --msvc --wine` (in `ci:local`) checks the app for MSVC through cargo-xwin and runs the platform crates' tests under Wine; `bash scripts/build-windows-installer.sh` cross-builds an unsigned NSIS installer and checks it. Nothing has run on real Windows: Windows stays "Coming soon" until HUMAN_TODO's "M15 Windows first run" passes. Setup in OPERATING §6a.
 - Layout matches DECISIONS: 10 crates under `crates/`, Tauri crate `apps/desktop/src-tauri` (lib `tandem_app`, bin `tandem`), `apps/{api,web}`, `packages/{ui,protocol}`.
 - macOS from Linux (M15, branch `macos-ready`, D-2100…D-2110; `docs/MACOS.md`): the bundle config for macOS 14 with the hardened runtime, the microphone entitlement and usage string; every bundled executable signed, the app and dmg notarized and stapled, each Mach-O verified (release.yml, `scripts/ci/macos-*.sh`, `codemagic.yaml`, the manual `macos.yml`); the gate runs macOS clippy for both architectures (`scripts/macos-check.sh`). Nothing has run on a Mac yet: HUMAN_TODO "macOS first run". macOS stays "Coming soon" on the site.
@@ -1223,6 +1223,51 @@ Built on `ccr-6d871eba-mxry64` (from `product-m0-m5`) by the voice API's session
   - Rust 1,220 and clippy: the workspace without the app and the invariants, with tandem-voice built without `parakeet`.
   - Not run: the app's and the invariants' tests and clippy, the protocol drift check and the macOS check. All need the app, so `ort-sys`.
 - One test failed, and fails on `product-m0-m5` too: chain23's F-AC-09.8 (`f_ac_09_8_a_paused_agent_keeps_its_pane_and_its_shell_never_hands_it_back`) printed HANDBACK-147 in 3 of 5 runs on this branch and 1 of 6 on a7bac8c, mostly on the first run after a build. The shell took the terminal back while the job was paused, which D-857 meant to prevent. Left to the session that owns F-AC-09.
+
+## M16 · Conductor's voice: a free primary and a backup
+Built on `m16-voice-api` (restarted from `product-m0-m5` after #30 and #78) by the voice API's session, with decisions D-1013 to D-1016. The owner asked for the free model first, with the best backup. It stays off until the owner sets it up (HUMAN_TODO): released apps and the API's defaults behave as before.
+- [x] **API.** `REALTIME_PROVIDERS` orders the providers (`gemini,openai`). `POST /v1/voice/session` takes `providers`, the realtime protocols the app speaks, and mints with the first of those that mints, under one hold (D-1013). `GeminiLive` mints a Gemini Live ephemeral token (D-1014).
+- [x] **Client.** `tandem_voice::realtime::gemini::GeminiLive`, registered as `gemini`, and `realtime::PROVIDERS` for the session request (D-1015).
+- [ ] **Not in this branch.** Two pieces belong to the app and the call (`apps/desktop`, `conductor/call.rs`), which the Conductor session is changing. The app can't build here either (`cdn.pyke.io`, OPERATING §5).
+  - The app sends `providers`: one line in `services/api.rs`'s `voice_session` body, `"providers": tandem_voice::realtime::PROVIDERS`.
+  - After a failed connect, the call settles that session at 0 and asks for a new one without the provider that failed.
+- Facts used (Gemini Live, October 2026). Google's docs site is blocked here, so they come from Google's SDK source (`googleapis/js-genai` 2.30.0) and search results:
+  - Ephemeral tokens: `POST v1alpha/auth_tokens` with `uses`, `expireTime` (default 30 minutes, under 20 hours), `newSessionExpireTime` (default 60 s), `bidiGenerateContentSetup` and `fieldMask`. "Resuming a Live API session does not count as a use." The socket is `…/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=<name>`.
+  - A connection lasts about 10 minutes, with `goAway` about a minute before it ends. Audio-only sessions stop at 15 minutes unless context window compression is on. Resumption handles last 2 hours.
+  - Output audio is 24 kHz. Input is 16 kHz natively; other rates are resampled when tagged (`audio/pcm;rate=24000`).
+  - The Live models are free within rate limits on the free tier. Free-tier content is used to improve Google's products, and paid-tier content isn't. For the EEA, Switzerland and the UK, the terms allow only paid services. These come from third-party summaries of the terms: HUMAN_TODO has checking the original.
+
+### M16 · voice provider decisions
+- D-1013: Conductor's talker comes from an ordered list of providers, `REALTIME_PROVIDERS` (`gemini,openai`), or from `REALTIME_PROVIDER` alone as before.
+  - The session request names the realtime protocols the app speaks (`providers`). An app that names none speaks `mock` and `openai`, as every app released before this does, so it never gets a session it can't open.
+  - Names the API doesn't know are ignored, so a newer app can name a vendor an older API lacks.
+  - One hold, then each provider in order until one mints. A provider that fails (a free tier out of quota answers 429) logs its status, and the next one tries.
+  - The session records the provider that minted it, and the sweeper asks that one for usage. No migration: `voice_sessions.provider` is text.
+- D-1014: Gemini Live is minted with an ephemeral token: `POST v1alpha/auth_tokens`, with the key in `x-goog-api-key`.
+  - The token locks the model, spoken answers in the call's voice (one of the 8 prebuilt voices, else Puck), the `act` tool, both transcriptions, and sliding-window context compression, which lets a call pass 15 minutes. The tool is declared without `additionalProperties`, which the Live API's schema lacks.
+  - The app's instructions and its resumption handle stay unlocked. The app sends them in its setup, as it already replaces the base instructions with OpenAI.
+  - One use, the first connection within 60 s, and messages until the call's cap plus 5 minutes. Resuming isn't a use, so one token carries a 30-minute call across ~10-minute connections.
+  - The model (`gemini-3.1-flash-live-preview` unless `GEMINI_LIVE_MODEL` says otherwise) rides in `ws_url`'s fragment, since the grant has no model field and a fragment never leaves the app.
+- D-1015: The app's Gemini client has its own relay rather than the shared socket.
+  - The token goes in the query, never a header. The setup is the first frame, and every other frame waits for `setupComplete`.
+  - A frame can carry several events, in text or binary, and transcripts come in pieces: one TranscriptUser and one TranscriptAssistant per turn, when a piece is `finished` or at `turnComplete`.
+  - Audio goes at 24 kHz, tagged, for the service to resample. `interrupted` is SpeechStarted, `turnComplete` ResponseDone, each `functionCalls` entry a FunctionCall, and the act's output a `toolResponse`. Say is a user text turn.
+  - SetSpeed and Truncate send nothing: the Live API has no speech-rate setting and tracks barge-in itself. A tool call the service cancels still runs (`toolCallCancellation` is skipped).
+  - `goAway` reopens the socket on the same token, with the same setup and the latest resumable handle. An unexpected close tries the same, once per handle.
+- D-1016: Gemini stays off until the owner turns it on, because the free tier changes what a call's audio is used for: free-tier content improves Google's products, and in the EEA, Switzerland and the UK only paid services are allowed. HUMAN_TODO has the choice (a paid Gemini key keeps the same code and lifts both), the key, and checks against a recorded session.
+
+### M16 · voice provider log
+- Tests first, red then green:
+  - API: without the implementation, `gemini.test.ts` couldn't load its module (5 tests), and 10 tests failed.
+    - 5 of the chain's 6. The sixth, every provider failing, passed by accident: the old code's error path also answers 503.
+    - The `REALTIME_PROVIDER` test, which now reads a list, and 4 earlier voice tests that now read the first provider.
+  - Client: 6 of the 7 Gemini tests failed on stubs. The seventh, a refused server, passed on the stub's error.
+- After: API 225 tests in 31 files. `tandem-voice`'s realtime tests 23, with Gemini's 7 among them. `openapi.json` regenerated (the session body's `providers`), and Prettier clean.
+- The gate on the final tree, as far as this environment allows:
+  - passed: coverage, the hook guard, lint, the desktop build, clippy, Windows clippy and fmt;
+  - TypeScript 1,563 (desktop 747, UI 411, API 225, web 116, remote 33, mobile 21, protocol 10);
+  - Rust 1,278 (2 ignored): the workspace without the app and the invariants, which need `ort-sys`'s download.
+  - Not run: the app's and the invariants' tests and clippy, the protocol drift check (no generated type changed) and the macOS check.
 
 ## M16C checklist (Phone companion)
 Built on branch `m16c-phone-companion` (from `product-m0-m5`, D-1900). Owns F-BE-11 Remote relay and F-RM-03 Phone companion (MILESTONES M16 §16C) and extends F-TL-06 rule 5 with the live phone path. Decisions are D-1900–D-1949.
