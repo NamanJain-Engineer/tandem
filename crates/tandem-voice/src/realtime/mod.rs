@@ -54,7 +54,8 @@ pub enum ClientEvent {
 /// What the talker sends the app, normalized across providers.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServerEvent {
-    /// The session is configured and listening.
+    /// The session is up and listening. Every provider sends it before
+    /// anything else, and a call is connected from it (D-1017).
     Ready,
     /// Speech, PCM16 at [`SAMPLE_RATE`], and the assistant item it belongs
     /// to (for [`ClientEvent::Truncate`]), when the provider names one.
@@ -107,7 +108,8 @@ pub trait RealtimeProvider: Send + Sync {
 }
 
 /// The providers this build speaks: what `POST /v1/voice/session` is told,
-/// so the API never mints one the app can't (D-1013).
+/// less any that already failed the call, so the API never mints one the
+/// app can't open (D-1013, D-1017).
 pub const PROVIDERS: &[&str] = &["mock", "openai", "gemini"];
 
 /// The provider for a session's `provider` name (the API's
@@ -118,5 +120,18 @@ pub fn for_provider(name: &str) -> Option<Box<dyn RealtimeProvider>> {
         "openai" => Some(Box::new(openai::OpenAiRealtime)),
         "gemini" => Some(Box::new(gemini::GeminiLive)),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn f_cn_01_every_provider_the_api_is_told_has_a_client() {
+        for name in PROVIDERS {
+            assert!(for_provider(name).is_some(), "no client for {name}");
+        }
+        assert!(for_provider("nope").is_none());
     }
 }

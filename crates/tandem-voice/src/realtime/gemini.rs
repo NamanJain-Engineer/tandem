@@ -798,6 +798,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn f_cn_01_a_socket_closed_at_its_setup_is_an_error_and_never_ready() {
+        use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+        use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = tokio::spawn(async move {
+            let (_, _, mut ws) = accept(&listener).await;
+            let _setup = next_json(&mut ws).await;
+            // Over its limits, the service turns the session down: the call
+            // falls back to the next provider (D-1017).
+            ws.close(Some(CloseFrame {
+                code: CloseCode::Error,
+                reason: "quota exceeded".into(),
+            }))
+            .await
+            .expect("close");
+        });
+        let mut conn = GeminiLive
+            .connect(
+                &format!("ws://{addr}/ws/live#model=models/gemini-test"),
+                "auth_tokens/t3",
+            )
+            .await
+            .expect("connect");
+        conn.tx
+            .send(ClientEvent::Configure {
+                instructions: "You are Ada.".into(),
+                voice: None,
+            })
+            .await
+            .expect("send");
+        assert_eq!(
+            recv(&mut conn).await,
+            Some(ServerEvent::Error(
+                "the service closed the socket (1011): quota exceeded".into()
+            ))
+        );
+        assert_eq!(recv(&mut conn).await, Some(ServerEvent::Closed));
+        server.await.expect("server");
+    }
+
+    #[tokio::test]
     async fn f_cn_01_a_refused_or_missing_gemini_server_is_an_error() {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");
