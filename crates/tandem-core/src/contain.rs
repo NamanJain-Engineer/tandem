@@ -87,6 +87,21 @@ pub fn canonical(path: &Path) -> std::io::Result<PathBuf> {
     dunce::canonicalize(path)
 }
 
+/// [`canonical`] for a path that may not exist yet: its deepest existing
+/// ancestor canonicalized, with the missing rest appended as written. `None`
+/// when the missing rest ends in `..`, which only the file system resolves.
+fn canonical_existing(path: &Path) -> Option<PathBuf> {
+    let mut missing = Vec::new();
+    let mut existing = path;
+    loop {
+        if let Ok(canon) = canonical(existing) {
+            return Some(missing.iter().rev().fold(canon, |acc, part| acc.join(part)));
+        }
+        missing.push(existing.file_name()?);
+        existing = existing.parent()?;
+    }
+}
+
 /// Resolves `requested` (relative to `root`, or absolute) and returns the
 /// canonical path when it stays inside `root` and the policy allows it.
 pub fn contain(
@@ -108,20 +123,20 @@ pub fn contain(
 
     let root = canonical(root).map_err(|_| ContainError::RootMissing)?;
     let relative: PathBuf = if requested.is_absolute() {
-        if !path_starts_with(requested, &root) {
-            // An absolute path may still point inside root through a symlinked
-            // prefix; compare canonical forms when it exists.
-            match canonical(requested) {
-                Ok(canon) if path_starts_with(&canon, &root) => canon
-                    .strip_prefix(&root)
-                    .map(Path::to_path_buf)
-                    .unwrap_or_default(),
-                _ => return Err(ContainError::Escape),
-            }
+        // An absolute path may still point inside root through a symlinked
+        // prefix (macOS's /var is /private/var); compare canonical forms.
+        let resolved = if path_starts_with(requested, &root) {
+            requested.to_path_buf()
         } else {
-            let root_len = root.components().count();
-            requested.components().skip(root_len).collect()
+            canonical_existing(requested).ok_or(ContainError::Escape)?
+        };
+        if !path_starts_with(&resolved, &root) {
+            return Err(ContainError::Escape);
         }
+        resolved
+            .components()
+            .skip(root.components().count())
+            .collect()
     } else {
         requested.to_path_buf()
     };
@@ -276,6 +291,41 @@ mod tests {
             contain(&root, Path::new(".git/HEAD"), ContainPolicy::Write),
             Err(ContainError::Private)
         );
+    }
+
+    /// macOS's temp folders are under /var, a link to /private/var: an
+    /// absolute path to a file that doesn't exist yet, under a root reached
+    /// through a link, is still inside.
+    #[cfg(unix)]
+    #[test]
+    fn f_tl_03_1_new_file_under_a_linked_root_stays_inside() {
+        let (dir, root) = fixture();
+        let link = dir.path().join("ws-link");
+        std::os::unix::fs::symlink(&root, &link).expect("symlink");
+        let canon = canonical(&root).expect("canon");
+        for (path, policy) in [
+            ("README.md", ContainPolicy::Write),
+            ("new/dir/file.md", ContainPolicy::Write),
+            ("src/main.rs", ContainPolicy::Read),
+            ("src/../README.md", ContainPolicy::Write),
+        ] {
+            assert_eq!(
+                contain(&link, &link.join(path), policy),
+                Ok(canon.join(path.replace("src/../", ""))),
+                "{path}"
+            );
+        }
+        for path in [
+            "../outside/new.txt",
+            "linkdir/new.txt",
+            "missing/../../outside/new.txt",
+        ] {
+            assert_eq!(
+                contain(&link, &link.join(path), ContainPolicy::Write),
+                Err(ContainError::Escape),
+                "{path}"
+            );
+        }
     }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]

@@ -1285,6 +1285,10 @@ pub fn run() {
                 state.apply_orphan_policy().await;
                 state.telemetry.upload_crashes().await;
             });
+            // Compiled only with debug assertions: `e2e` is always false in a
+            // release build, but the capability's text would still ship in
+            // the binary (scripts/check-release-harness.sh, D-1011).
+            #[cfg(debug_assertions)]
             if e2e {
                 app.add_capability(include_str!("../test-capability.json"))?;
             }
@@ -1435,8 +1439,8 @@ mod harness_tests {
         assert!(harness.contains("allow-test-auth-refresh"));
         let lib = include_str!("lib.rs");
         assert!(
-            lib.contains("if e2e {\n                app.add_capability"),
-            "the harness capability is gated on e2e"
+            lib.contains("#[cfg(debug_assertions)]\n            if e2e {\n                app.add_capability"),
+            "the harness capability is compiled only with debug assertions, and added only with e2e"
         );
         let commands = include_str!("commands/mod.rs");
         assert!(
