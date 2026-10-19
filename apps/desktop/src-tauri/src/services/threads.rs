@@ -2956,6 +2956,20 @@ impl AppLauncher {
     }
 }
 
+/// The ACP adapter for an engine that speaks it (an added agent's, built
+/// when its thread starts).
+fn acp_adapter(engine: &tandem_engines::EngineSpec) -> Option<Arc<dyn ChatAdapter>> {
+    match (engine.chat_adapter.as_deref(), &engine.acp_cmd) {
+        (Some("acp"), Some(cmd)) => Some(Arc::new(tandem_engines::chat::acp::AcpAdapter::new(
+            &engine.id,
+            &engine.label,
+            cmd,
+            engine.limit_patterns.clone(),
+        ))),
+        _ => None,
+    }
+}
+
 #[async_trait]
 impl ChatLauncher for AppLauncher {
     fn model_for(&self, thread: &ThreadRecord) -> (Option<String>, Option<String>) {
@@ -3014,15 +3028,33 @@ impl ChatLauncher for AppLauncher {
                 "This engine isn't known to Vibezeo",
             )
         })?;
-        let adapter = self.adapters.get(&engine.id).cloned().ok_or_else(|| {
-            IpcError::new(
+        let added = engines.acp_agent(&engine.id);
+        let adapter = self
+            .adapters
+            .get(&engine.id)
+            .cloned()
+            .or_else(|| added.as_ref().and_then(|_| acp_adapter(&engine)))
+            .ok_or_else(|| {
+                IpcError::new(
+                    ErrorCode::EngineUnsupported,
+                    format!(
+                        "{} can't run in Thread mode yet. Use it in Code mode.",
+                        engine.label
+                    ),
+                )
+            })?;
+        // An added ACP agent is a command on this computer (F-EN-10).
+        if added.is_some()
+            && (self.remote_host(thread).await?.is_some() || self.wsl_host(thread).await?.is_some())
+        {
+            return Err(IpcError::new(
                 ErrorCode::EngineUnsupported,
                 format!(
-                    "{} can't run in Thread mode yet. Use it in Code mode.",
+                    "{} runs on this computer only. Start the thread in a local folder.",
                     engine.label
                 ),
-            )
-        })?;
+            ));
+        }
         if let Some((remote, host)) = self.remote_host(thread).await? {
             return self
                 .prepare_remote(thread, &engine, adapter, remote, host)
@@ -3062,6 +3094,11 @@ impl ChatLauncher for AppLauncher {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         env.extend(crate::services::fake_engine_env());
+        // An added agent's own variables, checked when it was added.
+        if let Some(agent) = &added {
+            env.retain(|(k, _)| !agent.env.contains_key(k));
+            env.extend(agent.env.clone());
+        }
         let stdio_servers: Vec<_> = self.tasks_server(thread).await.into_iter().collect();
         let (config, endpoint) = self.mcp_config(thread, &stdio_servers).await?;
         let origin = self.origin(thread).await;

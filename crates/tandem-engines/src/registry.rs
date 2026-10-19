@@ -306,7 +306,7 @@ fn bare_name(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
-fn env_name(s: &str) -> bool {
+pub(crate) fn env_name(s: &str) -> bool {
     let mut chars = s.chars();
     matches!(chars.next(), Some(c) if c.is_ascii_uppercase() || c == '_')
         && chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
@@ -314,7 +314,7 @@ fn env_name(s: &str) -> bool {
 
 /// Variables a Pin may never set: any engine's provider home, and anything
 /// that changes what a process loads or where it looks (F-EN-08).
-fn pin_reserved(name: &str, own_home: Option<&str>) -> bool {
+pub(crate) fn pin_reserved(name: &str, own_home: Option<&str>) -> bool {
     const RESERVED: &[&str] = &[
         "CLAUDE_CONFIG_DIR",
         "CODEX_HOME",
@@ -590,6 +590,14 @@ impl EngineRegistry {
 
     pub fn all(&self) -> &[EngineSpec] {
         &self.entries
+    }
+
+    /// Adds an entry unless its id is taken (ACP agents the user added,
+    /// F-EN-10).
+    pub fn add(&mut self, spec: EngineSpec) {
+        if self.get(&spec.id).is_none() {
+            self.entries.push(spec);
+        }
     }
 
     pub fn get(&self, id: &str) -> Option<&EngineSpec> {

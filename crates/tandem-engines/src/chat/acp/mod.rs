@@ -1243,5 +1243,7 @@ impl ChatSession for AcpSession {
     }
 }
 
+pub mod probe;
+
 #[cfg(test)]
 mod tests;

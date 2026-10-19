@@ -11,6 +11,7 @@ use tandem_core::bus::{BusEvent, EventBus, Topic};
 use tandem_core::error::{ErrorCode, IpcError};
 use tandem_core::ids::AccountId;
 use tandem_core::settings::SettingKey;
+use tandem_engines::acp_agents::AcpAgent;
 use tandem_engines::detect::{self, DetectEnv, DetectionReport};
 use tandem_engines::homes::{ProviderHomes, Seed};
 use tandem_engines::launch::{self, HostKind, LaunchSpec, StatusEnv, TerminalLaunchRequest};
@@ -38,7 +39,13 @@ pub struct EngineService {
     policy: std::sync::OnceLock<PolicySource>,
     /// Versions seen and the last good ones (F-EN-08), beside the homes.
     pub versions: crate::services::engine_versions::EngineVersions,
+    /// ACP agents the user added (F-EN-10), from `$DATA/acp-agents.json`.
+    acp_agents: RwLock<Vec<AcpAgent>>,
+    acp_file: PathBuf,
 }
+
+/// Where the ACP agents the user added are kept.
+pub const ACP_AGENTS_FILE: &str = "acp-agents.json";
 
 /// Reads the org policy in force (the entitlement service's).
 pub type PolicySource = Arc<dyn Fn() -> Option<tandem_core::policy::OrgPolicy> + Send + Sync>;
@@ -65,7 +72,13 @@ pub const LAUNCH_CONFIG_UNAVAILABLE: &str = "Launch configuration unavailable";
 
 impl EngineService {
     pub fn new(store: Store, bus: EventBus, providers: PathBuf) -> Arc<Self> {
+        let acp_file = providers
+            .parent()
+            .unwrap_or(&providers)
+            .join(ACP_AGENTS_FILE);
         Arc::new(Self {
+            acp_agents: RwLock::new(read_agents(&acp_file)),
+            acp_file,
             registry: RwLock::new(EngineRegistry::bundled()),
             report: RwLock::new(None),
             detecting: tokio::sync::Mutex::new(()),
@@ -99,7 +112,18 @@ impl EngineService {
         .with_hint("Ask an admin of your organization to allow it on the Team page."))
     }
 
+    /// The registry with the ACP agents the user added after it.
     pub fn registry(&self) -> EngineRegistry {
+        let mut reg = self.base_registry();
+        for agent in self.acp_agents() {
+            if let Ok(spec) = agent.spec() {
+                reg.add(spec);
+            }
+        }
+        reg
+    }
+
+    fn base_registry(&self) -> EngineRegistry {
         self.registry
             .read()
             .map(|r| r.clone())
@@ -107,7 +131,70 @@ impl EngineService {
     }
 
     pub fn get(&self, id: &str) -> Option<EngineSpec> {
-        self.registry.read().ok()?.get(id).cloned()
+        if let Some(spec) = self.registry.read().ok()?.get(id).cloned() {
+            return Some(spec);
+        }
+        self.acp_agent(id).and_then(|a| a.spec().ok())
+    }
+
+    /// The ACP agents the user added (F-EN-10).
+    pub fn acp_agents(&self) -> Vec<AcpAgent> {
+        self.acp_agents
+            .read()
+            .map(|a| a.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn acp_agent(&self, id: &str) -> Option<AcpAgent> {
+        self.acp_agents().into_iter().find(|a| a.id == id)
+    }
+
+    /// Saves an agent (already tested) and lists it as installed at its path.
+    pub fn add_acp_agent(&self, agent: AcpAgent) -> Result<(), IpcError> {
+        let mut list = self.acp_agents();
+        if list.len() >= tandem_engines::acp_agents::MAX_AGENTS {
+            return Err(IpcError::new(
+                ErrorCode::LimitReached,
+                format!(
+                    "Vibezeo keeps up to {} ACP agents",
+                    tandem_engines::acp_agents::MAX_AGENTS
+                ),
+            ));
+        }
+        list.push(agent.clone());
+        self.save_agents(list)?;
+        if let Ok(mut r) = self.report.write() {
+            if let Some(report) = r.as_mut() {
+                with_agents(report, &[agent]);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn remove_acp_agent(&self, id: &str) -> Result<(), IpcError> {
+        let list: Vec<AcpAgent> = self
+            .acp_agents()
+            .into_iter()
+            .filter(|a| a.id != id)
+            .collect();
+        self.save_agents(list)?;
+        if let Ok(mut r) = self.report.write() {
+            if let Some(report) = r.as_mut() {
+                report.found.retain(|f| f.engine_id != id);
+            }
+        }
+        Ok(())
+    }
+
+    fn save_agents(&self, list: Vec<AcpAgent>) -> Result<(), IpcError> {
+        let json = serde_json::to_vec_pretty(&list)
+            .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?;
+        tandem_core::atomic::atomic_write(&self.acp_file, &json, Some(0o600))
+            .map_err(|e| IpcError::new(ErrorCode::Io, format!("Couldn't save the agent: {e}")))?;
+        if let Ok(mut a) = self.acp_agents.write() {
+            *a = list;
+        }
+        Ok(())
     }
 
     /// Applies the remote config's `engines` (F-EN-02 AC1).
@@ -160,8 +247,10 @@ impl EngineService {
             *l = Some(Instant::now());
         }
         let env = detect_env(login);
-        let engines = self.registry().all().to_vec();
-        let report = detect::detect(&engines, &env).await;
+        // Added ACP agents aren't looked for: each is where it was added.
+        let engines = self.base_registry().all().to_vec();
+        let mut report = detect::detect(&engines, &env).await;
+        with_agents(&mut report, &self.acp_agents());
         let installs = report
             .found
             .iter()
@@ -546,6 +635,35 @@ fn hook_bin() -> Option<PathBuf> {
     p.is_file().then_some(p)
 }
 
+/// The saved agents, or none when the file is missing or unreadable.
+fn read_agents(path: &Path) -> Vec<AcpAgent> {
+    std::fs::read(path)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Vec<AcpAgent>>(&b).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|a| a.spec().is_ok())
+        .collect()
+}
+
+/// Lists each agent whose program is still there as found.
+fn with_agents(report: &mut DetectionReport, agents: &[AcpAgent]) {
+    for agent in agents {
+        report.found.retain(|f| f.engine_id != agent.id);
+        report.missing.retain(|m| m != &agent.id);
+        if Path::new(&agent.program).is_file() {
+            report.found.push(detect::FoundEngine {
+                engine_id: agent.id.clone(),
+                path: agent.program.clone(),
+                version: None,
+                source: detect::FoundSource::Shell,
+            });
+        } else {
+            report.missing.push(agent.id.clone());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -638,5 +756,49 @@ mod tests {
             )
             .await
             .is_err());
+    }
+
+    /// F-EN-10: an added agent joins the registry as a Thread engine through
+    /// ACP, is found at the path it was added with, survives a restart, and
+    /// leaves when removed.
+    #[tokio::test]
+    async fn f_en_10_1_an_added_agent_is_a_listed_thread_engine_until_removed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = tandem_core::DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let program = dir.path().join("my-agent");
+        std::fs::write(&program, "#!/bin/sh\n").expect("program");
+        let providers = data.root().join("providers");
+        let svc = EngineService::new(store.clone(), EventBus::new(), providers.clone());
+        let agent = AcpAgent {
+            id: "acp-my-agent".into(),
+            label: "My agent".into(),
+            program: program.to_string_lossy().into_owned(),
+            args: vec!["acp".into()],
+            env: [("MY_AGENT_MODE".to_string(), "fast".to_string())].into(),
+        };
+        if let Ok(mut r) = svc.report.write() {
+            *r = Some(DetectionReport::default());
+        }
+        svc.add_acp_agent(agent.clone()).expect("add");
+        let spec = svc.get("acp-my-agent").expect("in the registry");
+        assert_eq!(spec.chat_adapter.as_deref(), Some("acp"));
+        assert!(svc.registry().get("acp-my-agent").is_some());
+        assert_eq!(svc.installed("acp-my-agent"), Some(program.clone()));
+        // The file is the user's only, and a new run reads it back.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(data.root().join(ACP_AGENTS_FILE))
+                .expect("file")
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+        let again = EngineService::new(store, EventBus::new(), providers);
+        assert_eq!(again.acp_agents(), vec![agent]);
+        svc.remove_acp_agent("acp-my-agent").expect("remove");
+        assert!(svc.get("acp-my-agent").is_none());
+        assert!(svc.installed("acp-my-agent").is_none());
     }
 }

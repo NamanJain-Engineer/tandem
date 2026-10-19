@@ -31,6 +31,9 @@ pub struct EngineView {
     pub unsupported_reason: Option<String>,
     /// The user's extra launch args (Settings › Engines).
     pub extra_args: Vec<String>,
+    /// An ACP agent the user added (F-EN-10): shown "via ACP".
+    #[serde(default)]
+    pub added: bool,
 }
 
 /// The install command for this OS, shown verbatim and typed into a visible
@@ -61,10 +64,14 @@ fn views(
                 .get(&s.id)
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default(),
+            added: s.vendor == ACP_VENDOR,
             spec: s.clone(),
         })
         .collect()
 }
+
+/// The vendor an added ACP agent's registry entry carries.
+const ACP_VENDOR: &str = tandem_engines::acp_agents::VENDOR;
 
 /// Installed engines first, in registry order otherwise (UI-10).
 #[tauri::command]

@@ -11,6 +11,17 @@ Vibezeo detects these coding agent CLIs on your login shell's `PATH` and shows h
 
 Antigravity CLI and Kiro CLI run in terminal panes only, as their vendors ship them. Kiro CLI can have several accounts, each in its own home; Antigravity CLI keeps one account per computer, because it stores its sign-in in the system keyring. Gemini CLI is still listed: Google serves it to paid API keys and Gemini Code Assist Standard or Enterprise, and personal Google accounts use Antigravity CLI.
 
+## Any ACP agent in Thread mode
+
+Agents that speak the Agent Client Protocol (ACP) can run threads. Cursor Agent, Gemini CLI, Grok and OpenCode do out of the box. To add another, open **Settings › Engines › ACP agents** and choose **Add an ACP agent…**:
+
+- **Name**, **Command** (a command on your `PATH`, or its full path), **Arguments** and **Environment variables**. **Goose** fills in `goose acp`.
+- **Test** starts the command, asks it to introduce itself, waits up to 10 seconds and stops it. You see its name, version and how it signs in. If it doesn't answer as an ACP agent, it says "Not an ACP agent" and why, and nothing is saved. **Add** runs the same test before saving.
+- The agent then appears in the Thread engine picker as "via ACP". Threads with it are part of Pro, like other engines beyond Claude Code and Codex. Agents you add run on this computer only, not in SSH or WSL folders.
+- The agent signs in its own way. Vibezeo never sees or keeps its keys: a variable whose value looks like a key or token is refused, and so are variables that change which home an engine uses or what a program loads.
+
+Vibezeo shows what each agent reports over ACP: messages, tool calls, approvals and models. Usage and status beyond that depend on the agent.
+
 ## One instructions file for every engine
 
 Each engine reads its own instructions file, so a repository's rules can drift apart or reach only one engine. **Instructions…** in a local folder's menu in the rail shows which file each installed engine reads, whether git tracks or ignores each file, and how each one differs from `AGENTS.md`.

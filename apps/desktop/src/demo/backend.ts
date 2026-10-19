@@ -181,6 +181,7 @@ const ENGINES: EngineView[] = [
   chatCapable: adapter !== null,
   unsupportedReason: null,
   extraArgs: [],
+  added: false,
 }));
 
 const MODELS: Record<string, ModelEntry[]> = {
@@ -1123,7 +1124,10 @@ export class DemoCore {
       case "review_unapprove":
         return this.review.unapprove(String(args?.key ?? ""));
       case "review_snooze":
-        return this.review.snooze(String(args?.key ?? ""), typeof args?.minutes === "number" ? args.minutes : null);
+        return this.review.snooze(
+          String(args?.key ?? ""),
+          typeof args?.minutes === "number" ? args.minutes : null,
+        );
       case "review_run_check":
         return this.review.runCheck(String(args?.key ?? ""));
       case "review_repo_get":
@@ -1145,7 +1149,11 @@ export class DemoCore {
       case "instructions_apply":
       case "instructions_undo":
       case "instructions_copy_to_worktrees":
-        throw { code: "unavailable", message: "The demo has no repository files to read. In the app, this lists each engine's instructions file." };
+        throw {
+          code: "unavailable",
+          message:
+            "The demo has no repository files to read. In the app, this lists each engine's instructions file.",
+        };
       // Engines' versions and processes are on your computer (F-EN-08).
       case "engine_versions":
       case "engine_background":
@@ -1154,9 +1162,19 @@ export class DemoCore {
       case "engine_pin":
       case "engine_rollback_command":
       case "engine_background_stop":
-        throw { code: "unavailable", message: "The demo has no installed engines to check, pin or roll back." };
+        throw {
+          code: "unavailable",
+          message: "The demo has no installed engines to check, pin or roll back.",
+        };
       case "skill_sync":
         throw { code: "unavailable", message: "The demo has no engines to install skills for." };
+      // ACP agents are commands on your computer (F-EN-10).
+      case "acp_agents_list":
+        return [];
+      case "acp_agent_test":
+      case "acp_agent_add":
+      case "acp_agent_remove":
+        throw { code: "unavailable", message: "The demo can't run commands. In the app, this adds any agent that speaks the Agent Client Protocol." };
       // Engines' session files are on your computer (F-TH-17).
       case "library_list":
         return { sessions: [], skipped: 0 };
@@ -1166,7 +1184,11 @@ export class DemoCore {
       case "library_continue":
       case "library_search":
       case "library_search_set":
-        throw { code: "unavailable", message: "The demo has no engine sessions to read. In the app, this lists your Claude Code and Codex sessions." };
+        throw {
+          code: "unavailable",
+          message:
+            "The demo has no engine sessions to read. In the app, this lists your Claude Code and Codex sessions.",
+        };
       // A web page can't hold other pages the way the app's browser does.
       case "ssh_host_add":
       case "ssh_connect":

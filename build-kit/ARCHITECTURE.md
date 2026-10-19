@@ -599,7 +599,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 #### Engines, accounts, usage [F-EN-*, F-AC-*, F-TH-08]
 | Command | Args | Returns | Errors | IDs |
 |---|---|---|---|---|
-| `engines_list` | `{hostId?}` | `[EngineView {spec, install?: EngineInstall {path, version?, source:"shell"\|"known"}, chatCapable, unsupportedReason?, extraArgs}]` (installed first; waits for the first detection when nothing is cached) | — | F-EN-02 |
+| `engines_list` | `{hostId?}` | `[EngineView {spec, install?: EngineInstall {path, version?, source:"shell"\|"known"}, chatCapable, unsupportedReason?, extraArgs, added}]` (`added`: an ACP agent the user added, F-EN-10; installed first; waits for the first detection when nothing is cached) | — | F-EN-02 |
 | `engines_detect` | `{hostId?}` → op | `DetectionReport` (also sent as `engines:detected`); re-reads the remote registry first | — | F-EN-01 |
 | `engines_report` | `{hostId?}` | `DetectionReport?` (the last report, cached across launches; the launch grid loads it after a webview reload) | — | F-EN-01, F-CD-13 |
 | `engines_install_command` | `{engineId}` | `InstallCommand {display, shell}` (`display` is the registry string verbatim; the UI types it into a visible terminal pane) | NotFound | F-EN-03 |
@@ -615,6 +615,10 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `engine_rollback_command` | `{engineId, version}` | `InstallCommand {display, shell}` (`npm install -g <package>@<version>` or the engine's own installer with the version; the UI shows it and types it into a visible pane, like Install) | Invalid (an install method that can't roll back, a malformed version), NotFound | F-EN-08 |
 | `engine_background` | — | `[BackgroundProcess {pid, engineId, started, command}]` (this user's processes of an installed engine with no terminal, outside the app's own process tree; `command` is the engine's name and, when the engine documents it, its subcommand; Linux and macOS) | Unavailable (Windows) | F-EN-08 |
 | `engine_background_stop` | `{pid, engineId, started}` (window `main` only) | — (lists again and signals only a process with the same pid, engine and start time: SIGTERM) | NotFound, PermissionDenied | F-EN-08 |
+| `acp_agents_list` | — | `[AcpAgent {id, label, program, args, env}]` (the agents the user added, from `$DATA/acp-agents.json`) | — | F-EN-10 |
+| `acp_agent_test` | `{input: AcpAgentInput {label, command, args, env}}` (window `main` only; up to 10 s) | `AgentInfo {name?, version?, protocolVersion, authMethods}` (the command, resolved on the login PATH unless absolute, runs in the user's home with the login env plus `env`; `initialize` only, then it's stopped; nothing saved) | Invalid (a label, argument or variable the rules refuse: a secret-shaped value, a reserved name), NotFound (no such command), Unavailable (stage `acp_test`: "Not an ACP agent: …") | F-EN-10 |
+| `acp_agent_add` | `{input: AcpAgentInput}` (window `main` only) | `AcpAgent` (the same test, then saved 0600 with the command's absolute path; it's in `engines_list` with `added: true`) | as `acp_agent_test`, LimitReached (16 agents) | F-EN-10 |
+| `acp_agent_remove` | `{id}` (window `main` only) | — | NotFound | F-EN-10 |
 | `models_list` | `{engineId, accountId?}` | `[ModelEntry {id, label, description, isDefault, effortLevels, contextWindow, source}]` (Automatic first) | — | F-TH-08 |
 | `accounts_list` | — | `[Account]` | — | F-AC-02 |
 | `accounts_begin_add` | `{engineId, label}` | `LoginSession {opId, paneId, accountId, action, reports}` (mini PTY in a fresh home; the sheet `pty_attach`es `paneId`; `reports` false = the engine can't say when it's signed in, so the user clicks Done); the end arrives as `accounts:login-finished` | LimitReached (Free: 1/engine), Unavailable (mac Keychain single-account), Conflict (name taken), EngineMissing | F-AC-01, F-AC-02 |
