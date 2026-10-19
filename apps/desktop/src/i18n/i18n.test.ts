@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import en from "./en.json";
 import { t } from "./index";
@@ -8,6 +10,13 @@ describe("i18n catalog", () => {
     for (const [key, message] of Object.entries(en)) {
       expect(() => new IntlMessageFormat(message, "en"), key).not.toThrow();
     }
+  });
+
+  // A key written twice parses, and the last one silently wins (D-866).
+  it("each key is in the catalog once", () => {
+    const raw = readFileSync(join(import.meta.dirname, "en.json"), "utf8");
+    const keys = [...raw.matchAll(/^\s*"((?:[^"\\]|\\.)*)"\s*:/gm)].map((m) => m[1]);
+    expect(keys.filter((k, i) => keys.indexOf(k) !== i)).toEqual([]);
   });
 
   it("formats plurals", () => {

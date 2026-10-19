@@ -2980,7 +2980,7 @@
   "dictate.setup.release": "Now release it…",
   "dictate.setup.detected": "Key detected",
   "dictate.setup.fnHint": "Nothing yet? Some keyboards don't send Fn: choose Control+Option above.",
-  "dictate.setup.fnFallback": "Fn didn't reach Vibezeo, so your Dictate key is now Control+Option. Press it to try.",
+  "dictate.setup.fnFellBack": "Fn didn't reach Vibezeo, so your Dictate key is now Control+Option. Press it to try.",
   "dictate.setup.fnAgain": "Use Fn again",
   "dictate.globe.label": "🌐 key",
   "dictate.globe.now": "Press 🌐 key to: {usage}",

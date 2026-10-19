@@ -6,7 +6,8 @@ import { Composer, UiProvider, type ComposerHandle } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useDictate, watchDictate } from "../../stores/dictate";
-import { fakeBackend, resetStores } from "../../test/fakeBackend";
+import { BOOT, fakeBackend, resetStores } from "../../test/fakeBackend";
+import { useBoot } from "../shell/useBoot";
 import { bindingFrom, keyName, presets } from "./binding";
 import { DictateExtras, DictateHomeCard, MicSelect, ShortcutField } from "./DictatePage";
 import { StatusBar } from "../shell/StatusBar";
@@ -15,7 +16,7 @@ import { AutoEnhanceControl, FormattingControl } from "./EnhanceControls";
 import { useSettings } from "../../stores/settings";
 import { useSession } from "../../stores/session";
 import { useUi } from "../../stores/ui";
-import { Permissions, TryIt } from "./DictateSetup";
+import { Permissions, ShortcutChoice, TryIt } from "./DictateSetup";
 import { GlobeKey } from "./GlobeKey";
 import { DictionarySheet, emptyRule } from "./DictionarySheet";
 import { HistorySheet } from "./HistorySheet";
@@ -778,6 +779,22 @@ describe("macOS Fn key (F-DI-02, F-DI-11, D-524)", () => {
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "dictate_set_binding")?.args).toEqual({ binding: "Fn", mode: "hold" }),
     );
+  });
+
+  it("F-DI-02 Use Control+Option and the notice after Fn went unheard have their own words (D-866)", () => {
+    fakeBackend({ dictate_status: () => MAC });
+    useBoot.setState({ boot: { ...BOOT, platform: "macos" } });
+    useDictate.setState({
+      status: { ...MAC, fnFallback: true, hold: { binding: "Ctrl+Alt", label: "⌃⌥" } },
+    });
+    wrap(
+      <>
+        <ShortcutChoice />
+        <TryIt />
+      </>,
+    );
+    expect(screen.getByRole("button", { name: "Fn not working? Use Control+Option" })).toBeTruthy();
+    expect(screen.getByTestId("dictate-fn-fallback").textContent).toContain("Fn didn't reach Vibezeo");
   });
 
   it("F-DI-11 the 🌐 key changes only after consent, and can be put back", async () => {
