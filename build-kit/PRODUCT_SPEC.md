@@ -1386,6 +1386,34 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 3. Neither new engine appears as a Thread engine, in the teammate engine picker, or in any headless run.
 4. When Codex reports its models, they lead the picker, before the catalog's; when it reports none, the picker lists the catalog.
 
+#### F-EN-10 Any ACP agent as a thread engine (P2)
+**Story:** An agent I use speaks the Agent Client Protocol, but Vibezeo doesn't list it. I add it by its command and use it in Thread mode, signed in the agent's own way.
+
+**Behavior:**
+- **Built-in ACP mode**, from the vendor's documentation (checked 16 October 2026, D-2506): Gemini CLI (`gemini --acp`) becomes a Thread engine beside Cursor, Grok and OpenCode. Kiro CLI documents `kiro-cli acp` too, but stays a terminal engine as F-EN-09 decided until the owner says otherwise; a user can still add it below. Antigravity CLI gets one once its ACP mode ships.
+- **Settings › Engines › ACP agents** (UI-163) lists the agents the user added, and **Add an ACP agent…** takes:
+  - a label (1–40 characters);
+  - a command: a name on the login shell's PATH or an absolute path;
+  - arguments;
+  - environment variables.
+  A **Goose** preset fills in `goose acp`.
+- **Test** runs the command in the user's home folder with the login environment plus the given variables, sends `initialize`, and waits up to 10 s. It shows the agent's name and version, its protocol version and its sign-in methods, then stops the process.
+  - No answer, a crash, an answer that isn't the Agent Client Protocol, or a protocol version Vibezeo doesn't speak shows "Not an ACP agent" with the reason, and nothing is saved.
+  - **Add** runs the same test again and saves only when it passes.
+- **Saved agents** live in the `acp_agents` setting: label, the command resolved to an absolute path when added, arguments and environment. They appear in the Thread engine picker and the launch sheet's Thread engines, labelled "via ACP". **Remove** deletes one; its threads stay readable and say the engine is gone.
+- **Sign-in is the agent's own.** Vibezeo never reads, stores or proxies an agent's credentials:
+  - an environment value that looks like a secret (the redactor's patterns) is refused, with "Keep keys in the agent's own sign-in";
+  - a variable that steers other engines or what a process loads is refused, as in Pin (D-2503);
+  - an agent that answers `session/new` with an auth error shows its sign-in methods and offers to open a terminal pane with its command.
+- **Plan:** Thread mode on Free runs Claude Code and Codex only (§3.2), so an added agent shows the plan's limit there, as other engines do. Adding and testing one is free.
+- ACP shows what each agent exposes and no more; no transcript, usage or status beyond its updates.
+
+**Acceptance:**
+1. Adding the fake engine's ACP mode by its absolute command passes the test, shows its name and version, and appears in the Thread engine picker labelled "via ACP"; a thread with it on Pro runs a turn.
+2. A command that doesn't answer `initialize` within 10 s shows "Not an ACP agent", and nothing is saved.
+3. On Free, the added agent shows the plan's limit in the Thread engine picker, as other non-included engines do.
+4. An environment value matching a secret pattern, or a reserved variable, is refused before anything runs.
+
 ### 4.5 AC: Accounts and usage
 
 #### F-AC-01 Provider homes (P0)
