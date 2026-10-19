@@ -206,6 +206,7 @@ pub(crate) async fn login_env(
         home: Some(home.to_path_buf()),
         providers_root: terminals.engines.homes.root().to_path_buf(),
         status: None,
+        pinned: false,
     };
     let spec = launch::terminal_launch(&req)
         .map_err(|e| IpcError::new(ErrorCode::Unavailable, e.to_string()))?;

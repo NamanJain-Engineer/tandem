@@ -146,6 +146,11 @@ pub struct RoutinesService {
     host: OnceLock<Arc<dyn RoutineHost>>,
     /// Runs in flight.
     runs: StdMutex<HashMap<String, tokio::task::JoinHandle<()>>>,
+    /// The GUI holds `run/app.lock` (or couldn't take it and runs anyway).
+    /// Until then a headless pass may be running work (F-RT-06): the GUI
+    /// neither ticks Night Shift runs nor settles task attempts.
+    locked: std::sync::atomic::AtomicBool,
+    lock_ready: tokio::sync::Notify,
 }
 
 fn store_err(e: StoreError) -> IpcError {
@@ -178,7 +183,32 @@ impl RoutinesService {
             headless: std::sync::atomic::AtomicBool::new(runner == Runner::Headless),
             host: OnceLock::new(),
             runs: StdMutex::default(),
+            locked: std::sync::atomic::AtomicBool::new(false),
+            lock_ready: tokio::sync::Notify::new(),
         })
+    }
+
+    /// Whether this GUI holds the app lock (F-RT-06).
+    pub fn holds_lock(&self) -> bool {
+        self.locked.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Waits until this GUI holds the app lock (a headless pass running
+    /// work has ended).
+    pub async fn wait_lock(&self) {
+        loop {
+            let notified = self.lock_ready.notified();
+            if self.holds_lock() {
+                return;
+            }
+            notified.await;
+        }
+    }
+
+    fn mark_locked(&self) {
+        self.locked
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.lock_ready.notify_waiters();
     }
 
     /// `--run-routines` runs the same service headless.
@@ -737,6 +767,7 @@ impl RoutinesService {
                 }
             };
             let _held = lock;
+            me.mark_locked();
             me.settle().await;
             me.changed();
             tandem_core::supervisor::supervise_task("scheduler/routines", sup, None, move || {
@@ -1119,6 +1150,25 @@ mod tests {
             f.clock.advance(scheduler::TICK);
         }
         started
+    }
+
+    #[tokio::test]
+    async fn f_rt_06_9_the_gui_waits_for_the_app_lock_before_night_work() {
+        let f = fixture("2026-10-15T09:00:00Z", Runner::Gui).await;
+        assert!(!f.svc.holds_lock());
+        let svc = f.svc.clone();
+        let waiter = tokio::spawn(async move { svc.wait_lock().await });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(
+            !waiter.is_finished(),
+            "waits while a headless pass holds it"
+        );
+        f.svc.mark_locked();
+        tokio::time::timeout(Duration::from_secs(2), waiter)
+            .await
+            .expect("woken")
+            .expect("joined");
+        assert!(f.svc.holds_lock());
     }
 
     #[tokio::test]

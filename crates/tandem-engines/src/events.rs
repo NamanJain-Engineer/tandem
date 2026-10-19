@@ -243,6 +243,21 @@ pub enum ErrorStage {
     Unknown,
 }
 
+/// Codes that mean the engine itself broke (F-EN-08 AC3): it couldn't
+/// start, or its process died during a turn.
+const ENGINE_FAULTS: &[&str] = &["spawn_failed", "engine_exited"];
+
+impl ErrorStage {
+    /// Whether an error with this stage and code says the engine itself is
+    /// broken, and so counts against its version (F-EN-08, D-2501). An
+    /// engine's generic error result, an API overload, being offline or
+    /// signed out, a model the account can't use or a tool's own failure
+    /// don't: the engine reported them, so it works.
+    pub fn engine_fault(self, code: &str) -> bool {
+        self == ErrorStage::Spawn || ENGINE_FAULTS.contains(&code)
+    }
+}
+
 /// The button an error offers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]

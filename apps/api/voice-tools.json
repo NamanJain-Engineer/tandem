@@ -1128,6 +1128,54 @@
         "properties": {},
         "additionalProperties": false
       }
+    },
+    {
+      "name": "review_next",
+      "group": "review",
+      "description": "Move to the next piece of finished work to review, riskiest first, and get what to say about it: who, which branch, what it said, the files changed, what it touches and the check. Call it when the user asks what's ready or says next.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "review_send_back",
+      "group": "review",
+      "description": "Send the user's review comment to the agent whose work is being reviewed. Rewrite what they said into a clear instruction first.",
+      "confirm": false,
+      "free_text": [
+        "text"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "The review comment."
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "review_approve",
+      "group": "review",
+      "description": "Approve the work being reviewed, exactly as it was described. It can't merge; merging waits for the user at the desk.",
+      "confirm": false,
+      "free_text": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
     }
   ]
 }

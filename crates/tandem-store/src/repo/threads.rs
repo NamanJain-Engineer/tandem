@@ -1293,6 +1293,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn f_rt_06_10_launch_leaves_a_headless_runs_thread_working_until_the_lock() {
+        use crate::repo::restore::{settle_leftovers, settle_panes_blocking};
+        let (_dir, store) = store();
+        // A headless pass is driving `night`; `crashed` was left by a crash.
+        let night = insert(&store, new("claude")).await.expect("night");
+        let crashed = insert(&store, new("claude")).await.expect("crashed");
+        let turn = TurnId::new();
+        start_turn(&store, &night.id, &turn, "claude", None)
+            .await
+            .expect("turn");
+        for id in [&night.id, &crashed.id] {
+            set_state(&store, id, ThreadState::Working)
+                .await
+                .expect("working");
+        }
+        // Launch, with the lock held elsewhere: nothing about threads changes.
+        let st = store.clone();
+        let (_, left) = tokio::task::spawn_blocking(move || settle_panes_blocking(&st))
+            .await
+            .expect("join")
+            .expect("panes");
+        assert_eq!(left.threads.len(), 2);
+        assert_eq!(
+            get(&store, &night.id)
+                .await
+                .expect("get")
+                .expect("th")
+                .state,
+            ThreadState::Working
+        );
+        assert_eq!(
+            turns(&store, &night.id).await.expect("turns")[0].state,
+            TurnState::Running
+        );
+        // Meanwhile the pass finishes its turn, and this app starts its own.
+        end_turn(&store, &turn, TurnState::Completed, 0)
+            .await
+            .expect("end");
+        set_state(&store, &night.id, ThreadState::Done)
+            .await
+            .expect("done");
+        let mine = insert(&store, new("claude")).await.expect("mine");
+        set_state(&store, &mine.id, ThreadState::Working)
+            .await
+            .expect("mine working");
+        // The lock is this app's: only what's still left over settles.
+        assert_eq!(settle_leftovers(&store, left).await.expect("settle"), 1);
+        let state = |id: ThreadId| {
+            let store = store.clone();
+            async move { get(&store, &id).await.expect("get").expect("th").state }
+        };
+        assert_eq!(state(night.id.clone()).await, ThreadState::Done);
+        assert_eq!(state(crashed.id.clone()).await, ThreadState::Interrupted);
+        assert_eq!(state(mine.id.clone()).await, ThreadState::Working);
+        assert_eq!(
+            turns(&store, &night.id).await.expect("turns")[0].state,
+            TurnState::Completed
+        );
+    }
+
+    #[tokio::test]
     async fn f_th_10_plan_revisions_are_numbered_per_thread() {
         let (_dir, store) = store();
         let a = insert(&store, new("claude")).await.expect("a");

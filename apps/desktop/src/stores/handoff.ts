@@ -1,5 +1,13 @@
 import { create } from "zustand";
-import type { EngineView, HandoffBrief, HandoffPlace, HandoffResult, HandoffThread, IpcError } from "@tandem/protocol";
+import type {
+  EngineView,
+  HandoffBrief,
+  HandoffPlace,
+  HandoffResult,
+  HandoffThread,
+  IpcError,
+  LibraryOpened,
+} from "@tandem/protocol";
 import { invoke } from "../ipc/invoke";
 import { place, type Outcome } from "./launch";
 import { useLayout } from "./layout";
@@ -14,6 +22,8 @@ export type HandoffSource = {
   /** `agent` or `terminal`. */
   kind: string;
   engineId: string | null;
+  /** A session library session (F-TH-17): its key; `paneId` is empty. */
+  libraryKey?: string;
 };
 
 type HandoffState = {
@@ -53,13 +63,15 @@ export function defaultTarget(engines: EngineView[], sourceEngine: string | null
  * (up to 2 minutes each). */
 const BRIEF_TIMEOUT_MS = 270_000;
 
-export async function generateBrief(paneId: string, engineId: string): Promise<Outcome<HandoffBrief>> {
+export async function generateBrief(source: HandoffSource, engineId: string): Promise<Outcome<HandoffBrief>> {
   try {
-    const brief = await invoke<HandoffBrief>(
-      "handoff_brief",
-      { paneId, engineId, accountId: null },
-      { timeoutMs: BRIEF_TIMEOUT_MS },
-    );
+    const brief = source.libraryKey
+      ? await invoke<HandoffBrief>("library_brief", { key: source.libraryKey })
+      : await invoke<HandoffBrief>(
+          "handoff_brief",
+          { paneId: source.paneId, engineId, accountId: null },
+          { timeoutMs: BRIEF_TIMEOUT_MS },
+        );
     return { ok: true, value: brief };
   } catch (e) {
     return { ok: false, error: e as IpcError };
@@ -90,6 +102,33 @@ export async function startHandoff(
   }
   await showHandoff(source.paneId, result, where);
   return { ok: true, value: result };
+}
+
+/** Continues a library session (F-TH-17) with `engineId` in its folder,
+ * and shows the new pane. */
+export async function continueLibrarySession(
+  key: string,
+  engineId: string,
+  brief: string,
+): Promise<Outcome<LibraryOpened>> {
+  let opened: LibraryOpened;
+  try {
+    opened = await invoke<LibraryOpened>("library_continue", { key, engineId, accountId: null, brief });
+  } catch (e) {
+    return { ok: false, error: e as IpcError };
+  }
+  await showOpened(opened);
+  return { ok: true, value: opened };
+}
+
+/** Shows a pane the session library opened: in its tab, which is selected. */
+export async function showOpened(opened: LibraryOpened): Promise<void> {
+  // Resume may have added the session's folder as a workspace.
+  const workspaces = useWorkspaces.getState();
+  if (!workspaces.list.some((w) => w.id === opened.workspaceId)) await workspaces.refresh();
+  useWorkspaces.getState().select(opened.workspaceId);
+  await showHandoff("", { ...opened, laneBranch: null, sourceClosed: false }, "same");
+  useUi.getState().setMode("code");
 }
 
 /** Hands off to a new Thread in the source's folder and opens it in Thread

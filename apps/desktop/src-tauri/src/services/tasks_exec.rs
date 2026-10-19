@@ -893,7 +893,7 @@ impl TaskExecService {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use tandem_core::clock::SystemClock;
@@ -902,21 +902,21 @@ mod tests {
 
     /// Sessions finish when `release` is set (or at once with `instant`).
     #[derive(Default)]
-    struct FakeHost {
-        pro: bool,
-        signed_out: bool,
-        instant: bool,
-        release: AtomicBool,
+    pub(crate) struct FakeHost {
+        pub(crate) pro: bool,
+        pub(crate) signed_out: bool,
+        pub(crate) instant: bool,
+        pub(crate) release: AtomicBool,
         /// Lane creation takes this long (Stop during setup).
-        lane_ms: u64,
-        lanes: StdMutex<Vec<WorkspaceId>>,
-        removed: StdMutex<Vec<WorkspaceId>>,
-        sessions: StdMutex<Vec<SessionStart>>,
-        stopped: StdMutex<Vec<ThreadId>>,
-        tracker: OnceLock<TaskStore>,
-        spawns: AtomicUsize,
+        pub(crate) lane_ms: u64,
+        pub(crate) lanes: StdMutex<Vec<WorkspaceId>>,
+        pub(crate) removed: StdMutex<Vec<WorkspaceId>>,
+        pub(crate) sessions: StdMutex<Vec<SessionStart>>,
+        pub(crate) stopped: StdMutex<Vec<ThreadId>>,
+        pub(crate) tracker: OnceLock<TaskStore>,
+        pub(crate) spawns: AtomicUsize,
         /// The workspace's kind (`local` when unset).
-        kind: Option<&'static str>,
+        pub(crate) kind: Option<&'static str>,
     }
 
     #[async_trait]

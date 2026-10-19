@@ -216,6 +216,15 @@
     "enabledWhen": "workspace_open"
   },
   {
+    "id": "library.open",
+    "category": "navigation",
+    "mac": null,
+    "pc": null,
+    "pcTerminal": null,
+    "inText": false,
+    "enabledWhen": "always"
+  },
+  {
     "id": "workspace.launch",
     "category": "workspace",
     "mac": "Mod+Shift+L",

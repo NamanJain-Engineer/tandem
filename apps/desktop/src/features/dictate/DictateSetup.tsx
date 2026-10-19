@@ -79,7 +79,7 @@ function FnFallback() {
   return (
     <Callout tone="info">
       <span className="flex flex-col items-start gap-2" data-testid="dictate-fn-fallback">
-        {t("dictate.setup.fnFallback")}
+        {t("dictate.setup.fnFellBack")}
         <Button size="sm" variant="secondary" onClick={back} data-testid="dictate-fn-again">
           {t("dictate.setup.fnAgain")}
         </Button>
@@ -175,7 +175,7 @@ export function Permissions() {
   );
 }
 
-function ShortcutChoice() {
+export function ShortcutChoice() {
   const platform = useBoot((s) => s.boot?.platform ?? "linux");
   const status = useDictate((s) => s.status);
   const p = presets(platform);

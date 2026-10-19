@@ -10,6 +10,7 @@ import { RemotePage } from "./RemotePage";
 import { PluginsPage } from "../plugins/PluginsPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { RunawayGuardControl } from "./RunawayGuard";
+import { SandboxSetting } from "./SandboxSetting";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
 import { UpdatesPanel } from "../updates/UpdatesPanel";
 import { RunSetupAgain } from "../onboarding/RunSetupAgain";
@@ -34,6 +35,7 @@ import {
   NumberControl,
   PolicyBoolControl,
   SegmentControl,
+  SessionSearchControl,
   SelectControl,
   ShellIntegrationControl,
   TextControl,
@@ -276,6 +278,20 @@ export function settingsPages(platform: string, routines = false, accounts = fal
           ),
         },
         {
+          id: "night_shift_summary_at",
+          label: t("settings.nightSummary"),
+          description: t("settings.nightSummary.desc"),
+          keywords: ["night shift", "summary", "morning"],
+          control: (ids) => (
+            <TextControl
+              k="night_shift_summary_at"
+              ids={ids}
+              placeholder="08:00"
+              label={t("settings.nightSummary")}
+            />
+          ),
+        },
+        {
           id: "notify_attention",
           label: mac ? t("settings.notify.bounce") : t("settings.notify.flash"),
           keywords: ["dock", "bounce", "taskbar", "flash"],
@@ -455,7 +471,15 @@ export function settingsPages(platform: string, routines = false, accounts = fal
       label: t("settings.engines"),
       subtitle: t("settings.engines.subtitle"),
       keywords: ["engines", "agents", "claude", "codex", "install", "path", "arguments", "detect"],
-      rows: [],
+      rows: [
+        {
+          id: "agent_sandbox",
+          label: t("sandbox.setting"),
+          description: t("sandbox.setting.desc"),
+          keywords: ["sandbox", "bubblewrap", "bwrap", "isolate", "security"],
+          control: (ids) => <SandboxSetting ids={ids} />,
+        },
+      ],
       extra: <EnginesPage />,
     },
     {
@@ -967,6 +991,13 @@ export function settingsPages(platform: string, routines = false, accounts = fal
               },
             ]
           : []),
+        {
+          id: "session_search",
+          label: t("settings.sessionSearch"),
+          description: t("settings.sessionSearch.desc"),
+          keywords: ["session", "library", "search", "index", "history"],
+          control: (ids) => <SessionSearchControl ids={ids} label={t("settings.sessionSearch")} />,
+        },
         {
           id: "dictate_share_hints",
           label: t("settings.dictionaryHints"),

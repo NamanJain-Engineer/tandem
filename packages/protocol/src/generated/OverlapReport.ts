@@ -14,4 +14,9 @@ files: number, siblings: Array<SiblingOverlap>, forecast: Forecast,
 /**
  * Uncommitted changes in this worktree, which the forecast can't see.
  */
-uncommitted: number, };
+uncommitted: number, 
+/**
+ * F-WT-10: changed files not checked for symbols (other languages,
+ * too big, past the cap).
+ */
+unparsed: number, };

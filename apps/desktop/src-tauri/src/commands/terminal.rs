@@ -95,6 +95,21 @@ pub(crate) async fn create_pane(
     engine_id: Option<String>,
     account_id: Option<tandem_core::ids::AccountId>,
 ) -> Result<PaneRecord, IpcError> {
+    create_pane_with(state, tab_id, kind, cwd, engine_id, account_id, true).await
+}
+
+/// [`create_pane`]; `pick_account: false` leaves an agent pane with no
+/// account when none is given (a library session in the engine's own home,
+/// F-TH-17), instead of the workspace's or the engine's default.
+pub(crate) async fn create_pane_with(
+    state: &AppState,
+    tab_id: &TabId,
+    kind: &str,
+    cwd: Option<String>,
+    engine_id: Option<String>,
+    account_id: Option<tandem_core::ids::AccountId>,
+    pick_account: bool,
+) -> Result<PaneRecord, IpcError> {
     match kind {
         "terminal" => {}
         "agent" => {
@@ -126,14 +141,14 @@ pub(crate) async fn create_pane(
         .as_deref()
         .and_then(|id| state.terminals.engines.get(id));
     let account_id = match &engine {
-        Some(engine) => {
+        Some(engine) if pick_account || account_id.is_some() => {
             state
                 .terminals
                 .engines
                 .account_for_new_session(engine, &pane.workspace_id, account_id.as_ref())
                 .await?
         }
-        None => account_id,
+        _ => account_id,
     };
     if let Some(account) = account_id {
         panes::set_account(&state.store, &pane.id, &account).await?;
@@ -185,6 +200,7 @@ pub async fn close_pane(state: &AppState, pane_id: &PaneId) -> Result<(), IpcErr
     let _ = state.terminals.pty.kill(pane_id.as_str());
     state.terminals.status.unwatch(pane_id.as_str());
     state.terminals.end_tasks_session(pane_id.as_str());
+    state.terminals.forget_sandbox(pane_id.as_str());
     // A browser pane's page goes with it (one moved to the sidebar has
     // another id by now).
     if let Some(browser) = state.browser.get() {

@@ -36,7 +36,9 @@ fn default_channels(kind: NotificationKind) -> (bool, bool) {
         | NotificationKind::Failed
         | NotificationKind::RoutineReady
         | NotificationKind::UsageForecast
-        | NotificationKind::Runaway => (true, false),
+        | NotificationKind::Runaway
+        | NotificationKind::NightShift
+        | NotificationKind::Sandbox => (true, false),
         _ => (false, false),
     }
 }
@@ -47,7 +49,9 @@ fn type_key(kind: NotificationKind) -> &'static str {
         NotificationKind::Approval | NotificationKind::Question => "approval",
         NotificationKind::Done => "done",
         NotificationKind::Failed => "failed",
-        NotificationKind::RoutineReady | NotificationKind::RoutineChanged => "routines",
+        NotificationKind::RoutineReady
+        | NotificationKind::RoutineChanged
+        | NotificationKind::NightShift => "routines",
         NotificationKind::TaskReview => "tasks",
         NotificationKind::UsageForecast => "usage",
         NotificationKind::Runaway => "runaway",
@@ -339,6 +343,21 @@ impl NotificationService {
         .await;
     }
 
+    /// The Night Shift's morning summary (F-RT-06); it opens the task.
+    pub async fn raise_night_shift(&self, title: String, body: String, issue_id: String) {
+        let key = SessionKey(format!("night:{title}"));
+        let source = SourceRef::Task { issue_id };
+        self.raise(
+            NotificationKind::NightShift,
+            title,
+            body,
+            source,
+            &key,
+            None,
+        )
+        .await;
+    }
+
     /// A runaway guard limit tripped (F-AC-09), through the usual channels.
     pub async fn raise_runaway(&self, title: String, body: String, source: SourceRef) {
         let key = source
@@ -346,6 +365,21 @@ impl NotificationService {
             .unwrap_or_else(|| SessionKey(format!("runaway:{title}")));
         self.raise(NotificationKind::Runaway, title, body, source, &key, None)
             .await;
+    }
+
+    /// The agent sandbox couldn't wrap an agent pane while it's on
+    /// (F-TL-11): the pane started without it.
+    pub async fn raise_sandbox(&self, pane_id: String, reason: String) {
+        let key = SessionKey(format!("sandbox:{pane_id}"));
+        self.raise(
+            NotificationKind::Sandbox,
+            "An agent started without the sandbox".into(),
+            reason,
+            SourceRef::Pane { pane_id },
+            &key,
+            None,
+        )
+        .await;
     }
 
     /// Sets the OS notifier when there's no window (headless routines).

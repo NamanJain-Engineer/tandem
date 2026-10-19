@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-library-continue"
+description = "Enables the library_continue command without any pre-configured scope."
+commands.allow = ["library_continue"]
+
+[[permission]]
+identifier = "deny-library-continue"
+description = "Denies the library_continue command without any pre-configured scope."
+commands.deny = ["library_continue"]

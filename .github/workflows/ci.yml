@@ -274,7 +274,7 @@ jobs:
           cache-on-failure: true
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Linux build and E2E dependencies
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev webkit2gtk-driver xvfb libayatana-appindicator3-dev librsvg2-dev libasound2-dev libxdo-dev libdbus-1-dev dbus xclip openbox
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev webkit2gtk-driver xvfb libayatana-appindicator3-dev librsvg2-dev libasound2-dev libxdo-dev libdbus-1-dev dbus xclip openbox bubblewrap
       - uses: taiki-e/install-action@v2
         with: { tool: tauri-driver }
       - run: pnpm install --frozen-lockfile
