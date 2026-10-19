@@ -38,12 +38,13 @@ services:
     image: stripe/stripe-mock:v0.197.0
     ports:
       - "12111:12111"
+    # A real request (any test key works). Compose v2, which CI runs, fails
+    # `up --wait` on a disabled healthcheck: "has no healthcheck configured".
     healthcheck:
-      test: ["CMD", "stripe-mock", "-http-port", "12111"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "--header=Authorization: Bearer sk_test_123", "http://127.0.0.1:12111/v1/customers"]
       interval: 5s
       timeout: 3s
-      retries: 10
-      disable: true
+      retries: 20
 
   # The SSH host for remote workspaces (F-RM-01, MILESTONES M14). Not started
   # by `pnpm infra:up`; run scripts/gen-ssh-fixture.sh first, then
