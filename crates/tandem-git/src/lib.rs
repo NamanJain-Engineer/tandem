@@ -8,6 +8,7 @@ pub mod instructions;
 pub mod lanes;
 pub mod ops;
 pub mod overlap;
+pub mod queue;
 pub mod repo;
 pub mod setup;
 pub use tandem_core::lanes::slug;

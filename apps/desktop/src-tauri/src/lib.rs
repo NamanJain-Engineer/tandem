@@ -175,6 +175,15 @@ macro_rules! app_commands {
             commands::lanes::lane_runtime,
             commands::lanes::lane_previews,
             commands::lanes::lane_preview_start,
+            commands::lanes::merge_queue_plan,
+            commands::lanes::merge_queue_start,
+            commands::lanes::merge_queue_get,
+            commands::lanes::merge_queue_stop,
+            commands::lanes::merge_queue_undo,
+            commands::lanes::pr_checks_allow,
+            commands::lanes::lane_checks,
+            commands::lanes::lane_check_failure,
+            commands::lanes::lane_review_comments,
             commands::lanes::worktree_env_check,
             commands::lanes::lane_create_pr,
             commands::lanes::lane_remove,
@@ -1255,6 +1264,8 @@ pub fn run() {
                 let state = handle.state::<AppState>();
                 state.terminals.shutdown(&state.data.scrollback());
                 state.remote.shutdown();
+                // F-WT-07: a landing's check doesn't outlive the app.
+                services::merge_queue::shutdown();
             }
         }),
         Err(err) => {
