@@ -53,6 +53,7 @@ pub mod plugins;
 pub mod ports;
 pub mod pr_checks;
 pub mod prompts;
+pub mod radar;
 pub mod recall;
 pub mod remote;
 pub mod remote_files;

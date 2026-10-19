@@ -172,6 +172,8 @@
     "allow-lane-checks",
     "allow-lane-check-failure",
     "allow-lane-review-comments",
+    "allow-lane-radar",
+    "allow-lane-radar-note",
     "allow-worktree-env-check",
     "allow-lane-create-pr",
     "allow-lane-remove",

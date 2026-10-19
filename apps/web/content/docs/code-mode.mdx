@@ -124,10 +124,22 @@ When it finishes, each finding on a line the diff shows becomes a comment on tha
 
 **Check overlap…** lists the other worktrees of the same repository that changed any of the same files, uncommitted changes included, and forecasts what merging into the repository's current branch would do: **No conflicts expected**, or the files that would conflict. The forecast merges in memory with your own git (version 2.38 or later), so your checkout, its branch and its files aren't touched. It covers committed work only, and says how many uncommitted changes it left out. **Merge into…** shows the same forecast before you confirm.
 
+### Intent radar
+
+Git only notices two agents' changes clashing when they touch the same lines. The intent radar looks at the code itself: for each worktree, Vibezeo reads the TypeScript, Rust and Python files it changed and notes which functions, methods, classes, structs and other definitions it added, changed or removed, and which names its new lines use. It updates after each agent turn (when a checkpoint is saved) and whenever you open **Check overlap…**. It only reads files; nothing in the worktree changes.
+
+Two worktrees of the same repository share a symbol when both changed it, or when one renamed, removed or changed something the other's new code uses. One agent renames `Session` while another adds a call to `Session.refresh`, for example.
+
+- **Check overlap…** lists the shared symbols next to the shared files, with what each side did: "renamed or removed here, used there".
+- A worktree that shares symbols shows **Shares Session** (or how many) on its rail row; click it to check the overlap.
+- When an agent's turn makes two worktrees share something new, a notice names both branches and the symbols. **Warn both agents** types a short note into each worktree's agent, naming what the other worktree did. Nothing is typed until you click.
+
+Files in other languages, files over 512 KB, and anything past a worktree's first 300 changed files aren't checked, and Check overlap… says how many. Short names (under three letters) aren't matched.
+
 ### Merge requests on GitLab
 
 When a worktree's `origin` remote is on a host whose name contains `gitlab`, **Create pull request** becomes **Create merge request** and runs `glab mr create` in a terminal in the worktree; it needs the GitLab CLI (`glab`) installed and signed in. Other remotes use `gh pr create`, which needs the GitHub CLI (`gh`).
 
 ### Not available everywhere
 
-Worktrees aren't available in WSL folders yet. In folders on SSH hosts, worktrees don't have setup, ports and environment, previews, the overlap check or merge forecast, landing, pull request checks, or merge requests: **Create pull request** runs the host's own `gh`.
+Worktrees aren't available in WSL folders yet. In folders on SSH hosts, worktrees don't have setup, ports and environment, previews, the overlap check or merge forecast, landing, pull request checks, the intent radar, or merge requests: **Create pull request** runs the host's own `gh`.

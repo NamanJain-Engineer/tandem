@@ -11,6 +11,7 @@ pub mod overlap;
 pub mod queue;
 pub mod repo;
 pub mod setup;
+pub mod symbols;
 pub use tandem_core::lanes::slug;
 pub mod types;
 

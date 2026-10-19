@@ -184,6 +184,8 @@ macro_rules! app_commands {
             commands::lanes::lane_checks,
             commands::lanes::lane_check_failure,
             commands::lanes::lane_review_comments,
+            commands::lanes::lane_radar,
+            commands::lanes::lane_radar_note,
             commands::lanes::worktree_env_check,
             commands::lanes::lane_create_pr,
             commands::lanes::lane_remove,
@@ -674,6 +676,13 @@ fn spawn_background(state: &AppState) {
     let telemetry = state.telemetry.clone();
     tauri::async_runtime::spawn(telemetry.clone().run_uploader());
     tauri::async_runtime::spawn(state.audit.clone().run());
+    // F-WT-10: the intent radar follows checkpoints.
+    tauri::async_runtime::spawn(crate::services::radar::run(
+        state.store.clone(),
+        state.data.clone(),
+        state.bus.clone(),
+        state.terminals.clone(),
+    ));
     tauri::async_runtime::spawn(crate::services::hosted::run(
         state.entitlements.clone(),
         state.store.clone(),

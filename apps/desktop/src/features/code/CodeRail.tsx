@@ -35,6 +35,7 @@ import { useRemote } from "../../stores/remote";
 import { RailList } from "../rail/RailList";
 import { topLevel, useWorktrees, worktreesOf } from "../../stores/worktrees";
 import { useChecksPolling } from "./PullRequestChecks";
+import { useIntentRadar } from "./IntentRadar";
 import { WorktreeRow, usePreviewPolling } from "./Worktrees";
 import { browserSources, paneTitles } from "./titles";
 import { useBrowser } from "../../stores/browser";
@@ -308,6 +309,8 @@ export function CodeRail() {
   usePreviewPolling(localWorktrees, !collapsed);
   // F-WT-08: their pull requests' checks (no gh for a repository not allowed).
   useChecksPolling(localWorktrees, !collapsed);
+  // F-WT-10: radar marks, and the notice when two worktrees newly share symbols.
+  useIntentRadar(localWorktrees, !collapsed);
 
   const onWidth = (w: number, done: boolean) => {
     if (done && w < COLLAPSE_BELOW) {

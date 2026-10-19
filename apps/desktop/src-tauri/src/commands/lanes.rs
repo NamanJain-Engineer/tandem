@@ -14,6 +14,7 @@ use tandem_store::repo::workspaces::{self as repo, Workspace};
 use crate::services::lanes::{self, OverlapReport, StaleLanes};
 use crate::services::merge_queue::{self, LandingPlan, LandingRun};
 use crate::services::pr_checks::{self, Gh, ImportedComments, LaneChecks, LoginGh};
+use crate::services::radar::{self, RadarMark};
 use crate::services::worktree_setup::{self, LaneSetup, RemoveReport, SetupState};
 use crate::state::AppState;
 
@@ -504,4 +505,25 @@ pub async fn lane_review_comments(
     // F-WT-08: ids this worktree imported before don't count toward the cap.
     let seen = seen.unwrap_or_default().into_iter().take(10_000).collect();
     pr_checks::review_comments(&state.store, &state.data, as_gh(&gh), &lane_id, &seen).await
+}
+
+// ---- Intent radar (F-WT-10) -------------------------------------------------
+
+/// What each of these worktrees shares with the others, from their last
+/// indexes; nothing is parsed.
+#[tauri::command]
+pub async fn lane_radar(lane_ids: Vec<String>) -> Result<Vec<RadarMark>, IpcError> {
+    Ok(radar::marks(&lane_ids))
+}
+
+/// The note "Warn both agents" types into `lane_id`'s agent.
+#[tauri::command]
+pub async fn lane_radar_note(
+    state: State<'_, AppState>,
+    lane_id: WorkspaceId,
+    other_id: WorkspaceId,
+) -> Result<String, IpcError> {
+    let login = state.terminals.login_env().await;
+    let git = lanes::git_for(&state.data, &login)?;
+    radar::note(&state.store, &git, &lane_id, &other_id).await
 }
