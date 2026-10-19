@@ -14,15 +14,36 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import type { PhoneAgent, PhoneApproval, PhoneThread, PhoneTranscriptItem } from "@tandem/protocol";
+import type {
+  PhoneAgent,
+  PhoneApproval,
+  PhoneReview,
+  PhoneThread,
+  PhoneTranscriptItem,
+} from "@tandem/protocol";
 import type { RemoteSession, SessionView } from "@tandem/remote/session";
 import type { Prefs } from "../lib/prefs";
+import { checkText, lineKind, reviewLines, ruleText, statText } from "../lib/review";
 import { t, type StringKey } from "../lib/strings";
-import { Badge, Body, Button, Card, Empty, Field, Loading, Notice, Row, Small, StatusDot, Title, s as kit } from "../ui/kit";
+import {
+  Badge,
+  Body,
+  Button,
+  Card,
+  Empty,
+  Field,
+  Loading,
+  Notice,
+  Row,
+  Small,
+  StatusDot,
+  Title,
+  s as kit,
+} from "../ui/kit";
 import { color, font, rn, space } from "../ui/tokens";
 
-export type Tab = "agents" | "approvals" | "threads" | "routines" | "settings";
-const TABS: Tab[] = ["agents", "approvals", "threads", "routines", "settings"];
+export type Tab = "agents" | "approvals" | "threads" | "routines" | "review" | "settings";
+const TABS: Tab[] = ["agents", "approvals", "threads", "routines", "review", "settings"];
 
 type Props = {
   session: RemoteSession;
@@ -47,7 +68,12 @@ export function Home(props: Props) {
   const wide = useWindowDimensions().width >= 700;
 
   const detail = thread ? (
-    <ThreadView session={props.session} thread={thread} canSend={!!view.grants?.chat} onBack={() => setThread(null)} />
+    <ThreadView
+      session={props.session}
+      thread={thread}
+      canSend={!!view.grants?.chat}
+      onBack={() => setThread(null)}
+    />
   ) : typing ? (
     <TypeView session={props.session} agent={typing} onBack={() => setTyping(null)} />
   ) : null;
@@ -62,7 +88,9 @@ export function Home(props: Props) {
       ) : tab === "settings" ? (
         <SettingsTab {...props} />
       ) : (
-        <Loading label={t(view.connection === "online" ? "loading" : (`conn.${view.connection}` as StringKey))} />
+        <Loading
+          label={t(view.connection === "online" ? "loading" : (`conn.${view.connection}` as StringKey))}
+        />
       )
     ) : tab === "agents" ? (
       <AgentsTab view={view} onType={setTyping} />
@@ -72,6 +100,8 @@ export function Home(props: Props) {
       <ThreadsTab view={view} onOpen={setThread} />
     ) : tab === "routines" ? (
       <RoutinesTab session={props.session} view={view} />
+    ) : tab === "review" ? (
+      <ReviewTab session={props.session} view={view} />
     ) : (
       <SettingsTab {...props} />
     );
@@ -84,7 +114,9 @@ export function Home(props: Props) {
             {view.desktop || t("app.name")}
           </Text>
           <Row>
-            <View style={[st.pill, { backgroundColor: view.connection === "online" ? color.done : color.idle }]} />
+            <View
+              style={[st.pill, { backgroundColor: view.connection === "online" ? color.done : color.idle }]}
+            />
             <Small>{t(`conn.${view.connection}` as StringKey)}</Small>
           </Row>
         </View>
@@ -291,7 +323,10 @@ function ThreadView({
           {before !== null && <Button size="sm" label={t("thread.older")} onPress={() => void older()} />}
           {items.length === 0 && <Empty label={t("thread.empty")} />}
           {items.map((m, i) => (
-            <View key={`${m.at}-${i}`} style={[st.msg, m.role === "user" ? st.msgUser : m.role === "tool" ? st.msgTool : null]}>
+            <View
+              key={`${m.at}-${i}`}
+              style={[st.msg, m.role === "user" ? st.msgUser : m.role === "tool" ? st.msgTool : null]}
+            >
               <Text style={m.role === "tool" ? st.mono : kit.body}>{m.text}</Text>
             </View>
           ))}
@@ -301,9 +336,20 @@ function ThreadView({
         {canSend ? (
           <Row>
             <View style={st.fill}>
-              <Field label={t("thread.placeholder")} placeholder={t("thread.placeholder")} value={text} onChangeText={setText} multiline />
+              <Field
+                label={t("thread.placeholder")}
+                placeholder={t("thread.placeholder")}
+                value={text}
+                onChangeText={setText}
+                multiline
+              />
             </View>
-            <Button label={t("thread.send")} variant="primary" disabled={!text.trim() || sending} onPress={() => void send()} />
+            <Button
+              label={t("thread.send")}
+              variant="primary"
+              disabled={!text.trim() || sending}
+              onPress={() => void send()}
+            />
           </Row>
         ) : (
           <Small>{t("thread.readOnly")}</Small>
@@ -313,7 +359,15 @@ function ThreadView({
   );
 }
 
-function TypeView({ session, agent, onBack }: { session: RemoteSession; agent: PhoneAgent; onBack: () => void }) {
+function TypeView({
+  session,
+  agent,
+  onBack,
+}: {
+  session: RemoteSession;
+  agent: PhoneAgent;
+  onBack: () => void;
+}) {
   const [text, setText] = useState("");
   const [state, setState] = useState<{ ok: boolean; message: string } | null>(null);
   async function send() {
@@ -329,7 +383,13 @@ function TypeView({ session, agent, onBack }: { session: RemoteSession; agent: P
       </Row>
       <Title>{t("type.title", { agent: agent.title })}</Title>
       <Small>{t("type.body")}</Small>
-      <Field label={t("type.placeholder")} placeholder={t("type.placeholder")} value={text} onChangeText={setText} multiline />
+      <Field
+        label={t("type.placeholder")}
+        placeholder={t("type.placeholder")}
+        value={text}
+        onChangeText={setText}
+        multiline
+      />
       <Button label={t("type.send")} variant="primary" disabled={!text.trim()} onPress={() => void send()} />
       {state && <Notice tone={state.ok ? "info" : "error"}>{state.message}</Notice>}
     </ScrollView>
@@ -357,12 +417,83 @@ function RoutinesTab({ session, view }: { session: RemoteSession; view: SessionV
             size="sm"
             label={t("routines.run")}
             disabled={!view.grants?.routines || r.paused || r.running}
-            onPress={() =>
-              void session.runRoutine(r.id).then((res) => setError(res.ok ? null : res.message))
-            }
+            onPress={() => void session.runRoutine(r.id).then((res) => setError(res.ok ? null : res.message))}
           />
         </Card>
       ))}
+    </ScrollView>
+  );
+}
+
+const LINE_COLOR = { meta: color.textMuted, add: color.done, del: color.error, context: color.text } as const;
+
+/** F-CN-09: the review item Conductor is on (else the first to review) and
+ * its diff, read only. Approving and merging stay on the computer. */
+function ReviewTab({ session, view }: { session: RemoteSession; view: SessionView }) {
+  const [review, setReview] = useState<PhoneReview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void session.reviewCurrent().then((r) => {
+      if (!live) return;
+      if (r.ok) {
+        setReview(r.data);
+        setError(null);
+      } else setError(r.message);
+    });
+    return () => {
+      live = false;
+    };
+    // Asked again only when the queue changed on the computer.
+  }, [session, view.snapshot?.reviewRev]);
+  if (error) return <Notice tone="error">{error}</Notice>;
+  if (!review) return <Loading label={t("loading")} />;
+  const item = review.item;
+  if (!item) return <Empty label={t("review.empty")} />;
+  const check = checkText(item);
+  const lines = reviewLines(review);
+  return (
+    <ScrollView contentContainerStyle={st.list}>
+      <Card>
+        <Row>
+          <Text style={st.itemTitle} numberOfLines={1}>
+            {item.title}
+          </Text>
+          {review.position > 0 && (
+            <Small>{t("review.position", { n: review.position, total: review.total })}</Small>
+          )}
+        </Row>
+        <Small>{[item.engine, item.workspace, item.branch].filter(Boolean).join(" · ")}</Small>
+        {item.changed && <Badge label={t("review.changed")} tone="waiting" />}
+        {item.closing ? <Body>{item.closing}</Body> : null}
+        <Small>{statText(item)}</Small>
+        {item.risks.map((r) => (
+          <Badge key={r.rule} label={ruleText(r.rule)} tone="accent" />
+        ))}
+        {check && <Small>{check}</Small>}
+        <Small>{t("review.onComputer")}</Small>
+      </Card>
+      {review.files.map((f) =>
+        f.withheld ? null : (
+          <Card key={f.path}>
+            <Text style={st.mono}>
+              {f.path} +{f.additions} −{f.deletions}
+            </Text>
+            <ScrollView horizontal>
+              <View>
+                {f.patch.split("\n").map((l, i) => (
+                  <Text key={i} style={[st.mono, { color: LINE_COLOR[lineKind(l)] }]}>
+                    {l || " "}
+                  </Text>
+                ))}
+              </View>
+            </ScrollView>
+            {f.truncated && <Small>{t("review.truncated")}</Small>}
+          </Card>
+        ),
+      )}
+      {!lines.empty && lines.withheld.map((w) => <Notice key={w}>{w}</Notice>)}
+      {!lines.empty && lines.omitted && <Small>{lines.omitted}</Small>}
     </ScrollView>
   );
 }
@@ -418,7 +549,9 @@ function SettingsTab(props: Props) {
         </Row>
         <Small>{props.pushAvailable ? t("settings.pushNote") : t("settings.pushUnavailable")}</Small>
       </Card>
-      {!props.demo && <Button label={t("settings.unpair")} variant="danger" onPress={confirmUnpair} testID="unpair" />}
+      {!props.demo && (
+        <Button label={t("settings.unpair")} variant="danger" onPress={confirmUnpair} testID="unpair" />
+      )}
       <Small>{t("settings.version", { version: props.version })}</Small>
     </ScrollView>
   );
@@ -442,7 +575,11 @@ const st = StyleSheet.create({
   demo: { padding: space[3], gap: space[2], backgroundColor: rn(color.accentSoft) },
   list: { padding: space[4], gap: space[3] },
   itemTitle: { flex: 1, color: color.text, fontSize: font.base, fontWeight: "600" },
-  mono: { color: color.textMuted, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: font.sm },
+  mono: {
+    color: color.textMuted,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontSize: font.sm,
+  },
   tabs: {
     flexDirection: "row",
     borderTopWidth: 1,
@@ -467,6 +604,11 @@ const st = StyleSheet.create({
   msg: { padding: space[3], borderRadius: 8, backgroundColor: color.surface2, gap: space[1] },
   msgUser: { backgroundColor: color.surface4, alignSelf: "flex-end", maxWidth: "90%" },
   msgTool: { backgroundColor: "transparent" },
-  composer: { padding: space[3], borderTopWidth: 1, borderTopColor: rn(color.border), backgroundColor: color.surface1 },
+  composer: {
+    padding: space[3],
+    borderTopWidth: 1,
+    borderTopColor: rn(color.border),
+    backgroundColor: color.surface1,
+  },
   between: { justifyContent: "space-between" },
 });

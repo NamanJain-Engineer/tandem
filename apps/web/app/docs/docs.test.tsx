@@ -97,8 +97,9 @@ describe("docs (F-WB-02)", () => {
       expect(row, t.name).toContain(`<code>${t.name}</code>`);
       expect(row, t.name).toContain(`<td>${t.confirm ? "Yes" : "No"}</td>`);
     }
-    // Every tool the F-CN-02 table names, in its groups.
-    expect(rows).toHaveLength(47);
+    // Every tool the F-CN-02 table names, in its groups, and F-CN-09's Review group.
+    expect(rows).toHaveLength(50);
+    expect(tools).toMatch(/<tr data-tool="review_next"><td>Review<\/td>/);
     expect(tools).toMatch(/<tr data-tool="run_command_in_shell"><td>Panes and agents<\/td>/);
     const settable = html(<DOCS_COMPONENTS.ConductorSettingsTable />);
     expect([...settable.matchAll(/data-setting="([^"]+)"/g)].map((m) => m[1])).toEqual(voiceTools.settable_settings);

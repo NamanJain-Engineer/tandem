@@ -51,7 +51,7 @@ const TABS = [
 const ISOLATION = ["shared", "worktree"] as const satisfies readonly Isolation[];
 
 export type VoiceToolGroup =
-  "navigation" | "awareness" | "panes" | "threads" | "teammates" | "tasks" | "find" | "app";
+  "navigation" | "awareness" | "panes" | "threads" | "teammates" | "tasks" | "find" | "app" | "review";
 
 export type VoiceTool = {
   name: string;
@@ -362,6 +362,26 @@ export const VOICE_TOOLS: VoiceTool[] = [
   tool("app", "get_usage", "Read the engines' usage and limits.", none),
   tool("app", "get_credits", "Read the credit balance that pays for Conductor.", none),
   tool("app", "check_updates", "Check whether a newer version of the app is available.", none),
+  // Review (F-CN-09): the review queue by voice. Merging waits for the desk.
+  tool(
+    "review",
+    "review_next",
+    "Move to the next piece of finished work to review, riskiest first, and get what to say about it: who, which branch, what it said, the files changed, what it touches and the check. Call it when the user asks what's ready or says next.",
+    none,
+  ),
+  tool(
+    "review",
+    "review_send_back",
+    "Send the user's review comment to the agent whose work is being reviewed. Rewrite what they said into a clear instruction first.",
+    z.strictObject({ text: said("The review comment.") }),
+    { freeText: ["text"] },
+  ),
+  tool(
+    "review",
+    "review_approve",
+    "Approve the work being reviewed, exactly as it was described. It can't merge; merging waits for the user at the desk.",
+    none,
+  ),
 ];
 
 const BY_NAME = new Map(VOICE_TOOLS.map((t) => [t.name, t]));

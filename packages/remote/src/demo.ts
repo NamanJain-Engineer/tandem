@@ -4,7 +4,15 @@
 // socket, so every screen runs the same code it runs against a real desktop.
 // Everything it shows is made up and labelled as a demo.
 import type { SocketFactory } from "./client";
-import type { PhoneAgent, PhoneApproval, PhoneGrants, PhoneRoutine, PhoneSnapshot, PhoneThread } from "./messages";
+import type {
+  PhoneAgent,
+  PhoneApproval,
+  PhoneGrants,
+  PhoneReview,
+  PhoneRoutine,
+  PhoneSnapshot,
+  PhoneThread,
+} from "./messages";
 import {
   b64url,
   decodeHello,
@@ -24,7 +32,14 @@ import {
 export const DEMO_RELAY = "demo://vibezeo-remote";
 export const DEMO_DESKTOP = "Demo computer";
 
-type Cmd = { t: string; id?: number; cmd?: string; args?: Record<string, unknown>; device?: string; eph?: string };
+type Cmd = {
+  t: string;
+  id?: number;
+  cmd?: string;
+  args?: Record<string, unknown>;
+  device?: string;
+  eph?: string;
+};
 type Item = { role: string; text: string; at: number };
 
 function now(): number {
@@ -95,7 +110,13 @@ export class DemoDesktop {
       },
     ];
     this.threads = [
-      { id: "th_demo1", title: "Fix the login redirect", state: "waiting", updatedAt: t - 60_000, teammate: false },
+      {
+        id: "th_demo1",
+        title: "Fix the login redirect",
+        state: "waiting",
+        updatedAt: t - 60_000,
+        teammate: false,
+      },
       { id: "th_demo2", title: "Ava (reviewer)", state: "idle", updatedAt: t - 30 * 60_000, teammate: true },
     ];
     this.routines = [
@@ -104,20 +125,39 @@ export class DemoDesktop {
     ];
     this.transcripts = {
       th_demo1: [
-        { role: "user", text: "After sign-in we land on /home instead of the page we came from. Fix it.", at: t - 10 * 60_000 },
+        {
+          role: "user",
+          text: "After sign-in we land on /home instead of the page we came from. Fix it.",
+          at: t - 10 * 60_000,
+        },
         { role: "tool", text: "read src/auth/redirect.ts", at: t - 9 * 60_000 },
-        { role: "assistant", text: "The return path is dropped when the session cookie is refreshed. I'll keep it in the state parameter and add a test.", at: t - 8 * 60_000 },
+        {
+          role: "assistant",
+          text: "The return path is dropped when the session cookie is refreshed. I'll keep it in the state parameter and add a test.",
+          at: t - 8 * 60_000,
+        },
       ],
       th_demo2: [
         { role: "user", text: "Can you review the checkout PR when the tests pass?", at: t - 40 * 60_000 },
-        { role: "assistant", text: "Sure. I'll look at the diff and leave notes in the thread.", at: t - 39 * 60_000 },
+        {
+          role: "assistant",
+          text: "Sure. I'll look at the diff and leave notes in the thread.",
+          at: t - 39 * 60_000,
+        },
       ],
     };
   }
 
   /** The pairing link the demo "scans". */
   link(): PairingLink {
-    return { v: 1, pid: this.pid, dpk: b64url(this.identity.public), s: b64url(this.s), relay: DEMO_RELAY, ptok: "demo" };
+    return {
+      v: 1,
+      pid: this.pid,
+      dpk: b64url(this.identity.public),
+      s: b64url(this.s),
+      relay: DEMO_RELAY,
+      ptok: "demo",
+    };
   }
 
   /** A socket factory that reaches this desktop (and nothing else). */
@@ -164,7 +204,14 @@ export class DemoDesktop {
     if (bytes[0] === 0x01) {
       const { phonePub, tag } = decodeHello(bytes);
       if (!equalBytes(helloTag(this.s, this.pid, phonePub), tag)) return;
-      const root = rootSecret(this.s, this.pid, this.identity.public, phonePub, this.identity.secret, phonePub);
+      const root = rootSecret(
+        this.s,
+        this.pid,
+        this.identity.public,
+        phonePub,
+        this.identity.secret,
+        phonePub,
+      );
       this.session = newSession(this.pid, "desktop", root);
       return;
     }
@@ -178,9 +225,56 @@ export class DemoDesktop {
       this.send({ t: "reject", reason: "replay" });
       return;
     }
-    if (msg.t === "hi") this.send({ t: "welcome", desktop: DEMO_DESKTOP, grants: this.grants, armedUntil: null });
+    if (msg.t === "hi")
+      this.send({ t: "welcome", desktop: DEMO_DESKTOP, grants: this.grants, armedUntil: null });
     if (msg.t === "bye") this.session = null;
     if (msg.t === "cmd" && msg.id !== undefined) this.send({ t: "res", id: msg.id, ...this.answer(msg) });
+  }
+
+  /** F-CN-09: one made-up item waiting for review, and its diff. */
+  review(): PhoneReview {
+    return {
+      item: {
+        key: "pane:demo-1",
+        title: "Ada",
+        engine: "Claude Code",
+        workspace: "shop",
+        branch: "tandem/fix-auth",
+        finishedAt: now() - 4 * 60_000,
+        closing: "(Demo) Expired tokens now refresh once, then sign the user out.",
+        files: 2,
+        additions: 14,
+        deletions: 3,
+        risks: [{ rule: "auth", files: ["src/auth/session.ts"] }],
+        check: { state: "passed", exit: 0, output: "" },
+        changed: false,
+      },
+      files: [
+        {
+          path: "src/auth/session.ts",
+          change: "modified",
+          additions: 12,
+          deletions: 3,
+          patch:
+            "@@ -40,6 +40,15 @@\n export async function refresh(token: Token) {\n-  if (expired(token)) return null;\n+  if (expired(token)) {\n+    const next = await renew(token);\n+    if (next) return next;\n+    signOut();\n+    return null;\n+  }\n   return token;\n }\n",
+          truncated: false,
+          withheld: false,
+        },
+        {
+          path: "src/auth/session.test.ts",
+          change: "modified",
+          additions: 2,
+          deletions: 0,
+          patch:
+            '@@ -10,3 +10,5 @@\n it("refreshes", async () => {\n+  expect(await refresh(old)).not.toBeNull();\n+  expect(signOut).not.toHaveBeenCalled();\n });\n',
+          truncated: false,
+          withheld: false,
+        },
+      ],
+      position: 1,
+      total: 1,
+      omitted: 0,
+    };
   }
 
   snapshot(): PhoneSnapshot {
@@ -192,6 +286,7 @@ export class DemoDesktop {
       approvals: this.approvals,
       threads: this.threads,
       routines: this.routines,
+      reviewRev: 1,
     };
   }
 
@@ -210,14 +305,20 @@ export class DemoDesktop {
       }
       case "thread.read": {
         const items = this.transcripts[String(args.threadId)];
-        return items ? { ok: true, data: { items, before: null } } : { ok: false, error: { code: "not_found", message: "No such thread" } };
+        return items
+          ? { ok: true, data: { items, before: null } }
+          : { ok: false, error: { code: "not_found", message: "No such thread" } };
       }
       case "thread.send": {
         const id = String(args.threadId);
         const items = this.transcripts[id];
         if (!items) return { ok: false, error: { code: "not_found", message: "No such thread" } };
         items.push({ role: "user", text: String(args.text ?? ""), at: now() });
-        items.push({ role: "assistant", text: "(Demo) Got it. On a real computer, your agent answers here.", at: now() });
+        items.push({
+          role: "assistant",
+          text: "(Demo) Got it. On a real computer, your agent answers here.",
+          at: now(),
+        });
         return { ok: true, data: {} };
       }
       case "pane.type": {
@@ -228,6 +329,8 @@ export class DemoDesktop {
         this.typed.push({ paneId, text: String(args.text ?? "") });
         return { ok: true, data: {} };
       }
+      case "review.current":
+        return { ok: true, data: this.review() };
       case "routine.run_now": {
         const r = this.routines.find((x) => x.id === args.routineId);
         if (!r) return { ok: false, error: { code: "not_found", message: "No such routine" } };

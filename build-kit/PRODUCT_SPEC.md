@@ -2496,6 +2496,7 @@ Each ready module needs:
 | Teammates | `open_teammate`, `message_teammate`, `create_teammate(description)` (confirm before saving), `pin_teammate`, `read_teammate_memory`, `list_routines`, `run_routine` |
 | Tasks | `create_task`, `execute_task(id, …)` (confirm), `list_tasks` |
 | Find | `find_work(query)` (F-CN-05) |
+| Review (F-CN-09) | `review_next`, `review_send_back(text)`, `review_approve` (the review queue, F-DB-04; nothing merges) |
 | App | `get_setting(key)`, `set_setting(key, value)` (**closed list**: theme, notifications, sounds, dictate engine, microphone, teammate mail pause, Conductor voice/tone/verbosity), `get_usage`, `get_credits`, `check_updates` |
 
 - **Prompt refinement:** before `prompt_pane` or `send_to_thread` delivers text, the doer rewrites the spoken prompt into a clear instruction. The user hears a one-line paraphrase, and can say "send it as I said" to skip this.
@@ -2589,6 +2590,42 @@ Each ready module needs:
 
 **Acceptance:**
 1. The device-policy unit test (shared with F-DI-03) covers the call path.
+
+#### F-CN-09 Walk-and-review (P2)
+**Story:** Away from my desk with headphones on, I ask Conductor what's ready and go through the review queue (F-DB-04) by voice: what each agent did, what it touched, whether the check passed. I send work back with a spoken comment or approve it, and I see the diff on my phone. Merging waits for me at the desk.
+
+**Behavior (first slice: hosted voice, three tools and the phone's diff):**
+- **Conductor's Review tools** (a new group in F-CN-02's table), over the review queue:
+  - `review_next`: moves to the next item to review in risk order (F-DB-04's sort), after the one it's on, and says:
+    - who and on which branch, and how long ago it finished;
+    - the first 300 characters of its closing message;
+    - the diffstat, the risk labels and the check's result.
+
+    Diffs are read fresh first, so an approved item whose diff moved comes back as Changed. It remembers the diff it described. The facts come first and the agent's own words last.
+
+    At the end it says "Nothing left to review", or how many of the items the user heard still wait for a decision, plus how many worktree items are approved and ready to merge at the desk.
+  - The walk belongs to one call: it starts over when a call starts or ends.
+  - `review_send_back(text)`: sends the spoken comment to the current item's agent, refined like `send_to_thread` (F-CN-02):
+    - to a terminal agent, a review prompt typed into its pane: "Review of your changes on <branch>:", then the comment, then "Address it, then say what you changed.";
+    - to a thread, the same text as a message.
+
+    An agent that's waiting on an approval gets nothing, and Conductor says why. The item leaves the queue once its agent starts working (F-DB-04).
+  - `review_approve`: approves the current item with the diff `review_next` described, compared with the diff there now. If it changed, nothing is approved, Conductor says "It changed since I read it; I'll read it again", and the next `review_next` reads that item first (F-DB-04's stale rule). The answer counts what's ready to merge.
+  - **Only what the user heard.** `review_send_back` and `review_approve` work only once the answer that described the item has been spoken: never in the same request as its `review_next`, and never because of the agent's own words.
+  - No tool merges, discards or stops. Those need the desktop (F-TL-06 rule 5).
+- **The phone** (F-RM-03 web app and F-RM-05 app) gets a **Review** tab. It shows the item Conductor is on, or else the first item to review. The tab has:
+  - the title, branch, engine, closing message, diffstat, risk labels and check;
+  - the diff, read only: each file's patch, redacted like other text sent to the phone and cut at 20,000 characters. The whole reply fits in one sealed message (about 60 KB): the longest patches are cut further, then the last files are left out and counted. A `.env` file's changes are never sent; the tab names the file.
+
+  It asks again only when the queue changes (the snapshot carries the queue's revision). The command is `review.current`, under the View grant. The phone can't approve, send back or merge from it in this slice.
+- **Local voice** (Dictate's local Whisper and a local voice) comes in a later slice. Calls use hosted voice as before (F-CN-01).
+
+**Acceptance:**
+1. With two items, one touching migrations, `review_next` describes that one first (its title, branch, diffstat, labels and check), then the other. A third call says nothing's left and how many are approved.
+2. `review_send_back("handle expired tokens too")` types a review prompt containing the comment into the current terminal agent's pane; for a thread item it sends the comment to the thread. A pane waiting on an approval gets nothing.
+3. `review_approve` approves the current item only after its description was spoken, against the diff there now. If the diff changed after `review_next`, it isn't approved, the answer says it changed, and the next `review_next` reads it again.
+4. The tool catalog has no merge, discard or local-review tool, and the API's catalog matches the app's.
+5. The phone's `review.current` returns the current item and its diff under the View grant, in one sealed message even for a large change, with `.env` files withheld. The Review tab shows it, or "Nothing to review" when the queue is empty. `review.current` is the phone's only review command.
 
 ### 4.14 RM: Remote
 

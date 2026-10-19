@@ -97,6 +97,8 @@ struct Host {
     views: Mutex<Vec<CallView>>,
     records: Mutex<Vec<CallRecord>>,
     speaker: Arc<FakeSpeaker>,
+    /// F-CN-09's hooks, in order.
+    hooks: Mutex<Vec<&'static str>>,
 }
 
 impl Host {
@@ -125,6 +127,7 @@ impl Host {
                 views: Mutex::new(Vec::new()),
                 records: Mutex::new(Vec::new()),
                 speaker: Arc::new(FakeSpeaker::default()),
+                hooks: Mutex::new(Vec::new()),
             }),
             rx,
         )
@@ -244,6 +247,15 @@ impl CallHost for Host {
     fn emit_level(&self, _level: f32) {}
     async fn record(&self, record: CallRecord) {
         self.records.lock().push(record);
+    }
+    fn call_started(&self) {
+        self.hooks.lock().push("started");
+    }
+    fn call_ended(&self) {
+        self.hooks.lock().push("ended");
+    }
+    fn act_answered(&self) {
+        self.hooks.lock().push("answered");
     }
     async fn remember(&self, fact: &str) -> Result<(), RememberRefusal> {
         *self.remember_calls.lock() += 1;
@@ -392,6 +404,31 @@ async fn f_cn_01_1_a_65_second_call_settles_140_credits() {
     ));
     // The receipt clears after its 3 s (shortened here).
     until("idle", || host.last().phase == CallPhase::Idle).await;
+}
+
+#[tokio::test]
+async fn f_cn_09_an_act_answers_only_after_all_its_rounds_and_a_call_resets_at_both_ends() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    // Two rounds of tools in one act, then the say.
+    host.script(vec![
+        calls(&[("get_setting", json!({"key": "theme"}))]),
+        calls(&[("get_setting", json!({"key": "theme"}))]),
+    ]);
+    let (c, wire) = connected(&host, &mut wires, CallOrigin::Button).await;
+    assert_eq!(host.hooks.lock().clone(), vec!["started"]);
+    wire.to_app
+        .send(act("fc1", "what's the theme"))
+        .await
+        .expect("send");
+    until("the act answered", || host.hooks.lock().len() == 2).await;
+    assert_eq!(host.act_requests.lock().len(), 3, "three rounds");
+    assert_eq!(host.hooks.lock().clone(), vec!["started", "answered"]);
+    c.end();
+    until("ended", || host.last().phase == CallPhase::Ended).await;
+    assert_eq!(
+        host.hooks.lock().clone(),
+        vec!["started", "answered", "ended"]
+    );
 }
 
 #[tokio::test]
