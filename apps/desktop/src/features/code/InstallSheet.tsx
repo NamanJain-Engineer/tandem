@@ -25,7 +25,9 @@ type InstallState = {
   engine: EngineView | null;
   /** The tab the installer's terminal opens in. */
   tabId: string | null;
-  open: (engine: EngineView, tabId: string | null) => void;
+  /** Roll back to this version instead of installing (F-EN-08). */
+  rollback: string | null;
+  open: (engine: EngineView, tabId: string | null, rollback?: string | null) => void;
   close: () => void;
 };
 
@@ -34,14 +36,23 @@ type InstallState = {
 export const useInstall = create<InstallState>((set) => ({
   engine: null,
   tabId: null,
-  open: (engine, tabId) => set({ engine, tabId }),
-  close: () => set({ engine: null, tabId: null }),
+  rollback: null,
+  open: (engine, tabId, rollback = null) => set({ engine, tabId, rollback }),
+  close: () => set({ engine: null, tabId: null, rollback: null }),
 }));
 
 export function InstallHost() {
   const engine = useInstall((s) => s.engine);
   const tabId = useInstall((s) => s.tabId);
-  return <InstallSheet engine={engine} tabId={tabId} onClose={() => useInstall.getState().close()} />;
+  const rollback = useInstall((s) => s.rollback);
+  return (
+    <InstallSheet
+      engine={engine}
+      tabId={tabId}
+      rollback={rollback}
+      onClose={() => useInstall.getState().close()}
+    />
+  );
 }
 
 /** UI-34 / F-EN-03: the registry's install command, exactly as listed, with
@@ -50,10 +61,13 @@ export function InstallHost() {
 export function InstallSheet({
   engine,
   tabId,
+  rollback = null,
   onClose,
 }: {
   engine: EngineView | null;
   tabId: string | null;
+  /** Roll back to this version (F-EN-08): the same sheet, its own command. */
+  rollback?: string | null;
   onClose: () => void;
 }) {
   const [command, setCommand] = useState<InstallCommand | null>(null);
@@ -70,10 +84,13 @@ export function InstallSheet({
     setStep({ kind: "ready" });
     setCopied(false);
     if (!engineId) return;
-    invoke<InstallCommand>("engines_install_command", { engineId })
+    (rollback
+      ? invoke<InstallCommand>("engine_rollback_command", { engineId, version: rollback })
+      : invoke<InstallCommand>("engines_install_command", { engineId })
+    )
       .then(setCommand)
       .catch((e: { message?: string }) => setError(e.message ?? t("install.none")));
-  }, [engineId]);
+  }, [engineId, rollback]);
 
   useEffect(
     () => () => {
@@ -135,14 +152,16 @@ export function InstallSheet({
     <Sheet
       open={engine !== null}
       onOpenChange={(o) => !o && onClose()}
-      title={t("install.title", { name: label })}
+      title={rollback ? t("install.rollbackTitle", { name: label, version: rollback }) : t("install.title", { name: label })}
       subtitle={engine?.spec.vendor}
       closeLabel={t("common.close")}
     >
       <div data-testid="install-sheet" className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
           <EngineGlyph letters={engine?.spec.logo ?? ""} size={20} />
-          <p className="text-sm text-fg-muted">{t("install.body", { name: label })}</p>
+          <p className="text-sm text-fg-muted">
+            {rollback ? t("install.rollbackBody", { name: label, version: rollback }) : t("install.body", { name: label })}
+          </p>
         </div>
         {error && <Callout tone="error" title={error} />}
         {command && (

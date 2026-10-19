@@ -53,6 +53,8 @@ pub struct TerminalLaunchRequest<'a> {
     /// Tandem's provider-home root, to tell local homes apart.
     pub providers_root: PathBuf,
     pub status: Option<StatusEnv>,
+    /// Start with the registry's switch that stops self-updates (F-EN-08).
+    pub pinned: bool,
 }
 
 /// What a pane spawns: the engine argv (before shell wrapping, §5.2) and
@@ -112,6 +114,19 @@ pub fn terminal_launch(req: &TerminalLaunchRequest<'_>) -> Result<LaunchSpec, La
     }
 
     let mut env = BTreeMap::new();
+    // Pin first: the provider home and the status hook below always win.
+    if let Some(pin) = req
+        .engine
+        .updates
+        .as_ref()
+        .and_then(|u| u.pin.as_ref())
+        .filter(|_| req.pinned)
+    {
+        for (k, v) in &pin.env {
+            env.insert(k.clone(), v.clone());
+        }
+        args.extend(pin.args.iter().cloned());
+    }
     if let Some(home) = &req.home {
         if req.host != HostKind::Local && home.starts_with(&req.providers_root) {
             return Err(LaunchError::LocalHomeOnRemote);
@@ -190,6 +205,7 @@ mod tests {
                 url: "unix:///tmp/s.sock".into(),
                 secret: "ab".repeat(32),
             }),
+            pinned: false,
         }
     }
 
@@ -305,5 +321,39 @@ mod tests {
                 0o600
             );
         }
+    }
+
+    #[test]
+    fn f_en_08_2_a_pinned_engine_starts_with_its_documented_switch_and_an_unpinned_one_without() {
+        let reg = EngineRegistry::bundled();
+        let root = Path::new("/data/providers");
+        let claude = reg.get("claude").expect("claude");
+        let mut r = req(claude, root);
+        assert!(!terminal_launch(&r)
+            .expect("spec")
+            .env
+            .contains_key("DISABLE_AUTOUPDATER"));
+        r.pinned = true;
+        assert_eq!(
+            terminal_launch(&r).expect("spec").env["DISABLE_AUTOUPDATER"],
+            "1"
+        );
+        let codex = reg.get("codex").expect("codex");
+        let mut r = req(codex, root);
+        r.pinned = true;
+        let argv = terminal_launch(&r).expect("spec").argv();
+        assert!(
+            argv.ends_with(&[
+                "-c".to_string(),
+                "check_for_update_on_startup=false".to_string()
+            ]),
+            "{argv:?}"
+        );
+        // No documented switch: pinning changes nothing.
+        let gemini = reg.get("gemini").expect("gemini");
+        let mut r = req(gemini, root);
+        let before = terminal_launch(&r).expect("spec");
+        r.pinned = true;
+        assert_eq!(terminal_launch(&r).expect("spec"), before);
     }
 }

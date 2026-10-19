@@ -113,6 +113,9 @@ pub struct TerminalService {
         std::collections::HashMap<String, tokio::sync::mpsc::UnboundedSender<Vec<u8>>>,
     >,
     agent_panes: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// Agent panes whose first start resumes their saved session (the
+    /// session library's Resume, F-TH-17).
+    resume_first: std::sync::Mutex<std::collections::HashSet<String>>,
     /// SSH hosts: panes of remote workspaces run there (F-RM-01).
     remote: std::sync::OnceLock<Arc<crate::services::remote::RemoteService>>,
     /// WSL distributions: panes of WSL workspaces run there (F-RM-02).
@@ -214,6 +217,7 @@ impl TerminalService {
             prompt_hook: std::sync::OnceLock::new(),
             agent_inputs: Default::default(),
             agent_panes: Default::default(),
+            resume_first: Default::default(),
             remote: std::sync::OnceLock::new(),
             wsl: std::sync::OnceLock::new(),
             wsl_panes: Default::default(),
@@ -551,6 +555,14 @@ impl TerminalService {
             .await
     }
 
+    /// The pane's first start resumes its saved session instead of starting
+    /// a new one (F-TH-17).
+    pub fn resume_on_first_start(&self, pane: &PaneId) {
+        if let Ok(mut set) = self.resume_first.lock() {
+            set.insert(pane.as_str().to_string());
+        }
+    }
+
     /// Whether a paused agent can resume, and with what (F-SH-07). Errors
     /// are the card's reason: "Launch configuration unavailable" when the
     /// saved configuration is gone, never a fallback to defaults.
@@ -589,6 +601,7 @@ impl TerminalService {
             None => LaunchConfig {
                 extra_args: Vec::new(),
                 home: session.provider_home.clone(),
+                own_home: false,
             },
         };
         if config
@@ -618,6 +631,16 @@ impl TerminalService {
     ) -> Result<PtyInfo, IpcError> {
         self.check_live_limit(max_live)?;
         let record = panes::get_open(&self.store, pane).await?;
+        let resume_first = self
+            .resume_first
+            .lock()
+            .map(|mut set| set.remove(pane.as_str()))
+            .unwrap_or(false);
+        let mode = if mode == LaunchMode::Normal && resume_first {
+            LaunchMode::Resume
+        } else {
+            mode
+        };
         if record.kind == "agent" {
             if let Ok(mut agents) = self.agent_panes.lock() {
                 agents.insert(pane.as_str().to_string());
@@ -931,6 +954,7 @@ impl TerminalService {
                 home: None,
                 providers_root: PathBuf::new(),
                 status: None,
+                pinned: false,
             };
             let launch = tandem_engines::launch::terminal_launch(&req).map_err(|e| {
                 IpcError::new(ErrorCode::Invalid, e.to_string()).with_stage("launch")
@@ -1085,6 +1109,7 @@ impl TerminalService {
                 home: None,
                 providers_root: PathBuf::new(),
                 status: None,
+                pinned: false,
             };
             let launch = tandem_engines::launch::terminal_launch(&req).map_err(|e| {
                 IpcError::new(ErrorCode::Invalid, e.to_string()).with_stage("launch")

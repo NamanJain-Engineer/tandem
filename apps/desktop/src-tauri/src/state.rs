@@ -664,6 +664,16 @@ impl AppState {
                 terminals: terminals.clone(),
             }),
         );
+        // Each thread turn's result marks its engine's version good or not
+        // (F-EN-08).
+        {
+            let engines = terminals.engines.clone();
+            threads.set_health_sink(Arc::new(move |engine, reason| {
+                engines
+                    .versions
+                    .record(engines.report().as_ref(), engine, reason);
+            }));
+        }
         {
             let learn = learn.clone();
             threads.set_turn_sink(Arc::new(move |chat, turn, reason| {

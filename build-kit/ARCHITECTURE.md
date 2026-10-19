@@ -334,7 +334,7 @@ pub mod typing  { pub fn sanitize_prompt(s:&str)->String; pub async fn type_prom
 
 ### 2.5 `tandem-engines` [F-EN-*, F-AC-*, F-TH-03..06, F-TH-16, F-CD-16, F-AG-06, F-AG-08, F-AG-10]
 
-Each `EngineSpec` may carry `instructions: InstructionsSpec {files, mode: "all"|"first", fallback?, pointer?: {file, import}}`: the instructions files it reads at a repository's root, whether it reads every one that exists or only the first, the file it falls back to when none exist, and the pointer that imports `AGENTS.md` (F-EN-07, D-2400). `tandem_git::instructions` reads and writes the files; the table is data.
+Each `EngineSpec` may carry `instructions: InstructionsSpec {files, mode: "all"|"first", fallback?, pointer?: {file, import}}`: the instructions files it reads at a repository's root, whether it reads every one that exists or only the first, the file it falls back to when none exist, and the pointer that imports `AGENTS.md` (F-EN-07, D-2400). `tandem_git::instructions` reads and writes the files; the table is data. `updates: UpdatesSpec {npm?, nativeDir?, nativeInstall?, pin?: {env, args}, selfUpdates}` says how an engine is installed and updated (F-EN-08); `tandem_engines::versions` reads the install method from where its command resolves, keeps the versions seen and builds rollback commands.
 ```rust
 pub struct EngineRegistry { entries: Vec<EngineSpec> }                       // bundled JSON + remote overrides
 impl EngineRegistry { pub fn bundled() -> Self; pub fn with_overrides(&self, o: &[EngineSpec]) -> Self; pub fn get(&self, id:&str)->Option<&EngineSpec>; pub fn chat_engines(&self)->impl Iterator<Item=&EngineSpec>; }
@@ -609,6 +609,12 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `instructions_apply` | `{workspaceId, source?, digest}` (window `main` only; the plan's `source` and the digest of the plan the person confirmed) | `InstructionsChange {changeId, written: [path]}` (each replaced file is backed up first to `$DATA/instructions-backup/<changeId>/`) | Conflict ("The files changed. Review the plan again."), PermissionDenied, Io | F-EN-07 |
 | `instructions_undo` | `{changeId}` (window `main` only) | — (every file of the change back byte for byte; a file created by it is removed) | Conflict (a file changed since), NotFound, PermissionDenied | F-EN-07 |
 | `instructions_copy_to_worktrees` | `{workspaceId, path}` (window `main` only; an ignored instructions file) | `SetupState` (adds `path` to `.vibezeo/worktree.json`'s `copy`; the commands' trust is unchanged) | Invalid (not an ignored instructions file), PermissionDenied | F-EN-07 |
+| `engine_versions` | — | `[EngineVersionView {engineId, version?, method: "npm"\|"homebrew"\|"native"\|"other", selfUpdates, pinnable, pinned, previous?, lastGood?, broken?: {from, to}}]` (installed engines; `broken`: the version differs from the last good one and a thread of it failed since; reads `$DATA/engine-versions.json`, never the network) | — | F-EN-08 |
+| `engine_check_update` | `{engineId}` (runs only when clicked) | `UpdateCheck {latest?, how?}` (an npm install asks the npm registry with `npm view <package> version` in the login shell; any other install method answers `how`, the command that updates it) | NotFound, Unavailable (npm failed) | F-EN-08 |
+| `engine_pin` | `{engineId, on}` | — (the setting `engine_pins`; new panes of the engine start with its registry `updates.pin`) | Invalid (no documented switch) | F-EN-08 |
+| `engine_rollback_command` | `{engineId, version}` | `InstallCommand {display, shell}` (`npm install -g <package>@<version>` or the engine's own installer with the version; the UI shows it and types it into a visible pane, like Install) | Invalid (an install method that can't roll back, a malformed version), NotFound | F-EN-08 |
+| `engine_background` | — | `[BackgroundProcess {pid, engineId, started, command}]` (this user's processes of an installed engine with no terminal, outside the app's own process tree; `command` is the engine's name and, when the engine documents it, its subcommand; Linux and macOS) | Unavailable (Windows) | F-EN-08 |
+| `engine_background_stop` | `{pid, engineId, started}` (window `main` only) | — (lists again and signals only a process with the same pid, engine and start time: SIGTERM) | NotFound, PermissionDenied | F-EN-08 |
 | `models_list` | `{engineId, accountId?}` | `[ModelEntry {id, label, description, isDefault, effortLevels, contextWindow, source}]` (Automatic first) | — | F-TH-08 |
 | `accounts_list` | — | `[Account]` | — | F-AC-02 |
 | `accounts_begin_add` | `{engineId, label}` | `LoginSession {opId, paneId, accountId, action, reports}` (mini PTY in a fresh home; the sheet `pty_attach`es `paneId`; `reports` false = the engine can't say when it's signed in, so the user clicks Done); the end arrives as `accounts:login-finished` | LimitReached (Free: 1/engine), Unavailable (mac Keychain single-account), Conflict (name taken), EngineMissing | F-AC-01, F-AC-02 |
@@ -684,6 +690,18 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `thread_changes` | `{threadId}` | `ThreadChanges {source: "git"\|"snapshot"\|"not_started", files: [FileDiff]}`: since the thread's first turn (its `start_commit`, empty for a repository with no commits yet, or its `$DATA/snapshots/<thread>.json` manifest) | NotFound | F-TH-13 |
 | `thread_file_read` | `{threadId, path}` (relative to the thread's folder) | `FileText {path, content, truncated, binary}`: at most 256 KB; never outside the folder or a private file (`contain`, Read policy) | PathEscape, NotFound | F-TH-13 |
 | `thread_summarize_continue` | `{threadId}` | `Thread` (new thread seeded with summary) | — | F-TH-04 |
+
+
+#### Session library [F-TH-17] (M18)
+| Command | Args | Returns | Errors | Feature |
+|---|---|---|---|---|
+| `library_list` | — | `LibraryListing {sessions: [LibrarySession {key, engineId, accountId?, accountLabel?, sessionId, folder?, repository?, title?, size, modifiedAt, folderExists}], skipped}` (newest first; reads only `projects/*/*.jsonl` and `sessions/**/*.jsonl` in every Claude Code and Codex account's home and each engine's own home, never through a link; `skipped` counts files that don't parse) | — | F-TH-17 |
+| `library_transcript` | `{key}` (a key from `library_list`) | `[TranscriptItem {role: "user"\|"assistant"\|"tool", text}]` (tool calls by name only) | NotFound | F-TH-17 |
+| `library_resume` | `{key}` | `LibraryOpened {pane, workspaceId, tabId}`: an agent pane in the session's folder (its workspace added when it isn't open) whose first start runs the engine's resume with the session's home | NotFound, EngineMissing, LimitReached | F-TH-17 |
+| `library_brief` | `{key}` | `HandoffBrief {text, source: "fallback"}` (the transcript's last messages, redacted, §6.11 fallback) | NotFound | F-TH-17 |
+| `library_continue` | `{key, engineId, accountId?, brief}` | `LibraryOpened` (the target in the session's folder, the brief as its first prompt, as `handoff_start` delivers it) | NotFound, EngineMissing, LimitReached, Invalid | F-TH-17 |
+| `library_search` | `{query}` | `[string]` (keys whose prompts or replies match, best first; indexes new or changed files first) | ForbiddenPlan (Free), Unavailable (search is off) | F-TH-17 |
+| `library_search_set` | `{on}` (window `main` only) | — (sets `session_search`; off deletes `$DATA/session-index.db`) | ForbiddenPlan (turning on, Free) | F-TH-17 |
 
 #### Approvals and held drafts [F-TH-11, F-PL-06..08, F-DB-01]
 | Command | Args | Returns | Errors |

@@ -174,6 +174,9 @@ struct Running {
     /// When the engine last said anything (`clock.now_ms()`).
     last_output: i64,
     silence_noted: bool,
+    /// Whether an error this turn reported was the engine's own failure
+    /// (F-EN-08: only those count against its version).
+    engine_fault: bool,
 }
 
 impl Running {
@@ -234,7 +237,24 @@ pub struct ThreadService {
     plan_limits: std::sync::OnceLock<PlanLimits>,
     /// Threads in SSH workspaces (F-RM-01).
     remote: std::sync::OnceLock<Arc<crate::services::remote::RemoteService>>,
+    /// Hears how every turn ended, by engine (last good version, F-EN-08).
+    health_sink: std::sync::OnceLock<HealthSink>,
 }
+
+/// A thread turn of an engine ended, and why (F-EN-08).
+/// What a turn's end says about the engine's version (F-EN-08 AC3): a
+/// completed turn, or a turn that ended because the engine itself broke
+/// ([`ErrorStage::engine_fault`]). Any other error, a stop or a usage limit
+/// says nothing about the version.
+pub fn version_health(reason: TurnEndReason, engine_fault: bool) -> Option<TurnEndReason> {
+    match reason {
+        TurnEndReason::Completed => Some(TurnEndReason::Completed),
+        TurnEndReason::Error if engine_fault => Some(TurnEndReason::Error),
+        TurnEndReason::Error | TurnEndReason::Cancelled | TurnEndReason::Limit => None,
+    }
+}
+
+pub type HealthSink = Arc<dyn Fn(&str, TurnEndReason) + Send + Sync>;
 
 /// A teammate chat's turn ended: the chat, the turn and why.
 pub type TurnSink = Arc<dyn Fn(ThreadRecord, TurnId, TurnEndReason) + Send + Sync>;
@@ -357,6 +377,7 @@ impl ThreadService {
             checkpoints: std::sync::OnceLock::new(),
             chats_sink: std::sync::OnceLock::new(),
             turn_sink: std::sync::OnceLock::new(),
+            health_sink: std::sync::OnceLock::new(),
             plan_limits: std::sync::OnceLock::new(),
             remote: std::sync::OnceLock::new(),
         })
@@ -432,6 +453,17 @@ impl ThreadService {
                 root: thread.cwd.clone(),
             },
         ))
+    }
+
+    /// The thread runs this computer's engine: no workspace, or a local one.
+    async fn runs_locally(&self, thread: &ThreadRecord) -> bool {
+        match &thread.workspace_id {
+            None => true,
+            Some(ws) => tandem_store::repo::workspaces::get(&self.store, ws)
+                .await
+                .map(|w| w.kind == "local")
+                .unwrap_or(false),
+        }
     }
 
     /// Where this machine reads a thread's folder: a WSL thread's Linux
@@ -569,6 +601,10 @@ impl ThreadService {
     }
 
     /// Hears teammate chats' finished turns.
+    pub fn set_health_sink(&self, sink: HealthSink) {
+        let _ = self.health_sink.set(sink);
+    }
+
     pub fn set_turn_sink(&self, sink: TurnSink) {
         let _ = self.turn_sink.set(sink);
     }
@@ -1060,6 +1096,9 @@ impl ThreadService {
 
     /// Stores and streams one event of the running turn.
     async fn emit(&self, thread: &ThreadId, run: &mut Running, event: ThreadEvent) -> Option<i64> {
+        if let ThreadEvent::Error { stage, code, .. } = &event {
+            run.engine_fault |= stage.engine_fault(code);
+        }
         let seq = run.take_seq();
         let row = self.store_event(thread, &run.id, seq, &event, None).await;
         self.broadcast(self.envelope(thread, &run.id, seq, event));
@@ -1311,6 +1350,7 @@ impl ThreadService {
             r => r,
         };
         let blocked = run.blocked;
+        let engine_fault = run.engine_fault;
         if reason == TurnEndReason::Completed {
             if let Some(version) = self.save_plan(thread, &run.id).await {
                 self.emit(thread, &mut run, ThreadEvent::PlanRevision { version })
@@ -1331,6 +1371,15 @@ impl ThreadService {
         }
         // A teammate chat's prose becomes searchable (F-AG-11).
         if let Ok(Some(record)) = repo::get(&self.store, thread).await {
+            if let Some(sink) = self.health_sink.get() {
+                if let Some(health) = version_health(reason, engine_fault) {
+                    // A thread on an SSH host or in WSL runs that host's
+                    // engine, not this computer's (F-EN-08).
+                    if self.runs_locally(&record).await {
+                        sink(&record.engine_id, health);
+                    }
+                }
+            }
             if let Some(teammate) = &record.teammate_id {
                 if let Err(e) =
                     tandem_store::repo::search::index_turn(&self.store, thread, &run.id, teammate)
@@ -1433,6 +1482,7 @@ impl ThreadService {
             title_from: None,
             last_output: self.clock.now_ms(),
             silence_noted: false,
+            engine_fault: false,
         };
         self.emit(id, &mut run, row).await;
         self.emit(
@@ -1543,6 +1593,7 @@ impl ThreadService {
             title_from,
             last_output: self.clock.now_ms(),
             silence_noted: false,
+            engine_fault: false,
         };
         let row = self
             .emit(
@@ -3867,6 +3918,108 @@ mod tests {
         assert!(out.acked);
         ended(&f, 1).await;
         assert_eq!(turn_states(&f).await, vec![TurnState::Cancelled]);
+    }
+
+    /// F-EN-08 AC3: a thread on an SSH host or in WSL runs that host's
+    /// engine, so its turns never reach this computer's version book.
+    #[tokio::test]
+    async fn f_en_08_3_a_remote_threads_turns_never_reach_the_health_sink() {
+        use tandem_store::repo::workspaces::{self, NewWorkspace};
+        let script: Script = Arc::new(|turn, tx| {
+            play(
+                tx,
+                vec![
+                    ev(&turn, delta("partial answer")),
+                    AdapterEvent::Exited {
+                        code: Some(137),
+                        stderr_tail: "segfault\n".into(),
+                    },
+                ],
+            )
+        });
+        let f = fixture(OnStop::Ack, script).await;
+        let seen: Arc<StdMutex<Vec<(String, TurnEndReason)>>> = Arc::default();
+        let sink = seen.clone();
+        f.svc.set_health_sink(Arc::new(move |engine, reason| {
+            if let Ok(mut s) = sink.lock() {
+                s.push((engine.to_string(), reason));
+            }
+        }));
+        let ssh = tandem_store::repo::hosts::add_ssh(
+            &f.store,
+            tandem_store::repo::hosts::NewSshHost {
+                label: "box".into(),
+                target: "dev@box".into(),
+                port: None,
+                identity_file: None,
+            },
+        )
+        .await
+        .expect("host");
+        let ssh_host = ssh.id.as_str().to_string();
+        let mut threads = Vec::new();
+        for (kind, host, distro) in [
+            ("ssh", ssh_host.as_str(), None),
+            ("wsl", "local", Some("Ubuntu")),
+            ("local", "local", None),
+        ] {
+            let root = f._dir.path().join(kind);
+            std::fs::create_dir_all(&root).expect("mkdir");
+            let (ws, _) = workspaces::add(
+                &f.store,
+                NewWorkspace {
+                    kind: kind.into(),
+                    host_id: host.into(),
+                    root: root.display().to_string(),
+                    name: kind.into(),
+                    wsl_distro: distro.map(str::to_string),
+                },
+                None,
+            )
+            .await
+            .expect("workspace");
+            let thread = f
+                .svc
+                .create(NewThread {
+                    id: ThreadId::new(),
+                    kind: ThreadKind::Thread,
+                    workspace_id: Some(ws.id.clone()),
+                    cwd: root.display().to_string(),
+                    engine_id: "claude".into(),
+                    account_id: None,
+                    model: None,
+                    effort: None,
+                    access: Access::Edits,
+                    mode: ThreadMode::Act,
+                    attended: true,
+                })
+                .await
+                .expect("thread");
+            threads.push((kind, thread.id.clone()));
+        }
+        for (_, id) in &threads {
+            f.svc
+                .send(id, "do it".into(), Vec::new(), false)
+                .await
+                .expect("send");
+        }
+        // Every turn ends; only the local thread's reached the sink.
+        for _ in 0..300 {
+            let mut done = 0;
+            for (_, id) in &threads {
+                let turns = repo::turns(&f.store, id).await.expect("turns");
+                if turns.iter().any(|t| t.state != TurnState::Running) {
+                    done += 1;
+                }
+            }
+            if done == threads.len() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let seen = seen.lock().expect("lock").clone();
+        assert_eq!(seen, vec![("claude".to_string(), TurnEndReason::Error)]);
     }
 
     #[tokio::test]

@@ -38,6 +38,7 @@ import { Palette } from "../palette/Palette";
 import { RecallPicker } from "../recall/RecallPicker";
 import { BestOf } from "../bestof/BestOf";
 import { PromptPicker } from "../prompts/PromptPicker";
+import { SessionLibrary } from "../library/SessionLibrary";
 import { Cheatsheet } from "../commands/Cheatsheet";
 import { DiagnosticsPanel } from "../diagnostics/DiagnosticsPanel";
 import { OrphansDialog } from "../restore/OrphansDialog";
@@ -236,6 +237,7 @@ export function AppShell() {
       <Palette />
       <RecallPicker />
       <PromptPicker />
+      <SessionLibrary />
       <BestOf />
       <Cheatsheet />
       <DiagnosticsPanel />

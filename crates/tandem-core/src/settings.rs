@@ -151,6 +151,8 @@ setting_keys! {
     AutoConsent,
     AutoDontAsk,
     FindWorkHosted,
+    EnginePins,
+    SessionSearch,
     SendKey,
     ReduceMotion,
     LogLevel,
@@ -893,6 +895,16 @@ pub static SCHEMA: &[SettingSpec] = &[
         ["auto", "terminal output"]
     ),
     spec!(AutoDontAsk, json!(false), V::Bool, Hidden, []),
+    // F-EN-08: engine id → true; Settings › Engines sets it per engine.
+    spec!(EnginePins, json!({}), V::Map, Hidden, []),
+    // F-TH-17: a local full-text index of session text, Pro, opt-in.
+    spec!(
+        SessionSearch,
+        json!(false),
+        V::Bool,
+        Privacy,
+        ["session", "library", "search", "index", "history"]
+    ),
     // D-1302: Find work's hosted ranking sends the search and the candidates'
     // redacted names and last lines off the machine, so it's opt-in.
     spec!(
@@ -1250,6 +1262,7 @@ mod tests {
             SettingKey::DictateShareHints,
             SettingKey::DictateDictionarySync,
             SettingKey::FindWorkHosted,
+            SettingKey::SessionSearch,
         ] {
             assert_eq!(default_value(key), json!(false), "{key:?}");
         }

@@ -34,6 +34,7 @@ import {
   NumberControl,
   PolicyBoolControl,
   SegmentControl,
+  SessionSearchControl,
   SelectControl,
   ShellIntegrationControl,
   TextControl,
@@ -967,6 +968,13 @@ export function settingsPages(platform: string, routines = false, accounts = fal
               },
             ]
           : []),
+        {
+          id: "session_search",
+          label: t("settings.sessionSearch"),
+          description: t("settings.sessionSearch.desc"),
+          keywords: ["session", "library", "search", "index", "history"],
+          control: (ids) => <SessionSearchControl ids={ids} label={t("settings.sessionSearch")} />,
+        },
         {
           id: "dictate_share_hints",
           label: t("settings.dictionaryHints"),
