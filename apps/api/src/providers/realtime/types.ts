@@ -14,13 +14,16 @@ export type Minted = {
   providerSessionId?: string;
 };
 
+/** The protocols the app speaks: a session's `provider` tells it which one (D-1013). */
+export type RealtimeProviderName = "mock" | "openai" | "gemini";
+
 /**
  * The realtime speech model behind a Conductor call (F-BE-08, ARCHITECTURE
  * §14.8). The API only mints: the app connects to `wsUrl` itself, so audio
  * and transcripts never pass through the API.
  */
 export interface RealtimeProvider {
-  readonly name: "mock" | "openai";
+  readonly name: RealtimeProviderName;
   mint(req: MintRequest): Promise<Minted>;
   /** The seconds the provider metered for a session, or null when it doesn't report usage. */
   reportedSeconds(providerSessionId: string): Promise<number | null>;

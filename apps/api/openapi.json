@@ -2690,6 +2690,14 @@
                   "voice": {
                     "type": "string",
                     "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                  },
+                  "providers": {
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+                    }
                   }
                 }
               }
