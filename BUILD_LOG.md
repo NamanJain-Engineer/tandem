@@ -977,13 +977,13 @@ Built by the session that coordinates the parallel milestone sessions, while the
     - tree-sitter indexes each worktree's changed TypeScript, TSX, Rust and Python definitions, plus the names used on added lines.
     - Two worktrees sharing a symbol show on the rail and in Check overlap, with Warn both agents. Sharing means one renames or removes what the other uses, or both change it.
     - The grammars add about 4.6 MB to the release binary.
-  - F-EN-08 Engine versions and updates under your control (`m16d-teammate-extras` 408f9154; D-2406–D-2410, D-2500–D-2505).
+  - F-EN-08 Engine versions and updates under your control (`m16d-teammate-extras` 408f9154; D-2406–D-2410, D-2500–D-2503).
     - The version book records current, previous, last good and failing versions.
     - Pin adds the engine's documented setting to new panes.
     - Rollback commands refuse anything but a version.
     - Only the engine's own faults (it couldn't start, or exited mid-turn, on this computer) count against a version.
     - Background engine processes are the user's own only, and Stop checks the pid, engine and start time.
-  - F-TH-17 Session library across engines (`m16d-teammate-extras` 408f9154; D-2411–D-2416).
+  - F-TH-17 Session library across engines (`m16d-teammate-extras` 408f9154; D-2411–D-2416, D-2504, D-2505).
     - Claude Code's and Codex's sessions from every account and from each engine's own home, listed and searchable.
     - Resume runs in the session's folder; Continue goes through a redacted brief.
     - Turning search off deletes the index.
