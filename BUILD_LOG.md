@@ -1,6 +1,7 @@
 # BUILD_LOG
 
 ## Current state
+- Design direction (`design-lead`, D-1890 to D-1899): `docs/DESIGN.md` sets the look, feel and journey for the app and the site after the owner's 20 October ask for a premium feel; `app-ui` and `site-motion` build on it, and the design lead reviews their READYs. See "Design direction (`design-lead`)".
 - Agent sandbox (M18, F-TL-11, branch `product-research`): Settings › Engines › Sandbox agent panes runs the engine of a local agent pane under bubblewrap on Linux (writes only to its folder, git data, provider home, tasks folder and `/tmp`; `~/.ssh`, the other secrets and Vibezeo's own data hidden; `.git/hooks` read-only; engines without a provider home run unsandboxed and say why); macOS and Windows say "Not available on this system yet". See "M18 checklist (Next features: sandbox)".
 - Product research (M18, branch `product-research`, 15 October 2026): `docs/COMPETITIVE_ANALYSIS.md` refreshed (landscape, tracker reaction counts, HN demand signals, and an evidence index in §6), and a new `docs/NEXT_FEATURES.md` added: 21 ranked features with draft acceptance criteria and proposed IDs (F-EN-07…11, F-DB-04, F-AC-08/09, F-TH-17, F-WT-05…08, F-SH-14, F-TL-11, F-TK-05, F-EX-06/07, F-CD-22…24), a build order for the top 10 in eight slices, six bold bets and the owner-only items. The documents only; no product code changed. Reddit couldn't be read from the research environment.
 - Repo: github.com/NamanJain-Engineer/tandem (private). Build kit in `build-kit/`; plan in `docs/PLAN.md`.
@@ -41,7 +42,7 @@
   - **Docs:** they run no script.
 
   The real-app captures were retaken from 0.7.2 at 2×. Lighthouse CI scores 1.00 on its five URLs with no warnings: blocking time 0 ms everywhere, largest paint 1.51–1.74 s (fonts trimmed, D-1844). Batched in `chain22` and deployed to vibezeo.com from `main` (D-851).
-- M16 Conductor voice API (F-BE-08, and the API halves of F-CN-02 and F-CN-05) is on `product-m0-m5` (pull request #30, built on `m16-voice-api`); see "M16 · F-BE-08 Conductor voice API". The desktop's Conductor client (F-CN-01…04, F-CN-08: calls, the local tool executor, the HUD, the call log) is on `m16a-conductor`; see "M16 · 16A Conductor core".
+- M16 Conductor voice API (F-BE-08, and the API halves of F-CN-02 and F-CN-05) is on `product-m0-m5` (pull request #30, built on `m16-voice-api`); see "M16 · F-BE-08 Conductor voice API". The desktop's Conductor client (F-CN-01…04, F-CN-08: calls, the local tool executor, the HUD, the call log) is on `m16a-conductor`; see "M16 · 16A Conductor core". The talker can come from a free primary with a backup, Gemini Live then OpenAI (D-1013 to D-1016, `m16-voice-api`). It's off until the owner turns it on (HUMAN_TODO). The app tells the API which providers it speaks, and a call whose talker fails before it's ready falls back to the next (D-1017); see "M16 · Conductor's voice: a free primary and a backup".
 - Windows from Linux (M15, branch `windows-ready`, D-1700…D-1710): the gate runs Windows clippy (GNU target, every crate but the app); `bash scripts/windows-check.sh --msvc --wine` (in `ci:local`) checks the app for MSVC through cargo-xwin and runs the platform crates' tests under Wine; `bash scripts/build-windows-installer.sh` cross-builds an unsigned NSIS installer and checks it. Nothing has run on real Windows: Windows stays "Coming soon" until HUMAN_TODO's "M15 Windows first run" passes. Setup in OPERATING §6a.
 - Layout matches DECISIONS: 10 crates under `crates/`, Tauri crate `apps/desktop/src-tauri` (lib `tandem_app`, bin `tandem`), `apps/{api,web}`, `packages/{ui,protocol}`.
 - macOS from Linux (M15, branch `macos-ready`, D-2100…D-2110; `docs/MACOS.md`): the bundle config for macOS 14 with the hardened runtime, the microphone entitlement and usage string; every bundled executable signed, the app and dmg notarized and stapled, each Mach-O verified (release.yml, `scripts/ci/macos-*.sh`, `codemagic.yaml`, the manual `macos.yml`); the gate runs macOS clippy for both architectures (`scripts/macos-check.sh`). Nothing has run on a Mac yet: HUMAN_TODO "macOS first run". macOS stays "Coming soon" on the site.
@@ -1224,6 +1225,66 @@ Built on `ccr-6d871eba-mxry64` (from `product-m0-m5`) by the voice API's session
   - Not run: the app's and the invariants' tests and clippy, the protocol drift check and the macOS check. All need the app, so `ort-sys`.
 - One test failed, and fails on `product-m0-m5` too: chain23's F-AC-09.8 (`f_ac_09_8_a_paused_agent_keeps_its_pane_and_its_shell_never_hands_it_back`) printed HANDBACK-147 in 3 of 5 runs on this branch and 1 of 6 on a7bac8c, mostly on the first run after a build. The shell took the terminal back while the job was paused, which D-857 meant to prevent. Left to the session that owns F-AC-09.
 
+## M16 · Conductor's voice: a free primary and a backup
+Built on `m16-voice-api` (restarted from `product-m0-m5` after #30 and #78) by the voice API's session, with decisions D-1013 to D-1017. The owner asked for the free model first, with the best backup. It stays off until the owner sets it up (HUMAN_TODO): released apps and the API's defaults behave as before.
+- [x] **API.** `REALTIME_PROVIDERS` orders the providers (`gemini,openai`). `POST /v1/voice/session` takes `providers`, the realtime protocols the app speaks, and mints with the first of those that mints, under one hold (D-1013). `GeminiLive` mints a Gemini Live ephemeral token (D-1014).
+- [x] **Client.** `tandem_voice::realtime::gemini::GeminiLive`, registered as `gemini`, and `realtime::PROVIDERS` for the session request (D-1015).
+- [x] **App and call (D-1017).** The app sends `providers`: the session request is `conductor::call::SessionRequest {voice, providers}`, which `services/api.rs` sends as it is. A call is connected when its talker says Ready to the call's configuration; a talker that fails before that is settled at 0 s and left out of the next request. Done here once the Conductor session had nothing in flight on `conductor/call.rs`, `commands/conductor.rs` or `services/api.rs`.
+- Facts used (Gemini Live, October 2026). Google's docs site is blocked here, so they come from Google's SDK source (`googleapis/js-genai` 2.30.0) and search results:
+  - Ephemeral tokens: `POST v1alpha/auth_tokens` with `uses`, `expireTime` (default 30 minutes, under 20 hours), `newSessionExpireTime` (default 60 s), `bidiGenerateContentSetup` and `fieldMask`. "Resuming a Live API session does not count as a use." The socket is `…/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=<name>`.
+  - A connection lasts about 10 minutes, with `goAway` about a minute before it ends. Audio-only sessions stop at 15 minutes unless context window compression is on. Resumption handles last 2 hours.
+  - Output audio is 24 kHz. Input is 16 kHz natively; other rates are resampled when tagged (`audio/pcm;rate=24000`).
+  - The Live models are free within rate limits on the free tier. Free-tier content is used to improve Google's products, and paid-tier content isn't. For the EEA, Switzerland and the UK, the terms allow only paid services. These come from third-party summaries of the terms: HUMAN_TODO has checking the original.
+
+### M16 · voice provider decisions
+- D-1013: Conductor's talker comes from an ordered list of providers, `REALTIME_PROVIDERS` (`gemini,openai`), or from `REALTIME_PROVIDER` alone as before.
+  - The session request names the realtime protocols the app speaks (`providers`). An app that names none speaks `mock` and `openai`, as every app released before this does, so it never gets a session it can't open.
+  - Names the API doesn't know are ignored, so a newer app can name a vendor an older API lacks.
+  - One hold, then each provider in order until one mints. A provider that fails (a free tier out of quota answers 429) logs its status, and the next one tries.
+  - The session records the provider that minted it, and the sweeper asks that one for usage. No migration: `voice_sessions.provider` is text.
+- D-1014: Gemini Live is minted with an ephemeral token: `POST v1alpha/auth_tokens`, with the key in `x-goog-api-key`.
+  - The token locks the model, spoken answers in the call's voice (one of the 8 prebuilt voices, else Puck), the `act` tool, both transcriptions, and sliding-window context compression, which lets a call pass 15 minutes. The tool is declared without `additionalProperties`, which the Live API's schema lacks.
+  - The app's instructions and its resumption handle stay unlocked. The app sends them in its setup, as it already replaces the base instructions with OpenAI.
+  - One use, the first connection within 60 s, and messages until the call's cap plus 5 minutes. Resuming isn't a use, so one token carries a 30-minute call across ~10-minute connections.
+  - The model (`gemini-3.1-flash-live-preview` unless `GEMINI_LIVE_MODEL` says otherwise) rides in `ws_url`'s fragment, since the grant has no model field and a fragment never leaves the app.
+- D-1015: The app's Gemini client has its own relay rather than the shared socket.
+  - The token goes in the query, never a header. The setup is the first frame, and every other frame waits for `setupComplete`.
+  - A frame can carry several events, in text or binary, and transcripts come in pieces: one TranscriptUser and one TranscriptAssistant per turn, when a piece is `finished` or at `turnComplete`.
+  - Audio goes at 24 kHz, tagged, for the service to resample. `interrupted` is SpeechStarted, `turnComplete` ResponseDone, each `functionCalls` entry a FunctionCall, and the act's output a `toolResponse`. Say is a user text turn.
+  - SetSpeed and Truncate send nothing: the Live API has no speech-rate setting and tracks barge-in itself. A tool call the service cancels still runs (`toolCallCancellation` is skipped).
+  - `goAway` reopens the socket on the same token, with the same setup and the latest resumable handle. An unexpected close tries the same, once per handle.
+- D-1017: A call is connected when its talker says Ready to the call's configuration, not when its socket opens. A talker that fails before that (refused at the handshake, closed at its setup, or silent past `CallTiming::ready`, 10 s) is settled at 0 s and left out of the next session request's `providers`. A free tier's rate limits count every user of the API's one key together, and going over them may only show at the setup.
+  - The call sends its configuration as part of connecting, then waits for Ready. OpenAI says Ready at `session.created`, before the configuration; the mock and Gemini answer the configuration (`session.ready`, `setupComplete`). So the workspace summary in the instructions is read before the mint now, not after the socket opens.
+  - Each failed provider leaves the list, so a call tries each at most once, and the last request, with nothing left the API can mint, is a 503 ("Couldn't connect to Conductor."). An API from before D-1013 ignores the list: a session it mints from a provider already left out is settled at 0, and the call fails rather than trying the same talker again.
+  - A hang-up or a failed mic while connecting stops the fallback: the session in hand is settled at 0 s, and no other is asked for.
+  - After Ready, nothing changes: a talker that hangs up mid-call ends the call.
+  - Each fallback costs one more of the user's 10 session requests an hour (`voice_session` in the API's rate limits).
+  - `SessionRequest` lives in `tandem-voice`, next to `ActRequest`, so its JSON is tested where tests can run here; the app only sends it.
+- D-1016: Gemini stays off until the owner turns it on, because the free tier changes what a call's audio is used for: free-tier content improves Google's products, and in the EEA, Switzerland and the UK only paid services are allowed. HUMAN_TODO has the choice (a paid Gemini key keeps the same code and lifts both), the key, and checks against a recorded session.
+
+### M16 · voice provider log
+- Tests first, red then green:
+  - API: without the implementation, `gemini.test.ts` couldn't load its module (5 tests), and 10 tests failed.
+    - 5 of the chain's 6. The sixth, every provider failing, passed by accident: the old code's error path also answers 503.
+    - The `REALTIME_PROVIDER` test, which now reads a list, and 4 earlier voice tests that now read the first provider.
+  - Client: 6 of the 7 Gemini tests failed on stubs. The seventh, a refused server, passed on the stub's error.
+- After: API 225 tests in 31 files. `tandem-voice`'s realtime tests 23, with Gemini's 7 among them. `openapi.json` regenerated (the session body's `providers`), and Prettier clean.
+- The gate on the final tree, as far as this environment allows:
+  - passed: coverage, the hook guard, lint, the desktop build, clippy, Windows clippy and fmt;
+  - TypeScript 1,563 (desktop 747, UI 411, API 225, web 116, remote 33, mobile 21, protocol 10);
+  - Rust 1,278 (2 ignored): the workspace without the app and the invariants, which need `ort-sys`'s download.
+  - Not run: the app's and the invariants' tests and clippy, the protocol drift check (no generated type changed) and the macOS check.
+- D-1017, tests first, red then green:
+  - With only the interface in place (`SessionRequest`, `CallHost::providers`, `CallTiming::ready`), the 6 fallback tests failed on the old connect. The request's JSON test and the 26 earlier call tests passed: the fake provider says Ready as it opens, as OpenAI does, so the earlier tests didn't change.
+  - After: the call's 33 tests, run 11 times (8 in parallel, 3 on one thread) without a flake.
+  - Two more tests pin what the fallback relies on: a Gemini socket closed at its setup is an Error, then Closed, never Ready; and every name in `realtime::PROVIDERS` has a client.
+  - The app's two changed files type-check: clippy on the app crate, library and tests, with `ORT_SKIP_DOWNLOAD=1` (OPERATING §5). Their tests and the desktop E2E (`m16-1-conductor`) need the app built, so `cdn.pyke.io`.
+- The gate on the final tree:
+  - passed: coverage, lint, the desktop build, clippy on the whole workspace (the app and the invariants too, with `ORT_SKIP_DOWNLOAD=1`), Windows clippy, fmt, and the macOS check on both architectures. The macOS check doesn't need `cdn.pyke.io`: it sets `DOCS_RS`, which skips ort-sys's download (the first version of this log left it out as if it did);
+  - TypeScript 1,563 (desktop 747, UI 411, API 225, web 116, remote 33, mobile 21, protocol 10);
+  - Rust 1,287 (2 ignored): the workspace without the app and the invariants, which can't link without the download.
+  - Not run: those two crates' tests, and the protocol drift check, which runs the app's tests to export its bindings. No generated type changed.
+
 ## M16C checklist (Phone companion)
 Built on branch `m16c-phone-companion` (from `product-m0-m5`, D-1900). Owns F-BE-11 Remote relay and F-RM-03 Phone companion (MILESTONES M16 §16C) and extends F-TL-06 rule 5 with the live phone path. Decisions are D-1900–D-1949.
 - [x] F-BE-11 Remote relay.
@@ -2029,6 +2090,19 @@ Built on branch `mobile-apps` (from `m16c-phone-companion`, with `product-m0-m5`
 - F-RM-05/06: the Expo app, demo mode, push end to end, the iOS extension, store files. What the runs found: Expo SDK 57 needs iOS 16.4 at least (prebuild refused 15.1); Gradle's Maven Central downloads got 429 through the proxy (Google's mirror fixed it); the release JS bundle needs `babel-preset-expo` declared in a pnpm workspace; the first push tests failed because a phone that just sent a frame counts as connected (the tests now disconnect it, as a closed app does); the LAN hub could close a revoked phone before the desktop's `bye` reached it (the close now queues behind the desktop's frames, through a weak sender so a dropped link still ends); merging `product-m0-m5` duplicated a `tandem-store` line in `tests/invariants/Cargo.toml`.
 - F-RM-07: the Flatpak (built and started here), the Snap YAML and host commands in a Flatpak. A full gate run caught the LAN revoke race again under load: once the desktop's link is gone, the weak sender can't carry the end marker, so the forwarding task now finishes a revoked slot itself when its queue closes. Four full desktop test runs after the fix: 528/528 each.
 - Android release built here: `VibezeoRemote-0.1.0.apk` (73 MB, arm64-v8a, armeabi-v7a, x86_64) and `.aab` (49 MB), 16 KB aligned, signed with a throwaway upload key.
+
+## Design direction (`design-lead`)
+The owner (20 October): the product and the site should feel premium, "not something cheap and just another product", so people stay, try it, use it and pay; "the features are primary but the look and feel is equally important". Branch `design-lead` (from `product-m0-m5`) sets the direction for both surfaces in `docs/DESIGN.md`, builds the shared token layer and reviews the two implementing sessions' work: `app-ui` (D-2600 on) and `site-motion` (D-1870 on). Decisions D-1890 to D-1899: D-1900 on already belongs to the phone companion.
+
+### Design direction decisions
+- D-1890: `docs/DESIGN.md` is the design direction for the app and the site: five brand attributes (calm, precise, fast, trustworthy, crafted; when they conflict, trustworthy > fast > calm > precise > crafted), principles from the design books, what makes premium products feel premium, the shared system, the journey from first visit to paying with concrete changes and owners, and how a READY is reviewed (must-fix or polish). It starts from an audit of vibezeo.com 0.8.0 and its live demo at 1440×900 (§0): the product starts below the fold, the home page is 12,984 px, teal does six jobs, the demo opens on an empty thread under a six-step coach card, and the app's surfaces don't share the site's light and depth.
+- D-1891: one token source. `packages/ui/src/styles/brand.css` (new) holds the brand layer both surfaces use: edges, fills, elevation e1–e3, the rings' light, card and frame radii, the expo-out curve. `site.css` keeps its `--site-*` names as aliases and mirrors the light block under `prefers-color-scheme`, as D-1801 does for `tokens.css`. The app imports it but changes nothing until a slice uses it. Migration slices T1–T7 are in DESIGN §4.1.
+- D-1892: one accent, three jobs: the primary action, focus and selection, and a control's active state. On the site at most three teal elements per viewport (eyebrows, inline links and ticks go neutral); in the app one accent-filled button per view. Status colours stay status only, each with its shape.
+- D-1893: the path to paying is honest by rule (DESIGN §5.5): no plan prompt during first run; a limit is explained at the control that hit it, free way out first; Pro lists only what `LIMITS` gives it and the download runs, with hosted features apart under "Comes with accounts"; buttons that can't work today say "Tell me when accounts open"; no countdowns or repeated nags. Two lines in 0.8.0 break it and are on `app-ui`'s list: "Unlimited panes & threads" and "upgrade for unlimited panes" (Pro is 64 panes, 6 threads).
+
+### Design direction log
+- Read the brief's sources, captured vibezeo.com and its live demo (Playwright, Chromium, 1440×900, dark and light), inventoried the journey as built (welcome, five-step wizard, launch grid, empty states, every upgrade prompt and its copy, raw colours and arbitrary values) and studied premium product sites for principles only.
+- `docs/DESIGN.md` written (D-1890 to D-1893).
 
 ## Decisions
 - D-1: F-CD-09 owned by M9. It needs the Files editor and the Tandem browser.

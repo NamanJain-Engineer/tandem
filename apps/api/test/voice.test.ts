@@ -7,6 +7,11 @@ import { sweepVoiceSessions } from "../src/jobs/voiceSweeper";
 import { logger } from "../src/lib/logger";
 import type { MockAi } from "../src/providers/ai/mock";
 import type { MockRealtime } from "../src/providers/realtime/mock";
+import {
+  type Minted as ProviderMinted,
+  type RealtimeProvider,
+  RealtimeUnavailableError,
+} from "../src/providers/realtime/types";
 import { parseMatches } from "../src/services/ai";
 import { addPurchased, balance, grantMonthly } from "../src/services/ledger";
 import { membershipOf } from "../src/services/membership";
@@ -22,7 +27,7 @@ afterEach(async () => {
 });
 
 const ai = () => t.deps.ai as MockAi;
-const rt = () => t.deps.realtime as MockRealtime;
+const rt = () => t.deps.realtime[0] as MockRealtime;
 
 /** A Pro user with the monthly grant (10,000), or exactly `credits` purchased credits. */
 async function proUser(email: string, credits?: number) {
@@ -203,6 +208,96 @@ describe("F-BE-08 voice sessions (/v1/voice/session)", () => {
     expect(await res.json()).toMatchObject({ code: "VOICE_UNAVAILABLE", retryable: true });
     expect(await creditsOf(userId)).toBe(10_000);
     expect(await t.deps.db.select().from(voiceSessions)).toHaveLength(0);
+  });
+});
+
+/** Another vendor for the chain: answers like a provider, or fails with `fail`. */
+class FakeVendor implements RealtimeProvider {
+  calls = 0;
+  fail?: number;
+  constructor(readonly name: "gemini" | "openai") {}
+  async mint(): Promise<ProviderMinted> {
+    this.calls += 1;
+    if (this.fail) throw new RealtimeUnavailableError("down", this.fail);
+    return { token: `tok_${this.name}_${this.calls}`, wsUrl: `wss://${this.name}.example/live` };
+  }
+  async reportedSeconds(): Promise<number | null> {
+    return null;
+  }
+}
+
+describe("F-BE-08 a free primary with a backup (D-1013)", () => {
+  let gemini: FakeVendor;
+  let backup: FakeVendor;
+  beforeEach(async () => {
+    await t.close();
+    gemini = new FakeVendor("gemini");
+    backup = new FakeVendor("openai");
+    t = await makeTestApp({}, { realtime: [gemini, backup] });
+  });
+
+  it("F-BE-08 an app that names what it speaks gets the first provider in order", async () => {
+    const { userId, bearer } = await proUser("chain1@tandem.test");
+    const s = await mint(bearer, { providers: ["mock", "openai", "gemini"] });
+    expect(s).toMatchObject({ provider: "gemini", ws_url: "wss://gemini.example/live" });
+    expect(backup.calls).toBe(0);
+    expect((await sessionRow(s.session_id))?.provider).toBe("gemini");
+    expect(await creditsOf(userId)).toBe(10_000 - 1_200);
+  });
+
+  it("F-BE-08 an app that names nothing never gets a provider it can't speak", async () => {
+    // Every app released before D-1013 speaks mock and openai only.
+    const { bearer } = await proUser("chain2@tandem.test");
+    const s = await mint(bearer);
+    expect(s.provider).toBe("openai");
+    expect(gemini.calls).toBe(0);
+  });
+
+  it("F-BE-08 a primary that can't mint falls back to the next, under one hold", async () => {
+    const { userId, bearer } = await proUser("chain3@tandem.test");
+    gemini.fail = 429;
+    const s = await mint(bearer, { providers: ["openai", "gemini"] });
+    expect(s.provider).toBe("openai");
+    expect([gemini.calls, backup.calls]).toEqual([1, 1]);
+    expect(await creditsOf(userId)).toBe(10_000 - 1_200);
+    expect(await t.deps.db.select().from(creditReservations)).toHaveLength(1);
+  });
+
+  it("F-BE-08 when no provider mints, the hold comes back and the call is unavailable", async () => {
+    const { userId, bearer } = await proUser("chain4@tandem.test");
+    gemini.fail = 503;
+    backup.fail = 500;
+    const res = await json(t, "POST", "/v1/voice/session", {
+      bearer,
+      body: { providers: ["gemini", "openai"] },
+    });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ code: "VOICE_UNAVAILABLE", retryable: true });
+    expect(await creditsOf(userId)).toBe(10_000);
+    expect(await t.deps.db.select().from(voiceSessions)).toHaveLength(0);
+  });
+
+  it("F-BE-08 names the API doesn't know are ignored; none it has is unavailable, with nothing held", async () => {
+    const { userId, bearer } = await proUser("chain5@tandem.test");
+    const s = await mint(bearer, { providers: ["future-vendor", "gemini"] });
+    expect(s.provider).toBe("gemini");
+    const none = await json(t, "POST", "/v1/voice/session", {
+      bearer,
+      body: { providers: ["future-vendor"] },
+    });
+    expect(none.status).toBe(503);
+    expect(await none.json()).toMatchObject({ code: "VOICE_UNAVAILABLE" });
+    expect(await creditsOf(userId)).toBe(10_000 - 1_200);
+    expect([gemini.calls, backup.calls]).toEqual([1, 0]);
+  });
+
+  it("F-BE-08 a malformed providers list is a 422", async () => {
+    const { bearer } = await proUser("chain6@tandem.test");
+    for (const providers of ["gemini", [""], ["Gemini!"], Array.from({ length: 17 }, (_, i) => `p${i}`)]) {
+      const res = await json(t, "POST", "/v1/voice/session", { bearer, body: { providers } });
+      expect(res.status, JSON.stringify(providers)).toBe(422);
+    }
+    expect(gemini.calls + backup.calls).toBe(0);
   });
 });
 

@@ -224,7 +224,11 @@ E2E lessons (each cost a debugging round):
   feature, which the app turns on) downloads its library from `cdn.pyke.io`
   when it builds. A cloud environment whose network policy blocks that host
   can't build the app or the invariants, so the gate's Rust half can't run
-  there: add the host under the environment's Allowed domains.
+  there: add the host under the environment's Allowed domains. Type-checking
+  still works without it: `ORT_SKIP_DOWNLOAD=1 cargo clippy --workspace
+  --all-targets -- -D warnings` (ort-sys's own switch: no download is tried,
+  and the missing library only fails a link). Tests and builds of those two
+  crates still need the host.
 
 ### 5a. CI and its minutes
 

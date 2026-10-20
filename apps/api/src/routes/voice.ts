@@ -19,6 +19,11 @@ export const voiceSessionBody = z.object({
     .string()
     .regex(/^[a-z0-9][a-z0-9_-]{0,39}$/i, "A voice is a name of letters, digits, - and _.")
     .optional(),
+  /** The realtime protocols the app speaks (D-1013); a name the API doesn't know is ignored. */
+  providers: z
+    .array(z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/, "A provider is a lowercase name."))
+    .max(16)
+    .optional(),
 });
 
 export const settleBody = z.object({ seconds: z.number().int().min(0).max(MAX_CALL_SECONDS) });
@@ -91,7 +96,7 @@ export function voiceRoutes(deps: Deps) {
     const body = await parseJson(c, voiceSessionBody);
     await allowed(userId);
     await limit(userId, "voice_session", c);
-    return c.json(await mintSession(deps, userId, body.voice));
+    return c.json(await mintSession(deps, userId, body.voice, body.providers));
   });
 
   // Never gated by plan or policy: a call that loses either still settles, and its hold comes back.
