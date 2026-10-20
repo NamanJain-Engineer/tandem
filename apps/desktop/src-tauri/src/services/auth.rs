@@ -858,7 +858,7 @@ fn callback_page(cb: &Callback) -> String {
     );
     format!(
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Vibezeo</title>\
-         <style>body{{font:15px system-ui,sans-serif;background:#0b111c;color:#dbe4ef;display:grid;place-items:center;height:100vh;margin:0}}\
+         <style>body{{font:15px system-ui,sans-serif;background:#121214;color:#e4e4e7;display:grid;place-items:center;height:100vh;margin:0}}\
          a{{color:#2dd4bf}}</style></head><body><main><h1>You can return to Vibezeo.</h1>\
          <p>If Vibezeo didn't come to the front, <a href=\"{link}\">open Vibezeo</a>.</p></main></body></html>"
     )

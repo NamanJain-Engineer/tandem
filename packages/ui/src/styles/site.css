@@ -9,19 +9,20 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --tn-bg: var(--slate-50);
-    --tn-surface-1: var(--slate-25);
-    --tn-surface-2: var(--slate-0);
-    --tn-surface-3: var(--slate-0);
-    --tn-surface-4: var(--slate-50);
-    --tn-overlay: rgb(15 23 42 / 0.36);
-    --tn-border: rgb(15 23 42 / 0.10);
-    --tn-border-strong: rgb(15 23 42 / 0.20);
-    --tn-divider: rgb(15 23 42 / 0.06);
-    --tn-text: #0f172a;
-    --tn-text-muted: #475569;
-    --tn-text-subtle: #5f6f84;
-    --tn-text-disabled: #94a3b8;
+    --tn-bg: var(--ink-50);
+    --tn-surface-1: var(--ink-25);
+    --tn-surface-2: var(--ink-0);
+    --tn-surface-3: var(--ink-0);
+    --tn-surface-4: var(--ink-50);
+    --tn-overlay: rgb(9 9 11 / 0.32);
+    --tn-border: rgb(9 9 11 / 0.09);
+    --tn-border-strong: rgb(9 9 11 / 0.17);
+    --tn-divider: rgb(9 9 11 / 0.06);
+    --tn-edge: rgb(255 255 255 / 0.7);
+    --tn-text: #18181b;
+    --tn-text-muted: #4f4f58;
+    --tn-text-subtle: #62626c;
+    --tn-text-disabled: #a1a1aa;
     --tn-text-inverse: #ffffff;
     --tn-accent: var(--teal-700);
     --tn-accent-hover: var(--teal-800);
@@ -36,10 +37,10 @@
     --tn-status-done-text: var(--green-700);
     --tn-status-waiting: var(--amber-700);
     --tn-status-waiting-soft: rgb(217 119 6 / 0.12);
-    --tn-status-done: var(--green-600);
+    --tn-status-done: var(--green-700);
     --tn-status-done-soft: rgb(22 163 74 / 0.10);
-    --tn-status-idle: var(--slate-400);
-    --tn-status-idle-soft: rgb(100 116 139 / 0.12);
+    --tn-status-idle: var(--ink-400);
+    --tn-status-idle-soft: rgb(113 113 122 / 0.12);
     --tn-status-error: var(--rose-600);
     --tn-status-error-soft: rgb(225 29 72 / 0.10);
     --tn-success: var(--green-600);
@@ -53,10 +54,10 @@
     --tn-diff-del-bg: rgb(225 29 72 / 0.08);
     --tn-diff-del-fg: var(--rose-700);
     --tn-diff-hunk-bg: rgb(2 132 199 / 0.06);
-    --tn-scrollbar: rgb(15 23 42 / 0.20);
+    --tn-scrollbar: rgb(9 9 11 / 0.20);
     --tn-selection: rgb(15 118 110 / 0.20);
-    --tn-kbd-bg: var(--slate-50);
-    --tn-shadow-color: 15 23 42;
+    --tn-kbd-bg: var(--ink-50);
+    --tn-shadow-color: 9 9 11;
   }
 }
 

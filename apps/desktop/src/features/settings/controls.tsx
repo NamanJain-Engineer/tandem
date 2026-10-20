@@ -297,7 +297,7 @@ export function ThemeCards({ label }: { label: string }) {
     {
       id: "dark",
       label: t("settings.theme.dark"),
-      swatch: <span className="block h-10 rounded-xs border border-border bg-[#060a12]" />,
+      swatch: <span className="block h-10 rounded-xs border border-border bg-[#09090b]" />,
     },
     {
       id: "light",
@@ -308,7 +308,7 @@ export function ThemeCards({ label }: { label: string }) {
       id: "system",
       label: t("settings.theme.system"),
       swatch: (
-        <span className="block h-10 rounded-xs border border-border bg-[linear-gradient(135deg,#060a12_50%,#f1f5f9_50%)]" />
+        <span className="block h-10 rounded-xs border border-border bg-[linear-gradient(135deg,#09090b_50%,#f4f4f5_50%)]" />
       ),
     },
   ];

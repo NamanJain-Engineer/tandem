@@ -42,7 +42,7 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
 ## 1. Design tokens
 
 ### 1.1 Principles
-- **Calm surfaces, loud status.** Neutrals carry 95% of the UI. Colour is reserved for status, the accent (focus, primary action, selection) and diff/syntax.
+- **Calm surfaces, readable status.** Neutrals carry 95% of the UI. Colour is reserved for status, the accent (focus, primary action, selection) and diff/syntax.
 - **Density:** a compact desktop density with a 4px base grid. The default control height is 32px, and 28px in dense contexts (pane headers, tables).
 - **Two themes, one set of tokens.** Components only reference semantic tokens (`--tn-*`), never raw palette values.
 - **Terminals stay terminals.** Terminal colours come from a separate ANSI palette per theme (§1.9).
@@ -83,8 +83,27 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
 
   --amber-300: #fcd34d;  --amber-400: #fbbf24; --amber-500: #f59e0b; --amber-600: #d97706; --amber-700: #b45309;
   --sky-300:   #7dd3fc;  --sky-400:   #38bdf8; --sky-500:   #0ea5e9; --sky-600:   #0284c7; --sky-700: #0369a1;
-  --green-300: #86efac;  --green-400: #4ade80; --green-500: #22c55e; --green-600: #16a34a; --green-700: #15803d;
-  --rose-300:  #fda4af;  --rose-400:  #fb7185; --rose-500:  #f43f5e; --rose-600:  #e11d48; --rose-700:  #be123c;
+  --green-300: #86efac;  --green-400: #4ade80; --green-500: #22c55e; --green-600: #16a34a; --green-700: #15803d; --green-800: #166534;
+  --rose-300:  #fda4af;  --rose-400:  #fb7185; --rose-500:  #f43f5e; --rose-600:  #e11d48; --rose-700:  #be123c; --rose-800: #9f1239;
+  /* Ink: the neutral near-black scale behind the app's surfaces (D-2600).
+     Slate stays for the site and anything that wants its blue cast. */
+  --ink-0:   #ffffff;
+  --ink-25:  #fafafa;
+  --ink-50:  #f4f4f5;
+  --ink-100: #e8e8eb;
+  --ink-200: #d4d4d8;
+  --ink-300: #a1a1aa;
+  --ink-400: #71717a;
+  --ink-500: #52525b;
+  --ink-600: #3f3f46;
+  --ink-700: #2a2a2f;
+  --ink-750: #232327;
+  --ink-775: #1c1c20;
+  --ink-800: #17171a;
+  --ink-850: #121214;
+  --ink-900: #0e0e10;
+  --ink-950: #09090b;
+
   --violet-400:#a78bfa;  --violet-500:#8b5cf6;
   --orange-400:#fb923c;
 }
@@ -93,25 +112,27 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
 :root, [data-theme="dark"] {
   color-scheme: dark;
 
-  /* surfaces (elevation increases upward) */
-  --tn-bg:            var(--slate-950);  /* window background, behind panes */
-  --tn-surface-1:     var(--slate-900);  /* rails, sidebars */
-  --tn-surface-2:     var(--slate-850);  /* panes, cards */
-  --tn-surface-3:     var(--slate-800);  /* raised: menus, popovers, sheets */
-  --tn-surface-4:     var(--slate-750);  /* hover on surface-3, inputs */
-  --tn-overlay:       rgb(2 6 12 / 0.64);/* modal scrim */
+  /* surfaces (elevation increases upward): neutral near-black, each step a
+     little lighter, so panes lift off the window without hard lines (D-2600) */
+  --tn-bg:            var(--ink-950);  /* window background, behind panes */
+  --tn-surface-1:     var(--ink-900);  /* rails, sidebars */
+  --tn-surface-2:     var(--ink-850);  /* panes, cards */
+  --tn-surface-3:     var(--ink-775);  /* raised: menus, popovers, sheets */
+  --tn-surface-4:     var(--ink-750);  /* hover on surface-3, inputs */
+  --tn-overlay:       rgb(0 0 0 / 0.62);/* modal scrim */
 
-  /* borders */
-  --tn-border:        rgb(148 163 184 / 0.14);
-  --tn-border-strong: rgb(148 163 184 / 0.26);
-  --tn-divider:       rgb(148 163 184 / 0.08);
+  /* borders: soft, so elevation does the separating */
+  --tn-border:        rgb(255 255 255 / 0.08);
+  --tn-border-strong: rgb(255 255 255 / 0.15);
+  --tn-divider:       rgb(255 255 255 / 0.055);
+  --tn-edge:          rgb(255 255 255 / 0.045); /* top-edge highlight on raised surfaces */
 
   /* text */
-  --tn-text:          #e6edf5;
-  --tn-text-muted:    #9aa8bb;
-  --tn-text-subtle:   #7d8ba0;   /* §7.3 fix: was #6b7a90 (4.06–4.39:1) */
-  --tn-text-disabled: #4a5668;
-  --tn-text-inverse:  var(--slate-950);
+  --tn-text:          #ededef;
+  --tn-text-muted:    #a3a3ac;
+  --tn-text-subtle:   #8b8b95;
+  --tn-text-disabled: #55555e;
+  --tn-text-inverse:  var(--ink-950);
 
   /* accent */
   --tn-accent:        var(--teal-400);
@@ -131,8 +152,8 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
   --tn-status-waiting-soft: rgb(251 191 36 / 0.14);
   --tn-status-done:         var(--green-400);
   --tn-status-done-soft:    rgb(74 222 128 / 0.14);
-  --tn-status-idle:         var(--slate-400);
-  --tn-status-idle-soft:    rgb(100 116 139 / 0.16);
+  --tn-status-idle:         var(--ink-400);
+  --tn-status-idle-soft:    rgb(113 113 122 / 0.16);
   --tn-status-error:        var(--rose-400);
   --tn-status-error-soft:   rgb(251 113 133 / 0.14);
 
@@ -152,9 +173,9 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
   --tn-diff-hunk-bg:  rgb(56 189 248 / 0.08);
 
   /* misc */
-  --tn-scrollbar:     rgb(148 163 184 / 0.22);
+  --tn-scrollbar:     rgb(255 255 255 / 0.16);
   --tn-selection:     rgb(45 212 191 / 0.28);
-  --tn-kbd-bg:        var(--slate-800);
+  --tn-kbd-bg:        var(--ink-775);
   --tn-shadow-color:  0 0 0;
 }
 
@@ -162,21 +183,22 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
 [data-theme="light"] {
   color-scheme: light;
 
-  --tn-bg:            var(--slate-50);
-  --tn-surface-1:     var(--slate-25);
-  --tn-surface-2:     var(--slate-0);
-  --tn-surface-3:     var(--slate-0);
-  --tn-surface-4:     var(--slate-50);
-  --tn-overlay:       rgb(15 23 42 / 0.36);
+  --tn-bg:            var(--ink-50);
+  --tn-surface-1:     var(--ink-25);
+  --tn-surface-2:     var(--ink-0);
+  --tn-surface-3:     var(--ink-0);
+  --tn-surface-4:     var(--ink-50);
+  --tn-overlay:       rgb(9 9 11 / 0.32);
 
-  --tn-border:        rgb(15 23 42 / 0.10);
-  --tn-border-strong: rgb(15 23 42 / 0.20);
-  --tn-divider:       rgb(15 23 42 / 0.06);
+  --tn-border:        rgb(9 9 11 / 0.09);
+  --tn-border-strong: rgb(9 9 11 / 0.17);
+  --tn-divider:       rgb(9 9 11 / 0.06);
+  --tn-edge:          rgb(255 255 255 / 0.7);
 
-  --tn-text:          #0f172a;
-  --tn-text-muted:    #475569;
-  --tn-text-subtle:   #5f6f84;   /* was #64748b: 4.34:1 on bg/surface-4 (slate-50) */
-  --tn-text-disabled: #94a3b8;
+  --tn-text:          #18181b;
+  --tn-text-muted:    #4f4f58;
+  --tn-text-subtle:   #62626c;
+  --tn-text-disabled: #a1a1aa;
   --tn-text-inverse:  #ffffff;
 
   --tn-accent:        var(--teal-700);   /* #0f766e: 5.5:1 on white (§7.3; teal-600 was 3.74:1) */
@@ -184,39 +206,39 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
   --tn-accent-press:  var(--teal-900);
   --tn-accent-fg:     #ffffff;
   --tn-accent-soft:   rgb(15 118 110 / 0.10);
-  --tn-accent-ring:   rgb(15 118 110 / 0.50);
+  --tn-accent-ring:   rgb(15 118 110 / 0.85);  /* §5.4: 3.6:1 on every surface (0.50 was 2.1:1) */
 
   --tn-status-working:      var(--sky-600);
   --tn-status-working-soft: rgb(2 132 199 / 0.10);
   --tn-status-working-text: var(--sky-700);    /* 5.9:1 on white (§7.3) */
   --tn-status-waiting-text: var(--amber-700);  /* 5.0:1 */
   --tn-status-done-text:    var(--green-700);  /* 5.0:1 */
-  --tn-status-waiting:      var(--amber-600);
+  --tn-status-waiting:      var(--amber-700);  /* §5.4: 3:1 as a dot (amber-600 was 2.9:1 on bg) */
   --tn-status-waiting-soft: rgb(217 119 6 / 0.12);
-  --tn-status-done:         var(--green-600);
+  --tn-status-done:         var(--green-700);  /* 3:1 as a dot on the ink-50 bg */
   --tn-status-done-soft:    rgb(22 163 74 / 0.10);
-  --tn-status-idle:         var(--slate-400);
-  --tn-status-idle-soft:    rgb(100 116 139 / 0.12);
+  --tn-status-idle:         var(--ink-400);
+  --tn-status-idle-soft:    rgb(113 113 122 / 0.12);
   --tn-status-error:        var(--rose-600);
   --tn-status-error-soft:   rgb(225 29 72 / 0.10);
 
   --tn-success: var(--green-600);
   --tn-warning: var(--amber-600);
-  --tn-danger:  var(--rose-600);
-  --tn-danger-hover: var(--rose-700);
+  --tn-danger:  var(--rose-700);   /* §5.4: 4.5:1 as text (rose-600 was 4.3:1 on bg) */
+  --tn-danger-hover: var(--rose-800);
   --tn-danger-fg: #ffffff;
   --tn-info:    var(--sky-600);
 
   --tn-diff-add-bg:   rgb(22 163 74 / 0.10);
-  --tn-diff-add-fg:   var(--green-700);
+  --tn-diff-add-fg:   var(--green-800);  /* §5.4: green-700 was 4.49:1 on its tint */
   --tn-diff-del-bg:   rgb(225 29 72 / 0.08);
   --tn-diff-del-fg:   var(--rose-700);
   --tn-diff-hunk-bg:  rgb(2 132 199 / 0.06);
 
-  --tn-scrollbar:     rgb(15 23 42 / 0.20);
+  --tn-scrollbar:     rgb(9 9 11 / 0.20);
   --tn-selection:     rgb(15 118 110 / 0.20);
-  --tn-kbd-bg:        var(--slate-50);
-  --tn-shadow-color:  15 23 42;
+  --tn-kbd-bg:        var(--ink-50);
+  --tn-shadow-color:  9 9 11;
 }
 
 /* ---------- Theme mapping for Tailwind 4 ---------- */
@@ -230,6 +252,7 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
   --color-border: var(--tn-border);
   --color-border-strong: var(--tn-border-strong);
   --color-divider: var(--tn-divider);
+  --color-edge: var(--tn-edge);
   --color-fg: var(--tn-text);
   --color-fg-muted: var(--tn-text-muted);
   --color-fg-subtle: var(--tn-text-subtle);
@@ -289,17 +312,18 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
   /* spacing: Tailwind default 4px scale is used as-is (spacing-1 = 4px) */
   --spacing: 4px;
 
-  /* radii */
-  --radius-xs: 4px;    /* chips, kbd, badges */
-  --radius-sm: 6px;    /* controls: buttons, inputs, menu items */
-  --radius-md: 8px;    /* panels, panes, cards, popovers */
+  /* radii (D-2600: softer, 10–12px on panes, cards and popovers) */
+  --radius-xs: 5px;    /* chips, kbd, badges */
+  --radius-sm: 8px;    /* controls: buttons, inputs, menu items */
+  --radius-md: 10px;   /* panels, panes, cards, popovers */
   --radius-lg: 12px;   /* dialogs, sheets */
   --radius-full: 9999px;
 
-  /* shadows (dark theme relies more on borders than shadows) */
-  --shadow-1: 0 1px 2px rgb(var(--tn-shadow-color) / 0.18);
-  --shadow-2: 0 4px 12px rgb(var(--tn-shadow-color) / 0.22), 0 1px 2px rgb(var(--tn-shadow-color) / 0.16);
-  --shadow-3: 0 12px 32px rgb(var(--tn-shadow-color) / 0.30), 0 2px 6px rgb(var(--tn-shadow-color) / 0.18);
+  /* elevation: a soft drop plus a faint top-edge highlight, so raised
+     surfaces read as lifted rather than outlined (D-2600) */
+  --shadow-1: inset 0 1px 0 var(--tn-edge), 0 1px 2px rgb(var(--tn-shadow-color) / 0.20);
+  --shadow-2: inset 0 1px 0 var(--tn-edge), 0 6px 16px -2px rgb(var(--tn-shadow-color) / 0.28), 0 1px 3px rgb(var(--tn-shadow-color) / 0.18);
+  --shadow-3: inset 0 1px 0 var(--tn-edge), 0 16px 40px -4px rgb(var(--tn-shadow-color) / 0.40), 0 2px 8px rgb(var(--tn-shadow-color) / 0.20);
   --shadow-focus: 0 0 0 2px var(--tn-bg), 0 0 0 4px var(--tn-accent-ring);
 
   /* motion */
@@ -323,9 +347,9 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
   --z-rail: 20;
   --z-titlebar: 30;
   --z-sidebar: 40;
-  --z-popover: 100;       /* menus, selects, tooltips anchored */
   --z-sheet: 200;
   --z-dialog: 300;
+  --z-popover: 350;       /* menus, selects, tooltips anchored: above the sheet or dialog they open from (D-109) */
   --z-toast: 400;
   --z-hud: 500;           /* Dictate/Conductor HUD */
   --z-command: 600;       /* command palette sits above everything but HUD? no: above HUD */
@@ -348,13 +372,29 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
 
 /* base */
 html, body, #root { height: 100%; background: var(--tn-bg); color: var(--tn-text); }
-body { font-family: var(--font-sans); font-size: 13px; line-height: 20px; -webkit-font-smoothing: antialiased; }
+body { font-family: var(--font-sans); font-size: 13px; line-height: 20px; -webkit-font-smoothing: antialiased; font-feature-settings: "cv02", "cv03", "cv04", "cv11"; }
 ::selection { background: var(--tn-selection); }
 :focus-visible { outline: none; box-shadow: var(--shadow-focus); border-radius: inherit; }
 * { scrollbar-width: thin; scrollbar-color: var(--tn-scrollbar) transparent; }
 ```
 
 **Z-index note:** the command palette is `--z-command` (600), above the HUD (500). When the palette opens, the Dictate/Conductor HUD remains visible behind it with 40% opacity.
+
+### 1.2a Developer-first refresh (M18 · `app-ui`, D-2600 to D-2601)
+These decisions replace the slate-on-navy look the app shipped with up to 0.8.0, at the owner's request (20 October 2026: "the best UI experience to the developer"). The CSS above is already the result.
+- **Neutral near-black (D-2600).** A new raw `--ink-*` scale (zinc-like, no blue cast: no channel more than 4 apart) backs every app surface. Dark: bg `#09090b`, rails `#0e0e10`, panes `#121214`, raised `#1c1c20`, inputs and hover `#232327`. Light: bg `#f4f4f5`, rails `#fafafa`, panes and raised `#ffffff`, inputs `#f4f4f5`. Slate stays in the raw palette for the site's own tokens and the QR code. The accent stays teal (DECISIONS).
+- **Gentle elevation, soft borders (D-2600).** Borders are white (dark) or ink (light) at 8% / 15%, dividers 5.5–6%. Each surface step is lighter than the one below (a test checks the order), and the shadows carry a 1px top-edge highlight (`--tn-edge`, `color-edge` in Tailwind), so raised things read as lifted instead of outlined.
+- **Radii (D-2600):** xs 5px (badges, kbd, chips), sm 8px (controls), md 10px (panes, cards, popovers), lg 12px (dialogs, sheets).
+- **Spacing rhythm:** the 4px grid stays. Panels 12px dense or 16px default, dialogs 24px; rows 30px; pane gutters 6px.
+- **Focus rings:** unchanged in shape: 2px of the window background, then 2px of `accent-ring`, at 3:1 or better on every surface in both themes.
+- **Type:** Inter with its alternates cv02, cv03, cv04 and cv11 (open digits, a single-storey a), so numbers and paths scan cleanly; the scale in §1.4 is unchanged. Counts, times and meters are tabular.
+- **Terminal palette:** Night's background is the pane surface `#121214` with neutral blacks and whites, so a terminal sits flush in its pane; Day's greys are the ink scale (§1.9). The window's first paint and the PTY's OSC 11 answer use the same values.
+- **Quiet status primitives (D-2601):**
+  - `StatusDot`: working is a filled dot whose halo breathes (still under reduced motion); waiting a diamond, done a check, idle a hollow ring, error a triangle, offline a dashed ring. Every status still has its own shape (§1.3).
+  - `Badge quiet`: a dot and sentence-case coloured text with no box ("● Needs you" in `waiting-text`), for rows that must stay calm. The boxed, upper-case badge stays for plan labels and rare flags.
+  - `Count`: a 16px tabular pill for unread and queued counts, "99+" above 99, tones neutral, accent and strong.
+  - `TimeAgo` / `compactAgo`: "now", "4m", "2h", "3d" in a `<time>` whose tooltip is the full date; labels come from the caller's `en.json`.
+- **Contrast:** every text token passes 4.5:1 and every status mark and the focus ring 3:1 on all five surfaces in both themes (`contrast.test.ts`). Light `status-done` moved to green-700 for that.
 
 ### 1.3 Colour usage rules
 | Use | Token | Never |
@@ -371,7 +411,7 @@ body { font-family: var(--font-sans); font-size: 13px; line-height: 20px; -webki
 | Usage and context meters: 80–94% | warning fill | |
 | Usage and context meters: ≥95% (plan windows only; context meters stop at warning) | danger fill | |
 
-Every status indicator pairs colour with a **shape or text label** (never colour alone): working = animated three-dot pulse, waiting = filled diamond, done = check, idle = hollow circle, error = triangle.
+Every status indicator pairs colour with a **shape or text label** (never colour alone): working = a filled dot with a breathing halo (D-2601), waiting = filled diamond, done = check, idle = hollow circle, error = triangle.
 
 ### 1.4 Typography rules
 - UI default: `text-base` (13/20) regular, `text-fg`.
@@ -418,14 +458,14 @@ Every status indicator pairs colour with a **shape or text label** (never colour
 
 ### 1.9 Terminal palettes (xterm `ITheme`)
 **Dark ("Tandem Night"):**
-- background `#0b111c`, foreground `#dbe4ef`, cursor `#2dd4bf`, cursorAccent `#0b111c`, selection `rgba(45,212,191,0.28)`
-- black `#1b2433`, red `#f87171`, green `#4ade80`, yellow `#fbbf24`, blue `#60a5fa`, magenta `#c084fc`, cyan `#2dd4bf`, white `#cbd5e1`
-- bright: black `#475569`, red `#fca5a5`, green `#86efac`, yellow `#fde68a`, blue `#93c5fd`, magenta `#d8b4fe`, cyan `#5eead4`, white `#f8fafc`
+- background `#121214`, foreground `#e4e4e7`, cursor `#2dd4bf`, cursorAccent `#121214`, selection `rgba(45,212,191,0.28)`
+- black `#26262b`, red `#f87171`, green `#4ade80`, yellow `#fbbf24`, blue `#60a5fa`, magenta `#c084fc`, cyan `#2dd4bf`, white `#d4d4d8`
+- bright: black `#5c5c66`, red `#fca5a5`, green `#86efac`, yellow `#fde68a`, blue `#93c5fd`, magenta `#d8b4fe`, cyan `#5eead4`, white `#fafafa`
 
 **Light ("Tandem Day"):**
-- background `#ffffff`, foreground `#1e293b`, cursor `#0d9488`, selection `rgba(13,148,136,0.20)`
-- black `#1e293b`, red `#dc2626`, green `#16a34a`, yellow `#b45309`, blue `#2563eb`, magenta `#9333ea`, cyan `#0d9488`, white `#64748b`
-- bright: black `#475569`, red `#ef4444`, green `#22c55e`, yellow `#d97706`, blue `#3b82f6`, magenta `#a855f7`, cyan `#14b8a6`, white `#0f172a`
+- background `#ffffff`, foreground `#27272a`, cursor `#0d9488`, selection `rgba(13,148,136,0.20)`
+- black `#27272a`, red `#dc2626`, green `#16a34a`, yellow `#b45309`, blue `#2563eb`, magenta `#9333ea`, cyan `#0d9488`, white `#71717a`
+- bright: black `#52525b`, red `#ef4444`, green `#22c55e`, yellow `#d97706`, blue `#3b82f6`, magenta `#a855f7`, cyan `#14b8a6`, white `#18181b`
 
 Setting "Terminal theme: Follow app / Night / Day / High contrast" (high contrast: pure `#000`/`#fff` with saturated ANSI).
 
@@ -536,7 +576,7 @@ Used for the **mode switcher** and small toggles.
 
 ### 2.15 StatusDot
 - 8px by default (6 / 8 / 10). `status`: working | waiting | done | idle | error | offline.
-- Shapes per §1.3. `pulse` is on for working (continuous, subtle opacity 0.5↔1 over 1.2s) and a single-shot pulse on transition to waiting.
+- Shapes per §1.3, as refreshed in §1.2a: working is a filled dot with a halo that breathes over 1.6s; waiting gets a single-shot pulse on transition.
 - Always paired with an `aria-label`, e.g. "Waiting for you".
 
 ### 2.16 ProgressBar and UsageMeter

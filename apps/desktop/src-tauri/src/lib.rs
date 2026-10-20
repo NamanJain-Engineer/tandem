@@ -544,9 +544,9 @@ pub fn theme_background(theme: &str, os_light: bool) -> (u8, u8, u8) {
         _ => false,
     };
     if light {
-        (0xf1, 0xf5, 0xf9)
+        (0xf4, 0xf4, 0xf5)
     } else {
-        (0x06, 0x0a, 0x12)
+        (0x09, 0x09, 0x0b)
     }
 }
 
@@ -1340,17 +1340,17 @@ mod tests {
     #[test]
     fn f_sh_05_1_dark_on_a_light_os_starts_hidden_on_the_dark_background() {
         // Dark stays dark on a light OS; only "system" follows the OS.
-        assert_eq!(theme_background("dark", true), (0x06, 0x0a, 0x12));
-        assert_eq!(theme_background("light", false), (0xf1, 0xf5, 0xf9));
-        assert_eq!(theme_background("system", true), (0xf1, 0xf5, 0xf9));
-        assert_eq!(theme_background("system", false), (0x06, 0x0a, 0x12));
+        assert_eq!(theme_background("dark", true), (0x09, 0x09, 0x0b));
+        assert_eq!(theme_background("light", false), (0xf4, 0xf4, 0xf5));
+        assert_eq!(theme_background("system", true), (0xf4, 0xf4, 0xf5));
+        assert_eq!(theme_background("system", false), (0x09, 0x09, 0x0b));
         // The window is created hidden on the dark background and only shown
         // by `app_ready` after the UI's first paint.
         let conf: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).expect("conf");
         let main = &conf["app"]["windows"][0];
         assert_eq!(main["visible"], false);
-        assert_eq!(main["backgroundColor"], "#060a12");
+        assert_eq!(main["backgroundColor"], "#09090b");
         let html = include_str!("../../index.html");
         assert!(
             html.contains(r#"data-theme="dark""#),

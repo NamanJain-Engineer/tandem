@@ -27,12 +27,84 @@ const DOT: Partial<Record<BadgeVariant, string>> = {
   error: "bg-error",
 };
 
-/** UI_SPEC §2.13: 18px, text-2xs medium. Status badges use the *-text tokens. */
-export function Badge({ variant = "neutral", dot, children, className }: { variant?: BadgeVariant; dot?: boolean; children: ReactNode; className?: string }) {
+// Quiet badges are coloured text beside a dot: no box, no capitals (D-2601).
+const QUIET: Record<BadgeVariant, string> = {
+  neutral: "text-fg-muted",
+  accent: "text-accent",
+  working: "text-working-text",
+  waiting: "text-waiting-text",
+  done: "text-done-text",
+  idle: "text-fg-muted",
+  error: "text-error",
+  outline: "text-fg-muted",
+};
+
+/** UI_SPEC §2.13: 18px, text-2xs medium. Status badges use the *-text tokens.
+ * `quiet` drops the box and the capitals for a dot and sentence-case text
+ * ("● Needs you"), for rows that must stay calm (D-2601). */
+export function Badge({
+  variant = "neutral",
+  dot,
+  quiet,
+  children,
+  className,
+}: {
+  variant?: BadgeVariant;
+  dot?: boolean;
+  quiet?: boolean;
+  children: ReactNode;
+  className?: string;
+}) {
+  if (quiet)
+    return (
+      <span className={cx("inline-flex h-[18px] shrink-0 items-center gap-1.5 text-xs font-medium", QUIET[variant], className)}>
+        {dot && <span aria-hidden="true" className={cx("size-1.5 rounded-full", DOT[variant] ?? "bg-fg-muted")} />}
+        {children}
+      </span>
+    );
   return (
     <span className={cx("inline-flex h-[18px] shrink-0 items-center gap-1 rounded-xs px-1.5 text-2xs font-medium uppercase tracking-caps", BADGE[variant], className)}>
       {dot && <span aria-hidden="true" className={cx("size-1.5 rounded-full", DOT[variant] ?? "bg-fg-muted")} />}
       {children}
+    </span>
+  );
+}
+
+export type CountTone = "neutral" | "accent" | "strong";
+
+const COUNT: Record<CountTone, string> = {
+  neutral: "bg-surface-4 text-fg-muted",
+  accent: "bg-accent text-accent-fg",
+  strong: "bg-fg text-fg-inverse",
+};
+
+/** A small count pill (unread, queued, waiting): 16px, tabular, fully
+ * rounded. Counts above `max` read "99+". `label` is the accessible name
+ * ("3 unread"); without it the number is read as is (D-2601). */
+export function Count({
+  value,
+  tone = "neutral",
+  max = 99,
+  label,
+  className,
+}: {
+  value: number;
+  tone?: CountTone;
+  max?: number;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-label={label}
+      role={label ? "img" : undefined}
+      className={cx(
+        "inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-2xs font-semibold tabular-nums leading-none",
+        COUNT[tone],
+        className,
+      )}
+    >
+      {value > max ? `${max}+` : value}
     </span>
   );
 }

@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Bell, Folder, PanelLeft, Plus, Settings, Terminal } from "lucide-react";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { Avatar, AvatarStack } from "../components/Avatar";
-import { Badge, Chip } from "../components/Badge";
+import { Badge, Chip, Count } from "../components/Badge";
 import { WaveformRing } from "../components/WaveformRing";
 import { Button } from "../components/Button";
 import { QRCode } from "../components/QRCode";
@@ -239,6 +239,8 @@ export const galleryEntries: GalleryEntry[] = [
     states: [
       { name: "badges", render: () => (<div className="flex flex-wrap gap-2">{(["neutral", "accent", "working", "waiting", "done", "idle", "error", "outline"] as const).map((v) => <Badge key={v} variant={v} dot={v !== "outline"}>{v}</Badge>)}</div>) },
       { name: "chips", render: () => (<div className="flex gap-2"><Chip label="screenshot.png" onRemove={noop} /><Chip label="src/auth.ts" icon={<Folder size={12} />} selected /></div>) },
+      { name: "quiet", render: () => (<div className="flex flex-wrap items-center gap-3"><Badge variant="waiting" quiet dot>Needs you</Badge><Badge variant="working" quiet dot>Working</Badge><Badge variant="done" quiet>Done</Badge></div>) },
+      { name: "counts", render: () => (<div className="flex items-center gap-2"><Count value={1} /><Count value={12} tone="accent" /><Count value={140} tone="strong" label="140 unread" /></div>) },
     ],
   },
   {

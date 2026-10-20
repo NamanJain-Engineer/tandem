@@ -111,6 +111,17 @@ describe("§5.4 WCAG 2.2 AA contrast over the tokens", () => {
     });
   }
 
+  it("D-2600 dark: surfaces rise in lightness with elevation, all of them neutral", () => {
+    const t = themes.dark;
+    const lum = SURFACES.map((name) => luminance(parse(t.get(name) as string, t)));
+    for (let i = 1; i < lum.length; i++) expect(lum[i]).toBeGreaterThan(lum[i - 1] as number);
+    for (const name of SURFACES) {
+      const [r, g, b] = parse(t.get(name) as string, t);
+      // Neutral: no channel more than 4 apart (the old slate leaned blue by 12).
+      expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeLessThanOrEqual(4);
+    }
+  });
+
   it("measures known pairs correctly", () => {
     const t = new Map([
       ["--tn-bg", "#ffffff"],
