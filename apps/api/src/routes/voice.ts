@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { Deps } from "../deps";
 import { ApiError } from "../lib/problem";
+import { callerCountry } from "../lib/region";
 import { parseJson } from "../lib/validate";
 import { requireUser } from "../middleware/auth";
 import type { AppEnv } from "../middleware/context";
@@ -18,6 +19,11 @@ export const voiceSessionBody = z.object({
   voice: z
     .string()
     .regex(/^[a-z0-9][a-z0-9_-]{0,39}$/i, "A voice is a name of letters, digits, - and _.")
+    .optional(),
+  /** The realtime protocols the app speaks (D-1013); a name the API doesn't know is ignored. */
+  providers: z
+    .array(z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/, "A provider is a lowercase name."))
+    .max(16)
     .optional(),
 });
 
@@ -91,7 +97,10 @@ export function voiceRoutes(deps: Deps) {
     const body = await parseJson(c, voiceSessionBody);
     await allowed(userId);
     await limit(userId, "voice_session", c);
-    return c.json(await mintSession(deps, userId, body.voice));
+    // Read only the header the edge is configured to set (D-1018); without one, no country.
+    const header = deps.env.CLIENT_COUNTRY_HEADER;
+    const country = header ? callerCountry(c.req.header(header)) : undefined;
+    return c.json(await mintSession(deps, userId, body.voice, body.providers, country));
   });
 
   // Never gated by plan or policy: a call that loses either still settles, and its hold comes back.

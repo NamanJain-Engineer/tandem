@@ -1,0 +1,107 @@
+{
+  "_source": "Hand-built from Google's Gen AI SDK for TypeScript (googleapis/js-genai 2.30.0: src/types.ts LiveServerMessage, LiveServerContent, Transcription, LiveServerToolCall, LiveServerToolCallCancellation, LiveServerSessionResumptionUpdate, LiveServerGoAway; src/live.ts), not recorded: HUMAN_TODO.md has recording a real session and comparing it with this file. Frames are decoded in order with one turn's state. `expect` lists the normalized events each becomes (none: skipped) and `control` what realtime::gemini acts on itself.",
+  "events": [
+    {
+      "frame": { "setupComplete": {} },
+      "expect": [],
+      "control": { "setupComplete": true }
+    },
+    {
+      "frame": { "serverContent": { "inputTranscription": { "text": "Launch two " } } },
+      "expect": []
+    },
+    {
+      "frame": {
+        "serverContent": { "inputTranscription": { "text": "claude agents.", "finished": true } }
+      },
+      "expect": [{ "TranscriptUser": "Launch two claude agents." }]
+    },
+    {
+      "frame": {
+        "toolCall": {
+          "functionCalls": [
+            { "id": "fc_1", "name": "act", "args": { "request": "launch two claude agents" } }
+          ]
+        }
+      },
+      "expect": [
+        {
+          "FunctionCall": {
+            "call_id": "fc_1",
+            "name": "act",
+            "args": { "request": "launch two claude agents" }
+          }
+        }
+      ]
+    },
+    {
+      "frame": {
+        "serverContent": {
+          "modelTurn": {
+            "role": "model",
+            "parts": [{ "inlineData": { "mimeType": "audio/pcm;rate=24000", "data": "ZABkAJz/nP8=" } }]
+          }
+        }
+      },
+      "expect": [{ "AudioDelta": { "item": null, "pcm": [100, 100, -100, -100] } }]
+    },
+    {
+      "frame": { "serverContent": { "outputTranscription": { "text": "Starting two " } } },
+      "expect": []
+    },
+    {
+      "frame": { "serverContent": { "outputTranscription": { "text": "agents." } } },
+      "expect": []
+    },
+    {
+      "frame": { "serverContent": { "generationComplete": true } },
+      "expect": []
+    },
+    {
+      "frame": { "serverContent": { "turnComplete": true } },
+      "expect": [{ "TranscriptAssistant": "Starting two agents." }, "ResponseDone"]
+    },
+    {
+      "frame": { "serverContent": { "outputTranscription": { "text": "Two agents are" } } },
+      "expect": []
+    },
+    {
+      "frame": { "serverContent": { "inputTranscription": { "text": "Stop" } } },
+      "expect": []
+    },
+    {
+      "frame": { "serverContent": { "interrupted": true } },
+      "expect": ["SpeechStarted"]
+    },
+    {
+      "frame": { "serverContent": { "turnComplete": true } },
+      "expect": [
+        { "TranscriptUser": "Stop" },
+        { "TranscriptAssistant": "Two agents are" },
+        "ResponseDone"
+      ]
+    },
+    {
+      "frame": { "sessionResumptionUpdate": { "newHandle": "resume_h1", "resumable": true } },
+      "expect": [],
+      "control": { "handle": "resume_h1" }
+    },
+    {
+      "frame": { "sessionResumptionUpdate": { "resumable": false } },
+      "expect": []
+    },
+    {
+      "frame": { "usageMetadata": { "promptTokenCount": 120, "totalTokenCount": 160 } },
+      "expect": []
+    },
+    {
+      "frame": { "toolCallCancellation": { "ids": ["fc_1"] } },
+      "expect": []
+    },
+    {
+      "frame": { "goAway": { "timeLeft": "50s" } },
+      "expect": [],
+      "control": { "goAway": true }
+    }
+  ]
+}

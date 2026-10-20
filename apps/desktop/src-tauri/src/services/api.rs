@@ -454,11 +454,12 @@ pub trait ApiClient: Send + Sync {
     ) -> Result<AutoNextResponse, ApiError> {
         Err(no_hosted_service())
     }
-    /// `POST /v1/voice/session` (F-CN-01): mints a Conductor call.
+    /// `POST /v1/voice/session` (F-CN-01): mints a Conductor call from one
+    /// of the providers the request names (D-1013).
     async fn voice_session(
         &self,
         _access: &str,
-        _voice: Option<&str>,
+        _req: &tandem_voice::conductor::call::SessionRequest,
     ) -> Result<tandem_voice::conductor::call::SessionGrant, ApiError> {
         Err(no_hosted_service())
     }
@@ -889,18 +890,14 @@ impl ApiClient for HttpApi {
     async fn voice_session(
         &self,
         access: &str,
-        voice: Option<&str>,
+        req: &tandem_voice::conductor::call::SessionRequest,
     ) -> Result<tandem_voice::conductor::call::SessionGrant, ApiError> {
-        let body = match voice {
-            Some(v) => serde_json::json!({ "voice": v }),
-            None => serde_json::json!({}),
-        };
         let req = self
             .net
             .client()
             .post(self.url("/v1/voice/session"))
             .bearer_auth(access)
-            .json(&body);
+            .json(req);
         self.call(req).await
     }
 

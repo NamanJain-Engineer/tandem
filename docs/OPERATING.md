@@ -209,6 +209,14 @@ E2E lessons (each cost a debugging round):
   `/__say`, `/__state`, `/__control` and `/__close` steer it; `test_conductor_inject`
   runs doer tool calls the mock doer doesn't plan, and `test_conductor_clock` moves
   only the call's clock (the 30-minute cap).
+- Conductor's free primary against Google's real Gemini Live (D-1018):
+  `GEMINI_API_KEY=… bash scripts/agent/gemini-live-check.sh` (about a minute;
+  `--long` adds a 12-minute call past Google's 10-minute reconnect). The API's
+  `GeminiLive` mints each token and the app's own client opens it; tokens stay in
+  a private temp file and are never printed. In a cloud session, add
+  `GEMINI_API_KEY` in the environment's settings and start a new session (a
+  running one doesn't see it). The WebSocket goes out directly, which works
+  from Claude's cloud containers.
 - Dictate specs download models from `scripts/serve-models.ts` (:8792, the real
   `~/.cache/tandem-models`; run `bash scripts/fetch-models.sh base.en parakeet`
   first). The runner points `HOME` at the test's home, so anything that needs the
@@ -224,7 +232,11 @@ E2E lessons (each cost a debugging round):
   feature, which the app turns on) downloads its library from `cdn.pyke.io`
   when it builds. A cloud environment whose network policy blocks that host
   can't build the app or the invariants, so the gate's Rust half can't run
-  there: add the host under the environment's Allowed domains.
+  there: add the host under the environment's Allowed domains. Type-checking
+  still works without it: `ORT_SKIP_DOWNLOAD=1 cargo clippy --workspace
+  --all-targets -- -D warnings` (ort-sys's own switch: no download is tried,
+  and the missing library only fails a link). Tests and builds of those two
+  crates still need the host.
 
 ### 5a. CI and its minutes
 
