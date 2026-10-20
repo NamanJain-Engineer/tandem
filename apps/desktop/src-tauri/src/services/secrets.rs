@@ -387,7 +387,6 @@ mod tests {
             "test \"$API_KEY\" = sk_test_4242xyz && echo \"ok $PORT $API_KEY\"",
         )
         .await
-        .ok()
         .expect("prepared");
         assert_eq!(folder, root);
         let tab = pane.tab_id.clone();

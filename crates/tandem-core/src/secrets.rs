@@ -218,7 +218,6 @@ mod tests {
         let r = resolve(&vars, |n| {
             (n == "stripe-test").then(|| "sk_test_42".to_string())
         })
-        .ok()
         .expect("resolved");
         assert_eq!(r.env.get("API_KEY").map(String::as_str), Some("sk_test_42"));
         assert_eq!(r.env.get("PORT").map(String::as_str), Some("3000"));
