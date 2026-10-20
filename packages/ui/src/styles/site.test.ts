@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 const tokens = readFileSync(join(import.meta.dirname, "tokens.css"), "utf8");
 const site = readFileSync(join(import.meta.dirname, "site.css"), "utf8");
+const brand = readFileSync(join(import.meta.dirname, "brand.css"), "utf8");
 
 type Rgba = [number, number, number, number];
 
@@ -27,10 +28,13 @@ const LIGHT_SELECTOR = ':root:not([data-theme="dark"]) {';
 const siteLightTn = vars(site, LIGHT_SELECTOR);
 const siteRoot = vars(site, "/* ---------- 2.");
 const siteLightSemantic = vars(site, LIGHT_SELECTOR, site.indexOf("/* ---------- 2."));
+const brandDark = vars(brand, ':root, [data-theme="dark"]');
+const brandLight = vars(brand, '[data-theme="light"]');
+const siteLightBrand = vars(site, LIGHT_SELECTOR, site.indexOf("/* ---------- 1b."));
 
 const themes = {
-  dark: new Map([...appDark, ...siteRoot]),
-  light: new Map([...appLight, ...siteRoot, ...siteLightSemantic]),
+  dark: new Map([...appDark, ...brandDark, ...siteRoot]),
+  light: new Map([...appLight, ...brandLight, ...siteRoot, ...siteLightSemantic]),
 };
 
 function parse(value: string, theme: Map<string, string>): Rgba {
@@ -114,10 +118,23 @@ describe("F-WB-01 site.css (D-1801)", () => {
         expect(ratio(theme, "--tn-accent-fg", stop), `${name} ${stop}`).toBeGreaterThanOrEqual(4.5);
   });
 
-  it("F-WB-01 every light, depth and edge token the dark theme sets has a light value (D-1830)", () => {
+  it("F-WB-01 site light theme mirrors the brand layer's light tokens (D-1891)", () => {
+    expect(brandLight.size).toBeGreaterThan(12);
+    expect(Object.fromEntries(siteLightBrand)).toEqual(Object.fromEntries(brandLight));
+  });
+
+  it("F-WB-01 every light, depth and edge token the dark theme sets has a light value (D-1830, D-1891)", () => {
     const themed = [...siteRoot.keys()].filter((k) => /^--site-(edge|fill|glow|ring|elev|bezel|line|btn|spot)/.test(k));
     expect(themed.length).toBeGreaterThan(12);
-    expect(themed.filter((k) => !siteLightSemantic.has(k))).toEqual([]);
+    // Set in the site's light block, or an alias of a brand.css token that has a light value.
+    const lit = (k: string) => {
+      if (siteLightSemantic.has(k)) return true;
+      const alias = /^var\((--tn-[\w-]+)\)$/.exec(siteRoot.get(k) ?? "");
+      return alias !== null && brandDark.has(alias[1] as string) && brandLight.has(alias[1] as string);
+    };
+    expect(themed.filter((k) => !lit(k))).toEqual([]);
+    // Every brand token the dark theme sets has a light value.
+    expect([...brandDark.keys()].filter((k) => !brandLight.has(k))).toEqual([]);
   });
 
   it("F-WB-01 eyebrows, card text and the accent pass AA on the bezel and card fills (D-1830)", () => {

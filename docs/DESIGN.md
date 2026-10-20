@@ -1,6 +1,6 @@
 # Vibezeo design direction
 
-**Owner:** the design lead (`design-lead`). **Decisions:** D-1890 to D-1899 (BUILD_LOG "Design direction (`design-lead`)").
+**Owner:** the design lead (`design-lead`). **Decisions:** D-1890 to D-1899, then D-2700 on (BUILD_LOG "Design direction (`design-lead`)").
 **Read with:** `build-kit/DECISIONS.md` (Identity, Visual identity, the clean room), `build-kit/UI_SPEC.md` §1 (the app's tokens), `docs/WEBSITE_ELITE.md` (the site's lit system, D-1830 to D-1844) and `docs/BLOG.md` §1.
 **Who builds on it:** `app-ui` (the app: tokens, engine marks, pane headers, rail, launch grid, Agent mode's first run, status bar, threads; decisions from D-2600) and `site-motion` (the site: dark mode, motion and animated product scenes; decisions from D-1870).
 
