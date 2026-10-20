@@ -9,11 +9,11 @@ Vibezeo detects these coding agent CLIs on your login shell's `PATH` and shows h
 
 <EnginesTable />
 
-Antigravity CLI and Kiro CLI run in terminal panes only, as their vendors ship them. Kiro CLI can have several accounts, each in its own home; Antigravity CLI keeps one account per computer, because it stores its sign-in in the system keyring. Gemini CLI is still listed: Google serves it to paid API keys and Gemini Code Assist Standard or Enterprise, and personal Google accounts use Antigravity CLI.
+Antigravity CLI runs in terminal panes only, as Google ships it. Kiro CLI runs in terminal panes and, through its Agent Client Protocol mode, in Thread mode. Kiro CLI can have several accounts, each in its own home; Antigravity CLI keeps one account per computer, because it stores its sign-in in the system keyring. Gemini CLI is still listed: Google serves it to paid API keys and Gemini Code Assist Standard or Enterprise, and personal Google accounts use Antigravity CLI.
 
 ## Any ACP agent in Thread mode
 
-Agents that speak the Agent Client Protocol (ACP) can run threads. Cursor Agent, Gemini CLI, Grok and OpenCode do out of the box. To add another, open **Settings › Engines › ACP agents** and choose **Add an ACP agent…**:
+Agents that speak the Agent Client Protocol (ACP) can run threads. Cursor Agent, Gemini CLI, Grok, Kiro CLI and OpenCode do out of the box. To add another, open **Settings › Engines › ACP agents** and choose **Add an ACP agent…**:
 
 - **Name**, **Command** (a command on your `PATH`, or its full path), **Arguments** and **Environment variables**. **Goose** fills in `goose acp`.
 - **Test** starts the command, asks it to introduce itself, waits up to 10 seconds and stops it. You see its name, version and how it signs in. If it doesn't answer as an ACP agent, it says "Not an ACP agent" and why, and nothing is saved. **Add** runs the same test before saving.

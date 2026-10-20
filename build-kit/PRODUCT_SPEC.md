@@ -1375,7 +1375,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 - **Two new terminal engines**, added from each vendor's own documentation (checked 15 October 2026, D-2404):
   - **Antigravity CLI** (Google): command `agy`, `agy --version`, installed with Google's script (`curl -fsSL https://antigravity.google/cli/install.sh | bash` on macOS and Linux, `irm https://antigravity.google/cli/install.ps1 | iex` on Windows). It signs in through the browser and keeps its token in the system keyring, and its docs name no way to move its home, so it has one account per computer (`homeStrategy: none`). It reads `GEMINI.md` and `AGENTS.md` (F-EN-07).
   - **Kiro CLI** (AWS): command `kiro-cli`, `kiro-cli --version`, installed with `curl -fsSL https://cli.kiro.dev/install | bash`. `KIRO_HOME` points it at a provider home, so each account has its own (F-AC-01). Sign in and out with `kiro-cli login` and `kiro-cli logout`, run in the account's home.
-  - Both run in terminal panes only, unmodified and signed in by themselves. Neither is a Thread engine, and Vibezeo never runs them headless: Antigravity's terms for third-party automation wait on the owner (HUMAN_TODO).
+  - Both run in terminal panes, unmodified and signed in by themselves, and Vibezeo never runs them headless: Antigravity's terms for third-party automation wait on the owner (HUMAN_TODO). Antigravity CLI is not a Thread engine. Kiro CLI became one through its documented ACP mode with F-EN-10 (D-2510).
   - Screen patterns that need a signed-in run to record (ready, waiting, limit) start empty, so status falls back to output and quiet (F-EN-06); usage limits use the common patterns.
 - **Engine notes:** a registry entry may carry a `note`, shown on its tile in the launch grid's "Not installed" list and in Settings › Engines. Gemini CLI's says: "Google serves Gemini CLI to paid API keys and Gemini Code Assist Standard or Enterprise. Personal Google accounts use Antigravity CLI."
 - **Models from the engines:** a Thread engine's model picker leads with what the engine reports at run time (Codex's `model/list`, ACP's `session/new`), then the remote and bundled catalog (F-TH-08); with nothing reported, the catalog fills it. Terminal engines have no picker: Antigravity and Kiro choose their model inside their own UI (D-2405).
@@ -1383,14 +1383,14 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 **Acceptance:**
 1. With `agy` and `kiro-cli` on the login PATH, both are detected and launch in terminal panes. Two Kiro accounts get two provider homes, each passed as `KIRO_HOME`; Antigravity offers one account.
 2. Gemini CLI stays listed, with its note about API keys and enterprise access.
-3. Neither new engine appears as a Thread engine, in the teammate engine picker, or in any headless run.
+3. Antigravity CLI appears in no Thread engine picker, teammate engine picker or headless run. Kiro CLI appears as a Thread and teammate engine through `kiro-cli acp`, as every ACP engine does (F-EN-10 supersedes this criterion's first version, D-2510), and in no headless run.
 4. When Codex reports its models, they lead the picker, before the catalog's; when it reports none, the picker lists the catalog.
 
 #### F-EN-10 Any ACP agent as a thread engine (P2)
 **Story:** An agent I use speaks the Agent Client Protocol, but Vibezeo doesn't list it. I add it by its command and use it in Thread mode, signed in the agent's own way.
 
 **Behavior:**
-- **Built-in ACP mode**, from the vendor's documentation (checked 16 October 2026, D-2506): Gemini CLI (`gemini --acp`) becomes a Thread engine beside Cursor, Grok and OpenCode. Kiro CLI documents `kiro-cli acp` too, but stays a terminal engine as F-EN-09 decided until the owner says otherwise; a user can still add it below. Antigravity CLI gets one once its ACP mode ships.
+- **Built-in ACP mode**, from the vendor's documentation (checked 16 October 2026, D-2506): Gemini CLI (`gemini --acp`) and Kiro CLI (`kiro-cli acp`, in its account's provider home) become Thread engines beside Cursor, Grok and OpenCode; Kiro's note says it runs through ACP (D-2510). Antigravity CLI gets one once its ACP mode ships.
 - **Settings › Engines › ACP agents** (UI-163) lists the agents the user added, and **Add an ACP agent…** takes:
   - a label (1–40 characters);
   - a command: a name on the login shell's PATH or an absolute path;
@@ -1409,7 +1409,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 - ACP shows what each agent exposes and no more; no transcript, usage or status beyond its updates.
 
 **Acceptance:**
-1. Adding the fake engine's ACP mode by its absolute command passes the test, shows its name and version, and appears in the Thread engine picker labelled "via ACP"; a thread with it on Pro runs a turn.
+1. Kiro CLI is a Thread engine through `kiro-cli acp`. Adding the fake engine's ACP mode by its absolute command passes the test, shows its name and version, and appears in the Thread engine picker labelled "via ACP"; a thread with it on Pro runs a turn.
 2. A command that doesn't answer `initialize` within 10 s shows "Not an ACP agent", and nothing is saved.
 3. On Free, the added agent shows the plan's limit in the Thread engine picker, as other non-included engines do.
 4. An environment value matching a secret pattern, or a reserved variable, is refused before anything runs.

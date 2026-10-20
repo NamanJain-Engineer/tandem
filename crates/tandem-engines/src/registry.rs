@@ -813,9 +813,10 @@ mod tests {
         assert_eq!(kiro.home_strategy, HomeStrategy::Env);
         assert_eq!(kiro.login_cmd, Some(vec!["login".to_string()]));
         assert_eq!(kiro.login_mode, LoginMode::Argv);
-        // F-EN-09.3: terminal only, and never headless.
+        // F-EN-09.3: never headless; Antigravity is terminal only (Kiro's
+        // ACP mode came with F-EN-10, D-2510).
+        assert!(agy.chat_adapter.is_none() && agy.acp_cmd.is_none());
         for e in [agy, kiro] {
-            assert!(e.chat_adapter.is_none() && e.acp_cmd.is_none(), "{}", e.id);
             assert!(e.headless_cmd.is_none(), "{}", e.id);
         }
         // F-EN-09.2: Gemini CLI stays, with its note.
@@ -827,5 +828,26 @@ mod tests {
         let mut bad = gemini.clone();
         bad.note = Some("two\nlines".into());
         assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn f_en_10_1_kiro_is_a_thread_engine_through_its_acp_mode() {
+        let reg = EngineRegistry::bundled();
+        let kiro = reg.get("kiro").expect("kiro");
+        assert_eq!(kiro.chat_adapter.as_deref(), Some("acp"));
+        assert_eq!(
+            kiro.acp_cmd,
+            Some(vec!["kiro-cli".to_string(), "acp".to_string()])
+        );
+        // In the account's own home, like its terminal panes.
+        assert_eq!(kiro.provider_home_env.as_deref(), Some("KIRO_HOME"));
+        assert!(kiro
+            .note
+            .as_deref()
+            .is_some_and(|n| n.contains("Agent Client Protocol")));
+        // Free's thread engines are unchanged: Kiro in a thread is Pro.
+        let free = tandem_core::entitlement::Limits::free();
+        assert!(!free.allows_chat_engine("kiro"));
+        assert!(free.allows_chat_engine("claude") && free.allows_chat_engine("codex"));
     }
 }

@@ -232,15 +232,26 @@ mod chat_tests {
             .all(|v| !v.chat_capable));
     }
 
+    /// F-EN-09 AC3 as F-EN-10 left it (D-2510): Antigravity is never a
+    /// Thread or teammate engine; Kiro is one through its ACP mode; neither
+    /// ever runs headless.
     #[test]
-    fn f_en_09_3_antigravity_and_kiro_are_never_thread_or_teammate_engines() {
+    fn f_en_09_3_antigravity_is_never_a_thread_engine_and_kiro_is_one_through_acp() {
         let registry = tandem_engines::registry::EngineRegistry::bundled();
         let list = views(registry.all(), None, &serde_json::json!({}));
-        for id in ["antigravity", "kiro"] {
-            let v = list.iter().find(|v| v.spec.id == id).expect(id);
-            assert!(!v.chat_capable, "{id}");
-            assert!(!crate::services::threads::has_chat_adapter(&v.spec), "{id}");
-            assert!(v.spec.headless_cmd.is_none(), "{id} never runs headless");
+        let get = |id: &str| list.iter().find(|v| v.spec.id == id).expect("engine");
+        let agy = get("antigravity");
+        assert!(!agy.chat_capable);
+        assert!(!crate::services::threads::has_chat_adapter(&agy.spec));
+        let kiro = get("kiro");
+        assert!(kiro.chat_capable);
+        assert_eq!(kiro.spec.chat_adapter.as_deref(), Some("acp"));
+        for v in [agy, kiro] {
+            assert!(
+                v.spec.headless_cmd.is_none(),
+                "{} never runs headless",
+                v.spec.id
+            );
         }
     }
 }
