@@ -348,7 +348,7 @@ Five steps, each with what the person needs to feel, what they see today and the
 **Today:** a welcome screen ("Welcome to Vibezeo", a Free plan callout, "Start using Vibezeo"), then a five-step wizard (engines, accounts, Dictate, privacy, workspace), then Code mode on an empty tab with the launch grid.
 
 **Changes:**
-1. **Welcome (app).** The two rings at 96 px on the brand bloom (`bg-lens` light, from `brand.css`), "Welcome to Vibezeo" at `3xl`, one line ("Run your coding agents side by side, on this computer."), the primary "Start using Vibezeo", and under it one quiet fact line: "Free plan · no account · nothing leaves this computer". The rings draw in once (400 ms, off under reduce).
+1. **Welcome (app).** The two rings at 96 px on the brand bloom (`bg-lens` light, from `brand.css`), "Welcome to Vibezeo" at `3xl`, one line ("Run your coding agents side by side, on this computer."), the primary "Start using Vibezeo", and under it one quiet fact line: "Free plan · no account · nothing sent to Vibezeo" (not "nothing leaves this computer": the engines talk to their vendors). The rings draw in once (400 ms, off under reduce).
 2. **Three steps, not five (app).** Engines (what we found, with sign-in inline per engine) → Your first folder → Done. Dictate moves to a dismissible tip after the first agent finishes; privacy switches (both off) move to a single line on the Done step with a link to Settings. Hick's law and the goal gradient: fewer, clearer steps. The stepper shows three dots.
 3. **Engines step (app).** Found engines first, each a row with its `EngineGlyph`, name, version and a status: "Signed in", or "Sign in" (opens a terminal in that engine's provider home). Missing engines collapse under "10 more you can install". One engine is preselected as the default: the first signed-in one.
 4. **First folder → first agent in one move (app).** The folder step ends with "Start Claude Code in shop" (the default engine and the chosen folder), which opens Code mode with that agent already launching. The launch grid stays for every later empty tab.
@@ -410,7 +410,7 @@ The checklist per review:
 
 ## 7. Who does what, in order
 
-The implementers take slices in this order; each slice is one READY.
+The implementers take slices in this order; each slice is one READY. The words for every changed string are in §9: paste them, adjusting only to fit.
 
 **`app-ui`** (D-2600 on):
 1. T2: brand elevation on raised surfaces (§4.5), after T1 lands.
@@ -434,3 +434,96 @@ The implementers take slices in this order; each slice is one READY.
 ## 8. Clean room
 
 We study other products for principles and record them in our own words. We never use another product's names, logos, artwork, copy, code, fonts or signature effects (DECISIONS "Identity"; CLAUDE.md "Never"); WEBSITE_ELITE §1.3 and §3 here list the looks we keep clear of. Our own signatures: the two rings and their teal-and-sky light, monogram engine marks, mono facts, and checksums on the download page.
+
+---
+
+## 9. Copy deck
+
+Exact words for every string §5 changes, checked on 20 October against 0.8.0's code: `LIMITS` (`packages/protocol/src/plans.ts`), `apps/desktop/src/i18n/en.json`, `apps/web/lib/*.ts`. `{braces}` are values from code, never typed in. When code changes a fact, the string follows the code. Implementers may adjust a word to fit; they may not add a claim.
+
+### 9.1 Site: home (`apps/web/lib/home.ts`, `components/site/home/*`) (site-motion)
+
+| Where | Today | Use |
+|---|---|---|
+| Hero h1 (`HERO.title`) | Your agents. / Your machine. / Your plan. | unchanged |
+| Hero lead (`Hero.tsx`, from `ENGINES`) | Vibezeo runs Claude Code, Codex, Gemini CLI and 10 more coding agents side by side in real terminals. One Dashboard shows what each one is doing, and which one needs you. | Run the coding agents you already use side by side, in real terminals, and see at a glance which one needs you. |
+| Under the lead, small, linking `#engines` | — | Works with {ENGINES.length} agent CLIs |
+| Ownership chips (`OWNERSHIP`) | four facts | unchanged; drawn neutral (§4.2) |
+| Meta line | Free for Linux. · .deb · .rpm · {size} · Watch it run (1 min) | Free · .deb and .rpm · {size} · Watch it run (1 min) |
+| Phone CTAs (below 640 px) | Download for Linux / Try it in your browser | Try it in your browser (primary) / Email me the link (`mailto:?subject=Vibezeo for Linux&body=https://vibezeo.com/download/`) |
+| Scene 1 h2 / lead | — | Many agents, one screen / Each agent runs in a real terminal over your own folder. Split, arrange and keep going. |
+| Scene 2 h2 / lead | — | See who needs you / Working, waiting, done or failed: every pane, the rail and the Dashboard show it, from each engine's own signals. |
+| Scene 3 h2 / lead | — | Review before you merge / Finished work waits in one queue with its diff. Ask another engine for a second opinion before you approve. |
+| Scene caption (each) | — | Scene from Vibezeo {RELEASE.version}, simplified. |
+| Ownership lead | Engines sign in by themselves, in their own folders, and Vibezeo never reads, copies or proxies their tokens. | Engines sign in by themselves, in their own folders. Vibezeo never reads, copies or proxies their tokens. |
+| Engines lead | Vibezeo finds the engine CLIs installed on your machine and launches them in panes, each signed in to your own account. If an engine is missing, Vibezeo shows you how to install it. | Vibezeo finds the agent CLIs on your machine and starts each one signed in to your own account. Missing ones come with install steps. |
+| Capabilities h2 | And everything else that works today | Built in, working today |
+| Capabilities (eight, then a link) | 18 tiles | Dictate; Worktree lanes and handoff; Previews per worktree; Files, git and a browser; SSH workspaces; Find work by what it's about; Plugins with approvals; Crash-safe restore. Link: "Everything else in the docs" |
+| Pricing teaser lead | Free is available today; Pro and Team start with Vibezeo accounts. Your agents always run on your own subscriptions. | Free runs on your computer today. Pro and Team start with Vibezeo accounts. |
+| FAQ | six questions | four: "Can I use Vibezeo today?", "Do I need a new AI subscription?", "Does Vibezeo see my API keys or subscription tokens?", "What will it cost?" (answers as today). "How does Vibezeo use Claude?" moves to /about/ with the Built with Claude band; "Which platforms?" is answered by the meta line and /download/. |
+| Closing band lead | Download Vibezeo for Linux, then tell us what works and what doesn't at contact@vibezeo.com. | Free for Linux, no account. Tell us what works and what doesn't: {SITE.contactEmail}. |
+| Closing band, one line | — | Built by {founder}. More about Vibezeo → (/about/) |
+
+### 9.2 Site: pricing and download (site-motion)
+
+| Where | Today | Use |
+|---|---|---|
+| Pricing lead | Free is available now: download Vibezeo 0.8.0 for Linux. Pro and Team start with Vibezeo accounts. Your coding agents always run on your own subscriptions, so Vibezeo never charges for engine usage. | Free is available now for Linux. Pro and Team start with Vibezeo accounts; your agents always run on your own subscriptions. |
+| Under the cards (new) | — | Your engines bill you directly; Vibezeo never charges for engine usage. Prices in US dollars. |
+| Plan cards (`PLANS`) | true today | unchanged |
+| Download step 2 title / body | Start on the Free plan / Open the app and choose Start on the welcome screen. The Free plan runs on your computer, no account needed. | Start on the Free plan / Open the app and choose Start using Vibezeo. The Free plan runs on your computer, no account needed. |
+| Download step 3 body | The launch grid lists the agents it found: pick one to start it in a real terminal, or Terminal for a shell. | Setup ends by asking for a project folder. Then pick an agent from the launch grid to start it in a real terminal, or Terminal for a shell. |
+| Windows and macOS rows | Coming soon | Coming soon · Tell me when (`mailto:`, as the pricing page does) |
+
+### 9.3 App: welcome and first run (`en.json`) (app-ui)
+
+| Key | Today | Use |
+|---|---|---|
+| `signin.title` | Welcome to Vibezeo | unchanged |
+| `signin.subtitle` | Run your coding agents side by side. | Run your coding agents side by side, on this computer. |
+| `signin.earlyAccess.start` | Start using Vibezeo | unchanged (the site quotes it) |
+| `signin.earlyAccess.note` | Free plan: 4 panes, 3 workspaces | Free plan · no account · nothing sent to Vibezeo |
+| `signin.earlyAccess.title` / `.body` (callout) | Free plan / Vibezeo runs on this computer… | drop the callout; the note carries it. Pro and Team are explained where they're met (§9.5). |
+| Steps | engines, accounts, dictate, privacy, workspace | engines (with sign-in), folder, done |
+| `onboarding.engines.title` / `.body` | Set up your coding agents / Vibezeo runs the agents you already use… | Your coding agents / Vibezeo found these on your computer. Each signs in by itself; Vibezeo never sees its token. |
+| Engine row states | Installed {version} / Not installed / Not signed in | {version} · Signed in / {version} · Sign in (button) / Not installed |
+| Missing engines, collapsed | — | {n} more you can install |
+| `onboarding.workspace.title` / `.body` | Open your first workspace / Pick a project folder. Agents work on it right where it is. | Pick a project folder / Agents work on it right where it is. |
+| Done step title / body | — | You're set / Usage statistics and crash reports stay off. You can turn them on in Settings › Privacy. |
+| Done step primary | — | Start {engine} in {folder} |
+| Done step secondary | — | Open {folder} without an agent |
+| Dictate tip, after the first agent finishes (dismissible) | — | Hold {dictateKey} in any app and speak: Dictate types where your cursor is, recognized on this computer. |
+
+### 9.4 App: launch grid, empty states, first finish, demo (app-ui)
+
+| Key | Today | Use |
+|---|---|---|
+| `code.startIn` | Start in {name} | Start an agent in {name} |
+| `code.startBody` | Launch a coding agent — it runs in a real terminal in this folder. | It runs in a real terminal in this folder. |
+| Tile meta (new) | — | Default / Signed in / Not signed in |
+| `agent.main.emptyTitle` / `.emptyBody` | No teammate open / Pick a teammate in the rail. | Pick a teammate, or make one / A teammate is an agent with a name, a brief and notes it keeps between chats. |
+| Agent mode main action (new) | — | New teammate |
+| `agent.rail.empty` | No teammates. Add one with +. | No teammates yet. |
+| `dashboard.emptyTitle` / `.emptyBody` | No agents running / Start one in Code, Thread or Agent mode. | No agents running / Start one from Code, Thread or Agent mode. Agents that need you show up here. |
+| First finish toast (new) | — | {engine} finished in {workspace} · Review changes (when it changed files; otherwise · Open) |
+| `demo.hint.*`, `demo.try.*` (six-step card) | Your first message is ready… / Try this… | three hints, one at a time: (1) on the waiting agent: "{engine} is waiting on you. Open it to see why." (2) on the thread's composer: "Press Enter to send this task. The agent is simulated and runs in your browser." (3) on Changes: "Open Changes to see what it edited." |
+| Demo end (new, once, in the demo bar) | — | That's the loop. Download for Linux · {size} |
+
+### 9.5 App: plans and limits (app-ui; honesty first, §5.5)
+
+| Key | Today | Use |
+|---|---|---|
+| `upgrade.pro.f1` | Unlimited panes & threads | Up to {LIMITS.pro.panes} live panes |
+| `upgrade.pro.f2` | 10,000 credits a month | {LIMITS.pro.threadGrid} threads side by side, with every chat engine |
+| `upgrade.pro.f3` | Conductor, cloud Dictate, Enhance, Auto | Unlimited workspaces, teammates and plugin connections |
+| `upgrade.pro.f4` | Routines, phone remote | Several accounts per engine, and Routines |
+| "Comes with accounts" group (new, under Pro, visibly separate) | — | Comes with Vibezeo accounts: {MONTHLY_CREDITS} credits a month for Conductor, cloud Dictate, Enhance and Auto |
+| `upgrade.withAccounts` (disabled button) | Comes with Vibezeo accounts | Tell me when accounts open (an enabled button opening the same `mailto:` as the site) |
+| `upgrade.recommended` | RECOMMENDED | Recommended |
+| `upgrade.gate.panes` | You hit the Free limit of {n} panes. | Free runs {n} live panes at once. |
+| `upgrade.gate.workspaces` | You hit the Free limit of {n} workspaces. | Free keeps {n} workspaces. |
+| `limit.panes.title` | Free includes {n} live panes | unchanged |
+| `limit.panes.body` | Close a pane to start another, or upgrade for unlimited panes. Running panes aren't affected. | Running panes keep going. Close one to start another; Pro runs up to {LIMITS.pro.panes}. |
+| `limit.panes.manage` / `.plans` | Manage panes / See plans | unchanged; Manage panes is the primary, See plans the secondary |
+| `launch.limitBody` | Close a pane, or upgrade for more live panes. | Close a pane to launch more. Pro runs up to {LIMITS.pro.panes} live panes. |
+| `plan.footer.free` / `.offline` | FREE / OFFLINE | Free / Offline |
