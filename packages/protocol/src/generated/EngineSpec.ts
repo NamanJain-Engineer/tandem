@@ -7,6 +7,7 @@ import type { KeychainIsolation } from "./KeychainIsolation";
 import type { LoginMode } from "./LoginMode";
 import type { McpNative } from "./McpNative";
 import type { OnboardingSeed } from "./OnboardingSeed";
+import type { UpdatesSpec } from "./UpdatesSpec";
 
 export type EngineSpec = { id: string, label: string, vendor: string, 
 /**
@@ -90,4 +91,8 @@ instructions: InstructionsSpec | null,
 /**
  * One line about who can use it, shown with its tile (F-EN-09).
  */
-note: string | null, };
+note: string | null, 
+/**
+ * How it's installed and updated (F-EN-08).
+ */
+updates: UpdatesSpec | null, };

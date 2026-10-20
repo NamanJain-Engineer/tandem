@@ -76,6 +76,12 @@ sh scripts/agent/with-infra.sh true              # proves Docker + Postgres/Redi
   builds: `python3 scripts/agent/prune-target.py` (keep 3 builds per crate; pass `1`
   after a version bump), `rm -rf target/debug/examples target/perf`. Set
   `CARGO_INCREMENTAL=0`.
+  When the gate runs short, delete the test binaries
+  (`find target/debug/deps -maxdepth 1 -type f -executable -size +20M ! -name '*.so' -delete`)
+  once `cargo test` has passed, and again after `pnpm gen:protocol`, which builds
+  the crates' tests again to export the bindings. A cross target can go once its
+  check has passed. A container restart stops background runs, so give long ones
+  a marker per finished step and skip marked steps when they run again.
 - The shell may be zsh: an unquoted `$VAR` holding several paths is **one** word
   there. Use arrays or quote per item.
 - Docker Hub may answer image pulls with `429 Too Many Requests`, and
@@ -214,6 +220,42 @@ E2E lessons (each cost a debugging round):
   proxy's CA, so it reads the archive from `SHERPA_ONNX_ARCHIVE_DIR` (the gate
   sets it). Its benchmark: `cargo test -p tandem-voice --features kws --
   --include-ignored f_cn_07_1` (about a minute).
+- `ort-sys` (ONNX Runtime for Dictate's Parakeet: tandem-voice's `parakeet`
+  feature, which the app turns on) downloads its library from `cdn.pyke.io`
+  when it builds. A cloud environment whose network policy blocks that host
+  can't build the app or the invariants, so the gate's Rust half can't run
+  there: add the host under the environment's Allowed domains.
+
+### 5a. CI and its minutes
+
+GitHub gives this private repository 2,000 free Actions minutes a month, and a
+macOS minute counts as 10, a Windows minute as 2. October's ran out in a week
+(75–100 Linux minutes a pull request, 250–350 a push to `main`), and the owner
+doesn't pay for more. So `ci.yml` runs on its own only what a fresh machine
+adds to the gate (D-1009):
+
+| When | Job | What | About |
+|---|---|---|---|
+| A pull request into `product-m0-m5` (not a draft, not docs only) | `quick` | spec coverage, the hook guard, rustfmt, and every package's typecheck and ESLint (`pnpm -r lint`); nothing compiled, no tests | 5 min |
+| Every night at 21:37 UTC | `checks` | the gate's Linux half on `product-m0-m5`'s head (TypeScript, `cargo test`, clippy, fmt, protocol drift) and the audit. A commit that was already checked is skipped | 25 min |
+| By hand (Actions › CI › Run workflow, any branch) | `checks` | the same, on that branch | 25 min |
+| … with **full** | `web`, `desktop-build`, `integration`, `tandem-host`, the Whisper test | the site's Playwright tests, the debug app and the release harness, the desktop E2E, the SSH helpers | +60 min |
+| … with **platforms** | `test-rust`, `desktop-build`, `tandem-host`, `e2e-windows` | the same on macOS and Windows | +500 counted |
+
+At October's pace (100–150 pull requests a month) that's about 500–750
+minutes of `quick` and at most 750 of `checks`. That leaves a few hundred for
+runs by hand, and one with **platforms** spends a quarter of the month. These are
+estimates from October's runs: check Settings › Billing and licensing after
+November 1 and adjust. Pull requests here are merged seconds after they open,
+so no run ever gated a merge. The gate does that, before every commit, and
+everything CI runs also runs locally:
+- `pnpm gate` covers `quick` and `checks`, plus the Windows and macOS clippy.
+- `pnpm ci:local` adds the Wine tests, the audit and the desktop E2E
+  (`TANDEM_CI_INTEGRATION=0` skips the E2E).
+- The rest of **full**: `bash scripts/check-release-harness.sh` (a release
+  build), the site's Playwright tests (`PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium
+  pnpm --filter web test:e2e` after `db:migrate`, `db:seed` and `keys:dev`) and
+  `sh scripts/build-tandem-host.sh`.
 
 ## 6. Releasing the desktop app (Linux, local)
 
@@ -346,8 +388,8 @@ MSIX_IDENTITY_NAME=… MSIX_PUBLISHER='CN=…' MSIX_PUBLISHER_DISPLAY_NAME=… \
   into the `winget-manifests` artifact. By hand:
   `bash scripts/gen-winget.sh <setup.exe> <its public https URL>` (needs
   `pip install pyyaml jsonschema`).
-- **Windows E2E (D-1714).** `ci.yml`'s `e2e-windows` job (merges to main and by
-  hand) installs tauri-driver, fetches the `msedgedriver` matching the runner's
+- **Windows E2E (D-1714).** `ci.yml`'s `e2e-windows` job (by hand, with
+  **platforms**, §5a) installs tauri-driver, fetches the `msedgedriver` matching the runner's
   WebView2, and runs `pnpm --filter desktop e2e -- --spec-list e2e/windows-smoke.txt`
   with `TANDEM_E2E_OFFLINE=1` (no API, web app or mock servers: they need Docker).
   On Linux the same command checks the list:
@@ -409,8 +451,8 @@ release runs offline. What to watch:
 - **The site:** the curl checks above; Vercel deployment status after each push to
   `main`; Google Search Console (Pages and Sitemaps) and Bing Webmaster Tools.
 - **Mail:** `contact@vibezeo.com` (contact address on every page and in `security.txt`).
-- **CI:** GitHub Actions when minutes are available (CI runs Linux on pull requests;
-  macOS and Windows on `main`).
+- **CI:** GitHub Actions when minutes are available: `quick` on pull requests, the
+  nightly `checks`, and the rest by hand (§5a).
 - **Later** (when the API ships, see `HUMAN_TODO.md`): `GET /v1/health`, the API's
   pino logs (tokens and content are redacted), and opt-in-only crash and usage
   reports (Sentry, PostHog; nothing is sent unless the user turns it on).

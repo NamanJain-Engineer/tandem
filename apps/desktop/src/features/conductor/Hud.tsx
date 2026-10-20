@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  ClipboardCheck,
   AppWindow,
   Bell,
   Check,
@@ -34,6 +35,7 @@ const GROUP_ICON: Record<VoiceToolGroup, typeof Check> = {
   tasks: ListChecks,
   find: FolderSearch,
   app: Settings2,
+  review: ClipboardCheck,
 };
 
 function ChipMark({ chip }: { chip: ChipView }) {

@@ -38,6 +38,7 @@ import { useThreads } from "../../stores/threads";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { LoginSheet, type LoginRequest } from "../settings/AccountsPage";
+import { EngineBroken } from "./EngineBroken";
 import { switchMode } from "../shell/actions";
 import { pendingApprovals, reuseRows, toRows, usageOf, type Row } from "./rows";
 import { useThreadDrops } from "./drops";
@@ -552,6 +553,7 @@ function ThreadView({
             </SkeletonGate>
           )}
           <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 px-4 pb-4">
+            <EngineBroken engineId={thread.engineId} failed={thread.state === "failed"} />
             {thread.state === "interrupted" && running === null && (
               // A crash or quit stopped its turn: never shown as done (F-SH-07).
               <div data-testid="thread-interrupted">

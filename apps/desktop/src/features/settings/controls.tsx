@@ -3,6 +3,7 @@ import type { OrgPolicy, SettingKey } from "@tandem/protocol";
 import { Checkbox, Combobox, Input, SegmentedControl, Select, Switch, cx, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useSession } from "../../stores/session";
+import { setLibrarySearch } from "../../stores/library";
 import { useSetting, useSettings } from "../../stores/settings";
 
 type Ids = { id: string; describedBy?: string };
@@ -350,5 +351,27 @@ export function ThemeCards({ label }: { label: string }) {
         </button>
       ))}
     </div>
+  );
+}
+
+/** Search session text (F-TH-17): Pro, and off deletes the index. */
+export function SessionSearchControl({ ids, label }: { ids: Ids; label: string }) {
+  const value = useSetting("session_search", false);
+  const pro = useSession((s) => s.entitlement?.limits.sessionSearch ?? false);
+  const { show } = useToast();
+  return (
+    <Switch
+      id={ids.id}
+      aria-describedby={ids.describedBy}
+      checked={value}
+      disabled={!pro && !value}
+      aria-label={label}
+      onCheckedChange={(on) =>
+        void setLibrarySearch(on).then((out) => {
+          if (!out.ok) return show({ tone: "error", title: out.error.message });
+          useSettings.setState((st) => ({ values: { ...st.values, session_search: on } }));
+        })
+      }
+    />
   );
 }

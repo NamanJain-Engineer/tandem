@@ -1,15 +1,40 @@
 name: CI
 
-# Pull requests run Linux only; macOS and Windows minutes cost several times
-# more on a private repository, so those run on merges to main and by hand.
+# The free Actions minutes are 2,000 a month on this private repository,
+# with macOS counting 10× and Windows 2×. October's ran out in a week, at
+# 75–100 Linux minutes a pull request and 250–350 a push to main, so CI now
+# runs on its own only what the gate leaves to a fresh machine (D-1009,
+# docs/OPERATING.md §5a):
+# - pull requests into product-m0-m5 run `quick`: spec coverage, rustfmt,
+#   and every package's typecheck and ESLint (`pnpm -r lint`), with nothing
+#   compiled and no tests;
+# - each night `checks` runs the gate's Linux half on product-m0-m5's head,
+#   unless that commit was already checked;
+# - everything else runs by hand (Actions › CI › Run workflow): `full` adds
+#   the web and desktop E2E, the release harness, tandem-host and the
+#   Whisper test, and `platforms` adds macOS and Windows;
+# - drafts, and pull requests that change only docs, run nothing.
 on:
-  push:
-    branches: [main]
   pull_request:
+    branches: [product-m0-m5]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore: ["**/*.md", "docs/**"]
+  schedule:
+    # 21:37 UTC (03:07 in India), after the day's merges.
+    - cron: "37 21 * * *"
   workflow_dispatch:
+    inputs:
+      full:
+        description: "Also the web and desktop E2E, the release harness, tandem-host and the Whisper test (about 60 more Linux minutes)"
+        type: boolean
+        default: false
+      platforms:
+        description: "Also macOS and Windows (their minutes count 10× and 2×: about 500)"
+        type: boolean
+        default: false
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -17,8 +42,11 @@ env:
   TANDEM_FAKE_KEYCHAIN: "1"
 
 jobs:
-  lint:
+  # Pull requests: the checks that need nothing compiled and no services.
+  quick:
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       # The version comes from package.json's packageManager; naming it here too
@@ -27,35 +55,125 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version-file: .nvmrc, cache: pnpm }
       - uses: dtolnay/rust-toolchain@stable
-        with: { components: "rustfmt, clippy" }
-      - uses: Swatinem/rust-cache@v2
-      - name: Linux build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libxdo-dev libdbus-1-dev
+        with: { components: rustfmt }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r lint
-      - name: Build UI assets for the Tauri crate
-        run: pnpm --filter desktop build
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Protocol drift
-        run: pnpm gen:protocol && git diff --exit-code packages/protocol
       - run: bash scripts/check-coverage.sh
       # F-DI-02 AC2: the Windows keyboard hook never consumes an event.
       - run: bash scripts/guards/no-consuming-hook.sh
+      - run: cargo fmt --all --check
+      - run: pnpm -r lint
 
+  # Which commit `checks` takes: product-m0-m5's head at night, skipped when
+  # that commit was already checked; a manual run's own commit.
+  pick:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+      run: ${{ github.event_name != 'schedule' || steps.checked.outputs.cache-hit != 'true' }}
+    steps:
+      - id: sha
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.event_name == 'schedule' && 'product-m0-m5' || github.sha }}
+        run: echo "sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$REF" --jq .sha)" >> "$GITHUB_OUTPUT"
+      - id: checked
+        if: github.event_name == 'schedule'
+        uses: actions/cache/restore@v4
+        with:
+          path: .ci-checked
+          key: ci-checked-${{ steps.sha.outputs.sha }}
+          lookup-only: true
+
+  # The gate's Linux half (scripts/gate.sh) on a fresh machine, and the audit.
+  checks:
+    needs: pick
+    if: needs.pick.outputs.run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.pick.outputs.sha }}" }
+      - name: Disk for the workspace's build (the image's Android SDK, .NET and GHC)
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: "rustfmt, clippy" }
+      # Saved only from main's ref (the nightly), which every branch can restore.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Linux build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libxdo-dev libdbus-1-dev
+      - uses: taiki-e/install-action@v2
+        with: { tool: cargo-audit }
+      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/check-coverage.sh
+      - run: bash scripts/guards/no-consuming-hook.sh
+      - run: pnpm -r lint
+      - name: Postgres, Redis, Mailpit and stripe-mock for the API tests
+        run: pnpm infra:up
+      - run: pnpm -r test
+      - name: Build UI assets for the Tauri crate
+        run: pnpm --filter desktop build
+      - run: cargo test --workspace
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo fmt --all --check
+      - name: Protocol drift (changed, new or deleted generated files)
+        run: |
+          pnpm gen:protocol
+          git diff --exit-code packages/protocol
+          test -z "$(git status --porcelain packages/protocol)"
+      # F-DI-04 AC2 / F-DI-01 AC1: the real base.en model on the committed
+      # fixture, cached by the catalog's hash so it downloads once.
+      - name: Dictate model cache
+        if: inputs.full
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/tandem-models
+          key: tandem-models-${{ hashFiles('crates/tandem-voice/models/catalog.json') }}
+      - name: Dictate transcription (whisper base.en)
+        if: inputs.full
+        run: |
+          bash scripts/fetch-models.sh base.en
+          cargo test -p tandem-voice --features whisper -- --include-ignored f_di_04_2 f_di_01_1
+      - name: Audit (advisories without a waiver)
+        run: |
+          mkdir -p target
+          cargo audit --json > target/audit.json || true
+          pnpm audit --audit-level high --json > target/pnpm-audit.json || true
+          pnpm tsx scripts/check-waivers.ts --cargo target/audit.json --pnpm target/pnpm-audit.json
+      # Passed or failed, the night's commit isn't checked again; a cancelled
+      # run is retried the next night.
+      - name: Mark the commit checked
+        if: (success() || failure()) && github.event_name == 'schedule'
+        run: mkdir -p .ci-checked
+      - if: (success() || failure()) && github.event_name == 'schedule'
+        uses: actions/cache/save@v4
+        with:
+          path: .ci-checked
+          key: ci-checked-${{ needs.pick.outputs.sha }}
+
+  # By hand, with `platforms`: the workspace's tests on macOS and Windows
+  # (Linux runs them in `checks`).
   test-rust:
+    if: inputs.platforms
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-14","windows-2022"]') }}
+        os: [macos-14, windows-2022]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Linux build dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libxdo-dev libdbus-1-dev
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with: { node-version-file: .nvmrc, cache: pnpm }
@@ -63,28 +181,16 @@ jobs:
       - name: Build UI assets for the Tauri crate
         run: pnpm --filter desktop build
       - run: cargo test --workspace
-      # F-DI-04 AC2 / F-DI-01 AC1: the real base.en model on the committed
-      # fixture, cached by the catalog's hash so it downloads once.
-      - name: Dictate model cache
-        if: runner.os == 'Linux'
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/tandem-models
-          key: tandem-models-${{ hashFiles('crates/tandem-voice/models/catalog.json') }}
-      - name: Dictate transcription (whisper base.en)
-        if: runner.os == 'Linux'
-        run: |
-          bash scripts/fetch-models.sh base.en
-          cargo test -p tandem-voice --features whisper -- --include-ignored f_di_04_2 f_di_01_1
 
   # tandem-host for SSH hosts (F-RM-01, MILESTONES M14): static binaries for
-  # the three host platforms. macOS minutes cost more, so macOS builds on
-  # merges to main and by hand, like test-rust.
+  # the three host platforms, by hand: Linux with `full`, macOS with
+  # `platforms`. release.yml builds its own.
   tandem-host:
+    if: inputs.full || inputs.platforms
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"platform":"linux-x86_64","os":"ubuntu-24.04"},{"platform":"linux-aarch64","os":"ubuntu-24.04"}]' || '[{"platform":"linux-x86_64","os":"ubuntu-24.04"},{"platform":"linux-aarch64","os":"ubuntu-24.04"},{"platform":"macos-universal","os":"macos-14"}]') }}
+        include: ${{ fromJSON(inputs.full && inputs.platforms && '[{"platform":"linux-x86_64","os":"ubuntu-24.04"},{"platform":"linux-aarch64","os":"ubuntu-24.04"},{"platform":"macos-universal","os":"macos-14"}]' || inputs.platforms && '[{"platform":"macos-universal","os":"macos-14"}]' || '[{"platform":"linux-x86_64","os":"ubuntu-24.04"},{"platform":"linux-aarch64","os":"ubuntu-24.04"}]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -92,9 +198,15 @@ jobs:
         with:
           targets: ${{ matrix.platform == 'macos-universal' && 'aarch64-apple-darwin,x86_64-apple-darwin' || (matrix.platform == 'linux-aarch64' && 'aarch64-unknown-linux-musl' || 'x86_64-unknown-linux-musl') }}
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - if: runner.os == 'Linux'
         name: Zig linker for static musl builds
-        run: pip install ziglang==0.13.0 && cargo install cargo-zigbuild --locked
+        run: pip install ziglang==0.13.0
+      - if: runner.os == 'Linux'
+        uses: taiki-e/install-action@v2
+        with: { tool: cargo-zigbuild }
       - name: Build
         shell: bash
         run: bash scripts/ci/build-tandem-host.sh "${{ matrix.platform }}"
@@ -103,19 +215,9 @@ jobs:
           name: tandem-host-${{ matrix.platform }}
           path: apps/desktop/src-tauri/resources/tandem-host/${{ matrix.platform }}/tandem-host
 
-  test-ts:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version-file: .nvmrc, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - name: Postgres and Redis for API tests
-        run: pnpm infra:up
-      - run: pnpm -r test
-
+  # By hand, with `full`: the website's build and Playwright tests.
   web:
+    if: inputs.full
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -128,11 +230,14 @@ jobs:
       - run: pnpm --filter web exec playwright install --with-deps chromium
       - run: pnpm --filter web test:e2e
 
+  # By hand: the debug app on Linux and the release harness check (`full`),
+  # on macOS and Windows with `platforms`.
   desktop-build:
+    if: inputs.full || inputs.platforms
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-14","windows-2022"]') }}
+        os: ${{ fromJSON(inputs.full && inputs.platforms && '["ubuntu-24.04","macos-14","windows-2022"]' || inputs.platforms && '["macos-14","windows-2022"]' || '["ubuntu-24.04"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -141,6 +246,9 @@ jobs:
         with: { node-version-file: .nvmrc, cache: pnpm }
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Linux build dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libxdo-dev libdbus-1-dev
@@ -151,7 +259,9 @@ jobs:
         if: matrix.os == 'ubuntu-24.04'
         run: bash scripts/check-release-harness.sh
 
+  # By hand, with `full`: the desktop E2E against the API, web app and mocks.
   integration:
+    if: inputs.full
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -160,9 +270,13 @@ jobs:
         with: { node-version-file: .nvmrc, cache: pnpm }
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Linux build and E2E dependencies
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev webkit2gtk-driver xvfb libayatana-appindicator3-dev librsvg2-dev libasound2-dev libxdo-dev libdbus-1-dev dbus xclip openbox bubblewrap
-      - run: cargo install tauri-driver --locked
+      - uses: taiki-e/install-action@v2
+        with: { tool: tauri-driver }
       - run: pnpm install --frozen-lockfile
       - run: pnpm infra:up && pnpm db:migrate && pnpm db:seed && pnpm keys:dev
       - run: pnpm --filter web exec playwright install --with-deps chromium
@@ -172,9 +286,9 @@ jobs:
   # The desktop E2E on Windows (D-1714): tauri-driver drives WebView2
   # through msedgedriver, which must match the runner's WebView2. Offline
   # (no API or mock servers, which need Docker): the specs in
-  # apps/desktop/e2e/windows-smoke.txt. Merges to main and by hand only.
+  # apps/desktop/e2e/windows-smoke.txt. By hand, with `platforms`.
   e2e-windows:
-    if: github.event_name != 'pull_request'
+    if: inputs.platforms
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -183,7 +297,11 @@ jobs:
         with: { node-version-file: .nvmrc, cache: pnpm }
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo install tauri-driver --locked
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@v2
+        with: { tool: tauri-driver }
       - name: msedgedriver for this WebView2
         shell: pwsh
         run: |
@@ -202,17 +320,3 @@ jobs:
         with:
           name: e2e-windows-results
           path: test-results/
-
-  audit:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version-file: .nvmrc, cache: pnpm }
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo install cargo-audit --locked
-      - run: pnpm install --frozen-lockfile
-      - run: mkdir -p target && (cargo audit --json > target/audit.json || true)
-      - run: pnpm audit --audit-level high --json > target/pnpm-audit.json || true
-      - run: pnpm tsx scripts/check-waivers.ts --cargo target/audit.json --pnpm target/pnpm-audit.json

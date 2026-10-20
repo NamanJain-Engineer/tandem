@@ -2,7 +2,7 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshOffline, settled } from "../support/app";
+import { addFolder, freshOffline, paneIds, settled } from "../support/app";
 import { pick, repoMenu } from "../support/worktrees";
 
 const GIT_ENV = {
@@ -17,6 +17,22 @@ const git = (cwd: string, ...args: string[]) =>
 
 const textOf = (selector: string) =>
   browser.execute((s: string) => document.querySelector(s)?.textContent ?? "", selector) as Promise<string>;
+
+/** Clicks `selector` as it is now: the panel re-renders when it refreshes,
+ * so a node found earlier can be stale by the time it's clicked. */
+async function clickFresh(selector: string): Promise<void> {
+  await settled();
+  await browser.waitUntil(
+    () =>
+      browser.execute((s: string) => {
+        const el = document.querySelector<HTMLElement>(s);
+        if (!el || (el as HTMLButtonElement).disabled) return false;
+        el.click();
+        return true;
+      }, selector),
+    { timeout: 10_000, timeoutMsg: `${selector} never became clickable` },
+  );
+}
 
 async function openInstructions(repo: string): Promise<void> {
   await repoMenu(repo);
@@ -42,6 +58,11 @@ describe("E2E-M18-EN07 instructions", function () {
     writeFileSync(join(repo, "CLAUDE.local.md"), "My sandbox is on port 4100.\n");
     await freshOffline();
     await addFolder(repo);
+    await browser.waitUntil(async () => (await paneIds()).length === 1, {
+      timeout: 30_000,
+      timeoutMsg: "the folder's first pane didn't open",
+    });
+    await settled();
   });
 
   it("F-EN-07.1 the panel says Claude Code reads CLAUDE.md, not AGENTS.md, and shows the difference", async () => {
@@ -49,8 +70,7 @@ describe("E2E-M18-EN07 instructions", function () {
     expect(await textOf('[data-testid="instructions-engine"][data-engine="claude"] [data-testid="instructions-reads"]')).toBe(
       "Reads CLAUDE.md, CLAUDE.local.md, not AGENTS.md",
     );
-    await settled();
-    await $('[data-testid="instructions-file"][data-path="CLAUDE.md"] [data-testid="instructions-diff-toggle"]').click();
+    await clickFresh('[data-testid="instructions-file"][data-path="CLAUDE.md"] [data-testid="instructions-diff-toggle"]');
     await browser.waitUntil(
       async () => (await textOf('[data-testid="instructions-file"][data-path="CLAUDE.md"]')).includes("Never push to main."),
       { timeout: 5_000, timeoutMsg: "no difference shown" },
@@ -58,7 +78,7 @@ describe("E2E-M18-EN07 instructions", function () {
   });
 
   it("F-EN-07.4 Copy into worktrees adds the ignored CLAUDE.local.md to the worktree setup", async () => {
-    await $('[data-testid="instructions-file"][data-path="CLAUDE.local.md"] [data-testid="instructions-not-in-worktrees"] button').click();
+    await clickFresh('[data-testid="instructions-file"][data-path="CLAUDE.local.md"] [data-testid="instructions-not-in-worktrees"] button');
     await browser.waitUntil(
       async () => {
         try {
@@ -75,12 +95,11 @@ describe("E2E-M18-EN07 instructions", function () {
   });
 
   it("F-EN-07.2 Use one file for all writes nothing until confirmed, then Undo restores CLAUDE.md byte for byte", async () => {
-    await $('[data-testid="instructions-one-file"]').click();
+    await clickFresh('[data-testid="instructions-one-file"]');
     await $('[data-testid="instructions-change"][data-path="CLAUDE.md"]').waitForExist({ timeout: 10_000 });
     expect(await $('[data-testid="instructions-text-lost"]').isExisting()).toBe(true);
     expect(readFileSync(join(repo, "CLAUDE.md"), "utf8")).toBe(claudeMd);
-    await settled();
-    await $('[data-testid="instructions-confirm"]').click();
+    await clickFresh('[data-testid="instructions-confirm"]');
     await browser.waitUntil(() => readFileSync(join(repo, "CLAUDE.md"), "utf8") === "@AGENTS.md\n", {
       timeout: 10_000,
       timeoutMsg: "CLAUDE.md wasn't pointed at AGENTS.md",

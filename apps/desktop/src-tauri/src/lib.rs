@@ -175,6 +175,17 @@ macro_rules! app_commands {
             commands::lanes::lane_runtime,
             commands::lanes::lane_previews,
             commands::lanes::lane_preview_start,
+            commands::lanes::merge_queue_plan,
+            commands::lanes::merge_queue_start,
+            commands::lanes::merge_queue_get,
+            commands::lanes::merge_queue_stop,
+            commands::lanes::merge_queue_undo,
+            commands::lanes::pr_checks_allow,
+            commands::lanes::lane_checks,
+            commands::lanes::lane_check_failure,
+            commands::lanes::lane_review_comments,
+            commands::lanes::lane_radar,
+            commands::lanes::lane_radar_note,
             commands::lanes::worktree_env_check,
             commands::lanes::lane_create_pr,
             commands::lanes::lane_remove,
@@ -302,6 +313,19 @@ macro_rules! app_commands {
             commands::terminal::pty_type_prompt,
             commands::terminal::status_list,
             commands::engines::engines_list,
+            commands::engine_versions::engine_versions,
+            commands::engine_versions::engine_check_update,
+            commands::engine_versions::engine_pin,
+            commands::engine_versions::engine_rollback_command,
+            commands::engine_versions::engine_background,
+            commands::engine_versions::engine_background_stop,
+            commands::library::library_list,
+            commands::library::library_transcript,
+            commands::library::library_resume,
+            commands::library::library_brief,
+            commands::library::library_continue,
+            commands::library::library_search,
+            commands::library::library_search_set,
             commands::instructions::instructions_get,
             commands::instructions::instructions_plan,
             commands::instructions::instructions_apply,
@@ -657,6 +681,13 @@ fn spawn_background(state: &AppState) {
     let telemetry = state.telemetry.clone();
     tauri::async_runtime::spawn(telemetry.clone().run_uploader());
     tauri::async_runtime::spawn(state.audit.clone().run());
+    // F-WT-10: the intent radar follows checkpoints.
+    tauri::async_runtime::spawn(crate::services::radar::run(
+        state.store.clone(),
+        state.data.clone(),
+        state.bus.clone(),
+        state.terminals.clone(),
+    ));
     tauri::async_runtime::spawn(crate::services::hosted::run(
         state.entitlements.clone(),
         state.store.clone(),
@@ -1278,6 +1309,10 @@ pub fn run() {
                 state.apply_orphan_policy().await;
                 state.telemetry.upload_crashes().await;
             });
+            // Compiled only with debug assertions: `e2e` is always false in a
+            // release build, but the capability's text would still ship in
+            // the binary (scripts/check-release-harness.sh, D-1011).
+            #[cfg(debug_assertions)]
             if e2e {
                 app.add_capability(include_str!("../test-capability.json"))?;
             }
@@ -1311,6 +1346,8 @@ pub fn run() {
                 let state = handle.state::<AppState>();
                 state.terminals.shutdown(&state.data.scrollback());
                 state.remote.shutdown();
+                // F-WT-07: a landing's check doesn't outlive the app.
+                services::merge_queue::shutdown();
             }
         }),
         Err(err) => {
@@ -1426,8 +1463,8 @@ mod harness_tests {
         assert!(harness.contains("allow-test-auth-refresh"));
         let lib = include_str!("lib.rs");
         assert!(
-            lib.contains("if e2e {\n                app.add_capability"),
-            "the harness capability is gated on e2e"
+            lib.contains("#[cfg(debug_assertions)]\n            if e2e {\n                app.add_capability"),
+            "the harness capability is compiled only with debug assertions, and added only with e2e"
         );
         let commands = include_str!("commands/mod.rs");
         assert!(

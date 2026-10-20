@@ -263,6 +263,12 @@ pub trait CallHost: ToolHost {
         _tools: Vec<String>,
     ) {
     }
+    /// A call starts, or ends: state that belongs to one call resets.
+    fn call_started(&self) {}
+    fn call_ended(&self) {}
+    /// An `act` answered: what its tools found is being said to the user
+    /// now (F-CN-09: the review item they just heard may be acted on).
+    fn act_answered(&self) {}
 }
 
 #[derive(Debug, Clone)]
@@ -476,6 +482,7 @@ impl CallController {
             }
         };
 
+        host.call_started();
         // The mic first: early speech waits in the buffer.
         if let Err(why) = host.mic_start(mic_tx) {
             tracing::info!(error = %why, "conductor: the microphone didn't start");
@@ -618,8 +625,13 @@ impl CallController {
                     }
                     Some(Cmd::Inject(calls)) => {
                         let (exec, notes, cancel) = (executor.clone(), notes_tx.clone(), cancel.child_token());
+                        let host = host.clone();
+                        // A batch stands in for one act: it answers once it has run.
                         tokio::spawn(async move {
                             run_calls(&exec, calls, &cancel, &notes).await;
+                            if !cancel.is_cancelled() {
+                                host.act_answered();
+                            }
                         });
                     }
                 },
@@ -800,6 +812,7 @@ impl CallController {
         confirms.cancel_all();
         speaker.stop();
         host.mic_stop();
+        host.call_ended();
         drop(tx);
         let ended_at = host.now_ms();
         let seconds =
@@ -1036,6 +1049,9 @@ async fn doer(
     notes: mpsc::UnboundedSender<Note>,
 ) {
     let output = doer_rounds(&host, &exec, &session_id, &request, &cancel, &notes).await;
+    if !cancel.is_cancelled() && !output.is_empty() {
+        host.act_answered();
+    }
     let _ = notes.send(Note::Output {
         call_id: fc,
         output: tandem_core::redact::redact(&output),

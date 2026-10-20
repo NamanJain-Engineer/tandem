@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-engine-versions"
+description = "Enables the engine_versions command without any pre-configured scope."
+commands.allow = ["engine_versions"]
+
+[[permission]]
+identifier = "deny-engine-versions"
+description = "Denies the engine_versions command without any pre-configured scope."
+commands.deny = ["engine_versions"]

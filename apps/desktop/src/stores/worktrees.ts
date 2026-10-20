@@ -3,6 +3,10 @@ import type {
   FileDiff,
   Forge,
   IpcError,
+  LaneChecks,
+  RadarMark,
+  LandingPlan,
+  LandingRun,
   LaneSetup,
   MergeReport,
   OverlapReport,
@@ -57,6 +61,12 @@ export type WorktreeAsk =
   | { kind: "opinion"; worktreeId: string }
   /** UI-151: untrusted setup commands for new worktrees, reviewed once. */
   | { kind: "review"; worktreeIds: string[]; state: SetupState; after?: "preview" }
+  /** UI-156: allow reading pull requests with gh (F-WT-08). */
+  | { kind: "allowChecks"; worktreeId: string }
+  /** UI-157: a worktree's pull request checks (F-WT-08). */
+  | { kind: "checks"; worktreeId: string }
+  /** UI-155: land the repository's worktrees (F-WT-07). */
+  | { kind: "land"; workspaceId: string }
   /** UI-154: two worktrees' previews side by side (F-WT-09). */
   | { kind: "comparePreviews"; candidates: string[]; chosen: string[]; onDone?: () => void }
   | null;
@@ -74,6 +84,10 @@ type WorktreesState = {
   runtimes: Record<string, PortRange | null>;
   /** F-WT-09: each local worktree's preview, polled while the rail shows. */
   previews: Record<string, PreviewState>;
+  /** F-WT-08: each local worktree's pull request checks, once read. */
+  checks: Record<string, LaneChecks>;
+  /** F-WT-10: the symbols each worktree shares with a sibling. */
+  radar: Record<string, string[]>;
 };
 
 /** Which worktree dialog is open (rail rows and pane menus open them). */
@@ -84,6 +98,8 @@ export const useWorktrees = create<WorktreesState>((set, get) => ({
   forges: {},
   runtimes: {},
   previews: {},
+  checks: {},
+  radar: {},
   notify: (n) => set({ notices: [...get().notices, n] }),
   takeNotices: () => {
     const out = get().notices;
@@ -474,4 +490,120 @@ export async function comparePreviews(
   workspaces.select(parentId);
   workspaces.selectTab(parentId, tab.value.id);
   return tab;
+}
+
+// ---- Local merge queue (F-WT-07) --------------------------------------------
+
+/** How often UI-155 reads a running landing. */
+export const LANDING_POLL_MS = 1_000;
+
+export function landingPlan(workspaceId: string): Promise<Outcome<LandingPlan>> {
+  return run<LandingPlan>("merge_queue_plan", { workspaceId });
+}
+
+export function startLanding(
+  workspaceId: string,
+  laneIds: string[],
+  check: string | null,
+): Promise<Outcome<LandingRun>> {
+  return run<LandingRun>("merge_queue_start", { workspaceId, laneIds, check });
+}
+
+export function landingRun(workspaceId: string): Promise<Outcome<LandingRun | null>> {
+  return run<LandingRun | null>("merge_queue_get", { workspaceId });
+}
+
+export function stopLanding(workspaceId: string): Promise<Outcome<null>> {
+  return run<null>("merge_queue_stop", { workspaceId });
+}
+
+/** Undo landing: the core asks with a native confirm first. */
+export function undoLanding(workspaceId: string): Promise<Outcome<null>> {
+  return run<null>("merge_queue_undo", { workspaceId });
+}
+
+// ---- CI results (F-WT-08) ---------------------------------------------------
+
+/** How often the rail reads pull request checks (only while focused). */
+export const CHECKS_POLL_MS = 120_000;
+/** Worktrees with no pull request, or whose checks all finished, are read
+ * this rarely between Refreshes: each read is two gh calls. */
+export const CHECKS_IDLE_MS = 15 * 60_000;
+
+const checkedAt = new Map<string, number>();
+let polling = false;
+
+/** Whether a poll should read this worktree now (S6). */
+export function checksDue(c: LaneChecks | undefined, at: number | undefined, now: number): boolean {
+  if (!c || at === undefined || c.state === "error") return true;
+  const live = c.state === "ready" && (c.checks.length === 0 || c.checks.some((x) => x.bucket === "pending"));
+  return live || now - at >= CHECKS_IDLE_MS;
+}
+
+/** One poll: skipped while the last one still runs; reads only the
+ * worktrees that are due. */
+export async function pollChecks(laneIds: string[], now = Date.now()): Promise<void> {
+  if (polling) return;
+  polling = true;
+  try {
+    const { checks } = useWorktrees.getState();
+    await loadChecks(laneIds.filter((id) => checksDue(checks[id], checkedAt.get(id), now)));
+  } finally {
+    polling = false;
+  }
+}
+
+/** Reads each worktree's checks; the core runs no gh for a repository
+ * that isn't allowed. */
+export async function loadChecks(laneIds: string[]): Promise<void> {
+  for (const laneId of laneIds.slice(0, 64)) {
+    const out = await run<LaneChecks>("lane_checks", { laneId });
+    checkedAt.set(laneId, Date.now());
+    if (out.ok) useWorktrees.setState((s) => ({ checks: { ...s.checks, [laneId]: out.value } }));
+  }
+}
+
+/** Allows or forgets gh for the worktree's repository, then re-reads it. */
+export async function allowChecks(worktreeId: string, allow: boolean): Promise<Outcome<null>> {
+  const out = await run<null>("pr_checks_allow", { workspaceId: worktreeId, allow });
+  if (out.ok) {
+    const wt = useWorkspaces.getState().list.find((w) => w.id === worktreeId);
+    const siblings = useWorkspaces
+      .getState()
+      .list.filter((w) => wt && w.parentId === wt.parentId && w.laneBranch && w.kind === "local")
+      .map((w) => w.id);
+    await loadChecks(siblings.length > 0 ? siblings : [worktreeId]);
+  }
+  return out;
+}
+
+/** "Check pull request" in a worktree's menu: the checks, or the ask first. */
+export async function openChecks(worktreeId: string): Promise<void> {
+  await loadChecks([worktreeId]);
+  const state = useWorktrees.getState().checks[worktreeId]?.state;
+  useWorktrees
+    .getState()
+    .open(state === "not_allowed" ? { kind: "allowChecks", worktreeId } : { kind: "checks", worktreeId });
+}
+
+/** The prompt for a failed check: CI's text behind the core's fence. */
+export function checkFailurePrompt(laneId: string, name: string): Promise<Outcome<string>> {
+  return run<string>("lane_check_failure", { laneId, name });
+}
+
+// ---- Intent radar (F-WT-10) -------------------------------------------------
+
+/** The rail's radar marks, from the core's last indexes (nothing parsed). */
+export async function loadRadar(laneIds: string[]): Promise<void> {
+  if (laneIds.length === 0) return;
+  const out = await run<RadarMark[]>("lane_radar", { laneIds });
+  if (!out.ok || !Array.isArray(out.value)) return;
+  const radar: Record<string, string[]> = {};
+  for (const m of out.value) radar[m.laneId] = m.symbols;
+  useWorktrees.setState({ radar });
+}
+
+/** The note Warn both agents types into `laneId`'s agent about `otherId`. */
+export function radarNote(laneId: string, otherId: string): Promise<Outcome<string>> {
+  return run<string>("lane_radar_note", { laneId, otherId });
 }

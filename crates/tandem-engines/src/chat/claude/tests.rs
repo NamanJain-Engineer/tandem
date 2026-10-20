@@ -512,3 +512,28 @@ read more"#;
     assert_eq!(said, "allowed");
     s.shutdown().await.expect("shutdown");
 }
+
+/// F-EN-08 AC3: Claude Code's generic error result (an API overload, say)
+/// ends the turn in error, but isn't the engine's own failure, so it never
+/// counts against its version.
+#[test]
+fn f_en_08_3_a_generic_error_result_isnt_the_engines_fault() {
+    let mut parser = ClaudeParser::new(PathBuf::from("/w"), &claude_patterns(), false);
+    let line = r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":"API Error: 529 Overloaded"}"#;
+    let events = parser.line(line, now());
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Parsed::Event(ThreadEvent::TurnEnd {
+            reason: TurnEndReason::Error,
+            ..
+        })
+    )));
+    let faults: Vec<bool> = events
+        .iter()
+        .filter_map(|e| match e {
+            Parsed::Event(ThreadEvent::Error { stage, code, .. }) => Some(stage.engine_fault(code)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(faults, vec![false], "{events:?}");
+}

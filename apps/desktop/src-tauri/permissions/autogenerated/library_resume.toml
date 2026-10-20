@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-library-resume"
+description = "Enables the library_resume command without any pre-configured scope."
+commands.allow = ["library_resume"]
+
+[[permission]]
+identifier = "deny-library-resume"
+description = "Denies the library_resume command without any pre-configured scope."
+commands.deny = ["library_resume"]

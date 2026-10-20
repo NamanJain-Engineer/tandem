@@ -5,6 +5,7 @@ use tauri::{AppHandle, State};
 use tauri_plugin_autostart::ManagerExt;
 
 use tandem_core::bus::{BusEvent, Topic};
+use tandem_core::entitlement::Limits;
 use tandem_core::settings::SettingKey;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_store::repo::settings;
@@ -36,16 +37,7 @@ pub async fn store_and_apply(
     key: SettingKey,
     value: Value,
 ) -> Result<(), IpcError> {
-    // The sandbox turns on only where it can run, so nobody believes
-    // they're sandboxed when they aren't (F-TL-11).
-    if key == SettingKey::AgentSandbox {
-        crate::commands::sandbox::may_turn_on(state.terminals.sandboxer().await.as_ref(), &value)?;
-    }
-    // A memory cap is offered only where it applies (F-EX-06).
-    if key == SettingKey::AgentMemoryCap {
-        crate::commands::resources::may_cap(&state.terminals.resources.status().await, &value)?;
-    }
-    settings::set(&state.store, key, value.clone()).await?;
+    store(state, key, &value).await?;
     apply(app, state, key, &value).await?;
     state.bus.publish(BusEvent::new(
         Topic::App,
@@ -61,8 +53,7 @@ pub async fn settings_reset(
     state: State<'_, AppState>,
     key: SettingKey,
 ) -> Result<(), IpcError> {
-    settings::reset(&state.store, Some(vec![key])).await?;
-    let value = settings::get(&state.store, key).await?;
+    let value = reset(&state, key).await?;
     apply(&app, &state, key, &value).await?;
     state.bus.publish(BusEvent::new(
         Topic::App,
@@ -70,6 +61,55 @@ pub async fn settings_reset(
         serde_json::json!({ "key": key, "value": value }),
     ));
     Ok(())
+}
+
+/// What a plan allows a setting to be: session search is Pro, whoever turns
+/// it on (F-TH-17, D-2414).
+fn allowed(limits: &Limits, key: SettingKey, value: &Value) -> Result<(), IpcError> {
+    if key == SettingKey::SessionSearch && value.as_bool() == Some(true) && !limits.session_search {
+        return Err(IpcError::new(
+            ErrorCode::ForbiddenPlan,
+            "Searching session text needs Vibezeo Pro.",
+        ));
+    }
+    Ok(())
+}
+
+/// Stores a setting and runs the effects that need no window: every path
+/// that sets one (`settings_set`, Conductor's `set_setting`) comes here.
+async fn store(state: &AppState, key: SettingKey, value: &Value) -> Result<(), IpcError> {
+    allowed(&state.entitlements.limits(), key, value)?;
+    // The sandbox turns on only where it can run, so nobody believes
+    // they're sandboxed when they aren't (F-TL-11).
+    if key == SettingKey::AgentSandbox {
+        crate::commands::sandbox::may_turn_on(state.terminals.sandboxer().await.as_ref(), value)?;
+    }
+    // A memory cap is offered only where it applies (F-EX-06).
+    if key == SettingKey::AgentMemoryCap {
+        crate::commands::resources::may_cap(&state.terminals.resources.status().await, value)?;
+    }
+    settings::set(&state.store, key, value.clone()).await?;
+    stored(state, key, value);
+    Ok(())
+}
+
+/// Resets a setting to its default, with the same effects; the new value.
+async fn reset(state: &AppState, key: SettingKey) -> Result<Value, IpcError> {
+    settings::reset(&state.store, Some(vec![key])).await?;
+    let value = settings::get(&state.store, key).await?;
+    stored(state, key, &value);
+    Ok(value)
+}
+
+fn stored(state: &AppState, key: SettingKey, value: &Value) {
+    // Off deletes the session index, however it was turned off (F-TH-17).
+    if key == SettingKey::SessionSearch && value.as_bool() != Some(true) {
+        crate::services::library::delete_index(state.data.root());
+    }
+    // Checks started from now on take turns, or run at once (F-EX-06).
+    if key == SettingKey::ChecksOneAtATime {
+        crate::services::check_queue::set(value.as_bool().unwrap_or(false));
+    }
 }
 
 /// Side effects that live outside the webview.
@@ -92,10 +132,6 @@ async fn apply(
     }
     match key {
         SettingKey::TelemetryUsage | SettingKey::TelemetryCrash => state.apply_settings().await,
-        // Checks started from now on take turns, or run at once (F-EX-06).
-        SettingKey::ChecksOneAtATime => {
-            crate::services::check_queue::set(value.as_bool().unwrap_or(false));
-        }
         SettingKey::ExposeAllPluginTools => {
             state
                 .gateway
@@ -131,4 +167,76 @@ async fn apply(
         _ => {}
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::library::INDEX_FILE;
+    use tandem_core::DataDir;
+    use tandem_store::Store;
+
+    fn state() -> (tempfile::TempDir, AppState) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = Store::open(&data).expect("store");
+        (dir, AppState::for_tests(data, store))
+    }
+
+    fn index(state: &AppState) -> std::path::PathBuf {
+        let path = state.data.root().join(INDEX_FILE);
+        std::fs::write(&path, b"index").expect("index");
+        path
+    }
+
+    #[tokio::test]
+    async fn f_th_17_4_turning_search_off_through_settings_set_deletes_the_index() {
+        let (_dir, state) = state();
+        let path = index(&state);
+        store(&state, SettingKey::SessionSearch, &Value::Bool(false))
+            .await
+            .expect("set");
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn f_th_17_4_resetting_search_deletes_the_index() {
+        let (_dir, state) = state();
+        let path = index(&state);
+        let value = reset(&state, SettingKey::SessionSearch)
+            .await
+            .expect("reset");
+        assert_eq!(value, Value::Bool(false));
+        assert!(!path.exists());
+        // Other settings leave it alone.
+        let path = index(&state);
+        reset(&state, SettingKey::Theme).await.expect("reset");
+        assert!(path.exists());
+    }
+
+    #[tokio::test]
+    async fn f_th_17_4_free_cant_turn_search_on() {
+        let (_dir, state) = state();
+        let err = store(&state, SettingKey::SessionSearch, &Value::Bool(true))
+            .await
+            .expect_err("free");
+        assert_eq!(err.code, ErrorCode::ForbiddenPlan);
+        assert_eq!(
+            settings::get(&state.store, SettingKey::SessionSearch)
+                .await
+                .expect("get"),
+            Value::Bool(false)
+        );
+        let pro = Limits {
+            session_search: true,
+            ..Limits::free()
+        };
+        assert!(allowed(&pro, SettingKey::SessionSearch, &Value::Bool(true)).is_ok());
+        assert!(allowed(
+            &Limits::free(),
+            SettingKey::SessionSearch,
+            &Value::Bool(false)
+        )
+        .is_ok());
+    }
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lane-review-comments"
+description = "Enables the lane_review_comments command without any pre-configured scope."
+commands.allow = ["lane_review_comments"]
+
+[[permission]]
+identifier = "deny-lane-review-comments"
+description = "Denies the lane_review_comments command without any pre-configured scope."
+commands.deny = ["lane_review_comments"]

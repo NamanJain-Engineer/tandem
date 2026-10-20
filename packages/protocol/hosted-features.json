@@ -66,6 +66,13 @@
       "state": { "kind": "on_use" }
     },
     {
+      "id": "engine_update_check",
+      "label": "Engine update checks",
+      "sends": "An engine's npm package name, when you press Check for updates in Settings › Engines",
+      "destination": "Your npm's registry (npm view)",
+      "state": { "kind": "on_use" }
+    },
+    {
       "id": "auto",
       "label": "Auto",
       "sends": "Last 200 terminal lines, redacted",
@@ -78,6 +85,13 @@
       "sends": "Your search, and the names, titles and last lines of open panes, threads and teammates, redacted; never file contents",
       "destination": "Vibezeo API → Anthropic (Claude API)",
       "state": { "kind": "setting", "key": "find_work_hosted", "equals": true }
+    },
+    {
+      "id": "conductor",
+      "label": "Conductor calls",
+      "sends": "Your voice during a call, and what Conductor reads to answer you: the names, titles and status of your panes, threads and teammates, and tool results such as an agent's closing message or a review item's summary, redacted",
+      "destination": "Vibezeo API → realtime voice provider and Anthropic (Claude API)",
+      "state": { "kind": "on_use" }
     },
     {
       "id": "usage_stats",

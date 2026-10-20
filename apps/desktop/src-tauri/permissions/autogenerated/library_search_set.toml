@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-library-search-set"
+description = "Enables the library_search_set command without any pre-configured scope."
+commands.allow = ["library_search_set"]
+
+[[permission]]
+identifier = "deny-library-search-set"
+description = "Denies the library_search_set command without any pre-configured scope."
+commands.deny = ["library_search_set"]

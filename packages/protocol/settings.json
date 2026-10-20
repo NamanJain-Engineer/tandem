@@ -491,6 +491,11 @@
   },
   {
     "default": false,
+    "key": "session_search",
+    "page": "privacy"
+  },
+  {
+    "default": false,
     "key": "find_work_hosted",
     "page": "privacy"
   },

@@ -78,6 +78,17 @@ async fn teammate(state: &AppState, wanted: &str) -> Result<TeammateId, String> 
         .ok_or_else(|| format!("There's no teammate {wanted}."))
 }
 
+/// The review queue (F-DB-04), once the app has started it.
+fn review_queue(
+    state: &AppState,
+) -> Result<std::sync::Arc<crate::services::review_queue::ReviewQueue>, String> {
+    state
+        .review
+        .get()
+        .cloned()
+        .ok_or_else(|| "The review queue is still starting.".to_string())
+}
+
 /// The last thing said in a thread, one message per line.
 async fn last_messages(state: &AppState, id: &ThreadId, n: usize) -> Vec<String> {
     let rows = threads::page(&state.store, id, None, 200)
@@ -467,6 +478,59 @@ pub async fn run(state: State<'_, AppState>, host: &dyn ToolWindow, name: &str, 
                 ),
                 None => format!("You're up to date on {}.", u.current),
             })
+        }
+        // F-CN-09: the review queue by voice; merging waits for the desk.
+        "review_next" => {
+            let q = review_queue(&state)?;
+            let step = q.walk_next().await;
+            Ok(crate::services::review_queue::spoken(&step, q.now()))
+        }
+        "review_send_back" => {
+            let q = review_queue(&state)?;
+            let item = q.walk_heard_item().map_err(ipc)?;
+            let text = tandem_voice::conductor::exec::strip_controls(&s(a, "text"));
+            if text.trim().is_empty() {
+                return Err("Say what to send back.".into());
+            }
+            if state.approvals.broker.pending_for(&item.source).is_some() {
+                return Err(format!(
+                    "{} is waiting for approval, so nothing was sent. Tell the user to answer it first.",
+                    item.title
+                ));
+            }
+            let prompt = crate::services::review_queue::send_back_prompt(
+                item.branch.as_deref().unwrap_or(&item.workspace),
+                &text,
+            );
+            match &item.source {
+                SourceRef::Pane { pane_id } => state
+                    .terminals
+                    .type_prompt_with(&PaneId::from_db(pane_id.clone()), &prompt, true)
+                    .await
+                    .map_err(ipc)?,
+                SourceRef::Thread { thread_id } => {
+                    crate::commands::threads::thread_send(
+                        state.clone(),
+                        ThreadId::from_db(thread_id.clone()),
+                        prompt,
+                        None,
+                        Some(true),
+                    )
+                    .await
+                    .map_err(ipc)?;
+                }
+                _ => return Err("That review item can't take a message.".into()),
+            }
+            Ok(format!("Sent it back to {}.", item.title))
+        }
+        "review_approve" => {
+            let q = review_queue(&state)?;
+            let (item, approved) = q.walk_approve().await.map_err(ipc)?;
+            Ok(format!(
+                "Approved {}.{}",
+                item.title,
+                crate::services::review_queue::ready_to_merge(approved)
+            ))
         }
         other => Err(format!(
             "{} isn't available by voice in this version yet; it's in the app.",

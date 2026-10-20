@@ -71,8 +71,55 @@ pub struct BestOfDetail {
     pub diffs: Vec<LaneDiff>,
 }
 
-/// A running check's process group, while it runs.
-type GroupSlot = Arc<Mutex<Option<u32>>>;
+/// A check's process group while it runs, and whether it was stopped:
+/// stopping before the spawn means it never starts, and stopping right
+/// after kills it as soon as it's registered (F-WT-07 AC6).
+#[derive(Debug, Default)]
+pub struct CheckSlot {
+    pid: Mutex<Option<u32>>,
+    cancelled: std::sync::atomic::AtomicBool,
+}
+
+impl CheckSlot {
+    /// Stops the check: kills it if running, or keeps it from starting.
+    pub fn cancel(&self) {
+        let pid = self.pid.lock().unwrap_or_else(|e| e.into_inner());
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        if let Some(pid) = *pid {
+            kill_group(pid);
+        }
+    }
+
+    pub fn cancelled(&self) -> bool {
+        self.cancelled.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Registers the spawned check; false (and killed) when already cancelled.
+    fn register(&self, pid: u32) -> bool {
+        let mut slot = self.pid.lock().unwrap_or_else(|e| e.into_inner());
+        if self.cancelled() {
+            kill_group(pid);
+            return false;
+        }
+        *slot = Some(pid);
+        true
+    }
+
+    fn clear(&self) {
+        *self.pid.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    #[cfg(test)]
+    pub fn pid(&self) -> Option<u32> {
+        *self.pid.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+pub type GroupSlot = Arc<CheckSlot>;
+
+/// How much of a check's output is kept: its last 64 KiB.
+pub const OUTPUT_CAP: usize = 64 * 1024;
 
 /// Running checks, per run, to stop them.
 #[derive(Default)]
@@ -331,16 +378,61 @@ fn local_check(command: &str, cwd: &Path) -> tokio::process::Command {
     c
 }
 
+/// Appends `chunk`, keeping only the last `cap` bytes; true once cut.
+pub fn push_capped(buf: &mut Vec<u8>, chunk: &[u8], cap: usize) -> bool {
+    buf.extend_from_slice(chunk);
+    if buf.len() > cap {
+        let cut = buf.len() - cap;
+        buf.drain(..cut);
+        return true;
+    }
+    false
+}
+
+/// Reads `from` to its end into `into`, capped (see [`push_capped`]).
+async fn read_capped(
+    mut from: impl tokio::io::AsyncRead + Unpin,
+    into: Arc<Mutex<(Vec<u8>, bool)>>,
+) {
+    use tokio::io::AsyncReadExt;
+    let mut chunk = vec![0u8; 8192];
+    loop {
+        match from.read(&mut chunk).await {
+            Ok(0) | Err(_) => return,
+            Ok(n) => {
+                let mut b = into.lock().unwrap_or_else(|e| e.into_inner());
+                let cut = push_capped(&mut b.0, &chunk[..n], OUTPUT_CAP);
+                b.1 |= cut;
+            }
+        }
+    }
+}
+
+fn captured(buf: &Mutex<(Vec<u8>, bool)>) -> String {
+    let b = buf.lock().unwrap_or_else(|e| e.into_inner());
+    let text = String::from_utf8_lossy(&b.0).into_owned();
+    if b.1 {
+        format!("[… earlier output cut]\n{text}")
+    } else {
+        text
+    }
+}
+
 /// Runs a check's process (here, or the ssh that runs it on a host) in its
-/// own process group, stdout and stderr together; `None` exit when it timed
-/// out or was killed. Killing a host check's ssh ends it there too:
-/// `tandem-host run` ends the check's group once its input closes.
+/// own process group, stdout and stderr together, keeping the last
+/// [`OUTPUT_CAP`] bytes; `None` exit when it timed out or was stopped.
+/// Killing a host check's ssh ends it there too: `tandem-host run` ends the
+/// check's group once its input closes.
 pub async fn run_prepared(
     mut cmd: tokio::process::Command,
     env: &std::collections::BTreeMap<String, String>,
     limit: Duration,
     group_slot: Option<GroupSlot>,
 ) -> (Option<i32>, String) {
+    const STOPPED: &str = "Stopped.";
+    if group_slot.as_ref().is_some_and(|s| s.cancelled()) {
+        return (None, STOPPED.into());
+    }
     cmd.env_clear()
         .envs(env)
         .stdin(std::process::Stdio::null())
@@ -349,48 +441,117 @@ pub async fn run_prepared(
         .kill_on_drop(true);
     #[cfg(unix)]
     cmd.process_group(0);
-    let child = match cmd.spawn() {
+    let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => return (None, e.to_string()),
     };
-    #[cfg(unix)]
     let group = child.id();
-    if let (Some(slot), Some(pid)) = (&group_slot, child.id()) {
-        *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(pid);
+    if let (Some(slot), Some(pid)) = (&group_slot, group) {
+        if !slot.register(pid) {
+            let _ = child.wait().await;
+            return (None, STOPPED.into());
+        }
     }
-    let waited = tokio::time::timeout(limit, child.wait_with_output()).await;
+    let (out, err) = (
+        Arc::new(Mutex::new((Vec::new(), false))),
+        Arc::new(Mutex::new((Vec::new(), false))),
+    );
+    let readers = (
+        child
+            .stdout
+            .take()
+            .map(|o| tokio::spawn(read_capped(o, out.clone()))),
+        child
+            .stderr
+            .take()
+            .map(|e| tokio::spawn(read_capped(e, err.clone()))),
+    );
+    let waited = tokio::time::timeout(limit, child.wait()).await;
+    let code = match &waited {
+        Ok(Ok(status)) => status.code(),
+        _ => None,
+    };
+    if waited.is_err() {
+        if let Some(pid) = group {
+            kill_group(pid);
+        }
+        let _ = child.wait().await;
+    }
     // The group is gone once the check ends: Stop must not signal a
     // process group id the system has since given to someone else.
     if let Some(slot) = &group_slot {
-        *slot.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        slot.clear();
     }
+    // Grandchildren holding the pipes open can't keep the output waiting.
+    for reader in [readers.0, readers.1].into_iter().flatten() {
+        let _ = tokio::time::timeout(Duration::from_secs(2), reader).await;
+    }
+    let mut text = captured(&out);
+    text.push_str(&captured(&err));
     match waited {
-        Ok(Ok(out)) => {
-            let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
-            text.push_str(&String::from_utf8_lossy(&out.stderr));
-            (out.status.code(), text)
-        }
+        Ok(Ok(_)) => (code, text),
         Ok(Err(e)) => (None, e.to_string()),
         Err(_) => {
-            #[cfg(unix)]
-            if let Some(pid) = group {
-                kill_group(pid);
-            }
-            (
-                None,
-                format!("Stopped after {} minutes.", limit.as_secs() / 60),
-            )
+            text.push_str(&format!(
+                "\nStopped after {} minutes.",
+                limit.as_secs() / 60
+            ));
+            (None, text)
         }
     }
 }
 
-/// Kills a check's whole process group (a test runner's workers too).
-pub fn kill_group(pid: u32) {
-    if cfg!(unix) {
-        let _ = std::process::Command::new("kill")
-            .args(["-KILL", "--", &format!("-{pid}")])
-            .status();
+/// How a check's whole process tree is killed (a test runner's workers
+/// too): its process group on Unix, `taskkill /T /F` on Windows.
+pub trait TreeKiller {
+    fn argv(&self, pid: u32) -> Vec<String>;
+}
+
+pub struct UnixKiller;
+pub struct WindowsKiller;
+
+impl TreeKiller for UnixKiller {
+    fn argv(&self, pid: u32) -> Vec<String> {
+        ["kill", "-KILL", "--", &format!("-{pid}")]
+            .map(String::from)
+            .to_vec()
     }
+}
+
+impl TreeKiller for WindowsKiller {
+    fn argv(&self, pid: u32) -> Vec<String> {
+        ["taskkill", "/T", "/F", "/PID", &pid.to_string()]
+            .map(String::from)
+            .to_vec()
+    }
+}
+
+fn system_killer() -> &'static dyn TreeKiller {
+    if cfg!(windows) {
+        &WindowsKiller
+    } else {
+        &UnixKiller
+    }
+}
+
+/// Kills a check's whole process tree.
+pub fn kill_group(pid: u32) {
+    let argv = system_killer().argv(pid);
+    let Some((program, args)) = argv.split_first() else {
+        return;
+    };
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW: no console flashes up.
+        cmd.creation_flags(0x0800_0000);
+    }
+    let _ = cmd.status();
 }
 
 /// `bestof_check`: the run's check command in every lane at once.
@@ -518,10 +679,8 @@ pub async fn stop_checks(state: &AppState, id: &str) {
         return;
     }
     for (h, slot) in handles {
+        slot.cancel();
         h.abort();
-        if let Some(pid) = *slot.lock().unwrap_or_else(|e| e.into_inner()) {
-            kill_group(pid);
-        }
     }
     if let Ok(run) = run_of(state, id).await {
         for lane in run
@@ -1206,6 +1365,77 @@ mod tests {
             Some(slot.clone()),
         )
         .await;
-        assert_eq!(*slot.lock().expect("slot"), None);
+        assert_eq!(slot.pid(), None);
+    }
+
+    #[test]
+    fn f_wt_07_output_keeps_the_last_64_kib() {
+        let mut buf = Vec::new();
+        assert!(!push_capped(&mut buf, b"abc", 4));
+        assert!(push_capped(&mut buf, b"defg", 4));
+        assert_eq!(buf, b"defg");
+        let big = "x".repeat(OUTPUT_CAP * 2);
+        let mut buf = Vec::new();
+        assert!(push_capped(&mut buf, big.as_bytes(), OUTPUT_CAP));
+        assert_eq!(buf.len(), OUTPUT_CAP);
+    }
+
+    #[test]
+    fn f_wt_07_6_the_tree_kill_on_each_platform() {
+        assert_eq!(UnixKiller.argv(42), ["kill", "-KILL", "--", "-42"]);
+        assert_eq!(
+            WindowsKiller.argv(42),
+            ["taskkill", "/T", "/F", "/PID", "42"]
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn f_wt_07_6_a_cancelled_slot_never_starts_or_kills_at_once() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
+        let marker = tmp.path().join("ran");
+        // Cancelled before: the check never starts.
+        let slot: GroupSlot = Arc::default();
+        slot.cancel();
+        let (exit, _) = run_check(
+            "touch ran",
+            tmp.path(),
+            &env,
+            Duration::from_secs(10),
+            Some(slot),
+        )
+        .await;
+        assert_eq!(exit, None);
+        assert!(!marker.exists(), "a stopped check never starts");
+        // Cancelled while running: killed with its children, output kept.
+        let slot: GroupSlot = Arc::default();
+        let (dir, env2, task_slot) = (tmp.path().to_path_buf(), env.clone(), slot.clone());
+        let task = tokio::spawn(async move {
+            run_check(
+                "echo started; sleep 30 & wait",
+                &dir,
+                &env2,
+                Duration::from_secs(60),
+                Some(task_slot),
+            )
+            .await
+        });
+        for _ in 0..200 {
+            if slot.pid().is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let t = std::time::Instant::now();
+        slot.cancel();
+        let (exit, out) = task.await.expect("join");
+        assert!(
+            t.elapsed() < Duration::from_secs(5),
+            "killed, not waited out"
+        );
+        assert_eq!(exit, None);
+        assert!(out.contains("started"), "{out}");
     }
 }

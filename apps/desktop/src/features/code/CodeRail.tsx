@@ -34,6 +34,8 @@ import { useWorkspaces } from "../../stores/workspaces";
 import { useRemote } from "../../stores/remote";
 import { RailList } from "../rail/RailList";
 import { topLevel, useWorktrees, worktreesOf } from "../../stores/worktrees";
+import { useChecksPolling } from "./PullRequestChecks";
+import { useIntentRadar } from "./IntentRadar";
 import { WorktreeRow, usePreviewPolling } from "./Worktrees";
 import { browserSources, paneTitles } from "./titles";
 import { useBrowser } from "../../stores/browser";
@@ -300,13 +302,15 @@ export function CodeRail() {
   const [width, setWidth] = useState<number | null>(null);
   const { show } = useToast();
   const shown = Math.min(RAIL_MAX, Math.max(RAIL_MIN, width ?? saved));
+  const localWorktrees = list
+    .filter((w) => w.parentId !== null && w.laneBranch !== null && w.kind === "local" && !w.missing)
+    .map((w) => w.id);
   // F-WT-09: whether each local worktree's preview answers, while the rail shows.
-  usePreviewPolling(
-    list
-      .filter((w) => w.parentId !== null && w.laneBranch !== null && w.kind === "local" && !w.missing)
-      .map((w) => w.id),
-    !collapsed,
-  );
+  usePreviewPolling(localWorktrees, !collapsed);
+  // F-WT-08: their pull requests' checks (no gh for a repository not allowed).
+  useChecksPolling(localWorktrees, !collapsed);
+  // F-WT-10: radar marks, and the notice when two worktrees newly share symbols.
+  useIntentRadar(localWorktrees, !collapsed);
 
   const onWidth = (w: number, done: boolean) => {
     if (done && w < COLLAPSE_BELOW) {
@@ -339,6 +343,13 @@ export function CodeRail() {
       label: t("worktree.setup.menu"),
       disabled: ws.kind !== "local" || !ws.branch || ws.missing,
       onSelect: () => useWorktrees.getState().open({ kind: "setup", workspaceId: ws.id }),
+    },
+    {
+      // F-WT-07: land this repository's worktrees one after another.
+      id: "land-worktrees",
+      label: t("landing.menu"),
+      disabled: ws.kind !== "local" || !ws.branch || ws.missing,
+      onSelect: () => useWorktrees.getState().open({ kind: "land", workspaceId: ws.id }),
     },
     {
       // F-EN-07: which instructions file each engine reads here.

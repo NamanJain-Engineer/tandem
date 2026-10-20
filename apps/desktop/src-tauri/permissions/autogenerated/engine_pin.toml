@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-engine-pin"
+description = "Enables the engine_pin command without any pre-configured scope."
+commands.allow = ["engine_pin"]
+
+[[permission]]
+identifier = "deny-engine-pin"
+description = "Denies the engine_pin command without any pre-configured scope."
+commands.deny = ["engine_pin"]
