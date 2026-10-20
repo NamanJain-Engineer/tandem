@@ -31,6 +31,7 @@ pub mod prompts;
 pub mod redact;
 pub mod remote;
 pub mod remote_config;
+pub mod run_request;
 pub mod sandbox;
 pub mod secrets;
 pub mod settings;

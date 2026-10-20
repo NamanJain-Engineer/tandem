@@ -5,7 +5,9 @@
 
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -14,8 +16,9 @@ use hyper::body::{Bytes, Incoming};
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use rand::RngCore;
+use tandem_core::run_request::{self, RunReply, RunRequest, MAX_RUN_BYTES, RUN_PATH};
 use tandem_core::status_report::{
-    accept, claimed_pane, ReportError, StatusReport, MAX_REPORT_BYTES, SIGNATURE_HEADER,
+    accept, claimed_pane, ReportError, StatusReport, MAX_AGE_MS, MAX_REPORT_BYTES, SIGNATURE_HEADER,
 };
 use tokio::task::JoinHandle;
 
@@ -32,10 +35,22 @@ impl<F: Fn(StatusReport) + Send + Sync> ReportSink for F {
 
 type Secrets = Arc<Mutex<HashMap<String, String>>>;
 
+/// Runs a `vibezeo run` request (F-TL-12): the app's approval, the run and
+/// its masked output. The connection stays open until it resolves.
+pub trait RunHandler: Send + Sync {
+    fn run(&self, req: RunRequest) -> Pin<Box<dyn Future<Output = RunReply> + Send>>;
+}
+
+type Handler = Arc<Mutex<Option<Arc<dyn RunHandler>>>>;
+
+/// Nonces seen in the last [`MAX_AGE_MS`]: a replayed run is refused.
+type Nonces = Arc<Mutex<HashMap<String, i64>>>;
+
 pub struct StatusServer {
     url: String,
     socket: Option<PathBuf>,
     secrets: Secrets,
+    handler: Handler,
     task: JoinHandle<()>,
 }
 
@@ -44,6 +59,14 @@ impl StatusServer {
     pub async fn start(run_dir: &Path, sink: Arc<dyn ReportSink>) -> std::io::Result<Self> {
         std::fs::create_dir_all(run_dir)?;
         let secrets: Secrets = Arc::default();
+        let handler: Handler = Arc::default();
+        let base = State {
+            secrets: secrets.clone(),
+            sink,
+            handler: handler.clone(),
+            nonces: Arc::default(),
+            tcp: false,
+        };
         #[cfg(unix)]
         {
             let path = run_dir.join("status.sock");
@@ -54,7 +77,7 @@ impl StatusServer {
                 use std::os::unix::fs::PermissionsExt;
                 std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
             }
-            let state = (secrets.clone(), sink, false);
+            let state = base;
             let task = tokio::spawn(async move {
                 loop {
                     let Ok((stream, _)) = listener.accept().await else {
@@ -67,6 +90,7 @@ impl StatusServer {
                 url: format!("unix://{}", path.display()),
                 socket: Some(path),
                 secrets,
+                handler,
                 task,
             })
         }
@@ -74,7 +98,7 @@ impl StatusServer {
         {
             let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
             let port = listener.local_addr()?.port();
-            let state = (secrets.clone(), sink, true);
+            let state = State { tcp: true, ..base };
             let task = tokio::spawn(async move {
                 loop {
                     let Ok((stream, _)) = listener.accept().await else {
@@ -87,6 +111,7 @@ impl StatusServer {
                 url: format!("http://127.0.0.1:{port}"),
                 socket: None,
                 secrets,
+                handler,
                 task,
             })
         }
@@ -127,6 +152,13 @@ impl StatusServer {
         accept(&secret, body, signature, now_ms())
     }
 
+    /// Where `vibezeo run` requests go (F-TL-12); none answers "not ready".
+    pub fn set_run_handler(&self, handler: Arc<dyn RunHandler>) {
+        if let Ok(mut h) = self.handler.lock() {
+            *h = Some(handler);
+        }
+    }
+
     pub fn unregister(&self, pane_id: &str) {
         if let Ok(mut s) = self.secrets.lock() {
             s.remove(pane_id);
@@ -147,7 +179,14 @@ impl Drop for StatusServer {
     }
 }
 
-type State = (Secrets, Arc<dyn ReportSink>, bool);
+#[derive(Clone)]
+struct State {
+    secrets: Secrets,
+    sink: Arc<dyn ReportSink>,
+    handler: Handler,
+    nonces: Nonces,
+    tcp: bool,
+}
 
 fn serve<I>(io: TokioIo<I>, state: State)
 where
@@ -159,6 +198,16 @@ where
             .serve_connection(io, svc)
             .await;
     });
+}
+
+fn json_reply(reply: &RunReply) -> Response<Full<Bytes>> {
+    let body = serde_json::to_vec(reply).unwrap_or_default();
+    let mut r = Response::new(Full::new(Bytes::from(body)));
+    r.headers_mut().insert(
+        hyper::header::CONTENT_TYPE,
+        hyper::header::HeaderValue::from_static("application/json"),
+    );
+    r
 }
 
 fn reply(code: StatusCode, body: &'static str) -> Response<Full<Bytes>> {
@@ -189,15 +238,16 @@ fn host_ok(req: &Request<Incoming>, tcp: bool) -> bool {
     matches!(name, "127.0.0.1" | "localhost")
 }
 
-async fn handle(
-    req: Request<Incoming>,
-    (secrets, sink, tcp): State,
-) -> Result<Response<Full<Bytes>>, Infallible> {
+async fn handle(req: Request<Incoming>, state: State) -> Result<Response<Full<Bytes>>, Infallible> {
+    let State {
+        secrets, sink, tcp, ..
+    } = state.clone();
     if !host_ok(&req, tcp) {
         return Ok(reply(StatusCode::FORBIDDEN, ""));
     }
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/v1/health") => Ok(reply(StatusCode::OK, r#"{"ok":true}"#)),
+        (&Method::POST, RUN_PATH) => Ok(run(req, state).await),
         (&Method::POST, "/v1/status") => {
             let sig = req
                 .headers()
@@ -231,6 +281,59 @@ async fn handle(
         }
         _ => Ok(reply(StatusCode::NOT_FOUND, "")),
     }
+}
+
+/// `vibezeo run`: signed by the pane's secret, recent, never seen before.
+async fn run(req: Request<Incoming>, state: State) -> Response<Full<Bytes>> {
+    let sig = req
+        .headers()
+        .get(SIGNATURE_HEADER)
+        .and_then(|h| h.to_str().ok())
+        .map(str::to_string);
+    let body = match Limited::new(req.into_body(), MAX_RUN_BYTES).collect().await {
+        Ok(b) => b.to_bytes(),
+        Err(_) => return reply(StatusCode::PAYLOAD_TOO_LARGE, ""),
+    };
+    let secret = claimed_pane(&body).ok().and_then(|pane| {
+        state
+            .secrets
+            .lock()
+            .ok()
+            .and_then(|s| s.get(&pane).cloned())
+    });
+    let Some(secret) = secret else {
+        return reply(StatusCode::UNAUTHORIZED, "");
+    };
+    let now = now_ms();
+    let request = match run_request::accept(&secret, &body, sig.as_deref(), now) {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::debug!(
+                code = "run.refused",
+                status = e.http_status(),
+                "run request refused"
+            );
+            return reply(
+                StatusCode::from_u16(e.http_status()).unwrap_or(StatusCode::BAD_REQUEST),
+                "",
+            );
+        }
+    };
+    {
+        let Ok(mut seen) = state.nonces.lock() else {
+            return reply(StatusCode::INTERNAL_SERVER_ERROR, "");
+        };
+        seen.retain(|_, at| *at >= now - MAX_AGE_MS);
+        if seen.insert(request.nonce.clone(), now).is_some() {
+            return reply(StatusCode::CONFLICT, "");
+        }
+    }
+    let handler = state.handler.lock().ok().and_then(|h| h.clone());
+    let out = match handler {
+        Some(h) => h.run(request).await,
+        None => RunReply::refused("Vibezeo isn't ready to run commands yet"),
+    };
+    json_reply(&out)
 }
 
 fn apply(
@@ -292,6 +395,70 @@ mod tests {
             .await
             .expect("join")
             .expect("post")
+    }
+
+    /// Echoes the command back as its output, exit 7.
+    struct Echo;
+    impl RunHandler for Echo {
+        fn run(&self, req: RunRequest) -> Pin<Box<dyn Future<Output = RunReply> + Send>> {
+            Box::pin(async move {
+                RunReply {
+                    exit_code: Some(7),
+                    output: format!("ran {} in {}", req.command, req.cwd),
+                    ..RunReply::default()
+                }
+            })
+        }
+    }
+
+    fn run_req(pane: &str, nonce: &str) -> RunRequest {
+        RunRequest {
+            pane_id: pane.into(),
+            cwd: "/w".into(),
+            command: "pnpm deploy".into(),
+            ts: now_ms(),
+            nonce: nonce.into(),
+        }
+    }
+
+    async fn exchange(url: &str, req: Vec<u8>) -> (u16, Vec<u8>) {
+        let url = url.to_string();
+        tokio::task::spawn_blocking(move || {
+            hook::exchange(&url, &req, Duration::from_secs(5), 1 << 20)
+        })
+        .await
+        .expect("join")
+        .expect("exchange")
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_7_a_signed_run_reaches_the_handler_and_its_reply_comes_back() {
+        let (_d, s, _got) = server().await;
+        let secret = s.register("p1");
+        let req = hook::run_request(&run_req("p1", "0123456789abcdef"), &secret).expect("req");
+        // No handler yet: refused with a reason, not dropped.
+        let (code, body) = exchange(&s.url(), req.clone()).await;
+        assert_eq!(code, 200);
+        let reply: RunReply = serde_json::from_slice(&body).expect("json");
+        assert!(reply.error.is_some() && reply.exit_code.is_none());
+
+        s.set_run_handler(Arc::new(Echo));
+        let fresh = hook::run_request(&run_req("p1", "fedcba9876543210"), &secret).expect("req");
+        let (code, body) = exchange(&s.url(), fresh.clone()).await;
+        assert_eq!(code, 200);
+        let reply: RunReply = serde_json::from_slice(&body).expect("json");
+        assert_eq!(
+            (reply.exit_code, reply.output.as_str()),
+            (Some(7), "ran pnpm deploy in /w")
+        );
+        // The same body again is a replay.
+        assert_eq!(exchange(&s.url(), fresh).await.0, 409);
+        // Another pane's secret, or an unknown pane, isn't accepted.
+        let wrong =
+            hook::run_request(&run_req("p1", "aaaaaaaaaaaaaaaa"), "not-the-secret").expect("req");
+        assert_eq!(exchange(&s.url(), wrong).await.0, 401);
+        let unknown = hook::run_request(&run_req("p9", "bbbbbbbbbbbbbbbb"), &secret).expect("req");
+        assert_eq!(exchange(&s.url(), unknown).await.0, 401);
     }
 
     #[tokio::test(flavor = "multi_thread")]

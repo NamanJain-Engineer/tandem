@@ -3245,11 +3245,18 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
   - **Run** opens a new terminal pane beside the current one, named after the command, in the same folder. The command runs under the user's login shell with every variable in the folder's `.env` set, references replaced by their values. When it exits, those variables are unset and the pane's shell takes over, so what's typed there afterwards never sees them.
   - The values never appear on a command line, in the shell's history, in a file Vibezeo writes, or in a log.
 - **Masking:** in that pane, each secret value the command prints (4 bytes or more) shows as `[REDACTED]`: on screen, in its scrollback, its saved snapshot and everything that reads the pane (Auto, the Dashboard preview, Conductor). A value split across two pieces of output is still caught; a partial match held back flushes after 50 ms of quiet.
-- **Honest limits** (in the docs and the dialog's footnote "The command can still send or print these values in other forms."): a command that's given a secret can use it, write it to a file, or print it encoded; masking only catches the exact value in that pane. Not in this slice: a `vibezeo run` command line, approvals for runs an agent starts, and secrets for agent panes.
+- **Honest limits** (in the docs and the dialog's footnote "The command can still send or print these values in other forms."): a command that's given a secret can use it, write it to a file, or print it encoded; masking only catches the exact value in that pane. A command that prints the value base64-encoded (or split by more than 50 ms of quiet) isn't caught. Not built yet: secrets for chat threads, routines and the Night Shift.
+- **Agents: `vibezeo run`** (slice 2). An agent in an agent pane runs `vibezeo run -- <command>` (or `vibezeo run <command>`) instead of the command itself. The value never enters the agent's process:
+  - `vibezeo` is on the agent pane's PATH (a link to the hook helper Vibezeo already ships). It asks the app over the pane's own authenticated channel (the status socket, signed with the pane's secret), and waits.
+  - The app reads the folder's `.env` as Run with secrets does, then asks before running: a card on the pane and its Dashboard card, and a notification, "Claude Code in checkout wants to run `pnpm deploy` with stripe-test" (the secret names, never values), with **Allow once**, **Allow for this agent** (until its pane's agent exits) and **Deny**. Unanswered after 30 minutes, it's denied.
+  - **Rules** (Settings › Secrets › "Commands agents can run without asking"): per repository (the main checkout, so its worktrees share them), a command and its arguments, such as `pnpm deploy`; matching works like a thread's allow rules (no `;`, `|`, `&`, `$`, backticks, redirections or newlines). A matching run starts without asking.
+  - The app runs the command in the pane's working folder (or the folder, if the agent is elsewhere) under `sh -c` (`cmd /C` on Windows) with the login environment plus the `.env` variables, references resolved, for up to 10 minutes. The agent gets the output (stdout and stderr together, the last 64 KB) with every secret value masked as `[REDACTED]`, and the command's exit code; `vibezeo run` prints the output and exits with that code.
+  - Refused, with the reason printed and exit code 1: outside an agent pane (including chat threads, routines and the Night Shift, which have no pane: "vibezeo run works in agent panes in Vibezeo"), in SSH and WSL panes, in the Flatpak build, on Deny ("Not allowed: you declined"), for a missing secret ("No secret named gone"), and when the app isn't running.
+  - **Telling agents:** the Run with secrets dialog and the Secrets page offer **Tell agents in this folder**, which adds one short paragraph between markers to the folder's `AGENTS.md` (created if missing, shown as a diff first): "Commands that need secrets: run them as `vibezeo run -- <command>`; the values stay out of your context." No secret names unless the person adds them.
 - **Delete local data…** (Settings › Privacy) deletes every secret's keychain entry and name.
 - Nothing here leaves the machine.
 
-**Data:** table `secrets` (`name` primary key, `created_at`, `updated_at`); keychain entries `<NS>.secrets` / `<name>`.
+**Data:** table `secrets` (`name` primary key, `created_at`, `updated_at`); keychain entries `<NS>.secrets` / `<name>`; `$DATA/run-rules.json` (main checkout path → allowed commands); `$DATA/run/bin/vibezeo` (a link to `tandem-hook`). Runs and their output aren't stored.
 
 **Acceptance:**
 1. Adding a secret stores its value in the keychain and only its name in the database; the list shows the name and its reference, never the value.
@@ -3258,6 +3265,10 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
 4. A reference to a secret that doesn't exist disables Run with the name of the missing secret, and nothing starts.
 5. After the command exits, the pane's shell has none of the `.env` variables.
 6. Deleting a secret removes its keychain entry and its row; Delete local data… removes them all.
+7. In an agent pane, `vibezeo run -- printenv API_KEY` with `API_KEY=vibezeo-secret://stripe-test` in `.env` asks first, naming the command and `stripe-test`; after Allow once, it prints `[REDACTED]`, exits 0, and the agent pane's screen shows `[REDACTED]`, never the value. The agent pane's own environment has no `API_KEY`.
+8. The command's exit code comes back as `vibezeo run`'s; output over 64 KB keeps its last 64 KB.
+9. Deny returns "Not allowed: you declined" with exit code 1 and runs nothing; Allow for this agent lets the next run from that pane start without asking; a repository rule for `pnpm deploy` lets `pnpm deploy --prod` start without asking in that repository and its worktrees, and not `pnpm deploy; rm -rf x`.
+10. `vibezeo run` outside an agent pane, or with a missing secret, prints why and exits 1 without running anything.
 
 ### 4.19 EX: Extras
 

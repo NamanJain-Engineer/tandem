@@ -115,6 +115,31 @@ pub fn request(report: &StatusReport, secret: &str) -> Option<Vec<u8>> {
 /// Sends a request to `TANDEM_STATUS_URL` (`unix:///…` or `http://127.0.0.1:…`)
 /// and returns the HTTP status.
 pub fn post(url: &str, request: &[u8], timeout: Duration) -> io::Result<u16> {
+    exchange(url, request, timeout, 4096).map(|(code, _)| code)
+}
+
+/// The signed request bytes for `vibezeo run` (F-TL-12).
+pub fn run_request(req: &tandem_core::run_request::RunRequest, secret: &str) -> Option<Vec<u8>> {
+    let body = serde_json::to_vec(req).ok()?;
+    let sig = sign(secret, &body);
+    let mut out = format!(
+        "POST {} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n{SIGNATURE_HEADER}: {sig}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        tandem_core::run_request::RUN_PATH,
+        body.len()
+    )
+    .into_bytes();
+    out.extend_from_slice(&body);
+    Some(out)
+}
+
+/// Sends `request` and reads at most `max` bytes back: the HTTP status and
+/// the body.
+pub fn exchange(
+    url: &str,
+    request: &[u8],
+    timeout: Duration,
+    max: u64,
+) -> io::Result<(u16, Vec<u8>)> {
     let mut response = Vec::new();
     if let Some(path) = url.strip_prefix("unix://") {
         #[cfg(unix)]
@@ -123,7 +148,7 @@ pub fn post(url: &str, request: &[u8], timeout: Duration) -> io::Result<u16> {
             s.set_read_timeout(Some(timeout))?;
             s.set_write_timeout(Some(timeout))?;
             s.write_all(request)?;
-            let _ = s.take(4096).read_to_end(&mut response);
+            let _ = s.take(max).read_to_end(&mut response);
         }
         #[cfg(not(unix))]
         {
@@ -145,15 +170,21 @@ pub fn post(url: &str, request: &[u8], timeout: Duration) -> io::Result<u16> {
         s.set_read_timeout(Some(timeout))?;
         s.set_write_timeout(Some(timeout))?;
         s.write_all(request)?;
-        let _ = s.take(4096).read_to_end(&mut response);
+        let _ = s.take(max).read_to_end(&mut response);
     } else {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "status url"));
     }
-    let head = String::from_utf8_lossy(&response);
-    head.split_whitespace()
+    let split = response
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map_or(response.len(), |i| i + 4);
+    let head = String::from_utf8_lossy(&response[..split]);
+    let code = head
+        .split_whitespace()
         .nth(1)
         .and_then(|c| c.parse().ok())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no status line"))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no status line"))?;
+    Ok((code, response[split..].to_vec()))
 }
 
 #[cfg(test)]
