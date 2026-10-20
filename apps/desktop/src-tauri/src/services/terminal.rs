@@ -116,6 +116,8 @@ pub struct TerminalService {
     /// Agent panes whose first start resumes their saved session (the
     /// session library's Resume, F-TH-17).
     resume_first: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// Run with secrets: a pane's first spawn runs this (F-TL-12).
+    runs: std::sync::Mutex<std::collections::HashMap<String, crate::services::secrets::PendingRun>>,
     /// SSH hosts: panes of remote workspaces run there (F-RM-01).
     remote: std::sync::OnceLock<Arc<crate::services::remote::RemoteService>>,
     /// WSL distributions: panes of WSL workspaces run there (F-RM-02).
@@ -287,6 +289,7 @@ impl TerminalService {
             agent_inputs: Default::default(),
             agent_panes: Default::default(),
             resume_first: Default::default(),
+            runs: Default::default(),
             remote: std::sync::OnceLock::new(),
             wsl: std::sync::OnceLock::new(),
             wsl_panes: Default::default(),
@@ -795,6 +798,18 @@ impl TerminalService {
             .await
     }
 
+    /// The pane's next spawn runs `run`'s command with its variables, masked
+    /// (F-TL-12).
+    pub fn set_pending_run(&self, pane: &PaneId, run: crate::services::secrets::PendingRun) {
+        if let Ok(mut runs) = self.runs.lock() {
+            runs.insert(pane.to_string(), run);
+        }
+    }
+
+    fn take_run(&self, pane: &PaneId) -> Option<crate::services::secrets::PendingRun> {
+        self.runs.lock().ok()?.remove(pane.as_str())
+    }
+
     /// The pane's first start resumes its saved session instead of starting
     /// a new one (F-TH-17).
     pub fn resume_on_first_start(&self, pane: &PaneId) {
@@ -965,6 +980,7 @@ impl TerminalService {
         let integration = self.integration_for(&shell).await;
         // Agent panes run the engine under the login shell and hand back to
         // it when the engine exits (F-CD-03 AC3).
+        let mut run_mask = None;
         let (args, extra_env, engine, launched) = if record.kind == "agent" {
             let engine = record
                 .engine_id
@@ -1043,6 +1059,18 @@ impl TerminalService {
                     .await,
             );
             (args, env, Some(engine), Some(launch))
+        } else if let Some(run) = self.take_run(pane) {
+            // Run with secrets: the variables reach the command only, and
+            // the shell after it starts without them (F-TL-12).
+            let names: Vec<String> = run.env.iter().map(|(k, _)| k.clone()).collect();
+            let args = env::run_wrapper(&shell, &run.command, &names).ok_or_else(|| {
+                IpcError::new(
+                    ErrorCode::Invalid,
+                    "Run with secrets needs a POSIX shell, fish or PowerShell",
+                )
+            })?;
+            run_mask = Some(run.mask);
+            (args, run.env, None, None)
         } else if let Some((kind, dir)) = &integration {
             let launch =
                 integration::launch(*kind, dir, login.vars.get("ZDOTDIR").map(String::as_str))
@@ -1110,6 +1138,9 @@ impl TerminalService {
             }
             _ => None,
         };
+        if let Some(values) = run_mask {
+            self.pty.mask_next_spawn(pane.as_str(), values);
+        }
         let spawned = self.pty.spawn(spec, sink);
         let info = match spawned {
             Ok(info) => info,

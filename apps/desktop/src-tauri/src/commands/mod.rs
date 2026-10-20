@@ -39,6 +39,7 @@ pub mod routines;
 pub mod runaway;
 pub mod sandbox;
 pub mod scratchpad;
+pub mod secrets;
 pub mod settings;
 pub mod shell;
 #[cfg(any(target_os = "macos", test))]
