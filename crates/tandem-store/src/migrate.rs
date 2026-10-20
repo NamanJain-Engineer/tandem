@@ -14,8 +14,8 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         include_str!("../migrations/0003_bestof_queued.sql"),
     ),
     (
-        "0004_secrets",
-        include_str!("../migrations/0004_secrets.sql"),
+        "0005_secrets",
+        include_str!("../migrations/0005_secrets.sql"),
     ),
 ];
 

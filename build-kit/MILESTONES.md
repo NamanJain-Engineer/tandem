@@ -2161,7 +2161,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 **Prerequisites.** The keychain (DECISIONS rule 2), the redactor (F-TL-02), terminal panes (F-CD-01) and worktrees (F-WT-01).
 
 **Ordered tasks**
-1. **Store and references.** The `secrets` table (migration 0004), `services::secrets` (names in SQLite, values in `NS.secrets`), `tandem_core::secrets` (names, `.env` parsing, references), and Delete local data… removing the keychain entries.
+1. **Store and references.** The `secrets` table (migration 0005; 0004 is `competitive-gaps`' lane_repos, merged first), `services::secrets` (names in SQLite, values in `NS.secrets`), `tandem_core::secrets` (names, `.env` parsing, references), and Delete local data… removing the keychain entries.
 2. **Run and masking.** `secrets_run` parks a pending run for a new pane; `env::run_wrapper`; `SpawnSpec.mask` and `tandem_pty::mask::LiteralMasker` in the reader, with the 50 ms flusher.
 3. **UI and docs.** Settings › Secrets, the pane's Run button and its dialog, E2E-M18-TL12, and Privacy › Agent-proof secrets in the docs.
 
