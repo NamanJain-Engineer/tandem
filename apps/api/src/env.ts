@@ -42,9 +42,21 @@ const schema = z.object({
   STT_MODEL: z.string().optional(),
   /** Conductor's realtime voice (F-BE-08): `openai` needs OPENAI_API_KEY; `mock` mints dev tokens. */
   REALTIME_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
+  /** Several, in order (`gemini,openai`): a call goes to the first the app speaks that mints (D-1013). */
+  REALTIME_PROVIDERS: z
+    .string()
+    .regex(
+      /^(mock|openai|gemini)(,(mock|openai|gemini))*$/,
+      "Realtime providers are mock, openai or gemini, comma-separated.",
+    )
+    .optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_API_BASE: z.string().optional(),
   REALTIME_MODEL: z.string().optional(),
+  /** Gemini Live (D-1014): the key, and optionally another API base and Live model. */
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_API_BASE: z.string().optional(),
+  GEMINI_LIVE_MODEL: z.string().optional(),
   /** Phone push (F-RM-06): `live` sends through FCM and APNs where their credentials are set; `mock` records. */
   PUSH_PROVIDER: z.enum(["mock", "live"]).default("mock"),
   FCM_PROJECT_ID: z.string().optional(),

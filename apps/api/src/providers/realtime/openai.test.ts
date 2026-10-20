@@ -103,10 +103,13 @@ describe("F-BE-08 OpenAiRealtime", () => {
   });
 
   it("F-BE-08 REALTIME_PROVIDER picks the provider; openai without a key refuses to start", () => {
-    expect(selectRealtime(loadEnv({}))).toBeInstanceOf(MockRealtime);
-    expect(selectRealtime(loadEnv({ REALTIME_PROVIDER: "openai", OPENAI_API_KEY: "sk-x" }))).toBeInstanceOf(
-      OpenAiRealtime,
-    );
+    // One provider, first in the chain (D-1013).
+    const mock = selectRealtime(loadEnv({}));
+    expect(mock).toHaveLength(1);
+    expect(mock[0]).toBeInstanceOf(MockRealtime);
+    const openai = selectRealtime(loadEnv({ REALTIME_PROVIDER: "openai", OPENAI_API_KEY: "sk-x" }));
+    expect(openai).toHaveLength(1);
+    expect(openai[0]).toBeInstanceOf(OpenAiRealtime);
     expect(() => selectRealtime(loadEnv({ REALTIME_PROVIDER: "openai" }))).toThrow("OPENAI_API_KEY");
   });
 });
