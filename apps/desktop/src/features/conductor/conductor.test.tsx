@@ -165,6 +165,19 @@ describe("Conductor HUD (F-CN-04, UI-61)", () => {
     expect(named("conductor_end_call")).toHaveLength(1);
   });
 
+  it("F-CN-01 a country the voice service can't serve offers no Try again (D-1018)", () => {
+    hud(
+      live({
+        phase: "error",
+        error: { code: "not_in_region", message: "Conductor's voice isn't available in your country yet." },
+      }),
+    );
+    expect(screen.getByTestId("conductor-error-message").textContent).toBe(
+      "Conductor's voice isn't available in your country yet.",
+    );
+    expect(screen.queryByTestId("conductor-error-action")).toBeNull();
+  });
+
   it("F-CN-01.1 the receipt shows time, credits and actions", () => {
     hud(live({ phase: "ended", receipt: { callId: "vs_1", seconds: 65, credits: 140, actions: 5 } }));
     expect(screen.getByTestId("conductor-receipt").textContent).toContain(
