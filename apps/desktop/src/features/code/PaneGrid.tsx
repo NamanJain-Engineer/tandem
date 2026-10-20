@@ -10,7 +10,7 @@ import {
   type ImperativePanelGroupHandle,
 } from "react-resizable-panels";
 import type { IpcError, PaneRecord, WorkspaceSummary } from "@tandem/protocol";
-import { ArrowRightLeft, SquareTerminal, X } from "lucide-react";
+import { ArrowRightLeft, Play, SquareTerminal, X } from "lucide-react";
 import {
   Badge,
   Button,
@@ -65,6 +65,7 @@ import { LimitBanner } from "./LimitCard";
 import { GuardBanner } from "./GuardCard";
 import { SandboxChip } from "./SandboxChip";
 import { ResourceChip } from "./ResourceChip";
+import { RunDialog } from "../secrets/RunDialog";
 import { setFrozen, useResources } from "../../stores/resources";
 import { useContexts } from "../../stores/contexts";
 import { baseBranch, isWorktree } from "../../stores/worktrees";
@@ -286,6 +287,9 @@ const PaneView = memo(function PaneView({
   const freezing = useResources((st) => st.status?.freezing ?? false);
   const frozen = useResources((st) => st.byPane[pane.id]?.frozen ?? false);
   const freezable = freezing && home?.kind === "local";
+  // F-TL-12: Run with secrets, from a terminal pane in a folder here.
+  const runnable = pane.kind === "terminal" && home?.kind === "local";
+  const [running, setRunning] = useState(false);
   const toggleFrozen = () =>
     void setFrozen(pane.id, !frozen).catch((e: IpcError) =>
       show({
@@ -322,6 +326,7 @@ const PaneView = memo(function PaneView({
     },
     { id: "new-tab", label: t("pane.moveToNewTab"), onSelect: () => void moveToNewTab(tabId, pane.id) },
     { id: "restart", label: t("pane.restart"), onSelect: () => terminalHandles.get(pane.id)?.restart() },
+    ...(runnable ? [{ id: "run", label: t("run.menu"), onSelect: () => setRunning(true) }] : []),
     ...(freezable
       ? [{ id: "freeze", label: frozen ? t("resources.thaw") : t("resources.freeze"), onSelect: toggleFrozen }]
       : []),
@@ -404,6 +409,17 @@ const PaneView = memo(function PaneView({
             <ResourceChip paneId={pane.id} />
           </>
         }
+        actions={
+          runnable ? (
+            <IconButton
+              size="sm"
+              icon={<Play size={13} />}
+              label={t("run.menu")}
+              data-testid="pane-run"
+              onClick={() => setRunning(true)}
+            />
+          ) : undefined
+        }
         onRename={rename}
         renaming={renaming}
         onRenamingChange={setRenaming}
@@ -434,6 +450,7 @@ const PaneView = memo(function PaneView({
         dragRef={setNodeRef}
         dragProps={{ ...attributes, ...listeners, tabIndex: -1, role: "toolbar" }}
       />
+      {runnable && <RunDialog paneId={pane.id} tabId={tabId} open={running} onOpenChange={setRunning} />}
       <LimitBanner pane={pane} />
       <GuardBanner paneId={pane.id} />
       {note && (

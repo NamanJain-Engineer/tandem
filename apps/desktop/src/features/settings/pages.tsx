@@ -11,6 +11,7 @@ import { PluginsPage } from "../plugins/PluginsPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { RunawayGuardControl } from "./RunawayGuard";
 import { SandboxSetting } from "./SandboxSetting";
+import { SecretsPage } from "../secrets/SecretsPage";
 import { MemoryCapSetting } from "./MemoryCapSetting";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
 import { UpdatesPanel } from "../updates/UpdatesPanel";
@@ -923,6 +924,14 @@ export function settingsPages(platform: string, routines = false, accounts = fal
       keywords: ["plugins", "connect", "github", "oauth", "api key", "grants", "approvals", "held"],
       rows: [],
       extra: <PluginsPage />,
+    },
+    {
+      id: "secrets",
+      label: t("settings.secrets"),
+      subtitle: t("settings.secrets.subtitle"),
+      keywords: ["secrets", "keys", "api key", "env", ".env", "keychain", "credentials", "tokens"],
+      rows: [],
+      extra: <SecretsPage />,
     },
     {
       id: "privacy",
