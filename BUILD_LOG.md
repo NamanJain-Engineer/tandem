@@ -1884,6 +1884,12 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - E2E: `m18-tk05-claims.e2e.ts`.
   - **Docs.** PRODUCT_SPEC F-TK-05 (P2, owned by M18, coverage 176); ARCHITECTURE §9.2, §9.3 (20 tools), the new §9.5, `review:queue` and the hook's `paths`; tasks.mdx "Claims".
   - **Not in this slice:** claims inferred from checkpoints, notices in chat threads, and other engines' edit hooks (only Claude Code's hooks name the file).
+  - **Gate:** passed on 0aeb3524 (product-m0-m5 2537c45f merged in, a fast-forward):
+    - 2,151 Rust tests (4 ignored) and 1,553 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 183, and protocol drift: `TaskClaim`, `TaskClaimOverlap` and `TaskClaimScope` added; `ReportPayload.paths`, `TaskConnection.scope` and `ReviewQueueView.overlaps`.
+    - E2E: m18-tk05, m18-db04 and m18-cn09, 3 of 3.
+    - `f_cd_03_shell_starts_in_the_workspace_and_echoes` now waits for `pwd`'s line: under load it arrived after the echo's and failed one gate run.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
