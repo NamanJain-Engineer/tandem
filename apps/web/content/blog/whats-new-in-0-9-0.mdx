@@ -1,0 +1,63 @@
+---
+title: What's new in 0.9.0
+description: Bring parallel agents' work home. Land finished worktrees behind your checks, send CI failures and review comments back to the agent, see when two agents change the same function, keep engine versions under your control, find every past session, and sandbox agents on Linux.
+date: 2026-10-21
+author: Naman Jain
+tags: [release, worktrees, engines, linux]
+---
+
+Vibezeo 0.9.0 is out for Linux, as a `.deb` for Debian and Ubuntu and an `.rpm` for Fedora. Like 0.8.0, it runs the Free plan on your computer, with no account and nothing sent to our servers.
+
+0.8.0 was about checking what parallel agents did. This release is about bringing their work home: landing finished worktrees one after another behind your own checks, sending a pull request's failures and review comments back to the agent that can fix them, and noticing when two agents are about to collide in the same code.
+
+## Land finished worktrees, one after another
+
+**Land worktrees…** in a repository's menu merges finished worktrees into your current branch without a pull request for each. It lists the worktrees with commits the branch doesn't have, safest first, and takes a check command, such as your tests. For each worktree in turn, Vibezeo merges the branch into it, runs the check there with the worktree's own ports and environment, then merges it into the branch. What lands is exactly what was checked.
+
+- The queue stops and says why when a merge conflicts (it's aborted, so nothing is left half-merged), a check fails, or the branch or the worktree changed while it ran.
+- A failed check offers **Send failure to agent**, which types the end of its output into the agent in that worktree when you click.
+- Landing never pushes or fetches. Until you push, **Undo landing** moves the branch back.
+
+## CI failures and review comments, back to the agent
+
+Allow a repository with **Check pull request** in a worktree's ⋯ menu, and Vibezeo reads its pull requests through your own GitHub CLI, which signs itself in: Vibezeo never sees a token. A worktree with an open pull request shows its checks on its rail row. On a failed check, **Send failure to agent** types the check's name, its link and the end of the failing job's log into the worktree's agent. In **Open diff**, **Import review comments** brings the pull request's line comments into the review bar, next to your own, to send as one review.
+
+Logs and comments are other people's text, so they reach the agent marked as data, not instructions, and only when you click.
+
+## See when two agents change the same function
+
+Git only notices a clash when two agents touch the same lines. The **intent radar** reads the TypeScript, Rust and Python each worktree changed, and notes which functions, classes and other definitions it added, changed or removed, and which names its new code uses. When one agent renames `Session` while another adds a call to `Session.refresh`, both worktrees' rows say so, **Check overlap…** lists what each side did, and **Warn both agents** types a short note into each agent when you click. It updates after every agent turn, and only reads files.
+
+## Engine versions under your control
+
+**Settings › Engines** now shows each installed engine's version and how it was installed. **Check for updates** asks npm for the newest version, only when you click. **Pin this version** starts new Claude Code or Codex panes with the engine's own switch against updating. If an engine updates and then breaks on this computer, the Engines page and the thread say so, and **Roll back to…** shows the command that installs the earlier version, before anything runs. **Running in the background** lists your own engine processes that no terminal owns, such as a leftover daemon, so you can stop them.
+
+## Every past session in one library
+
+**Session library…** in the command palette lists the Claude Code and Codex sessions on this computer, including ones you started in a terminal outside Vibezeo, grouped by repository with their first prompt. **Resume** opens the session in an agent pane in its folder; **Continue with another engine…** hands it over with a summary of its last messages. Vibezeo only reads the engines' session files and never opens their sign-in files. Searching what sessions say is part of Pro.
+
+## Agents in a sandbox, on Linux
+
+**Settings › Engines › Sandbox agent panes** runs each new agent pane's engine in a sandbox made with bubblewrap. It writes only to its folder, its repository's git data, its own engine home and `/tmp`; it can't read `~/.ssh`, `~/.aws`, `~/.gnupg` or Vibezeo's own data; and git's hooks stay read-only, so an agent can't plant one that runs later. The network stays on, because engines need it. Claude Code, Codex and OpenCode run sandboxed, and a pane that can't says why in its header. It's off by default; install bubblewrap with your package manager to use it.
+
+## Update or install
+
+On Debian or Ubuntu, check the download against its checksum, then install it:
+
+```bash
+sha256sum Vibezeo_0.9.0_amd64.deb
+sudo apt install ./Vibezeo_0.9.0_amd64.deb
+```
+
+On Fedora:
+
+```bash
+sha256sum Vibezeo-0.9.0-1.x86_64.rpm
+sudo dnf install ./Vibezeo-0.9.0-1.x86_64.rpm
+```
+
+Compare each checksum with the one on the [download page](/download/). The free download keeps its limits: 4 live panes, 3 workspaces, one thread at a time, threads with Claude Code and Codex, one account per engine, one teammate besides Lead and one plugin connection.
+
+Next up, and already in review: worktrees across several repositories in one folder, agents that claim the files they're about to change, any agent that speaks ACP as a thread engine, and a governor that caps an agent pane's memory.
+
+The full notes are in the [0.9.0 release notes](/changelog/0.9.0/).

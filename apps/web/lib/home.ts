@@ -117,8 +117,8 @@ export const CLAUDE = [
 /** What comes next, in order. Each item says what's built and what it waits for. */
 export const ROADMAP = [
   {
-    title: "Night Shift, a sandbox and a merge queue",
-    body: "Built and in review now: the Night Shift starts a task on an account the moment its usage window resets; a Linux sandbox keeps agents to their own folder; a local merge queue lands worktrees one at a time, with undo; CI results and review comments go back to the agent; and every engine's past sessions in one searchable library.",
+    title: "Multi-repo workspaces, claims and any ACP agent",
+    body: "Built and in review now: one worktree per agent across several repositories in a folder, with linked pull requests; agents claim the files they're about to change, so overlaps show before they clash; any agent that speaks ACP, Gemini CLI among them, as a thread engine; and a resource governor that caps an agent pane's memory on Linux.",
   },
   {
     title: "Your phone, from anywhere",
@@ -130,7 +130,7 @@ export const ROADMAP = [
   },
   {
     title: "Conductor and Pro, when accounts open",
-    body: "Talk to Vibezeo and it works the app for you: Conductor starts agents, prompts them and finds work. It's built, along with routines that run teammates on a schedule, tasks run in their own lanes and the hosted features, and they switch on with Vibezeo accounts.",
+    body: "Talk to Vibezeo and it works the app for you: Conductor starts agents, prompts them and finds work. It's built, along with routines that run teammates on a schedule, tasks run in their own lanes, the Night Shift that starts a task the moment an account's usage window resets, and the hosted features, and they switch on with Vibezeo accounts.",
   },
 ] as const;
 
@@ -309,6 +309,12 @@ export const RELEASE_TILE_MAP: Record<string, { icon: string; docs: string }> = 
   "Runaway guard": { icon: "shield", docs: docsPath("workflow-tools") },
   "Usage forecast": { icon: "activity", docs: docsPath("accounts-and-limits") },
   "One instructions file for every engine": { icon: "book", docs: docsPath("engines") },
+  "Land worktrees": { icon: "merge", docs: docsPath("code-mode") },
+  "CI results and review comments back to the agent": { icon: "message", docs: docsPath("code-mode") },
+  "Intent radar": { icon: "layers", docs: docsPath("code-mode") },
+  "Engine versions and updates under your control": { icon: "package", docs: docsPath("engines") },
+  "Session library": { icon: "history", docs: docsPath("workflow-tools") },
+  "Sandbox agent panes": { icon: "lock", docs: docsPath("engines") },
   "Antigravity CLI and Kiro CLI": { icon: "terminal", docs: docsPath("engines") },
 };
 
