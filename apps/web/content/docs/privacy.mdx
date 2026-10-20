@@ -15,3 +15,21 @@ The download on this site doesn't contact Vibezeo's servers at all: no sign-in, 
 - **Usage statistics and crash reports** are off by default and stay off unless you turn them on in Settings › Privacy.
 
 The full list of what the app can send once Vibezeo accounts open, where to and when, and who processes it, is on the [privacy page](/privacy/). The app shows the same list in Settings › Privacy.
+
+## Agent-proof secrets
+
+Agents read `.env` files, so a key written there ends up in their context, their transcripts and every worktree copy. Keep the value in your keychain and put a reference in the file instead.
+
+1. **Settings › Secrets › Add secret.** Give it a name (`stripe-test`) and paste the value. It's saved in your system keychain; Vibezeo keeps only the name and never shows the value again.
+2. **In the folder's `.env`,** use the reference as the value: `API_KEY=vibezeo-secret://stripe-test`. Agents, diffs and worktree copies see only that text.
+3. **Run the command** with the play button in a terminal pane's header (or "Run with secrets…" in its menu). The dialog lists what the `.env` uses and names any secret that's missing. Run opens a new pane beside it in the same folder: the command gets every `.env` variable with the references replaced, and when it exits the variables are unset before the shell takes over.
+
+In that pane, a secret value the command prints shows as `[REDACTED]`, on screen, in its scrollback and in what Vibezeo saves or reads from the pane.
+
+What it doesn't cover:
+
+- A command that's given a secret can use it, write it to a file or print it encoded; only the exact value is masked, and only in that pane.
+- Agent panes never get the values in this version, and there's no `vibezeo run` command line yet.
+- The Flatpak build can't run with secrets yet.
+
+Settings › Privacy › Delete local data… removes every secret from the keychain too.

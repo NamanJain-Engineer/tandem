@@ -3246,7 +3246,7 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
   - The values never appear on a command line, in the shell's history, in a file Vibezeo writes, or in a log.
 - **Masking:** in that pane, each secret value the command prints (4 bytes or more) shows as `[REDACTED]`: on screen, in its scrollback, its saved snapshot and everything that reads the pane (Auto, the Dashboard preview, Conductor). A value split across two pieces of output is still caught; a partial match held back flushes after 50 ms of quiet.
 - **Honest limits** (in the docs and the dialog's footnote "The command can still send or print these values in other forms."): a command that's given a secret can use it, write it to a file, or print it encoded; masking only catches the exact value in that pane. Not in this slice: a `vibezeo run` command line, approvals for runs an agent starts, and secrets for agent panes.
-- **Forget data** (Settings › Privacy) deletes every secret's keychain entry and name.
+- **Delete local data…** (Settings › Privacy) deletes every secret's keychain entry and name.
 - Nothing here leaves the machine.
 
 **Data:** table `secrets` (`name` primary key, `created_at`, `updated_at`); keychain entries `<NS>.secrets` / `<name>`.
@@ -3257,7 +3257,7 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
 3. When the command prints the value, the pane shows `[REDACTED]` in its place, in its scrollback and its saved snapshot too, also when the value arrives split across two writes.
 4. A reference to a secret that doesn't exist disables Run with the name of the missing secret, and nothing starts.
 5. After the command exits, the pane's shell has none of the `.env` variables.
-6. Deleting a secret removes its keychain entry and its row; Forget data removes them all.
+6. Deleting a secret removes its keychain entry and its row; Delete local data… removes them all.
 
 ### 4.19 EX: Extras
 
