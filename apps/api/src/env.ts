@@ -57,6 +57,23 @@ const schema = z.object({
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_API_BASE: z.string().optional(),
   GEMINI_LIVE_MODEL: z.string().optional(),
+  /**
+   * The key's tier (D-1018). `free` (no billing on its Cloud project) keeps
+   * calls from the EEA, Switzerland and the UK, and from unknown places, off
+   * Gemini, as Google's terms require; `paid` has no such rule.
+   */
+  GEMINI_TIER: z.enum(["free", "paid"]).default("free"),
+  /**
+   * The header the API's edge sets to the caller's country (ISO 3166-1
+   * alpha-2): `cf-ipcountry` on Cloudflare, `x-vercel-ip-country` on Vercel,
+   * `cloudfront-viewer-country` on CloudFront. Only one the edge always
+   * overwrites, with the API unreachable around it. Unset, the API reads no
+   * country, which production allows only without the free Gemini.
+   */
+  CLIENT_COUNTRY_HEADER: z
+    .string()
+    .regex(/^[a-z0-9-]{1,64}$/i, "A header name is letters, digits and -.")
+    .optional(),
   /** Phone push (F-RM-06): `live` sends through FCM and APNs where their credentials are set; `mock` records. */
   PUSH_PROVIDER: z.enum(["mock", "live"]).default("mock"),
   FCM_PROJECT_ID: z.string().optional(),

@@ -122,6 +122,7 @@ pub fn hosted_error(e: &ApiError) -> HostedError {
             (403, _) => HostedError::NeedsPro,
             (409, _) => HostedError::SessionEnded,
             (429, _) => HostedError::RateLimited,
+            (503, "VOICE_NOT_IN_REGION") => HostedError::NotInRegion,
             _ => HostedError::Other(code.clone()),
         },
     }
@@ -316,6 +317,15 @@ mod tests {
         );
         assert!(matches!(
             hosted_error(&ApiError::Network("server error 503".into())),
+            HostedError::Other(_)
+        ));
+        // The free Gemini can't serve the caller's country (D-1018); any other 503 is a failed connect.
+        assert_eq!(
+            hosted_error(&http(503, "VOICE_NOT_IN_REGION")),
+            HostedError::NotInRegion
+        );
+        assert!(matches!(
+            hosted_error(&http(503, "VOICE_UNAVAILABLE")),
             HostedError::Other(_)
         ));
     }

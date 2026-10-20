@@ -99,6 +99,10 @@ pub enum HostedError {
     Offline,
     /// 409: the server already ended the call.
     SessionEnded,
+    /// 503 `VOICE_NOT_IN_REGION`: no voice provider the API has may serve
+    /// the user's country, as the free Gemini may not the EEA, Switzerland
+    /// or the UK (D-1018).
+    NotInRegion,
     Other(String),
 }
 
@@ -955,6 +959,10 @@ fn hosted_error(e: &HostedError) -> CallError {
         HostedError::Offline => (
             CallErrorCode::Offline,
             "You're offline. Conductor needs a connection.",
+        ),
+        HostedError::NotInRegion => (
+            CallErrorCode::NotInRegion,
+            "Conductor's voice isn't available in your country yet.",
         ),
         HostedError::SessionEnded | HostedError::Other(_) => (
             CallErrorCode::ConnectFailed,
