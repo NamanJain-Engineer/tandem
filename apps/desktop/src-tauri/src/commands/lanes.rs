@@ -167,7 +167,11 @@ pub async fn lane_remove(
     };
     let login = state.terminals.login_env().await;
     let git = lanes::git_for(&state.data, &login)?;
-    lanes::remove_with_teardown(
+    let root = repo::get(&state.store, &lane_id)
+        .await
+        .ok()
+        .map(|ws| crate::services::files::local_root(&ws));
+    let report = lanes::remove_with_teardown(
         &state.store,
         &state.terminals.pty,
         &git,
@@ -175,7 +179,12 @@ pub async fn lane_remove(
         confirm,
         Some((&state.data, &login)),
     )
-    .await
+    .await?;
+    // F-CD-23: the worktree's language servers stop with it.
+    if let Some(root) = root {
+        crate::services::lsp::global().forget(&root).await;
+    }
+    Ok(report)
 }
 
 #[tauri::command]

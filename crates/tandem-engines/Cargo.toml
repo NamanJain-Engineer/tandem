@@ -22,7 +22,7 @@ regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["io-std"] }
 tracing.workspace = true
 ts-rs.workspace = true
 
@@ -34,7 +34,7 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
 [features]
-# Test support: the `fake-engine` binary (ARCHITECTURE §6.12).
+# Test support: the `fake-engine` and `fake-lsp` binaries (ARCHITECTURE §6.12).
 fixtures = []
 
 [[bin]]
@@ -44,6 +44,11 @@ path = "src/bin/tandem-hook.rs"
 [[bin]]
 name = "fake-engine"
 path = "src/bin/fake-engine.rs"
+required-features = ["fixtures"]
+
+[[bin]]
+name = "fake-lsp"
+path = "src/bin/fake-lsp.rs"
 required-features = ["fixtures"]
 
 [lints]

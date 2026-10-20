@@ -927,6 +927,28 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 4. With a fake `gh` and local bare remotes, Create pull requests pushes the branch in both repositories, opens one pull request in each, and each body links the other; nothing is pushed before the confirm.
 5. Discard removes both repositories' worktrees and the parent folder, and keeps both branches.
 
+#### F-CD-23 Code intelligence in the editor and diffs (P2)
+**Story:** I'm reviewing what an agent changed. I want to jump from a changed function to its definition and its callers, and see type errors, without leaving Vibezeo for an IDE.
+
+**Behavior:**
+- **Language servers you already have.** Vibezeo uses the language server for a file's language when it's on the login PATH: `rust-analyzer` (Rust), `typescript-language-server --stdio` (TypeScript, TSX, JavaScript), `pyright-langserver --stdio` (Python) and `gopls` (Go). It never installs one. A server starts on first use for a folder and language (the workspace or worktree the file is in), with the login environment, and stops after 10 minutes without a request, or when the folder is removed or the app quits. At most 4 run at once; the one used longest ago stops first. Local folders only: on SSH hosts and in WSL the editor works as today.
+- **In the Files editor (F-CD-19):**
+  - **Go to definition:** F12, or Mod+click on a name, opens the definition (in a new tab when it's another file in the folder).
+  - **Find references:** Shift+F12 lists every reference with its file, line and text; choosing one opens it.
+  - **Hover:** resting the pointer on a name shows the server's hover text (types, signatures) in a tooltip, as plain text.
+  - **Diagnostics:** the server's errors and warnings underline their ranges, with the message on hover, and the editor's status line counts them ("2 errors, 1 warning").
+  - The editor sends the server the text as it is in the editor, unsaved edits included.
+- **In diffs (F-WT-02's worktree diff and the review queue's):** clicking a name on a line of the new side offers **Go to definition** and **Find references** for it, in the worktree; the results open in the Files editor.
+- **Without a server** for the language, the editor works as today and its status line says "No language server for Python" (with the server's name to install). Go to definition still finds a definition of the same name in the same file for TypeScript, Rust and Python, from F-WT-10's tree-sitter index. A server that fails to start or crashes says so in the status line ("rust-analyzer stopped: …") and is tried again on the next request, at most 3 times in 10 minutes.
+- Every request has a 10-second limit; a slow answer is dropped and says "rust-analyzer didn't answer". Nothing leaves the machine.
+
+**Acceptance:**
+1. With a language server on the login PATH (a fake one in tests), go to definition on a name in a Python file opens its definition at the right line, and in another file of the folder in a new tab.
+2. Find references on a diff line's name lists each reference in the worktree with its file and line, and choosing one opens it in the Files editor.
+3. Hover shows the server's text; the server's diagnostics underline their ranges and the status line counts them.
+4. Without a server for the language, the editor works as today with "No language server for Rust" in its status line, and go to definition still finds a definition of the same name in the file.
+5. A server unused for 10 minutes is stopped; the next request starts it again.
+
 ### 4.3 TH: Thread mode
 
 #### F-TH-01 Thread model and rail (P0)

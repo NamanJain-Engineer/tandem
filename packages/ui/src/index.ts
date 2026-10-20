@@ -64,6 +64,8 @@ export {
   type DiffFile,
   type DiffLine,
   type DiffLineTarget,
+  type DiffNameTarget,
+  type DiffNames,
   type DiffViewLabels,
 } from "./components/DiffView";
 export {
@@ -90,7 +92,14 @@ export {
 } from "./components/Field";
 export { EngineBadge, EngineGlyph } from "./components/EngineGlyph";
 export { Heatmap, heatLevel, type HeatmapDay } from "./components/Heatmap";
-export { CodeEditor, languageFor, type CodeEditorProps } from "./components/CodeEditor";
+export {
+  CodeEditor,
+  languageFor,
+  type CodeEditorProps,
+  type CodeIntel,
+  type EditorDiagnostic,
+  type EditorPosition,
+} from "./components/CodeEditor";
 export { NoteEditor, type NoteEditorHandle, type NoteEditorProps } from "./components/NoteEditor";
 export { QRCode, type QRCodeProps } from "./components/QRCode";
 export { HotkeyRecorder, type HotkeyRecorderProps, type RecordedKeys } from "./components/HotkeyRecorder";
