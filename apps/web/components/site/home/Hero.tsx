@@ -32,10 +32,10 @@ export function Hero() {
           href={versionPath(RELEASE.version)}
           className="group inline-flex h-8 items-center gap-2.5 rounded-full bg-(--site-glass) pl-3 pr-2.5 text-caption text-fg shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong)] transition-colors duration-(--dur-base) hover:bg-(--site-glass-hover)"
         >
-          <span aria-hidden="true" className="size-1.5 rounded-full bg-accent shadow-[0_0_10px_var(--tn-accent)]" />
+          <span aria-hidden="true" className="size-1.5 rounded-full bg-fg-subtle" />
           <span className="font-mono text-[0.75rem]">Released · {RELEASE.version} for Linux</span>
           <span aria-hidden="true" className="h-3.5 w-px bg-line-strong" />
-          <span className="link-arrow inline-flex items-center gap-1 font-medium text-accent">
+          <span className="link-arrow inline-flex items-center gap-1 font-medium text-fg">
             What&apos;s new
             <Icon icon={ArrowRight} size={14} />
           </span>
@@ -67,7 +67,7 @@ export function Hero() {
               key={o.text}
               className="flex items-center justify-center gap-2 rounded-full bg-(--site-glass) px-3.5 py-2 text-caption text-fg shadow-[inset_0_0_0_1px_var(--site-line)]"
             >
-              <Icon icon={iconFor(o.icon)} size={14} className="shrink-0 text-accent" />
+              <Icon icon={iconFor(o.icon)} size={14} className="shrink-0 text-fg-muted" />
               {o.text}
             </li>
           ))}
@@ -81,7 +81,7 @@ export function Hero() {
             </>
           )}
           <span aria-hidden="true" className="text-fg-subtle">·</span>
-          <a href="/demo/#video" className="inline-flex min-h-6 items-center gap-1.5 font-medium text-fg hover:text-accent">
+          <a href="/demo/#video" className="inline-flex min-h-6 items-center gap-1.5 font-medium text-fg hover:text-fg-muted">
             <Icon icon={Play} size={14} />
             Watch it run (1 min)
           </a>

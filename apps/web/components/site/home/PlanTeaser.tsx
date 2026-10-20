@@ -5,6 +5,7 @@ import { SITE } from "../../../lib/site";
 import { Icon } from "../Icon";
 import { Section } from "../Section";
 import { TextLink } from "../TextLink";
+import { stagger } from "../../../lib/motion";
 
 /** #pricing on the home page: the three plans, divided by hairlines. */
 export function PlanTeaser() {
@@ -21,7 +22,7 @@ export function PlanTeaser() {
         {PLANS.map((p, i) => (
           <li
             key={p.id}
-            className={`reveal relative flex flex-col gap-4 p-6 lg:p-8 ${i > 0 ? "border-t border-line md:border-l md:border-t-0" : ""}`}
+            className={`reveal ${stagger(i)} relative flex flex-col gap-4 p-6 lg:p-8 ${i > 0 ? "border-t border-line md:border-l md:border-t-0" : ""}`}
           >
             <h3 className="text-title text-fg">{p.name}</h3>
             <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">

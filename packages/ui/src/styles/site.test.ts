@@ -162,5 +162,27 @@ describe("F-WB-01 site.css (D-1801)", () => {
     expect(rest).not.toMatch(/animation-timeline/);
     expect(rest).not.toMatch(/@view-transition/);
   });
-});
 
+  it("F-WB-01 AC8 motion has its tokens, and scroll reveals only where the browser can run them (D-1874)", () => {
+    const root = vars(site, "/* ---------- 5. Motion");
+    for (const t of ["--ease-io-site", "--ease-spring-site", "--dur-pop", "--dur-panel", "--dur-spring", "--dur-reveal", "--stagger"])
+      expect(root.has(t), t).toBe(true);
+    expect(root.get("--ease-spring-site")).toBe("cubic-bezier(0.3, 1.35, 0.5, 1)");
+    // Every view()-timeline rule sits inside @supports, so where the browser
+    // lacks scroll timelines the content is simply there.
+    const css = site.replace(/\/\*[\s\S]*?\*\//g, "");
+    const supports = [...css.matchAll(/@supports \(animation-timeline: view\(\)\) \{/g)].map((m) => m.index ?? 0);
+    for (const m of css.matchAll(/animation-timeline: view\(\);/g)) {
+      const at = m.index ?? 0;
+      expect(supports.some((s) => s < at && css.slice(s, at).split("{").length - css.slice(s, at).split("}").length > 0), `view() at ${at}`).toBe(true);
+    }
+    // Stagger never runs past five steps (DESIGN §4.7).
+    expect(css).toContain(".reveal.stagger-5");
+    expect(css).not.toContain(".reveal.stagger-6");
+  });
+
+  it("F-WB-01 AC8 motion moves only transform and opacity: no filter in any keyframe (D-1874)", () => {
+    const css = site.replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const m of css.matchAll(/@keyframes ([\w-]+) \{([\s\S]*?)\}\s*\}?/g)) expect(m[2], m[1]).not.toMatch(/filter|width|height|top|left|margin/);
+  });
+});

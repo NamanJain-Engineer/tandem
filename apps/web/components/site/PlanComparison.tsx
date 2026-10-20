@@ -28,7 +28,7 @@ export function PlanComparison() {
           <tbody key={g.title}>
             <tr>
               <th colSpan={4} scope="colgroup" className="border-t border-line bg-(--site-glass) px-5 pb-2.5 pt-5 text-left">
-                <span className="font-mono text-eyebrow uppercase tracking-[0.12em] text-accent">{g.title}</span>
+                <span className="font-mono text-eyebrow uppercase tracking-[0.12em] text-fg-muted">{g.title}</span>
                 {g.note && <span className="ml-3 text-caption font-normal text-fg-muted">{g.note}</span>}
               </th>
             </tr>
@@ -43,7 +43,7 @@ export function PlanComparison() {
                     <td key={id} data-plan={id} className="px-5 py-3.5 text-fg">
                       {v === true ? (
                         <>
-                          <Icon icon={Check} size={18} className="text-accent" />
+                          <Icon icon={Check} size={18} className="text-fg" />
                           <span className="sr-only">Included</span>
                         </>
                       ) : v === false ? (

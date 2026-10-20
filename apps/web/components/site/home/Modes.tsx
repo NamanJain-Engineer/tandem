@@ -25,7 +25,7 @@ function Facts({ facts }: { facts: readonly string[] }) {
     <ul className="flex flex-col gap-2.5">
       {facts.map((f) => (
         <li key={f} className="flex items-start gap-2.5 text-copy-sm text-fg">
-          <Icon icon={Check} size={16} className="mt-1 shrink-0 text-accent" />
+          <Icon icon={Check} size={16} className="mt-1 shrink-0 text-fg-subtle" />
           {f}
         </li>
       ))}

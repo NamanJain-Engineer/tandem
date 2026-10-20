@@ -8,6 +8,7 @@ import { VideoSection } from "../../components/site/home/VideoSection";
 import { PageHero } from "../../components/site/PageHero";
 import { SiteFrame } from "../../components/site/SiteFrame";
 import { SITE } from "../../lib/site";
+import { stagger } from "../../lib/motion";
 
 export const metadata: Metadata = {
   title: "Live demo",
@@ -102,7 +103,7 @@ export default function DemoPage() {
           </div>
           <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {TRY.map((t, i) => (
-              <li key={t.body} className="reveal surface-raised flex flex-col gap-3 p-6">
+              <li key={t.body} className={`reveal ${stagger(i)} surface-raised flex flex-col gap-3 p-6`}>
                 <span className="keycap !h-8 !min-w-8 self-start !px-0 !text-[0.75rem] text-fg-muted">{String(i + 1).padStart(2, "0")}</span>
                 <span className="text-copy font-semibold text-fg">{t.title}</span>
                 <span className="text-copy-sm text-fg-muted">{t.body}</span>

@@ -3050,6 +3050,7 @@ All endpoints are under `https://api.tandem.dev/v1` (dev: `http://api.tandem.loc
 7. Nothing is stored until the visitor picks a theme, and then only `vibezeo-theme`.
 8. With reduced motion nothing on any page animates, and every product scene shows its complete final frame; elsewhere the reveals sit inside `@supports (animation-timeline: view())`.
 9. Each product scene is `aria-hidden` with a text alternative, uses only words from the app's catalog (`en.json`) or the site's own copy, pauses its animations off screen and in a hidden tab, and the home page keeps its Lighthouse budgets (performance ≥ 0.99, LCP ≤ 2.0 s, CLS ≤ 0.02).
+10. No first viewport at 1440×900, in either theme, shows more than three teal things (the primary action, the one highlighted phrase, the mark; DESIGN §4.2): eyebrows, inline links, ticks and list icons are neutral.
 
 #### F-WB-02 Docs (P1)
 **Behavior:**

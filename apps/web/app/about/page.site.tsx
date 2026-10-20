@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { PageHero } from "../../components/site/PageHero";
 import { SiteFrame } from "../../components/site/SiteFrame";
 import { SITE } from "../../lib/site";
+import { stagger } from "../../lib/motion";
 
 export const metadata: Metadata = { title: `About ${SITE.company}`, alternates: { canonical: "/about/" } };
 
@@ -29,7 +30,7 @@ function details(): Array<[string, ReactNode]> {
     [
       "Founder",
       SITE.founder.link ? (
-        <a key="founder" href={SITE.founder.link} className="text-accent">
+        <a key="founder" href={SITE.founder.link} className="text-fg">
           {SITE.founder.name}
         </a>
       ) : (
@@ -47,7 +48,7 @@ function details(): Array<[string, ReactNode]> {
   rows.push(
     [
       "Email",
-      <a key="email" href={`mailto:${SITE.contactEmail}`} className="text-accent">
+      <a key="email" href={`mailto:${SITE.contactEmail}`} className="text-fg">
         {SITE.contactEmail}
       </a>,
     ],
@@ -95,7 +96,7 @@ export default function AboutPage() {
             releases and support. Every email gets a reply from the founder.
           </p>
           {SITE.founder.link && (
-            <a href={SITE.founder.link} className="mt-1 self-start text-copy-sm font-medium text-accent">
+            <a href={SITE.founder.link} className="mt-1 self-start text-copy-sm font-medium text-fg">
               {SITE.founder.link.replace("https://", "")}
             </a>
           )}
@@ -104,8 +105,8 @@ export default function AboutPage() {
 
       <Block id="how-we-work" title="How we work">
         <ul className="grid gap-4 sm:grid-cols-3">
-          {WAYS.map((w) => (
-            <li key={w.title} className="reveal surface flex flex-col gap-2 p-6">
+          {WAYS.map((w, i) => (
+            <li key={w.title} className={`reveal ${stagger(i)} surface flex flex-col gap-2 p-6`}>
               <h3 className="text-title text-fg">{w.title}</h3>
               <p className="text-copy-sm text-fg-muted">{w.body}</p>
             </li>
@@ -128,21 +129,21 @@ export default function AboutPage() {
         <div className="flex max-w-narrow flex-col gap-3 text-copy text-fg-muted">
           <p>
             For support, partnerships or anything else, email{" "}
-            <a href={`mailto:${SITE.contactEmail}`} className="text-accent">
+            <a href={`mailto:${SITE.contactEmail}`} className="text-fg">
               {SITE.contactEmail}
             </a>
             .
           </p>
           <p>
             See what's shipped so far in the{" "}
-            <a href="/changelog/" className="text-accent">
+            <a href="/changelog/" className="text-fg">
               changelog
             </a>
             .
           </p>
           <p>
             Found a security problem? See{" "}
-            <a href="/security/" className="text-accent">
+            <a href="/security/" className="text-fg">
               how to report it
             </a>
             .

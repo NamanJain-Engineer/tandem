@@ -286,7 +286,7 @@
   /* descenders stay inside the painted box */
   padding-bottom: 0.06em;
 }
-@utility eyebrow {              /* "CODE MODE": mono caps after a short lit rule */
+@utility eyebrow {              /* "CODE MODE": mono caps after a short rule */
   display: inline-flex;
   align-items: center;
   gap: 0.75rem;
@@ -296,7 +296,7 @@
   letter-spacing: var(--text-eyebrow--letter-spacing);
   font-weight: 500;
   text-transform: uppercase;
-  color: var(--tn-accent);
+  color: var(--tn-text-muted);   /* neutral: teal is for the next step (DESIGN §4.2, D-1875) */
   &::before {
     content: "";
     width: 1.25rem;
@@ -537,10 +537,23 @@ body.site {
   .btn { border: 1px solid ButtonText; }
 }
 
-/* ---------- 5. Motion: CSS only, progressive, off under reduced motion (D-1831) ---------- */
+/* ---------- 5. Motion: CSS only, progressive, off under reduced motion (D-1831, D-1874) ----------
+   Tokens: entrances ease out (expo), moves ease in and out, and a small
+   overshoot for things that pop in. Named durations on top of the app's
+   60/120/180/260/400 ms. Transform and opacity only (DESIGN §4.7): reveals
+   no longer blur, since a filter over a whole section is costly to paint. */
+:root {
+  --ease-io-site:     cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring-site: cubic-bezier(0.3, 1.35, 0.5, 1);
+  --dur-pop:    180ms;   /* a chip, a tick, a badge arriving */
+  --dur-panel:  420ms;   /* a card or panel settling */
+  --dur-spring: 520ms;   /* an overshooting pop */
+  --dur-reveal: 700ms;   /* a section's content as it scrolls in */
+  --stagger:    60ms;    /* one step between related items; five steps at most */
+}
 @keyframes site-reveal {
-  from { opacity: 0.001; translate: 0 1.5rem; filter: blur(6px); }
-  to   { opacity: 1; translate: 0 0; filter: blur(0); }
+  from { opacity: 0.001; translate: 0 1.5rem; }
+  to   { opacity: 1; translate: 0 0; }
 }
 @keyframes site-rise {
   from { opacity: 0.001; translate: 0 2.5rem; scale: 0.985; }
@@ -548,26 +561,62 @@ body.site {
 }
 @keyframes site-header-line { from { border-bottom-color: transparent; } to { border-bottom-color: var(--site-line); } }
 @keyframes site-ring-turn { to { rotate: 360deg; } }
+@keyframes site-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* The reading-progress hairline (D-1861), now on the docs too: hidden where
+   it can't follow the scroll. */
+.reading-progress { display: none; }
 
 @media (prefers-reduced-motion: no-preference) {
   @supports (animation-timeline: view()) {
     .reveal { animation: site-reveal linear both; animation-timeline: view(); animation-range: entry 0% entry 40%; }
     .reveal-late { animation-range: entry 12% entry 52%; }
+    /* Staggered by scroll: items that enter together arrive one after the
+       other, each a little later in the same entry. */
+    .reveal.stagger-1 { animation-range: entry 4% entry 44%; }
+    .reveal.stagger-2 { animation-range: entry 8% entry 48%; }
+    .reveal.stagger-3 { animation-range: entry 12% entry 52%; }
+    .reveal.stagger-4 { animation-range: entry 16% entry 56%; }
+    .reveal.stagger-5 { animation-range: entry 20% entry 60%; }
     .rise { animation: site-rise linear both; animation-timeline: view(); animation-range: entry 0% cover 30%; }
   }
   @supports (animation-timeline: scroll()) {
     .site-header { border-bottom-color: transparent; animation: site-header-line linear both; animation-timeline: scroll(root); animation-range: 0 4rem; }
+    .reading-progress { display: block; transform-origin: 0 50%; animation: site-progress linear both; animation-timeline: scroll(root); }
   }
   .enter {
-    transition: opacity 700ms var(--ease-out-site), translate 700ms var(--ease-out-site), filter 700ms var(--ease-out-site);
-    @starting-style { opacity: 0; translate: 0 0.75rem; filter: blur(4px); }
+    transition: opacity var(--dur-reveal) var(--ease-out-site), translate var(--dur-reveal) var(--ease-out-site);
+    @starting-style { opacity: 0; translate: 0 0.75rem; }
   }
-  .enter-2 { transition-delay: 80ms; }
-  .enter-3 { transition-delay: 160ms; }
-  .enter-4 { transition-delay: 240ms; }
+  .enter-2 { transition-delay: calc(var(--stagger) * 1); }
+  .enter-3 { transition-delay: calc(var(--stagger) * 2); }
+  .enter-4 { transition-delay: calc(var(--stagger) * 3); }
+  .enter-5 { transition-delay: calc(var(--stagger) * 4); }
   .ring-turn { animation: site-ring-turn 120s linear infinite; transform-origin: center; transform-box: fill-box; }
   /* The theme control's icon turns a quarter as it's pressed (D-1870). */
   .theme-switch label:active svg { rotate: 90deg; }
+
+  /* Micro-interactions (D-1874). A bar under a header link fills from the
+     middle with a little overshoot; an icon in an `icon-turn` control turns
+     a quarter on hover and focus; a pressed button sinks a touch. */
+  .hover-bar { position: relative; }
+  .hover-bar::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0.875rem;
+    bottom: 0.3125rem;
+    height: 1px;
+    border-radius: 1px;
+    background: currentColor;
+    scale: 0 1;
+    transition: scale var(--dur-spring) var(--ease-spring-site);
+  }
+  .hover-bar:hover::after, .hover-bar:focus-visible::after, .hover-bar[aria-current="page"]::after { scale: 1 1; }
+  .icon-turn svg { transition: rotate var(--dur-panel) var(--ease-spring-site); }
+  .icon-turn:hover svg, .icon-turn:focus-visible svg { rotate: 90deg; }
+  .btn:active { scale: 0.98; }
+  .btn { transition-property: background-color, box-shadow, translate, scale, color; }
+
   @view-transition { navigation: auto; }
   ::view-transition-group(root) { animation-duration: var(--dur-slow); animation-timing-function: var(--ease-out-site); }
 }

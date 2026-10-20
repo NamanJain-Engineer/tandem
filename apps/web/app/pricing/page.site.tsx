@@ -105,7 +105,7 @@ export default function PricingPage() {
                 <ul className="flex flex-col gap-3 border-t border-line pt-6 text-copy-sm">
                   {plan.features.map((f) => (
                     <li key={f.text} className="flex items-start gap-2.5">
-                      <Icon icon={Check} size={16} className="mt-1 shrink-0 text-accent" />
+                      <Icon icon={Check} size={16} className="mt-1 shrink-0 text-fg-subtle" />
                       <span className={f.planned ? "text-fg-muted" : "text-fg"}>{f.text}</span>
                     </li>
                   ))}

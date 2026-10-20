@@ -14,7 +14,7 @@ export function CtaBand() {
       lead={
         <>
           Download {SITE.product} for Linux, then{" "}
-          <a href={EARLY_ACCESS_HREF} className="text-accent">
+          <a href={EARLY_ACCESS_HREF} className="text-fg">
             tell us what works and what doesn&apos;t
           </a>{" "}
           at {SITE.contactEmail}.

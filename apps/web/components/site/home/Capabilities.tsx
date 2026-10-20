@@ -3,6 +3,7 @@ import { CAPABILITIES, feature, firstSentence } from "../../../lib/home";
 import { Icon } from "../Icon";
 import { iconFor } from "../icons";
 import { Section } from "../Section";
+import { stagger } from "../../../lib/motion";
 
 /** #capabilities (§6.9): everything else that works today, one line each;
  * the full copy is in the docs. */
@@ -10,13 +11,13 @@ export function Capabilities() {
   return (
     <Section id="capabilities" eyebrow="Everything in the app" title="And everything else that works today" divider>
       <ul className="grid gap-x-10 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
-        {CAPABILITIES.map((c) => (
-          <li key={c.title} className="reveal">
+        {CAPABILITIES.map((c, i) => (
+          <li key={c.title} className={`reveal ${stagger(i)}`}>
             <a
               href={c.docs}
               className="group -mx-3 flex h-full gap-4 rounded-[10px] p-3 transition-colors duration-(--dur-base) hover:bg-(--site-glass)"
             >
-              <span className="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-[10px] text-accent shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong)]">
+              <span className="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-[10px] text-fg-muted shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong)]">
                 <Icon icon={iconFor(c.icon)} size={18} />
               </span>
               <span className="flex flex-col gap-1">

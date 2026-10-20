@@ -25,6 +25,7 @@ export function Orbit({
   return (
     <svg
       aria-hidden="true"
+      data-orbit=""
       focusable="false"
       viewBox="0 0 1200 760"
       preserveAspectRatio="xMidYMin slice"

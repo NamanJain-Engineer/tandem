@@ -13,7 +13,7 @@ export function Founder() {
       <figure className="reveal surface relative isolate flex max-w-narrow flex-col gap-6 overflow-hidden p-8 sm:flex-row sm:gap-8 lg:p-10">
         <span
           aria-hidden="true"
-          className="inline-flex size-14 shrink-0 items-center justify-center rounded-full font-mono text-copy font-semibold text-accent shadow-[inset_0_0_0_1px_var(--site-line-strong),0_0_24px_var(--site-glow-a)] [background:radial-gradient(circle_at_50%_0%,var(--tn-accent-soft),transparent_70%)]"
+          className="inline-flex size-14 shrink-0 items-center justify-center rounded-full font-mono text-copy font-semibold text-fg shadow-[inset_0_0_0_1px_var(--site-line-strong),0_0_24px_var(--site-glow-a)] [background:radial-gradient(circle_at_50%_0%,var(--tn-accent-soft),transparent_70%)]"
         >
           {initials}
         </span>

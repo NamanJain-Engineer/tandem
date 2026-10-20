@@ -29,11 +29,11 @@ export function CtaBand({
         <span className="reveal inline-flex size-16 items-center justify-center rounded-2xl surface">
           <Mark size={34} />
         </span>
-        <h2 id={`${id}-title`} className="reveal text-sheen max-w-[16em] text-display-2xl text-fg">
+        <h2 id={`${id}-title`} className="reveal stagger-1 text-sheen max-w-[16em] text-display-2xl text-fg">
           {title}
         </h2>
-        {lead && <p className="reveal max-w-measure text-lead text-pretty text-fg-muted">{lead}</p>}
-        <div className="reveal flex flex-wrap justify-center gap-3 pt-1">{children}</div>
+        {lead && <p className="reveal stagger-2 max-w-measure text-lead text-pretty text-fg-muted">{lead}</p>}
+        <div className="reveal stagger-3 flex flex-wrap justify-center gap-3 pt-1">{children}</div>
       </div>
     </section>
   );

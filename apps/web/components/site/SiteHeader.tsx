@@ -32,7 +32,7 @@ export function SiteHeader({ current }: { current?: string }) {
               <a
                 href={n.href}
                 {...link(n.href)}
-                className="flex h-9 items-center rounded-md px-3.5 text-[0.875rem] font-medium text-fg-muted transition-colors duration-(--dur-base) hover:bg-(--site-glass) hover:text-fg aria-[current=page]:text-fg"
+                className="hover-bar flex h-9 items-center rounded-md px-3.5 text-[0.875rem] font-medium text-fg-muted transition-colors duration-(--dur-base) hover:bg-(--site-glass) hover:text-fg aria-[current=page]:text-fg"
               >
                 {n.label}
               </a>
@@ -40,7 +40,7 @@ export function SiteHeader({ current }: { current?: string }) {
           ))}
         </ul>
         <ThemeSwitch name="theme" className="ml-auto max-sm:!hidden" />
-        <a href="/download/" className={siteButton("primary", "sm", "max-sm:ml-auto")}>
+        <a href="/download/" className={siteButton("secondary", "sm", "max-sm:ml-auto")}>
           <Icon icon={Download} size={15} />
           Download
         </a>

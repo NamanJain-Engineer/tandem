@@ -39,7 +39,7 @@ export default async function VersionPage({ params }: Params) {
       <div aria-hidden="true" className="bg-lens absolute inset-x-0 top-0 -z-10 h-[32rem]" />
       <div className="container-site grid gap-10 py-16 lg:grid-cols-12 lg:gap-6 lg:py-24">
         <aside className="flex flex-col items-start gap-5 lg:sticky lg:top-24 lg:col-span-3 lg:self-start">
-          <a href="/changelog/" className="inline-flex min-h-8 items-center gap-1.5 text-copy-sm text-accent">
+          <a href="/changelog/" className="inline-flex min-h-8 items-center gap-1.5 text-copy-sm text-fg-muted">
             <Icon icon={ArrowLeft} size={14} />
             Changelog
           </a>

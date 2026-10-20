@@ -37,7 +37,7 @@
   --tw-prose-body: var(--tn-text-muted);
   --tw-prose-headings: var(--tn-text);
   --tw-prose-bold: var(--tn-text);
-  --tw-prose-links: var(--tn-accent);
+  --tw-prose-links: var(--tn-text);
   --tw-prose-bullets: var(--tn-text-subtle);
   --tw-prose-counters: var(--tn-text-subtle);
 }
@@ -82,10 +82,10 @@
   scroll-margin-top: calc(var(--site-header-h) + 1.5rem);
 }
 .docs-prose :where(a):not(.surface) {
-  color: var(--tn-accent);
+  color: var(--tn-text);
   text-decoration-line: underline;
   text-decoration-thickness: 1px;
-  text-decoration-color: color-mix(in oklab, var(--tn-accent) 45%, transparent);
+  text-decoration-color: color-mix(in oklab, var(--tn-text) 40%, transparent);
   text-underline-offset: 0.2em;
 }
 .docs-prose :where(a):not(.surface):hover { text-decoration-color: currentColor; }

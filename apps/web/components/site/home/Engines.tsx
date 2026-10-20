@@ -4,6 +4,7 @@ import { ENGINES } from "../../../lib/site";
 import { SCREENS } from "../../../lib/media";
 import { ProductShot } from "../ProductShot";
 import { Section } from "../Section";
+import { stagger } from "../../../lib/motion";
 
 /** An engine's monogram, from the registry's `logo` letters. Never a vendor logo. */
 export function engineLetters(label: string): string {
@@ -26,10 +27,10 @@ export function Engines() {
       <div className="grid items-start gap-10 lg:grid-cols-12 lg:gap-8">
         <div className="flex flex-col gap-5 lg:col-span-7">
           <ul className="surface grid grid-cols-2 overflow-hidden p-0 sm:grid-cols-3">
-            {ENGINES.map((e) => (
+            {ENGINES.map((e, i) => (
               <li
                 key={e}
-                className="reveal flex min-h-20 items-center gap-3 border-b border-r border-line px-4 py-4 text-copy-sm font-medium text-fg [&:nth-child(2n)]:max-sm:border-r-0 sm:[&:nth-child(3n)]:border-r-0 max-sm:[&:nth-last-child(-n+2)]:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0"
+                className={`reveal ${stagger(i)} flex min-h-20 items-center gap-3 border-b border-r border-line px-4 py-4 text-copy-sm font-medium text-fg [&:nth-child(2n)]:max-sm:border-r-0 sm:[&:nth-child(3n)]:border-r-0 max-sm:[&:nth-last-child(-n+2)]:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0`}
               >
                 <EngineGlyph letters={engineLetters(e)} size={32} />
                 {e}

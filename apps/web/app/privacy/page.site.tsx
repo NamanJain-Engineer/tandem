@@ -38,7 +38,7 @@ export default function PrivacyPage() {
       <p>
         {OPERATOR} is responsible for your data. This page covers this website and the {SITE.product} desktop
         app. Questions go to{" "}
-        <a href={`mailto:${SITE.contactEmail}`} className="text-accent hover:underline">
+        <a href={`mailto:${SITE.contactEmail}`} className="text-fg underline">
           {SITE.contactEmail}
         </a>
         .
