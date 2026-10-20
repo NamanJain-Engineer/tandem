@@ -391,7 +391,7 @@ Five steps, each with what the person needs to feel, what they see today and the
 
 When the coordinating session says an implementer sent READY, the design lead:
 1. Checks out the branch and builds what changed: `pnpm --filter desktop build:demo` (the demo runs the real UI) and/or `pnpm --filter web build:site`, served locally.
-2. Captures before (the branch's merge base) and after, in Chromium (`/opt/pw-browsers/chromium`): 1440×900 and 390×844, dark and light, motion on and reduced. Scenes are also captured at their first and final frames.
+2. Captures before (the branch's merge base) and after, in Chromium (`/opt/pw-browsers/chromium`): 1440×900 and 390×844, dark and light, motion on and reduced. Scenes are also captured at their first and final frames. `scripts/agent/design-shots.mjs` does the stills: every page at both sizes in the OS's dark and light and with Light or Dark forced, reporting the resolved theme, any sideways scroll and the teal elements in the first viewport (more than three fails, §4.2). Implementers run it before sending READY.
 3. Reviews against this document, and sends the coordinating session one list, each item ranked:
    - **Must-fix:** breaks a **must** here; a claim untrue of the shipped build; contrast below AA; anything that moves under reduced motion; a raw colour or arbitrary value where a token exists; a regression in the site's largest paint or CLS budgets; a missing empty, loading or error state; a clean-room problem.
    - **Polish:** a better value, spacing, timing or word that would raise the craft, which may land in a later slice.
