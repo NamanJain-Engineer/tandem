@@ -19,6 +19,7 @@ import { resetThreads } from "../stores/threads";
 import { resetTeammates } from "../stores/teammates";
 import { resetSuggestions } from "../features/agents/Suggestions";
 import { resetFiles } from "../stores/files";
+import { resetIntel } from "../stores/intel";
 import { resetGit } from "../stores/git";
 import { resetBrowser } from "../stores/browser";
 import { resetScratchpad } from "../stores/scratchpad";
@@ -153,6 +154,7 @@ export function resetStores(): void {
   resetTeammates();
   resetSuggestions();
   resetFiles();
+  resetIntel();
   resetGit();
   resetBrowser();
   useDictate.setState({ status: null, models: null, stats: null, take: null, level: 0, historyRev: 0 });

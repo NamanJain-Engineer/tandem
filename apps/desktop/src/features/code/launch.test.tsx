@@ -228,7 +228,7 @@ describe("launch sheet (F-CD-14, UI-12)", () => {
     await preset("Fleet");
     const box = () => screen.getByRole("checkbox", { name: /Give each agent its own worktree/ });
     expect(box().getAttribute("data-disabled")).not.toBeNull();
-    expect(screen.getByText("Multi-repo worktrees are part of Pro.")).toBeTruthy();
+    expect(screen.getByText("Worktrees across several repositories come with Pro. On Free, agents can still work in this folder directly, and adding one repository on its own gives it worktrees.")).toBeTruthy();
   });
 
   it("F-CD-22.1 on Pro a multi-repo folder can give each agent its own worktree", async () => {
@@ -239,7 +239,7 @@ describe("launch sheet (F-CD-14, UI-12)", () => {
     await preset("Fleet");
     const box = screen.getByRole("checkbox", { name: /Give each agent its own worktree/ });
     expect(box.getAttribute("data-disabled")).toBeNull();
-    expect(screen.queryByText("Multi-repo worktrees are part of Pro.")).toBeNull();
+    expect(screen.queryByText("Worktrees across several repositories come with Pro. On Free, agents can still work in this folder directly, and adding one repository on its own gives it worktrees.")).toBeNull();
   });
 
   it("UI-12 outside a git repository the worktree box is off and says why", async () => {

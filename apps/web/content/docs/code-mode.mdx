@@ -12,11 +12,25 @@ Code mode is a grid of real PTY terminals. Each pane runs an agent CLI or a shel
 - **Worktrees.** Run a task in its own git worktree, under `<repo>/.tandem/worktrees/<name>` on a `tandem/<name>` branch, then merge it back or clean it up. See [Worktrees](#worktrees) below.
 - **Handoff.** Hand a session to another engine with a written summary, in a pane beside it or as a thread.
 - **Find work.** **Find work…** in the command palette (<kbd>Mod+K</kbd>) finds work by what it's about. Describe it, such as "the login tests", and it lists open panes, threads and teammates, best first; choose one to go to it, and a pane flashes. It reads each pane's name, title, engine, folder and last 20 lines of output, each thread's title and last message, and each teammate's name, the first line of its brief and its last message, with anything that looks like a key or password removed first. It ranks them on your computer. Ranking them with Vibezeo's AI is a Pro feature that comes with Vibezeo accounts.
-- **Around the terminals.** A Files tab with a code editor, a git panel, a browser and a Scratchpad sit in the sidebar. Paths and URLs a program prints open with <kbd>Mod</kbd>+Click.
+- **Around the terminals.** A Files tab with a code editor, a git panel, a browser and a Scratchpad sit in the sidebar. Paths and URLs a program prints open with <kbd>Mod</kbd>+Click. The editor can go to definitions and find references with the language servers you have; see [Code intelligence](#code-intelligence) below.
 - **Checkpoints and more.** Vibezeo saves a folder's files before agents change them, so you can rewind; it also recalls commands you ran, lists the ports your panes' servers use, runs Best of N and keeps a prompt library. See [Checkpoints and workflow tools](/docs/workflow-tools/).
 - **Restore.** After a crash or relaunch, layouts come back and agents return paused, ready to resume their session.
 
 On the Free plan you can have 4 live panes and 3 workspaces; see [Accounts and limits](/docs/accounts-and-limits/).
+
+## Code intelligence
+
+The Files editor uses the language server for a file's language when it's on your login PATH: `rust-analyzer` for Rust, `typescript-language-server` for TypeScript and JavaScript, `pyright-langserver` for Python and `gopls` for Go. Vibezeo never installs one; install it the way you usually would and it's picked up.
+
+- **Go to definition:** <kbd>F12</kbd>, or <kbd>Mod</kbd>+Click on a name. A definition in another file opens in a new tab at its line.
+- **Find references:** <kbd>Shift+F12</kbd> lists every reference under the editor with its file, line and text. Choose one to open it; <kbd>Esc</kbd> closes the list.
+- **Hover:** rest the pointer on a name to see what the server says about it, such as its type or signature.
+- **Problems:** the server's errors and warnings are underlined, with the message on hover, and the line beside the tabs counts them ("2 errors, 1 warning").
+- **In diffs:** in a worktree's diff and the review queue's, click a name on a changed or unchanged line of the new side for **Go to definition** or **Find references** in that worktree. The result opens in the Files editor.
+
+The server reads the text as it is in the editor, unsaved edits included. A server starts the first time you need it for a folder (each worktree has its own), stops after 10 minutes without use, and at most 4 run at once. Everything stays on your computer.
+
+Without a server for the language, the line beside the tabs says so, such as "No language server for Python", and its tooltip names what to install. Go to definition still finds a definition of the same name in the same file for Rust, TypeScript and Python. A server that fails says "rust-analyzer stopped: …" and is tried again on your next request, up to 3 times in 10 minutes; one that takes over 10 seconds to answer says "rust-analyzer didn't answer". Folders on SSH hosts and in WSL don't have code intelligence yet.
 
 ## Review queue
 

@@ -917,7 +917,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 **Behavior:**
 - **A multi-repo workspace** is a local folder that isn't itself in a git repository and whose direct subfolders include at least two git repositories (`<folder>/<name>/.git`; hidden folders don't count). Vibezeo finds them when it lists the folder; up to 12, by name. The rail row shows "{n} repositories" where a repository shows its branch. Nested deeper repositories, submodules and the folder's other subfolders don't count.
 - **Worktrees.** New worktree…, and the launch sheet's Worktrees option, work in a multi-repo workspace: one worktree makes a parent folder `<folder>/.tandem/worktrees/<slug>/` and, inside it, a git worktree of each repository at `<slug>/<name>` on the same branch `tandem/<slug>`, each from its repository's current commit. The slug is free in every repository (F-CD-14's numbering, across all of them). The agent starts in the parent folder, so it sees every repository. If any repository's worktree fails (one without commits, say), the ones already made are removed and the error says which repository failed.
-- **Plan.** Multi-repo worktrees are part of Pro (§3.2). On Free, the launch sheet's Worktrees option and New worktree… are disabled with "Multi-repo worktrees are part of Pro." The folder itself works as any folder: panes, files, shared work.
+- **Plan.** Multi-repo worktrees are part of Pro (§3.2). On Free, the launch sheet's Worktrees option and New worktree… are disabled with "Worktrees across several repositories come with Pro. On Free, agents can still work in this folder directly, and adding one repository on its own gives it worktrees." The folder itself works as any folder: panes, files, shared work.
 - **Diff.** Open diff lists each repository with its share of the changes ("api · 3 files", "web · No changes"), then the files grouped by repository, each path starting with the repository's name, with F-WT-02's line comments. Paths in comments and the review prompt start with the repository's name (`api/src/a.ts`).
 - **Create pull requests.** For a multi-repo worktree, "Create pull requests" asks first (the native confirm: "Push tandem/<slug> and open a pull request in api and web?"), then for each repository with commits on the branch, through the user's own `git` and `gh` in that repository's worktree: `git push -u origin tandem/<slug>`, then `gh pr create --fill --head tandem/<slug>`. Once all are open, each pull request's body gains a "Related pull requests" list linking the others (`gh pr edit --body-file`). A dialog shows each repository's step and the pull request links; a failure in one repository is shown and doesn't stop the others. Repositories without new commits are skipped and listed. GitLab remotes aren't handled in this slice: they're listed as skipped.
 - **Discard** removes every repository's worktree (each as F-CD-15's Discard, with the same confirm), then the parent folder. The branches are kept.
@@ -929,6 +929,28 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 3. Open diff on a multi-repo worktree lists a section per repository with its changed files; a comment on `web/src/app.ts` line 3 reaches the review prompt as `web/src/app.ts:3`.
 4. With a fake `gh` and local bare remotes, Create pull requests pushes the branch in both repositories, opens one pull request in each, and each body links the other; nothing is pushed before the confirm.
 5. Discard removes both repositories' worktrees and the parent folder, and keeps both branches.
+
+#### F-CD-23 Code intelligence in the editor and diffs (P2)
+**Story:** I'm reviewing what an agent changed. I want to jump from a changed function to its definition and its callers, and see type errors, without leaving Vibezeo for an IDE.
+
+**Behavior:**
+- **Language servers you already have.** Vibezeo uses the language server for a file's language when it's on the login PATH: `rust-analyzer` (Rust), `typescript-language-server --stdio` (TypeScript, TSX, JavaScript), `pyright-langserver --stdio` (Python) and `gopls` (Go). It never installs one. A server starts on first use for a folder and language (the workspace or worktree the file is in), with the login environment, and stops after 10 minutes without a request, or when the folder is removed or the app quits. At most 4 run at once; the one used longest ago stops first. Local folders only: on SSH hosts and in WSL the editor works as today.
+- **In the Files editor (F-CD-19):**
+  - **Go to definition:** F12, or Mod+click on a name, opens the definition (in a new tab when it's another file in the folder).
+  - **Find references:** Shift+F12 lists every reference with its file, line and text; choosing one opens it.
+  - **Hover:** resting the pointer on a name shows the server's hover text (types, signatures) in a tooltip, as plain text.
+  - **Diagnostics:** the server's errors and warnings underline their ranges, with the message on hover, and the editor's status line counts them ("2 errors, 1 warning").
+  - The editor sends the server the text as it is in the editor, unsaved edits included.
+- **In diffs (F-WT-02's worktree diff and the review queue's):** clicking a name on a line of the new side offers **Go to definition** and **Find references** for it, in the worktree; the results open in the Files editor.
+- **Without a server** for the language, the editor works as today and its status line says "No language server for Python" (with the server's name to install). Go to definition still finds a definition of the same name in the same file for TypeScript, Rust and Python, from F-WT-10's tree-sitter index. A server that fails to start or crashes says so in the status line ("rust-analyzer stopped: …") and is tried again on the next request, at most 3 times in 10 minutes.
+- Every request has a 10-second limit; a slow answer is dropped and says "rust-analyzer didn't answer". Nothing leaves the machine.
+
+**Acceptance:**
+1. With a language server on the login PATH (a fake one in tests), go to definition on a name in a Python file opens its definition at the right line, and in another file of the folder in a new tab.
+2. Find references on a diff line's name lists each reference in the worktree with its file and line, and choosing one opens it in the Files editor.
+3. Hover shows the server's text; the server's diagnostics underline their ranges and the status line counts them.
+4. Without a server for the language, the editor works as today with "No language server for Rust" in its status line, and go to definition still finds a definition of the same name in the file.
+5. A server unused for 10 minutes is stopped; the next request starts it again.
 
 ### 4.3 TH: Thread mode
 

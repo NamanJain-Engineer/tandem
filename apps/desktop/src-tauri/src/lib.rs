@@ -206,6 +206,10 @@ macro_rules! app_commands {
             commands::files::fs_delete,
             commands::files::fs_watch,
             commands::files::fs_unwatch,
+            commands::lsp::lsp_sync,
+            commands::lsp::lsp_definition,
+            commands::lsp::lsp_references,
+            commands::lsp::lsp_hover,
             commands::checkpoints::checkpoints_list,
             commands::checkpoints::checkpoint_create,
             commands::checkpoints::checkpoint_diff,
@@ -678,6 +682,8 @@ fn spawn_background(state: &AppState) {
     let telemetry = state.telemetry.clone();
     tauri::async_runtime::spawn(telemetry.clone().run_uploader());
     tauri::async_runtime::spawn(state.audit.clone().run());
+    // F-CD-23: language servers stop after ten idle minutes.
+    tauri::async_runtime::spawn(crate::services::lsp::run_reaper());
     // F-WT-10: the intent radar follows checkpoints.
     tauri::async_runtime::spawn(crate::services::radar::run(
         state.store.clone(),
@@ -1326,6 +1332,11 @@ pub fn run() {
                 state.remote.shutdown();
                 // F-WT-07: a landing's check doesn't outlive the app.
                 services::merge_queue::shutdown();
+                // F-CD-23: language servers get shutdown and exit.
+                tauri::async_runtime::block_on(async {
+                    let stop = services::lsp::global().shutdown();
+                    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), stop).await;
+                });
             }
         }),
         Err(err) => {

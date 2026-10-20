@@ -176,7 +176,7 @@ pub async fn create(
     Ok(row)
 }
 
-pub const MULTI_PRO: &str = "Multi-repo worktrees are part of Pro.";
+pub const MULTI_PRO: &str = "Worktrees across several repositories come with Pro. On Free, agents can still work in this folder directly, and adding one repository on its own gives it worktrees.";
 
 /// Refuses the features that need one repository for a multi-repo
 /// worktree (F-CD-22).

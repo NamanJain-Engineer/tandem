@@ -2,9 +2,9 @@
 // neighbour), CodeMirror for text, a hex placeholder for binary files, a
 // preview for images, read-only banners, and the "File changed on disk"
 // dialog with Reload / Overwrite / Compare.
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { ChevronLeft, FileWarning, X } from "lucide-react";
-import type { FileDiff, IpcError } from "@tandem/protocol";
+import type { FileContext, FileDiff, IpcError, LspDocument } from "@tandem/protocol";
 import {
   Banner,
   Button,
@@ -19,6 +19,7 @@ import {
 } from "@tandem/ui";
 import { t, type MessageKey } from "../../i18n";
 import { useFiles, type OpenFile } from "../../stores/files";
+import { docId, openReference, useIntel } from "../../stores/intel";
 
 const READONLY: Record<string, MessageKey> = {
   outside: "files.readonly.outside",
@@ -155,8 +156,31 @@ function ConflictDialog({ file }: { file: OpenFile }) {
   );
 }
 
-function Body({ file }: { file: OpenFile }) {
+function Body({ file, context }: { file: OpenFile; context: FileContext | null }) {
   const c = file.content;
+  const id = context ? docId(context, file.path) : null;
+  const diagnostics = useIntel((s) => (id ? s.docs[id]?.diagnostics : undefined));
+  const text = c?.kind === "text" ? file.text : null;
+  // F-CD-23: the server reads the text as it is in the editor.
+  useEffect(() => {
+    if (context && text !== null && file.status === "ready")
+      useIntel.getState().sync(context, file.path, text);
+  }, [context, file.path, file.status, text]);
+  const intel = useMemo(() => {
+    if (!context) return undefined;
+    const now = () =>
+      useFiles.getState().byKey[useFiles.getState().key ?? ""]?.tabs.find((f) => f.path === file.path)
+        ?.text ?? "";
+    return {
+      diagnostics,
+      hover: (at: { line: number; character: number }) =>
+        useIntel.getState().hover(context, file.path, now(), at),
+      definition: (at: { line: number; character: number }) =>
+        void useIntel.getState().definition(context, file.path, now(), at),
+      references: (at: { line: number; character: number }) =>
+        void useIntel.getState().references(context, file.path, now(), at),
+    };
+  }, [context, file.path, diagnostics]);
   if (file.status === "loading") {
     return (
       <div role="status" aria-busy="true" aria-label={t("files.loading")} className="flex flex-col gap-2 p-4">
@@ -215,15 +239,118 @@ function Body({ file }: { file: OpenFile }) {
       value={file.text}
       readOnly={c.readonly}
       goto={file.goto}
+      intel={intel}
       onChange={(text) => useFiles.getState().edit(file.path, text)}
       onSave={() => void useFiles.getState().save(file.path)}
     />
   );
 }
 
+/** The status line's words for the server's answer (UI_SPEC "Code
+ * intelligence"). */
+export function intelStatus(
+  doc: LspDocument | undefined,
+  pending: boolean,
+): { text: string; hint?: string } | null {
+  if (!doc) return pending ? { text: t("intel.starting") } : null;
+  if (doc.state !== "ready") {
+    if (!doc.message) return null;
+    return {
+      text: doc.message,
+      hint: doc.state === "none" && doc.server ? t("intel.install", { server: doc.server }) : undefined,
+    };
+  }
+  const errors = doc.diagnostics.filter((d) => d.severity === "error").length;
+  const warnings = doc.diagnostics.filter((d) => d.severity === "warning").length;
+  const parts = [
+    errors > 0 ? t("intel.errors", { n: errors }) : null,
+    warnings > 0 ? t("intel.warnings", { n: warnings }) : null,
+  ].filter((p): p is string => p !== null);
+  return { text: parts.length > 0 ? parts.join(", ") : (doc.server ?? "") };
+}
+
+function IntelStatus({ context, path }: { context: FileContext; path: string }) {
+  const id = docId(context, path);
+  const doc = useIntel((s) => s.docs[id]);
+  const pending = useIntel((s) => s.pending[id] ?? false);
+  const notice = useIntel((s) => s.notice[id]);
+  const status = notice ? { text: notice, hint: undefined } : intelStatus(doc, pending);
+  if (!status?.text) return null;
+  return (
+    <span
+      data-testid="intel-status"
+      title={status.hint}
+      className="mb-1.5 flex shrink-0 items-center gap-1 truncate pr-1 text-2xs text-fg-subtle"
+    >
+      {pending && !doc && <Spinner size={10} />}
+      {status.text}
+    </span>
+  );
+}
+
+/** Shift+F12's list, under the editor. */
+function ReferencesPanel({ filesKey }: { filesKey: string }) {
+  const refs = useIntel((s) => (s.refs?.key === filesKey ? s.refs : null));
+  if (!refs) return null;
+  const close = () => useIntel.getState().closeReferences();
+  return (
+    <section
+      aria-label={t("intel.references.region")}
+      data-testid="references-panel"
+      className="flex max-h-[40%] min-h-0 shrink-0 flex-col border-t border-divider bg-surface-1"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          close();
+        }
+      }}
+    >
+      <div className="flex h-7 shrink-0 items-center gap-2 px-2 text-sm">
+        <span className="min-w-0 flex-1 truncate text-fg-muted" data-testid="references-title">
+          {refs.status === "loading" ? (
+            <span className="flex items-center gap-1" role="status">
+              <Spinner size={10} />
+              {t("intel.references.loading", { name: refs.name })}
+            </span>
+          ) : refs.status === "error" ? (
+            refs.error
+          ) : refs.items.length === 0 ? (
+            t("intel.references.none")
+          ) : (
+            t("intel.references.title", { n: refs.items.length, name: refs.name })
+          )}
+        </span>
+        <IconButton size="sm" icon={<X size={12} />} label={t("intel.references.close")} onClick={close} />
+      </div>
+      {refs.items.length > 0 && (
+        <ul className="min-h-0 overflow-y-auto pb-1" aria-label={t("intel.references.list")}>
+          {refs.items.map((r, i) => (
+            <li key={`${r.path}:${r.line}:${r.character}:${i}`}>
+              <button
+                type="button"
+                data-testid="reference-row"
+                data-path={r.path}
+                data-line={r.line + 1}
+                onClick={() => openReference(r)}
+                className="flex w-full items-baseline gap-2 px-2 py-0.5 text-left text-sm hover:bg-surface-3 focus-visible:shadow-focus focus-visible:outline-none"
+              >
+                <span className="shrink-0 text-fg-muted">
+                  {t("intel.references.at", { path: r.path, line: r.line + 1 })}
+                </span>
+                <span className="truncate font-mono text-xs text-fg">{r.preview}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 /** The editor column: tabs, banners and the open file. */
 export function FileEditor({ onBack }: { onBack?: () => void }) {
   const ctx = useFiles((s) => (s.key ? s.byKey[s.key] : undefined));
+  const filesKey = useFiles((s) => s.key);
   const tabs = ctx?.tabs ?? [];
   const active = tabs.find((f) => f.path === ctx?.active) ?? null;
 
@@ -254,8 +381,12 @@ export function FileEditor({ onBack }: { onBack?: () => void }) {
             <Tab key={f.path} file={f} active={f.path === active?.path} />
           ))}
         </div>
+        <span className="ml-auto" />
+        {active && ctx && active.content?.kind === "text" && (
+          <IntelStatus context={ctx.context} path={active.path} />
+        )}
         {active?.saving && (
-          <span className="mb-1.5 ml-auto flex items-center gap-1 pr-1 text-2xs text-fg-subtle" role="status">
+          <span className="mb-1.5 flex items-center gap-1 pr-1 text-2xs text-fg-subtle" role="status">
             <Spinner size={10} />
             {t("files.saving")}
           </span>
@@ -292,11 +423,12 @@ export function FileEditor({ onBack }: { onBack?: () => void }) {
         aria-label={active ? baseName(active.path) : t("files.tabs.label")}
       >
         {active ? (
-          <Body file={active} />
+          <Body file={active} context={ctx?.context ?? null} />
         ) : (
           <EmptyState title={t("files.editor.empty.title")} body={t("files.editor.empty.body")} />
         )}
       </div>
+      {filesKey && <ReferencesPanel filesKey={filesKey} />}
       {active?.conflict && <ConflictDialog file={active} />}
     </section>
   );
