@@ -2766,7 +2766,7 @@
   "settings.dictate.subtitle": "Hold a key, speak, release: the text lands where your cursor was.",
   "settings.conductor": "Conductor",
   "settings.conductor.subtitle": "How Conductor sounds, what it remembers, and how you call it.",
-  "conductor.privacy": "During a call, your voice goes to Vibezeo's voice service and its provider, with what Conductor reads to answer you: the names and titles of your panes, threads and teammates, and results such as an agent's closing message, redacted. Nothing is recorded after you hang up. The wake phrase is detected on this computer.",
+  "conductor.privacy": "During a call, your voice goes to Vibezeo's voice service and its provider, Google's Gemini Live or a backup listed at vibezeo.com/privacy, with what Conductor reads to answer you: the names and titles of your panes, threads and teammates, and results such as an agent's closing message, redacted. Google's free service may keep what you say, use it to improve Google's products and have people review it, so keep private details off calls. Calls from the EEA, Switzerland and the UK never use it. Vibezeo's servers keep no recording. The wake phrase is detected on this computer.",
   "conductor.persona.name": "Name",
   "conductor.persona.name.desc": "What Conductor calls itself. The wake phrase stays \"Hey Conductor\".",
   "conductor.voice": "Voice",

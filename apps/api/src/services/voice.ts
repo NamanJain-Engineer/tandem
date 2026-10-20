@@ -10,8 +10,9 @@ import { newId } from "../lib/ids";
 import { logger } from "../lib/logger";
 import { ApiError } from "../lib/problem";
 import { redactText } from "../lib/redact";
+import { FREE_GEMINI_EXCLUDED } from "../lib/region";
 import type { AiResult } from "../providers/ai/types";
-import { RealtimeUnavailableError } from "../providers/realtime/types";
+import { type Minted, type RealtimeProvider, RealtimeUnavailableError } from "../providers/realtime/types";
 import { fence, included } from "./ai";
 import { notifyCredits } from "./credits";
 import { type Owner, refund, reserve, settle, topUp } from "./ledger";
@@ -91,10 +92,45 @@ export function voiceCost(seconds: number, price: number): number {
 
 const ended = () => new ApiError(409, "SESSION_ENDED", "Conflict", "This call has ended.");
 
-/** `POST /v1/voice/session`: hold 10 minutes of credits, then mint the realtime session. */
-export async function mintSession(deps: Deps, userId: string, voice?: string): Promise<MintedSession> {
+/** What every app released before D-1013 speaks; a newer one names its own. */
+export const LEGACY_PROTOCOLS: readonly string[] = ["mock", "openai"];
+
+/**
+ * Whether Gemini may take a call from `country` (D-1018): on the free tier,
+ * not from the EEA, Switzerland or the UK, nor from a country the edge
+ * couldn't name (null). Undefined means the API reads no country (dev).
+ */
+function geminiServes(deps: Deps, country: string | null | undefined): boolean {
+  if (deps.env.GEMINI_TIER === "paid" || country === undefined) return true;
+  return country !== null && !FREE_GEMINI_EXCLUDED.has(country);
+}
+
+/**
+ * `POST /v1/voice/session`: hold 10 minutes of credits, then mint the realtime
+ * session with the first provider the app speaks that mints (D-1013), so a
+ * free primary that fails or runs out falls back to the next under one hold.
+ */
+export async function mintSession(
+  deps: Deps,
+  userId: string,
+  voice?: string,
+  speaks: readonly string[] = LEGACY_PROTOCOLS,
+  country?: string | null,
+): Promise<MintedSession> {
   // The mock's socket is a dev service: production without a provider has no voice to offer.
-  if (deps.realtime.name === "mock" && deps.env.NODE_ENV === "production") {
+  const spoken = deps.realtime.filter(
+    (p) => speaks.includes(p.name) && !(p.name === "mock" && deps.env.NODE_ENV === "production"),
+  );
+  const candidates = spoken.filter((p) => p.name !== "gemini" || geminiServes(deps, country));
+  if (candidates.length === 0 && spoken.length > 0) {
+    throw new ApiError(
+      503,
+      "VOICE_NOT_IN_REGION",
+      "Service Unavailable",
+      "Conductor's voice isn't available in your country yet.",
+    );
+  }
+  if (candidates.length === 0) {
     throw new ApiError(503, "VOICE_UNAVAILABLE", "Service Unavailable", "Conductor isn't available yet.");
   }
   const now = deps.clock.now();
@@ -106,26 +142,32 @@ export async function mintSession(deps: Deps, userId: string, voice?: string): P
     now,
     expiresAt: new Date(expiresAt.getTime() + HOLD_GRACE_MS),
   });
-  let minted;
-  try {
-    minted = await deps.realtime.mint({
-      instructions: TALKER_INSTRUCTIONS,
-      voice,
-      maxSeconds: MAX_CALL_SECONDS,
-    });
-  } catch (err) {
+  let chosen: { provider: RealtimeProvider; minted: Minted } | undefined;
+  for (const provider of candidates) {
+    try {
+      const minted = await provider.mint({
+        instructions: TALKER_INSTRUCTIONS,
+        voice,
+        maxSeconds: MAX_CALL_SECONDS,
+      });
+      chosen = { provider, minted };
+      break;
+    } catch (err) {
+      // The provider's own errors carry a status only; anything else is named, never shown.
+      logger.warn(
+        {
+          provider: provider.name,
+          status: err instanceof RealtimeUnavailableError ? err.status : undefined,
+          err:
+            err instanceof RealtimeUnavailableError ? undefined : err instanceof Error ? err.name : "unknown",
+        },
+        "voice session not minted",
+      );
+    }
+  }
+  if (!chosen) {
     const back = await refund(deps.db, reservationId);
     if (back) await notifyCredits(deps, back.owner);
-    // The provider's own errors carry a status only; anything else is named, never shown.
-    logger.warn(
-      {
-        provider: deps.realtime.name,
-        status: err instanceof RealtimeUnavailableError ? err.status : undefined,
-        err:
-          err instanceof RealtimeUnavailableError ? undefined : err instanceof Error ? err.name : "unknown",
-      },
-      "voice session not minted",
-    );
     throw new ApiError(
       503,
       "VOICE_UNAVAILABLE",
@@ -136,11 +178,12 @@ export async function mintSession(deps: Deps, userId: string, voice?: string): P
       },
     );
   }
+  const { provider, minted } = chosen;
   const id = newId("vs");
   await deps.db.insert(voiceSessions).values({
     id,
     userId,
-    provider: deps.realtime.name,
+    provider: provider.name,
     reservationId,
     maxSeconds: MAX_CALL_SECONDS,
     startedAt: now,
@@ -149,7 +192,7 @@ export async function mintSession(deps: Deps, userId: string, voice?: string): P
   });
   return {
     session_id: id,
-    provider: deps.realtime.name,
+    provider: provider.name,
     ephemeral_token: minted.token,
     ws_url: minted.wsUrl,
     expires_at: expiresAt.toISOString(),
@@ -254,9 +297,10 @@ export async function overdueSessions(deps: Deps, limit = 200): Promise<SessionR
  * hold. True when this pass closed it.
  */
 export async function sweepSession(deps: Deps, row: SessionRow): Promise<boolean> {
+  const provider = deps.realtime.find((p) => p.name === row.provider);
   const reported =
-    row.provider === deps.realtime.name && row.providerSessionId
-      ? await deps.realtime.reportedSeconds(row.providerSessionId).catch(() => null)
+    provider && row.providerSessionId
+      ? await provider.reportedSeconds(row.providerSessionId).catch(() => null)
       : null;
   const seconds =
     reported !== null ? Math.min(Math.max(0, Math.round(reported)), row.maxSeconds) : row.maxSeconds;

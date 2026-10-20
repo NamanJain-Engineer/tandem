@@ -36,8 +36,8 @@ export type Deps = {
   push: PushProvider;
   /** Tells the phone relay to drop a revoked pairing's sockets (F-BE-11). */
   relay: RelayControl;
-  /** Conductor's realtime voice: mints a session for the app to connect to (F-BE-08). */
-  realtime: RealtimeProvider;
+  /** Conductor's realtime voice, in order of preference: mints a session for the app to connect to (F-BE-08, D-1013). */
+  realtime: readonly RealtimeProvider[];
   /** What Team SSO reaches out with: the identity provider and DNS (faked in tests). */
   ssoNet: SsoNet;
 };

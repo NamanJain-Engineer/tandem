@@ -82,7 +82,7 @@ pub(crate) async fn open(
     })
 }
 
-fn kind_of(e: &tokio_tungstenite::tungstenite::Error) -> String {
+pub(crate) fn kind_of(e: &tokio_tungstenite::tungstenite::Error) -> String {
     use tokio_tungstenite::tungstenite::Error as E;
     match e {
         E::Io(io) => format!("{:?}", io.kind()),

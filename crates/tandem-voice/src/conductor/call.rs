@@ -2,9 +2,11 @@
 //!
 //! - **Start.** The mic starts at once into the 3 s pre-connect buffer
 //!   while `POST /v1/voice/session` mints a session (the server holds 10
-//!   minutes of credits) and the socket opens; the buffer is sent once
-//!   connected (AC4). Startup errors show; they never fall back to idle
-//!   silently.
+//!   minutes of credits) and the talker opens and takes the call's
+//!   configuration. The call is connected when the talker says Ready, and
+//!   the buffer is sent then (AC4). A talker that fails before that is
+//!   settled at 0 s, and the API is asked again without it (D-1017).
+//!   Startup errors show; they never fall back to idle silently.
 //! - **During.** Mic audio goes to the talker unless muted. Each `act`
 //!   call runs the doer (`POST /v1/voice/act`, up to 8 rounds) and every
 //!   tool call through the [`Executor`]; its answer goes back to the talker.
@@ -49,6 +51,17 @@ pub struct SessionGrant {
     pub max_seconds: u32,
 }
 
+/// `POST /v1/voice/session`'s body.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct SessionRequest {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub voice: Option<String>,
+    /// The realtime protocols the call can still open; the API mints from
+    /// one of them (D-1013).
+    #[serde(default)]
+    pub providers: Vec<String>,
+}
+
 /// `POST /v1/voice/act`'s body.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActRequest {
@@ -86,6 +99,10 @@ pub enum HostedError {
     Offline,
     /// 409: the server already ended the call.
     SessionEnded,
+    /// 503 `VOICE_NOT_IN_REGION`: no voice provider the API has may serve
+    /// the user's country, as the free Gemini may not the EEA, Switzerland
+    /// or the UK (D-1018).
+    NotInRegion,
     Other(String),
 }
 
@@ -221,7 +238,7 @@ pub enum CallRecord {
 /// The app around a call; faked in tests.
 #[async_trait]
 pub trait CallHost: ToolHost {
-    async fn mint(&self, voice: Option<&str>) -> Result<SessionGrant, HostedError>;
+    async fn mint(&self, req: &SessionRequest) -> Result<SessionGrant, HostedError>;
     async fn act(&self, req: &ActRequest) -> Result<ActResponse, HostedError>;
     async fn settle(&self, session_id: &str, seconds: u32) -> Result<Settlement, HostedError>;
     /// The workspace for the doer (no file contents) and a one-paragraph
@@ -230,6 +247,10 @@ pub trait CallHost: ToolHost {
     /// Persona and memory, read once per call (F-CN-06's seam).
     async fn persona(&self) -> PersonaBrief;
     fn provider(&self, name: &str) -> Option<Arc<dyn RealtimeProvider>>;
+    /// Every name [`CallHost::provider`] opens, as the API is told them.
+    fn providers(&self) -> &'static [&'static str] {
+        crate::realtime::PROVIDERS
+    }
     /// Claims the mic for the call (composer dictation is refused while it
     /// holds it) and starts sending audio.
     fn mic_start(&self, tx: mpsc::UnboundedSender<MicEvent>) -> Result<(), String>;
@@ -280,6 +301,8 @@ pub struct CallTiming {
     pub warn_before: Duration,
     /// Push-to-talk ends after this long without the ring held.
     pub quiet: Duration,
+    /// How long a talker has to say Ready to the call's configuration.
+    pub ready: Duration,
     pub exec: ExecTiming,
 }
 
@@ -290,6 +313,7 @@ impl Default for CallTiming {
             receipt: Duration::from_secs(3),
             warn_before: Duration::from_secs(120),
             quiet: Duration::from_secs(120),
+            ready: Duration::from_secs(10),
             exec: ExecTiming::default(),
         }
     }
@@ -498,10 +522,16 @@ impl CallController {
 
         // Mint and connect, while the mic fills the buffer.
         let persona = host.persona().await;
+        let (_, summary) = host.snapshot().await;
+        let configure = ClientEvent::Configure {
+            instructions: persona::instructions(&persona, &summary),
+            voice: persona.voice.clone(),
+        };
         let mut connect = {
             let host = host.clone();
             let voice = persona.voice.clone();
-            tokio::spawn(async move { connect(host, voice).await })
+            let (ready, stop) = (self.timing.ready, cancel.clone());
+            tokio::spawn(async move { connect(host, voice, configure, ready, stop).await })
         };
         let outcome = loop {
             tokio::select! {
@@ -523,6 +553,7 @@ impl CallController {
                     }
                     Some(MicEvent::NotDelivering) => {
                         // Settle whatever was minted, then show the error.
+                        cancel.cancel();
                         settle_later(host.clone(), connect);
                         host.mic_stop();
                         self.fail(None, mic_error());
@@ -537,6 +568,7 @@ impl CallController {
             // is settled at 0 s when it arrives.
             None => {
                 buffer.clear();
+                cancel.cancel();
                 settle_later(host.clone(), connect);
                 host.mic_stop();
                 self.finish_quietly();
@@ -561,13 +593,6 @@ impl CallController {
             started_at: connected_at,
         })
         .await;
-        let (_, summary) = host.snapshot().await;
-        let _ = tx
-            .send(ClientEvent::Configure {
-                instructions: persona::instructions(&persona, &summary),
-                voice: persona.voice.clone(),
-            })
-            .await;
         if (persona.speed - 1.0).abs() > 0.01 {
             let _ = tx
                 .send(ClientEvent::SetSpeed(
@@ -935,6 +960,10 @@ fn hosted_error(e: &HostedError) -> CallError {
             CallErrorCode::Offline,
             "You're offline. Conductor needs a connection.",
         ),
+        HostedError::NotInRegion => (
+            CallErrorCode::NotInRegion,
+            "Conductor's voice isn't available in your country yet.",
+        ),
         HostedError::SessionEnded | HostedError::Other(_) => (
             CallErrorCode::ConnectFailed,
             "Couldn't connect to Conductor.",
@@ -946,30 +975,100 @@ fn hosted_error(e: &HostedError) -> CallError {
     }
 }
 
+/// Mints a session and opens its talker with the call's configuration:
+/// connected once the talker says [`ServerEvent::Ready`]. A talker that
+/// fails first (refused, closed or silent at its setup, as a free tier over
+/// its limits may be) is settled at 0 s and left out of the next ask, until
+/// none is left or the call was hung up (D-1017).
 async fn connect(
     host: Arc<dyn CallHost>,
     voice: Option<String>,
+    configure: ClientEvent,
+    ready_within: Duration,
+    stop: CancellationToken,
 ) -> Result<(SessionGrant, Connection), Failure> {
-    let grant = host.mint(voice.as_deref()).await.map_err(|e| Failure {
-        error: hosted_error(&e),
-        minted: None,
-    })?;
-    let failed = |grant: &SessionGrant| Failure {
-        minted: Some(grant.session_id.clone()),
-        ..Failure::other()
+    let mut req = SessionRequest {
+        voice,
+        providers: host.providers().iter().map(|p| p.to_string()).collect(),
     };
-    let Some(provider) = host.provider(&grant.provider) else {
-        tracing::warn!(provider = %grant.provider, "conductor: no client for this voice provider");
-        return Err(failed(&grant));
+    loop {
+        let grant = host.mint(&req).await.map_err(|e| Failure {
+            error: hosted_error(&e),
+            minted: None,
+        })?;
+        let failed = Failure {
+            minted: Some(grant.session_id.clone()),
+            ..Failure::other()
+        };
+        // An API from before D-1013 ignores the list: it can answer with a
+        // provider the call already left out.
+        if !req.providers.contains(&grant.provider) {
+            tracing::warn!(provider = %grant.provider, "conductor: a session from a provider the call can't open");
+            return Err(failed);
+        }
+        if let Some(conn) = open(host.as_ref(), &grant, &configure, ready_within).await {
+            return Ok((grant, conn));
+        }
+        req.providers.retain(|p| *p != grant.provider);
+        if req.providers.is_empty() {
+            return Err(failed);
+        }
+        let _ = host.settle(&grant.session_id, 0).await;
+        if stop.is_cancelled() {
+            return Err(Failure::other());
+        }
+    }
+}
+
+/// Opens the grant's talker and configures it: the connection once the
+/// talker says Ready, `None` if it was refused, closed first or not ready in
+/// time. Its errors until then are logged, redacted.
+async fn open(
+    host: &dyn CallHost,
+    grant: &SessionGrant,
+    configure: &ClientEvent,
+    within: Duration,
+) -> Option<Connection> {
+    let provider = &grant.provider;
+    let Some(client) = host.provider(provider) else {
+        tracing::warn!(%provider, "conductor: no client for this voice provider");
+        return None;
     };
-    match provider
-        .connect(&grant.ws_url, &grant.ephemeral_token)
-        .await
-    {
-        Ok(conn) => Ok((grant, conn)),
+    let mut conn = match client.connect(&grant.ws_url, &grant.ephemeral_token).await {
+        Ok(conn) => conn,
         Err(e) => {
-            tracing::info!(error = %e, "conductor: connect failed");
-            Err(failed(&grant))
+            tracing::info!(%provider, error = %e, "conductor: connect failed");
+            return None;
+        }
+    };
+    if conn.tx.send(configure.clone()).await.is_err() {
+        return None;
+    }
+    let ready = async {
+        loop {
+            match conn.rx.recv().await {
+                Some(ServerEvent::Ready) => return true,
+                Some(ServerEvent::Closed) | None => return false,
+                Some(ServerEvent::Error(msg)) => tracing::info!(
+                    %provider,
+                    error = %tandem_core::redact::redact(&msg),
+                    "conductor: the talker failed at its setup"
+                ),
+                // Every provider says Ready before anything else.
+                Some(_) => {}
+            }
+        }
+    };
+    let ready = tokio::time::timeout(within, ready).await;
+    match ready {
+        Ok(true) => Some(conn),
+        Ok(false) => {
+            tracing::info!(%provider, "conductor: the talker closed before it was ready");
+            None
+        }
+        Err(_) => {
+            tracing::info!(%provider, "conductor: the talker wasn't ready in time");
+            None
         }
     }
 }
