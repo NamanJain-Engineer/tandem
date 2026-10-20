@@ -256,7 +256,7 @@ pub async fn settle_checks(store: &Store) -> Result<(), StoreError> {
     store
         .write(|t| {
             t.execute(
-                "UPDATE bestof_lanes SET check_state = 'stopped' WHERE check_state = 'running'",
+                "UPDATE bestof_lanes SET check_state = 'stopped' WHERE check_state IN ('queued', 'running')",
                 [],
             )?;
             Ok(())
@@ -294,6 +294,22 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    #[tokio::test]
+    async fn f_ex_06_5_a_lane_waiting_its_turn_is_stored_queued_and_settles_stopped() {
+        let (_d, store) = temp_store().await;
+        insert(&store, run("bo_q", "ws_a", 1))
+            .await
+            .expect("insert");
+        set_check(&store, "bo_q".into(), 0, CheckState::Queued, None, None)
+            .await
+            .expect("queued");
+        let got = get(&store, "bo_q".into()).await.expect("get").expect("run");
+        assert_eq!(got.lanes[0].check, CheckState::Queued);
+        settle_checks(&store).await.expect("settle");
+        let got = get(&store, "bo_q".into()).await.expect("get").expect("run");
+        assert_eq!(got.lanes[0].check, CheckState::Stopped);
     }
 
     #[tokio::test]

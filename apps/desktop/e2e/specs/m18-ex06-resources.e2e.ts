@@ -50,6 +50,14 @@ async function press(selector: string): Promise<void> {
   await browser.execute((sel: string) => document.querySelector<HTMLElement>(sel)?.click(), selector);
 }
 
+/** Shows a sidebar tab, opening it only the first time (a second Ports tab
+ * would hold a second, hidden Panes list). */
+async function show(kind: string, label: string): Promise<void> {
+  const pill = `[data-testid="sidebar-pill-${kind}"]`;
+  if (await $(pill).isExisting()) await press(pill);
+  else await openFromPlus(label);
+}
+
 /** The last `tick-N` the pane printed. */
 async function lastTick(pane: string): Promise<number> {
   const ticks = [...(await paneText(pane)).matchAll(/tick-(\d+)/g)].map((m) => Number(m[1]));
@@ -109,17 +117,21 @@ describe("E2E-M18-EX06 resource governor", function () {
     const status = await invoke<Status>("resources_status");
     expect(status.grouping).toBe(false);
     expect(status.freezing).toBe(true);
-    expect(status.reason).toBe("Memory caps need a systemd user session.");
+    // No user manager at all, or a session bus without one that can limit memory.
+    expect([
+      "Memory caps need a systemd user session.",
+      "This system's user session can't limit memory.",
+    ]).toContain(status.reason);
     // The cap can't be turned on where it can't apply.
     let refused = "";
     await invoke("settings_set", { key: "agent_memory_cap", value: "512" }).catch(
       (e: { message?: string }) => (refused = e.message ?? String(e)),
     );
-    expect(refused).toContain("Memory caps need a systemd user session.");
+    expect(refused).toContain(status.reason ?? "");
 
     const agent = await split("right", "claude");
     await waitForPaneText(agent, "Fake Claude Code");
-    await openFromPlus("Ports");
+    await show("ports", "Ports");
     const row = `[data-testid="pane-usage-row"][data-pane="${agent}"]`;
     const started = Date.now();
     await browser.waitUntil(
@@ -140,7 +152,7 @@ describe("E2E-M18-EX06 resource governor", function () {
     await expectNoSeriousA11yViolationsInBothThemes();
 
     // Its Dashboard card says the same.
-    await openFromPlus("Dashboard");
+    await show("dashboard", "Dashboard");
     await browser.waitUntil(
       async () =>
         browser.execute(() =>
@@ -160,12 +172,21 @@ describe("E2E-M18-EX06 resource governor", function () {
       timeout: 15_000,
       timeoutMsg: "no ticks",
     });
-    await openFromPlus("Ports");
+    await show("ports", "Ports");
     const row = `[data-testid="pane-usage-row"][data-pane="${pane}"]`;
     await press(`${row} [data-testid="pane-usage-freeze"]`);
     await browser.waitUntil(async () => (await $(row).getAttribute("data-frozen")) === "true", {
       timeout: 10_000,
-      timeoutMsg: "never frozen",
+      timeoutMsg: `never frozen: ${await browser.execute(
+        (sel: string) =>
+          [
+            ...Array.from(document.querySelectorAll(sel)).map((r) => r.outerHTML.slice(0, 300)),
+            ...Array.from(document.querySelectorAll("[data-sonner-toast], [role=status]")).map(
+              (t) => t.textContent,
+            ),
+          ].join(" | "),
+        row,
+      )}`,
     });
     const chip = `[data-testid="pane"][data-pane-id="${pane}"] [data-testid="resource-chip"][data-kind="frozen"]`;
     await $(chip).waitForExist({ timeout: 5_000 });
@@ -188,6 +209,8 @@ describe("E2E-M18-EX06 resource governor", function () {
 
   it("F-EX-06.5 with one check at a time, three lanes' checks run one after another", async function () {
     this.timeout(180_000);
+    // Free includes 4 live panes: the three lanes need room.
+    await closeAllPanes();
     const log = join(repo, "..", `ex06-checks-${Date.now()}.log`);
     const check = `echo "s $PWD $(date +%s%N)" >> ${log}; sleep 1; echo "e $PWD $(date +%s%N)" >> ${log}`;
     const run = await invoke<Run>("bestof_start", {

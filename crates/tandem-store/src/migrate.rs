@@ -9,6 +9,10 @@ use crate::StoreError;
 pub const MIGRATIONS: &[(&str, &str)] = &[
     ("0001_init", include_str!("../migrations/0001_init.sql")),
     ("0002_extras", include_str!("../migrations/0002_extras.sql")),
+    (
+        "0003_bestof_queued",
+        include_str!("../migrations/0003_bestof_queued.sql"),
+    ),
 ];
 
 pub const KEEP_BACKUPS: usize = 3;
