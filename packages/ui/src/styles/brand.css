@@ -1,0 +1,67 @@
+/* @tandem/ui/brand.css: the brand layer the app and the site share (D-1891,
+   docs/DESIGN.md §4.1). Light, edges, depth, the rings' glow, card and frame
+   radii and the expo-out curve: one value, one place. Import it after
+   tokens.css. site.css aliases its --site-* names to these and mirrors the
+   light block under prefers-color-scheme; site.test.ts fails if they differ. */
+
+:root, [data-theme="dark"] {
+  /* Edges: a lit top and a quiet bottom, drawn as a gradient border */
+  --tn-edge-top:    rgb(255 255 255 / 0.13);
+  --tn-edge-bottom: rgb(255 255 255 / 0.04);
+  --tn-edge-hi:     rgb(255 255 255 / 0.06);      /* 1 px inner highlight under the top edge */
+  /* Fills laid over a surface: a touch of light at the top */
+  --tn-fill-top:    rgb(255 255 255 / 0.035);
+  --tn-fill-bottom: rgb(255 255 255 / 0.008);
+  /* Light: the two rings' teal and sky */
+  --tn-glow-a:      rgb(45 212 191 / 0.16);
+  --tn-glow-b:      rgb(56 189 248 / 0.11);
+  --tn-ring:        rgb(148 163 184 / 0.11);      /* the rings' line art */
+  --tn-ring-lit:    rgb(94 234 212 / 0.42);       /* where the light catches them */
+  --tn-spot:        rgb(45 212 191 / 0.07);       /* a card's top light on hover */
+  /* The highlight ink: teal → sky */
+  --tn-ink-a:       var(--teal-400);
+  --tn-ink-b:       var(--sky-400);
+  /* Elevation: e1 surfaces, e2 raised (menus, a lifted card), e3 floating (dialogs, product frames) */
+  --tn-elev-1: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(0 0 0 / 0.30);
+  --tn-elev-2: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(0 0 0 / 0.30), 0 12px 32px -12px rgb(0 0 0 / 0.60);
+  --tn-elev-3: 0 0 0 1px rgb(0 0 0 / 0.50), 0 2px 4px rgb(0 0 0 / 0.20), 0 16px 32px -8px rgb(0 0 0 / 0.40), 0 48px 96px -24px rgb(0 0 0 / 0.65);
+}
+
+[data-theme="light"] {
+  --tn-edge-top:    rgb(15 23 42 / 0.08);
+  --tn-edge-bottom: rgb(15 23 42 / 0.14);
+  --tn-edge-hi:     rgb(255 255 255 / 0.90);
+  --tn-fill-top:    rgb(255 255 255 / 0.70);
+  --tn-fill-bottom: rgb(241 245 249 / 0.50);
+  --tn-glow-a:      rgb(20 184 166 / 0.16);
+  --tn-glow-b:      rgb(14 165 233 / 0.10);
+  --tn-ring:        rgb(15 23 42 / 0.08);
+  --tn-ring-lit:    rgb(13 148 136 / 0.45);
+  --tn-spot:        rgb(15 118 110 / 0.05);
+  --tn-ink-a:       var(--teal-700);
+  --tn-ink-b:       var(--sky-700);
+  --tn-elev-1: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(15 23 42 / 0.05), 0 2px 6px -2px rgb(15 23 42 / 0.05);
+  --tn-elev-2: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(15 23 42 / 0.06), 0 16px 32px -14px rgb(15 23 42 / 0.16);
+  --tn-elev-3: 0 0 0 1px rgb(15 23 42 / 0.06), 0 2px 4px rgb(15 23 42 / 0.04), 0 16px 32px -8px rgb(15 23 42 / 0.10), 0 48px 96px -24px rgb(15 23 42 / 0.22);
+}
+
+@theme inline {
+  --shadow-e1: var(--tn-elev-1);
+  --shadow-e2: var(--tn-elev-2);
+  --shadow-e3: var(--tn-elev-3);
+}
+
+@theme {
+  /* Radii nest (D-1833): the app's 6 px controls and 8 px panels stay in
+     tokens.css; cards and frames grow with size. */
+  --radius-card: 12px;
+  --radius-frame: 16px;
+}
+@theme inline {
+  /* Entrances: expo-out, slow to arrive and fast to settle (D-1831) */
+  --ease-out-expo: var(--tn-ease-out);
+}
+
+:root {
+  --tn-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
