@@ -174,6 +174,8 @@ pub struct AppState {
     pub second_opinions: crate::services::second_opinion::Running,
     /// F-DB-04: set once the app has a handle.
     pub review: std::sync::OnceLock<Arc<crate::services::review_queue::ReviewQueue>>,
+    /// Plans with Lead (F-TK-06).
+    pub plan: std::sync::OnceLock<Arc<crate::services::plan::PlanService>>,
     /// The Ports panel (F-EX-03).
     pub ports: Arc<crate::services::ports::PortsService>,
     /// SSH hosts and their connections (F-RM-01).
@@ -895,6 +897,7 @@ impl AppState {
             bestof_checks: Default::default(),
             second_opinions: Default::default(),
             review: std::sync::OnceLock::new(),
+            plan: std::sync::OnceLock::new(),
             remote,
             wsl,
             simulator: crate::services::simulator::host()

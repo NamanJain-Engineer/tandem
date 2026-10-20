@@ -1958,6 +1958,37 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 3. Claims are released when the worktree is merged or removed.
 4. `list_claims` returns other agents' intents inside untrusted fences.
 
+#### F-TK-06 Plan with Lead (P2)
+**Story:** I have a goal bigger than one agent's task. I give it to Lead, the built-in teammate. Lead reads the repository and splits the goal into tasks, each with the engine it suggests. I adjust the plan, approve it, and every task runs in its own worktree. The review queue (F-DB-04) fills as they finish.
+
+**Behavior (first slice; bold bet B3, "The Foreman"):**
+- **Plan with Lead…** on the Tasks page asks for a goal (up to 4,000 characters) and a local workspace.
+- **Lead plans in its own thread.** Vibezeo opens a new Lead chat in that workspace, titled "Plan: <goal>", at Read access. Its first message has:
+  - the goal;
+  - the engines that can run tasks here, each with its accounts' fullest usage window (for example "claude: 62 % of the 5-hour window used, resets 14:10");
+  - the reply format: one JSON block between markers that carry a fresh code.
+
+  You can read Lead's reasoning in that thread, and answer it there.
+- **The draft.** When Lead's turn ends, Vibezeo reads the block and shows the plan as editable rows: title, description and engine (a menu of the engines offered). It holds 1–12 tasks.
+  - An engine Lead names that wasn't offered becomes Lead's own engine, and the row says so.
+  - A reply without a readable block fails the plan with "Lead's reply had no plan", and offers Plan again.
+  - Nothing is written until you choose **Create tasks**.
+- **Create tasks** puts the rows into the tracker (F-TK-01) as To do tasks in a new project named after the goal. Each task remembers its suggested engine, and F-TK-04's Execute dialog starts on that engine.
+- **Execute all** runs every task of the plan through F-TK-04's queue:
+  - each in its own worktree, at Edits;
+  - on its suggested engine, using that engine's account with the most room;
+  - with the independent review on.
+
+  At most 4 run at once and the rest queue. Like F-TK-04, it needs sign-in and Pro. On Free, the plan explains that where the button is, and the tasks stay usable.
+- **Not in this slice:** Lead answering agents' questions, reviews by a second engine, and merging. Review and merge stay yours.
+- A plan lives until it's created or discarded, or the app quits. Lead's thread keeps the reply.
+
+**Acceptance:**
+1. Plan with Lead opens a Lead chat in the chosen workspace whose first message has the goal, the offered engines with their usage, and the reply markers.
+2. A reply with a valid block becomes a draft of its tasks with their engines. An engine that wasn't offered falls back to Lead's, and a reply without a block fails the plan.
+3. Create tasks writes one To do task per row in a new project, each with its suggested engine. Nothing is written before it.
+4. Execute all starts one attempt per task on its suggested engine, in a worktree. On Free it starts none and says why.
+
 ### 4.9 RT: Routines
 
 #### F-RT-01 Routine model (P1, Pro)

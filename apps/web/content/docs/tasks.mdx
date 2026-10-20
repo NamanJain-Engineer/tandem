@@ -13,6 +13,14 @@ Tasks is a task tracker stored on your computer, in the app's data folder. Open 
 
 Agents in your threads and teammate chats read and update the same tasks through Vibezeo's tasks server, and so do Claude Code and Codex in terminal panes. Every change lands in the task's history with who made it, so you can see what an agent did. Threads on an SSH host or in WSL don't get the tasks server: it runs on this computer.
 
+## Plan with Lead
+
+Give Lead a goal and it splits it into tasks. On the Tasks page, choose **Plan with Lead…**, write the goal, and pick a workspace on this computer. Lead plans in a new chat in that workspace, where you can follow its reasoning and answer it. It reads the repository but changes nothing.
+
+Lead suggests an engine for each task. It sees which engines are installed and how much of each account's usage window is used. The plan comes back as a list you can edit: change titles and descriptions, move a task to another engine, or remove it. Nothing is created until you choose **Create tasks**. The tasks go into a new project named after the goal, and each remembers its engine.
+
+**Execute all** runs every task in its own worktree on its engine, with an independent review, at most 4 at once. Like running a single task, it's part of Pro. Review and merging stay with you: finished work shows in the Dashboard's review queue.
+
 ## Claims
 
 When several agents work in worktrees of one repository, each can say which files it's about to change. An agent claims files or folders with the tasks server's `claim` tool, saying what it's doing, and checks `list_claims` for what agents in the other worktrees claimed. A worktree's briefing asks its agent to do this. Claude Code in a terminal pane claims a file just by editing it, so agents that skip the tool are still counted. Only the file's path leaves the hook, never the change.

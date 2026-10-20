@@ -1499,7 +1499,7 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
   - worktrees (`competitive-gaps`): D-2520 to D-2539;
   - usage (`product-research`): D-2540 to D-2559;
   - reliability (`perf-open`): D-2560 to D-2579.
-  The review loop (`m16a-conductor`) still has D-2430 to D-2439. REMAINING's M18 section names each session's next features.
+  The review loop (`m16a-conductor`) still has D-2434 to D-2439. REMAINING's M18 section names each session's next features.
 - D-859: A read-only thread never joins the review queue (F-DB-04), found by chain24's review of F-CN-09.
   - **The bug:** the queue accepted any thread in a workspace. A second opinion's reviewer (F-WT-05) is a Read only thread in the worktree it reviews, so when it finished, the worktree's diff made it an item: the review showed another agent's work under the reviewer's name, and Send back (or walk-and-review's) typed "Address it…" into the reviewer while the agent that made the changes got nothing.
   - **The fix:** `reviews_thread` keeps threads that can change their folder (Edits or Full access); Read only threads and teammate chats stay out.
@@ -1974,6 +1974,29 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - E2E: m18-tk05, m18-db04 and m18-cn09, 3 of 3.
     - `f_cd_03_shell_starts_in_the_workspace_and_echoes` now waits for `pwd`'s line: under load it arrived after the echo's and failed one gate run.
 
+- [x] F-TK-06 Plan with Lead, bold bet B3's first slice (D-2430 to D-2433). Built after merging product-m0-m5 874d2fc4 (#83, #84 `docs/DESIGN.md`, #85).
+  - **Spec.** PRODUCT_SPEC F-TK-06 (P2, owned by M18; coverage 184, M18 owns 18).
+  - **Tracker.** `Issue.suggested_engine` and `SaveIssue.suggested_engine` (nullable, an engine id `^[a-z0-9-]{1,64}$`), left out of files when unset; `save_issue`'s schema takes it.
+  - **`services::plan`.**
+    - The prompt offers the installed chat engines with each account's fullest usage window, and asks for one JSON block between `PLAN-BEGIN-<nonce>` and `PLAN-END-<nonce>`.
+    - `parse` reads the last block (1–12 tasks; cuts titles, descriptions and reasons). An engine that wasn't offered falls back to Lead's.
+    - `PlanService` starts Lead's chat, polls it, and holds the drafts in memory (`tasks:plan`).
+    - `create_tasks` makes a project and To do tasks. `execute` calls `TaskExecService::can_execute` first, then one F-TK-04 run per task: a worktree, Edits, review on, and the engine's account with the most room (`roomiest`).
+  - **Commands.** `plan_start`, `plan_list`, `plan_get`, `plan_create_tasks`, `plan_execute` and `plan_discard`, with their permissions in `build.rs` and `capabilities/main.json`.
+  - **UI.**
+    - "Plan with Lead…" (a neutral button) and chips for unfinished plans in the Tasks page's header.
+    - The goal form, then the plan dialog: Lead planning (a working shape); the editable rows, with each row's engine menu showing its roomiest account; Create tasks; Execute all.
+    - On Free, Execute all isn't offered and the plan says why where it would be, with Upgrade when there's one. Failed plans offer Plan again.
+    - F-TK-04's Execute dialog starts on a task's suggested engine.
+    - The browser demo simulates the plan (its reasons say "Simulated in the demo"), so every state can be reviewed there.
+  - **Fake engine.** As a chat engine it answers a plan request with two tasks, the second on an engine that wasn't offered.
+  - **Tests.**
+    - Rust: 7 in `services::plan` (start, parse, draft and create, a reply without a plan, Execute all on Pro and on Free, names and accounts) and `tandem-tasks` F-TK-06.3.
+    - TS: `plan.test.tsx` (6), `tasks.test.tsx` F-TK-06.3, `demo.test.ts` F-TK-06.
+    - E2E: `m18-tk06-plan-with-lead.e2e.ts` (Free: Lead's chat, the draft, Create tasks, no Execute all; Pro: one run per task on its engine).
+  - **Docs.** ARCHITECTURE §3.2 (the `plan_*` commands), §3.3 (`tasks:plan`), §9.2 and §9.3 (`suggested_engine`), and the new §9.6; tasks.mdx "Plan with Lead".
+  - **Not in this slice:** Lead answering agents' questions, second-engine review of results, merging through the merge queue, and plans that survive a restart.
+
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
   - Only engines with a chat adapter can review. They are the ones whose read-only access is enforced by the adapter (Claude's disallowed tools, Codex's read-only sandbox, ACP's refused writes). The registry has no read-only flag for terminal engines, so they're listed and disabled.
@@ -2013,6 +2036,17 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - A path that newly overlaps is announced again; an overlap that ended and comes back is new.
   - The names are the worktrees' folder names (their slugs). In the tools, another worktree's name and intent are fenced as untrusted, like task comments, so one agent's intent can't instruct another.
   - Chat threads have no notice line yet; they see overlaps in `list_claims`.
+- D-2430: Lead plans in a new chat of its own, in the workspace, at Read access, and the app writes the tasks only after you approve.
+  - Lead could create tasks itself with `save_issue`, but then nothing would stand between its reply and the tracker. B3's "after you approve the plan" needs a draft first.
+  - The reply is one JSON block between markers that carry a fresh code, read like the handoff brief's (F-CD-16). A repository's text that Lead reads can't forge the markers, because it doesn't know the code. Anything that does get through still meets you before it's written.
+  - The chat is attended and visible, so you can read Lead's reasoning and answer it there. That's B3's "one thread with Lead".
+- D-2431: Lead suggests engines, Vibezeo offers them. The offer is the installed engines with a chat adapter, since a task runs as a chat (F-TK-04), each with its accounts' fullest usage window. The registry has no "strengths" data, so Lead judges from the task and the room left.
+  - An engine Lead names that wasn't offered becomes Lead's own and the row says so, rather than failing the plan.
+  - Execute all uses each engine's account with the most room: the lowest fullest window, else the default.
+- D-2432: The suggested engine is stored on the task (`suggested_engine`), not only in the plan. A plan lives in memory and ends with the app, but its tasks outlive it, and Execute starts on their engine later too.
+- D-2433: Execute all is refused as a whole on Free or signed out (`can_execute` before the first run), never partway through.
+  - On Free the plan doesn't show a disabled button. It says, where the button would be, that running tasks is part of Pro and that the tasks are saved (DESIGN §5.5 rules 2 and 4).
+  - Each task runs in its own worktree at Edits with the review on: F-TK-04's defaults, with no Full access and no shared folder from a batch. A plan's runs queue behind F-TK-04's 4 at once.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

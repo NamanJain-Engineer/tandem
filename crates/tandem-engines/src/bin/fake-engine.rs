@@ -44,6 +44,9 @@
 //! terminal pane's), which it starts once and keeps, as engines keep their
 //! MCP servers; it prints `tasks[<server pid>]: <answer>` (D-1606).
 //!
+//! As a chat engine, a plan request (F-TK-06) is answered with two tasks
+//! between its markers, the second on an engine that wasn't offered.
+//!
 //! `/edit <path>` (as `claude`) reports an Edit of that file in the cwd
 //! (`PreToolUse` with its `file_path`), appends a line to it, then Stop
 //! (F-TK-05 inferred claims).
@@ -185,6 +188,32 @@ fn send_line(v: serde_json::Value) {
 /// A second opinion (F-WT-05): findings on the first added line of the
 /// first two files in the prompt's diff (the second by its file name only),
 /// one on a line the diff doesn't show, and a free line.
+/// Lead's answer to a plan request (F-TK-06): two tasks between the
+/// prompt's markers, the second on an engine Vibezeo didn't offer.
+fn plan_reply(text: &str) -> Option<String> {
+    let nonce = text
+        .split("PLAN-BEGIN-")
+        .nth(1)?
+        .split_whitespace()
+        .next()?
+        .to_string();
+    let first = text
+        .split("Engines a task can run on")
+        .nth(1)?
+        .lines()
+        .find_map(|l| l.strip_prefix("- `"))?
+        .split('`')
+        .next()?
+        .to_string();
+    let plan = serde_json::json!({"tasks": [
+        {"title": "Add the OAuth routes", "description": "Done when /auth/google answers.", "engine": first, "why": "It has room left"},
+        {"title": "Write the sign-in page", "description": "A page with both buttons.", "engine": "no-such-engine"}
+    ]});
+    Some(format!(
+        "I read the repository.\nPLAN-BEGIN-{nonce}\n{plan}\nPLAN-END-{nonce}\nTwo tasks."
+    ))
+}
+
 fn second_opinion_reply(text: &str) -> Option<String> {
     if !text.contains("second opinion") || !text.contains("## Findings") {
         return None;

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type {
+  PlanView,
   AppBoot,
   AuthState,
   DashboardItem,
@@ -326,6 +327,21 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     }
     expect(error.code).toBe("unavailable");
     expect(error.message).toContain("running on your computer");
+  });
+
+  it("F-TK-06 the demo simulates Lead's plan, creates its tasks, and can't run them", async () => {
+    core = new DemoCore(0);
+    const started = core.handle("plan_start", { workspaceId: "ws_demo", goal: "Add dark mode" }) as PlanView;
+    expect([started.state, started.threadId]).toEqual(["planning", ""]);
+    await new Promise((r) => setTimeout(r, 10));
+    const ready = (core.handle("plan_list", {}) as PlanView[])[0]!;
+    expect(ready.state).toBe("ready");
+    expect(ready.tasks.map((t) => t.engineId)).toEqual(["claude", "codex", "claude"]);
+    expect(ready.tasks[0]!.why).toContain("Simulated in the demo");
+    const created = core.handle("plan_create_tasks", { id: ready.id, tasks: ready.tasks.slice(0, 2) }) as PlanView;
+    expect(created.issueIds).toEqual(["TAN-1", "TAN-2"]);
+    expect((core.handle("task_get", { id: "TAN-2" }) as { issue: Issue }).issue.suggested_engine).toBe("codex");
+    expect(() => core?.handle("plan_execute", { id: ready.id })).toThrow();
   });
 
   it("F-TK-03 the demo keeps tasks in the page: quick add, edits with revisions and history, comments, archive", () => {

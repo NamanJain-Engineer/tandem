@@ -339,7 +339,9 @@ impl TaskExecService {
     }
 
     /// Execute… (F-TK-04): needs sign-in and Pro; Full only when chosen.
-    pub async fn execute(self: &Arc<Self>, input: ExecuteInput) -> Result<AttemptView, IpcError> {
+    /// Sign-in and the plan: what every run needs (F-TK-06's Execute all
+    /// asks before it starts any).
+    pub fn can_execute(&self) -> Result<(), IpcError> {
         let host = self.host()?;
         if !host.signed_in() {
             return Err(IpcError::new(
@@ -353,6 +355,12 @@ impl TaskExecService {
                 "Running tasks is part of Pro. You can still track tasks for free.",
             ));
         }
+        Ok(())
+    }
+
+    pub async fn execute(self: &Arc<Self>, input: ExecuteInput) -> Result<AttemptView, IpcError> {
+        self.can_execute()?;
+        let host = self.host()?;
         if input.access == Access::Full && !input.full_confirmed {
             return Err(IpcError::new(
                 ErrorCode::Invalid,
@@ -1335,6 +1343,7 @@ pub(crate) mod tests {
             archived: false,
             result: None,
             attempts: vec![],
+            suggested_engine: None,
         };
         let b = briefing(&issue, &[], None);
         let label = untrusted::label("the task tracker");

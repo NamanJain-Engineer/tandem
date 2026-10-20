@@ -386,6 +386,42 @@ describe("F-TK-04 Execute and runs", () => {
     fireEvent.click(screen.getByTestId("task-run-stop"));
     await waitFor(() => expect(screen.getByTestId("task-run").dataset.state).toBe("stopped"));
   });
+
+  it("F-TK-06.3 a plan's task starts Execute on the engine Lead suggested", async () => {
+    const t = tracker([issue(1, { suggested_engine: "codex" })]);
+    let started: Record<string, unknown> | undefined;
+    fakeBackendAdd(t, {
+      task_attempts_list: () => [],
+      task_execute: (a) => {
+        started = a?.input as Record<string, unknown>;
+        return {
+          attempt: {
+            id: "atm_1",
+            issueId: "TAN-1",
+            engineId: "codex",
+            state: "queued",
+            threadId: null,
+            error: null,
+            reviewVerdict: null,
+          },
+          queuePosition: 1,
+        };
+      },
+    });
+    await openTask(t, "pro");
+    act(() =>
+      useEngines.setState({
+        list: [
+          { spec: { id: "claude", label: "Claude Code" }, install: {}, chatCapable: true },
+          { spec: { id: "codex", label: "Codex" }, install: {}, chatCapable: true },
+        ] as never,
+        loaded: true,
+      }),
+    );
+    expect(screen.getByRole("combobox", { name: "Runner" }).textContent).toContain("Codex");
+    fireEvent.click(screen.getByTestId("task-execute-start"));
+    await waitFor(() => expect(started?.engineId).toBe("codex"));
+  });
 });
 
 /** Adds handlers to the fake tracker's backend. */

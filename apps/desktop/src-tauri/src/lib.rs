@@ -54,6 +54,12 @@ macro_rules! app_commands {
             commands::tasks::task_connections_list,
             commands::tasks::task_connection_revoke,
             commands::task_exec::task_execute,
+            commands::plan::plan_start,
+            commands::plan::plan_list,
+            commands::plan::plan_get,
+            commands::plan::plan_create_tasks,
+            commands::plan::plan_execute,
+            commands::plan::plan_discard,
             commands::task_exec::task_attempts_list,
             commands::task_exec::task_attempt_stop,
             commands::task_exec::task_attempt_resume,
@@ -1180,6 +1186,11 @@ pub fn run() {
                 let _ = state
                     .review
                     .set(services::review_queue::start(handle.clone()));
+                // F-TK-06: Plan with Lead.
+                let _ = state.plan.set(services::plan::PlanService::new(
+                    std::sync::Arc::new(services::plan::AppHost { app: handle.clone() }),
+                    state.bus.clone(),
+                ));
                 // F-TK-05: a new claim overlap is a notice in both agents'
                 // panes, and the queue shows every overlap there is.
                 {

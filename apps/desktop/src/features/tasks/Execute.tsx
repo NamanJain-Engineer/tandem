@@ -90,7 +90,9 @@ export function ExecuteDialog({
     [teammates, engines],
   );
   const ws = workspace || workspaces[0]?.id || "";
-  const who = runner || runners[0]?.value || "";
+  // A plan's task starts on the engine Lead suggested (F-TK-06).
+  const suggested = issue.suggested_engine ? `en:${issue.suggested_engine}` : "";
+  const who = runner || (runners.some((r) => r.value === suggested) ? suggested : runners[0]?.value) || "";
   const busySlots = attempts.filter((a) => ACTIVE.has(a.attempt.state)).length;
   const full = busySlots >= MAX_ACTIVE;
   const canStart = !block && !!ws && !!who && !busy && (access !== "full" || fullOk);

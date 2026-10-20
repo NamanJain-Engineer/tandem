@@ -439,6 +439,13 @@ impl TaskStore {
                 )));
             }
         }
+        if let Some(Some(e)) = &req.suggested_engine {
+            if !valid_engine_id(e) {
+                return Err(TaskError::invalid(
+                    "suggested_engine is an engine id: lowercase letters, digits and -.",
+                ));
+            }
+        }
         if let Some(Some(a)) = &req.assignee {
             if !meta.actors.iter().any(|x| &x.id == a) {
                 return Err(TaskError::invalid(format!(
@@ -589,6 +596,7 @@ impl TaskStore {
             archived: false,
             result: req.result,
             attempts: Vec::new(),
+            suggested_engine: req.suggested_engine.flatten(),
         };
         let _g = lock::acquire(&self.lock_path(&format!("ISSUE-{number}")))?;
         self.write_json(&self.issue_path(number), &issue)?;
@@ -694,6 +702,9 @@ impl TaskStore {
             }
             if let Some(a) = req.assignee {
                 i.assignee = a;
+            }
+            if let Some(e) = req.suggested_engine {
+                i.suggested_engine = e;
             }
             if let Some(r) = req.result {
                 i.result = Some(r);
@@ -941,6 +952,7 @@ fn diff_fields(a: &Issue, b: &Issue) -> Vec<(&'static str, Value, Value)> {
     field!(labels);
     field!(project);
     field!(assignee);
+    field!(suggested_engine);
     field!(archived);
     field!(result);
     if a.attempts != b.attempts {

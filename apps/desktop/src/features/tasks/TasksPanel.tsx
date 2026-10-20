@@ -15,12 +15,15 @@ import {
   IconButton,
   Input,
   Skeleton,
+  StatusDot,
   cx,
   useToast,
 } from "@tandem/ui";
 import { t } from "../../i18n";
+import { usePlans } from "../../stores/plan";
 import { STATUS_ORDER, useTasks } from "../../stores/tasks";
 import { useExecuteBlock } from "./Execute";
+import { PlanWithLead } from "./PlanWithLead";
 import { TaskDetailView, actorName, priorityLabel, statusLabel } from "./TaskDetail";
 
 /** Wide enough for the list beside the open task. */
@@ -243,17 +246,48 @@ export function TasksPanel({ header }: { header?: ReactNode }) {
   );
 }
 
+/** Plans this run holds that aren't finished, newest first (F-TK-06). */
+function OpenPlans() {
+  const plans = usePlans((s) => s.plans);
+  const live = Object.values(plans)
+    .filter((p) => p.state !== "started")
+    .sort((a, b) => b.createdAt - a.createdAt);
+  const STATUS = { planning: "working", failed: "error", ready: "waiting", created: "done" } as const;
+  return (
+    <>
+      {live.map((p) => (
+        <Button
+          key={p.id}
+          size="sm"
+          variant="ghost"
+          onClick={() => usePlans.getState().open(p.id)}
+          data-testid="plan-reopen"
+        >
+          <StatusDot status={STATUS[p.state as keyof typeof STATUS]} />
+          <span className="max-w-48 truncate">{t("plan.chip", { goal: p.goal.split("\n")[0] ?? "" })}</span>
+        </Button>
+      ))}
+    </>
+  );
+}
+
 /** The full-page view (Agent mode's "Tasks"). */
 export function TasksPage() {
+  const [asking, setAsking] = useState(false);
   return (
     <TasksPanel
       header={
         <div className="flex h-11 shrink-0 items-center gap-2 border-b border-divider px-3">
           <h1 className="text-md font-semibold text-fg">{t("tasks.title")}</h1>
           <span className="flex-1" />
+          <OpenPlans />
+          <Button size="sm" variant="secondary" onClick={() => setAsking(true)} data-testid="plan-with-lead">
+            {t("plan.open")}
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => void useTasks.getState().load()}>
             {t("tasks.refresh")}
           </Button>
+          <PlanWithLead asking={asking} onAskingChange={setAsking} />
         </div>
       }
     />

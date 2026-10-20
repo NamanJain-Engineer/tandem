@@ -14,6 +14,17 @@ pub const TITLE_MAX: usize = 200;
 pub const DESCRIPTION_MAX: usize = 50_000;
 pub const COMMENT_MAX: usize = 20_000;
 pub const IDEMPOTENCY_KEY_MAX: usize = 128;
+/// An engine id (`claude`, `gemini-cli`): what `suggested_engine` holds.
+pub const ENGINE_ID_MAX: usize = 64;
+
+/// Lowercase letters, digits and `-`, 1–64 characters.
+pub fn valid_engine_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= ENGINE_ID_MAX
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -114,6 +125,10 @@ pub struct Issue {
     /// The Markdown summary of the work (F-TK-04).
     pub result: Option<String>,
     pub attempts: Vec<AttemptRecord>,
+    /// The engine a plan suggested for it (F-TK-06): Execute starts there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub suggested_engine: Option<String>,
 }
 
 /// A row in the list.
@@ -302,6 +317,13 @@ pub struct SaveIssue {
     )]
     #[ts(optional, type = "string | null")]
     pub assignee: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[ts(optional, type = "string | null")]
+    pub suggested_engine: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub result: Option<String>,

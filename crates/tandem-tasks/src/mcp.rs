@@ -173,6 +173,7 @@ pub fn tools() -> Vec<Tool> {
                 "labels": {"type": "array", "items": {"type": "string"}},
                 "project": {"type": ["string", "null"]},
                 "assignee": {"type": ["string", "null"]},
+                "suggested_engine": {"type": ["string", "null"], "pattern": "^[a-z0-9-]{1,64}$"},
                 "result": {"type": "string", "maxLength": 50000},
                 "expected_revision": {"type": "integer", "minimum": 1},
                 "idempotency_key": {"type": "string", "minLength": 1, "maxLength": 128}
