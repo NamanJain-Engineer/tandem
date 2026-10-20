@@ -99,6 +99,56 @@ impl PhoneHost for FakeHost {
         self.ran.lock().expect("lock").push(routine_id.into());
         Ok(())
     }
+    async fn review_current(&self) -> Result<PhoneReview, String> {
+        use crate::services::review_queue::{ReviewRisk, ReviewRiskRule};
+        Ok(PhoneReview {
+            item: Some(PhoneReviewItem {
+                key: "pane:pn_1".into(),
+                title: "Ada".into(),
+                engine: Some("Claude Code".into()),
+                workspace: "shop".into(),
+                branch: Some("tandem/fix-auth".into()),
+                finished_at: 1,
+                closing: Some(
+                    "token sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789 rotated".into(),
+                ),
+                files: 1,
+                additions: 30_000,
+                deletions: 0,
+                risks: vec![ReviewRisk {
+                    rule: ReviewRiskRule::Migrations,
+                    files: vec!["db/migrations/1.sql".into()],
+                }],
+                check: None,
+                changed: false,
+            }),
+            // Twelve files at the per-file cap, and an .env file.
+            files: (0..12)
+                .map(|n| PhoneDiffFile {
+                    path: format!("db/migrations/{n}.sql"),
+                    change: "added".into(),
+                    additions: 30_000,
+                    deletions: 0,
+                    patch: "+x\n".repeat(15_000),
+                    truncated: false,
+                    withheld: false,
+                })
+                .chain([PhoneDiffFile {
+                    path: ".env.local".into(),
+                    change: "modified".into(),
+                    additions: 1,
+                    deletions: 0,
+                    patch: "+SMTP_PASS=Tr0ub4dor&3\n".into(),
+                    truncated: false,
+                    withheld: false,
+                }])
+                .collect(),
+            position: 1,
+            total: 1,
+            omitted: 0,
+        })
+    }
+
     async fn queued_notice(&self, approval: &ApprovalView, device: &str) {
         self.notices
             .lock()
@@ -493,6 +543,74 @@ async fn f_rm_03_each_command_needs_its_grant_and_grants_change_only_from_the_ma
     .await;
     assert_eq!(routine["error"]["code"], "forbidden");
     assert!(r.host.ran.lock().expect("lock").is_empty());
+}
+
+#[tokio::test]
+async fn f_cn_09_5_a_big_review_reaches_the_phone_in_one_frame_with_view_only_cut_and_redacted() {
+    let r = rig();
+    let mut phone = paired(&r).await;
+    // View comes with pairing: no other grant is needed to read it. The
+    // reply goes through the sealed path, so it must fit in one frame.
+    let res = cmd(&r, &mut phone, 1, "review.current", json!({})).await;
+    assert_eq!(res["ok"], true, "{res}");
+    assert!(res.to_string().len() <= MAX_PLAINTEXT, "fits a frame");
+    let data = &res["data"];
+    assert_eq!(data["item"]["title"], "Ada");
+    assert_eq!(data["item"]["risks"][0]["rule"], "migrations");
+    assert_eq!(
+        (data["position"].as_u64(), data["total"].as_u64()),
+        (Some(1), Some(1))
+    );
+    let files = data["files"].as_array().expect("files");
+    assert!(files
+        .iter()
+        .all(|f| f["patch"].as_str().expect("patch").chars().count() <= MAX_DIFF_FILE_CHARS));
+    assert!(files.iter().any(|f| f["truncated"] == true));
+    // The .env file's values never leave the computer.
+    let sent = files.len() as u64 + data["omitted"].as_u64().expect("omitted");
+    assert_eq!(sent, 13);
+    assert!(!res.to_string().contains("Tr0ub4dor"));
+    let closing = data["item"]["closing"].as_str().expect("closing");
+    assert!(!closing.contains("sk-ant-api03"), "{closing}");
+}
+
+#[test]
+fn f_cn_09_5_patches_shrink_until_the_reply_fits_then_files_go_from_the_end() {
+    let file = |n: usize, len: usize| PhoneDiffFile {
+        path: format!("f{n}"),
+        change: "modified".into(),
+        additions: 1,
+        deletions: 0,
+        patch: "y".repeat(len),
+        truncated: false,
+        withheld: false,
+    };
+    let review = |files| PhoneReview {
+        item: None,
+        files,
+        position: 0,
+        total: 0,
+        omitted: 0,
+    };
+    let big = review_for_phone(review(
+        (0..12).map(|n| file(n, MAX_DIFF_FILE_CHARS)).collect(),
+    ));
+    assert!(serde_json::to_string(&big).expect("json").len() <= REVIEW_BUDGET);
+    assert_eq!(big.files.len(), 12, "every file keeps its place");
+    assert!(big.files.iter().all(|f| f.truncated));
+    // Thousands of small files: names alone don't fit, so some go.
+    let many = review_for_phone(review((0..5_000).map(|n| file(n, 10)).collect()));
+    assert!(serde_json::to_string(&many).expect("json").len() <= REVIEW_BUDGET);
+    assert_eq!(many.files.len() as u32 + many.omitted, 5_000);
+    assert!(many.omitted > 0);
+    // A small review is untouched.
+    let small = review_for_phone(review(vec![file(0, 100)]));
+    assert!(!small.files[0].truncated);
+    let env = review_for_phone(review(vec![PhoneDiffFile {
+        path: "config/.env".into(),
+        ..file(0, 40)
+    }]));
+    assert!(env.files[0].withheld && env.files[0].patch.is_empty());
 }
 
 #[tokio::test]

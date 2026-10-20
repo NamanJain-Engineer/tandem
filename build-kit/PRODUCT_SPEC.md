@@ -2036,6 +2036,50 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 1. A teammate without the permission gets no schedule tools.
 2. `tandem__schedule_create` with access Full is rejected.
 
+#### F-RT-06 Night Shift: run at reset (P2, Pro)
+**Story:** My plan's usage windows refill while I'm away, and that capacity goes to waste. I want to queue a task to start on an account I choose when that account's window resets, overnight if need be, and find a summary in the morning, on my phone too.
+
+**Behavior:**
+- **Entry:** "Run at reset…" beside Execute… on a task (F-TK-04), with the same block as Execute (sign-in, Pro's task execution). It opens UI-171 with:
+  - **Account:** every account whose engine can run tasks (a chat engine, as Execute). Each shows its next reset:
+    - the reset time of its fullest usage window (F-AC-04);
+    - or, when the engine reports no windows, the reset time of the last usage limit a pane hit on that account (F-AC-05);
+    - or else "No reset time known yet". Such an account can't be picked.
+  - **Workspace, isolation, access and review,** as Execute (a new worktree and Edits by default; Full only with its explicit choice).
+- **The plan:** UI-171 states the plan in words before anything is saved: "Starts {task} on {account} ({engine}) at {time}, when its {window} resets. In a new worktree, with Edits access. It waits for that account's reset and never uses another account."
+  - When background routines are off (F-RT-03), it adds: "Vibezeo must be open then, or turn on Run even when Vibezeo is closed in Routines."
+  - **Schedule run** saves it. That click is the user's approval of the plan.
+- **On the task:** each scheduled run shows "Runs at {time} on {account}" with **Cancel**. A run that has started shows its attempt in Runs, as Execute does.
+- **At the reset:** Vibezeo reads the account's usage again (F-AC-04).
+  - If its fullest window is still at 95% or more with a later reset, the run waits for that reset ("Waiting for {account} to reset at {time}").
+  - Otherwise it starts task execution (F-TK-04) with that account and engine and the saved choices.
+  - It never uses another account or engine (F-AC-05, out of scope §6.7). A start that fails (signed out, plan, engine missing, the queue's limit) is marked "Couldn't start" with the reason, and isn't retried.
+- **With the app closed:** the background runner (F-RT-03, `--run-routines`) starts a due run.
+  - It keeps its process, and the app lock, while the run goes on, for at most 8 hours (routines' passes stop at 50 minutes). At 8 hours it stops the run, which needs the user: "Stopped after 8 hours: the most a run gets while Vibezeo is closed."
+  - UI-171 says so up front when background routines are on: "If Vibezeo is closed then, the run gets up to 8 hours."
+  - While a background pass holds the lock, an app that opens doesn't tick Night Shift runs and doesn't settle task attempts; it does both once it holds the lock.
+- **A run whose process died** (the background runner killed, the computer off) ends as needing the user, with its attempt's reason ("Vibezeo closed during the run."), the next time Vibezeo or the background runner starts. The summary counts it.
+- **Morning summary** (Settings › Notifications › "Night Shift summary at", 8:00 AM by default):
+  - At that time, if any Night Shift runs ended since the last summary, one notification: "Night Shift: {n} done, {m} need you" / the tasks' titles. "Need you" means failed, stopped or couldn't start. Its source opens Tasks.
+  - A paired phone with push turned on (F-RM-06) gets the same summary as a push alert. When the background runner wrote the summary (Vibezeo closed), the alert waits in the Night Shift's file and goes out when Vibezeo next opens, if that's within a day.
+- **Opening Vibezeo while a run works** never stops it: until the background runner ends and lets go of the app lock, Vibezeo leaves that run's thread, attempt and schedule alone, and it reads the schedule again before starting anything, so a run is never started twice.
+  - Nothing ran: no summary.
+- **Storage:** `$DATA/night-shift.json` (atomic writes): each run's task, workspace, account, engine, choices, start time, state (`scheduled`, `waiting`, `started`, `done`, `needs_you`, `cancelled`), attempt and reason. Nothing leaves the machine beyond what task execution and the phone's push already send.
+
+**Acceptance:**
+1. With an account whose 5-hour window resets at 3:10 AM, "Run at reset" shows that time in the plan; Schedule run saves it, the task lists "Runs at 3:10 AM on {account}", and nothing starts before then.
+2. At 3:10 (a mocked clock), the run starts task execution with that account and engine, even when another account has more room.
+3. When the account is still at 95% or more with a later reset, the run waits for that reset and starts then. It never uses another account.
+4. Cancel before the reset removes the run, and nothing starts.
+5. An account with no known reset can't be picked, and Free shows Execute's Pro block.
+6. At the summary time after two runs ended (one done, one failed), one notification reads "Night Shift: 1 done, 1 needs you". The next day, with nothing new, there's none. A paired phone with push on is queued the same alert.
+7. With the app closed and background routines on, `--run-routines` starts a due run and keeps waiting while it runs, past routines' 50 minutes, up to 8 hours; at 8 hours the run is stopped and needs the user.
+8. A run whose attempt was left running by a process that died ends as "needs you" with the attempt's reason the next time the app or the background runner starts, and the next summary counts it.
+9. While the background runner holds the app lock, the app starts no Night Shift run and settles no task attempt.
+10. Opening the app while the background runner's run is working leaves that run's thread and turn working; only threads still working once the app holds the lock are settled to interrupted.
+11. A run the background runner started while the app waited for the lock isn't started again by the app, and the app's next change keeps the runner's record of it.
+12. A summary written by the background runner reaches a paired phone with push on when the app next opens (within a day), once.
+
 ### 4.10 PL: Plugins and tandem-gateway
 
 #### F-PL-01 Gateway process (P1)
@@ -2524,6 +2568,7 @@ Each ready module needs:
 | Teammates | `open_teammate`, `message_teammate`, `create_teammate(description)` (confirm before saving), `pin_teammate`, `read_teammate_memory`, `list_routines`, `run_routine` |
 | Tasks | `create_task`, `execute_task(id, …)` (confirm), `list_tasks` |
 | Find | `find_work(query)` (F-CN-05) |
+| Review (F-CN-09) | `review_next`, `review_send_back(text)`, `review_approve` (the review queue, F-DB-04; nothing merges) |
 | App | `get_setting(key)`, `set_setting(key, value)` (**closed list**: theme, notifications, sounds, dictate engine, microphone, teammate mail pause, Conductor voice/tone/verbosity), `get_usage`, `get_credits`, `check_updates` |
 
 - **Prompt refinement:** before `prompt_pane` or `send_to_thread` delivers text, the doer rewrites the spoken prompt into a clear instruction. The user hears a one-line paraphrase, and can say "send it as I said" to skip this.
@@ -2617,6 +2662,42 @@ Each ready module needs:
 
 **Acceptance:**
 1. The device-policy unit test (shared with F-DI-03) covers the call path.
+
+#### F-CN-09 Walk-and-review (P2)
+**Story:** Away from my desk with headphones on, I ask Conductor what's ready and go through the review queue (F-DB-04) by voice: what each agent did, what it touched, whether the check passed. I send work back with a spoken comment or approve it, and I see the diff on my phone. Merging waits for me at the desk.
+
+**Behavior (first slice: hosted voice, three tools and the phone's diff):**
+- **Conductor's Review tools** (a new group in F-CN-02's table), over the review queue:
+  - `review_next`: moves to the next item to review in risk order (F-DB-04's sort), after the one it's on, and says:
+    - who and on which branch, and how long ago it finished;
+    - the first 300 characters of its closing message;
+    - the diffstat, the risk labels and the check's result.
+
+    Diffs are read fresh first, so an approved item whose diff moved comes back as Changed. It remembers the diff it described. The facts come first and the agent's own words last.
+
+    At the end it says "Nothing left to review", or how many of the items the user heard still wait for a decision, plus how many worktree items are approved and ready to merge at the desk.
+  - The walk belongs to one call: it starts over when a call starts or ends.
+  - `review_send_back(text)`: sends the spoken comment to the current item's agent, refined like `send_to_thread` (F-CN-02):
+    - to a terminal agent, a review prompt typed into its pane: "Review of your changes on <branch>:", then the comment, then "Address it, then say what you changed.";
+    - to a thread, the same text as a message.
+
+    An agent that's waiting on an approval gets nothing, and Conductor says why. The item leaves the queue once its agent starts working (F-DB-04).
+  - `review_approve`: approves the current item with the diff `review_next` described, compared with the diff there now. If it changed, nothing is approved, Conductor says "It changed since I read it; I'll read it again", and the next `review_next` reads that item first (F-DB-04's stale rule). The answer counts what's ready to merge.
+  - **Only what the user heard.** `review_send_back` and `review_approve` work only once the answer that described the item has been spoken: never in the same request as its `review_next`, and never because of the agent's own words.
+  - No tool merges, discards or stops. Those need the desktop (F-TL-06 rule 5).
+- **The phone** (F-RM-03 web app and F-RM-05 app) gets a **Review** tab. It shows the item Conductor is on, or else the first item to review. The tab has:
+  - the title, branch, engine, closing message, diffstat, risk labels and check;
+  - the diff, read only: each file's patch, redacted like other text sent to the phone and cut at 20,000 characters. The whole reply fits in one sealed message (about 60 KB): the longest patches are cut further, then the last files are left out and counted. A `.env` file's changes are never sent; the tab names the file.
+
+  It asks again only when the queue changes (the snapshot carries the queue's revision). The command is `review.current`, under the View grant. The phone can't approve, send back or merge from it in this slice.
+- **Local voice** (Dictate's local Whisper and a local voice) comes in a later slice. Calls use hosted voice as before (F-CN-01).
+
+**Acceptance:**
+1. With two items, one touching migrations, `review_next` describes that one first (its title, branch, diffstat, labels and check), then the other. A third call says nothing's left and how many are approved.
+2. `review_send_back("handle expired tokens too")` types a review prompt containing the comment into the current terminal agent's pane; for a thread item it sends the comment to the thread. A pane waiting on an approval gets nothing.
+3. `review_approve` approves the current item only after its description was spoken, against the diff there now. If the diff changed after `review_next`, it isn't approved, the answer says it changed, and the next `review_next` reads it again.
+4. The tool catalog has no merge, discard or local-review tool, and the API's catalog matches the app's.
+5. The phone's `review.current` returns the current item and its diff under the View grant, in one sealed message even for a large change, with `.env` files withheld. The Review tab shows it, or "Nothing to review" when the queue is empty. `review.current` is the phone's only review command.
 
 ### 4.14 RM: Remote
 
@@ -3143,6 +3224,40 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
 **Acceptance:**
 1. A Team member with audit on generates an audit event for a Full-access session start, while a Pro user generates nothing.
 
+#### F-TL-11 Agent sandbox, Linux first (P2)
+**Story:** I let agents work in auto mode, and I don't want one of them reading my SSH keys, writing outside its folder, or planting a git hook that runs later outside its reach. I want agent panes to see only what their work needs, whichever engine they run.
+
+**Behavior:**
+- **Setting:** Settings › Engines › "Sandbox agent panes": **Off** (default) or **Workspace**. It applies to agent panes started after the change, in folders on this computer. SSH and WSL panes are never sandboxed.
+- **How:** on Linux, the engine's own command runs under bubblewrap (`bwrap`), found on the login PATH. The pane's shell stays outside the sandbox: when the engine exits, the shell is back.
+  - Vibezeo never installs it. Without `bwrap`, or when it can't make a sandbox here (user namespaces off), the setting shows the reason ("Install bubblewrap (the bwrap command) to sandbox agents.") and Workspace can't be chosen. If it stops working after it was turned on, agent panes start unsandboxed, each chip says "Not sandboxed" with the reason, and the first such pane of a launch raises one notification ("An agent started without the sandbox").
+  - Engines that keep their sign-in in the user's home folder (no provider home: Cursor Agent, Gemini CLI, Copilot CLI and the others without one) start unsandboxed, their chip saying why, since their own home would be read-only.
+  - On macOS and Windows the setting reads "Not available on this system yet", through the same interface.
+- **Workspace policy:**
+  - **The whole filesystem is read-only,** apart from these writable areas:
+    - the pane's folder (the workspace or its worktree);
+    - for a worktree, the repository's git folder, so commits work;
+    - the account's provider home;
+    - Vibezeo's tasks folder (the `tandem-tasks` server the engine starts);
+    - `/tmp`, shared with the rest of the computer (engines and their tools write there);
+    - an empty `~/.cache`.
+  - **Hidden** (they read as empty): `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.docker`, `~/.kube`, `~/.netrc`, `~/.local/share/keyrings`, Vibezeo's own data folder (its database of every project's threads, the other accounts' provider homes, teammates), and the other worktrees of the repository. From the data folder only the tasks folder (writable), the status socket's folder and the pane's staged clipboard images (read-only) and this account's provider home (writable) come back.
+  - **Git internals stay read-only** inside the writable folders: `.git/hooks` and `.git/config` (and the repository's for a worktree), the hooks folder even when it doesn't exist yet, and the folder `core.hooksPath` names. An agent can't plant a hook that later runs outside the sandbox.
+  - **Not covered:** agents already running for the user behind a socket (`ssh-agent`, `gpg-agent`, an unlocked desktop keyring) stay reachable, as for any program the user runs; scripts a hook calls from elsewhere in the folder are ordinary files there (the change shows in the diff).
+  - **The network is shared** (engines need it for inference).
+- **The engine signs in by itself, as always.** The sandbox only narrows what the agent's process can reach. Vibezeo never reads, copies or proxies the engine's credentials. The account's provider home stays writable, so the engine's own sign-in refresh works.
+- **Where it shows:** a "Sandboxed" chip in the agent pane's header (tooltip: "Writes only to this folder, its git data and the engine's own home; can't read your key files"). A write the sandbox refuses reaches the engine as its own "Read-only file system" error.
+
+**Data:** setting `agent_sandbox` (`"off"` | `"workspace"`). Nothing else is stored.
+
+**Acceptance:**
+1. With Workspace on Linux, an agent pane can create a file in its folder and can't create one in `$HOME`.
+2. Reading `~/.ssh/id_ed25519` from a sandboxed pane fails, and so does reading another account's provider home or Vibezeo's database; the pane's staged clipboard images stay readable.
+3. Writing `.git/hooks/pre-commit` from a sandboxed pane fails, while a commit in a worktree succeeds.
+4. Without `bwrap` (or where it can't run), the setting says why and Workspace can't be turned on. If it stops running after it was on, agent panes start unsandboxed with the chip saying why, and one notification per launch says so. An engine with no provider home starts unsandboxed with the chip saying why. On macOS and Windows the setting says it isn't available yet.
+5. The engine's command line inside the sandbox is the same as without it, its environment is the same, and its provider home is writable. No file under a provider home is read by Vibezeo to build the sandbox.
+6. With the setting Off, agent panes start exactly as before.
+
 ### 4.19 EX: Extras
 
 Features beyond the original spec that make working with coding agents faster, safer or more pleasant. They're all local: nothing here sends anything off the machine. Built in M17.
@@ -3431,6 +3546,79 @@ Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1�
 5. Side by side opens one tab with two browser panes loading the two lanes' preview addresses.
 6. On a filesystem with copy-on-write, copied files share their data with the main checkout's (the clone count equals the copied count); on one without, the copy falls back to an ordinary copy and the files are byte for byte the same.
 7. `preview` without `ports`, a `port` offset outside the block, or a `path` not starting with `/` makes the file invalid, naming the problem.
+
+
+#### F-WT-07 Local merge queue (P2)
+**Story:** My agents finish a dozen branches a day. I want them landed one after another, each tested against what landed before it, without a pull request or CI bill for each, and a way back if the batch was a mistake.
+
+**Behavior:**
+- **Opening it.** "Land worktrees…" in a repository's rail menu and every worktree's ⋯ menu opens UI-155 for the repository. Local folders only: on SSH hosts and in WSL the entry is disabled.
+- **The candidates.** The repository's worktrees whose branch has commits its current branch (the **base**) doesn't, each with its commit count and the overlap forecast against the base (F-WT-03): "No conflicts expected", "Conflicts in N files" or "No forecast". They're listed, and land, in forecast order: no conflicts first, then fewest conflicting files, then no forecast; ties go to the oldest worktree. All are ticked; a worktree with uncommitted changes can't be ticked ("Commit or stash its changes first"), nor can a missing one.
+- **The check.** A **Check command** field, filled with the last one used for this repository on this computer (empty the first time). It runs in each worktree with the login environment and the worktree's variables (F-WT-06), up to 30 minutes; its output is redacted (F-TL-02). Empty lands without a check, after a warning in the dialog.
+- **Landing.** **Land** starts when the base's checkout has no uncommitted tracked changes and is on a branch. For each ticked worktree in turn:
+  1. merges the base's commit into the worktree (`git merge --ff --no-edit`), and notes the worktree's resulting commit;
+  2. runs the check in the worktree;
+  3. merges that noted commit into the base with `--no-ff` (F-CD-15), as "Merge branch '<branch>'".
+
+  What lands is exactly what was checked, into exactly the base the run started on. The queue stops, saying why, when:
+  - the base's checkout moved during the landing: another branch or a detached HEAD, or a commit that isn't the queue's ("{base} moved during the landing");
+  - the worktree isn't on its own branch, or its branch got new commits or its tracked files changed during the check (a formatter, a snapshot update): "{branch} changed during its check" (nothing of it lands);
+  - a merge would write a file that exists on disk but isn't committed in that checkout (an ignored `.env`, say): it's refused before merging, naming the file, so nothing uncommitted is ever overwritten;
+  - a merge conflicts; the merge is aborted (`git merge --abort`), so the worktree or base is as it was; if the abort itself fails, the queue says so instead of reporting a conflict;
+  - a check fails; it shows its last 200 lines (at most 64 KiB) with **Send failure to agent**.
+
+  The worktrees after a stop are untouched. **Stop** kills a running check (its whole process tree, on Windows too) and stops the queue before its next step; what landed stays landed. Quitting the app stops the queue the same way, and a merge the quit interrupted is aborted the next time the repository's landing is opened, which says so.
+- **Never pushes.** Landing never pushes or fetches.
+- **Send failure to agent.** Types into the worktree's agent (chosen as in F-WT-02, or **Copy** when none runs there) a prompt naming the branch, the check command and its exit code, with the output behind the untrusted label and fence (`tandem_core::untrusted`, rule 8). Only on a click.
+- **Undo landing.** Once a run lands its first worktree, it records the base's branch, its commit before the run and each landed merge, kept on this computer (a run that lands nothing leaves the previous record alone). **Undo landing** (in UI-155 while a landing can be undone), after a confirm, moves the base branch back to that commit (`git reset --keep`). It's refused, saying why, when:
+  - the base checkout is on another branch or has uncommitted tracked changes;
+  - the base's first-parent history since the recorded commit isn't exactly the landed merges (a commit was added during or after the landing);
+  - a remote-tracking branch contains a landed merge (it was pushed).
+
+  The worktrees keep the base merged into them, so a later worktree keeps the changes of the ones landed before it; the confirm says so.
+
+**Acceptance:**
+1. Three worktrees whose checks pass land in forecast order: the base gains three `--no-ff` merge commits, in that order, and no push or fetch runs.
+2. A worktree whose check fails stops the queue at it: the base doesn't get its merge, the worktrees after it are untouched, and its output's tail is shown. Send failure to agent types a prompt with the branch, the command, the exit code and the output between untrusted fences.
+3. A conflict stops the queue with the base unchanged for that worktree and the merge aborted (no merge in progress, the worktree at its previous commit).
+4. Undo landing restores the base branch to the recorded commit after a confirm. It's refused when a remote-tracking branch contains a landed merge, or the base has a commit that isn't a landed merge, made during the landing or after it.
+5. Land refuses to start while the base checkout has uncommitted tracked changes, or a worktree isn't on its branch; a worktree with uncommitted changes can't be ticked.
+6. Stop kills a running check and ends the queue, and Stop before the check starts means it never runs: worktrees landed before it stay landed, later ones are untouched.
+7. A commit on the base during a check, a commit in the worktree during its check, or a check that edits tracked files stops the queue before that worktree lands, and nothing unchecked lands.
+8. A worktree that would replace a file present but not committed in the base (an ignored `.env`) isn't merged, and the file is unchanged.
+
+#### F-WT-08 CI results and review comments back to the agent (P2)
+**Story:** CI failed on my agent's pull request, and a reviewer left five comments. I want the agent to see the failure and the comments without me copying logs out of a browser.
+
+**Behavior:**
+- **Asking first.** Vibezeo reads pull requests only through the user's own `gh` (GitHub CLI), which signs itself in; Vibezeo never reads, stores or passes a token. Before its first `gh` call for a repository it asks once: "Check pull requests for this repository? Vibezeo will run your GitHub CLI (gh) to read this repository's pull requests and their checks." It's asked from "Check pull request" in a worktree's ⋯ menu (UI-156). Allowed repositories are remembered on this computer, and "Stop checking pull requests" in the same menu forgets one. Until then no `gh` call is made for it.
+- **The worktree's pull request.** For a worktree whose branch has an open pull request (`gh pr view <branch>`), its rail row shows the checks: a spinner while any run, "1 check failed: test" when some failed, a check mark when all passed. Read every 2 minutes while the rail is open and the window focused, but only for worktrees whose checks are still running (or not read yet); a worktree with no pull request, or whose checks all finished, is read every 15 minutes, and any worktree on **Refresh checks** in its menu or **Refresh** in UI-157. A poll never starts while the last one still runs. Local folders only.
+- **Send failure to agent.** The row's checks open UI-157 with each check; on a failed one, **Send failure to agent** types into the worktree's agent (as F-WT-02) a prompt with the check's name, its link, and the failing job's log tail (the last 200 lines of `gh run view --job <id> --log-failed`, at most 16 KiB, for GitHub Actions jobs; when `gh` can't read it, the prompt says why), all CI text without terminal escapes and behind the untrusted label and fence (rule 8). Only on a click; nothing is ever sent by itself.
+- **Import review comments.** **Import review comments** in the worktree's diff (F-WT-02) adds the pull request's line comments (`gh api …/pulls/<n>/comments`) to the review bar, each on its file and line with its author, marked as imported. Imported comments go into the review prompt behind the untrusted label and fence, their file and line inside the fence too; the user's own comments don't. Imported comments can be removed but not edited. A comment on a line that no longer exists (outdated) is left out; one import brings at most 40 comments of up to 2,000 characters each, and says what it left out. Importing again adds only comments this worktree hasn't imported before, even after they were sent or removed. Resolved threads are imported like open ones: GitHub's REST API doesn't say which are resolved.
+- **GitLab.** Merge requests on GitLab (F-WT-04) aren't read yet: their rows show no checks, and "Check pull request" says so.
+
+**Acceptance:**
+1. With a fake `gh` returning one failed check named `test`, the row shows "1 check failed: test". Send failure to agent types a prompt containing the job name and the log tail between untrusted fences.
+2. Import review comments adds each pull request line comment to the review bar with its file, line and author; sending puts their text between untrusted fences.
+3. No `gh` call is made for a repository before the user allows "Check pull requests for this repository".
+4. Nothing reaches an agent without a click: polling only updates the row.
+
+#### F-WT-10 Intent radar (P2)
+**Story:** Two agents work in parallel worktrees. One renames `Session`; the other adds a call to `Session.refresh`. Git won't say anything until the merge. I want to know while it's still cheap to change.
+
+**Behavior:**
+- **Changed symbols.** For each local worktree, Vibezeo parses the files it changed since its base (as F-WT-03 counts them, uncommitted work included) with tree-sitter, for TypeScript and TSX (`.ts`, `.tsx`, `.mts`, `.cts`), Rust (`.rs`) and Python (`.py`). Other files, files over 512 KiB and files past the first 300 changed ones are skipped and counted. In both the base version (`git show <base>:<path>`) and the worktree's, it lists definitions: functions, methods, classes, structs, enums, traits, interfaces, type aliases and modules, each with its qualified name (`Session.refresh`, `auth::Session::refresh`). A definition is **added**, **removed** or **changed** (its text differs) between the two; a rename shows as one removed and one added. It also notes the names the worktree's new or changed lines **use** (identifiers on lines the diff adds).
+- **When it updates.** After each checkpoint (F-EX-01) in a worktree's folder, which is taken before each agent turn, and when "Check overlap…" opens. Only files whose content changed since the last update are parsed again; the others are reused. Parsing reads only, off the app's main threads; nothing is written to the worktree.
+- **Shared symbols.** Two worktrees of the same repository share a symbol when both changed or removed a definition with the same name, or one removed or changed a definition whose name the other's new lines use. Names shorter than 3 characters aren't matched. Changes to the same definition in both, and a removal against a use, are what's reported; a use against a definition the other only added is not.
+- **Where it shows.** UI-153 (Check overlap…) lists each sibling's shared symbols next to its shared files, with what each side did ("renamed or removed here, used there"). A worktree sharing symbols with a sibling shows a radar mark on its rail row naming them.
+- **Warning.** When a checkpoint makes a pair of worktrees share a symbol they didn't share before, Vibezeo shows a notice naming both branches and the symbols, with **Warn both agents**, which types into each worktree's agent (as F-WT-02) a short note: which symbols the other worktree changed and how, with the symbol names and paths behind the untrusted label and fence (rule 8, they come from code an agent wrote). Only on a click. The same pair and symbols don't raise a second notice.
+- Local folders only: on SSH hosts and in WSL there's no radar.
+
+**Acceptance:**
+1. A TypeScript worktree that renames `class Session` to `UserSession`, and one that adds `session.refresh()` with `new Session()`, share `Session`: removed in the first, used in the second. UI-153 lists it for both.
+2. Changed symbols are found for TypeScript, Rust and Python: a changed method body is "changed" with its qualified name, a new function "added", a deleted one "removed"; a file in another language is skipped and counted.
+3. Two worktrees that only add unrelated functions share nothing; two that both change the body of `parse` share `parse`.
+4. After a checkpoint makes two worktrees share a symbol, one notice appears; Warn both agents types a note into each worktree's agent with the symbol between untrusted fences, and nothing is typed without the click. Another checkpoint with the same overlap shows no second notice.
 
 ---
 

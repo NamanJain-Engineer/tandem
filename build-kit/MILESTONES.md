@@ -1999,6 +1999,58 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ---
 
+## M18 · Next features: merge and CI (M)
+
+**Goal.** Land agent branches without a pull request each, and bring CI and review results back to the agents: a local merge queue with undo (F-WT-07) and CI results and review comments from `gh` (F-WT-08). From `docs/NEXT_FEATURES.md` (§1 #12, #13). Built on branch `competitive-gaps`; decisions D-2451–D-2459.
+
+**Owns:** F-WT-07, F-WT-08 (P2)
+**Prerequisites.** M17 · Worktree workflow (F-WT-02, F-WT-03, F-WT-04), F-CD-15 (merge), F-EX-04's check runner, F-WT-06 (the worktree's variables).
+
+**Ordered tasks**
+1. **Local merge queue (F-WT-07).** `tandem_git` gains the queue's git steps (merge the base in, abort, `--no-ff` into the base, reset back). `services::merge_queue`: the plan (candidates in forecast order), the run (one worktree at a time, the check through Best of N's runner, stop), the undo record in `$DATA/landing.json` and its refusals, the failure prompt through `tandem_core::untrusted`. Commands `merge_queue_plan|start|get|stop|undo`; UI-155 Land worktrees.
+2. **CI results and review comments (F-WT-08).** The per-repository allow list; `gh pr view`, `gh pr checks`, `gh run view --log-failed` and `gh api` through the login shell, behind a trait with a fake; the rail row's checks; Send failure to agent; Import review comments into F-WT-02's bar; the prompt with imported text fenced.
+
+**Verification**
+```bash
+cargo test -p tandem-git f_wt_07 && cargo test -p tandem-desktop --lib f_wt_0
+pnpm --filter desktop exec vitest run -t "F-WT-0"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-wt0[78]*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-WT07-1 Merge queue.** A repository with three worktrees with a commit each and a check that passes. Expected: Land worktrees lands all three, the base has three merge commits; a fourth whose check fails stops the queue with Send failure to agent; Undo landing restores the base.
+- **E2E-M18-WT08-1 CI back to the agent.** A repository whose worktree branch has a pull request on a fake `gh`. Expected: nothing is called before the allow; the row shows the failed check; Send failure to agent types the fenced log tail into the worktree's agent; Import review comments fills the review bar.
+
+**Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
+
+---
+
+## M18 · Next features: intent radar (S)
+
+**Goal.** Warn about conflicts that git can't see yet: which symbols each worktree changed, and when two parallel worktrees touch the same one (F-WT-10). From `docs/NEXT_FEATURES.md` (§3 B6, first slice). Built on branch `competitive-gaps`; decisions D-2520–D-2539.
+
+**Owns:** F-WT-10 (P2)
+**Prerequisites.** F-WT-03 (the overlap check), F-EX-01 (checkpoints), F-WT-02 (typing into a worktree's agent).
+
+**Ordered tasks**
+1. **Symbol index.** `tandem_git::symbols`: tree-sitter definitions for TypeScript/TSX, Rust and Python with qualified names, base against worktree (added, changed, removed), and the names new lines use; skip and count other files and big ones.
+2. **Radar.** `services::radar`: per-worktree indexes refreshed on `checkpoint:created` and by `lane_overlap`; shared symbols between siblings; `radar:overlap` for newly shared pairs; `lane_radar` and `lane_radar_note`.
+3. **UI.** Shared symbols in UI-153, the rail's radar mark, the notice with Warn both agents.
+
+**Verification**
+```bash
+cargo test -p tandem-git f_wt_10 && cargo test -p tandem-desktop --lib f_wt_10
+pnpm --filter desktop exec vitest run -t "F-WT-10"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-wt10*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-WT10-1 Intent radar.** A TypeScript repository with two worktrees: one renames `class Session`, the other adds a call to `Session.refresh`. Expected: Check overlap lists `Session` for both with what each did; the rail marks both worktrees.
+
+**Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
+
+---
+
 ## M18 · Next features: engines (M)
 
 **Goal.** The engine work `docs/NEXT_FEATURES.md` ranks first (§1 #1, #3, #5, #9): one instructions file for every engine, an engine catalog that keeps up with the vendors, engine versions under the user's control, and one library of every engine's local sessions. Built on its own branch (decisions D-2400–D-2419); each feature lands on its own and can ship in any release after it's green.
@@ -2033,23 +2085,49 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 **Goal.** The usage work `docs/NEXT_FEATURES.md` ranks (§1 #4, #8 and §3 B1): a forecast of when each account runs out before its window resets, a guard against runaway agents, and the Night Shift, work that waits for a reset. Built on branch `product-research`; decisions D-2460–D-2479.
 
-**Owns:** F-AC-08, F-AC-09 (P2)
+**Owns:** F-AC-08, F-AC-09, F-RT-06 (P2)
 **Prerequisites.** M6 and M16 usage polling and the usage dashboard (F-AC-04, F-AC-07).
 
 **Ordered tasks**
 1. **Usage forecast (F-AC-08).** Per-window run-out at the current pace in the usage chip, "Who's using it" from the engines' own local logs (numbers only, F-AC-07's parser), the opt-in `usage_forecast` notification, and the launch sheet's near-limit note naming an account with more room; never switches accounts.
 2. **Runaway guard (F-AC-09).** `tandem_engines::guard` (limits and per-session state), `tandem_pty::suspend` (`ProcessControl`: SIGSTOP/SIGCONT on Unix, unavailable on Windows) and `PtyManager::foreground_group`; the registry's `interrupt` and `subagent_tools`; `services::runaway` over the status snapshot and the tool sink; UI-170 on the pane, the `runaway` notification, Settings › Teammates › Runaway guard (`runaway_guard`, `runaway_action`); commands `runaway_list`, `runaway_dismiss`, `runaway_pause`, `runaway_resume`.
+3. **Night Shift (F-RT-06), first slice.** `services::night_shift` (`$DATA/night-shift.json`): each account's next reset (its fullest usage window's, else a limit's), "Run at reset…" on a task with the plan in words (UI-171), a due run that waits while its account is still full and otherwise starts task execution on that account only, the GUI's 30 s tick and `headless::night_pass` in `--run-routines`, the morning summary (`night_shift_summary_at`, a `night_shift` notification and a queued phone push alert); commands `night_accounts`, `night_list`, `night_schedule`, `night_cancel`.
 
 **Verification**
 ```bash
-cargo test -p tandem-engines f_ac_0 && cargo test -p tandem-pty f_ac_09 && cargo test -p tandem-desktop --lib f_ac_0
-pnpm --filter desktop exec vitest run -t "F-AC-0"
-dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-ac*.e2e.ts'
+cargo test -p tandem-engines f_ac_0 && cargo test -p tandem-pty f_ac_09 && cargo test -p tandem-desktop --lib f_ac_0 && cargo test -p tandem-desktop --lib f_rt_06
+pnpm --filter desktop exec vitest run -t "F-AC-0|F-RT-06"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-{ac,rt}*.e2e.ts'
 ```
 
 **E2E**
 - **E2E-M18-AC08 Forecast** (`m18-ac08-forecast.e2e.ts`). A usage window that will run out before it resets: the chip's popover says when; the notification fires once per window when turned on.
 - **E2E-M18-AC09 Runaway guard** (`m18-ac09-runaway.e2e.ts`). The fake Claude Code starts subagents past the limit: the card and the notification; Dismiss keeps it quiet for the turn; with "Pause the agent", an agent that ignores the interrupt key is stopped, and Resume continues it.
+- **E2E-M18-RT06 Night Shift** (`m18-rt06-night-shift.e2e.ts`). Run at reset on a task shows the plan and saves it, Cancel removes it; a due run waits while the fake Codex account is at 97%, then starts task execution on that account after its reset; the summary says "Night Shift: 1 done" once.
+
+---
+
+## M18 · Next features: sandbox (M)
+
+**Goal.** The agent sandbox `docs/NEXT_FEATURES.md` ranks (§1 F-TL-11), Linux first: with "Workspace" on, an agent pane's engine runs under bubblewrap and can write only to its folder, its git data, its provider home and Vibezeo's tasks folder, and can't read the user's keys. Built on branch `product-research`; decisions D-2474 on.
+
+**Owns:** F-TL-11 (P2)
+**Prerequisites.** M4 agent panes and provider homes (F-EN-01, F-AC-01), M17's worktrees (F-WT-01).
+
+**Ordered tasks**
+1. **Policy and detection.** `tandem_engines::sandbox`: `SandboxPolicy`, `bwrap_args` (read-only root, the writable binds, the hidden secrets, provider homes and other worktrees, then `.git/hooks` and `.git/config` read-only again), the `Sandboxer` trait with `Bubblewrap::detect` (found on the login PATH and probed with a real one-command sandbox) on Linux and `NotYet` elsewhere, behind `cfg(target_os)`. Never installs anything.
+2. **Agent panes.** `TerminalService` wraps the engine's own argv (the shell stays outside) when `agent_sandbox = "workspace"`, for local folders only; it records each pane's `PaneSandbox` and publishes `sandbox:pane`; commands `sandbox_status`, `sandbox_panes`.
+3. **UI and docs.** The "Sandboxed" chip on agent panes (or why not), Settings › Engines › Sandbox agent panes with the reason when unavailable, and Engines › Sandbox agent panes (Linux) in the docs. The fake engine's `/sh <cmd>` reports what the sandbox lets it do.
+
+**Verification**
+```bash
+cargo test -p tandem-engines f_tl_11 && cargo test -p tandem-desktop --lib f_tl_11
+pnpm --filter desktop exec vitest run -t "F-TL-11"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-tl11-*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-TL11 Agent sandbox** (`m18-tl11-sandbox.e2e.ts`, needs `bwrap` on the test machine). With the setting off, an agent pane has no chip. With Workspace, the next agent pane shows "Sandboxed"; its engine writes in its folder but not in `$HOME` or `/var/tmp`, can't read `~/.ssh/id_ed25519`, can't write `.git/hooks/pre-commit`, and can commit.
 
 ---
 
@@ -2057,22 +2135,24 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 **Goal.** The review loop from `docs/NEXT_FEATURES.md` (§1 #6 and #2, §3 B4): another engine's read-only second opinion, one review queue across engines, and walking that queue by voice and on the phone. Built on `m16a-conductor`; decisions D-2420 to D-2439.
 
-**Owns:** F-WT-05, F-DB-04 (P2)
+**Owns:** F-WT-05, F-DB-04, F-CN-09 (P2)
 **Prerequisites.** M17 · Worktree workflow (F-WT-02's review bar), F-TH-09 (Read only threads), F-EX-01 (checkpoints).
 
 **Ordered tasks**
 1. **Second opinion (F-WT-05).** `services::second_opinion` (the prompt, the reply parser, the runner and its bus event), `lane_second_opinion`, the reviewer sheet and the review bar's General comment and reviewing state.
 2. **Review queue (F-DB-04).** `services::review_queue` (the status listener, the risk rules, diff-hash approvals, snooze, the repository's check), `review_*` commands, the Dashboard panel's Review view.
+3. **Walk-and-review, first slice (F-CN-09).** The Review group of Conductor tools over the queue's walk, the phone's `review.current` and Review tab (web and app). Later: local voice and voice second opinions.
 
 **Verification**
 ```bash
-cargo test -p tandem-desktop --lib f_wt_05 && cargo test -p tandem-desktop --lib f_db_04
+cargo test -p tandem-desktop --lib f_wt_05 && cargo test -p tandem-desktop --lib f_db_04 && cargo test -p tandem-desktop --lib f_cn_09
 pnpm --filter desktop exec vitest run src/features/code/secondOpinion.test.tsx src/features/dashboard/reviewQueue.test.tsx
-dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-{wt05,db04}-*.e2e.ts'
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-{wt05,db04,cn09}-*.e2e.ts'
 ```
 
 **E2E**
 - **E2E-M18-WT-05 Second opinion.** A worktree with a Claude Code agent and two changed files; Codex reviews it. Expected: a Read only Codex thread in the worktree whose first message has the task, the diff and the headings; two placed comments and a General one; Send to agent carries all three; a worktree with no changes has nothing to review.
+- **E2E-M18-CN-09 Walk-and-review.** A Pro call with a done agent in a git folder. Expected: `review_next`, `review_send_back` (the review prompt reaches the agent's pane), the agent finishes again, `review_next` and `review_approve` approve it; a paired phone's `review.current` returns the item and its migration diff, and `review.approve` is refused.
 - **E2E-M18-DB-04 Review queue.** Two worktree agents and a thread. Expected: the agent that changed a migration and deleted a test joins within 1.5 s with both rules; the one without changes doesn't; the thread joins; approve, then a new change shows Changed since you approved; Send back opens the diff, Merge the forecast; the check passes for `true` and fails with exit 1.
 
 **Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
@@ -2081,7 +2161,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **174 features** (65 P0, 67 P1, 42 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 8 so far (F-AC-08, F-AC-09, F-DB-04, F-EN-07, F-EN-09, F-WT-05, F-WT-06 and F-WT-09). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **183 features** (65 P0, 67 P1, 51 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 17 so far (F-AC-08, F-AC-09, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-RT-06, F-TH-17, F-TL-11, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -2101,7 +2181,9 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **174 features** (6
 | F-EN-03 | P1 | M4 | F-EN-04 | P0 | M4 | F-EN-05 | P0 | M4 | F-EN-06 | P1 | M4 |
 | F-AC-08 | P2 | M18 | F-AC-09 | P2 | M18 | F-DB-04 | P2 | M18 | F-EN-07 | P2 | M18 |
 | F-EN-09 | P2 | M18 | F-WT-05 | P2 | M18 | F-WT-06 | P2 | M18 | F-WT-09 | P2 | M18 |
-| F-EN-08 | P2 | M18 | F-TH-17 | P2 | M18 | F-EN-10 | P2 | M18 | | | |
+| F-EN-08 | P2 | M18 | F-TH-17 | P2 | M18 | F-WT-07 | P2 | M18 | F-WT-08 | P2 | M18 |
+| F-CN-09 | P2 | M18 | F-RT-06 | P2 | M18 | F-TL-11 | P2 | M18 | F-WT-10 | P2 | M18 |
+| F-EN-10 | P2 | M18 | | | | | | | | | |
 | F-AC-01 | P0 | M4 | F-AC-02 | P0 | M6 | F-AC-03 | P0 | M6 | F-AC-04 | P1 | M6 |
 | F-AC-05 | P0 | M6 | F-AC-06 | P1 | M6 | F-AC-07 | P2 | M16 | F-DB-01 | P0 | M5 |
 | F-DB-02 | P0 | M5 | F-DB-03 | P0 | M5 | F-AG-01 | P1 | M10 | F-AG-02 | P1 | M10 |
@@ -2128,7 +2210,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **174 features** (6
 | F-TL-05 | P1 | M15 | F-TL-06 | P0 | M15 | F-TL-07 | P1 | M13 | F-TL-10 | P1 | M13 |
 | F-RM-04 | P2 | M16 | F-RM-05 | P2 | M16 | F-RM-06 | P2 | M16 | F-RM-07 | P2 | M16 |
 
-**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 11 = 177 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
+**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 17 = 183 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|

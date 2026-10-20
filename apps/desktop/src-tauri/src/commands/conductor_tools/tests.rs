@@ -389,3 +389,224 @@ async fn f_cn_02_routine_and_handoff_tools_name_what_is_missing() {
     assert!(handoff.is_err(), "{handoff:?}");
     assert!(f.window.actions.lock().is_empty());
 }
+
+/// F-CN-09: a review queue over one finished thread.
+struct ReviewHost {
+    thread: ThreadId,
+    patch: Mutex<String>,
+    /// A terminal agent's item instead of the thread's.
+    pane: Option<String>,
+}
+
+#[async_trait::async_trait]
+impl crate::services::review_queue::QueueHost for ReviewHost {
+    async fn session(&self, _key: &str) -> Option<crate::services::review_queue::Session> {
+        Some(crate::services::review_queue::Session {
+            source: match &self.pane {
+                Some(pane_id) => SourceRef::Pane {
+                    pane_id: pane_id.clone(),
+                },
+                None => SourceRef::Thread {
+                    thread_id: self.thread.as_str().to_string(),
+                },
+            },
+            title: "Release".into(),
+            engine_id: Some("claude".into()),
+            workspace_id: "ws".into(),
+            workspace: "shop".into(),
+            root: std::path::PathBuf::from("/r"),
+            branch: Some("tandem/release".into()),
+            lane_id: Some("ws".into()),
+        })
+    }
+    async fn changes(
+        &self,
+        _s: &crate::services::review_queue::Session,
+    ) -> Option<Vec<tandem_git::FileDiff>> {
+        Some(vec![tandem_git::FileDiff {
+            path: "db/migrations/1.sql".into(),
+            old_path: None,
+            change: tandem_git::FileChange::Added,
+            additions: 3,
+            deletions: 0,
+            binary: false,
+            patch: self.patch.lock().clone(),
+            truncated: false,
+        }])
+    }
+    async fn closing(
+        &self,
+        _k: &str,
+        _s: &crate::services::review_queue::Session,
+    ) -> Option<String> {
+        Some("Bumped the version and added the migration".into())
+    }
+    async fn turn_checkpoint(
+        &self,
+        _k: &str,
+        _s: &crate::services::review_queue::Session,
+    ) -> Option<String> {
+        None
+    }
+    async fn checkpoint_diff(
+        &self,
+        _id: &str,
+    ) -> Result<Vec<tandem_git::FileDiff>, tandem_core::IpcError> {
+        Ok(Vec::new())
+    }
+    async fn repo(
+        &self,
+        _s: &crate::services::review_queue::Session,
+    ) -> crate::services::review_queue::RepoReview {
+        Default::default()
+    }
+    async fn run_check(&self, _c: &str, _cwd: &std::path::Path) -> (Option<i32>, String) {
+        (Some(0), String::new())
+    }
+    fn now(&self) -> i64 {
+        0
+    }
+}
+
+#[tokio::test]
+async fn f_cn_09_review_tools_walk_refuse_a_waiting_agent_and_approve() {
+    use crate::services::review_queue::ReviewQueue;
+    use tandem_core::status::{AgentStatus, SessionKey, StatusRecord};
+    let f = Fixture::new();
+    // Before the queue starts, the tools say so.
+    assert_eq!(
+        f.call("review_next", json!({})).await,
+        Err("The review queue is still starting.".into())
+    );
+    let id = f.thread("Release").await;
+    let review_host = Arc::new(ReviewHost {
+        thread: id.clone(),
+        patch: Mutex::new("+create table t;\n".into()),
+        pane: None,
+    });
+    let q = ReviewQueue::new(review_host.clone(), f.state().bus.clone());
+    let _ = f.state().review.set(q.clone());
+    assert_eq!(
+        f.call("review_next", json!({})).await,
+        Ok("Nothing left to review.".into())
+    );
+    assert_eq!(
+        f.call("review_send_back", json!({"text": "x"})).await,
+        Err("No review item is open: ask what's ready first".into())
+    );
+    q.on_status(
+        vec![StatusRecord {
+            key: SessionKey(format!("thread:{}", id.as_str())),
+            status: AgentStatus::Done,
+            reason: None,
+            since: 1,
+            ts: 1,
+            tool: None,
+            title: None,
+            preview: None,
+        }],
+        Vec::new(),
+    )
+    .await;
+    let said = f.call("review_next", json!({})).await.expect("next");
+    assert_eq!(
+        said,
+        "Release on tandem/release, finished just now. 1 file, 3 added, 0 removed. It touches migrations. It said: Bumped the version and added the migration."
+    );
+    // Not heard yet: the doer can't approve or send back in the same act.
+    assert!(f
+        .call("review_approve", json!({}))
+        .await
+        .expect_err("unheard")
+        .starts_with("The user hasn't heard"));
+    q.walk_heard();
+
+    // Waiting on an approval: nothing is sent, and it says why.
+    let (_view, _ticket) = f.state().approvals.broker.request(ApprovalRequest {
+        source: SourceRef::Thread {
+            thread_id: id.as_str().to_string(),
+        },
+        kind: ApprovalKind::Command,
+        summary: "Run `npm publish`".into(),
+        detail: String::new(),
+        options: vec![ApprovalScope::Once],
+    });
+    assert_eq!(
+        f.call("review_send_back", json!({"text": "handle expired tokens too"}))
+            .await,
+        Err("Release is waiting for approval, so nothing was sent. Tell the user to answer it first.".into())
+    );
+    assert!(threads::all_messages(&f.store(), &id)
+        .await
+        .expect("messages")
+        .is_empty());
+
+    // The agent changed it after Conductor read it out: no refresh from the
+    // desk, and still the approval goes by what's there now.
+    *review_host.patch.lock() = "+create table t2;\n".into();
+    assert_eq!(
+        f.call("review_approve", json!({})).await,
+        Err("It changed since I read it; I'll read it again".into())
+    );
+    let again = f.call("review_next", json!({})).await.expect("again");
+    assert!(again.starts_with("Release on tandem/release"), "{again}");
+    q.walk_heard();
+    assert_eq!(
+        f.call("review_approve", json!({})).await,
+        Ok("Approved Release. 1 approved, ready to merge when you're back at the desk.".into())
+    );
+    assert_eq!(
+        f.call("review_next", json!({})).await,
+        Ok(
+            "Nothing left to review. 1 approved, ready to merge when you're back at the desk."
+                .into()
+        )
+    );
+}
+
+#[tokio::test]
+async fn f_cn_09_2_a_terminal_agent_waiting_on_an_approval_gets_nothing() {
+    use crate::services::review_queue::ReviewQueue;
+    use tandem_core::status::{AgentStatus, SessionKey, StatusRecord};
+    let f = Fixture::new();
+    let id = f.thread("Release").await;
+    let q = ReviewQueue::new(
+        Arc::new(ReviewHost {
+            thread: id,
+            patch: Mutex::new("+x\n".into()),
+            pane: Some("pn_agent".into()),
+        }),
+        f.state().bus.clone(),
+    );
+    let _ = f.state().review.set(q.clone());
+    q.on_status(
+        vec![StatusRecord {
+            key: SessionKey("pane:pn_agent".into()),
+            status: AgentStatus::Done,
+            reason: None,
+            since: 1,
+            ts: 1,
+            tool: None,
+            title: None,
+            preview: None,
+        }],
+        Vec::new(),
+    )
+    .await;
+    f.call("review_next", json!({})).await.expect("next");
+    q.walk_heard();
+    let (_view, _ticket) = f.state().approvals.broker.request(ApprovalRequest {
+        source: SourceRef::Pane {
+            pane_id: "pn_agent".into(),
+        },
+        kind: ApprovalKind::Command,
+        summary: "Run `rm -rf build`".into(),
+        detail: String::new(),
+        options: vec![ApprovalScope::Once],
+    });
+    assert_eq!(
+        f.call("review_send_back", json!({"text": "handle expired tokens too"}))
+            .await,
+        Err("Release is waiting for approval, so nothing was sent. Tell the user to answer it first.".into())
+    );
+}

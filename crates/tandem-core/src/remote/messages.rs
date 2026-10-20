@@ -48,7 +48,7 @@ impl PhoneGrants {
 /// Every command the phone can send. Nothing here forces a lane removal,
 /// enables Full access, runs a shell command or answers a local-review
 /// prompt (F-TL-06 rule 5; `tests/invariants/tests/rule_5.rs`).
-pub const PHONE_COMMANDS: [&str; 8] = [
+pub const PHONE_COMMANDS: [&str; 9] = [
     "view.snapshot",
     "thread.read",
     "thread.send",
@@ -57,6 +57,8 @@ pub const PHONE_COMMANDS: [&str; 8] = [
     "routine.run_now",
     "push.register",
     "push.unregister",
+    // F-CN-09: the review item and its diff, read only.
+    "review.current",
 ];
 
 /// Where the phone's push token comes from (F-RM-06).
@@ -118,6 +120,8 @@ pub enum PhoneCommand {
         key: [u8; 32],
     },
     PushUnregister,
+    /// The review queue's current item and its diff (F-CN-09), read only.
+    ReviewCurrent,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -281,6 +285,7 @@ impl PhoneCommand {
                 }
             }
             "push.unregister" => PhoneCommand::PushUnregister,
+            "review.current" => PhoneCommand::ReviewCurrent,
             _ => return Err(CommandError::Unknown),
         })
     }
@@ -295,12 +300,15 @@ impl PhoneCommand {
             PhoneCommand::RoutineRunNow { .. } => "routine.run_now",
             PhoneCommand::PushRegister { .. } => "push.register",
             PhoneCommand::PushUnregister => "push.unregister",
+            PhoneCommand::ReviewCurrent => "review.current",
         }
     }
 
     pub fn grant(&self) -> PhoneGrant {
         match self {
-            PhoneCommand::ViewSnapshot | PhoneCommand::ThreadRead { .. } => PhoneGrant::View,
+            PhoneCommand::ViewSnapshot
+            | PhoneCommand::ThreadRead { .. }
+            | PhoneCommand::ReviewCurrent => PhoneGrant::View,
             PhoneCommand::ThreadSend { .. } => PhoneGrant::Chat,
             PhoneCommand::PaneType { .. } => PhoneGrant::Terminal,
             PhoneCommand::ApprovalDecide { .. } => PhoneGrant::Approvals,
@@ -438,6 +446,7 @@ mod tests {
         for (cmd, args, grant) in [
             ("view.snapshot", json!({}), PhoneGrant::View),
             ("thread.read", json!({"threadId": "th_1"}), PhoneGrant::View),
+            ("review.current", json!({}), PhoneGrant::View),
             (
                 "thread.send",
                 json!({"threadId": "th_1", "text": "hi"}),

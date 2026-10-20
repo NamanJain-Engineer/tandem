@@ -79,6 +79,11 @@ fn allowed(limits: &Limits, key: SettingKey, value: &Value) -> Result<(), IpcErr
 /// that sets one (`settings_set`, Conductor's `set_setting`) comes here.
 async fn store(state: &AppState, key: SettingKey, value: &Value) -> Result<(), IpcError> {
     allowed(&state.entitlements.limits(), key, value)?;
+    // The sandbox turns on only where it can run, so nobody believes
+    // they're sandboxed when they aren't (F-TL-11).
+    if key == SettingKey::AgentSandbox {
+        crate::commands::sandbox::may_turn_on(state.terminals.sandboxer().await.as_ref(), value)?;
+    }
     settings::set(&state.store, key, value.clone()).await?;
     stored(state, key, value);
     Ok(())

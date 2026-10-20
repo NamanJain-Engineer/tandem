@@ -245,7 +245,13 @@ describe("perf: terminals", () => {
       };
       requestAnimationFrame(tick);
     });
-    await $(`[data-testid="tab"][data-tab-id="${tab.id}"]`).click();
+    // Each agent is framed from the click that shows its tab, so the time a
+    // view waits to open counts too (D-141).
+    const clickedAt = (await browser.execute((sel: string) => {
+      const at = performance.now();
+      document.querySelector<HTMLElement>(sel)?.click();
+      return at;
+    }, `[data-testid="tab"][data-tab-id="${tab.id}"] button`)) as number;
     for (const id of agents) await waitForPaneText(id, "Fake Claude Code", 15_000);
     const gap = (await browser.execute(() => {
       const w = window as unknown as { __maxGap: number; __gapRun: boolean };
@@ -256,7 +262,7 @@ describe("perf: terminals", () => {
       string,
       { mounted: number; firstOutput?: number }
     >;
-    const framed = agents.map((id) => (times[id]?.firstOutput ?? Infinity) - (times[id]?.mounted ?? 0));
+    const framed = agents.map((id) => (times[id]?.firstOutput ?? Infinity) - clickedAt);
     record("sixAgentsFramedMs", Math.max(...framed), "<=", 300, "ms");
     record("sixAgentsMaxStallMs", gap, "<=", 100, "ms");
     // Back to the 16 shells for the rest.

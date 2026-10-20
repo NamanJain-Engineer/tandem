@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lane-check-failure"
+description = "Enables the lane_check_failure command without any pre-configured scope."
+commands.allow = ["lane_check_failure"]
+
+[[permission]]
+identifier = "deny-lane-check-failure"
+description = "Denies the lane_check_failure command without any pre-configured scope."
+commands.deny = ["lane_check_failure"]

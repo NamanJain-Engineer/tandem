@@ -175,6 +175,17 @@ macro_rules! app_commands {
             commands::lanes::lane_runtime,
             commands::lanes::lane_previews,
             commands::lanes::lane_preview_start,
+            commands::lanes::merge_queue_plan,
+            commands::lanes::merge_queue_start,
+            commands::lanes::merge_queue_get,
+            commands::lanes::merge_queue_stop,
+            commands::lanes::merge_queue_undo,
+            commands::lanes::pr_checks_allow,
+            commands::lanes::lane_checks,
+            commands::lanes::lane_check_failure,
+            commands::lanes::lane_review_comments,
+            commands::lanes::lane_radar,
+            commands::lanes::lane_radar_note,
             commands::lanes::worktree_env_check,
             commands::lanes::lane_create_pr,
             commands::lanes::lane_remove,
@@ -278,6 +289,12 @@ macro_rules! app_commands {
             commands::runaway::runaway_dismiss,
             commands::runaway::runaway_pause,
             commands::runaway::runaway_resume,
+            commands::night_shift::night_accounts,
+            commands::night_shift::night_list,
+            commands::night_shift::night_schedule,
+            commands::night_shift::night_cancel,
+            commands::sandbox::sandbox_status,
+            commands::sandbox::sandbox_panes,
             commands::data_controls::data_export,
             commands::data_controls::data_delete_local,
             commands::find_work::find_work,
@@ -663,6 +680,13 @@ fn spawn_background(state: &AppState) {
     let telemetry = state.telemetry.clone();
     tauri::async_runtime::spawn(telemetry.clone().run_uploader());
     tauri::async_runtime::spawn(state.audit.clone().run());
+    // F-WT-10: the intent radar follows checkpoints.
+    tauri::async_runtime::spawn(crate::services::radar::run(
+        state.store.clone(),
+        state.data.clone(),
+        state.bus.clone(),
+        state.terminals.clone(),
+    ));
     tauri::async_runtime::spawn(crate::services::hosted::run(
         state.entitlements.clone(),
         state.store.clone(),
@@ -931,6 +955,7 @@ pub fn run() {
         commands::test::test_spawn_log,
         commands::test::test_clock_advance,
         commands::test::test_usage_backdate,
+        commands::test::test_night_tick,
         commands::test::test_fixture_agent,
         commands::test::test_notifier_calls,
         commands::test::test_notifier_click,
@@ -1030,7 +1055,16 @@ pub fn run() {
                 let (auth, ent) = (state.auth.clone(), state.entitlements.clone());
                 let mut app_events = state.bus.subscribe(tandem_core::bus::Topic::App);
                 let mut plan_events = state.bus.subscribe(tandem_core::bus::Topic::Entitlement);
+                let routines = state.routines.clone();
+                let (restore, threads) = (state.restore.clone(), state.threads.clone());
                 tauri::async_runtime::spawn(async move {
+                    // Threads and attempts a headless pass is still running
+                    // aren't stale: settle them only once this app holds the
+                    // lock (F-RT-06, D-2540). The panes paused at launch.
+                    routines.wait_lock().await;
+                    if restore.settle_threads().await > 0 {
+                        threads.republish().await;
+                    }
                     exec.settle().await;
                     loop {
                         use tokio::sync::broadcast::error::RecvError;
@@ -1130,6 +1164,22 @@ pub fn run() {
                     .start(handle.clone(), notifier, recording);
                 // The runaway guard watches agents from here on (F-AC-09).
                 state.runaway.start(handle.clone());
+                // The Night Shift starts due runs and sends its summary (F-RT-06).
+                let night = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        let state = night.state::<AppState>();
+                        // A headless pass owns the runs until it ends (F-RT-06).
+                        if state.routines.holds_lock() {
+                            state.night_shift.tick(&state).await;
+                            // Summaries a headless pass wrote, or this tick.
+                            for alert in state.night_shift.take_alerts(state.clock.now_ms()) {
+                                state.phone.queue_alert(alert);
+                            }
+                        }
+                        state.clock.sleep(crate::services::night_shift::TICK).await;
+                    }
+                });
                 // F-DB-04: the review queue follows the status bus.
                 let _ = state
                     .review
@@ -1239,6 +1289,10 @@ pub fn run() {
                 state.apply_orphan_policy().await;
                 state.telemetry.upload_crashes().await;
             });
+            // Compiled only with debug assertions: `e2e` is always false in a
+            // release build, but the capability's text would still ship in
+            // the binary (scripts/check-release-harness.sh, D-1011).
+            #[cfg(debug_assertions)]
             if e2e {
                 app.add_capability(include_str!("../test-capability.json"))?;
             }
@@ -1272,6 +1326,8 @@ pub fn run() {
                 let state = handle.state::<AppState>();
                 state.terminals.shutdown(&state.data.scrollback());
                 state.remote.shutdown();
+                // F-WT-07: a landing's check doesn't outlive the app.
+                services::merge_queue::shutdown();
             }
         }),
         Err(err) => {
@@ -1387,8 +1443,8 @@ mod harness_tests {
         assert!(harness.contains("allow-test-auth-refresh"));
         let lib = include_str!("lib.rs");
         assert!(
-            lib.contains("if e2e {\n                app.add_capability"),
-            "the harness capability is gated on e2e"
+            lib.contains("#[cfg(debug_assertions)]\n            if e2e {\n                app.add_capability"),
+            "the harness capability is compiled only with debug assertions, and added only with e2e"
         );
         let commands = include_str!("commands/mod.rs");
         assert!(

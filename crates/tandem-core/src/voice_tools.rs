@@ -26,6 +26,8 @@ pub enum VoiceToolGroup {
     Tasks,
     Find,
     App,
+    /// F-CN-09: walking the review queue (F-DB-04).
+    Review,
 }
 
 /// What has to happen before a tool runs.
@@ -219,6 +221,10 @@ static TOOLS: &[VoiceToolSpec] = &[
     tool("get_usage", G::App, VOICE, Plain),
     tool("get_credits", G::App, cmd(&["billing.plans"]), Plain),
     tool("check_updates", G::App, VOICE, Plain),
+    // Review (F-CN-09): the queue by voice; merging needs the desk.
+    tool("review_next", G::Review, VOICE, Plain),
+    tool("review_send_back", G::Review, VOICE, Plain),
+    tool("review_approve", G::Review, VOICE, Plain),
 ];
 
 pub fn catalog() -> &'static [VoiceToolSpec] {
@@ -308,6 +314,9 @@ mod tests {
             "set_access",
             "approve_plugin",
             "resolve_approval",
+            "review_merge",
+            "merge_lane",
+            "discard_lane",
         ] {
             assert!(find(name).is_none(), "{name} must not be a voice tool");
         }

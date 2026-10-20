@@ -90,6 +90,11 @@
     "page": "notifications"
   },
   {
+    "default": "08:00",
+    "key": "night_shift_summary_at",
+    "page": "notifications"
+  },
+  {
     "default": false,
     "key": "usage_forecast_notify",
     "page": "notifications"
@@ -187,6 +192,11 @@
   {
     "default": {},
     "key": "engine_extra_args",
+    "page": "engines"
+  },
+  {
+    "default": "off",
+    "key": "agent_sandbox",
     "page": "engines"
   },
   {

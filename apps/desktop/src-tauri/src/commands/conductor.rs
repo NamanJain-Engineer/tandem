@@ -472,6 +472,25 @@ impl CallHost for AppHost {
             .after_call(&proposals, ended_at, seconds, &tools)
             .await;
     }
+    // F-CN-09: the review walk belongs to one call, and an item may be acted
+    // on only after the act that described it answered (D-2423).
+    fn call_started(&self) {
+        if let Some(q) = self.app.state::<AppState>().review.get() {
+            q.walk_reset();
+        }
+    }
+
+    fn call_ended(&self) {
+        if let Some(q) = self.app.state::<AppState>().review.get() {
+            q.walk_reset();
+        }
+    }
+
+    fn act_answered(&self) {
+        if let Some(q) = self.app.state::<AppState>().review.get() {
+            q.walk_heard();
+        }
+    }
 }
 
 /// Builds the controller once the app runs, and tidies the call log.

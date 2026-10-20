@@ -10,6 +10,7 @@
     "allow-test-spawn-log",
     "allow-test-clock-advance",
     "allow-test-usage-backdate",
+    "allow-test-night-tick",
     "allow-test-fixture-agent",
     "allow-test-notifier-calls",
     "allow-test-notifier-click",

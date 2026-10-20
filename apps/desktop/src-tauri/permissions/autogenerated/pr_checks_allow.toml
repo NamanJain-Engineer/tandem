@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pr-checks-allow"
+description = "Enables the pr_checks_allow command without any pre-configured scope."
+commands.allow = ["pr_checks_allow"]
+
+[[permission]]
+identifier = "deny-pr-checks-allow"
+description = "Denies the pr_checks_allow command without any pre-configured scope."
+commands.deny = ["pr_checks_allow"]

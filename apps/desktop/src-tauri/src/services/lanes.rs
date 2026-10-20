@@ -908,6 +908,8 @@ pub struct SiblingOverlap {
     pub lane_id: WorkspaceId,
     pub branch: String,
     pub files: Vec<String>,
+    /// F-WT-10: symbols both touch, from their tree-sitter indexes.
+    pub symbols: Vec<tandem_git::symbols::SharedSymbol>,
 }
 
 /// `lane_overlap`: shared files with sibling worktrees, and the forecast of
@@ -922,6 +924,9 @@ pub struct OverlapReport {
     pub forecast: tandem_git::overlap::Forecast,
     /// Uncommitted changes in this worktree, which the forecast can't see.
     pub uncommitted: u32,
+    /// F-WT-10: changed files not checked for symbols (other languages,
+    /// too big, past the cap).
+    pub unparsed: u32,
 }
 
 /// `lane_overlap` (F-WT-03). Reads only: the forecast merges in memory.
@@ -935,6 +940,8 @@ pub async fn overlap(
     let lane_repo = discover(&lane.root, FOLDER_MISSING)?;
     let base = lane.lane_base.clone().unwrap_or_default();
     let mine = changed_files(git, lane_repo.root(), &base).await?;
+    // F-WT-10: this worktree's symbols, parsed now.
+    let my_symbols = crate::services::radar::refresh(git, &lane).await?;
     let mut siblings = Vec::new();
     for other in workspaces::lanes(store, &parent.id).await? {
         if other.id == lane.id || !Path::new(&other.root).is_dir() {
@@ -949,11 +956,16 @@ pub async fn overlap(
         };
         let theirs = changed_files(git, other_repo.root(), &other_base).await?;
         let files = shared(&mine, &theirs);
-        if !files.is_empty() {
+        let symbols = match crate::services::radar::refresh(git, &other).await {
+            Ok(their_symbols) => crate::services::radar::shared(&my_symbols, &their_symbols),
+            Err(_) => Vec::new(),
+        };
+        if !files.is_empty() || !symbols.is_empty() {
             siblings.push(SiblingOverlap {
                 lane_id: other.id.clone(),
                 branch,
                 files,
+                symbols,
             });
         }
     }
@@ -977,6 +989,7 @@ pub async fn overlap(
         siblings,
         forecast,
         uncommitted: u32::try_from(uncommitted.len()).unwrap_or(u32::MAX),
+        unparsed: my_symbols.unparsed,
     })
 }
 
