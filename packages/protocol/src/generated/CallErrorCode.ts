@@ -3,4 +3,4 @@
 /**
  * Why a call couldn't start or had to end (UI-61 "Errors").
  */
-export type CallErrorCode = "connect_failed" | "offline" | "mic_not_delivering" | "time_cap" | "out_of_credits" | "signed_out" | "needs_pro" | "turned_off" | "rate_limited";
+export type CallErrorCode = "connect_failed" | "offline" | "mic_not_delivering" | "time_cap" | "out_of_credits" | "signed_out" | "needs_pro" | "turned_off" | "rate_limited" | "not_in_region";
