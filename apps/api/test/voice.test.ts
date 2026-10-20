@@ -301,6 +301,89 @@ describe("F-BE-08 a free primary with a backup (D-1013)", () => {
   });
 });
 
+describe("F-BE-08 Google's free tier never serves the EEA, Switzerland or the UK (D-1018)", () => {
+  let gemini: FakeVendor;
+  let backup: FakeVendor;
+  async function appWith(env: Record<string, string>, withBackup = true) {
+    await t.close();
+    gemini = new FakeVendor("gemini");
+    backup = new FakeVendor("openai");
+    t = await makeTestApp(env, { realtime: withBackup ? [gemini, backup] : [gemini] });
+  }
+  beforeEach(() => appWith({ CLIENT_COUNTRY_HEADER: "cf-ipcountry" }));
+
+  /** A session request from `country`, as the API's edge would tag it; undefined sends no header. */
+  const mintFrom = (bearer: string, country?: string, providers = ["gemini", "openai"]) =>
+    json(t, "POST", "/v1/voice/session", {
+      bearer,
+      body: { providers },
+      headers: country === undefined ? {} : { "cf-ipcountry": country },
+    });
+  const providerFrom = async (bearer: string, country?: string) => {
+    const res = await mintFrom(bearer, country);
+    expect(res.status, String(country)).toBe(200);
+    return ((await res.json()) as Minted).provider;
+  };
+
+  it("F-BE-08 a caller in the UK, Switzerland or the EEA gets the backup, never the free Gemini", async () => {
+    const { bearer } = await proUser("region1@tandem.test");
+    for (const country of ["GB", "CH", "DE", "NO", "IS", "LI", "RE", "gb"]) {
+      expect(await providerFrom(bearer, country), country).toBe("openai");
+    }
+    expect(gemini.calls).toBe(0);
+  });
+
+  it("F-BE-08 a caller anywhere else gets Gemini first", async () => {
+    const { bearer } = await proUser("region2@tandem.test");
+    for (const country of ["US", "IN", "BR", "JP"]) {
+      expect(await providerFrom(bearer, country), country).toBe("gemini");
+    }
+    expect(backup.calls).toBe(0);
+  });
+
+  it("F-BE-08 a caller whose country isn't known is kept off the free Gemini too", async () => {
+    // Cloudflare says XX when it doesn't know and T1 for Tor; some databases say EU.
+    const { bearer } = await proUser("region3@tandem.test");
+    for (const country of [undefined, "", "XX", "T1", "EU", "not a country"]) {
+      expect(await providerFrom(bearer, country), String(country)).toBe("openai");
+    }
+    expect(gemini.calls).toBe(0);
+  });
+
+  it("F-BE-08 with no backup, a caller there is told Conductor isn't available in their country, with nothing held", async () => {
+    const expectNotInRegion = async (res: Response, userId: string) => {
+      expect(res.status).toBe(503);
+      const body = (await res.json()) as { code: string; retryable?: boolean; detail: string };
+      expect(body).toMatchObject({ code: "VOICE_NOT_IN_REGION" });
+      expect(body.retryable).toBeFalsy();
+      expect(body.detail).toBe("Conductor's voice isn't available in your country yet.");
+      expect(await creditsOf(userId)).toBe(10_000);
+      expect(await t.deps.db.select().from(voiceSessions)).toHaveLength(0);
+      expect(gemini.calls).toBe(0);
+    };
+    // The app speaks only Gemini, or the API has only Gemini.
+    const first = await proUser("region4@tandem.test");
+    await expectNotInRegion(await mintFrom(first.bearer, "FR", ["gemini"]), first.userId);
+    await appWith({ CLIENT_COUNTRY_HEADER: "cf-ipcountry" }, false);
+    const second = await proUser("region4b@tandem.test");
+    await expectNotInRegion(await mintFrom(second.bearer, "GB"), second.userId);
+  });
+
+  it("F-BE-08 GEMINI_TIER=paid has no region rule", async () => {
+    await appWith({ CLIENT_COUNTRY_HEADER: "cf-ipcountry", GEMINI_TIER: "paid" });
+    const { bearer } = await proUser("region5@tandem.test");
+    for (const country of ["GB", "DE", undefined]) {
+      expect(await providerFrom(bearer, country), String(country)).toBe("gemini");
+    }
+  });
+
+  it("F-BE-08 without CLIENT_COUNTRY_HEADER (dev and tests) the API reads no country, so the rule is off", async () => {
+    await appWith({});
+    const { bearer } = await proUser("region6@tandem.test");
+    expect(await providerFrom(bearer, "GB")).toBe("gemini");
+  });
+});
+
 describe("F-BE-08 settling (/v1/voice/session/:id/settle)", () => {
   it("F-CN-01.1 a 65 s call settles 7 × 20 = 140 credits and refunds the rest of the hold", async () => {
     const { userId, bearer } = await proUser("voice65@tandem.test");
