@@ -70,7 +70,14 @@ impl ExecHost for AppExecHost {
         slug: &str,
     ) -> Result<(WorkspaceId, PathBuf), IpcError> {
         let git = self.git().await?;
-        let lane = crate::services::lanes::create(&self.store, &git, ws, slug).await?;
+        let lane = crate::services::lanes::create(
+            &self.store,
+            &git,
+            &self.entitlements.limits(),
+            ws,
+            slug,
+        )
+        .await?;
         Ok((lane.id, PathBuf::from(lane.root)))
     }
 

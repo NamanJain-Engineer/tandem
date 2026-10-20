@@ -12,4 +12,9 @@ dictionarySync: boolean,
 /**
  * Full-text search across engine sessions (F-TH-17).
  */
-sessionSearch: boolean, };
+sessionSearch: boolean, 
+/**
+ * Worktrees across a multi-repo folder (F-CD-22). Defaults to false so
+ * an older API's entitlement still parses.
+ */
+multiRepo: boolean, };

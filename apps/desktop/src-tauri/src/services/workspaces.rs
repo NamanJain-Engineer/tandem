@@ -10,6 +10,7 @@ use tandem_core::ids::WorkspaceId;
 use tandem_core::redact::Redactor;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_pty::PtyManager;
+use tandem_store::repo::lane_repos;
 use tandem_store::repo::panes;
 use tandem_store::repo::tabs::{self, Tab};
 use tandem_store::repo::workspaces::{self, Added, NewWorkspace, Workspace};
@@ -28,6 +29,11 @@ pub struct WorkspaceSummary {
     pub branch: Option<String>,
     pub live_count: u32,
     pub tabs: Vec<Tab>,
+    /// F-CD-22: a multi-repo folder's repositories, or a multi-repo
+    /// worktree's; absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub repos: Option<Vec<String>>,
 }
 
 /// `workspace_add` result.
@@ -182,11 +188,26 @@ pub async fn list(store: &Store, pty: &PtyManager) -> Result<Vec<WorkspaceSummar
         let root = Path::new(&ws.root);
         // A remote folder is checked when its host is reached.
         let local = ws.kind == "local";
+        let branch = if local { git_branch(root) } else { None };
+        let repos = if !local {
+            Vec::new()
+        } else if ws.parent_id.is_some() {
+            lane_repos::list(store, &ws.id)
+                .await?
+                .into_iter()
+                .map(|r| r.name)
+                .collect()
+        } else if branch.is_none() {
+            multi_repos(root)
+        } else {
+            Vec::new()
+        };
         out.push(WorkspaceSummary {
             missing: local && !root.is_dir(),
-            branch: if local { git_branch(root) } else { None },
+            branch,
             live_count: live,
             tabs,
+            repos: (!repos.is_empty()).then_some(repos),
             workspace: ws,
         });
     }
@@ -213,6 +234,35 @@ pub async fn remove(store: &Store, pty: &PtyManager, id: &WorkspaceId) -> Result
     }
     workspaces::remove(store, id).await?;
     Ok(())
+}
+
+/// At most this many repositories make up a multi-repo folder (F-CD-22).
+pub const MAX_REPOS: usize = 12;
+
+/// F-CD-22: the git repositories directly inside `root`, by name, when
+/// there are at least two and `root` isn't itself in a repository. Hidden
+/// folders don't count; nested deeper repositories aren't looked for.
+pub fn multi_repos(root: &Path) -> Vec<String> {
+    if root.ancestors().any(|a| a.join(".git").exists()) {
+        return Vec::new();
+    }
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| !n.starts_with('.'))
+        .filter(|n| root.join(n).join(".git").exists())
+        .collect();
+    names.sort();
+    names.truncate(MAX_REPOS);
+    if names.len() >= 2 {
+        names
+    } else {
+        Vec::new()
+    }
 }
 
 /// The checked-out branch from `.git/HEAD` (worktrees follow `gitdir:`),

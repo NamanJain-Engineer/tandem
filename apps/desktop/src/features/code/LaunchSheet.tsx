@@ -38,6 +38,7 @@ import {
   branchPreview,
   counts,
   defaultEngine,
+  isMultiRepo,
   isRepo,
   launchLineup,
   lineupFrom,
@@ -47,6 +48,7 @@ import {
   browserSeat,
   useLaunch,
 } from "../../stores/launch";
+import { useSession } from "../../stores/session";
 import { useWorkspaces } from "../../stores/workspaces";
 import { accountForNext, accountsFor, useAccounts } from "../../stores/accounts";
 import { useUsage } from "../../stores/usage";
@@ -354,7 +356,10 @@ function LaunchSheetBody({ workspaceId }: { workspaceId: string }) {
 
   const engine = defaultEngine(engines);
   // A host's worktrees are made by its git (D-1602); a WSL folder has none yet.
-  const repo = isRepo(ws) && ws?.kind !== "wsl";
+  const multiRepoAllowed = useSession((st) => st.entitlement?.limits.multiRepo ?? false);
+  // F-CD-22: worktrees across a multi-repo folder are part of Pro.
+  const multiLocked = isMultiRepo(ws) && !multiRepoAllowed;
+  const repo = isRepo(ws) && ws?.kind !== "wsl" && !multiLocked;
   const [presetId, setPresetId] = useState(SOLO);
   const [seats, setSeats] = useState<Seat[]>(() => [agentSeat(engine)]);
   const [isolation, setIsolation] = useState<Isolation>("shared");
@@ -498,7 +503,9 @@ function LaunchSheetBody({ workspaceId }: { workspaceId: string }) {
                 : undefined
             : ws?.kind === "wsl"
               ? t("worktree.remote")
-              : t("launch.needsRepo")
+              : multiLocked
+                ? t("worktree.multi.pro")
+                : t("launch.needsRepo")
         }
         checked={isolation === "worktree"}
         disabled={!repo || c.agents === 0}

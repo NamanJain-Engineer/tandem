@@ -203,7 +203,14 @@ pub async fn launch(
             lanes[i] = Some(match (&git, injected_lane_failure(nth + 1)) {
                 (_, Some(fault)) => Err(fault),
                 (Ok(git), None) => {
-                    lanes::create(&state.store, git, workspace, &slug_source(seat, task)).await
+                    lanes::create(
+                        &state.store,
+                        git,
+                        &state.entitlements.limits(),
+                        workspace,
+                        &slug_source(seat, task),
+                    )
+                    .await
                 }
                 (Err(e), None) => Err(e.clone()),
             });
@@ -284,7 +291,14 @@ pub async fn retry(
         let login = state.terminals.login_env().await;
         Some(match lanes::git_for(&state.data, &login) {
             Ok(git) => {
-                lanes::create(&state.store, &git, workspace, &slug_source(&seat, task)).await
+                lanes::create(
+                    &state.store,
+                    &git,
+                    &state.entitlements.limits(),
+                    workspace,
+                    &slug_source(&seat, task),
+                )
+                .await
             }
             Err(e) => Err(e),
         })

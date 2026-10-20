@@ -9,7 +9,12 @@ export type WorkspaceSummary = {
 /**
  * The folder no longer exists (warning row; panes can't launch).
  */
-missing: boolean, branch: string | null, liveCount: number, tabs: Array<Tab>, id: WorkspaceId, 
+missing: boolean, branch: string | null, liveCount: number, tabs: Array<Tab>, 
+/**
+ * F-CD-22: a multi-repo folder's repositories, or a multi-repo
+ * worktree's; absent otherwise.
+ */
+repos?: Array<string>, id: WorkspaceId, 
 /**
  * `local` | `ssh` | `wsl`
  */

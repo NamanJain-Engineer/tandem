@@ -31,6 +31,8 @@ import { useSetting, useSettings } from "../../stores/settings";
 import { paneKey, statusView, useStatus } from "../../stores/status";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
+import { useSession } from "../../stores/session";
+import { isMultiRepo } from "../../stores/launch";
 import { useRemote } from "../../stores/remote";
 import { RailList } from "../rail/RailList";
 import { topLevel, useWorktrees, worktreesOf } from "../../stores/worktrees";
@@ -299,6 +301,8 @@ export function CodeRail() {
   const collapsed = useUi((s) => s.railCollapsed);
   const platform = useBoot((s) => s.boot?.platform ?? "linux");
   const saved = useSetting("rail_width", 248);
+  // F-CD-22: worktrees across a multi-repo folder are part of Pro.
+  const multiAllowed = useSession((st) => st.entitlement?.limits.multiRepo ?? false);
   const [width, setWidth] = useState<number | null>(null);
   const { show } = useToast();
   const shown = Math.min(RAIL_MAX, Math.max(RAIL_MIN, width ?? saved));
@@ -333,8 +337,18 @@ export function CodeRail() {
       // Only a repository can have worktrees; the label says why it's off.
       id: "new-worktree",
       label:
-        ws.kind === "wsl" ? t("worktree.remote") : ws.branch ? t("worktree.new") : t("worktree.needsRepo"),
-      disabled: ws.kind === "wsl" || !ws.branch || ws.missing,
+        ws.kind === "wsl"
+          ? t("worktree.remote")
+          : isMultiRepo(ws) && !multiAllowed
+            ? t("worktree.multi.pro")
+            : ws.branch || isMultiRepo(ws)
+              ? t("worktree.new")
+              : t("worktree.needsRepo"),
+      disabled:
+        ws.kind === "wsl" ||
+        (!ws.branch && !isMultiRepo(ws)) ||
+        (isMultiRepo(ws) && !multiAllowed) ||
+        ws.missing,
       onSelect: () => useWorktrees.getState().open({ kind: "new", workspaceId: ws.id }),
     },
     {
@@ -429,6 +443,18 @@ export function CodeRail() {
           ),
           trailing: (
             <>
+              {isMultiRepo(ws) ? (
+                <span
+                  data-testid="workspace-repos"
+                  className={
+                    "inline-flex shrink-0 items-center gap-0.5 truncate text-sm " +
+                    (ws.id === activeId ? "text-fg-muted" : "text-fg-subtle")
+                  }
+                >
+                  <GitBranch size={12} aria-hidden="true" />
+                  <span className="truncate">{t("worktree.multi.count", { n: ws.repos?.length ?? 0 })}</span>
+                </span>
+              ) : null}
               {ws.branch && (
                 <span
                   className={

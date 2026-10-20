@@ -1031,6 +1031,12 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
 
 - **UI-153 Overlap** (dialog; "Check overlap…" in a worktree's ⋯ menu; F-WT-03, F-WT-10). Title "Overlap: {branch}". Body: "{n} files changed since this worktree started", then **Other worktrees**: each sibling with shared files or symbols, "{branch} also changed {n} files" and the files (monospace), then "Shared symbols" with each symbol (monospace) and what each side did: "changed here and there", "renamed or removed here, used there", "used here, renamed or removed there". "No overlap with other worktrees" when none. Then **Merging into {base}**: the forecast verdict. A line under the symbols says what wasn't parsed: "{n} files weren't checked for symbols (other languages or too large)". Loading: "Checking for conflicts…". Error: an error `Banner` with Retry.
 
+- **Multi-repo rows** (F-CD-22). A multi-repo folder's rail row shows "{n} repositories" where a repository's shows its branch; its worktrees list the same. Disabled menu entries on a multi-repo worktree say "Not available for multi-repo worktrees yet". On Free, New worktree… and the launch sheet's Worktrees option say "Multi-repo worktrees are part of Pro." (with Upgrade, as task execution does).
+
+- **Multi-repo diff** (the worktree diff dialog; F-CD-22). A line per repository above the files, "{repo} · {n} files" (or "{repo} · No changes"); the files follow grouped by repository, each path starting with its name, all in one review bar. Second opinion isn't offered.
+
+- **UI-158 Create pull requests** (dialog; "Create pull requests" in a multi-repo worktree's ⋯ menu, after the native confirm; F-CD-22). Title "Pull requests for {branch}". One row per repository: its name and step ("Pushing…", "Opening the pull request…", "Linking…", "Opened" with the link, "Skipped: no new commits", "Skipped: GitLab isn't supported yet", "Failed: {reason}"). Footer: Close. Loading: the rows in their waiting state with a `Spinner`.
+
 - **Radar mark** (a worktree's rail row; F-WT-10). A `Badge` (`waiting`, amber) "Shares {symbol}" (or "Shares {n} symbols") while the worktree shares symbols with a sibling; it opens UI-153.
 
 - **Radar notice** (a toast; F-WT-10). Title "{branchA} and {branchB} both touch {symbols}". Body: "Their rail rows show it; Check overlap… has the details." Action: **Warn both agents** (types the note into each worktree's agent, then "Warned both agents"; when a worktree has no agent, "No agent is running in {branch}"). Warning tone.
@@ -2706,6 +2712,7 @@ ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 T
 | UI-155 | Land worktrees | §4.2 | WT |
 | UI-156 | Check pull requests? | §4.2 | WT |
 | UI-157 | Pull request checks | §4.2 | WT |
+| UI-158 | Create pull requests | §4.2 | CD |
 | UI-160 | Instructions | §4.2 | EN |
 | UI-161 | Engine versions | §4.4 | EN |
 | UI-162 | Session library | §4.3 | TH |

@@ -473,7 +473,7 @@ pub fn failure_prompt(pr: u32, check: &PrCheck, log: &Log) -> String {
     )
 }
 
-fn first_line(text: &str) -> String {
+pub fn first_line(text: &str) -> String {
     Redactor::global()
         .redact(
             text.lines()

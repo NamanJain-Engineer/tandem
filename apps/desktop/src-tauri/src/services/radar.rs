@@ -54,7 +54,8 @@ fn covered(ws: &Workspace) -> bool {
     ws.kind == "local"
         && ws.parent_id.is_some()
         && ws.lane_branch.is_some()
-        && ws.lane_base.is_some()
+        // A multi-repo worktree (F-CD-22) has no single base: not covered yet.
+        && ws.lane_base.as_deref().is_some_and(|b| !b.is_empty())
         && Path::new(&ws.root).is_dir()
 }
 

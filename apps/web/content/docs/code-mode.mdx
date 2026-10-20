@@ -136,6 +136,18 @@ Two worktrees of the same repository share a symbol when both changed it, or whe
 
 Files in other languages, files over 512 KB, and anything past a worktree's first 300 changed files aren't checked, and Check overlap… says how many. Short names (under three letters) aren't matched.
 
+### Multi-repo workspaces
+
+Add a folder that holds several repositories side by side, such as `shop/` with `api/` and `web/`, and Vibezeo treats them as one workspace. Its rail row says how many repositories it holds ("2 repositories"). Only repositories directly inside the folder count, up to 12, and the folder itself mustn't be inside a repository.
+
+On Pro, **New worktree…** and the launch sheet's worktrees work across all of them. Each worktree is a folder `shop/.tandem/worktrees/<name>/` holding a worktree of every repository, all on the same branch `tandem/<name>`, so one agent started there can change both the API and the web app together. If one repository can't get a worktree (it has no commits yet, for example), none is made and Vibezeo says which.
+
+- **Open diff** shows each repository's share of the changes, then the files under each repository's name. Comments for the agent work as for any worktree.
+- **Create pull requests** asks first, then in each repository with new commits pushes the branch and opens a pull request with your own `git` and GitHub CLI (`gh`). Each pull request's description then links the others. Repositories without new commits, and GitLab ones for now, are skipped and listed.
+- **Discard worktree…** removes every repository's worktree and the folder holding them. The branches stay.
+
+Merge into…, Land worktrees, Check overlap, pull request checks, previews, worktree setup, second opinion and the intent radar don't work for multi-repo worktrees yet; their menu entries say so.
+
 ### Merge requests on GitLab
 
 When a worktree's `origin` remote is on a host whose name contains `gitlab`, **Create pull request** becomes **Create merge request** and runs `glab mr create` in a terminal in the worktree; it needs the GitLab CLI (`glab`) installed and signed in. Other remotes use `gh pr create`, which needs the GitHub CLI (`gh`).

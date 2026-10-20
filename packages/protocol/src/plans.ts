@@ -33,6 +33,8 @@ export type Limits = {
   dictionarySync: boolean;
   /** Full-text search across engine sessions (F-TH-17). */
   sessionSearch: boolean;
+  /** Worktrees across a multi-repo folder (F-CD-22). */
+  multiRepo: boolean;
 };
 
 export const LIMITS: Record<Plan, Limits> = {
@@ -56,6 +58,7 @@ export const LIMITS: Record<Plan, Limits> = {
     creditPacks: false,
     dictionarySync: false,
     sessionSearch: false,
+    multiRepo: false,
   },
   pro: {
     panes: 64,
@@ -77,6 +80,7 @@ export const LIMITS: Record<Plan, Limits> = {
     creditPacks: true,
     dictionarySync: true,
     sessionSearch: true,
+    multiRepo: true,
   },
   team: {
     panes: null,
@@ -98,6 +102,7 @@ export const LIMITS: Record<Plan, Limits> = {
     creditPacks: true,
     dictionarySync: true,
     sessionSearch: true,
+    multiRepo: true,
   },
 };
 

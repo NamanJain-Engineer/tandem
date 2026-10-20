@@ -546,7 +546,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 |---|---|---|---|---|
 | `workspace_pick_folder` | — | `String?` (async dialog; never blocks other commands) | — | F-CD-01 |
 | `workspace_add` | `{kind, root, hostId?, wslDistro?}` | `Workspace` (existing one if same host+root; restores soft-removed) | LimitReached, NotFound | F-CD-01, F-SH-03 |
-| `workspace_list` | — | `[WorkspaceSummary]` (incl. lanes as children, missing flag, branch, live count) | — | F-CD-01 |
+| `workspace_list` | — | `[WorkspaceSummary]` (incl. lanes as children, missing flag, branch, live count; `repos: [string]` the repositories of a multi-repo folder or worktree, F-CD-22) | — | F-CD-01, F-CD-22 |
 | `workspace_rename` / `workspace_remove` / `workspace_locate` | `{id, name}` / `{id}` / `{id, newRoot}` | — | NotFound | F-CD-01, F-SH-03 |
 | `workspace_set_account_override` | `{id, engineId, accountId?}` | — | NotFound | F-AC-03 |
 | `workspace_set_flags` | `{id, collapsed?, showSessionsCollapsed?}` | — | — | F-SH-03, F-CD-11 |
@@ -727,12 +727,14 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `handoff_brief` | `{paneId, engineId, accountId?}` (up to 120 s per strategy; UI-13 shows "Writing summary…") | `HandoffBrief {text, source: "source"\|"headless"\|"fallback"}` (§6.11 strategies in order; always returns text unless the pane is gone) | NotFound | F-CD-16 |
 | `handoff_start` | `{paneId, engineId, accountId?, brief, place: "same"\|"new_worktree", closeSource}` | `HandoffResult {pane, workspaceId, tabId, laneBranch?, sourceClosed}` (the client splits it right of the source; briefs over 8 KB go via `$DATA/briefings/<pane>.md`) | EngineMissing, LimitReached, Invalid (empty brief) | F-CD-16 |
 | `handoff_to_thread` | `{paneId, engineId, accountId?, brief, closeSource}` | `HandoffThread {thread, sourceClosed}` (a new Thread in the source's workspace with the engine's remembered settings; the brief is its first message, §6.11 chat target) | EngineMissing, EngineUnsupported (no chat adapter), Invalid (empty brief) | F-CD-16 |
-| `lane_create` | `{workspaceId, slugSource}` | `Workspace` (child) | Conflict, Io | F-CD-15 |
-| `lane_diff` | `{laneId}` | `[FileDiff]` | — | F-CD-15 |
+| `lane_create` | `{workspaceId, slugSource}` | `Workspace` (child; for a multi-repo folder, the parent folder with a worktree of each repository on one `tandem/<slug>`, F-CD-22) | Conflict, Io, ForbiddenPlan (multi-repo on Free) | F-CD-15, F-CD-22 |
+| `lane_diff` | `{laneId}` | `[FileDiff]` (a multi-repo worktree's paths start with the repository's name, `api/src/a.ts`, F-CD-22) | — | F-CD-15, F-CD-22 |
 | `lane_merge` | `{laneId}` | `MergeReport {merged, conflicts:[path], commit?}` | — | F-CD-15 |
 | `lane_overlap` | `{laneId}` | `OverlapReport {files, siblings: [{laneId, branch, files[], symbols: [SharedSymbol {name, here: added\|changed\|removed\|used, there}]}], forecast: {kind: clean\|conflicts(files[])\|unavailable(reason)}, uncommitted, unparsed}` (reads only; `git merge-tree --write-tree` merges in memory; symbols from F-WT-10's tree-sitter index, refreshed for this worktree and its siblings) | NotFound | F-WT-03, F-WT-10 |
 | `lane_radar` | `{laneIds}` | `[RadarMark {laneId, symbols: [string]}]` (F-WT-10: from the last indexes, no parsing; worktrees sharing nothing are left out) | — | F-WT-10 |
 | `lane_create_pr` | `{laneId, tabId}` | `PaneRecord` (types `gh pr create`, or `glab mr create` when `origin`'s host contains "gitlab") | EngineMissing ("gh not found", "GitLab CLI (glab) isn't installed") | F-CD-15, F-WT-04 |
+| `lane_create_prs` | `{laneId}` (a multi-repo worktree; window `main` only; shows a native confirm in Rust) | `PrsRun {laneId, steps: [PrStep {repo, state: waiting\|pushing\|creating\|linking\|done\|skipped\|failed, url?, reason?}]}` (starts in the background: per repository `git push -u origin tandem/<slug>`, `gh pr create --fill --head`, then each body gains links to the others with `gh pr edit --body-file`) | Invalid (not multi-repo), EngineMissing (gh), Cancelled, PermissionDenied | F-CD-22 |
+| `lane_prs_get` | `{laneId}` | `PrsRun \| null` (the dialog polls it) | — | F-CD-22 |
 | `lane_forge` | `{laneId}` | `"github" \| "gitlab"` (from `origin`'s host; the menu says pull or merge request) | — | F-WT-04 |
 | `lane_remove` | `{laneId, force}` (force only from window `main`; shows a native confirm in Rust) | `RemoveReport {teardown?: {kind: ran(code?)\|timed_out\|untrusted\|failed(message)}}` (the trusted teardown runs in the worktree after its panes stop, before removal, F-WT-01) | Conflict ("Uncommitted changes"), PermissionDenied | F-CD-15, F-WT-01 |
 | `worktree_setup_get` | `{workspaceId}` (a repository or a worktree) | `SetupState {file, exists, config?: WorktreeSetup {copy[], setup?, teardown?}, error?, digest?, trusted}` | Invalid ("Worktrees need a git repository"), Unavailable (remote) | F-WT-01 |
@@ -1165,6 +1167,17 @@ CREATE TABLE workspaces (
   UNIQUE (host_id, root)
 );
 CREATE INDEX workspaces_parent ON workspaces(parent_id);
+-- F-CD-22 (migration 0003): a multi-repo worktree's repositories. Its
+-- workspaces row is the parent folder (lane_base ''); each repository's
+-- git worktree is here, all on the row's lane_branch.
+CREATE TABLE lane_repos (
+  lane_id    TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,                    -- the repository's folder name
+  repo_root  TEXT NOT NULL,                    -- <folder>/<name>
+  root       TEXT NOT NULL,                    -- <parent folder>/<name>
+  base       TEXT NOT NULL,                    -- its base commit
+  PRIMARY KEY (lane_id, name)
+);
 CREATE TABLE tabs (
   id           TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

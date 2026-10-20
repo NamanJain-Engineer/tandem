@@ -65,6 +65,16 @@ pub fn origin_url(root: &Path) -> Option<String> {
     remote.url().map(str::to_string)
 }
 
+/// A multi-repo worktree (F-CD-22): the parent folder and each
+/// repository's worktree in it, by name.
+#[derive(Debug, Clone)]
+pub struct MultiLane {
+    pub slug: String,
+    pub branch: String,
+    pub path: PathBuf,
+    pub repos: Vec<(String, Lane)>,
+}
+
 pub struct LaneManager;
 
 impl LaneManager {
@@ -106,6 +116,23 @@ impl LaneManager {
         let dir = repo.main_root().join(WORKTREES_DIR);
         std::fs::create_dir_all(&dir)?;
         let path = dir.join(&slug);
+        Self::add_worktree(git, repo, &path, &branch, &base).await?;
+        Ok(Lane {
+            slug,
+            branch,
+            path: std::fs::canonicalize(&path).unwrap_or(path),
+            base,
+        })
+    }
+
+    /// `git worktree add <path> -b <branch> <base>`.
+    async fn add_worktree(
+        git: &Git,
+        repo: &Repo,
+        path: &Path,
+        branch: &str,
+        base: &str,
+    ) -> Result<(), GitError> {
         let out = git
             .run(
                 Mode::Write,
@@ -115,27 +142,107 @@ impl LaneManager {
                     OsStr::new("add"),
                     path.as_os_str(),
                     OsStr::new("-b"),
-                    OsStr::new(&branch),
-                    OsStr::new(&base),
+                    OsStr::new(branch),
+                    OsStr::new(base),
                 ],
             )
             .await?;
-        if !out.success() {
-            if out.stderr.contains("already exists") {
-                return Err(GitError::Conflict(format!("{branch} already exists")));
-            }
-            return Err(GitError::Command {
-                op: "worktree add".into(),
-                code: out.code,
-                stderr: out.stderr,
-            });
+        if out.success() {
+            return Ok(());
         }
-        Ok(Lane {
+        if out.stderr.contains("already exists") {
+            return Err(GitError::Conflict(format!("{branch} already exists")));
+        }
+        Err(GitError::Command {
+            op: "worktree add".into(),
+            code: out.code,
+            stderr: out.stderr,
+        })
+    }
+
+    /// F-CD-22: one worktree across the repositories directly inside
+    /// `folder`: the parent folder `<folder>/.tandem/worktrees/<slug>`, and
+    /// in it a git worktree of each repository at `<slug>/<name>` on
+    /// `tandem/<slug>`, each from its repository's HEAD. The slug is free in
+    /// every repository. If one fails, those already made are removed and
+    /// the error names the repository.
+    pub async fn create_multi(
+        git: &Git,
+        folder: &Path,
+        repos: &[(String, Repo)],
+        slug_source: &str,
+        also_taken: &HashSet<String>,
+    ) -> Result<MultiLane, GitError> {
+        let in_repo = |name: &str, e: GitError| GitError::Invalid(format!("In {name}: {e}"));
+        let mut taken: HashSet<String> = also_taken.clone();
+        for (name, repo) in repos {
+            taken.extend(
+                Self::taken_slugs(repo)
+                    .await
+                    .map_err(|e| in_repo(name, e))?,
+            );
+        }
+        let dir = folder.join(WORKTREES_DIR);
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                taken.insert(entry.file_name().to_string_lossy().into_owned());
+            }
+        }
+        let slug = dedupe(&slugify(slug_source), &taken);
+        let branch = format!("{BRANCH_PREFIX}{slug}");
+        let parent = dir.join(&slug);
+        std::fs::create_dir_all(&parent)?;
+        let mut made: Vec<(String, Lane, &Repo)> = Vec::new();
+        for (name, repo) in repos {
+            let path = parent.join(name);
+            let step = async {
+                let base = repo.head().await?.ok_or_else(|| {
+                    GitError::Invalid(
+                        "it has no commits yet. Make a first commit, then try again.".into(),
+                    )
+                })?;
+                Self::add_worktree(git, repo, &path, &branch, &base).await?;
+                Ok::<String, GitError>(base)
+            };
+            match step.await {
+                Ok(base) => made.push((
+                    name.clone(),
+                    Lane {
+                        slug: slug.clone(),
+                        branch: branch.clone(),
+                        path: std::fs::canonicalize(&path).unwrap_or(path),
+                        base,
+                    },
+                    repo,
+                )),
+                Err(e) => {
+                    for (_, lane, repo) in &made {
+                        let _ = Self::remove(git, repo, &lane.path, None).await;
+                        let _ = Self::delete_branch(git, repo, &lane.branch).await;
+                    }
+                    let _ = std::fs::remove_dir_all(&parent);
+                    return Err(in_repo(name, e));
+                }
+            }
+        }
+        Ok(MultiLane {
+            path: std::fs::canonicalize(&parent).unwrap_or(parent),
             slug,
             branch,
-            path: std::fs::canonicalize(&path).unwrap_or(path),
-            base,
+            repos: made.into_iter().map(|(n, l, _)| (n, l)).collect(),
         })
+    }
+
+    /// Deletes a branch a failed multi-repo worktree just made (it has no
+    /// commits of its own yet).
+    async fn delete_branch(git: &Git, repo: &Repo, branch: &str) -> Result<(), GitError> {
+        git.ok(
+            Mode::Write,
+            repo.root(),
+            &[OsStr::new("branch"), OsStr::new("-D"), OsStr::new(branch)],
+        )
+        .await?;
+        Ok(())
     }
 
     /// `git worktree remove`. A lane with uncommitted or untracked files
@@ -145,6 +252,28 @@ impl LaneManager {
         repo: &Repo,
         lane_path: &Path,
         force: Option<ForceConfirm>,
+    ) -> Result<(), GitError> {
+        Self::remove_inner(git, repo, lane_path, force.is_some()).await
+    }
+
+    /// [`remove`](Self::remove) for each of a multi-repo worktree's
+    /// repositories (F-CD-22): one confirmation covers them all.
+    pub async fn remove_many(
+        git: &Git,
+        lanes: &[(Repo, PathBuf)],
+        force: Option<ForceConfirm>,
+    ) -> Result<(), GitError> {
+        for (repo, path) in lanes {
+            Self::remove_inner(git, repo, path, force.is_some()).await?;
+        }
+        Ok(())
+    }
+
+    async fn remove_inner(
+        git: &Git,
+        repo: &Repo,
+        lane_path: &Path,
+        force: bool,
     ) -> Result<(), GitError> {
         let main = repo.main_root();
         if !lane_path.exists() {
@@ -156,7 +285,7 @@ impl LaneManager {
             .await?;
             return Ok(());
         }
-        if force.is_none() {
+        if !force {
             if let Some(lane) = Repo::discover(lane_path)? {
                 if !lane.status().await?.is_clean() {
                     return Err(GitError::Dirty);
@@ -164,7 +293,7 @@ impl LaneManager {
             }
         }
         let mut args = vec![OsStr::new("worktree"), OsStr::new("remove")];
-        if force.is_some() {
+        if force {
             args.push(OsStr::new("--force"));
         }
         args.push(lane_path.as_os_str());

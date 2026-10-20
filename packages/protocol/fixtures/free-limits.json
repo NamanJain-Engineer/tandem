@@ -17,5 +17,6 @@
   "chatEngines": ["claude", "codex"],
   "creditPacks": false,
   "dictionarySync": false,
-  "sessionSearch": false
+  "sessionSearch": false,
+  "multiRepo": false
 }
