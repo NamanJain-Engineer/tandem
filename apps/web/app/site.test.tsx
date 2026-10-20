@@ -9,7 +9,7 @@ import { VIDEO } from "../lib/media";
 import { PLANS } from "../lib/pricing";
 import { MILESTONES, PROGRESS } from "../lib/progress";
 import { fileURLToPath } from "node:url";
-import { allowedScripts } from "../scripts/script-allowlist.mjs";
+import { THEME_BOOT, allowedScripts } from "../scripts/script-allowlist.mjs";
 import { CHECKSUMS_URL, DOWNLOADS, DOWNLOADS_PATH, RELEASE, assetUrl } from "../lib/release";
 import {
   EARLY_ACCESS_HREF,
@@ -293,13 +293,15 @@ describe("public site", () => {
       expect(external, name).toEqual([]);
     }
     // A blog post page (F-WB-06, D-1852, D-1860) keeps its JSON-LD and its
-    // reading script; strip-runtime fails the build on anything else.
+    // reading script; every page opens with the theme script (D-1871), which
+    // the root layout adds; strip-runtime fails the build on anything else.
     expect(allowedScripts("blog/a-post/index.html")).toEqual([
+      THEME_BOOT,
       '<script type="application/ld+json">',
       '<script src="/blog/blog.js" defer="">',
     ]);
     for (const page of ["blog/index.html", "blog/tags/release/index.html", "about/index.html"])
-      expect(allowedScripts(page), page).toEqual([]);
+      expect(allowedScripts(page), page).toEqual([THEME_BOOT]);
     // The loader names no other origin and frames only /demo/app/.
     const loader = readFileSync(join(import.meta.dirname, "../public/demo/embed.js"), "utf8");
     expect(loader).not.toMatch(/https?:\/\//);

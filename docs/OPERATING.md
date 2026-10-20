@@ -413,7 +413,7 @@ MSIX_IDENTITY_NAME=… MSIX_PUBLISHER='CN=…' MSIX_PUBLISHER_DISPLAY_NAME=… \
   (`CHROME_PATH=/opt/pw-browsers/chromium pnpm --filter web lhci`: `/`, `/pricing/`,
   `/download/`, `/changelog/`, `/docs/`, `/blog/` and one post, three runs each, 95 or more in all four
   categories and CLS under 0.02; delete `apps/web/.lighthouseci` first, it keeps old
-  runs), then walk the demo:
+  runs; `pnpm --filter web lhci:dark` runs the same in the dark theme, D-1870), then walk the demo:
   `(cd apps/web/public && python3 -m http.server 4321 &)` and
   `node scripts/agent/demo-walkthrough.mjs /tmp/demo-shots` (screenshots plus any
   console errors). A clean-clone build with Vercel's exact install command is the

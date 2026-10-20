@@ -16,6 +16,7 @@
     "test:e2e": "playwright test",
     "test:site": "playwright test -c playwright.site.config.ts",
     "lhci": "lhci autorun",
+    "lhci:dark": "lhci autorun --collect.settings.chromeFlags=\"--headless=new --no-sandbox --blink-settings=preferredColorScheme=0\" --upload.outputDir=./.lighthouseci/dark",
     "new-post": "node scripts/new-post.mjs",
     "postinstall": "fumadocs-mdx",
     "build:remote-lan": "vite build --config remote-lan/vite.config.ts"
@@ -55,6 +56,7 @@
     "typescript": "~5.8.3",
     "vite": "^7.0.0",
     "vitest": "^4.1.11",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "jsdom": "^26.1.0"
   }
 }

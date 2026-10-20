@@ -88,6 +88,20 @@ describe("F-WB-01 site.css (D-1801)", () => {
     );
   });
 
+  it("F-WB-01 AC6 a visitor's Light sets exactly the site tokens the OS's light does (D-1870)", () => {
+    const forced = vars(site, ':root[data-theme="light"] {');
+    expect(forced.size).toBeGreaterThan(30);
+    expect(Object.fromEntries(forced)).toEqual(Object.fromEntries(siteLightSemantic));
+    // The app's own tokens come from tokens.css's [data-theme="light"],
+    // which the OS block above mirrors.
+    expect(appLight.get("--tn-bg")).toBe("var(--slate-50)");
+  });
+
+  it("F-WB-01 AC6 the OS's light never overrides a visitor's Dark (D-1870)", () => {
+    for (const m of site.matchAll(/@media \(prefers-color-scheme: light\) \{\s*([^{]+)\{/g))
+      expect(m[1]?.trim()).toMatch(/^:root:not\(\[data-theme="dark"\]\)( &)?$/);
+  });
+
   for (const [name, theme] of Object.entries(themes)) {
     it(`F-WB-01 site colour pairs meet WCAG AA in ${name}: text on every site surface`, () => {
       const low = TEXT.flatMap((fg) =>

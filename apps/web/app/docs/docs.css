@@ -115,7 +115,8 @@
 }
 /* Code blocks get the blog's box, a `surface` in the mono type, and scroll
    sideways inside it, so a long line never widens the page past a 320 px
-   phone (F-WB-01, D-864). Shiki's colours follow the OS theme. */
+   phone (F-WB-01, D-864). Shiki's colours follow the site's theme: the OS's
+   under System, or the visitor's Light or Dark (D-1870). */
 .docs-prose :where(pre) {
   margin: 2rem 0;
   overflow-x: auto;
@@ -134,8 +135,9 @@
 }
 .docs-prose :where(pre span) { color: var(--shiki-dark); }
 @media (prefers-color-scheme: light) {
-  .docs-prose :where(pre span) { color: var(--shiki-light); }
+  :root:not([data-theme="dark"]) .docs-prose :where(pre span) { color: var(--shiki-light); }
 }
+:root[data-theme="light"] .docs-prose :where(pre span) { color: var(--shiki-light); }
 .docs-prose :where(code)::before,
 .docs-prose :where(code)::after { content: none; }
 .docs-prose :where(table) {

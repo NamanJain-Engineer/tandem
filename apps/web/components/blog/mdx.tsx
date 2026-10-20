@@ -5,7 +5,8 @@ import { cx } from "../../lib/cx";
 // How a post's Markdown renders (F-WB-06): the site's type and tokens, in a
 // 68-character column. Server components only. Code is highlighted at build
 // time by fumadocs-mdx's Shiki, in a light and a dark theme; the CSS below
-// picks the one matching the visitor's OS theme, as the site does (D-1801).
+// picks the one matching the site's theme: the OS's under System, or the visitor's
+// Light or Dark (D-1801, D-1870).
 
 /** Styles the body's elements; on the wrapper so they reach what MDX emits. */
 export const PROSE = cx(
@@ -92,7 +93,7 @@ function CodeBlock({
       className={cx(
         className,
         "overflow-x-auto p-5 pr-24 font-mono text-[0.8125rem] leading-6 text-fg",
-        "[&_span]:text-(--shiki-dark) [@media(prefers-color-scheme:light)]:[&_span]:text-(--shiki-light)",
+        "[&_span]:text-(--shiki-dark) light:[&_span]:text-(--shiki-light)",
       )}
     />
   );

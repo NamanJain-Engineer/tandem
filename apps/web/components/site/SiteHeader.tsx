@@ -4,13 +4,15 @@ import { Icon } from "./Icon";
 import { SITE } from "../../lib/site";
 import { Mark } from "./Mark";
 import { NAV } from "./nav";
+import { ThemeSwitch } from "./ThemeSwitch";
 
 const MENU_ID = "site-menu";
 
 /** The sticky header (D-1836): glass over the page, a hairline that appears
  * once the page scrolls, the links centred. Below 1024 px they move into a
  * sheet built on the Popover API: no script, light dismiss and Esc for free.
- * Browsers without it still reach every link from the footer. */
+ * Browsers without it still reach every link from the footer. The theme
+ * control (D-1870) sits before Download, and in the sheet below 640 px. */
 export function SiteHeader({ current }: { current?: string }) {
   const link = (href: string) =>
     current === href ? ({ "aria-current": "page" } as const) : ({} as Record<string, never>);
@@ -37,7 +39,8 @@ export function SiteHeader({ current }: { current?: string }) {
             </li>
           ))}
         </ul>
-        <a href="/download/" className={siteButton("primary", "sm", "ml-auto")}>
+        <ThemeSwitch name="theme" className="ml-auto max-sm:!hidden" />
+        <a href="/download/" className={siteButton("primary", "sm", "max-sm:ml-auto")}>
           <Icon icon={Download} size={15} />
           Download
         </a>
@@ -84,6 +87,10 @@ export function SiteHeader({ current }: { current?: string }) {
                 </li>
               ))}
             </ul>
+            <div className="theme-only flex items-center justify-between gap-4 sm:hidden">
+              <span className="text-copy-sm text-fg-muted">Theme</span>
+              <ThemeSwitch name="theme-menu" labels />
+            </div>
             <a href="/download/" {...link("/download/")} className={siteButton("primary", "lg", "w-full")}>
               <Icon icon={Download} size={18} />
               Download for Linux

@@ -34,7 +34,7 @@ import { RELEASES } from "../../lib/changelog";
 import { RELEASE } from "../../lib/release";
 import { SITE, sitemapXml } from "../../lib/site";
 import { scaffold, slugify } from "../../scripts/new-post.mjs";
-import { allowedScripts } from "../../scripts/script-allowlist.mjs";
+import { THEME_BOOT, allowedScripts } from "../../scripts/script-allowlist.mjs";
 import BlogPage, { metadata as indexMetadata } from "./page.site";
 import TagPage, { generateMetadata as tagMetadata, generateStaticParams as tagParams } from "./tags/[tag]/page.site";
 
@@ -304,11 +304,12 @@ describe("blog (F-WB-06)", () => {
 
   it("F-WB-06 AC6 (D-1852) the runtime strip allows a JSON-LD block on post pages only", () => {
     const ld = '<script type="application/ld+json">';
-    expect(allowedScripts("index.html")).toEqual(['<script src="/demo/embed.js" defer="">']);
-    expect(allowedScripts("download/index.html")).toEqual(['<script src="/download/detect.js" defer="">']);
-    expect(allowedScripts("blog/introducing-vibezeo/index.html")).toEqual([ld, '<script src="/blog/blog.js" defer="">']);
+    // Every page opens with the theme script (F-WB-01 AC4, D-1871).
+    expect(allowedScripts("index.html")).toEqual([THEME_BOOT, '<script src="/demo/embed.js" defer="">']);
+    expect(allowedScripts("download/index.html")).toEqual([THEME_BOOT, '<script src="/download/detect.js" defer="">']);
+    expect(allowedScripts("blog/introducing-vibezeo/index.html")).toEqual([THEME_BOOT, ld, '<script src="/blog/blog.js" defer="">']);
     for (const page of ["blog/index.html", "blog/tags/release/index.html", "pricing/index.html", "changelog/0.7.2/index.html"])
-      expect(allowedScripts(page), page).toEqual([]);
+      expect(allowedScripts(page), page).toEqual([THEME_BOOT]);
     // JSON-LD is data: a BlogPosting whose dates are the post's.
     const p = POSTS[0];
     expect(p).toBeDefined();

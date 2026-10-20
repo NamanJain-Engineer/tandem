@@ -3,9 +3,12 @@
    app never imports it. */
 
 /* ---------- 1. Light theme by OS preference ----------
-   The site follows the visitor's OS with CSS only: no script, no storage, so
-   no toggle (D-1801). This block is a copy of [data-theme="light"] in
-   tokens.css; site.test.ts fails if the two ever differ. */
+   With System chosen (the default, and every page without JavaScript) the
+   site follows the visitor's OS in CSS (D-1801). This block is a copy of
+   [data-theme="light"] in tokens.css; site.test.ts fails if the two ever
+   differ. Light or Dark from the header's control (D-1870) sets
+   data-theme on <html>: tokens.css answers it for the app's tokens, and
+   section 2 below for the site's. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     color-scheme: light;
@@ -148,6 +151,51 @@
     --site-glass:       rgb(255 255 255 / 0.70);
     --site-glass-hover: rgb(255 255 255 / 1);
   }
+}
+
+/* The same values when the visitor picks Light (D-1870). site.test.ts fails
+   if this block and the one above ever differ. */
+:root[data-theme="light"] {
+  --site-page:   var(--slate-25);   /* #F8FAFC, a touch whiter than the app's slate-50 */
+  --site-raised: var(--slate-50);   /* #F1F5F9: the app's bg, so bands read as bands */
+  --site-card:   var(--slate-0);
+  --site-grid:   rgb(15 23 42 / 0.05);
+  --site-glow:   rgb(15 118 110 / 0.09);
+  --site-ink-a:  var(--teal-700);
+  --site-ink-b:  var(--sky-700);
+  --site-line:        rgb(15 23 42 / 0.08);
+  --site-line-strong: rgb(15 23 42 / 0.16);
+  --site-edge-top:    rgb(15 23 42 / 0.08);
+  --site-edge-bottom: rgb(15 23 42 / 0.14);
+  --site-edge-hi:     rgb(255 255 255 / 0.90);
+  --site-fill-top:    rgb(255 255 255 / 0.70);
+  --site-fill-bottom: rgb(241 245 249 / 0.50);
+  --site-glow-a:      rgb(20 184 166 / 0.16);
+  --site-glow-b:      rgb(14 165 233 / 0.10);
+  --site-ring:        rgb(15 23 42 / 0.08);
+  --site-ring-lit:    rgb(13 148 136 / 0.45);
+  --site-spot:        rgb(15 118 110 / 0.05);
+  --site-bezel:       rgb(255 255 255 / 0.75);
+  --site-bezel-edge:  rgb(15 23 42 / 0.10);
+  --site-elev-1: inset 0 1px 0 var(--site-edge-hi), 0 1px 2px rgb(15 23 42 / 0.05), 0 2px 6px -2px rgb(15 23 42 / 0.05);
+  --site-elev-2: inset 0 1px 0 var(--site-edge-hi), 0 1px 2px rgb(15 23 42 / 0.06), 0 16px 32px -14px rgb(15 23 42 / 0.16);
+  --site-elev-3: 0 0 0 1px rgb(15 23 42 / 0.06), 0 2px 4px rgb(15 23 42 / 0.04), 0 16px 32px -8px rgb(15 23 42 / 0.10), 0 48px 96px -24px rgb(15 23 42 / 0.22);
+  --site-btn-top:     var(--teal-700);
+  --site-btn-bottom:  var(--teal-800);
+  --site-btn-hover:   var(--teal-800);
+  --site-btn-glow:    rgb(15 118 110 / 0.22);
+  --site-btn-hi:      rgb(255 255 255 / 0.22);
+  --site-glass:       rgb(255 255 255 / 0.70);
+  --site-glass-hover: rgb(255 255 255 / 1);
+}
+
+/* `light:` for the odd utility that differs by theme (Shiki's colours in
+   code blocks): the OS's light under System, or the visitor's Light. */
+@custom-variant light {
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) & { @slot; }
+  }
+  :root[data-theme="light"] & { @slot; }
 }
 
 @theme inline {
@@ -439,6 +487,51 @@ body.site {
 }
 .site :where(p, dd, figcaption, td, blockquote) a:hover { text-decoration-color: currentColor; }
 
+/* The theme control (D-1870): three icon radios in a well. The selected one
+   is lit from data-theme-choice on <html>, which the theme script sets before
+   the first paint. Without that script (no JavaScript) the control and its
+   menu row aren't shown: the page follows the OS. In the components layer,
+   so utilities (`ml-auto`, `max-sm:hidden`) still place it. */
+@layer components {
+  .theme-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin: 0;
+    padding: 3px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--site-glass);
+    box-shadow: inset 0 0 0 1px var(--site-line);
+    & label {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.375rem;
+      height: 1.75rem;
+      min-width: 1.75rem;
+      padding-inline: 0.375rem;
+      border-radius: 5px;
+      color: var(--tn-text-muted);
+      cursor: pointer;
+      transition: color var(--dur-base) var(--ease-out-site), background-color var(--dur-base) var(--ease-out-site), box-shadow var(--dur-base) var(--ease-out-site);
+    }
+    & label:hover { color: var(--tn-text); }
+    & label:has(:focus-visible) { box-shadow: 0 0 0 2px var(--site-page), 0 0 0 4px var(--tn-accent-ring); }
+    & svg { transition: rotate var(--dur-slow) var(--ease-spring); }
+  }
+  .theme-switch-wide label { height: 2.25rem; padding-inline: 0.75rem; font-size: 0.875rem; }
+  :root[data-theme-choice="system"] .theme-switch [data-choice="system"],
+  :root[data-theme-choice="light"] .theme-switch [data-choice="light"],
+  :root[data-theme-choice="dark"] .theme-switch [data-choice="dark"] {
+    color: var(--tn-text);
+    background: var(--site-card);
+    box-shadow: inset 0 1px 0 var(--site-edge-hi), 0 0 0 1px var(--site-line-strong), 0 1px 2px rgb(var(--tn-shadow-color) / 0.18);
+  }
+}
+:root:not([data-theme-choice]) :is(.theme-switch, .theme-only) { display: none !important; }
+
 @media (forced-colors: active) {
   .text-ink, .text-sheen { background: none; color: CanvasText; }
   .btn { border: 1px solid ButtonText; }
@@ -473,6 +566,8 @@ body.site {
   .enter-3 { transition-delay: 160ms; }
   .enter-4 { transition-delay: 240ms; }
   .ring-turn { animation: site-ring-turn 120s linear infinite; transform-origin: center; transform-box: fill-box; }
+  /* The theme control's icon turns a quarter as it's pressed (D-1870). */
+  .theme-switch label:active svg { rotate: 90deg; }
   @view-transition { navigation: auto; }
   ::view-transition-group(root) { animation-duration: var(--dur-slow); animation-timing-function: var(--ease-out-site); }
 }
