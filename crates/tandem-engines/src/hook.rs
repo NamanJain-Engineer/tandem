@@ -1,7 +1,8 @@
 //! `tandem-hook`'s logic (ARCHITECTURE §6.6, F-EN-05 AC4): engine hook input
 //! in, a signed status report out. Only the event, tool, notification type,
-//! session id and transcript path are read; prompts, tool inputs and
-//! transcript text never leave the hook.
+//! session id, transcript path and an edit tool's file path are read;
+//! prompts, other tool inputs, edit contents and transcript text never
+//! leave the hook.
 
 use std::io::{self, Read, Write};
 use std::time::Duration;
@@ -16,6 +17,15 @@ use tandem_core::status_report::{
 pub const MAX_STDIN: usize = 1024 * 1024;
 pub const POST_TIMEOUT: Duration = Duration::from_millis(500);
 pub const PANE_VAR: &str = "TANDEM_PANE_ID";
+/// Claude's tools that change a file, and the input field naming it
+/// (F-TK-05 inferred claims).
+const EDIT_TOOLS: [(&str, &str); 4] = [
+    ("Edit", "file_path"),
+    ("MultiEdit", "file_path"),
+    ("Write", "file_path"),
+    ("NotebookEdit", "notebook_path"),
+];
+const PATH_MAX: usize = 1024;
 
 /// The report for one Claude hook call (`tandem-hook claude <Event>`).
 pub fn claude_report(
@@ -36,6 +46,13 @@ pub fn claude_report(
         "UserPromptSubmit" | "SubagentStop" => ReportEvent::Working,
         "PreToolUse" => {
             payload.tool = field("tool_name").filter(|s| short(s));
+            let edited = payload
+                .tool
+                .as_deref()
+                .and_then(|t| EDIT_TOOLS.iter().find(|(name, _)| *name == t))
+                .and_then(|(_, key)| input.get("tool_input")?.get(*key)?.as_str())
+                .filter(|p| !p.is_empty() && p.len() <= PATH_MAX);
+            payload.paths = edited.map(str::to_string).into_iter().collect();
             ReportEvent::Working
         }
         "Notification" => {
@@ -221,6 +238,30 @@ mod tests {
             claude_report("Stop", b"not json", "pn_1", 1).map(|r| r.event),
             Some(ReportEvent::Done)
         );
+    }
+
+    #[test]
+    fn f_tk_05_2_an_edit_reports_its_file_path_but_not_the_edit() {
+        let stdin = br#"{"hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"/r/app/a.ts","old_string":"SECRET OLD","new_string":"SECRET NEW"}}"#;
+        let report = claude_report("PreToolUse", stdin, "pn_1", 1).expect("report");
+        assert_eq!(report.payload.paths, vec!["/r/app/a.ts".to_string()]);
+        assert!(!serde_json::to_string(&report)
+            .expect("json")
+            .contains("SECRET"));
+        let note = br#"{"hook_event_name":"PreToolUse","tool_name":"NotebookEdit","tool_input":{"notebook_path":"/r/n.ipynb"}}"#;
+        assert_eq!(
+            claude_report("PreToolUse", note, "pn_1", 1)
+                .expect("note")
+                .payload
+                .paths,
+            vec!["/r/n.ipynb".to_string()]
+        );
+        let read = br#"{"hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{"file_path":"/r/app/a.ts"}}"#;
+        assert!(claude_report("PreToolUse", read, "pn_1", 1)
+            .expect("read")
+            .payload
+            .paths
+            .is_empty());
     }
 
     #[test]

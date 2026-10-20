@@ -1180,6 +1180,29 @@ pub fn run() {
                 let _ = state
                     .review
                     .set(services::review_queue::start(handle.clone()));
+                // F-TK-05: a new claim overlap is a notice in both agents'
+                // panes, and the queue shows every overlap there is.
+                {
+                    let app = handle.clone();
+                    state
+                        .tasks
+                        .set_overlap_sink(std::sync::Arc::new(move |new, all| {
+                            let state = app.state::<AppState>();
+                            for o in new {
+                                let msg = services::tasks::overlap_notice(o);
+                                for folder in &o.folders {
+                                    for pane in state.tasks.panes_in(folder) {
+                                        let _ = state.terminals.pty.notice(&pane, &msg);
+                                    }
+                                }
+                            }
+                            if let Some(q) = state.review.get() {
+                                q.set_overlaps(all.to_vec());
+                            }
+                        }));
+                    let tasks = state.tasks.clone();
+                    tauri::async_runtime::spawn_blocking(move || tasks.check_overlaps());
+                }
             }
             // The status server, then engines: the cached report at once, the
             // remote registry and a fresh detection in the background (F-EN-01).

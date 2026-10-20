@@ -637,7 +637,17 @@ impl AppState {
             crate::services::tasks::tasks_bin(),
         );
         launcher.bind_tasks(&tasks);
+        crate::services::lanes::set_tasks(&tasks);
         let _ = handback_tasks.set(tasks.clone());
+        // An agent's edit claims its file (F-TK-05 AC2).
+        let edit_tasks = Arc::downgrade(&tasks);
+        terminals.status.set_edit_sink(Arc::new(move |pane, paths| {
+            let Some(tasks) = edit_tasks.upgrade() else {
+                return;
+            };
+            let (pane, paths) = (pane.to_string(), paths.to_vec());
+            tauri::async_runtime::spawn_blocking(move || tasks.claim_edits(&pane, &paths));
+        }));
         let routines = crate::services::routines::RoutinesService::new(
             store.clone(),
             bus.clone(),

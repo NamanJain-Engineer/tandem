@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { IpcError, ReviewItem, ReviewQueueView } from "@tandem/protocol";
+import type { IpcError, ReviewItem, ReviewQueueView, TaskClaimOverlap } from "@tandem/protocol";
 import { listen } from "../ipc/events";
 import { invoke } from "../ipc/invoke";
 
@@ -7,6 +7,8 @@ export type ReviewSort = "risk" | "time";
 
 type ReviewState = {
   items: ReviewItem[];
+  /** Worktrees claiming the same files (F-TK-05). */
+  overlaps: TaskClaimOverlap[];
   loaded: boolean;
   error: string | null;
   /** The Dashboard panel's view (F-DB-04). */
@@ -20,6 +22,7 @@ type ReviewState = {
 
 export const useReview = create<ReviewState>((set) => ({
   items: [],
+  overlaps: [],
   loaded: false,
   error: null,
   view: "agents",
@@ -29,12 +32,12 @@ export const useReview = create<ReviewState>((set) => ({
   load: async (refresh = false) => {
     try {
       const q = await invoke<ReviewQueueView>("review_queue", { refresh });
-      set({ items: q?.items ?? [], loaded: true, error: null });
+      set({ items: q?.items ?? [], overlaps: q?.overlaps ?? [], loaded: true, error: null });
     } catch (e) {
       set({ loaded: true, error: (e as IpcError).message });
     }
   },
-  apply: (q) => set({ items: q.items, loaded: true, error: null }),
+  apply: (q) => set({ items: q.items, overlaps: q.overlaps ?? [], loaded: true, error: null }),
 }));
 
 /** Waiting to be looked at: not approved, not snoozed. */

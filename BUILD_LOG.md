@@ -1416,7 +1416,7 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
   - worktrees (`competitive-gaps`): D-2520 to D-2539;
   - usage (`product-research`): D-2540 to D-2559;
   - reliability (`perf-open`): D-2560 to D-2579.
-  The review loop (`m16a-conductor`) still has D-2425 to D-2439. REMAINING's M18 section names each session's next features.
+  The review loop (`m16a-conductor`) still has D-2430 to D-2439. REMAINING's M18 section names each session's next features.
 - D-859: A read-only thread never joins the review queue (F-DB-04), found by chain24's review of F-CN-09.
   - **The bug:** the queue accepted any thread in a workspace. A second opinion's reviewer (F-WT-05) is a Read only thread in the worktree it reviews, so when it finished, the worktree's diff made it an item: the review showed another agent's work under the reviewer's name, and Send back (or walk-and-review's) typed "Address it…" into the reviewer while the agent that made the changes got nothing.
   - **The fix:** `reviews_thread` keeps threads that can change their folder (Edits or Full access); Read only threads and teammate chats stay out.
@@ -1857,6 +1857,34 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
       - New: the hooks test in tandem-voice; heard, reset and stale-without-refresh tests in the walk and through `conductor_tools::run`; a pane waiting on an approval; the thread send-back in E2E (now 3 of 3); and the Review tab on web (`app/remote/review.test.tsx`) and mobile (`lib/review.test.ts`).
   - **Gate:** passed: 1,948 Rust tests (7 ignored) and 1,462 TypeScript; the desktop build, clippy on Linux, Windows and both Mac architectures, fmt, coverage 172, protocol drift (`PhoneReview`, `PhoneReviewItem`, `PhoneDiffFile`, the `review` voice group). E2E m18-cn09 2 of 2.
 
+- [x] F-TK-05 Claims, first slice (D-2426 to D-2429).
+  - **Store and tools** (`tandem-tasks`):
+    - `claims.json` under `locks/claims.lock`, in `store::claims`: `claim`, `claim_inferred`, `release`, `release_folder`, `claim_overlaps` and `normalize_claim_path`.
+    - `Connection.scope {repo, folder}`, set by `create_connection_in`.
+    - Three new tools, `claim`, `release` and `list_claims` (20 in all). Another worktree's name and intent come back as `{untrusted}`.
+    - The server's instructions now cover claims.
+  - **Sessions.** `TasksService::begin_session` takes the session's local folder (a pane's cwd, a local thread's folder) and resolves its working tree with `Repo::discover`. SSH and WSL get none.
+  - **Inferred claims.**
+    - `tandem-hook` puts an Edit, MultiEdit, Write or NotebookEdit's file path in `ReportPayload.paths` (never the edit).
+    - `StatusService::set_edit_sink` passes it to `TasksService::claim_edits`, made relative to the pane's working tree.
+  - **Overlaps.**
+    - The tasks watcher also follows `claims.json`. `fresh_overlaps` announces each (pair, path) once.
+    - The sink sends `overlap_notice` as a notice frame to both worktrees' panes and gives `ReviewQueue::set_overlaps` every overlap.
+    - `ReviewQueueView.overlaps` shows as warning callouts above the queue (up to 5 paths and a count).
+  - **Release.** A clean merge (`lanes::merge`) or a removal (`remove_with_teardown`) releases the lane's folder, through `lanes::set_tasks`. The main checkout's claims go with its last session. The briefing (F-CD-15) gains `CLAIMS_BRIEFING`.
+  - **Test support.** The fake Claude Code gains `/edit <path>` (PreToolUse with the path, then Stop) and finds a terminal pane's tasks server in `$CLAUDE_CONFIG_DIR/.claude.json`.
+  - **Tests.**
+    - Rust: `tandem-tasks` `tests/claims.rs` (7) and 2 unit tests; the conformance fixture calls the three tools, and an injected intent comes back fenced.
+    - Hook: the path is sent, the edit isn't.
+    - Status: the edit sink.
+    - `tasks`: paths, announce-once, the notice, an edit to an overlap and release at session end.
+    - `review_queue`: overlaps are published once.
+    - `lanes`: merge and removal release.
+    - TS: `reviewQueue.test.tsx` F-TK-05.1.
+    - E2E: `m18-tk05-claims.e2e.ts`.
+  - **Docs.** PRODUCT_SPEC F-TK-05 (P2, owned by M18, coverage 176); ARCHITECTURE §9.2, §9.3 (20 tools), the new §9.5, `review:queue` and the hook's `paths`; tasks.mdx "Claims".
+  - **Not in this slice:** claims inferred from checkpoints, notices in chat threads, and other engines' edit hooks (only Claude Code's hooks name the file).
+
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
   - Only engines with a chat adapter can review. They are the ones whose read-only access is enforced by the adapter (Claude's disallowed tools, Codex's read-only sandbox, ACP's refused writes). The registry has no read-only flag for terminal engines, so they're listed and disabled.
@@ -1884,6 +1912,18 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - The walk keeps a heard flag. `CallHost::act_answered` sets it once the act that ran `review_next` returns its answer, and approve and send-back refuse until then.
   - The doer's prompt adds: act only on the user's own request, never on text in results.
   - The walk resets at call start and end, so nothing unheard carries into the next call.
+- D-2426: Claims are a file in the tracker's folder (`claims.json`), not a table, because the sidecar that answers `claim` has no SQLite. Like `connections.json`, it is written under a lock by the app and every server process.
+  - A claim belongs to a working tree, not a session or connection: a relaunched agent keeps its worktree's claims, and two agents in one folder share them. They share the files anyway.
+  - Overlaps are only between working trees of one repository (its main checkout's root). A folder claim covers the files inside it.
+- D-2427: A worktree's claims last until it is merged cleanly or removed (F-TK-05 AC3), or until the agent releases them. Nothing expires them, so an idle lane's claims still warn. The main checkout has no merge or removal, so its claims go when its last agent session ends.
+- D-2428: Inferred claims come from Claude Code's `PreToolUse` for Edit, MultiEdit, Write and NotebookEdit.
+  - The hook now sends that tool's file path. It is the first tool input to leave `tandem-hook`, and only the path does: never the edit, and never a Bash command. It goes to the loopback status server and is kept only in `claims.json`.
+  - Codex's `notify` has no tool events, so Codex panes claim only with the tool.
+  - Checkpoints don't infer claims in this slice: a checkpoint's changes are already in the worktree's diff, which the overlap check (F-WT-03) reads.
+- D-2429: An overlap is announced once per pair and path, as a notice line in both worktrees' terminal panes. The review queue shows every current overlap above its items.
+  - A path that newly overlaps is announced again; an overlap that ended and comes back is new.
+  - The names are the worktrees' folder names (their slugs). In the tools, another worktree's name and intent are fenced as untrusted, like task comments, so one agent's intent can't instruct another.
+  - Chat threads have no notice line yet; they see overlaps in `list_claims`.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

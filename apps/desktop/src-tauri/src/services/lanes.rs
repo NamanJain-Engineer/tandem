@@ -44,6 +44,31 @@ pub fn set_remote(remote: &std::sync::Arc<crate::services::remote::RemoteService
     let _ = REMOTE.set(std::sync::Arc::downgrade(remote));
 }
 
+/// The trackers whose claims a merged or removed lane releases (F-TK-05):
+/// the app's one, set at startup (tests make their own, so every live one
+/// is told).
+static TASKS: std::sync::Mutex<Vec<std::sync::Weak<crate::services::tasks::TasksService>>> =
+    std::sync::Mutex::new(Vec::new());
+
+pub fn set_tasks(tasks: &std::sync::Arc<crate::services::tasks::TasksService>) {
+    if let Ok(mut all) = TASKS.lock() {
+        all.retain(|w| w.strong_count() > 0);
+        all.push(std::sync::Arc::downgrade(tasks));
+    }
+}
+
+/// A lane's worktree was merged or removed: its claims go (F-TK-05 AC3).
+/// `folder` is the worktree's resolved path, as its sessions claimed in.
+fn release_claims(folder: &Path) {
+    let live: Vec<_> = match TASKS.lock() {
+        Ok(all) => all.iter().filter_map(std::sync::Weak::upgrade).collect(),
+        Err(_) => return,
+    };
+    for tasks in live {
+        tasks.release_folder(folder);
+    }
+}
+
 type Remote = (
     std::sync::Arc<crate::services::remote::RemoteService>,
     tandem_core::ids::HostId,
@@ -266,6 +291,11 @@ pub async fn merge(store: &Store, git: &Git, id: &WorkspaceId) -> Result<MergeRe
     let branch = lane.lane_branch.unwrap_or_default();
     match LaneManager::merge_into_base(git, &repo, &branch).await {
         Ok(report) => {
+            if report.merged {
+                release_claims(
+                    &std::fs::canonicalize(&lane.root).unwrap_or_else(|_| lane.root.clone().into()),
+                );
+            }
             tracing::info!(
                 code = "lane.merged",
                 merged = report.merged,
@@ -508,7 +538,9 @@ pub async fn remove_with_teardown(
         .await;
     }
     let repo = discover(&parent.root, "Folder not found")?;
+    let claimed_in = std::fs::canonicalize(lane_path).unwrap_or_else(|_| lane_path.to_path_buf());
     LaneManager::remove(git, &repo, lane_path, force).await?;
+    release_claims(&claimed_in);
     workspaces::remove(store, &lane.id).await?;
     crate::services::worktree_runtime::free_global(lane.id.as_str());
     tracing::info!(code = "lane.removed", "worktree removed");
@@ -824,6 +856,50 @@ mod tests {
             .is_empty());
         let branches = git_cmd(Path::new(&fx.repo.root), &["branch", "--list", "tandem/*"]);
         assert!(branches.contains("tandem/fix-auth"), "the branch stays");
+    }
+
+    #[tokio::test]
+    async fn f_tk_05_3_merging_or_removing_a_lane_releases_its_claims() {
+        let fx = fixture().await;
+        let tasks_dir = tempfile::tempdir().expect("dir");
+        let data = DataDir::at(tasks_dir.path().to_path_buf()).expect("data");
+        let tasks = crate::services::tasks::TasksService::new(&data, fx.store.clone(), None);
+        set_tasks(&tasks);
+        let tracker = tasks.tracker.clone().expect("tracker");
+        let merged = create(&fx.store, &fx.git, &fx.repo.id, "add oauth")
+            .await
+            .expect("lane");
+        let removed = create(&fx.store, &fx.git, &fx.repo.id, "fix auth")
+            .await
+            .expect("lane");
+        for (pane, lane) in [("p1", &merged), ("p2", &removed)] {
+            tasks
+                .begin_session(
+                    &format!("pn:{pane}"),
+                    "Claude Code",
+                    "me",
+                    Some(Path::new(&lane.root)),
+                )
+                .expect("session");
+            let file = Path::new(&lane.root).join("app.txt");
+            tasks.claim_edits(pane, &[file.to_string_lossy().into_owned()]);
+        }
+        assert_eq!(tracker.claim_overlaps().expect("overlaps").len(), 1);
+        std::fs::write(Path::new(&merged.root).join("app.txt"), "oauth\n").expect("write");
+        git_cmd(Path::new(&merged.root), &["commit", "-qam", "oauth"]);
+        assert!(
+            merge(&fx.store, &fx.git, &merged.id)
+                .await
+                .expect("merge")
+                .merged
+        );
+        let claims = tracker.claims().expect("claims");
+        assert_eq!(claims.len(), 1, "the merged lane's claim went");
+        assert_eq!(claims[0].agent, "fix-auth");
+        remove(&fx.store, &PtyManager::new(), &fx.git, &removed.id, None)
+            .await
+            .expect("remove");
+        assert!(tracker.claims().expect("claims").is_empty());
     }
 
     #[tokio::test]

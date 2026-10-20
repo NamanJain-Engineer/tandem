@@ -378,6 +378,62 @@ pub struct Connection {
     pub actor: String,
     #[serde(default)]
     pub revoked_at: Option<i64>,
+    /// The working tree the session runs in, when it's in a git repository:
+    /// what its claims are made for (F-TK-05).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<ClaimScope>,
+}
+
+/// Paths in a claim (F-TK-05): at most this many per call.
+pub const CLAIM_PATHS_MAX: usize = 50;
+pub const CLAIM_PATH_MAX: usize = 512;
+pub const CLAIM_INTENT_MAX: usize = 500;
+/// A working tree keeps at most this many claims; its oldest inferred ones
+/// go first.
+pub const CLAIMS_PER_FOLDER_MAX: usize = 500;
+
+/// Where a session works: the repository (its main checkout's top folder)
+/// and the working tree (a lane's worktree, or the main checkout itself).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export, rename = "TaskClaimScope")]
+pub struct ClaimScope {
+    pub repo: String,
+    pub folder: String,
+}
+
+/// `claims.json`: one path a working tree's agent said (or was seen) it
+/// is changing (F-TK-05). A claim belongs to the working tree, not the
+/// session: a relaunched agent keeps its lane's claims.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, rename = "TaskClaim")]
+pub struct Claim {
+    /// Relative to the working tree, `/`-separated; a folder ends in `/`.
+    pub path: String,
+    /// What the agent says it's doing. Another agent's intent is untrusted.
+    pub intent: String,
+    pub repo: String,
+    pub folder: String,
+    /// The working tree's name (a lane's slug), for notices.
+    pub agent: String,
+    /// The connection that made it; `None` for one the app inferred.
+    #[serde(default)]
+    pub connection: Option<String>,
+    /// Seen in an edit, not claimed with the tool.
+    pub inferred: bool,
+    pub at: i64,
+}
+
+/// Two working trees of one repository claiming the same files.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, rename = "TaskClaimOverlap")]
+pub struct ClaimOverlap {
+    pub repo: String,
+    /// The two working trees, in path order.
+    pub folders: [String; 2],
+    /// Their names, in the same order.
+    pub agents: [String; 2],
+    /// The overlapping paths (the more specific of each pair), sorted.
+    pub paths: Vec<String>,
 }
 
 pub fn issue_id(number: u64) -> String {

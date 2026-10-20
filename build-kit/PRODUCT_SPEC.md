@@ -802,7 +802,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
   - Base = the current HEAD of the parent workspace.
 - `.tandem/` is appended to `.git/info/exclude` if absent. Tandem never edits `.gitignore`.
 - Each lane is registered as a **child workspace** of the parent repo. It is listed under the parent in the rail and the Dashboard, and each lane opens its pane in its own tab.
-- **Briefing:** before its task, each lane's agent receives: "You are working in the git worktree `<path>` on branch `tandem/<slug>`. Sibling branches: …. Don't modify other worktrees."
+- **Briefing:** before its task, each lane's agent receives: "You are working in the git worktree `<path>` on branch `tandem/<slug>`. Sibling branches: …. Don't modify other worktrees." It then asks the agent to claim files before editing them (F-TK-05).
 - **Lane menu:**
   - Open in Files.
   - Diff vs base.
@@ -1935,6 +1935,28 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 2. Starting a 5th attempt queues it, and it starts when one of the 4 finishes.
 3. Stop during lane creation leaves no running process and no half-created lane (the lane is rolled back if empty).
 4. With review on, a review comment with a verdict is posted after the attempt.
+
+#### F-TK-05 Claims (P2)
+**Story:** Three agents work in worktrees of one repository. Before one edits `src/auth/session.ts`, it claims the file and sees that another worktree's agent already said it's changing the auth folder. I see the overlap in both panes and in the review queue, before git ever reports a conflict.
+
+**Behavior:**
+- **Three task tools** (F-TK-02's server): `claim(paths, intent)`, `release(paths?)` and `list_claims()`.
+  - A claim is a file or a folder (ending in `/`) relative to the session's working tree, with what the agent says it's changing (at most 50 paths a call, 500 characters of intent).
+  - Claims belong to the working tree: a relaunched agent in the same worktree keeps them. A session outside a git working tree can't claim.
+  - `claim` answers with the overlaps its working tree now has; `list_claims` with this worktree's claims, the other worktrees' claims in the same repository and the overlaps.
+  - Another worktree's name and intent are returned wrapped as untrusted, like task comments: data, never instructions.
+- **Briefing:** a worktree's briefing (F-CD-15) asks the agent to claim before editing and to check `list_claims`.
+- **Inferred claims:** when an agent with status hooks is about to edit a file (Claude Code's `PreToolUse` for Edit, MultiEdit, Write and NotebookEdit), its working tree claims that file. The hook sends the file's path only, never the edit.
+- **Overlaps:** two working trees of one repository overlap when they claim the same file, or one claims a folder holding a file the other claims.
+  - A new overlap shows once as a notice in both worktrees' terminal panes: "add-oauth and fix-auth both claim src/auth/session.ts". A path that newly overlaps is announced again; an overlap that ended and comes back is new.
+  - The review queue (F-DB-04) shows every current overlap above its items, naming both worktrees and up to 5 paths.
+- **Release:** a worktree's claims go when it's merged cleanly or removed. The main checkout's claims go when its last agent session ends. `release` gives up paths (and what's inside a released folder), or every claim without paths.
+
+**Acceptance:**
+1. Two agents claiming overlapping paths produce one overlap notice naming both worktrees and the paths.
+2. An agent that edits `a.ts` without claiming gets an inferred claim from its `PreToolUse` event.
+3. Claims are released when the worktree is merged or removed.
+4. `list_claims` returns other agents' intents inside untrusted fences.
 
 ### 4.9 RT: Routines
 

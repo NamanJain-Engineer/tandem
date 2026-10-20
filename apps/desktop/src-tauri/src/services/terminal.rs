@@ -585,7 +585,9 @@ impl TerminalService {
         let Some(server) = tasks.terminal_server() else {
             return Vec::new();
         };
-        let Some(conn) = tasks.begin_session(&format!("pn:{pane}"), &engine.label, "me") else {
+        // An SSH host's folder isn't a working tree here: no claims.
+        let Some(conn) = tasks.begin_session(&format!("pn:{pane}"), &engine.label, "me", None)
+        else {
             return Vec::new();
         };
         let mut mcp = RemoteMcp::kept(remote.clone());
@@ -616,6 +618,7 @@ impl TerminalService {
         engine: &tandem_engines::registry::EngineSpec,
         home: Option<&Path>,
         pane: &str,
+        folder: &Path,
     ) -> Vec<(String, String)> {
         let (Some(tasks), Some(home)) = (self.tasks.get(), home) else {
             return Vec::new();
@@ -634,7 +637,7 @@ impl TerminalService {
         if server.is_none() {
             return Vec::new();
         }
-        match tasks.begin_session(&format!("pn:{pane}"), &engine.label, "me") {
+        match tasks.begin_session(&format!("pn:{pane}"), &engine.label, "me", Some(folder)) {
             Some(conn) => vec![(crate::services::tasks::CONNECTION_ENV.to_string(), conn)],
             None => Vec::new(),
         }
@@ -1034,7 +1037,7 @@ impl TerminalService {
             })?;
             let mut env: Vec<(String, String)> = launch.spec.env.clone().into_iter().collect();
             env.extend(
-                self.tasks_env(&engine, launch.home.as_deref(), pane.as_str())
+                self.tasks_env(&engine, launch.home.as_deref(), pane.as_str(), &cwd)
                     .await,
             );
             (args, env, Some(engine), Some(launch))
@@ -1758,9 +1761,11 @@ mod tests {
             "{}",
             text()
         );
+        // `pwd`'s line can arrive after the echo's on a busy machine.
         assert!(
-            text().contains("ws1"),
-            "starts in the workspace root when cwd is gone"
+            wait_until(Duration::from_secs(5), || text().contains("ws1")),
+            "starts in the workspace root when cwd is gone: {}",
+            text()
         );
         let notices: Vec<String> = sink
             .frames

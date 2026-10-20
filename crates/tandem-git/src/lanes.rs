@@ -40,6 +40,9 @@ impl ForceConfirm {
     }
 }
 
+/// The briefing's line on claims (F-TK-05).
+pub const CLAIMS_BRIEFING: &str = "If you have the tandem_tasks tools, claim the files you're about to change with claim before editing them, and check list_claims for other worktrees' claims.";
+
 /// What a worktree's agent receives before its task (F-CD-15 "Briefing").
 /// `siblings` are the other worktrees' branches in the same launch or repo.
 pub fn briefing(path: &Path, branch: &str, siblings: &[String]) -> String {
@@ -53,7 +56,7 @@ pub fn briefing(path: &Path, branch: &str, siblings: &[String]) -> String {
             .join(", ")
     };
     format!(
-        "You are working in the git worktree `{}` on branch `{branch}`. Sibling branches: {others}. Don't modify other worktrees.",
+        "You are working in the git worktree `{}` on branch `{branch}`. Sibling branches: {others}. Don't modify other worktrees. {CLAIMS_BRIEFING}",
         path_string(path)
     )
 }
@@ -332,7 +335,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn f_cd_15_briefing_names_the_worktree_branch_and_siblings() {
+    fn f_cd_15_f_tk_05_briefing_names_the_worktree_branch_siblings_and_claims() {
         let text = briefing(
             Path::new("/repo/.tandem/worktrees/fix-auth"),
             "tandem/fix-auth",
@@ -341,7 +344,9 @@ mod tests {
         assert_eq!(
             text,
             "You are working in the git worktree `/repo/.tandem/worktrees/fix-auth` on branch `tandem/fix-auth`. \
-             Sibling branches: `tandem/fix-auth-2`, `tandem/fix-auth-3`. Don't modify other worktrees."
+             Sibling branches: `tandem/fix-auth-2`, `tandem/fix-auth-3`. Don't modify other worktrees. \
+             If you have the tandem_tasks tools, claim the files you're about to change with claim before editing them, \
+             and check list_claims for other worktrees' claims."
         );
         assert!(briefing(Path::new("/r/w"), "tandem/w", &[]).contains("Sibling branches: none."));
     }

@@ -111,6 +111,8 @@ pub struct ReviewItem {
 #[ts(export)]
 pub struct ReviewQueueView {
     pub items: Vec<ReviewItem>,
+    /// Worktrees claiming the same files (F-TK-05).
+    pub overlaps: Vec<tandem_tasks::ClaimOverlap>,
 }
 
 /// A repository's review settings, kept in the app's settings by its root.
@@ -322,6 +324,8 @@ struct Inner {
     visited: HashSet<String>,
     /// An item to read again first (its approve found it changed).
     reread: Option<String>,
+    /// F-TK-05: worktrees claiming the same files.
+    overlaps: Vec<tandem_tasks::ClaimOverlap>,
 }
 
 #[derive(Debug, Clone)]
@@ -377,9 +381,23 @@ impl ReviewQueue {
             }
         }
         let mut items: Vec<ReviewItem> = inner.items.values().cloned().collect();
+        let overlaps = inner.overlaps.clone();
         drop(inner);
         items.sort_by(|a, b| a.finished_at.cmp(&b.finished_at).then(a.key.cmp(&b.key)));
-        ReviewQueueView { items }
+        ReviewQueueView { items, overlaps }
+    }
+
+    /// The claim overlaps now (F-TK-05 AC1): the queue shows them above
+    /// its items.
+    pub fn set_overlaps(&self, overlaps: Vec<tandem_tasks::ClaimOverlap>) {
+        {
+            let mut inner = self.lock();
+            if inner.overlaps == overlaps {
+                return;
+            }
+            inner.overlaps = overlaps;
+        }
+        self.publish();
     }
 
     /// The queue's revision (F-CN-09's phone).
@@ -1809,5 +1827,28 @@ mod tests {
             q.run_check("pane:a").await.expect_err("none").code,
             ErrorCode::Invalid
         );
+    }
+
+    #[tokio::test]
+    async fn f_tk_05_1_the_queue_shows_claim_overlaps_once() {
+        let (_fake, q, bus) = rig();
+        let mut rx = bus.subscribe(Topic::Status);
+        let overlap = tandem_tasks::ClaimOverlap {
+            repo: "/r".into(),
+            folders: ["/r/a".into(), "/r/b".into()],
+            agents: ["a".into(), "b".into()],
+            paths: vec!["x.ts".into()],
+        };
+        q.set_overlaps(vec![overlap.clone()]);
+        q.set_overlaps(vec![overlap.clone()]);
+        let ev = rx.try_recv().expect("published");
+        assert_eq!(ev.name, EVENT);
+        assert!(
+            rx.try_recv().is_err(),
+            "the same overlaps aren't published again"
+        );
+        assert_eq!(q.view().overlaps, vec![overlap]);
+        q.set_overlaps(Vec::new());
+        assert!(q.view().overlaps.is_empty());
     }
 }

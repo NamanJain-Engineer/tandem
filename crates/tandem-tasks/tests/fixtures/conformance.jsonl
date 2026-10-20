@@ -23,3 +23,6 @@
 {"jsonrpc":"2.0","id":22,"method":"tools/call","params":{"name":"get_issue","arguments":{"id":"TAN-99"}}}
 {"jsonrpc":"2.0","id":23,"method":"tools/call","params":{"name":"list_issues","arguments":{"surprise":true}}}
 {"jsonrpc":"2.0","id":24,"method":"resources/read","params":{"uri":"tandem-tasks://issues/TAN-1"}}
+{"jsonrpc":"2.0","id":25,"method":"tools/call","params":{"name":"claim","arguments":{"paths":["src/auth/session.ts","src/oauth.ts"],"intent":"Add OAuth sign-in"}}}
+{"jsonrpc":"2.0","id":26,"method":"tools/call","params":{"name":"list_claims","arguments":{}}}
+{"jsonrpc":"2.0","id":27,"method":"tools/call","params":{"name":"release","arguments":{"paths":["src/oauth.ts"]}}}

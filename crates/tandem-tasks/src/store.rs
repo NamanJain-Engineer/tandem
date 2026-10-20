@@ -21,6 +21,9 @@ use crate::error::TaskError;
 use crate::lock;
 use crate::model::*;
 
+mod claims;
+pub use claims::{normalize_claim_path, overlaps_of};
+
 /// Idempotency keys are remembered this long (F-TK-01 AC2).
 pub const IDEMPOTENCY_WINDOW_MS: i64 = 24 * 60 * 60 * 1000;
 /// Page size cap for issues (F-TK-02 AC3).
@@ -850,12 +853,24 @@ impl TaskStore {
     /// A connection for one engine session; its writes are recorded as
     /// `actor`.
     pub fn create_connection(&self, label: &str, actor: &str) -> Result<Connection, TaskError> {
+        self.create_connection_in(label, actor, None)
+    }
+
+    /// A connection whose session works in `scope`; it can claim files
+    /// there (F-TK-05).
+    pub fn create_connection_in(
+        &self,
+        label: &str,
+        actor: &str,
+        scope: Option<ClaimScope>,
+    ) -> Result<Connection, TaskError> {
         let conn = Connection {
             id: tandem_core::ids::new_id("tc"),
             created_at: self.now(),
             label: label.to_string(),
             actor: actor.to_string(),
             revoked_at: None,
+            scope,
         };
         let out = conn.clone();
         self.edit_connections(move |m| {

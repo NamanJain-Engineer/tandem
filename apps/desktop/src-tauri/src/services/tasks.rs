@@ -1,17 +1,18 @@
 //! The task tracker in the app (F-TK-01..03): its store at `$DATA/tasks/`,
 //! and the `tandem-tasks` MCP server agents get (F-TK-02). Each engine
 //! session gets its own connection, revoked when the session ends, so a
-//! server left behind can't write any more.
+//! server left behind can't write any more. A session in a git working
+//! tree can claim files there (F-TK-05); its edits claim them too.
 
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use tandem_core::settings::SettingKey;
 use tandem_core::DataDir;
 use tandem_engines::chat::StdioServer;
 use tandem_store::Store;
-use tandem_tasks::TaskStore;
+use tandem_tasks::{ClaimOverlap, ClaimScope, TaskStore};
 
 /// The name engines know the tasks server by (`mcp__tandem_tasks__…`).
 pub const SERVER_NAME: &str = "tandem_tasks";
@@ -27,9 +28,108 @@ pub struct TasksService {
     bin: Option<PathBuf>,
     store: Store,
     /// The live connection per session key (`th:<id>`, `pn:<id>`).
-    sessions: Mutex<HashMap<String, String>>,
-    /// The `issues/` watcher, while it runs.
+    sessions: Mutex<HashMap<String, Live>>,
+    /// The `issues/` and `claims.json` watcher, while it runs.
     watcher: Mutex<Option<notify::RecommendedWatcher>>,
+    /// Overlaps already announced, by [`overlap_keys`].
+    announced: Mutex<HashSet<String>>,
+    on_overlap: std::sync::OnceLock<OverlapSink>,
+}
+
+/// A session's connection and the working tree it claims in.
+#[derive(Clone)]
+struct Live {
+    connection: String,
+    scope: Option<ClaimScope>,
+}
+
+/// `(new, all)`: overlaps not announced before (only their new paths), and
+/// every overlap there is now (F-TK-05 AC1).
+pub type OverlapSink = Arc<dyn Fn(&[ClaimOverlap], &[ClaimOverlap]) + Send + Sync>;
+
+/// Where a session in `folder` claims: its working tree and the repository
+/// it belongs to (a lane's worktree claims against its main checkout).
+pub fn claim_scope(folder: &Path) -> Option<ClaimScope> {
+    let repo = tandem_git::repo::Repo::discover(folder).ok()??;
+    Some(ClaimScope {
+        repo: repo.main_root().to_string_lossy().into_owned(),
+        folder: repo.root().to_string_lossy().into_owned(),
+    })
+}
+
+/// An edited file's path relative to the working tree, or `None` outside
+/// it (and inside `.git` or Vibezeo's own `.tandem`).
+pub fn claim_path(folder: &Path, edited: &Path) -> Option<String> {
+    let rel = if edited.is_relative() {
+        edited.to_path_buf()
+    } else if let Ok(r) = edited.strip_prefix(folder) {
+        r.to_path_buf()
+    } else {
+        // A new file's folder exists; symlinked paths (macOS /tmp) resolve.
+        let parent = std::fs::canonicalize(edited.parent()?).ok()?;
+        parent
+            .join(edited.file_name()?)
+            .strip_prefix(folder)
+            .ok()?
+            .to_path_buf()
+    };
+    let text = rel.to_string_lossy().replace('\\', "/");
+    if text.starts_with(".git/") || text.starts_with(".tandem/") {
+        return None;
+    }
+    tandem_tasks::store::normalize_claim_path(&text).ok()
+}
+
+/// One key per overlapping path, so a pair is announced again only for a
+/// path it didn't overlap on before.
+fn overlap_keys(o: &ClaimOverlap) -> impl Iterator<Item = (String, &str)> + '_ {
+    o.paths.iter().map(move |p| {
+        (
+            format!("{}\0{}\0{}\0{p}", o.repo, o.folders[0], o.folders[1]),
+            p.as_str(),
+        )
+    })
+}
+
+/// The overlaps in `all` with paths not in `announced` (recorded now);
+/// keys of overlaps that ended are forgotten, so a later one is new again.
+pub fn fresh_overlaps(announced: &mut HashSet<String>, all: &[ClaimOverlap]) -> Vec<ClaimOverlap> {
+    let mut now = HashSet::new();
+    let mut out = Vec::new();
+    for o in all {
+        let new: Vec<String> = overlap_keys(o)
+            .filter_map(|(k, p)| {
+                let was = announced.contains(&k);
+                now.insert(k);
+                (!was).then(|| p.to_string())
+            })
+            .collect();
+        if !new.is_empty() {
+            out.push(ClaimOverlap {
+                paths: new,
+                ..o.clone()
+            });
+        }
+    }
+    *announced = now;
+    out
+}
+
+/// "add-oauth and fix-auth both claim src/auth/session.ts" (up to 3 paths).
+pub fn overlap_notice(o: &ClaimOverlap) -> String {
+    let shown: Vec<&str> = o.paths.iter().take(3).map(String::as_str).collect();
+    let more = o.paths.len().saturating_sub(shown.len());
+    let tail = if more > 0 {
+        format!(" and {more} more")
+    } else {
+        String::new()
+    };
+    format!(
+        "{} and {} both claim {}{tail}",
+        o.agents[0],
+        o.agents[1],
+        shown.join(", ")
+    )
 }
 
 /// How long changes are gathered before `tasks:changed` goes out.
@@ -98,23 +198,106 @@ impl TasksService {
             store,
             sessions: Mutex::default(),
             watcher: Mutex::default(),
+            announced: Mutex::default(),
+            on_overlap: std::sync::OnceLock::new(),
         })
+    }
+
+    /// Told of claim overlaps as they change (set once, at startup).
+    pub fn set_overlap_sink(&self, sink: OverlapSink) {
+        let _ = self.on_overlap.set(sink);
+    }
+
+    /// Reads the claims and tells the sink about new overlaps.
+    pub fn check_overlaps(&self) {
+        let (Some(tracker), Some(sink)) = (&self.tracker, self.on_overlap.get()) else {
+            return;
+        };
+        let all = match tracker.claim_overlaps() {
+            Ok(all) => all,
+            Err(e) => {
+                tracing::warn!(code = "tasks.claims_unreadable", error = %e, "claims couldn't be read");
+                return;
+            }
+        };
+        let new = match self.announced.lock() {
+            Ok(mut a) => fresh_overlaps(&mut a, &all),
+            Err(_) => return,
+        };
+        sink(&new, &all);
+    }
+
+    /// The panes whose agents work in `folder`.
+    pub fn panes_in(&self, folder: &str) -> Vec<String> {
+        let Ok(sessions) = self.sessions.lock() else {
+            return Vec::new();
+        };
+        sessions
+            .iter()
+            .filter(|(_, l)| l.scope.as_ref().is_some_and(|s| s.folder == folder))
+            .filter_map(|(k, _)| k.strip_prefix("pn:").map(str::to_string))
+            .collect()
+    }
+
+    /// A pane's agent is about to edit `paths`: its working tree claims
+    /// them (F-TK-05 AC2). Blocking file IO.
+    pub fn claim_edits(&self, pane: &str, paths: &[String]) {
+        let Some(tracker) = &self.tracker else {
+            return;
+        };
+        let scope = self
+            .sessions
+            .lock()
+            .ok()
+            .and_then(|m| m.get(&format!("pn:{pane}")).and_then(|l| l.scope.clone()));
+        let Some(scope) = scope else {
+            return;
+        };
+        let folder = Path::new(&scope.folder);
+        let rel: Vec<String> = paths
+            .iter()
+            .filter_map(|p| claim_path(folder, Path::new(p)))
+            .collect();
+        if rel.is_empty() {
+            return;
+        }
+        if let Err(e) = tracker.claim_inferred(&scope, &rel) {
+            tracing::warn!(code = "tasks.claim_failed", error = %e, "an edit wasn't claimed");
+        }
+    }
+
+    /// A worktree was merged or removed: its claims go (F-TK-05 AC3).
+    pub fn release_folder(&self, folder: &Path) {
+        let Some(tracker) = &self.tracker else {
+            return;
+        };
+        if let Err(e) = tracker.release_folder(&folder.to_string_lossy()) {
+            tracing::warn!(code = "tasks.release_failed", error = %e, "a worktree's claims weren't released");
+        }
     }
 
     /// Watches `issues/` and publishes `tasks:changed {ids}` within
     /// [`WATCH_BATCH`] of a change by anyone: the UI, an MCP server, another
     /// process (F-TK-03, "within 500 ms").
-    pub fn watch(&self, bus: tandem_core::bus::EventBus) {
+    pub fn watch(self: &Arc<Self>, bus: tandem_core::bus::EventBus) {
         use notify::Watcher;
         let Some(tracker) = &self.tracker else {
             return;
         };
         let (tx, rx) = std::sync::mpsc::channel::<Vec<String>>();
+        let (claims_tx, claims_rx) = std::sync::mpsc::channel::<()>();
         let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             if let Ok(ev) = res {
                 let ids: Vec<String> = ev.paths.iter().filter_map(|p| issue_of(p)).collect();
                 if !ids.is_empty() {
                     let _ = tx.send(ids);
+                }
+                if ev
+                    .paths
+                    .iter()
+                    .any(|p| p.file_name().is_some_and(|n| n == "claims.json"))
+                {
+                    let _ = claims_tx.send(());
                 }
             }
         });
@@ -128,6 +311,10 @@ impl TasksService {
         if let Err(e) = watcher.watch(&tracker.issues_dir(), notify::RecursiveMode::NonRecursive) {
             tracing::warn!(code = "tasks.watch_failed", error = %e, "tasks won't refresh by themselves");
             return;
+        }
+        // Claims change in any session's server process (F-TK-05).
+        if let Err(e) = watcher.watch(tracker.dir(), notify::RecursiveMode::NonRecursive) {
+            tracing::warn!(code = "tasks.watch_failed", error = %e, "claim overlaps won't be noticed");
         }
         std::thread::spawn(move || {
             while let Ok(first) = rx.recv() {
@@ -149,6 +336,18 @@ impl TasksService {
                 ));
             }
         });
+        let me = Arc::downgrade(self);
+        std::thread::spawn(move || {
+            while claims_rx.recv().is_ok() {
+                // A burst of writes is read once.
+                std::thread::sleep(WATCH_BATCH);
+                while claims_rx.try_recv().is_ok() {}
+                let Some(me) = me.upgrade() else {
+                    return;
+                };
+                me.check_overlaps();
+            }
+        });
         if let Ok(mut w) = self.watcher.lock() {
             *w = Some(watcher);
         }
@@ -156,22 +355,33 @@ impl TasksService {
 
     /// A new connection for the session `key`; the session's previous one
     /// is revoked.
-    pub fn begin_session(&self, key: &str, label: &str, actor: &str) -> Option<String> {
+    pub fn begin_session(
+        &self,
+        key: &str,
+        label: &str,
+        actor: &str,
+        folder: Option<&Path>,
+    ) -> Option<String> {
         let tracker = self.tracker.as_ref()?;
-        let conn = match tracker.create_connection(label, actor) {
+        let scope = folder.and_then(claim_scope);
+        let conn = match tracker.create_connection_in(label, actor, scope.clone()) {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(code = "tasks.connection_failed", error = %e, "no task connection for the session");
                 return None;
             }
         };
-        let previous = self
-            .sessions
-            .lock()
-            .ok()
-            .and_then(|mut m| m.insert(key.to_string(), conn.id.clone()));
+        let previous = self.sessions.lock().ok().and_then(|mut m| {
+            m.insert(
+                key.to_string(),
+                Live {
+                    connection: conn.id.clone(),
+                    scope,
+                },
+            )
+        });
         if let Some(old) = previous {
-            let _ = tracker.revoke_connection(&old);
+            let _ = tracker.revoke_connection(&old.connection);
         }
         Some(conn.id)
     }
@@ -181,15 +391,37 @@ impl TasksService {
         let Some(tracker) = &self.tracker else {
             return;
         };
-        let conn = self.sessions.lock().ok().and_then(|mut m| m.remove(key));
-        if let Some(c) = conn {
-            let _ = tracker.revoke_connection(&c);
+        let (ended, others_there) = match self.sessions.lock() {
+            Ok(mut m) => {
+                let ended = m.remove(key);
+                let folder = ended
+                    .as_ref()
+                    .and_then(|l| l.scope.as_ref())
+                    .map(|s| &s.folder);
+                let others = folder.is_some_and(|f| {
+                    m.values()
+                        .any(|l| l.scope.as_ref().is_some_and(|s| &s.folder == f))
+                });
+                (ended, others)
+            }
+            Err(_) => return,
+        };
+        let Some(ended) = ended else {
+            return;
+        };
+        let _ = tracker.revoke_connection(&ended.connection);
+        // A lane's claims last until it's merged or removed; the main
+        // checkout's go with its last session (D-2427).
+        if let Some(scope) = ended.scope {
+            if scope.folder == scope.repo && !others_there {
+                let _ = tracker.release_folder(&scope.folder);
+            }
         }
     }
 
     /// The session's live connection.
     pub fn connection_of(&self, key: &str) -> Option<String> {
-        self.sessions.lock().ok()?.get(key).cloned()
+        Some(self.sessions.lock().ok()?.get(key)?.connection.clone())
     }
 
     fn server(&self, connection_args: [String; 2]) -> Option<StdioServer> {
@@ -216,9 +448,15 @@ impl TasksService {
     }
 
     /// The tasks server for a chat session, with a fresh connection.
-    pub fn chat_server(&self, key: &str, label: &str, actor: &str) -> Option<StdioServer> {
+    pub fn chat_server(
+        &self,
+        key: &str,
+        label: &str,
+        actor: &str,
+        folder: Option<&Path>,
+    ) -> Option<StdioServer> {
         self.bin.as_ref()?;
-        let conn = self.begin_session(key, label, actor)?;
+        let conn = self.begin_session(key, label, actor, folder)?;
         self.server(["--connection".into(), conn])
     }
 
@@ -295,13 +533,17 @@ mod tests {
     async fn f_tk_02_2_each_session_gets_a_connection_revoked_when_it_ends() {
         let (_d, tasks) = service(Some("/opt/v/tandem-tasks".into())).await;
         let tracker = tasks.tracker.clone().expect("tracker");
-        let server = tasks.chat_server("th:1", "Thread", "me").expect("server");
+        let server = tasks
+            .chat_server("th:1", "Thread", "me", None)
+            .expect("server");
         assert_eq!(server.name, "tandem_tasks");
         let conn = tasks.connection_of("th:1").expect("conn");
         assert_eq!(server.args.last(), Some(&conn));
         assert!(tracker.connection(&conn).is_ok());
         // A new session for the same chat revokes the last one.
-        tasks.chat_server("th:1", "Thread", "me").expect("again");
+        tasks
+            .chat_server("th:1", "Thread", "me", None)
+            .expect("again");
         let next = tasks.connection_of("th:1").expect("conn");
         assert_ne!(next, conn);
         assert!(tracker.connection(&conn).is_err());
@@ -320,7 +562,7 @@ mod tests {
     #[tokio::test]
     async fn f_tk_02_without_the_binary_no_server_is_offered() {
         let (_d, tasks) = service(None).await;
-        assert!(tasks.chat_server("th:1", "Thread", "me").is_none());
+        assert!(tasks.chat_server("th:1", "Thread", "me", None).is_none());
         assert!(tasks.connection_of("th:1").is_none(), "no connection made");
     }
 
@@ -330,7 +572,9 @@ mod tests {
         let data = DataDir::at(dir.path().to_path_buf()).expect("data");
         let store = Store::open(&data).expect("store");
         let first = TasksService::new(&data, store.clone(), Some("/x".into()));
-        first.chat_server("th:1", "Thread", "me").expect("server");
+        first
+            .chat_server("th:1", "Thread", "me", None)
+            .expect("server");
         let conn = first.connection_of("th:1").expect("conn");
         let second = TasksService::new(&data, store, Some("/x".into()));
         assert!(second
@@ -339,6 +583,131 @@ mod tests {
             .expect("tracker")
             .connection(&conn)
             .is_err());
+    }
+
+    fn git_repo(dir: &std::path::Path) -> std::path::PathBuf {
+        let root = dir.join("app");
+        std::fs::create_dir_all(root.join("src")).expect("mkdir");
+        let ok = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&root)
+            .status()
+            .expect("git")
+            .success();
+        assert!(ok, "git init");
+        std::fs::canonicalize(root).expect("canonical")
+    }
+
+    #[test]
+    fn f_tk_05_edited_paths_are_relative_to_the_working_tree() {
+        let dir = tempfile::tempdir().expect("dir");
+        let root = git_repo(dir.path());
+        let scope = claim_scope(&root.join("src")).expect("scope");
+        assert_eq!(scope.folder, root.to_string_lossy());
+        assert_eq!(
+            scope.repo, scope.folder,
+            "the main checkout is its own repo"
+        );
+        assert_eq!(
+            claim_path(&root, &root.join("src/a.ts")).as_deref(),
+            Some("src/a.ts")
+        );
+        assert_eq!(
+            claim_path(&root, &root.join("src/new/b.ts")).as_deref(),
+            Some("src/new/b.ts"),
+            "a new file in a new folder"
+        );
+        assert_eq!(claim_path(&root, Path::new("/elsewhere/a.ts")), None);
+        assert_eq!(claim_path(&root, &root.join(".git/config")), None);
+        assert_eq!(
+            claim_path(&root, Path::new("src/c.ts")).as_deref(),
+            Some("src/c.ts")
+        );
+        assert!(claim_scope(&dir.path().join("nowhere")).is_none());
+    }
+
+    fn overlap(paths: &[&str]) -> ClaimOverlap {
+        ClaimOverlap {
+            repo: "/r".into(),
+            folders: [
+                "/r/.tandem/worktrees/add-oauth".into(),
+                "/r/.tandem/worktrees/fix-auth".into(),
+            ],
+            agents: ["add-oauth".into(), "fix-auth".into()],
+            paths: paths.iter().map(|p| p.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn f_tk_05_1_an_overlap_is_announced_once_and_again_after_it_ended() {
+        let mut seen = HashSet::new();
+        let first = fresh_overlaps(&mut seen, &[overlap(&["a.ts"])]);
+        assert_eq!(first, vec![overlap(&["a.ts"])]);
+        assert!(fresh_overlaps(&mut seen, &[overlap(&["a.ts"])]).is_empty());
+        let more = fresh_overlaps(&mut seen, &[overlap(&["a.ts", "b.ts"])]);
+        assert_eq!(more, vec![overlap(&["b.ts"])], "only the new path");
+        assert!(fresh_overlaps(&mut seen, &[]).is_empty());
+        assert_eq!(fresh_overlaps(&mut seen, &[overlap(&["a.ts"])]).len(), 1);
+    }
+
+    #[test]
+    fn f_tk_05_1_the_notice_names_both_worktrees_and_the_paths() {
+        assert_eq!(
+            overlap_notice(&overlap(&["src/auth/session.ts"])),
+            "add-oauth and fix-auth both claim src/auth/session.ts"
+        );
+        assert_eq!(
+            overlap_notice(&overlap(&["a", "b", "c", "d", "e"])),
+            "add-oauth and fix-auth both claim a, b, c and 2 more"
+        );
+    }
+
+    #[tokio::test]
+    async fn f_tk_05_2_a_panes_edit_claims_its_file_and_overlaps_reach_the_sink() {
+        let (_d, tasks) = service(Some("/x".into())).await;
+        let dir = tempfile::tempdir().expect("dir");
+        let root = git_repo(dir.path());
+        let seen: Arc<Mutex<Vec<(usize, usize)>>> = Arc::default();
+        let sink = seen.clone();
+        tasks.set_overlap_sink(Arc::new(move |new, all| {
+            sink.lock().expect("seen").push((new.len(), all.len()));
+        }));
+        tasks
+            .begin_session("pn:p1", "Claude Code", "me", Some(&root))
+            .expect("p1");
+        tasks.claim_edits(
+            "p1",
+            &[root.join("src/a.ts").to_string_lossy().into_owned()],
+        );
+        let tracker = tasks.tracker.as_ref().expect("tracker");
+        let claims = tracker.claims().expect("claims");
+        assert_eq!(claims.len(), 1);
+        assert!(claims[0].inferred);
+        assert_eq!(claims[0].path, "src/a.ts");
+        assert_eq!(
+            tasks.panes_in(&root.to_string_lossy()),
+            vec!["p1".to_string()]
+        );
+        // Another working tree of the repository edits the same file.
+        tracker
+            .claim_inferred(
+                &ClaimScope {
+                    repo: root.to_string_lossy().into_owned(),
+                    folder: format!("{}/other", root.to_string_lossy()),
+                },
+                &["src/a.ts".into()],
+            )
+            .expect("other");
+        tasks.check_overlaps();
+        tasks.check_overlaps();
+        assert_eq!(*seen.lock().expect("seen"), vec![(1, 1), (0, 1)]);
+        // The main checkout's last session ending releases its claims.
+        tasks.end_session("pn:p1");
+        assert!(tracker
+            .claims()
+            .expect("claims")
+            .iter()
+            .all(|c| c.folder != root.to_string_lossy()));
     }
 
     #[test]
