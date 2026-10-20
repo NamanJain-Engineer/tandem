@@ -240,7 +240,7 @@ describe("Routines page (F-RT-04, UI-50..53)", () => {
     await waitFor(() => expect(saved).not.toBeNull());
     expect(saved!.access).toBe("full");
     expect(saved!.fullConfirmed).toBe(true);
-  });
+  }, 15_000); // two menus and a confirm: over 5 s under the full suite's load
 
   it("F-RT-01 a too-short instruction can't be saved, and Esc on a changed form asks first", async () => {
     pro();
