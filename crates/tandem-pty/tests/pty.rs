@@ -746,3 +746,91 @@ fn nfr_5_1_a_parked_pane_is_never_held_back_by_its_missing_acks() {
     );
     let _ = mgr.kill("p51c");
 }
+
+fn masked_spawn(mgr: &PtyManager, pane: &str, script: &str, sink: Arc<VecSink>) {
+    mgr.mask_next_spawn(
+        pane,
+        vec![zeroize::Zeroizing::new(b"sk_test_4242".to_vec())],
+    );
+    mgr.spawn(spec(pane, script), Some(sink as Arc<dyn OutputSink>))
+        .expect("spawn");
+}
+
+#[test]
+fn f_tl_12_3_a_value_is_masked_on_screen_in_frames_and_scrollback_even_split() {
+    let mgr = PtyManager::new();
+    let sink = Arc::new(VecSink::default());
+    // Two writes with a pause between: the value arrives in two reads.
+    masked_spawn(
+        &mgr,
+        "m1",
+        "printf 'key=sk_te'; sleep 0.02; printf 'st_4242 end\\n'; sleep 1",
+        sink.clone(),
+    );
+    assert!(wait_until(Duration::from_secs(5), || text(&sink).contains("end")));
+    assert!(
+        text(&sink).contains("key=[REDACTED] end"),
+        "{}",
+        text(&sink)
+    );
+    assert!(!text(&sink).contains("sk_test_4242"));
+    let screen = mgr.screen_text("m1").unwrap_or_default();
+    assert!(screen.contains("key=[REDACTED] end"), "{screen}");
+    let ring = String::from_utf8_lossy(&mgr.scrollback("m1").expect("ring")).into_owned();
+    assert!(
+        ring.contains("[REDACTED]") && !ring.contains("sk_test_4242"),
+        "{ring}"
+    );
+}
+
+#[test]
+fn f_tl_12_3_a_held_prefix_shows_after_a_short_quiet() {
+    let mgr = PtyManager::new();
+    let sink = Arc::new(VecSink::default());
+    masked_spawn(&mgr, "m2", "printf 'prompt sk_te'; sleep 3", sink.clone());
+    // Not a whole value: it shows well before the process ends.
+    assert!(wait_until(Duration::from_millis(1500), || text(&sink)
+        .contains("prompt sk_te")));
+    assert!(!sink.has_exit());
+}
+
+#[test]
+fn f_tl_12_unmasked_panes_are_untouched() {
+    let mgr = PtyManager::new();
+    let sink = Arc::new(VecSink::default());
+    mgr.spawn(
+        spec("m3", "printf 'sk_test_4242\\n'"),
+        Some(sink.clone() as Arc<dyn OutputSink>),
+    )
+    .expect("spawn");
+    assert!(wait_until(Duration::from_secs(5), || sink.has_exit()));
+    assert!(text(&sink).contains("sk_test_4242"));
+}
+
+#[test]
+fn f_tl_12_5_the_command_gets_the_variables_and_the_shell_after_it_doesnt() {
+    let mgr = PtyManager::new();
+    let sink = Arc::new(VecSink::default());
+    let mut s = spec("r1", "");
+    s.args = tandem_pty::env::run_wrapper(
+        std::path::Path::new("/bin/sh"),
+        "echo \"got=${API_KEY}\"",
+        &["API_KEY".to_string()],
+    )
+    .expect("posix");
+    s.env.insert("API_KEY".into(), "value-123".into());
+    mgr.spawn(s, Some(sink.clone() as Arc<dyn OutputSink>))
+        .expect("spawn");
+    assert!(wait_until(Duration::from_secs(5), || text(&sink)
+        .contains("got=value-123")));
+    std::thread::sleep(Duration::from_millis(300));
+    mgr.write("r1", b"echo \"after=${API_KEY:-none}\"\r")
+        .expect("write");
+    assert!(
+        wait_until(Duration::from_secs(5), || text(&sink)
+            .contains("after=none")),
+        "{}",
+        text(&sink)
+    );
+    let _ = mgr.kill("r1");
+}

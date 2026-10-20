@@ -982,6 +982,15 @@ Registered, permitted (build.rs `SIM_COMMANDS` for macOS targets, `sim-capabilit
 | `privacy_delete_local` | `{includeProviderHomes}` (native confirm in Rust) | — (app restarts) | Cancelled |
 | `telemetry_capture` | `{event, props}` | — (no-op when off; drops non-allowlisted props) | — |
 
+#### Secrets [F-TL-12]
+| Command | Args | Returns | Errors |
+|---|---|---|---|
+| `secrets_list` | — | `[SecretInfo {name, updatedAt}]` (names only, never values) | Unavailable (the keychain's message) |
+| `secrets_set` | `{name, value}` | `SecretInfo` (adds, or replaces that name's value) | Invalid (name rules, empty or over 16 KB), Unavailable |
+| `secrets_delete` | `{name}` | — (its keychain entry and row) | NotFound |
+| `secrets_run_plan` | `{paneId}` | `RunPlan {folder, envFile?, vars: [RunVar {name, secret?, missing}]}` (what Run would use; no values) | NotFound, Invalid (not a local terminal pane) |
+| `secrets_run` | `{paneId, tabId, command}` | `PaneRecord` (a new terminal pane in the same folder; the caller places it) | Invalid (empty command, Flatpak), NotFound (a missing secret, named), LimitReached |
+
 #### Test harness (debug builds with `TANDEM_E2E=1` only; compiled out of release, asserted absent by a release-build test) [§18, MILESTONES §1]
 | Command | Args | Returns | Errors |
 |---|---|---|---|
@@ -1608,6 +1617,7 @@ Namespace `NS` = `app.tandem` (release) or `app.tandem.dev` (dev builds). Tests 
 | `NS.auth` | `credentials-key` | 32-byte AES-256-GCM key for `auth/credentials.enc` | auth service |
 | `NS.remote` | `pairing:<pairing-id>` | JSON `{phone_pk, relay_url, session}`: the session's epoch keys (current and next) and counters as of the last handshake or rekey; `pairings` holds the live counters (D-1906) | phone service |
 | `NS.remote` | `identity` | desktop X25519 static secret (created on first pairing) | phone service |
+| `NS.secrets` | `<name>` | a value from Settings › Secrets, UTF-8, up to 16 KB; the `secrets` table holds the names | secrets service (F-TL-12) |
 | `NS.ssh` | `password:<host-id>` | only if the user ticks "Remember password" in the askpass dialog (default off) | ssh service |
 
 Linux without a Secret Service default collection: `keyring` returns an error; Tandem shows "Your system keyring is locked or missing" with a docs link and disables features needing secrets (sign-in falls back to a session-only in-memory key; plugins can't connect). It never writes secrets to disk in plaintext.
@@ -1793,6 +1803,9 @@ With `agent_sandbox = "workspace"`, a local agent pane's engine argv is prefixed
 ### 6.3b Resource governor [F-EX-06]
 
 `tandem_pty::governor::ResourceGroups` is the platform trait: `status`, `place(pane, pids, memory_max)` → the scope's unit name, `usage(unit)` (from its cgroup: `cpu.stat` `usage_usec`, `memory.current`, `memory.max`, `memory.events` `oom_kill`), `freeze(unit)` and `thaw(unit)`. Linux: `SystemdScopes` reaches the user manager with `busctl --user` (probed once with the Manager's `Version`); `place` calls `StartTransientUnit` with `PIDs` (the pane's process and any children it has by then), `CollectMode=inactive-or-failed` and, under a cap, `MemoryMax` and `MemorySwapMax=0`, right after the PTY spawns, so a pane whose scope can't be made still runs (D-2545). The cgroup path is read from `/proc/<pid>/cgroup` under the v2 hierarchy; capping needs `memory` in the user manager's `cgroup.subtree_control`. Freeze is `systemctl --user freeze|thaw` (systemd 246+). Other systems: `Unplaced` with the reason; `governor::tree_usage` sums `sysinfo`'s CPU time and RSS over each pane's process tree instead, and on Linux an unplaced pane freezes by signals: `suspend::pause` on its shell and foreground group, then SIGSTOP to each other process group in its tree (`governor::linux::pgids`), thawed in reverse (D-2546). `ResourcesService` (in `AppState`) places local agent panes from `TerminalService::spawn_with`, keeps each pane's last CPU reading for the percentage, and every 2 s compares capped scopes' `oom_kill` count: a rise writes "Stopped: memory cap {cap}" into the pane (`PtyManager::notice`) and publishes `resources:pane`. `settings_set` (`store()`) refuses an `agent_memory_cap` other than `off` while `capping` is false. `check_queue::turn()` hands out one permit at a time while `checks_one_at_a_time` is on (a `tokio` semaphore of one; the setting's `apply` flips it): Best of N's lane tasks wait for it as `queued`, the review queue's `run_check` waits for it, and dropping the task (Stop) gives up the place.
+
+### 6.3c Agent-proof secrets [F-TL-12]
+`services::secrets` keeps names in the `secrets` table and values in the keychain (`NS.secrets/<name>`). `tandem_core::secrets` parses a folder's `.env` (`KEY=value`, optional `export`, single or double quotes, `#` comments) and resolves each `vibezeo-secret://<name>` value. `secrets_run` creates a terminal pane in the source pane's folder and parks a `PendingRun {command, env, mask}` for it; the pane's first `spawn_with` takes it: the env goes into `SpawnSpec.env` only, and `env::run_wrapper` runs `<command>; c=$?; unset <names>; exec $SHELL -l` (fish: `set -e`; PowerShell: `Remove-Item Env:`), so the values are never on a command line and the shell that takes over doesn't hold them. `SpawnSpec.mask` gives the reader a `mask::LiteralMasker`: the read is masked before the screen parser and the batcher, so the screen, the ring, snapshots and every reader of the pane get `[REDACTED]`; a tail that's a prefix of a value is held, and a flusher thread releases it after 50 ms of quiet. Values of 8+ bytes are also registered with the global `Redactor` (logs, uploads). Refused in Flatpak, where `flatpak-spawn` would carry the environment on its command line.
 
 ### 6.4 Provider homes [F-AC-01, F-AC-02, F-EN-04]
 - Created at `$PROVIDERS/<engine>/<account-id>/`, mode 0700 (Unix; Windows ACL inherits the user profile).

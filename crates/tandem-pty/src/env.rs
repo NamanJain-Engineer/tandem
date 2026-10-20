@@ -361,6 +361,57 @@ pub fn agent_wrapper(
     })
 }
 
+/// Runs a command line typed in Run with secrets (F-TL-12) under the login
+/// shell, then unsets `names` and hands the pane to a fresh login shell: the
+/// variables (and the secret values in them) reach the command only, never a
+/// command line or what's typed afterwards. `None` for cmd.exe, which can't
+/// unset them before handing over.
+pub fn run_wrapper(shell: &Path, command: &str, names: &[String]) -> Option<Vec<String>> {
+    use tandem_core::shellquote::{quote_path, ShellDialect};
+    let shell_str = shell.to_string_lossy();
+    // Names are `[A-Za-z_][A-Za-z0-9_]*` (`.env` parsing keeps only those).
+    let names = names.join(" ");
+    Some(match shell_kind(shell) {
+        ShellKind::Posix => {
+            let again = quote_path(&shell_str, ShellDialect::Posix).ok()?;
+            let unset = if names.is_empty() {
+                String::new()
+            } else {
+                format!("unset {names}; ")
+            };
+            vec!["-lic".into(), format!("{command}\n{unset}exec {again} -l")]
+        }
+        ShellKind::Fish => {
+            let again = quote_path(&shell_str, ShellDialect::Posix).ok()?;
+            let unset = if names.is_empty() {
+                String::new()
+            } else {
+                format!("set -e {names}; ")
+            };
+            vec![
+                "-l".into(),
+                "-i".into(),
+                "-c".into(),
+                format!("{command}\n{unset}exec {again} -l"),
+            ]
+        }
+        ShellKind::PowerShell => {
+            let unset = names
+                .split(' ')
+                .filter(|n| !n.is_empty())
+                .map(|n| format!("Remove-Item Env:{n}; "))
+                .collect::<String>();
+            vec![
+                "-NoLogo".into(),
+                "-NoExit".into(),
+                "-Command".into(),
+                format!("{command}\n{unset}"),
+            ]
+        }
+        ShellKind::Cmd => return None,
+    })
+}
+
 /// Runs `argv` under the user's login shell (its profile's PATH and
 /// variables) and nothing after it: the sign-in terminal of Settings ›
 /// Accounts (F-AC-02), which closes when the engine exits.
@@ -438,6 +489,28 @@ fn is_executable(p: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn f_tl_12_run_wrapper_unsets_before_handing_over() {
+        let names = vec!["API_KEY".to_string(), "DB_URL".to_string()];
+        let sh = run_wrapper(Path::new("/bin/zsh"), "pnpm dev", &names).expect("posix");
+        assert_eq!(
+            sh,
+            vec![
+                "-lic".to_string(),
+                "pnpm dev\nunset API_KEY DB_URL; exec '/bin/zsh' -l".to_string()
+            ]
+        );
+        let fish = run_wrapper(Path::new("/usr/bin/fish"), "pnpm dev", &names).expect("fish");
+        assert_eq!(
+            fish.last().map(String::as_str),
+            Some("pnpm dev\nset -e API_KEY DB_URL; exec '/usr/bin/fish' -l")
+        );
+        let ps = run_wrapper(Path::new("pwsh.exe"), "pnpm dev", &names).expect("pwsh");
+        assert!(ps
+            .last()
+            .is_some_and(|c| c.contains("Remove-Item Env:API_KEY; Remove-Item Env:DB_URL; ")));
+        assert!(run_wrapper(Path::new("cmd.exe"), "x", &names).is_none());
+    }
 
     #[test]
     fn f_ac_02_the_sign_in_terminal_runs_the_engine_under_the_login_shell_and_exits_with_it() {

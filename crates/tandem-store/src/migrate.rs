@@ -13,6 +13,10 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         "0003_bestof_queued",
         include_str!("../migrations/0003_bestof_queued.sql"),
     ),
+    (
+        "0004_secrets",
+        include_str!("../migrations/0004_secrets.sql"),
+    ),
 ];
 
 pub const KEEP_BACKUPS: usize = 3;

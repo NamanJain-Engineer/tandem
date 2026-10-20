@@ -32,6 +32,7 @@ pub mod redact;
 pub mod remote;
 pub mod remote_config;
 pub mod sandbox;
+pub mod secrets;
 pub mod settings;
 pub mod shellquote;
 pub mod source;

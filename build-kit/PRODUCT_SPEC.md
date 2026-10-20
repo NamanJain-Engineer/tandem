@@ -3230,6 +3230,35 @@ See F-BL-06. Local actions such as "Full access used" and "Plugin write approved
 5. The engine's command line inside the sandbox is the same as without it, its environment is the same, and its provider home is writable. No file under a provider home is read by Vibezeo to build the sandbox.
 6. With the setting Off, agent panes start exactly as before.
 
+#### F-TL-12 Agent-proof secrets (P2)
+**Story:** My agents read `.env` files, and a key that's in a file ends up in their context, their transcripts and every worktree copy. I want the file to hold a reference, the value to stay in my keychain, and the value to reach only the command that needs it.
+
+**Behavior:**
+- **Secrets page** (Settings › Secrets): named values stored in the OS keychain (service `<NS>.secrets`, one entry per name). Vibezeo's database holds only the names and when each changed.
+  - One row per secret: its name, its reference in mono (`vibezeo-secret://stripe-test`) with **Copy reference**, "Updated 20 Oct", **Replace value…** and **Delete**. A value is never shown again once saved.
+  - **Add secret** opens a dialog: Name (lowercase letters, digits, `-` and `_`, up to 64, starting with a letter or digit) and Value (a password field, up to 16 KB). A name already in use replaces that value after a confirm that names it.
+  - Delete asks first: "Delete stripe-test? Commands whose .env refers to it won't start until you add it again." It removes the keychain entry and the name.
+  - States: loading, error (the keychain's own message, such as "Your system keyring is locked or missing", with Retry), empty ("Secrets stay in your keychain. Put vibezeo-secret://name in a .env instead of the value." [Add secret]), populated.
+- **References:** in a `.env` file, a variable whose whole value is `vibezeo-secret://<name>` (quoted or not) is a reference. Agents, file views, diffs and worktree copies see only that text.
+- **Run with secrets:** a **Run** button (a play icon) in the header of a terminal pane in a folder on this computer, and "Run with secrets…" in its menu, open a dialog:
+  - **Command** (an example in the field, "pnpm dev"), and what it will use: "Uses .env in checkout" and one line per variable (`API_KEY → stripe-test`, or the plain name for a plain value). A reference to a missing secret reads "No secret named stripe-test" and Run is disabled. Without a `.env` it says "No .env in this folder" and runs the command as typed.
+  - **Run** opens a new terminal pane beside the current one, named after the command, in the same folder. The command runs under the user's login shell with every variable in the folder's `.env` set, references replaced by their values. When it exits, those variables are unset and the pane's shell takes over, so what's typed there afterwards never sees them.
+  - The values never appear on a command line, in the shell's history, in a file Vibezeo writes, or in a log.
+- **Masking:** in that pane, each secret value the command prints (4 bytes or more) shows as `[REDACTED]`: on screen, in its scrollback, its saved snapshot and everything that reads the pane (Auto, the Dashboard preview, Conductor). A value split across two pieces of output is still caught; a partial match held back flushes after 50 ms of quiet.
+- **Honest limits** (in the docs and the dialog's footnote "The command can still send or print these values in other forms."): a command that's given a secret can use it, write it to a file, or print it encoded; masking only catches the exact value in that pane. Not in this slice: a `vibezeo run` command line, approvals for runs an agent starts, and secrets for agent panes.
+- **Forget data** (Settings › Privacy) deletes every secret's keychain entry and name.
+- Nothing here leaves the machine.
+
+**Data:** table `secrets` (`name` primary key, `created_at`, `updated_at`); keychain entries `<NS>.secrets` / `<name>`.
+
+**Acceptance:**
+1. Adding a secret stores its value in the keychain and only its name in the database; the list shows the name and its reference, never the value.
+2. With `.env` holding `API_KEY=vibezeo-secret://stripe-test`, Run with secrets starts the command in a new pane with `API_KEY` set to the stored value, and the `.env` file is unchanged.
+3. When the command prints the value, the pane shows `[REDACTED]` in its place, in its scrollback and its saved snapshot too, also when the value arrives split across two writes.
+4. A reference to a secret that doesn't exist disables Run with the name of the missing secret, and nothing starts.
+5. After the command exits, the pane's shell has none of the `.env` variables.
+6. Deleting a secret removes its keychain entry and its row; Forget data removes them all.
+
 ### 4.19 EX: Extras
 
 Features beyond the original spec that make working with coding agents faster, safer or more pleasant. They're all local: nothing here sends anything off the machine. Built in M17.
