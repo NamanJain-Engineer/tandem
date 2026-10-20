@@ -91,4 +91,8 @@ Settings › Conductor › **Wake phrase "Hey Conductor"** listens for the phras
 
 A call costs 20 credits for every started 10 seconds it's connected, about 120 credits a minute. Starting a call holds 10 minutes of credits, topped up as the call goes on, and whatever the call didn't use comes back when it ends. A call that's still connecting when you hang up costs nothing. The HUD shows about how many minutes your credits cover, and a call ends when they run out.
 
-Your voice goes to the hosted voice service only while a call is connected, and the planner's requests (what you asked, and the names and states above) go to Vibezeo's servers.
+## Privacy
+
+Your voice leaves your computer only while a call is connected. It goes straight from the app to Google's Gemini Live, with a token for that one call from Vibezeo's servers, and the planner's requests (what you asked, and the names and states above) go to Vibezeo's servers and Anthropic's Claude. Google's free service may keep what you say, use it to improve its products and have people review it, so keep private details off calls.
+
+Calls from the EEA, Switzerland and the UK never use Google's free service: they go to a backup voice provider, or Conductor says it isn't available in your country yet. A call Google can't take moves to the backup by itself. The call log stays on your computer, and Vibezeo's servers keep no recording. The [privacy page](/privacy/) lists every provider.
