@@ -159,7 +159,7 @@ async fn folder_of(store: &Store, pane: &tandem_core::ids::PaneId) -> Result<Pat
 }
 
 /// The folder's `.env`, parsed; `None` without one.
-fn read_env(folder: &Path) -> Result<Option<(PathBuf, Vec<EnvVar>)>, IpcError> {
+pub(crate) fn read_env(folder: &Path) -> Result<Option<(PathBuf, Vec<EnvVar>)>, IpcError> {
     let path = folder.join(ENV_FILE);
     let Ok(meta) = std::fs::metadata(&path) else {
         return Ok(None);
@@ -223,6 +223,25 @@ pub async fn prepare(
     }
     let folder = folder_of(store, pane).await?;
     let vars = read_env(&folder)?.map(|(_, v)| v).unwrap_or_default();
+    let resolved = resolve(keychain, &vars)?;
+    let mask = resolved
+        .secrets
+        .iter()
+        .map(|v| Zeroizing::new(v.as_bytes().to_vec()))
+        .collect();
+    Ok((
+        folder,
+        PendingRun {
+            command: command.to_string(),
+            env: resolved.env.into_iter().collect(),
+            mask,
+        },
+    ))
+}
+
+/// `vars` with their references replaced from the keychain; values of 8+
+/// bytes also go to the global redactor.
+pub(crate) fn resolve(keychain: &dyn Keychain, vars: &[EnvVar]) -> Result<refs::Resolved, IpcError> {
     let mut failed: Option<KeychainError> = None;
     let resolved = refs::resolve(&vars, |name| match keychain.get(&service(), name) {
         Ok(Some(v)) => String::from_utf8(v.to_vec()).ok(),
@@ -241,19 +260,7 @@ pub async fn prepare(
             tandem_core::redact::Redactor::global().register_secret(v);
         }
     }
-    let mask = resolved
-        .secrets
-        .iter()
-        .map(|v| Zeroizing::new(v.as_bytes().to_vec()))
-        .collect();
-    Ok((
-        folder,
-        PendingRun {
-            command: command.to_string(),
-            env: resolved.env.into_iter().collect(),
-            mask,
-        },
-    ))
+    Ok(resolved)
 }
 
 /// The run pane's name: the command, shortened.

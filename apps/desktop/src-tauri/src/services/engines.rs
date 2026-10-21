@@ -530,7 +530,7 @@ pub fn detect_env(login: &LoginEnv) -> DetectEnv {
 }
 
 /// `tandem-hook` next to the app binary (`TANDEM_HOOK_BIN` in debug builds).
-fn hook_bin() -> Option<PathBuf> {
+pub(crate) fn hook_bin() -> Option<PathBuf> {
     if cfg!(debug_assertions) {
         if let Some(p) = std::env::var_os("TANDEM_HOOK_BIN") {
             return Some(PathBuf::from(p));
