@@ -120,6 +120,7 @@ const COMMANDS: &[&str] = &[
     "lsp_definition",
     "lsp_references",
     "lsp_hover",
+    "lsp_trust",
     "checkpoints_list",
     "checkpoint_create",
     "checkpoint_diff",

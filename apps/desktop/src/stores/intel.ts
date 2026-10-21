@@ -38,6 +38,9 @@ type IntelStore = {
   references: (context: FileContext, path: string, text: string, at: At) => Promise<void>;
   hover: (context: FileContext, path: string, text: string, at: At) => Promise<string | null>;
   closeReferences: () => void;
+  /** Trusts the file's repository for its language server (native confirm),
+   * then asks again. */
+  trust: (context: FileContext, path: string, text: string) => Promise<void>;
 };
 
 export function resetIntel(): void {
@@ -184,6 +187,18 @@ export const useIntel = create<IntelStore>((set, get) => {
     },
 
     closeReferences: () => set({ refs: null }),
+
+    trust: async (context, path, text) => {
+      const id = docId(context, path);
+      try {
+        await invoke("lsp_trust", { context, path });
+      } catch (e) {
+        if ((e as IpcError)?.code !== "cancelled") note(id, message(e));
+        return;
+      }
+      note(id, null);
+      await run(context, path, text);
+    },
   };
 });
 

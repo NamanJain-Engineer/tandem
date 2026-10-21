@@ -20,7 +20,10 @@ const DISK: Record<string, string> = {
   "util.py": "def helper():\n    return 1\n",
   "main.py": "import util\nutil.helper()\nERROR\n",
   "lib.rs": "fn a() {}\n",
+  "app.ts": "export const a = 1;\n",
 };
+
+let trusted = false;
 
 const loc = (path: string, line: number, character: number, preview: string): LspLocation => ({
   path,
@@ -33,6 +36,22 @@ const loc = (path: string, line: number, character: number, preview: string): Ls
 });
 
 function doc(path: string, text: string): LspDocument {
+  if (path.endsWith(".ts"))
+    return trusted
+      ? {
+          language: "TypeScript",
+          server: "typescript-language-server",
+          state: "ready",
+          message: null,
+          diagnostics: [],
+        }
+      : {
+          language: "TypeScript",
+          server: "typescript-language-server",
+          state: "untrusted",
+          message: "typescript-language-server is off until you trust this repository",
+          diagnostics: [],
+        };
   if (path.endsWith(".rs"))
     return {
       language: "Rust",
@@ -106,6 +125,10 @@ function setup(): Call[] {
     lsp_definition: () => [loc("util.py", 0, 4, "def helper():")],
     lsp_references: () => [loc("util.py", 0, 4, "def helper():"), loc("main.py", 1, 5, "util.helper()")],
     lsp_hover: () => "fake hover: helper",
+    lsp_trust: () => {
+      trusted = true;
+      return null;
+    },
   });
   useWorkspaces.setState({ list: [WS], activeId: "ws_1", activeTab: { ws_1: "tab_1" } });
   render(
@@ -141,7 +164,10 @@ function press(key: string, shiftKey = false) {
 const status = () => screen.queryByTestId("intel-status")?.textContent ?? null;
 
 describe("Code intelligence in the Files editor (F-CD-23)", () => {
-  beforeEach(() => resetStores());
+  beforeEach(() => {
+    resetStores();
+    trusted = false;
+  });
 
   it("F-CD-23.1 F12 opens the definition in the other file, in a new tab at its line", async () => {
     const calls = setup();
@@ -210,6 +236,18 @@ describe("Code intelligence in the Files editor (F-CD-23)", () => {
     expect(screen.getByTestId("intel-status").getAttribute("title")).toBe(
       "Install rust-analyzer to get definitions and references",
     );
+  });
+
+  it("F-CD-23 a server that runs the repository's code waits for Trust repository…", async () => {
+    const calls = setup();
+    await openFile("app.ts");
+    await waitFor(() =>
+      expect(status()).toContain("typescript-language-server is off until you trust this repository"),
+    );
+    fireEvent.click(screen.getByTestId("intel-trust"));
+    await waitFor(() => expect(status()).toBe("typescript-language-server"));
+    expect(calls.find((c) => c.cmd === "lsp_trust")?.args).toMatchObject({ path: "app.ts" });
+    expect(screen.queryByTestId("intel-trust")).toBeNull();
   });
 
   it("F-CD-23 the status line's words", () => {

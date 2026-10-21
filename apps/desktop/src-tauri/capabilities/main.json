@@ -198,6 +198,7 @@
     "allow-lsp-definition",
     "allow-lsp-references",
     "allow-lsp-hover",
+    "allow-lsp-trust",
     "allow-checkpoints-list",
     "allow-checkpoint-create",
     "allow-checkpoint-diff",

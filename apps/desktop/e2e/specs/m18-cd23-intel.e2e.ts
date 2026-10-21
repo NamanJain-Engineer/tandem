@@ -2,14 +2,15 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { addFolder, checkAgain, freshOffline, mod, setProfile, userHome } from "../support/app";
+import { addFolder, checkAgain, freshOffline, home, mod, setProfile, userHome } from "../support/app";
 import { clickRow, editorTabs, openFiles } from "../support/files";
 
 // E2E-M18-CD23-1 Code intelligence (F-CD-23): a Python folder, with the
 // fake language server on the login PATH as `pyright-langserver`. F12 on a
 // name opens its definition in the other file; Shift+F12 lists the
 // references and one opens; the status line counts the server's
-// diagnostic; a Rust file says there's no server for it.
+// diagnostic; a Rust file says there's no server for it. No server starts
+// before Trust repository…, which covers the repository's other servers.
 
 const UTIL = "def helper():\n    return 1\n";
 const MAIN = "import util\n\nutil.helper()\nx = ERROR\n";
@@ -44,13 +45,17 @@ describe("E2E-M18-CD23-1 code intelligence", function () {
     writeFileSync(join(folder, "util.py"), UTIL);
     writeFileSync(join(folder, "main.py"), MAIN);
     writeFileSync(join(folder, "lib.rs"), "fn main() {}\n");
+    writeFileSync(join(folder, "app.ts"), "export function hello() {}\nhello();\n");
     execFileSync("git", ["-C", folder, "init", "-q", "-b", "main"]);
     // The fake server answers as pyright; nothing else is on the PATH.
     const bin = join(userHome(), "fakelsp");
     mkdirSync(bin, { recursive: true });
-    const link = join(bin, "pyright-langserver");
-    rmSync(link, { force: true });
-    symlinkSync(join(dirname(process.env.TANDEM_FAKE_ENGINE_BIN ?? ""), "fake-lsp"), link);
+    // As typescript-language-server too, which waits for the repository's trust.
+    for (const name of ["pyright-langserver", "typescript-language-server"]) {
+      const link = join(bin, name);
+      rmSync(link, { force: true });
+      symlinkSync(join(dirname(process.env.TANDEM_FAKE_ENGINE_BIN ?? ""), "fake-lsp"), link);
+    }
     const profile = readFileSync(join(userHome(), ".zprofile"), "utf8").trimEnd().split("\n");
     setProfile([...profile, `export PATH="${bin}:$PATH"`]);
     await freshOffline();
@@ -64,8 +69,19 @@ describe("E2E-M18-CD23-1 code intelligence", function () {
     await checkAgain();
   });
 
-  it("F-CD-23.3 the status line counts the server's diagnostics", async () => {
+  it("F-CD-23.6 no server starts until the repository is trusted", async () => {
     await clickRow("main.py");
+    const off = "pyright is off until you trust this repository";
+    await browser.waitUntil(async () => (await status()).startsWith(off), {
+      timeout: 15_000,
+      timeoutMsg: `the status line says ${await status()}`,
+    });
+    // The native confirm answers Yes.
+    writeFileSync(join(home(), "confirm.txt"), "yes");
+    await $('[data-testid="intel-trust"]').click();
+  });
+
+  it("F-CD-23.3 the status line counts the server's diagnostics", async () => {
     await browser.waitUntil(async () => (await status()) === "1 error", {
       timeout: 30_000,
       timeoutMsg: `the status line says ${await status()}`,
@@ -111,5 +127,14 @@ describe("E2E-M18-CD23-1 code intelligence", function () {
       timeout: 15_000,
       timeoutMsg: `the status line says ${await status()}`,
     });
+  });
+
+  it("F-CD-23 the trust covers the repository's other servers", async () => {
+    await clickRow("app.ts");
+    await browser.waitUntil(async () => (await status()) === "typescript-language-server", {
+      timeout: 30_000,
+      timeoutMsg: `the status line says ${await status()}`,
+    });
+    expect(await $('[data-testid="intel-trust"]').isExisting()).toBe(false);
   });
 });
