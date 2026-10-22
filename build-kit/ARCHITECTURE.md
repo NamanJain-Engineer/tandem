@@ -1100,7 +1100,8 @@ offset 12 …    payload   kind 1: raw PTY bytes; kind 2/3: UTF-8 JSON {code?, s
 - One channel per pane. There is **no** global data event.
 - The UI writes each data frame with `term.write(u8, () => pty_ack(paneId, len))`. Acks are batched in TS (at most one `pty_ack` per 50 ms per pane with the summed byte count).
 - Exit frames are always sent **after** the final data frame (the reader drains to EOF, flushes the batcher, then emits exit).
-- Seq gaps are impossible within a launch; on `pty_attach` Rust sends `replay-begin`, the ring contents, `replay-end`, then live frames.
+- `seq` grows by one per frame within a launch. Data frames made while no view is attached (parked, not shown yet, or after a webview reload) aren't sent, so a view can see gaps; their bytes come back in the next replay. The view counts ring positions (D-139), not `seq`.
+- `pty_attach` returns the replay in its `AttachSnapshot` (§3.2), not as frames: kinds 4 and 5 are reserved and never sent. On the channel, the notices that found no view (§5.1) come first, then live frames; the view writes the replay before both.
 
 **Thread events (per subscription) [F-TH-03, F-TH-12].** `thread_subscribe(threadId, channel)` sends `ThreadEventEnvelope` JSON (§6.9). On subscribe, Rust first sends the running turn from the DB (so a remounted view is exact), with the open text block as its text so far (an `assistant`/`reasoning` event at the block's `seq`), then live events. Assistant text arrives as `assistant_delta` envelopes carrying their block's `seq`; the UI reducer appends them to the item at that `seq` and replaces it with the compacted `assistant` event when the block closes (the next non-delta event, or `turn_end`). A subscriber that falls behind gets the running turn again; the reducer replaces by `seq`, so text is never doubled. A turn starts with its `user` event at `seq` 0; the reducer ignores envelopes of any other turn than the current one (F-TH-03 AC3).
 
@@ -1633,6 +1634,7 @@ pty_kill / pane_close → tree kill (§5.3) → unregister status secret → rev
 - **States:** `Starting` (until first output or 5 s, then `Live` anyway) → `Live` → `Exited{code}`. Agent panes add `Handback` (engine exited, shell running) (F-CD-03).
 - **Parallel spawns:** every `pty_spawn` runs on its own task; the manager holds no lock across `spawn_command` (F-CD-03 AC2). Restore queues use a separate semaphore of 2 (F-SH-07 AC3).
 - **Exit notice:** UI prints the notice only on the Exit frame, which follows the last data frame (F-CD-03). Plain shells show Restart/Close.
+- **Notice frames:** one-line notices (e.g. a missing folder, a remote host reconnecting, a claims overlap) go out in sequence with the pane's output. One that finds no view (the pane is parked or not shown yet, or its channel has closed) waits in the session, which keeps the newest 20 (`PENDING_NOTICES_MAX`); the next `pty_attach` sends them right after setting its sink, before any later frame (F-TK-05 AC1). They're never in the ring, so a replay doesn't repeat them.
 
 ### 5.2 Environment resolution [F-CD-03, F-EN-04, F-EN-01]
 - **LoginEnv capture (once at startup, cached; refreshed on `engines_detect`, which keeps the previous capture when the new one is degraded and the previous one wasn't):**
