@@ -21,7 +21,7 @@ pub mod text;
 pub mod typing;
 pub mod winpath;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -56,6 +56,10 @@ pub const ACK_LOW: u64 = 1024 * 1024;
 pub const READ_BUF: usize = 64 * 1024;
 /// `pty:state` goes out at most this often per pane (ARCHITECTURE §3.3).
 pub const STATE_DEBOUNCE: Duration = Duration::from_millis(100);
+/// A pane with no view to show them (parked, not shown yet, or its view
+/// gone) keeps its newest this many notices for the next attach; older ones
+/// are dropped (F-TK-05 AC1).
+pub const PENDING_NOTICES_MAX: usize = 20;
 
 /// Receives `pty:state` changes (the app forwards them to the webview).
 pub type StateSink = Arc<dyn Fn(PtyState) + Send + Sync>;
@@ -178,6 +182,10 @@ struct Session {
     writer: Mutex<Box<dyn Write + Send>>,
     sink: Arc<RwLock<Option<Arc<dyn OutputSink>>>>,
     ring: Arc<Mutex<ScrollbackRing>>,
+    /// Notices that found no view, oldest first, for the next attach to send
+    /// (F-TK-05). Only touched under `ring`'s lock, which also orders the
+    /// sink's swaps and the batcher's frames.
+    pending_notices: Mutex<VecDeque<PtyFrame>>,
     flow: Arc<FlowControl>,
     exited: Arc<Mutex<Option<ExitInfo>>>,
     seq: Arc<AtomicU64>,
@@ -336,6 +344,7 @@ impl PtyManager {
             ring: Arc::new(Mutex::new(ScrollbackRing::new(
                 spec.scrollback_lines + SCREEN_ROWS,
             ))),
+            pending_notices: Mutex::new(VecDeque::new()),
             flow: Arc::new(FlowControl {
                 sent: AtomicU64::new(0),
                 acked: AtomicU64::new(0),
@@ -408,6 +417,7 @@ impl PtyManager {
             ring: Arc::new(Mutex::new(ScrollbackRing::new(
                 spec.scrollback_lines + SCREEN_ROWS,
             ))),
+            pending_notices: Mutex::new(VecDeque::new()),
             flow: Arc::new(FlowControl {
                 sent: AtomicU64::new(0),
                 acked: AtomicU64::new(0),
@@ -722,6 +732,9 @@ impl PtyManager {
 
     /// Replaces the sink (webview reload, a parked view shown again) and
     /// returns the ring contents to replay with the position they end at.
+    /// Notices that found no view go to the new sink at once, so the view
+    /// shows them after the replay and before any output that follows
+    /// (F-TK-05 AC1).
     pub fn attach(&self, pane: &str, sink: Arc<dyn OutputSink>) -> Result<Attached, PtyError> {
         let session = self.get(pane)?;
         let ring = session.ring.lock().unwrap_or_else(|e| e.into_inner());
@@ -729,7 +742,21 @@ impl PtyManager {
             .flow
             .acked
             .store(session.flow.sent.load(Ordering::Acquire), Ordering::Release);
-        *session.sink.write() = Some(sink);
+        *session.sink.write() = Some(sink.clone());
+        // Still under the ring's lock: no frame of the batcher's and no new
+        // notice comes before these.
+        let mut pending = session
+            .pending_notices
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        while let Some(frame) = pending.front() {
+            if sink.send(frame.clone()).is_err() {
+                // Gone already: the rest wait for the next attach.
+                break;
+            }
+            pending.pop_front();
+        }
+        drop(pending);
         Ok(Attached {
             replay: ring.contents(),
             end: ring.end(),
@@ -740,8 +767,8 @@ impl PtyManager {
     /// per line, then the screen) stands for everything up to position `at`,
     /// which is what the view had parsed. The sink is dropped, so the program
     /// runs on without backpressure and its output waits in the ring for the
-    /// next attach. False when the ring no longer holds the output after
-    /// `at`; it then replays as it is.
+    /// next attach, as its notices do (see [`Self::notice`]). False when the
+    /// ring no longer holds the output after `at`; it then replays as it is.
     pub fn park(&self, pane: &str, at: u64, base: Vec<Vec<u8>>) -> Result<bool, PtyError> {
         let session = self.get(pane)?;
         let mut ring = session.ring.lock().unwrap_or_else(|e| e.into_inner());
@@ -836,12 +863,35 @@ impl PtyManager {
     }
 
     /// Sends a one-line notice frame (e.g. "Folder not found — opened at
-    /// workspace root") in sequence with the pane's output.
+    /// workspace root") in sequence with the pane's output. A notice that
+    /// finds no view (the pane is parked or not shown yet, or its view has
+    /// gone) waits for the next attach; a pane keeps its newest
+    /// [`PENDING_NOTICES_MAX`] (F-TK-05 AC1).
     pub fn notice(&self, pane: &str, message: &str) -> Result<(), PtyError> {
         let session = self.get(pane)?;
-        let seq = session.seq.fetch_add(1, Ordering::AcqRel);
-        if let Some(sink) = session.sink.read().as_ref() {
-            let _ = sink.send(PtyFrame::notice(seq, message));
+        // The ring's lock orders this with the batcher's frames and with
+        // `attach` and `park` swapping the sink: the notice reaches the view
+        // that's attached now, or waits for the one that attaches next.
+        let _ring = session.ring.lock().unwrap_or_else(|e| e.into_inner());
+        let frame = PtyFrame::notice(session.seq.fetch_add(1, Ordering::AcqRel), message);
+        let sent = match session.sink.read().as_ref() {
+            Some(sink) => sink.send(frame.clone()).is_ok(),
+            None => false,
+        };
+        if !sent {
+            let mut pending = session
+                .pending_notices
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if pending.len() >= PENDING_NOTICES_MAX {
+                pending.pop_front();
+                tracing::debug!(
+                    code = "pty.notice_dropped",
+                    pane = %pane,
+                    "a pane with no view dropped its oldest notice"
+                );
+            }
+            pending.push_back(frame);
         }
         Ok(())
     }

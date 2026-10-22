@@ -3,10 +3,14 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tandem_pty::{wait_until, FrameKind, OutputSink, PtyManager, SpawnSpec, TermColors, VecSink};
+use tandem_pty::{
+    wait_until, FrameKind, OutputSink, PtyManager, SpawnSpec, TermColors, VecSink,
+    PENDING_NOTICES_MAX,
+};
 
 fn spec(pane: &str, script: &str) -> SpawnSpec {
     let mut env = BTreeMap::new();
@@ -30,6 +34,18 @@ fn spec(pane: &str, script: &str) -> SpawnSpec {
 
 fn text(sink: &VecSink) -> String {
     String::from_utf8_lossy(&sink.data()).into_owned()
+}
+
+/// The messages of the notice frames a sink got, in order.
+fn notices(sink: &VecSink) -> Vec<String> {
+    sink.frames
+        .lock()
+        .expect("frames")
+        .iter()
+        .filter(|f| f.kind == FrameKind::Notice)
+        .filter_map(|f| serde_json::from_slice::<serde_json::Value>(&f.payload).ok())
+        .filter_map(|v| v["message"].as_str().map(str::to_string))
+        .collect()
 }
 
 #[test]
@@ -745,4 +761,103 @@ fn nfr_5_1_a_parked_pane_is_never_held_back_by_its_missing_acks() {
         "the program finished with nobody acking"
     );
     let _ = mgr.kill("p51c");
+}
+
+#[test]
+fn f_tk_05_1_a_notice_to_a_parked_pane_arrives_when_it_attaches() {
+    let mgr = PtyManager::new();
+    let view = Arc::new(VecSink::default());
+    mgr.spawn(
+        spec("tk51", "echo ready; read line; echo got:$line; read wait"),
+        Some(view.clone() as Arc<dyn OutputSink>),
+    )
+    .expect("spawn");
+    assert!(wait_until(Duration::from_secs(5), || text(&view).contains("ready")));
+    // A shown pane gets its notice at once.
+    mgr.notice("tk51", "shown at once").expect("notice");
+    assert_eq!(notices(&view), ["shown at once"]);
+    // Hidden for 30 s, the view hands its terminal to the core (§5.1).
+    let at = view.data().len() as u64;
+    assert!(mgr.park("tk51", at, vec![]).expect("park"));
+    let overlap = "add-oauth and fix-auth both claim src/auth/session.ts";
+    mgr.notice("tk51", overlap).expect("notice");
+    assert_eq!(
+        notices(&view),
+        ["shown at once"],
+        "nothing more went to the parked view"
+    );
+    // Shown again, the new view gets it once, after its replay and before
+    // the output that follows.
+    let shown = Arc::new(VecSink::default());
+    let attached = mgr
+        .attach("tk51", shown.clone() as Arc<dyn OutputSink>)
+        .expect("attach");
+    mgr.write("tk51", b"x\r").expect("write");
+    assert!(wait_until(Duration::from_secs(5), || text(&shown).contains("got:x")));
+    assert_eq!(notices(&shown), [overlap]);
+    assert!(
+        !String::from_utf8_lossy(&attached.replay).contains("both claim"),
+        "a notice isn't output: it's never in the ring"
+    );
+    {
+        let frames = shown.frames.lock().expect("frames");
+        assert_eq!(frames.first().map(|f| f.kind), Some(FrameKind::Notice));
+        assert!(
+            frames.windows(2).all(|w| w[0].seq < w[1].seq),
+            "seq still rises along the pane's frames (ARCHITECTURE §3.4)"
+        );
+    }
+    let later = Arc::new(VecSink::default());
+    mgr.attach("tk51", later.clone() as Arc<dyn OutputSink>)
+        .expect("attach");
+    assert!(notices(&later).is_empty(), "delivered once");
+    let _ = mgr.kill("tk51");
+}
+
+#[test]
+fn f_tk_05_1_a_parked_pane_keeps_its_newest_notices_up_to_the_cap() {
+    let mgr = PtyManager::new();
+    let view = Arc::new(VecSink::default());
+    mgr.spawn(
+        spec("tk52", "echo ready; read wait"),
+        Some(view.clone() as Arc<dyn OutputSink>),
+    )
+    .expect("spawn");
+    assert!(wait_until(Duration::from_secs(5), || text(&view).contains("ready")));
+    assert!(mgr
+        .park("tk52", view.data().len() as u64, vec![])
+        .expect("park"));
+    let sent = PENDING_NOTICES_MAX + 5;
+    for i in 0..sent {
+        mgr.notice("tk52", &format!("notice {i}")).expect("notice");
+    }
+    let shown = Arc::new(VecSink::default());
+    mgr.attach("tk52", shown.clone() as Arc<dyn OutputSink>)
+        .expect("attach");
+    let newest: Vec<String> = (sent - PENDING_NOTICES_MAX..sent)
+        .map(|i| format!("notice {i}"))
+        .collect();
+    assert_eq!(notices(&shown), newest, "the oldest are dropped first");
+    let _ = mgr.kill("tk52");
+}
+
+#[test]
+fn f_tk_05_1_a_notice_to_a_view_that_has_gone_waits_for_the_next_attach() {
+    let mgr = PtyManager::new();
+    let view = Arc::new(VecSink::default());
+    mgr.spawn(
+        spec("tk53", "echo ready; read wait"),
+        Some(view.clone() as Arc<dyn OutputSink>),
+    )
+    .expect("spawn");
+    assert!(wait_until(Duration::from_secs(5), || text(&view).contains("ready")));
+    // The webview reloaded: the old view's channel is closed, and the new
+    // view hasn't attached yet.
+    view.closed.store(true, Ordering::Release);
+    mgr.notice("tk53", "while reloading").expect("notice");
+    let shown = Arc::new(VecSink::default());
+    mgr.attach("tk53", shown.clone() as Arc<dyn OutputSink>)
+        .expect("attach");
+    assert_eq!(notices(&shown), ["while reloading"]);
+    let _ = mgr.kill("tk53");
 }
