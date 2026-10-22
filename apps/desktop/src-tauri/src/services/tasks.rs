@@ -63,9 +63,13 @@ pub type NoticeSink = Arc<dyn Fn(&str, &[String]) + Send + Sync>;
 /// it belongs to (a lane's worktree claims against its main checkout).
 pub fn claim_scope(folder: &Path) -> Option<ClaimScope> {
     let repo = tandem_git::repo::Repo::discover(folder).ok()??;
+    let main_root = repo.main_root().to_string_lossy().into_owned();
+    let root = repo.root().to_string_lossy().into_owned();
     Some(ClaimScope {
-        repo: repo.main_root().to_string_lossy().into_owned(),
-        folder: repo.root().to_string_lossy().into_owned(),
+        main: root == main_root,
+        repo: main_root,
+        folder: root,
+        prefix: String::new(),
     })
 }
 
@@ -813,6 +817,8 @@ mod tests {
                 &ClaimScope {
                     repo: root.to_string_lossy().into_owned(),
                     folder: format!("{}/other", root.to_string_lossy()),
+                    prefix: String::new(),
+                    main: false,
                 },
                 &["src/a.ts".into()],
             )

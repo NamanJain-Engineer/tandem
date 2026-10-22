@@ -421,6 +421,13 @@ pub const CLAIMS_PER_FOLDER_MAX: usize = 500;
 pub struct ClaimScope {
     pub repo: String,
     pub folder: String,
+    /// The session's folder relative to `folder`, `/`-separated; empty at
+    /// the top. An agent's relative paths start there.
+    #[serde(default)]
+    pub prefix: String,
+    /// `folder` is the repository's main checkout, not a linked worktree.
+    #[serde(default)]
+    pub main: bool,
 }
 
 /// `claims.json`: one path a working tree's agent said (or was seen) it
@@ -443,6 +450,9 @@ pub struct Claim {
     /// Seen in an edit, not claimed with the tool.
     pub inferred: bool,
     pub at: i64,
+    /// Made in the main checkout (its scope's `main`).
+    #[serde(default)]
+    pub main: bool,
 }
 
 /// Two working trees of one repository claiming the same files.

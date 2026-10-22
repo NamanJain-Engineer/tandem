@@ -214,12 +214,16 @@ impl TaskStore {
                     .find(|c| c.folder == scope.folder && c.path == path);
                 match existing {
                     // An edit doesn't replace what the agent said it's doing.
-                    Some(c) if inferred => c.at = now,
+                    Some(c) if inferred => {
+                        c.at = now;
+                        c.main = scope.main;
+                    }
                     Some(c) => {
                         c.intent = intent.to_string();
                         c.inferred = false;
                         c.connection = connection.map(str::to_string);
                         c.at = now;
+                        c.main = scope.main;
                     }
                     None => claims.push(Claim {
                         path,
@@ -230,6 +234,7 @@ impl TaskStore {
                         connection: connection.map(str::to_string),
                         inferred,
                         at: now,
+                        main: scope.main,
                     }),
                 }
             }

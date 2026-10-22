@@ -110,6 +110,8 @@ fn run_conformance(version: &str) -> HashMap<u64, Value> {
     let scope = |folder: &str| ClaimScope {
         repo: "/r/app".into(),
         folder: folder.into(),
+        prefix: String::new(),
+        main: false,
     };
     let conn = store
         .create_connection_in(

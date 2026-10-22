@@ -4,4 +4,13 @@
  * Where a session works: the repository (its main checkout's top folder)
  * and the working tree (a lane's worktree, or the main checkout itself).
  */
-export type TaskClaimScope = { repo: string, folder: string, };
+export type TaskClaimScope = { repo: string, folder: string, 
+/**
+ * The session's folder relative to `folder`, `/`-separated; empty at
+ * the top. An agent's relative paths start there.
+ */
+prefix: string, 
+/**
+ * `folder` is the repository's main checkout, not a linked worktree.
+ */
+main: boolean, };

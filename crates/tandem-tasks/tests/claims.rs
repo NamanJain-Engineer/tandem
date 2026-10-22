@@ -8,10 +8,13 @@ fn store() -> (tempfile::TempDir, TaskStore) {
     (dir, s)
 }
 
+/// A working tree of `/r/app`, its session at the tree's top folder.
 fn scope(folder: &str) -> ClaimScope {
     ClaimScope {
         repo: "/r/app".into(),
         folder: folder.into(),
+        prefix: String::new(),
+        main: folder == "/r/app",
     }
 }
 
@@ -62,6 +65,8 @@ fn f_tk_05_1_one_working_tree_never_overlaps_itself_nor_another_repo() {
             Some(ClaimScope {
                 repo: "/r/other".into(),
                 folder: "/r/other".into(),
+                prefix: String::new(),
+                main: true,
             }),
         )
         .expect("c")
@@ -163,4 +168,46 @@ fn f_tk_05_a_working_tree_over_its_cap_drops_its_oldest_inferred_claims() {
         claims.iter().any(|c| c.path == "kept.ts"),
         "a stated claim stays"
     );
+}
+
+#[test]
+fn f_tk_05_a_claim_copies_main_from_its_scope() {
+    let (_d, s) = store();
+    let main = session(&s, "/r/app");
+    s.claim(&main, &paths(&["a.ts"]), "")
+        .expect("main checkout");
+    let lane = session(&s, "/r/app/.tandem/worktrees/one");
+    s.claim(&lane, &paths(&["b.ts"]), "").expect("lane");
+    s.claim_inferred(&scope("/r/app"), &paths(&["c.ts"]))
+        .expect("inferred");
+    let main_of = |path: &str| {
+        s.claims()
+            .expect("claims")
+            .into_iter()
+            .find(|c| c.path == path)
+            .map(|c| c.main)
+    };
+    assert_eq!(main_of("a.ts"), Some(true));
+    assert_eq!(main_of("b.ts"), Some(false));
+    assert_eq!(main_of("c.ts"), Some(true), "an inferred claim too");
+}
+
+#[test]
+fn f_tk_05_claims_and_scopes_written_before_main_and_prefix_still_load() {
+    let (_d, s) = store();
+    std::fs::write(
+        s.dir().join("claims.json"),
+        r#"[{"path":"src/a.ts","intent":"","repo":"/r/app","folder":"/r/app","agent":"app","connection":null,"inferred":true,"at":1}]"#,
+    )
+    .expect("old claims.json");
+    std::fs::write(
+        s.dir().join("connections.json"),
+        r#"{"tc_old":{"id":"tc_old","created_at":1,"label":"Claude Code","actor":"me","revoked_at":null,"scope":{"repo":"/r/app","folder":"/r/app"}}}"#,
+    )
+    .expect("old connections.json");
+    let claims = s.claims().expect("old claims load");
+    assert_eq!(claims.len(), 1);
+    assert!(!claims[0].main);
+    let scope = s.claim_scope("tc_old").expect("an old scope loads");
+    assert_eq!((scope.prefix.as_str(), scope.main), ("", false));
 }

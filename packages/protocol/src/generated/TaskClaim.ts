@@ -25,4 +25,8 @@ connection: string | null,
 /**
  * Seen in an edit, not claimed with the tool.
  */
-inferred: boolean, at: number, };
+inferred: boolean, at: number, 
+/**
+ * Made in the main checkout (its scope's `main`).
+ */
+main: boolean, };
