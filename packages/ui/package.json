@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./tokens.css": "./src/styles/tokens.css",
+    "./brand.css": "./src/styles/brand.css",
     "./fonts.css": "./src/styles/fonts.css",
     "./base.css": "./src/styles/base.css",
     "./site.css": "./src/styles/site.css",
