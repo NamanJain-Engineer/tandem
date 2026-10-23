@@ -2034,6 +2034,13 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - Claims that a Windows development build saved with `\\?\` folders stay until those folders go.
     - A relative path from the hook counts from the tree's top, not the session's folder. Claude Code sends absolute paths.
     - Removing a main checkout's workspace keeps its claims while another session still works there (D-2427).
+  - **Gate:** passed on d3675c18:
+    - 2,217 Rust tests (6 ignored) and 1,583 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 184, and protocol drift: `TaskClaim.main`, `TaskClaimScope.prefix` and `TaskClaimScope.main` added.
+    - E2E: m18-tk05 3 of 3, m18-db04 6 of 6, m18-cn09 3 of 3 and m18-tk06 2 of 2.
+    - cdn.pyke.io is blocked in this container, so the app and the invariants were built against ONNX Runtime 1.28.0 (the version ort-sys expects) from PyPI's wheel, checksum-checked and linked dynamically. Nothing from it is committed.
+    - E2E first needed `pnpm db:migrate && pnpm db:seed` (sign-up's 500, docs/OPERATING.md).
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
