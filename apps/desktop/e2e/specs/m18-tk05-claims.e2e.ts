@@ -112,6 +112,8 @@ async function waitForNotice(pane: string, [a, b]: [Ws, Ws], path: string): Prom
 describe("E2E-M18-TK-05 claims", function () {
   this.timeout(300_000);
   const repo = `/tmp/tandem-e2e-tk-05-${Date.now()}`;
+  // The tracker outlives specs: only this repository's worktrees count.
+  const ours = async () => (await overlaps()).filter((o) => o.folders.every((f) => f.startsWith(`${repo}/`)));
   let lane1: Ws;
   let lane2: Ws;
   let agent1 = "";
@@ -172,7 +174,7 @@ describe("E2E-M18-TK-05 claims", function () {
       },
       { timeout: 10_000, timeoutMsg: `no overlap notice in ${agent2}: ${await paneText(agent2)}` },
     );
-    const listed = await overlaps();
+    const listed = await ours();
     expect(listed).toHaveLength(1);
     expect(listed[0]?.paths).toEqual(["src/auth/session.ts"]);
     expect([...(listed[0]?.agents ?? [])].sort()).toEqual([slug(lane1), slug(lane2)].sort());
@@ -221,14 +223,10 @@ describe("E2E-M18-TK-05 claims", function () {
       // The first worktree claims it too, with the tool: an edit would leave
       // the worktree dirty, and F-TK-05.3 removes it without force.
       await sendToPane(agent1, '/tasks claim {"paths":["README.md"],"intent":"Adding a setup section."}\r');
-      // The tracker outlives specs: only this repository's worktrees count.
-      await browser.waitUntil(
-        async () =>
-          (await overlaps()).some(
-            (o) => o.folders.every((f) => f.startsWith(`${repo}/`)) && o.paths.includes("README.md"),
-          ),
-        { timeout: 15_000, timeoutMsg: "the review queue has no overlap on README.md" },
-      );
+      await browser.waitUntil(async () => (await ours()).some((o) => o.paths.includes("README.md")), {
+        timeout: 15_000,
+        timeoutMsg: "the review queue has no overlap on README.md",
+      });
       await waitForNotice(agent1, [lane1, lane2], "README.md");
       // It was announced while the second worktree's pane was parked.
       expect(await parked()).toContain(agent2);
@@ -244,9 +242,9 @@ describe("E2E-M18-TK-05 claims", function () {
 
   it("F-TK-05.3 removing a worktree releases its claims", async () => {
     await invoke("lane_remove", { laneId: lane1.id, force: false });
-    await browser.waitUntil(async () => (await overlaps()).length === 0, {
+    await browser.waitUntil(async () => (await ours()).length === 0, {
       timeout: 10_000,
-      timeoutMsg: `still overlapping: ${JSON.stringify(await overlaps())}`,
+      timeoutMsg: `still overlapping: ${JSON.stringify(await ours())}`,
     });
     await $('[data-testid="review-overlaps"]').waitForExist({ reverse: true, timeout: 10_000 });
   });
