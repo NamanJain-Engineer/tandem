@@ -13,6 +13,7 @@ use tandem_core::settings::SettingKey;
 use tandem_core::DataDir;
 use tandem_engines::chat::StdioServer;
 use tandem_store::Store;
+use tandem_tasks::store::claim_key;
 use tandem_tasks::{Claim, ClaimOverlap, ClaimScope, TaskStore};
 
 /// The name engines know the tasks server by (`mcp__tandem_tasks__…`).
@@ -105,20 +106,9 @@ pub fn claim_path(folder: &Path, edited: &Path) -> Option<String> {
     (top != ".git" && top != ".tandem").then_some(rel)
 }
 
-/// An overlap's path in its key: as claims compare (no trailing `/`, folded
-/// where file names ignore case), so a pair isn't announced again for one
-/// file spelled another way.
-fn path_key(path: &str) -> String {
-    let path = path.trim_end_matches('/');
-    if contain::case_insensitive_fs() {
-        contain::fold(path)
-    } else {
-        path.to_string()
-    }
-}
-
 /// One key per overlapping path, so a pair is announced again only for a
-/// path it didn't overlap on before.
+/// path it didn't overlap on before. Paths key as claims compare
+/// ([`claim_key`]), so one file spelled another way isn't new.
 fn overlap_keys(o: &ClaimOverlap) -> impl Iterator<Item = (String, &str)> + '_ {
     o.paths.iter().map(move |p| {
         (
@@ -127,7 +117,7 @@ fn overlap_keys(o: &ClaimOverlap) -> impl Iterator<Item = (String, &str)> + '_ {
                 o.repo,
                 o.folders[0],
                 o.folders[1],
-                path_key(p)
+                claim_key(p)
             ),
             p.as_str(),
         )

@@ -124,7 +124,7 @@ fn inside(folder: &str, path: &str) -> Option<String> {
     let same = top
         .iter()
         .zip(&all)
-        .all(|(f, p)| path_key(f) == path_key(p));
+        .all(|(f, p)| claim_key(f) == claim_key(p));
     same.then(|| all[top.len()..].join("/"))
 }
 
@@ -159,7 +159,7 @@ fn tidy(path: &str) -> Result<String, TaskError> {
 /// The form two claim paths compare in: without a trailing `/` (a folder
 /// saved with one, before it stopped mattering), and folded where file
 /// names ignore case. Paths are kept as written.
-fn path_key(path: &str) -> Cow<'_, str> {
+pub fn claim_key(path: &str) -> Cow<'_, str> {
     let path = path.trim_end_matches('/');
     if contain::case_insensitive_fs() {
         Cow::Owned(contain::fold(path))
@@ -168,7 +168,7 @@ fn path_key(path: &str) -> Cow<'_, str> {
     }
 }
 
-/// True when `dir` is `path` or a folder holding it (both [`path_key`]s).
+/// True when `dir` is `path` or a folder holding it (both [`claim_key`]s).
 fn key_covers(dir: &str, path: &str) -> bool {
     !dir.is_empty()
         && path
@@ -179,17 +179,17 @@ fn key_covers(dir: &str, path: &str) -> bool {
 /// True when a claim on `claim` covers `path`: the same path, or one inside
 /// it.
 pub fn claim_covers(claim: &str, path: &str) -> bool {
-    key_covers(&path_key(claim), &path_key(path))
+    key_covers(&claim_key(claim), &claim_key(path))
 }
 
 /// The path two claims share: the same file, or a file inside a claimed
 /// folder (the more specific path).
 #[cfg(test)]
 fn shared<'a>(a: &'a str, b: &'a str) -> Option<&'a str> {
-    shared_keyed((a, &path_key(a)), (b, &path_key(b)))
+    shared_keyed((a, &claim_key(a)), (b, &claim_key(b)))
 }
 
-/// [`shared`] for paths with their [`path_key`]s.
+/// [`shared`] for paths with their [`claim_key`]s.
 fn shared_keyed<'a>(a: (&'a str, &str), b: (&'a str, &str)) -> Option<&'a str> {
     if a.1 == b.1 || key_covers(b.1, a.1) {
         Some(a.0)
@@ -215,14 +215,14 @@ type Pair<'a> = (&'a str, &'a str, Vec<&'a str>);
 
 /// Every overlap between working trees in `claims`, one per pair. Only
 /// claims in one repository are compared, each with its path's
-/// [`path_key`] worked out once.
+/// [`claim_key`] worked out once.
 pub fn overlaps_of(claims: &[Claim]) -> Vec<ClaimOverlap> {
     let mut repos: HashMap<&str, Vec<(&Claim, Cow<'_, str>)>> = HashMap::new();
     for c in claims {
         repos
             .entry(c.repo.as_str())
             .or_default()
-            .push((c, path_key(&c.path)));
+            .push((c, claim_key(&c.path)));
     }
     let mut pairs: BTreeMap<PairKey<'_>, Pair<'_>> = BTreeMap::new();
     for group in repos.values() {
@@ -247,8 +247,8 @@ pub fn overlaps_of(claims: &[Claim]) -> Vec<ClaimOverlap> {
         .into_iter()
         .map(|((repo, f1, f2), (a1, a2, mut paths))| {
             // Sorted as paths compare, and each file once, however spelled.
-            paths.sort_by_cached_key(|p| path_key(p).into_owned());
-            paths.dedup_by(|a, b| path_key(a) == path_key(b));
+            paths.sort_by_cached_key(|p| claim_key(p).into_owned());
+            paths.dedup_by(|a, b| claim_key(a) == claim_key(b));
             ClaimOverlap {
                 repo: repo.to_string(),
                 folders: [f1.to_string(), f2.to_string()],
@@ -380,10 +380,10 @@ impl TaskStore {
                 .iter()
                 .enumerate()
                 .filter(|(_, c)| c.folder == scope.folder)
-                .map(|(i, c)| (path_key(&c.path).into_owned(), i))
+                .map(|(i, c)| (claim_key(&c.path).into_owned(), i))
                 .collect();
             for path in paths {
-                let key = path_key(&path).into_owned();
+                let key = claim_key(&path).into_owned();
                 match mine.get(&key).and_then(|&i| claims.get_mut(i)) {
                     // An edit doesn't replace what the agent said it's doing.
                     Some(c) if inferred => {
@@ -435,7 +435,7 @@ impl TaskStore {
         let keys = match paths {
             Some(p) => Some(
                 p.iter()
-                    .map(|p| normalize_claim_path(&scope, p).map(|n| path_key(&n).into_owned()))
+                    .map(|p| normalize_claim_path(&scope, p).map(|n| claim_key(&n).into_owned()))
                     .collect::<Result<Vec<_>, _>>()?,
             ),
             None => None,
@@ -443,7 +443,7 @@ impl TaskStore {
         self.remove_claims(|c| {
             c.folder == scope.folder
                 && keys.as_ref().is_none_or(|ks| {
-                    let key = path_key(&c.path);
+                    let key = claim_key(&c.path);
                     ks.iter().any(|k| key_covers(k, &key))
                 })
         })
