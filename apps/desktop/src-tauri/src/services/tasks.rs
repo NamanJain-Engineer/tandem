@@ -33,6 +33,9 @@ pub struct TasksService {
     watcher: Mutex<Option<notify::RecommendedWatcher>>,
     /// Overlaps already announced, by [`overlap_keys`].
     announced: Mutex<HashSet<String>>,
+    /// Held by a check from reading the claims to telling the sink: one
+    /// check at a time (F-TK-05).
+    checking: Mutex<()>,
     on_overlap: std::sync::OnceLock<OverlapSink>,
 }
 
@@ -199,6 +202,7 @@ impl TasksService {
             sessions: Mutex::default(),
             watcher: Mutex::default(),
             announced: Mutex::default(),
+            checking: Mutex::default(),
             on_overlap: std::sync::OnceLock::new(),
         })
     }
@@ -208,12 +212,26 @@ impl TasksService {
         let _ = self.on_overlap.set(sink);
     }
 
-    /// Reads the claims and tells the sink about new overlaps.
+    /// Reads the claims and tells the sink about new overlaps. Checks take
+    /// turns (the startup one and the watcher's can meet).
     pub fn check_overlaps(&self) {
+        self.check_with(TaskStore::claim_overlaps);
+    }
+
+    /// [`Self::check_overlaps`], with the claims read by `read` (tests slow
+    /// it down).
+    fn check_with(
+        &self,
+        read: impl FnOnce(&TaskStore) -> Result<Vec<ClaimOverlap>, tandem_tasks::TaskError>,
+    ) {
         let (Some(tracker), Some(sink)) = (&self.tracker, self.on_overlap.get()) else {
             return;
         };
-        let all = match tracker.claim_overlaps() {
+        // From the read to the sink: a check that read older claims could
+        // forget a newer check's overlaps (announcing them again later) and
+        // deliver its older list last.
+        let _turn = self.checking.lock().unwrap_or_else(|e| e.into_inner());
+        let all = match read(tracker) {
             Ok(all) => all,
             Err(e) => {
                 tracing::warn!(code = "tasks.claims_unreadable", error = %e, "claims couldn't be read");
@@ -751,5 +769,109 @@ mod tests {
         assert!(started.elapsed() < std::time::Duration::from_millis(500));
         assert_eq!(ev.name, "tasks:changed");
         assert_eq!(ev.payload["ids"], serde_json::json!(["TAN-1"]));
+    }
+
+    /// `app` with one commit, and its worktree `fix-auth`, as a lane's:
+    /// `(main checkout, worktree)`, resolved.
+    fn repo_with_lane(dir: &Path) -> (PathBuf, PathBuf) {
+        let main = git_repo(dir);
+        let git = |args: &[&str]| {
+            let ok = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&main)
+                .status()
+                .expect("git")
+                .success();
+            assert!(ok, "git {args:?}");
+        };
+        git(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "init",
+        ]);
+        let lane = main.join(".tandem/worktrees/fix-auth");
+        git(&[
+            "worktree",
+            "add",
+            "-q",
+            lane.to_str().expect("utf8"),
+            "-b",
+            "tandem/fix-auth",
+        ]);
+        let lane = std::fs::canonicalize(lane).expect("canonical");
+        (main, lane)
+    }
+
+    /// What a sink was given, in order.
+    type Seen<T> = Arc<Mutex<Vec<T>>>;
+
+    #[tokio::test]
+    async fn f_tk_05_1_concurrent_checks_announce_each_overlap_once() {
+        let (_d, tasks) = service(None).await;
+        let dir = tempfile::tempdir().expect("dir");
+        let (main, lane) = repo_with_lane(dir.path());
+        // (new paths, how many overlaps there are) per delivery.
+        let lists: Seen<(Vec<String>, usize)> = Arc::default();
+        let sink = lists.clone();
+        tasks.set_overlap_sink(Arc::new(move |new, all| {
+            let paths = new.iter().flat_map(|o| o.paths.clone()).collect();
+            sink.lock().expect("lists").push((paths, all.len()));
+        }));
+        let tracker = tasks.tracker.clone().expect("tracker");
+        let edit = |root: &Path| {
+            tracker
+                .claim_inferred(&claim_scope(root).expect("scope"), &["src/a.ts".into()])
+                .expect("claim");
+        };
+        edit(&main);
+        // A check (at startup, say) reads the claims before they overlap, then
+        // is slow to go on.
+        let (read_tx, read_rx) = std::sync::mpsc::channel();
+        let (go_tx, go_rx) = std::sync::mpsc::channel::<()>();
+        let slow = {
+            let tasks = tasks.clone();
+            std::thread::spawn(move || {
+                tasks.check_with(|t| {
+                    let all = t.claim_overlaps();
+                    let _ = read_tx.send(());
+                    let _ = go_rx.recv();
+                    all
+                })
+            })
+        };
+        read_rx.recv().expect("read");
+        edit(&lane);
+        // The watcher's check of the overlapping claims, meanwhile.
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let quick = {
+            let tasks = tasks.clone();
+            std::thread::spawn(move || {
+                tasks.check_overlaps();
+                let _ = done_tx.send(());
+            })
+        };
+        // It finishes now unless checks take turns; then it waits for the slow one.
+        let _ = done_rx.recv_timeout(std::time::Duration::from_millis(300));
+        go_tx.send(()).expect("go");
+        slow.join().expect("slow");
+        quick.join().expect("quick");
+        // A later check.
+        tasks.check_overlaps();
+        let lists = lists.lock().expect("lists").clone();
+        let announced = lists.iter().filter(|(new, _)| !new.is_empty()).count();
+        assert_eq!(announced, 1, "announced once: {lists:?}");
+        assert_eq!(
+            lists.iter().map(|(_, all)| *all).collect::<Vec<_>>(),
+            [0, 1, 1],
+            "an older list is never delivered last: {lists:?}"
+        );
     }
 }
