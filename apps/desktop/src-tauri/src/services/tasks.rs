@@ -196,10 +196,12 @@ pub fn overlap_notice(o: &ClaimOverlap) -> String {
 }
 
 /// A claim nothing will release after a restart (F-TK-05): the main
-/// checkout's (one from before claims said `main` has its repository as its
-/// folder), or a folder's that's gone.
+/// checkout's, or a folder's that's gone. `main` is the only test of the
+/// main checkout: a worktree of a repository whose git data lives elsewhere
+/// (`--separate-git-dir`, bare) has itself as its repository too. No build
+/// that wrote claims without `main` has shipped.
 fn stale_at_start(c: &Claim) -> bool {
-    c.main || c.folder == c.repo || !Path::new(&c.folder).is_dir()
+    c.main || !Path::new(&c.folder).is_dir()
 }
 
 /// How long changes are gathered before `tasks:changed` goes out.
@@ -1361,8 +1363,6 @@ mod tests {
                 .expect("claim");
         };
         let main_scope = claim_scope(&main).expect("main");
-        // The main checkout's claim from before claims said `main`: its
-        // folder is its repository.
         claim(&main_scope);
         // A main checkout's, and a worktree's deleted outside the app.
         let other = repos.path().join("other");
@@ -1382,15 +1382,6 @@ mod tests {
         });
         std::fs::remove_dir(&deleted).expect("rmdir");
         claim(&claim_scope(&lane).expect("lane"));
-        let file = data.tasks().join("claims.json");
-        let mut saved: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&file).expect("read")).expect("json");
-        saved[0]
-            .as_object_mut()
-            .expect("claim")
-            .remove("main")
-            .expect("main");
-        std::fs::write(&file, serde_json::to_vec(&saved).expect("json")).expect("write");
         drop(first);
         let second = TasksService::new(&data, store, None);
         let left: Vec<String> = second
@@ -1403,5 +1394,38 @@ mod tests {
             .map(|c| c.folder)
             .collect();
         assert_eq!(left, [claim_scope(&lane).expect("lane").folder]);
+    }
+
+    #[tokio::test]
+    async fn f_tk_05_3_a_restart_keeps_a_worktrees_claims_when_its_git_data_lives_elsewhere() {
+        // A worktree of a repository made with `--separate-git-dir` (or a
+        // bare one) has itself as its repository (`main_root` can't name a
+        // main checkout), yet it's still a worktree, not the main checkout.
+        let dir = tempfile::tempdir().expect("dir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let repos = tempfile::tempdir().expect("repos");
+        let (_split, split_lane) = split_repo_with_lane(repos.path());
+        let scope = claim_scope(&split_lane).expect("scope");
+        assert!(!scope.main);
+        let first = TasksService::new(&data, store.clone(), None);
+        first
+            .tracker
+            .as_ref()
+            .expect("tracker")
+            .claim_inferred(&scope, &["src/a.ts".into()])
+            .expect("claim");
+        drop(first);
+        let second = TasksService::new(&data, store, None);
+        let left: Vec<String> = second
+            .tracker
+            .as_ref()
+            .expect("tracker")
+            .claims()
+            .expect("claims")
+            .into_iter()
+            .map(|c| c.folder)
+            .collect();
+        assert_eq!(left, [scope.folder]);
     }
 }
