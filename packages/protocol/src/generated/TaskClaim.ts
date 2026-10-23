@@ -7,7 +7,8 @@
  */
 export type TaskClaim = { 
 /**
- * Relative to the working tree, `/`-separated; a folder ends in `/`.
+ * Relative to the working tree's top folder, `/`-separated, as written.
+ * A folder covers everything inside it.
  */
 path: string, 
 /**

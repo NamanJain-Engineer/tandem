@@ -3,17 +3,61 @@
 //! trees of one repository claiming the same file overlap; the app turns a
 //! new overlap into notices.
 
-use std::collections::BTreeMap;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+
+use tandem_core::contain;
 
 use super::TaskStore;
 use crate::error::TaskError;
 use crate::lock;
 use crate::model::*;
 
-/// A claimed path relative to the working tree, `/`-separated, with no
-/// `.` or `..`; a folder keeps its trailing `/`.
-pub fn normalize_claim_path(raw: &str) -> Result<String, TaskError> {
+/// A claim names files and folders, never a pattern.
+const WILDCARDS: [char; 3] = ['*', '?', '['];
+
+/// An agent's path (`claim`, `release`) as it's kept: relative to the
+/// working tree's top folder, `/`-separated, with no `.`, `..` or trailing
+/// `/`. A relative path starts at the session's folder (`scope.prefix`); an
+/// absolute one must be inside `scope.folder`. Anything else is refused.
+pub fn normalize_claim_path(scope: &ClaimScope, raw: &str) -> Result<String, TaskError> {
+    resolve(&scope.folder, &scope.prefix, raw)
+}
+
+/// [`normalize_claim_path`] for a path already relative to the working
+/// tree's top folder (the app's edits): checked and tidied the same way,
+/// and refused when it's absolute.
+pub fn normalize_relative_claim_path(raw: &str) -> Result<String, TaskError> {
+    let raw = screened(raw)?;
+    if is_absolute(&raw) {
+        return Err(TaskError::invalid(
+            "Paths are relative to your working tree's top folder.",
+        ));
+    }
+    tidy(&raw)
+}
+
+/// `raw` from a session in `prefix` of the working tree at `folder`.
+fn resolve(folder: &str, prefix: &str, raw: &str) -> Result<String, TaskError> {
+    let raw = screened(raw)?;
+    let rel = if is_absolute(&raw) {
+        inside(folder, &raw)
+            .ok_or_else(|| TaskError::invalid("That path is outside your working tree."))?
+    } else {
+        let prefix = prefix.replace('\\', "/");
+        let prefix = prefix.trim_matches('/');
+        if prefix.is_empty() {
+            raw
+        } else {
+            format!("{prefix}/{raw}")
+        }
+    };
+    tidy(&rel)
+}
+
+/// The checks every path gets, then `/` for `\`.
+fn screened(raw: &str) -> Result<String, TaskError> {
     let raw = raw.trim();
     if raw.is_empty() {
         return Err(TaskError::invalid("A path is empty."));
@@ -27,17 +71,64 @@ pub fn normalize_claim_path(raw: &str) -> Result<String, TaskError> {
         return Err(TaskError::invalid("A path has a control character."));
     }
     let raw = raw.replace('\\', "/");
-    let bytes = raw.as_bytes();
-    if raw.starts_with('/') || (bytes.len() > 1 && bytes[1] == b':') {
+    // Windows' verbatim prefix (`\\?\C:\…`) is the one `?` a path may have.
+    if raw.strip_prefix("//?/").unwrap_or(&raw).contains(WILDCARDS) {
         return Err(TaskError::invalid(
-            "Paths are relative to your working tree's top folder.",
+            "Claim files or folders by name: `*`, `?` and `[` aren't allowed.",
         ));
     }
+    Ok(raw)
+}
+
+/// `/…`, or a drive (`C:…`), once `\` is `/`.
+fn is_absolute(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    path.starts_with('/') || (bytes.len() > 1 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':')
+}
+
+/// A path's parts, without empty ones, `.` and Windows' verbatim `\\?\`
+/// (`\\?\UNC\` too).
+fn parts(path: &str) -> Vec<&str> {
+    let mut parts: Vec<&str> = path
+        .split('/')
+        .filter(|p| !p.is_empty() && *p != ".")
+        .collect();
+    if path.starts_with("//?/") && parts.first() == Some(&"?") {
+        parts.remove(0);
+        if parts.first() == Some(&"UNC") {
+            parts.remove(0);
+        }
+    }
+    parts
+}
+
+/// What's left of the absolute `path` under `folder`, as written; `None`
+/// when it isn't under it.
+fn inside(folder: &str, path: &str) -> Option<String> {
+    let folder = folder.replace('\\', "/");
+    let top = parts(&folder);
+    let all = parts(path);
+    if top.is_empty() || all.len() < top.len() {
+        return None;
+    }
+    let same = top
+        .iter()
+        .zip(&all)
+        .all(|(f, p)| path_key(f) == path_key(p));
+    same.then(|| all[top.len()..].join("/"))
+}
+
+/// `path` without `.`, refused with `..` or when nothing is left.
+fn tidy(path: &str) -> Result<String, TaskError> {
     let mut parts = Vec::new();
-    for part in raw.split('/') {
+    for part in path.split('/') {
         match part {
             "" | "." => {}
-            ".." => return Err(TaskError::invalid("Paths can't use `..`.")),
+            ".." => {
+                return Err(TaskError::invalid(
+                    "Paths can't use `..`: give a file outside your folder by its absolute path.",
+                ))
+            }
             p => parts.push(p),
         }
     }
@@ -46,30 +137,57 @@ pub fn normalize_claim_path(raw: &str) -> Result<String, TaskError> {
             "Claim files or folders, not the whole working tree.",
         ));
     }
-    let mut out = parts.join("/");
-    if raw.ends_with('/') {
-        out.push('/');
+    let out = parts.join("/");
+    if out.len() > CLAIM_PATH_MAX {
+        return Err(TaskError::invalid(format!(
+            "Paths are at most {CLAIM_PATH_MAX} characters."
+        )));
     }
     Ok(out)
 }
 
-/// The path two claims share: the same file, or a file inside a claimed
-/// folder (the more specific path).
-fn shared<'a>(a: &'a str, b: &'a str) -> Option<&'a str> {
-    if a == b {
-        Some(a)
-    } else if a.ends_with('/') && b.starts_with(a) {
-        Some(b)
-    } else if b.ends_with('/') && a.starts_with(b) {
-        Some(a)
+/// The form two claim paths compare in: without a trailing `/` (a folder
+/// saved with one, before it stopped mattering), and folded where file
+/// names ignore case. Paths are kept as written.
+fn path_key(path: &str) -> Cow<'_, str> {
+    let path = path.trim_end_matches('/');
+    if contain::case_insensitive_fs() {
+        Cow::Owned(contain::fold(path))
     } else {
-        None
+        Cow::Borrowed(path)
     }
 }
 
-/// True when `path` is `release` or inside it.
-fn covered(path: &str, release: &str) -> bool {
-    path == release || (release.ends_with('/') && path.starts_with(release))
+/// True when `dir` is `path` or a folder holding it (both [`path_key`]s).
+fn key_covers(dir: &str, path: &str) -> bool {
+    !dir.is_empty()
+        && path
+            .strip_prefix(dir)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+}
+
+/// True when a claim on `claim` covers `path`: the same path, or one inside
+/// it.
+pub fn claim_covers(claim: &str, path: &str) -> bool {
+    key_covers(&path_key(claim), &path_key(path))
+}
+
+/// The path two claims share: the same file, or a file inside a claimed
+/// folder (the more specific path).
+#[cfg(test)]
+fn shared<'a>(a: &'a str, b: &'a str) -> Option<&'a str> {
+    shared_keyed((a, &path_key(a)), (b, &path_key(b)))
+}
+
+/// [`shared`] for paths with their [`path_key`]s.
+fn shared_keyed<'a>(a: (&'a str, &str), b: (&'a str, &str)) -> Option<&'a str> {
+    if a.1 == b.1 || key_covers(b.1, a.1) {
+        Some(a.0)
+    } else if key_covers(a.1, b.1) {
+        Some(b.0)
+    } else {
+        None
+    }
 }
 
 /// A working tree's name in notices: its folder's last part (a lane's slug).
@@ -87,13 +205,14 @@ type Pair = (String, String, Vec<String>);
 
 /// Every overlap between working trees in `claims`, one per pair.
 pub fn overlaps_of(claims: &[Claim]) -> Vec<ClaimOverlap> {
+    let keys: Vec<Cow<'_, str>> = claims.iter().map(|c| path_key(&c.path)).collect();
     let mut pairs: BTreeMap<PairKey, Pair> = BTreeMap::new();
     for (i, a) in claims.iter().enumerate() {
-        for b in &claims[i + 1..] {
+        for (j, b) in claims.iter().enumerate().skip(i + 1) {
             if a.repo != b.repo || a.folder == b.folder {
                 continue;
             }
-            let Some(path) = shared(&a.path, &b.path) else {
+            let Some(path) = shared_keyed((&a.path, &keys[i]), (&b.path, &keys[j])) else {
                 continue;
             };
             let (first, second) = if a.folder < b.folder { (a, b) } else { (b, a) };
@@ -110,8 +229,9 @@ pub fn overlaps_of(claims: &[Claim]) -> Vec<ClaimOverlap> {
     pairs
         .into_iter()
         .map(|((repo, f1, f2), (a1, a2, mut paths))| {
-            paths.sort();
-            paths.dedup();
+            // Sorted as paths compare, and each file once, however spelled.
+            paths.sort_by_cached_key(|p| path_key(p).into_owned());
+            paths.dedup_by(|a, b| path_key(a) == path_key(b));
             ClaimOverlap {
                 repo,
                 folders: [f1, f2],
@@ -180,7 +300,9 @@ impl TaskStore {
     }
 
     /// Claims the app saw an agent make by editing (`PreToolUse`), for
-    /// agents that don't call the tool.
+    /// agents that don't call the tool. `paths` are absolute inside the
+    /// working tree, or relative to its top folder whatever the session's
+    /// `prefix` (what [`normalize_relative_claim_path`] takes).
     pub fn claim_inferred(
         &self,
         scope: &ClaimScope,
@@ -202,17 +324,24 @@ impl TaskStore {
                 "Claim 1–{CLAIM_PATHS_MAX} paths at a time."
             )));
         }
+        // An agent's relative paths start at its folder; the app's at the top.
+        let prefix = if inferred { "" } else { scope.prefix.as_str() };
         let paths = paths
             .iter()
-            .map(|p| normalize_claim_path(p))
+            .map(|p| resolve(&scope.folder, prefix, p))
             .collect::<Result<Vec<_>, _>>()?;
         let now = self.now();
         self.edit_claims(|claims| {
+            // This working tree's claims, by how their paths compare.
+            let mut mine: HashMap<String, usize> = claims
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| c.folder == scope.folder)
+                .map(|(i, c)| (path_key(&c.path).into_owned(), i))
+                .collect();
             for path in paths {
-                let existing = claims
-                    .iter_mut()
-                    .find(|c| c.folder == scope.folder && c.path == path);
-                match existing {
+                let key = path_key(&path).into_owned();
+                match mine.get(&key).and_then(|&i| claims.get_mut(i)) {
                     // An edit doesn't replace what the agent said it's doing.
                     Some(c) if inferred => {
                         c.at = now;
@@ -225,17 +354,20 @@ impl TaskStore {
                         c.at = now;
                         c.main = scope.main;
                     }
-                    None => claims.push(Claim {
-                        path,
-                        intent: intent.to_string(),
-                        repo: scope.repo.clone(),
-                        folder: scope.folder.clone(),
-                        agent: agent_name(&scope.folder),
-                        connection: connection.map(str::to_string),
-                        inferred,
-                        at: now,
-                        main: scope.main,
-                    }),
+                    None => {
+                        mine.insert(key, claims.len());
+                        claims.push(Claim {
+                            path,
+                            intent: intent.to_string(),
+                            repo: scope.repo.clone(),
+                            folder: scope.folder.clone(),
+                            agent: agent_name(&scope.folder),
+                            connection: connection.map(str::to_string),
+                            inferred,
+                            at: now,
+                            main: scope.main,
+                        });
+                    }
                 }
             }
             trim_folder(claims, &scope.folder);
@@ -250,10 +382,10 @@ impl TaskStore {
     /// (and what's inside a released folder), or every claim when `None`.
     pub fn release(&self, connection: &str, paths: Option<&[String]>) -> Result<usize, TaskError> {
         let scope = self.claim_scope(connection)?;
-        let paths = match paths {
+        let keys = match paths {
             Some(p) => Some(
                 p.iter()
-                    .map(|p| normalize_claim_path(p))
+                    .map(|p| normalize_claim_path(&scope, p).map(|n| path_key(&n).into_owned()))
                     .collect::<Result<Vec<_>, _>>()?,
             ),
             None => None,
@@ -262,9 +394,10 @@ impl TaskStore {
             let before = claims.len();
             claims.retain(|c| {
                 c.folder != scope.folder
-                    || paths
-                        .as_ref()
-                        .is_some_and(|ps| !ps.iter().any(|p| covered(&c.path, p)))
+                    || keys.as_ref().is_some_and(|ks| {
+                        let key = path_key(&c.path);
+                        !ks.iter().any(|k| key_covers(k, &key))
+                    })
             });
             Ok(before - claims.len())
         })
@@ -312,26 +445,108 @@ mod tests {
     #[test]
     fn f_tk_05_paths_are_relative_and_tidy() {
         assert_eq!(
-            normalize_claim_path("./src//a.ts").expect("tidy"),
+            normalize_relative_claim_path("./src//a.ts").expect("tidy"),
             "src/a.ts"
         );
         assert_eq!(
-            normalize_claim_path("src\\auth\\").expect("folder"),
-            "src/auth/"
+            normalize_relative_claim_path("src\\auth\\").expect("folder"),
+            "src/auth"
         );
-        for bad in ["", "/etc/passwd", "C:/x", "a/../b", "./", "a\nb"] {
-            assert!(normalize_claim_path(bad).is_err(), "{bad:?}");
+        for bad in [
+            "",
+            "/etc/passwd",
+            "C:/x",
+            "a/../b",
+            "./",
+            "a\nb",
+            "*.ts",
+            "src/a?.ts",
+            "[ab].ts",
+        ] {
+            assert!(normalize_relative_claim_path(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    fn scope(folder: &str, prefix: &str) -> ClaimScope {
+        ClaimScope {
+            repo: "/r".into(),
+            folder: folder.into(),
+            prefix: prefix.into(),
+            main: false,
+        }
+    }
+
+    #[test]
+    fn f_tk_05_an_agents_path_starts_at_its_folder_or_is_absolute_inside_its_tree() {
+        let top = scope("/r/wt", "");
+        let sub = scope("/r/wt", "packages\\web\\");
+        let ok = |s: &ClaimScope, raw: &str| normalize_claim_path(s, raw).expect(raw);
+        assert_eq!(ok(&top, "src/a.ts"), "src/a.ts");
+        assert_eq!(ok(&sub, "src/a.ts"), "packages/web/src/a.ts");
+        assert_eq!(ok(&sub, "./"), "packages/web", "the session's folder");
+        assert_eq!(ok(&sub, "/r/wt/packages/ui/b.ts"), "packages/ui/b.ts");
+        assert_eq!(ok(&sub, "/r/wt//packages/./ui/"), "packages/ui");
+        for outside in [
+            "/r/wt",
+            "/r/wt/",
+            "/r/wt-2/a.ts",
+            "/r/a.ts",
+            "/r/wt/../a.ts",
+            "C:/r/wt/a.ts",
+            "../a.ts",
+            "src/../../a.ts",
+        ] {
+            assert!(normalize_claim_path(&sub, outside).is_err(), "{outside}");
+        }
+        // Windows paths, with either slash and the verbatim prefix.
+        let win = scope("C:\\Users\\me\\app", "");
+        for inside in [
+            "C:\\Users\\me\\app\\src\\a.ts",
+            "C:/Users/me/app/src/a.ts",
+            "\\\\?\\C:\\Users\\me\\app\\src\\a.ts",
+        ] {
+            assert_eq!(ok(&win, inside), "src/a.ts", "{inside}");
+        }
+        assert_eq!(
+            ok(
+                &scope("\\\\?\\C:\\Users\\me\\app", ""),
+                "C:\\Users\\me\\app\\src\\a.ts"
+            ),
+            "src/a.ts"
+        );
+        assert!(normalize_claim_path(&win, "D:\\app\\a.ts").is_err());
+        assert!(normalize_claim_path(&win, "\\\\?\\C:\\Users\\me\\app\\*.ts").is_err());
+        let other_case = normalize_claim_path(&win, "c:\\users\\ME\\app\\Src\\a.ts");
+        if contain::case_insensitive_fs() {
+            assert_eq!(
+                other_case.expect("folds"),
+                "Src/a.ts",
+                "the rest as written"
+            );
+        } else {
+            assert!(other_case.is_err());
         }
     }
 
     #[test]
     fn f_tk_05_a_file_in_a_claimed_folder_overlaps() {
         assert_eq!(
+            shared("src/auth", "src/auth/session.ts"),
+            Some("src/auth/session.ts")
+        );
+        assert_eq!(
+            shared("src/auth/session.ts", "src/auth"),
+            Some("src/auth/session.ts")
+        );
+        // A folder claim saved with its slash, before the slash stopped
+        // mattering, still covers its files.
+        assert_eq!(
             shared("src/auth/", "src/auth/session.ts"),
             Some("src/auth/session.ts")
         );
         assert_eq!(shared("a.ts", "a.ts"), Some("a.ts"));
-        assert_eq!(shared("src/auth", "src/auth/session.ts"), None);
+        assert_eq!(shared("src/auth", "src/authz.ts"), None);
+        assert_eq!(shared("src/auth", "src/auth.ts"), None);
         assert_eq!(shared("src/a.ts", "src/b.ts"), None);
     }
 }

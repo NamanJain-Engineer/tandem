@@ -22,7 +22,7 @@ use crate::lock;
 use crate::model::*;
 
 mod claims;
-pub use claims::{normalize_claim_path, overlaps_of};
+pub use claims::{claim_covers, normalize_claim_path, normalize_relative_claim_path, overlaps_of};
 
 /// Idempotency keys are remembered this long (F-TK-01 AC2).
 pub const IDEMPOTENCY_WINDOW_MS: i64 = 24 * 60 * 60 * 1000;

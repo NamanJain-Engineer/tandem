@@ -211,3 +211,180 @@ fn f_tk_05_claims_and_scopes_written_before_main_and_prefix_still_load() {
     let scope = s.claim_scope("tc_old").expect("an old scope loads");
     assert_eq!((scope.prefix.as_str(), scope.main), ("", false));
 }
+
+fn claimed_paths(s: &TaskStore, folder: &str) -> Vec<String> {
+    s.claims()
+        .expect("claims")
+        .into_iter()
+        .filter(|c| c.folder == folder)
+        .map(|c| c.path)
+        .collect()
+}
+
+#[test]
+fn f_tk_05_1_a_folder_claimed_without_a_slash_covers_its_files() {
+    let (_d, s) = store();
+    let a = session(&s, "/r/app/.tandem/worktrees/add-oauth");
+    let b = session(&s, "/r/app/.tandem/worktrees/fix-auth");
+    s.claim(&a, &paths(&["src/auth", "src/authz.ts"]), "OAuth")
+        .expect("a");
+    let overlaps = s
+        .claim(&b, &paths(&["src/auth/session.ts", "src/auth.ts"]), "fix")
+        .expect("b");
+    assert_eq!(overlaps.len(), 1, "{overlaps:?}");
+    assert_eq!(
+        overlaps[0].paths,
+        vec!["src/auth/session.ts".to_string()],
+        "src/auth covers what's inside it, not src/auth.ts or src/authz.ts"
+    );
+}
+
+#[test]
+fn f_tk_05_a_folder_with_or_without_its_slash_is_one_claim() {
+    let (_d, s) = store();
+    let a = session(&s, "/r/app");
+    s.claim(&a, &paths(&["src/auth/"]), "first").expect("slash");
+    s.claim(&a, &paths(&["src/auth"]), "second")
+        .expect("no slash");
+    let claims = s.claims().expect("claims");
+    assert_eq!(claims.len(), 1, "{claims:?}");
+    assert_eq!(
+        (claims[0].path.as_str(), claims[0].intent.as_str()),
+        ("src/auth", "second")
+    );
+}
+
+#[test]
+fn f_tk_05_releasing_a_folder_without_its_slash_gives_up_what_is_inside() {
+    let (_d, s) = store();
+    let a = session(&s, "/r/app");
+    s.claim(
+        &a,
+        &paths(&["src/a.ts", "src/b/c.ts", "src", "srcx.ts"]),
+        "",
+    )
+    .expect("a");
+    assert_eq!(s.release(&a, Some(&paths(&["src"]))).expect("src"), 3);
+    assert_eq!(claimed_paths(&s, "/r/app"), vec!["srcx.ts".to_string()]);
+}
+
+#[test]
+fn f_tk_05_wildcards_are_refused() {
+    let (_d, s) = store();
+    let a = session(&s, "/r/app");
+    for glob in ["src/*.ts", "src/a?.ts", "src/[ab].ts", "**"] {
+        assert!(
+            matches!(s.claim(&a, &paths(&[glob]), ""), Err(TaskError::Invalid(_))),
+            "{glob}"
+        );
+    }
+    assert!(s
+        .claim_inferred(&scope("/r/app"), &paths(&["src/*.ts"]))
+        .is_err());
+    assert!(s.release(&a, Some(&paths(&["src/*"]))).is_err());
+    assert!(s.claims().expect("claims").is_empty());
+}
+
+#[test]
+fn f_tk_05_an_agents_paths_start_at_its_folder_or_are_absolute_inside_its_tree() {
+    let (_d, s) = store();
+    let tree = "/r/app/.tandem/worktrees/web";
+    let web = s
+        .create_connection_in(
+            "Claude Code",
+            "me",
+            Some(ClaimScope {
+                prefix: "packages/web".into(),
+                ..scope(tree)
+            }),
+        )
+        .expect("web")
+        .id;
+    s.claim(
+        &web,
+        &paths(&[
+            "src/a.ts",
+            "./README.md",
+            "/r/app/.tandem/worktrees/web/packages/ui/b.ts",
+        ]),
+        "",
+    )
+    .expect("web");
+    assert_eq!(
+        claimed_paths(&s, tree),
+        vec![
+            "packages/web/src/a.ts".to_string(),
+            "packages/web/README.md".to_string(),
+            "packages/ui/b.ts".to_string(),
+        ]
+    );
+    // Another worktree, its session at the top, names the same file.
+    let top = session(&s, "/r/app/.tandem/worktrees/top");
+    let overlaps = s
+        .claim(&top, &paths(&["packages/web/src/a.ts"]), "")
+        .expect("top");
+    assert_eq!(overlaps[0].paths, vec!["packages/web/src/a.ts".to_string()]);
+    // Release resolves paths the same way.
+    assert_eq!(s.release(&web, Some(&paths(&["src"]))).expect("src"), 1);
+    // An app-inferred path is relative to the tree's top, whatever the
+    // session's folder.
+    s.claim_inferred(
+        &ClaimScope {
+            prefix: "packages/web".into(),
+            ..scope(tree)
+        },
+        &paths(&["packages/web/c.ts"]),
+    )
+    .expect("inferred");
+    assert!(claimed_paths(&s, tree).contains(&"packages/web/c.ts".to_string()));
+    for outside in [
+        tree,
+        "/r/app/.tandem/worktrees/web-2/a.ts",
+        "/r/app/src/a.ts",
+        "/etc/passwd",
+        "C:/r/app/a.ts",
+        "../ui/b.ts",
+    ] {
+        assert!(
+            matches!(
+                s.claim(&web, &paths(&[outside]), ""),
+                Err(TaskError::Invalid(_))
+            ),
+            "{outside}"
+        );
+    }
+}
+
+#[test]
+fn f_tk_05_paths_compare_case_folded_where_the_file_system_does() {
+    let folds = tandem_core::contain::case_insensitive_fs();
+    let (_d, s) = store();
+    let one = "/r/app/.tandem/worktrees/one";
+    let a = session(&s, one);
+    s.claim(&a, &paths(&["src/Auth.ts"]), "first")
+        .expect("as written");
+    s.claim(&a, &paths(&["SRC/auth.ts"]), "second")
+        .expect("another case");
+    let claims = s.claims().expect("claims");
+    if folds {
+        assert_eq!(claims.len(), 1, "one file here: {claims:?}");
+        assert_eq!(
+            (claims[0].path.as_str(), claims[0].intent.as_str()),
+            ("src/Auth.ts", "second"),
+            "kept as first written"
+        );
+    } else {
+        assert_eq!(claims.len(), 2, "two files here: {claims:?}");
+    }
+    let b = session(&s, "/r/app/.tandem/worktrees/two");
+    let overlaps = s.claim(&b, &paths(&["Src"]), "").expect("b");
+    if folds {
+        assert_eq!(overlaps[0].paths, vec!["src/Auth.ts".to_string()]);
+    } else {
+        assert!(overlaps.is_empty(), "{overlaps:?}");
+    }
+    let released = s
+        .release(&a, Some(&paths(&["src/AUTH.ts"])))
+        .expect("release");
+    assert_eq!(released, usize::from(folds));
+}

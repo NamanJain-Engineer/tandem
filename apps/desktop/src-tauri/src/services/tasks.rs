@@ -93,7 +93,7 @@ pub fn claim_path(folder: &Path, edited: &Path) -> Option<String> {
     if text.starts_with(".git/") || text.starts_with(".tandem/") {
         return None;
     }
-    tandem_tasks::store::normalize_claim_path(&text).ok()
+    tandem_tasks::store::normalize_relative_claim_path(&text).ok()
 }
 
 /// One key per overlapping path, so a pair is announced again only for a

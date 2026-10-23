@@ -436,7 +436,8 @@ pub struct ClaimScope {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, rename = "TaskClaim")]
 pub struct Claim {
-    /// Relative to the working tree, `/`-separated; a folder ends in `/`.
+    /// Relative to the working tree's top folder, `/`-separated, as written.
+    /// A folder covers everything inside it.
     pub path: String,
     /// What the agent says it's doing. Another agent's intent is untrusted.
     pub intent: String,
