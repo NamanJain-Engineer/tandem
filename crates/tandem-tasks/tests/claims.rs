@@ -388,3 +388,34 @@ fn f_tk_05_paths_compare_case_folded_where_the_file_system_does() {
         .expect("release");
     assert_eq!(released, usize::from(folds));
 }
+
+#[test]
+fn f_tk_05_release_refuses_over_50_paths_before_it_waits_for_the_lock() {
+    let (_d, s) = store();
+    let a = session(&s, "/r/app");
+    s.claim(&a, &paths(&["a.ts"]), "").expect("a");
+    let too_many: Vec<String> = (0..=CLAIM_PATHS_MAX).map(|i| format!("f{i}.ts")).collect();
+    {
+        // Another process is writing claims.
+        let _held =
+            tandem_tasks::lock::acquire(&s.dir().join("locks").join("claims.lock")).expect("held");
+        let started = std::time::Instant::now();
+        assert!(matches!(
+            s.release(&a, Some(&too_many)),
+            Err(TaskError::Invalid(_))
+        ));
+        assert!(matches!(
+            s.release(&a, Some(&paths(&["src/*"]))),
+            Err(TaskError::Invalid(_))
+        ));
+        assert!(
+            started.elapsed() < tandem_tasks::lock::ACQUIRE_TIMEOUT,
+            "refused without waiting for the lock"
+        );
+    }
+    let fifty: Vec<String> = (1..CLAIM_PATHS_MAX)
+        .map(|i| format!("f{i}.ts"))
+        .chain(["a.ts".to_string()])
+        .collect();
+    assert_eq!(s.release(&a, Some(&fifty)).expect("50 paths"), 1);
+}

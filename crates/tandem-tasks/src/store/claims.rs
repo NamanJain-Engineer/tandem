@@ -380,7 +380,14 @@ impl TaskStore {
 
     /// `release(paths)`: the connection's working tree gives up `paths`
     /// (and what's inside a released folder), or every claim when `None`.
+    /// At most [`CLAIM_PATHS_MAX`] paths, checked and resolved before the
+    /// claims lock is taken.
     pub fn release(&self, connection: &str, paths: Option<&[String]>) -> Result<usize, TaskError> {
+        if paths.is_some_and(|p| p.len() > CLAIM_PATHS_MAX) {
+            return Err(TaskError::invalid(format!(
+                "Release at most {CLAIM_PATHS_MAX} paths at a time."
+            )));
+        }
         let scope = self.claim_scope(connection)?;
         let keys = match paths {
             Some(p) => Some(
