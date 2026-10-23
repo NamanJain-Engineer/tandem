@@ -419,3 +419,53 @@ fn f_tk_05_release_refuses_over_50_paths_before_it_waits_for_the_lock() {
         .collect();
     assert_eq!(s.release(&a, Some(&fifty)).expect("50 paths"), 1);
 }
+
+/// `claims.json`'s file as it is now; a rewrite (temp, then rename) makes
+/// a new one. `None` where there's no file, or no inode to tell by.
+fn claims_file(s: &TaskStore) -> Option<u64> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::metadata(s.dir().join("claims.json"))
+            .ok()
+            .map(|m| m.ino())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = s;
+        None
+    }
+}
+
+#[test]
+fn f_tk_05_3_stale_claims_are_pruned_by_what_keep_refuses() {
+    let (_d, s) = store();
+    // Nothing to prune or release: no claims file appears.
+    assert_eq!(s.prune_claims(|_| false).expect("empty"), 0);
+    assert_eq!(s.release_folder("/r/app").expect("empty"), 0);
+    assert!(!s.dir().join("claims.json").exists());
+    let main = session(&s, "/r/app");
+    let one = session(&s, "/r/app/.tandem/worktrees/one");
+    let gone = session(&s, "/r/app/.tandem/worktrees/gone");
+    s.claim(&main, &paths(&["a.ts"]), "").expect("main");
+    s.claim(&one, &paths(&["b.ts"]), "").expect("one");
+    s.claim(&gone, &paths(&["c.ts", "d.ts"]), "").expect("gone");
+    // A sweep: the main checkout's claims after a restart, and those of a
+    // worktree deleted outside the app.
+    let pruned = s
+        .prune_claims(|c| !c.main && c.folder != "/r/app/.tandem/worktrees/gone")
+        .expect("prune");
+    assert_eq!(pruned, 3);
+    let left: Vec<String> = s
+        .claims()
+        .expect("left")
+        .into_iter()
+        .map(|c| c.path)
+        .collect();
+    assert_eq!(left, vec!["b.ts".to_string()]);
+    // Keeping everything leaves the file as it was.
+    let before = claims_file(&s);
+    assert_eq!(s.prune_claims(|_| true).expect("none"), 0);
+    assert_eq!(s.release_folder("/r/app").expect("none"), 0);
+    assert_eq!(claims_file(&s), before, "claims.json isn't rewritten");
+}

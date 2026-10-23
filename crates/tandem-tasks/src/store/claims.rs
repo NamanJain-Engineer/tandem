@@ -272,6 +272,25 @@ impl TaskStore {
         Ok(out)
     }
 
+    /// Drops the claims `gone` picks, under the claims lock; how many went.
+    /// The file is written only when some did, so a sweep that finds
+    /// nothing doesn't wake the app's watcher.
+    fn remove_claims(&self, gone: impl Fn(&Claim) -> bool) -> Result<usize, TaskError> {
+        let _g = lock::acquire(&self.lock_path("claims"))?;
+        let path = self.claims_path();
+        if !path.exists() {
+            return Ok(0);
+        }
+        let mut claims: Vec<Claim> = Self::read_json(&path)?;
+        let before = claims.len();
+        claims.retain(|c| !gone(c));
+        let removed = before - claims.len();
+        if removed > 0 {
+            self.write_json(&path, &claims)?;
+        }
+        Ok(removed)
+    }
+
     /// The live connection's working tree, or `INVALID` when its session
     /// isn't in one.
     pub fn claim_scope(&self, connection: &str) -> Result<ClaimScope, TaskError> {
@@ -397,26 +416,25 @@ impl TaskStore {
             ),
             None => None,
         };
-        self.edit_claims(|claims| {
-            let before = claims.len();
-            claims.retain(|c| {
-                c.folder != scope.folder
-                    || keys.as_ref().is_some_and(|ks| {
-                        let key = path_key(&c.path);
-                        !ks.iter().any(|k| key_covers(k, &key))
-                    })
-            });
-            Ok(before - claims.len())
+        self.remove_claims(|c| {
+            c.folder == scope.folder
+                && keys.as_ref().is_none_or(|ks| {
+                    let key = path_key(&c.path);
+                    ks.iter().any(|k| key_covers(k, &key))
+                })
         })
     }
 
     /// A working tree was merged or removed: its claims go (F-TK-05 AC3).
     pub fn release_folder(&self, folder: &str) -> Result<usize, TaskError> {
-        self.edit_claims(|claims| {
-            let before = claims.len();
-            claims.retain(|c| c.folder != folder);
-            Ok(before - claims.len())
-        })
+        self.remove_claims(|c| c.folder == folder)
+    }
+
+    /// Drops every claim `keep` refuses, under the claims lock, and says how
+    /// many went: the app's sweeps of claims nothing will release (the main
+    /// checkout's after a restart, a working tree deleted outside the app).
+    pub fn prune_claims(&self, keep: impl Fn(&Claim) -> bool) -> Result<usize, TaskError> {
+        self.remove_claims(|c| !keep(c))
     }
 
     /// Every overlap there is now.
