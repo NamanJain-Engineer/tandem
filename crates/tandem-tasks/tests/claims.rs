@@ -469,3 +469,46 @@ fn f_tk_05_3_stale_claims_are_pruned_by_what_keep_refuses() {
     assert_eq!(s.release_folder("/r/app").expect("none"), 0);
     assert_eq!(claims_file(&s), before, "claims.json isn't rewritten");
 }
+
+#[test]
+fn f_tk_05_1_overlaps_come_from_within_each_repository_in_order() {
+    let claim = |repo: &str, lane: &str, path: &str| Claim {
+        path: path.into(),
+        intent: String::new(),
+        repo: repo.into(),
+        folder: format!("{repo}/.tandem/worktrees/{lane}"),
+        agent: lane.into(),
+        connection: None,
+        inferred: true,
+        at: 0,
+        main: false,
+    };
+    let claims = vec![
+        claim("/r/b", "one", "x.ts"),
+        claim("/r/a", "one", "x.ts"),
+        claim("/r/c", "one", "x.ts"),
+        claim("/r/b", "two", "src"),
+        claim("/r/a", "two", "x.ts"),
+        claim("/r/b", "two", "x.ts"),
+        claim("/r/a", "three", "src"),
+        claim("/r/b", "one", "src/b.ts"),
+    ];
+    let overlaps = tandem_tasks::store::overlaps_of(&claims);
+    let seen: Vec<(&str, &[String; 2], &[String])> = overlaps
+        .iter()
+        .map(|o| (o.repo.as_str(), &o.agents, o.paths.as_slice()))
+        .collect();
+    let pair = ["one".to_string(), "two".to_string()];
+    assert_eq!(
+        seen,
+        vec![
+            ("/r/a", &pair, &["x.ts".to_string()][..]),
+            (
+                "/r/b",
+                &pair,
+                &["src/b.ts".to_string(), "x.ts".to_string()][..]
+            ),
+        ],
+        "one per pair, never across repositories, in order"
+    );
+}

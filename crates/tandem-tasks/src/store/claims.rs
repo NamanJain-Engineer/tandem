@@ -199,31 +199,38 @@ fn agent_name(folder: &str) -> String {
 }
 
 /// `(repo, first folder, second folder)`.
-type PairKey = (String, String, String);
+type PairKey<'a> = (&'a str, &'a str, &'a str);
 /// The two agents' names and the paths they share.
-type Pair = (String, String, Vec<String>);
+type Pair<'a> = (&'a str, &'a str, Vec<&'a str>);
 
-/// Every overlap between working trees in `claims`, one per pair.
+/// Every overlap between working trees in `claims`, one per pair. Only
+/// claims in one repository are compared, each with its path's
+/// [`path_key`] worked out once.
 pub fn overlaps_of(claims: &[Claim]) -> Vec<ClaimOverlap> {
-    let keys: Vec<Cow<'_, str>> = claims.iter().map(|c| path_key(&c.path)).collect();
-    let mut pairs: BTreeMap<PairKey, Pair> = BTreeMap::new();
-    for (i, a) in claims.iter().enumerate() {
-        for (j, b) in claims.iter().enumerate().skip(i + 1) {
-            if a.repo != b.repo || a.folder == b.folder {
-                continue;
+    let mut repos: HashMap<&str, Vec<(&Claim, Cow<'_, str>)>> = HashMap::new();
+    for c in claims {
+        repos
+            .entry(c.repo.as_str())
+            .or_default()
+            .push((c, path_key(&c.path)));
+    }
+    let mut pairs: BTreeMap<PairKey<'_>, Pair<'_>> = BTreeMap::new();
+    for group in repos.values() {
+        for (i, &(a, ref ka)) in group.iter().enumerate() {
+            for &(b, ref kb) in &group[i + 1..] {
+                if a.folder == b.folder {
+                    continue;
+                }
+                let Some(path) = shared_keyed((&a.path, ka), (&b.path, kb)) else {
+                    continue;
+                };
+                let (first, second) = if a.folder < b.folder { (a, b) } else { (b, a) };
+                pairs
+                    .entry((&first.repo, &first.folder, &second.folder))
+                    .or_insert_with(|| (&first.agent, &second.agent, Vec::new()))
+                    .2
+                    .push(path);
             }
-            let Some(path) = shared_keyed((&a.path, &keys[i]), (&b.path, &keys[j])) else {
-                continue;
-            };
-            let (first, second) = if a.folder < b.folder { (a, b) } else { (b, a) };
-            let entry = pairs
-                .entry((
-                    first.repo.clone(),
-                    first.folder.clone(),
-                    second.folder.clone(),
-                ))
-                .or_insert_with(|| (first.agent.clone(), second.agent.clone(), Vec::new()));
-            entry.2.push(path.to_string());
         }
     }
     pairs
@@ -233,10 +240,10 @@ pub fn overlaps_of(claims: &[Claim]) -> Vec<ClaimOverlap> {
             paths.sort_by_cached_key(|p| path_key(p).into_owned());
             paths.dedup_by(|a, b| path_key(a) == path_key(b));
             ClaimOverlap {
-                repo,
-                folders: [f1, f2],
-                agents: [a1, a2],
-                paths,
+                repo: repo.to_string(),
+                folders: [f1.to_string(), f2.to_string()],
+                agents: [a1.to_string(), a2.to_string()],
+                paths: paths.into_iter().map(str::to_string).collect(),
             }
         })
         .collect()
