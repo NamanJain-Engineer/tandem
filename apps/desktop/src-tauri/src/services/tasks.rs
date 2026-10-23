@@ -34,10 +34,11 @@ pub struct TasksService {
     watcher: Mutex<Option<notify::RecommendedWatcher>>,
     /// Overlaps already announced, by [`overlap_keys`].
     announced: Mutex<HashSet<String>>,
-    /// Held by a check from reading the claims to telling the sink: one
-    /// check at a time (F-TK-05).
+    /// Held by a check from reading the claims to telling the sink, and by
+    /// a session's start: one at a time (F-TK-05).
     checking: Mutex<()>,
     on_overlap: std::sync::OnceLock<OverlapSink>,
+    on_notice: std::sync::OnceLock<NoticeSink>,
 }
 
 /// A session's connection and the working tree it claims in.
@@ -53,6 +54,10 @@ struct Live {
 /// `(new, all)`: overlaps not announced before (only their new paths), and
 /// every overlap there is now (F-TK-05 AC1).
 pub type OverlapSink = Arc<dyn Fn(&[ClaimOverlap], &[ClaimOverlap]) + Send + Sync>;
+
+/// `(pane, notices)`: a pane's session began, and these are the overlap
+/// notices it's told first (F-TK-05 AC1).
+pub type NoticeSink = Arc<dyn Fn(&str, &[String]) + Send + Sync>;
 
 /// Where a session in `folder` claims: its working tree and the repository
 /// it belongs to (a lane's worktree claims against its main checkout).
@@ -120,6 +125,26 @@ pub fn fresh_overlaps(announced: &mut HashSet<String>, all: &[ClaimOverlap]) -> 
     }
     *announced = now;
     out
+}
+
+/// The overlaps in `all` that `folder` is in, with only their paths in
+/// `announced`: what a session beginning there missed. Paths not announced
+/// yet reach it from the next check, as they reach everyone.
+pub fn announced_overlaps(
+    announced: &HashSet<String>,
+    all: &[ClaimOverlap],
+    folder: &str,
+) -> Vec<ClaimOverlap> {
+    all.iter()
+        .filter(|o| o.folders.iter().any(|f| f == folder))
+        .filter_map(|o| {
+            let paths: Vec<String> = overlap_keys(o)
+                .filter(|(k, _)| announced.contains(k))
+                .map(|(_, p)| p.to_string())
+                .collect();
+            (!paths.is_empty()).then(|| ClaimOverlap { paths, ..o.clone() })
+        })
+        .collect()
 }
 
 /// "add-oauth and fix-auth both claim src/auth/session.ts" (up to 3 paths).
@@ -208,6 +233,7 @@ impl TasksService {
             announced: Mutex::default(),
             checking: Mutex::default(),
             on_overlap: std::sync::OnceLock::new(),
+            on_notice: std::sync::OnceLock::new(),
         })
     }
 
@@ -216,10 +242,15 @@ impl TasksService {
         let _ = self.on_overlap.set(sink);
     }
 
+    /// Told what a pane hears as its session begins (set once, at startup).
+    pub fn set_notice_sink(&self, sink: NoticeSink) {
+        let _ = self.on_notice.set(sink);
+    }
+
     /// The session `key` begins in `folder`, with or without a connection
-    /// (F-TK-05): its edits claim there, and its pane gets the overlap
-    /// notices of its working tree. The key's previous connection is
-    /// revoked. Blocking file IO.
+    /// (F-TK-05): its edits claim there, and a pane gets the overlap notices
+    /// of its working tree, the ones announced before it began included
+    /// (AC1). The key's previous connection is revoked. Blocking file IO.
     pub fn track_scope(&self, key: &str, folder: Option<&Path>) {
         self.track(key, folder.and_then(claim_scope));
     }
@@ -228,18 +259,45 @@ impl TasksService {
         let Some(tracker) = &self.tracker else {
             return;
         };
+        // In turn with the checks: the pane hears each overlap once, either
+        // here or from the next check.
+        let turn = self.checking.lock().unwrap_or_else(|e| e.into_inner());
         let previous = match self.sessions.lock() {
             Ok(mut m) => m.insert(
                 key.to_string(),
                 Live {
                     connection: None,
-                    scope,
+                    scope: scope.clone(),
                 },
             ),
             Err(_) => return,
         };
+        if let (Some(pane), Some(sink)) = (key.strip_prefix("pn:"), self.on_notice.get()) {
+            let missed = match &scope {
+                Some(s) => self.announced_in(tracker, &s.folder),
+                None => Vec::new(),
+            };
+            let notices: Vec<String> = missed.iter().map(overlap_notice).collect();
+            sink(pane, &notices);
+        }
+        drop(turn);
         if let Some(old) = previous.and_then(|l| l.connection) {
             let _ = tracker.revoke_connection(&old);
+        }
+    }
+
+    /// The overlaps announced so far that `folder` is in. Under `checking`.
+    fn announced_in(&self, tracker: &TaskStore, folder: &str) -> Vec<ClaimOverlap> {
+        let all = match tracker.claim_overlaps() {
+            Ok(all) => all,
+            Err(e) => {
+                tracing::warn!(code = "tasks.claims_unreadable", error = %e, "claims couldn't be read");
+                return Vec::new();
+            }
+        };
+        match self.announced.lock() {
+            Ok(a) => announced_overlaps(&a, &all, folder),
+            Err(_) => Vec::new(),
         }
     }
 
@@ -971,5 +1029,74 @@ mod tests {
         let left = tracker.claims().expect("claims");
         assert_eq!(left.len(), 1, "{left:?}");
         assert_eq!(left[0].agent, "fix-auth");
+    }
+
+    #[tokio::test]
+    async fn f_tk_05_1_overlaps_from_before_a_panes_session_reach_it_as_it_begins() {
+        let (_d, tasks) = service(Some("/x".into())).await;
+        let dir = tempfile::tempdir().expect("dir");
+        let (main, lane) = repo_with_lane(dir.path());
+        let told: Seen<(String, Vec<String>)> = Arc::default();
+        let seen = told.clone();
+        tasks.set_notice_sink(Arc::new(move |pane, notices| {
+            seen.lock()
+                .expect("told")
+                .push((pane.to_string(), notices.to_vec()));
+        }));
+        let routed = route_overlaps(&tasks);
+        let tracker = tasks.tracker.clone().expect("tracker");
+        let edit = |root: &Path, path: &str| {
+            tracker
+                .claim_inferred(&claim_scope(root).expect("scope"), &[path.into()])
+                .expect("claim");
+        };
+        // The last run left both worktrees claiming a.ts, and the startup
+        // check announced it to no pane.
+        edit(&main, "src/a.ts");
+        edit(&lane, "src/a.ts");
+        tasks.check_overlaps();
+        assert!(routed.lock().expect("routed").is_empty());
+        // A pane's session begins in the lane: it's told.
+        tasks.track_scope("pn:p1", Some(&lane));
+        let a = "app and fix-auth both claim src/a.ts".to_string();
+        assert_eq!(
+            *told.lock().expect("told"),
+            [("p1".to_string(), vec![a.clone()])]
+        );
+        // An overlap not announced yet reaches a beginning session once,
+        // from the next check.
+        edit(&main, "src/b.ts");
+        edit(&lane, "src/b.ts");
+        tasks
+            .begin_session("pn:p2", "Claude Code", "me", Some(&main))
+            .expect("p2");
+        tasks.check_overlaps();
+        let b = "app and fix-auth both claim src/b.ts".to_string();
+        let mut got = routed.lock().expect("routed").clone();
+        got.sort();
+        assert_eq!(got, [("p1".into(), b.clone()), ("p2".into(), b)]);
+        // A terminal pane's launch tracks its session, then connects it: it's
+        // told once. A chat isn't a pane; one outside a working tree is told
+        // nothing.
+        tasks.track_scope("pn:p3", Some(&lane));
+        tasks
+            .begin_session("pn:p3", "Claude Code", "me", Some(&lane))
+            .expect("p3");
+        tasks
+            .begin_session("th:1", "Thread", "me", Some(&lane))
+            .expect("thread");
+        tasks.track_scope("pn:p4", Some(dir.path()));
+        assert_eq!(
+            *told.lock().expect("told"),
+            [
+                ("p1".to_string(), vec![a.clone()]),
+                ("p2".to_string(), vec![a]),
+                (
+                    "p3".to_string(),
+                    vec!["app and fix-auth both claim src/a.ts, src/b.ts".to_string()]
+                ),
+                ("p4".to_string(), vec![]),
+            ]
+        );
     }
 }

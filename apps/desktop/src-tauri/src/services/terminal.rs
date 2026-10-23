@@ -49,6 +49,9 @@ pub const PROMPT_WAIT: Duration = Duration::from_secs(2);
 pub const READY_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub const FOLDER_NOT_FOUND: &str = "Folder not found — opened at workspace root";
+/// A pane whose process isn't running keeps at most this many notices
+/// (the newest) for when it starts.
+pub const HELD_NOTICES_MAX: usize = 20;
 /// Lines kept per pane in `$DATA/scrollback/<pane>.bin` (F-CD-03).
 pub const SNAPSHOT_LINES: usize = 2_000;
 /// Live panes are also snapshotted this often, to survive a crash (§5.4).
@@ -90,6 +93,9 @@ pub struct ResumePlan {
 
 pub const AGENT_PAUSED: &str = "This agent is paused. Resume it or start fresh from its card.";
 
+/// Notices waiting for each pane's process to start.
+type HeldNotices = std::collections::HashMap<String, Vec<String>>;
+
 pub struct TerminalService {
     pub pty: PtyManager,
     pub engines: Arc<EngineService>,
@@ -124,6 +130,9 @@ pub struct TerminalService {
     wsl_panes: std::sync::Mutex<std::collections::HashSet<String>>,
     /// The tasks server terminal agents get (F-TK-02).
     tasks: std::sync::OnceLock<Arc<crate::services::tasks::TasksService>>,
+    /// Notices for panes whose process isn't running (yet), sent when it
+    /// starts (F-TK-05).
+    held_notices: std::sync::Mutex<HeldNotices>,
     /// Agent panes on SSH hosts: their tasks server's channel, kept across
     /// drops as their PTY is, closed with the pane (D-1606).
     host_tasks:
@@ -287,6 +296,7 @@ impl TerminalService {
             wsl: std::sync::OnceLock::new(),
             wsl_panes: Default::default(),
             tasks: std::sync::OnceLock::new(),
+            held_notices: Default::default(),
             host_tasks: Default::default(),
             sandbox: tokio::sync::OnceCell::new(),
             sandboxed: Default::default(),
@@ -546,11 +556,55 @@ impl TerminalService {
         let _ = self.tasks.set(tasks.clone());
     }
 
+    /// A one-line notice in the pane's terminal. One for a pane whose
+    /// process isn't running waits until it starts (at most
+    /// [`HELD_NOTICES_MAX`], the newest): an agent's tasks session, and the
+    /// overlaps it's told about, begin before its process does (F-TK-05).
+    pub fn notice(&self, pane: &str, message: &str) {
+        let mut held = self.held_notices.lock().unwrap_or_else(|e| e.into_inner());
+        self.notice_or_hold(&mut held, pane, message);
+    }
+
+    /// The pane's tasks session began (F-TK-05 AC1): `notices` are what it's
+    /// told first. They replace any that waited for it, which named
+    /// overlaps that `notices` has while they last.
+    pub fn session_notices(&self, pane: &str, notices: &[String]) {
+        let mut held = self.held_notices.lock().unwrap_or_else(|e| e.into_inner());
+        held.remove(pane);
+        for n in notices {
+            self.notice_or_hold(&mut held, pane, n);
+        }
+    }
+
+    fn notice_or_hold(&self, held: &mut HeldNotices, pane: &str, message: &str) {
+        // A live pane with no view keeps it for its next attach.
+        if self.pty.is_live(pane) {
+            let _ = self.pty.notice(pane, message);
+            return;
+        }
+        let waiting = held.entry(pane.to_string()).or_default();
+        if waiting.len() >= HELD_NOTICES_MAX {
+            waiting.remove(0);
+        }
+        waiting.push(message.to_string());
+    }
+
+    /// The pane's process started: the notices that waited for it go out.
+    fn send_held_notices(&self, pane: &str) {
+        let mut held = self.held_notices.lock().unwrap_or_else(|e| e.into_inner());
+        for message in held.remove(pane).unwrap_or_default() {
+            let _ = self.pty.notice(pane, &message);
+        }
+    }
+
     /// The pane's agent session ended or the pane closed: its task
     /// connection is revoked.
     pub fn end_tasks_session(&self, pane: &str) {
         if let Some(tasks) = self.tasks.get() {
             tasks.end_session(&format!("pn:{pane}"));
+        }
+        if let Ok(mut held) = self.held_notices.lock() {
+            held.remove(pane);
         }
         // A host agent's channel closes: its server there ends.
         let channel = self.host_tasks.lock().ok().and_then(|mut m| m.remove(pane));
@@ -1145,6 +1199,7 @@ impl TerminalService {
         if let Some(text) = notice {
             let _ = self.pty.notice(pane.as_str(), text);
         }
+        self.send_held_notices(pane.as_str());
         tracing::info!(code = "pty.spawned", pid = info.pid, "terminal started");
         Ok(info)
     }
@@ -2098,6 +2153,62 @@ mod tests {
         panes.sort();
         assert_eq!(panes, ["p1", "p2"], "their panes get overlap notices");
         assert_eq!(tasks.connection_of("pn:p1"), None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tk_05_1_a_notice_for_a_pane_waits_until_its_terminal_starts() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let root = dir.path().join("ws1");
+        std::fs::create_dir_all(&root).expect("mkdir");
+        settings::set(
+            &store,
+            SettingKey::DefaultShell,
+            serde_json::json!("/bin/sh"),
+        )
+        .await
+        .expect("shell");
+        let added = crate::services::workspaces::add(&store, root.to_str().expect("utf8"), Some(3))
+            .await
+            .expect("ws");
+        let tab = tabs::list(&store, &added.workspace.id)
+            .await
+            .expect("tabs")
+            .remove(0);
+        let pane = panes::create(&store, &tab.id, "terminal", None)
+            .await
+            .expect("pane");
+        let svc = TerminalService::new(PtyManager::new(), store.clone());
+        // An agent's tasks session begins before its process does.
+        svc.notice(pane.id.as_str(), "an overlap that ended since");
+        svc.session_notices(
+            pane.id.as_str(),
+            &["add-oauth and fix-auth both claim a.ts".to_string()],
+        );
+        let sink = Arc::new(VecSink::default());
+        svc.spawn(&pane.id, 80, 24, Some(4), sink.clone())
+            .await
+            .expect("spawn");
+        svc.notice(pane.id.as_str(), "add-oauth and fix-auth both claim b.ts");
+        let notices: Vec<String> = sink
+            .frames
+            .lock()
+            .expect("frames")
+            .iter()
+            .filter(|f| f.kind == tandem_pty::FrameKind::Notice)
+            .filter_map(|f| serde_json::from_slice::<serde_json::Value>(&f.payload).ok())
+            .filter_map(|v| v["message"].as_str().map(str::to_string))
+            .collect();
+        assert_eq!(
+            notices,
+            [
+                "add-oauth and fix-auth both claim a.ts",
+                "add-oauth and fix-auth both claim b.ts"
+            ],
+            "what waited for the pane arrives once it starts, then it's told at once"
+        );
+        svc.pty.kill(pane.id.as_str()).expect("kill");
     }
 }
 

@@ -1192,7 +1192,8 @@ pub fn run() {
                     state.bus.clone(),
                 ));
                 // F-TK-05: a new claim overlap is a notice in both agents'
-                // panes, and the queue shows every overlap there is.
+                // panes, and the queue shows every overlap there is. A pane
+                // whose process hasn't started yet gets it when it does.
                 {
                     let app = handle.clone();
                     state
@@ -1203,13 +1204,23 @@ pub fn run() {
                                 let msg = services::tasks::overlap_notice(o);
                                 for folder in &o.folders {
                                     for pane in state.tasks.panes_in(folder) {
-                                        let _ = state.terminals.pty.notice(&pane, &msg);
+                                        state.terminals.notice(&pane, &msg);
                                     }
                                 }
                             }
                             if let Some(q) = state.review.get() {
                                 q.set_overlaps(all.to_vec());
                             }
+                        }));
+                    // A pane's session begins with the overlaps announced
+                    // before it (AC1): at startup, or when it joins later.
+                    let app = handle.clone();
+                    state
+                        .tasks
+                        .set_notice_sink(std::sync::Arc::new(move |pane, notices| {
+                            app.state::<AppState>()
+                                .terminals
+                                .session_notices(pane, notices);
                         }));
                     let tasks = state.tasks.clone();
                     tauri::async_runtime::spawn_blocking(move || tasks.check_overlaps());
