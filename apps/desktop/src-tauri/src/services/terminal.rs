@@ -577,6 +577,9 @@ impl TerminalService {
         let Some(tasks) = self.tasks.get() else {
             return Vec::new();
         };
+        // Tracked whatever the setting, as a local pane is; an SSH host's
+        // folder isn't a working tree here, so it has no claims.
+        tasks.track_scope(&format!("pn:{pane}"), None);
         if engine.hooks_support == tandem_engines::registry::HooksSupport::None
             || !tasks.expose_to_terminals().await
         {
@@ -620,7 +623,13 @@ impl TerminalService {
         pane: &str,
         folder: &Path,
     ) -> Vec<(String, String)> {
-        let (Some(tasks), Some(home)) = (self.tasks.get(), home) else {
+        let Some(tasks) = self.tasks.get() else {
+            return Vec::new();
+        };
+        // Whatever the setting, and with no provider home of Vibezeo's: the
+        // agent's edits claim, and its pane gets overlap notices (F-TK-05).
+        tasks.track_scope(&format!("pn:{pane}"), Some(folder));
+        let Some(home) = home else {
             return Vec::new();
         };
         let on = tasks.expose_to_terminals().await;
@@ -2030,6 +2039,65 @@ mod tests {
         assert!(!q.settled(1_400, Some("user@host %\nmotd")));
         assert!(!q.settled(2_800, Some("user@host %\nmotd")));
         assert!(q.settled(2_900, Some("user@host %\nmotd")));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tk_05_2_an_agent_panes_edits_claim_with_tasks_not_exposed_to_terminal_agents() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        settings::set(
+            &store,
+            SettingKey::ExposeTasksToTerminalAgents,
+            serde_json::json!(false),
+        )
+        .await
+        .expect("setting");
+        let tasks = crate::services::tasks::TasksService::new(
+            &data,
+            store.clone(),
+            Some("/opt/v/tandem-tasks".into()),
+        );
+        let svc = TerminalService::new(PtyManager::new(), store.clone());
+        svc.bind_tasks(&tasks);
+        let root = dir.path().join("app");
+        std::fs::create_dir_all(&root).expect("mkdir");
+        let ok = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&root)
+            .status()
+            .expect("git")
+            .success();
+        assert!(ok, "git init");
+        let root = std::fs::canonicalize(root).expect("canonical");
+        let engine = svc.engines.get("claude").expect("claude");
+        // A provider home of Vibezeo's, and an engine in the user's own home.
+        let home = store
+            .path()
+            .parent()
+            .expect("data")
+            .join("providers/claude/acc");
+        std::fs::create_dir_all(&home).expect("home");
+        assert!(svc
+            .tasks_env(&engine, Some(&home), "p1", &root)
+            .await
+            .is_empty());
+        assert!(svc.tasks_env(&engine, None, "p2", &root).await.is_empty());
+        for (pane, file) in [("p1", "a.ts"), ("p2", "b.ts")] {
+            tasks.claim_edits(pane, &[root.join(file).to_string_lossy().into_owned()]);
+        }
+        let claims = tasks
+            .tracker
+            .as_ref()
+            .expect("tracker")
+            .claims()
+            .expect("claims");
+        let paths: Vec<&str> = claims.iter().map(|c| c.path.as_str()).collect();
+        assert_eq!(paths, ["a.ts", "b.ts"], "inferred claims");
+        let mut panes = tasks.panes_in(&root.to_string_lossy());
+        panes.sort();
+        assert_eq!(panes, ["p1", "p2"], "their panes get overlap notices");
+        assert_eq!(tasks.connection_of("pn:p1"), None);
     }
 }
 

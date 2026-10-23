@@ -27,7 +27,8 @@ pub struct TasksService {
     /// The `tandem-tasks` binary, when it ships next to the app.
     bin: Option<PathBuf>,
     store: Store,
-    /// The live connection per session key (`th:<id>`, `pn:<id>`).
+    /// The live session per key (`th:<id>`, `pn:<id>`): its connection, if
+    /// it has one, and its working tree.
     sessions: Mutex<HashMap<String, Live>>,
     /// The `issues/` and `claims.json` watcher, while it runs.
     watcher: Mutex<Option<notify::RecommendedWatcher>>,
@@ -42,7 +43,10 @@ pub struct TasksService {
 /// A session's connection and the working tree it claims in.
 #[derive(Clone)]
 struct Live {
-    connection: String,
+    /// `None` while the session has no tasks server (a terminal agent with
+    /// "Expose tasks to terminal agents" off, or no provider home of
+    /// Vibezeo's): its edits still claim and its pane still gets notices.
+    connection: Option<String>,
     scope: Option<ClaimScope>,
 }
 
@@ -212,6 +216,33 @@ impl TasksService {
         let _ = self.on_overlap.set(sink);
     }
 
+    /// The session `key` begins in `folder`, with or without a connection
+    /// (F-TK-05): its edits claim there, and its pane gets the overlap
+    /// notices of its working tree. The key's previous connection is
+    /// revoked. Blocking file IO.
+    pub fn track_scope(&self, key: &str, folder: Option<&Path>) {
+        self.track(key, folder.and_then(claim_scope));
+    }
+
+    fn track(&self, key: &str, scope: Option<ClaimScope>) {
+        let Some(tracker) = &self.tracker else {
+            return;
+        };
+        let previous = match self.sessions.lock() {
+            Ok(mut m) => m.insert(
+                key.to_string(),
+                Live {
+                    connection: None,
+                    scope,
+                },
+            ),
+            Err(_) => return,
+        };
+        if let Some(old) = previous.and_then(|l| l.connection) {
+            let _ = tracker.revoke_connection(&old);
+        }
+    }
+
     /// Reads the claims and tells the sink about new overlaps. Checks take
     /// turns (the startup one and the watcher's can meet).
     pub fn check_overlaps(&self) {
@@ -372,7 +403,9 @@ impl TasksService {
     }
 
     /// A new connection for the session `key`; the session's previous one
-    /// is revoked.
+    /// is revoked. A terminal pane's launch began the session with
+    /// [`Self::track_scope`] already, so here it only gets its connection;
+    /// any other session begins here.
     pub fn begin_session(
         &self,
         key: &str,
@@ -382,6 +415,13 @@ impl TasksService {
     ) -> Option<String> {
         let tracker = self.tracker.as_ref()?;
         let scope = folder.and_then(claim_scope);
+        let tracked = self.sessions.lock().ok().is_some_and(|m| {
+            m.get(key)
+                .is_some_and(|l| l.connection.is_none() && l.scope == scope)
+        });
+        if !tracked {
+            self.track(key, scope.clone());
+        }
         let conn = match tracker.create_connection_in(label, actor, scope.clone()) {
             Ok(c) => c,
             Err(e) => {
@@ -393,13 +433,14 @@ impl TasksService {
             m.insert(
                 key.to_string(),
                 Live {
-                    connection: conn.id.clone(),
+                    connection: Some(conn.id.clone()),
                     scope,
                 },
             )
         });
-        if let Some(old) = previous {
-            let _ = tracker.revoke_connection(&old.connection);
+        // Another start for the key in the meantime: its connection goes.
+        if let Some(old) = previous.and_then(|l| l.connection) {
+            let _ = tracker.revoke_connection(&old);
         }
         Some(conn.id)
     }
@@ -427,7 +468,9 @@ impl TasksService {
         let Some(ended) = ended else {
             return;
         };
-        let _ = tracker.revoke_connection(&ended.connection);
+        if let Some(conn) = &ended.connection {
+            let _ = tracker.revoke_connection(conn);
+        }
         // A lane's claims last until it's merged or removed; the main
         // checkout's go with its last session (D-2427).
         if let Some(scope) = ended.scope {
@@ -437,9 +480,9 @@ impl TasksService {
         }
     }
 
-    /// The session's live connection.
+    /// The session's live connection, when it has one.
     pub fn connection_of(&self, key: &str) -> Option<String> {
-        Some(self.sessions.lock().ok()?.get(key)?.connection.clone())
+        self.sessions.lock().ok()?.get(key)?.connection.clone()
     }
 
     fn server(&self, connection_args: [String; 2]) -> Option<StdioServer> {
@@ -813,6 +856,26 @@ mod tests {
     /// What a sink was given, in order.
     type Seen<T> = Arc<Mutex<Vec<T>>>;
 
+    /// `(pane, notice)` for each new overlap, routed as the app routes them
+    /// (`lib.rs`): to the panes of both working trees.
+    fn route_overlaps(tasks: &Arc<TasksService>) -> Seen<(String, String)> {
+        let routed: Seen<(String, String)> = Arc::default();
+        let (seen, weak) = (routed.clone(), Arc::downgrade(tasks));
+        tasks.set_overlap_sink(Arc::new(move |new, _all| {
+            let Some(tasks) = weak.upgrade() else {
+                return;
+            };
+            for o in new {
+                for folder in &o.folders {
+                    for pane in tasks.panes_in(folder) {
+                        seen.lock().expect("routed").push((pane, overlap_notice(o)));
+                    }
+                }
+            }
+        }));
+        routed
+    }
+
     #[tokio::test]
     async fn f_tk_05_1_concurrent_checks_announce_each_overlap_once() {
         let (_d, tasks) = service(None).await;
@@ -873,5 +936,40 @@ mod tests {
             [0, 1, 1],
             "an older list is never delivered last: {lists:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn f_tk_05_2_with_tasks_not_exposed_edits_still_claim_and_reach_the_pane() {
+        let (_d, tasks) = service(Some("/x".into())).await;
+        let dir = tempfile::tempdir().expect("dir");
+        let (main, lane) = repo_with_lane(dir.path());
+        let routed = route_overlaps(&tasks);
+        // "Expose tasks to terminal agents" is off: the panes' sessions are
+        // tracked, and get no connection.
+        tasks.track_scope("pn:p1", Some(&main));
+        tasks.track_scope("pn:p2", Some(&lane));
+        assert_eq!(tasks.connection_of("pn:p1"), None);
+        for (pane, root) in [("p1", &main), ("p2", &lane)] {
+            tasks.claim_edits(
+                pane,
+                &[root.join("src/a.ts").to_string_lossy().into_owned()],
+            );
+        }
+        let tracker = tasks.tracker.as_ref().expect("tracker");
+        let claims = tracker.claims().expect("claims");
+        assert_eq!(claims.len(), 2, "{claims:?}");
+        assert!(claims.iter().all(|c| c.inferred && c.path == "src/a.ts"));
+        tasks.check_overlaps();
+        let mut got = routed.lock().expect("routed").clone();
+        got.sort();
+        let msg = "app and fix-auth both claim src/a.ts".to_string();
+        assert_eq!(got, [("p1".into(), msg.clone()), ("p2".into(), msg)]);
+        // A session with no connection ends as one with: the main
+        // checkout's last session releases its claims, a lane keeps them.
+        tasks.end_session("pn:p1");
+        tasks.end_session("pn:p2");
+        let left = tracker.claims().expect("claims");
+        assert_eq!(left.len(), 1, "{left:?}");
+        assert_eq!(left[0].agent, "fix-auth");
     }
 }
