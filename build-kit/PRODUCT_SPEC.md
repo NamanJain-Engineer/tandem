@@ -1941,10 +1941,10 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 
 **Behavior:**
 - **Three task tools** (F-TK-02's server): `claim(paths, intent)`, `release(paths?)` and `list_claims()`.
-  - A claim is a file or a folder (ending in `/`) relative to the session's working tree, with what the agent says it's changing (at most 50 paths a call, 500 characters of intent).
+  - A claim is a file or a folder (covering everything in it) in the session's working tree, named relative to the session's folder or by an absolute path inside the tree, never by a pattern (`*` or `?`), with what the agent says it's changing (at most 50 paths a call, 500 characters of intent).
   - Claims belong to the working tree: a relaunched agent in the same worktree keeps them. A session outside a git working tree can't claim.
   - `claim` answers with the overlaps its working tree now has; `list_claims` with this worktree's claims, the other worktrees' claims in the same repository and the overlaps.
-  - Another worktree's name and intent are returned wrapped as untrusted, like task comments: data, never instructions.
+  - What another agent wrote (its worktree's name, its paths and its intent) is returned wrapped as untrusted, like task comments: data, never instructions.
 - **Briefing:** a worktree's briefing (F-CD-15) asks the agent to claim before editing and to check `list_claims`.
 - **Inferred claims:** when an agent with status hooks is about to edit a file (Claude Code's `PreToolUse` for Edit, MultiEdit, Write and NotebookEdit), its working tree claims that file. The hook sends the file's path only, never the edit.
 - **Overlaps:** two working trees of one repository overlap when they claim the same file, or one claims a folder holding a file the other claims.
