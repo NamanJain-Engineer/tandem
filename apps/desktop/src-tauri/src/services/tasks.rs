@@ -93,10 +93,9 @@ pub fn claim_path(folder: &Path, edited: &Path) -> Option<String> {
     } else if let Ok(r) = edited.strip_prefix(folder) {
         r.to_path_buf()
     } else {
-        // A new file's folder exists; symlinked paths (macOS /tmp) resolve.
-        let parent = std::fs::canonicalize(edited.parent()?).ok()?;
-        parent
-            .join(edited.file_name()?)
+        // A new file in new folders, a symlinked path (macOS /tmp) or
+        // Windows' `\\?\`: the deepest folder that exists resolves.
+        contain::canonical_existing(edited)?
             .strip_prefix(folder)
             .ok()?
             .to_path_buf()
@@ -1291,6 +1290,27 @@ mod tests {
         assert_eq!(
             claim_path(&root, Path::new(".gitignore")).as_deref(),
             Some(".gitignore")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn f_tk_05_2_a_new_file_in_new_folders_claims_through_a_symlink() {
+        let dir = tempfile::tempdir().expect("dir");
+        let root = git_repo(dir.path());
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&root, &link).expect("symlink");
+        assert_eq!(
+            claim_path(&root, &link.join("src/new/deeper/b.ts")).as_deref(),
+            Some("src/new/deeper/b.ts")
+        );
+        assert_eq!(
+            claim_path(&root, &link.join("src/c.ts")).as_deref(),
+            Some("src/c.ts")
+        );
+        assert_eq!(
+            claim_path(&root, &dir.path().join("elsewhere/x/y.ts")),
+            None
         );
     }
 }
