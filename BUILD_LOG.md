@@ -1499,7 +1499,7 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
   - worktrees (`competitive-gaps`): D-2520 to D-2539;
   - usage (`product-research`): D-2540 to D-2559;
   - reliability (`perf-open`): D-2560 to D-2579.
-  The review loop (`m16a-conductor`) still has D-2434 to D-2439. REMAINING's M18 section names each session's next features.
+  The review loop (`m16a-conductor`) still has D-2438 and D-2439 (F-TK-05's review fixes took D-2434 to D-2437). REMAINING's M18 section names each session's next features.
 - D-859: A read-only thread never joins the review queue (F-DB-04), found by chain24's review of F-CN-09.
   - **The bug:** the queue accepted any thread in a workspace. A second opinion's reviewer (F-WT-05) is a Read only thread in the worktree it reviews, so when it finished, the worktree's diff made it an item: the review showed another agent's work under the reviewer's name, and Send back (or walk-and-review's) typed "Address it…" into the reviewer while the agent that made the changes got nothing.
   - **The fix:** `reviews_thread` keeps threads that can change their folder (Edits or Full access); Read only threads and teammate chats stay out.
@@ -1996,6 +1996,44 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - E2E: `m18-tk06-plan-with-lead.e2e.ts` (Free: Lead's chat, the draft, Create tasks, no Execute all; Pro: one run per task on its engine).
   - **Docs.** ARCHITECTURE §3.2 (the `plan_*` commands), §3.3 (`tasks:plan`), §9.2 and §9.3 (`suggested_engine`), and the new §9.6; tasks.mdx "Plan with Lead".
   - **Not in this slice:** Lead answering agents' questions, second-engine review of results, merging through the merge queue, and plans that survive a restart.
+  - **Gate:** passed on 197e0d3b: 2,181 Rust tests (6 ignored) and 1,582 TypeScript; the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt; coverage 184; protocol drift: `PlanAccount`, `PlanEngine`, `PlanState`, `PlanTask` and `PlanView` added; `Issue.suggested_engine` and `SaveIssue.suggested_engine`. E2E: m18-tk06 2 of 2.
+
+- [x] F-TK-05 Claims, the coordinator's review fixes (D-2434 to D-2437). Built after merging product-m0-m5 f0c9bb46 (#86 to #89). Each code fix began with a failing `F-TK-05` test.
+  - **Must-fix.**
+    - **Notices reach panes that aren't showing (AC1).** `tandem-pty` holds a notice that finds no view (a parked pane, one not shown yet, or a closed channel), the newest 20 (`PENDING_NOTICES_MAX`), and `attach` sends them right after setting its sink. A pane whose session begins is told its working tree's overlaps announced before it, through a new `NoticeSink`. `TerminalService::notice` holds a notice for a pane whose process hasn't started and sends it after the local spawn.
+    - **Landing releases claims (AC3).** The merge queue releases a lane's claims when it lands, "already up to date" included.
+    - **Stale claims are swept.** `TaskStore::prune_claims(keep)`. At startup the main checkouts' claims go, and so do those of folders that are gone; the worktree sweep drops gone folders' claims; removing a workspace ends its panes' sessions and releases its worktrees' claims.
+    - **The main checkout on Windows.** `ClaimScope` and `Claim` gain `main`, from git (`!is_linked_worktree`), and both folders resolve with `contain::canonical` (`C:\…`, not `\\?\C:\…`), so the main checkout's last session releases its claims there too.
+    - **The fence (AC4).** Every path and intent another agent wrote comes back as `{untrusted}`, overlaps' paths included. Under `mine`, so does any path or intent the caller's own connection didn't write, inferred claims' included.
+  - **Also in this round.**
+    - **Path rules.** A folder claimed without its `/` covers its files. An agent's relative path starts at its session's folder (`ClaimScope.prefix`, from `Repo::prefix`), and an absolute one must be inside its tree. `..`, `*` and `?` are refused; `[` is literal. Paths compare folded on macOS and Windows (`contain::fold`) and are stored as written.
+    - **Limits.** `release` refuses more than 50 paths before it waits for the lock. `list_claims` pages the other worktrees' claims (`cursor`, `limit`, `next_cursor`).
+    - **Tasks not exposed.** A terminal agent's session is tracked (`TasksService::track_scope`) whatever "Expose tasks to terminal agents" says, so its edits claim and its pane is told. Its connection is optional.
+    - **Checks take turns.** `check_overlaps` holds one guard from reading the claims to the sink.
+    - **Edited files resolve.** A new file in new folders, a path through a symlink (macOS `/tmp`) or one written `\\?\…` resolves by its deepest existing folder (`contain::canonical_existing`, now public with `fold` and `case_insensitive_fs`).
+    - **Docs (item 11).** ARCHITECTURE §6.6: the hook sends an edit tool's path. REMAINING's next step.
+    - **Optional.** `overlaps_of` compares claims within each repository only.
+  - **Found while integrating.**
+    - A restart dropped the claims of a worktree whose repository keeps its git data elsewhere (`--separate-git-dir`, bare). A fallback for claims saved before `main` treated a folder equal to its repository as a main checkout, and such a worktree is its own repository. `main` is now the only test.
+    - Edits under `.GIT/` or `.Tandem/` claimed where file names ignore case; the check compares folded now. A scope's prefix and the overlap keys compare as claims do. The overlap keys used a copy of the store's path key; the store's `claim_key` is public now.
+  - **Tests** (33 new Rust tests):
+    - `tandem-pty` (3): a parked pane's notice arrives on its next attach; the newest 20 are kept; a notice to a view that has gone waits for the next attach.
+    - `tandem-tasks` (15): folders without `/`, brackets but no patterns, prefix and absolute paths, case folding, the fence, the 50-path cap before the lock, `list_claims` paging, `prune_claims`, overlaps per repository, `main` from the scope, and files saved before `main` and `prefix` still loading.
+    - App (15):
+      - `tasks` (10): a session's scope, the main checkout's last session, a path announced once however it's spelled, checks taking turns, overlaps from before a session, edits of `.git` or `.tandem` data, symlinks and new folders, tasks not exposed, and two restarts (the main checkout's and deleted worktrees' claims go; a worktree's stay when its git data lives elsewhere).
+      - `terminal` (2): held notices, and tasks not exposed.
+      - `merge_queue`, `lanes` and `workspaces` (1 each): landing, the sweep and a workspace's removal release.
+    - E2E: E2E-M18-TK-05 gains "an overlap that arises while a worktree's pane is parked reaches it when its tab is shown", and counts only its own repository's overlaps.
+  - **Docs.** PRODUCT_SPEC F-TK-05 (a folder needn't end in `/`, never a pattern, paths fenced); ARCHITECTURE §3.2 (`pty_attach`'s `live` and `state`), §3.4 and §5.1 (held notices), §6.6, §9.1, §9.2, §9.3 and §9.5; MILESTONES' E2E-M18-TK-05; REMAINING.
+  - **Unlike the review's plan,** an agent's claim refuses `*` and `?` but not `[`, and inferred claims refuse none of the three (D-2434). Five files in this repository have `[` in their path (Next.js routes such as `apps/web/app/blog/[slug]/page.site.tsx`), and an edit to one must still claim.
+  - **Not in this round:**
+    - A notice sent while a view is parking (one IPC round trip, between its serialize and `pty_park`) is lost.
+    - A paused agent (F-AC-09) swaps its view for the paused card without parking, so notices during a pause are lost. Its output still replays from the ring.
+    - The Accounts sign-in pane's small terminal ignores notices.
+    - `lanes::stop_panes` doesn't end its panes' tasks sessions, so their connections and held notices stay until the app restarts.
+    - Claims that a Windows development build saved with `\\?\` folders stay until those folders go.
+    - A relative path from the hook counts from the tree's top, not the session's folder. Claude Code sends absolute paths.
+    - Removing a main checkout's workspace keeps its claims while another session still works there (D-2427).
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -2047,6 +2085,27 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
 - D-2433: Execute all is refused as a whole on Free or signed out (`can_execute` before the first run), never partway through.
   - On Free the plan doesn't show a disabled button. It says, where the button would be, that running tasks is part of Pro and that the tasks are saved (DESIGN §5.5 rules 2 and 4).
   - Each task runs in its own worktree at Edits with the review on: F-TK-04's defaults, with no Full access and no shared folder from a batch. A plan's runs queue behind F-TK-04's 4 at once.
+- D-2434: A claim's path is a file or a folder in the working tree, and claims compare as the file system does.
+  - A path covers itself and everything under `path/`, so a folder needn't end in `/`. A trailing `/` is dropped, so claims saved with one still compare.
+  - An agent's relative path starts at its session's folder (`ClaimScope.prefix`), as its other tools' paths do. An absolute one must be inside its working tree and is kept relative to the tree's top. `..` is refused. The hook's paths are absolute, so the app makes them relative to the tree's top.
+  - An agent's claim refuses `*` and `?`, so a pattern can't pass for a path. `[` stays literal, unlike the review's plan: real paths have it (five files here, Next.js routes such as `apps/web/app/blog/[slug]/page.site.tsx`). Inferred claims refuse none of the three, because they name files that exist.
+  - On macOS and Windows paths compare folded (`contain::fold`), as their file systems do. A path is stored as first written, with one claim per folded path.
+- D-2435: What another agent wrote is fenced wherever a tool returns it, and the tools' limits hold on the server.
+  - Every path, name and intent from another worktree comes back as `{untrusted}`, overlaps' paths included. A path can be 512 characters of free text, more than an intent's 500.
+  - Under `mine`, a path and its intent come back bare only when the caller's own connection wrote them. An inferred claim's are fenced, and so are another session's in the same folder.
+  - rmcp doesn't check input against the schemas, so `release` refuses more than 50 paths itself, before it waits for the lock. `list_claims` pages the other worktrees' claims (`cursor`, `limit`); `mine` (at most 500) and the overlaps come whole.
+- D-2436: Git says which folder is the main checkout, and claims that nothing would release are swept.
+  - `main` is `!is_linked_worktree`, never the folder compared with the repository. On Windows libgit2 gives `C:/…` and `fs::canonicalize` gives `\\?\C:\…`, and a worktree of a repository whose git data lives elsewhere (`--separate-git-dir`, bare) is its own repository. A claim copies `main` from its scope.
+  - Both folders resolve with `contain::canonical` (`C:\…`, D-1705), the form a release uses for a lane's path.
+  - At startup the main checkouts' claims go, since no session outlives the app (D-2427 releases them with the last one), and so do the claims of folders that are gone. The worktree sweep drops gone folders' claims too (a worktree deleted outside the app).
+  - A landed lane's claims go like a merged one's. Removing a workspace ends its panes' sessions and releases its worktrees' claims.
+  - Claims saved before `main` aren't migrated, because no build that wrote them has shipped. They load as worktrees' claims, and the main checkout's go when its last session ends.
+- D-2437: Notices reach panes that aren't showing, and every terminal agent's session is tracked.
+  - A notice that finds no view waits in its PTY session, the newest 20 (`PENDING_NOTICES_MAX`). The next attach sends them before any later frame, under the ring's lock. They're never in the ring, so a replay doesn't repeat them.
+  - A pane whose process hasn't started holds its notices in `TerminalService` (also 20) until its local spawn.
+  - A pane whose session begins is told the overlaps of its working tree announced before it (the announced paths only). The startup check runs before any pane attaches, so this is how existing overlaps reach a pane, as well as reaching agents that start later.
+  - A terminal agent's session is tracked (`track_scope`) whatever "Expose tasks to terminal agents" says, so its edits claim and its pane is told. Only its connection depends on the setting.
+  - `check_overlaps` holds one guard from reading the claims to the sink. So the startup check and the watcher take turns: no notice goes out twice, and an older list never arrives last. The notice sink runs under the guard and must never call back into the tracker.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.
