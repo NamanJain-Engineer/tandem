@@ -57,9 +57,10 @@ pub fn set_tasks(tasks: &std::sync::Arc<crate::services::tasks::TasksService>) {
     }
 }
 
-/// A lane's worktree was merged or removed: its claims go (F-TK-05 AC3).
-/// `folder` is the worktree's resolved path, as its sessions claimed in.
-fn release_claims(folder: &Path) {
+/// A lane's worktree was merged (here or by the merge queue) or removed:
+/// its claims go (F-TK-05 AC3). `folder` is the worktree's resolved path,
+/// as its sessions claimed in.
+pub(crate) fn release_claims(folder: &Path) {
     let live: Vec<_> = match TASKS.lock() {
         Ok(all) => all.iter().filter_map(std::sync::Weak::upgrade).collect(),
         Err(_) => return,
