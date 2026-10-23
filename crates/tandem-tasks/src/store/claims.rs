@@ -511,6 +511,7 @@ mod tests {
     #[test]
     fn f_tk_05_an_agents_path_starts_at_its_folder_or_is_absolute_inside_its_tree() {
         let top = scope("/r/wt", "");
+        // `Repo::prefix()` on Windows, with a trailing separator.
         let sub = scope("/r/wt", "packages\\web\\");
         let ok = |s: &ClaimScope, raw: &str| normalize_claim_path(s, raw).expect(raw);
         assert_eq!(ok(&top, "src/a.ts"), "src/a.ts");

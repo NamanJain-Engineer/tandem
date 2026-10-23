@@ -6,8 +6,8 @@
  */
 export type TaskClaimScope = { repo: string, folder: string, 
 /**
- * The session's folder relative to `folder`, `/`-separated; empty at
- * the top. An agent's relative paths start there.
+ * The session's folder relative to `folder` (`/` or `\` between
+ * parts); empty at the top. An agent's relative paths start there.
  */
 prefix: string, 
 /**

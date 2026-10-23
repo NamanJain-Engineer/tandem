@@ -421,8 +421,8 @@ pub const CLAIMS_PER_FOLDER_MAX: usize = 500;
 pub struct ClaimScope {
     pub repo: String,
     pub folder: String,
-    /// The session's folder relative to `folder`, `/`-separated; empty at
-    /// the top. An agent's relative paths start there.
+    /// The session's folder relative to `folder` (`/` or `\` between
+    /// parts); empty at the top. An agent's relative paths start there.
     #[serde(default)]
     pub prefix: String,
     /// `folder` is the repository's main checkout, not a linked worktree.
