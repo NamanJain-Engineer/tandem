@@ -13,7 +13,7 @@ use tandem_core::settings::SettingKey;
 use tandem_core::DataDir;
 use tandem_engines::chat::StdioServer;
 use tandem_store::Store;
-use tandem_tasks::{ClaimOverlap, ClaimScope, TaskStore};
+use tandem_tasks::{Claim, ClaimOverlap, ClaimScope, TaskStore};
 
 /// The name engines know the tasks server by (`mcp__tandem_tasks__…`).
 pub const SERVER_NAME: &str = "tandem_tasks";
@@ -195,6 +195,13 @@ pub fn overlap_notice(o: &ClaimOverlap) -> String {
     )
 }
 
+/// A claim nothing will release after a restart (F-TK-05): the main
+/// checkout's (one from before claims said `main` has its repository as its
+/// folder), or a folder's that's gone.
+fn stale_at_start(c: &Claim) -> bool {
+    c.main || c.folder == c.repo || !Path::new(&c.folder).is_dir()
+}
+
 /// How long changes are gathered before `tasks:changed` goes out.
 pub const WATCH_BATCH: std::time::Duration = std::time::Duration::from_millis(120);
 
@@ -248,6 +255,11 @@ impl TasksService {
                     }
                 }
                 let _ = t.prune_connections(KEEP_REVOKED_MS);
+                // So did the main checkouts' claims with their last sessions
+                // (D-2427), and a worktree deleted meanwhile keeps none.
+                if let Err(e) = t.prune_claims(|c| !stale_at_start(c)) {
+                    tracing::warn!(code = "tasks.prune_failed", error = %e, "old claims weren't dropped");
+                }
                 Some(t)
             }
             Err(e) => {
@@ -401,6 +413,26 @@ impl TasksService {
         }
         if let Err(e) = tracker.claim_inferred(&scope, &rel) {
             tracing::warn!(code = "tasks.claim_failed", error = %e, "an edit wasn't claimed");
+        }
+    }
+
+    /// A workspace or worktree at `root` left the app (F-TK-05 AC3): the
+    /// claims of its working tree go, unless that's a main checkout, whose
+    /// claims go with its last session (D-2427). Blocking file IO.
+    pub fn release_removed(&self, root: &Path) {
+        if let Some(scope) = claim_scope(root).filter(|s| !s.main) {
+            self.release_folder(Path::new(&scope.folder));
+        }
+    }
+
+    /// Claims of folders that are gone (a worktree deleted outside the app)
+    /// go, since nothing would release them (F-TK-05). Blocking file IO.
+    pub fn prune_gone(&self) {
+        let Some(tracker) = &self.tracker else {
+            return;
+        };
+        if let Err(e) = tracker.prune_claims(|c| Path::new(&c.folder).is_dir()) {
+            tracing::warn!(code = "tasks.prune_failed", error = %e, "gone worktrees' claims weren't dropped");
         }
     }
 
@@ -1312,5 +1344,64 @@ mod tests {
             claim_path(&root, &dir.path().join("elsewhere/x/y.ts")),
             None
         );
+    }
+
+    #[tokio::test]
+    async fn f_tk_05_3_a_restart_drops_the_main_checkouts_and_deleted_worktrees_claims() {
+        let dir = tempfile::tempdir().expect("dir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let repos = tempfile::tempdir().expect("repos");
+        let (main, lane) = repo_with_lane(repos.path());
+        let first = TasksService::new(&data, store.clone(), None);
+        let tracker = first.tracker.clone().expect("tracker");
+        let claim = |scope: &ClaimScope| {
+            tracker
+                .claim_inferred(scope, &["src/a.ts".into()])
+                .expect("claim");
+        };
+        let main_scope = claim_scope(&main).expect("main");
+        // The main checkout's claim from before claims said `main`: its
+        // folder is its repository.
+        claim(&main_scope);
+        // A main checkout's, and a worktree's deleted outside the app.
+        let other = repos.path().join("other");
+        let deleted = repos.path().join("deleted");
+        for d in [&other, &deleted] {
+            std::fs::create_dir_all(d).expect("mkdir");
+        }
+        claim(&ClaimScope {
+            folder: other.to_string_lossy().into_owned(),
+            main: true,
+            ..main_scope.clone()
+        });
+        claim(&ClaimScope {
+            folder: deleted.to_string_lossy().into_owned(),
+            main: false,
+            ..main_scope.clone()
+        });
+        std::fs::remove_dir(&deleted).expect("rmdir");
+        claim(&claim_scope(&lane).expect("lane"));
+        let file = data.tasks().join("claims.json");
+        let mut saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&file).expect("read")).expect("json");
+        saved[0]
+            .as_object_mut()
+            .expect("claim")
+            .remove("main")
+            .expect("main");
+        std::fs::write(&file, serde_json::to_vec(&saved).expect("json")).expect("write");
+        drop(first);
+        let second = TasksService::new(&data, store, None);
+        let left: Vec<String> = second
+            .tracker
+            .as_ref()
+            .expect("tracker")
+            .claims()
+            .expect("claims")
+            .into_iter()
+            .map(|c| c.folder)
+            .collect();
+        assert_eq!(left, [claim_scope(&lane).expect("lane").folder]);
     }
 }

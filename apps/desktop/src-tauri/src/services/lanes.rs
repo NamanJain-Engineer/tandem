@@ -70,6 +70,18 @@ pub(crate) fn release_claims(folder: &Path) {
     }
 }
 
+/// Worktrees deleted outside the app: their claims go, in every tracker
+/// (F-TK-05). Blocking file IO.
+fn prune_gone_claims() {
+    let live: Vec<_> = match TASKS.lock() {
+        Ok(all) => all.iter().filter_map(std::sync::Weak::upgrade).collect(),
+        Err(_) => return,
+    };
+    for tasks in live {
+        tasks.prune_gone();
+    }
+}
+
 type Remote = (
     std::sync::Arc<crate::services::remote::RemoteService>,
     tandem_core::ids::HostId,
@@ -564,13 +576,17 @@ async fn swept(store: &Store) -> Result<Vec<Workspace>, IpcError> {
         .collect())
 }
 
-/// `lanes_sweep`: `git worktree prune` in each repository with worktrees,
-/// then the merged ones idle for over 7 days. Never deletes a worktree.
+/// `lanes_sweep`: the claims of worktrees that are gone (F-TK-05), then
+/// `git worktree prune` in each repository with worktrees, then the merged
+/// ones idle for over 7 days. Never deletes a worktree.
 pub async fn sweep(
     store: &Store,
     git: &Git,
     now: DateTime<Utc>,
 ) -> Result<Vec<StaleLanes>, IpcError> {
+    if let Err(e) = tokio::task::spawn_blocking(prune_gone_claims).await {
+        tracing::warn!(error = %e, "the claims sweep stopped");
+    }
     let mut out = Vec::new();
     for ws in swept(store).await? {
         let Ok(Some(repo)) = Repo::discover(Path::new(&ws.root)) else {
@@ -903,6 +919,37 @@ mod tests {
             .await
             .expect("remove");
         assert!(tracker.claims().expect("claims").is_empty());
+    }
+
+    #[tokio::test]
+    async fn f_tk_05_3_the_sweep_drops_the_claims_of_worktrees_deleted_outside_the_app() {
+        let fx = fixture().await;
+        let tasks_dir = tempfile::tempdir().expect("dir");
+        let data = DataDir::at(tasks_dir.path().to_path_buf()).expect("data");
+        let tasks = crate::services::tasks::TasksService::new(&data, fx.store.clone(), None);
+        set_tasks(&tasks);
+        let tracker = tasks.tracker.clone().expect("tracker");
+        let kept = create(&fx.store, &fx.git, &fx.repo.id, "add oauth")
+            .await
+            .expect("lane");
+        let deleted = create(&fx.store, &fx.git, &fx.repo.id, "fix auth")
+            .await
+            .expect("lane");
+        for lane in [&kept, &deleted] {
+            let scope = crate::services::tasks::claim_scope(Path::new(&lane.root)).expect("scope");
+            tracker
+                .claim_inferred(&scope, &["app.txt".into()])
+                .expect("claim");
+        }
+        std::fs::remove_dir_all(&deleted.root).expect("rm");
+        sweep(&fx.store, &fx.git, Utc::now()).await.expect("sweep");
+        let left: Vec<String> = tracker
+            .claims()
+            .expect("claims")
+            .into_iter()
+            .map(|c| c.agent)
+            .collect();
+        assert_eq!(left, ["add-oauth"]);
     }
 
     #[tokio::test]

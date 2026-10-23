@@ -589,6 +589,15 @@ impl TerminalService {
         waiting.push(message.to_string());
     }
 
+    /// The notices waiting for the pane's process to start.
+    #[cfg(test)]
+    pub(crate) fn held_notices_of(&self, pane: &str) -> Vec<String> {
+        self.held_notices
+            .lock()
+            .map(|held| held.get(pane).cloned().unwrap_or_default())
+            .unwrap_or_default()
+    }
+
     /// The pane's process started: the notices that waited for it go out.
     fn send_held_notices(&self, pane: &str) {
         let mut held = self.held_notices.lock().unwrap_or_else(|e| e.into_inner());
