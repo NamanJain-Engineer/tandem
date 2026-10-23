@@ -634,9 +634,9 @@ fn done_merging(data: &DataDir, key: &str) {
 }
 
 /// A worktree is in the base now: its claims go, as a merged one's do
-/// (F-TK-05 AC3). Its folder is resolved as `lanes::merge` resolves it.
+/// (F-TK-05 AC3). Its folder is resolved as its sessions' claims name it.
 fn release_landed(root: &Path) {
-    let folder = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let folder = tandem_core::contain::canonical(root).unwrap_or_else(|_| root.to_path_buf());
     crate::services::lanes::release_claims(&folder);
 }
 

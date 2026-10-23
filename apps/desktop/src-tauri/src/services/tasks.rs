@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use tandem_core::contain;
 use tandem_core::settings::SettingKey;
 use tandem_core::DataDir;
 use tandem_engines::chat::StdioServer;
@@ -60,17 +61,26 @@ pub type OverlapSink = Arc<dyn Fn(&[ClaimOverlap], &[ClaimOverlap]) + Send + Syn
 pub type NoticeSink = Arc<dyn Fn(&str, &[String]) + Send + Sync>;
 
 /// Where a session in `folder` claims: its working tree and the repository
-/// it belongs to (a lane's worktree claims against its main checkout).
+/// it belongs to (a lane's worktree claims against its main checkout). Both
+/// folders are resolved as [`contain::canonical`] resolves them (`C:\…` on
+/// Windows, not `\\?\C:\…`), as releases resolve a worktree's path; git says
+/// which is the main checkout.
 pub fn claim_scope(folder: &Path) -> Option<ClaimScope> {
     let repo = tandem_git::repo::Repo::discover(folder).ok()??;
-    let main_root = repo.main_root().to_string_lossy().into_owned();
-    let root = repo.root().to_string_lossy().into_owned();
     Some(ClaimScope {
-        main: root == main_root,
-        repo: main_root,
-        folder: root,
+        repo: resolved(&repo.main_root()),
+        folder: resolved(repo.root()),
         prefix: String::new(),
+        main: !repo.is_linked_worktree(),
     })
+}
+
+/// A folder as claims name it: [`contain::canonical`], else as given.
+fn resolved(path: &Path) -> String {
+    contain::canonical(path)
+        .unwrap_or_else(|_| path.to_path_buf())
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// An edited file's path relative to the working tree, or `None` outside
@@ -536,7 +546,7 @@ impl TasksService {
         // A lane's claims last until it's merged or removed; the main
         // checkout's go with its last session (D-2427).
         if let Some(scope) = ended.scope {
-            if scope.folder == scope.repo && !others_there {
+            if scope.main && !others_there {
                 let _ = tracker.release_folder(&scope.folder);
             }
         }
@@ -1103,6 +1113,112 @@ mod tests {
                 ),
                 ("p4".to_string(), vec![]),
             ]
+        );
+    }
+
+    /// `split`, whose git data is in `split.git` beside it (`git init
+    /// --separate-git-dir`), and its worktree `fix-auth`: `(main checkout,
+    /// worktree)`, resolved.
+    fn split_repo_with_lane(dir: &Path) -> (PathBuf, PathBuf) {
+        let main = dir.join("split");
+        std::fs::create_dir_all(main.join("src")).expect("mkdir");
+        let git = |cwd: &Path, args: &[&str]| {
+            let ok = std::process::Command::new("git")
+                .args(args)
+                .current_dir(cwd)
+                .status()
+                .expect("git")
+                .success();
+            assert!(ok, "git {args:?}");
+        };
+        let data = dir.join("split.git");
+        git(
+            dir,
+            &[
+                "init",
+                "-q",
+                "--separate-git-dir",
+                data.to_str().expect("utf8"),
+                main.to_str().expect("utf8"),
+            ],
+        );
+        git(
+            &main,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "init",
+            ],
+        );
+        let lane = main.join(".tandem/worktrees/fix-auth");
+        git(
+            &main,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                lane.to_str().expect("utf8"),
+                "-b",
+                "tandem/fix-auth",
+            ],
+        );
+        (
+            std::fs::canonicalize(main).expect("canonical"),
+            std::fs::canonicalize(lane).expect("canonical"),
+        )
+    }
+
+    #[tokio::test]
+    async fn f_tk_05_3_only_the_main_checkouts_claims_go_with_its_last_session() {
+        let (_d, tasks) = service(None).await;
+        let dir = tempfile::tempdir().expect("dir");
+        let (main, lane) = repo_with_lane(dir.path());
+        let (split, split_lane) = split_repo_with_lane(dir.path());
+        // Told by git, not by comparing the folders' spellings (Windows
+        // spells a main checkout's two differently).
+        for (root, is_main) in [
+            (&main, true),
+            (&lane, false),
+            (&split, true),
+            (&split_lane, false),
+        ] {
+            assert_eq!(claim_scope(root).expect("scope").main, is_main, "{root:?}");
+        }
+        for (pane, root) in [
+            ("p1", &main),
+            ("p2", &lane),
+            ("p3", &split),
+            ("p4", &split_lane),
+        ] {
+            tasks.track_scope(&format!("pn:{pane}"), Some(root));
+            tasks.claim_edits(
+                pane,
+                &[root.join("src/a.ts").to_string_lossy().into_owned()],
+            );
+            tasks.end_session(&format!("pn:{pane}"));
+        }
+        let left: Vec<String> = tasks
+            .tracker
+            .as_ref()
+            .expect("tracker")
+            .claims()
+            .expect("claims")
+            .into_iter()
+            .map(|c| c.folder)
+            .collect();
+        let folder = |root: &Path| claim_scope(root).expect("scope").folder;
+        assert_eq!(
+            left,
+            [folder(&lane), folder(&split_lane)],
+            "the worktrees keep theirs until they're merged or removed"
         );
     }
 }

@@ -58,8 +58,8 @@ pub fn set_tasks(tasks: &std::sync::Arc<crate::services::tasks::TasksService>) {
 }
 
 /// A lane's worktree was merged (here or by the merge queue) or removed:
-/// its claims go (F-TK-05 AC3). `folder` is the worktree's resolved path,
-/// as its sessions claimed in.
+/// its claims go (F-TK-05 AC3). `folder` is the worktree's path resolved
+/// with `contain::canonical`, as its sessions claimed in.
 pub(crate) fn release_claims(folder: &Path) {
     let live: Vec<_> = match TASKS.lock() {
         Ok(all) => all.iter().filter_map(std::sync::Weak::upgrade).collect(),
@@ -294,7 +294,8 @@ pub async fn merge(store: &Store, git: &Git, id: &WorkspaceId) -> Result<MergeRe
         Ok(report) => {
             if report.merged {
                 release_claims(
-                    &std::fs::canonicalize(&lane.root).unwrap_or_else(|_| lane.root.clone().into()),
+                    &tandem_core::contain::canonical(Path::new(&lane.root))
+                        .unwrap_or_else(|_| lane.root.clone().into()),
                 );
             }
             tracing::info!(
@@ -539,7 +540,8 @@ pub async fn remove_with_teardown(
         .await;
     }
     let repo = discover(&parent.root, "Folder not found")?;
-    let claimed_in = std::fs::canonicalize(lane_path).unwrap_or_else(|_| lane_path.to_path_buf());
+    let claimed_in =
+        tandem_core::contain::canonical(lane_path).unwrap_or_else(|_| lane_path.to_path_buf());
     LaneManager::remove(git, &repo, lane_path, force).await?;
     release_claims(&claimed_in);
     workspaces::remove(store, &lane.id).await?;
