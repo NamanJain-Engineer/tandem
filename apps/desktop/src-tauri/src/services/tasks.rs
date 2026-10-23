@@ -60,17 +60,18 @@ pub type OverlapSink = Arc<dyn Fn(&[ClaimOverlap], &[ClaimOverlap]) + Send + Syn
 /// notices it's told first (F-TK-05 AC1).
 pub type NoticeSink = Arc<dyn Fn(&str, &[String]) + Send + Sync>;
 
-/// Where a session in `folder` claims: its working tree and the repository
-/// it belongs to (a lane's worktree claims against its main checkout). Both
-/// folders are resolved as [`contain::canonical`] resolves them (`C:\…` on
-/// Windows, not `\\?\C:\…`), as releases resolve a worktree's path; git says
-/// which is the main checkout.
+/// Where a session in `folder` claims: its working tree, the repository it
+/// belongs to (a lane's worktree claims against its main checkout), and
+/// where in the tree the session is. Both folders are resolved as
+/// [`contain::canonical`] resolves them (`C:\…` on Windows, not `\\?\C:\…`),
+/// as releases resolve a worktree's path; git says which is the main
+/// checkout.
 pub fn claim_scope(folder: &Path) -> Option<ClaimScope> {
     let repo = tandem_git::repo::Repo::discover(folder).ok()??;
     Some(ClaimScope {
         repo: resolved(&repo.main_root()),
         folder: resolved(repo.root()),
-        prefix: String::new(),
+        prefix: repo.prefix().to_string_lossy().into_owned(),
         main: !repo.is_linked_worktree(),
     })
 }
@@ -84,7 +85,8 @@ fn resolved(path: &Path) -> String {
 }
 
 /// An edited file's path relative to the working tree, or `None` outside
-/// it (and inside `.git` or Vibezeo's own `.tandem`).
+/// it, and in git's data (`.git`) or Vibezeo's (`.tandem`), compared as file
+/// names compare here.
 pub fn claim_path(folder: &Path, edited: &Path) -> Option<String> {
     let rel = if edited.is_relative() {
         edited.to_path_buf()
@@ -99,11 +101,21 @@ pub fn claim_path(folder: &Path, edited: &Path) -> Option<String> {
             .ok()?
             .to_path_buf()
     };
-    let text = rel.to_string_lossy().replace('\\', "/");
-    if text.starts_with(".git/") || text.starts_with(".tandem/") {
-        return None;
+    let rel = tandem_tasks::store::normalize_relative_claim_path(&rel.to_string_lossy()).ok()?;
+    let top = contain::fold(rel.split('/').next().unwrap_or_default());
+    (top != ".git" && top != ".tandem").then_some(rel)
+}
+
+/// An overlap's path in its key: as claims compare (no trailing `/`, folded
+/// where file names ignore case), so a pair isn't announced again for one
+/// file spelled another way.
+fn path_key(path: &str) -> String {
+    let path = path.trim_end_matches('/');
+    if contain::case_insensitive_fs() {
+        contain::fold(path)
+    } else {
+        path.to_string()
     }
-    tandem_tasks::store::normalize_relative_claim_path(&text).ok()
 }
 
 /// One key per overlapping path, so a pair is announced again only for a
@@ -111,7 +123,13 @@ pub fn claim_path(folder: &Path, edited: &Path) -> Option<String> {
 fn overlap_keys(o: &ClaimOverlap) -> impl Iterator<Item = (String, &str)> + '_ {
     o.paths.iter().map(move |p| {
         (
-            format!("{}\0{}\0{}\0{p}", o.repo, o.folders[0], o.folders[1]),
+            format!(
+                "{}\0{}\0{}\0{}",
+                o.repo,
+                o.folders[0],
+                o.folders[1],
+                path_key(p)
+            ),
             p.as_str(),
         )
     })
@@ -1219,6 +1237,60 @@ mod tests {
             left,
             [folder(&lane), folder(&split_lane)],
             "the worktrees keep theirs until they're merged or removed"
+        );
+    }
+
+    #[test]
+    fn f_tk_05_a_sessions_scope_has_its_folder_in_the_working_tree() {
+        let dir = tempfile::tempdir().expect("dir");
+        let root = git_repo(dir.path());
+        std::fs::create_dir_all(root.join("src/web")).expect("mkdir");
+        assert_eq!(claim_scope(&root).expect("top").prefix, "");
+        let sub = claim_scope(&root.join("src/web")).expect("sub");
+        assert_eq!(Path::new(&sub.prefix), Path::new("src").join("web"));
+        assert_eq!(sub.folder, claim_scope(&root).expect("top").folder);
+    }
+
+    #[test]
+    fn f_tk_05_1_a_path_is_announced_once_however_it_is_spelled() {
+        let mut seen = HashSet::new();
+        assert_eq!(
+            fresh_overlaps(&mut seen, &[overlap(&["src/auth/"])]).len(),
+            1
+        );
+        // A folder claimed before its trailing `/` stopped mattering.
+        assert!(fresh_overlaps(&mut seen, &[overlap(&["src/auth"])]).is_empty());
+        // Where file names ignore case, so does the announcement.
+        let again = fresh_overlaps(&mut seen, &[overlap(&["SRC/Auth"])]);
+        assert_eq!(
+            again.is_empty(),
+            tandem_core::contain::case_insensitive_fs(),
+            "{again:?}"
+        );
+    }
+
+    #[test]
+    fn f_tk_05_2_edits_of_git_or_vibezeo_data_never_claim() {
+        let dir = tempfile::tempdir().expect("dir");
+        let root = git_repo(dir.path());
+        for inside in [
+            ".git/config",
+            "./.git/config",
+            ".git",
+            ".tandem/worktrees/x/a.ts",
+            ".tandem",
+        ] {
+            assert_eq!(claim_path(&root, &root.join(inside)), None, "{inside}");
+            assert_eq!(claim_path(&root, Path::new(inside)), None, "{inside}");
+        }
+        // Where file names ignore case, `.GIT` is that folder too.
+        assert_eq!(
+            claim_path(&root, Path::new(".GIT/config")).is_none(),
+            tandem_core::contain::case_insensitive_fs()
+        );
+        assert_eq!(
+            claim_path(&root, Path::new(".gitignore")).as_deref(),
+            Some(".gitignore")
         );
     }
 }
