@@ -14,20 +14,31 @@ use crate::error::TaskError;
 use crate::lock;
 use crate::model::*;
 
-/// A claim names files and folders, never a pattern.
-const WILDCARDS: [char; 3] = ['*', '?', '['];
+/// What an agent's pattern has: stored literally, `src/*.ts` would match
+/// none of the files it meant, so an agent's claim refuses `*` and `?`. `[`
+/// is a real file name's (`app/[id]/page.tsx`), and matches literally.
+const PATTERN: [char; 2] = ['*', '?'];
 
 /// An agent's path (`claim`, `release`) as it's kept: relative to the
 /// working tree's top folder, `/`-separated, with no `.`, `..` or trailing
 /// `/`. A relative path starts at the session's folder (`scope.prefix`); an
-/// absolute one must be inside `scope.folder`. Anything else is refused.
+/// absolute one must be inside `scope.folder`. Anything else is refused, and
+/// so is a pattern (`*`, `?`).
 pub fn normalize_claim_path(scope: &ClaimScope, raw: &str) -> Result<String, TaskError> {
+    let raw = screened(raw)?;
+    // Windows' verbatim prefix (`\\?\C:\…`) is the one `?` a path may have.
+    if raw.strip_prefix("//?/").unwrap_or(&raw).contains(PATTERN) {
+        return Err(TaskError::invalid(
+            "Claim files or a folder, not a pattern: `*` and `?` aren't allowed.",
+        ));
+    }
     resolve(&scope.folder, &scope.prefix, raw)
 }
 
 /// [`normalize_claim_path`] for a path already relative to the working
 /// tree's top folder (the app's edits): checked and tidied the same way,
-/// and refused when it's absolute.
+/// and refused when it's absolute. It names a real file, so `*`, `?` and
+/// `[` are kept, and match literally.
 pub fn normalize_relative_claim_path(raw: &str) -> Result<String, TaskError> {
     let raw = screened(raw)?;
     if is_absolute(&raw) {
@@ -38,9 +49,15 @@ pub fn normalize_relative_claim_path(raw: &str) -> Result<String, TaskError> {
     tidy(&raw)
 }
 
-/// `raw` from a session in `prefix` of the working tree at `folder`.
-fn resolve(folder: &str, prefix: &str, raw: &str) -> Result<String, TaskError> {
-    let raw = screened(raw)?;
+/// A file the app saw edited ([`TaskStore::claim_inferred`]): absolute
+/// inside the working tree at `folder`, or relative to its top.
+fn seen_path(folder: &str, raw: &str) -> Result<String, TaskError> {
+    resolve(folder, "", screened(raw)?)
+}
+
+/// A [`screened`] `raw` from a session in `prefix` of the working tree at
+/// `folder`.
+fn resolve(folder: &str, prefix: &str, raw: String) -> Result<String, TaskError> {
     let rel = if is_absolute(&raw) {
         inside(folder, &raw)
             .ok_or_else(|| TaskError::invalid("That path is outside your working tree."))?
@@ -70,14 +87,7 @@ fn screened(raw: &str) -> Result<String, TaskError> {
     if raw.chars().any(char::is_control) {
         return Err(TaskError::invalid("A path has a control character."));
     }
-    let raw = raw.replace('\\', "/");
-    // Windows' verbatim prefix (`\\?\C:\…`) is the one `?` a path may have.
-    if raw.strip_prefix("//?/").unwrap_or(&raw).contains(WILDCARDS) {
-        return Err(TaskError::invalid(
-            "Claim files or folders by name: `*`, `?` and `[` aren't allowed.",
-        ));
-    }
-    Ok(raw)
+    Ok(raw.replace('\\', "/"))
 }
 
 /// `/…`, or a drive (`C:…`), once `\` is `/`.
@@ -328,7 +338,8 @@ impl TaskStore {
     /// Claims the app saw an agent make by editing (`PreToolUse`), for
     /// agents that don't call the tool. `paths` are absolute inside the
     /// working tree, or relative to its top folder whatever the session's
-    /// `prefix` (what [`normalize_relative_claim_path`] takes).
+    /// `prefix` (what [`normalize_relative_claim_path`] takes). They're real
+    /// files, so `*`, `?` and `[` are kept and match literally.
     pub fn claim_inferred(
         &self,
         scope: &ClaimScope,
@@ -350,11 +361,17 @@ impl TaskStore {
                 "Claim 1–{CLAIM_PATHS_MAX} paths at a time."
             )));
         }
-        // An agent's relative paths start at its folder; the app's at the top.
-        let prefix = if inferred { "" } else { scope.prefix.as_str() };
+        // An agent's paths start at its folder and can't be patterns; the
+        // app's are real files, from the top.
         let paths = paths
             .iter()
-            .map(|p| resolve(&scope.folder, prefix, p))
+            .map(|p| {
+                if inferred {
+                    seen_path(&scope.folder, p)
+                } else {
+                    normalize_claim_path(scope, p)
+                }
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let now = self.now();
         self.edit_claims(|claims| {
@@ -484,17 +501,11 @@ mod tests {
             normalize_relative_claim_path("src\\auth\\").expect("folder"),
             "src/auth"
         );
-        for bad in [
-            "",
-            "/etc/passwd",
-            "C:/x",
-            "a/../b",
-            "./",
-            "a\nb",
-            "*.ts",
-            "src/a?.ts",
-            "[ab].ts",
-        ] {
+        // A file the app saw edited is a real name, whatever it holds.
+        for real in ["app/[id]/page.tsx", "notes?.md", "a*b.txt"] {
+            assert_eq!(normalize_relative_claim_path(real).expect(real), real);
+        }
+        for bad in ["", "/etc/passwd", "C:/x", "a/../b", "./", "a\nb"] {
             assert!(normalize_relative_claim_path(bad).is_err(), "{bad:?}");
         }
     }
@@ -519,6 +530,10 @@ mod tests {
         assert_eq!(ok(&sub, "./"), "packages/web", "the session's folder");
         assert_eq!(ok(&sub, "/r/wt/packages/ui/b.ts"), "packages/ui/b.ts");
         assert_eq!(ok(&sub, "/r/wt//packages/./ui/"), "packages/ui");
+        assert_eq!(ok(&top, "app/[id]/page.tsx"), "app/[id]/page.tsx");
+        for pattern in ["src/*.ts", "src/?.ts", "/r/wt/*"] {
+            assert!(normalize_claim_path(&top, pattern).is_err(), "{pattern}");
+        }
         for outside in [
             "/r/wt",
             "/r/wt/",

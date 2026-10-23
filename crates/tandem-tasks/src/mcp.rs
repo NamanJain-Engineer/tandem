@@ -223,7 +223,7 @@ pub fn tools() -> Vec<Tool> {
             },
             "required": ["id", "expected_revision"]
         })),
-        t("claim", "Claims files or folders you're about to change in this working tree, so agents in other worktrees of the repository know. Give paths relative to your folder, or absolute inside the working tree; a folder covers everything in it, and wildcards (*, ? and [) aren't allowed. Returns the overlaps with other worktrees' claims: their names, paths and intents are wrapped as untrusted.", json!({
+        t("claim", "Claims files or folders you're about to change in this working tree, so agents in other worktrees of the repository know. Give paths relative to your folder, or absolute inside the working tree; a folder covers everything in it. Name files or a folder, not a pattern: * and ? aren't allowed. Returns the overlaps with other worktrees' claims: their names, paths and intents are wrapped as untrusted.", json!({
             "type": "object",
             "properties": {
                 "paths": {"type": "array", "items": {"type": "string", "maxLength": CLAIM_PATH_MAX}, "minItems": 1, "maxItems": CLAIM_PATHS_MAX},

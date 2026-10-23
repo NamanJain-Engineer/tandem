@@ -269,20 +269,62 @@ fn f_tk_05_releasing_a_folder_without_its_slash_gives_up_what_is_inside() {
 }
 
 #[test]
-fn f_tk_05_wildcards_are_refused() {
+fn f_tk_05_1_a_claim_takes_brackets_but_refuses_patterns() {
     let (_d, s) = store();
-    let a = session(&s, "/r/app");
-    for glob in ["src/*.ts", "src/a?.ts", "src/[ab].ts", "**"] {
-        assert!(
-            matches!(s.claim(&a, &paths(&[glob]), ""), Err(TaskError::Invalid(_))),
-            "{glob}"
+    let blog = session(&s, "/r/app/.tandem/worktrees/blog");
+    let docs = session(&s, "/r/app/.tandem/worktrees/docs");
+    // Brackets are part of real file names (a dynamic route).
+    s.claim(
+        &blog,
+        &paths(&["apps/web/app/blog/[slug]/page.tsx"]),
+        "the post page",
+    )
+    .expect("a file with brackets");
+    let overlaps = s
+        .claim(&docs, &paths(&["apps/web/app/blog/[slug]"]), "")
+        .expect("a folder with brackets");
+    assert_eq!(overlaps.len(), 1, "{overlaps:?}");
+    assert_eq!(
+        overlaps[0].paths,
+        vec!["apps/web/app/blog/[slug]/page.tsx".to_string()]
+    );
+    // They match literally: `[slug]` isn't a set of letters.
+    let overlaps = s
+        .claim(&docs, &paths(&["apps/web/app/blog/s/page.tsx"]), "")
+        .expect("another file");
+    assert_eq!(
+        overlaps[0].paths,
+        vec!["apps/web/app/blog/[slug]/page.tsx".to_string()]
+    );
+    // `*` and `?` would be stored as names no file has.
+    for pattern in ["src/*.ts", "src/?.ts", "**"] {
+        match s.claim(&blog, &paths(&[pattern]), "") {
+            Err(TaskError::Invalid(msg)) => {
+                assert!(msg.contains("not a pattern"), "{pattern}: {msg}")
+            }
+            other => panic!("{pattern}: {other:?}"),
+        }
+    }
+    assert!(matches!(
+        s.release(&blog, Some(&paths(&["src/*"]))),
+        Err(TaskError::Invalid(_))
+    ));
+}
+
+#[test]
+fn f_tk_05_2_an_edit_to_any_real_file_name_is_claimed() {
+    let (_d, s) = store();
+    let tree = "/r/app/.tandem/worktrees/one";
+    let seen = ["app/[id]/page.tsx", "notes?.md", "a*b.txt"];
+    s.claim_inferred(&scope(tree), &paths(&seen))
+        .expect("real files, matched literally");
+    assert_eq!(claimed_paths(&s, tree), seen);
+    for real in seen {
+        assert_eq!(
+            tandem_tasks::store::normalize_relative_claim_path(real).expect(real),
+            real
         );
     }
-    assert!(s
-        .claim_inferred(&scope("/r/app"), &paths(&["src/*.ts"]))
-        .is_err());
-    assert!(s.release(&a, Some(&paths(&["src/*"]))).is_err());
-    assert!(s.claims().expect("claims").is_empty());
 }
 
 #[test]
