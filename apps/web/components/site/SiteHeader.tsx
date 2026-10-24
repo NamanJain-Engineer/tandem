@@ -17,7 +17,7 @@ export function SiteHeader({ current }: { current?: string }) {
   const link = (href: string) =>
     current === href ? ({ "aria-current": "page" } as const) : ({} as Record<string, never>);
   return (
-    <header className="site-header sticky top-0 z-50 border-b border-line bg-(--site-header) backdrop-blur-xl backdrop-saturate-150">
+    <header className="site-header sticky top-0 z-50 border-b border-line bg-(--site-header) backdrop-blur-2xl backdrop-saturate-150">
       <nav aria-label="Site" className="container-site relative flex h-(--site-header-h) items-center gap-2">
         <a
           href="/"

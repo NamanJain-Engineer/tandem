@@ -95,23 +95,23 @@
   --site-page:        var(--tn-bg);                 /* #060A12 */
   --site-raised:      var(--tn-surface-1);          /* alternate bands */
   --site-card:        var(--tn-surface-2);          /* cards and tiles */
-  --site-stage:       var(--slate-900);             /* product media backdrop: dark in both themes */
-  --site-stage-line:  rgb(148 163 184 / 0.18);
+  --site-stage:       var(--ink-900);               /* product media backdrop: dark in both themes (ink, D-1894) */
+  --site-stage-line:  rgb(255 255 255 / 0.12);
   --site-stage-fg:    #e6edf5;                      /* text on the stage: the dark theme's, in both themes */
   --site-stage-muted: #9aa8bb;
   --site-stage-accent: var(--teal-400);
-  --site-grid:        rgb(148 163 184 / 0.06);      /* the faint grid of og.png and the video poster */
+  --site-grid:        rgb(255 255 255 / 0.04);      /* the faint grid of og.png and the video poster */
   --site-glow:        rgb(45 212 191 / 0.13);       /* the poster's soft teal glow */
   --site-ink-a:       var(--tn-ink-a);
   --site-ink-b:       var(--tn-ink-b);
-  --site-header:      color-mix(in oklab, var(--site-page) 78%, transparent);
+  --site-header:      color-mix(in oklab, var(--site-page) 90%, transparent);   /* text under it stays unreadable */
   --site-gutter:      clamp(1rem, 0.6rem + 1.8vw, 2rem);    /* 16 → 32 px */
   --site-section-y:   clamp(5rem, 3.4rem + 4vw, 7rem);      /* 80 → 112 px: tighter, so the home page says less (D-1881) */
   --site-header-h:    4rem;
 
   /* Hairlines */
-  --site-line:        rgb(148 163 184 / 0.12);
-  --site-line-strong: rgb(148 163 184 / 0.22);
+  --site-line:        rgb(255 255 255 / 0.08);
+  --site-line-strong: rgb(255 255 255 / 0.14);
   /* Edges: a lit top and a quiet bottom, drawn as a gradient border */
   --site-edge-top:    var(--tn-edge-top);
   --site-edge-bottom: var(--tn-edge-bottom);
@@ -126,7 +126,7 @@
   --site-ring-lit:    var(--tn-ring-lit);
   --site-spot:        var(--tn-spot);
   /* The bezel product captures sit in */
-  --site-bezel:       var(--slate-900);
+  --site-bezel:       var(--ink-900);
   --site-bezel-edge:  rgb(255 255 255 / 0.10);
   /* Elevation: e1 cards, e2 raised cards, e3 product frames */
   --site-elev-1:      var(--tn-elev-1);
@@ -139,20 +139,20 @@
   --site-btn-glow:    rgb(45 212 191 / 0.28);
   --site-btn-hi:      rgb(255 255 255 / 0.45);
   /* Glass: the secondary button and the header */
-  --site-glass:       rgb(148 163 184 / 0.06);
-  --site-glass-hover: rgb(148 163 184 / 0.11);
+  --site-glass:       rgb(255 255 255 / 0.04);
+  --site-glass-hover: rgb(255 255 255 / 0.07);
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --site-page:   var(--slate-25);   /* #F8FAFC, a touch whiter than the app's slate-50 */
-    --site-raised: var(--slate-50);   /* #F1F5F9: the app's bg, so bands read as bands */
-    --site-card:   var(--slate-0);
-    --site-grid:   rgb(15 23 42 / 0.05);
+    --site-page:   var(--ink-25);     /* #FAFAFA, a touch whiter than the app's light bg (ink, D-1894) */
+    --site-raised: var(--ink-50);     /* #F4F4F5: so bands read as bands */
+    --site-card:   var(--ink-0);
+    --site-grid:   rgb(9 9 11 / 0.05);
     --site-glow:   rgb(15 118 110 / 0.09);
-    --site-line:        rgb(15 23 42 / 0.08);
-    --site-line-strong: rgb(15 23 42 / 0.16);
+    --site-line:        rgb(9 9 11 / 0.08);
+    --site-line-strong: rgb(9 9 11 / 0.16);
     --site-bezel:       rgb(255 255 255 / 0.75);
-    --site-bezel-edge:  rgb(15 23 42 / 0.10);
+    --site-bezel-edge:  rgb(9 9 11 / 0.10);
     --site-btn-top:     var(--teal-700);
     --site-btn-bottom:  var(--teal-800);
     --site-btn-hover:   var(--teal-800);
@@ -166,30 +166,15 @@
 /* The same values when the visitor picks Light (D-1870). site.test.ts fails
    if this block and the one above ever differ. */
 :root[data-theme="light"] {
-  --site-page:   var(--slate-25);   /* #F8FAFC, a touch whiter than the app's slate-50 */
-  --site-raised: var(--slate-50);   /* #F1F5F9: the app's bg, so bands read as bands */
-  --site-card:   var(--slate-0);
-  --site-grid:   rgb(15 23 42 / 0.05);
+  --site-page:   var(--ink-25);     /* #FAFAFA, a touch whiter than the app's light bg (ink, D-1894) */
+  --site-raised: var(--ink-50);     /* #F4F4F5: so bands read as bands */
+  --site-card:   var(--ink-0);
+  --site-grid:   rgb(9 9 11 / 0.05);
   --site-glow:   rgb(15 118 110 / 0.09);
-  --site-ink-a:  var(--teal-700);
-  --site-ink-b:  var(--sky-700);
-  --site-line:        rgb(15 23 42 / 0.08);
-  --site-line-strong: rgb(15 23 42 / 0.16);
-  --site-edge-top:    rgb(15 23 42 / 0.08);
-  --site-edge-bottom: rgb(15 23 42 / 0.14);
-  --site-edge-hi:     rgb(255 255 255 / 0.90);
-  --site-fill-top:    rgb(255 255 255 / 0.70);
-  --site-fill-bottom: rgb(241 245 249 / 0.50);
-  --site-glow-a:      rgb(20 184 166 / 0.16);
-  --site-glow-b:      rgb(14 165 233 / 0.10);
-  --site-ring:        rgb(15 23 42 / 0.08);
-  --site-ring-lit:    rgb(13 148 136 / 0.45);
-  --site-spot:        rgb(15 118 110 / 0.05);
+  --site-line:        rgb(9 9 11 / 0.08);
+  --site-line-strong: rgb(9 9 11 / 0.16);
   --site-bezel:       rgb(255 255 255 / 0.75);
-  --site-bezel-edge:  rgb(15 23 42 / 0.10);
-  --site-elev-1: inset 0 1px 0 var(--site-edge-hi), 0 1px 2px rgb(15 23 42 / 0.05), 0 2px 6px -2px rgb(15 23 42 / 0.05);
-  --site-elev-2: inset 0 1px 0 var(--site-edge-hi), 0 1px 2px rgb(15 23 42 / 0.06), 0 16px 32px -14px rgb(15 23 42 / 0.16);
-  --site-elev-3: 0 0 0 1px rgb(15 23 42 / 0.06), 0 2px 4px rgb(15 23 42 / 0.04), 0 16px 32px -8px rgb(15 23 42 / 0.10), 0 48px 96px -24px rgb(15 23 42 / 0.22);
+  --site-bezel-edge:  rgb(9 9 11 / 0.10);
   --site-btn-top:     var(--teal-700);
   --site-btn-bottom:  var(--teal-800);
   --site-btn-hover:   var(--teal-800);
@@ -503,7 +488,7 @@ body.site {
     align-items: center;
     gap: 2px;
     margin: 0;
-    padding: 3px;
+    padding: 1px;
     border: 0;
     border-radius: 8px;
     background: var(--site-glass);
@@ -514,8 +499,8 @@ body.site {
       align-items: center;
       justify-content: center;
       gap: 0.375rem;
-      height: 1.75rem;
-      min-width: 1.75rem;
+      height: 2rem;
+      min-width: 2rem;
       padding-inline: 0.375rem;
       border-radius: 5px;
       color: var(--tn-text-muted);
@@ -523,7 +508,9 @@ body.site {
       transition: color var(--dur-base) var(--ease-out-site), background-color var(--dur-base) var(--ease-out-site), box-shadow var(--dur-base) var(--ease-out-site);
     }
     & label:hover { color: var(--tn-text); }
-    & label:has(:focus-visible) { box-shadow: 0 0 0 2px var(--site-page), 0 0 0 4px var(--tn-accent-ring); }
+    /* Keyboard focus on the cell, not the hidden radio: an outline, so the
+       selected cell's lit edge (a box-shadow) can't cover it (WCAG 2.4.7). */
+    & label:has(input:focus-visible) { outline: 2px solid var(--tn-accent-ring); outline-offset: 2px; color: var(--tn-text); }
     & svg { transition: rotate var(--dur-slow) var(--ease-spring); }
   }
   .theme-switch-wide label { height: 2.25rem; padding-inline: 0.75rem; font-size: 0.875rem; }

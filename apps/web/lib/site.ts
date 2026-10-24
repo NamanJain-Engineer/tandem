@@ -72,6 +72,11 @@ export const SITE_PAGES = [
   "/security/",
 ] as const;
 
+/** "Email me the link" on a phone (DESIGN §9.1): a desktop download is a
+ * dead end there, so the visitor mails the download page to themselves. No
+ * recipient, no script: their own mail app opens. */
+export const EMAIL_ME_HREF = `mailto:?subject=${encodeURIComponent(`${SITE.product} for Linux`)}&body=${encodeURIComponent(`${SITE.url}/download/`)}`;
+
 /** Feedback from users: a prefilled email, so people can tell
  * us what they run. The site keeps no form or list of its own. */
 export const EARLY_ACCESS_HREF = `mailto:${SITE.contactEmail}?subject=${encodeURIComponent(

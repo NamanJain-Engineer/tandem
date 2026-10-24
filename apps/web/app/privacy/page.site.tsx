@@ -51,6 +51,10 @@ export default function PrivacyPage() {
           scripts.
         </li>
         <li>
+          Picking Light or Dark in the header makes your browser remember it under one key,{" "}
+          <code>vibezeo-theme</code>. It never leaves your browser, and choosing System removes it.
+        </li>
+        <li>
           There are no forms or accounts here. If you email us, we use your message and address only to reply.
         </li>
         <li>

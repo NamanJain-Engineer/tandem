@@ -20,7 +20,13 @@ const SCENES = {
 export function Features() {
   const rows = SCENE_ROWS.filter((r) => atLeast(SCENE_BUILD, r.release));
   return (
-    <Section id="features" eyebrow="Working today" align="center" title="Many agents, one calm view">
+    <Section
+      id="features"
+      eyebrow="Working today"
+      align="center"
+      title="Many agents, one screen"
+      lead="Each agent runs in a real terminal over your own folder. Split, arrange and keep going."
+    >
       <div className="flex flex-col gap-24 lg:gap-32">
         {rows.map((r) => {
           const s = SCENES[r.id];

@@ -7,7 +7,7 @@ export const THEME_CHOICES = ["system", "light", "dark"] as const;
 export type ThemeChoice = (typeof THEME_CHOICES)[number];
 
 /** The browser bar's colour in each theme: the page background. */
-export const THEME_COLOR = { dark: "#060a12", light: "#f8fafc" } as const;
+export const THEME_COLOR = { dark: "#060a12", light: "#fafafa" } as const;
 
 /** The inline script that runs first in `<head>`, before the body is
  * parsed, so no page paints in the wrong theme (D-1871). It reads the choice

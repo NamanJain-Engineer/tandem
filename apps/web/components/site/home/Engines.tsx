@@ -22,7 +22,7 @@ export function Engines() {
       eyebrow="Engines"
       align="split"
       title="Bring the agents you already use"
-      lead="Vibezeo finds the engine CLIs installed on your machine and launches them in panes, each signed in to your own account. If an engine is missing, Vibezeo shows you how to install it."
+      lead="Vibezeo finds the agent CLIs on your machine and starts each one signed in to your own account. Missing ones come with install steps."
     >
       <div className="grid items-start gap-10 lg:grid-cols-12 lg:gap-8">
         <div className="flex flex-col gap-5 lg:col-span-7">

@@ -9,11 +9,14 @@ export function CtaBand({
   id,
   title,
   lead,
+  note,
   children,
 }: {
   id: string;
   title: ReactNode;
   lead?: ReactNode;
+  /** One quiet line under the actions. */
+  note?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -34,6 +37,7 @@ export function CtaBand({
         </h2>
         {lead && <p className="reveal stagger-2 max-w-measure text-lead text-pretty text-fg-muted">{lead}</p>}
         <div className="reveal stagger-3 flex flex-wrap justify-center gap-3 pt-1">{children}</div>
+        {note && <p className="reveal stagger-4 text-caption text-fg-muted">{note}</p>}
       </div>
     </section>
   );

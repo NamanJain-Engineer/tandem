@@ -21,7 +21,7 @@ export function ThemeSwitch({ name, labels = false, className }: { name: string;
     <fieldset className={cx("theme-switch", labels && "theme-switch-wide", className)}>
       <legend className="sr-only">Theme</legend>
       {OPTIONS.map((o) => (
-        <label key={o.value} data-choice={o.value} title={labels ? undefined : o.label}>
+        <label key={o.value} data-choice={o.value} title={labels ? undefined : `${o.label} theme`}>
           <input type="radio" name={name} value={o.value} data-theme-set="" className="sr-only" />
           <Icon icon={o.icon} size={labels ? 16 : 15} />
           <span className={labels ? undefined : "sr-only"}>{o.label}</span>

@@ -29,11 +29,11 @@ const START: ReadonlyArray<{ title: string; body: ReactNode }> = [
   {
     title: "Start on the Free plan",
     // The welcome screen's own button, from the app's catalog (DESIGN §5.2).
-    body: `Open the app and choose “${en["signin.earlyAccess.start"]}” on the welcome screen. The Free plan runs on your computer, no account needed.`,
+    body: `Open the app and choose ${en["signin.earlyAccess.start"]}. The Free plan runs on your computer, no account needed.`,
   },
   {
     title: "Add a project folder",
-    body: "The launch grid lists the agents it found: pick one to start it in a real terminal, or Terminal for a shell.",
+    body: "Setup ends by asking for a project folder. Then pick an agent from the launch grid to start it in a real terminal, or Terminal for a shell.",
   },
   {
     title: "Split, and keep an eye on them",

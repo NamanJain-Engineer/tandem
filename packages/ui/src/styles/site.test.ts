@@ -94,8 +94,16 @@ describe("F-WB-01 site.css (D-1801)", () => {
 
   it("F-WB-01 AC6 a visitor's Light sets exactly the site tokens the OS's light does (D-1870)", () => {
     const forced = vars(site, ':root[data-theme="light"] {');
-    expect(forced.size).toBeGreaterThan(30);
+    expect(forced.size).toBeGreaterThan(12);
     expect(Object.fromEntries(forced)).toEqual(Object.fromEntries(siteLightSemantic));
+    // The brand tokens the site aliases (D-1891) get a visitor's Light from
+    // brand.css's own [data-theme="light"] block.
+    const brand = readFileSync(join(import.meta.dirname, "brand.css"), "utf8");
+    const brandLight = vars(brand, '[data-theme="light"] {');
+    const aliases = [...siteRoot].filter(([, v]) => /^var\(--tn-/.test(v)).map(([, v]) => v.slice(4, -1));
+    const brandAliases = aliases.filter((t) => /^--tn-(edge|fill|glow|ring|spot|ink|elev)/.test(t));
+    expect(brandAliases.length).toBeGreaterThan(10);
+    for (const t of brandAliases) expect(brandLight.has(t), t).toBe(true);
     // The app's own tokens come from tokens.css's [data-theme="light"],
     // which the OS block above mirrors.
     expect(appLight.get("--tn-bg")).toBe("var(--slate-50)");
@@ -201,5 +209,19 @@ describe("F-WB-01 site.css (D-1801)", () => {
   it("F-WB-01 AC8 motion moves only transform and opacity: no filter in any keyframe (D-1874)", () => {
     const css = site.replace(/\/\*[\s\S]*?\*\//g, "");
     for (const m of css.matchAll(/@keyframes ([\w-]+) \{([\s\S]*?)\}\s*\}?/g)) expect(m[2], m[1]).not.toMatch(/filter|width|height|top|left|margin/);
+  });
+
+  it("F-WB-01 the site's own tokens are ink, never slate (T8, D-1894)", () => {
+    // Sections 1 and 1b mirror tokens.css and brand.css and follow them; the
+    // site's own semantics (section 2 on) and the scenes carry no slate.
+    const own = site.slice(site.indexOf("/* ---------- 2.")).replace(/\/\*[\s\S]*?\*\//g, "");
+    const scenes = readFileSync(join(import.meta.dirname, "../../../../apps/web/components/site/scenes/scenes.css"), "utf8");
+    for (const [name, css] of [["site.css", own], ["scenes.css", scenes]] as const) {
+      expect(css, name).not.toMatch(/--slate-/);
+      expect(css, name).not.toContain("148 163 184");
+      expect(css, name).not.toContain("15 23 42");
+    }
+    expect(siteRoot.get("--site-stage")).toBe("var(--ink-900)");
+    expect(siteLightSemantic.get("--site-page")).toBe("var(--ink-25)");
   });
 });

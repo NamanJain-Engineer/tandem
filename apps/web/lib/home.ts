@@ -229,8 +229,8 @@ export const SCENE_ROWS = [
   {
     id: "dashboard",
     eyebrow: "Dashboard",
-    title: "See which agent needs you",
-    body: "Every agent in every workspace, by project or by status. The one waiting on you says what it wants, and you answer it there.",
+    title: "See who needs you",
+    body: "Working, waiting, done or failed: every pane, the rail and the Dashboard show it, from each engine's own signals.",
     features: ["One Dashboard", "Live status for every agent"],
     docs: docsPath("code-mode"),
     release: "0.5.0",
@@ -238,8 +238,8 @@ export const SCENE_ROWS = [
   {
     id: "review",
     eyebrow: "Review",
-    title: "Check the work before it lands",
-    body: "Finished work waits in one queue, labelled by what it touches. Another engine can read it and leave line comments for the agent.",
+    title: "Review before you merge",
+    body: "Finished work waits in one queue with its diff. Ask another engine for a second opinion before you approve.",
     features: ["A review queue across engines"],
     docs: docsPath("code-mode"),
     release: "0.8.0",
@@ -255,29 +255,28 @@ export const SCENE_ROWS = [
   },
 ] as const satisfies ReadonlyArray<{ features: readonly FeatureTitle[]; [key: string]: unknown }>;
 
-/** The capability index (#capabilities): the eight people use most, one
- * line each; the full copy is in the docs (DESIGN §2, progressive
- * disclosure). */
+/** The capability index (#capabilities): eight, one line each, as DESIGN
+ * §9.1 lists them; the full copy is in the docs (progressive disclosure). */
 export const CAPABILITIES = [
-  { title: "Thread mode", icon: "message", docs: docsPath("thread-mode") },
-  { title: "Teammates", icon: "users", docs: docsPath("agent-mode") },
+  { title: "Dictate", icon: "mic", docs: docsPath("dictate") },
+  { title: "Worktree lanes and handoff", icon: "branch", docs: docsPath("code-mode") },
   { title: "Previews per worktree", icon: "compare", docs: docsPath("code-mode") },
   { title: "Files, git and a browser", icon: "files", docs: docsPath("code-mode") },
   { title: "SSH workspaces", icon: "server", docs: docsPath("remote") },
-  { title: "Dictate", icon: "mic", docs: docsPath("dictate") },
+  { title: "Find work by what it's about", icon: "search", docs: docsPath("code-mode") },
   { title: "Plugins with approvals", icon: "plug", docs: docsPath("plugins") },
-  { title: "Tasks", icon: "tasks", docs: docsPath("tasks") },
+  { title: "Crash-safe restore", icon: "restore", docs: docsPath("troubleshooting") },
 ] as const satisfies ReadonlyArray<{ title: FeatureTitle; [key: string]: unknown }>;
 
-/** "Everything else": the rest, as one line of links to their docs. */
+/** "Everything else in the docs": the rest, as one line of links. */
 export const MORE = [
+  { title: "Thread mode", docs: docsPath("thread-mode") },
   { title: "Switch engines mid-thread", docs: docsPath("thread-mode") },
-  { title: "Worktree lanes and handoff", docs: docsPath("code-mode") },
-  { title: "Find work by what it's about", docs: docsPath("code-mode") },
+  { title: "Teammates", docs: docsPath("agent-mode") },
+  { title: "Tasks", docs: docsPath("tasks") },
   { title: "Several accounts per engine", docs: docsPath("accounts-and-limits") },
   { title: "Your accounts, untouched", docs: docsPath("privacy") },
   { title: "Notifications that matter", docs: docsPath("settings") },
-  { title: "Crash-safe restore", docs: docsPath("troubleshooting") },
   { title: "Signed updates", docs: docsPath("troubleshooting") },
   { title: "Private by default", docs: docsPath("privacy") },
 ] as const satisfies ReadonlyArray<{ title: FeatureTitle; docs: string }>;
@@ -286,8 +285,8 @@ export const MORE = [
  * answered on /about/ and /download/. */
 export const HOME_FAQ = [
   "Can I use Vibezeo today?",
-  "Does Vibezeo see my API keys or subscription tokens?",
   "Do I need a new AI subscription?",
+  "Does Vibezeo see my API keys or subscription tokens?",
   "What will it cost?",
 ] as const;
 

@@ -1,3 +1,4 @@
+import { FEATURES } from "../lib/home";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -80,7 +81,7 @@ describe("public site", () => {
   it("F-WB-01 the founder is named on the home and About pages, and Terms and Privacy name who runs the site", () => {
     expect(html(<AboutPage />)).toContain(`${SITE.founder.role}, ${SITE.company}`);
     // The home page's closing band names who builds it and links About (D-1881).
-    expect(html(<HomePage />)).toMatch(new RegExp(`built by ${SITE.founder.name}:[\\s\\S]*?<a href="/about/"`));
+    expect(html(<HomePage />)).toMatch(new RegExp(`Built by ${SITE.founder.name}\\.[\\s\\S]*?<a href="/about/"`));
     for (const Page of [TermsPage, PrivacyPage]) expect(html(<Page />)).toContain(OPERATOR);
     expect(html(<PrivacyPage />)).toContain(`Our host, ${SITE.host}`);
   });
@@ -257,8 +258,11 @@ describe("public site", () => {
     expect(free).toContain("Thread mode with Claude Code and Codex, one thread at a time");
     expect(free.join(" ")).not.toMatch(/Cursor|Grok|OpenCode|Every supported engine, on/);
     expect(pro).toContain("Thread mode with every chat engine: Cursor Agent, Grok and OpenCode too");
+    // The home page names Thread mode only as a link to its docs (D-1881), so
+    // it makes no claim there; the feature's own text keeps the limit.
     const home = html(<HomePage />);
-    expect(home).toContain("Free threads run Claude Code and Codex; Cursor Agent, Grok and OpenCode threads need Pro.");
+    expect(home).toMatch(/<a href="\/docs\/thread-mode\/"[^>]*>Thread mode<\/a>/);
+    expect(FEATURES.find((f) => f.title === "Thread mode")?.body).toContain("Free threads run Claude Code and Codex; Cursor Agent, Grok and OpenCode threads need Pro.");
   });
 
   it("F-WB-01 the changelog lists every closed milestone", () => {

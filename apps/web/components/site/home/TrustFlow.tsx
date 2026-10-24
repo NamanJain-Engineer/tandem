@@ -35,7 +35,7 @@ export function TrustFlow() {
           <h2 id="principles-title" className="max-w-[28em] text-display-md text-fg [text-wrap:pretty]">
             Nothing leaves your machine unless you opt in.{" "}
             <span className="text-fg-muted">
-              Engines sign in by themselves, in their own folders, and Vibezeo never reads, copies or proxies their
+              Engines sign in by themselves, in their own folders. Vibezeo never reads, copies or proxies their
               tokens.
             </span>
           </h2>

@@ -1,5 +1,5 @@
 import { siteButton } from "@tandem/ui/components/SiteButton";
-import { Download } from "lucide-react";
+import { ArrowRight, Download } from "lucide-react";
 import { RELEASE } from "../../../lib/release";
 import { EARLY_ACCESS_HREF, SITE } from "../../../lib/site";
 import { CtaBand as Band } from "../CtaBand";
@@ -13,15 +13,20 @@ export function CtaBand() {
       title="Try it on your own projects"
       lead={
         <>
-          Download {SITE.product} for Linux, then{" "}
+          Free for Linux, no account. Tell us what works and what doesn&apos;t:{" "}
           <a href={EARLY_ACCESS_HREF} className="text-fg">
-            tell us what works and what doesn&apos;t
-          </a>
-          . It&apos;s built by {SITE.founder.name}:{" "}
-          <a href="/about/" className="text-fg">
-            more about us
+            {SITE.contactEmail}
           </a>
           .
+        </>
+      }
+      note={
+        <>
+          Built by {SITE.founder.name}.{" "}
+          <a href="/about/" className="link-arrow inline-flex items-center gap-1 text-fg">
+            More about {SITE.product}
+            <Icon icon={ArrowRight} size={14} />
+          </a>
         </>
       }
     >

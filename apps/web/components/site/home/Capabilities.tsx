@@ -17,7 +17,7 @@ function planLimit(body: string): string | undefined {
  * in the docs. */
 export function Capabilities() {
   return (
-    <Section id="capabilities" eyebrow="Everything in the app" title="And the rest of the workspace" divider>
+    <Section id="capabilities" eyebrow="Everything in the app" title="Built in, working today" divider>
       <ul className="grid gap-x-10 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
         {CAPABILITIES.map((c, i) => (
           <li key={c.title} className={`reveal ${stagger(i)}`}>
@@ -47,7 +47,10 @@ export function Capabilities() {
         ))}
       </ul>
       <p className="reveal flex flex-wrap items-baseline gap-x-2 gap-y-1 text-copy-sm text-fg-muted">
-        <span className="font-medium text-fg">Everything else:</span>
+        <a href="/docs/" className="font-medium text-fg underline decoration-[color-mix(in_oklab,currentColor_35%,transparent)] underline-offset-[0.2em]">
+          Everything else in the docs
+        </a>
+        <span aria-hidden="true">·</span>
         {MORE.map((m, i) => (
           <span key={m.title}>
             <a href={m.docs} className="text-fg-muted underline decoration-[color-mix(in_oklab,currentColor_35%,transparent)] underline-offset-[0.2em] hover:text-fg">

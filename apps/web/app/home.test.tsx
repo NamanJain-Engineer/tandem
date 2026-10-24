@@ -28,10 +28,11 @@ describe("home page", () => {
     expect(text(h1)).toBe(HERO.title.join(" "));
     expect(HERO.title).toContain(HERO.highlight);
     // One sentence, the count from code, no vendor named (DESIGN §5.1, D-1881).
-    const lead = /<\/h1><p[^>]*>([\s\S]*?)<\/p>/.exec(home)?.[1] ?? "";
-    expect(text(lead)).toContain(`Run any of ${ENGINES.length} coding agents side by side`);
-    expect(text(lead).split(". ").length).toBe(1);
+    const lead = /<\/h1><div[^>]*><p[^>]*>([\s\S]*?)<\/p>/.exec(home)?.[1] ?? "";
+    expect(text(lead)).toBe("Run the coding agents you already use side by side, in real terminals, and see at a glance which one needs you.");
     for (const e of ENGINES) expect(text(lead), e).not.toContain(e);
+    // The count from code, under the lead (DESIGN §9.1).
+    expect(home).toMatch(new RegExp(`<a href="#engines"[^>]*>Works with ${ENGINES.length} agent CLIs</a>`));
   });
 
   it('F-WB-01 "New in" tiles on /changelog/ come from CHANGELOG: this release\'s Added entries, or the last release that added any', () => {

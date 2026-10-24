@@ -19,7 +19,7 @@ export function Faq() {
           </p>
         </header>
         <div className="flex flex-col border-t border-line lg:col-span-8">
-          {FAQ.filter((f) => (HOME_FAQ as readonly string[]).includes(f.q)).map((f, i) => (
+          {HOME_FAQ.map((q) => FAQ.find((f) => f.q === q)).filter((f) => f !== undefined).map((f, i) => (
             <details key={f.q} name="faq" open={i === 0} className="group border-b border-line">
               <summary className="flex min-h-18 cursor-pointer list-none items-center justify-between gap-6 py-5 text-title text-fg transition-colors duration-(--dur-base) hover:text-fg-muted [&::-webkit-details-marker]:hidden">
                 {f.q}

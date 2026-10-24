@@ -13,7 +13,7 @@ const PAGES = [...SITE_PAGES, ...blogPages(), "/changelog/0.5.0/", "/404.html", 
 // The test server answers a missing page with its own 404, so the site's is
 // opened by its file.
 // The page backgrounds (--site-page) of each theme.
-const BG = { dark: "rgb(6, 10, 18)", light: "rgb(248, 250, 252)" };
+const BG = { dark: "rgb(6, 10, 18)", light: "rgb(250, 250, 250)" }; // ink-25 in light (T8, D-1878)
 
 async function context(browser: Browser, os: "dark" | "light", stored?: "dark" | "light", javaScriptEnabled = true) {
   const ctx = await browser.newContext({ colorScheme: os, reducedMotion: "reduce", javaScriptEnabled });
@@ -86,6 +86,26 @@ test("F-WB-01 AC4 F-WB-01 AC7 the header's control switches the page at once and
   await header.locator('label[data-choice="system"]').click();
   expect(await page.evaluate(() => localStorage.length)).toBe(0);
   expect(await page.evaluate(() => document.documentElement.hasAttribute("data-theme"))).toBe(false);
+  await ctx.close();
+});
+
+test("F-WB-01 AC4 keyboard focus shows on the theme control's cell, not only on its hidden radio (WCAG 2.4.7)", async ({ browser }) => {
+  const ctx = await context(browser, "dark");
+  const page = await ctx.newPage();
+  await page.goto("/");
+  const cell = page.locator('.site-header > nav > fieldset label[data-choice="system"]');
+  const look = () => cell.evaluate((el) => { const s = getComputedStyle(el); return `${s.outlineStyle} ${s.outlineWidth} ${s.outlineColor}`; });
+  const before = await look();
+  // Tab from the element just before the control lands on its checked radio.
+  await page.locator(".site-header > nav > ul a").last().focus();
+  await page.keyboard.press("Tab");
+  await expect(page.locator('.site-header > nav > fieldset input[value="system"]')).toBeFocused();
+  const after = await look();
+  expect(after).not.toBe(before);
+  expect(after).toMatch(/^solid 2px/);
+  // The theme cells are icon-only in the header: each says what it is.
+  for (const [v, t] of [["system", "System theme"], ["light", "Light theme"], ["dark", "Dark theme"]])
+    await expect(page.locator(`.site-header > nav > fieldset label[data-choice="${v}"]`)).toHaveAttribute("title", t);
   await ctx.close();
 });
 
