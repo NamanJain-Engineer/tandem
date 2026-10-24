@@ -2,7 +2,7 @@
 # Runs a release AppImage with a fresh home and NO network, then screenshots
 # the welcome screen and the first setup step into $OUT (default /tmp/smoke).
 #   xvfb-run -a -s "-screen 0 1440x900x24" sh scripts/agent/smoke-appimage.sh [AppImage]
-# Look at the PNGs: the welcome says "Free plan", Start opens setup. To go
+# Look at the PNGs: the welcome says "Free · no account · nothing sent to Vibezeo", Start opens setup. To go
 # further, run the app on a persistent display (Xvfb :77 &) and step through
 # with `xdotool mousemove X Y click 1` plus `ffmpeg -f x11grab` screenshots.
 set -u

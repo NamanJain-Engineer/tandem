@@ -78,14 +78,16 @@ describe("docs (F-WB-02)", () => {
     expect(html(<DOCS_COMPONENTS.PlatformMatrix />)).toContain("Linux");
   });
 
-  it("F-WB-02 plan limits come from the plan definitions the app enforces", () => {
-    const h = html(<DOCS_COMPONENTS.PlanLimitsTable />);
-    const row = (key: string) => h.match(new RegExp(`<tr data-limit="${key}">(.*?)</tr>`))?.[1] ?? "";
-    expect(row("panes")).toContain(`<td>${LIMITS.free.panes}</td>`);
-    expect(row("workspaces")).toContain(`<td>${LIMITS.free.workspaces}</td>`);
-    expect(row("threadGrid")).toContain(`<td>${LIMITS.free.threadGrid}</td>`);
-    expect(row("chatEngines")).toContain("<td>Claude Code, Codex</td>");
-    expect(readFileSync(content("accounts-and-limits"), "utf8")).toContain("<PlanLimitsTable />");
+  it("F-WB-02 the docs say nothing local is limited, matching LIMITS.free, and name no paid plan (D-869, D-2900)", () => {
+    expect(LIMITS.free).toMatchObject({ panes: null, workspaces: null, accountsPerEngine: null, chatEngines: null });
+    expect("PlanLimitsTable" in DOCS_COMPONENTS).toBe(false);
+    const limits = readFileSync(content("accounts-and-limits"), "utf8");
+    expect(limits).toContain("Nothing that runs on your computer is limited");
+    expect(limits).not.toContain("<PlanLimitsTable />");
+    for (const p of DOCS_PAGES) {
+      const mdx = readFileSync(content(p.slug), "utf8");
+      expect(mdx, p.slug).not.toMatch(/\bPro\b|Free plan|on Free\b|the next release/);
+    }
   });
 
   it("F-WB-02 Conductor's tools and settings come from the catalog the app and the API check calls against", () => {
@@ -154,10 +156,9 @@ describe("docs (F-WB-02)", () => {
     // Shipped: Agent mode since 0.4.0; Dictate, Tasks, Plugins and SSH workspaces since 0.5.0.
     for (const slug of ["agent-mode", "dictate", "tasks", "plugins", "routines", "remote", "conductor"])
       expect(readFileSync(content(slug), "utf8"), slug).not.toContain("Not in the app yet");
-    // Routines and Conductor are in the app but don't run in this download:
-    // routines switch on in the next release, and Conductor needs Vibezeo's
-    // servers (D-869).
-    expect(readFileSync(content("routines"), "utf8")).toContain("**In the next release.**");
+    // Routines run in this download, free (D-2900); Conductor needs Vibezeo's
+    // servers, so it comes with accounts (D-869).
+    expect(readFileSync(content("routines"), "utf8")).not.toContain("**In the next release.**");
     expect(readFileSync(content("conductor"), "utf8")).toContain("**Comes with Vibezeo accounts.**");
   });
 

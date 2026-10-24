@@ -25,16 +25,10 @@ pub async fn night_schedule(
     state: State<'_, AppState>,
     input: NightInput,
 ) -> Result<NightRun, IpcError> {
-    if !state.auth.is_signed_in() {
-        return Err(IpcError::new(
-            ErrorCode::Unauthenticated,
-            "Sign in to run tasks. Your tasks stay available offline.",
-        ));
-    }
     if !state.entitlements.limits().task_execution {
         return Err(IpcError::new(
             ErrorCode::ForbiddenPlan,
-            "Running tasks is part of Pro. You can still track tasks for free.",
+            "Running tasks is turned off for this account. You can still track tasks.",
         ));
     }
     if input.access == tandem_core::access::Access::Full && !input.full_confirmed {

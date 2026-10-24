@@ -1,7 +1,7 @@
 // The browser demo's task tracker (F-TK-03): tasks kept in the page, with the
 // app's rules for what a save, a comment, an archive and a restore change. It
 // starts empty, as a new install does, and nothing is saved anywhere. Running
-// a task is Pro, which the download (and so the demo) doesn't have.
+// a task needs your computer, so the demo says it works in the app (D-2905).
 import type {
   Issue,
   IssueStatus,

@@ -1,5 +1,5 @@
 import { $, browser } from "@wdio/globals";
-import { freshUser, invoke, mod, planFooter, setPlan } from "../support/app";
+import { freshUser, invoke, mod } from "../support/app";
 import { lead } from "../support/agents";
 
 type Routine = { id: string; nextRunAt: number | null; lastStatus: string | null };
@@ -29,9 +29,7 @@ async function save(name: string, teammateId: string, expr: string): Promise<Rou
 describe("E2E-M11-4 missed run", () => {
   before(async function () {
     this.timeout(180_000);
-    const { email } = await freshUser("m11-4");
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
+    await freshUser("m11-4");
   });
 
   it("F-RT-02.2 closed across the due time, reopened 2 h later: exactly one late run", async function () {

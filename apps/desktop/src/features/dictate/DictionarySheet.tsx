@@ -397,7 +397,7 @@ function ImportExport({ onChanged }: { onChanged: () => void }) {
 }
 
 /** UI-64: Words, Corrections, Review and Deleted, with the test box,
- * import/export and, on Pro, the opt-in sync (F-DI-09). */
+ * import/export and, with a Vibezeo account, the opt-in sync (F-DI-09). */
 export function DictionarySheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [rules, setRules] = useState<Rule[] | null>(null);
   const [tab, setTab] = useState<Tab>("words");

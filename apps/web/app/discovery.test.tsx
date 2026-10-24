@@ -9,7 +9,7 @@ import { GET as siteInfoGet } from "./api/v1/site-info.json/route.site";
 import { GET as openApiGet } from "./openapi.json/route.site";
 import { SITE_INFO_PATH, SiteInfoSchema, llmsFullTxt, llmsTxt, openApi, siteInfo } from "../lib/discovery";
 import { DOCS_PAGES } from "../lib/docs/pages";
-import { shortcutsTable, tableMarkdown } from "../lib/docs/tables";
+import { enginesTable, shortcutsTable, tableMarkdown } from "../lib/docs/tables";
 import { releaseAssets, releaseChecksums } from "../lib/manifest";
 import { DOWNLOADS, RELEASE } from "../lib/release";
 
@@ -24,13 +24,12 @@ describe("downloads and discovery (F-WB-04)", () => {
     expect(txt).not.toMatch(/\$\d|\bcredits?\b|per seat|\/pricing\//);
     for (const p of DOCS_PAGES)
       expect(txt).toContain(`[${p.title}](https://vibezeo.com/docs/${p.slug ? `${p.slug}/` : ""})`);
-    // In the app but not running in this release's download: routines switch on
-    // in the next release, and Conductor needs Vibezeo's servers.
-    for (const slug of ["routines", "conductor"])
-      expect(txt).toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*\\(Not in this release's download yet\\.\\)`));
+    // In the app but not running in this release's download: Conductor needs
+    // Vibezeo's servers. Routines run, free (D-2900).
+    expect(txt).toMatch(new RegExp(`/docs/conductor/\\): [^\\n]*\\(Not in this release's download yet\\.\\)`));
     for (const slug of ["thread-mode", "agent-mode", "dictate", "tasks", "plugins", "routines", "remote", "conductor"])
       expect(txt).not.toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*Not in the app yet`));
-    for (const slug of ["thread-mode", "agent-mode", "dictate", "tasks", "plugins", "remote"])
+    for (const slug of ["thread-mode", "agent-mode", "dictate", "tasks", "plugins", "remote", "routines"])
       expect(txt).not.toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*Not in this release`));
   });
 
@@ -39,7 +38,9 @@ describe("downloads and discovery (F-WB-04)", () => {
     expect(txt.startsWith(llmsTxt())).toBe(true);
     for (const p of DOCS_PAGES) expect(txt).toContain(`# ${p.title}\n`);
     expect(txt).toContain(tableMarkdown(shortcutsTable()));
-    expect(txt).toContain("| Thread mode engines | Claude Code, Codex |");
+    expect(txt).toContain(tableMarkdown(enginesTable()));
+    // No limits table: nothing local is limited (D-2900).
+    expect(txt).not.toContain("| Thread mode engines |");
     expect(txt).not.toMatch(/<[A-Z]\w* \/>/);
     expect(txt).not.toContain("](/");
   });

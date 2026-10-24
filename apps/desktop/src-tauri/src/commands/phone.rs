@@ -328,7 +328,7 @@ fn pairing_error(err: ApiError) -> IpcError {
             status: 403, code, ..
         } if code == "FORBIDDEN_PLAN" => IpcError::new(
             ErrorCode::ForbiddenPlan,
-            "Pairing a phone needs Vibezeo Pro.",
+            "Pairing through the Vibezeo relay comes with Vibezeo accounts. Pair over your local network instead.",
         ),
         ApiError::Http { status: 403, .. } => IpcError::new(
             ErrorCode::PermissionDenied,
@@ -502,7 +502,8 @@ fn org_forbids_phone(state: &AppState) -> bool {
     state.entitlements.policy().is_some_and(|p| p.disable_phone)
 }
 
-/// Settings › Remote › Pair a phone: through the hosted relay (Pro), or
+/// Settings › Remote › Pair a phone: through the hosted relay (comes with
+/// Vibezeo accounts), or
 /// with `via: "lan"` over the local network (F-RM-04; any plan, no account,
 /// LAN mode on).
 #[tauri::command]
@@ -543,7 +544,7 @@ pub async fn phone_pair_begin(
     if !state.entitlements.limits().phone {
         return Err(IpcError::new(
             ErrorCode::ForbiddenPlan,
-            "Pairing a phone needs Vibezeo Pro.",
+            "Pairing through the Vibezeo relay comes with Vibezeo accounts. Pair over your local network instead.",
         ));
     }
     state.phone.pair_begin().await

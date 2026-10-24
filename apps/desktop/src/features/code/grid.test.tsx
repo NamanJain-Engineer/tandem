@@ -356,15 +356,26 @@ describe("pane grid (F-CD-02)", () => {
     expect(screen.getAllByRole("button", { name: "Maximize pane" })).toHaveLength(2);
   });
 
-  it("F-CD-03 at the Free pane limit the picker shows the upgrade card and creates nothing", async () => {
-    const { calls } = core({ live: 4, panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
+  it("F-CD-03 with no account a fifth pane opens the picker: there's no pane limit (D-2900)", async () => {
+    core({ live: 4, panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
     useSession.setState({ entitlement: FREE_VIEW });
     renderCode();
     await waitFor(() => expect(paneEls()).toHaveLength(1));
     act(() => void useLayout.getState().requestSplit(TAB.id, "pn_a", "right"));
+    expect(await screen.findByTestId("tile-shell")).toBeTruthy();
+    expect(screen.queryByTestId("pane-limit")).toBeNull();
+  });
+
+  it("F-CD-03 at a pane limit the limits carry the picker shows the limit card, sells nothing and creates nothing", async () => {
+    const { calls } = core({ live: 4, panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
+    useSession.setState({ entitlement: { ...FREE_VIEW, limits: { ...FREE_VIEW.limits, panes: 4 } } });
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    act(() => void useLayout.getState().requestSplit(TAB.id, "pn_a", "right"));
     expect(await screen.findByTestId("pane-limit")).toBeTruthy();
-    expect(screen.getByText("Free includes 4 live panes")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "See plans" })).toBeTruthy();
+    expect(screen.getByText("This account runs up to 4 live panes")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "See plans" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Manage panes" })).toBeTruthy();
     expect(screen.queryByTestId("tile-shell")).toBeNull();
     expect(calls.filter((c) => c.cmd === "pane_create")).toHaveLength(0);
   });

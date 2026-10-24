@@ -4,7 +4,8 @@ import { $, browser } from "@wdio/globals";
 import { home, invoke, relaunch, resetToWelcome } from "../support/app";
 
 // Early-access builds (D-105): no hosted service yet. The welcome screen
-// offers only the local Free plan, sign-in is refused, and the app sends
+// says everything runs free with no account (D-869), the limits are the
+// unlocked local set (D-2900), sign-in is refused, and the app sends
 // nothing to the API. `--test-no-hosted` is the debug stand-in for a
 // release built with TANDEM_HOSTED=0.
 describe("EA-1 early-access build", () => {
@@ -18,15 +19,30 @@ describe("EA-1 early-access build", () => {
     await invoke("auth_sign_out");
   });
 
-  it("runs the Free plan locally, with no sign-in and nothing sent to the API", async () => {
+  it("runs free and unlimited locally, with no sign-in and nothing sent to the API", async () => {
     const before = size();
     await relaunch(["--test-no-hosted"]);
     await resetToWelcome();
-    await $("p=Free plan").waitForDisplayed({ timeout: 10_000 });
+    await $('[data-testid="signin-free"]').waitForDisplayed({ timeout: 10_000 });
+    expect(await $('[data-testid="signin-free"]').getText()).toBe(
+      "Free · no account · nothing sent to Vibezeo",
+    );
     expect(await $("button=Continue with Google").isExisting()).toBe(false);
 
     await $("button=Start using Vibezeo").click();
     await $('[data-testid="plan-footer"]').waitForExist({ timeout: 20_000 });
+    const { limits } = await invoke<{ limits: Record<string, unknown> }>("entitlement_get");
+    expect(limits).toMatchObject({
+      panes: null,
+      workspaces: null,
+      threadGrid: 6,
+      chatEngines: null,
+      routines: true,
+      taskExecution: true,
+      sessionSearch: true,
+      conductor: false,
+      cloudStt: false,
+    });
 
     let refused = "";
     await invoke("auth_sign_in").catch((e: Error) => {

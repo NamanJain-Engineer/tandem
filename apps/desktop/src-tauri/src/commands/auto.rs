@@ -36,9 +36,10 @@ fn ending(view: &AutoRunView) -> (NotificationKind, &'static str) {
         Some(AutoEndReason::OutOfCredits) => {
             (NotificationKind::Failed, "Auto stopped: out of credits")
         }
-        Some(AutoEndReason::NoSubscription) => {
-            (NotificationKind::Failed, "Auto stopped: it needs Pro")
-        }
+        Some(AutoEndReason::NoSubscription) => (
+            NotificationKind::Failed,
+            "Auto stopped: it comes with Vibezeo accounts",
+        ),
         Some(AutoEndReason::TurnedOff) => (
             NotificationKind::Failed,
             "Auto stopped: your organization turned it off",
@@ -179,7 +180,7 @@ pub async fn auto_start(
     if !state.entitlements.limits().auto {
         return Err(IpcError::new(
             ErrorCode::ForbiddenPlan,
-            "Auto needs Vibezeo Pro.",
+            "Auto comes with Vibezeo accounts.",
         ));
     }
     let consent = settings::get(&state.store, SettingKey::AutoConsent)

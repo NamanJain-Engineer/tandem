@@ -1,6 +1,6 @@
 //! "Create with AI" (F-AG-04, D-8): a description of the job becomes a
 //! name, a brief, a suggested engine and suggested plugins, from
-//! `/v1/ai/teammate-draft` (Pro, signed in, online; 10 credits). Nothing is
+//! `/v1/ai/teammate-draft` (hosted: a Vibezeo account, signed in, online). Nothing is
 //! saved: the sheet is prefilled for review. Offline or on Free the sheet
 //! offers the local templates instead (`TEMPLATES`).
 //!
@@ -122,7 +122,10 @@ pub fn api_error(e: &ApiError) -> IpcError {
             ErrorCode::CreditsExhausted,
             "You're out of credits for this month.",
         ),
-        Some(403) => IpcError::new(ErrorCode::ForbiddenPlan, "Create with AI is part of Pro."),
+        Some(403) => IpcError::new(
+            ErrorCode::ForbiddenPlan,
+            "Create with AI comes with Vibezeo accounts.",
+        ),
         Some(401) => IpcError::new(ErrorCode::Unauthenticated, "Sign in to draft with AI."),
         _ => IpcError::new(ErrorCode::Unavailable, COULDNT_DRAFT),
     }

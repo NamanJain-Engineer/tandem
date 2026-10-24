@@ -10,8 +10,9 @@ export const FORMATTING_MAX = 2_000;
 type Key = "dictate_quick_actions" | "dictate_auto_enhance" | "dictate_formatting" | "dictate_formatting_apps" | "dictate_enhance_disclosed";
 const save = (key: Key, value: unknown) => useSettings.getState().set(key, value);
 
-function usePro(): boolean {
-  return useSession((s) => (s.entitlement?.plan ?? "free") !== "free");
+/** Enhance is hosted: it comes with Vibezeo accounts (D-2903). */
+function useHosted(): boolean {
+  return useSession((s) => s.entitlement?.limits.enhance ?? false);
 }
 
 /** Shows F-DI-10's disclosure once, before the first text would be sent. */
@@ -37,31 +38,31 @@ function useDisclosure(): { ask: (then: () => void) => void; dialog: React.React
   };
 }
 
-/** Free plans see the controls disabled, with the reason (UI-62). */
-function ProGate({ children }: { children: React.ReactElement }) {
-  const pro = usePro();
+/** With no account the controls show disabled, with the reason (UI-62). */
+function HostedGate({ children }: { children: React.ReactElement }) {
+  const pro = useHosted();
   return pro ? children : <Tooltip label={t("dictate.enhance.needsPro")}><span className="inline-flex">{children}</span></Tooltip>;
 }
 
 /** "Show Enhance and Polish after each take". */
 export function QuickActionsControl({ label }: { label: string }) {
   const value = useSetting<boolean>("dictate_quick_actions", true);
-  const pro = usePro();
+  const pro = useHosted();
   return (
-    <ProGate>
+    <HostedGate>
       <Switch aria-label={label} checked={pro && value} disabled={!pro} onCheckedChange={(v) => void save("dictate_quick_actions", v)} />
-    </ProGate>
+    </HostedGate>
   );
 }
 
 /** "Enhance every take automatically": the disclosure comes first. */
 export function AutoEnhanceControl({ label }: { label: string }) {
   const value = useSetting<boolean>("dictate_auto_enhance", false);
-  const pro = usePro();
+  const pro = useHosted();
   const { ask, dialog } = useDisclosure();
   return (
     <>
-      <ProGate>
+      <HostedGate>
         <span data-testid="dictate-auto-enhance" className="inline-flex">
           <Switch
             aria-label={label}
@@ -70,7 +71,7 @@ export function AutoEnhanceControl({ label }: { label: string }) {
             onCheckedChange={(v) => (v ? ask(() => void save("dictate_auto_enhance", true)) : void save("dictate_auto_enhance", false))}
           />
         </span>
-      </ProGate>
+      </HostedGate>
       {dialog}
     </>
   );
@@ -79,7 +80,7 @@ export function AutoEnhanceControl({ label }: { label: string }) {
 /** "Formatting instructions" (≤2,000 characters) with "Per app…" overrides. */
 export function FormattingControl({ label }: { label: string }) {
   const saved = useSetting<string | null>("dictate_formatting", null);
-  const pro = usePro();
+  const pro = useHosted();
   const [text, setText] = useState(saved ?? "");
   const [perApp, setPerApp] = useState(false);
   const { ask, dialog } = useDisclosure();

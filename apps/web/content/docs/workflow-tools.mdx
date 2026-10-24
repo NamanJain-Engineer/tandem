@@ -36,7 +36,7 @@ The sidebar's **Ports** tab (from the **+** menu) lists TCP ports that processes
 Give the same prompt to two or three agents at once, each in its own worktree, then keep the best result.
 
 - **Start** with **Best of N…** in the command palette, in a local folder that's a git repository with at least one commit. Choose 2 or 3 agents (the same engine can appear twice) and, optionally, a check command such as `pnpm test`.
-- Each agent gets a worktree on its own `tandem/<name>` branch from the current commit and starts right away with the prompt; the worktrees appear under the folder in the rail. Uncommitted changes in your folder aren't in the worktrees. The agents count against your live panes (4 on Free); if they don't all fit, none is started.
+- Each agent gets a worktree on its own `tandem/<name>` branch from the current commit and starts right away with the prompt; the worktrees appear under the folder in the rail. Uncommitted changes in your folder aren't in the worktrees.
 - **Compare** (opens after Start, and from **Compare Best of N** in the palette) shows each agent's state, files changed and diff against the starting commit. **Run check** runs the check command in every worktree at once, for up to 10 minutes each, and shows passed or the exit code with the last 200 lines of output.
 - **Keep this one…** stops the agents, commits that agent's changes on its branch, merges it into your folder, and deletes the other worktrees and their uncommitted changes. Their branches stay. It refuses while your folder has uncommitted changes, and a merge conflict keeps every worktree. **Discard all…** deletes every worktree; branches stay.
 
@@ -60,7 +60,7 @@ Save prompts you reuse as Markdown files and drop them into any message box or p
 - **Open** shows the prompts and replies, read-only; tools appear by name only.
 - **Resume** opens an agent pane in the session's folder, adding the folder to the rail if it isn't there. It runs the engine's own resume (`claude --resume <id>`, `codex resume <id>`) with the session's account; a session from outside Vibezeo resumes as it does in your terminal. It's offered when the folder still exists and the engine is installed.
 - **Continue with another engine…** opens the handoff sheet with a summary written from the session's last messages, which you can edit before starting the other engine in the same folder.
-- **Search session text** is part of Pro and is off by default. Turn it on in **Settings › Privacy** to search what sessions say. Vibezeo then keeps an index of their prompts and replies on this computer, and sends nothing anywhere. Tokens and keys pasted into a session are blanked out before anything is shown or indexed. Turning it off deletes the index.
+- **Search session text** is free and off by default. Turn it on in **Settings › Privacy** to search what sessions say. Vibezeo then keeps an index of their prompts and replies on this computer, and sends nothing anywhere. Tokens and keys pasted into a session are blanked out before anything is shown or indexed. Turning it off deletes the index.
 
 ## Runaway guard
 

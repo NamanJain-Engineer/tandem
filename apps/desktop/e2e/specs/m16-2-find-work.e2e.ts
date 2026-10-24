@@ -6,14 +6,13 @@ import {
   invoke,
   mod,
   paneIds,
-  planFooter,
   sendToPane,
   setPlan,
   split,
   typeKeys,
   waitForPaneText,
 } from "../support/app";
-import { entitlement, testRoute } from "../support/hosted";
+import { entitlement, testRoute, waitForEntitlement } from "../support/hosted";
 
 const pane = (id: string) => `[data-testid="pane"][data-pane-id="${id}"]`;
 const attr = async (id: string, name: string) => $(pane(id)).getAttribute(name);
@@ -116,10 +115,7 @@ describe("E2E-M16-2 find work", () => {
     const { email } = await freshUser("m16-2");
     await setPlan(email, "pro");
     await testRoute("credits", { email, monthly: 1_000, purchased: 0 });
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), {
-      timeout: 20_000,
-      timeoutMsg: "the plan never showed Pro",
-    });
+    await waitForEntitlement((e) => e.plan === "pro", "an account that carries the hosted ranking", 20_000);
     await browser.waitUntil(async () => ((await entitlement()).credits?.monthly ?? 0) === 1_000, {
       timeout: 20_000,
       timeoutMsg: "the credits never arrived",

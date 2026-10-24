@@ -362,7 +362,7 @@ function Card({ card, onOpen, onConnect }: { card: PluginCard; onOpen: () => voi
             data-testid={`plugin-connect-${card.pluginId}`}
             aria-label={t("plugins.connectTo", { plugin: card.label })}
           >
-            {card.limitReached && !off ? t("plugins.pro") : t("plugins.connect")}
+            {card.limitReached && !off ? t("plugins.atLimit") : t("plugins.connect")}
           </Button>
         </div>
       )}

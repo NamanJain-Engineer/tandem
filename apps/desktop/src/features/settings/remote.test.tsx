@@ -61,16 +61,20 @@ beforeEach(() => resetStores());
 afterEach(() => setInvokeBackend(null));
 
 describe("F-RM-03 Settings › Remote", () => {
-  it("F-RM-03 empty: no phones, and Pair a phone is offered on Pro", async () => {
+  it("F-RM-03 empty: no phones, and Pair a phone is offered with an account that carries the relay", async () => {
     setup();
     expect(await screen.findByText("No phones are paired")).toBeTruthy();
     expect((screen.getByTestId("remote-pair") as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("F-RM-03 the Free plan and an org policy keep pairing off", async () => {
+  it("F-RM-03 no relay in the limits and an org policy keep relay pairing off", async () => {
     setup();
     act(() => useSession.setState({ entitlement: FREE_VIEW }));
-    expect(await screen.findByText("Pairing a phone is included with Pro.")).toBeTruthy();
+    expect(
+      await screen.findByText(
+        "Pairing through the Vibezeo relay comes with Vibezeo accounts. Pair over your local network below.",
+      ),
+    ).toBeTruthy();
     expect((screen.getByTestId("remote-pair") as HTMLButtonElement).disabled).toBe(true);
     act(() =>
       useSession.setState({
@@ -87,7 +91,7 @@ describe("F-RM-03 Settings › Remote", () => {
     );
     expect(
       await screen.findByText(
-        "Pairing through the Vibezeo relay is part of Pro. Pro and Team start with Vibezeo accounts. This build runs the Free plan: pair over your local network below.",
+        "Pairing through the Vibezeo relay comes with Vibezeo accounts. Pair over your local network below: it needs no account.",
       ),
     ).toBeTruthy();
     expect(screen.queryByText("Sign in to pair a phone.")).toBeNull();

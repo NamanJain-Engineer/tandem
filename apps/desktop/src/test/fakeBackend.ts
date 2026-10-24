@@ -9,6 +9,7 @@ import { useEngines } from "../stores/engines";
 import { useContexts } from "../stores/contexts";
 import { useUsage } from "../stores/usage";
 import type { AppBoot, AuthState, EntitlementView, Limits, WorkspaceSummary } from "@tandem/protocol";
+import { LIMITS } from "@tandem/protocol/plans";
 import { setInvokeBackend } from "../ipc/invoke";
 import { useDictate } from "../stores/dictate";
 import { useBoot } from "../features/shell/useBoot";
@@ -26,27 +27,8 @@ import { resetTasks } from "../stores/tasks";
 import { resetRoutines } from "../stores/routines";
 import { useWorkspaces } from "../stores/workspaces";
 
-export const FREE: Limits = {
-  panes: 4,
-  workspaces: 3,
-  threadGrid: 1,
-  teammates: 1,
-  routines: false,
-  backgroundRoutines: false,
-  taskExecution: false,
-  pluginConnections: 1,
-  accountsPerEngine: 1,
-  cloudStt: false,
-  enhance: false,
-  conductor: false,
-  auto: false,
-  phone: false,
-  admin: false,
-  chatEngines: ["claude", "codex"],
-  creditPacks: false,
-  dictionarySync: false,
-  sessionSearch: false,
-};
+/** What runs with no account (D-869, D-2900): the protocol's own `LIMITS.free`. */
+export const FREE: Limits = { ...LIMITS.free };
 
 export const BOOT: AppBoot = {
   version: "0.1.0",
@@ -142,7 +124,6 @@ export function resetStores(): void {
     railCollapsed: false,
     paletteOpen: false,
     cheatsheetOpen: false,
-    upgrade: { open: false },
     settingsPage: null,
   });
   useWorkspaces.setState({ list: [], activeId: null, activeTab: {} });

@@ -13,7 +13,6 @@ import { useEngines } from "../../stores/engines";
 import { useThreads } from "../../stores/threads";
 import { useWorkspaces } from "../../stores/workspaces";
 import { useSession } from "../../stores/session";
-import { useUi } from "../../stores/ui";
 import { FREE, FREE_VIEW, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { referencedFiles } from "./ChangesPanel";
 import type { Row, ToolEvent } from "./rows";
@@ -460,7 +459,7 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     ]);
   });
 
-  it("F-TH-14.1 threads dropped from the rail show side by side, up to 6; Free shows 1", async () => {
+  it("F-TH-14.1 threads dropped from the rail show side by side, up to 6 with no account; a smaller limit shows fewer", async () => {
     const threads = Array.from({ length: 7 }, (_, i) => thread({ title: `Grid ${i}` }));
     const calls: Call[] = fakeBackend({
       thread_list: () => threads,
@@ -470,7 +469,8 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
       models_list: () => [],
       settings_set: () => null,
     });
-    act(() => useSession.setState({ entitlement: { ...FREE_VIEW, limits: { ...FREE, threadGrid: 6 } } }));
+    // No account: six side by side (D-2900).
+    expect(FREE.threadGrid).toBe(6);
     await act(async () => {
       await useThreads.getState().refresh();
       useThreads.getState().select(threads[0]?.id ?? null);
@@ -511,15 +511,15 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     fireEvent.click(within(cells[4] as HTMLElement).getByTestId("grid-close"));
     await waitFor(() => expect(screen.getAllByTestId("grid-cell")).toHaveLength(5));
 
-    // Free: a second thread stays in the list.
+    // Limits of one thread: a second thread stays in the list, and nothing is sold.
     act(() => {
       useThreads.getState().removeFromGrid(threads[1]?.id ?? "");
       for (const th of threads.slice(2, 6)) useThreads.getState().removeFromGrid(th.id);
-      useSession.setState({ entitlement: FREE_VIEW });
+      useSession.setState({ entitlement: { ...FREE_VIEW, limits: { ...FREE, threadGrid: 1 } } });
     });
     expect(screen.queryAllByTestId("grid-cell")).toHaveLength(0);
     act(() => drop(threads[6]?.id ?? ""));
-    expect(await screen.findByText("Free shows 1 thread at a time")).toBeTruthy();
+    expect(await screen.findByText("This account shows 1 thread at a time")).toBeTruthy();
     expect(screen.queryAllByTestId("grid-cell")).toHaveLength(0);
   });
 
@@ -646,31 +646,34 @@ const chatEngine = (id: string, label: string, logo: string): EngineView => ({
 const CODEX = chatEngine("codex", "Codex", "CX");
 const OPENCODE = chatEngine("opencode", "OpenCode", "OC");
 const GROK = chatEngine("grok", "Grok", "GK");
-const PRO_VIEW = { ...FREE_VIEW, plan: "pro" as const, limits: { ...FREE, chatEngines: null } };
+/** A signed token that lists only Claude Code and Codex (none does with no account). */
+const LISTED_VIEW = { ...FREE_VIEW, limits: { ...FREE, chatEngines: ["claude", "codex"] } };
 
-describe("Free plan chat engines (F-TH-06, PRODUCT_SPEC §3.2)", () => {
+describe("Chat engines in Thread mode (F-TH-06, D-2900)", () => {
   beforeEach(() => {
     resetStores();
     n = 0;
     useEngines.setState({ list: [CLAUDE, CODEX, OPENCODE, GROK], loaded: true });
   });
 
-  it("F-TH-06 on Free the engine picker enables Claude Code and Codex; the others show Pro", () => {
-    const options = engineOptionsFor([CLAUDE, CODEX, OPENCODE, GROK], FREE.chatEngines);
+  it("F-TH-06 limits that list chat engines enable only those; the others say so, without a plan", () => {
+    const options = engineOptionsFor([CLAUDE, CODEX, OPENCODE, GROK], LISTED_VIEW.limits.chatEngines);
     expect(options.map((o) => [o.value, Boolean(o.disabled), o.disabledReason ?? null])).toEqual([
       ["claude", false, null],
       ["codex", false, null],
-      ["opencode", true, "Pro"],
-      ["grok", true, "Pro"],
+      ["opencode", true, "Not available to threads here"],
+      ["grok", true, "Not available to threads here"],
     ]);
   });
 
-  it("F-TH-06 on Pro every chat engine is enabled", () => {
-    const options = engineOptionsFor([CLAUDE, CODEX, OPENCODE, GROK], null);
+  it("F-TH-06 with no account every chat engine is enabled (D-2900)", () => {
+    expect(FREE.chatEngines).toBeNull();
+    const options = engineOptionsFor([CLAUDE, CODEX, OPENCODE, GROK], FREE.chatEngines);
     expect(options.every((o) => !o.disabled)).toBe(true);
   });
 
-  it("F-TH-06 a thread on a Pro-only engine shows the Free gate; See plans opens the plans", async () => {
+  it("F-TH-06 a thread on an engine the limits leave out shows the gate, with no plans to open", async () => {
+    useSession.setState({ entitlement: LISTED_VIEW });
     const th = thread({ engineId: "opencode" });
     fakeBackend({
       thread_list: () => [th],
@@ -678,6 +681,7 @@ describe("Free plan chat engines (F-TH-06, PRODUCT_SPEC §3.2)", () => {
       thread_events: () => ({ items: [], nextBeforeId: null }),
       thread_subscribe: () => null,
       models_list: () => [],
+      entitlement_get: () => LISTED_VIEW,
     });
     await act(async () => {
       await useThreads.getState().refresh();
@@ -685,14 +689,13 @@ describe("Free plan chat engines (F-TH-06, PRODUCT_SPEC §3.2)", () => {
     });
     mount(<ThreadMain />);
     const gate = await screen.findByTestId("thread-engine-gate");
-    expect(gate.textContent).toContain("Free threads run Claude Code and Codex");
-    expect(gate.textContent).toContain("OpenCode needs Pro");
-    fireEvent.click(within(gate).getByRole("button", { name: "See plans" }));
-    expect(useUi.getState().upgrade).toMatchObject({ open: true, gate: { kind: "chat_engines" } });
+    expect(gate.textContent).toContain("This engine isn't available to threads here");
+    expect(gate.textContent).toContain("This thread stays readable");
+    expect(within(gate).queryByRole("button")).toBeNull();
+    expect(gate.textContent).not.toMatch(/\bPro\b|plans?\b/);
   });
 
-  it("F-TH-06 on Pro the same thread shows no gate", async () => {
-    useSession.setState({ entitlement: PRO_VIEW });
+  it("F-TH-06 with no account the same thread shows no gate", async () => {
     const th = thread({ engineId: "opencode" });
     fakeBackend({
       thread_list: () => [th],
@@ -700,7 +703,6 @@ describe("Free plan chat engines (F-TH-06, PRODUCT_SPEC §3.2)", () => {
       thread_events: () => ({ items: [], nextBeforeId: null }),
       thread_subscribe: () => null,
       models_list: () => [],
-      entitlement_get: () => PRO_VIEW,
     });
     await act(async () => {
       await useThreads.getState().refresh();
