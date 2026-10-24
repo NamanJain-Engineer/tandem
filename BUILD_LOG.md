@@ -26,6 +26,11 @@
   - the full desktop E2E, 145 of 145 spec files in five chunks (36 minutes);
   - the .rpm on clean Fedora 42, 43 and 44 (images from Fedora's registry);
   - the AppImage smoke test offline (the welcome says "Free plan", setup lists all 13 engines);
+  - the site from a fresh clone of c5b98702, D-869 included:
+    - `build:site` with `strip-runtime` and `check-routes`: 49 pages, no redirects;
+    - web vitest 114/114 and site Playwright 25/25;
+    - Lighthouse CI on seven URLs, every assertion passing with no warnings (99 or 100 in every category, LCP at most 1.88 s, CLS at most 0.001);
+    - the demo walkthrough.
   Deploying is merging `product-m0-m5` into `main` (OPERATING §7).
 - Blog (F-WB-06, built under M15 and owned by "M17 · Blog", D-853; D-1850 to D-1864): `/blog/` with posts as files in `apps/web/content/blog`, tag pages and an Atom feed, batched in `chain22` and deployed to vibezeo.com from `main` (D-851). Publishing a post is `docs/BLOG.md` §3. See "M15 · F-WB-06 Blog".
 - Website redesign (M15, D-1800 to D-1815): phases 1–4 and 6 of `docs/WEBSITE_BRIEF.md` (`docs-briefs`) are merged with the `chain4` batch: OS light and dark themes, marketing type, the new home page, Pricing, Download, Changelog, the inner pages and the docs, and the performance phase (marketing pages ship no framework JavaScript, D-1813; Lighthouse at 0.95 on five URLs). They reach vibezeo.com with the next release. The signed-in captures of phase 5 wait on the owner (`HUMAN_TODO.md`). See "M15 · Website redesign".
@@ -1055,6 +1060,12 @@ Built by the session that coordinates the parallel milestone sessions, while the
     - `Vibezeo_0.9.0_amd64.deb` (SHA-256 `7c711289…2e1883`) and `Vibezeo-0.9.0-1.x86_64.rpm` (`0e82217f…865df0`) are 54.1 MB each.
     - The .rpm installed, found every library and started on clean Fedora 42, 43 and 44.
     - The AppImage passed the offline smoke test: the welcome says "Free plan", and setup lists all 13 engines.
+  - The site, from a fresh clone of c5b98702 (D-869 included):
+    - `build:site` with `strip-runtime` and `check-routes`: 49 pages, one fewer without `/pricing/`, no redirects;
+    - web vitest 114/114 and site Playwright 25/25;
+    - Lighthouse CI on seven URLs, with `/about/` in place of `/pricing/`: every assertion passing with no warnings, `/` and a blog post at 99 for performance (LCP 1.88 s and 1.81 s), 100 everywhere else;
+    - the demo walkthrough.
+    The run before D-869, on 4ba32cd9, passed the same checks with 50 pages. The only change after c5b98702 is the download page's "Start using Vibezeo" step (b435a107), and web vitest passed again on it.
 
 ## M16 · F-AC-07 Usage dashboard
 Built on branch `m16-usage-dashboard` (from `product-m0-m5`) by the M13 session as part of its follow-on chain. Decisions come from the M13 range (D-600–D-699).
