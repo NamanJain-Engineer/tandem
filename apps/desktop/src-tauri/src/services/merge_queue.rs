@@ -719,6 +719,12 @@ async fn drive(
         // 2. The check, in the worktree.
         if let Some(command) = &check {
             step(key, i, |s| s.state = LandingStepState::Checking);
+            // One check at a time, with Best of N's and the review queue's
+            // (F-EX-06).
+            let _turn = crate::services::check_queue::turn().await;
+            if stopping() {
+                return halt(key, i, LandingStepState::Stopped, None);
+            }
             let (exit, out) = run_check(
                 command,
                 &lane.root,

@@ -1199,6 +1199,12 @@ pub fn run() {
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
                     crate::services::check_queue::set(on);
+                    governed
+                        .state::<AppState>()
+                        .terminals
+                        .resources
+                        .thaw_leftovers()
+                        .await;
                     loop {
                         let state = governed.state::<AppState>();
                         state.terminals.resources.watch(&state.terminals.pty).await;

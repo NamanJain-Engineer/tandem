@@ -13,11 +13,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::services::terminal::TerminalService;
 use tandem_core::ids::{TabId, WorkspaceId};
 use tandem_core::{DataDir, ErrorCode, IpcError};
 use tandem_git::{ForceConfirm, Git, GitError, LaneManager, MergeReport, Repo, StaleLane};
 use tandem_pty::env::{resolve_on_path, LoginEnv};
-use tandem_pty::PtyManager;
 use tandem_store::repo::panes::{self, PaneRecord};
 use tandem_store::repo::tabs;
 use tandem_store::repo::workspaces::{self, NewLane, Workspace};
@@ -404,10 +404,14 @@ pub async fn create_pr_pane(
 }
 
 /// Stops every open pane in a workspace's tabs.
-pub async fn stop_panes(store: &Store, pty: &PtyManager, ws: &WorkspaceId) -> Result<(), IpcError> {
+pub async fn stop_panes(
+    store: &Store,
+    terms: &TerminalService,
+    ws: &WorkspaceId,
+) -> Result<(), IpcError> {
     for tab in tabs::list(store, ws).await? {
         for pane in panes::list_open(store, &tab.id).await? {
-            let _ = pty.kill(pane.id.as_str());
+            let _ = terms.end_pane(pane.id.as_str()).await;
             panes::close(store, &pane.id).await?;
         }
     }
@@ -420,12 +424,12 @@ pub async fn stop_panes(store: &Store, pty: &PtyManager, ws: &WorkspaceId) -> Re
 /// changes go. Either way the branch and its commits stay.
 pub async fn remove(
     store: &Store,
-    pty: &PtyManager,
+    terms: &TerminalService,
     git: &Git,
     id: &WorkspaceId,
     force: Option<ForceConfirm>,
 ) -> Result<(), IpcError> {
-    remove_with_teardown(store, pty, git, id, force, None)
+    remove_with_teardown(store, terms, git, id, force, None)
         .await
         .map(|_| ())
 }
@@ -435,7 +439,7 @@ pub async fn remove(
 /// result never blocks the removal.
 pub async fn remove_with_teardown(
     store: &Store,
-    pty: &PtyManager,
+    terms: &TerminalService,
     git: &Git,
     id: &WorkspaceId,
     force: Option<ForceConfirm>,
@@ -463,7 +467,7 @@ pub async fn remove_with_teardown(
                 );
             }
         }
-        stop_panes(store, pty, &lane.id).await?;
+        stop_panes(store, terms, &lane.id).await?;
         remote
             .call::<serde_json::Value>(
                 &host,
@@ -493,7 +497,7 @@ pub async fn remove_with_teardown(
             }
         }
     }
-    stop_panes(store, pty, &lane.id).await?;
+    stop_panes(store, terms, &lane.id).await?;
     let mut report = RemoveReport::default();
     if let Some((data, login)) = teardown {
         // F-WT-06: the teardown sees the worktree's variables.
@@ -660,6 +664,7 @@ mod tests {
     use super::*;
     use std::process::Command;
     use tandem_core::origin::{LocalReview, Origin};
+    use tandem_pty::PtyManager;
 
     /// Plain git for fixtures, with no global or system config.
     fn git_cmd(cwd: &Path, args: &[&str]) -> String {
@@ -797,7 +802,8 @@ mod tests {
             .await
             .expect("lane");
         std::fs::write(Path::new(&lane.root).join("wip.txt"), "draft\n").expect("dirty");
-        let err = remove(&fx.store, &PtyManager::new(), &fx.git, &lane.id, None)
+        let terms = TerminalService::new(PtyManager::new(), fx.store.clone());
+        let err = remove(&fx.store, &terms, &fx.git, &lane.id, None)
             .await
             .expect_err("dirty");
         assert_eq!(err.code, ErrorCode::Conflict);
@@ -810,7 +816,7 @@ mod tests {
         let local = LocalReview::check(&Origin::main_window()).expect("main window");
         remove(
             &fx.store,
-            &PtyManager::new(),
+            &terms,
             &fx.git,
             &lane.id,
             Some(ForceConfirm::new(local)),

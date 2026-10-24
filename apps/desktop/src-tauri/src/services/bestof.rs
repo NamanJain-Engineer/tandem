@@ -830,7 +830,7 @@ pub async fn keep(
         if let Some(l) = &lane.lane_id {
             lanes::stop_panes(
                 &state.store,
-                &state.terminals.pty,
+                &state.terminals,
                 &WorkspaceId::from_db(l.clone()),
             )
             .await?;
@@ -897,7 +897,7 @@ pub async fn keep(
         if let Some(l) = &lane.lane_id {
             if let Err(e) = lanes::remove(
                 &state.store,
-                &state.terminals.pty,
+                &state.terminals,
                 &git,
                 &WorkspaceId::from_db(l.clone()),
                 Some(force(origin)?),
@@ -926,7 +926,7 @@ pub async fn discard(state: &AppState, origin: &Origin, id: &str) -> Result<(), 
             if workspaces::get(&state.store, &lane_id).await.is_ok() {
                 lanes::remove(
                     &state.store,
-                    &state.terminals.pty,
+                    &state.terminals,
                     &git,
                     &lane_id,
                     Some(force(origin)?),

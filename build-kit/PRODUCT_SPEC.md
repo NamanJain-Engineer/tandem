@@ -3397,7 +3397,7 @@ Features beyond the original spec that make working with coding agents faster, s
 **Story:** I run four or five agents at once, and their builds and tests can bring my laptop to a halt. I want to see which pane is eating the CPU and memory, cap an agent before it takes the whole machine, put one on ice for a while, and keep checks from all running at once.
 
 **Behavior:**
-- **Resource groups:** on Linux with a systemd user session, each local agent pane's process tree (its shell, the engine and everything they start) runs in its own systemd user scope, `vibezeo-pane-<pane>-<n>.scope`, made as soon as the pane starts. Plain terminal panes, SSH and WSL panes aren't placed. Without a systemd user session (or on macOS and Windows), panes run as before and are only measured.
+- **Resource groups:** on Linux with a systemd user session, each local agent pane's process tree (its shell, the engine and everything they start) runs in its own systemd user scope, `vibezeo-pane-<pane>-<launch>-<n>.scope`, made as soon as the pane starts; children it started by then go in with it, and any that start while the scope is made follow. Plain terminal panes, SSH and WSL panes aren't placed. Without a systemd user session (or on macOS and Windows), panes run as before and are only measured.
   - A pane whose scope can't be made starts anyway, unplaced. With a memory cap set, its header says "Not capped" with the reason.
 - **Usage:** each live local pane's CPU (percent of one core, so 250% is two and a half cores busy) and memory: the scope's own counters when it has one, else the sum over the pane's process tree.
   - The **Ports** tab gets a **Panes** section above its ports: one row per pane with its name and workspace, "CPU 12%", "840 MB" (or "840 MB of 1 GB" under a cap), its state and **Freeze**/**Thaw**, grouped by worktree as the ports are. States: loading, error ("Couldn't read pane usage." [Retry]), empty ("No panes running"), populated.
@@ -3411,7 +3411,7 @@ Features beyond the original spec that make working with coding agents faster, s
 - Nothing here leaves the machine; nothing new is stored on disk (scopes, readings and frozen states live only while the app runs).
 
 **Acceptance:**
-1. On Linux with a systemd user session, an agent pane's processes are in the scope `vibezeo-pane-<pane>-<n>.scope`, and its CPU and memory show in the Ports tab's Panes section and on its Dashboard card within 3 s.
+1. On Linux with a systemd user session, an agent pane's processes are in the scope `vibezeo-pane-<pane>-<launch>-<n>.scope`, and its CPU and memory show in the Ports tab's Panes section and on its Dashboard card within 3 s.
 2. Without a systemd user session, the same numbers come from the pane's process tree, panes start as before, and "Memory cap per agent" says why it's unavailable and can't be turned on.
 3. With a 512 MB cap, a process in an agent pane that allocates 1 GB is ended, the pane shows "Stopped: memory cap 512 MB", and the pane's shell and the other panes keep running.
 4. Freeze stops every process in the pane (no CPU used, the pane's shell doesn't take the terminal back) and Thaw resumes them, with or without a scope.

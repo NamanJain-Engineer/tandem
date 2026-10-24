@@ -137,7 +137,7 @@ pub async fn workspace_rename(
 
 #[tauri::command]
 pub async fn workspace_remove(state: State<'_, AppState>, id: WorkspaceId) -> Result<(), IpcError> {
-    workspaces::remove(&state.store, &state.terminals.pty, &id).await
+    workspaces::remove(&state.store, &state.terminals, &id).await
 }
 
 /// Points a workspace at its folder's new location ("Locate…", F-SH-03).
@@ -248,7 +248,7 @@ pub async fn tab_rename(
 #[tauri::command]
 pub async fn tab_close(state: State<'_, AppState>, id: TabId) -> Result<(), IpcError> {
     for pane in tandem_store::repo::panes::list_open(&state.store, &id).await? {
-        let _ = state.terminals.pty.kill(pane.id.as_str());
+        let _ = state.terminals.end_pane(pane.id.as_str()).await;
         tandem_store::repo::panes::close(&state.store, &pane.id).await?;
     }
     Ok(tabs::close(&state.store, &id).await?)

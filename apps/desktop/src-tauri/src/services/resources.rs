@@ -113,11 +113,24 @@ pub fn cap_bytes(value: &serde_json::Value) -> Option<u64> {
     Some(mb << 20)
 }
 
+/// A pane's process tree, its root first.
+pub type TreeReader = dyn Fn(u32) -> Vec<u32> + Send + Sync;
+
+fn read_tree(pid: u32) -> Vec<u32> {
+    governor::tree_usage(&[(String::new(), pid)])
+        .remove("")
+        .map(|t| t.pids)
+        .unwrap_or_default()
+}
+
 pub struct ResourcesService {
     store: Store,
     bus: EventBus,
     groups: tokio::sync::OnceCell<Arc<dyn ResourceGroups>>,
     control: Arc<dyn ProcessControl>,
+    tree: Arc<TreeReader>,
+    /// This launch's tag in unit names (a previous launch's scopes differ).
+    launch: String,
     /// Where process groups are read (Linux; a different root in tests).
     proc_root: PathBuf,
     next: AtomicU64,
@@ -147,6 +160,8 @@ impl ResourcesService {
             bus,
             groups: tokio::sync::OnceCell::new(),
             control,
+            tree: Arc::new(read_tree),
+            launch: governor::launch_tag(),
             proc_root: PathBuf::from("/proc"),
             next: AtomicU64::new(1),
             placed: Mutex::default(),
@@ -163,9 +178,41 @@ impl ResourcesService {
         groups: Arc<dyn ResourceGroups>,
         control: Arc<dyn ProcessControl>,
     ) -> Arc<Self> {
-        let svc = Self::build(store, bus, control);
+        Arc::new(Self::fixed(
+            store,
+            bus,
+            groups,
+            control,
+            Arc::new(read_tree),
+        ))
+    }
+
+    /// With fixed groups, signals and process trees (tests).
+    pub fn fixed(
+        store: Store,
+        bus: EventBus,
+        groups: Arc<dyn ResourceGroups>,
+        control: Arc<dyn ProcessControl>,
+        tree: Arc<TreeReader>,
+    ) -> Self {
+        let mut svc = Self::build(store, bus, control);
+        svc.tree = tree;
         let _ = svc.groups.set(groups);
-        Arc::new(svc)
+        svc
+    }
+
+    /// No scopes and no freezing: what tests of other services get, so
+    /// they never make real scopes.
+    pub fn inert(store: Store, bus: EventBus) -> Arc<Self> {
+        Self::with_parts(
+            store,
+            bus,
+            Arc::new(governor::Unplaced {
+                reason: governor::NOT_YET.to_string(),
+                freezing: false,
+            }),
+            Arc::new(tandem_pty::suspend::SignalControl),
+        )
     }
 
     /// The platform's groups, detected once (it asks the user manager).
@@ -238,11 +285,32 @@ impl ResourcesService {
             }
             return;
         }
-        let unit = governor::unit_name(pane, self.next.fetch_add(1, Ordering::Relaxed));
-        let (u, p) = (unit.clone(), pane.to_string());
-        let placed = tokio::task::spawn_blocking(move || groups.place(&u, &p, &[pid], cap))
-            .await
-            .unwrap_or_else(|e| Err(GovernorError::Failed(e.to_string())));
+        let unit = governor::unit_name(
+            pane,
+            &self.launch,
+            self.next.fetch_add(1, Ordering::Relaxed),
+        );
+        let (u, p, tree) = (unit.clone(), pane.to_string(), self.tree.clone());
+        // The whole tree goes in, and any child that started while the scope
+        // was made follows it.
+        let placed = tokio::task::spawn_blocking(move || {
+            let mut pids = tree(pid);
+            if pids.first() != Some(&pid) {
+                pids.retain(|&p| p != pid);
+                pids.insert(0, pid);
+            }
+            groups.place(&u, &p, &pids, cap)?;
+            let late: Vec<u32> = tree(pid)
+                .into_iter()
+                .filter(|p| !pids.contains(p))
+                .collect();
+            if let Err(e) = groups.attach(&u, &late) {
+                tracing::warn!(code = "resources.attach_failed", error = %e, "late children stay outside the scope");
+            }
+            Ok(())
+        })
+        .await
+        .unwrap_or_else(|e| Err(GovernorError::Failed(e.to_string())));
         match placed {
             Ok(()) => {
                 tracing::info!(
@@ -273,29 +341,69 @@ impl ResourcesService {
     }
 
     /// The pane is gone, or starts again: thaw it if it's frozen, and drop
-    /// its scope, readings and chip.
-    pub async fn forget(&self, pane: &str) {
+    /// its readings and chip. Its scope, if it had one, is returned for
+    /// [`Self::stop_scope`] once its processes are killed.
+    pub async fn forget(&self, pane: &str) -> Option<String> {
         let frozen = lock(&self.frozen).remove(pane);
         if let Some(f) = frozen {
-            self.thaw_with(f).await;
+            if let Err(e) = self.thaw_with(&f).await {
+                // Stopping the scope ends it frozen or not.
+                tracing::warn!(code = "resources.thaw_failed", error = %e, "closing a frozen pane");
+            }
         }
-        lock(&self.placed).remove(pane);
+        let unit = lock(&self.placed).remove(pane).map(|p| p.unit);
         lock(&self.samples).remove(pane);
         self.note(PaneResources::clear(pane));
+        unit
     }
 
-    async fn thaw_with(&self, frozen: Frozen) {
+    /// Ends a closed pane's scope and anything that outlived its kill.
+    pub async fn stop_scope(&self, unit: String) {
+        let groups = self.groups().await;
+        let stopped = tokio::task::spawn_blocking(move || groups.stop(&unit))
+            .await
+            .unwrap_or_else(|e| Err(GovernorError::Failed(e.to_string())));
+        if let Err(e) = stopped {
+            tracing::debug!(code = "resources.stop_failed", error = %e, "scope already gone");
+        }
+    }
+
+    /// At start: scopes an earlier launch left (it quit while a pane was
+    /// frozen) are thawed, so their processes see the hangup and end.
+    pub async fn thaw_leftovers(&self) {
+        let groups = self.groups().await;
+        let tag = format!("-{}-", self.launch);
+        let _ = tokio::task::spawn_blocking(move || {
+            for unit in groups.leftovers() {
+                if unit.contains(&tag) {
+                    continue;
+                }
+                if groups.thaw(&unit).is_ok() {
+                    tracing::info!(
+                        code = "resources.leftover_thawed",
+                        "an earlier launch's scope"
+                    );
+                }
+            }
+        })
+        .await;
+    }
+
+    async fn thaw_with(&self, frozen: &Frozen) -> Result<(), String> {
         match frozen {
             Frozen::Scope(unit) => {
-                let groups = self.groups().await;
-                let _ = tokio::task::spawn_blocking(move || groups.thaw(&unit)).await;
+                let (groups, unit) = (self.groups().await, unit.clone());
+                tokio::task::spawn_blocking(move || groups.thaw(&unit))
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| e.to_string())
             }
             Frozen::Signals(tree) => {
-                let control = self.control.clone();
-                let _ = tokio::task::spawn_blocking(move || {
-                    governor::thaw_tree(control.as_ref(), &tree)
-                })
-                .await;
+                let (control, tree) = (self.control.clone(), tree.clone());
+                tokio::task::spawn_blocking(move || governor::thaw_tree(control.as_ref(), &tree))
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| e.to_string())
             }
         }
     }
@@ -454,12 +562,20 @@ impl ResourcesService {
         Ok(())
     }
 
-    /// `resources_thaw`.
+    /// `resources_thaw`. When thawing fails the pane stays frozen, and says
+    /// so.
     pub async fn thaw(&self, pane: &str) -> Result<(), IpcError> {
         let frozen = lock(&self.frozen).remove(pane).ok_or_else(|| {
             IpcError::new(ErrorCode::Conflict, NOT_FROZEN).with_stage("resources")
         })?;
-        self.thaw_with(frozen).await;
+        if let Err(e) = self.thaw_with(&frozen).await {
+            lock(&self.frozen).insert(pane.to_string(), frozen);
+            return Err(IpcError::new(
+                ErrorCode::Unavailable,
+                format!("Couldn't thaw this pane: {e}"),
+            )
+            .with_stage("resources"));
+        }
         tracing::info!(code = "resources.thawed", "pane thawed");
         self.note(PaneResources {
             frozen: false,
@@ -527,7 +643,7 @@ fn process_groups(proc_root: &std::path::Path, pids: &[u32]) -> Vec<i32> {
     }
 }
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use tandem_pty::governor::Usage;
@@ -541,9 +657,12 @@ mod tests {
         grouping: bool,
         capping: bool,
         fail_place: bool,
+        fail_thaw: bool,
         placed: Mutex<Vec<Placed>>,
         oom: Mutex<u64>,
+        /// freeze, thaw, attach and stop calls, in order.
         frozen: Mutex<Vec<String>>,
+        leftovers: Vec<String>,
     }
 
     impl ResourceGroups for FakeGroups {
@@ -591,8 +710,41 @@ mod tests {
                 .lock()
                 .expect("lock")
                 .push(format!("thaw {unit}"));
+            if self.fail_thaw {
+                return Err(GovernorError::Failed("Unit is busy".into()));
+            }
             Ok(())
         }
+        fn attach(&self, unit: &str, pids: &[u32]) -> Result<(), GovernorError> {
+            if !pids.is_empty() {
+                self.frozen
+                    .lock()
+                    .expect("lock")
+                    .push(format!("attach {unit} {pids:?}"));
+            }
+            Ok(())
+        }
+        fn stop(&self, unit: &str) -> Result<(), GovernorError> {
+            self.frozen
+                .lock()
+                .expect("lock")
+                .push(format!("stop {unit}"));
+            Ok(())
+        }
+        fn leftovers(&self) -> Vec<String> {
+            self.leftovers.clone()
+        }
+    }
+
+    /// A process tree that grows by one child on every read after the first.
+    fn growing_tree() -> Arc<TreeReader> {
+        let reads = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        Arc::new(move |pid| {
+            let n = reads.fetch_add(1, Ordering::SeqCst);
+            let mut pids = vec![pid, pid + 1];
+            pids.extend((0..n).map(|i| pid + 2 + i));
+            pids
+        })
     }
 
     #[derive(Default)]
@@ -635,25 +787,27 @@ mod tests {
             capping: true,
             ..Default::default()
         });
-        let svc = ResourcesService::with_parts(
+        let svc = ResourcesService::fixed(
             store,
             EventBus::new(),
             groups.clone(),
             Arc::new(Signals::default()),
+            Arc::new(|pid| vec![pid]),
         );
         svc.place("p1", 4242).await;
         svc.place("p2", 4343).await;
         let placed = groups.placed.lock().expect("lock").clone();
+        let tag = &svc.launch;
         assert_eq!(
             placed,
             vec![
                 (
-                    "vibezeo-pane-p1-1.scope".to_string(),
+                    format!("vibezeo-pane-p1-{tag}-1.scope"),
                     vec![4242],
                     Some(512 << 20)
                 ),
                 (
-                    "vibezeo-pane-p2-2.scope".to_string(),
+                    format!("vibezeo-pane-p2-{tag}-2.scope"),
                     vec![4343],
                     Some(512 << 20)
                 ),
@@ -761,5 +915,107 @@ mod tests {
         assert_eq!(err.code, ErrorCode::NotFound);
         let err = svc.thaw("nope").await.expect_err("not frozen");
         assert_eq!(err.code, ErrorCode::Conflict);
+    }
+
+    #[tokio::test]
+    async fn f_ex_06_1_the_whole_tree_goes_in_and_a_late_child_follows() {
+        let (_d, store) = store();
+        let groups = Arc::new(FakeGroups {
+            grouping: true,
+            capping: true,
+            ..Default::default()
+        });
+        let svc = ResourcesService::fixed(
+            store,
+            EventBus::new(),
+            groups.clone(),
+            Arc::new(Signals::default()),
+            growing_tree(),
+        );
+        svc.place("p1", 100).await;
+        let unit = format!("vibezeo-pane-p1-{}-1.scope", svc.launch);
+        // The shell had a child before the scope was made...
+        assert_eq!(
+            groups.placed.lock().expect("lock")[0],
+            (unit.clone(), vec![100, 101], None)
+        );
+        // ...and another started while it was being made.
+        assert_eq!(
+            *groups.frozen.lock().expect("lock"),
+            [format!("attach {unit} [102]")]
+        );
+    }
+
+    #[tokio::test]
+    async fn f_ex_06_4_a_thaw_that_fails_says_so_and_the_pane_stays_frozen() {
+        let (_d, store) = store();
+        let groups = Arc::new(FakeGroups {
+            grouping: true,
+            fail_thaw: true,
+            ..Default::default()
+        });
+        let svc = ResourcesService::with_parts(
+            store,
+            EventBus::new(),
+            groups.clone(),
+            Arc::new(Signals::default()),
+        );
+        svc.frozen_as("p1", Frozen::Scope("u.scope".into()))
+            .expect("frozen");
+        let err = svc.thaw("p1").await.expect_err("thaw fails");
+        assert_eq!(err.code, ErrorCode::Unavailable);
+        assert!(err.message.contains("Unit is busy"), "{}", err.message);
+        assert!(lock(&svc.frozen).contains_key("p1"));
+        assert!(svc.notes()[0].frozen);
+    }
+
+    #[tokio::test]
+    async fn f_ex_06_5_closing_thaws_first_and_hands_back_the_scope_to_stop() {
+        let (_d, store) = store();
+        let groups = Arc::new(FakeGroups {
+            grouping: true,
+            ..Default::default()
+        });
+        let svc = ResourcesService::fixed(
+            store,
+            EventBus::new(),
+            groups.clone(),
+            Arc::new(Signals::default()),
+            Arc::new(|pid| vec![pid]),
+        );
+        svc.place("p1", 7).await;
+        let unit = format!("vibezeo-pane-p1-{}-1.scope", svc.launch);
+        svc.frozen_as("p1", Frozen::Scope(unit.clone()))
+            .expect("frozen");
+        let back = svc.forget("p1").await;
+        assert_eq!(back.as_deref(), Some(unit.as_str()));
+        svc.stop_scope(unit.clone()).await;
+        assert_eq!(
+            *groups.frozen.lock().expect("lock"),
+            [format!("thaw {unit}"), format!("stop {unit}")]
+        );
+        assert!(svc.notes().is_empty());
+        assert_eq!(svc.forget("p1").await, None);
+    }
+
+    #[tokio::test]
+    async fn f_ex_06_4_an_earlier_launchs_scopes_are_thawed_at_start() {
+        let (_d, store) = store();
+        let mut svc = ResourcesService::build(store, EventBus::new(), Arc::new(Signals::default()));
+        svc.launch = "cafe0001".into();
+        let groups = Arc::new(FakeGroups {
+            grouping: true,
+            leftovers: vec![
+                "vibezeo-pane-p1-0ld00000-3.scope".into(),
+                "vibezeo-pane-p2-cafe0001-1.scope".into(),
+            ],
+            ..Default::default()
+        });
+        let _ = svc.groups.set(groups.clone());
+        svc.thaw_leftovers().await;
+        assert_eq!(
+            *groups.frozen.lock().expect("lock"),
+            ["thaw vibezeo-pane-p1-0ld00000-3.scope"]
+        );
     }
 }

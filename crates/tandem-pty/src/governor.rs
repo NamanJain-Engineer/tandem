@@ -5,8 +5,10 @@
 //! One [`ResourceGroups`] per platform:
 //! - Linux with a systemd user session: [`linux::SystemdScopes`], a
 //!   transient user scope per pane (`busctl --user call … StartTransientUnit`
-//!   once the pane's process exists, D-2545), read from its cgroup v2 files
-//!   and frozen with `systemctl --user freeze`;
+//!   with the pane's whole process tree once it exists, D-2545, and
+//!   `AttachProcessesToUnit` for children that appeared meanwhile), read from
+//!   its cgroup v2 files, frozen with `systemctl --user freeze` and stopped
+//!   once the pane's processes are killed;
 //! - everywhere else: [`Unplaced`], with the reason.
 //!
 //! An unplaced pane is measured over its process tree ([`tree_usage`]) and,
@@ -75,11 +77,21 @@ pub trait ResourceGroups: Send + Sync {
     fn usage(&self, unit: &str, pid: u32) -> Option<Usage>;
     fn freeze(&self, unit: &str) -> Result<(), GovernorError>;
     fn thaw(&self, unit: &str) -> Result<(), GovernorError>;
+    /// Moves `pids` into `unit` (children that started while it was made).
+    fn attach(&self, unit: &str, pids: &[u32]) -> Result<(), GovernorError>;
+    /// Ends `unit` and anything still in it.
+    fn stop(&self, unit: &str) -> Result<(), GovernorError>;
+    /// Every pane scope the user manager has, from any launch.
+    fn leftovers(&self) -> Vec<String>;
 }
 
-/// `vibezeo-pane-<pane>-<n>.scope`, with anything a unit name can't hold
-/// replaced by `_`.
-pub fn unit_name(pane: &str, n: u64) -> String {
+/// A unit name's prefix for every pane scope.
+pub const UNIT_PREFIX: &str = "vibezeo-pane-";
+
+/// `vibezeo-pane-<pane>-<launch>-<n>.scope`, with anything a unit name can't
+/// hold replaced by `_`. `launch` tells this launch's scopes from those a
+/// previous one left behind.
+pub fn unit_name(pane: &str, launch: &str, n: u64) -> String {
     let safe: String = pane
         .chars()
         .map(|c| {
@@ -90,7 +102,21 @@ pub fn unit_name(pane: &str, n: u64) -> String {
             }
         })
         .collect();
-    format!("vibezeo-pane-{safe}-{n}.scope")
+    format!("{UNIT_PREFIX}{safe}-{launch}-{n}.scope")
+}
+
+/// A launch's tag for [`unit_name`]: 8 hex digits from the pid and the clock.
+pub fn launch_tag() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u32(std::process::id());
+    h.write_u128(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0),
+    );
+    format!("{:08x}", h.finish() as u32)
 }
 
 /// No scopes here.
@@ -121,22 +147,85 @@ impl ResourceGroups for Unplaced {
     fn thaw(&self, _: &str) -> Result<(), GovernorError> {
         Err(GovernorError::Unavailable(self.reason.clone()))
     }
+    fn attach(&self, _: &str, _: &[u32]) -> Result<(), GovernorError> {
+        Err(GovernorError::Unavailable(self.reason.clone()))
+    }
+    fn stop(&self, _: &str) -> Result<(), GovernorError> {
+        Err(GovernorError::Unavailable(self.reason.clone()))
+    }
+    fn leftovers(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// Runs `program` with `args`; its stdout, or its stderr as the error.
 pub type Runner = dyn Fn(&str, &[String]) -> Result<String, String> + Send + Sync;
 
-/// The real commands.
+/// A `busctl` or `systemctl` call that takes longer is ended and fails: a
+/// stuck user manager never holds up a pane.
+pub const COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The real commands, ended after [`COMMAND_TIMEOUT`].
 pub fn run_command(program: &str, args: &[String]) -> Result<String, String> {
-    let out = std::process::Command::new(program)
+    run_with_timeout(program, args, COMMAND_TIMEOUT)
+}
+
+pub fn run_with_timeout(
+    program: &str,
+    args: &[String],
+    timeout: std::time::Duration,
+) -> Result<String, String> {
+    use std::io::Read;
+    use std::process::Stdio;
+    let mut child = std::process::Command::new(program)
         .args(args)
-        .stdin(std::process::Stdio::null())
-        .output()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| e.to_string())?;
-    if out.status.success() {
-        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut p) = pipe {
+                let _ = p.read_to_end(&mut buf);
+            }
+            buf
+        })
+    };
+    let out = drain(
+        child
+            .stdout
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    );
+    let err = drain(
+        child
+            .stderr
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    );
+    let started = std::time::Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() < timeout => {
+                std::thread::sleep(std::time::Duration::from_millis(10))
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("{program} took longer than {}s", timeout.as_secs()));
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    };
+    let stdout = out.join().unwrap_or_default();
+    let stderr = err.join().unwrap_or_default();
+    if status.success() {
+        Ok(String::from_utf8_lossy(&stdout).into_owned())
     } else {
-        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+        Err(String::from_utf8_lossy(&stderr).trim().to_string())
     }
 }
 
@@ -275,12 +364,16 @@ pub mod linux {
     const MANAGER: &str = "org.freedesktop.systemd1.Manager";
     /// `systemctl freeze` arrived in systemd 246.
     const FREEZE_SINCE: u32 = 246;
+    /// Scopes take `OOMPolicy` from systemd 253; before, a scope whose
+    /// process hit the cap was stopped whole.
+    pub const OOM_POLICY_SINCE: u32 = 253;
 
     /// Transient systemd user scopes.
     pub struct SystemdScopes {
         run: Arc<Runner>,
         cgroup_root: PathBuf,
         proc_root: PathBuf,
+        version: u32,
         capping: bool,
         freezer: bool,
         reason: Option<String>,
@@ -356,8 +449,10 @@ pub mod linux {
             let Some(version) = run("busctl", &args).ok().and_then(|o| parse_version(&o)) else {
                 return unplaced(NO_SESSION);
             };
+            // What's delegated to the user manager: it turns a controller on
+            // below itself only once a unit asks for it.
             let manager = cgroup_root.join(format!(
-                "user.slice/user-{uid}.slice/user@{uid}.service/cgroup.subtree_control"
+                "user.slice/user-{uid}.slice/user@{uid}.service/cgroup.controllers"
             ));
             let capping = std::fs::read_to_string(manager)
                 .map(|s| s.split_whitespace().any(|c| c == "memory"))
@@ -366,6 +461,7 @@ pub mod linux {
                 run,
                 cgroup_root,
                 proc_root: proc_root.into(),
+                version,
                 capping,
                 freezer: version >= FREEZE_SINCE,
                 reason: (!capping).then(|| NO_MEMORY.to_string()),
@@ -390,12 +486,14 @@ pub mod linux {
         }
     }
 
-    /// `StartTransientUnit`'s arguments for busctl.
+    /// `StartTransientUnit`'s arguments for busctl, for a user manager at
+    /// `version`.
     pub fn start_args(
         unit: &str,
         pane: &str,
         pids: &[u32],
         memory_max: Option<u64>,
+        version: u32,
     ) -> Vec<String> {
         let mut props: Vec<String> = vec!["PIDs".into(), "au".into(), pids.len().to_string()];
         props.extend(pids.iter().map(|p| p.to_string()));
@@ -408,6 +506,11 @@ pub mod linux {
             format!("Vibezeo pane {pane}"),
         ]);
         let mut count = 3;
+        if version >= OOM_POLICY_SINCE {
+            // A process over the cap is ended; the pane's shell stays.
+            props.extend(["OOMPolicy".into(), "s".into(), "continue".into()]);
+            count += 1;
+        }
         if let Some(max) = memory_max {
             props.extend([
                 "MemoryMax".into(),
@@ -459,9 +562,65 @@ pub mod linux {
             if memory_max.is_some() && !self.capping {
                 return Err(GovernorError::Unavailable(NO_MEMORY.to_string()));
             }
-            (self.run)("busctl", &start_args(unit, pane, pids, memory_max))
+            (self.run)(
+                "busctl",
+                &start_args(unit, pane, pids, memory_max, self.version),
+            )
+            .map(|_| ())
+            .map_err(GovernorError::Failed)
+        }
+
+        fn attach(&self, unit: &str, pids: &[u32]) -> Result<(), GovernorError> {
+            if pids.is_empty() {
+                return Ok(());
+            }
+            let mut args: Vec<String> = [
+                "--user",
+                "call",
+                DEST,
+                PATH,
+                MANAGER,
+                "AttachProcessesToUnit",
+                "ssau",
+                unit,
+                "",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+            args.push(pids.len().to_string());
+            args.extend(pids.iter().map(|p| p.to_string()));
+            (self.run)("busctl", &args)
                 .map(|_| ())
                 .map_err(GovernorError::Failed)
+        }
+
+        fn stop(&self, unit: &str) -> Result<(), GovernorError> {
+            self.systemctl("stop", unit)
+        }
+
+        fn leftovers(&self) -> Vec<String> {
+            let args: Vec<String> = [
+                "--user",
+                "list-units",
+                "--all",
+                "--plain",
+                "--no-legend",
+                "--type=scope",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .chain([format!("{UNIT_PREFIX}*")])
+            .collect();
+            (self.run)("systemctl", &args)
+                .map(|out| {
+                    out.lines()
+                        .filter_map(|l| l.split_whitespace().next())
+                        .filter(|u| u.starts_with(UNIT_PREFIX) && u.ends_with(".scope"))
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default()
         }
 
         fn usage(&self, unit: &str, pid: u32) -> Option<Usage> {
@@ -497,8 +656,122 @@ pub mod linux {
     }
 }
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(test)]
 mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    #[test]
+    fn f_ex_06_unit_names_are_named_after_the_pane_and_the_launch() {
+        assert_eq!(
+            unit_name("p_01HX", "0a1b2c3d", 3),
+            "vibezeo-pane-p_01HX-0a1b2c3d-3.scope"
+        );
+        assert_eq!(
+            unit_name("a b/c.d", "0a1b2c3d", 1),
+            "vibezeo-pane-a_b_c_d-0a1b2c3d-1.scope"
+        );
+        let tag = launch_tag();
+        assert_eq!(tag.len(), 8);
+        assert!(tag.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn f_ex_06_2_unplaced_says_why_for_everything() {
+        let g = Unplaced {
+            reason: NOT_YET.into(),
+            freezing: false,
+        };
+        let s = g.status();
+        assert!(!s.grouping && !s.capping && !s.freezing);
+        assert_eq!(s.reason.as_deref(), Some(NOT_YET));
+        for r in [
+            g.place("u", "p", &[1], None),
+            g.freeze("u"),
+            g.thaw("u"),
+            g.attach("u", &[1]),
+            g.stop("u"),
+        ] {
+            assert_eq!(r, Err(GovernorError::Unavailable(NOT_YET.into())));
+        }
+        assert!(g.leftovers().is_empty());
+        assert_eq!(g.usage("u", 1), None);
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn f_ex_06_2_other_platforms_have_no_scopes_yet() {
+        let s = platform().status();
+        assert!(!s.grouping && !s.capping && !s.freezing);
+        assert_eq!(s.reason.as_deref(), Some(NOT_YET));
+    }
+
+    #[derive(Default)]
+    struct Fake {
+        log: Mutex<Vec<String>>,
+    }
+
+    impl ProcessControl for Fake {
+        fn stop(&self, g: i32) -> Result<(), SuspendError> {
+            self.log
+                .lock()
+                .expect("test setup")
+                .push(format!("stop {g}"));
+            Ok(())
+        }
+        fn cont(&self, g: i32) -> Result<(), SuspendError> {
+            self.log
+                .lock()
+                .expect("test setup")
+                .push(format!("cont {g}"));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn f_ex_06_4_freeze_by_signals_stops_the_shell_first_and_thaws_in_reverse() {
+        let fake = Fake::default();
+        let frozen =
+            freeze_tree(&fake, 100, Some(200), &[100, 200, 300, 300, 400]).expect("test setup");
+        assert_eq!(frozen.others, vec![300, 400]);
+        thaw_tree(&fake, &frozen).expect("test setup");
+        assert_eq!(
+            *fake.log.lock().expect("test setup"),
+            [
+                "stop 100", "stop 200", "stop 300", "stop 400", "cont 300", "cont 400", "cont 200",
+                "cont 100"
+            ]
+        );
+    }
+
+    #[test]
+    fn f_ex_06_4_a_shell_at_its_prompt_is_stopped_alone() {
+        let fake = Fake::default();
+        let frozen = freeze_tree(&fake, 100, Some(100), &[100]).expect("test setup");
+        assert!(frozen.others.is_empty());
+        assert_eq!(*fake.log.lock().expect("test setup"), ["stop 100"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn f_ex_06_1_tree_usage_sums_a_real_tree() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("5")
+            .spawn()
+            .expect("test setup");
+        let me = std::process::id();
+        let usage = tree_usage(&[("me".to_string(), me)]);
+        let mine = &usage["me"];
+        assert_eq!(mine.pids[0], me);
+        assert!(mine.pids.contains(&child.id()));
+        assert!(mine.rss > 0);
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_tests {
     use super::linux::*;
     use super::*;
     use std::sync::{Arc, Mutex};
@@ -522,7 +795,7 @@ mod tests {
         (run, calls)
     }
 
-    /// A cgroup v2 root with the user manager delegating `controllers`.
+    /// A cgroup v2 root with `controllers` delegated to the user manager.
     fn cgroup_root(controllers: &str) -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("test setup");
         std::fs::write(dir.path().join("cgroup.controllers"), "cpu memory pids")
@@ -531,14 +804,10 @@ mod tests {
             .path()
             .join("user.slice/user-1000.slice/user@1000.service");
         std::fs::create_dir_all(&manager).expect("test setup");
-        std::fs::write(manager.join("cgroup.subtree_control"), controllers).expect("test setup");
+        std::fs::write(manager.join("cgroup.controllers"), controllers).expect("test setup");
+        // Not turned on below the manager yet: no unit has asked for it.
+        std::fs::write(manager.join("cgroup.subtree_control"), "").expect("test setup");
         dir
-    }
-
-    #[test]
-    fn f_ex_06_unit_names_are_named_after_the_pane() {
-        assert_eq!(unit_name("p_01HX", 3), "vibezeo-pane-p_01HX-3.scope");
-        assert_eq!(unit_name("a b/c.d", 1), "vibezeo-pane-a_b_c_d-1.scope");
     }
 
     #[test]
@@ -587,6 +856,103 @@ mod tests {
              org.freedesktop.systemd1.Manager StartTransientUnit ssa(sv)a(sa(sv)) \
              vibezeo-pane-p-1.scope fail 5 PIDs au 2 41 42 CollectMode s inactive-or-failed \
              Description s Vibezeo pane p MemoryMax t 536870912 MemorySwapMax t 0 0"
+        );
+    }
+
+    #[test]
+    fn f_ex_06_2_from_systemd_253_a_process_over_the_cap_ends_alone() {
+        let root = cgroup_root("cpu memory pids");
+        for (version, oom) in [("252", false), ("253", true), ("255.4", true)] {
+            let (run, calls) = runner(Some(version));
+            let g = SystemdScopes::detect(run, root.path(), "/proc", 1000);
+            g.place("u.scope", "p", &[41], Some(1 << 30))
+                .expect("test setup");
+            let calls = calls.lock().expect("test setup");
+            let args = calls.last().expect("test setup").1.join(" ");
+            assert_eq!(
+                args.contains("OOMPolicy s continue"),
+                oom,
+                "{version}: {args}"
+            );
+            let count = if oom { "6" } else { "5" };
+            assert!(
+                args.contains(&format!("u.scope fail {count} ")),
+                "{version}: {args}"
+            );
+        }
+    }
+
+    #[test]
+    fn f_ex_06_1_late_children_are_attached_and_scopes_stop() {
+        let (run, calls) = runner(Some("255"));
+        let root = cgroup_root("memory");
+        let g = SystemdScopes::detect(run, root.path(), "/proc", 1000);
+        g.attach("u.scope", &[]).expect("nothing to attach");
+        g.attach("u.scope", &[43, 44]).expect("test setup");
+        g.stop("u.scope").expect("test setup");
+        let calls = calls.lock().expect("test setup");
+        let got: Vec<String> = calls
+            .iter()
+            .filter(|(_, a)| a.get(1).map(String::as_str) != Some("get-property"))
+            .map(|(p, a)| format!("{p} {}", a.join(" ")))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                "busctl --user call org.freedesktop.systemd1 /org/freedesktop/systemd1 \
+                 org.freedesktop.systemd1.Manager AttachProcessesToUnit ssau u.scope  2 43 44",
+                "systemctl --user stop u.scope",
+            ]
+        );
+    }
+
+    #[test]
+    fn f_ex_06_4_leftover_scopes_are_listed_by_prefix() {
+        let calls: Calls = Arc::default();
+        let seen = calls.clone();
+        let run: Arc<Runner> = Arc::new(move |_: &str, args: &[String]| {
+            seen.lock()
+                .expect("test setup")
+                .push((String::new(), args.to_vec()));
+            if args.get(1).map(String::as_str) == Some("get-property") {
+                return Ok("s \"255\"".into());
+            }
+            Ok(
+                "vibezeo-pane-p_1-aaaa0000-1.scope loaded active running Vibezeo pane p_1\n\
+                vibezeo-pane-p_2-bbbb1111-4.scope loaded active running Vibezeo pane p_2\n\
+                other.scope loaded active running x\n"
+                    .into(),
+            )
+        });
+        let root = cgroup_root("memory");
+        let g = SystemdScopes::detect(run, root.path(), "/proc", 1000);
+        assert_eq!(
+            g.leftovers(),
+            [
+                "vibezeo-pane-p_1-aaaa0000-1.scope",
+                "vibezeo-pane-p_2-bbbb1111-4.scope"
+            ]
+        );
+        let calls = calls.lock().expect("test setup");
+        assert_eq!(
+            calls.last().expect("test setup").1.join(" "),
+            "--user list-units --all --plain --no-legend --type=scope vibezeo-pane-*"
+        );
+    }
+
+    #[test]
+    fn f_ex_06_8_a_stuck_command_is_ended() {
+        let started = std::time::Instant::now();
+        let out = run_with_timeout(
+            "sleep",
+            &["5".to_string()],
+            std::time::Duration::from_millis(200),
+        );
+        assert!(out.is_err());
+        assert!(started.elapsed() < std::time::Duration::from_secs(3));
+        assert_eq!(
+            run_with_timeout("echo", &["hi".to_string()], COMMAND_TIMEOUT),
+            Ok("hi\n".to_string())
         );
     }
 
@@ -677,67 +1043,5 @@ mod tests {
         .expect("test setup");
         assert_eq!(pgid(proc.path(), 7), Some(7000));
         assert_eq!(pgids(proc.path(), &[7, 7, 8]), vec![7000]);
-    }
-
-    #[derive(Default)]
-    struct Fake {
-        log: Mutex<Vec<String>>,
-    }
-
-    impl ProcessControl for Fake {
-        fn stop(&self, g: i32) -> Result<(), SuspendError> {
-            self.log
-                .lock()
-                .expect("test setup")
-                .push(format!("stop {g}"));
-            Ok(())
-        }
-        fn cont(&self, g: i32) -> Result<(), SuspendError> {
-            self.log
-                .lock()
-                .expect("test setup")
-                .push(format!("cont {g}"));
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn f_ex_06_4_freeze_by_signals_stops_the_shell_first_and_thaws_in_reverse() {
-        let fake = Fake::default();
-        let frozen =
-            freeze_tree(&fake, 100, Some(200), &[100, 200, 300, 300, 400]).expect("test setup");
-        assert_eq!(frozen.others, vec![300, 400]);
-        thaw_tree(&fake, &frozen).expect("test setup");
-        assert_eq!(
-            *fake.log.lock().expect("test setup"),
-            [
-                "stop 100", "stop 200", "stop 300", "stop 400", "cont 300", "cont 400", "cont 200",
-                "cont 100"
-            ]
-        );
-    }
-
-    #[test]
-    fn f_ex_06_4_a_shell_at_its_prompt_is_stopped_alone() {
-        let fake = Fake::default();
-        let frozen = freeze_tree(&fake, 100, Some(100), &[100]).expect("test setup");
-        assert!(frozen.others.is_empty());
-        assert_eq!(*fake.log.lock().expect("test setup"), ["stop 100"]);
-    }
-
-    #[test]
-    fn f_ex_06_1_tree_usage_sums_a_real_tree() {
-        let mut child = std::process::Command::new("sleep")
-            .arg("5")
-            .spawn()
-            .expect("test setup");
-        let me = std::process::id();
-        let usage = tree_usage(&[("me".to_string(), me)]);
-        let mine = &usage["me"];
-        assert_eq!(mine.pids[0], me);
-        assert!(mine.pids.contains(&child.id()));
-        assert!(mine.rss > 0);
-        let _ = child.kill();
-        let _ = child.wait();
     }
 }

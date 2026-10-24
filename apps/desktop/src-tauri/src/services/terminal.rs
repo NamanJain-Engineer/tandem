@@ -272,8 +272,12 @@ impl TerminalService {
         } else {
             None
         };
-        let resources =
-            crate::services::resources::ResourcesService::new(store.clone(), status.bus().clone());
+        // Unit tests never make real scopes on the machine running them.
+        let resources = if cfg!(test) {
+            crate::services::resources::ResourcesService::inert(store.clone(), status.bus().clone())
+        } else {
+            crate::services::resources::ResourcesService::new(store.clone(), status.bus().clone())
+        };
         Arc::new(Self {
             pty,
             engines,
@@ -810,6 +814,19 @@ impl TerminalService {
         self.runs.lock().ok()?.remove(pane.as_str())
     }
 
+    /// Ends a pane's processes for good (F-EX-06): a frozen pane is thawed
+    /// first so they see the hangup, its parked run goes, and once they're
+    /// killed its scope is stopped with anything that outlived the kill.
+    pub async fn end_pane(&self, pane: &str) -> Result<tandem_pty::ExitInfo, tandem_pty::PtyError> {
+        self.drop_run(pane);
+        let unit = self.resources.forget(pane).await;
+        let ended = self.pty.kill(pane);
+        if let Some(unit) = unit {
+            self.resources.stop_scope(unit).await;
+        }
+        ended
+    }
+
     /// A closed pane's parked run goes, values and all.
     pub fn drop_run(&self, pane: &str) {
         if let Ok(mut runs) = self.runs.lock() {
@@ -1196,7 +1213,9 @@ impl TerminalService {
         }
         // F-EX-06: a local agent pane gets its own scope, from its first
         // process on; what it had before (a restart) is gone.
-        self.resources.forget(pane.as_str()).await;
+        if let Some(old) = self.resources.forget(pane.as_str()).await {
+            self.resources.stop_scope(old).await;
+        }
         if engine.is_some() {
             self.resources.place(pane.as_str(), info.pid).await;
         }
