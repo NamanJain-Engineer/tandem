@@ -1,12 +1,12 @@
-/** What's in the 0.8.0 release, for the home page's progress strip and the
+/** What's in the 0.9.0 release, for the home page's progress strip and the
  * changelog. Figures are counted in the code the release was built from
- * (product branch): `scripts/gate.sh` output (1975 Rust and 1501
+ * (product branch): `scripts/gate.sh` output (2148 Rust and 1574
  * TypeScript tests) and the files in `apps/desktop/e2e/specs`. Update them
  * with each release. */
 export const PROGRESS = {
   milestones: 16,
-  automatedTests: 3476,
-  endToEndSuites: 137,
+  automatedTests: 3722,
+  endToEndSuites: 145,
   engines: 13,
 } as const;
 
@@ -25,7 +25,7 @@ export const MILESTONES: readonly Milestone[] = [
       "Your phone pairs with Vibezeo over your own network, with no account, through a phone web app that's end-to-end encrypted.",
       "Find work goes to the pane, thread or teammate doing a task, found by what it's about, on your computer.",
       "A teammate's skills install into Claude Code or Codex, and a teammate opens as an agent pane in Code mode.",
-      "Conductor, a coordinator you talk to that starts agents, prompts them and finds work, is built for Pro and Team and switches on with accounts.",
+      "Conductor, a coordinator you talk to that starts agents, prompts them and finds work, is built and switches on with Vibezeo accounts.",
       "The Vibezeo Remote phone app, encrypted push and a relay that reaches your agents away from home are built, and wait for the app stores and accounts.",
     ],
   },
@@ -70,7 +70,7 @@ export const MILESTONES: readonly Milestone[] = [
     items: [
       "A task tracker on your computer, with statuses, priorities, labels, comments and history, updated live as anyone changes it.",
       "Agents in threads, teammate chats and terminal panes read and update the same tasks through Vibezeo's tasks server.",
-      "Running tasks in their own lanes, and routines that run teammates on a schedule, are built for Pro and switch on with Vibezeo accounts.",
+      "Running tasks in their own lanes, and routines that run teammates on a schedule, are built and switch on for everyone in the next release.",
     ],
   },
   {
@@ -80,7 +80,7 @@ export const MILESTONES: readonly Milestone[] = [
       "Named teammates in Agent mode that run on the engines you already use, each with a brief, notes it remembers between chats and skills it can read.",
       "Chats you can come back to, and after a turn a suggestion of what to remember, for you to keep or discard.",
       "Teammates search their past chats and send each other mail, through one local gateway.",
-      "Lead is made for you; Free includes one teammate besides Lead.",
+      "Lead is made for you; this release includes one teammate besides Lead, and the next has as many as you like.",
     ],
   },
   {
@@ -109,11 +109,11 @@ export const MILESTONES: readonly Milestone[] = [
     id: "M7",
     title: "Thread mode",
     items: [
-      "Claude Code, Codex, Cursor Agent, Grok and OpenCode as conversations: streamed replies, folded tool calls, Stop and queued follow-ups (Cursor Agent, Grok and OpenCode threads on Pro).",
+      "Claude Code, Codex, Cursor Agent, Grok and OpenCode as conversations: streamed replies, folded tool calls, Stop and queued follow-ups (Cursor Agent, Grok and OpenCode threads in the next release).",
       "Approvals answered inline, once or for the whole thread.",
       "Plan mode with numbered plan versions, and Implement for the one you pick.",
       "A Changes panel with every file a thread changed since it started, and the files it read.",
-      "Up to six threads side by side on Pro (one at a time on Free).",
+      "Up to six threads side by side, in the next release (one at a time in this one).",
       "Switching engines mid-thread, with a summary of the conversation.",
     ],
   },

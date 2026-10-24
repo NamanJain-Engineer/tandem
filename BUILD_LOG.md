@@ -13,20 +13,24 @@
   - the headers, and no framework chunks on marketing pages;
   - D-1815's redirects (`/changelog/0.8.0/` answers 200, and without the slash it's a 308 to it), the home page's lazy still with `/demo/`'s video loading nothing until it's played (D-1816, D-1841), and D-1817's slash links, whose payloads answer 200.
   Releases are built locally (`TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run`) and served from vibezeo.com/downloads with SHA256SUMS. The Release workflow (D-105 `early-access` channel, public `tandem-releases` repository, `RELEASES_TOKEN`) waits for Actions minutes, which reset about November 1; the owner chose not to pay for more. CI now runs `quick` on pull requests into `product-m0-m5`, a nightly `checks` on its head and the rest by hand, which should fit the free minutes; its three real failures from 7 October are fixed (D-1009 to D-1012, OPERATING §5a). Tags `m0`–`m7` are local only. The public site at vibezeo.com deploys from `main` (D-102, `docs/DEPLOY_SITE.md`).
-- Release: **0.8.0** (Linux, `TANDEM_HOSTED=0`, built with `bash scripts/release-local.sh --dry-run`; `Vibezeo_0.8.0_amd64.deb`, SHA-256 `8ada2dc7…cb94a0`, and `Vibezeo-0.8.0-1.x86_64.rpm`, SHA-256 `26195a75…c6d479`, 53.3 MB each). The first M18 release, about running agents side by side and checking their work:
-  - one review queue across engines, with Approve, Snooze and repository checks (F-DB-04, D-859);
-  - second opinions from another engine (F-WT-05);
-  - ports, environments and previews for every worktree, Compare previews side by side, and copy-on-write clones in Worktree setup (F-WT-06, F-WT-09, D-861, D-863);
-  - the runaway guard (F-AC-09, D-855, D-857, D-860) and the usage forecast (F-AC-08);
-  - one instructions file for every engine (F-EN-07), and Antigravity CLI and Kiro CLI (F-EN-09), 13 engines in all;
-  - terminals on screen open first, and parked terminals let go of their scrollback.
-  Built since 0.7.2 but not in the Free download: chain18's dictionary sync (Pro), chain19's macOS Dictate work (no Mac build ships), and D-865's fix to the hosted API's plan and credit updates. The site gains the post "What's new in 0.8.0", a review queue in the demo and new figures: 16 milestones, 3,476 automated tests, 137 E2E spec files, 13 engines.
+- Release: **0.9.0** (Linux, `TANDEM_HOSTED=0`, built with `bash scripts/release-local.sh --dry-run`; `Vibezeo_0.9.0_amd64.deb`, SHA-256 `7c711289…2e1883`, and `Vibezeo-0.9.0-1.x86_64.rpm`, SHA-256 `0e82217f…865df0`, 54.1 MB each). The second M18 release, about bringing parallel agents' work home:
+  - Land worktrees: finished worktrees merge into the current branch one after another, each behind the repository's check, with Undo (F-WT-07);
+  - a pull request's failing checks and review comments go back to the worktree's agent, through the person's own `gh` (F-WT-08);
+  - the intent radar notices when two worktrees change the same functions (F-WT-10, first slice);
+  - engine versions, pins, rollback commands and the engines' own background processes (F-EN-08);
+  - the session library across Claude Code and Codex, with search in Pro (F-TH-17);
+  - agent panes in a bubblewrap sandbox on Linux (F-TL-11).
+  Built since 0.8.0 but not in the Free download: F-CN-09's walk-and-review and F-RT-06's Night Shift (both need accounts), the Conductor voice fallback (#83, #85; hosted), and #78's CI changes. The site gains the post "What's new in 0.9.0", six "New in 0.9.0" tiles, a roadmap led by "Everything free" and what's in review, and new figures: 16 milestones, 3,722 automated tests, 145 E2E spec files, 13 engines. Vibezeo is free (D-869): the pricing page is gone (`/pricing/` redirects to `/download/`), no page shows a price, and the notes say the next release removes the download's remaining limits. The demo has no new surfaces (D-868).
   Verified:
-  - the gate on the release tree (1,975 Rust and 1,500 TypeScript tests), then the API's lint and 212 tests on D-865's change;
-  - the full desktop E2E (136 of 137 spec files; the failure found D-865, and with the fix E2E-M8-7 passed three runs and the seven specs that wait on plan or credit updates passed);
-  - the .rpm on clean Fedora 42, 43 and 44 (images from Fedora's registry, since Docker Hub answered 429);
-  - the AppImage smoke test offline;
-  - the site from a fresh clone: `build:site` with `strip-runtime` and `check-routes` (47 pages, no redirects), web vitest 114/114, site Playwright 25/25, Lighthouse CI on seven URLs (every assertion passed with no warnings; performance 99 on `/` with LCP 1.82 s, 100 elsewhere, `/docs/` included), and the demo walkthrough.
+  - the gate on the release tree d891f4ff (2,148 Rust and 1,574 TypeScript tests, coverage of 182 spec IDs, clippy on Linux, Windows and both Mac architectures, fmt, protocol drift with 554 types);
+  - the full desktop E2E, 145 of 145 spec files in five chunks (36 minutes);
+  - the .rpm on clean Fedora 42, 43 and 44 (images from Fedora's registry);
+  - the AppImage smoke test offline (the welcome says "Free plan", setup lists all 13 engines);
+  - the site from a fresh clone of c5b98702, D-869 included:
+    - `build:site` with `strip-runtime` and `check-routes`: 49 pages, no redirects;
+    - web vitest 114/114 and site Playwright 25/25;
+    - Lighthouse CI on seven URLs, every assertion passing with no warnings (99 or 100 in every category, LCP at most 1.88 s, CLS at most 0.001);
+    - the demo walkthrough.
   Deploying is merging `product-m0-m5` into `main` (OPERATING §7).
 - Blog (F-WB-06, built under M15 and owned by "M17 · Blog", D-853; D-1850 to D-1864): `/blog/` with posts as files in `apps/web/content/blog`, tag pages and an Atom feed, batched in `chain22` and deployed to vibezeo.com from `main` (D-851). Publishing a post is `docs/BLOG.md` §3. See "M15 · F-WB-06 Blog".
 - Website redesign (M15, D-1800 to D-1815): phases 1–4 and 6 of `docs/WEBSITE_BRIEF.md` (`docs-briefs`) are merged with the `chain4` batch: OS light and dark themes, marketing type, the new home page, Pricing, Download, Changelog, the inner pages and the docs, and the performance phase (marketing pages ship no framework JavaScript, D-1813; Lighthouse at 0.95 on five URLs). They reach vibezeo.com with the next release. The signed-in captures of phase 5 wait on the owner (`HUMAN_TODO.md`). See "M15 · Website redesign".
@@ -1016,6 +1020,53 @@ Built by the session that coordinates the parallel milestone sessions, while the
     - coverage (182 spec IDs), the desktop build, clippy on Linux, Windows and both Mac architectures, fmt, and protocol drift.
   - The full E2E passed 145 of 145 spec files (39 minutes), the new M18 specs among them. The container restarted twice during the gate, so it ran with a marker for each step and each fifth of the specs, and every run resumed where the last stopped on the same commit.
 
+- Release 0.9.0 (`release-0.9.0`, after chain24): the second M18 release. It ships everything merged since 0.8.0:
+  - chain24's M18 features;
+  - #78's CI within the free minutes;
+  - #83 and #85's Conductor voice fallback;
+  - the design direction's docs and shared brand tokens (#84, #86 to #89).
+  It also has the version, the CHANGELOG, the .deb and .rpm with SHA256SUMS, the Flatpak and Snap manifests at 0.9.0's .deb, the site's figures, tiles and roadmap, and a release post.
+  - The CHANGELOG's Added section, one tile each under the changelog page's "New in 0.9.0":
+    - Land worktrees (F-WT-07);
+    - CI results and review comments back to the agent (F-WT-08);
+    - Intent radar (F-WT-10);
+    - Engine versions and updates under your control (F-EN-08);
+    - Session library (F-TH-17; searching what sessions say is Pro);
+    - Sandbox agent panes (F-TL-11, Linux).
+  - Left out of the notes, each checked:
+    - F-CN-09, walk-and-review: Conductor and the phone need accounts;
+    - F-RT-06, the Night Shift: it starts tasks, which Free can't run;
+    - #83 and #85: the voice fallback is in the hosted API;
+    - #78: CI only;
+    - #86's `brand.css`: the app's look doesn't change yet;
+    - D-141 and D-866: a measurement and a duplicated string.
+  - The site:
+    - `release.ts` names the 0.9.0 assets.
+    - `progress.ts` has 3,722 tests (the gate's 2,148 Rust and 1,574 TypeScript), 145 E2E spec files and 13 engines.
+    - `RELEASE_TILE_MAP` gives each new Added title its icon and docs page.
+    - The roadmap leads with what's in review: multi-repo workspaces, claims, any ACP agent and the resource governor. Its Pro item now names the Night Shift.
+    - "What's new in 0.9.0" is on the blog.
+  - The demo (D-128): no new surfaces, recorded as D-868. Everything the demo shows is in the download, and its plan is the download's.
+  - The gate passed on the release tree (d891f4ff):
+    - 2,148 Rust tests (6 ignored);
+    - 1,574 TypeScript tests: desktop 748, UI 412, API 234, web 116, remote 33, mobile 21, protocol 10;
+    - coverage (182 spec IDs), the desktop build, clippy on Linux, Windows and both Mac architectures, fmt, and protocol drift (554 types).
+    - It ran per package and per invariant rule, with a marker for each step. The first run filled the disk while linking the desktop crate's tests, and the run after `prune-target.py` resumed at that step on the same commit.
+    - The figures commit changes only `progress.ts`: web lint and its 116 tests passed on it.
+  - The full E2E on d891f4ff passed 145 of 145 spec files, in five chunks of about 30 (36 minutes).
+  - The packages:
+    - `TANDEM_HOSTED=0 scripts/release-local.sh --dry-run` on 42a73a7f built the .deb, .rpm and AppImage. Every bundle carries tandem-host for both Linux architectures and the three sidecars.
+    - The later commits are product-m0-m5's docs (#84 to #88), the downloads and the site's figures. No product code changed.
+    - `Vibezeo_0.9.0_amd64.deb` (SHA-256 `7c711289…2e1883`) and `Vibezeo-0.9.0-1.x86_64.rpm` (`0e82217f…865df0`) are 54.1 MB each.
+    - The .rpm installed, found every library and started on clean Fedora 42, 43 and 44.
+    - The AppImage passed the offline smoke test: the welcome says "Free plan", and setup lists all 13 engines.
+  - The site, from a fresh clone of c5b98702 (D-869 included):
+    - `build:site` with `strip-runtime` and `check-routes`: 49 pages, one fewer without `/pricing/`, no redirects;
+    - web vitest 114/114 and site Playwright 25/25;
+    - Lighthouse CI on seven URLs, with `/about/` in place of `/pricing/`: every assertion passing with no warnings, `/` and a blog post at 99 for performance (LCP 1.88 s and 1.81 s), 100 everywhere else;
+    - the demo walkthrough.
+    The run before D-869, on 4ba32cd9, passed the same checks with 50 pages. The only change after c5b98702 is the download page's "Start using Vibezeo" step (b435a107), and web vitest passed again on it.
+
 ## M16 · F-AC-07 Usage dashboard
 Built on branch `m16-usage-dashboard` (from `product-m0-m5`) by the M13 session as part of its follow-on chain. Decisions come from the M13 range (D-600–D-699).
 - [x] F-AC-07 Usage dashboard. `tandem_engines::usage_log` reads Claude Code's `projects/**/*.jsonl` and Codex's `sessions/**/*.jsonl` through the registry's `usage_log_globs`, only inside each account's provider home. It streams line by line, and skips and counts a line that isn't JSON, is over 4 MB, or has no usable date or token counts. Only numbers, dates, ids and the working folder are read; no message text is kept. `services::usage_report` turns the scan into 12 weeks of days in the user's zone, totals per engine and per account, and the top 8 workspaces (a folder counts for the workspace whose root holds it). `usage_report` and `usage_share_save` are declared in ARCHITECTURE §3. Workspace menu → **Usage…** opens `UsageDialog`, which has empty, loading, error and populated states, a `Heatmap` (new in `@tandem/ui`, tokens only), engine, account and workspace lists, "N lines skipped", and a share card. The card is drawn on a canvas, shows only engines with usage, and leaves out workspace names unless the user switches them on. Tests: `usage_log` 6 (`f_ac_07_1`–`3` and 3 more), the report 1, `Heatmap` 1, the page 4, and E2E-M16-6 (F-AC-07.1, F-AC-07.2 and a saved PNG).
@@ -1518,6 +1569,20 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
 - D-864: Code blocks in the docs scroll inside a box of their own, and long inline code wraps (F-WB-01, F-WB-02), found by 0.8.0's site check: on a 320 px phone `/docs/code-mode/` was 750 px wide, so "no page scrolls sideways" failed. The docs render shiki's `<pre>` under Fumadocs' typography plugin, which gives `pre` no style at all, so the docs' first code block (the preview's `worktree.json`, added with F-WT-09) had no box and pushed the page sideways at every width; so did the unbroken `DATABASE_URL=postgres://localhost/app_{{slug}}` in F-WT-06's text. The site's browser tests run only in a release's site check, so the batches that added them didn't catch it. `docs.css` now gives `pre` the blog's code box (the `surface` edge, fill and shadow, the mono type at 13 px, shiki's colours by the OS theme) with `overflow-x: auto`, and inline code `overflow-wrap: anywhere`. The 320 px check and axe in both themes pass on the rebuilt site.
 - D-865: A desktop's plan and credit updates no longer stop about 25 s after it reconnects (F-BE-04), found by 0.8.0's second full E2E run: E2E-M8-7's Polish charged its 3 credits, but the desktop never fetched `/v1/me` again. An SSE stream on `/v1/me/events` stops twice: on its abort, and again when its heartbeat loop next wakes, up to 25 s later. When a desktop reconnected (after signing in, or a plan change), the old stream's abort emptied the user's listener set and removed it; the new stream made a new set; then the old stream's second stop, still holding the empty set, removed the user's entry again, which was now the new stream's. Events went nowhere until the desktop's next reconnect. In the failing run the Enhance's event (22:06:11) arrived, and the Polish's (22:06:25) came 2 s after that second stop. `EventHub.listen`'s stop now removes the user's entry only while it is still that stream's own set. `F-BE-04 a closed stream's late cleanup never silences the stream that replaced it (D-865)` failed before the fix. The hosted API isn't deployed yet, so no user met it. With the fix, the API's 212 tests pass, the seven E2E specs that wait on plan or credit updates over the stream passed, and E2E-M8-7 passed three runs in a row.
 - D-866: Dictate's Fn fallback notice has its own string (F-DI-02), found by checking chain24's merged catalog for keys written twice. `en.json` held `dictate.setup.fnFallback` twice: M8's label for the macOS shortcut section's "Fn not working? Use Control+Option" button, and chain19's notice after Fn went unheard (D-524). JSON keeps the last, so on a Mac the button read "Fn didn't reach Vibezeo, so your Dictate key is now Control+Option. Press it to try." The notice is now `dictate.setup.fnFellBack`. `i18n.test` fails on any key written twice, and `F-DI-02 Use Control+Option and the notice after Fn went unheard have their own words` renders both; each failed on the old catalog.
+- D-867: M18's decision ranges, extended while reviewing chain25's candidates.
+  - `competitive-gaps` used all of D-2520 to D-2539 (F-CD-23 took D-2536 to D-2539), so it continues at D-2580 to D-2599. F-CD-23's repository-trust decision is D-2580. It was first suggested as D-2540, which F-TL-11 already holds.
+  - `product-research` finishes D-2540 to D-2559 with B5's second slice, and continues at D-2800 to D-2819 from F-EX-07.
+  - Both new ranges were unused on every branch.
+- D-868: 0.9.0 ships without new demo surfaces (D-128).
+  - The rule's first half holds: everything the demo shows is in the download, and the demo's plan (`ENTITLEMENT`) is the download's Free plan.
+  - None of the six new features is in the demo. Landing, pull-request results and the intent radar need worktrees with real history, engine versions and the session library read the engines' own files, and the sandbox needs bubblewrap. A simulated core can show them only as scripted scenes.
+  - They are queued for the demo with the website's product scenes (`site-motion`, DESIGN §5.1), tracked in REMAINING's website section.
+- D-869: Vibezeo is free (the owner, 24 October 2026): "Remove the costing page. I need it free."
+  - **No paid plans.** No prices, plan comparisons or credit prices anywhere on the site. `/pricing/` and anything under it redirect to `/download/` (vercel.json). The home page's plan teaser, the nav and footer links, `lib/pricing.ts`, llms.txt's price lines and site-info's `pricing` block are gone, and site-info says `free: true`. DECISIONS' business model records it.
+  - **0.9.0 ships as built.** Its download still has the earlier Free plan's limits (4 live panes, 3 workspaces, one thread at a time, threads with Claude Code and Codex, one account per engine). The notes, the post, the download page and the docs' limits table say so, and say the next release removes them.
+  - **The next release unlocks every local feature** for everyone: panes, workspaces, engine accounts, six threads, every chat engine, teammates, routines, tasks in their own lanes, the Night Shift and session search. Hosted features (cloud dictation, Enhance and Polish, dictionary sync, Conductor's calls, the phone relay) need servers. They stay off until Vibezeo accounts open, and the site never prices them.
+  - **Docs:** the routines page opens with "In the next release", and Conductor's with "Comes with Vibezeo accounts". Conductor's credit costs and Dictate's credit prices are gone.
+  - **Tests:** the site's pricing tests (F-WB-01 AC3, the comparison table, llms.txt's and site-info's prices) checked a requirement this decision removes. They now check that no page shows a price or links to `/pricing/`, that the redirect is there, and that site-info and llms.txt say Vibezeo is free.
 
 ### Website redesign log
 - Merged product-m0-m5 (#46, D-829's `git.deploymentEnabled`) into website-redesign; vercel.json keeps both that block and D-1814's cache headers. The home page's proof band adds "Linux first", only facts the build ships: the .deb's distributions (from `lib/release.ts`), Dictate on X11 and Wayland, SSH hosts on x86-64 and arm64 (a test checks the 0.5.0 CHANGELOG says them). No claim about price or markup.

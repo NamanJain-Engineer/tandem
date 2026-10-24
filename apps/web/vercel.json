@@ -98,6 +98,16 @@
   ],
   "redirects": [
     {
+      "source": "/pricing",
+      "destination": "/download/",
+      "permanent": true
+    },
+    {
+      "source": "/pricing/:rest(.*)",
+      "destination": "/download/",
+      "permanent": true
+    },
+    {
       "source": "/:notfile((?!\\.well-known(?:/.*)?)(?:[^/]+/)*[^/\\.]+)",
       "destination": "/:notfile/",
       "permanent": true

@@ -1,15 +1,13 @@
 // Machine-readable discovery (F-WB-04): /llms.txt, /llms-full.txt,
 // /api/v1/site-info and the OpenAPI document that describes it. All of it is
-// built from the same config as /pricing, /download and /docs.
+// built from the same config as /download and /docs.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { PRICES } from "@tandem/protocol/plans";
 import { BLOG_PATH, FEED_PATH, POSTS } from "./blog/posts";
 import { DOCS_MARKDOWN } from "./docs/tables";
 import { DOCS_PAGES, docsPath } from "./docs/pages";
 import { releaseAssets } from "./manifest";
-import { CREDIT_ROWS, CREDIT_VALUE_USD, PLANS } from "./pricing";
 import { CHECKSUMS_URL, DOWNLOADS, RELEASE } from "./release";
 import { ENGINES, SITE } from "./site";
 
@@ -37,28 +35,7 @@ export const SiteInfoSchema = z
         downloads: z.array(Download),
       }),
     ),
-    pricing: z.object({
-      currency: z.literal("USD"),
-      url: z.url(),
-      plans: z.array(
-        z.object({
-          id: z.enum(["free", "pro", "team"]),
-          name: z.string(),
-          available: z.boolean().describe("False until the plan can be bought."),
-          monthlyCents: z.number().int(),
-          yearlyCents: z.number().int().nullable(),
-          perSeat: z.boolean(),
-          minSeats: z.number().int().nullable(),
-          trialDays: z.number().int().nullable(),
-        }),
-      ),
-      creditValueUsd: z
-        .number()
-        .describe("What one credit is worth; credits pay only for hosted AI features."),
-      creditPrices: z
-        .record(z.string(), z.number().int())
-        .describe("Credits per use of each hosted feature."),
-    }),
+    free: z.literal(true).describe("Vibezeo is free: there are no paid plans."),
   })
   .describe("Public, read-only facts about Vibezeo.");
 
@@ -79,44 +56,7 @@ export function siteInfo(): SiteInfo {
       available: d.available,
       downloads: (assets.get(d.os) ?? []).map(({ file, url, sha256 }) => ({ file, url, sha256 })),
     })),
-    pricing: {
-      currency: "USD",
-      url: abs("/pricing/"),
-      plans: [
-        {
-          id: "free",
-          name: "Free",
-          available: true,
-          monthlyCents: 0,
-          yearlyCents: null,
-          perSeat: false,
-          minSeats: null,
-          trialDays: null,
-        },
-        {
-          id: "pro",
-          name: "Pro",
-          available: false,
-          monthlyCents: PRICES.pro.month,
-          yearlyCents: PRICES.pro.year,
-          perSeat: false,
-          minSeats: null,
-          trialDays: PRICES.pro.trialDays,
-        },
-        {
-          id: "team",
-          name: "Team",
-          available: false,
-          monthlyCents: PRICES.team.month,
-          yearlyCents: PRICES.team.year,
-          perSeat: true,
-          minSeats: PRICES.team.minSeats,
-          trialDays: PRICES.team.trialDays,
-        },
-      ],
-      creditValueUsd: CREDIT_VALUE_USD,
-      creditPrices: Object.fromEntries(CREDIT_ROWS.map((r) => [r.key, r.credits])),
-    },
+    free: true,
   };
 }
 
@@ -134,9 +74,11 @@ export function docSource(slug: string): DocSource {
 /** A page for a feature the release doesn't have opens with this label. */
 export const notInApp = (d: DocSource) => d.body.startsWith("> **Not in the app yet.**");
 
-/** A page for a feature that's in the app but runs only on Pro, which the
- * download can't have, opens with this one. */
-export const partOfPro = (d: DocSource) => d.body.startsWith("> **Part of Pro.**");
+/** A page for a feature that's in the app but doesn't run in this release's
+ * download opens with one of these: the next release switches it on, or it
+ * needs Vibezeo's servers and comes with accounts (D-869). */
+export const comesLater = (d: DocSource) =>
+  d.body.startsWith("> **In the next release.**") || d.body.startsWith("> **Comes with Vibezeo accounts.**");
 
 /** MDX to plain Markdown: generated components become their tables, site
  * links become absolute, and `<kbd>` keys become code. */
@@ -146,11 +88,6 @@ function toMarkdown(body: string): string {
     .replace(/<kbd>(.*?)<\/kbd>/g, "`$1`")
     .replace(/\]\((\/[^)]*)\)/g, (_, path: string) => `](${abs(path)})`);
 }
-
-const planLine = (id: string) => {
-  const p = PLANS.find((x) => x.id === id);
-  return p ? `${p.name}: ${p.price} ${p.cadence}` : "";
-};
 
 export function llmsTxt(): string {
   const linux = releaseAssets().get("linux") ?? [];
@@ -163,16 +100,14 @@ export function llmsTxt(): string {
     .join(", ")}. ${DOWNLOADS.filter((d) => !d.available)
     .map((d) => d.name)
     .join(" and ")} builds are not available yet.
-- The download runs the Free plan on your computer, with no account, and doesn't contact ${SITE.product}'s servers.
+- ${SITE.product} is free, with no paid plans. The download runs on your computer, with no account, and doesn't contact ${SITE.product}'s servers.
 - Engines it detects and runs: ${ENGINES.join(", ")}. Each signs in by itself; ${SITE.product} never reads their credentials.
-- Prices are in US dollars. ${planLine("free")} (available now). ${planLine("pro")}. ${planLine("team")}. Pro and Team start when ${SITE.product} accounts open.
-- Credits pay only for hosted AI features; one credit is $${CREDIT_VALUE_USD.toFixed(3)}. ${CREDIT_ROWS.map((r) => `${r.label}: ${r.credits === 0 ? "free" : `${r.credits} credits ${r.unit}`}`).join("; ")}.
 
 ## Docs
 
 ${DOCS_PAGES.map((p) => {
   const d = docSource(p.slug);
-  return `- [${p.title}](${abs(docsPath(p.slug))}): ${d.description}${notInApp(d) ? " (Not in the app yet.)" : partOfPro(d) ? " (Part of Pro, which starts when accounts open.)" : ""}`;
+  return `- [${p.title}](${abs(docsPath(p.slug))}): ${d.description}${notInApp(d) ? " (Not in the app yet.)" : comesLater(d) ? " (Not in this release's download yet.)" : ""}`;
 }).join("\n")}
 
 ## Blog
@@ -189,9 +124,8 @@ ${linux.map((a) => `- [${a.file}](${a.url}): SHA-256 ${a.sha256}`).join("\n")}
 ## Optional
 
 - [Full docs as one file](${abs("/llms-full.txt")})
-- [Site info as JSON](${abs(SITE_INFO_PATH)}): name, version, platforms and pricing
+- [Site info as JSON](${abs(SITE_INFO_PATH)}): name, version, platforms and downloads
 - [OpenAPI 3.1 document](${abs("/openapi.json")})
-- [Pricing](${abs("/pricing/")})
 - [Changelog](${abs("/changelog/")})
 - [Privacy](${abs("/privacy/")})
 `;
@@ -220,7 +154,7 @@ export function openApi() {
       [SITE_INFO_PATH]: {
         get: {
           operationId: "getSiteInfo",
-          summary: "Name, version, platforms and pricing",
+          summary: "Name, version, platforms and downloads",
           responses: {
             "308": {
               description: `Every path on the site ends in a slash: this redirects to ${SITE_INFO_PATH}/, which answers 200.`,

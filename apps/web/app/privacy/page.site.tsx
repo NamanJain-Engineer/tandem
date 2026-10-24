@@ -83,7 +83,7 @@ export default function PrivacyPage() {
         </li>
         <li>
           Once accounts open: if you sign in to a {SITE.product} account, our service stores your email
-          address, your plan, and the devices you've signed in on (device name, platform and app version), so
+          address and the devices you've signed in on (device name, platform and app version), so
           you can see and revoke them.
         </li>
         <li>

@@ -15,7 +15,7 @@ export default function TermsPage() {
       <h2>The site</h2>
       <ul>
         <li>
-          The site describes {SITE.product}, a desktop app. Features, platforms and plans described here may
+          The site describes {SITE.product}, a free desktop app. Features and platforms described here may
           change.
         </li>
         <li>
